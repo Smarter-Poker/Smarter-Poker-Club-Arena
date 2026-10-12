@@ -395,15 +395,19 @@ describe('cashier Phase 4 operational resilience', () => {
   it('shows one reconciliation console with verified freshness evidence', () => {
     expect(page).toContain('data-cashier-recovery="true"');
     expect(page).toContain('Reconciliation Console');
-    expect(page).toContain('Reconcile Now');
+    expect(
+      readFileSync(resolve(root, 'src/components/wallet/CashierConservationReport.tsx'), 'utf8')
+    ).toContain('Reconcile Now');
     expect(page).toContain('if (complete) setLastVerifiedAt(Date.now())');
-    expect(page).toContain('Cashier Balances Reconciled');
+    expect(page).not.toContain('Cashier Balances Reconciled');
+    expect(page).toContain('CashierConservationReport');
+    expect(page).toContain('onRefresh={reconcileCashier}');
     expect(page).toContain('if (floatRes.error) {');
     expect(page).toContain("reportError(floatRes.error, 'CashierTradePage.agentWallet')");
     expect(page).toContain('checks.every((complete) => complete === true)');
     expect(page).toContain("tab === 'record' ? loadRecords()");
     expect(page).toContain("tab === 'leaderboard' ? loadInvoices()");
-    expect(page).toContain('Not Yet Verified');
+    expect(page).toContain('Not Yet Refreshed');
   });
 
   it('preserves a partial batch as a visible retryable intent', () => {
@@ -425,7 +429,9 @@ describe('cashier Phase 4 operational resilience', () => {
     expect(page).toContain('opIds: Object.fromEntries(opIdsRef.current)');
     expect(page).toContain('Original Retry Keys Are Preserved');
     expect(page).toContain('Review And Retry');
-    expect(page).toContain('saved.failures.map((failure)');
+    expect(page).toContain('saved.failures');
+    expect(page).toContain('.filter((failure) => !confirmedTargets.has(failure.userId))');
+    expect(page).toContain("supabase.rpc('fn_cashier_recovery_receipts'");
     expect(page).toContain('opIdsRef.current = new Map()');
     expect(page).not.toContain('`${entry.userId}:${entry.message}`');
   });
@@ -476,5 +482,78 @@ describe('unresolved transfer identities do not expire', () => {
     expect(readCashierTransferRecoveries(recovery.userId, recovery.clubId, storage, later)).toEqual(
       []
     );
+  });
+});
+
+describe('Phase 5 durable individual batch amounts', () => {
+  it('round-trips exact amounts without changing legacy uniform journals', () => {
+    const storage = new MemoryStorage();
+    const custom = {
+      ...recovery,
+      targetAmounts: {
+        [recovery.targetIds[0]]: 0.1,
+        [recovery.targetIds[1]]: 21.05,
+      },
+    };
+    expect(writeCashierTransferRecovery(custom, storage, recovery.createdAt)).toBe(true);
+    expect(
+      readCashierTransferRecovery(recovery.userId, recovery.clubId, storage, recovery.createdAt)
+        ?.targetAmounts
+    ).toEqual(custom.targetAmounts);
+    expect(
+      writeCashierTransferRecovery(
+        { ...custom, targetAmounts: { ...custom.targetAmounts, [recovery.targetIds[1]]: 22 } },
+        storage,
+        recovery.createdAt
+      )
+    ).toBe(false);
+    expect(
+      readCashierTransferRecovery(recovery.userId, recovery.clubId, storage, recovery.createdAt)
+        ?.targetAmounts
+    ).toEqual(custom.targetAmounts);
+  });
+  it.each([0, -1, 10.005, 1_000_000_001, NaN, Infinity])(
+    'refuses invalid retained recipient value %s',
+    (value) => {
+      const storage = new MemoryStorage();
+      expect(
+        writeCashierTransferRecovery(
+          {
+            ...recovery,
+            targetAmounts: {
+              [recovery.targetIds[0]]: value,
+              [recovery.targetIds[1]]: 1,
+            },
+          },
+          storage,
+          recovery.createdAt
+        )
+      ).toBe(false);
+      expect(storage.length).toBe(0);
+    }
+  );
+  it('refuses missing or extra amounts before a retry can change the original intent', () => {
+    const storage = new MemoryStorage();
+    expect(
+      writeCashierTransferRecovery(
+        { ...recovery, targetAmounts: { [recovery.targetIds[0]]: 1 } },
+        storage,
+        recovery.createdAt
+      )
+    ).toBe(false);
+    expect(
+      writeCashierTransferRecovery(
+        {
+          ...recovery,
+          targetAmounts: {
+            [recovery.targetIds[0]]: 1,
+            [recovery.targetIds[1]]: 2,
+            '88888888-8888-4888-8888-888888888888': 3,
+          },
+        },
+        storage,
+        recovery.createdAt
+      )
+    ).toBe(false);
   });
 });

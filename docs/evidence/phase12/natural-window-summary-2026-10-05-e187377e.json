@@ -1,0 +1,120 @@
+{
+  "schema": "horse-phase11-12-natural-window-summary-v1",
+  "release": "e187377e21eb0f408d2287e8022821a1f83f58c1",
+  "window": {
+    "from": "2026-10-05T17:02:00Z",
+    "to": "2026-10-05T17:50:00Z"
+  },
+  "readers": "7ce58e54f4e69530be411d9d4f8af30f9a9a951a",
+  "packs": {
+    "plo5": {
+      "extract": {
+        "excluded_deep_second_look": 168,
+        "excluded_multiboard": 722,
+        "records": 23470,
+        "segment_retired_during_scan": 1,
+        "segments_read": 138977
+      },
+      "extractSha256": "f4481ebb5d4d6aaae4dcbedfb99183fa3c7a76545dda2a61e8daf3cef2bcc68d",
+      "receipts": 23470,
+      "shadow": 23470,
+      "applied": 0,
+      "eligible": 23231,
+      "eligibleBound": 23231,
+      "authorityUnselected": 23470
+    },
+    "plo6": {
+      "extract": {
+        "excluded_deep_second_look": 118,
+        "excluded_multiboard": 423,
+        "records": 21195,
+        "segments_read": 139600
+      },
+      "extractSha256": "a3994b13ea9c84e0711df5a9a63a5a6f42e8f01764d7b71d1d30cfbccee9a5d5",
+      "receipts": 21195,
+      "shadow": 21195,
+      "applied": 0,
+      "eligible": 21150,
+      "eligibleBound": 21150,
+      "authorityUnselected": 21195
+    },
+    "plo8": {
+      "extract": {
+        "excluded_deep_second_look": 38,
+        "excluded_multiboard": 333,
+        "records": 2183,
+        "segments_read": 139600
+      },
+      "extractSha256": "004fc24ea5ef958b8a04e7f709f61f237bca8919a241573bad5a0c64a6a9a067",
+      "receipts": 2183,
+      "shadow": 2183,
+      "applied": 0,
+      "eligible": 2176,
+      "eligibleBound": 2176,
+      "authorityUnselected": 2183
+    },
+    "short_deck": {
+      "extract": {
+        "excluded_deep_second_look": 38,
+        "excluded_multiboard": 320,
+        "records": 2762,
+        "segments_read": 139624
+      },
+      "extractSha256": "c38f06924465d554b04665e50029edf4ae22a9ff8fef5e7bf8b05da8804896e5",
+      "receipts": 2762,
+      "shadow": 2762,
+      "applied": 0,
+      "eligible": 2620,
+      "eligibleBound": 2620,
+      "authorityUnselected": 2762
+    },
+    "pineapple": {
+      "extract": {
+        "excluded_deep_second_look": 50,
+        "excluded_discard_decision": 535,
+        "excluded_multiboard": 274,
+        "records": 2500,
+        "segment_retired_during_scan": 1,
+        "segments_read": 143040
+      },
+      "extractSha256": "9245a85dcb09113fc8f495f6a3144bbada0a4c48c29c2df85f2e2f7b49f2ef3c",
+      "receipts": 2500,
+      "shadow": 2500,
+      "applied": 0,
+      "eligible": 2412,
+      "eligibleBound": 2412,
+      "authorityUnselected": 2500
+    },
+    "flh": {
+      "extract": {
+        "excluded_multiboard": 202,
+        "records": 1339,
+        "segment_retired_during_scan": 2,
+        "segments_read": 149699
+      },
+      "extractSha256": "62fedb3dc2c8f314ec2d451b1527cf9786eff2fdfdcc905f55fee7cffc4aa387",
+      "receipts": 1339,
+      "shadow": 1339,
+      "applied": 0,
+      "eligible": 1339,
+      "eligibleBound": 1339,
+      "authorityUnselected": 1339
+    },
+    "flo8": {
+      "extract": {
+        "excluded_deep_second_look": 2,
+        "excluded_multiboard": 22,
+        "records": 1758,
+        "segment_retired_during_scan": 2,
+        "segments_read": 156058
+      },
+      "extractSha256": "52abf59dec0c973474044ee2ef015f445593c1179a9086693d0d256eaca890cc",
+      "receipts": 1758,
+      "shadow": 1758,
+      "applied": 0,
+      "eligible": 1758,
+      "eligibleBound": 1758,
+      "authorityUnselected": 1758
+    }
+  }
+}

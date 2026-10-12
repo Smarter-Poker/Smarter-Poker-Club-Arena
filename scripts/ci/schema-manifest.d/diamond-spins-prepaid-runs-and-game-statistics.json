@@ -1,0 +1,21 @@
+{
+  "_owner": "Diamond Spins compatible support observed in production 2026-10-10T09:25:42.167124+00:00; provider version 20261010092525, statements MD5 cb463f43a21e0279799da8b583cb004c. Choice-v5 activation changes existing doors only and remains pending compatible client publication.",
+  "tables": ["wheel_batch_requests"],
+  "functions": [
+    "fn_choice_loss_floor_v5",
+    "fn_choice_prizes_v5",
+    "fn_choice_road_probability_v5",
+    "fn_diamond_game_lifetime",
+    "fn_wheel_batch_active",
+    "fn_wheel_batch_begin",
+    "fn_wheel_batch_immutable",
+    "fn_wheel_batch_prepare",
+    "fn_wheel_batch_read",
+    "fn_wheel_bonus_public_award",
+    "fn_wheel_bonus_start",
+    "fn_wheel_card_public",
+    "fn_wheel_diamond_cards_pick",
+    "fn_wheel_next_unplayed",
+    "fn_wheel_prize_order"
+  ]
+}

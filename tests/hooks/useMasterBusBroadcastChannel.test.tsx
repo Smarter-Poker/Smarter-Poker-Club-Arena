@@ -13,6 +13,8 @@ const mocks = vi.hoisted(() => ({
   reportError: vi.fn(),
   on: vi.fn(),
   subscribe: vi.fn(),
+  subscriptionCallbacks: [] as Array<(status: string, err?: Error) => void>,
+  payloadCallbacks: [] as Array<(payload: unknown) => void>,
 }));
 
 vi.mock('../../src/lib/supabase', () => ({
@@ -39,8 +41,16 @@ describe('useMasterBusBroadcastChannel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.setAuth.mockResolvedValue(undefined);
-    mocks.subscribe.mockReturnValue(undefined);
-    mocks.on.mockReturnValue({ subscribe: mocks.subscribe });
+    mocks.subscriptionCallbacks.length = 0;
+    mocks.payloadCallbacks.length = 0;
+    mocks.subscribe.mockImplementation((callback: (status: string, err?: Error) => void) => {
+      mocks.subscriptionCallbacks.push(callback);
+      return undefined;
+    });
+    mocks.on.mockImplementation((_type, _filter, callback: (payload: unknown) => void) => {
+      mocks.payloadCallbacks.push(callback);
+      return { subscribe: mocks.subscribe };
+    });
     mocks.getOrCreateChannel.mockReturnValue({ state: 'closed', on: mocks.on });
     mocks.authListeners = [];
     mocks.onAuthStateChange.mockImplementation((listener: (event: string) => void) => {
@@ -114,6 +124,98 @@ describe('useMasterBusBroadcastChannel', () => {
       'useMasterBusBroadcastChannel.AUTH_ERROR.changed'
     );
     expect(mocks.getOrCreateChannel).not.toHaveBeenCalled();
+  });
+
+  it('ignores stale status and payload callbacks after a channel replacement', async () => {
+    const firstChannel = { state: 'closed', on: mocks.on };
+    const replacementChannel = { state: 'closed', on: mocks.on };
+    mocks.getOrCreateChannel
+      .mockReturnValueOnce(firstChannel)
+      .mockReturnValueOnce(replacementChannel);
+    const onPayload = vi.fn();
+    const onSubscriptionError = vi.fn();
+    const onSubscriptionStatus = vi.fn();
+
+    renderHook(() =>
+      useMasterBusBroadcastChannel({
+        channelName: 'private:user-1',
+        event: 'changed',
+        onPayload,
+        onSubscriptionError,
+        onSubscriptionStatus,
+      })
+    );
+
+    await waitFor(() => expect(mocks.subscriptionCallbacks).toHaveLength(1));
+    const startReplacement = mocks.registerChannelFactory.mock.calls[0]?.[1] as
+      | (() => void)
+      | undefined;
+    expect(startReplacement).toBeTypeOf('function');
+    await act(async () => {
+      startReplacement?.();
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(mocks.subscriptionCallbacks).toHaveLength(2));
+
+    // The superseded channel may still report its late terminal status or a
+    // queued frame after its replacement has become the active owner.
+    act(() => {
+      mocks.subscriptionCallbacks[0]('CLOSED');
+      mocks.payloadCallbacks[0]({ revision: 1 });
+    });
+    expect(onSubscriptionStatus).not.toHaveBeenCalled();
+    expect(onSubscriptionError).not.toHaveBeenCalled();
+    expect(onPayload).not.toHaveBeenCalled();
+
+    // The active callback remains live across ordinary disconnect/rejoin
+    // statuses and continues delivering current-channel payloads.
+    const channelError = new Error('Temporary Realtime Disconnect');
+    act(() => {
+      mocks.subscriptionCallbacks[1]('CHANNEL_ERROR', channelError);
+      mocks.subscriptionCallbacks[1]('SUBSCRIBED');
+      mocks.payloadCallbacks[1]({ revision: 2 });
+    });
+    expect(onSubscriptionStatus.mock.calls.map(([status]) => status)).toEqual([
+      'CHANNEL_ERROR',
+      'SUBSCRIBED',
+    ]);
+    expect(onSubscriptionError).toHaveBeenCalledWith('CHANNEL_ERROR', channelError);
+    expect(onPayload).toHaveBeenCalledWith({ revision: 2 });
+  });
+
+  it('does not let an older auth attempt win when it completes after its replacement', async () => {
+    const resolveAuth: Array<() => void> = [];
+    mocks.setAuth.mockImplementation(
+      () => new Promise<void>((resolve) => resolveAuth.push(resolve))
+    );
+    const firstChannel = { state: 'closed', on: mocks.on };
+    const replacementChannel = { state: 'closed', on: mocks.on };
+    mocks.getOrCreateChannel
+      .mockReturnValueOnce(firstChannel)
+      .mockReturnValueOnce(replacementChannel);
+
+    renderHook(() =>
+      useMasterBusBroadcastChannel({
+        channelName: 'private:user-1',
+        event: 'changed',
+        onPayload: vi.fn(),
+      })
+    );
+    await waitFor(() => expect(resolveAuth).toHaveLength(1));
+
+    const startReplacement = mocks.registerChannelFactory.mock.calls[0]?.[1] as
+      | (() => void)
+      | undefined;
+    startReplacement?.();
+    await waitFor(() => expect(resolveAuth).toHaveLength(2));
+
+    await act(async () => resolveAuth[1]?.());
+    await waitFor(() => expect(mocks.subscriptionCallbacks).toHaveLength(1));
+    await act(async () => resolveAuth[0]?.());
+
+    expect(mocks.getOrCreateChannel).toHaveBeenCalledOnce();
+    expect(mocks.getOrCreateChannel).toHaveBeenCalledWith('private:user-1', { private: true });
+    expect(mocks.subscriptionCallbacks).toHaveLength(1);
   });
 
   it('does not join after unmount while authentication is pending', async () => {

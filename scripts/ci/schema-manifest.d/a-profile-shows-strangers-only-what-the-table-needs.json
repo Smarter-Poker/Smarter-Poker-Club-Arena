@@ -1,0 +1,4 @@
+{
+  "_owner": "agent/claude-fix/a-profile-shows-strangers-only-what-the-table-needs",
+  "functions": ["get_full_profiles_for_staff", "fn_profile_presence"]
+}

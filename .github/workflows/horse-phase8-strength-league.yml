@@ -1,0 +1,131 @@
+name: Horse Phase 8 Strength League
+run-name: Horse Phase 8 strength league ${{ inputs.source_sha }}
+
+# ──────────────────────────────────────────────────────────────────────────────
+# THE P8.2 STRENGTH MATRIX ON QUALIFIED LINUX HOSTS (Horse Brain Phase 8.2)
+#
+# The completion plan's P8.2 contract: seeds 8101101, 8102203 and 8103307,
+# objectives mtt, sng, spin, satellite, pko and mystery, 1,024 paired
+# tournaments per run, 18 distinct runs, in promotion mode with hydrated,
+# identified solver stores. HorseLeagueComputeWorkerClient refuses every
+# platform but Linux, and the production engine host must never carry the
+# league, so the matrix needs Linux hosts of its own.
+#
+# One run per job, one job per runner. A league run is two busy processes
+# (the tournament and its nice-19 compute child), and the October 2 Hetzner
+# matrix showed that sharing cores starves the 4 ms continuation budget, so
+# each run gets an uncontended four-vCPU runner here.
+#
+# Manual dispatch only, by a repository writer, for one exact source SHA. It
+# never runs on a pull request, never on a schedule, never writes to the
+# database (the solver stores are read once at hydration), and never decides
+# promotion: server/scripts/phase8-strength-assemble.mjs does that from the
+# 18 uploaded run directories with the real league contract.
+# ──────────────────────────────────────────────────────────────────────────────
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact 40-hex commit on main to evaluate
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: horse-phase8-strength-league-${{ inputs.source_sha }}
+  cancel-in-progress: false
+
+jobs:
+  league:
+    name: League ${{ matrix.objective }} ${{ matrix.seed }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 355
+    strategy:
+      fail-fast: false
+      max-parallel: 18
+      matrix:
+        seed: [8101101, 8102203, 8103307]
+        objective: [mtt, sng, spin, satellite, pko, mystery]
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - name: Refuse anything but an exact commit
+        working-directory: .
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "source_sha must be 40 hex"; exit 1; }
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+
+      - name: Setup Node 22 (the engine image's Node)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Record the runner
+        env:
+          OBJECTIVE: ${{ matrix.objective }}
+          SEED: ${{ matrix.seed }}
+        run: |
+          OUT="$RUNNER_TEMP/p82"
+          mkdir -p "$OUT"
+          python3 - "$OUT/runner-$OBJECTIVE-$SEED.json" <<'PY'
+          import json, os, platform, subprocess, sys
+          cpu = next((l.split(':', 1)[1].strip() for l in open('/proc/cpuinfo') if l.startswith('model name')), None)
+          json.dump({
+            'schema': 'horse-phase8-strength-runner-v1',
+            'runner': os.environ.get('RUNNER_NAME'),
+            'image': os.environ.get('ImageOS'),
+            'imageVersion': os.environ.get('ImageVersion'),
+            'vcpu': os.cpu_count(),
+            'cpu': cpu,
+            'kernel': platform.release(),
+            'node': subprocess.run(['node', '--version'], capture_output=True, text=True).stdout.strip(),
+            'workflowRun': f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
+            'sourceSha': subprocess.run(['git', 'rev-parse', 'HEAD'], capture_output=True, text=True).stdout.strip(),
+          }, open(sys.argv[1], 'w'), indent=2)
+          PY
+
+      - name: Run the league
+        env:
+          OBJECTIVE: ${{ matrix.objective }}
+          SEED: ${{ matrix.seed }}
+          SUPABASE_URL: https://kuklfnapbkmacvwxktbh.supabase.co
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          OUT="$RUNNER_TEMP/p82"
+          set +e
+          npx tsx src/scripts/horseTournamentEvaluate.ts \
+            --output="$OUT/$OBJECTIVE-$SEED" --objective="$OBJECTIVE" --seed="$SEED" --promotion \
+            > "$OUT/$OBJECTIVE-$SEED.log" 2>&1
+          code=$?
+          set -e
+          echo "$code" > "$OUT/exit-$OBJECTIVE-$SEED.txt"
+          tail -n 5 "$OUT/$OBJECTIVE-$SEED.log"
+          # Exit 1 is the single-run software baseline gate (it needs all 18
+          # runs in one process); the result file is the evidence. A run that
+          # wrote no result is a failure.
+          test -f "$OUT/$OBJECTIVE-$SEED/$OBJECTIVE-$SEED.json"
+
+      - name: Upload the run
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p82-${{ matrix.objective }}-${{ matrix.seed }}
+          path: ${{ runner.temp }}/p82/
+          retention-days: 30
+          if-no-files-found: error

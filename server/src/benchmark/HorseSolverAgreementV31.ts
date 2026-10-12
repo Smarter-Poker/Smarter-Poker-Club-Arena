@@ -25,6 +25,7 @@ import type {
 import {
   gtoPostflopV31Count,
   gtoPostflopV31Dataset,
+  gtoV31FeatureContractVersion,
   type GtoV31SourceSeal,
 } from '../engine/GtoPostflopV31.js';
 import { stableSolverPolicyJson } from '../gto/SolverPolicyContract.js';
@@ -91,7 +92,11 @@ export interface GtoV31AgreementResult {
   decisions: GtoV31AgreementDecision[];
 }
 
-type DatasetIdentity = { id: string; checksum: string };
+type DatasetIdentity = {
+  id: string;
+  checksum: string;
+  feature_contract_version?: GtoV31SourceSeal['feature_contract_version'];
+};
 type MatchupRunner = typeof runMatchup;
 
 export interface GtoV31AgreementDependencies {
@@ -159,6 +164,8 @@ export function gtoV31AgreementDecisionFromReceipt(args: {
     receipt.datasetChecksum !== dataset.checksum ||
     receipt.sourceSeal.dataset_id !== dataset.id ||
     receipt.sourceSeal.dataset_checksum !== dataset.checksum ||
+    gtoV31FeatureContractVersion(receipt.sourceSeal) === null ||
+    gtoV31FeatureContractVersion(receipt.sourceSeal) !== gtoV31FeatureContractVersion(dataset) ||
     receipt.sourceSeal.dataset_state !== 'active' ||
     receipt.cell !== state.cell ||
     receipt.handKey !== state.handKey ||

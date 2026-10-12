@@ -90,10 +90,12 @@
  *   ... --require-proof      an unverifiable migration also fails
  * Exit: 0 every migration in the window is live · 1 one is not · 2 could not ask
  */
-import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { loadAliases } from './migration-aliases.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const DIR = join(ROOT, 'supabase', 'migrations');
@@ -108,6 +110,62 @@ const flag = (name, fallback) => {
 };
 const REQUIRE_PROOF = argv.includes('--require-proof');
 const DAYS = Number(flag('days', '21'));
+
+/**
+ * THE PULL-REQUEST FORM OF THIS QUESTION (2026-09-27).
+ *
+ * The scheduled audit accuses a merged migration the moment it is not live.
+ * On a pull request that is too early for somebody else's migration merged a
+ * minute ago, so .github/workflows/migration-ledger-reconciled.yml runs this
+ * with --min-age-hours: a file younger than that (by the version stamp, UTC)
+ * that is not live yet is listed as in flight; an older one fails the branch.
+ * The scheduled audit passes no flag and is exactly as strict as before.
+ */
+const MIN_AGE_HOURS = Number(flag('min-age-hours', '0'));
+
+/**
+ * RECORDED UNDER ITS OWN FILE NAME (2026-10-03). An apply can record the
+ * migration's name as the whole file stem - its own version included - while
+ * the transport stamps a new version: production carries
+ * `20260927041957 20260927035803_certification_cleanup_removes_archived_public_user_residue`
+ * for the file 20260927035803_certification_cleanup_removes_archived_public_user_residue.sql.
+ * A name that carries the file's own version AND slug can only be that file,
+ * so it matches by name exactly as the bare slug does.
+ *
+ * Before this, three such 2026-09-27 files fell through to step 3, whose
+ * proofs begin `NOT public.fn_platform_frozen()`: every run inside a
+ * maintenance freeze (the :55 cutover) read an installed migration as
+ * MERGED BUT NOT LIVE, and `Installed and merged migrations agree` went red on
+ * main and on every pull request for as long as the freeze lasted.
+ */
+export function matchedByName(file, recorded, recordedPrefixes) {
+  const stem = String(file).replace(/\.sql$/, '');
+  const slug = stem.slice(stem.indexOf('_') + 1);
+  return [slug, stem].some(
+    (n) => recorded.has(n) || recordedPrefixes.has(n.slice(0, NAME_PREFIX))
+  );
+}
+
+export function stampedAt(file) {
+  const m = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})_/.exec(String(file));
+  if (!m) return null;
+  return Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+}
+
+/**
+ * EXPLICITLY MARKED (2026-09-27). The repository's own marker for a file that
+ * must never run because a later file replaced it - honoured by
+ * check-migrations-applied.mjs since 2026-09-07 - is honoured here too, on the
+ * same terms: it must NAME the superseding version, and a file with that
+ * version must exist in this directory. "Superseded" is the easiest lie to tell
+ * about a migration that simply never ran, so an unverifiable claim is ignored
+ * and the file is judged like any other.
+ */
+export function supersededBy(sql, dirFiles) {
+  const m = String(sql).slice(0, 400).match(/^--\s*SUPERSEDED BY\s+(\d{14})\b/m);
+  if (!m) return null;
+  return dirFiles.some((f) => f.startsWith(`${m[1]}_`)) ? m[1] : null;
+}
 
 function windowFloor() {
   const since = flag('since', null);
@@ -151,17 +209,25 @@ function ask(sql) {
   const url = process.env.SUPABASE_DB_URL || process.env.DATABASE_URL || '';
   if (!url) die('no SUPABASE_DB_URL / DATABASE_URL in the environment.');
   try {
-    const out = execFileSync(process.env.PSQL_BIN || 'psql', [url, '-Atc', sql], {
-      encoding: 'utf8',
-      timeout: 60_000,
-      maxBuffer: 32 * 1024 * 1024,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    // VERBOSITY=verbose makes psql prefix the SQLSTATE on an ERROR line, which
+    // is the only thing that separates "production does not have that object"
+    // from "what you sent me is not SQL". It changes nothing about a query
+    // that succeeds.
+    const out = execFileSync(
+      process.env.PSQL_BIN || 'psql',
+      [url, '-v', 'VERBOSITY=verbose', '-Atc', sql],
+      {
+        encoding: 'utf8',
+        timeout: 60_000,
+        maxBuffer: 32 * 1024 * 1024,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      }
+    );
     return { out };
   } catch (err) {
     const refused = String(err.stderr || '')
       .split('\n')
-      .find((l) => l.startsWith('ERROR:'));
+      .find((l) => l.trim().startsWith('ERROR:'));
     if (err.status === 1 && refused) return { error: refused.trim() };
     die(String(err.message).split(url).join('<database url>'));
     return { error: '' };
@@ -250,7 +316,163 @@ export function declaredObjects(sql) {
  * per Lightning file against the raw line count.
  */
 export function declaredProofs(sql) {
-  return [...sql.matchAll(/^-- @live-proof: (.*)$/gm)].map((m) => m[1].trim());
+  return [...sql.matchAll(/^-- @live-proof: (.*)$/gm)].map((m) => m[1].trim()).concat(
+    externalDeclaredProofs(sql, JSON.parse(readFileSync(join(ROOT,'scripts/ci/migration-live-proofs.json'),'utf8')), DIR)
+  );
+}
+
+/** Immutable installed files cannot be edited to add markers. External proof
+ * declarations bind their exact bytes, never exempt the migration from proof.
+ * Validate every declaration even when the queried file is unrelated. */
+const externalProofFiles = new Map();
+function externalProofFile(path) {
+  const before = statSync(path, { bigint: true });
+  const identity = [before.dev, before.ino, before.size, before.mtimeNs, before.ctimeNs].join(':');
+  const cached = externalProofFiles.get(path);
+  if (cached?.identity === identity) return cached;
+  const bytes = readFileSync(path);
+  const after = statSync(path, { bigint: true });
+  if ([after.dev, after.ino, after.size, after.mtimeNs, after.ctimeNs].join(':') !== identity) throw Error(`external live proof migration changed while reading: ${path}`);
+  const value = { identity, text: bytes.toString('utf8'), sha256: createHash('sha256').update(bytes).digest('hex') };
+  if (externalProofFiles.size >= 4096) externalProofFiles.clear();
+  externalProofFiles.set(path, value);
+  return value;
+}
+export function externalDeclaredProofs(sql, registry, dir) {
+  if (!registry || registry.schema !== 1 || Object.keys(registry).sort().join(',') !== 'entries,schema' || !Array.isArray(registry.entries)) throw Error('invalid external live proof registry');
+  const seen = new Set(), result = [];
+  for (const entry of registry.entries) {
+    if (!entry || Object.keys(entry).sort().join(',') !== 'file,proofs,sha256' || typeof entry.file !== 'string' || !/^\d{14}_[a-z0-9_]+\.sql$/.test(entry.file) || seen.has(entry.file) || typeof entry.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(entry.sha256) || !Array.isArray(entry.proofs) || !entry.proofs.length || entry.proofs.some(p => typeof p !== 'string' || !p.trim() || !proofIsRunnable(p))) throw Error('invalid external live proof declaration');
+    seen.add(entry.file);
+    const file = externalProofFile(join(dir,entry.file));
+    if (file.sha256 !== entry.sha256) throw Error(`external live proof migration bytes changed: ${entry.file}`);
+    if (file.text === sql) result.push(...entry.proofs);
+  }
+  return result;
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  A PROOF THIS CHECK CANNOT RUN IS NOT A PROOF THAT CAME BACK FALSE
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * (2026-09-30.) Step 3 runs each declared proof and treats anything that is
+ * not `true` - including a rejection - as evidence the migration is not live.
+ * For a rejection that reads "function ... does not exist" that is exactly
+ * right, and it is why the rule was written that way: a proof about an
+ * unapplied migration names what is not there yet.
+ *
+ * It is wrong for a rejection that means "what you sent me is not SQL".
+ *
+ * `declaredProofs` reads ONE LINE, because the marker is line-anchored and
+ * every Lightning harness greps for it that way. Three migrations on main
+ * declare a proof that does not survive that:
+ *
+ *   20260929130144  "(SELECT count(*) FROM pg_index i"      truncated -> 42601
+ *   20260928200404  "(SELECT count(*) FROM pg_class c ..."  truncated -> 42601
+ *   20260928001128  two proofs that are English prose, not SQL at all
+ *
+ * The first was reported on 2026-09-30 as
+ *
+ *   proof false: (SELECT count(*) FROM pg_index i  ->  rejected: ERROR: syntax error
+ *
+ * and counted toward MERGED BUT NOT LIVE. The verdict happened to be right -
+ * that migration really is unapplied, decided at step 2 from its missing
+ * indexes - but the proof line was this check reading back its own truncation
+ * and presenting it as an answer from production. Had the objects been there,
+ * a correct migration would have been accused on nothing at all, and this
+ * file's own header says why that matters: "a check that accuses at a 70%
+ * false rate gets switched off, which is how this estate already lost Applied
+ * Migrations Are Recorded."
+ *
+ * So an unrunnable proof is a THIRD outcome. It is never run, never counted
+ * false, always named in the report, and on its own it makes the run exit 2 -
+ * COULD NOT TELL - which is neither 0 nor 1 (CLAUDE.md 10.86 rules 1 and 2).
+ * A migration that also fails on real evidence still exits 1: FAIL beats
+ * COULD-NOT-TELL beats PASS, because there we do know.
+ *
+ * Two layers catch it, because neither alone is enough:
+ *
+ *   BEFORE ASKING  `proofIsRunnable` refuses text that cannot be an
+ *                  expression - unbalanced parentheses, an unterminated
+ *                  literal. That covers every truncation, and it keeps a
+ *                  malformed proof out of the shared UNION ALL batch, which is
+ *                  the collapse this file already feared.
+ *   AFTER ASKING   a rejection carrying SQLSTATE 42601 (syntax_error) is about
+ *                  the text we sent and can never be about what production
+ *                  holds. A missing object raises 42883 / 42P01 / 42703 and
+ *                  stays a failure, exactly as before. Prose that parses as
+ *                  SQL but names nothing real is caught here, not above.
+ */
+// The grammar result depends only on the expression. External declarations
+// repeat across every migration in a scan; retain a bounded pure result cache.
+// File bytes and hashes are still read and validated on every declaration.
+const proofGrammarResults = new Map();
+export function proofIsRunnable(expr) {
+  if (proofGrammarResults.has(expr)) return proofGrammarResults.get(expr);
+  const result = proofGrammarIsRunnable(expr);
+  if (proofGrammarResults.size >= 4096) proofGrammarResults.clear();
+  proofGrammarResults.set(expr, result);
+  return result;
+}
+function proofGrammarIsRunnable(expr) {
+  const s = String(expr ?? '');
+  if (!s.trim()) return false;
+  let depth = 0;
+  for (let i = 0; i < s.length; i += 1) {
+    const c = s[i];
+    if (c === '$') {
+      const tag = /^\$[A-Za-z_]*\$/.exec(s.slice(i));
+      if (tag) {
+        const close = s.indexOf(tag[0], i + tag[0].length);
+        if (close < 0) return false; // an unterminated dollar quote
+        i = close + tag[0].length - 1;
+      }
+      continue;
+    }
+    if (c === "'") {
+      let from = i + 1;
+      for (;;) {
+        const q = s.indexOf("'", from);
+        if (q < 0) return false; // an unterminated string literal
+        if (s[q + 1] === "'") {
+          from = q + 2;
+          continue;
+        }
+        i = q;
+        break;
+      }
+      continue;
+    }
+    if (c === '"') {
+      const q = s.indexOf('"', i + 1);
+      if (q < 0) return false; // an unterminated quoted identifier
+      i = q;
+      continue;
+    }
+    if (c === '(') depth += 1;
+    else if (c === ')') {
+      depth -= 1;
+      if (depth < 0) return false;
+    }
+  }
+  return depth === 0;
+}
+
+/** Postgres raises this, and only this, when the TEXT we sent is not SQL. */
+const SYNTAX_ERROR = '42601';
+
+/**
+ * The SQLSTATE of a psql `ERROR:` line, when psql was asked to print one.
+ * `VERBOSITY=verbose` prefixes the code: `ERROR:  42601: syntax error ...`.
+ *
+ * Null when the line carries no code, and null is deliberately judged the OLD
+ * way - as a failure. A surprise in psql's output format must not quietly turn
+ * a real miss into a shrug.
+ */
+export function errorSqlState(line) {
+  const m = /^ERROR:\s+([0-9A-Z]{5}):/.exec(String(line || '').trim());
+  return m ? m[1] : null;
 }
 
 const sqlLiteral = (s) => `'${String(s).replace(/'/g, "''")}'`;
@@ -279,11 +501,35 @@ function main() {
   if (recorded.size === 0) die('schema_migrations returned no names at all');
   const recordedPrefixes = new Set([...recorded].map((n) => n.slice(0, NAME_PREFIX)));
 
+  // Apply-time aliases (scripts/ci/migration-aliases.mjs): the same migration
+  // recorded under the version and name the Supabase MCP gave it.
+  const dirFiles = readdirSync(DIR);
+  const aliases = loadAliases(ROOT, { files: dirFiles });
+  if (aliases.error) die(`the alias table is unreadable: ${aliases.error}`);
+  for (const r of aliases.rejected) console.error(`[migrations-are-live] alias refused: ${r}`);
+  const aliasedLive = (file) =>
+    (aliases.byFile.get(file) || []).some(
+      (row) =>
+        recorded.has(String(row.appliedName)) ||
+        recordedPrefixes.has(String(row.appliedName).slice(0, NAME_PREFIX))
+    );
+
   const unmatched = [];
+  const superseded = [];
   for (const file of files) {
     const slug = file.slice(file.indexOf('_') + 1, -4);
-    if (recorded.has(slug) || recordedPrefixes.has(slug.slice(0, NAME_PREFIX))) continue;
-    unmatched.push({ file, slug, sql: readFileSync(join(DIR, file), 'utf8') });
+    if (matchedByName(file, recorded, recordedPrefixes)) continue;
+    if (aliasedLive(file)) continue;
+    const sql = readFileSync(join(DIR, file), 'utf8');
+    const by = supersededBy(sql, dirFiles) || aliases.superseded.get(file)?.by || null;
+    if (by) {
+      superseded.push({ file, by });
+      continue;
+    }
+    unmatched.push({ file, slug, sql });
+  }
+  for (const s of superseded) {
+    console.log(`[migrations-are-live] explicitly marked: ${s.file} is SUPERSEDED BY ${s.by} and must never run.`);
   }
 
   console.log(
@@ -341,7 +587,30 @@ function main() {
 
   // ── 3. declared proofs ─────────────────────────────────────────────────────
   const falseProofs = new Map();
-  const proofChecks = unmatched.flatMap((m) => m.proofs.map((p) => ({ m, p })));
+  /** Proofs this check could not put a question to. Never a false proof. */
+  const unrunnable = new Map();
+  const cannotRun = ({ m, p }, why) => {
+    if (!unrunnable.has(m.file)) unrunnable.set(m.file, []);
+    unrunnable.get(m.file).push(`${p}  ->  ${why}`);
+  };
+
+  // Refused BEFORE the database is asked, so a fragment can neither be
+  // mistaken for an answer nor collapse the shared UNION ALL below.
+  for (const m of unmatched) {
+    m.runnableProofs = [];
+    for (const p of m.proofs) {
+      if (proofIsRunnable(p)) m.runnableProofs.push(p);
+      else
+        cannotRun(
+          { m, p },
+          'not a runnable expression (unbalanced parentheses or an unterminated ' +
+            'literal - a "-- @live-proof:" is ONE line, so a proof written across ' +
+            'several comment lines arrives here truncated)'
+        );
+    }
+  }
+
+  const proofChecks = unmatched.flatMap((m) => m.runnableProofs.map((p) => ({ m, p })));
   if (proofChecks.length > 0) {
     const record = ({ m, p }, answer) => {
       if (!falseProofs.has(m.file)) falseProofs.set(m.file, []);
@@ -367,7 +636,7 @@ function main() {
     if (all.out !== undefined) {
       judge(proofChecks, all.out);
     } else {
-      for (const m of unmatched.filter((u) => u.proofs.length > 0)) {
+      for (const m of unmatched.filter((u) => u.runnableProofs.length > 0)) {
         const mine = proofChecks.filter((c) => c.m === m);
         const file = ask(union(mine));
         if (file.out !== undefined) {
@@ -376,8 +645,18 @@ function main() {
         }
         for (const check of mine) {
           const one = ask(union([check]));
-          if (one.out !== undefined) judge([check], one.out);
-          else record(check, `rejected: ${one.error}`);
+          if (one.out !== undefined) {
+            judge([check], one.out);
+            continue;
+          }
+          // A rejection naming a missing object IS evidence this migration is
+          // not live, and stays a failure. A syntax error is about the text we
+          // sent and can never be about what production holds.
+          if (errorSqlState(one.error) === SYNTAX_ERROR) {
+            cannotRun(check, `the database refused it as malformed: ${one.error}`);
+          } else {
+            record(check, `rejected: ${one.error}`);
+          }
         }
       }
     }
@@ -385,11 +664,17 @@ function main() {
 
   // ── the verdict ────────────────────────────────────────────────────────────
   const notApplied = [];
+  const inFlight = [];
   const unverifiable = [];
   for (const m of unmatched) {
     const gone = m.objects.filter((o) => missing.has(`${o.kind}\t${o.name}`));
     const bad = falseProofs.get(m.file) || [];
     if (gone.length > 0 || bad.length > 0) {
+      const at = stampedAt(m.file);
+      if (MIN_AGE_HOURS > 0 && at !== null && Date.now() - at < MIN_AGE_HOURS * 3600000) {
+        inFlight.push({ ...m, gone, bad });
+        continue;
+      }
       notApplied.push({ ...m, gone, bad });
     } else if (m.objects.length === 0 && m.proofs.length === 0) {
       unverifiable.push(m);
@@ -406,6 +691,25 @@ function main() {
     for (const m of unverifiable) console.log(`    ${m.file}`);
   }
 
+  if (unrunnable.size > 0) {
+    console.error(
+      `\n[migrations-are-live] ${unrunnable.size} migration(s) declare a proof this check\n` +
+        '  COULD NOT RUN. These are NOT reported as false: a proof the database never\n' +
+        '  answered says nothing whatever about production. Rewrite each one as a\n' +
+        '  single-line boolean expression after "-- @live-proof: ":\n'
+    );
+    for (const [file, why] of unrunnable) {
+      console.error(`    ${file}`);
+      for (const w of why) console.error(`        ${w}`);
+    }
+  }
+
+  for (const m of inFlight) {
+    console.log(
+      `[migrations-are-live] in flight (younger than ${MIN_AGE_HOURS}h, not failed yet): ${m.file}`
+    );
+  }
+
   if (notApplied.length > 0) {
     console.error('\n[migrations-are-live] MERGED BUT NOT LIVE:\n');
     for (const m of notApplied) {
@@ -415,8 +719,9 @@ function main() {
     }
     console.error(
       '\n  These are in the repository and not in the database. Apply each one with the\n' +
-        '  Supabase MCP apply_migration, or - if it was superseded - delete the file in\n' +
-        '  the same pull request that says why.\n'
+        '  Supabase MCP apply_migration, or - if it was superseded - put\n' +
+        '  "-- SUPERSEDED BY <version>" on its first line, naming the file that replaced it,\n' +
+        '  in a pull request that says why. History is never deleted.\n'
     );
     process.exit(1);
   }
@@ -424,6 +729,17 @@ function main() {
   if (REQUIRE_PROOF && unverifiable.length > 0) {
     console.error('[migrations-are-live] --require-proof: every migration must be checkable.');
     process.exit(1);
+  }
+
+  // FAIL beats COULD-NOT-TELL beats PASS. Nothing above is failing, so an
+  // unrunnable proof is now the only thing between this run and a clean bill -
+  // and a clean bill is not something it is entitled to give.
+  if (unrunnable.size > 0) {
+    console.error(
+      `[migrations-are-live] COULD NOT TELL: ${unrunnable.size} migration(s) above could not be\n` +
+        '   proved either way. This is not a pass.'
+    );
+    process.exit(2);
   }
 
   console.log('[migrations-are-live] OK - every migration in the window is live in production.');

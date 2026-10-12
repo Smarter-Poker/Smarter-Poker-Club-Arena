@@ -1,3 +1,4 @@
+import { subscribePlayerSessionRevocations } from './services/PlayerSessionAccess.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * SMARTER POKER GAME SERVER — 24/7 Server-Side Game Engine (bootstrap only)
@@ -26,6 +27,7 @@ import { horseAdaptiveJournalWorker } from './services/HorseAdaptiveJournalWorke
 import { createEngineHttpServer } from './http/createEngineHttpServer.js';
 import { reportError } from './services/errorReporter.js';
 import { tableStateHub } from './transport/TableStateHub.js';
+import { authorizeTableConnection } from './services/TableConnectionAccess.js';
 import { EngineWebSocketServer } from './transport/EngineWebSocketServer.js';
 import { ChannelWebSocketServer } from './transport/ChannelWebSocketServer.js';
 import { channelHub } from './hub/ChannelHub.js';
@@ -93,7 +95,14 @@ const gameServer = new GameServer();
 // Constructed BEFORE the HTTP server so the router closure can capture it.
 const engineWs = new EngineWebSocketServer({
   hub: tableStateHub,
-  tableExists: (tableId) => gameServer.getTableEngine(tableId) !== undefined,
+  // Lightning Phase 6: a pool_session_id the caller was admitted to is a room too.
+  tableExists: (tableId) => gameServer.hasTableOrLightningRoom(tableId),
+  authorizeConnection: async (tableId, userId) => {
+    const verdict = await authorizeTableConnection(tableId, userId);
+    if (verdict.allowed || verdict.reason !== 'table_not_found') return verdict;
+    // Not a table: the caller's own Lightning room (fn_lightning_hand_view_access).
+    return gameServer.lightningRooms.authorize(tableId, userId);
+  },
   ensureTable: (tableId) => gameServer.ensureCashTableEngine(tableId),
   // FIX 2 (2026-07-24): on (re)connect / RESYNC, re-push the player's hole
   // cards for the current hand (public state alone leaves reconnecting players
@@ -102,6 +111,7 @@ const engineWs = new EngineWebSocketServer({
     gameServer.replayMaintenancePresentation(tableId);
     const engine = gameServer.getTableEngine(tableId);
     void engine?.rePushHoleCards(userId);
+    gameServer.lightningRooms.rePushHoleCards(tableId, userId);
     // 2026-09-04 (disconnect audit item 11): and the engine's copy of this
     // player's pre-action, so a reconnected bar shows what is actually armed.
     engine?.rePushPreAction(userId);
@@ -114,12 +124,30 @@ const engineWs = new EngineWebSocketServer({
   // milliseconds; before this the engine waited up to 30s for the HTTP
   // heartbeat to go stale, burning a full action clock on a player who was
   // already gone (and giving reconnects a laggy, frozen-feeling re-entry).
-  onConnect: (tableId, userId) => {
+  onConnect: (tableId, userId, platform) => {
+    gameServer.getTableEngine(tableId)?.heartbeat(userId);
+    // Lightning Phase 8: the device class rides along for the matcher's
+    // per-platform Cluster limit (only a Lightning room records it).
+    gameServer.lightningRooms.connect(tableId, userId, platform ?? null);
+  },
+  // 2026-10-05: a PONG or RESYNC on an admitted table socket is proof of
+  // life, the same as an HTTP /heartbeat (presence only, never strikes).
+  onAlive: (tableId, userId) => {
     gameServer.getTableEngine(tableId)?.heartbeat(userId);
   },
   onDisconnect: (tableId, userId) => {
     gameServer.getTableEngine(tableId)?.notifyTransportDisconnect(userId);
+    gameServer.lightningRooms.disconnect(tableId, userId);
   },
+  // Lightning Phase 12: the client rendered its room's hand (hand_to_first_render).
+  onRenderAck: (tableId, userId, handId) => {
+    gameServer.lightningRooms.renderAck(tableId, userId, handId);
+  },
+});
+
+// Lightning Phase 6 remediation: an ended pool session's room has its sockets closed.
+gameServer.lightningRooms.setRoomCloser((roomId, reason) => {
+  engineWs.closeRoom(roomId, reason);
 });
 
 // Phase U4: Channel WebSocket server at /ws/channel (Realtime migration).
@@ -132,6 +160,20 @@ const httpServer = createEngineHttpServer(
 );
 engineWs.attach(httpServer);
 channelWs.attach(httpServer);
+const unsubscribePlayerRevocations = subscribePlayerSessionRevocations(
+  (userId) => {
+    void Promise.all([
+      engineWs.revokePlayerSessions(userId),
+      channelWs.revokePlayerSessions(userId),
+    ]).catch((error) => reportError(error, 'PlayerSessions.revocation_delivery_unknown'));
+  },
+  (isCurrent) => {
+    void Promise.all([
+      engineWs.revalidatePlayerSessions(isCurrent),
+      channelWs.revalidatePlayerSessions(isCurrent),
+    ]).catch((error) => reportError(error, 'PlayerSessions.recovered_delivery_unknown'));
+  }
+);
 
 let shuttingDown = false;
 let leaderServicesActive = false;
@@ -402,6 +444,7 @@ async function performShutdown(): Promise<void> {
     ? beginShutdownStep('leader startup', () => leaderStartOperation)
     : Promise.resolve<ShutdownStepResult>({ step: 'leader startup', status: 'fulfilled' });
   const localStops = [
+    beginShutdownStep('Player Session Revocations', () => unsubscribePlayerRevocations()),
     beginShutdownStep('HTTP server', closeHttpServer),
     beginShutdownStep('table WebSocket server', () => engineWs.close()),
     beginShutdownStep('channel WebSocket server', () => channelWs.close()),

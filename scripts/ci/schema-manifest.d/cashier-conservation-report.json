@@ -1,0 +1,4 @@
+{
+  "_owner": "Cashier Phase 3 on-demand read-only accounting report; installation independently verified in task checkpoint",
+  "functions": ["fn_cashier_conservation_report"]
+}

@@ -47,7 +47,7 @@ interface PlayerStatsRow {
   tournaments_played?: number;
   tournaments_won: number;
   club_id?: string;
-  rank_change?: number;
+  rank_change?: number | null;
   qualified?: boolean;
   sum_big_blind?: number;
   rank?: number;
@@ -275,7 +275,7 @@ export interface LeaderboardEntry {
   avatar?: string;
   value: number;
   metric: LeaderboardMetric;
-  change: number; // Real position change vs yesterday's snapshot ranking
+  change: number | null; // Null means no authoritative comparison baseline.
   isVIP?: boolean;
   vipTier?: string;
   level?: number;
@@ -422,7 +422,10 @@ async function decorateWithProfiles(
       avatar: profile.avatar_url,
       value: metricValue(row, metric),
       metric,
-      change: Number(row.rank_change) || 0,
+      change:
+        row.rank_change == null || !Number.isFinite(Number(row.rank_change))
+          ? null
+          : Number(row.rank_change),
       hands: handsOf(row),
       qualified: row.qualified !== false,
       totalRanked: row.total_ranked != null ? Number(row.total_ranked) : undefined,
@@ -576,6 +579,26 @@ export const LeaderboardService = {
       if (strict) throw err;
       return [];
     }
+  },
+
+  /**
+   * THE DIAMOND ARENA'S TABLE BOARD (Phase 10, line 1; migration
+   * 20260930043000): the club board's profit ranking, window and population
+   * over the Diamond running totals, in whole Diamonds. It throws when the
+   * server cannot answer, so a Diamond table says it could not tell instead
+   * of showing an empty board.
+   */
+  async getDiamondArenaLeaderboard(
+    period: LeaderboardPeriod,
+    limit: number
+  ): Promise<LeaderboardEntry[]> {
+    const { data, error } = await supabase.rpc('fn_diamond_arena_leaderboard_period', {
+      p_period: period,
+      p_limit: limit,
+      p_offset: 0,
+    });
+    if (error || !Array.isArray(data)) throw error ?? new Error('Diamond Board Returned No Rows');
+    return decorateWithProfiles(data as PlayerStatsRow[], 'profit');
   },
 
   /**

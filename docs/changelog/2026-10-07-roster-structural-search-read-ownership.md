@@ -1,0 +1,7 @@
+# A Structural Roster Refresh Preserves The Pending Search Read
+
+The production Players acceptance failed while clearing a search: a structural refresh started a directory RPC, then the pending search debounce replaced and aborted it 14ms later. The replacement completed with 200 and rendered the roster, but the original zero-abort acceptance correctly refused the redundant request. The served component, service policy and acceptance source are unchanged in the follow-up base.
+
+The original structural event timer now carries its summary invalidation into the pending search's own read instead of starting the obsolete query. If the user reverts the search before the debounce commits, that same invalidation still performs its required directory and summary read. Club/account changes reset the deferred intent. Ordinary structural refreshes retain their existing delay and behavior. Permissions, financial operations, request failure reporting, search latency and production acceptance assertions are unchanged.
+
+The regression mounts the real page with React Router, the real debounce and summary coordinator; only external service/event inputs are isolated. The original transition reproduced one pending-request abort before the fix and zero afterward. Reverted-search and ordinary structural-refresh boundaries also pass. This qualifies the connected request ownership correction; protected publication and actual affected production acceptance remain separate evidence.

@@ -16,8 +16,9 @@ import { tableService } from '../services/TableService';
 import { getUserMemberships } from '../services/ClubsService';
 import { confirmDialog } from '../components/common/confirmDialog';
 import { useAuthUser } from '../hooks/useAuthUser';
-import { presenceService } from '../services/PresenceService';
-import { supabase, getAuthUser } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
+import { COUNT_UNKNOWN, countText, type CountFigure } from '../lib/countFigure';
+import { PRESENCE_RECHECK_MS } from '../lib/profilePresence';
 import { masterBus } from '../core/MasterBus';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import type { PokerTable, Tournament } from '../types/database.types';
@@ -29,7 +30,6 @@ import { useToast } from '../components/common/Toast';
 import ConfirmModal from '../components/common/ConfirmModal';
 import CreateTournamentModal from '../components/club/CreateTournamentModal';
 import GameCreationActions from '../components/club/GameCreationActions';
-import { ensureMidwayUnionSetup } from '../services/HorseOrchestrator';
 import { getUnionLevel, getClubLevel } from '../utils/clubLevels';
 import { reportError } from '../utils/errorReporter';
 import CasinoSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
@@ -104,18 +104,37 @@ export default function UnionDetailPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadRevision, setLoadRevision] = useState(0);
+  const [canManageUnion, setCanManageUnion] = useState<boolean | null>(null);
 
-  // UNION LAW (2026-08-19, Dan): the union surface is the owner's operations
-  // page. Players never see a union card, and a deep link must not leak the
-  // surface either — non-owners bounce back to their clubs, where union games
-  // already appear inside their own club lobby.
+  // The union surface is an operations page. Its owner and appointed admins
+  // use the same authoritative predicate as Table Management; everybody else
+  // is returned to Clubs without briefly seeing the operator controls.
   useEffect(() => {
-    if (!union || !user?.id) return;
-    if (union.ownerId !== user.id) {
-      navigate('/clubs', { replace: true });
+    let cancelled = false;
+    if (!union || !user?.id) {
+      setCanManageUnion(null);
+      return () => {
+        cancelled = true;
+      };
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [union?.id, union?.ownerId, user?.id]);
+    setCanManageUnion(null);
+    void unionService
+      .isUnionAdmin(union.id, user.id)
+      .then((allowed) => {
+        if (cancelled) return;
+        setCanManageUnion(allowed);
+        if (!allowed) navigate('/clubs', { replace: true });
+      })
+      .catch((error) => {
+        reportError(error, 'UnionDetailPage.management_authority');
+        if (cancelled) return;
+        setCanManageUnion(false);
+        navigate('/clubs', { replace: true });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [navigate, union?.id, user?.id]);
 
   const [activeTab, setActiveTabRaw] = useState<
     'overview' | 'clubs' | 'tables' | 'tournaments' | 'financials' | 'settings'
@@ -146,7 +165,6 @@ export default function UnionDetailPage() {
     sharedPlayerPool: true,
     crossClubTournaments: false,
   });
-  const [onlineCount, setOnlineCount] = useState(0);
 
   // ── Recurring tournament schedules (2026-08-22): the union owner's compact
   // manager over tournament_schedules. Loaded when the Tournaments tab opens. ──
@@ -197,34 +215,46 @@ export default function UnionDetailPage() {
     prevLevelRef.current = currentLevel;
   }, [union?.level]);
 
-  // Real-time presence tracking (non-blocking)
+  /* ONLINE NOW IS THE DATABASE'S ANSWER (2026-10-05). This counted the people
+     holding this page open on a Realtime presence channel - only people can
+     join one, never a house player - and the header read unions.online_count,
+     a column that does not exist, so it was always 0. Both figures now come
+     from fn_union_online_count (seated, or a heartbeat under five minutes old:
+     the one definition), re-asked on the presence cadence so the figure
+     follows heartbeats going stale. A failed read says Unavailable. */
+  const [onlineNow, setOnlineNow] = useState<CountFigure>(null);
   useEffect(() => {
     if (!unionId) return;
-
-    const setupPresence = async () => {
-      try {
-        // Use getAuthUser() which has built-in 6s timeout + getSession() fallback
-        const {
-          data: { user: authUser },
-        } = await getAuthUser();
-        if (!authUser) return;
-
-        await presenceService.joinUnion(unionId, authUser.id, {
-          onSync: (state) => {
-            setOnlineCount(Object.keys(state).length);
-          },
-        });
-
-        setOnlineCount(presenceService.getUnionOnlineCount(unionId));
-      } catch (err) {
-        // Non-critical: presence setup failed
-      }
+    let alive = true;
+    /* Only the latest ask may answer: a slow read must not overwrite the
+       newer figure that overtook it. */
+    let latest = 0;
+    setOnlineNow(null);
+    const ask = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      const seq = ++latest;
+      unionService.getOnlineCount(unionId).then(
+        (n) => {
+          if (alive && seq === latest) setOnlineNow(n);
+        },
+        (e) => {
+          reportError(e, 'UnionDetailPage.onlineCount');
+          if (alive && seq === latest) setOnlineNow(COUNT_UNKNOWN);
+        }
+      );
     };
-
-    setupPresence();
-
+    /* A hidden tab is not re-asked; it is re-asked the moment it returns,
+       rather than showing a figure up to a minute old. */
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') ask();
+    };
+    ask();
+    const timer = setInterval(ask, PRESENCE_RECHECK_MS);
+    document.addEventListener('visibilitychange', onVisibility);
     return () => {
-      presenceService.leave(`union:${unionId}`);
+      alive = false;
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [unionId]);
 
@@ -238,7 +268,6 @@ export default function UnionDetailPage() {
     setConfirmJoin({ show: false, club: null });
     setIsUpdatingSettings(false);
     setShowXmttModal(false);
-    setOnlineCount(0);
     setLoadError(null);
     loadingRef.current = false;
   }, [unionId]);
@@ -258,16 +287,11 @@ export default function UnionDetailPage() {
         setLoadError(null);
       }
       try {
-        let unionData = await unionService.getUnion(unionId);
-
-        // Self-healing: if Midway Union is missing, auto-create it
-        if (!unionData && unionId === 'fade0000-0000-0000-0000-000000000001') {
-          console.warn('[UnionDetailPage] Midway Union missing - auto-creating...');
-          const ok = await ensureMidwayUnionSetup();
-          if (ok) {
-            unionData = await unionService.getUnion(unionId);
-          }
-        }
+        /* No browser "self-heal" of the Midway Union (2026-10-05). It went
+           through HorseOrchestrator, which inserted unions / union_clubs rows
+           from whoever opened this page; the union exists, and a missing union
+           is a data fault to fix where the data lives, not on page load. */
+        const unionData = await unionService.getUnion(unionId);
 
         const clubsData = await unionService.getUnionClubs(unionId);
         const tablesData = await tableService.getUnionTables(unionId);
@@ -717,6 +741,22 @@ export default function UnionDetailPage() {
     );
   }
 
+  if (user?.id && canManageUnion === null) {
+    return (
+      <div className={styles.loading} role="status" aria-live="polite">
+        <LoadingState message="Checking Union Management Access" />
+      </div>
+    );
+  }
+
+  if (user?.id && canManageUnion === false) {
+    return (
+      <div className={styles.loading} role="status" aria-live="polite">
+        <LoadingState message="Returning To Your Clubs" />
+      </div>
+    );
+  }
+
   return (
     <div className={styles.page}>
       <CasinoSurfaceHeader
@@ -732,7 +772,7 @@ export default function UnionDetailPage() {
         metrics={[
           { label: 'Clubs', value: union.clubCount },
           { label: 'Players', value: union.memberCount.toLocaleString(), tone: 'live' },
-          { label: 'Online', value: union.onlineCount.toLocaleString(), tone: 'attention' },
+          { label: 'Online', value: countText(onlineNow), tone: 'attention' },
         ]}
       />
       <div className={styles.header}>
@@ -744,7 +784,7 @@ export default function UnionDetailPage() {
           <p>{union.description}</p>
         </div>
         <div className={styles.headerActions}>
-          {union.ownerId === user?.id ? (
+          {canManageUnion ? (
             <>
               <Link className={styles.managementButton} to={`/unions/${unionRef}/table-management`}>
                 Table Management
@@ -832,7 +872,7 @@ export default function UnionDetailPage() {
               </div>
               <div className={styles.statCard}>
                 <span className={`${styles.statValue} ${styles.online}`}>
-                  {onlineCount.toLocaleString()}
+                  {countText(onlineNow)}
                 </span>
                 <span className={styles.statLabel}>Online Now</span>
               </div>

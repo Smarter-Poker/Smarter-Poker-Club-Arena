@@ -17,9 +17,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const mockRpc = vi.fn();
 const mockFromChain = vi.fn();
 
+const mockGetSession = vi.fn();
+
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
     rpc: (...args: any[]) => mockRpc(...args),
+    auth: { getSession: () => mockGetSession() },
     from: () => ({
       select: () => ({
         eq: () => ({
@@ -46,6 +49,10 @@ vi.mock('../../src/core/MasterBus', () => ({
   },
 }));
 
+vi.mock('../../src/utils/clubIdResolver', () => ({
+  resolveClubUUID: async (id: string) => id,
+}));
+
 vi.mock('../../src/services/FinancialAlertService', () => ({
   FinancialAlertService: {
     logWarning: vi.fn(),
@@ -57,245 +64,34 @@ vi.mock('../../src/services/FinancialAlertService', () => ({
 
 import { WalletService } from '../../src/services/WalletService';
 
+const PROMO_OP_ID = '4f6d2c1e-8b3a-4c5d-9e7f-0a1b2c3d4e5f';
+
 describe('WalletService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockRpc.mockReset();
   });
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // INTERNAL TRANSFER VALIDATION
-  // ─────────────────────────────────────────────────────────────────────────
-
-  describe('internalTransfer', () => {
-    it('should reject amount <= 0', async () => {
-      await expect(
-        WalletService.internalTransfer('user1', {
-          fromWallet: 'BUSINESS',
-          toWallet: 'PLAYER',
-          amount: 0,
-        })
-      ).rejects.toThrow('Transfer amount must be positive');
-    });
-
-    it('should reject negative amounts', async () => {
-      await expect(
-        WalletService.internalTransfer('user1', {
-          fromWallet: 'BUSINESS',
-          toWallet: 'PLAYER',
-          amount: -50,
-        })
-      ).rejects.toThrow('Transfer amount must be positive');
-    });
-
-    it('should reject same-wallet transfers', async () => {
-      await expect(
-        WalletService.internalTransfer('user1', {
-          fromWallet: 'PLAYER',
-          toWallet: 'PLAYER',
-          amount: 100,
-        })
-      ).rejects.toThrow('Cannot transfer to same wallet');
-    });
-
-    it('should emit BALANCE_UPDATED on successful transfer', async () => {
-      // The database returns both booked balances and the exact transfer scope.
-      mockRpc.mockResolvedValueOnce({
-        data: {
-          success: true,
-          from: 'BUSINESS',
-          to: 'PLAYER',
-          amount: 100,
-          from_balance: 50,
-          to_balance: 100,
-        },
-        error: null,
-      });
-      mockFromChain.mockResolvedValue({ data: null, error: null }); // log transactions
-
-      await WalletService.internalTransfer('user1', {
-        fromWallet: 'BUSINESS',
-        toWallet: 'PLAYER',
-        amount: 100,
-      });
-
-      expect(mockBusEmit).toHaveBeenCalledWith(
-        'BALANCE_UPDATED',
-        expect.objectContaining({
-          source: 'internal_transfer',
-          userId: 'user1',
-        })
-      );
-    });
+  it('does not expose transfers into the retired global wallet pool', () => {
+    expect(WalletService).not.toHaveProperty('internalTransfer');
+    expect(WalletService).not.toHaveProperty('transferToUser');
+    expect(typeof WalletService.agentSelfTransfer).toBe('function');
   });
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // TRANSFER TO USER
-  // ─────────────────────────────────────────────────────────────────────────
-
-  describe('transferToUser', () => {
-    it('should reject amount <= 0', async () => {
-      await expect(WalletService.transferToUser('user1', 'user2', 0)).rejects.toThrow(
-        'Transfer amount must be positive'
-      );
-    });
-
-    it('should reject negative amounts', async () => {
-      await expect(WalletService.transferToUser('user1', 'user2', -100)).rejects.toThrow(
-        'Transfer amount must be positive'
-      );
-    });
-
-    it('should emit BALANCE_UPDATED for both sender and receiver', async () => {
-      mockRpc.mockResolvedValueOnce({ data: { success: true }, error: null });
-      mockFromChain.mockResolvedValue({ data: null, error: null }); // log transactions
-
-      await WalletService.transferToUser('sender', 'receiver', 100);
-
-      expect(mockBusEmit).toHaveBeenCalledWith(
-        'BALANCE_UPDATED',
-        expect.objectContaining({ source: 'transfer_sent', userId: 'sender' })
-      );
-      expect(mockBusEmit).toHaveBeenCalledWith(
-        'BALANCE_UPDATED',
-        expect.objectContaining({ source: 'transfer_received', userId: 'receiver' })
-      );
-    });
-  });
-
-  it('does not submit an unkeyed transfer twice after a lost response', async () => {
-    vi.useFakeTimers();
-    mockRpc
-      .mockRejectedValueOnce(new Error('network response lost after commit'))
-      .mockResolvedValue({ data: { success: true }, error: null });
-    const audit = vi.spyOn(WalletService, 'logTransaction').mockResolvedValue(undefined);
-    try {
-      const outcome = WalletService.transferToUser('sender', 'receiver', 5).then(
-        () => 'accepted',
-        () => 'unconfirmed'
-      );
-      await vi.runAllTimersAsync();
-      expect(await outcome).toBe('unconfirmed');
-      expect(mockRpc).toHaveBeenCalledTimes(1);
-      expect(audit).not.toHaveBeenCalled();
-      expect(mockBusEmit).not.toHaveBeenCalled();
-    } finally {
-      audit.mockRestore();
-      vi.useRealTimers();
-    }
-  });
-
-  it('does not append duplicate history after the database books both transfer legs', async () => {
-    mockRpc.mockResolvedValueOnce({
-      data: {
-        success: true,
-        from: 'BUSINESS',
-        to: 'PLAYER',
-        amount: 5,
-        from_balance: 95,
-        to_balance: 5,
-      },
-      error: null,
-    });
-    const audit = vi.spyOn(WalletService, 'logTransaction').mockResolvedValue(undefined);
-    try {
-      await expect(
-        WalletService.internalTransfer('sender', {
-          fromWallet: 'BUSINESS',
-          toWallet: 'PLAYER',
-          amount: 5,
-        })
-      ).resolves.toBe(true);
-      expect(audit).not.toHaveBeenCalled();
-      expect(mockRpc).toHaveBeenCalledTimes(1);
-    } finally {
-      audit.mockRestore();
-    }
-  });
-
-  it.each(['missing', 'source', 'destination', 'amount', 'balance'])(
-    'does not confirm an internal transfer with a mismatched %s receipt',
-    async (kind) => {
-      const data: Record<string, unknown> = {
-        success: true,
-        from: 'BUSINESS',
-        to: 'PLAYER',
-        amount: 5,
-        from_balance: 95,
-        to_balance: 5,
-      };
-      if (kind === 'missing') delete data.amount;
-      if (kind === 'source') data.from = 'PROMO';
-      if (kind === 'destination') data.to = 'PROMO';
-      if (kind === 'amount') data.amount = 6;
-      if (kind === 'balance') data.to_balance = NaN;
-      mockRpc.mockResolvedValueOnce({ data, error: null });
-      const audit = vi.spyOn(WalletService, 'logTransaction').mockResolvedValue(undefined);
-      try {
-        await expect(
-          WalletService.internalTransfer('sender', {
-            fromWallet: 'BUSINESS',
-            toWallet: 'PLAYER',
-            amount: 5,
-          })
-        ).rejects.toThrow(/confirmed/);
-        expect(audit).not.toHaveBeenCalled();
-        expect(mockBusEmit).not.toHaveBeenCalled();
-      } finally {
-        audit.mockRestore();
-      }
-    }
-  );
-
-  describe('transfer receipt boundaries', () => {
-    const transfer = (kind: string, amount = 5) =>
-      kind === 'internal'
-        ? WalletService.internalTransfer('sender', {
-            fromWallet: 'BUSINESS',
-            toWallet: 'PLAYER',
-            amount,
-          })
-        : WalletService.transferToUser('sender', 'receiver', amount);
-    it.each(['internal', 'user'])('%s rejects nonfinite amounts before an RPC', async (kind) => {
-      for (const amount of [NaN, Infinity, -Infinity]) {
-        await expect(transfer(kind, amount)).rejects.toThrow(/positive/);
-      }
-      expect(mockRpc).not.toHaveBeenCalled();
-      expect(mockBusEmit).not.toHaveBeenCalled();
-    });
-    it.each(['internal', 'user'])('%s requires literal successful confirmation', async (kind) => {
-      const audit = vi.spyOn(WalletService, 'logTransaction').mockResolvedValue(undefined);
-      try {
-        for (const data of [null, {}, { success: 'false' }, { success: 1 }]) {
-          mockRpc.mockResolvedValueOnce({ data, error: null });
-          await expect(transfer(kind)).rejects.toThrow();
-        }
-        expect(audit).not.toHaveBeenCalled();
-        expect(mockBusEmit).not.toHaveBeenCalled();
-      } finally {
-        audit.mockRestore();
-      }
-    });
-  });
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // PROMO DISTRIBUTION
-  // ─────────────────────────────────────────────────────────────────────────
 
   describe('disbursePromo', () => {
     // Dan, 2026-09-03: promo is disbursed by the union owner, or by an
     // unaffiliated club owner, and lands as ordinary chips. The old
     // agent-keyed distributePromo is retired and throws.
     it('rejects zero amounts', async () => {
-      await expect(WalletService.disbursePromo('club1', 'player1', 0)).rejects.toThrow(
-        'Amount must be positive'
-      );
+      await expect(
+        WalletService.disbursePromo('club1', 'player1', 0, undefined, PROMO_OP_ID)
+      ).rejects.toThrow('Amount must be positive');
     });
 
     it('rejects negative amounts', async () => {
-      await expect(WalletService.disbursePromo('club1', 'player1', -50)).rejects.toThrow(
-        'Amount must be positive'
-      );
+      await expect(
+        WalletService.disbursePromo('club1', 'player1', -50, undefined, PROMO_OP_ID)
+      ).rejects.toThrow('Amount must be positive');
     });
 
     it('refuses to report a server refusal as a paid disbursement', async () => {
@@ -306,9 +102,34 @@ describe('WalletService', () => {
         error: null,
       });
 
-      await expect(WalletService.disbursePromo('club1', 'player1', 500)).rejects.toThrow(
-        'Insufficient Promo Balance'
-      );
+      await expect(
+        WalletService.disbursePromo('club1', 'player1', 500, undefined, PROMO_OP_ID)
+      ).rejects.toThrow('Insufficient Promo Balance');
+    });
+
+    it('refuses to pay without a caller-retained operation id (launch audit S-04)', async () => {
+      for (const missing of [undefined, '', 'not-a-uuid']) {
+        await expect(
+          WalletService.disbursePromo('club1', 'player1', 500, undefined, missing as never)
+        ).rejects.toThrow('Promo Disbursement Requires A Retained Operation Id');
+      }
+      expect(mockRpc).not.toHaveBeenCalled();
+    });
+
+    it('a retry after a refused rpc carries the same caller-retained p_op_id', async () => {
+      mockFromChain.mockResolvedValue({ data: { id: 'club1', union_id: null }, error: null });
+      mockRpc
+        .mockResolvedValueOnce({ data: null, error: { message: 'connection reset' } })
+        .mockResolvedValueOnce({ data: { success: true }, error: null });
+      const retained = PROMO_OP_ID;
+      await expect(
+        WalletService.disbursePromo('club1', 'player1', 500, undefined, retained)
+      ).rejects.toThrow();
+      await WalletService.disbursePromo('club1', 'player1', 500, undefined, retained);
+      expect(mockRpc).toHaveBeenCalledTimes(2);
+      expect(mockRpc.mock.calls[0][1].p_op_id).toBe(retained);
+      expect(mockRpc.mock.calls[1][1].p_op_id).toBe(retained);
+      expect(mockRpc.mock.calls[0][0]).toBe('fn_promo_disburse');
     });
 
     it('is retired under its old agent-keyed name', async () => {
@@ -362,6 +183,55 @@ describe('WalletService', () => {
         p_hand_id: null,
         p_related_entity_id: null,
       });
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // MINT CHIPS: THE IDEMPOTENCY KEY BELONGS TO THE CALLER (launch audit S-03)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  describe('mintChips', () => {
+    const CLUB = '11111111-1111-4111-8111-111111111111';
+    const KEY = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const fetchMock = vi.fn();
+
+    beforeEach(() => {
+      vi.stubGlobal('fetch', fetchMock);
+      fetchMock.mockReset();
+      mockGetSession.mockResolvedValue({ data: { session: { access_token: 'jwt' } } });
+      mockFromChain.mockResolvedValue({
+        data: { id: CLUB, name: 'Shark Club', owner_id: 'owner-1', union_id: null },
+        error: null,
+      });
+    });
+
+    it('sends the caller-supplied key and the SAME key when the caller retries', async () => {
+      // Attempt 1: the mint may have committed; the response never arrived.
+      fetchMock.mockRejectedValueOnce(new Error('network lost'));
+      await expect(WalletService.mintChips(CLUB, 100, KEY, 'owner-1')).rejects.toThrow(
+        'network lost'
+      );
+      // Attempt 2: the caller presents the key it held across the failure.
+      fetchMock.mockResolvedValueOnce({
+        status: 200,
+        json: async () => ({ success: true, diamondsSpent: 100, newBalance: 0 }),
+      });
+      const result = await WalletService.mintChips(CLUB, 100, KEY, 'owner-1');
+      expect(result.success).toBe(true);
+
+      const keys = fetchMock.mock.calls.map(
+        ([, init]) => (init as RequestInit).headers as Record<string, string>
+      );
+      expect(keys).toHaveLength(2);
+      expect(keys[0]['X-Idempotency-Key']).toBe(KEY);
+      expect(keys[1]['X-Idempotency-Key']).toBe(KEY);
+    });
+
+    it('refuses to mint without a key rather than minting one for the caller', async () => {
+      await expect(
+        WalletService.mintChips(CLUB, 100, '' as unknown as string, 'owner-1')
+      ).rejects.toThrow(/idempotency key/i);
+      expect(fetchMock).not.toHaveBeenCalled();
     });
   });
 

@@ -62,11 +62,17 @@
  * the defaults exactly once, then never again.
  */
 
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback, useLayoutEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { getLocalStorage, setLocalStorage } from '../lib/storage';
 import { recordCustomizationOperation } from '../services/CustomizationOperationsTelemetry';
+import {
+  DEFAULT_FACE_DECK_ID,
+  applyFaceDeckToDocument,
+  normalizeFaceDeckId,
+  type FaceDeckId,
+} from '../lib/faceDeck';
 
 export interface UserThemeSelection {
   theme_id: string;
@@ -74,6 +80,8 @@ export interface UserThemeSelection {
   button_id: string;
   background_id: string;
   cards_id: string;
+  /** Client appearance name; persisted as user_theme_settings.face_deck_id. */
+  faceDeckId: FaceDeckId;
 }
 
 export const THEME_FIELDS = [
@@ -82,6 +90,7 @@ export const THEME_FIELDS = [
   'button_id',
   'background_id',
   'cards_id',
+  'faceDeckId',
 ] as const;
 
 const DEFAULT_THEME: UserThemeSelection = {
@@ -93,6 +102,7 @@ const DEFAULT_THEME: UserThemeSelection = {
   button_id: 'classic-white',
   background_id: 'midnight',
   cards_id: 'classic_red',
+  faceDeckId: DEFAULT_FACE_DECK_ID,
 };
 
 /** The only values `user_theme_settings.game_type` may be keyed on. */
@@ -172,9 +182,14 @@ export function resolveThemeBucket(
 
 type ThemeRow = Partial<UserThemeSelection> & {
   game_type?: string | null;
+  /** Database spelling; live client events use faceDeckId. */
+  face_deck_id?: string | null;
   /** Row timestamp — lets a NEWER 'Apply To: ALL' save beat an older
    *  per-variant row (Dan 2026-08-28, see pickThemeRow). */
   updated_at?: string | null;
+  /** Authenticated DB clock/values, separate from optimistic cache precedence. */
+  server_updated_at?: string;
+  server_values?: Partial<UserThemeSelection>;
 };
 
 /** Fill every field, so a row with a NULL column cannot blank the felt. */
@@ -185,6 +200,7 @@ function toSelection(row: ThemeRow): UserThemeSelection {
     button_id: row.button_id || DEFAULT_THEME.button_id,
     background_id: row.background_id || DEFAULT_THEME.background_id,
     cards_id: row.cards_id || DEFAULT_THEME.cards_id,
+    faceDeckId: normalizeFaceDeckId(row.faceDeckId ?? row.face_deck_id),
   };
 }
 
@@ -221,8 +237,8 @@ export function pickThemeRow(rows: ThemeRow[], gameType: CanonicalGameType): The
         ) ?? null)
       : null);
   if (bucketRow && allRow && bucketRow !== allRow) {
-    const bucketTs = Date.parse(bucketRow.updated_at || '') || 0;
-    const allTs = Date.parse(allRow.updated_at || '') || 0;
+    const bucketTs = serverThemeVersion(bucketRow.updated_at) ?? 0n;
+    const allTs = serverThemeVersion(allRow.updated_at) ?? 0n;
     return allTs > bucketTs ? allRow : bucketRow;
   }
   return bucketRow ?? allRow;
@@ -246,12 +262,21 @@ export function pickThemeRow(rows: ThemeRow[], gameType: CanonicalGameType): The
 const themeRowsQuery = (userId: string) =>
   supabase
     .from('user_theme_settings')
-    .select('game_type, theme_id, table_id, button_id, background_id, cards_id, updated_at')
+    .select(
+      'game_type, theme_id, table_id, button_id, background_id, cards_id, face_deck_id, updated_at'
+    )
     .eq('user_id', userId);
 
 type ThemeRowsResult = Awaited<ReturnType<typeof themeRowsQuery>>;
 
 const inFlightThemeReads = new Map<string, Promise<ThemeRowsResult>>();
+// A shared read belongs to the account revision when it STARTED, even if a
+// later-mounted hook joins that promise after an accepted live row arrived.
+const accountThemeRevisions = new Map<string, number>();
+const themeReadRevisions = new WeakMap<Promise<ThemeRowsResult>, number>();
+function advanceAccountThemeRevision(userId: string | null | undefined): void {
+  if (userId) accountThemeRevisions.set(userId, (accountThemeRevisions.get(userId) ?? 0) + 1);
+}
 
 export function fetchUserThemeRows(userId: string): Promise<ThemeRowsResult> {
   const existing = inFlightThemeReads.get(userId);
@@ -273,6 +298,7 @@ export function fetchUserThemeRows(userId: string): Promise<ThemeRowsResult> {
     }
   );
 
+  themeReadRevisions.set(p, accountThemeRevisions.get(userId) ?? 0);
   inFlightThemeReads.set(userId, p);
   return p;
 }
@@ -344,7 +370,10 @@ function startThemeRealtime(userId: string, entry: ThemeRealtimeEntry): void {
           THEME_FIELDS.flatMap((field) =>
             typeof raw[field] === 'string' && raw[field] ? [[field, raw[field]]] : []
           )
-        );
+        ) as Partial<UserThemeSelection>;
+        if (typeof raw.face_deck_id === 'string' && raw.face_deck_id) {
+          value.faceDeckId = normalizeFaceDeckId(raw.face_deck_id);
+        }
         masterBus.emit('UI_THEME_CHANGED', {
           key: canonicalGameType(raw.game_type),
           value,
@@ -512,22 +541,97 @@ export function resolveCachedTheme(
   return row ? toSelection(row) : null;
 }
 
-/** Merge a live appearance patch into the cached row for its bucket. */
+/** Preserve Postgres microseconds when ordering authenticated row versions. */
+function serverThemeVersion(value?: string | null): bigint | null {
+  // Realtime preserves timestamptz text, including Postgres' space separator
+  // and hour-only offset. Normalize that spelling, never guess a missing zone.
+  const parts = value?.match(
+    /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})(?:\.(\d{1,6}))?(Z|[+-]\d{2}(?::?\d{2})?)$/
+  );
+  if (!parts) return null;
+  const [, date, time, fraction = '', zone] = parts;
+  const offset =
+    zone.length === 3
+      ? `${zone}:00`
+      : zone.length === 5
+        ? `${zone.slice(0, 3)}:${zone.slice(3)}`
+        : zone;
+  const milliseconds = Date.parse(`${date}T${time}${fraction ? `.${fraction}` : ''}${offset}`);
+  if (!Number.isFinite(milliseconds)) return null;
+  return BigInt(milliseconds) * 1000n + BigInt(fraction.padEnd(6, '0').slice(3) || '0');
+}
+
+function cacheAuthoritativeThemeRows(userId: string, rows: ThemeRow[]): void {
+  writeCachedThemeRows(
+    userId,
+    rows.map((row) => ({
+      ...row,
+      ...(serverThemeVersion(row.updated_at) !== null
+        ? {
+            server_updated_at: row.updated_at as string,
+            server_values: toSelection(row),
+          }
+        : {}),
+    }))
+  );
+}
+
+/** Returns false for an older/conflicting DB echo without changing any cache. */
 function mergeCachedThemeRow(
   userId: string | null | undefined,
   bucket: CanonicalGameType,
   patch: Partial<UserThemeSelection>,
-  updatedAt?: string
-): void {
-  if (!userId || (!Object.keys(patch).length && !updatedAt)) return;
+  updatedAt?: string,
+  authoritative = false,
+  metadataOnly = false
+): boolean {
+  if (!userId || (!Object.keys(patch).length && !updatedAt)) return false;
   const rows = readCachedThemeRows(userId);
   const index = rows.findIndex((r) => (r.game_type || '') === bucket);
-  if (index >= 0) {
-    rows[index] = { ...rows[index], ...patch, ...(updatedAt ? { updated_at: updatedAt } : {}) };
-  } else {
-    rows.push({ game_type: bucket, ...patch, ...(updatedAt ? { updated_at: updatedAt } : {}) });
+  const previous = index >= 0 ? rows[index] : undefined;
+  const nextVersion = serverThemeVersion(updatedAt);
+  if (authoritative && updatedAt && nextVersion === null) return false;
+  if (authoritative && nextVersion !== null) {
+    const previousVersion = serverThemeVersion(previous?.server_updated_at);
+    if (previousVersion !== null && nextVersion < previousVersion) return false;
+    // The same version reaches multiple mounted hooks and both account channels.
+    // Admit its identical fields for every subscriber, never a conflicting value.
+    if (
+      previousVersion === nextVersion &&
+      previous?.server_values &&
+      THEME_FIELDS.some(
+        (field) =>
+          patch[field] !== undefined &&
+          previous.server_values?.[field] !== undefined &&
+          patch[field] !== previous.server_values[field]
+      )
+    )
+      return false;
   }
+  const row: ThemeRow = {
+    ...previous,
+    game_type: bucket,
+    ...(metadataOnly ? {} : patch),
+    ...(updatedAt && !metadataOnly ? { updated_at: updatedAt } : {}),
+    ...(authoritative && nextVersion !== null
+      ? {
+          server_updated_at: updatedAt,
+          // A partial echo authenticates only its supplied fields at THIS
+          // version. Carrying older fields into a newer version would falsely
+          // reject the complete post-image arriving on the other account channel.
+          server_values: {
+            ...(serverThemeVersion(previous?.server_updated_at) === nextVersion
+              ? previous?.server_values
+              : {}),
+            ...patch,
+          },
+        }
+      : {}),
+  };
+  if (index >= 0) rows[index] = row;
+  else rows.push(row);
   writeCachedThemeRows(userId, rows);
+  return true;
 }
 
 function sameSelection(a: UserThemeSelection, b: UserThemeSelection): boolean {
@@ -540,12 +644,19 @@ export function useUserThemeSettings(
   isTournament?: boolean,
   tournamentType?: string
 ) {
+  /**
+   * null while a tournament's format is unresolved: the bucket is not yet
+   * knowable, and guessing is what the load effect refuses to do.
+   */
+  const gameType = useMemo<CanonicalGameType | null>(
+    () => resolveThemeBucket(gameVariant, isTournament, tournamentType),
+    [gameVariant, isTournament, tournamentType]
+  );
   const [theme, setTheme] = useState<UserThemeSelection>(() => {
     // FIRST PAINT (2026-08-28): resolve synchronously from the cache so the
     // opening frame already wears the saved theme instead of flashing the
     // defaults for the length of a network round trip.
-    const bucket = resolveThemeBucket(gameVariant, isTournament, tournamentType);
-    return resolveCachedTheme(userId, bucket) ?? { ...DEFAULT_THEME };
+    return resolveCachedTheme(userId, gameType) ?? { ...DEFAULT_THEME };
   });
   const [loading, setLoading] = useState(true);
   /**
@@ -555,16 +666,31 @@ export function useUserThemeSettings(
    */
   const [error, setError] = useState<string | null>(null);
   const pendingMutationsRef = useRef(new Map<CanonicalGameType, Set<string>>());
+  const liveThemeRevisionRef = useRef(0);
   const realtime = useUserThemeRealtime(userId);
+  const themeScope = `${userId || 'guest'}:${gameType || 'unresolved'}`;
+  const themeScopeRef = useRef(themeScope);
 
-  /**
-   * null while a tournament's format is unresolved: the bucket is not yet
-   * knowable, and guessing is what the load effect refuses to do.
-   */
-  const gameType = useMemo<CanonicalGameType | null>(
-    () => resolveThemeBucket(gameVariant, isTournament, tournamentType),
-    [gameVariant, isTournament, tournamentType]
-  );
+  // A persistent table shell can survive logout/login and game-bucket changes.
+  // Never let the previous scope's art reach a browser paint while the next
+  // account has no cache (or its authoritative read is slow/fails). A layout
+  // effect performs the scope handoff before paint; the database load below
+  // remains the source of truth and can replace this scoped first-frame value.
+  useLayoutEffect(() => {
+    if (themeScopeRef.current === themeScope) return;
+    themeScopeRef.current = themeScope;
+    pendingMutationsRef.current.clear();
+    setError(null);
+    setLoading(Boolean(userId));
+    const scopedTheme = resolveCachedTheme(userId, gameType) ?? { ...DEFAULT_THEME };
+    setTheme((current) => (sameSelection(current, scopedTheme) ? current : scopedTheme));
+  }, [gameType, themeScope, userId]);
+
+  // Paint cached and hydrated finishes before the next browser frame. Direct
+  // taps also update this synchronously in applyTableAppearance.
+  useLayoutEffect(() => {
+    applyFaceDeckToDocument(theme.faceDeckId);
+  }, [theme.faceDeckId]);
 
   useEffect(() => {
     if (!userId) {
@@ -586,12 +712,15 @@ export function useUserThemeSettings(
     let mounted = true;
 
     const load = async () => {
+      const liveRevisionAtRead = liveThemeRevisionRef.current;
       try {
         // ONE query for the user's rows — the table is UNIQUE(user_id,
         // game_type) over seven buckets, so this is a handful of rows at most,
         // and resolving in memory is both cheaper than the old two round trips
         // and the only way to see a row stored under a raw variant key.
-        const { data, error: queryError } = await fetchUserThemeRows(userId);
+        const read = fetchUserThemeRows(userId);
+        const accountRevisionAtRead = themeReadRevisions.get(read) ?? 0;
+        const { data, error: queryError } = await read;
 
         if (!mounted) return;
 
@@ -604,9 +733,21 @@ export function useUserThemeSettings(
         }
 
         setError(null);
+        // A read started before a newer accepted live patch cannot replace
+        // that patch when its older snapshot arrives. The event already owns
+        // the current paint and cache; no second read or replay is needed.
+        if (
+          liveThemeRevisionRef.current !== liveRevisionAtRead ||
+          (accountThemeRevisions.get(userId) ?? 0) !== accountRevisionAtRead
+        ) {
+          const current = resolveCachedTheme(userId, gameType);
+          if (current) setTheme((prev) => (sameSelection(prev, current) ? prev : current));
+          setLoading(false);
+          return;
+        }
         // The database answered: it is the truth, and the cache follows it.
         // (Only a real array is cached — some test doubles resolve to nothing.)
-        if (Array.isArray(data)) writeCachedThemeRows(userId, data as ThemeRow[]);
+        if (Array.isArray(data)) cacheAuthoritativeThemeRows(userId, data as ThemeRow[]);
         const row = pickThemeRow((data as ThemeRow[]) || [], gameType);
         if (row) {
           const selection = toSelection(row);
@@ -714,23 +855,40 @@ export function useUserThemeSettings(
          for that bucket is pending. Tracking a set (not only the newest id)
          also lets an older failed table-field mutation roll back while a newer
          button-field mutation is still saving. */
-      if (savedBucket) {
-        const pending = pendingMutationsRef.current.get(savedBucket);
-        if (!mutationId && pending?.size) return;
-      }
 
-      // Only the five theme fields, never whatever else rode along on the bus.
+      // Only the six theme fields, never whatever else rode along on the bus.
       const clean: Partial<UserThemeSelection> = {};
       for (const field of THEME_FIELDS) {
         const value = (selection as Record<string, unknown>)[field];
-        if (typeof value === 'string' && value) clean[field] = value;
+        if (typeof value === 'string' && value) {
+          clean[field] = (field === 'faceDeckId' ? normalizeFaceDeckId(value) : value) as never;
+        }
       }
       if (!Object.keys(clean).length) return;
 
-      setTheme((prev) => ({ ...prev, ...clean }));
-      // Keep the first-paint cache current, so a page change or refresh
-      // immediately after a change still opens wearing it — no flash back.
-      mergeCachedThemeRow(userId, canonicalGameType(savedFor), clean, updatedAt);
+      const authoritative = !mutationId && Boolean(updatedAt);
+      if (savedBucket && !mutationId && pendingMutationsRef.current.get(savedBucket)?.size) {
+        // Remember a committed server version even while a newer local tap owns
+        // the paint. Otherwise its delayed predecessor can win after confirmation.
+        if (
+          authoritative &&
+          mergeCachedThemeRow(userId, savedBucket, clean, updatedAt, true, true)
+        ) {
+          advanceAccountThemeRevision(userId);
+        }
+        return;
+      }
+      // Client confirmation clocks affect optimistic first-paint precedence only.
+      // They never fence an authenticated database row from another device.
+      if (
+        !mergeCachedThemeRow(userId, canonicalGameType(savedFor), clean, updatedAt, authoritative)
+      ) {
+        if (userId) return;
+      }
+      advanceAccountThemeRevision(userId);
+      liveThemeRevisionRef.current += 1;
+      const resolved = authoritative ? resolveCachedTheme(userId, gameType) : null;
+      setTheme((prev) => resolved ?? { ...prev, ...clean });
     });
 
     return () => {

@@ -401,6 +401,26 @@ export function assembleChain({ records, decisionRecord, handKey, deps }) {
   };
 }
 
+/* THE ARCHIVE IS ONE CATALOG PER DECISION SHARD (2026-09-29). #5541 gave each
+   decision-shard writer its own catalog: shard 0 stays in 'archive', later
+   shards are 'archive-shard-N'. These helpers are the only place this tool
+   builds a path into the archive, and the names come from the journal's own
+   directory listing (config.horseJournalArchiveDirectoryNames), so a shard the
+   journal has cannot be one this tool never opens. Empty is not "nothing to
+   read": the journal answers empty only when no archive exists at all. */
+export function archiveShardNames(config, directory) {
+  const names = config.horseJournalArchiveDirectoryNames(directory);
+  if (!Array.isArray(names) || !names.length) throw Error('archive_custody_unavailable');
+  return names;
+}
+export const shardCatalogPath = (directory, shardName) =>
+  directory + '/' + shardName + '/horse-journal-archive.sqlite';
+export const shardSegmentPath = (directory, shardName, sha) =>
+  directory + '/' + shardName + '/segments/' + sha + '.ndjson.gz';
+/** The union of two shards' bounds: a missing bound never wins. */
+export const mergeBound = (a, b, pick) =>
+  Number.isSafeInteger(a) ? (Number.isSafeInteger(b) ? pick(a, b) : a) : (b ?? null);
+
 /* CAPTURE SHED IS NAMED, NOT GUESSED (2026-09-27). The 2026-09-27 population
    on 6b6eabb1 admitted 68 incomplete tournament chains whose completed-hand
    record or execution witness was absent. Their hands were committed in
@@ -538,22 +558,35 @@ async function observe(declarationB64) {
   const deadlineMs = startedAt + declaration.selection.bounds.observerDeadlineSeconds * 1000;
   const admitted = new Set(declaration.admittedReleases.map((r) => r.sha));
   const population = createPopulation({ declaration, digest: declarationDigest });
-  const journal = new store.HorseDecisionJournalStore(
-    directory,
-    config.readonlyHorseJournalStoreOptions(directory)
-  );
-  const storage = journal.storageStats();
-  if (!storage.archive) throw Error('archive_custody_unavailable');
-  const catalog = new DatabaseSync(directory + '/archive/horse-journal-archive.sqlite', {
-    readOnly: true,
-    allowExtension: false,
+  // EVERY ARCHIVE SHARD IS READ (2026-09-29). Since #5541 each decision-shard
+  // writer owns its own catalog: shard 0 stays in 'archive', later shards are
+  // 'archive-shard-N', and a hand's records live in exactly one of them. This
+  // observer used to open 'archive' only, so half of the fleet's hands were
+  // never selected and the capture continuity of half of its producers was
+  // never measured. The shards are listed by the same function the journal's
+  // own reader uses, and none of them may be skipped.
+  const shardNames = archiveShardNames(config, directory);
+  const shards = shardNames.map((name) => {
+    const journal = new store.HorseDecisionJournalStore(
+      directory,
+      config.readonlyHorseJournalStoreOptions(directory, name)
+    );
+    const storage = journal.storageStats();
+    if (!storage.archive) throw Error('archive_custody_unavailable');
+    const catalog = new DatabaseSync(shardCatalogPath(directory, name), {
+      readOnly: true,
+      allowExtension: false,
+    });
+    catalog.exec('PRAGMA busy_timeout=250; PRAGMA query_only=ON; PRAGMA trusted_schema=OFF;');
+    return { name, journal, storage, catalog };
   });
-  catalog.exec('PRAGMA busy_timeout=250; PRAGMA query_only=ON; PRAGMA trusted_schema=OFF;');
   const output = {
     observedAt: new Date(startedAt).toISOString(),
     expectedRelease,
     declarationDigest,
-    storage,
+    // Shard 0's storage stays under its old name; every shard is under shards.
+    storage: shards[0].storage,
+    shards: shards.map((sh) => ({ shard: sh.name, storage: sh.storage })),
     strata: [],
     counts: {
       handsInspected: 0,
@@ -568,224 +601,241 @@ async function observe(declarationB64) {
     stopReason: 'strata_exhausted',
   };
   try {
-    const maxRowid = catalog
-      .prepare('SELECT COALESCE(max(rowid),0) AS rowid FROM archive_events')
-      .get().rowid;
-    // The archive is a ring (#5355): the oldest segments are retired, so the
-    // catalog's rowids start above 1 and every probe lands on a rowid that exists.
-    const minRowid = catalog
-      .prepare('SELECT COALESCE(min(rowid),0) AS rowid FROM archive_events')
-      .get().rowid;
-    output.maxRowid = maxRowid;
-    output.minRowid = minRowid;
-    const existingAtOrAfter = catalog.prepare(
-      'SELECT rowid FROM archive_events WHERE rowid >= ? ORDER BY rowid LIMIT 1'
-    );
-    const rowMeta = catalog.prepare(
-      `SELECT e.hand_key, e.ordinal, s.sha, s.compressed_sha, s.bytes, s.decoded_bytes, s.records
-       FROM archive_events e JOIN archive_segments s ON s.sha = e.segment_sha WHERE e.rowid = ?`
-    );
-    const segmentCache = new Map();
-    const atMsOf = (rowid) => {
-      const row = rowMeta.get(rowid);
-      if (!row) throw Error('rowid_unavailable');
-      let lines = segmentCache.get(row.sha);
-      if (!lines) {
-        output.counts.segmentProbes++;
-        const compressed = readFile(directory + '/archive/segments/' + row.sha + '.ndjson.gz');
-        if (record.journalHash(compressed) !== row.compressed_sha) throw Error('segment_digest');
-        const decoded = gunzipSync(compressed, { maxOutputLength: 4 * 1024 * 1024 + 65536 });
-        if (record.journalHash(decoded) !== row.sha) throw Error('segment_digest');
-        lines = decoded.toString('utf8').slice(0, -1).split('\n');
-        if (segmentCache.size > 64) segmentCache.clear();
-        segmentCache.set(row.sha, lines);
-      }
-      const parsed = JSON.parse(lines[Number(row.ordinal)]);
-      record.validateHorseJournalRecord(parsed);
-      return parsed.atMs;
-    };
-    const lowerBound = (t) => {
-      let lo = Math.max(1, Number(minRowid)),
-        hi = maxRowid + 1;
-      while (lo < hi) {
-        const mid = Math.floor((lo + hi) / 2);
-        const row = Number(existingAtOrAfter.get(mid).rowid);
-        if (atMsOf(row) < t) lo = row + 1;
-        else hi = mid;
-      }
-      return lo;
-    };
-    try {
-      // The oldest segment may be retired by the ring while this reads.
-      output.archiveFirstAtMs = maxRowid ? atMsOf(Number(minRowid)) : null;
-    } catch {
-      output.archiveFirstAtMs = null;
-    }
-    output.archiveLastAtMs = maxRowid ? atMsOf(maxRowid) : null;
-    const continuityRows = catalog.prepare(
-      'SELECT rowid, producer_id, sequence FROM archive_events WHERE rowid >= ? AND rowid < ?'
-    );
-    const handRows = catalog.prepare(
-      'SELECT rowid, hand_key FROM archive_events WHERE rowid >= ? AND rowid < ? ORDER BY rowid LIMIT 4096'
-    );
     let handsTotal = 0;
-    const windowEnd = declaration.window.endMs;
-    outer: for (let h = 0; h < strataCount(declaration); h++) {
-      const startMs = declaration.window.startMs + h * HOUR_MS;
-      const endMs = Math.min(startMs + HOUR_MS, windowEnd);
-      const stratum = {
-        index: h,
-        start: new Date(startMs).toISOString(),
-        end: new Date(endMs).toISOString(),
-        firstRowid: null,
-        nextRowid: null,
-        hands: 0,
-        preflopDecisions: 0,
-        admitted: 0,
-        status: 'walked',
-      };
-      output.strata.push(stratum);
-      if (Date.now() > deadlineMs) {
-        stratum.status = 'not walked: deadline';
-        output.stopReason = 'deadline';
-        continue;
+    shards: for (const shard of shards) {
+      const { name: shardName, catalog } = shard;
+      const maxRowid = catalog
+        .prepare('SELECT COALESCE(max(rowid),0) AS rowid FROM archive_events')
+        .get().rowid;
+      // The archive is a ring (#5355): the oldest segments are retired, so the
+      // catalog's rowids start above 1 and every probe lands on a rowid that exists.
+      const minRowid = catalog
+        .prepare('SELECT COALESCE(min(rowid),0) AS rowid FROM archive_events')
+        .get().rowid;
+      if (!('maxRowid' in output)) {
+        output.maxRowid = maxRowid;
+        output.minRowid = minRowid;
       }
-      const firstRowid = lowerBound(startMs);
-      const nextRowid = lowerBound(endMs);
-      stratum.firstRowid = firstRowid;
-      stratum.nextRowid = nextRowid;
-      if (firstRowid > maxRowid || firstRowid >= nextRowid) {
-        stratum.status = 'stratum empty: no archived records';
-        continue;
-      }
-      // Sequence continuity over the stratum and a bounded tail after it: a
-      // hand's trailing records (its witnesses and completed hand) are written
-      // after the stratum's last decision.
-      const scanEnd = Math.min(maxRowid + 1, nextRowid + CAPTURE_TAIL_ROWS);
-      const continuity = captureContinuity(
-        continuityRows.all(firstRowid, scanEnd).map((r) => ({
-          rowid: Number(r.rowid),
-          producer: String(r.producer_id),
-          sequence: Number(r.sequence),
-        }))
+      const shardOutput = output.shards.find((x) => x.shard === shardName);
+      shardOutput.minRowid = minRowid;
+      shardOutput.maxRowid = maxRowid;
+      const existingAtOrAfter = catalog.prepare(
+        'SELECT rowid FROM archive_events WHERE rowid >= ? ORDER BY rowid LIMIT 1'
       );
-      const gapTimes = new Map();
-      const shedAtMs = (gap) => {
-        if (!gapTimes.has(gap.beforeRowid)) {
-          let at = null;
-          try {
-            at = atMsOf(gap.beforeRowid);
-          } catch {
-            at = null;
-          }
-          gapTimes.set(gap.beforeRowid, at);
+      const rowMeta = catalog.prepare(
+        `SELECT e.hand_key, e.ordinal, s.sha, s.compressed_sha, s.bytes, s.decoded_bytes, s.records
+         FROM archive_events e JOIN archive_segments s ON s.sha = e.segment_sha WHERE e.rowid = ?`
+      );
+      const segmentCache = new Map();
+      const atMsOf = (rowid) => {
+        const row = rowMeta.get(rowid);
+        if (!row) throw Error('rowid_unavailable');
+        let lines = segmentCache.get(row.sha);
+        if (!lines) {
+          output.counts.segmentProbes++;
+          const compressed = readFile(shardSegmentPath(directory, shardName, row.sha));
+          if (record.journalHash(compressed) !== row.compressed_sha) throw Error('segment_digest');
+          const decoded = gunzipSync(compressed, { maxOutputLength: 4 * 1024 * 1024 + 65536 });
+          if (record.journalHash(decoded) !== row.sha) throw Error('segment_digest');
+          lines = decoded.toString('utf8').slice(0, -1).split('\n');
+          if (segmentCache.size > 64) segmentCache.clear();
+          segmentCache.set(row.sha, lines);
         }
-        return gapTimes.get(gap.beforeRowid);
+        const parsed = JSON.parse(lines[Number(row.ordinal)]);
+        record.validateHorseJournalRecord(parsed);
+        return parsed.atMs;
       };
-      stratum.capture = {
-        scannedRowids: [firstRowid, scanEnd],
-        producers: [...continuity.values()].map((p) => {
-          const at = p.gaps.length ? shedAtMs(p.gaps[0]) : null;
-          return {
-            producer: p.label,
-            archived: p.archived,
-            firstSequence: p.firstSequence,
-            lastSequence: p.lastSequence,
-            notArchived: p.notArchived,
-            holes: p.gaps.length,
-            firstShedAt: Number.isSafeInteger(at) ? new Date(at).toISOString() : null,
-          };
-        }),
+      const lowerBound = (t) => {
+        let lo = Math.max(1, Number(minRowid)),
+          hi = maxRowid + 1;
+        while (lo < hi) {
+          const mid = Math.floor((lo + hi) / 2);
+          const row = Number(existingAtOrAfter.get(mid).rowid);
+          if (atMsOf(row) < t) lo = row + 1;
+          else hi = mid;
+        }
+        return lo;
       };
-      const seen = new Set();
-      let cursor = firstRowid;
-      while (seen.size < declaration.selection.handsPerStratum && cursor < nextRowid) {
-        const rows = handRows.all(cursor, nextRowid);
-        if (!rows.length) break;
-        for (const row of rows) {
-          cursor = Number(row.rowid) + 1;
-          if (seen.has(row.hand_key)) continue;
-          if (seen.size >= declaration.selection.handsPerStratum) break;
-          seen.add(row.hand_key);
-          if (Date.now() > deadlineMs) {
-            stratum.status = 'partially walked: deadline';
-            output.stopReason = 'deadline';
-            break outer;
-          }
-          if (++handsTotal > declaration.selection.bounds.maxHandsInspected) {
-            stratum.status = 'partially walked: maxHandsInspected';
-            output.stopReason = 'maxHandsInspected';
-            break outer;
-          }
-          output.counts.handsInspected++;
-          stratum.hands++;
-          let records;
-          try {
-            records = journal.readHand(row.hand_key);
-          } catch (error) {
-            if (error instanceof Error && error.message === 'Horse archive custody pending')
-              output.counts.handsPendingCustody++;
-            else output.counts.handsUnreadable++;
-            continue;
-          }
-          const verdict = review.reconcileHorseJournalHand(records, row.hand_key);
-          const decisions = records.filter((r) => r.kind === 'decision');
-          output.counts.decisionRecords += decisions.length;
-          for (const decisionRecord of decisions) {
-            let chain;
+      let shardFirstAtMs = null;
+      try {
+        // The oldest segment may be retired by the ring while this reads.
+        shardFirstAtMs = maxRowid ? atMsOf(Number(minRowid)) : null;
+      } catch {
+        shardFirstAtMs = null;
+      }
+      const shardLastAtMs = maxRowid ? atMsOf(maxRowid) : null;
+      shardOutput.archiveFirstAtMs = shardFirstAtMs;
+      shardOutput.archiveLastAtMs = shardLastAtMs;
+      // The archive's span is the union of its shards' spans.
+      output.archiveFirstAtMs = mergeBound(output.archiveFirstAtMs, shardFirstAtMs, Math.min);
+      output.archiveLastAtMs = mergeBound(output.archiveLastAtMs, shardLastAtMs, Math.max);
+      const continuityRows = catalog.prepare(
+        'SELECT rowid, producer_id, sequence FROM archive_events WHERE rowid >= ? AND rowid < ?'
+      );
+      const handRows = catalog.prepare(
+        'SELECT rowid, hand_key FROM archive_events WHERE rowid >= ? AND rowid < ? ORDER BY rowid LIMIT 4096'
+      );
+      const windowEnd = declaration.window.endMs;
+      outer: for (let h = 0; h < strataCount(declaration); h++) {
+        const startMs = declaration.window.startMs + h * HOUR_MS;
+        const endMs = Math.min(startMs + HOUR_MS, windowEnd);
+        const stratum = {
+          shard: shardName,
+          index: h,
+          start: new Date(startMs).toISOString(),
+          end: new Date(endMs).toISOString(),
+          firstRowid: null,
+          nextRowid: null,
+          hands: 0,
+          preflopDecisions: 0,
+          admitted: 0,
+          status: 'walked',
+        };
+        output.strata.push(stratum);
+        if (Date.now() > deadlineMs) {
+          stratum.status = 'not walked: deadline';
+          output.stopReason = 'deadline';
+          continue;
+        }
+        const firstRowid = lowerBound(startMs);
+        const nextRowid = lowerBound(endMs);
+        stratum.firstRowid = firstRowid;
+        stratum.nextRowid = nextRowid;
+        if (firstRowid > maxRowid || firstRowid >= nextRowid) {
+          stratum.status = 'stratum empty: no archived records';
+          continue;
+        }
+        // Sequence continuity over the stratum and a bounded tail after it: a
+        // hand's trailing records (its witnesses and completed hand) are written
+        // after the stratum's last decision.
+        const scanEnd = Math.min(maxRowid + 1, nextRowid + CAPTURE_TAIL_ROWS);
+        const continuity = captureContinuity(
+          continuityRows.all(firstRowid, scanEnd).map((r) => ({
+            rowid: Number(r.rowid),
+            producer: String(r.producer_id),
+            sequence: Number(r.sequence),
+          }))
+        );
+        const gapTimes = new Map();
+        const shedAtMs = (gap) => {
+          if (!gapTimes.has(gap.beforeRowid)) {
+            let at = null;
             try {
-              chain = assembleChain({ records, decisionRecord, handKey: row.hand_key, deps });
+              at = atMsOf(gap.beforeRowid);
             } catch {
-              count(population.rejected, 'unreadable_decision');
+              at = null;
+            }
+            gapTimes.set(gap.beforeRowid, at);
+          }
+          return gapTimes.get(gap.beforeRowid);
+        };
+        stratum.capture = {
+          scannedRowids: [firstRowid, scanEnd],
+          producers: [...continuity.values()].map((p) => {
+            const at = p.gaps.length ? shedAtMs(p.gaps[0]) : null;
+            return {
+              producer: p.label,
+              archived: p.archived,
+              firstSequence: p.firstSequence,
+              lastSequence: p.lastSequence,
+              notArchived: p.notArchived,
+              holes: p.gaps.length,
+              firstShedAt: Number.isSafeInteger(at) ? new Date(at).toISOString() : null,
+            };
+          }),
+        };
+        const seen = new Set();
+        let cursor = firstRowid;
+        while (seen.size < declaration.selection.handsPerStratum && cursor < nextRowid) {
+          const rows = handRows.all(cursor, nextRowid);
+          if (!rows.length) break;
+          for (const row of rows) {
+            cursor = Number(row.rowid) + 1;
+            if (seen.has(row.hand_key)) continue;
+            if (seen.size >= declaration.selection.handsPerStratum) break;
+            seen.add(row.hand_key);
+            if (Date.now() > deadlineMs) {
+              stratum.status = 'partially walked: deadline';
+              output.stopReason = 'deadline';
+              break outer;
+            }
+            if (++handsTotal > declaration.selection.bounds.maxHandsInspected) {
+              stratum.status = 'partially walked: maxHandsInspected';
+              output.stopReason = 'maxHandsInspected';
+              break outer;
+            }
+            output.counts.handsInspected++;
+            stratum.hands++;
+            let records;
+            try {
+              records = shard.journal.readHand(row.hand_key);
+            } catch (error) {
+              if (error instanceof Error && error.message === 'Horse archive custody pending')
+                output.counts.handsPendingCustody++;
+              else output.counts.handsUnreadable++;
               continue;
             }
-            if (chain.snapshot?.gameState?.stage !== 'preflop') {
-              count(population.rejected, 'postflop');
-              continue;
-            }
-            output.counts.preflopDecisions++;
-            stratum.preflopDecisions++;
-            if (
-              decisionRecord.atMs < declaration.window.startMs ||
-              decisionRecord.atMs >= windowEnd
-            ) {
-              count(population.rejected, 'outside_window');
-              continue;
-            }
-            if (!admitted.has(decisionRecord.sourceRelease ?? '')) {
-              count(population.rejected, 'release');
-              continue;
-            }
-            const classified = classifyDecision({
-              snapshot: chain.snapshot,
-              decision: chain.decision,
-              witness: chain.witness,
-              acceptedOrigin: chain.acceptedOrigin,
-              declaration,
-            });
-            const result = admitChain(population, {
-              ...(classified.cell
-                ? { cell: classified.cell }
-                : { rejectReason: classified.rejectReason }),
-              sourceRelease: decisionRecord.sourceRelease,
-              isServingRelease: decisionRecord.sourceRelease === expectedRelease,
-              stratum: h,
-              rowid: Number(row.rowid),
-              atMs: decisionRecord.atMs,
-              at: new Date(decisionRecord.atMs).toISOString(),
-              review: { status: verdict.status, gaps: verdict.gaps },
-              decisionId: decisionRecord.eventId,
-              capture: captureMark(continuity, decisionRecord, shedAtMs),
-              ...chainSummary(chain, {}),
-            });
-            if (result.admitted) {
-              stratum.admitted++;
-              output.counts.chainsAdmitted++;
-              if (chain.complete) output.counts.chainsComplete++;
+            const verdict = review.reconcileHorseJournalHand(records, row.hand_key);
+            const decisions = records.filter((r) => r.kind === 'decision');
+            output.counts.decisionRecords += decisions.length;
+            for (const decisionRecord of decisions) {
+              let chain;
+              try {
+                chain = assembleChain({ records, decisionRecord, handKey: row.hand_key, deps });
+              } catch {
+                count(population.rejected, 'unreadable_decision');
+                continue;
+              }
+              if (chain.snapshot?.gameState?.stage !== 'preflop') {
+                count(population.rejected, 'postflop');
+                continue;
+              }
+              output.counts.preflopDecisions++;
+              stratum.preflopDecisions++;
+              if (
+                decisionRecord.atMs < declaration.window.startMs ||
+                decisionRecord.atMs >= windowEnd
+              ) {
+                count(population.rejected, 'outside_window');
+                continue;
+              }
+              if (!admitted.has(decisionRecord.sourceRelease ?? '')) {
+                count(population.rejected, 'release');
+                continue;
+              }
+              const classified = classifyDecision({
+                snapshot: chain.snapshot,
+                decision: chain.decision,
+                witness: chain.witness,
+                acceptedOrigin: chain.acceptedOrigin,
+                declaration,
+              });
+              const result = admitChain(population, {
+                ...(classified.cell
+                  ? { cell: classified.cell }
+                  : { rejectReason: classified.rejectReason }),
+                sourceRelease: decisionRecord.sourceRelease,
+                isServingRelease: decisionRecord.sourceRelease === expectedRelease,
+                stratum: h,
+                shard: shardName,
+                rowid: Number(row.rowid),
+                atMs: decisionRecord.atMs,
+                at: new Date(decisionRecord.atMs).toISOString(),
+                review: { status: verdict.status, gaps: verdict.gaps },
+                decisionId: decisionRecord.eventId,
+                capture: captureMark(continuity, decisionRecord, shedAtMs),
+                ...chainSummary(chain, {}),
+              });
+              if (result.admitted) {
+                stratum.admitted++;
+                output.counts.chainsAdmitted++;
+                if (chain.complete) output.counts.chainsComplete++;
+              }
             }
           }
         }
       }
+      if (output.stopReason !== 'strata_exhausted') break shards;
     }
     output.population = serializePopulation(population);
     output.status = 'observed';
@@ -793,15 +843,17 @@ async function observe(declarationB64) {
     output.status = 'unavailable';
     output.reason = error instanceof Error ? error.message.slice(0, 120) : 'observer_failed';
   } finally {
-    try {
-      catalog.close();
-    } catch {
-      output.cleanupVerified = false;
-    }
-    try {
-      journal.close();
-    } catch {
-      output.cleanupVerified = false;
+    for (const sh of shards) {
+      try {
+        sh.catalog.close();
+      } catch {
+        output.cleanupVerified = false;
+      }
+      try {
+        sh.journal.close();
+      } catch {
+        output.cleanupVerified = false;
+      }
     }
   }
   output.finishedAt = new Date().toISOString();
@@ -1064,6 +1116,7 @@ export function buildReport({ loaded, observationFile, observation, commandLine,
       observedAt: remote.observedAt ?? null,
       finishedAt: remote.finishedAt ?? null,
       storage: remote.storage ?? null,
+      shards: remote.shards ?? null,
       minRowid: remote.minRowid ?? null,
       maxRowid: remote.maxRowid ?? null,
       firstRecordAt: remote.archiveFirstAtMs
@@ -1146,6 +1199,18 @@ export function renderMarkdown(report, loaded) {
   lines.push(
     `Status ${a.status}${a.reason ? ` (${a.reason})` : ''}; observed ${a.observedAt ?? 'never'} to ${a.finishedAt ?? 'never'}; stop reason ${a.stopReason ?? 'none'}. Catalog rowids ${a.minRowid ?? 'unknown'} to ${a.maxRowid ?? 'unknown'}; first archived record ${a.firstRecordAt ?? 'unknown'}; last archived record ${a.lastRecordAt ?? 'unknown'}.`
   );
+  if (Array.isArray(a.shards) && a.shards.length)
+    lines.push(
+      '',
+      `Archive shards read (${a.shards.length}): ` +
+        a.shards
+          .map(
+            (sh) =>
+              `${sh.shard} rowids ${sh.minRowid ?? 'unknown'} to ${sh.maxRowid ?? 'unknown'}, ${sh.storage?.archive?.segments ?? 'unknown'} segments`
+          )
+          .join('; ') +
+        '.'
+    );
   const windowEnd = d.window.end;
   if (a.lastRecordAt && Date.parse(a.lastRecordAt) < Date.parse(windowEnd))
     lines.push(
@@ -1169,12 +1234,12 @@ export function renderMarkdown(report, loaded) {
   lines.push(`## Strata (${strataCount(d)} hourly, walked in rowid order)`);
   lines.push('');
   lines.push(
-    '| Stratum | Start | First rowid | Next rowid | Hands read | Preflop decisions | Admitted | Status |'
+    '| Shard | Stratum | Start | First rowid | Next rowid | Hands read | Preflop decisions | Admitted | Status |'
   );
-  lines.push('| --- | --- | --- | --- | --- | --- | --- | --- |');
+  lines.push('| --- | --- | --- | --- | --- | --- | --- | --- | --- |');
   for (const st of report.strata)
     lines.push(
-      `| ${st.index} | ${st.start} | ${st.firstRowid ?? 'none'} | ${st.nextRowid ?? 'none'} | ${st.hands} | ${st.preflopDecisions} | ${st.admitted} | ${st.status} |`
+      `| ${st.shard ?? 'archive'} | ${st.index} | ${st.start} | ${st.firstRowid ?? 'none'} | ${st.nextRowid ?? 'none'} | ${st.hands} | ${st.preflopDecisions} | ${st.admitted} | ${st.status} |`
     );
   lines.push('');
   lines.push('## Capture continuity');
@@ -1186,18 +1251,18 @@ export function renderMarkdown(report, loaded) {
   );
   lines.push('');
   lines.push(
-    '| Stratum | Producer | Archived | Sequence range | Not archived | Holes | First shed |'
+    '| Shard | Stratum | Producer | Archived | Sequence range | Not archived | Holes | First shed |'
   );
-  lines.push('| --- | --- | --- | --- | --- | --- | --- |');
+  lines.push('| --- | --- | --- | --- | --- | --- | --- | --- |');
   let captureRows = 0;
   for (const st of report.strata)
     for (const p of st.capture?.producers ?? []) {
       captureRows++;
       lines.push(
-        `| ${st.index} | ${p.producer} | ${p.archived} | ${p.firstSequence} to ${p.lastSequence} | ${p.notArchived} | ${p.holes} | ${p.firstShedAt ?? 'none'} |`
+        `| ${st.shard ?? 'archive'} | ${st.index} | ${p.producer} | ${p.archived} | ${p.firstSequence} to ${p.lastSequence} | ${p.notArchived} | ${p.holes} | ${p.firstShedAt ?? 'none'} |`
       );
     }
-  if (!captureRows) lines.push('| none | none | 0 | none | 0 | 0 | none |');
+  if (!captureRows) lines.push('| none | none | none | 0 | none | 0 | 0 | none |');
   lines.push('');
   lines.push(
     'Incomplete chains by the capture mark of their own producer: `' +

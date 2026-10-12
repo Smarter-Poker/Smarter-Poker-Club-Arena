@@ -46,12 +46,12 @@ type Audit = {
 const judge = (files: Record<string, string>): Audit =>
   audit(Object.entries(files).map(([file, sql]) => ({ file, sql })));
 
-/** A directory holding `files`, removed after `use` returns. */
-function withTree<T>(files: Record<string, string>, use: (dir: string) => T): T {
+/** A directory holding `files`, removed after `visit` returns. */
+function withTree<T>(files: Record<string, string>, visit: (dir: string) => T): T {
   const dir = mkdtempSync(join(tmpdir(), 'sender-addressing-'));
   try {
     for (const [name, sql] of Object.entries(files)) writeFileSync(join(dir, name), sql);
-    return use(dir);
+    return visit(dir);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

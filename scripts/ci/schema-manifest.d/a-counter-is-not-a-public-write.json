@@ -1,0 +1,15 @@
+{
+  "_owner": "p3-a-counter-is-not-a-public-write. Migration 20261002223109_a_counter_is_not_a_public_write (phase 3 of 9, security sweep). public.content_engagement_receipts holds one row per (content, player, view|share); public.fn_count_content_engagement is the browser's only counter door; public.fn_guard_profile_trust_columns refuses a browser change to the profile verification and standing columns.",
+  "tables": ["content_engagement_receipts"],
+  "functions": ["fn_count_content_engagement", "fn_guard_profile_trust_columns"],
+  "columns": {
+    "content_engagement_receipts": [
+      "content_id",
+      "viewer_id",
+      "kind",
+      "first_counted_at",
+      "counted_at",
+      "times_counted"
+    ]
+  }
+}

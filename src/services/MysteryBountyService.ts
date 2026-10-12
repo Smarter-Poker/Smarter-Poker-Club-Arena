@@ -333,7 +333,19 @@ export function activationStatusLine(inv: MysteryBountyInventory | null): string
   if (!inv) return 'Mystery Bounty Details Are Loading';
   if (inv.stage === 'active') return 'Mystery Bounties Are Live';
   if (inv.stage === 'complete') return 'Every Mystery Bounty Has Been Awarded';
+  return `${pendingActivationLine(inv)}. ${SMALL_FIELD_NOTE}`;
+}
 
+/**
+ * Dan, 2026-10-05: "MYSTERY BOUNTY OF 10 OR FEWER DON'T GET CHESTS, ITS
+ * TREATING LIKE A SINGLE TABLE TOURNAMENTS WITH 50 30 20 PAYOUT PERCENTAGES".
+ * The engine refuses the mystery phase for a field of ten or fewer entries
+ * (mysteryBountyActivation.ts, small_field), so the waiting line says so
+ * rather than promise chests a small field will never open.
+ */
+export const SMALL_FIELD_NOTE = 'Fields Of Ten Or Fewer Entries Pay Flat Bounties Only';
+
+function pendingActivationLine(inv: MysteryBountyInventory): string {
   const base = 'Mystery Bounties Begin After The Rebuy And Add-On Period Ends';
   const value = inv.activationValue;
   switch (inv.activation) {

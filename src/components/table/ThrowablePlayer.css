@@ -44,6 +44,14 @@
   width: 100%;
   height: 100%;
   overflow: visible;
+  /* Keep payload artwork bold at every measured seat size. The reference
+     water gun already fills this composition and stays at native scale. */
+  transform: scale(1.22);
+  transform-origin: center;
+}
+
+.thr--water_gun .thr__payload > svg {
+  transform: scale(1);
 }
 
 /* Spawn: scale in from nothing at the thrower, then hold at 1. The scale is

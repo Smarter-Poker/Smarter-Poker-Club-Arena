@@ -3,7 +3,6 @@ import { RIG_VIEWBOX, type RigProps, type ThrowableRig } from '../rig';
 import type { ThrowableSpec } from '../spec';
 import { preloadThrowableCues } from '../cues';
 import './vomit_rainbow.css';
-// Dedicated recorded cues still pending: gag, splash_rainbow.
 export const spec: ThrowableSpec = {
   id: 'vomit_rainbow',
   name: 'Rainbow Reaction',
@@ -27,6 +26,7 @@ export const spec: ThrowableSpec = {
     { at: 4000, marker: 'cut' },
   ],
   audio: [
+    { at: 1300, sample: 'comic_burp', gain: 0.7 },
     { at: 1600, sample: 'squirt_start', gain: 0.3 },
     { at: 1800, sample: 'sparkle_bed', gain: 0.18 },
   ],

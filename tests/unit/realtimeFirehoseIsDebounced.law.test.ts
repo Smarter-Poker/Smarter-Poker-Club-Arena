@@ -82,7 +82,15 @@ describe('LAW: weekly accounting does not reload on per-hand ledger events', () 
     expect(summary).toMatch(
       /const current\s*=\s*\(\)\s*=>\s*scope\(\)\s*&&\s*sequence\.current\s*===\s*read/
     );
-    expect(summary).toMatch(/return\s*\(\)\s*=>\s*\{\s*\+\+sequence\.current;\s*\}/);
+    expect(summary).toMatch(
+      /const current\s*=\s*\(\)\s*=>\s*scope\(\)\s*&&\s*exportSequence\.current\s*===\s*read/
+    );
+    expect(summary).toMatch(
+      /function retire\(counter:\s*\{\s*current:\s*number\s*\}\)\s*\{\s*counter\.current\s*\+=\s*1;\s*\}/
+    );
+    expect(summary).toMatch(
+      /return\s*\(\)\s*=>\s*\{\s*retire\(sequence\);\s*retire\(exportSequence\);\s*\}/
+    );
     expect(observation).toMatch(
       /readAccountingRunObservation\(\{\s*\.\.\.input,\s*isCurrent:\s*\(\)\s*=>\s*active\s*&&\s*isCurrent\(\)\s*,?\s*\}\)/
     );

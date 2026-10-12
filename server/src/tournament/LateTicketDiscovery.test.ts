@@ -90,7 +90,10 @@ function harness(rows = [target()]) {
       await server.drainDiscoveryJobs();
       running = false;
     }),
-    tournamentRecurring: { topUpWithHorses: vi.fn(async (): Promise<number> => 0) },
+    tournamentRecurring: {
+      topUpWithHorses: vi.fn(async (): Promise<number> => 0),
+      seatFirstPartnerHoldUntil: vi.fn(() => -Infinity),
+    },
   });
   const pass = new HorseTopUpPass();
   const select = () => server.recoverLateSatelliteTickets(new Set(rows.map((r) => r.id)), pass, 7);

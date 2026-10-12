@@ -724,6 +724,42 @@ lines. Values are read and judged now. If you ever re-touch that counter, judge
 the DECLARATION - a negative lookahead behind `\s*` backtracks to zero width and
 matches `border-radius:` inside `border-radius: 0;`.
 
+**A declaration, and only a declaration (2026-10-02).** The sweep printed
+`0 to go` on 2026-09-23 and `4 to go` nine days later. Three of those four had
+not changed at all, and the scorer was wrong in three separate ways. Each is the
+paragraph above left standing one level up, which is CLAUDE.md 10.86 rule 4: a
+fix that leaves the same trap one level up has not landed.
+
+- **A comment is not a rule.** `:hover` is the heaviest term here, weighted
+  five times because the real thing is forbidden outright. Measured across
+  `src/`: ZERO real hover rules and 109 stylesheets with the word inside a
+  comment, most of them promising the file has none. Every match this counter
+  could ever produce was prose. `tests/no-hover-effects.law.test.ts` has blanked
+  comment bodies since a sweep matched one and cut a stylesheet in half; the
+  scanner now does the same, for every counter.
+- **An engraved rule is not a frame.** Step 5 of the method prescribes
+  `border-top: 1px solid #000` plus `box-shadow: inset 0 1px 0 rgb(255 255 255
+/ 8%)` as the divider between rows, "instead of a drawn divider" - and 488 of
+  the 1,985 `box-shadow` declarations in `src/` are it. A shadow counts as paint
+  only when it has a blur or a spread; offsets of at most 2px with neither are
+  the rule, not chrome. `SpinActivationPanel` owns no frame at all and all five
+  of its shadows were that rule.
+- **A surface wears the sheet it imports.** The scanner found a stylesheet by
+  FILENAME. `DiamondPlayersPage` imports `ClubMembersPage.css` whole and adds 27
+  lines; the roster sheet is pinned by the Players Casino Realism contract, so
+  the page is finished work on another master (step 1.5) and was judged on its
+  delta instead. And the `master` test named two of the three authorities its
+  own comment claims: the lobby's card art (`ArenaGameCard`, `game-cards/`) was
+  missing, so `CreateTablePage` was nominated for the one thing it was right to
+  leave out.
+
+Only the fourth row was real: `MultiDayStagePanel` drew its Open Table control
+as a 999px pill in CSS. All four verdicts and the controls that keep the
+counters from going quiet are pinned by
+`tests/unit/consoleInventoryIsHonest.test.ts`, which also holds the sweep at
+zero - so the next surface that lands generic says so in its own pull request
+rather than waiting for somebody to run this script.
+
 **Two rows are ruled off by hand, and both maps say why.** `RULED` carries a
 surface that is finished work without a test whose title says so; it also
 carries `src/components/common/Card.tsx`, which is not a surface at all -

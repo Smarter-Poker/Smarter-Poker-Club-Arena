@@ -80,3 +80,16 @@ try {
 } catch(Exception e) {
     logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
 }
+
+// A RELEASE WITHOUT FIREBASE CRASHES (2026-09-29, Android emulator). Once the
+// player has allowed notifications, every launch registers for push, and the
+// push plugin's register() calls FirebaseMessaging.getInstance() on its own
+// thread: with no google-services.json that throws "Default FirebaseApp is not
+// initialized" and takes the whole app down - at launch, every launch. Debug
+// builds may go without it; no release build can.
+gradle.taskGraph.whenReady { graph ->
+    def releasing = graph.allTasks.any { it.project == project && it.name.toLowerCase().contains('release') }
+    if (releasing && !file('google-services.json').exists()) {
+        throw new GradleException("android/app/google-services.json is missing: a release without Firebase crashes at launch once notifications are allowed (runbook, Firebase row).")
+    }
+}

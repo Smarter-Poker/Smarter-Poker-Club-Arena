@@ -1,3 +1,4 @@
+import { arenaDisplayText } from '../arenaDisplay/text';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  LOCAL NOTIFICATIONS — what public/sw-bus.js did for a backgrounded tab
@@ -31,6 +32,7 @@ const TITLES: Record<string, string> = {
 };
 
 function titleCase(raw: string): string {
+  raw = arenaDisplayText(raw);
   return raw
     .split(' ')
     .filter(Boolean)
@@ -41,12 +43,13 @@ function titleCase(raw: string): string {
 /** Pure: the worker's body rules, kept identical. Exported for tests. */
 export function notificationBody(eventType: string, payload: unknown): string {
   const p = (payload && typeof payload === 'object' ? payload : {}) as Record<string, unknown>;
-  if (eventType === 'BALANCE_UPDATED') return `Source: ${String(p.source || 'unknown')}`;
+  if (eventType === 'BALANCE_UPDATED')
+    return arenaDisplayText(`Source: ${String(p.source || 'unknown')}`);
   if (eventType === 'CLUB_JOINED' || eventType === 'CLUB_LEFT') {
     return titleCase(String(p.clubName || p.clubId || ''));
   }
   if (eventType === 'TABLE_SEATED' || eventType === 'TABLE_LEFT') {
-    return `Table: ${String(p.tableId || '')}`;
+    return arenaDisplayText(`Table: ${String(p.tableId || '')}`);
   }
   return '';
 }

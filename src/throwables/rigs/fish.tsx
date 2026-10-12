@@ -24,8 +24,8 @@ export const spec: ThrowableSpec = {
     { at: 3000, marker: 'last-fade' },
     { at: 3400, marker: 'cut' },
   ],
-  // Recorded fish flops remain pending; the impact flash is deliberately silent.
   audio: [
+    { at: 700, sample: 'water_lap', gain: 0.5 },
     { at: 1700, sample: 'whoosh_low', gain: 0.3 },
     { at: 1967, sample: 'whoosh_low', gain: 0.3 },
   ],

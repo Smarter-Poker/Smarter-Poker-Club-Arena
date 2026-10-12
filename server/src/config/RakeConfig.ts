@@ -797,11 +797,7 @@ export function detectBBJHit(
   // variants (2 hole cards at showdown: nlh, flh, pineapple post-discard),
   // BOTH the loser's and the winner's best five must use both hole cards.
   // Omaha variants are game-enforced (exactly 2 of 4/5 always play).
-  const needBothCards =
-    BBJ_RULES.requireBothHoleCards &&
-    (normalizedVariant === 'nlh' ||
-      normalizedVariant === 'flh' ||
-      normalizedVariant === 'pineapple');
+  const needBothCards = bothCardsRuleApplies(normalizedVariant);
   const shortDeck = normalizedVariant === 'short_deck';
   const bothPlayOk = (hole: Array<{ rank: string; suit: string }>): boolean => {
     if (!needBothCards) return true;
@@ -1057,6 +1053,52 @@ function bothHoleCardsPlay(
 }
 
 /**
+ * The PAIR of a full house, read from the evaluator's kickers.
+ *
+ * The evaluator lists all five ranks grouped by count (AAAJJ is
+ * `[14, 14, 14, 11, 11]`); older fixtures carry the short `[trip, pair]` form.
+ * Either way the pair is the first rank that is not the trips. Returns -1 when
+ * there is no second rank, which fails every floor it is compared against.
+ */
+export function fullHousePairRank(kickers: number[]): number {
+  const trip = kickers[0];
+  const pair = kickers.find((k) => k !== trip);
+  return pair ?? -1;
+}
+
+/**
+ * Hold'em-family games show two hole cards at showdown, so "both cards must
+ * play" is a real test there. Omaha already forces exactly two of the hand to
+ * play, so the rule is game-enforced and never needs checking.
+ */
+function bothCardsRuleApplies(normalizedVariant: string): boolean {
+  return (
+    BBJ_RULES.requireBothHoleCards &&
+    (normalizedVariant === 'nlh' ||
+      normalizedVariant === 'flh' ||
+      normalizedVariant === 'pineapple')
+  );
+}
+
+/**
+ * Do both hole cards play, FAILING CLOSED when the board is not visible?
+ *
+ * The same reading the main jackpot has used since 2026-08-18: a qualifying
+ * hand always has a five-card board, so refusing when we cannot see one cannot
+ * cost a legitimate jackpot, while paying blind demonstrably cost real money.
+ */
+function bothCardsPlayOrRefuse(
+  normalizedVariant: string,
+  hole: Array<{ rank: string; suit: string }>,
+  board: Array<{ rank: string; suit: string }> | undefined
+): boolean {
+  if (!bothCardsRuleApplies(normalizedVariant)) return true;
+  if (!board || board.length < 5) return false;
+  if (hole.length < 2) return false;
+  return bothHoleCardsPlay(hole, board, normalizedVariant === 'short_deck');
+}
+
+/**
  * Check if a specific hand meets the BBJ minimum qualifying hand.
  */
 function doesHandQualify(
@@ -1075,11 +1117,25 @@ function doesHandQualify(
       if (handRanking < HAND_RANK.FULL_HOUSE) return false;
       if (handRanking > HAND_RANK.FULL_HOUSE) return true; // Quads+ always qualifies
 
-      // Full House: check if it's Aces full of Jacks or better
-      // kickers format: [trip_rank, pair_rank] (e.g., [14, 11] for AAAJJ)
+      // Full House: check if it's Aces full of Jacks or better.
+      //
+      // ACES FULL OF JACKS IS THE FLOOR (Dan 2026-10-11): "BBJ for Holdem is
+      // Aces full of Jacks but it's paying out any aces full as a BBJ ... make
+      // sure that it's hard coded that aces full of jacks with both cards
+      // playing is the standard."
+      //
+      // THE CAUSE. This read `pairRank = kickers[1]` on the belief that a full
+      // house's kickers are `[trip, pair]`. The engine's evaluator
+      // (PokerEngine getKickers) returns all FIVE ranks grouped by count -
+      // AAA66 is `[14, 14, 14, 6, 6]` - so `kickers[1]` was the second ACE,
+      // always 14, and every aces full cleared the Jacks floor. Live, that paid
+      // the main jackpot on Aces full of Sixes (2026-10-11 07:34 UTC, NLH,
+      // board 9 6 6 A 3) and earlier on Aces full of Fours. The pair is the
+      // first rank that is NOT the trips, which is correct in both encodings
+      // (`[14, 11]` and `[14, 14, 14, 11, 11]`).
       if (kickers.length < 2) return false;
       const tripRank = kickers[0];
-      const pairRank = kickers[1];
+      const pairRank = fullHousePairRank(kickers);
 
       // Must be Aces full (tripRank = 14)
       if (tripRank < 14) return false;
@@ -1142,15 +1198,21 @@ function doesHandQualify(
  * 3.4 a day in hold'em and 0.6 a day in PLO - one rule applied to both games
  * would have been either a lottery in one or a shrug in the other.
  *
- * WHAT THE MINI DROPS, and it is exactly the near-miss set. The main hold'em
- * rule is aces full of JACKS or better, PLUS an Ace in the hole cards, PLUS
- * both hole cards playing. The mini keeps the strength floor and drops the
- * other two, so the hands it catches are the ones a player would swear was a
- * bad beat and the main rule refused on a technicality. The main PLO rule is
- * quad KINGS or better; the mini takes any quads, which is every quad below
- * the main's floor.
+ * WHAT THE MINI DROPS. The main hold'em rule is aces full of JACKS or better,
+ * PLUS an Ace in the hole cards, PLUS both hole cards playing. The mini takes
+ * any aces full (the Jacks floor and the Ace-in-the-hole rule are dropped).
+ * The main PLO rule is quad KINGS or better; the mini takes any quads, which
+ * is every quad below the main's floor.
  *
  * WHAT IT DOES NOT DROP:
+ *
+ *   - BOTH HOLE CARDS MUST PLAY (Dan 2026-10-11: "BOTH cards must play for BBJ
+ *     or Mini BBJ"), for the losing hand and the winning hand, exactly as the
+ *     main applies it. Until that day the mini dropped this rule too, and it
+ *     paid board-quads hands where the player's own cards did nothing (board
+ *     3 3 3 3 5, a K-T "losing" to an 8-8) and aces full where one hole card
+ *     was dead weight (board A 6 K A A, an A-8). Omaha needs no check: exactly
+ *     two cards always play there. Fails closed without a board, like the main.
  *
  *   - the winner must still hold QUADS OR BETTER. Aces full losing to a bigger
  *     boat is a cooler, not a bad beat, and paying it was the 2026-08-18
@@ -1235,7 +1297,8 @@ export type BBJMiniNearMissReason =
   | 'mini_not_enough_players'
   | 'mini_pot_too_small'
   | 'mini_double_board'
-  | 'mini_winner_not_quads';
+  | 'mini_winner_not_quads'
+  | 'mini_both_cards_must_play';
 
 export interface BBJMiniNearMissResult {
   nearMiss: boolean;
@@ -1258,7 +1321,9 @@ export function detectMiniBBJNearMiss(
   potSize: number,
   bigBlind: number,
   numPlayersDealt: number,
-  context?: { doubleBoard?: boolean }
+  /** `board` is the final community cards (board one on a run-it-twice hand),
+   *  needed for the both-cards-must-play rule. */
+  context?: { doubleBoard?: boolean; board?: Array<{ rank: string; suit: string }> }
 ): BBJMiniNearMissResult {
   const none: BBJMiniNearMissResult = { nearMiss: false };
 
@@ -1355,6 +1420,23 @@ export function detectMiniBBJNearMiss(
     };
   }
 
+  /* BOTH HOLE CARDS MUST PLAY (Dan 2026-10-11), mirroring detectMiniBBJHit:
+     the winner must use both, and at least one loser over the bar must too -
+     the hit takes the strongest loser who passes, so a near miss is only
+     reported when none does. */
+  const board = context?.board;
+  const winnerPlays = bothCardsPlayOrRefuse(normalizedVariant, winner.holeCards || [], board);
+  const someLoserPlays = losers.some(
+    (l) => meetsMiniBar(l) && bothCardsPlayOrRefuse(normalizedVariant, l.holeCards || [], board)
+  );
+  if (!winnerPlays || !someLoserPlays) {
+    return {
+      ...base,
+      reason: 'mini_both_cards_must_play',
+      message: `So close! ${best.handName} lost to Quads - but the Mini needs BOTH hole cards to play.`,
+    };
+  }
+
   // Every gate cleared: this was a hit, not a near miss.
   return none;
 }
@@ -1373,7 +1455,10 @@ export function detectMiniBBJHit(
   bigBlind: number,
   numPlayersDealt: number,
   dealtInPlayerIds: string[],
-  context?: { doubleBoard?: boolean }
+  /** `board` is the final community cards (board one on a run-it-twice hand),
+   *  needed for the both-cards-must-play rule. Without it a hold'em-family
+   *  mini fails closed, exactly as the main does. */
+  context?: { doubleBoard?: boolean; board?: Array<{ rank: string; suit: string }> }
 ): BBJMiniDetectionResult {
   const noHit: BBJMiniDetectionResult = { hit: false };
 
@@ -1407,6 +1492,12 @@ export function detectMiniBBJHit(
   // A bad beat means beaten by something huge, in both tiers.
   if (winner.handRanking < HAND_RANK.FOUR_OF_A_KIND) return noHit;
 
+  /* BOTH HOLE CARDS MUST PLAY, IN THE MINI TOO (Dan 2026-10-11: "BOTH cards
+     must play for BBJ or Mini BBJ"). The same test the main applies, to the
+     winner and to the loser, failing closed without a board. */
+  const board = context?.board;
+  if (!bothCardsPlayOrRefuse(normalizedVariant, winner.holeCards || [], board)) return noHit;
+
   const isHoldemFamily = qualifying.handRank === 'full_house';
   /* A RANKED QUAD BAR BEATS THE FAMILY DEFAULT (Dan, 2026-09-12). PLO5/FLO5 is
      Quad Tens or better and Pineapple is Quad Deuces; every other game keeps
@@ -1427,6 +1518,7 @@ export function detectMiniBBJHit(
   let best: (typeof losers)[number] | null = null;
   for (const loser of losers) {
     if (!meetsMiniBar(loser)) continue;
+    if (!bothCardsPlayOrRefuse(normalizedVariant, loser.holeCards || [], board)) continue;
     if (
       best === null ||
       loser.handRanking > best.handRanking ||

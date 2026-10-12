@@ -42,6 +42,7 @@ on:
       - 'scripts/build-diamond-test.mjs'
       - 'scripts/dev/diamond-test-shots.mjs'
       - 'scripts/ci/diamond-visual-baseline.mjs'
+      - 'scripts/ci/diamond-visual-diff.mjs'
       - '.github/workflows/diamond-visual-baseline.yml'
 
 # A newer push supersedes older screenshots; nothing requires this check, so
@@ -57,7 +58,9 @@ jobs:
   shots:
     name: Diamond games visual baseline (informational)
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # Two builds and two sets of shots since 2026-10-01 (the pull request and
+    # the commit it merges into).
+    timeout-minutes: 40
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -136,6 +139,72 @@ jobs:
           BASELINE_ARTIFACT: diamond-visual-baseline-${{ github.event.pull_request.number }}-${{ github.run_attempt }}
         run: node scripts/ci/diamond-visual-baseline.mjs http://127.0.0.1:4173/hub/club-arena test-results/diamond-visual-baseline
 
+      # ── THE SAME FRAMES FROM THE COMMIT THIS MERGES INTO (2026-10-01) ─────
+      #
+      # A frame on its own says what the pull request draws; a reviewer needs
+      # what it CHANGED. The base commit's fixture page is built and shot with
+      # this pull request's own harness, so both sides are photographed the same
+      # way, and scripts/ci/diamond-visual-diff.mjs compares them frame by frame.
+      # Every base step is allowed to fail: an unbuildable base is reported in
+      # the summary as "nothing to compare", never as a red check, because this
+      # job informs and never gates.
+      - name: Check out the base commit
+        id: base-checkout
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: .diamond-base
+          persist-credentials: false
+
+      - name: Build the base commit's fixture page
+        id: base-build
+        if: steps.base-checkout.outcome == 'success'
+        continue-on-error: true
+        working-directory: .diamond-base
+        env:
+          VITE_SUPABASE_URL: https://example.supabase.co
+          VITE_SUPABASE_ANON_KEY: footer-probe-ci
+        run: |
+          ln -s "$GITHUB_WORKSPACE/node_modules" node_modules
+          node scripts/generate-webp-media.mjs
+          node scripts/generate-customization-thumbnails.mjs
+          npx vite build
+          node scripts/build-diamond-test.mjs
+          node scripts/self-host-fonts.mjs
+          test -f dist/diamond-test.html
+
+      - name: Serve the base commit's fixture page
+        id: base-serve
+        if: steps.base-build.outcome == 'success'
+        continue-on-error: true
+        working-directory: .diamond-base
+        run: |
+          nohup npx vite preview --host 127.0.0.1 --port 4174 --strictPort \
+            > /tmp/diamond-base-preview.log 2>&1 &
+          echo $! > /tmp/diamond-base-preview.pid
+          for _ in $(seq 1 40); do
+            curl -sf http://127.0.0.1:4174/hub/club-arena/diamond-test.html > /dev/null && exit 0
+            sleep 0.5
+          done
+          echo "::warning::the base fixture page never answered; nothing to compare"
+          cat /tmp/diamond-base-preview.log
+          exit 1
+
+      # The summary is the pull request's; the base run only writes frames
+      # (without GITHUB_STEP_SUMMARY the harness prints its table to the log).
+      - name: Screenshot the base commit the same way
+        id: base-shots
+        if: steps.base-serve.outcome == 'success'
+        continue-on-error: true
+        run: env -u GITHUB_STEP_SUMMARY node scripts/ci/diamond-visual-baseline.mjs http://127.0.0.1:4174/hub/club-arena test-results/diamond-visual-baseline/base
+
+      - name: Compare every frame with the base
+        if: always() && steps.shots.outcome != 'skipped'
+        env:
+          BASELINE_ARTIFACT: diamond-visual-baseline-${{ github.event.pull_request.number }}-${{ github.run_attempt }}
+        run: node scripts/ci/diamond-visual-diff.mjs test-results/diamond-visual-baseline/base test-results/diamond-visual-baseline test-results/diamond-visual-baseline/diff
+
       - name: Upload the frames
         if: always() && steps.shots.outcome != 'skipped'
         uses: actions/upload-artifact@v4
@@ -148,6 +217,8 @@ jobs:
       - name: Stop the preview
         if: always()
         run: |
-          pid=$(cat /tmp/diamond-baseline-preview.pid 2>/dev/null || echo "")
-          [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
+          for file in /tmp/diamond-baseline-preview.pid /tmp/diamond-base-preview.pid; do
+            pid=$(cat "$file" 2>/dev/null || echo "")
+            [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
+          done
           exit 0

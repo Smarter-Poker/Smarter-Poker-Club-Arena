@@ -1,0 +1,229 @@
+{
+  "started": "2026-09-30T11:47:51Z",
+  "postgres": "postgres (PostgreSQL) 17.11 (Homebrew)",
+  "node": "v24.15.0",
+  "engine_dist": "/Volumes/SmarterWork/agent-work/claude-p11/engine/server/dist",
+  "engine_commit": "be6bbbc65e7d174c7da05713ed108a4ed4a3b326",
+  "live_capture": "2026-09-30T11:34:19+00:00",
+  "fleet": {
+    "cash_tables": {
+      "chips": 6,
+      "diamonds": 4
+    },
+    "tournaments": {
+      "chips": 2,
+      "diamonds": 1
+    },
+    "tournament_tables": 6
+  },
+  "scenarios": {
+    "R1 release cutover": {
+      "start": 1790768873807,
+      "end": 1790768885482,
+      "outgoing": "A1",
+      "replacement": "A2",
+      "released_at": 1790768884918,
+      "replacement_held_fleet_after_s": 0.6,
+      "parked": {
+        "t": 1790768884388,
+        "engine": "A1",
+        "instance": "97139-a40ae772",
+        "ev": "parked",
+        "handsInFlight": 0
+      },
+      "stopped": {
+        "t": 1790768884907,
+        "engine": "A1",
+        "instance": "97139-a40ae772",
+        "ev": "stopped",
+        "reason": "SIGTERM",
+        "handsInFlightAtRelease": 0,
+        "tables": {
+          "status": "confirmed",
+          "releasedCount": 10,
+          "attempts": 1
+        },
+        "tournaments": {
+          "status": "confirmed",
+          "releasedCount": 3,
+          "attempts": 1
+        },
+        "leadership": "released"
+      }
+    },
+    "R2 crash restart": {
+      "start": 1790768885482,
+      "end": 1790768926559,
+      "crashed": "A2",
+      "restarted": "A3",
+      "killed_at": 1790768895483,
+      "restarted_held_fleet_after_s": 30.6
+    },
+    "R3 partition": {
+      "start": 1790768926559,
+      "end": 1790769020537,
+      "partitioned": "A3",
+      "successor": "B1",
+      "partitioned_at": 1790768936589,
+      "healed_at": 1790768974913,
+      "successor_held_fleet_after_s": 30.3,
+      "restarted_a": "A4",
+      "restarted_a_role": "standby"
+    },
+    "R4 two leaders at once": {
+      "start": 1790769020564,
+      "end": 1790769080768,
+      "killed": "C1",
+      "killed_at": 1790769050587,
+      "survivor_held_fleet_after_s": 25.1,
+      "split_while_both_ran": {
+        "C1": 2,
+        "D1": 11
+      }
+    },
+    "R5 busy settlement": {
+      "start": 1790769080768,
+      "end": 1790769086851,
+      "first_claim_granted": true,
+      "successor_waited_s": 4.99,
+      "successor_granted": true,
+      "settling_commit": "true|2026-09-30 06:51:26.819524-05",
+      "late_commit_after_takeover": "hand_lease_lost",
+      "commits": [
+        {
+          "ref": "probe-settling|3e96ea2e-5281-494d-ae7c-c9a16fd9c3af",
+          "hand_number": 1000001
+        }
+      ]
+    }
+  },
+  "authority_intervals": 67,
+  "overlaps": [],
+  "hands": {
+    "committed": 9016,
+    "committed_by_asset": {
+      "chips": 5560,
+      "diamonds": 3456
+    },
+    "engine_saw_refused": {
+      "transport:Error: supabase_timeout": 32
+    },
+    "committed_but_engine_never_heard": 0,
+    "committed_but_engine_never_heard_list": []
+  },
+  "late_writes_after_partition": {
+    "isolated_commit_hand": {
+      "hand_lease_lost": 32
+    },
+    "heartbeat_tournament_leases_v4": {
+      "taken": 1
+    },
+    "heartbeat_table_leases_v4": {
+      "taken": 1
+    },
+    "claim_engine_leadership": {
+      "refused": 3
+    },
+    "claim_table_lease_v2": {
+      "refused": 10
+    },
+    "claim_tournament_lease_v2": {
+      "refused": 3
+    }
+  },
+  "leadership_changes": [
+    {
+      "at": "2026-09-30T06:47:54.020261-05:00",
+      "op": "INSERT",
+      "instance_id": "97139-a40ae772"
+    },
+    {
+      "at": "2026-09-30T06:48:04.907497-05:00",
+      "op": "DELETE",
+      "instance_id": "97139-a40ae772"
+    },
+    {
+      "at": "2026-09-30T06:48:04.99691-05:00",
+      "op": "INSERT",
+      "instance_id": "98169-c6a3f501"
+    },
+    {
+      "at": "2026-09-30T06:48:46.259028-05:00",
+      "op": "UPDATE",
+      "instance_id": "98779-d2022b13"
+    },
+    {
+      "at": "2026-09-30T06:49:26.722358-05:00",
+      "op": "UPDATE",
+      "instance_id": "1532-aa354721"
+    },
+    {
+      "at": "2026-09-30T06:50:20.546733-05:00",
+      "op": "DELETE",
+      "instance_id": "1532-aa354721"
+    }
+  ],
+  "handovers": {
+    "R1 release cutover": {
+      "chips": {
+        "handovers": 8,
+        "min_gap_ms": 107,
+        "max_gap_ms": 110,
+        "from_reasons": ["shutdown:SIGTERM"]
+      },
+      "diamonds": {
+        "handovers": 5,
+        "min_gap_ms": 108,
+        "max_gap_ms": 109,
+        "from_reasons": ["shutdown:SIGTERM"]
+      }
+    },
+    "R2 crash restart": {
+      "chips": {
+        "handovers": 8,
+        "min_gap_ms": 30782,
+        "max_gap_ms": 30792,
+        "from_reasons": ["process_killed"]
+      },
+      "diamonds": {
+        "handovers": 5,
+        "min_gap_ms": 30788,
+        "max_gap_ms": 30792,
+        "from_reasons": ["process_killed"]
+      }
+    },
+    "R3 partition": {
+      "chips": {
+        "handovers": 8,
+        "min_gap_ms": 10461,
+        "max_gap_ms": 10469,
+        "from_reasons": ["proof_expired"]
+      },
+      "diamonds": {
+        "handovers": 5,
+        "min_gap_ms": 10466,
+        "max_gap_ms": 10469,
+        "from_reasons": ["proof_expired"]
+      }
+    },
+    "R4 two leaders at once": {
+      "chips": {
+        "handovers": 10,
+        "min_gap_ms": 100,
+        "max_gap_ms": 25095,
+        "from_reasons": ["process_killed", "shutdown:SIGTERM"]
+      },
+      "diamonds": {
+        "handovers": 5,
+        "min_gap_ms": 102,
+        "max_gap_ms": 104,
+        "from_reasons": ["shutdown:SIGTERM"]
+      }
+    },
+    "R5 busy settlement": {}
+  },
+  "database_takeovers": {
+    "count": 31,
+    "min_stale_for_s": 30.04963
+  }
+}

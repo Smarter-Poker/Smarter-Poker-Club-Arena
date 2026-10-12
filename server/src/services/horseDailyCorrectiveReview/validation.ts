@@ -1,11 +1,13 @@
 import { isAbsolute } from 'node:path';
 import {
   DAILY_LIMITS,
+  isDailyIdentityBasis,
   type DailyCursor,
   type DailyManifest,
   type DailyPage,
   type DailyRequest,
   type DailyRow,
+  type DailySelectionCursor,
 } from './contract.js';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 export const uuid = (v: unknown): v is string => typeof v === 'string' && UUID.test(v);
@@ -37,6 +39,9 @@ export function cursor(v: unknown): v is DailyCursor {
   );
 }
 export const cursorKey = (v: DailyCursor) => `${v.playedAt}|${v.handId}|${v.horseId}`;
+export function selectionCursor(v: unknown): v is DailySelectionCursor {
+  return object(v) && Object.keys(v).length === 2 && utcTime(v.playedAt) && uuid(v.handId);
+}
 export function validateRequest(v: DailyRequest): void {
   if (
     !v ||
@@ -84,7 +89,7 @@ export function parseDailyPage(raw: unknown, request: DailyRequest): DailyPage {
     typeof p.dayObservation !== 'string' ||
     !['present', 'missing'].includes(p.dayObservation) ||
     p.sourceCoverage !== 'not_established' ||
-    p.identityBasis !== 'current_profile_is_horse' ||
+    !isDailyIdentityBasis(p.identityBasis) ||
     p.gtoVerified !== false ||
     p.activationAllowed !== false
   )
@@ -156,7 +161,7 @@ export function parseDailyPage(raw: unknown, request: DailyRequest): DailyPage {
     next: next ? Object.freeze(next) : null,
     dayObservation: p.dayObservation as DailyPage['dayObservation'],
     sourceCoverage: 'not_established',
-    identityBasis: 'current_profile_is_horse',
+    identityBasis: p.identityBasis as DailyPage['identityBasis'],
     gtoVerified: false,
     activationAllowed: false,
   });
@@ -173,6 +178,10 @@ export function parseDailyManifest(raw: unknown): DailyManifest {
     (raw.after !== undefined &&
       raw.after !== null &&
       (!cursor(raw.after) || raw.after.playedAt.slice(0, 10) !== raw.day)) ||
+    (raw.selectionAfter !== undefined &&
+      raw.selectionAfter !== null &&
+      (!selectionCursor(raw.selectionAfter) ||
+        raw.selectionAfter.playedAt.slice(0, 10) !== raw.day)) ||
     !Array.isArray(raw.mappings) ||
     raw.mappings.length > DAILY_LIMITS.hands
   )
@@ -212,6 +221,9 @@ export function parseDailyManifest(raw: unknown): DailyManifest {
     version: 1,
     day: raw.day,
     after: cursor(raw.after) ? Object.freeze({ ...raw.after }) : null,
+    selectionAfter: selectionCursor(raw.selectionAfter)
+      ? Object.freeze({ playedAt: raw.selectionAfter.playedAt, handId: raw.selectionAfter.handId })
+      : null,
     journalDirectory: raw.journalDirectory,
     mappings: Object.freeze(mappings),
   });

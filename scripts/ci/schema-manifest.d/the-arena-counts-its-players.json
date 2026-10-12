@@ -1,0 +1,11 @@
+{
+  "_owner": "agent/claude-diamond-phase-10/feat/the-arena-counts-its-players",
+  "functions": [
+    "fn_diamond_arena_club",
+    "fn_diamond_arena_counts",
+    "fn_diamond_arena_is_player",
+    "fn_diamond_arena_open_tables",
+    "fn_diamond_arena_roster",
+    "fn_diamond_arena_seated_players"
+  ]
+}

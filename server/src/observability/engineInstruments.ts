@@ -783,6 +783,59 @@ for (const reason of [
 }
 
 /**
+ * ═══ EVERY PLAYER'S CLOCKS, COUNTED (2026-10-05) ═════════════════════════════
+ *
+ * The four horse series above count the input device failing a horse. Nothing
+ * counted the same events for a person, so "how often does a human's clock
+ * run out, how often is somebody sat out by the ladder, how long are players
+ * gone when they drop" had no answer outside the database. These sit NEXT TO
+ * the horse series, not instead of them (aHorseActionReleasesItsClocks pins
+ * those), and are observation only: no gameplay decision reads them.
+ *
+ *   turn_timeouts       a seat's turn resolved by the clock: kind=timer (the
+ *                       action clock) or timebank (an automatic or manual bank
+ *                       ran out). audience is the SEAT (human|horse), format
+ *                       the table's.
+ *   forced_sit_outs     the consecutive-timeout ladder sat a seat out.
+ *   disconnect_seconds  how long a player was gone, observed on the reconnect
+ *                       edge (the first proof of life after a disconnect).
+ *   disconnect_auto_actions  the presence engine acted for a seat:
+ *                       action=fold|check, reason=timeout (reconnect allowance
+ *                       ran out) | sitting_out (a sat-out seat's turn).
+ *
+ * Bounded labels only, never a table or user id (CLAUDE.md 10.5: horses are
+ * counted exactly as people are; the label says which, nothing else differs).
+ */
+export const turnTimeoutsTotal: Counter = alwaysOnRegistry.counter(
+  'poker_turn_timeouts_total',
+  'Seat turns resolved by the clock (labels: kind=timer|timebank, audience=human|horse for the seat, format=cash|spin|hu_sng|sng|mtt)'
+);
+export const forcedSitOutsTotal: Counter = alwaysOnRegistry.counter(
+  'poker_forced_sit_outs_total',
+  'Seats sat out by the consecutive-timeout ladder (labels: audience=human|horse for the seat, format)'
+);
+export const disconnectSeconds: Histogram = alwaysOnRegistry.histogram(
+  'poker_disconnect_seconds',
+  'How long a player was disconnected, observed when their first proof of life arrives (seconds)',
+  [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 1800, 3600]
+);
+export const disconnectAutoActionsTotal: Counter = alwaysOnRegistry.counter(
+  'poker_disconnect_auto_actions_total',
+  'Actions the presence engine took for an absent or sat-out seat (labels: action=fold|check, reason=timeout|sitting_out)'
+);
+for (const audience of ['human', 'horse']) {
+  for (const format of ['cash', 'spin', 'hu_sng', 'sng', 'mtt']) {
+    for (const kind of ['timer', 'timebank']) turnTimeoutsTotal.inc(0, { kind, audience, format });
+    forcedSitOutsTotal.inc(0, { audience, format });
+  }
+}
+for (const action of ['fold', 'check']) {
+  for (const reason of ['timeout', 'sitting_out']) {
+    disconnectAutoActionsTotal.inc(0, { action, reason });
+  }
+}
+
+/**
  * A tournament finish the database DEFINITIVELY REFUSED, by why (2026-09-17,
  * phase 3 of the horse programme).
  *

@@ -1449,7 +1449,11 @@ describe('Phase 6 live wiring', () => {
     expect(turns).toContain('state.dealerSeat ?? this.currentHandDealerSeat');
     expect(turns).toContain('gameVariant: activeVariant');
     expect(turns).toContain("format: contextStatus === 'complete'");
-    expect(turns).toContain("nextSmallBlind: contextStatus === 'complete'");
+    // Projected urgency reaches the worker only under the complete-context
+    // contract, through one level clock shared by M and the published fields.
+    expect(turns).toMatch(/contextStatus !== 'complete'\s*\?\s*\{\s*nextSmallBlind: null,/);
+    expect(turns).toContain('nextSmallBlind: levelClock.nextSmallBlind');
+    expect(turns).toContain('minutesToNextLevel: levelClock.nextBlindInMin');
     expect(logic).toContain('classifyTournamentPreflopBranch');
     expect(logic).toContain('tournamentPreflopPolicy');
     expect(logic).toContain("noteFire('phase6_tournament_context_incomplete')");

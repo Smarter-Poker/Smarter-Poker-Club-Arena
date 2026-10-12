@@ -1,3 +1,4 @@
+import { titleCase } from '../../utils/titleCase';
 import { getTournamentEntryCapacity } from '../../utils/tournamentPresentation';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -1047,9 +1048,6 @@ export default function ClubDashboard() {
           <Link to={`/clubs/${clubId}/announcements`} className={styles.actionBtn}>
             Announce
           </Link>
-          <Link to={`/financial-health`} className={styles.actionBtn}>
-            Health
-          </Link>
           <Link to={`/financial-admin`} className={styles.actionBtn}>
             Admin Hub
           </Link>
@@ -1151,7 +1149,7 @@ export default function ClubDashboard() {
           {loading
             ? 'Refreshing...'
             : lastUpdated
-              ? `Updated ${formatAgo(lastUpdated, nowTick)}`
+              ? titleCase(`Updated ${formatAgo(lastUpdated, nowTick)}`)
               : ''}
         </span>
         <button
@@ -1263,7 +1261,7 @@ export default function ClubDashboard() {
 
               <div className={styles.leaderboard}>
                 {rankedPlayers.length === 0 ? (
-                  <p className={styles.empty}>No Hands Played {rangeLabel}</p>
+                  <p className={styles.empty}>No Hands Played {titleCase(rangeLabel)}</p>
                 ) : (
                   rankedPlayers.slice(0, LEADERBOARD_VISIBLE).map((player) => (
                     <Link

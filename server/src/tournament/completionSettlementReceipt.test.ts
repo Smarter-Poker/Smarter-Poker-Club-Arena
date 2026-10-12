@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { verifyTournamentCompletionReceipt } from './completionSettlementReceipt.js';
+import {
+  parseLegacyFeeCustodyOrigin,
+  verifyTournamentCompletionReceipt,
+} from './completionSettlementReceipt.js';
 
 const TOURNAMENT_ID = '11111111-2222-4333-8444-555555555555';
 const WINNER_ID = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
@@ -364,6 +367,16 @@ describe('historical nonzero full lifecycle captures', () => {
 
 describe('bounded original fee custody terminal receipts', () => {
   const id = 'f370585d-40ea-4085-bb8f-c7e8c74f3fb4';
+  /** What fn_ca_legacy_fee_custody_origin returns for f370585d. */
+  const ORIGIN = {
+    tournamentId: id,
+    amount: 17,
+    sourceFingerprint: 'f67bf12ee0b00c954b6f8403de9718fe',
+    sourceCount: 34,
+    recognizedSourceCount: 0,
+  };
+  /** The same event once its 34 original sources are recognized. */
+  const RECOGNIZED = { ...ORIGIN, recognizedSourceCount: 34 };
   function custodyReceipt(): any {
     const r = receipt();
     r.tournament_id = id;
@@ -410,8 +423,69 @@ describe('bounded original fee custody terminal receipts', () => {
     };
     return r;
   }
+  it('accepts a September 8 event only against the custody origin the database holds for it', () => {
+    // 2026-10-02 02:16Z: 26 events of the legacy fee custody cohort (launched by
+    // 20261001225325) committed their terminal receipt, paid each winner once and
+    // held the fee in custody, yet the engine called every one "outcome unknown"
+    // because it recognised only a hard-coded list of older custody events.
+    const event = '659d3ec6-c584-42ea-956d-5fc2004ba566';
+    const fingerprint = 'b87bf1237b4dd2802dcb09a205838c96';
+    const r = custodyReceipt();
+    r.tournament_id = event;
+    r.rake.amount = 2;
+    r.escrow.fee_balance = 2;
+    Object.assign(r.rake.accounting, {
+      tournament_id: event,
+      held_amount: 2,
+      current_held_amount: 2,
+      source_fingerprint: fingerprint,
+      source_count: 2,
+    });
+    const origin = parseLegacyFeeCustodyOrigin(
+      {
+        tournament_id: event,
+        amount: 2.0,
+        source_fingerprint: fingerprint,
+        source_count: 2,
+        recognized_source_count: 0,
+      },
+      event
+    );
+    expect(origin).not.toBeNull();
+    expect(
+      verifyTournamentCompletionReceipt(r, event, 'places', WINNER_ID, origin)?.rake
+    ).toMatchObject({ amount: 2, accountingState: 'fee_custody_unresolved' });
+    // No origin read from the database: nothing proves the custody, so no receipt.
+    expect(verifyTournamentCompletionReceipt(r, event, 'places', WINNER_ID)).toBeNull();
+    // The origin must be this event's and must match the custody field for field.
+    expect(verifyTournamentCompletionReceipt(r, event, 'places', WINNER_ID, ORIGIN)).toBeNull();
+    expect(
+      verifyTournamentCompletionReceipt(r, event, 'places', WINNER_ID, {
+        ...origin!,
+        sourceFingerprint: '0'.repeat(32),
+      })
+    ).toBeNull();
+    expect(
+      verifyTournamentCompletionReceipt(r, event, 'places', WINNER_ID, { ...origin!, amount: 2.01 })
+    ).toBeNull();
+    expect(
+      verifyTournamentCompletionReceipt(r, event, 'places', WINNER_ID, {
+        ...origin!,
+        sourceCount: 1,
+      })
+    ).toBeNull();
+    // A database answer for another event, or a malformed one, is no origin at all.
+    expect(parseLegacyFeeCustodyOrigin({ tournament_id: id, amount: 2 }, event)).toBeNull();
+    expect(parseLegacyFeeCustodyOrigin(null, event)).toBeNull();
+  });
   it('accepts exact final player result while preserving 17 original fee chips', () => {
-    const parsed = verifyTournamentCompletionReceipt(custodyReceipt(), id, 'places', WINNER_ID);
+    const parsed = verifyTournamentCompletionReceipt(
+      custodyReceipt(),
+      id,
+      'places',
+      WINNER_ID,
+      ORIGIN
+    );
     expect(parsed?.rake).toMatchObject({
       amount: 17,
       destination: 'tournament_escrow',
@@ -504,7 +578,9 @@ describe('bounded original fee custody terminal receipts', () => {
   ])('refuses %s', (_label, change) => {
     const r = custodyReceipt();
     change(r);
-    expect(verifyTournamentCompletionReceipt(r, r.tournament_id, 'places', WINNER_ID)).toBeNull();
+    expect(
+      verifyTournamentCompletionReceipt(r, r.tournament_id, 'places', WINNER_ID, ORIGIN)
+    ).toBeNull();
   });
   it.each([
     ['1ffbd637-9241-4957-902f-3a75e09892c0', 127.5, '53fd19518004de9991312c0aaa749705', 85],
@@ -529,11 +605,21 @@ describe('bounded original fee custody terminal receipts', () => {
         source_fingerprint: fingerprint,
         source_count: count,
       });
+      const origin = {
+        tournamentId: String(event),
+        amount: Number(amount),
+        sourceFingerprint: String(fingerprint),
+        sourceCount: Number(count),
+        recognizedSourceCount: 0,
+      };
       expect(
-        verifyTournamentCompletionReceipt(r, String(event), 'places', WINNER_ID)?.rake.amount
+        verifyTournamentCompletionReceipt(r, String(event), 'places', WINNER_ID, origin)?.rake
+          .amount
       ).toBe(amount);
       r.rake.accounting.source_fingerprint = '0'.repeat(32);
-      expect(verifyTournamentCompletionReceipt(r, String(event), 'places', WINNER_ID)).toBeNull();
+      expect(
+        verifyTournamentCompletionReceipt(r, String(event), 'places', WINNER_ID, origin)
+      ).toBeNull();
     }
   );
   it('accepts an exact later recognition while preserving the original terminal header', () => {
@@ -559,9 +645,17 @@ describe('bounded original fee custody terminal receipts', () => {
       bank_receipt_kind: 'chip_ledger',
     };
     expect(
-      verifyTournamentCompletionReceipt(r, id, 'places', WINNER_ID)?.rake.accountingState
+      verifyTournamentCompletionReceipt(r, id, 'places', WINNER_ID, RECOGNIZED)?.rake
+        .accountingState
     ).toBe('recognized');
     // One Spin fee record covers three original paid contributors.
+    const spinOrigin = {
+      tournamentId: '199a71a9-f364-4e90-a3ba-3cdcfb7755bc',
+      amount: 1.2,
+      sourceFingerprint: 'ceeb0817a40a48f9e7cfdac3883036b7',
+      sourceCount: 1,
+      recognizedSourceCount: 3,
+    };
     const spin = structuredClone(r);
     spin.tournament_id = '199a71a9-f364-4e90-a3ba-3cdcfb7755bc';
     spin.rake.amount = 1.2;
@@ -578,21 +672,27 @@ describe('bounded original fee custody terminal receipts', () => {
       recognized_source_count: 3,
     });
     expect(
-      verifyTournamentCompletionReceipt(spin, spin.tournament_id, 'places', WINNER_ID)?.rake
-        .accountingState
+      verifyTournamentCompletionReceipt(spin, spin.tournament_id, 'places', WINNER_ID, spinOrigin)
+        ?.rake.accountingState
     ).toBe('recognized');
     spin.rake.accounting.resolution.recognized_source_count = 1;
     expect(
-      verifyTournamentCompletionReceipt(spin, spin.tournament_id, 'places', WINNER_ID)
+      verifyTournamentCompletionReceipt(spin, spin.tournament_id, 'places', WINNER_ID, spinOrigin)
     ).toBeNull();
     const changed = structuredClone(r);
     changed.rake.accounting.resolution.recognized_source_count = 1;
-    expect(verifyTournamentCompletionReceipt(changed, id, 'places', WINNER_ID)).toBeNull();
+    expect(
+      verifyTournamentCompletionReceipt(changed, id, 'places', WINNER_ID, RECOGNIZED)
+    ).toBeNull();
     changed.rake.accounting.resolution.recognized_source_count = 34;
     changed.rake.accounting.resolution.bank_amount = 16.99;
-    expect(verifyTournamentCompletionReceipt(changed, id, 'places', WINNER_ID)).toBeNull();
+    expect(
+      verifyTournamentCompletionReceipt(changed, id, 'places', WINNER_ID, RECOGNIZED)
+    ).toBeNull();
     changed.rake.accounting.resolution.bank_amount = 17;
     changed.rake.accounting.resolution.source_fingerprint = '0'.repeat(32);
-    expect(verifyTournamentCompletionReceipt(changed, id, 'places', WINNER_ID)).toBeNull();
+    expect(
+      verifyTournamentCompletionReceipt(changed, id, 'places', WINNER_ID, RECOGNIZED)
+    ).toBeNull();
   });
 });

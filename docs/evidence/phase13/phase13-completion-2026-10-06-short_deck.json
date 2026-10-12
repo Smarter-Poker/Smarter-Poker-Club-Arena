@@ -1,0 +1,83 @@
+{
+  "schema": "horse-phase13-completion-v1",
+  "definition": "horse-phase13-completion-definition-v1",
+  "variant": "short_deck",
+  "packVersion": "joint-multiway-round1-v4",
+  "releaseSha": "ffbd89d60094041d4bd8af49bea28f90b371b469",
+  "policyDigestDefinition": "horse-phase13-policy-digest-v1",
+  "policyDigest": "c130b74d598c5c858a6ca650e382b0c6c050135ac06c72300faed78e23e40dca",
+  "gameMode": "cash",
+  "window": {
+    "from": "2026-10-06T09:02:00Z",
+    "to": "2026-10-06T09:50:00Z",
+    "releaseUnchanged": true,
+    "source": "engine host archive segments, closed files only, read 2026-10-06T09:51Z-09:56Z; release label and StartedAt 2026-10-06T08:55:19.997907879Z identical at 09:02:30Z and 09:50:21Z"
+  },
+  "streets": {
+    "preflop": {
+      "eligible": 0,
+      "completed": 0,
+      "workBudget": 0,
+      "samplerBudgetExhausted": 0,
+      "sampleUnavailable": 0,
+      "governorReduced": 0,
+      "responseBranchUnavailable": 0
+    },
+    "flop": {
+      "eligible": 4,
+      "completed": 4,
+      "workBudget": 0,
+      "samplerBudgetExhausted": 0,
+      "sampleUnavailable": 0,
+      "governorReduced": 0,
+      "responseBranchUnavailable": 0
+    },
+    "turn": {
+      "eligible": 3,
+      "completed": 2,
+      "workBudget": 1,
+      "samplerBudgetExhausted": 0,
+      "sampleUnavailable": 0,
+      "governorReduced": 0,
+      "responseBranchUnavailable": 0
+    },
+    "river": {
+      "eligible": 2,
+      "completed": 2,
+      "workBudget": 0,
+      "samplerBudgetExhausted": 0,
+      "sampleUnavailable": 0,
+      "governorReduced": 0,
+      "responseBranchUnavailable": 0
+    }
+  },
+  "boardCounts": {
+    "1": {
+      "eligible": 0,
+      "completed": 0,
+      "workBudget": 0,
+      "samplerBudgetExhausted": 0,
+      "sampleUnavailable": 0,
+      "governorReduced": 0,
+      "responseBranchUnavailable": 0
+    },
+    "2": {
+      "eligible": 9,
+      "completed": 8,
+      "workBudget": 1,
+      "samplerBudgetExhausted": 0,
+      "sampleUnavailable": 0,
+      "governorReduced": 0,
+      "responseBranchUnavailable": 0
+    },
+    "3": {
+      "eligible": 0,
+      "completed": 0,
+      "workBudget": 0,
+      "samplerBudgetExhausted": 0,
+      "sampleUnavailable": 0,
+      "governorReduced": 0,
+      "responseBranchUnavailable": 0
+    }
+  }
+}

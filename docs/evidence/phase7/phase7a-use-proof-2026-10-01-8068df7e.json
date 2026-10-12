@@ -1,0 +1,274 @@
+{
+  "containerName": "phase7a-use-proof-20261001t010910z",
+  "startedAt": "2026-10-01T01:09:10.182256+00:00",
+  "release": "8068df7e66563a1a88635ce0909198438dcc884c",
+  "recordsRelease": "8068df7e66563a1a88635ce0909198438dcc884c",
+  "scriptSha256": "937a1a44f95d0900f4d61e060900c1ce4614e669f54c55bdc809e0b4e2d11dca",
+  "commandLine": "python3 /Volumes/SmarterWork/agent-work/horse-brain-phase7-20260930-01a09144/phase7-observer/phase7a-use-proof-observe.py 8068df7e66563a1a88635ce0909198438dcc884c 2026-10-01T01:04:00Z 2026-10-01T01:09:00Z /Volumes/SmarterArchives/agent-evidence/horse-brain-resume-20260930-01a09144/phase7/natural-8068-window",
+  "servingHealthBefore": {
+    "ok": true,
+    "releaseSha": "8068df7e66563a1a88635ce0909198438dcc884c",
+    "horseJournal": {
+      "mode": "ready",
+      "pausedReason": null,
+      "pausedSince": null,
+      "failedSince": null,
+      "lastFailureReason": null,
+      "records": 4410492,
+      "maxRowid": 25144262,
+      "pendingSegments": 0,
+      "queued": 7,
+      "publishers": {
+        "total": 2,
+        "byMode": {
+          "ready": 2
+        }
+      }
+    }
+  },
+  "execution": {
+    "containerName": "phase7a-use-proof-20261001t010910z",
+    "release": "8068df7e66563a1a88635ce0909198438dcc884c",
+    "recordsRelease": "8068df7e66563a1a88635ce0909198438dcc884c",
+    "imageId": "sha256:432f1dbc5f6cb7b46be85720a0e7464b2e2cfb8156ddc7b400cc21693600ebe3",
+    "servingContainer": "795943c6f66b79f5fe565ce8a6797d6d936036e45617fe245cc736ef0580ef83",
+    "servingStartedAt": "2026-10-01T00:55:29.40612326Z",
+    "horseJournalMountVerified": true,
+    "readOnly": true,
+    "network": "none",
+    "memoryBytes": 1073741824,
+    "cpus": 1.0,
+    "deadlineSeconds": 300,
+    "exitCode": 0,
+    "wallSeconds": 121.5,
+    "stderrBytes": 0,
+    "oomKilled": false,
+    "containerExitCode": 0,
+    "cleanupExitCode": 0,
+    "stdoutBytes": 5029,
+    "observation": {
+      "version": "phase7a-use-proof-v1",
+      "status": "observed",
+      "reason": null,
+      "selector": {
+        "release": "8068df7e66563a1a88635ce0909198438dcc884c",
+        "since": "2026-10-01T01:04:00Z",
+        "until": "2026-10-01T01:09:00Z",
+        "sinceMs": 1790816640000,
+        "untilMs": 1790816940000,
+        "recordsRelease": "8068df7e66563a1a88635ce0909198438dcc884c",
+        "timeBasis": "committed accepted_hand receipt atMs",
+        "range": "[since,until)",
+        "candidateBasis": "newest bounded catalog key rows, deduplicated newest-first"
+      },
+      "limits": {
+        "catalogRowsPerShard": 8192,
+        "handsPerShard": 512,
+        "shards": 16,
+        "recordsPerHand": 256,
+        "bytesPerHand": 8388608,
+        "totalRecords": 131072,
+        "workSeconds": 240
+      },
+      "compiledHashes": {
+        "engine/HorseLogic": "35789c499ce9d4adf07e713dfaf8bcd08aca7725557c3fe751d09f0b3c8704ad",
+        "engine/HorseExecutionWitness": "8c629d74cb457ae38d7b391e8e6b73054e9cf3b12bebb8c49bc3f40193fa2910",
+        "engine/HorseTournamentUtilityEvidence": "eb0f7cdbd4f91e6a0d0b4de4720c8077b2b80f66785eb98480998110879826b8",
+        "engine/HorseTournamentUtility": "8caeb2d96cc22fa9696acd81a9a307f034aab06bf9e46d9fc24315ee36c9b3f5",
+        "engine/IcmModel": "03c4f9bcbf7f918da1630ccc7e34ee881f82381bb9c80e70cecfa8fd8cf876ee",
+        "engine/HorseDecisionReadFrame": "4c0df10a5fb16cc18e7e4e9fea30ca84c9f8ff6e7690fad82b6b5255403179e5",
+        "engine/HorseMind": "ebbb4e6c7320d514a0d423e4ce8e22f1d890997049b003d002b00e9c5c0b3809",
+        "engine/HorseObservationWindow": "1c66cd25a6a8b0801b55419afefa0b4887ce69f9c2a45fad18384dc53a96c4b5",
+        "services/HorseMindPersistence": "60c72c22309a2e8946a50b34ed7412945473dced97503b24bf50bc05a68f118d",
+        "engine/horseDecision/responseValidation": "64da82465068e41c622ad581280d7e7dd9778264aa172de03c2764a8a742313e",
+        "engine/horseDecision/workerRuntime": "1569d35850ba9f9423dcde3a08f3f4d088abfaf4af15590ff94b02ace2d39a10",
+        "services/horseDecisionJournal/config": "8a5da6b8793529c4ffd4ff469bd455b514791576cfbda8e753760fb28a759473",
+        "services/horseDecisionJournal/store": "bf5e313de464194199e6450f36b350f949bddae8c2e792f92921191aab194894",
+        "services/horseDecisionJournal/record": "eccfdc11ae22143fe8aebb92f4ec2817d842e1d8eab1a77f4b825eb93ebbc0a7",
+        "services/horseDecisionJournal/review": "803ad3b90e354772093c4ce83a97d9c44876e9e744222bc3f8b538830dfd25c3"
+      },
+      "shards": [
+        {
+          "name": "archive",
+          "catalogRows": 8192,
+          "candidateHands": 512,
+          "catalogRowBoundReached": true,
+          "candidateHandBoundReached": true
+        },
+        {
+          "name": "archive-shard-1",
+          "catalogRows": 8192,
+          "candidateHands": 512,
+          "catalogRowBoundReached": true,
+          "candidateHandBoundReached": true
+        }
+      ],
+      "counts": {
+        "catalogRows": 16384,
+        "candidates": 1024,
+        "duplicateCandidates": 0,
+        "handsRead": 1024,
+        "candidateRecordTimes": {
+          "basis": "all_read_candidate_records_atMs",
+          "minAtMs": 1790816802277,
+          "maxAtMs": 1790817023133,
+          "beforeWindow": 0,
+          "withinWindow": 9265,
+          "atOrAfterWindow": 7594,
+          "invalidAtMs": 0
+        },
+        "readUnavailable": 0,
+        "recordsRead": 16859,
+        "recordsSelected": 6118,
+        "recordsOtherRelease": 0,
+        "recordsOutsideWindow": 7594,
+        "handsWithSelectedRecords": 414,
+        "handsOutsideCompletionWindow": 610,
+        "selectedCompletionReceipts": 414,
+        "mixedReleaseHands": 0,
+        "utilityAbsent": 635,
+        "utilityLegacy": 0,
+        "utilityEvidence": 785,
+        "phase7Evidence": 785,
+        "invalidUtility": 0,
+        "originalFrameDigestMatched": 785,
+        "compactEvidencePresent": 785,
+        "executionMissingOrConflicted": 0,
+        "verifiedIntended": 770,
+        "verifiedCoerced": 0,
+        "verifiedRetired": 15,
+        "evidenceNotReconciled": 0,
+        "handReview": {
+          "reconciled": 414
+        },
+        "gaps": {},
+        "byFormat": {
+          "hu_sng": 256,
+          "mtt": 275,
+          "spin": 254
+        },
+        "byVariant": {
+          "plo4": 281,
+          "nlh": 407,
+          "plo5": 71,
+          "plo6": 26
+        },
+        "byStreet": {
+          "preflop": 613,
+          "flop": 85,
+          "turn": 50,
+          "river": 37
+        },
+        "byBoards": {
+          "1": 785
+        },
+        "byModel": {
+          "horse-tournament-utility-phase7-round1": 785
+        },
+        "byObjective": {
+          "sng": 256,
+          "mtt_payout": 257,
+          "spin_chip_ev": 254,
+          "pko": 18
+        },
+        "byOutcomeModel": {
+          "conditioned_showdown_samples": 785
+        },
+        "byResponseModel": {
+          "mdf-strength-v1": 785
+        },
+        "byCalibration": {
+          "uncalibrated": 785
+        },
+        "byScope": {
+          "omaha:hu": 234,
+          "holdem:short": 177,
+          "holdem:hu": 178,
+          "holdem:full": 52,
+          "omaha:short": 83,
+          "omaha:full": 61
+        },
+        "byObservationStatus": {
+          "captured": 785
+        },
+        "byStatisticsSource": {
+          "pooled": 995,
+          "family_size": 122
+        },
+        "byRecencySource": {
+          "pooled": 1117
+        },
+        "byObservationWindow": {
+          "contribution_envelope": 785
+        },
+        "byObservationCoverage": {
+          "partial": 784,
+          "complete": 1
+        },
+        "byStatisticsCoverage": {
+          "partial": 1115,
+          "complete": 2
+        },
+        "byRecencyCoverage": {
+          "partial": 1117
+        },
+        "byIcmMethod": {
+          "exact_mh": 545,
+          "plackett_luce_mc": 240
+        },
+        "bySampleBand": {
+          "65-plus": 544,
+          "17-64": 241
+        },
+        "byEffectiveSampleBand": {
+          "65-plus": 544,
+          "17-64": 241
+        },
+        "byExecutionStatus": {
+          "intended": 770,
+          "not_executed": 15
+        },
+        "byRetirementReason": {
+          "second_look_unchanged": 15
+        }
+      },
+      "stoppedByBound": null,
+      "completedCandidateSweep": true,
+      "selectedManifestsSha256": "fd972f8d022c6d2904695a3749ac24c41eace1fc9541c39a713c69495ac3572c",
+      "durationMs": 121231,
+      "completePopulation": false,
+      "replayVerified": false,
+      "gtoVerified": false,
+      "calibrationVerified": false,
+      "learningVerified": false,
+      "activationAllowed": false,
+      "limitation": "Finite retained sample only. Completed-hand receipt source and capture time select the declared window; all joined records must match the exact release. Earlier decisions are retained to reconcile that completed hand. Missing records remain gaps. Response-model calibration and exact historical observation windows are not established."
+    },
+    "sameServingIdentityAfter": true,
+    "observerRemoved": true,
+    "scratchRemoved": true
+  },
+  "servingHealthAfter": {
+    "ok": true,
+    "releaseSha": "8068df7e66563a1a88635ce0909198438dcc884c",
+    "horseJournal": {
+      "mode": "ready",
+      "pausedReason": null,
+      "pausedSince": null,
+      "failedSince": null,
+      "lastFailureReason": null,
+      "records": 4409360,
+      "maxRowid": 25156095,
+      "pendingSegments": 0,
+      "queued": 10,
+      "publishers": {
+        "total": 2,
+        "byMode": {
+          "ready": 2
+        }
+      }
+    }
+  },
+  "finishedAt": "2026-10-01T01:11:16.815425+00:00",
+  "completedObservation": true
+}

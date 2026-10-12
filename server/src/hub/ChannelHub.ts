@@ -114,6 +114,7 @@ export class ChannelHub {
   // permanently. A user is now allowed several sockets; subscriptions are
   // torn down only when the LAST one closes.
   private connections: Map<string, Set<WebSocket>> = new Map();
+  private privateSenders = new WeakMap<WebSocket, (data: string) => void>();
 
   /** Cap per user — bounds a leak or a hostile client, generous for real use. */
   private static readonly MAX_SOCKETS_PER_USER = 8;
@@ -153,7 +154,8 @@ export class ChannelHub {
    * Register a new authenticated connection. A user may hold several live
    * sockets (tabs/devices); beyond MAX_SOCKETS_PER_USER the OLDEST is closed.
    */
-  addConnection(userId: string, ws: WebSocket): void {
+  addConnection(userId: string, ws: WebSocket, sendPrivate?: (data: string) => void): void {
+    if (sendPrivate) this.privateSenders.set(ws, sendPrivate);
     let set = this.connections.get(userId);
     if (!set) {
       set = new Set();
@@ -188,6 +190,7 @@ export class ChannelHub {
   removeConnection(userId: string, closingWs?: WebSocket): void {
     const set = this.connections.get(userId);
     if (closingWs) {
+      this.privateSenders.delete(closingWs);
       // Late close of a socket that is no longer registered (already evicted,
       // or torn down by a previous full removal) — nothing to do. This is the
       // same reconnect-race guard as before, generalised to the multi-socket
@@ -258,10 +261,7 @@ export class ChannelHub {
         event: 'join',
         changed: userPresence,
       };
-      for (const memberId of members) {
-        if (memberId === userId) continue;
-        this.sendToUserSockets(memberId, joinMsg);
-      }
+      this.fanOut(members, joinMsg, userId);
     }
   }
 
@@ -287,9 +287,7 @@ export class ChannelHub {
       event: 'leave',
       changed: leavingPresence,
     };
-    for (const memberId of members) {
-      this.sendToUserSockets(memberId, leaveMsg);
-    }
+    this.fanOut(members, leaveMsg);
   }
 
   /**
@@ -358,9 +356,7 @@ export class ChannelHub {
   broadcastToClub(clubId: string, msg: OutboundMessage): void {
     const members = this.clubSubs.get(clubId);
     if (!members) return;
-    for (const userId of members) {
-      this.sendToUserSockets(userId, msg);
-    }
+    this.fanOut(members, msg);
   }
 
   /**
@@ -369,18 +365,14 @@ export class ChannelHub {
   broadcastToTournament(tournamentId: string, msg: OutboundMessage): void {
     const members = this.tournamentSubs.get(tournamentId);
     if (!members) return;
-    for (const userId of members) {
-      this.sendToUserSockets(userId, msg);
-    }
+    this.fanOut(members, msg);
   }
 
   /**
    * Send a message to all lobby subscribers.
    */
   broadcastToLobby(msg: OutboundMessage): void {
-    for (const userId of this.lobbySubscribers) {
-      this.sendToUserSockets(userId, msg);
-    }
+    this.fanOut(this.lobbySubscribers, msg);
   }
 
   /**
@@ -397,17 +389,33 @@ export class ChannelHub {
    */
   broadcastLobbyUpdate(): void {
     if (this.lobbySubscribers.size === 0) return;
+    this.broadcastToLobby(this.lobbyUpdateMessage());
+  }
 
+  /**
+   * The same LOBBY_UPDATE, to ONE user (every tab they hold). This is what a
+   * JOIN_LOBBY answers with: the joiner needs the current counts, and nobody
+   * else learns anything from a lobby join - it changes no club's online
+   * count. Answering a join with broadcastLobbyUpdate() sent N messages per
+   * join, so N clients arriving together (a reconnect storm after every
+   * engine restart) cost N(N+1)/2 sends on the main loop. Measured
+   * 2026-09-30, Diamond Phase 11 line 5 (docs/evidence/diamond-phase-11/
+   * operating-envelope.md).
+   */
+  sendLobbyUpdateTo(userId: string): void {
+    if (!this.lobbySubscribers.has(userId)) return;
+    this.sendToUserSockets(userId, this.lobbyUpdateMessage());
+  }
+
+  private lobbyUpdateMessage(): LobbyUpdateMsg {
     const clubCounts: Record<string, number> = {};
     for (const [clubId, members] of this.clubSubs) {
       clubCounts[clubId] = members.size;
     }
-
-    const msg: LobbyUpdateMsg = {
+    return {
       type: 'LOBBY_UPDATE',
       payload: { clubOnlineCounts: clubCounts, ts: Date.now() },
     };
-    this.broadcastToLobby(msg);
   }
 
   /**
@@ -417,7 +425,10 @@ export class ChannelHub {
   sendWs(ws: WebSocket, msg: OutboundMessage): void {
     if (ws.readyState !== 1 /* ws.OPEN */) return;
     try {
-      ws.send(JSON.stringify(msg));
+      const privateSend = this.privateSenders.get(ws);
+      if (privateSend && (msg.type === 'FINANCIAL_UPDATE' || msg.type === 'HAND_REPLAY_EVENT'))
+        privateSend(JSON.stringify(msg));
+      else ws.send(JSON.stringify(msg));
     } catch {
       /* swallow — transport error handled by ws.on('error') */
     }
@@ -425,9 +436,37 @@ export class ChannelHub {
 
   /** Send to EVERY live socket a user holds (all tabs / devices). */
   private sendToUserSockets(userId: string, msg: OutboundMessage): void {
-    const set = this.connections.get(userId);
-    if (!set) return;
-    for (const ws of set) this.sendWs(ws, msg);
+    this.fanOut([userId], msg);
+  }
+
+  /**
+   * Every fan-out serializes ONCE (the TableStateHub C16 rule, 2026-08-15).
+   * sendWs stringified inside the per-socket loop, so a message to N
+   * subscribers was serialized N times - and a club presence event carries the
+   * whole member list, so each join or leave cost N serializations of an
+   * N-entry list. The payload is identical for every recipient; nothing here
+   * is per-subscriber. Lazily built, so a fan-out with no open socket
+   * serializes nothing. A failed send is swallowed exactly as sendWs does.
+   */
+  private fanOut(userIds: Iterable<string>, msg: OutboundMessage, skip?: string): void {
+    let data: string | null = null;
+    for (const userId of userIds) {
+      if (userId === skip) continue;
+      const set = this.connections.get(userId);
+      if (!set) continue;
+      for (const ws of set) {
+        if (ws.readyState !== 1 /* ws.OPEN */) continue;
+        try {
+          data ??= JSON.stringify(msg);
+          const privateSend = this.privateSenders.get(ws);
+          if (privateSend && (msg.type === 'FINANCIAL_UPDATE' || msg.type === 'HAND_REPLAY_EVENT'))
+            privateSend(data);
+          else ws.send(data);
+        } catch {
+          /* swallow - transport error handled by ws.on('error') */
+        }
+      }
+    }
   }
 
   // ─── Metrics (used by /ws-metrics and tests) ────────────────────────────────
@@ -501,9 +540,7 @@ export class ChannelHub {
       event: 'leave',
       changed: { userId, status: 'away', updatedAt: new Date().toISOString() },
     };
-    for (const memberId of members) {
-      this.sendToUserSockets(memberId, leaveMsg);
-    }
+    this.fanOut(members, leaveMsg);
   }
 }
 

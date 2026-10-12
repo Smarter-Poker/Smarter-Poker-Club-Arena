@@ -4,7 +4,19 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
+import { arenaDisplayText } from './arenaDisplay/text';
+
 import { downloadBlob as sharedDownloadBlob } from '../utils/downloadCsv';
+
+/** Keep stored display names as text when inserting them into a print document. */
+function arenaPrintText(text: string): string {
+  return arenaDisplayText(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
 /**
  * Export settlement report as PDF
@@ -59,7 +71,7 @@ export async function exportSettlementPDF(data: {
 <body>
     <h1> Settlement Report</h1>
     <p><strong>Period:</strong> ${data.periodNumber} | <strong>Year:</strong> ${data.year}</p>
-    <p><strong>Period:</strong> ${data.startDate} → ${data.endDate}</p>
+    <p><strong>Period:</strong> ${arenaPrintText(data.startDate)} → ${arenaPrintText(data.endDate)}</p>
     
     <div class="summary">
         <div class="summary-row">
@@ -90,7 +102,7 @@ export async function exportSettlementPDF(data: {
               .map(
                 (club) => `
                 <tr>
-                    <td>${club.clubName}</td>
+                    <td>${arenaPrintText(club.clubName)}</td>
                     <td class="${club.netPlayerPL >= 0 ? 'positive' : 'negative'}">${club.netPlayerPL.toLocaleString()}</td>
                     <td>${club.grossRake.toLocaleString()}</td>
                     <td>${club.unionTax.toLocaleString()}</td>
@@ -120,7 +132,7 @@ export async function exportSettlementPDF(data: {
               .map(
                 (agent) => `
                 <tr>
-                    <td>${agent.agentName}</td>
+                    <td>${arenaPrintText(agent.agentName)}</td>
                     <td>${agent.rakeGenerated.toLocaleString()}</td>
                     <td>${(agent.commissionRate * 100).toFixed(1)}%</td>
                     <td>${agent.grossCommission.toLocaleString()}</td>
@@ -162,7 +174,7 @@ export async function exportHandHistoryPDF(data: {
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Hand History - ${data.handId}</title>
+    <title>Hand History - ${arenaPrintText(data.handId)}</title>
     <style>
         body { font-family: 'Courier New', monospace; padding: 40px; color: #333; font-size: 14px; }
         h1 { color: #4169E1; font-size: 1.5em; }
@@ -178,20 +190,20 @@ export async function exportHandHistoryPDF(data: {
     </style>
 </head>
 <body>
-    <h1> Hand #${data.handId}</h1>
+    <h1> Hand #${arenaPrintText(data.handId)}</h1>
     <div class="meta">
-        <p><strong>Table:</strong> ${data.tableName} | <strong>Stakes:</strong> ${data.stakes}</p>
-        <p><strong>Date:</strong> ${data.date}</p>
+        <p><strong>Table:</strong> ${arenaPrintText(data.tableName)} | <strong>Stakes:</strong> ${arenaPrintText(data.stakes)}</p>
+        <p><strong>Date:</strong> ${arenaPrintText(data.date)}</p>
     </div>
 
     <div class="section">
         <strong>Players:</strong>
-        ${data.players.map((p) => `<div>${p.position}: ${p.name} (${p.stack})</div>`).join('')}
+        ${data.players.map((p) => `<div>${arenaPrintText(p.position)}: ${arenaPrintText(p.name)} (${p.stack})</div>`).join('')}
     </div>
 
     <div class="section">
         <strong>Community Cards:</strong>
-        <div class="cards">${data.communityCards.join(' ')}</div>
+        <div class="cards">${arenaPrintText(data.communityCards.join(' '))}</div>
     </div>
 
     <div class="section">
@@ -200,9 +212,9 @@ export async function exportHandHistoryPDF(data: {
           .map(
             (a) => `
             <div class="action">
-                <span class="action-player">${a.player}</span>: 
-                <span class="action-${a.action.toLowerCase()}">${a.action}${a.amount ? ` ${a.amount}` : ''}</span>
-                (${a.street})
+                <span class="action-player">${arenaPrintText(a.player)}</span>: 
+                <span class="action-${a.action.toLowerCase()}">${arenaPrintText(a.action)}${a.amount ? ` ${a.amount}` : ''}</span>
+                (${arenaPrintText(a.street)})
             </div>
         `
           )
@@ -211,7 +223,7 @@ export async function exportHandHistoryPDF(data: {
 
     <div class="section">
         <strong>Result:</strong>
-        <div class="winner">${data.result.winners.join(', ')} wins ${data.result.pot}</div>
+        <div class="winner">${arenaPrintText(data.result.winners.join(', '))} wins ${data.result.pot}</div>
     </div>
 </body>
 </html>

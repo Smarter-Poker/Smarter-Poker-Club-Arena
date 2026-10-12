@@ -27,9 +27,8 @@ export interface ClubOpeningSetupInput {
   leaderboardMetric: 'profit' | 'hands_played' | 'tournaments_won' | 'roi';
   leaderboardPrizeBudget: number;
   /**
-   * The owner's explicit answer on a paid leaderboard: true when the Club Bank
-   * may pay a later round's shortfall as its own recorded overlay leg. Never a
-   * default; the server records OFF unless it is sent.
+   * Retained for caller compatibility only. New setups always send false;
+   * historical server receipts retain their actual recorded overlay answer.
    */
   leaderboardOverlayEnabled: boolean;
 }
@@ -142,6 +141,8 @@ export function openingLeaderboardBudgetSplitsEvenly(budget: number): boolean {
 export interface OpeningLeaderboardFundingInput {
   promoEnabled: boolean;
   promoBudget: number;
+  leaderboardRewardsEnabled?: boolean;
+  leaderboardPrizeBudget?: number;
   /** Promo Wallet chips the club already holds. A new club holds none. */
   existingPromoBalance?: number | null;
 }
@@ -151,28 +152,27 @@ export const OPENING_LEADERBOARD_MINIMUM_BUDGET = 100;
 
 /**
  * The Promo Wallet the club holds once setup commits: what it already holds
- * plus the Promotion budget. A paid leaderboard's first round is paid from its
- * own seed; every later round draws on this wallet.
+ * plus enabled Promotion and leaderboard allocations. Every new leaderboard
+ * round draws only on this wallet, including its first round.
  */
 export function openingLeaderboardFundingCapacity(input: OpeningLeaderboardFundingInput): number {
   const existing = Math.max(0, Math.floor(Number(input.existingPromoBalance) || 0));
   const promo = input.promoEnabled ? Math.max(0, Math.floor(Number(input.promoBudget) || 0)) : 0;
-  return existing + promo;
+  const leaderboard = input.leaderboardRewardsEnabled
+    ? Math.max(0, Math.floor(Number(input.leaderboardPrizeBudget) || 0))
+    : 0;
+  return existing + promo + leaderboard;
 }
 
 /**
  * Mirrors what the server still refuses about a paid leaderboard's funding
  * when a club opens.
  *
- * The opening RPC moves the whole weekly budget out of the Club Bank as the
- * first round's explicit seed and, since 20260923143157, writes the setup row
- * that holds it BEFORE it publishes the program. The funding gate
- * (fn_enforce_leaderboard_program_funding) counts that unreleased seed, for
- * the setup's own publication only, beside clubs.promo_balance. The published
- * plan sums exactly to the budget, so the seed alone covers it: no Promotion is
- * required and no Promotion size can refuse it. What the server still refuses
+ * The opening allocation moves the whole weekly budget into the Promo Wallet
+ * before it publishes the program. The plan sums exactly to that budget: no
+ * separate Promotion is required. What the server still refuses
  * is a paid budget under its 100-chip minimum ("A Prize Leaderboard Requires A
- * Minimum 100-Chip Budget"). The seed's Club Bank cover is checked with every
+ * Minimum 100-Chip Budget"). The allocation's Club Bank cover is checked with every
  * other transfer, on the review step.
  *
  * Returns '' when the server will accept the budget, otherwise the Title Case
@@ -248,13 +248,9 @@ export const clubOpeningSetupService = {
         p_leaderboard_prize_budget: input.leaderboardRewardsEnabled
           ? input.leaderboardPrizeBudget
           : 0,
-        /* The Club Bank overlay travels only when the owner allowed it on a
-           paid leaderboard. The server records OFF unless it is sent, so
-           leaving it out IS the owner's "Leave Unpaid Until Funded", and the
-           eighteen-argument payload is unchanged for every other answer. */
-        ...(input.leaderboardRewardsEnabled && input.leaderboardOverlayEnabled
-          ? { p_leaderboard_overlay_enabled: true }
-          : {}),
+        // New setup never authorizes a Club Bank payout overlay. Returned
+        // historical receipts are preserved, not rewritten as Promo-only.
+        p_leaderboard_overlay_enabled: false,
       } as never
     );
     if (error) {

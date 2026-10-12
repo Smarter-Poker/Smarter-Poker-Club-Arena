@@ -1,0 +1,39 @@
+{
+  "_owner": "agent/fleet-p9c/feat/phase9-clip-mode",
+  "tables": ["hand_clip_jobs"],
+  "functions": [
+    "fn_hand_clip_request",
+    "fn_hand_clip_claim",
+    "fn_hand_clip_finish",
+    "fn_p9_publish_hand_clip"
+  ],
+  "columns": {
+    "hand_clip_jobs": [
+      "id",
+      "hand_id",
+      "author_id",
+      "kind",
+      "style",
+      "state",
+      "auto_publish",
+      "publication_key",
+      "caption",
+      "requested_by",
+      "video_url",
+      "poster_url",
+      "duration_ms",
+      "width",
+      "height",
+      "frames",
+      "render_ms",
+      "social_post_id",
+      "social_reel_id",
+      "error",
+      "created_at",
+      "updated_at",
+      "claimed_at",
+      "rendered_at",
+      "published_at"
+    ]
+  }
+}

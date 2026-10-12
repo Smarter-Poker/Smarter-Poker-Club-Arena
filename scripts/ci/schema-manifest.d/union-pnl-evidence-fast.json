@@ -1,0 +1,5 @@
+{
+  "_owner": "perf/union-pnl-evidence-memo. fn_weekly_accounting_attempt_begin/_end are LIVE in production (migration 20260928164258, applied 2026-09-28, whose own fragment is on the unmerged fix/weekly-close-scale branch); migration 20260928211132 replaces them. That migration is applied by the accounting coordinator after review (STEP 1 CONCURRENTLY outside a transaction, then STEP 2).",
+  "tables": [],
+  "functions": ["fn_weekly_accounting_attempt_begin", "fn_weekly_accounting_attempt_end"]
+}

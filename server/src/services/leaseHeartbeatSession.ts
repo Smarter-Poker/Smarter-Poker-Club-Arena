@@ -28,7 +28,8 @@
  *
  *   - One statement at a time per scope. The session sets statement_timeout
  *     to 8 s, and a local bound of 10 s drops a session whose socket went
- *     silent, so one bad statement can delay the next by at most that.
+ *     silent. A request does not wait more than 1 s behind a statement that
+ *     has not answered: it asks on the shared client instead (2026-10-03).
  *   - A lost session reconnects in the background with jittered backoff. The
  *     heartbeat loop never waits for a reconnect: while the session is down
  *     each request uses the shared client exactly as before.
@@ -95,6 +96,48 @@ const EXECUTE_PRIVILEGE_SQL: Record<LeaseHeartbeatScope, string> = {
     "SELECT has_function_privilege('public.heartbeat_table_leases_v4(text,jsonb,integer)', 'EXECUTE') AS ok",
 };
 const STATEMENT_TIMEOUT_SQL = `SET statement_timeout = ${LEASE_HEARTBEAT_STATEMENT_TIMEOUT_MS}`;
+
+/* ─── A RENEWAL DOES NOT WAIT FOR THE DISK (2026-10-03) ──────────────────────
+ *
+ * The dedicated session shipped at 23:57 on 2026-10-02 and was answering
+ * (1,885 table statements, mean 27.5 ms, max 404 ms). At 00:53:39-41 the
+ * fleet fenced itself anyway: 182 cash_lease_proof_expired, 144
+ * tournament_lease_proof_expired, 39 tournament_lease_lost. What happened:
+ *
+ *   - the checkpoint running since 00:44 was in its I/O-saturated tail
+ *     (sync=104.7 s, longest single fsync 10.7 s), and sp_prune_hand_history
+ *     ran 00:53:01-00:54:07; hand_atomic_commits recorded NOTHING from
+ *     00:53:22 to 00:53:36: every COMMIT was waiting for its WAL flush;
+ *   - the heartbeat UPDATE itself finished in milliseconds (no statement was
+ *     cancelled, pg_stat_statements never saw one slower than 1.6 s), but its
+ *     COMMIT waited on that same flush. statement_timeout is disarmed before
+ *     COMMIT, so nothing cut it short: the session went silent for the full
+ *     10 s local bound and was dropped (disconnects_total 1 per scope, the new
+ *     backends started 00:53:33/34);
+ *   - all the while that COMMIT still held the row lock of every lease it
+ *     renewed, and the heartbeat function skips locked rows, so a hedge sent
+ *     on the shared client (edge log: 00:53:28.58, 758 ms) could only answer
+ *     `busy`, which renews nothing (the process counts 186 table and 570
+ *     tournament `busy` rows since its 23:57 boot). 20 s after the last
+ *     renewal every proof ran out.
+ *
+ * This session commits asynchronously: COMMIT returns once the commit record
+ * is in the WAL buffers, without waiting for the flush. That does not change
+ * what a `kept` row proves to any LIVE session: the new heartbeat_at is
+ * visible to every other transaction the moment COMMIT returns, exactly as
+ * before, so a claim by another instance still sees it and still fails, and
+ * hand commits stay fenced by the database on the exact generation. The only
+ * thing given up is durability across a Postgres crash: an unflushed
+ * heartbeat_at can be lost in recovery and the row look older than the engine
+ * believes. A crash ends every engine statement in flight and the next
+ * heartbeat on the new server answers `taken`/`stale`/`missing` (fail-stop);
+ * every hand submission still checks instance, generation and heartbeat_at in
+ * the database (fn_ca_retain_hand_submission, FOR KEY SHARE) and keeps
+ * synchronous commit, and WAL is flushed in order, so a hand that is durable
+ * makes every heartbeat before it durable too. A lost heartbeat can never let
+ * two generations commit the same table.
+ */
+const SYNCHRONOUS_COMMIT_SQL = 'SET synchronous_commit = off';
 
 export interface LeaseHeartbeatArgs {
   p_instance_id: string;
@@ -163,6 +206,20 @@ function sessionSurvives(err: unknown): boolean {
   return !code.startsWith('08') && !code.startsWith('57P');
 }
 
+/** True when `turn` settles within `ms`; the timer never holds the process open. */
+async function settlesWithin(turn: Promise<void>, ms: number): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<false>((resolve) => {
+    timer = setTimeout(() => resolve(false), ms);
+    timer.unref?.();
+  });
+  try {
+    return await Promise.race([turn.then(() => true as const), late]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 type SessionState = 'idle' | 'connecting' | 'ready' | 'disabled';
 
 class LeaseHeartbeatSession {
@@ -202,6 +259,11 @@ class LeaseHeartbeatSession {
     return this.state !== 'disabled';
   }
 
+  /** Built before any connection string existed; replaced once one does. */
+  get unconfigured(): boolean {
+    return this.state === 'disabled' && !this.connectionString;
+  }
+
   async call(args: LeaseHeartbeatArgs): Promise<LeaseHeartbeatRpcResult> {
     this.ensureConnecting();
     // A connect already in flight is bounded by CONNECT_TIMEOUT_MS. A session
@@ -230,7 +292,18 @@ class LeaseHeartbeatSession {
     this.tail = new Promise<void>((resolve) => {
       release = resolve;
     });
-    await prior;
+    /* A QUEUED BATCH DOES NOT WAIT OUT A STUCK ONE EITHER (2026-10-03). A pass
+       now sends several small batches (leaseHeartbeatBatches), so batches
+       queue here behind each other. Waiting more than a second for the turn
+       means the statement ahead has not answered: the same evidence as the
+       rule above, so this batch asks on the shared client instead of sitting
+       out the 8 s statement timeout. Its turn is still handed on in order
+       when the statement ahead settles, so the session never runs two. */
+    if (!(await settlesWithin(prior, LEASE_HEARTBEAT_HEDGE_TO_SHARED_AFTER_MS))) {
+      // `prior` never rejects (it is a turn, not a statement); the catch is for form.
+      void prior.then(release).catch(() => undefined);
+      return this.shared(args);
+    }
     try {
       const client = this.client;
       if (this.state !== 'ready' || !client) return await this.shared(args);
@@ -312,6 +385,7 @@ class LeaseHeartbeatSession {
           (async () => {
             await client.connect();
             await client.query(STATEMENT_TIMEOUT_SQL);
+            await client.query(SYNCHRONOUS_COMMIT_SQL);
             return await client.query(EXECUTE_PRIVILEGE_SQL[this.scope]);
           })(),
           silent,
@@ -408,12 +482,108 @@ type SessionOptions = {
 let options: SessionOptions = {};
 const sessions = new Map<LeaseHeartbeatScope, LeaseHeartbeatSession>();
 
+/* ─── THE SESSION HAS A CREDENTIAL NOW (2026-10-02) ─────────────────────────
+ *
+ * Everything above was inert in production for eight days: the engine host
+ * never had ENGINE_PG_LISTEN_URL, because it holds no database password, so
+ * every heartbeat kept queueing for a PostgREST pool slot. About fifteen
+ * times in 24 hours (2026-10-01/02) a pool stall of ~20 s (PGRST003) outlived
+ * the 20 s proof and the whole fleet fenced itself at once, ~340 tables and
+ * ~160 voided-hand alerts per storm, with only one engine instance alive.
+ *
+ * Migration 20261002223745 gives the heartbeat a login of its own
+ * (engine_lease_heartbeat: EXECUTE on the two heartbeat functions, nothing
+ * else) and keeps its Supavisor session-mode URL in Vault. The engine reads it
+ * here, through fn_engine_lease_session_url() on the service-role client it
+ * already holds, when the host sets no variable. The URL is never logged.
+ *
+ * A failed read is retried in the background every 30 s until it answers;
+ * a definitive "no secret" stops. Until then the shared client serves, exactly
+ * as before. Nothing about proof, generations or fencing changes: this only
+ * decides which socket the same statement travels on.
+ */
+export const LEASE_SESSION_URL_RPC = 'fn_engine_lease_session_url';
+const VAULT_READ_BOUND_MS = 5_000;
+export const LEASE_SESSION_URL_RETRY_MS = 30_000;
+
+let vaultConnectionString = '';
+let vaultRead: Promise<boolean> | null = null;
+let vaultRetryTimer: ReturnType<typeof setTimeout> | null = null;
+let vaultStopped = false;
+let vaultAbsent = false;
+
+function configuredConnectionString(): string {
+  return options.connectionString ?? (enginePgConnectionString() || vaultConnectionString);
+}
+
+/**
+ * Read the dedicated session's URL from Vault unless the host configured one.
+ * Never throws and never blocks a heartbeat: callers do not await it.
+ */
+export function resolveLeaseHeartbeatSessionUrl(): Promise<boolean> {
+  if (options.connectionString !== undefined) return Promise.resolve(!!options.connectionString);
+  if (configuredConnectionString()) return Promise.resolve(true);
+  if (vaultStopped || vaultAbsent) return Promise.resolve(false);
+  if (vaultRead) return vaultRead;
+  vaultRead = (async () => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const bound = new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`no answer within ${VAULT_READ_BOUND_MS} ms`)),
+          VAULT_READ_BOUND_MS
+        );
+        timer.unref?.();
+      });
+      const { data, error } = (await Promise.race([
+        supabase.rpc(LEASE_SESSION_URL_RPC),
+        bound,
+      ])) as LeaseHeartbeatRpcResult;
+      if (error) throw new Error(error.code ? `${error.code}: ${error.message}` : error.message);
+      if (typeof data !== 'string' || !/^postgres(ql)?:\/\//.test(data)) {
+        // The database answered and holds no usable secret: asking again
+        // every 30 s would only repeat that answer.
+        vaultAbsent = true;
+        console.error(
+          '[lease-session] Vault holds no engine_lease_heartbeat_url; heartbeats use the shared client'
+        );
+        return false;
+      }
+      vaultConnectionString = data;
+      console.log(
+        '[lease-session] dedicated session credential read from Vault (engine_lease_heartbeat)'
+      );
+      return true;
+    } catch (err) {
+      if (!vaultStopped) {
+        console.warn(
+          `[lease-session] could not read the dedicated session credential (${errorMessage(err)}); ` +
+            `heartbeats use the shared client; asking again in ${LEASE_SESSION_URL_RETRY_MS} ms`
+        );
+        vaultRetryTimer = setTimeout(() => {
+          vaultRetryTimer = null;
+          void resolveLeaseHeartbeatSessionUrl();
+        }, LEASE_SESSION_URL_RETRY_MS);
+        vaultRetryTimer.unref?.();
+      }
+      return false;
+    } finally {
+      if (timer) clearTimeout(timer);
+      vaultRead = null;
+    }
+  })();
+  return vaultRead;
+}
+
 function sessionFor(scope: LeaseHeartbeatScope): LeaseHeartbeatSession {
   let session = sessions.get(scope);
-  if (!session) {
+  const connectionString = configuredConnectionString();
+  // A session built before the credential arrived holds no client and no
+  // statement; replacing it is the whole upgrade.
+  if (!session || (session.unconfigured && connectionString)) {
     session = new LeaseHeartbeatSession(
       scope,
-      options.connectionString ?? enginePgConnectionString(),
+      connectionString,
       options.openSession ?? defaultOpenSession,
       options.random ?? Math.random
     );
@@ -435,6 +605,9 @@ export function leaseHeartbeatRpc(
 
 /** Close both sessions. Called on shutdown after the leases are released. */
 export async function stopLeaseHeartbeatSessions(): Promise<void> {
+  vaultStopped = true;
+  if (vaultRetryTimer) clearTimeout(vaultRetryTimer);
+  vaultRetryTimer = null;
   await Promise.all([...sessions.values()].map((session) => session.stop()));
 }
 
@@ -472,4 +645,8 @@ export async function _resetLeaseHeartbeatSessionsForTests(
   await stopLeaseHeartbeatSessions();
   sessions.clear();
   options = next;
+  vaultConnectionString = '';
+  vaultRead = null;
+  vaultStopped = false;
+  vaultAbsent = false;
 }

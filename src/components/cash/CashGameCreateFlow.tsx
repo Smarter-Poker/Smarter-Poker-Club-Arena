@@ -50,6 +50,7 @@ import {
 } from '../../services/GameServerAPI';
 import { presetsFor, DEFAULT_BLINDS_INDEX } from '../../config/blindsPresets';
 import { isFixedLimitVariant, stakesLabel } from '../../lib/bettingStructure';
+import { isEightOrBetterVariant } from '../../utils/handEvaluator';
 import { getRakeConfig, RAKE_INHERIT } from '../../config/RakeConfig';
 import { formatCurrency } from '../../lib/utils';
 import CashGameCard, { rulesLineFor } from './CashGameCard';
@@ -181,6 +182,10 @@ export default function CashGameCreateFlow({
   const takenReasonsId = useId();
 
   const limitGame = isFixedLimitVariant(variant);
+  /* Insurance is not sold on a split-pot (hi-lo) game: the engine never offers
+     it there (owner decision 2026-10-07, insuranceContractIsExact), so the
+     switch is not shown and a hi-lo game is always created with it off. */
+  const insuranceOffered = !isEightOrBetterVariant(variant);
   const presets = useMemo(() => presetsFor(limitGame), [limitGame]);
 
   /* KILL POTS (rule manifest kill-v1). Offered on a fixed-limit game ONLY
@@ -357,7 +362,9 @@ export default function CashGameCreateFlow({
           p_sb: stakes.sb,
           p_bb: stakes.bb,
           p_handedness: handedness,
-          p_overrides: overrides,
+          p_overrides: insuranceOffered
+            ? overrides
+            : { ...overrides, options: { ...overrides.options, insurance_enabled: false } },
           p_name: name.trim() || null,
           p_must_move: tableMode === 'must_move',
         });
@@ -458,6 +465,7 @@ export default function CashGameCreateFlow({
       toast,
       onSaved,
       killChoice,
+      insuranceOffered,
     ]
   );
 
@@ -807,14 +815,16 @@ export default function CashGameCreateFlow({
               onChange={(v) => setOverride('options', { ...overrides.options, ban_chat: v })}
               tooltip="Players Cannot Send Chat Messages At This Table"
             />
-            <Toggle
-              label="Insurance"
-              value={overrides.options.insurance_enabled}
-              onChange={(v) =>
-                setOverride('options', { ...overrides.options, insurance_enabled: v })
-              }
-              tooltip="When Players Are All In, The Player Who Is Ahead May Buy Insurance Against Losing The Pot"
-            />
+            {insuranceOffered && (
+              <Toggle
+                label="Insurance"
+                value={overrides.options.insurance_enabled}
+                onChange={(v) =>
+                  setOverride('options', { ...overrides.options, insurance_enabled: v })
+                }
+                tooltip="When Players Are All In, The Player Who Is Ahead May Buy Insurance Against Losing The Pot"
+              />
+            )}
             {variant === 'nlh' && (
               <Toggle
                 label="Seven Deuce Bonus"

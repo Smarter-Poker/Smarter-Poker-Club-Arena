@@ -12,6 +12,7 @@
  */
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { compactChips } from '../../utils/format';
 import './AdvancedStatsSummary.css';
 
 interface AdvancedStat {
@@ -90,7 +91,7 @@ function buildStats(d: AdvancedStatsInput): AdvancedStat[] {
       id: 'hourly',
       label: 'Hourly Rate',
       value: hourlyRate,
-      format: (val) => `${val >= 0 ? '+' : ''}${val.toFixed(2)}`,
+      format: (val) => `${val >= 0 ? '+' : ''}${compactChips(val)}`,
       unit: '/hr',
       description: 'Cash Profit Per Hour Played In This Window',
     },
@@ -112,7 +113,7 @@ function buildStats(d: AdvancedStatsInput): AdvancedStat[] {
       id: 'aggression',
       label: 'Aggression Factor',
       value: n(d.aggression_factor),
-      format: (val) => val.toFixed(2),
+      format: (val) => val.toFixed(1),
       description: 'Bets And Raises Divided By Calls',
     },
     {
@@ -140,7 +141,7 @@ function buildStats(d: AdvancedStatsInput): AdvancedStat[] {
       id: 'bbPer100',
       label: 'BB/100',
       value: n(d.bb_per_100),
-      format: (val) => `${val >= 0 ? '+' : ''}${val.toFixed(2)}`,
+      format: (val) => `${val >= 0 ? '+' : ''}${val.toFixed(1)}`,
       description: 'Big Blinds Won Per 100 Cash Hands',
     },
   ];

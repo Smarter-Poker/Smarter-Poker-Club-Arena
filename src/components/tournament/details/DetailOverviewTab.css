@@ -519,6 +519,16 @@
   max-height: 168px;
 }
 
+/* The seat winners of a finished satellite: every one of them, never clipped
+   to the runners-up window above. */
+.dov-finishers--all {
+  max-height: none;
+}
+
+.dov-finisher--qualified .dov-finisher__pos {
+  color: var(--tl-accent);
+}
+
 .dov-finisher {
   display: grid;
   grid-template-columns: 42px minmax(0, 1fr);
@@ -586,6 +596,21 @@
   }
   .dov-blind__value {
     font-size: 15px;
+  }
+}
+
+/* THE BLINDS ARE A NUMBER, NOT AN ELLIPSIS (2026-10-04). Beside the clock on
+   a phone the two wells were about 75px and 60px wide, and "200 / 400" does
+   not fit in either: the current blinds printed as "200 / ..." and the next
+   level as "300 / ...", on the one tab whose job is to say what the blinds
+   are. Under the clock they get the full width of the band and always fit. */
+@media (max-width: 520px) {
+  .dov-hero__main {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dov-hero__blinds {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

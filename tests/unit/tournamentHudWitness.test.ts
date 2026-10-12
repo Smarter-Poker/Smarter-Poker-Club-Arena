@@ -4,7 +4,9 @@ import {
   createHudClockReader,
   hudEventObservationMs,
   mttCaseTimeoutMs,
+  OperationalPollFailure,
   receivedHudLevel,
+  selectableHudClock,
   sharedNaturalLevel,
   waitForSharedNaturalLevel,
   HUD_RESERVE_MS,
@@ -15,6 +17,7 @@ const id = '11111111-1111-4111-8111-111111111111';
 const now = Date.parse('2026-09-27T03:40:30Z');
 const row = {
   id,
+  format_contract: 'mtt-v1',
   status: 'RUNNING',
   current_players: 12,
   started_at: '2026-09-27T03:30:00Z',
@@ -156,6 +159,7 @@ describe('a natural HUD witness must fit the real clock and keep independent wir
       expect(new Date(readAt).toISOString()).toBe('2026-09-28T07:05:18.502Z');
       const row10 = {
         id: tournamentId,
+        format_contract: 'mtt-v1',
         status: 'RUNNING',
         current_players: 164,
         started_at: '2026-09-28T05:00:00Z',
@@ -244,6 +248,312 @@ describe('a natural HUD witness must fit the real clock and keep independent wir
       vi.unstubAllEnvs();
       vi.useRealTimers();
     }
+  });
+  it('records an unreadable table separately from a readable but ineligible tournament', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    const email = 'ca-customization-cert-postdeploy-refusal@example.invalid';
+    const missingTable = '22222222-2222-4222-8222-222222222222';
+    const ineligibleTable = '33333333-3333-4333-8333-333333333333';
+    vi.stubEnv('SP_EMAIL', email);
+    vi.stubEnv('SP_PASS', 'local-fixture-only');
+    vi.stubEnv('SUPABASE_URL', 'https://hud-refusal.example.invalid');
+    vi.stubEnv('VITE_SUPABASE_ANON_KEY', 'local-fixture-public-key');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = new URL(String(input));
+        let body: unknown;
+        if (url.pathname === '/auth/v1/token') {
+          body = {
+            access_token: 'local-fixture-access-token',
+            token_type: 'bearer',
+            expires_in: 3600,
+            refresh_token: 'local-fixture-refresh-token',
+            user: { id, email },
+          };
+        } else if (url.pathname === '/rest/v1/tables') {
+          body = [{ id: ineligibleTable, tournament_id: id }];
+        } else if (url.pathname === '/rest/v1/tournaments') {
+          body = [
+            {
+              ...row,
+              addon_period_started_at: '2026-09-27T03:35:00Z',
+              addon_period_ends_at: '2026-09-27T03:45:00Z',
+            },
+          ];
+        } else if (url.pathname === '/auth/v1/logout') body = {};
+        else throw new Error('Unexpected local SDK request: ' + url.pathname);
+        return new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      })
+    );
+    let reader: Awaited<ReturnType<typeof createHudClockReader>> | undefined;
+    try {
+      reader = await createHudClockReader();
+      expect(
+        await reader.clocks(
+          [missingTable, ineligibleTable],
+          MTT_HUD_LEVEL_CAP_MS,
+          selectableHudClock
+        )
+      ).toEqual(new Map());
+      expect(reader.qualificationBatches.at(-1)).toEqual({
+        requestedTableCount: 2,
+        readableTableCount: 1,
+        requestedTournamentCount: 1,
+        readableTournamentCount: 1,
+        eligibleTournamentCount: 0,
+        eligibleTableCount: 0,
+        rejectionCategories: {
+          unreadable_table: 1,
+          addon_period_open: 1,
+        },
+      });
+      expect(reader.refusalEvidence().latestQualifications).toEqual([
+        {
+          tableId: missingTable,
+          tournamentId: null,
+          clock: null,
+          levelCapMs: MTT_HUD_LEVEL_CAP_MS,
+          category: 'unreadable_table',
+        },
+        {
+          tableId: ineligibleTable,
+          tournamentId: id,
+          clock: null,
+          levelCapMs: MTT_HUD_LEVEL_CAP_MS,
+          category: 'addon_period_open',
+        },
+      ]);
+    } finally {
+      await reader?.close();
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+      vi.useRealTimers();
+    }
+  });
+  it('pages the joined table read, pins every MTT filter, and excludes competing SNGs', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    const email = 'ca-customization-cert-postdeploy-pagination@example.invalid';
+    const fixtureClub = 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
+    const fixtureUnion = 'fade0000-0000-0000-0000-000000000001';
+    const eligibleTournament = '66666666-6666-4666-8666-666666666666';
+    const eligibleTable = '77777777-7777-4777-8777-777777777777';
+    let tableReads = 0;
+    vi.stubEnv('SP_EMAIL', email);
+    vi.stubEnv('SP_PASS', 'local-fixture-only');
+    vi.stubEnv('SUPABASE_URL', 'https://hud-pagination.example.invalid');
+    vi.stubEnv('VITE_SUPABASE_ANON_KEY', 'local-fixture-public-key');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(String(input));
+        let body: unknown;
+        if (url.pathname === '/auth/v1/token') {
+          body = {
+            access_token: 'local-fixture-access-token',
+            token_type: 'bearer',
+            expires_in: 3600,
+            refresh_token: 'local-fixture-refresh-token',
+            user: { id, email },
+          };
+        } else if (url.pathname === '/rest/v1/tables') {
+          tableReads += 1;
+          expect(url.searchParams.get('select')).toContain(
+            'tournament:tournaments!tables_tournament_id_fkey!inner('
+          );
+          expect(url.searchParams.get('status')).toBe('eq.running');
+          expect(url.searchParams.get('tournament.status')).toBe('eq.RUNNING');
+          expect(url.searchParams.get('tournament.format_contract')).toBe('in.(mtt-v1,mtt-v2)');
+          expect(url.searchParams.get('tournament.or')).toBe(
+            `(club_id.in.(${fixtureClub},${fixtureUnion}),union_id.in.(${fixtureClub},${fixtureUnion}))`
+          );
+          expect(url.searchParams.get('order')).toBe('id.asc');
+          expect(url.searchParams.get('limit')).toBe('1000');
+          expect(init?.signal).toBeInstanceOf(AbortSignal);
+          expect(init?.signal?.aborted).toBe(false);
+          expect(url.searchParams.has('offset')).toBe(false);
+          expect(url.searchParams.get('id')).toBe(
+            tableReads === 1 ? null : 'gt.20000000-0000-4000-8000-000000000999'
+          );
+          body =
+            tableReads === 1
+              ? Array.from({ length: 1000 }, (_, index) => {
+                  const tournamentId = `88888888-8888-4888-8888-${String(index).padStart(12, '0')}`;
+                  return {
+                    id: `20000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+                    tournament_id: tournamentId,
+                    status: 'running',
+                    current_players: 9,
+                    tournament: {
+                      ...row,
+                      id: tournamentId,
+                      format_contract: 'sng-v1',
+                      club_id: fixtureClub,
+                    },
+                  };
+                })
+              : tableReads === 2
+                ? [
+                    {
+                      id: eligibleTable,
+                      tournament_id: eligibleTournament,
+                      status: 'running',
+                      current_players: 4,
+                      tournament: {
+                        ...row,
+                        id: eligibleTournament,
+                        format_contract: 'mtt-v1',
+                        club_id: fixtureClub,
+                      },
+                    },
+                  ]
+                : [];
+        } else if (url.pathname === '/auth/v1/logout') body = {};
+        else throw new Error('Unexpected local SDK request: ' + url.pathname);
+        return new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      })
+    );
+    let reader: Awaited<ReturnType<typeof createHudClockReader>> | undefined;
+    try {
+      reader = await createHudClockReader();
+      expect(
+        await reader.discoverSelectableTableIds(
+          [fixtureClub, fixtureUnion],
+          MTT_HUD_LEVEL_CAP_MS,
+          32,
+          now + 30_000
+        )
+      ).toEqual([eligibleTable]);
+      expect(tableReads).toBe(2);
+      expect(reader.discoveries.at(-1)).toEqual({
+        fixtureClubIds: [fixtureClub, fixtureUnion],
+        readableTournamentCount: 1001,
+        eligibleTournamentCount: 1,
+        requestedTournamentCount: 1001,
+        readableTableCount: 1001,
+        selectedTableCount: 1,
+        rejectionCategories: { not_mtt_format: 1000, eligible: 1 },
+      });
+    } finally {
+      await reader?.close();
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+      vi.useRealTimers();
+    }
+  });
+  it('bounds a large unreadable candidate set to four joined requests and the fixed deadline', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    const email = 'ca-customization-cert-postdeploy-bounded@example.invalid';
+    const fixtureClub = 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
+    const fixtureUnion = 'fade0000-0000-0000-0000-000000000001';
+    let tableReads = 0;
+    vi.stubEnv('SP_EMAIL', email);
+    vi.stubEnv('SP_PASS', 'local-fixture-only');
+    vi.stubEnv('SUPABASE_URL', 'https://hud-bounded.example.invalid');
+    vi.stubEnv('VITE_SUPABASE_ANON_KEY', 'local-fixture-public-key');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = new URL(String(input));
+        let body: unknown;
+        if (url.pathname === '/auth/v1/token') {
+          body = {
+            access_token: 'local-fixture-access-token',
+            token_type: 'bearer',
+            expires_in: 3600,
+            refresh_token: 'local-fixture-refresh-token',
+            user: { id, email },
+          };
+        } else if (url.pathname === '/rest/v1/tables') {
+          const page = tableReads;
+          tableReads += 1;
+          expect(url.searchParams.has('offset')).toBe(false);
+          expect(url.searchParams.get('order')).toBe('id.asc');
+          expect(url.searchParams.get('limit')).toBe('1000');
+          expect(url.searchParams.get('id')).toBe(
+            page === 0 ? null : `gt.table-${String(page * 1000 - 1).padStart(8, '0')}`
+          );
+          body = Array.from({ length: 1000 }, (_, index) => {
+            const ordinal = page * 1000 + index;
+            const tournamentId = `tournament-${ordinal}`;
+            return {
+              id: `table-${String(ordinal).padStart(8, '0')}`,
+              tournament_id: tournamentId,
+              status: 'paused',
+              current_players: 4,
+              tournament: { ...row, id: tournamentId, club_id: fixtureClub },
+            };
+          });
+        } else if (url.pathname === '/auth/v1/logout') body = {};
+        else throw new Error('Unexpected local SDK request: ' + url.pathname);
+        return new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      })
+    );
+    let reader: Awaited<ReturnType<typeof createHudClockReader>> | undefined;
+    try {
+      reader = await createHudClockReader();
+      await expect(
+        reader.discoverSelectableTableIds(
+          [fixtureClub, fixtureUnion],
+          MTT_HUD_LEVEL_CAP_MS,
+          32,
+          now + 30_000
+        )
+      ).rejects.toThrow('bounded read limit');
+      expect(tableReads).toBe(4);
+      expect(reader.discoveries.at(-1)).toMatchObject({
+        readableTournamentCount: 4000,
+        eligibleTournamentCount: 4000,
+        readableTableCount: 4000,
+        selectedTableCount: 0,
+        rejectionCategories: { eligible: 4000, table_scan_truncated: 1 },
+      });
+    } finally {
+      await reader?.close();
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+      vi.useRealTimers();
+    }
+  });
+  it('rethrows a forced discovery or exact-health failure and clears it after a clean read', async () => {
+    const tracker = new OperationalPollFailure();
+    const failure = new Error('forced exact-health failure');
+    await expect(
+      tracker.attempt(async () => {
+        throw failure;
+      })
+    ).rejects.toBe(failure);
+    expect(() => tracker.rethrowIfPresent()).toThrow(failure);
+    await expect(tracker.attempt(async () => 0)).resolves.toBe(0);
+    expect(() => tracker.rethrowIfPresent()).not.toThrow();
+  });
+  it('classifies an abandoned in-flight health read as operational, never as an absent subject', async () => {
+    const tracker = new OperationalPollFailure();
+    let resolve!: (value: number) => void;
+    const pending = tracker.attempt(
+      () =>
+        new Promise<number>((done) => {
+          resolve = done;
+        })
+    );
+    expect(() => tracker.rethrowIfPresent()).toThrow(
+      'authenticated health read was still in flight'
+    );
+    resolve(1);
+    await expect(pending).resolves.toBe(1);
+    expect(() => tracker.rethrowIfPresent()).not.toThrow();
   });
   it('ignores a level received during the outage and requires a new shared event after recovery', async () => {
     vi.useFakeTimers();

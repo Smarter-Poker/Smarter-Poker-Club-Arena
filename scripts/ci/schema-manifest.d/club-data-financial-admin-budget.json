@@ -1,0 +1,9 @@
+{
+  "_owner": "agent/codex/club-data-deep-cert-20261004. Reserved migration 20261004153522_union_ops_reports_stay_inside_the_signed_in_budget; prepared and not yet applied.",
+  "tables": ["union_law_selftest_runs"],
+  "functions": [
+    "fn_union_law_selftest_record",
+    "fn_union_law_selftest_status",
+    "fn_union_overseer_options"
+  ]
+}

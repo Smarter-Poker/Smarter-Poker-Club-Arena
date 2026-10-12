@@ -29,6 +29,8 @@ import {
   type HorseJournalWorker,
 } from '../../services/HorseDecisionJournal.js';
 import { HorseDecisionJournalStore } from '../../services/horseDecisionJournal/store.js';
+import { doorRosterTransport } from '../../services/horseAcceptedRoster/fixture.test-support.js';
+import { readReturnedRosterTransport } from '../../services/horseAcceptedRoster/schema.js';
 import {
   horseLifecycleKeys,
   horseLifecycleRequestDigest,
@@ -170,7 +172,7 @@ function harness(decide = HorseLogic.decide.bind(HorseLogic)) {
     rmSync(directory, { recursive: true, force: true });
   });
   const rows = () => store.readHand(handKey);
-  const accepted = async () => {
+  const accepted = async (extra: Record<string, unknown> = {}) => {
     runtime.receive({
       type: 'OBSERVE_COMPLETED_HAND',
       requestId: 100,
@@ -180,6 +182,7 @@ function harness(decide = HorseLogic.decide.bind(HorseLogic)) {
       committedHandId: '30000000-0000-4000-8000-000000000001',
       actions: [],
       bigBlind: 2,
+      ...extra,
     });
     await runtime.drain();
     await Promise.resolve();
@@ -385,6 +388,18 @@ describe('valid private Horse request lifecycle', () => {
       });
     }
   );
+
+  it('P14.2: the durable accepted_hand record body retains the bound accepted actor roster', async () => {
+    const h = harness();
+    const transport = doorRosterTransport(table, 12, '30000000-0000-4000-8000-000000000001');
+    await h.accepted({ acceptedActorRoster: transport });
+    await vi.waitFor(() => expect(h.rows().some((r) => r.kind === 'accepted_hand')).toBe(true));
+    const row = h.rows().find((r) => r.kind === 'accepted_hand')!;
+    const body = JSON.parse(row.body);
+    expect(body.acceptedActorRoster).toEqual(transport);
+    expect(readReturnedRosterTransport(body.acceptedActorRoster)).toEqual(transport);
+    expect(h.notes).not.toContain('phase14_accepted_roster_refused');
+  });
 
   it('records a valid deep request refusal without fabricating decision output or original reads', async () => {
     const h = harness(),

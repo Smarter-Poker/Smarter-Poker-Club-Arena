@@ -1,0 +1,33 @@
+{
+  "schema": "horse-phase8-qualification-v1",
+  "qualified": false,
+  "mode": "promotion",
+  "sourceSha": "c0b56ffce7c92a4827d73bbedec21b5b60e541c3",
+  "continuationVersion": "horse-tournament-postflop-round1-v4",
+  "packId": "horse-tournament-postflop",
+  "packIdSource": "server/src/engine/HorseQualifiedAuthority.test-support.ts testQualificationEvidence(); no production module defines a pack id",
+  "domain": "nlh-single-board-tournament-postflop",
+  "policyDigest": "fc359c40d5c8447ff728036f181d20b106eb96dd07d20f98fd99ab8a73b05254",
+  "evidencePath": "docs/evidence/phase8/strength-2026-10-02/strength.json",
+  "evidenceSha256": "d9a7f1f7d4b466a115bb94be5ad4b8eed4fc69127f18b34731168d3a960db656",
+  "reasons": [
+    "mtt:8101101:not_promotable",
+    "mtt:8102203:not_promotable",
+    "mtt:8103307:not_promotable",
+    "sng:8101101:not_promotable",
+    "sng:8102203:not_promotable",
+    "sng:8103307:not_promotable",
+    "spin:8101101:not_promotable",
+    "spin:8102203:not_promotable",
+    "spin:8103307:not_promotable",
+    "satellite:8101101:not_promotable",
+    "satellite:8102203:not_promotable",
+    "satellite:8103307:not_promotable",
+    "pko:8101101:not_promotable",
+    "pko:8102203:not_promotable",
+    "pko:8103307:not_promotable",
+    "mystery:8101101:not_promotable",
+    "mystery:8102203:not_promotable",
+    "mystery:8103307:not_promotable"
+  ]
+}

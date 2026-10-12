@@ -6,14 +6,14 @@ gone, now what" page. Read it before you need it.
 
 ## What the platform is made of, and where each part lives
 
-| Component                          | Lives in                                              | Reproducible from                                                      | Single copy?                    |
-| ---------------------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------- | ------------------------------- |
-| Club Arena frontend                | Hetzner `/srv/club-arena`                             | GitHub `Smarter-Poker-Club-Arena`                                      | No - GitHub                     |
-| Poker engine code                  | Hetzner `/opt/club-arena`                             | GitHub `Smarter-Poker-Club-Arena` (`server/`)                          | No - GitHub, exact-SHA workflow |
-| **Engine secrets (`server/.env`)** | **Hetzner disk only**                                 | **nothing**                                                            | **YES — see below**             |
-| Database (chips, users, all state) | Supabase `kuklfnapbkmacvwxktbh` (108 GB, Postgres 17) | Supabase PITR / backups                                                | Supabase-managed                |
-| Open Claw cron dispatcher          | Hetzner `/opt/openclaw`                               | GitHub `Smarter-Poker-World-Hub` `scripts/openclaw-cron-dispatcher.py` | No — GitHub                     |
-| CI/CD credentials                  | GitHub App + repo secrets                             | —                                                                      | GitHub-managed                  |
+| Component                          | Lives in                                                            | Reproducible from                                                      | Single copy?                    |
+| ---------------------------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------------- | ------------------------------- |
+| Club Arena frontend                | Hetzner `/srv/club-arena`                                           | GitHub `Smarter-Poker-Club-Arena`                                      | No - GitHub                     |
+| Poker engine code                  | Hetzner `/opt/club-arena`                                           | GitHub `Smarter-Poker-Club-Arena` (`server/`)                          | No - GitHub, exact-SHA workflow |
+| **Engine secrets (`server/.env`)** | **Hetzner disk only**                                               | **nothing**                                                            | **YES — see below**             |
+| Database (chips, users, all state) | Supabase `kuklfnapbkmacvwxktbh` (Postgres 17; measure current size) | Supabase PITR / backups                                                | Supabase-managed                |
+| Open Claw cron dispatcher          | Hetzner `/opt/openclaw`                                             | GitHub `Smarter-Poker-World-Hub` `scripts/openclaw-cron-dispatcher.py` | No — GitHub                     |
+| CI/CD credentials                  | GitHub App + repo secrets                                           | —                                                                      | GitHub-managed                  |
 
 The one host-only component is the engine's runtime `server/.env`. Routine
 publishing never reads a workstation copy. For an explicitly authorized
@@ -51,14 +51,26 @@ entry via `fn_ca_post_correction` — prefer that over a restore.
 
 Only if forward correction is impossible:
 
-1. **Confirm PITR is enabled and its window** in the Supabase dashboard
-   (Project → Database → Backups). If it is NOT enabled, enable it now — this
-   is the single most important standing DR control and an agent cannot toggle
-   it. On the current plan, daily backups exist; PITR (second-granular) is the
-   add-on that makes "restore to 3 minutes before the bad write" possible.
+1. **Confirm PITR is enabled and its actual recovery window** through the
+   configured Supabase Management API or project dashboard. Read
+   `GET /v1/projects/{ref}/billing/addons` and
+   `GET /v1/projects/{ref}/database/backups`; configuration alone is not a
+   successful restore. Authorized agents can apply the supported
+   `PATCH /v1/projects/{ref}/billing/addons` with
+   `{"addon_type":"pitr","addon_variant":"pitr_7"}` through the existing
+   credential-store identity. Preserve other add-ons and independently read
+   back the result before considering a retry after an unknown response.
+   Never print credentials or read them from environment files. Enabling PITR
+   does not retroactively recover a time outside the reported window.
 2. Identify the target time from `chip_ledger.created_at` / incident detection.
-3. Restore into a **NEW branch/project first** (never overwrite production
-   blind), verify the ledger chain there, then cut over.
+3. Restore into an **isolated NEW project first**. A physical Supabase clone
+   copies credentials and can immediately run `pg_cron`, `pg_net` and other
+   external integrations. Disabling these after startup is not isolation.
+   Before starting a drill, require a supported pre-start containment method,
+   or prepare a logical restore whose external effects are disabled before
+   execution in the isolated environment. Never disable production schedules
+   to prepare a drill. A schema-only or narrow financial fixture is not a full
+   recovery certificate. Do not overwrite production to test a backup.
 4. After any restore, run `fn_ca_verify_ledger_chain(50000)` and
    `fn_ca_daily_attestation()` before reopening play.
 
@@ -81,20 +93,34 @@ in Supabase.
 
 ## STANDING CONTROLS — verify these are on
 
-- [ ] Supabase PITR enabled (dashboard; agent cannot check or toggle it —
-      **Dan/human action**).
-- [ ] Hetzner provider backups/snapshots enabled and restore-tested (human
-      action). If the offline backup is retained, refresh it only as an
+- [x] Supabase PITR enabled: seven-day `pitr_7` verified through both add-on
+      and backup APIs on 2026-10-06 at 02:20 UTC. Approximately $100/month,
+      prorated hourly. This is dated evidence; re-read before an incident.
+      Recovery window then: 2026-09-29 11:49:49 to 2026-10-06 02:20:11 UTC.
+      Database startup remained 2026-10-04 00:09:55 UTC, with no restart.
+- [ ] Hetzner provider backups/snapshots enabled and restore-tested through configured
+      provider access. If the offline backup is retained, refresh it only as an
       explicitly authorized DR operation with the pinned-host inputs.
 - [ ] A restore drill into a scratch Supabase branch once a quarter — an
       untested backup is a hope, not a backup.
-- [ ] Hetzner engine box: enable Hetzner's own snapshot/backup in their console
-      (**human action**) so Scenario A is a rollback, not a rebuild.
+- [ ] Hetzner engine box: enable Hetzner's own snapshot/backup through the configured provider interface so Scenario A is a rollback, not a rebuild.
 
 ## DRILL LOG
 
-| Date       | Scenario                         | Result                                   |
-| ---------- | -------------------------------- | ---------------------------------------- |
-| 2026-09-01 | Ledger chain integrity           | 50,000 rows, 0 breaks (verified via MCP) |
-| 2026-09-01 | Engine secret backup             | 15 keys encrypted + roundtrip-verified   |
-| _next_     | PITR restore into scratch branch | **TODO — first real drill**              |
+| Date       | Scenario                     | Result                                                                                                                                            |
+| ---------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-09-01 | Ledger chain integrity       | 50,000 rows, 0 breaks (verified via MCP)                                                                                                          |
+| 2026-09-01 | Engine secret backup         | 15 keys encrypted + roundtrip-verified                                                                                                            |
+| 2026-10-06 | PITR seven-day configuration | Add-on and backup API readback passed; no database restart. **Not a restore drill.**                                                              |
+| _next_     | Isolated full restore        | **Unverified**: pre-start external-effect containment and sufficient target capacity required. Measure recovery time and recovered data boundary. |
+
+The 2026-10-06 local CLI schema export stopped before export because Docker
+was unavailable. A full restore was not attempted: several individual tables
+exceed tens of GB, and available local work space was approximately 46 GiB.
+Do not treat a failed export, physical-backup listing, or enabled PITR as
+restore qualification. Storage objects also need their own recovery evidence;
+database backups do not contain Storage object bytes.
+
+Provider references: [database backups](https://supabase.com/docs/guides/platform/backups),
+[restore to a new project](https://supabase.com/docs/guides/platform/clone-project),
+[PITR billing](https://supabase.com/docs/guides/platform/manage-your-usage/point-in-time-recovery).

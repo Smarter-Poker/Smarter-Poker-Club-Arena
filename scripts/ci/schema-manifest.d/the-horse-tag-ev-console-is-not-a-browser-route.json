@@ -1,0 +1,7 @@
+{
+  "_owner": "agent/claude-definer-closure/cw-definer-closure-0930",
+  "_comment": "20260930181616 close_the_horse_tag_ev_console_to_the_browser: revokes PUBLIC, anon and authenticated from fn_horse_tag_ev_significance(date) leaving service_role, records written reasons for the three routines that stay browser-reachable by design, and teaches fn_ca_browser_reachable_telemetry() to see an identity gate that sits behind a helper such as fn_is_platform_admin().",
+  "tables": [],
+  "functions": ["fn_ca_browser_reachable_telemetry"],
+  "columns": {}
+}

@@ -5,7 +5,7 @@
  * Custom React hooks for Club Arena functionality
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useClubStore } from '@/stores/useClubStore';
 import { useUnionStore } from '@/stores/useUnionStore';
 import { useWalletStore } from '@/stores/useWalletStore';
@@ -94,7 +94,7 @@ export function useClubRole(clubId: string): {
  */
 export function useClubMembers(clubId: string) {
   const [members, setMembers] = useState<ClubMembership[]>([]);
-  const [counts, setCounts] = useState({ total: 0, active: 0, pending: 0, online: 0 });
+  const [counts, setCounts] = useState({ total: 0, active: 0, pending: 0 });
   const [isLoading, setIsLoading] = useState(true);
 
   const refresh = useCallback(async () => {
@@ -213,60 +213,10 @@ export function useUnionSettlement(unionId: string) {
 // WALLET HOOKS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/**
- * Get user's wallet balances and operations
- */
-export function useWallet() {
-  const { user } = useAuthUser();
-  const {
-    balances,
-    diamonds,
-    isLoadingWallet,
-    isLoadingDiamonds,
-    loadBalances,
-    loadDiamonds,
-    lockForBuyIn,
-    internalTransfer,
-    mintChips,
-  } = useWalletStore();
-
-  useEffect(() => {
-    if (user?.id) {
-      loadBalances(user.id);
-      loadDiamonds(user.id);
-    }
-  }, [user?.id, loadBalances, loadDiamonds]);
-
-  const totalBalance = useMemo(
-    () => balances.BUSINESS.total + balances.PLAYER.total + balances.PROMO.total,
-    [balances]
-  );
-
-  const availableForPlay = balances.PLAYER.available;
-
-  return {
-    balances,
-    diamonds,
-    totalBalance,
-    availableForPlay,
-    isLoading: isLoadingWallet || isLoadingDiamonds,
-    lockForBuyIn,
-    // AUDIT M17: unlockFromTable is gone. Table cash-out is engine-owned via
-    // (removed 2026-09-04: no partial cash-out at a cash table); see WalletService.
-    internalTransfer,
-    mintChips,
-    // force: this is the EXPLICIT "give me fresh numbers" entry point. A caller
-    // reaching for refresh() is stating that what is on screen may be wrong, so
-    // the store's freshness window (which exists to make mounts free) must not
-    // turn it into a no-op.
-    refresh: () => {
-      if (user?.id) {
-        loadBalances(user.id, { force: true });
-        loadDiamonds(user.id, { force: true });
-      }
-    },
-  };
-}
+/* useWallet REMOVED (launch audit 2026-10-09, S-11): nothing imported it, its
+   `totalBalance` summed BUSINESS + PLAYER + PROMO (the conflation WalletService
+   forbids) and it re-exported the retired lockForBuyIn / mintChips store ops.
+   Pages read the store directly and force a refresh where they mean it. */
 
 /**
  * Check if user can afford a buy-in
@@ -390,7 +340,6 @@ export default {
   useIsMember,
   useUnion,
   useUnionSettlement,
-  useWallet,
   useCanAfford,
   useChipFormatter,
   useClubSearch,

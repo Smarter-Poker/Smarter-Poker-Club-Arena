@@ -1,0 +1,4 @@
+{
+  "_owner": "agent/claude-a5/frozen-engine-minute. Applied to production as migration 20261003030700_a_frozen_engine_minute_is_not_a_stuck_minute: live engine minutes (wall minutes minus declared maintenance breaks) for the tournament stall detectors.",
+  "functions": ["fn_ca_engine_live_minutes"]
+}

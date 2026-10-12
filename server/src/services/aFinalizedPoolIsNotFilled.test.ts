@@ -178,6 +178,38 @@ describe('1. a finalized prize pool is not filled', () => {
     expect(pick).toHaveBeenCalledTimes(1);
   });
 
+  /* 2026-10-12: the overlay guard asked for Late Night PKO d4a393c0 27
+     minutes after it started, two minutes after its 25 minute late
+     registration closed on time. That is a correct state, not a stranded
+     row: the fill is refused exactly as before and nothing is reported. */
+  it('a running event whose late registration closed is refused without an error report', async () => {
+    const T = 'aaaaaaaa-0000-4000-8000-000000000009';
+    tableResults = {
+      tournaments: {
+        data: {
+          variant: 'progressive_bounty',
+          format_contract: 'mtt-v2',
+          max_players: 500,
+          club_id: 'club',
+          start_time: '2026-10-12T00:10:40.474Z',
+          prize_pool_finalized: true,
+          status: 'RUNNING',
+        },
+        error: null,
+      },
+      tables: { data: { max_players: 9 }, error: null },
+    };
+    expect(await svc.topUpWithHorses(T, 60)).toBe(0);
+    expect(await svc.topUpWithHorses(T, 60)).toBe(0);
+    expect(pick).not.toHaveBeenCalled();
+    expect(rpcMock).not.toHaveBeenCalledWith('fn_register_horse_for_tournament', expect.anything());
+    expect(
+      reportErrorMock.mock.calls.filter(
+        (c) => c[1] === 'TournamentRecurring.top_up_refused_pool_finalized'
+      )
+    ).toEqual([]);
+  });
+
   it('the seat RPC answer that is neither seated nor table_full is named in the log', async () => {
     const T = 'aaaaaaaa-0000-4000-8000-000000000003';
     rpcMock.mockImplementation(async (name: string) => {

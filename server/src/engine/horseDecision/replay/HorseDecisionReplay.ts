@@ -108,7 +108,7 @@ const isShadowReceipt = (value: unknown): boolean =>
   typeof value === 'object' &&
   ((value as { applied?: unknown }).applied === false ||
     (value as { mode?: unknown }).mode === 'shadow');
-function stableReceipt(value: unknown): unknown {
+export function stableReceipt(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(stableReceipt);
   if (value && typeof value === 'object') {
     const out: Record<string, unknown> = {};

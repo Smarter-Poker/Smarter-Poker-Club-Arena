@@ -1,0 +1,5 @@
+{
+  "_owner": "fix/content-engine-presence-sports-recorded. Applied to production as 20261006040333_players_share_sports_reels_and_youtube_reel_thumbnail_at_creation on 2026-10-06 (psql, COMMIT confirmed; both functions present in pg_proc).",
+  "tables": [],
+  "functions": ["user_reel_topics", "fn_youtube_reel_thumbnail_url", "fn_social_post_topics"]
+}

@@ -1,0 +1,208 @@
+{
+  "short_deck": {
+    "population": "human-calibrated-v1-20261008",
+    "seeds": [12101101, 12103307],
+    "pairs": 77760,
+    "candidate": {
+      "meanBbPer100": 266.175,
+      "confidence99BbPer100": [226.804, 305.545]
+    },
+    "reference": {
+      "meanBbPer100": 335.711,
+      "confidence99BbPer100": [294.148, 377.274]
+    },
+    "pairedDifference": {
+      "meanBbPer100": -69.536,
+      "confidence99BbPer100": [-84.221, -54.852]
+    },
+    "profiles": {
+      "p12c-short_deck-6max-100bb": {
+        "pairs": 12960,
+        "candidateBbPer100": 313.139,
+        "referenceBbPer100": 402.902
+      },
+      "p12c-short_deck-6max-200bb": {
+        "pairs": 12960,
+        "candidateBbPer100": 593.874,
+        "referenceBbPer100": 758.854
+      },
+      "p12c-short_deck-6max-2dealt-100bb": {
+        "pairs": 12960,
+        "candidateBbPer100": 26.659,
+        "referenceBbPer100": 53.917
+      },
+      "p12c-short_deck-6max-40bb": {
+        "pairs": 12960,
+        "candidateBbPer100": 122.372,
+        "referenceBbPer100": 161.89
+      },
+      "p12c-short_deck-6max-4dealt-100bb": {
+        "pairs": 12960,
+        "candidateBbPer100": 184.501,
+        "referenceBbPer100": 242.503
+      },
+      "p12c-short_deck-9max-100bb": {
+        "pairs": 12960,
+        "candidateBbPer100": 356.504,
+        "referenceBbPer100": 394.2
+      }
+    }
+  },
+  "pineapple": {
+    "population": "human-calibrated-v1-20261008",
+    "seeds": [12101101, 12103307],
+    "pairs": 77760,
+    "candidate": {
+      "meanBbPer100": 606.567,
+      "confidence99BbPer100": [546.337, 666.797]
+    },
+    "reference": {
+      "meanBbPer100": 661.173,
+      "confidence99BbPer100": [598.914, 723.431]
+    },
+    "pairedDifference": {
+      "meanBbPer100": -54.606,
+      "confidence99BbPer100": [-73.914, -35.297]
+    },
+    "profiles": {
+      "p12c-pineapple-6max-100bb": {
+        "pairs": 12960,
+        "candidateBbPer100": 670.176,
+        "referenceBbPer100": 731.971
+      },
+      "p12c-pineapple-6max-200bb": {
+        "pairs": 12960,
+        "candidateBbPer100": 1317.558,
+        "referenceBbPer100": 1421.603
+      },
+      "p12c-pineapple-6max-2dealt-100bb": {
+        "pairs": 12960,
+        "candidateBbPer100": 148.942,
+        "referenceBbPer100": 175.47
+      },
+      "p12c-pineapple-6max-40bb": {
+        "pairs": 12960,
+        "candidateBbPer100": 255.445,
+        "referenceBbPer100": 277.771
+      },
+      "p12c-pineapple-6max-4dealt-100bb": {
+        "pairs": 12960,
+        "candidateBbPer100": 449.945,
+        "referenceBbPer100": 521.68
+      },
+      "p12c-pineapple-9max-100bb": {
+        "pairs": 12960,
+        "candidateBbPer100": 797.334,
+        "referenceBbPer100": 838.539
+      }
+    }
+  },
+  "flh": {
+    "population": "human-calibrated-v1-20261008",
+    "seeds": [12101101, 12103307],
+    "pairs": 90720,
+    "candidate": {
+      "meanBbPer100": 5.314,
+      "confidence99BbPer100": [1.137, 9.491]
+    },
+    "reference": {
+      "meanBbPer100": 4.109,
+      "confidence99BbPer100": [-0.14, 8.359]
+    },
+    "pairedDifference": {
+      "meanBbPer100": 1.204,
+      "confidence99BbPer100": [0.32, 2.089]
+    },
+    "profiles": {
+      "p12c-flh-6max-1000bb": {
+        "pairs": 12960,
+        "candidateBbPer100": 1.636,
+        "referenceBbPer100": 1.264
+      },
+      "p12c-flh-6max-100bb": {
+        "pairs": 12960,
+        "candidateBbPer100": 2.871,
+        "referenceBbPer100": 2.466
+      },
+      "p12c-flh-6max-200bb": {
+        "pairs": 12960,
+        "candidateBbPer100": 1.69,
+        "referenceBbPer100": 1.295
+      },
+      "p12c-flh-6max-2dealt-100bb": {
+        "pairs": 12960,
+        "candidateBbPer100": 12.046,
+        "referenceBbPer100": 7.03
+      },
+      "p12c-flh-6max-40bb": {
+        "pairs": 12960,
+        "candidateBbPer100": 5.991,
+        "referenceBbPer100": 5.656
+      },
+      "p12c-flh-6max-4dealt-100bb": {
+        "pairs": 12960,
+        "candidateBbPer100": -4.692,
+        "referenceBbPer100": -6.996
+      },
+      "p12c-flh-9max-100bb": {
+        "pairs": 12960,
+        "candidateBbPer100": 17.655,
+        "referenceBbPer100": 18.05
+      }
+    }
+  },
+  "flo8": {
+    "population": "human-calibrated-v1-20261008",
+    "seeds": [12101101, 12103307],
+    "pairs": 40320,
+    "candidate": {
+      "meanBbPer100": -13.57,
+      "confidence99BbPer100": [-18.15, -8.991]
+    },
+    "reference": {
+      "meanBbPer100": -14.646,
+      "confidence99BbPer100": [-19.315, -9.976]
+    },
+    "pairedDifference": {
+      "meanBbPer100": 1.075,
+      "confidence99BbPer100": [0.139, 2.012]
+    },
+    "profiles": {
+      "p12c-flo8-6max-1000bb": {
+        "pairs": 5760,
+        "candidateBbPer100": -20.08,
+        "referenceBbPer100": -22.059
+      },
+      "p12c-flo8-6max-100bb": {
+        "pairs": 5760,
+        "candidateBbPer100": -19.453,
+        "referenceBbPer100": -21.029
+      },
+      "p12c-flo8-6max-200bb": {
+        "pairs": 5760,
+        "candidateBbPer100": -20.071,
+        "referenceBbPer100": -22.05
+      },
+      "p12c-flo8-6max-2dealt-100bb": {
+        "pairs": 5760,
+        "candidateBbPer100": -2.184,
+        "referenceBbPer100": -2.365
+      },
+      "p12c-flo8-6max-40bb": {
+        "pairs": 5760,
+        "candidateBbPer100": -18.845,
+        "referenceBbPer100": -20.449
+      },
+      "p12c-flo8-6max-4dealt-100bb": {
+        "pairs": 5760,
+        "candidateBbPer100": -16.883,
+        "referenceBbPer100": -17.535
+      },
+      "p12c-flo8-8max-100bb": {
+        "pairs": 5760,
+        "candidateBbPer100": 2.524,
+        "referenceBbPer100": 2.968
+      }
+    }
+  }
+}

@@ -508,6 +508,24 @@ export function compareLowHands(a: number[], b: number[]): number {
 // POT CALCULATIONS
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/**
+ * The merge test's equality: the same answer as comparing the two lists'
+ * JSON text, without formatting either list. Two strings are equal exactly
+ * when their JSON is; any other element is compared by the JSON text it has
+ * inside an array, which is what the whole-list comparison saw.
+ */
+function sameEligiblePlayers(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x: unknown = a[i];
+    const y: unknown = b[i];
+    if (typeof x === 'string' && typeof y === 'string') {
+      if (x !== y) return false;
+    } else if (JSON.stringify([x]) !== JSON.stringify([y])) return false;
+  }
+  return true;
+}
+
 export function calculatePots(players: SeatPlayer[]): Pot[] {
   const activePlayers = players.filter((p) => !p.is_folded);
   if (activePlayers.length === 0) return [];
@@ -544,9 +562,16 @@ export function calculatePots(players: SeatPlayer[]): Pot[] {
     return [{ amount: deadTotal, eligiblePlayers: activePlayers.map((p) => p.user_id) }];
   }
 
-  const sortedInvestments = [...new Set(allContributors.map((entry) => entry.investment))].sort(
-    (a, b) => a - b
-  );
+  // Distinct investment levels, ascending. Sorting a copy and skipping equal
+  // neighbours yields exactly the values (and order) a Set then sort did; every
+  // investment here is a finite positive number, so === is the Set's equality.
+  const ascendingInvestments = allContributors
+    .map((entry) => entry.investment)
+    .sort((a, b) => a - b);
+  const sortedInvestments: number[] = [];
+  for (const investment of ascendingInvestments)
+    if (sortedInvestments[sortedInvestments.length - 1] !== investment)
+      sortedInvestments.push(investment);
   const pots: Pot[] = [];
   let previousLevel = 0;
   // 2026-08-20 (chip-conservation property test, D24): money contributed at a
@@ -575,15 +600,21 @@ export function calculatePots(players: SeatPlayer[]): Pot[] {
   for (const level of sortedInvestments) {
     if (level === 0) continue;
     const contribution = level - previousLevel;
-    const totalContributors = allContributors.filter((entry) => entry.investment >= level).length;
-    const eligiblePlayers = allContributors.filter(
-      (entry) => !entry.player.is_folded && entry.investment >= level
-    );
+    // One pass in seat-list order: every contributor at or above this level,
+    // and the unfolded ones among them (the same members, in the same order,
+    // as filtering the contributors twice).
+    let totalContributors = 0;
+    const eligiblePlayers: string[] = [];
+    for (const entry of allContributors) {
+      if (entry.investment < level) continue;
+      totalContributors++;
+      if (!entry.player.is_folded) eligiblePlayers.push(entry.player.user_id);
+    }
 
     if (totalContributors > 0 && eligiblePlayers.length > 0) {
       pots.push({
         amount: contribution * totalContributors,
-        eligiblePlayers: eligiblePlayers.map((entry) => entry.player.user_id),
+        eligiblePlayers,
       });
     } else if (totalContributors > 0) {
       orphaned = Math.round((orphaned + contribution * totalContributors) * 100) / 100;
@@ -639,7 +670,7 @@ export function calculatePots(players: SeatPlayer[]): Pot[] {
   const merged: Pot[] = [pots[0]];
   for (let i = 1; i < pots.length; i++) {
     const last = merged[merged.length - 1];
-    if (JSON.stringify(last.eligiblePlayers) === JSON.stringify(pots[i].eligiblePlayers)) {
+    if (sameEligiblePlayers(last.eligiblePlayers, pots[i].eligiblePlayers)) {
       last.amount += pots[i].amount;
     } else {
       merged.push(pots[i]);
@@ -806,7 +837,10 @@ export function validateAction(
       if (toCall > 0) return { valid: false, error: 'Cannot check when there is a bet to call' };
       return { valid: true };
     case 'call':
-      if (toCall === 0) return { valid: false, error: 'Nothing to call' };
+      // `<= 0`, not `=== 0`: a negative toCall means this seat already has
+      // more in than the level, and a "call" there pays the caller back out
+      // of the pot (launch audit 2026-10-05).
+      if (toCall <= 0) return { valid: false, error: 'Nothing to call' };
       return { valid: true };
     case 'bet':
       if (currentBet > 0)
@@ -837,6 +871,15 @@ export function validateAction(
       const playerBet = currentBet - toCall;
       const maxRaiseTo = playerBet + playerStack;
       const raiseAmount = amount - currentBet;
+      // A RAISE IS ABOVE THE BET (launch audit 2026-10-05). The short-stack
+      // escape below accepts anything that is the seat's whole stack, and that
+      // included a "raise" TO LESS than the bet already made: 28 against 100
+      // was valid, the level became 28, and every earlier bettor was handed
+      // the difference back when they "called". A stack that cannot exceed
+      // the level is a call, and must arrive as `call` or `all_in`.
+      if (amount <= currentBet + CENT_EPS) {
+        return { valid: false, error: 'A raise must be more than the current bet' };
+      }
       // The `amount < maxRaiseTo` escape lets a short stack raise all-in for
       // less than a full increment. That is correct in no-limit and pot-limit;
       // in fixed limit an under-sized wager must arrive as `all_in`, never as

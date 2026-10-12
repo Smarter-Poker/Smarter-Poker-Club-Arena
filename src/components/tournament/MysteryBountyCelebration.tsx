@@ -32,23 +32,19 @@
  *
  * ── THE SERVER HALF, CLOSED 2026-08-26 ─────────────────────────────────────
  *
- * Two events reach this component, and both are a mystery pull:
+ * One event is a mystery pull (corrected 2026-10-05):
  *
- *   - `bounty_collected` with `mode: 'mystery_pre'` - a head drawn at
- *     registration, claimed before the mystery phase opened. fn_collect_bounty
- *     returns 'pko' | 'mystery_pre' | 'regular' and never 'mystery', so the
- *     engine's old `res.mode === 'mystery'` test was dead; it now sends this
- *     name unconditionally, which is what it was already sending in practice;
  *   - `mystery_bounty_revealed` - a CHEST, from the sealed inventory. This is
  *     where the event's top prizes actually live, and it is the case Dan's
- *     requirement is about. It used to carry the money only as `amountCents`,
- *     so the amount check below saw nothing and the celebration stayed silent
- *     through exactly the moment it exists for. The engine now sends `amount`
- *     beside it (server/src/tournament/TournamentManagerEliminations.ts).
+ *     requirement is about. The engine sends `amount` beside `amountCents`
+ *     and a `prizeRank` computed against the event's own chest inventory, so
+ *     the rank is decided once, on the server. rankOf() prefers it.
  *
- * Both now carry `prizeRank` as well, computed by the engine against the
- * event's own prize ladder - so the rank is decided once, on the server, from
- * data every client would otherwise have to re-read. rankOf() prefers it.
+ * `bounty_collected` with `mode: 'mystery_pre'` - the flat head paid on a
+ * knockout before the chests open - is NOT a pull. It was treated as one
+ * until 2026-10-05, and because every pre-phase head is the same flat figure
+ * it ranked 1 every time: every routine bust announced "The Top Mystery
+ * Bounty". It is ignored here, and the engine no longer ranks it.
  *
  * ── HOW "TOP 3" IS DECIDED WHEN THE SERVER DOES NOT SAY ────────────────────
  *
@@ -159,16 +155,19 @@ function money(n: number): string {
 }
 
 /**
- * A mystery event's knockouts, under either name the engine may use.
+ * A mystery PULL: a chest drawn from the sealed inventory, and nothing else.
  *
- * Exported for tests/unit/mysteryBountyCelebrationContract.test.ts, which pins
- * it against the modes fn_collect_bounty actually returns.
+ * NOT A PRE-PHASE HEAD (2026-10-05). This used to accept `bounty_collected`
+ * with mode `mystery_pre` too. Before the chests open every knockout pays the
+ * same flat head, so ranked against the other flat heads it was rank 1 every
+ * time, and every routine bust raised "X Just Pulled The Top Mystery Bounty
+ * Worth 8". A flat head is not drawn from a prize ladder; only a chest is.
+ * The engine no longer ranks a head either.
+ *
+ * Exported for tests/unit/mysteryBountyCelebrationContract.test.ts.
  */
-export function isMysteryPull(type: string | undefined, data: BountyRevealPayload): boolean {
-  if (type === 'mystery_bounty_revealed') return true;
-  if (type !== 'bounty_collected') return false;
-  const mode = String(data.mode || '').toLowerCase();
-  return mode === 'mystery' || mode === 'mystery_pre';
+export function isMysteryPull(type: string | undefined, _data?: BountyRevealPayload): boolean {
+  return type === 'mystery_bounty_revealed';
 }
 
 /**

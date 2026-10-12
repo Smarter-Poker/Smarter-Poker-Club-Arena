@@ -103,6 +103,26 @@
   mask-image: radial-gradient(circle, #000 5%, transparent 68%);
   animation: prize-rays calc(12s * var(--animation-speed, 1)) linear infinite;
 }
+/* A Big Win (five times the stake, src/utils/bigWin.ts) burns gold and turns
+   faster. Still one transformed layer: nothing here repaints per frame. */
+.prize[data-big='true'] .rays {
+  inset: 2%;
+  background: conic-gradient(
+    from 0deg,
+    transparent,
+    #ffd76a66,
+    transparent 14%,
+    #ffb22e66,
+    transparent 29%,
+    #ffd76a66,
+    transparent 50%,
+    #ffb22e66,
+    transparent 71%,
+    #ffd76a66,
+    transparent
+  );
+  animation-duration: calc(6s * var(--animation-speed, 1));
+}
 .continue {
   display: block;
   margin: 12px auto;

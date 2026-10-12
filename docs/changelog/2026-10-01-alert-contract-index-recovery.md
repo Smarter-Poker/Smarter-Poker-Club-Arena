@@ -1,0 +1,7 @@
+# Recover the interrupted alert contract index through its owning installer
+
+The oldest production alert could not complete its bounded contract lookup. Its concurrent index build timed out waiting for an older snapshot and left an invalid, ready/live index. The original installer would skip that index and refuse, while advising an unguarded drop.
+
+The same dispatch-only installer now accepts explicit recovery selection for this exact migration, observed index OID and inspected failed-operation cutoff. It verifies original source bytes, ownership, complete index shape, absent builders/replacement indexes/constraints, and old snapshot absence. One bounded concurrent reindex replaces the index; exact replacement readback precedes the unchanged migration transaction and history recording. Errors retain unknown outcomes and never trigger a retry. Existing maintenance guards, 600-second cap and 12-minute admission remain.
+
+Regression protection includes strict request/catalog controls and an isolated PostgreSQL17 interrupted-build exercise using the actual exported guards and command. It checks refusal while an older snapshot exists, a later concurrent writer, exact replacement and unchanged original rows. The existing required accounting job executes and retains this proof. Local/hosted and production results are recorded separately in the Production Alerts checkpoint; source alone does not certify recovery or settle the alert.

@@ -29,7 +29,8 @@
  * -- can never be hit by the same thumb press.
  */
 
-.promo-vault-page {
+.promo-vault-page,
+.pv-overlay {
   --ca-cyan: var(--realism-cyan);
   --ca-blue: var(--realism-blue);
   --ca-royal: #1877f2;
@@ -47,7 +48,9 @@
 
   /* The milled face every control on this page is cut from. */
   --ca-face: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
+}
 
+.promo-vault-page {
   min-height: 100vh;
   min-height: 100dvh; /* the visible viewport on a phone */
   width: 100%;

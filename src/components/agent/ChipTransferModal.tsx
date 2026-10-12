@@ -109,6 +109,9 @@ export default function ChipTransferModal({
      preview: chip_balance for a player, agents.agent_wallet_balance for an
      agent-capable recipient. null while unknown. */
   const [destinationBalance, setDestinationBalance] = useState<number | null>(null);
+  /* Latest sender read. A slower read for an earlier club or account must
+     not paint its role or balance over the current one. */
+  const senderReadRef = useRef(0);
   const modalRef = useRef<HTMLDivElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const successCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -173,6 +176,10 @@ export default function ChipTransferModal({
 
   const loadSenderInfo = async () => {
     if (!user?.id) return;
+    const read = ++senderReadRef.current;
+    const isLatest = () => isMounted.current && read === senderReadRef.current;
+    // Unknown until this read answers: never the previous club's figure.
+    setSenderBalance(null);
     try {
       /* THE BALANCE SHOWN MUST BE THE ACCOUNT THAT GETS DEBITED.
          This used to read WalletService.readPlayerBalance - the viewer's GLOBAL
@@ -192,6 +199,7 @@ export default function ChipTransferModal({
         .eq('club_id', resolvedId)
         .eq('user_id', user.id)
         .maybeSingle();
+      if (!isLatest()) return;
       if (memberErr) {
         // Unknown, not 'member': the role picks the account that is debited.
         setSenderRole(null);
@@ -208,6 +216,7 @@ export default function ChipTransferModal({
           .select('owner_id')
           .eq('id', resolvedId)
           .maybeSingle();
+        if (!isLatest()) return;
         if (ownedErr) {
           setSenderRole(null);
           setSenderRoleFailed(true);
@@ -220,12 +229,36 @@ export default function ChipTransferModal({
       setSenderRoleFailed(false);
 
       if (CLUB_BANK_ROLES.includes(normaliseRole(role))) {
-        const { data: bank, error: bankErr } = await supabase
-          .from('clubs')
-          .select('chip_treasury')
-          .eq('id', resolvedId)
-          .maybeSingle();
-        if (!bankErr) setSenderBalance(Number(bank?.chip_treasury ?? 0) || 0);
+        // The treasury is read through the role-checked money panel (launch
+        // audit 2026-10-09, S-05), the same read cashierBalanceRead uses. A
+        // direct clubs.chip_treasury select is an RLS-dependent table read that
+        // can answer null for a role the panel would serve. A refusal
+        // ({authorized:false}), an error or a non-numeric figure leaves the
+        // balance UNKNOWN, never 0, and Confirm stays closed.
+        const { data: panelData, error: panelErr } = await supabase.rpc('fn_club_money_panel', {
+          p_club_id: resolvedId,
+        });
+        if (!isLatest()) return;
+        const panel = Array.isArray(panelData) ? panelData[0] : panelData;
+        const figure =
+          !panelErr &&
+          panel &&
+          typeof panel === 'object' &&
+          (panel as { authorized?: unknown }).authorized === true
+            ? (panel as { club_treasury?: unknown }).club_treasury
+            : null;
+        // Number(null) is 0: an absent figure must stay unknown.
+        const treasury =
+          figure === null || figure === undefined || figure === '' ? NaN : Number(figure);
+        // A refusal or a malformed figure is reported as well as an error: all
+        // three leave the Club Bank Unknown on screen, and none is silent.
+        if (panelErr || !Number.isFinite(treasury)) {
+          reportError(
+            panelErr ?? new Error('The Club Bank Panel Was Refused Or Malformed'),
+            'ChipTransferModal.club_bank_read'
+          );
+        }
+        setSenderBalance(Number.isFinite(treasury) ? treasury : null);
       } else {
         const { data: float_, error: floatErr } = await supabase
           .from('agents')
@@ -233,7 +266,9 @@ export default function ChipTransferModal({
           .eq('club_id', resolvedId)
           .eq('user_id', user.id)
           .maybeSingle();
+        if (!isLatest()) return;
         // No row is a float of zero. A row we could not READ is unknown.
+        if (floatErr) reportError(floatErr, 'ChipTransferModal.agent_float_read');
         if (!floatErr) setSenderBalance(Number(float_?.agent_wallet_balance ?? 0) || 0);
       }
 
@@ -244,6 +279,7 @@ export default function ChipTransferModal({
         .select('name')
         .eq(clubCol, clubVal)
         .maybeSingle();
+      if (!isLatest()) return;
       setClubName(club?.name || '');
     } catch (err) {
       reportError(err, 'ChipTransferModal.Failed_to_load_sender_info');
@@ -645,7 +681,7 @@ export default function ChipTransferModal({
         if (e.key !== 'Tab') return;
         const focusable = Array.from(
           modalRef.current?.querySelectorAll<HTMLElement>(
-            'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+            'button:not([disabled]), input:not([disabled]):not([tabindex="-1"]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
           ) ?? []
         );
         if (focusable.length === 0) return;
@@ -814,8 +850,10 @@ export default function ChipTransferModal({
               <div className="preview-row">
                 <span>You:</span>
                 <span>
-                  {(senderBalance ?? 0).toLocaleString()} →{' '}
-                  {Math.max(0, (senderBalance ?? 0) - parseFloat(amount)).toLocaleString()}
+                  {/* An unread balance is Unknown, never a fabricated 0 -> 0. */}
+                  {senderBalance === null
+                    ? 'Unknown'
+                    : `${senderBalance.toLocaleString()} → ${Math.max(0, senderBalance - parseFloat(amount)).toLocaleString()}`}
                 </span>
               </div>
               <div className="preview-row">
@@ -853,7 +891,12 @@ export default function ChipTransferModal({
             className="transfer-btn"
             onClick={handleTransfer}
             disabled={
-              isLoading || !selectedRecipient || !amount || !senderKnown || !selectedRecipientData
+              isLoading ||
+              !selectedRecipient ||
+              !amount ||
+              !senderKnown ||
+              senderBalance === null ||
+              !selectedRecipientData
             }
           >
             {isLoading ? 'Processing...' : 'Confirm Transfer'}

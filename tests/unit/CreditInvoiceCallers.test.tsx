@@ -6,7 +6,6 @@ vi.mock('../../src/core/IdentityDNA', () => ({
 }));
 const m = vi.hoisted(() => ({
   invoices: [] as any[],
-  scans: [] as any[],
   listeners: [] as any[],
   rpc: vi.fn(),
   warning: vi.fn(),
@@ -16,19 +15,17 @@ vi.mock('../../src/lib/supabase', () => ({
   supabase: {
     rpc: m.rpc,
     from: (table: string) => {
-      let scan = false;
       const filters: any[] = [];
       const c: any = {};
       for (const op of ['select', 'eq', 'order', 'limit', 'gt'])
         c[op] = (...args: any[]) => {
           filters.push([op, ...args]);
-          if (op === 'gt') scan = true;
           return c;
         };
       c.maybeSingle = async () => ({ data: null, error: null });
       c.then = (yes: any, no: any) => {
         m.queries.push({ table, filters });
-        const value = (table === 'credit_invoices' ? m.invoices : scan ? m.scans : []).shift() ?? {
+        const value = (table === 'credit_invoices' ? m.invoices : []).shift() ?? {
           data: [],
           error: null,
         };
@@ -59,42 +56,42 @@ vi.mock('../../src/services/FinancialAlertService', () => ({
 }));
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 vi.mock('../../src/utils/clubIdResolver', () => ({ resolveClubUUID: vi.fn() }));
-let credit: any, cron: any;
+let credit: any;
 beforeEach(async () => {
   vi.resetModules();
   m.invoices = [];
-  m.scans = [];
   m.listeners = [];
   m.queries = [];
   m.rpc.mockReset().mockResolvedValue({ data: { success: true }, error: null });
   m.warning.mockReset().mockResolvedValue(undefined);
   credit = (await import('../../src/services/CreditService')).CreditService;
-  cron = (await import('../../src/services/FinancialCronService')).FinancialCronService;
 });
 afterEach(() => {
-  cron.stop();
   vi.useRealTimers();
 });
 const empty = () => ({ data: [], error: null });
-const owed = (status = 'overdue') => ({
-  data: [
-    {
-      id: 'i',
-      agent_id: 'a',
-      status,
-      due_date: '2020-01-01',
-      amount_remaining: 10,
-    },
-  ],
-  error: null,
-});
-const agents = (n = 1) => ({
-  data: Array.from({ length: n }, (_, i) => ({
-    id: 'a' + i,
-    status: 'active',
-  })),
-  error: null,
-});
+const owed = (status = 'overdue') => {
+  const settled = status === 'paid' || status === 'void';
+  const partial = status === 'partial';
+  return {
+    data: [
+      {
+        id: 'i',
+        agent_id: 'a',
+        period_start: '2019-12-22T00:00:00.000Z',
+        period_end: '2019-12-29T00:00:00.000Z',
+        debt_owed: 10,
+        amount_paid: status === 'paid' ? 10 : partial ? 5 : 0,
+        amount_remaining: settled ? 0 : partial ? 5 : 10,
+        status,
+        due_date: '2020-01-01T00:00:00.000Z',
+        created_at: '2019-12-29T00:00:00.000Z',
+        paid_at: status === 'paid' ? '2019-12-30T00:00:00.000Z' : null,
+      },
+    ],
+    error: null,
+  };
+};
 const switchAccount = () =>
   m.listeners.forEach((fn) => fn({ payload: { isAuthenticated: true, userId: 'b' } }));
 
@@ -128,36 +125,14 @@ it('0067 corrected: actual panel clears previous agent invoice after replacement
   expect(screen.queryByRole('button', { name: 'Pay Now' })).toBeNull();
   expect(screen.getByRole('alert').textContent).toMatch(/unavailable/i);
 });
-it('0067 corrected: failed full scan replaces previous clean last result', async () => {
-  m.scans.push(empty());
-  const clean = await cron.runSuspensionCheck();
-  m.scans.push({ data: null, error: new Error('unavailable') });
-  expect((await cron.runSuspensionCheck()).unavailable).toBe(true);
-  expect(cron.getStatus().lastSuspensionCheck).not.toBe(clean);
-  expect(cron.getStatus().lastSuspensionCheck.unavailable).toBe(true);
-});
-it('0067 corrected: actual mounted financial health page labels partial unavailable scan counts', async () => {
-  const bus = (await import('../../src/core/MasterBus')).masterBus as any;
-  bus.subscribeDebounced = () => () => {};
-  m.scans.push(agents());
-  m.invoices.push({ data: null, error: new Error('unavailable') });
+it('0067 corrected: financial health never starts an unscoped browser scan', async () => {
   const Page = (await import('../../src/pages/FinancialHealthPage')).default;
   render(<Page />);
-  const section = screen.getByText('Credit Suspension Check').closest('section')!;
-  fireEvent.click(section.querySelector('button')!);
-  await waitFor(() => expect(section.textContent).toContain('Agents Checked'));
-  expect(section.textContent).toMatch(/unavailable|incomplete/i);
-  expect(cron.getStatus().lastSuspensionCheck.unavailable).toBe(true);
-});
-it('0067 corrected: same-account token-refresh preserves a disabled circuit', async () => {
-  m.listeners.forEach((fn) => fn({ payload: { isAuthenticated: true, userId: 'a' } }));
-  m.scans.push(new Error('1'), new Error('2'));
-  await cron.runSuspensionCheck();
-  await cron.runSuspensionCheck();
-  expect(cron._suspensionCheckDisabled).toBe(true);
-  // IdentityDNA TOKEN_REFRESHED publishes this identical identity event.
-  m.listeners.forEach((fn) => fn({ payload: { isAuthenticated: true, userId: 'a' } }));
-  expect(cron._suspensionCheckDisabled).toBe(true);
+  const section = screen.getByText('Credit Enforcement').closest('section')!;
+  expect(section.textContent).toMatch(/global browser scan/i);
+  expect(section.textContent).toMatch(/unavailable/i);
+  expect(screen.queryByRole('button', { name: /run now/i })).toBeNull();
+  expect(m.queries.some((query) => query.table === 'agents')).toBe(false);
 });
 it('0067 corrected: reinstatement suppresses publication after auth scope changes during RPC', async () => {
   const bus = (await import('../../src/core/MasterBus')).masterBus as any;
@@ -171,33 +146,6 @@ it('0067 corrected: reinstatement suppresses publication after auth scope change
   await expect(result).rejects.toThrow(/may have committed/);
   expect(bus.emit).not.toHaveBeenCalledWith('CREDIT_UPDATED', { clubId: 'old-club' });
 });
-it('0067 protection: successful whole agent attempt resets consecutive per-agent failures', async () => {
-  m.scans.push(agents(5));
-  m.invoices.push(new Error('1'), new Error('2'), empty(), new Error('3'), new Error('4'));
-  const result = await cron.runSuspensionCheck();
-  expect(result.agentsChecked).toBe(5);
-  expect(result.unavailable).toBe(true);
-  expect(cron._suspensionCheckDisabled).toBe(false);
-});
-it('0067 protection: auto-suspend enabled still requires genuinely owed invoice eligibility', async () => {
-  cron._config.autoSuspendEnabled = true;
-  m.scans.push(agents(3));
-  m.invoices.push(owed('void'), owed('paid'), owed('disputed'));
-  const result = await cron.runSuspensionCheck();
-  expect(result.agentsSuspended).toBe(0);
-  expect(result.agentsWarned).toBe(0);
-  expect(m.rpc.mock.calls.filter(([name]) => name === 'fn_admin_update_agent')).toHaveLength(0);
-  expect(
-    m.queries
-      .filter((q) => q.table === 'credit_invoices')
-      .map((q) => q.filters.find((f: any) => f[0] === 'eq'))
-  ).toEqual([
-    ['eq', 'agent_id', 'a0'],
-    ['eq', 'agent_id', 'a1'],
-    ['eq', 'agent_id', 'a2'],
-  ]);
-});
-
 it('late agent A response cannot replace successful B rows', async () => {
   let finish: any;
   m.invoices.push(new Promise((r) => (finish = r)));
@@ -263,33 +211,4 @@ it('same identity refresh preserves pending debt read; signout fences it', async
   auth(null);
   finish(empty());
   await expect(stale).rejects.toThrow(/account changed/);
-});
-it('disabled attempts publish fresh unavailable results without generating invoices', async () => {
-  m.scans.push(new Error('1'), new Error('2'));
-  await cron.runSuspensionCheck();
-  await cron.runSuspensionCheck();
-  const previous = cron.getStatus().lastSuspensionCheck;
-  const calls = m.rpc.mock.calls.length;
-  const next = await cron.runSuspensionCheck();
-  expect(next).not.toBe(previous);
-  expect(next.unavailable).toBe(true);
-  expect(cron.getStatus().lastSuspensionCheck).toBe(next);
-  expect(m.rpc).toHaveBeenCalledTimes(calls);
-});
-it('scheduled status snapshot renders unknown and partial counts', async () => {
-  const bus = (await import('../../src/core/MasterBus')).masterBus as any;
-  let refresh: any;
-  bus.subscribeDebounced = (_name: any, fn: any) => {
-    refresh = fn;
-    return () => {};
-  };
-  const Page = (await import('../../src/pages/FinancialHealthPage')).default;
-  render(<Page />);
-  m.scans.push(agents(2));
-  m.invoices.push(empty(), new Error('unknown'));
-  await cron.runSuspensionCheck();
-  const { act } = await import('@testing-library/react');
-  act(() => refresh());
-  expect(screen.getByRole('alert').textContent).toMatch(/partial/i);
-  expect(screen.getByText('Agents Checked').previousElementSibling?.textContent).toBe('2');
 });

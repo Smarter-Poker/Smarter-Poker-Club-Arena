@@ -65,8 +65,64 @@ const ROSTER = join(ROOT, 'docs', 'attestation', 'cron-roster.tsv');
  * inactive rows are untouched again, and
  * tests/a-retired-compensation-job-is-never-scheduled-again.law.test.ts keeps
  * all fourteen names from coming back.
+ *
+ * 121 -> 124 active and 2 -> 3 retained inactive on 2026-09-30, read live.
+ * No previously pinned job changed its schedule. Four jobs appeared:
+ * rakeback-settler-stranded-source-check-hourly (applied migration
+ * 20260927220353), horse-stackoff-audit-20m (20260927221321),
+ * horse-daily-audit-fallback (20260928000527, an applied migration with no
+ * file in either repo), and midway-close-once-20260929d, which no migration
+ * mentions at all: it carries union-weekly-rakeback-close's command as a
+ * one-shot for 2026-09-29 13:04 UTC, ran once on that minute, and is now a
+ * spent schedule whose next fire is 2027. One job left the ACTIVE set without
+ * vanishing: union-weekly-rakeback-close is still row jobid 272 of cron.job
+ * with active = false, stood down while 20260928164258 reworked the weekly
+ * close, which is why RETAINED_INACTIVE moves with ACTIVE_JOBS here. Each move
+ * is named in docs/attestation/cron-roster.tsv's header beside this one.
+ *
+ * 124 -> 125 active and 3 -> 2 retained inactive on 2026-10-03, read live from
+ * fn_ca_cron_health('24 hours'). TOTAL_JOBS is 127 on both sides of this move,
+ * and that is a coincidence of three separate rows, not one row standing still:
+ *   - client-error-events-prune APPEARED, scheduled by applied migration
+ *     20261003080431 players_errors_reach_a_first_party_sink. It prunes
+ *     public.client_error_events on a 14-day retention, which is the kind of
+ *     timer CLAUDE.md 10.12 explicitly allows: its schedule is the work.
+ *   - union-weekly-rakeback-close RETURNED to the active set. Applied migration
+ *     20261003101805 the_weekly_close_commits_one_round_at_a_time re-armed
+ *     jobid 272 with cron.alter_job(..., active := true), so it leaves
+ *     retained-inactive (3 -> 2) and enters the body (124 -> 125). The two
+ *     remaining inactive rows are the bust sweeps 20260910073355 restored.
+ *   - midway-close-once-20260929d VANISHED from cron.job entirely. The
+ *     2026-09-30 note above recorded it as a hand-made spent one-shot and said
+ *     unscheduling it was its owner's call; it has been unscheduled, also by
+ *     hand (no applied migration's statements name it). It is therefore NOT
+ *     20260831112020 recurring: no migration is recorded as applied whose job
+ *     went missing underneath it. The argument for all three is in
+ *     docs/attestation/cron-roster.tsv's header beside this one.
  */
-const ACTIVE_JOBS = 121;
+/*
+ * 125 -> 126 active on 2026-10-04: postgrest-pool-renew-10m, scheduled by
+ * the_api_pool_is_renewed_before_it_outgrows_the_host (argument in its header).
+ *
+ * 126 -> 128 active on 2026-10-07, read live from fn_ca_cron_health('24 hours')
+ * (127 active) plus the one job 20261007034146 schedules:
+ * ca-diamond-cash-rake-sweep-hourly, design R4's periodic sweep of the Diamond
+ * cash rake to the house (ruling 26; argument in that migration's header).
+ * The reading also found horse-presence-heartbeat, scheduled by applied
+ * migration 20261005174041 without this file being moved, and
+ * ca-ratchet-watch-hourly moved from :35 to :29 by applied migration
+ * 20261004002936. The roster header names all three.
+ * 128 -> 129 active on 2026-10-09: lightning-alert-sweep-1m, scheduled by
+ * 20261009144343 lightning_phase_12_operator_dashboard_and_alerting through
+ * the managed cron API (Lightning operator alerting, Phase 21; argument in
+ * that migration's header).
+ * 129 -> 132 active on 2026-10-11, read live from cron.job and
+ * fn_ca_cron_health('24 hours'): ca-bound-outside-snapshots-1m (20261006170925),
+ * ca-tournament-dark-while-running-5m (20261008113537) and
+ * ca-terminal-receipt-replay-daily (20261008140859), each scheduled by a merged
+ * migration. The roster header names all three.
+ */
+const ACTIVE_JOBS = 132;
 const RETAINED_INACTIVE = 2;
 const TOTAL_JOBS = ACTIVE_JOBS + RETAINED_INACTIVE;
 
@@ -92,9 +148,13 @@ describe('the scheduled-work roster is pinned', () => {
     expect(Number(headerValue('retained-inactive'))).toBe(RETAINED_INACTIVE);
   });
 
-  it('123 total is 121 active plus the two rows 20260910073355 kept disabled', () => {
-    expect(TOTAL_JOBS).toBe(123);
+  it('134 total is 132 active plus the two rows cron.job keeps inactive', () => {
+    expect(TOTAL_JOBS).toBe(134);
+    // The two bust sweeps 20260910073355 restored disabled are both of them
+    // again: union-weekly-rakeback-close was the third until 20261003101805
+    // re-armed jobid 272, and it is now an ACTIVE row of the body instead.
     expect(raw).toContain('20260910073355');
+    expect(body.some((l) => l.startsWith('union-weekly-rakeback-close\t'))).toBe(true);
   });
 
   it('every row is one job name and one schedule, and no name repeats', () => {

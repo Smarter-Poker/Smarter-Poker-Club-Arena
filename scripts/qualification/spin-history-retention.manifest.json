@@ -143,8 +143,8 @@
       "sha256": "f435bf9da6627e16c8dbe8e19ab373c02c2f8fc2be6b9d4004d5d697d360cf9a"
     },
     ".github/workflows/ci.yml": {
-      "bytes": 124398,
-      "sha256": "4871fe2568235642dfa73277aed6a72f028bbe383c5f280c7c6ed55ca76ccb27"
+      "bytes": 189705,
+      "sha256": "2a507b74ffb80472ec31674545582cd153272381236b1fea5e18036d79d770e3"
     },
     "scripts/qualification/spin-expiry-business-state.sql": {
       "bytes": 4866,

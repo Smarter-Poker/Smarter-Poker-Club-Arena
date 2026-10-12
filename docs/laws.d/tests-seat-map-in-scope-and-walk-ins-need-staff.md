@@ -1,0 +1,3 @@
+# tests/seat-map-in-scope-and-walk-ins-need-staff.law.test.ts
+
+A signed-in account reads a seat only where it can read the seat's table (or the seat is its own): `table_seats` no longer answers every account with every seat on the platform, and no later migration may give it a `USING (true)` read policy for anyone but service_role. A Commander walk-in (a waitlist or tournament-entry row with no player) is written only by active staff of that venue: neither insert policy admits a row by its NULL owner, and anon holds no write on either table. Migration 20261007034527_seat_map_in_scope_and_walk_ins_need_staff.

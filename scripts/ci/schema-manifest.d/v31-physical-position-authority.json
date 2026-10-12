@@ -1,0 +1,4 @@
+{
+  "_owner": "Phase 6 V31 controller. Observed production catalog at 2026-10-07T04:37:38.644329Z after exact installation of migration20261007042245 SHA2563f46d013e532676170aefb604ea8fefbd203893bd4d0b626287298c73c557982. Fragment is not installation proof; independent ledger, postimage and behavior readback remain required.",
+  "functions": ["fn_gto_v31_physical_positions_valid", "fn_gto_v31_assert_physical_positions"]
+}

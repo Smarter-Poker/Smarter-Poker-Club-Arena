@@ -25,6 +25,8 @@ export interface AddchipsDeps {
         }
       | null
       | undefined;
+    /** Lightning: a pool_session_id resolves to the anchor seat's table. */
+    lightningAnchorFor?(roomId: string, userId: string): Promise<{ anchorTableId: string } | null>;
   };
 }
 
@@ -79,7 +81,12 @@ export async function handleAddchips(
       });
     }
 
-    const engine = deps.gameServer.getTableEngine(tableId);
+    let engine = deps.gameServer.getTableEngine(tableId);
+    if (!engine && typeof tableId === 'string' && deps.gameServer.lightningAnchorFor) {
+      // A Lightning room: the chips are added to the anchor seat, at its table.
+      const anchor = await deps.gameServer.lightningAnchorFor(tableId, userId);
+      if (anchor) engine = deps.gameServer.getTableEngine(anchor.anchorTableId);
+    }
     if (!engine) {
       return sendJSON(res, 404, { success: false, error: 'Table engine not found' });
     }

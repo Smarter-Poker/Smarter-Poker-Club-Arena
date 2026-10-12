@@ -93,14 +93,49 @@
     0 0.7cqw 0.9cqw rgb(0 0 0 / 90%);
 }
 
-.diamond-wallet-modal__custody-balances p,
-.diamond-wallet-modal__custody-balances button {
+.diamond-wallet-modal__custody-balances p {
   margin: 0;
   color: #d7dee7;
   font:
     500 3.4cqw/1.5 Inter,
     system-ui,
     sans-serif;
+}
+
+/* "Retry Balance" is a word control on the glass, like every other action
+   here (launch audit R-04): it used to be a raw browser button that
+   metallic-popups.css bevelled into a grey box beside Inter prose. The
+   custody component is shared with the arena, so its button is dressed
+   from this sheet rather than from its own file. */
+.diamond-wallet-modal__custody-balances button {
+  appearance: none;
+  margin: 0 0 0 1.2cqw;
+  padding: 1.2cqw 1.6cqw;
+  border: 0;
+  background: transparent;
+  color: #45adff;
+  font:
+    800 3.2cqw/1 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-shadow:
+    0 0 0.9cqw rgb(49 168 255 / 70%),
+    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.diamond-wallet-modal__custody-balances button:active {
+  filter: brightness(1.25);
+}
+
+.diamond-wallet-modal__custody-balances button:focus-visible {
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: 0.6cqw;
 }
 
 /* ── The transfer: printed under an engraved rule ───────────────────────── */
@@ -210,6 +245,7 @@
    more (SpadeConsole.css does the same for its plates). */
 [role='dialog'] .dwc-word.dwc-word,
 [role='dialog'] .diamond-wallet-transfer button,
+[role='dialog'] .diamond-wallet-modal__custody-balances button,
 [role='dialog'] .diamond-wallet-modal__buy-btn.diamond-wallet-modal__buy-btn {
   min-width: 0;
   min-height: 44px;

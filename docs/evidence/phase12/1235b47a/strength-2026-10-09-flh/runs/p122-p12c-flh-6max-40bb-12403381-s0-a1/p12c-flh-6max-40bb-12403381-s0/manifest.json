@@ -1,0 +1,29 @@
+{
+  "schema": "horse-phase12-strength-manifest-v1",
+  "mode": "contract",
+  "variant": "flh",
+  "head": "1235b47a63c439da9bdf8427148bc0818499378c",
+  "dirty": false,
+  "trackedDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "sourceSha256": "f356460a73ea429d1839e9fc31c874180d889ca50a1bf945b10359481bbbaed0",
+  "sourceFiles": 1932,
+  "serverLockSha256": "b9b88b0154db80a8a77a8de040834b41c53851465c793569acf2b5a7d6a80b74",
+  "contractVersion": "remaining-variant-strength-contract-v1",
+  "contractDigest": "fafbba8dc23ebc59b5aadf78fdcc47cd6f504baf9bcd10b07970ad7fbea501c0",
+  "packVersion": "fixed-limit-holdem-round3-v1",
+  "profileId": "p12c-flh-6max-40bb",
+  "seed": 12403381,
+  "shard": 0,
+  "pairs": 12960,
+  "runtimeStores": {
+    "charts": 0,
+    "postflop": 0,
+    "postflopV31": 0,
+    "postflopV31Dataset": null
+  },
+  "node": "v22.23.3",
+  "platform": "linux-x64",
+  "equityGovernor": "off",
+  "activation": "never",
+  "createdAt": "2026-10-09T17:57:40.131Z"
+}

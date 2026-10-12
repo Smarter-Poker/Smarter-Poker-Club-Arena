@@ -25,7 +25,6 @@ const statement = (over: Partial<Statement> = {}): Statement => ({
   netResultSettled: 30,
   unmatched: [],
   balanced: true,
-  readAt: '2026-09-14T00:00:00Z',
   ...over,
 });
 

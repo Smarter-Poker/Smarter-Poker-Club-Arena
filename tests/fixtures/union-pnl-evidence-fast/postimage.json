@@ -1,0 +1,6 @@
+{
+  "fn_union_pnl_evidence_report(uuid,timestamp with time zone,timestamp with time zone)": "3fda4fe97fac170716fef799ab6c5830",
+  "fn_union_pnl_boundary(uuid,timestamp with time zone)": "52682459bd047ad5aea7c454f3ae8c5e",
+  "fn_weekly_accounting_attempt_begin(boolean)": "130c004569f961aa6f312c4f2ed15961",
+  "fn_weekly_accounting_attempt_end()": "60f06cac8b45e49447155914600f7ca6"
+}

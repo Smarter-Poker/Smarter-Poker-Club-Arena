@@ -1,0 +1,64 @@
+Horse Brain Phases 11 and 12: natural completion records, predeclaration
+=======================================================================
+
+Declared before the engine release that carries the Phase 12 build and the
+Phase 11 audit fixes (PR #6156, branch agent/claude-horse-brain/phase12-3-20261005)
+serves any decision; nothing in the window below exists yet. The commit time of
+this file is the declaration time.
+
+1. Serving release
+------------------
+The first club-arena-engine release (label sp.release.sha) activated in an
+hourly break after #6156 merges, provided it contains the #6156 squash commit
+and, for each pack, its policy digest computed from `git show <release>:server/<file>`
+equals the digest of that squash commit (Phase 11: horsePhase11PolicyDigest,
+definition horse-phase11-policy-digest-v3; Phase 12: horsePhase12PolicyDigest,
+horse-phase12-policy-digest-v1). The release must be unchanged for the whole
+window: sp.release.sha and State.StartedAt are read before the window opens and
+after it closes, and must match. If the first such release is replaced before
+its window closes, the window moves to the next hour on the next qualifying
+release, every other rule unchanged.
+
+2. Window and population (complete, not a sample)
+-------------------------------------------------
+Minutes :02:00 to :50:00 UTC of the first full hour that release serves (the
+hour that begins after its break thaws). Every Horse decision record in the
+engine host's journal archive segments (archive/segments and
+archive-shard-1/segments; closed segment files only, sha256-name verified,
+read-only, nice 19 / ionice idle) with snapshot.decisionTimeMs in the window,
+single board, whose sourceRelease is exactly that release; records of any other
+release are counted and excluded by name.
+
+One record per pack:
+- Phase 11 (plo5, plo6, plo8): server/scripts/phase11-completion-extract.py and
+  server/src/scripts/phase11CompletionRecord.ts, definition
+  horse-phase11-completion-definition-v3 (governorReduced counted separately).
+- Phase 12 (short_deck, pineapple, flh, flo8): server/scripts/phase12-completion-extract.py
+  and server/src/scripts/phase12CompletionRecord.ts, definition
+  horse-phase12-completion-definition-v1. Pineapple discard records are never
+  counted as betting decisions.
+Tournament decisions are not counted.
+
+3. Verdict
+----------
+A pack's record meets the requirement only if every street's Wilson lower bound
+at the pack's contract z clears the floor (0.95), with at least 127 eligible
+decisions per street. The verdict is reported for all seven packs, whatever it
+is; a pack below the floor is not re-measured on another window to look for a
+pass. A record is used for admission only together with that pack's
+qualification measured at the same policy digest. A pack whose variant has too
+few natural decisions in the window to reach 127 per street is reported as
+such, not extended.
+
+4. Amendment, committed before any qualifying window has opened
+--------------------------------------------------------------
+Counted records are DECIDE_FAST decision records only (snapshot.type ==
+'DECIDE_FAST'). The worker journals a DEEP second look as a second 'decision'
+record for the same turn; it is counted and excluded by name
+(excluded_deep_second_look), never counted as another natural decision. Pineapple
+discard records (kind 'discard_decision') are counted and excluded by name in
+the window by their own request time. Both completion readers are read at the
+first main commit that carries this rule (the fix to
+server/scripts/phase11-completion-extract.py and phase12-completion-extract.py),
+which must be on main before the window is read; if it is not, the window moves
+to the next qualifying hour.

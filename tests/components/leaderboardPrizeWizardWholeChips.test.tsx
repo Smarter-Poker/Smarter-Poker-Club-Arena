@@ -228,36 +228,29 @@ describe('the prize wizard prints whole chips and publishes exactly what it show
 });
 
 describe('the wizard says only what the settlement and publication SQL do', () => {
-  it('names the leftover opening seed a standalone settlement draws first, and no bank', async () => {
+  it('uses only standalone Promo and a fixed unpaid shortfall rule', async () => {
     const user = userEvent.setup();
     open(standalone);
     await user.click(screen.getByRole('button', { name: /Yes, Show Prizes/i }));
     await user.click(screen.getByRole('button', { name: 'Continue' }));
     expect(
       screen.getByText(
-        'Harbor Kings Is Standalone, So Its Promo Wallet Pays Its Leaderboard Prizes. Any Leaderboard Prize Seed Left From Opening Is Used First.'
+        'Harbor Kings Is Standalone, So Its Promo Wallet Alone Pays Its Leaderboard Prizes.'
       )
     ).toBeInTheDocument();
-    /* A paid standalone program's shortfall row is the owner's Club Bank
-       overlay switch now (20260923143157), Off unless chosen; with it Off the
-       rule is exactly the old fixed row's. (Was: a fixed "If Promo Falls
-       Short / Round Waits Unpaid" row, which the owner's opt-in replaces for
-       this program; a union program keeps it, below and in
-       leaderboardPrizeWizardClubBankOverlay.test.tsx.) */
-    const rule = screen.getByRole('group', { name: 'Shortfall Rule' });
-    const overlay = within(rule).getByRole('switch', { name: 'Club Bank Covers Shortfalls' });
-    expect(overlay).not.toBeChecked();
-    expect(within(rule).getByText('Off')).toBeInTheDocument();
-    expect(within(rule).queryByText('If Promo Falls Short')).not.toBeInTheDocument();
+    const rule = screen.getByLabelText('Shortfall Rule');
+    expect(within(rule).getByText('If Promo Falls Short')).toBeInTheDocument();
+    expect(within(rule).getByText('Round Waits Unpaid')).toBeInTheDocument();
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument();
     expect(screen.getByText(/No Winner Is Paid, The Round Stays Unpaid/)).toHaveTextContent(
-      'The Club Bank Is Never Used.'
+      'The Club Bank And Historical Opening Prize Seed Are Never Used.'
     );
 
     await user.click(screen.getByRole('button', { name: 'Continue' }));
     await user.click(screen.getByRole('button', { name: 'Continue' }));
     expect(screen.getByText('Publishing Checks Funding And Moves No Chips.')).toBeInTheDocument();
     expect(screen.getByText(/Its Chips Are Not Locked\./)).toBeInTheDocument();
-    expect(reviewRow('Club Bank Covers Shortfalls')).toBe('Off');
+    expect(reviewRow('If Promo Falls Short')).toBe('Round Waits Unpaid');
     // The claim this replaced read as if publishing reserved the chips.
     expect(screen.queryByText(/Claims Funding Capacity/)).not.toBeInTheDocument();
   });

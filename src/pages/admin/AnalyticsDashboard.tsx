@@ -428,7 +428,7 @@ export default function AnalyticsDashboard() {
             </div>
             <div className="summary-card">
               <div className="label">Est. Total Rake</div>
-              <div className="value text-amber">${aggregate.totalRake.toLocaleString()}</div>
+              <div className="value text-amber">{aggregate.totalRake.toLocaleString()} Chips</div>
             </div>
             <div className="summary-card">
               <div className="label">VIP Points Issued</div>

@@ -53,7 +53,7 @@
 .club-identity__line,
 .club-identity__line-text,
 .club-identity__playing,
-.club-identity__level {
+.club-identity__invite {
   position: absolute;
   z-index: 1;
   display: grid;
@@ -164,14 +164,22 @@
     0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
 }
 
-/* White capitals on the painted blue plate. */
-.club-identity__level {
+/* White capitals on the painted blue plate. It is a button since Dan's
+   2026-10-11 ruling ("Share & Invite" replaces the club level), so it drops
+   the native button chrome - the plate itself is the control, in the paint. */
+.club-identity__invite {
+  appearance: none;
+  padding: 0;
+  border: 0;
+  border-radius: 0.8cqw;
+  background: transparent;
+  cursor: pointer;
   justify-items: center;
   text-align: center;
   color: #f1f5fa;
-  font-size: 3.05cqw;
+  font-family: inherit;
   font-weight: 800;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.04em;
   line-height: 1;
   text-transform: uppercase;
   white-space: nowrap;
@@ -180,8 +188,39 @@
     0 0.3cqw 0.5cqw rgb(0 0 0 / 70%);
 }
 
-.club-identity__level > span {
+/* Fitted by measurement (useFitText writes --fit): "Share & Invite" is
+   nearly twice as long as "Level 29" was, so it shrinks to an inset box inside
+   the plate rather than reaching the painted rim. */
+.club-identity__invite-text {
   display: block;
+  justify-self: center;
+  width: 90%;
+  overflow: hidden;
+}
+
+.club-identity__invite-text > span {
+  display: block;
+  font-size: calc(3.05cqw * var(--fit, 1));
+}
+
+.club-identity__invite::after {
+  /* A 44px thumb target even on the narrowest card; paints nothing. */
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: max(100%, 44px);
+  height: max(100%, 44px);
+  transform: translate(-50%, -50%);
+}
+
+.club-identity__invite:active {
+  background: rgb(255 255 255 / 5%);
+}
+
+.club-identity__invite:focus-visible {
+  outline: 0.4cqw solid #8fd4ff;
+  outline-offset: -0.4cqw;
 }
 
 /* The referral copy frame is painted; this is its hit target. */

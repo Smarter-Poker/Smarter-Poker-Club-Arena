@@ -7,6 +7,7 @@ import type {
   LiveHorseDecisionSnapshot,
 } from './horseDecision/protocol.js';
 import * as tournamentContext from '../services/TournamentBrainContext.js';
+import { HorseDecisionWorkerRuntime } from './horseDecision/workerRuntime.js';
 
 const { loadTournamentBlinds, loadSeatedPlayers } = vi.hoisted(() => ({
   loadTournamentBlinds: vi.fn(),
@@ -112,6 +113,95 @@ function fixture(count = 3, tableId = 'tournament-level-snapshot') {
   return { engine, seats, deal };
 }
 
+function cachedTournamentContext(
+  tournamentId: string,
+  changed = '',
+  clock?: { structure: unknown[]; currentLevel: number; bigBlindAnte?: boolean }
+) {
+  const now = Date.now();
+  // Synthetic source rows exercise the real context derivation and scheduler.
+  // This is not a live database read or an atomic database-snapshot proof.
+  const context = tournamentContext.deriveContext(
+    {
+      format_contract: 'mtt-v1',
+      effective_max_players: 100,
+      tournament_type: 'MTT',
+      status: 'RUNNING',
+      game_type: 'NLH',
+      variant: 'freezeout',
+      max_players: 100,
+      table_size: 6,
+      payout_structure: [{ place: 1, percentage: 100 }],
+      prize_pool: 100,
+      bounty_pool: 0,
+      is_pko: false,
+      is_bounty: false,
+      is_mystery_bounty: false,
+      blind_structure: clock?.structure ?? [
+        {
+          level: 1,
+          smallBlind: changed === 'blinds' || changed === 'small_blind' ? 20 : 10,
+          bigBlind: changed === 'blinds' ? 40 : 20,
+          ante: changed === 'blinds' || changed === 'ante' ? 4 : 2,
+          durationMinutes: 10,
+        },
+      ],
+      current_level: clock?.currentLevel ?? 0,
+      level_started_at: new Date(now - 60_000).toISOString(),
+      started_at: new Date(now - 120_000).toISOString(),
+      late_reg_mins: 0,
+      late_reg_levels: 0,
+      is_reentry: false,
+      max_reentries: 0,
+      is_rebuy: false,
+      rebuy_levels: 0,
+      max_rebuys: 0,
+      add_on_available: false,
+      addon_period_triggered: false,
+      prize_pool_finalized: false,
+      on_break: false,
+      accelerated_mtt: false,
+      big_blind_ante: clock?.bigBlindAnte ?? changed === 'ante_type',
+      authorized_to_register: false,
+    },
+    3,
+    3,
+    3000,
+    [1000, 1000, 1000],
+    [],
+    [],
+    0,
+    {},
+    now
+  );
+  expect(context.contextStatus).toBe('complete');
+  const cached: tournamentContext.TournamentBrainContextSnapshot = {
+    context,
+    status: 'complete',
+    issues: [],
+    ageMs: 0,
+    contextProvenance: {
+      version: 1,
+      readAtMs: now,
+      status: 'complete',
+      issues: [],
+      ageMs: 0,
+      source: {
+        version: 1,
+        tournamentId: tournamentId,
+        cacheId: 'aaaaaaaa-0000-4000-8000-000000000001',
+        generation: 1,
+        readStartedAtMs: now - 10,
+        readCompletedAtMs: now,
+        contextDigest: createHash('sha256').update(JSON.stringify(context)).digest('hex'),
+        contextStatus: 'complete',
+        contextIssues: [],
+      },
+    },
+  };
+  return cached;
+}
+
 describe('tournament levels belong to the hand that was created with them', () => {
   it.each([false, true])(
     'keeps the Horse request on the dealt level until the next hand (big-blind ante: %s)',
@@ -196,87 +286,7 @@ describe('tournament levels belong to the hand that was created with them', () =
       engine.getEngineLeaseAuthority = () => ({ verified: true, generation: 'fixture-lease' });
       const hand = await deal();
       hand.start();
-      const now = Date.now();
-      // Synthetic source rows exercise the real context derivation and scheduler.
-      // This is not a live database read or an atomic database-snapshot proof.
-      const context = tournamentContext.deriveContext(
-        {
-          format_contract: 'mtt-v1',
-          effective_max_players: 100,
-          tournament_type: 'MTT',
-          status: 'RUNNING',
-          game_type: 'NLH',
-          variant: 'freezeout',
-          max_players: 100,
-          table_size: 6,
-          payout_structure: [{ place: 1, percentage: 100 }],
-          prize_pool: 100,
-          bounty_pool: 0,
-          is_pko: false,
-          is_bounty: false,
-          is_mystery_bounty: false,
-          blind_structure: [
-            {
-              level: 1,
-              smallBlind: changed === 'blinds' || changed === 'small_blind' ? 20 : 10,
-              bigBlind: changed === 'blinds' ? 40 : 20,
-              ante: changed === 'blinds' || changed === 'ante' ? 4 : 2,
-              durationMinutes: 10,
-            },
-          ],
-          current_level: 0,
-          level_started_at: new Date(now - 60_000).toISOString(),
-          started_at: new Date(now - 120_000).toISOString(),
-          late_reg_mins: 0,
-          late_reg_levels: 0,
-          is_reentry: false,
-          max_reentries: 0,
-          is_rebuy: false,
-          rebuy_levels: 0,
-          max_rebuys: 0,
-          add_on_available: false,
-          addon_period_triggered: false,
-          prize_pool_finalized: false,
-          on_break: false,
-          accelerated_mtt: false,
-          big_blind_ante: changed === 'ante_type',
-          authorized_to_register: false,
-        },
-        3,
-        3,
-        3000,
-        [1000, 1000, 1000],
-        [],
-        [],
-        0,
-        {},
-        now
-      );
-      expect(context.contextStatus).toBe('complete');
-      const cached: tournamentContext.TournamentBrainContextSnapshot = {
-        context,
-        status: 'complete',
-        issues: [],
-        ageMs: 0,
-        contextProvenance: {
-          version: 1,
-          readAtMs: now,
-          status: 'complete',
-          issues: [],
-          ageMs: 0,
-          source: {
-            version: 1,
-            tournamentId: engine.tableInfo.tournament_id,
-            cacheId: 'aaaaaaaa-0000-4000-8000-000000000001',
-            generation: 1,
-            readStartedAtMs: now - 10,
-            readCompletedAtMs: now,
-            contextDigest: createHash('sha256').update(JSON.stringify(context)).digest('hex'),
-            contextStatus: 'complete',
-            contextIssues: [],
-          },
-        },
-      };
+      const cached = cachedTournamentContext(engine.tableInfo.tournament_id, changed);
       vi.spyOn(tournamentContext, 'getTournamentBrainContextSnapshot').mockReturnValue(cached);
       loadTournamentBlinds.mockResolvedValue({ ...engine.tableInfo, ...levelTwo });
       await engine.refreshBlinds();
@@ -313,6 +323,183 @@ describe('tournament levels belong to the hand that was created with them', () =
       expect(cached.context?.contextStatus).toBe('complete');
       expect(cached.contextProvenance.source?.contextStatus).toBe('complete');
       expect(cached.context?.currentBigBlind).toBe(changed === 'blinds' ? 40 : 20);
+      expect(cached.issues).toEqual([]);
+    }
+  );
+
+  const levelStructure = [
+    { level: 1, smallBlind: 10, bigBlind: 20, ante: 2, durationMinutes: 10 },
+    { level: 2, smallBlind: 20, bigBlind: 40, ante: 4, durationMinutes: 10 },
+    { level: 3, smallBlind: 40, bigBlind: 80, ante: 8, durationMinutes: 10 },
+  ];
+  const captureWithCache = async (cached: ReturnType<typeof cachedTournamentContext>) => {
+    const { engine, seats, deal } = fixture();
+    engine.getEngineLeaseAuthority = () => ({ verified: true, generation: 'fixture-lease' });
+    // The hand is dealt at level one; the tournament publishes later levels
+    // while it is still being played.
+    const hand = await deal();
+    hand.start();
+    vi.spyOn(tournamentContext, 'getTournamentBrainContextSnapshot').mockReturnValue(cached);
+    const state = hand.getState();
+    const player = state.players.find((p) => p.seat === state.currentPlayerSeat)!;
+    engine.scheduleHorseAction(
+      seats.find((p) => p.user_id === player.user_id)!,
+      player.seat,
+      player,
+      state
+    );
+    expect(decideFast).toHaveBeenCalledOnce();
+    return decideFast.mock.calls[0]![0];
+  };
+
+  it('describes a hand dealt one level before the published level as complete, with that level due next', async () => {
+    const cached = cachedTournamentContext('tournament-level-boundary', '', {
+      structure: levelStructure,
+      currentLevel: 1,
+    });
+    expect(cached.context).toMatchObject({
+      currentLevel: 1,
+      currentBigBlind: 40,
+      previousLevel: { level: 0, smallBlind: 10, bigBlind: 20, ante: 2, durationMin: 10 },
+    });
+    const request = await captureWithCache(cached);
+    expect(horseTournamentProvenanceMatchesSnapshot(request)).toBe(true);
+    expect(request.gameState).toMatchObject({
+      bigBlind: 20,
+      ante: 2,
+      tournament: {
+        contextStatus: 'complete',
+        contextIssues: [],
+        currentLevel: 0,
+        currentSmallBlind: 10,
+        currentBigBlind: 20,
+        currentAnte: 2,
+        anteType: 'per_player',
+        // The level the tournament is on now is the next level for this
+        // table, and it is already due: the next hand is dealt at it.
+        nextSmallBlind: 20,
+        nextBigBlind: 40,
+        nextAnte: 4,
+        nextBlindInMin: 0,
+        nextBlindMult: 2,
+        levelDurationMin: 10,
+        levelElapsedMin: 10,
+        m: { orbitCostChips: 36, projectedOrbitCostChips: 72, velocityMPerMinute: 0 },
+        contextProvenance: {
+          status: 'complete',
+          issues: [],
+          source: cached.contextProvenance.source,
+          projection: { smallBlind: 10, bigBlind: 20, ante: 2 },
+        },
+      },
+    });
+    // The worker admits it as a complete Phase 6 tournament snapshot.
+    expect(() =>
+      (HorseDecisionWorkerRuntime.prototype as any).assertPhase6TournamentSnapshot.call(
+        null,
+        request
+      )
+    ).not.toThrow();
+  });
+
+  it('keeps blind_level_cache_lag when the hand is not on the level just before the published one', async () => {
+    const request = await captureWithCache(
+      cachedTournamentContext('tournament-level-boundary', '', {
+        structure: levelStructure,
+        currentLevel: 2,
+      })
+    );
+    expect(request.gameState.tournament).toMatchObject({
+      contextStatus: 'incomplete',
+      contextIssues: ['TOURNAMENT_CONTEXT_INCOMPLETE', 'blind_level_cache_lag'],
+      currentLevel: 2,
+      nextSmallBlind: null,
+      nextBigBlind: null,
+      nextBlindInMin: null,
+      nextBlindMult: 1,
+    });
+  });
+
+  it('keeps blind_level_cache_lag when the published ante rule differs from the dealt hand', async () => {
+    const request = await captureWithCache(
+      cachedTournamentContext('tournament-level-boundary', '', {
+        structure: levelStructure,
+        currentLevel: 1,
+        bigBlindAnte: true,
+      })
+    );
+    expect(request.gameState.tournament).toMatchObject({
+      contextStatus: 'incomplete',
+      contextIssues: ['TOURNAMENT_CONTEXT_INCOMPLETE', 'blind_level_cache_lag'],
+    });
+  });
+
+  // The dealt hand is 10/20 with a 2 ante. A previous level that shares only
+  // its big blind is a different level, not this hand's.
+  it.each([
+    ['small blind', { smallBlind: 5, bigBlind: 20, ante: 2 }],
+    ['ante', { smallBlind: 10, bigBlind: 20, ante: 3 }],
+  ] as const)(
+    'keeps blind_level_cache_lag when the previous level matches the big blind but its %s differs',
+    async (_differs, previous) => {
+      const cached = cachedTournamentContext('tournament-level-boundary', '', {
+        structure: [{ level: 1, ...previous, durationMinutes: 10 }, ...levelStructure.slice(1)],
+        currentLevel: 1,
+      });
+      expect(cached.context).toMatchObject({
+        currentLevel: 1,
+        currentBigBlind: 40,
+        previousLevel: { level: 0, ...previous, durationMin: 10 },
+      });
+      const request = await captureWithCache(cached);
+      expect(request.gameState.tournament).toMatchObject({
+        contextStatus: 'incomplete',
+        contextIssues: ['TOURNAMENT_CONTEXT_INCOMPLETE', 'blind_level_cache_lag'],
+        currentLevel: 1,
+        nextSmallBlind: null,
+        nextBigBlind: null,
+        nextBlindInMin: null,
+        nextBlindMult: 1,
+      });
+    }
+  );
+
+  it.each([
+    { dealer: 1, count: 3, issue: null },
+    { dealer: 4, count: 3, issue: 'dead_button_atlas_unsupported' },
+    { dealer: 3, count: 2, issue: 'dealer_seat_missing' },
+    { dealer: 0, count: 3, issue: 'dealer_seat_missing' },
+    { dealer: 11, count: 3, issue: 'dealer_seat_missing' },
+    { dealer: undefined, count: 3, issue: 'dealer_seat_missing' },
+  ])(
+    'truthfully projects dealer $dealer with $count dealt players as $issue',
+    async ({ dealer, count, issue }) => {
+      const { engine, deal } = fixture();
+      const hand = await deal();
+      const players = hand.getState().players.slice(0, count);
+      const cached = cachedTournamentContext(engine.tableInfo.tournament_id);
+      vi.spyOn(tournamentContext, 'getTournamentBrainContextSnapshot').mockReturnValue(cached);
+      const result = engine.horseTournamentContext(
+        players[0],
+        players,
+        dealer,
+        'nlh',
+        hand.getBlindSnapshot()
+      );
+      expect(result.tournament).toMatchObject({
+        contextStatus: issue ? 'incomplete' : 'complete',
+        contextIssues: issue ? ['TOURNAMENT_CONTEXT_INCOMPLETE', issue] : [],
+        contextProvenance: {
+          status: 'complete',
+          source: cached.contextProvenance.source,
+          projection: {
+            dealerSeat: dealer ?? null,
+            dealtSeatIds: players.map((player) => player.seat),
+          },
+        },
+      });
+      // A valid empty physical button is observable; it cannot borrow a calibrated BTN cell.
+      expect(cached.context?.contextStatus).toBe('complete');
       expect(cached.issues).toEqual([]);
     }
   );

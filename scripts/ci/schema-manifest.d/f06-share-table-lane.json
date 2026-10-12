@@ -1,0 +1,5 @@
+{
+  "_owner": "patch/p7-f06-share-table-lane. NOT YET APPLIED when pushed (2026-10-03): migration 20261003230910_a_tournament_table_s_hand_does_not_wait_for_its_sibling_tabl contains row-lock clauses the MCP write gate holds for the owner, so it is applied with Apply Merged Migration after merge. Until then the credentialed CI run of check-migrations-applied correctly reports this name absent.",
+  "tables": [],
+  "functions": ["fn_ca_f06_share_table_lane"]
+}

@@ -39,13 +39,11 @@
   position: relative;
   width: 100%;
   min-height: 400px;
-  background: linear-gradient(155deg, rgba(16, 25, 34, 0.94), rgba(3, 7, 11, 0.99));
-  border: 1px solid rgba(199, 210, 220, 0.16);
-  border-radius: 2px;
   padding: 1rem;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.055),
-    0 12px 28px rgba(0, 0, 0, 0.3);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .position-svg {
@@ -142,12 +140,10 @@
   display: flex;
   align-items: center;
   padding: 1rem;
-  background: linear-gradient(155deg, rgba(17, 25, 34, 0.94), rgba(3, 7, 11, 0.98));
-  border: 1px solid rgba(199, 210, 220, 0.14);
-  border-radius: 2px;
-  box-shadow:
-    inset 3px 0 0 var(--callout-accent),
-    inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .callout.strongest {
@@ -156,6 +152,14 @@
 
 .callout.weakest {
   --callout-accent: rgba(222, 87, 87, 0.76);
+}
+
+.callout.sample-needed {
+  --callout-accent: rgba(69, 173, 255, 0.72);
+}
+
+.callout.sample-needed .callout-value {
+  color: #45adff;
 }
 
 .callout-text {
@@ -203,13 +207,11 @@
 }
 
 .position-stat-card {
-  background: linear-gradient(155deg, rgba(17, 25, 34, 0.94), rgba(3, 7, 11, 0.98));
-  border: 1px solid rgba(199, 210, 220, 0.14);
-  border-radius: 2px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
   padding: 1rem;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.045),
-    inset 0 -2px 0 rgba(22, 140, 255, 0.32);
+  box-shadow: none;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 

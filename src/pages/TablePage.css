@@ -2283,15 +2283,6 @@
   z-index: 10;
 }
 
-/* Dan 2026-08-28 (equity smart placement): a seat carrying an all-in equity
-   badge rises above the neighbouring wrappers so the badge cannot be sealed
-   under a DOM-later neighbour's avatar (every wrapper is a stacking context
-   — the badge's own z-index: 50 only counts INSIDE its wrapper). 28, so a
-   seat actually tabling its cards (--showing, z 30) still wins. */
-.seat-wrapper--equity:not(.seat-wrapper--showing) {
-  z-index: 28;
-}
-
 /* HERO LIFT — the HOOK survives; the values are retired (Dan 2026-08-25 r2).
 
    Hero is the only seat at y:100 (see SEAT_LAYOUTS in lib/tableSeatGeometry.ts),
@@ -2900,119 +2891,6 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   SPIN MULTIPLIER BADGE
-   ═══════════════════════════════════════════════════════════════════════════════ */
-
-.spinMultiplierBadge {
-  position: absolute;
-  top: 12px;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 16px;
-  background: linear-gradient(135deg, #f59e0b, #d97706);
-  border-radius: 20px;
-  font-weight: 800;
-  font-size: 1.1rem;
-  color: #1a1a2e;
-  box-shadow: 0 4px 15px rgba(245, 158, 11, 0.4);
-  z-index: 50;
-  animation: spinBadgeGlow 2s ease-in-out infinite alternate;
-}
-
-.spinMultiplierIcon {
-  font-size: 1.2rem;
-}
-
-.spinMultiplierValue {
-  font-size: 1.2rem;
-  letter-spacing: 0.05em;
-}
-
-/* THE PRIZE, BESIDE THE MULTIPLIER (Dan 2026-09-05). Separated by a hairline
-   rather than a gap so the pair reads as one badge — "12x | 36,000" — and set
-   a step down from the multiplier, which stays the headline. `tabular-nums`
-   because this number changes on nothing and must not jitter the badge width
-   between tables. */
-.spinMultiplierPrize {
-  font-size: 1rem;
-  font-weight: 800;
-  letter-spacing: 0.03em;
-  padding-left: 8px;
-  border-left: 1px solid rgba(26, 26, 46, 0.35);
-  font-variant-numeric: tabular-nums;
-}
-
-/* Premium spins (100x+) get special styling */
-.spinMultiplierBadge.premium {
-  background: linear-gradient(135deg, #ec4899, #8b5cf6);
-  box-shadow: 0 4px 20px rgba(236, 72, 153, 0.5);
-  animation: premiumSpinGlow 1.5s ease-in-out infinite alternate;
-}
-
-@keyframes spinBadgeGlow {
-  from {
-    box-shadow: 0 4px 15px rgba(245, 158, 11, 0.3);
-  }
-  to {
-    box-shadow: 0 4px 25px rgba(245, 158, 11, 0.6);
-  }
-}
-
-@keyframes premiumSpinGlow {
-  from {
-    box-shadow: 0 4px 15px rgba(236, 72, 153, 0.4);
-  }
-  to {
-    box-shadow: 0 4px 30px rgba(236, 72, 153, 0.7);
-  }
-}
-
-@media (max-width: 768px) {
-  .spinMultiplierBadge {
-    padding: 5px 12px;
-    font-size: 0.95rem;
-    top: 10px;
-  }
-
-  .spinMultiplierIcon {
-    font-size: 1rem;
-  }
-
-  .spinMultiplierValue {
-    font-size: 1rem;
-  }
-
-  .spinMultiplierPrize {
-    font-size: 0.85rem;
-    padding-left: 6px;
-  }
-}
-
-@media (max-width: 480px) {
-  .spinMultiplierBadge {
-    padding: 4px 12px;
-    font-size: 0.9rem;
-    top: 8px;
-  }
-
-  .spinMultiplierIcon {
-    font-size: 0.95rem;
-  }
-
-  .spinMultiplierValue {
-    font-size: 0.95rem;
-  }
-
-  .spinMultiplierPrize {
-    font-size: 0.8rem;
-    padding-left: 6px;
-  }
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════════
    ALL-IN DRAMATIC MODE — Vignette overlay + slow board dealing
    ═══════════════════════════════════════════════════════════════════════════════ */
 
@@ -3073,69 +2951,53 @@
   transition: background-color 0.4s ease;
   animation: equityPop calc(0.45s * var(--animation-speed, 1)) cubic-bezier(0.2, 0.8, 0.3, 1.4);
 }
-/* Dan 2026-08-28 (smart placement): "PERCENTAGES SHOULD ALWAYS BE ABOVE THE
-   AVATAR WHEN POSSIBLE, NOT BELOW, AND NOT TO THE RIGHT." Every seat now
-   defaults to `--above`: the badge rides the strip above the seat box, past
-   the action badge's -26..-3px slot so ALL IN and the percentage can both
-   show. The side docks below remain for the TOP-CAP seats only — the BBJ
-   banner owns the space above those — and TablePage.tsx picks WHICH side at
-   render time, swinging away from a neighbouring all-in badge. */
-.equity-overlay--above {
-  bottom: calc(100% + 28px);
-  top: auto;
-  left: 50%;
-  transform: translateX(-50%);
+/* ─── THE BADGES LIVE IN ONE LAYER ABOVE EVERY SEAT (Dan 2026-10-04) ────────
+   "THE '50%' TO WIN SHOULD NEVER BE 'IN THE BACKGROUND' OR HAVE ANYTHING OVER
+    IT, THEY SHOULD ALWAYS APPEAR AS LAYER 1 ... BUT CAN NEVER COVER A PLAYERS
+    DISPLAYED CARDS."
+
+   A badge used to be a child of its seat's wrapper, where its z-index counted
+   only against that seat's own contents; a neighbouring seat in the same
+   runout painted over it (components/table/EquityBadgeLayer.tsx has the whole
+   account). The layer is a sibling of the seats: 65 puts it over a seat
+   tabling its cards (30), the pot (20) and every banner on the felt (<= 60),
+   and under the sheets and modals, which are not the felt.
+
+   WHERE each badge goes is no longer a class. The `--above` / `--inboard-left`
+   / `--inboard-right` rules that stood here placed a badge relative to its
+   wrapper and could not see a card; lib/equityBadgePlacement.ts places it from
+   measured boxes and refuses any spot that touches a displayed card. */
+.equity-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 65;
+  pointer-events: none;
 }
 
-@media (max-width: 640px) {
-  .equity-overlay--above {
-    /* Phone action badges are shorter; hug the seat a little closer so the
-       badge stays inside the felt on the shallow top rows. */
-    bottom: calc(100% + 22px);
-  }
+.equity-layer__slot {
+  position: absolute;
 }
 
-.equity-overlay--inboard-right {
-  bottom: auto;
-  top: 50%;
-  left: calc(100% + 6px);
-  transform: translateY(-50%);
-  font-size: 18px;
+/* Inside a slot the badge is placed by the slot, so it sheds the base rule's
+   own offsets - and its pop must not carry the translateX(-50%) the base
+   keyframes bake in, or it would jump half its width sideways as it lands. */
+.equity-layer .equity-overlay {
+  position: static;
+  transform: none;
+  animation-name: equityPopLayer;
 }
 
-.equity-overlay--inboard-left {
-  bottom: auto;
-  top: 50%;
-  left: auto;
-  right: calc(100% + 6px);
-  transform: translateY(-50%);
-  font-size: 18px;
-}
-
-.equity-overlay--inboard-right .equity-overlay__track,
-.equity-overlay--inboard-left .equity-overlay__track {
-  width: 64px;
-}
-
-/* The pop keyframes bake in the below-seat translateX(-50%); the side-docked
-   badges need their own translateY variant or the animation would yank them
-   back under the seat for its first half-second. */
-.equity-overlay--inboard-right,
-.equity-overlay--inboard-left {
-  animation-name: equityPopSide;
-}
-
-@keyframes equityPopSide {
+@keyframes equityPopLayer {
   0% {
-    transform: translateY(-50%) scale(0.6);
+    transform: scale(0.6);
     opacity: 0;
   }
   60% {
-    transform: translateY(-50%) scale(1.18);
+    transform: scale(1.18);
     opacity: 1;
   }
   100% {
-    transform: translateY(-50%) scale(1);
+    transform: scale(1);
     opacity: 1;
   }
 }
@@ -5084,3 +4946,32 @@ button.post-bb-overlay-button {
    not also declare, the banner vanishes for every reduced-motion player, and
    CLAUDE.md §10.6 is explicit that reduced motion collapses motion but never
    meaning. Deleting the override is the fix; the global rule is the mechanism. */
+
+/* Spins and Heads Up take the full available table canvas. This class is
+   table identity, so no action, dock toggle or hand phase can resize it. */
+.table-page.table-page--short-match .table-scaler {
+  --sp-table-ar-w: 700;
+  --sp-table-ar-h: 1000;
+  --sp-short-table-drop: 0px;
+  max-width: min(100%, 760px);
+}
+.table-brand__prize {
+  color: #e4e7ec;
+  font-weight: 800;
+}
+@media (max-width: 768px) {
+  .table-page.table-page--short-match .table-scaler {
+    width: 100%;
+    height: var(--sp-table-h);
+    margin-top: 0;
+  }
+  .table-page--short-match .table-container {
+    --sp-table-top: calc(var(--sp-page-inset-top) + var(--sp-bbj-h, 22px) + 22px);
+  }
+  .table-page--short-match .table-brand__meta {
+    width: 100%;
+  }
+  .table-page--short-match .table-brand__line--identity {
+    font-size: 10px;
+  }
+}

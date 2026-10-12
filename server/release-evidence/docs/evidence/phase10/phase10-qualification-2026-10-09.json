@@ -1,0 +1,27 @@
+{
+  "schema": "horse-phase10-qualification-v1",
+  "qualified": true,
+  "mode": "contract",
+  "sourceSha": "c8bfc6171ddfabdfa8d8ca55f4e13fc7e2466400",
+  "packVersion": "plo4-policy-round3-v2",
+  "contractVersion": "plo4-strength-contract-v1",
+  "contractDigest": "83ab185b2a2df72876b73d61ece6ea8c2f03f364ce252deecbfcde392ae5f838",
+  "domain": "plo4-cash-single-board-after-rake-horse-population",
+  "policyDigest": "7f7968b11afd353646de507a381c188f131f241191ad1eb6fb33f563fb0ceadb",
+  "policyDigestDefinition": "horse-phase10-policy-digest-v2",
+  "objectives": {
+    "cash": { "qualified": true, "status": "measured" },
+    "tournament": {
+      "status": "unavailable dependency",
+      "qualified": false,
+      "reasons": [
+        "tournament:plo4_whole_tournament_outcome_model_unavailable",
+        "tournament:qualified_plo4_tournament_reference_population_unavailable",
+        "tournament:plo4_tournament_thresholds_not_specified"
+      ]
+    }
+  },
+  "evidencePath": "docs/evidence/phase10/strength-2026-10-09/strength.json",
+  "evidenceSha256": "0b56fce6057aec37d710df12554df6c0eec4049e0057748c9b2fa17239f25a31",
+  "reasons": []
+}

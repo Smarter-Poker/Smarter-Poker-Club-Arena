@@ -1,0 +1,15 @@
+{
+  "_owner": "agent/claude-lightning-p9/lightning/reconnect-db - migration 20261008050805_lightning_phase_9_disconnect_reconnect_and_the_forensic_ledg",
+  "_comment": "Lightning Phase 9 (spec Phases 14 and 15, database side). NOT YET APPLIED: every name below is a promise until the owner installs 20261008050805 after the Phase 7/8 review fixes (20261008043021). lightning_pool_session.disconnected_at is stamped and cleared by fn_lightning_presence_report (service_role) and read by fn_lightning_reap_expired_disconnects (service_role, wired into fn_cash_clusters_tick_all), which exits a disconnect past disconnect_timeout_ms (new fn_lightning_config key, default 180000, clamp 30000..1800000) whose player is not in a live hand (exit_reason disconnect_expired, pool_player_left + player_expired events). fn_lightning_reconnect_state(cluster) is the caller-only browser door (SECURITY DEFINER, authenticated + service_role). fn_lightning_cluster_forensics(cluster, from, to, limit) and fn_lightning_hand_replay_check(hand) are read-only service_role operator doors. fn_cash_cluster_unfreeze now emits pool_player_left per exited session.",
+  "tables": [],
+  "functions": [
+    "fn_lightning_presence_report",
+    "fn_lightning_reap_expired_disconnects",
+    "fn_lightning_reconnect_state",
+    "fn_lightning_cluster_forensics",
+    "fn_lightning_hand_replay_check"
+  ],
+  "columns": {
+    "lightning_pool_session": ["disconnected_at"]
+  }
+}

@@ -18,11 +18,13 @@
   --members-text: #f4f7fa;
   --members-text-dim: #9ba8b5;
   --members-text-faint: #6f7c89;
-  --members-content: min(1380px, calc(100vw - 32px));
+  /* The application shell can be narrower than the viewport. Every roster
+     surface shares the page's available width, including its clipped controls. */
+  --members-content: min(1380px, calc(100% - 32px));
   width: 100%;
   min-height: 100vh;
   min-height: 100dvh;
-  max-width: 100vw;
+  max-width: 100%;
   overflow-x: hidden;
   overflow-x: clip;
   padding: 16px 0 calc(var(--bottom-nav-clearance, 74px) + 24px);
@@ -1089,7 +1091,7 @@
 
 @media (max-width: 720px) {
   .club-members-page {
-    --members-content: calc(100vw - 18px);
+    --members-content: calc(100% - 18px);
     padding-top: 9px;
     background-size: 36px 36px;
   }
@@ -1139,10 +1141,22 @@
     font-size: 0.53rem;
     letter-spacing: 0.08em;
   }
+  /* On a phone the console is most of the screen tall (search, saved views,
+     sort, five controls, the export scope and Metric Definitions), so pinning
+     it hid the roster beneath it and, with Metric Definitions open, pushed its
+     own last definitions under the bottom navigation where no scroll could
+     reach them. It scrolls with the page here; the roster keeps its own
+     scrolling viewport. tests/e2e/css/club-members-containment.spec.ts. */
   .members-console {
-    top: 0;
+    position: relative;
+    top: auto;
     margin-bottom: 9px;
     padding: 15px 12px 12px;
+  }
+  /* With the console no longer pinned above it, the selection bar pins
+     directly under the header instead of 306px down the screen. */
+  .members-bulk {
+    top: calc(var(--top-nav-height, 62px) + 6px);
   }
   .members-console__heading {
     align-items: center;

@@ -1,0 +1,1720 @@
+{
+  "schema": "horse-phase8-strength-v1",
+  "phase": "P8.2",
+  "mode": "promotion",
+  "contract": {
+    "seeds": [8101101, 8102203, 8103307],
+    "objectives": ["mtt", "sng", "spin", "satellite", "pko", "mystery"],
+    "pairsPerRun": 1024,
+    "requiredRuns": 18,
+    "domain": "nlh-single-board-tournament-postflop",
+    "verdictFunctions": "summarizeTournamentPromotion and tournamentRunCanPromote, server/src/benchmark/HorseTournamentLeague.ts",
+    "runner": "server/src/scripts/horseTournamentEvaluate.ts --output=<dir> --objective=<o> --seed=<s> --promotion",
+    "limits": { "workBudgetMs": 4, "budgetMs": 5, "policyBudgetMs": 2 }
+  },
+  "source": {
+    "head": "c0b56ffce7c92a4827d73bbedec21b5b60e541c3",
+    "dirty": false,
+    "sourceSha256": "eb34bf5c1bf3adfd836f64074789a24048203270a28c5a64f7548e12c7b7b026",
+    "sourceFiles": 1691,
+    "serverLockSha256": "ca23ba067ed2c588ef30304d6db05485a9bf8d9c8395d1016e863883ccf64952",
+    "continuationVersion": "horse-tournament-postflop-round1-v4",
+    "policyDigest": "fc359c40d5c8447ff728036f181d20b106eb96dd07d20f98fd99ab8a73b05254",
+    "policyDigestCheck": "computed by horsePhase8PolicyDigest(); server/src/engine/HorseTournamentPostflop.ts, server/src/engine/HorseTournamentContinuation.ts, server/src/engine/HorseTournamentFutureHand.ts, server/src/engine/HorseQualifiedAuthority.ts are identical at c0b56ffce7c92a4827d73bbedec21b5b60e541c3 and the assembling checkout"
+  },
+  "hosts": {
+    "gh-runner-mtt-8101101": {
+      "label": "mtt-8101101",
+      "provider": "GitHub-hosted",
+      "serverType": "ubuntu24",
+      "vcpu": 4,
+      "vcpuKind": "runner",
+      "cpu": "AMD EPYC 7763 64-Core Processor",
+      "memoryGb": 16,
+      "runner": "GitHub Actions 1000217760",
+      "imageVersion": "20260927.320.1",
+      "kernel": "6.17.0-1022-azure",
+      "node": "v22.23.3",
+      "workflowRun": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37022970018",
+      "sourceSha": "c0b56ffce7c92a4827d73bbedec21b5b60e541c3",
+      "concurrency": "one league run on this runner"
+    },
+    "gh-runner-mtt-8102203": {
+      "label": "mtt-8102203",
+      "provider": "GitHub-hosted",
+      "serverType": "ubuntu24",
+      "vcpu": 4,
+      "vcpuKind": "runner",
+      "cpu": "AMD EPYC 7763 64-Core Processor",
+      "memoryGb": 16,
+      "runner": "GitHub Actions 1000219747",
+      "imageVersion": "20260927.320.1",
+      "kernel": "6.17.0-1022-azure",
+      "node": "v22.23.3",
+      "workflowRun": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37022970018",
+      "sourceSha": "c0b56ffce7c92a4827d73bbedec21b5b60e541c3",
+      "concurrency": "one league run on this runner",
+      "note": "attempt 2: attempt 1 (job 110890435092) lost its runner to a shutdown signal at 2026-10-02T19:03:16Z before writing any result or artifact, and was rerun from scratch on the same source, seed and pair count"
+    },
+    "gh-runner-mtt-8103307": {
+      "label": "mtt-8103307",
+      "provider": "GitHub-hosted",
+      "serverType": "ubuntu24",
+      "vcpu": 4,
+      "vcpuKind": "runner",
+      "cpu": "AMD EPYC 7763 64-Core Processor",
+      "memoryGb": 16,
+      "runner": "GitHub Actions 1000217752",
+      "imageVersion": "20260927.320.1",
+      "kernel": "6.17.0-1022-azure",
+      "node": "v22.23.3",
+      "workflowRun": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37022970018",
+      "sourceSha": "c0b56ffce7c92a4827d73bbedec21b5b60e541c3",
+      "concurrency": "one league run on this runner"
+    },
+    "gh-runner-mystery-8101101": {
+      "label": "mystery-8101101",
+      "provider": "GitHub-hosted",
+      "serverType": "ubuntu24",
+      "vcpu": 4,
+      "vcpuKind": "runner",
+      "cpu": "AMD EPYC 7763 64-Core Processor",
+      "memoryGb": 16,
+      "runner": "GitHub Actions 1000217756",
+      "imageVersion": "20260927.320.1",
+      "kernel": "6.17.0-1022-azure",
+      "node": "v22.23.3",
+      "workflowRun": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37022970018",
+      "sourceSha": "c0b56ffce7c92a4827d73bbedec21b5b60e541c3",
+      "concurrency": "one league run on this runner"
+    },
+    "gh-runner-mystery-8102203": {
+      "label": "mystery-8102203",
+      "provider": "GitHub-hosted",
+      "serverType": "ubuntu24",
+      "vcpu": 4,
+      "vcpuKind": "runner",
+      "cpu": "INTEL(R) XEON(R) PLATINUM 8573C",
+      "memoryGb": 16,
+      "runner": "GitHub Actions 1000217762",
+      "imageVersion": "20260927.320.1",
+      "kernel": "6.17.0-1022-azure",
+      "node": "v22.23.3",
+      "workflowRun": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37022970018",
+      "sourceSha": "c0b56ffce7c92a4827d73bbedec21b5b60e541c3",
+      "concurrency": "one league run on this runner"
+    },
+    "gh-runner-mystery-8103307": {
+      "label": "mystery-8103307",
+      "provider": "GitHub-hosted",
+      "serverType": "ubuntu24",
+      "vcpu": 4,
+      "vcpuKind": "runner",
+      "cpu": "AMD EPYC 9V45 96-Core Processor",
+      "memoryGb": 16,
+      "runner": "GitHub Actions 1000217750",
+      "imageVersion": "20260927.320.1",
+      "kernel": "6.17.0-1022-azure",
+      "node": "v22.23.3",
+      "workflowRun": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37022970018",
+      "sourceSha": "c0b56ffce7c92a4827d73bbedec21b5b60e541c3",
+      "concurrency": "one league run on this runner"
+    },
+    "gh-runner-pko-8101101": {
+      "label": "pko-8101101",
+      "provider": "GitHub-hosted",
+      "serverType": "ubuntu24",
+      "vcpu": 4,
+      "vcpuKind": "runner",
+      "cpu": "AMD EPYC 9V45 96-Core Processor",
+      "memoryGb": 16,
+      "runner": "GitHub Actions 1000217763",
+      "imageVersion": "20260927.320.1",
+      "kernel": "6.17.0-1022-azure",
+      "node": "v22.23.3",
+      "workflowRun": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37022970018",
+      "sourceSha": "c0b56ffce7c92a4827d73bbedec21b5b60e541c3",
+      "concurrency": "one league run on this runner"
+    },
+    "gh-runner-pko-8102203": {
+      "label": "pko-8102203",
+      "provider": "GitHub-hosted",
+      "serverType": "ubuntu24",
+      "vcpu": 4,
+      "vcpuKind": "runner",
+      "cpu": "AMD EPYC 7763 64-Core Processor",
+      "memoryGb": 16,
+      "runner": "GitHub Actions 1000217754",
+      "imageVersion": "20260927.320.1",
+      "kernel": "6.17.0-1022-azure",
+      "node": "v22.23.3",
+      "workflowRun": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37022970018",
+      "sourceSha": "c0b56ffce7c92a4827d73bbedec21b5b60e541c3",
+      "concurrency": "one league run on this runner"
+    },
+    "gh-runner-pko-8103307": {
+      "label": "pko-8103307",
+      "provider": "GitHub-hosted",
+      "serverType": "ubuntu24",
+      "vcpu": 4,
+      "vcpuKind": "runner",
+      "cpu": "AMD EPYC 7763 64-Core Processor",
+      "memoryGb": 16,
+      "runner": "GitHub Actions 1000219748",
+      "imageVersion": "20260927.320.1",
+      "kernel": "6.17.0-1022-azure",
+      "node": "v22.23.3",
+      "workflowRun": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37022970018",
+      "sourceSha": "c0b56ffce7c92a4827d73bbedec21b5b60e541c3",
+      "concurrency": "one league run on this runner",
+      "note": "attempt 2: attempt 1 (job 110890435029) lost its runner to a shutdown signal at 2026-10-02T17:42:10Z before writing any result or artifact, and was rerun from scratch on the same source, seed and pair count"
+    },
+    "gh-runner-satellite-8101101": {
+      "label": "satellite-8101101",
+      "provider": "GitHub-hosted",
+      "serverType": "ubuntu24",
+      "vcpu": 4,
+      "vcpuKind": "runner",
+      "cpu": "INTEL(R) XEON(R) PLATINUM 8573C",
+      "memoryGb": 16,
+      "runner": "GitHub Actions 1000217751",
+      "imageVersion": "20260927.320.1",
+      "kernel": "6.17.0-1022-azure",
+      "node": "v22.23.3",
+      "workflowRun": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37022970018",
+      "sourceSha": "c0b56ffce7c92a4827d73bbedec21b5b60e541c3",
+      "concurrency": "one league run on this runner"
+    },
+    "gh-runner-satellite-8102203": {
+      "label": "satellite-8102203",
+      "provider": "GitHub-hosted",
+      "serverType": "ubuntu24",
+      "vcpu": 4,
+      "vcpuKind": "runner",
+      "cpu": "Intel(R) Xeon(R) Platinum 8370C CPU @ 2.80GHz",
+      "memoryGb": 16,
+      "runner": "GitHub Actions 1000217753",
+      "imageVersion": "20260927.320.1",
+      "kernel": "6.17.0-1022-azure",
+      "node": "v22.23.3",
+      "workflowRun": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37022970018",
+      "sourceSha": "c0b56ffce7c92a4827d73bbedec21b5b60e541c3",
+      "concurrency": "one league run on this runner"
+    },
+    "gh-runner-satellite-8103307": {
+      "label": "satellite-8103307",
+      "provider": "GitHub-hosted",
+      "serverType": "ubuntu24",
+      "vcpu": 4,
+      "vcpuKind": "runner",
+      "cpu": "Intel(R) Xeon(R) Platinum 8370C CPU @ 2.80GHz",
+      "memoryGb": 16,
+      "runner": "GitHub Actions 1000217761",
+      "imageVersion": "20260927.320.1",
+      "kernel": "6.17.0-1022-azure",
+      "node": "v22.23.3",
+      "workflowRun": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37022970018",
+      "sourceSha": "c0b56ffce7c92a4827d73bbedec21b5b60e541c3",
+      "concurrency": "one league run on this runner"
+    },
+    "gh-runner-sng-8101101": {
+      "label": "sng-8101101",
+      "provider": "GitHub-hosted",
+      "serverType": "ubuntu24",
+      "vcpu": 4,
+      "vcpuKind": "runner",
+      "cpu": "AMD EPYC 7763 64-Core Processor",
+      "memoryGb": 16,
+      "runner": "GitHub Actions 1000217758",
+      "imageVersion": "20260927.320.1",
+      "kernel": "6.17.0-1022-azure",
+      "node": "v22.23.3",
+      "workflowRun": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37022970018",
+      "sourceSha": "c0b56ffce7c92a4827d73bbedec21b5b60e541c3",
+      "concurrency": "one league run on this runner"
+    },
+    "gh-runner-sng-8102203": {
+      "label": "sng-8102203",
+      "provider": "GitHub-hosted",
+      "serverType": "ubuntu24",
+      "vcpu": 4,
+      "vcpuKind": "runner",
+      "cpu": "AMD EPYC 7763 64-Core Processor",
+      "memoryGb": 16,
+      "runner": "GitHub Actions 1000217757",
+      "imageVersion": "20260927.320.1",
+      "kernel": "6.17.0-1022-azure",
+      "node": "v22.23.3",
+      "workflowRun": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37022970018",
+      "sourceSha": "c0b56ffce7c92a4827d73bbedec21b5b60e541c3",
+      "concurrency": "one league run on this runner"
+    },
+    "gh-runner-sng-8103307": {
+      "label": "sng-8103307",
+      "provider": "GitHub-hosted",
+      "serverType": "ubuntu24",
+      "vcpu": 4,
+      "vcpuKind": "runner",
+      "cpu": "AMD EPYC 7763 64-Core Processor",
+      "memoryGb": 16,
+      "runner": "GitHub Actions 1000217766",
+      "imageVersion": "20260927.320.1",
+      "kernel": "6.17.0-1022-azure",
+      "node": "v22.23.3",
+      "workflowRun": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37022970018",
+      "sourceSha": "c0b56ffce7c92a4827d73bbedec21b5b60e541c3",
+      "concurrency": "one league run on this runner"
+    },
+    "gh-runner-spin-8101101": {
+      "label": "spin-8101101",
+      "provider": "GitHub-hosted",
+      "serverType": "ubuntu24",
+      "vcpu": 4,
+      "vcpuKind": "runner",
+      "cpu": "Intel(R) Xeon(R) 6973P-C",
+      "memoryGb": 16,
+      "runner": "GitHub Actions 1000217759",
+      "imageVersion": "20260927.320.1",
+      "kernel": "6.17.0-1022-azure",
+      "node": "v22.23.3",
+      "workflowRun": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37022970018",
+      "sourceSha": "c0b56ffce7c92a4827d73bbedec21b5b60e541c3",
+      "concurrency": "one league run on this runner"
+    },
+    "gh-runner-spin-8102203": {
+      "label": "spin-8102203",
+      "provider": "GitHub-hosted",
+      "serverType": "ubuntu24",
+      "vcpu": 4,
+      "vcpuKind": "runner",
+      "cpu": "Intel(R) Xeon(R) 6973P-C",
+      "memoryGb": 16,
+      "runner": "GitHub Actions 1000217749",
+      "imageVersion": "20260927.320.1",
+      "kernel": "6.17.0-1022-azure",
+      "node": "v22.23.3",
+      "workflowRun": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37022970018",
+      "sourceSha": "c0b56ffce7c92a4827d73bbedec21b5b60e541c3",
+      "concurrency": "one league run on this runner"
+    },
+    "gh-runner-spin-8103307": {
+      "label": "spin-8103307",
+      "provider": "GitHub-hosted",
+      "serverType": "ubuntu24",
+      "vcpu": 4,
+      "vcpuKind": "runner",
+      "cpu": "AMD EPYC 9V74 80-Core Processor",
+      "memoryGb": 16,
+      "runner": "GitHub Actions 1000217755",
+      "imageVersion": "20260927.320.1",
+      "kernel": "6.17.0-1022-azure",
+      "node": "v22.23.3",
+      "workflowRun": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37022970018",
+      "sourceSha": "c0b56ffce7c92a4827d73bbedec21b5b60e541c3",
+      "concurrency": "one league run on this runner"
+    }
+  },
+  "hostAssignment": "One league run per GitHub-hosted ubuntu-24.04 runner (.github/workflows/horse-phase8-strength-league.yml, workflow run 37022970018), the 18-job matrix fixed by the workflow before any result; Node 22 (the engine image Node), a clean checkout of the evaluated source with npm ci in server/, league children at nice 19 under the qualified Linux launcher.",
+  "matrixComplete": true,
+  "receiptFormatting": "Each run file is the host bytes reformatted by the repository Prettier configuration; formatting is the only difference (the parsed JSON is identical, checked at assembly). sourceSha256 hashes the host bytes, committedSha256 the committed file.",
+  "runs": [
+    {
+      "run": "mtt-8101101",
+      "objective": "mtt",
+      "seed": 8101101,
+      "host": "gh-runner-mtt-8101101",
+      "hostLabel": "mtt-8101101",
+      "startedAt": "2026-10-02T14:54:00.698Z",
+      "durationMs": 14321489.511390999,
+      "files": {
+        "mtt-8101101.json": {
+          "sourceSha256": "38da2c9b0fe6f60861e42b829246e233ddb1122658357ffed2640b80e1761013",
+          "committedSha256": "af9f0886ef8e748297f46c61d9d3e5b6d31208a35fcf7aecaa8f39b78cbfc307"
+        },
+        "mtt-8101101/manifest.json": {
+          "sourceSha256": "d93dcd5231c69287ca5c6ce19749fc037df46a6363a0dbccca91d0eaea4aa126",
+          "committedSha256": "13c1f14af8545911d9c43cc51db23cb4d770e903584cf01c8fc02ae9e2cbee69"
+        },
+        "mtt-8101101/summary.json": {
+          "sourceSha256": "6f72eaa79a34a47284a5cc13980b1eb784f26cb56edfe6e54049645d039d461c",
+          "committedSha256": "9fca5edea8b319493709208d0e6043bf934382d3247ae44f923197d9b74a8213"
+        },
+        "mtt-8101101/baseline-verification.json": {
+          "sourceSha256": "823c66f7d41d2122755429f9884e5c34471b474c8f85563458301f80d2c90b4a",
+          "committedSha256": "823c66f7d41d2122755429f9884e5c34471b474c8f85563458301f80d2c90b4a"
+        }
+      },
+      "solverStores": {
+        "charts": 240,
+        "postflop": 7747,
+        "postflopV31": 0,
+        "postflopV31Dataset": null
+      },
+      "requestedPairs": 1024,
+      "pairs": 1024,
+      "complete": true,
+      "pairsShortOfRequest": 0,
+      "decisions": 782140,
+      "eligible": 4563,
+      "fired": 155,
+      "completed": 155,
+      "changed": 11,
+      "completionRefusals": {
+        "continuation_operation_budget": 4345,
+        "budget_exhausted": 32,
+        "continuation_sample_calibration": 31
+      },
+      "completionDiagnosticsDropped": 4307,
+      "budgetExhaustions": 4377,
+      "illegalActions": 0,
+      "conservationErrors": 0,
+      "truncatedHands": 0,
+      "candidateDeepOnePairCommitments": 2,
+      "baselineDeepOnePairCommitments": 13,
+      "preventedCommitments": 11,
+      "latencyMs": {
+        "p50": 4.014330000034533,
+        "p95": 4.2707090000621974,
+        "p99": 4.888077000156045,
+        "max": 5.619690000079572
+      },
+      "primaryMetric": "funded_pool_return",
+      "candidateReturn": 0.057031250000000006,
+      "baselineReturn": 0.05683593750000001,
+      "meanDifference": 0.0001953125,
+      "standardError": 0.0005696744135606119,
+      "confidence99": [-0.0012801442311219848, 0.0016707692311219847],
+      "promotable": false,
+      "baselineVerified": true,
+      "exitCode": 0
+    },
+    {
+      "run": "sng-8101101",
+      "objective": "sng",
+      "seed": 8101101,
+      "host": "gh-runner-sng-8101101",
+      "hostLabel": "sng-8101101",
+      "startedAt": "2026-10-02T14:53:40.453Z",
+      "durationMs": 17092900.932847,
+      "files": {
+        "sng-8101101.json": {
+          "sourceSha256": "7b83954aa935879ebf7b61bc0abba3982f987249af23b27f39d37903ddd5fa0b",
+          "committedSha256": "692d25ea5978ad12737d6af01e32cc75e3c2c24a9da92382f0982ccaa1c69bf4"
+        },
+        "sng-8101101/manifest.json": {
+          "sourceSha256": "3fb739e99ca9f521661d37376306a5ce1029dc40b15cf1a2949cba9be2838f2d",
+          "committedSha256": "a1d20193073cdc75ae324477e1aab1e7cd3f18d5e386ed0b79a23fab8434f042"
+        },
+        "sng-8101101/summary.json": {
+          "sourceSha256": "4254df5865fdcfc87bb14a516ed9d504bcb9328c08cedc64f597db20560b04b2",
+          "committedSha256": "7404154bcc1fbcf7958e2ca7f31e0e13c60ee43ac780bced458766a4c89801dc"
+        },
+        "sng-8101101/baseline-verification.json": {
+          "sourceSha256": "aa021ba58e3a5342dbe0b160a427dd57346bb0d6d483ab2db1764190b0f2d158",
+          "committedSha256": "aa021ba58e3a5342dbe0b160a427dd57346bb0d6d483ab2db1764190b0f2d158"
+        }
+      },
+      "solverStores": {
+        "charts": 240,
+        "postflop": 7747,
+        "postflopV31": 0,
+        "postflopV31Dataset": null
+      },
+      "requestedPairs": 1024,
+      "pairs": 1024,
+      "complete": true,
+      "pairsShortOfRequest": 0,
+      "decisions": 566124,
+      "eligible": 12918,
+      "fired": 600,
+      "completed": 600,
+      "changed": 22,
+      "completionRefusals": {
+        "continuation_operation_budget": 12154,
+        "continuation_sample_calibration": 120,
+        "budget_exhausted": 44
+      },
+      "completionDiagnosticsDropped": 12662,
+      "budgetExhaustions": 12198,
+      "illegalActions": 0,
+      "conservationErrors": 0,
+      "truncatedHands": 0,
+      "candidateDeepOnePairCommitments": 16,
+      "baselineDeepOnePairCommitments": 39,
+      "preventedCommitments": 22,
+      "latencyMs": {
+        "p50": 4.012512000277638,
+        "p95": 4.201153999194503,
+        "p99": 4.8081130012869835,
+        "max": 5.391129000112414
+      },
+      "primaryMetric": "funded_pool_return",
+      "candidateReturn": 0.1759765625000001,
+      "baselineReturn": 0.1772949218750001,
+      "meanDifference": -0.0013183593749999999,
+      "standardError": 0.0014311948051169982,
+      "confidence99": [-0.005025153920253025, 0.0023884351702530256],
+      "promotable": false,
+      "baselineVerified": true,
+      "exitCode": 0
+    },
+    {
+      "run": "spin-8101101",
+      "objective": "spin",
+      "seed": 8101101,
+      "host": "gh-runner-spin-8101101",
+      "hostLabel": "spin-8101101",
+      "startedAt": "2026-10-02T14:53:30.586Z",
+      "durationMs": 3967169.2748600002,
+      "files": {
+        "spin-8101101.json": {
+          "sourceSha256": "666d596b3b17a0a719b96a08eef281a3c7401879ba7aaabcc78395f83aefc3e8",
+          "committedSha256": "4ae8d4000d723e70e2cfc9753f6531d0dc0f33a648d5594c3d3988cebae776d3"
+        },
+        "spin-8101101/manifest.json": {
+          "sourceSha256": "7e9dbf013f2a5006da16534dde2f71d90befc12eb5cc8f503e33479fed873c81",
+          "committedSha256": "2424037698b3cf204b953e0eb86f52f9743ff89166a20b73f3667f93ec66552d"
+        },
+        "spin-8101101/summary.json": {
+          "sourceSha256": "007e7f7fb7d8214da6c310dff1639c47d2f63096feb22d0838f8b21b01511119",
+          "committedSha256": "4352cf3d09c4431fd0c244db85d03fd1d5d1147aaa2948e158042a6d2645e8dc"
+        },
+        "spin-8101101/baseline-verification.json": {
+          "sourceSha256": "246bc35cb2938e53f5930ee46cbecee93f9fd043f86a2c41ae95b860c6b53849",
+          "committedSha256": "246bc35cb2938e53f5930ee46cbecee93f9fd043f86a2c41ae95b860c6b53849"
+        }
+      },
+      "solverStores": {
+        "charts": 240,
+        "postflop": 7747,
+        "postflopV31": 0,
+        "postflopV31Dataset": null
+      },
+      "requestedPairs": 1024,
+      "pairs": 1024,
+      "complete": true,
+      "pairsShortOfRequest": 0,
+      "decisions": 284405,
+      "eligible": 20496,
+      "fired": 19595,
+      "completed": 19595,
+      "changed": 51,
+      "completionRefusals": {
+        "continuation_operation_budget": 798,
+        "continuation_sample_calibration": 102,
+        "budget_exhausted": 1
+      },
+      "completionDiagnosticsDropped": 20240,
+      "budgetExhaustions": 799,
+      "illegalActions": 0,
+      "conservationErrors": 0,
+      "truncatedHands": 0,
+      "candidateDeepOnePairCommitments": 2,
+      "baselineDeepOnePairCommitments": 57,
+      "preventedCommitments": 51,
+      "latencyMs": {
+        "p50": 2.947684000246227,
+        "p95": 4.005814000032842,
+        "p99": 4.111424000002444,
+        "max": 5.067675999831408
+      },
+      "primaryMetric": "funded_pool_return",
+      "candidateReturn": 0.3720703125,
+      "baselineReturn": 0.3662109375,
+      "meanDifference": 0.005859375,
+      "standardError": 0.0045790592592278604,
+      "confidence99": [-0.006000388481400158, 0.017719138481400158],
+      "promotable": false,
+      "baselineVerified": true,
+      "exitCode": 0
+    },
+    {
+      "run": "satellite-8101101",
+      "objective": "satellite",
+      "seed": 8101101,
+      "host": "gh-runner-satellite-8101101",
+      "hostLabel": "satellite-8101101",
+      "startedAt": "2026-10-02T14:53:25.778Z",
+      "durationMs": 10984073.206363,
+      "files": {
+        "satellite-8101101.json": {
+          "sourceSha256": "ada400a22031d836a2406a61b8e5224291370d8180f9b9b77c5e71b06bbc58d0",
+          "committedSha256": "ffe55112b24441b90aab721ec4b8773a436ff71f67bc3f6f64a5d247d4dee65c"
+        },
+        "satellite-8101101/manifest.json": {
+          "sourceSha256": "d8b9d200a0ad2af111ab7ea1aba852a993c42785c86b884ccf5ad7d6c0eae41c",
+          "committedSha256": "87092886bdb247191dc5ee84668796dd26eb0f42fa59d5d5151e3431aee2d26b"
+        },
+        "satellite-8101101/summary.json": {
+          "sourceSha256": "aa317e14723add9a2af36a1c0ad38342265a82850f854cb4fab78b515c59b970",
+          "committedSha256": "5401ff1de014c8f538b23cf17f55666c70b1e1b64851d5d8033336d76b186d3e"
+        },
+        "satellite-8101101/baseline-verification.json": {
+          "sourceSha256": "ef526450412ba162e2e7b37324a181648d1121a1d21298cf09fe80b64cbe7225",
+          "committedSha256": "ef526450412ba162e2e7b37324a181648d1121a1d21298cf09fe80b64cbe7225"
+        }
+      },
+      "solverStores": {
+        "charts": 240,
+        "postflop": 7747,
+        "postflopV31": 0,
+        "postflopV31Dataset": null
+      },
+      "requestedPairs": 1024,
+      "pairs": 1024,
+      "complete": true,
+      "pairsShortOfRequest": 0,
+      "decisions": 771258,
+      "eligible": 4560,
+      "fired": 366,
+      "completed": 366,
+      "changed": 8,
+      "completionRefusals": {
+        "continuation_operation_budget": 4158,
+        "continuation_sample_calibration": 35,
+        "budget_exhausted": 1
+      },
+      "completionDiagnosticsDropped": 4304,
+      "budgetExhaustions": 4159,
+      "illegalActions": 0,
+      "conservationErrors": 0,
+      "truncatedHands": 0,
+      "candidateDeepOnePairCommitments": 1,
+      "baselineDeepOnePairCommitments": 9,
+      "preventedCommitments": 8,
+      "latencyMs": {
+        "p50": 4.010551999788731,
+        "p95": 4.2073160000145435,
+        "p99": 4.680732999928296,
+        "max": 5.024372999556363
+      },
+      "primaryMetric": "seat_attainment",
+      "candidateReturn": 0.1123046875,
+      "baselineReturn": 0.1123046875,
+      "meanDifference": 0,
+      "standardError": 0,
+      "confidence99": [0, 0],
+      "promotable": false,
+      "baselineVerified": true,
+      "exitCode": 0
+    },
+    {
+      "run": "pko-8101101",
+      "objective": "pko",
+      "seed": 8101101,
+      "host": "gh-runner-pko-8101101",
+      "hostLabel": "pko-8101101",
+      "startedAt": "2026-10-02T14:53:26.331Z",
+      "durationMs": 9254710.342213,
+      "files": {
+        "pko-8101101.json": {
+          "sourceSha256": "a98446c7a71028687d504c010852e884d9d71fb6ca960526f12a0f45cf560b2a",
+          "committedSha256": "6f58034c138b93f0474a1f2a4701d239b79dc905dc031d005a7f3d2355a29493"
+        },
+        "pko-8101101/manifest.json": {
+          "sourceSha256": "a6191d229cbf544fe1b5b558bb4e597cfafaea17baced39934533deaae8754ca",
+          "committedSha256": "76f9bdd1d3ca0b913416b47704d0bfcdcaa43af51b5bbc6efec6612987946f5d"
+        },
+        "pko-8101101/summary.json": {
+          "sourceSha256": "c032e4a5e1a4152d4c621ad8dd4efbb1c961e33d7753b5a5a4a1e4dcb5aa70d7",
+          "committedSha256": "23641a052833ce7485cfb1835da21de447c8a7a2d1022ba117fb292dff8931b1"
+        },
+        "pko-8101101/baseline-verification.json": {
+          "sourceSha256": "4e7aa79826ad126dc2793d411d468de3ffa78309e6a7787dd918bf7db8a25376",
+          "committedSha256": "4e7aa79826ad126dc2793d411d468de3ffa78309e6a7787dd918bf7db8a25376"
+        }
+      },
+      "solverStores": {
+        "charts": 240,
+        "postflop": 7747,
+        "postflopV31": 0,
+        "postflopV31Dataset": null
+      },
+      "requestedPairs": 1024,
+      "pairs": 1024,
+      "complete": true,
+      "pairsShortOfRequest": 0,
+      "decisions": 786667,
+      "eligible": 4841,
+      "fired": 888,
+      "completed": 885,
+      "changed": 14,
+      "completionRefusals": {
+        "continuation_operation_budget": 3807,
+        "budget_exhausted": 107,
+        "continuation_sample_calibration": 42
+      },
+      "completionDiagnosticsDropped": 4585,
+      "budgetExhaustions": 3914,
+      "illegalActions": 0,
+      "conservationErrors": 0,
+      "truncatedHands": 0,
+      "candidateDeepOnePairCommitments": 1,
+      "baselineDeepOnePairCommitments": 15,
+      "preventedCommitments": 14,
+      "latencyMs": {
+        "p50": 4.009630999993533,
+        "p95": 4.639424999244511,
+        "p99": 5.20947299990803,
+        "max": 6.85598099976778
+      },
+      "primaryMetric": "funded_pool_return",
+      "candidateReturn": 0.06039267645941826,
+      "baselineReturn": 0.06062562730577243,
+      "meanDifference": -0.0002329508463541666,
+      "standardError": 0.0007431632688504558,
+      "confidence99": [-0.002157743712676847, 0.0016918420199685139],
+      "promotable": false,
+      "baselineVerified": false,
+      "exitCode": 1
+    },
+    {
+      "run": "mystery-8101101",
+      "objective": "mystery",
+      "seed": 8101101,
+      "host": "gh-runner-mystery-8101101",
+      "hostLabel": "mystery-8101101",
+      "startedAt": "2026-10-02T14:53:30.235Z",
+      "durationMs": 14253398.168078,
+      "files": {
+        "mystery-8101101.json": {
+          "sourceSha256": "669075e7ef2786b59cbdc9ba680b8132ebcde67b6c83fedbb925a6ce3af4de6f",
+          "committedSha256": "03d00ffe91cd4a2513a4e398b41d1af545525116318442e5add3e27e07233ad6"
+        },
+        "mystery-8101101/manifest.json": {
+          "sourceSha256": "2714d98b9df288caefb657c2ecf9000bda3f320d893b430eb44fc10c4a270d4a",
+          "committedSha256": "efd9dc7887c5804b4f8bc3380639e701343152261ac567a00c51eef59fc2d387"
+        },
+        "mystery-8101101/summary.json": {
+          "sourceSha256": "67f7414576895f6d36bbd6cb38530fc060d5907d3b5ec4b44a38711fd9a4d931",
+          "committedSha256": "6000982ab786eb292ed430e846927ff09b590d3116dfd3952c602f3ef7b14f5b"
+        },
+        "mystery-8101101/baseline-verification.json": {
+          "sourceSha256": "de733578b9f63437795696be0dd78a2e98d719adb09be7be53169674f3933400",
+          "committedSha256": "de733578b9f63437795696be0dd78a2e98d719adb09be7be53169674f3933400"
+        }
+      },
+      "solverStores": {
+        "charts": 240,
+        "postflop": 7747,
+        "postflopV31": 0,
+        "postflopV31Dataset": null
+      },
+      "requestedPairs": 1024,
+      "pairs": 1024,
+      "complete": true,
+      "pairsShortOfRequest": 0,
+      "decisions": 786438,
+      "eligible": 4825,
+      "fired": 183,
+      "completed": 183,
+      "changed": 11,
+      "completionRefusals": {
+        "continuation_operation_budget": 4560,
+        "budget_exhausted": 40,
+        "continuation_sample_calibration": 42
+      },
+      "completionDiagnosticsDropped": 4569,
+      "budgetExhaustions": 4600,
+      "illegalActions": 0,
+      "conservationErrors": 0,
+      "truncatedHands": 0,
+      "candidateDeepOnePairCommitments": 4,
+      "baselineDeepOnePairCommitments": 15,
+      "preventedCommitments": 11,
+      "latencyMs": {
+        "p50": 4.013941999990493,
+        "p95": 4.319329999387264,
+        "p99": 4.954366000369191,
+        "max": 5.463859001174569
+      },
+      "primaryMetric": "funded_pool_return",
+      "candidateReturn": 0.056871202256944635,
+      "baselineReturn": 0.05725640190972241,
+      "meanDifference": -0.0003851996527777777,
+      "standardError": 0.0006336145206212938,
+      "confidence99": [-0.0020262612611869285, 0.0012558619556313731],
+      "promotable": false,
+      "baselineVerified": true,
+      "exitCode": 0
+    },
+    {
+      "run": "mtt-8102203",
+      "objective": "mtt",
+      "seed": 8102203,
+      "host": "gh-runner-mtt-8102203",
+      "hostLabel": "mtt-8102203",
+      "startedAt": "2026-10-02T19:56:07.397Z",
+      "durationMs": 14548329.208377,
+      "files": {
+        "mtt-8102203.json": {
+          "sourceSha256": "c023a1092aeac4f955d100530e55a31d551287668dac105fcfa989e116c4b603",
+          "committedSha256": "52b3241cbc7d601b84ff729d82367e427908c34a71a1ace9a246c0fc30ec853f"
+        },
+        "mtt-8102203/manifest.json": {
+          "sourceSha256": "d7771c3ee6cb23809d5529bde7cd2bf1068022844cc0eb3f76ad51263893e2df",
+          "committedSha256": "7d8e52a5640b58948c4ad1b340ef08ba03ed1600b7a6fc01e0ec2ba8f81493db"
+        },
+        "mtt-8102203/summary.json": {
+          "sourceSha256": "a7e87dbf08340c8d30ff294de829b4a66222df812363b62b457660a0779c4da9",
+          "committedSha256": "846ff553bbb5ab31ed019e8d209ff77f587bd75b6d3e8d1e016d5833d51334e0"
+        },
+        "mtt-8102203/baseline-verification.json": {
+          "sourceSha256": "b88c54371ccb4184beebabb92a34f012a14341fc39ef1dd7127b09b78a3bbddd",
+          "committedSha256": "b88c54371ccb4184beebabb92a34f012a14341fc39ef1dd7127b09b78a3bbddd"
+        }
+      },
+      "solverStores": {
+        "charts": 240,
+        "postflop": 7747,
+        "postflopV31": 0,
+        "postflopV31Dataset": null
+      },
+      "requestedPairs": 1024,
+      "pairs": 1024,
+      "complete": true,
+      "pairsShortOfRequest": 0,
+      "decisions": 781289,
+      "eligible": 4480,
+      "fired": 142,
+      "completed": 142,
+      "changed": 5,
+      "completionRefusals": {
+        "continuation_operation_budget": 4215,
+        "continuation_sample_calibration": 53,
+        "budget_exhausted": 70
+      },
+      "completionDiagnosticsDropped": 4224,
+      "budgetExhaustions": 4285,
+      "illegalActions": 0,
+      "conservationErrors": 0,
+      "truncatedHands": 0,
+      "candidateDeepOnePairCommitments": 9,
+      "baselineDeepOnePairCommitments": 14,
+      "preventedCommitments": 5,
+      "latencyMs": {
+        "p50": 4.014591000974178,
+        "p95": 4.386834999997518,
+        "p99": 5.146499000489712,
+        "max": 5.762700000777841
+      },
+      "primaryMetric": "funded_pool_return",
+      "candidateReturn": 0.0447265625,
+      "baselineReturn": 0.0447265625,
+      "meanDifference": 0,
+      "standardError": 0,
+      "confidence99": [0, 0],
+      "promotable": false,
+      "baselineVerified": false,
+      "exitCode": 1
+    },
+    {
+      "run": "sng-8102203",
+      "objective": "sng",
+      "seed": 8102203,
+      "host": "gh-runner-sng-8102203",
+      "hostLabel": "sng-8102203",
+      "startedAt": "2026-10-02T14:53:43.462Z",
+      "durationMs": 17612173.269048,
+      "files": {
+        "sng-8102203.json": {
+          "sourceSha256": "19adcd9176e2f2958034f0f0921f7b7b01639658733d91ffd40e5579c54b407e",
+          "committedSha256": "82645d9cec4a5cb41be425d75f7a0ebe3313a763b459074613b5e3365f5127c1"
+        },
+        "sng-8102203/manifest.json": {
+          "sourceSha256": "79e6851c916162b08930ac24430be01caab69eddc88010abbc4193aefcb450ad",
+          "committedSha256": "b84d880a7efecc167cb00bba3498e56a23393cf68ea3906ea5d1335f3946f3e6"
+        },
+        "sng-8102203/summary.json": {
+          "sourceSha256": "8643b9a16af28417f25cc95beaa3eaaf5d20a1c3ea98f49e9752f976b901bab1",
+          "committedSha256": "d14700e3689179eb95a9b08cce7c44c29dd1d4b2c7882e7ce5329a2fe547950f"
+        },
+        "sng-8102203/baseline-verification.json": {
+          "sourceSha256": "1cca3607b5aa80f93265426442dc1531f7e0fda21302dd04225b3cc323f5527d",
+          "committedSha256": "1cca3607b5aa80f93265426442dc1531f7e0fda21302dd04225b3cc323f5527d"
+        }
+      },
+      "solverStores": {
+        "charts": 240,
+        "postflop": 7747,
+        "postflopV31": 0,
+        "postflopV31Dataset": null
+      },
+      "requestedPairs": 1024,
+      "pairs": 1024,
+      "complete": true,
+      "pairsShortOfRequest": 0,
+      "decisions": 566971,
+      "eligible": 13331,
+      "fired": 576,
+      "completed": 575,
+      "changed": 12,
+      "completionRefusals": {
+        "continuation_operation_budget": 12435,
+        "budget_exhausted": 205,
+        "continuation_sample_calibration": 116
+      },
+      "completionDiagnosticsDropped": 13075,
+      "budgetExhaustions": 12640,
+      "illegalActions": 0,
+      "conservationErrors": 0,
+      "truncatedHands": 0,
+      "candidateDeepOnePairCommitments": 15,
+      "baselineDeepOnePairCommitments": 27,
+      "preventedCommitments": 12,
+      "latencyMs": {
+        "p50": 4.013886000029743,
+        "p95": 4.437611000612378,
+        "p99": 5.110221998766065,
+        "max": 6.2714460007846355
+      },
+      "primaryMetric": "funded_pool_return",
+      "candidateReturn": 0.17026367187499994,
+      "baselineReturn": 0.16953124999999994,
+      "meanDifference": 0.0007324218749999999,
+      "standardError": 0.0014316051074655428,
+      "confidence99": [-0.002975435353335756, 0.004440279103335756],
+      "promotable": false,
+      "baselineVerified": false,
+      "exitCode": 1
+    },
+    {
+      "run": "spin-8102203",
+      "objective": "spin",
+      "seed": 8102203,
+      "host": "gh-runner-spin-8102203",
+      "hostLabel": "spin-8102203",
+      "startedAt": "2026-10-02T14:53:44.214Z",
+      "durationMs": 4956442.710073,
+      "files": {
+        "spin-8102203.json": {
+          "sourceSha256": "40cf49856c4448909232c036c86cb985fd2cc35395bc14ac93b25f20a97936d1",
+          "committedSha256": "825e6823cddd986bb7099aa62d5960022ea31613514dfc13ee42aa8cb1856c6c"
+        },
+        "spin-8102203/manifest.json": {
+          "sourceSha256": "863d1ceeb7f99974a77d43f03b304def05b88ac24f5b2f4dbdf368346d10d30a",
+          "committedSha256": "8148d77d77c00bdd25810b6f4a160d7729276c317eb4eb755982277c4d66177e"
+        },
+        "spin-8102203/summary.json": {
+          "sourceSha256": "4b0118d01ded9ffb59759b3305b3367b0b9c87c873e5f4b560bcc86e1d3ad539",
+          "committedSha256": "0b7dcc36bd7a394feac8c8f857c6218b899caf3d3feb7230a2f14a716566328a"
+        },
+        "spin-8102203/baseline-verification.json": {
+          "sourceSha256": "c5a444e7b78552c3281b5a8fa95b71b648451b9bf73e6f65671c94c989f7ee4b",
+          "committedSha256": "c5a444e7b78552c3281b5a8fa95b71b648451b9bf73e6f65671c94c989f7ee4b"
+        }
+      },
+      "solverStores": {
+        "charts": 240,
+        "postflop": 7747,
+        "postflopV31": 0,
+        "postflopV31Dataset": null
+      },
+      "requestedPairs": 1024,
+      "pairs": 1024,
+      "complete": true,
+      "pairsShortOfRequest": 0,
+      "decisions": 280565,
+      "eligible": 20564,
+      "fired": 15003,
+      "completed": 14999,
+      "changed": 41,
+      "completionRefusals": {
+        "continuation_operation_budget": 5420,
+        "budget_exhausted": 40,
+        "continuation_sample_calibration": 105
+      },
+      "completionDiagnosticsDropped": 20308,
+      "budgetExhaustions": 5460,
+      "illegalActions": 0,
+      "conservationErrors": 0,
+      "truncatedHands": 0,
+      "candidateDeepOnePairCommitments": 3,
+      "baselineDeepOnePairCommitments": 46,
+      "preventedCommitments": 41,
+      "latencyMs": {
+        "p50": 3.7069620001129806,
+        "p95": 4.164921999908984,
+        "p99": 4.436627000104636,
+        "max": 51.43575100041926
+      },
+      "primaryMetric": "funded_pool_return",
+      "candidateReturn": 0.349609375,
+      "baselineReturn": 0.345703125,
+      "meanDifference": 0.00390625,
+      "standardError": 0.0036537071535319814,
+      "confidence99": [-0.0055568515276478315, 0.013369351527647831],
+      "promotable": false,
+      "baselineVerified": true,
+      "exitCode": 0
+    },
+    {
+      "run": "satellite-8102203",
+      "objective": "satellite",
+      "seed": 8102203,
+      "host": "gh-runner-satellite-8102203",
+      "hostLabel": "satellite-8102203",
+      "startedAt": "2026-10-02T14:53:27.389Z",
+      "durationMs": 14513509.108936,
+      "files": {
+        "satellite-8102203.json": {
+          "sourceSha256": "5d49a3da2298ea8fae26d7b6cafc2026c48be36338408a90a0ce468e09558f3a",
+          "committedSha256": "2fde3e9a58a0683056e6dc1109cba6501b0b2a5dd960f9a3f6b3fd90fe4f8b9c"
+        },
+        "satellite-8102203/manifest.json": {
+          "sourceSha256": "2657318a69c05a8318273e8a3509b746a808819b33a6a5efea85d49f5df58bf8",
+          "committedSha256": "15d00e3c9523efb97a4671a7ef0d1b6a3685d5087b24685adcd487a9190dfd14"
+        },
+        "satellite-8102203/summary.json": {
+          "sourceSha256": "9609a344334884c4ef4a1c9734ee45f7ff47144ef16d775255df421c9ab22159",
+          "committedSha256": "886ff667d881d9e9d0d3ac98ec340336971de00980929489b9fdb18f5aed7015"
+        },
+        "satellite-8102203/baseline-verification.json": {
+          "sourceSha256": "64e59075c7343f828891be6da3b9ba040809fbc54aa57f1692d22ff53831ff0c",
+          "committedSha256": "64e59075c7343f828891be6da3b9ba040809fbc54aa57f1692d22ff53831ff0c"
+        }
+      },
+      "solverStores": {
+        "charts": 240,
+        "postflop": 7747,
+        "postflopV31": 0,
+        "postflopV31Dataset": null
+      },
+      "requestedPairs": 1024,
+      "pairs": 1024,
+      "complete": true,
+      "pairsShortOfRequest": 0,
+      "decisions": 774011,
+      "eligible": 4454,
+      "fired": 151,
+      "completed": 150,
+      "changed": 7,
+      "completionRefusals": {
+        "continuation_operation_budget": 4195,
+        "continuation_sample_calibration": 54,
+        "budget_exhausted": 55
+      },
+      "completionDiagnosticsDropped": 4198,
+      "budgetExhaustions": 4250,
+      "illegalActions": 0,
+      "conservationErrors": 0,
+      "truncatedHands": 0,
+      "candidateDeepOnePairCommitments": 8,
+      "baselineDeepOnePairCommitments": 15,
+      "preventedCommitments": 7,
+      "latencyMs": {
+        "p50": 4.0146099999547005,
+        "p95": 4.3705039992928505,
+        "p99": 5.045909998938441,
+        "max": 5.528178999200463
+      },
+      "primaryMetric": "seat_attainment",
+      "candidateReturn": 0.1103515625,
+      "baselineReturn": 0.109375,
+      "meanDifference": 0.0009765625,
+      "standardError": 0.0009765625,
+      "confidence99": [-0.0015527343749999999, 0.003505859375],
+      "promotable": false,
+      "baselineVerified": false,
+      "exitCode": 1
+    },
+    {
+      "run": "pko-8102203",
+      "objective": "pko",
+      "seed": 8102203,
+      "host": "gh-runner-pko-8102203",
+      "hostLabel": "pko-8102203",
+      "startedAt": "2026-10-02T14:53:30.052Z",
+      "durationMs": 14189711.869298,
+      "files": {
+        "pko-8102203.json": {
+          "sourceSha256": "cd5c85ad13602b5d5c2d9260e316cbf13961f8b286c16cbbf6c42ce89201d440",
+          "committedSha256": "cda758dd2301186ba8668c02a859acb8754e0ef874fe4c11c829b28f796938d0"
+        },
+        "pko-8102203/manifest.json": {
+          "sourceSha256": "04cf4c19be25454605846504358e2f98cac6dbc3a29fa7aa52963a9fc8938395",
+          "committedSha256": "c073ce86ad0de4e93d1b447ac686efaceae3f0d1def40c91ac03e2c58462cb52"
+        },
+        "pko-8102203/summary.json": {
+          "sourceSha256": "e044a8c8c17d576b56f65b9f80c2c360c529ee734abad2d8f10097ae871355ef",
+          "committedSha256": "54003b9d68aad8a7a0742c300bfeac3f796270725342f9cd798858e52ea1fb15"
+        },
+        "pko-8102203/baseline-verification.json": {
+          "sourceSha256": "0ffe748dd7bffb9903ea943398e447002c60027695769d30daf6de168a75b4c6",
+          "committedSha256": "0ffe748dd7bffb9903ea943398e447002c60027695769d30daf6de168a75b4c6"
+        }
+      },
+      "solverStores": {
+        "charts": 240,
+        "postflop": 7747,
+        "postflopV31": 0,
+        "postflopV31Dataset": null
+      },
+      "requestedPairs": 1024,
+      "pairs": 1024,
+      "complete": true,
+      "pairsShortOfRequest": 0,
+      "decisions": 786442,
+      "eligible": 4651,
+      "fired": 166,
+      "completed": 165,
+      "changed": 7,
+      "completionRefusals": {
+        "continuation_operation_budget": 4411,
+        "continuation_sample_calibration": 57,
+        "budget_exhausted": 18
+      },
+      "completionDiagnosticsDropped": 4395,
+      "budgetExhaustions": 4429,
+      "illegalActions": 0,
+      "conservationErrors": 0,
+      "truncatedHands": 0,
+      "candidateDeepOnePairCommitments": 9,
+      "baselineDeepOnePairCommitments": 16,
+      "preventedCommitments": 7,
+      "latencyMs": {
+        "p50": 4.0141290000174195,
+        "p95": 4.216638999991119,
+        "p99": 4.855151999741793,
+        "max": 5.373162999749184
+      },
+      "primaryMetric": "funded_pool_return",
+      "candidateReturn": 0.05400910554108789,
+      "baselineReturn": 0.05392975983796289,
+      "meanDifference": 0.00007934570312499999,
+      "standardError": 0.00023143072780948352,
+      "confidence99": [-0.0005200598819015622, 0.0006787512881515623],
+      "promotable": false,
+      "baselineVerified": true,
+      "exitCode": 0
+    },
+    {
+      "run": "mystery-8102203",
+      "objective": "mystery",
+      "seed": 8102203,
+      "host": "gh-runner-mystery-8102203",
+      "hostLabel": "mystery-8102203",
+      "startedAt": "2026-10-02T14:53:28.418Z",
+      "durationMs": 14152195.061076,
+      "files": {
+        "mystery-8102203.json": {
+          "sourceSha256": "bd87e2d1dc0890209633eeda62bf85e0d89bc449db83fed8726cd977fdabdbee",
+          "committedSha256": "35b65a509fc50f5a0bb9bc1b4c34e10c2dbc3493a96042fea2dc57652be4e443"
+        },
+        "mystery-8102203/manifest.json": {
+          "sourceSha256": "fc4adc3cd3b0bfbbae83796f060bbfcb011ca59ef9c11d8ddc820328ff87b422",
+          "committedSha256": "81c7d70fc4dd29aacc65a40939f52a480f26cec6500cb70e86e555f384bd645a"
+        },
+        "mystery-8102203/summary.json": {
+          "sourceSha256": "6aa96cf3dd36b989998a3c7c4155c8aa7cb75f2da87eda2bd980774eed3fb9df",
+          "committedSha256": "a52fa2d828dc1fb51977e528baf5dcf2a0ba12173a3a49bfee9c0d8d7a35ce7f"
+        },
+        "mystery-8102203/baseline-verification.json": {
+          "sourceSha256": "f03f6321a7b98373332d7289d8664aecfdac91520ddc185b1eb016b7d7d3e0cd",
+          "committedSha256": "f03f6321a7b98373332d7289d8664aecfdac91520ddc185b1eb016b7d7d3e0cd"
+        }
+      },
+      "solverStores": {
+        "charts": 240,
+        "postflop": 7747,
+        "postflopV31": 0,
+        "postflopV31Dataset": null
+      },
+      "requestedPairs": 1024,
+      "pairs": 1024,
+      "complete": true,
+      "pairsShortOfRequest": 0,
+      "decisions": 786390,
+      "eligible": 4654,
+      "fired": 211,
+      "completed": 210,
+      "changed": 9,
+      "completionRefusals": {
+        "continuation_operation_budget": 4247,
+        "budget_exhausted": 140,
+        "continuation_sample_calibration": 57
+      },
+      "completionDiagnosticsDropped": 4398,
+      "budgetExhaustions": 4387,
+      "illegalActions": 0,
+      "conservationErrors": 0,
+      "truncatedHands": 0,
+      "candidateDeepOnePairCommitments": 7,
+      "baselineDeepOnePairCommitments": 16,
+      "preventedCommitments": 9,
+      "latencyMs": {
+        "p50": 4.014647000003606,
+        "p95": 4.738662000745535,
+        "p99": 5.307792999781668,
+        "max": 7.205751000205055
+      },
+      "primaryMetric": "funded_pool_return",
+      "candidateReturn": 0.052415183738426095,
+      "baselineReturn": 0.052165617766203876,
+      "meanDifference": 0.0002495659722222222,
+      "standardError": 0.00032703108841309757,
+      "confidence99": [-0.0005974445467677005, 0.001096576491212145],
+      "promotable": false,
+      "baselineVerified": false,
+      "exitCode": 1
+    },
+    {
+      "run": "mtt-8103307",
+      "objective": "mtt",
+      "seed": 8103307,
+      "host": "gh-runner-mtt-8103307",
+      "hostLabel": "mtt-8103307",
+      "startedAt": "2026-10-02T14:53:41.785Z",
+      "durationMs": 14496340.030821,
+      "files": {
+        "mtt-8103307.json": {
+          "sourceSha256": "2bff2737429c5d020217c8e75d95cdb3821102784a90ac3cff80b676806851bd",
+          "committedSha256": "a1454656b434154326c7ffc96a1971f5d6342c11b44089332ee20c6e6e2cdb85"
+        },
+        "mtt-8103307/manifest.json": {
+          "sourceSha256": "2f4aae0bb65e86e355e02eb2af9650f95533e2b8ff0be90e5565eacee85d2104",
+          "committedSha256": "8349c0db3db7c58feb66c50121e826d64cf4422f4bd06955d69cc332d4efb854"
+        },
+        "mtt-8103307/summary.json": {
+          "sourceSha256": "98407b5c40884874ac2be00001a405ff3f4fa91dd0bc958c4468294b4a9f6b6b",
+          "committedSha256": "d09f75fc1ec66a2953d7da7bb3704a1062dbd4ec95d1324747bf65d3e4f331f9"
+        },
+        "mtt-8103307/baseline-verification.json": {
+          "sourceSha256": "ea110c42743b364c6d230f1f5dfbde0540405e0a1d55c2a55e8dfa1b546ea5ad",
+          "committedSha256": "ea110c42743b364c6d230f1f5dfbde0540405e0a1d55c2a55e8dfa1b546ea5ad"
+        }
+      },
+      "solverStores": {
+        "charts": 240,
+        "postflop": 7747,
+        "postflopV31": 0,
+        "postflopV31Dataset": null
+      },
+      "requestedPairs": 1024,
+      "pairs": 1024,
+      "complete": true,
+      "pairsShortOfRequest": 0,
+      "decisions": 782558,
+      "eligible": 4440,
+      "fired": 109,
+      "completed": 107,
+      "changed": 13,
+      "completionRefusals": {
+        "continuation_operation_budget": 4227,
+        "budget_exhausted": 66,
+        "continuation_sample_calibration": 40
+      },
+      "completionDiagnosticsDropped": 4184,
+      "budgetExhaustions": 4293,
+      "illegalActions": 0,
+      "conservationErrors": 0,
+      "truncatedHands": 0,
+      "candidateDeepOnePairCommitments": 17,
+      "baselineDeepOnePairCommitments": 30,
+      "preventedCommitments": 13,
+      "latencyMs": {
+        "p50": 4.015087000094354,
+        "p95": 4.492898998782039,
+        "p99": 5.129192000254989,
+        "max": 5.660542999394238
+      },
+      "primaryMetric": "funded_pool_return",
+      "candidateReturn": 0.06367187499999999,
+      "baselineReturn": 0.06347656249999999,
+      "meanDifference": 0.0001953125,
+      "standardError": 0.00045823154795571143,
+      "confidence99": [-0.0009915072092052926, 0.0013821322092052925],
+      "promotable": false,
+      "baselineVerified": false,
+      "exitCode": 1
+    },
+    {
+      "run": "sng-8103307",
+      "objective": "sng",
+      "seed": 8103307,
+      "host": "gh-runner-sng-8103307",
+      "hostLabel": "sng-8103307",
+      "startedAt": "2026-10-02T14:53:39.299Z",
+      "durationMs": 16817529.582699,
+      "files": {
+        "sng-8103307.json": {
+          "sourceSha256": "1f0a6a87d017d4de460c42bedd1a6c593d8ceb4c57c5698770ee041d16fe644a",
+          "committedSha256": "0e8ceacc9bb3407151912834588f4d6229da54c14de165931b052d14c8770371"
+        },
+        "sng-8103307/manifest.json": {
+          "sourceSha256": "2f3859575af81f4c96b7a780a965dfd669ab6a31141a8a4ec6160b79554b082b",
+          "committedSha256": "b1b1a809b5686101bdbfe24fb30ebfe7fe0887d0157ce404df6924b47c461284"
+        },
+        "sng-8103307/summary.json": {
+          "sourceSha256": "c02cb479d57cc7ae16f589e3a7e5bbdbe545ffb6b03f04f9f6c6ec3b66999f62",
+          "committedSha256": "c53785ca294703e166c57829c88a5ac8f5a1986ed5af879b7c6ba6e289c2e989"
+        },
+        "sng-8103307/baseline-verification.json": {
+          "sourceSha256": "88581f3791ec022228b541440b719c9276106d53a11cf5c37d190f04c6e78ab9",
+          "committedSha256": "88581f3791ec022228b541440b719c9276106d53a11cf5c37d190f04c6e78ab9"
+        }
+      },
+      "solverStores": {
+        "charts": 240,
+        "postflop": 7747,
+        "postflopV31": 0,
+        "postflopV31Dataset": null
+      },
+      "requestedPairs": 1024,
+      "pairs": 1024,
+      "complete": true,
+      "pairsShortOfRequest": 0,
+      "decisions": 566854,
+      "eligible": 13161,
+      "fired": 616,
+      "completed": 615,
+      "changed": 19,
+      "completionRefusals": {
+        "continuation_operation_budget": 12381,
+        "continuation_sample_calibration": 141,
+        "budget_exhausted": 24
+      },
+      "completionDiagnosticsDropped": 12905,
+      "budgetExhaustions": 12405,
+      "illegalActions": 0,
+      "conservationErrors": 0,
+      "truncatedHands": 0,
+      "candidateDeepOnePairCommitments": 28,
+      "baselineDeepOnePairCommitments": 48,
+      "preventedCommitments": 19,
+      "latencyMs": {
+        "p50": 4.012243000790477,
+        "p95": 4.136292999610305,
+        "p99": 4.6801420003175735,
+        "max": 5.352726999961305
+      },
+      "primaryMetric": "funded_pool_return",
+      "candidateReturn": 0.16791992187500004,
+      "baselineReturn": 0.16684570312500005,
+      "meanDifference": 0.0010742187499999997,
+      "standardError": 0.000993423261612458,
+      "confidence99": [-0.0014987474975762666, 0.003647184997576266],
+      "promotable": false,
+      "baselineVerified": true,
+      "exitCode": 0
+    },
+    {
+      "run": "spin-8103307",
+      "objective": "spin",
+      "seed": 8103307,
+      "host": "gh-runner-spin-8103307",
+      "hostLabel": "spin-8103307",
+      "startedAt": "2026-10-02T14:53:27.401Z",
+      "durationMs": 5873064.352121,
+      "files": {
+        "spin-8103307.json": {
+          "sourceSha256": "26a54697bb054cb05cb8dc77e59e6b6177177eb018dbfdedf568000e6ba94aa8",
+          "committedSha256": "0dee765d47a82a604281a7ab1f10b29f2a74e9f30f1048c92d76c3bef6e76319"
+        },
+        "spin-8103307/manifest.json": {
+          "sourceSha256": "a9d979aa761ffc0c8b54ae71d27dbbce96ae01e166022a9ee1434a1d33845bdc",
+          "committedSha256": "04b20fe067663c65d9027aaf0c4b769728aac4a33198df8a1e9bc888275f20b0"
+        },
+        "spin-8103307/summary.json": {
+          "sourceSha256": "f2c3a612e5e8c5cb86583a1fe783b9f6ed7661409f08a1988753a432dff74ae5",
+          "committedSha256": "2edab31cf7f0831de903f0515f1a2f3e34c2646ec60d0666d316d263c46fbdba"
+        },
+        "spin-8103307/baseline-verification.json": {
+          "sourceSha256": "075c63ad70c27a12656d180d1433a3543e86274b47a5c0cd4f5ebd6cc80d418c",
+          "committedSha256": "075c63ad70c27a12656d180d1433a3543e86274b47a5c0cd4f5ebd6cc80d418c"
+        }
+      },
+      "solverStores": {
+        "charts": 240,
+        "postflop": 7747,
+        "postflopV31": 0,
+        "postflopV31Dataset": null
+      },
+      "requestedPairs": 1024,
+      "pairs": 1024,
+      "complete": true,
+      "pairsShortOfRequest": 0,
+      "decisions": 283717,
+      "eligible": 21103,
+      "fired": 9534,
+      "completed": 9519,
+      "changed": 32,
+      "completionRefusals": {
+        "continuation_operation_budget": 11402,
+        "continuation_sample_calibration": 124,
+        "budget_exhausted": 58
+      },
+      "completionDiagnosticsDropped": 20847,
+      "budgetExhaustions": 11460,
+      "illegalActions": 0,
+      "conservationErrors": 0,
+      "truncatedHands": 0,
+      "candidateDeepOnePairCommitments": 10,
+      "baselineDeepOnePairCommitments": 45,
+      "preventedCommitments": 32,
+      "latencyMs": {
+        "p50": 4.007791000010911,
+        "p95": 4.214453999884427,
+        "p99": 4.674473999999464,
+        "max": 5.611802000552416
+      },
+      "primaryMetric": "funded_pool_return",
+      "candidateReturn": 0.34765625,
+      "baselineReturn": 0.341796875,
+      "meanDifference": 0.005859375,
+      "standardError": 0.0030842349306019214,
+      "confidence99": [-0.002128793470258976, 0.013847543470258976],
+      "promotable": false,
+      "baselineVerified": true,
+      "exitCode": 0
+    },
+    {
+      "run": "satellite-8103307",
+      "objective": "satellite",
+      "seed": 8103307,
+      "host": "gh-runner-satellite-8103307",
+      "hostLabel": "satellite-8103307",
+      "startedAt": "2026-10-02T14:53:29.928Z",
+      "durationMs": 15094516.997746,
+      "files": {
+        "satellite-8103307.json": {
+          "sourceSha256": "153395afca326e7df2fbd302886c31088abe6c6052be15fd2d5f5a0ea6f1ef8f",
+          "committedSha256": "9268db2e774326db32f1f8817f1106fcf8e275fcb53772385e367644bca60299"
+        },
+        "satellite-8103307/manifest.json": {
+          "sourceSha256": "63629143df92158c5b47aeef6bf1118bc42d64849ee2d87ba4728c6f9724f0fb",
+          "committedSha256": "12ad34733497c3dee96f482543509fe535eb1228179ae6c7eb223c4364e8f586"
+        },
+        "satellite-8103307/summary.json": {
+          "sourceSha256": "34e2935d70c680fbb5701be0e49702bc9220606a94ceb1d64e9adf5fe196ff82",
+          "committedSha256": "77336c4df7103264e970fa9c94c524ae1ded8a7f4232204e275d5205e54f6e0e"
+        },
+        "satellite-8103307/baseline-verification.json": {
+          "sourceSha256": "66cade0b18e52d46bb81765e858d23c12dade4098cd08437b75526186aeb699d",
+          "committedSha256": "66cade0b18e52d46bb81765e858d23c12dade4098cd08437b75526186aeb699d"
+        }
+      },
+      "solverStores": {
+        "charts": 240,
+        "postflop": 7747,
+        "postflopV31": 0,
+        "postflopV31Dataset": null
+      },
+      "requestedPairs": 1024,
+      "pairs": 1024,
+      "complete": true,
+      "pairsShortOfRequest": 0,
+      "decisions": 773075,
+      "eligible": 4475,
+      "fired": 121,
+      "completed": 120,
+      "changed": 11,
+      "completionRefusals": {
+        "continuation_operation_budget": 4196,
+        "budget_exhausted": 124,
+        "continuation_sample_calibration": 35
+      },
+      "completionDiagnosticsDropped": 4219,
+      "budgetExhaustions": 4320,
+      "illegalActions": 0,
+      "conservationErrors": 0,
+      "truncatedHands": 0,
+      "candidateDeepOnePairCommitments": 17,
+      "baselineDeepOnePairCommitments": 28,
+      "preventedCommitments": 11,
+      "latencyMs": {
+        "p50": 4.01664699986577,
+        "p95": 4.701053000986576,
+        "p99": 5.277626999653876,
+        "max": 5.814450999721885
+      },
+      "primaryMetric": "seat_attainment",
+      "candidateReturn": 0.1298828125,
+      "baselineReturn": 0.1298828125,
+      "meanDifference": 0,
+      "standardError": 0,
+      "confidence99": [0, 0],
+      "promotable": false,
+      "baselineVerified": false,
+      "exitCode": 1
+    },
+    {
+      "run": "pko-8103307",
+      "objective": "pko",
+      "seed": 8103307,
+      "host": "gh-runner-pko-8103307",
+      "hostLabel": "pko-8103307",
+      "startedAt": "2026-10-02T19:55:31.646Z",
+      "durationMs": 14831470.934997,
+      "files": {
+        "pko-8103307.json": {
+          "sourceSha256": "9cc80e831501613ffe89c6062e9f7fc3a49222e9b0b168db8d15781632f2ec66",
+          "committedSha256": "b73d28ea04d6698d153c451d8c4c7757d264a1e6948830540d4671f7af93f990"
+        },
+        "pko-8103307/manifest.json": {
+          "sourceSha256": "74d916bde178919194c13c1aab0932e8a77ac9d8bbfa2827dd76b47ec23b606b",
+          "committedSha256": "6e246bdf6961b86c4e7fa466727032b992df75aea2ae7e75bd2ff9375c0fce1d"
+        },
+        "pko-8103307/summary.json": {
+          "sourceSha256": "d78747b783e563b6ff3c711b43e43fc9831d7e4f69c88dfe605b01cd1b87a0a0",
+          "committedSha256": "8d547fe1f4123c5a9d9a297352dbd952421d8a65d712821277dc0e9c10a26a53"
+        },
+        "pko-8103307/baseline-verification.json": {
+          "sourceSha256": "f16e9552a6daf70fee618317f5dbf761784bc961cd91dca4a1ea53c4767e7ac5",
+          "committedSha256": "f16e9552a6daf70fee618317f5dbf761784bc961cd91dca4a1ea53c4767e7ac5"
+        }
+      },
+      "solverStores": {
+        "charts": 240,
+        "postflop": 7747,
+        "postflopV31": 0,
+        "postflopV31Dataset": null
+      },
+      "requestedPairs": 1024,
+      "pairs": 1024,
+      "complete": true,
+      "pairsShortOfRequest": 0,
+      "decisions": 786026,
+      "eligible": 4671,
+      "fired": 125,
+      "completed": 125,
+      "changed": 12,
+      "completionRefusals": {
+        "continuation_operation_budget": 4400,
+        "budget_exhausted": 103,
+        "continuation_sample_calibration": 43
+      },
+      "completionDiagnosticsDropped": 4415,
+      "budgetExhaustions": 4503,
+      "illegalActions": 0,
+      "conservationErrors": 0,
+      "truncatedHands": 0,
+      "candidateDeepOnePairCommitments": 18,
+      "baselineDeepOnePairCommitments": 30,
+      "preventedCommitments": 12,
+      "latencyMs": {
+        "p50": 4.016234000213444,
+        "p95": 4.5626360001042485,
+        "p99": 5.262335000559688,
+        "max": 6.9798090000404045
+      },
+      "primaryMetric": "funded_pool_return",
+      "candidateReturn": 0.05387810601128456,
+      "baselineReturn": 0.05426805284288178,
+      "meanDifference": -0.0003899468315972222,
+      "standardError": 0.00036250315258015714,
+      "confidence99": [-0.0013288299967798292, 0.0005489363335853847],
+      "promotable": false,
+      "baselineVerified": false,
+      "exitCode": 1
+    },
+    {
+      "run": "mystery-8103307",
+      "objective": "mystery",
+      "seed": 8103307,
+      "host": "gh-runner-mystery-8103307",
+      "hostLabel": "mystery-8103307",
+      "startedAt": "2026-10-02T14:53:25.426Z",
+      "durationMs": 7857730.0282850005,
+      "files": {
+        "mystery-8103307.json": {
+          "sourceSha256": "76047c7e47f7db17decf3844dd7a982b6607147e3cb379115d9eee9342824c20",
+          "committedSha256": "73a2138a0c82d7b45df495a8f60fbf6e5ad3b41aa1ead3608a468a534fb87b92"
+        },
+        "mystery-8103307/manifest.json": {
+          "sourceSha256": "22e867d1344436c1d3cbb2c3af4b1e78756a90525b5718664179f21fbf6b1d76",
+          "committedSha256": "8dba4a7d16b79f7884d19e19cec667bcbd89f5dbfd0e6e2298aae5415ab086b2"
+        },
+        "mystery-8103307/summary.json": {
+          "sourceSha256": "fb46b06d61d8202be7fef1f1b4768d325683341be437212d3e2f7046ccc4d36f",
+          "committedSha256": "190709e9a8559c430adee05310665b245bd99dda7e3b337d46456d0a40b53769"
+        },
+        "mystery-8103307/baseline-verification.json": {
+          "sourceSha256": "4badb5432dbf74ab0e8b90bf430baae8369199be81231187b70b25c2ac8960d1",
+          "committedSha256": "4badb5432dbf74ab0e8b90bf430baae8369199be81231187b70b25c2ac8960d1"
+        }
+      },
+      "solverStores": {
+        "charts": 240,
+        "postflop": 7747,
+        "postflopV31": 0,
+        "postflopV31Dataset": null
+      },
+      "requestedPairs": 1024,
+      "pairs": 1024,
+      "complete": true,
+      "pairsShortOfRequest": 0,
+      "decisions": 785994,
+      "eligible": 4685,
+      "fired": 1645,
+      "completed": 1645,
+      "changed": 21,
+      "completionRefusals": {
+        "continuation_operation_budget": 2991,
+        "continuation_sample_calibration": 43,
+        "budget_exhausted": 6
+      },
+      "completionDiagnosticsDropped": 4429,
+      "budgetExhaustions": 2997,
+      "illegalActions": 0,
+      "conservationErrors": 0,
+      "truncatedHands": 0,
+      "candidateDeepOnePairCommitments": 8,
+      "baselineDeepOnePairCommitments": 30,
+      "preventedCommitments": 21,
+      "latencyMs": {
+        "p50": 4.007015999872237,
+        "p95": 4.143598000053316,
+        "p99": 4.438683000393212,
+        "max": 5.3300230000168085
+      },
+      "primaryMetric": "funded_pool_return",
+      "candidateReturn": 0.054597981770833526,
+      "baselineReturn": 0.05474175347222242,
+      "meanDifference": -0.00014377170138888887,
+      "standardError": 0.0004877522100728094,
+      "confidence99": [-0.0014070499254774651, 0.0011195065226996875],
+      "promotable": false,
+      "baselineVerified": true,
+      "exitCode": 0
+    }
+  ],
+  "defectiveRuns": [],
+  "verdict": {
+    "promoted": false,
+    "reasons": [
+      "mtt:8101101:not_promotable",
+      "mtt:8102203:not_promotable",
+      "mtt:8103307:not_promotable",
+      "sng:8101101:not_promotable",
+      "sng:8102203:not_promotable",
+      "sng:8103307:not_promotable",
+      "spin:8101101:not_promotable",
+      "spin:8102203:not_promotable",
+      "spin:8103307:not_promotable",
+      "satellite:8101101:not_promotable",
+      "satellite:8102203:not_promotable",
+      "satellite:8103307:not_promotable",
+      "pko:8101101:not_promotable",
+      "pko:8102203:not_promotable",
+      "pko:8103307:not_promotable",
+      "mystery:8101101:not_promotable",
+      "mystery:8102203:not_promotable",
+      "mystery:8103307:not_promotable"
+    ],
+    "promotableRuns": 0,
+    "baselineVerifiedRuns": 10,
+    "buckets": [
+      {
+        "objective": "mtt",
+        "pairs": 3072,
+        "meanDifference": 0.00013020833333333333,
+        "standardError": 0.00024362581371300884,
+        "confidence99": [-0.0005007825241833596, 0.0007611991908500262]
+      },
+      {
+        "objective": "sng",
+        "pairs": 3072,
+        "meanDifference": 0.00016276041666666655,
+        "standardError": 0.0007516398117546699,
+        "confidence99": [-0.0017839866957779283, 0.0021095075291112614]
+      },
+      {
+        "objective": "spin",
+        "pairs": 3072,
+        "meanDifference": 0.005208333333333333,
+        "standardError": 0.0022061480948076563,
+        "confidence99": [-0.0005055902322184964, 0.010922256898885162]
+      },
+      {
+        "objective": "satellite",
+        "pairs": 3072,
+        "meanDifference": 0.0003255208333333333,
+        "standardError": 0.0003255208333333333,
+        "confidence99": [-0.000517578125, 0.0011686197916666665]
+      },
+      {
+        "objective": "pko",
+        "pairs": 3072,
+        "meanDifference": -0.00018118399160879629,
+        "standardError": 0.000286141324195897,
+        "confidence99": [-0.0009222900212761695, 0.0005599220380585769]
+      },
+      {
+        "objective": "mystery",
+        "pairs": 3072,
+        "meanDifference": -0.00009313512731481479,
+        "standardError": 0.00028791075626713073,
+        "confidence99": [-0.0008388239860466834, 0.0006525537314170538]
+      }
+    ]
+  },
+  "productionContext": {
+    "schema": "horse-phase8-strength-context-v1",
+    "productionTelemetry": {
+      "date": "2026-10-01",
+      "dayScope": "UTC day 2026-10-01 counters as read (rows last updated by 2026-10-01T23:21Z), not a closed day",
+      "source": "read-only SELECT day, feature, fires FROM horse_brain_telemetry, Supabase project kuklfnapbkmacvwxktbh",
+      "host": "production engine host (ccx23), saturated",
+      "counters": {
+        "phase8_eligible": 3185,
+        "phase8_fired": 416,
+        "phase8_completed": 412,
+        "phase8_reason_continuation_operation_budget": 2325,
+        "phase8_reason_budget_exhausted": 427,
+        "phase8_reason_context_incomplete": 1312
+      }
+    },
+    "macColdCompletion": {
+      "date": "2026-10-01",
+      "source": "docs/evidence/phase8/phase8-useful-completion-cold.json and phase8-useful-completion.md (P8.1)",
+      "machine": "Apple M3 Ultra development Mac",
+      "eligible": 181,
+      "completedRange": [137, 141],
+      "note": "cold completion across the P8.1 final-source repetitions"
+    },
+    "linuxFixtureSmoke": {
+      "date": "2026-10-01",
+      "command": "horseTournamentEvaluate.ts --hydrate, mtt, seed 8101101, 4 pairs (fixture mode)",
+      "hostA": {
+        "eligible": 14,
+        "completed": 0,
+        "continuation_operation_budget": 14,
+        "fired": 0,
+        "p99Ms": 4.19,
+        "durationMs": 56307
+      },
+      "hostC": {
+        "eligible": 14,
+        "completed": 0,
+        "continuation_operation_budget": 14,
+        "fired": 0,
+        "p99Ms": 4.44,
+        "durationMs": 36751
+      }
+    },
+    "limits": "Unchanged: PHASE8_POLICY workBudgetMs 4, budgetMs 5, policyBudgetMs 2. No budget, gate, seed, pair count or objective was changed for this matrix."
+  },
+  "superseded": {
+    "schema": "horse-phase8-strength-superseded-v1",
+    "path": "docs/horse-brain-phase8-2-strength-evidence-2026-10-01.md#historical-only-the-216a383f-hetzner-matrix",
+    "sourceSha": "216a383f389429ca070ff94d19ce5c32a48de4ba",
+    "status": "historical only",
+    "reason": "Ran with several league runs sharing each host's cores (7 on 8 vCPU, 4 on 4 vCPU), which starved the 4 ms continuation work budget, and before the exact x86 continuation speed-up (#5825) and the tournament context fix (#5827). 11 of 18 runs completed 1,024 pairs (all not promotable, no illegal, conservation or truncation failure); the other 7 were stopped to free the hosts. Raw results are kept in the agent evidence archive.",
+    "earlier": [
+      {
+        "schema": "horse-phase8-strength-superseded-v1",
+        "path": "docs/evidence/phase8/strength-2026-10-01-88217ac6-superseded/",
+        "sourceSha": "88217ac61335385b6127dbb04b8bcac3bea4a380",
+        "status": "historical only",
+        "reason": "The league harness paid a full bounty to every winner of a split knockout pot (attributeKnockout gives each splitter weight 1), so one knockout was paid more than once: mystery runs stopped at the champion residual conservation check and PKO returns were overstated on both sides.",
+        "defectFix": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/5786",
+        "earlierAttempt": {
+          "path": "docs/evidence/phase8/strength-2026-10-01/",
+          "status": "historical only",
+          "reason": "All 18 runs refused before play on the Mac (rejected solver credential, no qualified Linux launcher)."
+        }
+      }
+    ]
+  }
+}

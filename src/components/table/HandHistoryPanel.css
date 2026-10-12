@@ -223,7 +223,8 @@
 .hh-panel__search-input {
   width: 100%;
   min-width: 0;
-  min-height: 40px;
+  /* 44px, the touch floor (was 40). */
+  min-height: 44px;
   padding: 0 !important;
   border: 0 !important;
   border-radius: 0 !important;
@@ -233,7 +234,7 @@
   color: #e4e7ec !important;
   -webkit-text-fill-color: #e4e7ec;
   font-family: inherit;
-  font-size: 3.1cqw;
+  font-size: 16px;
   font-weight: 700;
   letter-spacing: 0.02em;
   text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
@@ -256,7 +257,8 @@
 
 .hh-panel__search-clear {
   appearance: none;
-  min-height: 40px;
+  /* 44px, the touch floor (was 40). */
+  min-height: 44px;
   margin: 0;
   padding: 0 1cqw;
   border: 0 !important;

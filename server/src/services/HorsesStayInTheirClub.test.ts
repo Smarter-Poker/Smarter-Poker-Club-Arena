@@ -165,7 +165,10 @@ describe('seat-first games are filled from their own club', () => {
   });
 
   it('the top-up fill passes its tournament', () => {
-    expect(SRC).toMatch(/await this\.pickFreeHorses\(poolWanted, false, tournamentId, pass\)/);
+    // A fifth argument (the human's first claim, 2026-10-03) may follow.
+    expect(SRC).toMatch(
+      /await this\.pickFreeHorses\(\s*poolWanted,\s*false,\s*tournamentId,\s*pass[,)]/
+    );
   });
 
   it('leaves the pool alone when the club cannot be resolved', () => {

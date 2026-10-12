@@ -11,6 +11,24 @@ export function variantCards(value: string): Card[] {
     suit: ({ c: 'clubs', d: 'diamonds', h: 'hearts', s: 'spades' } as const)[c[1] as 'c'],
   }));
 }
+/** The blind seats HandController posts behind an occupied button with a live
+ * small blind: heads-up the button posts the small blind; otherwise the first
+ * two dealt seats clockwise of the button. Fixtures that move the button call
+ * this again; the Phase 11 pack derives positions from these posted seats. */
+export function occupiedButtonBlinds(
+  dealerSeat: number,
+  dealtSeats: readonly number[]
+): { smallBlind: number; bigBlind: number } {
+  const sorted = [...dealtSeats].sort((a, b) => a - b);
+  const clockwise = [
+    ...sorted.filter((s) => s > dealerSeat),
+    ...sorted.filter((s) => s <= dealerSeat),
+  ];
+  return sorted.length === 2
+    ? { smallBlind: dealerSeat, bigBlind: clockwise[0] }
+    : { smallBlind: clockwise[0], bigBlind: clockwise[1] };
+}
+
 export function omahaVariantSpot(
   variant: OmahaPolicyVariant,
   street: 'preflop' | 'flop' | 'turn' | 'river' = 'river',
@@ -96,6 +114,10 @@ export function omahaVariantSpot(
             },
           ],
   };
+  state.blindSeats = occupiedButtonBlinds(
+    state.dealerSeat!,
+    players.map((p) => p.seat)
+  );
   if (mode === 'tournament') {
     state.pots = calculatePots(players);
     state.tournament = {

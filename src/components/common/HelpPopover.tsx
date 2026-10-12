@@ -118,7 +118,7 @@ export function HelpPopover({ label, children }: HelpPopoverProps) {
           else setOpen(false);
         }}
       >
-        ?
+        Help
       </button>
       {open &&
         position &&

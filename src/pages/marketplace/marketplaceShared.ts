@@ -1873,7 +1873,9 @@ export async function startCheckout(
     if (!req) {
       throw verifiedLocalCheckoutPrecommitError('This Item Is Not Available In The App Store Yet.');
     }
-    const { purchaseNative } = await import('../../lib/native/purchases');
+    const { purchaseNative } = await (IS_NATIVE_BUILD
+      ? import('../../lib/native/purchases')
+      : Promise.reject(new Error('The app store lives in the app build only.')));
     if (signal?.aborted) throw checkoutAbortError();
     const result = await purchaseNative(userId, req);
     if (signal?.aborted) throw checkoutAbortError();

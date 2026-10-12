@@ -3,6 +3,7 @@ import {
   remainingVariantSpot,
   remainingCards,
 } from '../../benchmark/RemainingVariantPolicyEvidence.js';
+import { occupiedButtonBlinds } from '../../benchmark/OmahaVariantPolicyEvidence.js';
 import { evaluateRemainingVariantPolicy } from './RemainingVariantLivePolicy.js';
 import {
   remainingVariantSeatCap,
@@ -17,6 +18,7 @@ import {
 import { saveFastRandom, seedFastRandom } from '../HorseEval.js';
 import { HorseLogic } from '../HorseLogic.js';
 import { calculatePots, calculateContestablePot } from '../PokerEngine.js';
+import { horseJournalJson } from '../../services/horseDecisionJournal/record.js';
 
 const variants = ['short_deck', 'pineapple', 'flh', 'flo8'] as const;
 describe('remaining variant first-round core', () => {
@@ -51,9 +53,33 @@ describe('remaining variant first-round core', () => {
     expect(after).not.toBeNull();
     expect({ ...after, analysisMs: 0 }).toEqual({ ...before, analysisMs: 0 });
   });
+  it.each(variants)(
+    '%s names an unavailable depth when every live opponent is away, journal-safe',
+    (variant) => {
+      // Reachability 2026-10-08: a -Infinity depth made the decision record unjournalable.
+      const s = remainingVariantSpot(variant, 'turn', 2);
+      s.state.players[1].is_sitting_out = true;
+      const r = evaluateRemainingVariantPolicy(
+        s.hero,
+        s.state,
+        s.baseline,
+        null,
+        'shadow',
+        () => 0
+      );
+      expect(r.receipt.reason).toBe('depth_or_ante_outside_pack');
+      expect(r.receipt.depthBB).toBeNull();
+      expect(() => horseJournalJson(r.receipt)).not.toThrow();
+      const decision = HorseLogic.decide(s.hero, s.state, 'balanced', {}, { mind: false });
+      expect(decision.policyFallback).toBeUndefined();
+      expect(decision.remainingVariantPolicy?.depthBB).toBeNull();
+      expect(() => horseJournalJson(decision)).not.toThrow();
+    }
+  );
   it.each(variants)('%s keeps a sitting-out dealer in the dealt ring', (variant) => {
     const s = remainingVariantSpot(variant, 'preflop', 3);
     s.state.dealerSeat = 3;
+    s.state.blindSeats = occupiedButtonBlinds(3, [1, 2, 3]);
     s.state.players[2].is_sitting_out = true;
     s.state.players[2].is_folded = true;
     const r = evaluateRemainingVariantPolicy(s.hero, s.state, s.baseline, null, 'shadow', () => 0);
@@ -141,6 +167,11 @@ describe('remaining variant first-round core', () => {
             for (let dealer = 1; dealer <= seats; dealer++) {
               const spot = remainingVariantSpot(variant, street, seats, mode);
               spot.state.dealerSeat = dealer;
+              // P12.1: the blinds move with the button, as the engine posts them.
+              spot.state.blindSeats = occupiedButtonBlinds(
+                dealer,
+                spot.state.players.map((p) => p.seat)
+              );
               const before = JSON.stringify(spot);
               seedFastRandom(120011);
               const rng = saveFastRandom();

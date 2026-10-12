@@ -1,0 +1,3 @@
+# tests/a-deleted-board-game-is-checked-by-index.law.test.ts
+
+Three foreign keys that the certification cleanup's deletes check are indexed: `tournament_refund_entitlements.source_satellite_id` (partial, NOT NULL), `cash_seat_moves.to_table_id` and `cash_seat_moves.game_id`. Without them every deleted board tournament, table or cash game was a full scan (121-226 ms each on production, 2026-10-03). That scan ran while the cleanup held the platform entry lock (530090,1) exclusively, so blind publication everywhere waited 7-13 s per cleanup. The law keeps the CONCURRENTLY preamble with its verifying transaction and refuses a later drop.

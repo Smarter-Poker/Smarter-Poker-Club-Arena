@@ -27,9 +27,7 @@
  * catalogue's "at" minus 233: squash 34, burst 67, expand 100-200, settle
  * 234-500, residue 534-3267. The comments keep both numbers.
  *
- * Sound (plan 4A): ONE wet splat 33 ms after the burst, `splat_wet` at 333.
- * It is a placeholder cue that falls back to the legacy recipe until phase 6
- * supplies a licensed take.
+ * Sound: one licensed wet splat 33 ms after the visible burst, `splat_wet` at 333.
  */
 
 import React from 'react';

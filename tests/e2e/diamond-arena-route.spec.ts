@@ -12,7 +12,7 @@
  *      door;
  *   3. on the arena, the light scheme is published on its own attribute
  *      (`data-arena-scheme`) and not by rewriting the player's `data-theme`;
- *   4. the closed-arena copy is shown, a refresh on the route keeps the arena,
+ *   4. controls match the current server switches, a refresh keeps the arena,
  *      and walking back out takes the scheme away again. A scheme that is
  *      applied but never removed reads as correct on the arena and turns the
  *      chip estate white.
@@ -31,6 +31,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
+import { parseDiamondDoorContext, parseLobbyHoldingIds } from './helpers/diamond-door-context';
 
 const ARENA_ROUTE = 'clubs/diamond-arena';
 /* Leaving the arena, by a route inside this app that no account is refused
@@ -144,23 +145,130 @@ for (const [orientation, viewport] of ORIENTATIONS) {
       expect(theme === null || theme === 'dark' || theme === 'light').toBe(true);
     });
 
-    test('says the arena is not open yet while its switch is off', async ({ page }) => {
+    test('matches the arena controls to the current server switches', async ({ page }) => {
+      // Observe the real boundary read before navigation. Missing/error/malformed
+      // authority is a failure, never evidence that either door is closed.
+      const contextRead = page
+        .waitForResponse(
+          (response) => {
+            if (!new URL(response.url()).pathname.endsWith('/rpc/fn_poker_arena_context'))
+              return false;
+            return response.request().postDataJSON()?.p_club_key === 'diamond-arena';
+          },
+          { timeout: 10_000 }
+        )
+        .then(async (response) => {
+          if (!response.ok()) throw new Error(`Arena context returned HTTP ${response.status()}`);
+          return { context: parseDiamondDoorContext(await response.json()), error: null };
+        })
+        .catch((error: unknown) => ({ context: null, error: String(error) }));
+      const holdingRead = (
+        table: 'table_seats' | 'tournament_players',
+        field: 'table_id' | 'tournament_id'
+      ) =>
+        page
+          .waitForResponse(
+            (response) => {
+              const url = new URL(response.url());
+              const select = url.searchParams.get('select') || '';
+              return (
+                url.pathname.endsWith(`/rest/v1/${table}`) &&
+                (url.searchParams.get('user_id') || '').startsWith('eq.') &&
+                (table === 'table_seats'
+                  ? select.startsWith('table_id, tables!') || select.startsWith('table_id,tables!')
+                  : select === 'tournament_id')
+              );
+            },
+            { timeout: 10_000 }
+          )
+          .then(async (response) => {
+            if (!response.ok())
+              throw new Error(`Own lobby holdings returned HTTP ${response.status()}`);
+            return { ids: parseLobbyHoldingIds(await response.json(), field), error: null };
+          })
+          .catch((error: unknown) => ({ ids: new Set<string>(), error: String(error) }));
+      const seatsRead = holdingRead('table_seats', 'table_id');
+      const registrationsRead = holdingRead('tournament_players', 'tournament_id');
       const { onArena, why } = await openArena(page);
       test.skip(!onArena, why);
-      /* Both switches are off, and neither is ours to flip: the seat card and
-         the registration card each carry the same label. If the lobby never
-         rendered a card, that is a third outcome too, not a verdict. */
-      const label = page.getByText(CLOSED_COPY).first();
-      const appeared = await label
-        .waitFor({ state: 'visible', timeout: 20_000 })
-        .then(() => true)
-        .catch(() => false);
-      test.skip(
-        !appeared,
-        'the arena lobby did not render a seat or registration card within 20s, so the ' +
-          'closed-arena copy could not be read. This case reports that rather than passing.'
+      const [authority, seats, registrations] = await Promise.all([
+        contextRead,
+        seatsRead,
+        registrationsRead,
+      ]);
+      expect(authority.error, 'the actual arena switch read could not be verified').toBeNull();
+      expect(seats.error, 'own seat state could not be verified').toBeNull();
+      expect(registrations.error, 'own registration state could not be verified').toBeNull();
+      const context = authority.context!;
+      const cards = page.getByTestId('arena-lobby-game-card');
+      await cards.first().waitFor({ state: 'visible', timeout: 20_000 });
+      const cashCards = page.locator('[data-testid="arena-lobby-game-card"][data-kind="cash"]');
+      expect(await cashCards.count(), 'the arena stake ladder did not render').toBeGreaterThan(0);
+      for (const card of await cashCards.all()) {
+        const id = await card.getAttribute('data-id');
+        const status = await card.getAttribute('data-status');
+        const primary = card.locator('button[data-zone="primaryAction"]');
+        await expect(primary).toBeVisible();
+        if (seats.ids.has(id!)) {
+          await expect(primary).toHaveAccessibleName('Return To Game');
+          await expect(primary).toBeEnabled();
+        } else if (status === 'full' || status === 'waitlist') {
+          await expect(primary).toHaveAccessibleName(/^(Join|Leave) Waitlist$/);
+          await expect(primary).toBeEnabled();
+        } else if (status === 'closed') {
+          await expect(primary).toBeDisabled();
+        } else if (!context.cashGamesEnabled) {
+          await expect(primary).toHaveAccessibleName(CLOSED_COPY);
+          await expect(primary).toBeDisabled();
+        } else {
+          const game = (await card.getAttribute('data-target')) === 'game';
+          await expect(primary).toHaveAccessibleName(
+            game ? /^Join (Game|Lightning)$/ : 'Join Table'
+          );
+          await expect(primary).toBeEnabled();
+        }
+      }
+      const tournamentCards = page.locator(
+        '[data-testid="arena-lobby-game-card"][data-kind="mtt"]'
       );
-      await expect(label).toBeVisible();
+      for (const card of await tournamentCards.all()) {
+        const id = await card.getAttribute('data-id');
+        const status = await card.getAttribute('data-status');
+        const primary = card.locator('button[data-zone="primaryAction"]');
+        const full =
+          Number(await card.getAttribute('data-capacity')) > 0 &&
+          Number(await card.getAttribute('data-players')) >=
+            Number(await card.getAttribute('data-capacity'));
+        await expect(primary).toBeVisible();
+        if (registrations.ids.has(id!)) {
+          await expect(primary).toHaveAccessibleName(
+            status === 'running' || status === 'late_reg' ? 'Return To Tournament' : 'Unregister'
+          );
+          await expect(primary).toBeEnabled();
+        } else if (status === 'running' || status === 'closed' || status === 'completed') {
+          await expect(primary).toHaveAccessibleName(
+            full ? 'Tournament Full' : 'Registration Closed'
+          );
+          await expect(primary).toBeDisabled();
+        } else if (!context.tournamentsEnabled) {
+          await expect(primary).toHaveAccessibleName(CLOSED_COPY);
+          await expect(primary).toBeDisabled();
+        } else if (full) {
+          await expect(primary).toHaveAccessibleName('Tournament Full');
+          await expect(primary).toBeDisabled();
+        } else {
+          await expect(primary).toHaveAccessibleName(
+            status === 'late_reg' ? 'Late Register' : 'Register'
+          );
+          await expect(primary).toBeEnabled();
+        }
+      }
+      // An empty live tournament catalogue cannot qualify a negative register
+      // branch. Its rendered closed/open controls are exercised in isolation.
+      test.info().annotations.push({
+        type: 'arena-door-state',
+        description: JSON.stringify({ ...context, tournamentCards: await tournamentCards.count() }),
+      });
       expect((await horizontalOverflow(page)).root).toBeLessThanOrEqual(1);
     });
   });

@@ -16,6 +16,7 @@ import { CardImage, type Card } from '../table/CardImage';
 import './ShareHand.css';
 import { reportError } from '../../utils/errorReporter';
 import { openInBrowser } from '../../lib/openExternal';
+import ShareAsVideoPanel from './ShareAsVideoPanel';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -207,6 +208,15 @@ export interface ShareHandProps {
   hand: ShareableHand;
   baseUrl?: string;
   clubName?: string;
+  /**
+   * SHARE AS VIDEO (Phase 9.1, 2026-09-30). The `hand_history` id of the
+   * hand the sheet was opened for, when the caller has one: the archive and
+   * the Previous Hand detail open the sheet from a stored record and pass
+   * its id; the live snapshot taken as a hand ends has no row id yet and
+   * passes nothing. Without it the video panel is not rendered, because a
+   * clip is rendered from the stored row and there is nothing to ask for.
+   */
+  handId?: string | null;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -706,6 +716,7 @@ export function ShareHand({
   hand,
   baseUrl = 'https://smarter.poker/hub/club-arena/replay',
   clubName = 'Smarter Poker',
+  handId = null,
 }: ShareHandProps) {
   const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const [copied, setCopied] = useState(false);
@@ -958,6 +969,9 @@ export function ShareHand({
             </div>
           )}
         </div>
+
+        {/* Share As Video (Phase 9.1): only for a hand with a stored row id. */}
+        {handId && <ShareAsVideoPanel handId={handId} />}
 
         {/* Footer */}
         <div className="share-hand__footer">

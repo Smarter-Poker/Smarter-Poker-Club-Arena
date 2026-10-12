@@ -1,0 +1,114 @@
+Horse Brain Phase 9 natural evidence, classic (single-board) hands: predeclaration
+==================================================================================
+
+Declared at: 2026-10-03T09:54:02Z (UTC), before any record of the population below was read.
+Read so far for this declaration: source code (PokerEngine.distributePot and
+calculatePots, HandController, OmahaReference), the engine container label,
+and the auto-deploy workflow run list (GitHub metadata). No hand_history,
+audit or journal record has been read for this evidence.
+
+1. Releases
+-----------
+Serving now (label sp.release.sha on engine.smarter.poker, read
+2026-10-03T09:52:27Z): d0a1775967349ec305f18c7ff135b4a6e014bcbd, container
+started 2026-10-03T08:55:56Z; a descendant of f5322827.
+Release that served the declared window: f5322827e41832f2023ca3f9e52b77d1be7e735b,
+container a0f8df8a19c1... started 2026-10-02T23:56:01Z, the same container
+read at 03:08:06Z, 03:29:12Z and 03:34:39Z (docs/evidence/phase9/declaration.txt
+and phase9-natural-evidence-2026-10-03-f5322827.json); the next successful
+auto-deploy run started 03:14:19Z and finished 03:58:32Z. The window is
+therefore wholly on f5322827. It is the same window as the earlier S2/S3
+offer join, chosen so the classic and run-it evidence share one release.
+
+2. Population C1
+----------------
+Rows of production public.hand_history with
+  created_at >= 2026-10-03T00:00:00Z and created_at < 2026-10-03T03:00:00Z
+  effective variant = coalesce(bomb_pot->>'variant', game_variant) in
+    plo4, plo5, plo6, plo8, flo8
+  single board: rit_boards is null or an empty array, community_cards2 is null
+    or empty, and bomb_pot is null (not a bomb pot).
+Every row is counted; nothing is sampled. Split by mode:
+  chip cash      tournament_id is null and captured asset chips (or no
+                 captured asset);
+  diamond cash   tournament_id is null and captured asset diamonds;
+  tournament     tournament_id is not null (chips);
+and by variant and has_human. Single-board bomb pots and multi-board hands
+are outside C1 and are counted as such, not re-settled here.
+Export: psql on the operator Mac, SELECT only, inside BEGIN READ ONLY ...
+ROLLBACK with statement_timeout 170 s, one 15-minute created_at slice per
+statement (12 statements). A slice that cannot be read within the limit is
+split into 5-minute slices; an interval that still cannot be read is
+reported as unknown_not_exported with its exact bounds. Nothing is sampled.
+
+3. Comparison (independent re-settlement)
+-----------------------------------------
+Reference: server/src/benchmark/OmahaReference.ts with the reused
+p9-natural-compare.mts, extended for one board and tournament units.
+Inputs as recorded: the board (community_cards), recorded hole cards,
+contributions replayed from actions (same rules as declaration.txt: blinds,
+call, bet, straddle, antes are chips added; raise and all_in resolved
+against the next captured invested totals, else unambiguous with no street
+bet, else one unresolved amount by pot_size), production's pot rule
+(individual antes matched; a shared big blind ante and a dead blind post are
+pooled dead money), the button seat, and the chip unit from the hand's
+captured public node (if absent: 1 for a tournament, 0.01 for chip cash,
+noted).
+Odd units: the engine's stated rule (PokerEngine.distributePot, Bible V8
+2.7): a pot or half that does not divide evenly gives its odd units one at a
+time to the winners in clockwise order from the button, the button last; in
+hi-lo the odd unit of a pot goes to the high half (PokerEngine.calculatePots
+caller). OmahaReference orders winners the same way (seats after the button
+ascending, then seats up to and including the button).
+Checks per hand:
+  (a) pots: reference pots (amount and eligible seat set, in order) equal the
+      recorded pots exactly;
+  (b) conservation: recorded winners sum equals pot_size - rake_amount -
+      bbj_amount exactly (tournament: equals pot_size);
+  (c) per player:
+      cash: recorded payout strictly within one cent of the exact pro-rata
+        share  reference award x net / gross  (|recorded - exact| < 1 cent).
+        The count within one cent inclusive (<= 1 cent) is reported beside it
+        as a secondary band; the strict rule decides the verdict;
+      tournament: recorded payout equals the reference award exactly, in
+        whole chips;
+  (d) per half (winners_by_board, written for single-board hi-lo), where
+      recorded:
+      cash: each player's entries sum exactly to that player's recorded
+        payout, and each entry is within fewer cents than that player's
+        number of entries of its exact pro-rata share (the engine's stated
+        per-player penny repair onto the largest entry);
+      tournament: each entry equals the reference half award exactly;
+      not recorded -> (d) unknown (verdict MATCH_PARTIAL, never a match);
+  (e) deductions, reported separately:
+      cash: expected rake = min(round(pot x pct), cap tier by players dealt),
+        pct at most 5 with two dealt, no rake when noFlopNoDrop and no flop
+        was dealt; expected BBJ = feeBB x big blind when enabled and dealt
+        >= minPlayersDealt; from the hand's own captured configuration; none
+        captured -> unknown;
+      tournament: rake_amount and bbj_amount must both be 0.
+Verdicts: MATCH (a)-(d) hold with every input recorded; MATCH_PARTIAL (a)-(c)
+hold, (d) unknown; MISMATCH any of (a)-(d) fails, with exact numbers per hand
+(hashed hand id only); EXCLUDED by reason, never zero-filled:
+live_eligible_cards_not_recorded, replay_disagrees_with_capture,
+replay_pot_size_disagrees, unresolved_raise_amount, unhandled_action:<name>,
+pots_not_recorded, winners_not_recorded, pot_size_not_recorded,
+board_incomplete_contested, chip_unit_unknown, actor_not_in_players,
+pooled_dead_money_encoding_does_not_hold, reference_threw.
+Uncontested hands (one non-folded contributor) are re-settled (the whole pot
+to that player) and reported separately from contested ones; their missing
+board cards are stood in by unused deck cards because no hand is scored.
+A mismatch is a finding; money is never changed.
+
+4. Correction to declaration.txt
+--------------------------------
+declaration.txt section 2 says "no Omaha row is known before
+2026-09-03T05:37Z". That was wrong: at least 242 retained human Omaha cash
+hands are older, back to 2026-07-22. It changes nothing in the earlier
+windows: S1 was defined from 2026-09-03T00:00Z by its own declared bounds,
+and no row before that date was in, or claimed to be in, any earlier result.
+
+5. Privacy
+----------
+Only aggregates, hashed hand ids (sha256 prefix) and script hashes are
+committed. No hole cards, no user ids. The export stays on the operator SSD.

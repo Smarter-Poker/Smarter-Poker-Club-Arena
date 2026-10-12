@@ -178,7 +178,14 @@ function validateNode(node: PublicNode): void {
       throw Error('invalid seat');
     seats.add(seat[0]);
   }
-  if (!seats.has(node.actorSeat) || !seats.has(node.dealerSeat)) throw Error('invalid position');
+  if (
+    !seats.has(node.actorSeat) ||
+    !count(node.dealerSeat) ||
+    node.dealerSeat < 1 ||
+    node.dealerSeat > 10 ||
+    (seats.size === 2 && !seats.has(node.dealerSeat))
+  )
+    throw Error('invalid position');
   const actor = node.seats.find((s) => s[0] === node.actorSeat)!;
   if (actor[6] !== 0 || actor[1] <= 0) throw Error('inactive actor');
   const expectedCards = [0, 3, 4, 5][STREETS.indexOf(node.street)],
@@ -334,10 +341,22 @@ const emptyLine = (): Line => ({ aggression: 0, calls: 0, actors: new Set(), las
 function scopeOf(node: PublicNode, lines: readonly Line[]): readonly unknown[] {
   const actor = node.seats.find((seat) => seat[0] === node.actorSeat)!;
   const seats = node.seats.map((seat) => seat[0]).sort((a, b) => a - b);
+  const buttonIndex = seats.indexOf(node.dealerSeat);
+  const clockwise =
+    buttonIndex < 0
+      ? seats
+          .filter((seat) => seat > node.dealerSeat)
+          .concat(seats.filter((seat) => seat <= node.dealerSeat))
+      : [];
+  // Occupied-button keys remain byte-for-byte compatible. A dead button has
+  // no actor at position zero: use 1..N clockwise from its physical seat,
+  // keeping its contribution topology distinct from an occupied button.
   const position = (seat: number) =>
     seat < 0
       ? -1
-      : (seats.indexOf(seat) - seats.indexOf(node.dealerSeat) + seats.length) % seats.length;
+      : buttonIndex < 0
+        ? clockwise.indexOf(seat) + 1
+        : (seats.indexOf(seat) - buttonIndex + seats.length) % seats.length;
   // Versioned structural scope. No action outcome, identity, partition or private object enters this key.
   return Object.freeze([
     'adaptive-public-node-v1',

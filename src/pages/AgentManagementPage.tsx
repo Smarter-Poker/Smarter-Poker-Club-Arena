@@ -25,7 +25,8 @@
  * dialog, the ChipTransferModal / PlayerInviteModal / CommissionHistoryModal
  * wiring (userId, never agent.id), the QUERY_LIMITS cap notice, the swipe
  * handlers, the stagger timers, and every commission, rakeback and credit
- * figure. Not one number, gate or handler was touched - only what draws them.
+ * figure. The authoritative credit writer also revokes this view immediately
+ * when Postgres reports that the same user's management authority was removed.
  *
  * THE FIGURES STAY EXACT. `compactChips` is used for the COUNTS in the
  * summary. It is not used for the money: a credit limit, a credit draw and an
@@ -55,12 +56,6 @@ import CommissionHistoryModal from '@/components/agent/CommissionHistoryModal';
 import DistributionHistory from '@/components/agent/DistributionHistory';
 import AgentAnalyticsDashboard from '@/components/agent/AgentAnalyticsDashboard';
 import PlayerInviteModal from '@/components/agent/PlayerInviteModal';
-import { CreditService } from '@/services/CreditService';
-import AgentManager from '@/components/club/AgentManager';
-import AdminReports from '@/components/club/AdminReports';
-import SecurityAuditLog from '@/components/club/SecurityAuditLog';
-import { PermissionService } from '@/services/PermissionService';
-import { AgentFinancialPortal } from '@/components/dashboard/AgentFinancialPortal';
 import AgentCommissionDashboard from '@/components/agent/AgentCommissionDashboard';
 import { useToast } from '@/components/common/Toast';
 import AgentAssignmentPanel from '@/components/agent/AgentAssignmentPanel';
@@ -69,7 +64,6 @@ import { PlayerSearch } from '@/components/admin/PlayerSearch';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { EmptyState, ErrorState } from '../components/common/EmptyState';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
-import { retryFetch } from '../utils/retryFetch';
 import { useSwipeTabs } from '../hooks/useSwipeTabs';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import {
@@ -81,6 +75,7 @@ import { reportError } from '../utils/errorReporter';
 
 import { safeErrorMessage } from '../utils/safeErrorMessage';
 import { QUERY_LIMITS } from '../lib/constants';
+import { parseAgentPayablesPayload, type AgentPayables } from '../utils/agentManagementPayload';
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -92,37 +87,21 @@ type TabType = 'agents' | 'players' | 'hierarchy' | 'credit-limits' | 'commissio
  * superseded arithmetic this page printed before phase 3 (weekly rake times
  * commission rate) rode alongside for one release and came down 2026-09-04.
  */
-interface AgentPayableRow {
-  agent_id: string;
-  user_id: string;
-  name: string;
-  role: string;
-  status: string;
-  is_prepaid: boolean;
-  credit_limit: number;
-  credit_used: number;
-  credit_available: number;
-  utilization: number;
-  owed: number;
-  rows_behind: number;
-  oldest_unsettled: string | null;
-}
-
-interface AgentPayables {
-  agents: number;
-  cap: number;
-  total_owed: number;
-  total_rows: number;
-  oldest_unsettled: string | null;
-  rows: AgentPayableRow[];
-  generated_at: string;
-}
+const EMPTY_AGENT_FORM = {
+  userId: '',
+  role: 'agent' as const,
+  parentAgentId: '',
+  commissionRate: 50,
+  playerRakebackRate: 30,
+  creditLimit: 0,
+};
 
 export default function AgentManagementPage() {
   const { clubId } = useParams<{ clubId: string }>();
   const navigate = useNavigate();
   const { user } = useAuthUser();
   const toast = useToast();
+  const isMounted = useIsMounted();
   /* THE AGENTS ON SCREEN ARE THE AGENTS OF THE CLUB IN THE URL (2026-09-10).
      Every agents load was guarded by isMounted alone, so changing club while
      a read was in flight landed the previous club's credit limits, wallet
@@ -130,9 +109,40 @@ export default function AgentManagementPage() {
      ticket; a result whose ticket is no longer current is dropped. The
      ticket is reissued whenever the club changes. */
   const agentsLoadTicket = useRef(0);
-  const claimAgentsLoad = () => ++agentsLoadTicket.current;
-  const agentsLoadIsCurrent = (ticket: number) =>
-    isMounted.current && ticket === agentsLoadTicket.current;
+  const accessRevoked = useRef(false);
+  const claimAgentsLoad = useCallback(() => ++agentsLoadTicket.current, []);
+  const agentsLoadIsCurrent = useCallback(
+    (ticket: number) =>
+      isMounted.current && !accessRevoked.current && ticket === agentsLoadTicket.current,
+    [isMounted]
+  );
+  /* A roster ticket orders agent refreshes. A separate generation guards all
+     sensitive readers together: payables, reversible sends, promotion
+     candidates and modal-completion refreshes must also die when either the
+     club/user scope changes or authority is revoked inside the same scope. */
+  const scopeKey = `${user?.id || 'anonymous'}:${clubId || 'no-club'}`;
+  const scopeKeyRef = useRef(scopeKey);
+  const scopeGeneration = useRef(0);
+  if (scopeKeyRef.current !== scopeKey) {
+    scopeKeyRef.current = scopeKey;
+    scopeGeneration.current += 1;
+    accessRevoked.current = false;
+  }
+  const captureScope = useCallback(
+    () => ({ key: scopeKeyRef.current, generation: scopeGeneration.current }),
+    []
+  );
+  const scopeIsCurrent = useCallback(
+    (scope: { key: string; generation: number }) =>
+      isMounted.current &&
+      !accessRevoked.current &&
+      scope.key === scopeKeyRef.current &&
+      scope.generation === scopeGeneration.current,
+    [isMounted]
+  );
+  const invalidateScope = useCallback(() => {
+    scopeGeneration.current += 1;
+  }, []);
   useVisibilityRefresh(async () => {
     if (!clubId) return;
     const ticket = claimAgentsLoad();
@@ -155,7 +165,6 @@ export default function AgentManagementPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingLimit, setEditingLimit] = useState<string | null>(null);
   const [newLimit, setNewLimit] = useState<number>(0);
@@ -190,14 +199,14 @@ export default function AgentManagementPage() {
   const [availableMembers, setAvailableMembers] = useState<ClubMembership[]>([]);
   const [isLoadingMembers, setIsLoadingMembers] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
-  const [newAgentForm, setNewAgentForm] = useState({
-    userId: '',
-    role: 'agent' as 'super_agent' | 'agent' | 'sub_agent',
-    parentAgentId: '',
-    commissionRate: 50, // Default 50%
-    playerRakebackRate: 30, // Default 30%
-    creditLimit: 0, // MANDATORY - must be set
-  });
+  const [newAgentForm, setNewAgentForm] = useState<{
+    userId: string;
+    role: 'super_agent' | 'agent' | 'sub_agent';
+    parentAgentId: string;
+    commissionRate: number;
+    playerRakebackRate: number;
+    creditLimit: number;
+  }>({ ...EMPTY_AGENT_FORM });
 
   // Animation state
   const [visibleAgents, setVisibleAgents] = useState<Set<string>>(new Set());
@@ -207,23 +216,82 @@ export default function AgentManagementPage() {
   const [payables, setPayables] = useState<AgentPayables | null>(null);
   const [payablesError, setPayablesError] = useState<string | null>(null);
   const [clawbackProcessing, setClawbackProcessing] = useState<string | null>(null);
+  const clawbackBusy = useRef(false);
+  const clawbackOperationIds = useRef(new Map<string, string>());
 
   // Stagger animation for agents list
-  const isMounted = useIsMounted();
+  const revokeAgentManagementAccess = useCallback(() => {
+    // ClubMemberGuard still admits staff after an owner/admin is downgraded to
+    // an agent. A 42501 from the credit writer is therefore a narrower,
+    // authoritative revocation signal. Retire every pending reader and remove
+    // all agent financial data and action state before leaving this route.
+    accessRevoked.current = true;
+    claimAgentsLoad();
+    invalidateScope();
+    setAgents([]);
+    setActiveTab('agents');
+    setIsLoading(false);
+    setError(null);
+    setShowAddModal(false);
+    setEditingLimit(null);
+    setNewLimit(0);
+    setShowTransferModal(false);
+    setTransferAgentId(null);
+    setShowCommissionModal(false);
+    setCommissionAgentId(null);
+    setCommissionAgentName('');
+    setShowPlayerInviteModal(false);
+    setPlayerInviteAgentUserId(null);
+    setConfirmAction(null);
+    setBanTarget(null);
+    setBanReason('');
+    setBanDays('');
+    setBanBusy(false);
+    setAvailableMembers([]);
+    setIsLoadingMembers(false);
+    setIsCreating(false);
+    setNewAgentForm({ ...EMPTY_AGENT_FORM });
+    setVisibleAgents(new Set());
+    setRecentDistributions([]);
+    setPayables(null);
+    setPayablesError(null);
+    setClawbackProcessing(null);
+    clawbackBusy.current = false;
+    clawbackOperationIds.current.clear();
+    navigate(`/clubs/${clubId}/operations`, { replace: true });
+  }, [claimAgentsLoad, clubId, invalidateScope, navigate]);
 
   // ── CRITICAL: Reset per-club state when navigating between clubs ──
   useEffect(() => {
+    accessRevoked.current = false;
+    invalidateScope();
     setActiveTab('agents');
     setError(null);
-    setSelectedAgent(null);
     setShowAddModal(false);
+    setEditingLimit(null);
+    setNewLimit(0);
     setShowTransferModal(false);
+    setTransferAgentId(null);
     setShowCommissionModal(false);
+    setCommissionAgentId(null);
+    setCommissionAgentName('');
     setShowPlayerInviteModal(false);
+    setPlayerInviteAgentUserId(null);
     setConfirmAction(null);
+    setBanTarget(null);
+    setBanReason('');
+    setBanDays('');
+    setAvailableMembers([]);
+    setIsLoadingMembers(false);
+    setNewAgentForm({ ...EMPTY_AGENT_FORM });
     setVisibleAgents(new Set());
+    setRecentDistributions([]);
+    setPayables(null);
+    setPayablesError(null);
     setClawbackProcessing(null);
-  }, [clubId]);
+    clawbackBusy.current = false;
+    clawbackOperationIds.current.clear();
+  }, [clubId, invalidateScope, user?.id]);
 
   // Load agents from Supabase
   useEffect(() => {
@@ -248,7 +316,7 @@ export default function AgentManagementPage() {
       // A club change reissues the ticket so the read in flight is dropped.
       claimAgentsLoad();
     };
-  }, [clubId]);
+  }, [agentsLoadIsCurrent, claimAgentsLoad, clubId]);
 
   // Load recent distributions for clawback
   /* WHAT THIS USED TO BE. A client select on chip_transactions filtered to
@@ -262,14 +330,20 @@ export default function AgentManagementPage() {
      window, with seconds_left computed by the database. */
   const loadRecentDistributions = useCallback(async () => {
     if (!clubId || !user?.id) return;
+    const requestScope = captureScope();
     try {
       const rows = await AgentService.reversibleDistributions(clubId);
-      if (isMounted.current) setRecentDistributions(rows);
+      if (scopeIsCurrent(requestScope)) setRecentDistributions(rows);
     } catch (e) {
       reportError(e, 'AgentManagementPage.reversibleDistributions');
-      if (isMounted.current) setRecentDistributions([]);
+      if (!scopeIsCurrent(requestScope)) return;
+      if (isAuthzError(e)) {
+        revokeAgentManagementAccess();
+        return;
+      }
+      if (scopeIsCurrent(requestScope)) setRecentDistributions([]);
     }
-  }, [clubId, user?.id, isMounted]);
+  }, [captureScope, clubId, revokeAgentManagementAccess, scopeIsCurrent, user?.id]);
 
   /* What the club actually owes, from the commission ledger. It needs a
      function because agent_commissions grants `authenticated` one read -
@@ -278,6 +352,7 @@ export default function AgentManagementPage() {
      aggregates a quarter of a million rows. */
   const loadPayables = useCallback(async () => {
     if (!clubId) return;
+    const requestScope = captureScope();
     setPayablesError(null);
     try {
       const resolved = await resolveClubUUID(clubId);
@@ -285,19 +360,21 @@ export default function AgentManagementPage() {
         p_club_id: resolved,
       });
       if (error) throw error;
-      if (isMounted.current) setPayables(data as AgentPayables);
+      const verified = parseAgentPayablesPayload(data);
+      if (scopeIsCurrent(requestScope)) setPayables(verified);
     } catch (e) {
       reportError(e, 'AgentManagementPage.payables');
-      if (isMounted.current) {
+      if (!scopeIsCurrent(requestScope)) return;
+      if (isAuthzError(e)) {
+        revokeAgentManagementAccess();
+        return;
+      }
+      if (scopeIsCurrent(requestScope)) {
         setPayables(null);
-        setPayablesError(
-          isAuthzError(e)
-            ? 'Agent Payables Are Restricted To Club Owners And Administrators'
-            : 'The Commission Ledger Could Not Be Read'
-        );
+        setPayablesError('The Commission Ledger Could Not Be Read');
       }
     }
-  }, [clubId, isMounted]);
+  }, [captureScope, clubId, revokeAgentManagementAccess, scopeIsCurrent]);
 
   useEffect(() => {
     if (activeTab === 'payouts') loadPayables();
@@ -305,7 +382,7 @@ export default function AgentManagementPage() {
 
   useEffect(() => {
     if (activeTab === 'players') loadRecentDistributions();
-  }, [activeTab, clubId, user?.id]);
+  }, [activeTab, loadRecentDistributions]);
 
   // Stagger animation for agents list
   useEffect(() => {
@@ -323,24 +400,32 @@ export default function AgentManagementPage() {
   useEffect(() => {
     if (!showAddModal || !clubId) return;
 
+    const requestScope = captureScope();
     setIsLoadingMembers(true);
     MembershipService.getEligibleForPromotion(clubId)
       .then((members) => {
-        if (isMounted.current) setAvailableMembers(members);
+        if (scopeIsCurrent(requestScope)) setAvailableMembers(members);
       })
       .catch((err) => {
+        if (!scopeIsCurrent(requestScope)) return;
         reportError(err, 'AgentManagementPage.Failed_to_load_eligible_members');
+        if (isAuthzError(err)) {
+          revokeAgentManagementAccess();
+          return;
+        }
         toast.error('Failed to load eligible members');
-        if (isMounted.current) setAvailableMembers([]);
+        setAvailableMembers([]);
       })
       .finally(() => {
-        if (isMounted.current) setIsLoadingMembers(false);
+        if (scopeIsCurrent(requestScope)) setIsLoadingMembers(false);
       });
-  }, [showAddModal, clubId]);
+  }, [captureScope, clubId, revokeAgentManagementAccess, scopeIsCurrent, showAddModal, toast]);
 
   // Realtime subscription: auto-update on club_members and wallet_transactions changes
   useEffect(() => {
     if (!clubId) return;
+    const requestScope = captureScope();
+    let cancelled = false;
 
     const loadAgentsData = async () => {
       setIsLoading(true);
@@ -364,7 +449,7 @@ export default function AgentManagementPage() {
 
     const setupRealtime = async () => {
       const resolvedId = await resolveClubUUID(clubId);
-      if (!isMounted.current) return;
+      if (cancelled || !scopeIsCurrent(requestScope)) return;
 
       const channel = masterBus.getOrCreateChannel(channelKey);
       channel
@@ -376,7 +461,7 @@ export default function AgentManagementPage() {
             table: 'club_members',
             filter: `club_id=eq.${resolvedId}`,
           },
-          (payload) => {
+          (_payload) => {
             // Agents are club members with agent roles - reload on any change
             loadAgentsData();
           }
@@ -465,6 +550,7 @@ export default function AgentManagementPage() {
     );
 
     return () => {
+      cancelled = true;
       masterBus.removeRegisteredChannel(channelKey);
       unsubWallet();
       unsubBalance();
@@ -474,7 +560,15 @@ export default function AgentManagementPage() {
       unsubCashoutCancelled();
       unsubAgentUpdated();
     };
-  }, [clubId]);
+  }, [
+    agentsLoadIsCurrent,
+    captureScope,
+    claimAgentsLoad,
+    clubId,
+    loadRecentDistributions,
+    scopeIsCurrent,
+    toast,
+  ]);
 
   // Stats summary
   const totalAgents = agents.length;
@@ -505,7 +599,9 @@ export default function AgentManagementPage() {
 
   const formatMoney = (amount: number) =>
     amount.toLocaleString('en-US', { minimumFractionDigits: 2 });
-  const formatPercent = (rate: number) => `${((rate || 0) * 100).toFixed(0)}%`;
+  // Commission and rakeback are payment rates, not chip counts. Preserve the
+  // contract's tenth instead of rounding 32.5% into a different deal.
+  const formatPercent = (rate: number) => `${(rate * 100).toFixed(1)}%`;
   const getCreditUtilization = (agent: Agent) =>
     agent.creditLimit > 0 ? (agent.creditUsed / agent.creditLimit) * 100 : 0;
 
@@ -532,7 +628,7 @@ export default function AgentManagementPage() {
           displayName: a.displayName || 'Unknown',
           role: a.role,
           status: a.status,
-          commissionRate: `${((a.commissionRate || 0) * 100).toFixed(0)}%`,
+          commissionRate: formatPercent(a.commissionRate),
           creditLimit: a.creditLimit,
           totalPlayers: a.totalPlayers,
           weeklyRake: a.weeklyRakeGenerated,
@@ -557,8 +653,10 @@ export default function AgentManagementPage() {
   // Direct credit limit assignment (real Supabase call)
   const handleSetCreditLimit = async (agentId: string, limit: number) => {
     if (!user?.id) return;
+    const requestScope = captureScope();
     try {
-      const success = await AgentService.setCreditLimit(agentId, limit, user.id);
+      const success = await AgentService.setCreditLimit(agentId, limit, user.id, undefined, clubId);
+      if (!scopeIsCurrent(requestScope)) return;
       if (success) {
         setAgents((prev) => prev.map((a) => (a.id === agentId ? { ...a, creditLimit: limit } : a)));
         toast.success(`Credit limit updated to ${limit.toLocaleString()}`);
@@ -567,20 +665,29 @@ export default function AgentManagementPage() {
       } else {
         toast.error('Failed to update credit limit');
       }
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to update credit limit');
+    } catch (err: unknown) {
+      if (!scopeIsCurrent(requestScope)) return;
+      if (isAuthzError(err)) {
+        reportError(err, 'AgentManagementPage.credit_authority_revoked', { clubId, agentId });
+        revokeAgentManagementAccess();
+        return;
+      }
+      const message = err instanceof Error ? err.message : 'Failed to update credit limit';
+      toast.error(message);
     }
     setEditingLimit(null);
   };
 
   // Suspend agent (optimistic UI with rollback)
   const handleSuspendAgent = async (agentId: string) => {
+    const requestScope = captureScope();
     // Optimistic: update UI instantly for premium feel
     setAgents((prev) =>
       prev.map((a) => (a.id === agentId ? { ...a, status: 'suspended' as const } : a))
     );
     try {
-      const success = await AgentService.updateAgentStatus(agentId, 'suspended');
+      const success = await AgentService.updateAgentStatus(agentId, 'suspended', clubId);
+      if (!scopeIsCurrent(requestScope)) return;
       if (success) {
         masterBus.emit('AGENT_UPDATED', { clubId: clubId || '', agentId });
         masterBus.emit('ADMIN_ACTION', {
@@ -596,23 +703,31 @@ export default function AgentManagementPage() {
         );
         toast.error('Failed to suspend agent');
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
+      if (!scopeIsCurrent(requestScope)) return;
+      if (isAuthzError(err)) {
+        reportError(err, 'AgentManagementPage.status_authority_revoked', { clubId, agentId });
+        revokeAgentManagementAccess();
+        return;
+      }
       // Rollback on network error
       setAgents((prev) =>
         prev.map((a) => (a.id === agentId ? { ...a, status: 'active' as const } : a))
       );
-      toast.error(err.message || 'Failed to suspend agent');
+      toast.error(err instanceof Error ? err.message : 'Failed to suspend agent');
     }
   };
 
   // Reinstate agent (optimistic UI with rollback)
   const handleReinstateAgent = async (agentId: string) => {
+    const requestScope = captureScope();
     // Optimistic: update UI instantly for premium feel
     setAgents((prev) =>
       prev.map((a) => (a.id === agentId ? { ...a, status: 'active' as const } : a))
     );
     try {
-      const success = await AgentService.updateAgentStatus(agentId, 'active');
+      const success = await AgentService.updateAgentStatus(agentId, 'active', clubId);
+      if (!scopeIsCurrent(requestScope)) return;
       if (success) {
         masterBus.emit('AGENT_UPDATED', { clubId: clubId || '', agentId });
         masterBus.emit('ADMIN_ACTION', {
@@ -628,12 +743,18 @@ export default function AgentManagementPage() {
         );
         toast.error('Failed to reinstate agent');
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
+      if (!scopeIsCurrent(requestScope)) return;
+      if (isAuthzError(err)) {
+        reportError(err, 'AgentManagementPage.status_authority_revoked', { clubId, agentId });
+        revokeAgentManagementAccess();
+        return;
+      }
       // Rollback on network error
       setAgents((prev) =>
         prev.map((a) => (a.id === agentId ? { ...a, status: 'suspended' as const } : a))
       );
-      toast.error(err.message || 'Failed to reinstate agent');
+      toast.error(err instanceof Error ? err.message : 'Failed to reinstate agent');
     }
   };
 
@@ -656,26 +777,39 @@ export default function AgentManagementPage() {
     setConfirmAction(null);
 
     if (type === 'promote' && agentId && newRole) {
-      const success = await AgentService.updateAgentRole(
-        agentId,
-        newRole as 'super_agent' | 'agent' | 'sub_agent'
-      );
-      if (success) {
-        setAgents((prev) =>
-          prev.map((a) => (a.id === agentId ? { ...a, role: newRole as any } : a))
+      const requestScope = captureScope();
+      try {
+        const success = await AgentService.updateAgentRole(
+          agentId,
+          newRole as 'super_agent' | 'agent' | 'sub_agent',
+          clubId
         );
-        toast.success(
-          `Agent role updated to ${newRole === 'super_agent' ? 'Super Agent' : 'Agent'}`
-        );
-        masterBus.emit('AGENT_UPDATED', { clubId: clubId || '', agentId });
-        masterBus.emit('ADMIN_ACTION', {
-          action: newRole === 'super_agent' ? 'agent_promoted' : 'agent_demoted',
-          target: agentId,
-          details: { newRole },
-          userId: user?.id,
-        });
-      } else {
-        toast.error('Failed to update agent role');
+        if (!scopeIsCurrent(requestScope)) return;
+        if (success) {
+          setAgents((prev) =>
+            prev.map((a) => (a.id === agentId ? { ...a, role: newRole as Agent['role'] } : a))
+          );
+          toast.success(
+            `Agent role updated to ${newRole === 'super_agent' ? 'Super Agent' : 'Agent'}`
+          );
+          masterBus.emit('AGENT_UPDATED', { clubId: clubId || '', agentId });
+          masterBus.emit('ADMIN_ACTION', {
+            action: newRole === 'super_agent' ? 'agent_promoted' : 'agent_demoted',
+            target: agentId,
+            details: { newRole },
+            userId: user?.id,
+          });
+        } else {
+          toast.error('Failed to update agent role');
+        }
+      } catch (err: unknown) {
+        if (!scopeIsCurrent(requestScope)) return;
+        if (isAuthzError(err)) {
+          reportError(err, 'AgentManagementPage.role_authority_revoked', { clubId, agentId });
+          revokeAgentManagementAccess();
+          return;
+        }
+        toast.error(err instanceof Error ? err.message : 'Failed to update agent role');
       }
     }
   };
@@ -694,6 +828,7 @@ export default function AgentManagementPage() {
   const executeBan = async () => {
     const playerId = banTarget;
     if (!playerId || !clubId || banBusy) return;
+    const requestScope = captureScope();
     const reason = banReason.trim();
     if (reason.length < 3) {
       toast.error('Say Why. The Reason Is Written To The Exclusion Record.');
@@ -712,6 +847,7 @@ export default function AgentManagementPage() {
         p_expires_at: expiresAt,
       });
       if (error) throw error;
+      if (!scopeIsCurrent(requestScope)) return;
       const outcome = (data || {}) as {
         ok?: boolean;
         reason?: string;
@@ -736,11 +872,13 @@ export default function AgentManagementPage() {
       );
       if (outcome.live_seats) {
         const tableIds = await liveSeatTableIds(resolved, playerId);
+        if (!scopeIsCurrent(requestScope)) return;
         const removal = await adminRemovePlayerFromClubTables(
           tableIds,
           playerId,
           'Excluded from the club by an administrator'
         );
+        if (!scopeIsCurrent(requestScope)) return;
         toast.info(
           `Removed From ${fmt(removal.removed)} Tables; ${fmt(removal.pending)} Pending; ${fmt(removal.failed)} Failed. ${removal.firstError || ''}`.trim()
         );
@@ -760,6 +898,12 @@ export default function AgentManagementPage() {
         userId: user?.id,
       });
     } catch (err: unknown) {
+      if (!scopeIsCurrent(requestScope)) return;
+      if (isAuthzError(err)) {
+        reportError(err, 'AgentManagementPage.ban_authority_revoked', { clubId, playerId });
+        revokeAgentManagementAccess();
+        return;
+      }
       toast.error(err instanceof Error ? err.message : 'That Player Could Not Be Excluded.');
     } finally {
       setBanBusy(false);
@@ -769,6 +913,7 @@ export default function AgentManagementPage() {
   // Create new agent (real Supabase call)
   const handleCreateAgent = async () => {
     if (!clubId || !newAgentForm.userId) return;
+    const requestScope = captureScope();
 
     // Validate mandatory fields
     if (newAgentForm.creditLimit <= 0) {
@@ -796,35 +941,60 @@ export default function AgentManagementPage() {
         creditLimit: newAgentForm.creditLimit,
       });
 
+      if (!scopeIsCurrent(requestScope)) return;
       setAgents((prev) => [newAgent, ...prev]);
       setShowAddModal(false);
       masterBus.emit('AGENT_UPDATED', { clubId: clubId || '', agentId: newAgent.id });
-      setNewAgentForm({
-        userId: '',
-        role: 'agent',
-        parentAgentId: '',
-        commissionRate: 50,
-        playerRakebackRate: 30,
-        creditLimit: 0,
-      });
-    } catch (err: any) {
-      toast.error('Failed to create agent: ' + err.message);
+      setNewAgentForm({ ...EMPTY_AGENT_FORM });
+    } catch (err: unknown) {
+      if (!scopeIsCurrent(requestScope)) return;
+      if (isAuthzError(err)) {
+        reportError(err, 'AgentManagementPage.create_authority_revoked', { clubId });
+        revokeAgentManagementAccess();
+        return;
+      }
+      toast.error(
+        `Failed to create agent: ${err instanceof Error ? err.message : 'Unknown Error'}`
+      );
     } finally {
-      setIsCreating(false);
+      if (scopeIsCurrent(requestScope)) setIsCreating(false);
     }
   };
 
   // Reset form when modal closes
   const handleCloseModal = () => {
     setShowAddModal(false);
-    setNewAgentForm({
-      userId: '',
-      role: 'agent',
-      parentAgentId: '',
-      commissionRate: 50,
-      playerRakebackRate: 30,
-      creditLimit: 0,
-    });
+    setNewAgentForm({ ...EMPTY_AGENT_FORM });
+  };
+
+  const refreshAgentsForCurrentScope = async (
+    source: 'retry' | 'transfer-complete' | 'player-added',
+    showLoading = false
+  ) => {
+    if (!clubId) return;
+    const requestScope = captureScope();
+    const ticket = claimAgentsLoad();
+    if (showLoading) {
+      setIsLoading(true);
+      setError(null);
+    }
+    try {
+      const data = await AgentService.getAgents(clubId);
+      if (!scopeIsCurrent(requestScope) || !agentsLoadIsCurrent(ticket)) return;
+      setAgents(data);
+    } catch (err: unknown) {
+      if (!scopeIsCurrent(requestScope) || !agentsLoadIsCurrent(ticket)) return;
+      reportError(err, `AgentManagementPage.${source}`);
+      if (isAuthzError(err)) {
+        revokeAgentManagementAccess();
+        return;
+      }
+      if (showLoading) setError(safeErrorMessage(err, 'Failed to reload agents'));
+    } finally {
+      if (showLoading && scopeIsCurrent(requestScope) && agentsLoadIsCurrent(ticket)) {
+        setIsLoading(false);
+      }
+    }
   };
 
   // No club selected
@@ -869,12 +1039,7 @@ export default function AgentManagementPage() {
         <ErrorState
           message={error}
           onRetry={() => {
-            setIsLoading(true);
-            setError(null);
-            AgentService.getAgents(clubId)
-              .then(setAgents)
-              .catch((retryError) => setError(safeErrorMessage(retryError)))
-              .finally(() => setIsLoading(false));
+            void refreshAgentsForCurrentScope('retry', true);
           }}
         />
       </StandardContentLayout>
@@ -1240,6 +1405,7 @@ export default function AgentManagementPage() {
                         type="button"
                         className={`${styles.word} sc-ink--red`}
                         onClick={async () => {
+                          if (clawbackBusy.current) return;
                           if (
                             !(await confirmDialog({
                               title: 'Take This Send Back',
@@ -1249,15 +1415,23 @@ export default function AgentManagementPage() {
                             }))
                           )
                             return;
+                          if (clawbackBusy.current) return;
+                          clawbackBusy.current = true;
                           setClawbackProcessing(tx.transaction_id);
                           try {
+                            const operationId =
+                              clawbackOperationIds.current.get(tx.transaction_id) ||
+                              crypto.randomUUID();
+                            clawbackOperationIds.current.set(tx.transaction_id, operationId);
                             const result = await AgentService.claimBackDistribution(
                               clubId!,
                               tx.transaction_id,
                               tx.remaining,
-                              'Taken back from the agent network console'
+                              'Taken back from the agent network console',
+                              operationId
                             );
                             if (result.success) {
+                              clawbackOperationIds.current.delete(tx.transaction_id);
                               toast.success(
                                 `Took Back ${fmtChips(result.claimedBack || tx.remaining)} Chips.`
                               );
@@ -1266,10 +1440,19 @@ export default function AgentManagementPage() {
                               toast.error(result.error || 'That Claim Back Was Refused.');
                             }
                           } catch (err: unknown) {
+                            if (isAuthzError(err)) {
+                              reportError(err, 'AgentManagementPage.clawback_authority_revoked', {
+                                clubId,
+                                transactionId: tx.transaction_id,
+                              });
+                              revokeAgentManagementAccess();
+                              return;
+                            }
                             toast.error(
                               err instanceof Error ? err.message : 'That Claim Back Was Refused.'
                             );
                           } finally {
+                            clawbackBusy.current = false;
                             setClawbackProcessing(null);
                           }
                         }}
@@ -1805,14 +1988,7 @@ export default function AgentManagementPage() {
         clubId={clubId || ''}
         recipientId={transferAgentId || undefined}
         onTransferComplete={() => {
-          // Refresh agents
-          if (clubId) {
-            AgentService.getAgents(clubId)
-              .then(setAgents)
-              .catch((e) =>
-                console.warn('[AgentManagementPage] Failed to refresh agents after transfer:', e)
-              );
-          }
+          void refreshAgentsForCurrentScope('transfer-complete');
         }}
       />
 
@@ -1838,17 +2014,7 @@ export default function AgentManagementPage() {
         agentUserId={playerInviteAgentUserId || ''}
         clubId={clubId || ''}
         onPlayerAdded={() => {
-          // Refresh agents
-          if (clubId) {
-            AgentService.getAgents(clubId)
-              .then(setAgents)
-              .catch((e) =>
-                console.warn(
-                  '[AgentManagementPage] Failed to refresh agents after player added:',
-                  e
-                )
-              );
-          }
+          void refreshAgentsForCurrentScope('player-added');
         }}
       />
 

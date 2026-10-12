@@ -2,12 +2,15 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import * as THREE from 'three';
 import { gameRenderer, metal, solid } from '../games/sceneKit';
+import { createFramePacer } from '../games/framePacer';
+import { createSceneTelemetry, reportSceneFailure } from '../games/sceneTelemetry';
 import { pegIndexAt, plinkoPegField } from './plinkoPegField';
 import { plinkoCabinet, type CabinetFrame } from './plinkoCabinet';
 import { getAnimationSpeed, prefersReducedMotion } from '../../utils/animationSpeed';
 import { multiplierLabel } from '../../utils/diamondGamesFairness';
 import { reportError } from '../../utils/errorReporter';
 import { PLINKO_PEG_GAP_MS, soundService } from '../../services/SoundService';
+import { BIG_WIN_CENTS } from '../../utils/bigWin';
 import styles from './PlinkoBoard.module.css';
 export const PLINKO_ROWS = 16;
 /** Sixteen rows of pegs drop into seventeen buckets. */
@@ -15,9 +18,10 @@ export const PLINKO_SLOTS = PLINKO_ROWS + 1;
 /**
  * Five times the drop or better. Dan played twenty games without seeing one, so
  * a landing at or above this gets a celebration of its own rather than a number
- * appearing in a list after the fact.
+ * appearing in a list after the fact. The bar is shared with every game's
+ * receipt (src/utils/bigWin.ts).
  */
-export const BIG_WIN_CENTS = 500;
+export { BIG_WIN_CENTS };
 /** The y the bucket row rests on, so a bounce always settles back to it. */
 const SLOT_REST_Y = -4.55;
 
@@ -274,13 +278,20 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
     } catch (error) {
       setFailed(true);
       reportError(error, 'PlinkoBoard.renderer');
+      reportSceneFailure('plinko', 'renderer');
       return;
     }
     const { scene, camera, renderer } = kit;
+    // One anonymous summary of how this phone drew the visit (sceneTelemetry.ts).
+    const telemetry = createSceneTelemetry('plinko', {
+      software: kit.software,
+      startTier: kit.qualityTier,
+    });
     const surface = renderer.domElement;
     const lost = (event: Event) => {
       event.preventDefault();
       setFailed(true);
+      reportSceneFailure('plinko', 'context_lost');
     };
     const restored = () => setFailed(false);
     surface.addEventListener('webglcontextlost', lost);
@@ -447,9 +458,18 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
     const writeTally = (count: number, total: number) => {
       if (tally.current) tally.current.textContent = tallyLine(count, total, bestCents);
     };
+    // Every display frame while diamonds fall or a landing plays, about 30 a
+    // second between drops, nothing at all once parked (framePacer.ts).
+    const pacer = createFramePacer({ reducedMs: 150 });
     const draw = (now: number) => {
       raf = requestAnimationFrame(draw);
-      if (document.hidden || now - last < (reduced ? 150 : 30)) return;
+      const live = latest.current;
+      const pace = pacer.pace(now, {
+        reduced,
+        moving: !landed || pendingLanding,
+        signature: `${live.dropKey}|${live.batchPathBits?.length ?? -1}|${live.path?.length ?? -1}|${live.restingSlot}|${live.multipliersCents.join(',')}`,
+      });
+      if (document.hidden || now - last < pace) return;
       last = now;
       visibleElapsed += lastVisibleFrame === null ? 0 : now - lastVisibleFrame;
       lastVisibleFrame = now;
@@ -660,7 +680,9 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
       cabinetFrame.flying = flying;
       cabinetFrame.pulsing = pulsing;
       cabinet.frame(cabinetFrame);
-      if (kit.render(reduced ? 150 : 30)) {
+      if (kit.render(pacer.governorInterval(pace))) {
+        telemetry.tier(kit.qualityTier);
+        telemetry.frame(now, pace === 0);
         /* THE BOARD IS HEARD ON THE FRAME THAT SHOWS IT (2026-09-26). A tick
            for the pegs this frame shows being struck, at most one every
            PLINKO_PEG_GAP_MS on the frame clock, pitched by the lowest row
@@ -689,6 +711,8 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
     return () => {
       cancelAnimationFrame(raf);
       document.removeEventListener('visibilitychange', visibilityChanged);
+      pacer.dispose();
+      telemetry.end();
       surface.removeEventListener('webglcontextlost', lost);
       surface.removeEventListener('webglcontextrestored', restored);
       sceneRef.current = null;

@@ -1,0 +1,5 @@
+{
+  "_owner": "fix/guarantee-overlay-excess-returns. Migration 20261001230928_an_excess_guarantee_overlay_returns_to_its_bank_when_the_poo, applied after merge through apply-merged-migration.yml.",
+  "tables": [],
+  "functions": ["fn_ca_return_excess_start_overlay_locked"]
+}

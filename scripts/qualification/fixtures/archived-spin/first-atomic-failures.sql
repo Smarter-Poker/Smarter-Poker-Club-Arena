@@ -21,7 +21,7 @@ DECLARE name text; part jsonb; result jsonb:='{}'; BEGIN
  END LOOP; RETURN result; END $snapshot$;
 CREATE TEMP TABLE archive_failure_before ON COMMIT PRESERVE ROWS AS SELECT pg_temp.archive_failure_snapshot() value;
 BEGIN;
-DO $$ BEGIN IF transaction_timestamp()<'2026-09-28T07:00:00Z'::timestamptz OR transaction_timestamp()>='2026-10-05T07:00:00Z'::timestamptz THEN RAISE EXCEPTION 'ARCHIVE_RECOGNITION_PERIOD_CAPTURE_EXPIRED'; END IF; END $$;
+DO $$ BEGIN IF transaction_timestamp()<'2026-10-05T07:00:00Z'::timestamptz OR transaction_timestamp()>='2026-10-12T07:00:00Z'::timestamptz THEN RAISE EXCEPTION 'ARCHIVE_RECOGNITION_PERIOD_CAPTURE_EXPIRED'; END IF; END $$;
 CREATE FUNCTION pg_temp.archive_late_fault() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
 SET search_path=pg_catalog,public,pg_temp AS $fault$
 DECLARE previous numeric; present numeric; BEGIN

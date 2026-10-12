@@ -62,6 +62,6 @@ describe('a bagged horse is a bagged player', () => {
       recurring.indexOf('private async horseLoadMap()'),
       recurring.indexOf('return buildHorseLoadMap(')
     );
-    expect(load).toContain(".in('tournaments.status', ['ANNOUNCED', 'REGISTERING', 'BAGGED'])");
+    expect(load).toContain(".in('status', ['ANNOUNCED', 'REGISTERING', 'BAGGED'])");
   });
 });

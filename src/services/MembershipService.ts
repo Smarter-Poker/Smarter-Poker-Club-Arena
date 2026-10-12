@@ -497,7 +497,7 @@ export const MembershipService = {
    */
   async getMemberCounts(
     clubId: string
-  ): Promise<{ total: number; active: number; pending: number; online: number }> {
+  ): Promise<{ total: number; active: number; pending: number }> {
     try {
       const resolvedId = await resolveClubUUID(clubId);
       /* ONE SCAN, AND THE CLUB'S NUMBERS RATHER THAN THE CALLER'S.
@@ -532,21 +532,18 @@ export const MembershipService = {
       const active = row?.active == null ? 0 : Number(row.active);
       const pending = row?.pending == null ? 0 : Number(row.pending);
 
-      let online = 0;
-      // Estimate online count — creating a channel just to check presenceState()
-      // on an unsubscribed channel always returned 0 and caused side-effect churn.
-      // Real online tracking should come from a dedicated presence subscription.
-      online = Math.floor((active || 0) * 0.15);
-
+      /* No `online` here (2026-10-05). It was 15% of the active members, a
+         number nobody measured. Who is online has one definition, the
+         presence door (src/lib/profilePresence.ts), and a club's figure comes
+         from the roster functions that apply it (ca_club_members_summary). */
       return {
         total: total || 0,
         active: active || 0,
         pending: pending || 0,
-        online,
       };
     } catch (err: any) {
       reportError(err, 'MembershipService.getMemberCounts');
-      return { total: 0, active: 0, pending: 0, online: 0 };
+      return { total: 0, active: 0, pending: 0 };
     }
   },
 };

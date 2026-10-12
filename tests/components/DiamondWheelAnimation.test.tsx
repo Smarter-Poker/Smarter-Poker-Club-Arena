@@ -7,6 +7,7 @@ import {
   wheelPegTimes,
 } from '../../src/utils/diamondWheelMotion';
 import type { WheelSegment } from '../../src/services/DiamondWheelService';
+import { resetWheelLite } from '../../src/components/wheel/wheelLite';
 const sounds = vi.hoisted(() => ({
   playSpinStart: vi.fn(),
   playSpinTicking: vi.fn(),
@@ -19,6 +20,7 @@ vi.mock('../../src/utils/animationSpeed', () => ({
   prefersReducedMotion: () => false,
 }));
 afterEach(() => {
+  resetWheelLite();
   cleanup();
   vi.restoreAllMocks();
   vi.clearAllMocks();
@@ -98,6 +100,9 @@ describe('the wheel owes its complete visible reveal', () => {
     expect(sounds.playSpinResult).toHaveBeenCalledTimes(1);
     advance(500);
     expect(landed).toHaveBeenCalledTimes(1);
+    // Every frame of that spin was slow: the decoration rests from here on,
+    // and the spin above kept its full duration and landing all the same.
+    expect(container.querySelector('[data-motion="keep"]')).toHaveAttribute('data-lite');
   });
 
   it('keeps the result and matching peg sounds pending during a hidden tab', () => {

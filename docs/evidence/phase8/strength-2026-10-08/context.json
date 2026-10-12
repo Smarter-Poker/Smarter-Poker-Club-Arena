@@ -1,0 +1,42 @@
+{
+  "schema": "horse-phase8-strength-context-v1",
+  "round": "Phase 8 round 2 (WIN-P8), 2026-10-08",
+  "productionBeforeFix": {
+    "source": "read-only copies of the production Horse decision journal (both shards), parsed off the host",
+    "engine": "4fadb520bbf0dc1dbe346dd3447bb5ca72ab8efe",
+    "windows": [
+      "2026-10-08T09:00:00Z/2026-10-08T10:00:00Z",
+      "2026-10-08T13:00:00Z/2026-10-08T13:30:00Z"
+    ],
+    "eligibleNlhTournamentPostflop": 6579,
+    "completedBySeats": {
+      "2": [2753, 2920],
+      "3": [801, 890],
+      "5": [0, 3],
+      "6": [0, 14],
+      "7": [15, 294],
+      "8": [81, 1648],
+      "9": [12, 810]
+    },
+    "window2DisabledEligibleButSilent": [8645, 13034],
+    "firedWithUtilityPreferringAnotherAction": [3053, 3663],
+    "utilityChangesAllowedBySeparateIntervals": 0
+  },
+  "productionAfterFix": {
+    "engine": "44c44900b3181e03e1daa36b7615b5307571d360 (contains e687427d, #6506), one process from 2026-10-08T18:55:14Z",
+    "window": "2026-10-08T19:05:00Z/2026-10-08T19:35:00Z",
+    "phase8Ledgers": 6966,
+    "disabledEligibleButSilent": 0,
+    "safetyDisabledReason": "null on every record",
+    "futureHandSeatsOutsideWorkBudget": 1571,
+    "eligible": 1255,
+    "fired": 1162,
+    "completed": 1162,
+    "changed": 0,
+    "refusalsAmongEligible": {
+      "continuation_operation_budget": 84,
+      "continuation_sample_calibration": 9
+    }
+  },
+  "limits": "Unchanged: PHASE8_POLICY workBudgetMs 4, budgetMs 5, policyBudgetMs 2; silence latch 32, budget-breach latch 3. New: maxFutureHandSeats 3 (scoped refusal before eligibility). No seed, pair count, objective or threshold of the matrix was changed."
+}

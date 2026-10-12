@@ -100,7 +100,10 @@ describe('the membership rule still holds - it moved into the pool', () => {
   it('the seat-first fill passes the tournament id, so that narrowing runs', () => {
     // pickFreeHorses(count, allLanes, tournamentId) - drop the third argument
     // and the pool silently becomes every horse on the platform.
-    expect(topUpSource()).toMatch(/this\.pickFreeHorses\(poolWanted, false, tournamentId, pass\)/);
+    // A fifth argument (the human's first claim, 2026-10-03) may follow.
+    expect(topUpSource()).toMatch(
+      /this\.pickFreeHorses\(\s*poolWanted,\s*false,\s*tournamentId,\s*pass[,)]/
+    );
   });
 
   it('a standalone club draws on its own members, a union event on the union', () => {

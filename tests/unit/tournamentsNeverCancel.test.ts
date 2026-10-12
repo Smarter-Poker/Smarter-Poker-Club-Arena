@@ -66,9 +66,14 @@ describe('what replaced each cancel path', () => {
     expect(recurring).toContain('async topUpWithHorses');
   });
 
-  it('the top-up rewrites current_players from the authoritative count', () => {
-    // Never `liveCount + added` — a human may register in the same window.
-    expect(recurring).toMatch(/finalCount[\s\S]{0,200}current_players:\s*finalCount/);
+  it('the top-up leaves current_players to the door that admitted each entrant', () => {
+    // 2026-10-08: a re-read written back after the pass raced every door call
+    // that committed in between, and the door then refused the next entrant
+    // ("Tournament roster cache diverged"). The doors publish the count in
+    // their own transaction; theDoorAloneCountsTheField.test.ts drives it.
+    const code = recurring.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    expect(code).not.toMatch(/current_players:\s*finalCount/);
+    expect(code).not.toMatch(/current_players:\s*registered/);
   });
 
   it('start() stands down when short instead of cancelling', () => {

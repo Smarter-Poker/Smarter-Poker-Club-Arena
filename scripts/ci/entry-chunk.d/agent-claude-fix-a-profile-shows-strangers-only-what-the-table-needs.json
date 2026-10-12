@@ -1,0 +1,4 @@
+{
+  "_owner": "agent/claude-fix/a-profile-shows-strangers-only-what-the-table-needs - ruling 25 (docs/DIAMOND-RULINGS.md): a profile's private fields are readable only through the owner door, and the two first-paint readers of the player's own row (the user store's profile load and the Diamond balance read) already lived in the entry chunk. src/lib/ownProfile.ts is that door: two small functions and a column list over the supabase client the entry already carries, nothing else.",
+  "modules": ["src/lib/ownProfile.ts"]
+}

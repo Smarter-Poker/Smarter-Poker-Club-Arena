@@ -26,6 +26,7 @@
 
 import { supabase } from './supabase.js';
 import { HorseMind, type ReadScope, type OpponentStats } from '../engine/HorseMind.js';
+import { normalizeHorseObservationWindow } from '../engine/HorseObservationWindow.js';
 import { reportError } from './errorReporter.js';
 
 const FLUSH_INTERVAL_MS = 5 * 60 * 1000;
@@ -87,10 +88,12 @@ type DbRow = {
   r_aggr: number;
   r_passive: number;
   updated_at?: string;
+  source_window?: unknown;
 };
 
 const toDb = (r: { user_id: string } & OpponentStats): DbRow => ({
   user_id: r.user_id,
+  source_window: normalizeHorseObservationWindow(r.sourceWindow),
   hands: r.hands,
   vpip: r.vpip,
   pfr: r.pfr,
@@ -124,6 +127,7 @@ const toDb = (r: { user_id: string } & OpponentStats): DbRow => ({
 
 const fromDb = (r: DbRow): { user_id: string } & OpponentStats => ({
   user_id: r.user_id,
+  sourceWindow: normalizeHorseObservationWindow(r.source_window),
   hands: r.hands,
   vpip: r.vpip,
   pfr: r.pfr,
@@ -353,6 +357,26 @@ export async function flushHorseMind(): Promise<{ flushed: number; failed: numbe
   return { flushed, failed };
 }
 
+/** A new engine may start before the additive schema is installed. Only the
+ * specific absent metadata column permits one legacy projection; never mask
+ * permission, transport or other schema errors. Legacy time remains unknown. */
+async function readStatsWithWindow(
+  table: 'horse_mind_stats' | 'horse_mind_stats_scoped',
+  columns: string,
+  limit: number
+): Promise<{ data: unknown[] | null; error: { code: string; message: string } | null }> {
+  const read = (withWindow: boolean) =>
+    supabase
+      .from(table)
+      .select(withWindow ? `${columns},source_window` : columns)
+      .order('hands', { ascending: false })
+      .limit(limit);
+  const result = await read(true);
+  if (result.error?.code === '42703' && /\bsource_window\b/.test(result.error.message ?? ''))
+    return read(false);
+  return result;
+}
+
 /**
  * Boot-time hydration. Returns the timestamp of the most recent flushed row
  * (so the caller can replay only the un-flushed hand_history tail), or null
@@ -368,13 +392,11 @@ export async function hydrateHorseMindFromDb(): Promise<string | null> {
   await hydrateHorseMindScopedFromDb();
   try {
     const t0 = Date.now();
-    const { data, error } = await supabase
-      .from('horse_mind_stats')
-      .select(
-        'user_id,hands,vpip,pfr,three_bet,aggr,passive,folds,faced_aggr,cbet_opps,cbet_folds,f3b_opps,f3b_folds,bigbet_sd,bigbet_sd_strong,post_aggr,post_passive,river_bet_opps,river_bet_folds,checks,snap_bet_sd,snap_bet_sd_strong,tank_bet_sd,tank_bet_sd_strong,r_checks,r_hands,r_folds,r_faced_aggr,r_aggr,r_passive,updated_at'
-      )
-      .order('hands', { ascending: false })
-      .limit(HYDRATE_LIMIT);
+    const { data, error } = await readStatsWithWindow(
+      'horse_mind_stats',
+      'user_id,hands,vpip,pfr,three_bet,aggr,passive,folds,faced_aggr,cbet_opps,cbet_folds,f3b_opps,f3b_folds,bigbet_sd,bigbet_sd_strong,post_aggr,post_passive,river_bet_opps,river_bet_folds,checks,snap_bet_sd,snap_bet_sd_strong,tank_bet_sd,tank_bet_sd_strong,r_checks,r_hands,r_folds,r_faced_aggr,r_aggr,r_passive,updated_at',
+      HYDRATE_LIMIT
+    );
     if (error) throw new Error(error.message || 'horse_mind_stats read failed');
     if (!data || data.length === 0) return null;
 
@@ -489,13 +511,11 @@ export async function flushHorseMindScoped(): Promise<{ flushed: number; failed:
 /** V45 boot hydration of the scoped overlay. Best-effort; returns rows applied. */
 export async function hydrateHorseMindScopedFromDb(): Promise<number> {
   try {
-    const { data, error } = await supabase
-      .from('horse_mind_stats_scoped')
-      .select(
-        'user_id,scope,hands,vpip,pfr,three_bet,aggr,passive,folds,faced_aggr,cbet_opps,cbet_folds,f3b_opps,f3b_folds,bigbet_sd,bigbet_sd_strong,post_aggr,post_passive,river_bet_opps,river_bet_folds,checks,snap_bet_sd,snap_bet_sd_strong,tank_bet_sd,tank_bet_sd_strong'
-      )
-      .order('hands', { ascending: false })
-      .limit(HYDRATE_LIMIT * 3);
+    const { data, error } = await readStatsWithWindow(
+      'horse_mind_stats_scoped',
+      'user_id,scope,hands,vpip,pfr,three_bet,aggr,passive,folds,faced_aggr,cbet_opps,cbet_folds,f3b_opps,f3b_folds,bigbet_sd,bigbet_sd_strong,post_aggr,post_passive,river_bet_opps,river_bet_folds,checks,snap_bet_sd,snap_bet_sd_strong,tank_bet_sd,tank_bet_sd_strong',
+      HYDRATE_LIMIT * 3
+    );
     if (error) throw new Error(error.message || 'horse_mind_stats_scoped read failed');
     if (!data || data.length === 0) return 0;
     const applied = HorseMind.importScoped(

@@ -58,10 +58,12 @@ RUNNERS = [
     ('run-poker-diamond-custody.py', '69 additional assertions passed'),
     ('run-diamond-wallet-transfer.py', '37 Phase 4 assertions passed'),
     ('run-diamond-transfer-door-and-dr16.py',
-     '26 isolated transfer door and DR16 checks passed; this is not a production certification.'),
+     '34 isolated transfer door and DR16 checks passed; this is not a production certification.'),
     ('run-diamond-cash-custody.py',
      'Diamond custody contract passed; this is not full gameplay certification.'),
     ('run-diamond-cash-admission.py', 'forgery case leaves the fixture settled again'),
+    ('run-diamond-cash-rake.py',
+     'Diamond cash rake checks passed on isolated PostgreSQL 17; this is a fixture proof, not a production certification.'),
     ('run-diamond-top-up.py',
      'Diamond top-up door certified in the isolated fixture; this is not public release.'),
     ('run-diamond-straddle.py',
@@ -80,6 +82,8 @@ RUNNERS = [
     ('run-diamond-tournament-doors.py', 'Diamond tournament door capture verified.'),
     ('run-diamond-tournament-lifecycle.py',
      'Diamond tournament lifecycle cases verified against the installed doors,'),
+    ('run-diamond-tournament-lane-journal.py',
+     'Diamond tournament lane checks passed on isolated PostgreSQL 17; this is a fixture proof, not a production certification.'),
     ('run-diamond-stats-asset-dimension.py',
      'Diamond stats asset dimension certified on isolated PostgreSQL 17.'),
     ('run-diamond-club-commerce.py',
@@ -96,6 +100,15 @@ RUNNERS = [
      'settled earnings coverage and sponsored club insurance qualified in isolation'),
     ('run-diamond-club-commerce-recovery.py',
      'diamond commerce ownership, deletion and restore-shaped recovery qualified in isolation'),
+    ('run-diamond-concurrency.py',
+     'checks passed: one Diamond cannot be spent twice under concurrency, duplicate delivery or a crash; isolated PostgreSQL 17, not a production certification.'),
+    ('run-diamond-cross-format-conservation.py',
+     'cross-format conservation checks passed on isolated PostgreSQL 17; this is a fixture proof, not a production installation.'),
+    ('run-diamond-bad-beat-jackpot.py',
+     'Diamond bad beat jackpot certified on isolated PostgreSQL 17; the jackpot ships shut and public gameplay remains gated.'),
+    ('run-diamond-scheduled-tournaments.py',
+     'Diamond scheduled tournaments certified on isolated PostgreSQL 17; the migration is applied by the lead, never by this runner.'),
+    ('run-diamond-engine-hand-proof.py', 'ENGINE HAND PROOF PASSED:'),
 ]
 # Plain psql acceptance scripts: (file, database, the line that proves it ran).
 SQL_SCRIPTS = [
@@ -112,6 +125,8 @@ SQL_SCRIPTS = [
 # (hard-wired to SOCKET_DIR and PORT). A runner therefore cannot be mislabelled
 # into a weaker check - the two contracts exclude each other by assertion.
 PRIVATE_CLUSTER_RUNNERS = [
+    'run-diamond-bad-beat-jackpot.py',
+    'run-diamond-cash-rake.py',
     'run-diamond-club-commerce-admission.py',
     'run-diamond-club-commerce-completion.py',
     'run-diamond-club-commerce-earnings.py',
@@ -119,8 +134,13 @@ PRIVATE_CLUSTER_RUNNERS = [
     'run-diamond-club-commerce-recovery.py',
     'run-diamond-club-commerce-refunds.py',
     'run-diamond-club-commerce.py',
+    'run-diamond-concurrency.py',
+    'run-diamond-cross-format-conservation.py',
+    'run-diamond-engine-hand-proof.py',
+    'run-diamond-scheduled-tournaments.py',
     'run-diamond-stats-asset-dimension.py',
     'run-diamond-tournament-doors.py',
+    'run-diamond-tournament-lane-journal.py',
     'run-diamond-tournament-lifecycle.py',
 ]
 RUNNER_NAMES = [name for name, _ in RUNNERS]

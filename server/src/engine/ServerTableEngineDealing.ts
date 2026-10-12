@@ -38,8 +38,11 @@ import {
   horseRebuyAmount,
   rebuyStopLossReached,
 } from '../services/HorseRebuyPolicy.js';
+import { buildArrivalInput, greetArrival } from '../services/HorseTableTalk.js';
 import type { SeatPlayer, GameVariant, HandConfig, HandEvent, SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
+import { readDiamondCashRakeSchedule } from '../services/supabase/diamondCashRakeSettings.js';
+import type { DiamondCashRakeSchedule } from '../domain/diamondCashRakeSchedule.js';
 import { holeCardCount, deckSizeFor, maxSeatsFor } from './VariantRules.js';
 // The VARIANT'S OWN seat ceiling, which is a house rule and not deck
 // arithmetic — PLO6 is 6-max and PLO5 is 7-max by Dan's ruling, both tighter
@@ -65,6 +68,7 @@ import {
 } from '../config/handCompletionSpec.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { nextHandGap } from './nextHandGapRecorder.js';
+import { jitteredBackoffMs } from '../services/horseEntryRefusalBackoff.js';
 import { currentTournamentDataAuthority } from '../services/supabase/dataActorContext.js';
 
 /**
@@ -291,6 +295,19 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
               starting_stack: p.stack ?? 0,
               timestamp: Date.now(),
             });
+            // TABLE TALK (Phase 10, 2026-10-06): a horse seated ten hands or
+            // more may greet the arrival, human or horse alike. The module
+            // decides who and whether (gate, cadence, claim); the loop never
+            // waits for it. handCount is the last hand this table dealt.
+            void greetArrival(
+              buildArrivalInput(
+                p,
+                this.seatedPlayers,
+                this.tableInfo,
+                this.handCount,
+                this.isTournamentTable()
+              )
+            );
           }
         }
         // Phase X5 (2026-04-29) — online_count broadcast every hand-start so
@@ -648,6 +665,11 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // counted at the deal itself, below.
         await this.evictExpiredSitOuts({ countOrbit: false });
 
+        if (await this.passOperatorFloorBoundary()) {
+          await this.sleep(3000);
+          continue;
+        }
+
         // Bible V8 §6.17: Admin pause/maintenance lock — skip dealing
         if (this.adminPauseLock || this.maintenanceLock) {
           if (this.tableFSM.state === 'running') {
@@ -980,6 +1002,10 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             this.stopIfClusterTableClosed()
           );
           if (!this.lifecycleCanMutate()) return;
+          // The freshly adopted idle roster must also replace the hub's last
+          // hand snapshot. Otherwise a late subscriber sees departed chairs
+          // even though GET /state and the native roster are already empty.
+          await this.broadcastCurrentState();
           // A completed short-handed sweep is real progress just like the
           // startup waiting sweep. Stamp after all awaited idle work so a
           // hung read or move remains visible to the existing watchdog.
@@ -1059,11 +1085,16 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // Return through the owner's gate before using the prepared hand.
         if (this.isNextHandPaused()) {
           if (this.maintenancePaused) await this.persistPresenceForRestart('parked');
-          // The three POLLED owners have no gate to wait on. awaitPauseGate
+          // The four POLLED owners have no gate to wait on. awaitPauseGate
           // returns immediately when only one of them is raised, and this
           // branch then `continue`s - a hot spin. The gate is for the owners
           // that something in this process will release.
-          if (!this.adminPauseLock && !this.maintenanceLock && !this.dealingHaltLock)
+          if (
+            !this.adminPauseLock &&
+            !this.maintenanceLock &&
+            !this.dealingHaltLock &&
+            !this.operatorFloorPaused
+          )
             await this.awaitPauseGate();
           if (!this.running) break;
           continue;
@@ -1473,10 +1504,23 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // for the same reason.
         if (errMsg.includes('deal_step_timeout')) {
           this.markProgress();
-          reportError(err, 'ServerTableEngine.' + this.tableId + '.deal_step_timeout', {
-            phase: this.loopPhase,
-            handCount: this.handCount,
-          });
+          /* AN IDLE TABLE'S SLOW READ IS NOT AN ERROR (2026-10-09). A step
+             budget blown while the table waits on people (no hand in flight,
+             nothing owed to anyone, the loop retries in seconds) is a slow
+             database read, not a dealing failure: on 2026-10-09 every one of
+             the day's deal_step_timeout reports was idle_cluster_closed. It
+             still marks progress and is still logged; a budget blown while a
+             hand is being dealt is still reported. */
+          if (ServerTableEngineDealing.IDLE_LOOP_PHASES.has(this.loopPhase)) {
+            console.warn(
+              `[ServerTableEngine:${this.tableId}] idle step over budget (${this.loopPhase}): ${errMsg}`
+            );
+          } else {
+            reportError(err, 'ServerTableEngine.' + this.tableId + '.deal_step_timeout', {
+              phase: this.loopPhase,
+              handCount: this.handCount,
+            });
+          }
         }
 
         if (!isTransient) {
@@ -1920,12 +1964,31 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       ),
     ] as const;
     this.setLoopPhase('load_next_hand_inputs');
+    const haltedBeforeRead = this.dealingHaltLock;
     // Do not fail fast and start another iteration while a sibling read is
     // still in its budget. The old roster is retained if any input fails.
     const [seats, rake, halt] = await Promise.allSettled(reads);
     if (seats.status === 'rejected') throw seats.reason;
     if (rake.status === 'rejected') throw rake.reason;
     if (halt.status === 'rejected') throw halt.reason;
+    /* A HALT THAT LIFTED IN THIS READ GETS A ROSTER READ AFTER IT (Lightning
+       Phase 7, 2026-10-02). LIGHTNING -> MUST_MOVE clears the halt only after
+       every Lightning hand has settled, and those settlements moved chips on
+       this table's anchor seats while it stood halted. The roster and the
+       halt are separate round trips sent side by side, so the halt can be
+       answered cleared while the roster beside it was answered before the
+       last settlement committed - and the first hand back would be dealt on
+       stacks the database no longer holds. When this read is the one that
+       saw the lift, the seats are read once more, sent after the lift was
+       observed, so they include every settlement the lift waited for. Costs
+       one extra read per lift and nothing on any other hand. */
+    if (haltedBeforeRead && !this.dealingHaltLock) {
+      return await this.withStepBudget(
+        'load_seats_after_halt_lift',
+        ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
+        loadSeatedPlayers(this.tableId)
+      );
+    }
     return seats.value;
   }
 
@@ -2024,6 +2087,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
   }
 
   protected async dealHand(players: SeatedPlayer[]): Promise<void> {
+    if (this.operatorClosureOnlyId) throw new Error('operator_cash_close_dealing_forbidden');
     // Resume an already-owned cancellation with the same immutable identity.
     // A lost response never permits allocation of a different hand first.
     if (this.f06CurrentPermit?.hasPreparedCancellation()) await this.cancelF06PreparedHand();
@@ -2050,6 +2114,34 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       );
       if (players.length < this.minPlayersToDeal()) return;
       if (!this.tableInfo) return;
+
+      /* ═══ THE DIAMOND CASH HAND IS PRICED BY ITS SETTINGS (2026-10-06) ═══
+         Read ONCE, here, before a hand number is allocated, and frozen into
+         this hand's config. The settler recomputes the rake from the owner's
+         published economics and refuses a hand whose number differs, so the
+         engine has to price from the same rows - and a hand must be priced by
+         the schedule in force when it was DEALT, not by one the owner
+         inserted while the hand was in the air. Nothing is cached across
+         hands, so there is no window in which a superseded number could price
+         money; the next deal at every Diamond table reads the new answer.
+
+         A READ THAT FAILS DEALS NOTHING. A hand the engine cannot price is a
+         hand the settler will refuse, and refusing it AFTER players' Diamonds
+         are in a pot is the one outcome worse than not dealing. Declining
+         here costs nobody a Diamond: no hand number is taken and no card is
+         dealt. */
+      let diamondRakeSchedule: DiamondCashRakeSchedule | null = null;
+      if (this.tableInfo.arena?.asset === 'diamonds' && !this.isTournamentTable()) {
+        try {
+          diamondRakeSchedule = await readDiamondCashRakeSchedule(Number(this.tableInfo.big_blind));
+        } catch (scheduleError) {
+          reportError(
+            scheduleError instanceof Error ? scheduleError : new Error(String(scheduleError)),
+            'ServerTableEngineDealing.diamond_cash_rake_schedule_unreadable'
+          );
+          return;
+        }
+      }
 
       // GLOBAL HAND NUMBER (2026-08-18). Allocated from the database sequence at
       // the moment the hand is dealt, so numbers ascend in true deal order across
@@ -2091,6 +2183,9 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       // winners it belongs to and never independently of them.
       this.currentHandPots = [];
       this.currentHandContributions.clear(); // Weighted contributed rake (Dan 2026-08-29): reset per-hand eligible contributions
+      this.currentHandSawFlopForMoney = false; // ... and the hand's own money-facing flop fact
+      // ... and the published schedule this hand is priced by, read above.
+      this.currentHandDiamondRakeSchedule = diamondRakeSchedule;
       this.currentHandReturnedUncalled.clear(); // ... and the returned-uncalled audit map
       this.currentHandInsuranceSettlements = []; // Bible V8 §4.19: Reset insurance settlements
       this.currentHandInsuranceNet = 0; // chip standard 2026-09-04: declared to the stack write
@@ -2595,6 +2690,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         if (
           !decision.isBombPot &&
           this.tableInfo.bomb_pot_enabled === true &&
+          // A tournament never deals a bomb, manual or scheduled (P9.2).
+          !this.isTournamentTable() &&
           // PUSHED, NOT POLLED (2026-08-29). This block used to run on EVERY
           // non-bomb hand of every bomb table — one round trip on the hand-start
           // critical path to learn a flag that is false essentially always.
@@ -3031,6 +3128,10 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
               // and the full cap on a 6/7/8-max one, Dan 2026-09-14).
               playerCountCaps: getPlayerCountCaps(fullRakeConfig.rakeCap, this.tableSeatCount()),
             },
+        /* The owner's Diamond schedule, read above. Null on every chip hand
+           and every tournament hand, which leaves `rakeConfig` above the only
+           thing those hands are priced by - byte for byte as before. */
+        diamondRakeSchedule,
         bbjConfig: {
           // FIX-A2 2026-07-19 gated the BBJ fee-drop on bbj_percent > 0.
           // RAKE-AUDIT 2026-07-24: that gate killed BBJ platform-wide — every live
@@ -3638,7 +3739,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       json: JSON.stringify({ user_id: userId, seat_number: seat, cards }),
     };
     const handNumberAtDeal = this.handCount;
-    // Private socket delivery stays synchronous and never waits for PostgREST.
+    // Enqueue through the original private transport; dealing never awaits its session read.
     this.hub?.sendToUser(this.tableId, userId, {
       kind: 'hole_cards',
       row: {
@@ -3705,7 +3806,9 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         );
       }
       if (attempt < 3) {
-        await new Promise((r) => setTimeout(r, 150 * attempt));
+        // Jittered (horseEntryRefusalBackoff.ts): every table of an event is
+        // refused together when its lane is held, and must not return together.
+        await new Promise((r) => setTimeout(r, jitteredBackoffMs(attempt, 200, 800)));
       }
     }
     if (!isCurrent()) return;
@@ -3867,7 +3970,17 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
 
     // Horses have their own recovery pass with its own stop-loss and treasury
     // accounting; removing them here too would double-handle the same seat.
-    const seated = this.seatedPlayers.filter((p) => p.user_id && !p.is_horse);
+    //
+    // EXCEPT AT A DIAMOND CASH TABLE (2026-10-06). That pass returns at once
+    // there (`recoverBustedSeatedHorses`: no treasury funds a Diamond seat, and
+    // settlement skips the horse rebuy too), so a horse that busted at the
+    // Diamond Arena was neither rebought nor released and held its chair at
+    // zero for ever - a seat no person could take and a table that could not
+    // deal. A Diamond cash seat has no rebuy prompt for anybody, so a busted
+    // person is stood up here after the grace; a busted horse now is too,
+    // through the same door, the same grace and the same cash-out (10.5).
+    const diamondCash = this.tableInfo?.arena?.asset === 'diamonds';
+    const seated = this.seatedPlayers.filter((p) => p.user_id && (!p.is_horse || diamondCash));
     const broke = seated.filter((p) => Number(p.stack ?? 0) <= 0);
 
     // Anyone who is funded again stops being watched.

@@ -13,7 +13,7 @@
  *             bays) - useWalletStore -> WalletService / DiamondService.
  *    SEND     Diamonds to an accepted friend: POST /api/store/diamond-transfer
  *             (World Hub, server-authoritative, friend + age + velocity gated).
- *             Chips between your own wallets: rpc fn_wallet_type_transfer.
+ *             Chips: the selected club cashier, with club-scoped authority.
  *    RECEIVE  Your player number and profile link, plus every credit that
  *             landed in your diamond ledger (`diamond_transactions`, RLS-scoped
  *             to the caller).
@@ -39,6 +39,7 @@ import { useUserStore } from '../stores/useUserStore';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { useDiamondWalletSummary } from '../hooks/useDiamondWalletSummary';
+import { readCashierOnlineState } from '../services/CashierResilience';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { useToast } from '../components/common/Toast';
 import DiamondsToChipsButton from '../components/games/DiamondsToChipsButton';
@@ -63,11 +64,10 @@ import { formatPopupText } from '../utils/popupStyle';
 import { mediaUrl } from '../utils/mediaBase';
 import { reportError } from '../utils/errorReporter';
 import { useRealtimeFinancials } from '../hooks/useRealtimeFinancials';
-import {
-  useDiamondLedger,
-  DIAMOND_LEDGER_PAGE,
-  type DiamondLedgerRow,
-} from '../hooks/useDiamondLedger';
+import { useDiamondLedger, type DiamondLedgerRow } from '../hooks/useDiamondLedger';
+/* The paged tail both diamond panes render. `DIAMOND_LEDGER_PAGE` moved in
+   there with the end line that reads it, so this page no longer imports it. */
+import { DiamondLedgerMore } from '../components/wallet/DiamondLedgerMore';
 import { uuid } from '../utils/uuid';
 import './PlayerWalletPage.css';
 import { publicOrigin } from '../lib/appBase';
@@ -104,18 +104,41 @@ const PLATE = {
 const MIN_DIAMOND_SEND = 1;
 
 /**
- * In-page messages are not toasts, so `formatPopupText` (which the Toast layer
- * applies for every popup in the app) never touched them. Dan's casing law is
- * about what the PLAYER reads, not about which component renders it, so the
- * strings below are written in the same Title Case the toasts come out in.
+ * Chip figures keep both cent digits or none (launch audit 2026-10-09, P-24).
+ * A bare `toLocaleString()` printed 12.30 as "12.3" and would print 12.345 as
+ * "12.345"; a wallet figure is whole, or it is exactly two places.
  */
-const MSG = {
-  invalidAmount: 'Please Enter A Valid Amount',
-  sameWallet: 'Cannot Transfer To The Same Wallet',
-  transferFailed: 'Transfer Failed. Please Try Again',
-} as const;
+const fmtNum = (n: number) => {
+  const safe = Number.isFinite(n) ? n : 0;
+  const cents = Math.round(safe * 100);
+  return cents % 100 === 0
+    ? (cents / 100).toLocaleString()
+    : (cents / 100).toLocaleString(undefined, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+};
 
-const fmtNum = (n: number) => (Number.isFinite(n) ? n : 0).toLocaleString();
+/**
+ * What the wallet head may claim about the ledger (launch audit 2026-10-09,
+ * P-15). "Synchronized" used to be printed unconditionally, read failed or
+ * not. The store keeps the last snapshot through a failed refresh and exposes
+ * no error flag, so each read this page starts is settled against the
+ * store's own stamp: a forced read that did not advance it failed, a cached
+ * read is only trusted inside the store's freshness window.
+ */
+type LedgerReadState = 'reading' | 'synced' | 'unavailable';
+/** Mirrors BALANCE_FRESH_MS in useWalletStore (not exported from there). */
+const WALLET_STORE_FRESH_MS = 30_000;
+const LEDGER_STATUS: Record<
+  LedgerReadState | 'offline',
+  { status: string; ink: 'green' | 'gold' | 'red' }
+> = {
+  reading: { status: 'Wallet Ledger // Reading', ink: 'gold' },
+  synced: { status: 'Wallet Ledger // Synced', ink: 'green' },
+  unavailable: { status: 'Wallet Ledger // Unavailable', ink: 'gold' },
+  offline: { status: 'Wallet Ledger // Offline', ink: 'red' },
+};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ANIMATED COUNTER HOOK
@@ -231,7 +254,7 @@ const WALLET_CONFIG: Record<
 // WALLET PLATE - rendered plate art, live figures in the bay
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function WalletPlate({
+export function WalletPlate({
   type,
   available,
   locked,
@@ -520,7 +543,39 @@ export default function PlayerWalletPage() {
   const navigate = useNavigate();
   const toast = useToast();
   const { user } = useAuthUser();
-  const { balances, diamonds, loadBalances, loadDiamonds, internalTransfer } = useWalletStore();
+  const { balances, diamonds, loadBalances: storeLoadBalances, loadDiamonds } = useWalletStore();
+  const [ledgerRead, setLedgerRead] = useState<LedgerReadState>('reading');
+  const [isOnline, setIsOnline] = useState(readCashierOnlineState);
+  useEffect(() => {
+    const online = () => setIsOnline(true);
+    const offline = () => setIsOnline(false);
+    window.addEventListener('online', online);
+    window.addEventListener('offline', offline);
+    setIsOnline(readCashierOnlineState());
+    return () => {
+      window.removeEventListener('online', online);
+      window.removeEventListener('offline', offline);
+    };
+  }, []);
+  /**
+   * Every balance read this page starts goes through here so the head's
+   * status word is the read's real outcome (P-15). The store's promise
+   * resolves on failure too; the stamp is the evidence. It keeps the store
+   * action's name and signature so every call site below reads as before.
+   */
+  const loadBalances = useCallback(
+    async (userId: string, opts?: { force?: boolean }) => {
+      const before = useWalletStore.getState()._balancesAt;
+      await storeLoadBalances(userId, opts);
+      const after = useWalletStore.getState();
+      const held = after._balancesUserId === userId && after._balancesAt > 0;
+      const advanced = after._balancesAt > before;
+      const servedFromCache =
+        !opts?.force && held && Date.now() - after._balancesAt < WALLET_STORE_FRESH_MS;
+      setLedgerRead(held && (advanced || servedFromCache) ? 'synced' : 'unavailable');
+    },
+    [storeLoadBalances]
+  );
   /**
    * A dispute is filed AGAINST A CLUB, and this page is not club-scoped, so
    * the Dispute button used to open a modal hard-wired to `clubId=""`.
@@ -592,11 +647,6 @@ export default function PlayerWalletPage() {
   const heldCollateral = walletSummary ? walletSummary.collateral : 0;
 
   const [activeTab, setActiveTab] = useState<WalletTab>('overview');
-  const [transferFrom, setTransferFrom] = useState<WalletType>('PLAYER');
-  const [transferTo, setTransferTo] = useState<WalletType>('BUSINESS');
-  const [transferAmount, setTransferAmount] = useState('');
-  const [isTransferring, setIsTransferring] = useState(false);
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [showDepositModal, setShowDepositModal] = useState(false);
   const [showWithdrawModal, setShowWithdrawModal] = useState(false);
   const [showDisputeModal, setShowDisputeModal] = useState(false);
@@ -650,15 +700,6 @@ export default function PlayerWalletPage() {
   /* Three outcomes, three shapes: `undefined` still reading, `null` the read
      failed (10.86: never a zero that means "unknown"), an object the truth. */
   const [lifetime, setLifetime] = useState<DiamondLifetimeStats | null | undefined>(undefined);
-
-  // Auto-dismiss messages after 8s
-  useEffect(() => {
-    if (!message) return;
-    const t = setTimeout(() => {
-      if (isMounted.current) setMessage(null);
-    }, 8000);
-    return () => clearTimeout(t);
-  }, [message, isMounted]);
 
   // Load wallet data
   useEffect(() => {
@@ -758,64 +799,6 @@ export default function PlayerWalletPage() {
   const animatedTotal = useAnimatedNumber(totalBalance, 1000);
   const animatedDiamonds = useAnimatedNumber(diamonds, 800);
 
-  // ═══════════════════ INTERNAL CHIP TRANSFER (own wallets) ═══════════════════
-  const handleTransfer = async () => {
-    const amount = parseFloat(transferAmount);
-    // `parseFloat` accepts Infinity and, on a `type="number"` field, whatever a
-    // paste puts there. A non-finite amount reached the RPC as `Infinity`.
-    if (!Number.isFinite(amount) || amount <= 0) {
-      setMessage({ type: 'error', text: MSG.invalidAmount });
-      return;
-    }
-    if (transferFrom === transferTo) {
-      setMessage({ type: 'error', text: MSG.sameWallet });
-      return;
-    }
-    if (amount > balances[transferFrom].available) {
-      setMessage({
-        type: 'error',
-        text: `Insufficient Balance. Available: ${balances[transferFrom].available.toLocaleString()}`,
-      });
-      return;
-    }
-    /* Before `setIsTransferring(true)`, not inside the try: a `return` there
-       skipped the reset at the bottom and left the button on "Transferring..."
-       for the life of the page. */
-    if (!user?.id) return;
-    setIsTransferring(true);
-    setMessage(null);
-    try {
-      // 2026-08-27: internalTransfer NEVER throws - it returns false on the
-      // store mutex skip, on insufficient balance, and on every RPC failure
-      // (the store swallows those into reportError). This success message used
-      // to fire unconditionally after the await, so a REFUSED transfer told
-      // the player it succeeded, cleared their input and emitted
-      // BALANCE_UPDATED. The catch below was dead for every store-level
-      // failure. Honour the boolean.
-      const transferred = await internalTransfer(user.id, transferFrom, transferTo, amount);
-      if (!transferred) {
-        if (isMounted.current) {
-          setMessage({ type: 'error', text: MSG.transferFailed });
-          setIsTransferring(false);
-        }
-        return;
-      }
-      if (isMounted.current) {
-        setMessage({
-          type: 'success',
-          text: `Transferred ${amount.toLocaleString()} Chips Successfully`,
-        });
-        setTransferAmount('');
-      }
-      loadBalances(user.id, { force: true });
-      masterBus.emit('BALANCE_UPDATED', { source: 'internal_transfer', userId: user.id });
-    } catch (e) {
-      reportError(e, 'PlayerWalletPage.handleTransfer');
-      if (isMounted.current) setMessage({ type: 'error', text: MSG.transferFailed });
-    }
-    if (isMounted.current) setIsTransferring(false);
-  };
-
   // ═══════════════════ SEND DIAMONDS TO A FRIEND ═══════════════════
   /*
    * The transfer route only pays ACCEPTED friends, so the recipient picker is
@@ -903,7 +886,8 @@ export default function PlayerWalletPage() {
   const describeRow = useCallback(
     (row: DiamondLedgerRow, verb: 'Sent To' | 'Received From') => {
       const name = row.counterpartyId ? friendNameById.get(row.counterpartyId) : undefined;
-      return name ? `${verb} ${name}` : formatPopupText(row.description || row.label);
+      // Phase 6: the ledger's own player line, never the raw description.
+      return name ? `${verb} ${name}` : formatPopupText(row.line || row.label);
     },
     [friendNameById]
   );
@@ -1144,15 +1128,25 @@ export default function PlayerWalletPage() {
     );
 
   const escrow = balances.PLAYER.locked;
+  /** Offline outranks whatever the last read said: nothing is live. */
+  const ledgerState: LedgerReadState | 'offline' = isOnline ? ledgerRead : 'offline';
 
   return (
     <div className="wallet-page" data-arena-surface="wallet">
       <RewardsSurfaceHeader
         eyebrow="Rewards Circuit / Wallet"
         title="Your Value Vault"
-        description="One Secure Command Surface For Playable Chips, Protected Balances, Club Earnings, Promotional Value, And Diamonds. Every Figure Below Remains Connected To The Live Wallet Ledger."
+        description={`One Secure Command Surface For Playable Chips, Protected Balances, Club Earnings, Promotional Value, And Diamonds. ${
+          ledgerState === 'synced'
+            ? 'Every Figure Below Remains Connected To The Live Wallet Ledger.'
+            : ledgerState === 'reading'
+              ? 'Reading The Live Wallet Ledger.'
+              : 'The Live Wallet Ledger Could Not Be Read Just Now, So The Figures Below Are The Last Known Snapshot.'
+        }`}
         artPath="images/wallet/value-vault-hero-v1.webp"
-        status="WALLET LEDGER // SYNCHRONIZED"
+        status={LEDGER_STATUS[ledgerState].status}
+        pill={LEDGER_STATUS[ledgerState].status.split('//')[1].trim()}
+        pillInk={LEDGER_STATUS[ledgerState].ink}
         crest="diamond"
         metrics={[
           {
@@ -1423,81 +1417,23 @@ export default function PlayerWalletPage() {
               </div>
             </section>
 
-            <section className="vault-panel" aria-labelledby="internal-transfer-title">
-              <h3 id="internal-transfer-title" className="vault-panel__title">
-                Move Chips Between My Wallets
+            <section className="vault-panel" aria-labelledby="club-chip-transfer-title">
+              <h3 id="club-chip-transfer-title" className="vault-panel__title">
+                Manage Club Chips
               </h3>
               <p className="vault-panel__sub">
-                Business, Player And Promo Are Separate Accounts. Move Funds Between Them Instantly.
+                Chips Belong To Their Club. Open The Club Cashier To View Your Balance And Available
+                Transfers.
               </p>
-              <div className="vault-form">
-                <label className="vault-field">
-                  <span className="vault-field__label">From</span>
-                  <select
-                    className="vault-select"
-                    value={transferFrom}
-                    onChange={(e) => setTransferFrom(e.target.value as WalletType)}
-                    aria-label="Transfer From Wallet"
-                  >
-                    {(Object.keys(WALLET_CONFIG) as WalletType[]).map((type) => (
-                      <option key={type} value={type}>
-                        {WALLET_CONFIG[type].icon} {WALLET_CONFIG[type].label} (
-                        {balances[type].available.toLocaleString()})
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="vault-field">
-                  <span className="vault-field__label">To</span>
-                  <select
-                    className="vault-select"
-                    value={transferTo}
-                    onChange={(e) => setTransferTo(e.target.value as WalletType)}
-                    aria-label="Transfer To Wallet"
-                  >
-                    {(Object.keys(WALLET_CONFIG) as WalletType[]).map((type) => (
-                      <option key={type} value={type}>
-                        {WALLET_CONFIG[type].icon} {WALLET_CONFIG[type].label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="vault-field">
-                  <span className="vault-field__label">Amount</span>
-                  <input
-                    className="vault-input"
-                    type="number"
-                    placeholder="0.00"
-                    value={transferAmount}
-                    onChange={(e) => setTransferAmount(e.target.value)}
-                    aria-label="Transfer Amount"
-                    inputMode="decimal"
-                    min="0"
-                  />
-                </label>
-                {message && (
-                  <div
-                    className={`message ${message.type}`}
-                    role={message.type === 'error' ? 'alert' : 'status'}
-                  >
-                    {message.text}
-                  </div>
-                )}
-                <div className="vault-form__row">
-                  <span className="vault-form__hint">
-                    Available In {WALLET_CONFIG[transferFrom].label}:{' '}
-                    {balances[transferFrom].available.toLocaleString()}
-                  </span>
-                  <button
-                    type="button"
-                    className="vault-btn primary"
-                    onClick={handleTransfer}
-                    disabled={isTransferring || !transferAmount}
-                  >
-                    {isTransferring ? 'Transferring...' : 'Transfer'}
-                  </button>
-                </div>
-              </div>
+              <button
+                type="button"
+                className="vault-btn primary"
+                onClick={() =>
+                  navigate(currentClubId ? `/clubs/${currentClubId}/cashier` : '/cashier')
+                }
+              >
+                Open Club Cashier
+              </button>
             </section>
 
             {/* THE SEND CONFIRMS ITSELF.
@@ -1561,33 +1497,19 @@ export default function PlayerWalletPage() {
                   ))}
                 </ul>
               )}
-              {sent !== null && sentError && sent.length > 0 && (
-                <div className="vault-empty" role="alert">
-                  Could Not Load Older Sends.{' '}
-                  <button
-                    type="button"
-                    className="vault-link"
-                    onClick={() => void loadSent('more')}
-                  >
-                    Retry
-                  </button>
-                </div>
-              )}
-              {sent !== null && sent.length > 0 && sentHasMore && !sentError && (
-                <button
-                  type="button"
-                  className="vault-btn vault-btn--wide"
-                  onClick={() => void loadSent('more')}
-                  disabled={sentLoadingMore}
-                >
-                  {sentLoadingMore ? 'Loading...' : 'Load Older Sends'}
-                </button>
-              )}
-              {sent !== null && sent.length > DIAMOND_LEDGER_PAGE && !sentHasMore && !sentError && (
-                <p className="vault-panel__sub">
-                  That Is Every Diamond You Have Sent. {fmtNum(sent.length)} Entries.
-                </p>
-              )}
+              {/* The tail: the prefetch sentinel, the retry after a failed
+                  later page, the manual control, and the end line. One
+                  component, because Receive below carries the same four. */}
+              <DiamondLedgerMore
+                rowCount={sent === null ? 0 : sent.length}
+                hasMore={sentHasMore}
+                loadingMore={sentLoadingMore}
+                error={sentError}
+                onLoadMore={() => void loadSent('more')}
+                moreLabel="Load Older Sends"
+                errorLabel="Could Not Load Older Sends."
+                endLine={`That Is Every Diamond You Have Sent. ${fmtNum(sent?.length ?? 0)} Entries.`}
+              />
             </section>
           </div>
         )}
@@ -1700,40 +1622,23 @@ export default function PlayerWalletPage() {
                   ))}
                 </ul>
               )}
-              {/* A LATER page failed. The pages already read stay on screen. */}
-              {incoming !== null && incomingError && incoming.length > 0 && (
-                <div className="vault-empty" role="alert">
-                  Could Not Load Older Diamonds.{' '}
-                  <button
-                    type="button"
-                    className="vault-link"
-                    onClick={() => void loadIncoming('more')}
-                  >
-                    Retry
-                  </button>
-                </div>
-              )}
-              {incoming !== null && incoming.length > 0 && incomingHasMore && !incomingError && (
-                <button
-                  type="button"
-                  className="vault-btn vault-btn--wide"
-                  onClick={() => void loadIncoming('more')}
-                  disabled={incomingLoadingMore}
-                >
-                  {incomingLoadingMore ? 'Loading...' : 'Load Older Diamonds'}
-                </button>
-              )}
-              {/* Say the ledger has ended, rather than just running out of
-                  button. Before this the pane simply stopped at 25 rows and a
-                  player could not tell a full ledger from a truncated one. */}
-              {incoming !== null &&
-                incoming.length > DIAMOND_LEDGER_PAGE &&
-                !incomingHasMore &&
-                !incomingError && (
-                  <p className="vault-panel__sub">
-                    That Is Every Diamond You Have Received. {fmtNum(incoming.length)} Credits.
-                  </p>
-                )}
+              {/* The tail, the same component the Send pane uses: a sentinel
+                  that starts the next page a screenful early, the retry for a
+                  later page that failed (the pages already read stay), the
+                  manual control that is never taken away, and the line that
+                  says the ledger has ended. Before any of it the pane simply
+                  stopped at 25 rows and a player could not tell a full ledger
+                  from a truncated one. */}
+              <DiamondLedgerMore
+                rowCount={incoming === null ? 0 : incoming.length}
+                hasMore={incomingHasMore}
+                loadingMore={incomingLoadingMore}
+                error={incomingError}
+                onLoadMore={() => void loadIncoming('more')}
+                moreLabel="Load Older Diamonds"
+                errorLabel="Could Not Load Older Diamonds."
+                endLine={`That Is Every Diamond You Have Received. ${fmtNum(incoming?.length ?? 0)} Credits.`}
+              />
             </section>
           </div>
         )}

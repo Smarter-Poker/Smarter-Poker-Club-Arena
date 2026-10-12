@@ -385,6 +385,7 @@ describe('GameManagementService command execution', () => {
       scheduledPending: 2,
       scheduledRejected24h: 1,
       eventRows: 80,
+      eventRowsCapped: false,
       retentionDays: 30,
     });
     expect(mocks.rpc).toHaveBeenCalledWith('fn_get_game_management_health', {

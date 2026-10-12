@@ -189,6 +189,19 @@ describe('the PostgreSQL accounting qualification runs as four shards of one job
     expect(constant).toBe(job.name.replace('${{ matrix.shard }}', '1'));
   });
 
+  it('runs the Phase 1 customization database contract on portable PG17 scratch', () => {
+    const phaseOne = steps.find(
+      (s) => s.name === 'Phase 1 customization ownership and cutover remain atomic'
+    );
+    expect(phaseOne).toBeDefined();
+    expect(shardsOf(phaseOne!)).toEqual([1]);
+    expect(phaseOne!.env!.PG_BIN).toBe('/usr/lib/postgresql/17/bin');
+    expect(phaseOne!.env!.PHASE1_PG_WORK_ROOT).toBe('${{ runner.temp }}');
+    expect(phaseOne!.run).toBe(
+      'node --test scripts/ci/final-table-cleanup-batches.test.mjs\npython3 scripts/ci/test-phase1-customization-postgres.py\n'
+    );
+  });
+
   it('still feeds the required Server Engine aggregate, which needs every shard', () => {
     expect(ci.jobs.server.name).toBe('Server Engine (typecheck + tests)');
     expect(ci.jobs.server.needs).toContain('accounting_postgres');
@@ -199,9 +212,13 @@ describe('the PostgreSQL accounting qualification runs as four shards of one job
 });
 
 describe('a retried Diamond playfield pass is named, never hidden', () => {
-  const beats: Step[] = ci.jobs['css-beats-e2e'].steps;
-  const suite = beats.find((s) => s.name === "Run the beats against this commit's CSS")!;
+  // Since 2026-10-01 the playfield runs in its own job beside the beats
+  // (diamond-playfield-e2e); css-beats-gate requires both.
+  const playfield: Step[] = ci.jobs['diamond-playfield-e2e'].steps;
+  const suite = playfield.find((s) => s.name === 'Run the Diamond playfields')!;
   const line = suite.run!.split('\n').find((l) => l.includes('diamond-games-playfield.spec.ts'))!;
+  const beats: Step[] = ci.jobs['css-beats-e2e'].steps;
+  const beatSuite = beats.find((s) => s.name === "Run the beats against this commit's CSS")!;
 
   it('gives the software-WebGL suite one retry and a JSON report', () => {
     expect(line).toContain('--retries=1');
@@ -211,20 +228,22 @@ describe('a retried Diamond playfield pass is named, never hidden', () => {
     );
   });
 
-  it('reads that report right after the suites, whether they passed or failed', () => {
-    const index = beats.indexOf(suite);
-    const reader = beats[index + 1];
+  it('reads that report right after the suite, whether it passed or failed', () => {
+    const index = playfield.indexOf(suite);
+    const reader = playfield[index + 1];
     expect(reader.run).toBe('node scripts/ci/playwright-flaky-summary.mjs');
     expect(reader.if).toContain('always()');
     expect(reader.env!.PLAYFIELD_REPORT).toBe('${{ runner.temp }}/diamond-playfield-report.json');
   });
 
   it('names a retried pass in the other CSS Beat suites too', () => {
-    const first = suite.run!.split('\n').find((l) => l.includes('tests/e2e/multi-table.spec.ts'))!;
+    const first = beatSuite
+      .run!.split('\n')
+      .find((l) => l.includes('tests/e2e/multi-table.spec.ts'))!;
     expect(first).toContain('--retries=1');
     expect(first).toContain('--reporter=line,json');
     expect(first).toContain('PLAYWRIGHT_JSON_OUTPUT_NAME="$RUNNER_TEMP/css-beats-report.json"');
-    const reader = beats[beats.indexOf(suite) + 2];
+    const reader = beats[beats.indexOf(beatSuite) + 1];
     expect(reader.run).toBe('node scripts/ci/playwright-flaky-summary.mjs');
     expect(reader.if).toContain('always()');
     expect(reader.env!.PLAYFIELD_REPORT).toBe('${{ runner.temp }}/css-beats-report.json');

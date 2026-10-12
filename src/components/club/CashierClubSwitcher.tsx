@@ -23,17 +23,20 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 import haptic from '../../services/HapticService';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useMasterBusSubscriptions } from '../../hooks/useMasterBusSubscription';
+import { compactChips } from '../../utils/format';
+import { titleCase } from '../../utils/titleCase';
+import { cashierDestination } from '../../utils/cashierDestination';
 import {
   eligibleQuickLinkClubs,
   clubParamToUuid,
   fetchClubChipBalances,
   clearClubChipBalanceCache,
-  fetchQuickLinkClubs,
+  fetchQuickLinkClubsResult,
   readCachedQuickLinkClubs,
   rememberLastClub,
   CHIP_BALANCE_EVENTS,
@@ -50,12 +53,18 @@ interface CashierClubSwitcherProps {
 
 export default function CashierClubSwitcher({ clubId, clubName }: CashierClubSwitcherProps) {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuthUser();
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const [balances, setBalances] = useState<Map<string, number> | null>(null);
   const [balanceOwnerId, setBalanceOwnerId] = useState<string | null>(null);
   const [balanceNonce, setBalanceNonce] = useState(0);
+  const [balanceState, setBalanceState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const [directoryState, setDirectoryState] = useState<'idle' | 'loading' | 'ready' | 'error'>(
+    'idle'
+  );
+  const [directoryNonce, setDirectoryNonce] = useState(0);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
@@ -63,11 +72,18 @@ export default function CashierClubSwitcher({ clubId, clubName }: CashierClubSwi
     setMenuOpen(false);
     setBalances(null);
     setBalanceOwnerId(null);
+    setBalanceState('idle');
+    setDirectoryState('idle');
+    setFetchedClubs(null);
+    setFetchedForUserId(null);
   }, [user?.id]);
 
   // Cached list, re-read on demand (cacheNonce) so a join/leave lands
   const [cacheNonce, setCacheNonce] = useState(0);
-  const cachedClubs = useMemo(() => readCachedQuickLinkClubs(user?.id), [cacheNonce, user?.id]);
+  const cachedClubs = useMemo(() => {
+    void cacheNonce;
+    return readCachedQuickLinkClubs(user?.id);
+  }, [cacheNonce, user?.id]);
   const [fetchedClubs, setFetchedClubs] = useState<QuickLinkClub[] | null>(null);
   const [fetchedForUserId, setFetchedForUserId] = useState<string | null>(null);
   const sameUserFetchedClubs = fetchedForUserId === user?.id ? fetchedClubs : null;
@@ -83,16 +99,18 @@ export default function CashierClubSwitcher({ clubId, clubName }: CashierClubSwi
     if (cachedClubs.length > 0 || sameUserFetchedClubs !== null || !user?.id) return;
     const requestedUserId = user.id;
     let live = true;
-    fetchQuickLinkClubs(requestedUserId).then((list) => {
+    setDirectoryState('loading');
+    fetchQuickLinkClubsResult(requestedUserId).then((result) => {
       if (live) {
         setFetchedForUserId(requestedUserId);
-        setFetchedClubs(list);
+        setFetchedClubs(result.clubs);
+        setDirectoryState(result.ok ? 'ready' : 'error');
       }
     });
     return () => {
       live = false;
     };
-  }, [cachedClubs.length, sameUserFetchedClubs, user?.id]);
+  }, [cachedClubs.length, sameUserFetchedClubs, user?.id, directoryNonce]);
 
   // Per-club chip balances — lazy-loaded when the dropdown opens
   useEffect(() => {
@@ -105,11 +123,13 @@ export default function CashierClubSwitcher({ clubId, clubName }: CashierClubSwi
     const requestedUserId = user.id;
     setBalances(null);
     setBalanceOwnerId(requestedUserId);
+    setBalanceState('loading');
     let live = true;
     fetchClubChipBalances(requestedUserId).then((b) => {
       if (live) {
         setBalanceOwnerId(requestedUserId);
         setBalances(b);
+        setBalanceState(b === null ? 'error' : 'ready');
       }
     });
     return () => {
@@ -124,14 +144,33 @@ export default function CashierClubSwitcher({ clubId, clubName }: CashierClubSwi
   });
 
   const currentUuid = useMemo(() => clubParamToUuid(clubId, user?.id), [clubId, user?.id]);
+  // A route can name the club by uuid, numeric code or SLUG (every link this
+  // bar builds uses the slug); an unmatched slug left no row marked current and
+  // let "choosing" the current club navigate away from it.
   const currentClub = useMemo(
-    () => clubs.find((c) => c.id === currentUuid || String(c.club_id) === clubId) || null,
+    () =>
+      clubs.find(
+        (c) =>
+          c.id === currentUuid || String(c.club_id) === clubId || (!!c.slug && c.slug === clubId)
+      ) || null,
     [clubs, currentUuid, clubId]
   );
 
-  const displayName = currentClub?.name || clubName || '';
+  const displayName = titleCase(currentClub?.name || clubName || '');
   const hasSwitch = clubs.length > 1;
   const visibleBalances = balanceOwnerId === user?.id ? balances : null;
+
+  const retryDirectory = useCallback(() => {
+    setFetchedClubs(null);
+    setFetchedForUserId(null);
+    setDirectoryState('idle');
+    setDirectoryNonce((n) => n + 1);
+  }, []);
+
+  const retryBalances = useCallback(() => {
+    clearClubChipBalanceCache();
+    setBalanceNonce((n) => n + 1);
+  }, []);
 
   // LastClubTracker can only resolve a UUID route param (or a numeric code
   // already present in the cache). Once this page has resolved the club for
@@ -162,9 +201,15 @@ export default function CashierClubSwitcher({ clubId, clubName }: CashierClubSwi
       closeMenu(false);
       if (club.id === currentClub?.id) return;
       haptic.light();
-      navigate(`/clubs/${club.slug || club.id}/cashier`);
+      const slug = club.slug || club.id;
+      // Literal targets, one per declared route, so check-route-targets can
+      // match each of them against src/App.tsx.
+      const destination = cashierDestination(location.pathname);
+      if (destination === 'cashier-classic') navigate(`/clubs/${slug}/cashier-classic`);
+      else if (destination === 'cashier/statements') navigate(`/clubs/${slug}/cashier/statements`);
+      else navigate(`/clubs/${slug}/cashier`);
     },
-    [closeMenu, currentClub, navigate]
+    [closeMenu, currentClub, navigate, location.pathname]
   );
 
   const handleMenuKeyDown = useCallback(
@@ -204,8 +249,11 @@ export default function CashierClubSwitcher({ clubId, clubName }: CashierClubSwi
   // Drop refs for rows that no longer exist
   itemRefs.current.length = clubs.length;
 
-  // Nothing useful to show: no name resolved and nothing to switch to
-  if (!displayName && !hasSwitch) return null;
+  // A cold deep link can have neither a cached name nor memberships yet. Keep
+  // the truthful loading/error rail visible; only a settled empty result has
+  // nothing useful to show.
+  if (!displayName && !hasSwitch && directoryState !== 'loading' && directoryState !== 'error')
+    return null;
 
   /* A club's own logo when it has one. When it has none there is nothing
      here: the name is printed right beside it, and an initial in a tile is a
@@ -248,6 +296,17 @@ export default function CashierClubSwitcher({ clubId, clubName }: CashierClubSwi
         </span>
       )}
 
+      {directoryState === 'loading' && cachedClubs.length === 0 && (
+        <span className={styles.status} role="status">
+          Checking Clubs
+        </span>
+      )}
+      {directoryState === 'error' && cachedClubs.length === 0 && (
+        <button className={styles.retry} type="button" onClick={retryDirectory}>
+          Retry Club List
+        </button>
+      )}
+
       {menuOpen && (
         <>
           <div className={styles.overlay} onClick={() => closeMenu(false)} />
@@ -258,6 +317,19 @@ export default function CashierClubSwitcher({ clubId, clubName }: CashierClubSwi
             onKeyDown={handleMenuKeyDown}
           >
             <div className={styles.menuTitle}>Open Cashier For</div>
+            {balanceState === 'loading' && (
+              <div className={styles.menuStatus} role="status">
+                Checking Balances
+              </div>
+            )}
+            {balanceState === 'error' && (
+              <div className={styles.menuStatus} role="alert">
+                <span>Balances Unavailable</span>
+                <button className={styles.retry} type="button" onClick={retryBalances}>
+                  Retry
+                </button>
+              </div>
+            )}
             {clubs.map((club, idx) => (
               <button
                 key={club.id}
@@ -267,18 +339,15 @@ export default function CashierClubSwitcher({ clubId, clubName }: CashierClubSwi
                 role="menuitem"
                 tabIndex={idx === activeIndex ? 0 : -1}
                 className={`${styles.item} ${club.id === currentClub?.id ? styles.itemActive : ''}`}
-                title={club.name || undefined}
+                title={club.name ? titleCase(club.name) : undefined}
                 onClick={() => handleSelect(club)}
               >
                 {logo(club)}
                 <span className={styles.itemText}>
-                  <span className={styles.itemName}>{club.name || 'Unnamed Club'}</span>
+                  <span className={styles.itemName}>{titleCase(club.name || 'Unnamed Club')}</span>
                   {visibleBalances?.has(club.id) && (
                     <span className={styles.itemBalance}>
-                      {(visibleBalances.get(club.id) as number).toLocaleString(undefined, {
-                        maximumFractionDigits: 2,
-                      })}{' '}
-                      Chips
+                      {compactChips(visibleBalances.get(club.id))} Chips
                     </span>
                   )}
                 </span>

@@ -41,7 +41,8 @@
  * calling them differently.
  */
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -49,7 +50,9 @@ import { useToast } from '../components/common/Toast';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { ErrorState } from '../components/common/EmptyState';
 import RoleBadge from '../components/club/RoleBadge';
-import { resolveClubUUID } from '../utils/clubIdResolver';
+import { resolveClubUUIDStrict } from '../utils/strictClubIdResolver';
+import { runWithRequestDeadline } from '../utils/requestDeadline';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
 import { toTitleCase } from '../utils/titleCase';
@@ -169,110 +172,142 @@ export default function PromoVaultPage() {
   const [items, setItems] = useState<VaultItem[]>([]);
   const [records, setRecords] = useState<VaultRecord[]>([]);
   const [roster, setRoster] = useState<RosterMember[]>([]);
-  const [diamonds, setDiamonds] = useState(0);
+  const [diamonds, setDiamonds] = useState<number | null>(null);
   const [userRole, setUserRole] = useState<ClubRole>('player');
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [recordsLoading, setRecordsLoading] = useState(false);
   const [tab, setTab] = useState<'items' | 'records'>('items');
+  const itemsTabRef = useRef<HTMLButtonElement>(null);
+  const recordsTabRef = useRef<HTMLButtonElement>(null);
+  const handleTabKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+    let next: 'items' | 'records';
+    if (event.key === 'Home') next = 'items';
+    else if (event.key === 'End') next = 'records';
+    else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight')
+      next = tab === 'items' ? 'records' : 'items';
+    else return;
+    event.preventDefault();
+    setTab(next);
+    (next === 'items' ? itemsTabRef : recordsTabRef).current?.focus();
+  };
   const [helpOpen, setHelpOpen] = useState(false);
   const [buyTarget, setBuyTarget] = useState<VaultItem | null>(null);
   const [grantTarget, setGrantTarget] = useState<VaultItem | null>(null);
+  const grantDialogOwnerRef = useRef<object | null>(null);
+  const buyDialogOwnerRef = useRef<object | null>(null);
+  const openBuyDialog = useCallback((item: VaultItem) => {
+    buyDialogOwnerRef.current = {};
+    setBuyTarget(item);
+  }, []);
 
   const recordsLoadedRef = useRef(false);
+  const vaultRequest = useRef<AbortController | null>(null);
+  const recordsRequest = useRef<AbortController | null>(null);
+  const [recordsError, setRecordsError] = useState<string | null>(null);
 
   /* One retry key per (item, recipient, quantity) attempt. Held until the send
      either succeeds or is refused, so pressing Send again after a lost
      response replays rather than sends twice. */
   const grantOpIds = useRef<Map<string, string>>(new Map());
 
-  const canManage = MANAGER_ROLES.includes(userRole);
+  // Navigation changes ownership immediately, even before effect cleanup.
+  const vaultScope = `${clubId ?? ''}:${user?.id ?? ''}`;
+  const vaultScopeRef = useRef({ key: vaultScope });
+  if (vaultScopeRef.current.key !== vaultScope) vaultScopeRef.current = { key: vaultScope };
 
-  // Safety net: an empty vault is a better answer than a skeleton that never
-  // resolves, if auth or the network hangs.
-  useEffect(() => {
-    const timeout = setTimeout(() => setLoading(false), 8000);
-    return () => clearTimeout(timeout);
-  }, []);
+  const canManage = MANAGER_ROLES.includes(userRole);
 
   /* ── Load ─────────────────────────────────────────────────────────────── */
 
   const loadVault = useCallback(
     async (getIsMounted?: () => boolean) => {
-      if (!clubId) return;
-      const live = () => (getIsMounted ? getIsMounted() : true) && isMountedRef.current;
-
-      if (live()) setLoading(true);
-      if (live()) setLoadError(null);
+      vaultRequest.current?.abort();
+      const controller = new AbortController();
+      vaultRequest.current = controller;
+      const live = () =>
+        !controller.signal.aborted &&
+        vaultRequest.current === controller &&
+        (getIsMounted ? getIsMounted() : true) &&
+        isMountedRef.current;
+      if (live()) {
+        setLoading(true);
+        setLoadError(null);
+        setItems([]);
+        setRoster([]);
+        setUserRole('player');
+        setDiamonds(null);
+        setResolvedClubId(null);
+        setBuyTarget(null);
+        setGrantTarget(null);
+      }
       try {
-        const uuid = await resolveClubUUID(clubId);
-        if (!live()) return;
-        if (!uuid) {
-          setItems([]);
-          return;
-        }
-        setResolvedClubId(uuid);
-
-        // The catalog already carries this club's holdings, so the shelf and the
-        // price list are one round trip rather than two and a join in the
-        // browser. The wallet and the roster ride alongside it.
-        const [catalogResult, walletResult, rosterResult] = await Promise.allSettled([
-          supabase.rpc('ca_promo_vault_catalog', { p_club_id: uuid }),
-          supabase.from('club_diamond_wallets').select('balance').eq('club_id', uuid).maybeSingle(),
-          ClubRosterService.getRoster(uuid),
-        ]);
-        if (!live()) return;
-
-        if (catalogResult.status === 'fulfilled') {
-          const { data, error } = catalogResult.value;
-          if (error) throw error;
-          setItems(
-            ((data ?? []) as Record<string, unknown>[]).map((row) => ({
-              item_key: String(row.item_key ?? ''),
-              category: (row.category as VaultItem['category']) ?? 'feature',
-              label: (row.label as string) ?? '',
-              description: (row.description as string) ?? null,
-              duration_days: row.duration_days == null ? null : num(row.duration_days),
-              pack_size: row.pack_size == null ? null : num(row.pack_size),
-              tier: (row.tier as string) ?? null,
-              diamond_cost: num(row.diamond_cost),
-              icon_key: (row.icon_key as string) ?? null,
-              sort_order: num(row.sort_order),
-              quantity: num(row.quantity),
-            }))
-          );
-        } else {
-          throw catalogResult.reason;
-        }
-
-        // A club with no wallet row yet shows zero rather than an error: the
-        // vault is still perfectly readable, buying is simply refused.
-        if (walletResult.status === 'fulfilled') {
-          setDiamonds(num(walletResult.value.data?.balance));
-        }
-
-        if (rosterResult.status === 'fulfilled') {
-          const list = rosterResult.value;
-          setRoster(list);
-          if (user?.id) {
-            const me = list.find((m) => m.user_id === user.id);
-            if (me) setUserRole(me.role);
-            else {
-              const { data: memberData } = await supabase
-                .from('club_members')
-                .select('role')
+        const result = await runWithRequestDeadline(
+          async (signal) => {
+            if (!clubId) throw new Error('Choose A Club To Read Its Vault.');
+            const uuid = await resolveClubUUIDStrict(clubId, signal);
+            if (signal.aborted) throw new DOMException('Cancelled', 'AbortError');
+            const [catalog, wallet, list] = await Promise.all([
+              supabase.rpc('ca_promo_vault_catalog', { p_club_id: uuid }).abortSignal(signal),
+              supabase
+                .from('club_diamond_wallets')
+                .select('balance')
                 .eq('club_id', uuid)
-                .eq('user_id', user.id)
-                .maybeSingle();
-              if (live() && memberData) setUserRole(normaliseRole(memberData.role));
+                .abortSignal(signal)
+                .maybeSingle(),
+              ClubRosterService.getRoster(uuid, signal),
+            ]);
+            if (catalog.error) throw catalog.error;
+            if (wallet.error) throw wallet.error;
+            const data = catalog.data;
+            if (!Array.isArray(data)) throw new Error('The Vault Catalog Response Was Incomplete.');
+            let role: ClubRole = 'player';
+            if (user?.id) {
+              const me = list.find((member) => member.user_id === user.id);
+              if (me) role = me.role;
+              else {
+                const { data: memberData, error } = await supabase
+                  .from('club_members')
+                  .select('role')
+                  .eq('club_id', uuid)
+                  .eq('user_id', user.id)
+                  .abortSignal(signal)
+                  .maybeSingle();
+                if (error) throw error;
+                if (memberData) role = normaliseRole(memberData.role);
+              }
             }
-          }
-        } else {
-          reportError(rosterResult.reason, 'PromoVaultPage.roster');
-        }
+            return {
+              uuid,
+              list,
+              role,
+              diamonds: num(wallet.data?.balance),
+              items: (data as Record<string, unknown>[]).map((row) => ({
+                item_key: String(row.item_key ?? ''),
+                category: (row.category as VaultItem['category']) ?? 'feature',
+                label: (row.label as string) ?? '',
+                description: (row.description as string) ?? null,
+                duration_days: row.duration_days == null ? null : num(row.duration_days),
+                pack_size: row.pack_size == null ? null : num(row.pack_size),
+                tier: (row.tier as string) ?? null,
+                diamond_cost: num(row.diamond_cost),
+                icon_key: (row.icon_key as string) ?? null,
+                sort_order: num(row.sort_order),
+                quantity: num(row.quantity),
+              })),
+            };
+          },
+          { timeoutMs: 40_000, signal: controller.signal }
+        );
+        if (!live()) return;
+        setResolvedClubId(result.uuid);
+        setItems(result.items);
+        setRoster(result.list);
+        setDiamonds(result.diamonds);
+        setUserRole(result.role);
       } catch (error) {
-        reportError(error, 'PromoVaultPage.loadVault');
         if (live()) {
+          reportError(error, 'PromoVaultPage.loadVault');
           setLoadError('The live vault catalog could not be loaded. No diamonds were spent.');
           toast.error('Failed To Load The Promo Vault');
         }
@@ -285,22 +320,43 @@ export default function PromoVaultPage() {
 
   useEffect(() => {
     let mounted = true;
-    if (clubId) loadVault(() => mounted);
+    recordsRequest.current?.abort();
+    recordsLoadedRef.current = false;
+    setRecords([]);
+    setRecordsError(null);
+    setRecordsLoading(false);
+    void loadVault(() => mounted);
     return () => {
       mounted = false;
+      vaultRequest.current?.abort();
+      recordsRequest.current?.abort();
     };
   }, [clubId, loadVault]);
 
   const loadRecords = useCallback(async () => {
     if (!resolvedClubId) return;
+    recordsRequest.current?.abort();
+    const controller = new AbortController();
+    recordsRequest.current = controller;
+    const live = () =>
+      !controller.signal.aborted && recordsRequest.current === controller && isMountedRef.current;
     setRecordsLoading(true);
+    setRecordsError(null);
+    setRecords([]);
     try {
-      const { data, error } = await supabase.rpc('ca_promo_vault_records', {
-        p_club_id: resolvedClubId,
-        p_limit: 100,
-      });
+      const { data, error } = await runWithRequestDeadline(
+        (signal) =>
+          supabase
+            .rpc('ca_promo_vault_records', {
+              p_club_id: resolvedClubId,
+              p_limit: 100,
+            })
+            .abortSignal(signal),
+        { timeoutMs: 40_000, signal: controller.signal }
+      );
       if (error) throw error;
-      if (!isMountedRef.current) return;
+      if (!live()) return;
+      if (!Array.isArray(data)) throw new Error('The Vault Records Response Was Incomplete.');
       setRecords(
         ((data ?? []) as Record<string, unknown>[]).map((row) => ({
           id: String(row.id ?? ''),
@@ -318,10 +374,13 @@ export default function PromoVaultPage() {
       );
       recordsLoadedRef.current = true;
     } catch (error) {
-      reportError(error, 'PromoVaultPage.loadRecords');
-      if (isMountedRef.current) toast.error('Failed To Load The Vault Records');
+      if (live()) {
+        reportError(error, 'PromoVaultPage.loadRecords');
+        setRecordsError('The Live Vault Records Could Not Be Loaded.');
+        toast.error('Failed To Load The Vault Records');
+      }
     } finally {
-      if (isMountedRef.current) setRecordsLoading(false);
+      if (live()) setRecordsLoading(false);
     }
   }, [resolvedClubId, isMountedRef, toast]);
 
@@ -338,13 +397,23 @@ export default function PromoVaultPage() {
   const handleBuy = useCallback(
     async (item: VaultItem, quantity: number) => {
       if (!resolvedClubId) return;
+      const scope = vaultScopeRef.current;
+      const dialogOwner = buyDialogOwnerRef.current;
+      const live = () => isMountedRef.current && vaultScopeRef.current === scope;
       try {
-        const { data, error } = await supabase.rpc('ca_promo_vault_buy', {
-          p_club_id: resolvedClubId,
-          p_item_key: item.item_key,
-          p_quantity: quantity,
-        });
+        const { data, error } = await runWithRequestDeadline(
+          (signal) =>
+            supabase
+              .rpc('ca_promo_vault_buy', {
+                p_club_id: resolvedClubId,
+                p_item_key: item.item_key,
+                p_quantity: quantity,
+              })
+              .abortSignal(signal),
+          { timeoutMs: 40_000 }
+        );
         if (error) throw error;
+        if (!live()) return;
         const result = (data ?? {}) as Record<string, unknown>;
         if (result.success !== true) {
           toast.error(String(result.error ?? 'That Purchase Could Not Be Completed'));
@@ -360,16 +429,19 @@ export default function PromoVaultPage() {
         setDiamonds(num(result.diamond_balance));
         recordsLoadedRef.current = false;
         if (tab === 'records') void loadRecords();
-        setBuyTarget(null);
+        if (buyDialogOwnerRef.current === dialogOwner) {
+          buyDialogOwnerRef.current = null;
+          setBuyTarget(null);
+        }
         toast.success(
           `Bought ${count(quantity)} ${item.label} For ${count(num(result.diamonds_spent))} Diamonds`
         );
       } catch (err) {
         reportError(err, 'PromoVaultPage.handleBuy');
-        toast.error('That Purchase Could Not Be Completed');
+        if (live()) toast.error('That Purchase Could Not Be Completed');
       }
     },
-    [resolvedClubId, tab, loadRecords, toast]
+    [resolvedClubId, tab, loadRecords, toast, vaultScope, isMountedRef]
   );
 
   /* ── Grant ────────────────────────────────────────────────────────────── */
@@ -383,22 +455,32 @@ export default function PromoVaultPage() {
          `replayed` set and touches neither the stock nor the player. Keyed on
          the item and recipient so a DIFFERENT send is never mistaken for a
          retry of this one. */
-      const attemptKey = `${item.item_key}:${recipient.user_id}:${quantity}`;
+      const scope = vaultScopeRef.current;
+      const live = () => isMountedRef.current && vaultScopeRef.current === scope;
+      const dialogOwner = grantDialogOwnerRef.current;
+      const attemptKey = `${scope.key}:${resolvedClubId}:${item.item_key}:${recipient.user_id}:${quantity}`;
       let opId = grantOpIds.current.get(attemptKey);
       if (!opId) {
         opId = crypto.randomUUID();
         grantOpIds.current.set(attemptKey, opId);
       }
       try {
-        const { data, error } = await supabase.rpc('ca_promo_vault_grant', {
-          p_club_id: resolvedClubId,
-          p_item_key: item.item_key,
-          p_recipient_user_id: recipient.user_id,
-          p_quantity: quantity,
-          p_note: null,
-          p_op_id: opId,
-        });
+        const { data, error } = await runWithRequestDeadline(
+          (signal) =>
+            supabase
+              .rpc('ca_promo_vault_grant', {
+                p_club_id: resolvedClubId,
+                p_item_key: item.item_key,
+                p_recipient_user_id: recipient.user_id,
+                p_quantity: quantity,
+                p_note: null,
+                p_op_id: opId,
+              })
+              .abortSignal(signal),
+          { timeoutMs: 40_000 }
+        );
         if (error) throw error;
+        if (!live()) return;
         const result = (data ?? {}) as Record<string, unknown>;
         if (result.success !== true) {
           toast.error(String(result.error ?? 'That Item Could Not Be Sent'));
@@ -416,7 +498,11 @@ export default function PromoVaultPage() {
         );
         recordsLoadedRef.current = false;
         if (tab === 'records') void loadRecords();
-        setGrantTarget(null);
+        // Apply the receipt to inventory, but only dismiss the dialog that submitted it.
+        if (grantDialogOwnerRef.current === dialogOwner) {
+          grantDialogOwnerRef.current = null;
+          setGrantTarget(null);
+        }
         /* Say what the player actually received, not that a button was
            pressed. Before 20260905083005 this said "Sent" and the recipient
            got nothing at all. */
@@ -430,10 +516,10 @@ export default function PromoVaultPage() {
         );
       } catch (err) {
         reportError(err, 'PromoVaultPage.handleGrant');
-        toast.error('That Item Could Not Be Sent');
+        if (live()) toast.error('That Item Could Not Be Sent');
       }
     },
-    [resolvedClubId, tab, loadRecords, toast]
+    [resolvedClubId, tab, loadRecords, toast, vaultScope, isMountedRef]
   );
 
   /* ── Sections ─────────────────────────────────────────────────────────── */
@@ -444,16 +530,17 @@ export default function PromoVaultPage() {
   const openTile = useCallback(
     (item: VaultItem) => {
       if (item.quantity > 0) {
+        grantDialogOwnerRef.current = {};
         setGrantTarget(item);
         return;
       }
       if (canManage) {
-        setBuyTarget(item);
+        openBuyDialog(item);
         return;
       }
       toast.info('The Vault Holds None Of This Item Yet');
     },
-    [canManage, toast]
+    [canManage, toast, openBuyDialog]
   );
 
   /* ── Render ───────────────────────────────────────────────────────────── */
@@ -477,7 +564,9 @@ export default function PromoVaultPage() {
             <span className="pv-balance__glyph" aria-hidden="true">
               ◆
             </span>
-            <span className="pv-balance__value">{count(diamonds)}</span>
+            <span className="pv-balance__value">
+              {diamonds === null ? (loading ? 'Loading' : 'Unavailable') : count(diamonds)}
+            </span>
             <span className="sr-only">Diamonds In The Club Wallet</span>
           </span>
           <button
@@ -495,6 +584,11 @@ export default function PromoVaultPage() {
         <button
           type="button"
           role="tab"
+          id="pv-items-tab"
+          ref={itemsTabRef}
+          aria-controls="pv-items-panel"
+          tabIndex={tab === 'items' ? 0 : -1}
+          onKeyDown={handleTabKeyDown}
           aria-selected={tab === 'items'}
           className={tab === 'items' ? 'active' : ''}
           onClick={() => setTab('items')}
@@ -504,6 +598,11 @@ export default function PromoVaultPage() {
         <button
           type="button"
           role="tab"
+          id="pv-records-tab"
+          ref={recordsTabRef}
+          aria-controls="pv-records-panel"
+          tabIndex={tab === 'records' ? 0 : -1}
+          onKeyDown={handleTabKeyDown}
           aria-selected={tab === 'records'}
           className={tab === 'records' ? 'active' : ''}
           onClick={() => setTab('records')}
@@ -512,46 +611,72 @@ export default function PromoVaultPage() {
         </button>
       </div>
 
-      {loading && items.length === 0 ? (
-        <PageSkeleton variant="list" />
-      ) : loadError ? (
-        <ErrorState message={loadError} onRetry={() => void loadVault()} />
-      ) : tab === 'items' ? (
-        <div className="pv-body">
-          <p className="pv-hint">Click An Item To Grant</p>
+      <div
+        id="pv-items-panel"
+        role="tabpanel"
+        aria-labelledby="pv-items-tab"
+        hidden={tab !== 'items'}
+      >
+        {tab === 'items' &&
+          (loading ? (
+            <PageSkeleton variant="list" />
+          ) : loadError ? (
+            <ErrorState message={loadError} onRetry={() => void loadVault()} />
+          ) : (
+            <div className="pv-body">
+              <p className="pv-hint">Click An Item To Grant</p>
 
-          {!canManage && (
-            <p className="pv-readonly">
-              Only Owners And Admins Can Buy Or Send Items From This Vault.
-            </p>
-          )}
+              {!canManage && (
+                <p className="pv-readonly">
+                  Only Owners And Admins Can Buy Or Send Items From This Vault.
+                </p>
+              )}
 
-          <ItemSection
-            heading="Features"
-            items={features}
-            canManage={canManage}
-            onOpen={openTile}
-            onBuy={setBuyTarget}
-          />
-          <ItemSection
-            heading="VIP Cards"
-            items={vipCards}
-            canManage={canManage}
-            onOpen={openTile}
-            onBuy={setBuyTarget}
-          />
-        </div>
-      ) : (
-        <RecordsList records={records} loading={recordsLoading} />
-      )}
+              <ItemSection
+                heading="Features"
+                items={features}
+                canManage={canManage}
+                onOpen={openTile}
+                onBuy={openBuyDialog}
+              />
+              <ItemSection
+                heading="VIP Cards"
+                items={vipCards}
+                canManage={canManage}
+                onOpen={openTile}
+                onBuy={openBuyDialog}
+              />
+            </div>
+          ))}
+      </div>
+      <div
+        id="pv-records-panel"
+        role="tabpanel"
+        aria-labelledby="pv-records-tab"
+        hidden={tab !== 'records'}
+      >
+        {tab === 'records' &&
+          (loading ? (
+            <PageSkeleton variant="list" />
+          ) : loadError ? (
+            <ErrorState message={loadError} onRetry={() => void loadVault()} />
+          ) : recordsError ? (
+            <ErrorState message={recordsError} onRetry={() => void loadRecords()} />
+          ) : (
+            <RecordsList records={records} loading={recordsLoading} />
+          ))}
+      </div>
 
       {helpOpen && <HelpDialog onClose={() => setHelpOpen(false)} />}
 
-      {buyTarget && (
+      {buyTarget && diamonds !== null && (
         <BuyDialog
           item={buyTarget}
           diamonds={diamonds}
-          onCancel={() => setBuyTarget(null)}
+          onCancel={() => {
+            buyDialogOwnerRef.current = null;
+            setBuyTarget(null);
+          }}
           onConfirm={handleBuy}
         />
       )}
@@ -562,7 +687,10 @@ export default function PromoVaultPage() {
           roster={roster}
           canManage={canManage}
           preselectedPlayerId={preselectedPlayer}
-          onCancel={() => setGrantTarget(null)}
+          onCancel={() => {
+            grantDialogOwnerRef.current = null;
+            setGrantTarget(null);
+          }}
           onConfirm={handleGrant}
         />
       )}
@@ -620,6 +748,7 @@ function ItemTile({
 }) {
   const color = itemColor(item);
   const meta = itemMeta(item);
+  const tileAction = item.quantity > 0 ? 'Grant' : canManage ? 'Buy' : 'Check Availability For';
 
   return (
     <div
@@ -630,7 +759,7 @@ function ItemTile({
         type="button"
         className="pv-tile__face"
         onClick={() => onOpen(item)}
-        aria-label={`Grant ${item.label}${meta ? `, ${meta}` : ''}`}
+        aria-label={`${tileAction} ${item.label}${meta ? `, ${meta}` : ''}`}
       >
         <span className="pv-tile__icon" aria-hidden="true">
           {ITEM_GLYPH[item.icon_key ?? ''] ?? '◇'}
@@ -777,6 +906,16 @@ function GrantDialog({
   );
 
   const [recipient, setRecipient] = useState<RosterMember | null>(preselected);
+  const recipientFocusPendingRef = useRef(false);
+  const recipientSearchRef = useRef<HTMLInputElement>(null);
+  const sendQuantityRef = useRef<HTMLInputElement>(null);
+  useLayoutEffect(() => {
+    // Both recipient transitions remove the focused control. Transfer focus
+    // after the replacement mounts, without restarting the dialog's trap.
+    if (!recipientFocusPendingRef.current) return;
+    recipientFocusPendingRef.current = false;
+    (recipient ? sendQuantityRef : recipientSearchRef).current?.focus();
+  }, [recipient]);
   const [search, setSearch] = useState('');
   const [quantity, setQuantity] = useState(1);
   const [busy, setBusy] = useState(false);
@@ -828,6 +967,7 @@ function GrantDialog({
           <input
             type="text"
             className="pv-search"
+            ref={recipientSearchRef}
             placeholder={toTitleCase('search by name, username or player number')}
             aria-label="Search Players"
             value={search}
@@ -842,7 +982,10 @@ function GrantDialog({
                   key={m.user_id}
                   type="button"
                   className="pv-picker__row"
-                  onClick={() => setRecipient(m)}
+                  onClick={() => {
+                    recipientFocusPendingRef.current = true;
+                    setRecipient(m);
+                  }}
                 >
                   <RoleBadge role={m.role} size="sm" />
                   <span className="pv-picker__names">
@@ -872,7 +1015,14 @@ function GrantDialog({
             {recipient.player_number && (
               <span className="pv-chosen__number">No. {recipient.player_number}</span>
             )}
-            <button type="button" className="pv-chosen__change" onClick={() => setRecipient(null)}>
+            <button
+              type="button"
+              className="pv-chosen__change"
+              onClick={() => {
+                recipientFocusPendingRef.current = true;
+                setRecipient(null);
+              }}
+            >
               Change
             </button>
           </div>
@@ -893,6 +1043,7 @@ function GrantDialog({
               max={maxQuantity}
               value={quantity}
               aria-label="Quantity To Send"
+              ref={sendQuantityRef}
               onChange={(e) => {
                 const next = Number(e.target.value);
                 setQuantity(
@@ -1057,19 +1208,24 @@ function Overlay({
   onClose: () => void;
   labelledBy: string;
 }) {
+  const dialogRef = useFocusTrap(true);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   // Escape closes, because on a phone the backdrop is often entirely covered by
   // the sheet and there is nothing left to tap outside it.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') onCloseRef.current();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, []);
 
-  return (
+  // Escape the isolated page stage so the dialog and backdrop cover navigation.
+  return createPortal(
     <div className="pv-overlay" onClick={onClose} role="presentation">
       <div
+        ref={dialogRef}
         className="pv-dialog"
         role="dialog"
         aria-modal="true"
@@ -1078,6 +1234,7 @@ function Overlay({
       >
         {children}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

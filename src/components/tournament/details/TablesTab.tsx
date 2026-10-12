@@ -56,10 +56,15 @@
 
 import React, { useCallback, useMemo, useEffect, useRef } from 'react';
 import { warmTable, observeLobbyTableWarmups } from '../../../services/tableWarmup';
-import { useNavigate } from 'react-router-dom';
 import { useToast } from '../../common/Toast';
-import { openTableAsObserver } from '../../../utils/observeTable';
-import { chips, chipsCompact, isPlayerLive, type TournamentTabProps } from './types';
+import {
+  chips,
+  chipsCompact,
+  isPlayerLive,
+  shortTableName,
+  type TournamentTabProps,
+} from './types';
+import { isBaggedStatus } from '../../../utils/multiDaySchedule';
 /* `TournamentEntry` was imported here too and referenced nowhere in the file. */
 import type { TournamentTable } from './types';
 import '../../../styles/tournament-lobby-3d.css';
@@ -116,6 +121,8 @@ function statusLabel(table: TournamentTable): StatusLabel {
 /** Everything one row needs, derived once for the whole list. */
 interface TableLine {
   table: TournamentTable;
+  /** The table's name without the event's name in front of it. */
+  label: string;
   /** Parsed table number, or the 1-based list index when the name carries none. */
   displayNumber: number;
   /** Sort key: parsed number, or a value that parks unnumbered tables last. */
@@ -162,6 +169,7 @@ interface TableRowProps extends Omit<TableLine, 'table' | 'sortNumber'> {
 
 const TableRow = React.memo(function TableRow({
   table,
+  label,
   displayNumber,
   seated,
   seatCountIsFallback,
@@ -198,7 +206,7 @@ const TableRow = React.memo(function TableRow({
 
       <span className="tt-head">
         <span className="tt-headline">
-          <span className="tl-name tt-name">{table.name || `Table ${displayNumber}`}</span>
+          <span className="tl-name tt-name">{label}</span>
           {isHeroTable && <span className="tl-badge tl-badge--action">Your Table</span>}
         </span>
         <span className="tt-headmeta">
@@ -252,9 +260,11 @@ const TableRow = React.memo(function TableRow({
 
       {blockedReason ? (
         <span className="tl-sub tt-blocked">{blockedReason}</span>
-      ) : (
-        <span className="tl-sub tt-hint">Tap To Watch In A New Screen</span>
-      )}
+      ) : openable ? (
+        <span className="tl-sub tt-hint">
+          {isHeroTable ? 'Tap To Go To Your Table' : 'Tap To Watch In A New Screen'}
+        </span>
+      ) : null}
     </>
   );
 
@@ -286,7 +296,11 @@ const TableRow = React.memo(function TableRow({
         onTouchStart={() => warmTable(table.id)}
         onFocus={() => warmTable(table.id)}
         onClick={() => onOpen(table)}
-        aria-label={`Watch ${table.name || `Table ${displayNumber}`}, ${seatText} Players Seated`}
+        aria-label={
+          isHeroTable
+            ? `Go To Your Table, ${label}, ${seatText} Players Seated`
+            : `Watch ${label}, ${seatText} Players Seated`
+        }
       >
         {body}
       </button>
@@ -303,8 +317,8 @@ export default function TablesTab({
   entries,
   tables,
   currentUserId,
+  onWatchPlayer,
 }: TournamentTabProps) {
-  const navigate = useNavigate();
   const toast = useToast();
   const tableListRef = useRef<HTMLUListElement>(null);
 
@@ -378,12 +392,13 @@ export default function TablesTab({
 
       const status = normalisedStatus(table.status);
       const closed = status === 'closed';
-      const openable = !!table.id && !closed;
+      const openable = !!table.id && !closed && !!onWatchPlayer;
 
       const parsed = tableNumber(table.name);
 
       return {
         table,
+        label: shortTableName(table.name, tournament?.name) || `Table ${parsed ?? index + 1}`,
         displayNumber: parsed ?? index + 1,
         sortNumber: parsed ?? Number.MAX_SAFE_INTEGER,
         seated: seatCountIsFallback ? rowSeated : derivedSeated,
@@ -413,7 +428,7 @@ export default function TablesTab({
     });
 
     return built;
-  }, [tables, byTable, heroTableId]);
+  }, [tables, byTable, heroTableId, tournament?.name, onWatchPlayer]);
 
   const handleOpen = useCallback(
     (table: TournamentTable) => {
@@ -427,14 +442,19 @@ export default function TablesTab({
         toast.warning('That Table Has Closed');
         return;
       }
-      const opened = openTableAsObserver(navigate, {
-        tableId: table.id,
-        tableName: table.name,
-      });
-      // Only reachable if the table row lost its id between render and click.
-      if (!opened) toast.warning('That Table Is No Longer Available');
+      // Only reachable if the table row lost its id between render and click,
+      // or the event stopped dealing while the list was on screen.
+      if (!table.id || !onWatchPlayer) {
+        toast.warning('That Table Is No Longer Available');
+        return;
+      }
+      /* Through the page's one door (see `onWatchPlayer` in types.ts). This
+         tab used to navigate by itself, so inside the in-game popup a tap on
+         "Your Table" asked for the table the popup was covering and nothing
+         visible happened. */
+      onWatchPlayer(table.id, shortTableName(table.name, tournament?.name) || table.name);
     },
-    [navigate, toast]
+    [onWatchPlayer, toast, tournament?.name]
   );
 
   const warmTableIds = lines
@@ -446,15 +466,27 @@ export default function TablesTab({
   }, [warmTableIds]);
 
   if (tables.length === 0) {
+    /* SAY WHY THERE ARE NONE (2026-10-04 review pass). Since the shell stopped
+       handing a finished event its dead table rows, every finished event's
+       Tables tab read "No Tables Yet - Tables Are Created When The Event
+       Starts": a promise about the future, printed under a header that says
+       Completed. Each state has its own true sentence. */
+    const status = String(tournament?.status || '').toUpperCase();
+    const empty =
+      status === 'COMPLETED'
+        ? { title: 'No Tables', hint: 'This Event Has Finished And Its Tables Are Closed' }
+        : status === 'CANCELLED'
+          ? { title: 'No Tables', hint: 'This Event Was Cancelled' }
+          : isBaggedStatus(status)
+            ? { title: 'No Tables Right Now', hint: 'Tables Reopen When The Next Day Starts' }
+            : status === 'RUNNING' || status === 'LATE_REG' || status === 'LATE_REGISTRATION'
+              ? { title: 'No Tables Yet', hint: 'Seating Is Being Drawn Now' }
+              : { title: 'No Tables Yet', hint: 'Tables Are Created When The Event Starts' };
     return (
       <div className="tl-panel tt-panel">
         <div className="tl-empty">
-          <span>No Tables Yet</span>
-          <span className="tl-empty__hint">
-            {tournament?.status === 'RUNNING'
-              ? 'Seating Is Being Drawn Now'
-              : 'Tables Are Created When The Event Starts'}
-          </span>
+          <span>{empty.title}</span>
+          <span className="tl-empty__hint">{empty.hint}</span>
         </div>
       </div>
     );

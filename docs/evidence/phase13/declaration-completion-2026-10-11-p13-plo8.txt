@@ -1,0 +1,36 @@
+Horse Brain Phase 13 PLO8: Natural Completion Window, Predeclaration
+====================================================================
+
+Declared 2026-10-11 at 19:27Z, before reading any journal record of the window
+below. Archived with this timestamp and committed with the next records change.
+
+Why: the locked P13.2 PLO8 matrix on 1235b47a (run 38011357161) is qualified on
+condition (a) (assembled 2026-10-11, evidence sha256 33f5bb29...). P13.3 admits
+the variant only with a natural completion record meeting the floor
+(horse-phase13-completion-definition-v2: every street and every board count,
+Wilson lower bound at Phi^-1(0.995) at least 0.95, at least 127 eligible).
+
+1. Serving Release
+------------------
+f47ad93ce25b54e98d4c8c0a952a87f1482aff99 (StartedAt 2026-10-11T17:55:32.90787101Z,
+read 19:26:56Z). 1235b47a is its ancestor and every
+HORSE_PHASE13_POLICY_SOURCE_FILES entry is identical between them (git diff
+--stat empty), so its Phase 13 policy digest is the matrix's. It must be
+unchanged from before 20:02Z to after 20:50Z (StartedAt and release label read
+at the start and the end). If it is replaced, the window moves to the first
+full hour (:02 to :50) of the next release with the same Phase 13 digest.
+
+2. Window And Population
+------------------------
+2026-10-11T20:02:00.000Z to 2026-10-11T20:50:00.000Z. Stage 1
+server/scripts/phase13-completion-extract.py (run on the engine host under
+nice -n 19 ionice -c3, closed archive segments, sha256-name verified), variant
+plo8, that release; stage 2 server/src/scripts/phase13CompletionRecord.ts
+--variant=plo8 --release=<sha> --from=2026-10-11T20:02:00.000Z
+--to=2026-10-11T20:50:00.000Z --release-unchanged=true. Counting is the
+authority's own; nothing is filtered here.
+
+3. Verdict
+----------
+Every street and every board count must clear the floor. Recorded whatever it
+shows; not re-measured on another window of this release.

@@ -1,0 +1,26 @@
+== main 455ec7ee4e
+plo5 preflop median_us=27.3 rounds=7 calls=5000
+plo5 river median_us=4415.5 rounds=7 calls=1000
+plo6 preflop median_us=27.5 rounds=7 calls=5000
+plo6 river median_us=5726.0 rounds=7 calls=1000
+plo8 preflop median_us=25.4 rounds=7 calls=5000
+plo8 river median_us=3532.4 rounds=7 calls=1000
+== branch
+plo5 preflop median_us=46.7 rounds=7 calls=5000
+plo5 river median_us=4506.1 rounds=7 calls=1000
+plo6 preflop median_us=34.0 rounds=7 calls=5000
+plo6 river median_us=5824.5 rounds=7 calls=1000
+plo8 preflop median_us=29.6 rounds=7 calls=5000
+plo8 river median_us=3598.4 rounds=7 calls=1000
+== branch
+plo5 preflop median_us=32.2 rounds=7 calls=5000
+plo6 preflop median_us=34.6 rounds=7 calls=5000
+plo8 preflop median_us=34.2 rounds=7 calls=5000
+== main 455ec7ee4e
+plo5 preflop median_us=28.9 rounds=7 calls=5000
+plo6 preflop median_us=33.7 rounds=7 calls=5000
+plo8 preflop median_us=25.0 rounds=7 calls=5000
+== branch
+plo5 preflop median_us=34.9 rounds=7 calls=5000
+plo6 preflop median_us=31.0 rounds=7 calls=5000
+plo8 preflop median_us=36.1 rounds=7 calls=5000

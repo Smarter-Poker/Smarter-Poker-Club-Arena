@@ -1,63 +1,144 @@
 /**
- * ═══════════════════════════════════════════════════════════════════════════════
- *  PLAYER STATS CACHES — the parts sign-out has to be able to reach
- * ═══════════════════════════════════════════════════════════════════════════════
+ * Player Stats cache ownership.
  *
- * This module exists so `clearUserCaches` can purge the Stats page's two caches
- * WITHOUT importing the page.
- *
- * That import would have been a real regression, not a style point: sign-out
- * runs from the header, so pulling PlayerStatsPage into clearUserCaches would
- * pull its whole import graph into whatever chunk holds it - and the point of
- * the lazy chart split was to keep exactly that weight off the critical path.
- * A leaf module both sides can depend on costs nothing.
- *
- * The two caches:
- *
- *   STATS_CACHE_PREFIX  a localStorage payload per user (lifetime profit,
- *                       session history, hand counts) with a 10-minute TTL. It
- *                       was not in USER_SCOPED_PREFIXES, so it survived a
- *                       sign-out on a shared device and getCachedFull read it
- *                       straight back. The two stats keys that WERE listed are
- *                       different ones: club_arena_player_stats and
- *                       club-arena-player-stats.
- *
- *   rangeMemo           an in-memory payload per (user, range), 60s TTL, added
- *                       so the range pills do not refire a 2.6s RPC. Keyed by
- *                       user id, so account B can never READ account A's entry
- *                       - but A's stats stayed resident in the tab for the rest
- *                       of its life, and a page reopened at /stats/<A> inside
- *                       the TTL still painted from it.
+ * Every cache entry is identified by the complete analytical scope. Keeping
+ * this in a leaf module lets sign-out purge Stats without importing the page.
  */
 
-/** localStorage key prefix for the SWR payload. Purged by clearUserCaches. */
-export const STATS_CACHE_PREFIX = 'ps_stats_v4_contract2_';
-
-/** How long a memoised per-range payload may be served without a refetch. */
+/** localStorage prefix retained for sign-out's user-cache purge. */
+export const STATS_CACHE_PREFIX = 'ps_stats_v5_scope_';
+export const STATS_CACHE_CONTRACT_VERSION = 2 as const;
 export const RANGE_MEMO_TTL_MS = 60_000;
 
-/**
- * `${userId}:${rangeKey}` -> payload. Deliberately untyped here so this module
- * stays a leaf: the page owns the FullStats shape and casts on the way out.
- */
-const rangeMemo = new Map<string, { full: unknown; at: number }>();
+export type StatsCacheVisibility = 'owner' | 'shared_club';
 
-export function readStatsRangeMemo(userId: string, rangeKey: string): unknown | null {
-  const key = `${userId}:${rangeKey}`;
+export interface StatsCacheIdentity {
+  contractVersion: typeof STATS_CACHE_CONTRACT_VERSION;
+  viewerId: string;
+  targetUserId: string;
+  clubId: string | null;
+  asset: string;
+  rangeKey: string;
+  rangeDays: number | null;
+  timezone: string;
+  visibility: StatsCacheVisibility;
+}
+
+interface PersistentStatsEntry {
+  identity: StatsCacheIdentity;
+  payload: unknown;
+  cachedAt: number;
+}
+
+const rangeMemo = new Map<string, { payload: unknown; at: number }>();
+
+export function statsCacheIdentityKey(identity: StatsCacheIdentity): string {
+  return JSON.stringify([
+    identity.contractVersion,
+    identity.viewerId,
+    identity.targetUserId,
+    identity.clubId,
+    identity.asset,
+    identity.rangeKey,
+    identity.rangeDays,
+    identity.timezone,
+    identity.visibility,
+  ]);
+}
+
+export function statsCacheStorageKey(identity: StatsCacheIdentity): string {
+  return `${STATS_CACHE_PREFIX}${statsCacheIdentityKey(identity)}`;
+}
+
+function sameIdentity(left: unknown, right: StatsCacheIdentity): boolean {
+  if (!left || typeof left !== 'object') return false;
+  return statsCacheIdentityKey(left as StatsCacheIdentity) === statsCacheIdentityKey(right);
+}
+
+/** Reject data whose server-declared scope differs from its cache identity. */
+export function statsPayloadMatchesIdentity(
+  payload: unknown,
+  identity: StatsCacheIdentity
+): boolean {
+  if (!payload || typeof payload !== 'object') return false;
+  const root = payload as Record<string, unknown>;
+  const scope = root.scope;
+  if (!scope || typeof scope !== 'object') return false;
+  const declared = scope as Record<string, unknown>;
+  if (root.contract_version !== identity.contractVersion) return false;
+  if (declared.target_user_id !== identity.targetUserId) return false;
+  if ((declared.club_id ?? null) !== identity.clubId) return false;
+  if ((declared.range_days ?? null) !== identity.rangeDays) return false;
+  if (declared.visibility !== identity.visibility) return false;
+  if (typeof declared.asset === 'string' && declared.asset !== identity.asset) return false;
+  const declaredTimezone =
+    typeof root.window_tz === 'string'
+      ? root.window_tz
+      : typeof declared.range_tz === 'string'
+        ? declared.range_tz
+        : null;
+  return declaredTimezone === identity.timezone;
+}
+
+/** Shared-club data is never written to persistent browser storage. */
+export function statsCacheMayPersist(identity: StatsCacheIdentity): boolean {
+  return identity.visibility === 'owner' && identity.viewerId === identity.targetUserId;
+}
+
+export function readStatsPersistentCache(
+  identity: StatsCacheIdentity,
+  ttlMs: number
+): { payload: unknown; cachedAt: number } | null {
+  if (!statsCacheMayPersist(identity)) return null;
+  try {
+    const raw = localStorage.getItem(statsCacheStorageKey(identity));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<PersistentStatsEntry>;
+    if (!Number.isFinite(parsed.cachedAt)) return null;
+    if (Date.now() - Number(parsed.cachedAt) > ttlMs) return null;
+    if (!sameIdentity(parsed.identity, identity)) return null;
+    if (!statsPayloadMatchesIdentity(parsed.payload, identity)) return null;
+    return { payload: parsed.payload, cachedAt: Number(parsed.cachedAt) };
+  } catch {
+    return null;
+  }
+}
+
+export function writeStatsPersistentCache(identity: StatsCacheIdentity, payload: unknown): boolean {
+  if (!statsCacheMayPersist(identity) || !statsPayloadMatchesIdentity(payload, identity)) {
+    return false;
+  }
+  try {
+    const entry: PersistentStatsEntry = { identity, payload, cachedAt: Date.now() };
+    localStorage.setItem(statsCacheStorageKey(identity), JSON.stringify(entry));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function readStatsRangeMemo(identity: StatsCacheIdentity): unknown | null {
+  const key = statsCacheIdentityKey(identity);
   const hit = rangeMemo.get(key);
   if (!hit) return null;
   if (Date.now() - hit.at > RANGE_MEMO_TTL_MS) {
     rangeMemo.delete(key);
     return null;
   }
-  return hit.full;
+  if (!statsPayloadMatchesIdentity(hit.payload, identity)) {
+    rangeMemo.delete(key);
+    return null;
+  }
+  return hit.payload;
 }
 
-export function writeStatsRangeMemo(userId: string, rangeKey: string, full: unknown): void {
-  rangeMemo.set(`${userId}:${rangeKey}`, { full, at: Date.now() });
+export function writeStatsRangeMemo(identity: StatsCacheIdentity, payload: unknown): boolean {
+  if (!statsPayloadMatchesIdentity(payload, identity)) return false;
+  rangeMemo.set(statsCacheIdentityKey(identity), { payload, at: Date.now() });
+  return true;
 }
 
-/** Drop every memoised payload. Sign-out, and any "something changed" refresh. */
+/** Drop every memoised payload. Sign-out and explicit refresh both call this. */
 export function clearStatsRangeMemo(): void {
   rangeMemo.clear();
 }

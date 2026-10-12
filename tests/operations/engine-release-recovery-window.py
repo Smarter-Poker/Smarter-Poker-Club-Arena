@@ -15,19 +15,20 @@ CERTIFICATE = SOURCE[SOURCE.index('maintenance_certificate() {'):SOURCE.index('#
 
 BASE_HEALTH = {'running': True, 'maintenance': {'active': False,
     'recoveryWindowProtocol': 'engine-recovery-window-v1', 'recoveryWindowReady': True}}
-SERVING = 'a' * 40
 TARGET = 'b' * 40
 NEWER = 'c' * 40
 
 
 def invoke(*, capability=True, active=False, eligible=True, unknown=False, live=False, minute=30, ready=True, becomes_ready=False,
-           health_extra=None, maintenance_extra=None, missed=False, desired=SERVING, urgent=False,
+           health_extra=None, maintenance_extra=None, missed=False, urgent=False,
            certificate_deadline=0, superseded='', requests=(), seal_answers=None, calls=2, advance=0):
     """Run the real request_recovery_window `calls` times, `advance` seconds apart.
 
     `requests` are other durable requests on this host: (run, sha, unit state,
     whether TARGET is an ancestor of sha). `seal_answers` scripts the seal's
-    successive reserve answers; the default is the historical eligible flag.
+    successive answers to a reservation that names a cause; the default is the
+    historical eligible flag. Like the real seal since 2026-10-04, the stub
+    answers `unavailable` to any reservation without `--cause`.
     """
     with tempfile.TemporaryDirectory(prefix='recovery-owner-') as temp:
         events = Path(temp) / 'events'
@@ -62,7 +63,6 @@ BREAK_WINDOW_MS=300000
 BREAK_ADMISSION_MIN_BREAK_MS=260000
 CERTIFICATE_DEADLINE={certificate_deadline}
 SUPERSEDED_BY={superseded}
-RECOVERY_BASELINE_DESIRED={SERVING}
 RECOVERY_URGENT={int(urgent)}
 LOCK_HELD=0
 NOW={1800000000 + minute * 60}
@@ -89,10 +89,11 @@ fixture_git() {{
 timeout() {{
   shift 3
   if [ "$1" = env ]; then shift 2; fi
-  if [ "$1" = fixture-seal ] && [ "$2" = get ] && [ "$3" = desired-sha ]; then
-    echo {desired}
-  elif [ "$1" = fixture-seal ] && [ "$2" = reserve-recovery-window ]; then
+  if [ "$1" = fixture-seal ] && [ "$2" = reserve-recovery-window ]; then
     [ "$LOCK_HELD" = 1 ]; shift 8; record "RESERVE${{*:+:$*}}"
+    # The real seal: a failed or missed release is not a cause, and a
+    # reservation that names none is `unavailable` before anything is read.
+    case " $* " in *' --cause '*) ;; *) echo unavailable; return 0 ;; esac
     # The seal answers inside $(...), a subshell: count on disk.
     RESERVES=$(( $(cat "$EVENTS.reserves" 2>/dev/null || echo 0) + 1 ))
     echo "$RESERVES" > "$EVENTS.reserves"
@@ -188,37 +189,41 @@ class RecoveryWindowTests(unittest.TestCase):
             with self.subTest(options=options):
                 self.assertEqual(certificate(window, **options).returncode, 1)
 
+    # Every request below carries an emergency cause (urgent): since the
+    # owner's 2026-10-04 ruling nothing else reaches the lock or the seal.
+
     def test_eligible_release_reserves_and_requests_once_inside_lock(self):
-        result, events = invoke()
+        result, events = invoke(urgent=True)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE', 'REQUEST', 'UNLOCK'])
+        self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE:--cause urgent', 'REQUEST', 'UNLOCK'])
 
     def test_unchanged_transaction_can_request_after_prior_resume_finishes(self):
-        result, events = invoke(ready=False, becomes_ready=True)
+        result, events = invoke(urgent=True, ready=False, becomes_ready=True)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE', 'REQUEST', 'UNLOCK'])
+        self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE:--cause urgent', 'REQUEST', 'UNLOCK'])
 
     def test_unknown_response_keeps_one_reservation_and_never_blind_retries(self):
-        result, events = invoke(unknown=True)
+        result, events = invoke(urgent=True, unknown=True)
         self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(events.count('RESERVE:--cause urgent'), 1)
         self.assertEqual(events.count('REQUEST'), 1)
         self.assertIn(': unknown;', result.stdout)
 
-    def test_no_verified_failure_does_not_announce(self):
-        result, events = invoke(eligible=False)
+    def test_a_reservation_the_seal_refuses_does_not_announce(self):
+        result, events = invoke(urgent=True, eligible=False)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(events.count('RESERVE'), 1)
-        self.assertNotIn('REQUEST', events)
+        # Asked once; `unavailable` is remembered for this cause, not re-asked.
+        self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE:--cause urgent', 'UNLOCK'])
 
     def test_already_serving_target_finishes_without_another_pause(self):
-        result, events = invoke(live=True)
+        result, events = invoke(urgent=True, live=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(events, ['LOCK', 'SOURCE', 'ALREADY'])
 
     def test_old_engine_active_break_unfinished_thaw_or_hourly_overlap_never_requests(self):
         for inputs in ({'capability': False}, {'active': True}, {'minute': 48}, {'minute': 1}, {'ready': False}):
             with self.subTest(inputs=inputs):
-                result, events = invoke(**inputs)
+                result, events = invoke(urgent=True, **inputs)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(events, [])
 
@@ -228,13 +233,15 @@ class ProportionateRecoveryWindowTests(unittest.TestCase):
     it, and the seal allows one per rolling hour. None of it touches what
     makes a cutover safe; these tests only ever see RESERVE and REQUEST."""
 
-    def test_an_ordinary_release_with_no_reason_never_announces(self):
-        # The seal still gets its one question (an unshipped failed ancestor is
-        # its own, unchanged cause); without one, nothing pauses the floor.
-        result, events = invoke(eligible=False)
+    def test_an_ordinary_release_with_no_reason_never_takes_the_lock(self):
+        # The seal answers `unavailable` to every reservation without a cause
+        # (2026-10-04), so a routine release has nothing to ask: it does not
+        # take the engine lock, re-read the source, reserve or announce, on
+        # this evaluation or any later one.
+        result, events = invoke(calls=3, advance=120)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE', 'UNLOCK'])
-        self.assertNotIn('off-cycle recovery window reason', result.stdout)
+        self.assertEqual(events, [])
+        self.assertEqual(result.stdout, '')
 
     def test_a_degraded_engine_still_gets_its_window(self):
         for extra, maintenance, sign in [
@@ -253,11 +260,11 @@ class ProportionateRecoveryWindowTests(unittest.TestCase):
     def test_healthy_signals_are_not_degradation(self):
         # 27 quarantined managers is what a normally dealing 209d1b45 carried on
         # 2026-09-26; its 07:37Z window, spent on 16 of them, shipped nothing.
-        result, events = invoke(eligible=False, health_extra={
+        result, events = invoke(health_extra={
             'liveness': 'ok', 'wholeFleetStalled': False, 'tournamentManagersQuarantined': 27},
             maintenance_extra={'breaksSinceRestartCertified': 0})
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE', 'UNLOCK'])
+        self.assertEqual(events, [])
 
     def test_an_urgent_release_still_gets_its_window(self):
         result, events = invoke(urgent=True)
@@ -271,34 +278,38 @@ class ProportionateRecoveryWindowTests(unittest.TestCase):
         now = 1800000000 + 30 * 60
         result, events = invoke(certificate_deadline=now + 20 * 60)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(events[2], 'RESERVE:--cause deadline')
-        self.assertIn('REQUEST', events)
-        result, events = invoke(eligible=False, certificate_deadline=now + 27 * 60)
+        self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE:--cause deadline', 'REQUEST', 'UNLOCK'])
+        self.assertIn('reason: deadline ', result.stdout)
+        result, events = invoke(certificate_deadline=now + 27 * 60)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE', 'UNLOCK'])
+        self.assertEqual(events, [])
 
-    def test_a_break_that_admitted_nobody_is_a_reason(self):
-        result, events = invoke(missed=True)
+    def test_a_missed_scheduled_break_alone_is_not_a_reason(self):
+        # Owner ruling 2026-10-04: one scheduled break an hour. A break this
+        # release waited through - whether or not a sibling shipped in it (94c7cf0b
+        # sealed in the 06:05 window on 2026-09-26; 1cb373d1 and 6cd35918 read the
+        # rest of it as a missed certificate and each asked for another) - never
+        # takes the lock, never reserves and never announces.
+        result, events = invoke(missed=True, calls=3, advance=120)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE:--missed-window', 'REQUEST', 'UNLOCK'])
+        self.assertEqual(events, [])
+        self.assertEqual(result.stdout, '')
 
-    def test_a_break_a_sibling_shipped_in_is_not_a_reason(self):
-        # 94c7cf0b sealed in the 06:05 window; 1cb373d1 and 6cd35918 read the
-        # rest of it as a missed certificate and each asked for another.
-        result, events = invoke(missed=True, desired='e' * 40, eligible=False)
+    def test_a_missed_break_adds_nothing_to_a_real_cause(self):
+        # The emergency cause is the whole reservation; no --missed-window.
+        result, events = invoke(missed=True, urgent=True)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE', 'UNLOCK'])
-        self.assertIn('the scheduled break is working', result.stdout)
+        self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE:--cause urgent', 'REQUEST', 'UNLOCK'])
 
     def test_the_newest_release_owns_the_window(self):
         requests = [('901-1', NEWER, 'activating', True)]
-        result, events = invoke(missed=True, superseded=NEWER, requests=requests)
+        result, events = invoke(urgent=True, superseded=NEWER, requests=requests)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(events, ['LOCK', 'SOURCE', 'UNLOCK'])
         self.assertEqual(result.stdout.count('owns any off-cycle window'), 1)
         self.assertIn('run 901-1', result.stdout)
         # Deferral is re-evaluated, not cached: a minute later it still defers.
-        result, events = invoke(missed=True, superseded=NEWER, requests=requests, advance=60)
+        result, events = invoke(urgent=True, superseded=NEWER, requests=requests, advance=60)
         self.assertEqual(events, ['LOCK', 'SOURCE', 'UNLOCK', 'LOCK', 'SOURCE', 'UNLOCK'])
         self.assertEqual(result.stdout.count('owns any off-cycle window'), 1)
 
@@ -317,21 +328,21 @@ class ProportionateRecoveryWindowTests(unittest.TestCase):
                          [('900-2', NEWER, 'active', True)],
                          []):
             with self.subTest(requests=requests):
-                result, events = invoke(missed=True, superseded=NEWER, requests=requests)
+                result, events = invoke(urgent=True, superseded=NEWER, requests=requests)
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE:--missed-window',
+                self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE:--cause urgent',
                                           'REQUEST', 'UNLOCK'])
 
     def test_a_spent_hour_waits_and_asks_again_later_without_announcing(self):
-        result, events = invoke(missed=True, seal_answers=['rate-limited', 'rate-limited'],
+        result, events = invoke(urgent=True, seal_answers=['rate-limited', 'rate-limited'],
                                 calls=3, advance=30)
         self.assertEqual(result.returncode, 0, result.stderr)
         # 0s asks, 30s is inside the deferral, 60s asks again.
-        self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE:--missed-window', 'UNLOCK',
-                                  'LOCK', 'SOURCE', 'RESERVE:--missed-window', 'UNLOCK'])
+        self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE:--cause urgent', 'UNLOCK',
+                                  'LOCK', 'SOURCE', 'RESERVE:--cause urgent', 'UNLOCK'])
         self.assertNotIn('REQUEST', events)
-        self.assertIn('already announced in the last hour', result.stdout)
-        result, events = invoke(missed=True, seal_answers=['rate-limited', '1800000000000'],
+        self.assertIn('off-cycle window wanted (urgent Engine-Release: urgent) but one was already announced in the last hour', result.stdout)
+        result, events = invoke(urgent=True, seal_answers=['rate-limited', '1800000000000'],
                                 advance=60)
         self.assertEqual(events[-2:], ['REQUEST', 'UNLOCK'])
         self.assertEqual(events.count('REQUEST'), 1)
@@ -339,10 +350,12 @@ class ProportionateRecoveryWindowTests(unittest.TestCase):
     def test_one_window_per_release_whatever_its_reasons(self):
         result, events = invoke(urgent=True, missed=True, calls=3, advance=120)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(events.count('RESERVE:--missed-window --cause urgent'), 1)
+        self.assertEqual(events.count('RESERVE:--cause urgent'), 1)
+        self.assertEqual(sum(e.startswith('RESERVE') for e in events), 1)
         self.assertEqual(events.count('REQUEST'), 1)
 
     def test_only_a_release_waiting_when_the_break_could_admit_it_missed_it(self):
+        # Still recorded (the queue reports it), no longer a reason to ask.
         # now is :56:00 of the hour; 240000ms remain, so the break opened at
         # :55:00 and could admit until :55:40.
         now = 1800000000 + 56 * 60
@@ -363,7 +376,8 @@ class ProportionateRecoveryWindowTests(unittest.TestCase):
         for options in ({'maintenance_extra': {'stoppedCustodyStuckTables': 27,
                                                'breaksSinceRestartCertified': 1}},
                         {'urgent': True, 'maintenance_extra': {'stoppedCustodyStuckTables': 1}},
-                        {'missed': True, 'maintenance_extra': {'stoppedCustodyStuckTables': 27}}):
+                        {'certificate_deadline': 1800000000 + 50 * 60,
+                         'maintenance_extra': {'stoppedCustodyStuckTables': 27}}):
             with self.subTest(options=options):
                 result, events = invoke(calls=3, advance=30, **options)
                 self.assertEqual(result.returncode, 0, result.stderr)

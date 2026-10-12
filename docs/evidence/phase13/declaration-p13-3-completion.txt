@@ -1,0 +1,53 @@
+Horse Brain Phase 13: natural completion records, predeclaration
+==================================================================
+
+Declared after the Phase 13 build (PR #6280, squash 886cc9655461c1049ece829c1fc86c14e2d3ba75) merged to main and
+before any window below opens. The commit time of this file on main is the
+declaration time; no window that began before that time can be used.
+
+1. Serving release
+------------------
+The first club-arena-engine release (label sp.release.sha) activated in an
+hourly break after this declaration is on main, provided it contains the
+squash commit above and, for each of the nine variants, its policy digest
+computed from `git show <release>:server/<file>` (horsePhase13PolicyDigest,
+definition horse-phase13-policy-digest-v1) equals the digest of that squash
+commit. The release must be unchanged for the whole window: sp.release.sha and
+State.StartedAt are read before the window opens and after it closes, and must
+match. If the first such release is replaced before its window closes, the
+window moves to the next full hour on the next qualifying release, every other
+rule unchanged.
+
+2. Window and population (complete, not a sample)
+-------------------------------------------------
+Minutes :02:00 to :50:00 UTC of the first full hour that release serves which
+begins after this declaration is on main. Every Horse decision record in the
+engine host's journal archive segments (archive/segments and
+archive-shard-1/segments; closed segment files only, sha256-name verified,
+read-only, nice 19 / ionice idle) with snapshot.decisionTimeMs in the window
+whose sourceRelease is exactly that release; records of any other release are
+counted and excluded by name. Only DECIDE_FAST records are counted (a DEEP
+second look is excluded by name, excluded_deep_second_look); Pineapple discard
+records are excluded by name. Multi-board and bomb hands are included and
+counted in their board-count cells.
+
+One record per variant (nlh, short_deck, flh, pineapple, plo4, plo5, plo6,
+plo8, flo8): server/scripts/phase13-completion-extract.py and
+server/src/scripts/phase13CompletionRecord.ts, read at the squash commit,
+definition horse-phase13-completion-definition-v1 (receipt
+body.decision.jointPolicy, receipt version joint-multiway-round1-v4; outcomes
+workBudget, samplerBudgetExhausted, responseBranchUnavailable,
+sampleUnavailable, governorReduced, completed). Tournament decisions are not
+counted.
+
+3. Verdict
+----------
+A variant's record meets the requirement only if every street cell and every
+board-count cell has at least 127 eligible decisions and a Wilson lower bound
+at the contract z (JOINT_STRENGTH_Z99) at or above 0.95. The verdict is
+reported for all nine variants, whatever it is; a variant below the floor is
+not re-measured on another window to look for a pass, and a cell with too few
+natural decisions is reported as such, not extended. A record is used for
+admission only together with that variant's qualification measured at the same
+policy digest; with every PHASE13_PROTECTED_RELEASE_SELECTIONS entry null, no
+record admits anything.

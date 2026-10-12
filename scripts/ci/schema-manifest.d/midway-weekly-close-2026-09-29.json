@@ -1,0 +1,5 @@
+{
+  "_owner": "fix/jackpot-share-on-the-felt-is-a-cash-result. Applied to production as migrations 20260929110440_a_jackpot_share_on_the_felt_is_a_cash_result (fn_union_pnl_week_bbj_stack_awards) and 20260929124252_a_union_close_never_holds_the_union_rake_wallet (fn_union_close_post_rake_debit).",
+  "tables": [],
+  "functions": ["fn_union_pnl_week_bbj_stack_awards", "fn_union_close_post_rake_debit"]
+}

@@ -4,7 +4,8 @@ import { describe, expect, it } from 'vitest';
 /**
  * #ClubArenaConsole IS THE CASHIER'S VISUAL AUTHORITY (Dan, September 2026).
  *
- * Every Cashier page and every Cashier-owned dialog is rendered ON the approved
+ * October 10 owner direction replaces routed page frames with Players-style
+ * CashierWorkspace layouts. Cashier-owned dialogs remain ON the approved
  * painted master through `SpadeConsole`, directly: no wrapper framework, no
  * retired vault picture, no flat `x` close glyph, no CSS-built frame, plate or
  * pill on the glass, no browser number spinner, and the console's own crest
@@ -18,18 +19,28 @@ import { describe, expect, it } from 'vitest';
 
 const read = (path: string) => readFileSync(path, 'utf8');
 
-/** Every Cashier surface, paired with the stylesheet that dresses its glass. */
-const CASHIER_SURFACES: ReadonlyArray<{ tsx: string; css: string; consoles: number }> = [
+/**
+ * Every Cashier surface, paired with the stylesheet that dresses its glass.
+ * `crest` names the one non-default crest a surface is allowed to ask for:
+ * 'flat' is no crest at all (the rails bridged), which is not one of the
+ * rejected club / diamond / crown crests. Surfaces without it may name none.
+ */
+const CASHIER_SURFACES: ReadonlyArray<{
+  tsx: string;
+  css: string;
+  consoles: number;
+  crest?: 'flat';
+}> = [
   {
     tsx: 'src/pages/CashierTradePage.tsx',
     css: 'src/pages/CashierTradePage.module.css',
-    consoles: 5,
+    consoles: 4,
   },
-  { tsx: 'src/pages/CashierPage.tsx', css: 'src/pages/CashierPage.module.css', consoles: 3 },
+  { tsx: 'src/pages/CashierPage.tsx', css: 'src/pages/CashierPage.module.css', consoles: 1 },
   {
     tsx: 'src/pages/CashierStatementsPage.tsx',
     css: 'src/pages/CashierStatementsPage.module.css',
-    consoles: 1,
+    consoles: 0,
   },
   {
     tsx: 'src/components/wallet/WalletCashierModal.tsx',
@@ -52,14 +63,15 @@ const CASHIER_SURFACES: ReadonlyArray<{ tsx: string; css: string; consoles: numb
     consoles: 1,
   },
   {
-    tsx: 'src/components/table/CashierModal.tsx',
-    css: 'src/components/table/CashierModal.css',
-    consoles: 1,
-  },
-  {
     tsx: 'src/components/union/UnionWalletModal.tsx',
     css: 'src/components/union/UnionWalletModal.css',
     consoles: 1,
+  },
+  {
+    tsx: 'src/components/wallet/DiamondWalletModal.tsx',
+    css: 'src/components/wallet/DiamondWalletModal.css',
+    consoles: 1,
+    crest: 'flat',
   },
 ];
 
@@ -115,12 +127,23 @@ describe('#ClubArenaConsole is the Cashier visual authority', () => {
     '$tsx renders $consoles console(s) directly on SpadeConsole',
     ({ tsx, consoles }) => {
       const source = read(tsx);
-      expect(source).toMatch(
-        /import \{[^}]*\bSpadeConsole\b[^}]*\} from '[^']*\/console\/SpadeConsole'/
-      );
+      if (consoles > 0)
+        expect(source).toMatch(
+          /import \{[^}]*\bSpadeConsole\b[^}]*\} from '[^']*\/console\/SpadeConsole'/
+        );
       expect(consoleTags(source)).toHaveLength(consoles);
     }
   );
+
+  it('the table top-up uses the owner-supplied October 9 purchase master', () => {
+    const source = read('src/components/table/CashierModal.tsx');
+    expect(source).toContain('<PurchaseConsole');
+    expect(source).toContain('onClick: handleConfirm');
+    expect(source).toContain('disabled: confirmDisabled');
+    expect(read('src/components/table/PurchaseConsole.tsx')).toContain(
+      'assets/club-buttons/popups/add-on-v2/chassis.png'
+    );
+  });
 
   it('never reintroduces a second console framework, the vault picture or a flat close glyph', () => {
     for (const { tsx } of CASHIER_SURFACES) {
@@ -137,9 +160,10 @@ describe('#ClubArenaConsole is the Cashier visual authority', () => {
     // Dan 2026-09-13: the spade is the only crest that passed; the club, diamond
     // and crown crests are to be repainted. Until they are, the Cashier prints
     // on the console's default crest and never asks for one of the rejected ones.
-    for (const { tsx } of CASHIER_SURFACES) {
+    for (const { tsx, crest } of CASHIER_SURFACES) {
       for (const tag of consoleTags(read(tsx))) {
-        expect(tag, tsx).not.toMatch(/\bcrest=/);
+        if (crest) expect(tag, tsx).not.toMatch(/\bcrest=(?!["']flat["'])/);
+        else expect(tag, tsx).not.toMatch(/\bcrest=/);
       }
     }
   });
@@ -204,6 +228,9 @@ describe('#ClubArenaConsole is the Cashier visual authority', () => {
     expect(read('src/pages/CashierTradePage.tsx')).toContain('title="Cashier"');
     expect(read('src/pages/CashierPage.tsx')).toContain('title="Cashier"');
     expect(read('src/pages/CashierStatementsPage.tsx')).toContain('title="Cashier"');
+    for (const page of ['CashierTradePage', 'CashierPage', 'CashierStatementsPage']) {
+      expect(read(`src/pages/${page}.tsx`)).toContain('<CashierWorkspace');
+    }
   });
 
   it('puts every Trade Cashier dialog on the painted authority', () => {
@@ -213,7 +240,74 @@ describe('#ClubArenaConsole is the Cashier visual authority', () => {
     }
   });
 
-  it('prints painted head zones through compactChips, never a raw locale figure', () => {
+  it('offers the decimal keypad wherever a Cashier amount goes to two places', () => {
+    // Launch audit 2026-10-09, P-04: `inputMode="numeric"` has no "." key on a
+    // phone and `step="1"` flags 12.34 as invalid, so the two-decimal rule the
+    // copy advertises was unreachable on the device most agents use.
+    const trade = read('src/pages/CashierTradePage.tsx');
+    const tradeInputs = trade.match(/<input[^>]*type="number"[^>]*>/gs) ?? [];
+    expect(tradeInputs.length).toBeGreaterThanOrEqual(2);
+    for (const tag of tradeInputs) {
+      expect(tag).toContain('inputMode="decimal"');
+      expect(tag).toContain('step="0.01"');
+    }
+    for (const label of ['Amount Per Player', 'Chips Requested']) {
+      expect(trade).toContain(`aria-label="${label}"`);
+    }
+    expect(read('src/pages/CashierPage.tsx')).not.toContain('inputMode="numeric"');
+  });
+
+  it('prints the Settlement Record through the forward display reader, never exact cents', () => {
+    // Launch audit 2026-10-09, P-09 / R-08: "NEVER USE DECIMAL POINTS ON ANY
+    // FORWARD FACING PAGE". The reader keeps its cents; the rows do not.
+    const trade = read('src/pages/CashierTradePage.tsx');
+    expect(trade).not.toContain('formatWeeklyChips(iv');
+    expect(trade).toContain('formatWeeklyChipsForDisplay(iv.rakeFunding)');
+    expect(trade).toContain('formatWeeklyChipsForDisplay(iv.paidByClub)');
+    expect(trade).toContain('formatWeeklyChipsForDisplay(iv.retainedByClub)');
+  });
+
+  it('paints the Trade dock and the Claim Back band in the glass tone, one tone inside the well', () => {
+    // Launch audit 2026-10-09, R-06: SpadeConsole.css paints the body glass
+    // #0a0b0d; a #000 band inside it read as a second, darker well.
+    const css = read('src/pages/CashierTradePage.module.css');
+    expect(css).toMatch(/\.dock \{[^}]*background: #0a0b0d;/);
+    expect(css).toMatch(/\.modalActions \{[^}]*background: #0a0b0d;/);
+    expect(css).not.toMatch(/\.dock \{[^}]*background: #000;/);
+    expect(css).not.toMatch(/\.modalActions \{[^}]*background: #000;/);
+    // The engraved rule above each band stays: a divider, not a frame.
+    expect(css).toMatch(/\.modalActions \{[^}]*border-top: 1px solid #000;/);
+    expect(read('src/components/console/SpadeConsole.css')).toContain('#0a0b0d');
+  });
+
+  it('gives every Cashier word control a 44px thumb target in both directions', () => {
+    // Launch audit 2026-10-09, R-12 and P-11.
+    expect(read('src/pages/CashierTradePage.module.css')).toMatch(
+      /\.plusBtn \{[^}]*min-width: 44px;[^}]*min-height: 44px;/
+    );
+    expect(read('src/pages/CashierStatementsPage.module.css')).toMatch(
+      /\.copyWord \{[^}]*min-width: 44px;/
+    );
+    const wallet = read('src/pages/PlayerWalletPage.css');
+    expect(wallet).toMatch(/\.vault-btn\.small \{[^}]*min-height: 44px;/);
+    expect(wallet).toMatch(/\.wallet-plate__cta \{[^}]*min-height: 44px;/);
+  });
+
+  it('names every routed Cashier document', () => {
+    // Launch audit 2026-10-09, L-03: the Trade and Statement pages kept the
+    // previous page's title; the classic cashier set its own.
+    expect(read('src/pages/CashierTradePage.tsx')).toContain(
+      "document.title = 'Cashier | Smarter Poker';"
+    );
+    expect(read('src/pages/CashierStatementsPage.tsx')).toContain(
+      "document.title = 'Cashier Statement | Smarter Poker';"
+    );
+    expect(read('src/pages/CashierPage.tsx')).toContain(
+      "document.title = 'Cashier | Smarter Poker';"
+    );
+  });
+
+  it('prints every Cashier chip figure through compactChips, never decimal locale formatting', () => {
     for (const { tsx } of CASHIER_SURFACES) {
       for (const tag of consoleTags(read(tsx))) {
         for (const zone of ['eyebrow', 'subtitle', 'pill']) {
@@ -222,5 +316,55 @@ describe('#ClubArenaConsole is the Cashier visual authority', () => {
         }
       }
     }
+    expect(read('src/pages/CashierTradePage.tsx')).toContain('const fmt = compactChips;');
+    expect(read('src/pages/CashierPage.tsx')).toContain('const chipFigure = compactChips;');
+    expect(read('src/pages/CashierStatementsPage.tsx')).toContain(
+      'return compactChips(Number(value));'
+    );
+    expect(read('src/pages/CashierPage.tsx')).toContain(
+      "subtitle={titleCase(clubName || 'Club Wallet')}"
+    );
+
+    const wallet = read('src/components/wallet/DynamicWallet.tsx');
+    expect(wallet).toContain("import { compactChips } from '../../utils/format';");
+    expect(wallet).toContain('return compactChips(num);');
+    expect(wallet).not.toContain('minimumFractionDigits: 2');
+  });
+
+  it('keeps copied statement receipts exact and drops clipboard completion after unmount', () => {
+    const statements = read('src/pages/CashierStatementsPage.tsx');
+    expect(statements).toContain('exactChips(entry.amount)');
+    expect(statements).toContain('exactChips(entry.balance_after)');
+    expect(statements).toContain('mountedRef.current = true;');
+    expect(statements).toContain('if (mountedRef.current) setCopiedId(ok ? id : null);');
+  });
+
+  it('renders the Cashier card wallet directory on an approved painted console', () => {
+    const tile = read('src/components/home/ClubQuickLinkTile.tsx');
+    const homeCss = read('src/pages/HomePage.module.css');
+    const directoryCss = homeCss.slice(
+      homeCss.indexOf('.cashierSwitchOverlay'),
+      homeCss.indexOf('/* Dan 2026-08-24', homeCss.indexOf('.cashierSwitchOverlay'))
+    );
+
+    expect(tile).toMatch(
+      /import \{[^}]*\bSpadeConsole\b[^}]*\} from '[^']*\/console\/SpadeConsole'/
+    );
+    expect(tile).toContain('<SpadeConsole');
+    expect(tile).toContain('family="shark"');
+    expect(tile).toContain('className={styles.cashierSwitchConsole}');
+    expect(tile).toContain('compactChips(visibleBalances.get(club.id))');
+    expect(tile).not.toContain('cashierSwitchLogoFallback');
+
+    expect(directoryCss).toContain('.cashierSwitchConsole');
+    expect(directoryCss).not.toMatch(/border-radius:\s*[1-9]/);
+    expect(directoryCss).not.toMatch(/(linear|radial|conic)-gradient\(/);
+    expect(directoryCss).not.toMatch(/^\s*[^*\n]*:hover\b[^\n]*\{/m);
+  });
+
+  it('prints the in-Cashier club switcher balance through compactChips', () => {
+    const switcher = read('src/components/club/CashierClubSwitcher.tsx');
+    expect(switcher).toContain('compactChips(visibleBalances.get(club.id))');
+    expect(switcher).not.toContain('maximumFractionDigits');
   });
 });

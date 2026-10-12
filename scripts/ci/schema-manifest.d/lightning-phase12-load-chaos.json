@@ -1,0 +1,7 @@
+{
+  "_owner": "agent/claude-lightning-p12/lightning/load-chaos-db - migration 20261009151825_lightning_phase_12_load_chaos_the_pass_forms_under_surge",
+  "_comment": "Lightning Phase 12 load, stress and chaos (spec Phase 20, database side). The migration creates no function, no table and no column and alters nothing: every change is an asserted substitution into a body PokerIQ-Production already carries, so this fragment promises nothing new. fn_lightning_match_and_form measures pass_time_budget_ms from the end of its first plan, so a pool whose plan alone outlasts the budget (about 3,000 eligible players and up) is still dealt; fn_cash_cluster_commit_lightning and fn_cash_cluster_abort_pending_off take the Cluster's live seats FOR SHARE in seat-id order before entering them into the pool, so a departure racing a conversion can no longer leave a pool session on a departed seat that refuses every later reversion. Proven by scripts/dev/test-lightning-phase12-load-chaos.sh.",
+  "tables": [],
+  "functions": [],
+  "columns": {}
+}

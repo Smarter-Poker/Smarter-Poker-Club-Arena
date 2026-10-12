@@ -8,29 +8,69 @@ served anything.
 ## What it means
 
 ```
-poker_spin_unfilled_waits > 5   for: 20m   severity: warning
+SpinUnfilledBacklog            poker_spin_unfilled_past_window > 5        for: 20m  warning
+SpinHumanWaitingForOpponents   poker_spin_human_oldest_wait_seconds > 60  for: 1m   critical
+(both: unless on () max_over_time(poker_maintenance_break_active[6m]) == 1)
 ```
 
-More than five Spins have sat for twenty minutes open, unstarted and partly
-filled. It is a population count. As the rule's own description says, it does
-not filter on wait age, on the fill policy or on a booked draw, so it proves
-neither that any member is due for expiry nor that the expiry timer failed.
-Seated players in these games have paid their buy-in and are waiting.
+Changed 2026-10-03. The rule used to read `poker_spin_unfilled_waits > 5`, the
+whole population of partly filled Spins. That population is mostly the product
+working: a horse-opened board sits at 2/3 holding its last seat for a human for
+90-350 s (Dan's rule, `SEAT_FIRST_HUMAN_WINDOW_*`), and ~700 Spins an hour keep
+~40 boards there at any instant, so the old rule fired every hour by
+construction (12 to 66 overnight 2026-10-02/03, while every Spin created
+started and none needed a refund).
 
-## What the expression measures
+- **SpinHumanWaitingForOpponents**: a live HUMAN seat on a partly filled Spin
+  has waited over a minute. The seat-first fast lane normally fills a human's
+  board in seconds (measured 2026-10-03: 0/3 board, full 8.5 s after the
+  seat, RUNNING at 17.5 s), with first claim on free horses. This is the one
+  that means a paying player is waiting.
+- **SpinUnfilledBacklog**: more than five partly filled Spins whose human
+  window (`start_time`) closed over 120 s ago. The last horse normally
+  arrives a median 11 s after the window; boards past it mean the fleet is
+  not filling (pool exhausted, four-table cap, seat-RPC lock timeouts).
 
-`fn_spin_metrics` counts every row of `v_spin_unfilled_waits`: Spins in
-REGISTERING or ANNOUNCED with `started_at` NULL and between one live seat and
-`max_players - 1` (default 3). The view also gives `oldest_seat_at`,
-`longest_wait` and `chips_locked` (`buy_in_amount * live_seats`).
+`poker_spin_unfilled_waits` is still emitted and is the population, not an
+alarm. `poker_spin_unfilled_oldest_wait_seconds` is the oldest live seat on
+any partly filled board.
 
-Measured 2026-09-26 06:50 UTC with the query in step 1 below: 33 rows. 20
-were ordinary waits under the 30-minute policy (1,107.00 seated). The other 13
-all had a multiplier set and a `jackpot_draw` booked, no
-`spin_draw_receipts` row, and had never started; the oldest had waited 17 days
-and they held 244.00 in seats. Expiry correctly refuses those (they are drawn),
-so the count stays above five until their launch or settlement is resolved.
-That tail, not the count, is the part to read.
+## What the expressions measure
+
+`fn_spin_fill_waits()` (read by `SpinMetrics` in the same snapshot as
+`fn_spin_metrics`; a failed read keeps the last good snapshot and trips
+SpinMetricsStale, it is never read as zero): Spins in REGISTERING or ANNOUNCED
+with `started_at` NULL and between one live seat and `max_players - 1`:
+
+- `human_unfilled_waits`: those with at least one live non-horse seat;
+- `human_oldest_wait_seconds`: the longest such human seat has waited (0 when none);
+- `unfilled_past_window`: those whose `start_time` is more than 120 s ago;
+- `unfilled_oldest_wait_seconds`: oldest live seat on any of them.
+
+`v_spin_unfilled_waits` keeps `oldest_seat_at`, `longest_wait` and
+`chips_locked` per board for the drill-down below.
+
+## A human is waiting
+
+1. Find the board and the human seat, read-only:
+   ```sql
+   SELECT t.id, t.name, t.start_time, s.seat_number, s.joined_at, now() - s.joined_at AS waited
+   FROM tournaments t
+   JOIN tables tb ON tb.tournament_id = t.id
+   JOIN table_seats s ON s.table_id = tb.id AND s.left_at IS NULL
+   JOIN profiles p ON p.id = s.user_id AND NOT coalesce(p.is_horse, false)
+   WHERE t.variant = 'spin' AND t.status IN ('REGISTERING','ANNOUNCED') AND t.started_at IS NULL
+   ORDER BY s.joined_at;
+   ```
+2. Engine log: `GameServer.seat_first_human_waiting` ("SEAT-FIRST BOARD CANNOT
+   FILL ... (a human is waiting)") names the board and the seats the top-up
+   could not fill; the matching `seat-first-precheck` and "seat-first fill
+   added nobody" lines say why (four-table cap refusals, lock timeouts).
+3. A human's ask draws on the events lanes, then active cash-lane horses, and
+   is not held to the cash-room floor; every other claim leaves the seats the
+   human needs free (`humanSeatsOwed`). If even that pool is empty the fleet
+   itself is exhausted: look at `HorseFleet` "No available horses" and
+   `HorseOverlayGuard` lines.
 
 ## How expiry works
 
@@ -45,9 +85,10 @@ ten-minute clock (`server/src/GameServer.ts`, "UNFILLED-SPIN REFUND"), and the
 World Hub `/api/cron/spin-sweep` route calls it too; the function is idempotent.
 The timeout is the product rule, not a repair.
 
-## First checks
+## Boards past their window
 
 1. Split the backlog by what expiry will do with each row, read-only:
+
    ```sql
    SELECT w.tournament_id, w.club_id, w.live_seats, w.longest_wait, w.chips_locked,
           coalesce(t.spin_multiplier, 0) > 0 AS multiplier_set,
@@ -68,6 +109,7 @@ The timeout is the product rule, not a repair.
      launch evidence (`/health.spinLaunchParks`, the engine log for the id) and
      `docs/runbooks/spin-fleet-stalled.md`.
    - Not yet past the policy: ordinary waiting.
+
 2. The expiry's last result, from the engine log:
    `docker logs --since 1h club-arena-engine 2>&1 | grep -i 'unfilled-spin' | tail`.
 
@@ -92,8 +134,10 @@ this runbook path, updates both in the same commit.
 
 ## Where the owning code lives
 
-- Gauge: `server/src/services/SpinMetrics.ts`, SQL `fn_spin_metrics`, view
-  `v_spin_unfilled_waits`.
+- Gauge: `server/src/services/SpinMetrics.ts`, SQL `fn_spin_metrics` and
+  `fn_spin_fill_waits`, view `v_spin_unfilled_waits`.
+- Fill: `GameServer.fillPartialSeatFirstGame` (seat-first fast lane),
+  `TournamentRecurringService.topUpWithHorses` / `pickFreeHorses`.
 - Expiry: `fn_spin_expire_unfilled`, `spin_fill_policy`; engine caller in
   `server/src/GameServer.ts`.
 - Launch: `server/src/tournament/spinLaunchParking.ts`,

@@ -3,6 +3,7 @@ import ts from 'typescript';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { uuid } from '../../src/utils/uuid';
 import { cashBuyInRefusalText } from '../../src/lib/cashBuyIn';
+import { isDeadSessionRefusal } from '../../src/lib/deadSessionRefusal';
 import {
   createCashBuyInJournal,
   executeCashBuyIn,
@@ -85,12 +86,13 @@ function fixture() {
     reportError: vi.fn(),
     toast: { error: vi.fn(), warning: vi.fn() },
     cashBuyInRefusalText,
+    isDeadSessionRefusal,
+    askToSignInAgain: vi.fn(),
     applyBalanceDelta: vi.fn(),
     totalBuyInRef: ref(0),
     peakStackRef: ref(0),
     seatAcquiredAtRef: ref(0),
     bootNoticeShownRef: ref(false),
-    HydraService: { onRealPlayerJoined: vi.fn() },
     sendAction: vi.fn().mockResolvedValue(undefined),
     masterBus: { emit: vi.fn() },
     tableState: state,
@@ -146,11 +148,8 @@ describe('cash buy-in callback recovery', () => {
     expect(f.d.supabase.rpc).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps the confirmed seat when both engine notifications throw', async () => {
+  it('keeps the confirmed seat when the engine notification throws', async () => {
     const f = fixture();
-    f.d.HydraService.onRealPlayerJoined.mockImplementation(() => {
-      throw new Error('hydra');
-    });
     f.d.requestEngineSnapshot.mockImplementation(() => {
       throw new Error('socket offline');
     });
@@ -425,3 +424,31 @@ it.each([
     ).toHaveLength(1);
   }
 );
+
+/* Diamond Phase 11, line 7: a dead session is a sign-in, not a retry. The
+   door refuses before it runs, on every retry, until the player signs in. */
+it.each([
+  { code: '28000', message: 'SESSION_REVOKED: this session is signed out - sign in again' },
+])('asks a dead session to sign in and keeps the one request for the retry: %j', async (error) => {
+  const f = fixture();
+  f.d.supabase.rpc.mockImplementation((name: string) =>
+    Promise.resolve({
+      data: null,
+      error:
+        name === 'atomic_table_buyin'
+          ? error
+          : { code: '28000', message: 'SESSION_REVOKED: sign in again to check your buy-in' },
+    })
+  );
+  expect(await f.handler(100, false)).toBe(false);
+  expect(f.d.toast.error).toHaveBeenCalledWith(
+    'Your Session Has Ended. Sign In Again To Finish This Buy-In.'
+  );
+  expect(f.d.toast.warning).not.toHaveBeenCalled();
+  expect(f.d.askToSignInAgain).toHaveBeenCalledWith('money:cash_buyin');
+  expect(f.d.cashBuyInJournal.read(f.d.userId, f.d.tableId)).not.toBeNull();
+  expect(f.d.cashBuyInPendingRef.current).not.toBeNull();
+  expect(
+    f.d.supabase.rpc.mock.calls.filter((call: any[]) => call[0] === 'atomic_table_buyin')
+  ).toHaveLength(1);
+});

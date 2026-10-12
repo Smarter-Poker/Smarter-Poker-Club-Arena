@@ -1,0 +1,5907 @@
+{
+  "short_deck": {
+    "seeds": [12101101, 12102203],
+    "pairs": 155520,
+    "meanBbPer100": -14.551,
+    "confidence99BbPer100": [-24.753, -4.349],
+    "profiles": {
+      "p12c-short_deck-6max-100bb": {
+        "pairs": 25920,
+        "meanBbPer100": -15.348
+      },
+      "p12c-short_deck-6max-200bb": {
+        "pairs": 25920,
+        "meanBbPer100": 5.43
+      },
+      "p12c-short_deck-6max-2dealt-100bb": {
+        "pairs": 25920,
+        "meanBbPer100": -30.265
+      },
+      "p12c-short_deck-6max-40bb": {
+        "pairs": 25920,
+        "meanBbPer100": -9.032
+      },
+      "p12c-short_deck-6max-4dealt-100bb": {
+        "pairs": 25920,
+        "meanBbPer100": -25.543
+      },
+      "p12c-short_deck-9max-100bb": {
+        "pairs": 25920,
+        "meanBbPer100": -12.55
+      }
+    },
+    "attribution": [
+      {
+        "key": "preflop|big_blind|defense|C>F",
+        "n": 10964,
+        "contributionBbPer100": -8.734,
+        "halfWidth99BbPer100": 3.966
+      },
+      {
+        "key": "preflop|big_blind|squeeze|C>F",
+        "n": 2483,
+        "contributionBbPer100": -2.918,
+        "halfWidth99BbPer100": 2.091
+      },
+      {
+        "key": "preflop|big_blind|defense|W>C",
+        "n": 1088,
+        "contributionBbPer100": -2.602,
+        "halfWidth99BbPer100": 1.518
+      },
+      {
+        "key": "preflop|button|three_bet|C>F",
+        "n": 1143,
+        "contributionBbPer100": -1.605,
+        "halfWidth99BbPer100": 2.101
+      },
+      {
+        "key": "flop|big_blind|facing_bet|F>C",
+        "n": 134,
+        "contributionBbPer100": -1.555,
+        "halfWidth99BbPer100": 0.586
+      },
+      {
+        "key": "preflop|big_blind|squeeze|W>C",
+        "n": 123,
+        "contributionBbPer100": -1.426,
+        "halfWidth99BbPer100": 1.077
+      },
+      {
+        "key": "turn|big_blind|facing_bet|F>C",
+        "n": 140,
+        "contributionBbPer100": -1.248,
+        "halfWidth99BbPer100": 0.583
+      },
+      {
+        "key": "preflop|big_blind|overcall|C>F",
+        "n": 368,
+        "contributionBbPer100": -0.972,
+        "halfWidth99BbPer100": 1.358
+      },
+      {
+        "key": "preflop|small_blind|defense|W>F",
+        "n": 445,
+        "contributionBbPer100": -0.838,
+        "halfWidth99BbPer100": 1.317
+      },
+      {
+        "key": "preflop|small_blind|squeeze|W>C",
+        "n": 64,
+        "contributionBbPer100": -0.714,
+        "halfWidth99BbPer100": 0.787
+      },
+      {
+        "key": "preflop|early|rfi|W>W",
+        "n": 346,
+        "contributionBbPer100": -0.616,
+        "halfWidth99BbPer100": 1.233
+      },
+      {
+        "key": "flop|cutoff|facing_bet|F>C",
+        "n": 33,
+        "contributionBbPer100": -0.588,
+        "halfWidth99BbPer100": 0.392
+      },
+      {
+        "key": "river|big_blind|facing_bet|F>C",
+        "n": 114,
+        "contributionBbPer100": -0.579,
+        "halfWidth99BbPer100": 0.301
+      },
+      {
+        "key": "flop|button|facing_bet|F>C",
+        "n": 28,
+        "contributionBbPer100": -0.574,
+        "halfWidth99BbPer100": 0.422
+      },
+      {
+        "key": "flop|small_blind|facing_bet|F>C",
+        "n": 45,
+        "contributionBbPer100": -0.524,
+        "halfWidth99BbPer100": 0.538
+      },
+      {
+        "key": "turn|small_blind|facing_bet|F>C",
+        "n": 32,
+        "contributionBbPer100": -0.486,
+        "halfWidth99BbPer100": 0.352
+      },
+      {
+        "key": "flop|middle|facing_bet|F>C",
+        "n": 11,
+        "contributionBbPer100": -0.47,
+        "halfWidth99BbPer100": 0.37
+      },
+      {
+        "key": "preflop|button|squeeze|W>C",
+        "n": 11,
+        "contributionBbPer100": -0.429,
+        "halfWidth99BbPer100": 0.725
+      },
+      {
+        "key": "preflop|big_blind|defense|W>W",
+        "n": 140,
+        "contributionBbPer100": -0.419,
+        "halfWidth99BbPer100": 0.405
+      },
+      {
+        "key": "river|button|facing_bet|F>C",
+        "n": 43,
+        "contributionBbPer100": -0.388,
+        "halfWidth99BbPer100": 0.206
+      },
+      {
+        "key": "flop|middle|facing_bet|W>C",
+        "n": 13,
+        "contributionBbPer100": -0.371,
+        "halfWidth99BbPer100": 0.306
+      },
+      {
+        "key": "preflop|big_blind|squeeze|W>F",
+        "n": 118,
+        "contributionBbPer100": -0.365,
+        "halfWidth99BbPer100": 0.901
+      },
+      {
+        "key": "preflop|big_blind|four_bet|C>F",
+        "n": 93,
+        "contributionBbPer100": -0.351,
+        "halfWidth99BbPer100": 1.083
+      },
+      {
+        "key": "preflop|small_blind|defense|W>C",
+        "n": 526,
+        "contributionBbPer100": -0.345,
+        "halfWidth99BbPer100": 1.599
+      },
+      {
+        "key": "preflop|small_blind|defense|F>C",
+        "n": 330,
+        "contributionBbPer100": -0.323,
+        "halfWidth99BbPer100": 0.707
+      },
+      {
+        "key": "preflop|cutoff|three_bet|F>C",
+        "n": 59,
+        "contributionBbPer100": -0.309,
+        "halfWidth99BbPer100": 0.281
+      },
+      {
+        "key": "preflop|button|four_bet|W>C",
+        "n": 9,
+        "contributionBbPer100": -0.305,
+        "halfWidth99BbPer100": 0.434
+      },
+      {
+        "key": "turn|cutoff|facing_bet|F>C",
+        "n": 21,
+        "contributionBbPer100": -0.298,
+        "halfWidth99BbPer100": 0.676
+      },
+      {
+        "key": "preflop|button|overcall|C>F",
+        "n": 7,
+        "contributionBbPer100": -0.289,
+        "halfWidth99BbPer100": 0.348
+      },
+      {
+        "key": "preflop|button|three_bet|W>C",
+        "n": 238,
+        "contributionBbPer100": -0.278,
+        "halfWidth99BbPer100": 1.304
+      },
+      {
+        "key": "preflop|middle|four_bet|C>F",
+        "n": 67,
+        "contributionBbPer100": -0.263,
+        "halfWidth99BbPer100": 0.953
+      },
+      {
+        "key": "turn|big_blind|checked_to|W>K",
+        "n": 354,
+        "contributionBbPer100": -0.261,
+        "halfWidth99BbPer100": 0.395
+      },
+      {
+        "key": "preflop|early|four_bet|W>C",
+        "n": 10,
+        "contributionBbPer100": -0.249,
+        "halfWidth99BbPer100": 0.393
+      },
+      {
+        "key": "preflop|cutoff|squeeze|W>F",
+        "n": 13,
+        "contributionBbPer100": -0.246,
+        "halfWidth99BbPer100": 0.439
+      },
+      {
+        "key": "turn|big_blind|facing_bet|W>C",
+        "n": 75,
+        "contributionBbPer100": -0.232,
+        "halfWidth99BbPer100": 0.516
+      },
+      {
+        "key": "river|big_blind|checked_to|K>W",
+        "n": 38,
+        "contributionBbPer100": -0.197,
+        "halfWidth99BbPer100": 0.336
+      },
+      {
+        "key": "flop|cutoff|facing_raise|F>C",
+        "n": 2,
+        "contributionBbPer100": -0.19,
+        "halfWidth99BbPer100": 0.117
+      },
+      {
+        "key": "river|small_blind|facing_bet|F>C",
+        "n": 16,
+        "contributionBbPer100": -0.183,
+        "halfWidth99BbPer100": 0.217
+      },
+      {
+        "key": "turn|button|facing_bet|F>C",
+        "n": 61,
+        "contributionBbPer100": -0.177,
+        "halfWidth99BbPer100": 0.33
+      },
+      {
+        "key": "river|button|call_off|F>J",
+        "n": 5,
+        "contributionBbPer100": -0.168,
+        "halfWidth99BbPer100": 0.067
+      },
+      {
+        "key": "preflop|middle|squeeze|C>F",
+        "n": 34,
+        "contributionBbPer100": -0.158,
+        "halfWidth99BbPer100": 0.587
+      },
+      {
+        "key": "preflop|middle|rfi|F>W",
+        "n": 131,
+        "contributionBbPer100": -0.154,
+        "halfWidth99BbPer100": 0.297
+      },
+      {
+        "key": "preflop|small_blind|defense|W>W",
+        "n": 87,
+        "contributionBbPer100": -0.153,
+        "halfWidth99BbPer100": 0.281
+      },
+      {
+        "key": "preflop|cutoff|four_bet|W>C",
+        "n": 8,
+        "contributionBbPer100": -0.143,
+        "halfWidth99BbPer100": 0.366
+      },
+      {
+        "key": "river|small_blind|call_off|F>J",
+        "n": 4,
+        "contributionBbPer100": -0.143,
+        "halfWidth99BbPer100": 0.052
+      },
+      {
+        "key": "flop|small_blind|checked_to|W>W",
+        "n": 4,
+        "contributionBbPer100": -0.141,
+        "halfWidth99BbPer100": 0.234
+      },
+      {
+        "key": "flop|button|facing_bet|J>C",
+        "n": 4,
+        "contributionBbPer100": -0.137,
+        "halfWidth99BbPer100": 0.305
+      },
+      {
+        "key": "flop|small_blind|checked_to|W>K",
+        "n": 106,
+        "contributionBbPer100": -0.135,
+        "halfWidth99BbPer100": 0.456
+      },
+      {
+        "key": "preflop|cutoff|three_bet|W>C",
+        "n": 63,
+        "contributionBbPer100": -0.135,
+        "halfWidth99BbPer100": 0.532
+      },
+      {
+        "key": "preflop|button|four_bet|F>C",
+        "n": 7,
+        "contributionBbPer100": -0.133,
+        "halfWidth99BbPer100": 0.192
+      },
+      {
+        "key": "river|big_blind|facing_bet|W>C",
+        "n": 21,
+        "contributionBbPer100": -0.122,
+        "halfWidth99BbPer100": 0.208
+      },
+      {
+        "key": "flop|small_blind|facing_bet|W>C",
+        "n": 10,
+        "contributionBbPer100": -0.121,
+        "halfWidth99BbPer100": 0.166
+      },
+      {
+        "key": "preflop|button|squeeze|W>W",
+        "n": 5,
+        "contributionBbPer100": -0.121,
+        "halfWidth99BbPer100": 0.388
+      },
+      {
+        "key": "preflop|button|three_bet|F>C",
+        "n": 109,
+        "contributionBbPer100": -0.119,
+        "halfWidth99BbPer100": 0.335
+      },
+      {
+        "key": "turn|early|facing_bet|F>C",
+        "n": 5,
+        "contributionBbPer100": -0.118,
+        "halfWidth99BbPer100": 0.014
+      },
+      {
+        "key": "turn|big_blind|facing_bet|C>F",
+        "n": 17,
+        "contributionBbPer100": -0.115,
+        "halfWidth99BbPer100": 0.216
+      },
+      {
+        "key": "preflop|small_blind|limp_option|W>C",
+        "n": 588,
+        "contributionBbPer100": -0.115,
+        "halfWidth99BbPer100": 0.412
+      },
+      {
+        "key": "turn|small_blind|facing_bet|W>C",
+        "n": 11,
+        "contributionBbPer100": -0.112,
+        "halfWidth99BbPer100": 0.175
+      },
+      {
+        "key": "preflop|button|squeeze|F>C",
+        "n": 6,
+        "contributionBbPer100": -0.111,
+        "halfWidth99BbPer100": 0.164
+      },
+      {
+        "key": "preflop|small_blind|overcall|C>F",
+        "n": 17,
+        "contributionBbPer100": -0.108,
+        "halfWidth99BbPer100": 0.236
+      },
+      {
+        "key": "flop|early|call_off|F>J",
+        "n": 1,
+        "contributionBbPer100": -0.108,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|cutoff|four_bet|W>F",
+        "n": 10,
+        "contributionBbPer100": -0.105,
+        "halfWidth99BbPer100": 0.078
+      },
+      {
+        "key": "turn|cutoff|checked_to|W>K",
+        "n": 30,
+        "contributionBbPer100": -0.104,
+        "halfWidth99BbPer100": 0.168
+      },
+      {
+        "key": "turn|button|facing_bet|W>C",
+        "n": 37,
+        "contributionBbPer100": -0.102,
+        "halfWidth99BbPer100": 0.25
+      },
+      {
+        "key": "preflop|small_blind|limp_option|W>F",
+        "n": 468,
+        "contributionBbPer100": -0.097,
+        "halfWidth99BbPer100": 0.465
+      },
+      {
+        "key": "preflop|button|four_bet|C>F",
+        "n": 99,
+        "contributionBbPer100": -0.096,
+        "halfWidth99BbPer100": 0.91
+      },
+      {
+        "key": "river|cutoff|facing_bet|F>C",
+        "n": 12,
+        "contributionBbPer100": -0.094,
+        "halfWidth99BbPer100": 0.221
+      },
+      {
+        "key": "river|middle|facing_bet|F>C",
+        "n": 13,
+        "contributionBbPer100": -0.092,
+        "halfWidth99BbPer100": 0.233
+      },
+      {
+        "key": "river|button|checked_to|W>K",
+        "n": 94,
+        "contributionBbPer100": -0.09,
+        "halfWidth99BbPer100": 0.057
+      },
+      {
+        "key": "preflop|big_blind|overcall|W>C",
+        "n": 6,
+        "contributionBbPer100": -0.085,
+        "halfWidth99BbPer100": 0.152
+      },
+      {
+        "key": "turn|middle|checked_to|W>K",
+        "n": 33,
+        "contributionBbPer100": -0.082,
+        "halfWidth99BbPer100": 0.161
+      },
+      {
+        "key": "river|cutoff|facing_bet|W>C",
+        "n": 2,
+        "contributionBbPer100": -0.077,
+        "halfWidth99BbPer100": 0.05
+      },
+      {
+        "key": "preflop|small_blind|five_bet_plus|J>F",
+        "n": 1,
+        "contributionBbPer100": -0.069,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|button|checked_to|W>K",
+        "n": 150,
+        "contributionBbPer100": -0.067,
+        "halfWidth99BbPer100": 0.213
+      },
+      {
+        "key": "river|small_blind|checked_to|K>W",
+        "n": 5,
+        "contributionBbPer100": -0.066,
+        "halfWidth99BbPer100": 0.107
+      },
+      {
+        "key": "turn|middle|checked_to|W>W",
+        "n": 2,
+        "contributionBbPer100": -0.064,
+        "halfWidth99BbPer100": 0.117
+      },
+      {
+        "key": "preflop|small_blind|squeeze|W>W",
+        "n": 5,
+        "contributionBbPer100": -0.058,
+        "halfWidth99BbPer100": 0.133
+      },
+      {
+        "key": "preflop|small_blind|defense|C>W",
+        "n": 10,
+        "contributionBbPer100": -0.057,
+        "halfWidth99BbPer100": 0.101
+      },
+      {
+        "key": "turn|big_blind|call_off|F>J",
+        "n": 1,
+        "contributionBbPer100": -0.057,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|button|overcall|W>C",
+        "n": 3,
+        "contributionBbPer100": -0.057,
+        "halfWidth99BbPer100": 0.123
+      },
+      {
+        "key": "river|big_blind|call_off|F>J",
+        "n": 4,
+        "contributionBbPer100": -0.054,
+        "halfWidth99BbPer100": 0.006
+      },
+      {
+        "key": "preflop|small_blind|overcall|W>F",
+        "n": 2,
+        "contributionBbPer100": -0.053,
+        "halfWidth99BbPer100": 0.169
+      },
+      {
+        "key": "preflop|cutoff|squeeze|C>F",
+        "n": 52,
+        "contributionBbPer100": -0.053,
+        "halfWidth99BbPer100": 0.772
+      },
+      {
+        "key": "preflop|cutoff|call_off|J>F",
+        "n": 1,
+        "contributionBbPer100": -0.052,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|small_blind|facing_bet|W>C",
+        "n": 1,
+        "contributionBbPer100": -0.05,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|button|facing_bet|W>C",
+        "n": 4,
+        "contributionBbPer100": -0.045,
+        "halfWidth99BbPer100": 0.175
+      },
+      {
+        "key": "turn|big_blind|checked_to|K>W",
+        "n": 20,
+        "contributionBbPer100": -0.045,
+        "halfWidth99BbPer100": 0.291
+      },
+      {
+        "key": "preflop|middle|squeeze|W>C",
+        "n": 5,
+        "contributionBbPer100": -0.044,
+        "halfWidth99BbPer100": 0.27
+      },
+      {
+        "key": "river|early|facing_bet|F>C",
+        "n": 1,
+        "contributionBbPer100": -0.043,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|cutoff|call_off|F>J",
+        "n": 1,
+        "contributionBbPer100": -0.042,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|cutoff|four_bet|F>C",
+        "n": 3,
+        "contributionBbPer100": -0.039,
+        "halfWidth99BbPer100": 0.146
+      },
+      {
+        "key": "river|cutoff|call_off|F>J",
+        "n": 3,
+        "contributionBbPer100": -0.036,
+        "halfWidth99BbPer100": 0.159
+      },
+      {
+        "key": "turn|middle|facing_bet|W>C",
+        "n": 11,
+        "contributionBbPer100": -0.035,
+        "halfWidth99BbPer100": 0.269
+      },
+      {
+        "key": "preflop|middle|three_bet|C>W",
+        "n": 8,
+        "contributionBbPer100": -0.034,
+        "halfWidth99BbPer100": 0.296
+      },
+      {
+        "key": "turn|cutoff|facing_bet|J>C",
+        "n": 7,
+        "contributionBbPer100": -0.033,
+        "halfWidth99BbPer100": 0.076
+      },
+      {
+        "key": "river|early|facing_bet|J>C",
+        "n": 1,
+        "contributionBbPer100": -0.032,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|middle|facing_bet|F>C",
+        "n": 18,
+        "contributionBbPer100": -0.027,
+        "halfWidth99BbPer100": 0.515
+      },
+      {
+        "key": "flop|big_blind|facing_bet|W>W",
+        "n": 4,
+        "contributionBbPer100": -0.027,
+        "halfWidth99BbPer100": 0.079
+      },
+      {
+        "key": "preflop|big_blind|squeeze|W>W",
+        "n": 14,
+        "contributionBbPer100": -0.027,
+        "halfWidth99BbPer100": 0.222
+      },
+      {
+        "key": "preflop|button|four_bet|J>F",
+        "n": 1,
+        "contributionBbPer100": -0.026,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|small_blind|facing_bet|J>C",
+        "n": 2,
+        "contributionBbPer100": -0.024,
+        "halfWidth99BbPer100": 0.054
+      },
+      {
+        "key": "preflop|big_blind|four_bet|W>F",
+        "n": 5,
+        "contributionBbPer100": -0.023,
+        "halfWidth99BbPer100": 0.236
+      },
+      {
+        "key": "preflop|small_blind|overcall|F>C",
+        "n": 1,
+        "contributionBbPer100": -0.023,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|middle|facing_bet|W>W",
+        "n": 1,
+        "contributionBbPer100": -0.023,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|button|four_bet|W>F",
+        "n": 3,
+        "contributionBbPer100": -0.023,
+        "halfWidth99BbPer100": 0.005
+      },
+      {
+        "key": "preflop|middle|three_bet|F>C",
+        "n": 2,
+        "contributionBbPer100": -0.023,
+        "halfWidth99BbPer100": 0.025
+      },
+      {
+        "key": "preflop|cutoff|squeeze|C>W",
+        "n": 2,
+        "contributionBbPer100": -0.022,
+        "halfWidth99BbPer100": 0.007
+      },
+      {
+        "key": "river|big_blind|facing_bet|J>C",
+        "n": 8,
+        "contributionBbPer100": -0.022,
+        "halfWidth99BbPer100": 0.132
+      },
+      {
+        "key": "flop|button|facing_bet|W>C",
+        "n": 10,
+        "contributionBbPer100": -0.021,
+        "halfWidth99BbPer100": 0.171
+      },
+      {
+        "key": "turn|button|facing_bet|W>W",
+        "n": 3,
+        "contributionBbPer100": -0.02,
+        "halfWidth99BbPer100": 0.02
+      },
+      {
+        "key": "preflop|middle|squeeze|W>F",
+        "n": 5,
+        "contributionBbPer100": -0.017,
+        "halfWidth99BbPer100": 0.114
+      },
+      {
+        "key": "river|middle|call_off|F>J",
+        "n": 6,
+        "contributionBbPer100": -0.015,
+        "halfWidth99BbPer100": 0.302
+      },
+      {
+        "key": "preflop|button|rfi|F>W",
+        "n": 350,
+        "contributionBbPer100": -0.015,
+        "halfWidth99BbPer100": 0.337
+      },
+      {
+        "key": "river|middle|checked_to|W>K",
+        "n": 10,
+        "contributionBbPer100": -0.012,
+        "halfWidth99BbPer100": 0.037
+      },
+      {
+        "key": "river|cutoff|checked_to|W>W",
+        "n": 1,
+        "contributionBbPer100": -0.011,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "flop|cutoff|facing_bet|J>C",
+        "n": 3,
+        "contributionBbPer100": -0.011,
+        "halfWidth99BbPer100": 0.022
+      },
+      {
+        "key": "river|small_blind|facing_bet|J>W",
+        "n": 1,
+        "contributionBbPer100": -0.011,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|middle|overcall|W>F",
+        "n": 1,
+        "contributionBbPer100": -0.01,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|big_blind|five_bet_plus|J>C",
+        "n": 2,
+        "contributionBbPer100": -0.01,
+        "halfWidth99BbPer100": 0.018
+      },
+      {
+        "key": "turn|button|facing_bet|J>C",
+        "n": 5,
+        "contributionBbPer100": -0.01,
+        "halfWidth99BbPer100": 0.014
+      },
+      {
+        "key": "turn|middle|facing_bet|C>F",
+        "n": 2,
+        "contributionBbPer100": -0.009,
+        "halfWidth99BbPer100": 0.035
+      },
+      {
+        "key": "turn|big_blind|facing_bet|J>C",
+        "n": 5,
+        "contributionBbPer100": -0.009,
+        "halfWidth99BbPer100": 0.049
+      },
+      {
+        "key": "river|big_blind|checked_to|W>K",
+        "n": 8,
+        "contributionBbPer100": -0.008,
+        "halfWidth99BbPer100": 0.013
+      },
+      {
+        "key": "turn|button|checked_to|K>W",
+        "n": 8,
+        "contributionBbPer100": -0.007,
+        "halfWidth99BbPer100": 0.015
+      },
+      {
+        "key": "flop|cutoff|facing_bet|W>C",
+        "n": 9,
+        "contributionBbPer100": -0.007,
+        "halfWidth99BbPer100": 0.086
+      },
+      {
+        "key": "flop|middle|facing_bet|J>C",
+        "n": 2,
+        "contributionBbPer100": -0.007,
+        "halfWidth99BbPer100": 0.047
+      },
+      {
+        "key": "flop|big_blind|facing_bet|C>W",
+        "n": 2,
+        "contributionBbPer100": -0.007,
+        "halfWidth99BbPer100": 0.015
+      },
+      {
+        "key": "turn|cutoff|checked_to|W>W",
+        "n": 4,
+        "contributionBbPer100": -0.006,
+        "halfWidth99BbPer100": 0.01
+      },
+      {
+        "key": "flop|big_blind|checked_to|W>W",
+        "n": 3,
+        "contributionBbPer100": -0.006,
+        "halfWidth99BbPer100": 0.012
+      },
+      {
+        "key": "turn|button|facing_bet|J>W",
+        "n": 1,
+        "contributionBbPer100": -0.005,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|big_blind|facing_bet|W>W",
+        "n": 1,
+        "contributionBbPer100": -0.005,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|button|facing_bet|W>W",
+        "n": 2,
+        "contributionBbPer100": -0.005,
+        "halfWidth99BbPer100": 0.008
+      },
+      {
+        "key": "preflop|small_blind|four_bet|F>C",
+        "n": 1,
+        "contributionBbPer100": -0.004,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "flop|big_blind|facing_bet|J>C",
+        "n": 3,
+        "contributionBbPer100": -0.004,
+        "halfWidth99BbPer100": 0.008
+      },
+      {
+        "key": "flop|early|facing_bet|J>C",
+        "n": 4,
+        "contributionBbPer100": -0.004,
+        "halfWidth99BbPer100": 0.009
+      },
+      {
+        "key": "river|cutoff|checked_to|W>K",
+        "n": 17,
+        "contributionBbPer100": -0.003,
+        "halfWidth99BbPer100": 0.015
+      },
+      {
+        "key": "preflop|early|five_bet_plus|J>F",
+        "n": 2,
+        "contributionBbPer100": -0.003,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|early|call_off|J>F",
+        "n": 1,
+        "contributionBbPer100": -0.001,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|small_blind|facing_bet|C>W",
+        "n": 1,
+        "contributionBbPer100": -0.001,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "flop|cutoff|checked_to|K>W",
+        "n": 2,
+        "contributionBbPer100": -0.001,
+        "halfWidth99BbPer100": 0.001
+      },
+      {
+        "key": "river|middle|checked_to|W>W",
+        "n": 1,
+        "contributionBbPer100": -0.001,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|big_blind|checked_to|J>K",
+        "n": 1,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "flop|early|facing_bet|W>C",
+        "n": 3,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|early|facing_bet|J>C",
+        "n": 1,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|early|checked_to|W>K",
+        "n": 3,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|middle|facing_bet|J>C",
+        "n": 4,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|early|checked_to|W>W",
+        "n": 1,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "flop|early|checked_to|W>W",
+        "n": 1,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|button|facing_bet|J>C",
+        "n": 1,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|cutoff|four_bet|J>C",
+        "n": 4,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|big_blind|four_bet|J>C",
+        "n": 2,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|middle|four_bet|J>C",
+        "n": 5,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|small_blind|facing_bet|J>C",
+        "n": 2,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|small_blind|facing_raise|J>C",
+        "n": 1,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|button|four_bet|J>C",
+        "n": 1,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|small_blind|four_bet|J>C",
+        "n": 1,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|small_blind|checked_to|W>K",
+        "n": 1,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|button|facing_bet|C>J",
+        "n": 1,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|small_blind|facing_bet|C>W",
+        "n": 1,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|small_blind|five_bet_plus|J>C",
+        "n": 1,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|middle|facing_bet|W>W",
+        "n": 1,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|big_blind|facing_bet|C>W",
+        "n": 1,
+        "contributionBbPer100": 0.001,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|big_blind|overcall|W>W",
+        "n": 1,
+        "contributionBbPer100": 0.001,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|big_blind|checked_to|W>W",
+        "n": 6,
+        "contributionBbPer100": 0.001,
+        "halfWidth99BbPer100": 0.009
+      },
+      {
+        "key": "river|early|checked_to|W>W",
+        "n": 3,
+        "contributionBbPer100": 0.002,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|cutoff|facing_bet|W>C",
+        "n": 8,
+        "contributionBbPer100": 0.002,
+        "halfWidth99BbPer100": 0.158
+      },
+      {
+        "key": "flop|button|facing_bet|C>F",
+        "n": 1,
+        "contributionBbPer100": 0.002,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|big_blind|defense|F>C",
+        "n": 1,
+        "contributionBbPer100": 0.002,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "flop|cutoff|checked_to|W>W",
+        "n": 3,
+        "contributionBbPer100": 0.002,
+        "halfWidth99BbPer100": 0.004
+      },
+      {
+        "key": "flop|cutoff|facing_bet|C>F",
+        "n": 1,
+        "contributionBbPer100": 0.003,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "flop|small_blind|facing_bet|C>F",
+        "n": 1,
+        "contributionBbPer100": 0.003,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|cutoff|facing_bet|J>C",
+        "n": 2,
+        "contributionBbPer100": 0.003,
+        "halfWidth99BbPer100": 0.006
+      },
+      {
+        "key": "preflop|cutoff|four_bet|C>F",
+        "n": 84,
+        "contributionBbPer100": 0.004,
+        "halfWidth99BbPer100": 1.041
+      },
+      {
+        "key": "river|button|facing_bet|C>F",
+        "n": 1,
+        "contributionBbPer100": 0.004,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|big_blind|facing_bet|C>F",
+        "n": 1,
+        "contributionBbPer100": 0.004,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|cutoff|overcall|C>F",
+        "n": 3,
+        "contributionBbPer100": 0.005,
+        "halfWidth99BbPer100": 0.228
+      },
+      {
+        "key": "preflop|big_blind|four_bet|W>C",
+        "n": 11,
+        "contributionBbPer100": 0.005,
+        "halfWidth99BbPer100": 0.239
+      },
+      {
+        "key": "flop|small_blind|facing_bet|C>W",
+        "n": 1,
+        "contributionBbPer100": 0.005,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|small_blind|facing_bet|W>W",
+        "n": 3,
+        "contributionBbPer100": 0.006,
+        "halfWidth99BbPer100": 0.006
+      },
+      {
+        "key": "turn|small_blind|checked_to|K>W",
+        "n": 4,
+        "contributionBbPer100": 0.006,
+        "halfWidth99BbPer100": 0.014
+      },
+      {
+        "key": "turn|button|facing_bet|W>F",
+        "n": 1,
+        "contributionBbPer100": 0.007,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|small_blind|checked_to|W>W",
+        "n": 10,
+        "contributionBbPer100": 0.008,
+        "halfWidth99BbPer100": 0.079
+      },
+      {
+        "key": "flop|small_blind|facing_raise|C>F",
+        "n": 1,
+        "contributionBbPer100": 0.008,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|button|overcall|W>F",
+        "n": 1,
+        "contributionBbPer100": 0.008,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|button|facing_bet|C>J",
+        "n": 1,
+        "contributionBbPer100": 0.008,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|cutoff|facing_bet|W>F",
+        "n": 1,
+        "contributionBbPer100": 0.01,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|small_blind|facing_bet|C>F",
+        "n": 1,
+        "contributionBbPer100": 0.01,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|cutoff|facing_bet|C>F",
+        "n": 2,
+        "contributionBbPer100": 0.01,
+        "halfWidth99BbPer100": 0.007
+      },
+      {
+        "key": "river|middle|facing_bet|W>C",
+        "n": 1,
+        "contributionBbPer100": 0.011,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|small_blind|facing_bet|W>F",
+        "n": 1,
+        "contributionBbPer100": 0.011,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|cutoff|overcall|W>F",
+        "n": 1,
+        "contributionBbPer100": 0.011,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "flop|middle|checked_to|W>W",
+        "n": 5,
+        "contributionBbPer100": 0.012,
+        "halfWidth99BbPer100": 0.024
+      },
+      {
+        "key": "river|button|facing_bet|J>W",
+        "n": 1,
+        "contributionBbPer100": 0.012,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|middle|three_bet|W>W",
+        "n": 6,
+        "contributionBbPer100": 0.012,
+        "halfWidth99BbPer100": 0.123
+      },
+      {
+        "key": "flop|big_blind|facing_bet|C>F",
+        "n": 15,
+        "contributionBbPer100": 0.014,
+        "halfWidth99BbPer100": 0.038
+      },
+      {
+        "key": "preflop|small_blind|squeeze|C>F",
+        "n": 130,
+        "contributionBbPer100": 0.014,
+        "halfWidth99BbPer100": 0.812
+      },
+      {
+        "key": "flop|middle|facing_bet|C>F",
+        "n": 2,
+        "contributionBbPer100": 0.014,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|button|call_off|F>J",
+        "n": 2,
+        "contributionBbPer100": 0.014,
+        "halfWidth99BbPer100": 0.175
+      },
+      {
+        "key": "preflop|middle|four_bet|F>C",
+        "n": 2,
+        "contributionBbPer100": 0.015,
+        "halfWidth99BbPer100": 0.009
+      },
+      {
+        "key": "river|button|checked_to|W>W",
+        "n": 16,
+        "contributionBbPer100": 0.015,
+        "halfWidth99BbPer100": 0.01
+      },
+      {
+        "key": "preflop|small_blind|four_bet|W>F",
+        "n": 4,
+        "contributionBbPer100": 0.015,
+        "halfWidth99BbPer100": 0.186
+      },
+      {
+        "key": "preflop|early|four_bet|J>C",
+        "n": 4,
+        "contributionBbPer100": 0.015,
+        "halfWidth99BbPer100": 0.034
+      },
+      {
+        "key": "preflop|cutoff|squeeze|W>W",
+        "n": 1,
+        "contributionBbPer100": 0.018,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "flop|button|checked_to|K>W",
+        "n": 34,
+        "contributionBbPer100": 0.02,
+        "halfWidth99BbPer100": 0.062
+      },
+      {
+        "key": "turn|big_blind|facing_bet|W>W",
+        "n": 8,
+        "contributionBbPer100": 0.022,
+        "halfWidth99BbPer100": 0.203
+      },
+      {
+        "key": "preflop|small_blind|limp_option|F>C",
+        "n": 363,
+        "contributionBbPer100": 0.023,
+        "halfWidth99BbPer100": 0.146
+      },
+      {
+        "key": "turn|early|facing_bet|C>F",
+        "n": 5,
+        "contributionBbPer100": 0.024,
+        "halfWidth99BbPer100": 0.015
+      },
+      {
+        "key": "flop|early|checked_to|K>W",
+        "n": 3,
+        "contributionBbPer100": 0.025,
+        "halfWidth99BbPer100": 0.03
+      },
+      {
+        "key": "river|big_blind|facing_bet|W>F",
+        "n": 5,
+        "contributionBbPer100": 0.026,
+        "halfWidth99BbPer100": 0.13
+      },
+      {
+        "key": "flop|big_blind|checked_to|K>W",
+        "n": 13,
+        "contributionBbPer100": 0.03,
+        "halfWidth99BbPer100": 0.299
+      },
+      {
+        "key": "preflop|big_blind|four_bet|F>C",
+        "n": 4,
+        "contributionBbPer100": 0.03,
+        "halfWidth99BbPer100": 0.179
+      },
+      {
+        "key": "river|big_blind|facing_bet|C>W",
+        "n": 5,
+        "contributionBbPer100": 0.034,
+        "halfWidth99BbPer100": 0.052
+      },
+      {
+        "key": "preflop|small_blind|limp_option|F>W",
+        "n": 74,
+        "contributionBbPer100": 0.042,
+        "halfWidth99BbPer100": 0.103
+      },
+      {
+        "key": "preflop|early|four_bet|W>F",
+        "n": 4,
+        "contributionBbPer100": 0.044,
+        "halfWidth99BbPer100": 0.155
+      },
+      {
+        "key": "preflop|small_blind|call_off|J>F",
+        "n": 2,
+        "contributionBbPer100": 0.044,
+        "halfWidth99BbPer100": 0.007
+      },
+      {
+        "key": "turn|button|checked_to|W>W",
+        "n": 24,
+        "contributionBbPer100": 0.046,
+        "halfWidth99BbPer100": 0.158
+      },
+      {
+        "key": "preflop|big_blind|call_off|J>F",
+        "n": 2,
+        "contributionBbPer100": 0.046,
+        "halfWidth99BbPer100": 0.007
+      },
+      {
+        "key": "flop|early|facing_bet|F>C",
+        "n": 2,
+        "contributionBbPer100": 0.046,
+        "halfWidth99BbPer100": 0.157
+      },
+      {
+        "key": "preflop|cutoff|four_bet|J>F",
+        "n": 2,
+        "contributionBbPer100": 0.048,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "flop|middle|facing_raise|W>C",
+        "n": 1,
+        "contributionBbPer100": 0.054,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|middle|facing_bet|J>C",
+        "n": 2,
+        "contributionBbPer100": 0.059,
+        "halfWidth99BbPer100": 0.029
+      },
+      {
+        "key": "preflop|big_blind|five_bet_plus|C>F",
+        "n": 2,
+        "contributionBbPer100": 0.061,
+        "halfWidth99BbPer100": 0.033
+      },
+      {
+        "key": "preflop|button|three_bet|W>W",
+        "n": 52,
+        "contributionBbPer100": 0.067,
+        "halfWidth99BbPer100": 0.387
+      },
+      {
+        "key": "preflop|small_blind|four_bet|W>C",
+        "n": 6,
+        "contributionBbPer100": 0.067,
+        "halfWidth99BbPer100": 0.157
+      },
+      {
+        "key": "preflop|middle|overcall|C>F",
+        "n": 3,
+        "contributionBbPer100": 0.068,
+        "halfWidth99BbPer100": 0.132
+      },
+      {
+        "key": "river|button|facing_bet|C>W",
+        "n": 5,
+        "contributionBbPer100": 0.068,
+        "halfWidth99BbPer100": 0.077
+      },
+      {
+        "key": "turn|small_blind|facing_bet|C>F",
+        "n": 3,
+        "contributionBbPer100": 0.069,
+        "halfWidth99BbPer100": 0.126
+      },
+      {
+        "key": "flop|big_blind|checked_to|W>K",
+        "n": 42,
+        "contributionBbPer100": 0.07,
+        "halfWidth99BbPer100": 0.276
+      },
+      {
+        "key": "preflop|middle|four_bet|W>F",
+        "n": 5,
+        "contributionBbPer100": 0.07,
+        "halfWidth99BbPer100": 0.178
+      },
+      {
+        "key": "river|button|facing_bet|W>F",
+        "n": 4,
+        "contributionBbPer100": 0.071,
+        "halfWidth99BbPer100": 0.006
+      },
+      {
+        "key": "turn|button|facing_bet|C>F",
+        "n": 28,
+        "contributionBbPer100": 0.08,
+        "halfWidth99BbPer100": 0.117
+      },
+      {
+        "key": "preflop|button|overcall|C>W",
+        "n": 1,
+        "contributionBbPer100": 0.085,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|early|checked_to|W>K",
+        "n": 16,
+        "contributionBbPer100": 0.087,
+        "halfWidth99BbPer100": 0.308
+      },
+      {
+        "key": "preflop|cutoff|three_bet|C>W",
+        "n": 4,
+        "contributionBbPer100": 0.088,
+        "halfWidth99BbPer100": 0.178
+      },
+      {
+        "key": "turn|big_blind|checked_to|W>W",
+        "n": 27,
+        "contributionBbPer100": 0.09,
+        "halfWidth99BbPer100": 0.161
+      },
+      {
+        "key": "flop|middle|facing_raise|F>C",
+        "n": 1,
+        "contributionBbPer100": 0.092,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|button|three_bet|C>W",
+        "n": 7,
+        "contributionBbPer100": 0.096,
+        "halfWidth99BbPer100": 0.257
+      },
+      {
+        "key": "turn|middle|call_off|F>J",
+        "n": 2,
+        "contributionBbPer100": 0.097,
+        "halfWidth99BbPer100": 0.039
+      },
+      {
+        "key": "flop|button|checked_to|W>W",
+        "n": 86,
+        "contributionBbPer100": 0.116,
+        "halfWidth99BbPer100": 0.332
+      },
+      {
+        "key": "preflop|early|four_bet|C>F",
+        "n": 14,
+        "contributionBbPer100": 0.127,
+        "halfWidth99BbPer100": 0.335
+      },
+      {
+        "key": "preflop|middle|three_bet|W>C",
+        "n": 63,
+        "contributionBbPer100": 0.129,
+        "halfWidth99BbPer100": 0.663
+      },
+      {
+        "key": "preflop|cutoff|three_bet|W>W",
+        "n": 14,
+        "contributionBbPer100": 0.131,
+        "halfWidth99BbPer100": 0.241
+      },
+      {
+        "key": "preflop|middle|three_bet|W>F",
+        "n": 86,
+        "contributionBbPer100": 0.133,
+        "halfWidth99BbPer100": 0.698
+      },
+      {
+        "key": "flop|middle|checked_to|W>K",
+        "n": 253,
+        "contributionBbPer100": 0.136,
+        "halfWidth99BbPer100": 0.785
+      },
+      {
+        "key": "preflop|big_blind|defense|W>F",
+        "n": 450,
+        "contributionBbPer100": 0.14,
+        "halfWidth99BbPer100": 1.093
+      },
+      {
+        "key": "preflop|big_blind|overcall|W>F",
+        "n": 2,
+        "contributionBbPer100": 0.145,
+        "halfWidth99BbPer100": 0.201
+      },
+      {
+        "key": "preflop|middle|four_bet|W>C",
+        "n": 16,
+        "contributionBbPer100": 0.15,
+        "halfWidth99BbPer100": 0.431
+      },
+      {
+        "key": "preflop|small_blind|squeeze|F>C",
+        "n": 28,
+        "contributionBbPer100": 0.152,
+        "halfWidth99BbPer100": 0.249
+      },
+      {
+        "key": "preflop|button|squeeze|C>F",
+        "n": 63,
+        "contributionBbPer100": 0.154,
+        "halfWidth99BbPer100": 0.705
+      },
+      {
+        "key": "preflop|small_blind|limp_option|W>W",
+        "n": 291,
+        "contributionBbPer100": 0.168,
+        "halfWidth99BbPer100": 0.52
+      },
+      {
+        "key": "flop|big_blind|facing_bet|W>C",
+        "n": 112,
+        "contributionBbPer100": 0.182,
+        "halfWidth99BbPer100": 0.578
+      },
+      {
+        "key": "preflop|big_blind|defense|C>W",
+        "n": 15,
+        "contributionBbPer100": 0.183,
+        "halfWidth99BbPer100": 0.289
+      },
+      {
+        "key": "preflop|button|squeeze|W>F",
+        "n": 6,
+        "contributionBbPer100": 0.187,
+        "halfWidth99BbPer100": 0.131
+      },
+      {
+        "key": "flop|early|checked_to|W>K",
+        "n": 140,
+        "contributionBbPer100": 0.189,
+        "halfWidth99BbPer100": 0.679
+      },
+      {
+        "key": "preflop|cutoff|squeeze|W>C",
+        "n": 7,
+        "contributionBbPer100": 0.202,
+        "halfWidth99BbPer100": 0.653
+      },
+      {
+        "key": "preflop|small_blind|squeeze|W>F",
+        "n": 62,
+        "contributionBbPer100": 0.237,
+        "halfWidth99BbPer100": 0.93
+      },
+      {
+        "key": "preflop|cutoff|rfi|F>W",
+        "n": 389,
+        "contributionBbPer100": 0.25,
+        "halfWidth99BbPer100": 0.542
+      },
+      {
+        "key": "preflop|middle|rfi|W>W",
+        "n": 557,
+        "contributionBbPer100": 0.26,
+        "halfWidth99BbPer100": 1.35
+      },
+      {
+        "key": "turn|small_blind|checked_to|W>K",
+        "n": 120,
+        "contributionBbPer100": 0.33,
+        "halfWidth99BbPer100": 0.345
+      },
+      {
+        "key": "preflop|cutoff|three_bet|W>F",
+        "n": 69,
+        "contributionBbPer100": 0.406,
+        "halfWidth99BbPer100": 0.619
+      },
+      {
+        "key": "preflop|small_blind|four_bet|C>F",
+        "n": 69,
+        "contributionBbPer100": 0.616,
+        "halfWidth99BbPer100": 0.943
+      },
+      {
+        "key": "flop|cutoff|checked_to|W>K",
+        "n": 400,
+        "contributionBbPer100": 0.746,
+        "halfWidth99BbPer100": 1.008
+      },
+      {
+        "key": "flop|button|checked_to|W>K",
+        "n": 1302,
+        "contributionBbPer100": 0.761,
+        "halfWidth99BbPer100": 1.288
+      },
+      {
+        "key": "preflop|middle|three_bet|C>F",
+        "n": 503,
+        "contributionBbPer100": 0.763,
+        "halfWidth99BbPer100": 1.537
+      },
+      {
+        "key": "preflop|cutoff|rfi|W>W",
+        "n": 1661,
+        "contributionBbPer100": 0.801,
+        "halfWidth99BbPer100": 1.625
+      },
+      {
+        "key": "preflop|small_blind|defense|C>F",
+        "n": 1017,
+        "contributionBbPer100": 0.807,
+        "halfWidth99BbPer100": 1.731
+      },
+      {
+        "key": "preflop|cutoff|rfi|W>F",
+        "n": 2966,
+        "contributionBbPer100": 1.019,
+        "halfWidth99BbPer100": 1.871
+      },
+      {
+        "key": "preflop|button|three_bet|W>F",
+        "n": 271,
+        "contributionBbPer100": 1.101,
+        "halfWidth99BbPer100": 1.086
+      },
+      {
+        "key": "preflop|button|rfi|W>F",
+        "n": 5733,
+        "contributionBbPer100": 1.228,
+        "halfWidth99BbPer100": 1.863
+      },
+      {
+        "key": "preflop|cutoff|three_bet|C>F",
+        "n": 447,
+        "contributionBbPer100": 1.239,
+        "halfWidth99BbPer100": 1.539
+      },
+      {
+        "key": "preflop|button|rfi|W>W",
+        "n": 4960,
+        "contributionBbPer100": 1.59,
+        "halfWidth99BbPer100": 1.807
+      },
+      {
+        "key": "preflop|middle|rfi|W>F",
+        "n": 2078,
+        "contributionBbPer100": 3.327,
+        "halfWidth99BbPer100": 2.497
+      },
+      {
+        "key": "preflop|early|rfi|W>F",
+        "n": 2159,
+        "contributionBbPer100": 3.566,
+        "halfWidth99BbPer100": 2.666
+      }
+    ]
+  },
+  "pineapple": {
+    "seeds": [12101101, 12102203],
+    "pairs": 155520,
+    "meanBbPer100": -29.848,
+    "confidence99BbPer100": [-41.486, -18.21],
+    "profiles": {
+      "p12c-pineapple-6max-100bb": {
+        "pairs": 25920,
+        "meanBbPer100": -40.022
+      },
+      "p12c-pineapple-6max-200bb": {
+        "pairs": 25920,
+        "meanBbPer100": -41.363
+      },
+      "p12c-pineapple-6max-2dealt-100bb": {
+        "pairs": 25920,
+        "meanBbPer100": -38.183
+      },
+      "p12c-pineapple-6max-40bb": {
+        "pairs": 25920,
+        "meanBbPer100": -23.762
+      },
+      "p12c-pineapple-6max-4dealt-100bb": {
+        "pairs": 25920,
+        "meanBbPer100": -31.548
+      },
+      "p12c-pineapple-9max-100bb": {
+        "pairs": 25920,
+        "meanBbPer100": -4.209
+      }
+    },
+    "attribution": [
+      {
+        "key": "preflop|big_blind|defense|C>F",
+        "n": 7986,
+        "contributionBbPer100": -10.613,
+        "halfWidth99BbPer100": 4.344
+      },
+      {
+        "key": "flop|big_blind|facing_bet|F>C",
+        "n": 164,
+        "contributionBbPer100": -3.264,
+        "halfWidth99BbPer100": 1.064
+      },
+      {
+        "key": "preflop|big_blind|squeeze|C>F",
+        "n": 1498,
+        "contributionBbPer100": -2.684,
+        "halfWidth99BbPer100": 2.644
+      },
+      {
+        "key": "flop|small_blind|facing_bet|F>C",
+        "n": 68,
+        "contributionBbPer100": -1.991,
+        "halfWidth99BbPer100": 1.064
+      },
+      {
+        "key": "preflop|cutoff|rfi|W>W",
+        "n": 1469,
+        "contributionBbPer100": -1.596,
+        "halfWidth99BbPer100": 2.046
+      },
+      {
+        "key": "flop|button|facing_bet|F>C",
+        "n": 49,
+        "contributionBbPer100": -1.383,
+        "halfWidth99BbPer100": 0.74
+      },
+      {
+        "key": "preflop|big_blind|defense|W>F",
+        "n": 635,
+        "contributionBbPer100": -1.232,
+        "halfWidth99BbPer100": 1.242
+      },
+      {
+        "key": "preflop|big_blind|defense|W>C",
+        "n": 637,
+        "contributionBbPer100": -1.189,
+        "halfWidth99BbPer100": 1.602
+      },
+      {
+        "key": "preflop|early|rfi|W>W",
+        "n": 424,
+        "contributionBbPer100": -1.186,
+        "halfWidth99BbPer100": 1.573
+      },
+      {
+        "key": "preflop|small_blind|defense|W>C",
+        "n": 411,
+        "contributionBbPer100": -1.138,
+        "halfWidth99BbPer100": 1.957
+      },
+      {
+        "key": "turn|big_blind|facing_bet|F>C",
+        "n": 82,
+        "contributionBbPer100": -1.133,
+        "halfWidth99BbPer100": 0.452
+      },
+      {
+        "key": "preflop|small_blind|defense|C>F",
+        "n": 583,
+        "contributionBbPer100": -1.003,
+        "halfWidth99BbPer100": 2.042
+      },
+      {
+        "key": "turn|middle|facing_bet|F>C",
+        "n": 21,
+        "contributionBbPer100": -0.869,
+        "halfWidth99BbPer100": 0.476
+      },
+      {
+        "key": "flop|cutoff|facing_bet|F>C",
+        "n": 12,
+        "contributionBbPer100": -0.785,
+        "halfWidth99BbPer100": 0.353
+      },
+      {
+        "key": "turn|small_blind|facing_bet|F>C",
+        "n": 21,
+        "contributionBbPer100": -0.729,
+        "halfWidth99BbPer100": 0.392
+      },
+      {
+        "key": "flop|middle|facing_bet|F>C",
+        "n": 12,
+        "contributionBbPer100": -0.724,
+        "halfWidth99BbPer100": 0.295
+      },
+      {
+        "key": "flop|early|facing_bet|F>C",
+        "n": 8,
+        "contributionBbPer100": -0.579,
+        "halfWidth99BbPer100": 0.621
+      },
+      {
+        "key": "preflop|small_blind|limp_option|W>C",
+        "n": 709,
+        "contributionBbPer100": -0.57,
+        "halfWidth99BbPer100": 0.963
+      },
+      {
+        "key": "turn|cutoff|facing_bet|F>C",
+        "n": 17,
+        "contributionBbPer100": -0.562,
+        "halfWidth99BbPer100": 0.451
+      },
+      {
+        "key": "preflop|small_blind|squeeze|W>C",
+        "n": 52,
+        "contributionBbPer100": -0.505,
+        "halfWidth99BbPer100": 1.153
+      },
+      {
+        "key": "turn|early|facing_bet|F>C",
+        "n": 8,
+        "contributionBbPer100": -0.493,
+        "halfWidth99BbPer100": 0.219
+      },
+      {
+        "key": "flop|big_blind|facing_bet|W>C",
+        "n": 110,
+        "contributionBbPer100": -0.488,
+        "halfWidth99BbPer100": 0.618
+      },
+      {
+        "key": "turn|button|facing_bet|F>C",
+        "n": 41,
+        "contributionBbPer100": -0.472,
+        "halfWidth99BbPer100": 0.349
+      },
+      {
+        "key": "preflop|big_blind|defense|W>W",
+        "n": 489,
+        "contributionBbPer100": -0.461,
+        "halfWidth99BbPer100": 0.881
+      },
+      {
+        "key": "preflop|button|three_bet|W>C",
+        "n": 184,
+        "contributionBbPer100": -0.446,
+        "halfWidth99BbPer100": 1.497
+      },
+      {
+        "key": "preflop|big_blind|overcall|C>F",
+        "n": 127,
+        "contributionBbPer100": -0.398,
+        "halfWidth99BbPer100": 1.324
+      },
+      {
+        "key": "preflop|big_blind|overcall|W>C",
+        "n": 7,
+        "contributionBbPer100": -0.374,
+        "halfWidth99BbPer100": 0.62
+      },
+      {
+        "key": "preflop|middle|rfi|W>W",
+        "n": 663,
+        "contributionBbPer100": -0.368,
+        "halfWidth99BbPer100": 1.98
+      },
+      {
+        "key": "preflop|middle|three_bet|W>C",
+        "n": 46,
+        "contributionBbPer100": -0.366,
+        "halfWidth99BbPer100": 0.448
+      },
+      {
+        "key": "river|big_blind|facing_bet|F>C",
+        "n": 119,
+        "contributionBbPer100": -0.356,
+        "halfWidth99BbPer100": 0.477
+      },
+      {
+        "key": "river|button|facing_bet|F>C",
+        "n": 37,
+        "contributionBbPer100": -0.35,
+        "halfWidth99BbPer100": 0.278
+      },
+      {
+        "key": "preflop|middle|three_bet|W>W",
+        "n": 38,
+        "contributionBbPer100": -0.339,
+        "halfWidth99BbPer100": 0.5
+      },
+      {
+        "key": "river|small_blind|facing_bet|F>C",
+        "n": 25,
+        "contributionBbPer100": -0.318,
+        "halfWidth99BbPer100": 0.235
+      },
+      {
+        "key": "turn|small_blind|checked_to|W>K",
+        "n": 83,
+        "contributionBbPer100": -0.312,
+        "halfWidth99BbPer100": 0.4
+      },
+      {
+        "key": "preflop|big_blind|squeeze|W>C",
+        "n": 68,
+        "contributionBbPer100": -0.3,
+        "halfWidth99BbPer100": 1.054
+      },
+      {
+        "key": "preflop|button|four_bet|F>C",
+        "n": 18,
+        "contributionBbPer100": -0.291,
+        "halfWidth99BbPer100": 0.399
+      },
+      {
+        "key": "river|middle|call_off|F>J",
+        "n": 7,
+        "contributionBbPer100": -0.278,
+        "halfWidth99BbPer100": 0.146
+      },
+      {
+        "key": "flop|big_blind|checked_to|W>K",
+        "n": 105,
+        "contributionBbPer100": -0.275,
+        "halfWidth99BbPer100": 0.505
+      },
+      {
+        "key": "river|cutoff|facing_bet|F>C",
+        "n": 15,
+        "contributionBbPer100": -0.253,
+        "halfWidth99BbPer100": 0.183
+      },
+      {
+        "key": "preflop|cutoff|three_bet|C>W",
+        "n": 18,
+        "contributionBbPer100": -0.243,
+        "halfWidth99BbPer100": 0.196
+      },
+      {
+        "key": "turn|button|checked_to|W>K",
+        "n": 73,
+        "contributionBbPer100": -0.234,
+        "halfWidth99BbPer100": 0.369
+      },
+      {
+        "key": "preflop|cutoff|three_bet|W>F",
+        "n": 88,
+        "contributionBbPer100": -0.231,
+        "halfWidth99BbPer100": 0.867
+      },
+      {
+        "key": "preflop|button|three_bet|W>W",
+        "n": 159,
+        "contributionBbPer100": -0.22,
+        "halfWidth99BbPer100": 0.611
+      },
+      {
+        "key": "river|big_blind|call_off|F>J",
+        "n": 6,
+        "contributionBbPer100": -0.217,
+        "halfWidth99BbPer100": 0.1
+      },
+      {
+        "key": "preflop|small_blind|defense|W>W",
+        "n": 290,
+        "contributionBbPer100": -0.211,
+        "halfWidth99BbPer100": 0.672
+      },
+      {
+        "key": "preflop|small_blind|limp_option|W>F",
+        "n": 499,
+        "contributionBbPer100": -0.205,
+        "halfWidth99BbPer100": 0.464
+      },
+      {
+        "key": "preflop|small_blind|squeeze|F>C",
+        "n": 12,
+        "contributionBbPer100": -0.204,
+        "halfWidth99BbPer100": 0.32
+      },
+      {
+        "key": "river|middle|facing_bet|F>C",
+        "n": 10,
+        "contributionBbPer100": -0.203,
+        "halfWidth99BbPer100": 0.064
+      },
+      {
+        "key": "flop|middle|checked_to|W>W",
+        "n": 14,
+        "contributionBbPer100": -0.201,
+        "halfWidth99BbPer100": 0.298
+      },
+      {
+        "key": "preflop|button|three_bet|F>C",
+        "n": 37,
+        "contributionBbPer100": -0.189,
+        "halfWidth99BbPer100": 0.282
+      },
+      {
+        "key": "preflop|small_blind|defense|F>C",
+        "n": 186,
+        "contributionBbPer100": -0.185,
+        "halfWidth99BbPer100": 0.954
+      },
+      {
+        "key": "flop|small_blind|checked_to|W>K",
+        "n": 128,
+        "contributionBbPer100": -0.184,
+        "halfWidth99BbPer100": 0.483
+      },
+      {
+        "key": "river|early|call_off|F>J",
+        "n": 6,
+        "contributionBbPer100": -0.174,
+        "halfWidth99BbPer100": 0.197
+      },
+      {
+        "key": "preflop|middle|rfi|F>W",
+        "n": 72,
+        "contributionBbPer100": -0.173,
+        "halfWidth99BbPer100": 0.219
+      },
+      {
+        "key": "river|small_blind|call_off|F>J",
+        "n": 4,
+        "contributionBbPer100": -0.165,
+        "halfWidth99BbPer100": 0.141
+      },
+      {
+        "key": "turn|button|facing_raise|F>C",
+        "n": 2,
+        "contributionBbPer100": -0.163,
+        "halfWidth99BbPer100": 0.087
+      },
+      {
+        "key": "preflop|cutoff|four_bet|F>C",
+        "n": 2,
+        "contributionBbPer100": -0.16,
+        "halfWidth99BbPer100": 0.171
+      },
+      {
+        "key": "preflop|middle|four_bet|C>W",
+        "n": 4,
+        "contributionBbPer100": -0.158,
+        "halfWidth99BbPer100": 0.166
+      },
+      {
+        "key": "preflop|small_blind|four_bet|C>F",
+        "n": 39,
+        "contributionBbPer100": -0.154,
+        "halfWidth99BbPer100": 0.608
+      },
+      {
+        "key": "preflop|button|four_bet|W>F",
+        "n": 12,
+        "contributionBbPer100": -0.153,
+        "halfWidth99BbPer100": 0.457
+      },
+      {
+        "key": "preflop|small_blind|four_bet|C>W",
+        "n": 3,
+        "contributionBbPer100": -0.151,
+        "halfWidth99BbPer100": 0.284
+      },
+      {
+        "key": "preflop|button|squeeze|W>C",
+        "n": 6,
+        "contributionBbPer100": -0.144,
+        "halfWidth99BbPer100": 0.173
+      },
+      {
+        "key": "flop|middle|facing_bet|W>C",
+        "n": 21,
+        "contributionBbPer100": -0.142,
+        "halfWidth99BbPer100": 0.501
+      },
+      {
+        "key": "flop|early|checked_to|W>K",
+        "n": 207,
+        "contributionBbPer100": -0.141,
+        "halfWidth99BbPer100": 1.05
+      },
+      {
+        "key": "river|button|call_off|F>J",
+        "n": 7,
+        "contributionBbPer100": -0.14,
+        "halfWidth99BbPer100": 0.049
+      },
+      {
+        "key": "preflop|early|four_bet|F>C",
+        "n": 4,
+        "contributionBbPer100": -0.135,
+        "halfWidth99BbPer100": 0.086
+      },
+      {
+        "key": "flop|small_blind|facing_raise|C>F",
+        "n": 1,
+        "contributionBbPer100": -0.13,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|early|five_bet_plus|J>F",
+        "n": 1,
+        "contributionBbPer100": -0.129,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|cutoff|facing_bet|W>C",
+        "n": 16,
+        "contributionBbPer100": -0.125,
+        "halfWidth99BbPer100": 0.201
+      },
+      {
+        "key": "preflop|small_blind|five_bet_plus|F>C",
+        "n": 1,
+        "contributionBbPer100": -0.122,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|cutoff|five_bet_plus|F>C",
+        "n": 2,
+        "contributionBbPer100": -0.121,
+        "halfWidth99BbPer100": 0.008
+      },
+      {
+        "key": "preflop|cutoff|three_bet|F>C",
+        "n": 19,
+        "contributionBbPer100": -0.118,
+        "halfWidth99BbPer100": 0.222
+      },
+      {
+        "key": "flop|middle|facing_bet|W>W",
+        "n": 1,
+        "contributionBbPer100": -0.118,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "flop|small_blind|facing_raise|F>C",
+        "n": 1,
+        "contributionBbPer100": -0.115,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|cutoff|call_off|F>J",
+        "n": 1,
+        "contributionBbPer100": -0.109,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|middle|call_off|F>J",
+        "n": 3,
+        "contributionBbPer100": -0.108,
+        "halfWidth99BbPer100": 0.086
+      },
+      {
+        "key": "preflop|middle|four_bet|W>C",
+        "n": 24,
+        "contributionBbPer100": -0.108,
+        "halfWidth99BbPer100": 0.653
+      },
+      {
+        "key": "flop|cutoff|checked_to|W>K",
+        "n": 405,
+        "contributionBbPer100": -0.106,
+        "halfWidth99BbPer100": 1.239
+      },
+      {
+        "key": "preflop|cutoff|rfi|F>W",
+        "n": 50,
+        "contributionBbPer100": -0.097,
+        "halfWidth99BbPer100": 0.105
+      },
+      {
+        "key": "flop|button|facing_bet|C>W",
+        "n": 3,
+        "contributionBbPer100": -0.096,
+        "halfWidth99BbPer100": 0.143
+      },
+      {
+        "key": "preflop|button|rfi|C>W",
+        "n": 44,
+        "contributionBbPer100": -0.089,
+        "halfWidth99BbPer100": 0.1
+      },
+      {
+        "key": "preflop|middle|three_bet|F>C",
+        "n": 3,
+        "contributionBbPer100": -0.087,
+        "halfWidth99BbPer100": 0.123
+      },
+      {
+        "key": "preflop|big_blind|defense|C>W",
+        "n": 8,
+        "contributionBbPer100": -0.085,
+        "halfWidth99BbPer100": 0.131
+      },
+      {
+        "key": "flop|small_blind|facing_bet|W>C",
+        "n": 18,
+        "contributionBbPer100": -0.083,
+        "halfWidth99BbPer100": 0.532
+      },
+      {
+        "key": "flop|early|facing_bet|W>C",
+        "n": 7,
+        "contributionBbPer100": -0.078,
+        "halfWidth99BbPer100": 0.104
+      },
+      {
+        "key": "preflop|early|rfi|F>W",
+        "n": 5,
+        "contributionBbPer100": -0.076,
+        "halfWidth99BbPer100": 0.069
+      },
+      {
+        "key": "preflop|button|five_bet_plus|J>C",
+        "n": 1,
+        "contributionBbPer100": -0.076,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|early|four_bet|C>W",
+        "n": 3,
+        "contributionBbPer100": -0.074,
+        "halfWidth99BbPer100": 0.151
+      },
+      {
+        "key": "river|big_blind|facing_bet|W>C",
+        "n": 8,
+        "contributionBbPer100": -0.072,
+        "halfWidth99BbPer100": 0.088
+      },
+      {
+        "key": "flop|cutoff|call_off|F>J",
+        "n": 2,
+        "contributionBbPer100": -0.071,
+        "halfWidth99BbPer100": 0.07
+      },
+      {
+        "key": "preflop|small_blind|squeeze|W>W",
+        "n": 32,
+        "contributionBbPer100": -0.069,
+        "halfWidth99BbPer100": 0.417
+      },
+      {
+        "key": "flop|big_blind|facing_bet|W>W",
+        "n": 7,
+        "contributionBbPer100": -0.068,
+        "halfWidth99BbPer100": 0.092
+      },
+      {
+        "key": "preflop|big_blind|four_bet|F>C",
+        "n": 18,
+        "contributionBbPer100": -0.067,
+        "halfWidth99BbPer100": 0.951
+      },
+      {
+        "key": "preflop|small_blind|limp_option|W>W",
+        "n": 372,
+        "contributionBbPer100": -0.066,
+        "halfWidth99BbPer100": 0.484
+      },
+      {
+        "key": "preflop|button|squeeze|W>W",
+        "n": 9,
+        "contributionBbPer100": -0.064,
+        "halfWidth99BbPer100": 0.063
+      },
+      {
+        "key": "flop|big_blind|facing_raise|F>C",
+        "n": 1,
+        "contributionBbPer100": -0.063,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|early|call_off|F>J",
+        "n": 2,
+        "contributionBbPer100": -0.063,
+        "halfWidth99BbPer100": 0.05
+      },
+      {
+        "key": "flop|middle|facing_raise|F>C",
+        "n": 1,
+        "contributionBbPer100": -0.063,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|big_blind|checked_to|K>W",
+        "n": 8,
+        "contributionBbPer100": -0.061,
+        "halfWidth99BbPer100": 0.183
+      },
+      {
+        "key": "preflop|early|four_bet|C>J",
+        "n": 1,
+        "contributionBbPer100": -0.058,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|middle|five_bet_plus|J>C",
+        "n": 1,
+        "contributionBbPer100": -0.058,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|middle|squeeze|W>W",
+        "n": 2,
+        "contributionBbPer100": -0.058,
+        "halfWidth99BbPer100": 0.105
+      },
+      {
+        "key": "preflop|button|four_bet|C>W",
+        "n": 2,
+        "contributionBbPer100": -0.057,
+        "halfWidth99BbPer100": 0.042
+      },
+      {
+        "key": "flop|big_blind|checked_to|K>W",
+        "n": 28,
+        "contributionBbPer100": -0.057,
+        "halfWidth99BbPer100": 0.208
+      },
+      {
+        "key": "turn|small_blind|call_off|F>J",
+        "n": 1,
+        "contributionBbPer100": -0.056,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "flop|button|checked_to|K>W",
+        "n": 16,
+        "contributionBbPer100": -0.053,
+        "halfWidth99BbPer100": 0.214
+      },
+      {
+        "key": "turn|cutoff|checked_to|W>K",
+        "n": 18,
+        "contributionBbPer100": -0.053,
+        "halfWidth99BbPer100": 0.139
+      },
+      {
+        "key": "preflop|small_blind|call_off|J>F",
+        "n": 1,
+        "contributionBbPer100": -0.051,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|early|four_bet|C>F",
+        "n": 8,
+        "contributionBbPer100": -0.05,
+        "halfWidth99BbPer100": 0.285
+      },
+      {
+        "key": "river|early|checked_to|J>K",
+        "n": 1,
+        "contributionBbPer100": -0.046,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|big_blind|facing_bet|W>F",
+        "n": 4,
+        "contributionBbPer100": -0.046,
+        "halfWidth99BbPer100": 0.046
+      },
+      {
+        "key": "river|small_blind|facing_bet|J>C",
+        "n": 2,
+        "contributionBbPer100": -0.045,
+        "halfWidth99BbPer100": 0.03
+      },
+      {
+        "key": "flop|early|facing_bet|C>W",
+        "n": 1,
+        "contributionBbPer100": -0.043,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|big_blind|four_bet|W>C",
+        "n": 15,
+        "contributionBbPer100": -0.042,
+        "halfWidth99BbPer100": 0.532
+      },
+      {
+        "key": "preflop|small_blind|overcall|W>W",
+        "n": 1,
+        "contributionBbPer100": -0.04,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "flop|early|facing_bet|W>W",
+        "n": 2,
+        "contributionBbPer100": -0.039,
+        "halfWidth99BbPer100": 0.07
+      },
+      {
+        "key": "turn|big_blind|checked_to|W>K",
+        "n": 198,
+        "contributionBbPer100": -0.038,
+        "halfWidth99BbPer100": 0.225
+      },
+      {
+        "key": "flop|small_blind|call_off|F>J",
+        "n": 2,
+        "contributionBbPer100": -0.036,
+        "halfWidth99BbPer100": 0.013
+      },
+      {
+        "key": "river|button|checked_to|W>K",
+        "n": 40,
+        "contributionBbPer100": -0.033,
+        "halfWidth99BbPer100": 0.078
+      },
+      {
+        "key": "preflop|small_blind|squeeze|C>F",
+        "n": 50,
+        "contributionBbPer100": -0.028,
+        "halfWidth99BbPer100": 0.642
+      },
+      {
+        "key": "turn|big_blind|checked_to|K>W",
+        "n": 8,
+        "contributionBbPer100": -0.027,
+        "halfWidth99BbPer100": 0.066
+      },
+      {
+        "key": "preflop|cutoff|squeeze|W>C",
+        "n": 3,
+        "contributionBbPer100": -0.026,
+        "halfWidth99BbPer100": 0.22
+      },
+      {
+        "key": "flop|big_blind|facing_raise|W>C",
+        "n": 1,
+        "contributionBbPer100": -0.025,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|cutoff|facing_bet|C>W",
+        "n": 1,
+        "contributionBbPer100": -0.023,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|cutoff|facing_bet|W>W",
+        "n": 1,
+        "contributionBbPer100": -0.023,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|big_blind|facing_bet|J>C",
+        "n": 2,
+        "contributionBbPer100": -0.021,
+        "halfWidth99BbPer100": 0.012
+      },
+      {
+        "key": "turn|early|facing_bet|W>C",
+        "n": 4,
+        "contributionBbPer100": -0.019,
+        "halfWidth99BbPer100": 0.05
+      },
+      {
+        "key": "preflop|big_blind|overcall|W>F",
+        "n": 3,
+        "contributionBbPer100": -0.018,
+        "halfWidth99BbPer100": 0.004
+      },
+      {
+        "key": "river|early|facing_bet|F>C",
+        "n": 1,
+        "contributionBbPer100": -0.018,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "flop|big_blind|facing_bet|C>W",
+        "n": 2,
+        "contributionBbPer100": -0.018,
+        "halfWidth99BbPer100": 0.033
+      },
+      {
+        "key": "preflop|button|rfi|C>F",
+        "n": 151,
+        "contributionBbPer100": -0.018,
+        "halfWidth99BbPer100": 0.432
+      },
+      {
+        "key": "flop|cutoff|checked_to|K>W",
+        "n": 3,
+        "contributionBbPer100": -0.018,
+        "halfWidth99BbPer100": 0.037
+      },
+      {
+        "key": "preflop|early|four_bet|W>W",
+        "n": 2,
+        "contributionBbPer100": -0.017,
+        "halfWidth99BbPer100": 0.031
+      },
+      {
+        "key": "turn|early|checked_to|W>K",
+        "n": 11,
+        "contributionBbPer100": -0.017,
+        "halfWidth99BbPer100": 0.05
+      },
+      {
+        "key": "river|small_blind|checked_to|K>W",
+        "n": 1,
+        "contributionBbPer100": -0.017,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "flop|early|facing_bet|J>C",
+        "n": 10,
+        "contributionBbPer100": -0.015,
+        "halfWidth99BbPer100": 0.038
+      },
+      {
+        "key": "river|small_blind|facing_bet|C>F",
+        "n": 2,
+        "contributionBbPer100": -0.014,
+        "halfWidth99BbPer100": 0.076
+      },
+      {
+        "key": "preflop|small_blind|limp_option|F>W",
+        "n": 6,
+        "contributionBbPer100": -0.014,
+        "halfWidth99BbPer100": 0.092
+      },
+      {
+        "key": "preflop|middle|four_bet|W>F",
+        "n": 1,
+        "contributionBbPer100": -0.014,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|big_blind|isolation|W>K",
+        "n": 7,
+        "contributionBbPer100": -0.013,
+        "halfWidth99BbPer100": 0.014
+      },
+      {
+        "key": "preflop|middle|four_bet|J>C",
+        "n": 3,
+        "contributionBbPer100": -0.012,
+        "halfWidth99BbPer100": 0.026
+      },
+      {
+        "key": "flop|button|checked_to|W>W",
+        "n": 72,
+        "contributionBbPer100": -0.012,
+        "halfWidth99BbPer100": 0.316
+      },
+      {
+        "key": "river|cutoff|facing_bet|W>C",
+        "n": 2,
+        "contributionBbPer100": -0.012,
+        "halfWidth99BbPer100": 0.022
+      },
+      {
+        "key": "preflop|middle|three_bet|C>W",
+        "n": 12,
+        "contributionBbPer100": -0.011,
+        "halfWidth99BbPer100": 0.195
+      },
+      {
+        "key": "flop|cutoff|checked_to|W>W",
+        "n": 11,
+        "contributionBbPer100": -0.011,
+        "halfWidth99BbPer100": 0.135
+      },
+      {
+        "key": "turn|early|facing_bet|J>C",
+        "n": 7,
+        "contributionBbPer100": -0.011,
+        "halfWidth99BbPer100": 0.025
+      },
+      {
+        "key": "preflop|early|four_bet|J>W",
+        "n": 3,
+        "contributionBbPer100": -0.011,
+        "halfWidth99BbPer100": 0.011
+      },
+      {
+        "key": "river|big_blind|checked_to|W>K",
+        "n": 13,
+        "contributionBbPer100": -0.009,
+        "halfWidth99BbPer100": 0.032
+      },
+      {
+        "key": "turn|button|facing_bet|C>W",
+        "n": 1,
+        "contributionBbPer100": -0.005,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|small_blind|checked_to|W>W",
+        "n": 4,
+        "contributionBbPer100": -0.004,
+        "halfWidth99BbPer100": 0.032
+      },
+      {
+        "key": "preflop|cutoff|four_bet|J>W",
+        "n": 2,
+        "contributionBbPer100": -0.004,
+        "halfWidth99BbPer100": 0.008
+      },
+      {
+        "key": "turn|big_blind|facing_bet|W>W",
+        "n": 3,
+        "contributionBbPer100": -0.003,
+        "halfWidth99BbPer100": 0.069
+      },
+      {
+        "key": "preflop|big_blind|four_bet|C>W",
+        "n": 3,
+        "contributionBbPer100": -0.002,
+        "halfWidth99BbPer100": 0.025
+      },
+      {
+        "key": "river|early|facing_bet|W>W",
+        "n": 1,
+        "contributionBbPer100": -0.002,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|big_blind|overcall|W>W",
+        "n": 2,
+        "contributionBbPer100": -0.001,
+        "halfWidth99BbPer100": 0.002
+      },
+      {
+        "key": "flop|big_blind|checked_to|W>W",
+        "n": 3,
+        "contributionBbPer100": -0.001,
+        "halfWidth99BbPer100": 0.013
+      },
+      {
+        "key": "flop|small_blind|checked_to|W>W",
+        "n": 1,
+        "contributionBbPer100": -0.001,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|button|checked_to|W>W",
+        "n": 16,
+        "contributionBbPer100": -0.001,
+        "halfWidth99BbPer100": 0.135
+      },
+      {
+        "key": "preflop|big_blind|call_off|J>F",
+        "n": 3,
+        "contributionBbPer100": -0.0,
+        "halfWidth99BbPer100": 0.266
+      },
+      {
+        "key": "river|early|checked_to|W>K",
+        "n": 5,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|middle|checked_to|W>W",
+        "n": 5,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|cutoff|four_bet|W>W",
+        "n": 1,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|middle|four_bet|W>W",
+        "n": 1,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|middle|facing_bet|J>C",
+        "n": 7,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|early|checked_to|W>W",
+        "n": 3,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|cutoff|five_bet_plus|J>C",
+        "n": 1,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "flop|small_blind|checked_to|K>W",
+        "n": 1,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "flop|early|checked_to|K>W",
+        "n": 3,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "flop|middle|checked_to|K>W",
+        "n": 3,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|big_blind|facing_bet|J>C",
+        "n": 14,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|cutoff|checked_to|K>J",
+        "n": 1,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|early|facing_bet|W>W",
+        "n": 1,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|big_blind|isolation|W>W",
+        "n": 19,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|big_blind|facing_bet|W>W",
+        "n": 1,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|early|four_bet|J>C",
+        "n": 6,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|big_blind|four_bet|J>W",
+        "n": 2,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|small_blind|checked_to|K>J",
+        "n": 1,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "flop|cutoff|facing_bet|J>C",
+        "n": 5,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|big_blind|four_bet|J>C",
+        "n": 3,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|small_blind|checked_to|K>W",
+        "n": 1,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "flop|cutoff|facing_bet|W>W",
+        "n": 1,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "flop|small_blind|facing_bet|W>W",
+        "n": 2,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|cutoff|checked_to|K>W",
+        "n": 1,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|cutoff|facing_bet|W>W",
+        "n": 1,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|middle|checked_to|W>K",
+        "n": 1,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|middle|facing_bet|C>W",
+        "n": 1,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|button|overcall|C>W",
+        "n": 1,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|middle|facing_bet|W>W",
+        "n": 2,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|big_blind|four_bet|W>W",
+        "n": 1,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|cutoff|checked_to|W>W",
+        "n": 1,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|button|checked_to|W>W",
+        "n": 1,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|button|facing_bet|W>W",
+        "n": 2,
+        "contributionBbPer100": 0.002,
+        "halfWidth99BbPer100": 0.027
+      },
+      {
+        "key": "preflop|button|rfi|F>W",
+        "n": 311,
+        "contributionBbPer100": 0.002,
+        "halfWidth99BbPer100": 0.174
+      },
+      {
+        "key": "turn|big_blind|checked_to|W>W",
+        "n": 13,
+        "contributionBbPer100": 0.002,
+        "halfWidth99BbPer100": 0.008
+      },
+      {
+        "key": "turn|button|facing_bet|W>W",
+        "n": 1,
+        "contributionBbPer100": 0.003,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|cutoff|three_bet|C>F",
+        "n": 234,
+        "contributionBbPer100": 0.004,
+        "halfWidth99BbPer100": 1.388
+      },
+      {
+        "key": "flop|cutoff|facing_bet|C>F",
+        "n": 2,
+        "contributionBbPer100": 0.004,
+        "halfWidth99BbPer100": 0.001
+      },
+      {
+        "key": "preflop|middle|squeeze|C>W",
+        "n": 1,
+        "contributionBbPer100": 0.004,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|button|squeeze|F>C",
+        "n": 1,
+        "contributionBbPer100": 0.004,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|button|facing_bet|W>C",
+        "n": 4,
+        "contributionBbPer100": 0.005,
+        "halfWidth99BbPer100": 0.166
+      },
+      {
+        "key": "river|early|checked_to|W>W",
+        "n": 2,
+        "contributionBbPer100": 0.006,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|button|facing_bet|J>C",
+        "n": 4,
+        "contributionBbPer100": 0.006,
+        "halfWidth99BbPer100": 0.152
+      },
+      {
+        "key": "flop|big_blind|facing_raise|J>C",
+        "n": 2,
+        "contributionBbPer100": 0.006,
+        "halfWidth99BbPer100": 0.011
+      },
+      {
+        "key": "river|small_blind|checked_to|W>W",
+        "n": 1,
+        "contributionBbPer100": 0.006,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|cutoff|facing_bet|J>C",
+        "n": 1,
+        "contributionBbPer100": 0.007,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|cutoff|checked_to|W>K",
+        "n": 3,
+        "contributionBbPer100": 0.008,
+        "halfWidth99BbPer100": 0.022
+      },
+      {
+        "key": "turn|button|facing_bet|W>C",
+        "n": 33,
+        "contributionBbPer100": 0.009,
+        "halfWidth99BbPer100": 0.211
+      },
+      {
+        "key": "turn|big_blind|facing_bet|C>F",
+        "n": 3,
+        "contributionBbPer100": 0.009,
+        "halfWidth99BbPer100": 0.003
+      },
+      {
+        "key": "turn|big_blind|facing_bet|C>W",
+        "n": 2,
+        "contributionBbPer100": 0.009,
+        "halfWidth99BbPer100": 0.088
+      },
+      {
+        "key": "flop|early|checked_to|W>W",
+        "n": 9,
+        "contributionBbPer100": 0.01,
+        "halfWidth99BbPer100": 0.015
+      },
+      {
+        "key": "turn|button|checked_to|K>W",
+        "n": 1,
+        "contributionBbPer100": 0.011,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|cutoff|facing_bet|C>F",
+        "n": 4,
+        "contributionBbPer100": 0.011,
+        "halfWidth99BbPer100": 0.042
+      },
+      {
+        "key": "river|big_blind|checked_to|W>W",
+        "n": 3,
+        "contributionBbPer100": 0.011,
+        "halfWidth99BbPer100": 0.022
+      },
+      {
+        "key": "preflop|cutoff|overcall|C>W",
+        "n": 1,
+        "contributionBbPer100": 0.012,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "flop|button|facing_bet|W>C",
+        "n": 25,
+        "contributionBbPer100": 0.012,
+        "halfWidth99BbPer100": 0.343
+      },
+      {
+        "key": "preflop|small_blind|four_bet|W>W",
+        "n": 1,
+        "contributionBbPer100": 0.012,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|button|four_bet|J>C",
+        "n": 1,
+        "contributionBbPer100": 0.013,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|small_blind|facing_bet|J>C",
+        "n": 6,
+        "contributionBbPer100": 0.014,
+        "halfWidth99BbPer100": 0.033
+      },
+      {
+        "key": "preflop|cutoff|squeeze|F>C",
+        "n": 1,
+        "contributionBbPer100": 0.014,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|middle|checked_to|W>K",
+        "n": 14,
+        "contributionBbPer100": 0.014,
+        "halfWidth99BbPer100": 0.157
+      },
+      {
+        "key": "river|button|facing_bet|C>F",
+        "n": 2,
+        "contributionBbPer100": 0.016,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "flop|big_blind|call_off|F>J",
+        "n": 2,
+        "contributionBbPer100": 0.016,
+        "halfWidth99BbPer100": 0.198
+      },
+      {
+        "key": "turn|button|facing_bet|J>C",
+        "n": 10,
+        "contributionBbPer100": 0.018,
+        "halfWidth99BbPer100": 0.056
+      },
+      {
+        "key": "flop|big_blind|facing_bet|J>C",
+        "n": 3,
+        "contributionBbPer100": 0.019,
+        "halfWidth99BbPer100": 0.041
+      },
+      {
+        "key": "preflop|cutoff|four_bet|J>C",
+        "n": 2,
+        "contributionBbPer100": 0.02,
+        "halfWidth99BbPer100": 0.036
+      },
+      {
+        "key": "flop|small_blind|facing_bet|J>C",
+        "n": 3,
+        "contributionBbPer100": 0.022,
+        "halfWidth99BbPer100": 0.047
+      },
+      {
+        "key": "river|big_blind|facing_bet|C>W",
+        "n": 3,
+        "contributionBbPer100": 0.024,
+        "halfWidth99BbPer100": 0.025
+      },
+      {
+        "key": "turn|early|facing_bet|W>F",
+        "n": 1,
+        "contributionBbPer100": 0.03,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|cutoff|four_bet|C>W",
+        "n": 5,
+        "contributionBbPer100": 0.032,
+        "halfWidth99BbPer100": 0.081
+      },
+      {
+        "key": "preflop|small_blind|limp_option|F>C",
+        "n": 380,
+        "contributionBbPer100": 0.033,
+        "halfWidth99BbPer100": 0.224
+      },
+      {
+        "key": "preflop|big_blind|squeeze|W>W",
+        "n": 64,
+        "contributionBbPer100": 0.037,
+        "halfWidth99BbPer100": 0.86
+      },
+      {
+        "key": "turn|small_blind|facing_bet|W>W",
+        "n": 1,
+        "contributionBbPer100": 0.037,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|small_blind|four_bet|F>C",
+        "n": 10,
+        "contributionBbPer100": 0.037,
+        "halfWidth99BbPer100": 0.728
+      },
+      {
+        "key": "turn|button|facing_bet|C>J",
+        "n": 1,
+        "contributionBbPer100": 0.038,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|early|four_bet|W>C",
+        "n": 13,
+        "contributionBbPer100": 0.038,
+        "halfWidth99BbPer100": 0.489
+      },
+      {
+        "key": "preflop|cutoff|squeeze|W>F",
+        "n": 4,
+        "contributionBbPer100": 0.039,
+        "halfWidth99BbPer100": 0.2
+      },
+      {
+        "key": "preflop|small_blind|four_bet|W>F",
+        "n": 3,
+        "contributionBbPer100": 0.04,
+        "halfWidth99BbPer100": 0.161
+      },
+      {
+        "key": "flop|middle|facing_bet|J>C",
+        "n": 7,
+        "contributionBbPer100": 0.045,
+        "halfWidth99BbPer100": 0.107
+      },
+      {
+        "key": "turn|small_blind|facing_raise|C>F",
+        "n": 1,
+        "contributionBbPer100": 0.048,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|cutoff|four_bet|J>F",
+        "n": 2,
+        "contributionBbPer100": 0.048,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|button|call_off|J>F",
+        "n": 2,
+        "contributionBbPer100": 0.049,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "flop|big_blind|facing_bet|C>F",
+        "n": 9,
+        "contributionBbPer100": 0.05,
+        "halfWidth99BbPer100": 0.167
+      },
+      {
+        "key": "preflop|small_blind|defense|C>W",
+        "n": 9,
+        "contributionBbPer100": 0.058,
+        "halfWidth99BbPer100": 0.209
+      },
+      {
+        "key": "turn|button|facing_bet|J>W",
+        "n": 1,
+        "contributionBbPer100": 0.06,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|middle|five_bet_plus|C>F",
+        "n": 1,
+        "contributionBbPer100": 0.062,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|cutoff|squeeze|C>F",
+        "n": 13,
+        "contributionBbPer100": 0.063,
+        "halfWidth99BbPer100": 0.062
+      },
+      {
+        "key": "preflop|middle|four_bet|J>W",
+        "n": 4,
+        "contributionBbPer100": 0.065,
+        "halfWidth99BbPer100": 0.171
+      },
+      {
+        "key": "preflop|middle|three_bet|W>F",
+        "n": 74,
+        "contributionBbPer100": 0.066,
+        "halfWidth99BbPer100": 0.883
+      },
+      {
+        "key": "preflop|small_blind|four_bet|W>C",
+        "n": 8,
+        "contributionBbPer100": 0.069,
+        "halfWidth99BbPer100": 0.405
+      },
+      {
+        "key": "turn|middle|facing_bet|W>C",
+        "n": 8,
+        "contributionBbPer100": 0.069,
+        "halfWidth99BbPer100": 0.129
+      },
+      {
+        "key": "preflop|big_blind|five_bet_plus|F>C",
+        "n": 1,
+        "contributionBbPer100": 0.069,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|cutoff|facing_bet|J>C",
+        "n": 12,
+        "contributionBbPer100": 0.071,
+        "halfWidth99BbPer100": 0.128
+      },
+      {
+        "key": "preflop|middle|squeeze|W>C",
+        "n": 3,
+        "contributionBbPer100": 0.074,
+        "halfWidth99BbPer100": 0.155
+      },
+      {
+        "key": "preflop|big_blind|four_bet|J>F",
+        "n": 4,
+        "contributionBbPer100": 0.075,
+        "halfWidth99BbPer100": 0.057
+      },
+      {
+        "key": "turn|button|facing_bet|C>F",
+        "n": 26,
+        "contributionBbPer100": 0.078,
+        "halfWidth99BbPer100": 0.072
+      },
+      {
+        "key": "preflop|button|squeeze|W>F",
+        "n": 8,
+        "contributionBbPer100": 0.084,
+        "halfWidth99BbPer100": 0.252
+      },
+      {
+        "key": "flop|cutoff|facing_bet|W>C",
+        "n": 21,
+        "contributionBbPer100": 0.088,
+        "halfWidth99BbPer100": 0.403
+      },
+      {
+        "key": "turn|small_blind|facing_bet|W>C",
+        "n": 8,
+        "contributionBbPer100": 0.094,
+        "halfWidth99BbPer100": 0.171
+      },
+      {
+        "key": "preflop|cutoff|call_off|J>F",
+        "n": 3,
+        "contributionBbPer100": 0.099,
+        "halfWidth99BbPer100": 0.082
+      },
+      {
+        "key": "turn|big_blind|facing_bet|W>C",
+        "n": 31,
+        "contributionBbPer100": 0.109,
+        "halfWidth99BbPer100": 0.256
+      },
+      {
+        "key": "preflop|middle|squeeze|W>F",
+        "n": 6,
+        "contributionBbPer100": 0.113,
+        "halfWidth99BbPer100": 0.324
+      },
+      {
+        "key": "preflop|middle|three_bet|C>F",
+        "n": 294,
+        "contributionBbPer100": 0.118,
+        "halfWidth99BbPer100": 1.684
+      },
+      {
+        "key": "preflop|small_blind|overcall|C>F",
+        "n": 5,
+        "contributionBbPer100": 0.128,
+        "halfWidth99BbPer100": 0.14
+      },
+      {
+        "key": "preflop|big_blind|four_bet|C>F",
+        "n": 65,
+        "contributionBbPer100": 0.145,
+        "halfWidth99BbPer100": 0.823
+      },
+      {
+        "key": "flop|button|facing_bet|J>C",
+        "n": 6,
+        "contributionBbPer100": 0.148,
+        "halfWidth99BbPer100": 0.348
+      },
+      {
+        "key": "preflop|small_blind|overcall|W>F",
+        "n": 3,
+        "contributionBbPer100": 0.152,
+        "halfWidth99BbPer100": 0.213
+      },
+      {
+        "key": "preflop|button|rfi|W>W",
+        "n": 4630,
+        "contributionBbPer100": 0.163,
+        "halfWidth99BbPer100": 2.106
+      },
+      {
+        "key": "preflop|button|four_bet|C>F",
+        "n": 91,
+        "contributionBbPer100": 0.188,
+        "halfWidth99BbPer100": 0.849
+      },
+      {
+        "key": "river|cutoff|call_off|F>J",
+        "n": 9,
+        "contributionBbPer100": 0.219,
+        "halfWidth99BbPer100": 0.537
+      },
+      {
+        "key": "preflop|big_blind|four_bet|W>F",
+        "n": 13,
+        "contributionBbPer100": 0.22,
+        "halfWidth99BbPer100": 0.382
+      },
+      {
+        "key": "preflop|button|three_bet|W>F",
+        "n": 213,
+        "contributionBbPer100": 0.229,
+        "halfWidth99BbPer100": 1.173
+      },
+      {
+        "key": "preflop|cutoff|four_bet|W>F",
+        "n": 6,
+        "contributionBbPer100": 0.234,
+        "halfWidth99BbPer100": 0.212
+      },
+      {
+        "key": "preflop|button|four_bet|W>C",
+        "n": 15,
+        "contributionBbPer100": 0.235,
+        "halfWidth99BbPer100": 0.244
+      },
+      {
+        "key": "preflop|middle|squeeze|C>F",
+        "n": 7,
+        "contributionBbPer100": 0.254,
+        "halfWidth99BbPer100": 0.221
+      },
+      {
+        "key": "preflop|cutoff|three_bet|W>W",
+        "n": 63,
+        "contributionBbPer100": 0.276,
+        "halfWidth99BbPer100": 0.586
+      },
+      {
+        "key": "preflop|button|squeeze|C>F",
+        "n": 28,
+        "contributionBbPer100": 0.277,
+        "halfWidth99BbPer100": 0.618
+      },
+      {
+        "key": "preflop|middle|four_bet|C>F",
+        "n": 45,
+        "contributionBbPer100": 0.328,
+        "halfWidth99BbPer100": 0.708
+      },
+      {
+        "key": "preflop|cutoff|four_bet|W>C",
+        "n": 17,
+        "contributionBbPer100": 0.353,
+        "halfWidth99BbPer100": 0.497
+      },
+      {
+        "key": "flop|middle|checked_to|W>K",
+        "n": 271,
+        "contributionBbPer100": 0.395,
+        "halfWidth99BbPer100": 1.106
+      },
+      {
+        "key": "preflop|small_blind|defense|W>F",
+        "n": 417,
+        "contributionBbPer100": 0.483,
+        "halfWidth99BbPer100": 1.136
+      },
+      {
+        "key": "preflop|small_blind|squeeze|W>F",
+        "n": 44,
+        "contributionBbPer100": 0.541,
+        "halfWidth99BbPer100": 0.725
+      },
+      {
+        "key": "preflop|cutoff|three_bet|W>C",
+        "n": 53,
+        "contributionBbPer100": 0.566,
+        "halfWidth99BbPer100": 0.972
+      },
+      {
+        "key": "preflop|big_blind|squeeze|W>F",
+        "n": 83,
+        "contributionBbPer100": 0.754,
+        "halfWidth99BbPer100": 0.864
+      },
+      {
+        "key": "preflop|cutoff|four_bet|C>F",
+        "n": 53,
+        "contributionBbPer100": 0.765,
+        "halfWidth99BbPer100": 0.616
+      },
+      {
+        "key": "preflop|cutoff|rfi|W>F",
+        "n": 2709,
+        "contributionBbPer100": 0.913,
+        "halfWidth99BbPer100": 2.364
+      },
+      {
+        "key": "flop|button|checked_to|W>K",
+        "n": 1010,
+        "contributionBbPer100": 1.048,
+        "halfWidth99BbPer100": 1.508
+      },
+      {
+        "key": "preflop|button|rfi|W>F",
+        "n": 4583,
+        "contributionBbPer100": 1.402,
+        "halfWidth99BbPer100": 1.886
+      },
+      {
+        "key": "preflop|early|rfi|W>F",
+        "n": 1469,
+        "contributionBbPer100": 1.632,
+        "halfWidth99BbPer100": 2.936
+      },
+      {
+        "key": "preflop|button|three_bet|C>F",
+        "n": 698,
+        "contributionBbPer100": 1.975,
+        "halfWidth99BbPer100": 2.267
+      },
+      {
+        "key": "preflop|middle|rfi|W>F",
+        "n": 1566,
+        "contributionBbPer100": 3.585,
+        "halfWidth99BbPer100": 2.657
+      }
+    ]
+  },
+  "flh": {
+    "seeds": [12101101, 12102203],
+    "pairs": 181440,
+    "meanBbPer100": -6.793,
+    "confidence99BbPer100": [-8.16, -5.426],
+    "profiles": {
+      "p12c-flh-6max-1000bb": {
+        "pairs": 25920,
+        "meanBbPer100": -2.479
+      },
+      "p12c-flh-6max-100bb": {
+        "pairs": 25920,
+        "meanBbPer100": -3.567
+      },
+      "p12c-flh-6max-200bb": {
+        "pairs": 25920,
+        "meanBbPer100": -2.707
+      },
+      "p12c-flh-6max-2dealt-100bb": {
+        "pairs": 25920,
+        "meanBbPer100": -26.006
+      },
+      "p12c-flh-6max-40bb": {
+        "pairs": 25920,
+        "meanBbPer100": -3.439
+      },
+      "p12c-flh-6max-4dealt-100bb": {
+        "pairs": 25920,
+        "meanBbPer100": -8.991
+      },
+      "p12c-flh-9max-100bb": {
+        "pairs": 25920,
+        "meanBbPer100": -0.365
+      }
+    },
+    "attribution": [
+      {
+        "key": "preflop|big_blind|defense|C>F",
+        "n": 13496,
+        "contributionBbPer100": -2.5,
+        "halfWidth99BbPer100": 0.595
+      },
+      {
+        "key": "preflop|button|rfi|W>F",
+        "n": 9951,
+        "contributionBbPer100": -1.496,
+        "halfWidth99BbPer100": 0.476
+      },
+      {
+        "key": "preflop|small_blind|limp_option|W>C",
+        "n": 872,
+        "contributionBbPer100": -0.462,
+        "halfWidth99BbPer100": 0.126
+      },
+      {
+        "key": "preflop|button|four_bet|C>F",
+        "n": 508,
+        "contributionBbPer100": -0.295,
+        "halfWidth99BbPer100": 0.179
+      },
+      {
+        "key": "flop|button|checked_to|W>K",
+        "n": 1284,
+        "contributionBbPer100": -0.286,
+        "halfWidth99BbPer100": 0.125
+      },
+      {
+        "key": "preflop|big_blind|defense|W>C",
+        "n": 1202,
+        "contributionBbPer100": -0.236,
+        "halfWidth99BbPer100": 0.118
+      },
+      {
+        "key": "preflop|small_blind|defense|W>F",
+        "n": 491,
+        "contributionBbPer100": -0.195,
+        "halfWidth99BbPer100": 0.162
+      },
+      {
+        "key": "turn|button|facing_bet|F>C",
+        "n": 176,
+        "contributionBbPer100": -0.188,
+        "halfWidth99BbPer100": 0.073
+      },
+      {
+        "key": "preflop|small_blind|defense|W>C",
+        "n": 728,
+        "contributionBbPer100": -0.184,
+        "halfWidth99BbPer100": 0.149
+      },
+      {
+        "key": "flop|cutoff|checked_to|W>K",
+        "n": 565,
+        "contributionBbPer100": -0.171,
+        "halfWidth99BbPer100": 0.089
+      },
+      {
+        "key": "turn|big_blind|facing_bet|F>C",
+        "n": 88,
+        "contributionBbPer100": -0.161,
+        "halfWidth99BbPer100": 0.033
+      },
+      {
+        "key": "preflop|cutoff|three_bet|W>C",
+        "n": 114,
+        "contributionBbPer100": -0.155,
+        "halfWidth99BbPer100": 0.072
+      },
+      {
+        "key": "turn|button|checked_to|W>K",
+        "n": 272,
+        "contributionBbPer100": -0.141,
+        "halfWidth99BbPer100": 0.068
+      },
+      {
+        "key": "preflop|button|squeeze|C>F",
+        "n": 117,
+        "contributionBbPer100": -0.131,
+        "halfWidth99BbPer100": 0.114
+      },
+      {
+        "key": "preflop|big_blind|defense|W>F",
+        "n": 631,
+        "contributionBbPer100": -0.123,
+        "halfWidth99BbPer100": 0.178
+      },
+      {
+        "key": "river|button|facing_bet|F>C",
+        "n": 119,
+        "contributionBbPer100": -0.123,
+        "halfWidth99BbPer100": 0.017
+      },
+      {
+        "key": "turn|cutoff|facing_bet|F>C",
+        "n": 59,
+        "contributionBbPer100": -0.117,
+        "halfWidth99BbPer100": 0.028
+      },
+      {
+        "key": "preflop|big_blind|squeeze|W>F",
+        "n": 116,
+        "contributionBbPer100": -0.117,
+        "halfWidth99BbPer100": 0.115
+      },
+      {
+        "key": "flop|middle|checked_to|W>K",
+        "n": 367,
+        "contributionBbPer100": -0.113,
+        "halfWidth99BbPer100": 0.072
+      },
+      {
+        "key": "flop|early|checked_to|W>K",
+        "n": 255,
+        "contributionBbPer100": -0.111,
+        "halfWidth99BbPer100": 0.053
+      },
+      {
+        "key": "flop|big_blind|checked_to|W>K",
+        "n": 263,
+        "contributionBbPer100": -0.101,
+        "halfWidth99BbPer100": 0.054
+      },
+      {
+        "key": "flop|big_blind|facing_bet|F>C",
+        "n": 71,
+        "contributionBbPer100": -0.099,
+        "halfWidth99BbPer100": 0.046
+      },
+      {
+        "key": "flop|small_blind|facing_bet|F>C",
+        "n": 56,
+        "contributionBbPer100": -0.094,
+        "halfWidth99BbPer100": 0.045
+      },
+      {
+        "key": "river|big_blind|facing_bet|F>C",
+        "n": 98,
+        "contributionBbPer100": -0.082,
+        "halfWidth99BbPer100": 0.028
+      },
+      {
+        "key": "preflop|button|three_bet|W>C",
+        "n": 290,
+        "contributionBbPer100": -0.079,
+        "halfWidth99BbPer100": 0.087
+      },
+      {
+        "key": "preflop|cutoff|four_bet|C>F",
+        "n": 170,
+        "contributionBbPer100": -0.069,
+        "halfWidth99BbPer100": 0.123
+      },
+      {
+        "key": "river|cutoff|facing_bet|F>C",
+        "n": 71,
+        "contributionBbPer100": -0.067,
+        "halfWidth99BbPer100": 0.021
+      },
+      {
+        "key": "turn|small_blind|facing_bet|F>C",
+        "n": 39,
+        "contributionBbPer100": -0.064,
+        "halfWidth99BbPer100": 0.026
+      },
+      {
+        "key": "turn|big_blind|checked_to|W>K",
+        "n": 169,
+        "contributionBbPer100": -0.059,
+        "halfWidth99BbPer100": 0.044
+      },
+      {
+        "key": "river|button|checked_to|W>K",
+        "n": 228,
+        "contributionBbPer100": -0.059,
+        "halfWidth99BbPer100": 0.044
+      },
+      {
+        "key": "preflop|small_blind|limp_option|W>F",
+        "n": 644,
+        "contributionBbPer100": -0.051,
+        "halfWidth99BbPer100": 0.104
+      },
+      {
+        "key": "flop|small_blind|checked_to|W>K",
+        "n": 259,
+        "contributionBbPer100": -0.05,
+        "halfWidth99BbPer100": 0.039
+      },
+      {
+        "key": "turn|button|facing_bet|C>W",
+        "n": 38,
+        "contributionBbPer100": -0.043,
+        "halfWidth99BbPer100": 0.031
+      },
+      {
+        "key": "river|small_blind|facing_bet|F>C",
+        "n": 36,
+        "contributionBbPer100": -0.04,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|middle|facing_bet|F>C",
+        "n": 31,
+        "contributionBbPer100": -0.039,
+        "halfWidth99BbPer100": 0.005
+      },
+      {
+        "key": "turn|middle|checked_to|W>K",
+        "n": 72,
+        "contributionBbPer100": -0.037,
+        "halfWidth99BbPer100": 0.039
+      },
+      {
+        "key": "preflop|button|squeeze|W>C",
+        "n": 15,
+        "contributionBbPer100": -0.036,
+        "halfWidth99BbPer100": 0.025
+      },
+      {
+        "key": "turn|middle|facing_bet|F>C",
+        "n": 18,
+        "contributionBbPer100": -0.035,
+        "halfWidth99BbPer100": 0.005
+      },
+      {
+        "key": "preflop|button|four_bet|W>C",
+        "n": 24,
+        "contributionBbPer100": -0.035,
+        "halfWidth99BbPer100": 0.035
+      },
+      {
+        "key": "turn|middle|facing_raise|F>C",
+        "n": 9,
+        "contributionBbPer100": -0.033,
+        "halfWidth99BbPer100": 0.004
+      },
+      {
+        "key": "preflop|big_blind|squeeze|W>C",
+        "n": 106,
+        "contributionBbPer100": -0.026,
+        "halfWidth99BbPer100": 0.057
+      },
+      {
+        "key": "turn|cutoff|checked_to|W>K",
+        "n": 120,
+        "contributionBbPer100": -0.024,
+        "halfWidth99BbPer100": 0.045
+      },
+      {
+        "key": "preflop|middle|three_bet|W>C",
+        "n": 72,
+        "contributionBbPer100": -0.024,
+        "halfWidth99BbPer100": 0.053
+      },
+      {
+        "key": "preflop|cutoff|four_bet|W>F",
+        "n": 15,
+        "contributionBbPer100": -0.023,
+        "halfWidth99BbPer100": 0.031
+      },
+      {
+        "key": "preflop|small_blind|squeeze|W>C",
+        "n": 89,
+        "contributionBbPer100": -0.023,
+        "halfWidth99BbPer100": 0.046
+      },
+      {
+        "key": "turn|small_blind|checked_to|W>K",
+        "n": 116,
+        "contributionBbPer100": -0.022,
+        "halfWidth99BbPer100": 0.025
+      },
+      {
+        "key": "preflop|big_blind|defense|C>W",
+        "n": 10,
+        "contributionBbPer100": -0.019,
+        "halfWidth99BbPer100": 0.02
+      },
+      {
+        "key": "preflop|cutoff|five_bet_plus|C>F",
+        "n": 2,
+        "contributionBbPer100": -0.019,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|cutoff|three_bet|C>W",
+        "n": 9,
+        "contributionBbPer100": -0.019,
+        "halfWidth99BbPer100": 0.023
+      },
+      {
+        "key": "flop|early|facing_raise|C>W",
+        "n": 11,
+        "contributionBbPer100": -0.018,
+        "halfWidth99BbPer100": 0.022
+      },
+      {
+        "key": "flop|cutoff|facing_bet|F>C",
+        "n": 11,
+        "contributionBbPer100": -0.018,
+        "halfWidth99BbPer100": 0.028
+      },
+      {
+        "key": "river|early|facing_bet|F>C",
+        "n": 16,
+        "contributionBbPer100": -0.018,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "flop|middle|checked_to|K>W",
+        "n": 71,
+        "contributionBbPer100": -0.017,
+        "halfWidth99BbPer100": 0.027
+      },
+      {
+        "key": "preflop|middle|squeeze|W>F",
+        "n": 3,
+        "contributionBbPer100": -0.017,
+        "halfWidth99BbPer100": 0.026
+      },
+      {
+        "key": "turn|cutoff|facing_raise|F>C",
+        "n": 5,
+        "contributionBbPer100": -0.017,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|early|checked_to|W>K",
+        "n": 47,
+        "contributionBbPer100": -0.016,
+        "halfWidth99BbPer100": 0.027
+      },
+      {
+        "key": "river|big_blind|checked_to|K>W",
+        "n": 47,
+        "contributionBbPer100": -0.016,
+        "halfWidth99BbPer100": 0.016
+      },
+      {
+        "key": "preflop|big_blind|five_bet_plus|J>C",
+        "n": 12,
+        "contributionBbPer100": -0.016,
+        "halfWidth99BbPer100": 0.015
+      },
+      {
+        "key": "preflop|cutoff|five_bet_plus|F>C",
+        "n": 4,
+        "contributionBbPer100": -0.015,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|cutoff|four_bet|C>W",
+        "n": 17,
+        "contributionBbPer100": -0.015,
+        "halfWidth99BbPer100": 0.009
+      },
+      {
+        "key": "preflop|early|four_bet|W>C",
+        "n": 16,
+        "contributionBbPer100": -0.015,
+        "halfWidth99BbPer100": 0.012
+      },
+      {
+        "key": "preflop|small_blind|five_bet_plus|C>F",
+        "n": 3,
+        "contributionBbPer100": -0.014,
+        "halfWidth99BbPer100": 0.033
+      },
+      {
+        "key": "preflop|middle|squeeze|C>F",
+        "n": 26,
+        "contributionBbPer100": -0.014,
+        "halfWidth99BbPer100": 0.049
+      },
+      {
+        "key": "turn|early|facing_bet|F>C",
+        "n": 6,
+        "contributionBbPer100": -0.013,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|big_blind|four_bet|C>W",
+        "n": 17,
+        "contributionBbPer100": -0.012,
+        "halfWidth99BbPer100": 0.042
+      },
+      {
+        "key": "preflop|cutoff|three_bet|F>C",
+        "n": 12,
+        "contributionBbPer100": -0.012,
+        "halfWidth99BbPer100": 0.04
+      },
+      {
+        "key": "flop|early|checked_to|K>W",
+        "n": 23,
+        "contributionBbPer100": -0.012,
+        "halfWidth99BbPer100": 0.009
+      },
+      {
+        "key": "flop|cutoff|facing_bet|C>W",
+        "n": 7,
+        "contributionBbPer100": -0.01,
+        "halfWidth99BbPer100": 0.01
+      },
+      {
+        "key": "river|small_blind|checked_to|K>W",
+        "n": 21,
+        "contributionBbPer100": -0.01,
+        "halfWidth99BbPer100": 0.009
+      },
+      {
+        "key": "flop|button|facing_bet|F>C",
+        "n": 9,
+        "contributionBbPer100": -0.01,
+        "halfWidth99BbPer100": 0.02
+      },
+      {
+        "key": "preflop|big_blind|overcall|W>F",
+        "n": 5,
+        "contributionBbPer100": -0.009,
+        "halfWidth99BbPer100": 0.026
+      },
+      {
+        "key": "preflop|cutoff|five_bet_plus|J>C",
+        "n": 8,
+        "contributionBbPer100": -0.009,
+        "halfWidth99BbPer100": 0.008
+      },
+      {
+        "key": "flop|small_blind|facing_raise|F>C",
+        "n": 2,
+        "contributionBbPer100": -0.009,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|big_blind|five_bet_plus|F>C",
+        "n": 2,
+        "contributionBbPer100": -0.009,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|button|rfi|F>W",
+        "n": 6,
+        "contributionBbPer100": -0.009,
+        "halfWidth99BbPer100": 0.009
+      },
+      {
+        "key": "preflop|big_blind|four_bet|W>C",
+        "n": 16,
+        "contributionBbPer100": -0.008,
+        "halfWidth99BbPer100": 0.017
+      },
+      {
+        "key": "preflop|small_blind|four_bet|C>F",
+        "n": 67,
+        "contributionBbPer100": -0.008,
+        "halfWidth99BbPer100": 0.072
+      },
+      {
+        "key": "turn|button|facing_raise|F>C",
+        "n": 2,
+        "contributionBbPer100": -0.008,
+        "halfWidth99BbPer100": 0.002
+      },
+      {
+        "key": "turn|big_blind|checked_to|K>W",
+        "n": 39,
+        "contributionBbPer100": -0.007,
+        "halfWidth99BbPer100": 0.022
+      },
+      {
+        "key": "river|button|facing_raise|C>W",
+        "n": 8,
+        "contributionBbPer100": -0.007,
+        "halfWidth99BbPer100": 0.009
+      },
+      {
+        "key": "flop|middle|facing_bet|F>C",
+        "n": 6,
+        "contributionBbPer100": -0.007,
+        "halfWidth99BbPer100": 0.005
+      },
+      {
+        "key": "river|early|facing_bet|C>W",
+        "n": 2,
+        "contributionBbPer100": -0.007,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|small_blind|squeeze|W>F",
+        "n": 93,
+        "contributionBbPer100": -0.006,
+        "halfWidth99BbPer100": 0.103
+      },
+      {
+        "key": "preflop|button|three_bet|F>C",
+        "n": 24,
+        "contributionBbPer100": -0.006,
+        "halfWidth99BbPer100": 0.041
+      },
+      {
+        "key": "preflop|middle|five_bet_plus|J>C",
+        "n": 14,
+        "contributionBbPer100": -0.006,
+        "halfWidth99BbPer100": 0.012
+      },
+      {
+        "key": "flop|big_blind|facing_raise|C>W",
+        "n": 3,
+        "contributionBbPer100": -0.006,
+        "halfWidth99BbPer100": 0.004
+      },
+      {
+        "key": "preflop|early|four_bet|C>W",
+        "n": 38,
+        "contributionBbPer100": -0.005,
+        "halfWidth99BbPer100": 0.013
+      },
+      {
+        "key": "preflop|cutoff|four_bet|W>C",
+        "n": 17,
+        "contributionBbPer100": -0.005,
+        "halfWidth99BbPer100": 0.012
+      },
+      {
+        "key": "preflop|small_blind|overcall|C>F",
+        "n": 13,
+        "contributionBbPer100": -0.005,
+        "halfWidth99BbPer100": 0.035
+      },
+      {
+        "key": "river|middle|facing_bet|C>W",
+        "n": 6,
+        "contributionBbPer100": -0.005,
+        "halfWidth99BbPer100": 0.005
+      },
+      {
+        "key": "flop|cutoff|facing_raise|F>C",
+        "n": 1,
+        "contributionBbPer100": -0.004,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|small_blind|four_bet|C>W",
+        "n": 7,
+        "contributionBbPer100": -0.004,
+        "halfWidth99BbPer100": 0.006
+      },
+      {
+        "key": "river|middle|checked_to|W>K",
+        "n": 25,
+        "contributionBbPer100": -0.004,
+        "halfWidth99BbPer100": 0.009
+      },
+      {
+        "key": "preflop|middle|four_bet|F>C",
+        "n": 1,
+        "contributionBbPer100": -0.004,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|button|facing_bet|C>W",
+        "n": 47,
+        "contributionBbPer100": -0.004,
+        "halfWidth99BbPer100": 0.022
+      },
+      {
+        "key": "preflop|small_blind|squeeze|F>C",
+        "n": 11,
+        "contributionBbPer100": -0.003,
+        "halfWidth99BbPer100": 0.028
+      },
+      {
+        "key": "turn|small_blind|facing_raise|C>W",
+        "n": 3,
+        "contributionBbPer100": -0.003,
+        "halfWidth99BbPer100": 0.01
+      },
+      {
+        "key": "preflop|middle|four_bet|W>C",
+        "n": 19,
+        "contributionBbPer100": -0.003,
+        "halfWidth99BbPer100": 0.013
+      },
+      {
+        "key": "flop|cutoff|facing_raise|C>W",
+        "n": 7,
+        "contributionBbPer100": -0.003,
+        "halfWidth99BbPer100": 0.012
+      },
+      {
+        "key": "river|cutoff|facing_bet|W>C",
+        "n": 6,
+        "contributionBbPer100": -0.003,
+        "halfWidth99BbPer100": 0.005
+      },
+      {
+        "key": "river|early|facing_raise|F>C",
+        "n": 3,
+        "contributionBbPer100": -0.003,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|middle|facing_bet|W>C",
+        "n": 3,
+        "contributionBbPer100": -0.003,
+        "halfWidth99BbPer100": 0.007
+      },
+      {
+        "key": "flop|early|facing_bet|F>C",
+        "n": 2,
+        "contributionBbPer100": -0.003,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|button|four_bet|C>W",
+        "n": 8,
+        "contributionBbPer100": -0.003,
+        "halfWidth99BbPer100": 0.006
+      },
+      {
+        "key": "preflop|small_blind|five_bet_plus|J>C",
+        "n": 2,
+        "contributionBbPer100": -0.003,
+        "halfWidth99BbPer100": 0.006
+      },
+      {
+        "key": "flop|big_blind|facing_bet|F>W",
+        "n": 1,
+        "contributionBbPer100": -0.003,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|cutoff|checked_to|K>W",
+        "n": 3,
+        "contributionBbPer100": -0.003,
+        "halfWidth99BbPer100": 0.003
+      },
+      {
+        "key": "turn|early|facing_bet|W>C",
+        "n": 2,
+        "contributionBbPer100": -0.003,
+        "halfWidth99BbPer100": 0.009
+      },
+      {
+        "key": "preflop|big_blind|overcall|W>C",
+        "n": 6,
+        "contributionBbPer100": -0.003,
+        "halfWidth99BbPer100": 0.004
+      },
+      {
+        "key": "preflop|cutoff|overcall|W>F",
+        "n": 1,
+        "contributionBbPer100": -0.003,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|cutoff|facing_bet|C>W",
+        "n": 23,
+        "contributionBbPer100": -0.003,
+        "halfWidth99BbPer100": 0.013
+      },
+      {
+        "key": "turn|big_blind|facing_bet|C>W",
+        "n": 4,
+        "contributionBbPer100": -0.002,
+        "halfWidth99BbPer100": 0.005
+      },
+      {
+        "key": "river|button|facing_bet|F>W",
+        "n": 1,
+        "contributionBbPer100": -0.002,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|cutoff|facing_raise|F>C",
+        "n": 1,
+        "contributionBbPer100": -0.002,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|early|facing_raise|C>W",
+        "n": 1,
+        "contributionBbPer100": -0.002,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|cutoff|checked_to|W>K",
+        "n": 100,
+        "contributionBbPer100": -0.002,
+        "halfWidth99BbPer100": 0.027
+      },
+      {
+        "key": "flop|button|facing_bet|C>W",
+        "n": 8,
+        "contributionBbPer100": -0.002,
+        "halfWidth99BbPer100": 0.009
+      },
+      {
+        "key": "flop|early|facing_bet|W>C",
+        "n": 2,
+        "contributionBbPer100": -0.002,
+        "halfWidth99BbPer100": 0.001
+      },
+      {
+        "key": "turn|button|facing_raise|C>W",
+        "n": 8,
+        "contributionBbPer100": -0.001,
+        "halfWidth99BbPer100": 0.016
+      },
+      {
+        "key": "preflop|big_blind|overcall|C>W",
+        "n": 1,
+        "contributionBbPer100": -0.001,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|small_blind|overcall|W>C",
+        "n": 2,
+        "contributionBbPer100": -0.001,
+        "halfWidth99BbPer100": 0.006
+      },
+      {
+        "key": "turn|cutoff|facing_raise|C>W",
+        "n": 2,
+        "contributionBbPer100": -0.001,
+        "halfWidth99BbPer100": 0.002
+      },
+      {
+        "key": "river|small_blind|facing_bet|C>W",
+        "n": 1,
+        "contributionBbPer100": -0.001,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|small_blind|checked_to|K>W",
+        "n": 9,
+        "contributionBbPer100": -0.001,
+        "halfWidth99BbPer100": 0.008
+      },
+      {
+        "key": "flop|small_blind|facing_bet|C>W",
+        "n": 5,
+        "contributionBbPer100": -0.001,
+        "halfWidth99BbPer100": 0.011
+      },
+      {
+        "key": "river|cutoff|checked_to|K>W",
+        "n": 6,
+        "contributionBbPer100": -0.001,
+        "halfWidth99BbPer100": 0.006
+      },
+      {
+        "key": "preflop|early|five_bet_plus|J>C",
+        "n": 2,
+        "contributionBbPer100": -0.001,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|big_blind|squeeze|C>F",
+        "n": 3266,
+        "contributionBbPer100": -0.0,
+        "halfWidth99BbPer100": 0.373
+      },
+      {
+        "key": "preflop|cutoff|squeeze|W>C",
+        "n": 7,
+        "contributionBbPer100": -0.0,
+        "halfWidth99BbPer100": 0.012
+      },
+      {
+        "key": "turn|cutoff|facing_bet|W>C",
+        "n": 12,
+        "contributionBbPer100": -0.0,
+        "halfWidth99BbPer100": 0.007
+      },
+      {
+        "key": "river|cutoff|facing_raise|C>W",
+        "n": 1,
+        "contributionBbPer100": -0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|button|checked_to|K>W",
+        "n": 3,
+        "contributionBbPer100": -0.0,
+        "halfWidth99BbPer100": 0.004
+      },
+      {
+        "key": "river|big_blind|facing_raise|C>W",
+        "n": 2,
+        "contributionBbPer100": -0.0,
+        "halfWidth99BbPer100": 0.004
+      },
+      {
+        "key": "flop|big_blind|facing_bet|W>C",
+        "n": 10,
+        "contributionBbPer100": -0.0,
+        "halfWidth99BbPer100": 0.004
+      },
+      {
+        "key": "river|early|checked_to|K>W",
+        "n": 4,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|middle|checked_to|K>W",
+        "n": 6,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|early|facing_raise|C>W",
+        "n": 1,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|small_blind|four_bet|W>C",
+        "n": 12,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.006
+      },
+      {
+        "key": "turn|big_blind|facing_bet|W>C",
+        "n": 3,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.004
+      },
+      {
+        "key": "flop|middle|facing_bet|W>C",
+        "n": 1,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|early|checked_to|K>W",
+        "n": 13,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.01
+      },
+      {
+        "key": "preflop|button|five_bet_plus|J>C",
+        "n": 25,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.011
+      },
+      {
+        "key": "turn|cutoff|facing_bet|C>W",
+        "n": 9,
+        "contributionBbPer100": 0.001,
+        "halfWidth99BbPer100": 0.007
+      },
+      {
+        "key": "turn|cutoff|facing_bet|C>F",
+        "n": 6,
+        "contributionBbPer100": 0.001,
+        "halfWidth99BbPer100": 0.014
+      },
+      {
+        "key": "river|middle|facing_raise|C>W",
+        "n": 1,
+        "contributionBbPer100": 0.001,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "flop|cutoff|facing_bet|W>C",
+        "n": 3,
+        "contributionBbPer100": 0.001,
+        "halfWidth99BbPer100": 0.001
+      },
+      {
+        "key": "turn|button|checked_to|J>K",
+        "n": 1,
+        "contributionBbPer100": 0.001,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|small_blind|facing_bet|W>C",
+        "n": 1,
+        "contributionBbPer100": 0.001,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|button|facing_bet|C>F",
+        "n": 1,
+        "contributionBbPer100": 0.001,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "flop|small_blind|facing_bet|W>C",
+        "n": 1,
+        "contributionBbPer100": 0.001,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|middle|overcall|W>C",
+        "n": 1,
+        "contributionBbPer100": 0.001,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|middle|five_bet_plus|F>C",
+        "n": 12,
+        "contributionBbPer100": 0.001,
+        "halfWidth99BbPer100": 0.048
+      },
+      {
+        "key": "flop|small_blind|facing_raise|C>W",
+        "n": 1,
+        "contributionBbPer100": 0.001,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|big_blind|facing_bet|C>W",
+        "n": 14,
+        "contributionBbPer100": 0.001,
+        "halfWidth99BbPer100": 0.01
+      },
+      {
+        "key": "turn|middle|checked_to|K>W",
+        "n": 2,
+        "contributionBbPer100": 0.002,
+        "halfWidth99BbPer100": 0.003
+      },
+      {
+        "key": "flop|big_blind|facing_bet|C>W",
+        "n": 11,
+        "contributionBbPer100": 0.002,
+        "halfWidth99BbPer100": 0.017
+      },
+      {
+        "key": "preflop|cutoff|overcall|C>F",
+        "n": 1,
+        "contributionBbPer100": 0.002,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|button|facing_bet|W>C",
+        "n": 4,
+        "contributionBbPer100": 0.002,
+        "halfWidth99BbPer100": 0.005
+      },
+      {
+        "key": "river|small_blind|checked_to|W>K",
+        "n": 18,
+        "contributionBbPer100": 0.003,
+        "halfWidth99BbPer100": 0.006
+      },
+      {
+        "key": "river|small_blind|facing_raise|C>W",
+        "n": 3,
+        "contributionBbPer100": 0.003,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|middle|facing_bet|C>W",
+        "n": 5,
+        "contributionBbPer100": 0.003,
+        "halfWidth99BbPer100": 0.005
+      },
+      {
+        "key": "river|big_blind|checked_to|W>K",
+        "n": 48,
+        "contributionBbPer100": 0.003,
+        "halfWidth99BbPer100": 0.013
+      },
+      {
+        "key": "flop|middle|facing_bet|C>W",
+        "n": 9,
+        "contributionBbPer100": 0.003,
+        "halfWidth99BbPer100": 0.005
+      },
+      {
+        "key": "preflop|middle|squeeze|W>C",
+        "n": 3,
+        "contributionBbPer100": 0.003,
+        "halfWidth99BbPer100": 0.032
+      },
+      {
+        "key": "turn|big_blind|checked_to|J>K",
+        "n": 1,
+        "contributionBbPer100": 0.003,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|middle|five_bet_plus|C>F",
+        "n": 1,
+        "contributionBbPer100": 0.003,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "flop|button|checked_to|K>W",
+        "n": 51,
+        "contributionBbPer100": 0.004,
+        "halfWidth99BbPer100": 0.022
+      },
+      {
+        "key": "preflop|middle|three_bet|C>W",
+        "n": 7,
+        "contributionBbPer100": 0.004,
+        "halfWidth99BbPer100": 0.011
+      },
+      {
+        "key": "river|middle|facing_bet|W>C",
+        "n": 4,
+        "contributionBbPer100": 0.004,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|big_blind|facing_bet|W>C",
+        "n": 4,
+        "contributionBbPer100": 0.004,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|small_blind|facing_bet|W>C",
+        "n": 6,
+        "contributionBbPer100": 0.005,
+        "halfWidth99BbPer100": 0.005
+      },
+      {
+        "key": "flop|big_blind|checked_to|K>W",
+        "n": 131,
+        "contributionBbPer100": 0.005,
+        "halfWidth99BbPer100": 0.036
+      },
+      {
+        "key": "preflop|button|squeeze|W>F",
+        "n": 8,
+        "contributionBbPer100": 0.005,
+        "halfWidth99BbPer100": 0.03
+      },
+      {
+        "key": "preflop|big_blind|five_bet_plus|C>F",
+        "n": 5,
+        "contributionBbPer100": 0.006,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|button|facing_bet|W>C",
+        "n": 13,
+        "contributionBbPer100": 0.006,
+        "halfWidth99BbPer100": 0.006
+      },
+      {
+        "key": "turn|button|facing_bet|C>F",
+        "n": 9,
+        "contributionBbPer100": 0.006,
+        "halfWidth99BbPer100": 0.014
+      },
+      {
+        "key": "turn|early|facing_bet|C>W",
+        "n": 8,
+        "contributionBbPer100": 0.006,
+        "halfWidth99BbPer100": 0.002
+      },
+      {
+        "key": "turn|big_blind|facing_raise|C>W",
+        "n": 3,
+        "contributionBbPer100": 0.006,
+        "halfWidth99BbPer100": 0.004
+      },
+      {
+        "key": "preflop|button|four_bet|W>F",
+        "n": 12,
+        "contributionBbPer100": 0.007,
+        "halfWidth99BbPer100": 0.027
+      },
+      {
+        "key": "preflop|button|squeeze|F>C",
+        "n": 1,
+        "contributionBbPer100": 0.008,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|small_blind|four_bet|W>F",
+        "n": 8,
+        "contributionBbPer100": 0.009,
+        "halfWidth99BbPer100": 0.019
+      },
+      {
+        "key": "turn|middle|facing_bet|C>F",
+        "n": 4,
+        "contributionBbPer100": 0.009,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|button|overcall|C>F",
+        "n": 3,
+        "contributionBbPer100": 0.009,
+        "halfWidth99BbPer100": 0.006
+      },
+      {
+        "key": "preflop|big_blind|four_bet|F>C",
+        "n": 4,
+        "contributionBbPer100": 0.01,
+        "halfWidth99BbPer100": 0.01
+      },
+      {
+        "key": "preflop|button|five_bet_plus|F>C",
+        "n": 1,
+        "contributionBbPer100": 0.01,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|small_blind|overcall|W>F",
+        "n": 4,
+        "contributionBbPer100": 0.01,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|small_blind|defense|C>W",
+        "n": 17,
+        "contributionBbPer100": 0.011,
+        "halfWidth99BbPer100": 0.033
+      },
+      {
+        "key": "turn|button|checked_to|K>W",
+        "n": 22,
+        "contributionBbPer100": 0.011,
+        "halfWidth99BbPer100": 0.017
+      },
+      {
+        "key": "preflop|early|rfi|W>F",
+        "n": 2871,
+        "contributionBbPer100": 0.011,
+        "halfWidth99BbPer100": 0.396
+      },
+      {
+        "key": "preflop|cutoff|squeeze|W>F",
+        "n": 11,
+        "contributionBbPer100": 0.012,
+        "halfWidth99BbPer100": 0.015
+      },
+      {
+        "key": "preflop|small_blind|four_bet|F>C",
+        "n": 4,
+        "contributionBbPer100": 0.013,
+        "halfWidth99BbPer100": 0.023
+      },
+      {
+        "key": "preflop|middle|four_bet|C>W",
+        "n": 22,
+        "contributionBbPer100": 0.014,
+        "halfWidth99BbPer100": 0.024
+      },
+      {
+        "key": "flop|small_blind|checked_to|K>W",
+        "n": 43,
+        "contributionBbPer100": 0.015,
+        "halfWidth99BbPer100": 0.015
+      },
+      {
+        "key": "preflop|small_blind|limp_option|F>C",
+        "n": 44,
+        "contributionBbPer100": 0.015,
+        "halfWidth99BbPer100": 0.021
+      },
+      {
+        "key": "preflop|middle|four_bet|C>F",
+        "n": 12,
+        "contributionBbPer100": 0.015,
+        "halfWidth99BbPer100": 0.032
+      },
+      {
+        "key": "flop|button|facing_raise|C>W",
+        "n": 17,
+        "contributionBbPer100": 0.015,
+        "halfWidth99BbPer100": 0.014
+      },
+      {
+        "key": "flop|cutoff|checked_to|K>W",
+        "n": 31,
+        "contributionBbPer100": 0.017,
+        "halfWidth99BbPer100": 0.031
+      },
+      {
+        "key": "river|early|checked_to|W>K",
+        "n": 23,
+        "contributionBbPer100": 0.019,
+        "halfWidth99BbPer100": 0.01
+      },
+      {
+        "key": "preflop|big_blind|four_bet|W>F",
+        "n": 13,
+        "contributionBbPer100": 0.02,
+        "halfWidth99BbPer100": 0.026
+      },
+      {
+        "key": "preflop|middle|three_bet|W>F",
+        "n": 86,
+        "contributionBbPer100": 0.021,
+        "halfWidth99BbPer100": 0.102
+      },
+      {
+        "key": "preflop|small_blind|defense|F>C",
+        "n": 107,
+        "contributionBbPer100": 0.037,
+        "halfWidth99BbPer100": 0.085
+      },
+      {
+        "key": "preflop|cutoff|three_bet|C>F",
+        "n": 532,
+        "contributionBbPer100": 0.049,
+        "halfWidth99BbPer100": 0.206
+      },
+      {
+        "key": "preflop|cutoff|squeeze|C>F",
+        "n": 41,
+        "contributionBbPer100": 0.055,
+        "halfWidth99BbPer100": 0.054
+      },
+      {
+        "key": "preflop|big_blind|four_bet|C>F",
+        "n": 267,
+        "contributionBbPer100": 0.058,
+        "halfWidth99BbPer100": 0.153
+      },
+      {
+        "key": "preflop|big_blind|overcall|C>F",
+        "n": 359,
+        "contributionBbPer100": 0.069,
+        "halfWidth99BbPer100": 0.138
+      },
+      {
+        "key": "preflop|cutoff|three_bet|W>F",
+        "n": 82,
+        "contributionBbPer100": 0.088,
+        "halfWidth99BbPer100": 0.084
+      },
+      {
+        "key": "preflop|button|three_bet|C>F",
+        "n": 1427,
+        "contributionBbPer100": 0.115,
+        "halfWidth99BbPer100": 0.309
+      },
+      {
+        "key": "preflop|small_blind|squeeze|C>F",
+        "n": 146,
+        "contributionBbPer100": 0.116,
+        "halfWidth99BbPer100": 0.08
+      },
+      {
+        "key": "preflop|button|three_bet|W>F",
+        "n": 281,
+        "contributionBbPer100": 0.125,
+        "halfWidth99BbPer100": 0.13
+      },
+      {
+        "key": "preflop|small_blind|defense|C>F",
+        "n": 1173,
+        "contributionBbPer100": 0.14,
+        "halfWidth99BbPer100": 0.228
+      },
+      {
+        "key": "preflop|middle|rfi|W>F",
+        "n": 2834,
+        "contributionBbPer100": 0.192,
+        "halfWidth99BbPer100": 0.373
+      },
+      {
+        "key": "preflop|middle|three_bet|C>F",
+        "n": 537,
+        "contributionBbPer100": 0.263,
+        "halfWidth99BbPer100": 0.198
+      },
+      {
+        "key": "preflop|cutoff|rfi|W>F",
+        "n": 4740,
+        "contributionBbPer100": 0.727,
+        "halfWidth99BbPer100": 0.395
+      }
+    ]
+  },
+  "flo8": {
+    "seeds": [12101101, 12102203],
+    "pairs": 80640,
+    "meanBbPer100": -3.724,
+    "confidence99BbPer100": [-5.845, -1.603],
+    "profiles": {
+      "p12c-flo8-6max-1000bb": {
+        "pairs": 11520,
+        "meanBbPer100": 1.926
+      },
+      "p12c-flo8-6max-100bb": {
+        "pairs": 11520,
+        "meanBbPer100": 2.024
+      },
+      "p12c-flo8-6max-200bb": {
+        "pairs": 11520,
+        "meanBbPer100": 2.049
+      },
+      "p12c-flo8-6max-2dealt-100bb": {
+        "pairs": 11520,
+        "meanBbPer100": -25.169
+      },
+      "p12c-flo8-6max-40bb": {
+        "pairs": 11520,
+        "meanBbPer100": 1.319
+      },
+      "p12c-flo8-6max-4dealt-100bb": {
+        "pairs": 11520,
+        "meanBbPer100": -5.596
+      },
+      "p12c-flo8-8max-100bb": {
+        "pairs": 11520,
+        "meanBbPer100": -2.623
+      }
+    },
+    "attribution": [
+      {
+        "key": "preflop|button|rfi|W>F",
+        "n": 4408,
+        "contributionBbPer100": -2.033,
+        "halfWidth99BbPer100": 0.746
+      },
+      {
+        "key": "preflop|big_blind|defense|C>F",
+        "n": 3934,
+        "contributionBbPer100": -0.832,
+        "halfWidth99BbPer100": 0.753
+      },
+      {
+        "key": "flop|button|checked_to|W>K",
+        "n": 675,
+        "contributionBbPer100": -0.676,
+        "halfWidth99BbPer100": 0.2
+      },
+      {
+        "key": "flop|cutoff|checked_to|W>K",
+        "n": 542,
+        "contributionBbPer100": -0.596,
+        "halfWidth99BbPer100": 0.173
+      },
+      {
+        "key": "preflop|big_blind|squeeze|C>F",
+        "n": 2819,
+        "contributionBbPer100": -0.511,
+        "halfWidth99BbPer100": 0.737
+      },
+      {
+        "key": "preflop|small_blind|limp_option|W>F",
+        "n": 540,
+        "contributionBbPer100": -0.392,
+        "halfWidth99BbPer100": 0.221
+      },
+      {
+        "key": "preflop|middle|rfi|W>F",
+        "n": 826,
+        "contributionBbPer100": -0.359,
+        "halfWidth99BbPer100": 0.458
+      },
+      {
+        "key": "flop|early|checked_to|W>K",
+        "n": 257,
+        "contributionBbPer100": -0.308,
+        "halfWidth99BbPer100": 0.098
+      },
+      {
+        "key": "flop|middle|checked_to|W>K",
+        "n": 309,
+        "contributionBbPer100": -0.265,
+        "halfWidth99BbPer100": 0.135
+      },
+      {
+        "key": "preflop|big_blind|defense|W>F",
+        "n": 122,
+        "contributionBbPer100": -0.216,
+        "halfWidth99BbPer100": 0.163
+      },
+      {
+        "key": "preflop|big_blind|defense|W>C",
+        "n": 159,
+        "contributionBbPer100": -0.208,
+        "halfWidth99BbPer100": 0.082
+      },
+      {
+        "key": "preflop|middle|rfi|F>W",
+        "n": 273,
+        "contributionBbPer100": -0.18,
+        "halfWidth99BbPer100": 0.196
+      },
+      {
+        "key": "turn|big_blind|checked_to|W>K",
+        "n": 158,
+        "contributionBbPer100": -0.161,
+        "halfWidth99BbPer100": 0.074
+      },
+      {
+        "key": "preflop|button|three_bet|C>W",
+        "n": 101,
+        "contributionBbPer100": -0.143,
+        "halfWidth99BbPer100": 0.075
+      },
+      {
+        "key": "preflop|small_blind|defense|W>C",
+        "n": 78,
+        "contributionBbPer100": -0.138,
+        "halfWidth99BbPer100": 0.112
+      },
+      {
+        "key": "flop|small_blind|checked_to|W>K",
+        "n": 173,
+        "contributionBbPer100": -0.137,
+        "halfWidth99BbPer100": 0.059
+      },
+      {
+        "key": "preflop|small_blind|defense|C>W",
+        "n": 235,
+        "contributionBbPer100": -0.121,
+        "halfWidth99BbPer100": 0.145
+      },
+      {
+        "key": "flop|big_blind|checked_to|W>K",
+        "n": 164,
+        "contributionBbPer100": -0.113,
+        "halfWidth99BbPer100": 0.083
+      },
+      {
+        "key": "turn|middle|checked_to|W>K",
+        "n": 43,
+        "contributionBbPer100": -0.097,
+        "halfWidth99BbPer100": 0.072
+      },
+      {
+        "key": "preflop|big_blind|squeeze|W>C",
+        "n": 44,
+        "contributionBbPer100": -0.094,
+        "halfWidth99BbPer100": 0.062
+      },
+      {
+        "key": "preflop|button|three_bet|W>C",
+        "n": 70,
+        "contributionBbPer100": -0.092,
+        "halfWidth99BbPer100": 0.106
+      },
+      {
+        "key": "river|button|facing_bet|F>C",
+        "n": 37,
+        "contributionBbPer100": -0.092,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|small_blind|squeeze|W>C",
+        "n": 34,
+        "contributionBbPer100": -0.086,
+        "halfWidth99BbPer100": 0.073
+      },
+      {
+        "key": "preflop|small_blind|squeeze|C>W",
+        "n": 54,
+        "contributionBbPer100": -0.085,
+        "halfWidth99BbPer100": 0.051
+      },
+      {
+        "key": "turn|button|checked_to|W>K",
+        "n": 104,
+        "contributionBbPer100": -0.075,
+        "halfWidth99BbPer100": 0.058
+      },
+      {
+        "key": "preflop|button|rfi|C>F",
+        "n": 162,
+        "contributionBbPer100": -0.074,
+        "halfWidth99BbPer100": 0.104
+      },
+      {
+        "key": "turn|small_blind|checked_to|W>K",
+        "n": 131,
+        "contributionBbPer100": -0.072,
+        "halfWidth99BbPer100": 0.079
+      },
+      {
+        "key": "turn|early|checked_to|W>K",
+        "n": 50,
+        "contributionBbPer100": -0.071,
+        "halfWidth99BbPer100": 0.063
+      },
+      {
+        "key": "preflop|early|four_bet|C>W",
+        "n": 33,
+        "contributionBbPer100": -0.071,
+        "halfWidth99BbPer100": 0.033
+      },
+      {
+        "key": "turn|cutoff|facing_bet|F>C",
+        "n": 19,
+        "contributionBbPer100": -0.069,
+        "halfWidth99BbPer100": 0.014
+      },
+      {
+        "key": "preflop|middle|three_bet|C>W",
+        "n": 58,
+        "contributionBbPer100": -0.067,
+        "halfWidth99BbPer100": 0.093
+      },
+      {
+        "key": "preflop|cutoff|three_bet|C>W",
+        "n": 63,
+        "contributionBbPer100": -0.061,
+        "halfWidth99BbPer100": 0.056
+      },
+      {
+        "key": "river|big_blind|facing_bet|F>C",
+        "n": 30,
+        "contributionBbPer100": -0.06,
+        "halfWidth99BbPer100": 0.036
+      },
+      {
+        "key": "preflop|cutoff|rfi|F>W",
+        "n": 93,
+        "contributionBbPer100": -0.047,
+        "halfWidth99BbPer100": 0.091
+      },
+      {
+        "key": "river|small_blind|facing_bet|F>C",
+        "n": 26,
+        "contributionBbPer100": -0.046,
+        "halfWidth99BbPer100": 0.039
+      },
+      {
+        "key": "preflop|cutoff|four_bet|W>C",
+        "n": 5,
+        "contributionBbPer100": -0.046,
+        "halfWidth99BbPer100": 0.015
+      },
+      {
+        "key": "turn|cutoff|checked_to|W>K",
+        "n": 62,
+        "contributionBbPer100": -0.046,
+        "halfWidth99BbPer100": 0.039
+      },
+      {
+        "key": "preflop|big_blind|squeeze|W>F",
+        "n": 27,
+        "contributionBbPer100": -0.044,
+        "halfWidth99BbPer100": 0.1
+      },
+      {
+        "key": "preflop|button|squeeze|W>C",
+        "n": 4,
+        "contributionBbPer100": -0.042,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|middle|facing_bet|F>C",
+        "n": 16,
+        "contributionBbPer100": -0.04,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|small_blind|defense|F>C",
+        "n": 23,
+        "contributionBbPer100": -0.039,
+        "halfWidth99BbPer100": 0.07
+      },
+      {
+        "key": "preflop|big_blind|overcall|C>W",
+        "n": 12,
+        "contributionBbPer100": -0.034,
+        "halfWidth99BbPer100": 0.029
+      },
+      {
+        "key": "preflop|cutoff|three_bet|W>F",
+        "n": 13,
+        "contributionBbPer100": -0.032,
+        "halfWidth99BbPer100": 0.111
+      },
+      {
+        "key": "preflop|button|squeeze|C>F",
+        "n": 159,
+        "contributionBbPer100": -0.031,
+        "halfWidth99BbPer100": 0.283
+      },
+      {
+        "key": "preflop|early|rfi|F>W",
+        "n": 220,
+        "contributionBbPer100": -0.031,
+        "halfWidth99BbPer100": 0.163
+      },
+      {
+        "key": "preflop|button|four_bet|F>C",
+        "n": 5,
+        "contributionBbPer100": -0.03,
+        "halfWidth99BbPer100": 0.01
+      },
+      {
+        "key": "preflop|middle|four_bet|C>W",
+        "n": 31,
+        "contributionBbPer100": -0.029,
+        "halfWidth99BbPer100": 0.055
+      },
+      {
+        "key": "preflop|middle|three_bet|W>F",
+        "n": 9,
+        "contributionBbPer100": -0.028,
+        "halfWidth99BbPer100": 0.049
+      },
+      {
+        "key": "river|small_blind|checked_to|W>K",
+        "n": 18,
+        "contributionBbPer100": -0.027,
+        "halfWidth99BbPer100": 0.025
+      },
+      {
+        "key": "flop|small_blind|facing_bet|F>C",
+        "n": 8,
+        "contributionBbPer100": -0.026,
+        "halfWidth99BbPer100": 0.014
+      },
+      {
+        "key": "flop|early|facing_bet|C>F",
+        "n": 4,
+        "contributionBbPer100": -0.026,
+        "halfWidth99BbPer100": 0.006
+      },
+      {
+        "key": "preflop|big_blind|isolation|W>K",
+        "n": 29,
+        "contributionBbPer100": -0.026,
+        "halfWidth99BbPer100": 0.053
+      },
+      {
+        "key": "preflop|big_blind|overcall|W>C",
+        "n": 7,
+        "contributionBbPer100": -0.023,
+        "halfWidth99BbPer100": 0.014
+      },
+      {
+        "key": "river|early|checked_to|W>K",
+        "n": 17,
+        "contributionBbPer100": -0.021,
+        "halfWidth99BbPer100": 0.013
+      },
+      {
+        "key": "preflop|big_blind|squeeze|C>W",
+        "n": 79,
+        "contributionBbPer100": -0.021,
+        "halfWidth99BbPer100": 0.054
+      },
+      {
+        "key": "preflop|cutoff|overcall|W>C",
+        "n": 1,
+        "contributionBbPer100": -0.02,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "flop|big_blind|facing_bet|C>W",
+        "n": 4,
+        "contributionBbPer100": -0.02,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|early|facing_bet|F>C",
+        "n": 5,
+        "contributionBbPer100": -0.02,
+        "halfWidth99BbPer100": 0.011
+      },
+      {
+        "key": "river|small_blind|facing_bet|C>F",
+        "n": 3,
+        "contributionBbPer100": -0.018,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|button|squeeze|W>F",
+        "n": 1,
+        "contributionBbPer100": -0.018,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|cutoff|four_bet|C>W",
+        "n": 22,
+        "contributionBbPer100": -0.018,
+        "halfWidth99BbPer100": 0.015
+      },
+      {
+        "key": "river|big_blind|checked_to|W>K",
+        "n": 18,
+        "contributionBbPer100": -0.016,
+        "halfWidth99BbPer100": 0.014
+      },
+      {
+        "key": "preflop|small_blind|overcall|W>C",
+        "n": 6,
+        "contributionBbPer100": -0.015,
+        "halfWidth99BbPer100": 0.034
+      },
+      {
+        "key": "river|button|checked_to|W>K",
+        "n": 77,
+        "contributionBbPer100": -0.015,
+        "halfWidth99BbPer100": 0.035
+      },
+      {
+        "key": "river|middle|checked_to|W>K",
+        "n": 28,
+        "contributionBbPer100": -0.012,
+        "halfWidth99BbPer100": 0.048
+      },
+      {
+        "key": "flop|button|facing_bet|W>C",
+        "n": 15,
+        "contributionBbPer100": -0.012,
+        "halfWidth99BbPer100": 0.021
+      },
+      {
+        "key": "turn|big_blind|facing_bet|F>C",
+        "n": 15,
+        "contributionBbPer100": -0.012,
+        "halfWidth99BbPer100": 0.057
+      },
+      {
+        "key": "flop|big_blind|facing_bet|W>C",
+        "n": 50,
+        "contributionBbPer100": -0.012,
+        "halfWidth99BbPer100": 0.037
+      },
+      {
+        "key": "flop|big_blind|facing_bet|F>C",
+        "n": 5,
+        "contributionBbPer100": -0.011,
+        "halfWidth99BbPer100": 0.014
+      },
+      {
+        "key": "preflop|small_blind|limp_option|W>C",
+        "n": 47,
+        "contributionBbPer100": -0.011,
+        "halfWidth99BbPer100": 0.047
+      },
+      {
+        "key": "preflop|big_blind|four_bet|F>C",
+        "n": 1,
+        "contributionBbPer100": -0.01,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|big_blind|overcall|W>F",
+        "n": 8,
+        "contributionBbPer100": -0.01,
+        "halfWidth99BbPer100": 0.047
+      },
+      {
+        "key": "river|middle|facing_bet|C>F",
+        "n": 1,
+        "contributionBbPer100": -0.009,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|cutoff|checked_to|W>K",
+        "n": 37,
+        "contributionBbPer100": -0.008,
+        "halfWidth99BbPer100": 0.023
+      },
+      {
+        "key": "preflop|button|squeeze|C>W",
+        "n": 17,
+        "contributionBbPer100": -0.008,
+        "halfWidth99BbPer100": 0.04
+      },
+      {
+        "key": "river|cutoff|facing_raise|F>C",
+        "n": 1,
+        "contributionBbPer100": -0.007,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|button|facing_bet|F>C",
+        "n": 21,
+        "contributionBbPer100": -0.007,
+        "halfWidth99BbPer100": 0.066
+      },
+      {
+        "key": "preflop|small_blind|limp_option|F>C",
+        "n": 34,
+        "contributionBbPer100": -0.007,
+        "halfWidth99BbPer100": 0.025
+      },
+      {
+        "key": "turn|early|checked_to|J>K",
+        "n": 1,
+        "contributionBbPer100": -0.007,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|small_blind|facing_bet|F>C",
+        "n": 9,
+        "contributionBbPer100": -0.007,
+        "halfWidth99BbPer100": 0.047
+      },
+      {
+        "key": "preflop|button|four_bet|W>C",
+        "n": 4,
+        "contributionBbPer100": -0.006,
+        "halfWidth99BbPer100": 0.01
+      },
+      {
+        "key": "preflop|button|three_bet|F>C",
+        "n": 11,
+        "contributionBbPer100": -0.006,
+        "halfWidth99BbPer100": 0.041
+      },
+      {
+        "key": "river|cutoff|facing_bet|F>C",
+        "n": 8,
+        "contributionBbPer100": -0.006,
+        "halfWidth99BbPer100": 0.033
+      },
+      {
+        "key": "preflop|middle|three_bet|W>C",
+        "n": 7,
+        "contributionBbPer100": -0.006,
+        "halfWidth99BbPer100": 0.023
+      },
+      {
+        "key": "flop|cutoff|facing_bet|F>C",
+        "n": 4,
+        "contributionBbPer100": -0.005,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|middle|facing_raise|F>C",
+        "n": 1,
+        "contributionBbPer100": -0.005,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|small_blind|facing_raise|F>C",
+        "n": 1,
+        "contributionBbPer100": -0.005,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|middle|facing_raise|F>C",
+        "n": 1,
+        "contributionBbPer100": -0.005,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|big_blind|facing_bet|C>W",
+        "n": 6,
+        "contributionBbPer100": -0.005,
+        "halfWidth99BbPer100": 0.013
+      },
+      {
+        "key": "flop|middle|facing_bet|W>C",
+        "n": 1,
+        "contributionBbPer100": -0.005,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|small_blind|five_bet_plus|J>C",
+        "n": 8,
+        "contributionBbPer100": -0.004,
+        "halfWidth99BbPer100": 0.01
+      },
+      {
+        "key": "preflop|middle|squeeze|C>F",
+        "n": 31,
+        "contributionBbPer100": -0.004,
+        "halfWidth99BbPer100": 0.086
+      },
+      {
+        "key": "preflop|button|overcall|C>W",
+        "n": 12,
+        "contributionBbPer100": -0.004,
+        "halfWidth99BbPer100": 0.052
+      },
+      {
+        "key": "preflop|button|squeeze|F>C",
+        "n": 1,
+        "contributionBbPer100": -0.004,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|big_blind|defense|F>C",
+        "n": 2,
+        "contributionBbPer100": -0.003,
+        "halfWidth99BbPer100": 0.008
+      },
+      {
+        "key": "river|small_blind|facing_raise|W>C",
+        "n": 1,
+        "contributionBbPer100": -0.002,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|button|facing_bet|W>C",
+        "n": 1,
+        "contributionBbPer100": -0.002,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "flop|button|facing_bet|C>F",
+        "n": 1,
+        "contributionBbPer100": -0.002,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|middle|facing_bet|W>C",
+        "n": 8,
+        "contributionBbPer100": -0.001,
+        "halfWidth99BbPer100": 0.005
+      },
+      {
+        "key": "turn|small_blind|facing_bet|W>C",
+        "n": 7,
+        "contributionBbPer100": -0.001,
+        "halfWidth99BbPer100": 0.004
+      },
+      {
+        "key": "flop|small_blind|facing_raise|W>C",
+        "n": 1,
+        "contributionBbPer100": -0.001,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "flop|middle|facing_bet|F>C",
+        "n": 1,
+        "contributionBbPer100": -0.001,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|button|facing_bet|C>W",
+        "n": 9,
+        "contributionBbPer100": -0.001,
+        "halfWidth99BbPer100": 0.02
+      },
+      {
+        "key": "flop|big_blind|facing_raise|W>C",
+        "n": 1,
+        "contributionBbPer100": -0.001,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|middle|four_bet|W>C",
+        "n": 1,
+        "contributionBbPer100": -0.001,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "flop|button|checked_to|K>W",
+        "n": 3,
+        "contributionBbPer100": -0.0,
+        "halfWidth99BbPer100": 0.004
+      },
+      {
+        "key": "preflop|small_blind|four_bet|C>W",
+        "n": 2,
+        "contributionBbPer100": -0.0,
+        "halfWidth99BbPer100": 0.004
+      },
+      {
+        "key": "turn|early|checked_to|K>W",
+        "n": 4,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|big_blind|isolation|K>W",
+        "n": 1,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|big_blind|five_bet_plus|J>C",
+        "n": 2,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|button|facing_bet|C>W",
+        "n": 1,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|small_blind|four_bet|W>C",
+        "n": 1,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|button|five_bet_plus|J>C",
+        "n": 1,
+        "contributionBbPer100": 0.0,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|early|four_bet|W>C",
+        "n": 4,
+        "contributionBbPer100": 0.001,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|cutoff|facing_raise|W>C",
+        "n": 4,
+        "contributionBbPer100": 0.001,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "flop|button|facing_raise|W>C",
+        "n": 1,
+        "contributionBbPer100": 0.001,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|middle|five_bet_plus|J>C",
+        "n": 1,
+        "contributionBbPer100": 0.001,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "flop|cutoff|checked_to|K>W",
+        "n": 1,
+        "contributionBbPer100": 0.001,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "flop|big_blind|facing_bet|C>F",
+        "n": 1,
+        "contributionBbPer100": 0.001,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|button|facing_raise|C>W",
+        "n": 1,
+        "contributionBbPer100": 0.002,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|big_blind|checked_to|J>K",
+        "n": 1,
+        "contributionBbPer100": 0.002,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|cutoff|squeeze|W>C",
+        "n": 2,
+        "contributionBbPer100": 0.002,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|middle|squeeze|W>C",
+        "n": 1,
+        "contributionBbPer100": 0.002,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|button|rfi|F>W",
+        "n": 24,
+        "contributionBbPer100": 0.003,
+        "halfWidth99BbPer100": 0.03
+      },
+      {
+        "key": "flop|button|facing_raise|C>W",
+        "n": 1,
+        "contributionBbPer100": 0.003,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|middle|overcall|W>F",
+        "n": 1,
+        "contributionBbPer100": 0.004,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|button|overcall|W>F",
+        "n": 1,
+        "contributionBbPer100": 0.004,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|middle|overcall|C>F",
+        "n": 5,
+        "contributionBbPer100": 0.004,
+        "halfWidth99BbPer100": 0.028
+      },
+      {
+        "key": "flop|cutoff|facing_bet|W>C",
+        "n": 4,
+        "contributionBbPer100": 0.005,
+        "halfWidth99BbPer100": 0.004
+      },
+      {
+        "key": "turn|big_blind|facing_bet|W>C",
+        "n": 8,
+        "contributionBbPer100": 0.005,
+        "halfWidth99BbPer100": 0.008
+      },
+      {
+        "key": "turn|big_blind|facing_bet|C>F",
+        "n": 2,
+        "contributionBbPer100": 0.005,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|button|checked_to|J>K",
+        "n": 1,
+        "contributionBbPer100": 0.005,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|small_blind|facing_bet|C>F",
+        "n": 2,
+        "contributionBbPer100": 0.005,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|middle|squeeze|W>F",
+        "n": 1,
+        "contributionBbPer100": 0.005,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|button|facing_bet|C>F",
+        "n": 17,
+        "contributionBbPer100": 0.005,
+        "halfWidth99BbPer100": 0.037
+      },
+      {
+        "key": "river|big_blind|checked_to|K>W",
+        "n": 14,
+        "contributionBbPer100": 0.006,
+        "halfWidth99BbPer100": 0.014
+      },
+      {
+        "key": "preflop|cutoff|three_bet|W>C",
+        "n": 19,
+        "contributionBbPer100": 0.006,
+        "halfWidth99BbPer100": 0.047
+      },
+      {
+        "key": "preflop|cutoff|squeeze|C>W",
+        "n": 4,
+        "contributionBbPer100": 0.006,
+        "halfWidth99BbPer100": 0.014
+      },
+      {
+        "key": "turn|cutoff|facing_bet|W>C",
+        "n": 9,
+        "contributionBbPer100": 0.006,
+        "halfWidth99BbPer100": 0.012
+      },
+      {
+        "key": "flop|big_blind|checked_to|K>W",
+        "n": 10,
+        "contributionBbPer100": 0.007,
+        "halfWidth99BbPer100": 0.008
+      },
+      {
+        "key": "river|early|facing_bet|C>F",
+        "n": 3,
+        "contributionBbPer100": 0.007,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|big_blind|facing_bet|C>F",
+        "n": 3,
+        "contributionBbPer100": 0.007,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|big_blind|four_bet|C>W",
+        "n": 3,
+        "contributionBbPer100": 0.008,
+        "halfWidth99BbPer100": 0.016
+      },
+      {
+        "key": "river|middle|checked_to|K>W",
+        "n": 4,
+        "contributionBbPer100": 0.008,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "river|middle|facing_bet|C>W",
+        "n": 4,
+        "contributionBbPer100": 0.008,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "flop|small_blind|checked_to|K>W",
+        "n": 4,
+        "contributionBbPer100": 0.008,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|button|rfi|C>W",
+        "n": 6,
+        "contributionBbPer100": 0.008,
+        "halfWidth99BbPer100": 0.018
+      },
+      {
+        "key": "flop|middle|facing_bet|C>F",
+        "n": 3,
+        "contributionBbPer100": 0.009,
+        "halfWidth99BbPer100": 0.005
+      },
+      {
+        "key": "preflop|cutoff|four_bet|W>F",
+        "n": 2,
+        "contributionBbPer100": 0.01,
+        "halfWidth99BbPer100": 0.026
+      },
+      {
+        "key": "turn|small_blind|checked_to|K>W",
+        "n": 6,
+        "contributionBbPer100": 0.011,
+        "halfWidth99BbPer100": 0.007
+      },
+      {
+        "key": "preflop|middle|squeeze|C>W",
+        "n": 3,
+        "contributionBbPer100": 0.011,
+        "halfWidth99BbPer100": 0.036
+      },
+      {
+        "key": "preflop|cutoff|three_bet|F>C",
+        "n": 11,
+        "contributionBbPer100": 0.011,
+        "halfWidth99BbPer100": 0.05
+      },
+      {
+        "key": "turn|button|facing_bet|W>C",
+        "n": 12,
+        "contributionBbPer100": 0.013,
+        "halfWidth99BbPer100": 0.011
+      },
+      {
+        "key": "preflop|small_blind|four_bet|C>F",
+        "n": 42,
+        "contributionBbPer100": 0.013,
+        "halfWidth99BbPer100": 0.146
+      },
+      {
+        "key": "preflop|small_blind|overcall|C>W",
+        "n": 9,
+        "contributionBbPer100": 0.014,
+        "halfWidth99BbPer100": 0.01
+      },
+      {
+        "key": "preflop|middle|three_bet|F>C",
+        "n": 12,
+        "contributionBbPer100": 0.015,
+        "halfWidth99BbPer100": 0.054
+      },
+      {
+        "key": "river|big_blind|facing_raise|F>C",
+        "n": 2,
+        "contributionBbPer100": 0.015,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "turn|big_blind|checked_to|K>W",
+        "n": 18,
+        "contributionBbPer100": 0.016,
+        "halfWidth99BbPer100": 0.032
+      },
+      {
+        "key": "preflop|cutoff|squeeze|C>F",
+        "n": 106,
+        "contributionBbPer100": 0.016,
+        "halfWidth99BbPer100": 0.268
+      },
+      {
+        "key": "preflop|cutoff|three_bet|F>W",
+        "n": 2,
+        "contributionBbPer100": 0.021,
+        "halfWidth99BbPer100": 0.0
+      },
+      {
+        "key": "preflop|cutoff|four_bet|C>F",
+        "n": 7,
+        "contributionBbPer100": 0.024,
+        "halfWidth99BbPer100": 0.009
+      },
+      {
+        "key": "preflop|small_blind|overcall|C>F",
+        "n": 140,
+        "contributionBbPer100": 0.03,
+        "halfWidth99BbPer100": 0.195
+      },
+      {
+        "key": "preflop|cutoff|overcall|C>F",
+        "n": 12,
+        "contributionBbPer100": 0.03,
+        "halfWidth99BbPer100": 0.086
+      },
+      {
+        "key": "preflop|button|four_bet|C>W",
+        "n": 37,
+        "contributionBbPer100": 0.032,
+        "halfWidth99BbPer100": 0.061
+      },
+      {
+        "key": "river|small_blind|checked_to|K>W",
+        "n": 12,
+        "contributionBbPer100": 0.035,
+        "halfWidth99BbPer100": 0.018
+      },
+      {
+        "key": "turn|cutoff|facing_bet|C>F",
+        "n": 11,
+        "contributionBbPer100": 0.037,
+        "halfWidth99BbPer100": 0.01
+      },
+      {
+        "key": "preflop|small_blind|limp_option|F>W",
+        "n": 27,
+        "contributionBbPer100": 0.042,
+        "halfWidth99BbPer100": 0.043
+      },
+      {
+        "key": "preflop|big_blind|defense|C>W",
+        "n": 258,
+        "contributionBbPer100": 0.05,
+        "halfWidth99BbPer100": 0.098
+      },
+      {
+        "key": "preflop|button|four_bet|C>F",
+        "n": 14,
+        "contributionBbPer100": 0.052,
+        "halfWidth99BbPer100": 0.046
+      },
+      {
+        "key": "flop|button|facing_bet|F>C",
+        "n": 8,
+        "contributionBbPer100": 0.056,
+        "halfWidth99BbPer100": 0.06
+      },
+      {
+        "key": "turn|middle|facing_bet|F>C",
+        "n": 12,
+        "contributionBbPer100": 0.059,
+        "halfWidth99BbPer100": 0.059
+      },
+      {
+        "key": "preflop|small_blind|squeeze|W>F",
+        "n": 16,
+        "contributionBbPer100": 0.06,
+        "halfWidth99BbPer100": 0.085
+      },
+      {
+        "key": "preflop|button|overcall|C>F",
+        "n": 48,
+        "contributionBbPer100": 0.069,
+        "halfWidth99BbPer100": 0.088
+      },
+      {
+        "key": "preflop|button|three_bet|W>F",
+        "n": 69,
+        "contributionBbPer100": 0.181,
+        "halfWidth99BbPer100": 0.155
+      },
+      {
+        "key": "preflop|small_blind|defense|W>F",
+        "n": 79,
+        "contributionBbPer100": 0.187,
+        "halfWidth99BbPer100": 0.14
+      },
+      {
+        "key": "preflop|cutoff|three_bet|C>F",
+        "n": 415,
+        "contributionBbPer100": 0.237,
+        "halfWidth99BbPer100": 0.338
+      },
+      {
+        "key": "preflop|big_blind|four_bet|C>F",
+        "n": 119,
+        "contributionBbPer100": 0.247,
+        "halfWidth99BbPer100": 0.201
+      },
+      {
+        "key": "preflop|small_blind|defense|C>F",
+        "n": 1432,
+        "contributionBbPer100": 0.267,
+        "halfWidth99BbPer100": 0.497
+      },
+      {
+        "key": "preflop|small_blind|squeeze|C>F",
+        "n": 522,
+        "contributionBbPer100": 0.331,
+        "halfWidth99BbPer100": 0.339
+      },
+      {
+        "key": "preflop|middle|three_bet|C>F",
+        "n": 319,
+        "contributionBbPer100": 0.402,
+        "halfWidth99BbPer100": 0.288
+      },
+      {
+        "key": "preflop|early|rfi|W>F",
+        "n": 874,
+        "contributionBbPer100": 0.466,
+        "halfWidth99BbPer100": 0.473
+      },
+      {
+        "key": "preflop|big_blind|overcall|C>F",
+        "n": 1001,
+        "contributionBbPer100": 0.577,
+        "halfWidth99BbPer100": 0.443
+      },
+      {
+        "key": "preflop|button|three_bet|C>F",
+        "n": 1216,
+        "contributionBbPer100": 1.041,
+        "halfWidth99BbPer100": 0.587
+      },
+      {
+        "key": "preflop|cutoff|rfi|W>F",
+        "n": 1817,
+        "contributionBbPer100": 1.122,
+        "halfWidth99BbPer100": 0.605
+      }
+    ]
+  },
+  "config": null
+}

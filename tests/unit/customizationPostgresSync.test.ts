@@ -72,6 +72,25 @@ describe('customization postgres sync', () => {
     });
   });
 
+  it('removes a retired club from every signed-in surface from its recipient event', () => {
+    binding('game_management_events', 'INSERT').handler({
+      new: {
+        event_type: 'club_identity_changed',
+        scope_kind: 'club',
+        scope_id: 'club-retired',
+        club_id: 'club-retired',
+      },
+    });
+
+    expect(emit).toHaveBeenCalledWith('CLUB_LEFT', { clubId: 'club-retired' });
+    expect(emit).toHaveBeenCalledWith('GAME_MANAGEMENT_ACCESS_CHANGED', {
+      scope: 'club',
+      scopeId: 'club-retired',
+      clubId: 'club-retired',
+      userId: 'user-1',
+    });
+  });
+
   it('repaints table art and card-back controls from another device', () => {
     binding('user_theme_settings', 'UPDATE').handler({
       eventType: 'UPDATE',

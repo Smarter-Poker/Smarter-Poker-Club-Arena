@@ -30,7 +30,9 @@ import { validateCashoutAmount } from '../utils/cashoutAmount';
  * ── THE TEN MINUTE WINDOW IS NOT HERE ──────────────────────────────────────
  *
  * It belongs to the AGENT WALLET SEND, not to the cashout. See
- * fn_agent_wallet_claim_back and `sendChipsToPlayer` below.
+ * fn_agent_wallet_claim_back, called by the cashier pages with their own
+ * retained op ids. Browser-side expiry, separate completion and agent-initiated
+ * removal never existed as money paths; their throw-only stubs are gone too.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -50,7 +52,10 @@ import { reportError } from '../utils/errorReporter';
  * SECOND call, and a second call used to carry a second op id and move the money
  * twice. Cashout lifecycle calls require the caller's retained UUID at runtime.
  * Their callers preserve uncertain operations in the durable operation store.
- * The legacy send/claim/admin paths below retain their separate existing API.
+ * The legacy send/claim/admin wrappers that minted a fresh id whenever the
+ * caller omitted one were deleted on 2026-10-09 (audit S-08): nothing called
+ * them, and a decorative op id is exactly the fault this note describes. The
+ * cashier pages hold their own retained ids.
  */
 export function newOpId(): string {
   try {
@@ -63,25 +68,6 @@ export function newOpId(): string {
     const r = (Math.random() * 16) | 0;
     return (ch === 'x' ? r : (r & 0x3) | 0x8).toString(16);
   });
-}
-
-/** Legacy send/claim/admin responses. Cashout lifecycle mutations require v2 receipts below. */
-interface CashoutRpcResult {
-  success?: boolean;
-  error?: string;
-  replayed?: boolean;
-  cashout_id?: string;
-  club_id?: string;
-  agent_id?: string;
-  player_id?: string;
-  player_name?: string;
-  amount?: number;
-  agent_wallet_after?: number;
-  player_balance_after?: number;
-}
-
-function unwrap(data: unknown): CashoutRpcResult | null {
-  return (Array.isArray(data) ? data[0] : data) as CashoutRpcResult | null;
 }
 
 /** Caller-owned view generation; captures the original account, club and intent. */
@@ -114,6 +100,88 @@ export class CashoutOutcomeUnknownError extends Error {
     this.clubId = context.clubId;
     this.cashoutId = context.cashoutId;
   }
+}
+
+/**
+ * A refusal the server raised and rolled back (2026-10-09, S-01). This call
+ * moved nothing and the server kept no event for its op id (for 22023
+ * cashier_operation_conflict the id already belongs to a different intent), so
+ * the outcome is DEFINITIVE: CashoutOperation acknowledges the durable
+ * generation and the next attempt mints a new id, instead of replaying the
+ * receipt lookup for an operation the server never kept. Transport throws,
+ * 57014, 40001, 08xxx, unrecognised codes and every 23514 outside
+ * CASHOUT_DEFINITIVE_23514 stay CashoutOutcomeUnknownError.
+ */
+export class CashoutRefusedError extends Error {
+  readonly definitive = true as const;
+  readonly code: string;
+  readonly token: string | null;
+  readonly operationId: string;
+  readonly clubId: string;
+  readonly cashoutId?: string;
+  constructor(message: string, code: string, token: string | null, context: CashoutContext) {
+    super(message);
+    this.name = 'CashoutRefusedError';
+    this.code = code;
+    this.token = token;
+    this.operationId = context.opId;
+    this.clubId = context.clubId;
+    this.cashoutId = context.cashoutId;
+  }
+}
+
+/**
+ * The 23514 RAISE tokens of fn_cashier_cashout_transition (component33, live
+ * 2026-09-14) that are definitive refusals. Each is raised before anything is
+ * written, and all but cashier_club_unavailable only after the replay branch
+ * found no event for this op id.
+ *
+ * 23514 is NOT definitive by code alone (2026-10-09, S-01 follow-up): the same
+ * SQLSTATE is raised by fn_cashier_operation_receipt while it re-reads the
+ * receipt of an operation that ALREADY COMMITTED (the replay branch returns
+ * through it), by the delivery and document asserts it calls, and by the
+ * integrity asserts around the writes. Settling the generation on one of those
+ * would treat committed money as never kept, so they stay unknown: the same op
+ * id is kept and only an exact receipt lookup may resolve it.
+ */
+const CASHOUT_DEFINITIVE_23514: Readonly<Record<string, string>> = {
+  cashier_wallet_balance_unverified: 'Not Enough Chips For That Cashout.',
+  cashier_pending_request_exists: 'You Already Have A Pending Cashout.',
+  cashier_request_already_terminal: 'That Cashout Was Already Decided.',
+  cashier_club_unavailable: 'That Cashout Was Refused.',
+  cashier_escrow_unverified: 'That Cashout Was Refused.',
+  cashier_legacy_hold_unverified: 'That Cashout Was Refused.',
+  cashier_journal_is_suppressed: 'That Cashout Was Refused.',
+};
+/**
+ * 22023 and 42501 are never raised while replaying a committed operation of
+ * the same intent: the replay branch either returns the receipt or raises
+ * 22023 cashier_operation_conflict, whose id belongs to another intent for good.
+ */
+const CASHOUT_REFUSAL_CODES: Readonly<Record<string, string>> = {
+  '22023': 'That Cashout Request Is Not Valid.',
+  '42501': 'You Are Not Allowed To Do That Here.',
+};
+function definitiveCashoutRefusal(
+  error: unknown,
+  context: CashoutContext
+): CashoutRefusedError | null {
+  if (!objectValue(error) || typeof error.code !== 'string') return null;
+  const code = error.code.trim();
+  const text = [error.message, error.details, error.hint]
+    .filter((part): part is string => typeof part === 'string')
+    .join(' ');
+  const token = /\bcashier_[a-z0-9_]+\b/.exec(text)?.[0] ?? null;
+  const words =
+    code === '23514'
+      ? token !== null && Object.prototype.hasOwnProperty.call(CASHOUT_DEFINITIVE_23514, token)
+        ? CASHOUT_DEFINITIVE_23514[token]
+        : undefined
+      : Object.prototype.hasOwnProperty.call(CASHOUT_REFUSAL_CODES, code)
+        ? CASHOUT_REFUSAL_CODES[code]
+        : undefined;
+  if (!words) return null;
+  return new CashoutRefusedError(words, code, token, context);
 }
 
 let cashoutAccount: string | null | undefined;
@@ -496,11 +564,16 @@ async function mutateCashout(
       context
     );
   const { data, error } = response;
-  if (error)
+  if (error) {
+    // A RAISE rolled the whole transaction back: 22023/23514/42501 are refusals
+    // the player can act on, never an outcome that needs a receipt lookup.
+    const refused = definitiveCashoutRefusal(error, context);
+    if (refused) throw refused;
     throw new CashoutOutcomeUnknownError(
       'Cashout Could Not Be Confirmed. Refresh Its Status Before Retrying The Same Operation.',
       context
     );
+  }
   if (objectValue(data) && data.success === false)
     throw new Error(typeof data.error === 'string' ? data.error : 'Cashout Was Refused');
   const request = verifiedCashoutReceipt(data, context, kind, normalizedNote);
@@ -773,13 +846,6 @@ class CashoutServiceClass {
     return true;
   }
 
-  /** Retired: approval is the only terminal payer; no receipt can be inferred here. */
-  async completeCashout(_cashoutId: string, _agentId: string): Promise<boolean> {
-    throw new Error(
-      'Separate Cashout Completion Is Retired. Refresh The Canonical Approval Receipt.'
-    );
-  }
-
   async rejectCashout(
     cashoutId: string,
     agentId: string,
@@ -915,151 +981,6 @@ class CashoutServiceClass {
   }
 
   /**
-   * Agent: send chips from THE AGENT WALLET to a downline member.
-   *
-   * This used to call ChipFlowService.transfer, which capped the send against
-   * agents.agent_wallet_balance and then debited `wallets` instead, and then
-   * hand-inserted a chip_transactions row from the browser. That insert had no
-   * INSERT policy behind it, so the ledger row it was trying to write for the
-   * reversal window never landed either. Both halves are now one RPC.
-   */
-  async sendChipsToPlayer(
-    agentId: string,
-    playerId: string,
-    clubId: string,
-    amount: number,
-    notes?: string,
-    opId?: string
-  ): Promise<boolean> {
-    void agentId; // the server takes the sender from auth.uid()
-    const resolvedClubId = await resolveClubUUID(clubId);
-    const { data, error } = await supabase.rpc('fn_agent_wallet_send', {
-      p_club_id: resolvedClubId,
-      p_to_user_id: playerId,
-      p_amount: amount,
-      p_destination: 'player_wallet',
-      p_reason: notes || null,
-      p_op_id: opId || newOpId(),
-    });
-    if (error) {
-      reportError(error, 'CashoutService.sendChipsToPlayer');
-      throw new Error(error.message || 'Failed to send chips');
-    }
-    const res = unwrap(data);
-    if (!res?.success) throw new Error(res?.error || 'Failed to send chips');
-
-    masterBus.emit('BALANCE_UPDATED', { source: 'agent_wallet_send', userId: playerId, amount });
-    return true;
-  }
-
-  /**
-   * THE TEN MINUTE MISTAKE ERASER (Dan 2026-08-25, binding).
-   *
-   * "Agents can only claim back chips that were sent in the first 10 minutes
-   *  (reconciling a mistake); after that they cannot remove chips from downline
-   *  wallets unless the downline requests a cash out."
-   *
-   * Takes a TRANSACTION id, never a member id, because the power granted is
-   * "undo that send" and not "take chips from that person". The window is
-   * enforced against chip_transactions.reversible_until inside the RPC, so a
-   * client with a wrong clock, or none, cannot widen it.
-   */
-  async claimBackSend(
-    clubId: string,
-    transactionId: string,
-    amount?: number,
-    reason?: string,
-    opId?: string
-  ): Promise<{ amount: number; agentWalletAfter: number }> {
-    const resolvedClubId = await resolveClubUUID(clubId);
-    const { data, error } = await supabase.rpc('fn_agent_wallet_claim_back', {
-      p_club_id: resolvedClubId,
-      p_transaction_id: transactionId,
-      p_amount: amount ?? null,
-      p_reason: reason || null,
-      p_op_id: opId || newOpId(),
-    });
-    if (error) {
-      reportError(error, 'CashoutService.claimBackSend');
-      throw new Error(error.message || 'Failed to claim those chips back');
-    }
-    const res = unwrap(data) as (CashoutRpcResult & { source?: string }) | null;
-    if (!res?.success) throw new Error(res?.error || 'Failed to claim those chips back');
-
-    masterBus.emit('BALANCE_UPDATED', { source: 'agent_wallet_claim_back' });
-    return {
-      amount: Number(res.amount || 0),
-      agentWalletAfter: Number(res.agent_wallet_after || 0),
-    };
-  }
-
-  /**
-   * FORBIDDEN by the chip-removal authority policy. Agents take chips only
-   * through the player-initiated cashout flow (requestCashout -> approveCashout)
-   * or, inside ten minutes, by undoing their own send (`claimBackSend`).
-   * Club owners, co owners and admins use `adminRemovePlayerChips`.
-   */
-  async removeChipsFromPlayer(
-    _agentId: string,
-    _playerId: string,
-    _clubId: string,
-    _amount: number,
-    _notes?: string
-  ): Promise<boolean> {
-    throw new Error(
-      'Agents cannot remove chips from a player. The player must request a cashout; ' +
-        'the chips are held in escrow immediately and transfer to you when you accept it.'
-    );
-  }
-
-  /**
-   * Club OWNER/ADMIN only: pull chips from any member at any time.
-   * Enforced server-side by fn_admin_remove_player_chips, which derives the
-   * actor from auth.uid(), refuses agents, row-locks the member, returns the
-   * chips to the club pool and writes a chip_transactions audit row.
-   *
-   * `opId` closes the lost-response window. This was the ONE staff money path
-   * with no idempotency key: a retry after a dropped reply pulled the chips a
-   * second time. Migration 20260826 added p_op_id, a replay branch and a
-   * partial unique index over (club_id, op_id) for admin_removal rows. Proved
-   * against production inside a rolled-back transaction: two calls with one
-   * key moved 300 chips once and wrote one ledger row.
-   *
-   * Pass a key HELD ACROSS A FAILURE. Minting one per call - which is what
-   * every leg here used to do - makes the parameter decorative.
-   */
-  async adminRemovePlayerChips(
-    clubId: string,
-    playerId: string,
-    amount: number,
-    reason?: string,
-    opId?: string
-  ): Promise<{ removed: number; balanceAfter: number }> {
-    const resolvedClubId = await resolveClubUUID(clubId);
-    const { data, error } = await supabase.rpc('fn_admin_remove_player_chips', {
-      p_club_id: resolvedClubId,
-      p_player_id: playerId,
-      p_amount: amount,
-      p_reason: reason || null,
-      p_op_id: opId || newOpId(),
-    });
-    if (error) {
-      reportError(error, 'CashoutService.adminRemovePlayerChips');
-      throw new Error(error.message || 'Failed to remove chips');
-    }
-    const res = data as {
-      success?: boolean;
-      error?: string;
-      removed?: number;
-      balance_after?: number;
-    };
-    if (!res?.success) throw new Error(res?.error || 'Failed to remove chips');
-
-    masterBus.emit('BALANCE_UPDATED', { source: 'admin_removal', userId: playerId });
-    return { removed: Number(res.removed || 0), balanceAfter: Number(res.balance_after || 0) };
-  }
-
-  /**
    * Map database record to CashoutRequest
    */
   private mapCashout(data: Record<string, unknown>): CashoutRequest {
@@ -1081,13 +1002,6 @@ class CashoutServiceClass {
       completedAt: data.completed_at as string,
       cancelledAt: data.cancelled_at as string,
     };
-  }
-
-  /** System expiry belongs to the service-only scheduler and its durable receipts. */
-  async expireStale(_maxHours = 72): Promise<{ expired: number }> {
-    throw new Error(
-      'Browser Cashout Expiry Is Retired. Only The Canonical Server Scheduler May Expire Holds.'
-    );
   }
 }
 

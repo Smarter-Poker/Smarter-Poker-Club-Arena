@@ -1,0 +1,83 @@
+.stats-data-table {
+  margin-top: 0.75rem;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  color: #e4e7ec;
+}
+
+.stats-data-table > summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #45adff;
+  cursor: pointer;
+  font-family: 'Roboto Condensed', sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  list-style: none;
+}
+
+.stats-data-table > summary::-webkit-details-marker {
+  display: none;
+}
+.stats-data-table > summary:focus-visible {
+  outline: 2px solid #45adff;
+  outline-offset: -2px;
+}
+
+.stats-data-table__scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.stats-data-table__scroll:focus-visible {
+  outline: 2px solid #45adff;
+  outline-offset: -2px;
+}
+
+.stats-data-table table {
+  width: 100%;
+  min-width: 34rem;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.stats-data-table caption {
+  padding: 0.65rem;
+  color: #9aa5b3;
+  text-align: left;
+}
+
+.stats-data-table th,
+.stats-data-table td {
+  padding: 0.55rem 0.65rem;
+  border-top: 1px solid rgb(255 255 255 / 8%);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.stats-data-table th:first-child,
+.stats-data-table td:first-child {
+  text-align: left;
+}
+.stats-data-table thead th {
+  color: #45adff;
+}
+.stats-data-table tbody th {
+  color: #f4f7fb;
+}
+
+@media (max-width: 390px) {
+  .stats-data-table table {
+    font-size: 0.72rem;
+  }
+  .stats-data-table th,
+  .stats-data-table td {
+    padding: 0.48rem 0.55rem;
+  }
+}

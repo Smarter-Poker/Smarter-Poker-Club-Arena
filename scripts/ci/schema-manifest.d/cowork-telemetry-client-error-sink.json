@@ -1,0 +1,10 @@
+{
+  "_owner": "agent/cowork-telemetry/feat/client-error-sink. Promised by migration 20261003080431_players_errors_reach_a_first_party_sink, applied after merge with apply-merged-migration.yml.",
+  "tables": ["client_error_events", "client_error_rates_10m"],
+  "functions": [
+    "fn_client_error_scrub",
+    "fn_report_client_errors",
+    "fn_client_error_health",
+    "fn_prune_client_error_events"
+  ]
+}

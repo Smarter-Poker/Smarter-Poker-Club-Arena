@@ -1,0 +1,15 @@
+{
+  "schema": "horse-phase13-strength-runner-v1",
+  "runner": "GitHub Actions 1000249742",
+  "image": "ubuntu24",
+  "imageVersion": "20260927.320.1",
+  "vcpu": 4,
+  "cpu": "AMD EPYC 9V74 80-Core Processor",
+  "kernel": "6.17.0-1022-azure",
+  "node": "v22.23.3",
+  "workflowRun": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37429443854",
+  "runAttempt": 1,
+  "variant": "pineapple",
+  "shard": "p13c-pineapple-9max-100bb-13242309-s8",
+  "sourceSha": "886cc9655461c1049ece829c1fc86c14e2d3ba75"
+}

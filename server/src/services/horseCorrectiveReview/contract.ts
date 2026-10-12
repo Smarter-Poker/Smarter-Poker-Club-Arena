@@ -1,4 +1,6 @@
 import type { HorseJournalRecord } from '../horseDecisionJournal/record.js';
+import type { CorrectiveReferenceDomain } from './domain.js';
+export type { CorrectiveReferenceDomain } from './domain.js';
 
 export const CORRECTIVE_REVIEW_VERSION = 'horse-corrective-review-v1' as const;
 export const CORRECTIVE_ROSTER_REVIEW_VERSION = 'horse-corrective-review-v2-roster' as const;
@@ -11,15 +13,26 @@ export const CORRECTIVE_LIMITS = Object.freeze({
 
 /** Supplied by the source/qualification owner, separately from the artifacts.
  * A digest is byte binding, not an assertion that observational data is causal.
- * This module does not discover, grant or persist approval. */
+ * This module does not discover, grant or persist approval.
+ *
+ * Version 2 (Phase 14.4) adds the signed approval generation, expiry and the
+ * variant/format/mode domains the signer reviewed. The signed message is
+ * `horse-corrective-review-authority-v2`; a version 1 envelope is refused,
+ * never reinterpreted with defaults for the fields it did not sign. */
 export interface CorrectiveReviewAuthority {
-  version: 1;
+  version: 2;
   role: 'accepted_source_and_counterfactual_reference';
   handKey: string;
   qualificationId: string;
   evidenceClass: 'synthetic_fixture' | 'reviewed_reference';
   commitmentDigest: string | null;
   referenceDigests: string[];
+  /** Positive safe integer; review refuses anything else by name. */
+  approvalGeneration: number;
+  /** Exact ISO-8601 instant; review refuses an authority at or after it. */
+  expiresAt: string;
+  /** Every domain a pinned reference may cover. No default: absent is none. */
+  domains: CorrectiveReferenceDomain[];
 }
 
 export interface CorrectiveAuthorityEnvelope {
@@ -57,10 +70,20 @@ export interface CorrectiveReferenceBinding {
   readFrameDigest: string;
   sourceRelease: string;
 }
+/** Version 2 (Phase 14.4) binds the reference to the original decision's
+ * domain, its reproducible sampling contract and its producer. A version 1
+ * reference is refused by name. */
 export interface AlternativeActionReference {
-  version: 1;
+  version: 2;
   sourceId: string;
   qualificationId: string;
+  evidenceClass: 'synthetic_fixture' | 'reviewed_reference';
+  /** Must equal the original decision's own domain and be signed by the authority. */
+  domain: CorrectiveReferenceDomain;
+  /** SHA256 of the reproducible sampling contract (seeds, budgets, sample plan). */
+  samplingContractDigest: string;
+  /** SHA256 identity of the reference producer build that computed it. */
+  producerDigest: string;
   basis: 'counterfactual';
   method: 'exact_enumeration' | 'paired_simulation';
   causal: true;
@@ -95,6 +118,17 @@ export interface InactiveCorrectiveCandidate {
   conservativeGain: number;
   maximumProbabilityDelta: 0.05;
   scope: 'exact_original_information_set';
+  /** Phase 14.4: the original decision's domain and identity, so an inactive
+   * catalog can key the candidate by its binding. Digests only; no cards or
+   * actor identifiers. */
+  domain: CorrectiveReferenceDomain;
+  binding: CorrectiveReferenceBinding;
+  /** The reference's complete finite menu for this information set. */
+  menu: CorrectiveAction[];
+  samplingContractDigest: string;
+  producerDigest: string;
+  qualificationId: string;
+  evidenceClass: AlternativeActionReference['evidenceClass'];
   requiredBeforeActivation: [
     'independent_holdout',
     'complete_policy_distribution',
@@ -115,6 +149,8 @@ export interface CorrectiveHandReview {
   version: typeof CORRECTIVE_REVIEW_VERSION | typeof CORRECTIVE_ROSTER_REVIEW_VERSION;
   scope: 'single_retained_hand_qualified_menu' | 'single_retained_hand_monetary_census';
   reviewId: string;
+  /** The SHA256 journal hand coordinate the review was asked about. */
+  handKey: string;
   journalManifest: string | null;
   evidenceClass: CorrectiveReviewAuthority['evidenceClass'] | 'reviewed_source' | 'unqualified';
   /** known_empty_census is monetary classification only, never a decision review. */

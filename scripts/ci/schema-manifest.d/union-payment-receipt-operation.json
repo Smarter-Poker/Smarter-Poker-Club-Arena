@@ -1,0 +1,8 @@
+{
+  "_owner": "agent/codex/union-documents-retry-20261009",
+  "functions": ["fn_union_presettlement_operation_immutable"],
+  "columns": {
+    "union_presettlements": ["operation_id"],
+    "settlement_invoices": ["source_union_presettlement_id"]
+  }
+}

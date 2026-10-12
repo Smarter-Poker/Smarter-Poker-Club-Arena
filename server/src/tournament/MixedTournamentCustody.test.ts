@@ -97,6 +97,18 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 function mixedResponse(name: string, a: any) {
+  if (name === 'fn_f06_dispose_dead_origin_originals')
+    return {
+      error: null,
+      data: {
+        ok: true,
+        transfer_id: a.p_transfer_id,
+        tournament_id: a.p_tournament_id,
+        admitted: false,
+        absent_released: 0,
+        void: { ok: true, hands_voided: 1, credit: 0 },
+      },
+    };
   if (name === 'fn_f06_find_mixed_manager_custody')
     return { error: null, data: { ok: true, tournament_id: a.p_tournament_id, receipt: null } };
   if (name === 'fn_f06_admit_mixed_manager_custody')
@@ -471,6 +483,88 @@ it('a discovered transfer is asked for again after its admission is refused (202
   const owner = replacement.tournamentEngines.get(id(1));
   if (owner) managers.push(owner);
 });
+it("a dead origin's originals are disposed by the successor before its admission (2026-10-04)", async () => {
+  // 15 events froze at 23:43Z on 2026-10-03: the process that held the
+  // originals was replaced, and only that dead origin could dispose them. The
+  // successor that holds the event now asks the door itself, under its own
+  // generation, and only then asks for admission.
+  const { s, m } = await mixedStopped();
+  await s.transferDrainedF06Custody(id(1), m);
+  const transfer = s.drainedF06TournamentCustody.get(id(1)).mixed;
+  const replacement = server();
+  const seen: { name: string; args: any }[] = [];
+  mocks.rpc.mockImplementation(async (name, a) => {
+    seen.push({ name, args: a });
+    return name === 'fn_f06_find_mixed_manager_custody'
+      ? { error: null, data: { ok: true, tournament_id: id(1), receipt: transfer.receipt } }
+      : mixedResponse(name, a);
+  });
+  await replacement.performTournamentManagerAdmission(id(1), 'resume', 'replacement', 1);
+  const owner = replacement.tournamentEngines.get(id(1));
+  managers.push(owner);
+  const names = seen.map((call) => call.name);
+  const dispose = names.indexOf('fn_f06_dispose_dead_origin_originals');
+  expect(dispose).toBeGreaterThanOrEqual(0);
+  expect(dispose).toBeLessThan(names.indexOf('fn_f06_admit_mixed_manager_custody'));
+  expect(seen[dispose].args).toEqual({
+    p_tournament_id: id(1),
+    p_lease_generation: transfer.successorGeneration,
+    p_transfer_id: transfer.transferId,
+  });
+  expect(owner.isF06RecoveryOwner()).toBe(true);
+});
+it('a refused dead-origin disposal names the database refusal, admits nothing and returns the lease', async () => {
+  const { s, m } = await mixedStopped();
+  await s.transferDrainedF06Custody(id(1), m);
+  const transfer = s.drainedF06TournamentCustody.get(id(1)).mixed;
+  const replacement = server();
+  mocks.rpc.mockImplementation(async (name, a) => {
+    if (name === 'fn_f06_find_mixed_manager_custody')
+      return { error: null, data: { ok: true, tournament_id: id(1), receipt: transfer.receipt } };
+    if (name === 'fn_f06_dispose_dead_origin_originals')
+      return { error: { message: 'F06_STRANDED_PARK_OPEN' }, data: null };
+    return mixedResponse(name, a);
+  });
+  await expect(
+    replacement.performTournamentManagerAdmission(id(1), 'resume', 'replacement', 1)
+  ).rejects.toThrow('f06_mixed_dead_origin_disposal_unproven: F06_STRANDED_PARK_OPEN');
+  const asked = mocks.rpc.mock.calls.map(([name]) => name);
+  expect(asked).not.toContain('fn_f06_admit_mixed_manager_custody');
+  expect(mocks.release).toHaveBeenCalled();
+  expect(replacement.tournamentEngines.has(id(1))).toBe(false);
+});
+it('a durable transfer with no pending original is admitted without asking the dead-origin door', async () => {
+  const { s, m } = await mixedStopped();
+  await s.transferDrainedF06Custody(id(1), m);
+  const transfer = s.drainedF06TournamentCustody.get(id(1)).mixed;
+  const receipt = JSON.parse(JSON.stringify(transfer.receipt));
+  receipt.canonical_proof.pending_original_tables = [];
+  const replacement = server();
+  mocks.rpc.mockImplementation(async (name, a) =>
+    name === 'fn_f06_find_mixed_manager_custody'
+      ? { error: null, data: { ok: true, tournament_id: id(1), receipt } }
+      : mixedResponse(name, a)
+  );
+  await replacement.performTournamentManagerAdmission(id(1), 'resume', 'replacement', 1);
+  const owner = replacement.tournamentEngines.get(id(1));
+  if (owner) managers.push(owner);
+  const asked = mocks.rpc.mock.calls.map(([name]) => name);
+  expect(asked).toContain('fn_f06_admit_mixed_manager_custody');
+  expect(asked).not.toContain('fn_f06_dispose_dead_origin_originals');
+});
+it('the process that drained the originals itself never asks the dead-origin door', async () => {
+  const { s, m } = await mixedStopped();
+  await s.transferDrainedF06Custody(id(1), m);
+  mocks.rpc.mockClear();
+  mocks.rpc.mockImplementation(async (name, a) => mixedResponse(name, a));
+  await s
+    .performTournamentManagerAdmission(id(1), 'resume', 'same process', 1)
+    .catch(() => undefined);
+  const owner = s.tournamentEngines.get(id(1));
+  if (owner && owner !== m) managers.push(owner);
+  const asked = mocks.rpc.mock.calls.map(([name]) => name);
+  expect(asked).not.toContain('fn_f06_dispose_dead_origin_originals');
+});
 it('a transfer this process drained itself is kept after a refused admission', async () => {
   const { s, m } = await mixedStopped();
   await s.transferDrainedF06Custody(id(1), m);
@@ -815,7 +909,11 @@ async function recoverableMixedScene(interrupt?: string, absentSource = false) {
     const ok = (data: unknown) => ({ error: null, data });
     if (name === 'fn_f06_find_mixed_manager_custody')
       return ok({ ok: true, tournament_id: id(1), receipt: complete ? null : transfer.receipt });
-    if (name === 'fn_f06_admit_mixed_manager_custody') return mixedResponse(name, args);
+    if (
+      name === 'fn_f06_dispose_dead_origin_originals' ||
+      name === 'fn_f06_admit_mixed_manager_custody'
+    )
+      return mixedResponse(name, args);
     if (name === 'fn_f06_mixed_custody_intent') {
       if (intents.has(args.p_key)) expect(intents.get(args.p_key)).toEqual(args.p_payload);
       intents.set(args.p_key, structuredClone(args.p_payload));

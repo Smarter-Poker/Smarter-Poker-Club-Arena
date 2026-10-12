@@ -111,3 +111,42 @@ describe('occupancy leave protocol', () => {
     });
   });
 });
+
+describe('a leave from a Lightning room (pool_session_id) is the anchor seat’s', () => {
+  const room = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+  const anchorTable = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+  const anchor = { anchorTableId: anchorTable, seatNumber: 4, occupancyId };
+  const lightningAnchorFor = vi.fn();
+  async function roomRequest(body: Record<string, unknown>) {
+    vi.mocked(readBody).mockResolvedValue(JSON.stringify(body));
+    getTableEngine.mockImplementation((id: string) => (id === anchorTable ? { leaveTable } : null));
+    const { res, captured } = mockRes();
+    await handleLeaveOccupancy(mockReq(), res, {
+      gameServer: { getTableEngine, lightningAnchorFor },
+    });
+    return { status: captured.statusCode, body: parseJson(captured) };
+  }
+
+  it('resolves to the anchor table and its seat identity instead of answering 503', async () => {
+    lightningAnchorFor.mockResolvedValue(anchor);
+    const out = await roomRequest({ tableId: room });
+    expect(out.status).toBe(200);
+    expect(lightningAnchorFor).toHaveBeenCalledWith(room, 'owner');
+    expect(leaveTable).toHaveBeenCalledWith('owner', { occupancyId, seatNumber: 4 });
+    expect(getSeatCashoutReceipt).toHaveBeenCalledWith('owner', anchorTable, 4, occupancyId);
+  });
+
+  it('a seat identity that disagrees with the anchor is stale, and nothing leaves', async () => {
+    lightningAnchorFor.mockResolvedValue(anchor);
+    const out = await roomRequest({ tableId: room, occupancyId, seatNumber: 7 });
+    expect(out.status).toBe(409);
+    expect(out.body).toMatchObject({ code: 'STALE_OCCUPANCY' });
+    expect(leaveTable).not.toHaveBeenCalled();
+  });
+
+  it('a room that is not the caller’s resolves to nothing and is refused as before', async () => {
+    lightningAnchorFor.mockResolvedValue(null);
+    expect((await roomRequest({ tableId: room })).status).toBe(400);
+    expect(leaveTable).not.toHaveBeenCalled();
+  });
+});

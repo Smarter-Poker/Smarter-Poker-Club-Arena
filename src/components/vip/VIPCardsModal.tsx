@@ -147,7 +147,7 @@ export function VIPCardsModal({ isOpen, onClose, vipStatus }: VIPInfoModalProps)
     const focusable = () =>
       Array.from(
         dialogRef.current?.querySelectorAll<HTMLElement>(
-          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+          'button:not([disabled]), [href], input:not([disabled]):not([tabindex="-1"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
         ) ?? []
       );
     const focusFrame = window.requestAnimationFrame(() => {

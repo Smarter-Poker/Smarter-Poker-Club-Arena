@@ -7,7 +7,7 @@ const all = () => ({ src: true, server: true, tests: true, phase4: true, fixture
 const wide =
   /^(package(-lock)?\.json|vite\.config|vitest\.config|tsconfig|\.npmrc|\.nvmrc|\.node-version|\.github\/workflows\/|scripts\/ci\/(classify-ci-changes|fixture-native-gate)\.mjs)/;
 const phase4 =
-  /^(\.github\/workflows\/ci\.yml|scripts\/ci\/classify-ci-changes\.mjs|scripts\/ci\/probes\/horse-phase4-certified-solver\/|supabase\/migrations\/20260909(165541|170039|170749|171644|172537|175000|180000)_|server\/src\/(benchmark\/(HorseLeague|HorseSolverAgreementV31)|engine\/(GtoDecisionContext|GtoPostflopV31|GtoV31|HorseDataLedger|HorseLogic|LiveHorseDecisionWorkerHealth|horseDecision\/)|services\/GtoPostflopV31Loader))/;
+  /^(\.github\/workflows\/ci\.yml|scripts\/ci\/(?:classify-ci-changes\.mjs|test-v4-policy-metadata\.mjs$)|scripts\/ci\/probes\/horse-phase4-certified-solver\/|supabase\/migrations\/(?:20260909(165541|170039|170749|171644|172537|175000|180000)_|20261007043848_v4_policy_schema_is_immutable_input_metadata\.sql$|20261007043945_solver_v4_nodes_prove_complete_public_state\.sql$|20261007051641_v4_consumers_bind_the_immutable_policy_schema\.sql$)|server\/src\/(benchmark\/(HorseLeague|HorseSolverAgreementV31|GtoV31EvaluationConfig\.(?:test\.)?ts$)|scripts\/gtoV31Evaluate\.ts$|engine\/(GtoDecisionContext|GtoPostflopV31|GtoV31|HorseDataLedger|HorseLogic|LiveHorseDecisionWorkerHealth|horseDecision\/)|services\/GtoPostflopV31Loader))/;
 const breakfastWitness =
   /^scripts\/ci\/(?:test-breakfast-original-witness\.py$|breakfast_(?:fixture|original_witness|qualification|concurrency)\.py$|fixtures\/breakfast-original-witness\/|probes\/breakfast-original-witness\/)/;
 
@@ -24,12 +24,27 @@ const originalPaidCustody =
 const f06HandAuthority =
   /^(?:scripts\/ci\/(?:(?:test-f06-shared-hand-lane|build-f06-retired-origin|build-f06-stopped-bank-custody)\.py$|(?:test|build)-f06-(?:accepted-elimination|elimination-migration|movement-admission|drained-custody|mixed-custody)\.py$|fixtures\/f06-(?:accepted-elimination|movement-admission|drained-custody|mixed-custody)\/|probes\/f06-(?:retired-origin-cohorts\.json$|shared-hand-lane\/|mixed-restart-qualification\.py$|(?:accepted-elimination|movement-admission|drained-custody|mixed-custody)\.(?:sql|spec)$|(?:retired-origin-authority|movement-opening|drained-custody-authority|mixed-custody-authority|mixed-movement-authority)\.sql$)|schema-manifest\.d\/f06-(?:movement-admission|drained-custody|mixed-custody|retained-mtt-disposition|retired-origin|stopped-bank-custody|lease-retention)\.json$|(?:test-hand-submission|build-hand-submission-migration)\.py$|probes\/hand-submission-[a-z-]+\.(?:sql|spec)$|fixtures\/hand-submission\/)|tests\/operations\/f06-(?:elimination|movement)-results\.test\.py$)/;
 const fixture =
-  /^(operations\/release\/(fixture\/|native\/|ci\/fixture-smoke\.py)|\.github\/workflows\/(ci|component-fixture-native-smoke|release-component-qualification)\.yml|scripts\/ci\/(fixture-native-gate|classify-ci-changes)\.mjs|tests\/(operations\/(fixture-|financial-|component-source-contract|native-component-semantics|fixtures\/realtime-launcher\/)|unit\/fixtureNativeCi\.test\.ts)|package(-lock)?\.json|\.npmrc|\.nvmrc|\.node-version)/;
+  /^(server\/(src\/(?!.*\.test\.)|package(-lock)?\.json|tsconfig\.json)|supabase\/migrations\/20260917(230925|232243)_|operations\/release\/(fixture\/|native\/|ci\/fixture-smoke\.py)|\.github\/workflows\/(ci|component-fixture-native-smoke|release-component-qualification)\.yml|scripts\/ci\/(fixture-native-gate|classify-ci-changes)\.mjs|tests\/(fixtures\/ev-cashout-lifecycle\/|fixtures\/full-weekly-accounting\/(tables|functions|types|sequences|triggers-round-3)\.json$|fixtures\/cash-participant-funding\/(bootstrap\.sql|captured-(preimages|hand-preimages|integration-preimages|reader-preimages)\.json)$|fixtures\/union-weekly-basis\/captured-cash-dependencies\.json$|operations\/(fixture-|financial-|component-source-contract|native-component-semantics|fixtures\/realtime-launcher\/)|unit\/fixtureNativeCi\.test\.ts)|package(-lock)?\.json|\.npmrc|\.nvmrc|\.node-version)/;
 
 // These maintained SQL components and fixture inputs feed the existing required
 // PostgreSQL accounting job even when no server application source changes.
 const accounting =
-  /^(supabase\/accounting\/|scripts\/ops\/build-cashier-totals-index-concurrently\.sql$|scripts\/ci\/build-weekly-accounting-activation\.py$|tests\/fixtures\/(accounting-agreement-history|accounting-alert-38644|accounting-delivery|agent-accounting-statements|browser-period-observer|cash-commission-sources|cash-rake-earning-evidence|cash-source-compatibility|cash-source-refusals|cashier-document-authority|cashier-statements|club-weekly-summary|correction-document-authority|correction-writer-authority|credit-invoice-generation|credit-reduction-authority|credit-request-authority|full-weekly-accounting|earlybird-fee-custody|legacy-fee-finality|sep8-spin-custody|messenger-private-accounting|mixed-rake-period|pnl-evidence|push-health-reader|push-subscription-ownership|push-subscription-rotation|rakeback-history-privacy|rakeback-write-authority|routed-accounting|scope-weekly-accounting|tournament-fee-lifecycle|tournament-fee-sources|unified-weekly-accounting|union-earned-close|union-weekly-accounting|weekly-accounting-coordinator|weekly-scheduler-fairness|weekly-scheduler-timing|weekly-union-continuation)\/)/;
+  /^(scripts\/ci\/schema-manifest\.d\/weekly-recompute-split\.json$|tests\/unit\/weeklyRecomputeSplitCi\.test\.ts$|supabase\/accounting\/|scripts\/ops\/build-cashier-totals-index-concurrently\.sql$|scripts\/ci\/build-weekly-accounting-activation\.py$|tests\/fixtures\/(accounting-agreement-history|accounting-alert-38644|accounting-delivery|agent-accounting-statements|browser-period-observer|cash-commission-sources|cash-rake-earning-evidence|cash-source-compatibility|cash-source-refusals|cashier-document-authority|cashier-statements|club-weekly-summary|correction-document-authority|correction-writer-authority|credit-invoice-generation|credit-reduction-authority|credit-request-authority|full-weekly-accounting|earlybird-fee-custody|held-fee-owner-basis|legacy-fee-finality|sep8-spin-custody|messenger-private-accounting|mixed-rake-period|pnl-evidence|push-health-reader|push-subscription-ownership|push-subscription-rotation|rakeback-history-privacy|rakeback-write-authority|routed-accounting|scope-weekly-accounting|tournament-fee-lifecycle|tournament-fee-sources|unified-weekly-accounting|union-earned-close|union-weekly-accounting|union-weekly-basis|weekly-recompute-split|weekly-accounting-coordinator|weekly-scheduler-fairness|weekly-scheduler-timing|weekly-union-continuation)\/)/;
+// Data/Stats console PostgreSQL contracts run inside accounting_postgres. The
+// wrapper, its wiring test, and every fixture are executable inputs; a change
+// to any one of them must select that job even without a migration beside it.
+const dataConsolePostgres =
+  /^(scripts\/ci\/test-data-console-postgres-contracts\.sh$|tests\/data-console-postgres-contracts-wired\.test\.ts$|tests\/fixtures\/(?:financial-admin-revenue|union-ops-financial-admin|stats-(?:cash-opportunities|club-scope|evidence-session|exact-cash-sessions|facts-phase2|financial-reports|operational-quality|owner-workspace))\/)/;
+// Every input to the managed-game one-door fixture must select the hosted
+// PostgreSQL job, including a fixture-only correction.
+const managedGameOneDoor =
+  /^(scripts\/dev\/test-managed-game-one-door-postgres\.sh$|tests\/fixtures\/managed-game-one-door\/|tests\/unit\/managedGameOneDoorMigration\.test\.ts$|supabase\/migrations\/20261004195024_managed_game_browser_updates_use_command_gateway\.sql$)/;
+
+// These original-owner qualifications execute inside the required accounting
+// matrix. Changes to a driver, captured owner or manifest must run it too.
+const stableAdminQualification =
+  /^(scripts\/qualify-stable-admin-(?:floor|close-selector|cancel-stops-pg17|cancel-lane-pg17)\.mjs$|scripts\/qualification\/stable-admin-(?:floor|close-selector|cancel-stops|cancel-lane)\/|scripts\/ci\/schema-manifest\.d\/stable-admin-[a-z-]+\.json$)/;
+
 // Spin qualification and every reviewed input use the existing accounting job.
 const spinExpiry =
   /^(supabase\/components\/(?:spin-expiry-lock-order|spin-history-retention|spin-mixed-basis-(?:receipt-lane|current-receipt-lane|current-terminal))(?:\.rollback)?\.sql$|supabase\/components\/spin-mixed-basis-evidence\.sql$|scripts\/qualification\/(?:spin-mixed-basis-(?:shape\.sql|evidence\.preimage\.sql|pure\.(?:sql|hosted\.manifest\.json))$|spin-finalized-horse-admission\.(?:py|manifest\.json)$|spin-horse-admission-race\.py$|spin-horse-platform-paid-entry\.sql$|spin-paid-terminal\.(?:py|md|hosted\.manifest\.json)$|spin-positive-fee-entry(?:-oracle)?\.py$|spin-positive-fee-entry\.(?:md|hosted\.manifest\.json)$|spin-mixed-positive-fee-entry\.sql$|spin-mixed-current(?:-(?:races|assertions))?\.py$|spin-mixed-current\.(?:md|hosted\.manifest\.json)$|spin-receipt-lane(?:-compactor)?\.(?:sql|py|md|hosted\.manifest\.json)$|spin-expiry-|spin-history-retention(?:-behavior\.sql|(?:-completed)?\.(?:sql|md|manifest\.json))$|fixtures\/(?:finalized-horse-admission|archived-spin-core-provider|spin-history-retention|spin-receipt-lane|spin-mixed-current|spin-mixed-positive-fee|spin-paid-terminal)\/)|scripts\/ci\/(?:test-spin-expiry-postgres\.py$|test_spin_expiry_wrapper\.py$|probes\/spin-expiry\/)|tests\/unit\/fixtureNativeCi\.test\.ts$)/;
@@ -37,7 +52,7 @@ const spinExpiry =
 // The first archived recovery uses the same required PostgreSQL job. Include
 // input-only edits and removals, rather than relying on a simultaneous driver edit.
 const firstArchivedSpin =
-  /^(supabase\/components\/spin-archived-first-[a-z0-9-]+\.sql$|scripts\/qualification\/(?:spin-first-archived(?:-[a-z0-9-]+)?\.(?:py|manifest\.json)$|test_first_archived_(?:oracle|concurrency|locks|production_probe)\.py$|fixtures\/archived-spin\/))/;
+  /^(supabase\/components\/spin-archived-first-[a-z0-9-]+\.sql$|scripts\/qualification\/(?:spin-first-archived(?:-[a-z0-9-]+)?\.(?:py|manifest\.json)$|test_first_archived_(?:oracle|concurrency|locks|production_probe|completion|postabort|bank_observer)\.py$|fixtures\/archived-spin\/))/;
 
 // Production Alert SQL inputs select the existing accounting checks.
 const productionAlertsSql =
@@ -60,8 +75,18 @@ const discoveryPrivacy =
   /^(scripts\/ci\/(?:test-discovery-privacy-postgres\.py$|fixtures\/discovery-privacy\/)|tests\/discoveryPrivacyRegression\.test\.ts$)/;
 const playerSearchPrivacy =
   /^(scripts\/ci\/(?:test-player-search-privacy-postgres\.py$|fixtures\/player-search-privacy\/)|tests\/playerSearchPrivacyRegression\.test\.ts$)/;
+const agentWalletSignals =
+  /^(scripts\/ci\/(?:test-agent-wallet-postgres\.py$|fixtures\/agent-wallet\/)|tests\/agentWalletSignalQualification\.test\.ts$)/;
+const clubCreateCapacity =
+  /^(scripts\/ci\/check-club-create-capacity\.mjs$|tests\/unit\/clubCreateCapacity\.test\.ts$|\.github\/workflows\/club-create-certification\.yml$)/;
 const backedPayoutScan =
   /^(scripts\/ci\/(?:test-backed-payout-scan-postgres\.py$|fixtures\/backed-payout-scan\/)|tests\/backedPayoutScanRegression\.test\.ts$)/;
+// The cashier launch's database qualifications (2026-10-09). Each harness
+// replays one migration on PostgreSQL 17 inside accounting_postgres (shard 2)
+// against its own fixtures, so an edit to a harness or a fixture alone must
+// still run it. Add a later cashier harness by its name to both groups.
+const cashierDbHarnesses =
+  /^(scripts\/ci\/test-(?:chip-request-approval|union-send|cashier-arena-names|finance-gate|cashier-statement|horse-reads|tournament-chat-default)-db-postgres\.py$|tests\/fixtures\/(?:chip-request-approval-db|union-send-db|cashier-arena-names-db|finance-gate-db|horse-reads-db|tournament-chat-default-db)\/)/;
 const bbjContributionCover =
   /^(scripts\/ci\/(?:test-bbj-contribution-cover-postgres\.py$|fixtures\/bbj-contribution-cover\/)|scripts\/ops\/build-bbj-contribution-cover-concurrently\.sql$|tests\/bbjContributionCoverRegression\.test\.ts$)/;
 const scopedAuditReads =
@@ -70,6 +95,8 @@ const settlementAttribution =
   /^(scripts\/ci\/(?:test-settlement-attribution-postgres\.py$|fixtures\/settlement-attribution\/)|tests\/settlementAttributionRegression\.test\.ts$)/;
 const strandedPlayerRead =
   /^(scripts\/ci\/(?:test-stranded-player-read-postgres\.py$|fixtures\/stranded-player-read\/)|tests\/strandedPlayerReadRegression\.test\.ts$)/;
+const contractIndexRecovery =
+  /^(?:scripts\/ci\/(?:contract-index-recovery(?:\.test)?\.mjs|final-table-cleanup-batches(?:\.test)?\.mjs|test-contract-index-recovery-postgres\.py|apply-recorded-migration\.mjs)|\.github\/workflows\/apply-merged-migration\.yml)$/;
 const settlementConservationIndex =
   /^(scripts\/(?:ci\/(?:test-settlement-conservation-index-postgres\.py$|fixtures\/settlement-conservation-index\/)|ops\/(?:build|recover)-settlement-conservation-index-concurrently\.sql$)|tests\/settlementConservationIndexRegression\.test\.ts$)/;
 
@@ -88,6 +115,13 @@ const certificationRetirement =
 // Actual reserved cleanup/FK access must retain native concurrency qualification.
 const certificationPlayerIndex =
   /^(scripts\/(?:ci\/(?:test-certification-player-index-postgres\.py$|fixtures\/certification-player-index\/)|ops\/build-certification-player-index-concurrently\.sql$)|tests\/certificationPlayerIndexRegression\.test\.ts$)/;
+
+// Phase 1 customization has a two-step database cutover. Its native harness,
+// loaded fixtures, durable marker and service-role sealer are one qualification
+// unit with both migrations; changing any one of them must admit the existing
+// PostgreSQL accounting lane even when no application source changed.
+const phase1CustomizationPostgres =
+  /^(scripts\/ci\/(?:test-phase1-customization-postgres\.py$|fixtures\/phase1-customization\/|phase1-customization-cutover-v1\.json$|seal-phase1-customization-cutover\.mjs$|schema-manifest\.d\/(?:phase-one-customization|final-table-cleanup)\.json$)|supabase\/migrations\/20261005(?:11(?:1453_phase_one_customization_ownership_face_decks_and_avatar_styl|1523_short_formats_never_reach_final_table)|230204_the_final_table_cleanup_advances_in_bounded_transactions|230230_the_final_table_cleanup_seals_its_completed_transition)\.sql$)/;
 
 export function gitEnvironmentForCwd() {
   // Hooks export repository context that overrides cwd. These local-only Git
@@ -186,6 +220,11 @@ export function classifyChangedPaths(paths) {
   const diamondGames = matches(
     /^(tests\/sql\/diamond-[a-z0-9-]+\.sql|tests\/fixtures\/(diamond-wheel-v2-(receipts|state)|diamond-spins\/wheel-(?:earned|v3|v4)-postgres-receipts)\.json|tests\/unit\/wheel(ServerReceipts|EarnedPostgresContract|UpgradeReceipts|UpgradePostgresContract|V4PostgresContract)\.test\.ts|src\/services\/(DiamondBonusService|DiamondGamesService|DiamondChoiceService|DiamondWheelService|DiamondReplayService|DiamondStatementService|WheelBonusEntryService|diamondBonusRecovery)\.ts|src\/hooks\/use(BonusBudget|EarnedBonus)\.ts|src\/components\/games\/BonusSetup\.tsx|src\/utils\/(crashReceipt|bonusGameBudget|wheelAward|wheelPendingSpin|wheelFairness|wheelV4Model)\.ts|src\/pages\/Diamond(Choice|Crash|Plinko|Wheel)Page\.tsx)$/
   );
+  // Daily Bonus grants share the canonical Diamond award path and the
+  // accounting PostgreSQL runner. Input-only edits must run that job too.
+  const dailyBonus = matches(
+    /^(tests\/sql\/daily-bonus-[a-z0-9-]+\.sql|src\/services\/DailyBonusService\.ts|src\/components\/daily-bonus\/useDailyBonus\.ts)$/
+  );
 
   // The Diamond Arena SQL acceptance (2026-09-19): every runner, every fixture
   // file the runners read and the wrapper that runs them in the accounting job.
@@ -198,8 +237,15 @@ export function classifyChangedPaths(paths) {
   // narrowing of that prefix cannot quietly take them out of the job that runs
   // them. The manifests are claimed only here. Nothing is derived from the
   // other lane, so the two cannot disagree - a path matched by either is in.
+  // The diamond-concurrency-* capture, manifest, tables and seed (2026-09-30)
+  // are what run-diamond-concurrency.py loads, named here for the same reason.
+  // diamond-cross-format-*.manifest.json (2026-10-04) is the md5 pin list
+  // run-diamond-cross-format-conservation.py checks its loaded readers
+  // against; its two .sql fixtures are poker-diamond-* and are already routed
+  // by that prefix, deliberately, so they do not also select the eleven
+  // tests/sql/diamond-*.sql game probes.
   const diamondSqlAcceptance = matches(
-    /^(tests\/sql\/(?:run-[a-z0-9-]*diamond[a-z0-9-]*\.py|poker-diamond-[a-z0-9-]+\.sql|poker-arena-access\.sql|diamond-controlled-play-driver\.ts|diamond-session-fixture\.sql|diamond-transfer-cap-fixture\.sql|diamond-tournament-[a-z0-9-]+\.sql|diamond-tournament-[a-z0-9-]+\.manifest\.json)|scripts\/ci\/(?:run-diamond-sql-acceptance\.py|check-diamond-runners-listed\.mjs))$/
+    /^(tests\/sql\/(?:run-[a-z0-9-]*diamond[a-z0-9-]*\.py|poker-diamond-[a-z0-9-]+\.sql|poker-arena-access\.sql|diamond-controlled-play-driver\.ts|diamond-session-fixture\.sql|diamond-transfer-cap-fixture\.sql|diamond-tournament-[a-z0-9-]+\.sql|diamond-tournament-[a-z0-9-]+\.manifest\.json|diamond-concurrency-[a-z0-9-]+\.sql|diamond-concurrency-[a-z0-9-]+\.manifest\.json|diamond-cross-format-[a-z0-9-]+\.manifest\.json)|scripts\/ci\/(?:run-diamond-sql-acceptance\.py|check-diamond-runners-listed\.mjs))$/
   );
   // The Phase 4 PostgreSQL step cannot run when its parent job is skipped.
   const phase4Changed = matches(phase4);
@@ -219,6 +265,16 @@ export function classifyChangedPaths(paths) {
   // deliberately outside the application suites otherwise - this one directory
   // is test input, so it is named, exactly as docs/agent-policy/ already is.
   const lawRegistry = matches(/^docs\/laws\.d\//);
+  // DOCS/EVIDENCE IS TEST INPUT TOO (2026-10-11). Server tests read committed
+  // evidence from disk - HorsePhase13Authority.test.ts walks
+  // docs/evidence/phase13/, and the phase8-14 authority and strength-assembly
+  // tests read their own directories - and several tests/ laws read it as
+  // well. #6687 changed only docs/ (a Phase 13 PLO8 qualification record), so
+  // it classified as docs-only, skipped every reader of the file it had just
+  // added, and main went red on the next pull request that ran the server
+  // shards. The whole directory, not a list of phases: the next phase must be
+  // admitted by where it is written, not by somebody remembering to name it.
+  const committedEvidence = matches(/^docs\/evidence\//);
   // The ranking inverse and reminder pg dependencies are executable accounting
   // inputs outside scripts/dev. Their changes also need the routing laws.
   const tournamentAccountingInput = matches(
@@ -242,9 +298,11 @@ export function classifyChangedPaths(paths) {
     src: broad || cashLobbyBrowser || buildProvenance || matches(/^src\//),
     server:
       broad ||
+      committedEvidence ||
       bbjFixture ||
       chipStoreCoverage ||
       diamondGames ||
+      dailyBonus ||
       diamondSqlAcceptance ||
       phase4Changed ||
       matches(mttPreparation) ||
@@ -255,6 +313,9 @@ export function classifyChangedPaths(paths) {
       matches(originalPaidCustody) ||
       commitmentAudit ||
       matches(accounting) ||
+      matches(dataConsolePostgres) ||
+      matches(managedGameOneDoor) ||
+      matches(stableAdminQualification) ||
       nativeIsolationTool ||
       spinRules ||
       horsePriority ||
@@ -271,12 +332,16 @@ export function classifyChangedPaths(paths) {
       matches(cashEvidence) ||
       matches(discoveryPrivacy) ||
       matches(playerSearchPrivacy) ||
+      matches(agentWalletSignals) ||
       matches(bbjContributionCover) ||
       matches(scopedAuditReads) ||
       matches(backedPayoutScan) ||
+      matches(cashierDbHarnesses) ||
       matches(settlementAttribution) ||
       matches(strandedPlayerRead) ||
+      matches(contractIndexRecovery) ||
       matches(settlementConservationIndex) ||
+      matches(phase1CustomizationPostgres) ||
       matches(certificationRetirement) ||
       matches(satelliteAuditIndex) ||
       matches(satelliteLedgerAuditIndex) ||
@@ -288,14 +353,18 @@ export function classifyChangedPaths(paths) {
       instructionOnlyPaths(paths) ||
       paths.some((p) => p.startsWith('docs/agent-policy/')) ||
       lawRegistry ||
+      committedEvidence ||
       broad ||
       matches(satelliteQualifiers) ||
       matches(breakfastWitness) ||
       buildProvenance ||
       diamondGames ||
+      dailyBonus ||
       diamondSqlAcceptance ||
       commitmentAudit ||
+      matches(dataConsolePostgres) ||
       tournamentAccountingInput ||
+      matches(stableAdminQualification) ||
       matches(mttPreparation) ||
       matches(mttActivation) ||
       matches(f06HandAuthority) ||
@@ -316,12 +385,17 @@ export function classifyChangedPaths(paths) {
       matches(cashEvidence) ||
       matches(discoveryPrivacy) ||
       matches(playerSearchPrivacy) ||
+      matches(agentWalletSignals) ||
+      matches(clubCreateCapacity) ||
       matches(bbjContributionCover) ||
       matches(scopedAuditReads) ||
       matches(backedPayoutScan) ||
+      matches(cashierDbHarnesses) ||
       matches(settlementAttribution) ||
       matches(strandedPlayerRead) ||
+      matches(contractIndexRecovery) ||
       matches(settlementConservationIndex) ||
+      matches(phase1CustomizationPostgres) ||
       matches(certificationRetirement) ||
       matches(satelliteAuditIndex) ||
       matches(satelliteLedgerAuditIndex) ||

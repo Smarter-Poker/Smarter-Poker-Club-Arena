@@ -9,25 +9,14 @@
   position: relative;
   margin: 0 0.75rem 1rem;
   padding: 1rem;
-  border-radius: 2px;
-  background:
-    radial-gradient(circle at 24% 36%, rgba(0, 126, 216, 0.09), transparent 32%),
-    linear-gradient(155deg, rgba(17, 26, 35, 0.96), rgba(3, 7, 11, 0.99));
-  border: 1px solid rgba(199, 210, 220, 0.15);
-  box-shadow:
-    inset 3px 0 0 rgba(22, 140, 255, 0.54),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05),
-    0 12px 28px rgba(0, 0, 0, 0.28);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .pos-radar-card::after {
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: 96px;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(22, 140, 255, 0.82));
-  content: '';
+  content: none;
 }
 
 .pos-radar-head {
@@ -103,6 +92,20 @@
   fill: #00d4ff;
 }
 
+.pos-radar-axis-target {
+  fill: transparent;
+  pointer-events: all;
+}
+
+.pos-radar-axis-label {
+  pointer-events: none;
+}
+
+.pos-radar-svg g[role='button']:focus-visible .pos-radar-axis-target {
+  stroke: #00d4ff;
+  stroke-width: 2;
+}
+
 /* ── Legend / metric toggles ───────────────────────────────────────────── */
 
 .pos-radar-legend {
@@ -128,9 +131,7 @@
     background 0.18s ease,
     border-color 0.18s ease,
     color 0.18s ease;
-  /* 32px is below the 44px ideal, but these are secondary controls sitting in
-     a dense panel; the row targets below carry the same information. */
-  min-height: 32px;
+  min-height: 44px;
 }
 
 .pos-radar-toggle.is-on {
@@ -185,6 +186,18 @@
   color: #e8f4ff;
   font-weight: 700;
   text-transform: none;
+}
+
+.pos-radar-row-button {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: inherit;
+  cursor: pointer;
 }
 
 .pos-radar-table tbody td {

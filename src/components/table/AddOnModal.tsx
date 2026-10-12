@@ -9,10 +9,13 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
+import { useFitText } from '../lobby/game-cards/useFitText';
+import './AddOnModal.css';
 import { haptic, soundService } from '../../services/SoundService';
 
 // Whole-number tournament money (Dan 2026-08-20).
-import { money, moneyExact } from '../../utils/buyIn';
+import { money } from '../../utils/buyIn';
 import DiamondsToChipsButton from '../games/DiamondsToChipsButton';
 import { TournamentPurchaseNotSubmittedError } from '../../services/TournamentPurchaseIntent';
 
@@ -49,10 +52,21 @@ interface AddOnModalProps {
   onPlayDiamonds?: (path: string) => void;
 }
 
-function secondsUntilAddOnDeadline(endsAtMs: number | null, fallbackSeconds: number): number {
-  return Number.isFinite(endsAtMs)
-    ? Math.max(0, Math.ceil(((endsAtMs as number) - Date.now()) / 1000))
-    : Math.max(0, Math.ceil(fallbackSeconds));
+function secondsUntilAddOnDeadline(endsAtMs: number): number {
+  return Number.isFinite(endsAtMs) ? Math.max(0, Math.ceil((endsAtMs - Date.now()) / 1000)) : 0;
+}
+
+function chipLabel(formattedAmount: string): string {
+  return `${formattedAmount} ${formattedAmount === '1' ? 'Chip' : 'Chips'}`;
+}
+
+function AddOnText({ children }: { children: string }) {
+  const ref = useFitText<HTMLSpanElement>(children, 1, 0.5);
+  return (
+    <span ref={ref} className="addon-console__fit">
+      {children}
+    </span>
+  );
 }
 
 export default function AddOnModal({
@@ -68,9 +82,29 @@ export default function AddOnModal({
   diamondGamesClubId,
   onPlayDiamonds,
 }: AddOnModalProps) {
-  const [countdown, setCountdown] = useState(() =>
-    secondsUntilAddOnDeadline(endsAtMs, initialTime)
-  );
+  const dialogRef = useFocusTrap(isVisible, '#addon-title');
+  // Capture the relative fallback once per offer/presentation, not once per
+  // timer tick or wallet render. The persisted server deadline always wins.
+  const fallbackDeadlineRef = useRef<{
+    isVisible: boolean;
+    seconds: number;
+    endsAtMs: number;
+  } | null>(null);
+  if (
+    fallbackDeadlineRef.current === null ||
+    fallbackDeadlineRef.current.isVisible !== isVisible ||
+    !Object.is(fallbackDeadlineRef.current.seconds, initialTime)
+  ) {
+    fallbackDeadlineRef.current = {
+      isVisible,
+      seconds: initialTime,
+      endsAtMs: Date.now() + (Number.isFinite(initialTime) ? Math.max(0, initialTime) : 0) * 1000,
+    };
+  }
+  const deadlineMs = Number.isFinite(endsAtMs)
+    ? (endsAtMs as number)
+    : fallbackDeadlineRef.current.endsAtMs;
+  const [countdown, setCountdown] = useState(() => secondsUntilAddOnDeadline(deadlineMs));
   const [processing, setProcessing] = useState(false);
   const [decided, setDecided] = useState(false);
   const [result, setResult] = useState<'accepted' | 'declined' | 'unknown' | null>(null);
@@ -81,6 +115,7 @@ export default function AddOnModal({
   const onDeclineRef = useRef(onDecline);
   onDeclineRef.current = onDecline;
   const decidedRef = useRef(false);
+  const dismissedRef = useRef(false);
 
   // Add-ons are currently unraked, but preserve exact cents if a historical
   // row supplies a split. Adding before formatting prevents component-wise
@@ -90,14 +125,18 @@ export default function AddOnModal({
   // realtime broadcast that defaults it to 0 when the field is missing; a 0
   // price made canAfford unconditionally true and let players buy at a price
   // the modal never actually showed them.
-  const priceKnown = totalCost > 0;
-  const canAfford = priceKnown && walletBalance >= totalCost;
-  const canAccept = canAfford && countdown > 0;
+  const priceKnown =
+    Number.isFinite(totalCost) && totalCost > 0 && Number(addOnCost) >= 0 && Number(addOnFee) >= 0;
+  const walletKnown = Number.isFinite(walletBalance);
+  const chipsKnown = Number.isFinite(addOnChips) && addOnChips > 0;
+  const canAfford = priceKnown && walletKnown && walletBalance >= totalCost;
+  const canAccept = canAfford && chipsKnown && countdown > 0;
 
   useEffect(() => {
     if (!isVisible) {
       setDecided(false);
       decidedRef.current = false;
+      dismissedRef.current = false;
       setResult(null);
       setFailureMessage(null);
       processingRef.current = false;
@@ -107,7 +146,7 @@ export default function AddOnModal({
     }
 
     const tick = () => {
-      const remaining = secondsUntilAddOnDeadline(endsAtMs, initialTime);
+      const remaining = secondsUntilAddOnDeadline(deadlineMs);
       setCountdown(remaining);
       if (
         remaining > 0 ||
@@ -123,6 +162,7 @@ export default function AddOnModal({
       decidedRef.current = true;
       setDecided(true);
       setResult('declined');
+      dismissedRef.current = true;
       if (timerRef.current) clearInterval(timerRef.current);
       onDeclineRef.current();
     };
@@ -132,17 +172,18 @@ export default function AddOnModal({
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [isVisible, initialTime, endsAtMs]);
+  }, [isVisible, deadlineMs]);
 
   const handleAccept = async () => {
     const retrying = confirmationNeededRef.current;
     // The confirm sound used to fire BEFORE this guard, so a locked-out or
     // double tap still played "purchase confirmed" at the player.
     if (
+      dismissedRef.current ||
       processingRef.current ||
       processing ||
       (!retrying &&
-        (decided || !canAfford || secondsUntilAddOnDeadline(endsAtMs, initialTime) <= 0))
+        (decided || !canAfford || !chipsKnown || secondsUntilAddOnDeadline(deadlineMs) <= 0))
     )
       return;
     processingRef.current = true;
@@ -182,304 +223,136 @@ export default function AddOnModal({
   };
 
   const handleDecline = () => {
-    if (processingRef.current || processing || (decided && !confirmationNeededRef.current)) return;
+    if (processingRef.current || processing || dismissedRef.current) return;
+    dismissedRef.current = true;
+    decidedRef.current = true;
     haptic.light();
-    if (confirmationNeededRef.current) {
-      // Closing an unknown result is only presentation dismissal, not a
-      // refusal or proof that the original purchase did not complete.
-      onDecline();
-      return;
-    }
-    setDecided(true);
-    setResult('declined');
     if (timerRef.current) clearInterval(timerRef.current);
+    // Close dismisses accepted and unknown receipts too. It does not change
+    // their financial outcome or clear the parent's durable purchase intent.
+    if (!confirmationNeededRef.current && result !== 'accepted') {
+      setDecided(true);
+      setResult('declined');
+    }
     onDecline();
   };
 
   if (!isVisible) return null;
 
+  const unknown = result === 'unknown';
+  const primaryLabel = processing
+    ? 'Processing...'
+    : unknown
+      ? 'Retry Confirmation'
+      : priceKnown
+        ? `Accept For ${money(totalCost)}`
+        : 'Accept Add-On';
   return (
-    <div
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        background: 'rgba(0,0,0,0.7)',
-        backdropFilter: 'blur(4px)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 9999,
-        padding: 16,
-      }}
-    >
-      <div
-        style={{
-          background: 'linear-gradient(145deg, #1a1a2e 0%, #16213e 100%)',
-          border: '1px solid rgba(63,185,80,0.3)',
-          borderRadius: 16,
-          padding: 24,
-          width: '100%',
-          maxWidth: 360,
-          textAlign: 'center',
-          boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+    <div className="addon-console__overlay">
+      <section
+        ref={dialogRef}
+        className="addon-console"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="addon-title"
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') handleDecline();
         }}
       >
-        {/* Header */}
-        <div style={{ fontSize: 18, fontWeight: 700, color: '#3fb950', marginBottom: 4 }}>
-          Add-On Available
-        </div>
-        <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', marginBottom: 16 }}>
-          One Add-On Per Player
-        </div>
-
-        {/* Countdown */}
-        <div
-          style={{
-            background: countdown <= 10 ? 'rgba(239,68,68,0.15)' : 'rgba(63,185,80,0.1)',
-            borderRadius: 12,
-            padding: '12px 0',
-            marginBottom: 16,
-          }}
-        >
+        <div className="addon-console__canvas">
+          <img
+            className="addon-console__art"
+            alt=""
+            aria-hidden="true"
+            draggable={false}
+            src={`${import.meta.env.BASE_URL}assets/club-buttons/popups/add-on-v2/chassis.png`}
+          />
+          <button
+            type="button"
+            className="addon-console__close"
+            aria-label="Close Add-On"
+            disabled={processing}
+            onClick={handleDecline}
+          />
+          <h2 id="addon-title" tabIndex={-1} className="addon-console__title">
+            <AddOnText>Add-On Available</AddOnText>
+          </h2>
+          <p className="addon-console__subtitle">One Add-On Per Player</p>
+          <div className={`addon-console__timer${countdown <= 10 ? ' is-expiring' : ''}`}>
+            <strong>{countdown}s</strong>
+            <span>Time Remaining</span>
+          </div>
+          <div className="addon-console__row addon-console__row--cost">
+            <span>Add-On Cost</span>
+            <strong>
+              <AddOnText>{priceKnown ? chipLabel(money(totalCost)) : 'Unavailable'}</AddOnText>
+            </strong>
+          </div>
+          <div className="addon-console__row addon-console__row--chips">
+            <span>Chips Received</span>
+            <strong>
+              <AddOnText>
+                {chipsKnown ? `+${chipLabel(addOnChips.toLocaleString())}` : 'Unavailable'}
+              </AddOnText>
+            </strong>
+          </div>
           <div
-            style={{
-              fontSize: 32,
-              fontWeight: 800,
-              color: countdown <= 10 ? '#ef4444' : '#3fb950',
-            }}
+            className={`addon-console__row addon-console__row--balance${canAfford ? '' : ' is-poor'}`}
           >
-            {countdown}s
+            <span>Your Balance</span>
+            <strong>
+              <AddOnText>{walletKnown ? chipLabel(money(walletBalance)) : 'Unavailable'}</AddOnText>
+            </strong>
           </div>
-          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>Time Remaining</div>
+          <button
+            type="button"
+            className="addon-console__plate addon-console__plate--secondary"
+            onClick={handleDecline}
+            disabled={processing}
+          >
+            <AddOnText>{unknown || decided ? 'Close' : 'Decline'}</AddOnText>
+          </button>
+          <button
+            type="button"
+            className="addon-console__plate addon-console__plate--primary"
+            onClick={handleAccept}
+            disabled={processing || (unknown ? false : decided || !canAccept)}
+          >
+            <AddOnText>{primaryLabel}</AddOnText>
+          </button>
         </div>
-
-        {/* Add-On Details */}
-        {!decided ? (
-          <>
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                padding: '8px 16px',
-                marginBottom: 4,
-              }}
-            >
-              <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>Add-On Cost</span>
-              <span style={{ color: '#fff', fontWeight: 600, fontSize: 14 }}>
-                {moneyExact(addOnCost)} Chips
-              </span>
-            </div>
-            {addOnFee > 0 && (
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  padding: '8px 16px',
-                  marginBottom: 4,
-                }}
-              >
-                <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>House Fee</span>
-                <span style={{ color: '#fff', fontWeight: 600, fontSize: 14 }}>
-                  {moneyExact(addOnFee)} Chips
-                </span>
-              </div>
-            )}
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                padding: '8px 16px',
-                marginBottom: 4,
-                borderTop: '1px solid rgba(255,255,255,0.1)',
-                paddingTop: 12,
-              }}
-            >
-              <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>Total Charged</span>
-              <span style={{ color: '#fff', fontWeight: 700, fontSize: 14 }}>
-                {money(totalCost)} Chips
-              </span>
-            </div>
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                padding: '8px 16px',
-                marginBottom: 4,
-              }}
-            >
-              <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>Chips Received</span>
-              <span style={{ color: '#3fb950', fontWeight: 600, fontSize: 14 }}>
-                +{addOnChips.toLocaleString()} Chips
-              </span>
-            </div>
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                padding: '8px 16px',
-                marginBottom: 16,
-                borderTop: '1px solid rgba(255,255,255,0.1)',
-                paddingTop: 12,
-              }}
-            >
-              <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>Your Balance</span>
-              <span
-                style={{ color: canAfford ? '#fbbf24' : '#ef4444', fontWeight: 600, fontSize: 14 }}
-              >
-                {walletBalance.toLocaleString()} Chips
-              </span>
-            </div>
-
-            {!priceKnown && (
-              <div style={{ color: '#ef4444', fontSize: 12, marginBottom: 12 }}>
-                Add-On Price Unavailable - Cannot Purchase Right Now
-              </div>
-            )}
-            {priceKnown && !canAfford && (
-              <div style={{ color: '#ef4444', fontSize: 12, marginBottom: 12 }}>
-                Insufficient Balance - You Need {totalCost.toLocaleString()} Chips
-              </div>
-            )}
-            {priceKnown && !canAfford && onPlayDiamonds && (
-              <div style={{ marginBottom: 12 }}>
-                <DiamondsToChipsButton
-                  clubId={diamondGamesClubId}
-                  enabled={isVisible}
-                  size="compact"
-                  onGo={onPlayDiamonds}
-                />
-              </div>
-            )}
-
-            {/* Buttons */}
-            {failureMessage && (
-              <div role="alert" style={{ color: '#ef4444', fontSize: 12, marginBottom: 12 }}>
-                {failureMessage}
-              </div>
-            )}
-            <div style={{ display: 'flex', gap: 12 }}>
-              <button
-                type="button"
-                onClick={handleDecline}
-                disabled={processing}
-                style={{
-                  flex: 1,
-                  padding: '12px 0',
-                  borderRadius: 10,
-                  border: '1px solid rgba(255,255,255,0.2)',
-                  background: 'transparent',
-                  color: '#fff',
-                  fontSize: 14,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  minHeight: 48,
-                }}
-              >
-                Decline
-              </button>
-              <button
-                type="button"
-                onClick={handleAccept}
-                disabled={!canAccept || processing}
-                style={{
-                  flex: 1,
-                  padding: '12px 0',
-                  borderRadius: 10,
-                  border: 'none',
-                  background: canAccept
-                    ? 'linear-gradient(135deg, #3fb950 0%, #2ea043 100%)'
-                    : '#374151',
-                  color: '#fff',
-                  fontSize: 14,
-                  fontWeight: 700,
-                  cursor: canAccept ? 'pointer' : 'not-allowed',
-                  opacity: processing ? 0.6 : 1,
-                  minHeight: 48,
-                }}
-              >
-                {processing
-                  ? 'Processing...'
-                  : priceKnown
-                    ? `Accept For ${totalCost.toLocaleString()}`
-                    : 'Accept Add-On'}
-              </button>
-            </div>
-          </>
-        ) : (
-          /* Result display */
-          <div style={{ padding: '16px 0' }}>
-            {result === 'accepted' && (
-              <div style={{ color: '#3fb950', fontSize: 16, fontWeight: 600 }}>
-                Add-On Accepted - +{addOnChips.toLocaleString()} Chips Added
-              </div>
-            )}
-            {result === 'declined' && (
-              <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: 16, fontWeight: 600 }}>
-                Add-On Declined
-              </div>
-            )}
-            {result === 'unknown' && (
-              <div style={{ color: '#ef4444', fontSize: 15, fontWeight: 600 }} role="alert">
-                Add-On Not Confirmed
-                <div
-                  style={{
-                    color: 'rgba(255,255,255,0.65)',
-                    fontSize: 12,
-                    fontWeight: 500,
-                    marginTop: 6,
-                  }}
-                >
-                  {failureMessage}
-                </div>
-                <div style={{ display: 'flex', gap: 12, marginTop: 16 }}>
-                  <button
-                    type="button"
-                    onClick={handleDecline}
-                    disabled={processing}
-                    style={{
-                      flex: 1,
-                      padding: '12px 0',
-                      borderRadius: 10,
-                      border: '1px solid rgba(255,255,255,0.2)',
-                      background: 'transparent',
-                      color: '#fff',
-                      fontSize: 14,
-                      fontWeight: 600,
-                      cursor: processing ? 'not-allowed' : 'pointer',
-                      minHeight: 48,
-                    }}
-                  >
-                    Close
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleAccept}
-                    disabled={processing}
-                    style={{
-                      flex: 1,
-                      padding: '12px 0',
-                      borderRadius: 10,
-                      border: 'none',
-                      background: 'linear-gradient(135deg, #3fb950 0%, #2ea043 100%)',
-                      color: '#fff',
-                      fontSize: 14,
-                      fontWeight: 700,
-                      cursor: processing ? 'not-allowed' : 'pointer',
-                      opacity: processing ? 0.6 : 1,
-                      minHeight: 48,
-                    }}
-                  >
-                    {processing ? 'Processing...' : 'Retry Confirmation'}
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+        <div className="addon-console__messages" aria-live="polite">
+          {result === 'accepted' && (
+            <p>Add-On Accepted - +{chipLabel(addOnChips.toLocaleString())} Added</p>
+          )}
+          {failureMessage && (
+            <p role="alert">
+              {unknown && <strong>Add-On Not Confirmed</strong>}
+              {failureMessage}
+            </p>
+          )}
+          {!decided && !priceKnown && (
+            <p role="alert">Add-On Price Unavailable - Cannot Purchase Right Now</p>
+          )}
+          {!decided && !chipsKnown && (
+            <p role="alert">Add-On Chips Unavailable - Cannot Purchase Right Now</p>
+          )}
+          {!decided && !walletKnown && (
+            <p role="alert">Wallet Balance Unavailable - Cannot Purchase Right Now</p>
+          )}
+          {!decided && priceKnown && walletKnown && !canAfford && (
+            <p role="alert">Insufficient Balance - You Need {chipLabel(money(totalCost))}</p>
+          )}
+          {!decided && priceKnown && walletKnown && !canAfford && onPlayDiamonds && (
+            <DiamondsToChipsButton
+              clubId={diamondGamesClubId}
+              enabled={isVisible}
+              size="compact"
+              onGo={onPlayDiamonds}
+            />
+          )}
+        </div>
+      </section>
     </div>
   );
 }

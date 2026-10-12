@@ -19,6 +19,8 @@ import { join } from 'node:path';
 import { isJoinableTableRow } from './TournamentRecurringService.js';
 import {
   planTableReopens,
+  reopenSweepIdChunks,
+  REOPEN_SWEEP_ID_CHUNK,
   isJoinableTable,
   isLiveTournamentStatus,
   MIN_SEATS_TO_REOPEN_RUNNING,
@@ -197,6 +199,26 @@ describe('the recovery sweep reopens a table closed under a live tournament', ()
   it('is scheduled by GameServer, not merely written', () => {
     expect(GAME_SERVER).toContain('reopenTablesClosedUnderLiveTournaments()');
     expect(GAME_SERVER).toContain('this.lastClosedTableReopenSweepAt = Date.now();');
+  });
+
+  it('sends its id lists in bounded chunks, so the gateway never resets the read', () => {
+    // 2026-10-02: 500 live tournament ids in one in.(...) filter (~19 KB of
+    // URL) reset the socket on every sweep - 56 failures an hour.
+    const ids = Array.from(
+      { length: 594 },
+      (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`
+    );
+    const chunks = reopenSweepIdChunks(ids);
+    expect(chunks.flat()).toEqual(ids);
+    expect(Math.max(...chunks.map((c) => c.length))).toBe(REOPEN_SWEEP_ID_CHUNK);
+    expect(Math.max(...chunks.map((c) => c.join(',').length))).toBeLessThan(4000);
+    const sweep = GAME_SERVER.slice(
+      GAME_SERVER.indexOf('private async reopenTablesClosedUnderLiveTournaments()'),
+      GAME_SERVER.indexOf('const plans = planTableReopens(tournaments, tables, openSeatsByTable);')
+    );
+    expect(sweep).not.toContain('.limit(500)');
+    expect(sweep).toContain(".in('tournament_id', chunk)");
+    expect(sweep).toContain(".in('table_id', chunk)");
   });
 
   it('reopens only a row that is still closed, so it cannot race an opener', () => {

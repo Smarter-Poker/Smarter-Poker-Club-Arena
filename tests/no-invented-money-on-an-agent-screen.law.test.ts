@@ -14,10 +14,10 @@
  *      carried a note about that page fabricating "rakeback as rake * 0.1 and
  *      agent commissions as rake * 0.05"; this was the last of that family.
  *
- *   2. AgentFinancialPortal's "Commission Trends" chart fed rake: 0 for every
- *      day, and FinancialChart drew the rake series unconditionally - so an
- *      agent saw a flat green Rake line at zero next to their real commission
- *      line. The downline rakes constantly; the chart simply had no rake data.
+ *   2. The retired embedded agent portal fed rake: 0 for every day, and
+ *      FinancialChart drew the rake series unconditionally - so an agent saw
+ *      a flat green Rake line at zero next to real commissions. The routed
+ *      Agent Portal now prints only the commission ledger it actually reads.
  *
  *   3. AgentDashboardPage's Commission History listed rows with no indication
  *      of whether they had been claimed. Before phase 6 there was no way to
@@ -41,15 +41,16 @@ const codeOnly = (src: string) =>
 
 const CLUB_DASH = read('src/components/dashboard/ClubFinancialDashboard.tsx');
 const CHART = read('src/components/charts/FinancialChart.tsx');
-const AGENT_PORTAL = read('src/components/dashboard/AgentFinancialPortal.tsx');
+const AGENT_PORTAL = read('src/pages/AgentPortalPage.tsx');
 const AGENT_DASH = read('src/pages/AgentDashboardPage.tsx');
+const AGENT_MANAGEMENT = read('src/pages/AgentManagementPage.tsx');
 const GUARDS = read(
   'supabase/migrations/20260901190748_two_guard_lists_named_a_dropped_function.sql'
 );
 const ALLOWLIST = read('scripts/ci/supabase-invariants.allowlist.json');
 const HARNESS = read('scripts/verification-harness/01-rls-regression.sql');
 
-describe('the club commission split is measured, not decided in advance', () => {
+describe('the club commission outflows are measured without inventing a partition', () => {
   it('has no hardcoded percentages left', () => {
     const code = codeOnly(CLUB_DASH);
     expect(code).not.toMatch(/name:\s*'Club',\s*value:\s*50/);
@@ -74,18 +75,16 @@ describe('the club commission split is measured, not decided in advance', () => 
     expect(migration).toMatch(/FROM ca_club_rake_daily r/);
   });
 
-  it('divides by the rake, because commission books to a different club than rake does', () => {
-    // credit_agent_commission_from_rake resolves the PLAYER's club; rake_records
-    // records the TABLE's club. Dividing by (club+agents+players) draws "Agents
-    // 100%" for any club whose members play at a host club's tables.
-    expect(CLUB_DASH).toMatch(/totalRake <= 0\s*\?\s*EMPTY_SPLIT/);
-    expect(CLUB_DASH).toMatch(/\(club \/ totalRake\)/);
-    expect(CLUB_DASH).toMatch(/\(agents \/ totalRake\)/);
+  it('prints each authoritative outflow without calling it a commission split', () => {
+    expect(CLUB_DASH).toMatch(/Agent Commissions Paid/);
+    expect(CLUB_DASH).toMatch(/Player Rakeback Paid/);
+    expect(CLUB_DASH).not.toMatch(/Measured Commission Split|Commission Split|EMPTY_SPLIT/);
   });
 
-  it('shows zero rather than a shape when the window holds no rake', () => {
-    expect(CLUB_DASH).toMatch(/const EMPTY_SPLIT = \[/);
-    expect(codeOnly(CLUB_DASH)).toMatch(/value: 0/);
+  it('does not derive a fictional club remainder or rounded share chart', () => {
+    const code = codeOnly(CLUB_DASH);
+    expect(code).not.toMatch(/gross_rake\s*-\s*.*agent_commissions/);
+    expect(code).not.toMatch(/PieChart|<Pie\b|totalRake/);
   });
 });
 
@@ -95,8 +94,12 @@ describe('a chart draws only the series it has data for', () => {
     expect(CHART).toMatch(/\{showRake && \(/);
   });
 
-  it('and the agent commission chart turns it off, because it feeds zeros', () => {
-    expect(AGENT_PORTAL).toMatch(/showRake=\{false\}/);
+  it('and the routed agent portal prints only its authoritative commission ledger', () => {
+    const code = codeOnly(AGENT_PORTAL);
+    expect(code).not.toMatch(/\brake\b/i);
+    expect(code).not.toMatch(/<FinancialChart\b/);
+    expect(code).toMatch(/commissionData\.map/);
+    expect(code).toMatch(/day\.commissions/);
   });
 });
 
@@ -108,6 +111,16 @@ describe('a commission row says whether it has been claimed', () => {
 
   it('and the CSV export carries the same fact', () => {
     expect(AGENT_DASH).toMatch(/key: 'settled_at', label: 'Claimed At'/);
+  });
+});
+
+describe('agent payment rates keep their authoritative tenth', () => {
+  it('uses the same one-decimal formatter on screen and in the export', () => {
+    expect(AGENT_MANAGEMENT).toMatch(/const formatPercent = .*toFixed\(1\)/);
+    expect(AGENT_MANAGEMENT).toMatch(/commissionRate: formatPercent\(a\.commissionRate\)/);
+    expect(AGENT_MANAGEMENT).not.toMatch(
+      /commissionRate: `\$\{\(\(a\.commissionRate \|\| 0\) \* 100\)\.toFixed\(0\)\}%`/
+    );
   });
 });
 

@@ -341,7 +341,9 @@ describe('the equity the squeezer sees waits for the card (Dan 2026-08-28)', () 
     expect(page).toContain('heroAllIn: heroInRunout,');
     // The two render sites of the per-seat equity read the held value...
     expect(page).toContain('displayedEquities.find((e) => e.userId === player.id)');
-    expect(page).toContain("? ' seat-wrapper--equity'");
+    // (the `seat-wrapper--equity` lift is gone with the in-wrapper badge:
+    // EquityBadgeLayer draws it above every seat, 2026-10-04)
+    expect(page).toContain('<EquityBadgeLayer');
     expect(page).not.toMatch(
       /allInEquities\.find\(\(e\) => e\.userId === player\.id\) \?\?\n\s*allInEquities\.find\(\(e\) => !e\.userId && e\.seat === seatNumber\);\n\s*if \(!eq\) return null;\n\s*const isAhead/
     );

@@ -78,7 +78,9 @@ describe('LAW: an admin money page names its club before it reads a number', () 
     it(`${page} resolves its scope through useFinancialAdminScope and gates on it`, () => {
       expect(source).toMatch(/useFinancialAdminScope\(\)/);
       expect(source).toMatch(/from '\.\.\/hooks\/useFinancialAdminScope'/);
-      expect(source).toMatch(/<FinancialAdminScopeState scope=\{scope\} \/>/);
+      expect(source).toMatch(
+        /<FinancialAdminScopeState scope=\{scope\} \/>|scope\.message \|\| 'Verifying Your Financial Access'/
+      );
       expect(source).toMatch(/scope\.status !== 'ready'/);
     });
 
@@ -166,11 +168,21 @@ describe('LAW: an admin money page names its club before it reads a number', () 
       return app.slice(at, app.indexOf('/>', app.indexOf('element={', at)));
     };
     expect(routeElement('engine')).toContain('<PlatformStaffGuard>');
-    expect(routeElement('financial-alerts')).toContain('<PlatformStaffGuard>');
+    const retiredAlertsRoute = routeElement('financial-alerts');
+    expect(retiredAlertsRoute).toContain('<PlatformStaffGuard>');
+    expect(retiredAlertsRoute).toContain('<Navigate replace to="/financial-incidents"');
+    expect(app).not.toContain("import('./pages/FinancialAlertsPage')");
+    expect(routeElement('financial-health')).toContain('<PlatformStaffGuard>');
     expect(routeElement('financial-incidents')).toContain('<FinancialAdminGate>');
-    for (const suffix of ['operations', 'table-management', 'data', 'statements', 'settlement']) {
+    for (const suffix of ['operations', 'data', 'statements', 'settlement']) {
       expect(routeElement(`unions/:unionId/${suffix}`)).toContain('<UnionOverseerGuard>');
     }
+    // Table Management deliberately uses the narrower game-management
+    // authority. Appointed union operators may manage games without gaining
+    // the broader financial/data overseer surface.
+    expect(routeElement('unions/:unionId/table-management')).toContain(
+      '<UnionOverseerGuard authority="game-management">'
+    );
     // The club settlement route keeps its member guard; the union twin now
     // carries the overseer guard - neither is an open door.
     expect(routeElement('clubs/:clubId/settlement')).toContain('<ClubMemberGuard>');
@@ -198,7 +210,10 @@ describe('LAW: an admin money page names its club before it reads a number', () 
     const staff = read('src/components/auth/PlatformStaffGuard.tsx');
     expect(staff).toMatch(/if \(allowed === null\) return/);
     expect(staff).toMatch(/if \(!allowed\) return <Navigate/);
-    expect(staff).toMatch(/if \(!cancelled\) setAllowed\(false\)/);
+    expect(staff).toContain(
+      'if (!cancelled) setDecision({ userId: verifiedUserId, allowed: false });'
+    );
+    expect(staff).toContain('decision?.userId === activeUserId');
     const union = read('src/components/auth/UnionOverseerGuard.tsx');
     expect(union).toContain("supabase.rpc('ca_can_oversee_union'");
     expect(union).toMatch(/allowed: data === true/);

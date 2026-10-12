@@ -71,6 +71,21 @@ describe('layer_fire_collapse reads each layer against its own population', () =
     expect(s2).toContain("'denominator_today', r.cur_den");
   });
 
+  it('does not judge a lane reason / refusal / miss breakdown as a layer (2026-10-05)', () => {
+    // Every phaseN decision notes one *_reason_*, the V44 second look one
+    // v44_declined_* per refusal. A drop in one is a shift inside the lane;
+    // on 2026-10-03 thirty-six of them read as collapses. The lane is judged
+    // on its own *_fired / *_eligible counters instead.
+    expect(s2).toContain("when feature ~ '(_reason_|unavailable|_skip_|_miss_|^v44_declined_)'");
+    expect(s2).toContain('or feature = any(v_fallback_exact) then null');
+    // ...and the layers themselves are still judged.
+    expect(s2).not.toMatch(/_fired[^\n]*then null/);
+  });
+
+  it('measures the river showdown reads per cash decision (2026-10-05)', () => {
+    expect(s2).toContain("when feature in ('v43_tempo_read', 'v16_reads_tell') then '#cash'");
+  });
+
   it('keeps the step-must-be-new and must-have-fallen guards', () => {
     expect(s2).toContain('and (p.prev_rate is null or p.prev_rate >= b.med_rate * 0.40)');
     expect(s2).toContain('and (p.prev_fires is null or c.cur_fires < p.prev_fires)');

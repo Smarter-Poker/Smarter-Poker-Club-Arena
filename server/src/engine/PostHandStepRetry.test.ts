@@ -203,6 +203,36 @@ describe('a transient leave_pending failure costs a retry, not the boundary', ()
     });
   });
 
+  it('a lock timeout is a blink: it gets the budget and says so (2026-10-01)', async () => {
+    const { engine, players } = cashTable();
+    mocks.leaves.mockRejectedValue(new Error('canceling statement due to lock timeout'));
+
+    await engine.postHandTasks(players, 1);
+
+    expect(mocks.leaves).toHaveBeenCalledTimes(3);
+    const alerts = leavePendingAlerts();
+    expect(alerts).toHaveLength(1);
+    expect(
+      alerts[0][3].leave_pending_diagnostic_v1.attempts.map((a: any) => a.retry_decision)
+    ).toEqual(['retry_scheduled', 'retry_scheduled', 'budget_exhausted']);
+  });
+
+  it('the failure it does report is a warning that asserts no chips moved (2026-10-01)', async () => {
+    // Every path that throws out of leave_pending is a read before any
+    // cash-out, or a seat move (no money). Nothing is lost: the seats stay
+    // leave_pending and the next boundary re-reads them. The alert says so.
+    const { engine, players } = cashTable();
+    mocks.leaves.mockRejectedValue(new Error('supabase_timeout'));
+
+    await engine.postHandTasks(players, 1);
+
+    const [severity, source, message, context] = leavePendingAlerts()[0];
+    expect(severity).toBe('warning');
+    expect(source).toBe('postHandTasks.leave_pending_failed');
+    expect(message).toContain('No chips moved');
+    expect(context).toMatchObject({ moves_chips: false });
+  });
+
   it('does not retry a refusal the database meant, only a blink', async () => {
     const { engine, players } = cashTable();
     mocks.leaves.mockRejectedValue(new Error('Pending Departure Read Failed'));

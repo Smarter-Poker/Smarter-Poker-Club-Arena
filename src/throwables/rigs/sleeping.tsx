@@ -3,7 +3,7 @@ import { RIG_VIEWBOX, type RigProps, type ThrowableRig } from '../rig';
 import type { ThrowableSpec } from '../spec';
 import { preloadThrowableCues } from '../cues';
 import './sleeping.css';
-// Dedicated recorded cues still pending: snore_loop.
+// Recorded snore lands under the held sleepy pose.
 export const spec: ThrowableSpec = {
   id: 'sleeping',
   name: 'Sleeping',
@@ -24,7 +24,10 @@ export const spec: ThrowableSpec = {
     { at: 3500, marker: 'snore-hold' },
     { at: 4000, marker: 'cut' },
   ],
-  audio: [{ at: 2800, sample: 'bubble_tick', gain: 0.4 }],
+  audio: [
+    { at: 2800, sample: 'bubble_tick', gain: 0.4 },
+    { at: 3500, sample: 'snore_soft' },
+  ],
 };
 preloadThrowableCues(spec.audio.map((cue) => cue.sample));
 const RECTS: [number, number, number, number][] = [

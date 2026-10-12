@@ -1,0 +1,3 @@
+# tests/a-cash-pot-audit-reads-the-hours-since-its-last-run.law.test.ts
+
+A cash pot audit reads the hours since its last run (2026-10-03): ca-cash-pot-conservation-hourly (job 259, every 6 hours) calls fn_cash_pot_conservation_check(8) instead of the 24-hour default that was cancelled at its 600 s budget in 3 of 5 runs, so every cash hand is still inside the window of the first run after it is written (2 hours of overlap), and fn_ca_cash_failed_run_intake's pinned command and the CI scheduler fixtures move with it in the same change so a failed run is still delivered as a critical operational alert rather than refused as contract drift; the checker body, its alerts and its schedule do not change

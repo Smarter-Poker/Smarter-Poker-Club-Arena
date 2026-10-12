@@ -1,9 +1,32 @@
 import { supabase } from '../lib/supabase';
 import { parseArenaIdentity, type ArenaAccessContext } from '../../server/src/domain/ArenaContext';
 
+// Match the existing ClubWorkspace authorization-read deadline. A timeout is
+// unreadable access, never a membership refusal or an authorization grant.
+const ARENA_ACCESS_READ_TIMEOUT_MS = 10_000;
+
 /** Fresh server entitlement. No localStorage, synthetic membership or chip fallback. */
 export async function getArenaContext(clubKey: string): Promise<ArenaAccessContext | null> {
-  const { data, error } = await supabase.rpc('fn_poker_arena_context', { p_club_key: clubKey });
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(new Error('Arena Access Read Timed Out'));
+    }, ARENA_ACCESS_READ_TIMEOUT_MS);
+  });
+  let response;
+  try {
+    response = await Promise.race([
+      supabase
+        .rpc('fn_poker_arena_context', { p_club_key: clubKey })
+        .abortSignal(controller.signal),
+      deadline,
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+  const { data, error } = response;
   if (error) throw new Error(error.message || 'Could Not Verify Arena Access');
   if (data === null) return null;
   const arena = parseArenaIdentity(data.arena);

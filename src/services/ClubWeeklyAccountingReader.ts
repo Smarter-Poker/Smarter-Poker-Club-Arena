@@ -86,6 +86,31 @@ export function formatWeeklyChips(value: string): string {
   return `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}.${fraction}`;
 }
 
+/** #ClubArenaConsole forward display. The canonical row keeps exact cents;
+ * the customer-facing console rounds down without decimals or overstatement. */
+export function formatWeeklyChipsForDisplay(value: string): string {
+  const match = /^(-?)(\d+)\.(\d{2})$/.exec(value);
+  if (!match) return 'Unavailable';
+  const negative = match[1] === '-';
+  const whole = BigInt(match[2]);
+  const hasFraction = match[3] !== '00';
+  if (whole === 0n && hasFraction) return negative ? 'Under 1 Chip Owed' : 'Under 1 Chip';
+  const units: Array<[bigint, string]> = [
+    [1_000_000_000n, 'B'],
+    [1_000_000n, 'M'],
+    [1_000n, 'K'],
+  ];
+  for (const [unit, suffix] of units) {
+    if (whole >= unit) {
+      const tenths = (whole * 10n) / unit;
+      const fraction = tenths % 10n;
+      const compact = `${tenths / 10n}${fraction === 0n ? '' : `.${fraction}`}${suffix}`;
+      return `${negative ? '-' : ''}${compact} Chips`;
+    }
+  }
+  return `${negative ? '-' : ''}${whole.toLocaleString('en-US')} ${whole === 1n ? 'Chip' : 'Chips'}`;
+}
+
 export interface ClubWeeklyStatement {
   id: string;
   clubId: string;

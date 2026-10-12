@@ -37,19 +37,11 @@ vi.mock('../../src/services/AutoRebuyService', () => ({
   },
 }));
 
-vi.mock('../../src/services/FinancialCronService', () => ({
-  FinancialCronService: {
-    start: vi.fn(),
-    stop: vi.fn(),
-  },
-}));
-
 // ─── Import AFTER mocks ──────────────────────────────────────────────────
 
 import { bootServices, shutdownServices } from '../../src/services/ServiceBootstrap';
 import { OfflineQueueService } from '../../src/services/OfflineQueueService';
 import { SettlementCronService } from '../../src/services/SettlementCronService';
-import { FinancialCronService } from '../../src/services/FinancialCronService';
 
 describe('ServiceBootstrap', () => {
   beforeEach(() => {
@@ -101,17 +93,23 @@ describe('ServiceBootstrap', () => {
 
     it('retains actual startup failures on repeat instead of manufacturing healthy services', async () => {
       vi.mocked(OfflineQueueService.init).mockRejectedValueOnce(new Error('unavailable'));
-      vi.mocked(FinancialCronService.start).mockImplementationOnce(() => {
-        throw new Error('unavailable');
-      });
       const first = await bootServices();
       first.offlineQueue = true; // A caller cannot mutate the cached observation.
       const repeated = await bootServices();
       expect(repeated.offlineQueue).toBe(false);
-      expect(repeated.financialCron).toBe(false);
       expect(repeated.settlementCron).toBe(false);
       expect(OfflineQueueService.init).toHaveBeenCalledTimes(1);
-      expect(FinancialCronService.start).toHaveBeenCalledTimes(1);
+    });
+
+    it('starts no financial schedule in a browser (2026-10-05)', async () => {
+      const source = readFileSync(
+        resolve(__dirname, '../../src/services/ServiceBootstrap.ts'),
+        'utf8'
+      ).replace(/^\s*\/\/.*$/gm, '');
+      expect(source).not.toMatch(/import[^;]*FinancialCronService/);
+      expect(source).not.toContain('FinancialCronService.start(');
+      const result = await bootServices();
+      expect(result.financialCron).toBe(false);
     });
   });
 

@@ -1,0 +1,32 @@
+# P11.3 PIN run: live Phase 11 worker actions on the unmodified base
+# base: fb9c43ea32a21d901727d4f3bf9b03047f506d4d (P11.1 merged with P11.2), before any P11.3 change
+# harness: the TEMP describe block in p11-3-pin-base.test.ts.txt, appended to server/src/engine/horseDecision/workerRuntime.test.ts and removed afterwards
+# command: cd server && npx vitest run src/engine/horseDecision/workerRuntime.test.ts -t 'TEMP P11.3 PIN'
+
+{"variant": "plo5", "format": "cash", "cards": "As Ad Ks Kd Qs", "packOff": false, "action": "raise", "amount": 11, "receipt": {"mode": "shadow", "reason": "preflop_entry", "eligible": true, "changed": true, "applied": false, "owner": "cash", "base": ["raise", 11], "prop": ["raise", 10]}}
+{"variant": "plo5", "format": "cash", "cards": "As Ad Ks Kd Qs", "packOff": true, "action": "raise", "amount": 11, "receipt": null}
+{"variant": "plo5", "format": "cash", "cards": "Ah 7c 2s 3d 9h", "packOff": false, "action": "fold", "amount": null, "receipt": {"mode": "shadow", "reason": "preflop_entry_declined", "eligible": true, "changed": false, "applied": false, "owner": "cash", "base": ["fold", null], "prop": ["fold", null]}}
+{"variant": "plo5", "format": "cash", "cards": "Ah 7c 2s 3d 9h", "packOff": true, "action": "fold", "amount": null, "receipt": null}
+{"variant": "plo5", "format": "cash", "cards": "Qs Qh 4c 4d 8s", "packOff": false, "action": "fold", "amount": null, "receipt": {"mode": "shadow", "reason": "preflop_entry_declined", "eligible": true, "changed": false, "applied": false, "owner": "cash", "base": ["fold", null], "prop": ["fold", null]}}
+{"variant": "plo5", "format": "cash", "cards": "Qs Qh 4c 4d 8s", "packOff": true, "action": "fold", "amount": null, "receipt": null}
+{"variant": "plo5", "format": "tournament", "cards": "As Ad Ks Kd Qs", "packOff": false, "action": "raise", "amount": 11, "receipt": {"mode": "shadow", "reason": "preflop_entry", "eligible": true, "changed": true, "applied": false, "owner": "phase7_unavailable", "base": ["raise", 11], "prop": ["raise", 10]}}
+{"variant": "plo5", "format": "tournament", "cards": "As Ad Ks Kd Qs", "packOff": true, "action": "raise", "amount": 11, "receipt": null}
+{"variant": "plo6", "format": "cash", "cards": "As Ad Ks Kd Qs Jd", "packOff": false, "action": "raise", "amount": 11, "receipt": {"mode": "shadow", "reason": "preflop_entry", "eligible": true, "changed": true, "applied": false, "owner": "cash", "base": ["raise", 11], "prop": ["raise", 10]}}
+{"variant": "plo6", "format": "cash", "cards": "As Ad Ks Kd Qs Jd", "packOff": true, "action": "raise", "amount": 11, "receipt": null}
+{"variant": "plo6", "format": "cash", "cards": "Ah 7c 2s 3d 9h 5c", "packOff": false, "action": "fold", "amount": null, "receipt": {"mode": "shadow", "reason": "preflop_entry", "eligible": true, "changed": true, "applied": false, "owner": "cash", "base": ["fold", null], "prop": ["raise", 10]}}
+{"variant": "plo6", "format": "cash", "cards": "Ah 7c 2s 3d 9h 5c", "packOff": true, "action": "fold", "amount": null, "receipt": null}
+{"variant": "plo6", "format": "cash", "cards": "Qs Qh 4c 4d 8s 9c", "packOff": false, "action": "call", "amount": 2, "receipt": {"mode": "shadow", "reason": "preflop_entry_declined", "eligible": true, "changed": true, "applied": false, "owner": "cash", "base": ["call", 2], "prop": ["fold", null]}}
+{"variant": "plo6", "format": "cash", "cards": "Qs Qh 4c 4d 8s 9c", "packOff": true, "action": "call", "amount": 2, "receipt": null}
+{"variant": "plo6", "format": "tournament", "cards": "As Ad Ks Kd Qs Jd", "packOff": false, "action": "raise", "amount": 11, "receipt": {"mode": "shadow", "reason": "preflop_entry", "eligible": true, "changed": true, "applied": false, "owner": "phase7_unavailable", "base": ["raise", 11], "prop": ["raise", 10]}}
+{"variant": "plo6", "format": "tournament", "cards": "As Ad Ks Kd Qs Jd", "packOff": true, "action": "raise", "amount": 11, "receipt": null}
+{"variant": "plo8", "format": "cash", "cards": "As 2s 3d Ac", "packOff": false, "action": "raise", "amount": 11, "receipt": {"mode": "shadow", "reason": "preflop_entry", "eligible": true, "changed": true, "applied": false, "owner": "cash", "base": ["raise", 11], "prop": ["raise", 10]}}
+{"variant": "plo8", "format": "cash", "cards": "As 2s 3d Ac", "packOff": true, "action": "raise", "amount": 11, "receipt": null}
+{"variant": "plo8", "format": "cash", "cards": "Ah 7c Ks 9d", "packOff": false, "action": "fold", "amount": null, "receipt": {"mode": "shadow", "reason": "preflop_entry_declined", "eligible": true, "changed": false, "applied": false, "owner": "cash", "base": ["fold", null], "prop": ["fold", null]}}
+{"variant": "plo8", "format": "cash", "cards": "Ah 7c Ks 9d", "packOff": true, "action": "fold", "amount": null, "receipt": null}
+{"variant": "plo8", "format": "cash", "cards": "Qs Qh 4c 4d", "packOff": false, "action": "call", "amount": 2, "receipt": {"mode": "shadow", "reason": "preflop_entry_declined", "eligible": true, "changed": true, "applied": false, "owner": "cash", "base": ["call", 2], "prop": ["fold", null]}}
+{"variant": "plo8", "format": "cash", "cards": "Qs Qh 4c 4d", "packOff": true, "action": "call", "amount": 2, "receipt": null}
+{"variant": "plo8", "format": "tournament", "cards": "As 2s 3d Ac", "packOff": false, "action": "raise", "amount": 11, "receipt": {"mode": "shadow", "reason": "preflop_entry", "eligible": true, "changed": true, "applied": false, "owner": "phase7_unavailable", "base": ["raise", 11], "prop": ["raise", 10]}}
+{"variant": "plo8", "format": "tournament", "cards": "As 2s 3d Ac", "packOff": true, "action": "raise", "amount": 11, "receipt": null}
+
+ Test Files  1 passed (1)
+      Tests  1 passed | 190 skipped (191)

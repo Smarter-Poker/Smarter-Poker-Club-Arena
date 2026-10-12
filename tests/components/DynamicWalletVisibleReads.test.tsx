@@ -26,59 +26,65 @@ vi.mock('../../src/lib/walletCache', () => ({
   writeWalletCacheDebounced: vi.fn(),
   dedupedFetch: (_key: string, read: () => unknown) => read(),
 }));
-vi.mock('../../src/lib/supabase', () => ({
-  supabase: {
-    from: (table: string) => {
-      const query = {
-        select: () => query,
-        eq: () => query,
-        abortSignal: () => query,
-        maybeSingle: async () => {
-          fixture.requests.push(table);
-          return {
-            error: null,
-            data:
-              table === 'profiles'
-                ? { diamonds: 8 }
-                : table === 'club_members'
-                  ? { chip_balance: 12 }
-                  : { agent_wallet_balance: fixture.agent, promo_wallet_balance: 15 },
-          };
-        },
-      };
-      return query;
+vi.mock('../../src/lib/supabase', () => {
+  const from = (table: string) => {
+    const query = {
+      select: () => query,
+      eq: () => query,
+      abortSignal: () => query,
+      maybeSingle: async () => {
+        fixture.requests.push(table);
+        return {
+          error: null,
+          data:
+            table === 'profiles'
+              ? { diamonds: 8 }
+              : table === 'club_members'
+                ? { chip_balance: 12 }
+                : { agent_wallet_balance: fixture.agent, promo_wallet_balance: 15 },
+        };
+      },
+    };
+    return query;
+  };
+  return {
+    supabase: {
+      from,
+      rpc: (name: string, args: unknown) => {
+        // The player's own balance is read through the owner door (ruling 25),
+        // which answers like the profiles row did.
+        if (name === 'get_my_full_profile') return from('profiles');
+        fixture.rpc(name, args);
+        const result = () => ({
+          error: fixture.failure ? { message: 'Read failed' } : null,
+          data: {
+            authorized: true,
+            scope: 'union',
+            in_union: true,
+            union_id: 'union-1',
+            club_treasury: fixture.bank,
+            club_promo_wallet: 7,
+            union_bank: fixture.unionBank,
+            rake_treasury: 9,
+            union_promo: 11,
+            bbj: { main: 50, backup: 10 },
+            next_close_at: '2026-10-01T00:00:00Z',
+          },
+        });
+        return {
+          abortSignal: async () => result(),
+          then: (resolve: (value: unknown) => unknown) => Promise.resolve(result()).then(resolve),
+        };
+      },
+      channel: (...args: unknown[]) => {
+        fixture.channel(...args);
+        const channel = { on: () => channel, subscribe: () => channel };
+        return channel;
+      },
+      removeChannel: vi.fn(),
     },
-    rpc: (name: string, args: unknown) => {
-      fixture.rpc(name, args);
-      const result = () => ({
-        error: fixture.failure ? { message: 'Read failed' } : null,
-        data: {
-          authorized: true,
-          scope: 'union',
-          in_union: true,
-          union_id: 'union-1',
-          club_treasury: fixture.bank,
-          club_promo_wallet: 7,
-          union_bank: fixture.unionBank,
-          rake_treasury: 9,
-          union_promo: 11,
-          bbj: { main: 50, backup: 10 },
-          next_close_at: '2026-10-01T00:00:00Z',
-        },
-      });
-      return {
-        abortSignal: async () => result(),
-        then: (resolve: (value: unknown) => unknown) => Promise.resolve(result()).then(resolve),
-      };
-    },
-    channel: (...args: unknown[]) => {
-      fixture.channel(...args);
-      const channel = { on: () => channel, subscribe: () => channel };
-      return channel;
-    },
-    removeChannel: vi.fn(),
-  },
-}));
+  };
+});
 
 import DynamicWallet from '../../src/components/wallet/DynamicWallet';
 import * as clubIds from '../../src/utils/clubIdResolver';
@@ -132,6 +138,17 @@ describe('wallet displays follow authenticated reads, not unpublished channels',
     expect(fixture.channel).not.toHaveBeenCalled();
   });
 
+  it('keeps exact balance state while printing forward-facing Cashier figures without cents', async () => {
+    fixture.bank = 1299.99;
+    fixture.agent = 23.75;
+    const view = render(<DynamicWallet {...base} variant="club" />);
+    await flush();
+    expect(value(view.container, 'club_bank')).toHaveTextContent('1.2K');
+    expect(value(view.container, 'agent_wallet')).toHaveTextContent('23');
+    expect(view.container).not.toHaveTextContent('1,299.99');
+    expect(view.container).not.toHaveTextContent('23.75');
+  });
+
   it('refreshes the union bank through the existing permission-aware money panel', async () => {
     const view = render(<DynamicWallet {...base} variant="union" />);
     await flush();
@@ -151,6 +168,27 @@ describe('wallet displays follow authenticated reads, not unpublished channels',
     await flush();
     expect(value(view.container, 'club_bank')).toHaveTextContent('100');
     expect(view.container).toHaveTextContent('Balances Unavailable');
+  });
+
+  it('prints "-" for every wallet, never 0, when the FIRST read fails (launch audit R-03)', async () => {
+    fixture.failure = true;
+    const view = render(<DynamicWallet {...base} variant="club" />);
+    await flush();
+    expect(view.container).toHaveTextContent('Balances Unavailable');
+    const values = Array.from(view.container.querySelectorAll('.dw__row-value')).map((el) =>
+      el.textContent?.trim()
+    );
+    expect(values.length).toBeGreaterThan(0);
+    for (const value of values) expect(value).toBe('-');
+    expect(view.container.querySelector('.dw__sr-live')?.textContent).not.toMatch(/\b0\b/);
+    expect(view.container.querySelector('.dw__sr-live')?.textContent).toContain('Unavailable');
+    expect(view.container.querySelector('.dw__sr-live')?.textContent).not.toContain('unavailable');
+
+    // The retry lands: the real figures replace the dashes.
+    fixture.failure = false;
+    await act(() => vi.advanceTimersByTimeAsync(8_000));
+    await flush();
+    expect(value(view.container, 'club_bank')).toHaveTextContent('100');
   });
 
   it('keeps diamond-only arenas free of chip reads on initial and subsequent refreshes', async () => {

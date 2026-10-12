@@ -34,5 +34,7 @@ export { default as AdvancedStatsSummary } from './AdvancedStatsSummary';
 export { default as BankrollTracker } from './BankrollTracker';
 export { default as PositionWinRates } from './PositionWinRates';
 export { default as SessionHistory } from './SessionHistory';
+export { default as CashIntelligencePanel } from './CashIntelligencePanel';
+export type { CashEvidenceMetric } from './CashIntelligencePanel';
 
 export * from './statsMotion';

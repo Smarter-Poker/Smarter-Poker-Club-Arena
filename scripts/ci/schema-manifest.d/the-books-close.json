@@ -1,0 +1,4 @@
+{
+  "_owner": "p4-the-books-close. Migration 20261003024413_the_books_close (phase 4 of 9, books close). public.fn_union_remind_statement posts an overdue statement's reminder into each accounting conversation the statement was delivered to.",
+  "functions": ["fn_union_remind_statement"]
+}

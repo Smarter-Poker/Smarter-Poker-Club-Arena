@@ -42,6 +42,8 @@ export function diamondChoicePageFixture() {
       clubIdResolver: `export const resolveClubUUID=async()=> 'club-fixture-0000-4000-8000-000000000001';`,
       errorReporter: `export const reportError=console.error;`,
       HapticService: `export const triggerHaptic=()=>{};`,
+      // The scene-health writer reaches the database; a layout fixture records nothing.
+      DiamondSceneRecorder: `export const installDiamondSceneRecorder=()=>{};`,
       // Every cue is a no-op, whatever its name: the scenes play their own sounds
       // (2026-09-26) and a fixed list of method names broke the build each time a
       // cue was added. PLINKO_PEG_GAP_MS mirrors src/services/SoundService.ts.

@@ -1,0 +1,11 @@
+{
+  "_owner": "agent/claude-refusal/fix/ledger-refusal-survives-rollback. PROMISED, not yet observed: migration 20261002135708_a_ledger_refusal_is_recorded_outside_its_rollback is applied through apply-merged-migration.yml after the protected merge, never from a branch (CLAUDE.md section 2). A ledger refusal is recorded outside its rollback: the refusal record, its counter's watermark, the recorder, the census and the watch.",
+  "tables": ["ca_ledger_invariant_refusals", "ca_ledger_invariant_refusal_watch_state"],
+  "functions": [
+    "fn_ca_ledger_refusal_file",
+    "fn_ca_ledger_refusal_raise",
+    "fn_ca_ledger_refusal_record",
+    "fn_ca_ledger_invariant_refusal_census",
+    "fn_ca_ledger_invariant_refusal_watch"
+  ]
+}

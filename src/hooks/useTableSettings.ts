@@ -579,7 +579,8 @@ function attachBusOnce(): void {
  */
 function pushKeyToServer(key: keyof TableUserSettings, value: unknown): void {
   const column = COLUMN_FOR_KEY[key];
-  if (!column || !hydratedUserId) return;
+  const ownerId = hydratedUserId;
+  if (!column || !ownerId) return;
   /* `.then(onFulfilled)` with ONE argument handles fulfilment only, and a
      PostgREST builder REJECTS on transport failure (offline, DNS, aborted
      fetch) rather than resolving with an `error`. So every settings change made
@@ -590,12 +591,12 @@ function pushKeyToServer(key: keyof TableUserSettings, value: unknown): void {
     try {
       const { error } = await supabase
         .from('user_table_settings')
-        .upsert({ user_id: hydratedUserId, [column]: value }, { onConflict: 'user_id' });
+        .upsert({ user_id: ownerId, [column]: value }, { onConflict: 'user_id' });
       if (error) {
         reportError(error, 'useTableSettings.Save_failed');
         return;
       }
-      await markSettingsTouched([column]);
+      await markSettingsTouched(ownerId, [column]);
     } catch (error) {
       reportError(error, 'useTableSettings.Save_failed');
     }
@@ -612,8 +613,8 @@ function pushKeyToServer(key: keyof TableUserSettings, value: unknown): void {
  * row — one marker for one table, or the two hooks would disagree about which
  * half of a user's settings were deliberate.
  */
-export async function markSettingsTouched(columns: string[]): Promise<void> {
-  if (columns.length === 0) return;
+export async function markSettingsTouched(userId: string, columns: string[]): Promise<void> {
+  if (!userId || columns.length === 0) return;
   try {
     /* BOUNDED, because `useUserTableSettings` awaits this INSIDE its ordered
        write queue: the promise it returns is what the next tap of the same
@@ -624,7 +625,10 @@ export async function markSettingsTouched(columns: string[]): Promise<void> {
        Losing the mark costs that one column the pre-2026-08-29 inference until
        the next write; losing the queue costs the setting. */
     const result = await Promise.race([
-      supabase.rpc('fn_mark_table_setting_touched', { p_columns: columns }),
+      supabase.rpc('fn_mark_table_setting_touched', {
+        p_expected_user_id: userId,
+        p_columns: columns,
+      }),
       new Promise<{ error: unknown }>((resolve) =>
         setTimeout(
           () => resolve({ error: new Error('fn_mark_table_setting_touched timed out') }),

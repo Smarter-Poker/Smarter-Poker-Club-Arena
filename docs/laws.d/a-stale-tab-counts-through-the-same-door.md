@@ -1,0 +1,3 @@
+# tests/a-stale-tab-counts-through-the-same-door.law.test.ts
+
+`increment_reel_count`, `decrement_reel_count`, `increment_post_count` and `decrement_post_count` decide by the request role (`COALESCE(auth.role(), 'service_role')`): the service role keeps the unchanged body, a browser's view or share is the caller's own and goes through `fn_count_content_engagement` (one per content per day), and every other browser request - a like, a comment, any decrement - is refused with 42501; anon has no grant. Pinned to production's md5 pre-image or its own post-image, so production's apply order and a rebuild's file order (20261002225448 first) end on the same four definitions; proved by `scripts/ci/test-a-stale-tab-counts-through-the-same-door.py`.

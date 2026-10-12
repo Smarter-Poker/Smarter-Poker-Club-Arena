@@ -61,6 +61,19 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+function matchesDestination(url: URL, target: string): boolean {
+  const expected = new URL(target, 'https://club-arena.invalid');
+  const pathMatches =
+    expected.pathname === '/'
+      ? url.pathname === '/' || /\/hub\/club-arena\/?$/.test(url.pathname)
+      : url.pathname.endsWith(expected.pathname);
+  if (!pathMatches) return false;
+  return [...expected.searchParams].every(
+    ([key, value]) =>
+      url.searchParams.getAll(key).length === 1 && url.searchParams.get(key) === value
+  );
+}
+
 /* Open the menu, or account honestly for why we could not.
  *
  * A signed-out run genuinely cannot test the menu: the route redirects to /auth
@@ -142,6 +155,7 @@ test.describe('Hamburger Menu — Navigation Links', () => {
     { label: 'Club Arena', path: '/' },
     { label: 'Tournaments', path: '/tournaments' },
     { label: 'Tournament Results', path: '/tournament-results' },
+    { label: 'My Spin Results', path: '/tournament-results?filter=mine&type=spin' },
     { label: 'Hand History', path: '/hand-history' },
     { label: 'Session History', path: '/session-history' },
     { label: 'Leaderboards', path: '/leaderboard' },
@@ -153,7 +167,7 @@ test.describe('Hamburger Menu — Navigation Links', () => {
     { label: 'Rewards Center', path: '/rewards' },
     { label: 'Wallet', path: '/wallet' },
     { label: 'Cashier', path: '/cashier' },
-    { label: 'Marketplace', path: '/marketplace' },
+    { label: 'Marketplace', path: '/marketplace', destination: '/hub/diamond-store' },
     { label: 'VIP & Rakeback', path: '/vip' },
     { label: 'Promotions', path: '/promotions' },
     { label: 'Achievements', path: '/achievements' },
@@ -162,6 +176,7 @@ test.describe('Hamburger Menu — Navigation Links', () => {
     { label: 'Notifications', path: '/notifications' },
     // Support & Legal
     { label: 'Help Center', path: '/help' },
+    { label: 'Legal Center', path: '/legal' },
     { label: 'Terms Of Service', path: '/legal/tos' },
     { label: 'Privacy Policy', path: '/legal/privacy' },
     { label: 'Fair Gaming', path: '/legal/fair-gaming' },
@@ -189,8 +204,11 @@ test.describe('Hamburger Menu — Navigation Links', () => {
       // done on a timer, and a 500 ms guess is exactly what made this spec
       // flaky once the suite went to 4 workers. toHaveURL already polls —
       // give it a real budget and let it do that.
-      const escapedPath = link.path.replace(/\//g, '\\/');
-      await expect(page).toHaveURL(new RegExp(`.*${escapedPath}`), { timeout: 10000 });
+      const destination = 'destination' in link ? link.destination : link.path;
+      await expect(page, `navigation did not reach ${destination}`).toHaveURL(
+        (url) => matchesDestination(url, destination),
+        { timeout: 10_000 }
+      );
     });
   }
 

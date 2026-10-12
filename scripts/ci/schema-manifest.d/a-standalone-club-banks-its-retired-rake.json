@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/standalone-rake-banks-weekly",
+  "functions": ["fn_bank_standalone_week_rake"]
+}

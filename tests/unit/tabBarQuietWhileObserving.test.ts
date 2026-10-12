@@ -70,6 +70,26 @@ describe('an observed tab shows the game and the stakes, and nothing that moves'
     );
   });
 
+  it('a TOURNAMENT tab takes its buy-in in that slot, ahead of both (Dan 2026-10-04)', () => {
+    /* Owner ruling, 2026-10-04: "THE ACTION BOX SHOULDN'T SAY MTT 200/400 OR
+       MTT 25/50 IT SHOULD BE DISPLAYING THE HOLE CARDS WHEN THEY ARE PRESENT,
+       OR MTT AND BUY IN AMOUNT UNDER IT FOR QUICK REFERENCE."
+
+       "The game and the stakes" above is the CASH reading of the 2026-08-26
+       ruling. On a tournament `stakes` is the blind level, which moves, so the
+       still thing to print there is the buy-in. The tournament branch is tested
+       first, which is what keeps blinds and the pot off an MTT pill whether the
+       hero is seated or watching. Full behaviour:
+       tests/a-tournament-tab-says-its-buy-in.law.test.tsx. */
+    const tournamentAt = TAB.indexOf('{isTournamentTab ? (');
+    const potAt = TAB.indexOf(') : potToShow !== null ? (');
+    expect(tournamentAt).toBeGreaterThan(-1);
+    expect(potAt).toBeGreaterThan(tournamentAt);
+    expect(TAB).toMatch(
+      /const isTournamentTab = tab\.isTournament === true \|\| isTournamentGameCode\(tab\.gameCode\);/
+    );
+  });
+
   it('does not flash an action chip or a win/loss pulse', () => {
     expect(TAB).toMatch(/const flash = observing \? undefined : actionFlash\[tab\.id\]/);
     expect(TAB).toMatch(/const result = observing \? undefined : resultFlash\[tab\.id\]/);

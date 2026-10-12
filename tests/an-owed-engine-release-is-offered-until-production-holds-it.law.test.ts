@@ -225,6 +225,38 @@ describe('the detector: a release is owed until production holds it', () => {
     });
   });
 
+  it('offers the newest server tree, so a test-only fix after the owed engine commit ships with it', () => {
+    // 2026-10-08: c79f08d347 was owed, its tree held one broken test, and the
+    // fix 3353d64d5f was test-only. Offering c79f08d347 again failed forever.
+    const fx = fixture();
+    const testFix = fx.commit('server/src/GameServer.test.ts', 'fixed test');
+    const after = fx.commit('src/pages/ClubHomePage.tsx', 'client three');
+    const { out, stdout } = detect(fx, {
+      before: testFix,
+      after,
+      healthUrl: health(fx.cwd, JSON.stringify({ releaseSha: fx.live })),
+    });
+    expect(out).toMatchObject({
+      release_required: 'true',
+      offer_reason: 'behind',
+      target_sha: testFix,
+    });
+    expect(stdout).toContain(`Exact engine component SHA: ${fx.owed}`);
+    expect(stdout).toContain(`Offered server tree SHA: ${testFix}`);
+  });
+
+  it('NEGATIVE: a test-only server commit never owes a release by itself', () => {
+    const fx = fixture();
+    const testOnlyBefore = fx.after;
+    const testOnlyAfter = fx.commit('server/src/GameServer.test.ts', 'new test');
+    const { out } = detect(fx, {
+      before: testOnlyBefore,
+      after: testOnlyAfter,
+      healthUrl: health(fx.cwd, JSON.stringify({ releaseSha: fx.owed })),
+    });
+    expect(out).toMatchObject({ release_required: 'false', offer_reason: 'current' });
+  });
+
   it('judges "behind" by containment over the same engine paths the receiver uses', () => {
     const source = readFileSync(workflowPath, 'utf8');
     for (const p of SERVER_PATHS) expect(source).toContain(`'${p}'`);

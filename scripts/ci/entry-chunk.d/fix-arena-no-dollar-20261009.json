@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/arena-no-dollar-20261009: the generated JSX runtime and its small display-text helper must execute before first paint on every route to enforce the owner ban on displayed dollar signs. They have no third-party imports beyond the existing React runtime. Lazy loading would expose dollar-bearing initial text.",
+  "modules": ["src/lib/arenaDisplay/jsx-runtime.ts", "src/lib/arenaDisplay/text.ts"]
+}

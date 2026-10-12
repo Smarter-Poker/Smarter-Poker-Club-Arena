@@ -1,0 +1,5 @@
+{
+  "_owner": "p5-alerts-and-main. Migration 20261003102610_a_silent_production_alerts_reader_reaches_a_person (phase 5 of 9). operational_alert_events.investigation_touched_at is stamped when a reader records an investigation; fn_ca_owner_route_reader_silence pages the owner once when a critical owner alert arrives while the Production Alerts inbox has not been read for 12 hours.",
+  "functions": ["fn_operational_alert_investigation_touched", "fn_ca_owner_route_reader_silence"],
+  "columns": { "operational_alert_events": ["investigation_touched_at"] }
+}

@@ -1,0 +1,1127 @@
+{
+  "captured_at": "2026-10-06T02:21:37.849185+00:00",
+  "scope": "ev-cashout-critical-authorities",
+  "functions": [
+    {
+      "signature": "fn_ca_commit_hand_settlement_exact_before_obligations(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_commit_hand_settlement_exact_before_obligations(p_table_id uuid, p_hand_number bigint, p_stacks jsonb, p_rake numeric, p_bbj numeric, p_ref text, p_inflow numeric, p_hand_row jsonb, p_units jsonb, p_instance_id text, p_lease_generation uuid)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_tournament_id uuid;\n  v_locked_tournament_id uuid;\n  v_holder text;\n  v_generation uuid;\n  v_protocol_version integer;\n  v_heartbeat_at timestamptz;\n  v_lease_found boolean;\n  v_scope text;\nBEGIN\n  IF length(btrim(COALESCE(p_instance_id, ''))) = 0\n     OR p_lease_generation IS NULL THEN\n    RETURN jsonb_build_object(\n      'success', false,\n      'atomic_hand_commit', false,\n      'reason', 'invalid_hand_lease_authority'\n    );\n  END IF;\n\n  /* This read is deliberately unlocked and is used only to choose one lease\n     relation.  No mutation follows until the chosen lease is locked and the\n     tables row is itself locked/re-read below. */\n  SELECT t.tournament_id INTO v_tournament_id\n    FROM public.tables t\n   WHERE t.id = p_table_id;\n  IF NOT FOUND THEN\n    RETURN jsonb_build_object('success', false, 'reason', 'table_not_found');\n  END IF;\n\n  IF v_tournament_id IS NULL THEN\n    v_scope := 'table';\n    SELECT l.instance_id, l.lease_generation, l.protocol_version, l.heartbeat_at\n      INTO v_holder, v_generation, v_protocol_version, v_heartbeat_at\n      FROM public.engine_table_leases l\n     WHERE l.table_id = p_table_id\n     FOR KEY SHARE;\n    v_lease_found := FOUND;\n  ELSE\n    v_scope := 'tournament';\n    SELECT l.instance_id, l.lease_generation, l.protocol_version, l.heartbeat_at\n      INTO v_holder, v_generation, v_protocol_version, v_heartbeat_at\n      FROM public.engine_tournament_leases l\n     WHERE l.tournament_id = v_tournament_id\n     -- A HAND COMMIT DOES NOT HOLD THE LEASE AGAINST ITS OWN HEARTBEAT\n     -- (2026-09-10): FOR KEY SHARE excludes a takeover (FOR UPDATE) and\n     -- nothing else, so the heartbeat can still renew this row.\n     FOR KEY SHARE;\n    v_lease_found := FOUND;\n  END IF;\n\n  IF NOT v_lease_found\n     OR v_protocol_version IS DISTINCT FROM 2\n     OR v_holder IS DISTINCT FROM p_instance_id\n     OR v_generation IS DISTINCT FROM p_lease_generation THEN\n    RETURN jsonb_build_object(\n      'success', false,\n      'atomic_hand_commit', false,\n      'reason', 'hand_lease_lost',\n      'lease_scope', v_scope,\n      'lease_generation', v_generation\n    );\n  END IF;\n\n  IF v_heartbeat_at < clock_timestamp() - make_interval(\n       secs => public.fn_engine_lease_stale_seconds()\n     ) THEN\n    RETURN jsonb_build_object(\n      'success', false,\n      'atomic_hand_commit', false,\n      'reason', 'hand_lease_stale',\n      'lease_scope', v_scope,\n      'lease_generation', v_generation\n    );\n  END IF;\n\n  /* Match the unchanged core and manager lock order before taking the mutable\n     table row.  FOR SHARE excludes tournament lifecycle updates without\n     serializing hands at distinct tables in the same event. */\n  IF v_tournament_id IS NOT NULL THEN\n    PERFORM 1\n      FROM public.tournaments t\n     WHERE t.id = v_tournament_id\n     FOR SHARE;\n    IF NOT FOUND THEN\n      RETURN jsonb_build_object('success', false, 'reason', 'tournament_not_found');\n    END IF;\n  END IF;\n\n  /* Cash uses lease -> table. Tournament settlement uses\n     lease -> tournament parent -> table. Holding the exact lease now prevents\n     takeover until the unchanged core has committed or rolled back. */\n  SELECT t.tournament_id INTO v_locked_tournament_id\n    FROM public.tables t\n   WHERE t.id = p_table_id\n   FOR UPDATE;\n  IF NOT FOUND THEN\n    RETURN jsonb_build_object('success', false, 'reason', 'table_not_found');\n  END IF;\n  IF v_locked_tournament_id IS DISTINCT FROM v_tournament_id THEN\n    RETURN jsonb_build_object(\n      'success', false,\n      'atomic_hand_commit', false,\n      'reason', 'hand_lease_scope_changed'\n    );\n  END IF;\n\n  RETURN public.fn_ca_commit_hand_settlement_before_lease_generation(\n    p_table_id,\n    p_hand_number,\n    p_stacks,\n    p_rake,\n    p_bbj,\n    p_ref,\n    p_inflow,\n    p_hand_row,\n    p_units\n  );\nEND;\n$function$\n",
+      "body_md5": "21eee4aac1840bd768592caff4b2c492",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}"
+    },
+    {
+      "signature": "fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid,jsonb)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_commit_hand_settlement(p_table_id uuid, p_hand_number bigint, p_stacks jsonb, p_rake numeric, p_bbj numeric, p_ref text, p_inflow numeric, p_hand_row jsonb, p_units jsonb, p_instance_id text, p_lease_generation uuid, p_post_commit_obligations jsonb)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'extensions', 'pg_temp'\nAS $function$\nDECLARE\n  v_result jsonb;\n  v_diamond boolean := false;\n  v_hand_id uuid;\n  v_request_hash text;\n  v_hash text;\n  v_existing_request_hash text;\n  v_existing_hash text;\n  v_payload jsonb;\n  v_club_id uuid;\n  v_tournament_id uuid;\n  v_item jsonb;\n  v_expected integer;\n  v_updated integer;\n  v_row_count integer;\n  v_exact_seat_generation boolean := false;\n  -- LIGHTNING PHASE 6 (20261001154813): see fn_ca_settle_hand_stacks_absolute.\n  v_lightning_seats jsonb := '{}'::jsonb;\nBEGIN\n  -- This public 12-argument door is the outermost accepted-hand authority.\n  -- Take the lifecycle root before its preserved exact-generation core can\n  -- lock a lease, tournament or table. The owner-only nine-argument core\n  -- re-enters this shared transaction lock defensively; that acquisition is\n  -- harmless and keeps the private core safe from future owner-only callers.\n  PERFORM public.fn_ca_share_settlement_lane_for_table(p_table_id);\n  PERFORM smarter_private.assert_retained_hand_submission(jsonb_build_object('p_table_id',p_table_id,'p_hand_number',p_hand_number,'p_stacks',p_stacks,'p_rake',p_rake,'p_bbj',p_bbj,'p_ref',p_ref,'p_inflow',p_inflow,'p_hand_row',p_hand_row,'p_units',p_units,'p_instance_id',p_instance_id,'p_lease_generation',p_lease_generation,'p_post_commit_obligations',p_post_commit_obligations));\n  PERFORM smarter_private.f06_hand_dispatch_guard(p_table_id,p_hand_number);\n\n  IF jsonb_typeof(p_post_commit_obligations) IS DISTINCT FROM 'object'\n     OR p_post_commit_obligations->>'version' <> '1'\n     OR jsonb_typeof(p_post_commit_obligations->'time_banks') IS DISTINCT FROM 'array'\n     OR jsonb_typeof(p_post_commit_obligations->'promo_playthrough') IS DISTINCT FROM 'array'\n     OR jsonb_typeof(p_post_commit_obligations->'insurance') IS DISTINCT FROM 'array'\n     OR NOT (p_post_commit_obligations ? 'pending_addons')\n     OR NOT (p_post_commit_obligations ? 'rake')\n     OR NOT (p_post_commit_obligations ? 'bbj_contribution')\n     OR p_post_commit_obligations ? 'accepted_hand_facts'\n     OR jsonb_typeof(p_post_commit_obligations->'rake') NOT IN ('object', 'null')\n     OR jsonb_typeof(p_post_commit_obligations->'bbj_contribution') NOT IN ('object', 'null')\n     OR jsonb_typeof(p_post_commit_obligations->'pending_addons') NOT IN ('object', 'null') THEN\n    RAISE EXCEPTION\n      'atomic hand commit refused (invalid_post_commit_obligations)';\n  END IF;\n\n  -- Database-first expansion. The previous engine may send an entirely legacy\n  -- roster while it drains, but exact and legacy identities never mix.\n  IF jsonb_typeof(p_stacks) = 'array' AND jsonb_array_length(p_stacks) > 0 THEN\n    IF EXISTS (\n      SELECT 1\n        FROM jsonb_array_elements(p_stacks) x\n       WHERE (x ? 'seat_id') IS DISTINCT FROM (x ? 'seat_joined_at')\n          OR CASE WHEN x ? 'seat_id'\n                  THEN jsonb_typeof(x->'seat_id') IS DISTINCT FROM 'string'\n                    OR jsonb_typeof(x->'seat_joined_at') IS DISTINCT FROM 'string'\n                  ELSE false END\n          OR CASE WHEN jsonb_typeof(x->'seat_id') = 'string'\n                  THEN (x->>'seat_id') !~*\n                    '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'\n                  ELSE false END\n          OR CASE WHEN jsonb_typeof(x->'seat_joined_at') = 'string'\n                  THEN NOT pg_input_is_valid(\n                    x->>'seat_joined_at', 'timestamp with time zone'\n                  )\n                  ELSE false END\n    ) THEN\n      RAISE EXCEPTION\n        'atomic hand commit refused (invalid_stack_seat_generation)';\n    END IF;\n    IF EXISTS (SELECT 1 FROM jsonb_array_elements(p_stacks) x WHERE x ? 'seat_id')\n       AND EXISTS (SELECT 1 FROM jsonb_array_elements(p_stacks) x WHERE NOT (x ? 'seat_id')) THEN\n      RAISE EXCEPTION\n        'atomic hand commit refused (mixed_stack_seat_generation_protocol)';\n    END IF;\n    SELECT COALESCE(bool_and(x ? 'seat_id' AND x ? 'seat_joined_at'), false)\n      INTO v_exact_seat_generation\n      FROM jsonb_array_elements(p_stacks) x;\n\n    IF EXISTS (\n      SELECT 1\n        FROM jsonb_array_elements(p_post_commit_obligations->'time_banks') x\n       WHERE (x ? 'seat_id') IS DISTINCT FROM (x ? 'seat_joined_at')\n          OR CASE WHEN x ? 'seat_id'\n                  THEN jsonb_typeof(x->'seat_id') IS DISTINCT FROM 'string'\n                    OR jsonb_typeof(x->'seat_joined_at') IS DISTINCT FROM 'string'\n                  ELSE false END\n          OR CASE WHEN jsonb_typeof(x->'seat_id') = 'string'\n                  THEN (x->>'seat_id') !~*\n                    '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'\n                  ELSE false END\n          OR CASE WHEN jsonb_typeof(x->'seat_joined_at') = 'string'\n                  THEN NOT pg_input_is_valid(\n                    x->>'seat_joined_at', 'timestamp with time zone'\n                  )\n                  ELSE false END\n          OR (x ? 'seat_id') IS DISTINCT FROM v_exact_seat_generation\n    ) THEN\n      RAISE EXCEPTION\n        'atomic hand commit refused (invalid_time_bank_seat_generation)';\n    END IF;\n\n    IF v_exact_seat_generation AND EXISTS (\n      SELECT 1\n        FROM jsonb_array_elements(p_post_commit_obligations->'time_banks') x\n       WHERE NOT EXISTS (\n         SELECT 1\n           FROM jsonb_array_elements(p_stacks) s\n          WHERE s->>'user_id' = x->>'user_id'\n            AND s->>'seat_id' = x->>'seat_id'\n            AND (s->>'seat_joined_at')::timestamptz =\n                (x->>'seat_joined_at')::timestamptz\n       )\n    ) THEN\n      RAISE EXCEPTION\n        'atomic hand commit refused (time_bank_seat_generation_mismatch)';\n    END IF;\n  END IF;\n\n  IF jsonb_typeof(p_hand_row->'_accepted_post_commit_facts') IS DISTINCT FROM 'object'\n     OR jsonb_typeof(p_hand_row->'pot_size') IS DISTINCT FROM 'number'\n     OR jsonb_typeof(p_hand_row->'big_blind') IS DISTINCT FROM 'number'\n     OR COALESCE(p_rake, 0) < 0\n     OR COALESCE(p_bbj, 0) < 0\n     OR jsonb_typeof(p_hand_row->'_accepted_post_commit_facts'->'contributions')\n          IS DISTINCT FROM 'object'\n     OR jsonb_typeof(p_hand_row->'_accepted_post_commit_facts'->'returned_uncalled')\n          IS DISTINCT FROM 'object'\n     OR jsonb_typeof(p_hand_row->'_accepted_post_commit_facts'->'insurance')\n          IS DISTINCT FROM 'array'\n     OR EXISTS (\n       SELECT 1\n         FROM jsonb_each(p_hand_row->'_accepted_post_commit_facts'->'contributions') e\n        WHERE e.key !~*\n          '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'\n           OR jsonb_typeof(e.value) IS DISTINCT FROM 'number'\n           OR CASE WHEN jsonb_typeof(e.value) = 'number'\n                   THEN (e.value::text)::numeric < 0 ELSE false END\n     )\n     OR EXISTS (\n       SELECT 1\n         FROM jsonb_each(p_hand_row->'_accepted_post_commit_facts'->'returned_uncalled') e\n        WHERE e.key !~*\n          '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'\n           OR jsonb_typeof(e.value) IS DISTINCT FROM 'number'\n           OR CASE WHEN jsonb_typeof(e.value) = 'number'\n                   THEN (e.value::text)::numeric < 0 ELSE false END\n     ) THEN\n    RAISE EXCEPTION\n      'atomic hand commit refused (invalid_accepted_post_commit_facts)';\n  END IF;\n\n  IF EXISTS (\n    SELECT 1 FROM jsonb_array_elements(p_post_commit_obligations->'time_banks') x\n     WHERE (x->>'user_id') !~*\n       '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'\n        OR jsonb_typeof(x->'uses_remaining') IS DISTINCT FROM 'number'\n        OR jsonb_typeof(x->'seconds_remaining') IS DISTINCT FROM 'number'\n        OR (x->>'uses_remaining') !~ '^[0-9]+$'\n        OR (x->>'seconds_remaining') !~ '^[0-9]+$'\n        OR CASE WHEN (x->>'uses_remaining') ~ '^[0-9]+$'\n                THEN (x->>'uses_remaining')::numeric > 2147483647 ELSE false END\n        OR CASE WHEN (x->>'seconds_remaining') ~ '^[0-9]+$'\n                THEN (x->>'seconds_remaining')::numeric > 2147483647 ELSE false END\n  ) OR EXISTS (\n    SELECT 1 FROM jsonb_array_elements(p_post_commit_obligations->'promo_playthrough') x\n     WHERE (x->>'club_id') !~*\n       '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'\n        OR (x->>'user_id') !~*\n       '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'\n        OR jsonb_typeof(x->'wagered') IS DISTINCT FROM 'number'\n        OR CASE WHEN jsonb_typeof(x->'wagered') = 'number'\n                THEN (x->>'wagered')::numeric <= 0 ELSE false END\n  ) OR EXISTS (\n    SELECT 1 FROM jsonb_array_elements(p_post_commit_obligations->'insurance') x\n     WHERE (x->>'club_id') !~*\n       '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'\n        OR (x->>'player_id') !~*\n       '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'\n        OR jsonb_typeof(x->'equity_percent') IS DISTINCT FROM 'number'\n        OR jsonb_typeof(x->'premium') IS DISTINCT FROM 'number'\n        OR jsonb_typeof(x->'insured_amount') IS DISTINCT FROM 'number'\n        OR jsonb_typeof(x->'payout') IS DISTINCT FROM 'number'\n        OR jsonb_typeof(x->'player_won') IS DISTINCT FROM 'boolean'\n        OR COALESCE(x->>'kind', '') NOT IN ('insurance', 'ev_cashout')\n        OR CASE WHEN jsonb_typeof(x->'equity_percent') = 'number'\n                THEN (x->>'equity_percent')::numeric NOT BETWEEN 0 AND 100 ELSE false END\n        OR CASE WHEN jsonb_typeof(x->'premium') = 'number'\n                THEN (x->>'premium')::numeric < 0 ELSE false END\n        OR CASE WHEN jsonb_typeof(x->'insured_amount') = 'number'\n                THEN (x->>'insured_amount')::numeric < 0 ELSE false END\n        OR CASE WHEN jsonb_typeof(x->'payout') = 'number'\n                THEN (x->>'payout')::numeric < 0 ELSE false END\n  ) THEN\n    RAISE EXCEPTION\n      'atomic hand commit refused (invalid_post_commit_item)';\n  END IF;\n\n  IF jsonb_typeof(p_post_commit_obligations->'rake') = 'object'\n     AND (\n       jsonb_typeof(p_post_commit_obligations->'rake'->'amount') IS DISTINCT FROM 'number'\n       OR jsonb_typeof(p_post_commit_obligations->'rake'->'bbj') IS DISTINCT FROM 'number'\n       OR jsonb_typeof(p_post_commit_obligations->'rake'->'pot') IS DISTINCT FROM 'number'\n       OR jsonb_typeof(p_post_commit_obligations->'rake'->'num_players') IS DISTINCT FROM 'number'\n       OR jsonb_typeof(p_post_commit_obligations->'rake'->'contributions') IS DISTINCT FROM 'object'\n       OR jsonb_typeof(p_post_commit_obligations->'rake'->'returned_uncalled') IS DISTINCT FROM 'object'\n       OR (p_post_commit_obligations->'rake'->>'num_players') !~ '^[0-9]+$'\n       OR COALESCE((p_post_commit_obligations->'rake'->>'amount')::numeric, 0) <= 0\n       OR COALESCE((p_post_commit_obligations->'rake'->>'bbj')::numeric, 0) < 0\n       OR COALESCE((p_post_commit_obligations->'rake'->>'pot')::numeric, -1) < 0\n       OR COALESCE((p_post_commit_obligations->'rake'->>'num_players')::numeric, 0) <= 0\n       OR COALESCE((p_post_commit_obligations->'rake'->>'num_players')::numeric, 0)\n            > 2147483647\n       OR (p_post_commit_obligations->'rake'->>'club_id') !~*\n          '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'\n       OR COALESCE(p_post_commit_obligations->'rake'->>'method', '')\n            <> 'WEIGHTED_CONTRIBUTED'\n     ) THEN\n    RAISE EXCEPTION\n      'atomic hand commit refused (invalid_post_commit_rake)';\n  END IF;\n  IF jsonb_typeof(p_post_commit_obligations->'bbj_contribution') = 'object'\n     AND (\n       jsonb_typeof(p_post_commit_obligations->'bbj_contribution'->'amount')\n         IS DISTINCT FROM 'number'\n       OR jsonb_typeof(p_post_commit_obligations->'bbj_contribution'->'big_blind')\n         IS DISTINCT FROM 'number'\n       OR COALESCE((p_post_commit_obligations->'bbj_contribution'->>'amount')::numeric, 0)\n            <= 0\n       OR COALESCE((p_post_commit_obligations->'bbj_contribution'->>'big_blind')::numeric, 0)\n            <= 0\n       OR (p_post_commit_obligations->'bbj_contribution'->>'club_id') !~*\n          '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'\n     ) THEN\n    RAISE EXCEPTION\n      'atomic hand commit refused (invalid_post_commit_bbj)';\n  END IF;\n\n  IF jsonb_typeof(p_post_commit_obligations->'pending_addons') = 'object'\n     AND (\n       jsonb_typeof(p_post_commit_obligations->'pending_addons'->'enabled')\n         IS DISTINCT FROM 'boolean'\n       OR CASE\n            WHEN jsonb_typeof(p_post_commit_obligations->'pending_addons'->'enabled') = 'boolean'\n            THEN COALESCE(\n              (p_post_commit_obligations->'pending_addons'->>'enabled')::boolean,\n              false\n            ) IS NOT TRUE\n            ELSE false\n          END\n       OR jsonb_typeof(p_post_commit_obligations->'pending_addons'->'max_buy_in')\n            IS DISTINCT FROM 'number'\n       OR COALESCE(\n            (p_post_commit_obligations->'pending_addons'->>'max_buy_in')::numeric,\n            0\n          ) <= 0\n       OR p_post_commit_obligations->'pending_addons' ? 'ids'\n     ) THEN\n    RAISE EXCEPTION\n      'atomic hand commit refused (invalid_post_commit_addons)';\n  END IF;\n\n  IF p_hand_number > 2147483647\n     AND (\n       jsonb_typeof(p_post_commit_obligations->'rake') = 'object'\n       OR jsonb_typeof(p_post_commit_obligations->'bbj_contribution') = 'object'\n       OR jsonb_array_length(p_post_commit_obligations->'insurance') > 0\n     ) THEN\n    RAISE EXCEPTION\n      'atomic hand commit refused (post_commit_hand_number_out_of_range)';\n  END IF;\n\n  -- DIAMOND PHASE 8: the Diamond cash rules below are cash rules; a Diamond\n  -- tournament hand carries a tournament rake scope and no add-on lane, and\n  -- is judged by the tournament rules exactly as a chip tournament hand is.\n  SELECT EXISTS(SELECT 1 FROM public.tables t JOIN public.clubs c ON c.id=t.club_id\n    WHERE t.id=p_table_id AND c.asset='diamonds' AND t.tournament_id IS NULL) INTO v_diamond;\n  IF v_diamond AND (\n    jsonb_array_length(p_post_commit_obligations->'promo_playthrough')<>0\n    OR jsonb_array_length(p_post_commit_obligations->'insurance')<>0\n    OR jsonb_typeof(p_post_commit_obligations->'rake') IS DISTINCT FROM 'null'\n    OR jsonb_typeof(p_post_commit_obligations->'bbj_contribution') IS DISTINCT FROM 'null'\n    OR jsonb_typeof(p_post_commit_obligations->'pending_addons') IS DISTINCT FROM 'null'\n    -- DIAMOND PHASE 9, STEP 0: every game the arena deals, as the settler reads it.\n    OR NOT public.fn_poker_diamond_cash_variant(p_hand_row->>'game_variant')\n    OR EXISTS(SELECT 1 FROM jsonb_array_elements(COALESCE(p_units,'[]'::jsonb)) u\n      WHERE (u->>'amount') IS NULL\n         OR (u->>'amount')::numeric<>trunc((u->>'amount')::numeric))\n    OR COALESCE(NULLIF(p_hand_row->'daily_mission_events','null'::jsonb),'[]'::jsonb)<>'[]'::jsonb\n    OR (p_hand_row->>'pot_size')::numeric<>trunc((p_hand_row->>'pot_size')::numeric)\n    OR EXISTS(SELECT 1 FROM jsonb_each(p_hand_row->'_accepted_post_commit_facts'->'contributions') e\n      WHERE (e.value::text)::numeric<>trunc((e.value::text)::numeric))\n    OR EXISTS(SELECT 1 FROM jsonb_each(p_hand_row->'_accepted_post_commit_facts'->'returned_uncalled') e\n      WHERE (e.value::text)::numeric<>trunc((e.value::text)::numeric))\n  ) THEN\n    RAISE EXCEPTION 'atomic hand commit refused (diamond_chip_obligation_or_fractional_fact)';\n  END IF;\n\n  v_request_hash := encode(\n    extensions.digest(convert_to(p_post_commit_obligations::text, 'UTF8'), 'sha256'),\n    'hex'\n  );\n\n  /* ONE SEAT WRITE PER HAND (2026-09-10). The time-bank items above are\n     already proven well formed and bound to the exact stack roster. Publish\n     them for this exact table+hand in a transaction-local setting so the\n     stack core (fn_ca_settle_hand_stacks_absolute) can carry the two\n     time-bank columns on its stack write instead of this door writing every\n     seat row a second time. The setting is cleared as soon as the core\n     returns; a stale value can only name a hand the core refuses as a\n     replay. The loop below still proves the resulting seat state before it\n     counts it, and still writes any seat the core did not carry. */\n  PERFORM set_config(\n    'app.ca_hand_time_banks',\n    jsonb_build_object(\n      'table_id', p_table_id,\n      'hand_number', p_hand_number,\n      'exact', v_exact_seat_generation,\n      'items', p_post_commit_obligations->'time_banks'\n    )::text,\n    true\n  );\n\n  /* The owner-only exact-generation core locks and proves the cash-table or\n     tournament generation, then runs the unchanged accepted-hand core. Its\n     lease/table locks remain held until this outer transaction commits. */\n  v_result := public.fn_ca_commit_hand_settlement_exact_before_obligations(\n    p_table_id,\n    p_hand_number,\n    p_stacks,\n    p_rake,\n    p_bbj,\n    p_ref,\n    p_inflow,\n    p_hand_row,\n    p_units,\n    p_instance_id,\n    p_lease_generation\n  );\n  PERFORM set_config('app.ca_hand_time_banks', '', true);\n  -- LIGHTNING PHASE 6 (20261001154813): the anchors a Lightning settlement in\n  -- this transaction names, so the three time-bank statements below find each\n  -- at its own table; '{}' for every physical hand.\n  v_lightning_seats := public.fn_lightning_settlement_seats(p_table_id, p_hand_number);\n\n  IF COALESCE((v_result->>'success')::boolean, false) IS NOT TRUE\n     OR COALESCE((v_result->>'atomic_hand_commit')::boolean, false) IS NOT TRUE THEN\n    RETURN v_result;\n  END IF;\n\n  BEGIN\n    v_hand_id := (v_result->>'history_id')::uuid;\n  EXCEPTION WHEN OTHERS THEN\n    RAISE EXCEPTION\n      'atomic hand commit refused (invalid_post_commit_history_receipt)';\n  END;\n  IF v_hand_id IS NULL THEN\n    RAISE EXCEPTION\n      'atomic hand commit refused (missing_post_commit_history_receipt)';\n  END IF;\n\n  SELECT t.club_id, t.tournament_id\n    INTO v_club_id, v_tournament_id\n    FROM public.tables t\n   WHERE t.id = p_table_id;\n  IF NOT FOUND OR v_club_id IS NULL THEN\n    RAISE EXCEPTION 'atomic hand commit refused (post_commit_table_scope_missing)';\n  END IF;\n\n  /* The envelope cannot contradict the accepted hand. Amounts bind to the\n     settlement arguments; every per-player item binds to its authoritative\n     stack roster; every money item binds to the table's club. */\n  IF (COALESCE(p_rake, 0) > 0) IS DISTINCT FROM\n       (jsonb_typeof(p_post_commit_obligations->'rake') = 'object')\n     OR (\n       COALESCE(p_rake, 0) > 0\n       AND (p_post_commit_obligations->'rake'->>'amount')::numeric\n             IS DISTINCT FROM p_rake\n     )\n     OR (\n       COALESCE(p_rake, 0) > 0\n       AND (p_post_commit_obligations->'rake'->>'bbj')::numeric\n             IS DISTINCT FROM COALESCE(p_bbj, 0)\n     )\n     OR (\n       COALESCE(p_rake, 0) > 0\n       AND (p_post_commit_obligations->'rake'->>'pot')::numeric\n             IS DISTINCT FROM (p_hand_row->>'pot_size')::numeric\n     )\n     OR (\n       COALESCE(p_rake, 0) > 0\n       AND (p_post_commit_obligations->'rake'->>'num_players')::integer\n             IS DISTINCT FROM (\n               SELECT count(*)::integer\n                 FROM jsonb_object_keys(\n                   p_hand_row->'_accepted_post_commit_facts'->'contributions'\n                 )\n             )\n     )\n     OR (\n       COALESCE(p_rake, 0) > 0\n       AND p_post_commit_obligations->'rake'->'contributions'\n             IS DISTINCT FROM\n             p_hand_row->'_accepted_post_commit_facts'->'contributions'\n     )\n     OR (\n       COALESCE(p_rake, 0) > 0\n       AND p_post_commit_obligations->'rake'->'returned_uncalled'\n             IS DISTINCT FROM\n             p_hand_row->'_accepted_post_commit_facts'->'returned_uncalled'\n     )\n     OR (COALESCE(p_bbj, 0) > 0) IS DISTINCT FROM\n       (jsonb_typeof(p_post_commit_obligations->'bbj_contribution') = 'object')\n     OR (\n       COALESCE(p_bbj, 0) > 0\n       AND (p_post_commit_obligations->'bbj_contribution'->>'amount')::numeric\n             IS DISTINCT FROM p_bbj\n     )\n     OR (\n       COALESCE(p_bbj, 0) > 0\n       AND (p_post_commit_obligations->'bbj_contribution'->>'big_blind')::numeric\n             IS DISTINCT FROM (p_hand_row->>'big_blind')::numeric\n     ) THEN\n    RAISE EXCEPTION\n      'atomic hand commit refused (post_commit_fee_mismatch)';\n  END IF;\n\n  IF p_post_commit_obligations->'insurance' IS DISTINCT FROM\n       p_hand_row->'_accepted_post_commit_facts'->'insurance' THEN\n    RAISE EXCEPTION\n      'atomic hand commit refused (post_commit_insurance_fact_mismatch)';\n  END IF;\n\n  IF (\n       v_tournament_id IS NULL AND NOT v_diamond\n       AND (\n         jsonb_array_length(p_post_commit_obligations->'promo_playthrough')\n           IS DISTINCT FROM (\n             SELECT count(*)::integer\n               FROM jsonb_each(\n                 p_hand_row->'_accepted_post_commit_facts'->'contributions'\n               ) e\n              WHERE (e.value::text)::numeric > 0\n           )\n         OR EXISTS (\n           SELECT 1\n             FROM jsonb_array_elements(p_post_commit_obligations->'promo_playthrough') x\n            WHERE (x->>'wagered')::numeric IS DISTINCT FROM\n                  (\n                    p_hand_row->'_accepted_post_commit_facts'->'contributions'->>\n                    (x->>'user_id')\n                  )::numeric\n         )\n       )\n     ) OR (\n       (v_tournament_id IS NOT NULL OR v_diamond)\n       AND jsonb_array_length(p_post_commit_obligations->'promo_playthrough') <> 0\n     ) THEN\n    RAISE EXCEPTION\n      'atomic hand commit refused (post_commit_promo_fact_mismatch)';\n  END IF;\n  IF EXISTS (\n    SELECT 1\n      FROM jsonb_array_elements(p_post_commit_obligations->'time_banks') x\n     WHERE NOT EXISTS (\n       SELECT 1 FROM jsonb_array_elements(COALESCE(p_stacks, '[]'::jsonb)) s\n        WHERE s->>'user_id' = x->>'user_id'\n     )\n  ) OR EXISTS (\n    SELECT 1\n      FROM jsonb_object_keys(\n        p_hand_row->'_accepted_post_commit_facts'->'contributions'\n      ) uid\n     WHERE NOT EXISTS (\n       SELECT 1 FROM jsonb_array_elements(p_stacks) s\n        WHERE s->>'user_id' = uid\n     )\n  ) OR EXISTS (\n    SELECT 1\n      FROM jsonb_object_keys(\n        p_hand_row->'_accepted_post_commit_facts'->'returned_uncalled'\n      ) uid\n     WHERE NOT EXISTS (\n       SELECT 1 FROM jsonb_array_elements(p_stacks) s\n        WHERE s->>'user_id' = uid\n     )\n  ) OR EXISTS (\n    SELECT 1\n      FROM jsonb_array_elements(p_post_commit_obligations->'promo_playthrough') x\n     WHERE x->>'club_id' IS DISTINCT FROM v_club_id::text\n        OR NOT EXISTS (\n          SELECT 1 FROM jsonb_array_elements(COALESCE(p_stacks, '[]'::jsonb)) s\n           WHERE s->>'user_id' = x->>'user_id'\n        )\n  ) OR EXISTS (\n    SELECT 1\n      FROM jsonb_array_elements(p_post_commit_obligations->'insurance') x\n     WHERE x->>'club_id' IS DISTINCT FROM v_club_id::text\n        OR NOT EXISTS (\n          SELECT 1 FROM jsonb_array_elements(COALESCE(p_stacks, '[]'::jsonb)) s\n           WHERE s->>'user_id' = x->>'player_id'\n        )\n  ) THEN\n    RAISE EXCEPTION\n      'atomic hand commit refused (post_commit_player_or_club_mismatch)';\n  END IF;\n\n  /* Repeated recipients would turn one accepted-hand fact into two additive\n     mutations. Time-bank rows are exhaustive because omitting one would make\n     the accepted seat state depend on whichever process ran before this one. */\n  IF jsonb_array_length(p_post_commit_obligations->'time_banks')\n       IS DISTINCT FROM jsonb_array_length(p_stacks)\n     OR (\n       SELECT count(DISTINCT x->>'user_id')\n         FROM jsonb_array_elements(p_post_commit_obligations->'time_banks') x\n     ) IS DISTINCT FROM jsonb_array_length(p_stacks)\n     OR (\n       SELECT count(DISTINCT x->>'user_id')\n         FROM jsonb_array_elements(p_post_commit_obligations->'promo_playthrough') x\n     ) IS DISTINCT FROM jsonb_array_length(p_post_commit_obligations->'promo_playthrough')\n     OR (\n       /* The durable insurance writer is unique per table/hand/player. Two\n          different kinds for one player would look like two obligations here\n          but collapse to one receipt downstream. Refuse that ambiguity. */\n       SELECT count(DISTINCT x->>'player_id')\n         FROM jsonb_array_elements(p_post_commit_obligations->'insurance') x\n     ) IS DISTINCT FROM jsonb_array_length(p_post_commit_obligations->'insurance') THEN\n    RAISE EXCEPTION\n      'atomic hand commit refused (post_commit_duplicate_or_missing_recipient)';\n  END IF;\n\n  IF jsonb_typeof(p_post_commit_obligations->'rake') = 'object'\n     AND (\n       EXISTS (\n         SELECT 1\n           FROM jsonb_object_keys(\n             COALESCE(p_post_commit_obligations->'rake'->'contributions', '{}'::jsonb)\n           ) uid\n          WHERE NOT EXISTS (\n            SELECT 1 FROM jsonb_array_elements(p_stacks) s\n             WHERE s->>'user_id' = uid\n          )\n       )\n       OR EXISTS (\n         SELECT 1\n           FROM jsonb_object_keys(\n             COALESCE(p_post_commit_obligations->'rake'->'returned_uncalled', '{}'::jsonb)\n           ) uid\n          WHERE NOT EXISTS (\n            SELECT 1 FROM jsonb_array_elements(p_stacks) s\n             WHERE s->>'user_id' = uid\n          )\n       )\n     ) THEN\n    RAISE EXCEPTION\n      'atomic hand commit refused (post_commit_rake_recipient_mismatch)';\n  END IF;\n  IF jsonb_typeof(p_post_commit_obligations->'rake') = 'object'\n     AND p_post_commit_obligations->'rake'->>'club_id' IS DISTINCT FROM v_club_id::text THEN\n    RAISE EXCEPTION 'atomic hand commit refused (post_commit_rake_club_mismatch)';\n  END IF;\n  IF jsonb_typeof(p_post_commit_obligations->'bbj_contribution') = 'object'\n     AND p_post_commit_obligations->'bbj_contribution'->>'club_id'\n           IS DISTINCT FROM v_club_id::text THEN\n    RAISE EXCEPTION 'atomic hand commit refused (post_commit_bbj_club_mismatch)';\n  END IF;\n  IF jsonb_typeof(p_post_commit_obligations->'rake') = 'object'\n     AND (\n       COALESCE(p_post_commit_obligations->'rake'->>'tournament_id', '')\n         IS DISTINCT FROM COALESCE(v_tournament_id::text, '')\n       OR COALESCE(p_post_commit_obligations->'rake'->>'method', '')\n            <> 'WEIGHTED_CONTRIBUTED'\n     ) THEN\n    RAISE EXCEPTION 'atomic hand commit refused (post_commit_rake_scope_mismatch)';\n  END IF;\n  IF (v_tournament_id IS NULL AND NOT v_diamond) IS DISTINCT FROM\n       (jsonb_typeof(p_post_commit_obligations->'pending_addons') = 'object') THEN\n    RAISE EXCEPTION 'atomic hand commit refused (post_commit_addon_scope_mismatch)';\n  END IF;\n\n  SELECT c.post_commit_request_hash, c.post_commit_payload_hash\n    INTO v_existing_request_hash, v_existing_hash\n    FROM public.hand_atomic_commits c\n   WHERE c.table_id = p_table_id\n     AND c.hand_number = p_hand_number\n     AND c.hand_id = v_hand_id\n   FOR UPDATE;\n  IF NOT FOUND THEN\n    RAISE EXCEPTION\n      'atomic hand commit refused (missing_post_commit_atomic_receipt)';\n  END IF;\n  IF v_existing_request_hash IS NOT NULL\n     AND v_existing_request_hash IS DISTINCT FROM v_request_hash THEN\n    RAISE EXCEPTION\n      'atomic hand commit refused (post_commit_payload_conflict)';\n  END IF;\n\n  IF v_existing_request_hash IS NULL THEN\n    /* A rolling 11-argument engine may already have committed this hand and\n       run its legacy post-commit steps. Never attach a new additive envelope\n       to that receipt. A response-loss replay from this 12-argument door\n       always finds the request hash written by its first transaction. */\n    IF COALESCE((v_result->>'replay')::boolean, false) IS TRUE THEN\n      RAISE EXCEPTION\n        'atomic hand commit refused (legacy_receipt_has_no_post_commit_envelope)';\n    END IF;\n\n    /* Copy the independently accepted facts into the immutable stored envelope.\n       The caller is forbidden from supplying this key itself. Besides the core\n       hand hash, the durable processor/audit row can therefore show exactly\n       which first-narrative facts every derived obligation was checked against. */\n    v_payload := jsonb_set(\n      p_post_commit_obligations,\n      '{accepted_hand_facts}',\n      p_hand_row->'_accepted_post_commit_facts',\n      true\n    );\n    IF jsonb_typeof(v_payload->'pending_addons') = 'object' THEN\n      /* Own the exact eligible rows through commit. A legacy/manual resolver\n         cannot consume one after it was frozen but before the obligation\n         transaction gets its causal wake. */\n      PERFORM 1\n        FROM public.table_pending_addons a\n       WHERE a.table_id = p_table_id\n         AND a.resolved_at IS NULL\n         AND a.created_at <= transaction_timestamp()\n       ORDER BY a.created_at, a.id\n       FOR UPDATE;\n      v_payload := jsonb_set(\n        v_payload,\n        '{pending_addons,ids}',\n        COALESCE((\n          SELECT jsonb_agg(a.id ORDER BY a.created_at, a.id)\n            FROM public.table_pending_addons a\n           WHERE a.table_id = p_table_id\n             AND a.resolved_at IS NULL\n             AND a.created_at <= transaction_timestamp()\n        ), '[]'::jsonb),\n        true\n      );\n    END IF;\n    v_hash := encode(\n      extensions.digest(convert_to(v_payload::text, 'UTF8'), 'sha256'),\n      'hex'\n    );\n\n    /* Time-bank state belongs to the accepted-hand boundary itself. Apply it\n       while the exact lease/table/seat locks inherited from the owner-only\n       exact-generation core are still held, never later from a stale envelope. */\n    v_expected := jsonb_array_length(v_payload->'time_banks');\n    v_updated := 0;\n    FOR v_item IN\n      SELECT value FROM jsonb_array_elements(v_payload->'time_banks')\n       ORDER BY value->>'user_id'\n    LOOP\n      IF (v_item->>'user_id') !~*\n           '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'\n         OR (v_item->>'uses_remaining') !~ '^[0-9]+$'\n         OR (v_item->>'seconds_remaining') !~ '^[0-9]+$' THEN\n        RAISE EXCEPTION\n          'atomic hand commit refused (invalid_time_bank_obligation)';\n      END IF;\n      /* ONE SEAT WRITE PER HAND (2026-09-10). The stack core carried these\n         two columns on its stack write from the envelope published above.\n         Prove that exact state on the exact row first (the same predicate\n         the lawful-noop rule below has always used) and count it without a\n         second write. Only a seat the core did not carry - a cash seat that\n         left during the hand is settled against its wallet and gets no stack\n         write - takes the UPDATE, exactly as before. */\n      SELECT count(*)::integer INTO v_row_count\n        FROM public.table_seats s\n       WHERE s.table_id = COALESCE((v_lightning_seats->>(v_item->>'user_id'))::uuid, p_table_id)\n         AND s.user_id = (v_item->>'user_id')::uuid\n         AND s.time_bank_uses_remaining = (v_item->>'uses_remaining')::integer\n         AND s.time_bank_remaining = (v_item->>'seconds_remaining')::integer\n         AND (\n           (v_exact_seat_generation\n             AND s.id = (v_item->>'seat_id')::uuid\n             AND s.joined_at = (v_item->>'seat_joined_at')::timestamptz)\n           OR (NOT v_exact_seat_generation AND (\n           s.left_at IS NULL\n           OR (\n             v_tournament_id IS NOT NULL\n             AND s.stack = 0\n             AND lower(COALESCE(s.status, '')) = 'left'\n             AND s.left_at =\n                   (v_result->>'tournament_zero_stack_vacated_at')::timestamptz\n             AND EXISTS (\n               SELECT 1\n                 FROM jsonb_array_elements(\n                        v_result->'tournament_zero_stack_seat_generations'\n                      ) generation(value)\n                WHERE (generation.value->>'seat_id')::uuid = s.id\n                  AND (generation.value->>'user_id')::uuid = s.user_id\n                  AND (generation.value->>'seat_number')::integer = s.seat_number\n                  AND (generation.value->>'joined_at')::timestamptz = s.joined_at\n             )\n           )\n         ))\n         );\n      IF v_row_count = 0 THEN\n      UPDATE public.table_seats s\n         SET time_bank_uses_remaining = (v_item->>'uses_remaining')::integer,\n             time_bank_remaining = (v_item->>'seconds_remaining')::integer\n       WHERE s.table_id = COALESCE((v_lightning_seats->>(v_item->>'user_id'))::uuid, p_table_id)\n         AND s.user_id = (v_item->>'user_id')::uuid\n         AND (\n           (v_exact_seat_generation\n             AND s.id = (v_item->>'seat_id')::uuid\n             AND s.joined_at = (v_item->>'seat_joined_at')::timestamptz)\n           OR (NOT v_exact_seat_generation AND (\n           s.left_at IS NULL\n           OR (\n             v_tournament_id IS NOT NULL\n             AND s.stack = 0\n             AND lower(COALESCE(s.status, '')) = 'left'\n             AND s.left_at =\n                   (v_result->>'tournament_zero_stack_vacated_at')::timestamptz\n             AND EXISTS (\n               SELECT 1\n                 FROM jsonb_array_elements(\n                        v_result->'tournament_zero_stack_seat_generations'\n                      ) generation(value)\n                WHERE (generation.value->>'seat_id')::uuid = s.id\n                  AND (generation.value->>'user_id')::uuid = s.user_id\n                  AND (generation.value->>'seat_number')::integer = s.seat_number\n                  AND (generation.value->>'joined_at')::timestamptz = s.joined_at\n             )\n           )\n         ))\n         );\n      GET DIAGNOSTICS v_row_count = ROW_COUNT;\n      /* Preserve the stack writer's lawful-noop rule. If a redundant-update\n         suppressor is installed, ROW_COUNT may be zero even though the exact\n         row already stores the requested state. Prove that exact state before\n         counting it; a missing or replaced generation still refuses whole. */\n      IF v_row_count = 0 AND EXISTS (\n        SELECT 1\n          FROM public.table_seats s\n         WHERE s.table_id = COALESCE((v_lightning_seats->>(v_item->>'user_id'))::uuid, p_table_id)\n           AND s.user_id = (v_item->>'user_id')::uuid\n           AND s.time_bank_uses_remaining = (v_item->>'uses_remaining')::integer\n           AND s.time_bank_remaining = (v_item->>'seconds_remaining')::integer\n           AND (\n             (v_exact_seat_generation\n               AND s.id = (v_item->>'seat_id')::uuid\n               AND s.joined_at = (v_item->>'seat_joined_at')::timestamptz)\n             OR (NOT v_exact_seat_generation AND (\n           s.left_at IS NULL\n           OR (\n             v_tournament_id IS NOT NULL\n             AND s.stack = 0\n             AND lower(COALESCE(s.status, '')) = 'left'\n             AND s.left_at =\n                   (v_result->>'tournament_zero_stack_vacated_at')::timestamptz\n             AND EXISTS (\n               SELECT 1\n                 FROM jsonb_array_elements(\n                        v_result->'tournament_zero_stack_seat_generations'\n                      ) generation(value)\n                WHERE (generation.value->>'seat_id')::uuid = s.id\n                  AND (generation.value->>'user_id')::uuid = s.user_id\n                  AND (generation.value->>'seat_number')::integer = s.seat_number\n                  AND (generation.value->>'joined_at')::timestamptz = s.joined_at\n             )\n           )\n         ))\n           )\n      ) THEN\n        v_row_count := 1;\n      END IF;\n      END IF;\n      v_updated := v_updated + v_row_count;\n    END LOOP;\n    IF v_updated IS DISTINCT FROM v_expected THEN\n      RAISE EXCEPTION\n        'atomic hand commit refused (time_bank_seat_mismatch)';\n    END IF;\n\n    UPDATE public.hand_atomic_commits c\n       SET post_commit_payload = v_payload,\n           post_commit_request_hash = v_request_hash,\n           post_commit_payload_hash = v_hash\n     WHERE c.table_id = p_table_id\n       AND c.hand_number = p_hand_number\n       AND c.hand_id = v_hand_id\n       AND c.post_commit_request_hash IS NULL;\n    IF NOT FOUND THEN\n      RAISE EXCEPTION\n        'atomic hand commit refused (post_commit_receipt_raced)';\n    END IF;\n  ELSE\n    v_hash := v_existing_hash;\n    IF v_hash IS NULL THEN\n      RAISE EXCEPTION\n        'atomic hand commit refused (post_commit_payload_hash_missing)';\n    END IF;\n  END IF;\n\n  RETURN v_result || jsonb_build_object(\n    'post_commit_obligations', true,\n    'post_commit_payload_hash', v_hash\n  );\nEND;\n$function$\n",
+      "body_md5": "650835c504d7fffa6a481806936dd306",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "signature": "fn_ca_commit_hand_submission(uuid,text,uuid)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_commit_hand_submission(p_submission_id uuid, p_instance_id text, p_lease_generation uuid)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\nDECLARE s smarter_private.hand_submissions; r jsonb; q jsonb;\nBEGIN\n SELECT * INTO s FROM smarter_private.hand_submissions WHERE submission_id=p_submission_id;\n IF NOT FOUND THEN RAISE EXCEPTION 'HAND_SUBMISSION_NOT_RETAINED' USING ERRCODE='55000'; END IF;\n IF s.instance_id IS DISTINCT FROM p_instance_id OR s.lease_generation IS DISTINCT FROM p_lease_generation THEN\n  RAISE EXCEPTION 'HAND_SUBMISSION_ORIGINAL_OWNER_REQUIRED' USING ERRCODE='55000'; END IF;\n q:=s.request;\n r:=public.fn_ca_commit_hand_settlement(s.table_id,s.hand_number,q->'p_stacks',\n (q->>'p_rake')::numeric,(q->>'p_bbj')::numeric,q->>'p_ref',(q->>'p_inflow')::numeric,\n q->'p_hand_row',q->'p_units',s.instance_id,s.lease_generation,q->'p_post_commit_obligations');\n IF r->>'success' IS DISTINCT FROM 'true' OR r->>'atomic_hand_commit' IS DISTINCT FROM 'true' THEN\n  IF r->>'success'='false' AND r->>'reason'='atomic_hand_rolled_back' AND length(r->>'sqlstate')=5 THEN\n   INSERT INTO smarter_private.hand_submission_failures(submission_id,transaction_id,request_hash,result)\n   VALUES(s.submission_id,txid_current(),s.request_hash,r) ON CONFLICT(submission_id) DO NOTHING;\n  END IF;\n  RETURN r;\n END IF;\n RETURN smarter_private.acknowledge_hand_submission(s.submission_id,r);\nEND $function$\n",
+      "body_md5": "ed834b00cd54481a9fd3334434c929e4",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "signature": "fn_ca_process_hand_post_commit_obligations(uuid)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_process_hand_post_commit_obligations(p_hand_id uuid)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'extensions', 'pg_temp'\nAS $function$\nDECLARE\n  v_table_id uuid;\n  v_commit public.hand_atomic_commits%ROWTYPE;\n  v_payload jsonb;\n  v_hash text;\n  v_rake jsonb;\n  v_bbj jsonb;\n  v_pending jsonb;\n  v_item jsonb;\n  v_rake_result record;\n  v_promo_result jsonb;\n  v_pool_id uuid;\n  v_union_id uuid;\n  v_contribution_id uuid;\n  v_insurance_id uuid;\n  v_addon_result record;\n  v_addon public.table_pending_addons%ROWTYPE;\n  v_time_bank_count integer := 0;\n  v_promo_count integer := 0;\n  v_insurance_count integer := 0;\n  v_addon_count integer := 0;\n  v_result jsonb;\nBEGIN\n  /* Read only the scope, then take the per-table mutex before the row lock.\n     This gives every hand at one table the same lock order. */\n  SELECT c.table_id INTO v_table_id\n    FROM public.hand_atomic_commits c\n   WHERE c.hand_id = p_hand_id;\n  IF NOT FOUND THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'not_found', 'hand_id', p_hand_id);\n  END IF;\n\n  PERFORM pg_advisory_xact_lock(\n    hashtextextended('hand-post-commit:' || v_table_id::text, 0)\n  );\n\n  SELECT c.* INTO v_commit\n    FROM public.hand_atomic_commits c\n   WHERE c.hand_id = p_hand_id\n   FOR UPDATE;\n  IF NOT FOUND THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'not_found', 'hand_id', p_hand_id);\n  END IF;\n  IF v_commit.post_commit_payload IS NULL THEN\n    RETURN jsonb_build_object(\n      'ok', false,\n      'reason', 'legacy_no_obligations',\n      'hand_id', p_hand_id\n    );\n  END IF;\n  IF v_commit.post_commit_completed_at IS NOT NULL THEN\n    RETURN COALESCE(v_commit.post_commit_result, '{}'::jsonb) || jsonb_build_object(\n      'ok', true,\n      'already_completed', true,\n      'hand_id', p_hand_id,\n      'completed_at', v_commit.post_commit_completed_at\n    );\n  END IF;\n\n  IF EXISTS (\n    SELECT 1\n      FROM public.hand_atomic_commits earlier\n     WHERE earlier.table_id = v_commit.table_id\n       AND earlier.hand_number < v_commit.hand_number\n       AND earlier.post_commit_payload IS NOT NULL\n       AND earlier.post_commit_completed_at IS NULL\n  ) THEN\n    RETURN jsonb_build_object(\n      'ok', false,\n      'reason', 'predecessor_pending',\n      'hand_id', p_hand_id\n    );\n  END IF;\n\n  v_payload := v_commit.post_commit_payload;\n  v_hash := encode(\n    extensions.digest(convert_to(v_payload::text, 'UTF8'), 'sha256'),\n    'hex'\n  );\n  IF v_commit.post_commit_payload_hash IS DISTINCT FROM v_hash THEN\n    RAISE EXCEPTION 'post-commit obligation payload hash mismatch for hand %', p_hand_id;\n  END IF;\n\n  /* Time banks were stamped inside the accepted-hand transaction while the\n     exact lease and seat locks were held. A delayed consumer must never apply\n     those older values again after hand N+1, a table break, or a seat move. */\n  IF jsonb_typeof(v_payload->'time_banks') IS DISTINCT FROM 'array' THEN\n    RAISE EXCEPTION 'invalid time-bank audit payload for hand %', p_hand_id;\n  END IF;\n  v_time_bank_count := jsonb_array_length(v_payload->'time_banks');\n\n  IF EXISTS(SELECT 1 FROM public.tables t JOIN public.clubs c ON c.id=t.club_id\n      WHERE t.id=v_table_id AND c.asset='diamonds') AND (\n    v_payload->'rake' IS DISTINCT FROM 'null'::jsonb\n    OR v_payload->'bbj_contribution' IS DISTINCT FROM 'null'::jsonb\n    OR v_payload->'pending_addons' IS DISTINCT FROM 'null'::jsonb\n    OR v_payload->'promo_playthrough' IS DISTINCT FROM '[]'::jsonb\n    OR v_payload->'insurance' IS DISTINCT FROM '[]'::jsonb\n  ) THEN\n    RAISE EXCEPTION 'diamond_hand_has_chip_obligations';\n  END IF;\n  v_rake := v_payload->'rake';\n  IF v_rake IS NOT NULL AND jsonb_typeof(v_rake) <> 'null' THEN\n    IF jsonb_typeof(v_rake) <> 'object'\n       OR COALESCE((v_rake->>'amount')::numeric, 0) <= 0\n       OR (v_rake->>'club_id') !~*\n          '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN\n      RAISE EXCEPTION 'invalid rake obligation for hand %', p_hand_id;\n    END IF;\n    IF v_commit.hand_number > 2147483647 THEN\n      RAISE EXCEPTION 'rake hand number exceeds downstream integer contract: %',\n        v_commit.hand_number;\n    END IF;\n\n    SELECT * INTO v_rake_result\n      FROM public.atomic_distribute_rake(\n        v_commit.table_id,\n        (v_rake->>'club_id')::uuid,\n        v_commit.hand_id,\n        v_commit.hand_number::integer,\n        (v_rake->>'amount')::numeric,\n        COALESCE((v_rake->>'bbj')::numeric, 0),\n        NULLIF(v_rake->>'pot', '')::numeric,\n        NULLIF(v_rake->>'num_players', '')::integer,\n        COALESCE(v_rake->'contributions', '{}'::jsonb),\n        NULLIF(v_rake->>'tournament_id', '')::uuid,\n        COALESCE(v_rake->'returned_uncalled', '{}'::jsonb),\n        COALESCE(NULLIF(v_rake->>'method', ''), 'WEIGHTED_CONTRIBUTED')\n      );\n    IF NOT FOUND OR NOT (\n      COALESCE(v_rake_result.applied, false)\n      OR COALESCE(v_rake_result.already_processed, false)\n      OR v_rake_result.rake_record_id IS NOT NULL\n    ) THEN\n      RAISE EXCEPTION 'rake obligation did not produce a receipt for hand %', p_hand_id;\n    END IF;\n  END IF;\n\n  v_bbj := v_payload->'bbj_contribution';\n  IF v_bbj IS NOT NULL AND jsonb_typeof(v_bbj) <> 'null' THEN\n    IF jsonb_typeof(v_bbj) <> 'object'\n       OR COALESCE((v_bbj->>'amount')::numeric, 0) <= 0\n       OR (v_bbj->>'club_id') !~*\n          '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN\n      RAISE EXCEPTION 'invalid BBJ contribution obligation for hand %', p_hand_id;\n    END IF;\n\n    SELECT c.union_id INTO v_union_id\n      FROM public.clubs c\n     WHERE c.id = (v_bbj->>'club_id')::uuid;\n    IF NOT FOUND THEN\n      RAISE EXCEPTION 'BBJ obligation club not found for hand %', p_hand_id;\n    END IF;\n\n    PERFORM pg_advisory_xact_lock(hashtextextended(\n      'bbj-pool:' || COALESCE(v_union_id::text, 'club:' || (v_bbj->>'club_id')),\n      0\n    ));\n    IF v_union_id IS NULL THEN\n      SELECT p.id INTO v_pool_id\n        FROM public.bbj_pools p\n       WHERE p.club_id = (v_bbj->>'club_id')::uuid\n         AND p.status = 'active'\n       ORDER BY p.created_at, p.id\n       LIMIT 1\n       FOR UPDATE;\n    ELSE\n      SELECT p.id INTO v_pool_id\n        FROM public.bbj_pools p\n       WHERE p.union_id = v_union_id\n         AND p.status = 'active'\n       ORDER BY p.created_at, p.id\n       LIMIT 1\n       FOR UPDATE;\n    END IF;\n\n    IF v_pool_id IS NULL THEN\n      IF v_union_id IS NULL THEN\n        INSERT INTO public.bbj_pools(\n          club_id, main_balance, backup_balance, promo_balance, status\n        ) VALUES (\n          (v_bbj->>'club_id')::uuid, 0, 0, 0, 'active'\n        ) RETURNING id INTO v_pool_id;\n      ELSE\n        INSERT INTO public.bbj_pools(\n          union_id, main_balance, backup_balance, promo_balance, status\n        ) VALUES (\n          v_union_id, 0, 0, 0, 'active'\n        ) RETURNING id INTO v_pool_id;\n      END IF;\n    END IF;\n\n    SELECT r.id INTO v_contribution_id\n      FROM public.bbj_record_contribution(\n        v_pool_id,\n        v_commit.hand_id,\n        v_commit.table_id,\n        (v_bbj->>'amount')::numeric,\n        0, 0, 0,\n        COALESCE((v_bbj->>'big_blind')::numeric, 2),\n        v_commit.hand_number::integer,\n        (v_bbj->>'club_id')::uuid\n      ) r;\n    IF v_contribution_id IS NULL THEN\n      RAISE EXCEPTION 'BBJ contribution produced no receipt for hand %', p_hand_id;\n    END IF;\n  END IF;\n\n  FOR v_item IN\n    SELECT value\n      FROM jsonb_array_elements(v_payload->'promo_playthrough')\n     ORDER BY value->>'user_id'\n  LOOP\n    IF (v_item->>'club_id') !~*\n         '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'\n       OR (v_item->>'user_id') !~*\n         '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'\n       OR COALESCE((v_item->>'wagered')::numeric, 0) <= 0 THEN\n      RAISE EXCEPTION 'invalid promo obligation for hand %', p_hand_id;\n    END IF;\n    v_promo_result := public.promo_apply_playthrough(\n      (v_item->>'club_id')::uuid,\n      (v_item->>'user_id')::uuid,\n      (v_item->>'wagered')::numeric\n    );\n    IF v_promo_result->>'reason' IN ('engine_only', 'no_wager') THEN\n      RAISE EXCEPTION 'promo obligation refused for hand %: %',\n        p_hand_id, v_promo_result;\n    END IF;\n    v_promo_count := v_promo_count + 1;\n  END LOOP;\n\n  FOR v_item IN\n    SELECT value\n      FROM jsonb_array_elements(v_payload->'insurance')\n     ORDER BY value->>'player_id', value->>'kind'\n  LOOP\n    IF (v_item->>'club_id') !~*\n         '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'\n       OR (v_item->>'player_id') !~*\n         '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN\n      RAISE EXCEPTION 'invalid insurance obligation for hand %', p_hand_id;\n    END IF;\n    SELECT r.id INTO v_insurance_id\n      FROM public.record_insurance_transaction(\n        v_commit.table_id,\n        (v_item->>'club_id')::uuid,\n        v_commit.hand_number::integer,\n        (v_item->>'player_id')::uuid,\n        COALESCE((v_item->>'equity_percent')::numeric, 0),\n        COALESCE((v_item->>'premium')::numeric, 0),\n        COALESCE((v_item->>'insured_amount')::numeric, 0),\n        COALESCE((v_item->>'payout')::numeric, 0),\n        COALESCE((v_item->>'player_won')::boolean, false),\n        COALESCE(NULLIF(v_item->>'kind', ''), 'insurance')::varchar\n      ) r;\n    IF v_insurance_id IS NULL THEN\n      RAISE EXCEPTION 'insurance obligation produced no receipt for hand %', p_hand_id;\n    END IF;\n    v_insurance_count := v_insurance_count + 1;\n  END LOOP;\n\n  v_pending := v_payload->'pending_addons';\n  IF v_pending IS NOT NULL AND jsonb_typeof(v_pending) <> 'null' THEN\n    IF jsonb_typeof(v_pending) <> 'object'\n       OR COALESCE((v_pending->>'enabled')::boolean, false) IS NOT TRUE\n       OR jsonb_typeof(v_pending->'ids') IS DISTINCT FROM 'array'\n       OR NULLIF(v_pending->>'max_buy_in', '') IS NULL\n       OR (v_pending->>'max_buy_in')::numeric <= 0 THEN\n      RAISE EXCEPTION 'invalid pending-add-on obligation for hand %', p_hand_id;\n    END IF;\n    FOR v_item IN\n      SELECT value\n        FROM jsonb_array_elements(v_pending->'ids')\n       ORDER BY value #>> '{}'\n    LOOP\n      IF (v_item #>> '{}') !~*\n           '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'\n      THEN\n        RAISE EXCEPTION 'pending add-on % is not frozen for table % (hand %)',\n          v_item, v_commit.table_id, p_hand_id;\n      END IF;\n      -- Recovery can encounter an ID also frozen by an earlier accepted\n      -- hand. The resolver owns exactly-once delivery and returns its stored\n      -- result on replay. A resolved row is evidence, not a failed payment.\n      SELECT a.* INTO v_addon\n        FROM public.table_pending_addons a\n       WHERE a.id = (v_item #>> '{}')::uuid\n         AND a.table_id = v_commit.table_id\n       FOR UPDATE;\n      IF NOT FOUND THEN\n        RAISE EXCEPTION 'pending add-on % does not belong to table % (hand %)',\n          v_item, v_commit.table_id, p_hand_id;\n      END IF;\n      SELECT * INTO v_addon_result\n        FROM public.resolve_pending_addon(\n          (v_item #>> '{}')::uuid,\n          NULLIF(v_pending->>'max_buy_in', '')::numeric\n        );\n      IF NOT FOUND THEN\n        RAISE EXCEPTION 'pending add-on % produced no receipt for hand %',\n          v_item, p_hand_id;\n      END IF;\n      IF v_addon.amount IS NULL OR v_addon.amount <= 0\n         OR v_addon.amount::text IN ('NaN', 'Infinity', '-Infinity')\n         OR (v_addon.resolved_at IS NOT NULL AND\n             (v_addon.applied_to_stack IS NULL OR v_addon.refunded IS NULL))\n         OR v_addon_result.applied IS NULL OR v_addon_result.applied < 0\n         OR v_addon_result.applied::text IN ('NaN', 'Infinity', '-Infinity')\n         OR v_addon_result.applied <> round(v_addon_result.applied, 2)\n         OR v_addon_result.refunded IS NULL OR v_addon_result.refunded < 0\n         OR v_addon_result.refunded::text IN ('NaN', 'Infinity', '-Infinity')\n         OR v_addon_result.refunded <> round(v_addon_result.refunded, 2)\n         OR v_addon_result.applied + v_addon_result.refunded\n              IS DISTINCT FROM round(v_addon.amount, 2)\n      THEN\n        RAISE EXCEPTION 'pending add-on % has an incomplete resolution receipt for hand %',\n          v_item, p_hand_id;\n      END IF;\n      v_addon_count := v_addon_count + 1;\n    END LOOP;\n  END IF;\n\n  v_result := jsonb_build_object(\n    'ok', true,\n    'already_completed', false,\n    'hand_id', p_hand_id,\n    'hand_number', v_commit.hand_number,\n    'time_banks', v_time_bank_count,\n    'rake', v_rake IS NOT NULL AND jsonb_typeof(v_rake) <> 'null',\n    'bbj_contribution', v_bbj IS NOT NULL AND jsonb_typeof(v_bbj) <> 'null',\n    'promo_playthrough', v_promo_count,\n    'insurance', v_insurance_count,\n    'pending_addons', v_addon_count\n  );\n\n  UPDATE public.hand_atomic_commits c\n     SET post_commit_completed_at = clock_timestamp(),\n         post_commit_result = v_result\n   WHERE c.hand_id = p_hand_id\n     AND c.post_commit_completed_at IS NULL;\n  IF NOT FOUND THEN\n    RAISE EXCEPTION 'post-commit completion receipt was lost for hand %', p_hand_id;\n  END IF;\n\n  RETURN v_result;\nEND;\n$function$\n",
+      "body_md5": "9672653f9e15a45072de3b60ce5b0b2f",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "signature": "fn_ca_retain_hand_submission(jsonb)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_retain_hand_submission(p_request jsonb)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public', 'extensions'\nAS $function$\nDECLARE s smarter_private.hand_submissions; h smarter_private.f06_hand_permits;\n d smarter_private.hand_submission_dispositions;\n tid uuid; hn bigint; sid uuid; instance text; generation uuid; tour uuid; locked_tour uuid;\n holder text; lease uuid; protocol integer; beat timestamptz; request_hash text;\nBEGIN\n IF jsonb_typeof(p_request) IS DISTINCT FROM 'object'\n OR (SELECT array_agg(k ORDER BY k) FROM jsonb_object_keys(p_request) k) IS DISTINCT FROM\n ARRAY['p_bbj','p_hand_number','p_hand_row','p_inflow','p_instance_id','p_lease_generation','p_post_commit_obligations','p_rake','p_ref','p_stacks','p_table_id','p_units']\n OR jsonb_typeof(p_request->'p_stacks') IS DISTINCT FROM 'array'\n OR jsonb_typeof(p_request->'p_hand_row') IS DISTINCT FROM 'object'\n OR jsonb_typeof(p_request->'p_post_commit_obligations') IS DISTINCT FROM 'object'\n OR jsonb_typeof(p_request->'p_units') IS DISTINCT FROM 'array' THEN\n  RAISE EXCEPTION 'HAND_SUBMISSION_INVALID_REQUEST' USING ERRCODE='22023';\n END IF;\n tid:=(p_request->>'p_table_id')::uuid; hn:=(p_request->>'p_hand_number')::bigint;\n sid:=(p_request->'p_hand_row'->>'id')::uuid;\n instance:=p_request->>'p_instance_id'; generation:=(p_request->>'p_lease_generation')::uuid;\n IF tid IS NULL OR hn IS NULL OR hn<=0 OR sid IS NULL OR generation IS NULL OR length(btrim(COALESCE(instance,'')))=0\n OR (p_request->'p_hand_row'->>'table_id')::uuid IS DISTINCT FROM tid\n OR (p_request->'p_hand_row'->>'hand_number')::bigint IS DISTINCT FROM hn THEN\n  RAISE EXCEPTION 'HAND_SUBMISSION_INVALID_IDENTITY' USING ERRCODE='22023';\n END IF;\n PERFORM public.fn_ca_share_settlement_lane_for_table(tid);\n PERFORM smarter_private.assert_retained_hand_submission(p_request);\n SELECT * INTO s FROM smarter_private.hand_submissions WHERE table_id=tid AND hand_number=hn;\n IF FOUND THEN\n  RETURN jsonb_build_object('retained',true,'submission_id',s.submission_id,'request_hash',s.request_hash,'replay',true);\n END IF;\n SELECT * INTO h FROM smarter_private.f06_hand_permits WHERE table_id=tid AND hand_number=hn;\n IF FOUND THEN\n  IF NOT pg_try_advisory_xact_lock(hashtextextended('f06:hand:'||h.permit_id::text,0)) THEN\n   RAISE EXCEPTION 'F06_HAND_DISPATCH_BUSY' USING ERRCODE='40001'; END IF;\n  SELECT * INTO STRICT h FROM smarter_private.f06_hand_permits WHERE permit_id=h.permit_id;\n  IF h.state NOT IN ('reserved','accepted') OR h.generation IS DISTINCT FROM generation THEN\n   RAISE EXCEPTION 'HAND_SUBMISSION_PERMIT_FENCED' USING ERRCODE='55000'; END IF;\n END IF;\n SELECT tournament_id INTO tour FROM public.tables WHERE id=tid;\n IF NOT FOUND THEN RAISE EXCEPTION 'HAND_SUBMISSION_TABLE_MISSING' USING ERRCODE='55000'; END IF;\n IF tour IS NOT NULL AND (h.permit_id IS NULL OR h.tournament_id IS DISTINCT FROM tour) THEN\n  RAISE EXCEPTION 'HAND_SUBMISSION_ORIGINAL_PERMIT_REQUIRED' USING ERRCODE='55000'; END IF;\n IF tour IS NULL THEN\n  SELECT instance_id,lease_generation,protocol_version,heartbeat_at INTO holder,lease,protocol,beat\n  FROM public.engine_table_leases WHERE table_id=tid FOR KEY SHARE;\n ELSE\n  SELECT instance_id,lease_generation,protocol_version,heartbeat_at INTO holder,lease,protocol,beat\n  FROM public.engine_tournament_leases WHERE tournament_id=tour FOR KEY SHARE;\n END IF;\n -- A LAPSED CASH LEASE STILL RETAINS ITS FINISHED HAND (2026-10-04). Retention\n -- moves no money: fn_ca_resume_hand_submission settles the request only under\n -- a successor's own fresh lease, after proving the original never settled it\n -- and that every chair, before-stack and hand number is unchanged. A cash\n -- original whose heartbeat went stale while its finished hand was in flight\n -- may therefore still retain it while the lease names its exact instance and\n -- generation. Taken, released or re-claimed still refuses. A tournament\n -- retention keeps the fresh-heartbeat requirement.\n IF holder IS DISTINCT FROM instance OR lease IS DISTINCT FROM generation OR protocol IS DISTINCT FROM 2\n OR beat IS NULL OR (tour IS NOT NULL\n   AND beat<clock_timestamp()-make_interval(secs=>public.fn_engine_lease_stale_seconds())) THEN\n  RAISE EXCEPTION 'HAND_SUBMISSION_LEASE_UNPROVEN' USING ERRCODE='55000'; END IF;\n IF tour IS NOT NULL THEN PERFORM 1 FROM public.tournaments WHERE id=tour FOR SHARE; END IF;\n SELECT tournament_id INTO locked_tour FROM public.tables WHERE id=tid FOR UPDATE;\n IF NOT FOUND OR locked_tour IS DISTINCT FROM tour THEN\n  RAISE EXCEPTION 'HAND_SUBMISSION_SCOPE_CHANGED' USING ERRCODE='55000'; END IF;\n INSERT INTO smarter_private.hand_submission_dispositions(table_id,hand_number,permit_id,disposition,submission_id)\n VALUES(tid,hn,h.permit_id,'retained',sid) ON CONFLICT(table_id,hand_number) DO NOTHING;\n SELECT * INTO STRICT d FROM smarter_private.hand_submission_dispositions WHERE table_id=tid AND hand_number=hn;\n IF d.disposition<>'retained' OR d.submission_id IS DISTINCT FROM sid OR d.permit_id IS DISTINCT FROM h.permit_id THEN\n  RAISE EXCEPTION 'HAND_SUBMISSION_PERMIT_DISPOSED' USING ERRCODE='55000'; END IF;\n request_hash:=encode(extensions.digest(convert_to(p_request::text,'UTF8'),'sha256'),'hex');\n INSERT INTO smarter_private.hand_submissions(submission_id,table_id,hand_number,instance_id,lease_generation,request,request_hash)\n VALUES(sid,tid,hn,instance,generation,p_request,request_hash);\n RETURN jsonb_build_object('retained',true,'submission_id',sid,'request_hash',request_hash,'replay',false);\nEND $function$\n",
+      "body_md5": "2003cf6e41ccd10c839f9cad53bfdf97",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "signature": "record_insurance_transaction(uuid,uuid,integer,uuid,numeric,numeric,numeric,numeric,boolean,character varying)",
+      "definition": "CREATE OR REPLACE FUNCTION public.record_insurance_transaction(p_table_id uuid, p_club_id uuid, p_hand_number integer, p_player_id uuid, p_equity_percent numeric, p_premium numeric, p_insured_amount numeric, p_payout numeric, p_player_won boolean, p_kind character varying DEFAULT 'insurance'::character varying)\n RETURNS insurance_transactions\n LANGUAGE plpgsql\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_union_id     uuid;\n  v_bank_type    varchar(10);\n  v_bank_entity  uuid;\n  v_net_player   numeric;\n  v_bank_delta   numeric;\n  v_tx           insurance_transactions;\n  v_club uuid; v_private boolean; v_context jsonb; v_setting text;\nBEGIN\n  IF p_table_id IS NULL OR p_club_id IS NULL OR p_hand_number IS NULL OR p_player_id IS NULL\n     OR p_player_won IS NULL OR p_equity_percent IS NULL\n     OR p_equity_percent::text IN ('NaN','Infinity','-Infinity')\n     OR p_equity_percent < 0 OR p_equity_percent > 100\n     OR EXISTS (SELECT 1 FROM unnest(ARRAY[p_premium,p_insured_amount,p_payout]) amount\n                WHERE amount IS NULL OR amount::text IN ('NaN','Infinity','-Infinity') OR amount < 0)\n     OR COALESCE(NULLIF(p_kind,''),'insurance') NOT IN ('insurance','ev_cashout') THEN\n    RAISE EXCEPTION 'Invalid insurance payment identity or amounts' USING ERRCODE='22023';\n  END IF;\n  -- Canonical cents match the persisted NUMERIC(...,2) receipt. Compute the\n  -- bank delta from those same cents, not from unrounded caller operands.\n  p_premium := round(p_premium,2);\n  p_payout := round(p_payout,2);\n  p_insured_amount := round(p_insured_amount,2);\n  p_equity_percent := round(p_equity_percent,2);\n  p_kind := COALESCE(NULLIF(p_kind,''),'insurance');\n\n  SELECT club_id,union_id,COALESCE(is_private,false) INTO v_club,v_union_id,v_private\n    FROM public.tables WHERE id=p_table_id FOR SHARE;\n  IF NOT FOUND OR v_club IS DISTINCT FROM p_club_id THEN\n    RAISE EXCEPTION 'Insurance table does not belong to supplied club' USING ERRCODE='22023';\n  END IF;\n  IF v_private THEN\n    v_union_id := NULL;\n  ELSIF v_union_id IS NULL THEN\n    SELECT union_id INTO v_union_id FROM public.clubs WHERE id=p_club_id;\n  END IF;\n\n  IF v_union_id IS NOT NULL THEN\n    v_bank_type := 'union';\n    v_bank_entity := v_union_id;\n  ELSE\n    v_bank_type := 'club';\n    v_bank_entity := p_club_id;\n  END IF;\n\n  v_net_player := COALESCE(p_payout, 0) - COALESCE(p_premium, 0);\n  v_bank_delta := COALESCE(p_premium, 0) - COALESCE(p_payout, 0);\n\n  INSERT INTO insurance_transactions (\n    table_id, club_id, union_id, hand_number,\n    player_id, equity_percent, premium, insured_amount, payout,\n    player_won, net_result, bank_type, bank_entity_id, kind\n  ) VALUES (\n    p_table_id, p_club_id, v_union_id, p_hand_number,\n    p_player_id, p_equity_percent, p_premium, p_insured_amount, p_payout,\n    p_player_won, v_net_player, v_bank_type, v_bank_entity,\n    COALESCE(NULLIF(p_kind, ''), 'insurance')\n  )\n  ON CONFLICT (table_id, hand_number, player_id) DO NOTHING\n  RETURNING * INTO v_tx;\n\n  IF v_tx.id IS NULL THEN\n    SELECT * INTO v_tx FROM insurance_transactions\n     WHERE table_id = p_table_id AND hand_number = p_hand_number AND player_id = p_player_id\n     LIMIT 1;\n    IF v_tx.id IS NULL OR v_tx.club_id IS DISTINCT FROM p_club_id\n       OR v_tx.equity_percent IS DISTINCT FROM p_equity_percent\n       OR v_tx.premium IS DISTINCT FROM p_premium\n       OR v_tx.insured_amount IS DISTINCT FROM p_insured_amount\n       OR v_tx.payout IS DISTINCT FROM p_payout\n       OR v_tx.player_won IS DISTINCT FROM p_player_won\n       OR v_tx.kind IS DISTINCT FROM p_kind THEN\n      RAISE EXCEPTION 'Insurance identity reused with a different payment payload' USING ERRCODE='22023';\n    END IF;\n    RETURN v_tx;\n  END IF;\n\n  SELECT jsonb_object_agg(k,COALESCE(current_setting(k,true),'')) INTO v_context\n    FROM unnest(ARRAY['app.ledger_category','app.ledger_counterparty',\n                     'app.ledger_counterparty_entity','app.ledger_settlement','app.ledger_hand_id']) settings(k);\n  PERFORM set_config('app.ledger_category','insurance',true);\n  PERFORM set_config('app.ledger_counterparty','table_stack',true);\n  PERFORM set_config('app.ledger_counterparty_entity',p_table_id::text,true);\n  PERFORM set_config('app.ledger_settlement',\n    'insurance:' || p_table_id::text || ':' || p_hand_number::text || ':' || p_player_id::text,true);\n  PERFORM set_config('app.ledger_hand_id','',true);\n\n  IF v_bank_delta <> 0 THEN\n    IF v_bank_type = 'union' THEN\n      INSERT INTO union_wallets (union_id, insurance_wallet)\n      VALUES (v_bank_entity, v_bank_delta)\n      ON CONFLICT (union_id) DO UPDATE\n        SET insurance_wallet = COALESCE(union_wallets.insurance_wallet, 0) + v_bank_delta,\n            updated_at = NOW();\n    ELSE\n      INSERT INTO club_wallets (club_id, insurance_balance)\n      VALUES (v_bank_entity, v_bank_delta)\n      ON CONFLICT (club_id) DO UPDATE\n        SET insurance_balance = COALESCE(club_wallets.insurance_balance, 0) + v_bank_delta,\n            updated_at = NOW();\n    END IF;\n  END IF;\n\n  FOR v_setting IN SELECT jsonb_object_keys(v_context) LOOP\n    PERFORM set_config(v_setting,v_context->>v_setting,true);\n  END LOOP;\n  RETURN v_tx;\nEND;\n$function$\n",
+      "body_md5": "a84003fddd44e4cf9acbe6f4ddd7aa43",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "signature": "fn_ca_commit_hand_settlement_before_lease_generation(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_commit_hand_settlement_before_lease_generation(p_table_id uuid, p_hand_number bigint, p_stacks jsonb, p_rake numeric, p_bbj numeric, p_ref text, p_inflow numeric, p_hand_row jsonb, p_units jsonb DEFAULT '[]'::jsonb)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_tournament_id uuid;\n  v_stack_result jsonb;\n  v_hand_id uuid;\n  v_existing public.hand_history%ROWTYPE;\n  v_prior public.hand_atomic_commits%ROWTYPE;\n  v_commit_hash text;\n  v_normalized_stacks jsonb;\n  v_normalized_units jsonb;\n  v_stack jsonb;\n  v_uid uuid;\n  v_written numeric;\n  v_before numeric;\n  v_seat record;\n  v_zero_generation jsonb;\n  v_zero_generation_count integer;\n  v_prompt_until timestamptz;\n  v_rebuy_window jsonb;\n  v_rebuy_offer_available boolean;\n  v_n integer;\n  v_distinct integer;\n  v_changed integer;\n  v_candidate_id uuid;\nBEGIN\n  -- External authority is the EXECUTE ACL on the lease-fenced public wrapper.\n  -- This nested SECURITY DEFINER core is owner-only and must remain callable\n  -- when its preserved production owner is neither postgres nor service_role.\n  IF p_table_id IS NULL OR p_hand_number IS NULL OR p_hand_number<1000000\n     OR jsonb_typeof(p_stacks)<>'array' OR jsonb_array_length(p_stacks)=0\n     OR jsonb_typeof(p_hand_row)<>'object'\n     OR jsonb_typeof(coalesce(p_units,'[]'::jsonb))<>'array'\n     OR coalesce(p_hand_row->>'table_id','')<>p_table_id::text\n     OR coalesce(p_hand_row->>'hand_number','')<>p_hand_number::text THEN\n    RETURN jsonb_build_object('success',false,'reason','invalid_atomic_hand_payload');\n  END IF;\n\n  SELECT count(*), count(DISTINCT x->>'user_id')\n    INTO v_n, v_distinct\n    FROM jsonb_array_elements(p_stacks) x\n   WHERE jsonb_typeof(x)='object'\n     AND coalesce(x->>'user_id','') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'\n     AND jsonb_typeof(x->'stack')='number'\n     AND jsonb_typeof(x->'stack_before')='number'\n     AND (x->>'stack')::numeric>=0\n     AND (x->>'stack_before')::numeric>=0;\n  IF v_n<>jsonb_array_length(p_stacks) OR v_distinct<>v_n THEN\n    RETURN jsonb_build_object('success',false,'reason','invalid_or_duplicate_stack_rows');\n  END IF;\n\n  SELECT jsonb_agg(x ORDER BY x->>'user_id') INTO v_normalized_stacks\n    FROM jsonb_array_elements(p_stacks) x;\n  SELECT coalesce(jsonb_agg(x ORDER BY x::text),'[]'::jsonb) INTO v_normalized_units\n    FROM jsonb_array_elements(coalesce(p_units,'[]'::jsonb)) x;\n  v_commit_hash := encode(extensions.digest(convert_to(jsonb_build_object(\n    'table_id',p_table_id,'hand_number',p_hand_number,\n    'stacks',v_normalized_stacks,'rake',p_rake,'bbj',p_bbj,\n    'ref',p_ref,'inflow',p_inflow,'hand_row',p_hand_row,\n    'units',v_normalized_units)::text,'UTF8'),'sha256'),'hex');\n\n  -- Lock order is global tournament lifecycle -> table -> exact table hand.\n  -- Paid admissions take the global root exclusively before the same table\n  -- lock; unrelated hands share the lifecycle root and remain concurrent.\n  PERFORM public.fn_ca_share_settlement_lane_for_table(p_table_id);\n  PERFORM pg_advisory_xact_lock(\n    hashtextextended('atomic-table:'||p_table_id::text,0));\n  PERFORM pg_advisory_xact_lock(\n    hashtextextended('atomic-hand:'||p_hand_number::text,0));\n\n  SELECT * INTO v_prior\n    FROM public.hand_atomic_commits c\n   WHERE c.table_id=p_table_id\n     AND c.hand_number=p_hand_number\n   FOR UPDATE;\n  IF FOUND THEN\n    IF v_prior.payload_hash IS DISTINCT FROM v_commit_hash THEN\n      RETURN jsonb_build_object(\n        'success',false,'reason','atomic_hand_payload_conflict',\n        'hand_number',p_hand_number,'existing_table_id',v_prior.table_id);\n    END IF;\n    RETURN v_prior.stack_result || jsonb_build_object(\n      'success',true,'atomic_hand_commit',true,'replay',true,\n      'history_id',v_prior.hand_id,'commit_hash',v_prior.payload_hash);\n  END IF;\n\n  SELECT t.tournament_id INTO v_tournament_id\n    FROM public.tables t WHERE t.id=p_table_id;\n  IF NOT FOUND THEN\n    RETURN jsonb_build_object('success',false,'reason','table_not_found');\n  END IF;\n\n  IF (p_hand_row->>'tournament_id') IS DISTINCT FROM v_tournament_id::text THEN\n    RETURN jsonb_build_object(\n      'success',false,'reason','hand_tournament_mismatch',\n      'table_tournament_id',v_tournament_id,\n      'row_tournament_id',p_hand_row->>'tournament_id');\n  END IF;\n\n  BEGIN\n    IF v_tournament_id IS NOT NULL THEN\n      PERFORM 1 FROM public.tournaments t WHERE t.id=v_tournament_id FOR SHARE;\n      PERFORM 1\n        FROM public.tournament_players tp\n       WHERE tp.tournament_id=v_tournament_id\n         AND tp.user_id IN (\n           SELECT (x->>'user_id')::uuid FROM jsonb_array_elements(p_stacks) x)\n       ORDER BY tp.user_id\n       FOR UPDATE;\n    END IF;\n\n    v_stack_result := public.fn_ca_settle_hand_stacks_absolute(\n      p_table_id,p_hand_number,v_normalized_stacks,p_rake,p_bbj,p_ref,p_inflow);\n    IF coalesce((v_stack_result->>'success')::boolean,false) IS NOT TRUE THEN\n      RETURN v_stack_result || jsonb_build_object('atomic_hand_commit',false);\n    END IF;\n    IF coalesce((v_stack_result->>'replay')::boolean,false) IS TRUE THEN\n      RAISE EXCEPTION 'legacy stack settlement exists for hand % without an atomic receipt',\n        p_hand_number USING ERRCODE='integrity_constraint_violation';\n    END IF;\n\n    SELECT * INTO v_existing\n      FROM public.hand_history h\n     WHERE h.table_id=p_table_id AND h.hand_number=p_hand_number;\n    IF FOUND THEN\n      RAISE EXCEPTION 'hand % already exists without an atomic commit receipt',p_hand_number\n        USING ERRCODE='integrity_constraint_violation';\n    ELSE\n      PERFORM set_config('app.atomic_hand_commit','on',true);\n      v_hand_id := public.fn_ca_insert_hand_with_awards(p_hand_row,p_units);\n    END IF;\n\n    IF v_tournament_id IS NOT NULL THEN\n      IF jsonb_typeof(\n           v_stack_result->'tournament_zero_stack_seat_generations')\n             IS DISTINCT FROM 'array'\n         OR jsonb_array_length(\n              v_stack_result->'tournament_zero_stack_seat_generations')\n              IS DISTINCT FROM\n              COALESCE(\n                (v_stack_result->>'tournament_zero_stack_seat_count')::integer,-1)\n         OR (\n              COALESCE(\n                (v_stack_result->>'tournament_zero_stack_seat_count')::integer,-1) > 0\n              AND (v_stack_result->>'tournament_zero_stack_vacated_at') IS NULL\n            ) THEN\n        RAISE EXCEPTION\n          'accepted tournament hand omitted exact zero-seat generation evidence';\n      END IF;\n\n      FOR v_stack IN SELECT value FROM jsonb_array_elements(p_stacks)\n      LOOP\n        v_uid := (v_stack->>'user_id')::uuid;\n        v_before := round((v_stack->>'stack_before')::numeric,2);\n        v_written := round((v_stack_result->'written'->>v_uid::text)::numeric,2);\n        IF v_written IS NULL THEN\n          RAISE EXCEPTION 'accepted tournament hand omitted written stack for %',v_uid;\n        END IF;\n        IF v_written<>trunc(v_written) THEN\n          RAISE EXCEPTION 'accepted tournament hand produced fractional stack % for %',v_written,v_uid;\n        END IF;\n\n        IF v_written=0 THEN\n          SELECT count(*) INTO v_zero_generation_count\n            FROM jsonb_array_elements(\n                   v_stack_result->'tournament_zero_stack_seat_generations') g(value)\n           WHERE g.value->>'user_id'=v_uid::text;\n          IF v_zero_generation_count<>1 THEN\n            RAISE EXCEPTION\n              'accepted tournament hand has % zero-seat generations for %',\n              v_zero_generation_count,v_uid USING ERRCODE='P0404';\n          END IF;\n          SELECT g.value INTO v_zero_generation\n            FROM jsonb_array_elements(\n                   v_stack_result->'tournament_zero_stack_seat_generations') g(value)\n           WHERE g.value->>'user_id'=v_uid::text;\n          SELECT s.id,s.joined_at,s.seat_number\n            INTO v_seat\n            FROM public.table_seats s\n           WHERE s.id=(v_zero_generation->>'seat_id')::uuid\n             AND s.table_id=p_table_id\n             AND s.user_id=v_uid\n             AND s.seat_number=(v_zero_generation->>'seat_number')::integer\n             AND s.joined_at=(v_zero_generation->>'joined_at')::timestamptz\n             AND s.stack=0\n             AND s.left_at=\n                   (v_stack_result->>'tournament_zero_stack_vacated_at')::timestamptz\n             AND lower(COALESCE(s.status,''))='left'\n           FOR UPDATE;\n          IF NOT FOUND THEN\n            RAISE EXCEPTION\n              'accepted tournament hand lost exact closed seat generation for %',v_uid\n              USING ERRCODE='P0404';\n          END IF;\n        ELSE\n          SELECT s.id,s.joined_at,s.seat_number\n            INTO v_seat\n            FROM public.table_seats s\n           WHERE s.table_id=p_table_id AND s.user_id=v_uid AND s.left_at IS NULL\n           FOR UPDATE;\n          IF NOT FOUND THEN\n            RAISE EXCEPTION\n              'accepted tournament hand lost active seat for % before generation capture',v_uid;\n          END IF;\n        END IF;\n\n        UPDATE public.tournament_players tp\n           SET chips=greatest(v_written,0)::integer,\n               table_id=p_table_id,\n               seat_number=v_seat.seat_number\n         WHERE tp.tournament_id=v_tournament_id AND tp.user_id=v_uid\n           AND tp.status='playing';\n        GET DIAGNOSTICS v_changed=ROW_COUNT;\n        IF v_changed<>1 AND NOT EXISTS (\n          SELECT 1 FROM public.tournament_players tp\n           WHERE tp.tournament_id=v_tournament_id AND tp.user_id=v_uid\n             AND tp.status='playing'\n             AND tp.chips=greatest(v_written,0)::integer\n             AND tp.table_id=p_table_id\n             AND tp.seat_number=v_seat.seat_number) THEN\n          RAISE EXCEPTION\n            'accepted tournament hand could not mirror playing roster row for %',v_uid;\n        END IF;\n\n        IF v_before>0 AND v_written=0 THEN\n          SELECT\n            (coalesce(t.is_rebuy,false)\n               AND (t.max_rebuys IS NULL OR coalesce(tp.rebuys,0)<t.max_rebuys))\n            OR\n            (coalesce(t.is_reentry,false)\n               AND (t.max_reentries IS NULL OR coalesce(tp.rebuys,0)<t.max_reentries)),\n            public.fn_ca_tournament_rebuy_window(v_tournament_id)\n            INTO v_rebuy_offer_available,v_rebuy_window\n            FROM public.tournaments t\n            JOIN public.tournament_players tp\n              ON tp.tournament_id=t.id AND tp.user_id=v_uid\n           WHERE t.id=v_tournament_id;\n          v_prompt_until:=CASE\n            WHEN v_rebuy_offer_available\n             AND coalesce((v_rebuy_window->>'open')::boolean,false)\n            THEN (v_rebuy_window->>'prompt_until')::timestamptz\n            ELSE NULL END;\n          IF v_prompt_until IS NOT NULL\n             AND v_prompt_until<=clock_timestamp() THEN\n            RAISE EXCEPTION\n              'authoritative rebuy window returned an expired prompt for tournament %',\n              v_tournament_id USING ERRCODE='P0404';\n          END IF;\n\n          v_candidate_id := NULL;\n          INSERT INTO public.tournament_knockout_candidates(\n            tournament_id,eliminated_user_id,table_id,seat_id,seat_joined_at,\n            hand_id,hand_number,stack_before,stack_after,rebuy_prompt_until)\n          VALUES (\n            v_tournament_id,v_uid,p_table_id,v_seat.id,v_seat.joined_at,\n            v_hand_id,p_hand_number,v_before,0,v_prompt_until)\n          -- One accepted hand is one immutable knockout generation. A rebuy can\n          -- bust again in the same physical chair, so chair identity must never\n          -- absorb that later hand.\n          ON CONFLICT (tournament_id,hand_number,eliminated_user_id) DO NOTHING\n          RETURNING id INTO v_candidate_id;\n          IF v_candidate_id IS NULL AND NOT EXISTS (\n            SELECT 1 FROM public.tournament_knockout_candidates c\n             WHERE c.tournament_id=v_tournament_id\n               AND c.hand_number=p_hand_number\n               AND c.eliminated_user_id=v_uid\n               AND c.table_id=p_table_id\n               AND c.seat_id=v_seat.id\n               AND c.seat_joined_at=v_seat.joined_at\n               AND c.hand_id=v_hand_id\n               AND c.stack_before=v_before\n               AND c.stack_after=0) THEN\n            RAISE EXCEPTION\n              'knockout candidate identity conflict for tournament %, hand %, user %',\n              v_tournament_id,p_hand_number,v_uid;\n          END IF;\n\n          UPDATE public.tournament_players tp\n             SET rebuy_prompt_until=v_prompt_until\n           WHERE tp.tournament_id=v_tournament_id AND tp.user_id=v_uid\n             AND tp.status='playing';\n        END IF;\n      END LOOP;\n    END IF;\n\n    INSERT INTO public.hand_projection_outbox(hand_id,table_id,hand_number)\n    VALUES (v_hand_id,p_table_id,p_hand_number);\n\n    INSERT INTO public.hand_atomic_commits(\n      table_id,hand_number,hand_id,payload_hash,stack_result)\n    VALUES (p_table_id,p_hand_number,v_hand_id,v_commit_hash,v_stack_result);\n\n    PERFORM public.fn_cash_accept_hand_provenance(p_table_id,p_hand_number,v_hand_id,\n      v_normalized_stacks,p_rake,p_bbj,p_inflow,v_commit_hash,\n      jsonb_build_object(\n        'table_id',p_table_id,'hand_number',p_hand_number,\n        'stacks',v_normalized_stacks,'rake',p_rake,'bbj',p_bbj,\n        'ref',p_ref,'inflow',p_inflow,'hand_row',p_hand_row,\n        'units',v_normalized_units));\n\n    RETURN v_stack_result || jsonb_build_object(\n      'success',true,\n      'atomic_hand_commit',true,\n      'history_id',v_hand_id,\n      'tournament_id',v_tournament_id,\n      'commit_hash',v_commit_hash);\n  EXCEPTION WHEN OTHERS THEN\n    RETURN jsonb_build_object(\n      'success',false,'atomic_hand_commit',false,'reason','atomic_hand_rolled_back',\n      'error',SQLERRM,'sqlstate',SQLSTATE,'table_id',p_table_id,\n      'hand_number',p_hand_number,'commit_hash',v_commit_hash);\n  END;\nEND;\n$function$\n",
+      "body_md5": "f5fe4f574d43082134178d377dcc6a9b",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}"
+    },
+    {
+      "signature": "fn_ca_insert_hand_with_awards(jsonb,jsonb)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_insert_hand_with_awards(p_row jsonb, p_units jsonb DEFAULT '[]'::jsonb)\n RETURNS uuid\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_id   uuid;\n  v_cols text;\nBEGIN\n  /* Only the columns the caller named. Anything absent keeps its DEFAULT,\n     which is the entire point - see the header. */\n  SELECT string_agg(quote_ident(c.column_name), ', ' ORDER BY c.ordinal_position)\n    INTO v_cols\n    FROM information_schema.columns c\n   WHERE c.table_schema = 'public'\n     AND c.table_name   = 'hand_history'\n     AND p_row ? c.column_name;\n\n  IF v_cols IS NULL THEN\n    RAISE EXCEPTION\n      'fn_ca_insert_hand_with_awards: p_row names no hand_history column - refusing to insert a row of pure defaults';\n  END IF;\n\n  EXECUTE format(\n    'INSERT INTO public.hand_history (%1$s) '\n    'SELECT %1$s FROM jsonb_populate_record(null::public.hand_history, $1) '\n    'RETURNING id', v_cols)\n    USING p_row\n     INTO v_id;\n\n  IF jsonb_array_length(COALESCE(p_units, '[]'::jsonb)) > 0 THEN\n    INSERT INTO public.bomb_pot_award_units\n      (hand_history_id, table_id, hand_number, pot_index, board, side, user_id, amount, hand_name)\n    SELECT v_id,\n           (u->>'table_id')::uuid,\n           (u->>'hand_number')::bigint,\n           (u->>'pot_index')::int,\n           COALESCE((u->>'board')::int, 1),\n           COALESCE(u->>'side', 'high'),\n           (u->>'user_id')::uuid,\n           (u->>'amount')::numeric,\n           NULLIF(u->>'hand_name', '')\n      FROM jsonb_array_elements(p_units) u\n    ON CONFLICT (hand_history_id, pot_index, board, side, user_id) DO NOTHING;\n  END IF;\n\n  RETURN v_id;\nEND $function$\n",
+      "body_md5": "b6eb532e40ba9820643616e70cdeb265",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}"
+    },
+    {
+      "signature": "fn_ca_settle_hand_stacks_absolute(uuid,bigint,jsonb,numeric,numeric,text,numeric)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_settle_hand_stacks_absolute(p_table_id uuid, p_hand_number bigint, p_stacks jsonb DEFAULT '[]'::jsonb, p_rake numeric DEFAULT NULL::numeric, p_bbj numeric DEFAULT NULL::numeric, p_ref text DEFAULT NULL::text, p_inflow numeric DEFAULT NULL::numeric)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_request jsonb;\n  v_canonical jsonb;\n  v_hand uuid; v_claimed integer; v_prior record; v_ca_id uuid;\n  e jsonb; v_uid uuid; v_new numeric; v_old numeric; v_before numeric; v_target numeric;\n  v_delta_sum numeric := 0; v_expected numeric;\n  v_n integer := 0; v_updated integer; v_err text; v_result jsonb;\n  v_delta_mode boolean;\n  -- Exact seat identity is the row id plus the join instant. A vacated row can\n  -- be reused in place, so neither user_id, chair number, nor row id is enough.\n  v_exact_seat_generation boolean;\n  v_exact_seat_id uuid;\n  v_exact_seat_joined_at timestamptz;\n  v_exact_seat_left_at timestamptz;\n  v_exact_seat_club uuid;\n  v_exact_seat_found boolean;\n  v_targets jsonb := '{}'::jsonb;      -- user_id -> stack to write\n  v_rebased jsonb := '{}'::jsonb;      -- user_id -> db_before - engine_before (delta mode only)\n  v_rebase_rows jsonb := '[]'::jsonb;  -- rows for ca_seat_stack_rebases\n  v_rebase_count integer := 0;\n  -- 2026-09-04 (verification sweep): a seat that LEFT during the hand\n  v_departed jsonb := '[]'::jsonb;   -- [{user_id, delta, club_id}]\n  v_dep record; v_dep_club uuid; v_dep_after numeric; v_dep_key text; v_dep_claimed integer;\n  -- chip-std Lane F (2026-09-02): tournament conservation (absolute mode)\n  v_tournament_id uuid;\n  -- The hand result is also the durable final-stack boundary for a tournament.\n  v_tournament_status text;\n  v_payload_stack_count integer := 0;\n  v_target_user_count integer := 0;\n  v_tournament_player_count integer := 0;\n  v_tournament_player_user_ids uuid[] := ARRAY[]::uuid[];\n  v_tournament_player_chips jsonb := '[]'::jsonb;\n  v_zero_stack_seat_count integer := 0;\n  v_zero_stack_seat_ids uuid[] := ARRAY[]::uuid[];\n  v_zero_stack_user_ids uuid[] := ARRAY[]::uuid[];\n  v_zero_stack_seat_generations jsonb := '[]'::jsonb;\n  v_zero_stack_vacated_at timestamptz;\n  v_table_live_seat_count integer := 0;\n  -- ONE SEAT WRITE PER HAND (2026-09-10): the accepted time-bank state the\n  -- 12-argument door publishes for this exact table+hand, carried on the\n  -- stack write so each seat row is written once per hand instead of twice.\n  v_tb_env_text text;\n  v_tb_env jsonb;\n  v_tb_map jsonb;   -- lower(user_id) -> time-bank item, or NULL (stack-only write)\n  v_tb jsonb;\n  -- LIGHTNING PHASE 6 (20261001154813): {player: anchor table} for the\n  -- anchors a Lightning settlement in THIS transaction names, '{}' otherwise.\n  v_lightning_seats jsonb := '{}'::jsonb;\nBEGIN\n  IF EXISTS (SELECT 1 FROM public.tables t JOIN public.clubs c ON c.id=t.club_id\n             WHERE t.id=p_table_id AND c.asset='diamonds' AND t.tournament_id IS NULL) THEN\n    -- DIAMOND PHASE 8: a Diamond TOURNAMENT hand moves play units on the\n    -- roster and the seat, exactly as a chip tournament hand does below.\n    RETURN public.fn_poker_diamond_settle_cash_hand(\n      p_table_id,p_hand_number,p_stacks,p_rake,p_bbj,p_ref,p_inflow);\n  END IF;\n  -- This implementation primitive is owner-only by ACL below. Do not inspect\n  -- current_user inside a SECURITY DEFINER core: CREATE OR REPLACE preserves\n  -- the production owner, so a valid call through the sole service wrapper\n  -- may execute here as that owner rather than as postgres/service_role.\n  IF p_table_id IS NULL OR p_hand_number IS NULL THEN\n    RETURN jsonb_build_object('success', false, 'reason', 'missing_ids');\n  END IF;\n  IF jsonb_typeof(p_stacks) IS DISTINCT FROM 'array' OR jsonb_array_length(p_stacks) = 0 THEN\n    RETURN jsonb_build_object('success', false, 'reason', 'no_stacks');\n  END IF;\n\n\n  -- One participant, one delta. Duplicates previously passed the sum check\n  -- twice but wrote a single target, allowing a non-conserving final balance.\n  IF EXISTS (SELECT 1 FROM jsonb_array_elements(p_stacks) x\n              WHERE jsonb_typeof(x) IS DISTINCT FROM 'object'\n                 OR jsonb_typeof(x->'user_id') IS DISTINCT FROM 'string'\n                 OR jsonb_typeof(x->'stack') IS DISTINCT FROM 'number'\n                 OR (x ? 'stack_before' AND jsonb_typeof(x->'stack_before') IS DISTINCT FROM 'number')) THEN\n    RAISE EXCEPTION 'Invalid hand settlement participant' USING ERRCODE = '22023';\n  END IF;\n\n  -- Rolling expansion accepts either a wholly legacy roster or a wholly exact\n  -- roster. One-sided and mixed generations can otherwise create a request\n  -- whose hash says one thing while individual rows are selected another way.\n  IF EXISTS (\n    SELECT 1\n      FROM jsonb_array_elements(p_stacks) x\n     WHERE (x ? 'seat_id') IS DISTINCT FROM (x ? 'seat_joined_at')\n        OR CASE WHEN x ? 'seat_id'\n                THEN jsonb_typeof(x->'seat_id') IS DISTINCT FROM 'string'\n                  OR jsonb_typeof(x->'seat_joined_at') IS DISTINCT FROM 'string'\n                ELSE false END\n        OR CASE WHEN jsonb_typeof(x->'seat_id') = 'string'\n                THEN (x->>'seat_id') !~*\n                  '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'\n                ELSE false END\n        OR CASE WHEN jsonb_typeof(x->'seat_joined_at') = 'string'\n                THEN NOT pg_input_is_valid(\n                  x->>'seat_joined_at', 'timestamp with time zone'\n                )\n                ELSE false END\n  ) THEN\n    RAISE EXCEPTION 'Invalid hand settlement seat generation'\n      USING ERRCODE = '22023';\n  END IF;\n  IF EXISTS (SELECT 1 FROM jsonb_array_elements(p_stacks) x WHERE x ? 'seat_id')\n     AND EXISTS (SELECT 1 FROM jsonb_array_elements(p_stacks) x WHERE NOT (x ? 'seat_id')) THEN\n    RAISE EXCEPTION 'Mixed legacy and exact hand settlement seat generations'\n      USING ERRCODE = '22023';\n  END IF;\n  SELECT COALESCE(bool_and(x ? 'seat_id' AND x ? 'seat_joined_at'), false)\n    INTO v_exact_seat_generation\n    FROM jsonb_array_elements(p_stacks) x;\n\n  IF (SELECT count(*) <> count(DISTINCT (x->>'user_id')::uuid) FROM jsonb_array_elements(p_stacks) x) THEN\n    RAISE EXCEPTION 'Duplicate hand settlement participant' USING ERRCODE = '22023';\n  END IF;\n  IF EXISTS (SELECT 1 FROM jsonb_array_elements(p_stacks) x WHERE x ? 'stack_before')\n     AND EXISTS (SELECT 1 FROM jsonb_array_elements(p_stacks) x WHERE NOT (x ? 'stack_before')) THEN\n    RAISE EXCEPTION 'Mixed absolute and delta hand settlement' USING ERRCODE = '22023';\n  END IF;\n  SELECT jsonb_agg(jsonb_build_object('user_id', (x->>'user_id')::uuid,\n      'stack', (x->>'stack')::numeric)\n      || CASE WHEN x ? 'stack_before' THEN jsonb_build_object('stack_before', (x->>'stack_before')::numeric)\n              ELSE '{}'::jsonb END\n      || CASE WHEN v_exact_seat_generation THEN jsonb_build_object(\n              'seat_id', (x->>'seat_id')::uuid,\n              'seat_joined_at', x->>'seat_joined_at')\n              ELSE '{}'::jsonb END\n      ORDER BY (x->>'user_id')::uuid) INTO v_canonical\n    FROM jsonb_array_elements(p_stacks) x;\n  v_request := jsonb_build_object('stacks', v_canonical, 'rake', p_rake,\n    'bbj', p_bbj, 'inflow', p_inflow);\n\n  /* DELTA MODE (chip standard 2026-09-04): the engine says what each stack\n     WAS when it dealt and what it IS now; the database applies the difference\n     to whatever the row holds. Every element must carry stack_before, or the\n     whole call is absolute - a mixed payload would silently erase on the\n     seats that lacked it. */\n  SELECT bool_and(x ? 'stack_before' AND jsonb_typeof(x -> 'stack_before') = 'number')\n    INTO v_delta_mode\n    FROM jsonb_array_elements(p_stacks) x;\n  v_delta_mode := COALESCE(v_delta_mode, false);\n  -- LIGHTNING PHASE 6 (20261001154813): THE ONE ADAPTER. A Lightning hand is\n  -- recorded at its Cluster's front table while each anchor seat sits at its\n  -- own table of the Cluster. fn_lightning_settle_hand names every anchor in\n  -- lightning_settlement_marker for this transaction, and only the four\n  -- exact-generation seat predicates below read the answer; for every\n  -- physical hand it is '{}' and each still compares to p_table_id.\n  v_lightning_seats := public.fn_lightning_settlement_seats(p_table_id, p_hand_number);\n  IF v_lightning_seats <> '{}'::jsonb\n     AND (NOT v_exact_seat_generation OR NOT v_delta_mode\n          OR EXISTS (SELECT 1 FROM jsonb_array_elements(v_canonical) x\n                      WHERE NOT (v_lightning_seats ? (x->>'user_id')))) THEN\n    RAISE EXCEPTION 'Lightning hand settlement must name every anchor by its exact seat generation in delta mode'\n      USING ERRCODE = '22023';\n  END IF;\n\n  -- stable hand id from (table, hand number[, ref])\n  v_hand := md5('ca-hand:' || p_table_id::text || ':' || p_hand_number::text\n                || CASE WHEN p_ref IS NULL OR p_ref = '' THEN '' ELSE ':' || p_ref END)::uuid;\n\n  INSERT INTO public.settlement_idempotency_keys\n    (table_id, hand_id, status, attempt_count, first_attempt_at, last_attempt_at)\n  VALUES (p_table_id, v_hand, 'in_flight', 1, now(), now())\n  ON CONFLICT (table_id, hand_id) DO NOTHING;\n  GET DIAGNOSTICS v_claimed = ROW_COUNT;\n  IF v_claimed = 0 THEN\n    SELECT status, result, last_attempt_at INTO v_prior\n      FROM public.settlement_idempotency_keys\n     WHERE table_id = p_table_id AND hand_id = v_hand FOR UPDATE;\n    IF v_prior.status = 'succeeded' THEN\n      -- Old receipts predate payload storage. New receipts bind the full request.\n      IF v_prior.result ? 'request' AND v_prior.result->'request' IS DISTINCT FROM v_request THEN\n        RAISE EXCEPTION 'Hand settlement identity belongs to a different payload' USING ERRCODE = '22023';\n      END IF;\n      RETURN COALESCE(v_prior.result, '{}'::jsonb) || jsonb_build_object('replay', true);\n    ELSIF v_prior.status = 'in_flight' AND v_prior.last_attempt_at > now() - interval '5 minutes' THEN\n      RETURN jsonb_build_object('success', false, 'reason', 'in_flight');\n    ELSE\n      UPDATE public.settlement_idempotency_keys\n         SET status = 'in_flight', attempt_count = attempt_count + 1, last_attempt_at = now(), error = NULL\n       WHERE table_id = p_table_id AND hand_id = v_hand;\n    END IF;\n  END IF;\n\n  INSERT INTO public.ca_settlements (settlement_type, external_ref, state, table_id, hand_id, idempotency_key)\n  VALUES ('hand_stacks', p_table_id::text || ':' || v_hand::text, 'open', p_table_id, v_hand,\n          'hand:' || p_table_id::text || ':' || v_hand::text)\n  ON CONFLICT (settlement_type, external_ref) DO UPDATE\n    SET state = CASE WHEN public.ca_settlements.state = 'failed' THEN 'open'\n                     ELSE public.ca_settlements.state END,\n        error_detail = NULL\n  RETURNING id INTO v_ca_id;\n\n  BEGIN\n    UPDATE public.ca_settlements SET state='locked_for_calculation' WHERE id = v_ca_id AND state='open';\n\n    -- ONE LOCK ORDER WITH TERMINAL CLOSE (20260908): tournament,\n    -- target tournament players by user_id/id, then target seats by id. The\n    -- terminal authority takes the same order. A hand that waited behind a\n    -- terminal commit sees COMPLETED and is refused before touching a seat.\n    SELECT tb.tournament_id INTO v_tournament_id\n      FROM public.tables tb WHERE tb.id = p_table_id;\n    IF v_tournament_id IS NOT NULL THEN\n      SELECT upper(COALESCE(t.status::text,'')) INTO v_tournament_status\n        FROM public.tournaments t\n       WHERE t.id = v_tournament_id\n       FOR SHARE;\n      IF NOT FOUND OR v_tournament_status <> 'RUNNING' THEN\n        RAISE EXCEPTION\n          'tournament % is not RUNNING at the durable hand boundary',\n          v_tournament_id USING ERRCODE = '55000';\n      END IF;\n      SELECT count(*),count(DISTINCT (x.value->>'user_id')::uuid)\n        INTO v_payload_stack_count,v_target_user_count\n        FROM jsonb_array_elements(v_canonical) AS x(value);\n      IF v_target_user_count <> v_payload_stack_count THEN\n        RAISE EXCEPTION 'tournament hand % contains duplicate player stacks',\n          p_hand_number USING ERRCODE = '22023';\n      END IF;\n      PERFORM 1\n        FROM public.tournament_players tp\n       WHERE tp.tournament_id = v_tournament_id\n         AND tp.status::text = 'playing'\n         AND tp.user_id IN (\n           SELECT (x.value->>'user_id')::uuid\n             FROM jsonb_array_elements(v_canonical) AS x(value))\n       ORDER BY tp.user_id,tp.id\n       FOR UPDATE;\n      SELECT count(*) INTO v_tournament_player_count\n        FROM public.tournament_players tp\n       WHERE tp.tournament_id = v_tournament_id\n         AND tp.status::text = 'playing'\n         AND tp.user_id IN (\n           SELECT (x.value->>'user_id')::uuid\n             FROM jsonb_array_elements(v_canonical) AS x(value));\n      IF v_tournament_player_count <> v_target_user_count THEN\n        RAISE EXCEPTION\n          'tournament % hand % does not map every stack to one playing player',\n          v_tournament_id,p_hand_number USING ERRCODE = 'P0404';\n      END IF;\n      -- A zero-seat vacate fires the seat-first table count trigger. Own the\n      -- table before the seats, matching terminal close, so that trigger only\n      -- reacquires a row this transaction already holds.\n      PERFORM 1 FROM public.tables tb\n       WHERE tb.id = p_table_id AND tb.tournament_id = v_tournament_id\n       FOR UPDATE;\n      IF NOT FOUND THEN\n        RAISE EXCEPTION 'tournament table % changed while hand % was locking',\n          p_table_id,p_hand_number USING ERRCODE = '40001';\n      END IF;\n    END IF;\n\n    -- Acquire every live target seat once in durable row-id order before the\n    -- original loop. The loop's individual SELECT FOR UPDATE calls then\n    -- reacquire locks that this transaction already owns. v_canonical is also\n    -- the immutable replay identity, so lock, write and receipt use one roster.\n    PERFORM 1\n      FROM public.table_seats ts\n      JOIN (\n        SELECT DISTINCT (x.value->>'user_id')::uuid AS user_id\n          FROM jsonb_array_elements(v_canonical) AS x(value)\n      ) target ON target.user_id = ts.user_id\n     WHERE ts.table_id = p_table_id\n       AND ts.left_at IS NULL\n     ORDER BY ts.id\n     FOR UPDATE OF ts;\n\n    -- lock seats, compute deltas / targets\n    FOR e IN SELECT * FROM jsonb_array_elements(v_canonical) LOOP\n      v_uid := (e->>'user_id')::uuid;\n      v_new := round((e->>'stack')::numeric, 2);\n      IF v_new IS NULL OR v_new < 0 THEN\n        RAISE EXCEPTION 'invalid stack for %: %', e->>'user_id', e->>'stack';\n      END IF;\n      v_exact_seat_id := NULL;\n      v_exact_seat_joined_at := NULL;\n      v_exact_seat_left_at := NULL;\n      v_exact_seat_club := NULL;\n      IF v_exact_seat_generation THEN\n        v_exact_seat_id := (e->>'seat_id')::uuid;\n        v_exact_seat_joined_at := (e->>'seat_joined_at')::timestamptz;\n        SELECT ts.stack, ts.left_at, ts.club_id\n          INTO v_old, v_exact_seat_left_at, v_exact_seat_club\n          FROM public.table_seats ts\n         WHERE ts.id = v_exact_seat_id\n           AND ts.joined_at = v_exact_seat_joined_at\n           AND ts.table_id = COALESCE((v_lightning_seats->>v_uid::text)::uuid, p_table_id)\n           AND ts.user_id = v_uid\n         FOR UPDATE;\n      ELSE\n        SELECT ts.stack INTO v_old FROM public.table_seats ts\n         WHERE ts.table_id = p_table_id AND ts.user_id = v_uid AND ts.left_at IS NULL\n         FOR UPDATE;\n      END IF;\n      v_exact_seat_found := FOUND;\n      IF NOT v_exact_seat_found\n         OR (v_exact_seat_generation AND v_exact_seat_left_at IS NOT NULL) THEN\n        -- If the exact row id was reused in place, joined_at no longer matches.\n        -- There is no historical row left to settle, so fail the hand whole.\n        IF v_exact_seat_generation AND NOT v_exact_seat_found THEN\n          RAISE EXCEPTION\n            'exact seat generation missing or replaced for % - hand write rejected whole',\n            v_uid;\n        END IF;\n        /* A SEAT THAT LEFT DURING THE HAND (2026-09-04, verification sweep).\n           In delta mode the player's own delta is settled against the club\n           wallet the seat cashed out to, keyed on hand + user, and the players\n           still seated get their deltas as usual. Refusing the whole hand here\n           left the winner unpaid in the database and the leaver refunded the\n           bet they had put in the pot (the exit cashes out the seat's stack\n           as it stood BEFORE the hand). Measured before this: 3 cash hands in\n           the first 40 minutes of delta mode, each a mid-hand leave_pending\n           cash-out raced by a stale settlement step. Absolute mode still\n           refuses: with no stack_before there is no delta to settle. */\n        /* CASH TABLES ONLY. Tournament chips are play chips: a seat that a\n           table balance moved or an elimination removed mid-hand has no\n           wallet to settle against, and settling it debited 230 real chips\n           from a player on 2026-09-04 13:04 (reversed in 20260904131500).\n           The tournament conservation gate in the engine and the tournament\n           branch below own that case; here it is refused whole, as before. */\n        IF v_delta_mode AND NOT EXISTS (SELECT 1 FROM public.tables tb WHERE tb.id = p_table_id AND tb.tournament_id IS NOT NULL) THEN\n          v_before := round((e->>'stack_before')::numeric, 2);\n          IF v_before IS NULL OR v_before < 0 THEN\n            RAISE EXCEPTION 'invalid stack_before for %: %', e->>'user_id', e->>'stack_before';\n          END IF;\n          IF v_exact_seat_generation THEN\n            -- Use the club captured on the exact departed generation. Looking\n            -- up the latest departed row can cross a later rejoin or club move.\n            v_dep_club := v_exact_seat_club;\n          ELSE\n            SELECT ts.club_id INTO v_dep_club FROM public.table_seats ts\n             WHERE ts.table_id = p_table_id AND ts.user_id = v_uid AND ts.left_at IS NOT NULL\n             ORDER BY ts.left_at DESC LIMIT 1;\n          END IF;\n          IF v_dep_club IS NULL AND NOT v_exact_seat_generation THEN\n            SELECT t.club_id INTO v_dep_club FROM public.tables t WHERE t.id = p_table_id;\n          END IF;\n          /* SETTLING NOTHING NEEDS NO WALLET (2026-09-08). A seat that left\n             having moved no chips has nothing to settle against a wallet, and\n             the departed loop below already skips a zero delta. Demanding the\n             wallet first refused whole hands over seats that owed nothing -\n             hand 7903456, which nets to zero between two seated players, was\n             refused because a third seat with a delta of 0.00 had gone. */\n          IF round(v_new - v_before, 2) = 0 THEN\n            v_n := v_n + 1;\n            CONTINUE;\n          END IF;\n          IF v_dep_club IS NULL OR NOT EXISTS (SELECT 1 FROM public.club_members m WHERE m.user_id = v_uid AND m.club_id = v_dep_club) THEN\n            RAISE EXCEPTION 'seat missing or left for % and no club wallet resolves for it - hand write rejected whole', v_uid;\n          END IF;\n          v_delta_sum := v_delta_sum + (v_new - v_before);\n          v_departed := v_departed || jsonb_build_array(\n            jsonb_build_object(\n              'user_id', v_uid,\n              'delta', round(v_new - v_before, 2),\n              'club_id', v_dep_club\n            ) || CASE WHEN v_exact_seat_generation THEN jsonb_build_object(\n              'seat_id', v_exact_seat_id,\n              'seat_joined_at', e->>'seat_joined_at'\n            ) ELSE '{}'::jsonb END\n          );\n          v_n := v_n + 1;\n          CONTINUE;\n        END IF;\n        RAISE EXCEPTION 'seat missing or left for % - hand write rejected whole', v_uid;\n      END IF;\n      v_old := COALESCE(v_old, 0);\n\n      IF v_delta_mode THEN\n        v_before := round((e->>'stack_before')::numeric, 2);\n        IF v_before IS NULL OR v_before < 0 THEN\n          RAISE EXCEPTION 'invalid stack_before for %: %', e->>'user_id', e->>'stack_before';\n        END IF;\n        v_target := round(v_old + (v_new - v_before), 2);\n        IF v_target < 0 THEN\n          RAISE EXCEPTION 'negative stack for % after applying delta % to the seat''s % (engine dealt from %) - hand write rejected whole',\n            v_uid, round(v_new - v_before, 2), v_old, v_before;\n        END IF;\n        v_delta_sum := v_delta_sum + (v_new - v_before);\n        IF round(v_old - v_before, 2) <> 0 THEN\n          v_rebased := v_rebased || jsonb_build_object(v_uid::text, round(v_old - v_before, 2));\n          v_rebase_rows := v_rebase_rows || jsonb_build_array(jsonb_build_object(\n            'user_id', v_uid, 'engine_before', v_before, 'db_before', v_old,\n            'engine_after', v_new, 'written', v_target));\n          v_rebase_count := v_rebase_count + 1;\n        END IF;\n      ELSE\n        v_target := v_new;\n        v_delta_sum := v_delta_sum + (v_new - v_old);\n      END IF;\n      v_targets := v_targets || jsonb_build_object(v_uid::text, v_target);\n      v_n := v_n + 1;\n    END LOOP;\n\n    UPDATE public.ca_settlements SET state='calculated',\n      totals = jsonb_build_object('players', v_n, 'net_deltas', round(v_delta_sum,2),\n                                  'rake', p_rake, 'bbj', p_bbj, 'inflow', p_inflow,\n                                  'mode', CASE WHEN v_delta_mode THEN 'delta' ELSE 'absolute' END,\n                                  'rebased', v_rebased, 'ref', p_ref, 'departed', v_departed)\n      WHERE id = v_ca_id AND state='locked_for_calculation';\n\n    SELECT tb.tournament_id INTO v_tournament_id FROM public.tables tb WHERE tb.id = p_table_id;\n\n    IF v_delta_mode THEN\n      /* THE IDENTITY, ON THE ENGINE'S OWN ARITHMETIC: what the seats gained\n         is what arrived from a declared pool, less what left as rake and\n         jackpot drop. Checked on every table, cash or tournament, on every\n         write. A credit that landed on the row is outside the identity by\n         construction - it is in v_old, not in the delta - so it is preserved\n         rather than \"explained\". */\n      v_expected := COALESCE(p_inflow, 0) - COALESCE(p_rake, 0) - COALESCE(p_bbj, 0);\n      IF round(v_delta_sum - v_expected, 2) <> 0 THEN\n        RAISE EXCEPTION 'conservation violation: stack deltas % != inflow % - rake % - bbj % (table % hand %) - write refused whole',\n          round(v_delta_sum, 2), COALESCE(p_inflow, 0), COALESCE(p_rake, 0), COALESCE(p_bbj, 0),\n          p_table_id, p_hand_number::text || COALESCE(':' || p_ref, '');\n      END IF;\n    ELSE\n      -- \u2550\u2550\u2550 TOURNAMENT CHIPS ARE CONSERVED HAND BY HAND (chip-std Lane F, 2026-09-02) \u2550\u2550\u2550\n      -- Absolute mode only. A tournament table has no rake and no BBJ drop,\n      -- so the named seats must sum, after this write, to exactly what they\n      -- summed to before it. A paid rebuy/re-entry/add-on commits its seat and\n      -- roster under the accepted-hand table lock. The dealing loop reloads\n      -- those authoritative rows before admitting the next hand. Therefore a\n      -- non-zero delta is stale hand input, never permission to scan payment\n      -- history and reconstruct chips. Refuse the whole hand at the boundary.\n      IF v_tournament_id IS NOT NULL AND round(v_delta_sum, 2) <> 0 THEN\n        RAISE EXCEPTION 'conservation violation (tournament %): stale accepted-hand stacks changed the table total by % across % seat(s) of table % hand % - paid seat/roster generations must be reloaded before dealing; write refused whole',\n          v_tournament_id,round(v_delta_sum,2),v_n,p_table_id,p_hand_number;\n      END IF;\n\n      -- strict conservation only when rake is declared\n      IF p_rake IS NOT NULL\n         AND round(v_delta_sum + p_rake + COALESCE(p_bbj, 0), 2) <> 0 THEN\n        RAISE EXCEPTION 'conservation violation: stack deltas %.2f + rake %.2f + bbj %.2f != 0',\n          v_delta_sum, p_rake, COALESCE(p_bbj, 0);\n      END IF;\n    END IF;\n    UPDATE public.ca_settlements SET state='validated' WHERE id = v_ca_id AND state='calculated';\n\n    /* ONE SEAT WRITE PER HAND (2026-09-10). fn_ca_commit_hand_settlement (the\n       12-argument door) validates the hand's time-bank obligations, publishes\n       them in the transaction-local setting app.ca_hand_time_banks, and only\n       then calls down to this core. When that envelope names this exact table\n       and hand, the stack write below also sets the two time-bank columns,\n       under the same seat guards, so the seat row is written once per hand\n       instead of stack-then-time-bank (two full trigger passes plus the FK\n       re-checks a second write of the same row costs). The door proves the\n       resulting state before it counts it and still writes any seat this core\n       did not carry. Any other caller leaves the setting unset and gets the\n       unchanged stack-only write. Nothing here reaches the request hash,\n       the receipt or the returned result. */\n    v_tb_map := NULL;\n    v_tb_env_text := current_setting('app.ca_hand_time_banks', true);\n    IF v_tb_env_text IS NOT NULL AND v_tb_env_text <> ''\n       AND pg_input_is_valid(v_tb_env_text, 'jsonb') THEN\n      v_tb_env := v_tb_env_text::jsonb;\n      IF jsonb_typeof(v_tb_env) = 'object'\n         AND v_tb_env->>'table_id' = p_table_id::text\n         AND v_tb_env->>'hand_number' = p_hand_number::text\n         AND (v_tb_env->>'exact')::boolean IS NOT DISTINCT FROM v_exact_seat_generation\n         AND jsonb_typeof(v_tb_env->'items') = 'array' THEN\n        -- Every item well formed and one item per player, or no fold at all.\n        SELECT CASE WHEN count(*) > 0\n                     AND count(*) = count(*) FILTER (WHERE x.ok)\n                     AND count(*) = count(DISTINCT x.uid)\n                    THEN jsonb_object_agg(x.uid, x.item) END\n          INTO v_tb_map\n          FROM (\n            SELECT i.value AS item,\n                   COALESCE(lower(i.value->>'user_id'), '') AS uid,\n                   jsonb_typeof(i.value) = 'object'\n                   AND (i.value->>'user_id') ~*\n                     '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'\n                   AND CASE WHEN (i.value->>'uses_remaining') ~ '^[0-9]+$'\n                            THEN (i.value->>'uses_remaining')::numeric <= 2147483647\n                            ELSE false END\n                   AND CASE WHEN (i.value->>'seconds_remaining') ~ '^[0-9]+$'\n                            THEN (i.value->>'seconds_remaining')::numeric <= 2147483647\n                            ELSE false END\n                   AND (NOT v_exact_seat_generation OR (\n                     (i.value->>'seat_id') ~*\n                       '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'\n                     AND pg_input_is_valid(i.value->>'seat_joined_at',\n                                           'timestamp with time zone'))) AS ok\n              FROM jsonb_array_elements(v_tb_env->'items') i\n          ) x;\n      END IF;\n    END IF;\n\n    FOR e IN SELECT * FROM jsonb_array_elements(v_canonical) LOOP\n      v_uid := (e->>'user_id')::uuid;\n      IF NOT (v_targets ? v_uid::text) THEN\n        CONTINUE;  -- a departed seat: settled against the wallet below\n      END IF;\n      v_target := (v_targets->>(v_uid::text))::numeric;\n      -- The time-bank item for this seat, only when it names this exact\n      -- seat generation. Otherwise the write is stack-only, as before.\n      v_tb := CASE WHEN v_tb_map IS NOT NULL THEN v_tb_map->(v_uid::text) END;\n      IF v_tb IS NOT NULL AND v_exact_seat_generation\n         AND ((v_tb->>'seat_id')::uuid IS DISTINCT FROM (e->>'seat_id')::uuid\n              OR (v_tb->>'seat_joined_at')::timestamptz\n                   IS DISTINCT FROM (e->>'seat_joined_at')::timestamptz) THEN\n        v_tb := NULL;\n      END IF;\n      IF v_exact_seat_generation THEN\n        IF v_tb IS NOT NULL THEN\n          UPDATE public.table_seats ts\n             SET stack = v_target,\n                 time_bank_uses_remaining = (v_tb->>'uses_remaining')::integer,\n                 time_bank_remaining = (v_tb->>'seconds_remaining')::integer\n           WHERE ts.id = (e->>'seat_id')::uuid\n             AND ts.joined_at = (e->>'seat_joined_at')::timestamptz\n             AND ts.table_id = COALESCE((v_lightning_seats->>v_uid::text)::uuid, p_table_id)\n             AND ts.user_id = v_uid\n             AND ts.left_at IS NULL;\n        ELSE\n          UPDATE public.table_seats ts SET stack = v_target\n           WHERE ts.id = (e->>'seat_id')::uuid\n             AND ts.joined_at = (e->>'seat_joined_at')::timestamptz\n             AND ts.table_id = COALESCE((v_lightning_seats->>v_uid::text)::uuid, p_table_id)\n             AND ts.user_id = v_uid\n             AND ts.left_at IS NULL;\n        END IF;\n      ELSE\n        IF v_tb IS NOT NULL THEN\n          UPDATE public.table_seats ts\n             SET stack = v_target,\n                 time_bank_uses_remaining = (v_tb->>'uses_remaining')::integer,\n                 time_bank_remaining = (v_tb->>'seconds_remaining')::integer\n           WHERE ts.table_id = p_table_id AND ts.user_id = v_uid AND ts.left_at IS NULL;\n        ELSE\n          UPDATE public.table_seats ts SET stack = v_target\n           WHERE ts.table_id = p_table_id AND ts.user_id = v_uid AND ts.left_at IS NULL;\n        END IF;\n      END IF;\n      GET DIAGNOSTICS v_updated = ROW_COUNT;\n      IF v_updated <> 1 THEN\n        /* aaa_skip_noop_update returns NULL for a row that would not change,\n           and ROW_COUNT then reads 0. The seat was locked and found above, so\n           a zero-row update whose seat already holds the target is the trigger\n           doing its job, not a failed write. Before 2026-09-04 this rejected\n           8,645 hands an hour - every hand in which one player's stack did not\n           move - and each of those was persisted by the engine's unchecked\n           per-seat fallback instead. */\n        IF NOT EXISTS (\n          SELECT 1\n            FROM public.table_seats ts\n           WHERE ts.table_id = COALESCE((v_lightning_seats->>v_uid::text)::uuid, p_table_id)\n             AND ts.user_id = v_uid\n             AND ts.stack = v_target\n             AND (\n               (v_exact_seat_generation\n                 AND ts.id = (e->>'seat_id')::uuid\n                 AND ts.joined_at = (e->>'seat_joined_at')::timestamptz\n                 AND ts.left_at IS NULL)\n               OR (NOT v_exact_seat_generation AND ts.left_at IS NULL)\n             )\n        ) THEN\n          RAISE EXCEPTION 'seat write failed for % - hand write rejected whole', v_uid;\n        END IF;\n      END IF;\n    END LOOP;\n\n    -- A successful tournament hand has one durable stack source. Mirror the\n    -- exact resulting/rebased live seat targets into the matching playing\n    -- tournament_players rows while both sets are still locked. Any missing,\n    -- duplicate or divergent row rejects the whole hand subtransaction.\n    IF v_tournament_id IS NOT NULL THEN\n      UPDATE public.tournament_players tp\n         SET chips = target.stack\n        FROM (\n          SELECT x.key::uuid AS user_id,x.value::numeric AS stack\n            FROM jsonb_each_text(v_targets) AS x(key,value)\n        ) target\n       WHERE tp.tournament_id = v_tournament_id\n         AND tp.user_id = target.user_id\n         AND tp.status::text = 'playing';\n\n      SELECT count(*),\n             COALESCE(array_agg(tp.user_id ORDER BY tp.user_id),ARRAY[]::uuid[]),\n             COALESCE(jsonb_agg(jsonb_build_object(\n               'user_id',tp.user_id,'chips',tp.chips)\n               ORDER BY tp.user_id),'[]'::jsonb)\n        INTO v_tournament_player_count,v_tournament_player_user_ids,\n             v_tournament_player_chips\n        FROM public.tournament_players tp\n        JOIN jsonb_each_text(v_targets) target\n          ON target.key::uuid = tp.user_id\n       WHERE tp.tournament_id = v_tournament_id\n         AND tp.status::text = 'playing';\n      IF v_tournament_player_count <>\n           (SELECT count(*) FROM jsonb_each(v_targets))\n         OR EXISTS (\n           SELECT 1\n             FROM jsonb_each_text(v_targets) target\n            WHERE NOT EXISTS (\n              SELECT 1\n                FROM public.tournament_players tp\n                JOIN public.table_seats ts\n                  ON ts.table_id = p_table_id\n                 AND ts.user_id = tp.user_id\n                 AND ts.left_at IS NULL\n               WHERE tp.tournament_id = v_tournament_id\n                 AND tp.status::text = 'playing'\n                 AND tp.user_id = target.key::uuid\n                 AND tp.chips IS NOT DISTINCT FROM target.value::numeric\n                 AND ts.stack IS NOT DISTINCT FROM target.value::numeric)) THEN\n        RAISE EXCEPTION\n          'tournament % hand % did not durably sync every final seat stack',\n          v_tournament_id,p_hand_number USING ERRCODE = 'P0404';\n      END IF;\n\n      -- A named zero-stack tournament seat is finished on the felt at this\n      -- same durable hand boundary. Keep tournament_players playing with\n      -- chips=0 so the rebuy/elimination state machine can decide its life,\n      -- but release the physical seat now. This replaces the former\n      -- PostgREST vacate followed by a compensating chips-zero write.\n      SELECT count(*),\n             COALESCE(array_agg(ts.id ORDER BY ts.id),ARRAY[]::uuid[]),\n             COALESCE(array_agg(ts.user_id ORDER BY ts.user_id),ARRAY[]::uuid[]),\n             COALESCE(jsonb_agg(jsonb_build_object(\n               'seat_id',ts.id,\n               'user_id',ts.user_id,\n               'seat_number',ts.seat_number,\n               'joined_at',ts.joined_at)\n               ORDER BY ts.id),'[]'::jsonb)\n        INTO v_zero_stack_seat_count,v_zero_stack_seat_ids,\n             v_zero_stack_user_ids,v_zero_stack_seat_generations\n        FROM public.table_seats ts\n        JOIN jsonb_each_text(v_targets) target\n          ON target.key::uuid = ts.user_id\n       WHERE ts.table_id = p_table_id\n         AND ts.left_at IS NULL\n         AND ts.stack = 0\n         AND ts.user_id IS NOT NULL\n         AND ts.joined_at IS NOT NULL\n         AND target.value::numeric = 0;\n      IF v_zero_stack_seat_count <>\n           (SELECT count(*) FROM jsonb_each_text(v_targets) target\n             WHERE target.value::numeric = 0) THEN\n        RAISE EXCEPTION\n          'tournament % hand % cannot identify every named zero-stack seat',\n          v_tournament_id,p_hand_number USING ERRCODE = 'P0404';\n      END IF;\n\n      IF v_zero_stack_seat_count > 0 THEN\n        v_zero_stack_vacated_at := clock_timestamp();\n        UPDATE public.table_seats ts\n           SET left_at = v_zero_stack_vacated_at,\n               status = 'left',\n               leave_pending = false,\n               is_sitting_out = false,\n               is_away = false,\n               sit_out_at = NULL,\n               scheduled_leave_hands = NULL\n         WHERE ts.id = ANY(v_zero_stack_seat_ids)\n           AND ts.table_id = p_table_id\n           AND ts.left_at IS NULL\n           AND ts.stack = 0;\n        GET DIAGNOSTICS v_updated = ROW_COUNT;\n        IF v_updated <> v_zero_stack_seat_count\n           OR EXISTS (\n             SELECT 1\n               FROM unnest(v_zero_stack_seat_ids) expected(id)\n              WHERE NOT EXISTS (\n                SELECT 1 FROM public.table_seats ts\n                 WHERE ts.id = expected.id\n                   AND ts.table_id = p_table_id\n                   AND ts.stack = 0\n                   AND ts.left_at = v_zero_stack_vacated_at\n                   AND ts.status = 'left'\n                   AND COALESCE(ts.leave_pending,false) IS FALSE\n                   AND COALESCE(ts.is_sitting_out,false) IS FALSE\n                   AND COALESCE(ts.is_away,false) IS FALSE\n                   AND ts.sit_out_at IS NULL\n                   AND ts.scheduled_leave_hands IS NULL))\n           OR EXISTS (\n             SELECT 1\n               FROM public.table_seats ts\n               JOIN jsonb_each_text(v_targets) target\n                 ON target.key::uuid = ts.user_id\n              WHERE ts.table_id = p_table_id\n                AND ts.left_at IS NULL\n                AND target.value::numeric = 0) THEN\n          RAISE EXCEPTION\n            'tournament % hand % did not atomically vacate every zero-stack seat',\n            v_tournament_id,p_hand_number USING ERRCODE = 'P0404';\n        END IF;\n      END IF;\n\n      SELECT count(*) INTO v_table_live_seat_count\n        FROM public.table_seats ts\n       WHERE ts.table_id = p_table_id AND ts.left_at IS NULL;\n      UPDATE public.tables tb\n         SET current_players = v_table_live_seat_count,\n             updated_at = now()\n       WHERE tb.id = p_table_id\n         AND tb.current_players IS DISTINCT FROM v_table_live_seat_count;\n      IF NOT EXISTS (\n        SELECT 1 FROM public.tables tb\n         WHERE tb.id = p_table_id\n           AND tb.tournament_id = v_tournament_id\n           AND tb.current_players = v_table_live_seat_count) THEN\n        RAISE EXCEPTION\n          'tournament % hand % did not persist its exact live-seat count',\n          v_tournament_id,p_hand_number USING ERRCODE = 'P0404';\n      END IF;\n    END IF;\n\n    /* THE LEAVER STILL OWES WHAT THEY BET, AND IS STILL OWED WHAT THEY WON.\n       The exit credited the seat's pre-hand stack to the club wallet, so a\n       negative delta is chips the wallet holds that the pot (and now the\n       winner's seat) also holds: debit the wallet, counterparty the felt.\n       A positive delta is a pot they won after leaving: credit it. Keyed on\n       hand + user in wallet_credit_idempotency, so a retry of this hand\n       settles nothing twice. A wallet that cannot cover the debit refuses\n       the whole hand, with the numbers, rather than going negative. */\n    FOR v_dep IN SELECT (d->>'user_id')::uuid AS user_id, (d->>'delta')::numeric AS delta, (d->>'club_id')::uuid AS club_id\n                   FROM jsonb_array_elements(v_departed) d LOOP\n      IF v_dep.delta = 0 THEN CONTINUE; END IF;\n      v_dep_key := 'late_seat_settle:' || v_hand::text || ':' || v_dep.user_id::text;\n      INSERT INTO public.wallet_credit_idempotency (key, user_id, amount)\n      VALUES (v_dep_key, v_dep.user_id, v_dep.delta)\n      ON CONFLICT (key) DO NOTHING;\n      GET DIAGNOSTICS v_dep_claimed = ROW_COUNT;\n      IF v_dep_claimed = 0 THEN CONTINUE; END IF;  -- already settled by an earlier attempt\n      PERFORM public.fn_ca_declare_ledger('settlement', 'table_stack', p_table_id, v_ca_id, v_dep_key, NULL);\n      UPDATE public.club_members m\n         SET chip_balance = COALESCE(m.chip_balance, 0) + v_dep.delta, updated_at = now()\n       WHERE m.user_id = v_dep.user_id AND m.club_id = v_dep.club_id\n         AND COALESCE(m.chip_balance, 0) + v_dep.delta >= 0\n       RETURNING m.chip_balance INTO v_dep_after;\n      PERFORM set_config('app.ledger_category', '', true);\n      PERFORM set_config('app.ledger_counterparty', '', true);\n      PERFORM set_config('app.ledger_counterparty_entity', '', true);\n      PERFORM set_config('app.ledger_idempotency_key', '', true);\n      IF v_dep_after IS NULL THEN\n        RAISE EXCEPTION 'seat missing or left for % and its club wallet cannot cover its delta of % - hand write rejected whole', v_dep.user_id, v_dep.delta;\n      END IF;\n      INSERT INTO public.chip_transactions (club_id, to_user_id, amount, transaction_type, notes, table_id, balance_after, metadata)\n      VALUES (v_dep.club_id, v_dep.user_id, abs(v_dep.delta),\n              CASE WHEN v_dep.delta < 0 THEN 'late_seat_debit' ELSE 'late_seat_credit' END,\n              CASE WHEN v_dep.delta < 0\n                   THEN format('Hand #%s settled after you left the table: %s chips you had bet are taken from the club wallet the seat cashed out to', p_hand_number, abs(v_dep.delta))\n                   ELSE format('Hand #%s settled after you left the table: %s chips you won are credited to your club wallet', p_hand_number, v_dep.delta) END,\n              p_table_id, v_dep_after, jsonb_build_object('hand_id', v_hand, 'key', v_dep_key, 'delta', v_dep.delta));\n    END LOOP;\n    UPDATE public.ca_settlements SET state='ledger_posted' WHERE id = v_ca_id AND state='validated';\n\n    IF v_rebase_count > 0 THEN\n      INSERT INTO public.ca_seat_stack_rebases\n        (settlement_id, table_id, hand_id, hand_number, user_id, engine_before, db_before, engine_after, written)\n      SELECT v_ca_id, p_table_id, v_hand, p_hand_number,\n             (r->>'user_id')::uuid, (r->>'engine_before')::numeric, (r->>'db_before')::numeric,\n             (r->>'engine_after')::numeric, (r->>'written')::numeric\n        FROM jsonb_array_elements(v_rebase_rows) r;\n    END IF;\n    UPDATE public.ca_settlements SET state='post_commit_verified' WHERE id = v_ca_id AND state='ledger_posted';\n\n    v_result := jsonb_build_object('success', true, 'players', v_n,\n      'table_id', p_table_id, 'hand_id', v_hand, 'hand_number', p_hand_number,\n      'net_deltas', round(v_delta_sum, 2), 'rake', p_rake, 'bbj', p_bbj, 'inflow', p_inflow,\n      'mode', CASE WHEN v_delta_mode THEN 'delta' ELSE 'absolute' END,\n      'rebased', v_rebased, 'written', v_targets, 'departed', v_departed,\n      'conservation_checked', v_delta_mode OR p_rake IS NOT NULL,\n      'tournament_id', v_tournament_id,\n      'tournament_players_synced', v_tournament_id IS NOT NULL,\n      'tournament_player_count', v_tournament_player_count,\n      'tournament_player_user_ids', to_jsonb(v_tournament_player_user_ids),\n      'tournament_player_chips', v_tournament_player_chips,\n      'tournament_zero_stack_seats_vacated', v_tournament_id IS NOT NULL,\n      'tournament_zero_stack_seat_count', v_zero_stack_seat_count,\n      'tournament_zero_stack_seat_ids', to_jsonb(v_zero_stack_seat_ids),\n      'tournament_zero_stack_user_ids', to_jsonb(v_zero_stack_user_ids),\n      'tournament_zero_stack_seat_generations', v_zero_stack_seat_generations,\n      'tournament_zero_stack_vacated_at', v_zero_stack_vacated_at,\n      'tournament_table_live_seat_count', v_table_live_seat_count,\n      'request', v_request);\n\n    UPDATE public.settlement_idempotency_keys\n       SET status='succeeded', result=v_result, completed_at=now(), last_attempt_at=now()\n     WHERE table_id = p_table_id AND hand_id = v_hand;\n    UPDATE public.ca_settlements SET state='final' WHERE id = v_ca_id AND state='post_commit_verified';\n    RETURN v_result;\n\n  EXCEPTION WHEN OTHERS THEN\n    v_err := SQLERRM;\n    UPDATE public.settlement_idempotency_keys\n       SET status='failed', error=left(v_err, 500), last_attempt_at=now()\n     WHERE table_id = p_table_id AND hand_id = v_hand;\n    UPDATE public.ca_settlements SET state='failed', error_detail=left(v_err, 2000) WHERE id = v_ca_id;\n    IF v_err LIKE 'conservation violation%' OR v_err LIKE 'negative stack%' THEN\n      PERFORM public.fn_ca_raise_drift_incident(\n        'fn_ca_settle_hand_stacks_absolute', 'ledger_imbalance', 'warning',\n        'hand-conservation:' || p_table_id::text,\n        round(v_delta_sum + COALESCE(p_rake,0) + COALESCE(p_bbj,0) - COALESCE(p_inflow,0), 2), 0,\n        round(v_delta_sum + COALESCE(p_rake,0) + COALESCE(p_bbj,0) - COALESCE(p_inflow,0), 2),\n        'settlement', 'table_seats', v_hand, NULL, NULL, p_table_id, NULL, v_hand,\n        v_ca_id::text, NULL, NULL,\n        'engine submitted a hand whose stack deltas do not conserve: ' || left(v_err, 200),\n        false, jsonb_build_object('hand_number', p_hand_number, 'ref', p_ref,\n                                  'mode', CASE WHEN v_delta_mode THEN 'delta' ELSE 'absolute' END));\n    END IF;\n    RETURN jsonb_build_object('success', false, 'reason', 'rolled_back', 'error', v_err,\n                              'table_id', p_table_id, 'hand_number', p_hand_number, 'ref', p_ref);\n  END;\nEND $function$\n",
+      "body_md5": "544d493503612900f4ad039d9b7d27a6",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}"
+    },
+    {
+      "signature": "fn_ca_share_settlement_lane_for_table(uuid)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_share_settlement_lane_for_table(p_table_id uuid)\n RETURNS void\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_tournament_id uuid;\nBEGIN\n  -- Acquire G before B and T; source custody guards also need G.\n  PERFORM pg_advisory_xact_lock_shared(\n    hashtextextended('ca:tournament-terminal-settlement:v1',0));\n  -- B shared: yields to terminal authorities, concurrent with every other\n  -- hand and with rolling authorities of OTHER tournaments.\n  PERFORM pg_advisory_xact_lock_shared(\n    hashtextextended('ca:hand-settlement-barrier:v1', 0));\n\n  IF p_table_id IS NULL THEN\n    RETURN;\n  END IF;\n\n  SELECT tb.tournament_id INTO v_tournament_id\n  FROM public.tables tb\n  WHERE tb.id = p_table_id;\n\n  IF v_tournament_id IS NOT NULL THEN\n    -- T(id) shared: yields to this tournament's own rolling authorities.\n    PERFORM pg_advisory_xact_lock_shared(\n      hashtextextended('ca:tournament-terminal-settlement:v1:' || v_tournament_id::text, 0));\n  END IF;\nEND;\n$function$\n",
+      "body_md5": "7a4d464261d6cc5cb185ad6c8b846440",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "signature": "fn_engine_lease_stale_seconds()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_engine_lease_stale_seconds()\n RETURNS integer\n LANGUAGE sql\n IMMUTABLE PARALLEL SAFE\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n  SELECT 30;\n$function$\n",
+      "body_md5": "32335e76e9c5680e0c9cfbcf9631375b",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}"
+    },
+    {
+      "signature": "fn_lightning_settlement_seats(uuid,bigint)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_lightning_settlement_seats(p_table_id uuid, p_hand_number bigint)\n RETURNS jsonb\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n  SELECT coalesce(jsonb_object_agg(m.player_id::text, m.anchor_table_id), '{}'::jsonb)\n    FROM public.lightning_settlement_marker m\n   WHERE m.txid = pg_current_xact_id_if_assigned()\n     AND m.host_table_id = p_table_id\n     AND m.hand_number = p_hand_number;\n$function$\n",
+      "body_md5": "1ad046af8700640b77ddbc893bbc3d93",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "signature": "fn_poker_diamond_cash_variant(text)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_poker_diamond_cash_variant(p_variant text)\n RETURNS boolean\n LANGUAGE sql\n IMMUTABLE\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n  /* NULL-SAFE ON PURPOSE. `NULL IN (...)` is NULL, not false, so without the\n     first clause an unset `game_variant` made the whole plain-cash rule return\n     NULL rather than false: a row that is neither admitted nor refused. Every\n     caller today happens to treat unknown as refusal, which is exactly the\n     kind of accident that holds until one of them writes `IF fn(...) = false`.\n     An unset game is not a game. */\n  SELECT p_variant IS NOT NULL\n     AND p_variant IN ('nlh','plo4','plo5','plo6','plo8','pineapple','short_deck','flh','flo8');\n$function$\n",
+      "body_md5": "3637c85b7a70aee1f1029e6918a50ebc",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "signature": "smarter_private.acknowledge_hand_submission(uuid,jsonb)",
+      "definition": "CREATE OR REPLACE FUNCTION smarter_private.acknowledge_hand_submission(p_submission_id uuid, p_result jsonb)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\nDECLARE s smarter_private.hand_submissions; completed integer;\nBEGIN\n SELECT * INTO STRICT s FROM smarter_private.hand_submissions WHERE submission_id=p_submission_id;\n IF p_result->>'success' IS DISTINCT FROM 'true' OR p_result->>'atomic_hand_commit' IS DISTINCT FROM 'true'\n OR p_result->>'history_id' IS DISTINCT FROM s.submission_id::text\n OR p_result->>'post_commit_obligations' IS DISTINCT FROM 'true'\n OR NOT EXISTS(SELECT 1 FROM public.hand_atomic_commits a WHERE a.table_id=s.table_id AND a.hand_number=s.hand_number\n   AND a.hand_id=s.submission_id AND a.payload_hash=p_result->>'commit_hash'\n   AND a.post_commit_request_hash=encode(extensions.digest(convert_to((s.request->'p_post_commit_obligations')::text,'UTF8'),'sha256'),'hex')\n   AND a.post_commit_payload IS NOT NULL AND a.post_commit_payload_hash=p_result->>'post_commit_payload_hash') THEN\n  RAISE EXCEPTION 'HAND_SUBMISSION_ACCEPTANCE_UNPROVEN' USING ERRCODE='55000'; END IF;\n UPDATE public.hand_state_snapshots SET is_complete=true,updated_at=clock_timestamp()\n WHERE table_id=s.table_id AND hand_number=s.hand_number AND NOT is_complete;\n GET DIAGNOSTICS completed=ROW_COUNT;\n RETURN p_result||jsonb_build_object('submission_id',s.submission_id,'submission_hash',s.request_hash,\n 'snapshot_completed',true,'snapshots_completed',completed);\nEND $function$\n",
+      "body_md5": "8e13f72799dd44408ff7788e7992c0c1",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}"
+    },
+    {
+      "signature": "smarter_private.assert_retained_hand_submission(jsonb)",
+      "definition": "CREATE OR REPLACE FUNCTION smarter_private.assert_retained_hand_submission(p_request jsonb)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog'\nAS $function$\nDECLARE s smarter_private.hand_submissions; consumed integer;\nBEGIN\n PERFORM pg_advisory_xact_lock(hashtextextended('hand:submission:'||(p_request->>'p_table_id')||':'||(p_request->>'p_hand_number'),0));\n SELECT * INTO s FROM smarter_private.hand_submissions\n WHERE table_id=(p_request->>'p_table_id')::uuid AND hand_number=(p_request->>'p_hand_number')::bigint;\n IF NOT FOUND OR s.request IS NOT DISTINCT FROM p_request THEN RETURN; END IF;\n IF (s.request-'p_instance_id'-'p_lease_generation') IS NOT DISTINCT FROM\n    (p_request-'p_instance_id'-'p_lease_generation') THEN\n  DELETE FROM smarter_private.hand_submission_dispatch d WHERE d.transaction_id=txid_current()\n   AND d.submission_id=s.submission_id AND d.request_hash=s.request_hash\n   AND d.instance_id=p_request->>'p_instance_id'\n   AND d.lease_generation=(p_request->>'p_lease_generation')::uuid;\n  GET DIAGNOSTICS consumed=ROW_COUNT;\n  IF consumed=1 THEN RETURN; END IF;\n END IF;\n RAISE EXCEPTION 'HAND_SUBMISSION_ORIGINAL_PAYLOAD_REQUIRED' USING ERRCODE='55000';\nEND $function$\n",
+      "body_md5": "1bd5f0f6fc7070e073478bdab317e249",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}"
+    },
+    {
+      "signature": "smarter_private.f06_hand_dispatch_guard(uuid,bigint)",
+      "definition": "CREATE OR REPLACE FUNCTION smarter_private.f06_hand_dispatch_guard(tid uuid, hn bigint)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public', 'smarter_private'\nAS $function$\nDECLARE h smarter_private.f06_hand_permits;\nBEGIN\n SELECT * INTO h FROM smarter_private.f06_hand_permits WHERE table_id=tid AND hand_number=hn;\n IF FOUND THEN\n IF h.state IN ('never_started','aborted_unsettled') THEN RAISE EXCEPTION 'F06_HAND_PERMIT_FENCED' USING ERRCODE='55000'; END IF;\n IF h.state='reserved' THEN\n IF NOT pg_try_advisory_xact_lock(hashtextextended('f06:hand:'||h.permit_id::text,0)) THEN RAISE EXCEPTION 'F06_HAND_DISPATCH_BUSY' USING ERRCODE='40001'; END IF;\n INSERT INTO smarter_private.f06_hand_dispatch VALUES(h.permit_id,txid_current()) ON CONFLICT(permit_id) DO UPDATE SET xid=EXCLUDED.xid;\n END IF;\n ELSIF EXISTS(SELECT 1 FROM smarter_private.f06_operations WHERE source_table_id=tid AND state NOT IN ('acknowledged','withdrawn_before_manifest')) THEN\n RAISE EXCEPTION 'F06_UNPERMITTED_HAND' USING ERRCODE='55000';\n END IF;\nEND $function$\n",
+      "body_md5": "a442d2e2880b262cf4c7eb8cdb18c6ea",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}"
+    },
+    {
+      "signature": "fn_cash_stay_remaining_ms(integer,boolean,timestamp with time zone)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_cash_stay_remaining_ms(p_remaining integer, p_running boolean, p_last_tick timestamp with time zone)\n RETURNS integer\n LANGUAGE sql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n  SELECT CASE\n    WHEN COALESCE(p_running, false)\n      THEN LEAST(2147483647::bigint, GREATEST(0::bigint,\n             COALESCE(p_remaining, 0)::bigint\n             - FLOOR(EXTRACT(EPOCH FROM (clock_timestamp() - COALESCE(p_last_tick, clock_timestamp()))) * 1000)::bigint\n           ))::integer\n    ELSE GREATEST(0, COALESCE(p_remaining, 0))\n  END;\n$function$\n",
+      "body_md5": "987a40c0e45ea71017dece54272fd1ed",
+      "owner": "postgres",
+      "acl": "{=X/postgres,postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "signature": "promo_apply_playthrough(uuid,uuid,numeric)",
+      "definition": "CREATE OR REPLACE FUNCTION public.promo_apply_playthrough(p_club_id uuid, p_user_id uuid, p_wagered numeric)\n RETURNS jsonb\n LANGUAGE plpgsql\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_promo    numeric;\n  v_required numeric;\n  v_wagered  numeric;\n  v_released numeric := 0;\n  v_caller   text := COALESCE(auth.role(), '');\nBEGIN\n  /* ZERO-DRIFT (2026-08-31): the wager figure is engine truth. Only the\n     engine (service_role) or trusted admin context may apply playthrough -\n     an authenticated user could previously release ANY member's locked promo\n     by claiming an arbitrary wager. Fail closed. */\n  IF NOT (v_caller = 'service_role'\n          OR (v_caller = '' AND current_user IN ('postgres', 'supabase_admin'))) THEN\n    RETURN jsonb_build_object('applied', false, 'reason', 'engine_only');\n  END IF;\n\n  IF p_wagered IS NULL OR p_wagered <= 0 THEN\n    RETURN jsonb_build_object('applied', false, 'reason', 'no_wager');\n  END IF;\n\n  BEGIN\n    INSERT INTO player_stats (id, user_id, club_id, total_losses, updated_at)\n    VALUES (gen_random_uuid(), p_user_id, p_club_id, p_wagered, now())\n    ON CONFLICT (user_id, club_id) DO UPDATE\n       SET total_losses = player_stats.total_losses + EXCLUDED.total_losses,\n           updated_at   = now();\n  EXCEPTION WHEN OTHERS THEN\n    NULL;\n  END;\n\n  SELECT COALESCE(promo_balance, 0), COALESCE(promo_playthrough_required, 0), COALESCE(promo_wagered, 0)\n    INTO v_promo, v_required, v_wagered\n    FROM club_members\n   WHERE club_id = p_club_id AND user_id = p_user_id\n   FOR UPDATE;\n\n  IF v_promo IS NULL OR v_promo <= 0 OR v_required <= 0 THEN\n    RETURN jsonb_build_object('applied', false, 'reason', 'no_outstanding_promo');\n  END IF;\n\n  v_wagered := v_wagered + p_wagered;\n\n  IF v_wagered >= v_required THEN\n    /* Exact release - the old v_promo::integer truncated fractions into\n       nothing while promo_balance was zeroed in full. */\n    v_released := round(v_promo, 2);\n\n    /* ONE MOVEMENT, ONE LEG (2026-10-01). Both club_members journal triggers\n       stand down for this write, so the leg is written here: the promo float\n       becomes cashable chips in the same wallet. Before today this block set\n       the stand-down and wrote no leg, so the release moved chip_balance with\n       nothing in the journal - the shape zz_ca_balance_has_its_ledger_row\n       refuses at commit. */\n    PERFORM set_config('app.ledger_category', 'promo_release', true);\n    PERFORM set_config('app.ledger_autoskip_club_members', '1', true);\n    INSERT INTO public.chip_ledger\n      (performed_by, from_type, from_entity_id, to_type, to_entity_id,\n       amount, category, club_id, description, idempotency_key)\n    VALUES\n      (COALESCE(auth.uid(), '2d1cd6c3-5700-4af9-a271-d4863fdab20d'::uuid),\n       'promo_wallet', p_user_id, 'player_wallet', p_user_id,\n       v_released, 'promo_release', p_club_id,\n       'Promo bonus released to cashable balance after playthrough met',\n       'promo_release:' || p_club_id::text || ':' || p_user_id::text || ':' || to_char(clock_timestamp(), 'YYYYMMDDHH24MISSUS'));\n    UPDATE club_members\n       SET chip_balance               = COALESCE(chip_balance, 0) + v_released,\n           promo_balance              = 0,\n           promo_playthrough_required = 0,\n           promo_wagered              = 0,\n           updated_at                 = NOW()\n     WHERE club_id = p_club_id AND user_id = p_user_id;\n    PERFORM set_config('app.ledger_autoskip_club_members', '0', true);\n\n    INSERT INTO chip_transactions (id, club_id, to_user_id, amount, transaction_type, notes, created_at)\n    VALUES (gen_random_uuid(), p_club_id, p_user_id, v_released, 'promo_released',\n            'Promo bonus released to cashable balance after playthrough met', NOW());\n  ELSE\n    UPDATE club_members\n       SET promo_wagered = v_wagered, updated_at = NOW()\n     WHERE club_id = p_club_id AND user_id = p_user_id;\n  END IF;\n\n  RETURN jsonb_build_object('applied', true, 'released', v_released,\n                            'wagered', v_wagered, 'required', v_required);\nEND;\n$function$\n",
+      "body_md5": "6275e9fc1938465e205812d22c9968ea",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    }
+  ],
+  "relations": [
+    {
+      "name": "engine_table_leases",
+      "columns": [
+        {
+          "name": "table_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "instance_id",
+          "type": "text",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "engine_version",
+          "type": "text",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "acquired_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true
+        },
+        {
+          "name": "heartbeat_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true
+        },
+        {
+          "name": "lease_generation",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "notnull": true
+        },
+        {
+          "name": "protocol_version",
+          "type": "integer",
+          "default": "1",
+          "notnull": true
+        }
+      ],
+      "constraints": [
+        {
+          "name": "engine_table_leases_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (table_id)"
+        },
+        {
+          "name": "engine_table_leases_protocol_version_check",
+          "type": "c",
+          "definition": "CHECK ((protocol_version = ANY (ARRAY[1, 2])))"
+        }
+      ],
+      "unique_indexes": []
+    },
+    {
+      "name": "engine_tournament_leases",
+      "columns": [
+        {
+          "name": "tournament_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "instance_id",
+          "type": "text",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "engine_version",
+          "type": "text",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "acquired_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true
+        },
+        {
+          "name": "heartbeat_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true
+        },
+        {
+          "name": "lease_generation",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "notnull": true
+        },
+        {
+          "name": "protocol_version",
+          "type": "integer",
+          "default": "1",
+          "notnull": true
+        }
+      ],
+      "constraints": [
+        {
+          "name": "engine_tournament_leases_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (tournament_id)"
+        },
+        {
+          "name": "engine_tournament_leases_protocol_version_check",
+          "type": "c",
+          "definition": "CHECK ((protocol_version = ANY (ARRAY[1, 2])))"
+        },
+        {
+          "name": "engine_tournament_leases_tournament_id_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE"
+        }
+      ],
+      "unique_indexes": []
+    },
+    {
+      "name": "hand_atomic_commits",
+      "columns": [
+        {
+          "name": "table_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "hand_number",
+          "type": "bigint",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "hand_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "payload_hash",
+          "type": "text",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "stack_result",
+          "type": "jsonb",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "committed_at",
+          "type": "timestamp with time zone",
+          "default": "clock_timestamp()",
+          "notnull": true
+        },
+        {
+          "name": "post_commit_payload",
+          "type": "jsonb",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "post_commit_request_hash",
+          "type": "text",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "post_commit_payload_hash",
+          "type": "text",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "post_commit_completed_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "post_commit_result",
+          "type": "jsonb",
+          "default": null,
+          "notnull": false
+        }
+      ],
+      "constraints": [
+        {
+          "name": "hand_atomic_commits_hand_id_key",
+          "type": "u",
+          "definition": "UNIQUE (hand_id)"
+        },
+        {
+          "name": "hand_atomic_commits_hand_number_check",
+          "type": "c",
+          "definition": "CHECK ((hand_number >= 1000000))"
+        },
+        {
+          "name": "hand_atomic_commits_hand_number_key",
+          "type": "u",
+          "definition": "UNIQUE (hand_number)"
+        },
+        {
+          "name": "hand_atomic_commits_payload_hash_check",
+          "type": "c",
+          "definition": "CHECK ((payload_hash ~ '^[0-9a-f]{64}$'::text))"
+        },
+        {
+          "name": "hand_atomic_commits_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (table_id, hand_number)"
+        },
+        {
+          "name": "original_union_pnl_cash_acceptance",
+          "type": "t",
+          "definition": "TRIGGER DEFERRABLE INITIALLY DEFERRED"
+        },
+        {
+          "name": "zz_ca_balance_has_its_ledger_row",
+          "type": "t",
+          "definition": "TRIGGER DEFERRABLE INITIALLY DEFERRED"
+        }
+      ],
+      "unique_indexes": []
+    },
+    {
+      "name": "hand_projection_outbox",
+      "columns": [
+        {
+          "name": "hand_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "table_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "hand_number",
+          "type": "bigint",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "clock_timestamp()",
+          "notnull": true
+        }
+      ],
+      "constraints": [
+        {
+          "name": "hand_projection_outbox_hand_number_check",
+          "type": "c",
+          "definition": "CHECK ((hand_number >= 1000000))"
+        },
+        {
+          "name": "hand_projection_outbox_hand_number_key",
+          "type": "u",
+          "definition": "UNIQUE (hand_number)"
+        },
+        {
+          "name": "hand_projection_outbox_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (hand_id)"
+        }
+      ],
+      "unique_indexes": []
+    },
+    {
+      "name": "hand_state_snapshots",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "notnull": true
+        },
+        {
+          "name": "table_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "hand_number",
+          "type": "integer",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "state_json",
+          "type": "jsonb",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "config_json",
+          "type": "jsonb",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "dealer_seat",
+          "type": "integer",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "players_json",
+          "type": "jsonb",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "stage",
+          "type": "text",
+          "default": "'preflop'::text",
+          "notnull": true
+        },
+        {
+          "name": "is_complete",
+          "type": "boolean",
+          "default": "false",
+          "notnull": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true
+        },
+        {
+          "name": "pending_deadlines",
+          "type": "jsonb",
+          "default": "'[]'::jsonb",
+          "notnull": true
+        },
+        {
+          "name": "disconnect_states",
+          "type": "jsonb",
+          "default": "'{}'::jsonb",
+          "notnull": true
+        }
+      ],
+      "constraints": [
+        {
+          "name": "hand_state_snapshots_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "hand_state_snapshots_table_id_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (table_id) REFERENCES tables(id) ON DELETE CASCADE"
+        }
+      ],
+      "unique_indexes": [
+        "CREATE UNIQUE INDEX idx_hand_snapshots_one_active_per_table ON public.hand_state_snapshots USING btree (table_id) WHERE (is_complete = false)"
+      ]
+    },
+    {
+      "name": "insurance_transactions",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "notnull": true
+        },
+        {
+          "name": "table_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "club_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "union_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "hand_number",
+          "type": "integer",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "player_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "equity_percent",
+          "type": "numeric(5,2)",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "premium",
+          "type": "numeric(10,2)",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "insured_amount",
+          "type": "numeric(10,2)",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "payout",
+          "type": "numeric(10,2)",
+          "default": "0.00",
+          "notnull": true
+        },
+        {
+          "name": "player_won",
+          "type": "boolean",
+          "default": "false",
+          "notnull": true
+        },
+        {
+          "name": "net_result",
+          "type": "numeric(10,2)",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "bank_type",
+          "type": "character varying(10)",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "bank_entity_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true
+        },
+        {
+          "name": "kind",
+          "type": "character varying(16)",
+          "default": "'insurance'::character varying",
+          "notnull": true
+        }
+      ],
+      "constraints": [
+        {
+          "name": "insurance_transactions_bank_type_check",
+          "type": "c",
+          "definition": "CHECK (((bank_type)::text = ANY ((ARRAY['union'::character varying, 'club'::character varying])::text[])))"
+        },
+        {
+          "name": "insurance_transactions_club_id_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id) ON DELETE CASCADE"
+        },
+        {
+          "name": "insurance_transactions_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "insurance_transactions_player_id_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (player_id) REFERENCES profiles(id) ON DELETE CASCADE"
+        },
+        {
+          "name": "insurance_transactions_table_id_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (table_id) REFERENCES tables(id) ON DELETE CASCADE"
+        },
+        {
+          "name": "insurance_transactions_union_id_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (union_id) REFERENCES unions(id) ON DELETE SET NULL"
+        }
+      ],
+      "unique_indexes": [
+        "CREATE UNIQUE INDEX insurance_transactions_table_hand_player_uidx ON public.insurance_transactions USING btree (table_id, hand_number, player_id)"
+      ]
+    },
+    {
+      "name": "lightning_settlement_marker",
+      "columns": [
+        {
+          "name": "txid",
+          "type": "xid8",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "seat_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "anchor_table_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "player_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "hand_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "host_table_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "hand_number",
+          "type": "bigint",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "clock_timestamp()",
+          "notnull": true
+        }
+      ],
+      "constraints": [
+        {
+          "name": "lightning_settlement_marker_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (txid, seat_id)"
+        }
+      ],
+      "unique_indexes": []
+    },
+    {
+      "name": "smarter_private.hand_submission_dispatch",
+      "columns": [
+        {
+          "name": "transaction_id",
+          "type": "bigint",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "submission_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "request_hash",
+          "type": "text",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "instance_id",
+          "type": "text",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "lease_generation",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        }
+      ],
+      "constraints": [
+        {
+          "name": "hand_submission_dispatch_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (transaction_id, submission_id)"
+        }
+      ],
+      "unique_indexes": []
+    },
+    {
+      "name": "smarter_private.hand_submission_dispositions",
+      "columns": [
+        {
+          "name": "table_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "hand_number",
+          "type": "bigint",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "permit_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "disposition",
+          "type": "text",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "submission_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false
+        }
+      ],
+      "constraints": [
+        {
+          "name": "hand_submission_dispositions_check",
+          "type": "c",
+          "definition": "CHECK (((disposition = 'retained'::text) = (submission_id IS NOT NULL)))"
+        },
+        {
+          "name": "hand_submission_dispositions_disposition_check",
+          "type": "c",
+          "definition": "CHECK ((disposition = ANY (ARRAY['retained'::text, 'disposed'::text])))"
+        },
+        {
+          "name": "hand_submission_dispositions_hand_number_check",
+          "type": "c",
+          "definition": "CHECK ((hand_number > 0))"
+        },
+        {
+          "name": "hand_submission_dispositions_permit_id_key",
+          "type": "u",
+          "definition": "UNIQUE (permit_id)"
+        },
+        {
+          "name": "hand_submission_dispositions_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (table_id, hand_number)"
+        }
+      ],
+      "unique_indexes": []
+    },
+    {
+      "name": "smarter_private.hand_submission_failures",
+      "columns": [
+        {
+          "name": "submission_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "transaction_id",
+          "type": "bigint",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "request_hash",
+          "type": "text",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "result",
+          "type": "jsonb",
+          "default": null,
+          "notnull": true
+        }
+      ],
+      "constraints": [
+        {
+          "name": "hand_submission_failures_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (submission_id)"
+        },
+        {
+          "name": "hand_submission_failures_result_check",
+          "type": "c",
+          "definition": "CHECK ((((result ->> 'success'::text) = 'false'::text) AND ((result ->> 'reason'::text) = 'atomic_hand_rolled_back'::text) AND (length((result ->> 'sqlstate'::text)) = 5)))"
+        }
+      ],
+      "unique_indexes": []
+    },
+    {
+      "name": "smarter_private.hand_submissions",
+      "columns": [
+        {
+          "name": "submission_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "table_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "hand_number",
+          "type": "bigint",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "instance_id",
+          "type": "text",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "lease_generation",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "request",
+          "type": "jsonb",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "request_hash",
+          "type": "text",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "retained_at",
+          "type": "timestamp with time zone",
+          "default": "clock_timestamp()",
+          "notnull": true
+        }
+      ],
+      "constraints": [
+        {
+          "name": "hand_submissions_hand_number_check",
+          "type": "c",
+          "definition": "CHECK ((hand_number > 0))"
+        },
+        {
+          "name": "hand_submissions_instance_id_check",
+          "type": "c",
+          "definition": "CHECK ((length(btrim(instance_id)) > 0))"
+        },
+        {
+          "name": "hand_submissions_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (submission_id)"
+        },
+        {
+          "name": "hand_submissions_request_check",
+          "type": "c",
+          "definition": "CHECK ((jsonb_typeof(request) = 'object'::text))"
+        },
+        {
+          "name": "hand_submissions_request_hash_check",
+          "type": "c",
+          "definition": "CHECK ((request_hash ~ '^[0-9a-f]{64}$'::text))"
+        },
+        {
+          "name": "hand_submissions_table_id_hand_number_key",
+          "type": "u",
+          "definition": "UNIQUE (table_id, hand_number)"
+        }
+      ],
+      "unique_indexes": []
+    },
+    {
+      "name": "table_pending_addons",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "notnull": true
+        },
+        {
+          "name": "table_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "user_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "amount",
+          "type": "numeric",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true
+        },
+        {
+          "name": "resolved_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "applied_to_stack",
+          "type": "numeric",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "refunded",
+          "type": "numeric",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "kind",
+          "type": "text",
+          "default": "'addon'::text",
+          "notnull": true
+        }
+      ],
+      "constraints": [
+        {
+          "name": "table_pending_addons_amount_check",
+          "type": "c",
+          "definition": "CHECK ((amount > (0)::numeric))"
+        },
+        {
+          "name": "table_pending_addons_amount_is_cents",
+          "type": "c",
+          "definition": "CHECK (((amount IS NULL) OR (((amount)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND (amount = round(amount, 2))))) NOT VALID"
+        },
+        {
+          "name": "table_pending_addons_applied_is_cents",
+          "type": "c",
+          "definition": "CHECK (((applied_to_stack IS NULL) OR (((applied_to_stack)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND (applied_to_stack = round(applied_to_stack, 2))))) NOT VALID"
+        },
+        {
+          "name": "table_pending_addons_kind_check",
+          "type": "c",
+          "definition": "CHECK ((kind = ANY (ARRAY['addon'::text, 'rebuy'::text])))"
+        },
+        {
+          "name": "table_pending_addons_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "table_pending_addons_refunded_is_cents",
+          "type": "c",
+          "definition": "CHECK (((refunded IS NULL) OR (((refunded)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND (refunded = round(refunded, 2))))) NOT VALID"
+        },
+        {
+          "name": "zz_ca_balance_has_its_ledger_row",
+          "type": "t",
+          "definition": "TRIGGER DEFERRABLE INITIALLY DEFERRED"
+        }
+      ],
+      "unique_indexes": []
+    },
+    {
+      "name": "cash_rejoin_constraints",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "notnull": true
+        },
+        {
+          "name": "player_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "club_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "variant",
+          "type": "text",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "sb",
+          "type": "numeric(14,2)",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "bb",
+          "type": "numeric(14,2)",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "required_stack",
+          "type": "numeric(14,2)",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "left_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true
+        },
+        {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "source_table_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "barred_until",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": false
+        }
+      ],
+      "constraints": [
+        {
+          "name": "cash_rejoin_constraints_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "cash_rejoin_constraints_required_stack_check",
+          "type": "c",
+          "definition": "CHECK ((required_stack > (0)::numeric))"
+        }
+      ],
+      "unique_indexes": [
+        "CREATE UNIQUE INDEX cash_rejoin_constraints_pkey ON public.cash_rejoin_constraints USING btree (id)"
+      ]
+    }
+  ]
+}

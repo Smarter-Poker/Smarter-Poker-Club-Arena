@@ -101,9 +101,11 @@ Smarter.Poker account.
 | Product analytics                                                     | optional  | yes                | only after in-app consent (PostHog) |
 | Precise location, contacts, photos, health, financial account numbers | no        |                    |                                     |
 
-Data is encrypted in transit. Users can request deletion in Settings > Delete
-Account (removes the profile, wallet and push tokens). No data is sold; no
-third-party advertising SDKs.
+Data is encrypted in transit. Users close their account in the app (Settings >
+Account Data & Closure > Close Account). Closing removes their name, contact
+details, date of birth, pictures, sessions, push tokens and friendships, deletes
+the login and signs them out; game, chip and purchase records are kept, linked
+to no name. No data is sold; no third-party advertising SDKs.
 
 ## Screenshots to take (once a device exists)
 
@@ -126,6 +128,12 @@ own); email + password in the review notes field, already a member of one
 club with chips on the wallet and one tournament scheduled inside the review
 window.
 
+Deletion account: a SECOND review account holding no chips. Reviewers test
+account deletion, and an account still holding club chips, a seat, an open
+cashout or a tournament entry is refused until that is settled (it says what
+to settle), so closing the demo account above would be refused. Name both in
+the notes and say which one to close.
+
 Notes:
 
 - Sign-in is email and password only. There are no third-party sign-in
@@ -136,7 +144,10 @@ Notes:
 - All purchases (diamonds, a consumable; VIP monthly and yearly, auto-renewing
   subscriptions) go through the store's own billing. Restore Purchases and
   Manage Subscription are on the Marketplace > VIP Membership tab.
-- Account deletion: Settings > Delete Account, in the app.
+- Account deletion: Menu > App Settings > Account Data & Closure > Close
+  Account > Close My Account, in the app, on the deletion account above. The
+  login is deleted and the player is signed out at once; an account still
+  holding chips is told to settle them first.
 - Age: the app asks a date of birth at sign-up and refuses under 18.
 - Notifications are opt-in from Settings; nothing is sent until the user turns
   them on.

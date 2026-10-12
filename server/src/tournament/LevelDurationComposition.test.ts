@@ -55,6 +55,9 @@ function manager(
       'tableStateHub',
       'reportError',
       'isMaintenanceFrozen',
+      // advanceBlindLevel asks the Horse tournament context to read the level
+      // it has just committed (2026-10-02).
+      'refreshTournamentBrainContextAfterClockCommit',
       runtime
     )(
       acceleratedLevelMs,
@@ -68,7 +71,8 @@ function manager(
       dependencies.supabase,
       dependencies.tableStateHub,
       dependencies.reportError,
-      () => false
+      () => false,
+      vi.fn()
     ),
     tournamentCache: {
       accelerated_mtt: accelerated,
@@ -77,6 +81,17 @@ function manager(
     },
     isLateRegClosed: () => closed,
     capLevelToTournamentChips: (level: unknown) => level,
+    /**
+     * This fixture already opts out of the chip cap above, because what it
+     * measures is level DURATION. Since 2026-09-27 advanceBlindLevel also
+     * refuses to invent a blind past the end of the authored structure
+     * against an unproven chip supply, and several rows here are one level
+     * long, so the supply is stated for the same reason the cap is stubbed:
+     * chips are not what these assertions are about. Every RUNNING event on
+     * production carries a starting stack and a ladder of at least twelve
+     * rows, so no real event resolves this the way this fixture does.
+     */
+    chipsInPlayEstimate: () => 1_000_000,
   };
 }
 

@@ -1,0 +1,7 @@
+# Gameplay Table Art Delivery Evidence
+
+The original production gameplay failure persisted ALL/carbon_red and repainted the writer, while the reader stayed classic_green for the existing 60-second assertion. Its accountThemeSignal flag also accepted subscription acknowledgements, and readerSync described the separate private-profile carrier. Those observations cannot establish delivery of a table-art changed row or identify a product cause.
+
+The unchanged gameplay journey now reuses the maintained Phoenix join/binding/owner/generation observer. Its failure attachment separates account table-art subscription/error/closure health and counts actual own-row changes; safe booleans show whether the exact ALL/carbon_red field arrived and whether the latest delivered row still matched. The same failure-only SELECT now supplies all account theme buckets rather than only ALL; a bounded projection reports canonical bucket, expected-felt match and relative update-order booleans. No extra request is added. No frame bodies, identifiers, tokens or arbitrary row values are retained. Product assertions, timeouts, persistence, account cleanup and requests remain unchanged. This is diagnosis support, not a claimed product repair.
+
+Focused regression coverage distinguishes acknowledgement, foreign owner/binding/bucket, actual expected field, later conflicting row and old document generation. The original product failure remains unresolved until actual cause or sufficient new delivery evidence is available.

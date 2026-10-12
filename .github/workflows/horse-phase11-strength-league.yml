@@ -1,0 +1,225 @@
+name: Horse Phase 11 Strength League
+run-name: Horse Phase 11 ${{ inputs.variant }} strength league ${{ inputs.source_sha }}
+
+# ──────────────────────────────────────────────────────────────────────────────
+# THE P11.2 STRENGTH MATRIX OF ONE PHASE 11 PACK (Horse Brain Phase 11.2)
+#
+# Runs every shard the locked contract requires for ONE pack (PLO5, PLO6 or
+# PLO8; server/src/benchmark/OmahaVariantStrengthContract.ts,
+# OMAHA_VARIANT_STRENGTH_CONTRACT.packs.<variant>): five six-max cash profiles x
+# that pack's three held-out seeds x the profile shard count, one shard per
+# job and one job per runner. Each pack is a separate dispatch and a separate
+# qualification; a pass for one pack never certifies another. The matrix is
+# not written here: the plan job reads it from the contract at the evaluated
+# commit, so the workflow cannot drift from the contract.
+#
+# Shards are sized to stay under about 25 minutes on a hosted runner (2.5x the
+# design pilot time per pair), because hosted runners received shutdown
+# signals mid-run on 2026-10-02. A lost runner costs one shard; re-run that job
+# and the new attempt is uploaded under its own attempt number. The assembler
+# counts the earliest complete attempt of each shard, requires any later
+# complete attempt to replay it exactly, and records every incomplete attempt.
+#
+# Manual dispatch only, from main, for one exact commit that is on main: the
+# contract is locked by merge before any measurement. It never runs on a pull
+# request or a schedule, uses no secret, reads no database, and never decides
+# qualification: server/scripts/phase11-strength-assemble.mjs does that from
+# the downloaded attempts with the real contract.
+# ──────────────────────────────────────────────────────────────────────────────
+
+on:
+  workflow_dispatch:
+    inputs:
+      variant:
+        description: The one Phase 11 pack to evaluate
+        required: true
+        type: choice
+        options:
+          - plo5
+          - plo6
+          - plo8
+      source_sha:
+        description: Exact 40-hex commit on main to evaluate
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: horse-phase11-strength-league-${{ inputs.variant }}-${{ inputs.source_sha }}
+  cancel-in-progress: false
+
+env:
+  # Offline: imported engine modules construct a client at load time.
+  SUPABASE_URL: https://supabase.invalid
+  SUPABASE_SERVICE_ROLE_KEY: phase11-strength-offline-placeholder
+  EQUITY_GOVERNOR: 'off'
+
+jobs:
+  plan:
+    name: Plan the locked ${{ inputs.variant }} matrix
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - name: Refuse anything but an exact commit and a known pack
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          VARIANT: ${{ inputs.variant }}
+        run: |
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "source_sha must be 40 hex"; exit 1; }
+          [[ "$VARIANT" =~ ^(plo5|plo6|plo8)$ ]] || { echo "variant must be plo5, plo6 or plo8"; exit 1; }
+
+      - name: Checkout main with history
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Refuse a commit that is not on main
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          git cat-file -e "$SOURCE_SHA^{commit}" || { echo "unknown commit $SOURCE_SHA"; exit 1; }
+          git merge-base --is-ancestor "$SOURCE_SHA" origin/main || { echo "$SOURCE_SHA is not on main"; exit 1; }
+          git checkout --detach "$SOURCE_SHA"
+          test -f server/src/benchmark/OmahaVariantStrengthContract.ts || { echo "no P11.2 contract at $SOURCE_SHA"; exit 1; }
+
+      - name: Setup Node 22 (the engine image's Node)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install Dependencies
+        working-directory: server
+        run: npm ci
+
+      - name: Read the matrix from the contract
+        id: matrix
+        working-directory: server
+        env:
+          VARIANT: ${{ inputs.variant }}
+        run: |
+          cat > "$RUNNER_TEMP/plan.mts" <<'TS'
+          const c = await import(process.cwd() + '/src/benchmark/OmahaVariantStrengthContract.ts');
+          const variant = process.env.VARIANT;
+          if (!c.isOmahaVariantStrengthVariant(variant)) throw new Error('unknown variant');
+          const pack = c.omahaVariantStrengthPack(variant);
+          const include = c.omahaVariantStrengthRequiredShards(variant).map((s: { key: string; variant: string; profileId: string; seed: number; shard: number }) => ({
+            key: s.key, variant: s.variant, profile: s.profileId, seed: s.seed, shard: s.shard,
+          }));
+          if (include.length !== pack.matrix.requiredShards) throw new Error('matrix size');
+          console.log(JSON.stringify({ contract: c.OMAHA_VARIANT_STRENGTH_CONTRACT.version, digest: c.omahaVariantStrengthContractDigest(), variant, packVersion: pack.candidate.packVersion, shards: include.length }));
+          process.stdout.write('MATRIX=' + JSON.stringify({ include }) + '\n');
+          TS
+          npx tsx "$RUNNER_TEMP/plan.mts" | tee "$RUNNER_TEMP/plan.txt"
+          echo "matrix=$(grep '^MATRIX=' "$RUNNER_TEMP/plan.txt" | cut -d= -f2-)" >> "$GITHUB_OUTPUT"
+
+  league:
+    name: League ${{ matrix.key }}
+    needs: plan
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - name: Checkout the evaluated commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+
+      - name: Setup Node 22 (the engine image's Node)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Record the runner and the attempt
+        env:
+          KEY: ${{ matrix.key }}
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          OUT="$RUNNER_TEMP/p112"
+          mkdir -p "$OUT"
+          python3 - "$OUT/runner.json" <<'PY'
+          import json, os, platform, subprocess, sys
+          cpu = next((l.split(':', 1)[1].strip() for l in open('/proc/cpuinfo') if l.startswith('model name')), None)
+          json.dump({
+            'schema': 'horse-phase11-strength-runner-v1',
+            'runner': os.environ.get('RUNNER_NAME'),
+            'image': os.environ.get('ImageOS'),
+            'imageVersion': os.environ.get('ImageVersion'),
+            'vcpu': os.cpu_count(),
+            'cpu': cpu,
+            'kernel': platform.release(),
+            'node': subprocess.run(['node', '--version'], capture_output=True, text=True).stdout.strip(),
+            'workflowRun': f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
+            'runAttempt': int(os.environ['GITHUB_RUN_ATTEMPT']),
+            'variant': os.environ['VARIANT'],
+            'shard': os.environ['KEY'],
+            'sourceSha': subprocess.run(['git', 'rev-parse', 'HEAD'], capture_output=True, text=True).stdout.strip(),
+          }, open(sys.argv[1], 'w'), indent=2)
+          PY
+          date -u +%Y-%m-%dT%H:%M:%SZ > "$OUT/.started"
+
+      - name: Run the shard
+        env:
+          KEY: ${{ matrix.key }}
+          VARIANT: ${{ matrix.variant }}
+          PROFILE: ${{ matrix.profile }}
+          SEED: ${{ matrix.seed }}
+          SHARD: ${{ matrix.shard }}
+        run: |
+          OUT="$RUNNER_TEMP/p112"
+          set +e
+          npx tsx src/scripts/omahaVariantStrengthEvaluate.ts \
+            --variant="$VARIANT" --output="$OUT/$KEY" --profile="$PROFILE" --seed="$SEED" --shard="$SHARD" --contract \
+            > "$OUT/$KEY.log" 2>&1 &
+          child=$!
+          trap 'kill -TERM $child 2>/dev/null' TERM INT
+          wait $child
+          code=$?
+          set -e
+          python3 - "$OUT/attempt.json" "$code" <<'PY'
+          import json, os, sys, datetime
+          out = os.path.dirname(sys.argv[1])
+          json.dump({
+            'schema': 'horse-phase11-strength-attempt-v1',
+            'runAttempt': int(os.environ['GITHUB_RUN_ATTEMPT']),
+            'job': os.environ.get('GITHUB_JOB'),
+            'variant': os.environ['VARIANT'],
+            'startedAt': open(os.path.join(out, '.started')).read().strip(),
+            'finishedAt': datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+            'exitCode': int(sys.argv[2]),
+          }, open(sys.argv[1], 'w'), indent=2)
+          PY
+          tail -n 5 "$OUT/$KEY.log"
+          # A complete result is the evidence, whatever it says. A shard that
+          # wrote no result, or stopped early, fails the job so it is re-run.
+          python3 -c "import json,sys; r=json.load(open(sys.argv[1])); sys.exit(0 if r.get('complete') and not r.get('cancelled') else 1)" "$OUT/$KEY/$KEY.json"
+
+      - name: Upload the attempt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p112-${{ matrix.key }}-a${{ github.run_attempt }}
+          path: ${{ runner.temp }}/p112/
+          retention-days: 30
+          if-no-files-found: error

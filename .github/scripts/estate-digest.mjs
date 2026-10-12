@@ -102,7 +102,7 @@ for (const [label, repo] of [['Club Arena', REPO], ['World Hub', WH_REPO]]) {
     const since = new Date(Date.now() - DAY_MS).toISOString();
     const commits = await gh(`/repos/${repo}/commits?since=${since}&per_page=100`);
     const runs = await gh(`/repos/${repo}/actions/runs?created=%3E${since}&per_page=1`);
-    item(`${label}: ${commits.length}${commits.length === 100 ? '+' : ''} commits to main, ${runs.total_count} workflow runs. (August ran ~740 runs/day at the $1,100 bill; ~150/day is the post-audit norm.)`);
+    item(`${label}: ${commits.length}${commits.length === 100 ? '+' : ''} commits to main, ${runs.total_count} workflow runs. (August ran ~740 runs/day at the 1,100 USD bill; ~150/day is the post-audit norm.)`);
   });
 }
 

@@ -105,9 +105,9 @@ describe('it shows verified club weekly records rather than individual claims', 
     expect(SUMMARY).toMatch(/<th>Rake Received<\/th>/);
     expect(SUMMARY).toMatch(/<th>Rakeback Paid<\/th>/);
     expect(SUMMARY).toMatch(/<th>Rake Retained<\/th>/);
-    expect(SUMMARY).toMatch(/formatWeeklyChips\(row\.rakeFunding\)/);
-    expect(SUMMARY).toMatch(/formatWeeklyChips\(row\.paidByClub\)/);
-    expect(SUMMARY).toMatch(/formatWeeklyChips\(row\.retainedByClub\)/);
+    expect(SUMMARY).toMatch(/formatWeeklyChipsForDisplay\(row\.rakeFunding\)/);
+    expect(SUMMARY).toMatch(/formatWeeklyChipsForDisplay\(row\.paidByClub\)/);
+    expect(SUMMARY).toMatch(/formatWeeklyChipsForDisplay\(row\.retainedByClub\)/);
     expect(`${TAB}\n${SUMMARY}`).not.toMatch(
       /Awaiting Claim|Mark Paid|Mark All As Paid|Fund The Bank/
     );
@@ -143,10 +143,10 @@ describe('it shows verified club weekly records rather than individual claims', 
       /const current\s*=\s*\(\)\s*=>\s*scope\(\)\s*&&\s*sequence\.current\s*===\s*read/
     );
     expect(SUMMARY).toMatch(
-      /if\s*\(current\(\)\)\s*setObservation\(\{\s*scope,\s*read,\s*phase:\s*'unavailable',\s*rows:\s*\[\]\s*\}\)/
+      /if\s*\(current\(\)\)\s*\{[\s\S]*reportError\(error,\s*'ClubWeeklyAccountingSummary\.read'\);[\s\S]*setObservation\(\{\s*scope,\s*read,\s*phase:\s*'unavailable',\s*rows:\s*\[\]\s*\}\)/
     );
     expect(SUMMARY).toMatch(
-      /unavailable\s*&&\s*\(?\s*<p\s+role="alert">\s*Weekly Summaries Are Unavailable/
+      /unavailable\s*&&[\s\S]*<p[^>]*role="alert">\s*Weekly Summaries Are Unavailable/
     );
     expect(SUMMARY).toMatch(/!loading\s*&&\s*!unavailable\s*&&\s*current\?\.phase\s*===\s*'ready'/);
     expect(SUMMARY).toContain('No Issued Weekly Summaries Were Found For This Club.');

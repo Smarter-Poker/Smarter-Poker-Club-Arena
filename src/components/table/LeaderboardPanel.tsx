@@ -45,6 +45,9 @@ export interface LeaderboardPanelProps {
   metric?: 'winnings' | 'hands' | 'profit';
   currency?: string;
   isLoading?: boolean;
+  /** The board was asked and could not answer (CLAUDE.md 10.86 rule 1): its
+   *  own state, never folded into "No Rankings Yet". */
+  unavailable?: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -170,7 +173,9 @@ export function LeaderboardPanel({
   period,
   onPeriodChange,
   metric = 'winnings',
+  currency,
   isLoading = false,
+  unavailable = false,
 }: LeaderboardPanelProps) {
   const dialogRef = useFocusTrap(isOpen);
   useEffect(() => {
@@ -205,7 +210,11 @@ export function LeaderboardPanel({
           title={title}
           titleId="table-leaderboard-title"
           subtitle={
-            metric === 'hands' ? 'Hands Played' : metric === 'profit' ? 'Net Profit' : 'Winnings'
+            (metric === 'hands'
+              ? 'Hands Played'
+              : metric === 'profit'
+                ? 'Net Profit'
+                : 'Winnings') + (currency ? ` In ${currency}` : '')
           }
           pill={PERIOD_LABELS[period]}
         >
@@ -239,6 +248,13 @@ export function LeaderboardPanel({
             {isLoading ? (
               <div className="leaderboard-panel__loading" role="status">
                 <span>Loading Rankings...</span>
+              </div>
+            ) : unavailable ? (
+              <div className="leaderboard-panel__empty" role="status">
+                <span className="leaderboard-panel__empty-text">Rankings Unavailable</span>
+                <span className="leaderboard-panel__empty-hint">
+                  The Rankings Could Not Be Read. Close And Reopen To Try Again.
+                </span>
               </div>
             ) : players.length === 0 ? (
               <div className="leaderboard-panel__empty">

@@ -1,0 +1,35 @@
+/**
+ * P13.2 identity check: development league and earlier strength-shard outputs
+ * on this tree, hashed (durationMs removed), to compare with the base commit.
+ * Run from a server/ directory:  npx tsx p13-2-unchanged.mts
+ */
+process.env.EQUITY_GOVERNOR = 'off';
+process.env.SUPABASE_URL = 'https://supabase.invalid';
+process.env.SUPABASE_SERVICE_ROLE_KEY = 'phase13-unchanged-offline-placeholder';
+import { createHash } from 'node:crypto';
+const root = process.cwd();
+const J = await import(root + '/src/benchmark/JointPolicyLeague.ts');
+const R = await import(root + '/src/benchmark/RemainingVariantPolicyLeague.ts');
+const O = await import(root + '/src/benchmark/OmahaVariantPolicyLeague.ts');
+const P = await import(root + '/src/benchmark/Plo4PolicyLeague.ts');
+const RS = await import(root + '/src/benchmark/RemainingVariantStrengthLeague.ts');
+const OS = await import(root + '/src/benchmark/OmahaVariantStrengthLeague.ts');
+const { channelHub } = await import(root + '/src/hub/ChannelHub.ts');
+const strip = (v: unknown): unknown =>
+  JSON.parse(JSON.stringify(v, (k, x) => (k === 'durationMs' ? undefined : x)));
+const h = (v: unknown) => createHash('sha256').update(JSON.stringify(strip(v))).digest('hex');
+const runs: [string, () => Promise<unknown>][] = [
+  ['joint nlh-bomb2-cap', () => J.runJointPolicyLeague({ profileId: 'nlh-bomb2-cap', pairs: 2, seed: 13101101 })],
+  ['joint plo8-ordinary-cap', () => J.runJointPolicyLeague({ profileId: 'plo8-ordinary-cap', pairs: 2, seed: 13101101 })],
+  ['joint flo8-tournament-bomb2', () => J.runJointPolicyLeague({ profileId: 'flo8-tournament-bomb2', pairs: 2, seed: 13102203 })],
+  ['joint pineapple-bomb3-cap', () => J.runJointPolicyLeague({ profileId: 'pineapple-bomb3-cap', pairs: 2, seed: 13103307 })],
+  ['remaining flh-hu-25bb', () => R.runRemainingVariantLeague({ profileId: 'flh-hu-25bb', pairs: 2, seed: 12101101 })],
+  ['omaha plo5-hu-25bb', () => O.runOmahaVariantLeague({ profileId: 'plo5-hu-25bb', pairs: 2, seed: 11101101 })],
+  ['plo4 six-max-100bb', () => P.runPlo4PolicyLeague({ profileId: 'six-max-100bb', pairs: 2, seed: 10101101 })],
+  ['plo4 shard', () => P.runPlo4StrengthShard({ profileId: 'p10c-6max-2dealt-100bb', seed: 10101101, shard: 0, mode: 'development', pairs: 4 })],
+  ['phase11 shard', () => OS.runOmahaVariantStrengthShard('plo5', { profileId: 'p11c-plo5-6max-2dealt-100bb', seed: 11101101, shard: 0, mode: 'development', pairs: 4 })],
+  ['phase12 shard', () => RS.runRemainingVariantStrengthShard('pineapple', { profileId: 'p12c-pineapple-6max-4dealt-100bb', seed: 12101101, shard: 0, mode: 'development', pairs: 4 })],
+];
+for (const [name, run] of runs) console.log(`${name} ${h(await run())}`);
+channelHub.close();
+process.exit(0);

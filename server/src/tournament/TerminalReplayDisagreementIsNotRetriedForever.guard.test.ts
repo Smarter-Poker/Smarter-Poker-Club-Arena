@@ -35,7 +35,10 @@ describe('the RPC helper adopts the receipt instead of replaying the refusal', (
     const check = RPC.indexOf('if (isTerminalReplayDisagreement(error))', loop);
     const adopt = RPC.indexOf('return adoptStoredTerminalReceipt(', check);
     const wait = RPC.indexOf('if (attempt < attempts) await wait(', check);
-    const resolver = RPC.indexOf("terminalAuthority.rpc('fn_resolve_tournament_terminal_outcome'", loop);
+    const resolver = RPC.indexOf(
+      "terminalAuthority.rpc('fn_resolve_tournament_terminal_outcome'",
+      loop
+    );
     expect(loop).toBeGreaterThanOrEqual(0);
     expect(check).toBeGreaterThan(loop);
     expect(adopt).toBeGreaterThan(check);
@@ -45,8 +48,9 @@ describe('the RPC helper adopts the receipt instead of replaying the refusal', (
 
   it('reads the stored receipt and replays with ITS mode and winner, bounded', () => {
     const adopt = sliceMethod(RPC, 'async function adoptStoredTerminalReceipt(');
-    expect(adopt).toContain("from('tournament_terminal_settlements')");
-    expect(adopt).toContain("select('settlement_mode, winner_id')");
+    expect(adopt).toContain('await readStoredTerminalIdentity(tournamentId)');
+    expect(RPC).toContain("supabase.rpc('fn_tournament_terminal_settlement_identity'");
+    expect(RPC).not.toContain("from('tournament_terminal_settlements')");
     expect(adopt).toMatch(
       /p_observed_winner_id: stored\.winnerId,\s*p_settlement_mode: stored\.settlementMode/
     );

@@ -1,0 +1,294 @@
+{
+  "schema": "horse-phase12-strength-shard-v1",
+  "variant": "flh",
+  "contractVersion": "remaining-variant-strength-contract-v1",
+  "contractDigest": "d85d7569c31a1cd583a2397c2f598e448859ff66b417ba8e549ba00bcc6e19f1",
+  "packVersion": "fixed-limit-holdem-round1-v3",
+  "evidenceMode": "contract",
+  "profileId": "p12c-flh-6max-200bb",
+  "seed": 12403381,
+  "shard": 1,
+  "firstPair": 12960,
+  "requestedPairs": 12960,
+  "pairs": 12960,
+  "complete": true,
+  "positionCoverageComplete": true,
+  "offsetCounts": [2160, 2160, 2160, 2160, 2160, 2160],
+  "strata": {
+    "0|flop": {
+      "n": 48,
+      "s1": "-8370",
+      "s2": "15494100",
+      "s3": "-25408527000",
+      "s4": "66675178410000"
+    },
+    "0|none": {
+      "n": 1425,
+      "s1": "0",
+      "s2": "0",
+      "s3": "0",
+      "s4": "0"
+    },
+    "0|preflop": {
+      "n": 654,
+      "s1": "30047",
+      "s2": "571999579",
+      "s3": "-111906188317",
+      "s4": "1795802917932691"
+    },
+    "0|river": {
+      "n": 16,
+      "s1": "-2240",
+      "s2": "1804800",
+      "s3": "-321536000",
+      "s4": "276971520000"
+    },
+    "0|turn": {
+      "n": 17,
+      "s1": "-4520",
+      "s2": "4456000",
+      "s3": "-2179136000",
+      "s4": "2520517120000"
+    },
+    "1|flop": {
+      "n": 25,
+      "s1": "-3710",
+      "s2": "6150900",
+      "s3": "-3133253000",
+      "s4": "6547305930000"
+    },
+    "1|none": {
+      "n": 1734,
+      "s1": "0",
+      "s2": "0",
+      "s3": "0",
+      "s4": "0"
+    },
+    "1|preflop": {
+      "n": 378,
+      "s1": "-18543",
+      "s2": "340444189",
+      "s3": "-473869263087",
+      "s4": "3057580721731021"
+    },
+    "1|river": {
+      "n": 9,
+      "s1": "-1520",
+      "s2": "787200",
+      "s3": "-224768000",
+      "s4": "108257280000"
+    },
+    "1|turn": {
+      "n": 14,
+      "s1": "-3840",
+      "s2": "2854400",
+      "s3": "-1729536000",
+      "s4": "1342914560000"
+    },
+    "2|flop": {
+      "n": 28,
+      "s1": "-6190",
+      "s2": "8716900",
+      "s3": "-6770791000",
+      "s4": "8725266250000"
+    },
+    "2|none": {
+      "n": 850,
+      "s1": "0",
+      "s2": "0",
+      "s3": "0",
+      "s4": "0"
+    },
+    "2|preflop": {
+      "n": 1262,
+      "s1": "-49144",
+      "s2": "897484026",
+      "s3": "-610275357274",
+      "s4": "2552995299439926"
+    },
+    "2|river": {
+      "n": 8,
+      "s1": "-1270",
+      "s2": "748900",
+      "s3": "-220063000",
+      "s4": "114259210000"
+    },
+    "2|turn": {
+      "n": 12,
+      "s1": "-4250",
+      "s2": "4327300",
+      "s3": "-2485325000",
+      "s4": "2588705770000"
+    },
+    "3|flop": {
+      "n": 35,
+      "s1": "-5600",
+      "s2": "17508000",
+      "s3": "-15837296000",
+      "s4": "39581952960000"
+    },
+    "3|none": {
+      "n": 1765,
+      "s1": "0",
+      "s2": "0",
+      "s3": "0",
+      "s4": "0"
+    },
+    "3|preflop": {
+      "n": 354,
+      "s1": "-9735",
+      "s2": "365821825",
+      "s3": "-82042816875",
+      "s4": "906865745160625"
+    },
+    "3|river": {
+      "n": 5,
+      "s1": "-1600",
+      "s2": "1164800",
+      "s3": "-640000000",
+      "s4": "481771520000"
+    },
+    "3|turn": {
+      "n": 1,
+      "s1": "2080",
+      "s2": "4326400",
+      "s3": "8998912000",
+      "s4": "18717736960000"
+    },
+    "4|flop": {
+      "n": 29,
+      "s1": "-1060",
+      "s2": "8727600",
+      "s3": "-1404136000",
+      "s4": "8606477280000"
+    },
+    "4|none": {
+      "n": 1776,
+      "s1": "0",
+      "s2": "0",
+      "s3": "0",
+      "s4": "0"
+    },
+    "4|preflop": {
+      "n": 338,
+      "s1": "3521",
+      "s2": "370550621",
+      "s3": "-215110822969",
+      "s4": "1680616544560241"
+    },
+    "4|river": {
+      "n": 11,
+      "s1": "-480",
+      "s2": "1382400",
+      "s3": "-95232000",
+      "s4": "215285760000"
+    },
+    "4|turn": {
+      "n": 6,
+      "s1": "-3880",
+      "s2": "6600000",
+      "s3": "-8983744000",
+      "s4": "17572907520000"
+    },
+    "5|flop": {
+      "n": 64,
+      "s1": "5120",
+      "s2": "9395400",
+      "s3": "4768520000",
+      "s4": "5409651540000"
+    },
+    "5|none": {
+      "n": 1562,
+      "s1": "0",
+      "s2": "0",
+      "s3": "0",
+      "s4": "0"
+    },
+    "5|preflop": {
+      "n": 514,
+      "s1": "23973",
+      "s2": "447195659",
+      "s3": "-93655134273",
+      "s4": "1490807107282631"
+    },
+    "5|river": {
+      "n": 6,
+      "s1": "-1520",
+      "s2": "582400",
+      "s3": "-224768000",
+      "s4": "87285760000"
+    },
+    "5|turn": {
+      "n": 14,
+      "s1": "-4680",
+      "s2": "5236800",
+      "s3": "-3455040000",
+      "s4": "2911357440000"
+    }
+  },
+  "pairDigest": "0674725c6741e737594a5975fcd2316b478dae02b1e3df57558c1167facca3ca",
+  "candidateNetCents": -513169,
+  "referenceNetCents": -445758,
+  "changedPairs": 3848,
+  "decisions": 287652,
+  "eligible": 15427,
+  "changed": 4335,
+  "illegalCandidates": 0,
+  "discards": 0,
+  "illegalActions": 0,
+  "conservationErrors": 0,
+  "cardErrors": 0,
+  "truncatedHands": 0,
+  "settlementMismatches": 0,
+  "deductionMismatches": 0,
+  "pairedReplayMismatches": 0,
+  "showdownsChecked": 10283,
+  "foldWinsChecked": 15637,
+  "lowHalvesChecked": 0,
+  "totalRake": 36868.7,
+  "totalBbj": 8909.5,
+  "nodeCounts": {
+    "cash/preflop/three_bet": 2193,
+    "cash/preflop/defense": 2554,
+    "cash/preflop/rfi": 6188,
+    "cash/flop/checked_to": 676,
+    "cash/turn/facing_bet": 276,
+    "cash/river/checked_to": 531,
+    "cash/preflop/squeeze": 884,
+    "cash/turn/checked_to": 541,
+    "cash/preflop/limp_option": 379,
+    "cash/river/facing_bet": 247,
+    "cash/flop/facing_bet": 192,
+    "cash/preflop/four_bet": 593,
+    "cash/preflop/overcall": 66,
+    "cash/turn/facing_raise": 39,
+    "cash/river/facing_raise": 42,
+    "cash/flop/facing_raise": 20,
+    "cash/preflop/five_bet_plus": 6
+  },
+  "reasons": {
+    "preflop_defense": 6172,
+    "preflop_entry_declined": 6102,
+    "preflop_entry": 407,
+    "variant_protected_check": 1356,
+    "variant_value_raise": 143,
+    "variant_price_call": 641,
+    "variant_value_bet": 392,
+    "preflop_reraise": 124,
+    "preflop_complete": 58,
+    "variant_price_fold": 32
+  },
+  "equityWork": {
+    "450": 129897
+  },
+  "fixedWork": {
+    "governor": "off",
+    "scale": 1,
+    "policyClock": "fixed_work_no_wall_clock_branch",
+    "moodClock": "deal_seed_time_of_day"
+  },
+  "durationMs": 253124,
+  "promotionEligible": false,
+  "sourceUnchanged": true,
+  "cancelled": false
+}

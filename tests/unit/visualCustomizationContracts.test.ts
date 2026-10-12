@@ -11,8 +11,13 @@ describe('visual customization integration contracts', () => {
   const multi = read('src/pages/MultiTablePage.tsx');
 
   it('routes every Table Studio asset through the canonical ordered writer', () => {
+    const writer = read('src/lib/applyTableAppearance.ts');
     expect(studio).toContain('applyTableAppearance(patch');
     expect(studio).not.toMatch(/from\('user_theme_settings'\)\.upsert/);
+    expect(writer).toContain("supabase.rpc('fn_patch_table_appearance'");
+    expect(writer).toContain('p_expected_user_id: userId');
+    expect(writer).toContain('p_mutation_id: mutationId');
+    expect(writer).not.toMatch(/from\('user_theme_settings'\)/);
     expect(studio).toContain('pickThemeRow(data || []');
   });
 

@@ -4,6 +4,41 @@ import type { HorseEquityOutcomeSample } from '../HorseEval.js';
 import { calculatePots } from '../PokerEngine.js';
 import { isOmahaPolicyVariant, type OmahaPolicyVariant } from './OmahaVariantPolicyPack.js';
 
+/** P11.1: where the opponent holdings behind a live variant equity sample came
+ * from. The live sampler draws each dealt opponent from one physical deck under
+ * a sequential prior conditioned only on that opponent's public action counts
+ * (HorseMind statistics are not consumed), with a declared uniform escape on
+ * the third attempt. Nothing here is calibrated or solver input. */
+export interface OmahaVariantRangeProvenance {
+  readonly version: 'omaha-variant-range-provenance-v1';
+  readonly source: 'variant_public_line_sequential_prior';
+  readonly calibration: 'uncalibrated';
+  readonly solverInput: false;
+  readonly reads: 'public_action_line_only';
+  readonly prior: Readonly<{
+    attemptsPerSeat: 3;
+    finalAttempt: 'uniform_escape';
+    /** Dealt-opponent draws inside completed samples. */
+    seatDraws: number;
+    /** Of those, draws accepted by the uniform escape (third attempt). */
+    uniformEscapes: number;
+  }>;
+  readonly deck: Readonly<{
+    physical: 'single_deck_excluding_hero_and_board';
+    /** Every dealt opponent consumes unknown cards, folded seats included. */
+    dealtOpponents: number;
+  }>;
+  readonly work: Readonly<{
+    requestedSamples: number;
+    completedSamples: number;
+    budgetExhausted: boolean;
+  }>;
+  /** The contesting opponents scored at showdown, with the public counts read. */
+  readonly opponents: ReadonlyArray<
+    Readonly<{ userId: string; seat: number; raises: number; calls: number }>
+  >;
+}
+
 export interface OmahaVariantEquityEvidence {
   analysisMs: number;
   equity: number;
@@ -30,6 +65,8 @@ export interface OmahaVariantEquityEvidence {
   decisionEquityCeiling?: number;
   requestedSamples?: number;
   sampleBudgetExhausted?: boolean;
+  /** P11.1: the live sampler's range provenance; absent on external evidence. */
+  range?: OmahaVariantRangeProvenance;
   provenance:
     | 'existing_joint_deck_showdowns'
     | 'independent_offline_oracle'

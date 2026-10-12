@@ -1,0 +1,5 @@
+{
+  "_owner": "agent/cowork-lease/fix/f06-terminal-lease-release",
+  "_comment": "A finished event holds no F06 custody: f06_lease_has_pending_custody asks smarter_private.f06_event_is_finished for its operations clause (20261002164430).",
+  "functions": ["smarter_private.f06_event_is_finished"]
+}

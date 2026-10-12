@@ -224,11 +224,10 @@ describe('hardening sweep (2026-08-29) stays swept', () => {
     expect(barrel).not.toMatch(/from '\.\/HandPersistenceService'/);
   });
 
-  it('the browser no longer schedules weekly rakeback settlement', () => {
-    const cron = stripComments(read('src/services/FinancialCronService.ts'));
-    // The method may remain callable for an explicit admin action, but no
-    // timer in a random player's tab may own a money schedule.
-    expect(cron).not.toMatch(/setInterval\(\s*\(\)\s*=>\s*this\.settleAllClubRakebacks/);
+  it('the retired browser financial cron stays deleted', () => {
+    expect(() => read('src/services/FinancialCronService.ts')).toThrow();
+    const boot = stripComments(read('src/services/ServiceBootstrap.ts'));
+    expect(boot).not.toMatch(/import[^;]*FinancialCronService/);
   });
 
   it('the admin drill-down consumes the authorised breakdown RPC', () => {

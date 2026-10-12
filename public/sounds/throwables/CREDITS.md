@@ -182,3 +182,49 @@ Level: each cue's assembled mix is measured and peak-normalised to -1 dBFS, offs
 | Cue            | Source file(s) |
 | -------------- | -------------- |
 | `applause_bed` | `applause.wav` |
+
+## OpenGameArt - Tiny creatures sounds
+
+- Author: fvcalderan (opengameart.org/users/fvcalderan)
+- Licence: CC0-1.0
+- URL: https://opengameart.org/content/tiny-creatures-sounds
+
+| Cue           | Source file(s) |
+| ------------- | -------------- |
+| `laugh_short` | `laugh.ogg`    |
+| `laugh_swell` | `laugh.ogg`    |
+
+## OpenGameArt - 80 CC0 creature SFX
+
+- Author: rubberduck (opengameart.org/users/rubberduck)
+- Licence: CC0-1.0
+- URL: https://opengameart.org/content/80-cc0-creature-sfx
+
+| Cue            | Source file(s)  |
+| -------------- | --------------- |
+| `snore_soft`   | `snore.ogg`     |
+| `scream_short` | `scream_01.ogg` |
+| `yawn_breath`  | `breath.ogg`    |
+| `cheer_ooh`    | `ooh.ogg`       |
+| `sigh_soft`    | `breath.ogg`    |
+| `comic_burp`   | `burp_01.ogg`   |
+
+## OpenGameArt - Game Over Trumpet SFX
+
+- Author: 0new4y (opengameart.org/users/0new4y)
+- Licence: CC0-1.0
+- URL: https://opengameart.org/content/game-over-trumpet-sfx
+
+| Cue            | Source file(s)    |
+| -------------- | ----------------- |
+| `sad_trombone` | `losetrumpet.ogg` |
+
+## OpenGameArt - 202 More Sound Effects
+
+- Author: OwlishMedia (opengameart.org/users/owlishmedia)
+- Licence: CC0-1.0
+- URL: https://opengameart.org/content/202-more-sound-effects
+
+| Cue         | Source file(s)       |
+| ----------- | -------------------- |
+| `flag_flap` | `Cloth/Cloth_05.wav` |

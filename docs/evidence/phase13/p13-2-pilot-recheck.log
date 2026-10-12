@@ -1,0 +1,18 @@
+# P13.2 pilot re-check after the last shared-league edit: the design pilot of NLH and FLO8 rerun on the final tree (same script, seed 13101101, 144 pairs per profile). Every statistic the sizing reads except time is identical; time per pair (ms) is shown pilot then re-check, the shared container noise.
+nlh p13c-nlh-3dealt-100bb identical sdBB 20.43 kurtosis 20 eligiblePerPair 0.5 ms 17.8 / 23.9
+nlh p13c-nlh-9max-100bb identical sdBB 25.25 kurtosis 12.8 eligiblePerPair 0.97 ms 29.9 / 35.4
+nlh p13c-nlh-6max-40bb identical sdBB 11.68 kurtosis 9.9 eligiblePerPair 0.86 ms 21.3 / 20.5
+nlh p13c-nlh-6max-100bb identical sdBB 29.13 kurtosis 10.6 eligiblePerPair 0.88 ms 19.7 / 22.3
+nlh p13c-nlh-6max-200bb identical sdBB 54.79 kurtosis 11.7 eligiblePerPair 0.89 ms 21.1 / 20.4
+nlh p13c-nlh-bomb1-6max-100bb identical sdBB 62.45 kurtosis 7.1 eligiblePerPair 1.99 ms 94.2 / 100.1
+nlh p13c-nlh-bomb2-6max-100bb identical sdBB 38.21 kurtosis 3.7 eligiblePerPair 1.76 ms 112.1 / 108.7
+nlh p13c-nlh-bomb3-6max-100bb identical sdBB 36.72 kurtosis 4.6 eligiblePerPair 1.85 ms 118.5 / 107.9
+flo8 p13c-flo8-3dealt-100bb identical sdBB 3.93 kurtosis 7.8 eligiblePerPair 0.97 ms 74.2 / 67.5
+flo8 p13c-flo8-8max-100bb identical sdBB 6.2 kurtosis 4.4 eligiblePerPair 2.58 ms 177.3 / 183
+flo8 p13c-flo8-6max-40bb identical sdBB 4.14 kurtosis 3.7 eligiblePerPair 1.78 ms 105.9 / 113.9
+flo8 p13c-flo8-6max-100bb identical sdBB 4.42 kurtosis 4 eligiblePerPair 1.91 ms 125 / 124.6
+flo8 p13c-flo8-6max-200bb identical sdBB 5 kurtosis 5.3 eligiblePerPair 2.03 ms 161.1 / 134.2
+flo8 p13c-flo8-bomb1-6max-100bb identical sdBB 5.6 kurtosis 4.8 eligiblePerPair 3.38 ms 520.7 / 413.6
+flo8 p13c-flo8-bomb2-6max-100bb identical sdBB 4.75 kurtosis 3.8 eligiblePerPair 3.13 ms 610.9 / 625.6
+flo8 p13c-flo8-bomb3-6max-100bb identical sdBB 4.5 kurtosis 3 eligiblePerPair 3.24 ms 937.9 / 956.3
+flo8 p13c-flo8-6max-1000bb identical sdBB 4.97 kurtosis 5.4 eligiblePerPair 2.01 ms 130.4 / 129.3

@@ -1,0 +1,94 @@
+// P11.3 PIN harness. Appended verbatim to the end of
+// server/src/engine/horseDecision/workerRuntime.test.ts at fb9c43ea (no P11.3
+// change applied), run once with -t 'TEMP P11.3 PIN', then removed. It uses only
+// that file's own harness, snapshot, fastRequest, rekey and
+// phase6TournamentRequest. Output: p11-3-pin-base.log.
+
+describe('TEMP P11.3 PIN on the unmodified base', () => {
+  it('prints the live actions', async () => {
+    const { variantCards } = await import('../../benchmark/OmahaVariantPolicyEvidence.js');
+    const { horseVariantRulesFor } = await import('../VariantRules.js');
+    const cash = (variant: string, cards: string): FastHorseDecisionRequest =>
+      rekey({
+        ...fastRequest(701),
+        player: { ...snapshot.player, cards: variantCards(cards) },
+        gameState: {
+          ...structuredClone(snapshot.gameState),
+          gameVariant: variant,
+          variantRules: horseVariantRulesFor(variant as never),
+          dealerSeat: 2,
+          blindSeats: { smallBlind: 2, bigBlind: 3 },
+        },
+        style: 'balanced',
+        mods: {},
+        opts: { mind: false },
+      } as FastHorseDecisionRequest);
+    const tournament = (variant: string, cards: string): FastHorseDecisionRequest => {
+      const base = phase6TournamentRequest(702);
+      return rekey({
+        ...base,
+        player: { ...snapshot.player, cards: variantCards(cards) },
+        gameState: {
+          ...base.gameState,
+          gameVariant: variant,
+          bettingStructure: 'pot_limit',
+          variantRules: horseVariantRulesFor(variant as never),
+          legalActions: snapshot.gameState.legalActions,
+          minRaiseTo: snapshot.gameState.minRaiseTo,
+          maxRaiseTo: snapshot.gameState.maxRaiseTo,
+          blindSeats: { smallBlind: 2, bigBlind: 3 },
+          tournament: { ...base.gameState.tournament!, gameVariant: variant },
+        },
+        style: 'balanced',
+        mods: {},
+        opts: { mind: false },
+      } as FastHorseDecisionRequest);
+    };
+    const HANDS: Record<string, string[]> = {
+      plo5: ['As Ad Ks Kd Qs', 'Ah 7c 2s 3d 9h', 'Qs Qh 4c 4d 8s'],
+      plo6: ['As Ad Ks Kd Qs Jd', 'Ah 7c 2s 3d 9h 5c', 'Qs Qh 4c 4d 8s 9c'],
+      plo8: ['As 2s 3d Ac', 'Ah 7c Ks 9d', 'Qs Qh 4c 4d'],
+    };
+    const out: unknown[] = [];
+    for (const variant of ['plo5', 'plo6', 'plo8']) {
+      for (const [format, cards] of [
+        ...HANDS[variant].map((c) => ['cash', c] as const),
+        ['tournament', HANDS[variant][0]] as const,
+      ]) {
+        for (const packOff of [false, true]) {
+          const h = harness(true);
+          const decide = h.deps.decide;
+          h.deps.decide = (player, gameState, style, mods, opts) => {
+            const rng = saveFastRandom();
+            seedFastRandom(10_301_104);
+            try {
+              return decide(player, gameState, style, mods, packOff ? { ...opts, phase11Omaha: 'off' } : opts);
+            } finally {
+              restoreFastRandom(rng);
+            }
+          };
+          const request = format === 'cash' ? cash(variant, cards) : tournament(variant, cards);
+          const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
+          try {
+            h.runtime.receive(request);
+            await h.runtime.drain();
+          } finally {
+            clock.mockRestore();
+          }
+          const result = h.messages.find((m) => m.type === 'FAST_RESULT');
+          if (result?.type !== 'FAST_RESULT') {
+            out.push({ variant, format, cards, packOff, error: JSON.stringify(h.messages.at(-1)) });
+            continue;
+          }
+          const r = result.decision.omahaVariantPolicy;
+          out.push({
+            variant, format, cards, packOff,
+            action: result.decision.action, amount: result.decision.amount ?? null,
+            receipt: r ? { mode: r.mode, reason: r.reason, eligible: r.eligible, changed: r.changed, applied: r.applied, owner: r.utilityOwner, base: [r.baselineAction, r.baselineAmount], prop: [r.proposalAction, r.proposalAmount] } : null,
+          });
+        }
+      }
+    }
+    console.log('PIN ' + JSON.stringify(out));
+  }, 120_000);
+});

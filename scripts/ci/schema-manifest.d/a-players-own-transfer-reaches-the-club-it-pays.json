@@ -1,0 +1,6 @@
+{
+  "_owner": "launch/a-players-own-transfer-reaches-the-club-it-pays. Migration 20261006044028_a_players_own_transfer_reaches_the_club_it_pays declares the invoice delivery party resolver; installed through apply-merged-migration after merge.",
+  "tables": [],
+  "functions": ["fn_accounting_invoice_party_users"],
+  "columns": {}
+}

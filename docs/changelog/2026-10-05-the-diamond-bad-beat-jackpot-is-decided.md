@@ -1,0 +1,102 @@
+# The Diamond bad beat jackpot is decided, and its pool is player side
+
+2026-10-05. Migration `20261005152000_the_diamond_jackpot_is_decided_and_its_pool_is_player_side`.
+Law: `tests/the-diamond-jackpot-is-decided-and-never-a-chip-pool.law.test.ts`.
+Fixture: `tests/sql/run-diamond-bad-beat-jackpot.py`, on isolated PostgreSQL 17.
+
+## What this answers
+
+B14 to B22 of `docs/DIAMOND-DESTINATIONS-DESIGN-2026-09-21.md`, which no open pull
+request and no branch had decided. B12 and B13 were open too when this work
+started; the rake lane landed and decided them while it was being written, so
+they are named here and recorded there. Dan, verbatim, 2026-10-05:
+"NOTHING IS MINE, EVER.... THEY ARE ALWAYS YOURS TO DO.", answering the list that
+carried these questions back to him. Under CLAUDE.md 10.8 that later explicit
+owner instruction governs over the design document's earlier framing of them as
+decisions he had to make. It is not a licence to invent a number: every value is
+derived from what the chip estate already runs, read from production on
+2026-10-05, and each row records its derivation in its own `basis` column
+beside the authority quote, so no row can be read as an approval he never gave.
+
+|          | Decision                                                                                                                                                                                                          | Derived from                                                                                                                                                                                                                                                                                                               |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| B14      | Yes, there is a Diamond bad beat jackpot. The switch ships at 0.                                                                                                                                                  | The arena is a diamonds-only clone of a chip club that runs a BBJ on every eligible cash game; the six boundary layers refuse a CHIP jackpot object because "the counterparty does not exist", which this builds. A drop can only come out of a cash pot, and `cash_games_enabled` is false.                               |
+| B15      | `floor(big blind * the tier's bbj_fee_bb)` whole Diamonds. For the 17 live stakes: bb 2, 5, 10 drop nothing; 20 and 25 drop 1; 50 drops 1; 100 drops 3; up to 10000 dropping 300.                                 | The chip drop is published in big blind units, which carry no currency. The Diamond estate floors a proportional charge at the whole unit (`fn_ca_unit_floor_cents`, and the tournament fee under which a 9 Diamond entry pays nothing). A stake that drops nothing can never hit, by the chip estate's own symmetry rule. |
+| B16      | nlh/flh AAAJJ; plo4/flo4 KKKK2; plo5/flo5 87654; plo8/flo8 KKKK2 on the high hand; pineapple KKKK2. No jackpot: plo6, short_deck. Double boards excluded, first runout only, strongest qualifying loser takes it. | `BBJ_QUALIFYING_HANDS` and `ca_rake_rules.bbj_ineligible_variants`, verbatim. Which hand qualifies is a property of the game, not the currency.                                                                                                                                                                            |
+| B17      | To drop: a flop and 3 dealt in, no pot minimum. To hit: a pot above 10 big blinds and 3 dealt in.                                                                                                                 | `ca_rake_rules` (3 and 10) and RakeConfig.ts stating in words that the pot floor is a payout floor and never a fee gate. Nothing needed flooring.                                                                                                                                                                          |
+| B18      | Three pools: 50 / 25 / 25, pivoting to 25 / 25 / 50 at 100,000 Diamonds in main. Remainder by carried residue.                                                                                                    | `ca_bbj_policy` row 1. Three pools because `fn_bbj_reseed_main_from_backup` is what survives a 100 percent hit. The remainder rule is the chip allocator's own `ca_bbj_alloc_state` residue, at the Diamond's unit, so the three always re-sum to the drop.                                                                |
+| B19      | The tier's `payout_total_pct` of main (15/25/40/55/70/85), divided half to the loser, a quarter to the winner, a quarter among the rest of the table.                                                             | All six live `bbj_stakes_tiers` rows carry loser/winner/table as exactly 1/2, 1/4, 1/4 of the total. Every Diamond no floor could allocate stays in the main pool.                                                                                                                                                         |
+| B20      | No seed, and no account funds it.                                                                                                                                                                                 | Measured: of the 402 rows in `bbj_pools`, the count whose balances exceed contributions less payouts is ZERO. The chip estate has never seeded a pool.                                                                                                                                                                     |
+| B21      | No maximum, so no drop is turned away.                                                                                                                                                                            | The chip estate has no maximum either; the pivot is what stops main growing without bound. A maximum would have to send a drop somewhere, and ruling 21 says a platform pot never refuses a player.                                                                                                                        |
+| B22      | To the surviving Diamond pool, marked `retired_settled` and naming it. If none survives, to the contributing players pro rata. Never to the house.                                                                | The one chip pool ever withdrawn did exactly that. The pool is money owed to players: 10.9 condition 3, and design rule R1.                                                                                                                                                                                                |
+| B12, B13 | **Not recorded here.** The rake lane decided them first and this lane read it rather than duplicate it.                                                                                                           | `20261005151712` (PR #6163) records `cash_rakeback_percent = 0` and `cash_rake_vip_points = 0`, with the derivation this lane had reached independently. One decision in two vocabularies is the thing a single table of answers exists to prevent, so they are named here and recorded there.                             |
+
+Each of B14 to B22 lives as a row in `ca_diamond_economics`, read through `fn_ca_diamond_economic`,
+which refuses an unset value by name under SQLSTATE `DE001` and never falls back to
+another scope, to a chip value or to a literal. A row is never updated or deleted; a
+new answer is a new row. So every number above changes by appending a row.
+
+## What it builds
+
+- **Nothing of `ca_diamond_economics`.** That table existed nowhere when this
+  work began and was created here; it then landed on main as
+  `20261005151918_diamond_economics_records_the_owner_answers` (the A1 to A20
+  lane) with a closed name list that already carries every B14 to B22 name and a
+  units map that fixes each one's unit. This migration joins that table instead:
+  it creates no table and no reader, takes their names
+  (`bbj_enabled`, `bbj_drop_per_hand`, `bbj_qualifying_hand`,
+  `bbj_excluded_games`, `bbj_min_pot`, `bbj_min_dealt_in`, `bbj_pool_split`,
+  `bbj_hit_shares`, `bbj_seed`, `bbj_pool_ceiling`,
+  `bbj_withdrawal_destination`, `rakeback_percent`, `rake_earns_vip_points`) and
+  their units, refuses to run if their table or readers are absent, and refuses
+  rather than alter their closed name list. **One narrow extension**, the kind
+  that constraint's own comment asks for: the account list admitted only
+  `ca_diamond_house` and `retired_from_supply`, and B22's answer is neither and
+  must not be, so `surviving_diamond_jackpot_pool` and
+  `contributing_players_pro_rata` are added beside them. Both of theirs stay.
+- A strict reader for a `shares` answer. `bbj_pool_split` and `bbj_hit_shares`
+  carry several percentages in one word, so the grammar is fixed in one place
+  and a malformed segment or a missing key refuses by name rather than being
+  partly parsed. The migration asserts both pool regimes and all seventeen hit
+  shares re-sum to the whole.
+- `poker_diamond_jackpot_pools` and `poker_diamond_jackpot_ledger`. The pool is
+  player-side, inside the arena float, with NO stored balance: a bank's balance
+  is the sum of its append-only rows, so it cannot drift from its own history
+  and no repair job can ever be needed. A unique index on
+  (ref, bank, person, role) is what makes a replay pay nothing twice.
+- The carried-residue allocator, the drop, the hit, the reseed and the withdrawal.
+- `fn_ca_arena_diamonds()` counts the pool (design rule R5), by asserted
+  substitution against md5 `86863a12...`.
+- The settler's refusal of a drop becomes CONDITIONAL and RECOMPUTED, not
+  removed: rake and insurance are still refused outright in the same statement,
+  a drop is admitted only when the switch is 1 and the amount equals what the
+  stake owes, and conservation becomes "the deltas sum to minus the drop".
+  Asserted substitution against md5 `3aab9170...`.
+- `bbj_pools` and `bbj_contributions` refuse a Diamond Arena row by name, in the
+  `poker_arena_no_hierarchy` pattern. The other step 0 chip money tables are
+  left to the rake and step 0 lanes.
+
+## What it does not do
+
+It opens no switch: `cash_games_enabled` stays false and `tournaments_enabled`
+stays true, and the migration asserts both. It touches no engine file, so layer 3
+and `applyJointDeductions` keep refusing a non-zero Diamond deduction. It writes
+no Diamond rake path. It does not touch `fn_ca_diamond_trial_balance`: the pool is
+owned by nobody in particular, so there is no fixture account to split it between,
+and the trial balance already attributes every change in the arena float to players,
+which is where the pool's Diamonds are owed.
+
+## Proof
+
+`python3 tests/sql/run-diamond-bad-beat-jackpot.py` stands up its own PostgreSQL 17
+on a private socket, installs the production preimages of the settler and the arena
+float and pins them by md5, loads the migration verbatim and unnarrowed, and then
+proves through the real doors: a 300 Diamond drop out of a four-handed hand splits
+150 / 75 / 75 and attributes by loss (65 / 43 / 42 of main, remainder to the largest
+loser, ties by the lower user_id); the arena float does not move and no register row
+is written; a replay drops nothing twice; a hit pays 105 of a 150 Diamond main pool
+as 52 / 26 / 13 / 13 with the one unallocatable Diamond left in the pool; a horse
+pays its share and is paid its share; a replay of the hit pays nothing; the
+withdrawal moves all 196 Diamonds to the surviving pool and none to the house; and
+every gate refuses by name. Two mutation tests were run: breaking the replay check
+in the hit door, and discarding the allocator's carried residue. Both were caught.

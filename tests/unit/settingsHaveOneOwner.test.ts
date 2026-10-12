@@ -221,13 +221,13 @@ describe('hydration knows what was chosen instead of guessing from the value', (
 
   it('a successful write records the choice', () => {
     const push = sliceMethod(TABLE_SETTINGS, 'function pushKeyToServer');
-    expect(push).toMatch(/markSettingsTouched\(\[column\]\)/);
+    expect(push).toMatch(/markSettingsTouched\(ownerId, \[column\]\)/);
     expect(TABLE_SETTINGS).toMatch(/fn_mark_table_setting_touched/);
   });
 
   it('the other hook records it too, since it writes the same row', () => {
     const other = strip(readRaw('src/hooks/useUserTableSettings.ts'));
-    expect(other).toMatch(/markSettingsTouched\(\[column\]\)/);
+    expect(other).toMatch(/markSettingsTouched\(userId, \[column\]\)/);
   });
 
   it('a fire-and-forget write still catches a transport rejection', () => {

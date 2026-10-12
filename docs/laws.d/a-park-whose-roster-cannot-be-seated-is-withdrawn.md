@@ -1,0 +1,3 @@
+# tests/a-park-whose-roster-cannot-be-seated-is-withdrawn.law.test.ts
+
+`public.fn_f06_withdraw_unplaceable_park` withdraws a tournament table-break park only when it never began (park_requested, no manifest, member or attempt; its latest hand permit is never_started by the park's own custody, none reserved, no hand at or after it), the table is not the event's last, the whole roster is proven by `f06_movement_prior`, and the other open non-source tables have fewer free seats than the roster; it writes only its `f06_no_start_continuations` receipt (kind `unplaceable_park_withdrawal`) and the park's `withdrawn_before_manifest` state, and credits nothing.

@@ -77,6 +77,7 @@ function startable(leaseAuthority: ConstructorParameters<typeof ServerTableEngin
     killed.push(reason);
     engine.running = false;
   };
+  engine.refreshOperatorFloor = async () => {}; // Fixture has no operator hold; floor refusal is tested independently.
   engine.sleep = async () => {};
   engine.seedHandCountFromHistory = async () => {};
   /* ── FLAKE FIX 2026-08-27 ──────────────────────────────────────────────
@@ -127,6 +128,25 @@ describe('isTransientDbError - one definition, because two disagreed', () => {
     }
   });
 
+  it('recognises pre-execution API outages without excusing permission or schema defects', () => {
+    for (const code of ['PGRST001', 'PGRST002', 'PGRST003'])
+      expect(is({ code, message: 'unavailable' })).toBe(true);
+    expect(
+      is(
+        new Error(
+          'Failed to load table: Could not query the database for the schema cache. Retrying.'
+        )
+      )
+    ).toBe(true);
+    expect(
+      is(new Error('Failed to load table: Timed out acquiring connection from connection pool.'))
+    ).toBe(true);
+    expect(is({ code: 'PGRST202', message: 'Could not find a function in the schema cache' })).toBe(
+      false
+    );
+    expect(is({ code: '42501', message: 'permission denied' })).toBe(false);
+  });
+
   it('treats a blown deal-step budget as transient - the loop already did', () => {
     expect(is(new Error('deal_step_timeout: load_seats exceeded 20s'))).toBe(true);
   });
@@ -157,6 +177,49 @@ describe(
       expect(killed).toEqual([]);
       expect(engine.tableInfo).toMatchObject({ id: TABLE });
       await engine.stop();
+    });
+
+    it('keeps the original read owner across a pool outage longer than five short attempts', async () => {
+      const { engine, killed } = startable();
+      let clock = 0;
+      vi.spyOn(Date, 'now').mockImplementation(() => clock);
+      engine.sleep = async (ms: number) => {
+        clock += ms;
+      };
+      for (let attempt = 0; attempt < 8; attempt++)
+        loadTable.mockRejectedValueOnce(
+          new Error(
+            'Failed to load table: Could not query the database for the schema cache. Retrying.'
+          )
+        );
+      loadTable.mockResolvedValue(TABLE_ROW);
+      loadSeatedPlayers.mockResolvedValue([seat(1), seat(2)]);
+      try {
+        await engine.start();
+        expect(loadTable).toHaveBeenCalledTimes(9);
+        expect(clock).toBeGreaterThan(30_000);
+        expect(killed).toEqual([]);
+      } finally {
+        await engine.stop();
+      }
+    });
+
+    it('retains a terminal failure when the API outage consumes its bounded original read budget', async () => {
+      const { engine, killed } = startable();
+      let clock = 0;
+      vi.spyOn(Date, 'now').mockImplementation(() => clock);
+      engine.sleep = async (ms: number) => {
+        clock += ms;
+      };
+      loadTable.mockRejectedValue({ code: 'PGRST002', message: 'cache unavailable' });
+      try {
+        await expect(engine.start()).rejects.toMatchObject({ code: 'PGRST002' });
+        expect(clock).toBe(60_000);
+        expect(loadTable.mock.calls.length).toBeLessThan(20);
+        expect(killed).toEqual(['start_failed:start_load_table']);
+      } finally {
+        await engine.stop();
+      }
     });
 
     it('gives up after a bounded number of attempts, naming the stage it died in', async () => {

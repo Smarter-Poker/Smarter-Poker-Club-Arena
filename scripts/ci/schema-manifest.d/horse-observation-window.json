@@ -1,0 +1,9 @@
+{
+  "_owner": "Horse Brain Phase 7 original observation window",
+  "_comment": "Additive nullable metadata; exact migration installation and live readback remain separate from this source declaration.",
+  "functions": ["fn_horse_mind_source_window_normalize", "fn_horse_mind_source_window_merge"],
+  "columns": {
+    "horse_mind_stats": ["source_window"],
+    "horse_mind_stats_scoped": ["source_window"]
+  }
+}

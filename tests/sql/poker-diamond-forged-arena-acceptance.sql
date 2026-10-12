@@ -52,4 +52,45 @@ SELECT fixture_assert((SELECT sum(diamonds)=2000 FROM profiles)
  AND (SELECT sum(balance)=0 FROM poker_diamond_custody)
  AND (SELECT count(*)=0 FROM table_seats WHERE left_at IS NULL),
  'forgery case leaves the fixture settled again');
+-- A REPLAYED PURCHASE KEY MOVES NOTHING FOR ANYONE (Diamond Phase 11, line 1,
+-- 2026-09-30). Key ...0006 bought player 1 seat 1 at the start of this runner
+-- and that seat has since been cashed out. The key is bound to the whole
+-- request it first carried - who, which table, which seat, how much, which
+-- club - so nobody else can spend it and its owner cannot spend it on a
+-- different purchase; sent again word for word it answers from its receipt
+-- and buys nothing twice.
+SELECT set_config('request.jwt.claim.role','authenticated',false);
+SELECT set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000002',false);
+SELECT set_config('request.jwt.claims',
+ '{"role":"authenticated","session_id":"60000000-0000-0000-0000-000000000001"}',false);
+CREATE TEMP TABLE fixture_replay_before AS SELECT
+ (SELECT sum(diamonds) FROM profiles) wallets, (SELECT count(*) FROM table_seats) seats,
+ (SELECT count(*) FROM poker_diamond_custody) custody,
+ (SELECT count(*) FROM entry_purchase_idempotency_receipts) receipts;
+-- player 2 replays player 1's key word for word, as himself
+SELECT fixture_refuses($q$SELECT atomic_table_buyin('10000000-0000-0000-0000-000000000002',
+ '30000000-0000-0000-0000-000000000001',1,100,false,'20000000-0000-0000-0000-000000000001',
+ '40000000-0000-0000-0000-000000000006')$q$,'IDEMPOTENCY_KEY_REUSED');
+-- ... or names player 1 as the buyer
+SELECT fixture_refuses($q$SELECT atomic_table_buyin('10000000-0000-0000-0000-000000000001',
+ '30000000-0000-0000-0000-000000000001',1,100,false,'20000000-0000-0000-0000-000000000001',
+ '40000000-0000-0000-0000-000000000006')$q$,'Cannot buy in for another user');
+-- player 1 re-sends her settled key for a bigger buy-in, then for another seat
+SELECT set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',false);
+SELECT fixture_refuses($q$SELECT atomic_table_buyin('10000000-0000-0000-0000-000000000001',
+ '30000000-0000-0000-0000-000000000001',1,150,false,'20000000-0000-0000-0000-000000000001',
+ '40000000-0000-0000-0000-000000000006')$q$,'IDEMPOTENCY_KEY_REUSED');
+SELECT fixture_refuses($q$SELECT atomic_table_buyin('10000000-0000-0000-0000-000000000001',
+ '30000000-0000-0000-0000-000000000001',2,100,false,'20000000-0000-0000-0000-000000000001',
+ '40000000-0000-0000-0000-000000000006')$q$,'IDEMPOTENCY_KEY_REUSED');
+-- ... and the settled request exactly: answered from its receipt, nothing bought twice
+SELECT atomic_table_buyin('10000000-0000-0000-0000-000000000001',
+ '30000000-0000-0000-0000-000000000001',1,100,false,'20000000-0000-0000-0000-000000000001',
+ '40000000-0000-0000-0000-000000000006');
+SELECT fixture_assert((SELECT ROW(wallets,seats,custody,receipts) FROM fixture_replay_before)
+ = ROW((SELECT sum(diamonds) FROM profiles),(SELECT count(*) FROM table_seats),
+       (SELECT count(*) FROM poker_diamond_custody),(SELECT count(*) FROM entry_purchase_idempotency_receipts))
+ AND (SELECT count(*)=0 FROM table_seats WHERE left_at IS NULL),
+ 'a replayed purchase key moves nothing for anyone');
+DROP TABLE fixture_replay_before;
 DELETE FROM clubs WHERE id='20000000-0000-0000-0000-00000000c1a5';

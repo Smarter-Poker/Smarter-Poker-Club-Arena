@@ -1,0 +1,12 @@
+{
+  "_owner": "agent/claude-lightning-p7/lightning/reversion-db - migration 20261001222856_lightning_phase_7_the_pool_reverts_to_must_move_and_the_tick",
+  "_comment": "Lightning Phase 7 (spec Phase 10), LIGHTNING -> MUST-MOVE reversion and the tick that drives both conversions. NOT YET APPLIED: every name below is a promise until the owner installs 20261001222856 after the Phase 6 settlement remediation (20261001201216). fn_cash_cluster_begin_pending_off(game, request, reason) opens PENDING_OFF at or below OFF or when Lightning is disabled; fn_cash_cluster_abort_pending_off(game, request, reason) returns to LIGHTNING when the population is back above OFF; fn_cash_cluster_commit_must_move(game, request) reverts once no instance is live, exits every pool session, closes slots, expires reservations, lifts the Lightning halt and opens the next epoch, writing no seat, cash session or blind ledger row; fn_cash_cluster_lightning_drive(game) is the per-Cluster state machine fn_cash_clusters_tick_all runs. No table or column is added.",
+  "tables": [],
+  "functions": [
+    "fn_cash_cluster_begin_pending_off",
+    "fn_cash_cluster_abort_pending_off",
+    "fn_cash_cluster_commit_must_move",
+    "fn_cash_cluster_lightning_drive"
+  ],
+  "columns": {}
+}

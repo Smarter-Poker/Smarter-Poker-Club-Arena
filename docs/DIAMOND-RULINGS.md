@@ -124,3 +124,197 @@ neither can refuse a player.
 
 **If the aggregate needs to come down, the lever is the per-user daily cap**,
 which is one row per engine and identical for horses and humans.
+
+## Rulings 22, 23 and 24 (decided by Claude on Dan's delegation of 2026-09-30)
+
+**Dan, 2026-09-30, verbatim: "these are all for you to decide not me ... FIX AND FINISH ALL OF THESE".**
+
+Phase 11 left three questions open for Dan. He handed them back, so they are
+decided here by Claude on his delegation, and each is built. Like every ruling
+here, each binds every agent until Dan changes it.
+
+### Ruling 22: the Diamond Arena belongs to the system
+
+**Ruling.** The Diamond Arena's club row names the system account as its owner:
+`system@smarter.poker`, `00000000-0000-0000-0000-000000000001`, the estate's
+one non-person account. It is never a person's account, including the god
+account `daniel@smarter.poker` that owned it before. Platform staff, Dan
+included, run the arena through the staff doors. Those doors ask for the
+platform role and a live session, never for ownership.
+
+**Why.** Phase 11 line 1 found that the arena's owner was a real platform
+account people sign in as. Every door that trusts a club's owner treated it as
+the arena's owner. It could edit the arena's club row, read its audit rows, run
+the club integrity report, reach the chip bomb-pot door for a Diamond table,
+and it was the only account that could open a Diamond hand. The arena has
+players and platform staff (ruling 16). An owner a person can sign in as is a
+third role that nothing in the design gives a job to. The system account has no
+password, no sign-in identity and no session, and it has never signed in, so
+nobody inherits the owner's authority. A club row cannot own itself
+(`clubs.owner_id` references `profiles`), so the arena's club row, Phase 2's
+one system Diamond identity, is owned by the system account.
+
+**Built.** Migration `20260930235500_the_arena_belongs_to_the_system`, applied
+2026-09-30 and proved in rolled-back production rehearsals before and after. It
+does four things:
+
+- it names the system account as the arena's owner;
+- the owner-wallet trigger no longer gives a Diamond owner a chip membership
+  (that trigger had refused every change of the arena's owner);
+- a Diamond hand opens to platform staff with a live session;
+- the arena guard refuses any Diamond owner but the system account.
+
+Evidence:
+[the arena belongs to the system](./evidence/diamond-phase-11/the-arena-belongs-to-the-system.md),
+which also lists every function, policy, trigger, job and client path that
+reads the arena's owner. It had one side effect: `daniel@smarter.poker` had
+Club Commander access only because it owned the arena, so it lost it. The
+amendment below restores it the sanctioned way.
+
+**Amendment (2026-10-01): platform staff open Commander.** Commander already
+has a staff rule, and it is the platform's: `fn_is_platform_admin()`, which
+admits admin, superadmin and god. It already gates Commander's activity log,
+leads, rate limits, tournament points and player reputation. The two Commander
+access doors the World Hub reads, `get_commander_access_details` (its
+check-access route: the Commander orb, and "Host A Home Game") and
+`has_commander_access` (profile summaries), now admit platform staff by that
+same rule. The rule is read for the user asked about, because the World Hub
+asks as the server. The answer says why (`isPlatformStaff`). No venue row is
+made up, no subscription is invented, and no club, the arena least of all, gets
+an owner back. An ordinary player is still refused, and cannot borrow a staff
+account's answer by asking about it. Of the three platform staff accounts, the
+two admins already had Commander through their own venues, so only
+`daniel@smarter.poker` changes. Migration
+`20261001125101_platform_staff_open_commander`, rehearsed before and after in
+production (rolled back) and applied. The Commander app's own staff check
+(`smarter-poker-commander`, `pages/api/check-access.js`) reads venue staff rows
+and subscriptions only, and never admitted this account. Nothing there was
+lost, so nothing there changes.
+
+### Ruling 23: the multi-table walk plays only where nothing is real
+
+**Ruling.** `e2e-live/multitable-walk.mjs` is retired from production play. It
+refuses to run unless both of these hold:
+
+- it signs in as a test identity: an address ending in `.invalid`, the estate's
+  test-account marker (`fn_ca_is_fixture_account`; the post-deploy accounts are
+  `...@example.invalid`);
+- it targets a club flagged as a test club: `E2E_TEST_CLUB` names it, and its
+  `clubs.tags` holds `test-club`.
+
+It never plays Club JAQK, SHARK CLUB, Deep Stack Society or Midway Union, and
+it refuses a Diamond club or a retired one. Its sweeper, `cleanup-seats.mjs`,
+stands up only the same test identity.
+
+**Why.** The walk buys in and plays. It used to do that at the cheapest open
+table in Club JAQK, where horses play and people may sit, as whatever account
+the operator supplied. The README's "owner test account" named no particular
+account. That puts real chips at real tables under an account nobody chose on
+purpose. A walk that needs a real club to prove the multi-table layer is a walk
+that must not run against production. A test club and a test identity keep
+what it proves and remove what it risks.
+
+**Built.** `e2e-live/lib/test-only.mjs` holds the three checks: the named
+account, the saved browser state's account and the page's signed-in account.
+Every refusal comes before a browser opens or a seat is taken.
+`e2e-live/README.md` documents how to run the walk safely.
+`tests/the-multitable-walk-plays-only-where-nothing-is-real.law.test.ts` holds
+it. No production run was made. No club is tagged `test-club` today, so against
+production the walk refuses every time.
+
+### Ruling 24: no standby engine for now
+
+**Ruling.** The engine stays one process. No warm standby is run. Dan removed it
+on 2026-08-23.
+
+**Why.** The takeover logic works in testing. Phase 11's two-engine probe
+([engine ownership and scaling](./evidence/diamond-phase-11/engine-ownership-and-scaling.md),
+R2 and R3) shows a standby takes over only after the leader's lease is stale.
+But a standby adds a second server and a dual-leader risk, for little gain
+while the supervisor restarts the single engine: a crash costs the container
+restart plus 30 s instead of about 30 s. The scaling gate law
+(`tests/additional-engine-workers-wait-for-the-scaling-gate.law.test.ts`)
+already keeps extra engines off.
+
+**Revisit when** human traffic makes a 30-second crash takeover worth a second
+server. Enabling a standby then changes the gate law and the release's
+one-container rule in the same pull request.
+
+**Built.** Nothing to build. The decision is recorded in the evidence above.
+
+## Ruling 18 amended for streak milestones (2026-09-30, migration 20260930233000; docs/changelog/2026-09-30-a-streak-milestone-never-takes-the-daily-reward-down.md)
+
+**This amendment was decided by Claude on Dan's delegation of 2026-09-30.** Dan, verbatim: "these are all for you to decide not me ... FIX AND FINISH ALL OF THESE".
+
+**What happened.** A Daily Missions streak milestone (30 days 1,000; 60 days 2,500; 100 days and every 30 after 6,000) was paid inside the claim of a daily reward and counted on the `daily_missions` line, whose per-user daily cap is 500 under this ruling. When `DR7:user_over_daily_cap` began refusing on 2026-09-26, every milestone of 1,000 or more was refused, and because it ran inside the claim it rolled back the ordinary reward (9 to 45 Diamonds) with it, for as long as the streak lasted. 160 horses reached thirty days on 2026-09-29 and 2026-09-30; the horse claim sweep retried their refused rows oldest first, 500 a minute, and paid nobody behind them. On 2026-09-30 3,053 horse rewards worth 98,921 Diamonds were owed and 46 `DR0:health_critical` rows were open.
+
+**The decision: pay the milestones as promised.**
+
+1. Streak milestones have their own per-user line, `daily_mission_milestones`, capped at 6,000 a day - the largest milestone - identical for horses, humans and VIP. The 500 cap on ordinary daily-mission rewards stays exactly as written above, and no amount changes.
+2. A milestone is evaluated and paid apart from the claim, in its own subtransaction, so a refused milestone can never roll back the ordinary reward.
+3. A refused milestone stays owed and is retried: it is written down the moment the streak reaches it, paid one credit per milestone under its own reference, and tried again by the player's next daily claim until one pays it. It is never forfeited.
+4. The horse claim sweep never lets a refused reward block the rewards behind it (a capped reward waits for the day its cap resets, a failed one ten minutes, in `ca_horse_claim_deferrals`), and it names a milestone refusal as one: `CH3:milestone_refused`, and its own `milestones_refused` count, never an ordinary cap refusal.
+
+Every credit still goes through `add_diamonds_to_balance` and the register follows the journal as before, so players + house + custody = register holds.
+
+## A retry gets its first receipt (decided by Claude on Dan's delegation of 2026-09-30; migration 20260930235000; docs/changelog/2026-09-30-diamond-phase-11-a-retry-gets-its-first-receipt.md)
+
+**Dan, 2026-09-30, verbatim: "these are all for you to decide not me ... FIX AND FINISH ALL OF THESE".** The two questions Phase 11 left open (docs/evidence/diamond-phase-11/concurrency-and-recovery.md) are decided:
+
+1. **Every Diamond money door answers a retry of the same request with its first receipt, word for word.** No door adds a replay marker: the cash buy-in answers nothing and the prize payer answers true or false, so a marker could never be the same at every door, and five doors (transfer, buy-in, top-up, cash-out, registration) already answered word for word. The store's "cost 0, not granted" and the withdrawal's `replayed` and `idempotent` markers are gone, and the withdrawal reports the balance its refund left, not the wallet at the moment of the retry. A client only retries after a lost answer, so the first receipt is the answer it never got.
+2. **A retry that reuses a key with different parameters is refused by name at every door, the prize payer included.** The payer answers a retry of a payment it made (same payee, event, bank and amount under the key) true, as it did the first time, and refuses any other use of the key as `diamond_tournament_pay_key_reused`. The description is the payment's label, not its identity. `fn_credit_and_log`, the payer's only caller, reads whether its own call paid from the key the payer names when it pays, so it still writes the payout evidence once and still answers false to a verified retry; the settlers above it, the terminal and the engine read exactly the answers they read before. No engine code changed.
+
+The rebuy money core (`fn_ca_process_tournament_chip_purchase_money_v1`) keeps its "already charged" answer. It is shared with chips, it is not a door anyone calls, and the public door `process_tournament_rebuy` already answers every retry with its stored first receipt and refuses the core's answer by name. The core refuses a changed price by name. Chip doors are unchanged.
+
+## Ruling 25 (decided by Claude on Dan's delegation of 2026-09-30): a profile shows strangers only what the table needs
+
+Dan, verbatim: "these are all for you to decide not me ... FIX AND FINISH ALL OF THESE". It settles question 1 of the Phase 10 audit ([lines 1, 2 and 6](DIAMOND-PHASE-10-LINES-1-2-6-2026-09-29.md), line 2: "Which profile fields are public?").
+
+**The ruling.** A stranger sees only what playing with you needs: display name, username, avatar, player number and public statistics. Anything that reveals a person's money, real identity or whereabouts is readable only by that person and by platform staff (`fn_is_platform_admin()`: role admin, superadmin or god).
+
+**The columns of `public.profiles`.**
+
+- **Their owner's and staff's only (SELECT revoked from `authenticated` and `anon`):** `diamonds`, `diamond_balance`, `diamond_multiplier`, `first_name`, `last_name`, `full_name`, `birth_year`, `city`, `state`, `country`, `last_seen`, `last_login`, `last_login_date`, `last_active`, `updated_at` (the presence heartbeat stamps it with `last_seen`, so it is last seen), `referred_by`, `poker_near_me_preferences` (it holds a last location and city).
+- **Already unreadable before this ruling, unchanged:** `email`, `phone`, `birthday`, `age_verified`, `age_verified_at`, `over_18_attested_at`, the `jurisdiction_*` and `kyc_*` columns, `stripe_customer_id`, `notification_token`, `mfa_required`, `is_farming_flagged`, `is_horse`, `horse_status`, `horse_profile`, `status_text`.
+- **Public, everything else.** Kept public because each is genuinely ambiguous, and said so: `is_online` (a presence signal the player controls with `showOnlineStatus`); the Hendon Mob figures and link (public tournament records); `home_casino`, `favorite_venue`, `home_poker_club` (where someone likes to play, which they chose to show); the social links; `is_vip`, `vip_tier`, `vip_expires_at` (they drive VIP styling others see); `referral_code`; `last_trivia_date`; `created_at`; and the settings and preference blobs other than `poker_near_me_preferences`.
+
+**How it is read now.** The owner reads their own row through `get_my_full_profile()`; platform staff through `get_full_profiles_for_staff(uuid[])`; who is online now through `fn_profile_presence(uuid[])`, a boolean by the five-minute heartbeat rule that never returns the heartbeat. Writes are unchanged: a player still edits their own private fields.
+
+**Built.** Migration `20260930234000_a_profiles_private_fields_have_an_owner_and_a_staff_door` (the doors, and eleven database readers moved off the private fields), applied 2026-10-01 00:05 UTC; the Club Arena's reads moved in the same change (#5679); the World Hub's moved in Smarter-Poker-World-Hub#2056; the column revoke `20260930234500_a_profile_shows_strangers_only_what_the_table_needs`, applied 2026-10-01 11:26 UTC once both apps were live and their old reads had stopped, which also stops the live-stream list naming a broadcaster by legal name. Server functions that run as their owner behind home-game and agent screens, and some World Hub server routes, can still name a person by legal name; the revoke cannot reach them, and the evidence lists them as follow-ups under this ruling. Evidence: [profile privacy, 2026-10-01](evidence/profile-privacy-2026-10-01.md).
+
+**Follow-ups closed 2026-10-06.** The server routes and definer functions named above are closed. World Hub: Smarter-Poker-World-Hub#2148 moves every `pages/api` and `src/lib/server` route off a stranger's private fields (friends search and suggestions, the social feed's author names, leaderboards, reviews, comments, notification titles, live-stream titles, reel cards, an anonymous health endpoint that returned a real balance) and adds `a-server-route-hands-a-stranger-no-private-field.law`; its migration `20261006001817_strangers_names_never_fall_back_to_a_legal_name` stops fifteen home-game and messenger definers falling back to `full_name` (329 of 1,946 profiles had a legal name and no display name). Club Arena: `20261006005823_downline_agents_never_see_a_legal_name` (installed as 20261006010336) does the same for `ca_club_my_downline`, `calculate_agent_settlement`, `calculate_agent_spread` and `fn_club_bank_ledger`.
+
+**One exception, decided the same day:** a club's own staff, and a member's upline agent, keep that member's last-login date (`ca_club_member_detail`, `ca_club_members_export`, behind their staff/downline gates). It is the club's credit-risk view of its own members, not a stranger's read, and it shows a date, never a location.
+
+Migration `20260930234000`'s comments and the two new doors' database comments call this ruling 22: it was written under that number the same night rulings 22 to 24 above landed, and the applied file is a record that does not change. The database comments are corrected by the revoke migration. It is ruling 25.
+
+## The Diamond Arena's first schedule is four priced events, and a Diamond freeroll waits for the guarantee door (decided by Claude on Dan's delegation; migration 20261006090619; docs/changelog/2026-10-06-the-diamond-arena-has-a-tournament-schedule.md)
+
+Dan answered the pending production list on 2026-10-06 with "YES, GO AHEAD AND PROCEED", the Diamond tournament schedule among it. On 2026-09-30 he delegated the open product decisions: "these are all for you to decide not me". This settles the one question the schedule raised.
+
+**The ruling.** The arena's starter board is four priced daily events: Diamond Daily Turbo 300 at 14:00 UTC, Diamond Daily Deep Stack 500 at 20:00, Diamond Bounty Hunt 1000 at 01:00 and Diamond Progressive Bounty 2000 at 03:00. It carries no freeroll until the Diamond guarantee door opens. When it opens, the freeroll is a new schedule row with its guarantee.
+
+**Why.** `ca_diamond_economics.freeroll_allowed` (approved 2026-10-05) reads "The creation door admits a zero buy-in ONLY together with a guarantee, since a freeroll's prize IS its guarantee". `freeroll_rebuy_cost` and `freeroll_addon_cost` are `none_offered`: a Diamond freeroll is a freezeout. Today `fn_poker_diamond_create_tournament` refuses a buy-in below one Diamond (`diamond_tournament_requires_a_whole_positive_buy_in`) and refuses a guarantee. So a freeroll has no prize that can be funded. Scheduling one anyway would not be refused at the spawner. `freeBuyColumns` and `zz_freerolls_are_free_buy` would turn it into a free-buy event with unlimited rebuys and an add-on at one Diamond each: a price the recorded answers say does not exist, on a format the door refuses by name.
+
+**How a scheduled Diamond event is created.** The engine's `ScheduledTournamentService` writes it straight into `public.tournaments` as `service_role`, which `fn_poker_guard_arena_structure` admits. It does not go through `fn_poker_diamond_create_tournament`, which is a staff door. The schedule's rehearsal (`docs/evidence/diamond-arena-schedule/one-spawn-cycle-rehearsal.sql`) therefore proves it on the row. One whole spawn cycle, with the exact bytes the spawner writes, through every live trigger, was admitted. The real door, asked for the same events, admits each one at the same buy-in, fee, bounty, guarantee and unit. Routing the spawner through the door itself would need a non-staff entry into that door. That is a separate change.
+
+## Diamond cash games are open (Dan, 2026-10-06; migrations 20261006154344 and 20261006154844; docs/changelog/2026-10-06-the-diamond-cash-felt-reopens.md)
+
+Dan opened Diamond cash games for his certified run, and on 2026-10-06
+approved reopening them after `20261006021858` closed them by mistake ("YES,
+GO AHEAD AND PROCEED"), once the rake path was live and a Diamond cash hand
+was proved to settle. Both conditions were met first: a rolled-back
+production rehearsal of the engine's own request found and fixed the commit
+door's refusal of every raked Diamond hand (`20261006154344`), then settled
+the hand with its rake. `cash_games_enabled` being true is Dan's decision. It
+is not an unexplained open, and closing it again is his call.
+
+## Ruling 26 (decided by Claude on Dan's delegation, 2026-10-07): the Diamond cash rake is swept to the house hourly at :14 UTC
+
+Dan, 2026-09-30, verbatim: "these are all for you to decide not me". The Diamond economics table's standing answer: "NOTHING IS MINE, EVER.... THEY ARE ALWAYS YOURS TO DO."
+
+**The ruling.** The Diamond cash rake is swept to the house every hour at :14 UTC. The pg_cron job `ca-diamond-cash-rake-sweep-hourly` (`14 * * * *`) calls `fn_ca_diamond_sweep_cash_rake`, which banks every unswept `ca_diamond_rake_accrual` row to `ca_diamond_house`, the destination the owner settings name (B11).
+
+**Why.** A raked hand does not pay the house when it settles. Its rake accrues player-side inside the arena float and crosses "in a periodic sweep: one house write per sweep, not per hand" (design R4), so no hand waits on the house row. Nothing ran that sweep, and no owner answer set how often it should run. Hourly keeps platform-owned rake in the player-side float for under an hour (R1), keeps the house current for the hourly Diamond snapshot (:10) and trial balance (:20), and costs the house row one write an hour. :14 because no hourly job starts there and it is far from the :50-:03 break window. The job checks `fn_platform_frozen()` first; a frozen hour is skipped and loses nothing, because unswept rows stay counted in the float and the next run takes them oldest first.
+
+**Built.** Migration `20261007034146_the_diamond_cash_rake_is_swept_to_the_house_every_hour`, pinned by `tests/the-diamond-cash-rake-is-swept-to-the-house-every-hour.law.test.ts` and listed in `docs/attestation/cron-roster.tsv`. Changing the cadence is a forward migration that moves this ruling, the roster and that law together.

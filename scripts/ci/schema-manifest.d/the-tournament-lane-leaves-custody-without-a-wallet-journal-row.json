@@ -1,0 +1,10 @@
+{
+  "_owner": "fix/diamond-tournament-lane-journal-6411 (2026-10-07, issue #6411). Redefines five existing functions and relaxes two existing CHECK constraints (poker_diamond_movements_amount_check, poker_diamond_tournament_ledger_outflow) in 20261007132503; creates and retires nothing.",
+  "functions": [
+    "fn_poker_diamond_tournament_drain",
+    "fn_poker_diamond_tournament_settle_fee",
+    "fn_poker_diamond_tournament_settle_overlay",
+    "fn_poker_diamond_spin_draw",
+    "fn_diamond_arena_reconciliation"
+  ]
+}

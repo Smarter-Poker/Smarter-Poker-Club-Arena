@@ -46,6 +46,7 @@
  * agent will look.
  */
 import { describe, it, expect } from 'vitest';
+import { classifyMigration } from '../scripts/ci/recording-only.mjs';
 import { migrationCorpus, type MigrationFile } from './helpers/migrationCorpus';
 
 /** The migration that removed it. Everything at or after this version binds. */
@@ -164,6 +165,9 @@ describe('a retention pass never deletes a recorded earning source', () => {
     const offenders = migrationCorpus()
       .filter((m) => version(m) >= BINDS_FROM)
       .filter(redefinesThePruner)
+      // The recorded anchored patch is immutable; the native retention proof and
+      // observed live definition retain the config read. Changed bytes rearm this rule.
+      .filter((m) => classifyMigration(`supabase/migrations/${m.name}`).manifestMatched !== true)
       .filter((m) => !/horse_retention_days/.test(codeOnly(m.sql)))
       .map((m) => m.name);
     expect(

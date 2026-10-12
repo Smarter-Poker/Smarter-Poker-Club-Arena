@@ -157,6 +157,22 @@
 .frame[data-offscreen] .hubStone {
   animation-play-state: paused;
 }
+/* Lite (wheelLite.ts): a phone that cannot carry the decoration keeps every
+   element and the spin, and rests the decoration. The 48 lamps stop being 48
+   layers, the aura loses its blur and the pointer glow rests. */
+.frame[data-lite] .lamp {
+  will-change: auto;
+  animation: none;
+  opacity: 0.6;
+}
+.frame[data-lite] .aura {
+  filter: none;
+  animation: none;
+}
+.frame[data-lite] .pointerGlow {
+  will-change: auto;
+  animation: none;
+}
 /* Reduced motion: the idle drift already stops (DiamondWheel.tsx); the
    decorative loops settle to their resting look. The spin itself is owed and
    keeps its full duration (data-motion="keep"). */

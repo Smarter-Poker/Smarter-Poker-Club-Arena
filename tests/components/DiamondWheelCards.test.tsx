@@ -20,6 +20,7 @@ vi.mock('../../src/services/DiamondWheelService', async (importOriginal) => ({
     getStateV2: backend.state,
     commit: backend.commit,
     spin: backend.spin,
+    spinV2: backend.spin,
     pickCard: backend.pick,
     runEnd: backend.runEnd,
     welcomeState: async () => ({ available: false, enabled: false }),
@@ -117,8 +118,9 @@ beforeEach(() => {
   ticket = 0;
   backend.state.mockImplementation(async () => stateWith([]));
   backend.commit.mockImplementation(async () => nextTicket());
-  backend.spin.mockImplementation(async (clubId: string, commitId: string, clientSeed: string) =>
-    receiptFor({ commitId, commitHash: 'a'.repeat(64), clientSeed })
+  backend.spin.mockImplementation(
+    async (attempt: { commitId: string; commitHash: string; clientSeed: string }) =>
+      receiptFor(attempt)
   );
   backend.pick.mockImplementation(async () => ({ ok: true, pick: cardPick }));
 });
@@ -139,12 +141,17 @@ const ready = async () => {
 
 /** Land the wheel, then press the reveal's own plate. Nothing advances alone. */
 const landAndOpen = async () => {
+  // The wheel turns only once the receipt is in and verified. Waiting for the
+  // spin REQUEST is not that: a click that lands before the receipt hits a
+  // disabled wheel, nothing reveals, and the test failed on a busy runner
+  // with no "dialog" (CI run 36883666471).
+  const wheel = () => screen.getByRole('button', { name: 'Land Wheel' });
+  await waitFor(() => expect(wheel()).toBeEnabled());
   await act(async () => {
-    fireEvent.click(screen.getByRole('button', { name: 'Land Wheel' }));
+    fireEvent.click(wheel());
   });
-  await act(async () =>
-    fireEvent.animationEnd(screen.getByRole('dialog').querySelector('[data-motion="keep"]')!)
-  );
+  const reveal = await screen.findByRole('dialog');
+  await act(async () => fireEvent.animationEnd(reveal.querySelector('[data-motion="keep"]')!));
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: 'Pick Your Card' }));
   });

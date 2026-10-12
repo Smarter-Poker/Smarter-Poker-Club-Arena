@@ -1,0 +1,56 @@
+Horse Brain Phase 10 P10.1 natural evidence: predeclaration
+===========================================================
+
+Declared at: 2026-10-03T14:58:09Z (UTC), before any Horse journal record, decision, hand or
+telemetry row produced by the release below was read. Only source code on
+origin/main, the merged P10.1 record and the engine container label had been
+read.
+
+1. Serving release
+------------------
+club-arena-engine label sp.release.sha on engine.smarter.poker, read
+2026-10-03T14:57Z: 46bb9cf6cb59fa4663be21f7aa1cb5a347c3cc0e (PR #5966 merge,
+container started 2026-10-03T14:55:24Z). The label is re-read after the window
+and reported. Only records whose sourceRelease is exactly this SHA count; any
+other release in the window is counted and excluded by name (release_other).
+
+2. Window and population (complete, not a sample)
+-------------------------------------------------
+Every Horse decision record in the engine host's journal archive
+(/var/lib/club-arena/horse-decisions/archive*/segments, read-only, nice 19 /
+ionice idle) with decision time in [2026-10-03T15:05:00Z, 2026-10-03T15:50:00Z)
+and variant plo4 (single board), cash and tournament alike. Records that are
+unreadable or fail the journal's own schema are counted by name, never dropped
+silently.
+
+3. Checks (each is counted; a single failure is reported as a defect)
+---------------------------------------------------------------------
+C1 Presence: every PLO4 decision that ran the variant_policy step carries
+   plo4Policy; inputs is non-null exactly when the proposal was eligible, and
+   a refused proposal carries inputs = null plus a named reason.
+C2 Labels: packVersion = plo4-policy-round1-v3; the shape score is labelled
+   not-a-probability; range provenance says calibration uncalibrated and
+   solverInput false. Any calibrated or solver label is a defect.
+C3 Census: contesting opponents are a subset of dealt seats and disjoint from
+   folded and away seats; hero is dealt and not folded; dealt count in 2..8.
+C4 Range population: the range sample's opponent set equals exactly the
+   contesting opponents (when a sample is present).
+C5 Geometry: recomputed independently from the recorded pot, call price and
+   stacks: pot-limit raise-to = call + (pot after calling), capped by stack;
+   effective depth <= 250 BB for every eligible proposal; deeper play falls
+   back by name (depth outside pack).
+C6 Witness and read frame: readFrameSha256 present on every eligible decision;
+   the witness phase10Inputs hash recomputed from the recorded inputs equals
+   the recorded hash.
+C7 Authority: no PLO4 proposal is applied (shadow only in this release); the
+   accepted action is the reference/baseline action on every record.
+
+4. Reported, not gated
+----------------------
+Counts by cash/tournament, street, canonical position, depth band
+(<=40, 40-100, 100-250 BB), range status and accepted action; refusal names
+and counts.
+
+5. Exclusions, by name only
+---------------------------
+release_other, not_plo4, outside_window, unreadable_record, no_variant_policy_step.

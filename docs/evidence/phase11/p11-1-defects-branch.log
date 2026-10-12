@@ -1,0 +1,12 @@
+DEFECT dead button plo5 (dealer 5 empty; engine blinds 6/7): seat 8: preflop_entry_declined position=early | seat 1: preflop_entry_declined position=middle | seat 2: preflop_entry_declined position=cutoff | seat 4: preflop_entry_declined position=button | seat 6: preflop_entry_declined position=small_blind | seat 7: preflop_entry_declined position=big_blind
+DEFECT dead small blind plo5 (button 2 occupied; BB 4 posts alone; engine order 5,1,2,4 = early,cutoff,button,big_blind): seat 5: preflop_entry_declined position=early | seat 1: preflop_entry_declined position=cutoff | seat 2: preflop_entry_declined position=button | seat 4: preflop_entry_declined position=big_blind
+DEFECT dead button plo6 (dealer 5 empty; engine blinds 6/7): seat 8: preflop_entry_declined position=early | seat 1: preflop_entry_declined position=middle | seat 2: preflop_entry_declined position=cutoff | seat 4: preflop_entry_declined position=button | seat 6: preflop_entry_declined position=small_blind | seat 7: preflop_entry_declined position=big_blind
+DEFECT dead small blind plo6 (button 2 occupied; BB 4 posts alone; engine order 5,1,2,4 = early,cutoff,button,big_blind): seat 5: preflop_entry_declined position=early | seat 1: preflop_entry_declined position=cutoff | seat 2: preflop_entry_declined position=button | seat 4: preflop_entry_declined position=big_blind
+DEFECT dead button plo8 (dealer 5 empty; engine blinds 6/7): seat 8: preflop_entry_declined position=early | seat 1: preflop_entry_declined position=middle | seat 2: preflop_entry_declined position=cutoff | seat 4: preflop_entry_declined position=button | seat 6: preflop_entry_declined position=small_blind | seat 7: preflop_entry_declined position=big_blind
+DEFECT dead small blind plo8 (button 2 occupied; BB 4 posts alone; engine order 5,1,2,4 = early,cutoff,button,big_blind): seat 5: preflop_entry_declined position=early | seat 1: preflop_entry_declined position=cutoff | seat 2: preflop_entry_declined position=button | seat 4: preflop_entry_declined position=big_blind
+DEFECT census above ceiling plo6 cash 7 dealt: seat_count_outside_pack
+DEFECT census above ceiling plo6 tournament 8 dealt: seat_count_outside_pack
+DEFECT census above ceiling plo5 cash 8 dealt: seat_count_outside_pack
+DEFECT preflop receipt echoes caller evidence plo5: false
+DEFECT preflop receipt echoes caller evidence plo6: false
+DEFECT preflop receipt echoes caller evidence plo8: false

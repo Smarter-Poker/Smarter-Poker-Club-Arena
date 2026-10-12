@@ -723,6 +723,25 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
                   />
                 </div>
 
+                <section
+                  className={styles.welcomeSummary}
+                  aria-labelledby="new-club-welcome-title"
+                  style={revealStyle(3)}
+                >
+                  <span
+                    id="new-club-welcome-title"
+                    className={`sc-label sc-ink--blue ${styles.sectionLabel}`}
+                  >
+                    First-Club Opening Package
+                  </span>
+                  <p className={`sc-copy ${styles.copy}`}>
+                    Eligible First-Time Owners Receive Server-Provisioned Classic Cash Tables, A
+                    Daily Tournament, A Funded Bad Beat Jackpot, And Funded Spin And Heads-Up
+                    Boards. Diamond Spins Still Require The Owner To Read And Accept The Wallet
+                    Agreement. The Club Lobby Shows The Authoritative Receipt After Creation.
+                  </p>
+                </section>
+
                 {/* ── Launch Settings: switches that read On or Off. The word is
                    what the eye reads; aria-checked is what a screen reader
                    announces, so the word is hidden from it. ─────────────── */}
@@ -735,6 +754,7 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
                       type="button"
                       role="switch"
                       aria-checked={isPublic}
+                      aria-describedby="discoverable-help"
                       className={styles.toggleRow}
                       onClick={() => {
                         haptic.selection();
@@ -753,10 +773,14 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
                         {isPublic ? 'On' : 'Off'}
                       </span>
                     </button>
+                    <p id="discoverable-help" className={styles.toggleHelp}>
+                      On Lets Players Find The Club In Club Arena. Off Keeps Entry Invite-Only.
+                    </p>
                     <button
                       type="button"
                       role="switch"
                       aria-checked={requiresApproval}
+                      aria-describedby="approval-help"
                       className={styles.toggleRow}
                       onClick={() => {
                         haptic.selection();
@@ -775,6 +799,9 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
                         {requiresApproval ? 'On' : 'Off'}
                       </span>
                     </button>
+                    <p id="approval-help" className={styles.toggleHelp}>
+                      On Sends New Requests To The Owner For Review Before A Player Can Join.
+                    </p>
                   </div>
                 </div>
 

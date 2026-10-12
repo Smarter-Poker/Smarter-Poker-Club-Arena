@@ -15,6 +15,8 @@ import { isAuthzError } from '../../utils/clubDashboard';
 import { masterBus } from '../../core/MasterBus';
 import styles from './ClubStatsCards.module.css';
 import { reportError } from '../../utils/errorReporter';
+import { compactChips } from '../../utils/format';
+import { titleCase } from '../../utils/titleCase';
 
 export interface DailyPoint {
   d: string;
@@ -203,10 +205,7 @@ export default function ClubStatsCards({
   };
 
   const formatChips = (num: number): string => {
-    return (Math.trunc(num * 100) / 100).toLocaleString('en-US', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    });
+    return compactChips(num);
   };
 
   const statCards: Array<{
@@ -336,7 +335,7 @@ export default function ClubStatsCards({
             fill="#f59e0b"
             fontFamily="Rajdhani, monospace"
           >
-            $
+            C
           </text>
         </svg>
       ),
@@ -424,7 +423,7 @@ export default function ClubStatsCards({
                 marginTop: 2,
               }}
             >
-              {stat.sub}
+              {titleCase(stat.sub)}
             </span>
           )}
           {stat.spark && <Sparkline points={stat.spark} color={stat.color} />}

@@ -168,6 +168,28 @@ def verify(q,fresh,overlap,register,check,prepare=None,after_funded=None):
     assert q("SELECT left_at IS NULL FROM table_seats")=='t'
     check('seatless reentry commits its funded replacement chair in the same transaction')
 
+    if '--lobby-rebuy' in sys.argv:
+        setup('rebuy','declined_lobby',live=False)
+        q("UPDATE tournament_players SET status='eliminated'; UPDATE tournament_knockout_candidates SET state='eliminated',rebuy_prompt_until=clock_timestamp()-interval '1 hour';")
+        result=json.loads(q(call('rebuy')))
+        assert result.get('success') is True,result
+        after=funded('rebuy')
+        assert json.loads(q(call('rebuy')))==result and state()==after
+        check('a declined expired-prompt rebuy commits one funded replacement seat and replays its immutable receipt')
+        for name,mutation,error in [
+            ('closed',"UPDATE tournaments SET current_level=5,addon_period_ends_at=clock_timestamp()-interval '1 second';",'Rebuy period is closed'),
+            ('unfunded',"UPDATE club_members SET chip_balance=14 WHERE user_id='"+USER+"';",'Insufficient club chips'),
+            ('paid',"UPDATE tournament_players SET prize=1;",'Only the exact unpaid zero-stack entry'),
+            ('limit',"UPDATE tournaments SET max_rebuys=0;",'Rebuy limit reached'),
+        ]:
+            setup('rebuy','declined_refuse_'+name,live=False)
+            q("UPDATE tournament_players SET status='eliminated'; UPDATE tournament_knockout_candidates SET state='eliminated',rebuy_prompt_until=clock_timestamp()-interval '1 hour';"+mutation)
+            before=state()
+            response=json.loads(q(call('rebuy')))
+            assert error in response.get('error',''),response
+            assert state()==before,'declined lobby refusal changed funding or a generation'
+        check('late lobby rebuy retains closed-window, insufficient-funds, paid-result and purchase-limit refusals atomically')
+
     setup('reentry','generations')
     first=json.loads(q(call('reentry')))
     assert first.get('success') is True,first

@@ -10,9 +10,9 @@ import { WEEKLY_ID as ID, weeklyStatementRow } from './helpers/clubWeeklyStateme
 
 const state = vi.hoisted(() => ({
   userId: null as string | null,
-  auth: undefined as
-    | undefined
-    | ((event: { payload: { isAuthenticated: boolean; userId?: string } }) => void),
+  authListeners: new Set<
+    (event: { payload: { isAuthenticated: boolean; userId?: string } }) => void
+  >(),
   role: 'owner',
   rows: [] as Record<string, unknown>[],
   reply: null as null | (() => Promise<unknown>),
@@ -32,11 +32,12 @@ vi.mock('../src/core/MasterBus', () => ({
   masterBus: {
     emit: vi.fn(),
     subscribe: vi.fn((event, callback) => {
-      if (event === 'AUTH_STATE_CHANGED') state.auth = callback;
-      return vi.fn();
+      if (event === 'AUTH_STATE_CHANGED') state.authListeners.add(callback);
+      return () => state.authListeners.delete(callback);
     }),
   },
 }));
+vi.mock('../src/hooks/useMasterBusChannel', () => ({ useMasterBusChannel: vi.fn() }));
 vi.mock('../src/services/UnionService', () => ({
   UnionService: { getOwnedUnions: vi.fn(async () => []) },
 }));
@@ -56,7 +57,8 @@ import styles from '../src/pages/CashierTradePage.module.css';
 
 function signIn(userId: string | null) {
   state.userId = userId;
-  state.auth?.({ payload: { isAuthenticated: !!userId, userId: userId ?? undefined } });
+  for (const listener of [...state.authListeners])
+    listener({ payload: { isAuthenticated: !!userId, userId: userId ?? undefined } });
 }
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -89,7 +91,7 @@ function mountCashier() {
   );
 }
 async function openWeeklyStatements() {
-  await screen.findByText('Balances synchronized');
+  await screen.findByText('Balances Synchronized');
   fireEvent.click(screen.getByRole('tab', { name: 'Settlement Record' }));
   return screen.getByRole('tabpanel', { name: 'Settlement Record' });
 }
@@ -177,14 +179,19 @@ describe('cashier club weekly statement boundary', () => {
     ];
     mountCashier();
     const panel = await openWeeklyStatements();
-    expect(await within(panel).findByText('Retained 40.05')).not.toHaveClass(
+    // #ClubArenaConsole forward display (launch audit 2026-10-09, P-09 / R-08):
+    // the reader keeps 40.05 / 100.25 / 60.20 exactly; the rows print whole
+    // chips rounded down and never a decimal point.
+    expect(await within(panel).findByText('Retained 40 Chips')).not.toHaveClass(
       styles.amtIn,
       styles.amtOut
     );
     expect(within(panel).getByText('Latest Up To 50 Weekly Statements')).toBeInTheDocument();
     expect(within(panel).getByText('Club Weekly Accounting')).toBeInTheDocument();
-    expect(within(panel).getByText(/Rake Funding 100.25/)).toHaveTextContent('Paid By Club 60.20');
-    expect(panel).not.toHaveTextContent(/999\.00|888\.00|777\.00|\+40\.05/);
+    expect(within(panel).getByText(/Rake Funding 100 Chips/)).toHaveTextContent(
+      'Paid By Club 60 Chips'
+    );
+    expect(panel).not.toHaveTextContent(/999|888|777|\+40|40\.05|100\.25|60\.20/);
     expect(state.calls.filter((call) => call.table === 'settlement_invoices')).toEqual([
       {
         table: 'settlement_invoices',
@@ -221,7 +228,7 @@ describe('cashier club weekly statement boundary', () => {
     state.reply = null;
     state.rows = [weeklyStatementRow()];
     fireEvent.click(within(panel).getByRole('button', { name: 'Retry' }));
-    expect(await within(panel).findByText('Retained 40.05')).toBeInTheDocument();
+    expect(await within(panel).findByText('Retained 40 Chips')).toBeInTheDocument();
     expect(within(panel).queryByRole('alert')).not.toBeInTheDocument();
   });
   it('discards an old response through an auth ABA without an intermediate render', async () => {
@@ -241,30 +248,36 @@ describe('cashier club weekly statement boundary', () => {
       signIn(ID.actor);
       old.resolve({ data: [weeklyStatementRow()], error: null });
     });
-    expect(await within(panel).findByRole('alert')).toHaveTextContent(
+    // The scoped workspace remounts on the auth epoch and starts at Trade.
+    // Inspect its new panel, never the detached panel from the previous epoch.
+    expect(panel).not.toBeInTheDocument();
+    expect(screen.queryByText('Retained 40 Chips')).not.toBeInTheDocument();
+    const renewedPanel = await openWeeklyStatements();
+    expect(await within(renewedPanel).findByRole('alert')).toHaveTextContent(
       'Weekly Statements Are Unavailable'
     );
-    expect(within(panel).queryByText('Retained 40.05')).not.toBeInTheDocument();
+    expect(reads).toBeGreaterThan(1);
+    expect(within(renewedPanel).queryByText('Retained 40 Chips')).not.toBeInTheDocument();
   });
   it('removes the first club statement on navigation while the next club read is unresolved', async () => {
     state.rows = [weeklyStatementRow()];
     mountCashier();
     const first = await openWeeklyStatements();
-    await within(first).findByText('Retained 40.05');
+    await within(first).findByText('Retained 40 Chips');
     const pending = deferred<unknown>();
     state.reply = () => pending.promise;
     fireEvent.click(screen.getByRole('button', { name: 'Switch Fixture Club' }));
-    expect(screen.queryByText('Retained 40.05')).not.toBeInTheDocument();
+    expect(screen.queryByText('Retained 40 Chips')).not.toBeInTheDocument();
     await waitFor(() =>
       expect(supabase.rpc).toHaveBeenCalledWith(
         'fn_club_cashier_members_page_v3',
         expect.objectContaining({ p_club_id: ID.otherClub })
       )
     );
-    await screen.findByText('Balances synchronized');
+    await screen.findByText('Balances Synchronized');
     fireEvent.click(screen.getByRole('tab', { name: 'Settlement Record' }));
     const next = screen.getByRole('tabpanel', { name: 'Settlement Record' });
-    expect(next).not.toHaveTextContent('Retained 40.05');
+    expect(next).not.toHaveTextContent('Retained 40 Chips');
     await waitFor(() =>
       expect(
         state.calls.filter((call) => call.table === 'settlement_invoices').at(-1)?.filters
@@ -278,7 +291,7 @@ describe('cashier club weekly statement boundary', () => {
   it('preserves the existing player tab restriction without fetching weekly club documents', async () => {
     state.role = 'player';
     mountCashier();
-    await screen.findByText('Balances synchronized');
+    await screen.findByText('Balances Synchronized');
     expect(screen.queryByRole('tab', { name: 'Settlement Record' })).not.toBeInTheDocument();
     expect(state.calls.some((call) => call.table === 'settlement_invoices')).toBe(false);
   });

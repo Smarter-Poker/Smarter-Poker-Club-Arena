@@ -28,6 +28,23 @@ export function orderArenaCards<T extends ArenaCard>(
   );
 }
 
+/**
+ * The pinned clubs a device saved, read safely (Diamond Phase 11, line 7:
+ * stale storage). The value is only ever written as a JSON array of ids, but
+ * storage is shared with every build this origin has served and with the World
+ * Hub, and `JSON.parse` accepts `null`, `{}` or `"x"` without complaint - each
+ * of which reached `.includes` in the home sort and threw, taking the Poker
+ * Arena home down with it. Anything but an array of strings is discarded.
+ */
+export function savedPinnedClubIds(raw: string | null): string[] {
+  try {
+    const saved: unknown = JSON.parse(raw || '[]');
+    return Array.isArray(saved) ? saved.filter((id): id is string => typeof id === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
 /** An absent or retired choice opens Shark. A valid last arena remains selected. */
 export function initialArenaIndex(cards: ArenaCard[], lastId: string | null): number {
   const saved = cards.findIndex((card) => card.id === lastId || card.slug === lastId);

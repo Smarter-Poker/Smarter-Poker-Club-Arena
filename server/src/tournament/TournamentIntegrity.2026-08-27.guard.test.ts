@@ -25,6 +25,7 @@ const strip = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ 
 const BASE = strip(read('src/tournament/TournamentManagerBase.ts'));
 const MANAGER = strip(read('src/tournament/TournamentManager.ts'));
 const ELIM = strip(read('src/tournament/TournamentManagerEliminations.ts'));
+const FINAL_TABLE = strip(read('src/tournament/finalTableTransition.ts'));
 const MIGRATIONS = path.join(process.cwd(), '..', 'supabase', 'migrations');
 
 const stripSqlComments = (source: string): string =>
@@ -286,9 +287,28 @@ describe('A6: a headcount is not a final table', () => {
     const fn = MANAGER.slice(MANAGER.indexOf('protected async checkTableBalance('));
     const window = fn;
     expect(window).toMatch(/countLiveTablesWithPlayers\(\)/);
-    expect(window).toMatch(/liveTables === 1/);
+    expect(window).toMatch(
+      /hasReachedFinalTableShape\(remainingPlayers, finalTableSize, liveTables\)/
+    );
+    expect(FINAL_TABLE).toMatch(/liveTables === 1/);
     // The bare count is no longer sufficient on its own.
     expect(window).not.toMatch(/<= finalTableSize\)\s*\{\s*this\.isFinalTable = true/);
+  });
+
+  it('only a persisted unlimited MTT contract may enter Final Table mode', () => {
+    const fn = MANAGER.slice(MANAGER.indexOf('protected async checkTableBalance('));
+    expect(fn).toMatch(/mayBecomeFinalTable\(this\.tournamentCache\)/);
+    expect(FINAL_TABLE).toMatch(/isPersistedUnlimitedMtt\(row\)/);
+  });
+
+  it('a lost claim response is recovered only by the durable announcement owner', () => {
+    const fn = MANAGER.slice(MANAGER.indexOf('protected async checkTableBalance('));
+    expect(fn).toMatch(/fn_claim_final_table_transition/);
+    expect(fn).toMatch(/this\.finalTableTransitionOwner/);
+    expect(fn).toMatch(/fn_read_final_table_transition/);
+    expect(fn).toMatch(/fn_ack_final_table_announcement/);
+    expect(FINAL_TABLE).toMatch(/current\.ownershipToken === ownershipToken/);
+    expect(FINAL_TABLE).toMatch(/current\.announced !== true/);
   });
 
   it('the deal poll proves one authoritative occupied engine before settlement', () => {

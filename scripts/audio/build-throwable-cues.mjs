@@ -147,14 +147,15 @@ async function fetchKenney(src) {
   execFileSync('unzip', ['-q', '-o', zipPath, '-d', dest]);
 }
 
-// ── OpenGameArt: a direct zip on a stable path, and a licence per SUBMISSION.
+// ── OpenGameArt: a direct pack or file URL, and a licence per SUBMISSION.
 // Unlike Kenney (whose whole site is CC0) OGA hosts CC0, CC-BY, OGA-BY and GPL
 // side by side, so the manifest records the submission URL and the build
 // re-reads it: a pack whose page stops saying CC0, or starts also saying
 // CC-BY, stops being fetchable here rather than quietly changing licence
 // underneath us.
 async function fetchOpenGameArt(src) {
-  if (existsSync(join(sourcesDir, src.dir))) return;
+  const dest = join(sourcesDir, src.dir);
+  if (existsSync(dest)) return;
   console.log(`fetching ${src.title} ...`);
   const res = await fetch(src.url);
   if (!res.ok)
@@ -167,14 +168,21 @@ async function fetchOpenGameArt(src) {
     fail(
       `${src.url} now also carries a CC-BY style licence; refusing (attribution obligations are not silently taken on)`
     );
-  if (!page.includes(src.zip)) fail(`${src.url} no longer links ${src.zip}`);
-  const zipRes = await fetch(src.zip);
-  if (!zipRes.ok) fail(`${src.zip} answered ${zipRes.status}`);
-  const dest = join(sourcesDir, src.slug);
+  const sourceUrl = src.zip || src.download;
+  if (!sourceUrl || !page.includes(sourceUrl))
+    fail(`${src.url} no longer links ${sourceUrl || 'the configured file'}`);
+  const assetRes = await fetch(sourceUrl);
+  if (!assetRes.ok) fail(`${sourceUrl} answered ${assetRes.status}`);
   mkdirSync(dest, { recursive: true });
-  const zipPath = join(sourcesDir, `${src.slug}.zip`);
-  writeFileSync(zipPath, Buffer.from(await zipRes.arrayBuffer()));
-  execFileSync('unzip', ['-q', '-o', zipPath, '-d', dest]);
+  if (src.download) {
+    const filename = src.filename || new URL(src.download).pathname.split('/').pop();
+    if (!filename || filename.includes('..')) fail(`invalid download filename for ${src.url}`);
+    writeFileSync(join(dest, filename), Buffer.from(await assetRes.arrayBuffer()));
+  } else {
+    const zipPath = join(sourcesDir, `${src.slug}.zip`);
+    writeFileSync(zipPath, Buffer.from(await assetRes.arrayBuffer()));
+    execFileSync('unzip', ['-q', '-o', zipPath, '-d', dest]);
+  }
 }
 
 if (doFetch) {

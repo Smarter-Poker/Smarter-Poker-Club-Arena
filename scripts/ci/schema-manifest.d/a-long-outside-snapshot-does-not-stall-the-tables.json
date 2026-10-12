@@ -1,0 +1,5 @@
+{
+  "_owner": "fix/late-reg-close-stall. NOT YET APPLIED when committed (2026-10-06): migration 20261006170925_a_long_outside_snapshot_does_not_stall_the_tables adds new scheduled functionality and waits for the owner's explicit yes (docs/agent-policy/HARDENING.md). Until it is applied, a credentialed check-migrations-applied run correctly reports these names absent.",
+  "tables": ["smarter_private.ca_long_snapshot_cancellations"],
+  "functions": ["fn_ca_bound_outside_snapshots"]
+}

@@ -15,13 +15,63 @@
  * WHY SHADOW. It lets the SQL matcher be judged against live pools - who it
  * would have grouped, who it would have held and why - with nothing at stake.
  *
- * WHY 'form' IS REFUSED. `fn_lightning_match_and_form` writes formed hands.
- * Nothing in this engine deals a Lightning hand yet, so a formed hand would
- * have no dealer and would sit until the reaper took it - holding its players
- * out of every other hand for that long. Until the dealing host exists, a
- * Cluster configured 'form' gets a worker that says so (rate-limited) and
- * makes no RPC at all. The refusal is here, in the one class that could
- * call the writer, rather than trusted to a config value.
+ * FORM MODE (Lightning Phase 6, 2026-09-27). Each pass makes ONE call to
+ * `fn_lightning_match_and_form` with a fresh request id (reused only to retry
+ * a pass whose outcome is unknown, which the writer answers from its record),
+ * bounded by `maxHandsPerPass`, and hands every formed hand to the dealing
+ * host (`startHand`, LightningHosting). A host that frees a player, or ends,
+ * wakes the worker so the next pass runs at once instead of a pass interval
+ * later. `formation_invariant_failed` means the barrier FROZE the Cluster:
+ * the worker stops for good and says so. A worker built without a dealing
+ * host still refuses 'form' outright and calls nothing - a formed hand with
+ * no dealer would sit until reaped, holding its players out of every hand.
+ *
+ * DRAINING (Lightning Phase 7, 2026-10-02). A Cluster in `pending_off` is on
+ * its way back to MUST MOVE: the database refuses to form, and settles every
+ * hand already in the air. Its worker keeps running but DRAINS - each pass
+ * calls nothing at all (no matcher, no match_and_form), and says once per
+ * keepalive interval that it is draining. The hands in the air are not the
+ * worker's: their hosts deal them to settlement and keep their instances
+ * alive on their own clock. A Cluster that turns back to `lightning` (the
+ * conversion aborted) resumes forming on the next pass.
+ *
+ * THE SHADOW MATCHER (Lightning Phase 11, 2026-10-08). After a matching or
+ * forming pass has RETURNED - its hands already with their hosts - the
+ * worker hands the pass's presence snapshot, its `now` and the live
+ * decision to its LightningShadowRunner, synchronously, inside a try/catch,
+ * and reads nothing back. The runner plans its candidate on its own copy of
+ * the population and records the comparison once per window. With
+ * `lightning_shadow_matcher` and `integrity_telemetry` off it does nothing.
+ *
+ * SURGE PROTECTION (Lightning Phase 12, 2026-10-09). Admission is
+ * micro-batched: a player whose room's first socket arrives (a join, a
+ * reconnect) asks for a pass within LIGHTNING_ADMISSION_COALESCE_MS, so a
+ * burst of arrivals is formed together by a few passes rather than one pass
+ * per arrival or a pass interval later. A pass whose batch was cut short by
+ * the database (`max_hands` - admission_batch_hands - or `time_budget`)
+ * leaves a backlog, so the next pass runs at once, up to
+ * LIGHTNING_SURGE_MAX_BACK_TO_BACK in a row before the interval applies
+ * again. One formation is in flight per Cluster across every worker object
+ * of this process (LightningFormationGate), a call that does not answer
+ * within LIGHTNING_FORM_RPC_TIMEOUT_MS is treated as outcome-unknown and
+ * re-asked under the same request id, and nothing economic is ever formed
+ * ahead of a pass: prewarming stops at the room and the table shell.
+ *
+ * HOLDS (Lightning Phase 13, 2026-10-09). An operator's PAUSE, an operator's
+ * DRAIN (cluster_mode `draining`), Lightning switched off and `pending_off`
+ * are all one thing to this worker: a HOLD. A held worker forms nothing and
+ * calls nothing - no matcher, no match_and_form, no admission or wake pass -
+ * while every hand already dealt plays on to settlement under its own host.
+ * The hold takes effect on the next pass after the supervisor's next mode or
+ * config read; a pass already in flight finishes (and the database refuses its
+ * formation anyway). A DRAINING worker reports its progress - the hands still
+ * in the air - once per keepalive interval, and the supervisor stops it the
+ * moment its Cluster reaches MUST MOVE. Resume lifts a pause and the worker
+ * forms again from its next pass, in the mode it was paused from.
+ *
+ * THE LATENCY LEDGER (Lightning Phase 12). Each pass ticks the Cluster's
+ * LightningLatencyLedger (window roll and its one flush in flight), after
+ * the pass's own work is decided and without reading anything back.
  *
  * TIMERS. One setTimeout at a time, armed only after the previous pass has
  * finished (no overlap, no pile-up behind a slow database), unref'd so it
@@ -34,19 +84,54 @@ import {
   LIGHTNING_STOP_DRAIN_MS,
   type LightningConfig,
 } from './LightningConfig.js';
+import { randomUUID } from 'node:crypto';
 import {
+  isUuid,
   lightningMatch,
+  lightningMatchAndForm,
   summarizeLightningMatch,
   type LightningDiagnosisSummary,
+  type LightningPlatformsDelivery,
   type LightningRpcClient,
 } from './LightningRpc.js';
-import type { LightningPresence } from './LightningPresence.js';
+import type { LightningDevicePlatform, LightningPresence } from './LightningPresence.js';
 import {
   lightningMetrics,
   type LightningMetrics,
   type LightningPassOutcome,
 } from './LightningMetrics.js';
 import { RateLimitedLog } from './RateLimitedLog.js';
+import type { LightningFormedHand } from './LightningHandHost.js';
+import { LightningShadowRunner, type LightningDecidedGroup } from './LightningShadowRunner.js';
+import type { LightningPresenceSnapshot } from './LightningPresence.js';
+import { LightningLatencyLedger } from './LightningLatencyLedger.js';
+import {
+  LIGHTNING_FORM_RPC_TIMEOUT_MS,
+  lightningFormationGate,
+  type LightningFormationGate,
+} from './LightningFormationGate.js';
+
+/** After the old matcher signature refuses p_player_platforms, ask again this much later. */
+export const LIGHTNING_PLATFORMS_RETRY_MS = 10 * 60_000;
+/** Arrivals within this window share one forming pass (admission micro-batching). */
+export const LIGHTNING_ADMISSION_COALESCE_MS = 250;
+/** A saturated pass is followed at once by another, at most this many times in a row. */
+export const LIGHTNING_SURGE_MAX_BACK_TO_BACK = 8;
+/**
+ * LIGHTNING PHASE 13: why a worker is not forming. `pending_off` is the
+ * automatic reversion, `switched_off` Lightning disabled on a live Cluster,
+ * `draining` the operator's EMERGENCY DRAIN, `paused` the operator's PAUSE.
+ */
+export type LightningWorkerHold = 'pending_off' | 'switched_off' | 'draining' | 'paused';
+export const LIGHTNING_WORKER_HOLDS: readonly LightningWorkerHold[] = [
+  'pending_off',
+  'switched_off',
+  'draining',
+  'paused',
+];
+
+/** The stopped_reason values that mean the batch was cut short with players still waiting. */
+const SATURATED_STOP_REASONS = new Set(['max_hands', 'time_budget']);
 
 export interface LightningWorkerLogger {
   log(message: string): void;
@@ -62,11 +147,55 @@ export interface LightningClusterWorkerDeps {
   now?: () => Date;
   /** The platform freeze (CLAUDE.md 13): no pass, no I/O, while it holds. */
   frozen?: () => boolean;
+  /** The dealing host. Without it, 'form' is refused. */
+  startHand?: (hand: LightningFormedHand) => void;
+  /** A host already exists for this instance (a replayed pass names it again). */
+  hasInstance?: (instanceId: string) => boolean;
+  /** The barrier froze the Cluster: the supervisor drops this worker. */
+  onClusterFrozen?: (clusterId: string) => void;
+  /**
+   * Epoch ms before which this Cluster must not form: consecutive abandoned
+   * hands back it off (LightningHosting), a settled hand clears it.
+   */
+  formBackoffUntil?: () => number;
+  /**
+   * Does this process hold the verified lease on the Cluster's front table
+   * (the host table every hand binds to)? Without it a formed hand could only
+   * be abandoned, so the worker does not form.
+   */
+  holdsFrontTableLease?: () => Promise<boolean>;
+  /** LIGHTNING PHASE 11: the shadow runner (one is made when absent). */
+  shadow?: LightningShadowRunner;
+  /** LIGHTNING PHASE 12: the latency ledger (one is made when absent). */
+  latency?: LightningLatencyLedger;
+  /** LIGHTNING PHASE 12: the process-wide one-formation-per-Cluster gate. */
+  formationGate?: LightningFormationGate;
+  /**
+   * LIGHTNING PHASE 13: the hands of this Cluster still being dealt here (the
+   * drain's progress report). Read only while held; never decides anything.
+   */
+  handsInFlight?: () => number;
+  /**
+   * LIGHTNING PHASE 13: a held pass on the way out of Lightning (a drain or a
+   * reversion) found no hand of the Cluster left in the air here: the
+   * Cluster is about to be MUST MOVE, so the supervisor looks again soon.
+   */
+  onHeldIdle?: () => void;
+  /** How long a match_and_form call may go unanswered (tests shorten it). */
+  formTimeoutMs?: number;
 }
 
 export type LightningWorkerPassResult =
   | { outcome: 'matched'; summary: LightningDiagnosisSummary; disconnected: number }
-  | { outcome: Exclude<LightningPassOutcome, 'matched'>; reason?: string };
+  | {
+      outcome: Exclude<LightningPassOutcome, 'matched'>;
+      reason?: string;
+      formed?: number;
+      /** The database cut the batch short with players still waiting (surge). */
+      saturated?: boolean;
+      /** LIGHTNING PHASE 13: a draining pass's progress - the hands still in the air here. */
+      handsInFlight?: number;
+    };
 
 const consoleLogger: LightningWorkerLogger = {
   log: (m) => console.log(m),
@@ -80,6 +209,8 @@ export class LightningClusterWorker {
   private running = false;
   private stopped = false;
   private inFlight: Promise<LightningWorkerPassResult> | null = null;
+  /** Epoch ms before which p_player_platforms is not sent (the old signature refused it). */
+  private platformsRetryAtMs = 0;
   /** Who the last validated diagnosis named: the presence feed's memory of the pool. */
   private knownPoolPlayers: string[] = [];
   private lastSummaryKey: string | null = null;
@@ -90,6 +221,26 @@ export class LightningClusterWorker {
   private readonly now: () => Date;
   private readonly frozen: () => boolean;
   private passes = 0;
+  /** The request id of a forming pass whose outcome is unknown: retried as-is. */
+  private pendingRequestId: string | null = null;
+  private wakeRequested = false;
+  /**
+   * `pending_off` (and every Phase 13 hold): form nothing, call nothing; the
+   * hands in the air settle.
+   */
+  private hold: LightningWorkerHold | null = null;
+  private lastDrainLogAtMs = 0;
+  /** LIGHTNING PHASE 11: observes each live pass after it returned; never consulted. */
+  private readonly shadow: LightningShadowRunner;
+  /** LIGHTNING PHASE 12: the per-window latency ledger; never consulted. */
+  private readonly latency: LightningLatencyLedger;
+  private readonly gate: LightningFormationGate;
+  private readonly formTimeoutMs: number;
+  /** When the armed timer fires (epoch ms of the process clock), for admission coalescing. */
+  private timerDueAtMs = Number.POSITIVE_INFINITY;
+  /** Back-to-back passes run because the previous one was saturated. */
+  private surgeStreak = 0;
+  private lastPassSaturated = false;
 
   constructor(
     readonly clusterId: string,
@@ -101,6 +252,34 @@ export class LightningClusterWorker {
     this.logger = deps.logger ?? consoleLogger;
     this.now = deps.now ?? (() => new Date());
     this.frozen = deps.frozen ?? (() => false);
+    this.shadow =
+      deps.shadow ??
+      new LightningShadowRunner(clusterId, {
+        rpc: deps.rpc,
+        logger: this.logger,
+        now: () => this.now(),
+      });
+    this.shadow.configure(this.config.shadow);
+    this.latency =
+      deps.latency ??
+      new LightningLatencyLedger(clusterId, {
+        rpc: deps.rpc,
+        logger: this.logger,
+        now: () => this.now(),
+      });
+    this.latency.configure(this.config.latency);
+    this.gate = deps.formationGate ?? lightningFormationGate;
+    this.formTimeoutMs = deps.formTimeoutMs ?? LIGHTNING_FORM_RPC_TIMEOUT_MS;
+  }
+
+  /** The latency ledger (tests read it; the pass never does). */
+  get latencyLedger(): LightningLatencyLedger {
+    return this.latency;
+  }
+
+  /** The shadow runner (tests and the operator view read it; the pass never does). */
+  get shadowRunner(): LightningShadowRunner {
+    return this.shadow;
   }
 
   get mode(): LightningConfig['workerMode'] {
@@ -119,6 +298,54 @@ export class LightningClusterWorker {
     return this.passes;
   }
 
+  /** Not forming: any hold (pending_off, switched off, an operator drain or pause). */
+  get isDraining(): boolean {
+    return this.currentHold !== null;
+  }
+
+  /**
+   * LIGHTNING PHASE 13: why this worker is not forming, or null when it forms.
+   * The supervisor's word on the mode, or the config's own pause marker.
+   */
+  get currentHold(): LightningWorkerHold | null {
+    if (this.hold) return this.hold;
+    return this.config.rollout?.paused === true ? 'paused' : null;
+  }
+
+  /**
+   * The supervisor's word on the Cluster's mode: `pending_off` drains,
+   * `lightning` forms. Takes effect from the next pass; a pass already in
+   * flight finishes (and the database refuses its formation anyway).
+   */
+  setDraining(draining: boolean): void {
+    this.setHold(draining ? 'pending_off' : null);
+  }
+
+  /**
+   * LIGHTNING PHASE 13: the supervisor's word on the Cluster's hold. Null
+   * forms again (a resume, or a conversion that turned back to lightning).
+   */
+  setHold(hold: LightningWorkerHold | null): void {
+    const next = hold && LIGHTNING_WORKER_HOLDS.includes(hold) ? hold : null;
+    if (next === this.hold) return;
+    const was = this.hold;
+    this.hold = next;
+    this.lastDrainLogAtMs = 0;
+    if (next === 'pending_off' || (next === null && was === 'pending_off')) {
+      this.logger.log(
+        next
+          ? `[Lightning:${this.clusterId}] pending_off - forming stopped; hands in the air play on to settlement`
+          : `[Lightning:${this.clusterId}] back to lightning - forming resumes`
+      );
+      return;
+    }
+    this.logger.log(
+      next
+        ? `[Lightning:${this.clusterId}] ${next} - forming stopped; hands in the air play on to settlement`
+        : `[Lightning:${this.clusterId}] ${was ?? 'hold'} lifted - forming resumes`
+    );
+  }
+
   /** Arm the first pass. Idempotent; a stopped worker stays stopped. */
   start(): void {
     if (this.running || this.stopped) return;
@@ -134,6 +361,8 @@ export class LightningClusterWorker {
   updateConfig(config: LightningConfig): void {
     const modeChanged = config.workerMode !== this.config.workerMode;
     this.config = { ...config };
+    this.shadow.configure(this.config.shadow);
+    this.latency.configure(this.config.latency);
     if (modeChanged) {
       this.failureLog.forget('form');
       this.logger.log(`[Lightning:${this.clusterId}] worker mode is now ${config.workerMode}`);
@@ -154,13 +383,11 @@ export class LightningClusterWorker {
     }
     this.metrics.forgetCluster(this.clusterId);
     const inFlight = this.inFlight;
-    if (!inFlight) return;
     let drainTimer: ReturnType<typeof setTimeout> | null = null;
+    const stopObservers = () =>
+      Promise.all([this.shadow.stop(), this.latency.stop()]).then(() => undefined);
     await Promise.race([
-      inFlight.then(
-        () => undefined,
-        () => undefined
-      ),
+      (inFlight ?? Promise.resolve()).then(stopObservers, stopObservers),
       new Promise<void>((resolve) => {
         drainTimer = setTimeout(resolve, LIGHTNING_STOP_DRAIN_MS);
         (drainTimer as { unref?: () => void }).unref?.();
@@ -172,8 +399,10 @@ export class LightningClusterWorker {
   private arm(delayMs: number): void {
     if (!this.running || this.stopped) return;
     if (this.timer) clearTimeout(this.timer);
+    this.timerDueAtMs = Date.now() + delayMs;
     this.timer = setTimeout(() => {
       this.timer = null;
+      this.timerDueAtMs = Number.POSITIVE_INFINITY;
       if (!this.running || this.stopped) return;
       const pass = this.pass();
       this.inFlight = pass;
@@ -183,10 +412,49 @@ export class LightningClusterWorker {
         })
         .finally(() => {
           if (this.inFlight === pass) this.inFlight = null;
-          this.arm(this.config.passIntervalMs);
+          const woken = this.wakeRequested;
+          this.wakeRequested = false;
+          // SURGE: a batch the database cut short leaves players waiting, so
+          // the next pass runs at once - a bounded number of times in a row.
+          const surge =
+            this.lastPassSaturated && this.surgeStreak < LIGHTNING_SURGE_MAX_BACK_TO_BACK;
+          this.surgeStreak = surge ? this.surgeStreak + 1 : 0;
+          this.arm(woken || surge ? 0 : this.config.passIntervalMs);
         });
     }, delayMs);
     (this.timer as { unref?: () => void }).unref?.();
+  }
+
+  /**
+   * LIGHTNING PHASE 12 (admission micro-batching): a player just arrived in
+   * this Cluster's pool (their room's first socket). The next pass runs
+   * within LIGHTNING_ADMISSION_COALESCE_MS - never later than it would have
+   * anyway - so every arrival of a burst is formed by the same few passes.
+   */
+  admit(): void {
+    if (!this.running || this.stopped || this.config.workerMode !== 'form') return;
+    if (this.isDraining) return;
+    if (this.inFlight) {
+      this.wakeRequested = true;
+      return;
+    }
+    if (this.timerDueAtMs <= Date.now() + LIGHTNING_ADMISSION_COALESCE_MS) return;
+    this.arm(LIGHTNING_ADMISSION_COALESCE_MS);
+  }
+
+  /**
+   * A player was freed or a hand ended: run the next pass now rather than a
+   * pass interval from now. A pass in flight is followed at once by another.
+   */
+  wake(): void {
+    if (!this.running || this.stopped || this.config.workerMode !== 'form') return;
+    // A draining (or held) Cluster forms nothing, so a freed player is no reason to run.
+    if (this.isDraining) return;
+    if (this.inFlight) {
+      this.wakeRequested = true;
+      return;
+    }
+    this.arm(0);
   }
 
   /**
@@ -196,13 +464,22 @@ export class LightningClusterWorker {
   async pass(): Promise<LightningWorkerPassResult> {
     this.passes++;
     const result = await this.runPass();
+    this.lastPassSaturated = result.outcome === 'formed' && result.saturated === true;
     this.metrics.recordPass(result.outcome);
+    // LIGHTNING PHASE 12: the ledger's clock, after the pass decided everything.
+    try {
+      this.latency.tick();
+    } catch {
+      // The ledger never reaches back into a pass.
+    }
     return result;
   }
 
   private async runPass(): Promise<LightningWorkerPassResult> {
     const mode = this.config.workerMode;
     if (mode === 'off') return { outcome: 'off' };
+    if (this.isDraining) return this.drainPass();
+    if (mode === 'form' && this.deps.startHand) return this.formPass();
     if (mode === 'form') {
       if (this.failureLog.shouldLog('form')) {
         this.logger.warn(
@@ -216,11 +493,12 @@ export class LightningClusterWorker {
     if (this.frozen()) return { outcome: 'frozen' };
 
     let disconnected: string[];
+    let platforms: Record<string, LightningDevicePlatform>;
+    let snap: LightningPresenceSnapshot;
     try {
-      disconnected = this.deps.presence.snapshot(
-        this.clusterId,
-        this.knownPoolPlayers
-      ).pDisconnected;
+      snap = this.deps.presence.snapshot(this.clusterId, this.knownPoolPlayers);
+      disconnected = snap.pDisconnected;
+      platforms = snap.platforms ?? {};
     } catch (err) {
       // A presence feed that cannot answer must not be read as "everyone is here".
       if (this.failureLog.shouldLog('presence')) {
@@ -229,13 +507,17 @@ export class LightningClusterWorker {
       return { outcome: 'error', reason: 'presence_failed' };
     }
 
+    const passNow = this.now();
     const out = await lightningMatch(this.deps.rpc, {
       clusterId: this.clusterId,
-      now: this.now(),
+      now: passNow,
       disconnected,
       matcherVersion: this.config.matcherVersion,
+      playerPlatforms: this.platformsToSend(platforms),
     });
+    this.notePlatformsDelivery(out.platforms);
 
+    if (out.status !== 'ok') this.observeShadow(passNow, snap, 'match', false, null, []);
     if (out.status === 'unavailable') {
       if (this.failureLog.shouldLog('unavailable')) {
         this.logger.warn(
@@ -264,7 +546,312 @@ export class LightningClusterWorker {
     const summary = summarizeLightningMatch(result);
     this.metrics.recordSummary(this.clusterId, summary);
     this.maybeLogSummary(summary, disconnected.length);
+    // The diagnosis is the database's own legality for every pool player.
+    this.observeShadow(passNow, snap, 'match', true, result.matcherVersion, result.groups, {
+      legalCount: result.legalCount,
+      legality: new Map(result.diagnosis.map((d) => [d.playerId, d.reasonCode])),
+    });
     return { outcome: 'matched', summary, disconnected: disconnected.length };
+  }
+
+  /**
+   * LIGHTNING PHASE 11: hand the pass that just RETURNED to the shadow
+   * runner. Synchronous, guarded, and nothing is read back.
+   */
+  private observeShadow(
+    passNow: Date,
+    snap: LightningPresenceSnapshot,
+    kind: 'form' | 'match',
+    ok: boolean,
+    matcherVersion: string | null,
+    groups: readonly LightningDecidedGroup[],
+    answer: {
+      epoch?: number | null;
+      legalCount?: number | null;
+      legality?: ReadonlyMap<string, string | null> | null;
+    } = {}
+  ): void {
+    if (!this.shadow.active) return;
+    try {
+      this.shadow.observe({
+        ...answer,
+        nowMs: passNow.getTime(),
+        presence: {
+          connected: snap.connected,
+          disconnected: snap.disconnected,
+          unknown: snap.unknown,
+        },
+        kind,
+        ok,
+        matcherVersion,
+        groups,
+      });
+    } catch (err) {
+      if (this.failureLog.shouldLog('shadow')) {
+        this.logger.error(
+          `[Lightning:${this.clusterId}] shadow runner threw; live play unaffected`,
+          err
+        );
+      }
+    }
+  }
+
+  /**
+   * LIGHTNING PHASE 8: p_player_platforms, unless the database refused the
+   * argument recently (old signature still live). Then nothing is sent until
+   * the retry time, so a pass costs one call rather than two.
+   */
+  private platformsToSend(
+    platforms: Record<string, LightningDevicePlatform>
+  ): Record<string, LightningDevicePlatform> | null {
+    if (this.now().getTime() < this.platformsRetryAtMs) return null;
+    return Object.keys(platforms).length > 0 ? platforms : null;
+  }
+
+  private notePlatformsDelivery(delivery: LightningPlatformsDelivery): void {
+    if (delivery === 'dropped') {
+      this.platformsRetryAtMs = this.now().getTime() + LIGHTNING_PLATFORMS_RETRY_MS;
+      if (this.failureLog.shouldLog('platforms_dropped')) {
+        this.logger.warn(
+          `[Lightning:${this.clusterId}] the matcher does not take p_player_platforms yet; ` +
+            'calling without it (per-platform Cluster limits wait for the migration)'
+        );
+      }
+    } else if (delivery === 'sent') {
+      this.platformsRetryAtMs = 0;
+    }
+  }
+
+  /**
+   * A draining pass: no I/O at all. The keepalive line says, at most once per
+   * keepalive interval, that the worker is alive and why it is not forming.
+   */
+  private drainPass(): LightningWorkerPassResult {
+    const hold = this.currentHold ?? 'pending_off';
+    const nowMs = this.now().getTime();
+    // LIGHTNING PHASE 13: an operator drain reports its progress every pass
+    // (the hands still in the air here); every other hold reports nothing.
+    let handsInFlight: number | undefined;
+    if (hold !== 'paused') {
+      try {
+        const n = Number(this.deps.handsInFlight?.() ?? 0);
+        handsInFlight = Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+      } catch {
+        handsInFlight = 0;
+      }
+      if (handsInFlight === 0) {
+        try {
+          this.deps.onHeldIdle?.();
+        } catch {
+          // a hint must never take a pass down
+        }
+      }
+    }
+    if (nowMs - this.lastDrainLogAtMs >= this.config.keepaliveIntervalMs) {
+      this.lastDrainLogAtMs = nowMs;
+      this.logger.log(
+        hold === 'pending_off' || hold === 'switched_off'
+          ? `[Lightning:${this.clusterId}] draining (pending_off): forming nothing until the Cluster is MUST MOVE`
+          : hold === 'draining'
+            ? `[Lightning:${this.clusterId}] draining (operator drain): forming nothing; ` +
+              `hands_in_flight=${handsInFlight ?? 0}; the worker stops when the Cluster is MUST MOVE`
+            : `[Lightning:${this.clusterId}] paused by its operator: forming nothing until it resumes`
+      );
+    }
+    if (hold === 'draining') return { outcome: 'skipped', reason: 'draining', handsInFlight };
+    if (hold === 'paused') return { outcome: 'skipped', reason: 'paused' };
+    return { outcome: 'skipped', reason: 'pending_off' };
+  }
+
+  /** One forming pass: match_and_form, then a host per formed hand. */
+  private async formPass(): Promise<LightningWorkerPassResult> {
+    if (this.frozen()) return { outcome: 'frozen' };
+    const backoffUntil = this.deps.formBackoffUntil?.() ?? 0;
+    if (backoffUntil > this.now().getTime())
+      return { outcome: 'skipped', reason: 'abandon_backoff' };
+    if (this.deps.holdsFrontTableLease) {
+      let held = false;
+      try {
+        held = await this.deps.holdsFrontTableLease();
+      } catch (err) {
+        if (this.failureLog.shouldLog('front_table_lease')) {
+          this.logger.error(
+            `[Lightning:${this.clusterId}] front table lease unknown; not forming`,
+            err
+          );
+        }
+      }
+      if (!held) return { outcome: 'skipped', reason: 'front_table_lease_not_held' };
+    }
+    let disconnected: string[];
+    let platforms: Record<string, LightningDevicePlatform>;
+    let snap: LightningPresenceSnapshot;
+    try {
+      snap = this.deps.presence.snapshot(this.clusterId, this.knownPoolPlayers);
+      disconnected = snap.pDisconnected;
+      platforms = snap.platforms ?? {};
+    } catch (err) {
+      if (this.failureLog.shouldLog('presence')) {
+        this.logger.error(`[Lightning:${this.clusterId}] presence feed failed; pass skipped`, err);
+      }
+      return { outcome: 'error', reason: 'presence_failed' };
+    }
+    // ONE FORMATION IN FLIGHT PER CLUSTER (Lightning Phase 12): whichever
+    // worker object issued it. An id whose outcome is unknown is re-asked.
+    const gateNowMs = this.now().getTime();
+    const gate = this.gate.check(this.clusterId, gateNowMs);
+    if (gate.busy) return { outcome: 'skipped', reason: 'formation_in_flight' };
+    const retryId = this.pendingRequestId ?? gate.pendingRequestId;
+    const requestId = retryId ?? randomUUID();
+    this.pendingRequestId = requestId;
+    const passNow = this.now();
+    this.gate.open(this.clusterId, requestId, gateNowMs);
+    const out = await this.formCall({
+      clusterId: this.clusterId,
+      now: passNow,
+      disconnected,
+      maxHands: this.config.maxHandsPerPass,
+      requestId,
+      playerPlatforms: this.platformsToSend(platforms),
+    });
+    this.notePlatformsDelivery(out.platforms);
+    if (out.status !== 'ok') this.observeShadow(passNow, snap, 'form', false, null, []);
+    if (out.status === 'error') {
+      // Unknown outcome: the next pass asks again under the same id.
+      if (out.timedOut !== true) this.gate.close(this.clusterId, requestId, true, this.nowMs());
+      if (this.failureLog.shouldLog('form_error')) {
+        this.logger.error(
+          `[Lightning:${this.clusterId}] fn_lightning_match_and_form failed`,
+          out.error
+        );
+      }
+      return { outcome: 'error', reason: out.timedOut === true ? 'rpc_timeout' : 'rpc_failed' };
+    }
+    // A worker stopped while its call was out still hands what the call
+    // formed to the dealing host: the host deals it, or - on a leadership loss
+    // or shutdown - the supervisor's abort voids it cleanly right after this
+    // pass returns. Nothing formed is ever left without an owner.
+    // A pass the database skipped (`pass_in_progress`) did not run under this
+    // id: when it was a RETRY, the earlier attempt's outcome is still unknown.
+    const skippedRetry =
+      retryId !== null &&
+      out.status === 'ok' &&
+      (out.value as Record<string, unknown>).skipped === true &&
+      (out.value as Record<string, unknown>).replayed !== true;
+    this.gate.close(this.clusterId, requestId, skippedRetry, this.nowMs());
+    if (!skippedRetry) this.pendingRequestId = null;
+    if (out.status === 'unavailable') {
+      if (this.failureLog.shouldLog('unavailable')) {
+        this.logger.warn(
+          `[Lightning:${this.clusterId}] fn_lightning_match_and_form is not deployed yet`
+        );
+      }
+      return { outcome: 'unavailable', reason: out.reason };
+    }
+    if (out.status === 'invalid') return { outcome: 'invalid', reason: out.reason };
+    const result = out.value;
+    if (result.skipped === true) return { outcome: 'skipped', reason: String(result.reason ?? '') };
+    if (result.ok !== true && result.frozen !== true && result.reason) {
+      return { outcome: 'invalid', reason: String(result.reason) };
+    }
+    const formedAtMs = this.now().getTime();
+    const hands = Array.isArray(result.hands) ? result.hands : [];
+    let started = 0;
+    const decided: LightningDecidedGroup[] = [];
+    for (const raw of hands) {
+      const h = raw as Record<string, unknown>;
+      const players = Array.isArray(h.players) ? h.players.filter(isUuid) : [];
+      if (
+        !isUuid(h.hand_id) ||
+        !isUuid(h.instance_id) ||
+        !isUuid(h.bb) ||
+        !isUuid(h.sb) ||
+        !isUuid(h.btn) ||
+        players.length < 2
+      ) {
+        this.logger.error(
+          `[Lightning:${this.clusterId}] formed hand outside its contract; left to the reaper`
+        );
+        continue;
+      }
+      if (this.deps.hasInstance?.(h.instance_id)) continue; // a replay naming a hand already dealt
+      this.metrics.noteMatched(players, formedAtMs, this.clusterId);
+      decided.push({ players, bb: h.bb, sb: h.sb, btn: h.btn, handId: h.hand_id });
+      for (const p of players)
+        if (!this.knownPoolPlayers.includes(p)) this.knownPoolPlayers.push(p);
+      this.deps.startHand!({
+        clusterId: this.clusterId,
+        instanceId: h.instance_id,
+        handId: h.hand_id,
+        bb: h.bb,
+        sb: h.sb,
+        btn: h.btn,
+        players,
+        formedAtMs,
+      });
+      started++;
+    }
+    this.observeShadow(
+      passNow,
+      snap,
+      'form',
+      result.ok === true && result.frozen !== true,
+      typeof result.matcher_version === 'string' ? result.matcher_version : null,
+      decided,
+      {
+        epoch: typeof result.cluster_epoch === 'number' ? result.cluster_epoch : null,
+        legalCount: typeof result.legal_count === 'number' ? result.legal_count : null,
+      }
+    );
+    if (result.frozen === true || result.stopped_reason === 'frozen') {
+      this.logger.error(
+        `[Lightning:${this.clusterId}] formation_invariant_failed: the barrier froze the Cluster; worker stopping`
+      );
+      this.stopped = true;
+      this.running = false;
+      if (this.timer) clearTimeout(this.timer);
+      this.timer = null;
+      this.deps.onClusterFrozen?.(this.clusterId);
+      return { outcome: 'frozen', reason: 'formation_invariant_failed', formed: started };
+    }
+    const saturated =
+      started > 0 && SATURATED_STOP_REASONS.has(String(result.stopped_reason ?? ''));
+    return saturated
+      ? { outcome: 'formed', formed: started, saturated: true }
+      : { outcome: 'formed', formed: started };
+  }
+
+  private nowMs(): number {
+    return this.now().getTime();
+  }
+
+  /**
+   * The forming call, bounded: an answer later than formTimeoutMs is treated
+   * as outcome-unknown (the pass returns, the worker keeps its clock). The
+   * late answer, whatever it is, is acted on by nobody, so its id stays with
+   * the gate to be re-asked, and the gate stays held until it lands.
+   */
+  private async formCall(
+    args: Parameters<typeof lightningMatchAndForm>[1]
+  ): Promise<Awaited<ReturnType<typeof lightningMatchAndForm>> & { timedOut?: boolean }> {
+    const call = lightningMatchAndForm(this.deps.rpc, args);
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const timeout = new Promise<'timeout'>((resolve) => {
+      timer = setTimeout(() => resolve('timeout'), this.formTimeoutMs);
+      (timer as { unref?: () => void }).unref?.();
+    });
+    const first = await Promise.race([call, timeout]);
+    if (timer) clearTimeout(timer);
+    if (first !== 'timeout') return first;
+    void call
+      .then(() => this.gate.close(this.clusterId, args.requestId, true, this.nowMs()))
+      .catch(() => this.gate.close(this.clusterId, args.requestId, true, this.nowMs()));
+    return {
+      status: 'error',
+      error: new Error(`fn_lightning_match_and_form unanswered after ${this.formTimeoutMs}ms`),
+      platforms: 'none',
+      timedOut: true,
+    };
   }
 
   /**

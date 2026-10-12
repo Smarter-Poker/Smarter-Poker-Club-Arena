@@ -41,7 +41,7 @@ export const SWR_CACHE_PREFIXES = [
   'sh_cache_',
   'notif_cache_',
   'fr_cache_',
-  'leaderboard_',
+  'lb_cache_v2_',
   'achievements_',
   'hh_cache_',
   'psr_cache_',

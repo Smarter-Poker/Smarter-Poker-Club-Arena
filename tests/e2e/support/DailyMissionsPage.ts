@@ -9,6 +9,7 @@ import {
 import { ensureAcceptedTerms } from './ensureAcceptedTerms';
 import { ensurePlayableProfile } from './ensurePlayableProfile';
 import type { TemporaryCustomizationAccount } from './temporaryCustomizationAccount';
+import { footerOverlapScroll } from './viewportGeometry';
 
 export const DAILY_MISSIONS_RESPONSE_TIMEOUT = 60_000;
 
@@ -249,14 +250,29 @@ export class DailyMissionsPage {
       element.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'nearest' });
     });
     await expect
-      .poll(async () => {
-        const [controlBox, footerBox] = await Promise.all([
-          control.boundingBox(),
-          this.page.getByRole('navigation', { name: 'Poker Arena' }).boundingBox(),
-        ]);
-        if (!controlBox || !footerBox) return false;
-        return controlBox.y + controlBox.height <= footerBox.y - 8;
-      })
+      .poll(
+        async () => {
+          const [controlBox, footerBox] = await Promise.all([
+            control.boundingBox(),
+            this.page.getByRole('navigation', { name: 'Poker Arena' }).boundingBox(),
+          ]);
+          if (!controlBox || !footerBox) return false;
+          const footerOverlap = footerOverlapScroll(controlBox, footerBox);
+          if (footerOverlap > 0) {
+            // A viewport or text-scale reflow can finish after scrollIntoView.
+            // Move by the measured overlap instead of waiting for geometry that
+            // cannot repair itself. If the document has no remaining scroll
+            // range, the next poll remains red and the product defect is still
+            // reported rather than hidden by the harness.
+            await this.page.evaluate((pixels) => {
+              window.scrollBy({ top: pixels, behavior: 'auto' });
+            }, footerOverlap);
+            return false;
+          }
+          return true;
+        },
+        { timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT }
+      )
       .toBe(true);
   }
 

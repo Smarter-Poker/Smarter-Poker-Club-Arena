@@ -1,0 +1,4 @@
+{
+  "_owner": "perf/three-slow-db-paths. Migration 20261001010106_three_slow_paths_do_only_the_work_they_act_on: the buy-in's career-only NIT check.",
+  "functions": ["fn_nit_career_check"]
+}

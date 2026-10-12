@@ -82,14 +82,28 @@ test.describe('Visible catalog production reads', () => {
       page.goto(`clubs/${CLUB_ID}/create-table/nlh`, { waitUntil: 'domcontentloaded' }),
     ]);
     await expect(page.getByRole('button', { name: 'MTT', exact: true })).toBeVisible();
+    const mtt = page.getByRole('button', { name: 'MTT', exact: true });
     const firstRead = read(page, 'table_templates', match);
-    await page.getByRole('button', { name: 'MTT', exact: true }).click();
+    // Run 37091537727: the click resolved but the form still showed Regular
+    // pressed, so the MTT-only catalog read never started and this waited out
+    // its whole 90s budget. The read is caused by the selected format, so
+    // prove the selection took before waiting on the read it causes.
+    await expect(async () => {
+      if ((await mtt.getAttribute('aria-pressed')) !== 'true') await mtt.click();
+      await expect(mtt).toHaveAttribute('aria-pressed', 'true', { timeout: 2_000 });
+    }).toPass({ timeout: 20_000 });
     const first = await firstRead;
     expect(first.ok()).toBe(true);
     expect(Array.isArray(await first.json())).toBe(true);
     const draft = page.getByPlaceholder('Enter Table Name Here...');
     await draft.fill('Unsubmitted Catalog Check');
-    const next = await read(page, 'table_templates', match);
+    const nextRead = read(page, 'table_templates', match);
+    // A visible lifecycle signal is one of useVisibleRead's production refresh
+    // contracts. Trigger it directly instead of spending a minute waiting for
+    // the fallback interval; this still exercises a real authorized read and
+    // proves that the in-progress draft survives it.
+    await page.evaluate(() => window.dispatchEvent(new Event('online')));
+    const next = await nextRead;
     expect(next.ok()).toBe(true);
     expect(Array.isArray(await next.json())).toBe(true);
     await expect(draft).toHaveValue('Unsubmitted Catalog Check');

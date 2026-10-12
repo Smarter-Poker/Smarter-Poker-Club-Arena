@@ -10,7 +10,12 @@
 #     CA_ANDROID_KEYSTORE_PASSWORD (+ CA_ANDROID_KEY_ALIAS, CA_ANDROID_KEY_PASSWORD
 #     if they differ from 'clubarena' / the keystore password). Dan's, never
 #     in the repo. Without them Play refuses the bundle, so this stops first.
-#   - android/app/google-services.json for push (warned about, not required).
+#   - android/app/google-services.json (Firebase). REQUIRED since 2026-09-29:
+#     without it the push plugin's register() throws "Default FirebaseApp is
+#     not initialized" on the plugin thread and the WHOLE APP CRASHES the
+#     moment a player taps Enable on the notifications sheet (seen on the
+#     Android emulator). A store build that crashes on a first-run button is
+#     not shippable, so this refuses rather than warns.
 #
 # Usage:  npm run android:bundle          # -> android/app/build/outputs/bundle/release/app-release.aab
 set -euo pipefail
@@ -29,7 +34,10 @@ if [ "$MAJOR" != "17" ] && [ "$MAJOR" != "21" ]; then
   exit 1
 fi
 
-[ -f android/app/google-services.json ] || echo "warning: android/app/google-services.json is missing - push will not work in this build (Firebase, runbook step 5)."
+if [ ! -s android/app/google-services.json ]; then
+  echo "android/app/google-services.json is missing: without Firebase the app crashes when a player taps Enable on the notifications sheet. Add it first (Firebase, runbook step 5)." >&2
+  exit 1
+fi
 
 echo "[1/3] web bundle for the app (dist-native)"
 npm run build:native

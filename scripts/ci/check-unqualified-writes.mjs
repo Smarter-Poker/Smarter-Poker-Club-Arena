@@ -60,6 +60,7 @@
  * refusal you are trying to get past may be the only thing standing between an
  * API caller and that table. Scope it properly, or leave it refused.
  */
+import { classifyMigration } from './recording-only.mjs';
 import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
@@ -404,6 +405,13 @@ function main() {
   for (const file of files) {
     const path = join(REPO, file);
     if (!existsSync(path)) continue;
+    // A byte-exact installed record cannot be rewritten to satisfy a new-work
+    // prediction. Its ledger bytes and live verdict have the existing hosted reader.
+    const recording = classifyMigration(file);
+    if (recording.manifestMatched === true) {
+      console.log(`[recorded migration] ${file}: ${recording.reason}`);
+      continue;
+    }
     inspected += 1;
     for (const o of offenders(readFileSync(path, 'utf8'))) hits.push({ ...o, file });
   }

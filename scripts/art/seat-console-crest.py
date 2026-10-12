@@ -88,7 +88,18 @@ def seat(crest_full, flat, master, gap=1.6):
     ca = crest_full[..., 3:4]/255.0
     rgb = img[..., :3]*(1 - ca) + crest_full[..., :3]*ca
     a = np.maximum(img[..., 3], crest_full[..., 3])
-    return Image.fromarray(np.clip(np.concatenate([rgb, a[..., None]], -1), 0, 255).astype(np.uint8), 'RGBA')
+    result = np.clip(np.concatenate([rgb, a[..., None]], -1), 0, 255).astype(np.uint8)
+    # top-flat predates the sealed master and differs across the whole frame.
+    # It is a reconstruction source ONLY around the crest and rail junctions.
+    # Keep the master bytes everywhere else, including the title/pill wells.
+    ys, xs = np.where(al)
+    left = max(0, min(372, int(xs.min())) - 175)
+    right = min(W, max(628, int(xs.max()) + 1) + 175)
+    bottom = min(H, max(170, int(ys.max()) + 31))
+    keep_master = np.ones((H, W), dtype=bool)
+    keep_master[:bottom, left:right] = False
+    result[keep_master] = np.clip(master[keep_master], 0, 255).astype(np.uint8)
+    return Image.fromarray(result, 'RGBA')
 
 if __name__ == '__main__':
     src, name = sys.argv[1], sys.argv[2]

@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { detectLeaks, omahaBoardThreats } from './HorseHandReview.js';
+import { detectLeaks, omahaBoardThreats, buildReviewRows } from './HorseHandReview.js';
 import type { Card } from '../types.js';
 
 const c = (spec: string): Card => {
@@ -107,6 +107,94 @@ describe('V38 plo_toppair_no_redraw_stackoff', () => {
         })
       )
     ).not.toContain('plo_toppair_no_redraw_stackoff');
+  });
+});
+
+describe('plo_toppair_no_redraw_stackoff means TOP pair on ONE board (2026-09-30)', () => {
+  // Hero's one pair is a pocket pair of kings under nothing on a queen-high
+  // board: an overpair, not top pair (reviews 796401, 802448, 804424, 814544).
+  it('an overpair is not tagged', () => {
+    expect(
+      detectLeaks(
+        base({
+          holeCards: [c('Ks'), c('Kd'), c('8c'), c('3d'), c('3c'), c('4h')],
+          board: [c('Qh'), c('9s'), c('6c'), c('2d'), c('Td')],
+        })
+      )
+    ).not.toContain('plo_toppair_no_redraw_stackoff');
+  });
+
+  it('a middle pair is not tagged', () => {
+    expect(
+      detectLeaks(
+        base({
+          holeCards: [c('9d'), c('Kc'), c('8c'), c('3d'), c('3c'), c('4h')],
+          board: [c('Qh'), c('9s'), c('6c'), c('2d'), c('Td')],
+        })
+      )
+    ).not.toContain('plo_toppair_no_redraw_stackoff');
+  });
+
+  it('a true top pair with no redraw is still tagged', () => {
+    expect(
+      detectLeaks(
+        base({
+          variant: 'plo4',
+          holeCards: [c('Qs'), c('Kd'), c('8c'), c('3d')],
+          board: [c('Qh'), c('9s'), c('6c'), c('2d'), c('Td')],
+        })
+      )
+    ).toContain('plo_toppair_no_redraw_stackoff');
+  });
+
+  it('a double-board hand is not tagged - board 1 is not the whole hand', () => {
+    const top = base({
+      holeCards: [c('As'), c('Kd'), c('Jc'), c('7d'), c('5c'), c('4h')],
+      board: [c('Ah'), c('9s'), c('6c'), c('2d'), c('Td')],
+    });
+    expect(detectLeaks(top)).toContain('plo_toppair_no_redraw_stackoff');
+    expect(detectLeaks({ ...top, multiBoard: true })).not.toContain(
+      'plo_toppair_no_redraw_stackoff'
+    );
+  });
+
+  it('buildReviewRows reads every board: two boards stand the Omaha made-hand tags down', () => {
+    const board1 = ['Ahearts', '9spades', '6clubs', '2diamonds', '10diamonds'];
+    const board2 = ['Khearts', 'Kspades', '4clubs', '4diamonds', '8hearts'];
+    const input = (boards: string[][]) => ({
+      handId: 'h1',
+      tableId: 't1',
+      gameVariant: 'plo6',
+      bigBlind: 2,
+      playedAt: '2026-09-30T00:00:00Z',
+      board: board1,
+      boards,
+      holeCardsAll: new Map([
+        ['horse', { seat: 1, cards: [c('As'), c('Kd'), c('Jc'), c('7d'), c('5c'), c('4h')] }],
+      ]),
+      contributions: new Map([['horse', 400]]),
+      winners: [],
+      actions: [],
+      roster: [{ userId: 'horse', isHorse: true }],
+    });
+    expect(buildReviewRows(input([board1]))[0].leak_tags).toContain(
+      'plo_toppair_no_redraw_stackoff'
+    );
+    expect(buildReviewRows(input([board1, board2]))[0].leak_tags).not.toContain(
+      'plo_toppair_no_redraw_stackoff'
+    );
+  });
+
+  it('in hi-lo a made low is a redraw, so top pair with the low is not tagged', () => {
+    // Top pair kings plus A-2 with 7-5-3 on board: a made seven low.
+    const hand = base({
+      variant: 'plo8',
+      holeCards: [c('As'), c('2d'), c('Kc'), c('9h')],
+      board: [c('Kh'), c('7s'), c('5c'), c('3d'), c('Qd')],
+    });
+    expect(detectLeaks(hand)).not.toContain('plo_toppair_no_redraw_stackoff');
+    // The same cards in a hi-only game are the tag: the low is the difference.
+    expect(detectLeaks({ ...hand, variant: 'plo4' })).toContain('plo_toppair_no_redraw_stackoff');
   });
 });
 

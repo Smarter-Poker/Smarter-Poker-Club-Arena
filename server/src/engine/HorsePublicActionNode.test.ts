@@ -10,7 +10,11 @@ import type {
 } from '../types.js';
 
 type ActionEvent = Extract<HandEvent, { type: 'PLAYER_ACTION' }>;
-function harness(overrides: Partial<HandConfig> = {}, count = 3) {
+function harness(
+  overrides: Partial<HandConfig> = {},
+  count = 3,
+  layout?: { seats: number[]; dealerSeat: number }
+) {
   const config: HandConfig = {
     tableId: 'public-node',
     handNumber: 1,
@@ -20,9 +24,11 @@ function harness(overrides: Partial<HandConfig> = {}, count = 3) {
     rakeConfig: { percent: 0, cap: 0, noFlopNoDrop: true },
     ...overrides,
   };
-  const players: SeatPlayer[] = Array.from({ length: count }, (_, i) => ({
-    seat: i + 1,
-    user_id: `u${i + 1}`,
+  const players: SeatPlayer[] = (
+    layout?.seats ?? Array.from({ length: count }, (_, i) => i + 1)
+  ).map((seat, i) => ({
+    seat,
+    user_id: `u${seat}`,
     username: `private-name-${i}`,
     stack: 200,
     bet: 0,
@@ -32,7 +38,7 @@ function harness(overrides: Partial<HandConfig> = {}, count = 3) {
     is_all_in: false,
     is_sitting_out: false,
   }));
-  const controller = new HandController(config, players, 1);
+  const controller = new HandController(config, players, layout?.dealerSeat ?? 1);
   const events: ActionEvent[] = [];
   controller.onEvent((event) => {
     if (event.type === 'PLAYER_ACTION') events.push(event);
@@ -56,6 +62,42 @@ function checkOrCall(controller: HandController) {
 }
 
 describe('public action nodes belong to the accepted action, before its mutation', () => {
+  it.each([
+    { seats: [1, 2, 4, 5, 6], dealerSeat: 3, smallBlind: 4, bigBlind: 5 },
+    { seats: [2, 5, 9], dealerSeat: 10, smallBlind: 2, bigBlind: 5 },
+    { seats: [2, 5, 9], dealerSeat: 1, smallBlind: 2, bigBlind: 5 },
+  ])('captures every betting street with the actual empty button at $dealerSeat', (layout) => {
+    const h = harness(
+      {
+        isTournament: true,
+        blindSeats: { smallBlind: layout.smallBlind, bigBlind: layout.bigBlind },
+      },
+      layout.seats.length,
+      layout
+    );
+    const streets = new Set<string>();
+    for (
+      let i = 0;
+      i < 40 && !['showdown', 'complete'].includes(h.controller.getState().stage);
+      i++
+    ) {
+      const { state } = h.facts();
+      checkOrCall(h.controller);
+      const node = h.events.at(-1)!.publicNode;
+      expect(node).toMatchObject({
+        status: 'captured',
+        dealerSeat: layout.dealerSeat,
+        actorSeat: state.currentPlayerSeat,
+        street: state.stage,
+      });
+      if (node?.status !== 'captured') throw Error('dead-button capture missing');
+      expect(node.seats.map((seat) => seat[0])).toEqual(layout.seats);
+      expect(Object.isFrozen(node)).toBe(true);
+      streets.add(node.street);
+    }
+    expect([...streets]).toEqual(['preflop', 'flop', 'turn', 'river']);
+  });
+
   it('captures the original price, board, position and contribution without any private source read', () => {
     const h = harness();
     const { state, rights } = h.facts();
@@ -207,6 +249,28 @@ describe('public action nodes belong to the accepted action, before its mutation
 });
 
 describe('malformed or incompatible public evidence is excluded', () => {
+  it.each([0, -1, 11, 1.5, NaN, Infinity])(
+    'rejects invalid physical dealer seat %s',
+    (dealerSeat) => {
+      const h = harness(),
+        { state, rights } = h.facts();
+      state.dealerSeat = dealerSeat;
+      expect(captureHorsePublicActionNode(h.config, state, rights, 1)).toMatchObject({
+        status: 'unavailable',
+        reason: 'invalid_public_state',
+      });
+    }
+  );
+  it('still requires the heads-up button to belong to a dealt player', () => {
+    const h = harness({}, 2),
+      { state, rights } = h.facts();
+    state.dealerSeat = 3;
+    expect(captureHorsePublicActionNode(h.config, state, rights, 1)).toMatchObject({
+      status: 'unavailable',
+      reason: 'invalid_public_state',
+    });
+  });
+
   const corruptions: Array<
     [string, (state: GameState, rights: AuthoritativeActionState, config: HandConfig) => void]
   > = [

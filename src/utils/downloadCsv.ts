@@ -18,7 +18,7 @@
  * rather than assume it worked.
  */
 
-import { isNativePlatform } from '../lib/appBase';
+import { IS_NATIVE_BUILD, isNativePlatform } from '../lib/appBase';
 
 /** RFC 4180: quote anything containing a quote, comma or newline. */
 export function csvEscape(value: unknown): string {
@@ -66,7 +66,7 @@ export function downloadBlob(
 
   // THE APP (2026-09-08): a webview does not honour the download attribute,
   // so the file goes to the system share sheet (src/lib/native/share.ts).
-  if (isNativePlatform()) {
+  if (IS_NATIVE_BUILD && isNativePlatform()) {
     const sharing = import('../lib/native/share').then(({ nativeShareBlob }) => {
       check();
       return nativeShareBlob(blob, filename, undefined, isCurrent);
@@ -100,8 +100,19 @@ export function downloadBlob(
   return true;
 }
 
-export function downloadCsv(filename: string, csv: string): boolean {
+export function downloadCsv(filename: string, csv: string): boolean;
+export function downloadCsv(
+  filename: string,
+  csv: string,
+  isCurrent: () => boolean
+): boolean | Promise<boolean>;
+export function downloadCsv(
+  filename: string,
+  csv: string,
+  isCurrent?: () => boolean
+): boolean | Promise<boolean> {
   // The BOM is what makes Excel read this as UTF-8 instead of guessing;
   // club and player names are not all ASCII.
-  return downloadBlob(filename, new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' }));
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+  return isCurrent ? downloadBlob(filename, blob, isCurrent) : downloadBlob(filename, blob);
 }

@@ -1,3 +1,5 @@
+import { AuthorizedPrivateSend } from './AuthorizedPrivateSend.js';
+import { playerSessionVerdict } from '../services/PlayerSessionAccess.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * EngineWebSocketServer — native WebSocket transport for authoritative state
@@ -18,6 +20,9 @@
  * S→C:     ERROR    { type, code, message }
  * C→S:     RESYNC   { type }
  * C→S:     PONG     { type, ts }
+ * C→S:     RENDER_ACK { type, hand_id, d? }  Lightning Phase 12: the client
+ *          rendered this room's hand (a hand id only - never a card). The
+ *          engine times it on its own clock; `d` is ignored.
  *
  * Close codes (custom)
  *   4400 bad request (malformed upgrade)
@@ -30,6 +35,7 @@
  */
 
 import { WebSocketServer, WebSocket, type RawData } from 'ws';
+import { parseUpgradeTarget } from './upgradeTarget.js';
 import type { IncomingMessage } from 'http';
 import type { Server as HttpServer } from 'http';
 import { randomUUID } from 'crypto';
@@ -83,6 +89,14 @@ const TERMINATE_GRACE_MS = 250;
 const INBOUND_RATE_LIMIT = 30; // messages per second per connection
 const INBOUND_RATE_WINDOW_MS = 1_000;
 const MAX_INBOUND_MESSAGE_BYTES = 4 * 1024;
+/* The library's own ceiling, enforced while a message is still being received.
+   The MAX_INBOUND_MESSAGE_BYTES check runs on the `message` event, which
+   never fires for a frame that is still arriving or for an unfinished run of
+   fragments, so by itself it bounds nothing: `ws` defaults to 100 MiB per
+   message. This closes the socket (1009) long before that, and sits above
+   MAX_INBOUND_MESSAGE_BYTES so an oversized but complete message is still
+   answered by that check. */
+const MAX_FRAME_PAYLOAD_BYTES = 64 * 1024;
 
 // Close codes (must be in the 4000–4999 application-defined range per RFC 6455)
 export const CLOSE_AUTH_FAILED = 4401;
@@ -175,6 +189,26 @@ export function clientProtocolVersion(url: URL): number {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
+/** The device class a client reports (`?p=`), read for Lightning rooms. */
+export type ClientDevicePlatform = 'desktop' | 'tablet' | 'mobile';
+
+/**
+ * LIGHTNING PHASE 8 (2026-10-07): the device class the client says it runs
+ * on, from `?p=` on the socket URL (the one place both sockets share, like
+ * `?v=`). Anything else, or nothing (every bundle before this one), is null:
+ * "not reported", never a guess. Read only to tell the Lightning matcher how
+ * many Clusters this player may hold at once; it decides nothing else.
+ */
+export function clientDevicePlatform(url: URL): ClientDevicePlatform | null {
+  const raw = url.searchParams.get('p');
+  return raw === 'desktop' || raw === 'tablet' || raw === 'mobile' ? raw : null;
+}
+
+/** The same three words, carried on a mux SUBSCRIBE frame instead of the URL. */
+export function framePlatformOf(raw: unknown): ClientDevicePlatform | null {
+  return raw === 'desktop' || raw === 'tablet' || raw === 'mobile' ? raw : null;
+}
+
 // Round 70 + 67/190: extract real client IP from x-forwarded-for chain.
 // Caddy sits in front of the engine, so socket.remoteAddress is always
 // 127.0.0.1. The forwarded header carries the real chain.
@@ -240,8 +274,24 @@ export interface EngineWebSocketServerOptions {
    * disconnect countdown instantly instead of waiting for the next HTTP
    * heartbeat.
    */
-  onConnect?: (tableId: string, userId: string) => void;
+  onConnect?: (tableId: string, userId: string, platform?: ClientDevicePlatform | null) => void;
   onDisconnect?: (tableId: string, userId: string) => void;
+  /**
+   * PROOF OF LIFE FROM THE SOCKET (2026-10-05). A PONG or a RESYNC on an
+   * admitted table socket is the same evidence an HTTP /heartbeat is: the
+   * page is running and answering. Before this only onConnect fed presence,
+   * so a player whose HTTP beats were being lost (a proxy, a flaky request
+   * path) while their socket answered every PING was concluded gone after
+   * thirty seconds of HTTP silence. Presence only, never strikes (a beat
+   * is proof of a socket, not of a player; DisconnectEngine.heartbeat).
+   */
+  onAlive?: (tableId: string, userId: string) => void;
+  /**
+   * LIGHTNING PHASE 12: a RENDER_ACK on an admitted socket - the client
+   * painted the hand `handId` in room `tableId`. Telemetry only: it changes
+   * no state, and a malformed or unexpected ack is ignored.
+   */
+  onRenderAck?: (tableId: string, userId: string, handId: string) => void;
 }
 
 interface ConnectionState {
@@ -254,6 +304,8 @@ interface ConnectionState {
    * session revoked AFTER the upgrade.
    */
   token: string;
+  privateSend?: AuthorizedPrivateSend;
+  sessionRead?: Promise<boolean>;
   /** Epoch ms of the next re-auth. Staggered at connect, see REAUTH_INTERVAL_MS. */
   nextReauthAt: number;
   /** Single-table path: the table from the upgrade URL. Mux path: ''. */
@@ -270,6 +322,8 @@ interface ConnectionState {
   inboundWindowStart: number;
   /** Client address from the x-forwarded-for chain; null when unknown. */
   clientIp: string | null;
+  /** The device class from `?p=` (Lightning Phase 8); null when not reported. */
+  platform?: ClientDevicePlatform | null;
   /**
    * Roadmap batch 6 (2026-08-21) — multiplexed connection (/ws/multi).
    * One socket carries up to MUX_MAX_TABLES table subscriptions; every
@@ -319,14 +373,28 @@ async function defaultVerifyToken(token: string): Promise<TokenVerdict> {
   if (!token) return { denied: 'invalid', code: 'missing' };
   const hit = tokenCache.get(token);
   if (hit && Date.now() - hit.verifiedAt < TOKEN_CACHE_TTL_MS) {
-    return { userId: hit.userId };
+    const session = await playerSessionVerdict(hit.userId, token);
+    return session === 'alive'
+      ? { userId: hit.userId }
+      : {
+          denied: session === 'revoked' ? 'invalid' : 'unavailable',
+          code: session === 'revoked' ? 'session_not_found' : 'session_check_unavailable',
+        };
   }
   if (hit) tokenCache.delete(token);
   // 2026-09-04: the verdict says WHY (see wsHelpers). Only successes are
   // cached, as before - a 30s cache of "invalid" would lock a player out for
   // 30s after they sign back in.
   const verdict = await verifySupabaseToken(supabase.auth, token);
-  if (verdict.userId) cacheToken(token, verdict.userId);
+  if (verdict.userId) {
+    const session = await playerSessionVerdict(verdict.userId, token);
+    if (session !== 'alive')
+      return {
+        denied: session === 'revoked' ? 'invalid' : 'unavailable',
+        code: session === 'revoked' ? 'session_not_found' : 'session_check_unavailable',
+      };
+    cacheToken(token, verdict.userId);
+  }
   return verdict;
 }
 
@@ -405,9 +473,64 @@ export function refuseProtocol(
 // ─── EngineWebSocketServer ────────────────────────────────────────────────────
 
 export class EngineWebSocketServer {
+  /** Close only the target's definitively revoked sessions; active hands retain normal disconnect handling. */
+  public async revokePlayerSessions(userId: string, isCurrent = () => true): Promise<void> {
+    for (const [ws, connection] of Array.from(this.connections)) {
+      if (this.closing || !isCurrent()) return;
+      if (connection.userId !== userId) continue;
+      const token = connection.token;
+      if ((await playerSessionVerdict(userId, token)) !== 'revoked') continue;
+      if (
+        this.closing ||
+        !isCurrent() ||
+        this.connections.get(ws) !== connection ||
+        connection.token !== token
+      )
+        continue;
+      try {
+        ws.close(4401, 'auth:session_not_found');
+      } catch {
+        /* normal close cleanup owns presence */
+      }
+    }
+  }
+  /** Reconcile missed revocations only on the original subscription recovery event. */
+  public async revalidatePlayerSessions(isCurrent = () => true): Promise<void> {
+    const users = new Set(Array.from(this.connections.values(), (connection) => connection.userId));
+    for (const userId of users) {
+      if (this.closing || !isCurrent()) return;
+      await this.revokePlayerSessions(userId, isCurrent);
+    }
+  }
+  private async sessionCanReceive(conn: ConnectionState): Promise<boolean> {
+    if (this.closing || this.connections.get(conn.ws) !== conn) return false;
+    if (conn.sessionRead) return conn.sessionRead;
+    const token = conn.token;
+    const check = (async () => {
+      const verdict = await playerSessionVerdict(conn.userId, token);
+      if (this.closing || this.connections.get(conn.ws) !== conn || conn.token !== token)
+        return false;
+      if (verdict === 'revoked') {
+        try {
+          conn.ws.close(4401, 'auth:session_not_found');
+        } catch {
+          /* normal cleanup owns presence */
+        }
+      }
+      return verdict === 'alive';
+    })();
+    conn.sessionRead = check;
+    try {
+      return await check;
+    } finally {
+      if (conn.sessionRead === check) conn.sessionRead = undefined;
+    }
+  }
+
   private wss: WebSocketServer;
   private connections: Map<WebSocket, ConnectionState> = new Map();
   private heartbeatTimer: NodeJS.Timeout | null = null;
+  private closing = false;
   /** Last time the heartbeat interval actually got CPU time. */
   private lastHeartbeatSweepAt = Date.now();
   private readonly hub: TableStateHub;
@@ -419,7 +542,13 @@ export class EngineWebSocketServer {
     userId: string
   ) => Promise<TableConnectionAccess>;
   private readonly onResync?: (tableId: string, userId: string) => void;
-  private readonly onConnect?: (tableId: string, userId: string) => void;
+  private readonly onConnect?: (
+    tableId: string,
+    userId: string,
+    platform?: ClientDevicePlatform | null
+  ) => void;
+  private readonly onAlive?: (tableId: string, userId: string) => void;
+  private readonly onRenderAck?: (tableId: string, userId: string, handId: string) => void;
   private readonly onDisconnect?: (tableId: string, userId: string) => void;
   private accessStarts = new Map<symbol, number>();
   private accessCompleted = 0;
@@ -455,8 +584,10 @@ export class EngineWebSocketServer {
     };
     this.onResync = opts.onResync;
     this.onConnect = opts.onConnect;
+    this.onAlive = opts.onAlive;
+    this.onRenderAck = opts.onRenderAck;
     this.onDisconnect = opts.onDisconnect;
-    this.wss = new WebSocketServer({ noServer: true });
+    this.wss = new WebSocketServer({ noServer: true, maxPayload: MAX_FRAME_PAYLOAD_BYTES });
   }
 
   /**
@@ -466,8 +597,15 @@ export class EngineWebSocketServer {
    */
   attach(httpServer: HttpServer): void {
     httpServer.on('upgrade', (req, socket, head) => {
-      // Parse URL relative to a dummy host — `req.url` is path+query only.
-      const url = new URL(req.url || '/', 'http://localhost');
+      // A target that cannot be parsed is refused here, for both WebSocket
+      // servers: this listener is attached first, and an exception thrown in
+      // an upgrade listener restarts the whole engine (see upgradeTarget.ts).
+      const url = parseUpgradeTarget(req.url);
+      if (!url) {
+        socket.write('HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n');
+        socket.destroy();
+        return;
+      }
 
       /* ═══ PROTOCOL GATE (Phase 4, 2026-09-05) ═══════════════════════════
          Before auth and before any table work, because it is cheaper than
@@ -529,7 +667,7 @@ export class EngineWebSocketServer {
             }
             const userId = auth.userId;
             this.wss.handleUpgrade(req, socket, head, (ws) => {
-              this.onUpgradedMux(ws, userId, muxClientIp, muxToken);
+              this.onUpgradedMux(ws, userId, muxClientIp, muxToken, clientDevicePlatform(url));
             });
           })
           .catch(() => {
@@ -657,7 +795,15 @@ export class EngineWebSocketServer {
           this.logConnectionAudit(auth.userId, tableId, clientIp);
 
           this.wss.handleUpgrade(req, socket, head, (ws) => {
-            this.onUpgraded(ws, req, auth.userId, tableId, clientIp, token);
+            this.onUpgraded(
+              ws,
+              req,
+              auth.userId,
+              tableId,
+              clientIp,
+              token,
+              clientDevicePlatform(url)
+            );
           });
         })
         .catch(() => {
@@ -679,6 +825,7 @@ export class EngineWebSocketServer {
    * heartbeat interval.
    */
   async close(): Promise<void> {
+    this.closing = true;
     if (this.heartbeatTimer) {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;
@@ -696,6 +843,34 @@ export class EngineWebSocketServer {
   // Metrics
   connectionCount(): number {
     return this.connections.size;
+  }
+
+  /**
+   * Close every socket carrying `tableId` (Lightning Phase 6 remediation,
+   * 2026-10-01): a Lightning room whose pool session has ended. A
+   * single-table socket is closed 4404 (CLOSE_TABLE_NOT_FOUND), the code the
+   * client already treats as "this table is gone, stop reconnecting"; a mux
+   * socket keeps its other tables and is unsubscribed from this one with the
+   * TABLE_NOT_FOUND error a refused SUBSCRIBE gets. Presence is told for
+   * each, as for any close. Answers how many sockets it touched.
+   */
+  closeRoom(tableId: string, reason = 'Your Lightning Session Has Ended'): number {
+    let touched = 0;
+    for (const conn of [...this.connections.values()]) {
+      if (conn.isMux) {
+        if (!conn.subs?.has(tableId)) continue;
+        const sub = conn.subs.get(tableId);
+        conn.subs.delete(tableId);
+        if (sub && typeof sub !== 'symbol') this.hub.unsubscribe(tableId, sub);
+        this.sendMuxError(conn, tableId, 'TABLE_NOT_FOUND', reason);
+        this.notifyDisconnectIfLast(tableId, conn.userId);
+        touched++;
+      } else if (conn.tableId === tableId) {
+        this.retireConnection(conn, CLOSE_TABLE_NOT_FOUND, reason);
+        touched++;
+      }
+    }
+    return touched;
   }
 
   /** Counts and monotonic durations only; no identities or table contents. */
@@ -810,10 +985,12 @@ export class EngineWebSocketServer {
     userId: string,
     tableId: string,
     clientIp: string | null = null,
-    token = ''
+    token = '',
+    platform: ClientDevicePlatform | null = null
   ): void {
     if (this.refuseIfOverSocketCap(ws, userId)) return;
     const conn: ConnectionState = {
+      platform,
       id: randomUUID(),
       userId,
       token,
@@ -827,6 +1004,16 @@ export class EngineWebSocketServer {
       clientIp,
     };
     this.connections.set(ws, conn);
+    const privateSend = new AuthorizedPrivateSend({
+      current: () => !this.closing && this.connectionCanWrite(conn),
+      authorize: () => this.sessionCanReceive(conn),
+      send: (data, complete) => ws.send(data, complete),
+      buffered: () => ws.bufferedAmount,
+      retire: () =>
+        this.retireConnection(conn, CLOSE_RATE_LIMITED, 'private backpressure - reconnect'),
+      error: (error) => reportError(error, 'EngineWS.private_send'),
+    });
+    conn.privateSend = privateSend;
 
     // HubSubscriber adapter: ws already matches the shape almost exactly,
     // but we need a stable .id field and a numeric readyState.
@@ -844,6 +1031,7 @@ export class EngineWebSocketServer {
       get bufferedAmount() {
         return ws.bufferedAmount;
       },
+      sendPrivate: (data, delivered) => conn.privateSend?.enqueue(data, delivered),
       send(data: string) {
         ws.send(data);
       },
@@ -856,31 +1044,33 @@ export class EngineWebSocketServer {
     (ws as unknown as { __sub: HubSubscriber }).__sub = subscriber;
     this.hub.subscribe(tableId, subscriber);
     if (!this.connectionCanWrite(conn)) return;
-    // FIX 2 (2026-07-24): a fresh (re)connect gets the public SNAPSHOT above;
-    // ask the engine to also re-deliver this player's hole cards for the
-    // current hand so a reconnecting player isn't left blind.
-    // 2026-08-22 review: these callbacks reach into engine code and MUST NOT
-    // be able to abort the wiring below — a throw here used to leave the
-    // socket in this.connections and subscribed to the hub with NO close
-    // handler: a permanent leak the sweeps could never collect.
-    try {
-      this.resyncPlayer(tableId, userId);
-      // Presence belongs only to a physical connection that remains usable.
-      if (this.connectionCanWrite(conn)) this.onConnect?.(tableId, userId);
-    } catch {
-      /* engine wiring must never take down the transport */
-    }
-
+    // Wire lifecycle handlers before asynchronous admission or private delivery.
     ws.on('message', (raw) => this.onMessage(conn, raw));
     ws.on('close', () => this.onClose(ws));
     ws.on('error', () => this.onClose(ws));
+    // The upgrade's earlier verdict can expire during authorization/table wake.
+    // Recheck the registered connection before any initial private replay.
+    void this.sessionCanReceive(conn)
+      .then((allowed) => {
+        if (!allowed || !this.connectionCanWrite(conn)) return;
+        this.resyncPlayer(tableId, userId);
+        if (this.connectionCanWrite(conn)) this.notifyConnect(tableId, userId, conn.platform);
+      })
+      .catch((error) => reportError(error, 'EngineWS.initial_private_replay', { tableId }));
   }
 
   // ─── Roadmap batch 6: mux connection lifecycle ──────────────────────────
 
-  private onUpgradedMux(ws: WebSocket, userId: string, clientIp: string | null, token = ''): void {
+  private onUpgradedMux(
+    ws: WebSocket,
+    userId: string,
+    clientIp: string | null,
+    token = '',
+    platform: ClientDevicePlatform | null = null
+  ): void {
     if (this.refuseIfOverSocketCap(ws, userId)) return;
     const conn: ConnectionState = {
+      platform,
       id: randomUUID(),
       userId,
       token,
@@ -896,12 +1086,55 @@ export class EngineWebSocketServer {
       subs: new Map(),
     };
     this.connections.set(ws, conn);
+    const privateSend = new AuthorizedPrivateSend({
+      current: () => !this.closing && this.connectionCanWrite(conn),
+      authorize: () => this.sessionCanReceive(conn),
+      send: (data, complete) => ws.send(data, complete),
+      buffered: () => ws.bufferedAmount,
+      retire: () =>
+        this.retireConnection(conn, CLOSE_RATE_LIMITED, 'private backpressure - reconnect'),
+      error: (error) => reportError(error, 'EngineWS.private_send'),
+    });
+    conn.privateSend = privateSend;
     ws.on('message', (raw) => this.onMessage(conn, raw));
     ws.on('close', () => this.onClose(ws));
     ws.on('error', () => this.onClose(ws));
   }
 
+  /**
+   * Presence for a socket that became usable. The device class (Lightning
+   * Phase 8) is passed only when the client reported one, so every existing
+   * listener keeps the exact call it always had.
+   */
+  private notifyConnect(
+    tableId: string,
+    userId: string,
+    platform: ClientDevicePlatform | null | undefined
+  ): void {
+    if (platform) this.onConnect?.(tableId, userId, platform);
+    else this.onConnect?.(tableId, userId);
+  }
+
   /** A private-state replay failure must not abort transport recovery or presence. */
+  private notifyAlive(tableId: string, userId: string): void {
+    if (!tableId || !userId) return;
+    try {
+      this.onAlive?.(tableId, userId);
+    } catch (error) {
+      reportError(error, 'EngineWS.proof_of_life');
+    }
+  }
+
+  /** LIGHTNING PHASE 12: a render acknowledgement (telemetry only; never throws). */
+  private renderAck(tableId: string, userId: string, handId: unknown): void {
+    if (!tableId || !userId || typeof handId !== 'string' || handId.length > 64) return;
+    try {
+      this.onRenderAck?.(tableId, userId, handId);
+    } catch (error) {
+      reportError(error, 'EngineWS.render_ack');
+    }
+  }
+
   private resyncPlayer(tableId: string, userId: string): void {
     try {
       this.onResync?.(tableId, userId);
@@ -977,11 +1210,21 @@ export class EngineWebSocketServer {
     this.sendControl(conn, { type: 'ERROR', tableId, code, message });
   }
 
-  private async handleMuxSubscribe(conn: ConnectionState, tableId: string): Promise<void> {
+  private async handleMuxSubscribe(
+    conn: ConnectionState,
+    tableId: string,
+    framePlatform: ClientDevicePlatform | null = null
+  ): Promise<void> {
     if (!conn.subs || !this.connectionCanWrite(conn)) return;
     const existing = conn.subs.get(tableId);
     if (typeof existing === 'symbol') return; // in flight - first one wins
     if (existing) {
+      if (
+        !(await this.sessionCanReceive(conn)) ||
+        !this.connectionCanWrite(conn) ||
+        conn.subs.get(tableId) !== existing
+      )
+        return;
       // Idempotent: already subscribed. Re-ack + resync so a client retry
       // converges instead of erroring.
       if (!this.sendControl(conn, { type: 'SUBSCRIBED', tableId })) return;
@@ -1024,6 +1267,7 @@ export class EngineWebSocketServer {
     try {
       const viewerAccess = await this.authorizeConnection(tableId, conn.userId);
       timing.authorityReturnedAtMs = elapsed();
+      if (!isCurrent() || !(await this.sessionCanReceive(conn)) || !isCurrent()) return;
       const banned = viewerAccess.banned;
       // UNSUBSCRIBE, close, or a new attempt may have won during the await.
       // Neither a stale success nor a stale refusal belongs to that attempt.
@@ -1086,6 +1330,8 @@ export class EngineWebSocketServer {
       }
       // The socket may have closed while the async gates ran.
       if (!isCurrent()) return;
+      // Table wake may outlive the durable grant checked before that await.
+      if (!isCurrent() || !(await this.sessionCanReceive(conn)) || !isCurrent()) return;
       this.logConnectionAudit(conn.userId, tableId, conn.clientIp);
       const ws = conn.ws;
       // eslint-disable-next-line @typescript-eslint/no-this-alias
@@ -1099,6 +1345,8 @@ export class EngineWebSocketServer {
         get bufferedAmount() {
           return ws.bufferedAmount;
         },
+        sendPrivate: (data, delivered) =>
+          conn.privateSend?.enqueue(data, delivered, () => conn.subs?.get(tableId) === subscriber),
         send(data: string) {
           ws.send(data);
           if (measuringInitialFrames && timing.firstHubFrameQueuedAtMs === null) {
@@ -1127,7 +1375,7 @@ export class EngineWebSocketServer {
       try {
         this.resyncPlayer(tableId, conn.userId);
         // Presence belongs only to an adapter that survived the private replay.
-        if (isCurrent()) this.onConnect?.(tableId, conn.userId);
+        if (isCurrent()) this.notifyConnect(tableId, conn.userId, framePlatform ?? conn.platform);
       } catch {
         /* engine wiring must never take down the transport */
       }
@@ -1138,6 +1386,9 @@ export class EngineWebSocketServer {
       conn.subs.delete(tableId);
       this.sendMuxError(conn, tableId, 'SUB_FAILED', 'Subscribe failed');
     } finally {
+      // An unknown grant is not a settled subscription. Release only this
+      // pending attempt so a later explicit retry can recheck authority.
+      if (typeof owned === 'symbol' && conn.subs?.get(tableId) === owned) conn.subs.delete(tableId);
       measuringInitialFrames = false;
       // Private replay/presence callbacks can retire an admitted connection.
       // Observe final ownership without invoking another admission/cleanup gate.
@@ -1160,16 +1411,25 @@ export class EngineWebSocketServer {
     }
   }
 
-  private handleMuxMessage(conn: ConnectionState, msg: { type?: string; tableId?: unknown }): void {
+  private handleMuxMessage(
+    conn: ConnectionState,
+    msg: { type?: string; tableId?: unknown; platform?: unknown; hand_id?: unknown }
+  ): void {
     const tableId = typeof msg.tableId === 'string' ? msg.tableId : '';
     switch (msg.type) {
       case 'PONG':
         conn.lastPongAt = Date.now();
         conn.heartbeatGraceAt = 0;
+        if (conn.subs && this.connectionCanWrite(conn)) {
+          for (const [subTableId, sub] of conn.subs) {
+            if (typeof sub !== 'symbol') this.notifyAlive(subTableId, conn.userId);
+          }
+        }
         return;
       case 'SUBSCRIBE':
         if (!tableId) return;
-        void this.handleMuxSubscribe(conn, tableId);
+        // Lightning Phase 8: a Lightning room's SUBSCRIBE names the device class.
+        void this.handleMuxSubscribe(conn, tableId, framePlatformOf(msg.platform));
         return;
       case 'UNSUBSCRIBE': {
         if (!tableId || !conn.subs) return;
@@ -1182,9 +1442,23 @@ export class EngineWebSocketServer {
         if (!tableId || !conn.subs) return;
         const sub = conn.subs.get(tableId);
         if (sub && typeof sub !== 'symbol') {
-          this.hub.resync(tableId, sub);
-          if (this.connectionCanWrite(conn)) this.resyncPlayer(tableId, conn.userId);
+          void this.sessionCanReceive(conn)
+            .then((allowed) => {
+              if (!allowed || !this.connectionCanWrite(conn) || conn.subs?.get(tableId) !== sub)
+                return;
+              this.hub.resync(tableId, sub);
+              this.notifyAlive(tableId, conn.userId);
+              this.resyncPlayer(tableId, conn.userId);
+            })
+            .catch((error) => reportError(error, 'EngineWS.authorized_resync', { tableId }));
         }
+        return;
+      }
+      case 'RENDER_ACK': {
+        // Only for a table this socket is actually subscribed to.
+        if (!tableId || !conn.subs) return;
+        const sub = conn.subs.get(tableId);
+        if (sub && typeof sub !== 'symbol') this.renderAck(tableId, conn.userId, msg.hand_id);
         return;
       }
       default:
@@ -1234,7 +1508,10 @@ export class EngineWebSocketServer {
     if (!msg || typeof msg.type !== 'string') return;
 
     if (conn.isMux) {
-      this.handleMuxMessage(conn, msg as { type?: string; tableId?: unknown });
+      this.handleMuxMessage(
+        conn,
+        msg as { type?: string; tableId?: unknown; platform?: unknown; hand_id?: unknown }
+      );
       return;
     }
 
@@ -1242,15 +1519,27 @@ export class EngineWebSocketServer {
       case 'PONG':
         conn.lastPongAt = Date.now();
         conn.heartbeatGraceAt = 0;
+        this.notifyAlive(conn.tableId, conn.userId);
         return;
       case 'RESYNC': {
         const sub = (conn.ws as unknown as { __sub: HubSubscriber }).__sub;
-        this.hub.resync(conn.tableId, sub);
         // FIX 2 (2026-07-24): re-deliver hole cards alongside the public
         // snapshot — the RESYNC snapshot only carries scrubbed public state.
-        if (this.connectionCanWrite(conn)) this.resyncPlayer(conn.tableId, conn.userId);
+        void this.sessionCanReceive(conn)
+          .then((allowed) => {
+            if (!allowed || !this.connectionCanWrite(conn)) return;
+            this.hub.resync(conn.tableId, sub);
+            this.notifyAlive(conn.tableId, conn.userId);
+            this.resyncPlayer(conn.tableId, conn.userId);
+          })
+          .catch((error) =>
+            reportError(error, 'EngineWS.authorized_resync', { tableId: conn.tableId })
+          );
         return;
       }
+      case 'RENDER_ACK':
+        this.renderAck(conn.tableId, conn.userId, (msg as { hand_id?: unknown }).hand_id);
+        return;
       default:
         // Client→server messages other than PONG / RESYNC are ignored. We
         // deliberately do NOT accept action submissions over WS — the REST

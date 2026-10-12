@@ -9,6 +9,7 @@ from pathlib import Path
 import os
 import json
 import shlex
+import urllib.parse
 import shutil
 import subprocess
 import sys
@@ -81,9 +82,15 @@ class ForwardAdmissionTests(unittest.TestCase):
         self.side = self.commit('server/side.txt', 'side')
         self.git('switch', '-q', 'main')
         self.git('remote', 'add', 'origin', str(self.repo))
-        helper = self.repo / 'scripts/ci/production-e2e-provenance.mjs'
-        helper.parent.mkdir(parents=True, exist_ok=True)
-        helper.write_bytes((ROOT / 'scripts/ci/production-e2e-provenance.mjs').read_bytes())
+        # The certification gate reads the engine through read-engine-release.mjs
+        # so a scheduled :55 restart is a wait rather than a red. Copy the real
+        # reader and its import; the URL is redirected to a data: URL below, so
+        # the shipped transport executes for real against the fixture health.
+        for script in ('production-e2e-provenance.mjs', 'read-engine-release.mjs',
+                       'await-engine-gameplay.mjs'):
+            helper = self.repo / 'scripts/ci' / script
+            helper.parent.mkdir(parents=True, exist_ok=True)
+            helper.write_bytes((ROOT / 'scripts/ci' / script).read_bytes())
         self.high_water = self.directory / 'high-water'
         self.high_water.write_text(self.a + '\n')
         self.seal_calls = self.directory / 'seal-calls'
@@ -112,14 +119,21 @@ class ForwardAdmissionTests(unittest.TestCase):
                 checkout=None, now=600, inside_break=False, fault=None, tail='', trigger='', event=None, health=None):
         target = self.b if target is None else target
         control = self.main if control is None else control
+        health_document = json.dumps(
+            health if health is not None
+            else {'releaseSha': self.b, 'running': True, 'liveness': 'ok'})
+        # A data: URL is a real fetch with a real 200 through the real reader
+        # and needs no server, so the gate's own transport is what executes.
+        code = code.replace(
+            '"https://engine.smarter.poker/health?certificate=$GITHUB_RUN_ID"',
+            '"data:application/json,' + urllib.parse.quote(health_document, safe='') + '"')
         self.git('checkout', '-q', '--detach', checkout or control)
         env = dict(self.env)
         env.update(REPO_DIR=str(self.repo), SHA=target, TARGET_SHA=target,
                    ENGINE_TRIGGER_SHA=trigger,
                    EVENT_NAME=event or ('repository_dispatch' if trigger else 'workflow_run'),
                    GITHUB_RUN_ID='fixture',
-                   ENGINE_HEALTH_JSON=json.dumps(health if health is not None else
-                       {'releaseSha': self.b, 'running': True, 'liveness': 'ok'}),
+                   ENGINE_HEALTH_JSON=health_document,
                    REQUESTED_SHA=target if requested is None else requested,
                    CONTROL_SHA=control, RUN_KEY='123-1',
                    DEPLOY_NOT_AFTER_EPOCH='9000', DEADLINE='9000',

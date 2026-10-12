@@ -116,6 +116,18 @@ export class TableWebSocket {
     this.username = username;
   }
 
+  /** The topic realtime-js registers `channel('table:<id>')` under. */
+  static channelTopic(tableId: string): string {
+    return `realtime:table:${tableId}`;
+  }
+
+  /** Channels the realtime client still holds under `topic` (none if it cannot say). */
+  private registeredChannels(topic: string): RealtimeChannel[] {
+    const list =
+      typeof this.supabase?.getChannels === 'function' ? this.supabase.getChannels() : [];
+    return (list || []).filter((c) => c && c.topic === topic);
+  }
+
   // ─────────────────────────────────────────────────────────────────────────────
   // CONNECTION MANAGEMENT
   // ─────────────────────────────────────────────────────────────────────────────
@@ -165,6 +177,33 @@ export class TableWebSocket {
           /* best effort — a dead channel object can throw on removal */
         }
         if (this.destroyed) return false;
+      }
+
+      // 2026-10-12 (chat line shown three times): the 08-22 note above says
+      // supabase-js does not dedupe topics. The installed realtime-js
+      // (2.90.x) DOES: `client.channel(topic)` returns the channel already
+      // registered under that topic instead of a new one. A previous
+      // instance's channel stays registered until its leave round-trip
+      // finishes, and the hook's props churn 2-3 times per table mount, so
+      // the next instance was handed THAT object and stacked its `.on()`
+      // listeners onto it - one table_chat INSERT then emitted
+      // TABLE_CHAT_INSERT once per stacked listener (Dan's "Good Luck",
+      // one row in table_chat, drawn three times). A table channel is never
+      // reused: anything still registered under our topic is removed first,
+      // and if it will not go we retry later rather than stack onto it.
+      const topic = TableWebSocket.channelTopic(this.tableId);
+      for (const leftover of this.registeredChannels(topic)) {
+        try {
+          await this.supabase.removeChannel(leftover);
+        } catch {
+          /* best effort - checked again below */
+        }
+        if (this.destroyed) return false;
+      }
+      if (this.registeredChannels(topic).length > 0) {
+        reportError('Table channel still registered, retrying', 'TableWS.connect.channelInUse');
+        this.scheduleReconnect();
+        return false;
       }
 
       // Create channel for this table

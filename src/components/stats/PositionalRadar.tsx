@@ -37,7 +37,7 @@ export interface PositionalRadarRow {
   three_bet_opps?: number;
   hands_won?: number;
   total_profit?: number;
-  bb100?: number;
+  bb100?: number | null;
 }
 
 interface Props {
@@ -329,34 +329,37 @@ export default function PositionalRadar({ positions, minHands = 30 }: Props) {
               const [x, y] = pointAt(i, total, R + 22);
               const dim = r.hands_played < minHands;
               return (
-                <text
+                <g
                   key={`label-${r.position}`}
-                  className={`pos-radar-axis-label${dim ? ' is-dim' : ''}${
-                    focused === i ? ' is-focused' : ''
-                  }`}
-                  x={x}
-                  y={y}
-                  textAnchor="middle"
-                  dominantBaseline="middle"
-                  /* Tap and keyboard reach it too (2026-08-29): hover was the
-                     only way to focus an axis, so on a phone the radar could
-                     not be interrogated at all. */
                   tabIndex={0}
                   role="button"
+                  aria-label={`Focus ${r.position} Position`}
                   onMouseEnter={() => setFocused(i)}
                   onMouseLeave={() => setFocused(null)}
                   onFocus={() => setFocused(i)}
                   onBlur={() => setFocused(null)}
-                  onClick={() => setFocused((cur) => (cur === i ? null : i))}
+                  onClick={() => setFocused(i)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
                       e.preventDefault();
-                      setFocused((cur) => (cur === i ? null : i));
+                      setFocused(i);
                     }
                   }}
                 >
-                  {r.position}
-                </text>
+                  <circle className="pos-radar-axis-target" cx={x} cy={y} r={22} />
+                  <text
+                    className={`pos-radar-axis-label${dim ? ' is-dim' : ''}${
+                      focused === i ? ' is-focused' : ''
+                    }`}
+                    x={x}
+                    y={y}
+                    textAnchor="middle"
+                    dominantBaseline="middle"
+                    aria-hidden="true"
+                  >
+                    {r.position}
+                  </text>
+                </g>
               );
             })}
           </svg>
@@ -390,6 +393,7 @@ export default function PositionalRadar({ positions, minHands = 30 }: Props) {
           </div>
 
           <table className="pos-radar-table">
+            <caption className="sr-only">Positional Shape Data</caption>
             <thead>
               <tr>
                 <th scope="col">Pos</th>
@@ -408,22 +412,21 @@ export default function PositionalRadar({ positions, minHands = 30 }: Props) {
                   className={`${r.hands_played < minHands ? 'is-dim' : ''}${
                     focused === i ? ' is-focused' : ''
                   }`}
-                  /* The table row highlights its matching radar axis. On a
-                     phone that link did not exist, because it was hover-only. */
-                  tabIndex={0}
                   onMouseEnter={() => setFocused(i)}
                   onMouseLeave={() => setFocused(null)}
-                  onFocus={() => setFocused(i)}
-                  onBlur={() => setFocused(null)}
-                  onClick={() => setFocused((cur) => (cur === i ? null : i))}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      setFocused((cur) => (cur === i ? null : i));
-                    }
-                  }}
                 >
-                  <th scope="row">{r.position}</th>
+                  <th scope="row">
+                    <button
+                      type="button"
+                      className="pos-radar-row-button"
+                      aria-pressed={focused === i}
+                      onFocus={() => setFocused(i)}
+                      onBlur={() => setFocused(null)}
+                      onClick={() => setFocused(i)}
+                    >
+                      {r.position}
+                    </button>
+                  </th>
                   <td>{r.hands_played.toLocaleString()}</td>
                   {METRICS.filter((m) => visible[m.key]).map((m) => (
                     <td key={m.key} style={{ color: m.color }}>

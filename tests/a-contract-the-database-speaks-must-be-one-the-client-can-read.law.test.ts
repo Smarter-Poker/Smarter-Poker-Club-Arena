@@ -104,6 +104,23 @@ const LIVE_2026_09_23 = {
 };
 
 describe('a contract the database speaks must be one the client can read', () => {
+  it('reuses only identical SQL without sharing mutable facts or dropping non-wheel declarations', () => {
+    const sql =
+      'CREATE FUNCTION public.fn_diamond_bonus_new() RETURNS void AS $$ BEGIN END $$ LANGUAGE plpgsql; ALTER TABLE public.crash_rounds ADD CHECK(payout_version >= 99);';
+    const first = contractFactsInSql(sql);
+    expect(first.payout_versions).toEqual([99]);
+    expect(first.declared_bonus_fns).toEqual(['fn_diamond_bonus_new']);
+    first.payout_versions.push(100);
+    first.declared_bonus_fns.length = 0;
+    expect(contractFactsInSql(sql).payout_versions).toEqual([99]);
+    expect(contractFactsInSql(sql).declared_bonus_fns).toEqual(['fn_diamond_bonus_new']);
+    expect(contractFactsInSql(sql.replace('>= 99', '>= 98')).payout_versions).toEqual([98]);
+    expect(
+      contractFactsInSql(
+        "CREATE FUNCTION public.FN_WHEEL_STATE_V2() RETURNS jsonb AS $$ SELECT jsonb_build_object('contract_version',99); $$ LANGUAGE sql;"
+      ).contract_versions
+    ).toEqual([99]);
+  });
   it('reads the live catalogue, not a snapshot of it', () => {
     // The snapshot is what let the existing gates pass a contract production
     // had already moved past.

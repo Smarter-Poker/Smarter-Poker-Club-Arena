@@ -6,7 +6,14 @@ const mocks = vi.hoisted(() => ({
   track: vi.fn(),
 }));
 
-vi.mock('../src/lib/supabase', () => ({ supabase: { rpc: mocks.rpc } }));
+vi.mock('../src/lib/supabase', () => ({
+  supabase: {
+    rpc: (...args: unknown[]) => {
+      const response = mocks.rpc(...args);
+      return Object.assign(response, { abortSignal: () => response });
+    },
+  },
+}));
 vi.mock('../src/core/MasterBus', () => ({ masterBus: { emit: mocks.emit } }));
 vi.mock('../src/services/ClubEntryTrustService', () => ({
   ClubEntryTrustService: { track: mocks.track },
@@ -17,7 +24,7 @@ import { PlayerSearchService } from '../src/services/PlayerSearchService';
 
 describe('Phase 7 Club Entry service interactions', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     window.localStorage.clear();
   });
 

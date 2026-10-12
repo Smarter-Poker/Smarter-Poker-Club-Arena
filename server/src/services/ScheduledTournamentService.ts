@@ -42,7 +42,17 @@ import { validateMttBlindStructure } from '../domain/tournamentBlindContract.js'
 import { supabase } from './supabase.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { reportError } from './errorReporter.js';
+import { raiseFinancialAlert } from './financialAlerts.js';
+import { isGuaranteeBankRefusal } from '../domain/guaranteeBankRefusal.js';
+import { GuaranteeRefusalBackoff } from './guaranteeRefusalBackoff.js';
 import { buyInFor, freeBuyColumns, rakeRateFor, wholeChips } from '../config/buyIn.js';
+import {
+  DIAMOND_HOUSE_AVAILABLE_RPC,
+  DIAMOND_SPAWN_RPC,
+  diamondSpawnConfig,
+  isDiamondArenaClubRow,
+  readDiamondSpawnAnswer,
+} from './diamondScheduledSpawn.js';
 import { mttBountyAmount } from '../tournament/mttBountyAllocation.js';
 import { mysteryBountyCreationColumns } from '../domain/mysteryBountyCreation.js';
 import {
@@ -69,6 +79,19 @@ import {
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/** How close to its start a refused occurrence must be before it pages. */
+export const MISSED_OCCURRENCE_PAGE_WITHIN_MS = 60 * 60_000;
+export const MISSED_OCCURRENCE_SOURCE = 'ScheduledTournaments.occurrence_not_created';
+
+/** A refusal pages only when the occurrence is due within the hour or overdue. */
+export function occurrenceKey(scheduleId: string, startTime: Date): string {
+  return `${scheduleId}:${startTime.toISOString()}`;
+}
+
+export function missedOccurrenceIsPageable(startTime: Date, now: Date): boolean {
+  return startTime.getTime() - now.getTime() <= MISSED_OCCURRENCE_PAGE_WITHIN_MS;
+}
+
 export interface TournamentScheduleRow {
   id: string;
   union_id: string | null;
@@ -85,6 +108,15 @@ export interface TournamentScheduleRow {
    * in this zone, converted per occurrence by scheduleWallClock.zonedStartUtc.
    */
   time_zone?: string | null;
+}
+
+/** The club columns a scheduled spawn reads: its bank and its arena identity. */
+interface ScheduleClubRow {
+  id?: string;
+  chip_treasury?: number | string | null;
+  union_id?: string | null;
+  asset?: string | null;
+  is_platform?: boolean | null;
 }
 
 interface SpawnDue {
@@ -546,6 +578,69 @@ export class ScheduledTournamentService {
    */
   private readonly refusedSeatFirstSchedules = new Set<string>();
 
+  /**
+   * Refused guaranteed spawns wait until the answer can have changed: the
+   * funding bank grew by the refusal's shortfall, or a 5-to-30-minute recheck
+   * passed. See guaranteeRefusalBackoff.ts. The database stays the judge.
+   */
+  private readonly guaranteeBackoff = new GuaranteeRefusalBackoff();
+  /** One funding-bank read per club per poll, shared by every deferred spawn. */
+  private fundingBankReads = new Map<string, Promise<number | null>>();
+  /** One club row read per club per poll, shared by the bank and the arena check. */
+  private clubRowReads = new Map<string, Promise<ScheduleClubRow | null>>();
+  /** Schedules found deleted (FK 23503) during the current pass. */
+  private retiredScheduleIds = new Set<string>();
+
+  /** The schedule's club row, or null when it could not be read. */
+  private readonly readClubRow = (clubId: string): Promise<ScheduleClubRow | null> => {
+    const cached = this.clubRowReads.get(clubId);
+    if (cached) return cached;
+    const read = (async (): Promise<ScheduleClubRow | null> => {
+      const { data, error } = await supabase
+        .from('clubs')
+        .select('id, chip_treasury, union_id, asset, is_platform')
+        .eq('id', clubId)
+        .maybeSingle();
+      if (error || !data) return null;
+      return data as ScheduleClubRow;
+    })();
+    this.clubRowReads.set(clubId, read);
+    return read;
+  };
+
+  /**
+   * The bank that funds this club's overlays: its union's wallet, else its
+   * treasury - and for the Diamond Arena, the arena house's spare capacity
+   * (fn_ca_diamond_house_available), which is what a Diamond guarantee is
+   * earmarked against. Null when it could not be read.
+   */
+  private readonly readFundingBank = (clubId: string): Promise<number | null> => {
+    const cached = this.fundingBankReads.get(clubId);
+    if (cached) return cached;
+    const read = (async (): Promise<number | null> => {
+      const club = await this.readClubRow(clubId);
+      if (!club) return null;
+      if (isDiamondArenaClubRow(club)) {
+        const { data: available, error: houseErr } = await supabase.rpc(
+          DIAMOND_HOUSE_AVAILABLE_RPC
+        );
+        if (houseErr) return null;
+        const n = Number(available);
+        return Number.isFinite(n) ? n : null;
+      }
+      if (!club.union_id) return Number(club.chip_treasury ?? 0);
+      const { data: wallet, error: walletErr } = await supabase
+        .from('union_wallets')
+        .select('chip_balance')
+        .eq('union_id', club.union_id)
+        .maybeSingle();
+      if (walletErr) return null;
+      return Number(wallet?.chip_balance ?? 0);
+    })();
+    this.fundingBankReads.set(clubId, read);
+    return read;
+  };
+
   private lifecycleIsCurrent(generation: number): boolean {
     return this.isRunning && this.lifecycleGeneration === generation;
   }
@@ -622,6 +717,9 @@ export class ScheduledTournamentService {
     if (!this.lifecycleIsCurrent(generation) || isMaintenanceFrozen()) return;
     if (this.polling) return;
     this.polling = true;
+    this.clubRowReads = new Map();
+    this.fundingBankReads = new Map();
+    this.retiredScheduleIds = new Set();
     try {
       const { data: schedules, error } = await supabase
         .from('tournament_schedules')
@@ -729,6 +827,7 @@ export class ScheduledTournamentService {
     }
 
     for (const spawn of due) {
+      if (this.retiredScheduleIds.has(schedule.id)) return; // deleted mid-pass
       if (claimedSet?.has(spawn.spawnKey)) continue; // already spawned
       await this.spawnInstance(schedule, cfg, spawn.spawnKey, spawn.startTime);
     }
@@ -778,7 +877,14 @@ export class ScheduledTournamentService {
     if (!dueNow) return;
 
     const startTime = new Date(now.getTime() + 5 * 60 * 1000);
-    await this.spawnInstance(schedule, cfg, intervalSpawnKey(schedule.id, now), startTime);
+    await this.spawnInstance(
+      schedule,
+      cfg,
+      intervalSpawnKey(schedule.id, now),
+      startTime,
+      // the interval key changes every minute; its refusal is the schedule's
+      `${schedule.id}:interval`
+    );
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -789,15 +895,72 @@ export class ScheduledTournamentService {
     schedule: TournamentScheduleRow,
     cfg: Record<string, unknown>,
     spawnKey: string,
-    startTime: Date
+    startTime: Date,
+    deferralKey: string = spawnKey
   ): Promise<void> {
+    // A spawn the bank refused is asked again only when the answer can have
+    // changed (guaranteeRefusalBackoff.ts), not on every 60-second poll.
+    if (!(await this.guaranteeBackoff.shouldAttempt(deferralKey, this.readFundingBank))) return;
+
     // Resolve everything that can fail BEFORE claiming the spawn key, so a
     // skipped spawn (e.g. satellite target not found yet) is retried next poll
     // instead of being burned forever.
     const row = await this.buildInsertRow(schedule, cfg, startTime);
-    if (!row) return;
+    if (!row) {
+      // A satellite whose target event does not exist yet is not a missed
+      // event: a daily satellite feeding a weekly target only runs once that
+      // target is on the board, by design. Everything else that refuses the
+      // row is a configuration the schedule can never spawn.
+      if (this.waitingForSatelliteTarget.delete(occurrenceKey(schedule.id, startTime))) return;
+      await this.pageMissedOccurrence(
+        schedule,
+        startTime,
+        'its configuration was refused before creation (the ScheduledTournaments error log names the rule)'
+      );
+      return;
+    }
+
+    /* THE DIAMOND ARENA RUNS THE MIDWAY UNION'S SCHEDULE (Dan 2026-10-06:
+       "USE THE SAME TOURNAMENT SCHEDULE AND RAKE AS THE MIDWAY UNION FOR
+       NOW"). A schedule hung off the arena is built into the same row as
+       every other schedule - one set of presets, satellite rules and checks -
+       and then created through the arena's own door instead of a direct
+       insert, because only that door prices the entry in whole Diamonds and
+       earmarks the guarantee on the arena house. See diamondScheduledSpawn.ts.
+       Unknown is not chips: a club row that cannot be read skips this poll. */
+    const arena = await this.scheduleIsDiamondArena(schedule);
+    if (arena === null) return;
+    let diamondConfig: Record<string, unknown> | null = null;
+    if (arena) {
+      const mapped = diamondSpawnConfig(row, cfg, startTime);
+      if (!mapped.ok) {
+        reportError(
+          new Error(
+            `[ScheduledTournaments] schedule ${schedule.id.slice(0, 8)} cannot be priced in whole Diamonds: ${mapped.reason} - skipping`
+          ),
+          'ScheduledTournaments.diamond_config_refused'
+        );
+        await this.pageMissedOccurrence(schedule, startTime, mapped.reason);
+        return;
+      }
+      diamondConfig = mapped.config;
+    }
 
     if (!(await this.claimSpawn(schedule.id, spawnKey))) return; // already spawned
+
+    if (diamondConfig) {
+      const diamondId = await this.spawnDiamondInstance(
+        schedule,
+        spawnKey,
+        startTime,
+        diamondConfig,
+        deferralKey
+      );
+      if (!diamondId) return;
+      await this.clearMissedOccurrencePage(schedule.id);
+      await this.finishSpawn(row, cfg, spawnKey, startTime, diamondId);
+      return;
+    }
 
     const { data: created, error: insertErr } = await supabase
       .from('tournaments')
@@ -820,6 +983,7 @@ export class ScheduledTournamentService {
         // one collides with the earlier one that is still pre-start. Holding
         // the key would burn the 21:00 game for the day. Releasing lets it be
         // retried each poll and spawn the moment the earlier instance starts.
+        this.guaranteeBackoff.settled(deferralKey);
         console.log(
           `[ScheduledTournaments] "${row.name}" already live pre-start - spawn ${spawnKey} deferred`
         );
@@ -855,6 +1019,7 @@ export class ScheduledTournamentService {
         new Error(`[ScheduledTournaments] insert failed for ${spawnKey}: ${msg}`),
         'ScheduledTournaments.insert_failed'
       );
+      await this.pageMissedOccurrence(schedule, startTime, msg);
       // THE POP-UP (Dan 2026-08-29): "IF THE BANK DOESN'T HOLD ENOUGH CHIPS A
       // POP UP MUST APPEAR LETTING THE CLUB OR UNION KNOW THEY NEED MORE CHIPS
       // IN THE BANK TO COVER THE GUARANTEE."
@@ -866,7 +1031,13 @@ export class ScheduledTournamentService {
       // notification from a fresh transaction. fn_notify_guarantee_bank_short
       // dedupes on unread per recipient per bank, so a schedule that re-fails
       // every 30s poll produces ONE standing bell notification, not a storm.
-      if (/cannot guarantee/i.test(msg) && row.club_id) {
+      if (isGuaranteeBankRefusal(msg) && row.club_id) {
+        await this.guaranteeBackoff.refused(
+          deferralKey,
+          String(row.club_id),
+          msg,
+          this.readFundingBank
+        );
         const { error: notifyErr } = await supabase.rpc('fn_notify_guarantee_bank_short', {
           p_club_id: row.club_id,
         });
@@ -878,13 +1049,178 @@ export class ScheduledTournamentService {
             'ScheduledTournaments.guarantee_notify_failed'
           );
         }
+      } else {
+        this.guaranteeBackoff.settled(deferralKey);
       }
       return;
     }
+    this.guaranteeBackoff.settled(deferralKey);
+    await this.clearMissedOccurrencePage(schedule.id);
+    await this.finishSpawn(row, cfg, spawnKey, startTime, created.id);
+  }
 
+  /**
+   * Is this schedule hung off the Diamond Arena? A union schedule never is (a
+   * Diamond game cannot belong to a union), so it is answered without a read.
+   * Otherwise the club row decides, through the shared arena contract. Null
+   * when the club row could not be read - not an answer, so the spawn waits.
+   */
+  private async scheduleIsDiamondArena(schedule: TournamentScheduleRow): Promise<boolean | null> {
+    if (schedule.union_id) return false;
+    const club = await this.readClubRow(schedule.club_id);
+    if (!club) {
+      reportError(
+        new Error(
+          `[ScheduledTournaments] schedule ${schedule.id.slice(0, 8)}: club row unreadable - spawn waits for the next poll`
+        ),
+        'ScheduledTournaments.club_read_failed'
+      );
+      return null;
+    }
+    return isDiamondArenaClubRow(club);
+  }
+
+  /**
+   * Create one Diamond Arena occurrence through its door. Returns the
+   * tournament id, or null when the door refused or could not be asked.
+   *
+   * FAILS CLOSED. A refusal (or an unreadable answer) is reported with the
+   * door's own reason, the claim is released so the occurrence is not burnt,
+   * and nothing is linked or seeded - no spawn is ever recorded that the
+   * database did not make. The door is idempotent per (schedule, start), so a
+   * call that committed but whose answer was lost is answered with the same
+   * tournament id on the next attempt. The retry waits on the same backoff a
+   * refused chip guarantee does: until the arena house grew by the shortfall
+   * the door named, or 5 (doubling to 30) minutes passed.
+   */
+  private async spawnDiamondInstance(
+    schedule: TournamentScheduleRow,
+    spawnKey: string,
+    startTime: Date,
+    config: Record<string, unknown>,
+    deferralKey: string
+  ): Promise<string | null> {
+    let answer: ReturnType<typeof readDiamondSpawnAnswer>;
+    try {
+      const { data, error } = await supabase.rpc(DIAMOND_SPAWN_RPC, {
+        p_schedule_id: schedule.id,
+        p_scheduled_start: startTime.toISOString(),
+        p_config: config,
+      });
+      answer = readDiamondSpawnAnswer(data, error);
+    } catch (err: unknown) {
+      answer = { ok: false, reason: `rpc_threw: ${(err as Error)?.message ?? err}` };
+    }
+    if (answer.ok) {
+      this.guaranteeBackoff.settled(deferralKey);
+      if (answer.replayed) {
+        console.log(
+          `[ScheduledTournaments] Diamond spawn ${spawnKey} already existed - linked to ${answer.tournamentId}`
+        );
+      }
+      return answer.tournamentId;
+    }
+
+    const { error: releaseErr } = await supabase
+      .from('tournament_schedule_spawns')
+      .delete()
+      .eq('spawn_key', spawnKey)
+      .is('tournament_id', null);
+    if (releaseErr) {
+      reportError(
+        new Error(
+          `[ScheduledTournaments] could not release refused Diamond spawn key ${spawnKey}: ${releaseErr.message}`
+        ),
+        'ScheduledTournaments.spawn_release_failed'
+      );
+    }
+    reportError(
+      new Error(`[ScheduledTournaments] Diamond spawn refused for ${spawnKey}: ${answer.reason}`),
+      'ScheduledTournaments.diamond_spawn_refused'
+    );
+    await this.pageMissedOccurrence(schedule, startTime, answer.reason);
+    await this.guaranteeBackoff.refused(
+      deferralKey,
+      schedule.club_id,
+      answer.reason,
+      this.readFundingBank
+    );
+    return null;
+  }
+
+  /** Link the spawn key to the event it created, and seed horses at the gun. */
+  /**
+   * A SCHEDULED EVENT THAT WILL NOT EXIST IS PAGED (2026-10-09).
+   *
+   * Every refusal on the spawn path was an error-log line and nothing else.
+   * Four Diamond Arena "$100 Freeroll" schedules were refused by the arena's
+   * door on every poll since they were seeded on 2026-10-07 and not one of
+   * their occurrences ever existed, with no durable record anywhere. The look
+   * ahead is a day or more, so a refusal far from the start is still normal
+   * retry traffic; once the start is within MISSED_OCCURRENCE_PAGE_WITHIN_MS
+   * and the occurrence still could not be created, players will not get the
+   * event, and that is one open alert per schedule (keyed on it) naming the
+   * reason. The schedule's next successful spawn closes it.
+   */
+  private async pageMissedOccurrence(
+    schedule: TournamentScheduleRow,
+    startTime: Date,
+    reason: string
+  ): Promise<void> {
+    if (!missedOccurrenceIsPageable(startTime, new Date())) return;
+    // raiseFinancialAlert never throws; the page can never cost the retry.
+    await raiseFinancialAlert(
+      'warning',
+      MISSED_OCCURRENCE_SOURCE,
+      `Scheduled tournament "${schedule.name}" (${schedule.id.slice(0, 8)}) could not be created ` +
+        `for ${startTime.toISOString()}: ${reason}`,
+      {
+        schedule_id: schedule.id,
+        club_id: schedule.club_id,
+        start_time: startTime.toISOString(),
+        reason,
+      },
+      `scheduled-occurrence-not-created:${schedule.id}`,
+      schedule.id
+    );
+  }
+
+  /**
+   * Occurrences buildInsertRow skipped only because no satellite target exists
+   * yet. Keyed per occurrence, so concurrent spawns cannot read each other's.
+   */
+  private readonly waitingForSatelliteTarget = new Set<string>();
+
+  /** Housekeeping only: it never throws, so it can never cost a spawn. */
+  private async clearMissedOccurrencePage(scheduleId: string): Promise<void> {
+    try {
+      const at = new Date().toISOString();
+      const { error } = await supabase
+        .from('financial_alerts')
+        .update({
+          resolved: true,
+          resolved_at: at,
+          resolution: `The schedule created its next occurrence at ${at}.`,
+        })
+        .eq('source', MISSED_OCCURRENCE_SOURCE)
+        .eq('context->>schedule_id', scheduleId)
+        .or('resolved.is.null,resolved.eq.false');
+      if (error) reportError(error, 'ScheduledTournaments.occurrence_page_clear_failed');
+    } catch (err) {
+      reportError(err, 'ScheduledTournaments.occurrence_page_clear_failed');
+    }
+  }
+
+  private async finishSpawn(
+    row: Record<string, unknown>,
+    cfg: Record<string, unknown>,
+    spawnKey: string,
+    startTime: Date,
+    createdId: string
+  ): Promise<void> {
     const { error: linkErr } = await supabase
       .from('tournament_schedule_spawns')
-      .update({ tournament_id: created.id })
+      .update({ tournament_id: createdId })
       .eq('spawn_key', spawnKey);
     if (linkErr) {
       // The tournament exists and the key is claimed; a missing back-link is
@@ -909,7 +1245,7 @@ export class ScheduledTournamentService {
     const seedNow = horses > 0 && startsWithinMs <= HORSE_SEED_WITHIN_MS;
     let seeded = 0;
     if (seedNow) {
-      seeded = await this.horseSeeder.topUpWithHorses(created.id, horses);
+      seeded = await this.horseSeeder.topUpWithHorses(createdId, horses);
     }
 
     console.log(
@@ -931,6 +1267,28 @@ export class ScheduledTournamentService {
     if (!error) return true;
     const msg = error.message ?? '';
     if (error.code === '23505' || /duplicate key|unique constraint/i.test(msg)) return false;
+    /* A SCHEDULE DELETED MID-PASS IS RETIRED, NOT FAILED (2026-10-03).
+       The pass reads every active schedule once, then walks them for minutes.
+       A schedule deleted in between (club deletion, the welcome/certification
+       reset, an owner removing it) has no row for the spawn key to reference,
+       and the claim answers 23503 on tournament_schedule_spawns_schedule_id_fkey.
+       Nothing was spawned and nothing should be: the schedule is gone. This
+       used to be reported as a failure once per pending date - 24 reports
+       across 9 deleted schedules on 2026-10-03 - burying real spawn faults.
+       Stand the rest of this schedule's dates down for the pass, quietly; the
+       next pass does not read it at all. */
+    if (
+      (error.code === '23503' || /foreign key constraint/i.test(msg)) &&
+      /tournament_schedule_spawns_schedule_id_fkey/.test(msg)
+    ) {
+      if (!this.retiredScheduleIds.has(scheduleId)) {
+        this.retiredScheduleIds.add(scheduleId);
+        console.log(
+          `[ScheduledTournaments] schedule ${scheduleId.slice(0, 8)} was deleted during this pass - nothing spawned, its remaining dates stand down`
+        );
+      }
+      return false;
+    }
     reportError(
       new Error(`[ScheduledTournaments] spawn claim failed for ${spawnKey}: ${msg}`),
       'ScheduledTournaments.spawn_claim_failed'
@@ -1307,6 +1665,7 @@ export class ScheduledTournamentService {
         console.log(
           `[ScheduledTournaments] schedule ${schedule.id.slice(0, 8)}: no pre-start satellite target matching "${targetName}" - skipping this spawn`
         );
+        this.waitingForSatelliteTarget.add(occurrenceKey(schedule.id, startTime));
         return null;
       }
       satelliteTargetId = target;
@@ -1631,6 +1990,8 @@ export class ScheduledTournamentService {
 
   private async maybeRestartTournament(old: Record<string, unknown>): Promise<void> {
     if (typeof old.id !== 'string' || !old.id || !old.ended_at || !old.club_id || !old.name) return;
+    const deferralKey = `restart:${old.id}`;
+    if (!(await this.guaranteeBackoff.shouldAttempt(deferralKey, this.readFundingBank))) return;
 
     /**
      * A SEAT-FIRST FORMAT IS NEVER RESTARTED ON A CLOCK (Dan, 2026-09-01).
@@ -1786,6 +2147,7 @@ export class ScheduledTournamentService {
     if (insertErr || !created) {
       const msg = insertErr?.message ?? 'unknown';
       if (insertErr?.code === '23505' || /duplicate key|unique constraint/i.test(msg)) {
+        this.guaranteeBackoff.settled(deferralKey);
         return; // concurrent restart won the race — the clone exists
       }
       reportError(
@@ -1796,7 +2158,13 @@ export class ScheduledTournamentService {
       );
       // Same pop-up rule as the scheduled spawn path: a guarantee refusal must
       // reach the owners, and the raising trigger cannot write it itself.
-      if (/cannot guarantee/i.test(msg) && (row as { club_id?: string }).club_id) {
+      if (isGuaranteeBankRefusal(msg) && (row as { club_id?: string }).club_id) {
+        await this.guaranteeBackoff.refused(
+          deferralKey,
+          String((row as { club_id?: string }).club_id),
+          msg,
+          this.readFundingBank
+        );
         const { error: notifyErr } = await supabase.rpc('fn_notify_guarantee_bank_short', {
           p_club_id: (row as { club_id?: string }).club_id,
         });
@@ -1806,9 +2174,12 @@ export class ScheduledTournamentService {
             'ScheduledTournaments.guarantee_notify_failed'
           );
         }
+      } else {
+        this.guaranteeBackoff.settled(deferralKey);
       }
       return;
     }
+    this.guaranteeBackoff.settled(deferralKey);
 
     // No horse seeding here: restart clones are manual club events, and
     // GameServer's past-start top-up fills any short field once the clock hits.

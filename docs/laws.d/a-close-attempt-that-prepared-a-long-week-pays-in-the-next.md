@@ -1,0 +1,3 @@
+# tests/a-close-attempt-that-prepared-a-long-week-pays-in-the-next.law.test.ts
+
+A close attempt that prepared a long week pays in the next (2026-10-03): in a chunked weekly close (job 272 sets app.weekly_accounting_chunked), a union or standalone club attempt whose preparation succeeded after durable work of its own - a P&L step it proved and kept, or a weekly recompute it recorded for one of the book's clubs - and more than 60 seconds after the attempt began ends as a committed 'prepared' step with its run row running, nothing paid and no failure or alert, so preparing a long week and paying a round never share one transaction; a preparation that only reused receipts, and a paid-scope replay, never stop this way, so the close always moves forward.

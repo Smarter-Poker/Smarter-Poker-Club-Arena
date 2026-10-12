@@ -100,8 +100,16 @@ describe('the owner agreement and the daily profit burn notice', () => {
         error: null,
       });
     const onAccepted = vi.fn();
-    render(<DiamondSpinsOwnerTerms clubId={CLUB} onAccepted={onAccepted} />);
+    const onStatusChange = vi.fn();
+    render(
+      <DiamondSpinsOwnerTerms
+        clubId={CLUB}
+        onAccepted={onAccepted}
+        onStatusChange={onStatusChange}
+      />
+    );
     await screen.findByText(ADDENDUM_TEXT);
+    expect(onStatusChange).toHaveBeenLastCalledWith(false);
     expect(screen.getByText('Required')).toBeInTheDocument();
     fireEvent.click(
       screen.getByLabelText(
@@ -114,6 +122,7 @@ describe('the owner agreement and the daily profit burn notice', () => {
       p_agree: true,
     });
     expect(onAccepted).toHaveBeenCalledOnce();
+    expect(onStatusChange).toHaveBeenLastCalledWith(true);
     expect(screen.getByText('Accepted')).toBeInTheDocument();
   });
 

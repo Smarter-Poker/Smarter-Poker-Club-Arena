@@ -180,6 +180,8 @@ export function prepareTournamentFutureHandFacts(): void {
   }
 }
 
+const FUTURE_STREETS = ['flop', 'turn', 'river'] as const;
+
 export function commitFutureChips(
   p: SeatPlayer,
   requested: number,
@@ -227,17 +229,27 @@ export function simulateTournamentFutureHands(args: {
   let dealerSeat = args.dealerSeat;
   let hands = 0;
   const random = syntheticRandom(args.sampleIndex);
+  // The continuation's voluntary wagers are live chips (no ante type).
+  const commitLive = (p: SeatPlayer, n: number): void => {
+    commitFutureChips(p, n, null);
+  };
   for (let hand = 0; hand < FUTURE_HAND_POLICY.maxHands; hand++) {
     if (args.withinBudget?.() === false) return null;
-    const players = args.players
-      .filter((p) => vector[args.localIndex.get(p.user_id)!] > 0)
-      .map((p) => ({
+    // Surviving seats in seat order. The stable sort is skipped only when the
+    // caller's seats are already in that order, which is the same sequence.
+    const players: SeatPlayer[] = [];
+    let seatOrdered = true;
+    for (const p of args.players) {
+      const stack = vector[args.localIndex.get(p.user_id)!];
+      if (!(stack > 0)) continue;
+      if (players.length > 0 && players[players.length - 1].seat > p.seat) seatOrdered = false;
+      players.push({
         // A simulated next hand owns only rule/settlement state. Keep its
         // shape stable instead of copying unrelated live seat metadata.
         user_id: p.user_id,
         username: p.username,
         seat: p.seat,
-        stack: vector[args.localIndex.get(p.user_id)!],
+        stack,
         cards: [] as Card[],
         is_folded: false,
         is_all_in: false,
@@ -247,24 +259,30 @@ export function simulateTournamentFutureHands(args: {
         bet: 0,
         deadInvested: 0,
         individualAnteInvested: 0,
-      }))
-      .sort((a, b) => a.seat - b.seat);
+      });
+    }
+    if (!seatOrdered) players.sort((a, b) => a.seat - b.seat);
     if (players.length < 2 || !players.some((p) => p.user_id === args.heroId)) break;
     let fieldCount = 0;
     for (let index = 0; index < vector.length; index++) if (vector[index] > 0) fieldCount++;
-    const starts = new Map(players.map((p) => [p.user_id, p.stack]));
+    const seats = players.length;
+    // Pre-hand stacks by seat position (the elimination order below).
+    const starts: number[] = new Array(seats);
+    for (let i = 0; i < seats; i++) starts[i] = players[i].stack;
     dealerSeat = players.find((p) => p.seat > dealerSeat)?.seat ?? players[0].seat;
     const button = players.findIndex((p) => p.seat === dealerSeat);
-    const sb = (button + (players.length === 2 ? 0 : 1)) % players.length;
-    const bb = (sb + 1) % players.length;
-    const drawKey = `${args.sampleIndex}:${hand}:${players.map((p) => p.user_id).join(',')}`;
+    const sb = (button + (seats === 2 ? 0 : 1)) % seats;
+    const bb = (sb + 1) % seats;
+    let drawKey = `${args.sampleIndex}:${hand}:`;
+    for (let i = 0; i < seats; i++)
+      drawKey += i === 0 ? players[i].user_id : `,${players[i].user_id}`;
     let draw = args.drawCache?.get(drawKey);
     const templateKey =
       FUTURE_HAND_POLICY.maxHands === 1 &&
       Number.isInteger(args.sampleIndex) &&
       args.sampleIndex >= 0 &&
       args.sampleIndex < CONTINUATION_POLICY.maxOutcomeSamples
-        ? `${args.sampleIndex}:${players.length}`
+        ? `${args.sampleIndex}:${seats}`
         : null;
     const template = templateKey === null ? undefined : syntheticDealFacts.get(templateKey);
     if (!draw && template) {
@@ -275,7 +293,7 @@ export function simulateTournamentFutureHands(args: {
       args.drawCache?.set(drawKey, draw);
     }
     if (!draw) {
-      const facts = buildSyntheticDealFacts(players.length, random);
+      const facts = buildSyntheticDealFacts(seats, random);
       draw = {
         board: facts.board,
         seats: new Map(players.map((p, index) => [p.user_id, facts.seats[index]])),
@@ -287,15 +305,20 @@ export function simulateTournamentFutureHands(args: {
         });
       args.drawCache?.set(drawKey, draw);
     }
-    for (const p of players) p.cards = draw.seats.get(p.user_id)!.cards;
+    // One fact lookup per seat for the whole hand; the draw is not mutated.
+    const facts: FutureSeatFacts[] = new Array(seats);
+    for (let i = 0; i < seats; i++) {
+      facts[i] = draw.seats.get(players[i].user_id)!;
+      players[i].cards = facts[i].cards;
+    }
     const commit = (p: SeatPlayer, requested: number, ante = false) =>
       commitFutureChips(p, requested, ante ? level.anteType : null);
-    for (let i = 0; i < players.length; i++) {
+    for (let i = 0; i < seats; i++) {
       const p = players[i];
       const individual = level.anteType === 'per_player' ? level.ante : 0;
       const bba =
         level.anteType === 'big_blind' && i === bb
-          ? bigBlindAnteTotal(level.ante, players.length, level.bigBlind)
+          ? bigBlindAnteTotal(level.ante, seats, level.bigBlind)
           : 0;
       const paid =
         commit(p, individual, true) +
@@ -322,29 +345,49 @@ export function simulateTournamentFutureHands(args: {
         top.is_all_in = top.stack <= 0;
       }
     };
-    const order = players.slice(bb + 1).concat(players.slice(0, bb + 1));
-    const strength = new Map(
-      players.map((p) => [p.user_id, p.is_sitting_out ? 0 : draw.seats.get(p.user_id)!.preflop])
-    );
+    // Preflop action order starts after the big blind (positions bb + 1, ...,
+    // wrapping to bb). Strength is the seat's own preflop fact; sitting-out 0.
+    const preflop = (i: number) => (players[i].is_sitting_out ? 0 : facts[i].preflop);
     // One open, then fold/call responses; a short stack can fund only its own all-in.
-    const opener = order.find((p) => !p.is_all_in && strength.get(p.user_id)! >= 0.72);
+    let opener: SeatPlayer | undefined;
+    for (let k = 0; k < seats; k++) {
+      const i = (bb + 1 + k) % seats;
+      if (!players[i].is_all_in && preflop(i) >= 0.72) {
+        opener = players[i];
+        break;
+      }
+    }
     const price = opener
       ? Math.max(level.bigBlind, Math.min(opener.bet + opener.stack, 3 * level.bigBlind))
       : level.bigBlind;
     if (opener) commit(opener, price - opener.bet);
-    for (const p of order) {
+    for (let k = 0; k < seats; k++) {
+      const i = (bb + 1 + k) % seats;
+      const p = players[i];
       if (p === opener || p.is_all_in) continue;
       const due = Math.min(p.stack, Math.max(0, price - p.bet));
-      if (due > 0 && strength.get(p.user_id)! < (opener ? 0.55 : 0.38)) p.is_folded = true;
+      if (due > 0 && preflop(i) < (opener ? 0.55 : 0.38)) p.is_folded = true;
       else commit(p, due);
     }
     refund();
-    const opponents = players.filter((p) => p.user_id !== args.heroId);
-    const opponentIds = opponents.map((p) => p.user_id);
-    const hero = players.find((p) => p.user_id === args.heroId)!;
-    for (const [i, street] of (['flop', 'turn', 'river'] as const).entries()) {
+    let hero: SeatPlayer | undefined;
+    let heroFacts: FutureSeatFacts | undefined;
+    const opponentIds: string[] = [];
+    const opponentFacts: FutureSeatFacts[] = [];
+    for (let i = 0; i < seats; i++) {
+      if (players[i].user_id !== args.heroId) {
+        opponentIds.push(players[i].user_id);
+        opponentFacts.push(facts[i]);
+      } else if (!hero) {
+        hero = players[i];
+        heroFacts = facts[i];
+      }
+    }
+    for (let i = 0; i < FUTURE_STREETS.length; i++) {
       if (args.withinBudget?.() === false) return null;
-      const contact = (p: SeatPlayer) => draw.seats.get(p.user_id)!.streets[i];
+      const opponentStrength: number[] = new Array(opponentFacts.length);
+      for (let j = 0; j < opponentFacts.length; j++)
+        opponentStrength[j] = opponentFacts[j].streets[i];
       if (
         !simulateTournamentContinuation(
           players,
@@ -358,34 +401,36 @@ export function simulateTournamentFutureHands(args: {
             sampleIndex: args.sampleIndex,
             streets: [
               {
-                street,
-                heroStrength: contact(hero),
-                opponentStrength: opponents.map(contact),
+                street: FUTURE_STREETS[i],
+                heroStrength: heroFacts!.streets[i],
+                opponentStrength,
               },
             ],
           },
-          (p, n) => {
-            commit(p, n);
-          }
+          commitLive
         )
       )
         return null;
       refund();
     }
     const pots = calculatePots(players);
-    const winners = settleFutureHand(
-      players,
-      pots,
-      dealerSeat,
-      new Map(players.map((p) => [p.user_id, draw.seats.get(p.user_id)!.showdown]))
-    );
+    const scores = new Map<string, number>();
+    for (let i = 0; i < seats; i++) scores.set(players[i].user_id, facts[i].showdown);
+    const winners = settleFutureHand(players, pots, dealerSeat, scores);
     if (!winners) return null;
     for (const p of players) vector[args.localIndex.get(p.user_id)!] = p.stack;
     for (const win of winners) vector[args.localIndex.get(win.userId)!] += win.amount;
-    const busted = players.filter((p) => vector[args.localIndex.get(p.user_id)!] <= 0);
-    for (const p of busted) {
-      const shorter = busted.filter((q) => starts.get(q.user_id)! < starts.get(p.user_id)!).length;
-      const tied = busted.filter((q) => starts.get(q.user_id) === starts.get(p.user_id)).length;
+    const busted: number[] = [];
+    for (let i = 0; i < seats; i++)
+      if (vector[args.localIndex.get(players[i].user_id)!] <= 0) busted.push(i);
+    for (const b of busted) {
+      const p = players[b];
+      let shorter = 0;
+      let tied = 0;
+      for (const q of busted) {
+        if (starts[q] < starts[b]) shorter++;
+        if (starts[q] === starts[b]) tied++;
+      }
       const lastPot = pots
         .map((pot, i) => (pot.eligiblePlayers.includes(p.user_id) ? i : -1))
         .reduce((a, b) => Math.max(a, b), -1);

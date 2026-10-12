@@ -1,0 +1,25 @@
+# P12.2 seed check: every held-out seed searched for across the repository at the base commit 1157cf08 (git grep over all tracked files) before it was written into the contract. Empty output for a seed = no occurrence.
+$ git grep -c 12201119 1157cf08 -- .
+exit 1 (1 = no match)
+$ git grep -c 12202241 1157cf08 -- .
+exit 1 (1 = no match)
+$ git grep -c 12203363 1157cf08 -- .
+exit 1 (1 = no match)
+$ git grep -c 12301123 1157cf08 -- .
+exit 1 (1 = no match)
+$ git grep -c 12302251 1157cf08 -- .
+exit 1 (1 = no match)
+$ git grep -c 12303373 1157cf08 -- .
+exit 1 (1 = no match)
+$ git grep -c 12401129 1157cf08 -- .
+exit 1 (1 = no match)
+$ git grep -c 12402257 1157cf08 -- .
+exit 1 (1 = no match)
+$ git grep -c 12403381 1157cf08 -- .
+exit 1 (1 = no match)
+$ git grep -c 12501131 1157cf08 -- .
+exit 1 (1 = no match)
+$ git grep -c 12502263 1157cf08 -- .
+exit 1 (1 = no match)
+$ git grep -c 12503387 1157cf08 -- .
+exit 1 (1 = no match)

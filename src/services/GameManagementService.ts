@@ -73,6 +73,8 @@ export interface GameManagementHealth {
   scheduledPending: number;
   scheduledRejected24h: number;
   eventRows: number;
+  /** True when the scope holds more than eventRows events (the read is bounded). */
+  eventRowsCapped?: boolean;
   retentionDays: number;
 }
 
@@ -544,6 +546,7 @@ export const gameManagementService = {
       scheduledPending: numberValue(scale.scheduled_pending),
       scheduledRejected24h: numberValue(scale.scheduled_rejected_24h),
       eventRows: numberValue(scale.event_rows),
+      eventRowsCapped: scale.event_rows_capped === true,
       retentionDays: numberValue(scale.retention_days),
     };
   },

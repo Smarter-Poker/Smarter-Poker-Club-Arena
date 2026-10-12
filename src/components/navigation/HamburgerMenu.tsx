@@ -28,6 +28,7 @@ import { ThemeSettingsModal } from '../table/ThemeSettingsModal';
 import { getClubLevel, ClubLevelInfo } from '../../utils/clubLevels';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { reportError } from '../../utils/errorReporter';
+import { mayLeaveCurrentPage } from '../../lib/navigationGuard';
 import { AUTH_STORAGE_KEY, SPA_AUTH_BREADCRUMB } from '../../lib/authUtils';
 import { isPlatformStaffRole } from '../../utils/platformRoles';
 import { fetchGameCreationAccess } from '../../services/GameAccessService';
@@ -61,6 +62,8 @@ import { useCanCreateUnion, useCanOperateUnionNetwork } from '../../hooks/useCan
 import { mediaUrl } from '../../utils/mediaBase';
 import { signInUrl } from '../../lib/signIn';
 import { rewardToolMatchesSearch as matchesRewardToolSearch } from './rewardToolSearch';
+import { menuOffersCreateUnion } from './menuUnionDoor';
+import { useInTabLobbyActive, useInTabLobbyClubId } from '../club/inTabLobbySurface';
 
 /* Dan 2026-08-30: "THE FIRST LETTER OF EVERY WORD INSIDE THE HAMBURGER MENU
    MUST BE CAPITALIZED. AS WELL AS EVERY CLICKABLE PAGE AND SUBPAGE."
@@ -197,6 +200,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
    * page entirely, so for them the feature was unreachable from their account.
    */
   const [unionManageId, setUnionManageId] = useState<string | null>(null);
+  const [gameAuthorityContext, setGameAuthorityContext] = useState('');
   const [gameAccessRevision, setGameAccessRevision] = useState(0);
 
   // Stripe returns to the route where the player opened Table Studio. The
@@ -250,7 +254,39 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
      hands to `getClubArenaNavigation` is the same string the URL is carrying
      — slug stays slug, which is Dan's "THE SLUGS MUST MATCH". */
   const clubId = workspace.routeClubId;
+  const unionRouteRef = useMemo(() => {
+    const match = location.pathname.match(/^\/unions\/([^/]+)/);
+    if (!match || match[1] === 'create') return null;
+    try {
+      return decodeURIComponent(match[1]);
+    } catch {
+      return match[1];
+    }
+  }, [location.pathname]);
+  const gameAuthorityScopeKey = user?.id
+    ? unionRouteRef
+      ? `user:${user.id}:union:${unionRouteRef}`
+      : workspace.clubUUID
+        ? `user:${user.id}:club:${workspace.clubUUID}`
+        : ''
+    : '';
+  const gameAuthorityKey = gameAuthorityScopeKey
+    ? `${gameAuthorityScopeKey}:revision:${gameAccessRevision}`
+    : '';
+  const canManageGamesInContext = gameAuthorityContext === gameAuthorityKey && canManageGames;
+  const unionManageIdInContext = gameAuthorityContext === gameAuthorityKey ? unionManageId : null;
   const clubRole = workspace.clubRole;
+  /* No union in the Diamond Arena (ruling 16, Phase 10 line 6): the menu
+     does not offer one to create while the arena is the club in context,
+     including the arena's lobby opened as a tab over a table. See
+     menuUnionDoor.ts. */
+  const inTabLobbyActive = useInTabLobbyActive();
+  const inTabLobbyClubId = useInTabLobbyClubId();
+  const showCreateUnion = menuOffersCreateUnion(canCreateUnion, [
+    clubId,
+    workspace.clubUUID,
+    inTabLobbyActive ? inTabLobbyClubId : null,
+  ]);
   /* EITHER READER MAY SAY YES; NEITHER MAY VETO. This was
      `clubId ? workspace.isPlatformStaff : isPlatformStaff`, which was safe
      only while `clubId` meant "on a /clubs/… path". Now that it is also true
@@ -270,7 +306,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     clubId,
     clubRole,
     isPlatformStaff: effectivePlatformStaff,
-    canManageGames,
+    canManageGames: canManageGamesInContext,
     canOperateUnionNetwork,
   });
   const allNavigationItems = useMemo(
@@ -317,28 +353,60 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   };
 
   useEffect(() => {
-    if (!isOpen || !workspace.clubUUID) {
-      setCanManageGames(false);
-      setUnionManageId(null);
-      return;
-    }
     let cancelled = false;
-    void fetchGameCreationAccess(workspace.clubUUID).then(async (access) => {
-      if (cancelled) return;
-      setCanManageGames(access.allowed && !access.unionId);
-      if (!access.unionId || !user?.id) {
+    setCanManageGames(false);
+    setUnionManageId(null);
+    setGameAuthorityContext('');
+    if (!isOpen || !user?.id || !gameAuthorityKey) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const resolveGameAuthority = async () => {
+      try {
+        if (unionRouteRef) {
+          /* The drawer is part of the global first-paint shell. Resolve a
+             union slug only when this async authority path is actually used;
+             a static resolver import would make every player download the
+             union lookup and its Supabase dependency before first paint. */
+          const { resolveUnionUUID } = await import('../../utils/unionIdResolver');
+          const routeUnionId = await resolveUnionUUID(unionRouteRef);
+          if (cancelled) return;
+          const operator = await unionService.isUnionAdmin(routeUnionId, user.id);
+          if (cancelled) return;
+          setUnionManageId(operator ? unionRouteRef : null);
+          setGameAuthorityContext(gameAuthorityKey);
+          return;
+        }
+
+        if (workspace.clubUUID) {
+          const access = await fetchGameCreationAccess(workspace.clubUUID);
+          if (cancelled) return;
+          if (!access.unionId) {
+            setCanManageGames(access.allowed);
+            setGameAuthorityContext(gameAuthorityKey);
+            return;
+          }
+          const operator = await unionService.isUnionAdmin(access.unionId, user.id);
+          if (cancelled) return;
+          setUnionManageId(operator ? access.unionId : null);
+          setGameAuthorityContext(gameAuthorityKey);
+        }
+      } catch (error) {
+        if (cancelled) return;
+        reportError(error, 'HamburgerMenu.game_management_authority');
+        setCanManageGames(false);
         setUnionManageId(null);
-        return;
+        setGameAuthorityContext(gameAuthorityKey);
       }
-      // Owner or union_admin - the same test the union board itself applies,
-      // so the menu never offers a door the page would refuse.
-      const operator = await unionService.isUnionAdmin(access.unionId, user.id);
-      if (!cancelled) setUnionManageId(operator ? access.unionId : null);
-    });
+    };
+
+    void resolveGameAuthority();
     return () => {
       cancelled = true;
     };
-  }, [gameAccessRevision, isOpen, user?.id, workspace.clubUUID]);
+  }, [gameAccessRevision, gameAuthorityKey, isOpen, unionRouteRef, user?.id, workspace.clubUUID]);
 
   useMasterBusSubscription('GAME_MANAGEMENT_ACCESS_CHANGED', (payload) => {
     if (!payload.clubId || payload.clubId === workspace.clubUUID) {
@@ -643,6 +711,10 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
 
   // Navigate and close
   const handleNavigate = (path: string) => {
+    // A page holding unsaved work (Table Management's ticker and message
+    // drafts) is asked first; these entries are buttons, so no link guard
+    // ever sees them.
+    if (!mayLeaveCurrentPage()) return;
     const nextRecentPaths = [path, ...recentPaths.filter((item) => item !== path)].slice(0, 5);
     setRecentPaths(nextRecentPaths);
     try {
@@ -1168,7 +1240,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
         )}
 
         <div className={styles.quickActions} aria-label="Context Actions">
-          {clubId && canManageGames ? (
+          {clubId && canManageGamesInContext ? (
             <button
               type="button"
               className={styles.quickAction}
@@ -1176,11 +1248,11 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             >
               Table Management
             </button>
-          ) : unionManageId ? (
+          ) : unionManageIdInContext ? (
             <button
               type="button"
               className={styles.quickAction}
-              onClick={() => handleNavigate(`/unions/${unionManageId}/table-management`)}
+              onClick={() => handleNavigate(`/unions/${unionManageIdInContext}/table-management`)}
             >
               Table Management
             </button>
@@ -1197,11 +1269,11 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             <button
               type="button"
               className={styles.quickAction}
-              onClick={() => handleNavigate(`/invite/${clubId}`)}
+              onClick={() => handleNavigate(`/clubs/${clubId}/settings`)}
             >
               Invite Players
             </button>
-          ) : canCreateUnion ? (
+          ) : showCreateUnion ? (
             <button
               type="button"
               className={styles.quickAction}

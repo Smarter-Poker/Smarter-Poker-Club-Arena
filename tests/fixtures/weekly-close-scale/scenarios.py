@@ -1,0 +1,47 @@
+"""Scenarios: (name, scope kind, players, hands, union book, mutation SQL).
+Each mutation breaks exactly one fact a stage proves, so the original and the
+changed stage must refuse it the same way (or accept it the same way)."""
+U = "wcs_u"
+AC1 = "(SELECT ctid FROM public.agent_commissions WHERE amount>0 ORDER BY source_id,user_id LIMIT 1)"
+SRC1 = "(SELECT id FROM public.accounting_cash_rake_sources WHERE jsonb_array_length(contract->'tiers')>0 ORDER BY id LIMIT 1)"
+SCENARIOS = [
+ ("s00_clean_club", "club", 30, 400, False, ""),
+ ("s01_clean_union", "union", 30, 400, True, ""),
+ ("s02_clean_club_wide", "club", 90, 3000, False, ""),
+ ("s10_commission_row_missing", "club", 30, 400, False, f"DELETE FROM public.agent_commissions WHERE ctid={AC1};"),
+ ("s11_commission_row_elsewhere", "club", 30, 400, False, f"INSERT INTO public.agent_commissions(club_id,user_id,amount,commission_rate,source_type,source_id,created_at) SELECT {U}('otherclub'),{U}('stranger'),amount,commission_rate,source_type,source_id,created_at-interval '30 days' FROM public.agent_commissions WHERE ctid={AC1};"),
+ ("s12_commission_amount", "club", 30, 400, False, f"UPDATE public.agent_commissions SET amount=amount+0.01 WHERE ctid={AC1};"),
+ ("s13_commission_settled", "club", 30, 400, False, f"UPDATE public.agent_commissions SET settled_at='2026-09-10' WHERE ctid={AC1};"),
+ ("s14_unclassified_type", "club", 30, 400, False, f"INSERT INTO public.agent_commissions(club_id,user_id,amount,commission_rate,source_type,source_id,created_at) VALUES({U}('club'),{U}('agent:9'),1,0.1,'rake',{U}('x'),'2026-09-02 10:00+00');"),
+ ("s15_unclassified_time", "club", 30, 400, False, f"UPDATE public.agent_commissions SET created_at=created_at+interval '1 second' WHERE ctid={AC1};"),
+ ("s16_tiers_not_array", "club", 30, 400, False, f"UPDATE public.accounting_cash_rake_sources SET contract=jsonb_set(contract,'{{tiers}}','{{}}') WHERE id={SRC1};"),
+ ("s17_contract_club", "club", 30, 400, False, f"UPDATE public.accounting_cash_rake_sources SET contract=jsonb_set(contract,'{{club_id}}','\"x\"') WHERE id={SRC1};"),
+ ("s18_tier_uuid_unreadable", "club", 30, 400, False, f"UPDATE public.accounting_cash_rake_sources SET contract=jsonb_set(contract,'{{tiers,0,agent_id}}','\"not-a-uuid\"') WHERE id={SRC1};"),
+ ("s19_tier_parent", "club", 30, 400, False, f"UPDATE public.accounting_cash_rake_sources SET contract=jsonb_set(contract,'{{tiers,0,agreement,terms,parent_agent_id}}',to_jsonb({U}('agentrow:3')::text)) WHERE id={SRC1};"),
+ ("s30_certificate_missing", "club", 30, 400, False, f"DELETE FROM public.accounting_rakeback_period_calculations WHERE period_id={U}('period:1');"),
+ ("s31_certificate_payer", "club", 30, 400, False, f"UPDATE public.accounting_rakeback_period_calculations SET payer_user_id={U}('agent:10') WHERE period_id={U}('period:1');"),
+ ("s32_allocation_rate", "club", 30, 400, False, f"UPDATE public.accounting_rakeback_period_calculations SET source_allocations=jsonb_set(source_allocations,'{{0,rate}}','1.5') WHERE period_id={U}('period:2');"),
+ ("s33_allocation_unknown_source", "club", 30, 400, False, f"UPDATE public.accounting_rakeback_period_calculations SET source_allocations=jsonb_set(source_allocations,'{{0,source_id}}',to_jsonb({U}('nowhere')::text)) WHERE period_id={U}('period:2');"),
+ ("s34_allocation_other_week", "club", 30, 400, False, f"INSERT INTO public.accounting_cash_rake_sources(id,rake_record_id,player_id,club_id,earned_at,rake_credit,contract) SELECT {U}('oldsrc'),{U}('oldhand'),player_id,club_id,'2026-08-25 10:00+00',rake_credit,contract FROM public.accounting_cash_rake_sources WHERE id=(SELECT (source_allocations->0->>'source_id')::uuid FROM public.accounting_rakeback_period_calculations WHERE period_id={U}('period:3')); UPDATE public.accounting_rakeback_period_calculations SET source_allocations=jsonb_set(jsonb_set(source_allocations,'{{0,source_id}}',to_jsonb({U}('oldsrc')::text)),'{{0,rake_record_id}}',to_jsonb({U}('oldhand')::text)) WHERE period_id={U}('period:3');"),
+ ("s35_source_not_allocated", "club", 30, 400, False, f"INSERT INTO public.accounting_cash_rake_sources(id,rake_record_id,player_id,club_id,earned_at,rake_credit,contract) VALUES({U}('extra'),{U}('extrahand'),{U}('player:4'),{U}('club'),'2026-09-03 10:00+00',1.00,jsonb_build_object('club_id',{U}('club'),'tiers','[]'::jsonb,'membership',jsonb_build_object('terms',jsonb_build_object('agent_id',{U}('agent:12')::text))));"),
+ ("s36_period_already_paid", "club", 30, 400, False, f"UPDATE public.rakeback_periods SET status='paid' WHERE id={U}('period:5');"),
+ ("s38_newer_certificate_differs", "club", 30, 400, False, f"INSERT INTO public.accounting_rakeback_period_calculations(period_id,source_fingerprint,club_id,player_id,coordinator_union_id,period_start,period_end,rake_generated,rakeback_amount,display_rate,payer_kind,payer_user_id,source_allocations) SELECT period_id,'newer',club_id,player_id,coordinator_union_id,period_start,period_end,rake_generated,rakeback_amount+0.01,display_rate,payer_kind,payer_user_id,source_allocations FROM public.accounting_rakeback_period_calculations WHERE period_id={U}('period:7');"),
+ ("s39_period_missing", "club", 30, 400, False, f"DELETE FROM public.accounting_rakeback_period_calculations WHERE period_id={U}('period:8'); DELETE FROM public.rakeback_periods WHERE id={U}('period:8');"),
+ ("s40_allocation_payer_kind", "club", 30, 400, False, f"UPDATE public.accounting_rakeback_period_calculations SET source_allocations=jsonb_set(source_allocations,'{{0,payer_kind}}','\"club\"') WHERE period_id={U}('period:9');"),
+ ("s41_certificate_rounding", "club", 30, 400, False, f"UPDATE public.accounting_rakeback_period_calculations SET rakeback_amount=rakeback_amount+0.01 WHERE period_id={U}('period:10'); UPDATE public.rakeback_periods SET rakeback_amount=rakeback_amount+0.01,rakeback_earned=rakeback_earned+0.01 WHERE id={U}('period:10');"),
+ ("s50_deposit_amount", "club", 30, 400, False, f"UPDATE public.accounting_cash_bank_receipts SET amount=amount+0.01 WHERE rake_record_id={U}('hand:3');"),
+ ("s51_deposit_ledger_missing", "club", 30, 400, False, f"UPDATE public.accounting_cash_bank_receipts SET club_ledger_id={U}('noledger') WHERE rake_record_id={U}('hand:3');"),
+ ("s52_burn_amount", "club", 30, 400, False, f"UPDATE public.chip_ledger SET amount=amount+0.01 WHERE id={U}('burn:4');"),
+ ("s53_foreign_club_deposit", "club", 30, 400, False, f"INSERT INTO public.accounting_cash_rake_sources(id,rake_record_id,player_id,club_id,earned_at,rake_credit,contract) VALUES({U}('fsrc'),{U}('fhand'),{U}('fplayer'),{U}('otherclub'),'2026-09-03 10:00+00',2.00,'{{}}'); INSERT INTO public.accounting_cash_bank_receipts(rake_record_id,club_id,club_ledger_id,banked_at,amount) VALUES({U}('fhand'),{U}('club'),{U}('fburn'),'2026-09-03 10:00+00',2.00);"),
+ ("s54_burn_category", "club", 30, 400, False, f"UPDATE public.chip_ledger SET category='rake' WHERE id={U}('burn:6');"),
+ ("s55_source_time", "club", 30, 400, False, f"UPDATE public.accounting_cash_rake_sources SET earned_at=earned_at+interval '1 second' WHERE id={U}('src:7:0');"),
+ ("s56_deposit_prior_week", "club", 30, 400, False, f"UPDATE public.accounting_cash_bank_receipts SET banked_at='2026-08-30 10:00+00' WHERE rake_record_id={U}('hand:8');"),
+ ("s57_tournament_bank", "club", 30, 400, False, f"UPDATE public.accounting_tournament_fee_recognitions SET net_rake=net_rake+0.01 WHERE tournament_id={U}('tour:1');"),
+ ("s58_deposit_other_club", "club", 30, 400, False, f"UPDATE public.accounting_cash_bank_receipts SET club_id={U}('otherclub') WHERE rake_record_id={U}('hand:9');"),
+ ("s70_cash_hand_unaccrued", "club", 30, 400, False, f"DELETE FROM public.accounting_cash_accrual_batches WHERE rake_record_id={U}('hand:11');"),
+ ("s71_ghost_twin_excluded", "club", 30, 400, False, f"INSERT INTO public.rake_records(id,hand_id,table_id,club_id,rake_amount,created_at,metadata) VALUES({U}('ghost'),NULL,{U}('table:3'),{U}('club'),1.00,'2026-09-02 10:00+00',jsonb_build_object('hand_number','1000012'));"),
+ ("s72_null_hand_unaccrued", "club", 30, 400, False, f"INSERT INTO public.rake_records(id,hand_id,table_id,club_id,rake_amount,created_at,metadata) VALUES({U}('orphan'),NULL,{U}('table:3'),{U}('club'),1.00,'2026-09-02 10:00+00',jsonb_build_object('hand_number','1999999'));"),
+ ("s73_other_club_record_attributed", "club", 30, 400, False, f"UPDATE public.rake_records SET club_id={U}('otherclub') WHERE id={U}('hand:13'); DELETE FROM public.accounting_cash_accrual_batches WHERE rake_record_id={U}('hand:13');"),
+ ("s60_union_commission_missing", "union", 30, 400, True, f"DELETE FROM public.agent_commissions WHERE ctid={AC1};"),
+ ("s61_union_allocation_rate", "union", 30, 400, True, f"UPDATE public.accounting_rakeback_period_calculations SET source_allocations=jsonb_set(source_allocations,'{{0,rate}}','-0.1') WHERE period_id={U}('period:2');"),
+]

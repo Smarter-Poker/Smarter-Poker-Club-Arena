@@ -1,0 +1,130 @@
+// P12.2 shard sizing (Horse Brain Phase 12). Kept as text so nothing imports or
+// runs it by accident. To reproduce, from server/ at the recorded head, with
+// the four pilot logs beside it:
+//   cp ../docs/evidence/phase12/p12-2-sizing.mts.txt /tmp/p12-2-sizing.mts
+//   npx tsx /tmp/p12-2-sizing.mts ../docs/evidence/phase12
+// For each pack it applies the contract's own planning function
+// (remainingVariantPlannedHalfWidths, the Phase 10 and 11 formula) to the
+// pilot deviations and kurtoses, and:
+//  1. sets pairsPerShard = rotationBlock x k, k the largest whole number that
+//     keeps the slowest profile's shard under 25 minutes at 2.5 times its pilot
+//     time per pair (the Phase 10 hosted-runner budget);
+//  2. finds the smallest total shard count, then the least runner time, for
+//     which every gating cell's planned 99% half-width is at most the pack's
+//     planned maximum (0.85 of its regression margin) with at least 10,000
+//     pairs per profile in every cell: totals are searched upward from the sum
+//     of per-profile lower bounds, and every composition of a total is checked
+//     (feasibility only improves as a count grows, so the first feasible total
+//     is the minimum);
+//  3. if the pack then needs more than 256 jobs (the GitHub Actions matrix
+//     limit), raises k one block at a time until it fits, and says so.
+// It prints the planned cells, jobs and estimated hosted minutes.
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+process.env.EQUITY_GOVERNOR = 'off';
+const c = await import(process.cwd() + '/src/benchmark/RemainingVariantStrengthContract.ts');
+const dir = process.argv[2];
+const CEILING = c.REMAINING_VARIANT_MATRIX_JOB_CEILING;
+const FLOOR = c.REMAINING_VARIANT_STRENGTH_CONTRACT.interval.minimumPairsPerProfileInCell;
+for (const variant of c.REMAINING_VARIANT_STRENGTH_VARIANTS) {
+  const pack = c.remainingVariantStrengthPack(variant);
+  const pilot = JSON.parse(readFileSync(path.join(dir, `pilot-${variant}.json`), 'utf8'));
+  const base = pack.matrix.profiles.map((p: { id: string }) => {
+    const row = pilot.profiles.find((r: { profileId: string }) => r.profileId === p.id);
+    if (!row) throw new Error(`pilot has no ${p.id}`);
+    return {
+      ...p,
+      pilotSdBB: row.pairedDifferenceSdBB,
+      pilotMsPerPair: row.msPerPair,
+      pilotKurtosis: row.kurtosis,
+    };
+  });
+  const max = pack.regressionMargin.plannedHalfWidthMaxBbPer100;
+  const block = pack.matrix.rotationBlock;
+  const slowest = Math.max(...base.map((p: { pilotMsPerPair: number }) => p.pilotMsPerPair));
+  const feasible = (shards: number[], pairsPerShard: number) => {
+    const plan = c.remainingVariantPlannedHalfWidths(
+      base.map((p: object, i: number) => ({ ...p, shards: shards[i] })),
+      pairsPerShard
+    );
+    return Object.values(plan).every(
+      (x: { halfWidthBbPer100: number; minimumProfilePairs: number }) =>
+        x.halfWidthBbPer100 <= max && x.minimumProfilePairs >= FLOOR
+    );
+  };
+  const solve = (pairsPerShard: number) => {
+    const n = base.length;
+    // Per-profile lower bounds: its own profile cell with every other count large.
+    const lb = base.map((p: { id: string }, i: number) => {
+      for (let s = 1; s < 400; s++) {
+        const shards = Array(n).fill(400);
+        shards[i] = s;
+        const plan = c.remainingVariantPlannedHalfWidths(
+          base.map((q: object, j: number) => ({ ...q, shards: shards[j] })),
+          pairsPerShard
+        );
+        const cell = plan[`profile:${p.id}`];
+        if (cell.halfWidthBbPer100 <= max && cell.minimumProfilePairs >= FLOOR) return s;
+      }
+      throw new Error('no lower bound');
+    });
+    const ms = base.map((p: { pilotMsPerPair: number }) => p.pilotMsPerPair);
+    const start = lb.reduce((a: number, b: number) => a + b, 0);
+    for (let total = start; total < start + 400; total++) {
+      let best: { cost: number; shards: number[] } | null = null;
+      const slack = total - start;
+      const rec = (i: number, left: number, acc: number[]) => {
+        if (i === n - 1) {
+          const shards = [...acc, lb[i] + left];
+          if (feasible(shards, pairsPerShard)) {
+            const cost = shards.reduce((s, x, j) => s + x * ms[j], 0);
+            if (!best || cost < best.cost) best = { cost, shards };
+          }
+          return;
+        }
+        for (let e = 0; e <= left; e++) rec(i + 1, left - e, [...acc, lb[i] + e]);
+      };
+      rec(0, slack, []);
+      if (best) return { lb, ...(best as { cost: number; shards: number[] }), total };
+    }
+    throw new Error('no feasible total');
+  };
+  let k = Math.max(1, Math.floor((25 * 60000) / (2.5 * slowest * block)));
+  const budgetK = k;
+  let solved = solve(block * k);
+  while (3 * solved.total > CEILING) {
+    k++;
+    solved = solve(block * k);
+  }
+  const pairsPerShard = block * k;
+  const plan = c.remainingVariantPlannedHalfWidths(
+    base.map((p: object, i: number) => ({ ...p, shards: solved.shards[i] })),
+    pairsPerShard
+  );
+  console.log(
+    JSON.stringify({
+      variant,
+      rotationBlock: block,
+      budgetBlocks: budgetK,
+      blocks: k,
+      pairsPerShard,
+      plannedMax: max,
+      lowerBounds: solved.lb,
+      shards: solved.shards,
+      jobs: 3 * solved.total,
+      slowestMsPerPair: slowest,
+      hostedMinutesSlowestShard: Math.round(((2.5 * slowest * pairsPerShard) / 60000) * 10) / 10,
+      runnerHours:
+        Math.round(
+          (base.reduce(
+            (s: number, p: { pilotMsPerPair: number }, i: number) =>
+              s + 3 * solved.shards[i] * pairsPerShard * p.pilotMsPerPair * 2.5,
+            0
+          ) /
+            3.6e6) *
+            10
+        ) / 10,
+      plannedCells: plan,
+    })
+  );
+}

@@ -1,0 +1,9 @@
+{
+  "_owner": "codex/launch-retirement-collateral-20261006",
+  "_comment": "Exact57 retained tournament originals qualify private metadata restoration only inside the existing native successor hand transaction. All66 profiles remain closed/disabled. Full current financial owner PG17 proof is independent from the maintained narrower helper-native regression; source/CI never implies production installation or original settlement.",
+  "tables": [
+    "smarter_private.retirement_original_hand_qualification",
+    "smarter_private.retirement_original_hand_restorations"
+  ],
+  "functions": ["smarter_private.restore_retired_original_tournament_hand"]
+}

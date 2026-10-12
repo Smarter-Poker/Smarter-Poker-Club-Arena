@@ -1,0 +1,3 @@
+# tests/a-retained-hand-settles-past-an-undealt-chair-and-on-a-closing-table.law.test.ts
+
+The successor handoff (fn_ca_resume_hand_submission) settles a retained, finished hand past a chair that was present at the deal only when the hand's own record never names that chair's player and every player the record names is in the submission's stacks, and it admits a cash table whose lifecycle is 'breaking' as the original commit does; a player seated twice, an undated deal, a 'closed' table and a tournament table outside its rules still refuse, and the door stays service_role only (20260929022629).

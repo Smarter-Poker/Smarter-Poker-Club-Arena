@@ -62,7 +62,11 @@ export function MissionFreezePurchaseDialog({
               disabled={buyingFreeze}
               onClick={onDismiss}
             >
-              <CasinoControlIcon variant="keep" state="idle" size="sm" />
+              <CasinoControlIcon
+                variant="keep"
+                state={buyingFreeze ? 'disabled' : 'idle'}
+                size="sm"
+              />
               Keep My Diamonds
             </button>
             <button

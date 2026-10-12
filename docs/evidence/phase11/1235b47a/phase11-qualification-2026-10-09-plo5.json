@@ -1,0 +1,31 @@
+{
+  "schema": "horse-phase11-qualification-v1",
+  "qualified": true,
+  "mode": "contract",
+  "variant": "plo5",
+  "sourceSha": "1235b47a63c439da9bdf8427148bc0818499378c",
+  "packVersion": "plo5-high-round3-v2",
+  "contractVersion": "omaha-variant-strength-contract-v1",
+  "contractDigest": "5b93ae20962ff79798b998f437ed43d2bd224a64995d86e34ed63d7bb22057fc",
+  "domain": "plo5-cash-single-board-after-rake-horse-population",
+  "policyDigest": "9d5b1ed11d1ec000ae84ceb3cd1c0ff6df36d573e7371e8d9b74a0f151cda5ba",
+  "policyDigestDefinition": "horse-phase11-policy-digest-v4",
+  "objectives": {
+    "cash": { "qualified": true, "status": "measured" },
+    "tournament": {
+      "status": "unavailable dependency",
+      "qualified": false,
+      "reasons": [
+        "tournament:plo5_whole_tournament_outcome_model_unavailable",
+        "tournament:qualified_plo5_tournament_reference_population_unavailable",
+        "tournament:plo5_tournament_thresholds_not_specified"
+      ]
+    }
+  },
+  "admissionAlsoRequires": [
+    "natural completion-share evidence for the pack: on the release under admission, the share of eligible live candidate-path decisions that complete without the work_budget fallback, per street, measured from natural decisions with the release unchanged throughout the window; P11.3 must state and meet its own floor for that share before admitting the pack, because this contract measures strength only for decisions that complete"
+  ],
+  "evidencePath": "docs/evidence/phase11/1235b47a/strength-2026-10-09-plo5/strength.json",
+  "evidenceSha256": "96de79c09c269c9fd7205e6d609913c25c7fe5aa843b17f2f7ab310fa12fc77c",
+  "reasons": []
+}

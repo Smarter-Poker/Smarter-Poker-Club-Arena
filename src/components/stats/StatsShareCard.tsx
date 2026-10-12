@@ -19,7 +19,23 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import './StatsShareCard.css';
-import { isNativePlatform } from '../../lib/appBase';
+import { IS_NATIVE_BUILD, isNativePlatform } from '../../lib/appBase';
+import { arenaDisplayText } from '../../lib/arenaDisplay/text';
+import { compactChips } from '../../utils/format';
+
+/**
+ * The system share sheet (src/lib/native/share.ts). App build only, and a
+ * function of its own on purpose: Rollup keeps everything written inside a
+ * `try` block whatever a constant says (its default
+ * treeshake.tryCatchDeoptimization), so this import() written inside the share
+ * handler's try made the web build emit the share module and its Capacitor
+ * plugins for players who can never run them. Here IS_NATIVE_BUILD removes it.
+ */
+async function shareOnNative(blob: Blob, filename: string, title: string): Promise<void> {
+  if (!IS_NATIVE_BUILD) return;
+  const { nativeShareBlob } = await import('../../lib/native/share');
+  await nativeShareBlob(blob, filename, title);
+}
 
 interface Props {
   displayName: string;
@@ -29,7 +45,7 @@ interface Props {
     profit: number;
     vpip: number; // percent
     pfr: number; // percent
-    hoursPlayed: number;
+    hoursPlayed: number | null;
   };
   styleLabel?: string | null;
   styleColor?: string | null;
@@ -38,6 +54,10 @@ interface Props {
    * 7-day slice left the browser as an unlabelled lifetime claim.
    */
   rangeLabel?: string;
+  /** The exact club scope represented by the exported figures. */
+  scopeLabel?: string;
+  /** Masks player identity and every numeric artifact in presentation mode. */
+  privacyPresentationMode?: boolean;
 }
 
 const W = 1200;
@@ -71,6 +91,8 @@ export default function StatsShareCard({
   styleLabel,
   styleColor,
   rangeLabel,
+  scopeLabel,
+  privacyPresentationMode = false,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [busy, setBusy] = useState(false);
@@ -139,16 +161,19 @@ export default function StatsShareCard({
     // Measured, not counted: 23 wide glyphs at 54px can still reach the
     // right-aligned "smarter.poker" footer, which sits in the same band.
     const NAME_MAX_W = W - 64 - 260;
-    let name = displayName;
+    const safeDisplayName = arenaDisplayText(
+      privacyPresentationMode ? 'Private Player' : displayName
+    );
+    let name = safeDisplayName;
     while (name.length > 1 && ctx.measureText(`${name}...`).width > NAME_MAX_W) {
       name = name.slice(0, -1);
     }
-    if (name !== displayName) name = `${name}...`;
+    if (name !== safeDisplayName) name = `${name}...`;
     ctx.fillText(name, 64, 62);
 
     // Style badge
-    if (styleLabel) {
-      const label = styleLabel.toUpperCase();
+    if (styleLabel && !privacyPresentationMode) {
+      const label = arenaDisplayText(styleLabel).toUpperCase();
       ctx.font = `700 22px ${FONT}`;
       const tw = ctx.measureText(label).width;
       const bx = 64;
@@ -166,38 +191,57 @@ export default function StatsShareCard({
 
     // Headline stat: win rate
     const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
-    const bbColor = n(stats.bb100) >= 0 ? '#22c55e' : '#ef4444';
+    const bbColor = privacyPresentationMode
+      ? '#e8f4ff'
+      : n(stats.bb100) >= 0
+        ? '#22c55e'
+        : '#ef4444';
     ctx.fillStyle = 'rgba(200,224,245,0.55)';
     ctx.font = `600 22px ${FONT}`;
     ctx.fillText('WIN RATE', 64, 232);
     ctx.fillStyle = bbColor;
     ctx.font = `800 96px ${FONT}`;
-    const bbText = `${n(stats.bb100) >= 0 ? '+' : ''}${n(stats.bb100).toFixed(1)}`;
+    const bbText = privacyPresentationMode
+      ? 'PRIVATE'
+      : `${n(stats.bb100) >= 0 ? '+' : ''}${n(stats.bb100).toFixed(1)}`;
     ctx.fillText(bbText, 64, 262);
     const bbW = ctx.measureText(bbText).width;
     ctx.fillStyle = 'rgba(200,224,245,0.6)';
     ctx.font = `600 30px ${FONT}`;
-    ctx.fillText('bb/100', 64 + bbW + 16, 322);
+    if (!privacyPresentationMode) ctx.fillText('bb/100', 64 + bbW + 16, 322);
 
     // Profit, beside the win rate. This is the number people screenshot.
-    const profitColor = n(stats.profit) >= 0 ? '#22c55e' : '#ef4444';
+    const profitColor = privacyPresentationMode
+      ? '#e8f4ff'
+      : n(stats.profit) >= 0
+        ? '#22c55e'
+        : '#ef4444';
     ctx.fillStyle = 'rgba(200,224,245,0.55)';
     ctx.font = `600 22px ${FONT}`;
     ctx.fillText('PROFIT', 470, 232);
     ctx.fillStyle = profitColor;
     ctx.font = `800 64px ${FONT}`;
     ctx.fillText(
-      `${n(stats.profit) >= 0 ? '+' : '-'}${Math.round(Math.abs(n(stats.profit))).toLocaleString()}`,
+      privacyPresentationMode
+        ? 'PRIVATE'
+        : `${n(stats.profit) > 0 ? '+' : ''}${compactChips(n(stats.profit))}`,
       470,
       278
     );
 
     // Stat tiles
     const tiles: Array<[string, string]> = [
-      ['HANDS', n(stats.hands).toLocaleString()],
-      ['HOURS', n(stats.hoursPlayed).toFixed(1)],
-      ['VPIP', `${n(stats.vpip).toFixed(1)}%`],
-      ['PFR', `${n(stats.pfr).toFixed(1)}%`],
+      ['HANDS', privacyPresentationMode ? 'PRIVATE' : n(stats.hands).toLocaleString()],
+      [
+        'HOURS',
+        privacyPresentationMode
+          ? 'PRIVATE'
+          : stats.hoursPlayed === null
+            ? 'UNAVAILABLE'
+            : n(stats.hoursPlayed).toFixed(1),
+      ],
+      ['VPIP', privacyPresentationMode ? 'PRIVATE' : `${n(stats.vpip).toFixed(1)}%`],
+      ['PFR', privacyPresentationMode ? 'PRIVATE' : `${n(stats.pfr).toFixed(1)}%`],
     ];
     const tileW = 244;
     const tileH = 118;
@@ -235,9 +279,18 @@ export default function StatsShareCard({
     // read for what it is.
     ctx.fillStyle = 'rgba(200,224,245,0.55)';
     ctx.font = `600 20px ${FONT}`;
-    ctx.fillText(rangeLabel ? `${rangeLabel} · Cash Games` : 'Cash Games', W - 64, 104);
+    const scope = privacyPresentationMode
+      ? 'Presentation Safe'
+      : arenaDisplayText(scopeLabel || 'All Clubs');
+    ctx.fillText(
+      !privacyPresentationMode && rangeLabel
+        ? `${scope} · ${arenaDisplayText(rangeLabel)} · Cash Games`
+        : `${scope} · Cash Games`,
+      W - 64,
+      104
+    );
     ctx.textAlign = 'left';
-  }, [displayName, stats, styleLabel, styleColor, rangeLabel]);
+  }, [displayName, stats, styleLabel, styleColor, rangeLabel, scopeLabel, privacyPresentationMode]);
 
   useEffect(() => {
     draw();
@@ -263,9 +316,8 @@ export default function StatsShareCard({
 
       // THE APP (2026-09-08): no navigator.share on Android's webview, no
       // <a download> on either. The system share sheet on the written file.
-      if (isNativePlatform()) {
-        const { nativeShareBlob } = await import('../../lib/native/share');
-        await nativeShareBlob(blob, 'smarter-poker-stats.png', 'My Smarter Poker Stats');
+      if (IS_NATIVE_BUILD && isNativePlatform()) {
+        await shareOnNative(blob, 'smarter-poker-stats.png', 'My Smarter Poker Stats');
         return;
       }
 
@@ -298,7 +350,11 @@ export default function StatsShareCard({
           ref={canvasRef}
           className="sharecard-canvas"
           role="img"
-          aria-label="A Shareable Image Of Your Headline Poker Stats"
+          aria-label={
+            privacyPresentationMode
+              ? 'A Presentation Safe Image With Private Stats Hidden'
+              : 'A Shareable Image Of Your Headline Poker Stats'
+          }
         />
       </div>
       <button type="button" className="sharecard-btn" onClick={handleShare} disabled={busy}>

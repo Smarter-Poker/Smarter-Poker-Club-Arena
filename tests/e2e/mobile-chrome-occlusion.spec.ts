@@ -29,6 +29,7 @@
  * would make this spec cry wolf on every page with a full-height background.
  */
 import { test, expect, type Page } from '@playwright/test';
+import { CLOSED_DISCLOSURE_BODY_SELECTOR } from './support/closedDisclosureBody';
 
 const CLUB = process.env.AUDIT_CLUB_ID || 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
 const CLUB_ARENA_PATH = '/hub/club-arena';
@@ -73,8 +74,11 @@ const TRANSIENT_DOCUMENT_ERROR =
 
 async function evaluateAcrossDocumentReplacement(
   page: Page,
-  pageFunction: (arg: { SLACK: number }) => Promise<ChromeProbeResult>,
-  arg: { SLACK: number }
+  pageFunction: (arg: {
+    SLACK: number;
+    closedDisclosureBodySelector: string;
+  }) => Promise<ChromeProbeResult>,
+  arg: { SLACK: number; closedDisclosureBodySelector: string }
 ): Promise<ChromeProbeResult> {
   let lastNavigationError: unknown;
   for (let attempt = 1; attempt <= 3; attempt += 1) {
@@ -161,6 +165,16 @@ for (const route of ROUTES) {
     }
 
     if (skipped.length === 0) {
+      if (route === 'leaderboard') {
+        // The leaderboard's ranked rows and prize metadata arrive from
+        // independent reads. Do not measure its virtualized list while those
+        // reads are still changing the document height.
+        await expect(page.getByRole('region', { name: 'Leaderboards' })).toHaveAttribute(
+          'aria-busy',
+          'false',
+          { timeout: 15_000 }
+        );
+      }
       if (route.endsWith('/jackpot')) {
         // Parent data, mini first read, operator visibility, recent hits and
         // analytics all affect the initial height. Terminal errors/empty reads
@@ -178,7 +192,7 @@ for (const route of ROUTES) {
       }
       const found = await evaluateAcrossDocumentReplacement(
         page,
-        async ({ SLACK }) => {
+        async ({ SLACK, closedDisclosureBodySelector }) => {
           const vw = window.innerWidth;
           const vh = window.innerHeight;
 
@@ -207,6 +221,10 @@ for (const route of ROUTES) {
             for (const el of root.querySelectorAll('*')) {
               if (el.children.length > 0) continue;
               if (el.closest('[aria-hidden="true"]')) continue;
+              // Closed native disclosures can retain off-screen layout boxes,
+              // but their body is not readable. Keep the summary and every
+              // open disclosure in the same strict chrome measurement.
+              if (el.closest(closedDisclosureBodySelector)) continue;
               const s = getComputedStyle(el);
               if (s.visibility === 'hidden' || s.display === 'none' || +s.opacity === 0) continue;
               let b = el.getBoundingClientRect();
@@ -356,7 +374,7 @@ for (const route of ROUTES) {
 
           return { hits, hadTop: !!topBar, hadBottom: !!bottomBar };
         },
-        { SLACK }
+        { SLACK, closedDisclosureBodySelector: CLOSED_DISCLOSURE_BODY_SELECTOR }
       );
 
       // The replacement document may be an intentional cross-app handoff. The

@@ -52,26 +52,95 @@ test.describe('Player Stats production experience', () => {
     }
   });
 
-  test('fits a 390px phone and keeps all interactive targets usable', async ({ page }) => {
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.reload();
-    await expect(page.getByRole('tab', { name: 'Overview' })).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByRole('heading', { name: 'Player Intelligence' })).toBeVisible();
+  test('traverses every owner Stats surface and preserves club and range scope', async ({
+    page,
+  }) => {
+    for (const tabName of [
+      'Performance',
+      'Positions',
+      'Hands',
+      'Tournaments',
+      'Analysis',
+      'Trophies',
+      'Rake',
+      'Workspace',
+      'Overview',
+    ]) {
+      const tab = page.getByRole('tab', { name: tabName });
+      await expect(tab, `${tabName} must remain available`).toBeVisible();
+      await tab.click();
+      await expect(tab).toHaveAttribute('aria-selected', 'true');
+      await expect(page.locator(`#stats-panel-${tabName.toLowerCase()}`)).toBeVisible();
+    }
 
+    const clubGroup = page.getByRole('group', { name: 'Statistics Club' });
+    const clubButtons = clubGroup.getByRole('button');
+    await expect(clubButtons.first()).toHaveText('All Clubs');
+    expect(await clubButtons.count()).toBeGreaterThan(2);
+    await clubButtons.nth(1).click();
+    await expect.poll(() => new URL(page.url()).searchParams.get('statsClub')).not.toBeNull();
+
+    await page.getByRole('button', { name: '30 Days' }).click();
+    await expect.poll(() => new URL(page.url()).searchParams.get('range')).toBe('30d');
+
+    const compare = page.getByRole('button', { name: 'Compare Clubs' });
+    await expect(compare).toBeVisible();
+    await compare.click();
+    await expect(page.getByRole('heading', { name: 'Club Comparison' })).toBeVisible();
+    await page.getByRole('button', { name: 'Profit' }).click();
+    await expect(page.getByRole('button', { name: 'Profit' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+
+    await page.reload();
+    await expect(page.getByRole('tab', { name: 'Overview' })).toBeVisible({ timeout: 60_000 });
+    expect(new URL(page.url()).searchParams.get('statsClub')).not.toBeNull();
+    expect(new URL(page.url()).searchParams.get('range')).toBe('30d');
+    expect(new URL(page.url()).searchParams.get('clubSort')).toBe('profit');
+  });
+
+  for (const width of [375, 393]) {
+    test(`fits a ${width}px phone and keeps all interactive targets usable`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 844 });
+      await page.reload();
+      await expect(page.getByRole('tab', { name: 'Overview' })).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByRole('heading', { name: 'Player Intelligence' })).toBeVisible();
+
+      const overflow = await page.evaluate(
+        () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+      );
+      expect(overflow).toBeLessThanOrEqual(1);
+
+      const shortTargets = await page
+        .locator('.stats-page button:visible, .stats-page summary:visible')
+        .evaluateAll((targets) =>
+          targets
+            .map((target) => ({
+              label: (target.textContent || '').trim(),
+              height: target.getBoundingClientRect().height,
+            }))
+            .filter((target) => target.height < 44)
+        );
+      expect(shortTargets).toEqual([]);
+    });
+  }
+
+  test('stays operable at 200 percent zoom without page overflow', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.evaluate(() => {
+      document.documentElement.style.zoom = '2';
+    });
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth
     );
     expect(overflow).toBeLessThanOrEqual(1);
 
-    const shortTargets = await page.locator('.stats-page button:visible').evaluateAll((buttons) =>
-      buttons
-        .map((button) => ({
-          label: (button.textContent || '').trim(),
-          height: button.getBoundingClientRect().height,
-        }))
-        .filter((button) => button.height < 44)
-    );
-    expect(shortTargets).toEqual([]);
+    await page.getByRole('tab', { name: 'Overview' }).focus();
+    await page.keyboard.press('ArrowRight');
+    const selectedTab = page.getByRole('tab', { selected: true });
+    await expect(selectedTab).toBeFocused();
+    await expect(selectedTab).toBeVisible();
   });
 
   test('has no serious or critical automated accessibility violations', async ({ page }) => {

@@ -1,3 +1,4 @@
+import { choiceLossGuarantee } from '../utils/choiceProgressiveGuarantee';
 import { supabase } from '../lib/supabase';
 import { earnedReceiptBudget } from '../utils/bonusGameBudget';
 import { validBonusMinimum } from '../utils/diamondBonusPayout';
@@ -38,7 +39,7 @@ export interface ChoiceRound {
   /** 1: no floor (historical). 2: a tenth of the stake. 3: the Super half.
    *  4: half the stake, or for a Super award what the player paid, with the
    *  first step of the game certain (owner ruling 2026-09-21, R3). */
-  payout_version?: 1 | 2 | 3 | 4;
+  payout_version?: 1 | 2 | 3 | 4 | 5;
   server_seed_hash: string;
   client_seed: string;
   nonce: number;
@@ -141,7 +142,15 @@ export function parseChoiceRound(value: unknown): ChoiceRound {
   if (
     !validBonusMinimum(v) ||
     (v.status === 'open' && v.payout_chips !== 0) ||
-    (v.status === 'lost' && v.payout_chips !== (v.minimum_payout_chips ?? 0))
+    (v.status === 'lost' &&
+      v.payout_chips !==
+        (version === 5
+          ? choiceLossGuarantee(
+              v.prizes as number[],
+              v.picked.length - 1,
+              Number(v.minimum_payout_chips)
+            )
+          : (v.minimum_payout_chips ?? 0)))
   )
     throw new Error('The Game Response Could Not Be Verified');
   if (v.status !== 'open') {
@@ -165,6 +174,7 @@ export function parseChoiceRound(value: unknown): ChoiceRound {
       // proof. Only the contract-4 boundary is compared: a round dealt before
       // the proof carried a version at all still verifies as what it is.
       (p.payout_version ?? 0) >= CHOICE_PAYOUT_VERSION !== sealedV4 ||
+      (version === 5 && p.payout_version !== 5) ||
       // CONTRACT 4 mines: the board is dealt at the first pick, around it, so
       // it could not have been known before the player touched a tile. The
       // proof names that tile; without it the board is unverifiable in the

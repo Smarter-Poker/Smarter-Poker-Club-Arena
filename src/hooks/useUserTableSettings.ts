@@ -490,7 +490,7 @@ async function persistSettingColumn(
 ): Promise<PersistOutcome> {
   let error = await upsertSettingColumn(userId, column, value);
   if (!error) {
-    await markSettingsTouched([column]);
+    await markSettingsTouched(userId, [column]);
     return { status: 'saved' };
   }
 
@@ -499,7 +499,7 @@ async function persistSettingColumn(
     if (!stillCurrent()) return { status: 'superseded' };
     error = await upsertSettingColumn(userId, column, value);
     if (!error) {
-      await markSettingsTouched([column]);
+      await markSettingsTouched(userId, [column]);
       return { status: 'saved' };
     }
   }

@@ -22,7 +22,7 @@
  *    from the spins lobby".
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { resolve } from 'path';
 import { sliceMethod } from '../helpers/sourceWindow';
 
@@ -92,12 +92,10 @@ describe('a saved filter cannot leave the lobby empty', () => {
 });
 
 describe('the browser never seats horses', () => {
-  it('seedTable refuses on every table, cash included', () => {
-    const hydra = readSrc('services/HydraService.ts');
-    const body = sliceMethod(hydra, 'async seedTable(');
-    expect(body).toContain('HydraService.seedTable_refused_client_seating');
-    // The write path is gone, not merely guarded.
-    expect(body).not.toContain('seatHorse(');
+  it('the browser horse service is gone, not merely refusing', () => {
+    // seedTable refused on every table from 2026-08-28; HydraService itself
+    // was deleted on 2026-10-05 with the rest of the browser horse management.
+    expect(existsSync(resolve(__dirname, '../../src/services/HydraService.ts'))).toBe(false);
   });
 
   it('TablePage no longer runs a client horse loader', () => {

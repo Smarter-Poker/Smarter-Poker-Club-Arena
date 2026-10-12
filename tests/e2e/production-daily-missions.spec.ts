@@ -1,3 +1,6 @@
+import { MissionCursorLifecycle } from './support/missionCursorLifecycle';
+import { remountConcurrentMissionReceipts } from './support/missionRerollRemount';
+import { finalizeMissionCleanupWithEvidence } from './support/missionReloadObservation';
 import {
   devices,
   expect,
@@ -10,6 +13,7 @@ import {
   type WebSocketRoute,
 } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
+import { withoutTapSwitchNesting } from './helpers/axe-tap-switch';
 import { randomUUID } from 'node:crypto';
 
 import { DAILY_MISSIONS_RESPONSE_TIMEOUT, DailyMissionsPage } from './support/DailyMissionsPage';
@@ -20,8 +24,8 @@ import {
 import {
   callServiceRpc,
   cleanupTemporaryCustomizationAccount,
+  CLEANUP_FREEZE_ALLOWANCE_MS,
   createTemporaryCustomizationAccount,
-  deleteServiceRows,
   insertServiceRows,
   readServiceRows,
   requireCustomizationCertificationEnvironment,
@@ -71,8 +75,10 @@ async function expectNoAxeViolations(
     .include(selector)
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
     .analyze();
+  // A dialog's plates carry the iPhone tap switch: the one written exception.
+  const violations = await withoutTapSwitchNesting(page, results.violations);
   expect(
-    results.violations.map((violation) => ({
+    violations.map((violation) => ({
       id: violation.id,
       impact: violation.impact,
       help: violation.help,
@@ -178,6 +184,13 @@ function realtimeFrameDescriptor(message: string | Buffer): string {
 function exactQuery(select: string, column: string, value: string): URLSearchParams {
   return new URLSearchParams({ select, [column]: `eq.${value}` });
 }
+
+// The outbox is drained by four pg_cron shards once a minute, each with a
+// 45-second budget. Measured production lag from occurred_at to the booked
+// receipt (2026-09-27, 3 hours, 266,771 hand events): p50 29 s, p95 58 s,
+// p99 69 s, max 173 s. The certification waits past that observed maximum so
+// a healthy drainer never fails it and a stalled one always does.
+const DAILY_MISSIONS_OUTBOX_DRAIN_TIMEOUT = 180_000;
 
 async function serviceRows<T>(
   environment: CustomizationCertificationEnvironment,
@@ -297,43 +310,29 @@ test.describe('production Daily Missions certification', () => {
     !CERTIFICATION_ENABLED,
     'Set DAILY_MISSIONS_CERTIFICATION=1 to create one isolated production fixture.'
   );
-  test.describe.configure({ mode: 'serial', timeout: 600_000 });
+  /* The journey's own budget, plus room for the teardown to wait out one hourly
+   platform freeze rather than die inside it. The allowance is measured, not
+   guessed: see CLEANUP_FREEZE_ALLOWANCE_MS. It is spent only when a freeze is
+   actually enforced. */
+  const JOURNEY_TIMEOUT_MS = 600_000;
+  const CASE_TIMEOUT_MS = JOURNEY_TIMEOUT_MS + CLEANUP_FREEZE_ALLOWANCE_MS;
+
+  test.describe.configure({ mode: 'serial', timeout: CASE_TIMEOUT_MS });
 
   test('cold-loads once, settles every action exactly once, recovers, and leaves no fixture', async ({
     browser,
     baseURL,
   }) => {
-    test.setTimeout(600_000);
+    test.setTimeout(CASE_TIMEOUT_MS);
     if (!baseURL) throw new Error('A deployed BASE_URL is required.');
 
     const environment = requireCustomizationCertificationEnvironment();
     const contexts: BrowserContext[] = [];
     let account: TemporaryCustomizationAccount | null = null;
-    let certificationHandHistoryId: string | null = null;
     let compatibilityCycleRowId: string | null = null;
     let receiptBearingUiRowId: string | null = null;
     const report: JsonObject = {};
-    const cleanupErrors: string[] = [];
-    // A run cancelled mid-certification (CI cancellation, a SIGTERM from the
-    // runner) still reaches this handler even though it never reaches the
-    // finally block's own cleanup below - Node delivers the signal, but the
-    // process is free to exit before an interrupted await resumes. Reading
-    // certificationHandHistoryId here is a closure read, so it always sees
-    // whatever the try block has assigned by the time the signal lands. This
-    // is a backstop for cancellation only: it cannot run after SIGKILL or a
-    // host loss, which is why the retention sweep fix in
-    // 20260926151328_prune_e2e_certification_hand_history_fixtures.sql exists
-    // as the durable backstop underneath it (board #5070).
-    const deleteFixtureOnSignal = () => {
-      if (!certificationHandHistoryId) return;
-      void deleteServiceRows(
-        environment,
-        'hand_history',
-        new URLSearchParams({ id: `eq.${certificationHandHistoryId}` })
-      ).catch(() => undefined);
-    };
-    process.once('SIGTERM', deleteFixtureOnSignal);
-    process.once('SIGINT', deleteFixtureOnSignal);
+    let journeyError: unknown;
 
     try {
       account = await createTemporaryCustomizationAccount(environment, 'missions', 7_000);
@@ -349,6 +348,27 @@ test.describe('production Daily Missions certification', () => {
       let blockAllRealtimeFrames = false;
       const observedRealtimeFrames = new Set<string>();
       let interceptedRealtimeSockets = 0;
+      const cursorLifecycle = new MissionCursorLifecycle(
+        `realtime:daily-mission-revision:${account.id}`
+      );
+      let activeMissionPage: Page | null = null;
+      await desktopContext.exposeBinding('observeMissionCursorResume', ({ page }, event) => {
+        if (page !== activeMissionPage || (event !== 'focus' && event !== 'visible')) return;
+        cursorLifecycle.resume(event);
+      });
+      await desktopContext.addInitScript(() => {
+        const record = (event: 'focus' | 'visible') => {
+          if (document.visibilityState !== 'visible') return;
+          const binding = (
+            window as unknown as {
+              observeMissionCursorResume: (event: string) => Promise<void>;
+            }
+          ).observeMissionCursorResume;
+          void binding(event);
+        };
+        window.addEventListener('focus', () => record('focus'));
+        document.addEventListener('visibilitychange', () => record('visible'));
+      });
       // Every routed realtime socket keeps its server-side handle. Closing that
       // side is how a step interrupts the live connection the way a realtime
       // restart would: Playwright forwards the closure to the page's WebSocket
@@ -356,9 +376,15 @@ test.describe('production Daily Missions certification', () => {
       const routedRealtimeServers: WebSocketRoute[] = [];
       await desktopContext.routeWebSocket(/\/realtime\/v1\/websocket/, (socket) => {
         interceptedRealtimeSockets += 1;
+        const socketGeneration = interceptedRealtimeSockets;
         const server = socket.connectToServer();
+        socket.onMessage((message) => {
+          cursorLifecycle.clientMessage(socketGeneration, message);
+          server.send(message);
+        });
         routedRealtimeServers.push(server);
         server.onMessage((message) => {
+          cursorLifecycle.serverMessage(socketGeneration, message);
           if (observedRealtimeFrames.size < 30) {
             observedRealtimeFrames.add(realtimeFrameDescriptor(message));
           }
@@ -375,6 +401,7 @@ test.describe('production Daily Missions certification', () => {
       });
       const missions = await signInContext(desktopContext, baseURL, account);
       const { page } = missions;
+      activeMissionPage = page;
 
       await test.step('one-request cold load stays inside the production budget', async () => {
         await page.addInitScript(installMissionArtObservation);
@@ -528,7 +555,12 @@ test.describe('production Daily Missions certification', () => {
           ])
         );
         expect(vitals.missionArtBytes).toBeGreaterThan(0);
-        expect(vitals.missionArtBytes).toBeLessThan(INITIAL_MISSION_ART_BUDGET_BYTES);
+        // The assets are named in the message so a red run's annotation says
+        // which file was over budget, not only the total (2026-10-04).
+        expect(
+          vitals.missionArtBytes,
+          `initial mission art ${JSON.stringify(vitals.missionArt)}`
+        ).toBeLessThan(INITIAL_MISSION_ART_BUDGET_BYTES);
       });
 
       await test.step('warm in-app return restores the ledger inside its route budget', async () => {
@@ -735,13 +767,22 @@ test.describe('production Daily Missions certification', () => {
         await expect(page).toHaveURL(challengesURL.toString());
       });
 
-      await test.step('the settled-hand trigger preserves mixed exact threshold candidates', async () => {
-        certificationHandHistoryId = randomUUID();
+      // The settled-hand trigger (hand_history -> daily_challenge_event_outbox)
+      // is certified on a private native PostgreSQL by
+      // scripts/ci/test-daily-missions-hand-trigger-postgres.py, never here:
+      // production never receives a synthetic hand (board #5070, incident
+      // e2e-synthetic-hands). This step certifies the production half the
+      // trigger hands off to. It writes the exact outbox row
+      // fn_enqueue_hand_daily_missions writes for a settled hand (same columns,
+      // same mixed exact threshold candidates) and waits for the live pg_cron
+      // drainer (sp_drain_daily_challenge_event_outbox ->
+      // fn_drain_daily_challenge_event_outbox_user) to book it: the receipt
+      // appears in daily_challenge_progress_events and the outbox row is gone.
+      // It never books the event itself, so a stalled or broken drainer fails
+      // here. tests/operations/production-e2e-ledger-write-guard refuses any
+      // production spec that writes a hand or ledger table.
+      await test.step('the mission outbox drainer preserves mixed exact threshold candidates', async () => {
         const occurredAt = new Date().toISOString();
-        const handNumber =
-          1_700_000_000 +
-          (Number.parseInt(certificationHandHistoryId.replaceAll('-', '').slice(0, 7), 16) %
-            100_000_000);
         const amounts = {
           hands_played: 1,
           hands_won: 1,
@@ -752,37 +793,37 @@ test.describe('production Daily Missions certification', () => {
         };
         const magnitudes = { big_pots: 500, strong_hands: 7 };
         const thresholdValues = { big_pots: [499, 500], strong_hands: [6, 7] };
+        const eventKey = `certification:outbox:${randomUUID()}`;
 
-        const inserted = await insertServiceRows<{ id: string }>(environment, 'hand_history', {
-          id: certificationHandHistoryId,
-          table_id: null,
-          tournament_id: null,
-          hand_number: handNumber,
-          game_variant: 'nlh',
-          small_blind: 1,
-          big_blind: 2,
-          pot_size: 600,
-          rake_amount: 0,
-          community_cards: [],
-          winners: [],
-          players: [],
-          actions: [],
-          started_at: occurredAt,
-          ended_at: occurredAt,
-          has_human: false,
-          daily_mission_events: [
-            {
-              user_id: account!.id,
-              amounts,
-              magnitudes,
-              values: thresholdValues,
-            },
-          ],
+        // Exactly the row the settled-hand trigger inserts: user_id,
+        // event_key, amounts, magnitudes, threshold_values, occurred_at.
+        // attempts, next_attempt_at and created_at take their table defaults,
+        // as they do for a real hand.
+        const queued = await insertServiceRows<{
+          user_id: string;
+          event_key: string;
+          amounts: JsonObject;
+          magnitudes: JsonObject;
+          threshold_values: JsonObject;
+          dead_lettered_at: string | null;
+        }>(environment, 'daily_challenge_event_outbox', {
+          user_id: account!.id,
+          event_key: eventKey,
+          amounts,
+          magnitudes,
+          threshold_values: thresholdValues,
+          occurred_at: occurredAt,
         });
-        expect(inserted).toHaveLength(1);
-        expect(inserted[0]).toMatchObject({ id: certificationHandHistoryId });
+        expect(queued).toHaveLength(1);
+        expect(queued[0]).toMatchObject({
+          user_id: account!.id,
+          event_key: eventKey,
+          amounts,
+          magnitudes,
+          threshold_values: thresholdValues,
+          dead_lettered_at: null,
+        });
 
-        const eventKey = `hand:${certificationHandHistoryId}`;
         await expect
           .poll(
             async () => {
@@ -799,9 +840,22 @@ test.describe('production Daily Missions certification', () => {
               );
               return receipts.find((receipt) => receipt.event_key === eventKey) ?? null;
             },
-            { timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT }
+            {
+              message: 'the pg_cron outbox drainer must book the queued event',
+              timeout: DAILY_MISSIONS_OUTBOX_DRAIN_TIMEOUT,
+            }
           )
           .toEqual({ event_key: eventKey, amounts, magnitudes, threshold_values: thresholdValues });
+
+        // Booking an event removes its outbox row; a row that survives its own
+        // receipt would be booked twice.
+        const remaining = await serviceRows<{ event_key: string }>(
+          environment,
+          'daily_challenge_event_outbox',
+          account!.id,
+          'event_key'
+        );
+        expect(remaining.filter((row) => row.event_key === eventKey)).toEqual([]);
       });
 
       await test.step('reroll confirmation charges one Diamond exactly once', async () => {
@@ -865,12 +919,20 @@ test.describe('production Daily Missions certification', () => {
           (response) => response.url().includes('/rest/v1/rpc/reroll_daily_challenge'),
           { timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT }
         );
+        // The global wallet's authoritative Diamond read. Since #5679 (ruling 25,
+        // migration 20260930234500) `authenticated` holds no SELECT on
+        // profiles.diamonds, so every own-balance read goes through the owner
+        // door, ownProfile() in src/lib/ownProfile.ts:
+        // POST /rest/v1/rpc/get_my_full_profile?select=diamonds&id=eq.<uid>.
+        // DynamicWallet issues it on BALANCE_UPDATED, which the reroll emits.
+        // This pinned the retired GET /rest/v1/profiles read, which the client
+        // no longer sends, so it waited 60s for a request that cannot come.
         const globalBalanceRefresh = page.waitForResponse(
           (response) => {
             const url = new URL(response.url());
             return (
-              response.request().method() === 'GET' &&
-              url.pathname.endsWith('/rest/v1/profiles') &&
+              response.request().method() === 'POST' &&
+              url.pathname.endsWith('/rest/v1/rpc/get_my_full_profile') &&
               (url.searchParams.get('select') || '').includes('diamonds')
             );
           },
@@ -1316,8 +1378,23 @@ test.describe('production Daily Missions certification', () => {
           challenge_id: string;
           completed: boolean;
           claimed: boolean;
-        }>(environment, 'user_daily_challenges', account!.id, 'id,challenge_id,completed,claimed');
-        const candidates = assignments.filter((row) => !row.completed && !row.claimed).slice(0, 2);
+          tier_snapshot: string;
+          assigned_date: string;
+        }>(
+          environment,
+          'user_daily_challenges',
+          account!.id,
+          'id,challenge_id,completed,claimed,tier_snapshot,assigned_date'
+        );
+        const candidates = assignments
+          .filter(
+            (row) =>
+              !row.completed &&
+              !row.claimed &&
+              row.tier_snapshot === 'daily' &&
+              row.assigned_date === currentPeriodKeys().daily
+          )
+          .slice(0, 2);
         expect(candidates).toHaveLength(2);
         const balanceBefore = await diamondBalance(environment, account!.id);
         const requests = candidates.map((row) => ({
@@ -1344,9 +1421,23 @@ test.describe('production Daily Missions certification', () => {
         );
         expect(new Set(replacementIds).size).toBe(2);
         await expect.poll(() => diamondBalance(environment, account!.id)).toBe(balanceBefore - 2);
-        await page.reload({ waitUntil: 'domcontentloaded' });
-        await expect(page.getByText('Live Now')).toBeVisible({
-          timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
+        // This step proves persisted concurrent rerolls after a fresh panel load.
+        // The earlier weekly-cycle step separately certifies a document reload.
+        await remountConcurrentMissionReceipts({
+          page,
+          navigate: (route) => missions.navigateWithinArena(route),
+          replacements: candidates.map((row, index) => ({
+            rowId: row.id,
+            catalogId: replacementIds[index],
+          })),
+          balance: balanceBefore - 2,
+          timeoutMs: DAILY_MISSIONS_RESPONSE_TIMEOUT,
+          attach: async (observation) => {
+            await test.info().attach('daily-missions-reroll-remount.json', {
+              body: JSON.stringify(observation, null, 2),
+              contentType: 'application/json',
+            });
+          },
         });
       });
 
@@ -1522,7 +1613,10 @@ test.describe('production Daily Missions certification', () => {
         // for one bounded read.
         let cursorReads = 0;
         const onCursorRead = (request: Request) => {
-          if (new URL(request.url()).pathname.endsWith(REVISION_CURSOR_PATH)) cursorReads += 1;
+          if (new URL(request.url()).pathname.endsWith(REVISION_CURSOR_PATH)) {
+            cursorReads += 1;
+            cursorLifecycle.cursorRead();
+          }
         };
         page.on('request', onCursorRead);
         // Realtime has no backlog. Prove the browser has joined through an
@@ -1590,7 +1684,7 @@ test.describe('production Daily Missions certification', () => {
         }
         blockedRevisionFrames = 0;
         const socketsAtBlock = interceptedRealtimeSockets;
-        const cursorReadsAtBlock = cursorReads;
+        cursorLifecycle.begin();
         blockRevisionFrames = true;
         try {
           await completeEveryAssignedMission(environment, account!);
@@ -1619,16 +1713,28 @@ test.describe('production Daily Missions certification', () => {
               { cause: error }
             );
           }
-          // The completion frame is gone and the socket, join and heartbeat
-          // are all healthy, so no lifecycle event has happened. Hold that
-          // state for longer than the repair interval this page used to run
-          // and prove the durable cursor is not being polled.
+          // Suppress completion frames for longer than the retired repair
+          // interval. Observe actual private joins and tab resumes throughout:
+          // the provider may reconnect naturally while this step is waiting.
+          // Every cursor read must be owned by one of those lifecycle events.
           await page.waitForTimeout(NO_POLL_QUIET_WINDOW_MS);
+          const quietLifecycle = cursorLifecycle.receipt();
+          // A provider can replace the socket during this interval. A new socket
+          // alone proves no mission rejoin: only its correlated successful private
+          // phx_join reply or an observed tab resume owes a cursor read. Preserve
+          // zero unexplained reads, including when the provider remains healthy.
           expect(
-            cursorReads - cursorReadsAtBlock,
-            'revision cursor reads were issued while the routed socket stayed healthy ' +
-              `(routed sockets at block: ${socketsAtBlock}, now: ${interceptedRealtimeSockets})`
+            quietLifecycle.unexplainedReads,
+            'revision cursor reads lacked a mission rejoin or tab resume ' +
+              `(routed sockets at block: ${socketsAtBlock}, now: ${interceptedRealtimeSockets}; ` +
+              `lifecycle: ${JSON.stringify(quietLifecycle)})`
           ).toBe(0);
+          if (quietLifecycle.joins === 0 && quietLifecycle.resumes === 0) {
+            expect(quietLifecycle.reads, 'a healthy lifecycle must issue zero cursor reads').toBe(
+              0
+            );
+          }
+          report.quietCursorLifecycle = quietLifecycle;
 
           // Interrupt the live connection from the server side of every routed
           // socket, the way a realtime restart would. The client must observe a
@@ -1647,6 +1753,9 @@ test.describe('production Daily Missions certification', () => {
           // did not request, and the close is forwarded to the page.
           const socketsBeforeInterruption = interceptedRealtimeSockets;
           const cursorReadsBeforeInterruption = cursorReads;
+          const realtimeDegraded = expect(page.getByText('Reconnecting')).toBeVisible({
+            timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
+          });
           for (const server of routedRealtimeServers.splice(0)) {
             try {
               await server.close({ code: 4000, reason: 'Certification Realtime Interruption' });
@@ -1655,14 +1764,23 @@ test.describe('production Daily Missions certification', () => {
               // The reconnect proof below is what decides that.
             }
           }
-          await expect
-            .poll(() => interceptedRealtimeSockets, { timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT })
-            .toBeGreaterThan(socketsBeforeInterruption);
-          const claim = page.getByRole('button', { name: /^Claim (?:All|Next) / });
-          await expect(claim).toBeVisible({ timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT });
-          await expect(page.getByText('Live Now')).toBeVisible({
+          await realtimeDegraded;
+          // Observe the live recovery while the replacement socket is being
+          // established. The dashboard read below may finish after a valid
+          // transient SUBSCRIBED state, and starting this assertion only after
+          // the Claim control renders can miss that recovery when the provider
+          // degrades again immediately afterward.
+          const liveRecovery = expect(page.getByText('Live Now')).toBeVisible({
             timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
           });
+          await Promise.all([
+            expect
+              .poll(() => interceptedRealtimeSockets, { timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT })
+              .toBeGreaterThan(socketsBeforeInterruption),
+            liveRecovery,
+          ]);
+          const claim = page.getByRole('button', { name: /^Claim (?:All|Next) / });
+          await expect(claim).toBeVisible({ timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT });
           const catchUpReads = cursorReads - cursorReadsBeforeInterruption;
           expect(
             catchUpReads,
@@ -1672,10 +1790,18 @@ test.describe('production Daily Missions certification', () => {
             catchUpReads,
             'the rejoin must not turn the revision cursor into a poll'
           ).toBeLessThanOrEqual(2);
+          expect(
+            cursorLifecycle.receipt().unexplainedReads,
+            'the forced rejoin must not authorize unrelated cursor reads'
+          ).toBe(0);
           report.reconnectCursorReads = catchUpReads;
         } finally {
           blockRevisionFrames = false;
           page.off('request', onCursorRead);
+          await test.info().attach('daily-missions-cursor-lifecycle.json', {
+            body: JSON.stringify(cursorLifecycle.receipt()),
+            contentType: 'application/json',
+          });
         }
         expect(navigations).toBe(0);
         report.interceptedRealtimeSockets = interceptedRealtimeSockets;
@@ -1724,7 +1850,20 @@ test.describe('production Daily Missions certification', () => {
           '[aria-labelledby="challenge-reward-title"]',
           'Individual Reward Settlement Dialog'
         );
-        await reward.getByRole('button', { name: 'Continue' }).click();
+        const rewardHeading = reward.getByRole('heading', { name: 'Reward Settled' });
+        const continueButton = reward.getByRole('button', { name: 'Continue' });
+        await expect(rewardHeading).toBeFocused();
+        await page.keyboard.press('Tab');
+        await expect(continueButton).toBeFocused();
+        await page.keyboard.press('Tab');
+        await expect(continueButton).toBeFocused();
+        await page.keyboard.press('Shift+Tab');
+        await expect(continueButton).toBeFocused();
+        await page.keyboard.press('Escape');
+        await expect(reward).toHaveCount(0);
+        await expect(
+          page.locator(`#mission-card-${requestBody.p_challenge_row_ids[0]}`)
+        ).toBeFocused();
 
         await expect.poll(() => playerWalletBalance(environment, account!.id)).toBe(walletBefore);
         await expect
@@ -1909,7 +2048,14 @@ test.describe('production Daily Missions certification', () => {
           const subscription = await registration?.pushManager.getSubscription();
           if (subscription) await subscription.unsubscribe();
         });
-        await page.reload({ waitUntil: 'domcontentloaded' });
+        // Remount the panel through the loaded SPA. A full document reload is
+        // unrelated to this contract and can be held indefinitely by a
+        // service-worker shell update when production advances mid-run.
+        await missions.navigateWithinArena('notifications');
+        await expect(page.getByRole('heading', { name: 'Daily Challenges', level: 1 })).toHaveCount(
+          0
+        );
+        await missions.navigateWithinArena('challenges');
         await expect(page.getByText('Preference On, Device Disconnected')).toBeVisible({
           timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
         });
@@ -2062,36 +2208,26 @@ test.describe('production Daily Missions certification', () => {
         body: JSON.stringify(report, null, 2),
         contentType: 'application/json',
       });
+    } catch (error) {
+      journeyError = error;
+      throw error;
     } finally {
-      process.removeListener('SIGTERM', deleteFixtureOnSignal);
-      process.removeListener('SIGINT', deleteFixtureOnSignal);
       for (const context of contexts.reverse()) {
         await context.close().catch(() => undefined);
       }
-      if (certificationHandHistoryId) {
-        await deleteServiceRows(
-          environment,
-          'hand_history',
-          new URLSearchParams({ id: `eq.${certificationHandHistoryId}` })
-        ).catch((error) => cleanupErrors.push(`hand history: ${(error as Error).message}`));
-        await readServiceRows<{ id: string }>(
-          environment,
-          'hand_history',
-          new URLSearchParams({ select: 'id', id: `eq.${certificationHandHistoryId}`, limit: '1' })
-        )
-          .then((rows) => {
-            if (rows.length > 0) cleanupErrors.push('hand history: exact fixture row remains');
-          })
-          .catch((error) =>
-            cleanupErrors.push(`hand history verification: ${(error as Error).message}`)
-          );
-      }
-      if (account) {
-        await cleanupTemporaryCustomizationAccount(environment, account).catch((error) =>
-          cleanupErrors.push(`account: ${(error as Error).message}`)
-        );
-      }
+      await finalizeMissionCleanupWithEvidence(
+        account?.id ?? null,
+        journeyError,
+        async () => {
+          if (account) await cleanupTemporaryCustomizationAccount(environment, account);
+        },
+        async (observation) => {
+          await test.info().attach('daily-missions-cleanup.json', {
+            body: JSON.stringify(observation, null, 2),
+            contentType: 'application/json',
+          });
+        }
+      );
     }
-    expect(cleanupErrors, 'Daily Missions certification cleanup failed').toEqual([]);
   });
 });

@@ -20,25 +20,23 @@
 /* ═══════════════════════════════════════════════════════════════════════════════
    SHIMMER LOADING SKELETON
 ═══════════════════════════════════════════════════════════════════════════════ */
+/* The loading rows are flat bars on the black, square-cornered like every
+   painted row they stand in for (launch audit R-07): no radius, no drawn
+   gradient. The animation still plays; it breathes instead of sweeping. */
 .dw__shimmer {
   height: 32px;
-  border-radius: 6px;
-  background: linear-gradient(
-    90deg,
-    rgba(255, 255, 255, 0.04) 25%,
-    rgba(255, 255, 255, 0.08) 50%,
-    rgba(255, 255, 255, 0.04) 75%
-  );
-  background-size: 200% 100%;
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.06);
   animation: dwShimmer 1.5s ease-in-out infinite;
 }
 
 @keyframes dwShimmer {
-  0% {
-    background-position: 200% 0;
-  }
+  0%,
   100% {
-    background-position: -200% 0;
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
   }
 }
 
@@ -378,50 +376,39 @@
 
 .dw__shimmer--bbj {
   height: 36px;
-  border-radius: 8px;
+  border-radius: 0;
 }
 
 .dw__shimmer--row {
   height: 32px;
-  border-radius: 6px;
+  border-radius: 0;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    ERROR BADGE — subtle retry button
 ═══════════════════════════════════════════════════════════════════════════════ */
+/* A lit red word on an engraved rule, not a drawn pill (launch audit R-07):
+   the retry is the only way back from a failed read, so it keeps its 44px
+   box, but it paints nothing the console schema does not own. */
 .dw__error-badge {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 4px;
   padding: 4px 10px;
-  border-radius: 6px;
-  background: rgba(239, 68, 68, 0.12);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  color: #fca5a5;
+  border: 0;
+  border-top: 1px solid #000;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  color: #ff5b6e;
+  text-shadow: 0 0 0.9cqw rgb(240 40 73 / 60%);
   font-size: 0.65rem;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.3px;
+  text-transform: uppercase;
   cursor: pointer;
-  /* The only way back from a failed read. It was a 22px target at the top of a
-     money panel; the type stays small so the badge stays quiet, the box grows
-     so a thumb can actually reach it. */
   min-height: 44px;
-  transition:
-    background 0.2s ease,
-    border-color 0.2s ease;
-}
-
-/* A warning-triangle emoji used to carry this message's urgency. Text does it
-   instead, so a leading dot supplies the visual weight without a font
-   dependency. */
-.dw__error-badge::before {
-  content: '';
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #ef4444;
-  flex-shrink: 0;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════

@@ -1,5 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, useNavigate } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 type Reply = {
@@ -133,6 +133,14 @@ vi.mock('../src/lib/supabase', () => ({
               })),
               error: null,
             });
+        } else if (table === 'clubs') {
+          result = Promise.resolve({
+            data: ((query.filters.get('id') as string[]) || []).map((id) => ({
+              id,
+              name: id === 'club-a' ? 'shark club' : 'river club',
+            })),
+            error: null,
+          });
         } else if (table === 'credit_assignments') {
           const ids = query.filters.get('agent_id') as string[];
           result =
@@ -171,12 +179,27 @@ function OtherClub() {
   const navigate = useNavigate();
   return <button onClick={() => navigate('/credit-admin?club=club-b')}>Open other club</button>;
 }
+function LocationProbe() {
+  const location = useLocation();
+  return <output data-testid="location">{`${location.pathname}${location.search}`}</output>;
+}
 function View({ revision = 0 }: { revision?: number }) {
   void revision;
   return (
     <MemoryRouter initialEntries={['/credit-admin?club=club-a']}>
-      <OtherClub />
-      <CreditAdminPanel />
+      <Routes>
+        <Route
+          path="/credit-admin"
+          element={
+            <>
+              <OtherClub />
+              <LocationProbe />
+              <CreditAdminPanel />
+            </>
+          }
+        />
+        <Route path="/financial-admin" element={<LocationProbe />} />
+      </Routes>
     </MemoryRouter>
   );
 }
@@ -202,6 +225,8 @@ describe('Credit admin scoped view', () => {
     mocks.rows.set('operator-a:club-a', []);
     render(<View />);
     await waitFor(() => expect(screen.getByText('No Agents Found')).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: 'Back' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Export Shown Rows' })).not.toBeInTheDocument();
     expect(screen.getByTestId('manager-credit-inbox')).toHaveTextContent('club-a');
     fireEvent.click(screen.getByRole('button', { name: 'Open other club' }));
     await waitFor(() =>
@@ -209,13 +234,56 @@ describe('Credit admin scoped view', () => {
     );
   });
 
-  it('does not mount a manager review inbox for an unselected platform-wide scope', async () => {
+  it('fails an unselected platform-wide scope closed before any credit read or edit', async () => {
     mocks.platformWide = true;
     render(<View />);
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Export Shown Rows' })).toBeEnabled()
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Credit Admin Requires An Authorized Club. Select A Club Where You Are An Owner, Co Owner Or Admin. No Credit Data Has Been Loaded.'
     );
+    expect(mocks.queries).toHaveLength(0);
     expect(screen.queryByTestId('manager-credit-inbox')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Export Shown Rows' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
+    expect(mocks.save).not.toHaveBeenCalled();
+  });
+
+  it.each(['owner', 'co_owner', 'admin'])(
+    'keeps the authorized %s club scope wired to an exact club filter',
+    async (role) => {
+      mocks.clubRole = role;
+      render(<View />);
+
+      expect(await screen.findByRole('button', { name: 'Edit' })).toBeEnabled();
+      expect(mocks.queries.find((query) => query.table === 'agents')?.filters.get('club_id')).toBe(
+        'club-a'
+      );
+      expect(screen.getByTestId('manager-credit-inbox')).toHaveTextContent('club-a');
+    }
+  );
+
+  it('does not treat selecting a club as a credit-admin assignment', async () => {
+    mocks.clubRole = 'member';
+    render(<View />);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Credit Admin Requires An Authorized Club'
+    );
+    expect(mocks.queries).toHaveLength(0);
+    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
+    expect(mocks.save).not.toHaveBeenCalled();
+  });
+
+  it('refuses duplicate agent account keys instead of making one financial row look repeated', async () => {
+    mocks.rows.set('operator-a:club-a', [
+      row('agent-a', 'club-a', { user_id: 'person-shared' }),
+      row('agent-b', 'club-a', { user_id: 'person-shared' }),
+    ]);
+    render(<View />);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Duplicate Agent Credit Records Could Not Be Verified.'
+    );
+    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
   });
 
   it('exports recorded debt and labels its bounded shown-row scope', async () => {
@@ -236,6 +304,8 @@ describe('Credit admin scoped view', () => {
       currentBalance: '500.00',
     });
     expect(filename).toBe('credit_admin_shown_rows.csv');
+    expect(screen.queryByText('100.00')).not.toBeInTheDocument();
+    expect(screen.getAllByText('100').length).toBeGreaterThan(0);
     expect(screen.getByText(/Totals And CSV Cover The Shown Rows Only/)).toBeInTheDocument();
     expect(screen.queryByText('Total Exposure')).not.toBeInTheDocument();
     expect(mocks.queries.find((q) => q.table === 'agents')).toMatchObject({
@@ -267,6 +337,7 @@ describe('Credit admin scoped view', () => {
     await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
     expect(screen.queryByText('No Agents Found')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Export Shown Rows' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Back' })).toBeInTheDocument();
     expect(screen.getAllByText('Unavailable').length).toBeGreaterThanOrEqual(2);
   });
 
@@ -278,12 +349,12 @@ describe('Credit admin scoped view', () => {
     await waitFor(() => expect(mocks.queries.some((q) => q.table === 'agents')).toBe(true));
     mocks.userId = 'operator-b';
     view.rerender(<View revision={1} />);
-    await waitFor(() => expect(screen.getByText('Name person-agent-b')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Name Person-Agent-B')).toBeInTheDocument());
     await act(async () => {
       gate.resolve({ data: [row()], error: null });
       await gate.promise;
     });
-    expect(screen.queryByText('Name person-agent-a')).not.toBeInTheDocument();
+    expect(screen.queryByText('Name Person-Agent-A')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Export Shown Rows' }));
     expect(mocks.export.mock.calls[0][0].map((r: { id: string }) => r.id)).toEqual(['agent-b']);
   });
@@ -295,7 +366,7 @@ describe('Credit admin scoped view', () => {
     render(<View />);
     await waitFor(() => expect(mocks.queries.some((q) => q.table === 'profiles')).toBe(true));
     fireEvent.click(screen.getByRole('button', { name: 'Open other club' }));
-    await waitFor(() => expect(screen.getByText('Name person-agent-b')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Name Person-Agent-B')).toBeInTheDocument());
     await act(async () => {
       gate.resolve({ data: [{ id: 'person-agent-a', username: 'Wrong old club' }], error: null });
       await gate.promise;
@@ -335,7 +406,7 @@ describe('Credit admin scoped view', () => {
     expect(mocks.toast.error).not.toHaveBeenCalled();
   });
 
-  it('reads canonical recent credit changes only for shown agents with exact decimal transport', async () => {
+  it('reads canonical recent credit changes with exact transport and compact display', async () => {
     mocks.auditRows = [
       {
         id: 'change-a',
@@ -356,9 +427,13 @@ describe('Credit admin scoped view', () => {
     await waitFor(() =>
       expect(screen.getByText('Recent Credit Changes For Agents In View')).toBeInTheDocument()
     );
-    expect(screen.getByText('123.45')).toBeInTheDocument();
-    expect(screen.getByText('234.56')).toBeInTheDocument();
-    expect(screen.queryByText('456.78')).not.toBeInTheDocument();
+    expect(screen.getByText(/From 123/)).toBeInTheDocument();
+    expect(screen.getByText(/To 234/)).toBeInTheDocument();
+    expect(screen.queryByText(/To 456/)).not.toBeInTheDocument();
+    expect(screen.getByText('Shark Club')).toBeInTheDocument();
+    expect(screen.getByText(/^Shark Club \/ /)).toBeInTheDocument();
+    expect(screen.queryByText('shark club')).not.toBeInTheDocument();
+    expect(screen.queryByText(/^shark club \/ /)).not.toBeInTheDocument();
     const query = mocks.queries.find((q) => q.table === 'credit_assignments');
     expect(query).toMatchObject({
       limit: 5,
@@ -419,8 +494,8 @@ describe('Credit admin scoped view', () => {
       },
     ];
     const view = render(<View />);
-    await waitFor(() => expect(screen.getByText('234.56')).toBeInTheDocument());
-    expect(screen.getByText('Unavailable')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText(/To 234/)).toBeInTheDocument());
+    expect(screen.getByText(/From Unavailable/)).toBeInTheDocument();
     mocks.userId = 'operator-b';
     mocks.rows.set('operator-b:club-a', []);
     view.rerender(<View revision={1} />);
@@ -446,20 +521,67 @@ describe('Credit admin scoped view', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Edit' })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
     fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '200.25' } });
-    const save = screen.getByRole('button', { name: '✓' });
+    const save = screen.getByRole('button', { name: 'Save' });
     fireEvent.click(save);
     fireEvent.click(save);
     expect(mocks.save).toHaveBeenCalledTimes(1);
-    expect(mocks.save).toHaveBeenCalledWith('agent-a', 200.25, 'operator-a', expect.any(String));
+    expect(mocks.save).toHaveBeenCalledWith(
+      'agent-a',
+      200.25,
+      'operator-a',
+      expect.any(String),
+      'club-a'
+    );
     mocks.userId = 'operator-b';
     view.rerender(<View revision={1} />);
-    await waitFor(() => expect(screen.getByText('Name person-agent-b')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Name Person-Agent-B')).toBeInTheDocument());
     await act(async () => {
       gate.resolve(true);
       await gate.promise;
     });
     expect(mocks.toast.success).not.toHaveBeenCalled();
     expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument();
+  });
+
+  it('keeps exact credit cents in the write while the confirmation stays decimal-free', async () => {
+    mocks.save.mockResolvedValue(true);
+    render(<View />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Edit' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '200.25' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(mocks.save).toHaveBeenCalled());
+    expect(mocks.save).toHaveBeenCalledWith(
+      'agent-a',
+      200.25,
+      'operator-a',
+      expect.any(String),
+      'club-a'
+    );
+    expect(mocks.toast.success).toHaveBeenCalledWith('Credit limit updated to 200');
+    expect(mocks.toast.success).not.toHaveBeenCalledWith(expect.stringContaining('200.25'));
+  });
+
+  it('clears protected credit data and leaves the route when save authority is revoked', async () => {
+    mocks.save.mockRejectedValue({ code: '42501', message: 'Credit Access Refused' });
+    render(<View />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Edit' })).toBeEnabled());
+    expect(screen.getByText('Name Person-Agent-A')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '200.25' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('location')).toHaveTextContent('/financial-admin')
+    );
+    expect(screen.queryByText('Name Person-Agent-A')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Export Shown Rows' })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('manager-credit-inbox')).not.toBeInTheDocument();
+    expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument();
+    expect(mocks.toast.error).not.toHaveBeenCalledWith('Failed to update credit limit');
   });
 
   it('retires old save UI ownership on a same-component authority change without unlocking a newer save', async () => {
@@ -470,7 +592,7 @@ describe('Credit admin scoped view', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Edit' })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
     fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '200' } });
-    fireEvent.click(screen.getByRole('button', { name: '✓' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
     // Same auth user, URL and component key; only freshly observed authority changes.
     mocks.clubRole = 'co_owner';
@@ -478,14 +600,14 @@ describe('Credit admin scoped view', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Edit' })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
     fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '300' } });
-    fireEvent.click(screen.getByRole('button', { name: '✓' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     expect(mocks.save).toHaveBeenCalledTimes(2);
 
     await act(async () => {
       oldSave.resolve(true);
       await oldSave.promise;
     });
-    expect(screen.getByRole('button', { name: '...' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Saving' })).toBeDisabled();
     expect(mocks.toast.success).not.toHaveBeenCalled();
     await act(async () => {
       newSave.resolve(true);

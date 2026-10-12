@@ -52,6 +52,10 @@ const seeded = (over: Partial<SpinMetricsSnapshot> = {}): SpinMetrics => {
     secondsSinceLastStart: 12,
     openBoards: 9,
     unfilledWaits: 1,
+    humanUnfilledWaits: 0,
+    humanOldestWaitSeconds: 0,
+    unfilledPastWindow: 0,
+    unfilledOldestWaitSeconds: 41,
     reserveThinClubs: 0,
     reserveMinBalance: 63885.44,
     collectedAt: Date.now(),
@@ -79,6 +83,10 @@ describe('the engine exposes spin gauges', () => {
       'poker_spin_unpaid_settlements',
       'poker_spin_draw_booking_gaps',
       'poker_spin_unfilled_waits',
+      'poker_spin_human_unfilled_waits',
+      'poker_spin_human_oldest_wait_seconds',
+      'poker_spin_unfilled_past_window',
+      'poker_spin_unfilled_oldest_wait_seconds',
       'poker_spin_reserve_thin_clubs',
       'poker_spin_reserve_min_balance',
       'poker_rake_attribution_gaps',
@@ -154,6 +162,60 @@ describe('the engine exposes spin gauges', () => {
     expect(m.get().fairnessRealisedE).toBeCloseTo(2.740056, 6);
   });
 
+  it('a failed fill-wait read is a failed refresh, never "nobody is waiting"', async () => {
+    const m = seeded({ humanUnfilledWaits: 1, humanOldestWaitSeconds: 75 });
+    const before = m.get().collectedAt;
+    vi.mocked(supabase.rpc).mockImplementation((async (fn: string) =>
+      fn === 'fn_spin_metrics'
+        ? { data: [{ unfilled_waits: 0, open_boards: 3 }], error: null }
+        : { data: null, error: { message: 'fixture: fill waits unavailable' } }) as never);
+    try {
+      await m.refresh();
+    } finally {
+      vi.mocked(supabase.rpc).mockImplementation((async () => ({
+        data: null,
+        error: { message: 'audit fixture: unavailable' },
+      })) as never);
+    }
+    expect(supabase.rpc).toHaveBeenCalledWith('fn_spin_fill_waits');
+    expect(m.get().humanOldestWaitSeconds).toBe(75);
+    expect(m.get().humanUnfilledWaits).toBe(1);
+    expect(m.get().unfilledWaits).toBe(1);
+    expect(m.get().collectedAt).toBe(before);
+  });
+
+  it('reads who is waiting into the same snapshot and exposes it', async () => {
+    const m = new SpinMetrics();
+    vi.mocked(supabase.rpc).mockImplementation((async (fn: string) =>
+      fn === 'fn_spin_metrics'
+        ? { data: [{ unfilled_waits: 41, open_boards: 47 }], error: null }
+        : {
+            data: [
+              {
+                human_unfilled_waits: 1,
+                human_oldest_wait_seconds: '9',
+                unfilled_past_window: 2,
+                unfilled_oldest_wait_seconds: '236',
+              },
+            ],
+            error: null,
+          }) as never);
+    try {
+      await m.refresh();
+    } finally {
+      vi.mocked(supabase.rpc).mockImplementation((async () => ({
+        data: null,
+        error: { message: 'audit fixture: unavailable' },
+      })) as never);
+    }
+    const lines = m.toPrometheus().join('\n');
+    expect(lines).toContain('poker_spin_unfilled_waits 41');
+    expect(lines).toContain('poker_spin_human_unfilled_waits 1');
+    expect(lines).toContain('poker_spin_human_oldest_wait_seconds 9');
+    expect(lines).toContain('poker_spin_unfilled_past_window 2');
+    expect(lines).toContain('poker_spin_unfilled_oldest_wait_seconds 236');
+  });
+
   it('the drift flag is a number, not a boolean, so Prometheus can read it', () => {
     expect(seeded({ fairnessDrift: true }).toPrometheus().join('\n')).toContain(
       'poker_spin_draw_fairness_drift 1'
@@ -188,10 +250,15 @@ describe('the spin alert rules are wired and reference only real gauges', () => 
 
   it('every metric named in an expression is one the engine actually emits', () => {
     const emitted = seeded().toPrometheus().join('\n');
+    // The break guard (CLAUDE.md 13 rule 6) reads the maintenance gauge, which
+    // the break itself emits rather than this collector.
+    const breakGauge = 'poker_maintenance_break_active';
+    expect(read('../GameServer.ts')).toContain(`# TYPE ${breakGauge} gauge`);
     const exprs = rules().match(/^\s*expr:\s*(.+)$/gm) ?? [];
     expect(exprs.length).toBeGreaterThanOrEqual(10);
     for (const line of exprs) {
       for (const metric of line.match(/poker_[a-z_0-9]+/g) ?? []) {
+        if (metric === breakGauge) continue;
         expect(emitted, `${metric} is emitted by the engine`).toContain(metric);
       }
     }
@@ -219,6 +286,8 @@ describe('the spin alert rules are wired and reference only real gauges', () => 
       'SpinRevealChronicallyLate',
       'SpinReservePoolThin',
       'SpinUnfilledBacklog',
+      // A paying player waiting for opponents (2026-10-03).
+      'SpinHumanWaitingForOpponents',
     ]) {
       expect(src, `${alert} exists`).toContain(`alert: ${alert}`);
     }

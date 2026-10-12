@@ -9,10 +9,17 @@ import { HorsePolicyGraph } from './HorsePolicyGraph.js';
 import { horsePolicyRegistration, horsePolicyOwnership } from './HorsePolicyRegistry.js';
 import { hasHorseReviewSignals } from './HorseReviewSignals.js';
 import { evaluateJointLivePolicy } from './multiway/JointLivePolicy.js';
+import {
+  acquireJointSamples,
+  jointSampleAcquisitionMatches,
+  JOINT_SAMPLE_WORK_BUDGET_MS,
+  type JointSampleAcquisition,
+} from './multiway/JointSampleAcquisition.js';
 import { horseVariantRulesFor } from './VariantRules.js';
 import { jointPlayersBehind } from './multiway/JointActionModel.js';
 import { horsePolicyDealtPlayers } from './multiway/DealtSeatCensus.js';
 import { tournamentSampleEquity } from './HorseTournamentUtility.js';
+import { captureHorseTournamentUtilityObservations } from './HorseTournamentUtilityEvidence.js';
 import {
   evaluateRemainingVariantPolicy,
   type RemainingVariantMode,
@@ -24,7 +31,9 @@ import {
 } from './omaha/OmahaVariantLivePolicy.js';
 import { isOmahaPolicyVariant } from './omaha/OmahaVariantPolicyPack.js';
 import {
+  capturePlo4RangeProvenance,
   evaluatePlo4LivePolicy,
+  plo4SelectionOf,
   type Plo4EquityEvidence,
   type Plo4LiveMode,
 } from './plo4/Plo4LivePolicy.js';
@@ -932,6 +941,14 @@ export interface HorseGameStateV2 extends HorseGameState {
   /** Public deal census captured before stripping private cards. Connectivity
    * and folding never return a dealt hand to the physical deck. */
   dealtSeatIds?: number[];
+  /**
+   * The seats that posted the blinds this hand, as HandController posted them
+   * (getBlindSeatsSnapshot). `smallBlind` is null when the small blind is DEAD
+   * under the tournament dead-button rule (deadButton.ts): nobody posts it.
+   * Null when the hand posted no blinds (a bomb pot); absent on older
+   * snapshots and fixtures. The PLO4 pack derives positions from it.
+   */
+  blindSeats?: { smallBlind: number | null; bigBlind: number } | null;
   /** Settlement units from the active controller, including whole Diamonds. */
   chipUnit?: 0.01 | 1;
   asset?: 'chips' | 'diamonds';
@@ -1669,7 +1686,10 @@ export interface HorseDecideOpts {
    *  flat premium whenever the tournament context supplies both (default:
    *  enabled; degrades to the legacy heuristic without the data) */
   v16Icm?: boolean;
-  /** disable the V16 heads-up postflop overlay (default: enabled) */
+  /** ENABLE the V16 heads-up postflop overlay. DEFAULT OFF since 2026-10-05:
+   *  hu_v16_overlay measured -0.26 +/- 0.10 bb/100 pooled over 31 nightly
+   *  runs (z -2.6), the only measurement it ever had. League arm A of
+   *  hu_v16_overlay and v16_hu_overlay_6max turns it on. */
   v16Hu?: boolean;
   /** ENABLE the V16 bet-ratio rescale of the five thresholds still written
    *  in bet/(pot+bet) semantics (default: DISABLED — a strategy change that
@@ -1884,6 +1904,20 @@ export interface HorseDecideOpts {
    *  double-suited 3-bets, a rundown flats, AAA-x folds. Disable to ablate
    *  (default: enabled). Hold'em is unaffected either way. */
   v46Charts?: boolean;
+  /** V46 short deck, DEFAULT OFF since 2026-10-05. The short-deck half of the
+   *  chart lost: shortdeck_v46_classes measured -0.51 +/- 0.15 bb/100 over
+   *  960,000 duplicate-deal hands (80 seeds, equity governor off), and the
+   *  nightly league's 30 runs agreed in sign (-0.24 +/- 0.24). The Omaha half
+   *  is unaffected and stays on under v46Charts. Set true to measure the
+   *  short-deck chart (league arm A of shortdeck_v46_classes). */
+  v46ShortDeck?: boolean;
+  /** V51 (2026-10-05): a committed river one-pair hand calls instead of
+   *  jamming. On the river a jam has no card left to deny and no worse hand
+   *  that pays it, so with one pair (or two pair where one pair is the
+   *  board's) the committed branch flats. Audit hand 1039665 re-jammed QJ on
+   *  6-5-Q-9-3 over a river raise on 200 of 200 seeds. Disable to ablate
+   *  (default: enabled; league matchup v51_river_flat). */
+  v51RiverFlat?: boolean;
   /** Phase 7 Round 1: final action-specific tournament utility arbiter.
    *  Complete schema-v1 tournament decisions evaluate every legal action
    *  family after all legacy strategy layers; no global style multiplier can
@@ -1898,6 +1932,9 @@ export interface HorseDecideOpts {
   /** Phase 11 variant policies are live shadow; candidate/evidence controls are offline only. */
   phase11Omaha?: OmahaVariantMode;
   phase11EvidenceMode?: boolean;
+  /** Phase 12 variant policies are live shadow; live candidate mode is set only
+   *  by the worker from its own P12.3 authority for the decision's pack. The
+   *  caller may only turn them off; the evidence clock is offline only. */
   phase12Remaining?: RemainingVariantMode;
   phase12EvidenceMode?: boolean;
   phase13Joint?: import('./multiway/JointLivePolicy.js').JointPolicyMode;
@@ -2051,6 +2088,8 @@ export function vpipFloorMul(gs: {
 let difficultyHint = 0;
 
 interface Phase7EquityEvidence {
+  observations?: TournamentUtilityInput['observations'];
+  samplerProvenance?: TournamentUtilityInput['samplerProvenance'];
   equity: number;
   sampleSize: number;
   standardError: number;
@@ -2101,15 +2140,18 @@ function phase7PlayersBehind(gs: HorseGameStateV2, hero: SeatPlayer): Set<string
   const ordered = dealt.slice(start).concat(dealt.slice(0, start));
   const heroIndex = ordered.findIndex((player) => player.seat === hero.seat);
   if (heroIndex < 0) return new Set<string>();
+  const later = new Set(ordered.slice(heroIndex + 1).map((player) => player.seat));
   return new Set(
     ordered
-      .slice(heroIndex + 1)
       .filter(
         (player) =>
           !player.is_folded &&
           !player.is_sitting_out &&
           !player.is_all_in &&
-          player.user_id !== hero.user_id
+          player.user_id !== hero.user_id &&
+          // A re-raise returns around the ring. Earlier callers/raisers still
+          // owe the new price even though their opening position precedes us.
+          (later.has(player.seat) || player.bet < gs.currentBet)
       )
       .map((player) => player.user_id)
   );
@@ -2154,6 +2196,7 @@ function capturePhase7Equity(
     });
   }
   phase7EquityEvidence = {
+    observations: captureHorseTournamentUtilityObservations(active, useMind),
     equity: boundedEquity,
     sampleSize: n,
     standardError: n > 0 ? Math.sqrt((boundedEquity * (1 - boundedEquity)) / n) : 0,
@@ -2189,6 +2232,13 @@ function buildPhase7UtilityInput(
   if (!gs.pots || !gs.legalActions) throw new Error('joint_utility_canonical_state_unavailable');
   const toCall = Math.max(0, gs.currentBet - player.bet);
   return {
+    // Tournament stacks and awards use whole chips. Model the same button-
+    // ordered odd-chip and unmatched-contribution rules as final settlement.
+    settlement: {
+      chipUnit: 1,
+      dealerSeat: gs.dealerSeat!,
+      splitLow: horseVariantRulesFor(gs.gameVariant).splitLow8OrBetter,
+    },
     street: gs.stage,
     hero: player,
     players: gs.players,
@@ -2209,6 +2259,8 @@ function buildPhase7UtilityInput(
     opponents: evidence7.opponents,
     sampledOpponentIds: evidence7.sampledOpponentIds,
     showdownSamples: evidence7.showdownSamples,
+    observations: evidence7.observations,
+    samplerProvenance: evidence7.samplerProvenance,
     context: {
       format:
         gs.format === 'spin' || gs.format === 'sng' || gs.format === 'hu_sng' ? gs.format : 'mtt',
@@ -2698,10 +2750,23 @@ export class HorseLogic {
               decision,
               phase10EquityEvidence,
               opts.phase10Plo4 ?? 'shadow',
-              opts.phase10EvidenceMode && !tele ? () => 0 : undefined
+              opts.phase10EvidenceMode && !tele ? () => 0 : undefined,
+              (d) => this.legalize(d, player, gs, vi)
             )
           : null;
-      if (phase10) decision = this.legalize(phase10.decision, player, gs, vi);
+      if (phase10) {
+        const legal = this.legalize(phase10.decision, player, gs, vi);
+        // P10.3: an applied candidate the legalizer would rewrite is illegal as
+        // proposed. It never reaches the table: the reference is retained.
+        if (
+          phase10.receipt.applied &&
+          (legal.action !== phase10.decision.action ||
+            (legal.amount ?? null) !== (phase10.decision.amount ?? null))
+        ) {
+          phase10.receipt.applied = false;
+          phase10.receipt.selectionRefusal = 'illegal_candidate';
+        } else decision = legal;
+      }
       const phase11 =
         registration.owner === 'phase11' && opts.phase11Omaha !== 'off'
           ? evaluateOmahaVariantPolicy(
@@ -2711,10 +2776,25 @@ export class HorseLogic {
               null,
               opts.phase11Omaha ?? 'shadow',
               opts.phase11EvidenceMode && !tele ? () => 0 : undefined,
-              phase11DecisionEquityCeiling ?? 1
+              phase11DecisionEquityCeiling ?? 1,
+              true,
+              (d) => this.legalize(d, player, gs, vi)
             )
           : null;
-      if (phase11) decision = this.legalize(phase11.decision, player, gs, vi);
+      if (phase11) {
+        const legal = this.legalize(phase11.decision, player, gs, vi);
+        // P11.3, the P10.3 law: an applied candidate the legalizer would
+        // rewrite is illegal as proposed. It never reaches the table: the
+        // reference is retained.
+        if (
+          phase11.receipt.applied &&
+          (legal.action !== phase11.decision.action ||
+            (legal.amount ?? null) !== (phase11.decision.amount ?? null))
+        ) {
+          phase11.receipt.applied = false;
+          phase11.receipt.selectionRefusal = 'illegal_candidate';
+        } else decision = legal;
+      }
       const phase12 =
         registration.owner === 'phase12' && opts.phase12Remaining !== 'off'
           ? evaluateRemainingVariantPolicy(
@@ -2727,13 +2807,41 @@ export class HorseLogic {
               phase12DecisionEquityCeiling ?? 1
             )
           : null;
-      if (phase12) decision = this.legalize(phase12.decision, player, gs, vi);
+      if (phase12) {
+        const legal = this.legalize(phase12.decision, player, gs, vi);
+        // P12.2, the P10.3 law (as P11.3 applies it to Phase 11): an applied
+        // candidate the legalizer would rewrite is illegal as proposed. It
+        // never reaches the table: the reference is retained. P12.3: the same
+        // guard holds for a live candidate the worker admits from its own
+        // pack authority; a caller can never request candidate mode.
+        if (
+          phase12.receipt.applied &&
+          (legal.action !== phase12.decision.action ||
+            (legal.amount ?? null) !== (phase12.decision.amount ?? null))
+        ) {
+          phase12.receipt.applied = false;
+          phase12.receipt.selectionRefusal = 'illegal_candidate';
+        } else decision = legal;
+      }
       return { decision, phase10, phase11, phase12 };
     });
     decision = variants.decision;
     const { phase10, phase11, phase12 } = variants;
     const variantPolicy = phase10 ?? phase11 ?? phase12;
+    // Decision-local acquisition is independent of Phase 13 proposal authority.
+    // Its immutable population may be reused below; marginal board draws never
+    // enter this path. The existing offline clock control remains offline only.
+    let phase7JointAcquisition: JointSampleAcquisition | undefined;
+    const jointNow = opts.phase13EvidenceMode && !tele ? () => 0 : () => performance.now();
+    const multiBoard =
+      (gs.communityCards2?.length ?? 0) > 0 ||
+      (gs.communityCards3?.length ?? 0) > 0 ||
+      (gs.boardCount ?? 1) > 1;
 
+    // Reachability 2026-10-08: the refusal is part of the decision receipt, not
+    // only a FAST-lane telemetry counter, so every in-domain tournament decision
+    // without a utility ledger names its cause in the private journal.
+    let phase7Refusal: string | null = null;
     const arbitration = graph.run('tournament_utility', decision, () => {
       let phase8UtilityInput: TournamentUtilityInput | null = null;
       let phase8ReuseUtility: TournamentContinuationRunner | undefined;
@@ -2743,24 +2851,60 @@ export class HorseLogic {
         gs.tournament?.schemaVersion === 1
       ) {
         const tournament = trustedTournamentContext(gs);
-        const evidence7 = currentPhase7Equity();
+        let evidence7 = currentPhase7Equity();
+        let jointUnavailable: string | null = null;
+        let jointWithinBudget: (() => boolean) | undefined;
+        if (tournament && multiBoard) {
+          // Protect an existing commitment/continuation refusal before any
+          // joint utility may replace it. Phase 13 applies the same ownership.
+          if (decision.action === 'fold' && decision.continuationGuard) {
+            evidence7 = null;
+            jointUnavailable = `protected_${decision.continuationGuard}`;
+          } else {
+            const jointStarted = jointNow();
+            phase7JointAcquisition = acquireJointSamples(player, gs, { now: jointNow });
+            evidence7 = null;
+            if (
+              phase7JointAcquisition.status === 'acquired' &&
+              jointSampleAcquisitionMatches(player, gs, phase7JointAcquisition)
+            ) {
+              const acquisition = phase7JointAcquisition;
+              const joint = acquisition.evidence;
+              jointWithinBudget = () => jointNow() - jointStarted < JOINT_SAMPLE_WORK_BUDGET_MS;
+              const behind = new Set(jointPlayersBehind(player, gs));
+              const opponents = gs.players.filter((p) => joint.opponentIds.includes(p.user_id));
+              const useMind = opts.mind !== false;
+              evidence7 = {
+                ...tournamentSampleEquity({
+                  hero: player,
+                  sampledOpponentIds: joint.opponentIds,
+                  showdownSamples: joint.samples,
+                }),
+                samplerProvenance: acquisition.provenance,
+                observations: captureHorseTournamentUtilityObservations(opponents, useMind),
+                sampledOpponentIds: joint.opponentIds,
+                showdownSamples: joint.samples,
+                opponents: joint.opponentIds.map((userId) => ({
+                  userId,
+                  range: null,
+                  foldMul: useMind ? HorseMind.exploit(userId).bluffMod : 1,
+                  actsAfterHero: behind.has(userId),
+                })),
+              };
+            } else {
+              jointUnavailable = phase7JointAcquisition.reason ?? 'joint_samples_unavailable';
+            }
+          }
+        }
         if (!tournament) {
+          phase7Refusal = 'context_incomplete';
           if (tele) noteFire('phase7_utility_skip_incomplete');
         } else if (
           gs.stateSchemaVersion === 1 &&
           Array.isArray(gs.legalActions) &&
           gs.legalActions.some((action) => action !== 'discard') &&
           Array.isArray(gs.pots) &&
-          // Round 1 requires one coherent joint showdown sample per utility
-          // branch.  The existing multi-board strategy still prices those
-          // hands, but Phase 7 must not consume the independent per-board
-          // samples as though they came from one shared-deck deal.  Keep the
-          // baseline and expose the unavailable receipt until the later depth
-          // pass supplies that sampler.  Guard here as well as at capture time:
-          // preflop fixtures and restored hands can already carry extra boards.
-          !(Array.isArray(gs.communityCards2) && gs.communityCards2.length > 0) &&
-          !(Array.isArray(gs.communityCards3) && gs.communityCards3.length > 0) &&
-          (gs.boardCount ?? 1) <= 1 &&
+          (!multiBoard || evidence7?.samplerProvenance) &&
           evidence7
         ) {
           try {
@@ -2772,7 +2916,9 @@ export class HorseLogic {
               tournament,
               evidence7
             );
+            if (jointWithinBudget) phase8UtilityInput.withinBudget = jointWithinBudget;
             const evaluation = evaluateTournamentUtilityDetailed(phase8UtilityInput);
+            const jointExpired = jointWithinBudget?.() === false;
             if (variantPolicy) {
               if (variantPolicy.receipt.mode === 'shadow' && variantPolicy.receipt.fired) {
                 const shadowStart = performance.now();
@@ -2805,8 +2951,10 @@ export class HorseLogic {
                     evaluation.unavailableReason ?? 'unknown';
               }
             }
-            phase8ReuseUtility = evaluation.continuePostflop;
-            const result = evaluation.result;
+            // The final receipt/hash work is charged too. Never accept an
+            // over-budget result just because the last loop check was timely.
+            phase8ReuseUtility = multiBoard ? undefined : evaluation.continuePostflop;
+            const result = jointExpired ? null : evaluation.result;
             if (result) {
               const selected = this.legalize(result.decision, player, gs, vi);
               const selectedAmount =
@@ -2820,6 +2968,7 @@ export class HorseLogic {
                 // A utility receipt may never be relabeled as a different legal
                 // action. Keep the already-legal baseline if this invariant is
                 // ever violated and make the skipped arbiter observable.
+                phase7Refusal = 'legalizer_mismatch';
                 if (tele) {
                   noteFire('phase7_utility_unavailable');
                   noteFire('phase7_unavailable_legalizer_mismatch');
@@ -2836,31 +2985,39 @@ export class HorseLogic {
                   if (result.ledger.objective === 'pko') noteFire('phase7_bounty_utility');
                 }
               }
-            } else if (tele) {
-              noteFire('phase7_utility_unavailable');
-              noteFire(`phase7_unavailable_${evaluation.unavailableReason ?? 'unknown'}`);
+            } else {
+              phase7Refusal = jointExpired
+                ? 'work_budget'
+                : (evaluation.unavailableReason ?? 'unknown');
+              if (tele) {
+                noteFire('phase7_utility_unavailable');
+                noteFire(`phase7_unavailable_${phase7Refusal}`);
+              }
             }
           } catch (error) {
             reportError(error, 'HorseLogic.phase7_tournament_utility');
+            phase7Refusal = 'exception';
             if (variantPolicy) variantPolicy.receipt.utilityUnavailableReason = 'exception';
             if (tele) {
               noteFire('phase7_utility_unavailable');
               noteFire('phase7_unavailable_exception');
             }
           }
-        } else if (tele && gs.legalActions?.some((action) => action !== 'discard')) {
-          noteFire('phase7_utility_unavailable');
+        } else if (gs.legalActions?.some((action) => action !== 'discard')) {
           const multiBoardUnavailable =
             (Array.isArray(gs.communityCards2) && gs.communityCards2.length > 0) ||
             (Array.isArray(gs.communityCards3) && gs.communityCards3.length > 0) ||
             (gs.boardCount ?? 1) > 1;
-          noteFire(
-            multiBoardUnavailable
-              ? 'phase7_unavailable_multi_board'
-              : evidence7
-                ? 'phase7_unavailable_state_contract'
-                : 'phase7_unavailable_equity_evidence'
-          );
+          phase7Refusal = multiBoardUnavailable
+            ? 'multi_board'
+            : evidence7
+              ? 'state_contract'
+              : 'equity_evidence';
+          if (tele) {
+            noteFire('phase7_utility_unavailable');
+            noteFire(`phase7_unavailable_${phase7Refusal}`);
+            if (jointUnavailable) noteFire(`phase7_unavailable_joint_${jointUnavailable}`);
+          }
         }
       }
       return { decision, phase8UtilityInput, phase8ReuseUtility };
@@ -2891,6 +3048,7 @@ export class HorseLogic {
         ) {
           phase8.ledger.applied = false;
           phase8.ledger.completed = false;
+          phase8.ledger.selection = 'none';
           phase8.ledger.reason = 'illegal_candidate';
         } else decision = phase8.decision;
         decision = { ...decision, tournamentPostflop: phase8.ledger };
@@ -2907,6 +3065,7 @@ export class HorseLogic {
             noteFire(`phase8_objective_${phase8.ledger.objective}`);
           }
           if (phase8.ledger.changed) noteFire('phase8_shadow_changed');
+          noteFire(`phase8_selection_${phase8.ledger.selection}`);
           if (phase8.ledger.applied) noteFire('phase8_applied');
           else noteFire('phase8_baseline_retained');
           for (const reason of phase8.ledger.reasons) noteFire(`phase8_feature_${reason}`);
@@ -2926,12 +3085,23 @@ export class HorseLogic {
         }
         phase10.receipt.finalAction = decision.action;
         phase10.receipt.finalAmount = decision.amount ?? null;
+        // P10.3: `selected` only when the applied candidate is the action
+        // leaving this guard. In an offline tournament run Phase 7 may replace
+        // it; the pack then did not own the decision and is not selected.
+        phase10.receipt.selection =
+          phase10.receipt.applied &&
+          (decision.action !== phase10.receipt.proposalAction ||
+            (decision.amount ?? null) !== phase10.receipt.proposalAmount)
+            ? 'shadow_change'
+            : plo4SelectionOf(phase10.receipt);
         decision = { ...decision, plo4Policy: phase10.receipt };
         if (tele) {
           noteFire('phase10_seen');
           noteDecisionMs('phase10', phase10.receipt.latencyMs);
           noteFire(`phase10_reason_${phase10.receipt.reason}`);
           if (phase10.receipt.eligible) noteFire('phase10_eligible');
+          if (phase10.receipt.inputs)
+            noteFire(`phase10_range_${phase10.receipt.inputs.range.status}`);
           if (phase10.receipt.fired) {
             noteFire('phase10_fired');
             noteFire(`phase10_street_${gs.stage}`);
@@ -2939,6 +3109,7 @@ export class HorseLogic {
           if (phase10.receipt.changed) noteFire('phase10_shadow_changed');
           if (phase10.receipt.applied) noteFire('phase10_applied');
           else noteFire('phase10_baseline_retained');
+          noteFire(`phase10_selection_${phase10.receipt.selection}`);
           noteFire(`phase10_utility_${phase10.receipt.utilityOwner}`);
           if (phase10.receipt.utilityUnavailableReason)
             noteFire(`phase10_unavailable_utility_${phase10.receipt.utilityUnavailableReason}`);
@@ -2955,6 +3126,14 @@ export class HorseLogic {
         }
         phase11.receipt.finalAction = decision.action;
         phase11.receipt.finalAmount = decision.amount ?? null;
+        // P11.3: `selected` only when the applied candidate is the action
+        // leaving this guard; otherwise the pack did not own the decision.
+        phase11.receipt.selection =
+          phase11.receipt.applied &&
+          (decision.action !== phase11.receipt.proposalAction ||
+            (decision.amount ?? null) !== phase11.receipt.proposalAmount)
+            ? 'shadow_change'
+            : plo4SelectionOf(phase11.receipt);
         decision = { ...decision, omahaVariantPolicy: phase11.receipt };
         if (tele) {
           noteFire('phase11_seen');
@@ -2966,6 +3145,8 @@ export class HorseLogic {
           if (phase11.receipt.fired) noteFire(`phase11_${phase11.receipt.variant}_fired`);
           noteFire(`phase11_reason_${phase11.receipt.reason}`);
           if (phase11.receipt.eligible) noteFire('phase11_eligible');
+          if (phase11.receipt.inputs)
+            noteFire(`phase11_range_${phase11.receipt.inputs.range.status}`);
           if (phase11.receipt.fired) {
             noteFire('phase11_fired');
             noteFire(`phase11_street_${gs.stage}`);
@@ -2973,6 +3154,7 @@ export class HorseLogic {
           if (phase11.receipt.changed) noteFire('phase11_shadow_changed');
           if (phase11.receipt.applied) noteFire('phase11_applied');
           else noteFire('phase11_baseline_retained');
+          noteFire(`phase11_selection_${phase11.receipt.selection}`);
           noteFire(`phase11_utility_${phase11.receipt.utilityOwner}`);
           if (phase11.receipt.utilityUnavailableReason)
             noteFire(`phase11_unavailable_utility_${phase11.receipt.utilityUnavailableReason}`);
@@ -2989,6 +3171,14 @@ export class HorseLogic {
         }
         phase12.receipt.finalAction = decision.action;
         phase12.receipt.finalAmount = decision.amount ?? null;
+        // P12.3: `selected` only when the applied candidate is the action
+        // leaving this guard; otherwise the pack did not own the decision.
+        phase12.receipt.selection =
+          phase12.receipt.applied &&
+          (decision.action !== phase12.receipt.proposalAction ||
+            (decision.amount ?? null) !== phase12.receipt.proposalAmount)
+            ? 'shadow_change'
+            : plo4SelectionOf(phase12.receipt);
         decision = { ...decision, remainingVariantPolicy: phase12.receipt };
         if (tele) {
           noteFire('phase12_seen');
@@ -3000,6 +3190,8 @@ export class HorseLogic {
           if (phase12.receipt.fired) noteFire(`phase12_${phase12.receipt.variant}_fired`);
           noteFire(`phase12_reason_${phase12.receipt.reason}`);
           if (phase12.receipt.eligible) noteFire('phase12_eligible');
+          if (phase12.receipt.inputs)
+            noteFire(`phase12_range_${phase12.receipt.inputs.range.status}`);
           if (phase12.receipt.fired) {
             noteFire('phase12_fired');
             noteFire(`phase12_street_${gs.stage}`);
@@ -3007,6 +3199,7 @@ export class HorseLogic {
           if (phase12.receipt.changed) noteFire('phase12_shadow_changed');
           if (phase12.receipt.applied) noteFire('phase12_applied');
           else noteFire('phase12_baseline_retained');
+          noteFire(`phase12_selection_${phase12.receipt.selection}`);
           noteFire(`phase12_utility_${phase12.receipt.utilityOwner}`);
           if (phase12.receipt.utilityUnavailableReason)
             noteFire(`phase12_unavailable_utility_${phase12.receipt.utilityUnavailableReason}`);
@@ -3026,10 +3219,26 @@ export class HorseLogic {
               gs,
               decision,
               opts.phase13Joint ?? 'shadow',
-              opts.phase13EvidenceMode && !tele ? () => 0 : undefined
+              opts.phase13EvidenceMode && !tele ? () => 0 : undefined,
+              phase7JointAcquisition,
+              // P13.1: every candidate is priced, ranked and recorded in the
+              // exact form this legalizer executes.
+              (d) => this.legalize(d, player, gs, vi)
             );
       if (jointPolicy) {
         let proposal = this.legalize(jointPolicy.proposal, player, gs, vi);
+        // P13.1, the P10.3 law: a candidate the legalizer would rewrite is
+        // illegal as proposed and never reaches the table; and a Phase 13
+        // candidate is never applied on top of an applied Phase 10/11/12 one.
+        const legalAsProposed =
+          proposal.action === jointPolicy.proposal.action &&
+          (proposal.amount ?? null) === (jointPolicy.proposal.amount ?? null);
+        const earlierApplied = [
+          beforePhase13.plo4Policy,
+          beforePhase13.omahaVariantPolicy,
+          beforePhase13.remainingVariantPolicy,
+        ].some((prior) => prior?.applied === true);
+        let selectionRefusal: 'illegal_candidate' | 'earlier_phase_applied' | null = null;
         if (isTournamentMode(gs)) {
           const tournament = trustedTournamentContext(gs);
           const joint = jointPolicy.jointEvidence;
@@ -3075,12 +3284,16 @@ export class HorseLogic {
                   proposal = selected;
                   jointPolicy.receipt.shadowUtility = evaluated.result.ledger;
                   jointPolicy.receipt.utilityOwner = 'phase7_evaluated';
-                  if (jointPolicy.receipt.mode === 'candidate')
-                    decision = {
-                      ...beforePhase13,
-                      ...selected,
-                      tournamentUtility: evaluated.result.ledger,
-                    };
+                  if (jointPolicy.receipt.mode === 'candidate') {
+                    if (earlierApplied && !this.sameJointAction(selected, beforePhase13))
+                      selectionRefusal = 'earlier_phase_applied';
+                    else
+                      decision = {
+                        ...beforePhase13,
+                        ...selected,
+                        tournamentUtility: evaluated.result.ledger,
+                      };
+                  }
                 } else {
                   jointPolicy.receipt.utilityOwner = 'phase7_unavailable';
                   jointPolicy.receipt.utilityUnavailableReason = 'legalizer_mismatch';
@@ -3100,11 +3313,16 @@ export class HorseLogic {
             jointPolicy.receipt.utilityUnavailableReason = 'context_or_joint_samples_unavailable';
           }
           if (jointPolicy.receipt.utilityOwner !== 'phase7_evaluated') proposal = beforePhase13;
-        } else if (jointPolicy.receipt.mode === 'candidate' && jointPolicy.receipt.fired)
-          decision = { ...beforePhase13, ...proposal };
+        } else if (jointPolicy.receipt.mode === 'candidate' && jointPolicy.receipt.fired) {
+          if (this.sameJointAction(proposal, beforePhase13)) decision = beforePhase13;
+          else if (earlierApplied) selectionRefusal = 'earlier_phase_applied';
+          else if (!legalAsProposed) selectionRefusal = 'illegal_candidate';
+          else decision = { ...beforePhase13, ...proposal };
+        }
         if (beforePhase13.action === 'fold' && beforePhase13.continuationGuard) {
           proposal = beforePhase13;
           decision = beforePhase13;
+          selectionRefusal = null;
           jointPolicy.receipt.reason = 'protected_' + beforePhase13.continuationGuard;
         }
         const sameAction = (a: HorseDecision, b: HorseDecision) =>
@@ -3114,6 +3332,14 @@ export class HorseLogic {
         receipt.proposalAmount = proposal.amount ?? null;
         receipt.changed = !sameAction(proposal, beforePhase13);
         receipt.applied = !sameAction(decision, beforePhase13);
+        receipt.selectionRefusal = receipt.applied ? null : selectionRefusal;
+        // P13.3: `selected` only when the applied candidate is the action
+        // leaving this node, the Phase 10/11/12 vocabulary.
+        receipt.selection = receipt.applied
+          ? 'selected'
+          : receipt.changed
+            ? 'shadow_change'
+            : 'none';
         receipt.finalAction = decision.action;
         receipt.finalAmount = decision.amount ?? null;
         for (const prior of [
@@ -3150,6 +3376,13 @@ export class HorseLogic {
           if (receipt.changed) noteFire('phase13_shadow_changed');
           noteFire(receipt.applied ? 'phase13_applied' : 'phase13_baseline_retained');
           noteFire(`phase13_utility_${receipt.utilityOwner}`);
+          if (receipt.inputs) noteFire(`phase13_range_${receipt.inputs.ranges.status}`);
+          if (receipt.responseModel) noteFire(`phase13_response_model_${receipt.responseModel}`);
+          if (receipt.reason.startsWith('joint_response_'))
+            noteFire(`phase13_response_refused_${receipt.reason}`);
+          if (receipt.selectionRefusal)
+            noteFire(`phase13_selection_refused_${receipt.selectionRefusal}`);
+          noteFire(`phase13_selection_${receipt.selection}`);
         }
       }
       return { decision };
@@ -3181,6 +3414,8 @@ export class HorseLogic {
     // Preserve reference attribution through later policy owners without claiming
     // that this lookup caused the final action or survived their arbitration.
     if (phase6Attribution) decision.tournamentPreflopAttribution = phase6Attribution;
+    if (phase7Refusal !== null && decision.tournamentUtility === undefined)
+      decision.tournamentUtilityRefusal = phase7Refusal;
     return graph.finish(decision);
   }
 
@@ -3995,7 +4230,11 @@ export class HorseLogic {
       // read, so this is byte-identical outside Omaha and short deck.
       ...(() => {
         if ((opts.v46Charts ?? true) === false) return {};
-        const read46 = handClassRead(player.cards, vi.isOmaha, vi.isShortDeck);
+        const read46 = handClassRead(
+          player.cards,
+          vi.isOmaha,
+          vi.isShortDeck && opts.v46ShortDeck === true
+        );
         if (read46.cls === 'other' || read46.cls === 'sd_other') return {};
         if (telemetryOn(opts)) {
           noteFire('v46_class_read');
@@ -4527,9 +4766,9 @@ export class HorseLogic {
       (opts.phase7Utility ?? true) !== false &&
       gs.stateSchemaVersion === 1 &&
       isTournamentMode(gs) &&
-      // Phase 7 Round 1 never zips independently sampled boards into a fake
-      // joint deal. The existing audited multi-board layer remains authority
-      // until one shared-deck sampler is added in the later depth round.
+      // Phase 7 never zips independently sampled marginal boards into a fake
+      // joint deal. Multi-board utility consumes only the physical shared-deck
+      // acquisition in the tournament_utility node (Phase 7B).
       extraBoards.length === 0 &&
       trustedTournament?.schemaVersion === 1 &&
       trustedTournament.contextStatus === 'complete';
@@ -4601,12 +4840,7 @@ export class HorseLogic {
         const perBoardSplit: HiLoSplit | undefined = hiLoSplit
           ? { hi: 0, lo: 0, scoop: 0, quarter: 0 }
           : undefined;
-        const outcomes7: HorseEquityOutcomeCollector | undefined = captureOutcomes7
-          ? {
-              maxSamples: phase7OutcomeBudget(trustedTournament?.playersLeft),
-              samples: [],
-            }
-          : undefined;
+        // Marginal per-board draws are never Phase 7 outcome samples.
         const eb = simulateEquity(
           player.cards,
           b,
@@ -4617,10 +4851,9 @@ export class HorseLogic {
           useAdaptiveMC,
           perBoardSplit,
           oppReadsPerBoard,
-          outcomes7,
+          undefined,
           otherVisibleCards
         );
-        if (outcomes7) outcomeBoards7.push(outcomes7);
         boardEq36.push(eb);
         sum += eb;
         if (loAcc && perBoardSplit) {
@@ -4647,15 +4880,7 @@ export class HorseLogic {
         1,
         Math.floor(equitySampleSizeOfLastCall() * (useAdaptiveMC ? 0.4 : 1))
       );
-      capturePhase7Equity(
-        gs,
-        player,
-        equity,
-        perBoardSamples7 * (extraBoards.length + 1),
-        bands,
-        useMind,
-        outcomeBoards7
-      );
+      capturePhase7Equity(gs, player, equity, perBoardSamples7, bands, useMind, outcomeBoards7);
     }
 
     // V36: multi-board facts. nBoards36 boards pay equally; a board hero
@@ -4743,8 +4968,9 @@ export class HorseLogic {
     // wider: value thresholds drop, thin calls get easier, bluffs go up —
     // ranges are so wide that medium hands ARE value and folding medium
     // equity to single bets bleeds. Small nudges, league-measured by the
-    // hu_v16_overlay matchup.
-    const huOn = (opts.v16Hu ?? true) !== false && opponents.length === 1;
+    // hu_v16_overlay matchup. 2026-10-05: that matchup measured the overlay
+    // LOSING (-0.26 +/- 0.10 over 31 nights), so it is now opt-in.
+    const huOn = opts.v16Hu === true && opponents.length === 1;
     if (huOn) {
       mw = Math.max(-0.02, mw - 0.015);
       if (tele15) noteFire('v16_hu_overlay');
@@ -6677,10 +6903,32 @@ export class HorseLogic {
         Math.floor(equitySampleSizeOfLastCall() * (useAdaptiveMC ? 0.4 : 1))
       );
       const value = clamp01(eq15);
+      // P10.1: attribute the sample to the ranges that produced it - the same
+      // live opponents, bands and HorseMind read view used above. Attribution
+      // is best-effort; without it the policy records the sample unattributed.
+      // The capture is the proposal's own work, so it is deferred into the
+      // policy's timed region and counts against its work budget (P10 audit
+      // F7). Its inputs are fixed here; the decision is synchronous and the
+      // read scope set by decide() still holds when the policy consumes it.
+      const rangeInput: Parameters<typeof capturePlo4RangeProvenance>[0] = {
+        opponents,
+        bands,
+        mindEnabled: useMind,
+        publicLine: useHR ? 'full_hand' : 'preflop_only',
+        actions: (useHR
+          ? (gs.actionHistory ?? [])
+          : (gs.actionHistory ?? []).filter((a) => a.stage === 'preflop')
+        ).length,
+        sizeReads: useSizeReads,
+        boardContact: oppReads?.some((read) => read !== null) ?? false,
+        structuralCapApplied: eq15 < equity,
+        adaptiveSamples: useAdaptiveMC,
+      };
       phase10EquityEvidence = {
         equity: value,
         samples: sampleCount,
         standardError: Math.sqrt((value * (1 - value)) / sampleCount),
+        captureRange: () => capturePlo4RangeProvenance(rangeInput),
       };
     }
 
@@ -6788,9 +7036,27 @@ export class HorseLogic {
           (boatDominated15 && raisedAfterAggr) ||
           (useV21 && dominated21) ||
           planCallOnly23;
-        return toCall >= stack || preferFlat15
-          ? { action: 'call', amount: toCall, thinkTime: 0 }
-          : { action: 'all_in', thinkTime: 0 };
+        // ═══ V51 RIVER FLAT (2026-10-05) ═══ the jam above is a turn-and-
+        // earlier line: it denies equity and can fold out a draw. On the
+        // river there is nothing to deny, and the only hands that call a jam
+        // over a raise (or fold to one after betting) are the ones one pair
+        // already loses to or already beats. The 2026-10-04 audit's
+        // one_pair_river_stackoff hands were this branch: QJ on 6-5-Q-9-3
+        // bet, was raised to 15,656 and re-jammed 27,885. Two pair counts as
+        // one pair when one of its pairs is the board's.
+        const riverOnePair51 =
+          (opts.v51RiverFlat ?? true) !== false &&
+          isRiver &&
+          cat > 0 &&
+          (cat <= 2 || (cat === 3 && pairedBoard));
+        if (toCall >= stack || preferFlat15) {
+          return { action: 'call', amount: toCall, thinkTime: 0 };
+        }
+        if (riverOnePair51) {
+          if (tele15) noteFire('v51_river_flat');
+          return { action: 'call', amount: toCall, thinkTime: 0 };
+        }
+        return { action: 'all_in', thinkTime: 0 };
       }
       // V34: a solver-approved draw call is honored here too — the committed
       // bar must never fold a hand the solver's own range priced as a call.
@@ -7310,6 +7576,14 @@ export class HorseLogic {
    * amounts (Bible V8 §2.6). Falls back down the ladder raise -> call -> check
    * when a desired action has no legal sizing.
    */
+  /** P13.1: the joint node's action identity (amount only for a wager). */
+  private static sameJointAction(a: HorseDecision, b: HorseDecision): boolean {
+    return (
+      a.action === b.action &&
+      (!['bet', 'raise'].includes(a.action) || (a.amount ?? null) === (b.amount ?? null))
+    );
+  }
+
   private static legalize(
     d: HorseDecision,
     player: SeatPlayer,

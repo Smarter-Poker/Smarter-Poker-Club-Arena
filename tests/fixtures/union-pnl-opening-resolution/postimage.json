@@ -1,0 +1,6 @@
+{
+  "fn_union_pnl_boundary(uuid,timestamp with time zone)": "0e1fb7d6826b5a95ce5e637174017ede",
+  "fn_union_pnl_opening_registration_resolution(uuid,timestamp with time zone,jsonb,jsonb)": "09e6fc21f116c941de74edc8b37be654",
+  "fn_union_pnl_prove_opening_registrations(uuid,timestamp with time zone)": "2910a4e7d455ce6f05d1b6963fe54931",
+  "fn_union_pnl_resolve_opening_registrations(uuid,timestamp with time zone,text,boolean)": "b7946c6832f5d3dd80d3ac83a4a34536"
+}

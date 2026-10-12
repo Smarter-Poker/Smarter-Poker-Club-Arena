@@ -100,6 +100,7 @@
 }
 
 .arrow {
+  flex: 0 0 auto;
   font-size: 5cqw;
   padding-inline: 2.4cqw;
 }
@@ -241,14 +242,18 @@
 
 .rangeBar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   gap: 2cqw;
 }
 
 .rangeChip {
+  order: -1;
   display: inline-flex;
+  flex: 1 0 100%;
   align-items: baseline;
+  justify-content: center;
   gap: 1.6cqw;
   font-size: 4cqw;
   font-weight: 700;
@@ -351,6 +356,12 @@
   scrollbar-gutter: stable;
   scrollbar-width: thin;
   scrollbar-color: #304659 #000;
+}
+
+/* The list is a column flexbox. Virtual padding is measured scroll space, not
+   content that may shrink to fit the viewport. */
+.virtualSpacer {
+  flex: 0 0 auto;
 }
 
 .virtualList:focus-visible {

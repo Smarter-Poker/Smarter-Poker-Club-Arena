@@ -58,6 +58,7 @@ import { declaredFunctions, stripComments } from './check-definer-authorization.
 import { offenders as moneyTriggerOffenders } from './check-money-trigger-declared.mjs';
 import { declaredFunctions as bandAidNames, isBandAidName } from './check-no-new-band-aids.mjs';
 import { supabaseServerHeaders } from './supabase-auth-headers.mjs';
+import { loadAliases } from './migration-aliases.mjs';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const OFFLINE = process.argv.includes('--offline');
@@ -178,6 +179,35 @@ async function main() {
         `${version}: production's statements hash to ${record.md5}; the manifest and the file ` +
           `say ${row.md5}. These are not the same SQL.`
       );
+    }
+  }
+
+  // ---- 2b: every apply-time alias names a version production holds --------
+  // scripts/ci/migration-aliases.mjs lets both gates read an applied version
+  // and a file as one migration. That is only honest while production still
+  // holds that version with the md5 the row records (2026-09-27).
+  const aliases = loadAliases(REPO);
+  if (aliases.error) {
+    unknowns.push(`could not read the alias table: ${aliases.error}`);
+  } else {
+    for (const r of aliases.rejected) findings.push(`alias refused: ${r}`);
+    for (const [version, row] of aliases.byVersion) {
+      let answer;
+      try {
+        answer = await rpc('fn_ca_migration_text', { p_version: version });
+      } catch (err) {
+        unknowns.push(`could not read production's copy of aliased ${version}: ${err.message}`);
+        continue;
+      }
+      const record = Array.isArray(answer) ? answer[0] : answer;
+      if (!record) {
+        findings.push(`alias ${version} -> ${row.file}: production has NO such version.`);
+      } else if (String(record.md5) !== String(row.appliedMd5)) {
+        findings.push(
+          `alias ${version} -> ${row.file}: production's statements hash to ${record.md5}, ` +
+            `the alias records ${row.appliedMd5}.`
+        );
+      }
     }
   }
 

@@ -1,0 +1,43 @@
+Horse Brain Phases 11 And 12: Natural Completion Records On The Full-Sample Release, Predeclaration
+==================================================================================================
+
+Declared 2026-10-09 before 18:00Z, before the window below exists. The commit
+and push time of this file is the declaration time.
+
+Why a second window: the first predeclared window
+(declaration-completion-2026-10-09.txt, release c1deef24, 15:02 to 15:50Z)
+found every pack below the 0.95 floor, mostly from governor-reduced samples.
+#6592 (merge 1235b47a) makes the Omaha and remaining-variant samplers always
+request the full sample. The first window's records are kept and committed
+whatever they show; this window measures the release that carries the fix.
+
+1. Serving Release
+------------------
+The first club-arena-engine release (label sp.release.sha) that contains
+1235b47a63c439da9bdf8427148bc0818499378c and whose Phase 11 and Phase 12
+policy digests for every pack equal those of 1235b47a (computed from
+git show <release>:server/<file>). It must be unchanged for the whole window:
+sp.release.sha and State.StartedAt are read before the window opens and after
+it closes, and must match. If it is replaced before the window closes, the
+window moves to the first full hour of the next qualifying release.
+
+2. Window And Population
+------------------------
+Minutes :02:00 to :50:00 UTC of the first full hour that release serves.
+Everything else exactly as in declaration-completion-2026-10-09.txt sections 2
+and 3: closed archive segments only, sha256-name verified, read-only, nice 19 /
+ionice idle; single board; DECIDE_FAST only; other releases excluded by name;
+tournament decisions not counted; Pineapple discards never betting decisions;
+readers server/scripts/phase11-completion-extract.py,
+server/src/scripts/phase11CompletionRecord.ts (definition v3),
+server/scripts/phase12-completion-extract.py and
+server/src/scripts/phase12CompletionRecord.ts (definition v1) at that release.
+
+3. Verdict
+----------
+Every street's Wilson lower bound at the contract z must clear 0.95 with at
+least 127 eligible decisions. Reported for all seven packs, whatever it is,
+and every record committed. No pack is re-measured on another window of this
+release to look for a pass. A record is used for admission only with that
+pack's qualification measured at the same policy digest (the locked matrices
+re-run unchanged on 1235b47a).

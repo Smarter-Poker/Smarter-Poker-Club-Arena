@@ -41,10 +41,16 @@ ARCHIVE_POSTABORT_SPEC = importlib.util.spec_from_file_location('first_archived_
 ARCHIVE_POSTABORT_MODULE = importlib.util.module_from_spec(ARCHIVE_POSTABORT_SPEC)
 ARCHIVE_POSTABORT_SPEC.loader.exec_module(ARCHIVE_POSTABORT_MODULE)
 FirstArchivedPostabortTests = ARCHIVE_POSTABORT_MODULE.FirstArchivedPostabortTests
+CurrentOwnerBasisAbsenceTests = ARCHIVE_POSTABORT_MODULE.CurrentOwnerBasisAbsenceTests
 ARCHIVE_BANK_SPEC = importlib.util.spec_from_file_location('first_archived_bank_controls', Path(__file__).resolve().parents[1] / 'qualification/test_first_archived_bank_observer.py')
 ARCHIVE_BANK_MODULE = importlib.util.module_from_spec(ARCHIVE_BANK_SPEC)
 ARCHIVE_BANK_SPEC.loader.exec_module(ARCHIVE_BANK_MODULE)
 FirstArchivedBankObserverTests = ARCHIVE_BANK_MODULE.FirstArchivedBankObserverTests
+ARCHIVE_COMPLETION_SPEC = importlib.util.spec_from_file_location('archive_completion_controls', W.ROOT / 'scripts/qualification/test_first_archived_completion.py')
+ARCHIVE_COMPLETION_MODULE = importlib.util.module_from_spec(ARCHIVE_COMPLETION_SPEC)
+ARCHIVE_COMPLETION_SPEC.loader.exec_module(ARCHIVE_COMPLETION_MODULE)
+FirstArchivedCompletionTests = ARCHIVE_COMPLETION_MODULE.FirstArchivedCompletionTests
+
 EXECUTION = '00000000-0000-4000-8000-000000000001'
 ORDINARY = '00000000-0000-4000-8000-000000000002'
 TOURNAMENT = '00000000-0000-4000-8000-000000000003'
@@ -827,11 +833,11 @@ class MixedCurrentTests(unittest.TestCase):
 
     def test_all_images_and_original_cases_remain_required(self):
         self.assertEqual(W.IMAGES, ('preimage', 'candidate', 'retention-completed',
-                                   'mixed-current-completion', 'mixed-current-source-change', 'positive-fee-entry', 'positive-fee-terminal', 'finalized-horse-admission', 'first-archived-spin', 'first-archived-spin-bank-mvcc'))
+                                   'mixed-current-completion', 'mixed-current-source-change', 'positive-fee-entry', 'positive-fee-terminal', 'finalized-horse-admission', 'first-archived-spin', 'first-archived-spin-bank-mvcc', 'first-archived-spin-completion', 'first-archived-spin-completion-bank'))
         self.assertEqual(W.CASES, {'preimage': ('order',),
             'candidate': ('order', 'timeout', 'committed-refund'),
             'retention-completed': (), 'mixed-current-completion': (),
-            'mixed-current-source-change': (), 'positive-fee-entry': (), 'positive-fee-terminal': (), 'finalized-horse-admission': (), 'first-archived-spin': (), 'first-archived-spin-bank-mvcc': ()})
+            'mixed-current-source-change': (), 'positive-fee-entry': (), 'positive-fee-terminal': (), 'finalized-horse-admission': (), 'first-archived-spin': (), 'first-archived-spin-bank-mvcc': (), 'first-archived-spin-completion': (), 'first-archived-spin-completion-bank': ()})
         self.assertTrue(set(W.MIXED.INPUTS) <= set(W.REPLACEMENTS))
 
     def test_exact_sources_and_executed_provider_paths_are_pinned(self):

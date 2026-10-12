@@ -38,6 +38,11 @@ import { resolve } from 'node:path';
 
 const REACH = 20; // MIN(44) / 2 - 2, as the sweep computes it
 
+const canonicalClubDataRouteMatches = (currentUrl: string, renderedHref: string) => {
+  if (!/\/clubs\/[^/]+\/data\/?$/.test(renderedHref)) return false;
+  return new URL(currentUrl).pathname === new URL(renderedHref, currentUrl).pathname;
+};
+
 /** Build a page: a scrollable (or not) list with a control, optionally under
  *  fixed chrome, optionally overlapped by an ordinary sibling. */
 function page(opts: { scrolls: boolean; fixedChrome: boolean; sibling: boolean }) {
@@ -176,6 +181,22 @@ test.describe('the tap sweep excuses only what it genuinely cannot see', () => {
     expect(r.reported).toBe(true);
   });
 
+  test('Club Data accepts only the canonical route declared by its rendered club rail', () => {
+    const canonical = 'https://smarter.poker/hub/club-arena/clubs/shark-club/data';
+    expect(canonicalClubDataRouteMatches(canonical, '/hub/club-arena/clubs/shark-club/data')).toBe(
+      true
+    );
+    expect(
+      canonicalClubDataRouteMatches(
+        canonical,
+        '/hub/club-arena/clubs/shark-club/settlement-history'
+      )
+    ).toBe(false);
+    expect(canonicalClubDataRouteMatches(canonical, '/hub/club-arena/clubs/club-jaqk/data')).toBe(
+      false
+    );
+  });
+
   test('the sweep still contains the rule these beats model', () => {
     /* The rule lives inside a page.evaluate callback in the sweep, so it cannot
        be imported and shared. If it is ever removed or rewritten, these beats
@@ -191,6 +212,18 @@ test.describe('the tap sweep excuses only what it genuinely cannot see', () => {
     );
     expect(src, 'the fixed-chrome exclusion no longer records an unmeasured control').toContain(
       'under fixed chrome'
+    );
+    expect(src, 'Club Data no longer accepts only its rendered canonical club link').toContain(
+      "const canonicalHref = await dataLink.getAttribute('href')"
+    );
+    expect(src, 'Club Data no longer requires the canonical club route shape').toContain(
+      'expect(canonicalHref).toMatch(/\\/clubs\\/[^/]+\\/data\\/?$/)'
+    );
+    expect(src, 'Club Data no longer waits for the supported UUID-to-slug redirect').toContain(
+      'await expect.poll(() => new URL(page.url()).pathname).toBe(canonicalPath)'
+    );
+    expect(src, 'non-Club-Data routes no longer require their exact path').toContain(
+      'expect(new URL(page.url()).pathname.endsWith(`/${routePath}`)).toBe(true)'
     );
   });
 });

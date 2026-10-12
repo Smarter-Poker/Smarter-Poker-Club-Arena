@@ -33,7 +33,7 @@ describe('the promo panel spends the pool it displays', () => {
 
 describe('the Distribute tab does what its copy says', () => {
   it('routes bank roles onto fn_club_bank_send and agents onto fn_agent_wallet_send', () => {
-    expect(PAGE).toMatch(/viaClubBank \? 'fn_club_bank_send' : 'fn_agent_wallet_send'/);
+    expect(PAGE).toMatch(/viaClubBank\s*\? 'fn_club_bank_send'\s*:\s*'fn_agent_wallet_send'/);
   });
 
   it('never calls the dead distribute-promo route', () => {

@@ -117,3 +117,16 @@
     animation: none;
   }
 }
+
+/* A MOMENT'S ASK (2026-09-27): a card at the bottom, not a sheet over the
+   page. Only the card takes pointer events, so the page the player is using
+   stays usable around it. */
+.ca-push-prompt--card {
+  inset: auto 0 0 0;
+  background: transparent;
+  pointer-events: none;
+}
+
+.ca-push-prompt--card .ca-push-prompt__sheet {
+  pointer-events: auto;
+}

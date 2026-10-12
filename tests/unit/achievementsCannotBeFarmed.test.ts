@@ -35,7 +35,18 @@ vi.mock('../../src/lib/supabase', () => ({
         },
       };
     },
-    rpc: async () => ({ data: false, error: null }),
+    // The player's own streak day is read through the owner door (ruling 25):
+    // get_my_full_profile() filtered by id, then the columns.
+    rpc: (name: string) =>
+      name === 'get_my_full_profile'
+        ? {
+            eq: () => ({
+              select: () => ({
+                maybeSingle: async () => ({ data: { ...profileRow }, error: null }),
+              }),
+            }),
+          }
+        : Promise.resolve({ data: false, error: null }),
   },
 }));
 

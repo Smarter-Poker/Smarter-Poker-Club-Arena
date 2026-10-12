@@ -1,0 +1,28 @@
+# P13.2 identity check. The same script (p13-2-unchanged.mts.txt) was run from a copy of server/ at the base commit 3cd956fa (node_modules shared) and from this branch's working tree, EQUITY_GOVERNOR=off, one process at a time. Each line is sha256 of the JSON output with durationMs removed. The two outputs are identical: the P13.2 edits to the shared league (Plo4PolicyLeague.ts) and to the Phase 11 and 12 shard runners change no development league or earlier strength shard.
+
+## base 3cd956fa
+joint nlh-bomb2-cap 616dc99d44656c7d22da90c9d030a10f56b65d911d10ace61771fb3a00041996
+joint plo8-ordinary-cap 891d499e5bd86e88b03a84632170d489bda7380b3dac99b0c767c33191f228bc
+joint flo8-tournament-bomb2 e3a9de67a52185f3e1551dd0e502589a60a8baa104eda6c1308c12cb78b43915
+joint pineapple-bomb3-cap e5aaa221d3dab55300e02c2f34650c3bdf3fedd98cfd9423ff203e79ef93c593
+remaining flh-hu-25bb 7b4425af58ba03e44e55709404ee0b20ec765ff0cd80ec7ffd96663e6f0bd4d6
+omaha plo5-hu-25bb 99ecb744a18b4dba11019a2b191fcf5f4b44638f075959728c1e48c53768d4a0
+plo4 six-max-100bb c99fd551b343a8731b2e1d55291762ebaf7f70d5488e792df933cc73954e30de
+plo4 shard db5b6df9d7a674492f1c7c46a3028aa20bc092c68a257cac7a8e0aea3a706eef
+phase11 shard e420bca4333e7620607bd127006cb0fba0a6cf7aa4ff0c61aadae346e83c9584
+phase12 shard 99508baf0e85e39be34b378cdb7d2a19c33020de00baaf537f9e456733f29313
+
+## branch
+joint nlh-bomb2-cap 616dc99d44656c7d22da90c9d030a10f56b65d911d10ace61771fb3a00041996
+joint plo8-ordinary-cap 891d499e5bd86e88b03a84632170d489bda7380b3dac99b0c767c33191f228bc
+joint flo8-tournament-bomb2 e3a9de67a52185f3e1551dd0e502589a60a8baa104eda6c1308c12cb78b43915
+joint pineapple-bomb3-cap e5aaa221d3dab55300e02c2f34650c3bdf3fedd98cfd9423ff203e79ef93c593
+remaining flh-hu-25bb 7b4425af58ba03e44e55709404ee0b20ec765ff0cd80ec7ffd96663e6f0bd4d6
+omaha plo5-hu-25bb 99ecb744a18b4dba11019a2b191fcf5f4b44638f075959728c1e48c53768d4a0
+plo4 six-max-100bb c99fd551b343a8731b2e1d55291762ebaf7f70d5488e792df933cc73954e30de
+plo4 shard db5b6df9d7a674492f1c7c46a3028aa20bc092c68a257cac7a8e0aea3a706eef
+phase11 shard e420bca4333e7620607bd127006cb0fba0a6cf7aa4ff0c61aadae346e83c9584
+phase12 shard 99508baf0e85e39be34b378cdb7d2a19c33020de00baaf537f9e456733f29313
+
+## diff
+(no difference)

@@ -21,11 +21,11 @@ describe('#ClubButtons production components', () => {
 
   it('keeps unknown wallet data distinct from zero', () => {
     const { rerender } = render(<ArenaWalletRow label="Club Bank" value="$0.00" />);
-    expect(screen.getByText('$0.00')).toBeInTheDocument();
+    expect(screen.getByText('0.00')).toBeInTheDocument();
 
     rerender(<ArenaWalletRow label="Club Bank" dataState="error" />);
     expect(screen.getByText('Unavailable')).toBeInTheDocument();
-    expect(screen.queryByText('$0.00')).not.toBeInTheDocument();
+    expect(screen.queryByText('0.00')).not.toBeInTheDocument();
   });
 
   it('supports arrow, Home, and End navigation for tabs', () => {

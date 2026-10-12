@@ -1,0 +1,8 @@
+{
+  "_owner": "Lightning Phase 8: the engine socket clients (EngineStateClient, EngineSocketMux) are already in the entry, and every Lightning connection must carry the player's device platform in its upgrade URL (the matcher's per-platform table limit reads it) and route lightning_decision USER_EVENTs into the decision queue the moment a socket is open. All three modules together are 375 source lines with no heavy dependencies (serverClock is already in the entry).",
+  "modules": [
+    "src/lightning/lightningCapabilities.ts",
+    "src/lightning/lightningDecisionQueue.ts",
+    "src/lightning/lightningDeviceReport.ts"
+  ]
+}

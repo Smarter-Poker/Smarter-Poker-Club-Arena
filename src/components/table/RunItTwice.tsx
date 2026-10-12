@@ -104,7 +104,7 @@ export function RunItTwicePrompt({
   players = [],
   totalSeconds = 25,
   heroAccepted = false,
-  currency = '$',
+  currency = '',
 }: RunItTwicePromptProps) {
   const [mounted, setMounted] = useState(false);
 

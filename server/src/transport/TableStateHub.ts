@@ -121,6 +121,7 @@ export interface HubSubscriber {
    */
   readonly bufferedAmount?: number;
   send(data: string): void;
+  sendPrivate?(data: string, delivered?: () => void): void;
   /**
    * 2026-08-24: optional transport-supplied eviction. When the hub hard-drops
    * a hopeless subscriber (bufferedAmount past HARD), it used to only remove
@@ -267,15 +268,20 @@ export class TableStateHub {
    * Messages go out to every OPEN subscriber; closed subscribers are evicted.
    */
   publish(tableId: string, state: GameStateSnapshot): number {
+    // Diff the same JSON shape clients actually receive. structuredClone
+    // retains undefined object keys which JSON omits, causing later DELTAs
+    // to replace/remove paths absent from the client's SNAPSHOT. Normalize
+    // once per publish, before touching room state, not once per subscriber.
+    const wireState = JSON.parse(JSON.stringify(state)) as GameStateSnapshot;
     const room = this.getOrCreateRoom(tableId);
     const prev = room.lastSeq;
     const next = prev + 1;
 
     let message: HubMessage;
     if (!room.lastSnapshot) {
-      message = { type: 'SNAPSHOT', tableId, seq: next, state };
+      message = { type: 'SNAPSHOT', tableId, seq: next, state: wireState };
     } else {
-      const patch = compare(room.lastSnapshot, state) as JsonPatchOperation[];
+      const patch = compare(room.lastSnapshot, wireState) as JsonPatchOperation[];
       // ROUND 25 FIX (Bible V8 §6 reconnect FSM): no-op publishes (empty patch)
       // MUST NOT advance seq, otherwise the next real DELTA carries
       // prev=lastSeq+N which the client sees as a gap — triggering a spurious
@@ -290,7 +296,7 @@ export class TableStateHub {
       message = { type: 'DELTA', tableId, seq: next, prev, patch };
     }
 
-    room.lastSnapshot = structuredClone(state);
+    room.lastSnapshot = wireState;
     room.lastSeq = next;
     room.lastPublishedAt = Date.now();
 
@@ -389,10 +395,16 @@ export class TableStateHub {
   /**
    * Deliver a private frame to every open socket ONE user holds on a table
    * (a player may have the table open in two tabs). Returns how many sockets
-   * took it; 0 means the player is not subscribed right now, and the caller
-   * relies on the RESYNC re-send when they are.
+   * accepted it synchronously. Authorized asynchronous adapters return zero
+   * and invoke onDelivered only after the socket send callback succeeds.
+   * Recovery owners retain undelivered state until that acknowledgment.
    */
-  sendToUser(tableId: string, userId: string, payload: Record<string, unknown>): number {
+  sendToUser(
+    tableId: string,
+    userId: string,
+    payload: Record<string, unknown>,
+    onDelivered?: () => void
+  ): number {
     const room = this.rooms.get(tableId);
     if (!room || !userId) return 0;
     const message: UserEventMessage = { type: 'USER_EVENT', tableId, payload };
@@ -402,7 +414,12 @@ export class TableStateHub {
       if (sub.userId !== userId) continue;
       // Private cards are recovery data, like snapshots: exempt from SOFT,
       // but never allowed to keep growing a socket that has crossed HARD.
-      if (this.safeSend(tableId, sub, data)) delivered++;
+      if (sub.sendPrivate) {
+        sub.sendPrivate(data, onDelivered);
+      } else if (this.safeSend(tableId, sub, data)) {
+        delivered++;
+        onDelivered?.();
+      }
     }
     return delivered;
   }

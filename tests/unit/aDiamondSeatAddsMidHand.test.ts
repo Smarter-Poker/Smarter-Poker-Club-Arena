@@ -63,8 +63,10 @@ describe('a mid-hand Diamond top-up takes nothing until it lands', () => {
 
   it('it lands between hands, on the stack as it is by then', () => {
     const lander = sliceMethod(at(SEATING), 'protected async applyDiamondTopUpIntents(');
-    expect(lander, 'it can land while a hand is running').toMatch(
-      /if \(this\.handController\) return/
+    /* Not while a hand is dealt, and not while the last one is still settling
+       (Diamond Phase 11 line 5: a top-up landing under a settlement raced it). */
+    expect(lander, 'it can land while a hand is running or still settling').toMatch(
+      /if \(this\.handController \|\| this\.hasSettlementInFlight\(\)\) return/
     );
     expect(lander).toMatch(/fn_poker_diamond_top_up/);
     expect(lander, 'the door must be told the stack it is actually raising').toMatch(

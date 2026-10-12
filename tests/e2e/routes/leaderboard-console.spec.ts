@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
+import { HeldRouteLifecycle } from '../support/heldRouteLifecycle';
 
 // Read-only production coverage. The post-deploy workflow already runs routes/.
 // Never publish a program or invoke settlement against a real account here.
@@ -15,12 +16,15 @@ import { expect, test, type Page } from '@playwright/test';
 const SUBRESOURCE = /^Failed to load resource\b|net::ERR_|ERR_BLOCKED_BY_CLIENT/;
 const CLUB_ARENA_FILES = '/hub/club-arena/';
 const BOARD = '[data-arena-surface="leaderboard-console"]';
+const GLOBAL_WEEKLY_PROFIT_CACHE_KEY = 'lb_cache_v2_global_profit_weekly_0';
+const LEADERBOARD_CACHE_TTL_MS = 5 * 60 * 1000;
 
 interface Observed {
   consoleErrors: string[];
   pageErrors: number;
   failedArenaFiles: string[];
   otherBadResponses: string[];
+  failedOtherRequests: string[];
 }
 
 function observe(page: Page): Observed {
@@ -29,6 +33,7 @@ function observe(page: Page): Observed {
     pageErrors: 0,
     failedArenaFiles: [],
     otherBadResponses: [],
+    failedOtherRequests: [],
   };
   page.on('console', (message) => {
     if (message.type() === 'error') observed.consoleErrors.push(message.text());
@@ -49,6 +54,8 @@ function observe(page: Page): Observed {
     const url = new URL(request.url());
     if (url.pathname.startsWith(CLUB_ARENA_FILES)) {
       observed.failedArenaFiles.push(`failed ${url.host}${url.pathname}`);
+    } else {
+      observed.failedOtherRequests.push(`failed ${url.host}${url.pathname}`);
     }
   });
   return observed;
@@ -64,6 +71,22 @@ async function expectNoSeriousAxeFindings(page: Page, state: string): Promise<vo
   ).toEqual([]);
 }
 
+async function expectLeaderboardNamesToStartEachWordWithACapital(
+  page: Page,
+  selector: string,
+  state: string
+): Promise<void> {
+  const names = await page
+    .locator(`${BOARD} ${selector}`)
+    .evaluateAll((elements) =>
+      elements.map((element) => element.firstChild?.textContent?.trim() || '').filter(Boolean)
+    );
+  const lowercaseWordStarts = names.flatMap((name) =>
+    [...name.matchAll(/(?:^|[^A-Za-z0-9])([a-z])/g)].map((match) => match[1])
+  );
+  expect(lowercaseWordStarts, `${state}: every name word starts with a capital`).toEqual([]);
+}
+
 for (const width of [393, 1440]) {
   test(`Leaderboard Console Is Painted And Reachable At ${width}px`, async ({ page }, testInfo) => {
     const keep = (name: string) =>
@@ -73,7 +96,7 @@ for (const width of [393, 1440]) {
       });
     const observed = observe(page);
     await page.addInitScript(() => {
-      const metrics = { lcp: 0, cls: 0 };
+      const metrics = { lcp: null as number | null, cls: 0 };
       (window as unknown as { __lbMetrics: typeof metrics }).__lbMetrics = metrics;
       performance.setResourceTimingBufferSize(1000);
       new PerformanceObserver((list) => {
@@ -124,12 +147,15 @@ for (const width of [393, 1440]) {
         resources
           .filter((entry) => pattern.test(new URL(entry.name).pathname))
           .map((entry) => [file(entry), entry.transferSize, Math.round(entry.duration)] as const);
-      const metrics = (window as unknown as { __lbMetrics?: { lcp: number; cls: number } })
+      const metrics = (window as unknown as { __lbMetrics?: { lcp: number | null; cls: number } })
         .__lbMetrics;
       return {
         domContentLoadedMs: navigation ? Math.round(navigation.domContentLoadedEventEnd) : null,
         loadMs: navigation ? Math.round(navigation.loadEventEnd) : null,
-        lcpMs: metrics ? Math.round(metrics.lcp) : null,
+        lcpMs:
+          metrics && typeof metrics.lcp === 'number' && Number.isFinite(metrics.lcp)
+            ? Math.round(metrics.lcp)
+            : null,
         cls: metrics ? Number(metrics.cls.toFixed(3)) : null,
         resourceCount: resources.length,
         transferBytes: resources.reduce((sum, entry) => sum + (entry.transferSize || 0), 0),
@@ -146,6 +172,30 @@ for (const width of [393, 1440]) {
           ),
       };
     });
+    // Broad guardrails derived from healthy production observations. They catch
+    // a severe regression without treating small runner/network variance as a
+    // failure.
+    expect(firstReadyMs, 'the first usable board should load within 12 seconds').toBeLessThan(
+      12_000
+    );
+    expect(
+      firstLoad.lcpMs,
+      'the browser must report a largest-contentful-paint entry'
+    ).not.toBeNull();
+    expect(firstLoad.lcpMs ?? 0, 'the LCP measurement must be greater than zero').toBeGreaterThan(
+      0
+    );
+    expect(
+      firstLoad.lcpMs ?? Number.POSITIVE_INFINITY,
+      'the board should paint its main content within 8 seconds'
+    ).toBeLessThan(8_000);
+    if (firstLoad.cls !== null) {
+      expect(firstLoad.cls, 'the board should avoid disruptive layout shifts').toBeLessThan(0.15);
+    }
+    expect(
+      firstLoad.transferBytes,
+      'the full leaderboard route should stay below 12 MiB'
+    ).toBeLessThan(12 * 1024 * 1024);
     // The board painted from the real art and the real route chunk.
     expect(firstLoad.leaderboardChunks.map(([name]) => name).join(' ')).toMatch(/LeaderboardPage-/);
     expect(firstLoad.consoleArt.map(([name]) => name).sort()).toEqual(
@@ -163,6 +213,28 @@ for (const width of [393, 1440]) {
       'true'
     );
 
+    // Keyboard-only visitors can move and activate the same primary views.
+    const tabs = board.getByRole('tab');
+    await tabs.first().focus();
+    await page.keyboard.press('ArrowRight');
+    await expect(tabs.nth(1)).toBeFocused();
+    await expect(tabs.nth(1)).toHaveCSS('outline-style', 'solid');
+    await page.keyboard.press('Enter');
+    await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
+    await page.keyboard.press('ArrowLeft');
+    // Ensure the reverse arrow transition is complete before Enter activates the focused tab.
+    await expect(tabs.first()).toBeFocused();
+    await expect(tabs.first()).toHaveAttribute('aria-selected', 'true');
+    await page.keyboard.press('Enter');
+    await expect(tabs.first()).toHaveAttribute('aria-selected', 'true');
+
+    for (const label of ['Global', 'My Clubs', 'Hands Played']) {
+      const control = board.getByRole('button', { name: label, exact: true });
+      const size = await control.boundingBox();
+      expect(size?.width, `${label} target width`).toBeGreaterThanOrEqual(44);
+      expect(size?.height, `${label} target height`).toBeGreaterThanOrEqual(44);
+    }
+
     await board.getByRole('button', { name: 'Global', exact: true }).click();
     await expect(board.getByRole('button', { name: 'Global', exact: true })).toHaveAttribute(
       'aria-pressed',
@@ -179,6 +251,7 @@ for (const width of [393, 1440]) {
       timeout: 30000,
     });
     await expect(board.locator('.lb-error-state')).toHaveCount(0);
+    await expectLeaderboardNamesToStartEachWordWithACapital(page, '.entry-name', 'Rankings');
 
     const geometry = await board.evaluate((root) => ({
       width: root.querySelector('.sc')!.getBoundingClientRect().width,
@@ -197,6 +270,11 @@ for (const width of [393, 1440]) {
     await board.getByRole('button', { name: 'My Clubs', exact: true }).click();
     await board.getByRole('tab', { name: 'Tournament Stats' }).click();
     await expect(board.getByText('All Recorded Tournaments', { exact: true })).toBeVisible();
+    await expectLeaderboardNamesToStartEachWordWithACapital(
+      page,
+      '.player-name',
+      'Tournament Stats'
+    );
     await expect(board.getByRole('button', { name: 'Previous Period' })).toHaveCount(0);
     await expect(board.locator('.lb-prize-program, .lb-settlement-card')).toHaveCount(0);
     await expectNoSeriousAxeFindings(page, 'My Clubs Tournament Stats');
@@ -225,6 +303,7 @@ for (const width of [393, 1440]) {
           pageErrors: observed.pageErrors,
           failedArenaFiles: observed.failedArenaFiles.length,
           otherBadResponses: observed.otherBadResponses,
+          failedOtherRequests: observed.failedOtherRequests,
         })
     );
 
@@ -233,5 +312,178 @@ for (const width of [393, 1440]) {
     expect(observed.pageErrors, 'uncaught exceptions on the leaderboard').toBe(0);
     expect(appConsoleErrors, 'the application logged errors on the leaderboard').toEqual([]);
     expect(observed.failedArenaFiles, 'Club Arena files that failed to load').toEqual([]);
+    expect(observed.otherBadResponses, 'failed non-Club Arena requests on the leaderboard').toEqual(
+      []
+    );
+    expect(
+      observed.failedOtherRequests,
+      'non-Club Arena requests that failed on the leaderboard'
+    ).toEqual([]);
   });
 }
+
+test('Leaderboard Cache Paints Before Real Revalidation And Expires Safely', async ({ page }) => {
+  await page.setViewportSize({ width: 393, height: 900 });
+  await page.goto('leaderboard');
+  const board = page.locator(BOARD);
+  await expect(board).toBeVisible({ timeout: 30000 });
+  await expect(board.getByRole('tabpanel')).toHaveAttribute('aria-busy', 'false', {
+    timeout: 30000,
+  });
+
+  // Use only this browser context's global weekly record. The reserved E2E
+  // browser context is disposable; no server-side data is written or changed.
+  const cacheKey = await page.evaluate((key) => {
+    sessionStorage.removeItem(key);
+    return key;
+  }, GLOBAL_WEEKLY_PROFIT_CACHE_KEY);
+  const isLeaderboardRefresh = (response: { url(): string }) =>
+    new URL(response.url()).pathname.endsWith('/rpc/fn_global_leaderboard_period');
+
+  const coldStartedAt = Date.now();
+  const coldResponse = page.waitForResponse(isLeaderboardRefresh, { timeout: 30000 });
+  await board.getByRole('button', { name: 'Global', exact: true }).click();
+  await expect(board.getByRole('button', { name: 'Global', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true'
+  );
+  expect((await coldResponse).ok(), 'cold leaderboard refresh should succeed').toBe(true);
+  const coldRpcResponseMs = Date.now() - coldStartedAt;
+  await expect(board.getByRole('tabpanel')).toHaveAttribute('aria-busy', 'false', {
+    timeout: 30000,
+  });
+  const coldFirstReadyMs = Date.now() - coldStartedAt;
+
+  const cached = await page.evaluate((key) => {
+    const raw = sessionStorage.getItem(key);
+    if (!raw) return null;
+    const record = JSON.parse(raw) as { version?: number; storedAt?: number; entries?: unknown[] };
+    return {
+      version: record.version,
+      storedAt: record.storedAt,
+      entryCount: Array.isArray(record.entries) ? record.entries.length : -1,
+    };
+  }, cacheKey);
+  expect(cached?.version, 'cold API data should populate the scoped session cache').toBe(2);
+  expect(
+    cached?.entryCount,
+    'the cache record should contain a valid ranked result'
+  ).toBeGreaterThan(0);
+  const firstRankedName = board.locator('.entry-name').first();
+  await expect(firstRankedName).toBeVisible();
+  const cachePaintMarker = 'Cache Paint Verification';
+  // A browser-only marker proves the rendered rows came from this cache,
+  // not from My Clubs data left on screen during the Global scope change.
+  await page.evaluate(
+    ({ key, marker }) => {
+      const raw = sessionStorage.getItem(key);
+      if (!raw) throw new Error('Expected the cold leaderboard cache record');
+      const record = JSON.parse(raw) as { entries: { username: string }[] };
+      record.entries[0].username = marker;
+      sessionStorage.setItem(key, JSON.stringify(record));
+    },
+    { key: cacheKey, marker: cachePaintMarker }
+  );
+
+  const warmRoutes = new HeldRouteLifecycle();
+  await page.route('**/rest/v1/rpc/fn_global_leaderboard_period**', warmRoutes.handler);
+
+  const warmStartedAt = Date.now();
+  const warmResponse = page.waitForResponse(isLeaderboardRefresh, { timeout: 30000 }).then(
+    (response) => ({ ok: true as const, response }),
+    (error: unknown) => ({ ok: false as const, error })
+  );
+  let warmCachedPaintMs = 0;
+  try {
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await board.getByRole('button', { name: 'Global', exact: true }).click();
+    await warmRoutes.seen;
+    await expect(board.getByRole('tabpanel')).toHaveAttribute('aria-busy', 'false');
+    await expect(firstRankedName).toContainText(cachePaintMarker);
+    warmCachedPaintMs = Date.now() - warmStartedAt;
+    const sameCacheStillPresent = await page.evaluate(
+      (key) => sessionStorage.getItem(key) !== null,
+      cacheKey
+    );
+    expect(sameCacheStillPresent, 'the warm reload should reuse its own cached record').toBe(true);
+  } finally {
+    await warmRoutes.finish(() =>
+      page.unroute('**/rest/v1/rpc/fn_global_leaderboard_period**', warmRoutes.handler)
+    );
+  }
+  const warmOutcome = await warmResponse;
+  if (!warmOutcome.ok) throw warmOutcome.error;
+  expect(warmOutcome.response.ok(), 'warm leaderboard revalidation should succeed').toBe(true);
+  const warmRpcResponseMs = Date.now() - warmStartedAt;
+  await expect(board.getByRole('tabpanel')).toHaveAttribute('aria-busy', 'false', {
+    timeout: 30000,
+  });
+  await expect(firstRankedName).not.toContainText(cachePaintMarker);
+
+  await page.evaluate(
+    ({ key, ttlMs }) => {
+      const raw = sessionStorage.getItem(key);
+      if (!raw) throw new Error('Expected the warm leaderboard cache record');
+      const record = JSON.parse(raw) as { storedAt: number };
+      record.storedAt = Date.now() - ttlMs - 1;
+      sessionStorage.setItem(key, JSON.stringify(record));
+    },
+    { key: cacheKey, ttlMs: LEADERBOARD_CACHE_TTL_MS }
+  );
+
+  const expiredRoutes = new HeldRouteLifecycle();
+  await page.route('**/rest/v1/rpc/fn_global_leaderboard_period**', expiredRoutes.handler);
+
+  const expiredStartedAt = Date.now();
+  const expiredResponse = page.waitForResponse(isLeaderboardRefresh, { timeout: 30000 }).then(
+    (response) => ({ ok: true as const, response }),
+    (error: unknown) => ({ ok: false as const, error })
+  );
+  try {
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await board.getByRole('button', { name: 'Global', exact: true }).click();
+    await expiredRoutes.seen;
+    await expect(board.getByRole('tabpanel')).toHaveAttribute('aria-busy', 'true');
+    const expiredKeyWasRemoved = await page.evaluate(
+      (key) => sessionStorage.getItem(key) === null,
+      cacheKey
+    );
+    expect(expiredKeyWasRemoved, 'an expired record must be evicted before revalidation').toBe(
+      true
+    );
+  } finally {
+    await expiredRoutes.finish(() =>
+      page.unroute('**/rest/v1/rpc/fn_global_leaderboard_period**', expiredRoutes.handler)
+    );
+  }
+  const expiredOutcome = await expiredResponse;
+  if (!expiredOutcome.ok) throw expiredOutcome.error;
+  expect(expiredOutcome.response.ok(), 'expired leaderboard refresh should succeed').toBe(true);
+  await expect(board.getByRole('tabpanel')).toHaveAttribute('aria-busy', 'false', {
+    timeout: 30000,
+  });
+  const expiredFirstReadyMs = Date.now() - expiredStartedAt;
+  await expect(firstRankedName).toBeVisible();
+  const refreshedEntryCount = await page.evaluate((key) => {
+    const raw = sessionStorage.getItem(key);
+    if (!raw) return 0;
+    const record = JSON.parse(raw) as { version?: number; entries?: unknown[] };
+    return record.version === 2 && Array.isArray(record.entries) ? record.entries.length : 0;
+  }, cacheKey);
+  expect(refreshedEntryCount, 'expiry recovery should repopulate ranked data').toBeGreaterThan(0);
+  await expect(board.locator('.lb-error-state')).toHaveCount(0);
+
+  console.log(
+    'LEADERBOARD_CACHE_PERF ' +
+      JSON.stringify({
+        width: 393,
+        coldFirstReadyMs,
+        coldRpcResponseMs,
+        warmCachedPaintMs,
+        warmRpcResponseMs,
+        expiredFirstReadyMs,
+        rpcHeldUntilCachedPaint: true,
+        expiredRecordEvictedBeforeRefresh: true,
+      })
+  );
+});

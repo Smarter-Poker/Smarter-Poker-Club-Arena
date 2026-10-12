@@ -90,8 +90,8 @@ describe('the Diamond test entry is a pass of its own', () => {
   });
 
   it('the prefix is what keeps the test page out of the bundle budget', () => {
-    // scripts/ci/bundle-size.mjs sums every js/css in dist/assets/ against the
-    // whole-app ceiling. The test page shares the directory (pooled, immutable,
+    // scripts/ci/bundle-size.mjs sums every js/css in dist/assets/ into the
+    // whole-app total it reports. The test page shares the directory (pooled, immutable,
     // cached) and is excluded by name, so the two must agree on the prefix.
     const gate = read('scripts/ci/bundle-size.mjs');
     expect(gate).toContain(".filter((f) => !f.startsWith('diamond-test.'))");

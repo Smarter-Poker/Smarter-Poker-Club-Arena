@@ -16,6 +16,13 @@
  *    other leg (CLAUDE.md 10.12);
  *  - the cross-asset seat guard and the 14-day settlement window are LOG-ONLY, because a guard
  *    that can refuse a seat can strand a player mid-hand and there is no arena traffic yet.
+ *
+ * HISTORY, NOT THE LIVE ESTATE (2026-10-04). Every pin below reads the foundation migration
+ * 20260908034530 as it was written. The two doors it defines were replaced by custody
+ * (20260909065458) and dropped by 20261004214251; what is live is pinned by
+ * tests/the-legacy-diamond-arena-database-objects-are-dropped.law.test.ts and the custody
+ * laws. The file is kept because the foundation's other pins (club asset, the log-only seat
+ * guard, the settlement window) still describe installed objects.
  */
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';

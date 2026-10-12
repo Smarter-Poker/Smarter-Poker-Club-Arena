@@ -1,0 +1,568 @@
+-- UNQUALIFIED source preparation. Never run against production.
+-- Two selections of this same file: psql -v historical_before=true/false.
+-- BEFORE: append to the exact authorization fixture with its final ROLLBACK
+-- removed, original functions still installed. Commit ONLY this disposable DB.
+-- Then install prospective capture/ranking/payout/config/opening candidates; AFTER starts its own
+-- transaction and rolls back verification. Root destroys the entire owned DB.
+-- AFTER requires candidate_opening_body_md5/candidate_publish_body_md5/candidate_payout_body_md5 derived
+-- from the exact installed generated candidate definitions, not guessed values.
+-- Original first-completion and original replay responses differ by contract;
+-- comparison is original replay versus prospective replay, not first response.
+\set ON_ERROR_STOP on
+\if :historical_before
+SET LOCAL statement_timeout='60s';
+SET LOCAL lock_timeout='5s';
+DO $guard$ BEGIN
+  IF session_user<>'leaderboard_qualification_bootstrap' OR current_user<>session_user
+    OR inet_server_addr() IS NOT NULL OR current_database()<>'postgres'
+    OR (SELECT count(*) FROM auth.users)<>5 OR (SELECT count(*) FROM public.clubs)<>3
+    OR EXISTS(SELECT 1 FROM public.club_opening_setups)
+    OR to_regnamespace('leaderboard_historical_fixture') IS NOT NULL
+    OR NOT EXISTS(SELECT 1 FROM public.clubs WHERE id='92000000-0000-4000-8000-000000000002'
+      AND owner_id='90000000-0000-4000-8000-000000000002' AND chip_treasury=100000 AND promo_balance=0)
+    OR md5((SELECT prosrc FROM pg_proc WHERE oid='public.fn_complete_club_opening_setup(uuid,uuid,text,numeric,numeric,boolean,numeric,boolean,numeric,numeric,boolean,text,text,text,numeric,boolean,text,numeric,boolean)'::regprocedure))
+       <>'578960fee3c325b9c724e976bed968f4'
+    OR md5((SELECT prosrc FROM pg_proc WHERE oid='public.fn_publish_leaderboard_reward_program(uuid,boolean,text,jsonb,jsonb,text,integer,uuid,boolean)'::regprocedure))
+       <>'ef4ab9935eb3681ba4f1ab068a8b65fd' THEN
+    RAISE EXCEPTION 'Exact original disposable historical fixture required';
+  END IF;
+END $guard$;
+CREATE SCHEMA leaderboard_historical_fixture;
+REVOKE ALL ON SCHEMA leaderboard_historical_fixture FROM PUBLIC;
+CREATE TABLE leaderboard_historical_fixture.proof(operation uuid PRIMARY KEY,publication_operation uuid NOT NULL,opening_replay jsonb,
+  publication_replay jsonb, payout_replay jsonb, period_start date, period_end date,
+  monthly_program uuid NOT NULL, monthly_version integer NOT NULL, monthly_hash text NOT NULL,
+  monthly_start date NOT NULL, monthly_end date NOT NULL, monthly_board jsonb NOT NULL,
+  image text NOT NULL);
+CREATE FUNCTION leaderboard_historical_fixture.digest() RETURNS text LANGUAGE plpgsql AS $digest$
+DECLARE relation text; rows jsonb; image jsonb:='{}'; BEGIN
+  FOREACH relation IN ARRAY ARRAY['clubs','club_members','union_wallets','chip_ledger',
+    'ca_mint_ledger','chip_transactions','wallet_transactions','club_wallet_transactions',
+    'union_wallet_transactions','wallet_credit_idempotency','club_opening_setups',
+    'club_opening_setup_funding','leaderboard_reward_program_versions','club_leaderboard_settings',
+    'promotions','bbj_pools','spin_bonus_pools','spin_reserve_ledger','leaderboard_payout_batches',
+    'leaderboard_payouts','leaderboard_payout_failures','player_stats_snapshots'] LOOP
+    EXECUTE format('SELECT jsonb_agg(to_jsonb(t) ORDER BY to_jsonb(t)::text) FROM public.%I t',relation) INTO rows;
+    image:=image||jsonb_build_object(relation,rows);
+  END LOOP;
+  RETURN md5(image::text);
+END $digest$;
+DO $prepare$
+DECLARE club constant uuid:='92000000-0000-4000-8000-000000000002';
+  operation uuid:=gen_random_uuid(); publication_operation uuid:=gen_random_uuid(); opened jsonb; opening_replay jsonb; publication_replay jsonb;
+  expected_version integer; starts date; ends date; monthly_next date; historical_program uuid:=gen_random_uuid();
+  version_number integer; terms jsonb; response jsonb; payout_replay jsonb; preimage jsonb;
+  member_preimage jsonb; changed integer; established timestamptz;
+  monthly_start date; monthly_end date; weekly_next date; monthly_program uuid:=gen_random_uuid();
+  monthly_version integer; monthly_terms jsonb; monthly_board jsonb;
+BEGIN
+  PERFORM set_config('request.jwt.claims','{"sub":"90000000-0000-4000-8000-000000000002","role":"authenticated"}',true);
+  PERFORM set_config('request.jwt.claim.sub','90000000-0000-4000-8000-000000000002',true);
+  PERFORM set_config('request.jwt.claim.role','authenticated',true);
+  SET LOCAL ROLE authenticated;
+  opened:=public.fn_complete_club_opening_setup(club,operation,'Historical Recovery',-1,-1,
+    false,0,false,0,1,true,'leaderboard','Historical Promotion','',100,false,'profit',0,false);
+  opening_replay:=public.fn_complete_club_opening_setup(club,operation,'Historical Recovery',-1,-1,
+    false,0,false,0,1,true,'leaderboard','Historical Promotion','',100,false,'profit',0,false);
+  RESET ROLE;
+  IF (opened->>'success')::boolean IS DISTINCT FROM true
+    OR (opening_replay->>'already_completed')::boolean IS DISTINCT FROM true
+    OR (SELECT leaderboard_seed_remaining FROM public.club_opening_setups WHERE club_id=club) IS DISTINCT FROM 0
+    OR (SELECT chip_treasury FROM public.clubs WHERE id=club) IS DISTINCT FROM 99900
+    OR (SELECT promo_balance FROM public.clubs WHERE id=club) IS DISTINCT FROM 100 THEN
+    RAISE EXCEPTION 'Original historical funding evidence differs';
+  END IF;
+  SELECT version INTO STRICT expected_version FROM public.leaderboard_reward_program_versions
+    WHERE club_id=club AND operation_id=operation;
+  PERFORM set_config('request.jwt.claims','{"sub":"90000000-0000-4000-8000-000000000002","role":"service_role"}',true);
+  PERFORM set_config('request.jwt.claim.role','service_role',true);
+  SET LOCAL ROLE service_role;
+  -- Opening owns a disabled program; the actual original service door publishes
+  -- the paid program under its own durable identity, backed by real Promo.
+  response:=public.fn_publish_leaderboard_reward_program(club,true,'profit',
+    '[{"rank":1,"amount":50.00},{"rank":2,"amount":30.00},{"rank":3,"amount":20.00}]','[]','balanced',
+    expected_version,publication_operation,true);
+  publication_replay:=public.fn_publish_leaderboard_reward_program(club,true,'profit',
+    '[{"rank":1,"amount":50.00},{"rank":2,"amount":30.00},{"rank":3,"amount":20.00}]','[]','balanced',
+    expected_version,publication_operation,true);
+  RESET ROLE;
+  -- Publication starts next round. Only this disposable bootstrap may prepare
+  -- the same historical program convention as the original payout baseline.
+  -- Paid records are never inserted: the ORIGINAL payout produces them.
+  IF md5((SELECT prosrc FROM pg_proc WHERE oid='public.fn_payout_leaderboard(uuid,text,text,timestamptz,timestamptz)'::regprocedure))
+       <>'2ba8db49240eac826b2f3efe0e262648'
+    OR EXISTS(SELECT 1 FROM public.leaderboard_payout_batches)
+    OR EXISTS(SELECT 1 FROM public.leaderboard_payouts)
+    OR EXISTS(SELECT 1 FROM public.player_stats_snapshots) THEN
+    RAISE EXCEPTION 'Exact original unpaid historical fixture required';
+  END IF;
+  SELECT start_date,end_date INTO STRICT starts,ends FROM public.fn_leaderboard_period_window('weekly',-1);
+  SELECT start_date,end_date INTO STRICT monthly_start,monthly_end FROM public.fn_leaderboard_period_window('monthly',-2);
+  SELECT end_date INTO STRICT weekly_next FROM public.fn_leaderboard_period_window('weekly',0);
+  SELECT end_date INTO STRICT monthly_next FROM public.fn_leaderboard_period_window('monthly',0);
+  established:=(least(starts,monthly_start)-1)::timestamp AT TIME ZONE 'UTC';
+  SELECT to_jsonb(c)-'created_at' INTO STRICT preimage FROM public.clubs c WHERE id=club
+    AND created_at>=transaction_timestamp() AND created_at<=clock_timestamp();
+  UPDATE public.clubs SET created_at=established WHERE id=club;
+  GET DIAGNOSTICS changed=ROW_COUNT;
+  IF changed<>1 OR (SELECT to_jsonb(c)-'created_at' FROM public.clubs c WHERE id=club) IS DISTINCT FROM preimage THEN
+    RAISE EXCEPTION 'Historical club chronology changed other fixture fields';
+  END IF;
+  SELECT to_jsonb(m)-'joined_at' INTO STRICT member_preimage FROM public.club_members m
+    WHERE club_id=club AND user_id='90000000-0000-4000-8000-000000000004'
+      AND joined_at>=transaction_timestamp() AND joined_at<=clock_timestamp()
+      AND role::text='player' AND status::text IN ('active','approved') AND chip_balance=0;
+  UPDATE public.club_members SET joined_at=established WHERE club_id=club
+    AND user_id='90000000-0000-4000-8000-000000000004';
+  GET DIAGNOSTICS changed=ROW_COUNT;
+  IF changed<>1 OR (SELECT to_jsonb(m)-'joined_at' FROM public.club_members m WHERE club_id=club
+    AND user_id='90000000-0000-4000-8000-000000000004') IS DISTINCT FROM member_preimage THEN
+    RAISE EXCEPTION 'Historical member chronology changed other fixture fields';
+  END IF;
+  SELECT max(version)+1 INTO STRICT version_number FROM public.leaderboard_reward_program_versions WHERE club_id=club;
+  terms:=jsonb_build_object('club_id',club,'version',version_number,'rewards_enabled',true,
+    'payout_metric','profit','weekly_prizes','[{"rank":1,"amount":10}]'::jsonb,'monthly_prizes','[]'::jsonb,
+    'funding_owner_type','club','funding_union_id',NULL,'weekly_effective_from',starts,'monthly_effective_from',monthly_next,
+    'overlay_enabled',true);
+  INSERT INTO public.leaderboard_reward_program_versions(id,club_id,version,operation_id,rewards_enabled,payout_metric,
+    weekly_prizes,monthly_prizes,suggestion_key,funding_owner_type,funding_union_id,weekly_effective_from,
+    monthly_effective_from,published_by,program_hash,overlay_enabled)
+  VALUES(historical_program,club,version_number,gen_random_uuid(),true,'profit','[{"rank":1,"amount":10}]','[]',
+    'custom','club',NULL,starts,monthly_next,'90000000-0000-4000-8000-000000000002',md5(terms::text),true);
+  IF public.fn_get_leaderboard_reward_plan(club,'weekly',starts)->>'program_id' IS DISTINCT FROM historical_program::text THEN
+    RAISE EXCEPTION 'Actual historical plan differs';
+  END IF;
+  INSERT INTO public.player_stats_snapshots(user_id,club_id,snapshot_date,hands_played,hands_dealt,sum_big_blind,
+    total_winnings,total_losses,total_rake,tournaments_played,tournaments_won)
+  VALUES('90000000-0000-4000-8000-000000000004',club,starts,0,0,0,0,0,0,0,0),
+    ('90000000-0000-4000-8000-000000000004',club,ends,20,20,40,100,0,0,0,0);
+  PERFORM set_config('request.jwt.claims','{"sub":"90000000-0000-4000-8000-000000000002","role":"service_role"}',true);
+  PERFORM set_config('request.jwt.claim.role','service_role',true);
+  SET LOCAL ROLE service_role;
+  response:=public.fn_payout_leaderboard(club,'weekly','profit',starts::timestamp AT TIME ZONE 'UTC',ends::timestamp AT TIME ZONE 'UTC');
+  payout_replay:=public.fn_payout_leaderboard(club,'weekly','profit',starts::timestamp AT TIME ZONE 'UTC',ends::timestamp AT TIME ZONE 'UTC');
+  RESET ROLE;
+  IF (response->>'success')::boolean IS DISTINCT FROM true OR (response->>'already_settled')::boolean IS DISTINCT FROM false
+    OR (response->>'total_paid')::numeric IS DISTINCT FROM 10 OR (response->>'seed_funded')::numeric IS DISTINCT FROM 0
+    OR (response->>'promo_funded')::numeric IS DISTINCT FROM 10 OR (response->>'overlay_funded')::numeric IS DISTINCT FROM 0
+    OR (payout_replay->>'already_settled')::boolean IS DISTINCT FROM true
+    OR payout_replay->>'batch_id' IS DISTINCT FROM response->>'batch_id'
+    OR (SELECT count(*) FROM public.leaderboard_payout_batches WHERE id=(response->>'batch_id')::uuid
+      AND club_id=club AND period='weekly' AND period_start=starts AND period_end=ends AND program_id=historical_program)<>1
+    OR (SELECT count(*) FROM public.leaderboard_payout_batches)<>1
+    OR (SELECT count(*) FROM public.leaderboard_payouts)<>1
+    OR (SELECT count(*) FROM public.leaderboard_payouts WHERE batch_id=(response->>'batch_id')::uuid
+      AND user_id='90000000-0000-4000-8000-000000000004' AND payout_amount=10)<>1
+    OR (SELECT chip_balance FROM public.club_members WHERE club_id=club
+      AND user_id='90000000-0000-4000-8000-000000000004') IS DISTINCT FROM 10
+    OR (SELECT leaderboard_seed_remaining FROM public.club_opening_setups WHERE club_id=club) IS DISTINCT FROM 0
+    OR (SELECT chip_treasury FROM public.clubs WHERE id=club) IS DISTINCT FROM 99900
+    OR (SELECT promo_balance FROM public.clubs WHERE id=club) IS DISTINCT FROM 90 THEN
+    RAISE EXCEPTION 'Original real paid historical evidence differs';
+  END IF;
+  -- A second ORIGINAL immutable program remains UNPAID through installation.
+  -- Monthly -2 is older than weekly -1 at every calendar position, so its
+  -- two synthetic snapshot dates cannot overwrite the paid weekly inputs.
+  -- These are controlled historical terms/counters, NOT historical cron proof.
+  IF monthly_end>=starts OR monthly_start>=monthly_end
+    OR EXISTS(SELECT 1 FROM public.player_stats_snapshots WHERE club_id=club
+      AND snapshot_date IN(monthly_start,monthly_end)) THEN
+    RAISE EXCEPTION 'Separate unpaid canonical monthly fixture required';
+  END IF;
+  SELECT max(version)+1 INTO STRICT monthly_version FROM public.leaderboard_reward_program_versions WHERE club_id=club;
+  monthly_terms:=jsonb_build_object('club_id',club,'version',monthly_version,'rewards_enabled',true,
+    'payout_metric','profit','weekly_prizes','[]'::jsonb,'monthly_prizes','[{"rank":1,"amount":10}]'::jsonb,
+    'funding_owner_type','club','funding_union_id',NULL,'weekly_effective_from',weekly_next,'monthly_effective_from',monthly_start);
+  INSERT INTO public.leaderboard_reward_program_versions(id,club_id,version,operation_id,rewards_enabled,payout_metric,
+    weekly_prizes,monthly_prizes,suggestion_key,funding_owner_type,funding_union_id,weekly_effective_from,
+    monthly_effective_from,published_by,program_hash,overlay_enabled)
+  VALUES(monthly_program,club,monthly_version,gen_random_uuid(),true,'profit','[]','[{"rank":1,"amount":10}]',
+    'custom','club',NULL,weekly_next,monthly_start,'90000000-0000-4000-8000-000000000002',md5(monthly_terms::text),false);
+  INSERT INTO public.player_stats_snapshots(user_id,club_id,snapshot_date,hands_played,hands_dealt,sum_big_blind,
+    total_winnings,total_losses,total_rake,tournaments_played,tournaments_won)
+  VALUES('90000000-0000-4000-8000-000000000004',club,monthly_start,0,0,0,0,0,0,0,0),
+    ('90000000-0000-4000-8000-000000000004',club,monthly_end,20,20,40,100,0,0,0,0);
+  monthly_board:=jsonb_build_array(jsonb_build_object('user_id','90000000-0000-4000-8000-000000000004',
+    'hands_played',20,'total_winnings',100,'total_losses',0,'tournaments_won',0,'total_rake',0,'sum_big_blind',40,
+    'rank_change',0,'qualified',true,'rank',1,'total_ranked',1,'baseline_date',monthly_start));
+  IF public.fn_get_leaderboard_reward_plan(club,'monthly',monthly_start)->>'program_id' IS DISTINCT FROM monthly_program::text
+    OR EXISTS(SELECT 1 FROM public.leaderboard_payout_batches WHERE club_id=club AND period='monthly') THEN
+    RAISE EXCEPTION 'Original unpaid monthly program selection differs';
+  END IF;
+  -- Replay responses include CURRENT Promo capacity. Capture the original
+  -- comparison after the original payout and program preparation, before
+  -- installation, so both versions see the same real financial preimage.
+  PERFORM set_config('request.jwt.claims','{"sub":"90000000-0000-4000-8000-000000000002","role":"service_role"}',true);
+  PERFORM set_config('request.jwt.claim.sub','90000000-0000-4000-8000-000000000002',true);
+  PERFORM set_config('request.jwt.claim.role','service_role',true);
+  SET LOCAL ROLE service_role;
+  publication_replay:=public.fn_publish_leaderboard_reward_program(club,true,'profit',
+    '[{"rank":1,"amount":50.00},{"rank":2,"amount":30.00},{"rank":3,"amount":20.00}]','[]','balanced',
+    expected_version,publication_operation,true);
+  RESET ROLE;
+  IF (publication_replay->>'wallet_balance')::numeric IS DISTINCT FROM 90 THEN
+    RAISE EXCEPTION 'Original replay must witness post-payout Promo';
+  END IF;
+  SET CONSTRAINTS ALL IMMEDIATE;
+  INSERT INTO leaderboard_historical_fixture.proof VALUES(operation,publication_operation,opening_replay,publication_replay,payout_replay,starts,ends,
+    monthly_program,monthly_version,md5(monthly_terms::text),monthly_start,monthly_end,monthly_board,
+    leaderboard_historical_fixture.digest());
+END $prepare$;
+-- The preceding fixture is validated; new financial doors use normal timing.
+SET CONSTRAINTS ALL DEFERRED;
+
+-- A fourth standalone owns an ORIGINAL unpaid positive seed. Neither the union
+-- house nor its affiliate can legally complete a standalone opening setup.
+CREATE TABLE leaderboard_historical_fixture.seed_proof(club uuid PRIMARY KEY, program uuid,
+  version integer, hash text, starts date, ends date, board jsonb, setup jsonb, funding jsonb);
+DO $seed_prepare$
+DECLARE club constant uuid:='92000000-0000-4000-8000-000000000003';
+  owner constant uuid:='90000000-0000-4000-8000-000000000003';
+  player constant uuid:='90000000-0000-4000-8000-000000000004';
+  operation uuid:=gen_random_uuid(); program uuid:=gen_random_uuid(); result jsonb;
+  starts date; ends date; weekly_next date; version integer; terms jsonb; board jsonb;
+  preimage jsonb; changed integer; original_image text; seed_refused boolean:=false;
+BEGIN
+  IF EXISTS(SELECT 1 FROM public.clubs WHERE id=club)
+    OR (SELECT count(*) FROM public.clubs)<>3 THEN RAISE EXCEPTION 'Fresh fourth standalone required'; END IF;
+  PERFORM set_config('request.jwt.claims','{"sub":"90000000-0000-4000-8000-000000000001","role":"service_role"}',true);
+  PERFORM set_config('request.jwt.claim.sub','90000000-0000-4000-8000-000000000001',true);
+  PERFORM set_config('request.jwt.claim.role','service_role',true);
+  INSERT INTO public.clubs(id,name,owner_id,is_union,union_id,chip_treasury)
+  VALUES(club,'Isolated Historical Seed Standalone',owner,false,NULL,0);
+  IF NOT EXISTS(SELECT 1 FROM public.clubs WHERE id=club AND chip_treasury=100000 AND promo_balance=0 AND NOT is_union AND union_id IS NULL) THEN
+    RAISE EXCEPTION 'Real fourth club opening grant differs'; END IF;
+  PERFORM set_config('request.jwt.claims',jsonb_build_object('sub',owner,'role','authenticated')::text,true);
+  PERFORM set_config('request.jwt.claim.sub',owner::text,true); PERFORM set_config('request.jwt.claim.role','authenticated',true);
+  SET LOCAL ROLE authenticated;
+  result:=public.fn_join_club(club);
+  IF result->>'role' IS DISTINCT FROM 'owner' OR COALESCE(result->>'status','') NOT IN('active','approved') OR (result->>'chip_balance')::numeric IS DISTINCT FROM 0 THEN RAISE EXCEPTION 'Real seed owner join differs'; END IF;
+  result:=public.fn_complete_club_opening_setup(club,operation,'Historical Seed Preservation',-1,-1,false,0,false,0,1,false,'leaderboard','Historical Seed Promotion','',0,true,'profit',100,false);
+  RESET ROLE;
+  IF (result->>'success')::boolean IS DISTINCT FROM true
+    OR (SELECT chip_treasury FROM public.clubs WHERE id=club) IS DISTINCT FROM 99900
+    OR (SELECT promo_balance FROM public.clubs WHERE id=club) IS DISTINCT FROM 0
+    OR (SELECT leaderboard_seed_remaining FROM public.club_opening_setups WHERE club_id=club) IS DISTINCT FROM 100 THEN RAISE EXCEPTION 'Original positive seed allocation differs'; END IF;
+  SET LOCAL ROLE authenticated;
+  result:=public.fn_diamond_game_fund_promo(club,20,'historical-positive-seed-promo-fund');
+  RESET ROLE;
+  IF (result->>'ok')::boolean IS DISTINCT FROM true OR (SELECT chip_treasury FROM public.clubs WHERE id=club) IS DISTINCT FROM 99880
+    OR (SELECT promo_balance FROM public.clubs WHERE id=club) IS DISTINCT FROM 20 THEN RAISE EXCEPTION 'Actual positive seed Promo funding differs'; END IF;
+  PERFORM set_config('request.jwt.claims',jsonb_build_object('sub',player,'role','authenticated')::text,true);
+  PERFORM set_config('request.jwt.claim.sub',player::text,true);
+  SET LOCAL ROLE authenticated; result:=public.fn_join_club(club); RESET ROLE;
+  IF result->>'role' IS DISTINCT FROM 'player' OR COALESCE(result->>'status','') NOT IN('active','approved') OR (result->>'chip_balance')::numeric IS DISTINCT FROM 0 THEN RAISE EXCEPTION 'Real seed player join differs'; END IF;
+  SELECT start_date,end_date INTO STRICT starts,ends FROM public.fn_leaderboard_period_window('monthly',-2);
+  SELECT end_date INTO STRICT weekly_next FROM public.fn_leaderboard_period_window('weekly',0);
+  SELECT to_jsonb(c)-'created_at' INTO STRICT preimage FROM public.clubs c WHERE id=club AND created_at>=transaction_timestamp() AND created_at<=clock_timestamp();
+  UPDATE public.clubs SET created_at=(starts-1)::timestamp AT TIME ZONE 'UTC' WHERE id=club;
+  GET DIAGNOSTICS changed=ROW_COUNT;
+  IF changed<>1 OR (SELECT to_jsonb(c)-'created_at' FROM public.clubs c WHERE id=club) IS DISTINCT FROM preimage THEN RAISE EXCEPTION 'Seed club chronology changed money'; END IF;
+  SELECT to_jsonb(m)-'joined_at' INTO STRICT preimage FROM public.club_members m WHERE club_id=club AND user_id=player AND chip_balance=0 AND joined_at>=transaction_timestamp() AND joined_at<=clock_timestamp();
+  UPDATE public.club_members SET joined_at=(starts-1)::timestamp AT TIME ZONE 'UTC' WHERE club_id=club AND user_id=player;
+  GET DIAGNOSTICS changed=ROW_COUNT;
+  IF changed<>1 OR (SELECT to_jsonb(m)-'joined_at' FROM public.club_members m WHERE club_id=club AND user_id=player) IS DISTINCT FROM preimage THEN RAISE EXCEPTION 'Seed member chronology changed money'; END IF;
+  SELECT max(v.version)+1 INTO STRICT version FROM public.leaderboard_reward_program_versions v WHERE club_id=club;
+  terms:=jsonb_build_object('club_id',club,'version',version,'rewards_enabled',true,'payout_metric','profit','weekly_prizes','[]'::jsonb,'monthly_prizes','[{"rank":1,"amount":10}]'::jsonb,'funding_owner_type','club','funding_union_id',NULL,'weekly_effective_from',weekly_next,'monthly_effective_from',starts);
+  INSERT INTO public.leaderboard_reward_program_versions(id,club_id,version,operation_id,rewards_enabled,payout_metric,weekly_prizes,monthly_prizes,suggestion_key,funding_owner_type,funding_union_id,weekly_effective_from,monthly_effective_from,published_by,program_hash,overlay_enabled)
+  VALUES(program,club,version,gen_random_uuid(),true,'profit','[]','[{"rank":1,"amount":10}]','custom','club',NULL,weekly_next,starts,owner,md5(terms::text),false);
+  INSERT INTO public.player_stats_snapshots(user_id,club_id,snapshot_date,hands_played,hands_dealt,sum_big_blind,total_winnings,total_losses,total_rake,tournaments_played,tournaments_won)
+  VALUES(player,club,starts,0,0,0,0,0,0,0,0),(player,club,ends,20,20,40,100,0,0,0,0);
+  board:=jsonb_build_array(jsonb_build_object('user_id',player,'hands_played',20,'total_winnings',100,'total_losses',0,'tournaments_won',0,'total_rake',0,'sum_big_blind',40,'rank_change',0,'qualified',true,'rank',1,'total_ranked',1,'baseline_date',starts));
+  IF public.fn_get_leaderboard_reward_plan(club,'monthly',starts)->>'program_id' IS DISTINCT FROM program::text OR EXISTS(SELECT 1 FROM public.leaderboard_payout_batches WHERE club_id=club) THEN RAISE EXCEPTION 'Positive seed original unpaid selection differs'; END IF;
+  INSERT INTO leaderboard_historical_fixture.seed_proof VALUES(club,program,version,md5(terms::text),starts,ends,board,
+    (SELECT to_jsonb(t) FROM public.club_opening_setups t WHERE club_id=club),
+    (SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM public.club_opening_setup_funding t WHERE club_id=club));
+  SET CONSTRAINTS ALL IMMEDIATE;
+  -- The ORIGINAL seeded payout cannot commit under its real accounting guard:
+  -- it removes Seed without its debit leg. Prove the refusal and whole rollback;
+  -- never fabricate a paid receipt or corrective journal to get past the guard.
+  original_image:=leaderboard_historical_fixture.digest();
+  SET CONSTRAINTS ALL DEFERRED;
+  BEGIN
+    PERFORM set_config('request.jwt.claims',jsonb_build_object('sub',owner,'role','service_role')::text,true);
+    PERFORM set_config('request.jwt.claim.sub',owner::text,true);
+    PERFORM set_config('request.jwt.claim.role','service_role',true);
+    PERFORM set_config('app.ledger_correlation',gen_random_uuid()::text,true);
+    SET LOCAL ROLE service_role;
+    result:=public.fn_payout_leaderboard(club,'monthly','profit',
+      starts::timestamp AT TIME ZONE 'UTC',ends::timestamp AT TIME ZONE 'UTC');
+    RESET ROLE;
+    SET CONSTRAINTS ALL IMMEDIATE;
+  EXCEPTION WHEN SQLSTATE '23514' THEN
+    IF SQLERRM NOT LIKE 'REFUSED: balance_moved_without_its_ledger_row account=opening_setup:'||club::text||' %'
+      AND SQLERRM NOT LIKE 'REFUSED: balance_moved_without_its_ledger_row account=leaderboard_round:'||club::text||' %' THEN RAISE; END IF;
+    seed_refused:=true;
+  END;
+  IF NOT seed_refused OR leaderboard_historical_fixture.digest() IS DISTINCT FROM original_image
+    OR EXISTS(SELECT 1 FROM public.leaderboard_payout_batches WHERE club_id=club)
+    OR (SELECT leaderboard_seed_remaining FROM public.club_opening_setups WHERE club_id=club) IS DISTINCT FROM 100
+    OR (SELECT promo_balance FROM public.clubs WHERE id=club) IS DISTINCT FROM 20 THEN
+    RAISE EXCEPTION 'Original seeded payout refusal did not restore exact historical preimage';
+  END IF;
+  SET CONSTRAINTS ALL IMMEDIATE;
+  UPDATE leaderboard_historical_fixture.proof SET image=leaderboard_historical_fixture.digest();
+END $seed_prepare$;
+COMMIT;
+\else
+BEGIN;
+SET LOCAL statement_timeout='60s';
+SET LOCAL lock_timeout='5s';
+SELECT set_config('leaderboard_test.opening_body_md5', :'candidate_opening_body_md5', true);
+SELECT set_config('leaderboard_test.publish_body_md5', :'candidate_publish_body_md5', true);
+SELECT set_config('leaderboard_test.payout_body_md5', :'candidate_payout_body_md5', true);
+DO $verify$
+<<legacy_verify>>
+DECLARE club constant uuid:='92000000-0000-4000-8000-000000000002';
+  proof leaderboard_historical_fixture.proof%ROWTYPE; opening_replay jsonb; publication_replay jsonb;
+  expected_version integer; rejected boolean:=false; payout_replay jsonb;
+  response jsonb; replay jsonb; monthly_plan jsonb; basis jsonb; board jsonb; winners jsonb;
+  original_batch jsonb; original_payouts jsonb; receipt jsonb; paid_image text; correlation uuid;
+  legacy_passed boolean:=false;
+BEGIN
+  IF session_user<>'leaderboard_qualification_bootstrap' OR current_user<>session_user
+    OR inet_server_addr() IS NOT NULL OR current_database()<>'postgres'
+    OR (SELECT count(*) FROM auth.users)<>5 OR (SELECT count(*) FROM public.clubs)<>4
+    OR (SELECT count(*) FROM leaderboard_historical_fixture.proof)<>1
+    OR current_setting('leaderboard_test.opening_body_md5') !~ '^[0-9a-f]{32}$'
+    OR current_setting('leaderboard_test.publish_body_md5') !~ '^[0-9a-f]{32}$'
+    OR current_setting('leaderboard_test.payout_body_md5') !~ '^[0-9a-f]{32}$'
+    OR current_setting('leaderboard_test.payout_body_md5')='2ba8db49240eac826b2f3efe0e262648'
+    OR md5((SELECT prosrc FROM pg_proc WHERE oid='public.fn_payout_leaderboard(uuid,text,text,timestamptz,timestamptz)'::regprocedure))
+       <>current_setting('leaderboard_test.payout_body_md5')
+    OR current_setting('leaderboard_test.opening_body_md5')='578960fee3c325b9c724e976bed968f4'
+    OR current_setting('leaderboard_test.publish_body_md5')='ef4ab9935eb3681ba4f1ab068a8b65fd'
+    OR md5((SELECT prosrc FROM pg_proc WHERE oid='public.fn_complete_club_opening_setup(uuid,uuid,text,numeric,numeric,boolean,numeric,boolean,numeric,numeric,boolean,text,text,text,numeric,boolean,text,numeric,boolean)'::regprocedure))
+       <>current_setting('leaderboard_test.opening_body_md5')
+    OR md5((SELECT prosrc FROM pg_proc WHERE oid='public.fn_publish_leaderboard_reward_program(uuid,boolean,text,jsonb,jsonb,text,integer,uuid,boolean)'::regprocedure))
+       <>current_setting('leaderboard_test.publish_body_md5') THEN
+    RAISE EXCEPTION 'Exact disposable historical readback required' USING ERRCODE='P1001';
+  END IF;
+  SELECT * INTO STRICT proof FROM leaderboard_historical_fixture.proof;
+  IF leaderboard_historical_fixture.digest() IS DISTINCT FROM proof.image THEN
+    RAISE EXCEPTION 'Candidate installation changed historical state' USING ERRCODE='P1002';
+  END IF;
+  SELECT version-1 INTO STRICT expected_version FROM public.leaderboard_reward_program_versions
+    WHERE club_id=club AND operation_id=proof.publication_operation;
+  PERFORM set_config('request.jwt.claims','{"sub":"90000000-0000-4000-8000-000000000002","role":"authenticated"}',true);
+  PERFORM set_config('request.jwt.claim.sub','90000000-0000-4000-8000-000000000002',true);
+  PERFORM set_config('request.jwt.claim.role','authenticated',true);
+  SET LOCAL ROLE authenticated;
+  opening_replay:=public.fn_complete_club_opening_setup(club,proof.operation,'Historical Recovery',-1,-1,
+    false,0,false,0,1,true,'leaderboard','Historical Promotion','',100,false,'profit',0,false);
+  RESET ROLE;
+  PERFORM set_config('request.jwt.claims','{"sub":"90000000-0000-4000-8000-000000000002","role":"service_role"}',true);
+  PERFORM set_config('request.jwt.claim.role','service_role',true);
+  SET LOCAL ROLE service_role;
+  publication_replay:=public.fn_publish_leaderboard_reward_program(club,true,'profit',
+    '[{"rank":1,"amount":50.00},{"rank":2,"amount":30.00},{"rank":3,"amount":20.00}]','[]','balanced',
+    expected_version,proof.publication_operation,true);
+  BEGIN
+    PERFORM public.fn_publish_leaderboard_reward_program(club,true,'profit',
+      '[{"rank":1,"amount":50.00},{"rank":2,"amount":30.00},{"rank":3,"amount":20.00}]','[]','balanced',
+      expected_version+1,gen_random_uuid(),true);
+  EXCEPTION WHEN SQLSTATE '22023' THEN
+    IF SQLERRM<>'LEADERBOARD_PROMO_ONLY|Club Bank Overlay Is Not Allowed For Leaderboard Prizes' THEN RAISE; END IF;
+    rejected:=true;
+  END;
+  payout_replay:=public.fn_payout_leaderboard(club,'weekly','profit',proof.period_start::timestamp AT TIME ZONE 'UTC',proof.period_end::timestamp AT TIME ZONE 'UTC');
+  RESET ROLE;
+  SET CONSTRAINTS ALL IMMEDIATE;
+  IF NOT rejected OR opening_replay IS DISTINCT FROM proof.opening_replay
+    OR publication_replay IS DISTINCT FROM proof.publication_replay
+    OR payout_replay IS DISTINCT FROM proof.payout_replay
+    OR leaderboard_historical_fixture.digest() IS DISTINCT FROM proof.image THEN
+    RAISE EXCEPTION 'Historical replay or atomic new-overlay refusal differs' USING ERRCODE='P1003';
+  END IF;
+  -- Existing-club inventory was captured by the EXACT candidate installation.
+  -- Exercise both independent canonical cutoffs without time-warping immutable
+  -- rollout metadata, creating complete captures, or changing financial terms.
+  IF NOT EXISTS(SELECT 1 FROM public.leaderboard_basis_existing_clubs WHERE club_id=club)
+    OR NOT EXISTS(SELECT 1 FROM public.leaderboard_basis_rollout WHERE singleton
+      AND proof.period_start<weekly_v2_from AND proof.monthly_start<monthly_v2_from)
+    OR proof.monthly_end>(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date
+    OR extract(day FROM proof.monthly_start)<>1
+    OR proof.monthly_end<>(proof.monthly_start+interval '1 month')::date
+    OR EXISTS(SELECT 1 FROM public.leaderboard_complete_captures)
+    OR EXISTS(SELECT 1 FROM public.leaderboard_capture_counters)
+    OR EXISTS(SELECT 1 FROM public.leaderboard_round_basis_receipts) THEN
+    RAISE EXCEPTION 'Exact existing-club legacy rollout fixture required' USING ERRCODE='P1004';
+  END IF;
+  IF public.fn_leaderboard_complete_round_basis(club,'weekly',proof.period_start,proof.period_end)
+       IS DISTINCT FROM '{"basis_version":"legacy_v1","complete":false}'::jsonb
+    OR public.fn_leaderboard_complete_round_basis(club,'monthly',proof.monthly_start,proof.monthly_end)
+       IS DISTINCT FROM '{"basis_version":"legacy_v1","complete":false}'::jsonb THEN
+    RAISE EXCEPTION 'Existing weekly or monthly terms were misclassified as complete' USING ERRCODE='P1005';
+  END IF;
+  SET CONSTRAINTS ALL DEFERRED;
+  -- This new settlement and its replay self-abort even on PASS. The prior paid
+  -- history remains untouched, and the final outer ROLLBACK still owns cleanup.
+  BEGIN
+    SELECT to_jsonb(b) INTO STRICT original_batch FROM public.leaderboard_payout_batches b
+      WHERE b.id=(proof.payout_replay->>'batch_id')::uuid;
+    SELECT jsonb_agg(to_jsonb(p) ORDER BY p.id) INTO original_payouts FROM public.leaderboard_payouts p
+      WHERE p.batch_id=(proof.payout_replay->>'batch_id')::uuid;
+    monthly_plan:=public.fn_get_leaderboard_reward_plan(club,'monthly',proof.monthly_start);
+    SELECT COALESCE(jsonb_agg(to_jsonb(r) ORDER BY r.rank,r.user_id),'[]'::jsonb) INTO board
+      FROM public.fn_club_leaderboard_by_dates(club,'profit',proof.monthly_start,proof.monthly_end,1000000,0) r;
+    basis:='{"basis_version":"legacy_v1","complete":false}'::jsonb;
+    winners:='[{"user_id":"90000000-0000-4000-8000-000000000004","rank":1,"amount":10}]'::jsonb;
+    IF board IS DISTINCT FROM proof.monthly_board
+      OR monthly_plan->>'program_id' IS DISTINCT FROM proof.monthly_program::text
+      OR (monthly_plan->>'program_version')::integer IS DISTINCT FROM proof.monthly_version
+      OR monthly_plan->>'program_hash' IS DISTINCT FROM proof.monthly_hash
+      OR monthly_plan->'prizes' IS DISTINCT FROM '[{"rank":1,"amount":10}]'::jsonb
+      OR (SELECT count(*) FROM public.leaderboard_payout_batches)<>1 THEN
+      RAISE EXCEPTION 'Independently expected unpaid legacy board or original terms differ' USING ERRCODE='P1006';
+    END IF;
+    IF public.fn_player_home_club('90000000-0000-4000-8000-000000000004',NULL) IS DISTINCT FROM club
+      OR (SELECT chip_balance FROM public.club_members WHERE club_id=club AND user_id='90000000-0000-4000-8000-000000000004') IS DISTINCT FROM 10 THEN
+      RAISE EXCEPTION 'Unpaid legacy recipient wallet preimage differs' USING ERRCODE='P1007';
+    END IF;
+    correlation:=gen_random_uuid(); PERFORM set_config('app.ledger_correlation',correlation::text,true);
+    PERFORM set_config('request.jwt.claims','{"sub":"90000000-0000-4000-8000-000000000001","role":"service_role"}',true);
+    PERFORM set_config('request.jwt.claim.sub','90000000-0000-4000-8000-000000000001',true);
+    PERFORM set_config('request.jwt.claim.role','service_role',true);
+    SET LOCAL ROLE service_role;
+    response:=public.fn_payout_leaderboard(club,'monthly','profit',
+      proof.monthly_start::timestamp AT TIME ZONE 'UTC',proof.monthly_end::timestamp AT TIME ZONE 'UTC');
+    RESET ROLE;
+    IF (response->>'success')::boolean IS DISTINCT FROM true
+      OR (response->>'already_settled')::boolean IS DISTINCT FROM false
+      OR (response->>'total_paid')::numeric IS DISTINCT FROM 10
+      OR (response->>'promo_funded')::numeric IS DISTINCT FROM 10
+      OR (response->>'seed_funded')::numeric IS DISTINCT FROM 0
+      OR (response->>'overlay_funded')::numeric IS DISTINCT FROM 0
+      OR (response->>'winner_count')::integer IS DISTINCT FROM 1
+      OR (SELECT chip_treasury FROM public.clubs WHERE id=club) IS DISTINCT FROM 99900
+      OR (SELECT promo_balance FROM public.clubs WHERE id=club) IS DISTINCT FROM 80
+      OR (SELECT leaderboard_seed_remaining FROM public.club_opening_setups WHERE club_id=club) IS DISTINCT FROM 0
+      OR (SELECT chip_balance FROM public.club_members WHERE club_id=club
+        AND user_id='90000000-0000-4000-8000-000000000004') IS DISTINCT FROM 20
+      OR (SELECT count(*) FROM public.leaderboard_payout_batches)<>2
+      OR (SELECT count(*) FROM public.leaderboard_payouts)<>2
+      OR (SELECT count(*) FROM public.leaderboard_payout_batches WHERE id=(response->>'batch_id')::uuid
+        AND club_id=club AND period='monthly' AND period_start=proof.monthly_start AND period_end=proof.monthly_end
+        AND program_id=proof.monthly_program AND program_version=proof.monthly_version AND program_hash=proof.monthly_hash
+        AND total_paid=10 AND promo_funded=10 AND seed_funded=0 AND overlay_funded=0 AND winner_count=1)<>1
+      OR (SELECT count(*) FROM public.leaderboard_payouts WHERE batch_id=(response->>'batch_id')::uuid
+        AND user_id='90000000-0000-4000-8000-000000000004' AND rank=1 AND payout_amount=10)<>1
+      OR (SELECT count(*) FROM public.wallet_credit_idempotency WHERE key=format('leaderboard:%s:monthly:%s:%s',
+        club,proof.monthly_start,'90000000-0000-4000-8000-000000000004')
+        AND user_id='90000000-0000-4000-8000-000000000004' AND amount=10)<>1
+      OR (SELECT count(*) FROM public.wallet_transactions WHERE related_entity_id=proof.monthly_program
+        AND category='leaderboard_payout' AND user_id='90000000-0000-4000-8000-000000000004'
+        AND amount=10 AND type='credit')<>1 THEN
+      RAISE EXCEPTION 'New legacy settlement Promo-only conservation or durable receipts differ' USING ERRCODE='P1008';
+    END IF;
+    SELECT to_jsonb(r) INTO STRICT receipt FROM public.leaderboard_round_basis_receipts r
+      WHERE r.club_id=club AND r.period='monthly' AND r.period_start=proof.monthly_start
+        AND r.period_end=proof.monthly_end AND r.metric='profit'
+        AND r.program_id=proof.monthly_program AND r.program_version=proof.monthly_version AND r.program_hash=proof.monthly_hash
+        AND r.basis_version='legacy_v1' AND r.basis=legacy_verify.basis AND r.basis_hash=md5(legacy_verify.basis::text)
+        -- JSONB numeric equality ignores presentation scale; hashes must seal
+        -- the ACTUAL resolved bytes (10.00), not the literal expected scale (10).
+        AND r.selected_board=proof.monthly_board AND r.selected_board_hash=md5(r.selected_board::text)
+        AND r.winners=legacy_verify.winners AND r.winners_hash=md5(r.winners::text);
+    IF (SELECT count(*) FROM public.leaderboard_round_basis_receipts)<>1
+      OR (SELECT count(*) FROM public.chip_ledger WHERE correlation_id=correlation)<>2
+      OR (SELECT count(*) FROM public.chip_ledger WHERE correlation_id=correlation AND category='leaderboard_payout'
+        AND from_type='promo_wallet' AND from_entity_id=club AND to_type='leaderboard_round' AND to_entity_id=club
+        AND club_id=club AND amount=10 AND pre_from_balance=90 AND post_from_balance=80)<>1
+      OR (SELECT count(*) FROM public.chip_ledger WHERE correlation_id=correlation AND category='leaderboard_payout'
+        AND from_type='leaderboard_round' AND from_entity_id=club AND to_type='player_wallet'
+        AND to_entity_id='90000000-0000-4000-8000-000000000004'
+        AND club_id=club AND amount=10)<>1
+      OR (SELECT to_jsonb(b) FROM public.leaderboard_payout_batches b WHERE b.id=(proof.payout_replay->>'batch_id')::uuid)
+        IS DISTINCT FROM original_batch
+      OR (SELECT jsonb_agg(to_jsonb(p) ORDER BY p.id) FROM public.leaderboard_payouts p
+        WHERE p.batch_id=(proof.payout_replay->>'batch_id')::uuid) IS DISTINCT FROM original_payouts THEN
+      RAISE EXCEPTION 'Legacy settlement journal or prior immutable paid history differs' USING ERRCODE='P1009';
+    END IF;
+    paid_image:=leaderboard_historical_fixture.digest();
+    SET LOCAL ROLE service_role;
+    replay:=public.fn_payout_leaderboard(club,'monthly','profit',
+      proof.monthly_start::timestamp AT TIME ZONE 'UTC',proof.monthly_end::timestamp AT TIME ZONE 'UTC');
+    RESET ROLE;
+    IF (replay->>'already_settled')::boolean IS DISTINCT FROM true
+      OR replay->>'batch_id' IS DISTINCT FROM response->>'batch_id'
+      OR leaderboard_historical_fixture.digest() IS DISTINCT FROM paid_image
+      OR (SELECT to_jsonb(r) FROM public.leaderboard_round_basis_receipts r WHERE r.club_id=club
+        AND r.period='monthly' AND r.period_start=proof.monthly_start) IS DISTINCT FROM receipt THEN
+      RAISE EXCEPTION 'New legacy settlement replay changed money or immutable basis' USING ERRCODE='P1010';
+    END IF;
+    SET CONSTRAINTS ALL IMMEDIATE;
+    RAISE EXCEPTION USING ERRCODE='Q0004',MESSAGE='UnpaidLegacySettlementPassedAndRolledBack';
+  EXCEPTION WHEN SQLSTATE 'Q0004' THEN legacy_passed:=true;
+  END;
+  IF NOT legacy_passed OR leaderboard_historical_fixture.digest() IS DISTINCT FROM proof.image
+    OR EXISTS(SELECT 1 FROM public.leaderboard_round_basis_receipts) THEN
+    RAISE EXCEPTION 'Unpaid legacy settlement did not roll back to exact historical preimage' USING ERRCODE='P1011';
+  END IF;
+END $verify$;
+
+DO $positive_seed$
+<<seed_verify>>
+DECLARE proof leaderboard_historical_fixture.seed_proof%ROWTYPE; image text; paid_image text;
+  player constant uuid:='90000000-0000-4000-8000-000000000004';
+  response jsonb; replay jsonb; receipt jsonb; correlation uuid:=gen_random_uuid(); passed boolean:=false;
+  home_club uuid; wallet_before numeric; expected_wallets jsonb;
+BEGIN
+  SELECT * INTO STRICT proof FROM leaderboard_historical_fixture.seed_proof;
+  SELECT p.image INTO STRICT image FROM leaderboard_historical_fixture.proof p;
+  IF leaderboard_historical_fixture.digest() IS DISTINCT FROM image
+    OR (SELECT count(*) FROM public.clubs)<>4
+    OR NOT EXISTS(SELECT 1 FROM public.leaderboard_basis_existing_clubs WHERE club_id=proof.club)
+    OR public.fn_leaderboard_complete_round_basis(proof.club,'monthly',proof.starts,proof.ends) IS DISTINCT FROM '{"basis_version":"legacy_v1","complete":false}'::jsonb
+    OR (SELECT chip_balance FROM public.club_members WHERE club_id=proof.club AND user_id=player) IS DISTINCT FROM 0
+    OR (SELECT leaderboard_seed_remaining FROM public.club_opening_setups WHERE club_id=proof.club) IS DISTINCT FROM 100
+    OR (SELECT jsonb_agg(to_jsonb(r) ORDER BY r.rank,r.user_id) FROM public.fn_club_leaderboard_by_dates(proof.club,'profit',proof.starts,proof.ends,1000000,0) r) IS DISTINCT FROM proof.board
+    OR public.fn_get_leaderboard_reward_plan(proof.club,'monthly',proof.starts)->>'program_id' IS DISTINCT FROM proof.program::text THEN RAISE EXCEPTION 'Positive seed exact installed legacy preimage differs' USING ERRCODE='P1012'; END IF;
+  home_club:=public.fn_player_home_club(player,NULL);
+  IF home_club IS NULL OR home_club IS DISTINCT FROM (SELECT club_id FROM public.club_members
+      WHERE user_id=player AND status IN('active','approved') ORDER BY joined_at ASC NULLS LAST,club_id LIMIT 1) THEN
+    RAISE EXCEPTION 'Positive seed recipient home wallet differs' USING ERRCODE='P1013';
+  END IF;
+  SELECT chip_balance INTO STRICT wallet_before FROM public.club_members WHERE club_id=home_club AND user_id=player;
+  SELECT jsonb_agg(jsonb_build_object('club_id',club_id,'user_id',user_id,
+      'chip_balance',COALESCE(chip_balance,0)+CASE WHEN club_id=home_club AND user_id=player THEN 10 ELSE 0 END)
+      ORDER BY club_id,user_id) INTO expected_wallets FROM public.club_members;
+  BEGIN
+    PERFORM set_config('request.jwt.claims','{"sub":"90000000-0000-4000-8000-000000000001","role":"service_role"}',true);
+    PERFORM set_config('request.jwt.claim.sub','90000000-0000-4000-8000-000000000001',true); PERFORM set_config('request.jwt.claim.role','service_role',true);
+    PERFORM set_config('app.ledger_correlation',correlation::text,true);
+    SET LOCAL ROLE service_role;
+    response:=public.fn_payout_leaderboard(proof.club,'monthly','profit',proof.starts::timestamp AT TIME ZONE 'UTC',proof.ends::timestamp AT TIME ZONE 'UTC');
+    RESET ROLE;
+    IF (response->>'success')::boolean IS DISTINCT FROM true OR (response->>'already_settled')::boolean IS DISTINCT FROM false
+      OR (response->>'total_paid')::numeric IS DISTINCT FROM 10 OR (response->>'promo_funded')::numeric IS DISTINCT FROM 10
+      OR (response->>'seed_funded')::numeric IS DISTINCT FROM 0 OR (response->>'overlay_funded')::numeric IS DISTINCT FROM 0
+      OR (SELECT chip_treasury FROM public.clubs WHERE id=proof.club) IS DISTINCT FROM 99880
+      OR (SELECT promo_balance FROM public.clubs WHERE id=proof.club) IS DISTINCT FROM 10
+      OR (SELECT chip_balance FROM public.club_members WHERE club_id=home_club AND user_id=player) IS DISTINCT FROM wallet_before+10
+      OR (SELECT jsonb_agg(jsonb_build_object('club_id',club_id,'user_id',user_id,'chip_balance',COALESCE(chip_balance,0))
+          ORDER BY club_id,user_id) FROM public.club_members) IS DISTINCT FROM expected_wallets
+      OR (SELECT to_jsonb(t) FROM public.club_opening_setups t WHERE club_id=proof.club) IS DISTINCT FROM proof.setup
+      OR (SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM public.club_opening_setup_funding t WHERE club_id=proof.club) IS DISTINCT FROM proof.funding
+      OR (SELECT count(*) FROM public.leaderboard_payout_batches WHERE club_id=proof.club)<>1
+      OR (SELECT count(*) FROM public.leaderboard_payout_batches WHERE id=(response->>'batch_id')::uuid AND club_id=proof.club AND program_id=proof.program AND program_version=proof.version AND program_hash=proof.hash AND period='monthly' AND period_start=proof.starts AND period_end=proof.ends AND total_paid=10 AND promo_funded=10 AND seed_funded=0 AND overlay_funded=0 AND winner_count=1)<>1
+      OR (SELECT count(*) FROM public.leaderboard_payouts WHERE batch_id=(response->>'batch_id')::uuid AND user_id=player AND payout_amount=10 AND rank=1)<>1
+      OR (SELECT count(*) FROM public.wallet_credit_idempotency WHERE key=format('leaderboard:%s:monthly:%s:%s',proof.club,proof.starts,player) AND user_id=player AND amount=10)<>1
+      OR (SELECT count(*) FROM public.wallet_transactions WHERE related_entity_id=proof.program AND user_id=player AND category='leaderboard_payout' AND type='credit' AND amount=10)<>1 THEN RAISE EXCEPTION 'Positive seed was used released or prospective receipts differ' USING ERRCODE='P1014'; END IF;
+    SELECT to_jsonb(r) INTO STRICT receipt FROM public.leaderboard_round_basis_receipts r WHERE club_id=proof.club AND period='monthly' AND period_start=proof.starts AND period_end=proof.ends AND metric='profit' AND program_id=proof.program AND program_version=proof.version AND program_hash=proof.hash AND basis_version='legacy_v1' AND basis='{"basis_version":"legacy_v1","complete":false}'::jsonb AND basis_hash=md5(basis::text) AND selected_board=proof.board AND selected_board_hash=md5(selected_board::text) AND winners=jsonb_build_array(jsonb_build_object('user_id',player,'rank',1,'amount',10)) AND winners_hash=md5(winners::text);
+    IF (SELECT count(*) FROM public.chip_ledger WHERE correlation_id=correlation)<>2
+      OR (SELECT count(*) FROM public.chip_ledger WHERE correlation_id=correlation AND category='leaderboard_payout' AND from_type='promo_wallet' AND from_entity_id=proof.club AND to_type='leaderboard_round' AND to_entity_id=proof.club AND club_id=proof.club AND amount=10 AND pre_from_balance=20 AND post_from_balance=10)<>1
+      OR (SELECT count(*) FROM public.chip_ledger WHERE correlation_id=correlation AND category='leaderboard_payout' AND from_type='leaderboard_round' AND from_entity_id=proof.club AND to_type='player_wallet' AND to_entity_id=player AND club_id=home_club AND amount=10)<>1 THEN RAISE EXCEPTION 'Positive seed settlement journal differs' USING ERRCODE='P1015'; END IF;
+    paid_image:=leaderboard_historical_fixture.digest();
+    SET LOCAL ROLE service_role;
+    replay:=public.fn_payout_leaderboard(proof.club,'monthly','profit',proof.starts::timestamp AT TIME ZONE 'UTC',proof.ends::timestamp AT TIME ZONE 'UTC');
+    RESET ROLE;
+    IF (replay->>'already_settled')::boolean IS DISTINCT FROM true OR replay->>'batch_id' IS DISTINCT FROM response->>'batch_id' OR leaderboard_historical_fixture.digest() IS DISTINCT FROM paid_image OR (SELECT to_jsonb(r) FROM public.leaderboard_round_basis_receipts r WHERE club_id=proof.club AND period='monthly' AND period_start=proof.starts) IS DISTINCT FROM receipt THEN RAISE EXCEPTION 'Positive seed replay changed history' USING ERRCODE='P1016'; END IF;
+    SET CONSTRAINTS ALL IMMEDIATE;
+    RAISE EXCEPTION USING ERRCODE='Q0005',MESSAGE='PositiveHistoricalSeedPassedAndRolledBack';
+  EXCEPTION WHEN SQLSTATE 'Q0005' THEN passed:=true; END;
+  IF NOT passed OR leaderboard_historical_fixture.digest() IS DISTINCT FROM image OR EXISTS(SELECT 1 FROM public.leaderboard_round_basis_receipts) THEN RAISE EXCEPTION 'Positive seed case did not restore exact preimage' USING ERRCODE='P1017'; END IF;
+END $positive_seed$;
+SELECT 'HISTORICAL_REPLAY|PASS';
+ROLLBACK;
+\endif

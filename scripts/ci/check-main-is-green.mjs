@@ -40,11 +40,39 @@
  * product, not a defect, and the first run of this detector flagged it - which
  * would have taught everyone to ignore this detector inside a week.
  *
- * So the discriminator is not "is it red" but "is anybody being told". A
- * failing workflow with an open issue touched since the failures began is
- * already speaking for itself and is reported as `loud`. A failing workflow
- * with nothing open is `SILENT`, and silent is the only thing that alarms.
- * That is the distinction the Global Footer E2E case was made of.
+ * So the discriminator is not "is it red" but "is anybody being told".
+ *
+ * ── AND IT MUST NOT BE INFERRED FROM AN ISSUE THIS FILE WROTE (2026-09-30) ───
+ * It used to be. `r.loud = hasOpenAlarm(...)` muted any workflow an open
+ * main-health issue named - and this detector is the only thing that writes
+ * that label and that marker. The alarm step copies this log into the issue,
+ * the log prints a marker for every red workflow, and the next run reads them
+ * back as "somebody is already being told". The detector suppressed itself
+ * with its own output: ten workflows muted, one of them red for 29 days with
+ * no green run, and this job reporting success the whole time.
+ *
+ * A marker this file wrote is now a RECEIPT, not a mute switch. `tracked`
+ * changes the word in the report and nothing else; the narrow 10.83 exemption
+ * lives in `SELF_ALARMING_WORKFLOWS`, where it is declared rather than
+ * guessed. Full reasoning: scripts/ci/lib/workflowVerdicts.mjs.
+ *
+ * ── AND ITS OWN VERDICT IS NOT EVIDENCE ABOUT THE ESTATE (2026-10-03) ────────
+ * This file reads EVERY active workflow, including the one it is running
+ * inside. So its own exit code decided its own next input, and green was
+ * unreachable by arithmetic: with the whole estate green, the previous run's
+ * failure still put `Production Integrity Audit` in `red`, past the threshold,
+ * and alarmed. Measured on run 37098827354 as "112 consecutive failed
+ * verdict(s) over at least 21.5 days, no green run in the window", reported by
+ * a job inside that workflow.
+ *
+ * The 2026-09-30 registry cannot reach this by its own rule - an entry names
+ * the label of the issue THAT workflow files and never
+ * MAIN_HEALTH_READER_LABEL, and the main-health issue is this workflow's only
+ * write path - so this is 10.86 rule 4, the same trap one level up. Removed by
+ * deleting the circular part ONLY: this detector's own workflow stops alarming
+ * when every failing job in its latest verdict is the job that runs this
+ * detector, and alarms as before the moment any other job of it is red.
+ * `onlyFailingJobIs` in the lib carries the full reasoning.
  *
  * Usage:
  *   node scripts/ci/check-main-is-green.mjs                # 6h threshold
@@ -56,11 +84,16 @@
 import process from 'node:process';
 
 import {
+  classifyRedState,
   collectActiveWorkflowRuns,
   groupByWorkflow,
   issueCarriesWorkflowAlarm,
+  MAIN_HEALTH_JOB_NAME,
   MAIN_HEALTH_READER_LABEL,
+  onlyFailingJobIs,
+  RED_STATE,
   redWorkflows,
+  SELF_ALARMING_WORKFLOWS,
   workflowAlarmMarker,
 } from './lib/workflowVerdicts.mjs';
 
@@ -68,6 +101,10 @@ const REPO = process.env.GITHUB_REPOSITORY || '';
 const TOKEN = process.env.GITHUB_TOKEN || process.env.GH_TOKEN || '';
 const HOURS = Number(process.env.MAIN_RED_HOURS || 6);
 const BRANCH = process.env.MAIN_RED_BRANCH || 'main';
+// The workflow this detector is running inside, as Actions names it - the same
+// string the run inventory reports. Empty outside Actions, which disables the
+// self-reference check entirely rather than guessing a name.
+const SELF_WORKFLOW = (process.env.GITHUB_WORKFLOW || '').trim();
 
 /**
  * ── THREE OUTCOMES, BECAUSE TWO CLOSED A REAL ALARM (2026-09-07) ────────────
@@ -156,15 +193,83 @@ try {
 }
 
 /**
- * Is somebody already being told about this workflow?
+ * Does THIS detector's own durable issue already name this workflow?
  *
  * Human prose is not authority. The issue must carry the exact reader label and
  * exact per-workflow machine marker, and must have been touched since this
- * failure episode began. A similarly titled issue, a coincidental workflow name
- * in prose, or a stale marker cannot suppress an alarm.
+ * failure episode began.
+ *
+ * This is a RECEIPT AND NOT A MUTE SWITCH. It is the record of what this file
+ * reported last time, so the report can say "not new"; it can never be the
+ * reason this file goes quiet, because then the detector mutes itself with its
+ * own output - which is exactly what it did until 2026-09-30.
  */
-const hasOpenAlarm = (name, since) =>
+const isAlreadyReported = (name, since) =>
   openIssues.some((issue) => issueCarriesWorkflowAlarm(issue, name, since));
+
+/**
+ * Is a workflow that DECLARED itself self-alarming actually speaking right now?
+ *
+ * Its own `alarmLabel` - never this detector's label - must carry an open issue
+ * touched since the episode began. Declared but silent is not exempt.
+ *
+ * `SELF_ALARMING_WORKFLOWS` is empty, so this costs nothing until somebody
+ * declares an entry, and then it costs one request per declared label.
+ */
+const selfAlarmLabels = new Map();
+async function isSelfAlarming(red) {
+  const declared = SELF_ALARMING_WORKFLOWS.get(red.name);
+  if (!declared) return false;
+  const label = declared.alarmLabel;
+  if (!label || label === MAIN_HEALTH_READER_LABEL) return false;
+  if (!selfAlarmLabels.has(label)) {
+    try {
+      const d = await api(
+        `/repos/${REPO}/issues?state=open&labels=${encodeURIComponent(label)}` +
+          '&per_page=100&sort=updated'
+      );
+      selfAlarmLabels.set(label, Array.isArray(d) ? d.filter((i) => !i.pull_request) : []);
+    } catch {
+      // Unreadable is not "it is speaking". Erring here reports the workflow,
+      // which is the loud direction (10.86 rule 2).
+      selfAlarmLabels.set(label, []);
+    }
+  }
+  const since = new Date(red.since).getTime();
+  return selfAlarmLabels.get(label).some((issue) => {
+    const touched = new Date(issue?.updated_at).getTime();
+    return Number.isFinite(touched) && Number.isFinite(since) && touched >= since;
+  });
+}
+
+/**
+ * Is this red workflow nothing but this detector's own reflection?
+ *
+ * Only ever true for the workflow named by `GITHUB_WORKFLOW`, and only when the
+ * Actions jobs API says every failing job in its latest verdict was
+ * `MAIN_HEALTH_JOB_NAME`. Any other failing job - a live-drift reader, chip
+ * conservation, the engine provenance audit - is a real finding and must still
+ * alarm, so this returns false and the workflow is classified exactly as any
+ * other.
+ *
+ * Unreadable is not "nothing else failed" (10.86 rule 2): every failure path
+ * here returns false, which is the loud direction.
+ */
+async function isSelfReferential(red) {
+  if (!SELF_WORKFLOW || red?.name !== SELF_WORKFLOW) return false;
+  const runId = red?.latestRunId;
+  if (!runId) return false;
+  let jobs;
+  try {
+    const d = await api(
+      `/repos/${REPO}/actions/runs/${encodeURIComponent(String(runId))}/jobs?per_page=100`
+    );
+    jobs = d?.jobs;
+  } catch {
+    return false;
+  }
+  return onlyFailingJobIs(jobs, MAIN_HEALTH_JOB_NAME);
+}
 
 const hrs = (h) => (h >= 48 ? `${(h / 24).toFixed(1)} days` : `${h.toFixed(1)}h`);
 
@@ -179,41 +284,78 @@ if (red.length === 0) {
   process.exit(0);
 }
 
+// OLDEST FIRST. Age escalates; it never mutes. A workflow that has not been
+// green in a month is the first line of the report and the one the annotation
+// names, so it cannot disappear behind a queue of fresher failures.
 red.sort((a, b) => b.hours - a.hours);
-for (const r of red) r.loud = hasOpenAlarm(r.name, r.since);
+for (const r of red) {
+  const verdict = classifyRedState(r, {
+    tracked: isAlreadyReported(r.name, r.since),
+    selfAlarmed: await isSelfAlarming(r),
+    selfReferential: await isSelfReferential(r),
+    thresholdHours: HOURS,
+  });
+  r.state = verdict.state;
+  r.alarms = verdict.alarms;
+  r.declared = verdict.declared;
+}
 
-// Alarm only on SILENT failures that have outlived the threshold. Under it is a
-// normal transient - somebody broke main a moment ago and is probably already
-// fixing it.
-const overdue = red.filter((r) => r.hours >= HOURS && !r.loud);
+// Every red workflow past the threshold alarms, whether or not this detector's
+// own issue already names it. Under the threshold is a normal transient -
+// somebody broke main a moment ago and is probably already fixing it.
+const overdue = red.filter((r) => r.alarms);
 
 console.log('');
 for (const r of red) {
-  const mark = r.loud ? 'loud ' : r.hours >= HOURS ? 'SILENT' : 'fresh';
+  const note =
+    r.state === RED_STATE.TRACKED
+      ? " [already named by this detector's own open issue - reported again, not subtracted]"
+      : r.state === RED_STATE.SELF_ALARMING
+        ? ` [declared self-alarming: ${r.declared?.reason || 'no reason recorded'}]`
+        : r.state === RED_STATE.SELF_REFERENTIAL
+          ? ` [this detector's own workflow; the only failing job in its latest verdict is ` +
+            `"${MAIN_HEALTH_JOB_NAME}", so reporting it would be this detector reading its own ` +
+            `exit code - printed, never subtracted from the estate's health]`
+          : '';
   console.log(
-    `  ${mark} ${r.name} - ${r.consecutive} consecutive failed verdict(s) over ` +
+    `  ${r.state} ${r.name} - ${r.consecutive} consecutive failed verdict(s) over ` +
       `${r.windowLimited ? 'at least ' : ''}${hrs(r.hours)}` +
       (r.lastGreen ? `, last green ${r.lastGreen}` : ', no green run in the window') +
-      (r.loud ? ' [an open issue already names it]' : '')
+      note
   );
   // The workflow copies this log into its owned issue. These exact markers make
-  // that issue authoritative for the workflows it is actually tracking.
+  // that issue authoritative for the workflows it is actually tracking - and,
+  // since 2026-09-30, nothing more than that.
   console.log(`  ${workflowAlarmMarker(r.name)}`);
 }
 console.log('');
 
-if (overdue.length === 0) {
-  const loud = red.filter((r) => r.loud).length;
+// A self-referential red is still ANNOUNCED, every run, on the run itself. The
+// durable issue carries this whole log, so the issue names it too; this is the
+// reader for the case where nothing alarms and the job goes green (10.86 rule 3).
+for (const r of red.filter((x) => x.state === RED_STATE.SELF_REFERENTIAL)) {
   console.log(
-    `Nothing silent past ${HOURS}h. ${loud} failing workflow(s) already have an open issue; ` +
-      `${red.length - loud - overdue.length} are still fresh.`
+    `::warning title=This audit is red only because of its own verdict::${r.name} has been red ` +
+      `for ${hrs(r.hours)} over ${r.consecutive} consecutive verdict(s), and the only failing job ` +
+      `in its latest verdict is "${MAIN_HEALTH_JOB_NAME}". Nothing else in the estate is being ` +
+      `reported through it. ${r.url}`
+  );
+}
+
+if (overdue.length === 0) {
+  const quiet = red.filter((r) => r.state === RED_STATE.SELF_ALARMING).length;
+  const mirrored = red.filter((r) => r.state === RED_STATE.SELF_REFERENTIAL).length;
+  console.log(
+    `${red.length} workflow(s) red on ${BRANCH}, none past ${HOURS}h that this detector owns: ` +
+      `${red.length - quiet - mirrored} still fresh, ${quiet} declared self-alarming and ` +
+      `currently speaking, ${mirrored} this detector's own verdict reflected back at it.`
   );
   process.exit(0);
 }
 
 const lines = overdue.map(
   (r) =>
-    `- **${r.name}** - ${r.consecutive} consecutive failed verdicts over ` +
+    `- **${r.name}** (${r.state}) - ${r.consecutive} consecutive failed verdicts over ` +
     `${r.windowLimited ? 'at least ' : ''}${hrs(r.hours)}` +
     (r.lastGreen ? `, last green \`${r.lastGreen}\`` : ', no green run in the scanned window') +
     `\n  ${r.url}`
@@ -223,10 +365,15 @@ console.log('::group::report');
 console.log(lines.join('\n'));
 console.log('::endgroup::');
 
+// The annotation names the WORST one and how long it has run, so the alarm text
+// itself changes as the estate gets better or worse. A chronic alarm whose
+// wording never moves is the same blind spot as no alarm.
+const worst = overdue[0];
 console.error('');
 console.error(
-  `::error title=SILENTLY RED ON ${BRANCH.toUpperCase()}::${overdue.length} workflow(s) have been failing on ${BRANCH} for over ${HOURS}h with no open issue naming them: ${overdue
-    .map((r) => r.name)
-    .join(', ')}`
+  `::error title=RED ON ${BRANCH.toUpperCase()}::${overdue.length} workflow(s) have been failing on ` +
+    `${BRANCH} for over ${HOURS}h; the oldest is ${worst.name} at ` +
+    `${worst.windowLimited ? 'at least ' : ''}${hrs(worst.hours)} over ${worst.consecutive} ` +
+    `consecutive failed verdicts. All of them: ${overdue.map((r) => r.name).join(', ')}`
 );
 process.exit(1);

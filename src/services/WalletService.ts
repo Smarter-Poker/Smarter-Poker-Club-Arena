@@ -20,6 +20,8 @@ import { masterBus } from '../core/MasterBus';
 import { FinancialAlertService } from './FinancialAlertService';
 import { reportError } from '../utils/errorReporter';
 import { uuid } from '../utils/uuid';
+
+const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 import { useUserStore } from '../stores/useUserStore';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -55,13 +57,6 @@ export interface WalletBalance {
   lockedBalance: number; // Chips currently at tables
   availableBalance: number;
   lastUpdated: string;
-}
-
-export interface TransferRequest {
-  fromWallet: WalletType;
-  toWallet: WalletType;
-  amount: number;
-  note?: string;
 }
 
 export interface TransactionRecord {
@@ -234,12 +229,25 @@ export const WalletService = {
    * - If the club is standalone (no union affiliation), the club owner can mint directly.
    *
    * MINT RATE (Dan 2026-08-21, BINDING): 100 Diamonds = 10,000 Chips.
+   *
+   * THE IDEMPOTENCY KEY IS THE CALLER'S (launch audit 2026-10-09, S-03). This
+   * used to mint `uuid()` INSIDE the call, which protects nothing: the
+   * dangerous shape is commit + lost response + retry, and that retry must
+   * present the SAME key or the route mints a second time. The caller holds
+   * the key across a failure and rotates it only when the mint lands or the
+   * amount changes (ChipMintModal.opIdRef is the pattern). The classic
+   * Cashier no longer calls this at all; it mints through
+   * fn_mint_chips_from_diamonds with a retained p_op_id.
    */
   async mintChips(
     clubId: string,
     chipAmount: number,
+    idempotencyKey: string,
     requestingUserId?: string
   ): Promise<ChipMintResult> {
+    if (!idempotencyKey || typeof idempotencyKey !== 'string') {
+      throw new Error('A mint needs an idempotency key held by the caller');
+    }
     // Resolve the authenticated minter. Server-side authorization is enforced by
     // mint_club_chips (which now rejects a null minter), but we resolve it here so
     // the union-lock check below is never silently skipped when a caller omits the
@@ -283,13 +291,11 @@ export const WalletService = {
       }
     }
 
-    // ── Dan 2026-08-21, BINDING: "100 DIAMONDS EQUALS 10,000 CHIPS." ──
-    // The old 38-per-100 "75% cheaper law" is superseded. One rate, one place.
-    // NOTE (audit 2026-08-21): this legacy path calls /api/club-arena/mint-chips
-    // -> mint_club_chips, which credits the pool WITHOUT burning diamonds. The
-    // diamond-backed mint is fn_mint_chips_from_diamonds (ChipMintModal). This
-    // figure is therefore display-only here; do not treat it as a charge.
-    const diamondCost = Math.ceil(chipAmount / 100);
+    // The price is NOT computed here. /api/club-arena/mint-chips converts the
+    // chips with the live rate (fn_ca_bridge_rate, the same function
+    // fn_mint_chips_from_diamonds charges at) and reports what it actually
+    // spent as diamondsSpent; the literal 1-per-100 that used to sit here was
+    // the 2026-08-21 rate and a hundredth of one percent of the live price.
 
     // Mint SERVER-SIDE via the World Hub API route. mint_club_chips is
     // service_role-only, so a direct browser supabase.rpc() returns 42501 -- that
@@ -308,7 +314,7 @@ export const WalletService = {
       headers: {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
-        'X-Idempotency-Key': uuid(),
+        'X-Idempotency-Key': idempotencyKey,
       },
       body: JSON.stringify({
         clubId: resolvedClubId,
@@ -322,6 +328,7 @@ export const WalletService = {
     if (!mintData.success) {
       throw new Error(mintData.error || `Mint failed (HTTP ${mintResp.status})`);
     }
+    const diamondCost = Number(mintData.diamondsSpent) || 0;
 
     // 4. Determine who receives the minted chips
     const mintRecipientId = club.union_id
@@ -366,61 +373,6 @@ export const WalletService = {
   // ─────────────────────────────────────────────────────────────────────────────
 
   /**
-   * Transfer funds between wallets (same user)
-   */
-  async internalTransfer(userId: string, request: TransferRequest): Promise<boolean> {
-    if (!Number.isFinite(request.amount) || request.amount <= 0)
-      throw new Error('Transfer amount must be positive');
-    if (request.fromWallet === request.toWallet) throw new Error('Cannot transfer to same wallet');
-
-    const desc = request.note || `Transfer ${request.fromWallet} → ${request.toWallet}`;
-    // Atomic wallet-TYPE transfer for a single user via SECURITY DEFINER RPC.
-    // fn_wallet_type_transfer moves chips between wallet types (BUSINESS/PLAYER/PROMO)
-    // in ONE transaction, honoring the real from/to wallets — this replaces the old
-    // atomic_deduct + atomic_credit pair which was hardcoded to PLAYER (cross-wallet
-    // no-op, plus a deduct-then-credit chip-loss edge if the credit leg failed).
-    // 2026-08-27: retryAsync REMOVED from this call. fn_wallet_type_transfer
-    // takes no idempotency key, so an automatic retry after a network-layer
-    // REJECT (a thrown fetch, not a resolved { error }) could re-run a
-    // transfer whose first attempt had committed - the double-move shape. The
-    // wallet_user_transfer call below argues 42501 resolves rather than
-    // throws; that argument never covered thrown rejects and was never made
-    // for this call site at all. One attempt: a failure surfaces, and the
-    // user retries deliberately.
-    const { data: transferRes, error } = await supabase.rpc('fn_wallet_type_transfer', {
-      p_user_id: userId,
-      p_from_wallet: request.fromWallet,
-      p_to_wallet: request.toWallet,
-      p_amount: request.amount,
-      p_note: desc,
-    });
-
-    if (error) throw error;
-    if (transferRes?.success !== true) {
-      throw new Error(transferRes?.error || 'Insufficient balance for transfer');
-    }
-
-    // Both history entries are part of the database transaction. A browser
-    // insert here would duplicate them and could fail after money committed.
-    if (
-      transferRes.from !== request.fromWallet ||
-      transferRes.to !== request.toWallet ||
-      transferRes.amount !== request.amount ||
-      !Number.isFinite(transferRes.from_balance) ||
-      !Number.isFinite(transferRes.to_balance) ||
-      transferRes.from_balance < 0 ||
-      transferRes.to_balance < 0
-    ) {
-      throw new Error('Transfer receipt was not confirmed for the requested wallets and amount');
-    }
-
-    // Emit bus event so UI (header balances, cashier) updates immediately
-    masterBus.emit('BALANCE_UPDATED', { source: 'internal_transfer', userId });
-
-    return true;
-  },
-
-  /**
    * Agent self-transfer: Business → Player (to play at tables)
    */
   async agentSelfTransfer(clubId: string, amount: number): Promise<boolean> {
@@ -454,66 +406,6 @@ export const WalletService = {
     );
   },
 
-  /**
-   * Legacy user-to-user transfer. This RPC has no operation key, so a lost
-   * response must not trigger another submission. Only a positive server
-   * receipt can authorize success events and the application audit entries.
-   */
-  async transferToUser(
-    fromUserId: string,
-    toUserId: string,
-    amount: number,
-    fromWallet: WalletType = 'PLAYER',
-    toWallet: WalletType = 'PLAYER'
-  ): Promise<boolean> {
-    if (!Number.isFinite(amount) || amount <= 0)
-      throw new Error('Transfer amount must be positive');
-
-    const { data: transferData, error } = await supabase.rpc('wallet_user_transfer', {
-      p_from_user_id: fromUserId,
-      p_to_user_id: toUserId,
-      p_amount: amount,
-      p_from_wallet: fromWallet,
-      p_to_wallet: toWallet,
-    });
-
-    if (error) throw error;
-    const parsed = transferData as { success?: boolean; error?: string } | null;
-    if (parsed?.success !== true) {
-      throw new Error(parsed?.error || 'Transfer was not confirmed by the server');
-    }
-
-    // Log both sides of the user-to-user transfer
-    await this.logTransaction(
-      fromUserId,
-      fromWallet,
-      amount,
-      'debit',
-      'transfer',
-      `Sent ${amount} chips to user`,
-      undefined,
-      undefined,
-      toUserId
-    );
-    await this.logTransaction(
-      toUserId,
-      toWallet,
-      amount,
-      'credit',
-      'transfer',
-      `Received ${amount} chips from user`,
-      undefined,
-      undefined,
-      fromUserId
-    );
-
-    // Emit bus events for both users so their UIs update immediately
-    masterBus.emit('BALANCE_UPDATED', { source: 'transfer_sent', userId: fromUserId });
-    masterBus.emit('BALANCE_UPDATED', { source: 'transfer_received', userId: toUserId });
-
-    return true;
-  },
-
   // ─────────────────────────────────────────────────────────────────────────────
   // PROMO DISTRIBUTION
   // ─────────────────────────────────────────────────────────────────────────────
@@ -537,9 +429,18 @@ export const WalletService = {
     clubId: string,
     playerId: string,
     amount: number,
-    note?: string
+    note: string | undefined,
+    opId: string
   ): Promise<boolean> {
     if (amount <= 0) throw new Error('Amount must be positive');
+    // THE PAYMENT IDENTITY IS THE CALLER'S (launch audit 2026-10-09, S-04).
+    // Minting `uuid()` here protected nothing: commit + lost response + a
+    // user retry presented a fresh id and paid twice. The caller retains the
+    // id across a failure (AgentDashboardPage.promoOpIdRef) and rotates it
+    // only when the grant lands or the amount/target changes.
+    if (typeof opId !== 'string' || !UUID_SHAPE.test(opId)) {
+      throw new Error('Promo Disbursement Requires A Retained Operation Id');
+    }
 
     // The union holds the promo float for its member clubs; an unaffiliated
     // club holds its own.
@@ -552,7 +453,7 @@ export const WalletService = {
     if (!club) throw new Error('Club not found');
 
     // One payment identity survives every network retry, including a lost commit response.
-    const operationId = uuid();
+    const operationId = opId;
     const { data, error } = await retryAsync(
       () =>
         supabase.rpc('fn_promo_disburse', {
@@ -582,12 +483,12 @@ export const WalletService = {
 
   /**
    * @deprecated Kept so nothing calls the retired agent path by accident.
-   * Use `disbursePromo(clubId, playerId, amount)`.
+   * Use `disbursePromo(clubId, playerId, amount, note, opId)`.
    */
   async distributePromo(_agentId: string, _playerId: string, _amount: number): Promise<boolean> {
     throw new Error(
       'distributePromo is retired: promo is disbursed by the union owner, or by an unaffiliated ' +
-        'club owner, through WalletService.disbursePromo(clubId, playerId, amount).'
+        'club owner, through WalletService.disbursePromo(clubId, playerId, amount, note, opId).'
     );
   },
 
@@ -603,7 +504,9 @@ export const WalletService = {
 
     for (const dist of distributions) {
       try {
-        await this.disbursePromo(clubId, dist.playerId, dist.amount);
+        // Each row is its own deliberate payment; a bulk caller has no edit
+        // to retain across, so the id is minted once per row here.
+        await this.disbursePromo(clubId, dist.playerId, dist.amount, undefined, uuid());
         success++;
       } catch (err) {
         reportError(err, 'WalletService.bulkDistributePromo', { playerId: dist.playerId });

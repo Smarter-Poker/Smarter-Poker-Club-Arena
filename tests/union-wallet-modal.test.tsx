@@ -6,7 +6,7 @@
  * TO ANY MEMBER OF THE UNION." The tiles used to be static divs.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 
 const UNION_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const sourceState = vi.hoisted(() => ({ clubError: null as null | { message: string } }));
@@ -181,12 +181,58 @@ describe('UnionWalletModal', () => {
     await waitFor(() => expect(screen.getByText('Fish')).toBeTruthy());
 
     fireEvent.click(screen.getByText('Fish'));
-    fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '999999' } });
+    /* Within the figure on screen (5,000), so the screen lets it go and the
+       SERVER is the one refusing: another session may have drained the wallet
+       since the balance was read. Over-balance amounts never reach the RPC;
+       the launch-audit cases below pin that. */
+    fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '4000' } });
     fireEvent.click(screen.getByRole('button', { name: /send to fish/i }));
 
     await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
     expect(screen.getByRole('alert').textContent).toMatch(/insufficient/i);
     expect(base.onClose).not.toHaveBeenCalled();
+  });
+
+  describe('launch audit D-07 / D-15: the amount is validated before anything is sent', () => {
+    it('refuses an over-balance member send on the screen and never prints a negative figure', async () => {
+      render(<UnionWalletModal {...base} />);
+      await waitFor(() => expect(screen.getByText('Fish')).toBeTruthy());
+      fireEvent.click(screen.getByText('Fish'));
+      fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '9000' } });
+
+      expect(screen.getByRole('alert').textContent).toBe('This Wallet Only Holds 5,000.');
+      expect(screen.queryByText(/Would Hold/)).toBeNull();
+      expect(document.body.textContent).not.toMatch(/-4,000/);
+      const plate = screen.getByRole('button', { name: /send to fish/i });
+      expect((plate as HTMLButtonElement).disabled).toBe(true);
+      fireEvent.click(plate);
+      expect(rpc).not.toHaveBeenCalledWith('fn_union_send_to_member', expect.anything());
+    });
+
+    it.each([
+      ['10.005', 'Enter An Amount In Whole Cents.'],
+      ['1e3', 'Enter An Amount In Whole Cents.'],
+      ['-5', 'Enter An Amount Greater Than Zero.'],
+    ])('refuses the spelling %s', async (typed, sentence) => {
+      render(<UnionWalletModal {...base} />);
+      await waitFor(() => expect(screen.getByText('Fish')).toBeTruthy());
+      fireEvent.click(screen.getByText('Fish'));
+      fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: typed } });
+      expect(screen.getByRole('alert').textContent).toBe(sentence);
+      expect(
+        (screen.getByRole('button', { name: /send to fish/i }) as HTMLButtonElement).disabled
+      ).toBe(true);
+      expect(rpc).not.toHaveBeenCalledWith('fn_union_send_to_member', expect.anything());
+    });
+
+    it('still accepts a plain amount to the cent', async () => {
+      render(<UnionWalletModal {...base} />);
+      await waitFor(() => expect(screen.getByText('Fish')).toBeTruthy());
+      fireEvent.click(screen.getByText('Fish'));
+      fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '12.50' } });
+      expect(screen.queryByRole('alert')).toBeNull();
+      expect(screen.getByText(/Would Hold 4,987\.5 Afterwards/)).toBeTruthy();
+    });
   });
 
   it('retires the key after a definitive business refusal', async () => {
@@ -383,6 +429,69 @@ describe('UnionWalletModal', () => {
     ).toBe(true);
     expect(sendToClub).not.toHaveBeenCalled();
     expect(promoSend).not.toHaveBeenCalled();
+  });
+
+  it('discards a ledger page that arrives for the wallet that was open before (launch audit D-06)', async () => {
+    let releaseRake: (v: unknown) => void = () => {};
+    const rakePage = new Promise((resolve) => {
+      releaseRake = resolve;
+    });
+    const page = (category: string, total: number) => ({
+      data: {
+        authorized: true,
+        total,
+        totals: { in: 0, out: 1, net: -1 },
+        rows: [
+          {
+            id: `${category}-1`,
+            created_at: '2026-09-05T03:07:38Z',
+            amount: 1,
+            direction: 'out',
+            category,
+            notes: null,
+            balance_after: 1,
+            counterparty_type: 'club',
+            counterparty_name: 'Club JAQK',
+            actor_name: 'KingFish',
+          },
+        ],
+      },
+      error: null,
+    });
+    rpc.mockImplementation((fn: string, args: { p_wallet?: string }) => {
+      if (fn === 'fn_union_player_directory') return Promise.resolve({ data: roster, error: null });
+      if (fn === 'fn_promo_wallet_ledger')
+        return args.p_wallet === 'rake_wallet'
+          ? rakePage
+          : Promise.resolve(page('promo_to_club', 7));
+      return Promise.resolve({ data: null, error: null });
+    });
+    const view = render(
+      <UnionWalletModal {...base} walletKey="rake" walletLabel="Weekly Rake Wallet" />
+    );
+    await waitFor(() => expect(screen.getByText('Fish')).toBeTruthy());
+    fireEvent.click(screen.getByRole('tab', { name: 'Ledger' }));
+    await waitFor(() =>
+      expect(rpc).toHaveBeenCalledWith(
+        'fn_promo_wallet_ledger',
+        expect.objectContaining({ p_wallet: 'rake_wallet' })
+      )
+    );
+
+    view.rerender(<UnionWalletModal {...base} walletKey="promo" walletLabel="Promo Wallet" />);
+    await waitFor(() => expect(screen.getByText('Fish')).toBeTruthy());
+    // The reset put the count back to 0 before the promo page answered.
+    fireEvent.click(screen.getByRole('tab', { name: 'Ledger' }));
+    expect(await screen.findByText('Promo To Club')).toBeTruthy();
+    expect(screen.getByText(/7 Entries/)).toBeTruthy();
+
+    await act(async () => {
+      releaseRake(page('rake_to_union', 99));
+      await Promise.resolve();
+    });
+    expect(screen.queryByText('Rake To Union')).toBeNull();
+    expect(screen.queryByText(/99 Entries/)).toBeNull();
+    expect(screen.getByText(/7 Entries/)).toBeTruthy();
   });
 
   it('has a ledger tab that reads fn_promo_wallet_ledger for the open wallet', async () => {

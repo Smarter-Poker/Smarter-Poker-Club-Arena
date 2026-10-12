@@ -1,0 +1,3 @@
+# tests/a-hand-commit-starts-no-parallel-workers.law.test.ts
+
+`fn_ca_club_rake_daily_apply`, the club-rake-daily rollup that every raked cash hand runs at COMMIT through `ca_club_rake_daily_at_commit`, runs with `max_parallel_workers_per_gather = 0`. The LANGUAGE sql `fn_ca_club_rake_daily_compute` is planned without its arguments and chose a two-worker Gather for a one-row lookup. That took 14-30 ms per hand instead of ~2 ms, and it ran inside the COMMIT that still holds the union's single `union_wallets` row (production, 2026-10-03). The law pins the asserted single-transaction ALTER and refuses a later redefinition or RESET that drops the setting.

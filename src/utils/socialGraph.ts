@@ -3,15 +3,15 @@ import { playerDisplayName, type NameableProfile } from './playerDisplayName';
 export interface SocialGraphProfile extends NameableProfile {
   id: string;
   avatar_url?: string | null;
+  /** The presence door's answer (fn_profile_presence): online now, with the
+      five-minute heartbeat rule applied server-side. Never the raw flag. */
   is_online?: boolean | null;
-  last_seen?: string | null;
 }
 
 export interface ResolvedSocialProfile {
   available: boolean;
   name: string;
   avatarUrl?: string;
-  lastSeen?: string;
   sourceOnline: boolean;
 }
 
@@ -37,42 +37,31 @@ export function resolveSocialProfile(
     available: true,
     name: playerDisplayName(profile, 'arena'),
     avatarUrl: profile.avatar_url || undefined,
-    lastSeen: profile.last_seen || undefined,
     sourceOnline: profile.is_online === true,
   };
 }
 
 /**
- * Realtime presence wins. The persisted profile signal is accepted only while
- * its heartbeat is fresh, so a stale `is_online=true` row cannot keep somebody
- * online forever after a disconnected device disappears.
+ * Online now, by the one definition: the presence door's answer
+ * (fn_profile_presence, through src/lib/ownProfile.ts readPresence), which
+ * counts the persisted flag only while its heartbeat is under five minutes old
+ * (SOCIAL_PRESENCE_FRESH_MS) - the browser never receives last_seen (ruling
+ * 25). `livePresence` is that door re-asked every minute while the row is on
+ * screen (useProfilePresence); `loadedAnswer` is what the same door said when
+ * the page loaded, used until the first re-ask lands.
+ *
+ * Until 2026-10-05 a Realtime presence channel "won" here. Only people can
+ * join one - a house player never opens a browser - so it was a second
+ * definition of online that told a person from a house player. There is one
+ * definition now: tests/presence-has-one-definition.law.test.ts.
  */
 export function isSocialProfileOnline(
   userId: string,
-  liveUserIds: ReadonlySet<string>,
-  sourceOnline: boolean,
-  lastSeen?: string,
-  now = Date.now()
+  livePresence: ReadonlyMap<string, boolean>,
+  loadedAnswer: boolean
 ): boolean {
-  if (liveUserIds.has(userId)) return true;
-  if (!sourceOnline || !lastSeen) return false;
-  const seenAt = Date.parse(lastSeen);
-  return Number.isFinite(seenAt) && now - seenAt <= SOCIAL_PRESENCE_FRESH_MS;
-}
-
-export function formatSocialLastSeen(lastSeen?: string, now = Date.now()): string {
-  if (!lastSeen) return 'Offline';
-  const seenAt = Date.parse(lastSeen);
-  if (!Number.isFinite(seenAt)) return 'Offline';
-
-  const elapsedMinutes = Math.max(0, Math.floor((now - seenAt) / 60_000));
-  if (elapsedMinutes < 2) return 'Active moments ago';
-  if (elapsedMinutes < 60) return `Active ${elapsedMinutes}m ago`;
-  const elapsedHours = Math.floor(elapsedMinutes / 60);
-  if (elapsedHours < 24) return `Active ${elapsedHours}h ago`;
-  const elapsedDays = Math.floor(elapsedHours / 24);
-  if (elapsedDays < 30) return `Active ${elapsedDays}d ago`;
-  return 'Offline';
+  const live = livePresence.get(userId);
+  return live === undefined ? loadedAnswer === true : live === true;
 }
 
 export function chunkSocialProfileIds(ids: readonly string[], size = 100): string[][] {

@@ -1,0 +1,52 @@
+{
+  "schema": "horse-phase13-qualification-v1",
+  "qualified": false,
+  "mode": "contract",
+  "variant": "pineapple",
+  "sourceSha": "886cc9655461c1049ece829c1fc86c14e2d3ba75",
+  "packVersion": "joint-action-response-round2-v1",
+  "contractVersion": "joint-strength-contract-v1",
+  "contractDigest": "a036e702e7659334a2c531f8bf90fb5e3a852686028fad47f182e486b57bb754",
+  "domain": "pineapple-cash-joint-multiway-after-rake-horse-population",
+  "policyDigest": "475c342f65cec9185549fc6a6a3e0ee385211d2f1e0976b02cf58faa5dd0def0",
+  "policyDigestDefinition": "horse-phase13-policy-digest-v1",
+  "objectives": {
+    "cash": { "qualified": false, "status": "measured", "regressionMarginBbPer100": -10 },
+    "tournament": {
+      "status": "unavailable dependency",
+      "qualified": false,
+      "reasons": ["tournament:pineapple_tournament_format_unavailable"]
+    }
+  },
+  "admissionAlsoRequires": [
+    "natural completion-share evidence for the variant: on the release under admission, the share of eligible live joint decisions that complete without work_budget, insufficient_joint_samples or a joint_response_ refusal, per street and per board count, measured from natural decisions with the release unchanged throughout the window; P13.3 must state and meet its own floor for that share before admitting the variant, because this contract measures strength only for decisions that complete their fixed work"
+  ],
+  "evidencePath": "docs/evidence/phase13/strength-2026-10-06-pineapple/strength.json",
+  "evidenceSha256": "b21d4035f45706a79e6a56263b3e4a135a8d2df0b8f6c4024c7a473f2d317655",
+  "reasons": [
+    "cash:primary:lower_bound_not_above_zero",
+    "cash:seed:13241153:point_estimate_not_above_zero",
+    "cash:seed:13242309:point_estimate_not_above_zero",
+    "cash:seed:13243367:point_estimate_not_above_zero",
+    "cash:profile:p13c-pineapple-3dealt-100bb:regression_margin_exceeded",
+    "cash:profile:p13c-pineapple-9max-100bb:regression_margin_exceeded",
+    "cash:profile:p13c-pineapple-6max-40bb:regression_margin_exceeded",
+    "cash:profile:p13c-pineapple-6max-100bb:regression_margin_exceeded",
+    "cash:profile:p13c-pineapple-6max-200bb:regression_margin_exceeded",
+    "cash:profile:p13c-pineapple-bomb1-6max-100bb:regression_margin_exceeded",
+    "cash:profile:p13c-pineapple-bomb2-6max-100bb:regression_margin_exceeded",
+    "cash:profile:p13c-pineapple-bomb3-6max-100bb:regression_margin_exceeded",
+    "cash:position:button:regression_margin_exceeded",
+    "cash:position:small_blind:regression_margin_exceeded",
+    "cash:position:big_blind:regression_margin_exceeded",
+    "cash:position:cutoff:regression_margin_exceeded",
+    "cash:position:middle:regression_margin_exceeded",
+    "cash:position:early:regression_margin_exceeded",
+    "cash:depth:short:regression_margin_exceeded",
+    "cash:depth:standard:regression_margin_exceeded",
+    "cash:depth:deep:regression_margin_exceeded",
+    "cash:boards:1:regression_margin_exceeded",
+    "cash:boards:2:regression_margin_exceeded",
+    "cash:boards:3:regression_margin_exceeded"
+  ]
+}

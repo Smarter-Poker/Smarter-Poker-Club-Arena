@@ -1,0 +1,133 @@
+// P12.2 design pilot (Horse Brain Phase 12). Kept as text so nothing imports or
+// runs it by accident. To reproduce, from server/ at the recorded head:
+//   cp ../docs/evidence/phase12/p12-2-pilot.mts.txt /tmp/p12-2-pilot.mts
+//   EQUITY_GOVERNOR=off npx tsx /tmp/p12-2-pilot.mts <short_deck|pineapple|flh|flo8> <output.json>
+// Development seed 12101101 (REMAINING_VARIANT_LEAGUE_SEEDS[0]), shard 0,
+// runRemainingVariantStrengthShard development mode, one profile at a time.
+// Pairs per profile: the smallest whole number of rotations (a multiple of
+// seats squared) at or above 288, so 288 at 2, 4 and 6 dealt, 320 at 8 and 324
+// at 9. It records dispersion and time only: the paired-difference standard
+// deviation (BB per hand) and kurtosis from the exact power sums, the time per
+// pair, the validity counters, and the guard and discard counters. It never
+// computes or writes a mean difference, and it never touches a held-out seed
+// (the runner refuses one).
+import { execFileSync } from 'node:child_process';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import os from 'node:os';
+process.env.EQUITY_GOVERNOR = 'off';
+process.env.SUPABASE_URL = 'https://supabase.invalid';
+process.env.SUPABASE_SERVICE_ROLE_KEY = 'p12-2-pilot-offline-placeholder';
+const root = process.cwd();
+const { runRemainingVariantStrengthShard } = await import(
+  root + '/src/benchmark/RemainingVariantStrengthLeague.ts'
+);
+const { remainingVariantStrengthPack, remainingVariantStrengthContractDigest } = await import(
+  root + '/src/benchmark/RemainingVariantStrengthContract.ts'
+);
+const { channelHub } = await import(root + '/src/hub/ChannelHub.ts');
+const [variant, output] = process.argv.slice(2);
+const SEED = 12101101;
+const pairsFor = (seats: number) => Math.ceil(288 / (seats * seats)) * seats * seats;
+const pack = remainingVariantStrengthPack(variant);
+const profiles = [];
+for (const p of pack.matrix.profiles) {
+  const pairs = pairsFor(p.seats);
+  const r = await runRemainingVariantStrengthShard(variant, {
+    profileId: p.id,
+    seed: SEED,
+    shard: 0,
+    mode: 'development',
+    pairs,
+  });
+  // Exact power sums over the profile; central moments are formed from the
+  // sums directly and only dispersion and shape are reported.
+  let n = 0n, s1 = 0n, s2 = 0n, s3 = 0n, s4 = 0n;
+  for (const v of Object.values(r.strata) as { n: number; s1: string; s2: string; s3: string; s4: string }[]) {
+    n += BigInt(v.n); s1 += BigInt(v.s1); s2 += BigInt(v.s2); s3 += BigInt(v.s3); s4 += BigInt(v.s4);
+  }
+  const N = Number(n);
+  const varianceCents = Number(n * s2 - s1 * s1) / (N * (N - 1));
+  // n^4 m4 = n^3 S4 - 4 n^2 S1 S3 + 6 n S1^2 S2 - 3 S1^4 ; n^2 m2 = n S2 - S1^2
+  const m4 = Number(n * n * n * s4 - 4n * n * n * s1 * s3 + 6n * n * s1 * s1 * s2 - 3n * s1 ** 4n) / N ** 4;
+  const m2 = Number(n * s2 - s1 * s1) / N ** 2;
+  profiles.push({
+    profileId: p.id,
+    seats: p.seats,
+    tableSeats: p.tableSeats,
+    stackBB: p.stackBB,
+    pairs: r.pairs,
+    complete: r.complete,
+    positionCoverageComplete: r.positionCoverageComplete,
+    pairedDifferenceSdBB: Math.round((Math.sqrt(varianceCents) / 200) * 100) / 100,
+    kurtosis: m2 > 0 ? Math.round((m4 / (m2 * m2)) * 10) / 10 : null,
+    msPerPair: Math.round((r.durationMs / r.pairs) * 10) / 10,
+    durationMs: r.durationMs,
+    changedPairs: r.changedPairs,
+    eligible: r.eligible,
+    changed: r.changed,
+    illegalCandidates: r.illegalCandidates,
+    discards: r.discards,
+    showdownsChecked: r.showdownsChecked,
+    foldWinsChecked: r.foldWinsChecked,
+    lowHalvesChecked: r.lowHalvesChecked,
+    validity: {
+      illegalActions: r.illegalActions,
+      conservationErrors: r.conservationErrors,
+      cardErrors: r.cardErrors,
+      truncatedHands: r.truncatedHands,
+      settlementMismatches: r.settlementMismatches,
+      deductionMismatches: r.deductionMismatches,
+      pairedReplayMismatches: r.pairedReplayMismatches,
+    },
+  });
+  console.log(JSON.stringify(profiles.at(-1)));
+}
+const cpu = os.cpus();
+writeFileSync(
+  output,
+  JSON.stringify(
+    {
+      schema: 'horse-phase12-strength-pilot-v1',
+      phase: 'P12.2',
+      variant,
+      packVersion: pack.candidate.packVersion,
+      head: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+      dirty: execFileSync('git', ['status', '--porcelain'], { encoding: 'utf8' }).trim() !== '',
+      provisionalContractDigest: remainingVariantStrengthContractDigest(),
+      // The pilot ran before the contract carried its numbers, so the checkout
+      // is dirty by construction; these hashes name the code that played.
+      playingSourceSha256: Object.fromEntries(
+        [
+          'src/benchmark/Plo4PolicyLeague.ts',
+          'src/benchmark/RemainingVariantStrengthLeague.ts',
+          'src/benchmark/RemainingVariantStrengthChecks.ts',
+          'src/engine/HorseLogic.ts',
+          'src/engine/remainingVariants/RemainingVariantPolicyPack.ts',
+          'src/engine/remainingVariants/RemainingVariantLivePolicy.ts',
+          'src/engine/remainingVariants/RemainingVariantSampler.ts',
+          'src/engine/HandController.ts',
+        ].map((f) => [f, createHash('sha256').update(readFileSync(f)).digest('hex')])
+      ),
+      seed: SEED,
+      seedKind: 'development (REMAINING_VARIANT_LEAGUE_SEEDS[0]); never a held-out seed',
+      pairsRule: 'smallest multiple of seats squared at or above 288',
+      mode: 'development',
+      shard: 0,
+      recorded: 'dispersion and time only; no mean difference is computed or written',
+      host: {
+        cpu: cpu[0]?.model,
+        vcpu: cpu.length,
+        platform: `${process.platform}-${process.arch}`,
+        node: process.version,
+        note: 'shared container: another agent ran tests on the same two vCPUs; one pilot process at a time',
+      },
+      createdAt: new Date().toISOString(),
+      profiles,
+    },
+    null,
+    2
+  ) + '\n'
+);
+channelHub.close();
+process.exit(0);

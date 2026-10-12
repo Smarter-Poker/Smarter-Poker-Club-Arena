@@ -92,6 +92,12 @@ export interface InsuranceOffer {
    * while flop/turn declines stay FINAL for the hand (Dan 2026-08-26).
    */
   boardLength: number;
+  /**
+   * PHASE 9 CLOSE-OUT 2026-10-03: the exact inputs this offer was priced on,
+   * kept on the server so the audit trail can record them. Never broadcast:
+   * broadcastInsuranceOffers maps its wire fields one by one.
+   */
+  pricing: InsuranceOfferPricing;
   // Phase 1.2 PR-G-real: timeouts routed through DeadlineScheduler singleton via
   // the engine's private `scheduler` ref, keyed by
   // eventId = `insurance_offer:${playerId}` on the offer's tableId. The raw
@@ -125,6 +131,49 @@ export interface InsurancePricingComponents {
   equity: number;
   strictLossPct: number;
   pushPct: number;
+  /** Worker provenance: true when every runout was enumerated. */
+  exact?: boolean;
+  /** Worker provenance: how many runouts the percentages are counted over. */
+  runouts?: number;
+}
+
+/**
+ * PHASE 9 CLOSE-OUT 2026-10-03: everything createOffers used to price one
+ * offer, exactly as used. The Phase 9 natural evidence could not recompute a
+ * single offered premium because the recorded equity_percent is pot-share
+ * equity and the premium is priced from strict-loss and push probabilities
+ * that were never written down. With this record the premium follows from the
+ * row alone:
+ *
+ *   fullInsuredAmount = round2(insurablePot x maxInsurablePercent / 100)
+ *   fullPremium       = round2(fullInsuredAmount x lossGivenNoPush
+ *                              x houseMargin / winGivenNoPush)
+ *   lossGivenNoPush   = min(1, L / (1 - P)),  winGivenNoPush = 1 - lossGivenNoPush
+ *
+ * with L = strictLossPct / 100 and P = pushPct / 100, which in exact
+ * arithmetic is fullInsuredAmount x houseMargin x L / (1 - P - L). No cards.
+ */
+export interface InsuranceOfferPricing {
+  /** Worker pot-share equity (%), one decimal as published. Display and EV cashout only. */
+  equityPct: number;
+  /** Worker P(strictly beaten) (%), one decimal as published (round(1000 x n / runouts) / 10). */
+  strictLossPct: number;
+  /** Worker P(tie for best: the contract pushes) (%), same rounding. */
+  pushPct: number;
+  /** 100 - strictLossPct - pushPct, in tenths so no float residue: P(leader wins alone). */
+  strictWinPct: number;
+  /** The conditional probabilities createOffers multiplied by, unrounded. */
+  lossGivenNoPush: number;
+  winGivenNoPush: number;
+  /** Worker provenance, null when the caller did not supply it. */
+  exact: boolean | null;
+  runouts: number | null;
+  houseMargin: number;
+  maxInsurablePercent: number;
+  /** The pot createOffers was handed (the leader's insurable pot). */
+  insurablePot: number;
+  fullInsuredAmount: number;
+  fullPremium: number;
 }
 
 export type InsuranceEventType =
@@ -201,8 +250,10 @@ export class InsuranceEngine {
    *
    * Default offer is FULL insurance (100% coverage).
    * Player can adjust via acceptPartial() with a slider before accepting.
-   * Premium = (1 - equity%) × insuredAmount × houseMargin
-   * Max insurable = min(pot × maxInsurablePercent%, pot × equity%)
+   * Premium = insuredAmount × pLoss / pWin × houseMargin, pLoss and pWin
+   *   conditional on no push (the fee is kept only when the leader wins alone;
+   *   see POKERBROS PARITY below). Insured = pot × maxInsurablePercent%, where
+   *   pot is the leader's insurable pot (computeInsurablePot).
    */
   createOffers(
     tableId: string,
@@ -330,6 +381,22 @@ export class InsuranceEngine {
       declinedForHand: false,
       evCashoutAmount,
       boardLength: board.length,
+      pricing: {
+        equityPct: equity,
+        strictLossPct: components.strictLossPct,
+        pushPct: components.pushPct,
+        strictWinPct:
+          Math.round(1000 - components.strictLossPct * 10 - components.pushPct * 10) / 10,
+        lossGivenNoPush: lossGivenNotPush,
+        winGivenNoPush: winGivenNotPush,
+        exact: typeof components.exact === 'boolean' ? components.exact : null,
+        runouts: typeof components.runouts === 'number' ? components.runouts : null,
+        houseMargin: config.houseMargin,
+        maxInsurablePercent: config.maxInsurablePercent,
+        insurablePot: pot,
+        fullInsuredAmount,
+        fullPremium,
+      },
     };
 
     // Phase 1.2 PR-G-real: expiry via DeadlineScheduler.

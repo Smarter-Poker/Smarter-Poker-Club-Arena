@@ -38,7 +38,7 @@
  * end.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   clearSessionSummary,
@@ -50,7 +50,13 @@ import { supabase } from '../../lib/supabase';
 import { readLocalSession } from '../../lib/authUtils';
 import { tableService } from '../../services/TableService';
 import { reportError } from '../../utils/errorReporter';
-import TournamentRankingCard from './TournamentRankingCard';
+/* THE CARD IS LOADED WHEN IT IS NEEDED (2026-10-05). This host mounts at the
+   app root, so anything it imports statically is in the chunk every player
+   downloads before first paint - and the card is only ever shown after a
+   tournament ends. Its reveal and share image put the initial load over the
+   320kB gate (321kB measured), so it splits into its own chunk instead; the
+   payload that shows it waits the few milliseconds the chunk takes. */
+const TournamentRankingCard = lazy(() => import('./TournamentRankingCard'));
 import { arenaAssetUnitCents } from '../../lib/arenaUnitCents';
 
 export function TournamentRankingHost() {
@@ -304,23 +310,25 @@ export function TournamentRankingHost() {
   if (!payload?.tournament) return null;
 
   return (
-    <TournamentRankingCard
-      result={payload.tournament}
-      tableName={payload.tableName}
-      /* The payload has always carried these; the card simply never asked for
+    <Suspense fallback={null}>
+      <TournamentRankingCard
+        result={payload.tournament}
+        tableName={payload.tableName}
+        /* The payload has always carried these; the card simply never asked for
          them. See the props on TournamentRankingCard. */
-      durationSeconds={payload.duration}
-      handsPlayed={payload.handsPlayed}
-      /* THE GRID THIS EVENT PAID ON (2026-09-20). The payload has carried the
+        durationSeconds={payload.duration}
+        handsPlayed={payload.handsPlayed}
+        /* THE GRID THIS EVENT PAID ON (2026-09-20). The payload has carried the
          table's arena asset since the wallet learned the Diamond Arena, and
          `parseArenaIdentity` only ever writes 'diamonds' for a row that
          satisfies all three of the conditions `fn_ca_tournament_unit_cents`
          tests, so the asset on it IS the unit. */
-      unitCents={arenaAssetUnitCents(payload.arenaAsset)}
-      endedAt={payload.sessionEnd}
-      onDismiss={close}
-      onPlayAgain={playAgain}
-    />
+        unitCents={arenaAssetUnitCents(payload.arenaAsset)}
+        endedAt={payload.sessionEnd}
+        onDismiss={close}
+        onPlayAgain={playAgain}
+      />
+    </Suspense>
   );
 }
 

@@ -13,7 +13,7 @@
  * club owner could not answer the first question anybody asks about a forced
  * ante: is it bringing players to my tables or driving them away.
  *
- * Data: fn_club_bomb_pot_report — SECURITY DEFINER, gated server-side on the
+ * Data: fn_club_bomb_pot_report_v2 — SECURITY DEFINER, gated server-side on the
  * same owner / co_owner / admin test fn_request_manual_bomb_pot uses, raising
  * ERRCODE 42501 like its siblings. The client gate below is cosmetic.
  *
@@ -29,7 +29,7 @@
  * plates. Every read, guard and pinned literal of the generic page is kept.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { isAuthzError } from '../../utils/clubDashboard';
@@ -38,6 +38,9 @@ import { downloadCsv, csvEscape } from '../../utils/downloadCsv';
 import { SpadeConsole } from '../../components/console/SpadeConsole';
 import { compactChips } from '../../utils/format';
 import { titleCase } from '../../utils/titleCase';
+import { useIsMounted } from '../../hooks/useIsMounted';
+import { useAuthUser } from '../../hooks/useAuthUser';
+import { useToast } from '../../components/common/Toast';
 import styles from './ClubBombPotReportPage.module.css';
 
 interface ReportRow {
@@ -57,7 +60,128 @@ interface ReportRow {
   unrecorded_hands: number;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+const BOMB_POT_REPORT_CONTRACT = 'fn_club_bomb_pot_report.v2';
+const UUID_TOKEN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function reportText(value: unknown, label: string, nullable = false): string | null {
+  if (value === null && nullable) return null;
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new Error(`Bomb pot report ${label} is invalid`);
+  }
+  return value;
+}
+
+function reportCount(value: unknown, label: string): number {
+  if (!Number.isSafeInteger(value) || (value as number) < 0) {
+    throw new Error(`Bomb pot report ${label} is invalid`);
+  }
+  return value as number;
+}
+
+function reportAmount(value: unknown, label: string, nullable = false): number | null {
+  if (value === null && nullable) return null;
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+    throw new Error(`Bomb pot report ${label} is invalid`);
+  }
+  return value;
+}
+
+/** A successful RPC response is still untrusted until every row is safe to
+ * total, paint and export. */
+export function parseClubBombPotReport(
+  value: unknown,
+  expectedClubId: string,
+  expectedDays: number
+): ReportRow[] {
+  if (!isRecord(value)) throw new Error('Bomb pot report response is invalid');
+  if (
+    !UUID_TOKEN.test(expectedClubId) ||
+    value.contract !== BOMB_POT_REPORT_CONTRACT ||
+    value.contract_version !== 2 ||
+    value.club_id !== expectedClubId ||
+    value.requested_days !== expectedDays ||
+    value.window_days !== expectedDays
+  ) {
+    throw new Error('Bomb pot report scope receipt is invalid');
+  }
+  const windowStart = reportText(value.window_start, 'window start') as string;
+  const windowEnd = reportText(value.window_end, 'window end') as string;
+  const startMs = Date.parse(`${windowStart}T00:00:00.000Z`);
+  const endMs = Date.parse(`${windowEnd}T00:00:00.000Z`);
+  if (
+    !/^\d{4}-\d{2}-\d{2}$/.test(windowStart) ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(windowEnd) ||
+    !Number.isFinite(startMs) ||
+    !Number.isFinite(endMs) ||
+    new Date(startMs).toISOString().slice(0, 10) !== windowStart ||
+    new Date(endMs).toISOString().slice(0, 10) !== windowEnd ||
+    (endMs - startMs) / 86_400_000 !== expectedDays ||
+    typeof value.generated_at !== 'string' ||
+    !Number.isFinite(Date.parse(value.generated_at)) ||
+    !Array.isArray(value.rows)
+  ) {
+    throw new Error('Bomb pot report window receipt is invalid');
+  }
+  const identities = new Set<string>();
+  return value.rows.map((candidate) => {
+    if (!isRecord(candidate)) throw new Error('Bomb pot report row is invalid');
+    const tableId = reportText(candidate.table_id, 'table identity') as string;
+    if (!UUID_TOKEN.test(tableId)) throw new Error('Bomb pot report table identity is invalid');
+    const tableName = reportText(candidate.table_name, 'table name', true);
+    const triggerReason = reportText(candidate.trigger_reason, 'trigger', true);
+    const variant = reportText(candidate.variant, 'variant', true);
+    const boardCount =
+      candidate.board_count === null ? null : reportCount(candidate.board_count, 'board count');
+    if (boardCount !== null && boardCount < 1) {
+      throw new Error('Bomb pot report board count is invalid');
+    }
+    const hands = reportCount(candidate.hands, 'hand count');
+    const scoops = reportCount(candidate.scoops, 'scoop count');
+    const splits = reportCount(candidate.splits, 'split count');
+    const unrecordedHands = reportCount(candidate.unrecorded_hands, 'unrecorded count');
+    if (scoops + splits + unrecordedHands !== hands) {
+      throw new Error('Bomb pot report outcomes do not reconcile');
+    }
+    const identity = JSON.stringify([tableId, triggerReason, boardCount, variant]);
+    if (identities.has(identity)) throw new Error('Bomb pot report row is duplicated');
+    identities.add(identity);
+    return {
+      table_id: tableId,
+      table_name: tableName,
+      trigger_reason: triggerReason,
+      board_count: boardCount,
+      variant,
+      hands,
+      avg_players: reportAmount(candidate.avg_players, 'average players', true),
+      avg_pot: reportAmount(candidate.avg_pot, 'average pot', true),
+      total_pot: reportAmount(candidate.total_pot, 'total pot', true),
+      total_rake: reportAmount(candidate.total_rake, 'total rake', true),
+      total_antes: reportAmount(candidate.total_antes, 'total antes', true),
+      scoops,
+      splits,
+      unrecorded_hands: unrecordedHands,
+    };
+  });
+}
+
 const WINDOWS = [7, 30, 90] as const;
+
+interface ReportSnapshot {
+  scope: string;
+  rows: ReportRow[];
+}
+
+interface ReportRequestState {
+  scope: string;
+  loading: boolean;
+  denied: boolean;
+  notFound: boolean;
+  error: string | null;
+}
 
 /* Report money is forward-facing and reads compact (Dan: no decimals, 1.2K
    past a thousand). The CSV below still carries the exact figures. */
@@ -84,52 +208,120 @@ const boardLabel = (n: number | null) => (n && n >= 2 ? `${n} Boards` : '1 Board
 export default function ClubBombPotReportPage() {
   const { clubId } = useParams<{ clubId: string }>();
   const navigate = useNavigate();
+  const { user } = useAuthUser();
+  const toast = useToast();
   const [days, setDays] = useState<(typeof WINDOWS)[number]>(30);
-  const [rows, setRows] = useState<ReportRow[] | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [denied, setDenied] = useState(false);
-  const [notFound, setNotFound] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const scopeKey = `${user?.id ?? 'signed-out'}:${clubId ?? ''}:${days}`;
+  const [snapshot, setSnapshot] = useState<ReportSnapshot | null>(null);
+  const [requestState, setRequestState] = useState<ReportRequestState>({
+    scope: scopeKey,
+    loading: true,
+    denied: false,
+    notFound: false,
+    error: null,
+  });
+  const isMounted = useIsMounted();
+  const requestVersionRef = useRef(0);
+  const inFlightRef = useRef<{ scope: string; requestId: number } | null>(null);
+  const activeScopeRef = useRef(scopeKey);
+  activeScopeRef.current = scopeKey;
+
+  const rows = snapshot?.scope === scopeKey ? snapshot.rows : null;
+  const stateForScope: ReportRequestState =
+    requestState.scope === scopeKey
+      ? requestState
+      : { scope: scopeKey, loading: true, denied: false, notFound: false, error: null };
+  const { loading, denied, notFound, error } = stateForScope;
 
   const load = useCallback(async () => {
     if (!clubId) return;
-    setLoading(true);
-    setError(null);
+    const requestScope = scopeKey;
+    if (inFlightRef.current?.scope === requestScope) return;
+    const requestId = ++requestVersionRef.current;
+    inFlightRef.current = { scope: requestScope, requestId };
+    const isCurrent = () =>
+      isMounted.current &&
+      activeScopeRef.current === requestScope &&
+      requestVersionRef.current === requestId;
+
+    setRequestState({
+      scope: requestScope,
+      loading: true,
+      denied: false,
+      notFound: false,
+      error: null,
+    });
     // The route carries the club's SLUG (clubs/deep-stack-society-11192/...)
     // and this handed it to a uuid argument, so on every slug URL the RPC
     // answered 22P02 and the page said "Could Not Load". Resolve first, and
     // name a club that does not exist as one.
-    let resolved: string;
     try {
-      const { resolveClubUUIDStrict } = await import('../../utils/strictClubIdResolver');
-      resolved = await resolveClubUUIDStrict(clubId);
+      let resolved: string;
+      try {
+        const { resolveClubUUIDStrict } = await import('../../utils/strictClubIdResolver');
+        resolved = await resolveClubUUIDStrict(clubId);
+      } catch (e) {
+        if (!isCurrent()) return;
+        setSnapshot(null);
+        if ((e as { name?: string } | null)?.name === 'ClubNotFoundError') {
+          setRequestState((current) =>
+            current.scope === requestScope ? { ...current, notFound: true } : current
+          );
+        } else {
+          reportError(e, 'ClubBombPotReportPage.Resolve_failed');
+          setRequestState((current) =>
+            current.scope === requestScope
+              ? { ...current, error: 'The Club Could Not Be Resolved' }
+              : current
+          );
+        }
+        return;
+      }
+
+      if (!isCurrent()) return;
+      const { data, error: rpcError } = await supabase.rpc('fn_club_bomb_pot_report_v2', {
+        p_club_id: resolved,
+        p_days: days,
+      });
+      if (!isCurrent()) return;
+      if (rpcError) {
+        setSnapshot(null);
+        if (isAuthzError(rpcError)) {
+          setRequestState((current) =>
+            current.scope === requestScope ? { ...current, denied: true } : current
+          );
+        } else {
+          reportError(rpcError, 'ClubBombPotReportPage.Load_failed');
+          setRequestState((current) =>
+            current.scope === requestScope
+              ? { ...current, error: 'Could Not Load The Bomb Pot Report' }
+              : current
+          );
+        }
+      } else {
+        setSnapshot({
+          scope: requestScope,
+          rows: parseClubBombPotReport(data, resolved, days),
+        });
+      }
     } catch (e) {
-      if ((e as { name?: string } | null)?.name === 'ClubNotFoundError') {
-        setNotFound(true);
-      } else {
-        reportError(e, 'ClubBombPotReportPage.Resolve_failed');
-        setError('The Club Could Not Be Resolved');
+      if (!isCurrent()) return;
+      reportError(e, 'ClubBombPotReportPage.Load_failed');
+      setSnapshot(null);
+      setRequestState((current) =>
+        current.scope === requestScope
+          ? { ...current, error: 'Could Not Load The Bomb Pot Report' }
+          : current
+      );
+    } finally {
+      if (inFlightRef.current?.requestId === requestId) inFlightRef.current = null;
+      if (isCurrent()) {
+        setRequestState((current) =>
+          current.scope === requestScope ? { ...current, loading: false } : current
+        );
       }
-      setLoading(false);
-      return;
     }
-    const { data, error: rpcError } = await supabase.rpc('fn_club_bomb_pot_report', {
-      p_club_id: resolved,
-      p_days: days,
-    });
-    if (rpcError) {
-      if (isAuthzError(rpcError)) {
-        setDenied(true);
-      } else {
-        reportError(rpcError, 'ClubBombPotReportPage.Load_failed');
-        setError('Could Not Load The Bomb Pot Report');
-      }
-      setRows(null);
-    } else {
-      setRows((data ?? []) as ReportRow[]);
-    }
-    setLoading(false);
-  }, [clubId, days]);
+  }, [clubId, days, isMounted, scopeKey]);
 
   useEffect(() => {
     void load();
@@ -165,13 +357,15 @@ export default function ClubBombPotReportPage() {
     };
   }, [rows]);
 
-  const exportCsv = useCallback(() => {
+  const exportCsv = useCallback(async () => {
     if (!rows) return;
+    const exportScope = scopeKey;
+    const isCurrent = () => isMounted.current && activeScopeRef.current === exportScope;
     const header =
       'table,trigger,boards,variant,hands,avg_players,avg_pot,total_pot,total_rake,total_antes,scoops,splits,unrecorded';
     const body = rows.map((d) =>
       [
-        d.table_name ?? d.table_id,
+        d.table_name ?? 'Table Name Unavailable',
         triggerLabel(d.trigger_reason),
         d.board_count ?? 1,
         d.variant ?? '',
@@ -188,14 +382,28 @@ export default function ClubBombPotReportPage() {
         .map((v) => csvEscape(String(v)))
         .join(',')
     );
-    downloadCsv(`bomb-pot-report-${clubId}-${days}d.csv`, [header, ...body].join('\n'));
-  }, [rows, clubId, days]);
+    try {
+      const downloaded = await downloadCsv(
+        `bomb-pot-report-${clubId}-${days}d.csv`,
+        [header, ...body].join('\n'),
+        isCurrent
+      );
+      if (isCurrent() && !downloaded) {
+        toast.error('This Browser Could Not Start The Download');
+      }
+    } catch (error) {
+      if (!isCurrent()) return;
+      reportError(error, 'ClubBombPotReportPage.Export_failed');
+      toast.error('This Browser Could Not Start The Download');
+    }
+  }, [rows, clubId, days, isMounted, scopeKey, toast]);
 
   if (notFound) {
     return (
       <div className={styles.page}>
         <SpadeConsole
           className={styles.console}
+          family="spade"
           eyebrow="Bomb Pots"
           title="Club Not Found"
           titleId="bomb-pot-report-title"
@@ -225,6 +433,7 @@ export default function ClubBombPotReportPage() {
       <div className={styles.page}>
         <SpadeConsole
           className={styles.console}
+          family="spade"
           eyebrow="Bomb Pots"
           title="Bomb Pot Report"
           titleId="bomb-pot-report-title"
@@ -253,6 +462,7 @@ export default function ClubBombPotReportPage() {
     <div className={styles.page}>
       <SpadeConsole
         className={styles.console}
+        family="spade"
         eyebrow="Bomb Pots"
         title="Bomb Pot Report"
         titleId="bomb-pot-report-title"
@@ -287,9 +497,16 @@ export default function ClubBombPotReportPage() {
             Loading Report...
           </p>
         ) : error ? (
-          <p className={`sc-copy sc-copy--center ${styles.state} sc-ink--red`} role="alert">
-            {error}
-          </p>
+          <div className={styles.errorState} role="alert">
+            <p className={`sc-copy sc-copy--center ${styles.state} sc-ink--red`}>{error}</p>
+            <button
+              type="button"
+              className={`${styles.word} sc-ink--white`}
+              onClick={() => void load()}
+            >
+              Retry
+            </button>
+          </div>
         ) : !rows || rows.length === 0 ? (
           <p className={`sc-copy sc-copy--center ${styles.state}`}>
             No Bomb Pots Ran At This Club In The Last {days} Days. Turn Them On From A Table
@@ -311,7 +528,7 @@ export default function ClubBombPotReportPage() {
               <div className={styles.row}>
                 <span className={`${styles.rowLabel} sc-ink--blue`}>Players Per Bomb</span>
                 <span className={`${styles.rowValue} sc-ink--silver`}>
-                  {totals.avgPlayers.toFixed(1)}
+                  {compactChips(totals.avgPlayers)}
                 </span>
               </div>
               <div className={styles.row}>
@@ -354,9 +571,7 @@ export default function ClubBombPotReportPage() {
                   >
                     <div className={styles.recordHead}>
                       <span className={`${styles.recordName} sc-ink--silver`}>
-                        {d.table_name
-                          ? titleCase(d.table_name)
-                          : `Table ${d.table_id.slice(0, 8).toUpperCase()}`}
+                        {d.table_name ? titleCase(d.table_name) : 'Table Name Unavailable'}
                       </span>
                       <span className={`${styles.recordMeta} sc-ink--blue`}>
                         {triggerLabel(d.trigger_reason)}
@@ -373,7 +588,7 @@ export default function ClubBombPotReportPage() {
                       <div className={styles.figure}>
                         <dt className={`${styles.figureLabel} sc-ink--muted`}>Players</dt>
                         <dd className={`${styles.figureValue} sc-ink--silver`}>
-                          {d.avg_players == null ? '-' : Number(d.avg_players).toFixed(1)}
+                          {d.avg_players == null ? '-' : compactChips(Number(d.avg_players))}
                         </dd>
                       </div>
                       <div className={styles.figure}>

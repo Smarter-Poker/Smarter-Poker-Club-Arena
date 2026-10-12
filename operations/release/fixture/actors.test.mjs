@@ -36,6 +36,7 @@ function snapshot(current = null, context = null) {
     stage: current ? 'preflop' : 'waiting',
     current_player: current,
     action_context: context,
+    turn_start_time_ms: current ? 1791270328275 : 0,
     current_bet: 0,
     pot: 0,
     players: ids.map((id, i) => ({
@@ -167,6 +168,7 @@ test('two native actors check/call/fold only through HTTP with exact contexts an
     patch: [
       { op: 'replace', path: '/current_player', value: ids[1] },
       { op: 'replace', path: '/action_context', value: 'decision-two' },
+      { op: 'replace', path: '/turn_start_time_ms', value: 1791270329275 },
       { op: 'replace', path: '/current_bet', value: 10 },
     ],
   });
@@ -179,6 +181,7 @@ test('two native actors check/call/fold only through HTTP with exact contexts an
     patch: [
       { op: 'replace', path: '/current_player', value: ids[0] },
       { op: 'replace', path: '/action_context', value: 'decision-three' },
+      { op: 'replace', path: '/turn_start_time_ms', value: 1791270330275 },
       { op: 'replace', path: '/players/0/stack', value: 5 },
     ],
   });
@@ -243,6 +246,18 @@ test('financial actor transports top-up replay and offer acceptance over authent
     deadlineAt: Date.now() + 10000,
     offers: [{ playerId: ids[1], fullPremium: 4 }],
   };
+  h.broadcast({
+    type: 'USER_EVENT',
+    tableId,
+    payload: { ...payload, kind: 'pre_action', action: null, to_call_at_set: null },
+  });
+  await wait(30);
+  assert.equal(
+    h.financialRequests.length,
+    3,
+    'private events must never enter the financial event route'
+  );
+  assert.deepEqual(h.failures, []);
   h.broadcast({ type: 'EVENT', tableId, payload });
   await until(() => checkpoints.some((x) => x.phase === 'insurance.accepted'));
   h.broadcast({
@@ -343,6 +358,38 @@ test('actors continue through a completed hand into the next fresh decision', as
   assert.deepEqual(fixture.failures, []);
 });
 
+test('a post-action context on the answered clock cannot become a second action', async (t) => {
+  // Real isolated wire: DELTA68 armed seat 2, action367 called, DELTA69
+  // advanced the context while retaining that seat and its answered clock.
+  const fixture = await harness(t, { state: snapshot(ids[1], 'hand:preflop:0:2:2') });
+  await fixture.start();
+  await until(() => fixture.actions.length === 1);
+  fixture.broadcast({
+    type: 'DELTA',
+    tableId,
+    seq: 2,
+    prev: 1,
+    patch: [{ op: 'replace', path: '/action_context', value: 'hand:preflop:1:2:2' }],
+  });
+  await wait(500);
+  assert.equal(fixture.actions.length, 1, 'an accepted turn remains spent despite a new context');
+  fixture.broadcast({
+    type: 'DELTA',
+    tableId,
+    seq: 3,
+    prev: 2,
+    patch: [
+      { op: 'replace', path: '/action_context', value: 'hand:flop:0:2:2' },
+      { op: 'replace', path: '/stage', value: 'flop' },
+      { op: 'replace', path: '/turn_start_time_ms', value: 1791270329275 },
+    ],
+  });
+  await until(() => fixture.actions.length === 2);
+  assert.equal(fixture.actions[1].actor, ids[1]);
+  assert.equal(fixture.actions[1].actionContext, 'hand:flop:0:2:2');
+  assert.deepEqual(fixture.failures, []);
+});
+
 test('a changed decision during pacing replaces the unsent intent', async (t) => {
   const fixture = await harness(t, { state: snapshot(ids[0], 'old-context') });
   await fixture.start();
@@ -374,9 +421,38 @@ test('PING is answered; animation/user events never become a decision', async (t
   fixture.send({
     type: 'USER_EVENT',
     tableId,
-    payload: { type: 'hole_cards', cards: ['As', 'Ks'] },
+    payload: {
+      kind: 'hole_cards',
+      row: {
+        table_id: tableId,
+        user_id: ids[0],
+        seat_number: 1,
+        hand_number: 1,
+        cards: ['As', 'Ks'],
+      },
+    },
+  });
+  fixture.send({
+    type: 'USER_EVENT',
+    tableId,
+    payload: { kind: 'pre_action', hand_number: 1, action: null, to_call_at_set: null },
+  });
+  fixture.send({
+    type: 'USER_EVENT',
+    tableId,
+    payload: {
+      kind: 'add_on_adjusted',
+      addon_kind: 'add_on',
+      pending_id: 'local-pending',
+      requested: 10,
+      applied: 5,
+      refunded: 5,
+      max_buy_in: 200,
+      hand_number: 1,
+    },
   });
   await until(() => fixture.frames.some((x) => x.type === 'PONG'));
+  await wait(30);
   assert.deepEqual(
     fixture.frames.find((x) => x.type === 'PONG'),
     { type: 'PONG', ts: 1234 }
@@ -386,6 +462,16 @@ test('PING is answered; animation/user events never become a decision', async (t
 });
 
 for (const [name, message, expected] of [
+  ...[null, [], {}, { type: 'hole_cards' }, { kind: 'unknown' }, { kind: 1 }].map((payload, i) => [
+    `malformed private event ${i}`,
+    { type: 'USER_EVENT', tableId, payload },
+    'USER_EVENT',
+  ]),
+  [
+    'private kind on public event',
+    { type: 'EVENT', tableId, payload: { kind: 'hole_cards' } },
+    'EVENT',
+  ],
   ['unknown protocol', { type: 'MAYBE_ACTION', tableId }, 'UNKNOWN_FRAME'],
   ['wrong table', { type: 'SUBSCRIBED', tableId: spectatorId }, 'WRONG_TABLE'],
   ['server refusal', { type: 'ERROR', tableId, code: 'AUTH_DENIED' }, 'ENGINE_ERROR'],
@@ -414,6 +500,16 @@ for (const [name, message, expected] of [
     'PATCH',
   ],
   ['missing context', { type: 'SNAPSHOT', tableId, seq: 2, state: snapshot(ids[0]) }, 'CONTEXT'],
+  [
+    'missing turn clock',
+    {
+      type: 'SNAPSHOT',
+      tableId,
+      seq: 2,
+      state: { ...snapshot(ids[0], 'context'), turn_start_time_ms: null },
+    },
+    'TURN_CLOCK',
+  ],
   [
     'spectator enters roster',
     {
@@ -539,4 +635,144 @@ test('only two matching authenticated sessions can start, endpoints remain local
       })
     );
   }
+});
+
+for (const action of ['all_in', 'fold']) {
+  test(`published ${action} retains the answered pointer without another decision`, async (t) => {
+    const fixture = await harness(t, { state: snapshot(ids[0], 'original-turn') });
+    await fixture.start();
+    await until(() => fixture.actions.length === 1);
+    fixture.broadcast({
+      type: 'EVENT',
+      tableId,
+      seq: 10,
+      payload: { type: 'player_action', hand_number: 1, user_id: ids[0], action },
+    });
+    const patch =
+      action === 'all_in'
+        ? [
+            { op: 'replace', path: '/players/0/stack', value: 0 },
+            { op: 'replace', path: '/players/0/is_all_in', value: true },
+          ]
+        : [{ op: 'replace', path: '/players/0/is_folded', value: true }];
+    fixture.broadcast({
+      type: 'DELTA',
+      tableId,
+      prev: 1,
+      seq: 2,
+      patch: [...patch, { op: 'replace', path: '/action_context', value: 'answered-context' }],
+    });
+    await wait(450);
+    assert.deepEqual(fixture.failures, []);
+    assert.equal(fixture.actions.length, 1);
+    fixture.broadcast({
+      type: 'DELTA',
+      tableId,
+      prev: 2,
+      seq: 3,
+      patch: [{ op: 'add', path: '/server_time_ms', value: 123 }],
+    });
+    await wait(30);
+    assert.deepEqual(fixture.failures, []);
+    fixture.broadcast({
+      type: 'DELTA',
+      tableId,
+      prev: 3,
+      seq: 4,
+      patch: [
+        { op: 'replace', path: '/current_player', value: ids[1] },
+        { op: 'replace', path: '/turn_start_time_ms', value: 1791270329275 },
+        { op: 'replace', path: '/action_context', value: 'next-turn' },
+      ],
+    });
+    await until(() => fixture.actions.length === 2);
+    assert.equal(fixture.actions[1].actor, ids[1]);
+    assert.deepEqual(fixture.failures, []);
+  });
+}
+for (const variation of [
+  'missing-event',
+  'wrong-player',
+  'wrong-hand',
+  'replayed',
+  'new-clock',
+  'intervening-state',
+]) {
+  test(`inactive pointer refuses ${variation}`, async (t) => {
+    const fixture = await harness(t, { state: snapshot(ids[0], 'original') });
+    await fixture.start();
+    await until(() => fixture.actions.length === 1);
+    if (variation !== 'missing-event')
+      fixture.broadcast({
+        type: 'EVENT',
+        tableId,
+        seq: 10,
+        payload: {
+          type: 'player_action',
+          hand_number: variation === 'wrong-hand' ? 2 : 1,
+          user_id: variation === 'wrong-player' ? ids[1] : ids[0],
+          action: 'all_in',
+          replayed: variation === 'replayed',
+        },
+      });
+    let prev = 1;
+    if (variation === 'intervening-state') {
+      fixture.broadcast({
+        type: 'DELTA',
+        tableId,
+        prev: 1,
+        seq: 2,
+        patch: [{ op: 'add', path: '/server_time_ms', value: 1 }],
+      });
+      prev = 2;
+    }
+    fixture.broadcast({
+      type: 'DELTA',
+      tableId,
+      prev,
+      seq: prev + 1,
+      patch: [
+        { op: 'replace', path: '/players/0/stack', value: 0 },
+        { op: 'replace', path: '/players/0/is_all_in', value: true },
+        ...(variation === 'new-clock'
+          ? [{ op: 'replace', path: '/turn_start_time_ms', value: 1791270329275 }]
+          : []),
+      ],
+    });
+    await until(() => fixture.failures.length === 1);
+    assert.equal(fixture.failures[0], 'FIXTURE_ACTOR_DECISION_STATE');
+    assert.equal(fixture.actions.length, 1);
+  });
+}
+test('an accepted action may publish its reconnect grace clock with the inactive pointer', async (t) => {
+  const fixture = await harness(t, { state: snapshot(ids[0], 'original') });
+  await fixture.start();
+  await until(() => fixture.actions.length === 1);
+  fixture.broadcast({
+    type: 'EVENT',
+    tableId,
+    seq: 10,
+    payload: {
+      type: 'player_action',
+      hand_number: 1,
+      user_id: ids[0],
+      action: 'all_in',
+      timestamp: 1791270329775,
+    },
+  });
+  fixture.broadcast({
+    type: 'DELTA',
+    tableId,
+    prev: 1,
+    seq: 2,
+    patch: [
+      { op: 'replace', path: '/players/0/stack', value: 0 },
+      { op: 'replace', path: '/players/0/is_all_in', value: true },
+      { op: 'replace', path: '/turn_start_time_ms', value: 1791270329275 },
+      { op: 'replace', path: '/action_context', value: 'post-reconnect-all-in' },
+    ],
+  });
+  await wait(450);
+  assert.deepEqual(fixture.failures, []);
+  assert.equal(fixture.actions.length, 1);
 });

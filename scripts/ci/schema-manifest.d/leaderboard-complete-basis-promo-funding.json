@@ -1,0 +1,63 @@
+{
+  "_owner": "agent/leaderboard-completion",
+  "_comment": "Source-only declarations for reserved migration 20261009111728, exact SQL SHA256 58aebf766bbf7645a15205d675e06e574d88a5c0434fdf036d06f35cd3884a82. Production installation is pending. This fragment is not installation evidence. Protected merge, qualified installation and independent catalog/history readback remain required.",
+  "tables": [
+    "leaderboard_complete_captures",
+    "leaderboard_capture_counters",
+    "leaderboard_basis_rollout",
+    "leaderboard_basis_existing_clubs",
+    "leaderboard_round_basis_receipts"
+  ],
+  "functions": ["fn_refuse_leaderboard_basis_mutation", "fn_leaderboard_complete_round_basis"],
+  "columns": {
+    "leaderboard_complete_captures": [
+      "capture_date",
+      "captured_at",
+      "capture_timezone",
+      "origin",
+      "source_contract",
+      "row_count",
+      "counter_hash",
+      "complete"
+    ],
+    "leaderboard_capture_counters": [
+      "snapshot_date",
+      "user_id",
+      "club_id",
+      "hands_played",
+      "hands_dealt",
+      "sum_big_blind",
+      "total_winnings",
+      "total_losses",
+      "total_rake",
+      "tournaments_played",
+      "tournaments_won"
+    ],
+    "leaderboard_basis_rollout": [
+      "singleton",
+      "installed_at",
+      "weekly_v2_from",
+      "monthly_v2_from",
+      "contract_version"
+    ],
+    "leaderboard_basis_existing_clubs": ["club_id"],
+    "leaderboard_round_basis_receipts": [
+      "club_id",
+      "period",
+      "period_start",
+      "period_end",
+      "program_id",
+      "program_version",
+      "program_hash",
+      "metric",
+      "basis_version",
+      "basis",
+      "basis_hash",
+      "selected_board",
+      "selected_board_hash",
+      "winners",
+      "winners_hash",
+      "recorded_at"
+    ]
+  }
+}

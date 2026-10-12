@@ -250,6 +250,40 @@ describe('exact joint pot distributions', () => {
     ]);
     expect(Object.values(prepared.refunds)).toEqual([0, 0, 0]);
   });
+  it('returns uncalled money behind an ante-only all-in, as the controller does', () => {
+    // Natural-evidence F1 (hand 0e68afa3): BB 2.00 + ante 1.00 against a 0.70
+    // ante all-in. Matched 3.00 v 0.70: 2.30 goes back to the BB and the only
+    // pot is 0.70 x 2 = 1.40.
+    const { state } = jointFixture('nlh', 'river', 1, 2);
+    state.players.forEach((p) => {
+      p.is_folded = false;
+      p.is_sitting_out = false;
+    });
+    Object.assign(state.players[0], {
+      stack: 97,
+      bet: 2,
+      totalInvested: 3,
+      deadInvested: 1,
+      individualAnteInvested: 1,
+      is_all_in: false,
+    });
+    Object.assign(state.players[1], {
+      stack: 0,
+      bet: 0,
+      totalInvested: 0.7,
+      deadInvested: 0.7,
+      individualAnteInvested: 0.7,
+      is_all_in: true,
+    });
+    const prepared = prepareJointPots(state.players, 0.01);
+    expect(prepared.refunds).toEqual({ p0: 2.3, p1: 0 });
+    // The mirror stores pot amounts as units x chip unit; compare in cents.
+    expect(prepared.pots.map((p) => [Math.round(p.amount * 100), p.eligiblePlayers])).toEqual([
+      [140, ['p0', 'p1']],
+    ]);
+    expect(prepared.seats[0].stack).toBe(99.3);
+    expect(prepared.seats[0].totalInvested).toBe(0.7);
+  });
   it.each([
     'chip_unit',
     'fractional',

@@ -657,7 +657,7 @@ const HandHistoryPanel = memo(function HandHistoryPanel({
     panelRef.current?.focus();
 
     const FOCUSABLE =
-      'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+      'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]):not([tabindex="-1"]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         onCloseRef.current();

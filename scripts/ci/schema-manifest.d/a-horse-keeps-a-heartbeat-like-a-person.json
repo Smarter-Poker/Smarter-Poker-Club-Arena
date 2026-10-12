@@ -1,0 +1,5 @@
+{
+  "_owner": "fix/roster-and-seat-writes-closed. Applied to production as migration 20261005174041_a_horse_keeps_a_heartbeat_like_a_person on 2026-10-05 (verified live: pg_proc has smarter_private.fn_horse_presence_tick and cron.job horse-presence-heartbeat is active). The nightly base snapshot will observe it.",
+  "tables": [],
+  "functions": ["smarter_private.fn_horse_presence_tick"]
+}

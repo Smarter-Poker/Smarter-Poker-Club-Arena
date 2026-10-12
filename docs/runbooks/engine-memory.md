@@ -8,19 +8,21 @@ none initiates, advances, retries or certifies a release or a restart.
 
 The restored flow uses protected GitHub checks and the original Hetzner engine
 publisher. `server/scripts/build-engine-image.sh` builds the engine image on
-`engine-01`. Its existing gate requires **1179648 KiB available** at the actual
-build attempt: `BUILD_MEMORY_BYTES=939524096` (896 MiB) plus
-`BUILD_RESERVE_KIB=262144` (256 MiB), totaling **1207959552 bytes / 1152 MiB**.
+`engine-01`. Its existing gate requires **2359296 KiB available** at the actual
+build attempt: `BUILD_MEMORY_BYTES=2147483648` (2048 MiB) plus
+`BUILD_RESERVE_KIB=262144` (256 MiB), totaling **2415919104 bytes / 2304 MiB**.
 Keep that gate and all publication, maintenance, lease and financial safeguards.
 Retired local/custom pipelines remain unavailable under the shared owner policy.
 
 - `EngineHostNearOOM`: host MemAvailable below 256 MiB for two minutes, critical.
-- `EngineBuildHeadroomLost`: host MemAvailable below 1152 MiB for thirty minutes,
+- `EngineBuildHeadroomLost`: host MemAvailable below 2304 MiB for thirty minutes,
   warning. It reports sustained pressure relative to the current on-host build
   gate; conditions can change before the next authorized attempt.
-- `EngineProcessMemoryHigh`: engine RSS above 1717986918 bytes (approximately
-  1.6 GiB) for fifteen minutes, warning. This retained historical threshold is
-  not a process cap, a precise current build-fit calculation or proof of a leak.
+- `EngineProcessMemoryHigh`: engine RSS above 4294967296 bytes (4 GiB) for
+  fifteen minutes, warning. Re-measured 2026-10-02 on the 16 GiB host: hourly
+  RSS maxima over 48 h were 1.73-2.94 GiB with the main V8 heap flat at
+  0.47-0.93 GiB, so the historical 1.6 GiB line fired continuously without any
+  growth. It is not a process cap, a build-fit calculation or proof of a leak.
 
 The September 13/14 incident recorded a roughly 3819 MiB host, approximately
 1060 MiB of other residents, rising engine RSS and repeated refused builds.

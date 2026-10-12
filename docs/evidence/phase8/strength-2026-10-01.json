@@ -1,0 +1,347 @@
+{
+  "phase": "P8.2",
+  "date": "2026-10-01",
+  "base": "4948e0ffd527adee5d898426f7abd84be0be09ab",
+  "sourceSha256": "bb617c83e843a67516a5b7a9faac22777ad9920d927f54cb3dd3a5d2f5199a6f",
+  "contract": {
+    "seeds": [8101101, 8102203, 8103307],
+    "objectives": ["mtt", "sng", "spin", "satellite", "pko", "mystery"],
+    "pairsPerRun": 1024,
+    "requiredRuns": 18
+  },
+  "runner": "server/src/scripts/horseTournamentEvaluate.ts --promotion --objective=<o> --seed=<s>",
+  "host": {
+    "platform": "darwin arm64",
+    "physicalCores": 28
+  },
+  "runsAttempted": 18,
+  "runsCompleted": 0,
+  "blockers": [
+    {
+      "id": "credential",
+      "status": "unavailable external input",
+      "detail": "Both local service credentials for kuklfnapbkmacvwxktbh (server/.env and the shared agent credential file) are rejected by Supabase with \"Unregistered API key\". gto_postflop_compact and fn_gto_v31_active_cells are granted to service_role only, so promotion-mode solver hydration cannot succeed with any key available on this Mac."
+    },
+    {
+      "id": "launcher",
+      "status": "unavailable external input",
+      "detail": "HorseLeagueComputeWorkerClient.defaultWorkerFactory refuses every platform other than Linux (\"horse league process requires the qualified Linux launcher\") because its low-priority proof is Linux thread-group scope. This Mac (darwin arm64) has no running Linux instance. The boundary is deliberate and was not weakened."
+    }
+  ],
+  "promotionVerdict": {
+    "promoted": false,
+    "reasons": [
+      "mtt:missing_or_duplicate_seed",
+      "sng:missing_or_duplicate_seed",
+      "spin:missing_or_duplicate_seed",
+      "satellite:missing_or_duplicate_seed",
+      "pko:missing_or_duplicate_seed",
+      "mystery:missing_or_duplicate_seed",
+      "incomplete_run_matrix"
+    ],
+    "buckets": [
+      {
+        "objective": "mtt",
+        "pairs": 0,
+        "meanDifference": 0,
+        "standardError": 0,
+        "confidence99": [-1, 1]
+      },
+      {
+        "objective": "sng",
+        "pairs": 0,
+        "meanDifference": 0,
+        "standardError": 0,
+        "confidence99": [-1, 1]
+      },
+      {
+        "objective": "spin",
+        "pairs": 0,
+        "meanDifference": 0,
+        "standardError": 0,
+        "confidence99": [-1, 1]
+      },
+      {
+        "objective": "satellite",
+        "pairs": 0,
+        "meanDifference": 0,
+        "standardError": 0,
+        "confidence99": [-1, 1]
+      },
+      {
+        "objective": "pko",
+        "pairs": 0,
+        "meanDifference": 0,
+        "standardError": 0,
+        "confidence99": [-1, 1]
+      },
+      {
+        "objective": "mystery",
+        "pairs": 0,
+        "meanDifference": 0,
+        "standardError": 0,
+        "confidence99": [-1, 1]
+      }
+    ]
+  },
+  "runs": [
+    {
+      "run": "mtt-8101101",
+      "objective": "mtt",
+      "seed": 8101101,
+      "exitCode": 1,
+      "completedPairs": 0,
+      "status": "unavailable external input",
+      "refusals": [
+        "solver_store_hydration_failed:supabase_rejected_service_credential(Unregistered API key)",
+        "compute_process_refused:requires_the_qualified_Linux_launcher(platform=darwin)"
+      ]
+    },
+    {
+      "run": "sng-8101101",
+      "objective": "sng",
+      "seed": 8101101,
+      "exitCode": 1,
+      "completedPairs": 0,
+      "status": "unavailable external input",
+      "refusals": [
+        "solver_store_hydration_failed:supabase_rejected_service_credential(Unregistered API key)",
+        "compute_process_refused:requires_the_qualified_Linux_launcher(platform=darwin)"
+      ]
+    },
+    {
+      "run": "spin-8101101",
+      "objective": "spin",
+      "seed": 8101101,
+      "exitCode": 1,
+      "completedPairs": 0,
+      "status": "unavailable external input",
+      "refusals": [
+        "solver_store_hydration_failed:supabase_rejected_service_credential(Unregistered API key)",
+        "compute_process_refused:requires_the_qualified_Linux_launcher(platform=darwin)"
+      ]
+    },
+    {
+      "run": "satellite-8101101",
+      "objective": "satellite",
+      "seed": 8101101,
+      "exitCode": 1,
+      "completedPairs": 0,
+      "status": "unavailable external input",
+      "refusals": [
+        "solver_store_hydration_failed:supabase_rejected_service_credential(Unregistered API key)",
+        "compute_process_refused:requires_the_qualified_Linux_launcher(platform=darwin)"
+      ]
+    },
+    {
+      "run": "pko-8101101",
+      "objective": "pko",
+      "seed": 8101101,
+      "exitCode": 1,
+      "completedPairs": 0,
+      "status": "unavailable external input",
+      "refusals": [
+        "solver_store_hydration_failed:supabase_rejected_service_credential(Unregistered API key)",
+        "compute_process_refused:requires_the_qualified_Linux_launcher(platform=darwin)"
+      ]
+    },
+    {
+      "run": "mystery-8101101",
+      "objective": "mystery",
+      "seed": 8101101,
+      "exitCode": 1,
+      "completedPairs": 0,
+      "status": "unavailable external input",
+      "refusals": [
+        "solver_store_hydration_failed:supabase_rejected_service_credential(Unregistered API key)",
+        "compute_process_refused:requires_the_qualified_Linux_launcher(platform=darwin)"
+      ]
+    },
+    {
+      "run": "mtt-8102203",
+      "objective": "mtt",
+      "seed": 8102203,
+      "exitCode": 1,
+      "completedPairs": 0,
+      "status": "unavailable external input",
+      "refusals": [
+        "solver_store_hydration_failed:supabase_rejected_service_credential(Unregistered API key)",
+        "compute_process_refused:requires_the_qualified_Linux_launcher(platform=darwin)"
+      ]
+    },
+    {
+      "run": "sng-8102203",
+      "objective": "sng",
+      "seed": 8102203,
+      "exitCode": 1,
+      "completedPairs": 0,
+      "status": "unavailable external input",
+      "refusals": [
+        "solver_store_hydration_failed:supabase_rejected_service_credential(Unregistered API key)",
+        "compute_process_refused:requires_the_qualified_Linux_launcher(platform=darwin)"
+      ]
+    },
+    {
+      "run": "spin-8102203",
+      "objective": "spin",
+      "seed": 8102203,
+      "exitCode": 1,
+      "completedPairs": 0,
+      "status": "unavailable external input",
+      "refusals": [
+        "solver_store_hydration_failed:supabase_rejected_service_credential(Unregistered API key)",
+        "compute_process_refused:requires_the_qualified_Linux_launcher(platform=darwin)"
+      ]
+    },
+    {
+      "run": "satellite-8102203",
+      "objective": "satellite",
+      "seed": 8102203,
+      "exitCode": 1,
+      "completedPairs": 0,
+      "status": "unavailable external input",
+      "refusals": [
+        "solver_store_hydration_failed:supabase_rejected_service_credential(Unregistered API key)",
+        "compute_process_refused:requires_the_qualified_Linux_launcher(platform=darwin)"
+      ]
+    },
+    {
+      "run": "pko-8102203",
+      "objective": "pko",
+      "seed": 8102203,
+      "exitCode": 1,
+      "completedPairs": 0,
+      "status": "unavailable external input",
+      "refusals": [
+        "solver_store_hydration_failed:supabase_rejected_service_credential(Unregistered API key)",
+        "compute_process_refused:requires_the_qualified_Linux_launcher(platform=darwin)"
+      ]
+    },
+    {
+      "run": "mystery-8102203",
+      "objective": "mystery",
+      "seed": 8102203,
+      "exitCode": 1,
+      "completedPairs": 0,
+      "status": "unavailable external input",
+      "refusals": [
+        "solver_store_hydration_failed:supabase_rejected_service_credential(Unregistered API key)",
+        "compute_process_refused:requires_the_qualified_Linux_launcher(platform=darwin)"
+      ]
+    },
+    {
+      "run": "mtt-8103307",
+      "objective": "mtt",
+      "seed": 8103307,
+      "exitCode": 1,
+      "completedPairs": 0,
+      "status": "unavailable external input",
+      "refusals": [
+        "solver_store_hydration_failed:supabase_rejected_service_credential(Unregistered API key)",
+        "compute_process_refused:requires_the_qualified_Linux_launcher(platform=darwin)"
+      ]
+    },
+    {
+      "run": "sng-8103307",
+      "objective": "sng",
+      "seed": 8103307,
+      "exitCode": 1,
+      "completedPairs": 0,
+      "status": "unavailable external input",
+      "refusals": [
+        "solver_store_hydration_failed:supabase_rejected_service_credential(Unregistered API key)",
+        "compute_process_refused:requires_the_qualified_Linux_launcher(platform=darwin)"
+      ]
+    },
+    {
+      "run": "spin-8103307",
+      "objective": "spin",
+      "seed": 8103307,
+      "exitCode": 1,
+      "completedPairs": 0,
+      "status": "unavailable external input",
+      "refusals": [
+        "solver_store_hydration_failed:supabase_rejected_service_credential(Unregistered API key)",
+        "compute_process_refused:requires_the_qualified_Linux_launcher(platform=darwin)"
+      ]
+    },
+    {
+      "run": "satellite-8103307",
+      "objective": "satellite",
+      "seed": 8103307,
+      "exitCode": 1,
+      "completedPairs": 0,
+      "status": "unavailable external input",
+      "refusals": [
+        "solver_store_hydration_failed:supabase_rejected_service_credential(Unregistered API key)",
+        "compute_process_refused:requires_the_qualified_Linux_launcher(platform=darwin)"
+      ]
+    },
+    {
+      "run": "pko-8103307",
+      "objective": "pko",
+      "seed": 8103307,
+      "exitCode": 1,
+      "completedPairs": 0,
+      "status": "unavailable external input",
+      "refusals": [
+        "solver_store_hydration_failed:supabase_rejected_service_credential(Unregistered API key)",
+        "compute_process_refused:requires_the_qualified_Linux_launcher(platform=darwin)"
+      ]
+    },
+    {
+      "run": "mystery-8103307",
+      "objective": "mystery",
+      "seed": 8103307,
+      "exitCode": 1,
+      "completedPairs": 0,
+      "status": "unavailable external input",
+      "refusals": [
+        "solver_store_hydration_failed:supabase_rejected_service_credential(Unregistered API key)",
+        "compute_process_refused:requires_the_qualified_Linux_launcher(platform=darwin)"
+      ]
+    }
+  ],
+  "throughputProjection": {
+    "scope": "not evidence: in-process, unhydrated stores, fixture mode, 4 pairs per objective, six concurrent on this Mac",
+    "perObjective": [
+      {
+        "objective": "mtt",
+        "pairs": 4,
+        "msPerPair": 6322,
+        "projectedHoursPer1024Pairs": 1.8
+      },
+      {
+        "objective": "sng",
+        "pairs": 4,
+        "msPerPair": 6526,
+        "projectedHoursPer1024Pairs": 1.86
+      },
+      {
+        "objective": "spin",
+        "pairs": 4,
+        "msPerPair": 2843,
+        "projectedHoursPer1024Pairs": 0.81
+      },
+      {
+        "objective": "satellite",
+        "pairs": 4,
+        "msPerPair": 5722,
+        "projectedHoursPer1024Pairs": 1.63
+      },
+      {
+        "objective": "pko",
+        "pairs": 4,
+        "msPerPair": 6196,
+        "projectedHoursPer1024Pairs": 1.76
+      },
+      {
+        "objective": "mystery",
+        "pairs": 4,
+        "msPerPair": 5936,
+        "projectedHoursPer1024Pairs": 1.69
+      }
+    ]
+  },
+  "coverage": "Only the implemented NLH single-board tournament domain is in scope; every other variant, multi-board and cash domain is refused."
+}

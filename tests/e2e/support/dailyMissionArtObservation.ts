@@ -1,6 +1,6 @@
 import { expect, type Page } from '@playwright/test';
 
-type MissionArt = { name: string; bytes: number };
+type MissionArt = { name: string; bytes: number; requests: number };
 type MissionArtObservation = {
   resourcesSeen: number;
   timelineOverflowed: boolean;
@@ -32,10 +32,23 @@ export function installMissionArtObservation(): void {
           path
         )
       ) {
-        observation.missionArt.push({
-          name: path.split('/').pop()!,
-          bytes: resource.encodedBodySize,
-        });
+        /* ONE FILE IS ONE PAYLOAD (2026-10-04). The hero mounts in the route
+           fallback, the loading state and the dashboard, and each mount of the
+           same URL can add a resource entry with the full encodedBodySize even
+           when the bytes came from the HTTP cache (or when routing in this
+           context has turned that cache off). Run 37242346969 summed six
+           entries of one 45,698-byte casino-v2.webp to 276,828 bytes against
+           the 180,000-byte budget. The budget is the art a player downloads,
+           so each file counts once, at its largest size, and the number of
+           requests is kept beside it. */
+        const name = path.split('/').pop()!;
+        const seen = observation.missionArt.find((asset) => asset.name === name);
+        if (seen) {
+          seen.requests += 1;
+          seen.bytes = Math.max(seen.bytes, resource.encodedBodySize);
+        } else {
+          observation.missionArt.push({ name, bytes: resource.encodedBodySize, requests: 1 });
+        }
       }
     }
   };

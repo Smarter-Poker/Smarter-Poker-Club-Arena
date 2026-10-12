@@ -59,7 +59,6 @@ const GUARD = read(
 );
 const MIRROR = read('supabase/migrations/20260902185000_mirror_production_only_cash_rpcs.sql');
 const TABLE_SERVICE = read('src/services/TableService.ts');
-const HYDRA = read('src/services/HydraService.ts');
 const TABLE_PAGE = read('src/pages/TablePage.tsx');
 const ENGINE_BASE = read('server/src/engine/ServerTableEngineBase.ts');
 const ENGINE_SEATING = read('server/src/engine/ServerTableEngineSeating.ts');
@@ -180,11 +179,8 @@ describe('C1: one cash-out path', () => {
   });
 
   it('the browser never calls atomic_table_cashout', () => {
-    for (const file of [
-      'src/services/TableService.ts',
-      'src/services/HydraService.ts',
-      'src/services/WalletService.ts',
-    ]) {
+    // HydraService.ts was deleted on 2026-10-05 (browser horse management).
+    for (const file of ['src/services/TableService.ts', 'src/services/WalletService.ts']) {
       expect(read(file)).not.toMatch(/rpc\(\s*'atomic_table_cashout'/);
     }
   });
@@ -210,21 +206,14 @@ describe('C1: one cash-out path', () => {
     expect(bound).toContain('engine.leaveTable');
     expect(bound).not.toMatch(/clientCashout|supabase\.rpc/);
   });
-
-  it('HydraService.removeHorse refuses instead of cashing a horse out from the browser', () => {
-    const body = HYDRA.slice(
-      HYDRA.indexOf('async removeHorse('),
-      HYDRA.indexOf('async onRealPlayerJoined(')
-    );
-    expect(body).toMatch(/HydraService\.removeHorse_refused_client_cashout/);
-    expect(body).not.toMatch(/rpc\(/);
-  });
 });
 
 describe('C2: one seat creator', () => {
-  it('HydraService no longer INSERTs table_seats', () => {
-    expect(HYDRA).not.toMatch(/async seatHorse\(/);
-    expect(HYDRA).not.toMatch(/from\('table_seats'\)\s*\.insert\(/);
+  it('HydraService, which INSERTed table_seats and cashed horses out, is gone', () => {
+    // seatHorse minted a browser-chosen stack; removeHorse called
+    // atomic_table_cashout. Both refused for a month, and the file was deleted
+    // on 2026-10-05 with the rest of the browser's horse management.
+    expect(fs.existsSync(path.join(process.cwd(), 'src/services/HydraService.ts'))).toBe(false);
   });
 
   it('the five sanctioned creators are patched to declare app.money_path', () => {

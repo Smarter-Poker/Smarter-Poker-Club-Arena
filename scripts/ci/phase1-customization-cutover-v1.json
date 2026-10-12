@@ -1,0 +1,7 @@
+{
+  "contract": "phase1-customization-v1",
+  "client": "owner-bound-customization-and-durable-final-table",
+  "engine": "receipted-mtt-only-final-table-transition",
+  "prerequisiteMigration": "20261005111453",
+  "postCutoverMigration": "20261005111523"
+}

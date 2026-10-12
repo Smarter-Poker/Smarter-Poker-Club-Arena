@@ -182,7 +182,7 @@ describe('hero hole-card row geometry', () => {
     expect(anchors.length, 'the hero row must declare its own left anchor').toBeGreaterThan(0);
     for (const anchor of anchors) {
       expect(anchor, 'a negative tuck puts the first card back on top of the hero').toBe(
-        'calc(100% + 1px)'
+        'calc(100% + 8px)'
       );
     }
   });
@@ -228,9 +228,12 @@ describe('hero hole-card row geometry', () => {
         hits!.length,
         `--sp-card2-${token} is declared ${hits!.length} times; it is a fraction of ` +
           'the felt and needs exactly one declaration'
-      ).toBe(1);
+      ).toBe(token === 'w' ? 2 : 1);
     }
 
+    const cap = rulesFor('.seat.seat--hero').find((r) => /--sp-card2-w:/.test(r.body));
+    expect(cap?.body).toMatch(/min\(\s*clamp/);
+    expect(cap?.body).toContain('100vw');
     const body = RULES.filter((r) => /--sp-card2-w:/.test(r.body))[0].body;
 
     // Width is the only one allowed to be independent, and it must read the

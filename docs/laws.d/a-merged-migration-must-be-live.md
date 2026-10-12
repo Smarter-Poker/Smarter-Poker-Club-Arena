@@ -26,3 +26,15 @@ precisely enough to be machine-checked, and a person reading it later does not.
 The forward guard is that from 20260920 onward no migration may create nothing
 and prove nothing, because that is the exact shape every silent miss had; the
 check runs hourly in Production Integrity Audit, so it has a named reader.
+Extended 2026-09-30 with the mirror of the same rule: a proof the check COULD
+NOT RUN is not a proof that came back false. `declaredProofs` reads one line,
+so the three migrations on main whose proof spans several comment lines reached
+the database truncated, and 20260929130144 was reported as `proof false:
+(SELECT count(*) FROM pg_index i -> rejected: ERROR: syntax error` - the check
+reading back its own truncation and presenting it as an answer from production.
+`proofIsRunnable` now refuses unbalanced or unterminated text before anything
+is asked, which also keeps it out of the shared UNION ALL, and psql runs with
+VERBOSITY=verbose so a rejection carrying SQLSTATE 42601 is known to be about
+the text we sent while 42883 / 42P01 / 42703 stay failures as before. An
+unrunnable proof exits 2, COULD NOT TELL, never 0 and never 1, under the
+precedence FAIL > COULD-NOT-TELL > PASS.

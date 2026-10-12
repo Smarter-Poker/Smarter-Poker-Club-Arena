@@ -1,0 +1,9 @@
+{
+  "_owner": "agent/claude-a5/close-chunks. Migration 20261003101805_the_weekly_close_commits_one_round_at_a_time: the private certificate table a chunked weekly close keeps between its attempts, and its three invoker functions.",
+  "tables": ["accounting_close_certificates"],
+  "functions": [
+    "fn_accounting_close_certificate",
+    "fn_accounting_close_certify",
+    "fn_accounting_close_warm_stop"
+  ]
+}

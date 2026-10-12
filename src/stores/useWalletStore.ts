@@ -109,15 +109,15 @@ interface WalletState {
 
   // Wallet operations
   lockForBuyIn: (userId: string, amount: number, tableId: string) => Promise<boolean>;
-  internalTransfer: (
-    userId: string,
-    fromWallet: WalletType,
-    toWallet: WalletType,
-    amount: number
-  ) => Promise<boolean>;
+  /**
+   * `idempotencyKey` is minted by the CALLER once per intent and held across
+   * a failed attempt, so a retry replays server-side instead of minting twice
+   * (launch audit 2026-10-09, S-03).
+   */
   mintChips: (
     clubId: string,
-    chips: number
+    chips: number,
+    idempotencyKey: string
   ) => Promise<{ chips: number; success: boolean; error?: string }>;
 
   reset: () => void;
@@ -322,7 +322,15 @@ export const useWalletStore = create<WalletState>()(
 
         return coalesce(`diamonds:${userId}`, async () => {
           if (!(st._diamondsUserId === userId && st._diamondsAt > 0)) {
-            set({ isLoadingDiamonds: true });
+            /* Phase 11 line 7: a figure this account does not own - another
+               account's on a shared device, or one an older build saved with
+               no owner - is never painted as this player's balance, not while
+               the read is in flight and not after it fails. */
+            set(
+              get()._diamondsUserId === userId
+                ? { isLoadingDiamonds: true }
+                : { isLoadingDiamonds: true, diamonds: 0, _diamondsUserId: null, _diamondsAt: 0 }
+            );
           }
           try {
             // Load diamonds via centralized DiamondService (profiles.diamonds source-of-truth)
@@ -434,65 +442,9 @@ export const useWalletStore = create<WalletState>()(
         }
       },
 
-      internalTransfer: async (
-        userId: string,
-        fromWallet: WalletType,
-        toWallet: WalletType,
-        amount: number
-      ) => {
-        // Mutex: prevent concurrent wallet operations from racing
-        if (get()._operationInFlight) {
-          console.warn('[Store] Wallet operation already in flight, skipping internalTransfer');
-          return false;
-        }
-
-        const { balances } = get();
-        if (balances[fromWallet].available < amount) {
-          reportError(
-            new Error('[Store] Insufficient balance for transfer'),
-            'useWalletStore.Insufficient_balance_for_transfer'
-          );
-          return false;
-        }
-
-        // Deep copy for safe rollback (shallow spread shares nested object refs)
-        const previousBalances = JSON.parse(JSON.stringify(balances));
-        set({
-          _operationInFlight: true,
-          balances: {
-            ...balances,
-            [fromWallet]: {
-              ...balances[fromWallet],
-              available: balances[fromWallet].available - amount,
-              total: balances[fromWallet].total - amount,
-            },
-            [toWallet]: {
-              ...balances[toWallet],
-              available: balances[toWallet].available + amount,
-              total: balances[toWallet].total + amount,
-            },
-          },
-        });
-
+      mintChips: async (clubId: string, chips: number, idempotencyKey: string) => {
         try {
-          await WalletService.internalTransfer(userId, {
-            fromWallet,
-            toWallet,
-            amount,
-          });
-          set({ _operationInFlight: false });
-          return true;
-        } catch (error) {
-          // Revert on failure + release mutex
-          set({ _operationInFlight: false, balances: previousBalances });
-          reportError(error, 'useWalletStore.Internal_transfer_failed');
-          return false;
-        }
-      },
-
-      mintChips: async (clubId: string, chips: number) => {
-        try {
-          const result = await WalletService.mintChips(clubId, chips);
+          const result = await WalletService.mintChips(clubId, chips, idempotencyKey);
           if (result.success) {
             // Refresh balances after minting
             return { chips: result.chipsAdded, success: true };
@@ -539,11 +491,27 @@ export const useWalletStore = create<WalletState>()(
        * `transactions` stays UNPERSISTED on purpose: a ledger is genuinely
        * sensitive, it is large, and no surface needs it instantly on boot.
        */
+      /* STALE STORAGE (Diamond Phase 11, line 7). Until 2026-09-30 the Diamond
+         figure was saved WITHOUT its owner and time (the two fields below), so
+         after a sign-out the app never saw - another app on this origin, a
+         closed tab - the next account booted painting the last account's
+         Diamonds as its own, and kept them if its first read failed. A figure
+         an older build saved (version 0) is discarded, not shown; the chip
+         balances always carried their owner and are kept as they were. */
+      version: 1,
+      migrate: (persisted, version) => {
+        const saved = (persisted ?? {}) as Partial<WalletState>;
+        return (
+          version < 1 ? { ...saved, diamonds: 0, _diamondsUserId: null, _diamondsAt: 0 } : saved
+        ) as WalletState;
+      },
       partialize: (state) => ({
         balances: state.balances,
         diamonds: state.diamonds,
         _balancesUserId: state._balancesUserId,
         _balancesAt: state._balancesAt,
+        _diamondsUserId: state._diamondsUserId,
+        _diamondsAt: state._diamondsAt,
       }),
     }
   )
@@ -553,10 +521,10 @@ export const useWalletStore = create<WalletState>()(
 // 📐 HELPER HOOKS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export function useTotalBalance() {
-  const balances = useWalletStore((s) => s.balances);
-  return balances.BUSINESS.total + balances.PLAYER.total + balances.PROMO.total;
-}
+/* useTotalBalance REMOVED (launch audit 2026-10-09, S-11): it summed
+   BUSINESS + PLAYER + PROMO into one figure, the exact conflation
+   WalletService forbids ("Anyone who needs a total should say what it is a
+   total OF"), and nothing called it. */
 
 export function useAvailableChips() {
   const balances = useWalletStore((s) => s.balances);

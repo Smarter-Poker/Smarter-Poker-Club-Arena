@@ -1,0 +1,12 @@
+{
+  "_owner": "agent/claude-a5/seal-layers. Migration 20261003180832_the_inventory_seal_is_computed_six_hours_at_a_time: the split inventory seal's unlogged staging and the functions that compute a week's six-hour layers and seal or verify it.",
+  "tables": [
+    "union_pnl_inventory_seal_layers",
+    "union_pnl_inventory_seal_layer_rows",
+    "union_pnl_inventory_seal_layer_issues"
+  ],
+  "functions": [
+    "fn_union_pnl_inventory_layer_state",
+    "fn_union_pnl_inventory_seal_advance"
+  ]
+}

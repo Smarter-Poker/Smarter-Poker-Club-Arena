@@ -50,8 +50,6 @@ const NO_X_BY_DESIGN: Record<string, string> = {
     'a paid reveal with closeOnOverlay/closeOnEscape false; the plates are the only exits',
   'src/components/games/DoubleDownOffer.tsx':
     'a wager choice with closeOnOverlay/closeOnEscape false; declining is a plate',
-  'src/components/tournament/TournamentRankingCard.tsx':
-    'carries its own painted close control (.trc2__close) outside the console',
 };
 
 const BUSY_FLAGS = [

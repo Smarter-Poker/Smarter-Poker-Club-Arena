@@ -31,9 +31,15 @@ describe('the tournament lobby overlay is identified by its accessible name', ()
     expect(modal).toContain('aria-label="Tournament Lobby"');
   });
 
-  it('still prints both words in the console head the player reads', () => {
-    expect(modal).toContain('eyebrow="Tournament"');
-    expect(modal).toContain('title="Lobby"');
+  /* 2026-10-04: the console head that printed "Tournament" over "Lobby" is
+     gone with the rest of the popup's frame (Dan: "remove all these large
+     frames"). The popup is a full-screen dialog around the lobby page, whose
+     own header shows the event. The accessible name above is now the ONLY
+     place the words "Tournament Lobby" live, which is one more reason the
+     spec must keep asking for it by role and name. */
+  it('draws no console of its own around the lobby page', () => {
+    expect(modal).not.toContain('SpadeConsole');
+    expect(modal).toContain('onClose={onClose}');
   });
 
   it('has the spec ask by role and name rather than by concatenated text', () => {

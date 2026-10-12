@@ -1,0 +1,16 @@
+{
+  "_owner": "agent/claude-lightning-p13/lightning/rollout-drain-db - migration 20261009235505_lightning_phase_13_rollout_drain_and_rollback",
+  "_comment": "Lightning Phase 13 (spec Phase 22, database side): rollout, drain and rollback. NOT YET APPLIED: every name below is a promise until the owner installs 20261009235505 after 20261009181945. fn_lightning_operator_control (authenticated and service_role, never anon; gate service_role, fn_is_platform_admin or fn_ca_is_club_control of the Cluster's club; unfreeze the platform's alone) pauses and resumes a Cluster, closes and opens Lightning joins, starts the EMERGENCY DRAIN (cluster_mode draining, driven by fn_cash_cluster_lightning_drive through fn_lightning_drain_advance and ended through fn_cash_cluster_begin_pending_off / fn_cash_cluster_commit_must_move, pool sessions exiting lightning_drained), freezes through the existing freeze path and unfreezes through fn_cash_cluster_unfreeze, enables and disables Lightning, sets, disables, enables and rolls back matcher versions, and sets the specification flags on existing gates; idempotent by request id, every change one operator_<action> event. fn_lightning_rollout_readiness (the operator doors' gate) answers go / no_go / insufficient_evidence with reasons. lightning_operator_request, lightning_cluster_control and lightning_cluster_drain have RLS on and no privilege for any role. fn_lightning_operator_may_control, fn_lightning_operator_state, fn_lightning_spec_flags, fn_lightning_joins_enabled, fn_lightning_pool_enter_seated and fn_lightning_drain_advance are service_role-only helpers. Thirteen existing bodies change by asserted substitution (fn_lightning_config, fn_lightning_pool_enter, fn_lightning_player_legality, fn_lightning_pool_status, fn_lightning_reconnect_state, fn_cash_cluster_lightning_state, fn_cash_cluster_begin_pending_off, fn_cash_cluster_commit_must_move, fn_cash_cluster_lightning_drive, fn_cash_clusters_tick_all, fn_lightning_operator_cluster_row, fn_lightning_operator_cluster, fn_lightning_operator_session_trail), keeping their signatures and grants. Proven by scripts/dev/test-lightning-phase13-rollout-drain.sh.",
+  "tables": ["lightning_operator_request", "lightning_cluster_control", "lightning_cluster_drain"],
+  "functions": [
+    "fn_lightning_operator_control",
+    "fn_lightning_rollout_readiness",
+    "fn_lightning_drain_advance",
+    "fn_lightning_operator_may_control",
+    "fn_lightning_operator_state",
+    "fn_lightning_spec_flags",
+    "fn_lightning_joins_enabled",
+    "fn_lightning_pool_enter_seated"
+  ],
+  "columns": {}
+}

@@ -275,7 +275,7 @@ export function DiamondTopUpModal({
     const focusable = () =>
       Array.from(
         dialogRef.current?.querySelectorAll<HTMLElement>(
-          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+          'button:not([disabled]), [href], input:not([disabled]):not([tabindex="-1"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
         ) ?? []
       );
     const focusFrame = window.requestAnimationFrame(() => {
@@ -516,13 +516,13 @@ export function DiamondTopUpModal({
                         !cardPaymentAvailable ||
                         !user?.id
                       }
-                      aria-label={`Buy ${formatPopupText(pkg.name)}, ${(pkg.diamonds + pkg.bonus).toLocaleString()} Diamonds For $${pkg.priceUsd.toFixed(2)}`}
+                      aria-label={`Buy ${formatPopupText(pkg.name)}, ${(pkg.diamonds + pkg.bonus).toLocaleString()} Diamonds For ${pkg.priceUsd.toFixed(2)} USD`}
                     >
                       {/* DOLLARS, LABELLED AS DOLLARS. */}
                       {redirecting === pkg.id
                         ? 'Opening Checkout'
                         : cardPaymentAvailable
-                          ? `$${pkg.priceUsd.toFixed(2)}`
+                          ? `${pkg.priceUsd.toFixed(2)} USD`
                           : 'Checkout Paused'}
                     </button>
                   </div>

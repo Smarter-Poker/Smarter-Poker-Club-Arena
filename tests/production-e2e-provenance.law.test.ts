@@ -1,14 +1,19 @@
 import { describe, expect, it, vi } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { resolve } from 'node:path';
-import { readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import {
   classifyTrustedLineage,
+  classifyReleaseWindow,
+  classifyBracket,
+  UNKNOWN_EXIT_CODE,
   readBuildInfoSha,
   requireUnchangedBuildInfoSha,
   requireReadyEngineSha,
   readReadyEngineSha,
 } from '../scripts/ci/production-e2e-provenance.mjs';
+import { readEngineRelease } from '../scripts/ci/read-engine-release.mjs';
 
 const A = 'a'.repeat(40);
 const B = 'b'.repeat(40);
@@ -137,6 +142,10 @@ describe('the publisher hands its selected artifact to post-deploy verification'
       workflow.indexOf('  seo-contract:')
     );
     expect(gate).toContain('client_target_sha: ${{ steps.client-target.outputs.sha }}');
+    // A stood-down publisher has no client artifact to resolve.
+    expect(gate).toContain(
+      "if: github.event_name == 'workflow_run' && steps.origin.outputs.should_run == 'true'"
+    );
     expect(gate).toContain('actions/runs/$SOURCE_RUN_ID/artifacts?per_page=100');
     expect(gate).toContain(
       'publisher-artifact "$SOURCE_RUN_ID" "$SOURCE_TRIGGER_SHA" "$REPOSITORY_ID"'
@@ -202,8 +211,12 @@ describe('production E2E uses exact trusted provenance', () => {
     );
     const stanza = workflow.slice(gate, workflow.indexOf('- name: Install Chromium and WebKit'));
     expect(stanza).toContain('set -euo pipefail');
-    expect(stanza).toContain('curl -fsS --max-time 20');
-    expect(stanza).toContain('engine-ready "$EXPECTED_ENGINE_SHA"');
+    // The read waits through the engine's own announced :55 restart instead of
+    // calling a scheduled 502 a production failure (run 36717851302), but the
+    // gate it feeds is still an exact equality that the job cannot pass past.
+    expect(stanza).toContain('scripts/ci/read-engine-release.mjs');
+    expect(stanza).toContain('[ "$READY_SHA" = "$EXPECTED_ENGINE_SHA" ]');
+    expect(stanza).toContain('exit 1');
     expect(stanza).not.toContain('continue-on-error');
     expect(stanza).not.toContain('|| true');
   });
@@ -298,12 +311,362 @@ describe('production E2E uses exact trusted provenance', () => {
     ).toThrow('does not resolve');
   });
 
-  it('rejects a divergent production SHA', () => {
+  // 2026-09-30. Production being AHEAD of the checkout used to land here and
+  // read `is not an ancestor`, which was true and useless: it is the ordinary
+  // shape of a repository whose publisher fires on every merge. Run
+  // 36673263757 died on it. It is now its own lineage, and the caller
+  // re-targets the suite onto the live commit instead of refusing.
+  it('names a live commit that is AHEAD of the checkout as a forward release', () => {
+    expect(
+      classifyTrustedLineage(A, B, {
+        commitExists: () => true,
+        isAncestor: (ancestor) => ancestor === B,
+      })
+    ).toBe('descendant');
+  });
+
+  it('still rejects a production SHA that shares no lineage with the checkout', () => {
     expect(() =>
       classifyTrustedLineage(A, B, {
         commitExists: () => true,
         isAncestor: () => false,
       })
-    ).toThrow('is not an ancestor');
+    ).toThrow('shares no lineage');
+  });
+
+  it('certifies a release window that never left the recorded SHA', () => {
+    expect(
+      classifyReleaseWindow(JSON.stringify({ ca_sha: A }), A, {
+        commitExists: () => true,
+        isAncestor: () => true,
+      })
+    ).toEqual({ verdict: 'certified', sha: A });
+  });
+
+  // A forward publish during forty minutes of browsers is a NON-VERDICT, not a
+  // defect report. Twelve of the twenty runs sampled on 2026-09-30 were red
+  // for this and nothing else.
+  it('calls a forward publish during certification superseded, not failed', () => {
+    expect(
+      classifyReleaseWindow(JSON.stringify({ ca_sha: B }), A, {
+        commitExists: () => true,
+        isAncestor: (ancestor, descendant) => ancestor === A && descendant === B,
+      })
+    ).toEqual({ verdict: 'superseded', sha: B });
+  });
+
+  it.each([
+    [
+      'a rollback or an off-lineage release',
+      { commitExists: () => true, isAncestor: () => false },
+      'not a forward release',
+    ],
+    [
+      'a release that resolves to no trusted commit',
+      { commitExists: () => false, isAncestor: () => true },
+      'does not resolve',
+    ],
+  ])('still refuses %s outright', (_label, evidence, message) => {
+    expect(() => classifyReleaseWindow(JSON.stringify({ ca_sha: B }), A, evidence)).toThrow(
+      message
+    );
+  });
+
+  // CLAUDE.md 10.86 rule 1: UNKNOWN gets its own code. Sharing one with GREEN
+  // would certify a run that could not tell; sharing one with a real anomaly
+  // would put a rollback and an ordinary publish in the same bucket again.
+  // THE ENGINE'S OWN :55 RESTART IS NOT A PRODUCTION FAILURE.
+  //
+  // Run 36717851302 started at 12:54:24Z and died 72 seconds later on a bare
+  // `curl: (22) The requested URL returned error: 502` from an engine that was
+  // keeping the maintenance schedule CLAUDE.md section 13 sets for it. These
+  // pin the three outcomes the reader must keep apart, and in particular that
+  // an answer it CAN read is never polled past.
+  describe('reading the engine release through its announced break', () => {
+    const healthy = JSON.stringify({ releaseSha: A, running: true, liveness: 'ok' });
+
+    it('waits through a scheduled restart and returns the release that comes back', async () => {
+      let clock = 0;
+      let attempts = 0;
+      const result = await readEngineRelease('https://engine.invalid/health', {
+        now: () => clock,
+        pollMs: 0,
+        budgetMs: 60_000,
+        fetchImpl: async () => {
+          attempts += 1;
+          clock += 5_000;
+          if (attempts < 3) return { ok: false, status: 502 };
+          return { ok: true, text: async () => healthy };
+        },
+      });
+      expect(result).toEqual({ verdict: 'ready', sha: A });
+      expect(attempts).toBe(3);
+    });
+
+    it('calls a permanently silent engine UNKNOWN rather than healthy or broken', async () => {
+      let clock = 0;
+      const result = await readEngineRelease('https://engine.invalid/health', {
+        now: () => clock,
+        pollMs: 0,
+        budgetMs: 30_000,
+        fetchImpl: async () => {
+          clock += 5_000;
+          return { ok: false, status: 502 };
+        },
+      });
+      expect(result.verdict).toBe('unknown');
+      expect(result.reason).toContain('502');
+    });
+
+    // 10.86 rule 2: an answer that arrived is a verdict, and an unhealthy one
+    // must never be retried until the engine happens to agree with us.
+    it('refuses an engine that answers, but not with one healthy release', async () => {
+      let calls = 0;
+      await expect(
+        readEngineRelease('https://engine.invalid/health', {
+          now: () => 0,
+          pollMs: 0,
+          budgetMs: 600_000,
+          fetchImpl: async () => {
+            calls += 1;
+            return {
+              ok: true,
+              text: async () => JSON.stringify({ releaseSha: A, running: false, liveness: 'ok' }),
+            };
+          },
+        })
+      ).rejects.toThrow('not running with healthy liveness');
+      expect(calls).toBe(1);
+    });
+  });
+
+  it('gives UNKNOWN an exit code of its own, distinct from certified and from error', () => {
+    expect(UNKNOWN_EXIT_CODE).toBe(3);
+    const run = (raw: string) =>
+      spawnSync(process.execPath, [CLI, 'release-window', A], { input: raw, encoding: 'utf8' });
+
+    const certified = run(JSON.stringify({ ca_sha: A }));
+    expect(certified.status, certified.stderr).toBe(0);
+    expect(certified.stdout.trim()).toBe(`certified ${A}`);
+
+    // `B` is not a real commit in this repository, so the CLI's git evidence
+    // refuses it as unresolvable - a 1, never a 3 and never a 0.
+    expect(run(JSON.stringify({ ca_sha: B })).status).toBe(1);
+    expect(run('not-json').status).toBe(1);
+  });
+
+  // 2026-10-07. The seal's client evidence is a bracket around its own three
+  // journeys, not the whole forty-minute job. Both passing client lanes of
+  // 2026-10-06/07 (37587015087, 37598789558) ended `superseded` on the whole
+  // window, so the seal was never owed.
+  describe('the release bracket around one group of suites', () => {
+    const doc = (sha: string) => JSON.stringify({ ca_sha: sha });
+    const C = 'c'.repeat(40);
+    const forward = {
+      commitExists: () => true,
+      isAncestor: (ancestor: string, descendant: string) =>
+        (ancestor === A && (descendant === B || descendant === C)) ||
+        (ancestor === B && descendant === C),
+    };
+    const unused = {
+      commitExists: () => {
+        throw new Error('certifying both reads of the recorded SHA must not need history');
+      },
+      isAncestor: () => {
+        throw new Error('certifying both reads of the recorded SHA must not need history');
+      },
+    };
+
+    it('certifies only the SHA the run recorded, read on both sides of the group', () => {
+      expect(classifyBracket(doc(A), doc(A), A, unused)).toEqual({ verdict: 'certified', sha: A });
+    });
+
+    // Never certify a commit that was not tested: the specs came from A, so a
+    // group that met B on either side certifies neither A nor B.
+    it.each([
+      ['closed on a later release', A, B],
+      ['opened on a later release', B, B],
+      ['moved forward twice inside the group', B, C],
+    ])('calls a group that %s superseded, never certified', (_label, before, after) => {
+      expect(classifyBracket(doc(before), doc(after), A, forward)).toEqual({
+        verdict: 'superseded',
+        sha: after,
+      });
+    });
+
+    it.each([
+      ['a missing opening read', '', doc(A)],
+      ['a missing closing read', doc(A), ''],
+      ['an unreadable document', 'not-json', doc(A)],
+      ['a document without one full ca_sha', JSON.stringify({ ca_sha: 'abc' }), doc(A)],
+    ])('calls %s COULD NOT TELL, never certified', (_label, before, after) => {
+      expect(classifyBracket(before, after, A, forward)).toEqual({ verdict: 'unknown', sha: null });
+    });
+
+    it.each([
+      [
+        'a rollback before the expected release',
+        { commitExists: () => true, isAncestor: () => false },
+        'not a forward release',
+      ],
+      [
+        'a commit that does not resolve',
+        { commitExists: () => false, isAncestor: () => true },
+        'does not resolve',
+      ],
+    ])('still refuses %s outright', (_label, evidence, message) => {
+      expect(() => classifyBracket(doc(A), doc(B), A, evidence)).toThrow(message);
+    });
+
+    it('refuses a bracket that moved backwards inside itself', () => {
+      expect(() => classifyBracket(doc(C), doc(B), A, forward)).toThrow('inside one bracket');
+    });
+
+    it('gives the CLI the same three exit codes, and reads a file that was never written as unknown', () => {
+      const dir = mkdtempSync(join(tmpdir(), 'release-bracket-'));
+      try {
+        const before = join(dir, 'before.json');
+        const after = join(dir, 'after.json');
+        const run = () =>
+          spawnSync(process.execPath, [CLI, 'bracket', A, before, after], { encoding: 'utf8' });
+        writeFileSync(before, doc(A));
+        writeFileSync(after, doc(A));
+        const certified = run();
+        expect(certified.status, certified.stderr).toBe(0);
+        expect(certified.stdout.trim()).toBe(`certified ${A}`);
+        rmSync(after);
+        const unknown = run();
+        expect(unknown.status).toBe(UNKNOWN_EXIT_CODE);
+        expect(unknown.stdout.trim()).toBe('unknown unreadable');
+        // B is no commit in this repository: an anomaly, never a non-verdict.
+        writeFileSync(after, doc(B));
+        expect(run().status).toBe(1);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+  });
+});
+
+// Run 38170604116 (2026-10-11): a retaining publisher's certificate started
+// its browsers 48 minutes after the publish, production had moved three
+// protected-main commits forward, and a bare `test "$LIVE" = <retained>` sent
+// the whole client lane red before one page was opened. A later release is a
+// thing to align with, not a defect; only a non-forward move stays red.
+describe('a retained runtime superseded before the browsers start', () => {
+  const STEP = '- name: Take the specs from the commit production is actually serving';
+  const workflow = readFileSync(
+    resolve(process.cwd(), '.github/workflows/post-deploy-e2e.yml'),
+    'utf8'
+  );
+  const alignSteps = (): string[] => {
+    const out: string[] = [];
+    let at = workflow.indexOf(STEP);
+    while (at >= 0) {
+      const body = workflow.slice(at, workflow.indexOf('\n      - name:', at + STEP.length));
+      const script = body.slice(body.indexOf('run: |') + 'run: |'.length);
+      out.push(
+        script
+          .split('\n')
+          .map((line) => line.replace(/^ {10}/, ''))
+          .join('\n')
+      );
+      at = workflow.indexOf(STEP, at + STEP.length);
+    }
+    return out;
+  };
+
+  it('is present in both browser lanes, with no bare equality against the retained runtime', () => {
+    const steps = alignSteps();
+    expect(steps).toHaveLength(2);
+    for (const step of steps) {
+      expect(step).not.toContain(
+        'test "$LIVE" = \'${{ needs.publication-gate.outputs.client_target_sha }}\''
+      );
+      expect(step).toContain('git merge-base --is-ancestor "$RETAINED" "$LIVE"');
+    }
+  });
+
+  // A git hook runs this suite with GIT_DIR, GIT_INDEX_FILE and friends set
+  // for the repository being pushed. The fixture must never inherit them.
+  const isolatedEnv = (): NodeJS.ProcessEnv => {
+    const env = { ...process.env };
+    for (const name of spawnSync('git', ['rev-parse', '--local-env-vars'], { encoding: 'utf8' })
+      .stdout.trim()
+      .split(/\s+/))
+      delete env[name];
+    return env;
+  };
+  const git = (cwd: string, ...args: string[]) => {
+    const r = spawnSync('git', args, {
+      cwd,
+      encoding: 'utf8',
+      env: {
+        ...isolatedEnv(),
+        GIT_AUTHOR_NAME: 't',
+        GIT_AUTHOR_EMAIL: 't@example.invalid',
+        GIT_COMMITTER_NAME: 't',
+        GIT_COMMITTER_EMAIL: 't@example.invalid',
+      },
+    });
+    if (r.status !== 0) throw new Error(r.stderr);
+    return r.stdout.trim();
+  };
+  const commit = (cwd: string, label: string) => {
+    writeFileSync(join(cwd, 'tests/e2e/spec.txt'), label);
+    git(cwd, 'add', '-A');
+    git(cwd, 'commit', '-q', '-m', label);
+    return git(cwd, 'rev-parse', 'HEAD');
+  };
+
+  const runAlign = (step: string, live: string, here: string, retained: string, cwd: string) => {
+    const script = step
+      .replaceAll('${{ steps.live.outputs.sha }}', live)
+      .replaceAll('${{ needs.publication-gate.outputs.verification_sha }}', here)
+      .replaceAll('${{ needs.publication-gate.outputs.client_target_sha }}', retained)
+      .replace(/\$\{\{[^}]*\}\}/g, 'x')
+      .replaceAll('node scripts/ci/production-e2e-provenance.mjs', `node ${CLI}`)
+      .replaceAll('node scripts/ci/client-runtime-retention.mjs harness', 'true');
+    const output = join(cwd, '..', 'output');
+    const summary = join(cwd, '..', 'summary');
+    writeFileSync(output, '');
+    writeFileSync(summary, '');
+    const r = spawnSync('bash', ['-c', script], {
+      cwd,
+      encoding: 'utf8',
+      env: { ...isolatedEnv(), GITHUB_OUTPUT: output, GITHUB_STEP_SUMMARY: summary },
+    });
+    return { ...r, output: readFileSync(output, 'utf8') };
+  };
+
+  it('aligns with a forward release, keeps the exact retained path, and refuses a rollback', () => {
+    const root = mkdtempSync(join(tmpdir(), 'retained-superseded-'));
+    const repo = join(root, 'repo');
+    try {
+      spawnSync('mkdir', ['-p', join(repo, 'tests/e2e')]);
+      git(repo, 'init', '-q');
+      const before = commit(repo, 'before');
+      const retained = commit(repo, 'retained');
+      const here = commit(repo, 'verification');
+      const later = commit(repo, 'later');
+      git(repo, 'checkout', '-q', here);
+
+      for (const step of alignSteps()) {
+        const forward = runAlign(step, later, here, retained, repo);
+        expect(forward.status, forward.stderr + forward.stdout).toBe(0);
+        expect(forward.output).toContain(`specs=${later}`);
+        git(repo, 'checkout', '-q', here, '--', 'tests/e2e');
+
+        const exact = runAlign(step, retained, here, retained, repo);
+        expect(exact.status, exact.stderr + exact.stdout).toBe(0);
+        expect(exact.output).toContain(`specs=${here}`);
+
+        const rollback = runAlign(step, before, here, retained, repo);
+        expect(rollback.status).toBe(1);
+        expect(rollback.stdout).toContain('not a forward release from retained runtime');
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

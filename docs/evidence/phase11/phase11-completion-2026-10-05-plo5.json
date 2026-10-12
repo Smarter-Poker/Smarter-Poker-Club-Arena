@@ -1,0 +1,46 @@
+{
+  "schema": "horse-phase11-completion-v1",
+  "definition": "horse-phase11-completion-definition-v2",
+  "variant": "plo5",
+  "packVersion": "plo5-high-round1-v2",
+  "releaseSha": "90ffa0f24832839e9529011d9fd3d54e5814ffe0",
+  "policyDigestDefinition": "horse-phase11-policy-digest-v2",
+  "policyDigest": "e36ff6e8f87a7bf93e51629ce4276b971d7d8a08cb6e99fe1877576a0a37e738",
+  "gameMode": "cash",
+  "window": {
+    "from": "2026-10-05T03:02:00Z",
+    "to": "2026-10-05T03:50:00Z",
+    "releaseUnchanged": true,
+    "source": "engine.smarter.poker horse-decisions archive segments (archive, archive-shard-1), closed segment files, read-only, 2026-10-05T03:52Z; release 90ffa0f2 StartedAt 2026-10-05T02:55:51.522301043Z read at 02:59:35Z and 03:51:36Z; predeclared in docs/evidence/phase11/declaration-p11-3-completion.txt (#6132)"
+  },
+  "streets": {
+    "preflop": {
+      "eligible": 984,
+      "completed": 984,
+      "workBudget": 0,
+      "samplerBudgetExhausted": 0,
+      "sampleUnavailable": 0
+    },
+    "flop": {
+      "eligible": 365,
+      "completed": 346,
+      "workBudget": 4,
+      "samplerBudgetExhausted": 8,
+      "sampleUnavailable": 7
+    },
+    "turn": {
+      "eligible": 318,
+      "completed": 232,
+      "workBudget": 16,
+      "samplerBudgetExhausted": 50,
+      "sampleUnavailable": 20
+    },
+    "river": {
+      "eligible": 225,
+      "completed": 223,
+      "workBudget": 1,
+      "samplerBudgetExhausted": 1,
+      "sampleUnavailable": 0
+    }
+  }
+}

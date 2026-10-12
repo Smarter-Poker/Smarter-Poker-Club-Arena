@@ -940,9 +940,11 @@ const COL_ACTIONS: ColumnDef = {
                   : 'Return To Table'
                 : headsUp
                   ? 'Sit Down'
-                  : game
-                    ? 'Join Game'
-                    : 'Join Table'}
+                  : e.game?.lightning
+                    ? 'Join Lightning'
+                    : game
+                      ? 'Join Game'
+                      : 'Join Table'}
             </button>
           )}
         </span>
@@ -1866,7 +1868,17 @@ export default function LobbyTable({
     [sorted, selectedId, keyboardFocusId, onActivate]
   );
 
-  const sortableColumns = columns.filter((col) => col.sortable);
+  const sortableColumns = columns
+    .filter((col) => col.sortable)
+    .filter((col) => {
+      // Mobile controls expose the decisions that help choose a game. All desktop columns remain.
+      if (category !== 'MTT' && !groupsByVariant(category)) return true;
+      const useful =
+        category === 'MTT'
+          ? ['starts', 'variant', 'buyin', 'gtd', 'players', 'status']
+          : ['stakes', 'variant', 'players', 'buyin', 'status'];
+      return useful.includes(col.key);
+    });
 
   /**
    * Roving focus for the mobile sort toolbar.

@@ -18,23 +18,37 @@
  * record and live at /unions/:unionId/statements; this is production.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useUnionRouteId } from '../hooks/useUnionRouteId';
 import { supabase } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
+import { useCanOperateUnionNetwork } from '../hooks/useCanCreateUnion';
 import { reportError } from '../utils/errorReporter';
 import CasinoSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 import RakeSnapshotPanel from '../components/club/RakeSnapshotPanel';
+import { titleCase } from '../utils/titleCase';
 import styles from './UnionDataPage.module.css';
 
 export default function UnionDataPage() {
   const { unionId, unionRef } = useUnionRouteId();
   const navigate = useNavigate();
   const { user } = useAuthUser();
+  const { canOperateUnionNetwork } = useCanOperateUnionNetwork();
 
   const [unionName, setUnionName] = useState<string | null>(null);
   const [clubCount, setClubCount] = useState<number | null>(null);
+  const [unionNameReady, setUnionNameReady] = useState(false);
+  const [clubCountReady, setClubCountReady] = useState(false);
+
+  // A route change must retire the prior union's identity before the browser
+  // paints the new URL. The two header reads repopulate only this union.
+  useLayoutEffect(() => {
+    setUnionName(null);
+    setClubCount(null);
+    setUnionNameReady(false);
+    setClubCountReady(false);
+  }, [unionId]);
 
   /**
    * The name and the club count are for the header only. A refusal here is
@@ -48,29 +62,41 @@ export default function UnionDataPage() {
     let cancelled = false;
 
     void (async () => {
-      const { data, error } = await supabase
-        .from('unions')
-        .select('name')
-        .eq('id', unionId)
-        .maybeSingle();
-      if (cancelled) return;
-      if (error) {
-        reportError(error, 'UnionDataPage.union_name');
-      } else if (data?.name) {
-        setUnionName(String(data.name));
+      try {
+        const { data, error } = await supabase
+          .from('unions')
+          .select('name')
+          .eq('id', unionId)
+          .maybeSingle();
+        if (cancelled) return;
+        if (error) {
+          reportError(error, 'UnionDataPage.union_name');
+        } else if (data?.name) {
+          setUnionName(String(data.name));
+        }
+      } catch (error) {
+        if (!cancelled) reportError(error, 'UnionDataPage.union_name');
+      } finally {
+        if (!cancelled) setUnionNameReady(true);
       }
     })();
 
     void (async () => {
-      const { count, error } = await supabase
-        .from('union_clubs')
-        .select('club_id', { count: 'exact', head: true })
-        .eq('union_id', unionId);
-      if (cancelled) return;
-      if (error) {
-        reportError(error, 'UnionDataPage.club_count');
-      } else if (typeof count === 'number') {
-        setClubCount(count);
+      try {
+        const { count, error } = await supabase
+          .from('union_clubs')
+          .select('club_id', { count: 'exact', head: true })
+          .eq('union_id', unionId);
+        if (cancelled) return;
+        if (error) {
+          reportError(error, 'UnionDataPage.club_count');
+        } else if (typeof count === 'number') {
+          setClubCount(count);
+        }
+      } catch (error) {
+        if (!cancelled) reportError(error, 'UnionDataPage.club_count');
+      } finally {
+        if (!cancelled) setClubCountReady(true);
       }
     })();
 
@@ -82,7 +108,22 @@ export default function UnionDataPage() {
   if (!unionId) {
     return (
       <main className={styles.page}>
-        <p className={styles.empty}>No Union Selected.</p>
+        <CasinoSurfaceHeader
+          crest="flat"
+          family="shark"
+          eyebrow="Union Network / Data"
+          title="Union Data"
+          description="Choose A Union To Read Its Verified Production Ledger."
+          status="UNION PRODUCTION // CHECKING"
+          pill="No Union"
+          pillInk="muted"
+          plates={{
+            primary: {
+              label: canOperateUnionNetwork ? 'Return To Unions' : 'Return To Community',
+              onClick: () => navigate(canOperateUnionNetwork ? '/unions' : '/community'),
+            },
+          }}
+        />
       </main>
     );
   }
@@ -90,34 +131,29 @@ export default function UnionDataPage() {
   return (
     <main className={styles.page}>
       <CasinoSurfaceHeader
-        crest="club"
+        crest="spade"
+        family="riveted"
         eyebrow="Union Network / Data"
         title="Union Data"
         description="What Every Club Beneath This Union Produced In Rake, For The Day, The Week, The Month Or The Year."
-        artPath="assets/club-buttons/wallets/desktop/wallet-union-bank-v1.webp"
         status="UNION PRODUCTION // LIVE"
         metrics={[
-          { label: 'Union', value: unionName ?? 'Union' },
-          { label: 'Clubs', value: clubCount ?? 0 },
+          {
+            label: 'Union',
+            value: unionName ? titleCase(unionName) : unionNameReady ? 'Unavailable' : 'Checking',
+          },
+          { label: 'Clubs', value: clubCount ?? (clubCountReady ? 'Unavailable' : 'Checking') },
         ]}
-        actions={
-          <>
-            <button
-              type="button"
-              className={styles.headerBtn}
-              onClick={() => navigate(`/unions/${unionRef}`)}
-            >
-              Union
-            </button>
-            <button
-              type="button"
-              className={styles.headerBtn}
-              onClick={() => navigate(`/unions/${unionRef}/statements`)}
-            >
-              Statements
-            </button>
-          </>
-        }
+        plates={{
+          secondary: {
+            label: 'Union',
+            onClick: () => navigate(`/unions/${unionRef}`),
+          },
+          primary: {
+            label: 'Statements',
+            onClick: () => navigate(`/unions/${unionRef}/statements`),
+          },
+        }}
       />
 
       {/*

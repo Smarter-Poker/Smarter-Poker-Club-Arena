@@ -1,0 +1,4 @@
+{
+  "_owner": "agent/anon-leaks/player-stats. Declared by migration 20261006135147_the_player_arena_record_is_not_published_to_a_browser: ca_public_arena_record_v1, the SECURITY DEFINER reader PublicProfilePage moves to when player_stats stops being readable by an anonymous browser. Applied to production by apply-merged-migration.yml immediately after that migration merges; until the nightly base regenerates this fragment is a PROMISE, not an observation.",
+  "functions": ["ca_public_arena_record_v1"]
+}

@@ -341,6 +341,28 @@ describe('V46 wiring: the receipts fire from a live decision', () => {
     expect(g.v46_class_read ?? 0).toBe(0);
   });
 
+  it('a short-deck hand gets no class read by default, and v46ShortDeck brings it back', () => {
+    // 2026-10-05: shortdeck_v46_classes resolved -0.51 +/- 0.15 bb/100 over
+    // 960k hands, so the short-deck chart is off unless asked for.
+    enableBrainTelemetry();
+    drainFires();
+    const sd = ploSpot(cc('8s', '8h'), 'short_deck');
+    HorseLogic.decide(sd.hero, sd.gs, 'balanced', {}, { telemetry: true });
+    const f = Object.fromEntries(drainFires().map((r) => [r.feature, r.fires]));
+    expect(f.v46_class_read ?? 0).toBe(0);
+    expect(f.v46_class_never_3bet ?? 0).toBe(0);
+
+    const on = ploSpot(cc('8s', '8h'), 'short_deck');
+    HorseLogic.decide(on.hero, on.gs, 'balanced', {}, { telemetry: true, v46ShortDeck: true });
+    const g = Object.fromEntries(drainFires().map((r) => [r.feature, r.fires]));
+    expect(g.v46_class_read ?? 0).toBeGreaterThan(0);
+    expect(g.v46_class_never_3bet ?? 0).toBeGreaterThan(0);
+
+    const league = LEAGUE_MATCHUPS.find((m) => m.name === 'shortdeck_v46_classes')!;
+    expect(league.a).toEqual({ v46ShortDeck: true });
+    expect(league.b).toEqual({});
+  });
+
   it('trips fires the fold receipt, and the flag switches the whole layer off', () => {
     enableBrainTelemetry();
     const trips = ploSpot(cc('As', 'Ah', 'Ad', '7c'));

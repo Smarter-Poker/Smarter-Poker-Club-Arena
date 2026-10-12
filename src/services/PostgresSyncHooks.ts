@@ -355,6 +355,20 @@ class PostgresSyncHooksService {
         (payload) => {
           if (!ownsSubscription()) return;
           const row = (payload.new || {}) as Record<string, unknown>;
+          if (row.event_type === 'club_identity_changed') {
+            const clubId = typeof row.club_id === 'string' ? row.club_id : undefined;
+            if (!clubId) return;
+            this.lastSeenMemberships.delete(clubId);
+            masterBus.emit('CLUB_LEFT', { clubId });
+            this.debouncedEmit(`membership_${clubId}`, 'CLUB_UPDATED', { clubId });
+            masterBus.emit('GAME_MANAGEMENT_ACCESS_CHANGED', {
+              scope: 'club',
+              scopeId: clubId,
+              clubId,
+              userId,
+            });
+            return;
+          }
           if (row.event_type !== 'management_access_changed') return;
           masterBus.emit('GAME_MANAGEMENT_ACCESS_CHANGED', {
             scope: row.scope_kind === 'union' ? 'union' : 'club',

@@ -135,14 +135,47 @@ function scanAfterPreviouslyApprovedInstalledObligationCheck(
   return migration.sql.replace(OBLIGATION_UUID_PREDICATE, APPROVED_OBLIGATION_SCAN_MARKER);
 }
 
+const INSTALLED_FEATURE_ARCHIVE = '20261007030040_the_solver_binds_immutable_feature_contracts.sql';
+const UUID_SHAPE_SUCCESSOR = '20261007040648_solver_platform_ids_validate_uuid_shape.sql';
+/** A correction cannot rewrite its installed predecessor. Recognize only the
+ * byte-exact installed archive AND byte-exact qualified forward correction.
+ * No historical exemption is added; all copied, altered or uncorrected sources fail. */
+function scanAfterQualifiedUuidShapeSuccessor(
+  migration: MigrationFile,
+  migrations: MigrationFile[]
+): string {
+  const successor = migrations.find((m) => m.name === UUID_SHAPE_SUCCESSOR);
+  if (
+    migration.name !== INSTALLED_FEATURE_ARCHIVE ||
+    digest('sha256', migration.sql) !==
+      'c637cfcd35b46c8960d8d7ad154a87573b44e63b8cc1c729ed64727e7edb5b1d' ||
+    !successor ||
+    digest('sha256', successor.sql) !==
+      'bba381d3d461a11dfd51bcbf797ded4c99b68e8623a15495840fcd296f7f689c' ||
+    migration.sql.split(VERSION_CHECKED).length !== 5 ||
+    successor.sql.includes(VERSION_CHECKED) ||
+    !successor.sql.includes('EXECUTE replace(r.definition,old_predicate,shape);') ||
+    !successor.sql.includes('after_def IS DISTINCT FROM replace(r.definition,old_predicate,shape)')
+  )
+    return migration.sql;
+  return migration.sql.replaceAll(
+    VERSION_CHECKED,
+    '<immutable UUID version check superseded by exact shape correction>'
+  );
+}
+
 function migrationsWithUnapprovedVersionChecks(migrations: MigrationFile[]): string[] {
   const approval = migrations.find((migration) => migration.name === PLATFORM_ID_APPROVAL);
   return (
     migrations
       .filter((migration) =>
-        scanAfterPreviouslyApprovedInstalledObligationCheck(migration, approval).includes(
-          VERSION_CHECKED
-        )
+        scanAfterQualifiedUuidShapeSuccessor(
+          {
+            ...migration,
+            sql: scanAfterPreviouslyApprovedInstalledObligationCheck(migration, approval),
+          },
+          migrations
+        ).includes(VERSION_CHECKED)
       )
       .map((migration) => migration.name)
       .filter((name) => !HISTORICAL.has(name))
@@ -154,9 +187,66 @@ function migrationsWithUnapprovedVersionChecks(migrations: MigrationFile[]): str
   );
 }
 
+// Load the maintained corpus once outside individual test deadlines; cold disk
+// traversal is setup, not an assertion or a reason to relax the law's timeout.
+const loadedMigrationCorpus = migrationCorpus();
+
 describe('a player id is a uuid, not a uuid of a particular version', () => {
+  it('recognizes the installed feature archive only with its exact qualified shape successor', () => {
+    const all = loadedMigrationCorpus;
+    const archive = all.find((m) => m.name === INSTALLED_FEATURE_ARCHIVE)!;
+    const successor = all.find((m) => m.name === UUID_SHAPE_SUCCESSOR)!;
+    expect(archive).toBeDefined();
+    expect(successor).toBeDefined();
+    expect(scanAfterQualifiedUuidShapeSuccessor(archive, [archive, successor])).not.toContain(
+      VERSION_CHECKED
+    );
+    expect(migrationsWithUnapprovedVersionChecks([archive, successor])).toEqual([]);
+    expect(successor.sql).toContain('c1e3c11e47fc37b9f4966b6c84c6b7a3');
+    expect(successor.sql).toContain('b0dd9f5d02894324ef4524ba2529fead');
+    expect(successor.sql).toContain('p.proacl IS NOT DISTINCT FROM r.proacl');
+  });
+  it.each(['missing', 'renamed', 'changed'] as const)(
+    'rejects immutable archive with %s shape successor',
+    (caseName) => {
+      const all = loadedMigrationCorpus;
+      const archive = all.find((m) => m.name === INSTALLED_FEATURE_ARCHIVE)!;
+      const successor = all.find((m) => m.name === UUID_SHAPE_SUCCESSOR)!;
+      const changed =
+        caseName === 'missing'
+          ? undefined
+          : caseName === 'renamed'
+            ? { ...successor, name: '20261007050000_copied_shape_fix.sql' }
+            : { ...successor, sql: successor.sql + '\n-- changed\n' };
+      const corpus = changed ? [archive, changed] : [archive];
+      expect(scanAfterQualifiedUuidShapeSuccessor(archive, corpus)).toBe(archive.sql);
+      expect(migrationsWithUnapprovedVersionChecks(corpus)).toContain(archive.name);
+    }
+  );
+  it.each(['copied', 'changed', 'player-context', 'extra-check'] as const)(
+    'rejects %s feature archive',
+    (caseName) => {
+      const all = loadedMigrationCorpus;
+      const archive = all.find((m) => m.name === INSTALLED_FEATURE_ARCHIVE)!;
+      const successor = all.find((m) => m.name === UUID_SHAPE_SUCCESSOR)!;
+      const changed =
+        caseName === 'copied'
+          ? { ...archive, name: '20261007050000_copied_feature_archive.sql' }
+          : {
+              ...archive,
+              sql:
+                caseName === 'player-context'
+                  ? archive.sql.replace("p_dataset->>'input_bundle_id'", "p_dataset->>'player_id'")
+                  : caseName === 'extra-check'
+                    ? archive.sql + `\nSELECT '${VERSION_CHECKED}';\n`
+                    : archive.sql + '\n-- changed\n',
+            };
+      expect(scanAfterQualifiedUuidShapeSuccessor(changed, [changed, successor])).toBe(changed.sql);
+      expect(migrationsWithUnapprovedVersionChecks([changed, successor])).toContain(changed.name);
+    }
+  );
   it('no new migration validates an id by its uuid version nibble', () => {
-    const offenders = migrationsWithUnapprovedVersionChecks(migrationCorpus());
+    const offenders = migrationsWithUnapprovedVersionChecks(loadedMigrationCorpus);
     expect(
       offenders,
       [

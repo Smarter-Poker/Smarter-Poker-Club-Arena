@@ -500,6 +500,9 @@ def execute(repo, output, expected, run=command):
         proof, catalog_bytes = service_preimage(result, private_preimage)
         receipt['service_preimage'] = proof
         (output / 'native-service-preimage.json').write_bytes(catalog_bytes)
+        receipt['stage'] = 'authenticated-ev-cashout'
+        run(['python3', 'tests/fixtures/ev-cashout-lifecycle/run-native.py', str(repo), image_id, str(output)], repo, env, timeout=240)
+        receipt['ev_cashout'] = json.loads((output / 'ev-cashout-lifecycle.json').read_text())
     except Exception as error:
         # Never serialize command output, environment, service logs, or tokens.
         if isinstance(error, NativeSmokeFailure):

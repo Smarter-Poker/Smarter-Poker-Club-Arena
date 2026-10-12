@@ -434,3 +434,27 @@ describe('the RUNNING re-adoption loop is wired to the law', () => {
     expect(refusal).toContain('resumePassDistressed = true;');
   });
 });
+
+describe('a resume that keeps failing is a financial incident, not a health number (2026-10-08)', () => {
+  it('remembers when a streak started and names the ones past the page threshold', () => {
+    const cooldowns = new RunningResumeCooldowns();
+    const t0 = 1_000_000;
+    cooldowns.recordFailure('a', t0);
+    cooldowns.recordFailure('a', t0 + 5_000);
+    cooldowns.recordFailure('b', t0 + 9 * 60_000);
+    expect(cooldowns.longStreaks(t0 + 9 * 60_000 + 1, 10 * 60_000)).toEqual([]);
+    expect(cooldowns.longStreaks(t0 + 10 * 60_000, 10 * 60_000)).toEqual([
+      { tournamentId: 'a', failures: 2, firstFailedAtMs: t0 },
+    ]);
+  });
+
+  it('a streak that ends is no longer paged', () => {
+    const cooldowns = new RunningResumeCooldowns();
+    cooldowns.recordFailure('a', 0);
+    cooldowns.forget('a');
+    expect(cooldowns.longStreaks(60 * 60_000, 10 * 60_000)).toEqual([]);
+    cooldowns.recordFailure('c', 0);
+    cooldowns.settle([{ id: 'c' }], () => true);
+    expect(cooldowns.longStreaks(60 * 60_000, 10 * 60_000)).toEqual([]);
+  });
+});

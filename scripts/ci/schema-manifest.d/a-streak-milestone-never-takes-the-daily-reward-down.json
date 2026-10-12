@@ -1,0 +1,6 @@
+{
+  "_owner": "agent/claude-fix/a-streak-milestone-never-takes-the-daily-reward-down. Migration 20260930233000: the horse claim sweep's deferrals table; fn_ca_horse_claim_due is re-created under the same name with a milestones_refused column, and fn_award_daily_mission_milestones, fn_daily_missions_claimed_milestone and fn_ca_diamond_engine_of are redefined in place.",
+  "tables": ["ca_horse_claim_deferrals"],
+  "functions": [],
+  "columns": {}
+}

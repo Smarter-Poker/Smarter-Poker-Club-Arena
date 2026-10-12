@@ -28,6 +28,14 @@
  *
  *   fn_lightning_config(p_cluster_id uuid) -> jsonb   (see LightningConfig.ts)
  *
+ *   LIGHTNING PHASE 8: both matcher functions gain a trailing optional
+ *   `p_player_platforms jsonb` ({player_id: 'desktop'|'tablet'|'mobile'}),
+ *   which holds each player to their platform's Cluster limit. Sent only when
+ *   the presence feed knows a platform for someone; a database still on the
+ *   old signature answers "function not found" for the extra argument, and
+ *   the same call is made once more without it (nothing ran the first time,
+ *   so even the writer is safe to repeat). The answer says which happened.
+ *
  * NOT YET DEPLOYED IS NOT AN ERROR. The engine ships ahead of the migration,
  * so every wrapper turns "function not found" (PGRST202 / 42883) into a typed
  * `unavailable` outcome. A caller decides what unavailable means; none of
@@ -35,6 +43,7 @@
  */
 import { parseLightningConfig, type LightningConfig } from './LightningConfig.js';
 import { isMissingFunctionError } from './rpcErrors.js';
+import type { LightningDevicePlatform } from './LightningPresence.js';
 
 /** The minimal slice of `supabase.rpc` these doors need; injected for tests. */
 export type LightningRpcClient = (
@@ -87,6 +96,8 @@ export interface LightningMatchArgs {
   now: Date;
   disconnected: readonly string[];
   matcherVersion: string | null;
+  /** p_player_platforms; omitted from the call when empty or absent. */
+  playerPlatforms?: Readonly<Record<string, LightningDevicePlatform>> | null;
 }
 
 export interface LightningFormArgs {
@@ -95,7 +106,22 @@ export interface LightningFormArgs {
   disconnected: readonly string[];
   maxHands: number;
   requestId: string;
+  /** p_player_platforms; omitted from the call when empty or absent. */
+  playerPlatforms?: Readonly<Record<string, LightningDevicePlatform>> | null;
 }
+
+/**
+ * Whether p_player_platforms reached the database: `sent` (the new
+ * signature took it), `dropped` (the old signature refused it and the
+ * repeat without it ANSWERED) or `none` (there was nothing to send, or the
+ * repeat failed too and nothing proves the argument was the problem - e.g.
+ * the whole function absent during a deploy window).
+ */
+export type LightningPlatformsDelivery = 'sent' | 'dropped' | 'none';
+
+export type LightningPlatformAwareOutcome<T> = LightningRpcOutcome<T> & {
+  platforms: LightningPlatformsDelivery;
+};
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -232,23 +258,62 @@ function sortedUnique(ids: readonly string[]): string[] {
   return [...new Set(ids.filter(isUuid))].sort();
 }
 
+const DEVICE_PLATFORMS = new Set(['desktop', 'tablet', 'mobile']);
+
+/** The platforms map as the SQL takes it: uuid keys, known values, sorted; null when empty. */
+export function playerPlatformsArg(
+  platforms: Readonly<Record<string, LightningDevicePlatform>> | null | undefined
+): Record<string, LightningDevicePlatform> | null {
+  if (!platforms) return null;
+  const rows = Object.entries(platforms)
+    .filter(([id, p]) => isUuid(id) && DEVICE_PLATFORMS.has(p))
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  return rows.length > 0 ? Object.fromEntries(rows) : null;
+}
+
+/**
+ * Call with p_player_platforms when there is one, and once more without it
+ * when the database does not know the argument yet. `dropped` is reported
+ * ONLY when that retry answers: a retry that also fails (the whole RPC
+ * absent during a deploy window) proves nothing about the argument, and
+ * marking it dropped would pause a healthy argument for ten minutes.
+ */
+async function callWithPlatforms(
+  rpc: LightningRpcClient,
+  fn: string,
+  args: Record<string, unknown>,
+  platforms: Record<string, LightningDevicePlatform> | null
+): Promise<LightningRpcOutcome<unknown> & { platforms: LightningPlatformsDelivery }> {
+  if (!platforms) return { ...(await call(rpc, fn, args)), platforms: 'none' };
+  const first = await call(rpc, fn, { ...args, p_player_platforms: platforms });
+  if (first.status !== 'unavailable') return { ...first, platforms: 'sent' };
+  const retry = await call(rpc, fn, args);
+  return { ...retry, platforms: retry.status === 'ok' ? 'dropped' : 'none' };
+}
+
 /** The read-only matcher. One RPC, validated. */
 export async function lightningMatch(
   rpc: LightningRpcClient,
   args: LightningMatchArgs
-): Promise<LightningRpcOutcome<LightningMatchResult>> {
-  if (!isUuid(args.clusterId)) return { status: 'invalid', reason: 'cluster_id_invalid' };
-  const out = await call(rpc, 'fn_lightning_match', {
-    p_cluster_id: args.clusterId,
-    p_now: args.now.toISOString(),
-    p_disconnected: sortedUnique(args.disconnected),
-    p_matcher_version: args.matcherVersion,
-  });
+): Promise<LightningPlatformAwareOutcome<LightningMatchResult>> {
+  if (!isUuid(args.clusterId))
+    return { status: 'invalid', reason: 'cluster_id_invalid', platforms: 'none' };
+  const out = await callWithPlatforms(
+    rpc,
+    'fn_lightning_match',
+    {
+      p_cluster_id: args.clusterId,
+      p_now: args.now.toISOString(),
+      p_disconnected: sortedUnique(args.disconnected),
+      p_matcher_version: args.matcherVersion,
+    },
+    playerPlatformsArg(args.playerPlatforms)
+  );
   if (out.status !== 'ok') return out;
   const checked = validateLightningMatchResult(out.value);
   return checked.ok
-    ? { status: 'ok', value: checked.value }
-    : { status: 'invalid', reason: checked.reason };
+    ? { status: 'ok', value: checked.value, platforms: out.platforms }
+    : { status: 'invalid', reason: checked.reason, platforms: out.platforms };
 }
 
 /** The Cluster's worker configuration. Unavailable when the function is not deployed. */
@@ -273,21 +338,100 @@ export async function lightningConfig(
 export async function lightningMatchAndForm(
   rpc: LightningRpcClient,
   args: LightningFormArgs
-): Promise<LightningRpcOutcome<Record<string, unknown>>> {
-  if (!isUuid(args.clusterId)) return { status: 'invalid', reason: 'cluster_id_invalid' };
-  if (!isUuid(args.requestId)) return { status: 'invalid', reason: 'request_id_invalid' };
+): Promise<LightningPlatformAwareOutcome<Record<string, unknown>>> {
+  if (!isUuid(args.clusterId))
+    return { status: 'invalid', reason: 'cluster_id_invalid', platforms: 'none' };
+  if (!isUuid(args.requestId))
+    return { status: 'invalid', reason: 'request_id_invalid', platforms: 'none' };
   if (!Number.isInteger(args.maxHands) || args.maxHands < 1)
-    return { status: 'invalid', reason: 'max_hands_invalid' };
-  const out = await call(rpc, 'fn_lightning_match_and_form', {
-    p_cluster_id: args.clusterId,
-    p_now: args.now.toISOString(),
-    p_disconnected: sortedUnique(args.disconnected),
-    p_max_hands: args.maxHands,
-    p_request_id: args.requestId,
-  });
+    return { status: 'invalid', reason: 'max_hands_invalid', platforms: 'none' };
+  const out = await callWithPlatforms(
+    rpc,
+    'fn_lightning_match_and_form',
+    {
+      p_cluster_id: args.clusterId,
+      p_now: args.now.toISOString(),
+      p_disconnected: sortedUnique(args.disconnected),
+      p_max_hands: args.maxHands,
+      p_request_id: args.requestId,
+    },
+    playerPlatformsArg(args.playerPlatforms)
+  );
   if (out.status !== 'ok') return out;
-  if (!isPlainObject(out.value)) return { status: 'invalid', reason: 'form_result_not_object' };
-  return { status: 'ok', value: { ...out.value } };
+  if (!isPlainObject(out.value))
+    return { status: 'invalid', reason: 'form_result_not_object', platforms: out.platforms };
+  return { status: 'ok', value: { ...out.value }, platforms: out.platforms };
+}
+
+/**
+ * LIGHTNING PHASE 11: the shadow matcher's per-window comparison record.
+ * `fn_lightning_shadow_record(p_cluster_id, p_live_version, p_shadow_version,
+ * p_window_from, p_window_to, p_live, p_shadow)` - service_role, one call
+ * per Cluster per window (LightningShadowRunner). Unavailable while the
+ * migration is not deployed; the caller then sends nothing for a while.
+ */
+export interface LightningShadowRecordArgs {
+  clusterId: string;
+  liveVersion: string | null;
+  shadowVersion: string;
+  windowFrom: Date;
+  windowTo: Date;
+  live: Record<string, unknown>;
+  shadow: Record<string, unknown>;
+}
+
+export async function lightningShadowRecord(
+  rpc: LightningRpcClient,
+  args: LightningShadowRecordArgs
+): Promise<LightningRpcOutcome<unknown>> {
+  if (!isUuid(args.clusterId)) return { status: 'invalid', reason: 'cluster_id_invalid' };
+  return call(rpc, 'fn_lightning_shadow_record', {
+    p_cluster_id: args.clusterId,
+    p_live_version: args.liveVersion,
+    p_shadow_version: args.shadowVersion,
+    p_window_from: args.windowFrom.toISOString(),
+    p_window_to: args.windowTo.toISOString(),
+    p_live: args.live,
+    p_shadow: args.shadow,
+  });
+}
+
+/**
+ * LIGHTNING PHASE 11: the engine's integrity signals for one window.
+ * `fn_lightning_integrity_report(p_cluster_id, p_signals, p_now)` -
+ * service_role. Timing only: no card, board, amount or action type.
+ */
+export async function lightningIntegrityReport(
+  rpc: LightningRpcClient,
+  args: { clusterId: string; signals: Record<string, unknown>; now: Date }
+): Promise<LightningRpcOutcome<unknown>> {
+  if (!isUuid(args.clusterId)) return { status: 'invalid', reason: 'cluster_id_invalid' };
+  return call(rpc, 'fn_lightning_integrity_report', {
+    p_cluster_id: args.clusterId,
+    p_signals: args.signals,
+    p_now: args.now.toISOString(),
+  });
+}
+
+/**
+ * LIGHTNING PHASE 12: `fn_lightning_latency_report(p_cluster_id uuid,
+ * p_window_from timestamptz, p_window_to timestamptz, p_legs jsonb)`,
+ * service_role only. Idempotent per (cluster, window_from); the same body
+ * again replays, a different body answers IDEMPOTENCY_CONFLICT. The caller
+ * passes ONE frozen argument object and reuses it verbatim on every retry
+ * (LightningLatencyLedger), so a retry can only ever replay.
+ */
+export async function lightningLatencyReport(
+  rpc: LightningRpcClient,
+  args: {
+    readonly p_cluster_id: string;
+    readonly p_window_from: string;
+    readonly p_window_to: string;
+    readonly p_legs: Readonly<Record<string, unknown>>;
+  }
+): Promise<LightningRpcOutcome<unknown>> {
+  if (!isUuid(args.p_cluster_id)) return { status: 'invalid', reason: 'cluster_id_invalid' };
+  return call(rpc, 'fn_lightning_latency_report', args as unknown as Record<string, unknown>);
 }
 
 /** Counts by state and the most frequent block reasons: what a shadow pass records. */

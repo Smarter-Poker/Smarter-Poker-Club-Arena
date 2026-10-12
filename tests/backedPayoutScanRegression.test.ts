@@ -34,6 +34,34 @@ const successorPins = JSON.parse(
   read('scripts/ci/fixtures/backed-payout-scan/reviewed-return-expectations.json')
 );
 const fixture = JSON.parse(read('scripts/ci/fixtures/backed-payout-scan/baseline.json'));
+const ticketPins = JSON.parse(
+  read('scripts/ci/fixtures/backed-payout-scan/ticket-funding-expectations.json')
+);
+const ticketPath = ticketPins.migration;
+const ticketMigration = read(ticketPath);
+const ticketScalar = read('scripts/ci/fixtures/backed-payout-scan/ticket-funding-scalar.sql');
+// The conservation scan's one-pass read (2026-10-03) reads the scalar's md5
+// as a preimage and rewrites fn_tournament_money_conservation, not the scalar;
+// tests/the-conservation-scan-reads-every-event-in-one-pass.law.test.ts pins it.
+const conservationPath = JSON.parse(
+  read('scripts/ci/fixtures/backed-payout-scan/conservation-set-expectations.json')
+).migration;
+// A Diamond tournament is conserved by its own Diamond book (2026-10-09): an
+// anchored dynamic patch of the scalar, the set function and the batch, so
+// the maintained scalar is the ticket successor with its reviewed swaps;
+// diamond-book-native.py qualifies it.
+const diamondPins = JSON.parse(
+  read('scripts/ci/fixtures/backed-payout-scan/diamond-book-expectations.json')
+);
+const diamondPath = diamondPins.migration;
+const diamondMigration = read(diamondPath);
+const diamondScalar = read('scripts/ci/fixtures/backed-payout-scan/diamond-book-scalar.sql');
+// The migration's own anchored swaps, in order: [target, anchor, replacement, what].
+const diamondSwaps = [
+  ...diamondMigration.matchAll(
+    /pg_temp\.ca_swap_once\((v_\w+),\n\$a\$([\s\S]*?)\$a\$,\n\$a\$([\s\S]*?)\$a\$, '([^']+)'\);/g
+  ),
+].map((m) => m.slice(1, 5) as [string, string, string, string]);
 let declaredFunctions: (sql: string) => { name: string; header: string; body: string }[];
 let stripComments: (sql: string) => string;
 beforeAll(async () => {
@@ -77,6 +105,16 @@ describe('backed payout discovery is the same accounting question in a batch', (
     'scripts/ci/fixtures/backed-payout-scan/setup.sql',
     'scripts/ci/fixtures/backed-payout-scan/cases.sql',
     'tests/backedPayoutScanRegression.test.ts',
+    ticketPath,
+    'scripts/ci/fixtures/backed-payout-scan/ticket-funding-scalar.sql',
+    'scripts/ci/fixtures/backed-payout-scan/ticket-funding-cases.sql',
+    'scripts/ci/fixtures/backed-payout-scan/ticket-funding-native.py',
+    'scripts/ci/fixtures/backed-payout-scan/ticket-funding-expectations.json',
+    diamondPath,
+    'scripts/ci/fixtures/backed-payout-scan/diamond-book-scalar.sql',
+    'scripts/ci/fixtures/backed-payout-scan/diamond-book-cases.sql',
+    'scripts/ci/fixtures/backed-payout-scan/diamond-book-native.py',
+    'scripts/ci/fixtures/backed-payout-scan/diamond-book-expectations.json',
   ])('enforces native and source checks for %s', (path) => {
     expect(classifyChangedPaths([path])).toMatchObject({ server: true, tests: true });
   });
@@ -323,7 +361,10 @@ describe('backed payout discovery is the same accounting question in a batch', (
         .map((fn) => ({ file, ...fn }))
     );
     const latest = declarations.at(-1)!;
-    const baseline = declaredFunctions(successorScalar)[0];
+    // The ticket and house-funding successor (2026-10-03) is the last declared
+    // scalar; its native qualification is ticket-funding-native.py. The
+    // Diamond book successor (2026-10-09) patches it in place.
+    const baseline = declaredFunctions(ticketScalar)[0];
     const normalize = (body: string) => stripComments(body).replace(/\s+/g, ' ').trim();
     expect(normalize(latest.body), latest.file).toBe(normalize(baseline.body));
     // A dynamic patch is also a formula change: future pg_get_functiondef
@@ -331,12 +372,150 @@ describe('backed payout discovery is the same accounting question in a batch', (
     const laterDynamic = migrationCorpus().filter(
       ({ name: file, sql }) =>
         file > latest.file &&
-        ![migrationPath, successorPath, inlinePath, incomePath].some(
-          (path) => file === path.split('/').at(-1)
-        ) &&
+        ![
+          migrationPath,
+          successorPath,
+          inlinePath,
+          incomePath,
+          ticketPath,
+          conservationPath,
+          diamondPath,
+        ].some((path) => file === path.split('/').at(-1)) &&
         /pg_get_functiondef[\s\S]{0,180}fn_tournament_conservation_delta/.test(sql) &&
         /\bEXECUTE\b/i.test(stripComments(sql))
     );
     expect(laterDynamic.map(({ name: file }) => file)).toEqual([]);
+    // The reviewed dynamic successor is exactly its anchored swaps applied to
+    // the declared scalar, and that is the maintained, qualified scalar.
+    let maintained = ticketScalar;
+    for (const [target, anchor, replacement, what] of diamondSwaps) {
+      if (target !== 'v_scalar') continue;
+      expect(maintained.split(anchor), what).toHaveLength(2);
+      maintained = maintained.replace(anchor, () => replacement);
+    }
+    expect(maintained).toBe(diamondScalar);
+  });
+
+  it('reads a platform Diamond event from its own escrow and keeps it out of the chip sweep', () => {
+    expect(createHash('md5').update(diamondScalar).digest('hex')).toBe(
+      diamondPins.scalarDefinitionMD5
+    );
+    for (const key of [
+      'scalarBeforeMD5',
+      'scalarDefinitionMD5',
+      'setBeforeMD5',
+      'setAfterMD5',
+      'batchBeforeMD5',
+      'batchAfterMD5',
+    ])
+      expect(diamondMigration).toContain(diamondPins[key]);
+    // The predecessors are the qualified ones, nothing else.
+    expect(diamondPins.scalarBeforeMD5).toBe(ticketPins.scalarDefinitionMD5);
+    expect(diamondPins.batchBeforeMD5).toBe(ticketPins.batchAfterMD5);
+    expect(diamondPins.setBeforeMD5).toBe(
+      JSON.parse(read('scripts/ci/fixtures/backed-payout-scan/conservation-set-expectations.json'))
+        .deltasDefinitionMD5
+    );
+    expect(diamondSwaps.map(([target]) => target)).toEqual([
+      'v_scalar',
+      'v_scalar',
+      'v_scalar',
+      'v_set',
+      'v_set',
+      'v_set',
+      'v_batch',
+    ]);
+    // One Diamond test everywhere: the platform's Diamond club, no union on
+    // the club or the event. Its delta is the escrow balance, nothing else.
+    const isDiamond =
+      /c\.id = t\.club_id AND c\.asset = 'diamonds'\s+AND c\.is_platform IS TRUE AND c\.union_id IS NULL\s+AND t\.union_id IS NULL/g;
+    expect(diamondScalar.match(isDiamond)).toHaveLength(1);
+    expect(diamondSwaps[3][2].match(isDiamond)).toHaveLength(1);
+    expect(diamondSwaps[6][2].match(isDiamond)).toHaveLength(1);
+    expect(diamondScalar).toContain(
+      'THEN (SELECT x.prize_balance + x.bounty_balance + x.fee_balance\n                   FROM public.fn_poker_diamond_tournament_escrow(t.id) x)'
+    );
+    expect(diamondSwaps[6][2]).toMatch(/^\s+AND COALESCE\(t\.variant, ''\) <> 'spin'\n/);
+    expect(diamondSwaps[6][2]).toContain('AND NOT EXISTS (SELECT 1 FROM public.clubs c');
+    // Authority is never restated or widened by a patch.
+    expect(stripComments(diamondMigration)).not.toMatch(
+      /\b(?:GRANT|REVOKE|CREATE INDEX|DROP|cron\.(?:schedule|alter_job|unschedule))\b/i
+    );
+    for (const code of ['PREIMAGE_CHANGED', 'ANCHOR_CHANGED', 'RESULT_CHANGED'])
+      expect(diamondMigration).toContain('DIAMOND_BOOK_' + code);
+    expect(diamondMigration.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(diamondMigration.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(read('scripts/ci/test-backed-payout-scan-postgres.py')).toContain(
+      "runpy.run_path(str(FIXTURE/'diamond-book-native.py'))['qualify'](globals())"
+    );
+    const native = read('scripts/ci/fixtures/backed-payout-scan/diamond-book-native.py');
+    for (const proof of [
+      'original formula',
+      'predecessor batch must pay the Diamond target through the chip book',
+      'diamond transaction rollback',
+      'more than the anchored swaps changed',
+      'a non-Diamond delta changed',
+      'a Diamond delta is not its escrow balance',
+      'diamond whole-population scalar parity',
+      'whole successor caller differs',
+      'the chip sweep read a Diamond event',
+      'fresh statement missed committed Diamond leg',
+      'diamond successor changed authority or function identity',
+    ])
+      expect(native).toContain(proof);
+  });
+
+  it('reads a ticket from its payout row and a house correction as funding, on both paths', () => {
+    expect(createHash('md5').update(ticketScalar).digest('hex')).toBe(
+      ticketPins.scalarDefinitionMD5
+    );
+    expect(ticketMigration).toContain(ticketScalar.trimEnd() + ';');
+    for (const key of ['scalarBeforeMD5', 'scalarDefinitionMD5', 'batchBeforeMD5', 'batchAfterMD5'])
+      expect(ticketMigration).toContain(ticketPins[key]);
+    // The predecessors are the qualified ones, nothing else.
+    expect(ticketPins.scalarBeforeMD5).toBe(successorPins.scalarDefinitionMD5);
+    expect(ticketPins.batchBeforeMD5).toBe(incomePins.afterDefinitionMD5);
+    // The ticket resolves from the award row, else from a well-formed payout
+    // ticket id; a malformed one is never cast.
+    expect(
+      ticketScalar.match(/COALESCE\(a\.ticket_id, CASE WHEN sp\.metadata->>'ticket_id' ~\* /g)
+    ).toHaveLength(2);
+    expect(ticketScalar).toMatch(
+      /c\.category = 'correction'\s+AND c\.to_type = 'prize_liability'\s+AND c\.from_type IN \('union_bank','club_treasury'\)\), 0\) AS house_correction/
+    );
+    expect(ticketScalar).toMatch(/\+ m\.funded_overlay\n\s+\+ m\.house_correction\n/);
+    expect(ticketScalar).not.toMatch(/settlement_suspense|from_type IN \([^)]*player_wallet/);
+    const replacements = ticketPins.replacements as { old: string; new: string; count: number }[];
+    expect(replacements.map((r) => r.count)).toEqual([2, 1, 1, 1]);
+    expect(replacements[1].new).toContain('house_corrections AS MATERIALIZED (');
+    expect(replacements[3].new).toContain('LEFT JOIN house_corrections hc ON hc.id = e.id');
+    for (const code of ['PREIMAGE_CHANGED', 'AUTHORITY_CHANGED', 'BATCH_CHANGED', 'RESULT_CHANGED'])
+      expect(ticketMigration).toContain('TICKET_FUNDING_' + code);
+    expect(stripComments(ticketMigration)).not.toMatch(
+      /\b(?:CREATE INDEX|DROP|cron\.(?:schedule|alter_job|unschedule))\b/i
+    );
+    // Authority is only ever restated, never widened: the scalar is closed to
+    // every browser role and open to the service role, and nothing else is
+    // granted or revoked.
+    expect(stripComments(ticketMigration).match(/\b(?:GRANT|REVOKE)\b[^;]*;/g)).toEqual([
+      'REVOKE ALL ON FUNCTION public.fn_tournament_conservation_delta(uuid) FROM PUBLIC, anon, authenticated;',
+      'GRANT EXECUTE ON FUNCTION public.fn_tournament_conservation_delta(uuid) TO service_role;',
+    ]);
+    expect(ticketMigration.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(ticketMigration.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(read('scripts/ci/test-backed-payout-scan-postgres.py')).toContain(
+      "runpy.run_path(str(FIXTURE/'ticket-funding-native.py'))['qualify'](globals())"
+    );
+    const native = read('scripts/ci/fixtures/backed-payout-scan/ticket-funding-native.py');
+    for (const proof of [
+      'original formula',
+      'predecessor batch must pay the phantom backing',
+      'successor oracle must not pay the phantom backing',
+      'ticket transaction rollback',
+      'whole successor caller differs',
+      'ticket whole-population scalar parity',
+      'ticket successor changed authority or function identity',
+    ])
+      expect(native).toContain(proof);
   });
 });

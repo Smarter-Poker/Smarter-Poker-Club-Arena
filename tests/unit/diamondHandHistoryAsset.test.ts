@@ -2,6 +2,8 @@ import { describe, it, expect, vi } from 'vitest';
 const fixture = vi.hoisted(() => ({
   asset: 'diamonds' as string | undefined,
   tableSelect: '',
+  rpcName: '',
+  rpcArgs: null as Record<string, unknown> | null,
   /** The selection and the `.eq()` filters the hand_history query was built with. */
   handSelect: '',
   filters: [] as Array<[string, unknown]>,
@@ -53,14 +55,17 @@ vi.mock('../../src/lib/supabase', () => ({
       };
       return chain;
     },
-    rpc: async () => ({ data: [], error: null }),
+    rpc: async (name: string, args: Record<string, unknown>) => {
+      fixture.rpcName = name;
+      fixture.rpcArgs = args;
+      return { data: [], error: null };
+    },
   },
 }));
 vi.mock('../../src/lib/authUtils', () => ({ readLocalSession: () => null }));
 import {
   handHistoryService,
-  HAND_HISTORY_ARENA_EMBED,
-  HAND_HISTORY_ARENA_FILTER_COLUMN,
+  HAND_HISTORY_ARENA_RPC,
   HAND_HISTORY_COLUMNS,
 } from '../../src/services/HandHistoryService';
 import { adaptServiceHandToPanel } from '../../src/lib/handHistoryAdapter';
@@ -101,11 +106,9 @@ describe('canonical hand history denomination', () => {
  * production 2026-09-20: its only inbound keys are `ca_hand_facts`,
  * `ca_hand_flags` and `ca_hand_notes`, and it has no outbound one), so the
  * `tables -> clubs` join that labels a row cannot filter the query that
- * produces it. `ca_hand_facts` can: one row per player per hand, carrying the
- * table's `club_id`, under `ca_hand_facts_hand_id_fkey` and an RLS policy of
- * `user_id = auth.uid()`. Embedded `!inner` it is a server-side filter on
- * exactly the hands THIS player played in THAT club, so the page, the order and
- * Load More all remain the database's.
+ * produces it. The self-only RPC joins `ca_hand_facts` by immutable hand UUID
+ * without a foreign key, so facts survive the supported hand-history prune
+ * while club, order and Load More all remain database-side.
  *
  * A client-side filter would have been wrong in a way that is invisible until
  * it matters: page one of fifty cross-club hands can contain no Diamond hands
@@ -115,39 +118,45 @@ describe('a Diamond hand history is scoped by the server', () => {
   it('asks for no club filter by default, which is the cross-club archive', async () => {
     fixture.handSelect = '';
     fixture.filters = [];
+    fixture.rpcName = '';
     await handHistoryService.getPlayerHands('hero', 50);
     expect(fixture.handSelect).toBe(HAND_HISTORY_COLUMNS);
     expect(fixture.handSelect).not.toContain('ca_hand_facts');
     expect(fixture.filters).toEqual([]);
   });
 
-  it('filters on the facts row when a club id is given', async () => {
+  it('uses the self-only server RPC when a club id is given', async () => {
     fixture.handSelect = '';
     fixture.filters = [];
+    fixture.rpcName = '';
+    fixture.rpcArgs = null;
     await handHistoryService.getPlayerHands('hero', 50, { clubId: DIAMOND_ARENA_CLUB_ID });
-    expect(fixture.handSelect).toContain(HAND_HISTORY_ARENA_EMBED);
-    // The named constraint, not a bare `ca_hand_facts(...)`: an unnamed embed
-    // resolves today and errors the day a second path appears, at runtime, on
-    // a player's own page.
-    expect(HAND_HISTORY_ARENA_EMBED).toContain('!ca_hand_facts_hand_id_fkey');
-    expect(HAND_HISTORY_ARENA_EMBED).toContain('!inner');
-    expect(fixture.filters).toEqual([[HAND_HISTORY_ARENA_FILTER_COLUMN, DIAMOND_ARENA_CLUB_ID]]);
+    expect(fixture.rpcName).toBe(HAND_HISTORY_ARENA_RPC);
+    expect(fixture.rpcArgs).toEqual({
+      p_club_id: DIAMOND_ARENA_CLUB_ID,
+      p_table_id: null,
+      p_limit: 50,
+      p_offset: 0,
+    });
+    expect(fixture.handSelect).toBe('');
   });
 
   it('resolves the diamond asset to the one open club, so the footer need not know a uuid', async () => {
     fixture.handSelect = '';
     fixture.filters = [];
     await handHistoryService.getPlayerHands('hero', 50, { asset: 'diamonds' });
-    expect(fixture.filters).toEqual([[HAND_HISTORY_ARENA_FILTER_COLUMN, DIAMOND_ARENA_CLUB_ID]]);
+    expect(fixture.rpcArgs).toMatchObject({ p_club_id: DIAMOND_ARENA_CLUB_ID });
   });
 
   it('treats an absent scope as absent, never as the arena', async () => {
     for (const opts of [{}, { clubId: null }, { asset: null }, { clubId: '   ' }] as const) {
       fixture.handSelect = '';
       fixture.filters = [];
+      fixture.rpcName = '';
       await handHistoryService.getPlayerHands('hero', 50, opts);
       expect(fixture.filters, JSON.stringify(opts)).toEqual([]);
       expect(fixture.handSelect, JSON.stringify(opts)).not.toContain('ca_hand_facts');
+      expect(fixture.rpcName, JSON.stringify(opts)).toBe('');
     }
   });
 
@@ -158,10 +167,10 @@ describe('a Diamond hand history is scoped by the server', () => {
       tableId: 'table-1',
       asset: 'diamonds',
     });
-    expect(fixture.filters).toEqual([
-      ['table_id', 'table-1'],
-      [HAND_HISTORY_ARENA_FILTER_COLUMN, DIAMOND_ARENA_CLUB_ID],
-    ]);
+    expect(fixture.rpcArgs).toMatchObject({
+      p_table_id: 'table-1',
+      p_club_id: DIAMOND_ARENA_CLUB_ID,
+    });
   });
 
   it('prefers an explicit club id over the asset, the more specific statement winning', async () => {
@@ -171,6 +180,6 @@ describe('a Diamond hand history is scoped by the server', () => {
       clubId: 'some-other-club',
       asset: 'diamonds',
     });
-    expect(fixture.filters).toEqual([[HAND_HISTORY_ARENA_FILTER_COLUMN, 'some-other-club']]);
+    expect(fixture.rpcArgs).toMatchObject({ p_club_id: 'some-other-club' });
   });
 });

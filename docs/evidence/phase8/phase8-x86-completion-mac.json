@@ -1,0 +1,425 @@
+{
+  "machine": {
+    "host": "development Mac, shared with other agents",
+    "cpu": "Apple M3 Ultra",
+    "cpus": 28,
+    "platform": "darwin 25.5.0 arm64",
+    "node": "v26.3.0",
+    "v8": "14.6.202.34-node.20"
+  },
+  "revisions": {
+    "before": "03bdd28344",
+    "after": "9b4d7b3f78"
+  },
+  "runs": [
+    {
+      "tree": "before",
+      "run": "before-cold-1",
+      "node": "v26.3.0",
+      "load": "14.88",
+      "eligible": 181,
+      "fired": 114,
+      "completed": 114,
+      "refusals": {
+        "continuation_operation_budget": 63,
+        "budget_exhausted": 2,
+        "continuation_sample_calibration": 2
+      },
+      "finalGate": {},
+      "latch": null,
+      "budgetStops": {
+        "icm": 8,
+        "future_rollout": 46,
+        "none": 116,
+        "sample": 11
+      },
+      "p50": 3.385,
+      "p99": 5.537,
+      "max": 5.975,
+      "policyMax": 1.18,
+      "refusedMedianWork": {
+        "rollouts": 123,
+        "samplesVisited": 79,
+        "estimates": 116,
+        "candidatesCompleted": 4,
+        "candidateCount": 8
+      }
+    },
+    {
+      "tree": "after",
+      "run": "after-cold-1",
+      "node": "v26.3.0",
+      "load": "14.88",
+      "eligible": 181,
+      "fired": 140,
+      "completed": 140,
+      "refusals": {
+        "continuation_operation_budget": 37,
+        "continuation_sample_calibration": 2,
+        "budget_exhausted": 2
+      },
+      "finalGate": {},
+      "latch": null,
+      "budgetStops": {
+        "future_rollout": 22,
+        "none": 142,
+        "sample": 5,
+        "icm": 12
+      },
+      "p50": 2.649,
+      "p99": 5.452,
+      "max": 7.322,
+      "policyMax": 0.412,
+      "refusedMedianWork": {
+        "rollouts": 116,
+        "samplesVisited": 72,
+        "estimates": 110,
+        "candidatesCompleted": 3,
+        "candidateCount": 8
+      }
+    },
+    {
+      "tree": "after",
+      "run": "after-warm-1",
+      "node": "v26.3.0",
+      "load": "15.61",
+      "eligible": 181,
+      "fired": 156,
+      "completed": 156,
+      "refusals": {
+        "continuation_operation_budget": 22,
+        "continuation_sample_calibration": 2,
+        "budget_exhausted": 1
+      },
+      "finalGate": {},
+      "latch": null,
+      "budgetStops": {
+        "sample": 5,
+        "none": 158,
+        "future_rollout": 14,
+        "icm": 4
+      },
+      "p50": 2.469,
+      "p99": 4.541,
+      "max": 5.444,
+      "policyMax": 0.117,
+      "refusedMedianWork": {
+        "rollouts": 176,
+        "samplesVisited": 116,
+        "estimates": 164,
+        "candidatesCompleted": 6,
+        "candidateCount": 8
+      }
+    },
+    {
+      "tree": "before",
+      "run": "before-warm-1",
+      "node": "v26.3.0",
+      "load": "16.60",
+      "eligible": 181,
+      "fired": 121,
+      "completed": 121,
+      "refusals": {
+        "continuation_operation_budget": 54,
+        "budget_exhausted": 4,
+        "continuation_sample_calibration": 2
+      },
+      "finalGate": {},
+      "latch": null,
+      "budgetStops": {
+        "future_rollout": 34,
+        "icm": 12,
+        "none": 123,
+        "sample": 12
+      },
+      "p50": 3.215,
+      "p99": 6.1,
+      "max": 9.189,
+      "policyMax": 0.307,
+      "refusedMedianWork": {
+        "rollouts": 147,
+        "samplesVisited": 93,
+        "estimates": 122,
+        "candidatesCompleted": 5,
+        "candidateCount": 8
+      }
+    },
+    {
+      "tree": "before",
+      "run": "before-cold-2",
+      "node": "v26.3.0",
+      "load": "17.99",
+      "eligible": 181,
+      "fired": 89,
+      "completed": 89,
+      "refusals": {
+        "continuation_operation_budget": 86,
+        "continuation_sample_calibration": 2,
+        "budget_exhausted": 4
+      },
+      "finalGate": {},
+      "latch": null,
+      "budgetStops": {
+        "future_rollout": 52,
+        "icm": 25,
+        "sample": 13,
+        "none": 91
+      },
+      "p50": 4.004,
+      "p99": 6.848,
+      "max": 12.561,
+      "policyMax": 0.449,
+      "refusedMedianWork": {
+        "rollouts": 129,
+        "samplesVisited": 79,
+        "estimates": 108,
+        "candidatesCompleted": 4,
+        "candidateCount": 8
+      }
+    },
+    {
+      "tree": "after",
+      "run": "after-cold-2",
+      "node": "v26.3.0",
+      "load": "19.11",
+      "eligible": 181,
+      "fired": 138,
+      "completed": 137,
+      "refusals": {
+        "continuation_operation_budget": 36,
+        "budget_exhausted": 6,
+        "continuation_sample_calibration": 2
+      },
+      "finalGate": {
+        "budget_exhausted": 1
+      },
+      "latch": null,
+      "budgetStops": {
+        "future_rollout": 26,
+        "icm": 11,
+        "none": 140,
+        "sample": 4
+      },
+      "p50": 2.509,
+      "p99": 8.086,
+      "max": 8.696,
+      "policyMax": 3.69,
+      "refusedMedianWork": {
+        "rollouts": 122,
+        "samplesVisited": 70,
+        "estimates": 111,
+        "candidatesCompleted": 4,
+        "candidateCount": 8
+      }
+    },
+    {
+      "tree": "after",
+      "run": "after-warm-2",
+      "node": "v26.3.0",
+      "load": "19.91",
+      "eligible": 181,
+      "fired": 167,
+      "completed": 167,
+      "refusals": {
+        "continuation_operation_budget": 12,
+        "continuation_sample_calibration": 2
+      },
+      "finalGate": {},
+      "latch": null,
+      "budgetStops": {
+        "future_rollout": 5,
+        "none": 169,
+        "sample": 5,
+        "icm": 2
+      },
+      "p50": 2.201,
+      "p99": 4.032,
+      "max": 4.141,
+      "policyMax": 0.204,
+      "refusedMedianWork": {
+        "rollouts": 268,
+        "samplesVisited": 161,
+        "estimates": 233,
+        "candidatesCompleted": 5,
+        "candidateCount": 8
+      }
+    },
+    {
+      "tree": "before",
+      "run": "before-warm-2",
+      "node": "v26.3.0",
+      "load": "20.15",
+      "eligible": 181,
+      "fired": 140,
+      "completed": 140,
+      "refusals": {
+        "continuation_operation_budget": 39,
+        "continuation_sample_calibration": 2
+      },
+      "finalGate": {},
+      "latch": null,
+      "budgetStops": {
+        "sample": 9,
+        "future_rollout": 23,
+        "none": 142,
+        "icm": 7
+      },
+      "p50": 3.121,
+      "p99": 4.194,
+      "max": 4.237,
+      "policyMax": 0.087,
+      "refusedMedianWork": {
+        "rollouts": 186,
+        "samplesVisited": 113,
+        "estimates": 173,
+        "candidatesCompleted": 5,
+        "candidateCount": 8
+      }
+    },
+    {
+      "tree": "before",
+      "run": "before-cold-3",
+      "node": "v26.3.0",
+      "load": "20.70",
+      "eligible": 181,
+      "fired": 121,
+      "completed": 121,
+      "refusals": {
+        "continuation_operation_budget": 54,
+        "continuation_sample_calibration": 2,
+        "budget_exhausted": 4
+      },
+      "finalGate": {},
+      "latch": null,
+      "budgetStops": {
+        "future_rollout": 33,
+        "icm": 15,
+        "none": 123,
+        "sample": 10
+      },
+      "p50": 3.337,
+      "p99": 5.938,
+      "max": 7.756,
+      "policyMax": 0.41,
+      "refusedMedianWork": {
+        "rollouts": 162,
+        "samplesVisited": 106,
+        "estimates": 153,
+        "candidatesCompleted": 5,
+        "candidateCount": 8
+      }
+    },
+    {
+      "tree": "after",
+      "run": "after-cold-3",
+      "node": "v26.3.0",
+      "load": "20.70",
+      "eligible": 181,
+      "fired": 122,
+      "completed": 121,
+      "refusals": {
+        "continuation_operation_budget": 41,
+        "budget_exhausted": 17,
+        "continuation_sample_calibration": 2
+      },
+      "finalGate": {
+        "budget_exhausted": 1
+      },
+      "latch": null,
+      "budgetStops": {
+        "future_rollout": 28,
+        "none": 124,
+        "sample": 14,
+        "icm": 15
+      },
+      "p50": 2.695,
+      "p99": 34.032,
+      "max": 43.443,
+      "policyMax": 43.315,
+      "refusedMedianWork": {
+        "rollouts": 122,
+        "samplesVisited": 69,
+        "estimates": 113,
+        "candidatesCompleted": 4,
+        "candidateCount": 8
+      }
+    },
+    {
+      "tree": "after",
+      "run": "after-warm-3",
+      "node": "v26.3.0",
+      "load": "21.93",
+      "eligible": 181,
+      "fired": 150,
+      "completed": 150,
+      "refusals": {
+        "continuation_operation_budget": 21,
+        "continuation_sample_calibration": 2,
+        "budget_exhausted": 8
+      },
+      "finalGate": {},
+      "latch": null,
+      "budgetStops": {
+        "icm": 9,
+        "sample": 7,
+        "none": 152,
+        "future_rollout": 13
+      },
+      "p50": 2.273,
+      "p99": 16.331,
+      "max": 20.456,
+      "policyMax": 0.101,
+      "refusedMedianWork": {
+        "rollouts": 148,
+        "samplesVisited": 97,
+        "estimates": 146,
+        "candidatesCompleted": 5,
+        "candidateCount": 8
+      }
+    },
+    {
+      "tree": "before",
+      "run": "before-warm-3",
+      "node": "v26.3.0",
+      "load": "23.21",
+      "eligible": 68,
+      "fired": 37,
+      "completed": 36,
+      "refusals": {
+        "budget_exhausted": 15,
+        "continuation_operation_budget": 16,
+        "continuation_sample_calibration": 1
+      },
+      "finalGate": {
+        "budget_exhausted": 1
+      },
+      "latch": "repeated_budget_breach",
+      "budgetStops": {
+        "icm": 7,
+        "future_rollout": 17,
+        "none": 38,
+        "sample": 6
+      },
+      "p50": 3.986,
+      "p99": 45.633,
+      "max": 45.633,
+      "policyMax": 0.07,
+      "refusedMedianWork": {
+        "rollouts": 129,
+        "samplesVisited": 77,
+        "estimates": 124,
+        "candidatesCompleted": 4,
+        "candidateCount": 8
+      }
+    }
+  ],
+  "digest": {
+    "clock": "frozen_at_zero",
+    "before": "e150e342a36eee0e96cf07e4faf82e633282ff7f768a1bf0b6c796631eb53012",
+    "after": "e150e342a36eee0e96cf07e4faf82e633282ff7f768a1bf0b6c796631eb53012",
+    "identicalRows": 182,
+    "rows": 182,
+    "rowsDifferingFromHostC": [177],
+    "crossMachineNote": "row 177 differs between this Mac and host C before and after alike (last-place floating differences in its sample weights); each machine is compared only with itself"
+  }
+}

@@ -12,13 +12,13 @@
  * refusal clears everything (useCashierStatement).
  *
  * One console, the approved spade master, `foot="foot"`. Head zones print
- * compactChips(); figures on the glass print whole chips, with cents only when
- * the ledger really holds them. Every data word reaches the screen through
+ * compactChips(); figures on the glass obey the same no-decimal law without
+ * changing the ledger's exact stored cents. Every data word reaches the screen through
  * titleCase(); immutable references print exactly as stored, so they can be
  * copied and matched.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useCashoutScope, useCashoutScopeKey } from '../hooks/useCashoutScope';
@@ -43,7 +43,7 @@ import {
   type StatementScope,
   type WalletFamily,
 } from '../hooks/useCashierStatement';
-import { SpadeConsole } from '../components/console/SpadeConsole';
+import { CashierWorkspace } from '../components/wallet/CashierWorkspace';
 import { isUUID, resolveClubUUID } from '../utils/clubIdResolver';
 import { copyCashierText, readCashierOnlineState } from '../services/CashierResilience';
 import { compactChips } from '../utils/format';
@@ -72,6 +72,32 @@ const WALLET_WORD: Record<WalletFamily, string> = {
   other: 'Other',
 };
 
+/**
+ * The ledger's movement categories as a player reads them. `enumToTitleCase`
+ * turns `buyin` into "Buyin" and `addon` into "Addon"; the words the rest of
+ * the wallet prints are hyphenated (launch audit 2026-10-09, R-11). Anything
+ * not named here still falls through to the enum reading.
+ */
+const KIND_WORD: Record<string, string> = {
+  buyin: 'Buy-In',
+  cashout: 'Cash-Out',
+  addon: 'Add-On',
+  addon_refund: 'Add-On Refund',
+  rebuy: 'Rebuy',
+  tournament_buyin: 'Tournament Buy-In',
+  tournament_cashout: 'Tournament Cash-Out',
+  bbj: 'Bad Beat Jackpot',
+  bbj_promo_sweep: 'Bad Beat Jackpot Promo Sweep',
+  /* Read as the Club Bank send it is: a label of its own named the rows
+     only one kind of member ever receives (cashier launch B-5). */
+  horse_refill: 'Club Bank Send',
+  club_bank_send: 'Club Bank Send',
+};
+
+function kindWord(kind: string): string {
+  return KIND_WORD[kind] ?? enumToTitleCase(kind);
+}
+
 const DIRECTION_WORD: Record<EntryDirection, string> = {
   in: 'Incoming',
   out: 'Outgoing',
@@ -99,6 +125,8 @@ const PROBLEM_WORD: Record<StatementProblem, string> = {
   malformed: 'The Statement Came Back Incomplete, So None Of It Is Shown. Try Again.',
   too_large: `Narrow The Range. One Export Holds Up To ${STATEMENT_EXPORT_MAX_ROWS.toLocaleString('en-US')} Entries.`,
   expired: 'This Export Expired. Prepare It Again.',
+  busy: 'An Export Is Already Being Prepared. Try Again In A Moment.',
+  gone: 'This Export Is No Longer Available. Prepare A New Export.',
   download_failed: 'The File Could Not Be Handed Off. Try The Download Again.',
 };
 
@@ -118,11 +146,13 @@ const RANGE_PROBLEM_WORD = {
 
 // ─── Figures ─────────────────────────────────────────────────────────────────
 
-/**
- * EXACT LEDGER FIGURES ON THE GLASS, from the server's decimal string with no
- * float in between: 12,500 when whole, 32,482.58 when the ledger holds cents.
- */
+/** #ClubArenaConsole chip reading; exact decimal text remains in export/copy data. */
 function chips(value: string): string {
+  return compactChips(Number(value));
+}
+
+/** Exact server decimal for copied receipts; never route audit data through display abbreviation. */
+function exactChips(value: string): string {
   const negative = value.startsWith('-');
   const [whole = '0', fraction = ''] = value.replace(/^-/, '').split('.');
   const grouped = (whole.replace(/^0+(?=\d)/, '') || '0').replace(/\B(?=(\d{3})+(?!\d))/g, ',');
@@ -199,16 +229,16 @@ function receiptText(entry: StatementEntry): string {
   const lines = [
     'Smarter Poker Cashier Statement Entry',
     `Recorded: ${entry.at}`,
-    `Entry: ${enumToTitleCase(entry.kind)}`,
+    `Entry: ${kindWord(entry.kind)}`,
     `Wallet: ${WALLET_WORD[entry.wallet]}`,
     `Direction: ${DIRECTION_WORD[entry.direction]}`,
-    `Amount: ${signed(entry.direction)}${chips(entry.amount)} Chips`,
+    `Amount: ${signed(entry.direction)}${exactChips(entry.amount)} Chips`,
     `From: ${partyWord(entry.from.label, entry.from.type)}`,
     `To: ${partyWord(entry.to.label, entry.to.type)}`,
     `State: ${STATE_WORD[entry.state]}`,
     `Source: ${entry.source === 'receipt' ? 'Cashier Receipt' : 'Ledger Movement'}`,
   ];
-  if (entry.balance_after !== null) lines.push(`Balance After: ${chips(entry.balance_after)}`);
+  if (entry.balance_after !== null) lines.push(`Balance After: ${exactChips(entry.balance_after)}`);
   for (const [label, value] of referenceFacts(entry)) lines.push(`${label}: ${value}`);
   return lines.join('\n');
 }
@@ -244,6 +274,19 @@ function StatementsContent({ clubParam, userId }: { clubParam: string; userId?: 
 
   const [openId, setOpenId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    // React StrictMode runs setup, cleanup, setup in development. Reassert the
+    // live flag in setup or the rehearsal cleanup permanently disables Copy.
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+  useEffect(() => {
+    document.title = 'Cashier Statement | Smarter Poker';
+  }, []);
 
   useEffect(() => {
     const online = () => setIsOnline(true);
@@ -306,7 +349,7 @@ function StatementsContent({ clubParam, userId }: { clubParam: string; userId?: 
 
   const copy = useCallback(async (id: string, text: string) => {
     const ok = await copyCashierText(text);
-    setCopiedId(ok ? id : null);
+    if (mountedRef.current) setCopiedId(ok ? id : null);
   }, []);
 
   const pillText = refused
@@ -333,7 +376,7 @@ function StatementsContent({ clubParam, userId }: { clubParam: string; userId?: 
 
   return (
     <div className={styles.page} data-cashier-surface="statements">
-      <SpadeConsole
+      <CashierWorkspace
         eyebrow="Full Statement"
         title="Cashier"
         pill={pillText}
@@ -752,8 +795,8 @@ function StatementsContent({ clubParam, userId }: { clubParam: string; userId?: 
                                 {counterpartyWord(entry)}
                               </span>
                               <span className={styles.rowSub}>
-                                {enumToTitleCase(entry.kind)} &middot; {WALLET_WORD[entry.wallet]}{' '}
-                                &middot; {STATE_WORD[entry.state]} &middot; {recordedAt(entry.at)}
+                                {kindWord(entry.kind)} &middot; {WALLET_WORD[entry.wallet]} &middot;{' '}
+                                {STATE_WORD[entry.state]} &middot; {recordedAt(entry.at)}
                               </span>
                             </span>
                             <span
@@ -780,7 +823,7 @@ function StatementsContent({ clubParam, userId }: { clubParam: string; userId?: 
                             <dl className={styles.facts} id={factsId}>
                               <div>
                                 <dt className={styles.fieldLabel}>Entry</dt>
-                                <dd>{enumToTitleCase(entry.kind)}</dd>
+                                <dd>{kindWord(entry.kind)}</dd>
                               </div>
                               <div>
                                 <dt className={styles.fieldLabel}>Wallet</dt>
@@ -882,7 +925,7 @@ function StatementsContent({ clubParam, userId }: { clubParam: string; userId?: 
             </>
           )}
         </div>
-      </SpadeConsole>
+      </CashierWorkspace>
     </div>
   );
 }

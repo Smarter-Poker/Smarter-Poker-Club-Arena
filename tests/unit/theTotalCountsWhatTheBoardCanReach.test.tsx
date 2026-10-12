@@ -223,12 +223,9 @@ describe('the total counts what the board can reach', () => {
    * Found reviewing my own change, before calling it done.
    *
    * `counts` starts as a zero-filled object and this rail renders as soon as
-   * ACCESS resolves - which is before the first list has come back. For the
-   * length of that first load every figure in the rail is a placeholder. The
-   * numbers can live with that; a zero beside the word Live reads as
-   * "counting". The tooltip could not: "Every Game In This Scope Is On The
-   * Board" is a sentence, and a sentence reads as an answer. It was being
-   * asserted about a scope nothing had read yet.
+   * ACCESS resolves - which is before the first list has come back. Until the
+   * first authoritative count arrives, the rail must name the read in progress
+   * instead of painting zeros or claiming that every game is already listed.
    *
    * Exactly the failure the health rail's `?? 0` had, introduced in the same
    * breath as the fix for it, which is the reason this test exists.
@@ -246,8 +243,10 @@ describe('the total counts what the board can reach', () => {
       </MemoryRouter>
     );
     // The rail is up (access resolved); the list has not answered.
-    const total = await screen.findByText('Total');
-    expect(total.closest('span')?.getAttribute('title')).toBeNull();
+    const reading = await screen.findByText('Reading');
+    expect(reading.closest('span')).toHaveTextContent('Reading Game Counts');
+    expect(screen.queryByText('Total')).toBeNull();
+    expect(screen.queryByTitle(/every game in this scope is on the board/i)).toBeNull();
   });
   /**
    * A counts object with a hole in it must not render "NaN" on an operator

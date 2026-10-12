@@ -50,6 +50,7 @@ import DiamondSpinsOwnerTerms from '../../components/games/DiamondSpinsOwnerTerm
 import { DIAMOND_GAME_TITLES } from '../../utils/diamondGameTitles';
 import { uuid } from '../../utils/uuid';
 import { useIsMounted } from '../../hooks/useIsMounted';
+import { designedReturn } from '../../utils/diamondDesignedReturn';
 import styles from '../diamondGames.module.css';
 
 const chips = (n: number | null | undefined) => compactChips(Number(n ?? 0));
@@ -427,6 +428,12 @@ export default function ClubDiamondGamesOperationsPage() {
             meta={`Room ${chips(metrics?.exposure_headroom_chips)}`}
           />
           <Row
+            label="Paid Back"
+            value={pct(metrics?.realized_rtp_lifetime)}
+            ink="silver"
+            meta={`Built To Pay ${pct(designedReturn(game, metrics?.tables))}`}
+          />
+          <Row
             label="House Take"
             value={chips(metrics?.house_take_lifetime_chips)}
             ink="gold"
@@ -496,7 +503,7 @@ export default function ClubDiamondGamesOperationsPage() {
           <div className={`${styles.grid4} ${styles.grid4Head}`}>
             <span className="sc-label sc-ink--blue">Window</span>
             <span className={`sc-label sc-ink--blue ${styles.cellRight}`}>Rounds</span>
-            <span className={`sc-label sc-ink--blue ${styles.cellRight}`}>Chips Paid</span>
+            <span className={`sc-label sc-ink--blue ${styles.cellRight}`}>Paid Back</span>
             <span className={`sc-label sc-ink--blue ${styles.cellRight}`}>Review</span>
           </div>
           {(metrics?.windows ?? []).map((w) => (
@@ -517,7 +524,7 @@ export default function ClubDiamondGamesOperationsPage() {
               <span
                 className={`${styles.cell} ${styles.cellRight} ${w.drift ? 'sc-ink--red' : 'sc-ink--silver'}`}
               >
-                {chips(w.paid_chips)}
+                {pct(w.realized_rtp)}
               </span>
               <span
                 className={`${styles.cell} ${styles.cellRight} ${w.drift ? 'sc-ink--red' : 'sc-ink--muted'}`}
@@ -528,8 +535,10 @@ export default function ClubDiamondGamesOperationsPage() {
           ))}
         </div>
         <p className="sc-copy">
-          Review Highlights Activity That Needs An Operator Check. Intake And Paid Chips Come From
-          The Settled Game Records.
+          Paid Back Is Chips Paid Out Of Chips Taken In, Next To The{' '}
+          {pct(designedReturn(game, metrics?.tables))} The Game Is Built To Pay. A Short Window
+          Swings Far From It; Review Highlights Activity That Needs An Operator Check. Intake And
+          Paid Chips Come From The Settled Game Records.
         </p>
         {game === 'plinko' && metrics?.tables?.length ? (
           <div className={`${styles.rows} ${styles.rowsCompact}`}>
@@ -539,7 +548,7 @@ export default function ClubDiamondGamesOperationsPage() {
                 label={t.name}
                 value={multiplierLabel(t.max_multiplier_cents)}
                 ink={t.activated_at ? 'gold' : 'muted'}
-                meta={t.activated_at ? 'Active Table' : 'Not Yet Live'}
+                meta={`${t.activated_at ? 'Active Table' : 'Not Yet Live'}${t.spec_rtp !== null ? `, Built To Pay ${pct(t.spec_rtp)}` : ''}`}
               />
             ))}
           </div>

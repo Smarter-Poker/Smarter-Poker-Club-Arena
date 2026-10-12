@@ -27,6 +27,32 @@
  *
  * NOTHING HERE READS THE DATABASE. The model is built from the payload, which
  * is what makes the link work for a recipient who is not signed in.
+ *
+ * PHASE 9.1 2026-09-30 - CLIP MODE, AND 2026-10-07 - THE CLIP IS THE ARENA'S
+ * OWN REPLAYER. The hand clip renderer (World Hub,
+ * `/api/cron/render-hand-clips`) opens this route as `/replay?clip=1` in a
+ * headless browser with the hand injected as `window.__SP_CLIP__` before any
+ * script runs (contract C1), because this route needs no sign-in and no
+ * database read. When both are present, and only then, the page builds the
+ * `ReplaySource` HandReplay builds for a hand it fetched by id
+ * (`clipSourceFrom`: the archive's reconstruction straight from the record,
+ * the table's name, the hand number, the variant, the reveal record, the
+ * hero as the viewer) and renders the replayer inside the same 900px column
+ * the arena's by-id page (/share/hand/:id) holds it in, and NOTHING ELSE:
+ * no "Shared From" footer, because the arena's replayer has none. The only
+ * addition is the camera contract (`HandReplay`'s `clip` prop:
+ * `data-clip-state`, `data-clip-step`, `window.__spClip`, the fitted rate,
+ * no sound). Until 2026-10-07 the clip was a stripped felt of its own, with
+ * seat numbers for names and no header; the first fix made it this share
+ * page, which rebuilds the hand from the link's wire (whose last frame
+ * leaves the winner's stack short by the pot) under a footer the arena
+ * never shows; by owner decision (Dan,
+ * 2026-10-07) the reference is the hand replayer inside Club Arena, pixel
+ * for pixel. The renderer sets a 4:5 portrait viewport, 1080x1350; the
+ * clip-only page frame centres that unchanged replayer vertically so the
+ * camera does not leave its whole lower third empty. Still no `h=` needed,
+ * still no database read. A `clip=1` link WITHOUT the injected payload is an
+ * ordinary link and still needs `h=`; a malformed payload is not a clip either.
  */
 
 import { useMemo } from 'react';
@@ -34,6 +60,7 @@ import { useSearchParams, Link } from 'react-router-dom';
 import { decodeHandFromUrl, type ShareableHand } from '../../components/table/ShareHand';
 import HandReplay, { type ReplaySource } from '../../components/replay/HandReplay';
 import { replayFromShareable, shareUserId } from '../../lib/shareHandModel';
+import { clipSourceFrom, readClipPayload, type ClipPayload } from '../../lib/clipMode';
 import { reportError } from '../../utils/errorReporter';
 import './SharedHandReplayPage.css';
 
@@ -66,17 +93,55 @@ function sourceFrom(hand: ShareableHand): ReplaySource | null {
   }
 }
 
+/**
+ * The clip's source: what the arena's replayer renders for this hand, built
+ * from the payload; null when the payload cannot be built into a hand.
+ */
+function clipSourceOf(payload: ClipPayload): ReplaySource | null {
+  try {
+    const source = clipSourceFrom(payload);
+    /* A payload that reads but holds no players is not a hand. Better an
+       honest "not readable" than a felt with nobody at it. */
+    return source.model.players.length ? source : null;
+  } catch (e) {
+    reportError(e, 'SharedHandReplayPage.Failed_to_build_clip');
+    return null;
+  }
+}
+
 export default function SharedHandReplayPage() {
   const [params] = useSearchParams();
   const encoded = params.get('h');
+  const clipRequested = params.get('clip') === '1';
 
-  const hand: ShareableHand | null = useMemo(
-    () => (encoded ? decodeHandFromUrl(encoded) : null),
-    [encoded]
+  /* Read once per mount: the renderer injects the payload before any script
+     runs, so it is either there on the first render or never. */
+  const clipPayload = useMemo(
+    () => (clipRequested && typeof window !== 'undefined' ? readClipPayload(window) : null),
+    [clipRequested]
   );
-  const source = useMemo(() => (hand ? sourceFrom(hand) : null), [hand]);
+  /* Memoised like `source`: HandReplay rewinds whenever either changes. */
+  const clipWindow = useMemo(
+    () => (clipPayload ? { minMs: clipPayload.minMs, maxMs: clipPayload.maxMs } : null),
+    [clipPayload]
+  );
 
-  if (!hand || !source) {
+  /* THE LINK'S HAND, for a visitor. A clip never decodes one: its hand is the
+     payload, and it never needs `h=`. */
+  const hand: ShareableHand | null = useMemo(
+    () => (clipPayload || !encoded ? null : decodeHandFromUrl(encoded)),
+    [encoded, clipPayload]
+  );
+  /* ONE SOURCE, whichever door it came through: the arena's own, from the
+     payload, when this is a clip; the link's otherwise. A clip whose payload
+     cannot be built into a hand reads as not readable, exactly as a broken
+     link does. */
+  const source = useMemo(
+    () => (clipPayload ? clipSourceOf(clipPayload) : hand ? sourceFrom(hand) : null),
+    [clipPayload, hand]
+  );
+
+  if (!source) {
     return (
       <div className="shared-replay shared-replay--empty">
         <h1 className="shared-replay__title">This Replay Link Is Not Readable</h1>
@@ -91,7 +156,20 @@ export default function SharedHandReplayPage() {
     );
   }
 
-  const hero = hand.players.find((p) => p.isHero);
+  /* THE CLIP IS THE ARENA'S REPLAYER (owner decision, Dan, 2026-10-07): the
+     replayer in the column the arena's by-id page holds it in
+     (`.shared-replay` and `.hand-replayer-page` are the same frame), and
+     nothing else. No footer: the arena's replayer has none. The camera
+     contract (`clip`) is the only addition. */
+  if (clipPayload) {
+    return (
+      <div className="shared-replay shared-replay--clip">
+        <HandReplay source={source} clip={clipWindow} />
+      </div>
+    );
+  }
+
+  const hero = hand?.players.find((p) => p.isHero);
 
   return (
     <div className="shared-replay">

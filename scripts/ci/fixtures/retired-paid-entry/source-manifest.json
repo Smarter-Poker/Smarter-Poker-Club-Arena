@@ -1,0 +1,11 @@
+{
+  "scope": "Actual full financial-owner proof was run on isolated PG17.6; hosted checks bind exact anonymous inputs and finite original transaction. No production or full product certificate.",
+  "files": {
+    "supabase/migrations/20261007024455_a_retired_undealt_paid_entry_retains_its_original_seat_trans.sql": "163cf6e9f4ca60e0f7d4a9fff177d7fa33a58a2e2d5e0790b326589c9a10b810",
+    "scripts/ci/fixtures/retired-paid-entry/anonymous-manifest.json": "d7fbef5cfc2f2dd6404de5245bc2562b521e12092a8d27fcdd9d144c91a9d91c",
+    "scripts/ci/fixtures/retired-paid-entry/anonymous-native-seed.sql": "e42568103a96d09d153f152cee748e17bfd139c3e45fc8cccd629307ae8711c1",
+    "scripts/ci/fixtures/retired-paid-entry/current-native-owners.sql": "a61066370fa90cfacc41215d313c87cc40bad2a982c81629e1bbe592cc959532",
+    "scripts/ci/fixtures/retired-paid-entry/negative-native.sql": "8f64a6e0a09dcc0530ee629484a91efaa5330d336cf040aabac2c8c0ef4a2bda",
+    "scripts/ci/fixtures/retired-paid-entry/positive-native.sql": "4f7be1de738b479ab3ba80c0e98041ffa480c3dc51b50fe1db7a6dcc798d1aa9"
+  }
+}

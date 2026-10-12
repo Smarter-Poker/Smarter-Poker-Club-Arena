@@ -64,7 +64,7 @@ describe('the mobile sort bar', () => {
      * If these stop matching, a phone and a desktop can order the same board
      * differently.
      */
-    expect(TABLE).toContain('const sortableColumns = columns.filter((col) => col.sortable)');
+    expect(TABLE).toMatch(/const sortableColumns = columns\s*\.filter\(\(col\) => col\.sortable\)/);
     /* Dan 2026-09-03: the Variant heading is the game selector and opens a
        menu instead; every other chip still goes straight to the one handler. */
     expect(TABLE).toMatch(/lobby-sortbar__chip[\s\S]{0,1800}handleHeaderClick\(col\);/);

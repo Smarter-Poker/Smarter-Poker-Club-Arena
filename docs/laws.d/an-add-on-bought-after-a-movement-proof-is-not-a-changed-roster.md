@@ -1,0 +1,3 @@
+# tests/an-add-on-bought-after-a-movement-proof-is-not-a-changed-roster.law.test.ts
+
+A tournament add-on bought while a table is parked must not freeze that table: `smarter_private.f06_assert_movement` admits a roster entry whose only difference from the immutable movement proof is the event's add-on (the proof's registration says `add_on` false, the live one says true, and the live seat stack and registration chips are exactly the proof's plus the event's `addon_chips`), and a moved member's winner receipt may carry exactly that add-on only when the registration bought it. Every other difference, the boundary, permits, eliminations and whole-roster counts still refuse as before.

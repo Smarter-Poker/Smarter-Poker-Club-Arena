@@ -1160,9 +1160,43 @@ export async function auditGuaranteesKept(
   }
 }
 
+/**
+ * ONE ALERT PER SATELLITE, AND IT CLOSES ITSELF (2026-10-09).
+ *
+ * This raised one CRITICAL per hourly pass with no subject key, so a single
+ * condition became a new row every hour: 22 open criticals between 2026-10-07
+ * 18:06 and 2026-10-08 15:01 for three Diamond Sunday Deep Stack satellites
+ * ("seats 0/3", "seats 0/1"). Every one of them had paid its winners in full
+ * through the Diamond ledger; the audit simply read the chip books, and once
+ * fn_satellite_conservation_audit learned to accept a satellite conserved by
+ * its own receipt (20261008150323) it stopped flagging them. Nothing closed
+ * the 22 rows it had already written.
+ *
+ * Now: one alert per satellite, keyed on it (the RPC returns the open row
+ * instead of inserting another), and every pass re-asks the same audit over
+ * SATELLITE_CONSERVATION_RECHECK_HOURS about each satellite an open alert
+ * names. An alert is closed only when every satellite it names is COMPLETED
+ * inside that window and the audit no longer reports it, and the resolution
+ * says exactly that. It still never repairs money.
+ */
+export const SATELLITE_CONSERVATION_RECHECK_HOURS = 14 * 24;
+const SATELLITE_CONSERVATION_SOURCE = 'FeeReconciler.satellite_conservation';
+
+type SatelliteConservationRow = {
+  satellite_id: string;
+  satellite_name: string;
+  pool: number;
+  ticket_cost: number;
+  awardable: number;
+  seats_funded: number;
+  cash_paid: number;
+  unpaid_winners: number;
+  excess_disbursed: number;
+};
+
 export async function auditSatelliteConservation(
   windowHours = 24
-): Promise<{ violations: number } | null> {
+): Promise<{ violations: number; resolved: number } | null> {
   try {
     const { data, error } = await supabase.rpc('fn_satellite_conservation_audit', {
       p_hours: windowHours,
@@ -1171,41 +1205,115 @@ export async function auditSatelliteConservation(
       reportError(error, 'FeeReconciler.satellite_conservation_query_failed');
       return null;
     }
-    const rows = (data ?? []) as Array<{
-      satellite_id: string;
-      satellite_name: string;
-      pool: number;
-      ticket_cost: number;
-      awardable: number;
-      seats_funded: number;
-      cash_paid: number;
-      unpaid_winners: number;
-      excess_disbursed: number;
-    }>;
-    if (rows.length === 0) return { violations: 0 };
+    const rows = (data ?? []) as SatelliteConservationRow[];
 
-    const detail =
-      `SATELLITE_CONSERVATION: ${rows.length} completed satellite(s) in the last ${windowHours}h ` +
-      `broke conservation: ` +
-      rows
-        .slice(0, 10)
-        .map(
-          (r) =>
-            `${r.satellite_id.slice(0, 8)} "${r.satellite_name}" (pool ${r.pool}, seats ${r.seats_funded}/${r.awardable}, ` +
-            `cash ${r.cash_paid}, unpaid winners ${r.unpaid_winners}, excess ${r.excess_disbursed})`
-        )
-        .join('; ');
-    reportError(new Error(detail), 'FeeReconciler.satellite_conservation');
-    await raiseFinancialAlert('critical', 'FeeReconciler.satellite_conservation', detail, {
-      windowHours,
-      violations: rows.length,
-      rows: rows.slice(0, 50),
-    });
-    return { violations: rows.length };
+    for (const r of rows) {
+      const detail =
+        `SATELLITE_CONSERVATION: completed satellite ${r.satellite_id.slice(0, 8)} "${r.satellite_name}" ` +
+        `broke conservation in the last ${windowHours}h (pool ${r.pool}, seats ${r.seats_funded}/${r.awardable}, ` +
+        `cash ${r.cash_paid}, unpaid winners ${r.unpaid_winners}, excess ${r.excess_disbursed})`;
+      reportError(new Error(detail), SATELLITE_CONSERVATION_SOURCE);
+      await raiseFinancialAlert(
+        'critical',
+        SATELLITE_CONSERVATION_SOURCE,
+        detail,
+        { windowHours, satellite_id: r.satellite_id, violations: 1, rows: [r] },
+        `satellite-conservation:${r.satellite_id}`,
+        r.satellite_id
+      );
+    }
+
+    const resolved = await resolveConservedSatelliteAlerts();
+    return { violations: rows.length, resolved };
   } catch (err) {
     reportError(err, 'FeeReconciler.satellite_conservation_threw');
     return null;
   }
+}
+
+/** Every satellite id an open alert names, in either the old or the new shape. */
+export function satelliteIdsOfAlert(context: unknown): string[] {
+  const ids = new Set<string>();
+  const ctx = (context ?? {}) as { satellite_id?: unknown; rows?: unknown };
+  if (typeof ctx.satellite_id === 'string') ids.add(ctx.satellite_id);
+  if (Array.isArray(ctx.rows)) {
+    for (const row of ctx.rows) {
+      const sid = (row as { satellite_id?: unknown } | null)?.satellite_id;
+      if (typeof sid === 'string') ids.add(sid);
+    }
+  }
+  return [...ids];
+}
+
+async function resolveConservedSatelliteAlerts(): Promise<number> {
+  const { data: open, error: openError } = await supabase
+    .from('financial_alerts')
+    .select('id, context')
+    .eq('source', SATELLITE_CONSERVATION_SOURCE)
+    .or('resolved.is.null,resolved.eq.false')
+    .limit(500);
+  if (openError) {
+    reportError(openError, 'FeeReconciler.satellite_conservation_open_read_failed');
+    return 0;
+  }
+  const alerts = (open ?? []) as Array<{ id: string; context: unknown }>;
+  if (alerts.length === 0) return 0;
+
+  const named = new Set<string>();
+  for (const a of alerts) for (const sid of satelliteIdsOfAlert(a.context)) named.add(sid);
+  if (named.size === 0) return 0;
+
+  const { data: recheck, error: recheckError } = await supabase.rpc(
+    'fn_satellite_conservation_audit',
+    { p_hours: SATELLITE_CONSERVATION_RECHECK_HOURS }
+  );
+  if (recheckError) {
+    reportError(recheckError, 'FeeReconciler.satellite_conservation_recheck_failed');
+    return 0;
+  }
+  const stillBroken = new Set(
+    ((recheck ?? []) as SatelliteConservationRow[]).map((r) => r.satellite_id)
+  );
+
+  // Absence from the audit only means something for a satellite the audit
+  // actually read: COMPLETED and ended inside the recheck window.
+  const sinceMs = Date.now() - SATELLITE_CONSERVATION_RECHECK_HOURS * 3_600_000;
+  const { data: events, error: eventsError } = await supabase
+    .from('tournaments')
+    .select('id, status, ended_at')
+    .in('id', [...named]);
+  if (eventsError) {
+    reportError(eventsError, 'FeeReconciler.satellite_conservation_event_read_failed');
+    return 0;
+  }
+  const readByAudit = new Set(
+    ((events ?? []) as Array<{ id: string; status: string | null; ended_at: string | null }>)
+      .filter((e) => e.status === 'COMPLETED' && e.ended_at && Date.parse(e.ended_at) > sinceMs)
+      .map((e) => e.id)
+  );
+
+  const checkedAt = new Date().toISOString();
+  let resolved = 0;
+  for (const a of alerts) {
+    const sids = satelliteIdsOfAlert(a.context);
+    if (sids.length === 0) continue;
+    if (!sids.every((sid) => readByAudit.has(sid) && !stillBroken.has(sid))) continue;
+    const resolution =
+      `Every satellite this alert named (${sids.join(', ')}) now conserves: ` +
+      `fn_satellite_conservation_audit(${SATELLITE_CONSERVATION_RECHECK_HOURS}) at ${checkedAt} ` +
+      `read each of them as COMPLETED and reported none. No money was moved.`;
+    const { error: updateError } = await supabase
+      .from('financial_alerts')
+      .update({ resolved: true, resolved_at: checkedAt, resolution })
+      .eq('id', a.id)
+      .or('resolved.is.null,resolved.eq.false');
+    if (updateError) {
+      reportError(updateError, 'FeeReconciler.satellite_conservation_resolve_failed');
+      continue;
+    }
+    resolved += 1;
+  }
+  return resolved;
 }
 
 /**

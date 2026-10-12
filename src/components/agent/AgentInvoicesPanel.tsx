@@ -17,37 +17,43 @@ import { useToast } from '../common/Toast';
 import { masterBus } from '../../core/MasterBus';
 import { reportError } from '../../utils/errorReporter';
 import { uuid } from '../../utils/uuid';
+import { compactChips } from '../../utils/format';
+import { titleCase } from '../../utils/titleCase';
+import { SpadeConsole, type ConsoleInk } from '../console/SpadeConsole';
+import styles from './AgentInvoicesPanel.module.css';
 
 interface Props {
   /** agents.id PK (NOT auth.uid) */
   agentId: string | null;
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  pending: '#f0b429',
-  partial: '#f0b429',
-  overdue: '#e53e3e',
-  disputed: '#e53e3e',
-  paid: '#38a169',
+const STATUS_INKS: Record<string, ConsoleInk> = {
+  pending: 'gold',
+  partial: 'gold',
+  overdue: 'red',
+  disputed: 'red',
+  paid: 'green',
   // Cancelled, not owed. Grey so it reads as settled history rather than as an
   // unknown state, which is what the fallback colour said about 224 of them.
-  void: '#718096',
+  void: 'muted',
 };
 
 // Which statuses still owe money is defined once, in CreditService, because
 // this panel and CreditService.checkSuspension disagreeing about it is how a
 // cancelled invoice ends up suspending an agent.
 
-function fmt(n: number): string {
-  return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
 function fmtDate(iso: string): string {
   try {
-    return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    const date = new Date(iso);
+    if (!Number.isFinite(date.getTime())) return 'Date Unavailable';
+    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   } catch {
-    return iso;
+    return 'Date Unavailable';
   }
+}
+
+function invoiceStatus(status: CreditInvoice['status']): string {
+  return titleCase(status.replace(/_/g, ' '));
 }
 
 export default function AgentInvoicesPanel({ agentId }: Props) {
@@ -63,6 +69,10 @@ export default function AgentInvoicesPanel({ agentId }: Props) {
   const request = useRef(0);
   const payment = useRef<string | null>(null);
   const paymentOperations = useRef(new Map<string, { amount: number; operationId: string }>());
+  const invalidateScope = useCallback(() => {
+    scope.current++;
+    request.current++;
+  }, []);
 
   const load = useCallback(async () => {
     const generation = scope.current;
@@ -72,6 +82,7 @@ export default function AgentInvoicesPanel({ agentId }: Props) {
     if (!agentId) return;
     try {
       const rows = await CreditService.getAgentInvoices(agentId);
+      if (!Array.isArray(rows)) throw new Error('Invoice list is unavailable');
       if (current()) setState({ agentId, rows, loading: false, unavailable: false });
     } catch (e) {
       if (!current()) return;
@@ -81,16 +92,13 @@ export default function AgentInvoicesPanel({ agentId }: Props) {
   }, [agentId]);
 
   useLayoutEffect(() => {
-    scope.current++;
+    invalidateScope();
     payment.current = null;
     paymentOperations.current.clear();
     setPayingId(null);
     void load();
-    return () => {
-      scope.current++;
-      request.current++;
-    };
-  }, [load]);
+    return invalidateScope;
+  }, [invalidateScope, load]);
 
   const visible = state.agentId === agentId;
   const invoices = visible && !state.loading && !state.unavailable ? state.rows : [];
@@ -123,7 +131,7 @@ export default function AgentInvoicesPanel({ agentId }: Props) {
       // A sent payment may commit; only consume its result in the original selection.
       if (!current()) return;
       paymentOperations.current.delete(inv.id);
-      toast.success(`Paid ${fmt(receipt.amount)} chips toward invoice`);
+      toast.success(`Paid ${compactChips(receipt.amount)} Chips Toward Invoice`);
       masterBus.emit('BALANCE_UPDATED', { source: 'credit_invoice_payment' });
       await load();
     } catch (e) {
@@ -139,92 +147,84 @@ export default function AgentInvoicesPanel({ agentId }: Props) {
     }
   };
 
-  const outstanding = invoices.filter((i) => i.amountRemaining > 0);
+  const outstanding = invoices.filter(
+    (invoice) => OWED_INVOICE_STATUSES.has(invoice.status) && invoice.amountRemaining > 0
+  );
+  const pill = unavailable
+    ? 'Unavailable'
+    : loading
+      ? 'Checking'
+      : outstanding.length > 0
+        ? `${outstanding.length} Due`
+        : 'Clear';
+  const pillInk: ConsoleInk = unavailable
+    ? 'red'
+    : loading
+      ? 'blue'
+      : outstanding.length > 0
+        ? 'gold'
+        : 'green';
 
   return (
-    <div
-      style={{
-        padding: '16px',
-        background: 'rgba(255,255,255,0.03)',
-        borderRadius: '12px',
-        border: '1px solid rgba(255,255,255,0.08)',
-        margin: '0 0 16px 0',
-      }}
+    <SpadeConsole
+      className={styles.panel}
+      family="spade"
+      crest="spade"
+      eyebrow="Weekly Credit"
+      title="Credit Invoices"
+      titleId="agent-credit-invoices-title"
+      pill={pill}
+      pillInk={pillInk}
+      foot="foot"
+      aria-labelledby="agent-credit-invoices-title"
+      aria-busy={loading || Boolean(payingId)}
     >
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: '12px',
-        }}
-      >
-        <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700 }}>Credit Invoices</h3>
-        {outstanding.length > 0 && (
-          <span style={{ fontSize: '12px', color: '#e53e3e', fontWeight: 600 }}>
-            {outstanding.length} Outstanding
-          </span>
-        )}
-      </div>
-
       {loading ? (
-        <div style={{ fontSize: '13px', opacity: 0.6, padding: '8px 0' }}>Loading Invoices...</div>
+        <div className={styles.state} role="status" aria-live="polite">
+          <p className="sc-copy sc-copy--center sc-ink--muted">Loading Invoices...</p>
+        </div>
       ) : unavailable ? (
-        <div role="alert">
-          Invoices Unavailable. Try Again To Check Your Balance.
-          <button type="button" onClick={() => void load()}>
+        <div className={styles.state} role="alert">
+          <p className="sc-copy sc-copy--center sc-ink--red">
+            Invoices Unavailable. Try Again To Check Your Balance.
+          </p>
+          <button
+            type="button"
+            className={`${styles.litAction} sc-ink--blue`}
+            onClick={() => void load()}
+          >
             Retry
           </button>
         </div>
       ) : invoices.length === 0 ? (
-        <div style={{ fontSize: '13px', opacity: 0.6, padding: '8px 0' }}>
+        <p className="sc-copy sc-copy--center sc-ink--muted">
           No Invoices. Weekly Invoices Appear Here When Your Account Carries A Balance.
-        </div>
+        </p>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <ol className={styles.invoiceList} aria-label="Credit Invoice History">
           {invoices.map((inv) => {
-            const color = STATUS_COLORS[inv.status] || '#a0aec0';
+            const ink = STATUS_INKS[inv.status] ?? 'muted';
             // A number alone was not enough. Ask the STATUS as well, so a
             // cancelled or settled invoice can never offer a button the server
             // is going to refuse.
-            const canPay =
-              OWED_INVOICE_STATUSES.has(inv.status) &&
-              inv.status !== 'disputed' &&
-              inv.amountRemaining > 0;
+            const canPay = OWED_INVOICE_STATUSES.has(inv.status) && inv.amountRemaining > 0;
             return (
-              <div
-                key={inv.id}
-                style={{
-                  display: 'flex',
-                  flexWrap: 'wrap',
-                  gap: '8px',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '10px 12px',
-                  background: 'rgba(0,0,0,0.2)',
-                  borderRadius: '8px',
-                }}
-              >
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: '13px', fontWeight: 600 }}>
-                    Week Of {fmtDate(inv.periodStart)}
-                  </div>
-                  <div style={{ fontSize: '11px', opacity: 0.6 }}>
-                    Due {fmtDate(inv.dueDate)} &middot;{' '}
-                    <span style={{ color, fontWeight: 600, textTransform: 'capitalize' }}>
-                      {inv.status}
-                    </span>
-                  </div>
+              <li className={styles.invoiceRow} key={inv.id}>
+                <div className={styles.invoiceIdentity}>
+                  <strong className={styles.period}>Week Of {fmtDate(inv.periodStart)}</strong>
+                  <span className={styles.meta}>
+                    <span>Due {fmtDate(inv.dueDate)}</span>
+                    <span className={`sc-ink--${ink}`}>{invoiceStatus(inv.status)}</span>
+                  </span>
                 </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: '13px', fontWeight: 700 }}>
-                    {fmt(inv.amountRemaining)}{' '}
-                    <span style={{ fontSize: '10px', opacity: 0.6 }}>Due</span>
-                  </div>
+                <div className={styles.invoiceAmount}>
+                  <strong className="sc-ink--silver">
+                    {compactChips(inv.amountRemaining)} <span>Due</span>
+                  </strong>
                   {inv.amountPaid > 0 && (
-                    <div style={{ fontSize: '10px', opacity: 0.5 }}>
-                      {fmt(inv.amountPaid)} / {fmt(inv.debtOwed)} Paid
-                    </div>
+                    <small>
+                      {compactChips(inv.amountPaid)} Of {compactChips(inv.debtOwed)} Paid
+                    </small>
                   )}
                 </div>
                 {canPay && (
@@ -233,26 +233,16 @@ export default function AgentInvoicesPanel({ agentId }: Props) {
                     title="Pay From Your Player Wallet In This Club"
                     onClick={() => handlePay(inv)}
                     disabled={payingId === inv.id}
-                    style={{
-                      padding: '8px 14px',
-                      fontSize: '13px',
-                      fontWeight: 600,
-                      borderRadius: '8px',
-                      border: 'none',
-                      cursor: payingId === inv.id ? 'default' : 'pointer',
-                      background: payingId === inv.id ? '#4a5568' : '#3182ce',
-                      color: '#fff',
-                      minWidth: '84px',
-                    }}
+                    className={`${styles.litAction} sc-ink--blue`}
                   >
                     {payingId === inv.id ? 'Paying...' : 'Pay Now'}
                   </button>
                 )}
-              </div>
+              </li>
             );
           })}
-        </div>
+        </ol>
       )}
-    </div>
+    </SpadeConsole>
   );
 }

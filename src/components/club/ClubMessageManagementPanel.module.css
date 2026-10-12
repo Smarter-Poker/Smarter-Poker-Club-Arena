@@ -1,250 +1,428 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   CLUB MESSAGES - its own page on the riveted family (2026-09-20)
+
+   The panel draws its own frame now (SpadeConsole family="riveted"): bolted
+   corners and the heavier base, whose two painted plates are this page's two
+   saves. Everything below prints on the glass between the rails: lit blue caps
+   for labels, engraved silver for headings, the engraved rule between rows,
+   fields cut into the glass like the kit's tick well, and the kit's tick well
+   for every switch. Sizes are cqw against the console. Nothing here draws a
+   card, a pill or a rounded box.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 .panel {
-  display: grid;
-  gap: 20px;
   color: #e4e7ec;
 }
-.heading,
-.composerHeading,
-.composerOptions,
-.announcementActions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
+
+/* ── Intro ────────────────────────────────────────────────────────────── */
 .heading {
-  padding-bottom: 12px;
-  border-bottom: 1px solid rgb(100 121 139 / 35%);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 3cqw;
 }
-.heading span,
+
+.heading > div {
+  display: grid;
+  gap: 1cqw;
+}
+
+.heading > div > span,
+.sectionHeading span,
 .composerHeading span,
 .preview > span,
-.announcementList article > div > span {
-  color: #45adff;
+.announcementList article > div > span,
+.fields label > span {
   font:
-    800 10px/1.2 'Roboto Condensed',
+    700 2.5cqw/1.2 'Roboto Condensed',
     sans-serif;
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
-.heading h2,
-.composerHeading h3,
-.announcementList h3 {
-  margin: 4px 0;
-  color: #e9eef3;
-  font-family: 'Roboto Condensed', sans-serif;
+
+.sectionHeading span,
+.composerHeading span,
+.preview > span,
+.announcementList article > div > span,
+.fields label > span {
+  color: #45adff;
+  text-shadow: 0 0 0.9cqw rgb(49 168 255 / 60%);
+}
+
+.heading h3 {
+  margin: 0;
+  font:
+    800 4.4cqw/1.1 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.03em;
   text-transform: uppercase;
 }
-.heading p,
-.preview p,
-.announcementList p {
-  margin: 0;
-  color: #94a2ae;
+
+.heading p {
+  font-size: 3cqw;
 }
+
 .limitKey {
-  max-width: 190px;
+  max-width: 30cqw;
+  font:
+    600 max(9px, 2.3cqw) / 1.3 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.08em;
   text-align: right;
+  text-transform: uppercase;
 }
+
+/* ── Notices: an engraved row with a gold heading, never a coloured box ── */
 .safetyNotice {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px;
-  padding-block: 12px;
-  border-block: 1px solid #a9752e;
-  color: #ffd28b;
+  gap: 2.4cqw;
+  padding-block: 2.2cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
+
+.safetyNotice strong {
+  color: #ffd700;
+  font:
+    800 3cqw/1.2 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  text-shadow: 0 0 1cqw rgb(255 215 0 / 45%);
+}
+
 .safetyNotice span {
-  color: #c8b99f;
-  font-size: 12px;
+  color: #9aa5b3;
+  font:
+    500 2.9cqw/1.4 Inter,
+    sans-serif;
 }
+
+/* Lit words: the controls this page has no plate for. */
 .safetyNotice button,
-.primary,
 .composerHeading button,
 .announcementActions button {
   appearance: none;
   min-height: 44px;
-  padding: 0 12px;
+  padding: 0 2.2cqw;
   border: 0;
-  border-bottom: 1px solid currentColor;
   color: #45adff;
   background: transparent;
   font:
-    800 11px/1 'Roboto Condensed',
+    800 2.9cqw/1 'Roboto Condensed',
     sans-serif;
-  letter-spacing: 0.055em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
+  text-shadow: 0 0 1cqw rgb(49 168 255 / 60%);
   cursor: pointer;
 }
+
+.announcementActions .danger {
+  color: #ff5b6e;
+  text-shadow: 0 0 1cqw rgb(240 40 73 / 55%);
+}
+
+.safetyNotice button:active,
+.composerHeading button:active,
+.announcementActions button:active {
+  filter: brightness(1.25);
+}
+
+.announcementActions button:disabled {
+  color: #59636d;
+  text-shadow: none;
+  cursor: not-allowed;
+}
+
+/* ── Identity copy and its live plaque ───────────────────────────────── */
+/* The Save Identity plate saves this block; its heading says so by name. */
+.sectionHeading {
+  display: grid;
+  gap: 0.8cqw;
+  padding-top: 2.6cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
 .identityGrid,
 .announcementSection {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(260px, 0.6fr);
-  gap: 20px;
+  gap: 3cqw;
 }
+
 .fields {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
+  gap: 2.4cqw;
 }
+
 .fields label,
 .composer > label {
   display: grid;
-  gap: 6px;
-  color: #b8c4ce;
-  font-size: 12px;
-  letter-spacing: 0.04em;
+  gap: 1.2cqw;
+  color: #45adff;
+  font:
+    700 2.5cqw/1.2 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
+
 .wideField {
   grid-column: 1 / -1;
 }
-.fields input,
+
+/* Fields are cut into the glass like the kit's tick well: a groove, no box.
+   TEXT FIELDS ONLY. Without the guard this rule also caught the two switches
+   in the composer, and the kit's 21px tick well became a 299px text field with
+   its label shoved off the glass (2026-09-29 render review). */
+.fields input:not([type='checkbox']),
 .fields textarea,
-.composer input,
+.composer input:not([type='checkbox']),
 .composer textarea {
   width: 100%;
+  min-height: 44px;
   box-sizing: border-box;
-  padding: 10px 12px;
-  border: 1px solid rgb(94 116 134 / 48%);
+  padding: 1.6cqw 2.2cqw;
+  border: 0;
   color: #f4f7fb;
-  background: #05080c;
-  font: inherit;
+  background: #05070b;
+  font:
+    500 max(16px, 3.2cqw) / 1.35 Inter,
+    sans-serif;
+  letter-spacing: 0;
+  text-transform: none;
   resize: vertical;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 8%),
+    inset 0 0 0 1px rgb(0 0 0 / 88%),
+    inset 0 -1px 0 rgb(255 255 255 / 4%);
 }
+
+/* border-box takes the padding out of the rows, so the last line was cut
+   through the middle of its letters. The height is the line boxes plus the
+   padding, which ends the well between lines. */
+.fields textarea,
+.composer textarea {
+  height: calc(4 * 1.35em + 3.2cqw);
+}
+
 .fields small,
 .composer small {
   justify-self: end;
-  color: #758493;
+  color: #9aa5b3;
+  font:
+    600 2.4cqw/1 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.06em;
 }
+
 .atLimit {
-  color: #ffca5c !important;
+  color: #ffd700 !important;
 }
+
+/* The plaque players meet: printed on the glass between two engraved rules. */
+.preview {
+  display: grid;
+  gap: 1.4cqw;
+  padding-block: 2.6cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.preview h3 {
+  margin: 0;
+  color: #e4e7ec;
+  font:
+    800 4.2cqw/1.15 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  text-shadow:
+    0 -0.18cqw 0 rgb(255 255 255 / 55%),
+    0 0.25cqw 0 #6d747c,
+    0 0.45cqw 0 #050607;
+  overflow-wrap: anywhere;
+}
+
+.preview strong {
+  display: block;
+  color: #f4f7fb;
+  font:
+    600 3.2cqw/1.4 Inter,
+    sans-serif;
+  overflow-wrap: anywhere;
+}
+
+.preview p,
+.announcementList p {
+  margin: 0;
+  color: #9aa5b3;
+  font:
+    500 2.9cqw/1.5 Inter,
+    sans-serif;
+  overflow-wrap: anywhere;
+}
+
+/* ── Announcements ────────────────────────────────────────────────────── */
+.composer,
+.announcementList {
+  display: grid;
+  align-content: start;
+  gap: 2.2cqw;
+  padding-top: 2.6cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.composerHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2cqw;
+}
+
+.composerHeading > div {
+  display: grid;
+  gap: 0.8cqw;
+}
+
+.sectionHeading h3,
+.composerHeading h3,
+.announcementList h3 {
+  margin: 0;
+  color: #e4e7ec;
+  font:
+    800 3.8cqw/1.1 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-shadow:
+    0 -0.18cqw 0 rgb(255 255 255 / 55%),
+    0 0.25cqw 0 #6d747c,
+    0 0.45cqw 0 #050607;
+}
+
+.composerOptions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1cqw 5cqw;
+}
+
+.composerOptions label {
+  min-height: 44px;
+  color: #e4e7ec;
+  font:
+    700 2.9cqw/1 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+/* The native control keeps the semantics and the label binding; the kit's
+   engraved well is what it looks like. */
+.composerOptions input {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+  cursor: pointer;
+}
+
+.announcementList article {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.4cqw;
+  padding-block: 2cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.announcementList article > div {
+  display: grid;
+  gap: 0.8cqw;
+  min-width: 0;
+}
+
+.announcementList article h4 {
+  margin: 0;
+  color: #f4f7fb;
+  font:
+    700 3.3cqw/1.25 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+
+.announcementList article p {
+  white-space: pre-wrap;
+}
+
+.announcementList article.inactive {
+  opacity: 0.74;
+}
+
+.announcementList article > .announcementActions,
+.announcementActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 1cqw;
+  margin-inline-start: -2.2cqw;
+}
+
+/* The last row on the glass, directly above the two painted plates. */
 .saveStatus {
   margin: 0;
-  color: #8c9aa7;
-  font-size: 12px;
-  text-align: right;
+  font:
+    600 2.7cqw/1.3 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.05em;
+  text-align: center;
+  text-transform: uppercase;
 }
+
 .panel :is(button, input, textarea):focus-visible {
   outline: 3px solid #8fd4ff;
   outline-offset: 2px;
 }
-.primary:disabled,
-.announcementActions button:disabled {
-  color: #59636d;
-  cursor: not-allowed;
-}
-.preview,
-.composer,
-.announcementList {
-  padding-block: 14px;
-  border-block: 1px solid rgb(90 109 125 / 30%);
-}
-.preview h3 {
-  margin: 14px 0 8px;
-  color: #45adff;
-  font-family: 'Roboto Condensed', sans-serif;
-  text-transform: uppercase;
-}
-.preview strong {
-  display: block;
-  margin-bottom: 14px;
-  color: #fff;
-}
-.announcementSection {
-  grid-template-columns: minmax(300px, 0.72fr) minmax(0, 1.28fr);
-  padding-top: 20px;
-  border-top: 1px solid rgb(90 109 125 / 30%);
-}
-.composer {
-  display: grid;
-  align-content: start;
-  gap: 14px;
-}
-.composerOptions {
-  flex-wrap: wrap;
-}
-.composerOptions label {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: #b8c4ce;
-  font-size: 12px;
-}
-.announcementList {
-  display: grid;
-  align-content: start;
-  gap: 10px;
-}
-.announcementList article {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 16px;
-  padding: 13px 0;
-  border-bottom: 1px solid rgb(90 109 125 / 28%);
-}
-.announcementList article h4 {
-  margin: 4px 0;
-  color: #f1f5f8;
-}
-.announcementList article p {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.announcementList article.inactive {
-  opacity: 0.58;
-}
-.announcementActions {
-  align-items: flex-start;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-  max-width: 200px;
-}
-.announcementActions .danger {
-  color: #ff7282;
-}
-@media (max-width: 900px) {
-  .identityGrid,
-  .announcementSection {
-    grid-template-columns: 1fr;
-  }
+
+@media (max-width: 620px) {
   .heading,
-  .announcementList article {
-    grid-template-columns: 1fr;
+  .safetyNotice {
+    grid-template-columns: minmax(0, 1fr);
   }
-  .heading {
-    align-items: flex-start;
-  }
+
   .limitKey {
     max-width: none;
     text-align: left;
   }
 }
-@media (max-width: 620px) {
-  .fields {
-    grid-template-columns: 1fr;
-  }
-  .wideField {
-    grid-column: auto;
-  }
-  .announcementActions {
-    max-width: none;
-    justify-content: flex-start;
-  }
-  .safetyNotice {
-    grid-template-columns: 1fr;
-  }
-}
+
 @media (forced-colors: active) {
-  .heading,
+  .safetyNotice,
   .preview,
   .composer,
   .announcementList,
-  .announcementList article,
-  .safetyNotice {
+  .announcementList article {
     border-color: CanvasText;
   }
+
+  .fields input,
+  .fields textarea,
+  .composer input,
+  .composer textarea {
+    border: 1px solid CanvasText;
+  }
+
   .announcementList article.inactive {
     opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel * {
+    transition-duration: 0.01ms !important;
   }
 }

@@ -35,7 +35,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { cashoutService, CashoutRequest } from '../../services/CashoutService';
-import { CashoutReceiptChecks, useCashoutReceiptChecks } from '../wallet/CashoutReceiptChecks';
+import {
+  outcomeNeedsReceiptCheck,
+  CashoutReceiptChecks,
+  useCashoutReceiptChecks,
+} from '../wallet/CashoutReceiptChecks';
 import { useCashoutScope, useCashoutScopeKey } from '../../hooks/useCashoutScope';
 import {
   runCashoutOperation,
@@ -52,13 +56,21 @@ import { useAuthUser } from '../../hooks/useAuthUser';
 import { masterBus } from '../../core/MasterBus';
 import { checkSettlementLock } from '../../utils/settlementLock';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
-import { formatRelativeShort as formatTime } from '@/lib/date';
+import { formatRelativeShort } from '@/lib/date';
+import { titleCase } from '../../utils/titleCase';
 import './AgentCashoutPanel.css';
-import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 import { reportError } from '../../utils/errorReporter';
 import { SpadeConsole } from '../console/SpadeConsole';
 
 import { safeErrorMessage } from '../../utils/safeErrorMessage';
+
+/**
+ * The amount about to move prints exactly: whole when it is whole, to two
+ * places when it is not. A bare `toLocaleString()` printed 18,400.50 as
+ * "18,400.5" (launch audit R-10).
+ */
+const TWO_PLACES = { minimumFractionDigits: 2, maximumFractionDigits: 2 } as const;
+
 interface AgentCashoutPanelProps {
   clubId?: string;
   onCashoutProcessed?: () => void;
@@ -81,13 +93,16 @@ function AgentCashoutContent({ clubId, onCashoutProcessed }: AgentCashoutPanelPr
   const rowsScope = useRef<(() => boolean) | null>(null);
   const [cashouts, setCashouts] = useState<CashoutRequest[]>([]);
   const [loading, setLoading] = useState(true);
-  const [processing, setProcessing] = useState<string | null>(null);
+  /* One id PER CARD (launch audit D-21): a single id relabelled card A back
+     to "Approve Cashout" the moment card B was tapped, and A's finish then
+     cleared B's label. Keyed exactly like `inFlightRef`. */
+  const [processing, setProcessing] = useState<ReadonlySet<string>>(() => new Set());
   const [error, setError] = useState<string | null>(null);
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
   const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   /**
-   * `disabled={processing === cashout.id}` needs a render to take effect. Two
+   * `disabled={processing.has(cashout.id)}` needs a render to take effect. Two
    * taps in the same frame both read the old value and both called an RPC that
    * moves real chips. The set is written synchronously, so the second tap on the
    * SAME card is refused in the same tick.
@@ -143,14 +158,14 @@ function AgentCashoutContent({ clubId, onCashoutProcessed }: AgentCashoutPanelPr
       if (current()) {
         rowsScope.current = isCurrent;
         setCashouts([]);
-        setError(safeErrorMessage(err, 'Failed to load cashout requests'));
+        setError(safeErrorMessage(err, 'Failed To Load Cashout Requests'));
       }
     }
     if (current()) {
       hasLoadedRef.current = true;
       setLoading(false);
     }
-  }, [user?.id, clubId, isMounted, isCurrent]);
+  }, [user?.id, clubId, isCurrent]);
 
   useEffect(() => {
     loadCashouts();
@@ -210,7 +225,10 @@ function AgentCashoutContent({ clubId, onCashoutProcessed }: AgentCashoutPanelPr
             if (err) reportError(err?.message || err, 'AgentCashoutPanel._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
-            console.warn('[AgentCashoutPanel] Realtime channel timed out');
+            reportError(
+              'Realtime channel timed out',
+              'AgentCashoutPanel._Realtime_channel_timeout'
+            );
           }
         });
     })();
@@ -249,7 +267,7 @@ function AgentCashoutContent({ clubId, onCashoutProcessed }: AgentCashoutPanelPr
           targetId: row.id,
           kind: 'cashout_decline' as const,
           amount: row.amount,
-          note: 'Request declined',
+          note: 'Request Declined',
         },
       },
     ]),
@@ -271,12 +289,12 @@ function AgentCashoutContent({ clubId, onCashoutProcessed }: AgentCashoutPanelPr
       return;
     if (inFlightRef.current.has(cashout.id)) return;
     inFlightRef.current.add(cashout.id);
-    setProcessing(cashout.id);
+    setProcessing((prev) => new Set(prev).add(cashout.id));
     setError(null);
     let start: CashoutStart | null = null;
     let checkingOutcome = false;
     try {
-      if (action === 'reject' && reason !== 'Request declined')
+      if (action === 'reject' && reason !== 'Request Declined')
         throw new Error('Refresh To Verify This Cashout Decision');
       const prepared = decisions.get(
         `${cashout.id}:${action}`,
@@ -300,7 +318,7 @@ function AgentCashoutContent({ clubId, onCashoutProcessed }: AgentCashoutPanelPr
       void loadCashouts();
       onCashoutProcessed?.();
     } catch (err) {
-      if (checkingOutcome && start && isCurrent())
+      if (checkingOutcome && start && isCurrent() && outcomeNeedsReceiptCheck(err))
         receiptChecks.retain(
           `${cashout.id}:${action}`,
           cashout.amount,
@@ -312,7 +330,11 @@ function AgentCashoutContent({ clubId, onCashoutProcessed }: AgentCashoutPanelPr
     } finally {
       inFlightRef.current.delete(cashout.id);
       if (isCurrent()) {
-        setProcessing(null);
+        setProcessing((prev) => {
+          const next = new Set(prev);
+          next.delete(cashout.id);
+          return next;
+        });
         if (inFlightRef.current.size === 0 && queuedCashoutReload.current) {
           queuedCashoutReload.current = false;
           void loadCashouts();
@@ -368,13 +390,12 @@ function AgentCashoutContent({ clubId, onCashoutProcessed }: AgentCashoutPanelPr
         className="acp"
       >
         <CashoutReceiptChecks checks={receiptChecks} />
+        {/* Words, not glyphs (launch audit D-19): the triangle rendered as an
+            emoji on iOS and the arrows were font marks stuck on the glass. */}
         <div className="acp-state">
-          <span className="acp-state-mark" aria-hidden="true">
-            ⚠
-          </span>
           <p className="acp-state-text sc-copy sc-copy--center">Failed To Load Cashout Requests</p>
           <button type="button" className="acp-word acp-word-blue" onClick={loadCashouts}>
-            ↻ Retry
+            Retry
           </button>
         </div>
       </SpadeConsole>
@@ -398,7 +419,7 @@ function AgentCashoutContent({ clubId, onCashoutProcessed }: AgentCashoutPanelPr
           onClick={loadCashouts}
           title="Refresh"
         >
-          ↻ Refresh
+          Refresh
         </button>
       </div>
 
@@ -410,9 +431,6 @@ function AgentCashoutContent({ clubId, onCashoutProcessed }: AgentCashoutPanelPr
 
       {cashouts.length === 0 ? (
         <div className="acp-state">
-          <span className="acp-state-mark" aria-hidden="true">
-            ◉
-          </span>
           <p className="acp-state-text sc-copy sc-copy--center">No Pending Cashout Requests</p>
         </div>
       ) : (
@@ -428,24 +446,34 @@ function AgentCashoutContent({ clubId, onCashoutProcessed }: AgentCashoutPanelPr
               }}
             >
               <div className="acp-row">
+                {/* A player without a picture gets no invented one; the name
+                    beside it is the identification (launch audit R-09). */}
                 <span className="acp-face" aria-hidden="true">
-                  <img
-                    loading="lazy"
-                    decoding="async"
-                    src={cashout.playerAvatar || generateDefaultAvatar()}
-                    alt=""
-                    className="acp-face-img"
-                  />
+                  {cashout.playerAvatar && (
+                    <img
+                      loading="lazy"
+                      decoding="async"
+                      src={cashout.playerAvatar}
+                      alt=""
+                      className="acp-face-img"
+                    />
+                  )}
                 </span>
                 <span className="acp-who">
                   <span className="acp-name sc-ink--silver">{cashout.playerName || 'Player'}</span>
-                  <span className="acp-time">{formatTime(cashout.createdAt)}</span>
+                  {/* Relative time is data, so it goes through the house
+                      transform: "8h Ago", never "8h ago" (launch audit R-09). */}
+                  <span className="acp-time">
+                    {titleCase(formatRelativeShort(cashout.createdAt))}
+                  </span>
                 </span>
                 {/* The exact figure that is about to move between two wallets:
                     separators, never an abbreviation. */}
                 <span className="acp-amount">
                   <span className="acp-amount-value sc-ink--silver">
-                    {cashout.amount.toLocaleString()}
+                    {Number.isInteger(cashout.amount)
+                      ? cashout.amount.toLocaleString()
+                      : cashout.amount.toLocaleString(undefined, TWO_PLACES)}
                   </span>
                   <span className="acp-amount-label sc-label sc-ink--blue">Chips</span>
                 </span>
@@ -459,22 +487,22 @@ function AgentCashoutContent({ clubId, onCashoutProcessed }: AgentCashoutPanelPr
                   className="acp-word acp-word-white"
                   onClick={() => handleApprove(cashout)}
                   disabled={
-                    processing === cashout.id ||
+                    processing.has(cashout.id) ||
                     !decisions.get(`${cashout.id}:approve`, 'cashout_approve')
                   }
                 >
-                  {processing === cashout.id ? 'Approving...' : 'Approve Cashout'}
+                  {processing.has(cashout.id) ? 'Approving...' : 'Approve Cashout'}
                 </button>
                 <button
                   type="button"
                   className="acp-word acp-word-red"
-                  onClick={() => handleReject(cashout, 'Request declined')}
+                  onClick={() => handleReject(cashout, 'Request Declined')}
                   disabled={
-                    processing === cashout.id ||
+                    processing.has(cashout.id) ||
                     !decisions.get(`${cashout.id}:reject`, 'cashout_decline')
                   }
                 >
-                  {processing === cashout.id ? 'Working...' : 'Reject'}
+                  {processing.has(cashout.id) ? 'Working...' : 'Reject'}
                 </button>
               </div>
 

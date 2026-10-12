@@ -1,0 +1,7 @@
+# Isolated Leaderboard Recipient Reconciliation
+
+The prospective V2 payout run passed installation and schema/security checks but failed three positive cases. The baseline unknown-ack run reached durable readback and failed there. Actual metadata shows that the existing recipient journal writer does not populate its nullable pre/post destination balance fields; no column default or connected BEFORE trigger supplies them. The fixtures incorrectly required those fields. Historical positive-seed settlement also assumed the paying club was the player's home wallet despite an earlier established membership.
+
+These disposable fixtures now resolve the actual receiving membership before settlement, independently check its balance change and the unchanged other wallets, and retain exact journal source/destination, amount, category, club, correlation, credit key, receipt, replay and funding conservation assertions. Historical settlement preserves the original seed and Bank balances. No production financial function or consolidated installation SQL changes.
+
+The prospective adapter additionally records closed stages at each original assertion boundary with SQLSTATE only. The maintained reader rejects arbitrary labels and still reports unexecuted extended cases as unqualified. The frozen production-function baseline is unchanged; fixture bytes and whole-input pins are updated together. Source checks are preparation evidence. Actual changed qualification and production installation remain pending.

@@ -4,9 +4,100 @@ import { maxSeatsFor } from '../VariantRules.js';
 import { maxSeatsForVariant } from '../../config/tableSeating.js';
 
 export type RemainingPolicyVariant = 'short_deck' | 'pineapple' | 'flh' | 'flo8';
+
+/**
+ * Round 3 (docs/horse-brain-phase12-round3-2026-10-08.md). The round-1 packs
+ * replaced every eligible reference decision with their own entry bars and
+ * sampled-equity rules, and lost to the reference on every held-out matrix.
+ * Read from the locked matrices and from development-seed attribution of each
+ * pair to its first changed decision, the losses had three named causes:
+ *
+ *  1. Blind defence and every facing-a-raise node: the shared kernel's
+ *     defence bar is a fixed hand-shape quality that ignores the price, so the
+ *     big blind folded hands the reference profitably defends (the largest
+ *     single loss in every pack), and it called hands the reference
+ *     profitably three-bets.
+ *  2. Postflop calls and raises against a bet: the sampler conditions an
+ *     opponent's range on preflop hand shape and action counts only, never on
+ *     board contact, so a bettor's range is far too wide and the hero's
+ *     equity against it is overstated. Every call the pack made where the
+ *     reference folded lost (10 to 40 big blinds a time in no limit).
+ *  3. Postflop value bets the reference does not make lost for the same
+ *     reason: the equity they rest on is measured against the wrong range.
+ *
+ * So round 3 is a delta on the reference, not a replacement of it. The pack
+ * keeps the reference action everywhere it was measured to be worse, which
+ * removes causes 1 to 3 at their source (no price-blind defence bar, no
+ * line-blind sampled call, raise or value bet is ever substituted for the
+ * reference), and changes the decision only in declared preflop spots that
+ * won on development seeds against BOTH the horse population and the
+ * human-calibrated population (`human-calibrated-v1-20261008`), because the
+ * money horses play for is the human players':
+ *
+ *  - `openTighten` (fixed limit only): first in (`rfi`) from a listed position
+ *    with at least `openTightenMinDealt` dealt, when the reference opens and
+ *    the hand's pack quality is below the pack's open bar: fold.
+ *  - `headsUpOpenBelowBar`: heads-up, first in on the button, when the
+ *    reference does not open and the hand's quality is at least the open bar
+ *    minus this value: open. Folding a heads-up button loses the posted small
+ *    blind.
+ *  - `smallBlindStealBelowBar` (fixed limit only): folded to the small blind
+ *    with three or more dealt, when the reference does not open and the
+ *    hand's quality is at least the open bar minus this value: open.
+ *  - `bigBlindDefendBelowCallBar`: the big blind facing a single raise, when
+ *    the reference folds and the hand's quality is at least the pack's call
+ *    bar minus this value: call; the big blind closes the action at a price.
+ *
+ * Measured and NOT kept: no-limit open tightening and a no-limit flop check
+ * below 0.95 sampled equity beat the reference against horses, which defend
+ * and continue too widely, but lost to it against the human-calibrated
+ * population (Short Deck -69.5, Crazy Pineapple -54.6 bb/100 on development
+ * seeds), so they are exploits of horse-versus-horse play, not upgrades; the
+ * no-limit small blind steal lost against horses on both seeds tried.
+ *
+ * These are heuristic choices measured on development seeds, not solver
+ * frequencies, and nothing here is calibrated (`calibratedConfidence: null`).
+ *
+ * Round 4, no limit only (docs/horse-brain-phase12-round4-2026-10-11.md):
+ * `bigBlindDefendMaxDealt` caps the big blind defence at four dealt seats.
+ * At five or more dealt it was the only round-3 rule that could fire, and it
+ * changed fewer than 1 pair in 600 there (Short Deck 0.01% to 0.15%, Crazy
+ * Pineapple 0% to 0.14% of the locked matrices' 6-max and seat-ceiling
+ * pairs): too rare to measure, so rare that its handful of large paired
+ * differences failed the contract's normal-approximation check in every such
+ * cell, while the whole measured gain sat at two and four dealt. Full tables
+ * now play the reference exactly; two and four dealt are unchanged. The
+ * fixed-limit rules (FLH, FLO8) keep no cap (null) and decide exactly as in
+ * round 3.
+ */
+export interface RemainingVariantRound3Rules {
+  readonly openTighten: readonly ('early' | 'middle' | 'cutoff' | 'button')[];
+  readonly openTightenMinDealt: number;
+  readonly headsUpOpenBelowBar: number | null;
+  readonly smallBlindStealBelowBar: number | null;
+  readonly bigBlindDefendBelowCallBar: number | null;
+  /** The most dealt seats at which the big blind defence applies; null for no cap. */
+  readonly bigBlindDefendMaxDealt: number | null;
+}
+const REMAINING_VARIANT_NO_LIMIT_ROUND3: RemainingVariantRound3Rules = Object.freeze({
+  openTighten: Object.freeze([] as const),
+  openTightenMinDealt: 3,
+  headsUpOpenBelowBar: 0.15,
+  smallBlindStealBelowBar: null,
+  bigBlindDefendBelowCallBar: 0.15,
+  bigBlindDefendMaxDealt: 4,
+});
+const REMAINING_VARIANT_FIXED_LIMIT_ROUND3: RemainingVariantRound3Rules = Object.freeze({
+  openTighten: Object.freeze(['middle', 'cutoff', 'button'] as const),
+  openTightenMinDealt: 3,
+  headsUpOpenBelowBar: 0.15,
+  smallBlindStealBelowBar: 0.2,
+  bigBlindDefendBelowCallBar: 0.15,
+  bigBlindDefendMaxDealt: null,
+});
 export const REMAINING_VARIANT_PACKS = Object.freeze({
   short_deck: Object.freeze({
-    version: 'short-deck-round1-v2',
+    version: 'short-deck-round4-v1',
     holes: 2,
     deck: 36,
     splitLow: false,
@@ -25,9 +116,10 @@ export const REMAINING_VARIANT_PACKS = Object.freeze({
     value: 0.65,
     depthAdjustment: 0.065,
     multiway: 0.018,
+    round3: REMAINING_VARIANT_NO_LIMIT_ROUND3,
   }),
   pineapple: Object.freeze({
-    version: 'crazy-pineapple-round1-v2',
+    version: 'crazy-pineapple-round4-v1',
     holes: 3,
     deck: 52,
     splitLow: false,
@@ -46,9 +138,10 @@ export const REMAINING_VARIANT_PACKS = Object.freeze({
     value: 0.66,
     depthAdjustment: 0.07,
     multiway: 0.02,
+    round3: REMAINING_VARIANT_NO_LIMIT_ROUND3,
   }),
   flh: Object.freeze({
-    version: 'fixed-limit-holdem-round1-v3',
+    version: 'fixed-limit-holdem-round3-v1',
     holes: 2,
     deck: 52,
     splitLow: false,
@@ -67,9 +160,10 @@ export const REMAINING_VARIANT_PACKS = Object.freeze({
     value: 0.54,
     depthAdjustment: 0.025,
     multiway: 0.008,
+    round3: REMAINING_VARIANT_FIXED_LIMIT_ROUND3,
   }),
   flo8: Object.freeze({
-    version: 'fixed-limit-omaha8-round1-v3',
+    version: 'fixed-limit-omaha8-round3-v1',
     holes: 4,
     deck: 52,
     splitLow: true,
@@ -88,6 +182,7 @@ export const REMAINING_VARIANT_PACKS = Object.freeze({
     value: 0.58,
     depthAdjustment: 0.025,
     multiway: 0.01,
+    round3: REMAINING_VARIANT_FIXED_LIMIT_ROUND3,
   }),
 });
 export const REMAINING_VARIANT_DOMAIN = Object.freeze({
@@ -103,6 +198,16 @@ export const REMAINING_VARIANT_DOMAIN = Object.freeze({
   liveBudgetMs: 4,
   // Leave headroom for completing a physical sample, pot receipts and GC.
   samplingDeadlineMs: 2.5,
+  // P12.1: the net-action economics get a budget OF THEIR OWN, measured from
+  // their own start AFTER the policy has already finished and fixed its
+  // reason, proposal and latency. A deadline inside liveBudgetMs was the first
+  // design and it was wrong: the guard bounds work units, not wall time, so on
+  // a slow host one settlement's overshoot past the deadline still crossed
+  // liveBudgetMs and the diagnostic became the reason the policy fell back to
+  // the baseline. Measured, on a shared CI runner, by the test that pinned it.
+  // Now the decision cannot be reached from here at all. Checked before the
+  // hypothetical pots and before every terminal settlement.
+  netActionBudgetMs: 1,
   defaultSamples: 32,
   maxSamples: 128,
   maxActionsPerHand: 256,

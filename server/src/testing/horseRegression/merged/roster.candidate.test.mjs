@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { rosterFixture,sync,syntheticAuthority,HAND_KEY,OTHER,CLUB } from './fixture.test-support.mjs';
 import { readRosterCapsule,readReturnedRosterTransport,digest } from '../../../services/horseAcceptedRoster/schema.ts';
 import { readPrivateAcceptedRoster } from '../../../services/horseAcceptedRoster/reader.ts';
+import { readAcceptedRosterReturn } from '../../../services/horseAcceptedRoster/acceptance.ts';
 import { createUnsignedAcceptedCommitmentExport as run,ACCEPTED_SOURCE_SELECT } from '../../../services/horseAcceptedRoster/exporter.ts';
 import { acceptedRosterEligibility } from '../../../services/horseAcceptedRoster/eligibility.ts';
 import { verifyRosterSourceAuthority } from '../../../services/horseAcceptedRoster/authority.ts';
@@ -122,10 +123,12 @@ for(const [name,change] of joinNegatives) test(`rejects retained/source join ${n
   const x=rosterFixture(); change(x); sync(x);
   assert.equal(run(x.input).sourceExport.status,'unavailable'); assert.equal(qualify(x).status,'pending');
 });
-test('legacy stored payload cannot be backfilled by a supplied returned roster',()=>{
-  const x=rosterFixture(); delete x.payload.accepted_actor_roster; sync(x);
+test('legacy hand (no discriminator row) cannot be backfilled by a supplied returned roster',()=>{
+  const x=rosterFixture(); x.provenance=null; sync(x);
+  // The journal still carries a well-formed transport for the same roster.
+  x.hand.acceptedActorRoster={version:1,payloadDigest:x.row.payload_digest,rosterDigest:digest(x.roster),roster:x.roster}; pinned(x);
   const out=run(x.input); assert.equal(out.sourceExport.status,'unavailable');
-  assert.ok(out.sourceExport.reasons.includes('accepted_roster_legacy_missing'));
+  assert.ok(out.sourceExport.reasons.includes('roster_provenance_missing'));
 });
 for(const version of [42,0,'1',null]) test(`unknown private transport version ${JSON.stringify(version)}`,()=>{
   const x=rosterFixture(); x.hand.acceptedActorRoster.version=version; pinned(x);
@@ -182,6 +185,102 @@ test('signature covers full export; rebinding a silent actor invalidates old app
 test('source selector remains fixed, read-only, bounded and has no profile fallback',()=>{
   assert.match(ACCEPTED_SOURCE_SELECT,/LIMIT 2/); assert.match(ACCEPTED_SOURCE_SELECT,/post_commit_payload::text/);
   assert.doesNotMatch(ACCEPTED_SOURCE_SELECT,/\b(UPDATE|INSERT|DELETE|profiles)\b/i);
+  // P14.2: provenance comes from the protected first-write discriminator.
+  assert.match(ACCEPTED_SOURCE_SELECT,/LEFT JOIN smarter_private\.accepted_hand_rosters r\s+ON r\.table_id = c\.table_id AND r\.hand_number = c\.hand_number/);
+  for(const col of ['roster_status','roster_payload_digest','roster_producer_version','roster_text']) assert.match(ACCEPTED_SOURCE_SELECT,new RegExp(`AS ${col}\\b`));
+});
+
+// P14.2: the door-shaped accepted roster and its first-write provenance.
+const BIND={tableId:'',handNumber:12,historyId:'',payloadDigest:''};
+const bind=(x)=>({...BIND,tableId:x.roster.tableId,historyId:x.roster.handId,payloadDigest:x.row.payload_digest});
+test('door-shaped capsule copies into a transport that readReturnedRosterTransport accepts',()=>{
+  const x=rosterFixture(), read=readAcceptedRosterReturn(x.result,bind(x));
+  assert.equal(read.status,'captured');
+  assert.deepEqual(readReturnedRosterTransport(read.transport),read.transport);
+  assert.equal(read.transport.rosterDigest,digest(readRosterCapsule(x.result.roster)));
+  assert.equal(read.transport.payloadDigest,x.row.payload_digest);
+  assert.ok(Object.isFrozen(read.transport.roster.actors[0]));
+  // The door's microsecond text survives verbatim; JS order is the sort order.
+  assert.equal(read.transport.roster.actors[0].seatJoinedAt,'2026-09-14T13:00:00.123456+00:00');
+  assert.equal(read.transport.roster.capturedAt,'2026-09-14T14:00:00.000000Z');
+  assert.deepEqual(read.transport.roster.actors.map(a=>a.userId),[...read.transport.roster.actors.map(a=>a.userId)].sort());
+  assert.deepEqual(x.hand.acceptedActorRoster,read.transport);
+});
+for(const status of ['unavailable','legacy_missing']) test(`door ${status} carries no transport`,()=>{
+  const x=rosterFixture(), raw={...x.result,status,roster:null,reasons:status==='unavailable'?['seat_identity_unavailable']:[]};
+  assert.deepEqual(readAcceptedRosterReturn(raw,bind(x)),{status,reasons:raw.reasons});
+});
+const returnNegatives=[
+  ['extra key',r=>{r.is_horse=true;}],['missing key',r=>{delete r.reasons;}],['version 2',r=>{r.version=2;}],
+  ['producer',r=>{r.producerVersion='accepted_hand_roster_v0';}],['status',r=>{r.status='trusted';}],
+  ['reason text',r=>{r.reasons=['has space'];}],['payload digest',r=>{r.payloadDigest='0'.repeat(64);}],
+  ['captured without roster',r=>{r.roster=null;}],['unavailable with roster',r=>{r.status='unavailable';}],
+  ['capsule schema',r=>{r.roster={...r.roster,basis:'profiles_read_today'};}],
+  ['other table',r=>{r.roster={...r.roster,tableId:OTHER};}],['other hand id',r=>{r.roster={...r.roster,handId:OTHER};}],
+  ['other hand number',r=>{r.roster={...r.roster,handNumber:13};}],['not an object',()=>'captured'],
+];
+for(const [name,change] of returnNegatives) test(`malformed door roster ${name} is refused by name`,()=>{
+  const x=rosterFixture(), raw=clone(x.result), changed=change(raw)??raw;
+  const read=readAcceptedRosterReturn(changed,bind(x));
+  assert.equal(read.status,'malformed'); assert.match(read.reason,/^accepted_roster_[a-z_]+$/);
+  assert.ok(!JSON.stringify(read).includes(x.f.hero.user_id));
+});
+// The roster comes ONLY from the discriminator row; post_commit_payload is
+// byte-identical to the pre-roster contract and never carries one.
+test('the reader uses the discriminator roster and the payload carries no roster key',()=>{
+  const x=rosterFixture(); assert.ok(!Object.hasOwn(JSON.parse(x.row.payload_text),'accepted_actor_roster'));
+  const out=run(x.input); assert.equal(out.sourceExport.status,'unsigned_export',JSON.stringify(out.sourceExport.reasons));
+  assert.equal(out.commitments.rosterDigest,digest(x.roster));
+});
+const provenanceNegatives=[
+  ['no discriminator row (legacy)',x=>{x.provenance=null;},'roster_provenance_missing'],
+  ['discriminator unavailable',x=>{x.provenance=p=>{p.roster_status='unavailable';p.roster_text=null;};},'accepted_roster_unavailable'],
+  ['discriminator unavailable with a roster',x=>{x.provenance=p=>{p.roster_status='unavailable';};},'roster_provenance_mismatch'],
+  ['discriminator payload digest',x=>{x.provenance=p=>{p.roster_payload_digest='0'.repeat(64);};},'roster_provenance_mismatch'],
+  ['discriminator producer',x=>{x.provenance=p=>{p.roster_producer_version='caller';};},'roster_provenance_mismatch'],
+  ['discriminator hand id',x=>{x.provenance=p=>{p.roster_hand_id=OTHER;};},'roster_provenance_mismatch'],
+  ['discriminator roster differs from the journal transport',x=>{x.provenance=p=>{const r=JSON.parse(p.roster_text);r.actors[1].classification='horse';p.roster_text=JSON.stringify(r);};},'retained_roster_binding_mismatch'],
+  ['discriminator roster invalid',x=>{x.provenance=p=>{p.roster_text='{}';};},'accepted_roster_schema_invalid'],
+];
+for(const [name,change,reason] of provenanceNegatives) test(`reader refuses ${name}`,()=>{
+  const x=rosterFixture(); change(x); sync(x);
+  const out=run(x.input); assert.equal(out.sourceExport.status,'unavailable');
+  assert.ok(out.sourceExport.reasons.includes(reason),JSON.stringify(out.sourceExport.reasons));
+  assert.equal(qualify(x).status,'pending');
+});
+for(const withRow of [true,false]) test(`a payload accepted_actor_roster key is refused as unprovenanced (${withRow?'even with':'without'} a captured row)`,()=>{
+  const x=rosterFixture(); x.payload.accepted_actor_roster=clone(x.roster); if(!withRow) x.provenance=null; sync(x);
+  if(!withRow) { x.hand.acceptedActorRoster={version:1,payloadDigest:x.row.payload_digest,rosterDigest:digest(x.roster),roster:x.roster}; pinned(x); }
+  const out=run(x.input); assert.equal(out.sourceExport.status,'unavailable');
+  assert.ok(out.sourceExport.reasons.includes('payload_roster_unprovenanced'),JSON.stringify(out.sourceExport.reasons));
+  assert.equal(qualify(x).status,'pending');
+});
+// One accepted_roster field exactly as the qualified door returned it
+// (p14-2-capsules.json, case direct_first_acceptance; synthetic DB fixture).
+const REAL_DOOR_FIELD={"roster":{"basis":"profiles_read_in_acceptance_transaction","actors":[{"seat":1,"seatId":"88300000-0000-0000-0000-000000000001","status":"canonical_boolean","userId":"10000000-0000-0000-0000-000000000001","seatJoinedAt":"2026-10-06T10:00:01.123456+00:00","classification":"human"},{"seat":2,"seatId":"88300000-0000-0000-0000-000000000002","status":"canonical_boolean","userId":"10000000-0000-0000-0000-000000000002","seatJoinedAt":"2026-10-06T10:00:02+00:00","classification":"horse"},{"seat":3,"seatId":"88300000-0000-0000-0000-000000000003","status":"canonical_boolean","userId":"88200000-0000-0000-0000-000000000003","seatJoinedAt":"2026-10-06T10:00:03+00:00","classification":"horse"},{"seat":4,"seatId":"88300000-0000-0000-0000-000000000004","status":"canonical_boolean","userId":"88200000-0000-0000-0000-000000000004","seatJoinedAt":"2026-10-06T10:00:04+00:00","classification":"horse"},{"seat":5,"seatId":"88300000-0000-0000-0000-000000000005","status":"classification_null","userId":"88200000-0000-0000-0000-000000000005","seatJoinedAt":"2026-10-06T10:00:05+00:00","classification":"unknown"},{"seat":6,"seatId":"88300000-0000-0000-0000-000000000006","status":"canonical_boolean","userId":"88200000-0000-0000-0000-000000000006","seatJoinedAt":"2026-10-06T10:00:06+00:00","classification":"human"},{"seat":7,"seatId":"88300000-0000-0000-0000-000000000007","status":"canonical_boolean","userId":"88200000-0000-0000-0000-000000000007","seatJoinedAt":"2026-10-06T10:00:07+00:00","classification":"human"}],"handId":"88400000-0000-0000-0000-000000000001","tableId":"88100000-0000-0000-0000-000000000001","version":1,"capturedAt":"2026-10-07T06:57:01.079352Z","handNumber":8800001},"status":"captured","reasons":[],"version":1,"payloadDigest":"f617139c0bd67093ba5b170506c8d54918cae1fb81c658b6aa7b8547dd9ef617","producerVersion":"accepted_hand_roster_v1"};
+test('the real door output (microsecond Z capture, +00:00 seat generations, version-less ids) reads as captured',()=>{
+  const read=readAcceptedRosterReturn(REAL_DOOR_FIELD,{tableId:'88100000-0000-0000-0000-000000000001',handNumber:8800001,
+    historyId:'88400000-0000-0000-0000-000000000001',payloadDigest:REAL_DOOR_FIELD.payloadDigest});
+  assert.equal(read.status,'captured');
+  assert.deepEqual(readReturnedRosterTransport(read.transport),read.transport);
+  assert.equal(read.transport.roster.actors.filter(a=>a.classification==='unknown').length,1);
+  assert.deepEqual(readAcceptedRosterReturn({...REAL_DOOR_FIELD,status:'legacy_missing',roster:null,reasons:['accepted_roster_not_recorded']},
+    {tableId:'88100000-0000-0000-0000-000000000001',handNumber:8800001,historyId:'88400000-0000-0000-0000-000000000001'}),
+    {status:'legacy_missing',reasons:['accepted_roster_not_recorded']});
+});
+test('reader accepts the real captured roster with jsonb-formatted discriminator text',()=>{
+  const x=rosterFixture(); x.provenance=p=>{p.roster_text=JSON.stringify(JSON.parse(p.roster_text),null,1).replace(/":/g,'": ');}; sync(x);
+  const read=readPrivateAcceptedRoster({records:x.input.records,handKey:HAND_KEY,acceptedHandRecordDigest:x.input.acceptedHandRecordDigest,
+    payloadText:x.row.payload_text,payloadDigest:x.row.payload_digest,provenance:{status:x.row.roster_status,payloadDigest:x.row.roster_payload_digest,
+    producerVersion:x.row.roster_producer_version,rosterText:x.row.roster_text,handId:x.row.roster_hand_id}});
+  assert.equal(read.status,'structurally_bound'); assert.equal(read.rosterDigest,digest(x.roster));
+  assert.equal(run(x.input).sourceExport.status,'unsigned_export');
+});
+test('reader without any provenance argument has no roster to read',()=>{
+  const x=rosterFixture();
+  const read=readPrivateAcceptedRoster({records:x.input.records,handKey:HAND_KEY,acceptedHandRecordDigest:x.input.acceptedHandRecordDigest,
+    payloadText:x.row.payload_text,payloadDigest:x.row.payload_digest});
+  assert.deepEqual([read.status,read.reason],['pending','roster_provenance_missing']);
 });
 test('private CLI reads an actual retained store, stays pending, and cannot overwrite/leak',()=>{
   const directory=realpathSync(mkdtempSync(join(tmpdir(),'horse-roster-synthetic-')));

@@ -1,21 +1,12 @@
-/* ═══════════════════════════════════════════════════════════════════════════
-   CLASSIC CASHIER - #CLUBARENACONSOLE
-
-   The page is one spade console (SpadeConsole) with the Dynamic Wallet
-   masters above it, outside the frame. The console paints the frame, the
-   crest, the header well and the plates; this sheet only places the page and
-   types what prints on the black glass: the tab words, the fields, the rows,
-   the ledger. Nothing here draws a card, a pill, a button face or an icon
-   box. Rows are separated by the engraved rule (a black line with an 8%
-   light lip), fields sit on one engraved rule, and every control is a lit
-   word at least 44px tall. Inks come from the kit (`sc-ink--*`, `sc-copy`,
-   `sc-label`); sizes are cqw against the console. No hover rule
-   (tests/no-hover-effects.law.test.ts): the press is the feedback.
-   ═══════════════════════════════════════════════════════════════════════════ */
+/* October 10 owner direction: routed cashier pages follow the Players
+   directory layout without large frames. #ClubArenaConsole is the visual authority
+   of financial dialogs; their approved masters, handlers and guards remain.
+   Page typography is bounded on desktop, controls retain 44px touch targets,
+   and the compact directory uses the Players page inks and hairline rules. */
 
 .page {
   width: 100%;
-  max-width: 1000px;
+  max-width: 1380px;
   margin-inline: auto;
   color: #e6e9ee;
   background: #000;
@@ -32,12 +23,105 @@
   padding: 0;
 }
 
-.walletHeader :global(.dw) {
+.walletHeader.walletHeader :global(.dw) {
   width: 100%;
   max-width: none;
+  gap: 0;
+  margin-bottom: 20px;
 }
 
-.walletHeader :global(.dw__error-badge) {
+/* The routed cashier uses the Players directory presentation. Keep the same
+   role-scoped live balances and wallet handlers, without full-width artwork. */
+.walletHeader.walletHeader :global(.dw__row-picture),
+.walletHeader.walletHeader :global(.dw__bbj-shell),
+.walletHeader.walletHeader :global(.dw__row-icon),
+.walletHeader.walletHeader :global(.dw__row-chevron) {
+  display: none;
+}
+
+.walletHeader.walletHeader :global(.dw__rows) {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
+  gap: 0;
+}
+
+.walletHeader.walletHeader :global(.dw__row),
+.walletHeader.walletHeader :global(.dw__row--wallet-art.dw__row--actionable),
+.walletHeader.walletHeader :global(.dw__bbj),
+.walletHeader.walletHeader :global(.dw__bbj[role='button']) {
+  aspect-ratio: auto;
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border: 0;
+  border-bottom: 1px solid rgb(154 165 179 / 18%);
+  border-radius: 0;
+  background: #0d1218;
+  box-shadow: none;
+}
+
+.walletHeader.walletHeader :global(.dw__bbj),
+.walletHeader.walletHeader :global(.dw__bbj[role='button']) {
+  min-height: 44px;
+  justify-content: space-between;
+}
+
+.walletHeader.walletHeader :global(.dw__row-label),
+.walletHeader.walletHeader :global(.dw__row-hint),
+.walletHeader.walletHeader :global(.dw__bbj-label) {
+  position: static;
+  width: auto;
+  height: auto;
+  margin: 0;
+  padding: 0;
+  overflow: visible;
+  clip: auto;
+  clip-path: none;
+  white-space: normal;
+  color: #9aa5b3;
+  background: none;
+  -webkit-text-fill-color: currentColor;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.walletHeader.walletHeader :global(.dw__row-hint) {
+  font-size: 10px;
+}
+
+.walletHeader.walletHeader :global(.dw__row-value),
+.walletHeader.walletHeader :global(.dw__bbj-amount) {
+  position: static;
+  inset: auto;
+  flex: 1;
+  justify-content: flex-end;
+  min-width: 0;
+  color: #e4e7ec;
+  font-size: 18px;
+  line-height: 1.2;
+  text-shadow: none;
+}
+
+.walletHeader.walletHeader :global(.dw__bbj-amount) {
+  flex: 0;
+}
+
+.walletHeader.walletHeader :global(.dw__row--wallet-art .dw__plus) {
+  position: static;
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+  opacity: 1;
+  color: #45adff;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.walletHeader.walletHeader :global(.dw__error-badge) {
   min-height: 44px;
   border: 0 !important;
   border-radius: 0 !important;
@@ -47,7 +131,7 @@
   box-shadow: none !important;
 }
 
-.walletHeader :global(.dw__error-badge)::before {
+.walletHeader.walletHeader :global(.dw__error-badge)::before {
   content: none !important;
 }
 
@@ -90,6 +174,13 @@
   outline: 0;
   background: transparent;
   box-shadow: none;
+}
+
+/* The dialog element itself takes focus when it opens (P-05); show it only
+   to keyboard users, as the Trade page does. */
+.consoleDialog:focus-visible {
+  outline: 2px solid #8fd4ff;
+  outline-offset: 2px;
 }
 
 /* ── Legacy flattening inside the console ─────────────────────────────
@@ -160,10 +251,10 @@
   appearance: none;
   min-height: 44px;
   margin: 0;
-  padding: 1.2cqw 1.8cqw;
+  padding: min(1.2cqw, 6px) min(1.8cqw, 9px);
   color: #45adff;
   font:
-    800 3.2cqw/1.1 'Roboto Condensed',
+    800 min(3.2cqw, 16px)/1.1 'Roboto Condensed',
     Inter,
     system-ui,
     sans-serif;
@@ -183,8 +274,8 @@
 }
 
 .console :where(button:not(:global(.sc-plate))):focus-visible {
-  outline: 0.6cqw solid #8fd4ff;
-  outline-offset: -0.6cqw;
+  outline: min(0.6cqw, 3px) solid #8fd4ff;
+  outline-offset: -0min (6cqw, 30px);
 }
 
 /* ── Fields: one engraved rule under the value, no frame ─────────────── */
@@ -195,21 +286,21 @@
   min-width: 0;
   min-height: 44px;
   margin: 0;
-  padding: 1.6cqw 0.5cqw;
+  padding: min(1.6cqw, 8px) min(0.5cqw, 2.5px);
   border-bottom: 1px solid #000 !important;
   outline: 0;
   color: #f4f7fb;
   box-shadow: 0 1px 0 rgb(255 255 255 / 8%) !important;
   font:
-    500 max(16px, 3.6cqw) / 1.4 Inter,
+    500 max(16px, min(3.6cqw, 18px)) / 1.4 Inter,
     system-ui,
     sans-serif;
   caret-color: #45adff;
 }
 
 .console :where(input, select, textarea):focus-visible {
-  outline: 0.6cqw solid #8fd4ff;
-  outline-offset: 0.4cqw;
+  outline: min(0.6cqw, 3px) solid #8fd4ff;
+  outline-offset: min(0.4cqw, 2px);
 }
 
 .console :where(input, textarea)::placeholder {
@@ -225,7 +316,7 @@
 /* Amounts are figures, in the chrome face. iOS zooms under 16px. */
 .input[type='number'] {
   font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
-  font-size: max(16px, 5cqw);
+  font-size: max(16px, min(5cqw, 25px));
   font-weight: 800;
   letter-spacing: 0.02em;
   font-variant-numeric: tabular-nums lining-nums;
@@ -249,7 +340,7 @@
 .glass {
   display: flex;
   flex-direction: column;
-  gap: 3cqw;
+  gap: min(3cqw, 15px);
   min-width: 0;
 }
 
@@ -267,15 +358,15 @@
 
 .panel,
 .stack {
-  gap: 3cqw;
+  gap: min(3cqw, 15px);
 }
 
 .formGroup {
-  gap: 1.4cqw;
+  gap: min(1.4cqw, 7px);
 }
 
 .txContainer {
-  gap: 2cqw;
+  gap: min(2cqw, 10px);
 }
 
 .txList,
@@ -286,7 +377,7 @@
 /* A section opens under an engraved rule, the cut the master's own chrome
    rules are made of. */
 .console .panel {
-  padding-top: 3cqw;
+  padding-top: min(3cqw, 15px);
   border-top: 1px solid #000 !important;
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%) !important;
 }
@@ -301,11 +392,11 @@
 }
 
 .panelTitle {
-  font-size: 4.8cqw;
+  font-size: min(4.8cqw, 24px);
 }
 
 .subTitle {
-  font-size: 3.8cqw;
+  font-size: min(3.8cqw, 19px);
 }
 
 .loading {
@@ -319,14 +410,15 @@
   }
 
   50% {
-    opacity: 0.55;
+    /* Keep normal-text contrast readable at the pulse trough. */
+    opacity: 0.9;
   }
 }
 
 .alertRow {
   display: flex;
   flex-wrap: wrap;
-  gap: 1cqw 3cqw;
+  gap: min(1cqw, 5px) min(3cqw, 15px);
   align-items: center;
   justify-content: space-between;
 }
@@ -336,17 +428,17 @@
 .console .row,
 .console .txRow {
   display: flex;
-  gap: 3cqw;
+  gap: min(3cqw, 15px);
   align-items: baseline;
   justify-content: space-between;
   min-width: 0;
-  padding: 2.4cqw 0.5cqw;
+  padding: min(2.4cqw, 12px) min(0.5cqw, 2.5px);
   border-top: 1px solid #000 !important;
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%) !important;
 }
 
 .value {
-  font-size: 3.8cqw;
+  font-size: min(3.8cqw, 19px);
   font-weight: 800;
   letter-spacing: 0.02em;
   font-variant-numeric: tabular-nums lining-nums;
@@ -361,7 +453,7 @@
 .txFilters {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5cqw 1.5cqw;
+  gap: min(0.5cqw, 2.5px) min(1.5cqw, 7.5px);
   justify-content: center;
   margin: 0;
 }
@@ -390,18 +482,18 @@
 
 .tab {
   flex: 1 1 auto;
-  font-size: 3.2cqw;
+  font-size: min(3.2cqw, 16px);
 }
 
 .quickLink,
 .txFilterBtn,
 .txExportBtn {
-  font-size: 2.9cqw;
+  font-size: min(2.9cqw, 14.5px);
 }
 
 .presetBtn {
   flex: 1 1 18%;
-  font-size: 3.6cqw;
+  font-size: min(3.6cqw, 18px);
   font-variant-numeric: tabular-nums lining-nums;
 }
 
@@ -413,7 +505,7 @@
 /* A long action ("Confirm Secure Cashout" in a half-width cell) wraps inside
    its own box rather than running past the rail. */
 .wordAction {
-  font-size: 3.6cqw;
+  font-size: min(3.6cqw, 18px);
   letter-spacing: 0.14em;
   text-align: center;
   overflow-wrap: anywhere;
@@ -422,12 +514,12 @@
 .wordRow {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 2cqw;
+  gap: min(2cqw, 10px);
 }
 
 .wordInline {
-  padding-inline: 1cqw;
-  font-size: 3cqw;
+  padding-inline: min(1cqw, 5px);
+  font-size: min(3cqw, 15px);
 }
 
 /* ── The ledger ──────────────────────────────────────────────────────── */
@@ -453,7 +545,7 @@
 .txAmounts {
   display: flex;
   flex-direction: column;
-  gap: 0.6cqw;
+  gap: min(0.6cqw, 3px);
   min-width: 0;
 }
 
@@ -467,20 +559,20 @@
 
 .txCategory,
 .txEmptyTitle {
-  font-size: 3.4cqw;
+  font-size: min(3.4cqw, 17px);
   font-weight: 700;
 }
 
 .txDesc {
   overflow-wrap: anywhere;
   font:
-    500 2.9cqw/1.45 Inter,
+    500 min(2.9cqw, 14.5px)/1.45 Inter,
     system-ui,
     sans-serif;
 }
 
 .txAmount {
-  font-size: 3.8cqw;
+  font-size: min(3.8cqw, 19px);
   font-weight: 800;
   font-variant-numeric: tabular-nums lining-nums;
   white-space: nowrap;
@@ -488,7 +580,7 @@
 
 .txWallet,
 .txTime {
-  font-size: 2.4cqw;
+  font-size: min(2.4cqw, 12px);
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -498,9 +590,9 @@
 .txEmpty {
   display: flex;
   flex-direction: column;
-  gap: 1.4cqw;
+  gap: min(1.4cqw, 7px);
   align-items: center;
-  padding: 4cqw 0;
+  padding: min(4cqw, 20px) 0;
   text-align: center;
 }
 
@@ -516,4 +608,67 @@
   .console .txRow {
     animation: none;
   }
+}
+
+/* The classic actions share the unframed directory workspace. */
+.page {
+  max-width: 1380px;
+}
+.page > div {
+  max-width: 1380px;
+}
+.page .panelTitle {
+  font-size: 24px;
+  font-weight: 400;
+  text-transform: none;
+}
+.page .tabNav {
+  justify-content: flex-start;
+  gap: 6px;
+}
+.page .console .tab {
+  flex: 0 1 auto;
+  padding: 12px 16px;
+  border: 1px solid #27313c !important;
+  background: #0d1218 !important;
+  font-size: 12px;
+}
+.page .console .tab[aria-selected='true'] {
+  border-bottom: 2px solid #00d4ff !important;
+  color: #f4f7fa;
+}
+.page .console .formGroup {
+  max-width: 760px;
+}
+.page .console .input,
+.page .console .select {
+  padding: 14px;
+  border: 1px solid #27313c !important;
+  background: #05070a !important;
+  font-size: 16px;
+}
+.page .txRow {
+  padding: 16px !important;
+}
+
+.searchClear {
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  color: #45adff;
+  font-size: 14px;
+  padding: 10px 14px;
+}
+
+.recipientContext {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-block: 12px;
+  color: #e4e7ec;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.recipientContext span {
+  color: #9aa5b3;
 }

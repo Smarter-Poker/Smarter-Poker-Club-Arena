@@ -1,5 +1,7 @@
 # Horse Brain Phase 6C: Exact-Input Replay Protocol (2026-09-26)
 
+> Current qualification: [September 30 serving qualification](horse-brain-phase6-completion-2026-09-30.md). The older dated statuses below are retained as history; use the current record for remaining gates and measured serving behavior.
+
 Phase 6C (3 of 4) of the Phase 6 tournament work: a recorded Horse decision is replayed from its exact original inputs through the published decision code, the calculations and references it claims are qualified independently, and a fixed-shape verdict says what was reproduced, what diverged and what was refused, with a named reason. This document is the evaluation protocol. The implementation is `server/src/engine/horseDecision/replay/` and the batch tool is `server/scripts/phase6c-replay.mjs`; evidence lives under `docs/evidence/phase6c/`.
 
 Deterministic replay is not GTO strength. A reproduced decision proves that the published code repeats itself on its exact original inputs and that its stated arithmetic is right. It certifies nothing about whether the action was good.

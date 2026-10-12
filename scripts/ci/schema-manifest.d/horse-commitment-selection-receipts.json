@@ -1,0 +1,38 @@
+{
+  "_owner": "agent/claude-horse-brain/p14-3-source-selection: P14.3 immutable daily commitment-audit pass receipts, per-pass selection counters and the two service-role readers (20261007075304). Native PG17 qualified by scripts/ci/test-horse-commitment-audit.py job selection_receipts58; a declaration pending protected merge and exact production installation/readback, not a live installation claim.",
+  "tables": ["horse_commitment_audit_passes"],
+  "functions": [
+    "fn_horse_commitment_audit_pass_immutable",
+    "fn_horse_commitment_selection_receipt",
+    "fn_horse_accepted_source_rows"
+  ],
+  "columns": {
+    "horse_commitment_audit_passes": [
+      "day",
+      "pass",
+      "window_start",
+      "window_end",
+      "cutover",
+      "max_scanned_created_at",
+      "final_after_created_at",
+      "final_after_hand_id",
+      "scanned_hands",
+      "horse_hands",
+      "flagged_horse_hands",
+      "unknown_horse_hands",
+      "hand_gaps",
+      "hands_without_commit",
+      "missing_source_hands",
+      "late_arrival_hands",
+      "started_at",
+      "finished_at",
+      "source_coverage",
+      "identity_basis"
+    ],
+    "horse_commitment_audit_days": [
+      "hands_without_commit",
+      "missing_source_hands",
+      "late_arrival_hands"
+    ]
+  }
+}

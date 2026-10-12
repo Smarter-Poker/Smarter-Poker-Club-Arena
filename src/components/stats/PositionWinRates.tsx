@@ -20,6 +20,15 @@
  */
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import StatsDataTable from './StatsDataTable';
+import {
+  POSITION_CALLOUT_MIN_HANDS,
+  positionProgressPercent,
+  positionRateColor,
+  positionTrendLabel,
+  selectPositionCallouts,
+} from './positionCallouts';
+import { compactChips } from '../../utils/format';
 import './PositionWinRates.css';
 
 interface PositionStats {
@@ -31,7 +40,7 @@ interface PositionStats {
   /** Per OPPORTUNITY when the payload carries three_bet_opps, else per hand dealt. */
   threeBet: number;
   threeBetPerOpp: boolean;
-  winRate: number; // bb/100
+  winRate: number | null; // bb/100; null means the scoped contract did not measure it
   totalProfit: number;
 }
 
@@ -72,11 +81,18 @@ interface PositionWinRatesProps {
 }
 
 const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+const measuredRate = (v: unknown): number | null => {
+  if ((typeof v !== 'number' && typeof v !== 'string') || String(v).trim() === '') return null;
+  const rate = Number(v);
+  return Number.isFinite(rate) ? rate : null;
+};
 
 function mapRows(rows: PositionRowLike[]): PositionStats[] {
   const out: PositionStats[] = [];
   for (const live of rows) {
-    const position = typeof live?.position === 'string' && live.position ? live.position : 'UNK';
+    const positionToken =
+      typeof live?.position === 'string' ? live.position.trim().toUpperCase() : '';
+    const position = positionToken || 'UNK';
     const hp = num(live?.hands_played);
     if (hp <= 0) continue;
     const opps = num(live?.three_bet_opps);
@@ -91,7 +107,7 @@ function mapRows(rows: PositionRowLike[]): PositionStats[] {
         ? (num(live?.three_bet_count) / opps) * 100
         : (num(live?.three_bet_count) / hp) * 100,
       threeBetPerOpp: perOpp,
-      winRate: num(live?.bb100),
+      winRate: measuredRate(live?.bb100),
       totalProfit: num(live?.total_profit),
     });
   }
@@ -130,31 +146,15 @@ const PositionWinRates: React.FC<PositionWinRatesProps> = ({ initialPositions, d
   }, [statsData]);
 
   const totalHands = statsData.reduce((sum, p) => sum + p.handsPlayed, 0);
-  const bestPosition =
-    statsData.length > 0
-      ? statsData.reduce((best, current) => (current.winRate > best.winRate ? current : best))
-      : null;
-  const worstPosition =
-    statsData.length > 0
-      ? statsData.reduce((worst, current) => (current.winRate < worst.winRate ? current : worst))
-      : null;
-
-  const getTrendLabel = (value: number) => {
-    if (value > 3) return 'Exceptional';
-    if (value > 1.5) return 'Strong';
-    if (value >= 0) return 'Neutral';
-    return 'Losing';
-  };
-
-  const getPositionColor = (winRate: number) => {
-    if (winRate > 4) return 'var(--accent-green)';
-    if (winRate > 2) return 'var(--accent-cyan)';
-    if (winRate >= 0) return 'var(--accent-orange)';
-    return 'var(--accent-red)';
-  };
+  const {
+    strongest: bestPosition,
+    weakest: worstPosition,
+    eligibleCount: calloutEligibleCount,
+  } = useMemo(() => selectPositionCallouts(statsData), [statsData]);
 
   const hovered = hoveredPosition !== null ? statsData[hoveredPosition] : null;
   const anyPerOpp = statsData.some((p) => p.threeBetPerOpp);
+  const allPerOpp = statsData.every((p) => p.threeBetPerOpp);
 
   return (
     <div className="position-win-rates">
@@ -201,9 +201,9 @@ const PositionWinRates: React.FC<PositionWinRatesProps> = ({ initialPositions, d
                     cx={x}
                     cy={y}
                     r="45"
-                    fill={getPositionColor(pos.winRate)}
+                    fill={positionRateColor(pos.winRate, pos.handsPlayed)}
                     fillOpacity={isHovered ? 0.25 : 0.1}
-                    stroke={getPositionColor(pos.winRate)}
+                    stroke={positionRateColor(pos.winRate, pos.handsPlayed)}
                     strokeWidth={isHovered ? 2 : 1}
                     className="position-circle"
                     style={{
@@ -213,7 +213,11 @@ const PositionWinRates: React.FC<PositionWinRatesProps> = ({ initialPositions, d
                     }}
                     tabIndex={0}
                     role="button"
-                    aria-label={`${pos.position}, ${pos.winRate.toFixed(1)} BB Per 100`}
+                    aria-label={`${pos.position}, ${
+                      pos.winRate === null
+                        ? 'Win Rate Not Yet Measured'
+                        : `${pos.winRate.toFixed(1)} BB Per 100`
+                    }`}
                     onMouseEnter={() => setHoveredPosition(i)}
                     onMouseLeave={() => setHoveredPosition(null)}
                     onFocus={() => setHoveredPosition(i)}
@@ -231,7 +235,7 @@ const PositionWinRates: React.FC<PositionWinRatesProps> = ({ initialPositions, d
                     y={y - 12}
                     textAnchor="middle"
                     className="position-label"
-                    fill={getPositionColor(pos.winRate)}
+                    fill={positionRateColor(pos.winRate, pos.handsPlayed)}
                     style={{
                       opacity: isVisible ? 1 : 0,
                       transition: 'opacity 0.3s ease-out',
@@ -246,7 +250,7 @@ const PositionWinRates: React.FC<PositionWinRatesProps> = ({ initialPositions, d
                     y={y + 8}
                     textAnchor="middle"
                     className="position-winrate"
-                    fill={getPositionColor(pos.winRate)}
+                    fill={positionRateColor(pos.winRate, pos.handsPlayed)}
                     style={{
                       opacity: isVisible ? 1 : 0,
                       transition: 'opacity 0.3s ease-out',
@@ -254,7 +258,7 @@ const PositionWinRates: React.FC<PositionWinRatesProps> = ({ initialPositions, d
                       fontWeight: 700,
                     }}
                   >
-                    {pos.winRate.toFixed(2)}
+                    {pos.winRate === null ? '--' : pos.winRate.toFixed(1)}
                   </text>
                 </g>
               );
@@ -287,15 +291,17 @@ const PositionWinRates: React.FC<PositionWinRatesProps> = ({ initialPositions, d
                 </div>
                 <div className="tooltip-stat">
                   <span>Win Rate:</span>
-                  <span style={{ color: getPositionColor(hovered.winRate) }}>
-                    {hovered.winRate.toFixed(2)} BB/100
+                  <span style={{ color: positionRateColor(hovered.winRate, hovered.handsPlayed) }}>
+                    {hovered.winRate === null
+                      ? 'Not Yet Measured'
+                      : `${hovered.winRate.toFixed(1)} BB/100`}
                   </span>
                 </div>
                 <div className="tooltip-stat total">
                   <span>Total Profit:</span>
-                  <span style={{ color: getPositionColor(hovered.winRate) }}>
+                  <span style={{ color: positionRateColor(hovered.winRate, hovered.handsPlayed) }}>
                     {hovered.totalProfit > 0 ? '+' : ''}
-                    {hovered.totalProfit.toLocaleString()}
+                    {compactChips(hovered.totalProfit)}
                   </span>
                 </div>
               </div>
@@ -304,20 +310,35 @@ const PositionWinRates: React.FC<PositionWinRatesProps> = ({ initialPositions, d
         </div>
       )}
 
-      {bestPosition && worstPosition && statsData.length > 1 && (
+      {bestPosition && worstPosition && (
         <div className="position-callouts">
           <div className="callout strongest">
             <div className="callout-text">
               <span className="callout-label">Strongest Position</span>
               <span className="callout-value">{bestPosition.position}</span>
-              <span className="callout-detail">{bestPosition.winRate.toFixed(2)} BB/100</span>
+              <span className="callout-detail">{bestPosition.winRate.toFixed(1)} BB/100</span>
             </div>
           </div>
           <div className="callout weakest">
             <div className="callout-text">
               <span className="callout-label">Weakest Position</span>
               <span className="callout-value">{worstPosition.position}</span>
-              <span className="callout-detail">{worstPosition.winRate.toFixed(2)} BB/100</span>
+              <span className="callout-detail">{worstPosition.winRate.toFixed(1)} BB/100</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {statsData.length > 0 && calloutEligibleCount < 2 && (
+        <div className="position-callouts" role="status">
+          <div className="callout sample-needed">
+            <div className="callout-text">
+              <span className="callout-label">Position Comparison</span>
+              <span className="callout-value">More Hands Needed</span>
+              <span className="callout-detail">
+                At Least Two Known Positions Need {POSITION_CALLOUT_MIN_HANDS} Hands Before
+                Strongest And Weakest Rankings Are Shown.
+              </span>
             </div>
           </div>
         </div>
@@ -339,9 +360,12 @@ const PositionWinRates: React.FC<PositionWinRatesProps> = ({ initialPositions, d
               >
                 <div className="card-header">
                   <span className="position-name">{pos.position}</span>
-                  <span className="win-rate-badge" style={{ color: getPositionColor(pos.winRate) }}>
-                    {pos.winRate > 0 ? '+' : ''}
-                    {pos.winRate.toFixed(2)}
+                  <span
+                    className="win-rate-badge"
+                    style={{ color: positionRateColor(pos.winRate, pos.handsPlayed) }}
+                  >
+                    {pos.winRate !== null && pos.winRate > 0 ? '+' : ''}
+                    {pos.winRate === null ? '--' : pos.winRate.toFixed(1)}
                   </span>
                 </div>
                 <div className="card-stats">
@@ -362,13 +386,13 @@ const PositionWinRates: React.FC<PositionWinRatesProps> = ({ initialPositions, d
                   <div
                     className="progress-bar"
                     style={{
-                      width: `${Math.min(100, Math.max(0, (pos.winRate / 5.5) * 100))}%`,
-                      backgroundColor: getPositionColor(pos.winRate),
+                      width: `${positionProgressPercent(pos.winRate, pos.handsPlayed)}%`,
+                      backgroundColor: positionRateColor(pos.winRate, pos.handsPlayed),
                     }}
                   />
                 </div>
                 <div className="card-trend">
-                  <span>{getTrendLabel(pos.winRate)}</span>
+                  <span>{positionTrendLabel(pos.winRate, pos.handsPlayed)}</span>
                 </div>
               </div>
             );
@@ -376,11 +400,32 @@ const PositionWinRates: React.FC<PositionWinRatesProps> = ({ initialPositions, d
         </div>
       )}
 
+      <StatsDataTable
+        caption="Win Rate By Position"
+        rows={statsData}
+        rowKey={(row) => row.position}
+        columns={[
+          { key: 'position', label: 'Position', render: (row) => row.positionLabel },
+          { key: 'hands', label: 'Hands', render: (row) => row.handsPlayed.toLocaleString() },
+          { key: 'vpip', label: 'VPIP', render: (row) => `${row.vpip.toFixed(1)}%` },
+          { key: 'pfr', label: 'PFR', render: (row) => `${row.pfr.toFixed(1)}%` },
+          { key: 'three_bet', label: '3-Bet', render: (row) => `${row.threeBet.toFixed(1)}%` },
+          {
+            key: 'bb100',
+            label: 'BB/100',
+            render: (row) => (row.winRate === null ? 'Not Yet Measured' : row.winRate.toFixed(1)),
+          },
+          { key: 'profit', label: 'Profit', render: (row) => compactChips(row.totalProfit) },
+        ]}
+      />
+
       {statsData.length > 0 && (
         <p className="position-subtitle" style={{ marginTop: 8 }}>
-          {anyPerOpp
+          {allPerOpp
             ? '3-Bet Is Measured Per Opportunity To Re-Raise.'
-            : '3-Bet Is Measured Per Hand Dealt For This Payload.'}{' '}
+            : anyPerOpp
+              ? '3-Bet Measurement Varies By Position: Per Opportunity Where Available, Otherwise Per Hand Dealt.'
+              : '3-Bet Is Measured Per Hand Dealt For This Payload.'}{' '}
           Positions Under A Few Hundred Hands Swing A Long Way; Read The Shape, Not The Decimals.
         </p>
       )}

@@ -1,0 +1,62 @@
+{
+  "before": [
+    {
+      "kind": "INSERT",
+      "row_data": {
+        "user_id": "11111111-1111-4111-8111-111111111111",
+        "cards_id": "default",
+        "table_id": "classic_green",
+        "theme_id": "default-dark",
+        "button_id": "white-d",
+        "game_type": "ALL",
+        "updated_at": "2026-10-10T02:58:58.545557-05:00",
+        "face_deck_id": "default",
+        "background_id": "default"
+      }
+    },
+    {
+      "kind": "UPDATE",
+      "row_data": {
+        "user_id": "11111111-1111-4111-8111-111111111111",
+        "cards_id": "default",
+        "table_id": "carbon_red",
+        "theme_id": "default-dark",
+        "button_id": "white-d",
+        "game_type": "ALL",
+        "updated_at": "2026-10-10T02:58:58.545557-05:00",
+        "face_deck_id": "default",
+        "background_id": "default"
+      }
+    }
+  ],
+  "after": [
+    {
+      "kind": "INSERT",
+      "row_data": {
+        "user_id": "11111111-1111-4111-8111-111111111111",
+        "cards_id": "default",
+        "table_id": "classic_green",
+        "theme_id": "default-dark",
+        "button_id": "white-d",
+        "game_type": "ALL",
+        "updated_at": "2026-10-10T02:58:58.551839-05:00",
+        "face_deck_id": "default",
+        "background_id": "default"
+      }
+    },
+    {
+      "kind": "UPDATE",
+      "row_data": {
+        "user_id": "11111111-1111-4111-8111-111111111111",
+        "cards_id": "default",
+        "table_id": "carbon_red",
+        "theme_id": "default-dark",
+        "button_id": "white-d",
+        "game_type": "ALL",
+        "updated_at": "2026-10-10T02:58:58.552428-05:00",
+        "face_deck_id": "default",
+        "background_id": "default"
+      }
+    }
+  ]
+}

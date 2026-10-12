@@ -87,7 +87,6 @@ const CATEGORY_LABELS: Record<string, string> = {
   tournament_buyin: 'Tournament Buy-In',
   tournament_winnings: 'Tournament Winnings',
   tournament_cashout: 'Tournament Cash-Out',
-  horse_refill: 'Auto Refill',
   deposit: 'Deposit',
   withdrawal: 'Withdrawal',
   refund: 'Refund',
@@ -113,6 +112,16 @@ const CATEGORY_LABELS: Record<string, string> = {
 };
 
 /**
+ * A HORSE'S ROW WEARS A HUMAN CATEGORY (cashier launch B-5, 2026-10-11). A
+ * club refill of a seat is a transfer from the club, so it prints, colours and
+ * marks exactly as a transfer: its own "Auto Refill" label, grey ink and
+ * refill mark were worn only by those rows (tests/a-horse-is-never-named).
+ */
+function shownCategory(raw: string): string {
+  return raw === 'horse_refill' ? 'transfer' : raw;
+}
+
+/**
  * A category nobody has taught this component about must still read like
  * English, and must never render the raw enum (house rule 9: HIGH_HAND reads
  * "High Hand"). Underscores and hyphens become spaces, every word takes a
@@ -121,7 +130,7 @@ const CATEGORY_LABELS: Record<string, string> = {
  */
 export function formatCategory(raw: string | null | undefined): string {
   if (!raw) return 'Movement';
-  const known = CATEGORY_LABELS[raw];
+  const known = CATEGORY_LABELS[shownCategory(raw)];
   if (known) return known;
   const words = raw.replace(/[_-]+/g, ' ').trim().split(/\s+/).filter(Boolean);
   if (words.length === 0) return 'Movement';
@@ -151,7 +160,6 @@ const CATEGORY_COLORS: Record<string, string> = {
   promo: '#a855f7',
   promotion: '#a855f7',
   bbj: '#eab308',
-  horse_refill: '#94a3b8',
   tournament_buyin: '#f59e0b',
   tournament_winnings: '#22c55e',
   tournament_cashout: '#22c55e',
@@ -177,7 +185,6 @@ const CATEGORY_ICONS: Record<string, string> = {
   promotion: '↑',
   promo: '★',
   bbj: '♣',
-  horse_refill: '↺',
   transfer: '→',
   deposit: '+',
   withdrawal: '-',
@@ -453,10 +460,13 @@ function TransactionHistoryInner({ walletId, limit = 20 }: TransactionHistoryPro
           {transactions.map((tx, i) => (
             <div key={tx.id} className={`transaction-row ${tx.type}`} style={txStyle(i)}>
               <span className="icon" aria-hidden="true">
-                {CATEGORY_ICONS[tx.category] || '●'}
+                {CATEGORY_ICONS[shownCategory(tx.category)] || '●'}
               </span>
               <div className="details">
-                <span className="type" style={{ color: CATEGORY_COLORS[tx.category] || '#94a3b8' }}>
+                <span
+                  className="type"
+                  style={{ color: CATEGORY_COLORS[shownCategory(tx.category)] || '#94a3b8' }}
+                >
                   {formatCategory(tx.category)}
                 </span>
                 <span className="description">{formatPopupText(tx.description)}</span>

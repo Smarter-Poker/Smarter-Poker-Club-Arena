@@ -18,6 +18,7 @@ import type {
 } from './protocol.js';
 import type { HorseDiscardExecutionObservation } from '../../services/horseDecisionJournal/discard.js';
 import { decisionWorkersCanYield } from './workerPriority.js';
+import type { HorsePlanAcceptance } from '../HorsePlanEffectReceipt.js';
 
 /**
  * THE DECISION LANE IS SHARDED BY TABLE (2026-09-26).
@@ -190,7 +191,10 @@ export interface LiveHorseDecisionLane {
     observation: CompletedHandObservation,
     signal?: AbortSignal
   ): Promise<HorseDecisionWorkerAck>;
-  commitDecisionEffects(result: FastHorseDecisionResult): Promise<HorseDecisionWorkerAck>;
+  commitDecisionEffects(
+    result: FastHorseDecisionResult,
+    acceptance: HorsePlanAcceptance
+  ): Promise<HorseDecisionWorkerAck>;
   decideDiscard(
     snapshot: PineappleDiscardSnapshot,
     signal?: AbortSignal
@@ -238,7 +242,10 @@ export class LiveHorseDecisionWorkerPool implements LiveHorseDecisionLane {
     const clientOptions: LiveHorseDecisionWorkerClientOptions = { ...options };
     delete (clientOptions as LiveHorseDecisionLaneOptions).workers;
     this.clients = Object.freeze(
-      Array.from({ length: count }, () => new LiveHorseDecisionWorkerClient(clientOptions))
+      Array.from(
+        { length: count },
+        (_, index) => new LiveHorseDecisionWorkerClient({ ...clientOptions, shard: { index } })
+      )
     );
     this.readyPromise = this.awaitAllReady();
     void this.readyPromise.catch(() => undefined);
@@ -376,10 +383,13 @@ export class LiveHorseDecisionWorkerPool implements LiveHorseDecisionLane {
     return this.shard(observation.fence).observeCompletedHand(observation, signal);
   }
 
-  commitDecisionEffects(result: FastHorseDecisionResult): Promise<HorseDecisionWorkerAck> {
+  commitDecisionEffects(
+    result: FastHorseDecisionResult,
+    acceptance: HorsePlanAcceptance
+  ): Promise<HorseDecisionWorkerAck> {
     // The result's fence is its request's fence, so this is the client that
     // issued the plan and holds its ownership.
-    return this.shard(result.fence).commitDecisionEffects(result);
+    return this.shard(result.fence).commitDecisionEffects(result, acceptance);
   }
 
   decideDiscard(

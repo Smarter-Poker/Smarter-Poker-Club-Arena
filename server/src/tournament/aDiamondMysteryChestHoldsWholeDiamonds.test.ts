@@ -86,8 +86,10 @@ describe('a Diamond mystery chest holds whole Diamonds', () => {
     expect(site).toContain('const unitCents = this.tournamentUnit();');
     expect(site).toContain('if (unitCents == null) {');
     expect(site).toContain("'Tournament.mystery_bounty_unit_unknown'");
+    // drawCount is the decision's count net of busts already played
+    // (2026-10-05); the unit it is built at is unchanged.
     expect(site).toContain(
-      'buildInventoryAtUnit(poolCents, decision.drawCount, profile, topPercent, unitCents)'
+      'buildInventoryAtUnit(poolCents, drawCount, profile, topPercent, unitCents)'
     );
     expect((site.match(/\bunitCents\n\s*\);/g) ?? []).length).toBe(2);
     expect(site).not.toContain('UNIT_CENTS_ASSET_NOT_READ');

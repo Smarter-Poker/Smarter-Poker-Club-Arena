@@ -1,7 +1,8 @@
 import { useLayoutEffect, useRef } from 'react';
 
 /**
- * Shrink a single-line label until it fits its zone.
+ * Shrink a single-line label until it fits its zone (or, where the caller
+ * allows it, let it take a second line - see FitTextOptions).
  *
  * Dan 2026-09-03: "REDUCE THE FONT SIZE IN NLH STRADDLE, SO THAT 'STRADDLE'
  * FITS WITHOUT CUTTING OFF." The layered cards print into fixed pixel zones
@@ -28,12 +29,39 @@ import { useLayoutEffect, useRef } from 'react';
  * apply it, measure what really happened, and correct - which converges in two
  * passes and needs no per-caller fudge.
  */
+export type FitTextOptions = {
+  /**
+   * Let the label take a second line instead of shrinking below this ratio.
+   *
+   * The riveted frame and the deck (2026-09-14): their plates are a third of
+   * the console wide, and the honest money labels ("Buy In With Diamonds",
+   * "Request Cashout", "Retry Original Buy-In") are pinned by tests and by
+   * the ledger law - they cannot be shortened. On one line they hit the floor
+   * at half size and still lost their last letters to the rim. A real button
+   * carries a long label on two lines, so that is what the plate does.
+   *
+   * When the one-line fit lands under `wrapBelow`, the hook marks the element
+   * `data-fit-wrap="true"` and measures again; the stylesheet decides what a
+   * wrapped label looks like (white-space, its own base size, line-height).
+   * The wrapped result is kept only when it renders larger than the one-line
+   * result - never a smaller face on more lines. The block may take at most
+   * `maxLines` lines and its widest line must fit the zone; re-flow is
+   * discrete, so the hook steps down and re-measures until both hold.
+   */
+  wrapBelow?: number;
+  /** Lines a wrapped label may take. Default 2. */
+  maxLines?: number;
+};
+
 export function useFitText<T extends HTMLElement = HTMLElement>(
   text: string,
   scaleX = 1,
-  minRatio = 0.5
+  minRatio = 0.5,
+  options?: FitTextOptions
 ) {
   const ref = useRef<T | null>(null);
+  const wrapBelow = options?.wrapBelow;
+  const maxLines = options?.maxLines ?? 2;
 
   useLayoutEffect(() => {
     const el = ref.current;
@@ -41,41 +69,102 @@ export function useFitText<T extends HTMLElement = HTMLElement>(
     const zone = el.parentElement;
     if (!zone) return;
 
-    const fit = () => {
-      el.style.setProperty('--fit', '1');
-      /* Compare text and zone in the same layout coordinates. A parent's
-         pop-open scale changes getBoundingClientRect but not scrollWidth,
-         otherwise fitting during that animation permanently halves the text.
-         Computed width retains fractional pixels without the transform. */
+    /* Compare text and zone in the same layout coordinates. A parent's
+       pop-open scale changes getBoundingClientRect but not scrollWidth,
+       otherwise fitting during that animation permanently halves the text.
+       Computed width retains fractional pixels without the transform. */
+    const pixels = (value: string) => Number.parseFloat(value) || 0;
+    const available = () => {
       const css = getComputedStyle(zone);
-      const pixels = (value: string) => Number.parseFloat(value) || 0;
       const innerWidth =
         pixels(css.width) +
         (css.boxSizing === 'border-box'
           ? -pixels(css.borderLeftWidth) - pixels(css.borderRightWidth)
           : pixels(css.paddingLeft) + pixels(css.paddingRight));
-      const available = Math.min(zone.clientWidth, innerWidth || zone.clientWidth);
-      const needed = el.scrollWidth * scaleX;
-      if (!available || !needed) return;
-      /* Already fits at its designed size: never grow it. */
-      if (needed <= available) {
-        el.style.setProperty('--fit', '1');
-        return;
-      }
+      return Math.min(zone.clientWidth, innerWidth || zone.clientWidth);
+    };
+    const fitValue = (ratio: number) =>
+      ratio >= 0.995 ? '1' : String(Math.floor(ratio * 10000) / 10000);
+    const setFit = (ratio: number) => el.style.setProperty('--fit', fitValue(ratio));
+    const fontPx = () => pixels(getComputedStyle(el).fontSize);
 
-      let ratio = Math.max(minRatio, available / needed);
+    /* One line: shrink until it fits, converging on what really rendered. */
+    const fitLine = (): number => {
+      el.style.setProperty('--fit', '1');
+      const room = available();
+      const needed = el.scrollWidth * scaleX;
+      /* Nothing to measure (jsdom), or it already fits at its designed size:
+         never grow it. */
+      if (!room || !needed || needed <= room) return 1;
+
+      let ratio = Math.max(minRatio, room / needed);
       for (let pass = 0; pass < 4; pass += 1) {
         el.style.setProperty('--fit', String(Math.floor(ratio * 10000) / 10000));
         const actual = el.scrollWidth * scaleX;
-        if (actual <= available || ratio <= minRatio) break;
-        const corrected = Math.max(minRatio, ratio * (available / actual));
+        if (actual <= room || ratio <= minRatio) break;
+        const corrected = Math.max(minRatio, ratio * (room / actual));
         if (ratio - corrected < 0.0005) break;
         ratio = corrected;
       }
-      el.style.setProperty(
-        '--fit',
-        ratio >= 0.995 ? '1' : String(Math.floor(ratio * 10000) / 10000)
-      );
+      return ratio;
+    };
+
+    /* Wrapped: the widest line must fit the zone and the block must stay
+       within maxLines. Lines are read off the text's own client rects (one
+       per line box), which are fractional: a block that fills its zone has an
+       integer scrollWidth a hair over the zone's fractional width, and
+       measuring that way never converges. The rects are in viewport space, so
+       a parent's scale is divided out, as the one-line path's computed width
+       already is. Returns null when no ratio above the floor satisfies both. */
+    const wrappedLines = () => {
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      const rects = Array.from(range.getClientRects());
+      const room = available();
+      const scale = room ? zone.getBoundingClientRect().width / room || 1 : 1;
+      let widest = 0;
+      for (const rect of rects) widest = Math.max(widest, rect.width / scale);
+      return { lines: rects.length, widest: widest * scaleX };
+    };
+    const fitWrapped = (): number | null => {
+      el.dataset.fitWrap = 'true';
+      let ratio = 1;
+      for (let pass = 0; pass < 8; pass += 1) {
+        el.style.setProperty('--fit', String(Math.floor(ratio * 10000) / 10000));
+        const room = available();
+        const { lines, widest } = wrappedLines();
+        if (!lines) return null;
+        const wide = widest > room + 0.5;
+        const tall = lines > maxLines;
+        if (!wide && !tall) return ratio;
+        if (ratio <= minRatio) return null;
+        let next = ratio;
+        if (wide) next = Math.min(next, ratio * (room / widest));
+        /* Re-flow is discrete: a line count only changes at a word boundary,
+           so step down and look again. */
+        if (tall) next = Math.min(next, ratio * 0.94);
+        next = Math.max(minRatio, next);
+        if (ratio - next < 0.0005) return null;
+        ratio = next;
+      }
+      return null;
+    };
+
+    const fit = () => {
+      delete el.dataset.fitWrap;
+      const line = fitLine();
+      if (wrapBelow === undefined || line >= wrapBelow) {
+        setFit(line);
+        return;
+      }
+      const linePx = fontPx();
+      const wrapped = fitWrapped();
+      if (wrapped !== null && fontPx() > linePx * 1.05) {
+        setFit(wrapped);
+        return;
+      }
+      delete el.dataset.fitWrap;
+      setFit(line);
     };
 
     fit();
@@ -86,7 +175,7 @@ export function useFitText<T extends HTMLElement = HTMLElement>(
       document.fonts.ready.then(fit).catch(() => undefined);
     }
     return () => observer.disconnect();
-  }, [text, scaleX, minRatio]);
+  }, [text, scaleX, minRatio, wrapBelow, maxLines]);
 
   return ref;
 }

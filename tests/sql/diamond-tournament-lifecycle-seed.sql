@@ -150,6 +150,38 @@ SELECT fixture_assert((SELECT NOT cash_games_enabled AND NOT tournaments_enabled
 
 -- The MTT admission ABI production was observed running on 2026-09-20. The
 -- creation door reads it to decide whether a field size is capped.
+-- The published Spin table a Diamond Spin is priced from when it is given no
+-- table of its own: the multiplier ladder and the payout ladder each
+-- multiplier owes. Reference data, not a price this file sets: both statements
+-- are sliced verbatim from the migrations that seed them in production.
+-- Sliced from 20260905171024_the_spin_ladder_charges_the_eight_percent_it_books.sql.
+INSERT INTO public.spin_tier_spec (multiplier, freq, reserve_threshold_x) VALUES
+  (2,   4809776, 0),
+  (3,   3930716, 0),
+  (4,    900000, 0),
+  (5,    250000, 0),
+  (10,   100000, 0),
+  (25,     7500, 0),
+  (50,     1000, 0),
+  (100,    1008, 1.5)
+ON CONFLICT (multiplier) DO UPDATE
+  SET freq = EXCLUDED.freq,
+      reserve_threshold_x = EXCLUDED.reserve_threshold_x;
+-- Sliced from 20260902173213_the_spin_ladder_written_down_where_the_auditor_can_read_it.sql.
+INSERT INTO public.spin_payout_ladder (multiplier, structure) VALUES
+  (2,   '[{"place":1,"percentage":100}]'::jsonb),
+  (3,   '[{"place":1,"percentage":100}]'::jsonb),
+  (4,   '[{"place":1,"percentage":100}]'::jsonb),
+  (5,   '[{"place":1,"percentage":100}]'::jsonb),
+  (10,  '[{"place":1,"percentage":80},{"place":2,"percentage":20}]'::jsonb),
+  (25,  '[{"place":1,"percentage":80},{"place":2,"percentage":12},{"place":3,"percentage":8}]'::jsonb),
+  (50,  '[{"place":1,"percentage":80},{"place":2,"percentage":12},{"place":3,"percentage":8}]'::jsonb),
+  (100, '[{"place":1,"percentage":80},{"place":2,"percentage":12},{"place":3,"percentage":8}]'::jsonb)
+ON CONFLICT (multiplier) DO UPDATE
+  SET structure = EXCLUDED.structure, updated_at = now();
+SELECT fixture_assert((SELECT count(*)=8 FROM public.spin_tier_spec) AND (SELECT count(*)=8 FROM public.spin_payout_ladder),
+ 'the published Spin table is present, eight multipliers and the ladder each one owes');
+
 UPDATE public.ca_mtt_admission_contract SET abi='unlimited-mtt-v2' WHERE singleton;
 SELECT fixture_assert(public.fn_ca_lock_mtt_admission_contract()='unlimited-mtt-v2',
  'the MTT admission contract states the ABI production runs');

@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { supabase } from '../src/lib/supabase';
@@ -145,7 +145,7 @@ describe('CashierTradePage club load ordering', () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => expect(screen.getByText('Balances synchronized')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Balances Synchronized')).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: /open another club cashier/i }));
     expect(await screen.findByRole('option', { name: /Midway Union/i })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: /Phase One Club/i })).toBeInTheDocument();
@@ -328,7 +328,7 @@ describe('CashierTradePage club load ordering', () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => expect(screen.getByText('Balances synchronized')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Balances Synchronized')).toBeInTheDocument());
     fireEvent.click(screen.getByRole('tab', { name: 'Trade Record' }));
     expect(await screen.findByText('Transfer Alice Agent To Bob Player')).toBeInTheDocument();
     expect(screen.getAllByText('50')).toHaveLength(2);
@@ -543,7 +543,7 @@ describe('CashierTradePage club load ordering', () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => expect(screen.getByText('Balances synchronized')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Balances Synchronized')).toBeInTheDocument());
     expect(screen.getByRole('button', { name: 'Reconcile Now' })).toBeEnabled();
 
     await act(async () => {
@@ -551,7 +551,7 @@ describe('CashierTradePage club load ordering', () => {
       window.dispatchEvent(new Event('offline'));
     });
 
-    expect(screen.getByText('Cashier offline; money actions are locked')).toBeInTheDocument();
+    expect(screen.getByText('Cashier Offline; Money Actions Are Locked')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Reconcile Now' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Claim Back' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Open The Club Bank Cashier' })).toBeDisabled();
@@ -621,25 +621,27 @@ describe('CashierTradePage club load ordering', () => {
     vi.mocked(supabase.rpc).mockImplementation(
       (name: string) =>
         Promise.resolve(
-          name === 'fn_club_cashier_members_page_v3'
-            ? {
-                data: [
-                  {
-                    user_id: PLAYER_ID,
-                    name: 'Recovered Player',
-                    username: 'recovered_player',
-                    avatar_url: null,
-                    role: 'player',
-                    role_rank: 0,
-                    chip_balance: 75,
-                    is_horse: false,
-                    depth: 1,
-                    player_number: 'P-1',
-                  },
-                ],
-                error: null,
-              }
-            : { data: [], error: null }
+          name === 'fn_cashier_recovery_receipts'
+            ? { data: { operations: [], tickets: [] }, error: null }
+            : name === 'fn_club_cashier_members_page_v3'
+              ? {
+                  data: [
+                    {
+                      user_id: PLAYER_ID,
+                      name: 'Recovered Player',
+                      username: 'recovered_player',
+                      avatar_url: null,
+                      role: 'player',
+                      role_rank: 0,
+                      chip_balance: 75,
+                      is_horse: false,
+                      depth: 1,
+                      player_number: 'P-1',
+                    },
+                  ],
+                  error: null,
+                }
+              : { data: [], error: null }
         ) as never
     );
 
@@ -736,10 +738,18 @@ describe('CashierTradePage club load ordering', () => {
       </MemoryRouter>
     );
 
-    const player = await screen.findByRole('checkbox', { name: /Storage Guard Player/ });
-    await waitFor(() => expect(screen.getByText('Balances synchronized')).toBeInTheDocument());
+    const player = await screen.findByRole('button', { name: 'Select Storage Guard Player' });
+    await waitFor(() => expect(screen.getByText('Balances Synchronized')).toBeInTheDocument());
+    expect(screen.getByRole('link', { name: 'Manage Storage Guard Player' })).toHaveAttribute(
+      'href',
+      `/clubs/${CLUB_ID}/members/${PLAYER_ID}`
+    );
     fireEvent.click(player);
-    fireEvent.click(screen.getByRole('button', { name: 'Send Out' }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Send Diamonds' })).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Send Ticket' })
+    ).toBeInTheDocument();
     fireEvent.change(screen.getByRole('spinbutton', { name: 'Amount Per Player' }), {
       target: { value: '10' },
     });
@@ -829,7 +839,7 @@ describe('CashierTradePage club load ordering', () => {
       );
 
     const firstMount = renderCashier();
-    await waitFor(() => expect(screen.getByText('Balances synchronized')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Balances Synchronized')).toBeInTheDocument());
     fireEvent.click(await screen.findByRole('tab', { name: 'Chip Requests' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Request Chips From Your Agent' }));
     fireEvent.change(screen.getByRole('spinbutton', { name: 'Chips Requested' }), {
@@ -846,7 +856,7 @@ describe('CashierTradePage club load ordering', () => {
 
     firstMount.unmount();
     const secondMount = renderCashier();
-    await waitFor(() => expect(screen.getByText('Balances synchronized')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Balances Synchronized')).toBeInTheDocument());
     fireEvent.click(await screen.findByRole('tab', { name: 'Chip Requests' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Request Chips From Your Agent' }));
     fireEvent.change(screen.getByRole('spinbutton', { name: 'Chips Requested' }), {
@@ -914,15 +924,15 @@ describe('CashierTradePage club load ordering', () => {
     );
 
     await waitFor(() =>
-      expect(screen.getByText('Agent wallet could not be verified')).toBeInTheDocument()
+      expect(screen.getByText('Agent Wallet Could Not Be Verified')).toBeInTheDocument()
     );
-    expect(screen.getByText('Not Yet Verified')).toBeInTheDocument();
+    expect(screen.getByText('Not Yet Refreshed')).toBeInTheDocument();
     // The wallet warning is painted as soon as that read settles, while the
     // roster continuation can still be loading. On a busy CI runner the
     // reconcile control is therefore correctly disabled for a few more
     // milliseconds; clicking it early is a browser no-op and never exercises
     // the promised verification path this test is meant to prove.
-    const reconcile = screen.getByRole('button', { name: 'Reconcile Now' });
+    const reconcile = await screen.findByRole('button', { name: 'Reconcile Now' });
     await waitFor(() => expect(reconcile).toBeEnabled());
     fireEvent.click(reconcile);
     await waitFor(() =>

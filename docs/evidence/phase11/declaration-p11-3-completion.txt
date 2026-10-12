@@ -1,0 +1,43 @@
+Horse Brain Phase 11 P11.3 natural completion records: predeclaration
+=====================================================================
+
+Declared at: 2026-10-05T02:02:00Z (UTC), before the engine release that carries
+the integer sampler (#6131, squash 90ffa0f24832839e9529011d9fd3d54e5814ffe0)
+serves any decision. Nothing in the window below exists yet.
+
+1. Serving release
+------------------
+The club-arena-engine release activated in the 02:55Z hourly break of
+2026-10-05 (label sp.release.sha). It counts only if it contains 90ffa0f2 and,
+for each pack, `git show <release>:server/<file>` over
+HORSE_PHASE11_POLICY_SOURCE_FILES gives the same horsePhase11PolicyDigest as
+90ffa0f2. If not, the window below moves to the next hour on the first release
+that does, with every other rule unchanged. The release must be unchanged for
+the whole window: the container's sp.release.sha and State.StartedAt are read
+before the window opens and after it closes, and must match.
+
+2. Window and population (complete, not a sample)
+-------------------------------------------------
+Every Horse decision record in the engine host's journal archive segments
+(archive/segments and archive-shard-1/segments; closed segment files only,
+sha256-name verified, read-only, nice 19 / ionice idle) with
+snapshot.decisionTimeMs in [03:02:00Z, 03:50:00Z) of 2026-10-05, of one pack
+(plo5, plo6, plo8 each, one record per pack), single board, whose
+sourceRelease is exactly the release in section 1. Records of any other release
+are counted and excluded by name. The window ends before the 03:53Z break
+announcement.
+
+Reader: server/scripts/phase11-completion-extract.py (stage 1, on the host) and
+server/src/scripts/phase11CompletionRecord.ts (stage 2), both at 90ffa0f2. Stage 2
+counts with horsePhase11CompletionCounts (definition
+horse-phase11-completion-definition-v2): tournament decisions are not counted;
+eligible = completed + workBudget + samplerBudgetExhausted + sampleUnavailable.
+
+3. Verdict
+----------
+A pack's record meets the requirement only if every street's Wilson lower bound
+at z = 2.5758 clears HORSE_PHASE11_COMPLETION_FLOOR (0.95), with at least 127
+eligible decisions per street. The verdict is reported for all three packs,
+whatever it is; a pack below the floor is not re-measured on another window to
+look for a pass. A record is used for admission only together with that pack's
+P11.2 qualification measured at the same policy digest.

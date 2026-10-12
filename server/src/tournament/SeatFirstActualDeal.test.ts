@@ -210,6 +210,8 @@ function fixture(
   const rule_manifest = spinRuleManifest(1, stack);
   const tier = rule_manifest.tiers.find((candidate) => candidate.multiplier === 10)!;
   rpc.mockImplementation(async (name: string, args: any) => {
+    if (name === 'fn_ca_operator_floor_state')
+      return { data: { hold: null, close: null }, error: null };
     if (name === 'fn_ca_resume_hand_submission') return { error: null, data: { found: false } };
     if (name === 'fn_f06_hand_number_state' || name === 'fn_f06_allocate_hand_number') {
       expect(args).toEqual({
@@ -570,18 +572,55 @@ describe('actual manager launch reaches the first hand and action timer after th
     expect(f.blindStarts).toEqual([NOW + delay]);
   });
 
-  it('preserves the advertised pre-seat lead for a non-Spin game', async () => {
+  /* A FULL SPIN OR HEADS-UP DEALS NOW (2026-10-02, later). Its start_time
+     is the close of the human window. When the last seat is paid before that
+     close, the table is full and the buyer was told starts_now, so the launch
+     is stamped at its own instant instead of holding the deal to the close
+     (production Spin f92b0b22 held a full table 170 s). The pre-seat lead
+     stays for advertised starts: see the timed MTT test below. */
+  it.each([
+    ['Spin', { spin: true }],
+    ['Heads-Up', { spin: false }],
+  ] as const)(
+    'stamps a full %s at its launch instant while its human window is still open',
+    async (_name, options) => {
+      const f = fixture({ ...options, preseatLead: 170_000 });
+      await f.started;
+      await settle();
+      const begin = rpc.mock.calls.find(([name]) => name === 'fn_begin_tournament_launch_atomic');
+      expect(begin?.[1]?.p_started_at).toBeNull();
+      expect(f.row.started_at).toBe(new Date(NOW).toISOString());
+    }
+  );
+
+  it('deals a full Heads-Up without waiting for its human window to close', async () => {
     const f = fixture({ spin: false, preseatLead: 60_000 });
     await f.started;
     await settle();
-    expectNoHand(f);
-    expect(f.blindStarts).toEqual([]);
-    await vi.advanceTimersByTimeAsync(59_999);
-    expectNoHand(f);
-    await vi.advanceTimersByTimeAsync(1);
-    await expectFirstHand(f, NOW + 60_000);
-    expect(f.blindStarts).toEqual([NOW + 60_000]);
+    await expectFirstHand(f, NOW);
+    expect(f.blindStarts).toEqual([NOW]);
   });
+
+  /* A SEAT-FIRST GAME STARTS WHEN IT STARTS (2026-10-02). Its start_time is
+     the close of the human window, not an advertised start. Seven Spins and
+     Heads-Ups filled at 12:12Z were stamped started_at 11:40-11:42Z (their
+     window close) and read as "RUNNING 30 minutes without a hand" although
+     each dealt within 30 seconds of launch. A window already closed leaves
+     the instant to the database's own launch transaction. */
+  it.each([
+    ['Spin', { spin: true }],
+    ['Heads-Up', { spin: false }],
+  ] as const)(
+    'stamps a %s whose human window closed long ago with its real launch instant',
+    async (_name, options) => {
+      const f = fixture({ ...options, preseatLead: -30 * 60_000 });
+      await f.started;
+      await settle();
+      const begin = rpc.mock.calls.find(([name]) => name === 'fn_begin_tournament_launch_atomic');
+      expect(begin?.[1]?.p_started_at).toBeNull();
+      expect(f.row.started_at).toBe(new Date(NOW).toISOString());
+    }
+  );
 
   it('starts a timed MTT at the admitted instant even when preparation consumes part of the lead', async () => {
     const f = fixture({ spin: false, timed: true, preseatLead: 60_000, setupDelay: 20_000 });
@@ -631,7 +670,11 @@ describe('actual manager launch reaches the first hand and action timer after th
       expect(f.manager.blindTimer).toBeNull();
       await f.manager.advanceBlindLevel(f.row.blind_structure);
       expect(f.manager.currentLevel).toBe(0);
-      expect(rpc.mock.calls.map(([name]) => name)).toEqual([
+      expect(rpc.mock.calls.some(([name]) => name === 'fn_ca_operator_floor_state')).toBe(true);
+      // Floor hold reads follow the original parked loop; launch ownership calls remain exact.
+      expect(
+        rpc.mock.calls.map(([name]) => name).filter((name) => name !== 'fn_ca_operator_floor_state')
+      ).toEqual([
         // Adoption first looks for a reserved hand a dead generation left
         // (abandonedGenerationDoor.ts); this table holds none.
         'fn_f06_hand_number_state',
@@ -645,7 +688,11 @@ describe('actual manager launch reaches the first hand and action timer after th
       await expectFirstHand(f, NOW + 60_000);
       expect(f.row.level_started_at).toBe(new Date(NOW + 60_000).toISOString());
       expect(f.manager.currentLevel).toBe(0);
-      expect(rpc.mock.calls.map(([name]) => name)).toEqual([
+      expect(rpc.mock.calls.some(([name]) => name === 'fn_ca_operator_floor_state')).toBe(true);
+      // Floor hold reads follow the original parked loop; launch ownership calls remain exact.
+      expect(
+        rpc.mock.calls.map(([name]) => name).filter((name) => name !== 'fn_ca_operator_floor_state')
+      ).toEqual([
         'fn_f06_hand_number_state',
         'fn_ca_resume_hand_submission',
         'fn_f06_hand_number_state',

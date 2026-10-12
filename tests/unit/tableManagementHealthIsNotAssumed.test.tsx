@@ -192,7 +192,18 @@ describe('a failed health read is reported, not rounded down to zero', () => {
   it('shows the live event rate, not only the retained total', async () => {
     await renderBoard();
     expect(healthRail().textContent).toContain('935');
-    expect(healthRail().textContent).toContain('259681');
+    expect(healthRail().textContent).toContain('259,681');
+  });
+
+  /**
+   * 2026-10-07: the scale read is bounded at 10,000 rows, because an exact
+   * count of the busiest union (4.2 million rows) took 38 s and timed out on
+   * every load. A capped read says so instead of passing 10,000 off as exact.
+   */
+  it('marks a bounded event total as a lower bound', async () => {
+    mocks.health = { ...HEALTHY, eventRows: 10000, eventRowsCapped: true };
+    await renderBoard();
+    expect(healthRail().textContent).toMatch(/10,000\+ Realtime Events/);
   });
 
   /**

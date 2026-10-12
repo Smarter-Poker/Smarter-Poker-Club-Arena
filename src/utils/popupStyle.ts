@@ -1,3 +1,4 @@
+import { arenaDisplayText } from '../lib/arenaDisplay/text';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  POPUP STYLE — Dan's House Rule For Every Popup In Club Arena (2026-08-20)
@@ -83,7 +84,7 @@ const DASH_ANY = /[\u2014\u2013]/g;
 export function formatPopupText(message: string): string {
   if (!message) return message;
   return (
-    message
+    arenaDisplayText(message)
       // Clause-break dashes become sentence breaks…
       .replace(DASH_CLAUSE, '. ')
       // …anything else dash-like becomes a plain hyphen.

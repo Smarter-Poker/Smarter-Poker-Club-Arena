@@ -1,0 +1,3 @@
+# tests/the-supply-meter-counts-a-leg-that-commits-after-its-reading.law.test.ts
+
+The supply meter counts a leg that commits after its reading (2026-10-02): fn_ca_supply_snapshot reads every balance, this window's issuance and retirement, and the previous six windows in one statement under one cut; a leg that became visible after its window was read (its writer's transaction started before the reading and committed after) is counted once as late_mint / late_burn in the reading where its balance first appears, and the earlier window is marked restated so it is never counted twice; fn_union_money_path_check names fn_register_for_tournament, the live registration door, instead of the retired atomic_tournament_register

@@ -1,0 +1,12 @@
+#!/bin/sh
+# Condition (b) check driver: every Phase 12 cash contract profile x human-calibrated
+# held-out seed, 6 at a time, from the server directory of a checkout at SHA.
+# usage: hc-run.sh <sha> <outdir>
+export PATH=/opt/homebrew/opt/node@26/bin:/opt/homebrew/bin:$PATH
+SHA=$1; OUT=$2
+cd /Volumes/SmarterWork/agent-work/horse-brain-finish-20261008/win-remaining/server || exit 1
+[ "$(git rev-parse HEAD)" = "$SHA" ] || { echo "checkout is not $SHA"; exit 1; }
+mkdir -p "$OUT"
+JOBS=/Volumes/SmarterWork/agent-work/horse-brain-finish-20261008/scratch-wr/hc-jobs.txt
+sed "s/\$/ $SHA/" $JOBS | xargs -P 6 -L 1 sh -c 'f="$0/$1--$2--$3.json"; [ -s "$f" ] || npx tsx src/scripts/phase12HumanCalibratedCheck.ts run --variant=$1 --profile=$2 --seed=$3 --source-sha=$4 --out="$f" > "$f.log" 2>&1' "$OUT"
+echo DONE

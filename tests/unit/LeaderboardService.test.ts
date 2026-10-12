@@ -61,6 +61,54 @@ describe('LeaderboardService', () => {
   });
 
   describe('getClubLeaderboard', () => {
+    it.each([NaN, Infinity, -Infinity, 'invalid'])(
+      'treats invalid movement %s as unknown',
+      async (rankChange) => {
+        const { supabase } = await import('../../src/lib/supabase');
+        const rpc = supabase.rpc as unknown as ReturnType<typeof vi.fn>;
+        rpc.mockResolvedValueOnce({
+          data: [
+            {
+              user_id: 'player',
+              hands_played: 20,
+              total_winnings: 10,
+              total_losses: 0,
+              vpip: 0,
+              pfr: 0,
+              tournaments_won: 0,
+              rank_change: rankChange,
+            },
+          ],
+          error: null,
+        });
+        const result = await LeaderboardService.getClubLeaderboard('club-1', 'profit', 'weekly');
+        expect(result[0].change).toBeNull();
+      }
+    );
+    it.each([null, undefined, 0, 3, -2])(
+      'preserves unknown versus known rank movement %s',
+      async (rankChange) => {
+        const { supabase } = await import('../../src/lib/supabase');
+        const rpc = supabase.rpc as unknown as ReturnType<typeof vi.fn>;
+        rpc.mockResolvedValueOnce({
+          data: [
+            {
+              user_id: 'player',
+              hands_played: 20,
+              total_winnings: 10,
+              total_losses: 0,
+              vpip: 0,
+              pfr: 0,
+              tournaments_won: 0,
+              rank_change: rankChange,
+            },
+          ],
+          error: null,
+        });
+        const result = await LeaderboardService.getClubLeaderboard('club-1', 'profit', 'weekly');
+        expect(result[0].change).toBe(rankChange == null ? null : rankChange);
+      }
+    );
     it('should return empty array when no data', async () => {
       const result = await LeaderboardService.getClubLeaderboard('club-1', 'profit', 'weekly');
       expect(result).toEqual([]);

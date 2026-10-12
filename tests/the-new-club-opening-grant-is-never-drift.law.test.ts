@@ -75,7 +75,9 @@ function acceptedCounterparties(body: string): string[] {
 describe('the new-club opening grant is never drift', () => {
   it('reads the newest definitions, and they are this migration', () => {
     expect(migration, `${MIGRATION} must exist`).not.toBe('');
-    expect(velocity.file).toBe(MIGRATION);
+    // 20261003131810 restated the velocity watch to also leave out a declared
+    // operator funding; every clause below still holds in its body.
+    expect(velocity.file).toBe('20261003131810_an_operators_declared_funding_is_not_a_mint_loop.sql');
     expect(reconcile.file).toBe(MIGRATION);
     expect(integrity.file).toBe(MIGRATION);
   });

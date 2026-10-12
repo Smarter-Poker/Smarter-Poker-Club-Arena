@@ -1,4 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
+import { readFile } from 'node:fs/promises';
 import { expect, test, type Page, type Request, type TestInfo } from '@playwright/test';
 
 const MEMBERS_PATH = 'clubs/shark-club/members';
@@ -177,7 +178,10 @@ async function completeNextPageRead(
     .toBe(0);
   expect(probe.responseFailures).toEqual([]);
   expect(probe.requestFailureCount).toBe(0);
-  expect(probe.requestAbortCount).toBe(0);
+  expect(
+    probe.requestAbortCount,
+    `Roster request timeline: ${JSON.stringify(probe.timeline)}`
+  ).toBe(0);
 }
 
 async function attachMembersProbe(page: Page, probe: MembersProbe, testInfo: TestInfo) {
@@ -236,14 +240,43 @@ async function openMembers(page: Page, probe: MembersProbe): Promise<number> {
   await expect(page.getByText('Could Not Load The Roster.', { exact: true })).toHaveCount(0);
   expect(probe.responseFailures).toEqual([]);
   expect(probe.requestFailureCount).toBe(0);
-  expect(probe.requestAbortCount).toBe(0);
+  expect(
+    probe.requestAbortCount,
+    `Roster request timeline: ${JSON.stringify(probe.timeline)}`
+  ).toBe(0);
   expect(probe.pageErrorCount).toBe(0);
   expect(probe.criticalConsoleErrorCount).toBe(0);
   return Date.now() - startedAt;
 }
 
+async function expectContainedControls(page: Page, frameSelector: string, selector: string) {
+  const frame = await page.locator(frameSelector).boundingBox();
+  expect(frame, `${frameSelector} must render`).not.toBeNull();
+  const controls = await page.locator(selector).all();
+  expect(controls.length, `${selector} must execute real control checks`).toBeGreaterThan(0);
+  for (const control of controls) {
+    const box = await control.boundingBox();
+    expect(box, `${selector} must have a rendered box`).not.toBeNull();
+    expect(box!.width).toBeGreaterThan(0);
+    expect(box!.x).toBeGreaterThanOrEqual(frame!.x - 0.5);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(frame!.x + frame!.width + 0.5);
+    expect(
+      await control.evaluate((node) => node.scrollWidth <= node.clientWidth + 1),
+      `${selector} clips its own content`
+    ).toBe(true);
+  }
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+    )
+  ).toBeLessThanOrEqual(1);
+}
+
 test.describe('Production Shark Club Players', () => {
-  test.describe.configure({ mode: 'serial', timeout: 120_000 });
+  // Each case receives its own browser context. Only the roster export creates
+  // its established audit receipt; no financial or member changes are submitted.
+  // Keep one worker, but report every case when a sibling fails.
+  test.describe.configure({ mode: 'default', timeout: 120_000 });
 
   test.afterEach(async ({ page }, testInfo) => {
     const probe = observedMembersPaths.get(page);
@@ -306,11 +339,205 @@ test.describe('Production Shark Club Players', () => {
     await expect(page).toHaveURL(/[?&]sort=name(?:&|$)/);
     await expect(directory.getByRole('listitem').first()).toBeVisible({ timeout: 30_000 });
 
+    await expect(page.getByRole('note', { name: 'Export Scope' })).toContainText(
+      'All Matching Players Across Every Page'
+    );
+    const exportResponse = page.waitForResponse((response) =>
+      response.url().includes('/rpc/ca_club_members_export')
+    );
+    const exportDownload = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Export CSV', exact: true }).click();
+    const response = await exportResponse;
+    expect(response.ok()).toBe(true);
+    const receipt = await response.json();
+    expect(receipt.success).toBe(true);
+    expect(receipt.row_count).toBeGreaterThan(0);
+    const requestScope = response.request().postDataJSON();
+    expect(requestScope).toMatchObject({ p_filter: 'all', p_sort: 'name', p_user_ids: null });
+    const download = await exportDownload;
+    const downloadPath = await download.path();
+    expect(downloadPath).toBeTruthy();
+    const csv = await readFile(downloadPath!, 'utf8');
+    const header = csv
+      .replace(/^\uFEFF/, '')
+      .split('\r\n')[0]
+      .split(',');
+    for (const field of [
+      'export_club_id',
+      'export_scope',
+      'export_filter',
+      'export_sort',
+      'export_row_count',
+      'export_requested_at_utc',
+      'export_completed_at_utc',
+      'export_audit_id',
+      'export_activity_period',
+      'export_units',
+    ]) {
+      expect(header).toContain(field);
+    }
+    expect(csv).toContain(requestScope.p_club_id);
+    expect(csv).toContain(receipt.audit_id);
+    expect(csv).toContain('all_matching');
+    expect(csv).toContain('All Recorded Activity');
+    expect(csv).toContain('Club Chips');
+
     await directory.getByRole('listitem').first().getByRole('button').click();
     await expect(page).toHaveURL(/\/clubs\/shark-club\/members\/[0-9a-f-]{36}(?:[/?#]|$)/i);
     expect(probe.responseFailures).toEqual([]);
     expect(probe.requestFailureCount).toBe(0);
-    expect(probe.requestAbortCount).toBe(0);
+    expect(
+      probe.requestAbortCount,
+      `Roster request timeline: ${JSON.stringify(probe.timeline)}`
+    ).toBe(0);
+    expect(probe.pageErrorCount).toBe(0);
+    expect(probe.criticalConsoleErrorCount).toBe(0);
+  });
+
+  test('restores the roster workspace and virtual position after visiting a Player Record', async ({
+    page,
+  }) => {
+    const probe = observeMembersPath(page);
+    await openMembers(page, probe);
+    const sort = page.getByRole('combobox', { name: 'Sort Players' });
+    await completeNextPageRead(probe, () => sort.selectOption('name'), 'workspace name sort');
+    await page
+      .locator('.members-columns summary')
+      .filter({ hasText: /^Columns$/ })
+      .click();
+    const fees = page.getByRole('checkbox', { name: 'Fees', exact: true });
+    await fees.uncheck();
+    await page
+      .locator('.members-columns summary')
+      .filter({ hasText: /^Columns$/ })
+      .click();
+    const viewport = page.locator('.members-viewport');
+    await viewport.evaluate((node) => {
+      node.scrollTop = 448;
+      node.dispatchEvent(new Event('scroll'));
+    });
+    await expect.poll(() => viewport.evaluate((node) => node.scrollTop)).toBe(448);
+    const directory = page.getByRole('list', { name: 'Club Member Directory' });
+    const row = directory.getByRole('listitem').nth(5);
+    const alias = ((await row.locator('.member-alias').textContent()) || '').trim();
+    expect(alias).not.toBe('');
+    // Locator clicks can scroll a nested roster before its click handler saves
+    // the return position. Activate the actual button from keyboard focus while
+    // preserving the position this case is intended to verify.
+    await row.getByRole('button').evaluate((node) => node.focus({ preventScroll: true }));
+    await expect.poll(() => viewport.evaluate((node) => node.scrollTop)).toBe(448);
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('heading', { name: 'Player Record', exact: true })).toBeVisible();
+    await expect(page.locator('#mm-player-name')).toContainText(alias);
+    const savedPositions = await page.evaluate(() =>
+      Object.keys(sessionStorage)
+        .filter((key) => key.startsWith('roster_position_v1_'))
+        .map((key) => JSON.parse(sessionStorage.getItem(key)!).viewportTop)
+    );
+    expect(savedPositions).toEqual([448]);
+    await page.locator('.mm-back').click();
+    await expect(sort).toHaveValue('name');
+    await expect
+      .poll(() => viewport.evaluate((node) => node.scrollTop), { timeout: 30_000 })
+      .toBe(448);
+    await page
+      .locator('.members-columns summary')
+      .filter({ hasText: /^Columns$/ })
+      .click();
+    await expect(fees).not.toBeChecked();
+    await page
+      .locator('.members-columns summary')
+      .filter({ hasText: /^Columns$/ })
+      .click();
+    await expect(page.getByRole('region', { name: 'Selected Players' })).toHaveCount(0);
+
+    const search = page.getByRole('searchbox', { name: 'Search Club Members' });
+    await completeNextPageRead(probe, () => search.fill(alias), 'workspace saved search');
+    await expect(directory.getByRole('listitem').first().locator('.member-alias')).toContainText(
+      alias
+    );
+    await directory.getByRole('listitem').first().getByRole('button').click();
+    await expect(page.getByRole('heading', { name: 'Player Record', exact: true })).toBeVisible();
+    await expect(page.locator('#mm-player-name')).toContainText(alias);
+    await page.locator('.mm-back').click();
+    await expect(search).toHaveValue(alias);
+    await expect(sort).toHaveValue('name');
+    await expect(directory.getByRole('listitem').first().locator('.member-alias')).toContainText(
+      alias
+    );
+    expect(probe.responseFailures).toEqual([]);
+    expect(probe.requestFailureCount).toBe(0);
+    expect(probe.pageErrorCount).toBe(0);
+    expect(probe.criticalConsoleErrorCount).toBe(0);
+  });
+
+  test('keeps roster surfaces and controls inside the actual page at desktop and phone widths', async ({
+    page,
+  }) => {
+    const probe = observeMembersPath(page);
+    await openMembers(page, probe);
+    const originalViewport = page.viewportSize();
+    for (const width of [1449, 375, 393]) {
+      await page.setViewportSize({ width, height: 812 });
+      const frame = await page.locator('.club-members-page').boundingBox();
+      expect(frame, 'the roster page must have a rendered containing block').not.toBeNull();
+      for (const selector of [
+        '.members-hero',
+        '.members-console',
+        '.members-list',
+        '.members-count[role="status"]',
+        '.members-search',
+        '.members-search input',
+        '.members-sort',
+        '.members-refresh',
+        '.members-toolbar',
+      ]) {
+        const box = await page.locator(selector).boundingBox();
+        expect(box, `${selector} must render at ${width}px`).not.toBeNull();
+        expect(box!.width).toBeGreaterThan(0);
+        expect(
+          box!.x,
+          `${selector} clips at the left page edge at ${width}px`
+        ).toBeGreaterThanOrEqual(frame!.x - 0.5);
+        expect(
+          box!.x + box!.width,
+          `${selector} clips at the right page edge at ${width}px`
+        ).toBeLessThanOrEqual(frame!.x + frame!.width + 0.5);
+      }
+      const consoleFrame = await page.locator('.members-console').boundingBox();
+      expect(consoleFrame).not.toBeNull();
+      for (const control of await page
+        .locator(
+          '.members-search input, .members-sort select, .members-refresh, .members-columns, .members-export, .members-select-loaded'
+        )
+        .all()) {
+        const box = await control.boundingBox();
+        expect(box).not.toBeNull();
+        expect(box!.x).toBeGreaterThanOrEqual(consoleFrame!.x);
+        expect(box!.x + box!.width).toBeLessThanOrEqual(consoleFrame!.x + consoleFrame!.width);
+        expect(
+          await control.evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
+          'a roster control clips its own content'
+        ).toBe(true);
+      }
+      // Permission-specific controls are checked whenever the actual viewer
+      // can see them; the required search/sort/refresh checks always execute.
+      for (const control of await page
+        .locator('.members-export, .members-select-loaded, .members-columns, .member-row__open')
+        .all()) {
+        const box = await control.boundingBox();
+        expect(box).not.toBeNull();
+        expect(box!.x).toBeGreaterThanOrEqual(frame!.x - 0.5);
+        expect(box!.x + box!.width).toBeLessThanOrEqual(frame!.x + frame!.width + 0.5);
+      }
+    }
+    if (originalViewport) await page.setViewportSize(originalViewport);
+    expect(probe.responseFailures).toEqual([]);
+    expect(probe.requestFailureCount).toBe(0);
+    expect(
+      probe.requestAbortCount,
+      `Roster request timeline: ${JSON.stringify(probe.timeline)}`
+    ).toBe(0);
     expect(probe.pageErrorCount).toBe(0);
     expect(probe.criticalConsoleErrorCount).toBe(0);
   });
@@ -358,7 +585,10 @@ test.describe('Production Shark Club Players', () => {
     ).toEqual([]);
     expect(probe.responseFailures).toEqual([]);
     expect(probe.requestFailureCount).toBe(0);
-    expect(probe.requestAbortCount).toBe(0);
+    expect(
+      probe.requestAbortCount,
+      `Roster request timeline: ${JSON.stringify(probe.timeline)}`
+    ).toBe(0);
     expect(probe.pageErrorCount).toBe(0);
     expect(probe.criticalConsoleErrorCount).toBe(0);
   });
@@ -376,6 +606,12 @@ test.describe('Production Shark Club Players', () => {
       timeout: 45_000,
     });
     await expect(page.locator('#mm-player-name')).toBeVisible();
+    await expect(page.getByRole('status', { name: 'Displayed Activity Scope' })).toContainText(
+      'Recorded Activity'
+    );
+    const activityGuide = page.locator('[aria-label="Activity Metric Definitions"]');
+    await activityGuide.locator('summary').click();
+    await expect(activityGuide).toContainText('Signed Hand Results, Not Gross Prizes');
 
     const credentialArt = page.locator('.mm-credential__art');
     await expect(credentialArt).toBeVisible();
@@ -386,6 +622,56 @@ test.describe('Production Shark Club Players', () => {
         )
       )
       .toBe(true);
+
+    // The identity must remain readable beside a long role at phone widths.
+    // These are real rendered boxes on the published page, not CSS string pins.
+    const originalViewport = page.viewportSize();
+    for (const width of [375, 393]) {
+      await page.setViewportSize({ width, height: 812 });
+      const boxes = await Promise.all(
+        ['.mm-avatar', '.role-badge', '.mm-presence', '.mm-player-id', '#mm-player-name'].map(
+          (selector) => page.locator(`.mm-credential ${selector}`).boundingBox()
+        )
+      );
+      for (let i = 0; i < boxes.length; i++) {
+        expect(boxes[i], `identity field ${i} has no rendered box at ${width}px`).not.toBeNull();
+        expect(boxes[i]!.x).toBeGreaterThanOrEqual(0);
+        expect(boxes[i]!.x + boxes[i]!.width).toBeLessThanOrEqual(width);
+        for (let j = 0; j < i; j++) {
+          const a = boxes[i]!;
+          const b = boxes[j]!;
+          const overlapX = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x);
+          const overlapY = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y);
+          expect(
+            overlapX > 0.5 && overlapY > 0.5,
+            `identity fields ${i}/${j} overlap at ${width}px`
+          ).toBe(false);
+        }
+      }
+    }
+    await page.getByRole('button', { name: 'Select', exact: true }).click();
+    await page.locator('.mm-range__custom input[type="date"]').first().fill('2026-01-01');
+    await expect(page.locator('.mm-range__draft')).toContainText('Draft Dates Not Applied');
+    await expect(page.getByRole('status', { name: 'Displayed Activity Scope' })).toContainText(
+      'Recorded Activity'
+    );
+    for (const width of [375, 393, 768]) {
+      await page.setViewportSize({ width, height: 812 });
+      await expectContainedControls(
+        page,
+        '.mm-range',
+        '.mm-range__tabs button, .mm-range__custom input, .mm-range__confirm'
+      );
+      await expectContainedControls(page, '.member-mgmt-page', '.mm-nav__row');
+      await expectContainedControls(page, '.member-mgmt-page', '.member-mgmt-page > *');
+      await expectContainedControls(
+        page,
+        '.mm-metric-guide',
+        '.mm-metric-guide summary, .mm-metric-guide p'
+      );
+    }
+    await page.getByRole('button', { name: 'Overall', exact: true }).click();
+    if (originalViewport) await page.setViewportSize(originalViewport);
 
     const roleOption = page.locator('.mm-roles__option:not([disabled])').first();
     if (await roleOption.count()) {
@@ -430,6 +716,31 @@ test.describe('Production Shark Club Players', () => {
       await expect(control).toHaveAttribute('aria-pressed', 'true');
     }
     await expect(page.locator('.ps-range__custom input[type="date"]')).toHaveCount(2);
+    await expect(page.getByRole('status', { name: 'Displayed Performance Scope' })).toContainText(
+      'UTC'
+    );
+    const performanceGuide = page.locator('[aria-label="Performance Metric Definitions"]');
+    await performanceGuide.locator('summary').click();
+    await expect(performanceGuide).toContainText('Hands With A Positive Net Result');
+    await page.locator('.ps-range__custom input[type="date"]').first().fill('2026-01-01');
+    await expect(page.locator('.ps-range__draft')).toContainText('Draft Dates Not Applied');
+
+    for (const width of [375, 393, 768]) {
+      await page.setViewportSize({ width, height: 812 });
+      await expectContainedControls(
+        page,
+        '.ps-controls',
+        '.ps-range__tabs button, .ps-range__custom input, .ps-range__confirm, .ps-variant select'
+      );
+      await expect(page.getByRole('combobox', { name: 'Game', exact: true })).toBeVisible();
+      await expectContainedControls(page, '.player-stats-page', '.player-stats-page > *');
+      await expectContainedControls(
+        page,
+        '.ps-metric-guide',
+        '.ps-metric-guide summary, .ps-metric-guide p'
+      );
+    }
+    if (originalViewport) await page.setViewportSize(originalViewport);
 
     const statisticsAxe = await new AxeBuilder({ page }).include('.player-stats-page').analyze();
     expect(
@@ -439,7 +750,128 @@ test.describe('Production Shark Club Players', () => {
     ).toEqual([]);
     expect(probe.responseFailures).toEqual([]);
     expect(probe.requestFailureCount).toBe(0);
-    expect(probe.requestAbortCount).toBe(0);
+    expect(
+      probe.requestAbortCount,
+      `Roster request timeline: ${JSON.stringify(probe.timeline)}`
+    ).toBe(0);
+    expect(probe.pageErrorCount).toBe(0);
+    expect(probe.criticalConsoleErrorCount).toBe(0);
+  });
+
+  test('keeps linked Vault Help and section tabs keyboard accessible on phones', async ({
+    page,
+  }) => {
+    const probe = observeMembersPath(page);
+    await openMembers(page, probe);
+    await page
+      .getByRole('list', { name: 'Club Member Directory' })
+      .getByRole('listitem')
+      .first()
+      .getByRole('button')
+      .click();
+    await expect(page.getByRole('heading', { name: 'Player Record', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: /Promo Vault Review/ }).click();
+    await expect(page.getByRole('heading', { name: 'Promo Vault', exact: true })).toBeVisible();
+    const help = page.getByRole('button', { name: 'How The Promo Vault Works', exact: true });
+    const items = page.getByRole('tab', { name: 'Items', exact: true });
+    const records = page.getByRole('tab', { name: 'Records', exact: true });
+    for (const width of [375, 393]) {
+      await page.setViewportSize({ width, height: 812 });
+      await items.click();
+      await expect(items).toHaveAttribute('tabindex', '0');
+      await expect(records).toHaveAttribute('tabindex', '-1');
+      await items.press('ArrowRight');
+      await expect(records).toBeFocused();
+      await expect(records).toHaveAttribute('aria-selected', 'true');
+      const panelId = await records.getAttribute('aria-controls');
+      expect(panelId).toBeTruthy();
+      await expect(page.getByRole('tabpanel', { name: 'Records', exact: true })).toHaveAttribute(
+        'id',
+        panelId!
+      );
+      await records.press('Home');
+      await expect(items).toBeFocused();
+      await items.press('End');
+      await expect(records).toBeFocused();
+      await records.press('ArrowLeft');
+      await expect(items).toBeFocused();
+      await help.click();
+      const dialog = page.getByRole('dialog', { name: 'How The Promo Vault Works', exact: true });
+      const close = dialog.getByRole('button', { name: 'Got It', exact: true });
+      await expect(close).toBeFocused();
+      await expectContainedControls(page, '.pv-dialog', '.pv-dialog button');
+      await expect
+        .poll(
+          () =>
+            close.evaluate((button) => {
+              const rect = button.getBoundingClientRect();
+              // Sample the face, retaining all four straight edges; rounded corners are void.
+              const points = [
+                [rect.width / 2, 2],
+                [2, rect.height / 2],
+                [rect.width / 2, rect.height / 2],
+                [rect.width - 2, rect.height / 2],
+                [rect.width / 2, rect.height - 2],
+                [rect.width / 4, rect.height / 4],
+                [(rect.width * 3) / 4, rect.height / 4],
+                [rect.width / 4, (rect.height * 3) / 4],
+                [(rect.width * 3) / 4, (rect.height * 3) / 4],
+              ];
+              return points.every(
+                ([x, y]) =>
+                  document.elementFromPoint(rect.left + x, rect.top + y)?.closest('button') ===
+                  button
+              );
+            }),
+          { message: 'The footer must not cover any part of the Vault Help action.' }
+        )
+        .toBe(true);
+      await close.press('Tab');
+      await expect(close).toBeFocused();
+      await close.press('Shift+Tab');
+      await expect(close).toBeFocused();
+      await close.press('Escape');
+      await expect(dialog).toHaveCount(0);
+      await expect(help).toBeFocused();
+      const buy = page.getByRole('button', { name: 'Buy More Time Bank', exact: true });
+      await buy.click();
+      const purchase = page.getByRole('dialog', { name: 'Buy Time Bank', exact: true });
+      await expect(purchase.getByRole('spinbutton', { name: 'Quantity To Buy' })).toBeFocused();
+      const cancel = purchase.getByRole('button', { name: 'Cancel', exact: true });
+      await expect
+        .poll(
+          () =>
+            cancel.evaluate((button) => {
+              const rect = button.getBoundingClientRect();
+              // Sample the face, retaining all four straight edges; rounded corners are void.
+              const points = [
+                [rect.width / 2, 2],
+                [2, rect.height / 2],
+                [rect.width / 2, rect.height / 2],
+                [rect.width - 2, rect.height / 2],
+                [rect.width / 2, rect.height - 2],
+                [rect.width / 4, rect.height / 4],
+                [(rect.width * 3) / 4, rect.height / 4],
+                [rect.width / 4, (rect.height * 3) / 4],
+                [(rect.width * 3) / 4, (rect.height * 3) / 4],
+              ];
+              return points.every(
+                ([x, y]) =>
+                  document.elementFromPoint(rect.left + x, rect.top + y)?.closest('button') ===
+                  button
+              );
+            }),
+          { message: 'The footer must not cover any part of the Vault Cancel action.' }
+        )
+        .toBe(true);
+      await cancel.click();
+      await expect(purchase).toHaveCount(0);
+      await expect(buy).toBeFocused();
+      await help.click();
+      await close.click();
+      await expect(dialog).toHaveCount(0);
+      await expect(help).toBeFocused();
+    }
     expect(probe.pageErrorCount).toBe(0);
     expect(probe.criticalConsoleErrorCount).toBe(0);
   });

@@ -111,6 +111,13 @@ export interface SitVerdictContext {
   horseTables: ReadonlyMap<string, ReadonlySet<string>>;
   /** horse id -> chips at risk across its seats, LIVE. */
   horseExposure: ReadonlyMap<string, number>;
+  /** horse id -> Diamonds at risk across its Diamond Arena seats, LIVE
+   *  (2026-10-06). A seat paid from the arena wallet is measured against the
+   *  Diamond roll and this map, never against the chip one. Absent when the
+   *  arena is closed: then no seat club is the arena and this is never read. */
+  diamondExposure?: ReadonlyMap<string, number>;
+  /** The open Diamond Arena's club id this cycle, or null/absent when closed. */
+  diamondArenaId?: string | null;
   activeClubOf: ReadonlyMap<string, string>;
   activeHostOf: ReadonlyMap<string, string>;
   /** The tag book, or null when it could not be read whole (every gate that
@@ -202,7 +209,7 @@ export function sitVerdictFor(
       roll !== undefined &&
       !canOpenAnotherTable({
         bankroll: roll,
-        liveExposure: ctx.horseExposure.get(horseId) ?? 0,
+        liveExposure: exposureFor(ctx, seatClub).get(horseId) ?? 0,
         nextBuyIn: buyIn,
         policy: bankrollPolicyFor(horseId),
       })
@@ -261,7 +268,7 @@ export function sitVerdictFor(
           : (ctx.horseTables.get(horseId)?.size ?? 0) === 0
             ? balance
             : (sitState.sessionStartBalance ?? balance),
-      currentCommit: ctx.horseExposure.get(horseId) ?? 0,
+      currentCommit: exposureFor(ctx, seatClub).get(horseId) ?? 0,
       buyIn,
       persona: sitTag.personaCash,
       sitsOnKeyToday: sitsOnKeyToday(sitState, key, ctx.todayKey),
@@ -274,6 +281,19 @@ export function sitVerdictFor(
   }
 
   return { ok: true, seatClub: seatClub ?? undefined, buyIn, sitKey, telemetry };
+}
+
+/** The exposure map a seat paid by `seatClub` is measured against: the
+ *  Diamond map for the open arena's wallet, the chip map for everything else.
+ *  Two currencies, two rolls, two exposures - never one summed across both. */
+export function exposureFor(
+  ctx: Pick<SitVerdictContext, 'horseExposure' | 'diamondExposure' | 'diamondArenaId'>,
+  seatClub: string | null | undefined
+): ReadonlyMap<string, number> {
+  if (seatClub && ctx.diamondArenaId && seatClub === ctx.diamondArenaId) {
+    return ctx.diamondExposure ?? new Map<string, number>();
+  }
+  return ctx.horseExposure;
 }
 
 /** `reason=count reason=count`, non-zero reasons only, in first-seen order. */

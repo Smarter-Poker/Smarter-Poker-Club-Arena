@@ -1,5 +1,7 @@
 import { test, expect, devices, type Page } from '@playwright/test';
 import { prepareCashLobbyActions } from './support/cashLobbyOverlays';
+import { observeCashierFailure } from './support/cashierFailureDiagnostics';
+import { diamondEntryRead, settleDiamondSpinsOffer } from './support/diamondInvitationOffer';
 
 /**
  * THE THREE THINGS DAN PHOTOGRAPHED, ON THE LIVE LOBBY (2026-09-10).
@@ -25,9 +27,29 @@ const CLUB_ID = process.env.E2E_CLUB_ID || 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4
  *  percentage of the plate; the count line is centred on it. */
 const TITLE_CENTRE_PCT = 54.65;
 
+const diagnostics = new WeakMap<Page, ReturnType<typeof observeCashierFailure>>();
+test.beforeEach(async ({ page }) => {
+  diagnostics.set(page, observeCashierFailure(page));
+});
+test.afterEach(async ({ page }, testInfo) => {
+  const observer = diagnostics.get(page);
+  if (!observer) return;
+  observer.stop();
+  if (testInfo.status !== testInfo.expectedStatus) {
+    await testInfo.attach('mobile-lobby-network-diagnostics', {
+      body: Buffer.from(JSON.stringify(observer.snapshot())),
+      contentType: 'application/json',
+    });
+  }
+  diagnostics.delete(page);
+});
+
 test.use({ ...devices['iPhone 13'] });
 
 async function openLobby(page: Page) {
+  // The Diamond Spins offer opens on the answer to this read. Listen before
+  // navigating: it leaves as soon as the club resolves.
+  const offer = diamondEntryRead(page);
   await page.goto(`clubs/${CLUB_ID}`, { waitUntil: 'domcontentloaded', timeout: 30_000 });
   await page.waitForTimeout(500);
   test.skip(/\/auth(?:\/|$|\?)/.test(page.url()), 'signed out: the club lobby is behind a login');
@@ -36,6 +58,10 @@ async function openLobby(page: Page) {
   // public dismissals, including the shared handler for a delayed Diamond offer.
   await prepareCashLobbyActions(page);
   await expect(page.locator('.lobby-wallets-trigger')).toBeVisible({ timeout: 45_000 });
+  // Then settle that offer here, through its real Not Now and with its whole
+  // budget, before a 5-second assertion or a scroll measurement can meet it
+  // (support/diamondInvitationOffer.ts has the four runs it failed).
+  await settleDiamondSpinsOffer(page, offer);
 }
 
 /** Where a fixed element at bottom: 0 lands is the bottom edge. The viewport

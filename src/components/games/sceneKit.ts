@@ -1,3 +1,4 @@
+import { arenaDisplayText } from '../../lib/arenaDisplay/text';
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
@@ -163,6 +164,12 @@ export function gameRenderer(canvas: HTMLCanvasElement, width: number, height: n
     renderer,
     scene,
     camera,
+    /** Whether the CPU draws this scene (a software rasteriser), for the telemetry. */
+    software,
+    /** The quality tier in force (0 best, FLOOR_TIER lowest), for the telemetry. */
+    get qualityTier() {
+      return governor.tier;
+    },
     /** Resize the canvas, keeping the governor's pixel ratio. */
     setSize(nextWidth: number, nextHeight: number) {
       size = { width: nextWidth, height: nextHeight };
@@ -210,6 +217,7 @@ export function gameRenderer(canvas: HTMLCanvasElement, width: number, height: n
 }
 
 export function inscription(text: string, color = '#ffffff') {
+  text = arenaDisplayText(text);
   const canvas = document.createElement('canvas');
   canvas.width = 256;
   canvas.height = 96;

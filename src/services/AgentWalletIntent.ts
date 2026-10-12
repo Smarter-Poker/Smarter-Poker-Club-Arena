@@ -68,8 +68,9 @@ export async function reserveAgentWalletOperation(
         'club_chips',
         intent.amount.toFixed(2),
         // Preserve existing player-wallet reservations across this upgrade.
+        // Cashout kinds never reach here (refused above), so the digest has no
+        // note element; prepareAgentCashoutOperation owns the cashout digest.
         ...(intent.destination === 'agent_wallet' ? ['agent_wallet'] : []),
-        ...(intent.kind.startsWith('cashout_') ? [(intent.note ?? '').trim()] : []),
       ])
     )
   );
@@ -145,7 +146,6 @@ export function runAgentWalletOperation(
     intent.kind,
     intent.amount.toFixed(2),
     ...(intent.destination === 'agent_wallet' ? ['agent_wallet'] : []),
-    ...(intent.kind.startsWith('cashout_') ? [(intent.note ?? '').trim()] : []),
   ]);
   const pending = submissions.get(scope);
   if (pending) return pending;

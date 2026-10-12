@@ -6,6 +6,7 @@ import {
   type AccountingObservationInput,
   type AccountingRunObservation,
 } from '../services/AccountingObservationService';
+import { reportError } from '../utils/errorReporter';
 
 export function useAccountingRunObservation(
   input: Omit<AccountingObservationInput, 'isCurrent'> | null
@@ -41,7 +42,10 @@ export function useAccountingRunObservation(
     setState({ token: isCurrent, revision, loading: true, observation: null });
     void readAccountingRunObservation({ ...input, isCurrent: () => active && isCurrent() })
       .then(finish)
-      .catch(() => finish(null));
+      .catch((error) => {
+        if (active && isCurrent()) reportError(error, 'useAccountingRunObservation.read');
+        finish(null);
+      });
     return () => {
       active = false;
     };

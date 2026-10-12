@@ -197,7 +197,11 @@ describe('the original request identity survives both hand-failure reports', () 
       deferred: 0,
       failed: 0,
     });
-    vi.spyOn(handFacts, 'writeHandFacts').mockResolvedValue(undefined);
+    vi.spyOn(handFacts, 'writeHandFacts').mockResolvedValue({
+      version: 2,
+      facts: [{}],
+      transfers: [],
+    });
     vi.spyOn(horseReviews, 'recordHorseHandReviews').mockResolvedValue(undefined);
     vi.spyOn(horseDecision, 'getLiveHorseDecisionWorker').mockReturnValue({
       observeCompletedHand: vi.fn().mockResolvedValue(undefined),

@@ -11,19 +11,35 @@
 import { StatRow } from './StatRow';
 import { ratioOrUnmeasured } from './format';
 import { num, type FullStats, type OverallStats, type TournamentSummary } from './types';
+import StatsEvidenceLink from '../../components/stats/StatsEvidenceLink';
+import { buildStatsTournamentEvidencePath } from '../../lib/statsEvidenceNavigation';
+import { compactChips } from '../../utils/format';
+import { enumToTitleCase, titleCase } from '../../utils/titleCase';
+import type { ReactNode } from 'react';
 
 export interface TournamentsTabProps {
   tourn: TournamentSummary;
   overall: OverallStats;
   full: FullStats | null;
+  financialPanel?: ReactNode;
 }
 
-export default function TournamentsTab({ tourn, overall, full }: TournamentsTabProps) {
+export default function TournamentsTab({
+  tourn,
+  overall,
+  full,
+  financialPanel,
+}: TournamentsTabProps) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+      {financialPanel}
       <div>
         <div className="stats-section-header">
           <h3>Tournament Results</h3>
+        </div>
+        <div className="stats-notice" role="status">
+          Accounting Coverage: Reconstructed From Tournament Records. Registration, Rebuy, Add-On,
+          Refund, Ticket, Prize, And Bounty Ledgers Are Not Yet Reconciled Into This Readout.
         </div>
         <div className="stats-grid">
           <StatRow label="Entries" value={tourn.entries.toLocaleString()} color="#00d4ff" />
@@ -48,18 +64,18 @@ export default function TournamentsTab({ tourn, overall, full }: TournamentsTabP
             color="#8b5cf6"
           />
           <StatRow
-            label="Total Buy-Ins"
-            value={tourn.total_buyins.toLocaleString()}
+            label="Estimated Entry Costs"
+            value={compactChips(tourn.total_buyins)}
             color="#06b6d4"
           />
           <StatRow
-            label="Total Winnings"
-            value={tourn.total_winnings.toLocaleString()}
+            label="Recorded Prize And Bounty Amounts"
+            value={compactChips(tourn.total_winnings)}
             color="#10b981"
           />
           <StatRow
-            label="Net Profit"
-            value={`${tourn.net_profit >= 0 ? '+' : ''}${tourn.net_profit.toLocaleString()}`}
+            label="Reconstructed Net"
+            value={`${tourn.net_profit >= 0 ? '+' : ''}${compactChips(tourn.net_profit)}`}
             color={tourn.net_profit >= 0 ? '#22c55e' : '#ef4444'}
             highlight
           />
@@ -72,6 +88,7 @@ export default function TournamentsTab({ tourn, overall, full }: TournamentsTabP
             )}
             // An unmeasured return has no sign, so it gets no win or loss colour.
             color={tourn.total_buyins > 0 ? (tourn.roi >= 0 ? '#22c55e' : '#ef4444') : '#94a3b8'}
+            evidence="Reconstructed From Tournament Records"
           />
           <StatRow
             label="Tournament Hands"
@@ -90,22 +107,30 @@ export default function TournamentsTab({ tourn, overall, full }: TournamentsTabP
             {(full?.recent_tournaments || []).map((t, i) => (
               <div className="tournament-item" key={i}>
                 <div className="tournament-item-main">
-                  <span className="tournament-item-name">{t.name}</span>
+                  <span className="tournament-item-name">{titleCase(t.name)}</span>
                   <span className="tournament-item-date">
-                    {t.start_time
-                      ? new Date(t.start_time).toLocaleDateString('en-US', {
+                    {t.ended_at
+                      ? `Finalized ${new Date(t.ended_at).toLocaleDateString('en-US', {
                           month: 'short',
                           day: 'numeric',
                           year: 'numeric',
-                        })
-                      : '-'}
-                    {t.variant ? ` · ${t.variant.toUpperCase()}` : ''}
-                    {t.is_mystery_bounty ? ' · MYSTERY BOUNTY' : ''}
+                        })}`
+                      : t.start_time
+                        ? `Started ${new Date(t.start_time).toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric',
+                          })} · Result May Be Provisional`
+                        : 'Finalization Date Unavailable'}
+                    {t.variant ? ` · ${enumToTitleCase(t.variant)}` : ''}
+                    {t.is_mystery_bounty && enumToTitleCase(t.variant) !== 'Mystery Bounty'
+                      ? ' · Mystery Bounty'
+                      : ''}
                   </span>
                 </div>
                 <div className="tournament-item-result">
                   <span className="tournament-item-rank">
-                    {t.finish_rank ? `#${t.finish_rank}` : t.status || '-'}
+                    {t.finish_rank ? `#${t.finish_rank}` : enumToTitleCase(t.status) || '-'}
                   </span>
                   {/* Dan section 45: Finish / Prize / Bounties / Bounty
                         Earnings / Total Won. The net below is
@@ -121,23 +146,34 @@ export default function TournamentsTab({ tourn, overall, full }: TournamentsTabP
                       marginTop: 2,
                     }}
                   >
-                    Prize {num(t.prize).toLocaleString()}
+                    Prize {compactChips(num(t.prize))}
                     {num(t.bounty_winnings) > 0 && (
                       <>
                         {' '}
                         / {num(t.bounties).toLocaleString()} KO
-                        {num(t.bounties) === 1 ? '' : 's'} {num(t.bounty_winnings).toLocaleString()}
+                        {num(t.bounties) === 1 ? '' : 's'} {compactChips(num(t.bounty_winnings))}
                       </>
                     )}
                     {' / Total '}
-                    {num(t.total_won).toLocaleString()}
+                    {compactChips(num(t.total_won))}
                   </span>
                   <span
                     className={`tournament-item-net ${num(t.total_won) - num(t.buyin) >= 0 ? 'positive' : 'negative'}`}
                   >
                     {num(t.total_won) - num(t.buyin) >= 0 ? '+' : ''}
-                    {(num(t.total_won) - num(t.buyin)).toLocaleString()}
+                    {compactChips(num(t.total_won) - num(t.buyin))}
                   </span>
+                  {t.tournament_id ? (
+                    <StatsEvidenceLink
+                      className="stats-evidence-action"
+                      to={buildStatsTournamentEvidencePath(t.tournament_id)}
+                      aria-label={`Open ${titleCase(t.name)} Tournament Evidence`}
+                    >
+                      Open Tournament
+                    </StatsEvidenceLink>
+                  ) : (
+                    <span className="stats-evidence-unavailable">Evidence Unavailable</span>
+                  )}
                 </div>
               </div>
             ))}
@@ -145,9 +181,9 @@ export default function TournamentsTab({ tourn, overall, full }: TournamentsTabP
         </div>
       ) : (
         <div className="stats-empty-state">
-          <span className="empty-title">No Tournaments Yet</span>
+          <span className="empty-title">No Tournament Results Available</span>
           <span className="empty-description">
-            Register For A Tournament In The Lobby And Your Results Will Show Up Here.
+            No Tournament Records Were Returned For This Analysis Window.
           </span>
         </div>
       )}

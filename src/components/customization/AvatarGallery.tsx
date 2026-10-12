@@ -136,7 +136,7 @@ export function AvatarGallery({
     const focusable = () =>
       Array.from(
         dialogRef.current?.querySelectorAll<HTMLElement>(
-          'button:not([disabled]), input:not([disabled]), [href], [tabindex="0"]'
+          'button:not([disabled]), input:not([disabled]):not([tabindex="-1"]), [href], [tabindex="0"]'
         ) || []
       );
     window.requestAnimationFrame(() => focusable()[0]?.focus());
@@ -340,7 +340,9 @@ export function AvatarGallery({
         });
         if (result.reason === 'not-owned') {
           toast.error('You Have Not Unlocked That Yet');
-          setNotice('Frames and auras are a VIP benefit, or can be granted in your club shop.');
+          setNotice(
+            'Premium Frames And Auras Require Active VIP, A Club-Shop Purchase, Or A Separate Reward Unlock.'
+          );
         } else if (result.reason === 'unknown-cosmetic') {
           toast.error('That Style Is No Longer Available');
         } else {
@@ -512,7 +514,9 @@ export function AvatarGallery({
          stand in for. */
       if (avatar.category === 'vip' && !isVip && !avatar.isOwned) {
         haptic.light();
-        setNotice('This avatar is part of the VIP collection. Upgrade to VIP to use it.');
+        setNotice(
+          'This Premium Avatar Requires Active VIP, A Club-Shop Purchase, Or A Reward Unlock.'
+        );
         return;
       }
       haptic.light();
@@ -732,7 +736,7 @@ export function AvatarGallery({
             tabIndex={activeTab === 'style' ? 0 : -1}
             onKeyDown={(event) => handleTabKeyDown(event, 'style')}
           >
-            Style
+            Style ({frames.length + auras.length})
           </button>
         </div>
 
@@ -788,16 +792,22 @@ export function AvatarGallery({
               </div>
             ) : (
               <div className="ag-style">
+                <div className="ag-style__summary">
+                  <span>{frames.length + auras.length} Live Styles</span>
+                  <strong>Tap Any Owned Design To Apply It Instantly</strong>
+                </div>
                 {(
                   [
                     {
                       kind: 'frame' as CosmeticKind,
+                      kindLabel: 'Frame',
                       label: 'Frames',
                       items: frames,
                       equipped: equippedFrame,
                     },
                     {
                       kind: 'aura' as CosmeticKind,
+                      kindLabel: 'Aura',
                       label: 'Auras',
                       items: auras,
                       equipped: equippedAura,
@@ -805,7 +815,9 @@ export function AvatarGallery({
                   ] as const
                 ).map((group) => (
                   <section className="ag-style__group" key={group.kind}>
-                    <h4 className="ag-style__heading">{group.label}</h4>
+                    <h4 className="ag-style__heading">
+                      {group.label} <span>{group.items.length} Designs + None</span>
+                    </h4>
                     <div className="ag-style__row">
                       {/* "None" is a real choice and gets a real tile. Without
                           it the only way to take a frame off would be to guess
@@ -842,7 +854,16 @@ export function AvatarGallery({
                               .join(' ')}
                             disabled={savingCosmetic}
                             aria-pressed={isSelected}
-                            title={isLocked ? `${cosmetic.label} (VIP)` : cosmetic.label}
+                            aria-label={`${cosmetic.label} ${group.kindLabel}${
+                              isLocked
+                                ? ', Premium; Active VIP, Club-Shop, Or Reward Unlock Required'
+                                : ', Owned'
+                            }`}
+                            title={
+                              isLocked
+                                ? `${cosmetic.label} (Active VIP, Club-Shop, Or Reward Unlock Required)`
+                                : cosmetic.label
+                            }
                             onClick={() => {
                               /* Locked tiles still respond. A tile that does
                                  nothing on tap is indistinguishable from a dead
@@ -851,7 +872,7 @@ export function AvatarGallery({
                               if (isLocked) {
                                 haptic.light();
                                 setNotice(
-                                  'Frames and auras are a VIP benefit, or can be granted in your club shop.'
+                                  'Premium Frames And Auras Require Active VIP, A Club-Shop Purchase, Or A Separate Reward Unlock.'
                                 );
                                 return;
                               }
@@ -868,7 +889,11 @@ export function AvatarGallery({
                                 aura={group.kind === 'aura' ? cosmetic.id : null}
                               />
                             </span>
-                            {isLocked && <span className="ag-style__lock">VIP</span>}
+                            <span
+                              className={`ag-style__tier ${isLocked ? 'ag-style__tier--locked' : ''}`}
+                            >
+                              {cosmetic.tier === 'free' ? 'Free' : isLocked ? 'Premium' : 'Owned'}
+                            </span>
                             <span className="ag-style__name">{cosmetic.label}</span>
                           </button>
                         );
@@ -932,8 +957,18 @@ export function AvatarGallery({
                       .join(' ')}
                     onClick={() => handleSelect(avatar)}
                     aria-pressed={isSelected}
-                    aria-label={`${avatar.name}${isLocked ? ', VIP Required' : isUnlockedByPurchase ? ', Owned' : ''}`}
-                    title={isLocked ? `${avatar.name} (VIP)` : avatar.name}
+                    aria-label={`${avatar.name}${
+                      isLocked
+                        ? ', Premium; Active VIP, Club-Shop, Or Reward Unlock Required'
+                        : isUnlockedByPurchase
+                          ? ', Owned'
+                          : ''
+                    }`}
+                    title={
+                      isLocked
+                        ? `${avatar.name} (Active VIP, Club-Shop, Or Reward Unlock Required)`
+                        : avatar.name
+                    }
                   >
                     <img
                       loading="lazy"
@@ -948,7 +983,7 @@ export function AvatarGallery({
                         (e.target as HTMLImageElement).src = generateDefaultAvatar();
                       }}
                     />
-                    {isLocked && <div className="ag-item__lock">VIP</div>}
+                    {isLocked && <div className="ag-item__lock">Premium</div>}
                     {isUnlockedByPurchase && <div className="ag-item__owned">Owned</div>}
                     {isSelected && !isLocked && <div className="ag-item__check">&#10003;</div>}
                     <span className="ag-item__name">{avatar.name}</span>

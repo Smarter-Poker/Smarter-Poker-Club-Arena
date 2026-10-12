@@ -70,7 +70,7 @@ describe('a decided event held by a quarantined manager is named, not woken', ()
     const loop = blockAfter(GAME_SERVER, 'for (const t of decidedBoard)');
     const check = loop.indexOf('this.decidedOwnerActionFor(String(t.id))');
     const claim = loop.indexOf('recovering the winner');
-    const wake = loop.indexOf("requestEliminationSweep('stalled_decided_survivor')");
+    const wake = loop.indexOf("requestDecidedEliminationSweep('stalled_decided_survivor')");
     expect(check).toBeGreaterThan(0);
     expect(claim).toBeGreaterThan(check);
     expect(wake).toBeGreaterThan(check);
@@ -85,9 +85,13 @@ describe('a decided event held by a quarantined manager is named, not woken', ()
   });
 
   it('the seat-first finish sweep does not wake a quarantined manager', () => {
-    const block = blockAfter(GAME_SERVER, 'const claimedManager = this.tournamentEngines.get(id);', 700);
+    const block = blockAfter(
+      GAME_SERVER,
+      'const claimedManager = this.tournamentEngines.get(id);',
+      700
+    );
     const check = block.indexOf('this.decidedOwnerActionFor(id)');
-    const wake = block.indexOf("requestEliminationSweep('seat_first_terminal_stack')");
+    const wake = block.indexOf("requestDecidedEliminationSweep('seat_first_terminal_stack')");
     expect(check).toBeGreaterThan(0);
     expect(wake).toBeGreaterThan(check);
     expect(block.slice(check, wake)).toContain('this.noteDecidedEventHeld(');

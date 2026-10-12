@@ -33,8 +33,9 @@ import {
   ReferenceLine,
 } from 'recharts';
 import StatsFactsService, { type EVCurvePayload } from '../../services/StatsFactsService';
-import { CHIP_STATS } from '../../services/statsScope';
+import { CHIP_STATS, type StatsClubId, type StatsScope } from '../../services/statsScope';
 import { chartReveal } from './statsMotion';
+import StatsDataTable from './StatsDataTable';
 import './EVLuckChart.css';
 
 interface Props {
@@ -43,6 +44,10 @@ interface Props {
   still?: boolean;
   /** Range in days, or null for all time. Mirrors the page's RANGES. */
   days?: number | null;
+  /** The asset the figures are in: chips by default, Diamonds in the Diamond Arena. */
+  scope?: StatsScope;
+  /** Null reads All Clubs; a UUID reads the selected authorized club. */
+  clubId?: StatsClubId;
 }
 
 interface Row {
@@ -87,7 +92,13 @@ function toRow(p: EVCurvePayload['points'][number]): Row {
 const fmtBB = (n: number): string =>
   `${n >= 0 ? '+' : ''}${n.toLocaleString(undefined, { maximumFractionDigits: 1 })}`;
 
-export default function EVLuckChart({ userId, days = null, still = false }: Props) {
+export default function EVLuckChart({
+  userId,
+  days = null,
+  still = false,
+  scope = CHIP_STATS,
+  clubId = null,
+}: Props) {
   // Recharts renders axis ticks with an INLINE fill, which no stylesheet can
   // override - so on a printed white page the near-white ticks disappear and
   // the chart loses both axes. `still` is only true while the dossier renders.
@@ -107,7 +118,7 @@ export default function EVLuckChart({ userId, days = null, still = false }: Prop
     }
     let cancelled = false;
     setLoading(true);
-    StatsFactsService.getEVCurve(userId, CHIP_STATS, days)
+    StatsFactsService.getEVCurve(userId, scope, days, clubId)
       .then((payload) => {
         if (cancelled) return;
         setData(payload);
@@ -119,7 +130,7 @@ export default function EVLuckChart({ userId, days = null, still = false }: Prop
     return () => {
       cancelled = true;
     };
-  }, [userId, days, attempt]);
+  }, [userId, days, attempt, scope, clubId]);
 
   const rows: Row[] = useMemo(() => {
     if (!data?.points?.length) return [];
@@ -293,6 +304,18 @@ export default function EVLuckChart({ userId, days = null, still = false }: Prop
           </ComposedChart>
         </ResponsiveContainer>
       </div>
+
+      <StatsDataTable
+        caption="Actual Versus Expected Value By Hand"
+        rows={rows}
+        rowKey={(row) => String(row.i)}
+        columns={[
+          { key: 'hand', label: 'Hand', render: (row) => row.i.toLocaleString() },
+          { key: 'actual', label: 'Actual BB', render: (row) => fmtBB(row.actual) },
+          { key: 'expected', label: 'Expected BB', render: (row) => fmtBB(row.ev) },
+          { key: 'gap', label: 'Luck Gap BB', render: (row) => fmtBB(row.luck) },
+        ]}
+      />
 
       <div className="evluck-legend">
         <span className="evluck-key">

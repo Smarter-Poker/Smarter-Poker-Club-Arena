@@ -1,0 +1,4 @@
+{
+  "_owner": "agent/cowork-comm/fix/legacy-commission-backlog. PROMISED, not yet observed: declared by 20261003092217_a_settlement_floor_cannot_pass_owed_agent_commission, applied after merge with apply-merged-migration.yml (after 20261003092151 and 20261003092205).",
+  "functions": ["fn_settlement_floor_refuses_owed_agent_commission"]
+}

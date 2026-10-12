@@ -40,7 +40,29 @@ fi
 ROOT=$(git rev-parse --path-format=absolute --git-common-dir)
 ROOT=${ROOT%/.git}
 REPO=$(basename "$ROOT")
-TREES="${AGENT_WORKTREE_ROOT:-$HOME/Documents/.agent-trees/$REPO}"
+# ── WORKTREES LIVE ON THE EXTERNAL SSD (2026-09-29) ────────────────────────
+#
+# AGENTS.md has said for weeks that agent worktrees belong on
+# /Volumes/SmarterWork/agent-work. This script said otherwise, and this script
+# is what agents actually run: its default put every tree it made under
+# $HOME/Documents/.agent-trees. On 2026-09-29 the Mac carried 659 registered
+# worktrees, 490 of them on the boot disk, which reached 100% of its container
+# with 116 MiB left. Nothing announced itself as "disk full": npm ci died with
+# ENOSPC inside a pre-push gate, vitest failed on temp files, and a merge
+# resolved into a tree that could not be written. Agents spent hours on it.
+#
+# So the default follows the law: the SSD when it is mounted and writable, the
+# old path only as a fallback for a machine that has no SSD attached, and
+# AGENT_WORKTREE_ROOT still overrides both.
+SSD_TREES="/Volumes/SmarterWork/agent-work"
+if [ -n "${AGENT_WORKTREE_ROOT:-}" ]; then
+  TREES="$AGENT_WORKTREE_ROOT"
+elif [ -d "$SSD_TREES" ] && [ -w "$SSD_TREES" ]; then
+  TREES="$SSD_TREES/$REPO"
+else
+  echo "note: $SSD_TREES is not mounted or not writable; falling back to the boot disk." >&2
+  TREES="$HOME/Documents/.agent-trees/$REPO"
+fi
 
 SAFE_AGENT=$(printf '%s' "$AGENT" | tr -c 'A-Za-z0-9._-' '-')
 BRANCH="agent/${SAFE_AGENT}/$(printf '%s' "$SLUG" | sed 's#^agent/[^/]*/##')"

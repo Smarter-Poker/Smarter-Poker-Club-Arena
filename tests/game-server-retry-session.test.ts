@@ -100,8 +100,30 @@ describe('engine HTTP retry belongs to the original login', () => {
     expect(mocks.probe).not.toHaveBeenCalled();
   });
 
-  it('does not retry ambiguous server failures', async () => {
-    fetchMock.mockResolvedValueOnce(new Response('{}', { status: 503 }));
+  /* 2026-10-04: this case used to read "does not retry ambiguous server
+     failures" and required exactly one fetch for a 503. What it protects is
+     unchanged and still asserted: a failure that is not a 401 never goes
+     through the session-refresh replay, and an ambiguous handler failure
+     (500) is never re-sent at all. What changed is that an action nobody
+     answered - a proxy 502/503/504, a dropped or silent request - is now
+     re-sent a bounded number of times as THE SAME intent: the same body,
+     the same idempotency key and the same decision context, which are the
+     duplicate-effect protection the engine has had since 2026-09-05
+     (server/src/http/actionIdempotency.ts). See
+     tests/an-action-that-did-not-arrive-is-sent-again.test.ts. */
+  it('never sends an unanswered action through the session-refresh replay', async () => {
+    fetchMock.mockImplementation(async () => new Response('{}', { status: 503 }));
+    expect((await act()).success).toBe(false);
+    expect(mocks.refresh).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    const bodies = fetchMock.mock.calls.map((call) => call[1].body);
+    expect(new Set(bodies).size).toBe(1);
+    expect(JSON.parse(bodies[0]).idempotencyKey).toBeTruthy();
+    expect(JSON.parse(bodies[0]).actionContext).toBe('displayed-decision');
+  });
+
+  it('does not retry an ambiguous handler failure', async () => {
+    fetchMock.mockResolvedValueOnce(new Response('{}', { status: 500 }));
     expect((await act()).success).toBe(false);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(mocks.refresh).not.toHaveBeenCalled();

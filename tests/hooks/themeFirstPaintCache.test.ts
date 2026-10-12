@@ -165,4 +165,36 @@ describe('theme first paint comes from the cache', () => {
     const { result } = renderHook(() => useUserThemeSettings('user-2', 'nlh'));
     expect(result.current.theme.table_id).toBe('classic_green');
   });
+
+  it("clears account A's art before account B's uncached read can fail", async () => {
+    localStorage.setItem(CACHE_KEY, JSON.stringify(cachedRows));
+    let finishUserTwo: ((value: unknown) => void) | undefined;
+    eq.mockImplementation((_column: string, userId: string) => {
+      if (userId === 'user-1') return Promise.resolve({ data: cachedRows, error: null });
+      return new Promise((resolve) => {
+        finishUserTwo = resolve;
+      });
+    });
+
+    const { result, rerender } = renderHook(
+      ({ userId }: { userId: string }) => useUserThemeSettings(userId, 'nlh'),
+      { initialProps: { userId: 'user-1' } }
+    );
+    expect(result.current.theme.table_id).toBe('jade_city');
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    rerender({ userId: 'user-2' });
+    expect(result.current.theme.table_id).toBe('classic_green');
+    expect(result.current.theme.background_id).toBe('midnight');
+    expect(result.current.theme.faceDeckId).toBe('house-classic');
+    expect(result.current.loading).toBe(true);
+
+    act(() => {
+      finishUserTwo?.({ data: null, error: { message: 'user two read failed' } });
+    });
+    await waitFor(() => expect(result.current.error).toBe('user two read failed'));
+    expect(result.current.theme.table_id).toBe('classic_green');
+    expect(result.current.theme.background_id).toBe('midnight');
+    expect(result.current.theme.faceDeckId).toBe('house-classic');
+  });
 });

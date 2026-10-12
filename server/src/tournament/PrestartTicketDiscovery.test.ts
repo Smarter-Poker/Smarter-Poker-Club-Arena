@@ -105,7 +105,10 @@ function harness(ticketRows: unknown[] = [{ id: 'ticket', source_tournament_id: 
       await server.drainDiscoveryJobs();
       running = false;
     }),
-    tournamentRecurring: { topUpWithHorses: vi.fn(async () => 0) },
+    tournamentRecurring: {
+      topUpWithHorses: vi.fn(async () => 0),
+      seatFirstPartnerHoldUntil: vi.fn(() => -Infinity),
+    },
   });
   return { server, target, ticketRead };
 }

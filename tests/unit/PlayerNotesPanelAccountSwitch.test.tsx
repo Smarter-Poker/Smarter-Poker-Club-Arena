@@ -155,6 +155,7 @@ describe('Player Notes Account Isolation', () => {
   });
 
   it('lets account B start immediately and ignores account A purchase completion', async () => {
+    const accountANote = deferred<NoteRead>();
     const accountAPurchase = deferred<{
       success: boolean;
       charged: number;
@@ -165,7 +166,7 @@ describe('Player Notes Account Isolation', () => {
       charged: number;
       alreadyOwned?: boolean;
     }>();
-    mocks.noteReads.set('account-a', Promise.resolve({ data: null, error: null }));
+    mocks.noteReads.set('account-a', accountANote.promise);
     mocks.noteReads.set('account-b', Promise.resolve({ data: null, error: null }));
     mocks.checkVIPStatus.mockResolvedValue({ isVIP: false });
     mocks.purchaseFeature.mockImplementation((userId: string) =>
@@ -174,6 +175,15 @@ describe('Player Notes Account Isolation', () => {
 
     const rendered = render(view());
     await waitFor(() => expect(mocks.checkVIPStatus).toHaveBeenCalledWith('account-a'));
+    // A status request starting does not mean the note read has completed.
+    // Keep that boundary explicit, then purchase through the enabled control.
+    expect(screen.getByRole('button', { name: 'Aggressive' })).toBeDisabled();
+    expect(mocks.purchaseFeature).not.toHaveBeenCalled();
+    await act(async () => {
+      accountANote.resolve({ data: null, error: null });
+      await accountANote.promise;
+    });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Aggressive' })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: 'Aggressive' }));
     await waitFor(() =>
       expect(mocks.purchaseFeature).toHaveBeenCalledWith('account-a', 'tag_pack')

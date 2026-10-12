@@ -1,138 +1,16 @@
-/* ═══════════════════════════════════════════════════════════════════════════
-   REBUY - on the spade master (2026-09-08)
-
-   The same sheet as Buy-In (BuyInModal.css): the console's head, a stage on
-   the repeated rails, and the master's deck with its four bays and two
-   painted plates. This sheet only places it on the backdrop, switches off
-   the global popup chassis, and types the stage. No :hover; nothing drawn.
-   ═══════════════════════════════════════════════════════════════════════════ */
-
 .rebuy-modal__overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 12px;
-  /* Black, not grey: the master floats on the same black as the felt. */
-  background: rgb(0 0 0 / 90%);
   animation: rebuyFadeIn 0.2s ease-out;
 }
-
 @keyframes rebuyFadeIn {
   from {
     opacity: 0;
   }
-
   to {
     opacity: 1;
   }
 }
-
-.rebuy-modal.ac-popup {
-  width: min(100%, 420px);
-  max-height: 100%;
-  overflow: visible auto;
-  padding: 0 !important;
-  border: 0 !important;
-  border-radius: 0 !important;
-  outline: 0 !important;
-  background: transparent !important;
-  box-shadow: none !important;
-  animation: rebuySlideUp 0.28s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-
-@keyframes rebuySlideUp {
-  from {
-    opacity: 0;
-    transform: translateY(18px) scale(0.98);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-/* ── The master: head on top, stage on the rails, deck at the foot ────── */
-
-.rebuy-modal__master {
-  position: relative;
-  container-type: inline-size;
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
-  font-variant-numeric: tabular-nums lining-nums;
-  /* No art on the master itself: each piece paints its own box. */
-  background: none;
-}
-
-.rebuy-modal__head {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 1000 / 348;
-  background: url('/assets/club-buttons/console/spade-console-v1/top.png') top center / 100% auto
-    no-repeat;
-}
-
-.rebuy-modal__deck {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 1000 / 627;
-  background: url('/assets/club-buttons/popups/buy-in-v1/deck-d5664b815000.png') top center / 100% auto no-repeat;
-}
-
-/* ── Stage: the total, large, between the rails ───────────────────────── */
-
-.rebuy-modal__stage {
-  position: relative;
-  background: url('/assets/club-buttons/console/spade-console-v1/mid.png') top center / 100% auto
-    repeat-y;
-  display: grid;
-  justify-items: center;
-  align-content: center;
-  gap: 1.4cqw;
-  padding: 1cqw 11% 2cqw;
-  text-align: center;
-}
-
-.rebuy-modal__amount {
-  display: block;
-  max-width: 100%;
-  overflow: hidden;
-  font-size: 13cqw;
-  font-weight: 800;
-  letter-spacing: 0.01em;
-  line-height: 1;
-  white-space: nowrap;
-}
-
-.rebuy-modal__breakdown,
-.rebuy-modal__warning {
-  font-size: 3.2cqw;
-}
-
-.rebuy-modal__confirm--processing .sc-plate__text {
-  animation: rebuyProcessing 1.2s ease-in-out infinite;
-}
-
-@keyframes rebuyProcessing {
-  0%,
-  100% {
-    opacity: 1;
-  }
-
-  50% {
-    opacity: 0.55;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .rebuy-modal__overlay,
-  .rebuy-modal.ac-popup,
-  .rebuy-modal__confirm--processing .sc-plate__text {
+  .rebuy-modal__overlay {
     animation: none;
   }
 }

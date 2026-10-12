@@ -1,0 +1,50 @@
+{
+  "stage": "6D",
+  "subject": "the 75 incomplete chains of docs/evidence/phase6d/population-2026-09-28-763e4cec.json (release 763e4cec, decisions 14:12:00Z to 14:12:31Z of the declared 14:12Z to 15:12Z hour)",
+  "readAt": "2026-09-28T19:36Z to 19:50Z",
+  "supersedes": "the byte-cap attribution in docs/horse-brain-phase6d-serving-release-2026-09-27.md, section 2026-09-28 (sections 2, 4 and 6), which is corrected in its Correction 2026-09-28 section",
+  "method": [
+    "docs/evidence/phase6d/population-2026-09-28-763e4cec.json: per-chain link tally and capture marks, read as committed",
+    "Supabase kuklfnapbkmacvwxktbh, read-only: sum of the phase15_journal_* counters in horse_brain_flush_receipts for source_release 763e4cec with collected_at from 14:12:00Z (inclusive) to 15:12:00Z (exclusive)",
+    "engine /health horseJournal, read 2026-09-28T19:37Z",
+    "only aggregates are recorded here; no hand key, table, player or card leaves the read"
+  ],
+  "chains": {
+    "admitted": 137,
+    "complete": 62,
+    "incomplete": 75,
+    "incompleteByCapture": { "shed_within_60s_of_decision": 75 },
+    "missingLinks": {
+      "acceptedAction missing:execution_witness": 51,
+      "acceptedAction missing:accepted_action:second_look_unchanged": 1,
+      "completedHand missing:accepted_hand": 38,
+      "completedHand missing:hand_binding:no_witness": 36,
+      "completedHand missing:hand_binding:observation_identity_unavailable": 1
+    }
+  },
+  "producerCapture": {
+    "producer1": { "archivedInSequenceRange": 201071, "notArchived": 87288, "holes": 4501 },
+    "producer2": { "archivedInSequenceRange": 182997, "notArchived": 52641, "holes": 3011 },
+    "notArchivedTotal": 139929,
+    "firstShedMs": "producer 1 at 14:12:00.117Z and producer 2 at 14:12:00.087Z, within the first tenth of a second of the window"
+  },
+  "journalCounters763e4cecWindow": {
+    "phase15_journal_enqueued": 362935,
+    "phase15_journal_recorded": 356912,
+    "phase15_journal_replayed": 6132,
+    "phase15_journal_queue_capacity": 142745,
+    "phase15_journal_lock_retry": 1876,
+    "phase15_journal_capture_unavailable": 580,
+    "receipts": 104,
+    "firstCollectedAt": "2026-09-28T14:12:28.308Z",
+    "lastCollectedAt": "2026-09-28T15:11:30.301Z",
+    "shedShareOfAttempts": "142745 of 505680 (28.2%) offered records were refused at the queue"
+  },
+  "reading": [
+    "The records not archived per the population's per-producer sequence continuity (139,929) equal the queue_capacity refusals the producers counted over the same hour (142,745) to within 2.0%; the difference is the receipts' flush boundary against the sequence range.",
+    "Queue_capacity is the producer's own bound (64 records / 4 MiB per writer before the fix) refusing a record because the single shared catalog could not drain the fleet; it is a Horse Brain capture defect, not an archive capacity condition.",
+    "The archive byte bound (8,589,934,592) being reached is the ring's steady state: retirement removes the oldest published segment outside the evidence hold (237,613 held segments, 1,485,549,598 of 4,294,967,296 hold-budget bytes, 0 held segments trimmed), never a freshly captured record. The chains read here were retained; what is missing was never archived.",
+    "Lock retries (1,876) and capture_unavailable (580, 14:12:29Z to 14:24:57Z) are the writer's own contention on the one shared catalog, the same cause at a smaller size.",
+    "Fixed by PR 5541 (one archive catalog per decision-shard writer, queue bound 4,096 records / 16 MiB); verified only on the first serving release that contains it."
+  ]
+}

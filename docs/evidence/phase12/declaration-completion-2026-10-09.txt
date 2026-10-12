@@ -1,0 +1,51 @@
+Horse Brain Phases 11 And 12: Natural Completion Records For Selection, Predeclaration
+=====================================================================================
+
+Declared 2026-10-09 before 13:55Z, before the window below opens. The commit
+time of this file is the declaration time. Purpose: the natural
+completion-share record that P11.3 and P12.3 admission requires
+(liveConditions.admissionAlsoRequires) for the round-3 packs, which the owner
+decision of October 9, 2026 lets qualify on condition (a) alone.
+
+1. Serving Release
+------------------
+Release 94b2ae91c3c6742b5e05bca858c62580651ee180 (label sp.release.sha,
+State.StartedAt 2026-10-09T06:55:50.344782922Z, read 2026-10-09T13:46Z). Its
+policy digests equal main's at the declaration commit for every pack
+(Phase 11: horsePhase11PolicyDigest, definition horse-phase11-policy-digest-v4;
+PLO8 b13f13b5...a4a4 equals the c8bfc617 matrix; Phase 12:
+horsePhase12PolicyDigest, definition horse-phase12-policy-digest-v1; FLH
+1b3ca5c2...d3fe). The release must be unchanged for the whole window:
+sp.release.sha and State.StartedAt are read before the window opens and after
+it closes, and must match. If it is replaced before the window closes, the
+window moves to the first full hour served by the next release whose digests
+for these packs are unchanged, every other rule unchanged.
+
+2. Window And Population (Complete, Not A Sample)
+------------------------------------------------
+2026-10-09 15:02:00Z to 15:50:00Z. Every Horse decision record in the engine
+host's journal archive segments (archive/segments and archive-shard-1/segments;
+closed segment files only, sha256-name verified, read-only, nice 19 / ionice
+idle) with snapshot.decisionTimeMs in the window, single board, DECIDE_FAST
+only (a DEEP second look excluded by name), whose sourceRelease is exactly the
+release above; other releases are counted and excluded by name. Tournament
+decisions are not counted. Pineapple discards are never betting decisions.
+
+One record per pack, with the readers on main at this commit:
+- Phase 11 (plo5, plo6, plo8): server/scripts/phase11-completion-extract.py and
+  server/src/scripts/phase11CompletionRecord.ts, definition
+  horse-phase11-completion-definition-v3.
+- Phase 12 (short_deck, pineapple, flh, flo8): server/scripts/phase12-completion-extract.py
+  and server/src/scripts/phase12CompletionRecord.ts, definition
+  horse-phase12-completion-definition-v1.
+
+3. Verdict
+----------
+A pack's record meets the requirement only if every street's Wilson lower bound
+at the pack's contract z clears the floor (0.95), with at least 127 eligible
+decisions per street. The verdict is reported for all seven packs, whatever it
+is, and every record is committed. A pack below the floor is not re-measured
+on another window of this release to look for a pass; a pack with too few
+natural decisions is reported as such, not extended. A record is used for
+admission only with that pack's qualification measured at the same policy
+digest.

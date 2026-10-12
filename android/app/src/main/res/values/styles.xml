@@ -9,10 +9,25 @@
         <item name="colorAccent">@color/colorAccent</item>
     </style>
 
-    <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.DayNight.NoActionBar">
+    <!-- CLUB ARENA IS A DARK APP, ALWAYS (2026-09-28).
+         The Capacitor template ships Theme.AppCompat.DayNight here. DayNight
+         follows the PHONE's light/dark setting, so on a phone in light mode
+         the system painted white status and navigation bars around a black
+         console UI - which is what the first Android boot looked like.
+         Nothing in the web bundle can fix that: from Android 15 (targetSdk 35+)
+         edge-to-edge is enforced and Window.setStatusBarColor is a no-op, so
+         StatusBar.setBackgroundColor('#0a0a1a') in src/lib/nativeShell.ts is
+         accepted by the plugin and then ignored by the platform. The bars are
+         the THEME's job now: a dark parent, the app's own ground behind the
+         bars, and light icons on both. -->
+    <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.NoActionBar">
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
-        <item name="android:background">@null</item>
+        <item name="android:windowBackground">@color/clubArenaGround</item>
+        <!-- false = light icons, for a dark bar. The names read backwards:
+             windowLightStatusBar means "the bar is light", i.e. dark icons. -->
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
     </style>
 
 

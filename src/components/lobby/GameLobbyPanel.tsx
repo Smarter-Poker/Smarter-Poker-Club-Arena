@@ -435,6 +435,14 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
           run: () => onWaitlistToggle(entry.id, true),
           needsAuth: true,
         };
+      /* LIGHTNING PHASE 6: no table, no seat; the page opens the Lightning route. */
+      if (entry.game?.lightning)
+        return {
+          label: 'Join Lightning',
+          kind: 'primary' as const,
+          run: () => onJoinTable(entry.id),
+          note: 'Buy In Once And Play One Stream Of Hands',
+        };
       return {
         label: game ? 'Join Game' : 'Join Table',
         kind: 'primary' as const,

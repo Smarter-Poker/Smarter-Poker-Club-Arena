@@ -1,0 +1,1732 @@
+{
+ "window": [
+  "2026-10-03T20:00:56Z",
+  "2026-10-03T20:45:57Z"
+ ],
+ "segmentsRead": 85394,
+ "acceptedHandsByRelease": {
+  "62e79380b0b5b91f94b4d31d521be6b03ab6006f": 21378
+ },
+ "tournamentTables": 669,
+ "decisionTournamentTables": 670,
+ "counts": {
+  "bb_departed": 42,
+  "bb_departed:button_moved_to_prev_sb": 37,
+  "bb_departed:button_not_prev_sb": 5,
+  "bb_departed:button_on_dealt_seat/dead_sb": 37,
+  "bb_departed:dead_button/dead_sb": 5,
+  "dead_button_hands": 64,
+  "dead_sb_hands": 43,
+  "dealer_departed": 23,
+  "dealer_departed:button_moved_to_prev_sb": 20,
+  "dealer_departed:button_not_prev_sb": 3,
+  "dealer_departed:button_on_dealt_seat/dead_sb": 2,
+  "dealer_departed:button_on_dealt_seat/live_sb": 19,
+  "dealer_departed:dead_button/dead_sb": 1,
+  "dealer_departed:dead_button/live_sb": 1,
+  "dealt_2": 11691,
+  "dealt_3": 2528,
+  "dealt_4": 56,
+  "dealt_5": 196,
+  "dealt_6": 288,
+  "dealt_7": 430,
+  "dealt_8": 345,
+  "dealt_9": 7,
+  "departure_next_hand_headsup": 189,
+  "hands_3plus": 3850,
+  "sb_departed": 30,
+  "sb_departed:button_moved_to_prev_sb": 30,
+  "sb_departed:dead_button/dead_sb": 3,
+  "sb_departed:dead_button/live_sb": 27,
+  "tournament_hands": 15541,
+  "transitions_with_departure": 347
+ },
+ "decisions": {
+  "tournament_decisions": 43468,
+  "tournament_decisions_plo5": 9196,
+  "tournament_decisions_nlh": 18527,
+  "tournament_3plus": 21040,
+  "tournament_3plus_nlh": 10083,
+  "tournament_decisions_plo4": 13588,
+  "tournament_3plus_plo5": 7782,
+  "dead_sb_decisions": 237,
+  "dead_sb_decisions_nlh": 95,
+  "tournament_decisions_plo6": 2157,
+  "tournament_3plus_plo6": 1011,
+  "dead_button_decisions": 403,
+  "dead_button_decisions_nlh": 160,
+  "tournament_3plus_plo4": 2164,
+  "dead_sb_decisions_plo5": 142,
+  "dead_button_decisions_plo5": 243
+ },
+ "deadButtonDecisionIds": [
+  {
+   "eventId": "c83cec34a78807d1da58b560a66bd44f4b8d19d4700eecc23a15335a1376c7cd",
+   "variant": "nlh",
+   "dealer": 1,
+   "dealt": [
+    2,
+    3,
+    4,
+    6,
+    7,
+    8
+   ],
+   "blindSeats": {
+    "bigBlind": 3,
+    "smallBlind": 2
+   },
+   "release": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+  },
+  {
+   "eventId": "05cad1d6ab1970a2844ddb7e941b0b419cbcc4c9b9611205372b58fb717c1f5d",
+   "variant": "nlh",
+   "dealer": 2,
+   "dealt": [
+    1,
+    3,
+    4,
+    6
+   ],
+   "blindSeats": {
+    "bigBlind": 4,
+    "smallBlind": 3
+   },
+   "release": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+  },
+  {
+   "eventId": "5d8c24d9107788535de2e9c0842ad60a542c1c4b2cb7126c744baaadf90212c8",
+   "variant": "nlh",
+   "dealer": 2,
+   "dealt": [
+    1,
+    3,
+    4,
+    6
+   ],
+   "blindSeats": {
+    "bigBlind": 4,
+    "smallBlind": 3
+   },
+   "release": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+  },
+  {
+   "eventId": "b0949c9c0eb30d3df84b515eeb1b2d54cda8ce1fdefe994379c775291bcc628d",
+   "variant": "nlh",
+   "dealer": 2,
+   "dealt": [
+    1,
+    3,
+    4,
+    6
+   ],
+   "blindSeats": {
+    "bigBlind": 4,
+    "smallBlind": 3
+   },
+   "release": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+  },
+  {
+   "eventId": "ad17537d298bd07109149cbda120ba9589bc819745cd89b5a87323fdc77c1ceb",
+   "variant": "plo5",
+   "dealer": 3,
+   "dealt": [
+    1,
+    2,
+    4,
+    5,
+    7
+   ],
+   "blindSeats": {
+    "bigBlind": 5,
+    "smallBlind": 4
+   },
+   "release": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+  },
+  {
+   "eventId": "81da6e3927c55b42fdefdc007a732782e3c79fe280c17b2909d95c938f71fe9f",
+   "variant": "plo5",
+   "dealer": 3,
+   "dealt": [
+    1,
+    2,
+    4,
+    5,
+    7
+   ],
+   "blindSeats": {
+    "bigBlind": 5,
+    "smallBlind": 4
+   },
+   "release": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+  },
+  {
+   "eventId": "d06dacb7f53a5932ceb707df7da7c1ca7d19e95932ce2c054c379afe007f1ec9",
+   "variant": "plo5",
+   "dealer": 3,
+   "dealt": [
+    1,
+    2,
+    4,
+    5,
+    7
+   ],
+   "blindSeats": {
+    "bigBlind": 5,
+    "smallBlind": 4
+   },
+   "release": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+  },
+  {
+   "eventId": "81e142b381d622887bebbed755e02019dbdb93450db08876dfd7b17b207a0cb6",
+   "variant": "plo5",
+   "dealer": 3,
+   "dealt": [
+    1,
+    2,
+    4,
+    5,
+    7
+   ],
+   "blindSeats": {
+    "bigBlind": 5,
+    "smallBlind": 4
+   },
+   "release": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+  },
+  {
+   "eventId": "c920ecb531bf443b511e1a5fa3a4b6445f2578ec4544400b0940fd6c0cf39a55",
+   "variant": "plo5",
+   "dealer": 5,
+   "dealt": [
+    1,
+    2,
+    3,
+    4
+   ],
+   "blindSeats": {
+    "bigBlind": 1,
+    "smallBlind": null
+   },
+   "release": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+  },
+  {
+   "eventId": "1b32b1572017ff6166c563e8ed0a15fba955226f2fb0d8888d3517a770962f6b",
+   "variant": "plo5",
+   "dealer": 5,
+   "dealt": [
+    1,
+    2,
+    3,
+    4
+   ],
+   "blindSeats": {
+    "bigBlind": 1,
+    "smallBlind": null
+   },
+   "release": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+  },
+  {
+   "eventId": "fb9d61cab4a29b043a023d2b369b517472ae0036ec3f4866f51245c0727c64a8",
+   "variant": "plo5",
+   "dealer": 5,
+   "dealt": [
+    1,
+    2,
+    3,
+    4
+   ],
+   "blindSeats": {
+    "bigBlind": 1,
+    "smallBlind": null
+   },
+   "release": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+  },
+  {
+   "eventId": "deaa1433af32caeb50710adb4f876b5d8a3e69ce4ac4d3aaf4ffcbf36bf588be",
+   "variant": "plo5",
+   "dealer": 6,
+   "dealt": [
+    3,
+    4,
+    5,
+    7
+   ],
+   "blindSeats": {
+    "bigBlind": 3,
+    "smallBlind": 7
+   },
+   "release": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+  },
+  {
+   "eventId": "c00dcb1ea8a734a278a911619a59d6af048f03f1f5590e7bcbca90bd4157b0c6",
+   "variant": "plo5",
+   "dealer": 5,
+   "dealt": [
+    1,
+    2,
+    3,
+    4
+   ],
+   "blindSeats": {
+    "bigBlind": 1,
+    "smallBlind": null
+   },
+   "release": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+  },
+  {
+   "eventId": "5827a38b04bcbde0d7ac033755dbe46142b8968c9f31d0e84529f695d014a58a",
+   "variant": "plo5",
+   "dealer": 6,
+   "dealt": [
+    3,
+    4,
+    5,
+    7
+   ],
+   "blindSeats": {
+    "bigBlind": 3,
+    "smallBlind": 7
+   },
+   "release": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+  },
+  {
+   "eventId": "0d4511ed6789ae82683e01d777ac0807e7f1106c4df7bfa20a649f0b4c24cf90",
+   "variant": "plo5",
+   "dealer": 6,
+   "dealt": [
+    3,
+    4,
+    5,
+    7
+   ],
+   "blindSeats": {
+    "bigBlind": 3,
+    "smallBlind": 7
+   },
+   "release": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+  },
+  {
+   "eventId": "816398ead73102ec5114442d9adb3d78a23b8efb02b2ae272146cf45cc04778a",
+   "variant": "plo5",
+   "dealer": 6,
+   "dealt": [
+    1,
+    2,
+    3,
+    4
+   ],
+   "blindSeats": {
+    "bigBlind": 2,
+    "smallBlind": 1
+   },
+   "release": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+  },
+  {
+   "eventId": "bda0e1edbcb443fb817d950f80e21501fc684815abdfd777e34aed17e1f11714",
+   "variant": "plo5",
+   "dealer": 6,
+   "dealt": [
+    1,
+    2,
+    3,
+    4
+   ],
+   "blindSeats": {
+    "bigBlind": 2,
+    "smallBlind": 1
+   },
+   "release": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+  },
+  {
+   "eventId": "5537372c3341a77a774a22556d3ace1c439eb0ae47914d2dedc5eb751345db68",
+   "variant": "plo5",
+   "dealer": 6,
+   "dealt": [
+    1,
+    2,
+    3,
+    4
+   ],
+   "blindSeats": {
+    "bigBlind": 2,
+    "smallBlind": 1
+   },
+   "release": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+  },
+  {
+   "eventId": "3f4dce1db8de9f57527e3361d60414e60eb7fe531135c5965bf780c4979cb50e",
+   "variant": "plo5",
+   "dealer": 6,
+   "dealt": [
+    1,
+    2,
+    3,
+    4
+   ],
+   "blindSeats": {
+    "bigBlind": 2,
+    "smallBlind": 1
+   },
+   "release": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+  },
+  {
+   "eventId": "d78209881842ab4a7fe101283371b010028fc224d0a4531d788f81f44d2a397d",
+   "variant": "plo5",
+   "dealer": 4,
+   "dealt": [
+    1,
+    2,
+    3,
+    5,
+    6,
+    7
+   ],
+   "blindSeats": {
+    "bigBlind": 6,
+    "smallBlind": 5
+   },
+   "release": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+  },
+  {
+   "eventId": "12252c3f8f2e25d85ace1603e68185ad6738f1e60dcd4f4260f56d37bfcb79e7",
+   "variant": "plo5",
+   "dealer": 1,
+   "dealt": [
+    2,
+    4,
+    5,
+    6
+   ],
+   "blindSeats": {
+    "bigBlind": 4,
+    "smallBlind": 2
+   },
+   "release": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+  },
+  {
+   "eventId": "91acfc9dbf44f00c55479253f23f2a15ee8ce294eabff6521bd0186cbb005321",
+   "variant": "plo5",
+   "dealer": 1,
+   "dealt": [
+    2,
+    4,
+    5,
+    6
+   ],
+   "blindSeats": {
+    "bigBlind": 4,
+    "smallBlind": 2
+   },
+   "release": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+  },
+  {
+   "eventId": "f05fd8ca9d816e5b15c099b0c1602196970f8681603a3728cf4d1f518d4558b5",
+   "variant": "plo5",
+   "dealer": 6,
+   "dealt": [
+    1,
+    2,
+    3,
+    4
+   ],
+   "blindSeats": {
+    "bigBlind": 2,
+    "smallBlind": 1
+   },
+   "release": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+  },
+  {
+   "eventId": "32cf46c6d3bf60f1e552edadead934f30085b4aaa1ea7524040474fc1f956a0b",
+   "variant": "plo5",
+   "dealer": 4,
+   "dealt": [
+    1,
+    2,
+    3,
+    5,
+    6,
+    7
+   ],
+   "blindSeats": {
+    "bigBlind": 6,
+    "smallBlind": 5
+   },
+   "release": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+  },
+  {
+   "eventId": "a46f3b41bc30e6516973da7ff4422d472e0117e6ca4d642b6282769ebace4a47",
+   "variant": "plo5",
+   "dealer": 1,
+   "dealt": [
+    2,
+    4,
+    5,
+    6
+   ],
+   "blindSeats": {
+    "bigBlind": 4,
+    "smallBlind": 2
+   },
+   "release": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+  },
+  {
+   "eventId": "dd58b40ffe44ce2a81df4b38b6951f5725e93e949686898c280828e16d9fa906",
+   "variant": "plo5",
+   "dealer": 4,
+   "dealt": [
+    1,
+    2,
+    3,
+    5,
+    6,
+    7
+   ],
+   "blindSeats": {
+    "bigBlind": 6,
+    "smallBlind": 5
+   },
+   "release": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+  },
+  {
+   "eventId": "aed787f355c07fe6ef87d6c7a58aaafabaeec84343b19f6737deadf9e251ac65",
+   "variant": "plo5",
+   "dealer": 3,
+   "dealt": [
+    1,
+    4,
+    5,
+    6
+   ],
+   "blindSeats": {
+    "bigBlind": 5,
+    "smallBlind": 4
+   },
+   "release": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+  },
+  {
+   "eventId": "e261f06fbb582196b67aea7bd7cf1b9bda015d54690036b183958ce78aac65df",
+   "variant": "plo5",
+   "dealer": 4,
+   "dealt": [
+    1,
+    2,
+    3,
+    5,
+    6,
+    7
+   ],
+   "blindSeats": {
+    "bigBlind": 6,
+    "smallBlind": 5
+   },
+   "release": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+  },
+  {
+   "eventId": "956e40ceb4e1ff5a7951c4014c48d7629c0ab9d9d746fcf25c7e2032b2f44d18",
+   "variant": "plo5",
+   "dealer": 6,
+   "dealt": [
+    1,
+    2,
+    3,
+    4
+   ],
+   "blindSeats": {
+    "bigBlind": 2,
+    "smallBlind": 1
+   },
+   "release": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+  },
+  {
+   "eventId": "b01f8fe4652ff4002dce8cd67ee0a87934aed21dcd6decadb2c3289914d49bdf",
+   "variant": "plo5",
+   "dealer": 3,
+   "dealt": [
+    1,
+    4,
+    5,
+    6
+   ],
+   "blindSeats": {
+    "bigBlind": 5,
+    "smallBlind": 4
+   },
+   "release": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+  }
+ ],
+ "plo4DeadButtonOrDeadSbEligibleSamples": [],
+ "examples": {
+  "dealer_departed:button_on_dealt_seat/live_sb": [
+   {
+    "table": "f9cf6d53-932a-4ccb-b3f1-3e4b9151fb41",
+    "prev": {
+     "gen": 21937957,
+     "dealer": 4,
+     "dealt": [
+      1,
+      3,
+      4,
+      5,
+      6,
+      7,
+      9
+     ],
+     "sb": 5,
+     "bb": 6,
+     "eventId": "d4847ac30a5979eb783d527927a5ba452e03c406f3652432bd2f50c384fa4e6b",
+     "committedHandId": "99151827-f072-4131-b4f8-3ffeb0671511",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    },
+    "next": {
+     "gen": 21938849,
+     "dealer": 5,
+     "dealt": [
+      1,
+      3,
+      5,
+      6,
+      7,
+      9
+     ],
+     "sb": 6,
+     "bb": 7,
+     "eventId": "393370586e76ac7a1903e9087225bd3510b161c0bdecea63ff919ecc1bebb677",
+     "committedHandId": "e90d0f2b-e489-4914-97b1-049f4eb81ac0",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    }
+   },
+   {
+    "table": "61d59cba-fa00-4152-a7bb-8567fcc613b1",
+    "prev": {
+     "gen": 21941550,
+     "dealer": 1,
+     "dealt": [
+      1,
+      2,
+      4,
+      5,
+      7
+     ],
+     "sb": 2,
+     "bb": 4,
+     "eventId": "44ac2849a90c813144cdd2f1cc5bc2dc3277b81096cea2c6ff8f9602d57298f9",
+     "committedHandId": "2d5ffd67-03f7-4e66-ac7b-a730843f8161",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    },
+    "next": {
+     "gen": 21942239,
+     "dealer": 2,
+     "dealt": [
+      2,
+      4,
+      5,
+      6,
+      7
+     ],
+     "sb": 4,
+     "bb": 5,
+     "eventId": "6f1a24c559f608c67fd2aab2a28c236822cb2c683b5a9c7ac26f552a2bf81289",
+     "committedHandId": "447bee7d-3186-4725-91fa-dd73bbe23e44",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    }
+   },
+   {
+    "table": "db466fa6-0872-47a9-84a1-5d8d3e163c9a",
+    "prev": {
+     "gen": 21954182,
+     "dealer": 1,
+     "dealt": [
+      1,
+      2,
+      5,
+      6,
+      7,
+      8
+     ],
+     "sb": 2,
+     "bb": 5,
+     "eventId": "0234bfa8c079923387cd039e94350c00f30aa9121a0fc7050e667e1be72000b2",
+     "committedHandId": "4b602b96-36f2-42a5-bb2f-b9a53895dd68",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    },
+    "next": {
+     "gen": 21954868,
+     "dealer": 2,
+     "dealt": [
+      2,
+      5,
+      6,
+      7,
+      8
+     ],
+     "sb": 5,
+     "bb": 6,
+     "eventId": "06020b28379b30a7f520e957f25330b84ad573ba38ba43c2774d6e74f756e072",
+     "committedHandId": "a723ca88-e120-4e7c-b6ee-189c805ea60e",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    }
+   },
+   {
+    "table": "b7128312-37b9-4343-afcb-222d82d3d49c",
+    "prev": {
+     "gen": 21956744,
+     "dealer": 6,
+     "dealt": [
+      4,
+      5,
+      6,
+      7,
+      8,
+      9
+     ],
+     "sb": 7,
+     "bb": 8,
+     "eventId": "304e7d9af9f5138c5c9d4ec02001ff0cda729bc8368a443e527fd917aa74591a",
+     "committedHandId": "2be18d22-1a23-4da6-9f5d-8223fb043509",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    },
+    "next": {
+     "gen": 21958132,
+     "dealer": 7,
+     "dealt": [
+      4,
+      5,
+      7,
+      8,
+      9
+     ],
+     "sb": 8,
+     "bb": 9,
+     "eventId": "6c44bacd436efcfdb6159aa85e432ff24cd81bb53b3a6f83b76e12a9b9cb7308",
+     "committedHandId": "638fb204-abcb-4ebe-9cee-cd1673f3b101",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    }
+   },
+   {
+    "table": "ce3db276-9a8f-4ffa-9eb3-9b6f514da3c9",
+    "prev": {
+     "gen": 21943632,
+     "dealer": 9,
+     "dealt": [
+      1,
+      2,
+      4,
+      5,
+      7,
+      8,
+      9
+     ],
+     "sb": 1,
+     "bb": 2,
+     "eventId": "b7739151c4a7bcd60cab5cf6e1e1806a5b2bea17a09ffabb729c9b4796dd604f",
+     "committedHandId": "cfda4a1d-342b-4135-a3d4-4a5941386bf7",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    },
+    "next": {
+     "gen": 21944997,
+     "dealer": 1,
+     "dealt": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+     ],
+     "sb": 2,
+     "bb": 3,
+     "eventId": "ab2c03fcb70e970dce8f1432fdeca8453327966772500583d4d3d40681bdb51e",
+     "committedHandId": "2137b275-d3c9-41e2-9938-8fcb7ece8ab6",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    }
+   },
+   {
+    "table": "430c3916-22c2-44c5-b771-caec98d1da1c",
+    "prev": {
+     "gen": 21944259,
+     "dealer": 7,
+     "dealt": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      7,
+      8,
+      9
+     ],
+     "sb": 8,
+     "bb": 9,
+     "eventId": "5247fc8ebd59f6bacf9f86732ee35487580120c9074f45354a2dc618ffdb2c7d",
+     "committedHandId": "9744fe3b-68cd-4e61-8bff-c1e3cea16899",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    },
+    "next": {
+     "gen": 21945540,
+     "dealer": 8,
+     "dealt": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      8,
+      9
+     ],
+     "sb": 9,
+     "bb": 1,
+     "eventId": "29322fc93fc3d588aa22ba9d7475f8325cb5b035b56600795668fce1662df4d1",
+     "committedHandId": "1ae800e3-7487-48f2-af86-87681c292606",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    }
+   }
+  ],
+  "bb_departed:button_on_dealt_seat/dead_sb": [
+   {
+    "table": "f9cf6d53-932a-4ccb-b3f1-3e4b9151fb41",
+    "prev": {
+     "gen": 21940424,
+     "dealer": 7,
+     "dealt": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      9
+     ],
+     "sb": 9,
+     "bb": 1,
+     "eventId": "ea5bc885229540532ac078b8df7e352df39b227c056b19734b83efe38b840094",
+     "committedHandId": "345643b4-0f34-4ce8-bbcb-c91d4ccb75f4",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    },
+    "next": {
+     "gen": 21941255,
+     "dealer": 9,
+     "dealt": [
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      9
+     ],
+     "sb": null,
+     "bb": 2,
+     "eventId": "c59d09514a85d5e4b9653829851b1b6fd2d5386aa5eb64c6c309414786d371c2",
+     "committedHandId": "286e50da-e27f-4f25-85f3-d111cc987e10",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    }
+   },
+   {
+    "table": "f9cf6d53-932a-4ccb-b3f1-3e4b9151fb41",
+    "prev": {
+     "gen": 21947855,
+     "dealer": 2,
+     "dealt": [
+      1,
+      3,
+      4,
+      5,
+      6,
+      7,
+      9
+     ],
+     "sb": 3,
+     "bb": 4,
+     "eventId": "5dfa33f38987016519c5ccc8ea90d24eb0a33984414b0f7624d45271250ed9c7",
+     "committedHandId": "92461bb2-ec42-4767-9409-2aa890c2f1ca",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    },
+    "next": {
+     "gen": 21948725,
+     "dealer": 3,
+     "dealt": [
+      1,
+      3,
+      5,
+      6,
+      7,
+      9
+     ],
+     "sb": null,
+     "bb": 5,
+     "eventId": "0d79a8a33572c7a446e2aaed1b75678f77d5cd31ad560d9c13b84cb66451001c",
+     "committedHandId": "c7250a42-d137-4dc2-a607-c7b12752318c",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    }
+   },
+   {
+    "table": "f9cf6d53-932a-4ccb-b3f1-3e4b9151fb41",
+    "prev": {
+     "gen": 21953198,
+     "dealer": 3,
+     "dealt": [
+      1,
+      3,
+      5,
+      6,
+      7,
+      8
+     ],
+     "sb": 5,
+     "bb": 6,
+     "eventId": "865c9a84466e39e11af4391d9f715265b6ebe4b50cd8e524ab8268abb59a54b7",
+     "committedHandId": "22b66802-eb74-452a-8275-0105b18d5694",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    },
+    "next": {
+     "gen": 21954013,
+     "dealer": 5,
+     "dealt": [
+      1,
+      3,
+      5,
+      7,
+      8
+     ],
+     "sb": null,
+     "bb": 7,
+     "eventId": "7311f045bb20c577cae2ee3fd4b421eb65fb459f382bad6990d7f2311816a2b7",
+     "committedHandId": "b27bd5d8-c874-4079-80f5-b3367479ec26",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    }
+   },
+   {
+    "table": "61d59cba-fa00-4152-a7bb-8567fcc613b1",
+    "prev": {
+     "gen": 21946748,
+     "dealer": 7,
+     "dealt": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+     ],
+     "sb": 1,
+     "bb": 2,
+     "eventId": "a3b7ef939a7bbb8bb8785f95738470c921e531072c94946faa7cb78cdd0bae5a",
+     "committedHandId": "f6a4a0ba-8328-400d-b2c2-556c7b4fb633",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    },
+    "next": {
+     "gen": 21947536,
+     "dealer": 1,
+     "dealt": [
+      1,
+      3,
+      4,
+      5,
+      6
+     ],
+     "sb": null,
+     "bb": 3,
+     "eventId": "2bdf0b6a14a3b6e0a9154412337e1a65b8189b53dadfdd676043d5346508e4f2",
+     "committedHandId": "92c7c214-1af2-47c1-bb64-5bdccc676729",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    }
+   },
+   {
+    "table": "61d59cba-fa00-4152-a7bb-8567fcc613b1",
+    "prev": {
+     "gen": 21954174,
+     "dealer": 6,
+     "dealt": [
+      3,
+      4,
+      7
+     ],
+     "sb": 7,
+     "bb": 3,
+     "eventId": "94471d9430c647caa5eca6bd6e99cb7e94668415d5e3ce0b84f8a3578f72e1ed",
+     "committedHandId": "fbe4a59a-cdbe-46e5-b45b-9510ad2234f9",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    },
+    "next": {
+     "gen": 21954901,
+     "dealer": 2,
+     "dealt": [
+      1,
+      2,
+      4,
+      5,
+      6,
+      7
+     ],
+     "sb": null,
+     "bb": 4,
+     "eventId": "3de859e5bdb5146b437a88c86bcccd13e882c749b933dd0a61f82ede95635221",
+     "committedHandId": "4d53da06-059a-46f3-a2a6-8354dbd8bcf4",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    }
+   },
+   {
+    "table": "61d59cba-fa00-4152-a7bb-8567fcc613b1",
+    "prev": {
+     "gen": 21956491,
+     "dealer": 4,
+     "dealt": [
+      1,
+      4,
+      5,
+      6,
+      7
+     ],
+     "sb": 5,
+     "bb": 6,
+     "eventId": "f8b84a766189fe0a75044abd032e62c98720e81b4e34b1a66a2c24b54c7ff181",
+     "committedHandId": "ac8ce338-0c25-4ce9-acbc-c577d26b4bf4",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    },
+    "next": {
+     "gen": 21957077,
+     "dealer": 5,
+     "dealt": [
+      1,
+      4,
+      5,
+      7
+     ],
+     "sb": null,
+     "bb": 7,
+     "eventId": "9246bd36e016ff4cfc11cce76b3c56176d508da2f96d8fd0025e9576b8d521a4",
+     "committedHandId": "193579b7-4d21-4713-ac9c-2c79bb2c66b6",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    }
+   }
+  ],
+  "sb_departed:dead_button/live_sb": [
+   {
+    "table": "f9cf6d53-932a-4ccb-b3f1-3e4b9151fb41",
+    "prev": {
+     "gen": 21943069,
+     "dealer": 3,
+     "dealt": [
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      9
+     ],
+     "sb": 4,
+     "bb": 5,
+     "eventId": "46c699b41a6b4d298912eb5228ff67d6a3923afaf16d8dbc5caadb55314b98f1",
+     "committedHandId": "43bb3556-ffb2-4532-8ca4-0dd5d514a9c2",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    },
+    "next": {
+     "gen": 21943733,
+     "dealer": 4,
+     "dealt": [
+      2,
+      3,
+      5,
+      6,
+      7,
+      9
+     ],
+     "sb": 5,
+     "bb": 6,
+     "eventId": "fbefb3d24f231c1b77aa119d4f56278ca8aaf3e83943c154caa763cd20e8d4c7",
+     "committedHandId": "2b1a1454-dae0-45cc-8ef1-aca59a97f0bb",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    }
+   },
+   {
+    "table": "f9cf6d53-932a-4ccb-b3f1-3e4b9151fb41",
+    "prev": {
+     "gen": 21947073,
+     "dealer": 1,
+     "dealt": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      9
+     ],
+     "sb": 2,
+     "bb": 3,
+     "eventId": "7af737dec0f5d8cc382c2d09bac01438caf1464bbba41a6ef190fe328e1056f8",
+     "committedHandId": "42333553-adbb-4dc7-bc6c-37cac6e503c0",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    },
+    "next": {
+     "gen": 21947855,
+     "dealer": 2,
+     "dealt": [
+      1,
+      3,
+      4,
+      5,
+      6,
+      7,
+      9
+     ],
+     "sb": 3,
+     "bb": 4,
+     "eventId": "5dfa33f38987016519c5ccc8ea90d24eb0a33984414b0f7624d45271250ed9c7",
+     "committedHandId": "92461bb2-ec42-4767-9409-2aa890c2f1ca",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    }
+   },
+   {
+    "table": "61d59cba-fa00-4152-a7bb-8567fcc613b1",
+    "prev": {
+     "gen": 21938456,
+     "dealer": 2,
+     "dealt": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      7
+     ],
+     "sb": 3,
+     "bb": 4,
+     "eventId": "4512d98d5a97d44f716bbdf3375dfbc3fbd947b522d620edc8bd2a747daf118d",
+     "committedHandId": "00d6af53-735c-4dad-9493-2818c270a73e",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    },
+    "next": {
+     "gen": 21939473,
+     "dealer": 3,
+     "dealt": [
+      1,
+      2,
+      4,
+      5,
+      7
+     ],
+     "sb": 4,
+     "bb": 5,
+     "eventId": "1e1b6f05182ea1e0b62efc2b25d48be158517021c230be3a8ac1c1544936267c",
+     "committedHandId": "7ba1b96b-0596-41d0-872f-cca84bf9e416",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    }
+   },
+   {
+    "table": "61d59cba-fa00-4152-a7bb-8567fcc613b1",
+    "prev": {
+     "gen": 21945780,
+     "dealer": 5,
+     "dealt": [
+      1,
+      2,
+      4,
+      5,
+      7
+     ],
+     "sb": 7,
+     "bb": 1,
+     "eventId": "c9adc92bc834b6beebb3e3f910bba2433028af70b1481efb352acfcf2eb3a7f6",
+     "committedHandId": "3ab42664-4a15-45fa-ad6e-59d2e8de9908",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    },
+    "next": {
+     "gen": 21946748,
+     "dealer": 7,
+     "dealt": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+     ],
+     "sb": 1,
+     "bb": 2,
+     "eventId": "a3b7ef939a7bbb8bb8785f95738470c921e531072c94946faa7cb78cdd0bae5a",
+     "committedHandId": "f6a4a0ba-8328-400d-b2c2-556c7b4fb633",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    }
+   },
+   {
+    "table": "61d59cba-fa00-4152-a7bb-8567fcc613b1",
+    "prev": {
+     "gen": 21953124,
+     "dealer": 4,
+     "dealt": [
+      2,
+      3,
+      4,
+      6,
+      7
+     ],
+     "sb": 6,
+     "bb": 7,
+     "eventId": "9d684b821458023c363fcc8a1510af6b7359aa7db0d8e2f0be3739901c4390c1",
+     "committedHandId": "d5deb3df-482c-4f9b-8818-2c0be6966f4a",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    },
+    "next": {
+     "gen": 21954174,
+     "dealer": 6,
+     "dealt": [
+      3,
+      4,
+      7
+     ],
+     "sb": 7,
+     "bb": 3,
+     "eventId": "94471d9430c647caa5eca6bd6e99cb7e94668415d5e3ce0b84f8a3578f72e1ed",
+     "committedHandId": "fbe4a59a-cdbe-46e5-b45b-9510ad2234f9",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    }
+   },
+   {
+    "table": "a2bdebe6-5fed-4ef0-afe4-a81a4a786f96",
+    "prev": {
+     "gen": 21944116,
+     "dealer": 1,
+     "dealt": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+     ],
+     "sb": 2,
+     "bb": 3,
+     "eventId": "097fb67478d5483cb17631770ce89ca03bd0575fb1619434db65e9c252bf533c",
+     "committedHandId": "1c198ab4-9fd7-443f-8db7-9b196d6f56d8",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    },
+    "next": {
+     "gen": 21945855,
+     "dealer": 2,
+     "dealt": [
+      1,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+     ],
+     "sb": 3,
+     "bb": 4,
+     "eventId": "e0db96ac8f65c38835a288d890bbe34bd4398d62cda5d392282d52b292ca5aa0",
+     "committedHandId": "130fcbef-a3fe-4c6d-95d3-a7ac6c73a6f2",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    }
+   }
+  ],
+  "dealer_departed:dead_button/live_sb": [
+   {
+    "table": "61d59cba-fa00-4152-a7bb-8567fcc613b1",
+    "prev": {
+     "gen": 21954901,
+     "dealer": 2,
+     "dealt": [
+      1,
+      2,
+      4,
+      5,
+      6,
+      7
+     ],
+     "sb": null,
+     "bb": 4,
+     "eventId": "3de859e5bdb5146b437a88c86bcccd13e882c749b933dd0a61f82ede95635221",
+     "committedHandId": "4d53da06-059a-46f3-a2a6-8354dbd8bcf4",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    },
+    "next": {
+     "gen": 21955574,
+     "dealer": 3,
+     "dealt": [
+      1,
+      4,
+      5,
+      6,
+      7
+     ],
+     "sb": 4,
+     "bb": 5,
+     "eventId": "4873d4c8dabd0401f6ce1d6e2331b5b561ee2d70eac861cbbd4f5453a0d5f7d4",
+     "committedHandId": "df2c2e37-fb14-4d9c-b40a-65d873c4b4af",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    }
+   }
+  ],
+  "sb_departed:dead_button/dead_sb": [
+   {
+    "table": "3a037fe7-2810-4e6b-8797-5501f4759971",
+    "prev": {
+     "gen": 21938480,
+     "dealer": 4,
+     "dealt": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+     ],
+     "sb": 5,
+     "bb": 6,
+     "eventId": "056fe1c7d0b147c80ad6ec5ea4f04ddefc2d911bcdf3e92f5fa8516d679e370c",
+     "committedHandId": "5d457481-be78-4029-8969-619298bd2be7",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    },
+    "next": {
+     "gen": 21939758,
+     "dealer": 5,
+     "dealt": [
+      1,
+      2,
+      3,
+      4
+     ],
+     "sb": null,
+     "bb": 1,
+     "eventId": "be76dedac219dccdef31bfe5e968a189f3292c4c0dd29bfd66806ba5f1759980",
+     "committedHandId": "d8e705f0-74c2-436c-be72-9e2ddfa3a76a",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    }
+   },
+   {
+    "table": "d6aa376a-67f5-40f6-8c30-64c10f4481d7",
+    "prev": {
+     "gen": 21957745,
+     "dealer": 2,
+     "dealt": [
+      2,
+      3,
+      5,
+      6,
+      7
+     ],
+     "sb": 3,
+     "bb": 5,
+     "eventId": "38d30e31cb15b093a7f5b82a2ca0d6bf133e928093d59a700fa6a85ef19648cb",
+     "committedHandId": "53c39ef3-8a90-4b3c-8f47-e5a09360c9e5",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    },
+    "next": {
+     "gen": 21958827,
+     "dealer": 3,
+     "dealt": [
+      2,
+      6,
+      7
+     ],
+     "sb": null,
+     "bb": 6,
+     "eventId": "2c9a675522c9cd5209213ffcb9c7dd6e3d7a8001ff4208c9eeee720e59d562f0",
+     "committedHandId": "a818ef25-01c4-4bc1-a256-8c0771b795a9",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    }
+   },
+   {
+    "table": "ebc22ffa-b573-40e1-b1ac-72f1edac6727",
+    "prev": {
+     "gen": 21949531,
+     "dealer": 4,
+     "dealt": [
+      1,
+      2,
+      3,
+      4,
+      6,
+      7
+     ],
+     "sb": 6,
+     "bb": 7,
+     "eventId": "1bbd9cb0c91d59e9104fd7cdada276cbf4315d0e90ca248d776f3cfe7f37c2ae",
+     "committedHandId": "e7d7e252-5ece-46b6-b505-1b7a17ea16a2",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    },
+    "next": {
+     "gen": 21950456,
+     "dealer": 6,
+     "dealt": [
+      1,
+      2,
+      3,
+      4
+     ],
+     "sb": null,
+     "bb": 1,
+     "eventId": "2f2194cc62a443ba63faf1f6ea39670c4bbe361215a198ab36b0342b05df7265",
+     "committedHandId": "756e551a-ef81-4ead-a04d-0c3e48c5cc84",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    }
+   }
+  ],
+  "bb_departed:dead_button/dead_sb": [
+   {
+    "table": "3a037fe7-2810-4e6b-8797-5501f4759971",
+    "prev": {
+     "gen": 21938480,
+     "dealer": 4,
+     "dealt": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+     ],
+     "sb": 5,
+     "bb": 6,
+     "eventId": "056fe1c7d0b147c80ad6ec5ea4f04ddefc2d911bcdf3e92f5fa8516d679e370c",
+     "committedHandId": "5d457481-be78-4029-8969-619298bd2be7",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    },
+    "next": {
+     "gen": 21939758,
+     "dealer": 5,
+     "dealt": [
+      1,
+      2,
+      3,
+      4
+     ],
+     "sb": null,
+     "bb": 1,
+     "eventId": "be76dedac219dccdef31bfe5e968a189f3292c4c0dd29bfd66806ba5f1759980",
+     "committedHandId": "d8e705f0-74c2-436c-be72-9e2ddfa3a76a",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    }
+   },
+   {
+    "table": "a2bdebe6-5fed-4ef0-afe4-a81a4a786f96",
+    "prev": {
+     "gen": 21949536,
+     "dealer": 5,
+     "dealt": [
+      1,
+      3,
+      4,
+      5,
+      7,
+      8,
+      9
+     ],
+     "sb": null,
+     "bb": 7,
+     "eventId": "d8f7bda0cb1fafb8a0c2bba9d67566fa0d4b7eea6142c72916a58008e92bcdae",
+     "committedHandId": "a83e9cb4-c7b9-47bc-be2c-b28d731cad6a",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    },
+    "next": {
+     "gen": 21950282,
+     "dealer": 6,
+     "dealt": [
+      1,
+      3,
+      4,
+      5,
+      8,
+      9
+     ],
+     "sb": null,
+     "bb": 8,
+     "eventId": "19b3c9cd8cfbfacbb334bb6bfe7eb875c78fe1c38cd6a214b0e5dbade27784bd",
+     "committedHandId": "0ccbfed1-8806-4fe4-8a17-1a8c3a900273",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    }
+   },
+   {
+    "table": "e0c020d6-4039-427d-815c-cf5f6aed093e",
+    "prev": {
+     "gen": 21945085,
+     "dealer": 5,
+     "dealt": [
+      1,
+      2,
+      4,
+      5,
+      7
+     ],
+     "sb": null,
+     "bb": 7,
+     "eventId": "3aadd5bf414995d278b1e17529b7f905440427a2c491fc83606ccb8bf553c3fb",
+     "committedHandId": "ad46e535-449d-4523-b470-96dd5576d984",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    },
+    "next": {
+     "gen": 21945852,
+     "dealer": 6,
+     "dealt": [
+      1,
+      2,
+      4
+     ],
+     "sb": null,
+     "bb": 1,
+     "eventId": "b5eddbce7e43e4d9d985a4af2987d874e5639feb7d3992a773888eac2f4c1d1f",
+     "committedHandId": "85966f87-ca26-47df-a10a-65d080e49e0d",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    }
+   },
+   {
+    "table": "d6aa376a-67f5-40f6-8c30-64c10f4481d7",
+    "prev": {
+     "gen": 21957745,
+     "dealer": 2,
+     "dealt": [
+      2,
+      3,
+      5,
+      6,
+      7
+     ],
+     "sb": 3,
+     "bb": 5,
+     "eventId": "38d30e31cb15b093a7f5b82a2ca0d6bf133e928093d59a700fa6a85ef19648cb",
+     "committedHandId": "53c39ef3-8a90-4b3c-8f47-e5a09360c9e5",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    },
+    "next": {
+     "gen": 21958827,
+     "dealer": 3,
+     "dealt": [
+      2,
+      6,
+      7
+     ],
+     "sb": null,
+     "bb": 6,
+     "eventId": "2c9a675522c9cd5209213ffcb9c7dd6e3d7a8001ff4208c9eeee720e59d562f0",
+     "committedHandId": "a818ef25-01c4-4bc1-a256-8c0771b795a9",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    }
+   },
+   {
+    "table": "ebc22ffa-b573-40e1-b1ac-72f1edac6727",
+    "prev": {
+     "gen": 21949531,
+     "dealer": 4,
+     "dealt": [
+      1,
+      2,
+      3,
+      4,
+      6,
+      7
+     ],
+     "sb": 6,
+     "bb": 7,
+     "eventId": "1bbd9cb0c91d59e9104fd7cdada276cbf4315d0e90ca248d776f3cfe7f37c2ae",
+     "committedHandId": "e7d7e252-5ece-46b6-b505-1b7a17ea16a2",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    },
+    "next": {
+     "gen": 21950456,
+     "dealer": 6,
+     "dealt": [
+      1,
+      2,
+      3,
+      4
+     ],
+     "sb": null,
+     "bb": 1,
+     "eventId": "2f2194cc62a443ba63faf1f6ea39670c4bbe361215a198ab36b0342b05df7265",
+     "committedHandId": "756e551a-ef81-4ead-a04d-0c3e48c5cc84",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    }
+   }
+  ],
+  "dealer_departed:button_on_dealt_seat/dead_sb": [
+   {
+    "table": "d229105a-053d-4709-a4bd-40e41fd2e36c",
+    "prev": {
+     "gen": 21946481,
+     "dealer": 7,
+     "dealt": [
+      1,
+      2,
+      3,
+      5,
+      7
+     ],
+     "sb": 1,
+     "bb": 2,
+     "eventId": "b6a2b2076e9cb0542157f1f8e17a52a965901ce4caa18015e81b21c758f135a4",
+     "committedHandId": "3c9fc1d8-9f60-465a-868d-6aa941f96b92",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    },
+    "next": {
+     "gen": 21947269,
+     "dealer": 1,
+     "dealt": [
+      1,
+      3,
+      5
+     ],
+     "sb": null,
+     "bb": 3,
+     "eventId": "5b3a0903deba3d3b640d89b84d21ad523704dcdf3aa7897f44d324f21bad2235",
+     "committedHandId": "64f04ef4-3a56-4af0-b2b1-a7b56ed2a911",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    }
+   },
+   {
+    "table": "ebc22ffa-b573-40e1-b1ac-72f1edac6727",
+    "prev": {
+     "gen": 21943727,
+     "dealer": 4,
+     "dealt": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+     ],
+     "sb": 5,
+     "bb": 6,
+     "eventId": "085db0034e16a4957505942dadaa1864c896f4f541c6f4141939c4c9ea23704a",
+     "committedHandId": "b35f316e-3bb8-4055-8aa6-8067168a1122",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    },
+    "next": {
+     "gen": 21944720,
+     "dealer": 5,
+     "dealt": [
+      1,
+      2,
+      3,
+      5,
+      7
+     ],
+     "sb": null,
+     "bb": 7,
+     "eventId": "54ce6475818fba14418f765b98770f2186f2f3cdb1dedf982b772bb9b19420f8",
+     "committedHandId": "d6899006-2878-4bf8-a56f-ca3cc251462f",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    }
+   }
+  ],
+  "dealer_departed:dead_button/dead_sb": [
+   {
+    "table": "e0c020d6-4039-427d-815c-cf5f6aed093e",
+    "prev": {
+     "gen": 21945085,
+     "dealer": 5,
+     "dealt": [
+      1,
+      2,
+      4,
+      5,
+      7
+     ],
+     "sb": null,
+     "bb": 7,
+     "eventId": "3aadd5bf414995d278b1e17529b7f905440427a2c491fc83606ccb8bf553c3fb",
+     "committedHandId": "ad46e535-449d-4523-b470-96dd5576d984",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    },
+    "next": {
+     "gen": 21945852,
+     "dealer": 6,
+     "dealt": [
+      1,
+      2,
+      4
+     ],
+     "sb": null,
+     "bb": 1,
+     "eventId": "b5eddbce7e43e4d9d985a4af2987d874e5639feb7d3992a773888eac2f4c1d1f",
+     "committedHandId": "85966f87-ca26-47df-a10a-65d080e49e0d",
+     "rel": "62e79380b0b5b91f94b4d31d521be6b03ab6006f"
+    }
+   }
+  ]
+ },
+ "byVariant": {
+  "plo6": {
+   "dealt_2": 663,
+   "dealt_3": 328,
+   "hands": 991,
+   "hands_3plus": 328,
+   "transitions_with_departure": 23
+  },
+  "nlh": {
+   "bb_departed:button_on_dealt_seat/dead_sb": 13,
+   "bb_departed:dead_button/dead_sb": 1,
+   "dead_button_hands": 27,
+   "dead_sb_hands": 15,
+   "dealer_departed:button_on_dealt_seat/live_sb": 11,
+   "dealt_2": 4528,
+   "dealt_3": 938,
+   "dealt_4": 6,
+   "dealt_5": 48,
+   "dealt_6": 98,
+   "dealt_7": 334,
+   "dealt_8": 242,
+   "dealt_9": 7,
+   "hands": 6201,
+   "hands_3plus": 1673,
+   "sb_departed:dead_button/live_sb": 14,
+   "transitions_with_departure": 151
+  },
+  "plo4": {
+   "dealt_2": 5687,
+   "dealt_3": 682,
+   "hands": 6369,
+   "hands_3plus": 682,
+   "transitions_with_departure": 50
+  },
+  "plo5": {
+   "bb_departed:button_on_dealt_seat/dead_sb": 24,
+   "bb_departed:dead_button/dead_sb": 4,
+   "dead_button_hands": 37,
+   "dead_sb_hands": 28,
+   "dealer_departed:button_on_dealt_seat/dead_sb": 2,
+   "dealer_departed:button_on_dealt_seat/live_sb": 8,
+   "dealer_departed:dead_button/dead_sb": 1,
+   "dealer_departed:dead_button/live_sb": 1,
+   "dealt_2": 813,
+   "dealt_3": 580,
+   "dealt_4": 50,
+   "dealt_5": 148,
+   "dealt_6": 190,
+   "dealt_7": 96,
+   "dealt_8": 103,
+   "hands": 1980,
+   "hands_3plus": 1167,
+   "sb_departed:dead_button/dead_sb": 3,
+   "sb_departed:dead_button/live_sb": 13,
+   "transitions_with_departure": 123
+  }
+ },
+ "tablesByVariant": {
+  "plo6": 37,
+  "nlh": 299,
+  "plo4": 237,
+  "plo5": 96
+ },
+ "tables3plusByVariant": {
+  "nlh": 130,
+  "plo6": 31,
+  "plo5": 84,
+  "plo4": 65
+ },
+ "lifecycleTerminal": {
+  "success": 89123,
+  "{\"outcome\": \"cancelled\", \"requestDigest\": \"4274ab740e650f591a896bb6671a239fb3f895a7671c318543fec1ea23828936\"}": 1
+ }
+}

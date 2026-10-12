@@ -1,0 +1,110 @@
+# P12.2 identity check. The same scripts were run from a git archive of server/ at the base commit 1157cf08 (node_modules shared) and from this branch's working tree, EQUITY_GOVERNOR=off, one process at a time.
+
+## 1. PLO4 (Phase 10) and Phase 11 outputs are byte-identical (hash = sha256, first 16 hex, of the JSON output with durationMs zeroed)
+
+Script:
+
+    process.env.EQUITY_GOVERNOR = 'off';
+    process.env.SUPABASE_URL = 'https://supabase.invalid';
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'x';
+    import { createHash } from 'node:crypto';
+    const root = process.cwd();
+    const P = await import(root + '/src/benchmark/Plo4PolicyLeague.ts');
+    const O = await import(root + '/src/benchmark/OmahaVariantStrengthLeague.ts');
+    const OL = await import(root + '/src/benchmark/OmahaVariantPolicyLeague.ts');
+    const { channelHub } = await import(root + '/src/hub/ChannelHub.ts');
+    const h = (x: unknown) => createHash('sha256').update(JSON.stringify(x, (k, v) => (k === 'durationMs' ? 0 : v))).digest('hex').slice(0, 16);
+    for (const id of ['p10c-6max-2dealt-100bb', 'p10c-6max-100bb']) console.log('plo4 shard', id, h(await P.runPlo4StrengthShard({ profileId: id, seed: 10101101, shard: 0, mode: 'development', pairs: 36 })));
+    for (const v of ['plo5', 'plo6', 'plo8']) console.log('p11 shard', v, h(await O.runOmahaVariantStrengthShard(v, { profileId: `p11c-${v}-6max-100bb`, seed: 11101101, shard: 0, mode: 'development', pairs: 36 })));
+    for (const id of ['heads-up-25bb', 'six-max-100bb']) console.log('plo4 league', id, h(await P.runPlo4PolicyLeague({ profileId: id, pairs: 4, seed: 10101101 })));
+    for (const id of ['plo5-hu-25bb', 'plo8-hu-25bb']) console.log('p11 league', id, h(await OL.runOmahaVariantLeague({ profileId: id, pairs: 4, seed: 11101101 })));
+    channelHub.close(); process.exit(0);
+
+Base 1157cf08 and this branch printed the same nine lines:
+
+    plo4 shard p10c-6max-2dealt-100bb b9b3d42a66e91691
+    plo4 shard p10c-6max-100bb a910f0acc2dd8c62
+    p11 shard plo5 b4dac94d810e1f0f
+    p11 shard plo6 589cf3061477b80a
+    p11 shard plo8 0d3dce20efdcb062
+    plo4 league heads-up-25bb 23b9b77436f2f009
+    plo4 league six-max-100bb 6e2dc4c88d34f4b1
+    p11 league plo5-hu-25bb a94680d9c371c3b9
+    p11 league plo8-hu-25bb 22074293dc5e37f1
+
+## 2. Phase 12 development league: off and shadow identical; candidate differs only where the new guard refused a proposal
+
+Hash excludes the new per-hand illegalCandidates counter. Script:
+
+    process.env.EQUITY_GOVERNOR = 'off';
+    process.env.SUPABASE_URL = 'https://supabase.invalid';
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'x';
+    import { createHash } from 'node:crypto';
+    const root = process.cwd();
+    const R = await import(root + '/src/benchmark/RemainingVariantPolicyLeague.ts');
+    const { channelHub } = await import(root + '/src/hub/ChannelHub.ts');
+    const strip = (x: any) => JSON.parse(JSON.stringify(x, (k, v) => (k === 'illegalCandidates' ? undefined : v)));
+    const h = (x: unknown) => createHash('sha256').update(JSON.stringify(x)).digest('hex').slice(0, 16);
+    for (const v of ['short_deck', 'pineapple', 'flh', 'flo8'])
+      for (const p of ['hu-25bb', 'cash-cap-100bb']) {
+        for (const mode of ['off', 'shadow', 'candidate']) {
+          const r = await R.runRemainingVariantLeague({ profileId: `${v}-${p}`, pairs: 8, seed: 12101101, mode });
+          const ic = r.pairs.reduce((n: number, q: any) => n + (q.candidate.illegalCandidates ?? 0), 0);
+          console.log(v, p, mode, 'hash-without-counter', h(strip(r)), 'illegalCandidates', ic, 'changed', r.changed);
+        }
+      }
+    channelHub.close(); process.exit(0);
+
+Base 1157cf08:
+
+    short_deck hu-25bb off hash-without-counter a77d7cbd78cb9655 illegalCandidates 0 changed 0
+    short_deck hu-25bb shadow hash-without-counter c1aadc5476f576d4 illegalCandidates 0 changed 0
+    short_deck hu-25bb candidate hash-without-counter dddb21bb285cd14f illegalCandidates 0 changed 3
+    short_deck cash-cap-100bb off hash-without-counter 5b122a51e0a623ad illegalCandidates 0 changed 0
+    short_deck cash-cap-100bb shadow hash-without-counter 8b188838064f1e50 illegalCandidates 0 changed 0
+    short_deck cash-cap-100bb candidate hash-without-counter fca40a0abf8dc4a3 illegalCandidates 0 changed 1
+    pineapple hu-25bb off hash-without-counter 8164c0840ecedaa5 illegalCandidates 0 changed 0
+    pineapple hu-25bb shadow hash-without-counter 2367d3deba5ce2fe illegalCandidates 0 changed 0
+    pineapple hu-25bb candidate hash-without-counter 979374b2cee22ef5 illegalCandidates 0 changed 8
+    pineapple cash-cap-100bb off hash-without-counter d14683328edcc358 illegalCandidates 0 changed 0
+    pineapple cash-cap-100bb shadow hash-without-counter 334edb2c5c1bcc0d illegalCandidates 0 changed 0
+    pineapple cash-cap-100bb candidate hash-without-counter 50000cd16023b0a6 illegalCandidates 0 changed 1
+    flh hu-25bb off hash-without-counter 834065bd1b532895 illegalCandidates 0 changed 0
+    flh hu-25bb shadow hash-without-counter 97572fb8be7ad502 illegalCandidates 0 changed 0
+    flh hu-25bb candidate hash-without-counter 289743c9fce7f7e1 illegalCandidates 0 changed 2
+    flh cash-cap-100bb off hash-without-counter cb83e5cd3c403382 illegalCandidates 0 changed 0
+    flh cash-cap-100bb shadow hash-without-counter 1e42e604b2e36dc2 illegalCandidates 0 changed 0
+    flh cash-cap-100bb candidate hash-without-counter 53dd70635ad5ee96 illegalCandidates 0 changed 1
+    flo8 hu-25bb off hash-without-counter 4f56b691af4f9b44 illegalCandidates 0 changed 0
+    flo8 hu-25bb shadow hash-without-counter 8c27e7894afb9fad illegalCandidates 0 changed 0
+    flo8 hu-25bb candidate hash-without-counter f76b9894f1f54a83 illegalCandidates 0 changed 6
+    flo8 cash-cap-100bb off hash-without-counter d91b6b0b85eee5d0 illegalCandidates 0 changed 0
+    flo8 cash-cap-100bb shadow hash-without-counter 9d8121ed3ef683de illegalCandidates 0 changed 0
+    flo8 cash-cap-100bb candidate hash-without-counter c4b5dc3c5d823372 illegalCandidates 0 changed 6
+
+This branch:
+
+    short_deck hu-25bb off hash-without-counter a77d7cbd78cb9655 illegalCandidates 0 changed 0
+    short_deck hu-25bb shadow hash-without-counter c1aadc5476f576d4 illegalCandidates 0 changed 0
+    short_deck hu-25bb candidate hash-without-counter dddb21bb285cd14f illegalCandidates 0 changed 3
+    short_deck cash-cap-100bb off hash-without-counter 5b122a51e0a623ad illegalCandidates 0 changed 0
+    short_deck cash-cap-100bb shadow hash-without-counter 8b188838064f1e50 illegalCandidates 0 changed 0
+    short_deck cash-cap-100bb candidate hash-without-counter fca40a0abf8dc4a3 illegalCandidates 0 changed 1
+    pineapple hu-25bb off hash-without-counter 8164c0840ecedaa5 illegalCandidates 0 changed 0
+    pineapple hu-25bb shadow hash-without-counter 2367d3deba5ce2fe illegalCandidates 0 changed 0
+    pineapple hu-25bb candidate hash-without-counter 7daf42f1a10f99ce illegalCandidates 1 changed 7
+    pineapple cash-cap-100bb off hash-without-counter d14683328edcc358 illegalCandidates 0 changed 0
+    pineapple cash-cap-100bb shadow hash-without-counter 334edb2c5c1bcc0d illegalCandidates 0 changed 0
+    pineapple cash-cap-100bb candidate hash-without-counter 50000cd16023b0a6 illegalCandidates 0 changed 1
+    flh hu-25bb off hash-without-counter 834065bd1b532895 illegalCandidates 0 changed 0
+    flh hu-25bb shadow hash-without-counter 97572fb8be7ad502 illegalCandidates 0 changed 0
+    flh hu-25bb candidate hash-without-counter 289743c9fce7f7e1 illegalCandidates 0 changed 2
+    flh cash-cap-100bb off hash-without-counter cb83e5cd3c403382 illegalCandidates 0 changed 0
+    flh cash-cap-100bb shadow hash-without-counter 1e42e604b2e36dc2 illegalCandidates 0 changed 0
+    flh cash-cap-100bb candidate hash-without-counter 53dd70635ad5ee96 illegalCandidates 0 changed 1
+    flo8 hu-25bb off hash-without-counter 4f56b691af4f9b44 illegalCandidates 0 changed 0
+    flo8 hu-25bb shadow hash-without-counter 8c27e7894afb9fad illegalCandidates 0 changed 0
+    flo8 hu-25bb candidate hash-without-counter f76b9894f1f54a83 illegalCandidates 0 changed 6
+    flo8 cash-cap-100bb off hash-without-counter d91b6b0b85eee5d0 illegalCandidates 0 changed 0
+    flo8 cash-cap-100bb shadow hash-without-counter 9d8121ed3ef683de illegalCandidates 0 changed 0
+    flo8 cash-cap-100bb candidate hash-without-counter c4b5dc3c5d823372 illegalCandidates 0 changed 6

@@ -1,0 +1,7 @@
+# Original paid entries survive identity retirement
+
+Two closed identities were marked eliminated and their original positive chairs left while their three-player Spin had already booked its original entries and draw but had never dealt a hand. This finite transaction verifies all three original registrations, debits, immutable funding/entitlement receipts, original chairs, retirement claims, current lease and absence of later hand/movement/terminal obligations. It restores only the two existing paid participants through the ordinary atomic assignment owner, creating native successor occupancies while their profiles remain deleted and disabled.
+
+Original Spin contribution, keyed journal and draw receipts must remain byte-identical. Caps and Daily Missions are acquired before launch/event/chair row locks. Every failure rolls the whole transaction back; private qualification and restoration receipts are immutable and inaccessible to browser/service roles. No payment, new purchase, profile reopening or hand receipt is invented.
+
+The actual current full financial owners and triggers were qualified on an isolated network-none PostgreSQL17.6 catalog with anonymous structural inputs: positive admission, receipt-only replay, nine refused boundaries and a second-assignment native fault proving full rollback. Hosted source contracts bind those exact inputs and source; they do not claim a full financial or product certificate. Production installation, exact readback and natural play remain separate required outcomes.

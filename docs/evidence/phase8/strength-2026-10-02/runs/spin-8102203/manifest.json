@@ -1,0 +1,26 @@
+{
+  "mode": "promotion",
+  "head": "c0b56ffce7c92a4827d73bbedec21b5b60e541c3",
+  "dirty": false,
+  "trackedDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "sourceSha256": "eb34bf5c1bf3adfd836f64074789a24048203270a28c5a64f7548e12c7b7b026",
+  "sourceFiles": 1691,
+  "serverLockSha256": "ca23ba067ed2c588ef30304d6db05485a9bf8d9c8395d1016e863883ccf64952",
+  "solverStores": {
+    "charts": 240,
+    "postflop": 7747,
+    "postflopV31": 0,
+    "postflopV31Dataset": null
+  },
+  "seeds": [8102203],
+  "pairs": 1024,
+  "objectives": ["spin"],
+  "requiredMatrix": {
+    "seeds": [8101101, 8102203, 8103307],
+    "objectives": ["mtt", "sng", "spin", "satellite", "pko", "mystery"],
+    "pairs": 1024
+  },
+  "activation": "never",
+  "equityGovernor": "off_in_isolated_compute_process",
+  "createdAt": "2026-10-02T14:53:44.214Z"
+}

@@ -1,0 +1,4 @@
+{
+  "_owner": "agent/cowork-pg/fix/postgrest-pool-recycle. Migration 20261004004616_the_api_pool_is_renewed_before_it_outgrows_the_host (applied 2026-10-04 01:05 UTC as 20261004010520): renews the PostgREST pool every 10 minutes.",
+  "functions": ["smarter_private.fn_renew_postgrest_pool"]
+}

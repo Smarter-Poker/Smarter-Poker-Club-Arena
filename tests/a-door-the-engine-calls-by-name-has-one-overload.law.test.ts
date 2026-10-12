@@ -61,7 +61,15 @@ const TYPE_ALIASES: Record<string, string> = {
 };
 
 /** First words of the built-in types that are spelled with a space. */
-const MULTIWORD_TYPE_START = new Set(['timestamp', 'time', 'double', 'character', 'bit', 'interval', 'national']);
+const MULTIWORD_TYPE_START = new Set([
+  'timestamp',
+  'time',
+  'double',
+  'character',
+  'bit',
+  'interval',
+  'national',
+]);
 
 /** Split a top-level comma list (parentheses, e.g. numeric(12,2), stay whole). */
 function splitTopLevel(list: string): string[] {
@@ -91,7 +99,10 @@ function inputTypes(args: string): string[] {
       // "p_user_id uuid" -> uuid; a bare type ("uuid", "timestamp with time zone") stays.
       const typeWords =
         words.length > 1 && !MULTIWORD_TYPE_START.has(words[0]) ? words.slice(1) : words;
-      const t = typeWords.join(' ').replace(/\(.*\)$/, '').trim();
+      const t = typeWords
+        .join(' ')
+        .replace(/\(.*\)$/, '')
+        .trim();
       return TYPE_ALIASES[t] ?? t;
     });
 }
@@ -104,7 +115,8 @@ interface Created {
 
 const CREATE_RE =
   /create\s+(?:or\s+replace\s+)?function\s+(?:public\.)?"?([a-z0-9_]+)"?\s*\(([\s\S]*?)\)\s*returns/gi;
-const DROP_RE = /drop\s+function\s+(?:if\s+exists\s+)?(?:public\.)?"?([a-z0-9_]+)"?\s*\(([^)]*)\)/gi;
+const DROP_RE =
+  /drop\s+function\s+(?:if\s+exists\s+)?(?:public\.)?"?([a-z0-9_]+)"?\s*\(([^)]*)\)/gi;
 
 const parsed = files.map((file) => {
   const sql = stripComments(readFileSync(join(DIR, file), 'utf8'));
@@ -121,6 +133,44 @@ const parsed = files.map((file) => {
 
 const sig = (types: string[]) => types.join(',');
 
+/**
+ * Overloads that coexist on production on purpose, each with the reason no
+ * named-argument call can match more than one of them (so PGRST203 cannot
+ * arise). A pair listed here is not a "signature change"; anything else is.
+ *
+ * fn_thaw_platform: the v3 thaw (announced_at, freeze_started, frozen_seconds,
+ * ownership_token, thawed_by) was installed by
+ * 20260909180615_maintenance_ownership_fits_process_lifetime, which is held
+ * back from this directory for the maintenance lane, beside the legacy
+ * (freeze_started, frozen_seconds, thawed_by) door. The v3 door requires
+ * p_announced_at and p_ownership_token with no default, and the legacy door
+ * has neither parameter, so no named-argument set is accepted by both. The
+ * engine calls only the v3 door (GameServer: runMaintenanceThawV3).
+ * 20261002165326 replaces the v3 body in place.
+ *
+ * Phase 1 customization: the four owner-bound doors require
+ * p_expected_user_id (and the theme door also requires p_mutation_id). The
+ * legacy doors declare neither name, so an old call cannot match the new door
+ * and a new call cannot match the old one. The old doors remain only through
+ * the measured compatible-client cutover, after which 20261005111523 revokes
+ * their browser execution.
+ */
+const DELIBERATE_OVERLOADS: Record<string, string[]> = {
+  fn_thaw_platform: [
+    'timestamp with time zone,numeric,text',
+    'timestamp with time zone,timestamp with time zone,numeric,uuid,text',
+  ],
+  fn_set_interface_theme: ['text', 'uuid,uuid,text'],
+  fn_mark_table_setting_touched: ['text[]', 'uuid,text[]'],
+  fn_seed_table_studio_preferences: ['text[],jsonb', 'uuid,text[],jsonb'],
+  fn_mutate_table_studio_preferences: [
+    'text,boolean,integer,jsonb',
+    'uuid,text,boolean,integer,jsonb',
+  ],
+};
+const deliberatePair = (name: string, a: string, b: string): boolean =>
+  (DELIBERATE_OVERLOADS[name] ?? []).includes(a) && (DELIBERATE_OVERLOADS[name] ?? []).includes(b);
+
 describe('a door the engine calls by name has one overload', () => {
   it('the engine calls fn_consume_time_bank by name with named arguments', () => {
     const engine = readFileSync(
@@ -132,12 +182,22 @@ describe('a door the engine calls by name has one overload', () => {
 
   it('every new fn_consume_time_bank signature is followed by the drop of (uuid, integer)', () => {
     const offenders: string[] = [];
-    parsed.forEach(({ file, creates }, index) => {
+    // A signature is new where it is first created; re-creating the same
+    // three-argument door later (CREATE OR REPLACE of the one door) adds no
+    // overload, so the drop is looked for after the FIRST creation.
+    const firstCreated = new Map<string, number>();
+    parsed.forEach(({ creates }, index) => {
+      for (const c of creates) {
+        if (c.name !== 'fn_consume_time_bank') continue;
+        if (!firstCreated.has(sig(c.types))) firstCreated.set(sig(c.types), index);
+      }
+    });
+    parsed.forEach(({ file, creates }) => {
       for (const c of creates) {
         if (c.name !== 'fn_consume_time_bank') continue;
         if (sig(c.types) === 'uuid,integer') continue;
         const dropped = parsed
-          .slice(index)
+          .slice(firstCreated.get(sig(c.types)))
           .some(({ drops }) =>
             drops.some((d) => d.name === 'fn_consume_time_bank' && sig(d.types) === 'uuid,integer')
           );
@@ -168,11 +228,17 @@ describe('a door the engine calls by name has one overload', () => {
       for (const c of creates) {
         const previous = lastSeen.get(c.name);
         const now = sig(c.types);
-        if (file >= LAW_FROM && previous !== undefined && previous !== now) {
+        if (
+          file >= LAW_FROM &&
+          previous !== undefined &&
+          previous !== now &&
+          !deliberatePair(c.name, previous, now)
+        ) {
           const dropped = parsed
             .slice(index)
             .some(({ drops }) => drops.some((d) => d.name === c.name && sig(d.types) === previous));
-          if (!dropped) offenders.push(`${file}: ${c.name}(${previous}) -> (${now}) without a drop`);
+          if (!dropped)
+            offenders.push(`${file}: ${c.name}(${previous}) -> (${now}) without a drop`);
         }
         lastSeen.set(c.name, now);
       }
@@ -182,5 +248,52 @@ describe('a door the engine calls by name has one overload', () => {
       }
     });
     expect(offenders).toEqual([]);
+  });
+
+  it('a deliberate overload pair really is disjoint by required named arguments', () => {
+    // The v3 thaw door keeps p_announced_at and p_ownership_token with no
+    // default, and the legacy door declares neither, so no call can match both.
+    const v3 = parsed
+      .flatMap(({ sql }) => [
+        ...sql.matchAll(
+          /create\s+or\s+replace\s+function\s+public\.fn_thaw_platform\s*\(([\s\S]*?)\)\s*returns/gi
+        ),
+      ])
+      .map((m) => m[1])
+      .filter((args) => /p_ownership_token/.test(args));
+    expect(v3.length, 'no migration here replaces the v3 thaw door').toBeGreaterThan(0);
+    for (const args of v3) {
+      expect(args).toMatch(/p_announced_at timestamp with time zone,/);
+      expect(args).toMatch(/p_ownership_token uuid,/);
+      expect(args).not.toMatch(/p_announced_at[^,]*default/i);
+      expect(args).not.toMatch(/p_ownership_token[^,]*default/i);
+    }
+
+    const ownerBoundDoors = [
+      'fn_set_interface_theme',
+      'fn_mark_table_setting_touched',
+      'fn_seed_table_studio_preferences',
+      'fn_mutate_table_studio_preferences',
+    ];
+    for (const name of ownerBoundDoors) {
+      const definitions = parsed
+        .flatMap(({ sql }) => [
+          ...sql.matchAll(
+            new RegExp(
+              `create\\s+or\\s+replace\\s+function\\s+public\\.${name}\\s*\\(([\\s\\S]*?)\\)\\s*returns`,
+              'gi'
+            )
+          ),
+        ])
+        .map((match) => match[1]);
+      expect(
+        definitions.some((args) => !/p_expected_user_id/i.test(args)),
+        `${name} has no legacy definition`
+      ).toBe(true);
+      const ownerBound = definitions.find((args) => /p_expected_user_id/i.test(args));
+      expect(ownerBound, `${name} has no owner-bound definition`).toBeDefined();
+      expect(ownerBound).toMatch(/p_expected_user_id uuid,/i);
+      expect(ownerBound).not.toMatch(/p_expected_user_id[^,]*default/i);
+    }
   });
 });

@@ -62,11 +62,11 @@ describe('the other account baseline waits for its actual interface mode', () =>
       const baseline = await ready;
       expect(baseline).toBe(mode);
       expect(document.documentElement.getAttribute('data-theme')).toBe(baseline);
-      // A cross-account overwrite must still differ from this captured baseline.
+      // A cross-account event cannot repaint this account after its scope binds.
       act(() =>
         useSettingsStore.getState().receiveTheme(mode === 'dark' ? 'light' : 'dark', 'wrong-player')
       );
-      expect(document.documentElement.getAttribute('data-theme')).not.toBe(baseline);
+      expect(document.documentElement.getAttribute('data-theme')).toBe(baseline);
     }
   );
 

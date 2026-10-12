@@ -16,6 +16,10 @@
 import type { Card } from '../types.js';
 import { deepFreezeSolverPolicy } from '../gto/SolverPolicyContract.js';
 import { depthCandidates, textureClass } from './GtoPostflop.js';
+import {
+  boardRelativeFeatureKeyV2,
+  boardRelativeFeatureKeyV2Valid,
+} from './GtoBoardRelativeFeaturesV2.js';
 import type {
   GtoV31FacingKind,
   GtoV31NodeRole,
@@ -37,6 +41,8 @@ export interface GtoV31ActionSpec {
 }
 
 export interface GtoV31SourceSeal {
+  feature_contract_version?: 'rank-suit-count-v1' | 'holdem-board-relative-v2';
+  policy_export_schema?: 'smarter-poker.pio-policy.v4';
   dataset_id: string;
   dataset_key: string;
   dataset_checksum: string;
@@ -157,7 +163,40 @@ const RANK_INDEX: Record<string, number> = Object.fromEntries(
   [...'AKQJT98765432'].map((rank, index) => [rank, index])
 );
 
-function canonicalHandKey(value: string, street: GtoPostflopV31Row['street']): boolean {
+export function gtoV31FeatureContractVersion(value: {
+  feature_contract_version?: unknown;
+}): GtoV31SourceSeal['feature_contract_version'] | null {
+  if (!Object.prototype.hasOwnProperty.call(value, 'feature_contract_version'))
+    return 'rank-suit-count-v1';
+  return value.feature_contract_version === 'rank-suit-count-v1' ||
+    value.feature_contract_version === 'holdem-board-relative-v2'
+    ? value.feature_contract_version
+    : null;
+}
+
+export function gtoV31PolicyContractValid(value: { policy_export_schema?: unknown }): boolean {
+  return (
+    !Object.prototype.hasOwnProperty.call(value, 'policy_export_schema') ||
+    value.policy_export_schema === 'smarter-poker.pio-policy.v4'
+  );
+}
+
+export function gtoV31PolicyContractIdentity(value: {
+  policy_export_schema?: unknown;
+}): Pick<GtoV31SourceSeal, 'policy_export_schema'> {
+  if (!gtoV31PolicyContractValid(value)) throw new Error('v31_policy_contract_unknown');
+  return Object.prototype.hasOwnProperty.call(value, 'policy_export_schema')
+    ? { policy_export_schema: value.policy_export_schema as 'smarter-poker.pio-policy.v4' }
+    : {};
+}
+
+function canonicalHandKey(
+  value: string,
+  street: GtoPostflopV31Row['street'],
+  version: GtoV31SourceSeal['feature_contract_version']
+): boolean {
+  if (version === 'holdem-board-relative-v2')
+    return boardRelativeFeatureKeyV2Valid(value, street === 'flop' ? 3 : street === 'turn' ? 4 : 5);
   if (typeof value !== 'string') return false;
   const match = /^([AKQJT98765432])([AKQJT98765432])([so]?):([0-5])([0-5])$/.exec(value);
   if (!match) return false;
@@ -263,6 +302,8 @@ function sealIsValid(
   const nonzero64 = (value: unknown): value is string =>
     typeof value === 'string' && HEX64.test(value) && value !== '0'.repeat(64);
   return (
+    gtoV31FeatureContractVersion(row) !== null &&
+    gtoV31PolicyContractValid(row) &&
     UUID.test(row.dataset_id) &&
     typeof row.dataset_key === 'string' &&
     row.dataset_key.length > 0 &&
@@ -302,6 +343,12 @@ function sealIsValid(
 
 function datasetSealKey(row: GtoPostflopV31Row): string {
   return JSON.stringify({
+    ...(Object.prototype.hasOwnProperty.call(row, 'policy_export_schema')
+      ? { policy_export_schema: row.policy_export_schema }
+      : {}),
+    ...(Object.prototype.hasOwnProperty.call(row, 'feature_contract_version')
+      ? { feature_contract_version: row.feature_contract_version }
+      : {}),
     dataset_id: row.dataset_id,
     dataset_key: row.dataset_key,
     dataset_checksum: row.dataset_checksum,
@@ -439,7 +486,8 @@ function rowIsValid(
     return false;
   }
   for (const [handKey, mix] of hands) {
-    if (!canonicalHandKey(handKey, row.street)) return false;
+    if (!canonicalHandKey(handKey, row.street, gtoV31FeatureContractVersion(row) ?? undefined))
+      return false;
     if (!mix || typeof mix !== 'object' || Array.isArray(mix)) return false;
     const entries = Object.entries(mix);
     if (
@@ -494,6 +542,12 @@ function rowIsValid(
 
 function sealOf(row: GtoPostflopV31Row): GtoV31SourceSeal {
   return {
+    ...(Object.prototype.hasOwnProperty.call(row, 'policy_export_schema')
+      ? { policy_export_schema: row.policy_export_schema }
+      : {}),
+    ...(Object.prototype.hasOwnProperty.call(row, 'feature_contract_version')
+      ? { feature_contract_version: row.feature_contract_version }
+      : {}),
     dataset_id: row.dataset_id,
     dataset_key: row.dataset_key,
     dataset_checksum: row.dataset_checksum,
@@ -706,12 +760,21 @@ export function gtoStreetAdviceV31(input: {
   if (!input.hand) return { hit: false, miss: 'no_hand' };
   const texture = textureClass(input.board);
   if (!texture) return { hit: false, miss: 'no_texture' };
-  const handKey = v31HandKey(input.hand, input.holeCards, input.board);
-  if (!handKey) return { hit: false, miss: 'no_hand' };
+  const legacyHandKey = v31HandKey(input.hand, input.holeCards, input.board);
+  if (!legacyHandKey) return { hit: false, miss: 'no_hand' };
   for (const depth of depthCandidates(input.stackBB)) {
     const cellKey = key({ ...input, depth, texture });
     const cell = selected.get(cellKey);
     if (!cell) continue;
+    let handKey = legacyHandKey;
+    if (gtoV31FeatureContractVersion(cell.seal) === 'holdem-board-relative-v2') {
+      const wire = (card: Card): string => `${card.rank}${'cdhs'[SUIT_INDEX[card.suit]]}`;
+      try {
+        handKey = boardRelativeFeatureKeyV2(input.holeCards.map(wire), input.board.map(wire));
+      } catch {
+        return { hit: false, miss: 'no_hand' };
+      }
+    }
     const mix = cell.matrix[handKey];
     if (!mix) return { hit: false, miss: 'hand_not_in_cell' };
     return {
@@ -771,9 +834,24 @@ export function gtoPostflopV31EvaluationCount(datasetChecksum: string): number {
   return evaluationStores.get(datasetChecksum)?.cells.size ?? 0;
 }
 
-export function gtoPostflopV31Dataset(): { id: string; checksum: string } | null {
+export function gtoPostflopV31Dataset(): {
+  id: string;
+  checksum: string;
+  feature_contract_version?: GtoV31SourceSeal['feature_contract_version'];
+  policy_export_schema?: GtoV31SourceSeal['policy_export_schema'];
+} | null {
+  const seal = activeStore.cells.values().next().value?.seal;
   return activeStore.datasetId && activeStore.datasetChecksum
-    ? { id: activeStore.datasetId, checksum: activeStore.datasetChecksum }
+    ? {
+        id: activeStore.datasetId,
+        checksum: activeStore.datasetChecksum,
+        ...(seal && Object.prototype.hasOwnProperty.call(seal, 'policy_export_schema')
+          ? { policy_export_schema: seal.policy_export_schema }
+          : {}),
+        ...(seal && Object.prototype.hasOwnProperty.call(seal, 'feature_contract_version')
+          ? { feature_contract_version: seal.feature_contract_version }
+          : {}),
+      }
     : null;
 }
 

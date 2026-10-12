@@ -38,12 +38,20 @@ import { RANK_VALUES } from './PokerEngine.js';
 import type { OppPostflopRead } from './HorseEval.js';
 import { horseDecisionEffectsAreValid, horseMindHandKey } from './HorseDecisionEffects.js';
 import { horseMindHandIdentityKey, type HorseMindHandIdentity } from './HorseMindHandIdentity.js';
+import {
+  mergeHorseObservationWindows,
+  normalizeHorseObservationWindow,
+  observeHorseObservationWindow,
+  type HorseObservationWindow,
+} from './HorseObservationWindow.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // OPPONENT STATS
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface OpponentStats {
+  /** Original contributing timestamps, not flush/read time. Absent on legacy rows. */
+  sourceWindow?: HorseObservationWindow;
   /** distinct hands this player has been observed in */
   hands: number;
   /** hands where they voluntarily put money in preflop */
@@ -339,6 +347,32 @@ const SCOPED_FIELDS = [
   'tankBetSDStrong',
 ] as const;
 
+const COUNTER_FIELDS = [
+  ...SCOPED_FIELDS,
+  'rHands',
+  'rFolds',
+  'rFacedAggr',
+  'rAggr',
+  'rPassive',
+  'rChecks',
+] as const;
+const hasContributions = (row: Partial<OpponentStats> | undefined): boolean =>
+  !!row && COUNTER_FIELDS.some((field) => Number.isFinite(row[field]) && row[field]! > 0);
+const countersChanged = (before: OpponentStats, after: OpponentStats): boolean =>
+  COUNTER_FIELDS.some((field) => before[field] !== after[field]);
+
+/** Imports may mix independently merged fields. Unknown contributing history
+ * stays unknown even when another input has a recent valid timestamp. */
+function importedWindow(
+  incoming: Partial<OpponentStats>,
+  existing?: OpponentStats
+): HorseObservationWindow {
+  const sources: unknown[] = [];
+  if (hasContributions(incoming)) sources.push(incoming.sourceWindow);
+  if (hasContributions(existing)) sources.push(existing!.sourceWindow);
+  return mergeHorseObservationWindows(...sources);
+}
+
 export class HorseMind {
   private static stats = new Map<string, OpponentStats>();
   /** V45: the scoped overlay, keyed `${scope}|${userId}`. */
@@ -471,7 +505,7 @@ export class HorseMind {
       }
       // V45: the scoped bucket receives exactly what the pooled one does
       // for this action, as a delta taken at the end of the iteration.
-      const before45 = isNew && this.decisionScope ? { ...s } : null;
+      const beforeObservation = isNew ? { ...s } : null;
 
       if (isNew) {
         this.dirty.add(a.userId); // V12: schedule for the next DB flush
@@ -593,7 +627,19 @@ export class HorseMind {
         }
         if (isAggr) streetBettor = a.userId;
       }
-      if (before45) this.applyScopedDelta(a.userId, before45, s);
+      if (beforeObservation && countersChanged(beforeObservation, s)) {
+        s.sourceWindow = observeHorseObservationWindow(
+          beforeObservation.sourceWindow,
+          a.timestamp,
+          hasContributions(beforeObservation)
+        );
+        this.applyScopedDelta(
+          a.userId,
+          beforeObservation,
+          s,
+          observeHorseObservationWindow(undefined, a.timestamp, false)
+        );
+      }
 
       if (preflop && isAggr) preflopRaises++;
     }
@@ -694,20 +740,28 @@ export class HorseMind {
   private static applyScopedDelta(
     userId: string,
     before: OpponentStats,
-    after: OpponentStats
+    after: OpponentStats,
+    contributionWindow: HorseObservationWindow
   ): void {
     const scope = this.decisionScope;
     if (!scope) return;
     let touched = false;
     let sc: OpponentStats | null = null;
+    let hadContributions = false;
     for (const f of SCOPED_FIELDS) {
       const d = after[f] - before[f];
       if (d === 0) continue;
-      if (!sc) sc = this.scopedFor(userId, scope);
+      if (!sc) {
+        sc = this.scopedFor(userId, scope);
+        hadContributions = hasContributions(sc);
+      }
       sc[f] += d;
       touched = true;
     }
-    void touched;
+    if (touched && sc)
+      sc.sourceWindow = hadContributions
+        ? mergeHorseObservationWindows(sc.sourceWindow, contributionWindow)
+        : normalizeHorseObservationWindow(contributionWindow);
   }
 
   /** V45 persistence: scoped rows changed since the last flush. */
@@ -751,6 +805,7 @@ export class HorseMind {
       for (const f of SCOPED_FIELDS) {
         next[f] = Math.max(existing ? existing[f] : 0, num((r as Record<string, unknown>)[f]));
       }
+      next.sourceWindow = importedWindow(r, existing);
       this.scoped.set(key, next);
       applied++;
     }
@@ -822,6 +877,7 @@ export class HorseMind {
       const keep = (live: number | undefined, incoming: number): number =>
         Math.max(existing ? (live ?? 0) : 0, incoming);
       this.stats.set(r.user_id, {
+        sourceWindow: importedWindow(r, existing),
         hands: num(r.hands),
         vpip: num(r.vpip),
         pfr: num(r.pfr),
@@ -1822,13 +1878,27 @@ export class HorseMind {
           this.stats.set(id, s);
         }
         this.dirty.add(id);
-        if (this.decisionScope && !touchedBefore.has(id)) touchedBefore.set(id, { ...s });
+        if (!touchedBefore.has(id)) touchedBefore.set(id, { ...s });
         return s;
       };
       const mirror = (): void => {
+        if (touchedBefore.size === 0) return;
+        // Deep counters use the completed hand's source action timestamps.
+        // Missing legacy timestamps make this envelope partial/unknown; the
+        // later completion/read clock must never fill their place.
+        const contributionWindow = mergeHorseObservationWindows(
+          ...actions.map((action) =>
+            observeHorseObservationWindow(undefined, action.timestamp, false)
+          )
+        );
         for (const [id, before] of touchedBefore) {
           const after = this.stats.get(id);
-          if (after) this.applyScopedDelta(id, before, after);
+          if (after && countersChanged(before, after)) {
+            after.sourceWindow = hasContributions(before)
+              ? mergeHorseObservationWindows(before.sourceWindow, contributionWindow)
+              : contributionWindow;
+            this.applyScopedDelta(id, before, after, contributionWindow);
+          }
         }
       };
 

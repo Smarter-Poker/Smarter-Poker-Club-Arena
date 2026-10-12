@@ -208,6 +208,10 @@ async function mounted(ui: ReactNode): Promise<HTMLElement> {
 const MIGRATIONS = resolve(__dirname, '../../supabase/migrations');
 const CREATES_FULL = /CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+public\.ca_player_stats_full\s*\(/i;
 
+/* The newest migration that CARRIES the body. A later migration may edit the
+   function by asserted substitution against the live catalogue, and then its
+   text holds the header line as a fragment but not the body (2026-09-29:
+   20260920065728 added p_asset that way); the scanner must skip it. */
 function latestStatsFullSql(): { file: string; body: string } {
   let latest: { file: string; body: string } | null = null;
   for (const file of readdirSync(MIGRATIONS)
@@ -215,7 +219,7 @@ function latestStatsFullSql(): { file: string; body: string } {
     .sort()) {
     const sql = readFileSync(join(MIGRATIONS, file), 'utf8');
     const at = sql.search(CREATES_FULL);
-    if (at >= 0) latest = { file, body: sql.slice(at) };
+    if (at >= 0 && sql.includes('totals AS (', at)) latest = { file, body: sql.slice(at) };
   }
   if (!latest) throw new Error('no migration creates public.ca_player_stats_full');
   return latest;
@@ -341,8 +345,10 @@ describe('scope tags match the SQL (defect 4: one grid, two populations)', () =>
 });
 
 describe('a rate over an empty sample says so (defect 3)', () => {
-  it('Overview: BB/100, Showdown Win % and Aggression Factor read Not Yet Measured', async () => {
+  it('Overview: every zero-sample tendency reads Not Yet Measured', async () => {
     const c = await mounted(overview(TOURNAMENT_ONLY));
+    expect(row(c, 'VPIP').value).toBe(NOT_YET_MEASURED);
+    expect(row(c, 'PFR').value).toBe(NOT_YET_MEASURED);
     expect(row(c, 'BB/100').value).toBe(NOT_YET_MEASURED);
     expect(row(c, 'Showdown Win %').value).toBe(NOT_YET_MEASURED);
     expect(row(c, 'Aggression Factor').value).toBe(NOT_YET_MEASURED);
@@ -352,19 +358,23 @@ describe('a rate over an empty sample says so (defect 3)', () => {
 
   it('Overview: measured rates still print their numbers', async () => {
     const c = await mounted(overview(OVERALL));
-    expect(row(c, 'BB/100').value).toBe('-22.50');
+    expect(row(c, 'BB/100').value).toBe('-22.5');
     expect(row(c, 'Showdown Win %').value).toBe('35.8%');
-    expect(row(c, 'Aggression Factor').value).toBe('0.70');
+    expect(row(c, 'Aggression Factor').value).toBe('0.7');
   });
 
-  it('Performance: the same three rates, and a real zero stays a zero', async () => {
+  it('Performance: every zero-sample tendency is unmeasured and a measured zero stays zero', async () => {
     const empty = await mounted(performance(TOURNAMENT_ONLY));
+    expect(row(empty, 'VPIP').value).toBe(NOT_YET_MEASURED);
+    expect(row(empty, 'PFR').value).toBe(NOT_YET_MEASURED);
     expect(row(empty, 'BB/100').value).toBe(NOT_YET_MEASURED);
     expect(row(empty, 'Showdown Win %').value).toBe(NOT_YET_MEASURED);
     expect(row(empty, 'Aggression Factor').value).toBe(NOT_YET_MEASURED);
     cleanup();
-    const brokeEven = await mounted(performance({ ...OVERALL, bb_per_100: 0 }));
-    expect(row(brokeEven, 'BB/100').value).toBe('0.00');
+    const brokeEven = await mounted(performance({ ...OVERALL, vpip: 0, pfr: 0, bb_per_100: 0 }));
+    expect(row(brokeEven, 'VPIP').value).toBe('0.0%');
+    expect(row(brokeEven, 'PFR').value).toBe('0.0%');
+    expect(row(brokeEven, 'BB/100').value).toBe('0.0');
   });
 
   it('Tournaments: ITM % with no entries and ROI with no buy-ins read Not Yet Measured', async () => {
@@ -412,14 +422,8 @@ describe('Notable Hands names its window (defect 6)', () => {
           rangeLabel="7 Days"
           printing={false}
           advancedInitialData={{} as never}
-          dailySeries={[]}
-          positionPie={[]}
-          profitChartSummary=""
-          dailyChartSummary=""
-          positionChartSummary=""
           sessionRows={[]}
-          exportSessionsCSV={() => {}}
-          exportOverviewCSV={() => {}}
+          exportContext={{} as never}
           handMode="biggest_won"
           setHandMode={() => {}}
           hands={[]}

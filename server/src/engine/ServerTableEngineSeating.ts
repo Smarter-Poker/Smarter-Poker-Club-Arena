@@ -1,3 +1,5 @@
+import { readCommittedSeatStacks } from './committedSeatStackRead.js';
+import { loadSeatedPlayers } from '../services/supabase.js';
 import { requestSeatDeparture, type AdminDepartureAuthority } from '../services/supabase/seats.js';
 /**
  * ServerTableEngine, layer 2/8 — buy-ins, cash-outs, sit-out/leave, admin locks, BB entry.
@@ -24,6 +26,7 @@ import {
   LIGHTNING_ADD_ON_REFUSED_MESSAGE,
 } from '../lightning/rpcErrors.js';
 import { RateLimitedLog } from '../lightning/RateLimitedLog.js';
+import { lightningPlayerLiveHand } from '../services/supabase/lightningAnchor.js';
 
 /** "Add-ons wait behind a Lightning hand" is said once a minute per table. */
 const lightningAddOnWaitLog = new RateLimitedLog(60_000);
@@ -96,7 +99,54 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     // it takes the chip tournament path below and is refused there exactly as
     // a chip tournament seat is: a tournament table has no buy-in headroom.
     if (this.tableInfo?.arena?.asset === 'diamonds' && !this.isTournamentTable()) {
-      return this.addDiamonds(userId, amount, maxBuyIn, midHand, player, opId);
+      /* A HAND IS NOT OVER UNTIL IT HAS SETTLED (Diamond Phase 11 line 5).
+         The controller is cleared when a hand ends, but its settlement runs
+         on after it (postHandTasks is not awaited; the dealing loop waits for
+         it before the next deal). A direct top-up in that window raced the
+         settlement of the same seat: measured on an isolated cluster with the
+         live doors, the top-up door deadlocked against the hand settler, and a
+         top-up that won the race left the settler an opening stack that no
+         longer matched the seat, which it refuses. Until the settlement lands
+         the top-up is an intent, exactly as mid hand, and it is applied after
+         the settlement and before the next deal. */
+      if (midHand || this.hasSettlementInFlight()) {
+        return this.addDiamonds(userId, amount, maxBuyIn, true, player, opId);
+      }
+      /* A DIAMOND SEAT CREDIT WAITS FOR THE HAND BEING PREPARED (2026-10-08).
+         The chip lane below has taken the seat boundary since 2026-09-28; this
+         branch returned above it and never did. dealHand() snapshots every
+         stack under that boundary and only then sets `handController`, so a
+         direct top-up that read "between hands" while the next hand was being
+         prepared raised table_seats.stack under a roster that still held the
+         old stack. fn_poker_diamond_settle_cash_hand then found the seat
+         disagreeing with the hand's stack_before and refused the whole hand
+         with diamond_hand_stale_seat. Production 2026-10-07: three Diamond
+         cash hands (04:35, 08:44, 15:24 UTC), each with exactly one horse
+         top-up committed 2-4 s after the previous hand's receipt, and each
+         table stopped dealing. The decision is taken only once the boundary
+         is owned: either it lands before the roster is snapshotted (and the
+         dealt stack includes it), or the hand has started and it is an
+         intent. */
+      let releaseSeatBoundary: () => void;
+      try {
+        releaseSeatBoundary = await this.acquireSeatBoundary();
+      } catch {
+        return { success: false, error: 'Diamond Top Up Failed' };
+      }
+      try {
+        const seated = this.seatedPlayers.find((p) => p.user_id === userId);
+        if (!seated) return { success: false, error: 'Player not seated' };
+        return await this.addDiamonds(
+          userId,
+          amount,
+          this.getMaxBuyIn(),
+          !!this.handController || this.hasSettlementInFlight(),
+          seated,
+          opId
+        );
+      } finally {
+        releaseSeatBoundary();
+      }
     }
 
     /* A SEAT CREDIT WAITS FOR THE HAND BEING PREPARED (2026-09-28).
@@ -421,44 +471,63 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
    */
   protected async applyDiamondTopUpIntents(players: SeatedPlayer[]): Promise<void> {
     if (this.diamondTopUpIntents.size === 0) return;
-    if (this.handController) return;
-    const maxBuyIn = Math.floor(this.getMaxBuyIn());
-    for (const [requestId, intent] of [...this.diamondTopUpIntents]) {
-      const player = players.find((p) => p.user_id === intent.userId);
-      const stack = Number(player?.stack ?? 0);
-      if (!player || !Number.isSafeInteger(stack) || stack < 0) {
-        this.diamondTopUpIntents.delete(requestId);
-        continue;
-      }
-      const applied = Math.min(intent.amount, Math.max(0, maxBuyIn - stack));
-      if (applied < 1) {
-        this.diamondTopUpIntents.delete(requestId);
-        continue;
-      }
-      const { data, error } = await supabase.rpc('fn_poker_diamond_top_up', {
-        p_user_id: intent.userId,
-        p_table_id: this.tableId,
-        p_amount: applied,
-        p_expected_stack: stack,
-        p_request_id: requestId,
-      });
-      /* LIGHTNING (2026-09-25): the player's Diamonds are in a live Lightning
-         hand. Nothing was taken and the intent is still good, so it is KEPT
-         and landed on a later pass - the one refusal here that is a "not
-         now" rather than an intent that can no longer be honoured. */
-      if (error && isLightningHandInProgress(error)) continue;
-      this.diamondTopUpIntents.delete(requestId);
-      if (error) {
-        reportError(error, `ServerTableEngine.${this.tableId}.diamond_intent_failed`, {
-          userId: intent.userId,
-          amount: applied,
-          requestId,
+    // Not while a hand is dealt, and not while the last one is still settling:
+    // the settler checks the seat's opening stack, and a top-up landing under it
+    // would make that stack wrong. The next sweep lands it.
+    if (this.handController || this.hasSettlementInFlight()) return;
+    /* And not while the next hand is being prepared (2026-10-08): the sweep
+       runs under the dealing loop's step budget, which stops waiting without
+       cancelling the RPC, so a landing still in flight could commit after
+       dealHand() snapshotted the roster. Holding the seat boundary makes hand
+       preparation wait for every landing, exactly as a direct top-up does. */
+    let releaseSeatBoundary: () => void;
+    try {
+      releaseSeatBoundary = await this.acquireSeatBoundary();
+    } catch {
+      return;
+    }
+    try {
+      if (this.handController || this.hasSettlementInFlight()) return;
+      const maxBuyIn = Math.floor(this.getMaxBuyIn());
+      for (const [requestId, intent] of [...this.diamondTopUpIntents]) {
+        const player = players.find((p) => p.user_id === intent.userId);
+        const stack = Number(player?.stack ?? 0);
+        if (!player || !Number.isSafeInteger(stack) || stack < 0) {
+          this.diamondTopUpIntents.delete(requestId);
+          continue;
+        }
+        const applied = Math.min(intent.amount, Math.max(0, maxBuyIn - stack));
+        if (applied < 1) {
+          this.diamondTopUpIntents.delete(requestId);
+          continue;
+        }
+        const { data, error } = await supabase.rpc('fn_poker_diamond_top_up', {
+          p_user_id: intent.userId,
+          p_table_id: this.tableId,
+          p_amount: applied,
+          p_expected_stack: stack,
+          p_request_id: requestId,
         });
-        continue;
+        /* LIGHTNING (2026-09-25): the player's Diamonds are in a live Lightning
+           hand. Nothing was taken and the intent is still good, so it is KEPT
+           and landed on a later pass - the one refusal here that is a "not
+           now" rather than an intent that can no longer be honoured. */
+        if (error && isLightningHandInProgress(error)) continue;
+        this.diamondTopUpIntents.delete(requestId);
+        if (error) {
+          reportError(error, `ServerTableEngine.${this.tableId}.diamond_intent_failed`, {
+            userId: intent.userId,
+            amount: applied,
+            requestId,
+          });
+          continue;
+        }
+        const written = Number((data as { stack?: number } | null)?.stack);
+        player.stack = Number.isSafeInteger(written) ? written : stack + applied;
+        this.broadcastCurrentState();
       }
-      const written = Number((data as { stack?: number } | null)?.stack);
-      player.stack = Number.isSafeInteger(written) ? written : stack + applied;
-      this.broadcastCurrentState();
+    } finally {
+      releaseSeatBoundary();
     }
   }
 
@@ -593,11 +662,28 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       /* A committed response may have been lost before the identical retry.
          Re-read absolute seat truth even when the replay resolves zero rows;
          never infer a stack delta from which HTTP response happened to land. */
-      const { data: persistedSeats, error: persistedSeatError } = await supabase
-        .from('table_seats')
-        .select('user_id,stack')
-        .eq('table_id', this.tableId)
-        .is('left_at', null);
+      let persistedSeats: Awaited<ReturnType<typeof readCommittedSeatStacks>> = null;
+      let persistedSeatError: unknown = null;
+      try {
+        persistedSeats = await readCommittedSeatStacks({
+          read: () =>
+            supabase
+              .from('table_seats')
+              .select('user_id,stack')
+              .eq('table_id', this.tableId)
+              .is('left_at', null),
+          canReflect: () => this.lifecycleCanMutate(),
+          progress: () => this.markProgress(),
+          sleep: (ms) => this.sleep(ms),
+          report: (error, attempt) =>
+            reportError(error, 'ServerTableEngine.pending_addon_stack_refresh_failed', {
+              tableId: this.tableId,
+              attempt,
+            }),
+        });
+      } catch (error) {
+        persistedSeatError = error;
+      }
       if (!this.lifecycleCanMutate()) return;
       if (persistedSeatError) {
         reportError(
@@ -826,16 +912,12 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
        delivers to nobody; without this the correction is simply lost and the
        client's balance stays wrong until an absolute read. One frame per
        player is enough: it is the newest adjustment that matters. */
-    const delivered = this.hub.sendToUser(this.tableId, userId, frame);
-    /* Retained ONLY while undelivered. `onResync` fires on EVERY connect
-       and mux subscribe, not just a seq-gap RESYNC, so a frame kept after
-       delivery would greet this player on every reload until the hourly
-       restart - and a freshly loaded client, whose balance was just read
-       absolutely, would credit the refund a second time. Delivered once to
-       an open socket is delivered; the same-session dedupe covers a later
-       gap-RESYNC. */
-    if (delivered > 0) this.lastAddOnAdjustedByUser.delete(userId);
-    else this.lastAddOnAdjustedByUser.set(userId, frame);
+    this.lastAddOnAdjustedByUser.set(userId, frame);
+    const delivered = () => {
+      if (this.lastAddOnAdjustedByUser.get(userId) === frame)
+        this.lastAddOnAdjustedByUser.delete(userId);
+    };
+    if (this.hub.sendToUser(this.tableId, userId, frame, delivered) > 0) delivered();
   }
 
   /** An add_on_adjusted frame that found no open socket, held for the
@@ -846,9 +928,11 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
   public rePushAddOnAdjusted(userId: string): void {
     const frame = this.lastAddOnAdjustedByUser.get(userId);
     if (!frame || !this.hub || typeof this.hub.sendToUser !== 'function') return;
-    if (this.hub.sendToUser(this.tableId, userId, frame) > 0) {
-      this.lastAddOnAdjustedByUser.delete(userId);
-    }
+    const delivered = () => {
+      if (this.lastAddOnAdjustedByUser.get(userId) === frame)
+        this.lastAddOnAdjustedByUser.delete(userId);
+    };
+    if (this.hub.sendToUser(this.tableId, userId, frame, delivered) > 0) delivered();
   }
 
   /**
@@ -1098,6 +1182,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       // FIX 143: Bible V8 §7.12 — Can't fold mid-hand.
       // If a hand is in progress, defer the sit-out until after the hand completes.
       // The player continues playing the current hand normally.
+      this.returnedFromSitOutAtMs.delete(userId);
       if (this.handController !== null) {
         this.pendingSitOut.add(userId);
       } else {
@@ -1108,6 +1193,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       this.pendingSitOut.delete(userId);
       // CHIP CONTINUITY: sitting back in withdraws a leave the clock was holding.
       this.leaveHeldByClock.delete(userId);
+      this.returnedFromSitOutAtMs.set(userId, Date.now());
       this.disconnectEngine.sitBack(this.tableId, userId);
       // Bible V8 §4.2: Mark player as returning — must post dead blind on next hand (cash tables only)
       if (!this.isTournamentTable()) {
@@ -1622,6 +1708,25 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
           if (this.postHandTasksPromise === pending) break;
         }
 
+        /* A SEAT WHOSE CHIPS ARE IN A LIVE LIGHTNING HAND IS NOT CASHED OUT
+           (Lightning Phase 6 remediation, 2026-10-01). Its stack is out at
+           another table's hand until that hand settles, so the leave is
+           recorded as the durable leave_pending request - exactly what the
+           database's own refusal (LIGHTNING_HAND_IN_PROGRESS) leads to below -
+           and the existing sweep cashes it out once the hand has settled.
+           Asked first, rather than learned from a refused cash-out. If the
+           question cannot be answered the cash-out is attempted as before
+           and the database guard still decides. */
+        if (player.occupancy_id && (await this.inLiveLightningHand(userId))) {
+          return this.queueDepartureBehindLightningHand(
+            userId,
+            player.seat_number,
+            player.occupancy_id,
+            opts.forced ? 'forced' : 'voluntary',
+            opts.admin
+          );
+        }
+
         const teardown = () => {
           if (
             this.seatedPlayers.some(
@@ -1784,6 +1889,22 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
    * authority, before the cash-out was attempted, so it is not requested
    * again here.
    */
+  /**
+   * Is this player's seat anchoring a live Lightning hand right now
+   * (fn_lightning_player_live_hand for this table's Cluster)? Only a cash
+   * table in a Cluster can anchor one; a question that cannot be answered is
+   * "no", which leaves the decision to the database guard on the cash-out.
+   */
+  protected async inLiveLightningHand(userId: string): Promise<boolean> {
+    const clusterId = this.tableInfo?.cluster_id;
+    if (this.isTournamentTable() || typeof clusterId !== 'string' || !clusterId) return false;
+    try {
+      return (await lightningPlayerLiveHand(userId, clusterId)) !== null;
+    } catch {
+      return false;
+    }
+  }
+
   private async queueDepartureBehindLightningHand(
     userId: string,
     seatNumber: number,
@@ -1832,6 +1953,36 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
   /**
    * POST /admin/pause — Bible V8 §6.17: Admin pause. Current hand finishes, then no new hands.
    */
+  protected override async closeOperatorCashAtBoundary(): Promise<void> {
+    const command = this.operatorCloseRequest;
+    if (!command || this.isTournamentTable() || !this.isBetweenHands()) return;
+    const roster = await loadSeatedPlayers(this.tableId);
+    if (!this.lifecycleCanMutate() || !this.isBetweenHands()) return;
+    this.adoptSeatRoster(roster);
+    for (const seat of [...this.seatedPlayers]) {
+      const answer = await this.leaveTable(seat.user_id, {
+        forced: true,
+        occupancyId: seat.occupancy_id,
+        seatNumber: seat.seat_number,
+        admin: {
+          actorId: command.actor_id,
+          clubId: this.tableInfo!.club_id,
+          reason: command.reason,
+        },
+      });
+      if (!answer.success || !answer.immediate) return;
+    }
+    const { data, error } = await supabase.rpc('fn_ca_operator_finish_cash_close', {
+      p_table_id: this.tableId,
+      p_operation_id: command.operation_id,
+    });
+    if (error) throw new Error('operator_cash_close_outcome_unknown');
+    // stop() joins this dealer loop. Fence it now, then let this boundary
+    // return so teardown can join the original loop without awaiting itself.
+    if (data === true)
+      void this.stop().catch((error) => reportError(error, 'operator_cash_close_stop_failed'));
+  }
+
   public adminPause(reason?: string): { success: boolean } {
     this.adminPauseLock = true;
     console.log(

@@ -1,0 +1,41 @@
+{
+  "schema": "horse-human-calibrated-check-v1",
+  "phase": "phase12",
+  "variant": "short_deck",
+  "packVersion": "short-deck-round3-v1",
+  "contractDigest": "fafbba8dc23ebc59b5aadf78fdcc47cd6f504baf9bcd10b07970ad7fbea501c0",
+  "population": "human-calibrated-v1-20261008",
+  "profileId": "p12c-short_deck-6max-40bb",
+  "leagueProfileId": "p12c-short_deck-6max-40bb--human-calibrated-v1-20261008",
+  "evidenceMode": "contract",
+  "seed": 19203307,
+  "firstHand": 0,
+  "requestedHands": 3888,
+  "hands": 3888,
+  "complete": true,
+  "candidate": {
+    "sum": 1253841,
+    "sumSq": 70599141563
+  },
+  "reference": {
+    "sum": 1242791,
+    "sumSq": 70326634063
+  },
+  "difference": {
+    "sum": 11050,
+    "sumSq": 276927500
+  },
+  "changedHands": 11,
+  "decisions": 67338,
+  "changed": 11,
+  "illegalCandidates": 0,
+  "illegalActions": 0,
+  "conservationErrors": 0,
+  "cardErrors": 0,
+  "incompleteHands": 0,
+  "truncatedHands": 0,
+  "candidateRake": 16191.250000000033,
+  "referenceRake": 16188.62000000003,
+  "sourceSha": "022e1e4f8172de48eb4f81dca6c69bc2b0b0b2b1",
+  "durationMs": 23592
+}

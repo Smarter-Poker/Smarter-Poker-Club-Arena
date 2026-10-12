@@ -8,7 +8,7 @@ const fixture = vi.hoisted(() => ({
   float: 15,
   failure: false,
   reads: [] as Array<{ table: string; fields: string; filters: Record<string, string> }>,
-  rpc: vi.fn().mockResolvedValue({ data: [], error: null }),
+  rpc: vi.fn(),
   channel: vi.fn(),
 }));
 vi.mock('../../src/hooks/useAuthUser', () => ({
@@ -40,22 +40,52 @@ vi.mock('../../src/lib/supabase', () => ({
             ? { data: null, error: { message: 'Permission denied' } }
             : {
                 error: null,
-                data:
-                  table === 'clubs'
-                    ? {
-                        id: request.filters.id,
-                        name: 'Test Club',
-                        union_id: null,
-                        chip_treasury: fixture.bank,
-                        promo_balance: fixture.pot,
-                      }
-                    : { agent_wallet_balance: fixture.agent, promo_wallet_balance: fixture.float },
+                data: { agent_wallet_balance: fixture.agent, promo_wallet_balance: fixture.float },
               };
         },
       };
       return builder;
     },
-    rpc: fixture.rpc,
+    /* The club figures come from fn_club_money_panel, the role-checked read
+       (S-07, launch audit 2026-10-09); clubs.chip_treasury is never selected.
+       The panel is a one-row rpc the service reads with .abortSignal(), and it
+       is recorded as a read of the 'clubs' money so the filter assertions below
+       still cover it. */
+    rpc: (name: string, args: Record<string, unknown>) => {
+      if (name !== 'fn_club_money_panel') {
+        fixture.rpc(name, args);
+        return Promise.resolve({ data: [], error: null });
+      }
+      const request = {
+        table: 'clubs',
+        fields: 'fn_club_money_panel',
+        filters: { id: args.p_club_id as string },
+      };
+      const answer = async () => {
+        fixture.reads.push(request);
+        return fixture.failure
+          ? { data: null, error: { message: 'Permission denied' } }
+          : {
+              error: null,
+              data: {
+                authorized: true,
+                scope: 'club',
+                club_id: args.p_club_id,
+                club_name: 'Test Club',
+                in_union: false,
+                union_id: null,
+                club_treasury: fixture.bank,
+                club_promo_wallet: fixture.pot,
+              },
+            };
+      };
+      const thenable = {
+        abortSignal: () => answer(),
+        then: (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) =>
+          answer().then(resolve, reject),
+      };
+      return thenable;
+    },
     channel: (...args: unknown[]) => {
       fixture.channel(...args);
       const channel = { on: () => channel, subscribe: () => channel };
@@ -77,7 +107,7 @@ describe('the open cashier reads the balances that changed elsewhere', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     Object.assign(fixture, { bank: 100, pot: 25, agent: 40, float: 15, failure: false, reads: [] });
-    fixture.rpc.mockClear();
+    fixture.rpc.mockReset();
     fixture.channel.mockClear();
     vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
   });
@@ -88,12 +118,12 @@ describe('the open cashier reads the balances that changed elsewhere', () => {
   });
 
   it('shows a concurrent club-bank withdrawal without reopening or a row event', async () => {
-    const view = render(<WalletCashierModal {...base} walletType="club_bank" />);
+    render(<WalletCashierModal {...base} walletType="club_bank" />);
     await flush();
-    expect(view.container.querySelector('.cbc-bank strong')).toHaveTextContent('100');
+    expect(document.querySelector('.cbc-bank strong')).toHaveTextContent('100');
     fixture.bank = 70;
     await act(() => vi.advanceTimersByTimeAsync(8_000));
-    expect(view.container.querySelector('.cbc-bank strong')).toHaveTextContent('70');
+    expect(document.querySelector('.cbc-bank strong')).toHaveTextContent('70');
     expect(fixture.channel).not.toHaveBeenCalled();
     expect(fixture.rpc.mock.calls.every(([name]) => name === 'fn_club_cashier_members')).toBe(true);
     expect(fixture.reads.every((read) => read.filters.id === CLUB && read.table === 'clubs')).toBe(
@@ -102,12 +132,12 @@ describe('the open cashier reads the balances that changed elsewhere', () => {
   });
 
   it('updates the viewer’s agent float using both club and user filters', async () => {
-    const view = render(<WalletCashierModal {...base} role="agent" walletType="agent_wallet" />);
+    render(<WalletCashierModal {...base} role="agent" walletType="agent_wallet" />);
     await flush();
-    expect(view.container.querySelector('.cbc-bank strong')).toHaveTextContent('40');
+    expect(document.querySelector('.cbc-bank strong')).toHaveTextContent('40');
     fixture.agent = 19;
     await act(() => vi.advanceTimersByTimeAsync(8_000));
-    expect(view.container.querySelector('.cbc-bank strong')).toHaveTextContent('19');
+    expect(document.querySelector('.cbc-bank strong')).toHaveTextContent('19');
     for (const read of fixture.reads.filter((r) => r.table === 'agents')) {
       expect(read.filters).toEqual({
         club_id: CLUB,
@@ -117,21 +147,21 @@ describe('the open cashier reads the balances that changed elsewhere', () => {
   });
 
   it('keeps the club promo pot separate from the viewer’s promo float', async () => {
-    const view = render(<WalletCashierModal {...base} walletType="promo_wallet" />);
+    render(<WalletCashierModal {...base} walletType="promo_wallet" />);
     await flush();
-    expect(view.container.querySelector('.cbc-bank strong')).toHaveTextContent('25');
+    expect(document.querySelector('.cbc-bank strong')).toHaveTextContent('25');
     fixture.pot = 31;
     fixture.float = 99;
     await act(() => vi.advanceTimersByTimeAsync(8_000));
-    expect(view.container.querySelector('.cbc-bank strong')).toHaveTextContent('31');
+    expect(document.querySelector('.cbc-bank strong')).toHaveTextContent('31');
   });
 
   it('shows unavailable after a refused refresh, never the previous spendable number or zero', async () => {
-    const view = render(<WalletCashierModal {...base} walletType="club_bank" />);
+    render(<WalletCashierModal {...base} walletType="club_bank" />);
     await flush();
     fixture.failure = true;
     await act(() => vi.advanceTimersByTimeAsync(8_000));
-    expect(view.container.querySelector('.cbc-bank strong')).toHaveTextContent('Unavailable');
+    expect(document.querySelector('.cbc-bank strong')).toHaveTextContent('Unavailable');
   });
 
   it('stops all balance reads when the cashier closes', async () => {

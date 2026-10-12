@@ -1,0 +1,45 @@
+{
+  "run": "mtt-8101101",
+  "objective": "mtt",
+  "seed": 8101101,
+  "domain": "nlh_single_board_tournament",
+  "requestedPairs": 1024,
+  "completedPairs": 0,
+  "complete": false,
+  "status": "unavailable external input",
+  "sourceSha": "4948e0ffd527adee5d898426f7abd84be0be09ab",
+  "sourceSha256": "bb617c83e843a67516a5b7a9faac22777ad9920d927f54cb3dd3a5d2f5199a6f",
+  "sourceFiles": 1651,
+  "serverLockSha256": "ca23ba067ed2c588ef30304d6db05485a9bf8d9c8395d1016e863883ccf64952",
+  "dirty": false,
+  "mode": "promotion",
+  "solverStores": {
+    "charts": 0,
+    "postflop": 0,
+    "postflopV31": 0,
+    "postflopV31Dataset": null
+  },
+  "sampleIdentity": {
+    "pairSeedRule": "(seed ^ imul(pair + 1, 2654435761)) >>> 0 || 1",
+    "pairs": "0..1023",
+    "heroRotation": "pair % entrants"
+  },
+  "started": "2026-10-01T16:04:26Z",
+  "ended": "2026-10-01T16:04:28Z",
+  "exitCode": 1,
+  "refusals": [
+    "solver_store_hydration_failed:supabase_rejected_service_credential(Unregistered API key)",
+    "compute_process_refused:requires_the_qualified_Linux_launcher(platform=darwin)"
+  ],
+  "lowerBound99": null,
+  "confidence99": null,
+  "meanDifference": null,
+  "illegalActions": null,
+  "conservationErrors": null,
+  "truncatedHands": null,
+  "criticalCommitmentNonregression": null,
+  "completedVsRefusalReconciliation": null,
+  "p99DeadlineMs": null,
+  "promotionEligible": false,
+  "note": "No paired tournament was played; every metric is absent, not zero."
+}

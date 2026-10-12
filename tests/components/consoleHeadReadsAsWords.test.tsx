@@ -30,7 +30,11 @@ import TournamentLobbyModal from '../../src/components/table/TournamentLobbyModa
 /* The lobby page itself is not what this is about, and it is the expensive
    half of the modal. The panel, its console and its head are real. */
 vi.mock('../../src/pages/tournament/TournamentDetails', () => ({
-  default: () => <div data-testid="lobby-page" />,
+  default: ({ onClose }: { onClose?: () => void }) => (
+    <div data-testid="lobby-page">
+      <button type="button" aria-label="Close Tournament Lobby" onClick={onClose} />
+    </div>
+  ),
 }));
 
 describe('a painted console head reads as words', () => {
@@ -54,12 +58,19 @@ describe('a painted console head reads as words', () => {
     expect(container.querySelector('.sc__title > span')!.textContent).toBe('Lobby');
   });
 
-  it('gives the tournament lobby panel the text the watch spec asserts', () => {
-    render(<TournamentLobbyModal isOpen tournamentId="t-1" onClose={() => {}} />);
-    const panel = document.querySelector('.tlm-panel');
-    expect(panel).not.toBeNull();
-    expect(panel!.textContent).toMatch(/Tournament Lobby/i);
-    // And the door out is still named, one word away from the head.
-    expect(screen.getAllByRole('button', { name: 'Close' })[0]).toBeInTheDocument();
+  /* 2026-10-04: the tournament lobby popup no longer wears a console. Dan:
+     "remove all these large frames, and make it like a normal, industry
+     standard tournament lobby card". It is a full-screen dialog holding the
+     lobby page and nothing else, so there is no painted head left in it to
+     read as words. What survives of this case is the half that was never
+     about paint: the popup is still named, and it still has a door out. The
+     door is the PAGE's now, handed to it as `onClose`. */
+  it('names the tournament lobby popup and hands the page its way out', () => {
+    const onClose = vi.fn();
+    render(<TournamentLobbyModal isOpen tournamentId="t-1" onClose={onClose} />);
+    expect(screen.getByRole('dialog', { name: 'Tournament Lobby' })).toBeInTheDocument();
+    expect(document.querySelector('.tlm-panel .sc')).toBeNull();
+    screen.getByRole('button', { name: 'Close Tournament Lobby' }).click();
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

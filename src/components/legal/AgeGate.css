@@ -12,6 +12,11 @@
   color: rgba(255, 255, 255, 0.75);
 }
 .age-gate__input {
+  /* The Android WebView gives a date input an intrinsic width that wins over
+     the column's stretch: it sat at half the card on the first device run. */
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 48px;
   font-size: 16px; /* iOS: never under 16px, or Safari zooms on focus */
   padding: 12px 14px;
   border-radius: 10px;

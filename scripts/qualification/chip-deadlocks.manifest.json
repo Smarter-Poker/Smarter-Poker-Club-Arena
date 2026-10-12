@@ -1,0 +1,37 @@
+{
+  "captured": "2026-10-01 (read-only, supabase db query --linked)",
+  "functions": {
+    "fn_caller_is_engine": "d9a70f1d932538025e656bfe2b4d091d",
+    "fn_union_week_start": "103f192a228084dad0e4268c36c82c4b",
+    "fn_allocate_rake_credits": "74d61a3e0caf1037f6e6633eff0dd611",
+    "fn_award_vip_credit": "29b7217ecae30238871d3a6e676e1bf6",
+    "fn_award_vip_points_from_rake": "24028ae5df74069cadea2df80124569a",
+    "fn_ca_club_rake_daily_compute": "8c184988b1c7b14f27d4305eb9b99456",
+    "fn_ca_club_rake_daily_apply": "9b47ac0cf0ab468e28cfef01548f25e8",
+    "trg_ca_club_rake_daily_insert": "4bb7c4d64021796803829faacbcddbb0",
+    "fn_lock_cash_bank_accounting_week": "0b3cfc4dcbf320ce06d2948e14eaba8c",
+    "atomic_distribute_rake": "0ef820b10c57d902b5ab2d5f9e2be8a6",
+    "fn_agent_commission_paid_by_period": "bf3d7279f773b121cb8704ffc7e4b057",
+    "trg_agent_commission_rollup_insert": "50cb43eb54b7924b39c25b9816f450a0",
+    "fn_post_accounting_commission_source": "b647df60b45c25183638f4cdbaec57fd",
+    "apply_rakeback_player_stats": "7f2b71a539db1b9c5cf6dbf6a489d40e",
+    "fn_sync_profile_total_hands": "918a9211cf484127ab5d326aea1e47b3",
+    "fn_accrue_cash_hand_commissions": "fe09e05438e5028309ded9409a7403ea",
+    "fn_process_cash_accounting_source": "4ae4504e890c47a68ba1733c3759be46",
+    "fn_credit_agent_commissions_batch": "3b9313fc37e62ca2c0b0bbbc7fdc6dc0",
+    "fn_retry_cash_accounting_sources": "cf43f5cc8e7d47994025cc7682cc18bc",
+    "fn_lock_accounting_tournament_recognition_week": "bd8a01e6f7359a9a3a7cff5ae94fa946",
+    "fn_recognize_accounting_tournament_fees": "195878da781227b47753a28dbc7bc978",
+    "fn_lock_daily_mission_user": "0e9d2905374930bda4529a8febc6eff6",
+    "upsert_horse_mind_pairs": "c73cb456bd033f8d3f5a03e53b9934b0",
+    "upsert_horse_mind_stats": "84df6d650c905cedba86f2698f1fbd3d",
+    "upsert_horse_mind_stats_scoped": "73884faf30f48913dba34053fdd33337",
+    "fn_project_hand_side_effects_after_post_commit_20260908": "ee06376aba27a84ac4759d8ce9f42a1e"
+  },
+  "triggers": {
+    "trg_award_vip_points_from_rake": "CREATE TRIGGER trg_award_vip_points_from_rake AFTER INSERT ON public.rake_records FOR EACH ROW EXECUTE FUNCTION fn_award_vip_points_from_rake()",
+    "trg_ca_club_rake_daily_ins": "CREATE TRIGGER trg_ca_club_rake_daily_ins AFTER INSERT ON public.rake_records REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION trg_ca_club_rake_daily_insert()",
+    "trg_agent_commission_rollup_ins": "CREATE TRIGGER trg_agent_commission_rollup_ins AFTER INSERT ON public.agent_commissions REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION trg_agent_commission_rollup_insert()",
+    "trg_sync_profile_total_hands": "CREATE TRIGGER trg_sync_profile_total_hands AFTER INSERT OR DELETE OR UPDATE OF hands_played ON public.player_stats FOR EACH ROW EXECUTE FUNCTION fn_sync_profile_total_hands()"
+  }
+}

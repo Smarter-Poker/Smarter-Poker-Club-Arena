@@ -114,6 +114,11 @@ function world(engine: any) {
       data: [{ id: seat, user_id: user, seat_number: 1, stack: 100, occupancy_id: occupancy }],
       error: null,
     }),
+    // The source's registrations, which the break door also counts.
+    in: async () => ({
+      data: [{ user_id: user, status: 'playing', chips: 100, seat_number: 1 }],
+      error: null,
+    }),
   };
   vi.spyOn(supabase, 'from').mockReturnValue(query);
 

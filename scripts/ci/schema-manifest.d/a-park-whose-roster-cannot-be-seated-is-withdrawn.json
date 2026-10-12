@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/unbegun-park-withdraw. Migration 20261002142740_a_park_whose_roster_cannot_be_seated_is_withdrawn_and_its_ta: adds the not-last-table withdrawal door for an unbegun tournament table-break park whose roster cannot be seated.",
+  "functions": ["fn_f06_withdraw_unplaceable_park"]
+}

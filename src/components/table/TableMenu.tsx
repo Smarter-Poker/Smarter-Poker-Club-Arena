@@ -117,6 +117,7 @@ export interface TableMenuProps {
 export function createDefaultMenuSections(
   handlers: {
     onSitOut?: () => void;
+    onShowTournamentDock?: () => void;
     onStandUpBB?: () => void;
     onRebuy?: () => void;
     onAutoTopUp?: () => void;
@@ -161,7 +162,7 @@ export function createDefaultMenuSections(
       actions: [
         {
           id: 'sitout',
-          label: 'Sit Out Next Hand',
+          label: 'Sit Out',
           icon: <SitOutIcon />,
           onClick: handlers.onSitOut || (() => {}),
         },
@@ -203,6 +204,16 @@ export function createDefaultMenuSections(
     {
       title: 'Table Info',
       actions: [
+        ...(handlers.onShowTournamentDock
+          ? [
+              {
+                id: 'tournament-info',
+                label: 'Show Tournament Info',
+                icon: <SessionStatsIcon />,
+                onClick: handlers.onShowTournamentDock,
+              },
+            ]
+          : []),
         {
           id: 'history',
           label: 'Hand History',
@@ -565,7 +576,11 @@ export function TableMenu({
                   </div>
                   {(handNumber != null || sessionDuration) && (
                     <div className="table-menu__header-meta">
-                      {handNumber != null && <span>Hand #{handNumber}</span>}
+                      {handNumber != null && (
+                        <span role="status" aria-label={`Hand #${handNumber}`} aria-live="off">
+                          {`Hand #${handNumber}`}
+                        </span>
+                      )}
                       {handNumber != null && sessionDuration && (
                         <span className="table-menu__meta-sep">·</span>
                       )}

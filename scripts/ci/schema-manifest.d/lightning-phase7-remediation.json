@@ -1,0 +1,7 @@
+{
+  "_owner": "agent/claude-lightning-p7r/fix/reversion-review-db - migration 20261007222717_lightning_phase_7_remediation_the_reversion_review_findings_",
+  "_comment": "Lightning Phase 7 remediation: the reversion review findings are closed. NOT YET APPLIED: the column below is a promise until the owner installs 20261007222717 after Phase 7 (20261001222856). The migration creates no function and no table; every body change is an asserted substitution into functions production already carries (fn_cash_cluster_unfreeze, fn_cash_cluster_reap_stuck_conversions, fn_cash_cluster_begin_pending_on, fn_cash_cluster_begin_pending_off, fn_cash_cluster_commit_must_move, fn_cash_cluster_commit_lightning, fn_cash_cluster_lightning_drive, fn_lightning_instance_releases_its_reservations, fn_lightning_config). The one new object is cash_games.lightning_off_condition_since, the nullable timestamp that records the first sighting of the OFF condition for the pending_off dwell.",
+  "tables": [],
+  "functions": [],
+  "columns": { "cash_games": ["lightning_off_condition_since"] }
+}

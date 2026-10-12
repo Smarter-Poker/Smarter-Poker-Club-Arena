@@ -1,0 +1,4 @@
+{
+  "_owner": "agent/claude-diamond-phase-10/fix/fixture-accounts-are-not-players",
+  "functions": ["fn_diamond_arena_players_playing"]
+}

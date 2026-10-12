@@ -1501,13 +1501,21 @@ and 7pm, or in five Chicago windows, that text is OLD. This section wins.
 (That is exactly how the hamburger revert war ran for two days: a stale copy
 taught the next agent to "fix" the current behaviour back.)
 
-Owner update, September 17: a corrected failed release may request one extra
-certified recovery window through the existing release transaction. The normal
-hourly schedule remains unchanged. The additional window retains the two-minute
-last-hand lead, five-minute countdown, durable ownership, full 285-second
-cutover/rollback reserve and v3 thaw. It must not overlap the next hourly
-announcement or extend a previous freeze. See
-`docs/changelog/2026-09-17-event-owned-engine-recovery.md`.
+Owner update, October 4 (supersedes the September 17 update): there is ONE
+scheduled break an hour. Dan: "THERE ARE CURRENTLY TWO SCHEDULED MAINTENANCE
+BREAKS, ONE AT THE :55 AND THE NEXT ONE STARTS AT THE :11 FIGURE OUT WHAT THE
+2ND ONE IS FOR, AND REMOVE IT IF ITS NOT NECESSARY." The second one was the
+off-cycle "Deployment Recovery" window, which a failed or missed engine release
+could request so its fix shipped before the next :55. That is no longer a
+cause: a failed or missed release waits for the next hourly break. The window
+survives only for a named emergency the hourly break cannot wait for - the
+serving engine is dead, stalled or wedged (`engine-degraded`), the commit
+carries the `Engine-Release: urgent` trailer, or no scheduled break can admit
+the release before its certificate deadline - still at most one per rolling
+hour, with the same two-minute last-hand lead, five-minute countdown, durable
+ownership, full cutover/rollback reserve and v3 thaw. See
+`docs/changelog/2026-10-04-one-scheduled-break-an-hour.md` (and, for the
+mechanism, `docs/changelog/2026-09-17-event-owned-engine-recovery.md`).
 
 Dan, verbatim: "program the engine restart to be every hour on the :55 ...
 THE ENTIRE PLATFORM NEEDS TO FREEZE FOR THE 5 MINUTES, NO BUY INS, NO CHIP

@@ -1,0 +1,4 @@
+{
+  "_owner": "agent/claude/launch-blockers-2026-10-04. Migration 20261004135607_the_ledger_replay_knows_which_legs_its_snapshot_saw (applied 2026-10-04 ~14:30 UTC and recorded as 20261004135607): each replay reading records the legs its snapshot saw.",
+  "tables": ["ca_ledger_replay_readings"]
+}

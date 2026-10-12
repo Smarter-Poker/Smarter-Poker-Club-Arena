@@ -8,44 +8,116 @@ const amount = (value: unknown): number | null => {
   return Number.isFinite(parsed) ? parsed : null;
 };
 
-/** Same authenticated, RLS-protected rows the cashier reads at open time. */
+/**
+ * THE CREDIT LINE A SEND MAY STILL DRAW (2026-10-09), read exactly as
+ * fn_agent_wallet_send_core does: an agent who is not prepaid
+ * (coalesce(is_prepaid, true) is false) with a positive credit_limit may send
+ * past the float, and the shortfall is drawn against credit_limit -
+ * credit_used. Everyone else - prepaid, no line, no agents row - has none.
+ * The cashiers used to cap a send at the float alone, so a credit agent with
+ * an empty float could not send at all while the server would have allowed it.
+ */
+export function creditHeadroomOf(
+  row: { is_prepaid?: unknown; credit_limit?: unknown; credit_used?: unknown } | null | undefined
+): number {
+  if (!row || row.is_prepaid !== false) return 0;
+  const limit = amount(row.credit_limit) ?? 0;
+  if (limit <= 0) return 0;
+  const used = amount(row.credit_used) ?? 0;
+  return Math.max(0, Math.round((limit - used) * 100) / 100);
+}
+
+/** A column the server reads through coalesce(..., 0). */
+const coalescedAmount = (value: unknown): number | null =>
+  value === null || value === undefined ? 0 : amount(value);
+
+const objectValue = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+
+export interface CashierBalanceSnapshot {
+  clubId: string;
+  name: string;
+  inUnion: boolean;
+  /** Club Bank or the viewer's Agent Wallet, by walletType. null = unavailable, never 0. */
+  bank: number | null;
+  /** What a send may draw past the float: the Agent Wallet's credit line only, 0 otherwise. */
+  credit: number;
+  /** The club's promo pot (clubs.promo_balance through the role-checked panel). */
+  promoPot: number | null;
+  /** The viewer's own promo float (agents.promo_wallet_balance). */
+  promoFloat: number | null;
+  /**
+   * D-16 (2026-10-09): false when the viewer simply has no `agents` row, so the
+   * Agent Wallet row can say "No Agent Float Yet" instead of "Unavailable";
+   * true when the float row exists; null when the float was not read at all
+   * (club_bank cashier) or could not be read (then the read throws).
+   */
+  hasFloat: boolean | null;
+}
+
+/**
+ * The balances the cashier paints at open time.
+ *
+ * S-07 (2026-10-09): Club Bank and the promo pot used to be read straight off
+ * `clubs.chip_treasury` / `clubs.promo_balance`. Production grants SELECT on
+ * those columns to every signed-in (and anonymous) API caller, so the cashier
+ * role gate for that figure was client-only. `fn_club_money_panel` is the
+ * SECURITY DEFINER read that answers the same question behind a server role
+ * check (member, club staff or union staff), and is what DynamicWallet already
+ * uses. A refused or unreadable panel throws, so the modal shows Unavailable;
+ * it never resolves to 0.
+ */
 export async function readCashierBalances(
   clubId: string,
   userId: string,
   walletType: CashierWalletType,
   signal: AbortSignal
-) {
+): Promise<CashierBalanceSnapshot> {
   const uuid = await resolveClubUUID(clubId);
   if (!isUUID(uuid)) throw new Error('That club could not be resolved');
-  const [club, agent] = await Promise.all([
-    supabase
-      .from('clubs')
-      .select('id, name, union_id, chip_treasury, promo_balance')
-      .eq('id', uuid)
-      .abortSignal(signal)
-      .maybeSingle(),
+  const [panel, agent] = await Promise.all([
+    supabase.rpc('fn_club_money_panel', { p_club_id: uuid }).abortSignal(signal),
     walletType !== 'club_bank'
       ? supabase
           .from('agents')
-          .select('agent_wallet_balance, promo_wallet_balance')
+          .select(
+            'agent_wallet_balance, promo_wallet_balance, is_prepaid, credit_limit, credit_used'
+          )
           .eq('club_id', uuid)
           .eq('user_id', userId)
           .abortSignal(signal)
           .maybeSingle()
       : Promise.resolve({ data: null, error: null }),
   ]);
-  if (club.error) throw club.error;
+  if (panel.error) throw panel.error;
   if (agent.error) throw agent.error;
-  if (!club.data) throw new Error('The club balance is unavailable');
+  // A jsonb RPC hands back the object; a TABLE one would hand back an array.
+  const money = Array.isArray(panel.data) ? panel.data[0] : panel.data;
+  // `{authorized:false, reason}` is a RESOLVED rpc with no `error`: a refusal,
+  // not a balance. It must reach the modal's error path, never paint 0.00.
+  if (!objectValue(money) || money.authorized !== true)
+    throw new Error('The club balance is unavailable');
+  /* An agents row that does not exist is an EMPTY wallet, exactly as the
+     server reads it ("Your Agent Wallet Has Not Been Funded Yet"), not an
+     unknown one: only a read that failed (thrown above) is "Unavailable".
+     `hasFloat` carries that fact to the modal, which says "No Agent Float Yet"
+     rather than printing a bare 0 (D-16). The club bank cashier does not read
+     the agents row at all, so its float stays unknown. */
+  const agentRow = walletType === 'club_bank' ? undefined : agent.data;
+  const hasFloat = agentRow === undefined ? null : agentRow !== null;
+  const agentFigure = (column: 'agent_wallet_balance' | 'promo_wallet_balance') =>
+    agentRow === undefined ? null : agentRow ? coalescedAmount(agentRow[column]) : 0;
   return {
     clubId: uuid,
-    name: club.data.name || 'Club',
-    inUnion: Boolean(club.data.union_id),
+    name: typeof money.club_name === 'string' && money.club_name ? money.club_name : 'Club',
+    inUnion: money.in_union === true || Boolean(money.union_id),
     bank:
       walletType === 'club_bank'
-        ? amount(club.data.chip_treasury)
-        : amount(agent.data?.agent_wallet_balance),
-    promoPot: amount(club.data.promo_balance),
-    promoFloat: amount(agent.data?.promo_wallet_balance),
+        ? amount(money.club_treasury)
+        : agentFigure('agent_wallet_balance'),
+    credit: walletType === 'agent_wallet' ? creditHeadroomOf(agentRow) : 0,
+    promoPot: amount(money.club_promo_wallet),
+    promoFloat: agentFigure('promo_wallet_balance'),
+    hasFloat,
   };
 }

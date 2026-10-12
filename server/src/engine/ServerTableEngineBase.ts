@@ -1,4 +1,6 @@
+import { isPreExecutionDbUnavailable } from './committedSeatStackRead.js';
 import { randomUUID } from 'node:crypto';
+import { positionLabelsFor } from './presentation/projectHandState.js';
 import { custodyJSON } from '../tournament/mixedF06Custody.js';
 import type { RetirementCustody } from '../services/TournamentRetirementCustody.js';
 import { AllocatorIssuerMeasurement } from '../services/AllocatorIssuerMeasurement.js';
@@ -33,7 +35,7 @@ import { PreciseActionTimer } from './PreciseActionTimer.js';
 import { ServerActionValidator } from './ServerActionValidator.js';
 import { StateVerifier } from './StateVerifier.js';
 import { TimeBankEngine, type TimeBankEvent } from './TimeBankEngine.js';
-import { DisconnectEngine } from './DisconnectEngine.js';
+import { DisconnectEngine, type DisconnectFsmEntry } from './DisconnectEngine.js';
 import { PreActionEngine } from './PreActionEngine.js';
 import { AtomicStackService } from './AtomicStackService.js';
 import { StraddleEngine } from './StraddleEngine.js';
@@ -121,8 +123,10 @@ import {
   completeHandSnapshot,
   getActiveHandSnapshotFull,
   resumeRetainedHandSubmission,
+  RetainedHandSubmissionRefusedError,
   savePresenceAtPark,
   parkStoppedTimeBankCustody,
+  reaskTimeBankDebit,
   loadPresenceFromPark,
   loadTimeBanksFromPark,
   type ParkedTimeBank,
@@ -152,7 +156,12 @@ import {
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { wakeCluster } from '../cluster/ClusterController.js';
 import { ChipContinuityTracker } from './ChipContinuity.js';
-import { claimMovedPresence, depositMovedPresence, hasMovedPresence } from './SeatMovePresence.js';
+import {
+  claimMovedPresence,
+  claimTournamentMovePresence,
+  depositMovedPresence,
+  hasMovedPresence,
+} from './SeatMovePresence.js';
 import {
   readCashMoveArrivals,
   type CashMoveArrival,
@@ -204,6 +213,7 @@ import {
 export type EngineLeaseAuthority =
   | {
       scope: 'cash';
+      closureOperationId?: string;
       verified: true;
       generation: string;
       proofDeadlineMonotonicMs: number;
@@ -286,6 +296,16 @@ export abstract class ServerTableEngineBase {
   getStartupPolicyRefusal(): Readonly<CashTablePolicyRefusal> | null {
     return this.startupPolicyRefusal;
   }
+  /**
+   * The retained-hand door refused this cash table's start from durable
+   * state (RETAINED_HAND_STANDING_REFUSALS). Published before ready=false so
+   * the owner holds the table instead of rebuilding it into the same answer.
+   */
+  private startupRetainedHandRefusal: Readonly<{ code: string; tableId: string }> | null = null;
+
+  getStartupRetainedHandRefusal(): Readonly<{ code: string; tableId: string }> | null {
+    return this.startupRetainedHandRefusal;
+  }
   /** Passive first fence only; never used to authorize or schedule work. */
   private firstTerminalObservation: ReturnType<typeof leavePendingTerminalReason> | null = null;
   /**
@@ -296,6 +316,14 @@ export abstract class ServerTableEngineBase {
   private teardownPromise: Promise<void> | null = null;
   /** Successful physical teardown, never inferred from the terminal fence alone. */
   private terminalTeardownComplete = false;
+  /**
+   * performStop reached its end: every owned writer it captured was joined
+   * (resolved or rejected), the bank capture ran and process resources were
+   * released. Unlike terminalTeardownComplete it does not claim that nothing
+   * failed, so a transient read or snapshot write that rejected during the
+   * stop does not make the stopped custody untransferable (2026-10-01).
+   */
+  private terminalTeardownDrained = false;
   /** True only after this object has owned the process-global table resources. */
   private claimedProcessOwnership: boolean = false;
   /** One causal hand-off from an asynchronously failed dealer to its owner. */
@@ -628,6 +656,68 @@ export abstract class ServerTableEngineBase {
 
   // Bible V8 §6.17: Admin pause/maintenance lock — prevents new hands from starting
   protected adminPauseLock: boolean = false;
+  protected operatorFloorPaused = false;
+  /**
+   * True only when the last floor read SUCCEEDED and named an operator hold
+   * (2026-10-12). operatorFloorPaused is also raised when the read fails,
+   * which is "could not tell", never an operator's decision (CLAUDE.md 10.86).
+   */
+  private operatorFloorHoldRead = false;
+  protected readonly operatorClosureOnlyId: string | null;
+  private operatorFloorReadSequence = 0;
+  protected operatorCloseRequest: {
+    operation_id: string;
+    actor_id: string;
+    reason: string;
+  } | null = null;
+
+  /** Called by this table's existing boundary, never a second floor sweeper. */
+  public async refreshOperatorFloor(): Promise<void> {
+    const sequence = (this.operatorFloorReadSequence = (this.operatorFloorReadSequence ?? 0) + 1);
+    const { data, error } = await supabase.rpc('fn_ca_operator_floor_state', {
+      p_table_id: this.tableId,
+    });
+    if (sequence !== this.operatorFloorReadSequence) return;
+    if (error || !data || typeof data !== 'object') {
+      this.operatorFloorPaused = true;
+      this.operatorFloorHoldRead = false;
+      throw new Error('operator_floor_state_unknown');
+    }
+    this.operatorFloorHoldRead = Boolean(data.hold);
+    this.operatorCloseRequest = data.close ?? null;
+    const paused = Boolean(this.operatorClosureOnlyId || data.hold || this.operatorCloseRequest);
+    const wasPaused = this.operatorFloorPaused;
+    this.operatorFloorPaused = paused;
+    if (paused !== wasPaused && (paused || (!this.isNextHandPaused() && !this.handForHandPaused))) {
+      this.hub?.emitEvent(this.tableId, {
+        type: paused ? 'table_paused' : 'table_resumed',
+        table_id: this.tableId,
+        reason: data.close?.reason ?? data.hold?.reason ?? null,
+        timestamp: Date.now(),
+      });
+    }
+  }
+
+  protected async closeOperatorCashAtBoundary(): Promise<void> {
+    if (!this.operatorCloseRequest) return;
+    throw new Error('operator_cash_close_owner_unavailable');
+  }
+
+  protected async passOperatorFloorBoundary(): Promise<boolean> {
+    await this.refreshOperatorFloor();
+    if (!this.operatorFloorPaused) return false;
+    this.markProgress();
+    if (
+      this.operatorClosureOnlyId &&
+      this.operatorCloseRequest?.operation_id !== this.operatorClosureOnlyId
+    )
+      throw new Error('operator_cash_close_authority_changed');
+    if (this.operatorCloseRequest && !this.maintenancePaused && this.isBetweenHands()) {
+      await this.closeOperatorCashAtBoundary();
+    }
+    return true;
+  }
+
   /**
    * Wall-clock instant before which this table must not deal (2026-08-21).
    *
@@ -665,6 +755,20 @@ export abstract class ServerTableEngineBase {
 
   public holdDealingUntil(atMs: number): void {
     if (atMs > this.dealHoldUntilMs) this.dealHoldUntilMs = atMs;
+  }
+
+  /**
+   * Give back a hold placed for exactly `atMs` (2026-10-04).
+   *
+   * The hold only ever extends, which is right while its deadline stands. An
+   * add-on break begun inside the maintenance freeze holds for a deadline the
+   * thaw then moves; the manager withdraws that break and must take its hold
+   * with it, or the table waits out a break that is not running. Only the
+   * deadline still in force is released, so a later hold placed by another
+   * authority is never shortened.
+   */
+  public releaseDealingHold(atMs: number): void {
+    if (atMs > 0 && this.dealHoldUntilMs === atMs) this.dealHoldUntilMs = 0;
   }
 
   /**
@@ -796,6 +900,12 @@ export abstract class ServerTableEngineBase {
    */
   protected pendingAddOnSweepNeeded = true;
   /**
+   * When this engine last took each player back from a sit-out. Read by
+   * `restoreSitOutsFromSeats` so a roster row from before that moment cannot
+   * sit them out again. Cleared when the engine itself sits the player out.
+   */
+  protected returnedFromSitOutAtMs: Map<string, number> = new Map();
+  /**
    * CHIP STANDARD C3 (2026-09-02): a sweep request counter beside the flag.
    *
    * The flag alone had a losing race once rows could arrive from OUTSIDE the
@@ -818,6 +928,32 @@ export abstract class ServerTableEngineBase {
   protected requestPendingAddOnSweep(): void {
     this.pendingAddOnSweepNeeded = true;
     this.pendingAddOnSweepGen++;
+  }
+
+  /**
+   * AN IDLE TABLE FINDS THE CHIPS IT OWES (launch audit 2026-10-05).
+   *
+   * A browser rebuy is only a `table_pending_addons` row; the wallet is
+   * already debited. The engine reads that ledger only when the sweep flag is
+   * up, and nothing raised it for a row written from outside this process
+   * unless the seat was BROKE (the rebuy pause and the stand-up sweep ask
+   * about broke seats only). A row for a seat with chips was therefore found
+   * at the next hand commit, and a table that is not dealing has none:
+   * production row 8ba60255 sat 36 minutes with the wallet debited and
+   * nothing on the felt, until the hourly restart's first pass.
+   *
+   * The wait loop is where a table that is not dealing lives, so that is
+   * where the question is asked: one indexed read per pass for the seated
+   * roster, skipped when a sweep is already requested. A hit raises the flag
+   * (inside the helper) and `processPendingAddOns`, called right after,
+   * delivers or refunds in this same pass. An unreadable ledger changes
+   * nothing; the next pass asks again.
+   */
+  protected async findLedgerChipsOwedWhileWaiting(): Promise<void> {
+    if (this.pendingAddOnSweepNeeded) return;
+    const seated = (this.seatedPlayers ?? []).map((p) => p.user_id);
+    if (seated.length === 0) return;
+    await this.usersWithPendingLedgerChips(seated);
   }
 
   /**
@@ -1724,6 +1860,26 @@ export abstract class ServerTableEngineBase {
    */
   protected currentHandContributions: Map<string, number> = new Map();
   /**
+   * DID THIS HAND SEE A FLOP, FOR MONEY (2026-10-05). Captured at WINNERS from
+   * `HandController.handSawFlopForMoney()` — the exact expression
+   * `priceDeductions` prices the rake with — beside the contributions above,
+   * because by the time postHandTasks builds the settlement payload the
+   * controller may already be gone. Sent to the database as `hand_saw_flop` on
+   * every element of a Diamond cash hand's stacks payload, where the owner's
+   * `cash_rake_no_flop_no_drop` answer reads it. See diamondCashRakeFacts.ts.
+   */
+  protected currentHandSawFlopForMoney: boolean = false;
+  /**
+   * The owner's Diamond cash rake schedule this hand was DEALT under, read
+   * once at the deal from `ca_diamond_economics`. Carried to settlement so
+   * the accepted-hand guard re-prices the hand against the same rows the
+   * settler will, rather than against whatever is published by the time the
+   * hand finishes. Null on every chip hand and every tournament hand.
+   */
+  protected currentHandDiamondRakeSchedule:
+    | import('../domain/diamondCashRakeSchedule.js').DiamondCashRakeSchedule
+    | null = null;
+  /**
    * userId → uncalled amount returned to the player this hand. Persisted for
    * audit alongside contributions (gross = eligible + returned). Zero-entry
    * players are omitted.
@@ -2116,6 +2272,7 @@ export abstract class ServerTableEngineBase {
       throw new Error('f06_hand_number_precision');
     const permit = await this.f06PermitFactory(String(handNumber));
     if (!this.running) throw new Error('f06_dealer_fenced');
+    this.f06ParkReleasedPermit = null;
     this.f06CurrentPermit = permit;
     try {
       await permit.reserve();
@@ -2183,6 +2340,15 @@ export abstract class ServerTableEngineBase {
     }
   }
 
+  /**
+   * The binding of the never-started permit this engine's stopped-custody park
+   * released (2026-10-01). The database closed that permit in the park's own
+   * transaction, so the permit object is gone, but a break that already holds
+   * this table as its stopped original still needs to know which permit the
+   * original held. Set only when the park names the permit back; never a
+   * source of hand authority.
+   */
+  private f06ParkReleasedPermit: Readonly<F06HandPermit['binding']> | null = null;
   private f06StoppedMovementProof: string | null = null;
   private f06StoppedMovementGuards = new Map<string, () => void>();
   /** Admit only this positively drained original object under a live, exact
@@ -2221,26 +2387,66 @@ export abstract class ServerTableEngineBase {
     assertSource();
     if (this.f06StoppedMovementProof !== proof) {
       if (this.f06StoppedMovementProof) throw new Error('f06_stopped_original_binding_changed');
+      /*
+       * THE PARK THAT RELEASED THE PERMIT ALREADY PROVED THE NO-START
+       * (2026-10-01).
+       *
+       * Table a2d8a54e ($100 Freeroll 6:00 AM): a lost fn_f06_begin_hand left
+       * its permit `unknown`, the zombie watchdog stopped the engine at
+       * 11:49:22Z, and the Manager parked the table as this break's stopped
+       * original (c0b625dd). The first custody claim missed, and before the
+       * retry the :53 maintenance announcement ran the stopped-custody park,
+       * which released that never-started permit `never_started` in its own
+       * transaction and dropped the permit object. Every later retirement of
+       * the break then refused here with `f06_stopped_original_permit_mismatch`
+       * because the permit it asked for no longer existed - 426 refusals and a
+       * table of nine players that dealt nothing for over an hour.
+       *
+       * The park's release is the same fact `finishF06OriginalNoStart` writes:
+       * the original's hand never started and never can. So a permit the park
+       * named back stands in for the live one; the exact park claim is still
+       * read and checked before movement is admitted.
+       */
       const permit = this.f06CurrentPermit;
+      const identity = permit ? permit.binding : this.f06ParkReleasedPermit;
       if (
-        !permit ||
-        permit.binding.table_id !== b.tableId ||
-        permit.binding.lifecycle !== b.tableIncarnation ||
-        permit.binding.tournament_id !== b.tournamentId ||
-        permit.binding.lease_generation !== b.leaseGeneration
+        !identity ||
+        identity.table_id !== b.tableId ||
+        identity.lifecycle !== b.tableIncarnation ||
+        identity.tournament_id !== b.tournamentId ||
+        identity.lease_generation !== b.leaseGeneration
       )
         throw new Error('f06_stopped_original_permit_mismatch');
-      await this.drainF06NeverStarted();
-      assertSource();
-      await this.finishF06OriginalNoStart(
-        { break_id: b.breakId, custody_id: b.custodyId, revision: b.durableRevision },
-        async () => {
-          assertSource();
-          const row = await readExactParkClaim();
-          assertSource();
-          return row;
-        }
-      );
+      if (permit) {
+        await this.drainF06NeverStarted();
+        assertSource();
+        await this.finishF06OriginalNoStart(
+          { break_id: b.breakId, custody_id: b.custodyId, revision: b.durableRevision },
+          async () => {
+            assertSource();
+            const row = await readExactParkClaim();
+            assertSource();
+            return row;
+          }
+        );
+      } else {
+        const row = (await readExactParkClaim()) as Record<string, unknown> | null;
+        assertSource();
+        if (
+          this.f06CurrentPermit !== null ||
+          !row ||
+          row.ok !== true ||
+          row.state !== 'park_requested' ||
+          row.break_id !== b.breakId ||
+          row.custody_id !== b.custodyId ||
+          row.revision !== b.durableRevision ||
+          row.custody_generation !== identity.lease_generation ||
+          row.tournament_id !== identity.tournament_id ||
+          row.source_table_id !== identity.table_id ||
+          row.lifecycle !== identity.lifecycle
+        )
+          throw new Error('f06_original_custody_unproven');
+      }
       // Retain exact positive evidence even if the post-await map assertion
       // fails. A different binding cannot turn it into new movement authority.
       this.f06StoppedMovementProof = proof;
@@ -2575,7 +2781,10 @@ export abstract class ServerTableEngineBase {
      12:17:06Z froze a 335-player freeroll (its manager could not finish its
      stop) and held the restart gate shut for 55 tables. */
   private timeBankAccountingUnconfirmed = false;
-  private readonly unresolvedTimeBankDebits = new Map<string, { userId: string; seconds: number }>();
+  private readonly unresolvedTimeBankDebits = new Map<
+    string,
+    { userId: string; seconds: number }
+  >();
   private timeBankDebitResolution: Promise<void> | null = null;
   /** See persistPresenceForRestart: the delay before the one retry a refused park write gets. */
   protected parkWriteRetryMs = 5_000;
@@ -2612,6 +2821,10 @@ export abstract class ServerTableEngineBase {
   protected engineTelemetry: EngineTelemetry;
 
   constructor(tableId: string, leaseAuthority: EngineLeaseAuthority | null = null) {
+    this.operatorClosureOnlyId =
+      leaseAuthority?.scope === 'cash' && leaseAuthority.verified
+        ? (leaseAuthority.closureOperationId ?? null)
+        : null;
     this.tableId = tableId;
     this.engineLeaseScope = leaseAuthority?.scope ?? null;
     this.engineLeaseVerified = leaseAuthority?.verified ?? false;
@@ -2759,6 +2972,16 @@ export abstract class ServerTableEngineBase {
            cash seat is evicted after 2 orbits / 5 minutes and a tournament
            seat is blinded off. Counted fleet-wide so it can page (Dan
            2026-09-11). Twelve were parked this way at 14:55 UTC that day. */
+        if (sittingOut && event.reason === 'forced') {
+          try {
+            EngineMetrics.forcedSitOutsTotal.inc(1, {
+              audience: satPlayer?.is_horse ? 'horse' : 'human',
+              format: this.tableFormat(),
+            });
+          } catch {
+            /* metrics must never affect gameplay */
+          }
+        }
         if (sittingOut && event.reason === 'forced' && satPlayer?.is_horse) {
           try {
             EngineMetrics.horseForcedSitOutsTotal.inc(1, { format: this.tableFormat() });
@@ -3339,23 +3562,33 @@ export abstract class ServerTableEngineBase {
        */
       let tableData: unknown;
       let haltReadSeq = 0;
+      const startReadDeadline = Date.now() + 60_000;
       for (let attempt = 1; ; attempt++) {
+        if (!this.lifecycleCanMutate()) return;
         try {
           // Sequenced BEFORE the request goes out (see beginDealingHaltRead).
           haltReadSeq = this.beginDealingHaltRead();
-          tableData = await loadTable(this.tableId);
+          tableData = this.operatorClosureOnlyId
+            ? await loadTable(this.tableId, this.operatorClosureOnlyId)
+            : await loadTable(this.tableId);
           break;
         } catch (err) {
           if (
             !ServerTableEngineBase.isTransientDbError(err) ||
-            attempt >= ServerTableEngineBase.START_LOAD_ATTEMPTS
+            Date.now() >= startReadDeadline ||
+            (attempt >= ServerTableEngineBase.START_LOAD_ATTEMPTS &&
+              !isPreExecutionDbUnavailable(err))
           ) {
             throw err;
           }
-          if (!this.running) return;
-          const backoff = Math.min(500 * 2 ** (attempt - 1), 8_000);
+          if (!this.lifecycleCanMutate()) return;
+          const backoff = Math.min(
+            500 * 2 ** Math.min(attempt - 1, 4),
+            8_000,
+            Math.max(0, startReadDeadline - Date.now())
+          );
           console.warn(
-            `[ServerTableEngine:${this.tableId}] loadTable blipped on start (attempt ${attempt}/${ServerTableEngineBase.START_LOAD_ATTEMPTS}) - retrying in ${backoff}ms`
+            `[ServerTableEngine:${this.tableId}] loadTable blipped on start (attempt ${attempt}, ${Math.max(0, startReadDeadline - Date.now())}ms budget left) - retrying in ${backoff}ms`
           );
           await this.sleep(backoff);
         }
@@ -3578,6 +3811,10 @@ export abstract class ServerTableEngineBase {
           if (!this.running) break;
           this.setLoopPhase('start_wait_for_players');
         }
+        if (await this.passOperatorFloorBoundary()) {
+          await this.waitForPlayersPause(ServerTableEngineBase.WAIT_FOR_PLAYERS_POLL_MS);
+          continue;
+        }
         const idsBeforeSweep = new Set(this.seatedPlayers.map((p) => p.user_id));
         try {
           const nextRoster = await loadSeatedPlayers(this.tableId);
@@ -3707,6 +3944,8 @@ export abstract class ServerTableEngineBase {
            few funded seats. The sweep flag starts true once per engine and is
            raised again by every in-process add-on / observed bust rebuy. */
         if (!this.isTournamentTable()) {
+          await this.findLedgerChipsOwedWhileWaiting();
+          if (!this.lifecycleCanMutate()) return;
           await this.processPendingAddOns(this.seatedPlayers);
           if (!this.lifecycleCanMutate()) return;
         }
@@ -3726,6 +3965,9 @@ export abstract class ServerTableEngineBase {
         // hold restored only if and when the table filled again. Guarded to
         // once per process, so the two call sites cannot double-restore.
         this.restoreEntryHoldsFromSeats();
+        // Presence is judged here too, before the eviction that reads it.
+        await this.judgePresenceWhileWaiting();
+        if (!this.lifecycleCanMutate()) return;
         // THE CASE DAN REPORTED. This loop is where a table below the minimum
         // to deal waits — possibly forever — and the sit-out rule used to live
         // only in the dealing loop, which is never reached from here. So the
@@ -3835,6 +4077,20 @@ export abstract class ServerTableEngineBase {
           arenaId: err.arenaId,
         });
         this.fenceTerminalEngine('startup_policy_closed', false);
+        throw err;
+      }
+      if (
+        err instanceof RetainedHandSubmissionRefusedError &&
+        err.tableId === this.tableId &&
+        this.engineLeaseScope === 'cash'
+      ) {
+        // A STANDING REFUSAL IS NOT A CRASH (2026-09-29). The door answered
+        // from rows a rebuilt engine would read again; a watchdog kill here
+        // was a rebuild every five seconds into the same answer. Fence this
+        // generation without a watchdog record and let the owner hold the
+        // table and say so once (GameServer.holdRetainedHandRefusal).
+        this.startupRetainedHandRefusal = Object.freeze({ code: err.code, tableId: err.tableId });
+        this.fenceTerminalEngine('startup_retained_hand_refused', false);
         throw err;
       }
       this.settleReady(false);
@@ -4119,6 +4375,7 @@ export abstract class ServerTableEngineBase {
     console.log(
       `[ServerTableEngine:${this.tableId}] Stopped. Dealt ${this.handsDealtThisSession} hands.`
     );
+    this.terminalTeardownDrained = true;
     if (failures.length > 0) {
       throw new AggregateError(
         failures,
@@ -4681,6 +4938,58 @@ export abstract class ServerTableEngineBase {
   }
 
   /**
+   * The source half of a tournament move's presence handoff (2026-10-05).
+   * Read by the tournament manager while the source is parked at the hand
+   * boundary, before the move RPC. See SeatMovePresence.ts.
+   */
+  presenceForTournamentMove(playerId: string): DisconnectFsmEntry | null {
+    if (!this.isTournamentTable()) return null;
+    return this.disconnectEngine.getFsmState(this.tableId, playerId);
+  }
+
+  /**
+   * The destination half: a player the roster now seats here, with presence
+   * deposited by the move that brought them, keeps it. Runs ahead of every
+   * registration (see adoptMovedPresence), so the arriving entry is never
+   * pre-empted by a fresh CONNECTED one. A carried sit-out is written back to
+   * the new chair, which the move RPC opened with is_sitting_out=false, so the
+   * felt and the engine agree.
+   */
+  protected adoptTournamentMovePresence(): void {
+    for (const p of this.seatedPlayers) {
+      if (this.disconnectEngine.getFsmState(this.tableId, p.user_id)) continue;
+      const carried = claimTournamentMovePresence(p.user_id, this.tableId);
+      if (!carried) continue;
+      this.disconnectEngine.restoreFsmStates(this.tableId, { [p.user_id]: carried.fsm });
+      console.log(
+        `[ServerTableEngine:${this.tableId}] presence followed ${p.user_id} from ` +
+          `${carried.fromTableId} (tournament move): ${carried.fsm.state}`
+      );
+      if (carried.fsm.state !== 'SAT_OUT' || p.is_sitting_out === true || !p.occupancy_id) continue;
+      void Promise.resolve(
+        supabase
+          .from('table_seats')
+          .update({ is_sitting_out: true })
+          .eq('table_id', this.tableId)
+          .eq('user_id', p.user_id)
+          .eq('occupancy_id', p.occupancy_id)
+          .is('left_at', null)
+      )
+        .then(({ error }) => {
+          if (error) {
+            reportError(
+              new Error(`persist carried sit-out failed: ${error.message}`),
+              'ServerTableEngine.' + this.tableId + '.moved_sitout_persist_failed'
+            );
+          }
+        })
+        .catch((err) => {
+          reportError(err, 'ServerTableEngine.' + this.tableId + '.moved_sitout_persist_threw');
+        });
+    }
+  }
+
+  /**
    * ADOPT WHAT ARRIVED WITH THE PLAYER (2026-09-05).
    *
    * Called on every seat sweep, from BOTH the start-up wait loop and the
@@ -4701,6 +5010,7 @@ export abstract class ServerTableEngineBase {
    */
   protected async adoptMovedPresence(): Promise<boolean> {
     if (!this.lifecycleCanMutate()) return false;
+    if (this.isTournamentTable()) this.adoptTournamentMovePresence();
     const candidates = this.seatedPlayers
       .filter((p) => hasMovedPresence(p.user_id, this.tableId))
       .map((p) => ({ userId: p.user_id, occupancyId: p.occupancy_id }));
@@ -4805,7 +5115,25 @@ export abstract class ServerTableEngineBase {
     if (!this.lifecycleCanMutate()) return [];
     const previous = new Map(this.seatedPlayers.map((p) => [p.user_id, p.occupancy_id]));
     this.seatedPlayers = nextRoster;
+    /* PRESENCE DOES NOT OUTLIVE THE SEAT (2026-10-04). The roster is the one
+       authority on who sits here, and the presence FSM is the engine's mirror
+       of those seats. Two paths filled the mirror with players the roster no
+       longer holds: a tournament departure (the seat closes in the database
+       and this engine runs no leave path for it) and a restart (the park
+       restores every entry it was written with, seated or not). Forgetting a
+       mirror entry is not a seat release: no row is read or written, and
+       TournamentGhostSeat's single database authority is untouched. A cash
+       stay that ended is torn down whole by the loop below, so on that path
+       this runs after it and finds only what the loop could not know about.
+       See DisconnectEngine.retainOnly for what a stale entry costs. */
+    const forgetUnseatedPresence = (): void => {
+      this.disconnectEngine.retainOnly(
+        this.tableId,
+        nextRoster.map((p) => p.user_id)
+      );
+    };
     if (this.isTournamentTable()) {
+      forgetUnseatedPresence();
       // A tournament seat closes in the database (a balancing move or an
       // accepted elimination) and is simply absent from the next roster; the
       // engine runs no leave path of its own for it (TournamentGhostSeat.law).
@@ -4844,6 +5172,7 @@ export abstract class ServerTableEngineBase {
       this.preActionEngine.removePlayer(this.tableId, userId);
       this.chipContinuity.forget(userId);
     }
+    forgetUnseatedPresence();
     this.applyParkedTimeBanks(nextRoster);
     return replaced;
   }
@@ -5403,6 +5732,49 @@ export abstract class ServerTableEngineBase {
     }
   }
 
+  /**
+   * A WAITING TABLE STILL ASKS WHO IS THERE (launch audit 2026-10-05).
+   *
+   * Presence was judged only by the heartbeat tick, and the tick is armed
+   * after the start-up wait loop breaks, which a cash table below its deal
+   * minimum never does. Every engine starts in that loop, including after
+   * each hourly restart, where presence comes back from the park snapshot as
+   * CONNECTED and was never asked again. Production 2026-10-04, table
+   * 58b2c844: a human whose last action was 19:53 held the seat and the stack
+   * for about 1h45m with nobody behind it, then was dealt in and blinded
+   * when others arrived. The five-minute rule ran within seven minutes once
+   * the dealing loop started.
+   *
+   * This is the presence half of the tick, run from the wait loop's own
+   * pass: every seated player is known to the presence FSM (a fresh entry
+   * starts connected with a full timeout ahead of it), horses get the same
+   * synthetic beat the tick gives them BEFORE staleness is judged, and the
+   * stay clocks are told. `evictExpiredSitOuts` right after it then finds an
+   * absent seat by the same rule the dealing loop uses. The table watchdog
+   * stays out: a short table is idle by design.
+   *
+   * Cash only, like the eviction it feeds. Called after adoptMovedPresence
+   * and the sit-out restore, which must see the FSM before anything
+   * registers into it.
+   */
+  protected async judgePresenceWhileWaiting(): Promise<void> {
+    if (this.isTournamentTable() || this.heartbeatActive) return;
+    if (isMaintenanceFrozen()) return;
+    try {
+      for (const p of this.seatedPlayers ?? []) {
+        this.disconnectEngine.registerPlayer(this.tableId, p.user_id);
+        if (p.is_horse) this.disconnectEngine.heartbeat(this.tableId, p.user_id);
+      }
+      this.disconnectEngine.checkStaleHeartbeats(this.tableId);
+      await this.chipContinuity.sweepPresence(this.seatedPlayers ?? [], (uid) =>
+        this.isContinuityActive(uid)
+      );
+      await this.releaseLeavesHeldByClock();
+    } catch (err) {
+      reportError(err, 'ServerTableEngine.' + this.tableId + '.wait_loop_presence_threw');
+    }
+  }
+
   protected isContinuityActive(userId: string): boolean {
     // A leave the clock is holding serves the clock: the player asked to go,
     // and the sit-out that keeps them out of the deal is the engine's, not
@@ -5568,6 +5940,7 @@ export abstract class ServerTableEngineBase {
    * places that must agree cannot agree while only one of them has the list.
    */
   protected static isTransientDbError(err: unknown): boolean {
+    if (isPreExecutionDbUnavailable(err)) return true;
     const msg =
       err instanceof Error
         ? err.message
@@ -5604,7 +5977,18 @@ export abstract class ServerTableEngineBase {
       msg.includes('F06_RETRY_CANONICAL_LANE') ||
       /^40001$/.test(String((err as { code?: unknown })?.code ?? '')) ||
       msg.includes('could not serialize access') ||
-      msg.includes('deadlock detected')
+      msg.includes('deadlock detected') ||
+      /* A LOCK TIMEOUT IS A ROLLBACK, NOT A DECISION (2026-10-01).
+         55P03 aborts the statement before it commits anything, exactly as
+         a deadlock does: Postgres gave up waiting for a lock, it did not
+         refuse the work. The list above carried the deadlock and left out
+         its twin, so a post-hand step whose budget exists for "the
+         database blinked" (leave_pending, 2 retries) threw on the first
+         lock timeout as if the database had meant it - 8 of the 14
+         leave_pending_failed criticals on the board between 09-28 and
+         09-30 were this, every one a read that had written nothing. */
+      /^55P03$/.test(String((err as { code?: unknown })?.code ?? '')) ||
+      msg.includes('canceling statement due to lock timeout')
     );
   }
 
@@ -5763,6 +6147,9 @@ export abstract class ServerTableEngineBase {
     notifyOwner = true,
     recoveryEventClass?: EngineRecoveryEventClass
   ): void {
+    // Nested settlement catches and late watchdog callbacks describe the same
+    // dead generation. Preserve its first cause and emit exactly one kill.
+    if (this.terminal) return;
     const diagnosticReason: LifecycleDetail['reason'] =
       reason === 'cash_lease_proof_expired' ||
       reason === 'tournament_lease_proof_expired' ||
@@ -6694,6 +7081,7 @@ export abstract class ServerTableEngineBase {
   protected isNextHandPaused(): boolean {
     return (
       this.adminPauseLock ||
+      this.operatorFloorPaused ||
       this.maintenanceLock ||
       // Lightning 2.0 Phase 5: the Cluster's row says finish this hand and
       // start no other. Sits with the two locks above because it is polled
@@ -6913,9 +7301,27 @@ export abstract class ServerTableEngineBase {
   adoptStoppedTimeBankCustody(original: ServerTableEngineBase): boolean {
     const custody = original.stoppedTimeBankCustody;
     if (!custody) return !original.hasUnretiredStoppedTimeBankCustody();
+    /*
+     * A TEARDOWN THAT REPORTED A FAILURE STILL HANDS ITS BANKS ON (2026-10-01).
+     *
+     * GameServer.replaceTableEngine accepts a stop that rejected once the
+     * original has released process ownership - "retaining the terminal
+     * object would turn a diagnostic into a permanent outage" - and then asks
+     * this method to carry the banks across. Requiring terminalTeardownComplete
+     * here refused exactly that case: a stop can only reject with failures, and
+     * a stop with failures never sets it. At 12:27Z a ten-second connect
+     * timeout to the database failed one post-commit stack read and one
+     * terminal snapshot flush on fifteen tournament tables at once; every
+     * replacement was refused here and each table stalled until the next
+     * process restart. What custody transfer needs is that the stop has
+     * drained (no writer of the original can still run) and that the banks
+     * were captured, which the guards below already prove; an unproven hand
+     * outcome stays fenced by the F06 permit rows and the unresolved-
+     * preparation check, not by this flag.
+     */
     if (
       original.stoppedTimeBankCustodyTransferred ||
-      !original.terminalTeardownComplete ||
+      !original.terminalTeardownDrained ||
       !original.hasReleasedProcessOwnership() ||
       original.timeBankAccountingUnconfirmed ||
       original.timeBankAccountingPending.size > 0 ||
@@ -7083,9 +7489,14 @@ export abstract class ServerTableEngineBase {
       outcome.status === 'parked' &&
       unstartedPermit !== null &&
       outcome.unstartedPermitReleased === unstartedPermit.permitId &&
+      permit !== null &&
       this.f06CurrentPermit === permit
-    )
+    ) {
+      // A break holding this table as its stopped original reads which
+      // permit was released (admitF06StoppedOriginalMovement).
+      this.f06ParkReleasedPermit = Object.freeze({ ...permit.binding });
       this.f06CurrentPermit = null;
+    }
     if (generation !== this.maintenanceCheckpointGeneration) return true;
     if (this.stoppedTimeBankCustody !== custody) return true;
     if (outcome.status !== 'parked') return true;
@@ -7209,6 +7620,19 @@ export abstract class ServerTableEngineBase {
           await Promise.all(this.timeBankAccountingPending);
         }
         if (generation !== this.maintenanceCheckpointGeneration) return;
+        /* ASK A LOST DEBIT AGAIN BEFORE REFUSING THE PARK (2026-10-02).
+           At 07:53Z a debit's answer was lost in a database lock storm, this
+           write threw, the census re-asked the debit by its id 400 ms later
+           ("it had committed") - and nothing ever wrote the park again, so
+           the table held the 07:55 restart certificate shut until the pause
+           safety timeout. The stopped-custody writer already re-asks first
+           (persistStoppedTimeBankCustody); the parked writer does the same.
+           The same id answers from its receipt, so this never charges twice;
+           a debit that is still unknown keeps the refusal below. */
+        if (this.timeBankAccountingUnconfirmed && this.unresolvedTimeBankDebits.size > 0) {
+          await this.resolveUnconfirmedTimeBankDebits();
+          if (generation !== this.maintenanceCheckpointGeneration) return;
+        }
         if (this.timeBankAccountingUnconfirmed) {
           throw new Error('Time bank accounting outcome is unconfirmed');
         }
@@ -7294,8 +7718,21 @@ export abstract class ServerTableEngineBase {
       this.handForHandPaused ||
       this.finalTableDealPaused ||
       this.terminalCloseoutPaused
-    )
+    ) {
+      /**
+       * THE BREAK'S MINUTES ARE NOT CHARGED TO WHOEVER HOLDS THE TABLE NEXT
+       * (2026-10-02). `pausedSinceMs` was stamped at the :53 announcement and
+       * survives this early return, so the authority still holding the table -
+       * a tournament break waiting on the thaw, hand-for-hand - inherited the
+       * whole maintenance hold against GameServer.MAX_HEALTHY_PAUSE_MS. At
+       * 16:03 on 2026-10-02 that hold was already ten minutes, so a tournament
+       * table resumed by the break and still parked by its own event read as
+       * "paused too long" the moment the break let go. Its own pause is judged
+       * from here, on its own budget.
+       */
+      if (this.pausedSinceMs !== 0) this.pausedSinceMs = Date.now();
       return;
+    }
     this.releasePauseGate();
   }
 
@@ -7330,6 +7767,16 @@ export abstract class ServerTableEngineBase {
   /** True while the scheduled maintenance break is holding this table. */
   isMaintenancePaused(): boolean {
     return this.maintenancePaused;
+  }
+
+  /**
+   * True while an operator's floor hold (ca_operator_floor_hold), read
+   * successfully, is holding this table (2026-10-12). Asked by the dark
+   * tournament rebuild, which must respect a hold an operator placed and must
+   * not mistake an unreadable floor for one.
+   */
+  isHeldByOperatorFloor(): boolean {
+    return this.operatorFloorPaused && this.operatorFloorHoldRead;
   }
 
   /**
@@ -7467,9 +7914,58 @@ export abstract class ServerTableEngineBase {
     resolve();
   }
 
+  /**
+   * True while an `untilResumed` pause is still unreleased by the authority
+   * that armed it.
+   *
+   * `pauseRequiresExplicitResume` is raised by `pauseAfterHand(..., {
+   * untilResumed: true })` and by nothing else, and every caller of that shape
+   * is a tournament manager arming its own break or day-end hold. So this is
+   * exactly the question "does that manager still owe this table a release?" -
+   * raised by the arm, lowered by `resumeDealing()`, and readable by the
+   * manager at the table's own park edge.
+   */
+  requiresExplicitPauseResume(): boolean {
+    return this.handForHandPaused && this.pauseRequiresExplicitResume;
+  }
+
   /** Resume dealing (all tables finished their hand-for-hand hand) */
   resumeDealing(): void {
     this.handForHandPaused = false;
+    /**
+     * THE CLAIM DIES WITH THE RELEASE (2026-09-28).
+     *
+     * `untilResumed` is not a pause, it is a CLAIM: "only the authority that
+     * armed this may lift it", and awaitPauseGate's safety timeout honours it
+     * by refusing to self-resume - ONCE, after which it nulls its own timer
+     * and nothing re-arms it. The claim is load-bearing for the rest of the
+     * engine's life, and it had exactly one writer able to lower it:
+     * `releasePauseGate()` below, which the deferral underneath skips.
+     *
+     * So a break that released while ANY other authority co-held the table
+     * dropped its own flag and walked away leaving the claim raised. Nothing
+     * could lower it afterwards: `resumeFromBreak()` had already written
+     * `onBreak = false` and early-returns on every later call, for the rest of
+     * that event's life. The engine was left asserting that a manager would
+     * come back for it when no manager ever would, with its last-resort
+     * self-resume disabled on the strength of that assertion.
+     *
+     * Measured in production 2026-09-28: satellites b165b22f, 0e1d340e and
+     * e8cc6c78 came off an expired break onto brand-new dealers (engine
+     * restart 15:59:24Z, a fresh process), each table co-held by the qualifier
+     * boundary `admitManagedTableEngine` arms for a cohort satellite.
+     * `resumeDealing()` took this deferral on every one of them and the events
+     * sat on "Parked between hands - waiting for the pause to lift..." for 14
+     * to 18 hours with 2-4 dealable seats and `status = 'running'`.
+     *
+     * The claim is surrendered here, on the deferral path as well as on the
+     * release path. What still holds the table is the co-authority's OWN flag,
+     * checked immediately below, published by `isNextHandPaused()`, and
+     * released by that authority through `releasePauseGate()` exactly as
+     * before. The break gives back what the break took; it no longer speaks
+     * for whoever is left holding the table.
+     */
+    this.pauseRequiresExplicitResume = false;
     // THE MAINTENANCE BREAK OUTRANKS HAND-FOR-HAND HERE. Hand-for-hand's
     // 500ms sync loop calls this the moment every table is waiting, which
     // during a break is immediately — and without this line it would deal a
@@ -7574,8 +8070,46 @@ export abstract class ServerTableEngineBase {
        * hand-for-hand.
        */
       const maxWaitMs = this.pauseMaxWaitMs ?? 120000;
-      this.pauseGateTimer = setTimeout(() => {
+      const onSafetyTimeout = (): void => {
         if (this.handForHandResolve === resolve) {
+          /**
+           * THE BREAK IS NOT TIMED OUT FROM UNDER ITSELF (2026-10-06).
+           *
+           * A self-resume while the maintenance break still holds this table
+           * cannot deal: every gate in both loops checks `maintenancePaused`
+           * and parks again. All it can do is walk the loop out of the gate
+           * and back - and that walk is what was condemning tables.
+           *
+           * An engine adopted after a release cutover is parked with
+           * MaintenanceBreak.remainingParkBudgetMs(): the SCHEDULED end
+           * (:00:00) plus 30s. After a cutover the break does not end on
+           * schedule - it ends on the certified release (`break_ended_at`
+           * 23:00:28.17 and 00:00:28.07 on 2026-10-05/06) and its resume waves
+           * then run another 10.5s, to :00:38.5. So at :00:30 this timer let
+           * every table still waiting for wave 2-7 out into a pass of the
+           * start-up wait loop (roster read, Cluster halt read, add-ons,
+           * sit-out eviction, idle seat moves - inside the freeze) on its way
+           * back to the gate. A wave that landed during that pass found
+           * `handForHandResolve === null`, so releasePauseGate() gave no
+           * progress credit, and the table came off the break with its clock
+           * still anchored at process boot (:55:4x), 280s+ "without
+           * progress". The next zombie sweep killed and rebuilt it: 51 tables
+           * at 23:00, 24 at 00:00, 30 at 02:00 - and none in any hour whose
+           * break ended at or after :00:31, or had no cutover (tables parked
+           * at :53 carry PARK_BUDGET_MS, which runs to :01).
+           *
+           * So while the break holds the table the timer re-arms instead of
+           * firing. The break's own resume reaches every engine
+           * (MaintenanceBreak.resumeEveryEngine) and credits a parked one.
+           * Re-arming rather than retiring keeps the safety net in place for
+           * whichever authority still holds the table after the break lets
+           * go (resumeFromMaintenance defers to hand-for-hand and friends).
+           */
+          if (this.maintenancePaused && this.running) {
+            this.pauseGateTimer = setTimeout(onSafetyTimeout, maxWaitMs);
+            (this.pauseGateTimer as { unref?: () => void }).unref?.();
+            return;
+          }
           if (
             this.f06MovementAdmission !== null ||
             this.pauseRequiresExplicitResume ||
@@ -7600,7 +8134,8 @@ export abstract class ServerTableEngineBase {
           this.handForHandResolve = null;
           resolve();
         }
-      }, maxWaitMs);
+      };
+      this.pauseGateTimer = setTimeout(onSafetyTimeout, maxWaitMs);
       // The break is minutes long and this timer is the only thing keeping a
       // reference; unref so a shutdown inside a break is not held open by it.
       (this.pauseGateTimer as { unref?: () => void }).unref?.();
@@ -7754,6 +8289,7 @@ export abstract class ServerTableEngineBase {
       this.finalTableDealPaused ||
       this.terminalCloseoutPaused ||
       this.dealingHaltLock ||
+      this.operatorFloorPaused ||
       (this.tournamentMovePauseOwners.size > 0 && this.handForHandResolve !== null) ||
       this.dealHoldUntilMs > Date.now() ||
       this.tableFSM.state === 'paused'
@@ -7944,11 +8480,19 @@ export abstract class ServerTableEngineBase {
    * player twice: fn_consume_time_bank writes the request id's receipt in the
    * debit's own transaction and answers a repeat from it.
    */
-  private submitTimeBankDebit(userId: string, seconds: number, debitId: string = randomUUID()): void {
+  private submitTimeBankDebit(
+    userId: string,
+    seconds: number,
+    debitId: string = randomUUID()
+  ): void {
     const unanswered = (reason: string) => {
       this.unresolvedTimeBankDebits.set(debitId, { userId, seconds });
       this.timeBankAccountingUnconfirmed = true;
-      console.warn('[TimeBank] consume unconfirmed:', reason, `(debit ${debitId}, table ${this.tableId})`);
+      console.warn(
+        '[TimeBank] consume unconfirmed:',
+        reason,
+        `(debit ${debitId}, table ${this.tableId})`
+      );
     };
     try {
       const pending = Promise.resolve(
@@ -7960,7 +8504,9 @@ export abstract class ServerTableEngineBase {
       )
         .then(({ data, error }) => {
           if (error || !ServerTableEngineBase.timeBankDebitAnswered(data)) {
-            unanswered(String(error?.message ?? (data as { error?: unknown })?.error ?? 'missing receipt'));
+            unanswered(
+              String(error?.message ?? (data as { error?: unknown })?.error ?? 'missing receipt')
+            );
           }
         })
         .catch((err: unknown) => unanswered(String((err as Error)?.message ?? err)))
@@ -7977,7 +8523,9 @@ export abstract class ServerTableEngineBase {
    * once, so this is the debit completing, not a second charge. Callers are
    * the two places the answer matters: the restart gate's census
    * (maintenanceDurabilityReason) and the owning manager's stop
-   * (persistStoppedTimeBankCustody). One resolution runs at a time.
+   * (persistStoppedTimeBankCustody). One resolution runs at a time. It is
+   * asked at the process root (reaskTimeBankDebit), because the engines that
+   * need the answer are the ones whose tournament lease is already gone.
    */
   resolveUnconfirmedTimeBankDebits(): Promise<void> {
     if (this.timeBankDebitResolution) return this.timeBankDebitResolution;
@@ -7985,10 +8533,13 @@ export abstract class ServerTableEngineBase {
     const run = (async () => {
       for (const [debitId, debit] of [...this.unresolvedTimeBankDebits]) {
         try {
-          const { data, error } = await supabase.rpc('fn_consume_time_bank', {
-            p_user_id: debit.userId,
-            p_seconds: debit.seconds,
-            p_request_id: debitId,
+          // As the process, not as this engine's lease: a terminal engine's
+          // lease is gone, and the database fences every request sent with it
+          // (reaskTimeBankDebit). Same id, so this is never a second charge.
+          const { data, error } = await reaskTimeBankDebit({
+            userId: debit.userId,
+            seconds: debit.seconds,
+            debitId,
           });
           if (error || !ServerTableEngineBase.timeBankDebitAnswered(data)) continue;
           this.unresolvedTimeBankDebits.delete(debitId);
@@ -8246,51 +8797,9 @@ export abstract class ServerTableEngineBase {
    * Uses Appendix B position naming convention.
    */
   protected getPositionLabels(dealerSeat: number, players: SeatPlayer[]): Map<number, string> {
-    const labels = new Map<number, string>();
-    const seats = players.map((p) => p.seat).sort((a, b) => a - b);
-    const n = seats.length;
-    if (n === 0) return labels;
-
-    // Find dealer seat index in sorted seats
-    let dealerIdx = seats.indexOf(dealerSeat);
-    if (dealerIdx === -1) {
-      // Dealer seat not found in active players — use first seat
-      dealerIdx = 0;
-    }
-
-    if (n === 2) {
-      // FIX 177: Bible V8 §4.2 + Appendix B: Heads-up → dealer=BTN (is also SB), other=BB
-      labels.set(seats[dealerIdx], 'BTN');
-      labels.set(seats[(dealerIdx + 1) % n], 'BB');
-    } else if (n === 3) {
-      // AUDIT FIX 2026-07-19: 3-handed is BTN, SB, BB — the button is NOT the SB
-      // (that's heads-up only). postBlinds posts SB at dealer+1 and BB at
-      // dealer+2, so the previous BTN/BB/UTG labels mislabeled the SB as BB and
-      // the BB as UTG on every 3-handed hand.
-      labels.set(seats[dealerIdx], 'BTN');
-      labels.set(seats[(dealerIdx + 1) % n], 'SB');
-      labels.set(seats[(dealerIdx + 2) % n], 'BB');
-    } else {
-      // 4+ players — BTN, SB, BB, then positional names
-      labels.set(seats[dealerIdx], 'BTN');
-      labels.set(seats[(dealerIdx + 1) % n], 'SB');
-      labels.set(seats[(dealerIdx + 2) % n], 'BB');
-
-      // Bible V8 Appendix B position names
-      const positionNames: Record<number, string[]> = {
-        4: ['UTG'],
-        5: ['UTG', 'CO'],
-        6: ['UTG', 'MP', 'CO'],
-        7: ['UTG', 'UTG+1', 'MP', 'CO'],
-        8: ['UTG', 'UTG+1', 'MP', 'MP+1', 'CO'],
-        9: ['UTG', 'UTG+1', 'UTG+2', 'MP', 'HJ', 'CO'],
-      };
-      const names = positionNames[n] || positionNames[9] || [];
-      for (let i = 0; i < n - 3 && i < names.length; i++) {
-        labels.set(seats[(dealerIdx + 3 + i) % n], names[i]);
-      }
-    }
-    return labels;
+    // Part of the shared presentation (Lightning Phase 6, 2026-09-27): one
+    // implementation for every dealer. See src/engine/presentation/projectHandState.ts.
+    return positionLabelsFor(dealerSeat, players);
   }
 
   // ═════════════════════════════════════════════════════════════════════════════
@@ -8961,7 +9470,13 @@ export abstract class ServerTableEngineBase {
           // of the must-move audit). See the doc comment above for why: these
           // are no longer host settings that change twice a year, they are
           // rewritten by fn_cash_apply_ruleset on every cluster tick.
-          'rake_percent, rake_cap_bb, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_min_players, bomb_pot_ante_fixed, bomb_pot_variant, bomb_pot_button_policy, bomb_pot_announce_seconds, bomb_pot_manual_pending, dealing_halted_at, dealing_halted_reason, ante_enabled, ante, big_blind_ante_enabled, nit_game, maintain_percent_min, maintain_hands, career_percent_min, run_it_mode, run_it_twice, allow_run_it_twice, run_it_twice_enabled, insurance_enabled, seven_deuce_enabled, seven_deuce_amount, straddle_enabled, auto_utg_straddle, voluntary_straddle, min_buy_in, max_buy_in, action_time_seconds'
+          // THE BOUNDARY READS WHAT IT CHECKS (2026-10-09). assertDiamondTable
+          // below judges the variant, kind, status, blinds and jackpot share;
+          // none of them were read here, so every refresh of every Diamond
+          // cash table was refused as 'Diamond Plain Cash Table Required'
+          // (about 800 times in six hours) and a permitted straddle or run it
+          // twice change never landed without a restart.
+          'rake_percent, rake_cap_bb, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_min_players, bomb_pot_ante_fixed, bomb_pot_variant, bomb_pot_button_policy, bomb_pot_announce_seconds, bomb_pot_manual_pending, dealing_halted_at, dealing_halted_reason, ante_enabled, ante, big_blind_ante_enabled, nit_game, maintain_percent_min, maintain_hands, career_percent_min, run_it_mode, run_it_twice, allow_run_it_twice, run_it_twice_enabled, insurance_enabled, seven_deuce_enabled, seven_deuce_amount, straddle_enabled, auto_utg_straddle, voluntary_straddle, min_buy_in, max_buy_in, action_time_seconds, game_variant, game_type, tournament_id, cluster_id, status, is_template, all_in_or_fold, pineapple_holdem, cap_enabled, bbj_percent, small_blind, big_blind'
         )
         .eq('id', this.tableId)
         .maybeSingle();
@@ -9336,6 +9851,10 @@ export abstract class ServerTableEngineBase {
             // and the full cap on a 6/7/8-max one, Dan 2026-09-14).
             playerCountCaps: getPlayerCountCaps(fullRakeConfig.rakeCap, this.tableSeatCount()),
           },
+      /* The snapshot records how this hand WAS priced, so it carries the
+         Diamond schedule the live controller is holding rather than a fresh
+         read that could differ from it. Null on every chip hand. */
+      diamondRakeSchedule: this.handController.getDiamondRakeScheduleSnapshot(),
       bbjConfig: {
         enabled:
           !this.isTournamentTable() &&
@@ -9761,6 +10280,24 @@ export abstract class ServerTableEngineBase {
     for (const p of this.seatedPlayers) {
       if (p.is_sitting_out !== true) continue;
       if (this.disconnectEngine.isSittingOut(this.tableId, p.user_id)) continue;
+      /* "I'M BACK" IS NOT UNDONE BY A ROW READ BEFORE IT LANDED (launch audit
+         2026-10-05). Sitting back in clears the sit-out in memory at once and writes
+         `is_sitting_out = false` without waiting. This method runs on every
+         pass, and a roster read already in flight still says `true`, with the
+         ORIGINAL `sit_out_at`. Restoring from it sat the player out again
+         seconds after they were told they were back, on the old clock: a
+         player who returned at 4:50 could be evicted and cashed out at 5:00.
+
+         A sit-out row whose stamp is not later than the moment this engine
+         took the player back describes the sit-out that just ended. It is
+         skipped. A row stamped AFTER the return is a new sit-out the database
+         knows about, and is restored as before. */
+      const backAtMs = this.returnedFromSitOutAtMs.get(p.user_id);
+      if (backAtMs !== undefined) {
+        const rowStampMs = p.sit_out_at ? Date.parse(p.sit_out_at) : NaN;
+        if (!Number.isFinite(rowStampMs) || rowStampMs <= backAtMs) continue;
+        this.returnedFromSitOutAtMs.delete(p.user_id);
+      }
       this.disconnectEngine.registerPlayer(this.tableId, p.user_id);
       /* THE CLOCK COMES FROM THE DATABASE, NOT FROM now() (2026-08-28).
        *

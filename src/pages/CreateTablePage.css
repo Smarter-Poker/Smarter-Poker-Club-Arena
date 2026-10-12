@@ -5,17 +5,71 @@
 }
 
 .create-table-page {
+  container-type: inline-size;
   position: relative;
-  width: 100%;
+  width: min(100%, 1000px);
   min-width: 0;
-  padding-top: 54px;
+  margin-inline: auto;
+  padding-inline: 12px;
+}
+
+/* The deck header: printed on the black, closed by one engraved rule. */
+.create-table-page__deck {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: end;
+  gap: 4px 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #000;
+  box-shadow: 0 1px 0 rgb(255 255 255 / 8%);
+  margin-bottom: clamp(12px, 2.4vw, 22px);
+}
+
+.create-table-page__heading {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.create-table-page__eyebrow {
+  margin: 0;
+  color: #45adff;
+  font:
+    700 11px/1.2 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-shadow: 0 0 8px rgb(49 168 255 / 60%);
+}
+
+.create-table-page__title {
+  margin: 0;
+  color: #e4e7ec;
+  font:
+    800 clamp(20px, 3.4vw, 30px) / 1.05 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  text-shadow:
+    0 -1px 0 rgb(255 255 255 / 55%),
+    0 2px 0 #6d747c,
+    0 4px 0 #050607;
+}
+
+.create-table-page__meta {
+  margin: 0;
+  color: #9aa5b3;
+  font:
+    600 11px/1.3 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .create-table-page__back {
   appearance: none;
-  position: absolute;
-  inset: 0 auto auto 0;
-  z-index: 2;
+  align-self: end;
+  justify-self: start;
   min-width: 52px;
   min-height: 44px;
   padding: 0 10px;
@@ -65,5 +119,12 @@
   .create-table-page__back {
     border-color: CanvasText;
     color: ButtonText;
+  }
+
+  .create-table-page__eyebrow,
+  .create-table-page__title,
+  .create-table-page__meta {
+    color: CanvasText;
+    text-shadow: none;
   }
 }

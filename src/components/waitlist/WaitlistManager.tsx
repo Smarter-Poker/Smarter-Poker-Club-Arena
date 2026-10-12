@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
+import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../../utils/playerDisplayName';
 import { masterBus } from '../../core/MasterBus';
 import { useToast } from '../common/Toast';
 import './WaitlistManager.css';
@@ -109,9 +110,11 @@ export const WaitlistManager: React.FC<WaitlistManagerProps> = ({
       if (data && data.length > 0) {
         // Fetch profiles separately
         const userIds = data.map((e: any) => e.user_id);
+        // Public name columns only: a legal name is its owner's (ruling 25),
+        // and the arena calls a player by their handle.
         const { data: profiles } = await supabase
           .from('profiles')
-          .select('id, username, full_name, avatar_url:arena_avatar_url')
+          .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url`)
           .in('id', userIds);
 
         const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]));
@@ -122,7 +125,7 @@ export const WaitlistManager: React.FC<WaitlistManagerProps> = ({
             id: e.id,
             userId: e.user_id,
             username: profile?.username || 'Unknown',
-            displayName: profile?.full_name || profile?.username || 'Unknown',
+            displayName: profile ? playerDisplayName(profile) : 'Unknown',
             avatarUrl: profile?.avatar_url,
             // Display position is the row's place in a created_at-ordered
             // list, so it is always 1..n with no gaps or ties.

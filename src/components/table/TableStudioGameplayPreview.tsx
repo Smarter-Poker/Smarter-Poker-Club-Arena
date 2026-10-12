@@ -1,7 +1,8 @@
 import React from 'react';
 import { TABLE_BACKGROUNDS, TABLE_SKINS } from '../../assets/tableAssets';
+import { normalizeFaceDeckId, type FaceDeckId } from '../../lib/faceDeck';
 import { normalizeBackgroundId, normalizeFeltId } from '../../lib/tableTheme';
-import { CardBack, normalizeCardBack } from './CardImage';
+import { CardBack, CardImage, normalizeCardBack, type Card } from './CardImage';
 import './TableStudioGameplayPreview.css';
 
 export interface TableStudioPreviewSelection {
@@ -9,6 +10,7 @@ export interface TableStudioPreviewSelection {
   background_id: string;
   button_id: string;
   cards_id: string;
+  faceDeckId?: FaceDeckId | string;
 }
 
 interface Props {
@@ -54,6 +56,7 @@ export function TableStudioGameplayPreview({ selection, avatarUrls, finalTable }
         finalTable ? 'final_table_broadcast' : normalizeBackgroundId(selection.background_id)
       }
       data-card-back={normalizeCardBack(selection.cards_id)}
+      data-face-deck={normalizeFaceDeckId(selection.faceDeckId)}
       aria-label={
         finalTable
           ? 'Final Table Gameplay Preview Using Avatars From Your Avatar Library'
@@ -103,11 +106,24 @@ export function TableStudioGameplayPreview({ selection, avatarUrls, finalTable }
 
       <div className="studio-game-preview__pot">POT 24,800</div>
       <div className="studio-game-preview__board" aria-hidden="true">
-        <span className="red">A♥</span>
-        <span>10♣</span>
-        <span className="red">7♦</span>
-        <span>6♠</span>
-        <span>4♣</span>
+        {(
+          [
+            { rank: 'A', suit: 'h' },
+            { rank: 'T', suit: 'c' },
+            { rank: '7', suit: 'd' },
+            { rank: '6', suit: 's' },
+            { rank: '4', suit: 'c' },
+          ] as Card[]
+        ).map((card) => (
+          <CardImage
+            key={`${card.rank}${card.suit}`}
+            card={card}
+            deckStyle="4color"
+            faceDeckId={selection.faceDeckId}
+            size="xs"
+            loading="eager"
+          />
+        ))}
       </div>
       <div className="studio-game-preview__hole-cards">
         <CardBack style={normalizeCardBack(selection.cards_id)} size="sm" />

@@ -15,13 +15,57 @@ import {
   sha,
   freeze,
 } from './schema.js';
+import { ACCEPTED_ROSTER_PRODUCER_VERSION } from './acceptance.js';
 import type {
   UnknownObject,
   AcceptedRoster,
+  AcceptedRosterProvenance,
   AcceptedRosterReadRequest,
   AcceptedRosterReadResult,
   PrivateRosterHand,
 } from './contract.js';
+/** P14.2 provenance. The accepted roster lives ONLY in the separately
+ * protected first-write discriminator (smarter_private.accepted_hand_rosters),
+ * which only the definer settlement door writes, inside the acceptance
+ * transaction, bound to the payload's final hash. post_commit_payload and its
+ * hashes stay byte-identical to the pre-roster contract, so a roster-shaped key
+ * in the payload is never evidence: before the door refused it, legacy
+ * obligations accepted extra keys, and a caller could have put one there.
+ * The discriminator roster is PostgreSQL jsonb text, parsed and validated as
+ * data; PostgreSQL raw-text hashes (payloadDigest) are never compared with
+ * canonical Horse JSON digests (rosterDigest). */
+function provenanceRoster(
+  provenance: unknown,
+  payloadDigest: string
+): { roster: AcceptedRoster } | { reason: string } {
+  const p = provenance as Partial<AcceptedRosterProvenance> | null | undefined;
+  if (
+    !p ||
+    typeof p !== 'object' ||
+    Array.isArray(p) ||
+    (p.status == null &&
+      p.payloadDigest == null &&
+      p.producerVersion == null &&
+      p.rosterText == null &&
+      p.handId == null)
+  )
+    return { reason: 'roster_provenance_missing' };
+  if (p.producerVersion !== ACCEPTED_ROSTER_PRODUCER_VERSION || p.payloadDigest !== payloadDigest)
+    return { reason: 'roster_provenance_mismatch' };
+  // An honest producer refusal: the door could not state this hand's roster.
+  if (p.status === 'unavailable' && p.rosterText == null)
+    return { reason: 'accepted_roster_unavailable' };
+  if (
+    p.status !== 'captured' ||
+    typeof p.rosterText !== 'string' ||
+    Buffer.byteLength(p.rosterText) > 32768
+  )
+    return { reason: 'roster_provenance_mismatch' };
+  const roster = readRosterCapsule(JSON.parse(p.rosterText));
+  if (!roster) return { reason: 'accepted_roster_schema_invalid' };
+  if (p.handId !== roster.handId) return { reason: 'roster_provenance_mismatch' };
+  return { roster };
+}
 const no = (reason: string): AcceptedRosterReadResult => ({
   status: 'pending',
   reason,
@@ -34,6 +78,7 @@ export function readPrivateAcceptedRoster({
   acceptedHandRecordDigest,
   payloadText,
   payloadDigest,
+  provenance,
 }: AcceptedRosterReadRequest): AcceptedRosterReadResult {
   try {
     if (
@@ -64,10 +109,13 @@ export function readPrivateAcceptedRoster({
     if (!accepted.length || !accepted.some((r) => r.sha256 === acceptedHandRecordDigest))
       return no('roster_accepted_pin_missing');
     const payload = JSON.parse(payloadText) as UnknownObject | null;
-    if (!Object.hasOwn(payload ?? {}, PAYLOAD_ROSTER_FIELD))
-      return no('accepted_roster_legacy_missing');
-    const roster = readRosterCapsule((payload as UnknownObject)[PAYLOAD_ROSTER_FIELD]);
-    if (!roster) return no('accepted_roster_schema_invalid');
+    // The door never stores a roster in the payload; one there is a spoof,
+    // whatever the discriminator says.
+    if (Object.hasOwn(payload ?? {}, PAYLOAD_ROSTER_FIELD))
+      return no('payload_roster_unprovenanced');
+    const fromProvenance = provenanceRoster(provenance, payloadDigest);
+    if ('reason' in fromProvenance) return no(fromProvenance.reason);
+    const roster = fromProvenance.roster;
     let pinnedHand: PrivateRosterHand | undefined;
     const rosterDigest = digest(roster);
     for (const record of accepted) {

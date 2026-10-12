@@ -89,12 +89,15 @@ async function wireDeepLinks(): Promise<void> {
 }
 
 async function wireForeground(): Promise<void> {
-  const [{ App }, { resumeTrackedAudioContexts }] = await Promise.all([
+  const [{ App }, { resumeTrackedAudioContexts }, { announceNativeResume }] = await Promise.all([
     import('@capacitor/app'),
     import('./audioContexts'),
+    import('./nativeResume'),
   ]);
   await App.addListener('appStateChange', ({ isActive }) => {
     if (isActive) resumeTrackedAudioContexts();
+    // And the tables: resync a live link, reconnect a dead one (2026-10-05).
+    if (isActive) announceNativeResume();
   });
 }
 

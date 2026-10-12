@@ -69,7 +69,10 @@ describe('one native version, everywhere the binary and its OTA bundles state it
     // the warm-install law: npm ci only on a cache miss, guarded exactly so
     expect(body).toMatch(/if: steps\.nm-cache\.outputs\.cache-hit != 'true'\s*\n\s*run: npm ci/);
     expect(body).toContain('run: npm run build:native');
-    expect(body).toContain('@capgo/cli@latest bundle upload');
+    expect(body).toContain('@capgo/cli@8 bundle upload');
+    // Only what changed goes to the phones: the bundle is ~172 MB and this
+    // job runs on every merge (docs/changelog/2026-09-29-ota-sends-only-what-changed.md).
+    expect(body).toMatch(/bundle upload[\s\S]*?--delta \\\n/);
     expect(body).toContain('VERSION="${NATIVE}.${{ github.run_number }}"');
     // no second publisher: the OTA job lives inside the one publisher
     expect(wf.match(/^ {2}publish-to-origin:/gm)).toHaveLength(1);

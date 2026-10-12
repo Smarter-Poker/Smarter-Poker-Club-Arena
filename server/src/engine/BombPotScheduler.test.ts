@@ -6,7 +6,7 @@
  * dealtInCount, now), so every trigger mode is driven deterministically here
  * with no engine, no clock and no database.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   BombPotScheduler,
   bombPotSettingsFromTable,
@@ -534,5 +534,57 @@ describe('nobody tanks for the bomb (Dan 2026-09-05): the last three minutes bec
     fresh.restoreState(sch.exportState());
     expect(fresh.handsUntilDue(s)).toBe(5);
     expect(fresh.nextBombDueAt(s)).toBeNull();
+  });
+});
+
+describe('a tournament table never deals a bomb pot (Phase 9.2, 2026-10-02)', () => {
+  it('reads the switch as off on a tournament row, whichever column says tournament', () => {
+    const row = { bomb_pot_enabled: true, bomb_pot_frequency: 3 };
+    expect(bombPotSettingsFromTable({ id: 'cash-table', ...row }).enabled).toBe(true);
+    expect(
+      bombPotSettingsFromTable({ id: 'mtt-table', tournament_id: 't-1', ...row }).enabled
+    ).toBe(false);
+    expect(
+      bombPotSettingsFromTable({ id: 'sng-table', game_type: 'tournament', ...row }).enabled
+    ).toBe(false);
+  });
+
+  it('reports the refused switch once per table: not again for that table, again for another', () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const refusals = () =>
+        error.mock.calls.filter(
+          ([context]) => context === '[BombPotScheduler.tournament_bomb_refused]'
+        );
+      const row = { bomb_pot_enabled: true, bomb_pot_frequency: 3, tournament_id: 't-refusal' };
+
+      expect(bombPotSettingsFromTable({ id: 'refusal-table-a', ...row }).enabled).toBe(false);
+      expect(refusals()).toHaveLength(1);
+      expect(refusals()[0][1]).toBeInstanceOf(Error);
+      expect(String((refusals()[0][1] as Error).message)).toContain('refusal-table-a');
+      expect(refusals()[0][2]).toEqual({ tableId: 'refusal-table-a', tournamentId: 't-refusal' });
+
+      // Every later hand at the same table reads the switch as off again, silently.
+      for (let hand = 0; hand < 3; hand++) {
+        expect(bombPotSettingsFromTable({ id: 'refusal-table-a', ...row }).enabled).toBe(false);
+      }
+      expect(refusals()).toHaveLength(1);
+
+      // A different tournament table is its own report.
+      expect(bombPotSettingsFromTable({ id: 'refusal-table-b', ...row }).enabled).toBe(false);
+      expect(refusals()).toHaveLength(2);
+      expect(refusals()[1][2]).toEqual({ tableId: 'refusal-table-b', tournamentId: 't-refusal' });
+
+      // A tournament row with the switch off, or a cash row with it on, reports nothing.
+      bombPotSettingsFromTable({ id: 'refusal-table-c', ...row, bomb_pot_enabled: false });
+      bombPotSettingsFromTable({
+        id: 'refusal-cash',
+        bomb_pot_enabled: true,
+        bomb_pot_frequency: 3,
+      });
+      expect(refusals()).toHaveLength(2);
+    } finally {
+      error.mockRestore();
+    }
   });
 });

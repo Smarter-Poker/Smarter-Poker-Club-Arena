@@ -16,12 +16,11 @@
  *   non-member would have poisoned the number for everyone and cascaded it up.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { resolve } from 'path';
 import { sliceStatement } from './helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '..', p), 'utf8');
-const HORSE = read('src/services/HorseOrchestrator.ts');
 const CLUBS = read('src/services/ClubsService.ts');
 const UNION = read('src/services/UnionService.ts');
 const ADMIN = read('src/pages/AdminDashboardPage.tsx');
@@ -31,17 +30,11 @@ const CLUB_SCOPED_COUNT =
   /from\('club_members'\)[\s\S]{0,220}?count: 'exact'[\s\S]{0,220}?\.(eq|in)\('club_id'/;
 
 describe('nothing writes a private view into a shared column', () => {
-  it('HorseOrchestrator never manufactures club memberships', () => {
-    expect(HORSE).not.toContain('ensureHorsesInBothClubs');
-    expect(HORSE).not.toMatch(/from\(['"]club_members['"]\)\s*\.(?:insert|upsert)/);
-  });
-
-  it('and no longer counts club_members directly', () => {
-    expect(HORSE).not.toMatch(CLUB_SCOPED_COUNT);
-  });
-
-  it('does not write a membership-derived count into the shared club row', () => {
-    expect(HORSE).not.toMatch(/from\(['"]clubs['"]\)\s*\.update\(\{\s*member_count:/);
+  it('the browser orchestrator that wrote the filtered count is gone', () => {
+    /* HorseOrchestrator manufactured memberships, counted club_members under
+       RLS and wrote that private view into clubs.member_count. It was deleted
+       on 2026-10-05 with the rest of the browser's horse management. */
+    expect(existsSync(resolve(__dirname, '..', 'src/services/HorseOrchestrator.ts'))).toBe(false);
   });
 
   it('that guard would have caught the old code', () => {

@@ -1,0 +1,13 @@
+{
+  "_owner": "agent/claude-diamond-phase-10/feat/a-diamond-correction-settles-once",
+  "_comment": "20260929220000 a_diamond_correction_settles_once: what pays for a Diamond correction (one row or none, written only by a values migration that quotes Dan), one immutable receipt per settled Diamond adjustment, the platform-staff settle door and the three platform-staff register doors, and the receipt's immutability trigger.",
+  "tables": ["ca_diamond_adjustment_receipts", "ca_diamond_correction_source"],
+  "functions": [
+    "fn_ca_diamond_adjustment_approve",
+    "fn_ca_diamond_adjustment_propose",
+    "fn_ca_diamond_adjustment_receipt_is_immutable",
+    "fn_ca_diamond_adjustment_reject",
+    "fn_ca_diamond_adjustment_settle"
+  ],
+  "columns": {}
+}

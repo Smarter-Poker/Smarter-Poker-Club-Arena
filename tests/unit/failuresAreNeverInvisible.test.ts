@@ -81,23 +81,24 @@ describe('the felt never shows a card that is not the card', () => {
   });
 });
 
-describe('a waitlisted player is never stranded behind the horses silently', () => {
-  it('the horse-yield failure is reported, not swallowed', () => {
-    /* Was: `catch (err) { // Non-critical — silently ignore }`. It is the only
-       implementation of "give a horse's seat back when a human is queued", so
-       a throw here means a real player waits forever while horses play. */
-    expect(TABLE_PAGE).not.toMatch(/Non-critical — silently ignore/);
-    expect(TABLE_PAGE).toMatch(/TablePage\.horse_yield_failed/);
+describe('a waitlisted player is never stranded behind the horses', () => {
+  /* The browser used to try this: every seated client polled the waitlist and
+     asked HydraService to stand a horse up. It never could - it found horses
+     by reading profiles.is_horse, which no browser role may read - and it was
+     removed on 2026-10-05. The engine's fleet counts the humans waiting at
+     each table and releases a horse seat for them. */
+  const FLEET = readFileSync(
+    resolve(__dirname, '../../server/src/services/HorseFleetManager.ts'),
+    'utf8'
+  );
+
+  it('the release lives on the engine', () => {
+    expect(FLEET).toMatch(/private async humansWaitingByTable\(/);
   });
 
-  it('reports once per mount, not four times a minute', () => {
-    // The yield runs every 15s on every seated client.
-    expect(TABLE_PAGE).toMatch(/horseYieldReportedRef/);
-    expect(TABLE_PAGE).toMatch(/horseYieldReportedRef\.current = true;/);
-  });
-
-  it('stays non-fatal — a failed yield must never take the felt down', () => {
-    expect(TABLE_PAGE).not.toMatch(/throw err;\s*\}\s*\}, 15000/);
+  it('the table page runs no horse yield of its own', () => {
+    expect(TABLE_PAGE).not.toMatch(/checkWaitlistAndYield\(/);
+    expect(TABLE_PAGE).not.toMatch(/horse_yield_failed/);
   });
 });
 

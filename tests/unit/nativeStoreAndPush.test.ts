@@ -35,7 +35,23 @@ vi.mock('../../src/lib/native/purchases', () => ({
   purchaseNative: (...args: unknown[]) => nativePurchaseMocks.purchaseNative(...args),
 }));
 
+/* Being inside the app is two facts now: the APP BUILD (IS_NATIVE_BUILD, a
+   compile-time constant, so the web build carries none of the native code -
+   docs/changelog/2026-09-29-the-web-build-carries-no-app-code.md) and the
+   Capacitor bridge at runtime. pretendNative() sets both. */
+const appBuild = vi.hoisted(() => ({ native: false }));
+vi.mock('../../src/lib/appBase', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/lib/appBase')>();
+  return {
+    ...actual,
+    get IS_NATIVE_BUILD() {
+      return appBuild.native;
+    },
+  };
+});
+
 function pretendNative(on: boolean) {
+  appBuild.native = on;
   const w = window as unknown as { Capacitor?: unknown };
   if (on) w.Capacitor = { isNativePlatform: () => true, getPlatform: () => 'ios' };
   else delete w.Capacitor;
@@ -188,14 +204,16 @@ describe('wiring that only a phone can exercise', () => {
     const purchases = read('src/lib/native/purchases.ts');
     const branch = src.indexOf('if (isNativeMarketplaceRuntime()) {');
     const hold = src.indexOf('if (!NATIVE_MARKETPLACE_PAYMENTS_READY)', branch);
-    const providerImport = src.indexOf("await import('../../lib/native/purchases')", branch);
+    const providerImport = src.indexOf("import('../../lib/native/purchases')", branch);
     const stripe = src.indexOf("'/api/store/create-checkout-session'", branch);
     expect(branch).toBeGreaterThan(-1);
     expect(hold).toBeGreaterThan(branch);
     expect(providerImport).toBeGreaterThan(hold);
     expect(providerImport).toBeLessThan(stripe);
     expect(branch).toBeLessThan(stripe);
-    expect(src).toContain("await import('../../lib/native/purchases')");
+    // Behind the compile-time constant, so the web build carries none of the
+    // store SDK (docs/changelog/2026-09-29-the-web-build-carries-no-app-code.md).
+    expect(src).toMatch(/IS_NATIVE_BUILD\s*\?\s*import\('\.\.\/\.\.\/lib\/native\/purchases'\)/);
     expect(purchases).toContain('PRODUCT_CATEGORY.NON_SUBSCRIPTION');
     expect(purchases).toContain('PRODUCT_CATEGORY.SUBSCRIPTION');
   });

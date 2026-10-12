@@ -1,0 +1,522 @@
+{
+  "window": ["2026-10-03T15:05:00Z", "2026-10-03T15:50:00Z"],
+  "release": "46bb9cf6cb59fa4663be21f7aa1cb5a347c3cc0e",
+  "populationRecordsSeen": 54718,
+  "canonicalStateUnavailableBySubCondition": {
+    "dealer_seat_not_dealt": 465
+  },
+  "canonicalStateUnavailableDetail": {
+    "dealer_seat_not_dealt|tournament|preflop|6|6": 116,
+    "dealer_seat_not_dealt|tournament|preflop|5|5": 83,
+    "dealer_seat_not_dealt|tournament|preflop|3|3": 82,
+    "dealer_seat_not_dealt|tournament|preflop|4|4": 68,
+    "dealer_seat_not_dealt|tournament|preflop|7|7": 41,
+    "dealer_seat_not_dealt|tournament|turn|6|6": 21,
+    "dealer_seat_not_dealt|tournament|flop|6|6": 20,
+    "dealer_seat_not_dealt|tournament|river|6|6": 7,
+    "dealer_seat_not_dealt|tournament|flop|5|5": 4,
+    "dealer_seat_not_dealt|tournament|turn|5|5": 4,
+    "dealer_seat_not_dealt|tournament|river|5|5": 4,
+    "dealer_seat_not_dealt|tournament|flop|7|7": 3,
+    "dealer_seat_not_dealt|tournament|flop|4|4": 3,
+    "dealer_seat_not_dealt|tournament|flop|3|3": 3,
+    "dealer_seat_not_dealt|tournament|turn|3|3": 3,
+    "dealer_seat_not_dealt|tournament|river|3|3": 3
+  },
+  "canonicalStateUnavailableSample": [
+    {
+      "eventId": "008571cc1cd0dcad058b080ba6a4b6ecf821bb67c5fa7be853c0d9e587893bce",
+      "producerId": "6501f101-06e7-4ee4-b7f7-99175878ae4c",
+      "sequence": 80700,
+      "handKey": "92fe6625d73b7a2eaff21d14f6956d2bcfbdce19ff97043e72ae4fc0df575498",
+      "turnKey": "729423d20b44abe812919213028ebaefddb25f8f8ea8e32cdc8d2561fe6d5c3b",
+      "decisionTime": "2026-10-03T15:09:37Z",
+      "gameMode": "tournament",
+      "street": "preflop",
+      "why": "dealer_seat_not_dealt",
+      "dealtSeatIds": [1, 2, 4, 6, 7, 8],
+      "seats": [
+        [1, false, false, false],
+        [2, false, false, false],
+        [4, false, false, false],
+        [6, false, false, false],
+        [7, false, false, false],
+        [8, false, false, false]
+      ],
+      "heroSeat": 8,
+      "dealerSeat": 5,
+      "legalActions": ["fold", "call", "raise", "all_in"],
+      "baseline": {
+        "action": "fold",
+        "amount": null
+      }
+    },
+    {
+      "eventId": "bfd2ed6785108159c7890dbe478439c3293d6d065e4fb38a223f18cb48cf39bd",
+      "producerId": "6501f101-06e7-4ee4-b7f7-99175878ae4c",
+      "sequence": 80994,
+      "handKey": "92fe6625d73b7a2eaff21d14f6956d2bcfbdce19ff97043e72ae4fc0df575498",
+      "turnKey": "c99059d47f52feaa1753f52e5073520ba807a07e19b927ebd2964a22641968f5",
+      "decisionTime": "2026-10-03T15:09:39Z",
+      "gameMode": "tournament",
+      "street": "preflop",
+      "why": "dealer_seat_not_dealt",
+      "dealtSeatIds": [1, 2, 4, 6, 7, 8],
+      "seats": [
+        [1, false, false, false],
+        [2, false, false, false],
+        [4, false, false, false],
+        [6, false, false, false],
+        [7, false, false, false],
+        [8, true, false, false]
+      ],
+      "heroSeat": 1,
+      "dealerSeat": 5,
+      "legalActions": ["fold", "call", "raise", "all_in"],
+      "baseline": {
+        "action": "raise",
+        "amount": 440
+      }
+    },
+    {
+      "eventId": "12d4ad51f6e7e8e425dba28eb9c712d2a1910ff4cf81e58e82d786bd73e13e11",
+      "producerId": "6501f101-06e7-4ee4-b7f7-99175878ae4c",
+      "sequence": 82316,
+      "handKey": "92fe6625d73b7a2eaff21d14f6956d2bcfbdce19ff97043e72ae4fc0df575498",
+      "turnKey": "09c64e47b99ab1730e7a10ae48701a4ec367b80d5ea7f34b57b4eac72359f471",
+      "decisionTime": "2026-10-03T15:09:47Z",
+      "gameMode": "tournament",
+      "street": "preflop",
+      "why": "dealer_seat_not_dealt",
+      "dealtSeatIds": [1, 2, 4, 6, 7, 8],
+      "seats": [
+        [1, false, false, false],
+        [2, false, false, false],
+        [4, false, false, false],
+        [6, false, false, false],
+        [7, false, false, false],
+        [8, true, false, false]
+      ],
+      "heroSeat": 2,
+      "dealerSeat": 5,
+      "legalActions": ["fold", "call", "raise", "all_in"],
+      "baseline": {
+        "action": "fold",
+        "amount": null
+      }
+    },
+    {
+      "eventId": "8dcf55c60896bb1dce9a43897a4a64095dc2eda6c23c5ca52683cd675bb7f8f5",
+      "producerId": "6501f101-06e7-4ee4-b7f7-99175878ae4c",
+      "sequence": 84056,
+      "handKey": "92fe6625d73b7a2eaff21d14f6956d2bcfbdce19ff97043e72ae4fc0df575498",
+      "turnKey": "f85da5e9b618b065706d97b8ce39580afd8726b2ec71d53ae6ef0cd88797e832",
+      "decisionTime": "2026-10-03T15:09:59Z",
+      "gameMode": "tournament",
+      "street": "preflop",
+      "why": "dealer_seat_not_dealt",
+      "dealtSeatIds": [1, 2, 4, 6, 7, 8],
+      "seats": [
+        [1, false, false, false],
+        [2, true, false, false],
+        [4, false, false, false],
+        [6, false, false, false],
+        [7, false, false, false],
+        [8, true, false, false]
+      ],
+      "heroSeat": 4,
+      "dealerSeat": 5,
+      "legalActions": ["fold", "call", "raise", "all_in"],
+      "baseline": {
+        "action": "fold",
+        "amount": null
+      }
+    },
+    {
+      "eventId": "d62c3fb301bad75f5305d8bd90e4a5ab41aaef2c12441e957befc73066721dd6",
+      "producerId": "6501f101-06e7-4ee4-b7f7-99175878ae4c",
+      "sequence": 85824,
+      "handKey": "92fe6625d73b7a2eaff21d14f6956d2bcfbdce19ff97043e72ae4fc0df575498",
+      "turnKey": "d754f241118e6d1e17802ce28aaa322c6f6d605265a83645f51258d56dd872b0",
+      "decisionTime": "2026-10-03T15:10:11Z",
+      "gameMode": "tournament",
+      "street": "preflop",
+      "why": "dealer_seat_not_dealt",
+      "dealtSeatIds": [1, 2, 4, 6, 7, 8],
+      "seats": [
+        [1, false, false, false],
+        [2, true, false, false],
+        [4, true, false, false],
+        [6, false, false, false],
+        [7, false, false, false],
+        [8, true, false, false]
+      ],
+      "heroSeat": 6,
+      "dealerSeat": 5,
+      "legalActions": ["fold", "call", "raise", "all_in"],
+      "baseline": {
+        "action": "call",
+        "amount": 390
+      }
+    },
+    {
+      "eventId": "48354bcc751ddfa0ba0a4c96cc80831c889434f044d5a8f7434af8c41df99e47",
+      "producerId": "6501f101-06e7-4ee4-b7f7-99175878ae4c",
+      "sequence": 86061,
+      "handKey": "92fe6625d73b7a2eaff21d14f6956d2bcfbdce19ff97043e72ae4fc0df575498",
+      "turnKey": "afb1a53cdbce207401a648289620f0263d55c320f37ef7445632552041819406",
+      "decisionTime": "2026-10-03T15:10:12Z",
+      "gameMode": "tournament",
+      "street": "preflop",
+      "why": "dealer_seat_not_dealt",
+      "dealtSeatIds": [1, 2, 4, 6, 7, 8],
+      "seats": [
+        [1, false, false, false],
+        [2, true, false, false],
+        [4, true, false, false],
+        [6, false, false, false],
+        [7, false, false, false],
+        [8, true, false, false]
+      ],
+      "heroSeat": 7,
+      "dealerSeat": 5,
+      "legalActions": ["fold", "call", "raise", "all_in"],
+      "baseline": {
+        "action": "call",
+        "amount": 340
+      }
+    },
+    {
+      "eventId": "c042e88e86b612076850a5aceff45c3b4cbe56d3303235b7eee008dfc7e985e1",
+      "producerId": "6501f101-06e7-4ee4-b7f7-99175878ae4c",
+      "sequence": 86451,
+      "handKey": "92fe6625d73b7a2eaff21d14f6956d2bcfbdce19ff97043e72ae4fc0df575498",
+      "turnKey": "b11db4c574c6c43e9af163562c6a76f857fb391f1ede635f6b8956371dfa9db4",
+      "decisionTime": "2026-10-03T15:10:15Z",
+      "gameMode": "tournament",
+      "street": "flop",
+      "why": "dealer_seat_not_dealt",
+      "dealtSeatIds": [1, 2, 4, 6, 7, 8],
+      "seats": [
+        [1, false, false, false],
+        [2, true, false, false],
+        [4, true, false, false],
+        [6, false, false, false],
+        [7, false, false, false],
+        [8, true, false, false]
+      ],
+      "heroSeat": 6,
+      "dealerSeat": 5,
+      "legalActions": ["fold", "check", "bet", "all_in"],
+      "baseline": {
+        "action": "check",
+        "amount": null
+      }
+    },
+    {
+      "eventId": "00264a9281fb292df132a93818b7dbd5cd4470bd007207d2c322c1805f1553d4",
+      "producerId": "6501f101-06e7-4ee4-b7f7-99175878ae4c",
+      "sequence": 86533,
+      "handKey": "92fe6625d73b7a2eaff21d14f6956d2bcfbdce19ff97043e72ae4fc0df575498",
+      "turnKey": "40624c4d44998511e0fa9fdfb61b79c4be56d0b7f0b07b0d415d4badb53799fa",
+      "decisionTime": "2026-10-03T15:10:15Z",
+      "gameMode": "tournament",
+      "street": "flop",
+      "why": "dealer_seat_not_dealt",
+      "dealtSeatIds": [1, 2, 4, 6, 7, 8],
+      "seats": [
+        [1, false, false, false],
+        [2, true, false, false],
+        [4, true, false, false],
+        [6, false, false, false],
+        [7, false, false, false],
+        [8, true, false, false]
+      ],
+      "heroSeat": 7,
+      "dealerSeat": 5,
+      "legalActions": ["fold", "check", "bet", "all_in"],
+      "baseline": {
+        "action": "check",
+        "amount": null
+      }
+    },
+    {
+      "eventId": "8c89d16fb7ddaebd22b23afb35b871e4e029a2659c4d1d72af6062cad1170bcc",
+      "producerId": "6501f101-06e7-4ee4-b7f7-99175878ae4c",
+      "sequence": 86628,
+      "handKey": "92fe6625d73b7a2eaff21d14f6956d2bcfbdce19ff97043e72ae4fc0df575498",
+      "turnKey": "58145acd53a5bbd395d1fa29fa19d37a61c69ae7f24c221d8db10d159c226d92",
+      "decisionTime": "2026-10-03T15:10:16Z",
+      "gameMode": "tournament",
+      "street": "flop",
+      "why": "dealer_seat_not_dealt",
+      "dealtSeatIds": [1, 2, 4, 6, 7, 8],
+      "seats": [
+        [1, false, false, false],
+        [2, true, false, false],
+        [4, true, false, false],
+        [6, false, false, false],
+        [7, false, false, false],
+        [8, true, false, false]
+      ],
+      "heroSeat": 1,
+      "dealerSeat": 5,
+      "legalActions": ["fold", "check", "bet", "all_in"],
+      "baseline": {
+        "action": "bet",
+        "amount": 1329
+      }
+    },
+    {
+      "eventId": "8e1d0baa6d2bae2a30cf14b88d3b9d15999b6bd03524d9d0bf30362ddcaf94d5",
+      "producerId": "6501f101-06e7-4ee4-b7f7-99175878ae4c",
+      "sequence": 86799,
+      "handKey": "92fe6625d73b7a2eaff21d14f6956d2bcfbdce19ff97043e72ae4fc0df575498",
+      "turnKey": "68d3398309e8bfac4b5ace416862d055e247b37578f221a44457301576a1be20",
+      "decisionTime": "2026-10-03T15:10:17Z",
+      "gameMode": "tournament",
+      "street": "flop",
+      "why": "dealer_seat_not_dealt",
+      "dealtSeatIds": [1, 2, 4, 6, 7, 8],
+      "seats": [
+        [1, false, false, false],
+        [2, true, false, false],
+        [4, true, false, false],
+        [6, false, false, false],
+        [7, false, false, false],
+        [8, true, false, false]
+      ],
+      "heroSeat": 6,
+      "dealerSeat": 5,
+      "legalActions": ["fold", "call", "raise", "all_in"],
+      "baseline": {
+        "action": "fold",
+        "amount": null
+      }
+    }
+  ],
+  "depthOrAnteRefusedInsideDepth": [
+    {
+      "eventId": "f1aff146d5b6c0e601f5c8fd5c9af3893c8aa84aa6ae459f123848045c235aa6",
+      "producerId": "6501f101-06e7-4ee4-b7f7-99175878ae4c",
+      "sequence": 359696,
+      "handKey": "6ddecb9a5ac8088a2716366a8565dd865593906910c9b7f1e4f161850a2ac1f1",
+      "turnKey": "090cc18385e4a1ca853dd918665a06d90d18091ac62e5a89a502233a3d934744",
+      "decisionTime": "2026-10-03T15:39:54Z",
+      "gameMode": "tournament",
+      "street": "preflop",
+      "depthBB": 0,
+      "ante": 60,
+      "bigBlind": 500,
+      "anteBB": 0.12
+    },
+    {
+      "eventId": "928b400e2a4c09e0e7fbe40ad44272d406b7c5136d4b8a4e3b8589071d4b5810",
+      "producerId": "6501f101-06e7-4ee4-b7f7-99175878ae4c",
+      "sequence": 412194,
+      "handKey": "698e29dff84fc8edf2e8749fb91e6eedb1473be41abe0bfb095b6fb7844eda4f",
+      "turnKey": "a6aeb494dc97b8a4f92d64dca3e8f7d0dcfe69732f0d51db84a84f29b3d3dc89",
+      "decisionTime": "2026-10-03T15:46:19Z",
+      "gameMode": "tournament",
+      "street": "preflop",
+      "depthBB": 0,
+      "ante": 1500,
+      "bigBlind": 10000,
+      "anteBB": 0.15
+    },
+    {
+      "eventId": "463c889880ae1ad9c1e9de07b1c3e12f1dd35a39c0d29e9d7f955ecc73da64d4",
+      "producerId": "02d22e5c-ec92-4fb2-b587-437b438fe90d",
+      "sequence": 413794,
+      "handKey": "f9b96694fbc1d214fc4956b1a6510d44c34f7816b6390dfd02af91f9d3e23e7b",
+      "turnKey": "8bde8a02be8e26c8b54224361ae354aeb3a5d5e26e2aeedeba1798ba38f1a501",
+      "decisionTime": "2026-10-03T15:46:21Z",
+      "gameMode": "tournament",
+      "street": "preflop",
+      "depthBB": 0,
+      "ante": 1500,
+      "bigBlind": 10000,
+      "anteBB": 0.15
+    },
+    {
+      "eventId": "d9638ff6f9e3d71a4c830d231d90d6389768e274316a7290b7d4d18671607bb0",
+      "producerId": "6501f101-06e7-4ee4-b7f7-99175878ae4c",
+      "sequence": 413391,
+      "handKey": "2f612b6b5246e0d55ec6b840dd0281220e23d5025c6d39bf3d2c5f2665dee5fb",
+      "turnKey": "2f1b848a12da86167087ea7acc5aafbb93232f8432435fed4495173cbcad1703",
+      "decisionTime": "2026-10-03T15:46:28Z",
+      "gameMode": "tournament",
+      "street": "preflop",
+      "depthBB": 0,
+      "ante": 1500,
+      "bigBlind": 10000,
+      "anteBB": 0.15
+    },
+    {
+      "eventId": "4dc0f2d8dec672b721189c250cd8cbdd200a20358b2ffeb4474f0c5665106824",
+      "producerId": "6501f101-06e7-4ee4-b7f7-99175878ae4c",
+      "sequence": 415980,
+      "handKey": "569b7c62ea87589bd5aefcf0e37ecf18ffe031c5b752505e4f9d866c4d76a8b2",
+      "turnKey": "bf8bff13e952f468d4502d55421b5061476960d7f3360aba410e6a4989f0ad4a",
+      "decisionTime": "2026-10-03T15:46:47Z",
+      "gameMode": "tournament",
+      "street": "preflop",
+      "depthBB": 0,
+      "ante": 3000,
+      "bigBlind": 20000,
+      "anteBB": 0.15
+    },
+    {
+      "eventId": "b9e573813e1a5982aa2b4b6a5ffcf694f1e03ba00800d7ec81dc98237e51820a",
+      "producerId": "02d22e5c-ec92-4fb2-b587-437b438fe90d",
+      "sequence": 420585,
+      "handKey": "67719910c25248df05fbb0f4e7fefa2b419a3e8ae0a10210e55fe15e73754f3d",
+      "turnKey": "6ae1733cb91a8f905218c06d05c55ba21ada053c6c726175653b0a271dc40599",
+      "decisionTime": "2026-10-03T15:47:10Z",
+      "gameMode": "tournament",
+      "street": "preflop",
+      "depthBB": 0,
+      "ante": 3000,
+      "bigBlind": 20000,
+      "anteBB": 0.15
+    }
+  ],
+  "recordsWhereALaterNodeChangedTheAction": 1320,
+  "acceptedDiffersFromBaseline": [
+    {
+      "eventId": "a6f00bd9a2b1c72c0bfeb2f022fe2edab58ae7e5d0f96ee7c4e33a451c65b9bf",
+      "producerId": "6501f101-06e7-4ee4-b7f7-99175878ae4c",
+      "sequence": 279095,
+      "handKey": "93a724b130f00a52d9e371a3b4b91ab0aa96f9363ba59ec47161765bb9e4f106",
+      "turnKey": "9053c1250b39fa2f07bb8ec37dc11da070cdc6d9ce0eb3e3359e5396e972b6e3",
+      "decisionTime": "2026-10-03T15:30:40Z",
+      "gameMode": "tournament",
+      "street": "turn",
+      "changedBy": ["tournament_utility"],
+      "execution": {
+        "eventId": "5e77e2637cc4cc5ed4c8674559627651fd535f4710179f4e8bef928fff2cacb1",
+        "executionStatus": "intended",
+        "accepted": {
+          "action": "all_in",
+          "amount": 5,
+          "seat": 2,
+          "stage": "turn",
+          "timestamp": 1791041450669
+        },
+        "selected": {
+          "action": "all_in",
+          "amount": null
+        }
+      },
+      "baseline": ["fold", null],
+      "proposal": ["call", 5],
+      "final": ["all_in", null],
+      "applied": false,
+      "mode": "shadow",
+      "reason": "postflop_price_call",
+      "transitions": [
+        {
+          "after": {
+            "action": "fold",
+            "amount": null
+          },
+          "before": null,
+          "changed": false,
+          "elapsedMs": 17.927639999892563,
+          "node": "reference"
+        },
+        {
+          "after": {
+            "action": "fold",
+            "amount": null
+          },
+          "before": {
+            "action": "fold",
+            "amount": null
+          },
+          "changed": false,
+          "elapsedMs": 0.010526000056415796,
+          "node": "reference_legality"
+        },
+        {
+          "after": {
+            "action": "fold",
+            "amount": null
+          },
+          "before": {
+            "action": "fold",
+            "amount": null
+          },
+          "changed": false,
+          "elapsedMs": 1.189726000186056,
+          "node": "variant_policy"
+        },
+        {
+          "after": {
+            "action": "all_in",
+            "amount": null
+          },
+          "before": {
+            "action": "fold",
+            "amount": null
+          },
+          "changed": true,
+          "elapsedMs": 5.7601020000875,
+          "node": "tournament_utility"
+        },
+        {
+          "after": {
+            "action": "all_in",
+            "amount": null
+          },
+          "before": {
+            "action": "all_in",
+            "amount": null
+          },
+          "changed": false,
+          "elapsedMs": 0.015522999688982964,
+          "node": "tournament_continuation"
+        },
+        {
+          "after": {
+            "action": "all_in",
+            "amount": null
+          },
+          "before": {
+            "action": "all_in",
+            "amount": null
+          },
+          "changed": false,
+          "elapsedMs": 0.00674099987372756,
+          "node": "variant_utility_guard"
+        },
+        {
+          "after": {
+            "action": "all_in",
+            "amount": null
+          },
+          "before": {
+            "action": "all_in",
+            "amount": null
+          },
+          "changed": false,
+          "elapsedMs": 2.085636999923736,
+          "node": "joint_policy"
+        },
+        {
+          "after": {
+            "action": "all_in",
+            "amount": null
+          },
+          "before": {
+            "action": "all_in",
+            "amount": null
+          },
+          "changed": false,
+          "elapsedMs": 0.006000000052154064,
+          "node": "timing"
+        }
+      ]
+    }
+  ]
+}

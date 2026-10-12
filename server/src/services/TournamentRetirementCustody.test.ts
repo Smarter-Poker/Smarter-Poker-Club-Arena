@@ -199,3 +199,86 @@ it('reopen await cannot certify success after the admitting generation is fenced
   wait.resolve();
   await expect(admission).rejects.toThrow('stale');
 });
+
+// 2026-09-29: a reservation a retired generation could not acknowledge is
+// listed for, and yielded to, the live generation only; everything else refuses.
+const strand = async (gate: TournamentRetirementCustody<any>, b = binding) => {
+  await expect(
+    gate.withCustody(
+      b,
+      new Map(),
+      new Map(),
+      () => true,
+      async () => {
+        throw new Error('roster awaits seats');
+      },
+      prepared
+    )
+  ).rejects.toThrow('awaits seats');
+  expect(gate.admissionAllowed(b.tableId)).toBe(false);
+};
+it('lists a retired generation reservation for the live generation and yields it exactly', async () => {
+  const gate = new TournamentRetirementCustody<any>();
+  await strand(gate);
+  expect(gate.abandonedReservations('tournament', 'lease')).toEqual([]);
+  expect(gate.abandonedReservations('other-event', 'successor')).toEqual([]);
+  const [reservation] = gate.abandonedReservations('tournament', 'successor');
+  expect(reservation).toMatchObject({
+    tournamentId: 'tournament',
+    breakId: 'break',
+    tableId: 'table',
+    tableIncarnation: binding.tableIncarnation,
+    leaseGeneration: 'lease',
+    custodyId: 'custody',
+    durableRevision: binding.durableRevision,
+  });
+  // The retired generation cannot yield to itself, and a table with a
+  // registered engine is not released.
+  expect(gate.yieldAbandoned(reservation, 'lease', new Map())).toBe(false);
+  expect(gate.yieldAbandoned(reservation, 'successor', new Map([['table', {}]]))).toBe(false);
+  expect(gate.admissionAllowed('table')).toBe(false);
+  expect(gate.yieldAbandoned(reservation, 'successor', new Map())).toBe(true);
+  expect(gate.admissionAllowed('table')).toBe(true);
+  // Exactly once.
+  expect(gate.yieldAbandoned(reservation, 'successor', new Map())).toBe(false);
+});
+it('never yields running work, a replaced identity or a mixed transfer', async () => {
+  const running = new TournamentRetirementCustody<any>();
+  const wait = deferred();
+  const work = running.withCustody(
+    binding,
+    new Map(),
+    new Map(),
+    () => true,
+    () => wait.promise,
+    prepared
+  );
+  await Promise.resolve();
+  expect(running.abandonedReservations('tournament', 'successor')).toEqual([]);
+  wait.resolve();
+  await work;
+
+  const replaced = new TournamentRetirementCustody<any>();
+  await strand(replaced);
+  const [stale] = replaced.abandonedReservations('tournament', 'successor');
+  expect(replaced.yieldAbandoned(stale, 'successor', new Map())).toBe(true);
+  await strand(replaced, { ...binding, durableRevision: '9007199254740995' });
+  expect(replaced.yieldAbandoned(stale, 'successor', new Map())).toBe(false);
+  expect(replaced.admissionAllowed('table')).toBe(false);
+
+  const mixed = new TournamentRetirementCustody<any>();
+  await strand(mixed);
+  const [held] = mixed.abandonedReservations('tournament', 'successor');
+  mixed.reserveMixed(
+    'transfer',
+    ['table'],
+    [{ table_id: 'table', revision: '1', binding: JSON.parse(held.identity) }],
+    true,
+    new Map(),
+    new Map(),
+    () => true
+  );
+  expect(mixed.abandonedReservations('tournament', 'successor')).toEqual([]);
+  expect(mixed.yieldAbandoned(held, 'successor', new Map())).toBe(false);
+  expect(mixed.admissionAllowed('table')).toBe(false);
+});

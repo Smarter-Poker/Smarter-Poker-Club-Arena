@@ -1,0 +1,21 @@
+#!/bin/bash
+# usage: exp-all.sh OUTDIR "variants" "seeds" PARALLEL PAIRSDIV [profiles-filter-regex]
+# env P12R3 = experiment JSON; WORK = server dir
+export PATH=/opt/homebrew/opt/node@26/bin:/opt/homebrew/bin:$PATH
+OUT=$1; VARIANTS=$2; SEEDS=$3; PAR=${4:-20}; DIV=${5:-1}; FILT=${6:-.}
+mkdir -p $OUT; echo "$P12R3" > $OUT/config.json
+cd ${WORK:-/Volumes/SmarterWork/agent-work/horse-brain-finish-20261008/win-remaining-exp/server}
+jobs=$OUT/jobs.txt; : > $jobs
+for v in $VARIANTS; do
+  case $v in
+    flo8) profs="6max-2dealt-100bb 6max-4dealt-100bb 6max-40bb 6max-100bb 6max-200bb 8max-100bb 6max-1000bb"; pairs=5760;;
+    flh) profs="6max-2dealt-100bb 6max-4dealt-100bb 6max-40bb 6max-100bb 6max-200bb 9max-100bb 6max-1000bb"; pairs=12960;;
+    *) profs="6max-2dealt-100bb 6max-4dealt-100bb 6max-40bb 6max-100bb 6max-200bb 9max-100bb"; pairs=12960;;
+  esac
+  pairs=$((pairs / DIV))
+  for p in $profs; do for s in $SEEDS; do
+    echo "$v p12c-$v-$p $s $pairs" | grep -E -- "$FILT" >> $jobs
+  done; done
+done
+cat $jobs | xargs -P $PAR -L 1 sh -c 'node --import tsx diag-p12r3.ts --variant=$0 --profile=$1 --seed=$2 --first=0 --pairs=$3 --out='$OUT'/$1-$2.json > '$OUT'/$1-$2.log 2>&1; echo "$1 $2 EXIT=$?" >> '$OUT'/done.txt'
+echo ALLDONE >> $OUT/done.txt

@@ -1,0 +1,39 @@
+{
+  "schema": "horse-phase11-qualification-v1",
+  "qualified": false,
+  "mode": "contract",
+  "variant": "plo5",
+  "sourceSha": "27174382f2ad44aedb775474af05a69175640354",
+  "packVersion": "plo5-high-round1-v2",
+  "contractVersion": "omaha-variant-strength-contract-v1",
+  "contractDigest": "0e58a56ab8d123e32d474f23f154e4026a9a2f1a6119b06e449b2a3039c10326",
+  "domain": "plo5-cash-single-board-after-rake-horse-population",
+  "policyDigest": "c6b5a0534af4e8d9729e034a10c7103f7b4e059c81eab8113469befacdeb14d5",
+  "policyDigestDefinition": "horse-phase11-policy-digest-v3",
+  "objectives": {
+    "cash": { "qualified": false, "status": "measured" },
+    "tournament": {
+      "status": "unavailable dependency",
+      "qualified": false,
+      "reasons": [
+        "tournament:plo5_whole_tournament_outcome_model_unavailable",
+        "tournament:qualified_plo5_tournament_reference_population_unavailable",
+        "tournament:plo5_tournament_thresholds_not_specified"
+      ]
+    }
+  },
+  "admissionAlsoRequires": [
+    "natural completion-share evidence for the pack: on the release under admission, the share of eligible live candidate-path decisions that complete without the work_budget fallback, per street, measured from natural decisions with the release unchanged throughout the window; P11.3 must state and meet its own floor for that share before admitting the pack, because this contract measures strength only for decisions that complete"
+  ],
+  "evidencePath": "docs/evidence/phase11/strength-2026-10-05-plo5/strength.json",
+  "evidenceSha256": "1f05c633f6ab6779ba162bef64e48b2b881e93dad9eebf967762777bcdc0ebc3",
+  "reasons": [
+    "cash:primary:lower_bound_not_above_zero",
+    "cash:seed:11201117:point_estimate_not_above_zero",
+    "cash:seed:11202239:point_estimate_not_above_zero",
+    "cash:seed:11203351:point_estimate_not_above_zero",
+    "cash:profile:p11c-plo5-6max-2dealt-100bb:regression_margin_exceeded",
+    "cash:position:big_blind:regression_margin_exceeded",
+    "cash:depth:standard:regression_margin_exceeded"
+  ]
+}

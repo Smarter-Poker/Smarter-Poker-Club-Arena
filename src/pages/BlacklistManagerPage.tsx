@@ -53,11 +53,45 @@ export default function BlacklistManagerPage() {
   const [removing, setRemoving] = useState<string | null>(null);
   const [confirmingRemoval, setConfirmingRemoval] = useState<string | null>(null);
 
+  const scopeKey = `${clubId || ''}:${user?.id || ''}`;
+  const activeScopeRef = useRef(scopeKey);
+  activeScopeRef.current = scopeKey;
+  const readVersionRef = useRef(0);
+
+  useEffect(() => {
+    activeScopeRef.current = scopeKey;
+    readVersionRef.current += 1;
+    searchSeq.current += 1;
+    setEntries([]);
+    setNames({});
+    setError(null);
+    setLoadFailed(false);
+    setLoading(true);
+    resetForm();
+    setSearchingMembers(false);
+    setSeatedAfterExclusion(null);
+    setRemovalStatus(null);
+    setConfirmingRemoval(null);
+    setAdding(false);
+    setRemoving(null);
+    setRemovingFromPlay(false);
+    setClearingExpired(false);
+    return () => {
+      if (activeScopeRef.current === scopeKey) activeScopeRef.current = '';
+      readVersionRef.current += 1;
+      searchSeq.current += 1;
+    };
+  }, [scopeKey]);
+
   const loadEntries = useCallback(async () => {
     if (!clubId) {
       setLoading(false);
       return;
     }
+    const requestScope = scopeKey;
+    const requestId = ++readVersionRef.current;
+    const isCurrent = () =>
+      activeScopeRef.current === requestScope && readVersionRef.current === requestId;
     setLoading(true);
     setError(null);
     setLoadFailed(false);
@@ -69,16 +103,18 @@ export default function BlacklistManagerPage() {
         .select('*')
         .eq('club_id', resolvedClubId)
         .order('banned_at', { ascending: false });
+      if (!isCurrent()) return;
       if (fetchError) throw fetchError;
       setEntries(data || []);
     } catch (loadError) {
+      if (!isCurrent()) return;
       setEntries([]);
       setLoadFailed(true);
       setError(safeErrorMessage(loadError, 'The exclusion list could not be loaded.'));
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
-  }, [clubId]);
+  }, [clubId, scopeKey]);
 
   useEffect(() => {
     void loadEntries();
@@ -145,7 +181,10 @@ export default function BlacklistManagerPage() {
         }
       })();
     }, 300);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      searchSeq.current += 1;
+    };
   }, [clubId, memberSearch, showAddForm]);
 
   const expiredEntries = useMemo(
@@ -172,12 +211,14 @@ export default function BlacklistManagerPage() {
    * in is untouched until they stand up. The operator was never told that.
    */
   const checkSeated = useCallback(async (member: MemberOption, resolvedClubId: string) => {
+    const requestScope = activeScopeRef.current;
     const { data, error: seatError } = await supabase
       .from('table_seats')
       .select('table_id, tables!table_seats_table_id_fkey!inner(club_id, status)')
       .eq('user_id', member.user_id)
       .is('left_at', null)
       .eq('tables.club_id', resolvedClubId);
+    if (activeScopeRef.current !== requestScope) return;
     if (seatError || !data || data.length === 0) return;
     const tables = [
       ...new Map(
@@ -189,6 +230,8 @@ export default function BlacklistManagerPage() {
 
   const removeFromPlay = async () => {
     if (!seatedAfterExclusion) return;
+    const actionScope = scopeKey;
+    const isCurrent = () => activeScopeRef.current === actionScope;
     setRemovingFromPlay(true);
     setRemovalStatus(null);
     setError(null);
@@ -198,6 +241,7 @@ export default function BlacklistManagerPage() {
         seatedAfterExclusion.member.user_id,
         'Excluded from the club by an operator'
       );
+      if (!isCurrent()) return;
       if (outcome.removed === 0 && !outcome.pending) {
         throw new Error(outcome.firstError || 'The engine did not remove this player.');
       }
@@ -207,9 +251,10 @@ export default function BlacklistManagerPage() {
         );
       } else setSeatedAfterExclusion(null);
     } catch (removeError) {
+      if (!isCurrent()) return;
       setError(safeErrorMessage(removeError, 'The player could not be removed from play.'));
     } finally {
-      setRemovingFromPlay(false);
+      if (isCurrent()) setRemovingFromPlay(false);
     }
   };
 
@@ -221,6 +266,8 @@ export default function BlacklistManagerPage() {
    */
   const clearExpired = async () => {
     if (expiredEntries.length === 0) return;
+    const actionScope = scopeKey;
+    const isCurrent = () => activeScopeRef.current === actionScope;
     setClearingExpired(true);
     setError(null);
     try {
@@ -234,6 +281,7 @@ export default function BlacklistManagerPage() {
         .delete()
         .in('id', ids)
         .select('id');
+      if (!isCurrent()) return;
       if (deleteError) throw deleteError;
       if (!cleared || cleared.length === 0) {
         throw new Error(
@@ -242,20 +290,24 @@ export default function BlacklistManagerPage() {
       }
       await loadEntries();
     } catch (clearError) {
+      if (!isCurrent()) return;
       setError(safeErrorMessage(clearError, 'The expired exclusions could not be cleared.'));
     } finally {
-      setClearingExpired(false);
+      if (isCurrent()) setClearingExpired(false);
     }
   };
 
   const handleAdd = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!clubId || !user || !newUserId.trim() || !newReason.trim()) return;
+    const actionScope = scopeKey;
+    const isCurrent = () => activeScopeRef.current === actionScope;
     setAdding(true);
     setError(null);
     setLoadFailed(false);
     try {
       const resolvedClubId = await resolveClubUUID(clubId);
+      if (!isCurrent()) return;
       const entry: Partial<BlacklistEntry> = {
         club_id: resolvedClubId,
         user_id: newUserId.trim(),
@@ -265,19 +317,23 @@ export default function BlacklistManagerPage() {
       };
       if (newExpiry) entry.expires_at = new Date(newExpiry).toISOString();
       const { error: insertError } = await supabase.from('blacklists').insert(entry);
+      if (!isCurrent()) return;
       if (insertError) throw insertError;
       const excluded = selectedMember;
       resetForm();
       await loadEntries();
-      if (excluded) await checkSeated(excluded, resolvedClubId);
+      if (isCurrent() && excluded) await checkSeated(excluded, resolvedClubId);
     } catch (addError) {
+      if (!isCurrent()) return;
       setError(safeErrorMessage(addError, 'The player could not be excluded.'));
     } finally {
-      setAdding(false);
+      if (isCurrent()) setAdding(false);
     }
   };
 
   const handleRemove = async (entryId: string) => {
+    const actionScope = scopeKey;
+    const isCurrent = () => activeScopeRef.current === actionScope;
     setRemoving(entryId);
     setError(null);
     setLoadFailed(false);
@@ -293,6 +349,7 @@ export default function BlacklistManagerPage() {
         .delete()
         .eq('id', entryId)
         .select('id');
+      if (!isCurrent()) return;
       if (deleteError) throw deleteError;
       if (!removed || removed.length === 0) {
         throw new Error('That exclusion was not removed - you may not have permission to lift it.');
@@ -300,9 +357,10 @@ export default function BlacklistManagerPage() {
       setEntries((current) => current.filter((entry) => entry.id !== entryId));
       setConfirmingRemoval(null);
     } catch (removeError) {
+      if (!isCurrent()) return;
       setError(safeErrorMessage(removeError, 'The exclusion could not be removed.'));
     } finally {
-      setRemoving(null);
+      if (isCurrent()) setRemoving(null);
     }
   };
 

@@ -9,7 +9,7 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { supabase } from '../lib/supabase';
+import { ownProfile } from '../lib/ownProfile';
 import { reportError } from '../utils/errorReporter';
 import { resolveVipStatus } from '../utils/vipStatus';
 import { clearCachedIdentity } from '../lib/cachedIdentity';
@@ -112,6 +112,11 @@ const DEFAULT_STATS: PlayerStats = {
   games_played: 0,
 };
 
+// Invalidate profile reads whenever the authenticated owner changes. A late
+// response for A may not repopulate the store after B signs in or after the
+// device signs out.
+let profileScopeEpoch = 0;
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // STORE
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -126,6 +131,7 @@ export const useUserStore = create<UserState>()(
       totalChips: 0,
 
       login: (user: UserProfile) => {
+        if (get().user?.id !== user.id) profileScopeEpoch += 1;
         set({
           user,
           isAuthenticated: true,
@@ -139,9 +145,11 @@ export const useUserStore = create<UserState>()(
         // recursive loop: logout() → signOut() → SIGNED_OUT event → clearUser() →
         // logout() → signOut() again. This corrupts auth state and causes spurious
         // redirects to /auth during navigation.
+        profileScopeEpoch += 1;
         set({
           user: null,
           isAuthenticated: false,
+          isLoading: false,
           currentClubId: null,
           totalChips: 0,
         });
@@ -183,6 +191,7 @@ export const useUserStore = create<UserState>()(
            different id is an account switch and still replaces outright -
            never carry one person's name into another's session. */
         const previous = get().user;
+        if (previous?.id !== userData.id) profileScopeEpoch += 1;
         const base: Partial<UserProfile> = previous && previous.id === userData.id ? previous : {};
         const pick = <K extends keyof UserProfile>(key: K): UserProfile[K] =>
           userData[key] !== undefined
@@ -219,6 +228,7 @@ export const useUserStore = create<UserState>()(
         set({
           user,
           isAuthenticated: true,
+          isLoading: false,
           ...(incomingChips === undefined ? {} : { totalChips: incomingChips || 0 }),
         });
       },
@@ -227,7 +237,10 @@ export const useUserStore = create<UserState>()(
        * Load user profile from Supabase profiles table
        */
       loadProfile: async (userId: string): Promise<UserProfile | null> => {
+        const requestEpoch = profileScopeEpoch;
         set({ isLoading: true });
+        const requestStillOwnsStore = () =>
+          profileScopeEpoch === requestEpoch && get().user?.id === userId;
 
         try {
           /**
@@ -238,8 +251,14 @@ export const useUserStore = create<UserState>()(
            * the column. The store therefore never populated and the failure
            * was invisible. Explicit columns, all of them granted.
            */
-          const { data, error } = await supabase
-            .from('profiles')
+          /* THE OWNER DOOR (ruling 25, src/lib/ownProfile.ts). This is the
+             signed-in player's own row, and it carries their own real-name
+             fields so the arena resolver can still keep a display_name that IS
+             the legal name off the felt. A legal name is readable only by its
+             owner, and a column grant is not per row, so the table refuses
+             even the owner's own; get_my_full_profile() returns the caller's
+             row and nothing else. */
+          const { data, error } = await ownProfile(userId)
             .select(
               /* PLAYER_NAME_COLUMNS rather than a hand-written list: it is the
                  one place that says which columns `playerDisplayName` needs,
@@ -249,9 +268,8 @@ export const useUserStore = create<UserState>()(
                  granted to `authenticated` (checked against the live schema);
                  if that ever stops being true this select 403s WHOLE, per the
                  note above, so add to that constant with the same care. */
-              `id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url, tier, is_vip, vip_tier, vip_expires_at, created_at, player_number`
+              `id, ${PLAYER_NAME_COLUMNS}, first_name, last_name, full_name, avatar_url:arena_avatar_url, tier, is_vip, vip_tier, vip_expires_at, created_at, player_number`
             )
-            .eq('id', userId)
             .maybeSingle();
 
           if (error) {
@@ -259,14 +277,16 @@ export const useUserStore = create<UserState>()(
             if (error.code !== 'PGRST116') {
               reportError(error, 'useUserStore.USER_STORE_Load_profile_error');
             }
-            set({ isLoading: false });
+            if (requestStillOwnsStore()) set({ isLoading: false });
             return null;
           }
 
           if (!data) {
-            set({ isLoading: false });
+            if (requestStillOwnsStore()) set({ isLoading: false });
             return null;
           }
+
+          if (!requestStillOwnsStore()) return null;
 
           const profile: UserProfile = {
             id: data.id,
@@ -317,7 +337,7 @@ export const useUserStore = create<UserState>()(
           return profile;
         } catch (e) {
           reportError(e, 'useUserStore.USER_STORE_Unexpected_error');
-          set({ isLoading: false });
+          if (requestStillOwnsStore()) set({ isLoading: false });
           return null;
         }
       },

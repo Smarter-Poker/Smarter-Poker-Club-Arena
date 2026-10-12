@@ -107,6 +107,14 @@ export default function ClubSettingsPage() {
   const [playerNumber, setPlayerNumber] = useState<number | null>(null);
   const [inUnion, setInUnion] = useState<boolean>(false);
   const [clubNumericId, setClubNumericId] = useState<number | null>(null);
+  const [resolvedClubIdentity, setResolvedClubIdentity] = useState<{
+    route: string;
+    uuid: string;
+  } | null>(null);
+  const clubUUID =
+    resolvedClubIdentity && resolvedClubIdentity.route === clubId
+      ? resolvedClubIdentity.uuid
+      : null;
   const [settings, setSettings] = useState<ClubSettings>({
     name: '',
     description: '',
@@ -265,9 +273,9 @@ export default function ClubSettingsPage() {
     const uncappedLow = Math.round(settings.rake_cap * 2 * 100) / 100;
     const uncappedHigh = Math.round(settings.rake_cap * 10 * 100) / 100;
     const limited = uncappedLow > low || uncappedHigh > high;
-    return `Currently ${settings.rake_cap} BB - $${low.toFixed(2)} per pot at 1/2 and $${high.toFixed(
+    return `Currently ${settings.rake_cap} BB - ${low.toFixed(2)} Chips per pot at 1/2 and ${high.toFixed(
       2
-    )} at 5/10${limited ? ', held down by the house cap for those stakes.' : '.'}`;
+    )} Chips at 5/10${limited ? ', held down by the house cap for those stakes.' : '.'}`;
   })();
   const [loadError, setLoadError] = useState(false);
   // A club id that resolves to no row (deleted club, bad code, or a club RLS
@@ -276,12 +284,19 @@ export default function ClubSettingsPage() {
   // editable settings form for a club that does not exist.
   const [notFound, setNotFound] = useState(false);
   const loadingRef = useRef(false);
+  const settingsScope = `${clubId || ''}:${user?.id || ''}`;
+  const activeSettingsScopeRef = useRef(settingsScope);
+  activeSettingsScopeRef.current = settingsScope;
+  const settingsReadVersionRef = useRef(0);
 
   // ── CRITICAL: Reset per-club state when navigating between club settings ──
   // React Router reuses the component when only the clubId param changes.
   useEffect(() => {
+    activeSettingsScopeRef.current = settingsScope;
+    settingsReadVersionRef.current += 1;
     setSaving(false);
     setClubNumericId(null);
+    setResolvedClubIdentity(null);
     setClubCode(null);
     setIsOwner(false);
     setUserRole('player');
@@ -307,7 +322,11 @@ export default function ClubSettingsPage() {
     // "We Could Not Confirm Your Role" notice stayed on screen for a club where
     // the role is known for certain.
     setRoleLoadFailed(false);
-  }, [clubId]);
+    return () => {
+      settingsReadVersionRef.current += 1;
+      if (activeSettingsScopeRef.current === settingsScope) activeSettingsScopeRef.current = '';
+    };
+  }, [settingsScope]);
 
   // Release the pending-logo blob URL when the page goes away. The per-club
   // reset and the save/discard paths revoke it, but plain unmount did not.
@@ -660,8 +679,16 @@ export default function ClubSettingsPage() {
     getIsMounted?: () => boolean,
     opts?: { silent?: boolean; force?: boolean }
   ) => {
+    if (activeSettingsScopeRef.current !== settingsScope || (getIsMounted && !getIsMounted()))
+      return;
     if (loadingRef.current) return;
     loadingRef.current = true;
+    const requestScope = settingsScope;
+    const requestId = ++settingsReadVersionRef.current;
+    const isCurrent = () =>
+      activeSettingsScopeRef.current === requestScope &&
+      settingsReadVersionRef.current === requestId &&
+      (!getIsMounted || getIsMounted());
     /**
      * SILENT MEANS SILENT (Dan 2026-08-25).
      *
@@ -697,8 +724,9 @@ export default function ClubSettingsPage() {
         { maxRetries: 2 }
       );
 
-      if (getIsMounted && !getIsMounted()) return;
+      if (!isCurrent()) return;
       if (data) {
+        setResolvedClubIdentity({ route: clubId!, uuid: data.id });
         // One mapping, used for both the form and the diff baseline. These were
         // two hand-written copies of the same twelve lines; they had already
         // drifted once and would again.
@@ -766,25 +794,28 @@ export default function ClubSettingsPage() {
               .eq('club_id', data.id)
               .eq('user_id', user.id)
               .maybeSingle();
+            if (!isCurrent()) return;
             if (roleErr) {
               reportError(roleErr, 'ClubSettingsPage.role_lookup');
               setRoleLoadFailed(true);
             } else {
               setRoleLoadFailed(false);
             }
-            if (getIsMounted && !getIsMounted()) return;
+            if (!isCurrent()) return;
             if (membership?.role) {
               setUserRole(membership.role as ClubRole);
             }
           } catch (e) {
+            if (!isCurrent()) return;
             reportError(e, 'ClubSettingsPage');
             /* non-critical */
           }
         }
-      } else if (!getIsMounted || getIsMounted()) {
+      } else if (isCurrent()) {
         setNotFound(true);
       }
     } catch (error) {
+      if (!isCurrent()) return;
       reportError(error, 'ClubSettingsPage.Failed_to_load_club_settings');
       // A SILENT refresh must not replace the whole form with the error screen.
       // Tab away for 30s, come back, hit a network blip, and the owner's typed
@@ -793,8 +824,8 @@ export default function ClubSettingsPage() {
       if (!opts?.silent) setLoadError(true);
       if (!getIsMounted || getIsMounted()) toast.error('Failed to load club settings');
     } finally {
-      loadingRef.current = false;
-      if (!getIsMounted || getIsMounted()) setLoading(false);
+      if (settingsReadVersionRef.current === requestId) loadingRef.current = false;
+      if (isCurrent()) setLoading(false);
     }
   };
 
@@ -1095,6 +1126,7 @@ export default function ClubSettingsPage() {
         open_obligations?: unknown;
         union_affiliated?: unknown;
         already_retired?: unknown;
+        pristine_welcome_retire_available?: unknown;
       } | null;
       const members = Number(impact?.members ?? NaN);
       const runningTables = Number(impact?.running_tables ?? NaN);
@@ -1105,6 +1137,7 @@ export default function ClubSettingsPage() {
       const openObligations = Number(impact?.open_obligations ?? NaN);
       const unionAffiliated = impact?.union_affiliated;
       const alreadyRetired = impact?.already_retired;
+      const pristineWelcomeRetireAvailable = impact?.pristine_welcome_retire_available;
       const numericValues = [
         members,
         runningTables,
@@ -1119,7 +1152,8 @@ export default function ClubSettingsPage() {
         typeof impact !== 'object' ||
         numericValues.some((value) => !Number.isFinite(value) || value < 0) ||
         typeof unionAffiliated !== 'boolean' ||
-        typeof alreadyRetired !== 'boolean'
+        typeof alreadyRetired !== 'boolean' ||
+        typeof pristineWelcomeRetireAvailable !== 'boolean'
       ) {
         throw new Error('The retirement check returned something unreadable.');
       }
@@ -1134,6 +1168,7 @@ export default function ClubSettingsPage() {
         openObligations,
         unionAffiliated,
         alreadyRetired,
+        pristineWelcomeRetireAvailable,
       });
     } catch (e) {
       reportError(e, 'ClubSettingsPage.Failed_to_load_retirement_impact');
@@ -1734,7 +1769,7 @@ export default function ClubSettingsPage() {
               />
               <small className="form-hint">
                 Most That Can Be Raked From One Pot, In Big Blinds. Blank Uses The House Cap For
-                Each Stake ($3-$20 Depending On Blinds).{' '}
+                Each Stake (3-20 Chips Depending On Blinds).{' '}
                 {settings.rake_cap < 0 ? 'Currently: House Cap.' : capPreview}
               </small>
             </div>
@@ -1773,7 +1808,7 @@ export default function ClubSettingsPage() {
             union does not own the switch, and being TOLD that is better than a
             section that silently is not there. The panel draws a control only
             when the database says this club owns its own pool. */}
-        {clubId && <BBJMiniPanel clubId={clubId} canEdit={isOwner || isClubStaff(userRole)} />}
+        {clubUUID && <BBJMiniPanel clubId={clubUUID} canEdit={isOwner || isClubStaff(userRole)} />}
 
         {/* Spins — the owner's switch and the wallet behind it.
             Placed here, after Buy-In Limits, because it is the only other
@@ -2023,6 +2058,12 @@ export default function ClubSettingsPage() {
             {impactLoading && <p className="delete-impact">Checking Retirement Readiness...</p>}
             {!impactLoading && retirementImpact && (
               <ul className="delete-impact">
+                {retirementImpact.pristineWelcomeRetireAvailable && (
+                  <li>
+                    Exact Unused Welcome Package Verified - Opening Games And 100,000-Chip Grant
+                    Will Be Unwound Atomically
+                  </li>
+                )}
                 <li>{retirementImpact.members.toLocaleString()} Membership Records Retained</li>
                 <li>{retirementImpact.runningTables.toLocaleString()} Running Tables To Close</li>
                 <li>{retirementImpact.activeTournaments.toLocaleString()} Active Tournaments</li>

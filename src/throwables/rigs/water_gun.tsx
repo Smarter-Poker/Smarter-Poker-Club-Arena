@@ -32,9 +32,8 @@ import { AtlasSprite } from '../AtlasSprite';
  * Everything in the Payload is `animation-delay` from LANDING (400), so the
  * catalogue's "at" minus 400. The comments keep both numbers.
  *
- * Sound (plan 4A): `squirt_start` at 933, `squirt_loop` 933-3433 (pump +
- * water hiss), `drip` at 3467 on the cut. The two squirt cues are placeholders
- * that fall back to the legacy `squirt` recipe until phase 6 supplies takes.
+ * Sound: licensed `squirt_start` at 933, `squirt_loop` 933-3433 (pump +
+ * water hiss), and `drip` at 3467 on the cut.
  */
 
 import React from 'react';

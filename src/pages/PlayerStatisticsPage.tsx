@@ -25,12 +25,14 @@
  * Palette and tokens are ClubMembersPage's. No green, no purple.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
+import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
+import { compactChips } from '../utils/format';
 import { enumToTitleCase } from '../utils/titleCase';
 import { isUUID } from '../utils/clubIdResolver';
 import { ClubNotFoundError, resolveClubUUIDStrict } from '../utils/strictClubIdResolver';
@@ -79,13 +81,6 @@ function count(value: number): string {
   return (value ?? 0).toLocaleString();
 }
 
-function money(value: number): string {
-  return (value ?? 0).toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-}
-
 /** 'no_limit_holdem' is not a label. 'All Variants' is the null variant. */
 function variantLabel(variant: string | null): string {
   if (!variant || variant === 'all') return 'All Variants';
@@ -104,6 +99,7 @@ export default function PlayerStatisticsPage() {
 
   const navigate = useNavigate();
   const toast = useToast();
+  const { user } = useAuthUser();
   const isMountedRef = useIsMounted();
 
   const [stats, setStats] = useState<MemberStatistics | null>(null);
@@ -126,6 +122,14 @@ export default function PlayerStatisticsPage() {
    * variant is chosen.
    */
   const [knownVariants, setKnownVariants] = useState<string[]>([]);
+  const statsAbortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    setStats(null);
+    setKnownVariants([]);
+    setVariant(null);
+    setNotFound(false);
+  }, [clubId, userId, user?.id]);
 
   const load = useCallback(
     async (
@@ -133,6 +137,9 @@ export default function PlayerStatisticsPage() {
       activeRange: MemberRange,
       getIsMounted?: () => boolean
     ) => {
+      statsAbortRef.current?.abort();
+      const controller = new AbortController();
+      statsAbortRef.current = controller;
       if (!clubId || !userId) {
         if ((!getIsMounted || getIsMounted()) && isMountedRef.current) {
           setNotFound(true);
@@ -141,7 +148,10 @@ export default function PlayerStatisticsPage() {
         }
         return;
       }
-      const live = () => (getIsMounted ? getIsMounted() : true) && isMountedRef.current;
+      const live = () =>
+        !controller.signal.aborted &&
+        (getIsMounted ? getIsMounted() : true) &&
+        isMountedRef.current;
 
       if (live()) {
         setLoading(true);
@@ -177,7 +187,8 @@ export default function PlayerStatisticsPage() {
           resolved,
           userId,
           activeVariant,
-          activeRange
+          activeRange,
+          controller.signal
         );
         if (!live()) return;
         setStats(result);
@@ -189,8 +200,8 @@ export default function PlayerStatisticsPage() {
           });
         }
       } catch (error) {
-        reportError(error, 'PlayerStatisticsPage.load');
         if (live()) {
+          reportError(error, 'PlayerStatisticsPage.load');
           setLoadFailed(true);
           toast.error('Failed To Load Player Statistics');
         }
@@ -198,7 +209,7 @@ export default function PlayerStatisticsPage() {
         if (live()) setLoading(false);
       }
     },
-    [clubId, userId, isMountedRef, toast]
+    [clubId, userId, user?.id, isMountedRef, toast]
   );
 
   useEffect(() => {
@@ -206,6 +217,7 @@ export default function PlayerStatisticsPage() {
     load(variant, range, () => mounted);
     return () => {
       mounted = false;
+      statsAbortRef.current?.abort();
     };
   }, [load, variant, range, reloadKey]);
 
@@ -268,12 +280,12 @@ export default function PlayerStatisticsPage() {
           </h1>
           <p>Read Playing Style, Volume, And Club Results Across Any Recorded Game Window.</p>
           {stats?.authorized && stats.hands > 0 && (
-            <dl className="ps-hero__readouts" aria-label="Selected Range Summary">
+            <dl className="ps-hero__readouts" aria-label="Displayed Range Summary">
               <HeroReadout label="Hands" value={count(stats.hands)} />
               <HeroReadout label="Win Rate" value={pct(stats.win_rate)} />
               <HeroReadout
                 label="Net"
-                value={money(stats.net)}
+                value={compactChips(stats.net)}
                 tone={stats.net > 0 ? 'up' : stats.net < 0 ? 'down' : undefined}
               />
             </dl>
@@ -343,22 +355,78 @@ export default function PlayerStatisticsPage() {
 
         {/* The caption names the range the figures on screen BELONG to. While
             a new range or variant loads the figures below are dimmed. */}
-        <p className="ps-range__caption" aria-live="polite">
+        <p
+          className="ps-range__caption"
+          role="status"
+          aria-label="Displayed Performance Scope"
+          aria-live="polite"
+        >
           {loading && stats
             ? 'Loading The Selected Range...'
             : stats?.is_overall
-              ? 'Showing Lifetime Totals'
-              : `Showing ${stats?.from ?? range.from ?? '?'} To ${stats?.to ?? range.to ?? '?'}`}
+              ? 'Showing All Recorded Activity'
+              : `Showing ${stats?.from ?? range.from ?? '?'} To ${stats?.to ?? range.to ?? '?'} UTC · ${variantLabel(stats ? stats.variant : variant)}`}
         </p>
+        <p className="ps-range__caption">
+          UTC Dates Include Both From And To. Custom Dates Need Confirm.
+        </p>
+        {rangeMode === 'custom' && (customFrom !== range.from || customTo !== range.to) && (
+          <p className="ps-range__draft" role="status">
+            Draft Dates Not Applied. Confirm To Update The Displayed Range.
+          </p>
+        )}
+        {stats?.authorized && (
+          <details className="ps-metric-guide" aria-label="Performance Metric Definitions">
+            <summary>Metric Definitions</summary>
+            <p>
+              All Figures Use Recorded Hands For This Club, The Displayed UTC Dates And Game. Older
+              Activity May No Longer Be Retained.
+            </p>
+            <p>
+              VPIP Counts Hands With Voluntary Preflop Investment; PFR Counts Hands With A Preflop
+              Raise. Both Rates Divide By Hands Dealt.
+            </p>
+            <p>
+              3-Bet Per Hand Divides Three-Bet Hands By Hands Dealt, Not Three-Bet Opportunities.
+              Fold To 3-Bet Divides Folds By Opens That Faced A Three-Bet. C-Bet Divides Flop
+              Continuation Bets By Recorded Flop Continuation-Bet Opportunities.
+            </p>
+            <p>
+              Hands Won Counts Hands With A Positive Net Result. Win Rate Divides Those Hands By
+              Hands Dealt.
+            </p>
+            <p>
+              Net Sums Signed Hand Results; Fees Sum Rake Paid. Both Use Chip Units And Include Cash
+              And Tournament Hands For The Selected Game. These Are Not Wallet Balances Or
+              Tournament Prize Totals.
+            </p>
+          </details>
+        )}
       </section>
+
+      {loadFailed && stats && (
+        <div className="ps-stale" role="alert">
+          <div>
+            <span className="ps-empty__status">Statistics Connection Interrupted</span>
+            <p className="ps-stale__body">
+              Could Not Refresh Statistics. The Figures Below Are From The Previous Successful Read.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="ps-range__pill"
+            onClick={() => setReloadKey((n) => n + 1)}
+          >
+            Try Again
+          </button>
+        </div>
+      )}
 
       {loading && !stats ? (
         <PageSkeleton variant="stats" />
       ) : loadFailed && !stats ? (
         <div className="ps-empty" role="alert">
-          <span className="ps-empty__mark" aria-hidden="true">
-            !
-          </span>
+          <span className="ps-empty__status">Statistics Connection Interrupted</span>
           <p className="ps-empty__heading">Could Not Load Statistics</p>
           <p className="ps-empty__body">
             This Player's Statistics Are Still There. We Just Could Not Reach Them Right Now.
@@ -381,7 +449,7 @@ export default function PlayerStatisticsPage() {
       ) : !hasHands ? (
         <EmptyStats
           heading="No Hands In This Range"
-          body={`${variantLabel(variant)} Has No Recorded Hands For The Dates You Chose. Widen The Range Or Choose Another Game.`}
+          body={`${variantLabel(stats.variant)} Has No Recorded Hands For The Dates You Chose. Widen The Range Or Choose Another Game.`}
         />
       ) : (
         <div className={loading ? 'ps-cards ps-cards--busy' : 'ps-cards'} aria-busy={loading}>
@@ -425,8 +493,8 @@ export default function PlayerStatisticsPage() {
 
           <section className="ps-card">
             <h2 className="ps-card__title">Club Result</h2>
-            <StatRow label="Net" value={money(stats.net)} signed={stats.net} />
-            <StatRow label="Fees" value={money(stats.fees)} />
+            <StatRow label="Net" value={compactChips(stats.net)} signed={stats.net} />
+            <StatRow label="Fees" value={compactChips(stats.fees)} />
           </section>
         </div>
       )}

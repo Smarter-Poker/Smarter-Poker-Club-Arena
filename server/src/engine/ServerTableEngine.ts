@@ -33,6 +33,7 @@ import {
   isFixedLimitCapped,
 } from './BettingStructure.js';
 import type { GameState } from '../types.js';
+import { projectLiveHandState, projectResyncHandState } from './presentation/projectHandState.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SERVER TABLE ENGINE
@@ -267,185 +268,62 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
     if (!this.handController || !this.tableInfo) return null;
 
     const state = this.handController.getState();
-    const currentSeatPlayer = state.players.find((p) => p.seat === state.currentPlayerSeat);
-
-    return {
-      table_id: this.tableId,
-      hand_number: this.handCount,
-      pot: state.pot ?? 0,
-      community_cards: state.communityCards ?? [],
-      community_cards2: state.communityCards2 ?? [],
-      // TRIPLE-BOARD BOMB POT 2026-08-27: third board (empty unless active).
-      community_cards3: state.communityCards3 ?? [],
-      // VARIANT OVERRIDE 2026-08-28 (spec §10.1): what game THIS hand is —
-      // clients size villain card-backs and winner highlights from it.
-      hand_variant: this.activeHandVariant(),
-      // BOMB POT STANDARDIZATION 2026-08-27: countdown + timed due timestamp
-      // now come from the scheduler (all trigger modes), not raw arithmetic.
-      ...this.bombPotSnapshotFields(),
-      // KILL POTS (kill-v1): this hand's kill and the next hand's pending kill.
-      ...this.killPotSnapshotFields(),
-      // THE REGULAR ANTE (Dan 2026-09-04: "ANTES ... ARE NOT DISPLAYING").
-      // The money moved every hand (HandController posts it and the pot
-      // showed it) but no field said so, so the felt could not print it.
-      ...this.anteSnapshotFields(),
-      current_bet: state.currentBet ?? 0,
-      current_player: currentSeatPlayer?.user_id ?? null,
-      dealer_seat: state.dealerSeat ?? this.currentHandDealerSeat,
-      stage: state.stage ?? 'preflop',
-      /* THE THIRD PAYLOAD, AND THE ONE THAT MATTERS MOST (2026-08-31 audit).
-         `GET /state/:id` is what the client fetches on a websocket SEQUENCE
-         GAP and dispatches as GAME_START — the full-state resync. Phase 1 put
-         `max_seats` on the two hub payloads and stopped there, so a client
-         that had just lost frames — which is precisely a client whose local
-         view may be wrong — resynced from the one payload that could not tell
-         it how wide the table is. It would then fall back to inferring the
-         width from the players in the response, and the hand roster omits
-         anybody not dealt in: a player waiting for the big blind, say. That is
-         the original bug's own starting position, reached through the recovery
-         path. Same source as the other two: the table row, never the roster. */
-      max_seats: Number(this.tableInfo?.max_players) || 0,
-      // 2026-09-07: published beside max_seats on every payload so the client
-      // knows when seatIdentity() has scrubbed the roster and must not paint
-      // a real face over it from its own profile sync (an-avatar-change-
-      // stays-changed changelog). Absent on an older engine = not anonymous.
-      is_anonymous: this.tableInfo?.is_anonymous === true,
-      min_raise: state.minRaise ?? 0,
-      last_raise: state.lastRaise ?? 0,
-      // 2026-08-23: publish the betting structure rather than leaving the
-      // client to guess it from the variant string. `wagers_capped` in
-      // particular is NOT derivable client-side — the cap counts full raises,
-      // and action_history is broadcast without its isFullRaise flag.
-      ...this.bettingStructureFields(state),
-      // Bible V8 §2.4: Timer fields required for client-side countdown
-      action_context: this.getActionContext(),
-      turn_start_time_ms: this.playerTurnStartTime,
-      turn_duration_ms: this.playerTurnDuration * 1000, // Convert seconds → milliseconds
-      // ── Dan 2026-08-18: "make sure the yellow countdown actually takes 15
-      // seconds." The engine was already right - action_time_seconds is 15 on
-      // every table and turn_deadline_ms follows from it - but the CLIENT
-      // measured elapsed as `Date.now() - turn_start_time_ms`, mixing its own
-      // clock with a server timestamp. A device clock a few seconds fast made
-      // the ring start part-drained and finish early; a slow one made it
-      // overrun. Publishing the server's own "now" lets the client measure
-      // that offset and subtract it, so the ring reflects the real remaining
-      // time regardless of what the device clock says.
-      server_time_ms: Date.now(),
-      // ── PINEAPPLE DISCARD CLOCK (2026-08-31) ─────────────────────────────
-      // Absolute, server-authored, per seat. Before this the client counted
-      // down from its own copy of action_time_seconds anchored to the moment it
-      // first saw the stage - so a reconnect restarted a clock the server had
-      // half spent, and a differently-configured table showed a number that was
-      // simply wrong. Paired with server_time_ms above, which the client already
-      // uses to subtract its own clock skew, this is the same deadline that
-      // folds you.
-      ...this.pineappleDiscardSnapshotFields(),
-      pots: (state.pots ?? []).map((p) => ({
-        amount: p.amount,
-        eligible: p.eligiblePlayers ?? [],
-      })),
-      // Bible V8 §2.5: Action Record — seat, userId, action, amount, timestamp, stage
-      action_history: (state.actionHistory ?? []).map((a) => ({
-        seat: a.seat,
-        userId: a.userId ?? '',
-        action: a.action,
-        amount: a.amount,
-        timestamp: a.timestamp ?? 0,
-        stage: a.stage,
-      })),
-      players: (() => {
-        const positionLabels = this.getPositionLabels(
-          state.dealerSeat ?? this.currentHandDealerSeat,
-          state.players ?? []
-        );
-        return (state.players ?? []).map((p) => {
-          let showCards = false;
-          if (p.user_id === requestingUserId) {
-            showCards = true;
-          } else if (
-            // 2026-09-04 second sweep: `|| this.runoutRevealActive`, the same
-            // clause broadcastCurrentState has carried since 2026-08-19. Without
-            // it a reconnect DURING an all-in runout (the paced single-run and
-            // decline paths keep the controller alive for the whole runout)
-            // served every villain face-down while everyone still connected
-            // saw the tabled hands.
-            (state.stage === 'showdown' || this.runoutRevealActive) &&
-            !p.is_folded &&
-            !this.isMuckedAtShowdown(p.user_id)
-          ) {
-            // ── Dan 2026-08-18: the THIRD reveal gate, found on re-audit ──
-            //
-            // broadcastCurrentState was changed to turn every showdown hand
-            // face up, but this one was missed. getTableState serves
-            // GET /state/:tableId, which is what a client pulls on reconnect
-            // or resync - so a player who dropped and came back mid-showdown
-            // got the old auto-muck view and saw only the winner's cards,
-            // disagreeing with what everyone still connected could see.
-            //
-            // Same guard, same safety: `!p.is_folded` above means a folded
-            // hand is still never exposed.
-            //
-            // SHOWDOWN SYSTEM 2026-08-25: the muck gate applies on resync
-            // too, or a reconnecting client would see cards the rest of the
-            // table was never shown.
-            showCards = true;
-          }
-          // A voluntary per-card show survives HTTP resync just as it does
-          // the live snapshot. Unselected cards remain null, and no pick is
-          // public before the hand ends. Owners still receive their own hand.
-          const picked = this.showHandCards?.get(p.user_id);
-          const handIsOver = state.stage === 'showdown' || this.currentHandWinnerIds.length > 0;
-          const partialReveal = !showCards && handIsOver && !!picked && picked.size > 0;
-          const cardsOut = showCards
-            ? (p.cards ?? [])
-            : partialReveal
-              ? (p.cards ?? []).map((card, index) => (picked!.has(index) ? card : null))
-              : [];
-          return {
-            seat: p.seat,
-            user_id: p.user_id,
-            ...this.seatIdentity(p),
-            stack: p.stack,
-            bet: p.bet ?? 0,
-            totalInvested: p.totalInvested ?? 0,
-            cards: cardsOut,
-            is_folded: p.is_folded ?? false,
-            is_all_in: p.is_all_in ?? false,
-            /* THE ENGINE, NOT THE ROSTER (2026-08-28). `p.is_sitting_out` is the
-               HAND roster's copy, and ServerTableEngineDealing builds that field
-               hardcoded `false` on purpose so HandController deals a sat-out
-               tournament player in and blinds them off. Publishing it meant every
-               snapshot told every client that nobody was ever sitting out, which
-               is why the tag was invisible to other players. publishIdleState has
-               always read the engine here; this is the same read, so the live and
-               idle payloads finally agree. */
+    /* THE PROJECTION IS SHARED (Lightning Phase 6, 2026-09-27). The payload is
+       built by projectResyncHandState, the same pure function a Lightning hand
+       host publishes through, so the two dealers cannot drift apart. Every
+       fact below is this engine's and is read exactly where it always was; the
+       reveal gates (the requester's own cards, the showdown / all-in runout
+       rule with the muck, the per-card show once the hand is over) live in
+       src/engine/presentation/projectHandState.ts. */
+    return projectResyncHandState(
+      state,
+      {
+        table_id: this.tableId,
+        hand_number: this.handCount,
+        dealerSeatFallback: this.currentHandDealerSeat,
+        // VARIANT OVERRIDE 2026-08-28 (spec §10.1): what game THIS hand is.
+        hand_variant: this.activeHandVariant(),
+        // Bomb pot countdown, kill pots, and THE REGULAR ANTE (Dan 2026-09-04).
+        boardExtras: {
+          ...this.bombPotSnapshotFields(),
+          ...this.killPotSnapshotFields(),
+          ...this.anteSnapshotFields(),
+        },
+        bettingStructure: this.bettingStructureFields(state),
+        action_context: this.getActionContext(),
+        turn_start_time_ms: this.playerTurnStartTime,
+        turnDurationSeconds: this.playerTurnDuration,
+        // Dan 2026-08-18: the server's own "now", so the client can subtract its skew.
+        server_time_ms: Date.now(),
+        pineappleFields: this.pineappleDiscardSnapshotFields(),
+        /* THE THIRD PAYLOAD, AND THE ONE THAT MATTERS MOST (2026-08-31 audit):
+           the resync must say how wide the table is, from the table row. */
+        max_seats: Number(this.tableInfo?.max_players) || 0,
+        is_anonymous: this.tableInfo?.is_anonymous === true,
+        seats: {
+          seatIdentity: (p) => ({ ...this.seatIdentity(p) }),
+          /* THE ENGINE, NOT THE ROSTER (2026-08-28): the hand roster's copy of
+             is_sitting_out is deliberately always false. */
+          seatPresence: (p) => ({
             is_sitting_out: this.disconnectEngine.isSittingOut(this.tableId, p.user_id),
-            // SHOWDOWN SYSTEM 2026-08-25: resync parity with the broadcast.
-            is_mucked:
-              state.stage === 'showdown' && !p.is_folded && this.isMuckedAtShowdown(p.user_id),
             is_disconnected: !this.disconnectEngine.isConnected(this.tableId, p.user_id),
             time_bank_remaining: this.timeBankEngine.getRemainingSeconds(this.tableId, p.user_id),
             time_bank_uses_remaining: this.timeBankEngine.getUsesRemaining(this.tableId, p.user_id),
-            position: positionLabels.get(p.seat) ?? '',
-            /* NO is_horse ON THE WIRE (Dan 2026-09-02: "NOBODY SHOULD EVER EVER
-               EVER BE ABLE TO LOOK AT OUR CODE OR USE A DEVELOPER TOOL AND FIND
-               THIS OUT"). All three client payloads - this resync, the hand
-               broadcast and the between-hands roster - used to carry
-               `is_horse: p.is_horse ?? false` on every seat, so the WebSocket
-               frame in any player's Network tab labelled every horse at the
-               table. The flag stays on the engine's own Player record for the
-               horse's input device (HorseLogic, autoRebuyHorse); it is never
-               serialised to a client. Pinned by
-               TheEngineNeverSaysHorseOnTheWire.law.test.ts. */
-            // CHIP CONTINUITY: the stay clock, identical in all three payloads.
-            // Judged on the ROSTER stack (what the seat holds outside the
-            // hand), not the live hand stack net of bets - a bet is not a loss
-            // yet, and the leave check itself uses the roster stack.
+          }),
+          // CHIP CONTINUITY: the stay clock, judged on the ROSTER stack.
+          seatContinuity: (p) => ({
             ...this.chipContinuity.seatFields(p.user_id, this.continuityStack(p.user_id, p.stack)),
-          };
-        });
-      })(),
-    };
+          }),
+        },
+        reveal: {
+          runoutRevealActive: this.runoutRevealActive,
+          isMuckedAtShowdown: (userId) => this.isMuckedAtShowdown(userId),
+          showHandCards: this.showHandCards,
+          handHasWinners: this.currentHandWinnerIds.length > 0,
+        },
+      },
+      requestingUserId
+    );
   }
 
   /**
@@ -496,265 +374,63 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
     }
 
     const state = this.handController.getState();
-    const currentSeatPlayer = state.players.find((p) => p.seat === state.currentPlayerSeat);
 
-    // Phase 1.1 PR-2: Build the payload once, publish to both the authoritative
-    // WebSocket hub (direct to browser) AND the legacy Supabase Realtime
-    // channel. PR-5 removes the Supabase leg once WS is verified in prod.
-    const payload = {
+    // Phase 1.1 PR-2: Build the payload once and publish it to the
+    // authoritative WebSocket hub. Lightning Phase 6 (2026-09-27): built by
+    // projectLiveHandState, the one projection both dealers share
+    // (src/engine/presentation/projectHandState.ts). ONE payload for every
+    // subscriber, so it carries no hole card before showdown.
+    const payload = projectLiveHandState(state, {
       table_id: this.tableId,
       hand_number: this.handCount,
-      pot: state.pot ?? 0,
-      community_cards: state.communityCards ?? [],
-      // DOUBLE-BOARD BOMB POT 2026-08-20: second board (empty unless active).
-      community_cards2: state.communityCards2 ?? [],
-      // TRIPLE-BOARD BOMB POT 2026-08-27: third board (empty unless active).
-      community_cards3: state.communityCards3 ?? [],
-      // VARIANT OVERRIDE 2026-08-28 (spec §10.1): what game THIS hand is.
+      dealerSeatFallback: this.currentHandDealerSeat,
       hand_variant: this.activeHandVariant(),
-      // ROUND 3 (2026-08-20): hands until the next bomb pot (1 = next hand).
-      // null when the table doesn't run bomb pots. Drives the felt countdown.
-      // BOMB POT STANDARDIZATION 2026-08-27: scheduler-derived, all modes,
-      // plus bomb_pot_next_at (epoch ms) for the timed mode's clock.
-      ...this.bombPotSnapshotFields(),
-      // KILL POTS (kill-v1): this hand's kill and the next hand's pending kill.
-      ...this.killPotSnapshotFields(),
-      // THE REGULAR ANTE (Dan 2026-09-04: "ANTES ... ARE NOT DISPLAYING").
-      // The money moved every hand (HandController posts it and the pot
-      // showed it) but no field said so, so the felt could not print it.
-      ...this.anteSnapshotFields(),
-      current_bet: state.currentBet ?? 0,
-      current_player: currentSeatPlayer?.user_id ?? null,
-      dealer_seat: state.dealerSeat ?? this.currentHandDealerSeat,
-      stage: state.stage ?? 'preflop',
-      // Bible V8 §5.1: Winner IDs for client-side winner highlighting + sound
-      winner_ids: this.currentHandWinnerIds.length > 0 ? this.currentHandWinnerIds : [],
-      // Bible V8 §2.7: Winner amounts for pot distribution display.
-      //
-      // AUDIT FIX 2026-08-25: the raw currentHandWinners entries key the user
-      // as `userId`, but the documented client contract (EnginePublishedState
-      // in mapEngineSnapshot.ts) reads `user_id` — so every mapped winner had
-      // userId undefined and seat 0, and everything keyed off it (the per-seat
-      // "+N" net float, the muck loser-mask second source, the spec-21 stack
-      // hold) silently never matched a real player. Emit the snake_case key
-      // the client reads, keep `userId` for any internal consumer, and stop
-      // shipping the evaluated hand's full card list in every snapshot — the
-      // clients that need the winning cards get them from pot_win.
-      // SHOWDOWN POLISH 2026-08-25 (hygiene): the transitional `userId`
-      // duplicate is gone. Every first-party consumer reads `user_id` (the
-      // documented contract), the mapper accepts both spellings for skew,
-      // and pre-fix clients also read `user_id` — nothing ever consumed the
-      // duplicate.
-      winners:
-        this.currentHandWinners.length > 0
-          ? this.currentHandWinners.map((w) => ({
-              user_id: w.userId,
-              amount: w.amount,
-              pot_index: w.potIndex ?? 0,
-            }))
-          : [],
-      // Bible V8 §2.4: Required betting state fields
-      min_raise: state.minRaise ?? 0,
-      last_raise: state.lastRaise ?? 0,
-      // 2026-08-23: publish the betting structure rather than leaving the
-      // client to guess it from the variant string. `wagers_capped` in
-      // particular is NOT derivable client-side — the cap counts full raises,
-      // and action_history is broadcast without its isFullRaise flag.
-      ...this.bettingStructureFields(state),
+      boardExtras: {
+        ...this.bombPotSnapshotFields(),
+        ...this.killPotSnapshotFields(),
+        ...this.anteSnapshotFields(),
+      },
+      winnerIds: this.currentHandWinnerIds,
+      winners: this.currentHandWinners,
+      bettingStructure: this.bettingStructureFields(state),
       action_context: this.getActionContext(),
       turn_start_time_ms: this.playerTurnStartTime,
-      turn_duration_ms: this.playerTurnDuration * 1000, // Convert seconds → milliseconds
-      // ── Dan 2026-08-18: "make sure the yellow countdown actually takes 15
-      // seconds." The engine was already right - action_time_seconds is 15 on
-      // every table and turn_deadline_ms follows from it - but the CLIENT
-      // measured elapsed as `Date.now() - turn_start_time_ms`, mixing its own
-      // clock with a server timestamp. A device clock a few seconds fast made
-      // the ring start part-drained and finish early; a slow one made it
-      // overrun. Publishing the server's own "now" lets the client measure
-      // that offset and subtract it, so the ring reflects the real remaining
-      // time regardless of what the device clock says.
+      turnDurationSeconds: this.playerTurnDuration,
       server_time_ms: Date.now(),
-      // ── PINEAPPLE DISCARD CLOCK (2026-08-31) — see getTableState above.
-      ...this.pineappleDiscardSnapshotFields(),
-      // Phase 1.2 PR-F: absolute wall-clock deadline. Client reads this
-      // directly rather than computing start+duration locally, eliminating
-      // client/server clock skew for the countdown.
-      turn_deadline_ms:
-        this.playerTurnStartTime > 0
-          ? this.playerTurnStartTime + this.playerTurnDuration * 1000
-          : 0,
+      pineappleFields: this.pineappleDiscardSnapshotFields(),
       time_bank_active: this.timeBankActivatedThisTurn,
-      // Phase 1.2 PR-F: per-user disconnect FSM map for client UI toasts
-      // (MISSING / DISCONNECTED). Same shape the DB stores.
       disconnect_states: this.disconnectEngine.getFsmStatesForTable(this.tableId),
-      // Bible V8 §4.2 — Wait-for-BB user-id list. Walkthrough Step 4 fix
-      // 2026-04-29. Players who joined mid-hand are flagged here until the
-      // BB rotates to them OR they call POST /post-bb. Frontend reads this
-      // to render the "Post BB to enter" button on the hero seat.
       /* HOW MANY SEATS THIS TABLE HAS — FROM THE ONLY PARTY THAT KNOWS
-         (Dan 2026-08-31, phase 1 of the seat-truth contract).
-
-         The client used to GUESS. `tableState.maxPlayers` is seeded to 6 and
-         corrected only when its own `tables` row query lands, so for the first
-         seconds of every mount — and indefinitely if that query failed or was
-         RLS denied — a 9-max table was drawn as a 6-max one. On 2026-08-31
-         that erased a player seated in seat 7 from his own screen for ten
-         minutes while the engine dealt him in, took his big blind, timed out
-         his turns and finally evicted him (table 08746c1a). The mapper now
-         infers a floor from the highest OCCUPIED seat, which rescues a seated
-         hero but still under-draws a table whose high seats happen to be empty.
-
-         The engine holds `tableInfo.max_players` and always has. One field
-         ends the guessing: published on the live payload and on the idle one,
-         so every snapshot a client can receive carries the true capacity.
-         Clients older than this field fall back to the inference and are no
-         worse off than they are today. */
+         (Dan 2026-08-31, phase 1 of the seat-truth contract): the table row,
+         never the roster. */
       max_seats: Number(this.tableInfo?.max_players) || 0,
-      // 2026-09-07: published beside max_seats on every payload so the client
-      // knows when seatIdentity() has scrubbed the roster and must not paint
-      // a real face over it from its own profile sync (an-avatar-change-
-      // stays-changed changelog). Absent on an older engine = not anonymous.
       is_anonymous: this.tableInfo?.is_anonymous === true,
-      waiting_for_bb_user_ids: Array.from(this.waitingForBB),
-      // Dan 2026-08-29: the subset of the above who have ALREADY agreed to
-      // post and are held out only by the seat they are in. Published so the
-      // client stops asking them — without it the overlay returns on the very
-      // next snapshot, and on every reload, which is the complaint itself.
-      post_bb_deferred_user_ids: Array.from(this.postBBWhenClear),
-      // 2026-09-24: the third entry state. A player released from the wait
-      // to post their own live big blind on the NEXT deal is in neither list
-      // above (postBBToEnter deletes them from both), so between the tap and
-      // the deal every client read "not waiting, not agreed" and painted
-      // whatever the seat's status said - SITTING OUT, for the one case Dan
-      // named. Published so the seat can say they are posting.
-      posting_bb_user_ids: Array.from(this.postingBBToEnter),
-      // Bible V8 §2.4: Side pot information for multi-way all-ins
-      pots: (state.pots ?? []).map((p) => ({
-        amount: p.amount,
-        eligible: p.eligiblePlayers ?? [],
-      })),
-      // Bible V8 §2.4: Action history for the current hand
-      // Bible V8 §2.5: Action Record — seat, userId, action, amount, timestamp, stage
-      action_history: (state.actionHistory ?? []).map((a) => ({
-        seat: a.seat,
-        userId: a.userId ?? '',
-        action: a.action,
-        amount: a.amount,
-        timestamp: a.timestamp ?? 0,
-        stage: a.stage,
-      })),
-      // Bible V8 §2.3: Complete player objects with all required fields
-      // CARD SECURITY: Scrub hole cards from public broadcast.
-      // Players receive their own cards via RLS-protected table_hole_cards channel.
-      // Bible V8 §4.21: Auto-muck — at showdown, only show:
-      //   - Winners (must always show)
-      //   - Players who voluntarily chose to show (showHandPlayers set)
-      //   - All non-folded players if auto_muck is DISABLED
-      players: (() => {
-        const positionLabels = this.getPositionLabels(
-          state.dealerSeat ?? this.currentHandDealerSeat,
-          state.players ?? []
-        );
-        return (state.players ?? []).map((p) => {
-          // ── Dan 2026-08-18: at showdown every hand still in it is face up ──
-          //
-          // This is the path that actually puts opponents' cards on the table:
-          // mapEngineSnapshot turns `cards` into the seat's holeCards. (The
-          // separate `showdown_cards_revealed` event is re-emitted onto
-          // MasterBus by TablePage but has no subscriber, so it renders
-          // nothing - this snapshot is the whole story.)
-          //
-          // It used to apply the auto-muck gate: winner, or voluntary shower,
-          // or auto_muck disabled. Every one of the 56,052 tables has
-          // auto_muck_enabled true, so only the winner's cards were ever sent.
-          // Measured over 10,165 hands that reached a full five-card board:
-          // 1.08 holdings shown on average.
-          //
-          // The `!p.is_folded` guard is what keeps this safe and it stays. A
-          // player who folded is never included, so a fold is never exposed;
-          // only players who took the hand to showdown are turned over.
-          // ANIMATION AUDIT 2026-08-19: also reveal during an all-in runout
-          // (runoutRevealActive) — betting is complete, hands are tabled, and
-          // the paced runout is unwatchable with the cards still face down.
-          // The `!p.is_folded` guard stays: a fold is never exposed.
-          //
-          // SHOWDOWN SYSTEM 2026-08-25 (Dan spec section 4): a hand the
-          // engine ruled muckable stays face-down in the public snapshot too
-          // — this is the path that actually puts cards on the felt, so
-          // without this gate the muck was decoration. Voluntary shows
-          // override (isMuckedAtShowdown returns false for them). All-in
-          // showdowns never produce mucked=true, so runout reveals are
-          // untouched.
-          const muckedHere = this.isMuckedAtShowdown(p.user_id);
-          const showCards =
-            (state.stage === 'showdown' || this.runoutRevealActive) && !p.is_folded && !muckedHere;
-
-          // ── Dan 2026-08-18: per-card voluntary reveal ──
-          //
-          // "a user should be able to click on any card in their hand, and
-          //  when clicked that card or cards always get shown after the hand
-          //  is over."
-          //
-          // A player who clicked individual cards gets those - and only those -
-          // turned over once the hand is done, even if they folded and even if
-          // the hand never reached showdown. That is the whole point: it is how
-          // you show a bluff after taking the pot uncontested.
-          //
-          // Unpicked slots are sent as null rather than dropped, so the client
-          // still knows how many cards were held and renders a back in the
-          // gaps. A real showdown (showCards) already reveals everything, so
-          // this branch only ever ADDS to what is visible.
-          const picked = this.showHandCards?.get(p.user_id);
-          const handIsOver = state.stage === 'showdown' || this.currentHandWinnerIds.length > 0;
-          const partialReveal =
-            !showCards && handIsOver && !!picked && picked.size > 0 && (p.cards?.length ?? 0) > 0;
-
-          const cardsOut = showCards
-            ? (p.cards ?? [])
-            : partialReveal
-              ? (p.cards ?? []).map((c, i) => (picked!.has(i) ? c : null))
-              : [];
-
-          return {
-            seat: p.seat,
-            user_id: p.user_id,
-            ...this.seatIdentity(p),
-            stack: p.stack,
-            bet: p.bet ?? 0,
-            totalInvested: p.totalInvested ?? 0, // Bible V8 §2.3
-            cards: cardsOut,
-            is_folded: p.is_folded ?? false,
-            is_all_in: p.is_all_in ?? false,
-            /* See the identical read in getTableState(): the hand roster's copy
-               of this flag is deliberately always false, so it could never tell
-               a watching client that somebody had sat out. */
-            is_sitting_out: this.disconnectEngine.isSittingOut(this.tableId, p.user_id),
-            is_disconnected: !this.disconnectEngine.isConnected(this.tableId, p.user_id), // Bible V8 §2.3
-            time_bank_remaining: this.timeBankEngine.getRemainingSeconds(this.tableId, p.user_id), // Bible V8 §2.3
-            time_bank_uses_remaining: this.timeBankEngine.getUsesRemaining(this.tableId, p.user_id), // Bible V8 §2.3
-            position: positionLabels.get(p.seat) ?? '', // Bible V8 §2.3, Appendix B
-            // CHIP CONTINUITY: the stay clock, identical in all three payloads.
-            // Roster stack, not the live hand stack - see getTableState().
-            ...this.chipContinuity.seatFields(p.user_id, this.continuityStack(p.user_id, p.stack)),
-            // Bible V8 §4.2 — Wait-for-BB flag exposed to clients so the
-            // post-BB UI button can render. Walkthrough Step 4 fix
-            // 2026-04-29: previously the engine tracked this internally but
-            // never published it; frontend had no way to know the player was
-            // waiting and no way to call POST /post-bb to skip the wait.
-            is_waiting_for_bb: this.waitingForBB.has(p.user_id),
-            // SHOWDOWN SYSTEM 2026-08-25: engine-decided muck flag. The seat
-            // renders a MUCKED label instead of cards; the hole cards and the
-            // hand identity are withheld from every public surface.
-            is_mucked: state.stage === 'showdown' && !p.is_folded && muckedHere,
-            // Bible V8 §5.1 + §2.7: Hand name at showdown for winner label display
-            hand_name: showCards
-              ? (this.currentHandShowdownResults.find((r) => r.userId === p.user_id)?.handName ??
-                '')
-              : '',
-          };
-        });
-      })(),
-    };
+      waitingForBB: this.waitingForBB,
+      postBBWhenClear: this.postBBWhenClear,
+      postingBBToEnter: this.postingBBToEnter,
+      showdownResults: this.currentHandShowdownResults,
+      seats: {
+        seatIdentity: (p) => ({ ...this.seatIdentity(p) }),
+        /* THE ENGINE, NOT THE ROSTER (2026-08-28): the hand roster's copy of
+           is_sitting_out is deliberately always false. */
+        seatPresence: (p) => ({
+          is_sitting_out: this.disconnectEngine.isSittingOut(this.tableId, p.user_id),
+          is_disconnected: !this.disconnectEngine.isConnected(this.tableId, p.user_id),
+          time_bank_remaining: this.timeBankEngine.getRemainingSeconds(this.tableId, p.user_id),
+          time_bank_uses_remaining: this.timeBankEngine.getUsesRemaining(this.tableId, p.user_id),
+        }),
+        // CHIP CONTINUITY: the stay clock, judged on the ROSTER stack.
+        seatContinuity: (p) => ({
+          ...this.chipContinuity.seatFields(p.user_id, this.continuityStack(p.user_id, p.stack)),
+        }),
+      },
+      reveal: {
+        runoutRevealActive: this.runoutRevealActive,
+        isMuckedAtShowdown: (userId) => this.isMuckedAtShowdown(userId),
+        showHandCards: this.showHandCards,
+        handHasWinners: this.currentHandWinnerIds.length > 0,
+      },
+    });
 
     // Phase 1.1 PR-5: Publish ONLY to the authoritative WebSocket hub.
     // The legacy Supabase Realtime broadcast path has been deleted.

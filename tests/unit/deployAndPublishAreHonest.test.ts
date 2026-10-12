@@ -451,7 +451,7 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
     const jobTimeouts = [...publish.matchAll(/^ {4}timeout-minutes: (\d+)$/gm)].map((match) =>
       Number(match[1])
     );
-    expect(jobTimeouts).toHaveLength(5);
+    expect(jobTimeouts).toHaveLength(6);
     expect(jobTimeouts.every((minutes) => minutes > 0 && minutes <= 30)).toBe(true);
     const origin = originJob();
     expect(origin).toContain('timeout 35s ssh');

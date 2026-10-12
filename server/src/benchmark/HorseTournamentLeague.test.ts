@@ -73,7 +73,12 @@ describe('Phase 8 paired tournament league', () => {
     expect(result.illegalActions).toBe(0);
     expect(result.conservationErrors).toBe(0);
     expect(result.truncatedHands).toBe(0);
-    expect(result.eligible).toBeGreaterThan(0);
+    // Six-seat tables are outside Phase 8's future-hand seat scope
+    // (PHASE8_POLICY.maxFutureHandSeats), so the candidate is consulted on
+    // every decision but becomes eligible only at a table of three or fewer
+    // seats with chips; the Spin case above pins real eligibility.
+    expect(result.decisions).toBeGreaterThan(0);
+    expect(result.eligible).toBeLessThanOrEqual(result.decisions);
   }, 60000);
   it.each(TOURNAMENT_LEAGUE_OBJECTIVES)(
     'cancellation of %s returns incomplete evidence',

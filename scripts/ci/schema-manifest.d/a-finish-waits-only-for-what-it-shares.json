@@ -1,0 +1,4 @@
+{
+  "_owner": "agent/cowork-fin/fix/finish-tail-perf. Declared by migration 20261003164157_a_finish_waits_only_for_what_it_shares, applied after merge through apply-merged-migration.yml: the owner-only answer lane the satellite qualifier ask takes (G shared, F shared, both T keys).",
+  "functions": ["fn_ca_lock_satellite_answer_lane"]
+}

@@ -75,6 +75,9 @@ const EMPTY_TOURNAMENTS = {
   itm_percent: 0,
   total_buyins: 0,
   total_winnings: 0,
+  total_prizes: 0,
+  total_bounty_winnings: 0,
+  total_bounties: 0,
 };
 
 const EMPTY_RAKE = {
@@ -153,8 +156,23 @@ vi.mock('../../src/hooks/useAuthUser', () => ({
 vi.mock('react-router-dom', () => ({
   useParams: () => ({}),
   useNavigate: () => vi.fn(),
+  useSearchParams: () => [new URLSearchParams(), vi.fn()],
   useLocation: () => ({ pathname: '/stats', search: '', hash: '', state: null, key: 'test' }),
   Link: ({ to, children }: { to: string; children?: unknown }) => <a href={to}>{children}</a>,
+}));
+
+vi.mock('../../src/services/ClubsService', () => ({
+  getUserMemberships: vi.fn().mockResolvedValue([]),
+}));
+
+vi.mock('../../src/services/StatsWorkspaceService', () => ({
+  statsWorkspaceService: {
+    loadPreferences: vi.fn().mockResolvedValue({
+      ok: true,
+      data: { dashboardLayout: [], privacyPresentationMode: false },
+    }),
+    evaluateAlerts: vi.fn().mockResolvedValue({ ok: true, data: 0 }),
+  },
 }));
 
 vi.mock('../../src/services/AgentRakeService', () => ({
@@ -196,6 +214,12 @@ vi.mock('../../src/services/StatsFactsService', () => {
       generated_at: '',
     }),
     getDistribution: vi.fn().mockResolvedValue({ rows: [] }),
+    getCashOpportunityStats: vi.fn().mockResolvedValue({
+      contract_version: 2,
+      metrics: {},
+      splits: {},
+      coverage: { exact_hands: 0, returned_hands: 0 },
+    }),
     getRakeStats,
     getHandRakeShare: vi.fn().mockResolvedValue({ found: false }),
   };
@@ -211,20 +235,31 @@ import { clearStatsRangeMemo } from '../../src/lib/statsCache';
 import { NOT_YET_MEASURED } from '../../src/pages/stats/format';
 
 function payload(overall: Record<string, unknown>, lifetimeHands: number) {
+  const totalHands = Number(overall.total_hands);
+  const cashHands = Number(overall.cash_hands);
+  const handCap = Number(overall.hand_cap);
   return {
     contract_version: 2,
     generated_at: '2026-09-20T12:00:00.000Z',
-    scope: { target_user_id: 'user-1', club_id: null, range_days: null, visibility: 'owner' },
+    scope: {
+      target_user_id: 'user-1',
+      club_id: null,
+      asset: 'chips',
+      range_days: null,
+      range_tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      visibility: 'owner',
+    },
     quality: {
-      cash_money_source: 'engine_settlement',
+      cash_money_source: 'exact_settlement',
       cash_money_exact: true,
-      advanced_facts_source: 'ca_hand_player_stat',
+      exact_cash_hands: cashHands,
+      advanced_facts_source: 'ca_hand_facts',
       historical_club_breakdown_available: false,
-      live_tail_included: false,
+      live_tail_included: true,
     },
     coverage: {
-      analysis_hand_cap: 25_000,
-      analysis_hands_capped: false,
+      analysis_hand_cap: handCap,
+      analysis_hands_capped: totalHands > handCap,
       lifetime_index_complete: true,
       first_hand_at: null,
       last_hand_at: null,
@@ -433,11 +468,39 @@ describe('the hero hand count says when it is lifetime (defect 5)', () => {
   }, 12_000);
 });
 
+describe('the hero names capped figures as an analysis sample', () => {
+  it('does not label a capped 750-hand cash result as authoritative Cash Profit', async () => {
+    rpcPayload = payload(
+      {
+        ...PLAYED_OVERALL,
+        total_hands: 751,
+        cash_hands: 751,
+        hands_won: 150,
+        hands_lost: 601,
+        hand_cap: 750,
+        hands_capped: true,
+      },
+      50_000
+    );
+    render(<PlayerStatsPage />);
+    const h = await hero();
+    expect(await within(h).findByText('Analysis Cash Result')).toBeInTheDocument();
+    expect(within(h).queryByText('Cash Profit')).not.toBeInTheDocument();
+    expect(screen.getByText('Based On Your Most Recent 750 Hands.')).toBeInTheDocument();
+  }, 12_000);
+});
+
 describe('the hero does not rate an empty sample (defect 3, hero)', () => {
   it('with no hands scored, the gauge and BB/100 read Not Yet Measured, not 0% and 0.00', async () => {
     rpcPayload = {
       ...payload(EMPTY_OVERALL, 0),
-      tournaments: { ...EMPTY_TOURNAMENTS, entries: 3, total_buyins: 300 },
+      tournaments: {
+        ...EMPTY_TOURNAMENTS,
+        entries: 3,
+        total_buyins: 300,
+        net_profit: -300,
+        roi: -1,
+      },
     };
     render(<PlayerStatsPage />);
     const h = await hero();
@@ -470,7 +533,7 @@ describe('the hero does not rate an empty sample (defect 3, hero)', () => {
   it('a measured cash win rate still prints its number and its colour', async () => {
     render(<PlayerStatsPage />);
     const h = await hero();
-    expect(await within(h).findByText('4.25')).toHaveClass('positive');
+    expect(await within(h).findByText('4.3')).toHaveClass('positive');
     expect(within(h).queryByText(NOT_YET_MEASURED)).not.toBeInTheDocument();
   }, 12_000);
 });

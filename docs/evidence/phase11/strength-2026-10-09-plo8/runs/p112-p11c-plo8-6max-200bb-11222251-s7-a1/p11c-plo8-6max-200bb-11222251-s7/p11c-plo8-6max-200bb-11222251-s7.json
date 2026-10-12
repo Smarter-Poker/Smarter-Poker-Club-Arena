@@ -1,0 +1,119 @@
+{
+  "schema": "horse-phase11-strength-shard-v1",
+  "variant": "plo8",
+  "contractVersion": "omaha-variant-strength-contract-v1",
+  "contractDigest": "5b93ae20962ff79798b998f437ed43d2bd224a64995d86e34ed63d7bb22057fc",
+  "packVersion": "plo8-split-round3-v2",
+  "evidenceMode": "contract",
+  "profileId": "p11c-plo8-6max-200bb",
+  "seed": 11222251,
+  "shard": 7,
+  "firstPair": 68544,
+  "requestedPairs": 9792,
+  "pairs": 9792,
+  "complete": true,
+  "positionCoverageComplete": true,
+  "offsetCounts": [1632, 1632, 1632, 1632, 1632, 1632],
+  "strata": {
+    "0|none": {
+      "n": 1632,
+      "s1": "0",
+      "s2": "0",
+      "s3": "0",
+      "s4": "0"
+    },
+    "1|none": {
+      "n": 1632,
+      "s1": "0",
+      "s2": "0",
+      "s3": "0",
+      "s4": "0"
+    },
+    "2|none": {
+      "n": 1632,
+      "s1": "0",
+      "s2": "0",
+      "s3": "0",
+      "s4": "0"
+    },
+    "3|none": {
+      "n": 1632,
+      "s1": "0",
+      "s2": "0",
+      "s3": "0",
+      "s4": "0"
+    },
+    "4|none": {
+      "n": 1632,
+      "s1": "0",
+      "s2": "0",
+      "s3": "0",
+      "s4": "0"
+    },
+    "5|none": {
+      "n": 1632,
+      "s1": "0",
+      "s2": "0",
+      "s3": "0",
+      "s4": "0"
+    }
+  },
+  "pairDigest": "9febbef60f461edbe8a0237a6f38defbfece24870d57fc581bca32c0de860bde",
+  "candidateNetCents": -48137,
+  "referenceNetCents": -48137,
+  "changedPairs": 0,
+  "decisions": 205790,
+  "eligible": 17071,
+  "changed": 0,
+  "illegalActions": 0,
+  "conservationErrors": 0,
+  "cardErrors": 0,
+  "truncatedHands": 0,
+  "settlementMismatches": 0,
+  "deductionMismatches": 0,
+  "pairedReplayMismatches": 0,
+  "showdownsChecked": 5808,
+  "foldWinsChecked": 13776,
+  "lowHalvesChecked": 3254,
+  "totalRake": 43602.2,
+  "totalBbj": 6100,
+  "nodeCounts": {
+    "cash/preflop/rfi": 4961,
+    "cash/preflop/defense": 1619,
+    "cash/preflop/squeeze": 829,
+    "cash/flop/checked_to": 2236,
+    "cash/turn/checked_to": 1568,
+    "cash/turn/facing_bet": 817,
+    "cash/river/facing_bet": 354,
+    "cash/preflop/limp_option": 395,
+    "cash/preflop/three_bet": 1370,
+    "cash/flop/facing_bet": 931,
+    "cash/flop/facing_raise": 72,
+    "cash/river/checked_to": 1285,
+    "cash/preflop/overcall": 201,
+    "cash/turn/facing_raise": 46,
+    "cash/river/call_off": 37,
+    "cash/preflop/four_bet": 311,
+    "cash/turn/call_off": 12,
+    "cash/preflop/five_bet_plus": 10,
+    "cash/river/facing_raise": 15,
+    "cash/flop/call_off": 2
+  },
+  "reasons": {
+    "reference_retained": 17071
+  },
+  "equityWork": {
+    "187": 8340,
+    "220": 81268
+  },
+  "fixedWork": {
+    "governor": "off",
+    "scale": 1,
+    "policyClock": "fixed_work_no_wall_clock_branch",
+    "moodClock": "deal_seed_time_of_day"
+  },
+  "durationMs": 331709,
+  "promotionEligible": false,
+  "sourceUnchanged": true,
+  "cancelled": false
+}

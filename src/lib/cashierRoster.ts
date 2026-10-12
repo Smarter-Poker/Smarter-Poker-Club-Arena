@@ -90,7 +90,8 @@ export const rosterRowMatches = (row: DownlineRow, query: string): boolean => {
   return (
     row.name.toLowerCase().includes(q) ||
     row.username.toLowerCase().includes(q) ||
-    (row.playerNumber || '').toLowerCase().includes(q)
+    (row.playerNumber || '').toLowerCase().includes(q) ||
+    row.role.replace(/_/g, ' ').toLowerCase().includes(q)
   );
 };
 
@@ -182,10 +183,29 @@ export function rosterMatchRank(row: DownlineRow, query: string): number {
   else if (handle.includes(q)) rank = 400;
   else if (id === q) rank = 300;
   else if (id.startsWith(q)) rank = 200;
+  else if (id.includes(q)) rank = 100;
+  else if (row.role.replace(/_/g, ' ').toLowerCase().includes(q)) rank = 50;
   if (rank === 0) return 0;
 
   // The person searching for themselves is the most common search there is,
   // and their row is never a recipient, so it never gets in the way.
   if (row.isSelf) rank += 1000;
   return rank;
+}
+
+/** Search the complete authorized roster, then rank before the chosen sort. */
+export function sortCashierRosterMatches(
+  rows: DownlineRow[],
+  query: string,
+  bySort: (a: DownlineRow, b: DownlineRow) => number
+): DownlineRow[] {
+  const q = query.trim();
+  if (!q) return [...rows].sort(bySort);
+  // Score once per member, rather than normalizing every field on each
+  // comparison. Rank zero is exactly the search predicate's no-match result.
+  return rows
+    .map((row) => ({ row, rank: rosterMatchRank(row, q) }))
+    .filter(({ rank }) => rank > 0)
+    .sort((a, b) => b.rank - a.rank || bySort(a.row, b.row))
+    .map(({ row }) => row);
 }

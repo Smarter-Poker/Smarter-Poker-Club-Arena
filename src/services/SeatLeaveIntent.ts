@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
 import { notifyServerLeaveOccupancy, notifyServerKickOccupancy } from './GameServerAPI';
+import { reportError } from '../utils/errorReporter';
 
 type Intent = {
   version: 1;
@@ -44,9 +45,18 @@ function validIntent(
   );
 }
 
-/** An unknown response retains the original target across retries and reloads. */
-export function leaveSeatWithIntent(tableId: string, userId: string): Promise<SeatLeaveResult> {
-  return requestSeatWithIntent(tableId, userId, { kind: 'leave' });
+/**
+ * An unknown response retains the original target across retries and reloads.
+ * `target` names the seat when the caller already knows it from an authority
+ * other than this table's own seat row (a Lightning room's anchor seat, read
+ * from fn_lightning_my_session); without it the seat row is read, as always.
+ */
+export function leaveSeatWithIntent(
+  tableId: string,
+  userId: string,
+  target?: SeatOccupancyTarget
+): Promise<SeatLeaveResult> {
+  return requestSeatWithIntent(tableId, userId, { kind: 'leave' }, target);
 }
 export function kickSeatWithIntent(
   tableId: string,
@@ -66,7 +76,7 @@ async function requestSeatWithIntent(
     (action.kind === 'kick' ? 'ca:seat-kick:v1:' : 'ca:seat-leave:v1:') + userId + ':' + tableId;
   const active = running.get(key);
   if (active)
-    return target
+    return target && action.kind === 'kick'
       ? {
           success: false,
           chipsReturned: 0,
@@ -165,13 +175,17 @@ async function requestSeatWithIntent(
         if (matches && (result.code === 'STALE_OCCUPANCY' || result.code === 'LEAVE_LOCKED')) {
           storage.setItem(key, JSON.stringify({ ...intent, state: 'resolved' }));
         }
+        const refusal =
+          typeof result.error === 'string' ? result.error : 'The Server Did Not Confirm The Leave.';
+        reportError(new Error(refusal), 'SeatLeaveIntent.leave_refused', {
+          code:
+            typeof result.code === 'string' && result.code ? result.code : 'LEAVE_NOT_CONFIRMED',
+          action: action.kind,
+        });
         return {
           success: false,
           chipsReturned: 0,
-          error:
-            typeof result.error === 'string'
-              ? result.error
-              : 'The Server Did Not Confirm The Leave.',
+          error: refusal,
         };
       }
       if (!matches || typeof result.immediate !== 'boolean') {
@@ -209,6 +223,10 @@ async function requestSeatWithIntent(
       storage.setItem(key, JSON.stringify({ ...intent, state: 'resolved' }));
       return { ...outcome, occupancyId: intent.occupancyId };
     } catch (error) {
+      reportError(error, 'SeatLeaveIntent.leave_failed', {
+        code: 'LEAVE_NOT_CONFIRMED',
+        action: action.kind,
+      });
       return {
         success: false,
         chipsReturned: 0,

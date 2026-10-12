@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/one-ask-on-screen-at-a-time - TOSGuard wraps the whole router and must hold the prompt lane while the terms are owed, so the notifications sheet (mounted outside it) stops rising over the terms. The lane is ~70 lines of module state with no imports beyond React; lazy-loading it would let a sheet rise in the gap before it arrives.",
+  "modules": ["src/lib/promptLane.ts"]
+}

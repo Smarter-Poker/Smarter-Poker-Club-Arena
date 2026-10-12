@@ -1,0 +1,10 @@
+{
+  "_owner": "agent/claude-a5/earned-plan-windows. Migration 20261003140241_the_earned_plan_is_proved_two_hours_at_a_time: the unlogged cache of a chunked close's window results and the functions that prove and combine the earned plan per two-hour window.",
+  "tables": ["accounting_close_partials"],
+  "functions": [
+    "fn_accounting_close_windows",
+    "fn_accounting_union_earned_plan_window",
+    "fn_accounting_union_earned_plan_combine",
+    "fn_accounting_union_earned_plan_advance"
+  ]
+}

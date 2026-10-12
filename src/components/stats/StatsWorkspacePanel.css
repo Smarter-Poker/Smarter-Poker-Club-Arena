@@ -1,0 +1,147 @@
+.stats-workspace {
+  display: grid;
+  gap: 3.4cqw;
+  padding: 2cqw 10cqw 5cqw;
+  color: #e4e7ec;
+}
+
+.stats-workspace__intro,
+.stats-workspace__state {
+  text-align: center;
+}
+
+.stats-workspace__section {
+  min-width: 0;
+}
+
+.stats-workspace__section > .sc-label {
+  display: block;
+  margin: 0 0 1.6cqw;
+  color: #45adff;
+  text-align: left;
+}
+
+.stats-workspace__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 3cqw;
+  min-height: 9cqw;
+  padding: 1.8cqw 0;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  font-family: Inter, sans-serif;
+  font-size: 3.5cqw;
+}
+
+.stats-workspace__row--action label {
+  flex: 0 0 auto;
+}
+
+.stats-workspace__row select {
+  max-width: 34cqw;
+  border: 0;
+  background: transparent;
+  color: #45adff;
+  font: inherit;
+  text-align: right;
+}
+
+.stats-workspace__meta,
+.stats-workspace__muted {
+  color: #9aa5b3;
+}
+
+.stats-workspace__meta {
+  max-width: 47%;
+  text-align: right;
+}
+
+.stats-workspace__word-action {
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  color: #45adff;
+  font-family: 'Roboto Condensed', sans-serif;
+  font-size: 3.6cqw;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.stats-workspace__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.stats-workspace-composer {
+  display: grid;
+  gap: 3.4cqw;
+  padding: 2cqw 10cqw 5cqw;
+  margin: 0;
+  min-inline-size: 0;
+  border: 0;
+}
+
+.stats-workspace-composer form {
+  display: grid;
+  gap: 1.8cqw;
+  padding-top: 2.4cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.stats-workspace-composer label {
+  display: grid;
+  gap: 1cqw;
+  color: #45adff;
+  font-family: 'Roboto Condensed', sans-serif;
+  font-size: 3.2cqw;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.stats-workspace-composer input,
+.stats-workspace-composer textarea,
+.stats-workspace-composer select {
+  min-height: 44px;
+  border: 0;
+  border-bottom: 1px solid rgb(69 173 255 / 55%);
+  background: transparent;
+  color: #e4e7ec;
+  font-family: Inter, sans-serif;
+  font-size: 3.7cqw;
+}
+
+.stats-workspace-composer textarea {
+  min-height: 18cqw;
+  resize: vertical;
+}
+
+.stats-workspace-composer button {
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  color: #45adff;
+  font-family: 'Roboto Condensed', sans-serif;
+  font-size: 3.6cqw;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+@media (min-width: 700px) {
+  .stats-workspace {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .stats-workspace__intro,
+  .stats-workspace__state {
+    grid-column: 1 / -1;
+  }
+}

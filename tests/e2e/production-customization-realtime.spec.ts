@@ -6,7 +6,9 @@ import {
   type Locator,
   type Page,
 } from '@playwright/test';
+import { readAppearanceRoots } from './support/appearancePreviewObservation';
 import { rawProfileHeading } from './support/rawProfileHeading';
+import { navigateToRenderedProfile } from './support/renderedProfileNavigation';
 import { readProfileInterfaceMode } from './support/profileInterfaceMode';
 import { walletPlayableAmount } from './support/walletPlayableAmount';
 
@@ -14,9 +16,14 @@ import { ensureAcceptedTerms } from './support/ensureAcceptedTerms';
 import { ensurePlayableProfile } from './support/ensurePlayableProfile';
 import { observeAccountRealtime } from './support/accountRealtimeObservation';
 import { installAccountRealtimeInterruption } from './support/accountRealtimeInterruption';
+import {
+  observeAppearanceRealtime,
+  type AppearanceRealtimeObservationState,
+} from './support/appearanceRealtimeObservation';
 import { createReservedPresenceTransport } from './support/reservedPresenceTransport';
 import {
   cleanupTemporaryCustomizationAccount,
+  CLEANUP_FREEZE_ALLOWANCE_MS,
   createTemporaryCustomizationAccount,
   readServiceRows,
   requireCustomizationCertificationEnvironment,
@@ -92,11 +99,46 @@ const FREE_ASSET_ID_BY_NAME: Record<string, string> = {
 const PRODUCTION_RESPONSE_TIMEOUT = 60_000;
 const PRESENCE_TOPIC_PREFIX = 'cert-presence:';
 const accountObservations = new WeakMap<Page, ReturnType<typeof observeAccountRealtime>>();
-// Record only the expected cosmetic signal, never session/auth websocket frames.
-const appearanceSignalReceived = new WeakMap<Page, boolean>();
+const appearanceObservations = new WeakMap<Page, AppearanceRealtimeObservationState>();
+const tableArtObservations = new WeakMap<Page, AppearanceRealtimeObservationState>();
+const tableArtReadOutcomes = new WeakMap<
+  Page,
+  {
+    role: string;
+    requested: number;
+    responses: number;
+    failed: number;
+    lastStatus: number | null;
+    lastResponseMs: number | null;
+    stage: string | null;
+    operationStartedAt: number | null;
+    freshResponses: number;
+    olderRequestResponses: number;
+    unattributedResponses: number;
+    beforeOperation: { requested: number; responses: number; failed: number } | null;
+  }
+>();
+function markTableArtOperation(pages: Page[], stage: string) {
+  for (const page of pages) {
+    const art = tableArtObservations.get(page);
+    if (art) art.signalReceived = false;
+    const reads = tableArtReadOutcomes.get(page);
+    if (reads) {
+      reads.stage = stage;
+      reads.operationStartedAt = performance.now();
+      reads.freshResponses = 0;
+      reads.olderRequestResponses = 0;
+      reads.unattributedResponses = 0;
+      reads.beforeOperation = {
+        requested: reads.requested,
+        responses: reads.responses,
+        failed: reads.failed,
+      };
+    }
+  }
+}
 const accountSignalReceived = new WeakMap<Page, boolean>();
-function observeAppearanceSignal(page: Page, userId: string) {
-  appearanceSignalReceived.set(page, false);
+function observeAccountSignal(page: Page, userId: string) {
   accountSignalReceived.set(page, false);
   page.on('websocket', (socket) =>
     socket.on('framereceived', ({ payload }) => {
@@ -104,12 +146,6 @@ function observeAppearanceSignal(page: Page, userId: string) {
         const frame = JSON.parse(String(payload));
         const event = Array.isArray(frame) ? frame[3] : frame.event;
         const body = Array.isArray(frame) ? frame[4] : frame.payload;
-        if (
-          event === 'broadcast' &&
-          body?.event === 'appearance_changed' &&
-          body?.payload?.user_id === userId
-        )
-          appearanceSignalReceived.set(page, true);
         if (
           event === 'broadcast' &&
           body?.event === 'account_changed' &&
@@ -150,7 +186,44 @@ async function readAppearance(studio: Locator): Promise<Appearance> {
 }
 
 async function expectAppearance(studio: Locator, appearance: Appearance) {
-  await expect.poll(() => readAppearance(studio), { timeout: 20_000 }).toEqual(appearance);
+  let sample: { roots: number; values: Appearance[] } | null = null;
+  try {
+    await expect
+      .poll(
+        async () => {
+          const values = await readAppearanceRoots(preview(studio));
+          sample = { roots: values.length, values };
+          return sample;
+        },
+        { timeout: 20_000 }
+      )
+      .toEqual({ roots: 1, values: [appearance] });
+  } catch (error) {
+    // A single-root evaluate can wait for a missing locator inside the predicate,
+    // losing both the last paint and the distinction between absent and stale.
+    // These passive projections contain no actor IDs, sessions or wire payloads.
+    try {
+      await test.info().attach('table-art-consumer-failure', {
+        contentType: 'application/json',
+        body: JSON.stringify({
+          sample,
+          expected: appearance,
+          tableArt: tableArtObservations.get(studio.page()),
+          settingsReads: tableArtReadOutcomes.get(studio.page()),
+          profileAppearance: appearanceObservations.get(studio.page()),
+        }),
+      });
+    } catch (diagnosticError) {
+      throw new AggregateError(
+        [error, diagnosticError],
+        withCauses('Appearance assertion and diagnostic attachment both failed.', [
+          error,
+          diagnosticError,
+        ])
+      );
+    }
+    throw error;
+  }
 }
 
 async function expectPreviewAvatarsLoaded(studio: Locator) {
@@ -223,7 +296,10 @@ async function installOverlaySafety(page: Page) {
   );
 }
 
-async function openStudio(page: Page) {
+async function openStudio(
+  page: Page,
+  { expectedLook = 'coordinated' }: { expectedLook?: 'coordinated' | 'custom' } = {}
+) {
   await installOverlaySafety(page);
   await page.goto('./', { waitUntil: 'domcontentloaded', timeout: 60_000 });
   if (page.url().includes('/auth')) {
@@ -262,20 +338,101 @@ async function openStudio(page: Page) {
     timeout: PRODUCTION_RESPONSE_TIMEOUT,
   });
   await expectPreviewAvatarsLoaded(studio);
-  await expect(grid.locator('.theme-asset[aria-pressed="true"]')).toHaveCount(1, {
-    timeout: PRODUCTION_RESPONSE_TIMEOUT,
-  });
+  const selectedLooks = grid.locator('.theme-asset[aria-pressed="true"]');
+  if (expectedLook === 'coordinated') {
+    await expect(selectedLooks).toHaveCount(1, { timeout: PRODUCTION_RESPONSE_TIMEOUT });
+  } else {
+    // A player can start from a coordinated Look and then replace individual
+    // table, scene, button or card choices. That durable state is intentionally
+    // a Custom Mix: no coordinated Look tile may claim to be selected.
+    await expect(selectedLooks).toHaveCount(0, { timeout: PRODUCTION_RESPONSE_TIMEOUT });
+    await expect(
+      studio
+        .locator('[aria-label="Current Table Configuration"]')
+        .getByText('Custom Mix', { exact: true })
+    ).toBeVisible({ timeout: PRODUCTION_RESPONSE_TIMEOUT });
+  }
   return studio;
+}
+
+async function expectSelectedAppearanceTiles(studio: Locator, appearance: Appearance) {
+  for (const category of ['Tables', 'Scenes', 'Buttons', 'Cards'] as const) {
+    await activateCategory(studio, category);
+    if (category === 'Scenes') {
+      await studio.getByRole('button', { name: /^Places & Rooms/ }).click();
+    }
+    const field = CATEGORY_APPEARANCE_FIELD[category];
+    const expectedName = Object.entries(FREE_ASSET_ID_BY_NAME).find(
+      ([, id]) => id === appearance[field]
+    )?.[0];
+    if (!expectedName) {
+      throw new Error(`No certification asset name maps to ${category} ${appearance[field]}.`);
+    }
+    const selected = studio.locator('.theme-modal__grid .theme-asset[aria-pressed="true"]');
+    await expect(selected).toHaveCount(1, { timeout: PRODUCTION_RESPONSE_TIMEOUT });
+    await expect(selected).toHaveAttribute('aria-label', expectedName, {
+      timeout: PRODUCTION_RESPONSE_TIMEOUT,
+    });
+  }
 }
 
 async function signIn(
   context: BrowserContext,
   baseURL: string,
-  account: TemporaryCustomizationAccount
+  account: TemporaryCustomizationAccount,
+  role: 'writer' | 'mobile' | 'other-player'
 ) {
   const page = await context.newPage();
   accountObservations.set(page, observeAccountRealtime(page, account.id, ''));
-  observeAppearanceSignal(page, account.id);
+  appearanceObservations.set(page, observeAppearanceRealtime(page, account.id));
+  tableArtObservations.set(page, observeAppearanceRealtime(page, account.id, 'table-art'));
+  const reads = {
+    role,
+    requested: 0,
+    responses: 0,
+    failed: 0,
+    lastStatus: null as number | null,
+    lastResponseMs: null as number | null,
+    stage: null as string | null,
+    operationStartedAt: null as number | null,
+    freshResponses: 0,
+    olderRequestResponses: 0,
+    unattributedResponses: 0,
+    beforeOperation: null as { requested: number; responses: number; failed: number } | null,
+  };
+  const readStarts = new WeakMap<object, number>();
+  tableArtReadOutcomes.set(page, reads);
+  const isOwnSettingsRead = (request: { method(): string; url(): string }) => {
+    const url = new URL(request.url());
+    return (
+      request.method() === 'GET' &&
+      url.pathname.endsWith('/rest/v1/user_theme_settings') &&
+      url.searchParams.get('user_id') === `eq.${account.id}`
+    );
+  };
+  page.on('request', (request) => {
+    if (!isOwnSettingsRead(request)) return;
+    reads.requested += 1;
+    readStarts.set(request, performance.now());
+  });
+  page.on('response', (response) => {
+    if (!isOwnSettingsRead(response.request())) return;
+    reads.responses += 1;
+    const started = readStarts.get(response.request());
+    reads.lastResponseMs = started === undefined ? null : performance.now() - started;
+    // A response arriving after the marker is not a fresh read if its request
+    // began before the existing user action. Preserve that distinction.
+    if (reads.operationStartedAt !== null) {
+      if (started === undefined) reads.unattributedResponses += 1;
+      else if (started < reads.operationStartedAt) reads.olderRequestResponses += 1;
+      else reads.freshResponses += 1;
+    }
+    reads.lastStatus = response.status();
+  });
+  page.on('requestfailed', (request) => {
+    if (isOwnSettingsRead(request)) reads.failed += 1;
+  });
+  observeAccountSignal(page, account.id);
   // The public landing page deliberately does not redirect signed-out visitors.
   // These contexts are empty: enter a protected route and require real sign-in.
   const protectedURL = new URL('notifications', baseURL).toString();
@@ -402,7 +559,7 @@ async function selectAsset(
     .waitForResponse(
       (response) =>
         response.request().method() === 'POST' &&
-        response.url().includes('/rest/v1/user_theme_settings'),
+        response.url().includes('/rest/v1/rpc/fn_patch_table_appearance'),
       { timeout: PRODUCTION_RESPONSE_TIMEOUT }
     );
   await asset.click();
@@ -432,13 +589,20 @@ test.describe('production Table Studio realtime contract', () => {
   // This test performs and verifies durable production writes on two reserved
   // identities, then hard-deletes both. Restoring disposable cosmetics before
   // deletion adds no evidence and can hide the original journey failure.
-  test.describe.configure({ mode: 'serial', timeout: 600_000 });
+  /* The journey's own budget, plus room for the teardown to wait out one hourly
+   platform freeze rather than die inside it. The allowance is measured, not
+   guessed: see CLEANUP_FREEZE_ALLOWANCE_MS. It is spent only when a freeze is
+   actually enforced. */
+  const JOURNEY_TIMEOUT_MS = 600_000;
+  const CASE_TIMEOUT_MS = JOURNEY_TIMEOUT_MS + CLEANUP_FREEZE_ALLOWANCE_MS;
+
+  test.describe.configure({ mode: 'serial', timeout: CASE_TIMEOUT_MS });
 
   test('every free cosmetic applies, persists, syncs to another device, and stays isolated from another player', async ({
     browser,
     baseURL,
   }) => {
-    test.setTimeout(600_000);
+    test.setTimeout(CASE_TIMEOUT_MS);
     if (!baseURL) throw new Error('A deployed BASE_URL is required.');
 
     const environment = requireCustomizationCertificationEnvironment();
@@ -505,11 +669,11 @@ test.describe('production Table Studio realtime contract', () => {
         storageState: { cookies: [], origins: [] },
       });
 
-      primaryPage = await signIn(primaryDesktop, baseURL, primaryAccount);
+      primaryPage = await signIn(primaryDesktop, baseURL, primaryAccount, 'writer');
       primaryStudio = await openStudio(primaryPage);
-      const mobilePage = await signIn(primaryMobile, baseURL, primaryAccount);
+      const mobilePage = await signIn(primaryMobile, baseURL, primaryAccount, 'mobile');
       mobileStudio = await openStudio(mobilePage);
-      const otherPage = await signIn(otherPlayer, baseURL, otherAccount);
+      const otherPage = await signIn(otherPlayer, baseURL, otherAccount, 'other-player');
       otherStudio = await openStudio(otherPage);
       console.log('[customization-realtime] three isolated sessions ready');
       const primaryUserId = await sessionUserId(primaryPage);
@@ -529,20 +693,41 @@ test.describe('production Table Studio realtime contract', () => {
       await expectHeaderPortrait(primaryPage, originalPortrait);
       await expectHeaderPortrait(mobilePage, originalPortrait);
       await expectHeaderPortrait(otherPage, originalPortrait);
-      appearanceSignalReceived.set(primaryPage, false);
-      appearanceSignalReceived.set(mobilePage, false);
+      const primaryAppearance = appearanceObservations.get(primaryPage);
+      const mobileAppearance = appearanceObservations.get(mobilePage);
+      if (!primaryAppearance || !mobileAppearance) {
+        throw new Error('Appearance realtime observation was not installed before sign-in.');
+      }
+      // Do not race a durable write against a private channel that is still
+      // joining. A missing signal after a proven join is a product/runtime
+      // verdict; writing before either receiver has joined is only a harness
+      // race and cannot certify realtime delivery.
+      await expect
+        .poll(() => primaryAppearance.subscribed, {
+          timeout: PRODUCTION_RESPONSE_TIMEOUT,
+          message: 'The primary appearance channel never completed its private join.',
+        })
+        .toBe(true);
+      await expect
+        .poll(() => mobileAppearance.subscribed, {
+          timeout: PRODUCTION_RESPONSE_TIMEOUT,
+          message: 'The mobile appearance channel never completed its private join.',
+        })
+        .toBe(true);
+      primaryAppearance.signalReceived = false;
+      mobileAppearance.signalReceived = false;
       const edited = await primaryAccount.client
         .from('profiles')
         .update({ arena_avatar_url: changedPortrait, use_avatar_as_profile_pic: true })
         .eq('id', primaryUserId);
       if (edited.error) throw edited.error;
       await expect
-        .poll(() => appearanceSignalReceived.get(primaryPage!), {
+        .poll(() => primaryAppearance.signalReceived, {
           timeout: PRODUCTION_RESPONSE_TIMEOUT,
         })
         .toBe(true);
       await expect
-        .poll(() => appearanceSignalReceived.get(mobilePage), {
+        .poll(() => mobileAppearance.signalReceived, {
           timeout: PRODUCTION_RESPONSE_TIMEOUT,
         })
         .toBe(true);
@@ -568,6 +753,7 @@ test.describe('production Table Studio realtime contract', () => {
       );
 
       const primaryPreset = different(primaryOriginal.selections.Looks, Object.keys(PRESETS));
+      markTableArtOperation([primaryPage, mobilePage, otherPage], 'primary-preset');
       await selectAsset(primaryStudio, 'Looks', primaryPreset);
       let expectedPrimary = { ...PRESETS[primaryPreset] };
       await expectPersistedAppearance(environment, primaryUserId, expectedPrimary);
@@ -594,6 +780,7 @@ test.describe('production Table Studio realtime contract', () => {
           [current, primaryOriginal.selections[category]],
           CATEGORY_ALTERNATIVES[category]
         );
+        markTableArtOperation([primaryPage, mobilePage, otherPage], `primary-${category}`);
         await selectAsset(primaryStudio, category, target);
         const targetId = FREE_ASSET_ID_BY_NAME[target];
         if (!targetId) throw new Error(`The free design ${target} has no expected asset id.`);
@@ -614,11 +801,13 @@ test.describe('production Table Studio realtime contract', () => {
       // leave Playwright waiting forever for a lifecycle event even though the
       // production page had already rendered. The navigation below remains a
       // genuine cold rehydrate from the persisted account settings.
-      mobileStudio = await openStudio(mobilePage);
+      mobileStudio = await openStudio(mobilePage, { expectedLook: 'custom' });
       await expectAppearance(mobileStudio, finalPrimary);
+      await expectSelectedAppearanceTiles(mobileStudio, finalPrimary);
       console.log('[customization-realtime] persisted appearance survived a device reload');
 
       const otherPreset = different(primaryPreset, Object.keys(PRESETS));
+      markTableArtOperation([primaryPage, mobilePage, otherPage], 'other-player-preset');
       await selectAsset(otherStudio, 'Looks', otherPreset);
       await expectAppearance(otherStudio, PRESETS[otherPreset]);
       await expectAppearance(primaryStudio, finalPrimary);
@@ -627,13 +816,7 @@ test.describe('production Table Studio realtime contract', () => {
       // Same real third session, now exercising the separate metadata/settings
       // carrier on mounted profiles. No synthetic bus emission or read polling.
       for (const page of [primaryPage, mobilePage, otherPage]) {
-        await page.goto(new URL('profile', baseURL.endsWith('/') ? baseURL : `${baseURL}/`).href, {
-          waitUntil: 'domcontentloaded',
-          timeout: PRODUCTION_RESPONSE_TIMEOUT,
-        });
-        await expect(page.locator('#profile-heading')).toBeVisible({
-          timeout: PRODUCTION_RESPONSE_TIMEOUT,
-        });
+        await navigateToRenderedProfile(page, baseURL, PRODUCTION_RESPONSE_TIMEOUT);
       }
       const otherName = await rawProfileHeading(otherPage);
       const otherMode = await readProfileInterfaceMode(otherPage, PRODUCTION_RESPONSE_TIMEOUT);
@@ -660,8 +843,9 @@ test.describe('production Table Studio realtime contract', () => {
         await expect
           .poll(
             () =>
-              page.evaluate(() =>
-                JSON.parse(localStorage.getItem('club-arena-user-settings') || '{}')
+              page.evaluate(
+                (userId) => JSON.parse(localStorage.getItem(`ca_user_settings:${userId}`) || '{}'),
+                primaryUserId
               ),
             { timeout: PRODUCTION_RESPONSE_TIMEOUT }
           )

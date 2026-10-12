@@ -1,0 +1,3 @@
+# tests/a-close-attempt-asks-the-cash-refusal-queue-once.law.test.ts
+
+A close attempt asks the cash refusal queue once (2026-10-03): fn_prepare_accounting_week remembers, only inside one union close attempt (app.accounting_close_memo on), a 'ready' answer of fn_cash_source_refusals_for_period for that exact book in the transaction-local setting app.accounting_cash_refusal_memo, which fn_weekly_accounting_attempt_begin and fn_weekly_accounting_attempt_end clear with the other close memos, so the cascade's second preparation of the same book under the same week lock reuses it (exactly the empty-queue answer), while a blocked answer, a standalone club attempt and every call outside an attempt still ask the queue.

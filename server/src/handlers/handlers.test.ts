@@ -411,18 +411,22 @@ describe('handleInsurancePreview', () => {
 describe('handleGetActions', () => {
   beforeEach(() => vi.clearAllMocks());
 
+  // /actions answers for a real table id only (uuid-shaped); see the junk-id case.
+  const TABLE = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const OTHER_TABLE = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+
   it('401 when unauthenticated', async () => {
     vi.mocked(authenticateRequest).mockResolvedValue(null);
     const { res, captured } = mockRes();
-    await handleGetActions(mockReq(), res, 't1', { gameServer: mockGameServer(mockEngine()) });
+    await handleGetActions(mockReq(), res, TABLE, { gameServer: mockGameServer(mockEngine()) });
     expect(captured.statusCode).toBe(401);
   });
 
   it('404 when engine missing', async () => {
     vi.mocked(authenticateRequest).mockResolvedValue({ userId: 'u1' });
     const { res, captured } = mockRes();
-    await handleGetActions(mockReq(), res, 'ghost', {
-      gameServer: mockGameServer(mockEngine(), 't1'),
+    await handleGetActions(mockReq(), res, OTHER_TABLE, {
+      gameServer: mockGameServer(mockEngine(), TABLE),
     });
     expect(captured.statusCode).toBe(404);
   });
@@ -431,11 +435,29 @@ describe('handleGetActions', () => {
     vi.mocked(authenticateRequest).mockResolvedValue({ userId: 'auth_user' });
     const engine = mockEngine();
     const { res, captured } = mockRes();
-    await handleGetActions(mockReq(), res, 't1', { gameServer: mockGameServer(engine, 't1') });
+    await handleGetActions(mockReq(), res, TABLE, { gameServer: mockGameServer(engine, TABLE) });
     expect(captured.statusCode).toBe(200);
 
     expect((engine as any).getPlayerActions).toHaveBeenCalledWith('auth_user');
   });
+
+  it.each(['ghost', 'not-a-table', "'; drop table tables;--", '%00', '0'])(
+    'a table id that is not a uuid (%s) is refused 400 and never asks for an engine',
+    async (junk) => {
+      /* Launch audit 2026-10-05: a junk id used to reach ensureCashTableEngine,
+         whose lookup error is rescheduled with no cap until the next restart. */
+      vi.mocked(authenticateRequest).mockResolvedValue({ userId: 'u1' });
+      const ensureCashTableEngine = vi.fn(async () => false);
+      const getTableEngine = vi.fn(() => null);
+      const { res, captured } = mockRes();
+      await handleGetActions(mockReq(), res, junk, {
+        gameServer: { ensureCashTableEngine, getTableEngine },
+      });
+      expect(captured.statusCode).toBe(400);
+      expect(ensureCashTableEngine).not.toHaveBeenCalled();
+      expect(getTableEngine).not.toHaveBeenCalled();
+    }
+  );
 });
 
 describe('handleGetState', () => {

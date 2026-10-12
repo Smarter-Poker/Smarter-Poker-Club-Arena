@@ -1,0 +1,965 @@
+{
+  "version": "phase9-uncalled-money-check-v1",
+  "generatedAt": "2026-10-03T10:11:37Z",
+  "declaration": {
+    "path": "docs/evidence/phase9/declaration-walks.txt",
+    "sha256": "d6a2b8418042eb7aea60c8de081df1ff2ad2b8e5d46e8bfcd7edf71ec22a50ef",
+    "declaredAt": "2026-10-03T10:04:45Z",
+    "commit": "5caf4b5ea2370e4c2151271de2a344efc1f49174",
+    "pushedAt": "2026-10-03T10:04:57Z"
+  },
+  "rule": "HandController.returnUncalledBet at 5c7d15db (#5918): a unique non-folded top contributor is refunded top matched - second matched, matched = total - shared dead (shared BB ante, dead blind) + individual ante; with fewer than two contributors nothing is refunded (nothing was called, no contest).",
+  "scripts": {
+    "p9-export-walks.sql": {
+      "sha256": "020e75db7f38cec1bc35f7ded42e0596a08865513d84e645ff1ad5000bddca1f"
+    },
+    "p9-walks-check.py": {
+      "sha256": "73e963f2bd3edb5bcfed988e3669dc6213738558aec1f1049ca9a48af71fa294"
+    }
+  },
+  "windows": {
+    "PRE": {
+      "range": "[2026-10-03T00:00:00Z, 03:00:00Z)",
+      "release": "f5322827 (does not contain 5c7d15db)",
+      "exportRows": 150944,
+      "exportFiles": {
+        "w-0000.ndjson": {
+          "rows": 11709,
+          "sha256": "02991d9c1aa36570210e4111fc637c524fb961de6ad9a96ba2f571b973dd91f0"
+        },
+        "w-0015.ndjson": {
+          "rows": 13295,
+          "sha256": "c6ed8838ddc4708cd54cfd6e0f29a44288807051ce00638faca5bc3fdf223b2e"
+        },
+        "w-0030.ndjson": {
+          "rows": 11964,
+          "sha256": "3dd493740c76c5d55d2fdc93bffbe45406ffafc5308eb0a209fdde010319f130"
+        },
+        "w-0045.ndjson": {
+          "rows": 6479,
+          "sha256": "962474670cdf5613824b3080ecf265227161210c4d0c0f1822afaa75019f48fc"
+        },
+        "w-0100.ndjson": {
+          "rows": 12412,
+          "sha256": "17907fb9d9954a6e723ffb0e0eed56541edb39c811b045b29d42ba34175b3eac"
+        },
+        "w-0115.ndjson": {
+          "rows": 16498,
+          "sha256": "73704af4747fd00b14a48839978dc1fb575dc01e788d9829e927094f6c6be40e"
+        },
+        "w-0130.ndjson": {
+          "rows": 16114,
+          "sha256": "688cc4e1e8252c66065fd423c7cd45580d16eb7eaf545b532dc0b605ad7d14fc"
+        },
+        "w-0145.ndjson": {
+          "rows": 8131,
+          "sha256": "07bd6815fbd0ea72fb81ef9894ae4a16e2847abedf50401828fbe46a50acc111"
+        },
+        "w-0200.ndjson": {
+          "rows": 13768,
+          "sha256": "1671fafab86062189c3fd02fa5a83f27f36f1ef94d94ffdafa96fd2181876ae6"
+        },
+        "w-0215.ndjson": {
+          "rows": 16794,
+          "sha256": "6a248d984aca3dc403bded8cfad492eb5a41bdd2fc73010bb6a3f4de8be85ebd"
+        },
+        "w-0230.ndjson": {
+          "rows": 14782,
+          "sha256": "1df2eaee82b58d1c08c814b8f761e0c3a8e722fe5dd067c11d46646cfca0c31d"
+        },
+        "w-0245.ndjson": {
+          "rows": 8998,
+          "sha256": "08204c690f90778a551371ed08ffd9eebc31d3097d514a6244f2366da3e98932"
+        }
+      },
+      "totals": {
+        "hands": 150944,
+        "walks": 75394,
+        "handsWithOnePlayerPot": 150944,
+        "onePlayerPots": 150944,
+        "refund:refund_ok": 150816,
+        "onePlayerPotHands:genuine": 150899,
+        "walk_refunded": 75290,
+        "deduction:ok": 150944,
+        "refund:nothing_due": 83,
+        "walk_nothing_due": 59,
+        "refund:not_refunded": 24,
+        "onePlayerPotHands:uncontested_money": 24,
+        "walk_excess_in_one_player_pot": 24,
+        "refund:single_contributor_nothing_due": 21,
+        "onePlayerPotHands:single_contributor": 21,
+        "walk_single_contributor_nothing_due": 21
+      },
+      "byModeAndVariant": [
+        {
+          "mode": "cash_chips",
+          "variant": "flh",
+          "hands": 969,
+          "walks": 296,
+          "handsWithOnePlayerPot": 969,
+          "onePlayerPots": 969,
+          "onePlayerPotGenuine": 969,
+          "onePlayerPotUncontestedMoney": 0,
+          "onePlayerPotSingleContributor": 0,
+          "walksRefunded": 296,
+          "walksExcessInOnePlayerPot": 0,
+          "walksNothingDue": 0,
+          "walksSingleContributorNothingDue": 0,
+          "refundDisagreements": {},
+          "deductions": {
+            "ok": 969
+          },
+          "excluded": {}
+        },
+        {
+          "mode": "cash_chips",
+          "variant": "flo8",
+          "hands": 1339,
+          "walks": 673,
+          "handsWithOnePlayerPot": 1339,
+          "onePlayerPots": 1339,
+          "onePlayerPotGenuine": 1339,
+          "onePlayerPotUncontestedMoney": 0,
+          "onePlayerPotSingleContributor": 0,
+          "walksRefunded": 673,
+          "walksExcessInOnePlayerPot": 0,
+          "walksNothingDue": 0,
+          "walksSingleContributorNothingDue": 0,
+          "refundDisagreements": {},
+          "deductions": {
+            "ok": 1339
+          },
+          "excluded": {}
+        },
+        {
+          "mode": "cash_chips",
+          "variant": "nlh",
+          "hands": 14319,
+          "walks": 2857,
+          "handsWithOnePlayerPot": 14319,
+          "onePlayerPots": 14319,
+          "onePlayerPotGenuine": 14319,
+          "onePlayerPotUncontestedMoney": 0,
+          "onePlayerPotSingleContributor": 0,
+          "walksRefunded": 2857,
+          "walksExcessInOnePlayerPot": 0,
+          "walksNothingDue": 0,
+          "walksSingleContributorNothingDue": 0,
+          "refundDisagreements": {},
+          "deductions": {
+            "ok": 14319
+          },
+          "excluded": {}
+        },
+        {
+          "mode": "cash_chips",
+          "variant": "pineapple",
+          "hands": 1796,
+          "walks": 449,
+          "handsWithOnePlayerPot": 1796,
+          "onePlayerPots": 1796,
+          "onePlayerPotGenuine": 1796,
+          "onePlayerPotUncontestedMoney": 0,
+          "onePlayerPotSingleContributor": 0,
+          "walksRefunded": 449,
+          "walksExcessInOnePlayerPot": 0,
+          "walksNothingDue": 0,
+          "walksSingleContributorNothingDue": 0,
+          "refundDisagreements": {},
+          "deductions": {
+            "ok": 1796
+          },
+          "excluded": {}
+        },
+        {
+          "mode": "cash_chips",
+          "variant": "plo4",
+          "hands": 6398,
+          "walks": 1864,
+          "handsWithOnePlayerPot": 6398,
+          "onePlayerPots": 6398,
+          "onePlayerPotGenuine": 6398,
+          "onePlayerPotUncontestedMoney": 0,
+          "onePlayerPotSingleContributor": 0,
+          "walksRefunded": 1863,
+          "walksExcessInOnePlayerPot": 0,
+          "walksNothingDue": 1,
+          "walksSingleContributorNothingDue": 0,
+          "refundDisagreements": {},
+          "deductions": {
+            "ok": 6398
+          },
+          "excluded": {}
+        },
+        {
+          "mode": "cash_chips",
+          "variant": "plo5",
+          "hands": 6168,
+          "walks": 1673,
+          "handsWithOnePlayerPot": 6168,
+          "onePlayerPots": 6168,
+          "onePlayerPotGenuine": 6168,
+          "onePlayerPotUncontestedMoney": 0,
+          "onePlayerPotSingleContributor": 0,
+          "walksRefunded": 1673,
+          "walksExcessInOnePlayerPot": 0,
+          "walksNothingDue": 0,
+          "walksSingleContributorNothingDue": 0,
+          "refundDisagreements": {},
+          "deductions": {
+            "ok": 6168
+          },
+          "excluded": {}
+        },
+        {
+          "mode": "cash_chips",
+          "variant": "plo6",
+          "hands": 4519,
+          "walks": 1343,
+          "handsWithOnePlayerPot": 4519,
+          "onePlayerPots": 4519,
+          "onePlayerPotGenuine": 4519,
+          "onePlayerPotUncontestedMoney": 0,
+          "onePlayerPotSingleContributor": 0,
+          "walksRefunded": 1343,
+          "walksExcessInOnePlayerPot": 0,
+          "walksNothingDue": 0,
+          "walksSingleContributorNothingDue": 0,
+          "refundDisagreements": {},
+          "deductions": {
+            "ok": 4519
+          },
+          "excluded": {}
+        },
+        {
+          "mode": "cash_chips",
+          "variant": "plo8",
+          "hands": 2356,
+          "walks": 633,
+          "handsWithOnePlayerPot": 2356,
+          "onePlayerPots": 2356,
+          "onePlayerPotGenuine": 2356,
+          "onePlayerPotUncontestedMoney": 0,
+          "onePlayerPotSingleContributor": 0,
+          "walksRefunded": 633,
+          "walksExcessInOnePlayerPot": 0,
+          "walksNothingDue": 0,
+          "walksSingleContributorNothingDue": 0,
+          "refundDisagreements": {},
+          "deductions": {
+            "ok": 2356
+          },
+          "excluded": {}
+        },
+        {
+          "mode": "cash_chips",
+          "variant": "short_deck",
+          "hands": 2071,
+          "walks": 544,
+          "handsWithOnePlayerPot": 2071,
+          "onePlayerPots": 2071,
+          "onePlayerPotGenuine": 2071,
+          "onePlayerPotUncontestedMoney": 0,
+          "onePlayerPotSingleContributor": 0,
+          "walksRefunded": 544,
+          "walksExcessInOnePlayerPot": 0,
+          "walksNothingDue": 0,
+          "walksSingleContributorNothingDue": 0,
+          "refundDisagreements": {},
+          "deductions": {
+            "ok": 2071
+          },
+          "excluded": {}
+        },
+        {
+          "mode": "tournament",
+          "variant": "nlh",
+          "hands": 43055,
+          "walks": 21559,
+          "handsWithOnePlayerPot": 43055,
+          "onePlayerPots": 43055,
+          "onePlayerPotGenuine": 43019,
+          "onePlayerPotUncontestedMoney": 15,
+          "onePlayerPotSingleContributor": 21,
+          "walksRefunded": 21512,
+          "walksExcessInOnePlayerPot": 15,
+          "walksNothingDue": 11,
+          "walksSingleContributorNothingDue": 21,
+          "refundDisagreements": {
+            "not_refunded": 15
+          },
+          "deductions": {
+            "ok": 43055
+          },
+          "excluded": {}
+        },
+        {
+          "mode": "tournament",
+          "variant": "plo4",
+          "hands": 48355,
+          "walks": 31761,
+          "handsWithOnePlayerPot": 48355,
+          "onePlayerPots": 48355,
+          "onePlayerPotGenuine": 48350,
+          "onePlayerPotUncontestedMoney": 5,
+          "onePlayerPotSingleContributor": 0,
+          "walksRefunded": 31726,
+          "walksExcessInOnePlayerPot": 5,
+          "walksNothingDue": 30,
+          "walksSingleContributorNothingDue": 0,
+          "refundDisagreements": {
+            "not_refunded": 5
+          },
+          "deductions": {
+            "ok": 48355
+          },
+          "excluded": {}
+        },
+        {
+          "mode": "tournament",
+          "variant": "plo5",
+          "hands": 12949,
+          "walks": 7720,
+          "handsWithOnePlayerPot": 12949,
+          "onePlayerPots": 12949,
+          "onePlayerPotGenuine": 12945,
+          "onePlayerPotUncontestedMoney": 4,
+          "onePlayerPotSingleContributor": 0,
+          "walksRefunded": 7704,
+          "walksExcessInOnePlayerPot": 4,
+          "walksNothingDue": 12,
+          "walksSingleContributorNothingDue": 0,
+          "refundDisagreements": {
+            "not_refunded": 4
+          },
+          "deductions": {
+            "ok": 12949
+          },
+          "excluded": {}
+        },
+        {
+          "mode": "tournament",
+          "variant": "plo6",
+          "hands": 6650,
+          "walks": 4022,
+          "handsWithOnePlayerPot": 6650,
+          "onePlayerPots": 6650,
+          "onePlayerPotGenuine": 6650,
+          "onePlayerPotUncontestedMoney": 0,
+          "onePlayerPotSingleContributor": 0,
+          "walksRefunded": 4017,
+          "walksExcessInOnePlayerPot": 0,
+          "walksNothingDue": 5,
+          "walksSingleContributorNothingDue": 0,
+          "refundDisagreements": {},
+          "deductions": {
+            "ok": 6650
+          },
+          "excluded": {}
+        }
+      ],
+      "uncontestedMoneyExamples": {
+        "tournament|nlh": [
+          {
+            "hand": "47c3b5a54e94",
+            "createdAt": "2026-10-03T00:19:16Z",
+            "walk": true,
+            "potSize": 310.0,
+            "recordedPots": [[310, 1]],
+            "expectedRefundCents": 15000,
+            "recordedRefundCents": 0,
+            "leftoverUncontestedCents": 15000,
+            "rake": 0.0,
+            "bbj": 0.0
+          },
+          {
+            "hand": "df8083576116",
+            "createdAt": "2026-10-03T00:24:18Z",
+            "walk": true,
+            "potSize": 108.0,
+            "recordedPots": [[108, 1]],
+            "expectedRefundCents": 6000,
+            "recordedRefundCents": 0,
+            "leftoverUncontestedCents": 6000,
+            "rake": 0.0,
+            "bbj": 0.0
+          },
+          {
+            "hand": "2ba3b6a099d5",
+            "createdAt": "2026-10-03T00:25:41Z",
+            "walk": true,
+            "potSize": 1600.0,
+            "recordedPots": [[1600, 1]],
+            "expectedRefundCents": 100000,
+            "recordedRefundCents": 0,
+            "leftoverUncontestedCents": 100000,
+            "rake": 0.0,
+            "bbj": 0.0
+          },
+          {
+            "hand": "7cc7f29d9284",
+            "createdAt": "2026-10-03T00:31:36Z",
+            "walk": true,
+            "potSize": 2300.0,
+            "recordedPots": [[2300, 1]],
+            "expectedRefundCents": 150000,
+            "recordedRefundCents": 0,
+            "leftoverUncontestedCents": 150000,
+            "rake": 0.0,
+            "bbj": 0.0
+          },
+          {
+            "hand": "28122abfccf4",
+            "createdAt": "2026-10-03T00:32:19Z",
+            "walk": true,
+            "potSize": 3400.0,
+            "recordedPots": [[3400, 1]],
+            "expectedRefundCents": 250000,
+            "recordedRefundCents": 0,
+            "leftoverUncontestedCents": 250000,
+            "rake": 0.0,
+            "bbj": 0.0
+          },
+          {
+            "hand": "6a8b447c3fbf",
+            "createdAt": "2026-10-03T00:39:05Z",
+            "walk": true,
+            "potSize": 11225.0,
+            "recordedPots": [[11225, 1]],
+            "expectedRefundCents": 672500,
+            "recordedRefundCents": 0,
+            "leftoverUncontestedCents": 672500,
+            "rake": 0.0,
+            "bbj": 0.0
+          },
+          {
+            "hand": "313c007f1033",
+            "createdAt": "2026-10-03T01:16:15Z",
+            "walk": true,
+            "potSize": 21000.0,
+            "recordedPots": [[21000, 1]],
+            "expectedRefundCents": 1500000,
+            "recordedRefundCents": 0,
+            "leftoverUncontestedCents": 1500000,
+            "rake": 0.0,
+            "bbj": 0.0
+          },
+          {
+            "hand": "58ecae08db13",
+            "createdAt": "2026-10-03T01:18:32Z",
+            "walk": true,
+            "potSize": 80.0,
+            "recordedPots": [[80, 1]],
+            "expectedRefundCents": 4000,
+            "recordedRefundCents": 0,
+            "leftoverUncontestedCents": 4000,
+            "rake": 0.0,
+            "bbj": 0.0
+          },
+          {
+            "hand": "2ed59ec7ccad",
+            "createdAt": "2026-10-03T01:41:55Z",
+            "walk": true,
+            "potSize": 220.0,
+            "recordedPots": [[220, 1]],
+            "expectedRefundCents": 10000,
+            "recordedRefundCents": 0,
+            "leftoverUncontestedCents": 10000,
+            "rake": 0.0,
+            "bbj": 0.0
+          },
+          {
+            "hand": "f7cf78d4e362",
+            "createdAt": "2026-10-03T01:52:06Z",
+            "walk": true,
+            "potSize": 410.0,
+            "recordedPots": [[410, 1]],
+            "expectedRefundCents": 20000,
+            "recordedRefundCents": 0,
+            "leftoverUncontestedCents": 20000,
+            "rake": 0.0,
+            "bbj": 0.0
+          }
+        ],
+        "tournament|plo4": [
+          {
+            "hand": "2689a204232f",
+            "createdAt": "2026-10-03T01:03:14Z",
+            "walk": true,
+            "potSize": 840.0,
+            "recordedPots": [[840, 1]],
+            "expectedRefundCents": 60000,
+            "recordedRefundCents": 0,
+            "leftoverUncontestedCents": 60000,
+            "rake": 0.0,
+            "bbj": 0.0
+          },
+          {
+            "hand": "bc2abaac0e6e",
+            "createdAt": "2026-10-03T01:03:46Z",
+            "walk": true,
+            "potSize": 1750.0,
+            "recordedPots": [[1750, 1]],
+            "expectedRefundCents": 100000,
+            "recordedRefundCents": 0,
+            "leftoverUncontestedCents": 100000,
+            "rake": 0.0,
+            "bbj": 0.0
+          },
+          {
+            "hand": "9d0aee56ad64",
+            "createdAt": "2026-10-03T01:06:12Z",
+            "walk": true,
+            "potSize": 2500.0,
+            "recordedPots": [[2500, 1]],
+            "expectedRefundCents": 150000,
+            "recordedRefundCents": 0,
+            "leftoverUncontestedCents": 150000,
+            "rake": 0.0,
+            "bbj": 0.0
+          },
+          {
+            "hand": "0ce7f33be471",
+            "createdAt": "2026-10-03T02:09:27Z",
+            "walk": true,
+            "potSize": 400.0,
+            "recordedPots": [[400, 1]],
+            "expectedRefundCents": 25000,
+            "recordedRefundCents": 0,
+            "leftoverUncontestedCents": 25000,
+            "rake": 0.0,
+            "bbj": 0.0
+          },
+          {
+            "hand": "0dc8555abe87",
+            "createdAt": "2026-10-03T02:13:44Z",
+            "walk": true,
+            "potSize": 700.0,
+            "recordedPots": [[700, 1]],
+            "expectedRefundCents": 40000,
+            "recordedRefundCents": 0,
+            "leftoverUncontestedCents": 40000,
+            "rake": 0.0,
+            "bbj": 0.0
+          }
+        ],
+        "tournament|plo5": [
+          {
+            "hand": "66b660cef1e7",
+            "createdAt": "2026-10-03T01:45:28Z",
+            "walk": true,
+            "potSize": 270.0,
+            "recordedPots": [[270, 1]],
+            "expectedRefundCents": 15000,
+            "recordedRefundCents": 0,
+            "leftoverUncontestedCents": 15000,
+            "rake": 0.0,
+            "bbj": 0.0
+          },
+          {
+            "hand": "201a3a7c048d",
+            "createdAt": "2026-10-03T02:11:05Z",
+            "walk": true,
+            "potSize": 510.0,
+            "recordedPots": [[510, 1]],
+            "expectedRefundCents": 30000,
+            "recordedRefundCents": 0,
+            "leftoverUncontestedCents": 30000,
+            "rake": 0.0,
+            "bbj": 0.0
+          },
+          {
+            "hand": "ab83f076a651",
+            "createdAt": "2026-10-03T02:11:28Z",
+            "walk": true,
+            "potSize": 480.0,
+            "recordedPots": [[480, 1]],
+            "expectedRefundCents": 30000,
+            "recordedRefundCents": 0,
+            "leftoverUncontestedCents": 30000,
+            "rake": 0.0,
+            "bbj": 0.0
+          },
+          {
+            "hand": "e71278e0ebfe",
+            "createdAt": "2026-10-03T02:13:29Z",
+            "walk": true,
+            "potSize": 700.0,
+            "recordedPots": [[700, 1]],
+            "expectedRefundCents": 40000,
+            "recordedRefundCents": 0,
+            "leftoverUncontestedCents": 40000,
+            "rake": 0.0,
+            "bbj": 0.0
+          }
+        ]
+      }
+    },
+    "POST": {
+      "range": "[2026-10-03T06:00:00Z, 09:00:00Z)",
+      "releases": "5c7d15db, 58c8219e, 60c4f7e8, d0a17759 (all contain 5c7d15db)",
+      "exportRows": 148664,
+      "exportFiles": {
+        "w-0600.ndjson": {
+          "rows": 10263,
+          "sha256": "7b5c243824a0384ef1b9c45ec8de698783a402bf40d1adad1be8bf474a6b3599"
+        },
+        "w-0615.ndjson": {
+          "rows": 11896,
+          "sha256": "dd554d5095dd8c1164cbd35c9eb77e60c41f3672702e4783faa6f6e92b7558ba"
+        },
+        "w-0630.ndjson": {
+          "rows": 13585,
+          "sha256": "0a52961c3fe1243f4da83df81848632a2cdbcb52c55d9062da37cb8f31ffc20d"
+        },
+        "w-0645.ndjson": {
+          "rows": 6339,
+          "sha256": "d6974f5fc185889e41f0389b2294178e1d21c3b22c0c6ebd7f80bad41dabb77f"
+        },
+        "w-0700.ndjson": {
+          "rows": 12782,
+          "sha256": "189c35f7a244f94d386788582ee34ea60daff7323711662577bebdffc8b447c3"
+        },
+        "w-0715.ndjson": {
+          "rows": 16711,
+          "sha256": "2d439990beef9e87e2f1eb69a4c65fd6eb83d5225b37d51dd1a516b05fd1a07c"
+        },
+        "w-0730.ndjson": {
+          "rows": 14955,
+          "sha256": "d468660bea92e217fb139d628adb412b77e71bcb052965e9398b71521aea9143"
+        },
+        "w-0745.ndjson": {
+          "rows": 8779,
+          "sha256": "5a24ebf0a70e2d9b55c4748efc19560cb7cfc5b82c4a66ee60c5094ffe073ec0"
+        },
+        "w-0800.ndjson": {
+          "rows": 14235,
+          "sha256": "997eb4f54f24a982962d125efc3b67a4628dcd8a990e7c3ed5c75beb1b65a628"
+        },
+        "w-0815.ndjson": {
+          "rows": 15697,
+          "sha256": "503a2d11325b02babd3094ac71d623d7a10e3e9f8a45b5cc8df5078a532e2245"
+        },
+        "w-0830.ndjson": {
+          "rows": 15392,
+          "sha256": "d9859cba2e8abfec64a7c4569c5c8be15032508f38d19fa022d0ae384780448e"
+        },
+        "w-0845.ndjson": {
+          "rows": 8030,
+          "sha256": "612e840734d39a686549e284ce645cabad765715dc7f4fbd0bb1ce184be32e74"
+        }
+      },
+      "totals": {
+        "hands": 148664,
+        "walks": 79765,
+        "handsWithOnePlayerPot": 148662,
+        "onePlayerPots": 148662,
+        "refund:refund_ok": 148360,
+        "onePlayerPotHands:genuine": 148651,
+        "walk_refunded": 79693,
+        "deduction:ok": 148664,
+        "refund:single_contributor_nothing_due": 11,
+        "onePlayerPotHands:single_contributor": 11,
+        "walk_single_contributor_nothing_due": 11,
+        "refund:nothing_due": 293,
+        "walk_nothing_due": 61
+      },
+      "byModeAndVariant": [
+        {
+          "mode": "cash_chips",
+          "variant": "flh",
+          "hands": 366,
+          "walks": 99,
+          "handsWithOnePlayerPot": 366,
+          "onePlayerPots": 366,
+          "onePlayerPotGenuine": 366,
+          "onePlayerPotUncontestedMoney": 0,
+          "onePlayerPotSingleContributor": 0,
+          "walksRefunded": 99,
+          "walksExcessInOnePlayerPot": 0,
+          "walksNothingDue": 0,
+          "walksSingleContributorNothingDue": 0,
+          "refundDisagreements": {},
+          "deductions": {
+            "ok": 366
+          },
+          "excluded": {}
+        },
+        {
+          "mode": "cash_chips",
+          "variant": "flo8",
+          "hands": 198,
+          "walks": 68,
+          "handsWithOnePlayerPot": 198,
+          "onePlayerPots": 198,
+          "onePlayerPotGenuine": 198,
+          "onePlayerPotUncontestedMoney": 0,
+          "onePlayerPotSingleContributor": 0,
+          "walksRefunded": 68,
+          "walksExcessInOnePlayerPot": 0,
+          "walksNothingDue": 0,
+          "walksSingleContributorNothingDue": 0,
+          "refundDisagreements": {},
+          "deductions": {
+            "ok": 198
+          },
+          "excluded": {}
+        },
+        {
+          "mode": "cash_chips",
+          "variant": "nlh",
+          "hands": 11087,
+          "walks": 2133,
+          "handsWithOnePlayerPot": 11087,
+          "onePlayerPots": 11087,
+          "onePlayerPotGenuine": 11087,
+          "onePlayerPotUncontestedMoney": 0,
+          "onePlayerPotSingleContributor": 0,
+          "walksRefunded": 2133,
+          "walksExcessInOnePlayerPot": 0,
+          "walksNothingDue": 0,
+          "walksSingleContributorNothingDue": 0,
+          "refundDisagreements": {},
+          "deductions": {
+            "ok": 11087
+          },
+          "excluded": {}
+        },
+        {
+          "mode": "cash_chips",
+          "variant": "pineapple",
+          "hands": 695,
+          "walks": 203,
+          "handsWithOnePlayerPot": 695,
+          "onePlayerPots": 695,
+          "onePlayerPotGenuine": 695,
+          "onePlayerPotUncontestedMoney": 0,
+          "onePlayerPotSingleContributor": 0,
+          "walksRefunded": 203,
+          "walksExcessInOnePlayerPot": 0,
+          "walksNothingDue": 0,
+          "walksSingleContributorNothingDue": 0,
+          "refundDisagreements": {},
+          "deductions": {
+            "ok": 695
+          },
+          "excluded": {}
+        },
+        {
+          "mode": "cash_chips",
+          "variant": "plo4",
+          "hands": 2312,
+          "walks": 675,
+          "handsWithOnePlayerPot": 2312,
+          "onePlayerPots": 2312,
+          "onePlayerPotGenuine": 2312,
+          "onePlayerPotUncontestedMoney": 0,
+          "onePlayerPotSingleContributor": 0,
+          "walksRefunded": 675,
+          "walksExcessInOnePlayerPot": 0,
+          "walksNothingDue": 0,
+          "walksSingleContributorNothingDue": 0,
+          "refundDisagreements": {},
+          "deductions": {
+            "ok": 2312
+          },
+          "excluded": {}
+        },
+        {
+          "mode": "cash_chips",
+          "variant": "plo5",
+          "hands": 1894,
+          "walks": 511,
+          "handsWithOnePlayerPot": 1894,
+          "onePlayerPots": 1894,
+          "onePlayerPotGenuine": 1894,
+          "onePlayerPotUncontestedMoney": 0,
+          "onePlayerPotSingleContributor": 0,
+          "walksRefunded": 511,
+          "walksExcessInOnePlayerPot": 0,
+          "walksNothingDue": 0,
+          "walksSingleContributorNothingDue": 0,
+          "refundDisagreements": {},
+          "deductions": {
+            "ok": 1894
+          },
+          "excluded": {}
+        },
+        {
+          "mode": "cash_chips",
+          "variant": "plo6",
+          "hands": 1206,
+          "walks": 290,
+          "handsWithOnePlayerPot": 1206,
+          "onePlayerPots": 1206,
+          "onePlayerPotGenuine": 1206,
+          "onePlayerPotUncontestedMoney": 0,
+          "onePlayerPotSingleContributor": 0,
+          "walksRefunded": 290,
+          "walksExcessInOnePlayerPot": 0,
+          "walksNothingDue": 0,
+          "walksSingleContributorNothingDue": 0,
+          "refundDisagreements": {},
+          "deductions": {
+            "ok": 1206
+          },
+          "excluded": {}
+        },
+        {
+          "mode": "cash_chips",
+          "variant": "plo8",
+          "hands": 1016,
+          "walks": 333,
+          "handsWithOnePlayerPot": 1016,
+          "onePlayerPots": 1016,
+          "onePlayerPotGenuine": 1016,
+          "onePlayerPotUncontestedMoney": 0,
+          "onePlayerPotSingleContributor": 0,
+          "walksRefunded": 333,
+          "walksExcessInOnePlayerPot": 0,
+          "walksNothingDue": 0,
+          "walksSingleContributorNothingDue": 0,
+          "refundDisagreements": {},
+          "deductions": {
+            "ok": 1016
+          },
+          "excluded": {}
+        },
+        {
+          "mode": "cash_chips",
+          "variant": "short_deck",
+          "hands": 985,
+          "walks": 248,
+          "handsWithOnePlayerPot": 985,
+          "onePlayerPots": 985,
+          "onePlayerPotGenuine": 985,
+          "onePlayerPotUncontestedMoney": 0,
+          "onePlayerPotSingleContributor": 0,
+          "walksRefunded": 248,
+          "walksExcessInOnePlayerPot": 0,
+          "walksNothingDue": 0,
+          "walksSingleContributorNothingDue": 0,
+          "refundDisagreements": {},
+          "deductions": {
+            "ok": 985
+          },
+          "excluded": {}
+        },
+        {
+          "mode": "tournament",
+          "variant": "nlh",
+          "hands": 50289,
+          "walks": 26062,
+          "handsWithOnePlayerPot": 50287,
+          "onePlayerPots": 50287,
+          "onePlayerPotGenuine": 50276,
+          "onePlayerPotUncontestedMoney": 0,
+          "onePlayerPotSingleContributor": 11,
+          "walksRefunded": 26036,
+          "walksExcessInOnePlayerPot": 0,
+          "walksNothingDue": 15,
+          "walksSingleContributorNothingDue": 11,
+          "refundDisagreements": {},
+          "deductions": {
+            "ok": 50289
+          },
+          "excluded": {}
+        },
+        {
+          "mode": "tournament",
+          "variant": "plo4",
+          "hands": 55436,
+          "walks": 35462,
+          "handsWithOnePlayerPot": 55436,
+          "onePlayerPots": 55436,
+          "onePlayerPotGenuine": 55436,
+          "onePlayerPotUncontestedMoney": 0,
+          "onePlayerPotSingleContributor": 0,
+          "walksRefunded": 35435,
+          "walksExcessInOnePlayerPot": 0,
+          "walksNothingDue": 27,
+          "walksSingleContributorNothingDue": 0,
+          "refundDisagreements": {},
+          "deductions": {
+            "ok": 55436
+          },
+          "excluded": {}
+        },
+        {
+          "mode": "tournament",
+          "variant": "plo5",
+          "hands": 13486,
+          "walks": 8005,
+          "handsWithOnePlayerPot": 13486,
+          "onePlayerPots": 13486,
+          "onePlayerPotGenuine": 13486,
+          "onePlayerPotUncontestedMoney": 0,
+          "onePlayerPotSingleContributor": 0,
+          "walksRefunded": 7991,
+          "walksExcessInOnePlayerPot": 0,
+          "walksNothingDue": 14,
+          "walksSingleContributorNothingDue": 0,
+          "refundDisagreements": {},
+          "deductions": {
+            "ok": 13486
+          },
+          "excluded": {}
+        },
+        {
+          "mode": "tournament",
+          "variant": "plo6",
+          "hands": 9694,
+          "walks": 5676,
+          "handsWithOnePlayerPot": 9694,
+          "onePlayerPots": 9694,
+          "onePlayerPotGenuine": 9694,
+          "onePlayerPotUncontestedMoney": 0,
+          "onePlayerPotSingleContributor": 0,
+          "walksRefunded": 5671,
+          "walksExcessInOnePlayerPot": 0,
+          "walksNothingDue": 5,
+          "walksSingleContributorNothingDue": 0,
+          "refundDisagreements": {},
+          "deductions": {
+            "ok": 9694
+          },
+          "excluded": {}
+        }
+      ],
+      "uncontestedMoneyExamples": {}
+    }
+  },
+  "summary": {
+    "PRE": {
+      "hands": 150944,
+      "walks": 75394,
+      "walksRefunded": 75290,
+      "walksExcessInOnePlayerPot": 24,
+      "byCell": {
+        "tournament nlh": 15,
+        "tournament plo4": 5,
+        "tournament plo5": 4
+      },
+      "onePlayerPotsWithUncontestedMoney": 24,
+      "singleContributorWalks": 21,
+      "cashRakeOnWHands": "all 150,944 deductions as the stated rule says (0 rake and 0 BBJ with no flop)"
+    },
+    "POST": {
+      "hands": 148664,
+      "walks": 79765,
+      "walksRefunded": 79693,
+      "walksExcessInOnePlayerPot": 0,
+      "onePlayerPotsWithUncontestedMoney": 0,
+      "singleContributorWalks": 11,
+      "cashRakeOnWHands": "all 148,664 deductions as the stated rule says"
+    }
+  },
+  "notes": [
+    "Every hand that ends with one player left records a pot eligible to that player alone; that pot is genuine when it contains other (folded) players' money, which is why handsWithOnePlayerPot is close to hands.",
+    "Single-contributor walks (PRE 21, POST 11, all tournament NLH, rake 0): only the big blind put chips in, so the engine's stated rule refunds nothing (nothing was called); the player's own chips come back through the pot. No chip effect; listed separately rather than as violations.",
+    "2 POST walks have no one-player pot because short players were all-in on forced posts (multi-eligible pots); both refunded correctly.",
+    "Pineapple discard actions are treated as moving no chips; no hand was excluded in either window.",
+    "All 24 PRE violations are tournament walks with no small blind posted and individual antes (no rake, so no chip moved differently); none in cash. The 9 Omaha ones are the C-F1 hands of the classic artifact.",
+    "Release coverage of POST rests on git ancestry of every release deployed around the window and the deploy run list; a rollback to an older image inside the window would not be visible in those sources."
+  ]
+}

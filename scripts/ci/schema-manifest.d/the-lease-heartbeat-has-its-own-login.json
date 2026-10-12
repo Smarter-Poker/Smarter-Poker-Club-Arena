@@ -1,0 +1,5 @@
+{
+  "_owner": "agent/cowork-lease/fix/pool-stall-keeps-leases. Migration 20261002223745_the_lease_heartbeat_has_its_own_login: the engine reads its dedicated lease-heartbeat session URL from Vault.",
+  "tables": [],
+  "functions": ["fn_engine_lease_session_url"]
+}

@@ -30,6 +30,7 @@ import {
   type TournamentUnitClubRow,
 } from '../../../../server/src/tournament/tournamentUnit';
 import { parsePayoutStructure } from '../../../lib/payoutStructure';
+import { isRecordedSatelliteQualifier } from '../../../utils/satelliteQualification';
 
 export { parsePayoutStructure } from '../../../lib/payoutStructure';
 export { resolvePayoutStructure } from '../../../lib/payoutStructure';
@@ -179,10 +180,14 @@ export interface TournamentTabProps {
    * tournament is RUNNING, because a finished event's `table_id`s point at
    * closed felts.
    *
-   * Ranking and Tables call `openTableAsObserver` themselves and do not need
-   * this; Entries does, because it holds no navigate of its own.
+   * EVERY tab opens a table through this (2026-10-04). Ranking and Tables used
+   * to call `openTableAsObserver` themselves, which meant the page could not
+   * tell them apart from a watch made anywhere else: inside the in-game popup
+   * a tap on "Your Table" asked for the table the popup was already covering,
+   * and nothing visible happened. One door, owned by the page, which knows
+   * where it is mounted. `tableName` labels the new screen's tab.
    */
-  onWatchPlayer?: (tableId: string) => void;
+  onWatchPlayer?: (tableId: string, tableName?: string) => void;
 
   /**
    * The mystery bounty ladder, fetched ONCE by the page from
@@ -227,6 +232,38 @@ export function isPlayerOut(entry: Pick<TournamentEntry, 'status'>): boolean {
 /** True while this player still holds a stack in the event. */
 export function isPlayerLive(entry: Pick<TournamentEntry, 'status'>): boolean {
   return !isPlayerOut(entry);
+}
+
+/**
+ * WHAT A FINISHED EVENT CAN TRUTHFULLY SAY ABOUT ITS FIELD (2026-10-04).
+ *
+ * Dan sent three tabs of one finished satellite open at once: Tables said
+ * "Players Left 7, Average Stack 25.7K", Ranking said "Remaining 0, Average
+ * Stack 0, Total Chips 0", and Detail said the results were "Being Finalised"
+ * eight hours after the event ended. Each tab was answering "who is still
+ * playing" about an event where nobody is, with its own definition of still.
+ *
+ * A finished event has no remaining players, no average stack and no chips in
+ * play. What it has is how many entered, how many won a seat (a satellite's
+ * co-qualifiers are recorded unranked, see isRecordedSatelliteQualifier) and
+ * how many were paid. Detail and Ranking both print these, from here, so the
+ * two cannot drift apart again.
+ *
+ * `paid` counts RECORDED prizes only. An event settled before prizes were
+ * written per player reports zero, and the caller prints the advertised paid
+ * places instead of claiming nobody was paid.
+ */
+export function finishedFieldSummary(
+  tournament: Parameters<typeof isRecordedSatelliteQualifier>[0],
+  entries: readonly TournamentEntry[]
+): { entries: number; qualified: number; paid: number } {
+  let qualified = 0;
+  let paid = 0;
+  for (const entry of entries) {
+    if (isRecordedSatelliteQualifier(tournament, entry)) qualified += 1;
+    if (Number(entry.prize) > 0) paid += 1;
+  }
+  return { entries: entries.length, qualified, paid };
 }
 
 /** Chips, always whole, always grouped. Never `padStart`. */
@@ -469,4 +506,32 @@ export function initials(name: string | null | undefined): string {
   const parts = clean.split(/[\s_-]+/).filter(Boolean);
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[1][0]).toUpperCase();
+}
+
+/**
+ * A table's name without the event's name in front of it.
+ *
+ * The engine names a tournament table "<Event Name> - Table 2", and every
+ * surface in this lobby already says which event it is in its header. Printed
+ * whole, on a phone, the name truncated to "Sunday Funday Main Event
+ * Satellite - ..." on every Ranking row and every Tables row - the event,
+ * which the player knows, kept; the table number, which is the only part that
+ * differs from row to row, cut off (2026-10-04 review pass).
+ *
+ * Only an exact leading match is removed, and never down to nothing: a table
+ * whose name IS the event name (a sit and go, a heads-up) keeps it.
+ */
+export function shortTableName(
+  tableName: string | null | undefined,
+  eventName: string | null | undefined
+): string {
+  const full = (tableName || '').trim();
+  const event = (eventName || '').trim();
+  if (!full || !event || full.length <= event.length) return full;
+  if (full.slice(0, event.length).toLowerCase() !== event.toLowerCase()) return full;
+  const rest = full
+    .slice(event.length)
+    .replace(/^[\s\-:|,.\u2013]+/, '')
+    .trim();
+  return rest || full;
 }

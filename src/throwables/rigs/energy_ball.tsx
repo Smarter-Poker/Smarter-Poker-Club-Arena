@@ -3,7 +3,7 @@ import { RIG_VIEWBOX, type RigProps, type ThrowableRig } from '../rig';
 import type { ThrowableSpec } from '../spec';
 import { preloadThrowableCues } from '../cues';
 import './energy_ball.css';
-// Dedicated recorded cues still pending: plasma_hum_loop.
+
 export const spec: ThrowableSpec = {
   id: 'energy_ball',
   name: 'Energy Ball',

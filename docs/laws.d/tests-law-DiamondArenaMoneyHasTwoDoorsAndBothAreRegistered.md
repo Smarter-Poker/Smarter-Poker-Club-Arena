@@ -1,3 +1,5 @@
 # tests/law/DiamondArenaMoneyHasTwoDoorsAndBothAreRegistered.law.test.ts
 
 Diamonds enter and leave the Diamond Arena through exactly two doors, `fn_arena_deposit` and `fn_arena_withdraw`, which are mirrors of each other: each moves the balance, writes a journal row of class `arena` and moves the arena club wallet, so the register follows the journal and a deposit is a burn while a withdrawal is a mint. Neither calls the Mint (admin-only by design), neither compensates (a failure raises inside the one transaction), and both are idempotent on their op id; funding a membership never creates one. A club says which asset it is denominated in and only one club can be the platform's. The cross-asset seat guard and the fourteen-day settlement window are log-only and flip through `ca_diamond_rule_modes` like every other rule (docs/DIAMOND-RULINGS.md 14 and 16; CLAUDE.md 10.12).
+
+History, not the live estate (2026-10-04): this law reads the foundation migration 20260908034530 as written. Custody (20260909065458) replaced both doors and 20261004214251 dropped them; the live state is pinned by `tests/the-legacy-diamond-arena-database-objects-are-dropped.law.test.ts`.

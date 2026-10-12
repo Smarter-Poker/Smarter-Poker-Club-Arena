@@ -370,6 +370,8 @@
 
 .un-retry {
   margin-top: 2px;
+  /* 44px, the touch floor: at 8px of padding on 12px type this was ~32px. */
+  min-height: 44px;
   padding: 8px 18px;
   border-radius: var(--tl-radius-pill);
   font-size: 12px;

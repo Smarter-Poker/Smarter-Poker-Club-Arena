@@ -5,12 +5,13 @@
  *
  * Theme customization modal with:
  *   - Game type selector dropdown (ALL, NLH, FLH, 6+, PLO, etc.)
- *   - 5-tab layout (Themes, Table, Buttons, Background, Cards)
+ *   - 6-tab layout (Looks, Tables, Scenes, Buttons, Card Backs, Face Decks)
  *   - Three free choices per category; premium via VIP or permanent purchase
  *   - Per-game-type persistence via user_theme_settings table
  *
  * Bible V8 §11.2.4: Stored in user_theme_settings table
- *   Schema: user_id, game_type, theme_id, table_id, button_id, background_id, cards_id
+ *   Schema: user_id, game_type, theme_id, table_id, button_id, background_id,
+ *           cards_id, face_deck_id
  */
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
@@ -31,6 +32,7 @@ import {
 } from '../../lib/tableTheme';
 import {
   CardBack,
+  CardImage,
   normalizeCardBack,
   CARD_BACK_CATALOG,
   cardBackDesign,
@@ -73,6 +75,13 @@ import {
   clearSessionPurchaseRequestId,
   readOrCreateSessionPurchaseRequestId,
 } from '../../utils/sessionPurchaseRequest';
+import {
+  FACE_DECK_CATALOG,
+  faceDeckForThemePreset,
+  faceDeckStorefrontFeature,
+  normalizeFaceDeckId,
+  type FaceDeckId,
+} from '../../lib/faceDeck';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -88,9 +97,13 @@ export interface ThemeSettingsModalProps {
   checkoutReturnResult?: TableStudioCheckoutResult | null;
 }
 
-type ThemeSelection = Omit<TableStudioLoadout, 'name' | 'saved_at'>;
+type ThemeSelection = Omit<TableStudioLoadout, 'name' | 'saved_at' | 'face_deck_id'> & {
+  /** Runtime spelling. Database rows and saved JSONB loadouts use face_deck_id. */
+  faceDeckId: FaceDeckId;
+};
 
-type ThemeTab = 'themes' | 'table' | 'button' | 'background' | 'cards';
+type ThemeTab = 'themes' | 'table' | 'button' | 'background' | 'cards' | 'decks';
+type ThemeAssetCategory = Exclude<keyof TableStudioLoadout, 'name' | 'saved_at'>;
 type BackgroundGroup = 'places-rooms' | 'skins';
 type AssetFilter = 'all' | 'free' | 'vip' | 'favorites' | 'recent';
 
@@ -108,7 +121,9 @@ function readStudioThemeSettings(userId: string) {
     () =>
       supabase
         .from('user_theme_settings')
-        .select('game_type, theme_id, table_id, button_id, background_id, cards_id, updated_at')
+        .select(
+          'game_type, theme_id, table_id, button_id, background_id, cards_id, face_deck_id, updated_at'
+        )
         .eq('user_id', userId)
         .then((result) => result),
     STUDIO_READ_RETRY
@@ -121,6 +136,8 @@ interface ThemeAsset {
   thumbnail: string; // CSS gradient or image URL for preview
   /** Whether the asset requires VIP access */
   vipOnly: boolean;
+  /** Material treatment copy used only by face-deck tiles. */
+  finish?: string;
 }
 
 interface PendingAssetPurchase {
@@ -155,6 +172,7 @@ const TABS: { key: ThemeTab; label: string }[] = [
   { key: 'background', label: 'Scenes' },
   { key: 'button', label: 'Buttons' },
   { key: 'cards', label: 'Cards' },
+  { key: 'decks', label: 'Decks' },
 ];
 
 const TAB_DESCRIPTIONS: Record<ThemeTab, string> = {
@@ -163,6 +181,7 @@ const TAB_DESCRIPTIONS: Record<ThemeTab, string> = {
   button: 'Dealer marker and action-control finish',
   background: 'The room surrounding your table',
   cards: 'The design shown on every face-down card',
+  decks: 'The Edge, Stock And Foil Finish Around Every Card Face',
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -261,6 +280,15 @@ const CARD_ASSETS: ThemeAsset[] = CARD_BACK_CATALOG.map((design) => ({
   vipOnly: design.tier !== 'standard',
 }));
 
+/** Face decks decorate authoritative card-face art; they never replace it. */
+export const FACE_DECK_ASSETS: ThemeAsset[] = FACE_DECK_CATALOG.map((design) => ({
+  id: design.id,
+  name: design.name,
+  thumbnail: BACKGROUND_FALLBACK_GRADIENT,
+  vipOnly: design.tier === 'premium',
+  finish: design.finish,
+}));
+
 export const THEME_PRESETS: ThemeAsset[] = THEME_PRESET_CATALOG.map((preset) => ({
   id: preset.id,
   name: preset.name,
@@ -350,6 +378,7 @@ const THEME_ASSETS: Record<ThemeTab, ThemeAsset[]> = {
   // newly added background shows up in the picker on its own.
   background: BACKGROUND_ASSETS,
   cards: CARD_ASSETS,
+  decks: FACE_DECK_ASSETS,
 };
 
 const TAB_TO_FIELD: Record<ThemeTab, keyof ThemeSelection> = {
@@ -358,6 +387,16 @@ const TAB_TO_FIELD: Record<ThemeTab, keyof ThemeSelection> = {
   button: 'button_id',
   background: 'background_id',
   cards: 'cards_id',
+  decks: 'faceDeckId',
+};
+
+const TAB_TO_CATEGORY: Record<ThemeTab, ThemeAssetCategory> = {
+  themes: 'theme_id',
+  table: 'table_id',
+  button: 'button_id',
+  background: 'background_id',
+  cards: 'cards_id',
+  decks: 'face_deck_id',
 };
 
 const DEFAULT_SELECTION: ThemeSelection = {
@@ -366,11 +405,12 @@ const DEFAULT_SELECTION: ThemeSelection = {
   button_id: 'classic-white',
   background_id: 'midnight',
   cards_id: 'classic_red',
+  faceDeckId: 'house-classic',
 };
 
 function normalizeStoredSelection(value: unknown): ThemeSelection | null {
   if (!value || typeof value !== 'object') return null;
-  const raw = value as Partial<ThemeSelection>;
+  const raw = value as Partial<ThemeSelection> & { face_deck_id?: unknown };
   if (!raw.table_id || !raw.button_id || !raw.background_id || !raw.cards_id) return null;
   return {
     theme_id: raw.theme_id || DEFAULT_SELECTION.theme_id,
@@ -380,10 +420,26 @@ function normalizeStoredSelection(value: unknown): ThemeSelection | null {
       : DEFAULT_SELECTION.button_id,
     background_id: normalizeBackgroundId(raw.background_id),
     cards_id: normalizeCardBack(raw.cards_id),
+    faceDeckId: normalizeFaceDeckId(raw.faceDeckId ?? raw.face_deck_id),
   };
 }
 
+/** A Look is selected only while every independently paintable field matches. */
+function selectionMatchesThemePreset(selection: ThemeSelection, presetId: string): boolean {
+  const bundle = THEME_PRESET_BUNDLES[presetId];
+  if (!bundle) return false;
+  return (
+    normalizeFeltId(selection.table_id) === normalizeFeltId(bundle.table_id) &&
+    selection.button_id === bundle.button_id &&
+    normalizeBackgroundId(selection.background_id) ===
+      normalizeBackgroundId(bundle.background_id) &&
+    normalizeCardBack(selection.cards_id) === normalizeCardBack(bundle.cards_id) &&
+    normalizeFaceDeckId(selection.faceDeckId) === faceDeckForThemePreset(presetId)
+  );
+}
+
 function storefrontFeature(tab: ThemeTab, assetId: string): string {
+  if (tab === 'decks') return faceDeckStorefrontFeature(assetId);
   return tab === 'cards'
     ? `card_back_${normalizeCardBack(assetId)}`
     : `studio:${TAB_TO_FIELD[tab]}:${assetId}`;
@@ -414,7 +470,7 @@ function canAccessAsset(
   ownedThemeAssets: readonly string[]
 ): boolean {
   if (!vipOnly) return true; // Free items always accessible
-  if (ownedThemeAssets.includes(`${TAB_TO_FIELD[tab]}:${assetId}`)) return true;
+  if (ownedThemeAssets.includes(`${TAB_TO_CATEGORY[tab]}:${assetId}`)) return true;
   if (tab === 'cards') return isCardBackUnlocked(assetId, { isVip, owned: ownedCardBacks });
   if (tab === 'table') return isFeltUnlocked(assetId, { isVip });
   return isVip; // VIP-only items require VIP status
@@ -437,6 +493,7 @@ function canAccessAsset(
  *   button      the live dealer marker plus the Fold / Check / Raise control
  *               finish driven by the same data-button-theme as gameplay
  *   cards       a real <CardBack>, the same component the felt renders
+ *   decks       real, authoritative face images with the selected finish
  *   themes      a composite mini-table: the preset's own table skin with its
  *               background behind it, which is the only honest way to show
  *               what a preset actually does (it is a bundle of the others)
@@ -506,9 +563,35 @@ function renderAssetPreview(tab: ThemeTab, asset: ThemeAsset) {
     );
   }
 
+  if (tab === 'decks') {
+    const faceDeckId = normalizeFaceDeckId(asset.id);
+    return (
+      <div className="theme-asset__facedeckstage" data-face-deck={faceDeckId} aria-hidden="true">
+        <CardImage
+          card={{ rank: 'A', suit: 's' }}
+          deckStyle="4color"
+          faceDeckId={faceDeckId}
+          size="xs"
+        />
+        <CardImage
+          card={{ rank: 'Q', suit: 'h' }}
+          deckStyle="4color"
+          faceDeckId={faceDeckId}
+          size="xs"
+        />
+        <CardImage
+          card={{ rank: 'J', suit: 'c' }}
+          deckStyle="4color"
+          faceDeckId={faceDeckId}
+          size="xs"
+        />
+      </div>
+    );
+  }
+
   // themes: a preset bundles a table + background, so show both.
   // THEME_PRESET_BUNDLES holds Partial<ThemeSelection>, so both ids are
-  // optional - a preset may set only some of the five slots.
+  // optional - a preset may set only some of the six slots.
   const bundle = THEME_PRESET_BUNDLES[asset.id];
   // A preset naming a background id that isn't in the registry (renamed or
   // removed design) used to yield `undefined` and render a blank preview.
@@ -584,6 +667,7 @@ function renderLoadoutPreview(loadout: ThemeSelection) {
     <div
       className="theme-loadout__scene"
       data-button-theme={loadout.button_id}
+      data-face-deck={loadout.faceDeckId}
       style={{ '--loadout-dealer-bg': buttonFinish } as React.CSSProperties}
     >
       {background && (
@@ -599,6 +683,14 @@ function renderLoadoutPreview(loadout: ThemeSelection) {
       <span className="theme-loadout__cards" aria-hidden="true">
         <CardBack style={normalizeCardBack(loadout.cards_id)} size="sm" />
         <CardBack style={normalizeCardBack(loadout.cards_id)} size="sm" />
+      </span>
+      <span className="theme-loadout__face" aria-hidden="true">
+        <CardImage
+          card={{ rank: 'A', suit: 's' }}
+          deckStyle="4color"
+          faceDeckId={loadout.faceDeckId}
+          size="sm"
+        />
       </span>
     </div>
   );
@@ -743,7 +835,7 @@ export function ThemeSettingsModal({
       if (!body.value || typeof body.value !== 'object' || Array.isArray(body.value)) return;
       if (canonicalGameType(body.key) !== gameType) return;
 
-      const raw = body.value as Partial<ThemeSelection>;
+      const raw = body.value as Partial<ThemeSelection> & { face_deck_id?: unknown };
       const patch: Partial<ThemeSelection> = {};
       if (
         typeof raw.theme_id === 'string' &&
@@ -762,6 +854,8 @@ export function ThemeSettingsModal({
         patch.background_id = normalizeBackgroundId(raw.background_id);
       }
       if (typeof raw.cards_id === 'string') patch.cards_id = normalizeCardBack(raw.cards_id);
+      const faceDeck = raw.faceDeckId ?? raw.face_deck_id;
+      if (typeof faceDeck === 'string') patch.faceDeckId = normalizeFaceDeckId(faceDeck);
       if (!Object.keys(patch).length) return;
 
       setSelection((current) => {
@@ -786,7 +880,7 @@ export function ThemeSettingsModal({
     const focusable = () =>
       Array.from(
         activeDialog?.querySelectorAll<HTMLElement>(
-          'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex="0"]'
+          'button:not([disabled]), input:not([disabled]):not([tabindex="-1"]), select:not([disabled]), [tabindex="0"]'
         ) || []
       );
     // The purchase prompt's Buy plate is painted second (the steel Cancel
@@ -1003,7 +1097,7 @@ export function ThemeSettingsModal({
       if (event.payload.category === 'avatar') return;
       // Exact-category purchases can be merged in the same render, including
       // cross-tab broadcasts. Composite themes refresh because their one
-      // receipt atomically delivers all five linked categories.
+      // receipt atomically delivers all six linked categories.
       if (event.payload.category !== 'theme_id' && event.payload.assetId) {
         const assetId = event.payload.assetId;
         if (event.payload.category === 'cards_id') {
@@ -1017,7 +1111,7 @@ export function ThemeSettingsModal({
         });
         return;
       }
-      // Theme redemptions deliver five linked assets server-side, so refresh
+      // Theme redemptions deliver six linked assets server-side, so refresh
       // the complete bundle rather than guessing its component ids here.
       setOwnershipRevision((revision) => revision + 1);
     });
@@ -1056,9 +1150,9 @@ export function ThemeSettingsModal({
         (payload) => {
           const row = payload.new as { category?: unknown; asset_id?: unknown };
           if (typeof row.category !== 'string' || typeof row.asset_id !== 'string') return;
-          if (!Object.values(TAB_TO_FIELD).includes(row.category as keyof ThemeSelection)) return;
+          if (!Object.values(TAB_TO_CATEGORY).includes(row.category as ThemeAssetCategory)) return;
 
-          const category = row.category as keyof ThemeSelection;
+          const category = row.category as ThemeAssetCategory;
           const assetId = row.asset_id;
           if (category === 'cards_id') {
             setOwnedCardBacks((current) =>
@@ -1339,6 +1433,7 @@ export function ThemeSettingsModal({
             // invented ids (standard-red, premium-platinum, ...) highlights no
             // tile at all and the tab looks like it forgot the user's choice.
             cards_id: normalizeCardBack(row?.cards_id || DEFAULT_SELECTION.cards_id),
+            faceDeckId: normalizeFaceDeckId(row?.face_deck_id),
           });
           themeLoadReadyScopeRef.current = requestedScope;
           setThemeLoadState('ready');
@@ -1384,7 +1479,7 @@ export function ThemeSettingsModal({
   // Do this while the Studio is OPEN even when the document is backgrounded.
   // A second device/tab can miss one websocket frame while its Studio remains
   // mounted; pausing the only durable reconciliation merely because that page
-  // is hidden leaves its preview stale indefinitely. This is one five-column
+  // is hidden leaves its preview stale indefinitely. This is one six-column
   // row read at most every two seconds, bounded to an open modal. Browsers may
   // throttle the timer, but the application must not disable it itself.
   // The request guard above prevents an older snapshot from rolling back a tap
@@ -1458,7 +1553,8 @@ export function ThemeSettingsModal({
          The caller (`handleAssetSelect`) reverts its optimistic state on a
          false return. */
       if (!userId) {
-        replaceSelection({ ...selectionRef.current, ...previous });
+        const restored = { ...selectionRef.current, ...previous };
+        replaceSelection({ ...restored, faceDeckId: normalizeFaceDeckId(restored.faceDeckId) });
         toast.error('Please Sign In To Save Your Theme.');
         return false;
       }
@@ -1482,7 +1578,10 @@ export function ThemeSettingsModal({
             const next = { ...current };
             for (const field of Object.keys(reverted) as (keyof ThemeSelection)[]) {
               if (current[field] === patch[field] && reverted[field]) {
-                next[field] = reverted[field] as string;
+                Object.assign(next, {
+                  [field]:
+                    field === 'faceDeckId' ? normalizeFaceDeckId(reverted[field]) : reverted[field],
+                });
               }
             }
             selectionRef.current = next;
@@ -1508,7 +1607,11 @@ export function ThemeSettingsModal({
 
       if (tab === 'themes') {
         const bundle = THEME_PRESET_BUNDLES[assetId];
-        newSel = { [field]: assetId, ...(bundle || {}) };
+        newSel = {
+          [field]: assetId,
+          ...(bundle || {}),
+          faceDeckId: faceDeckForThemePreset(assetId),
+        };
       } else {
         newSel = { [field]: assetId };
       }
@@ -1522,7 +1625,7 @@ export function ThemeSettingsModal({
       replaceSelection(next);
       const previousPatch: AppearancePatch = {};
       for (const field of Object.keys(newSel) as (keyof ThemeSelection)[]) {
-        previousPatch[field] = before[field];
+        Object.assign(previousPatch, { [field]: before[field] });
       }
       const recentKey = `${tab}:${assetId}`;
       collections.rememberRecent(recentKey);
@@ -1644,7 +1747,7 @@ export function ThemeSettingsModal({
       // Permission lands before the paint. Updating both ownership views makes
       // the tile unlock in this render; the event refreshes every other open
       // Studio (including another browser tab) from the authoritative ledger.
-      const category = TAB_TO_FIELD[pending.tab];
+      const category = TAB_TO_CATEGORY[pending.tab];
       if (pending.tab === 'cards') {
         setOwnedCardBacks((current) =>
           current.includes(pending.id) ? current : [...current, pending.id]
@@ -1759,6 +1862,9 @@ export function ThemeSettingsModal({
       button_id: pick(BUTTON_ASSETS, 'button') || DEFAULT_SELECTION.button_id,
       background_id: pick(BACKGROUND_ASSETS, 'background') || DEFAULT_SELECTION.background_id,
       cards_id: pick(CARD_ASSETS, 'cards') || DEFAULT_SELECTION.cards_id,
+      faceDeckId: normalizeFaceDeckId(
+        pick(FACE_DECK_ASSETS, 'decks') || DEFAULT_SELECTION.faceDeckId
+      ),
     };
     const previous = { ...selectionRef.current };
     replaceSelection(randomized);
@@ -1771,8 +1877,10 @@ export function ThemeSettingsModal({
     (slot: number) => {
       if (themeLoadState !== 'ready') return;
       const existing = collections.loadouts[slot];
+      const { faceDeckId, ...appearance } = selectionRef.current;
       collections.saveLoadout(slot, {
-        ...selectionRef.current,
+        ...appearance,
+        face_deck_id: faceDeckId,
         name: existing?.name || `Look ${slot + 1}`,
         saved_at: new Date().toISOString(),
       });
@@ -1811,6 +1919,7 @@ export function ThemeSettingsModal({
         ['button', 'button_id', BUTTON_ASSETS],
         ['background', 'background_id', BACKGROUND_ASSETS],
         ['cards', 'cards_id', CARD_ASSETS],
+        ['decks', 'faceDeckId', FACE_DECK_ASSETS],
       ];
       let removedLockedChoice = false;
       for (const [tab, field, assets] of fields) {
@@ -1826,7 +1935,12 @@ export function ThemeSettingsModal({
             ownedThemeAssets
           )
         ) {
-          candidate[field] = selectionRef.current[field];
+          Object.assign(candidate, {
+            [field]:
+              field === 'faceDeckId'
+                ? normalizeFaceDeckId(selectionRef.current[field])
+                : selectionRef.current[field],
+          });
           removedLockedChoice = true;
         }
       }
@@ -1871,7 +1985,12 @@ export function ThemeSettingsModal({
     if (assetFilter === 'recent') return collections.recent.includes(key);
     return true;
   });
-  const currentSelected = selection[currentField];
+  const selectedThemePreset = THEME_PRESETS.find((preset) =>
+    selectionMatchesThemePreset(selection, preset.id)
+  );
+  const currentSelected =
+    activeTab === 'themes' ? selectedThemePreset?.id || '' : selection[currentField];
+  const selectedLookName = selectedThemePreset?.name || 'Custom Mix';
 
   const selectedCardName =
     CARD_BACK_CATALOG.find((design) => design.id === normalizeCardBack(selection.cards_id))?.name ||
@@ -1884,6 +2003,8 @@ export function ThemeSettingsModal({
       ?.name || 'Midnight';
   const selectedButtonName =
     BUTTON_ASSETS.find((asset) => asset.id === selection.button_id)?.name || 'White D';
+  const selectedFaceDeckName =
+    FACE_DECK_ASSETS.find((asset) => asset.id === selection.faceDeckId)?.name || 'House Classic';
   const collectionNeedsAttention =
     collections.syncState === 'error' || collections.realtimeState === 'error';
   const collectionSyncing =
@@ -1942,7 +2063,7 @@ export function ThemeSettingsModal({
      painted pill slot, and everything else printed on the black glass between
      the rails - the link status, the game-type select, the interface mode and
      preview switch as lit words, the live gameplay preview, the selection
-     ledger as label/value rows, the five tabs as lit words, the catalog tiles
+     ledger as label/value rows, the six tabs as lit words, the catalog tiles
      (still the real artwork - Dan 2026-08-18) with their names as lit words,
      the three saved looks as rows, and the two painted plates in the foot:
      Restore Defaults on steel, Done on the blue glass. Every handler, guard,
@@ -2103,21 +2224,28 @@ export function ThemeSettingsModal({
                   />
                 </div>
                 <div className="theme-modal__live-caption">
-                  <span className="tsc__label sc-ink--blue">
-                    {previewFinalTable ? 'Automatic MTT Event' : 'Live Gameplay Preview'}
+                  <span className="sr-only">
+                    {previewFinalTable ? 'Automatic MTT Event' : 'Live Gameplay Preview'}; Card
+                    Back: {selectedCardName}; Face Deck: {selectedFaceDeckName}; Game Type:{' '}
+                    {gameTypeLabel}
                   </span>
-                  <strong className="tsc__caption sc-ink--silver">
-                    {selectedCardName} · {gameTypeLabel}
+                  <span aria-hidden="true" className="tsc__label sc-ink--blue">
+                    {previewFinalTable ? 'MTT Auto' : 'Live'}
+                  </span>
+                  <strong aria-hidden="true" className="tsc__caption sc-ink--silver">
+                    {selectedCardName} · {selectedFaceDeckName} · {gameTypeLabel}
                   </strong>
                 </div>
               </div>
 
               <div className="tsc__ledger" aria-label="Current Table Configuration">
                 {[
+                  ['Look', selectedLookName],
                   ['Table', selectedTableName],
                   ['Background', selectedBackgroundName],
                   ['Buttons', selectedButtonName],
                   ['Card Back', selectedCardName],
+                  ['Face Deck', selectedFaceDeckName],
                 ].map(([label, value]) => (
                   <div className="tsc__row" key={label}>
                     <span className="tsc__label sc-ink--blue">{label}</span>
@@ -2358,7 +2486,7 @@ export function ThemeSettingsModal({
                   )}
                   {currentAssets.map((asset) => {
                     const isSelected = currentSelected === asset.id;
-                    const explicitKey = `${TAB_TO_FIELD[activeTab]}:${asset.id}`;
+                    const explicitKey = `${TAB_TO_CATEGORY[activeTab]}:${asset.id}`;
                     const isExplicitlyOwned =
                       ownedThemeAssets.includes(explicitKey) ||
                       (activeTab === 'cards' &&
@@ -2391,6 +2519,9 @@ export function ThemeSettingsModal({
                         <button
                           type="button"
                           className={`theme-asset ${isSelected ? 'theme-asset--selected' : ''} ${isLocked ? 'theme-asset--locked' : ''}`}
+                          data-storefront-feature={
+                            asset.vipOnly ? storefrontFeature(activeTab, asset.id) : undefined
+                          }
                           onClick={() => handleAssetSelect(activeTab, asset.id, asset.vipOnly)}
                           disabled={
                             themeLoadState !== 'ready' || ownershipPending || ownershipUnavailable
@@ -2434,6 +2565,11 @@ export function ThemeSettingsModal({
                             >
                               {asset.name}
                             </span>
+                            {asset.finish && (
+                              <span className="theme-asset__finish sc-ink--muted">
+                                {asset.finish}
+                              </span>
+                            )}
                             {!isLocked && !ownershipPending && !ownershipUnavailable && (
                               <span
                                 className={`theme-asset__tier-badge${isSelected ? ' theme-asset__tier-badge--selected sc-ink--green' : ' sc-ink--blue'}`}
@@ -2511,6 +2647,10 @@ export function ThemeSettingsModal({
                         ? BACKGROUND_ASSETS.find((asset) => asset.id === look.background_id)
                             ?.name || 'Room'
                         : '';
+                      const faceDeckName = look
+                        ? FACE_DECK_ASSETS.find((asset) => asset.id === look.faceDeckId)?.name ||
+                          'House Classic'
+                        : '';
                       return (
                         <div
                           key={slot}
@@ -2541,7 +2681,7 @@ export function ThemeSettingsModal({
                                 />
                               </label>
                               <span className="tsc__note">
-                                {tableName} · {backgroundName}
+                                {tableName} · {backgroundName} · {faceDeckName}
                               </span>
                               {pendingLoadoutClear === slot ? (
                                 <div className="tsc__row tsc__row--actions" role="alert">
@@ -2601,7 +2741,9 @@ export function ThemeSettingsModal({
                               <strong className="tsc__value sc-ink--white">
                                 Save Current Look
                               </strong>
-                              <small className="tsc__note">Table · Room · Buttons · Cards</small>
+                              <small className="tsc__note">
+                                Table · Room · Buttons · Card Backs · Face Deck
+                              </small>
                             </button>
                           )}
                         </div>

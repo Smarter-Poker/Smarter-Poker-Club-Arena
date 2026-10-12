@@ -3,7 +3,6 @@ import { RIG_VIEWBOX, type RigProps, type ThrowableRig } from '../rig';
 import type { ThrowableSpec } from '../spec';
 import { preloadThrowableCues } from '../cues';
 import './surrender.css';
-// Dedicated recorded cues still pending: flag_flap_loop, sad_trombone_short.
 export const spec: ThrowableSpec = {
   id: 'surrender',
   name: 'Surrender',
@@ -23,7 +22,11 @@ export const spec: ThrowableSpec = {
     { at: 2800, marker: 'flag-wave' },
     { at: 4000, marker: 'cut' },
   ],
-  audio: [{ at: 600, sample: 'whoosh_low', gain: 0.17 }],
+  audio: [
+    { at: 600, sample: 'whoosh_low', gain: 0.17 },
+    { at: 1200, sample: 'sad_trombone', gain: 0.8 },
+    { at: 2800, sample: 'flag_flap', gain: 0.7, loopUntil: 4000 },
+  ],
 };
 preloadThrowableCues(spec.audio.map((cue) => cue.sample));
 const RECTS: [number, number, number, number][] = [

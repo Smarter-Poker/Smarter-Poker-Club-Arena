@@ -8,13 +8,21 @@ import { DIAMOND_GAME_TITLES } from './utils/diamondGameTitles';
  * Root application with routing, auth guards, and global providers
  */
 
+import { Suspense, lazy, useState, useEffect } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { SessionSummaryHost } from './components/session/SessionSummaryHost';
+// LIGHTNING PHASE 8: lazy, so the Lightning component tree stays out of the
+// entry chunk every player downloads before first paint (entry-chunk gate).
+const LightningSessionSummaryHost = lazy(() =>
+  import('./components/lightning/LightningSessionSummary').then((m) => ({
+    default: m.LightningSessionSummaryHost,
+  }))
+);
 import TournamentRankingHost from './components/tournament/TournamentRankingHost';
 import TournamentAutoSeat from './components/tournament/TournamentAutoSeat';
 import { MEDIA_BASE } from './utils/mediaBase';
-import { Suspense, useState, useEffect } from 'react';
 import { supabase } from './lib/supabase';
+import { installPlayerSessionRevocationEvents } from './lib/sessionRevoked';
 import { realtimeChannelService } from './services/RealtimeChannelService';
 import { OfflineQueueService } from './services/OfflineQueueService';
 import GlobalWaitlistListener from './components/common/GlobalWaitlistListener';
@@ -25,7 +33,7 @@ import WaitlistBanner from './components/common/WaitlistBanner';
 
 // Intro Video — lazy-loaded (only shown once per session, not needed for initial paint)
 const IntroVideo = lazyWithRetry(() => import('./components/IntroVideo'));
-import { useSettingsStore } from './stores/useSettingsStore';
+import { useInterfaceThemeHydration } from './hooks/useInterfaceThemeHydration';
 import { useShellUpdateGate } from './hooks/useShellUpdateGate';
 import { startShellTelemetry } from './services/ShellTelemetryService';
 
@@ -82,6 +90,8 @@ const PushSubscriptionSync = lazyWithRetry(
 const FirstRunPushPrompt = lazyWithRetry(
   () => import('./components/notifications/FirstRunPushPrompt')
 );
+// The presence heartbeat: lazy for the same reason, it is not first paint.
+const PresenceHeartbeat = lazyWithRetry(() => import('./components/common/PresenceHeartbeat'));
 // The ticker is another application-root overlay, but it renders only on a
 // live table or club lobby and does not contribute to the first paint. Load it
 // after the shell so its polling, settings, and announcement graph is paid for
@@ -112,6 +122,10 @@ const TournamentResultsPage = lazyWithRetry(
   () => import('./pages/tournament/TournamentResultsPage')
 );
 const TablePage = lazyWithRetry(() => import('./pages/TablePage'));
+/* LIGHTNING PHASE 6: the one door to a Lightning Cluster. Resolves the
+   caller's pool session and opens its room in the table view, or shows the
+   Cluster's JOIN LIGHTNING entry. */
+const LightningEntryPage = lazyWithRetry(() => import('./pages/LightningEntryPage'));
 const ProfilePage = lazyWithRetry(() => import('./pages/ProfilePage'));
 // Keep the complete Daily Challenges presentation graph behind its route.
 // Auth/loading/crash paint is deliberately owned by the lazy route module so
@@ -134,7 +148,8 @@ const UnionNetworkGuard = lazyWithRetry(() => import('./components/auth/UnionNet
    PlatformStaffGuard closes /engine and /financial-alerts to platform staff;
    UnionOverseerGuard closes a union's money and operations routes to the
    union's overseers (ca_can_oversee_union); FinancialAdminGate closes
-   /financial-incidents to finance roles. 2026-09-10. */
+   /financial-incidents to platform staff or the server-owned incident
+   recipient registry. */
 const PlatformStaffGuard = lazyWithRetry(() => import('./components/auth/PlatformStaffGuard'));
 const UnionOverseerGuard = lazyWithRetry(() => import('./components/auth/UnionOverseerGuard'));
 const FinancialAdminGate = lazyWithRetry(() => import('./components/auth/FinancialAdminGate'));
@@ -153,8 +168,8 @@ const CashierTradePage = lazyWithRetry(() => import('./pages/CashierTradePage'))
 const CashierStatementsPage = lazyWithRetry(() => import('./pages/CashierStatementsPage'));
 const SuperAgentDashboard = lazyWithRetry(() => import('./pages/SuperAgentDashboard'));
 const AchievementsPage = lazyWithRetry(() => import('./pages/AchievementsPage'));
-const ClubMembersPage = lazyWithRetry(() => import('./pages/ClubMembersPage'));
-const MemberManagementPage = lazyWithRetry(() => import('./pages/MemberManagementPage'));
+const ClubPlayersDoor = lazyWithRetry(() => import('./pages/ClubPlayersDoor'));
+const ClubMemberDoor = lazyWithRetry(() => import('./pages/ClubMemberDoor'));
 const PlayerStatisticsPage = lazyWithRetry(() => import('./pages/PlayerStatisticsPage'));
 const PromoVaultPage = lazyWithRetry(() => import('./pages/PromoVaultPage'));
 const DiamondWheelPage = lazyWithRetry(() => import('./pages/DiamondWheelPage'));
@@ -210,7 +225,6 @@ const customizationHarnessEnabled =
   import.meta.env.DEV || import.meta.env.VITE_CUSTOMIZATION_TEST_HARNESS === 'true';
 const financialDecisionHarnessEnabled =
   import.meta.env.DEV || import.meta.env.VITE_FINANCIAL_DECISION_TEST_HARNESS === 'true';
-const FinancialAlertsPage = lazyWithRetry(() => import('./pages/FinancialAlertsPage'));
 const DisputeManagementPage = lazyWithRetry(() => import('./pages/DisputeManagementPage'));
 const FinancialHealthPage = lazyWithRetry(() => import('./pages/FinancialHealthPage'));
 const DriftIncidentsPage = lazyWithRetry(() => import('./pages/DriftIncidentsPage'));
@@ -226,6 +240,11 @@ const SessionHistoryPage = lazyWithRetry(() => import('./pages/SessionHistoryPag
 
 // Q4: New Backported Pages (Hub → Club Arena)
 const AntiCheatPage = lazyWithRetry(() => import('./pages/AntiCheatPage'));
+/* LIGHTNING PHASE 12: the operator dashboard. Lazy, so neither the page nor
+   its read hooks ever reach the entry chunk. */
+const ClubLightningOperationsPage = lazyWithRetry(
+  () => import('./pages/club/ClubLightningOperationsPage')
+);
 const XMTTPage = lazyWithRetry(() => import('./pages/XMTTPage'));
 const MarketplacePage = lazyWithRetry(() => import('./pages/MarketplacePage'));
 // One marketplace (Dan, 2026-09-21): the route hands the web to the World Hub
@@ -296,6 +315,11 @@ const HouseAdsPage = lazyWithRetry(() => import('./pages/admin/HouseAdsPage'));
    refunds, run the catalog price lifecycle and verify comparison evidence.
    PlatformStaffGuard closes the route; every door checks staff again. */
 const CommerceDeskPage = lazyWithRetry(() => import('./pages/admin/CommerceDeskPage'));
+/* Diamond Staff Desk (2026-09-29, Diamond Phase 10 line 4): platform staff run
+   Diamond games, review Diamond incidents, read the books and handle Diamond
+   adjustments. PlatformStaffGuard closes the route; every door checks staff
+   again. Outside the arena's own paths, which render the safe shell for all. */
+const DiamondStaffDeskPage = lazyWithRetry(() => import('./pages/admin/DiamondStaffDeskPage'));
 
 // Loading fallback
 function LoadingSpinner() {
@@ -343,6 +367,10 @@ function ClubFooterProbe() {
 
 function FullApp() {
   const location = useLocation();
+  // Fence the interface mode to the authenticated account before route
+  // children paint, then reconcile the durable profile preference. The
+  // deterministic customization harness supplies its own isolated identity.
+  useInterfaceThemeHydration(location.pathname !== '/dev/customization');
   const inTabLobbyActive = useInTabLobbyActive();
   const inTabLobbyClubId = useInTabLobbyClubId();
   /* A signed-out visitor on a public page (landing, Help Center, legal) is
@@ -366,6 +394,7 @@ function FullApp() {
      run a days-old bundle while production serves the fix. Applies the update
      only away from a table and only with the tab visible; see the hook. */
   useShellUpdateGate();
+  useEffect(() => installPlayerSessionRevocationEvents(), []);
   /* DIAMOND ARENA IS LIGHT, AND ONLY DIAMOND ARENA (Dan 2026-09-11). The
      scheme is published on `<html>` from HERE because this is the one place
      that already holds both inputs the answer needs, and it holds them for
@@ -462,8 +491,8 @@ function FullApp() {
     // every one of them was a STATIC import at the top of this file — so its
     // whole dependency tree was welded into the entry chunk and had to be
     // downloaded, parsed and evaluated BEFORE the lobby could paint. That is
-    // how SettlementCronService and FinancialCronService, neither of which the
-    // lobby has any use for, ended up on the critical path of every boot.
+    // how settlement and financial background jobs, neither of which the lobby
+    // has any use for, ended up on the critical path of every boot.
     //
     // Importing them here instead is behaviour-neutral (they already only ran
     // from this effect) and takes them out of the first paint entirely.
@@ -589,6 +618,12 @@ function FullApp() {
         <GlobalBalanceSync />
         <HeaderAppearanceSync />
         <ProfileAccountSync />
+        {/* The signed-in player's presence heartbeat, mounted once: without it a
+          person using only the arena read offline everywhere while a horse could
+          read online (src/lib/presenceHeartbeat.ts). */}
+        <Suspense fallback={null}>
+          <PresenceHeartbeat />
+        </Suspense>
         <LastClubTracker />
         {/* Dan 2026-08-23, binding: "players, agents, super agents, nobody
           should ever see the union skins." A union is a `clubs` row, so every
@@ -610,6 +645,11 @@ function FullApp() {
           table, and "the lobby" is HomePage OR ClubHomePage (which now serves
           /clubs/:clubId and /clubs/:clubId/lobby alike). */}
         <SessionSummaryHost />
+        {/* LIGHTNING PHASE 8: the Lightning session summary, over the lobby a
+            player lands in after leaving Lightning. */}
+        <Suspense fallback={null}>
+          <LightningSessionSummaryHost />
+        </Suspense>
         {/* Dan 2026-08-20: the tournament bust card. Same feed as the cash
           summary above, split on payload.tournament — see TournamentRankingHost. */}
         <TournamentRankingHost />
@@ -884,7 +924,7 @@ function FullApp() {
                     <AuthGuard>
                       <GameCreationGuard>
                         <PageErrorBoundary pageName="Table Config">
-                          <TableConfigPage />
+                          <TableConfigPage accessPrevalidated />
                         </PageErrorBoundary>
                       </GameCreationGuard>
                     </AuthGuard>
@@ -1112,7 +1152,7 @@ function FullApp() {
                   path="unions/:unionId/table-management"
                   element={
                     <AuthGuard>
-                      <UnionOverseerGuard>
+                      <UnionOverseerGuard authority="game-management">
                         <PageErrorBoundary pageName="Union Table Management">
                           <GameManagementPage scope="union" />
                         </PageErrorBoundary>
@@ -1506,7 +1546,7 @@ function FullApp() {
                     <AuthGuard>
                       <ClubMemberGuard>
                         <PageErrorBoundary pageName="Club Members">
-                          <ClubMembersPage />
+                          <ClubPlayersDoor />
                         </PageErrorBoundary>
                       </ClubMemberGuard>
                     </AuthGuard>
@@ -1659,7 +1699,7 @@ function FullApp() {
                     <AuthGuard>
                       <ClubMemberGuard>
                         <PageErrorBoundary pageName="Member Management">
-                          <MemberManagementPage />
+                          <ClubMemberDoor />
                         </PageErrorBoundary>
                       </ClubMemberGuard>
                     </AuthGuard>
@@ -1929,9 +1969,7 @@ function FullApp() {
                   element={
                     <AuthGuard>
                       <PlatformStaffGuard>
-                        <PageErrorBoundary pageName="Financial Alerts">
-                          <FinancialAlertsPage />
-                        </PageErrorBoundary>
+                        <Navigate replace to="/financial-incidents" />
                       </PlatformStaffGuard>
                     </AuthGuard>
                   }
@@ -1974,9 +2012,11 @@ function FullApp() {
                   path="financial-health"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Financial Health">
-                        <FinancialHealthPage />
-                      </PageErrorBoundary>
+                      <PlatformStaffGuard>
+                        <PageErrorBoundary pageName="Financial Health">
+                          <FinancialHealthPage />
+                        </PageErrorBoundary>
+                      </PlatformStaffGuard>
                     </AuthGuard>
                   }
                 />
@@ -2081,6 +2121,18 @@ function FullApp() {
                     </AuthGuard>
                   }
                 />
+                {/* LIGHTNING PHASE 6: /lightning/:clusterId, the one door to a
+                    Lightning Cluster. */}
+                <Route
+                  path="lightning/:clusterId"
+                  element={
+                    <AuthGuard>
+                      <PageErrorBoundary pageName="Lightning">
+                        <LightningEntryPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }
+                />
                 <Route
                   path="waitlist"
                   /* THE WAITLIST LIVES WHERE THE TABLES ARE (Phase 7).
@@ -2158,6 +2210,18 @@ function FullApp() {
                       <ClubMemberGuard>
                         <PageErrorBoundary pageName="Anti-Cheat">
                           <AntiCheatPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/lightning"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Lightning Operations">
+                          <ClubLightningOperationsPage />
                         </PageErrorBoundary>
                       </ClubMemberGuard>
                     </AuthGuard>
@@ -2335,6 +2399,18 @@ function FullApp() {
                       <PlatformStaffGuard>
                         <PageErrorBoundary pageName="Commerce Desk">
                           <CommerceDeskPage />
+                        </PageErrorBoundary>
+                      </PlatformStaffGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="diamond-staff-desk"
+                  element={
+                    <AuthGuard>
+                      <PlatformStaffGuard>
+                        <PageErrorBoundary pageName="Diamond Staff Desk">
+                          <DiamondStaffDeskPage />
                         </PageErrorBoundary>
                       </PlatformStaffGuard>
                     </AuthGuard>

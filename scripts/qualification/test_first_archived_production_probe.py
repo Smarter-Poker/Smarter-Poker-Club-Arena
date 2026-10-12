@@ -18,12 +18,13 @@ def fee_diagnostic(xid='10000'):
     return {'kind':'separate_original_capture_refusal','operation':P.OPERATION,'event':P.C.EVENT,
         'transaction_id':xid,'rake_record_id':'6d13847d-cbe2-473c-94e5-34dad1ce3efb',
         'sqlstate':'23514','message':'cash_commission_earning_club_not_observed',
-        'context':'PL/pgSQL function fn_accounting_earning_contract at RAISE; fn_ca_capture_tournament_fee_from_recorded_evidence at assignment',
-        'owner_md5':'b7e0c1cae9d65b9a0b3560dc3280991a','invoker_role':'service_role','auth_role':'service_role',
+        'context':'PL/pgSQL function fn_ca_capture_tournament_fee_from_recorded_evidence(uuid) line 269 at RAISE',
+        'owner_md5':'d7dae6781894ce817545116009a156b1','invoker_role':'service_role','auth_role':'service_role',
         'before':{'batches':[],'sources':[]},'after':{'batches':[],'sources':[]}}
 
 def valid():
     c=T.valid();before=copy.deepcopy(c['before']);before['rows'].update({'public.hand_history':[],'public.hand_atomic_commits':[]})
+    for rowset in (before['rows'],c['inside']['rows']):rowset.update({name:[] for name in ('public.accounting_tournament_fee_owner_bases', 'public.accounting_tournament_fee_owner_operations')})
     bank=[{'id':'059bb325-6eeb-4bbd-957d-3a82e755bb0c','union_id':'fade0000-0000-0000-0000-000000000001','rake_wallet':24,'chip_balance':0,'bbj_wallet':0,'promo_wallet':0,'insurance_wallet':0,'spin_reserve_wallet':0}]
     before['rows']['public.union_wallets']=copy.deepcopy(bank)
     c['accounts_before']['public.union_wallets']=copy.deepcopy(bank)

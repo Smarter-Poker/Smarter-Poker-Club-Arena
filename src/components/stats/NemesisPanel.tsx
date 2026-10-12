@@ -31,13 +31,18 @@ import StatsFactsService, {
   type NemesisPayload,
   type OpponentFlow,
 } from '../../services/StatsFactsService';
-import { CHIP_STATS } from '../../services/statsScope';
+import { CHIP_STATS, type StatsClubId, type StatsScope } from '../../services/statsScope';
 import './NemesisPanel.css';
 import { sizedStorageUrl } from '../../utils/avatarGenerator';
+import { compactChips } from '../../utils/format';
 
 interface Props {
   userId?: string;
   days?: number | null;
+  /** The asset the figures are in: chips by default, Diamonds in the Diamond Arena. */
+  scope?: StatsScope;
+  /** Null reads All Clubs; a UUID reads the selected authorized club. */
+  clubId?: StatsClubId;
 }
 
 function initials(name: string | null): string {
@@ -49,7 +54,7 @@ function initials(name: string | null): string {
 }
 
 function chips(n: number): string {
-  return Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: 0 });
+  return compactChips(Math.abs(n));
 }
 
 function Avatar({ flow }: { flow: OpponentFlow }) {
@@ -105,7 +110,12 @@ function FlowCard({
   );
 }
 
-export default function NemesisPanel({ userId, days = null }: Props) {
+export default function NemesisPanel({
+  userId,
+  days = null,
+  scope = CHIP_STATS,
+  clubId = null,
+}: Props) {
   const navigate = useNavigate();
   const [data, setData] = useState<NemesisPayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -119,7 +129,7 @@ export default function NemesisPanel({ userId, days = null }: Props) {
     }
     let cancelled = false;
     setLoading(true);
-    StatsFactsService.getNemesis(userId, CHIP_STATS, { days })
+    StatsFactsService.getNemesis(userId, scope, { days }, clubId)
       .then((payload) => {
         if (cancelled) return;
         setData(payload);
@@ -131,7 +141,7 @@ export default function NemesisPanel({ userId, days = null }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [userId, days, attempt]);
+  }, [userId, days, attempt, scope, clubId]);
 
   const rows = useMemo(() => {
     if (!data) return [];

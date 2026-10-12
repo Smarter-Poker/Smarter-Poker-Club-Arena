@@ -122,6 +122,8 @@ describe('Horse policy registration at the actual decision boundary', () => {
   it('retains a real depth-domain refusal instead of reporting pack execution', () => {
     const { hero, state } = jointPolicyFixture('plo4', 1, 'cash', 'preflop');
     state.dealerSeat = hero.seat;
+    // Button 1: the walk posts the blinds from seats 2 and 3.
+    state.blindSeats = { smallBlind: 2, bigBlind: 3 };
     hero.stack = 1000 * state.bigBlind;
     state.players.forEach((p) => {
       p.stack = hero.stack;

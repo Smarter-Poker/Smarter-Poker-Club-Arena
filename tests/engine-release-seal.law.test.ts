@@ -200,6 +200,11 @@ set -euo pipefail
 if [ "$1" = -C ]; then shift 2; fi
 case "$1" in
   cat-file) exit 0 ;;
+  rev-list)
+    # A..B names B alone; any other range is empty.
+    [ "$2" = '${A_SHA}..${B_SHA}' ] && echo '${B_SHA}'
+    exit 0
+    ;;
   merge-base)
     [ "$2" = --is-ancestor ]
     older="$3"; newer="$4"
@@ -1278,7 +1283,7 @@ printf '%s\\n%s' '{"running":true,"releaseSha":"${A_SHA}","liveness":"ok","insta
     ).toBe('sealed');
   });
 
-  it('reserves one recovery window only for an unshipped failed ancestor or an observed missed certificate', () => {
+  it('reserves one recovery window only for a named emergency, never for a failed or missed release', () => {
     expect(
       runSeal([
         'bootstrap-running',
@@ -1314,20 +1319,33 @@ printf '%s\\n%s' '{"running":true,"releaseSha":"${A_SHA}","liveness":"ok","insta
         'club-arena-engine',
       ]).status
     ).toBe(0);
-    const first = runSeal(reserve);
+    // ONE SCHEDULED BREAK AN HOUR (owner, 2026-10-04: "FIGURE OUT WHAT THE
+    // 2ND ONE IS FOR, AND REMOVE IT IF ITS NOT NECESSARY"). A failed release
+    // that has not shipped used to earn an off-cycle window here, and so did
+    // a release that watched a scheduled break admit nobody. Neither is an
+    // emergency: both wait for the next :55, and nothing is written for them.
+    expect(runSeal(reserve).stdout).toBe('unavailable');
+    expect(runSeal([...reserve, '--missed-window']).stdout).toBe('unavailable');
+    expect(existsSync(join(sandbox, 'state', 'engine-recovery-window-412-1.json'))).toBe(false);
+    // A named emergency still gets its window.
+    const urgent = [...reserve, '--cause', 'urgent'];
+    const first = runSeal(urgent);
     expect(first.status, first.stderr).toBe(0);
     expect(Number(first.stdout)).toBeGreaterThan(Date.now() - 10000);
     const receipt = join(sandbox, 'state', 'engine-recovery-window-412-1.json');
     const value = JSON.parse(readFileSync(receipt, 'utf8'));
-    expect(value.cause).toBe('failed-release:411-1');
+    expect(value.cause).toBe('urgent');
     // Replaying after completion keeps the expired original announcement;
     // it cannot pause players again or turn a lost response into a fresh end.
     value.announcedAt -= 600000;
     writeFileSync(receipt, JSON.stringify(value));
-    expect(runSeal(reserve).stdout).toBe(String(value.announcedAt));
-    expect(runSeal([...reserve.slice(0, 2), A_SHA, ...reserve.slice(3)]).stdout).toBe(
-      'unavailable'
-    );
+    expect(runSeal(urgent).stdout).toBe(String(value.announcedAt));
+    // A reservation on record for a ROUTINE cause (written before the
+    // emergency-only rule) is not honoured on a rerun.
+    writeFileSync(receipt, JSON.stringify({ ...value, cause: 'failed-release:411-1' }));
+    expect(runSeal(urgent).stdout).toBe('unavailable');
+    writeFileSync(receipt, JSON.stringify(value));
+    expect(runSeal([...urgent.slice(0, 2), A_SHA, ...urgent.slice(3)]).stdout).toBe('unavailable');
     expect(
       runSeal(['reserve-recovery-window', '--sha', C_SHA, '--run-id', '413-1', '--repo', sandbox])
         .status
@@ -1336,27 +1354,35 @@ printf '%s\\n%s' '{"running":true,"releaseSha":"${A_SHA}","liveness":"ok","insta
     // ONE OFF-CYCLE WINDOW PER ROLLING HOUR (2026-09-26). 412-1 announced ten
     // minutes ago, so a second release with a genuine cause is told to wait
     // for the scheduled break - and nothing is written for it.
-    const missed = [...reserve.slice(0, 4), '414-1', ...reserve.slice(5), '--missed-window'];
-    const limited = runSeal(missed);
+    const degraded = [
+      ...reserve.slice(0, 4),
+      '414-1',
+      ...reserve.slice(5),
+      '--missed-window',
+      '--cause',
+      'engine-degraded',
+    ];
+    const limited = runSeal(degraded);
     expect(limited.status, limited.stderr).toBe(0);
     expect(limited.stdout).toBe('rate-limited');
     expect(existsSync(join(sandbox, 'state', 'engine-recovery-window-414-1.json'))).toBe(false);
     // 412-1 replaying its own reservation is not limited by itself.
-    expect(runSeal(reserve).stdout).toBe(String(value.announcedAt));
+    expect(runSeal(urgent).stdout).toBe(String(value.announcedAt));
     // An unreadable reservation still spends the hour, dated by its file.
     value.announcedAt -= 3600000;
     writeFileSync(receipt, JSON.stringify(value));
     writeFileSync(join(sandbox, 'state', 'engine-recovery-window-415-1.json'), '{not json');
-    expect(runSeal(missed).stdout).toBe('rate-limited');
+    expect(runSeal(degraded).stdout).toBe('rate-limited');
     rmSync(join(sandbox, 'state', 'engine-recovery-window-415-1.json'));
-    // Past the hour the next reservation with a cause is granted.
-    const granted = runSeal(missed);
+    // Past the hour the next reservation with a cause is granted, and the
+    // cause on record is the emergency, never the missed break beside it.
+    const granted = runSeal(degraded);
     expect(granted.status, granted.stderr).toBe(0);
     expect(Number(granted.stdout)).toBeGreaterThan(Date.now() - 10000);
     expect(
       JSON.parse(readFileSync(join(sandbox, 'state', 'engine-recovery-window-414-1.json'), 'utf8'))
         .cause
-    ).toBe('observed-missed-certificate');
+    ).toBe('engine-degraded');
     // Named causes: urgent, engine-degraded and deadline qualify on their
     // own and share the same hour; anything else is refused by name.
     const named = (run: string, cause: string) =>
@@ -1686,6 +1712,25 @@ describe('every host mutation path obeys the durable release authority', () => {
     expect(engineUp).toContain('GIT_COMMIT_SHA|ENGINE_VERSION');
     expect(engineUp).toContain('--label "sp.release.sha=$AUTHORIZED_SHA"');
     expect(dockerfile).toContain('LABEL org.opencontainers.image.revision=$GIT_COMMIT_SHA');
+  });
+
+  it('sizes the bounded builder and the compiler heap together, with room to compile', () => {
+    // 2026-10-09: a 512 MiB heap inside a 640 MiB builder stopped fitting the
+    // runtime emit and every release build died with heap exhaustion. The emit
+    // was measured to complete at a 544 MiB heap and to peak near 830 MiB RSS.
+    const heaps = [...dockerfile.matchAll(/--max-old-space-size=(\d+)/g)].map((m) => Number(m[1]));
+    expect(heaps).toEqual([1024]);
+    const limit = Number(/^BUILD_MEMORY_BYTES=(\d+)$/m.exec(imageBuilderSource)?.[1]);
+    expect(limit).toBe(2048 * 1024 * 1024);
+    // The builder stays bounded with no swap, and the heap leaves native and
+    // BuildKit memory inside that same boundary.
+    expect(imageBuilderSource).toContain('--driver-opt "memory-swap=$BUILD_MEMORY_BYTES"');
+    expect(heaps[0] * 1024 * 1024).toBeLessThanOrEqual((limit * 2) / 3);
+    expect(heaps[0]).toBeGreaterThanOrEqual(Math.ceil(544 * 1.4));
+    expect(limit).toBeGreaterThanOrEqual(Math.ceil(830 * 1.4) * 1024 * 1024);
+    // The first real bounded Linux build at this heap peaked at 1322455040
+    // bytes of cgroup memory (page cache included); keep 40% above that too.
+    expect(limit).toBeGreaterThanOrEqual(Math.ceil(1322455040 * 1.4));
   });
 
   it('fully writes durable JSON and removes every abandoned atomic temporary', () => {
@@ -2423,12 +2468,12 @@ if [ "$1" = buildx ]; then
   if [ "$2" = stop ]; then printf 'stop\\n' >> "$STATE_DIR/builder-stops"; exit 0; fi
 fi
 if [ "$1" = inspect ]; then
-  printf '%s\\n' 'moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8 671088640 671088640 100000 100000 no'
+  printf '%s\\n' 'moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8 2147483648 2147483648 100000 100000 no'
   exit 0
 fi
 if [ "$1" = exec ]; then
   case "$4" in
-    */memory.max) printf '%s\\n' "\${FAKE_CGROUP_MEMORY:-671088640}" ;;
+    */memory.max) printf '%s\\n' "\${FAKE_CGROUP_MEMORY:-2147483648}" ;;
     */memory.peak) printf '654311424\\n' ;;
     */memory.swap.max) printf '0\\n' ;;
     */cpu.max) printf '100000 100000\\n' ;;
@@ -2447,7 +2492,7 @@ if [ "$1" = buildx ] && [ "$2" = build ]; then
   printf '%s\\n' "$PWD" > "$STATE_DIR/context-path"
   while [ "$#" -gt 0 ]; do
     case "$1" in
-      --builder) [ "$2" = club-arena-engine-bounded-v3 ]; shift 2 ;;
+      --builder) [ "$2" = club-arena-engine-bounded-v4 ]; shift 2 ;;
       --load) shift ;;
       --progress) [ "$2" = plain ]; shift 2 ;;
       --build-arg) printf '%s' "$2" > "$STATE_DIR/build-arg"; shift 2 ;;
@@ -2524,7 +2569,7 @@ sys.exit(int(os.environ.get('FAKE_GIT_ARCHIVE_FAILURE', '0')))
         ...isolatedEnv,
         PATH: `${bin}:${isolatedEnv.PATH ?? ''}`,
         FAKE_DOCKER_STATE_DIR: dockerState,
-        FAKE_AVAILABLE_KIB: '917504',
+        FAKE_AVAILABLE_KIB: '2359296',
         ENGINE_BUILD_CONTEXT_ROOT: contextRoot,
         ENGINE_BUILD_LOCK_FILE: join(sandbox, 'engine-build.lock'),
       };
@@ -2587,12 +2632,12 @@ sys.exit(int(os.environ.get('FAKE_GIT_ARCHIVE_FAILURE', '0')))
         [imageBuilder, repo, targetSha, `club-arena-engine:${targetSha}`],
         {
           encoding: 'utf8',
-          env: { ...env, FAKE_AVAILABLE_KIB: '917503' },
+          env: { ...env, FAKE_AVAILABLE_KIB: '2359295' },
         }
       );
       expect(noHeadroom.status).toBe(1);
       expect(noHeadroom.stderr).toContain('insufficient memory headroom');
-      expect(noHeadroom.stderr).toContain('available=917503KiB, required=917504KiB');
+      expect(noHeadroom.stderr).toContain('available=2359295KiB, required=2359296KiB');
       expect(readFileSync(join(dockerState, 'builds'), 'utf8')).toBe('build\n');
       expect(readdirSync(contextRoot)).toEqual([]);
       const wrongDriver = spawnSync(

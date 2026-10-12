@@ -71,24 +71,35 @@ describe('pre-actions reach the engine, and never hide an armed one', () => {
      `retryAsync(() => serverSetPreAction(...))` shape resolved its first
      `{success:false}` and retried NOTHING — the pin here used to require
      exactly that broken shape. Both directions must now throw a retryable
-     error on a falsy result so retryAsync's attempts are real. */
-  it('arming retries for real: a falsy result is thrown as retryable', () => {
-    expect(code).toMatch(/await serverSetPreAction\(tableId, serverAction, armCap\)/);
-    expect(code).toMatch(/network\/preaction-arm/);
+     error on an undelivered request so retryAsync's attempts are real.
+
+     2026-10-04: the engine sync these pins guard moved out of TablePage's
+     effect into src/lib/preActionSync.ts, line for line, so that it could be
+     driven with the engine's real replies (tests/unit/preActionSync.test.ts).
+     The pins followed the code: `sync` is that module, `code` is still the
+     page. One thing changed on the way and is pinned at the end: showing a
+     pre-action the engine holds no longer sends it to the engine again. */
+  const sync = readFileSync(join(process.cwd(), 'src/lib/preActionSync.ts'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '');
+
+  it('arming retries for real: an undelivered request is thrown as retryable', () => {
+    expect(sync).toMatch(/await serverSetPreAction\(tableId, serverAction, armCap\)/);
+    expect(sync).toMatch(/network\/preaction-arm/);
   });
 
   it('the armed CALL carries the price the player was looking at (Dan 2026-08-28)', () => {
     // "Call 15" can never call a raise to 65 — the arm-time price rides to
     // the engine as auto_call's cap, and only for auto_call.
-    expect(code).toMatch(
+    expect(sync).toMatch(
       /serverAction === 'auto_call' \? preActionCallAmountRef\.current : undefined/
     );
     expect(code).toMatch(/preActionCallAmountRef\.current = Math\.max\(/);
   });
 
   it('clearing retries too - it is the direction that folds a live hand', () => {
-    expect(code).toMatch(/await serverSetPreAction\(tableId, 'clear'\)/);
-    expect(code).toMatch(/network\/preaction-clear/);
+    expect(sync).toMatch(/await serverSetPreAction\(tableId, 'clear'\)/);
+    expect(sync).toMatch(/network\/preaction-clear/);
   });
 
   it('a failed clear restores the armed control rather than going dark', () => {
@@ -96,23 +107,40 @@ describe('pre-actions reach the engine, and never hide an armed one', () => {
     // The restore must read from lastArmedPreActionRef — `const armed =
     // preAction` inside the clear branch is null by definition (dead code
     // this repo shipped until 2026-08-28).
-    expect(code).toMatch(/const armed = lastArmedPreActionRef\.current/);
-    const restores = code.match(/if \(armed\) setPreAction\(armed\)/g) ?? [];
+    expect(sync).toMatch(/const armed = lastArmedPreActionRef\.current/);
+    const restores = sync.match(/if \(armed\) setPreAction\(armed\)/g) ?? [];
     expect(
       restores.length,
       'expected the armed control restored on a failed clear'
     ).toBeGreaterThanOrEqual(1);
-    expect(code).toMatch(/lastArmedPreActionRef\.current = preAction/);
+    expect(sync).toMatch(/lastArmedPreActionRef\.current = preAction/);
   });
 
   it('a failed arm still disarms, so the bar never claims what the engine refused', () => {
-    expect(code).toMatch(/setPreAction\(null\); /);
-    expect(code).toMatch(/PreAction_set_refused/);
+    expect(sync).toMatch(/setPreAction\(null\); /);
+    expect(sync).toMatch(/PreAction_set_refused/);
   });
 
   it('both failure paths report', () => {
-    expect(code).toMatch(/PreAction_set_refused/);
-    expect(code).toMatch(/PreAction_clear_refused/);
+    expect(sync).toMatch(/PreAction_set_refused/);
+    expect(sync).toMatch(/PreAction_clear_refused/);
+  });
+
+  it('the page sends pre-actions through that module and nowhere else', () => {
+    expect(code).toMatch(/syncPreActionToEngine\(\{/);
+    expect(code).not.toMatch(/serverSetPreAction\(/);
+  });
+
+  it('the restore is display only: it is marked before it is shown', () => {
+    // 2026-10-04. `if (armed) setPreAction(armed)` used to run the arm branch
+    // and send the pre-action to the engine again, into the next hand.
+    const marker = sync.indexOf(
+      'if (armed && !lightningRoomRef.current) preActionHeldByEngineRef.current = armed;'
+    );
+    const restore = sync.indexOf('} else if (armed) setPreAction(armed);');
+    expect(marker).toBeGreaterThan(-1);
+    expect(restore).toBeGreaterThan(marker);
+    expect(sync).toMatch(/if \(heldByEngine === preAction\) return;/);
   });
 });
 
@@ -132,29 +160,46 @@ describe('the action bar does not flash back after you act', () => {
     expect(code).toMatch(/currentPlayerSeat: nextCurrentSeat,/);
   });
 
+  /* 2026-10-04: the four pins below used to match the fence written inline in
+     the snapshot merge (`mapped.currentPlayerSeat === fence.seat`,
+     `fence.hand !== snapHand`, `Date.now() >= fence.until`). That inline rule
+     judged a frame by seat and by time alone, which is also what the engine
+     handing the SAME seat the next street looks like, and it cost those
+     players their turn. The rule moved to src/lib/heroActedFence.ts, where it
+     reads the decision as well; these pins moved with it, and its behaviour
+     is exercised frame by frame in tests/unit/heroActedFence.test.ts. */
+  const rule = readFileSync(join(process.cwd(), 'src/lib/heroActedFence.ts'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '');
+
   it('a stale snapshot cannot hand the turn back to the seat that just acted', () => {
-    expect(code).toMatch(/mapped\.currentPlayerSeat === fence\.seat/);
-    expect(code).toMatch(/nextCurrentSeat = 0/);
+    expect(code).toMatch(/judgeSnapshotAgainstFence\(\s*heroActedFenceRef\.current,/);
+    expect(code).toMatch(/const nextCurrentSeat = fenceVerdict\.currentPlayerSeat;/);
+    expect(rule).toMatch(/currentPlayerSeat: 0,/);
   });
 
   it('the fence is armed only when the hero actually held the turn', () => {
-    expect(code).toMatch(/if \(prev\.currentPlayerSeat === heroSeat\) \{/);
-    expect(code).toMatch(/heroActedFenceRef\.current = \{/);
+    expect(code).toMatch(/if \(prev\.currentPlayerSeat === heroSeat && !fenceArmed\) \{/);
+    expect(code).toMatch(/heroActedFenceRef\.current = armHeroActedFence\(\{/);
   });
 
   it('it is scoped to one hand, so it cannot leak into the next', () => {
-    expect(code).toMatch(/fence\.hand !== snapHand/);
+    expect(code).toMatch(/hand: snapHand,/);
+    expect(rule).toMatch(/fence\.hand !== frame\.hand/);
   });
 
   it('it releases the moment the engine names a different actor', () => {
     // The success signal. Without this the fence would sit out its full
     // timeout on every single action.
-    expect(code).toMatch(/heroActedFenceRef\.current = null; /);
+    expect(rule).toMatch(
+      /if \(frame\.actorSeat !== fence\.seat\) \{\s*return \{ currentPlayerSeat: frame\.actorSeat, fence: null \};/
+    );
+    expect(code).toMatch(/heroActedFenceRef\.current = fenceVerdict\.fence;/);
   });
 
   it('it expires on its own, so a lost action can never strand the player', () => {
     expect(code).toMatch(/HERO_ACTED_FENCE_MS/);
-    expect(code).toMatch(/Date\.now\(\) >= fence\.until/);
+    expect(rule).toMatch(/now >= fence\.until/);
   });
 
   it('a REJECTED action clears the fence and gives the turn straight back', () => {

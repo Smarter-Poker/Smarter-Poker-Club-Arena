@@ -425,19 +425,24 @@ describe('visualChipStacks', () => {
       [5, 1],
       [1, 2],
     ]);
-    expect(v.every((s) => !s.truncated)).toBe(true);
+    expect(v.every((s) => s.drawn === s.count)).toBe(true);
   });
 
   it('clamps a tall stack for layout but still reports the true count', () => {
     // The bug this replaces: the old breakdowns clamped the count AND
-    // subtracted the clamped count, so the drawn chips did not add up to the
-    // bet. Here `count` stays honest and `truncated` tells the renderer to
-    // print it.
+    // subtracted the clamped count, so the breakdown itself went wrong. Here
+    // `count` stays the true number of chips and `drawn` is the clamp.
+    //
+    // There used to be a `truncated` flag here telling the renderer to print
+    // an "x12" badge. Owner ruling 2026-10-04: "POT STACKING AND BET SIZING
+    // NEVER EVER EVER NEEDS THE X3 X2 ETC... REMOVE ANY AND ALL X2 X3 X4 ETC
+    // MULTIPLIERS FROM POT OR BET SIZING CHIP STACKS." The flag fed nothing
+    // but that badge, so it is gone from the shape.
     const v = visualChipStacks(60000, { maxPerStack: 5 });
     expect(v).toHaveLength(1);
     expect(v[0].count).toBe(12);
     expect(v[0].drawn).toBe(5);
-    expect(v[0].truncated).toBe(true);
+    expect(v[0]).not.toHaveProperty('truncated');
   });
 
   it('keeps the highest denominations when there are more groups than room', () => {

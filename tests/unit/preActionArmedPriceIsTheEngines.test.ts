@@ -56,7 +56,11 @@ describe('the engine hands its recorded price back to the hero', () => {
 });
 
 describe('the client adopts it', () => {
-  const page = read('src/pages/TablePage.tsx');
+  /* 2026-10-04: the arm path moved, unchanged, from TablePage's effect into
+     src/lib/preActionSync.ts (so it can be driven with the engine's real
+     replies: tests/unit/preActionSync.test.ts, which also exercises this
+     adoption). The pins below followed it. */
+  const page = read('src/lib/preActionSync.ts');
   const api = read('src/services/GameServerAPI.ts');
 
   it('ActionResult carries armedToCall through the API layer', () => {

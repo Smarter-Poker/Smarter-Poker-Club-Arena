@@ -331,6 +331,8 @@ export interface FuzzHandResult {
   reachedShowdown: boolean;
   allInRunout: boolean;
   sidePots: number;
+  /** All-in presses executed as a call/check (only with opts.pressAllIn). */
+  allInPresses: number;
   replay: string;
 }
 
@@ -614,8 +616,24 @@ function amountFor(
   return cents(lo + rnd() * Math.max(0, hi - lo));
 }
 
-export function fuzzOneHand(seed: number, opts: { kill?: boolean } = {}): FuzzHandResult {
+export function fuzzOneHand(
+  seed: number,
+  opts: {
+    kill?: boolean;
+    /**
+     * Owner ruling 2026-10-04 ("the ALL IN click counts as a CALL ... either
+     * one should work"). When set, a seat whose menu offers call/check but
+     * NOT all_in sometimes presses all_in anyway, and the driver asserts
+     * INV-ALLIN-IS-CALL: the engine accepts it and records exactly the passive
+     * action. Opt-in, and drawn from its own RNG stream, so every existing
+     * seed still replays the identical hand when this is off.
+     */
+    pressAllIn?: boolean;
+  } = {}
+): FuzzHandResult {
   const rnd = mulberry32(seed);
+  const pressRnd = mulberry32((seed ^ 0x5bd1e995) >>> 0);
+  let allInPresses = 0;
   const cfg = opts.kill ? randomKillTable(rnd) : randomTable(rnd);
   const hc = new HandController(cfg.config, cfg.seats, cfg.dealerSeat);
 
@@ -759,6 +777,61 @@ export function fuzzOneHand(seed: number, opts: { kill?: boolean } = {}): FuzzHa
     const pool: ActionType[] = [];
     for (const a of available) {
       for (let i = 0; i < (weights[a] ?? 1); i++) pool.push(a);
+    }
+
+    // ── INV-ALLIN-IS-CALL (owner ruling 2026-10-04) ─────────────────────────
+    // The menu withholds all_in wherever it is not a real shove (may not
+    // reopen betting, pot-limit cap below a full raise, capped fixed-limit
+    // round). A player can still press the button, and that press must be the
+    // passive action the seat is entitled to: never refused, never a raise.
+    if (
+      opts.pressAllIn &&
+      player!.stack > 0 &&
+      !available.includes('all_in') &&
+      (available.includes('call') || available.includes('check')) &&
+      pressRnd() < 0.5
+    ) {
+      const expectAction: ActionType = available.includes('call') ? 'call' : 'check';
+      const owed = Math.max(0, cents(st.currentBet - player!.bet));
+      const expectAmount = expectAction === 'call' ? cents(Math.min(owed, player!.stack)) : 0;
+      const investedBefore = player!.totalInvested ?? 0;
+      const historyBefore = st.actionHistory.length;
+      const stageBefore = st.stage;
+      const accepted = hc.performAction(seat, 'all_in', 0);
+      if (!accepted) {
+        fail(
+          ctx,
+          'INV-ALLIN-IS-CALL',
+          `seat ${seat} may ${expectAction} but its ALL IN press was REFUSED. ` +
+            `available=${JSON.stringify(available)} stage=${stageBefore} ` +
+            `currentBet=${st.currentBet} playerBet=${player!.bet} stack=${player!.stack}`
+        );
+      }
+      const after = readState();
+      const rec = after.actionHistory[historyBefore];
+      const livePlayer = after.players.find((p: SeatPlayer) => p.seat === seat);
+      if (
+        after.actionHistory.length !== historyBefore + 1 ||
+        !rec ||
+        rec.seat !== seat ||
+        rec.action !== expectAction ||
+        Math.abs(rec.amount - expectAmount) > EPS ||
+        rec.isFullRaise !== undefined ||
+        Math.abs(cents((livePlayer?.totalInvested ?? 0) - investedBefore) - expectAmount) > EPS
+      ) {
+        fail(
+          ctx,
+          'INV-ALLIN-IS-CALL',
+          `seat ${seat} pressed ALL IN where only ${expectAction} ${expectAmount} was legal, and ` +
+            `the engine recorded ${JSON.stringify(rec)} (invested ${investedBefore} -> ` +
+            `${livePlayer?.totalInvested}). It must be exactly the ${expectAction}.`
+        );
+      }
+      actions++;
+      allInPresses++;
+      ctx.log.push(`[${stageBefore}] seat ${seat} all_in PRESS -> ${expectAction} ${expectAmount}`);
+      if (!complete) checkMidHand(ctx, `after seat ${seat} all-in press #${actions}`);
+      continue;
     }
 
     let performed = false;
@@ -947,6 +1020,7 @@ export function fuzzOneHand(seed: number, opts: { kill?: boolean } = {}): FuzzHa
     reachedShowdown,
     allInRunout: ctx.log.some((l) => l.startsWith('ALL_IN_RUNOUT')),
     sidePots: ctx.maxSidePots,
+    allInPresses,
     replay: '', // populated only on failure, via ChipConservationError
   };
 }

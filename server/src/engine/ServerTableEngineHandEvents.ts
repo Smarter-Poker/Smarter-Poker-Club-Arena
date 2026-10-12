@@ -8,6 +8,21 @@
  * declarations for the hooks each layer calls on the layer below.
  */
 
+import {
+  accumulateBoard,
+  antesPostedFrame,
+  blindsPostedFrame,
+  communityCardsDealtFrame,
+  handStartedFrame,
+  normalizeShowdownResults,
+  normalizeWinners,
+  playerActionFrame,
+  potDistributedFrame,
+  potWinFrame,
+  showdownCardsRevealedFrame,
+  showdownFrame,
+  turnChangeFrame,
+} from './presentation/handEventFrames.js';
 import * as EngineMetrics from '../observability/engineInstruments.js';
 import { HandController } from './HandController.js';
 import type { Street as ShadowStreet } from './eventlog/events.js';
@@ -124,13 +139,15 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
         // so the client can immediately reset visual state (clear last action
         // badges, clear community cards, trigger the deal animation) without
         // waiting for the snapshot to arrive and diff-detect.
-        this.hub?.emitEvent(this.tableId, {
-          type: 'hand_started',
-          table_id: this.tableId,
-          hand_number: this.handCount,
-          dealer_seat: this.handController?.getState().dealerSeat ?? 0,
-          timestamp: Date.now(),
-        });
+        this.hub?.emitEvent(
+          this.tableId,
+          handStartedFrame({
+            tableId: this.tableId,
+            handNumber: this.handCount,
+            dealerSeat: this.handController?.getState().dealerSeat ?? 0,
+            timestamp: Date.now(),
+          })
+        );
         this.broadcastCurrentState();
         break;
 
@@ -199,15 +216,13 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
         const postings = (event as any).postings as
           | Array<{ seat: number; type: string; amount: number }>
           | undefined;
-        if (postings && postings.length > 0) {
-          this.hub?.emitEvent(this.tableId, {
-            type: 'blinds_posted',
-            table_id: this.tableId,
-            hand_number: this.handCount,
-            postings,
-            timestamp: Date.now(),
-          });
-        }
+        const blindsFrame = blindsPostedFrame({
+          tableId: this.tableId,
+          handNumber: this.handCount,
+          postings,
+          timestamp: Date.now(),
+        });
+        if (blindsFrame) this.hub?.emitEvent(this.tableId, blindsFrame);
         // ── ADDITIVE event-sourcing shadow (#1): record BlindsPosted ──
         if (this.shadowRecorder && postings && postings.length > 0) {
           this.shadowRecorder.recordBlindsPosted(
@@ -267,18 +282,14 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
          * one, and how much, so the client can fly it to the middle.
          */
         if (Array.isArray(postings)) {
-          const antePostings = postings
-            .filter((p) => p && p.kind === 'ante' && p.amount > 0)
-            .map((p) => ({ seat: p.seat, amount: p.amount }));
-          if (antePostings.length > 0) {
-            this.hub?.emitEvent(this.tableId, {
-              type: 'antes_posted',
-              table_id: this.tableId,
-              hand_number: this.handCount,
-              postings: antePostings,
-              timestamp: Date.now(),
-            });
-          }
+          // antes_posted: every seat that posted a regular ante (handEventFrames).
+          const antesFrame = antesPostedFrame({
+            tableId: this.tableId,
+            handNumber: this.handCount,
+            postings,
+            timestamp: Date.now(),
+          });
+          if (antesFrame) this.hub?.emitEvent(this.tableId, antesFrame);
           for (const p of postings) {
             if (!p || !(p.amount > 0)) continue;
             this.currentHandActions.push({
@@ -536,16 +547,18 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
         // Bible V8 §1.16 (Real-Time Law): discrete turn_change event. Now
         // carries the correct absolute deadline for the CURRENT player.
         try {
-          this.hub?.emitEvent(this.tableId, {
-            type: 'turn_change',
-            action_context: decisionContext,
-            table_id: this.tableId,
-            hand_number: this.handCount,
-            seat: event.seat,
-            user_id: tcSeatedPlayer?.user_id ?? '',
-            deadline_ms: this.playerTurnStartTime + this.playerTurnDuration * 1000,
-            timestamp: Date.now(),
-          });
+          this.hub?.emitEvent(
+            this.tableId,
+            turnChangeFrame({
+              actionContext: decisionContext,
+              tableId: this.tableId,
+              handNumber: this.handCount,
+              seat: event.seat,
+              userId: tcSeatedPlayer?.user_id ?? '',
+              deadlineMs: this.playerTurnStartTime + this.playerTurnDuration * 1000,
+              timestamp: Date.now(),
+            })
+          );
         } catch (err) {
           reportError(err, 'ServerTableEngine.' + this.tableId + '.turn_change_emit_threw');
         }
@@ -642,17 +655,19 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
           // client used to update pot only — chip animations + action labels
           // never fired because their handler was on the deleted Supabase
           // Realtime channel. The full state broadcast still follows below.
-          this.hub?.emitEvent(this.tableId, {
-            type: 'player_action',
-            table_id: this.tableId,
-            hand_number: this.handCount,
-            seat: event.seat,
-            user_id: actorId,
-            action: event.action,
-            amount: event.amount ?? 0,
-            stage,
-            timestamp: event.record?.timestamp ?? Date.now(),
-          });
+          this.hub?.emitEvent(
+            this.tableId,
+            playerActionFrame({
+              tableId: this.tableId,
+              handNumber: this.handCount,
+              seat: event.seat,
+              userId: actorId,
+              action: event.action,
+              amount: event.amount,
+              stage,
+              timestamp: event.record?.timestamp ?? Date.now(),
+            })
+          );
         }
         this.broadcastCurrentState();
         break;
@@ -688,63 +703,55 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
             // actions ending on the river but only ["6spades"] stored). Fix:
             // flop resets, turn/river APPEND. This now mirrors HandController's
             // own state.communityCards which already accumulates correctly.
-            const newCards = event.cards.map((c: any) =>
-              typeof c === 'string' ? c : `${c.rank}${c.suit}`
+            this.currentHandCommunityCards = accumulateBoard(
+              this.currentHandCommunityCards,
+              event.stage,
+              event.cards
             );
-            if (event.stage === 'flop') {
-              this.currentHandCommunityCards = newCards;
-            } else {
-              this.currentHandCommunityCards = [...this.currentHandCommunityCards, ...newCards];
-            }
           }
           // DOUBLE-BOARD BOMB POT 2026-08-20: board 2 accumulates the same way.
           const evCards2 = (event as { cards2?: import('../types.js').Card[] }).cards2;
           if (evCards2 && evCards2.length > 0) {
-            const newCards2 = evCards2.map((c: any) =>
-              typeof c === 'string' ? c : `${c.rank}${c.suit}`
+            this.currentHandCommunityCards2 = accumulateBoard(
+              this.currentHandCommunityCards2,
+              event.stage,
+              evCards2
             );
-            if (event.stage === 'flop') {
-              this.currentHandCommunityCards2 = newCards2;
-            } else {
-              this.currentHandCommunityCards2 = [...this.currentHandCommunityCards2, ...newCards2];
-            }
           }
           // TRIPLE-BOARD BOMB POT 2026-08-27: board 3 accumulates the same way.
           const evCards3 = (event as { cards3?: import('../types.js').Card[] }).cards3;
           if (evCards3 && evCards3.length > 0) {
-            const newCards3 = evCards3.map((c: any) =>
-              typeof c === 'string' ? c : `${c.rank}${c.suit}`
+            this.currentHandCommunityCards3 = accumulateBoard(
+              this.currentHandCommunityCards3,
+              event.stage,
+              evCards3
             );
-            if (event.stage === 'flop') {
-              this.currentHandCommunityCards3 = newCards3;
-            } else {
-              this.currentHandCommunityCards3 = [...this.currentHandCommunityCards3, ...newCards3];
-            }
           }
           // Bible V8 §1.16 (Real-Time Law): emit discrete community_cards_dealt
           // so the client slides the flop/turn/river cards onto the board with
           // the spec animation (§6 community cards dealing) the millisecond the
           // engine flips them — not whenever the next snapshot arrives.
-          this.hub?.emitEvent(this.tableId, {
-            type: 'community_cards_dealt',
-            table_id: this.tableId,
-            hand_number: this.handCount,
-            stage: event.stage,
-            // Send only the NEW cards for this stage so the client can animate
-            // just the additions (3 for flop, 1 each for turn/river).
-            new_cards: event.cards ?? [],
-            // Full board too, for clients that want to render the complete
-            // state without diffing.
-            board: this.currentHandCommunityCards,
-            // DOUBLE-BOARD BOMB POT 2026-08-20: board 2 (both empty arrays
-            // and the fields absent mean "single board" to the client).
-            new_cards2: evCards2 ?? [],
-            board2: this.currentHandCommunityCards2,
-            // TRIPLE-BOARD BOMB POT 2026-08-27: board 3, same contract.
-            new_cards3: evCards3 ?? [],
-            board3: this.currentHandCommunityCards3,
-            timestamp: Date.now(),
-          });
+          this.hub?.emitEvent(
+            this.tableId,
+            communityCardsDealtFrame({
+              tableId: this.tableId,
+              handNumber: this.handCount,
+              stage: event.stage,
+              // Only the NEW cards for this stage, so the client animates just
+              // the additions (3 for flop, 1 each for turn/river)...
+              newCards: event.cards ?? [],
+              // ...and the full board, for clients that render without diffing.
+              board: this.currentHandCommunityCards,
+              // DOUBLE-BOARD BOMB POT 2026-08-20: board 2 (both empty arrays
+              // and the fields absent mean "single board" to the client).
+              newCards2: evCards2 ?? [],
+              board2: this.currentHandCommunityCards2,
+              // TRIPLE-BOARD BOMB POT 2026-08-27: board 3, same contract.
+              newCards3: evCards3 ?? [],
+              board3: this.currentHandCommunityCards3,
+              timestamp: Date.now(),
+            })
+          );
           // ── ADDITIVE event-sourcing shadow (#1): record StreetAdvanced ──
           if (this.shadowRecorder && event.stage) {
             this.shadowRecorder.recordStreetAdvanced(event.stage as ShadowStreet);
@@ -789,21 +796,7 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
         // Capture showdown hand evaluations for BBJ detection.
         // SHOWDOWN SYSTEM 2026-08-25: also capture the engine-decided reveal
         // metadata — seat, reveal order, muck eligibility, hand description.
-        this.currentHandShowdownResults = ((event as any).results || []).map((r: any) => ({
-          userId: r.userId,
-          handRanking: r.hand?.ranking ?? 0,
-          handName: r.hand?.name ?? '',
-          kickers: r.hand?.kickers ?? [],
-          holeCards: (r.cards || []).map((c: any) =>
-            typeof c === 'string'
-              ? { rank: c.slice(0, -1), suit: c.slice(-1) }
-              : { rank: c.rank, suit: c.suit }
-          ),
-          seat: r.seat,
-          revealOrder: r.revealOrder,
-          mucked: r.mucked === true,
-          handDescription: r.handDescription ?? '',
-        }));
+        this.currentHandShowdownResults = normalizeShowdownResults((event as any).results);
         // SHOWDOWN POLISH 2026-08-25: muck-rate observability. If a future
         // change silently kills mucking, this pair flatlines against each
         // other — no DB sampling needed to notice. Metrics must never affect
@@ -835,23 +828,15 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
         // snapshot's showCards rising edge, reading the order this event
         // delivered — sent after the snapshot, the order routinely lost the
         // race and every reveal degraded to a simultaneous flip.
-        this.hub?.emitEvent(this.tableId, {
-          type: 'showdown',
-          table_id: this.tableId,
-          hand_number: this.handCount,
-          results: this.currentHandShowdownResults.map((r) => {
-            const mucked = this.isMuckedAtShowdown(r.userId);
-            return {
-              user_id: r.userId,
-              seat: r.seat ?? -1,
-              reveal_order: r.revealOrder ?? 0,
-              mucked,
-              hand_name: mucked ? '' : r.handName,
-              hand_ranking: mucked ? 0 : r.handRanking,
-              hand_description: mucked ? '' : (r.handDescription ?? ''),
-            };
-          }),
-        });
+        this.hub?.emitEvent(
+          this.tableId,
+          showdownFrame({
+            tableId: this.tableId,
+            handNumber: this.handCount,
+            results: this.currentHandShowdownResults,
+            isMuckedAtShowdown: (userId) => this.isMuckedAtShowdown(userId),
+          })
+        );
         this.broadcastCurrentState();
         // ── ADDITIVE event-sourcing shadow (#1): record ShowdownRevealed ──
         if (this.shadowRecorder && this.handController) {
@@ -943,18 +928,7 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
           // w.hand?.cards, and this map was dropping it on capture. The five
           // formerly-skipped specs in tests/unit/winningCardHighlight.test.ts
           // pin this wire at both ends.
-          this.currentHandWinners = (event.winners || []).map((w: any) => ({
-            userId: w.userId || w.user_id || '',
-            amount: w.amount || 0,
-            potIndex: w.potIndex ?? 0,
-            hand: w.hand
-              ? {
-                  name: w.hand.name || '',
-                  ranking: w.hand.ranking ?? 0,
-                  cards: Array.isArray(w.hand.cards) ? w.hand.cards : undefined,
-                }
-              : undefined,
-          }));
+          this.currentHandWinners = normalizeWinners(event.winners);
         }
         if (this.handController) {
           const state = this.handController.getState();
@@ -1008,6 +982,14 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
           // atomic_distribute_rake's weighted per-player attribution.
           this.currentHandContributions.clear();
           this.currentHandReturnedUncalled.clear();
+          /* THE HAND'S OWN FLOP FACT, CAPTURED WHERE ITS MONEY IS (2026-10-05).
+             `handSawFlopForMoney()` is the expression priceDeductions prices
+             the rake with - the flag AND a board that corroborates it - and
+             this is the last moment the controller is guaranteed to be the one
+             that played the hand. A Diamond cash hand sends it to the settler
+             as `hand_saw_flop` on every stack element, where the owner's
+             `cash_rake_no_flop_no_drop` answer reads it. */
+          this.currentHandSawFlopForMoney = this.handController.handSawFlopForMoney();
           for (const enginePlayer of state.players) {
             const localPlayer = players.find((p) => p.user_id === enginePlayer.user_id);
             if (localPlayer) localPlayer.stack = enginePlayer.stack;
@@ -1070,33 +1052,17 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
           // showing is consent. All-in showdowns never produce mucked=true
           // (HandController.applyShowdownRevealRules), so every live all-in
           // hand still rides this event exactly as before.
-          const reveals = this.currentHandShowdownResults
-            .filter((r) => !this.isMuckedAtShowdown(r.userId))
-            .map((r) => ({
-              user_id: r.userId,
-              // Review fix 2026-08-25: carry the seat so a reconnecting
-              // client can rebuild reveal staggering without a players
-              // lookup (it still falls back to user_id resolution).
-              seat: r.seat ?? -1,
-              cards: r.holeCards ?? [],
-              best_hand_label: r.handName,
-              best_hand_rank: r.handRanking,
-              best_hand_description: r.handDescription ?? '',
-              reveal_order: r.revealOrder ?? 0,
-            }));
-          const muckedPlayers = this.currentHandShowdownResults
-            .filter((r) => this.isMuckedAtShowdown(r.userId))
-            .map((r) => ({ user_id: r.userId, seat: r.seat ?? -1 }));
-          if (reveals.length > 0 || muckedPlayers.length > 0) {
-            this.hub?.emitEvent(this.tableId, {
-              type: 'showdown_cards_revealed',
-              table_id: this.tableId,
-              hand_number: this.handCount,
-              reveals,
-              mucked_players: muckedPlayers,
-              timestamp: Date.now(),
-            });
-          }
+          // Each reveal carries its seat (review fix 2026-08-25) and the list
+          // is filtered through the same isMuckedAtShowdown ruling as every
+          // other gate (showdownCardsRevealedFrame).
+          const revealFrame = showdownCardsRevealedFrame({
+            tableId: this.tableId,
+            handNumber: this.handCount,
+            results: this.currentHandShowdownResults,
+            isMuckedAtShowdown: (userId) => this.isMuckedAtShowdown(userId),
+            timestamp: Date.now(),
+          });
+          if (revealFrame) this.hub?.emitEvent(this.tableId, revealFrame);
         }
         // Phase 2 T1-05 (spec §6 Pot Shipping Animation): emit a discrete
         // pot_win event so the client can fire its curved-arc chip fan to
@@ -1210,132 +1176,39 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
            * and those are drawn at the seat, not on the felt. Matching is by
            * rank+suit against the community cards actually on the board.
            */
-          const cardKey = (c: { rank?: string; suit?: string }) => `${c?.rank}${c?.suit}`;
-          const winningBoardIndices = (() => {
-            try {
-              const used = new Set<string>();
-              for (const w of capturedWinners) {
-                for (const c of (w.hand?.cards ?? []) as Array<{ rank?: string; suit?: string }>) {
-                  used.add(cardKey(c));
-                }
-              }
-              if (used.size === 0) return [];
-              const out: number[] = [];
-              capturedBoard.forEach((c, i) => {
-                if (used.has(cardKey(c))) out.push(i);
-              });
-              return out;
-            } catch {
-              // A highlight is decoration: never let it break the payout event.
-              return [];
-            }
-          })();
-
-          this.hub?.emitEvent(this.tableId, {
-            type: 'pot_win',
-            table_id: this.tableId,
-            hand_number: emitHandNumber,
-            winner_ids: capturedWinnerIds,
-            pot: capturedPotSize,
-            // The board cards that are part of the winning hand(s). The client
-            // reads this as `card_indices` and lights exactly these.
-            card_indices: winningBoardIndices,
-            // Per-winner amounts for accurate sub-pot ship animations on chops
-            // SHOWDOWN SYSTEM 2026-08-25: hand_description is the secondary
-            // display line ("Kings Full Of Nines"); hole_card_indices are the
-            // indices of the winner's OWN hole cards that participate in the
-            // winning five, so the seat can light exactly those (the board
-            // half of the highlight rides card_indices above).
-            winners: capturedWinners.map((w) => {
-              const sd = capturedShowdownResults.find((r) => r.userId === w.userId);
-              const holeIndices: number[] = [];
-              try {
-                if (sd && w.hand?.cards) {
-                  const usedKeys = new Set(
-                    (w.hand.cards as Array<{ rank?: string; suit?: string }>).map(
-                      (c) => `${c?.rank}${c?.suit}`
-                    )
-                  );
-                  (sd.holeCards ?? []).forEach((c, i) => {
-                    if (usedKeys.has(`${c?.rank}${c?.suit}`)) holeIndices.push(i);
-                  });
-                }
-              } catch {
-                // Decoration only — never let a highlight break the payout event.
-              }
-              return {
-                user_id: w.userId,
-                amount: w.amount,
-                hand_name: w.hand?.name,
-                hand_description: sd?.handDescription ?? '',
-                hole_card_indices: holeIndices,
-                // SHOWDOWN follow-up 2026-08-25 (spec 16/19): which pot this
-                // winner's FIRST share came from (0 = main). The client
-                // sequences award animations by this — main pot first, then
-                // each side pot — so a hand with different winners for
-                // different pots resolves as a visible sequence, not a blur.
-                pot_index: w.potIndex ?? 0,
-              };
-            }),
-            // Round 2 (double board): board 1 / board 2 winner + hand-name
-            // breakdown. Empty array on single-board hands.
-            winners_by_board: capturedWinnersByBoard.map((w) => ({
-              board: w.board,
-              user_id: w.userId,
-              amount: w.amount,
-              hand_name: w.handName,
-            })),
-            // SHOWDOWN POLISH 2026-08-25 (spec 16/19/33): the UNMERGED award
-            // groups, one per (board, pot, hi/lo half), in award order — main
-            // pot's high half first, its low half second, then each side pot,
-            // then board 2. Each group carries its own winners with the EXACT
-            // share of that pot(-half), post-rake-scaled — so the client can
-            // finally play "A takes the main… C takes the side" as separate
-            // beats even when one player appears in several groups, and can
-            // label HIGH vs LOW winners on hi-lo boards. The flat winners[]
-            // above stays authoritative for totals.
-            pot_awards: capturedPotAwards,
-          });
+          // pot_win: the winning board cards (card_indices, board indices
+          // only), each winner's hand_description, hole_card_indices and
+          // pot_index, the per-board breakdown and the UNMERGED pot_awards
+          // groups. Built by potWinFrame (presentation/handEventFrames.ts).
+          this.hub?.emitEvent(
+            this.tableId,
+            potWinFrame({
+              tableId: this.tableId,
+              emitHandNumber,
+              capturedWinnerIds,
+              capturedPotSize,
+              capturedBoard,
+              capturedWinners,
+              capturedShowdownResults,
+              capturedWinnersByBoard,
+              capturedPotAwards,
+            })
+          );
 
           // Phase X5 (2026-04-29) — Bible V8 §1.16 pot_distributed companion
-          // event with explicit per-pot breakdown (main pot + side pots).
-          // Without this, the client must infer side-pot allocations from
-          // a state-snapshot diff. This event names every pot index, the
-          // amount that pot held, and the user_ids that received that
-          // pot's chips.
-          // SHOWDOWN SYSTEM 2026-08-25 eligibility fix: GameState.pots stores
-          // `eligiblePlayers`; the old read of `p.eligible` (the BROADCAST
-          // payload's rename, applied only in ServerTableEngine.ts) was always
-          // undefined here, so every pot listed every winner and side-pot
-          // breakdowns were wrong for the client and the audit trail alike.
-          // 2026-08-26: reads the pots captured BEFORE the settle hold — the
-          // controller is legitimately null by the time the hold ends (see the
-          // capture note above), and reading it here returned an empty
-          // breakdown on every contested showdown.
-          const potBreakdown = capturedPots.map((p, idx) => {
-            const eligibleIds = p.eligiblePlayers ?? p.eligible ?? [];
-            const eligibleWinners = capturedWinners.filter(
-              (w) => eligibleIds.length === 0 || eligibleIds.includes(w.userId)
-            );
-            const totalEligibleAmount = eligibleWinners.reduce((s, w) => s + w.amount, 0) || 1;
-            return {
-              pot_index: idx,
-              amount: p.amount,
-              winner_user_ids: eligibleWinners.map((w) => w.userId),
-              per_winner_share: eligibleWinners.map((w) => ({
-                user_id: w.userId,
-                share: (w.amount / totalEligibleAmount) * p.amount,
-              })),
-            };
-          });
-          this.hub?.emitEvent(this.tableId, {
-            type: 'pot_distributed',
-            table_id: this.tableId,
-            hand_number: emitHandNumber,
-            total_pot: capturedPotSize,
-            pots: potBreakdown,
-            timestamp: Date.now(),
-          });
+          // event with the per-pot breakdown, from the pots captured BEFORE
+          // the settle hold (2026-08-26) and their real eligiblePlayers field.
+          this.hub?.emitEvent(
+            this.tableId,
+            potDistributedFrame({
+              tableId: this.tableId,
+              emitHandNumber,
+              capturedPotSize,
+              capturedPots,
+              capturedWinners,
+              timestamp: Date.now(),
+            })
+          );
         }
         break;
       }

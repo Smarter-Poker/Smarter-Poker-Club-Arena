@@ -194,8 +194,10 @@ describe('live horse decisions stay outside the table event loop', () => {
     // Empty or unissued batches report their outcome instead of entering COMMIT.
     // The nonempty issued branch remains under the exact original FAST wager gate.
     expect(schedule).toMatch(
-      /if \(fastResult\.effects\.length === 0\)\s*\{\s*noteFire\('phase15_plan_accepted_no_effects'\);\s*\} else if \(fastResult\.planIssueDisposition !== 'issued'\)\s*\{\s*noteFire\(`phase15_plan_accepted_\$\{fastResult\.planIssueDisposition\}`\);\s*\} else\s*void worker\.commitDecisionEffects\(fastResult\)/
+      /if \(fastResult\.effects\.length === 0\)\s*\{\s*noteFire\('phase15_plan_accepted_no_effects'\);\s*\} else if \(fastResult\.planIssueDisposition !== 'issued'\)\s*\{\s*noteFire\(`phase15_plan_accepted_\$\{fastResult\.planIssueDisposition\}`\);\s*\} else\s*void worker\s*\.commitDecisionEffects\(\s*fastResult,/
     );
+    // Phase 15.1: the commit carries the controller's exact accepted wager.
+    expect(schedule).toContain('horsePlanAcceptanceFromController(');
     expect(schedule).toContain("action === 'bet' || action === 'raise'");
     expect(schedule).toContain('.commitDecisionEffects(');
     expect(schedule.indexOf('intendedApplied = applied')).toBeLessThan(

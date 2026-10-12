@@ -16,9 +16,23 @@ import React, { useRef, useCallback, useState } from 'react';
 import { haptic } from '../../services/HapticService';
 import './AchievementShareCard.css';
 import { reportError } from '../../utils/errorReporter';
-import { isNativePlatform } from '../../lib/appBase';
+import { IS_NATIVE_BUILD, isNativePlatform } from '../../lib/appBase';
 import { SpadeConsole, type ConsoleInk } from '../console/SpadeConsole';
 import { titleCase } from '../../utils/titleCase';
+
+/**
+ * The system share sheet (src/lib/native/share.ts). App build only, and a
+ * function of its own on purpose: Rollup keeps everything written inside a
+ * `try` block whatever a constant says (its default
+ * treeshake.tryCatchDeoptimization), so this import() written inside the share
+ * handler's try made the web build emit the share module and its Capacitor
+ * plugins for players who can never run them. Here IS_NATIVE_BUILD removes it.
+ */
+async function shareOnNative(blob: Blob, filename: string, title: string): Promise<void> {
+  if (!IS_NATIVE_BUILD) return;
+  const { nativeShareBlob } = await import('../../lib/native/share');
+  await nativeShareBlob(blob, filename, title);
+}
 
 interface AchievementShareCardProps {
   icon: string;
@@ -182,13 +196,12 @@ export const AchievementShareCard: React.FC<AchievementShareCardProps> = ({
       // THE APP (2026-09-08): Android's webview has no navigator.share and
       // neither webview honours <a download>. The system share sheet, via
       // Filesystem + Share (src/lib/native/share.ts).
-      if (isNativePlatform()) {
+      if (IS_NATIVE_BUILD && isNativePlatform()) {
         const png = await new Promise<Blob | null>((resolve) =>
           canvas.toBlob(resolve, 'image/png')
         );
         if (png) {
-          const { nativeShareBlob } = await import('../../lib/native/share');
-          await nativeShareBlob(
+          await shareOnNative(
             png,
             `achievement-${name.toLowerCase().replace(/\s+/g, '-')}.png`,
             name

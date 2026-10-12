@@ -42,9 +42,13 @@ function sweepViolations(body: string): string[] {
   const ageing = body.indexOf('public.fn_union_age_invoices(u.id)');
   const closes = body.indexOf('public.fn_close_due_settlement_periods()');
   const hygiene = body.indexOf('public.fn_settlement_lock_hygiene()');
-  if (refresh < 0) return ['the open-week snapshot is never refreshed'];
   if (stopLoss < 0 || ageing < 0 || closes < 0 || hygiene < 0)
     return ['a money control has left the sweep'];
+  // RETIRED 2026-10-03 (20261003225101): the sweep no longer rebuilds the
+  // unread open-week snapshot at all, which satisfies this law trivially - a
+  // refresh that is not there cannot roll a money control back. See
+  // tests/the-union-sweep-stops-rebuilding-an-unread-snapshot.law.test.ts.
+  if (refresh < 0) return [];
   if (refresh < stopLoss || refresh < ageing || refresh < closes || refresh < hygiene)
     v.push(
       'the snapshot refresh runs before a money control, so its cost can roll that control back'

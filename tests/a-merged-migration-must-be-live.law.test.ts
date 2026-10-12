@@ -53,10 +53,20 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
+import { tmpdir } from 'node:os';
 // The law parses a migration with the CHECK's own functions, never a lookalike
 // regex of its own: a guard that disagrees with the thing it guards is worse
 // than no guard.
-import { declaredObjects, declaredProofs, code } from '../scripts/ci/check-migrations-are-live.mjs';
+import {
+  code,
+  declaredObjects,
+  declaredProofs,
+  externalDeclaredProofs,
+  errorSqlState,
+  matchedByName,
+  proofIsRunnable,
+} from '../scripts/ci/check-migrations-are-live.mjs';
 import { classifyMigration } from '../scripts/ci/recording-only.mjs';
 
 const ROOT = path.resolve(__dirname, '..');
@@ -90,6 +100,51 @@ function migrations(): string[] {
 }
 
 describe('a merged migration must be live', () => {
+  it('invalidates cached file bytes after a same-length rewrite', () => {
+    const dir = fs.mkdtempSync(
+      path.join(
+        process.env.TMPDIR ||
+          (process.platform === 'darwin' ? '/Volumes/SmarterWork/agent-work' : tmpdir()),
+        'cashier-proof-cache-'
+      )
+    );
+    const name = '20990101000000_cached.sql';
+    const sql = 'SELECT 1;';
+    const file = path.join(dir, name);
+    fs.writeFileSync(file, sql);
+    const sha256 = createHash('sha256').update(sql).digest('hex');
+    const registry = { schema: 1, entries: [{ file: name, sha256, proofs: ['(SELECT 1)=1'] }] };
+    try {
+      expect(externalDeclaredProofs(sql, registry, dir)).toEqual(['(SELECT 1)=1']);
+      fs.writeFileSync(file, 'SELECT 2;');
+      expect(() => externalDeclaredProofs(sql, registry, dir)).toThrow('bytes changed');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+  it('immutable external proofs bind exact installed bytes and fail closed', () => {
+    const file = '20261007040648_solver_platform_ids_validate_uuid_shape.sql';
+    const sql = fs.readFileSync(path.join(MIGRATIONS, file), 'utf8');
+    const registry = JSON.parse(read('scripts/ci/migration-live-proofs.json'));
+    expect(declaredObjects(sql)).toEqual([]);
+    expect([...sql.matchAll(/^-- @live-proof: (.*)$/gm)]).toHaveLength(0);
+    expect(declaredProofs(sql)).toHaveLength(1);
+    expect(declaredProofs(sql)[0]).toContain('bool_and');
+    expect(declaredProofs(sql)[0]).toContain('input_bundle_id');
+    expect(proofIsRunnable(declaredProofs(sql)[0])).toBe(true);
+    for (const change of [
+      (r: any) => (r.entries[0].sha256 = '0'.repeat(64)),
+      (r: any) => (r.entries[0].file = '20990101000000_missing.sql'),
+      (r: any) => (r.entries[0].proofs = []),
+      (r: any) => (r.entries[0].proofs = ['']),
+      (r: any) => (r.entries[0].unknown = true),
+    ]) {
+      const copy = structuredClone(registry);
+      change(copy);
+      expect(() => externalDeclaredProofs(sql, copy, MIGRATIONS)).toThrow();
+    }
+    expect(() => externalDeclaredProofs(sql, { schema: 1 }, MIGRATIONS)).toThrow();
+  });
   it('decides by name, then by live objects, then by a declared proof', () => {
     expect(SRC).toContain('supabase_migrations.schema_migrations');
     // Step 2 reads the LIVE catalogue. A snapshot is what let the existing
@@ -103,6 +158,44 @@ describe('a merged migration must be live', () => {
     // Two verdicts, and only one of them is an accusation.
     expect(SRC).toContain('MERGED BUT NOT LIVE');
     expect(SRC).toContain('unverifiable');
+  });
+
+  it('a name recorded as the whole file stem matches by name, never by a freeze-sensitive proof', () => {
+    // Measured 2026-10-03: these three were installed under their full file
+    // stems, fell through to step 3, and their proofs read false during every
+    // maintenance freeze, turning the check red on main.
+    const recorded = new Set([
+      '20260927035803_certification_cleanup_removes_archived_public_user_residue',
+      'plain_slug_name',
+    ]);
+    const prefixes = new Set([...recorded].map((n) => n.slice(0, 55)));
+    expect(
+      matchedByName(
+        '20260927035803_certification_cleanup_removes_archived_public_user_residue.sql',
+        recorded,
+        prefixes
+      )
+    ).toBe(true);
+    expect(matchedByName('20990101000000_plain_slug_name.sql', recorded, prefixes)).toBe(true);
+    // A stem stored truncated still matches on its 55-character prefix.
+    const long = '20260927042756_certification_cleanup_removes_five_prearchive_public_user_residue';
+    const truncated = new Set([long.slice(0, 55)]);
+    expect(matchedByName(`${long}.sql`, truncated, truncated)).toBe(true);
+    // The same slug under ANOTHER version's stem is not this file.
+    expect(
+      matchedByName(
+        '20260927999999_certification_cleanup_removes_archived_public_user_residue_v2.sql',
+        recorded,
+        prefixes
+      )
+    ).toBe(false);
+    for (const f of [
+      '20260927035803_certification_cleanup_removes_archived_public_user_residue.sql',
+      '20260927042756_certification_cleanup_removes_five_prearchive_public_user_residue.sql',
+      '20260927045612_archive_and_retire_prearchive_certification_identity.sql',
+    ]) {
+      expect(migrations()).toContain(f);
+    }
   });
 
   it('never passes silently when it cannot ask', () => {
@@ -154,10 +247,14 @@ describe('a merged migration must be live', () => {
   it('step 3 is what catches a migration that creates nothing', () => {
     // The anon revoke creates nothing at all: it changes grants. Nothing in
     // any catalogue is named by the file, which is exactly the class that sat
-    // merged and unapplied - and the class the proof convention is for.
+    // merged and unapplied - and the class the proof convention is for. Its
+    // historical file now carries the same production-readable proof required
+    // of every newer no-object migration.
     const sql = fs.readFileSync(path.join(MIGRATIONS, CREATED_NOTHING), 'utf8');
     expect(declaredObjects(sql)).toEqual([]);
-    expect(declaredProofs(sql)).toEqual([]);
+    expect(declaredProofs(sql)).toHaveLength(1);
+    expect(declaredProofs(sql)[0]).toContain("has_function_privilege('anon'");
+    expect(proofIsRunnable(declaredProofs(sql)[0])).toBe(true);
   });
 
   it('a declared proof is read whole, and several may be declared', () => {
@@ -269,6 +366,86 @@ describe('a merged migration must be live', () => {
     // And the error that is printed does not carry the connection string,
     // which execFileSync puts in its message because it is psql's argv[1].
     expect(SRC.match(/split\(url\)\.join\('<database url>'\)/g)?.length ?? 0).toBe(2);
+  });
+
+  /**
+   * A PROOF THIS CHECK COULD NOT RUN IS NOT A PROOF THAT CAME BACK FALSE
+   * (2026-09-30).
+   *
+   * Step 3 counted any non-`true` answer - a rejection included - as evidence
+   * the migration is not live. That is right for "function ... does not
+   * exist", which is the whole reason the rule reads that way. It is wrong for
+   * "what you sent me is not SQL", and the check was manufacturing exactly
+   * that: `declaredProofs` reads ONE line, three migrations on main declare a
+   * proof spanning several comment lines, and the fragment that reaches the
+   * database cannot parse. The 2026-09-30 run reported
+   *
+   *     proof false: (SELECT count(*) FROM pg_index i  ->  rejected: ERROR: syntax error
+   *
+   * for 20260929130144 and counted it toward MERGED BUT NOT LIVE. That verdict
+   * was independently right - its two indexes really are absent from
+   * production - but the proof line was this check reading back its own
+   * truncation and calling it an answer. On a migration whose objects WERE
+   * live, the same line would have accused a correct branch of nothing at all,
+   * and this check's own header explains the cost: "a check that accuses at a
+   * 70% false rate gets switched off, which is how this estate already lost
+   * Applied Migrations Are Recorded."
+   */
+  it('refuses a proof it cannot run before it ever asks production', () => {
+    // Every truncation on main as at 2026-09-30, verbatim.
+    expect(proofIsRunnable('(SELECT count(*) FROM pg_index i')).toBe(false);
+    expect(
+      proofIsRunnable('(SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnam')
+    ).toBe(false);
+    // Prose with an apostrophe opens a literal that never closes.
+    expect(
+      proofIsRunnable(
+        'select public.fn_park_stopped_time_bank_custody(...) for 7e681bb6 with the ' +
+          "engine's attested permit -> ok, unstarted_permit_released"
+      )
+    ).toBe(false);
+    expect(proofIsRunnable('')).toBe(false);
+    expect(proofIsRunnable('(SELECT 1)) = 1')).toBe(false);
+  });
+
+  it('still runs a well-formed proof, including the shapes already on main', () => {
+    expect(proofIsRunnable('(SELECT 1) = 1')).toBe(true);
+    // Dollar quoting, which the marker test above already relies on.
+    expect(proofIsRunnable('EXISTS (SELECT 1 FROM pg_policy WHERE polname = $$p$$)')).toBe(true);
+    // A quoted identifier and a doubled quote inside a literal.
+    expect(proofIsRunnable(`(SELECT count(*) FROM "pg_class") > 0`)).toBe(true);
+    expect(proofIsRunnable("(SELECT 'it''s fine') = 'it''s fine'")).toBe(true);
+    // Non-vacuity: the real proofs in the window are overwhelmingly runnable,
+    // so this gate cannot be passing by refusing everything.
+    const declared = migrations().flatMap((f) =>
+      declaredProofs(fs.readFileSync(path.join(MIGRATIONS, f), 'utf8'))
+    );
+    expect(declared.length).toBeGreaterThanOrEqual(150);
+    const refused = declared.filter((p) => !proofIsRunnable(p));
+    expect(refused.length / declared.length).toBeLessThan(0.02);
+  });
+
+  it('a syntax error is about the text we sent, never about what production holds', () => {
+    // VERBOSITY=verbose is what makes the two distinguishable at all.
+    expect(SRC).toContain("'-v', 'VERBOSITY=verbose'");
+    expect(errorSqlState('ERROR:  42601: syntax error at or near "as"')).toBe('42601');
+    // A missing object is a different SQLSTATE and stays a failure.
+    expect(errorSqlState('ERROR:  42883: function public.fn_x() does not exist')).toBe('42883');
+    // An unrecognisable line is judged the OLD way, so a format surprise in
+    // psql cannot turn a real miss into a shrug.
+    expect(errorSqlState('ERROR:  syntax error at or near "as"')).toBeNull();
+    expect(SRC).toContain("const SYNTAX_ERROR = '42601'");
+    expect(SRC).toContain('errorSqlState(one.error) === SYNTAX_ERROR');
+  });
+
+  it('an unrunnable proof exits 2, which is neither the pass nor the accusation', () => {
+    // FAIL beats COULD-NOT-TELL beats PASS. Nothing else failing plus a proof
+    // that never ran is not a clean bill of health.
+    expect(SRC).toMatch(/if \(unrunnable\.size > 0\) \{[\s\S]*?process\.exit\(2\)/);
+    expect(SRC).toContain('COULD NOT TELL');
+    // And it is never folded into the false-proof list that drives exit 1.
+    expect(SRC).toContain('Never a false proof.');
+    expect(SRC).not.toMatch(/falseProofs[\s\S]{0,80}unrunnable/);
   });
 
   it('the negative control: neither existing check asks this question', () => {

@@ -220,6 +220,10 @@ describe('0064 actual Manager and transport proposal resolution', () => {
         ],
         error: null,
       }),
+      in: async () => ({
+        data: [{ user_id: id(4), status: 'playing', chips: 100, seat_number: 1 }],
+        error: null,
+      }),
     };
     vi.spyOn(supabase, 'from').mockReturnValue(query);
     const calls: any[] = [];

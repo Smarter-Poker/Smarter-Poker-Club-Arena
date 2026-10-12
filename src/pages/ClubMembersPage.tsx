@@ -1,10 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import {
+  useLocation,
+  useNavigate,
+  useNavigationType,
+  useParams,
+  useSearchParams,
+} from 'react-router-dom';
 import { sizedStorageUrl, generateAvatarSvg } from '../utils/avatarGenerator';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useDebounce } from '../hooks/useDebounce';
+import { useOnlineNow } from '../hooks/useProfilePresence';
 import { useMasterBusSubscriptions } from '../hooks/useMasterBusSubscription';
 import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
+import { useMasterBusBroadcastChannel } from '../hooks/useMasterBusBroadcastChannel';
+import { useRosterWalletUpdates } from '../hooks/useRosterWalletUpdates';
 import { useToast } from '../components/common/Toast';
 import { useVirtualScroll } from '../hooks/useVirtualScroll';
 import PageSkeleton from '../components/common/PageSkeleton';
@@ -24,18 +33,25 @@ import ClubRosterService, {
   type RosterSort,
   type RosterSummary,
 } from '../services/ClubRosterService';
-import {
-  purgeRosterCache,
-  readRosterCache,
-  rosterSearchKey,
-  writeRosterCache,
-} from '../lib/rosterCache';
+import { purgeRosterCache, readRosterCache, writeRosterCache } from '../lib/rosterCache';
 import { RosterSummaryCoordinator, settleRosterReadsIndependently } from '../lib/rosterLoadPolicy';
+import {
+  ROSTER_ROW_HEIGHT,
+  defaultRosterWorkspace,
+  readRosterWorkspace,
+  writeRosterWorkspace,
+  writeRosterReturnPosition,
+  takeRosterReturnPosition,
+  sameRosterQuery,
+  type RosterColumn,
+  type RosterReturnPosition,
+  type RosterWorkspace,
+} from '../lib/rosterWorkspace';
 import './ClubMembersPage.css';
 
 const ROSTER_OPERATIONS_ART = `${import.meta.env.BASE_URL}images/club-members/roster-ledger-desk-v2.webp`;
 const PAGE_SIZE = 80;
-const ROW_HEIGHT = 123;
+const ROW_HEIGHT = ROSTER_ROW_HEIGHT;
 
 const FILTER_LABEL: Record<RosterFilter, string> = {
   all: 'All Players',
@@ -59,7 +75,7 @@ const SORT_LABEL: Record<RosterSort, string> = {
   fees: 'Fees',
 };
 
-type OptionalColumn = 'downlines' | 'wallets' | 'fees' | 'activity';
+type OptionalColumn = RosterColumn;
 type SummaryFreshness = 'loading' | 'fresh' | 'stale' | 'failed';
 type RosterLoadOptions = { forceSummary?: boolean };
 
@@ -77,11 +93,15 @@ const DEFAULT_SUMMARY: RosterSummary = {
 };
 
 function readFilter(value: string | null): RosterFilter {
-  return value && value in FILTER_LABEL ? (value as RosterFilter) : 'all';
+  return value && Object.prototype.hasOwnProperty.call(FILTER_LABEL, value)
+    ? (value as RosterFilter)
+    : 'all';
 }
 
 function readSort(value: string | null): RosterSort {
-  return value && value in SORT_LABEL ? (value as RosterSort) : 'hierarchy';
+  return value && Object.prototype.hasOwnProperty.call(SORT_LABEL, value)
+    ? (value as RosterSort)
+    : 'hierarchy';
 }
 
 function chips(value: number | null): string {
@@ -103,6 +123,8 @@ export default function ClubMembersPage() {
   const { user } = useAuthUser();
   const toast = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
+  const navigationType = useNavigationType();
 
   const [resolvedClubId, setResolvedClubId] = useState<string | null>(null);
   const [summary, setSummary] = useState<RosterSummary>(DEFAULT_SUMMARY);
@@ -140,9 +162,41 @@ export default function ClubMembersPage() {
   const [lastSuccessfulSyncAt, setLastSuccessfulSyncAt] = useState<number | null>(null);
   const [resolutionAttempt, setResolutionAttempt] = useState(0);
 
-  const debouncedSearch = useDebounce(searchQuery, 260);
+  const [hydratedSearch, setHydratedSearch] = useState<string | null>('');
+  const pendingSearch = useDebounce(searchQuery, 260);
+  // Hydration is already validated and committed. Only typed edits owe a debounce.
+  const debouncedSearch = searchQuery === hydratedSearch ? searchQuery : pendingSearch;
+  const searchSettlingRef = useRef(false);
+  searchSettlingRef.current = searchQuery !== debouncedSearch;
+  const forceNextSummaryRef = useRef(false);
   const requestEpochRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
+  const activePageReadRef = useRef<AbortController | null>(null);
+  const exportAbortRef = useRef<AbortController | null>(null);
+  const exportScopeKey = `${routeClub}:${user?.id ?? ''}`;
+  const exportScopeRef = useRef({ key: exportScopeKey });
+  // Rotate during render: an old answer cannot land between a scope change
+  // and its effect, or become current again after an A/B/A navigation.
+  if (exportScopeRef.current.key !== exportScopeKey) {
+    exportScopeRef.current = { key: exportScopeKey };
+  }
+  const [workspaceScope, setWorkspaceScope] = useState<string | null>(null);
+  const [loadedQuery, setLoadedQuery] = useState<RosterWorkspace | null>(null);
+  const pendingPositionRef = useRef<RosterReturnPosition | null>(null);
+  const positionPagesRef = useRef(0);
+  const lastWrittenUrlRef = useRef<{ scope: string; query: string } | null>(null);
+  const pendingOwnUrlRef = useRef<{
+    scope: string;
+    sourceEntryKey: string;
+    sourceQuery: string;
+    targetQuery: string;
+  } | null>(null);
+  const currentWorkspace: RosterWorkspace = {
+    search: searchQuery.slice(0, 120),
+    filter,
+    sort: sortKey,
+    columns: [...columns],
+  };
   const moreAbortRef = useRef<AbortController | null>(null);
   const moreRef = useRef(false);
   const membersRef = useRef<RosterMember[]>([]);
@@ -156,19 +210,90 @@ export default function ClubMembersPage() {
     async () => undefined
   );
 
+  const wallets = useRosterWalletUpdates(
+    `${routeClub}:${user?.id ?? ''}:${searchQuery}:${filter}:${sortKey}`,
+    resolvedClubId,
+    membersRef,
+    setMembers,
+    () => setDataFreshness('stale')
+  );
+
+  const pendingOwnUrl = pendingOwnUrlRef.current;
+  const awaitingOwnUrl =
+    pendingOwnUrl?.scope === exportScopeKey &&
+    pendingOwnUrl.sourceEntryKey === location.key &&
+    pendingOwnUrl.sourceQuery === searchParams.toString();
+  const acknowledgedOwnUrl =
+    pendingOwnUrl?.scope === exportScopeKey &&
+    navigationType === 'REPLACE' &&
+    pendingOwnUrl.targetQuery === searchParams.toString() &&
+    !awaitingOwnUrl;
+  const externalWorkspaceUrl =
+    workspaceScope === exportScopeKey &&
+    lastWrittenUrlRef.current?.scope === exportScopeKey &&
+    !awaitingOwnUrl &&
+    !acknowledgedOwnUrl &&
+    (pendingOwnUrl?.scope === exportScopeKey ||
+      lastWrittenUrlRef.current.query !== searchParams.toString());
   useEffect(() => {
+    if (acknowledgedOwnUrl) pendingOwnUrlRef.current = null;
+    if (!externalWorkspaceUrl) return;
+    pendingOwnUrlRef.current = null;
+    // A new history entry can keep this page mounted. Its explicit query
+    // must be consumed before the controls write their own replacement URL.
+    setFilter(readFilter(searchParams.get('view')));
+    setSortKey(readSort(searchParams.get('sort')));
+    lastWrittenUrlRef.current = { scope: exportScopeKey, query: searchParams.toString() };
+  }, [acknowledgedOwnUrl, exportScopeKey, externalWorkspaceUrl, searchParams]);
+  useEffect(() => {
+    if (workspaceScope !== exportScopeKey || externalWorkspaceUrl || awaitingOwnUrl) return;
     const next = new URLSearchParams(searchParams);
     next.delete('q');
     if (filter === 'all') next.delete('view');
     else next.set('view', filter);
     if (sortKey === 'hierarchy') next.delete('sort');
     else next.set('sort', sortKey);
-    if (next.toString() !== searchParams.toString()) setSearchParams(next, { replace: true });
-  }, [filter, searchParams, setSearchParams, sortKey]);
+    lastWrittenUrlRef.current = { scope: exportScopeKey, query: next.toString() };
+    if (next.toString() !== searchParams.toString()) {
+      // Only one replacement is outstanding. An urgent page-load render may
+      // still see its source URL; wait for the router's acknowledgment before
+      // writing any newer control choice.
+      pendingOwnUrlRef.current = {
+        scope: exportScopeKey,
+        sourceEntryKey: location.key,
+        sourceQuery: searchParams.toString(),
+        targetQuery: next.toString(),
+      };
+      setSearchParams(next, { replace: true });
+    }
+  }, [
+    awaitingOwnUrl,
+    exportScopeKey,
+    externalWorkspaceUrl,
+    filter,
+    location.key,
+    searchParams,
+    setSearchParams,
+    sortKey,
+    workspaceScope,
+  ]);
 
   useEffect(() => {
     let active = true;
     setLoading(true);
+    setWorkspaceScope(null);
+    setLoadedQuery(null);
+    pendingOwnUrlRef.current = null;
+    pendingPositionRef.current = null;
+    positionPagesRef.current = 0;
+    const inheritedUrl =
+      lastWrittenUrlRef.current?.scope !== exportScopeKey &&
+      lastWrittenUrlRef.current?.query === searchParams.toString();
+    const explicitFilter = !inheritedUrl && searchParams.has('view');
+    const explicitSort = !inheritedUrl && searchParams.has('sort');
+    exportAbortRef.current?.abort();
+    exportAbortRef.current = null;
+    setIsExporting(false);
     abortRef.current?.abort();
     moreAbortRef.current?.abort();
     summaryAbortRef.current?.abort();
@@ -182,6 +307,7 @@ export default function ClubMembersPage() {
     directoryAvailableRef.current = false;
     setDirectoryAvailable(false);
     summaryCoordinatorRef.current.reset();
+    forceNextSummaryRef.current = false;
     summaryAvailableRef.current = false;
     setSummary(DEFAULT_SUMMARY);
     setSummaryAvailable(false);
@@ -211,32 +337,43 @@ export default function ClubMembersPage() {
     void resolveClubUUIDStrict(routeClub)
       .then((id) => {
         if (!active) return;
-        setResolvedClubId(id);
+        const saved = user?.id ? readRosterWorkspace(user.id, id) : null;
+        const workspace = saved ?? defaultRosterWorkspace();
+        if (explicitFilter) workspace.filter = readFilter(searchParams.get('view'));
+        if (explicitSort) workspace.sort = readSort(searchParams.get('sort'));
+        setFilter(workspace.filter);
+        setSortKey(workspace.sort);
+        setColumns(new Set(workspace.columns));
+        setHydratedSearch(workspace.search);
+        setSearchQuery(workspace.search);
         if (user?.id) {
-          try {
-            const rawSearch = sessionStorage.getItem(rosterSearchKey(user.id, id));
-            const savedSearch = rawSearch ? (JSON.parse(rawSearch) as string) : '';
-            if (savedSearch) setSearchQuery(savedSearch.slice(0, 120));
-            if (filter === 'all' && sortKey === 'hierarchy' && !savedSearch) {
-              const cached = readRosterCache(user.id, id);
-              if (cached) {
-                membersRef.current = cached.rows;
-                setMembers(cached.rows);
-                directoryAvailableRef.current = true;
-                setDirectoryAvailable(true);
-                summaryAvailableRef.current = true;
-                setSummary(cached.summary);
-                setSummaryAvailable(true);
-                setSummaryFreshness('stale');
-                setFilteredTotal(cached.summary.counts.total);
-                setLastSuccessfulSyncAt(cached.cachedAt);
-                setDataFreshness('stale');
-              }
+          const position = takeRosterReturnPosition(user.id, id, location.key);
+          if (
+            navigationType === 'POP' &&
+            position &&
+            sameRosterQuery(position.workspace, workspace)
+          ) {
+            pendingPositionRef.current = position;
+          }
+          if (workspace.filter === 'all' && workspace.sort === 'hierarchy' && !workspace.search) {
+            const cached = readRosterCache(user.id, id);
+            if (cached) {
+              membersRef.current = cached.rows;
+              setMembers(cached.rows);
+              directoryAvailableRef.current = true;
+              setDirectoryAvailable(true);
+              summaryAvailableRef.current = true;
+              setSummary(cached.summary);
+              setSummaryAvailable(true);
+              setSummaryFreshness('stale');
+              setFilteredTotal(cached.summary.counts.total);
+              setLastSuccessfulSyncAt(cached.cachedAt);
+              setDataFreshness('stale');
             }
-          } catch {
-            // Session storage is optional.
           }
         }
+        setWorkspaceScope(exportScopeKey);
+        setResolvedClubId(id);
       })
       .catch((error) => {
         reportError(error, 'ClubMembersPage.resolveClub');
@@ -251,28 +388,39 @@ export default function ClubMembersPage() {
     return () => {
       active = false;
     };
-    // Filter and sort are intentionally not reset when the same URL re-resolves.
+    // Each resolved account/club hydrates its own validated workspace.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resolutionAttempt, routeClub, user?.id]);
 
   useEffect(() => {
-    if (!resolvedClubId || !user?.id) return;
-    try {
-      const key = rosterSearchKey(user.id, resolvedClubId);
-      if (searchQuery) sessionStorage.setItem(key, JSON.stringify(searchQuery.slice(0, 120)));
-      else sessionStorage.removeItem(key);
-    } catch {
-      // Search continuity is optional; unlike URL state it never leaves the tab.
-    }
-  }, [resolvedClubId, searchQuery, user?.id]);
+    if (!resolvedClubId || !user?.id || workspaceScope !== exportScopeKey) return;
+    writeRosterWorkspace(user.id, resolvedClubId, {
+      search: searchQuery.slice(0, 120),
+      filter,
+      sort: sortKey,
+      columns: [...columns],
+    });
+  }, [
+    columns,
+    exportScopeKey,
+    filter,
+    resolvedClubId,
+    searchQuery,
+    sortKey,
+    user?.id,
+    workspaceScope,
+  ]);
 
   const loadFirstPage = useCallback(
     async (options: RosterLoadOptions = {}) => {
-      if (!resolvedClubId) return;
+      if (!resolvedClubId || workspaceScope !== exportScopeKey || searchSettlingRef.current) return;
+      const forceSummary = options.forceSummary === true || forceNextSummaryRef.current;
+      forceNextSummaryRef.current = false;
       const epoch = ++requestEpochRef.current;
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
+      activePageReadRef.current = controller;
       moreAbortRef.current?.abort();
       setLoading(true);
       setLoadError(false);
@@ -294,8 +442,9 @@ export default function ClubMembersPage() {
             }
           );
         },
-        { force: options.forceSummary === true }
+        { force: forceSummary }
       );
+      const walletRevision = wallets.snapshot();
       const pageRequest = ClubRosterService.getRosterPage(resolvedClubId, {
         search: debouncedSearch,
         filter,
@@ -303,6 +452,7 @@ export default function ClubMembersPage() {
         limit: PAGE_SIZE,
         signal: controller.signal,
       }).finally(() => {
+        if (activePageReadRef.current === controller) activePageReadRef.current = null;
         if (isCurrent()) {
           setLoading(false);
           setIsRefreshing(false);
@@ -348,8 +498,10 @@ export default function ClubMembersPage() {
         },
         onPage: (page) => {
           if (!isCurrent()) return;
-          membersRef.current = page.items;
-          setMembers(page.items);
+          setLoadedQuery({ search: debouncedSearch, filter, sort: sortKey, columns: [] });
+          const nextRows = wallets.reconcile(page.items, walletRevision);
+          membersRef.current = nextRows;
+          setMembers(nextRows);
           directoryAvailableRef.current = true;
           setDirectoryAvailable(true);
           setCursor(page.next_cursor);
@@ -395,10 +547,21 @@ export default function ClubMembersPage() {
         filter === 'all' &&
         sortKey === 'hierarchy'
       ) {
-        writeRosterCache(user.id, resolvedClubId, pageResult.value.items, summaryResult.value);
+        writeRosterCache(user.id, resolvedClubId, membersRef.current, summaryResult.value);
+      }
+      // A structural event may arrive after this read started. Preserve its
+      // invalidation, but let the healthy page publish before reading again.
+      // Query changes already consume the same flag in their own first read.
+      if (
+        isCurrent() &&
+        pageResult.status === 'fulfilled' &&
+        forceNextSummaryRef.current &&
+        !searchSettlingRef.current
+      ) {
+        void latestLoadRef.current({ forceSummary: true });
       }
     },
-    [debouncedSearch, filter, resolvedClubId, sortKey, user?.id]
+    [debouncedSearch, exportScopeKey, filter, resolvedClubId, sortKey, user?.id, workspaceScope]
   );
 
   useEffect(() => {
@@ -447,6 +610,19 @@ export default function ClubMembersPage() {
   }, [loadFirstPage, resolvedClubId]);
 
   useEffect(() => {
+    // Reverting to the already committed query can cancel the debounce without
+    // changing loadFirstPage. That still owes the deferred structural read.
+    if (
+      searchQuery !== debouncedSearch ||
+      !forceNextSummaryRef.current ||
+      activePageReadRef.current
+    )
+      return;
+    forceNextSummaryRef.current = false;
+    void latestLoadRef.current({ forceSummary: true });
+  }, [debouncedSearch, searchQuery]);
+
+  useEffect(() => {
     if (!loading || members.length > 0) {
       setLoadSlow(false);
       return;
@@ -476,6 +652,13 @@ export default function ClubMembersPage() {
     if (!resolvedClubId || refreshTimerRef.current) return;
     refreshTimerRef.current = setTimeout(() => {
       refreshTimerRef.current = null;
+      // The pending query owns its next read. Starting the old search here
+      // would be aborted as soon as its debounce commits. Carry the structural
+      // summary invalidation into that same new query instead.
+      if (searchSettlingRef.current || activePageReadRef.current) {
+        forceNextSummaryRef.current = true;
+        return;
+      }
       void latestLoadRef.current({ forceSummary: true });
     }, 1200);
   }, [resolvedClubId]);
@@ -486,13 +669,17 @@ export default function ClubMembersPage() {
       abortRef.current?.abort();
       moreAbortRef.current?.abort();
       summaryAbortRef.current?.abort();
+      exportAbortRef.current?.abort();
     },
     []
   );
 
   useMasterBusSubscriptions(
     ['CLUB_JOINED', 'CLUB_LEFT', 'MEMBER_ROLE_CHANGED'],
-    scheduleStructuralRefresh,
+    (payload) => {
+      const event = payload as { clubId?: string } | null;
+      if (event?.clubId === resolvedClubId) scheduleStructuralRefresh();
+    },
     { debounce: 800 }
   );
 
@@ -502,12 +689,38 @@ export default function ClubMembersPage() {
     filter: resolvedClubId ? `club_id=eq.${resolvedClubId}` : null,
     event: '*',
     onPayload: (payload) => {
-      const value = payload as { eventType?: string; new?: { status?: string } } | null;
-      const status = value?.new?.status;
+      const value = payload as {
+        eventType?: string;
+        new?: Record<string, unknown>;
+        old?: Record<string, unknown>;
+      } | null;
+      const next = value?.new;
+      if (value?.eventType === 'UPDATE' && next) wallets.membership(next);
+      const previous = value?.old;
+      const member = membersRef.current.find((row) => row.user_id === next?.user_id);
+      // WAL's default old image has only keys. Compare a full old image when
+      // present, otherwise the displayed identity. Wallet churn alone must not
+      // abort a healthy directory load.
+      const structural = ['role', 'status', 'agent_id', 'nickname', 'notes', 'display_name'].some(
+        (field) =>
+          next && previous && field in next && field in previous && next[field] !== previous[field]
+      );
+      const displayedIdentityChanged =
+        member &&
+        next &&
+        ((typeof next.role === 'string' && next.role !== member.role) ||
+          ('agent_id' in next && next.agent_id !== member.upline_user_id) ||
+          (member.can_view_notes &&
+            (('nickname' in next && next.nickname !== member.nickname) ||
+              ('notes' in next && next.notes !== member.remark))));
       if (
         value?.eventType === 'INSERT' ||
         value?.eventType === 'DELETE' ||
-        (value?.eventType === 'UPDATE' && (status === 'banned' || status === 'suspended'))
+        (value?.eventType === 'UPDATE' &&
+          (structural ||
+            displayedIdentityChanged ||
+            next?.status === 'banned' ||
+            next?.status === 'suspended'))
       )
         scheduleStructuralRefresh();
     },
@@ -528,6 +741,37 @@ export default function ClubMembersPage() {
     enabled: !!resolvedClubId,
   });
 
+  const walletChannelDegradedRef = useRef(false);
+  useMasterBusBroadcastChannel({
+    channelName: resolvedClubId ? `club-roster-wallet:${resolvedClubId}` : null,
+    event: 'wallet_changed',
+    enabled: !!resolvedClubId && !!user?.id,
+    onPayload: (value) => {
+      const payload = (value as { payload?: { club_id?: string; user_id?: string } } | null)
+        ?.payload;
+      if (payload?.club_id === resolvedClubId && typeof payload.user_id === 'string') {
+        wallets.refresh(payload.user_id);
+      }
+    },
+    onSubscriptionError: () => {
+      walletChannelDegradedRef.current = true;
+      setDataFreshness('stale');
+    },
+    onSubscriptionStatus: (status) => {
+      if (status !== 'SUBSCRIBED') return;
+      const recovered = walletChannelDegradedRef.current;
+      walletChannelDegradedRef.current = false;
+      if (recovered) wallets.refresh();
+    },
+  });
+  useMasterBusSubscriptions(['BALANCE_UPDATED'], (value) => {
+    const payload = value as { clubId?: string; userId?: string } | null;
+    if (payload?.clubId && payload.clubId !== resolvedClubId) return;
+    if (payload?.clubId === resolvedClubId || typeof payload?.userId === 'string') {
+      wallets.refresh(payload?.userId);
+    }
+  });
+
   const loadMore = useCallback(async () => {
     if (!resolvedClubId || !cursor || !hasMore || moreRef.current) return;
     moreRef.current = true;
@@ -537,6 +781,7 @@ export default function ClubMembersPage() {
     moreAbortRef.current?.abort();
     moreAbortRef.current = controller;
     try {
+      const walletRevision = wallets.snapshot();
       const page = await ClubRosterService.getRosterPage(resolvedClubId, {
         search: debouncedSearch,
         filter,
@@ -548,15 +793,22 @@ export default function ClubMembersPage() {
       if (controller.signal.aborted || epoch !== requestEpochRef.current) return;
       setMembers((current) => {
         const known = new Set(current.map((row) => row.user_id));
-        const next = [...current, ...page.items.filter((row) => !known.has(row.user_id))];
+        const next = [
+          ...current,
+          ...wallets.reconcile(page.items, walletRevision).filter((row) => !known.has(row.user_id)),
+        ];
         membersRef.current = next;
         return next;
       });
+      if (page.items.length === 0 || JSON.stringify(page.next_cursor) === JSON.stringify(cursor)) {
+        pendingPositionRef.current = null;
+      }
       setCursor(page.next_cursor);
       setHasMore(page.has_more);
       setFilteredTotal(page.filtered_total);
     } catch (error) {
       if (!abortLike(error)) {
+        pendingPositionRef.current = null;
         reportError(error, 'ClubMembersPage.loadMore');
         toast.error('Could Not Load More Players');
       }
@@ -577,8 +829,90 @@ export default function ClubMembersPage() {
     resetVirtual();
   }, [debouncedSearch, filter, resetVirtual, sortKey]);
   useEffect(() => {
-    if (hasMore && virtual.endIndex >= members.length - 8) void loadMore();
+    const position = pendingPositionRef.current;
+    if (!position) return;
+    if (loadError || accessDenied || dataFreshness === 'failed') {
+      pendingPositionRef.current = null;
+      return;
+    }
+    if (
+      workspaceScope !== exportScopeKey ||
+      !sameRosterQuery(position.workspace, currentWorkspace)
+    ) {
+      pendingPositionRef.current = null;
+      return;
+    }
+    if (
+      searchQuery !== debouncedSearch ||
+      loading ||
+      isLoadingMore ||
+      !loadedQuery ||
+      !sameRosterQuery(loadedQuery, currentWorkspace) ||
+      dataFreshness !== 'fresh'
+    )
+      return;
+    const node = virtual.containerRef.current;
+    const viewportHeight = node?.clientHeight || 696;
+    const requiredRows = Math.ceil((position.viewportTop + viewportHeight) / ROW_HEIGHT);
+    if (hasMore && members.length < requiredRows) {
+      if (positionPagesRef.current >= Math.ceil(requiredRows / PAGE_SIZE)) {
+        pendingPositionRef.current = null;
+        return;
+      }
+      positionPagesRef.current += 1;
+      void loadMore();
+      return;
+    }
+    if (node) {
+      node.scrollTop = Math.min(
+        position.viewportTop,
+        Math.max(0, node.scrollHeight - viewportHeight)
+      );
+      node.dispatchEvent(new Event('scroll'));
+    }
+    window.scrollTo({ top: position.windowTop, behavior: 'instant' });
+    pendingPositionRef.current = null;
+  }, [
+    accessDenied,
+    dataFreshness,
+    debouncedSearch,
+    exportScopeKey,
+    filter,
+    hasMore,
+    isLoadingMore,
+    loadError,
+    loadMore,
+    loadedQuery,
+    loading,
+    members.length,
+    searchQuery,
+    sortKey,
+    workspaceScope,
+  ]);
+  useEffect(() => {
+    if (!pendingPositionRef.current && hasMore && virtual.endIndex >= members.length - 8)
+      void loadMore();
   }, [hasMore, loadMore, members.length, virtual.endIndex]);
+
+  // Default WAL old images cannot identify an off-page promotion. The
+  // already-authorized, persisted audit event carries its structural cause;
+  // wallet traffic never enters this lane. Existing RLS remains authoritative.
+  useMasterBusChannel({
+    channelName: resolvedClubId ? `club-members-audit-${resolvedClubId}` : null,
+    table: 'audit_trail',
+    filter: resolvedClubId ? `club_id=eq.${resolvedClubId}` : null,
+    event: 'INSERT',
+    onPayload: (payload) => {
+      const row = (payload as { new?: Record<string, unknown> } | null)?.new;
+      if (
+        row?.club_id === resolvedClubId &&
+        row?.target_type === 'club_member' &&
+        ['set_member_role', 'set_member_status', 'update_member_notes'].includes(String(row.action))
+      )
+        scheduleStructuralRefresh();
+    },
+    enabled: !!resolvedClubId && ['owner', 'co_owner', 'admin'].includes(summary.viewer_role),
+  });
 
   const canUseFinancialViews = summary.capabilities.can_view_financials;
   const isAgent = AGENT_ROLES.includes(summary.viewer_role);
@@ -623,9 +957,32 @@ export default function ClubMembersPage() {
 
   const openMember = useCallback(
     (userId: string) => {
-      if (routeClub) navigate(`/clubs/${routeClub}/members/${userId}`);
+      if (!routeClub || workspaceScope !== exportScopeKey) return;
+      if (resolvedClubId && user?.id) {
+        writeRosterWorkspace(user.id, resolvedClubId, currentWorkspace);
+        writeRosterReturnPosition(user.id, resolvedClubId, {
+          version: 1,
+          entryKey: location.key,
+          workspace: currentWorkspace,
+          viewportTop: virtual.containerRef.current?.scrollTop ?? 0,
+          windowTop: window.scrollY,
+        });
+      }
+      navigate(`/clubs/${routeClub}/members/${userId}`);
     },
-    [navigate, routeClub]
+    [
+      columns,
+      exportScopeKey,
+      filter,
+      location.key,
+      navigate,
+      resolvedClubId,
+      routeClub,
+      searchQuery,
+      sortKey,
+      user?.id,
+      workspaceScope,
+    ]
   );
 
   const handleExport = useCallback(async () => {
@@ -633,16 +990,31 @@ export default function ClubMembersPage() {
       !resolvedClubId ||
       !summary.capabilities.can_export ||
       isExporting ||
+      exportAbortRef.current !== null ||
       searchQuery.trim() !== debouncedSearch.trim()
     )
       return;
+    const controller = new AbortController();
+    const scope = exportScopeRef.current;
+    exportAbortRef.current = controller;
+    const ownsExport = () =>
+      !controller.signal.aborted &&
+      exportScopeRef.current === scope &&
+      exportAbortRef.current === controller;
+    // These describe this request, even if the viewer changes controls while
+    // the authorized export is being prepared. They are not a snapshot time.
+    const exportQuery = { search: debouncedSearch.trim().slice(0, 120), filter, sort: sortKey };
+    const exportSelection = selected.size ? [...selected] : null;
+    const requestedAt = new Date().toISOString();
     setIsExporting(true);
     try {
       const result = await ClubRosterService.exportRoster(
         resolvedClubId,
-        { search: debouncedSearch, filter, sort: sortKey },
-        selected.size ? [...selected] : null
+        exportQuery,
+        exportSelection,
+        controller.signal
       );
+      if (!ownsExport()) return;
       /* AN EMPTY ROSTER PRODUCES NO FILE. `exportToCSV` returns early when the
          row array is empty (src/lib/export.ts), so "0 Players Exported" was a
          success message for a download that never started. ClubFinancialsPage
@@ -652,18 +1024,38 @@ export default function ClubMembersPage() {
         toast.error('There Are No Players To Export For That Filter.');
         return;
       }
+      const completedAt = new Date().toISOString();
       exportToCSV(
-        result.rows.map((row) => ({ ...row, role: roleLabel(row.role as any) })),
+        result.rows.map((row) => ({
+          ...row,
+          role: roleLabel(row.role as any),
+          export_club_id: resolvedClubId,
+          export_scope: exportSelection ? 'selected_matching' : 'all_matching',
+          export_filter: exportQuery.filter,
+          export_sort: exportQuery.sort,
+          export_search: exportQuery.search,
+          export_selected_count: exportSelection?.length ?? 0,
+          export_row_count: result.row_count,
+          export_requested_at_utc: requestedAt,
+          export_completed_at_utc: completedAt,
+          export_audit_id: result.audit_id,
+          export_activity_period: 'All Recorded Activity',
+          export_units: 'Club Chips',
+        })),
         `club-roster-${new Date().toISOString().slice(0, 10)}.csv`
       );
       toast.success(`${result.row_count.toLocaleString()} Players Exported`);
     } catch (error) {
+      if (!ownsExport()) return;
       reportError(error, 'ClubMembersPage.export');
       // The RPC's own refusal (the 5,000-selection cap, for one) is the
       // useful part of the message.
       toast.error(safeErrorMessage(error, 'Could Not Export The Roster'));
     } finally {
-      setIsExporting(false);
+      if (ownsExport()) {
+        exportAbortRef.current = null;
+        setIsExporting(false);
+      }
     }
   }, [
     debouncedSearch,
@@ -774,7 +1166,10 @@ export default function ClubMembersPage() {
             maxLength={120}
             autoComplete="off"
             spellCheck={false}
-            onChange={(event) => setSearchQuery(event.target.value)}
+            onChange={(event) => {
+              setHydratedSearch(null);
+              setSearchQuery(event.target.value);
+            }}
           />
         </label>
 
@@ -872,6 +1267,48 @@ export default function ClubMembersPage() {
           )}
         </div>
 
+        {summary.capabilities.can_export && (
+          <p className="members-count" role="note" aria-label="Export Scope">
+            <strong>Export Scope: </strong>
+            <span>
+              {selected.size
+                ? 'Selected Players Matching The Current Filter And Search'
+                : 'All Matching Players Across Every Page'}
+            </span>{' '}
+            Includes Authorized Fields Regardless Of Visible Columns.
+          </p>
+        )}
+        <details className="members-columns">
+          <summary>Metric Definitions</summary>
+          <div className="members-count">
+            <p>Downlines: Players In The Recursive Downline, Excluding This Player.</p>
+            <p>
+              Player Wallet: Current Club Member Chip Balance. Agent Wallet: Current Active Agent
+              Chip Balance.
+            </p>
+            <p>
+              Individual Fees: Fees Generated By This Player. Total Fees: Fees Generated By The
+              Recursive Downline Only, Excluding This Player.
+            </p>
+            <p>
+              Wallets And Fees Are In Club Chips. Fees Cover All Recorded Activity, With No Date
+              Filter On This Roster.
+            </p>
+            <p>
+              Recorded Activity Follows Hand History Retention. Missing History Is Not Included.
+            </p>
+            <p>
+              Recent Activity Uses Login Time When Available, Otherwise Presence Or Club Activity
+              Time. Online Includes Players At A Live Table Or With Fresh Presence.
+            </p>
+            <p>
+              Select Loaded Selects Only Players Already Loaded. Export Without A Selection Reads
+              All Authorized Matches Across Every Page. A Selection Is Further Limited By The
+              Current Filter And Search.
+            </p>
+          </div>
+        </details>
+
         <RosterConnectionStatus
           state={connectionState}
           hasData={hasVerifiedDirectory}
@@ -933,7 +1370,14 @@ export default function ClubMembersPage() {
         ) : members.length === 0 ? (
           <EmptyRoster filter={filter} searchQuery={searchQuery} />
         ) : (
-          <div ref={virtual.containerRef} className="members-viewport" style={{ height: 696 }}>
+          <div
+            ref={virtual.containerRef}
+            className="members-viewport"
+            style={{ height: 696 }}
+            onScroll={() => {
+              pendingPositionRef.current = null;
+            }}
+          >
             <div aria-hidden="true" style={{ height: virtual.paddingTop }} />
             {virtual.visibleItems.map((member, index) => (
               <MemberRow
@@ -1028,10 +1472,14 @@ function MemberRow({
   columns: Set<OptionalColumn>;
 }) {
   const initial = (member.alias || '?')[0]?.toUpperCase() ?? '?';
-  const status = member.is_seated ? 'At A Table' : member.is_online ? 'Online' : 'Offline';
+  /* The roster's is_online is "seated OR fresh presence"; off a seat it is the
+     presence door's answer, re-asked every minute while the row is shown so
+     it goes dark when the heartbeat does (presence-has-one-definition law). */
+  const online = useOnlineNow(member.user_id, member.is_online);
+  const status = member.is_seated ? 'At A Table' : online ? 'Online' : 'Offline';
   return (
     <div
-      className={`member-row${member.is_seated ? ' member-row--seated' : member.is_online ? ' member-row--online' : ''}`}
+      className={`member-row${member.is_seated ? ' member-row--seated' : online ? ' member-row--online' : ''}`}
       role="listitem"
       aria-posinset={position}
       aria-setsize={total}
@@ -1086,7 +1534,7 @@ function MemberRow({
             )}
             {member.is_seated ? (
               <span className="member-seated">At Table</span>
-            ) : member.is_online ? (
+            ) : online ? (
               <span className="member-online">Online</span>
             ) : columns.has('activity') && member.last_login ? (
               <span className="member-seen">{dormancy(member.last_login)}</span>

@@ -77,7 +77,7 @@ export default function CreateUnionModal({ onClose, onSuccess }: CreateUnionModa
     if (!node) return;
     const focusable = Array.from(
       node.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'
+        'button:not([disabled]), input:not([disabled]):not([tabindex="-1"]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'
       )
     ).filter((el) => el.offsetParent !== null || el === document.activeElement);
     if (focusable.length === 0) return;

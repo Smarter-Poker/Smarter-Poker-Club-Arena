@@ -34,7 +34,23 @@ interface VIPMembershipPlateProps {
   status: VipStatus;
   expiresAt: Date | null;
   limits: VIPMonthlyLimits;
-  points: { current: number; lifetime: number; monthly: number; activeStreak: number };
+  /**
+   * The only two VIP point figures the platform computes, both read from
+   * `vip_points`. A `monthly` and an `activeStreak` member used to be
+   * required here and printed as "This Month" and "Active Streak" below;
+   * `vip_points` has no such column and nothing on the client ever set
+   * them, so both always printed a fabricated zero. Removed 2026-09-30 -
+   * see the VIPPage comment on `vipPoints` for the full reasoning.
+   */
+  points: { current: number; lifetime: number };
+  /**
+   * Whether the `vip_points` read behind `points.current` and `points.lifetime`
+   * actually answered. 'error' means it did not, and those two figures print
+   * "Unavailable" rather than a zero the player would read as a settled
+   * balance (CLAUDE.md 10.86 rule 1). Optional, and absent behaves as 'ready',
+   * so a caller holding points from somewhere else is unaffected.
+   */
+  pointsState?: 'loading' | 'ready' | 'error';
 }
 
 const MEMBERSHIP_LABEL: Record<VipStatus, string> = {
@@ -54,9 +70,14 @@ export const VIPMembershipPlate: React.FC<VIPMembershipPlateProps> = ({
   expiresAt,
   limits,
   points,
+  pointsState = 'ready',
 }) => {
   const isMember = status !== 'none';
   const isLifetime = status === 'lifetime';
+  /* The two figures the vip_points read owns. When that read could not answer,
+     they say so: a zero here is a player who has spent everything they earned,
+     which is a different and much more discouraging statement. */
+  const pointsUnknown = pointsState === 'error';
 
   const allowances = [
     {
@@ -192,22 +213,16 @@ export const VIPMembershipPlate: React.FC<VIPMembershipPlateProps> = ({
           <dl className="vmp__points" aria-label="VIP Points">
             <div>
               <dt>Points</dt>
-              <dd>{fmt(points.current)}</dd>
-            </div>
-            <div>
-              <dt>This Month</dt>
-              <dd>{fmt(points.monthly)}</dd>
+              <dd>{pointsUnknown ? 'Unavailable' : fmt(points.current)}</dd>
             </div>
             <div>
               <dt>Lifetime</dt>
-              <dd>{fmt(points.lifetime)}</dd>
+              <dd>{pointsUnknown ? 'Unavailable' : fmt(points.lifetime)}</dd>
             </div>
-            <div>
-              <dt>Active Streak</dt>
-              <dd>
-                {fmt(points.activeStreak)} <span className="vmp__unit">Days</span>
-              </dd>
-            </div>
+            {/* "This Month" and "Active Streak" stood here and always read
+                zero. Neither had any writer, on the client or in the
+                database. Removed 2026-09-30 with the state fields behind
+                them, so the plate now prints only what vip_points answers. */}
           </dl>
         </header>
 

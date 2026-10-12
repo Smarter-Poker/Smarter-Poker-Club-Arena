@@ -12,6 +12,7 @@ import type {
   DeepHorseDecisionRequest,
 } from '../../engine/horseDecision/protocol.js';
 import type { HorseDecision } from '../../types.js';
+import { HORSE_DECISION_READ_FRAME_MAX_BYTES } from '../../engine/HorseDecisionReadFrame.js';
 
 export interface HorseRetainedEffectsQualification {
   status: 'qualified' | 'unavailable' | 'invalid';
@@ -45,7 +46,9 @@ export type HorseRetainedPlanContext =
 
 /** Preserve v1 under its original rules, never upgrade it from request shape.
  * New-present markers are checked against the original retained request; a
- * v2 frame without those markers cannot silently enter legacy qualification. */
+ * allocated v2/v3 frame without those markers cannot enter legacy qualification.
+ * A contextless v3 read codec remains a legacy plan capture, not allocated proof.
+ * Full frame digest, actor and body validation remains with the replay reader. */
 export function horseRetainedPlanContext(
   capture: unknown,
   request: FastHorseDecisionRequest | DeepHorseDecisionRequest
@@ -54,16 +57,28 @@ export function horseRetainedPlanContext(
   const value = capture as Record<string, unknown>;
   const hasContext = Object.hasOwn(value, 'planContext');
   const hasBinding = Object.hasOwn(value, 'planBinding');
-  const frame = value.readFrame as { version?: unknown } | null | undefined;
-  if (!hasContext && !hasBinding)
-    return frame?.version === 'horse-decision-reads-v2' ? { kind: 'invalid' } : { kind: 'legacy' };
+  const frame = value.readFrame as { version?: unknown; json?: unknown } | null | undefined;
+  let allocatedFrame = frame?.version === 'horse-decision-reads-v2';
+  if (frame?.version === 'horse-decision-reads-v3') {
+    if (typeof frame.json !== 'string' || frame.json.length > HORSE_DECISION_READ_FRAME_MAX_BYTES)
+      return { kind: 'invalid' };
+    try {
+      const body = JSON.parse(frame.json);
+      if (!body || typeof body !== 'object' || body.version !== frame.version)
+        return { kind: 'invalid' };
+      allocatedFrame = Object.hasOwn(body, 'planContext');
+    } catch {
+      return { kind: 'invalid' };
+    }
+  }
+  if (!hasContext && !hasBinding) return allocatedFrame ? { kind: 'invalid' } : { kind: 'legacy' };
   if (
     !hasContext ||
     !horsePlanContextMatchesRequest(value.planContext, request) ||
     (request.type === 'DECIDE_FAST'
       ? !hasBinding || !horsePlanBatchBindingMatchesRequest(value.planBinding, request)
       : hasBinding) ||
-    (frame != null && frame.version !== 'horse-decision-reads-v2')
+    (frame != null && !allocatedFrame)
   )
     return { kind: 'invalid' };
   return { kind: 'current', context: value.planContext };

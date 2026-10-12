@@ -58,10 +58,14 @@ jobs:
       should_run: ${{ steps.origin.outputs.should_run }}
       engine_trigger_sha: ${{ steps.origin.outputs.engine_trigger_sha }}
       client_target_sha: ${{ steps.client-target.outputs.sha }}
+      verification_sha: ${{ steps.client-target.outputs.verification_sha }}
     steps:
       - name: Checkout trusted publication verification
         if: github.event_name == 'workflow_run'
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          filter: blob:none
       # workflow_run.conclusion covers the whole publisher, including the
       # optional Capgo job. A Capgo failure after a verified web publish must
       # never suppress web E2E, so read the exact origin job and its proof step.
@@ -97,6 +101,46 @@ jobs:
           const payload = JSON.parse(fs.readFileSync(file, 'utf8'));
           if (!Array.isArray(payload.jobs)) throw new Error('The source jobs response is malformed.');
           const jobs = payload.jobs.filter((entry) => entry?.name === 'publish-to-origin');
+          // A PUBLISHER THAT NEVER PUBLISHED IS NOT A DEFECT ON PRODUCTION.
+          //
+          // publish-club-arena cancels in progress when a newer merge arrives,
+          // and on 2026-09-30 merges were landing every few minutes. Run
+          // 36749429418 was cancelled while still queued and produced ZERO
+          // jobs, so this read said `Expected one latest publish-to-origin
+          // job, received 0` and the certificate went red - twice in thirty
+          // seconds (36749436277, 36749498583), both before a single browser
+          // started. Nothing had gone wrong: a newer publisher had taken over,
+          // and its own certificate is the one that means anything.
+          //
+          // So when no publish-to-origin job exists AND every job the source
+          // run did produce ended cancelled or skipped, nothing reached the
+          // origin and there is nothing to certify. Stand down without a
+          // verdict: should_run is never written, so every downstream job
+          // skips and this run occupies no production lock.
+          //
+          // This deliberately cannot hide a real publish. A source run holding
+          // any job that actually ran, with no publish-to-origin among them,
+          // is the renamed-or-missing-job hole and still throws below. The
+          // source run's own top-level conclusion is still never consulted -
+          // an optional Capgo failure must not suppress web E2E.
+          if (payload.total_count !== payload.jobs.length) throw new Error('Source job metadata is incomplete.');
+          const retained = payload.jobs.filter((entry) => entry?.name === 'retain-runtime');
+          const retentionSucceeded = retained.length === 1 && retained[0].status === 'completed' && retained[0].conclusion === 'success' &&
+            ['Verify both origins still serve the qualified immutable runtime', 'Record qualified retained runtime'].every((name) =>
+              (retained[0].steps ?? []).filter((entry) => entry.name === name && entry.status === 'completed' && entry.conclusion === 'success').length === 1);
+          if (retentionSucceeded) {
+            if (jobs.length !== 1 || jobs[0].conclusion !== 'skipped') throw new Error('Retention cannot coexist with an origin transaction.');
+            fs.appendFileSync(output, 'should_run=true\nretained=true\n');
+          } else {
+          const inconclusive = (entry) =>
+            entry?.conclusion === 'cancelled' || entry?.conclusion === 'skipped';
+          const superseded = jobs.length === 0 && payload.jobs.every(inconclusive);
+          if (superseded) {
+            console.log(
+              'The source publisher was superseded before it reached the origin; ' +
+                'nothing was published, so this run has nothing to certify.'
+            );
+          } else {
           if (jobs.length !== 1) {
             throw new Error(`Expected one latest publish-to-origin job, received ${jobs.length}.`);
           }
@@ -132,6 +176,8 @@ jobs:
             );
           }
           fs.appendFileSync(output, 'should_run=true\n');
+          }
+          }
           NODE
 
       # The publisher selects current main, which can be newer than its trigger.
@@ -139,15 +185,35 @@ jobs:
       # a PR artifact or whichever newer SHA happens to be live now. If a later
       # publisher has superseded it, the exact live comparison still refuses.
       - name: Resolve the exact client artifact selected by this publisher
-        if: github.event_name == 'workflow_run'
+        # A STOOD-DOWN PUBLISHER HAS NO ARTIFACT (2026-10-02). When the origin
+        # verdict above stands down for a superseded publisher it never writes
+        # should_run, so every downstream job skips - but this step still ran,
+        # asked the cancelled run for its client artifact, found 0 and turned
+        # the stand-down red (37021105028, 37021996055, 37027174306,
+        # 37043492278, 37045423284). It only resolves a publisher that ran.
+        if: github.event_name == 'workflow_run' && steps.origin.outputs.should_run == 'true'
         id: client-target
         env:
           GH_TOKEN: ${{ github.token }}
           SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
           SOURCE_TRIGGER_SHA: ${{ github.event.workflow_run.head_sha }}
           REPOSITORY_ID: ${{ github.repository_id }}
+          RETAINED_RUNTIME: ${{ steps.origin.outputs.retained }}
         run: |
           set -euo pipefail
+          if [ "$RETAINED_RUNTIME" = 'true' ]; then
+            # The receipt is a separate same-run artifact, never a new dist.
+            timeout 30s gh api "repos/${{ github.repository }}/actions/runs/$SOURCE_RUN_ID/artifacts?per_page=100" \
+              | node scripts/ci/client-runtime-retention.mjs receipt-artifact "$SOURCE_RUN_ID" "$SOURCE_TRIGGER_SHA" "$REPOSITORY_ID" > "$RUNNER_TEMP/retained-artifact-id"
+            timeout 60s gh run download "$SOURCE_RUN_ID" --repo "${{ github.repository }}" \
+              --name club-arena-retained-runtime --dir "$RUNNER_TEMP/retained-runtime"
+            # Fetch complete baseline and verification ancestry before receipt
+            # validation; neither an API-capped compare nor trigger diff suffices.
+            git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
+            node scripts/ci/client-runtime-retention.mjs receive "$RUNNER_TEMP/retained-runtime/retained-runtime.json" \
+              "$SOURCE_RUN_ID" "$SOURCE_TRIGGER_SHA" "$REPOSITORY_ID"
+            exit 0
+          fi
           SELECTED_SHA=$(timeout 30s gh api \
             "repos/${{ github.repository }}/actions/runs/$SOURCE_RUN_ID/artifacts?per_page=100" \
             | node scripts/ci/production-e2e-provenance.mjs \
@@ -198,20 +264,41 @@ jobs:
     runs-on: ubuntu-latest
     # Serialize only jobs that will really touch the shared production test
     # accounts. Gate-only no-op runs never occupy this lock.
+    #
+    # A "cancelled" client lane is almost always a QUEUED job that never ran,
+    # not a running certificate that was killed. With cancel-in-progress false,
+    # GitHub keeps one running and one pending job per group, and a newer
+    # pending job replaces the older pending one. The replaced job has
+    # runner_id 0 and zero steps, and nothing is lost: the job that does run
+    # reads build-info.json when it starts and re-targets onto that commit
+    # (the `descendant` branch below), so it covers every commit it replaced.
+    # Measured 2026-10-07 04:00-07:25 UTC: all nineteen cancelled client lanes
+    # had runner_id 0 and zero steps, and every job that took the lock
+    # (04:10, 04:49, 05:28, 06:08, 06:41, 07:25) ran to its own verdict.
+    # cancel-in-progress true would instead kill the running certificate on
+    # every merge; see tests/unit/postDeployE2EConcurrency.test.ts.
     concurrency:
       group: post-deploy-e2e-production
       cancel-in-progress: false
-    # Cashier plus six isolated stateful groups and the 138-test responsive
-    # sweep take 20-24 minutes when production is under normal publish load.
-    # The old 20-minute ceiling cancelled the honesty/report steps just as the
-    # sweep completed, discarding a real verdict. This remains bounded while
-    # leaving enough room for first-attempt, zero-retry certification.
-    timeout-minutes: 50
+    # Cashier, the isolated stateful groups, and the responsive route sweep
+    # normally finish well below this ceiling. Runs 37397055463 and
+    # 37407226104 proved first that 50 minutes and then that 65 minutes could
+    # cancel the job after the nine-surface Table Management audit received
+    # its truthful sequential route budget. The latter ran for 67 minutes.
+    # Keep enough bounded headroom for that audit plus the honesty, cleanup,
+    # release-window, and report steps. A timeout before those steps produces
+    # neither a verdict nor fixture-cleanup proof.
+    timeout-minutes: 80
+    outputs:
+      client_sha: ${{ steps.live.outputs.sha }}
+      certified: ${{ steps.release_window.outcome == 'success' && steps.release_window.outputs.certified == 'true' }}
+      phase1_certified: ${{ steps.phase1_verdict.outcome == 'success' && steps.phase1_verdict.outputs.certified == 'true' }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          ref: ${{ needs.publication-gate.outputs.verification_sha || github.sha }}
           # The step below may need to resolve the sha production is actually
           # serving, which is usually an ancestor of this run's commit and is
           # absent from the default shallow clone.
@@ -223,6 +310,15 @@ jobs:
           # cat-file -e, which are all commit-graph work - so those blobs were paid
           # for on every run and never read.
           filter: blob:none
+
+      - name: Download source-bound retained runtime evidence
+        if: needs.publication-gate.outputs.verification_sha != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: club-arena-retained-runtime
+          path: retained-runtime-evidence
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
 
       - name: Setup Node 20
         uses: actions/setup-node@v4
@@ -318,6 +414,45 @@ jobs:
           if ! git cat-file -e "$LIVE^{commit}" 2>/dev/null; then
             git fetch --no-tags origin "$LIVE" --depth=1
           fi
+          if [ -n '${{ needs.publication-gate.outputs.verification_sha }}' ]; then
+            RETAINED='${{ needs.publication-gate.outputs.client_target_sha }}'
+            test "$HERE" = '${{ needs.publication-gate.outputs.verification_sha }}'
+            [[ "$RETAINED" =~ ^[0-9a-f]{40}$ ]]
+            if [ "$LIVE" = "$RETAINED" ]; then
+              node scripts/ci/client-runtime-retention.mjs harness "$LIVE" "$HERE" \
+                retained-runtime-evidence/retained-runtime.json \
+                '${{ github.event.workflow_run.id }}' '${{ github.event.workflow_run.head_sha }}' '${{ github.repository_id }}'
+              echo "specs=$HERE" >> "$GITHUB_OUTPUT"
+              echo "Actual runtime \`$LIVE\`; complete current qualified verification source \`$HERE\`." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            # A LATER PUBLISH IS NOT A DEFECT IN THE RETAINED ONE (2026-10-11).
+            #
+            # This used to be a bare `test "$LIVE" = <retained runtime>`. A
+            # retaining publisher's certificate can wait behind the production
+            # lock for longer than the gap between merges, and run 38170604116
+            # started its browsers 48 minutes after publisher 38169740342
+            # retained 5c1e013, by which time production served a76ebb9, three
+            # commits later on protected main. The test exited 1 with no message
+            # and the whole lane went red ("the suite did not run") although
+            # nothing on the live site had been examined at all. That is
+            # "could not tell" reported as a defect (CLAUDE.md 10.86 rule 1).
+            #
+            # A forward protected-main release is handled exactly as a run
+            # without a retained runtime handles it: the lineage logic below
+            # aligns the specs with what production actually serves, and the
+            # release-window step classifies anything that moves after that.
+            # The retained-runtime harness proof is skipped only because it
+            # describes a runtime production no longer serves. A rollback, or a
+            # live SHA that is not a descendant of the retained runtime, is still
+            # a hard red.
+            git cat-file -e "$RETAINED^{commit}"
+            if ! git merge-base --is-ancestor "$RETAINED" "$LIVE"; then
+              echo "::error::production serves \`$LIVE\`, which is not a forward release from retained runtime \`$RETAINED\`."
+              exit 1
+            fi
+            echo "Retained runtime \`$RETAINED\` was superseded by \`$LIVE\` before the browsers started; certifying the release production actually serves." >> "$GITHUB_STEP_SUMMARY"
+          fi
           RELATION=$(node scripts/ci/production-e2e-provenance.mjs lineage "$LIVE" "$HERE")
           if [ "$RELATION" = same ]; then
             echo "specs=$HERE" >> $GITHUB_OUTPUT
@@ -343,10 +478,31 @@ jobs:
             echo "specs=$LIVE" >> $GITHUB_OUTPUT
             echo "Production is serving \`$LIVE\`, an ancestor of this run's \`$HERE\`." >> $GITHUB_STEP_SUMMARY
             echo "Page assertions taken from \`$LIVE\`; auth and support harnesses kept at \`$HERE\`." >> $GITHUB_STEP_SUMMARY
-          else
-            echo "::error::Unexpected provenance relation '$RELATION'."
-            exit 1
+            exit 0
           fi
+          if [ "$RELATION" = descendant ]; then
+            # PRODUCTION IS AHEAD OF THIS CHECKOUT, AND THAT IS NORMAL.
+            #
+            # Until 2026-09-30 this was a hard red reading `Production SHA X is
+            # not an ancestor of checkout Y` (run 36673263757). It never meant a
+            # divergence: the publisher fires on every merge and merges land
+            # every few minutes, so by the time forty minutes of browsers have
+            # run, a LATER commit on the same protected main is usually what is
+            # being served. Refusing it told nobody anything about the live site.
+            #
+            # Re-target instead. Take the WHOLE suite from the live commit -
+            # assertions and harness together - because here $LIVE is the newer
+            # one, and restoring $HERE's harness over it would be exactly the
+            # roll-back-to-a-weaker-guard that the ancestor branch above exists
+            # to prevent, pointed the other way.
+            git checkout "$LIVE" -- tests/e2e
+            echo "specs=$LIVE" >> $GITHUB_OUTPUT
+            echo "Production is serving \`$LIVE\`, a later commit than this run's \`$HERE\`." >> $GITHUB_STEP_SUMMARY
+            echo "The whole suite was re-targeted onto \`$LIVE\` so the assertions match the bundle the browser loads." >> $GITHUB_STEP_SUMMARY
+            exit 0
+          fi
+          echo "::error::Unexpected provenance relation '$RELATION'."
+          exit 1
 
       # A standing shared login is eventually changed, disabled, left behind a
       # one-time gate, or mutated by two overlapping suites. Build one isolated
@@ -394,6 +550,47 @@ jobs:
       # Keep the release-critical Cashier result independent from the broader
       # production sweep. A failure on Stats or another route must not obscure
       # whether the money surface itself passed or failed.
+      # Read the real operator doors and cancel a worker decision. This uses
+      # the existing disposable zero-balance staff identity and makes no writes.
+      - name: Certify the authenticated production notification inbox
+        id: notification_inbox
+        if: always() && steps.live.outputs.ready == 'true' && steps.account.outcome == 'success'
+        env:
+          BASE_URL: https://smarter.poker/hub/club-arena/
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
+          E2E_REQUIRE_AUTH: '1'
+          PLAYWRIGHT_JSON_OUTPUT_NAME: e2e-report/notifications.json
+        run: >-
+          npx playwright test tests/e2e/production-notifications.spec.ts
+          --project=chromium --reporter=line,json --workers=1 --retries=0
+
+      - name: Preserve the notification verdict before the broader page sweep
+        if: always() && steps.live.outputs.ready == 'true' && steps.account.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: post-deploy-notification-report
+          path: |
+            e2e-report/notifications.json
+            test-results/production-notifications-*/
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Certify the authenticated Lightning operator cold loads
+        if: always() && steps.live.outputs.ready == 'true' && steps.account.outcome == 'success'
+        env:
+          BASE_URL: https://smarter.poker/hub/club-arena/
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
+          E2E_REQUIRE_AUTH: '1'
+          LIVE_SHA: ${{ steps.live.outputs.sha }}
+          PLAYWRIGHT_JSON_OUTPUT_NAME: e2e-report/lightning-operator.json
+        run: >-
+          npx playwright test tests/e2e/production-lightning-operator.spec.ts
+          --project=chromium --reporter=line,json --workers=1 --retries=0
+
       - name: Certify the authenticated production Cashier
         if: always() && steps.live.outputs.ready == 'true' && steps.account.outcome == 'success'
         env:
@@ -445,8 +642,13 @@ jobs:
           # Customization certification never mutates either standing player.
           # Realtime creates two isolated identities to prove cross-device sync
           # and cross-player isolation; commerce creates a third for checkout.
-          # Every one is hard-deleted and residue-checked before the run ends.
+          # Routed gameplay below owns a fourth cosmetic-only account. Every
+          # fixture is hard-deleted and residue-checked before the run ends.
           CUSTOMIZATION_COMMERCE_CERTIFICATION: '1'
+          # The routed customization lane owns a disposable account and makes
+          # only cosmetic writes. Its hand and seat are deterministic browser
+          # projections, so the certificate never buys in or touches live play.
+          GAMEPLAY_CUSTOMIZATION_CERTIFICATION: '1'
           # Daily Missions uses the same reserved hard-delete harness for one
           # production player, then proves the complete economy/realtime/error
           # journey and verifies that no account or ledger residue remains.
@@ -525,10 +727,45 @@ jobs:
               --output="test-results/$output_dir"
           }
 
+          # THE PHASE 1 JOURNEYS RUN FIRST, INSIDE ONE RELEASE BRACKET.
+          #
+          # The cutover seal needs these three journeys - not the whole forty
+          # minute sweep - to have run against one exact client. Read
+          # build-info.json immediately before the first and immediately after
+          # the last; scripts/ci/production-e2e-provenance.mjs `bracket`
+          # certifies the release only when both reads are the SHA this job
+          # recorded and took its specs from. They run first so the bracket
+          # opens minutes after that recording instead of a quarter hour later.
+          mkdir -p release-bracket
+          read_release () {
+            curl -fsS --max-time 20 -H 'Cache-Control: no-cache' \
+              "https://smarter.poker/hub/club-arena/build-info.json?bracket=$RANDOM" > "$1" 2>/dev/null \
+              || : > "$1"
+          }
+          read_release release-bracket/phase1-before.json
+
+          run_suite customization-realtime.json tests/e2e/production-customization-realtime.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
+          customization_realtime_rc=$?; [ $customization_realtime_rc -ne 0 ] && rc=$customization_realtime_rc
+
+          run_suite gameplay-customization-runtime.json tests/e2e/gameplay-customization-runtime.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
+          gameplay_customization_runtime_rc=$?; [ $gameplay_customization_runtime_rc -ne 0 ] && rc=$gameplay_customization_runtime_rc
+
+          run_suite customization-commerce.json tests/e2e/production-customization-commerce.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
+          customization_commerce_rc=$?; [ $customization_commerce_rc -ne 0 ] && rc=$customization_commerce_rc
+
+          read_release release-bracket/phase1-after.json
+
           # Certify Stats first among the broader route checks. Cashier has its
           # own preceding release gate so this suite cannot hide its verdict.
           run_suite stats.json tests/e2e/stats-deep.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
           stats_rc=$?; [ $stats_rc -ne 0 ] && rc=$stats_rc
+
+          # Financial Admin is the staff-scoped sibling of the Stats and Club
+          # Data deep certificates. It runs against this job's disposable,
+          # prepared staff account in its own process and report so a skip or
+          # missing spec cannot hide behind the broader sweep.
+          run_suite financial-admin.json tests/e2e/financial-admin-deep.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
+          financial_admin_rc=$?; [ $financial_admin_rc -ne 0 ] && rc=$financial_admin_rc
 
           # These contracts either mutate the standing authenticated player or
           # create and destroy isolated production fixtures. Each gets its own
@@ -544,11 +781,12 @@ jobs:
           run_suite club-members.json tests/e2e/production-club-members.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
           club_members_rc=$?; [ $club_members_rc -ne 0 ] && rc=$club_members_rc
 
-          run_suite customization-realtime.json tests/e2e/production-customization-realtime.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
-          customization_realtime_rc=$?; [ $customization_realtime_rc -ne 0 ] && rc=$customization_realtime_rc
-
-          run_suite customization-commerce.json tests/e2e/production-customization-commerce.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
-          customization_commerce_rc=$?; [ $customization_commerce_rc -ne 0 ] && rc=$customization_commerce_rc
+          # Table Management: each section is its own page on its own approved
+          # frame family. Proved on a harness and in the served bundle when it
+          # shipped, and then watched by nothing. Read-only: it navigates and
+          # reads, and skips itself without management authority.
+          run_suite table-management.json tests/e2e/production-table-management.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
+          table_management_rc=$?; [ $table_management_rc -ne 0 ] && rc=$table_management_rc
 
           run_suite daily-missions.json tests/e2e/production-daily-missions.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
           daily_missions_rc=$?; [ $daily_missions_rc -ne 0 ] && rc=$daily_missions_rc
@@ -582,12 +820,13 @@ jobs:
             tests/e2e/mobile-lobby-chrome.spec.ts \
             tests/e2e/header-portrait-frame.spec.ts \
             tests/e2e/diamond-arena-route.spec.ts \
+            tests/e2e/an-old-bookmark-lands-somewhere-true.spec.ts \
             tests/e2e/production-csp-violations.spec.ts \
             tests/e2e/routes \
             --reporter=line,json --workers=2 --retries=0
           sweep_rc=$?; [ $sweep_rc -ne 0 ] && rc=$sweep_rc
 
-          echo "stats exit=$stats_rc  lobby exit=$lobby_rc  club members exit=$club_members_rc  customization realtime exit=$customization_realtime_rc  customization commerce exit=$customization_commerce_rc  daily missions exit=$daily_missions_rc  daily missions accessibility exit=$daily_missions_accessibility_rc  daily missions settlement exit=$daily_missions_settlement_rc  sweep exit=$sweep_rc"
+          echo "stats exit=$stats_rc  financial admin exit=$financial_admin_rc  lobby exit=$lobby_rc  club members exit=$club_members_rc  customization realtime exit=$customization_realtime_rc  gameplay customization exit=$gameplay_customization_runtime_rc  customization commerce exit=$customization_commerce_rc  daily missions exit=$daily_missions_rc  daily missions accessibility exit=$daily_missions_accessibility_rc  daily missions settlement exit=$daily_missions_settlement_rc  sweep exit=$sweep_rc"
           exit $rc
 
       # THE RUN MUST NOT PASS BY NOT RUNNING.
@@ -597,23 +836,69 @@ jobs:
       # they land on /auth or find no live fixture. `always()` so this reports
       # on a red run too - a run can be BOTH failed and dishonest, and the
       # second fact is the one nobody was being told.
-      - name: Did the suite actually verify production?
+      # NAME THE FAILED TEST WHERE THE API CAN READ IT (2026-10-04). A red run
+      # used to say only "Process completed with exit code 1" to anyone reading
+      # check-run annotations; the failing test and its error lived in the job
+      # log and the uploaded report, both behind blob storage. Report-only:
+      # it never changes the verdict.
+      - name: Name every failed test as an annotation
         if: always() && steps.live.outputs.ready == 'true'
         run: >-
-          node scripts/ci/assert-e2e-actually-ran.mjs
+          node scripts/ci/annotate-e2e-failures.mjs
+          e2e-report/notifications.json
           e2e-report/cashier.json
           e2e-report/cashier-statements.json
+          e2e-report/lightning-operator.json
           e2e-report/stats.json
+          e2e-report/financial-admin.json
           e2e-report/lobby.json
           e2e-report/club-members.json
+          e2e-report/table-management.json
           e2e-report/customization-realtime.json
+          e2e-report/gameplay-customization-runtime.json
           e2e-report/customization-commerce.json
           e2e-report/daily-missions.json
           e2e-report/daily-missions-accessibility.json
           e2e-report/daily-missions-settlement.json
           e2e-report/sweep.json
 
+      - name: Did the suite actually verify production?
+        if: always() && steps.live.outputs.ready == 'true'
+        run: >-
+          node scripts/ci/assert-e2e-actually-ran.mjs
+          e2e-report/notifications.json
+          e2e-report/cashier.json
+          e2e-report/cashier-statements.json
+          e2e-report/lightning-operator.json
+          e2e-report/stats.json
+          e2e-report/financial-admin.json
+          e2e-report/lobby.json
+          e2e-report/club-members.json
+          e2e-report/table-management.json
+          e2e-report/customization-realtime.json
+          e2e-report/gameplay-customization-runtime.json
+          e2e-report/customization-commerce.json
+          e2e-report/daily-missions.json
+          e2e-report/daily-missions-accessibility.json
+          e2e-report/daily-missions-settlement.json
+          e2e-report/sweep.json
+
+      # The broad client job deliberately keeps unrelated routes visible and
+      # red. The database cutover has a narrower question: did every affected
+      # customization journey pass exactly once, without a skip or retry?
+      # Report that answer independently so a Club Data or Financial Admin
+      # defect cannot either impersonate or erase the Phase 1 evidence.
+      - name: Did every Phase 1 customization journey pass exactly?
+        id: phase1_coverage
+        if: always() && steps.live.outputs.ready == 'true'
+        run: >-
+          node scripts/ci/phase1-customization-certificate-coverage.mjs
+          e2e-report/customization-realtime.json
+          e2e-report/gameplay-customization-runtime.json
+          e2e-report/customization-commerce.json
+
       - name: Hard-delete the isolated production E2E account
+        id: account_cleanup
         if: always() && steps.live.outputs.ready == 'true'
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -627,26 +912,174 @@ jobs:
       # still be live after fixture cleanup. There is deliberately no retry: a
       # changed or unreadable final document is a non-verdict, not eventual
       # success for the release this run claims to have tested.
-      - name: Prove production stayed on one exact release during certification
+      # WHICH RELEASE DID THIS CERTIFICATE COVER, AND IS ANY OTHER ANSWER A DEFECT?
+      #
+      # This step used to demand ONE frozen SHA across forty minutes of
+      # browsers, and `publish-club-arena` fires on every merge. At this
+      # repository's real merge rate that demand can essentially never hold:
+      # twelve of the twenty runs sampled on 2026-09-30 died here or on its
+      # sibling lineage check, every one of them reading `Production changed
+      # from X to Y during certification`, and not one of them had found
+      # anything wrong with the live site.
+      #
+      # The reasoning behind the guard is still right - a green assembled
+      # across two bundles certifies neither - so it is kept, and classified
+      # rather than collapsed into a red:
+      #
+      #   certified  production never left the SHA this run recorded.
+      #   superseded production advanced to a LATER trusted commit on this
+      #              same protected main while the browsers were running. The
+      #              suites that finished before the switch still certify the
+      #              recorded SHA; anything that straddled it COULD NOT TELL.
+      #              That is a non-verdict (CLAUDE.md 10.86 rule 1), and it is
+      #              reported as one - never as a defect on production, and
+      #              never silently as success either.
+      #
+      # A rollback, a SHA off this lineage, or a SHA that does not resolve to a
+      # trusted commit is still a hard red. Those are the states worth waking
+      # somebody for, and they are exactly what the old string comparison could
+      # not tell apart from an ordinary publish.
+      #
+      # `unchanged` is deliberately NOT reused here and keeps its own meaning:
+      # `publish-club-arena` calls it the instant after it swaps its own
+      # symlink, where any change at all really is wrong.
+      - name: Classify the release window this certificate covers
+        id: release_window
         if: always() && steps.live.outputs.ready == 'true'
         env:
           EXPECTED_LIVE_SHA: ${{ steps.live.outputs.sha }}
         run: |
-          set -euo pipefail
-          [[ "$EXPECTED_LIVE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          set -uo pipefail
+          echo 'certified=false' >> "$GITHUB_OUTPUT"
+          if ! [[ "$EXPECTED_LIVE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::The recorded live SHA is malformed."
+            exit 1
+          fi
           BODY="$(curl -fsS --max-time 20 -H 'Cache-Control: no-cache' \
-            "https://smarter.poker/hub/club-arena/build-info.json?final=$RANDOM")"
-          FINAL_SHA="$(printf '%s' "$BODY" \
-            | node scripts/ci/production-e2e-provenance.mjs unchanged "$EXPECTED_LIVE_SHA")"
-          [ "$FINAL_SHA" = "$EXPECTED_LIVE_SHA" ]
-          echo "Production stayed on \`$FINAL_SHA\` for the complete browser certificate." >> "$GITHUB_STEP_SUMMARY"
+            "https://smarter.poker/hub/club-arena/build-info.json?final=$RANDOM")" || BODY=''
+          if [ -z "$BODY" ]; then
+            echo "::warning::UNKNOWN: production build-info.json could not be read at the end of this run, so the release window is unknown."
+            echo "NON-VERDICT: the closing release document was unreadable; this run does not certify a release." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          # The certificate may outlive a new protected publication. Refresh
+          # only trusted main, never an arbitrary SHA from the live document.
+          if ! timeout 30s git fetch --no-tags origin main; then
+            echo "::warning::UNKNOWN: protected-main history was unreadable at the end of certification."
+            echo "NON-VERDICT: protected-main history was unreadable; this run does not certify a release." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          STATUS=0
+          WINDOW="$(printf '%s' "$BODY" \
+            | node scripts/ci/production-e2e-provenance.mjs release-window "$EXPECTED_LIVE_SHA")" || STATUS=$?
+          case "$STATUS" in
+            0)
+              echo 'certified=true' >> "$GITHUB_OUTPUT"
+              echo "Production stayed on \`$EXPECTED_LIVE_SHA\` for the complete browser certificate." >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            3)
+              echo "::warning::UNKNOWN: production advanced during certification ($WINDOW). This run could not certify one exact release; it is not a report of a defect."
+              {
+                echo "NON-VERDICT: production advanced from \`$EXPECTED_LIVE_SHA\` during certification ($WINDOW)."
+                echo "Every suite that completed before the switch still certifies \`$EXPECTED_LIVE_SHA\`; any suite that straddled it could not tell."
+              } >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            *)
+              echo "::error::production left \`$EXPECTED_LIVE_SHA\` for a release that is not a forward publish on this lineage."
+              exit 1
+              ;;
+          esac
+
+      # The seal's client evidence is the bracket around the three Phase 1
+      # journeys (opened and closed in the sweep step above), not the whole
+      # job's window: see classifyBracket in production-e2e-provenance.mjs.
+      - name: Classify the release the Phase 1 journeys ran against
+        id: phase1_release
+        if: always() && steps.live.outputs.ready == 'true'
+        env:
+          EXPECTED_LIVE_SHA: ${{ steps.live.outputs.sha }}
+        run: |
+          set -uo pipefail
+          echo 'certified=false' >> "$GITHUB_OUTPUT"
+          if ! [[ "$EXPECTED_LIVE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::The recorded live SHA is malformed."
+            exit 1
+          fi
+          if ! timeout 30s git fetch --no-tags origin main; then
+            echo "::warning::UNKNOWN: protected-main history was unreadable, so the Phase 1 release bracket is unknown."
+            echo "NON-VERDICT: protected-main history was unreadable; the Phase 1 journeys certify no release." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          STATUS=0
+          BRACKET="$(node scripts/ci/production-e2e-provenance.mjs bracket "$EXPECTED_LIVE_SHA" \
+            release-bracket/phase1-before.json release-bracket/phase1-after.json)" || STATUS=$?
+          case "$STATUS" in
+            0)
+              echo 'certified=true' >> "$GITHUB_OUTPUT"
+              echo "Production served \`$EXPECTED_LIVE_SHA\` before and after all three Phase 1 journeys." >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            3)
+              echo "::warning::UNKNOWN: the Phase 1 journeys did not run inside one release ($BRACKET). This is a non-verdict, not a defect."
+              echo "NON-VERDICT: the Phase 1 journeys were not bracketed by \`$EXPECTED_LIVE_SHA\` ($BRACKET)." >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            *)
+              echo "::error::production left \`$EXPECTED_LIVE_SHA\` around the Phase 1 journeys for a release that is not a forward publish on this lineage."
+              exit 1
+              ;;
+          esac
+
+      - name: Classify the Phase 1 customization certificate
+        id: phase1_verdict
+        if: always()
+        env:
+          PHASE1_RELEASE_CERTIFIED: ${{ steps.phase1_release.outputs.certified }}
+          PHASE1_RELEASE_OUTCOME: ${{ steps.phase1_release.outcome }}
+          RELEASE_WINDOW_OUTCOME: ${{ steps.release_window.outcome }}
+          CUSTOMIZATION_COVERAGE_COMPLETE: ${{ steps.phase1_coverage.outputs.complete }}
+          CUSTOMIZATION_COVERAGE_OUTCOME: ${{ steps.phase1_coverage.outcome }}
+          ACCOUNT_CLEANUP_OUTCOME: ${{ steps.account_cleanup.outcome }}
+        run: |
+          set -euo pipefail
+          CERTIFIED=false
+          if [ "$CUSTOMIZATION_COVERAGE_OUTCOME" != 'success' ]; then
+            echo 'certified=false' >> "$GITHUB_OUTPUT"
+            echo '::error::The Phase 1 customization coverage producer did not complete successfully.'
+            exit 1
+          fi
+          if [ "$CUSTOMIZATION_COVERAGE_COMPLETE" != 'true' ]; then
+            echo 'certified=false' >> "$GITHUB_OUTPUT"
+            echo '::error::Phase 1 customization coverage was missing or incomplete.'
+            exit 1
+          fi
+          if [ "$ACCOUNT_CLEANUP_OUTCOME" != 'success' ]; then
+            echo 'certified=false' >> "$GITHUB_OUTPUT"
+            echo '::error::The isolated production account was not proven deleted.'
+            exit 1
+          fi
+          if [ "$RELEASE_WINDOW_OUTCOME" != 'success' ]; then
+            echo 'certified=false' >> "$GITHUB_OUTPUT"
+            echo '::error::The release-window producer did not complete successfully.'
+            exit 1
+          fi
+          if [ "$PHASE1_RELEASE_OUTCOME" != 'success' ]; then
+            echo 'certified=false' >> "$GITHUB_OUTPUT"
+            echo '::error::The Phase 1 release bracket producer did not complete successfully.'
+            exit 1
+          fi
+          if [ "$PHASE1_RELEASE_CERTIFIED" = 'true' ]; then
+            CERTIFIED=true
+            echo 'The exact served client has complete Phase 1 customization coverage.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'NON-VERDICT: no Phase 1 cutover seal may be written without one exact release and all three exact customization journeys.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "certified=$CERTIFIED" >> "$GITHUB_OUTPUT"
 
       - name: Upload the report when something is wrong on production
         # `failure()` is false when GitHub cancels a job at its time limit. The
         # old condition therefore discarded the only report from exactly the
         # run that exposed the obsolete timeout. Preserve evidence for both
         # kinds of non-verdict, while still skipping uploads on a clean run.
-        if: always() && (failure() || cancelled())
+        if: always() && (failure() || cancelled() || steps.phase1_coverage.outputs.complete != 'true')
         uses: actions/upload-artifact@v4
         with:
           name: post-deploy-playwright-report
@@ -664,19 +1097,26 @@ jobs:
     if: needs.publication-gate.outputs.should_run == 'true'
     name: Live-table and engine verification
     runs-on: ubuntu-latest
-    # 12m prerequisite + 3 x 6.5m tournament cases + 5m cash case leaves
-    # 23.5m for checkout/setup, fixture lifecycle, provenance and reports.
+    # 12m prerequisite + 3 x 6.5m tournament cases + 6.5m cash case leaves
+    # 22m for checkout/setup, fixture lifecycle, provenance and reports.
     # Preserve the existing job envelope; MTT shares the original case limit.
-    timeout-minutes: 60
+    # +16m (2026-10-04): a certificate that would start within 15 minutes of
+    # the :53 announcement first waits for that break (await-engine-gameplay).
+    timeout-minutes: 76
     permissions:
       contents: read
     concurrency:
       group: post-deploy-live-table-production
       cancel-in-progress: false
+    outputs:
+      client_sha: ${{ steps.live.outputs.sha }}
+      engine_sha: ${{ steps.engine.outputs.sha }}
+      certified: ${{ steps.release_window.outcome == 'success' && steps.release_window.outputs.certified == 'true' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          ref: ${{ needs.publication-gate.outputs.verification_sha || github.sha }}
           # The step below may need to resolve the sha production is actually
           # serving, which is usually an ancestor of this run's commit and is
           # absent from the default shallow clone.
@@ -688,6 +1128,15 @@ jobs:
           # cat-file -e, which are all commit-graph work - so those blobs were paid
           # for on every run and never read.
           filter: blob:none
+
+      - name: Download source-bound retained runtime evidence
+        if: needs.publication-gate.outputs.verification_sha != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: club-arena-retained-runtime
+          path: retained-runtime-evidence
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
 
       - name: Setup Node 20
         uses: actions/setup-node@v4
@@ -730,9 +1179,18 @@ jobs:
           elif [ "$EVENT_NAME" = workflow_run ] && [ -z "$ENGINE_TRIGGER_SHA" ]; then
             # Test the published client with the engine actually serving it.
             # Latest main may contain another task's staged, unshipped engine.
-            ENGINE_SHA="$(curl -fsS --max-time 20 -H 'Cache-Control: no-cache' \
-              "https://engine.smarter.poker/health?certificate=$GITHUB_RUN_ID" \
-              | node scripts/ci/production-e2e-provenance.mjs engine-live)"
+            #
+            # Read it through the announced break. This was one `curl -fsS`
+            # with no tolerance, and the engine restarts at :55 of every hour
+            # (CLAUDE.md section 13) and is genuinely down for about two
+            # minutes of it. Run 36717851302 started at 12:54:24Z and died at
+            # 12:55:36Z on `curl: (22) ... error: 502` - the engine keeping the
+            # schedule we set, reported as a production failure. The reader
+            # below waits the SAME measured budget the resume step a few steps
+            # down already waits, and parses with the same readReadyEngineSha,
+            # so nothing about what counts as a healthy release changed.
+            ENGINE_SHA="$(node scripts/ci/read-engine-release.mjs \
+              "https://engine.smarter.poker/health?certificate=$GITHUB_RUN_ID")"
           else
             echo '::error::Unsupported or contradictory engine certification event.'
             exit 1
@@ -751,9 +1209,15 @@ jobs:
           EXPECTED_ENGINE_SHA: ${{ steps.engine.outputs.sha }}
         run: |
           set -euo pipefail
-          curl -fsS --max-time 20 -H 'Cache-Control: no-cache' \
-            "https://engine.smarter.poker/health?certificate=$GITHUB_RUN_ID" \
-            | node scripts/ci/production-e2e-provenance.mjs engine-ready "$EXPECTED_ENGINE_SHA"
+          # Same break tolerance as the resolve step above: an engine inside
+          # its announced restart has not refused this release, it has not
+          # answered yet. The equality below is the unchanged gate.
+          READY_SHA="$(node scripts/ci/read-engine-release.mjs \
+            "https://engine.smarter.poker/health?certificate=$GITHUB_RUN_ID")"
+          [ "$READY_SHA" = "$EXPECTED_ENGINE_SHA" ] || {
+            echo "::error::Production engine $READY_SHA has not reached required $EXPECTED_ENGINE_SHA; this run cannot begin certification."
+            exit 1
+          }
 
       - name: Install Chromium and WebKit
         run: npx playwright install chromium webkit --with-deps
@@ -794,6 +1258,45 @@ jobs:
           if ! git cat-file -e "$LIVE^{commit}" 2>/dev/null; then
             git fetch --no-tags origin "$LIVE" --depth=1
           fi
+          if [ -n '${{ needs.publication-gate.outputs.verification_sha }}' ]; then
+            RETAINED='${{ needs.publication-gate.outputs.client_target_sha }}'
+            test "$HERE" = '${{ needs.publication-gate.outputs.verification_sha }}'
+            [[ "$RETAINED" =~ ^[0-9a-f]{40}$ ]]
+            if [ "$LIVE" = "$RETAINED" ]; then
+              node scripts/ci/client-runtime-retention.mjs harness "$LIVE" "$HERE" \
+                retained-runtime-evidence/retained-runtime.json \
+                '${{ github.event.workflow_run.id }}' '${{ github.event.workflow_run.head_sha }}' '${{ github.repository_id }}'
+              echo "specs=$HERE" >> "$GITHUB_OUTPUT"
+              echo "Actual runtime \`$LIVE\`; complete current qualified verification source \`$HERE\`." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            # A LATER PUBLISH IS NOT A DEFECT IN THE RETAINED ONE (2026-10-11).
+            #
+            # This used to be a bare `test "$LIVE" = <retained runtime>`. A
+            # retaining publisher's certificate can wait behind the production
+            # lock for longer than the gap between merges, and run 38170604116
+            # started its browsers 48 minutes after publisher 38169740342
+            # retained 5c1e013, by which time production served a76ebb9, three
+            # commits later on protected main. The test exited 1 with no message
+            # and the whole lane went red ("the suite did not run") although
+            # nothing on the live site had been examined at all. That is
+            # "could not tell" reported as a defect (CLAUDE.md 10.86 rule 1).
+            #
+            # A forward protected-main release is handled exactly as a run
+            # without a retained runtime handles it: the lineage logic below
+            # aligns the specs with what production actually serves, and the
+            # release-window step classifies anything that moves after that.
+            # The retained-runtime harness proof is skipped only because it
+            # describes a runtime production no longer serves. A rollback, or a
+            # live SHA that is not a descendant of the retained runtime, is still
+            # a hard red.
+            git cat-file -e "$RETAINED^{commit}"
+            if ! git merge-base --is-ancestor "$RETAINED" "$LIVE"; then
+              echo "::error::production serves \`$LIVE\`, which is not a forward release from retained runtime \`$RETAINED\`."
+              exit 1
+            fi
+            echo "Retained runtime \`$RETAINED\` was superseded by \`$LIVE\` before the browsers started; certifying the release production actually serves." >> "$GITHUB_STEP_SUMMARY"
+          fi
           RELATION=$(node scripts/ci/production-e2e-provenance.mjs lineage "$LIVE" "$HERE")
           if [ "$RELATION" = same ]; then
             echo "specs=$HERE" >> $GITHUB_OUTPUT
@@ -820,19 +1323,57 @@ jobs:
             echo "specs=$LIVE" >> $GITHUB_OUTPUT
             echo "Production is serving \`$LIVE\`, an ancestor of this run's \`$HERE\`." >> $GITHUB_STEP_SUMMARY
             echo "Page assertions taken from \`$LIVE\`; auth, exact engine provenance, and support harnesses kept at \`$HERE\`." >> $GITHUB_STEP_SUMMARY
-          else
-            echo "::error::Unexpected provenance relation '$RELATION'."
-            exit 1
+            exit 0
           fi
+          if [ "$RELATION" = descendant ]; then
+            # PRODUCTION IS AHEAD OF THIS CHECKOUT, AND THAT IS NORMAL.
+            #
+            # Until 2026-09-30 this was a hard red reading `Production SHA X is
+            # not an ancestor of checkout Y` (run 36673263757). It never meant a
+            # divergence: the publisher fires on every merge and merges land
+            # every few minutes, so by the time forty minutes of browsers have
+            # run, a LATER commit on the same protected main is usually what is
+            # being served. Refusing it told nobody anything about the live site.
+            #
+            # Re-target instead. Take the WHOLE suite from the live commit -
+            # assertions and harness together - because here $LIVE is the newer
+            # one, and restoring $HERE's harness over it would be exactly the
+            # roll-back-to-a-weaker-guard that the ancestor branch above exists
+            # to prevent, pointed the other way.
+            git checkout "$LIVE" -- tests/e2e
+            echo "specs=$LIVE" >> $GITHUB_OUTPUT
+            echo "Production is serving \`$LIVE\`, a later commit than this run's \`$HERE\`." >> $GITHUB_STEP_SUMMARY
+            echo "The whole suite was re-targeted onto \`$LIVE\` so the assertions match the bundle the browser loads." >> $GITHUB_STEP_SUMMARY
+            exit 0
+          fi
+          echo "::error::Unexpected provenance relation '$RELATION'."
+          exit 1
 
       - name: Wait for the same engine to resume gameplay
         if: steps.live.outputs.ready == 'true'
+        id: gameplay
         env:
           EXPECTED_ENGINE_SHA: ${{ steps.engine.outputs.sha }}
-        run: node scripts/ci/await-engine-gameplay.mjs "$EXPECTED_ENGINE_SHA"
+        # Exit 3 is UNKNOWN: a later protected-main engine release cut over
+        # inside the break, and that release dispatches its own certificate.
+        # Stand the live-table certificate down instead of certifying (or
+        # failing) an engine production no longer serves. Any other failure
+        # remains a red.
+        run: |
+          set -uo pipefail
+          STATUS=0
+          node scripts/ci/await-engine-gameplay.mjs "$EXPECTED_ENGINE_SHA" || STATUS=$?
+          case "$STATUS" in
+            0) echo 'resumed=true' >> "$GITHUB_OUTPUT" ;;
+            3)
+              echo 'resumed=false' >> "$GITHUB_OUTPUT"
+              echo "NON-VERDICT: engine \`$EXPECTED_ENGINE_SHA\` was superseded by a later release during its maintenance break; that release's own certificate covers live tables." >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            *) exit "$STATUS" ;;
+          esac
 
       - name: Provision an isolated production E2E account
-        if: steps.live.outputs.ready == 'true'
+        if: steps.live.outputs.ready == 'true' && steps.gameplay.outputs.resumed == 'true'
         id: account
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -857,9 +1398,20 @@ jobs:
           --project=webkit-live-table-realtime --reporter=line,json --workers=1 --retries=0
           --output=test-results/live-table-realtime
 
+      - name: Name every failed live-table test as an annotation
+        # A superseded engine stands the certificate down with no report
+        # (resumed=false); that is a non-verdict, not missing evidence.
+        if: always() && steps.live.outputs.ready == 'true' && steps.gameplay.outputs.resumed != 'false'
+        run: node scripts/ci/annotate-e2e-failures.mjs e2e-report/live-table-realtime.json
+
       - name: Did the live-table certificate actually execute?
-        if: always() && steps.live.outputs.ready == 'true'
+        if: always() && steps.live.outputs.ready == 'true' && steps.gameplay.outputs.resumed != 'false'
         run: node scripts/ci/assert-e2e-actually-ran.mjs e2e-report/live-table-realtime.json
+
+      - name: Did all required live-table cases pass?
+        id: live_coverage
+        if: always() && steps.live.outputs.ready == 'true' && steps.gameplay.outputs.resumed != 'false'
+        run: node scripts/ci/live-table-certificate-coverage.mjs e2e-report/live-table-realtime.json
 
       - name: Hard-delete the isolated production E2E account
         if: always() && steps.live.outputs.ready == 'true'
@@ -868,26 +1420,96 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: node scripts/ci/production-e2e-account.mjs cleanup
 
-      - name: Prove production stayed on one exact release during certification
+      # WHICH RELEASE DID THIS CERTIFICATE COVER, AND IS ANY OTHER ANSWER A DEFECT?
+      #
+      # This step used to demand ONE frozen SHA across forty minutes of
+      # browsers, and `publish-club-arena` fires on every merge. At this
+      # repository's real merge rate that demand can essentially never hold:
+      # twelve of the twenty runs sampled on 2026-09-30 died here or on its
+      # sibling lineage check, every one of them reading `Production changed
+      # from X to Y during certification`, and not one of them had found
+      # anything wrong with the live site.
+      #
+      # The reasoning behind the guard is still right - a green assembled
+      # across two bundles certifies neither - so it is kept, and classified
+      # rather than collapsed into a red:
+      #
+      #   certified  production never left the SHA this run recorded.
+      #   superseded production advanced to a LATER trusted commit on this
+      #              same protected main while the browsers were running. The
+      #              suites that finished before the switch still certify the
+      #              recorded SHA; anything that straddled it COULD NOT TELL.
+      #              That is a non-verdict (CLAUDE.md 10.86 rule 1), and it is
+      #              reported as one - never as a defect on production, and
+      #              never silently as success either.
+      #
+      # A rollback, a SHA off this lineage, or a SHA that does not resolve to a
+      # trusted commit is still a hard red. Those are the states worth waking
+      # somebody for, and they are exactly what the old string comparison could
+      # not tell apart from an ordinary publish.
+      #
+      # `unchanged` is deliberately NOT reused here and keeps its own meaning:
+      # `publish-club-arena` calls it the instant after it swaps its own
+      # symlink, where any change at all really is wrong.
+      - name: Classify the release window this certificate covers
+        id: release_window
         if: always() && steps.live.outputs.ready == 'true'
         env:
           EXPECTED_LIVE_SHA: ${{ steps.live.outputs.sha }}
+          RUNTIME_RESUMED: ${{ steps.gameplay.outputs.resumed }}
+          LIVE_COVERAGE_COMPLETE: ${{ steps.live_coverage.outputs.complete }}
         run: |
-          set -euo pipefail
-          [[ "$EXPECTED_LIVE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          set -uo pipefail
+          echo 'certified=false' >> "$GITHUB_OUTPUT"
+          if ! [[ "$EXPECTED_LIVE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::The recorded live SHA is malformed."
+            exit 1
+          fi
           BODY="$(curl -fsS --max-time 20 -H 'Cache-Control: no-cache' \
-            "https://smarter.poker/hub/club-arena/build-info.json?final=$RANDOM")"
-          FINAL_SHA="$(printf '%s' "$BODY" \
-            | node scripts/ci/production-e2e-provenance.mjs unchanged "$EXPECTED_LIVE_SHA")"
-          [ "$FINAL_SHA" = "$EXPECTED_LIVE_SHA" ]
-          echo "Production stayed on \`$FINAL_SHA\` for the complete browser certificate." >> "$GITHUB_STEP_SUMMARY"
+            "https://smarter.poker/hub/club-arena/build-info.json?final=$RANDOM")" || BODY=''
+          if [ -z "$BODY" ]; then
+            echo "::warning::UNKNOWN: production build-info.json could not be read at the end of this run, so the release window is unknown."
+            echo "NON-VERDICT: the closing release document was unreadable; this run does not certify a release." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          # The certificate may outlive a new protected publication. Refresh
+          # only trusted main, never an arbitrary SHA from the live document.
+          if ! timeout 30s git fetch --no-tags origin main; then
+            echo "::warning::UNKNOWN: protected-main history was unreadable at the end of certification."
+            echo "NON-VERDICT: protected-main history was unreadable; this run does not certify a release." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          STATUS=0
+          WINDOW="$(printf '%s' "$BODY" \
+            | node scripts/ci/production-e2e-provenance.mjs release-window "$EXPECTED_LIVE_SHA")" || STATUS=$?
+          case "$STATUS" in
+            0)
+              if [ "$RUNTIME_RESUMED" = 'true' ] && [ "${LIVE_COVERAGE_COMPLETE:-false}" = 'true' ]; then
+                echo 'certified=true' >> "$GITHUB_OUTPUT"
+              else
+                echo "NON-VERDICT: the exact engine did not resume or not all required live-table cases passed." >> "$GITHUB_STEP_SUMMARY"
+              fi
+              echo "Production stayed on \`$EXPECTED_LIVE_SHA\` during the live-table observation window." >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            3)
+              echo "::warning::UNKNOWN: production advanced during certification ($WINDOW). This run could not certify one exact release; it is not a report of a defect."
+              {
+                echo "NON-VERDICT: production advanced from \`$EXPECTED_LIVE_SHA\` during certification ($WINDOW)."
+                echo "Every suite that completed before the switch still certifies \`$EXPECTED_LIVE_SHA\`; any suite that straddled it could not tell."
+              } >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            *)
+              echo "::error::production left \`$EXPECTED_LIVE_SHA\` for a release that is not a forward publish on this lineage."
+              exit 1
+              ;;
+          esac
 
       - name: Upload the report when something is wrong on production
         # `failure()` is false when GitHub cancels a job at its time limit. The
         # old condition therefore discarded the only report from exactly the
         # run that exposed the obsolete timeout. Preserve evidence for both
         # kinds of non-verdict, while still skipping uploads on a clean run.
-        if: always() && (failure() || cancelled())
+        if: always() && (failure() || cancelled() || steps.live_coverage.outputs.complete != 'true')
         uses: actions/upload-artifact@v4
         with:
           name: post-deploy-live-table-report
@@ -896,3 +1518,231 @@ jobs:
             test-results/
             e2e-report/
           retention-days: 3 # 2026-09-01 cost audit: reports are read same-day or never
+
+  # The database cutover receipt is written only after BOTH browser lanes have
+  # completed against one exact client and the live-table lane has completed
+  # against one exact engine. The broad client job may remain red for another
+  # route; that failure remains visible in the workflow verdict, but cannot
+  # erase exact first-attempt evidence from these three affected journeys. A
+  # superseded/non-verdict lane exposes certified=false and cannot reach here.
+  #
+  # The CLIENT half is phase1_certified alone (2026-10-07): the three journeys
+  # passed exactly once AND ran inside one release bracket on client_sha. The
+  # whole-job `certified` window is still computed and reported, but it spans
+  # forty minutes of unrelated routes, and at the real publish rate it held on
+  # neither passing run of 2026-10-06/07, so requiring it meant the seal was
+  # never owed. Keep this condition identical to SEAL_OWED in post-deploy-verdict
+  # below (tests/unit/phase1CustomizationCertificateCoverage.test.ts).
+  phase1-customization-cutover-seal:
+    needs: [publication-gate, production-e2e, live-table-e2e]
+    if: >-
+      ${{
+        always() &&
+        needs.publication-gate.outputs.should_run == 'true' &&
+        needs.live-table-e2e.result == 'success' &&
+        needs.production-e2e.outputs.phase1_certified == 'true' &&
+        needs.live-table-e2e.outputs.certified == 'true' &&
+        needs.production-e2e.outputs.client_sha == needs.live-table-e2e.outputs.client_sha
+      }}
+    name: Seal certified Phase 1 customization cutover
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      sealed: ${{ steps.seal.outputs.sealed }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.publication-gate.outputs.verification_sha || github.sha }}
+          fetch-depth: 0
+          filter: blob:none
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Re-read the exact artifacts certified by both browser lanes
+        id: artifacts
+        env:
+          CLIENT_SHA: ${{ needs.production-e2e.outputs.client_sha }}
+          LIVE_TABLE_CLIENT_SHA: ${{ needs.live-table-e2e.outputs.client_sha }}
+          ENGINE_SHA: ${{ needs.live-table-e2e.outputs.engine_sha }}
+        run: |
+          set -euo pipefail
+          test "$CLIENT_SHA" = "$LIVE_TABLE_CLIENT_SHA"
+          git fetch --no-tags --filter=blob:none origin main
+
+          CLIENT_BODY="$(curl -fsS --max-time 20 -H 'Cache-Control: no-cache' \
+            "https://smarter.poker/hub/club-arena/build-info.json?cutover=$RANDOM")" || CLIENT_BODY=''
+          if [ -z "$CLIENT_BODY" ]; then
+            echo 'ready=false' >> "$GITHUB_OUTPUT"
+            echo 'NON-VERDICT: the terminal cutover could not re-read the client identity.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          CLIENT_STATUS=0
+          CLIENT_WINDOW="$(printf '%s' "$CLIENT_BODY" \
+            | node scripts/ci/production-e2e-provenance.mjs release-window "$CLIENT_SHA")" \
+            || CLIENT_STATUS=$?
+          # A LATER CLIENT IS NOT AN UNTESTED SEAL. The seal records the client
+          # the journeys and the live-table lane actually ran against
+          # ($CLIENT_SHA), never what is serving now. A forward protected-main
+          # release since then is accepted only when it still declares the
+          # Phase 1 contract below; a rollback or off-lineage SHA already made
+          # release-window exit 1 above. fn_seal_phase_one_customization_cutover
+          # itself binds only the ENGINE to what is live, which is unchanged.
+          LIVE_CLIENT_SHA="$CLIENT_SHA"
+          if [ "$CLIENT_STATUS" -eq 3 ]; then
+            LIVE_CLIENT_SHA="${CLIENT_WINDOW#superseded }"
+            [[ "$LIVE_CLIENT_SHA" =~ ^[0-9a-f]{40}$ ]]
+            echo "Client \`$CLIENT_SHA\` was certified; production has since advanced to \`$LIVE_CLIENT_SHA\` on protected main." >> "$GITHUB_STEP_SUMMARY"
+          else
+            test "$CLIENT_STATUS" -eq 0
+          fi
+
+          ENGINE_BODY="$(curl -fsS --max-time 20 -H 'Cache-Control: no-store' \
+            "https://engine.smarter.poker/health?cutover=$RANDOM")" || ENGINE_BODY=''
+          if [ -z "$ENGINE_BODY" ]; then
+            echo 'ready=false' >> "$GITHUB_OUTPUT"
+            echo 'NON-VERDICT: the terminal cutover could not re-read the engine identity.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          LIVE_ENGINE_SHA="$(printf '%s' "$ENGINE_BODY" \
+            | node scripts/ci/production-e2e-provenance.mjs engine-live)"
+          if [ "$LIVE_ENGINE_SHA" != "$ENGINE_SHA" ]; then
+            git cat-file -e "$LIVE_ENGINE_SHA^{commit}"
+            git merge-base --is-ancestor "$LIVE_ENGINE_SHA" origin/main
+            if git merge-base --is-ancestor "$ENGINE_SHA" "$LIVE_ENGINE_SHA"; then
+              echo 'ready=false' >> "$GITHUB_OUTPUT"
+              echo "NON-VERDICT: engine \`$ENGINE_SHA\` was superseded by protected-main release \`$LIVE_ENGINE_SHA\` before sealing." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            echo "::error::The live engine \`$LIVE_ENGINE_SHA\` is not a forward protected-main release from certified engine \`$ENGINE_SHA\`."
+            exit 1
+          fi
+
+          MARKER='scripts/ci/phase1-customization-cutover-v1.json'
+          for artifact_sha in "$CLIENT_SHA" "$LIVE_CLIENT_SHA" "$ENGINE_SHA"; do
+            git cat-file -e "$artifact_sha^{commit}"
+            git merge-base --is-ancestor "$artifact_sha" origin/main
+            if ! git cat-file -e "$artifact_sha:$MARKER" 2>/dev/null; then
+              echo 'ready=false' >> "$GITHUB_OUTPUT"
+              echo "Phase 1 cutover is not ready: \`$artifact_sha\` does not carry \`$MARKER\`." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            git show "$artifact_sha:$MARKER" \
+              | node -e "let s='';process.stdin.on('data',c=>s+=c).on('end',()=>{const v=JSON.parse(s);if(v.contract!=='phase1-customization-v1')process.exit(1)})"
+          done
+          echo 'ready=true' >> "$GITHUB_OUTPUT"
+
+      - name: Write the durable cutover receipt
+        id: seal
+        if: steps.artifacts.outcome == 'success' && steps.artifacts.outputs.ready == 'true'
+        env:
+          CLIENT_SHA: ${{ needs.production-e2e.outputs.client_sha }}
+          ENGINE_SHA: ${{ needs.live-table-e2e.outputs.engine_sha }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -euo pipefail
+          node scripts/ci/seal-phase1-customization-cutover.mjs
+          echo 'sealed=true' >> "$GITHUB_OUTPUT"
+          echo "Phase 1 client \`$CLIENT_SHA\` and engine \`$ENGINE_SHA\` now have one durable cutover seal." >> "$GITHUB_STEP_SUMMARY"
+
+  # On 2026-10-05 this workflow failed four times in 69 minutes (runs
+  # 37361302553, 37363764720, 37365802796, 37368847647) at
+  # "Confirm The Hetzner Web Publish Reached Production" / "Read The Origin Job
+  # Verdict", which left every lane below it SKIPPED, and
+  # public.operational_alert_events received nothing for any of them: a later
+  # green run cleared the episode and no person and no fleet lane ever learned
+  # the publish on main 6953271d had gone 69 minutes unconfirmed.
+  #
+  # always() is load-bearing and if: failure() would not do: three of those four
+  # runs had no FAILED lane, their lanes never ran. The should_run clause is NOT
+  # used to gate this job, because a gate that fails never reaches the step that
+  # writes should_run — the superseded publisher stand-down, where the gate
+  # SUCCEEDS and deliberately leaves should_run empty, is told apart inside
+  # record-post-deploy-verdict.mjs and records nothing.
+  post-deploy-verdict:
+    needs:
+      - publication-gate
+      - seo-contract
+      - production-e2e
+      - live-table-e2e
+      - phase1-customization-cutover-seal
+    if: ${{ always() && needs.publication-gate.result != 'skipped' }}
+    name: This verification admits its own verdict to the operational inbox
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    permissions:
+      # actions: read lets the recorder read this run's own job record, so a
+      # lane cancelled while still queued (no runner, no steps) is told apart
+      # from one that started and was killed.
+      actions: read
+      contents: read
+    steps:
+      # Full commit history, no blobs: a success closes an episode only when
+      # its release descends from every release the episode failed on, and
+      # that is read with git merge-base --is-ancestor. A shallow clone would
+      # make every lineage COULD NOT TELL and nothing would ever close.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          filter: blob:none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install the pinned database client
+        run: npm ci --ignore-scripts --prefer-offline --no-audit --no-fund
+      - name: Record the production-verification verdict
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          WORKFLOW_LABEL: Post-Deploy E2E
+          ALERT_SOURCE: club-arena.post-deploy-e2e
+          ALERT_NAME: PostDeployVerificationIncomplete
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          GATE_NAME: Confirm The Hetzner Web Publish Reached Production
+          GATE_RESULT: ${{ needs.publication-gate.result }}
+          GATE_SHOULD_RUN: ${{ needs.publication-gate.outputs.should_run }}
+          LANES: |
+            ${{ needs.seo-contract.result }}|The Live SEO Contract Holds
+            ${{ needs.production-e2e.result }}|Client browser verification
+            ${{ needs.live-table-e2e.result }}|Live-table and engine verification
+            ${{ needs.phase1-customization-cutover-seal.result }}|Seal certified Phase 1 customization cutover
+          GH_TOKEN: ${{ github.token }}
+          # A lane is owed only when its own `if:` held. The SEO contract runs
+          # only for a publisher (workflow_run) event, so an engine-triggered
+          # certificate (repository_dispatch) skips it by design: run
+          # 37604057526 certified and SEALED the Phase 1 cutover and still
+          # fired PostDeployVerificationIncomplete for that skip alone. Keep
+          # each condition identical to its job's `if:` (pinned by
+          # tests/unit/phase1CustomizationCertificateCoverage.test.ts).
+          SEO_OWED: ${{ needs.publication-gate.outputs.should_run == 'true' && github.event_name == 'workflow_run' }}
+          # The seal is owed only when both browser lanes certified one exact
+          # release. A seal skipped because no run certified one is a
+          # non-verdict, not incomplete verification.
+          SEAL_OWED: >-
+            ${{
+              needs.publication-gate.outputs.should_run == 'true' &&
+              needs.live-table-e2e.result == 'success' &&
+              needs.production-e2e.outputs.phase1_certified == 'true' &&
+              needs.live-table-e2e.outputs.certified == 'true' &&
+              needs.production-e2e.outputs.client_sha == needs.live-table-e2e.outputs.client_sha
+            }}
+        run: |
+          set -euo pipefail
+          UNOWED_LANES=''
+          if [ "$SEO_OWED" != 'true' ]; then
+            UNOWED_LANES+=$'The Live SEO Contract Holds\n'
+          fi
+          if [ "$SEAL_OWED" != 'true' ]; then
+            UNOWED_LANES+=$'Seal certified Phase 1 customization cutover\n'
+          fi
+          export UNOWED_LANES
+          node scripts/ci/record-post-deploy-verdict.mjs

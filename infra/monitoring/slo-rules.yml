@@ -49,10 +49,27 @@ groups:
     rules:
       # ── AVAILABILITY ────────────────────────────────────────────────────
       # The engine is scraped every 15s. Averaged over 30m this is the
-      # fraction of scrapes that found it alive.
+      # fraction of scrapes OUTSIDE A MAINTENANCE BREAK that found it alive.
+      #
+      # A SCRAPE TAKEN IN THE BREAK IS NOT IN THE RATIO (2026-10-08). This
+      # used to average every scrape, and SLOEngineAvailability's guard only
+      # covers six minutes after the break while this window is thirty. The
+      # engine is replaced inside the break (CLAUDE.md 13), so a cutover late
+      # in the countdown left its failed scrapes in the ratio after the guard
+      # had expired: production 2026-10-07/08 fired at :16 and resolved at :26
+      # after exactly the six breaks whose ready_for_restart came at :56:21 or
+      # later (02:55, 07:55, 12:55, 14:55, 16:55, 23:55). Each scrape is now
+      # dropped when the break flag was up in the six minutes before it - the
+      # same window the alert guard uses, which also covers the minutes the
+      # old engine is gone and its flag with it. An outage outside a break,
+      # or an engine that stays down after it, still counts in full.
+      # tests/monitoring/slo-engine-availability.test.yml.
       - record: sp:engine_availability:ratio30m
         expr: |
-          avg_over_time(up{job="engine_game_server"}[30m])
+          avg_over_time((
+            up{job="engine_game_server"}
+            unless on() (max_over_time(poker_maintenance_break_active[6m]) == 1)
+          )[30m:15s])
 
       # ── DEALING ─────────────────────────────────────────────────────────
       # The platform's core promise: hands are being dealt. A table that is up,

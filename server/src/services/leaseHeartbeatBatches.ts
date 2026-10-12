@@ -3,9 +3,44 @@
  * Bound the INPUT instead of paging a mutating heartbeat after execution.
  * The caller validates the complete snapshot before dispatch and retains its
  * monotonic proof deadline while these workers drain the captured claims.
+ *
+ * ONE SLOW STATEMENT IS NOT THE WHOLE FLEET'S PROOF (2026-10-03)
+ *
+ * The bound used to be 500, so the ~300-tournament fleet rode ONE statement.
+ * At 09:34:33 UTC that statement (dedicated session, Postgres pid 3566275,
+ * xid 828316560) ran its full 8 s and was cancelled at 09:34:41.003. It never
+ * waited on a lock - log_lock_waits is on at 1 s and logged nothing for it,
+ * and heartbeat_tournament_leases_v4 already SKIPs locked rows - but the two
+ * statements before it had already slowed to 1.5 s and 2.5 s (launches and
+ * spin draws logged waiting behind their xids 828312877 / 828314457). While a
+ * heartbeat runs it holds the row lock of every lease it has renewed until it
+ * commits, so the hedge sent 5 s in (leaseHeartbeatBatches below) could only
+ * answer `busy` for every row (183 tournament `busy` that minute), and at
+ * 09:34:42-47 every manager's proof ran out: one slow statement fenced all of
+ * them, plus every launch, finish and spin draw that queued behind its locks.
+ *
+ * A request now carries at most 50 claims. A statement that stalls holds at
+ * most 50 leases and can let at most those 50 proofs run out; every other
+ * request commits on its own and a hedge for them reaches unlocked rows. The
+ * proof rules do not change: each request still opens its own window just
+ * before it is sent, `kept` on the exact generation is the only renewal, and
+ * `busy`/UNKNOWN extend nothing. 50 x 4 workers keeps a 300-tournament pass
+ * in two rounds, and a request still never approaches the PostgREST row cap.
  */
-const HEARTBEAT_CLAIMS_PER_REQUEST = 500;
+export const HEARTBEAT_CLAIMS_PER_REQUEST = 50;
 const HEARTBEAT_REQUEST_CONCURRENCY = 4;
+let claimsPerRequest = HEARTBEAT_CLAIMS_PER_REQUEST;
+
+/**
+ * Tests that pin batching mechanics written against the earlier 500-claim
+ * bound (fleet waves, caps, cross-batch validation) keep that arithmetic; the
+ * production bound is pinned separately. Pass nothing to restore it.
+ */
+export function _setHeartbeatClaimsPerRequestForTests(
+  size: number = HEARTBEAT_CLAIMS_PER_REQUEST
+): void {
+  claimsPerRequest = size;
+}
 
 /**
  * A CLAIM NOBODY ANSWERED IS ASKED AGAIN (2026-09-26).
@@ -86,8 +121,8 @@ export class RetainedLeaseHeartbeatBatches<Claim, Outcome> {
     if (!current()) return;
     const now = this.monotonicNow();
     const available = claims.filter((claim) => this.mayAsk(key(claim), now));
-    for (let start = 0; start < available.length; start += HEARTBEAT_CLAIMS_PER_REQUEST) {
-      const captured = available.slice(start, start + HEARTBEAT_CLAIMS_PER_REQUEST);
+    for (let start = 0; start < available.length; start += claimsPerRequest) {
+      const captured = available.slice(start, start + claimsPerRequest);
       const batch: RetainedBatch<Outcome> = {
         keys: captured.map(key),
         current,
@@ -168,17 +203,15 @@ export async function mapLeaseHeartbeatBatches<Claim, Outcome>(
   claims: readonly Claim[],
   heartbeat: (batch: Claim[]) => Promise<Outcome>
 ): Promise<Outcome[]> {
-  const batchCount = Math.ceil(claims.length / HEARTBEAT_CLAIMS_PER_REQUEST);
+  const batchCount = Math.ceil(claims.length / claimsPerRequest);
   const outcomes = new Array<Outcome>(batchCount);
   let nextBatch = 0;
   await Promise.all(
     Array.from({ length: Math.min(batchCount, HEARTBEAT_REQUEST_CONCURRENCY) }, async () => {
       while (nextBatch < batchCount) {
         const index = nextBatch++;
-        const start = index * HEARTBEAT_CLAIMS_PER_REQUEST;
-        outcomes[index] = await heartbeat(
-          claims.slice(start, start + HEARTBEAT_CLAIMS_PER_REQUEST)
-        );
+        const start = index * claimsPerRequest;
+        outcomes[index] = await heartbeat(claims.slice(start, start + claimsPerRequest));
       }
     })
   );

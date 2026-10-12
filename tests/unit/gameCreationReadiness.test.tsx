@@ -274,6 +274,22 @@ it('keeps the production consumer wired before its unchanged control assertion a
   expect(awaited).toBeGreaterThan(permission);
   expect(control).toBeGreaterThan(awaited);
   expect(source).toContain('timeout: 150_000');
-  expect(source).toContain("const next = await read(page, 'table_templates', match)");
+  const nextRead = source.indexOf("const nextRead = read(page, 'table_templates', match)");
+  const lifecycleRefresh = source.indexOf(
+    "window.dispatchEvent(new Event('online'))",
+    nextRead
+  );
+  const awaitNext = source.indexOf('const next = await nextRead', lifecycleRefresh);
+  expect(nextRead).toBeGreaterThan(control);
+  expect(lifecycleRefresh).toBeGreaterThan(nextRead);
+  expect(awaitNext).toBeGreaterThan(lifecycleRefresh);
   expect(source).toContain("await expect(draft).toHaveValue('Unsubmitted Catalog Check')");
+});
+
+it('does not repeat standalone authority inside an already guarded table config route', () => {
+  const app = readFileSync('src/App.tsx', 'utf8');
+  const page = readFileSync('src/pages/TableConfigPage.tsx', 'utf8');
+  expect(app).toContain('<TableConfigPage accessPrevalidated />');
+  expect(page).toContain('accessPrevalidated ? PREVALIDATED_STANDALONE_ACCESS : null');
+  expect(page).toContain('if (accessPrevalidated)');
 });

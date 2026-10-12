@@ -22,7 +22,7 @@ BANK=C.load("archive_bank_observer",ROOT/"scripts/qualification/spin-first-archi
 
 
 PROBE='scripts/qualification/fixtures/archived-spin/first-production-rollback-probe.sql'
-PROBE_SHA = "12d7f7e671f586f62a71f59b1488460f9d075f6c2802ba574e82af50ac9a681a"
+PROBE_SHA = "84246761297532ecd969d4eaa46c3fff42d1bdbbbf1c1dd1fb42c5e735ec8ab6"
 OPERATION='341f02a3-4655-420c-b43b-3930b6d9ad8f'
 
 
@@ -33,13 +33,13 @@ def validate_fee_capture(d):
     require(d['kind']=='separate_original_capture_refusal' and d['operation']==OPERATION and d['event']==C.EVENT
         and d['rake_record_id']=='6d13847d-cbe2-473c-94e5-34dad1ce3efb'
         and d['sqlstate']=='23514' and d['message']=='cash_commission_earning_club_not_observed'
-        and d['owner_md5']=='b7e0c1cae9d65b9a0b3560dc3280991a'
+        and d['owner_md5']=='d7dae6781894ce817545116009a156b1'
         and d['invoker_role']==d['auth_role']=='service_role','fee capture original owner/refusal differs')
     require(isinstance(d['transaction_id'],str) and re.fullmatch(r'[1-9][0-9]{0,19}',d['transaction_id'])
         and int(d['transaction_id'])<2**64,'fee capture transaction identity malformed')
     require(isinstance(d['context'],str) and len(d['context'])<=16384
         and 'fn_ca_capture_tournament_fee_from_recorded_evidence' in d['context']
-        and 'fn_accounting_earning_contract' in d['context'],'fee capture actual context absent')
+        and 'fn_ca_capture_tournament_fee_from_recorded_evidence(uuid) line 269 at RAISE' in d['context'],'fee capture actual context absent')
     require(d['before']==d['after']=={'batches':[],'sources':[]},'fee capture provisional writes survived')
     return d
 
@@ -189,6 +189,7 @@ def protocol_error(raw,kind):
     return xid
 
 def validate_financial_detail(detail,observer_rows,archive):
+    require(all(detail[stage].get(name)==[] for stage in ('before','inside','replay_state') for name in ('public.accounting_tournament_fee_owner_bases', 'public.accounting_tournament_fee_owner_operations')),'fee owner basis must remain absent')
     before=detail['before'];inside=detail['inside'];account_keys=('public.club_members','public.clubs','public.unions','public.union_wallets','public.spin_bonus_pools')
     archive.validate_account_delta({k:before[k] for k in account_keys},{k:inside[k] for k in account_keys},bank_observations=detail['bank_observations'])
     terminal=inside['public.tournament_terminal_settlements'][0]
@@ -297,8 +298,9 @@ def run(args,e,sessions,deadline,R,A):
     env=observer.json("SELECT jsonb_build_object('database',current_database(),'user',current_user,'session_user',session_user,'port',current_setting('port'),'address',inet_server_addr(),'max_locks',current_setting('max_locks_per_transaction')::int,'max_connections',current_setting('max_connections')::int,'version',current_setting('server_version_num')::int,'others',(SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid()));")
     R.require_private_endpoint(env,database);e['environment']=env
     worker=new('worker')
-    external=new('external') if args.bank_races else None
+    external=new('external') if args.bank_races or (args.completion and args.completion_case=='bank_intervals') else None
     e['synthetic_bank_variant']=args.bank_races
+    e['completion_variant']=args.completion
     require(env['max_locks']==1024 and env['max_connections']==8,'probe isolated capacity differs')
     original=(ROOT/C.PROBE).read_text()
     setup="SET timezone='UTC';\n"+original[original.index('CREATE FUNCTION pg_temp.archive_financial_snapshot()'):original.index('CREATE TEMP TABLE archive_before')]
@@ -337,10 +339,14 @@ def run(args,e,sessions,deadline,R,A):
     if args.bank_races:
         races=C.load('archive_bank_races',ROOT/'scripts/qualification/spin-first-archived-bank-races.py')
         races.run(args,e,worker,observer,external,snapshot,source.decode(),type('ProbeAPI',(),dict(globals())),A,R,deadline)
+    if args.completion:
+        completion=C.load('archive_completion',ROOT/'scripts/qualification/spin-first-archived-completion.py')
+        completion.run(e,worker,observer,snapshot,external=external,kind=args.completion_case,deadline=deadline)
     e['passed']=True
 
 
-def validate_evidence(document,execution,archive,*,bank_races=False):
+def validate_evidence(document,execution,archive,*,bank_races=False,completion=False,completion_case='original'):
+    require(not(bank_races and completion),'mutually exclusive archive result variants')
     d=C.restore(document)
     require(d['execution']==execution and d['event']==C.EVENT and d['passed'] is True
         and d['cleanup_verified'] is True and d['financial_qualified'] is False
@@ -365,17 +371,25 @@ def validate_evidence(document,execution,archive,*,bank_races=False):
         require(d['bank_races']['original_before']['rows']==d['fee_protocol'][-1]['after']['rows'],'bank overlay baseline differs')
         require(d['bank_races']['pids']==d['backend_pids'],'bank race backend inventory differs')
     else:require('bank_races' not in d,'ordinary image contains synthetic bank races')
-    names={'observer','worker','external'} if bank_races else {'observer','worker'}
+    require(d.get('completion_variant',False) is completion,'completion variant identity differs')
+    if completion:
+        cv=C.load('archive_completion_validator',ROOT/'scripts/qualification/spin-first-archived-completion.py')
+        require(d['completion']['kind']==completion_case,'completion case differs')
+        require(d['completion']['pids']==d['backend_pids'],'completion backend identity differs')
+        cv.validate_native(d['completion'])
+        require(d['completion']['original_before']['rows']==d['fee_protocol'][-1]['after']['rows'],'completion baseline changed')
+    else:require('completion' not in d,'unexpected completion receipt')
+    names={'observer','worker','external'} if bank_races or (completion and completion_case=='bank_intervals') else {'observer','worker'}
     p=d['backend_pids'];require(set(p)==names and len(set(p.values()))==len(names) and all(type(v) is int and v>0 for v in p.values()),'probe original backend identity differs')
     require(len(d['clients'])==len(names) and {c['backend_pid'] for c in d['clients']}==set(p.values())
         and all(type(c['client_exit']) is int and c['client_exit']==0 for c in d['clients']),'probe client cleanup differs')
     require(d['backend_cleanup']=={'backends':0,'locks':0} and d['backend_cleanup_observations'][-1]=={'backends':0,'locks':0}
         and type(d['verifier_client']['client_exit']) is int and d['verifier_client']['client_exit']==0 and d['cleanup_transcript']
         and set(d['transcripts'])==set(p) and all(d['transcripts'].values()),'probe actual disposal absent')
-    return {'production_probe_rehearsed':True,'own_bank_fault_diagnostic_rehearsed':True,'financial_qualified':False,'production_qualified':False,'sequence_rollback_claimed':False}
+    return {'completion_rehearsed':completion,'production_probe_rehearsed':True,'own_bank_fault_diagnostic_rehearsed':True,'financial_qualified':False,'production_qualified':False,'sequence_rollback_claimed':False}
 
 def main():
-    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--psql',type=Path,required=True);parser.add_argument('--execution',required=True);parser.add_argument('--bank-races',action='store_true');args=parser.parse_args()
+    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--psql',type=Path,required=True);parser.add_argument('--execution',required=True);parser.add_argument('--bank-races',action='store_true');parser.add_argument('--completion',action='store_true');parser.add_argument('--completion-case',choices=('original','bank_intervals'),default='original');args=parser.parse_args();require(not(args.bank_races and args.completion),'mutually exclusive archive variants')
     require(args.psql.is_absolute() and args.psql.is_file(),'absolute qualified psql required')
     require(hashlib.sha256((ROOT/C.SESSION).read_bytes()).hexdigest()==C.SESSION_SHA,'existing Session owner changed')
     R=C.load('archive_probe_existing_session',ROOT/C.SESSION);A=C.load('archive_probe_financial_oracle',ROOT/C.MODULE);R.canonical_uuid(args.execution)
@@ -399,6 +413,11 @@ def main():
                 holder=owned['observer'];holder.deadline=deadline
                 try:holder.command("ROLLBACK; SELECT pg_advisory_unlock("+e["mvcc_operation_barrier"]+");")
                 except BaseException as error:e['fault_cleanup']['mvcc_barrier_error']=str(error)
+            if e.get('completion_barriers') and 'observer' in owned:
+                holder=owned['observer'];holder.deadline=deadline
+                for key in list(e['completion_barriers']):
+                    try:holder.command('ROLLBACK; SELECT pg_advisory_unlock('+key+');')
+                    except BaseException as error:e['fault_cleanup']['completion_barrier_error']=str(error)
             for name in ('external','worker'):
                 client=owned.get(name)
                 if client is None:continue
@@ -414,7 +433,7 @@ def main():
         e['transcripts']={name:bytes(s.raw).decode('utf-8',errors='replace') for name,s in sessions}
         verifier=None
         try:
-            require(len(sessions)==(3 if args.bank_races else 2),'original caller inventory incomplete')
+            require(len(sessions)==(3 if args.bank_races or (args.completion and args.completion_case=='bank_intervals') else 2),'original caller inventory incomplete')
             verifier=R.Session(args.psql,'qual_spin_expiry_'+args.execution.replace('-',''),'archive_probe_cleanup_'+args.execution,deadline)
             verifier.pid=verifier.json('SELECT to_jsonb(pg_backend_pid());');R.observe_backend_cleanup(verifier,','.join(str(s.pid) for _,s in sessions),deadline,e)
             e['cleanup_verified']=all(type(c.get('client_exit')) is int and c['client_exit']==0 and 'cleanup_error' not in c for c in e['clients'])
@@ -425,7 +444,7 @@ def main():
                 try:e['verifier_client']=verifier.close(deadline);require(e['verifier_client']['client_exit']==0,'verifier cleanup failed')
                 except BaseException as error:e['cleanup_verified']=False;e['verifier_cleanup_error']=str(error)
     if 'failure' not in e:
-        try:e['qualification']=validate_evidence(e,args.execution,A,bank_races=args.bank_races)
+        try:e['qualification']=validate_evidence(e,args.execution,A,bank_races=args.bank_races,completion=args.completion,completion_case=args.completion_case)
         except BaseException as error:e['failure']={'type':type(error).__name__,'message':str(error)}
     print(json.dumps(e,default=R.evidence_value,allow_nan=False))
     return 0 if e['passed'] and e['cleanup_verified'] and 'failure' not in e else 1

@@ -17,6 +17,10 @@ const AUDIT = resolve(ROOT, '.github/scripts/estate-integrity.sh');
 const REAL_SHASUM = spawnSync('sh', ['-c', 'command -v shasum'], {
   encoding: 'utf8',
 }).stdout.trim();
+/** The reviewed World Hub hook the audit expects, as GitHub would return it. */
+const WH_HOOK_B64 = readFileSync(
+  resolve(ROOT, '.github/estate-variants/Smarter-Poker-World-Hub/.husky/reference-transaction')
+).toString('base64');
 const sandboxes: string[] = [];
 
 type FixtureMode =
@@ -52,6 +56,7 @@ exec "\${ESTATE_REAL_SHASUM:?}" "$@"
     fakeGh,
     `#!/usr/bin/env bash
 set -u
+WH_HOOK_B64='${WH_HOOK_B64}'
 
 valid_detail() {
   local id="$1"
@@ -63,6 +68,14 @@ case "\${1:-}" in
   api)
     endpoint="\${2:-}"
     case "$endpoint" in
+      # A SWITCHED-OFF WORKFLOW IS NOT A LIVE ONE (2026-10-02). Section 3 now
+      # reads the workflow state before judging a run. Every repo here is
+      # enabled, so this fixture keeps testing only the ruleset reads.
+      */actions/workflows)
+        WF_JSON='{"total_count":1,"workflows":[{"id":2,"name":"Agent Autopilot","path":".github/workflows/agent-autopilot.yml","state":"active"}]}'
+        shift 2
+        if [ "\${1:-}" = --jq ]; then printf '%s' "$WF_JSON" | jq -r "\${2:-.}"; else printf '%s\\n' "$WF_JSON"; fi
+        ;;
       repos/Smarter-Poker/*/rulesets)
         printf '[{"id":101,"target":"branch"},{"id":102,"target":"branch"}]\\n'
         ;;
@@ -88,6 +101,14 @@ case "\${1:-}" in
         # decoding that error as if it were content.
         printf '{"message":"Not Found","status":"404"}\\n'
         exit 1
+        ;;
+      repos/Smarter-Poker/Smarter-Poker-World-Hub/contents/.husky/reference-transaction)
+        # World Hub's hook is a RECORDED EXPECTED VARIANT (2026-10-05): the
+        # audit holds it to the reviewed copy stored in this repository, not
+        # to the other repos. A healthy estate therefore serves that copy
+        # here, byte for byte, and this fixture reads it from disk rather
+        # than restating it.
+        printf '%s\\n' "$WH_HOOK_B64"
         ;;
       repos/Smarter-Poker/*/contents/*)
         if [ "\${ESTATE_FIXTURE_MODE:?}" = divergent ] && [ "$endpoint" = repos/Smarter-Poker/Smarter-Poker-World-Hub/contents/AGENT-PLAYBOOK.md ]; then
@@ -123,6 +144,11 @@ esac
     cwd: ROOT,
     encoding: 'utf8',
     env: {
+      ESTATE_INJECT_REPO: 'Smarter-Poker-Diamond-Arena',
+      ESTATE_INJECT_RETIRED_PATH1:
+        '.github/workflows/agent-autopilot.yml|Smarter-Poker-Diamond-Arena|test',
+      ESTATE_INJECT_RETIRED_PATH2:
+        '.github/workflows/agent-open-pr.yml|Smarter-Poker-Diamond-Arena|test',
       ...process.env,
       ESTATE_FIXTURE_MODE: mode,
       ESTATE_REAL_SHASUM: REAL_SHASUM,
@@ -200,7 +226,11 @@ describe('LAW - every branch ruleset detail must be readable before the audit ca
     expect(result.status).toBe(0);
     expect(combined).not.toContain('unauthorized required context');
     expect(combined).toContain('estate-integrity: 0 problem(s).');
-    expect(hashes).toBe(14);
+    // One hash per shared file, plus three for `.husky/reference-transaction`:
+    // the stored World Hub copy, World Hub's own bytes (which differ from Club
+    // Arena's and are compared against the stored copy, not the estate), and
+    // commander's bytes, which differ from the last payload seen.
+    expect(hashes).toBe(17);
   }, 15_000);
 
   it('rehashes different same-path bytes without hiding the divergent repository', () => {
@@ -209,7 +239,7 @@ describe('LAW - every branch ruleset detail must be readable before the audit ca
     expect(combined).toContain('AGENT-PLAYBOOK.md');
     expect(combined).toContain('2 different versions');
     expect(combined).toContain('Smarter-Poker-World-Hub');
-    expect(hashes).toBe(16);
+    expect(hashes).toBe(19);
   }, 15_000);
 
   it('refuses failed hashing and never reuses it as a successful digest', () => {

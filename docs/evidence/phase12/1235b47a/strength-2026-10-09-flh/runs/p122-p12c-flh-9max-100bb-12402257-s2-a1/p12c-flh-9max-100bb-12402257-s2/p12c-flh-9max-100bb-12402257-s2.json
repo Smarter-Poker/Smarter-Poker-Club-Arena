@@ -1,0 +1,189 @@
+{
+  "schema": "horse-phase12-strength-shard-v1",
+  "variant": "flh",
+  "contractVersion": "remaining-variant-strength-contract-v1",
+  "contractDigest": "fafbba8dc23ebc59b5aadf78fdcc47cd6f504baf9bcd10b07970ad7fbea501c0",
+  "packVersion": "fixed-limit-holdem-round3-v1",
+  "evidenceMode": "contract",
+  "profileId": "p12c-flh-9max-100bb",
+  "seed": 12402257,
+  "shard": 2,
+  "firstPair": 25920,
+  "requestedPairs": 12960,
+  "pairs": 12960,
+  "complete": true,
+  "positionCoverageComplete": true,
+  "offsetCounts": [1440, 1440, 1440, 1440, 1440, 1440, 1440, 1440, 1440],
+  "strata": {
+    "0|none": {
+      "n": 1246,
+      "s1": "0",
+      "s2": "0",
+      "s3": "0",
+      "s4": "0"
+    },
+    "0|preflop": {
+      "n": 194,
+      "s1": "-19320",
+      "s2": "114932050",
+      "s3": "-31118463000",
+      "s4": "258809121801250"
+    },
+    "1|none": {
+      "n": 1413,
+      "s1": "0",
+      "s2": "0",
+      "s3": "0",
+      "s4": "0"
+    },
+    "1|preflop": {
+      "n": 27,
+      "s1": "2090",
+      "s2": "12479100",
+      "s3": "7713461000",
+      "s4": "26211048390000"
+    },
+    "2|none": {
+      "n": 1440,
+      "s1": "0",
+      "s2": "0",
+      "s3": "0",
+      "s4": "0"
+    },
+    "3|none": {
+      "n": 1440,
+      "s1": "0",
+      "s2": "0",
+      "s3": "0",
+      "s4": "0"
+    },
+    "4|none": {
+      "n": 1313,
+      "s1": "0",
+      "s2": "0",
+      "s3": "0",
+      "s4": "0"
+    },
+    "4|preflop": {
+      "n": 127,
+      "s1": "-21910",
+      "s2": "179697100",
+      "s3": "-200665153000",
+      "s4": "812495913670000"
+    },
+    "5|none": {
+      "n": 1335,
+      "s1": "0",
+      "s2": "0",
+      "s3": "0",
+      "s4": "0"
+    },
+    "5|preflop": {
+      "n": 105,
+      "s1": "6750",
+      "s2": "112243900",
+      "s3": "-30858345000",
+      "s4": "273483357190000"
+    },
+    "6|none": {
+      "n": 1347,
+      "s1": "0",
+      "s2": "0",
+      "s3": "0",
+      "s4": "0"
+    },
+    "6|preflop": {
+      "n": 93,
+      "s1": "8095",
+      "s2": "104793425",
+      "s3": "25492685875",
+      "s4": "261952236700625"
+    },
+    "7|none": {
+      "n": 1339,
+      "s1": "0",
+      "s2": "0",
+      "s3": "0",
+      "s4": "0"
+    },
+    "7|preflop": {
+      "n": 101,
+      "s1": "-4020",
+      "s2": "92484000",
+      "s3": "-35693316000",
+      "s4": "258253281000000"
+    },
+    "8|none": {
+      "n": 1253,
+      "s1": "0",
+      "s2": "0",
+      "s3": "0",
+      "s4": "0"
+    },
+    "8|preflop": {
+      "n": 187,
+      "s1": "8080",
+      "s2": "148821200",
+      "s3": "36389254000",
+      "s4": "322763063360000"
+    }
+  },
+  "pairDigest": "6ceae3efe82e3ef1536659d6ead52bdc8e7dff019491e67e4329d39573a79850",
+  "candidateNetCents": -306066,
+  "referenceNetCents": -285831,
+  "changedPairs": 834,
+  "decisions": 399972,
+  "eligible": 20181,
+  "changed": 834,
+  "illegalCandidates": 0,
+  "discards": 0,
+  "illegalActions": 0,
+  "conservationErrors": 0,
+  "cardErrors": 0,
+  "truncatedHands": 0,
+  "settlementMismatches": 0,
+  "deductionMismatches": 0,
+  "pairedReplayMismatches": 0,
+  "showdownsChecked": 11997,
+  "foldWinsChecked": 13923,
+  "lowHalvesChecked": 0,
+  "totalRake": 46892.6,
+  "totalBbj": 9991.5,
+  "nodeCounts": {
+    "cash/preflop/overcall": 192,
+    "cash/preflop/defense": 1484,
+    "cash/preflop/four_bet": 840,
+    "cash/preflop/rfi": 6625,
+    "cash/preflop/three_bet": 2643,
+    "cash/flop/checked_to": 1899,
+    "cash/flop/facing_bet": 870,
+    "cash/preflop/squeeze": 1049,
+    "cash/preflop/five_bet_plus": 115,
+    "cash/turn/checked_to": 1520,
+    "cash/river/checked_to": 1223,
+    "cash/turn/facing_bet": 743,
+    "cash/river/facing_bet": 593,
+    "cash/flop/facing_raise": 56,
+    "cash/turn/facing_raise": 71,
+    "cash/preflop/limp_option": 194,
+    "cash/river/facing_raise": 64
+  },
+  "reasons": {
+    "round3_reference_retained": 19347,
+    "round3_open_tightened": 807,
+    "round3_small_blind_steal": 27
+  },
+  "equityWork": {
+    "450": 160493
+  },
+  "fixedWork": {
+    "governor": "off",
+    "scale": 1,
+    "policyClock": "fixed_work_no_wall_clock_branch",
+    "moodClock": "deal_seed_time_of_day"
+  },
+  "durationMs": 337565,
+  "promotionEligible": false,
+  "sourceUnchanged": true,
+  "cancelled": false
+}

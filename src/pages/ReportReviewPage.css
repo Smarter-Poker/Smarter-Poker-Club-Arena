@@ -1,9 +1,5 @@
-/* #SMARTERCASINOREALISM - the material layer. Tokens are defined once on :root
-   in src/styles/club-engine.css, which main.tsx loads; this sheet only consumes
-   them. The page is the club's conduct-report queue: staff filter the cases,
-   open one in the modal, add notes and action or dismiss it. The cut corners
-   are this page's own idiom and stay - a clip-path clips outer shadows away, so
-   clipped surfaces carry the bevel and cavity insets rather than the lift. */
+/* Player Report Review prints its live casework into approved console masters.
+   The page owns no CSS frame, plate, pill, gradient or floating icon. */
 
 .report-review-page {
   min-height: 100vh;
@@ -11,463 +7,336 @@
   padding-bottom: var(--bottom-nav-clearance, 74px);
   overflow-x: clip;
   background: var(--realism-obsidian);
-  color: var(--realism-chrome-hot);
-  font-family: 'Roboto Condensed', system-ui, sans-serif;
+  color: #e4e7ec;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
 }
+
 .report-workspace {
-  width: min(100%, 1180px);
+  width: min(100%, 1000px);
   margin: 0 auto;
-  padding: clamp(24px, 4vw, 48px) clamp(14px, 4vw, 44px) 60px;
+  padding: clamp(20px, 4vw, 44px) clamp(8px, 3vw, 28px) 60px;
   box-sizing: border-box;
 }
+
+.report-console {
+  --sc-max: 900px;
+}
+
 .case-toolbar {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
-  gap: 18px;
-  margin-bottom: 18px;
+  gap: 3cqw;
+  padding-bottom: 2cqw;
 }
+
 .case-kicker {
-  margin: 0 0 3px;
-  color: var(--realism-muted);
-  font-family: 'Rajdhani', system-ui, sans-serif;
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-.case-toolbar h2,
-.modal-header h2 {
   margin: 0;
-  font-family: 'Rajdhani', system-ui, sans-serif;
-  font-size: clamp(1.35rem, 3vw, 2rem);
-  letter-spacing: -0.02em;
+  color: #45adff;
+  font-size: 2.7cqw;
+  font-weight: 700;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
 }
+
 .filter-tabs {
   display: flex;
-  gap: 4px;
+  justify-content: flex-end;
+  gap: 1.5cqw;
+  min-width: 0;
   overflow-x: auto;
 }
-/* Milled face: lit top edge over a shallow drop. */
-.filter-tab {
+
+.filter-tab,
+.report-error button {
+  min-width: 44px;
   min-height: 44px;
-  padding: 8px 15px;
-  border: 1px solid var(--realism-gunmetal);
-  border-radius: 2px;
-  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
-  color: var(--realism-muted);
-  box-shadow:
-    var(--realism-bevel),
-    0 1px 2px rgba(0, 0, 0, 0.55);
+  padding: 1cqw 1.5cqw;
+  border: 0;
+  background: transparent;
+  color: #9aa5b3;
   font:
-    700 0.78rem 'Rajdhani',
+    700 2.7cqw/1.2 'Roboto Condensed',
+    Inter,
     system-ui,
     sans-serif;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  letter-spacing: 0.1em;
   cursor: pointer;
   touch-action: manipulation;
 }
-/* The press, not a hover: on a phone the tap IS the feedback. */
+
+.filter-tab[aria-selected='true'] {
+  color: #45adff;
+  text-shadow: 0 0 1.4cqw rgb(69 173 255 / 72%);
+}
+
 .filter-tab:active:not(:disabled),
 .report-error button:active:not(:disabled),
-.modal-header button:active:not(:disabled),
-.action-buttons .btn:active:not(:disabled) {
+.report-card:active:not(:disabled) {
   transform: translateY(1px);
-  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.7);
 }
-.filter-tab.active {
-  border-color: var(--realism-cyan);
-  background: #0a2740;
-  color: var(--realism-chrome-hot);
-  box-shadow: inset 0 -2px 0 var(--realism-cyan);
-}
+
 .filter-tab:focus-visible,
 .report-card:focus-visible,
-.report-review-page button:focus-visible,
-.report-review-page textarea:focus-visible {
-  outline: 2px solid var(--realism-cyan);
+.report-error button:focus-visible,
+.notes-field textarea:focus-visible {
+  outline: 2px solid #45adff;
   outline-offset: 3px;
 }
+
 .reports-list {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  display: flex;
+  flex-direction: column;
 }
-/* A case card is a plate in the queue. Its clip-path cuts the corners, which
-   also cuts any outer shadow, so the material here is all inset. */
+
 .report-card {
-  position: relative;
   display: grid;
-  gap: 12px;
+  gap: 2cqw;
+  width: 100%;
   min-width: 0;
-  min-height: 180px;
-  padding: 18px;
-  overflow: hidden;
-  border: 1px solid var(--realism-gunmetal);
-  border-left: 2px solid var(--realism-gunmetal-lit);
-  border-radius: 0;
-  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
-  box-shadow: var(--realism-bevel), var(--realism-cavity);
+  min-height: 44px;
+  padding: 3cqw 1cqw;
+  border: 0;
+  border-top: 1px solid #000;
+  background: transparent;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
   color: inherit;
   font: inherit;
   text-align: left;
   cursor: pointer;
-  clip-path: polygon(0 0, calc(100% - 9px) 0, 100% 9px, 100% 100%, 9px 100%, 0 calc(100% - 9px));
 }
-.report-card::after {
-  content: '';
-  position: absolute;
-  inset: auto 18px 0;
-  height: 1px;
-  background: var(--realism-cyan);
-  opacity: 0;
-  box-shadow: 0 0 12px var(--realism-cyan);
+
+.report-card:first-of-type {
+  border-top-color: transparent;
+  box-shadow: none;
 }
-.report-card:focus-visible::after {
-  opacity: 1;
-}
-.report-card:active {
-  transform: translateY(1px);
-}
+
 .report-header {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
-  gap: 12px;
+  gap: 3cqw;
 }
+
 .reason-label {
-  color: var(--realism-chrome-hot);
-  font:
-    700 1.08rem 'Rajdhani',
-    system-ui,
-    sans-serif;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-.status-badge {
-  padding: 5px 8px;
-  border: 1px solid var(--realism-gunmetal-lit);
-  color: var(--realism-chrome);
-  background: var(--realism-panel-raised);
-  box-shadow: var(--realism-bevel);
-  font-size: 0.66rem;
+  min-width: 0;
+  font-size: 3.5cqw;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
+  overflow-wrap: anywhere;
+}
+
+.status-badge {
+  flex: 0 0 auto;
+  color: #45adff;
+  font-size: 2.4cqw;
+  font-weight: 700;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
 }
+
 .status-pending {
-  border-color: #725a2a;
-  color: var(--realism-gold);
-  background: #261e0d;
+  color: #ffd700;
 }
+
 .status-actioned {
-  border-color: #7e3036;
-  color: #ff9a9e;
-  background: #2c1014;
+  color: #ff5b6e;
 }
-.status-dismissed {
-  color: var(--realism-muted);
+
+.status-dismissed,
+.status-reviewed {
+  color: #9aa5b3;
 }
+
 .report-players {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 13px;
-  color: var(--realism-chrome);
+  gap: 3cqw;
+  color: #d7dee7;
+  font:
+    500 3.2cqw/1.4 Inter,
+    system-ui,
+    sans-serif;
 }
+
 .report-players span {
   min-width: 0;
   overflow-wrap: anywhere;
 }
+
 .report-players strong {
   display: block;
-  margin-bottom: 3px;
-  color: var(--realism-muted);
-  font-size: 0.67rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-.report-date {
-  color: var(--realism-muted);
-  font-size: 0.76rem;
-}
-.inspect-label {
-  align-self: end;
-  color: var(--realism-cyan);
+  margin-bottom: 0.7cqw;
+  color: #45adff;
   font:
-    700 0.72rem 'Rajdhani',
+    700 2.3cqw/1.2 'Roboto Condensed',
+    Inter,
     system-ui,
     sans-serif;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
 }
+
+.report-date,
+.inspect-label {
+  color: #9aa5b3;
+  font-size: 2.5cqw;
+}
+
+.inspect-label {
+  color: #45adff;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
 .report-state {
-  min-height: 260px;
   display: grid;
   place-content: center;
-  gap: 7px;
-  padding: 30px;
-  border: 1px solid var(--realism-gunmetal);
-  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
-  box-shadow: var(--realism-bevel), var(--realism-cavity);
-  color: var(--realism-muted);
-  text-align: center;
-  clip-path: polygon(
-    0 0,
-    calc(100% - 10px) 0,
-    100% 10px,
-    100% 100%,
-    10px 100%,
-    0 calc(100% - 10px)
-  );
+  gap: 2cqw;
+  min-height: 30cqw;
+  padding: 6cqw 2cqw;
 }
-.report-state strong {
-  color: var(--realism-chrome-hot);
-  font:
-    700 1.1rem 'Rajdhani',
-    system-ui,
-    sans-serif;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
+
 .report-state p {
   margin: 0;
 }
-.state-signal {
-  justify-self: center;
-  width: 10px;
-  height: 10px;
-  margin-bottom: 6px;
-  background: var(--realism-cyan);
-  box-shadow: 0 0 15px rgba(0, 212, 255, 0.9);
-}
-.report-error {
-  border-left: 3px solid #ff5a5f;
-}
+
 .report-error button {
   justify-self: center;
-  min-height: 44px;
-  margin-top: 10px;
-  padding: 9px 15px;
-  border: 1px solid var(--realism-gunmetal-lit);
-  border-radius: 2px;
-  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
-  box-shadow:
-    var(--realism-bevel),
-    0 1px 2px rgba(0, 0, 0, 0.55);
-  color: var(--realism-chrome-hot);
-  font:
-    700 0.78rem 'Rajdhani',
-    system-ui,
-    sans-serif;
-  text-transform: uppercase;
-  cursor: pointer;
+  color: #f4f7fb;
+  text-shadow: 0 0 1.2cqw rgb(69 173 255 / 70%);
 }
+
+.report-cap {
+  margin: 0;
+  padding: 2.5cqw 1cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  color: #ffd700;
+  font-size: 2.6cqw;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .modal-overlay {
   position: fixed;
   inset: 0;
   z-index: 1000;
   display: grid;
   place-items: center;
-  padding: 16px;
-  background: rgba(1, 3, 5, 0.9);
-}
-.modal-content {
-  width: min(100%, 620px);
-  max-height: min(84vh, 760px);
+  padding: 12px;
   overflow-y: auto;
-  border: 1px solid var(--realism-gunmetal-lit);
-  border-top: 2px solid var(--realism-cyan);
-  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
-  box-shadow:
-    var(--realism-bevel),
-    var(--realism-cavity),
-    0 0 0 1px var(--realism-obsidian),
-    0 20px 80px rgba(0, 0, 0, 0.68);
-  clip-path: polygon(
-    0 0,
-    calc(100% - 12px) 0,
-    100% 12px,
-    100% 100%,
-    12px 100%,
-    0 calc(100% - 12px)
-  );
+  background: rgb(1 3 5 / 92%);
 }
-.modal-header {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 18px;
-  padding: 18px 20px;
-  border-bottom: 1px solid var(--realism-gunmetal);
-  background: var(--realism-carbon);
+
+.report-dialog-shell {
+  width: min(100%, 760px);
+  max-height: 96dvh;
 }
-.modal-header button {
-  min-height: 44px;
-  padding: 8px 13px;
-  border: 1px solid var(--realism-gunmetal-lit);
-  border-radius: 2px;
-  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
-  box-shadow:
-    var(--realism-bevel),
-    0 1px 2px rgba(0, 0, 0, 0.55);
-  color: var(--realism-chrome);
-  font:
-    700 0.75rem 'Rajdhani',
-    system-ui,
-    sans-serif;
-  text-transform: uppercase;
-  cursor: pointer;
+
+.report-dialog-console {
+  --sc-max: 760px;
 }
+
 .modal-body {
-  padding: 20px;
+  display: grid;
+  gap: 3cqw;
 }
-/* The 1px grid gaps are the frame between the cells, so the background here is
-   the edge colour and each cell paints its own cavity over it. */
+
 .case-details {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1px;
+  gap: 0;
   margin: 0;
-  background: var(--realism-gunmetal);
-  border: 1px solid var(--realism-gunmetal);
 }
+
 .case-details > div {
-  padding: 13px;
-  background: var(--realism-panel);
+  display: grid;
+  grid-template-columns: minmax(0, 0.42fr) minmax(0, 0.58fr);
+  gap: 3cqw;
+  padding: 2.4cqw 1cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
-.case-details dt {
-  color: var(--realism-muted);
-  font-size: 0.68rem;
+
+.case-details > div:first-child {
+  border-top-color: transparent;
+  box-shadow: none;
+}
+
+.case-details dt,
+.notes-field label {
+  color: #45adff;
+  font-size: 2.5cqw;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
 }
+
 .case-details dd {
-  margin: 5px 0 0;
-  color: var(--realism-chrome-hot);
+  margin: 0;
+  color: #e4e7ec;
+  font:
+    500 3.2cqw/1.45 Inter,
+    system-ui,
+    sans-serif;
   overflow-wrap: anywhere;
 }
-.case-details .full-detail {
-  grid-column: 1 / -1;
-}
+
 .notes-field {
   display: grid;
-  gap: 7px;
-  margin-top: 18px;
+  gap: 1.5cqw;
+  padding-top: 2cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
-.notes-field label {
-  color: var(--realism-muted);
-  font-size: 0.74rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-/* Cut INTO the modal, so the light falls on the inside of the top edge. */
+
 .notes-field textarea {
   width: 100%;
-  min-height: 104px;
-  padding: 12px;
+  min-height: 18cqw;
+  padding: 2.4cqw;
   box-sizing: border-box;
-  border: 1px solid var(--realism-gunmetal);
-  border-radius: 2px;
-  background: var(--realism-obsidian);
-  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.55);
-  color: var(--realism-chrome-hot);
+  border: 0;
+  border-top: 1px solid #000;
+  border-bottom: 1px solid rgb(255 255 255 / 8%);
+  background: #05070b;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  color: #f4f7fb;
   font:
-    16px 'Roboto Condensed',
+    500 3.2cqw/1.45 Inter,
     system-ui,
     sans-serif;
   resize: vertical;
 }
-.action-buttons {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 8px;
-  margin-top: 14px;
-}
-.action-buttons .btn {
-  min-height: 46px;
-  padding: 10px 13px;
-  border: 1px solid;
-  border-radius: 2px;
-  box-shadow:
-    var(--realism-bevel),
-    0 1px 2px rgba(0, 0, 0, 0.55);
-  font:
-    700 0.8rem 'Rajdhani',
-    system-ui,
-    sans-serif;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  cursor: pointer;
-}
-.btn-danger {
-  border-color: #86363c;
-  background: #381116;
-  color: #ffb6ba;
-}
-.btn-secondary {
-  border-color: var(--realism-gunmetal-lit);
-  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
-  color: var(--realism-chrome);
-}
-.btn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-  box-shadow: none;
-}
-@media (max-width: 680px) {
+
+@media (max-width: 560px) {
   .case-toolbar {
     align-items: flex-start;
     flex-direction: column;
   }
-  .reports-list {
-    grid-template-columns: 1fr;
-  }
+
   .filter-tabs {
+    justify-content: space-between;
     width: 100%;
-  }
-  .filter-tab {
-    flex: 1;
-  }
-}
-@media (max-width: 480px) {
-  .report-workspace {
-    padding-inline: 10px;
-  }
-  .report-card {
-    min-height: 0;
-  }
-  .case-details {
-    grid-template-columns: 1fr;
-  }
-  .case-details .full-detail {
-    grid-column: auto;
-  }
-  .action-buttons {
-    grid-template-columns: 1fr;
-  }
-  .modal-overlay {
-    align-items: end;
-    padding: 0;
-  }
-  .modal-content {
-    width: 100%;
-    max-height: 90dvh;
-  }
-}
-/* Motion collapses, the material does not: every border, bevel and colour above
-   survives here, so a reduced-motion reviewer sees the same object held still. */
-@media (prefers-reduced-motion: reduce) {
-  .report-card {
-    transition: none;
   }
 
+  .filter-tab {
+    flex: 1 1 0;
+  }
+
+  .report-players,
+  .case-details > div {
+    grid-template-columns: 1fr;
+  }
+
+  .modal-overlay {
+    align-items: start;
+    padding: 6px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
   .report-review-page *,
   .report-review-page *::before,
   .report-review-page *::after {
@@ -476,20 +345,4 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
-}
-
-/* The queue is capped at 100 rows by fn_list_player_reports; this line says so
-   rather than letting a full page read as a finished queue. */
-.report-cap {
-  margin: 0 0 10px;
-  padding: 9px 12px;
-  color: var(--realism-gold);
-  font-family: 'Rajdhani', 'Roboto Condensed', system-ui, sans-serif;
-  font-size: 0.78rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  background: rgba(78, 51, 20, 0.28);
-  border: 1px solid rgba(214, 158, 92, 0.34);
-  border-radius: 4px;
 }

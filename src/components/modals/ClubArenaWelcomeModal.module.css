@@ -22,7 +22,9 @@
 .overlay {
   position: fixed;
   inset: 0;
-  z-index: 1000;
+  /* Above ClubBottomNav (.bottomNav, 1000) - a tie let the footer cover the
+     agree box and ENTER (2026-10-05). Below CompleteProfileModal (10000). */
+  z-index: 9999;
   display: flex;
   align-items: center;
   justify-content: center;

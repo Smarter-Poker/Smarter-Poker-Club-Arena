@@ -1,0 +1,8 @@
+{
+  "_owner": "create-club-deep-audit-20261002. Migration 20261002152207 adds the prospective canonical club-wallet trigger, the welcome Diamond-game configuration trigger, and the private conserved welcome-package unwind. The migration is installed only after protected merge through apply-merged-migration.yml; the nightly schema refresh absorbs these identities after production readback.",
+  "functions": [
+    "fn_create_canonical_club_wallet",
+    "fn_configure_welcome_diamond_games",
+    "fn_unwind_unused_first_club_welcome_package"
+  ]
+}

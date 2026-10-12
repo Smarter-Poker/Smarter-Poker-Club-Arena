@@ -50,6 +50,7 @@ import { useLocation } from 'react-router-dom';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { supabase } from '../../lib/supabase';
 import { reportError } from '../../utils/errorReporter';
+import { useHoldPromptLane } from '../../lib/promptLane';
 import { uuid } from '../../utils/uuid';
 /* LAZY on purpose. This guard wraps the entire router, so a static import
    here would put the whole acceptance modal and its stylesheet into the chunk
@@ -84,6 +85,16 @@ export default function TOSGuard({ children }: TOSGuardProps) {
   const { user, isHydrating } = useAuthUser();
   const location = useLocation();
   const [state, setState] = useState<GateState>('checking');
+
+  /* The terms hold the prompt lane (src/lib/promptLane.ts) while they are
+     owed: still being looked up, or up and unanswered. The notifications
+     sheet is mounted outside this guard and used to rise over the terms
+     twenty seconds after sign-in. 'unknown' does not hold, for the same
+     reason it does not block (see the header). */
+  useHoldPromptLane(
+    'terms',
+    !isHydrating && Boolean(user?.id) && (state === 'checking' || state === 'not_accepted')
+  );
 
   useEffect(() => {
     if (!user?.id) {

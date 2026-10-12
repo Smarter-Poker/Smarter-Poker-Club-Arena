@@ -1,0 +1,3 @@
+# server/src/tournament/aDecidedGameIsPaidInTheAdmissionThatRecordsItsLastBust.law.test.ts
+
+Once a tournament's field is decided (the deciding hand left one stack, or the sweep just recorded the bust that left one player standing), its elimination sweep runs from that bust straight into the finish in the same admission, without yielding to the five-second work budget; a live field still yields as before. The scheduler gives decided games physical slots of their own beside the general cap, so a Spin, Sit & Go or MTT winner is paid seconds after the last hand instead of after one or two full trips through the platform's sweep queue.

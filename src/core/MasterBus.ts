@@ -881,7 +881,14 @@ export interface BusPayloadMap {
   DIAMOND_SPENT: { amount: number; item: string; category: string };
   COSMETIC_OWNERSHIP_CHANGED: {
     userId: string;
-    category: 'theme_id' | 'table_id' | 'button_id' | 'background_id' | 'cards_id' | 'avatar';
+    category:
+      | 'theme_id'
+      | 'table_id'
+      | 'button_id'
+      | 'background_id'
+      | 'cards_id'
+      | 'face_deck_id'
+      | 'avatar';
     assetId?: string;
     source:
       | 'diamond-purchase'
@@ -1179,6 +1186,7 @@ export interface BusPayloadMap {
   TABLE_MENU_ACTION: {
     tableId: string;
     action:
+      | 'SHOW_TOURNAMENT_DOCK'
       | 'SIT_OUT'
       | 'STAND_UP_BB'
       | 'AUTO_TOP_UP'

@@ -1,0 +1,3 @@
+# server/src/services/theHorseSaysNothingItWasNotTold.law.test.ts
+
+A horse line at the felt is one of the owner-approved static lines and nothing else: every pooled line passes the production sanitizer (no banned dash, no emoji, no at sign, at most 120 characters) with only the four engine placeholders and a clean profanity read; the path rolls no dice (Math.random banned, a replayed hand answers the same way twice); the gate is a pinned 30 second cache that fails closed with no catch answering allowed; and the chat insert names exactly the browser four columns so no row can carry a horse marker.

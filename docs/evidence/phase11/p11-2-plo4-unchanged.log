@@ -1,0 +1,61 @@
+# P11.2 PLO4 identity check, 2026-10-04T14:14:42Z
+# main: git archive 455ec7ee4e19080744805f8e0eccc5dd32334032 server/src (origin/main at branch point), run beside this branch's server/src.
+# Each value is sha256(JSON.stringify(result)); strength shards with durationMs set to 0. Development seeds only.
+# Probe script:
+#   process.env.EQUITY_GOVERNOR = 'off';
+#   process.env.SUPABASE_URL = 'https://supabase.invalid';
+#   process.env.SUPABASE_SERVICE_ROLE_KEY = 'identity-probe';
+#   import { createHash } from 'node:crypto';
+#   const root = process.cwd();
+#   const L = await import(root + '/src/benchmark/Plo4PolicyLeague.ts');
+#   const V = await import(root + '/src/benchmark/OmahaVariantPolicyLeague.ts');
+#   const C = await import(root + '/src/benchmark/Plo4StrengthContract.ts');
+#   const { channelHub } = await import(root + '/src/hub/ChannelHub.ts');
+#   const h = (x: unknown) => createHash('sha256').update(JSON.stringify(x)).digest('hex');
+#   const out: Record<string, string> = { plo4ContractDigest: C.plo4StrengthContractDigest() };
+#   for (const [profileId, pairs, shard] of [['p10c-6max-100bb', 36, 1], ['p10c-6max-2dealt-100bb', 16, 0], ['p10c-6max-4dealt-100bb', 16, 0], ['p10c-6max-40bb', 36, 0], ['p10c-6max-200bb', 36, 0]] as const) {
+#     const r = await L.runPlo4StrengthShard({ profileId, seed: 10101101, shard, mode: 'development', pairs });
+#     out[`strengthShard:${profileId}`] = h({ ...r, durationMs: 0 });
+#   }
+#   for (const profileId of ['heads-up-25bb', 'six-max-100bb', 'eight-max-50bb']) {
+#     const r = await L.runPlo4PolicyLeague({ profileId, pairs: 4, seed: 10101101 });
+#     out[`plo4League:${profileId}`] = h(r);
+#   }
+#   for (const profileId of ['plo5-cash-cap-100bb', 'plo6-cash-cap-100bb', 'plo8-cash-cap-100bb']) {
+#     const r = await V.runOmahaVariantLeague({ profileId, pairs: 4, seed: 11101101 });
+#     out[`omahaVariantLeague:${profileId}`] = h(r);
+#   }
+#   console.log(JSON.stringify(out, null, 2));
+#   channelHub.close();
+#   process.exit(0);
+## main
+{
+  "plo4ContractDigest": "ebdbdbb48336c0425df735fa073a4a28ef4884c199a69006e27909a6bc2b6384",
+  "strengthShard:p10c-6max-100bb": "de16e68784e8c60b4429deed144f9c7749696fc2ed392e3a6a719ef725d2a517",
+  "strengthShard:p10c-6max-2dealt-100bb": "47109496ee8e1e548d937b1ed1ff823d4672d9aa6fb71a999ccb8f9fd3b88da7",
+  "strengthShard:p10c-6max-4dealt-100bb": "73aa3a516cfdf0b54185c49ac44be103639043c4cd3c0eea8fd1bdac811a0d36",
+  "strengthShard:p10c-6max-40bb": "e0309fad889e2a2e4627ecb30beb38d018e2f9b2d00ca2f01d237dfd80befb39",
+  "strengthShard:p10c-6max-200bb": "f70cbdf538d3a47ffc03d1f7e1393f3841a0f75716f1f9db5197663a8a00c2f2",
+  "plo4League:heads-up-25bb": "23b9b77436f2f0095c34f18005f0bf7b7f8a4f92ee8939cef4a8bd15c2c7b84f",
+  "plo4League:six-max-100bb": "6e2dc4c88d34f4b12fcf3792f0ce38173197a6b7be3f271a20410923194e9ca3",
+  "plo4League:eight-max-50bb": "eef175f0164b2407d6602c04b1c3fe5f439ad207b503b5ae500fb13eea12fa1c",
+  "omahaVariantLeague:plo5-cash-cap-100bb": "9af19624208409d69f165f65ec05235c09020058b10dbec7c08f68c628bdecff",
+  "omahaVariantLeague:plo6-cash-cap-100bb": "18444360b245ab58c15f25b1edd8ea05f040971b7580d0b43223979fd2026e21",
+  "omahaVariantLeague:plo8-cash-cap-100bb": "5d06c657148a1e1d9ce3b44fe66219963108f2a2e54f8974002e826adff3bc64"
+}
+## branch
+{
+  "plo4ContractDigest": "ebdbdbb48336c0425df735fa073a4a28ef4884c199a69006e27909a6bc2b6384",
+  "strengthShard:p10c-6max-100bb": "de16e68784e8c60b4429deed144f9c7749696fc2ed392e3a6a719ef725d2a517",
+  "strengthShard:p10c-6max-2dealt-100bb": "47109496ee8e1e548d937b1ed1ff823d4672d9aa6fb71a999ccb8f9fd3b88da7",
+  "strengthShard:p10c-6max-4dealt-100bb": "73aa3a516cfdf0b54185c49ac44be103639043c4cd3c0eea8fd1bdac811a0d36",
+  "strengthShard:p10c-6max-40bb": "e0309fad889e2a2e4627ecb30beb38d018e2f9b2d00ca2f01d237dfd80befb39",
+  "strengthShard:p10c-6max-200bb": "f70cbdf538d3a47ffc03d1f7e1393f3841a0f75716f1f9db5197663a8a00c2f2",
+  "plo4League:heads-up-25bb": "23b9b77436f2f0095c34f18005f0bf7b7f8a4f92ee8939cef4a8bd15c2c7b84f",
+  "plo4League:six-max-100bb": "6e2dc4c88d34f4b12fcf3792f0ce38173197a6b7be3f271a20410923194e9ca3",
+  "plo4League:eight-max-50bb": "eef175f0164b2407d6602c04b1c3fe5f439ad207b503b5ae500fb13eea12fa1c",
+  "omahaVariantLeague:plo5-cash-cap-100bb": "9af19624208409d69f165f65ec05235c09020058b10dbec7c08f68c628bdecff",
+  "omahaVariantLeague:plo6-cash-cap-100bb": "18444360b245ab58c15f25b1edd8ea05f040971b7580d0b43223979fd2026e21",
+  "omahaVariantLeague:plo8-cash-cap-100bb": "5d06c657148a1e1d9ce3b44fe66219963108f2a2e54f8974002e826adff3bc64"
+}
+## diff: none (identical)

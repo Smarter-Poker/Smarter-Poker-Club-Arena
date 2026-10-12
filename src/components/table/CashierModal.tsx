@@ -6,7 +6,12 @@
  * Premium cashier modal for:
  * - Adding chips during play (up to the table maximum)
  * - Balance display
- * - Transaction history
+ *
+ * EVERYTHING IT SAYS IS PRINTED INSIDE THE PAINTED FRAME (launch audit R-05,
+ * 2026-10-09): the refusal, the cap sentence, an unread balance and a stack
+ * already at the table maximum share the status line under the amount. The
+ * "Recent" list that printed on bare black below the art is gone with the
+ * `transactions` prop no caller ever passed.
  *
  * CHIP CONTINUITY (Operation Table Stakes, Slice 0, 2026-09-04): the second
  * tab is gone. Chips on a cash table stay on the table until the player leaves
@@ -16,7 +21,7 @@
 
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { haptic } from '../../services/SoundService';
-import { SpadeConsole } from '../console/SpadeConsole';
+import { PurchaseConsole, PurchaseText } from './PurchaseConsole';
 import './CashierModal.css';
 import { reportError } from '../../utils/errorReporter';
 import { uuid } from '../../utils/uuid';
@@ -25,14 +30,6 @@ import { safeErrorMessage } from '../../utils/safeErrorMessage';
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
-
-export interface CashierTransaction {
-  id: string;
-  type: 'add' | 'withdraw';
-  amount: number;
-  timestamp: Date;
-  balance: number;
-}
 
 export interface CashierModalProps {
   isOpen: boolean;
@@ -54,9 +51,15 @@ export interface CashierModalProps {
   currentStack: number;
   /** null = unknown (a failed read). Nothing can be added until it is known. */
   accountBalance: number | null;
+  /**
+   * Re-read the balance after a failed read (audit C2-17). While the balance
+   * is Unavailable nothing can be added, so the money plate inside the frame
+   * offers this instead of a dead "Add 0"; without it the sheet had no way
+   * forward but closing.
+   */
+  onRetryBalance?: () => void;
   maxBuyIn: number;
   maxStack: number; // Max stack allowed at table
-  transactions?: CashierTransaction[];
   currency?: string;
   isProcessing?: boolean;
   /** Diamonds are whole units: every amount this modal offers or accepts is an
@@ -68,8 +71,11 @@ export interface CashierModalProps {
 // UTILITIES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// EXACT precision — no abbreviations, no rounding
-function formatAmount(amount: number, currency: string = ''): string {
+// EXACT precision — no abbreviations, no rounding. `currency` is accepted for
+// the callers' sake (the unit prints beside the figure, never inside it, and
+// tests/run-it-multiple-times-tells-the-truth.law.test.ts pins the balance
+// call that passes it); launch audit D-17 marks it unread.
+function formatAmount(amount: number, _currency: string = ''): string {
   if (Math.abs(amount - Math.round(amount)) < 0.005) {
     return Math.round(amount).toLocaleString('en-US');
   }
@@ -92,12 +98,22 @@ function clampToCents(raw: string | number, max: number, wholeUnits = false): nu
   return Math.round(Math.min(n, ceiling) * 100) / 100;
 }
 
-function formatTime(date: Date): string {
-  return date.toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-  });
+/**
+ * WHAT THE PLAYER TYPED, BEFORE THE CAP (launch audit D-22). The field used to
+ * clamp on every keystroke, so 500 against a 300 ceiling silently became 300
+ * with no sentence, and `aria-invalid` could never be true. The raw text is
+ * kept; it is read to the cent (or the whole unit), compared with the
+ * ceiling for validity, and clamped only when the field is left, with a
+ * sentence that says so. The spelling is digits and one point: an exponent
+ * or a sign is refused rather than parsed.
+ */
+const AMOUNT_SPELLING = /^\d*\.?\d*$/;
+function readAmount(text: string, wholeUnits: boolean): { amount: number; spelledOk: boolean } {
+  const trimmed = text.trim();
+  const spelledOk = trimmed === '' || AMOUNT_SPELLING.test(trimmed);
+  const n = parseFloat(trimmed);
+  if (!spelledOk || !Number.isFinite(n) || n <= 0) return { amount: 0, spelledOk };
+  return { amount: wholeUnits ? Math.floor(n) : Math.round(n * 100) / 100, spelledOk };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -110,20 +126,20 @@ export function CashierModal({
   onAddChips,
   currentStack,
   accountBalance,
+  onRetryBalance,
   maxBuyIn,
   maxStack,
-  transactions = [],
   currency = '',
   isProcessing = false,
   wholeUnits = false,
 }: CashierModalProps) {
-  const [amount, setAmount] = useState(0);
-  // The quick-amount buttons animate in. They used to start as [] — which
-  // renders every one of them at opacity: 0 — and only got seeded inside
-  // handleTabChange, so on first open 25/50/75/MAX were invisible (but still
-  // clickable) until you tapped a tab. Seed them true; the open effect replays
-  // the stagger.
-  const [visibleQuick] = useState<boolean[]>([true, true, true, true]);
+  const [amountText, setAmountText] = useState('');
+  const { amount, spelledOk } = readAmount(amountText, wholeUnits);
+  const setAmount = useCallback((value: number) => {
+    setAmountText(value > 0 ? String(value) : '');
+  }, []);
+  /** The sentence printed after the field was left over the ceiling. */
+  const [capNote, setCapNote] = useState<string | null>(null);
   // In-flight guard. `isProcessing` is an optional prop no caller passes, so it
   // was never able to stop a double tap on Confirm from firing two top-ups.
   const [busy, setBusy] = useState(false);
@@ -155,7 +171,9 @@ export function CashierModal({
     const spaceInStack = maxStack - currentStack;
     // An unknown balance affords nothing - and says "Unavailable", not 0.
     if (accountBalance === null) return 0;
-    return Math.min(spaceInStack, accountBalance, maxBuyIn);
+    // NEVER NEGATIVE (audit C2-17). A stack already above the table maximum -
+    // a pot won past it - has no room at all; it printed "Available To Add: -40".
+    return Math.max(0, Math.min(spaceInStack, accountBalance, maxBuyIn));
   }, [currentStack, maxStack, accountBalance, maxBuyIn]);
 
   const activeMax = canAddAmount;
@@ -222,20 +240,38 @@ export function CashierModal({
       onClose();
     } catch (error) {
       reportError(error, 'CashierModal.Cashier_error');
+      /* A thrown transport failure is the one case where the request may
+         have committed and the response was lost, so this banner makes no
+         claim about what moved (launch audit D-10): the same sentence as the
+         refused branch, pointing at the figures that settle it. */
       setSubmitError(
-        safeErrorMessage(error, 'Something Went Wrong. Nothing Was Moved - Please Try Again.')
+        safeErrorMessage(
+          error,
+          'That Top-Up Did Not Complete. Check Your Stack And Balance Before Trying Again.'
+        )
       );
     } finally {
       busyRef.current = false;
       setBusy(false);
     }
-  }, [amount, isProcessing, onAddChips, onClose]);
+  }, [amount, isProcessing, onAddChips, onClose, setAmount]);
 
   // Validate amount
   const isValidAmount = useMemo(() => {
-    if (amount <= 0) return false;
+    if (!spelledOk || amount <= 0) return false;
     return amount <= canAddAmount;
-  }, [amount, canAddAmount]);
+  }, [amount, canAddAmount, spelledOk]);
+
+  /* Leaving the field clamps what was typed to the ceiling and says so; the
+     next keystroke clears the sentence. */
+  const clampOnBlur = useCallback(() => {
+    if (amount <= 0) return;
+    const clamped = clampToCents(amount, activeMax, wholeUnits);
+    if (clamped !== amount) {
+      setAmount(clamped);
+      setCapNote(`Capped At ${formatAmount(clamped)}`);
+    }
+  }, [amount, activeMax, wholeUnits, setAmount]);
 
   // ── Focus Trap: trap focus inside modal when open ──
   const handleFocusTrap = useCallback((e: KeyboardEvent) => {
@@ -249,7 +285,7 @@ export function CashierModal({
     if (e.key !== 'Tab' || !modalRef.current) return;
 
     const focusable = modalRef.current.querySelectorAll<HTMLElement>(
-      'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      'button:not([disabled]), input:not([disabled]):not([tabindex="-1"]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
     );
     if (focusable.length === 0) return;
 
@@ -274,10 +310,11 @@ export function CashierModal({
   useEffect(() => {
     if (!isOpen) return;
     setAmount(0);
+    setCapNote(null);
     setSubmitError(null);
     busyRef.current = false;
     setBusy(false);
-  }, [isOpen]);
+  }, [isOpen, setAmount]);
 
   useEffect(() => {
     if (isOpen) {
@@ -285,7 +322,9 @@ export function CashierModal({
       document.addEventListener('keydown', handleFocusTrap);
       const t = setTimeout(() => {
         if (modalRef.current) {
-          const first = modalRef.current.querySelector<HTMLElement>('input, button');
+          const first = modalRef.current.querySelector<HTMLElement>(
+            'input:not([tabindex="-1"]), button'
+          );
           first?.focus();
         }
       }, 100);
@@ -300,180 +339,156 @@ export function CashierModal({
   if (!isOpen) return null;
 
   const confirmDisabled = !isValidAmount || isProcessing || busy;
-  const confirmLabel =
-    isProcessing || busy ? 'Processing...' : `Add ${formatAmount(amount, currency)}`;
+  const confirmLabel = isProcessing || busy ? 'Processing...' : `Add ${formatAmount(amount)}`;
 
-  /* REBUILT ON THE CONSOLE 2026-09-14 (#ClubArenaConsole, the riveted family:
-     chips move from the account to the felt here, so it wears the money frame).
-     Re-rendered, not rewritten. Everything above this line is untouched: the
-     per-attempt idempotency id, the busyRef double-tap guard, the focus trap
-     and its Escape, the previous-focus restore, the reset on open, the exact
-     precision formatting, the whole-unit floor. Below, the same elements print
-     onto the frame: the balances as rows on the glass, the amount as the one
-     drawn control (an input, which the art does not paint), the quick amounts
-     as lit words, the new stack in green, Close and Add on the two plates.
-     The accessible names the tests read - "Amount To Add", "Close Cashier",
-     "Add 99" - are the ones that were here. */
+  // Existing exact-amount, idempotency, busy and focus logic owns the purchase.
+  const closeTopUp = () => {
+    if (!busyRef.current && !isProcessing) onClose();
+  };
+  const unit = currency || 'Chips';
+  const balanceValue = balanceKnown ? formatAmount(accountBalance, currency) : 'Unavailable';
+  /** The stack already fills the table maximum, so there is no room to add into (audit C2-17). */
+  const atTableMax = balanceKnown && currentStack >= maxStack;
+  /** An unread balance affords nothing: the money plate offers the re-read instead. */
+  const offerRetry = !balanceKnown && onRetryBalance !== undefined;
+  /* Everything the sheet has to say is printed INSIDE the painted frame
+     (launch audit R-05): the refusal, the cap sentence, an unread balance
+     (R-14: it said "Available To Add: 0 Chips" under "Add-On Available"), a
+     stack already at the table maximum (audit C2-17) and the ceiling share the
+     status line under the amount, so nothing sits on bare black below the
+     art. */
+  const statusLine = submitError ? (
+    <span className="cashier-error" role="alert" aria-live="assertive">
+      {submitError}
+    </span>
+  ) : capNote ? (
+    <span role="status">
+      {capNote} {unit}
+    </span>
+  ) : !balanceKnown ? (
+    <span role="status">Balance Unavailable</span>
+  ) : atTableMax ? (
+    <span role="status">Your Stack Is At The Table Maximum, So There Is Nothing To Add.</span>
+  ) : (
+    <span>
+      Available To Add: {formatAmount(canAddAmount)} {unit}
+    </span>
+  );
   return (
     <div
-      className="cashier-overlay"
-      onClick={() => {
-        if (!busy) onClose();
-      }}
+      className="cashier-overlay addon-console__overlay"
+      onClick={closeTopUp}
       role="dialog"
       aria-modal="true"
       aria-labelledby="table-cashier-title"
     >
-      <div className="cashier-dialog" ref={modalRef} onClick={(e) => e.stopPropagation()}>
-        <SpadeConsole
-          onClose={busy ? undefined : onClose}
-          as="section"
-          family="riveted"
-          eyebrow="Add Chips"
-          title="Cashier"
+      <div
+        className="cashier-dialog addon-console"
+        ref={modalRef}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <PurchaseConsole
+          title="Add-On Available"
           titleId="table-cashier-title"
-          pill={currency || 'Chips'}
-          pillInk="blue"
-          plates={{
-            secondary: {
-              label: 'Close',
-              ink: 'silver',
-              onClick: onClose,
-              disabled: busy,
-              'aria-label': 'Close Cashier',
-            },
-            primary: {
-              label: confirmLabel,
-              ink: confirmDisabled ? 'muted' : 'white',
-              onClick: handleConfirm,
-              disabled: confirmDisabled,
-            },
-          }}
-        >
-          {/* Balance Summary */}
-          <div className="cashier-rows">
-            <div className="cashier-row">
-              <span className="sc-label sc-ink--blue">At Table</span>
-              <span className="cashier-row__value sc-ink--silver">
-                {formatAmount(currentStack, currency)}
-              </span>
-            </div>
-            <div className="cashier-row">
-              <span className="sc-label sc-ink--blue">Account</span>
-              <span
-                className={`cashier-row__value ${balanceKnown ? 'sc-ink--silver' : 'sc-ink--red'}`}
-              >
-                {balanceKnown ? formatAmount(accountBalance, currency) : 'Unavailable'}
-              </span>
-            </div>
-          </div>
-
-          {/* One action: Add Chips. The eyebrow prints it; this keeps the id the
-              amount group is labelled by. */}
-          <span id="table-cashier-tab-add" className="cashier-sr" aria-hidden="true">
-            Add Chips
-          </span>
-
-          {/* Amount Input - the one drawn control: the art paints no field. */}
-          <div
-            className="cashier-amount"
-            id="table-cashier-panel-add"
-            role="group"
-            aria-labelledby="table-cashier-tab-add"
-          >
-            <span className="sc-label sc-ink--blue">Amount</span>
-            <div className="cashier-amount__field">
-              {currency && (
-                <span className="cashier-amount__currency sc-ink--blue">{currency}</span>
-              )}
-              {/* parseInt threw away the cents on every 25/50/75/MAX value (they are
-                  truncated to 2dp), so editing after a quick tap silently changed the
-                  amount. parseFloat + snap-to-cent keeps them. */}
+          subtitle={`At Table: ${formatAmount(currentStack)} ${unit}`}
+          status={
+            <>
               <input
                 type="number"
-                className="cashier-amount__input sc-ink--silver"
-                value={amount || ''}
-                onChange={(e) => setAmount(clampToCents(e.target.value, activeMax, wholeUnits))}
-                onBlur={() => setAmount((prev) => clampToCents(prev, activeMax, wholeUnits))}
+                className="purchase-console__amount"
+                value={amountText}
+                onChange={(e) => {
+                  setCapNote(null);
+                  setSubmitError(null);
+                  /* The ceiling and the whole-unit floor still apply as the
+                     figure is typed (an over-max amount is never on screen
+                     for a tap to send); what changed is that a clamp SAYS SO,
+                     and a spelling the field cannot read stays on screen
+                     marked invalid instead of vanishing into 0. */
+                  const typed = e.target.value;
+                  const n = parseFloat(typed);
+                  if (!AMOUNT_SPELLING.test(typed.trim()) || !Number.isFinite(n) || n <= 0) {
+                    setAmountText(typed);
+                    return;
+                  }
+                  const clamped = clampToCents(n, activeMax, wholeUnits);
+                  if (clamped < n && Number.isFinite(activeMax) && n > activeMax) {
+                    setCapNote(`Capped At ${formatAmount(clamped)}`);
+                  }
+                  setAmountText(clamped === n ? typed : String(clamped));
+                }}
+                onBlur={clampOnBlur}
                 placeholder="0"
                 min={0}
                 step={wholeUnits ? 1 : 0.01}
                 max={activeMax}
-                disabled={busy}
+                disabled={busy || isProcessing}
                 aria-label="Amount To Add"
-                aria-invalid={amount > 0 && !isValidAmount}
+                aria-invalid={amountText.trim() !== '' && !isValidAmount}
               />
-            </div>
-            <span className="cashier-amount__limit sc-ink--muted">
-              Available To Add: {formatAmount(canAddAmount, currency)}
-            </span>
-          </div>
-
-          {/* Quick Amounts - lit words on the glass, the chosen one in white. */}
-          <div className="cashier-quick" role="group" aria-label="Quick Amounts">
-            {quickAmounts.map(({ label, value }, idx) => (
-              <button
-                key={label}
-                className={`cashier-quick__word ${amount === value && value > 0 ? 'sc-ink--white' : 'sc-ink--muted'}`}
-                type="button"
-                onClick={() => {
-                  setSubmitError(null);
-                  setAmount(value);
-                }}
-                disabled={value <= 0 || busy}
-                aria-pressed={amount === value}
-                style={{
-                  opacity: visibleQuick[idx] ? 1 : 0,
-                  transform: visibleQuick[idx] ? 'scale(1)' : 'scale(0.85)',
-                  transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-                }}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
-          {/* New Stack Preview - chips in, so green. */}
-          <div className="cashier-rows cashier-rows--preview">
-            <div className="cashier-row">
-              <span className="sc-label sc-ink--blue">New Stack</span>
-              <span className="cashier-row__value cashier-row__value--big sc-ink--green">
-                {formatAmount(currentStack + amount, currency)}
-              </span>
-            </div>
-          </div>
-
-          {/* Failure notice — the modal used to close as if it had worked */}
-          {submitError && (
-            <p
-              className="sc-copy sc-copy--center sc-ink--red cashier-error"
-              role="alert"
-              aria-live="assertive"
-            >
-              {submitError}
-            </p>
-          )}
-
-          {/* Recent Transactions */}
-          {transactions.length > 0 && (
-            <div className="cashier-recent">
-              <span className="sc-label sc-ink--muted">Recent</span>
-              {transactions.slice(0, 5).map((tx) => (
-                <div key={tx.id} className="cashier-recent__row">
-                  <span
-                    className={`cashier-recent__amount ${tx.type === 'add' ? 'sc-ink--green' : 'sc-ink--red'}`}
-                  >
-                    {tx.type === 'add' ? '+' : '-'}
-                    {formatAmount(tx.amount, currency)}
-                  </span>
-                  <span className="cashier-recent__time sc-ink--muted">
-                    {formatTime(tx.timestamp)}
-                  </span>
-                </div>
+              {statusLine}
+            </>
+          }
+          rows={[
+            <React.Fragment key="cost">
+              <span>Add-On Cost</span>
+              <strong>
+                <PurchaseText>{`${formatAmount(amount)} ${unit}`}</PurchaseText>
+              </strong>
+            </React.Fragment>,
+            <React.Fragment key="stack">
+              <span>New Stack</span>
+              <strong>
+                <PurchaseText>{`${formatAmount(currentStack + amount)} ${unit}`}</PurchaseText>
+              </strong>
+            </React.Fragment>,
+            <React.Fragment key="balance">
+              <span>Your Balance</span>
+              <strong>
+                <PurchaseText>
+                  {balanceKnown ? `${balanceValue} ${unit}` : balanceValue}
+                </PurchaseText>
+              </strong>
+            </React.Fragment>,
+          ]}
+          secondary={{
+            label: 'Close',
+            'aria-label': 'Close Cashier',
+            onClick: closeTopUp,
+            disabled: busy || isProcessing,
+          }}
+          primary={
+            /* THE WAY BACK FROM AN UNREAD BALANCE (audit C2-17), on the painted
+               money plate inside the frame rather than a word printed below it
+               (launch audit R-05). Nothing can be added until the balance is
+               known, so the plate re-reads it instead of offering a dead
+               "Add 0". */
+            offerRetry
+              ? { label: 'Retry', onClick: onRetryBalance, disabled: busy || isProcessing }
+              : { label: confirmLabel, onClick: handleConfirm, disabled: confirmDisabled }
+          }
+          onClose={closeTopUp}
+          closeDisabled={busy || isProcessing}
+          amountControls={
+            <>
+              {quickAmounts.map(({ label, value }) => (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={() => {
+                    setSubmitError(null);
+                    setCapNote(null);
+                    setAmount(value);
+                  }}
+                  disabled={value <= 0 || busy || isProcessing}
+                  aria-pressed={amount === value}
+                >
+                  {label}
+                </button>
               ))}
-            </div>
-          )}
-        </SpadeConsole>
+            </>
+          }
+        />
       </div>
     </div>
   );

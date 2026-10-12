@@ -10,6 +10,7 @@ import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { useAuthUser } from '../../hooks/useAuthUser';
+import { useProfilePresence } from '../../hooks/useProfilePresence';
 import { PlayerAvatar } from '../avatars/PlayerAvatar';
 import { haptic } from '../../services/HapticService';
 import type { VipTier, PresenceStatus } from '../avatars/PlayerAvatar';
@@ -327,13 +328,29 @@ function FriendListPanelInner({
     setFriends((prev) => prev.filter((f) => f.id !== friendshipId));
   };
 
-  const filteredFriends = friends.filter(
+  /* Online-now by the one definition (fn_profile_presence: the flag AND a
+     heartbeat under five minutes old), re-asked every minute while shown.
+     Until 2026-10-05 every friend here was hard-coded offline. */
+  const livePresence = useProfilePresence(friends.map((f) => f.friendId));
+  const friendsWithPresence: Friend[] = friends
+    .map((f) => {
+      const online = livePresence.get(f.friendId) === true;
+      const status: PresenceStatus =
+        f.status === 'playing' ? 'playing' : online ? 'online' : 'offline';
+      return { ...f, isOnline: online, status };
+    })
+    .sort((a, b) => {
+      if (a.isOnline !== b.isOnline) return a.isOnline ? -1 : 1;
+      return a.displayName.localeCompare(b.displayName);
+    });
+
+  const filteredFriends = friendsWithPresence.filter(
     (f) =>
       f.displayName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       f.username.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const onlineCount = friends.filter((f) => f.isOnline).length;
+  const onlineCount = friendsWithPresence.filter((f) => f.isOnline).length;
 
   const getStatusIcon = (status?: string): string => {
     switch (status) {

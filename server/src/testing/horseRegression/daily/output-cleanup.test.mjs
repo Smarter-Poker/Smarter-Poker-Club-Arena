@@ -8,14 +8,14 @@ import {HorseDecisionJournalStore} from '../../../services/horseDecisionJournal/
 import {reviewDailySelection} from '../../../services/horseDailyCorrectiveReview/batch.ts';
 import {runHorseDailyCorrectiveReview} from '../../../scripts/horseDailyCorrectiveReview.ts';
 import {privateFixture} from './fixture.mjs';
-it('reader close failure refuses aggregate success even after an otherwise qualified row',async()=>{const f=privateFixture(),original=HorseDecisionJournalStore.prototype.close;const close=vi.spyOn(HorseDecisionJournalStore.prototype,'close').mockImplementation(function(){original.call(this);throw Error('synthetic cleanup failure');});try{const r=await reviewDailySelection(f.manifest,f.source,f.trust);expect(r.status).toBe('incomplete');expect(r.reasons).toContain('private_reader_cleanup_unavailable');expect(r.gtoVerified).toBe(false);}finally{close.mockRestore();f.cleanup();}});
+it('reader close failure refuses aggregate success even after an otherwise qualified row',async()=>{const f=privateFixture(),original=HorseDecisionJournalStore.prototype.close;const close=vi.spyOn(HorseDecisionJournalStore.prototype,'close').mockImplementation(function(){original.call(this);throw Error('synthetic cleanup failure');});try{const r=await reviewDailySelection(f.manifest,f.source,f.trust,f.selection);expect(r.status).toBe('incomplete');expect(r.reasons).toContain('private_reader_cleanup_unavailable');expect(r.gtoVerified).toBe(false);}finally{close.mockRestore();f.cleanup();}});
 for(const totalBytes of [524287,524288,524289])it(`CLI artifact budgets final newline at JSON bytes ${totalBytes}`,async()=>{
  const f=privateFixture(),original=core.reviewHorseCorrectiveHand;let padding='';
  const spy=vi.spyOn(core,'reviewHorseCorrectiveHand').mockImplementation((input,options)=>{const r=original(input,options);r.actors[0].syntheticOutputPadding=padding;return r;});
  try{
-  const measured=await reviewDailySelection(f.manifest,f.source,f.trust);expect(measured.status).toBe('reviewed_selection');
+  const measured=await reviewDailySelection(f.manifest,f.source,f.trust,f.selection);expect(measured.status).toBe('reviewed_selection');
   padding='x'.repeat(totalBytes-Buffer.byteLength(JSON.stringify(measured)));
-  const output=join(f.dir,'size.json');const result=await runHorseDailyCorrectiveReview([f.manifestPath,output],{},{source:f.source,trust:f.trust});
+  const output=join(f.dir,'size.json');const result=await runHorseDailyCorrectiveReview([f.manifestPath,output],{},{source:f.source,trust:f.trust,selectionSource:f.selection});
   expect(result.code).toBe(totalBytes===524287?0:2);
   const bytes=readFileSync(output);expect(bytes.length).toBeLessThanOrEqual(524288);
   const saved=JSON.parse(bytes);expect(saved.status).toBe(totalBytes===524287?'reviewed_selection':'incomplete');

@@ -369,4 +369,217 @@ export function rankQuickJoinTables(
   return ranked.slice(0, Math.max(0, limit));
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// TOURNAMENTS — what the "+" sheet offers when you are sitting in one
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Dan, 2026-10-04, verbatim: "IF YOU ARE CURRENTLY ON A MTT TABLE, AND CLICK
+ * THE + BUTTON TO ADD ANOTHER, IT SHOULD BRING YOU TO MORE MTT'S, IT CURRENTLY
+ * ONLY IDENTIFIES THE 'GAME TYPE' (NO LIMIT HOLDEM) AND SHOWS YOU CASH GAMES,
+ * INSTEAD OF THE CURRENT TOURNAMENTS FOR 'QUICK JOIN' FUNCTIONALITY."
+ *
+ * Everything above this line ranks CASH TABLES, and it was the only ranking the
+ * sheet had: its candidate query is `.is('tournament_id', null)`, so from an
+ * MTT the only thing it could compare was the variant, and it offered 2/5
+ * Hold'em to a player who had chosen a tournament. A Spin got its own answer on
+ * 2026-09-05 (quickJoinSpins.ts); every other tournament fell through.
+ *
+ * A tournament is not ranked by a blind ladder. What makes another event
+ * "like this one" is the game it deals and what it costs to enter, so: the same
+ * variant first, then the nearest buy-in, then whichever starts soonest.
+ *
+ * Pure, like the cash ranking: the caller reads the tournaments and decides
+ * whether each one can still be entered (the lobby's own rules do that, see
+ * quickJoinTournaments.ts); this only filters and orders.
+ */
+export interface QuickJoinTournamentCandidate {
+  /** `tournaments.id`. */
+  id: string;
+  name: string;
+  /** `tournaments.game_type` ('nlh', 'plo', ...): the game being dealt. */
+  variant?: string | null;
+  /** The format family. A Spin is never offered here; it has its own sheet. */
+  format?: 'mtt' | 'sng' | 'spin' | 'unknown' | null;
+  /** What a player pays to enter: buy-in plus fee. 0 is a freeroll. */
+  buyIn: number;
+  /** Players entered so far (horses are players and are counted). */
+  entrants?: number | null;
+  /** Entry cap. null or 0 means the format has no cap. */
+  capacity?: number | null;
+  /**
+   * Can a new player enter RIGHT NOW: registering, still filling, or inside
+   * late registration. False once late registration has closed, the event is
+   * between days, finishing, or over.
+   */
+  entryOpen: boolean;
+  /** "Registering" / "Starting Soon" / "Late Reg" / "Filling": Title Case. */
+  stateLabel: string;
+  /** Scheduled start, epoch ms, when the event has one. */
+  startMs?: number | null;
+}
+
+/** The tournament the player is sitting in right now, when it could be read. */
+export interface QuickJoinCurrentTournament {
+  id?: string | null;
+  variant?: string | null;
+  buyIn?: number | null;
+}
+
+export type QuickJoinTournamentTier = 'same-buy-in' | 'same-game' | 'other';
+
+export interface RankedQuickJoinTournament extends QuickJoinTournamentCandidate {
+  tier: QuickJoinTournamentTier;
+  /** Entries still available, or null when the format has no cap. */
+  seatsOpen: number | null;
+}
+
+export interface RankQuickJoinTournamentOptions {
+  currentTournament?: QuickJoinCurrentTournament | null;
+  /** Tournaments the player is already registered or seated in. */
+  excludeIds?: ReadonlyArray<string> | null;
+  /** How many rows the sheet shows. The sheet fits five. */
+  limit?: number;
+}
+
+const TOURNAMENT_TIER_ORDER: Record<QuickJoinTournamentTier, number> = {
+  'same-buy-in': 0,
+  'same-game': 1,
+  other: 2,
+};
+
+function capacityOf(c: QuickJoinTournamentCandidate): number | null {
+  const cap = Number(c.capacity);
+  return Number.isFinite(cap) && cap > 0 ? cap : null;
+}
+
+/** Distance between two entry prices. Unknown sorts last, never first. */
+function buyInDistance(a: number, b?: number | null): number {
+  const x = Number(a);
+  const y = Number(b);
+  if (b === null || b === undefined || !Number.isFinite(x) || !Number.isFinite(y)) {
+    return Number.POSITIVE_INFINITY;
+  }
+  return Math.abs(x - y);
+}
+
+/**
+ * The tournaments worth offering from inside a tournament, in order.
+ *
+ * NEVER LISTED: the event the player is in; anything they are already
+ * registered or seated in; anything that can no longer be entered (late
+ * registration closed, finishing, over); anything capped and full; and Spins,
+ * which answer through their own sheet.
+ */
+export function rankQuickJoinTournaments(
+  candidates: ReadonlyArray<QuickJoinTournamentCandidate>,
+  options: RankQuickJoinTournamentOptions = {}
+): RankedQuickJoinTournament[] {
+  const { currentTournament, excludeIds, limit = 5 } = options;
+  const excluded = new Set((excludeIds || []).filter(Boolean));
+  if (currentTournament?.id) excluded.add(currentTournament.id);
+
+  const seen = new Set<string>();
+  const ranked: RankedQuickJoinTournament[] = [];
+  for (const c of candidates || []) {
+    if (!c || !c.id || excluded.has(c.id) || seen.has(c.id)) continue;
+    seen.add(c.id);
+    if (!c.entryOpen) continue;
+    if (c.format === 'spin') continue;
+    const cap = capacityOf(c);
+    const entrants = Math.max(0, Number(c.entrants) || 0);
+    if (cap !== null && entrants >= cap) continue;
+
+    const sameGame = !!currentTournament && isSameVariant(c.variant, currentTournament.variant);
+    const samePrice =
+      sameGame &&
+      currentTournament?.buyIn !== null &&
+      currentTournament?.buyIn !== undefined &&
+      Math.round(Number(c.buyIn) || 0) === Math.round(Number(currentTournament.buyIn));
+    ranked.push({
+      ...c,
+      tier: samePrice ? 'same-buy-in' : sameGame ? 'same-game' : 'other',
+      seatsOpen: cap === null ? null : cap - entrants,
+    });
+  }
+
+  ranked.sort((a, b) => {
+    // 1. The same game outranks every other game, whatever the price.
+    const tierDelta = TOURNAMENT_TIER_ORDER[a.tier] - TOURNAMENT_TIER_ORDER[b.tier];
+    if (tierDelta !== 0) return tierDelta;
+
+    // 2. Nearest in buy-in to the event being played. Skipped when that price
+    //    is not known: both distances are Infinity and this is a no-op.
+    const da = buyInDistance(a.buyIn, currentTournament?.buyIn);
+    const db = buyInDistance(b.buyIn, currentTournament?.buyIn);
+    if (Number.isFinite(da) && Number.isFinite(db) && da !== db) return da - db;
+
+    // 3. Soonest start. An event with no clock (a sit and go) sorts after one
+    //    with a start time rather than ahead of it.
+    const sa = Number.isFinite(Number(a.startMs)) && a.startMs != null ? Number(a.startMs) : null;
+    const sb = Number.isFinite(Number(b.startMs)) && b.startMs != null ? Number(b.startMs) : null;
+    if (sa !== sb) {
+      if (sa === null) return 1;
+      if (sb === null) return -1;
+      return sa - sb;
+    }
+
+    // 4. Deterministic last resort, so two presses give the same sheet.
+    return (a.name || '').localeCompare(b.name || '') || a.id.localeCompare(b.id);
+  });
+
+  return ranked.slice(0, Math.max(0, limit));
+}
+
+/**
+ * IS THE "+" SHEET A TOURNAMENT SHEET? (2026-10-04)
+ *
+ * Two witnesses: the table's own row, and what the tab already believes (its
+ * `isTournament` flag or a game code that looks like one). The row outranks
+ * the tab whenever it could be READ:
+ *
+ *   - read, part of a tournament  -> tournament sheet, unless it is a Spin,
+ *     which answers through its own sheet;
+ *   - read, `tournament_id` null  -> a CASH table (`format: 'cash'`). The
+ *     tab's guess is ignored: a cash game whose name carries "MTT" or "SNG"
+ *     used to get the tournament sheet because "read as cash" and "could not
+ *     be read" were the same null;
+ *   - not readable (null)         -> the tab's guess decides.
+ */
+export function quickJoinIsTournament(
+  tableRead: { format: string } | null | undefined,
+  tabSaysTournament: boolean
+): boolean {
+  if (!tableRead) return tabSaysTournament;
+  return tableRead.format !== 'cash' && tableRead.format !== 'spin';
+}
+
+/**
+ * ONE ANNOUNCEMENT PER MOVE (2026-10-04)
+ *
+ * A tournament move reaches the multi-table page on two transports (the old
+ * table's socket and the hero's own seat row), and the player must be told
+ * once. `announced` holds the moves already spoken, keyed `from->to`.
+ *
+ * Returns true when the caller should announce, and records the move.
+ *
+ * The key is the MOVE, not the destination, and a move stops counting the
+ * moment the hero leaves the table it led to: announcing `from -> to` forgets
+ * every earlier move INTO `from`. So A to B, back to A, then to B again is
+ * three announcements, while the same move heard on both transports is one.
+ */
+export function claimMoveAnnouncement(
+  announced: Set<string>,
+  fromId: string,
+  toId: string
+): boolean {
+  const key = `${fromId}->${toId}`;
+  if (announced.has(key)) return false;
+  for (const earlier of Array.from(announced)) {
+    if (earlier.endsWith(`->${fromId}`)) announced.delete(earlier);
+  }
+  announced.add(key);
+  return true;
+}
+
 export default rankQuickJoinTables;

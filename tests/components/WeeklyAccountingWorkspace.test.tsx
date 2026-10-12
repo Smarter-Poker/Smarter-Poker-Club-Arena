@@ -290,10 +290,10 @@ describe('routed automatic weekly accounting', () => {
       weeklyStatementRow({ club_id: ID.otherClub, gross_amount: '777.00' }),
     ];
     render(<RoutedPages initial={`/clubs/${ID.club}/settlement`} />);
-    expect(await screen.findByText('100.25 Chips')).toBeInTheDocument();
-    expect(screen.getByText('60.20 Chips')).toBeInTheDocument();
-    expect(screen.getByText('40.05 Chips')).toBeInTheDocument();
-    expect(screen.queryByText('999.00 Chips')).not.toBeInTheDocument();
+    expect(await screen.findByText('100 Chips')).toBeInTheDocument();
+    expect(screen.getByText('60 Chips')).toBeInTheDocument();
+    expect(screen.getByText('40 Chips')).toBeInTheDocument();
+    expect(screen.queryByText('999 Chips')).not.toBeInTheDocument();
     expect(screen.queryByText('888.00 Chips')).not.toBeInTheDocument();
     expect(screen.queryByText('777.00 Chips')).not.toBeInTheDocument();
     expect(
@@ -337,12 +337,12 @@ describe('routed automatic weekly accounting', () => {
     m.rows.settlement_invoices = [weeklyStatementRow()];
     render(<RoutedPages initial={`/unions/${ID.union}/settlement`} />);
     const history = await screen.findByRole('region', { name: 'Union Period Records' });
-    expect(await within(history).findByRole('listitem')).toHaveTextContent('closed');
+    expect(await within(history).findByRole('listitem')).toHaveTextContent('Closed');
     expect(within(history).getAllByRole('listitem')).toHaveLength(1);
     expect(
       within(history).getByText(/Recorded Period Status Alone Does Not Prove Payment/)
     ).toBeInTheDocument();
-    expect(screen.queryByText('100.25 Chips')).not.toBeInTheDocument();
+    expect(screen.queryByText('100 Chips')).not.toBeInTheDocument();
     expect(screen.queryByText('10.25')).not.toBeInTheDocument();
     expect(m.calls).toHaveLength(1);
     expect(m.calls[0]).toMatchObject({
@@ -474,7 +474,7 @@ describe('routed automatic weekly accounting', () => {
       oldSummary.resolve({ data: [weeklyStatementRow()], error: null });
     });
     expect(screen.queryByText('Automatic Weekly Accounting Posted')).not.toBeInTheDocument();
-    expect(screen.queryByText('100.25 Chips')).not.toBeInTheDocument();
+    expect(screen.queryByText('100 Chips')).not.toBeInTheDocument();
     expect(
       screen.queryByRole('heading', { name: 'Recorded Union Periods' })
     ).not.toBeInTheDocument();
@@ -510,7 +510,7 @@ describe('routed automatic weekly accounting', () => {
       oldSummary.resolve({ data: [weeklyStatementRow()], error: null });
     });
     expect(screen.queryByText('Automatic Weekly Accounting Posted')).not.toBeInTheDocument();
-    expect(screen.queryByText('100.25 Chips')).not.toBeInTheDocument();
+    expect(screen.queryByText('100 Chips')).not.toBeInTheDocument();
     expect(m.rpc).toHaveBeenLastCalledWith('fn_accounting_run_observation_v1', {
       p_expected_actor_id: ID.actor,
       p_scope_kind: 'club',
@@ -562,7 +562,7 @@ describe('routed settlement dashboard boundaries', () => {
     m.dashboard = { ...m.dashboard, clubId: ID.club, platformWide: false, clubRole: 'owner' };
     m.rows.settlement_invoices = [weeklyStatementRow()];
     render(<RoutedPages initial="/settlement-dashboard" />);
-    expect(await screen.findByText('100.25 Chips')).toBeInTheDocument();
+    expect(await screen.findByText('100 Chips')).toBeInTheDocument();
     expect(screen.getByTestId('transaction-ledger')).toHaveAttribute('data-club', ID.club);
     expect(screen.getByTestId('transaction-ledger')).toHaveAttribute('data-user', '');
     expect(screen.getByTestId('transaction-ledger')).toHaveAttribute('data-club-scoped', 'true');
@@ -587,7 +587,7 @@ describe('routed settlement dashboard boundaries', () => {
     m.dashboard = { ...m.dashboard, clubId: ID.club, platformWide: false, clubRole: 'owner' };
     m.rows.settlement_invoices = [weeklyStatementRow()];
     const view = render(<RoutedPages initial="/settlement-dashboard" />);
-    await screen.findByText('100.25 Chips');
+    await screen.findByText('100 Chips');
     act(() => {
       auth(ID.otherActor);
     });
@@ -596,7 +596,7 @@ describe('routed settlement dashboard boundaries', () => {
       screen.getByText('Accounting Is Unavailable Until This Account Is Ready.')
     ).toBeInTheDocument();
     expect(screen.queryByTestId('transaction-ledger')).not.toBeInTheDocument();
-    expect(screen.queryByText('100.25 Chips')).not.toBeInTheDocument();
+    expect(screen.queryByText('100 Chips')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Week Ending Monday')).not.toBeInTheDocument();
     expect(m.rpc.mock.calls.every(([, args]) => args.p_expected_actor_id === ID.actor)).toBe(true);
   });

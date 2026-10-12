@@ -189,9 +189,7 @@ describe('a seat this device has left is never re-adopted', () => {
 
   it('reads leave_pending everywhere it decides what a seat means', () => {
     // The mount restore and the ten-second poll are the two reads of the row.
-    expect(PAGE).toMatch(
-      /seat_number, user_id, stack, status, horse_id, is_sitting_out, leave_pending/
-    );
+    expect(PAGE).toMatch(/seat_number, user_id, stack, status, is_sitting_out, leave_pending/);
     expect(PAGE).toMatch(/'user_id, is_sitting_out, sit_out_at, leave_pending'/);
   });
 

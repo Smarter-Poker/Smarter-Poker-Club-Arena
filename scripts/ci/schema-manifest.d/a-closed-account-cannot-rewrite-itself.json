@@ -1,0 +1,7 @@
+{
+  "_owner": "fix/a-closed-account-signs-out - migration 20260929054441_a_closed_account_cannot_rewrite_itself: public.fn_a_closed_account_cannot_rewrite_itself is the BEFORE UPDATE trigger on profiles (rows whose status is deleted) that refuses a change made with the closed account's own token. Migration 20260929061606_only_close_account_closes_an_account adds public.fn_only_close_account_closes_an_account, the BEFORE UPDATE trigger on profiles that refuses the owner's token setting status deleted on a profile that is not closed.",
+  "functions": [
+    "fn_a_closed_account_cannot_rewrite_itself",
+    "fn_only_close_account_closes_an_account"
+  ]
+}

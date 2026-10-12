@@ -1,3 +1,4 @@
+import { arenaDisplayText } from '../lib/arenaDisplay/text';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  titleCase — house capitalisation for user-facing text
@@ -120,7 +121,7 @@ export function stripEmDashes(input: string): string {
  */
 export function titleCase(input: string | null | undefined): string {
   if (!input) return '';
-  const cleaned = stripEmDashes(String(input));
+  const cleaned = stripEmDashes(arenaDisplayText(String(input)));
   const trimmed = cleaned.trim();
 
   if (

@@ -413,6 +413,19 @@ export interface HandConfig {
   /** Bible V8 §4.4 / FIX 114: UTG straddle only (2× BB) */
   straddles?: { seat: number; amount: number }[];
   rakeConfig: RakeConfig;
+  /**
+   * THE OWNER'S DIAMOND CASH RAKE SCHEDULE, FROZEN FOR THIS HAND.
+   *
+   * Present only on a Diamond cash hand, read from `ca_diamond_economics` at
+   * the deal (services/supabase/diamondCashRakeSettings.ts) and never again
+   * for this hand, so the hand is priced by the schedule in force when it was
+   * dealt. Absent or null on every chip hand and every tournament hand, which
+   * is what keeps `rakeConfig` - the chip schedule - the only thing those
+   * hands are priced by.
+   */
+  diamondRakeSchedule?:
+    | import('./domain/diamondCashRakeSchedule.js').DiamondCashRakeSchedule
+    | null;
   bombPot?: {
     anteMultiplier: number;
     /**
@@ -951,6 +964,11 @@ export interface HorseTournamentUtilityCandidateLedger {
  */
 export interface HorseTournamentUtilityLedger {
   schemaVersion: 1;
+  /** Optional only for retained legacy receipts. New calculations identify the
+   * exact sampled inputs and the actual, uncalibrated observation sources. */
+  evidence?: import('./engine/HorseTournamentUtilityEvidence.js').HorseTournamentUtilityEvidence;
+  /** Worker-owned original private read view; null explicitly means unavailable. */
+  readFrameSha256?: string | null;
   model: 'horse-tournament-utility-phase7-round1' | 'horse-tournament-utility-phase8-round1';
   outcomeModel: 'conditioned_showdown_samples' | 'conditioned_public_street_continuation';
   objective: HorseTournamentUtilityObjective;
@@ -1012,6 +1030,12 @@ export interface HorseDecision {
   thinkTime: number;
   /** Present on complete-context tournament decisions after Phase 7. */
   tournamentUtility?: HorseTournamentUtilityLedger;
+  /** Reachability 2026-10-08: why a tournament decision inside Phase 7's
+   * domain carries no utility ledger (the telemetry suffix of the same
+   * refusal). Recorded on every lane, so a second look that runs without
+   * telemetry still names its refusal in the private journal. Never present
+   * together with `tournamentUtility`. */
+  tournamentUtilityRefusal?: string;
 }
 
 /** @deprecated Use HorseDecision */

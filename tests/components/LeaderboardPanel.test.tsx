@@ -53,4 +53,25 @@ describe('Table Leaderboard Console', () => {
     expect(document.body.style.overflow).toBe('auto');
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
+  it('names the Diamond unit and says it could not tell, apart from empty (Phase 10, line 1)', () => {
+    const props = {
+      isOpen: true,
+      onClose: vi.fn(),
+      title: 'Session Leaderboard',
+      players: [],
+      period: 'week' as const,
+      onPeriodChange: vi.fn(),
+    };
+    const { rerender } = render(<LeaderboardPanel {...props} currency="Diamonds" unavailable />);
+    expect(screen.getByRole('status')).toHaveTextContent('Rankings Unavailable');
+    expect(screen.queryByText('No Rankings Yet')).not.toBeInTheDocument();
+    expect(screen.getByText('Winnings In Diamonds')).toBeInTheDocument();
+    rerender(<LeaderboardPanel {...props} currency="Diamonds" isLoading />);
+    expect(screen.getByRole('status')).toHaveTextContent('Loading Rankings');
+    rerender(<LeaderboardPanel {...props} currency="Diamonds" />);
+    expect(screen.getByText('No Rankings Yet')).toBeInTheDocument();
+    rerender(<LeaderboardPanel {...props} />);
+    expect(screen.getByText('Winnings')).toBeInTheDocument();
+    expect(screen.queryByText('Rankings Unavailable')).not.toBeInTheDocument();
+  });
 });

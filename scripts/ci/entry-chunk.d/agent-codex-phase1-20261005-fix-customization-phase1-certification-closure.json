@@ -1,0 +1,8 @@
+{
+  "_owner": "Phase 1 mobile-first Table Studio: useInterfaceThemeHydration must mount before every route so light or dark mode is bound to the active account before paint; settingsPageCache is the small account-keyed cache used by the global theme/profile owners so one player's settings never paint for the next; faceDeck is the dependency-free catalog and normalizer used by the already-global CardImage and persistent live-table layer so the equipped face treatment paints before the lazy Studio opens. Lazy-loading these owners would create a wrong-account theme or deck flash and break the immediate live-customization contract.",
+  "modules": [
+    "src/hooks/useInterfaceThemeHydration.ts",
+    "src/lib/faceDeck.ts",
+    "src/lib/settingsPageCache.ts"
+  ]
+}

@@ -1,0 +1,18 @@
+# P12.1 evidence: legal-form-branch (see docs/horse-brain-phase12-1-input-binding-2026-10-05.md)
+{"variant":"short_deck","mode":"cash","spots":820,"eligible":759,"changed":594,"wagers":20,"allIns":25,"calls":32,"rewrites":0}
+{"variant":"short_deck","mode":"tournament","spots":601,"eligible":587,"changed":475,"wagers":14,"allIns":26,"calls":29,"rewrites":0}
+{"variant":"pineapple","mode":"cash","spots":1037,"eligible":983,"changed":740,"wagers":27,"allIns":46,"calls":52,"rewrites":0}
+{"variant":"flh","mode":"cash","spots":1975,"eligible":1975,"changed":992,"wagers":50,"allIns":26,"calls":531,"rewrites":0}
+{"variant":"flh","mode":"tournament","spots":1393,"eligible":1393,"changed":727,"wagers":38,"allIns":27,"calls":351,"rewrites":0}
+{"variant":"flo8","mode":"cash","spots":1532,"eligible":1532,"changed":700,"wagers":15,"allIns":32,"calls":489,"rewrites":0}
+{"variant":"flo8","mode":"tournament","spots":1201,"eligible":1201,"changed":611,"wagers":11,"allIns":22,"calls":349,"rewrites":0}
+ ✓ src/engine/remainingVariants/RemainingVariantLegalForm.test.ts (9 tests) 21576ms
+   ✓ P12.1 every Phase 12 proposal is in the legalizer form > short_deck cash: the real legalizer never rewrites a proposal (70 real hands) 1199ms
+   ✓ P12.1 every Phase 12 proposal is in the legalizer form > short_deck tournament: the real legalizer never rewrites a proposal (50 real hands) 518ms
+   ✓ P12.1 every Phase 12 proposal is in the legalizer form > pineapple cash: the real legalizer never rewrites a proposal (90 real hands) 3284ms
+   ✓ P12.1 every Phase 12 proposal is in the legalizer form > flh cash: the real legalizer never rewrites a proposal (70 real hands) 3184ms
+   ✓ P12.1 every Phase 12 proposal is in the legalizer form > flh tournament: the real legalizer never rewrites a proposal (50 real hands) 2228ms
+   ✓ P12.1 every Phase 12 proposal is in the legalizer form > flo8 cash: the real legalizer never rewrites a proposal (60 real hands) 5827ms
+   ✓ P12.1 every Phase 12 proposal is in the legalizer form > flo8 tournament: the real legalizer never rewrites a proposal (40 real hands) 4831ms
+   ✓ P12.1 every Phase 12 proposal is in the legalizer form > short_deck with a 2 big blind sizes on a 1 chip step 312ms
+      Tests  9 passed (9)

@@ -28,12 +28,25 @@ export interface ReturnedRosterTransport {
   roster: AcceptedRoster;
 }
 export type PrivateRosterHand = CompletedHandObservation & { acceptedActorRoster?: unknown };
+/** P14.2: the separately protected first-write discriminator, as raw
+ * PostgreSQL text from smarter_private.accepted_hand_rosters (LEFT JOIN, so
+ * every field is null when the hand has no discriminator row). */
+export interface AcceptedRosterProvenance {
+  status: unknown;
+  payloadDigest: unknown;
+  producerVersion: unknown;
+  rosterText: unknown;
+  /** The discriminator's hand_id (hand_history.id), bound to the capsule. */
+  handId: unknown;
+}
 export interface AcceptedRosterReadRequest {
   records: readonly HorseJournalRecord[];
   handKey: string;
   acceptedHandRecordDigest: string;
   payloadText: unknown;
   payloadDigest: unknown;
+  /** Required: the roster is read from this discriminator row only. */
+  provenance: unknown;
 }
 export type AcceptedRosterReadResult =
   | {

@@ -59,13 +59,13 @@ describe('seat-first lobby counts', () => {
     expect(body).toContain('fn_seat_horse_in_seat_first_game');
     expect(body).not.toContain('fn_sync_seat_first_player_count');
 
-    // And the MTT half still reads the registration count, in the else.
+    // And the MTT half registers through the door and writes no count: the
+    // door publishes it in its own transaction (2026-10-08, the door alone
+    // counts the field). theDoorAloneCountsTheField.test.ts drives this.
     const seatFirstAt = body.indexOf('if (seatFirst)');
-    const registrationCountAt = body.indexOf(
-      "in('status', ['registered', 'playing'])",
-      seatFirstAt
-    );
-    expect(registrationCountAt).toBeGreaterThan(seatFirstAt);
+    expect(body.indexOf('this.registerHorses(', seatFirstAt)).toBeGreaterThan(seatFirstAt);
+    const code = body.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    expect(code).not.toMatch(/current_players:/);
   });
 
   it('the service never writes a seat-first count it merely counted up', () => {
@@ -111,12 +111,12 @@ describe('nothing writes a seat-first count the application invented', () => {
     expect(body).not.toMatch(/current_players:\s*registered/);
   });
 
-  it('createSNG writes the count only for FIELD sngs, never seat-first ones', () => {
+  it('createSNG writes no count for any SNG: seats count a seat-first one, the door a field', () => {
     const body = bodyOf('async createSNG', 'return { tournamentId: sng.id');
-    // Guarded by the seat-first test rather than written unconditionally.
     expect(body).toMatch(/isSeatFirstFormat\('sng'/);
-    expect(body).toMatch(/if\s*\(!seatFirstSng\)/);
-    // The unconditional form must not come back.
+    // 2026-10-08: the field branch's `current_players = registered` raced the
+    // door's own count and is gone too.
     expect(body).not.toMatch(/\.update\(\{\s*current_players:\s*registered,/);
+    expect(body).not.toMatch(/\.current_players\s*=/);
   });
 });

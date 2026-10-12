@@ -27,11 +27,11 @@
  * referenced by SpectatorOverlay and shipped by nobody). A CSS cosmetic cannot
  * 404. There is no image to fail to load.
  *
- * The six ids below are BYTE-IDENTICAL to the World Hub's class names on
- * purpose. A player who equips `frame-gold` at smarter.poker/hub/avatars sees
- * the same gold frame on the felt, because both apps key off the same token and
- * both write the same two columns. Adding a seventh cosmetic means adding it in
- * BOTH places or the two surfaces silently disagree.
+ * The ids below are the cross-app contract. A player who equips `frame-gold`
+ * at smarter.poker/hub/avatars sees the same gold frame on the felt, because
+ * both apps key off the same token and both write the same two columns. Adding
+ * a cosmetic means adding it in BOTH places or the two surfaces silently
+ * disagree.
  *
  * ═══════════════════════════════════════════════════════════════════════════
  *  OWNERSHIP
@@ -47,11 +47,10 @@
  * badges" to paying members, and `RewardsMarketplace.tsx` has been listing an
  * `avatar-gold-frame` reward, since long before any code could render one.
  *
- * THE UI IS NOT THE GUARD. `supabase/migrations/20260825120000_avatar_cosmetics_ownership_guard.sql`
- * puts the same rule in a BEFORE UPDATE trigger on both tables, because
- * `avatar_unlocks` has a "Users can insert their own unlocks" policy and
- * `profiles_update` lets a player write their own row — a rule that lives only
- * in a component is not a rule, it is a suggestion with a nice font.
+ * THE UI IS NOT THE GUARD. The database puts the same rule in a BEFORE UPDATE
+ * trigger on both tables. `avatar_unlocks` is a server-issued, owner-readable
+ * entitlement ledger; `profiles_update` still lets a player write their own
+ * equipped columns, so the ownership rule must live where that write lands.
  */
 
 export type CosmeticKind = 'frame' | 'aura';
@@ -111,6 +110,27 @@ export const AVATAR_FRAMES: readonly AvatarCosmetic[] = [
     tier: 'vip',
     unlockToken: 'frame_hellfire',
   },
+  {
+    id: 'frame-obsidian',
+    kind: 'frame',
+    label: 'Obsidian',
+    tier: 'vip',
+    unlockToken: 'frame_obsidian',
+  },
+  {
+    id: 'frame-emerald',
+    kind: 'frame',
+    label: 'Emerald',
+    tier: 'vip',
+    unlockToken: 'frame_emerald',
+  },
+  {
+    id: 'frame-royal',
+    kind: 'frame',
+    label: 'Royal',
+    tier: 'vip',
+    unlockToken: 'frame_royal',
+  },
 ] as const;
 
 export const AVATAR_AURAS: readonly AvatarCosmetic[] = [
@@ -121,6 +141,11 @@ export const AVATAR_AURAS: readonly AvatarCosmetic[] = [
   { id: 'aura-moss', kind: 'aura', label: 'Moss', tier: 'free', unlockToken: 'aura_moss' },
   { id: 'aura-fire', kind: 'aura', label: 'Fire', tier: 'vip', unlockToken: 'aura_fire' },
   { id: 'aura-glitch', kind: 'aura', label: 'Glitch', tier: 'vip', unlockToken: 'aura_glitch' },
+  { id: 'aura-frost', kind: 'aura', label: 'Frost', tier: 'vip', unlockToken: 'aura_frost' },
+  { id: 'aura-neon', kind: 'aura', label: 'Neon', tier: 'vip', unlockToken: 'aura_neon' },
+  { id: 'aura-royal', kind: 'aura', label: 'Royal', tier: 'vip', unlockToken: 'aura_royal' },
+  { id: 'aura-ember', kind: 'aura', label: 'Ember', tier: 'vip', unlockToken: 'aura_ember' },
+  { id: 'aura-aurora', kind: 'aura', label: 'Aurora', tier: 'vip', unlockToken: 'aura_aurora' },
 ] as const;
 
 export const ALL_COSMETICS: readonly AvatarCosmetic[] = [...AVATAR_FRAMES, ...AVATAR_AURAS];

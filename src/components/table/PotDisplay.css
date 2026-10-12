@@ -363,8 +363,8 @@
 }
 
 .pot-display__pile-stack {
-  /* relative so a clamped denomination's "x12" badge can hang above the
-     spread without joining the row. */
+  /* Positioning context for the spread. (It anchored a row of "x12" count
+     badges until the owner ruling of 2026-10-04 removed them.) */
   position: relative;
   display: flex;
   flex-direction: row;
@@ -393,7 +393,7 @@
   /* Never let the column squash a disc into an oval - Dan 2026-09-04,
      "chips are circles". */
   flex: 0 0 auto;
-  /* The "x12" badge for a clamped group hangs off its top chip. */
+  /* Containing block for the disc's own inset detail. */
   position: relative;
   border-radius: 50%;
   box-sizing: border-box;
@@ -455,64 +455,9 @@
   height: var(--cp-chip-size, 24px);
 }
 
-/* ── THE TRUE COUNTS, IN ONE ROW YOU CAN ACTUALLY READ ───────────────────
-   The pile is clamped for width; the VALUE never is. Every denomination in
-   the pot is drawn (PotDisplay.tsx hands visualChipStacks the whole ladder as
-   `maxStacks`, so a group is never dropped and its value never leaves the
-   felt), and `maxTotal` then trims the discs from the smallest denomination
-   upward. On a mixed pot that clamps several groups at once - a 131,313 pot
-   clamps four of them, and a 987,654 pot five.
-
-   Each clamped group used to hang its own badge under its own disc,
-   `position: absolute; left: 50%`. Groups trimmed to a single disc sit half a
-   chip apart, so those badges landed on top of one another and the pot's true
-   total turned to mush precisely on the pots that needed it most.
-
-   So: ONE row under the spread, in ladder order, highest denomination first.
-   The number stays gold because gold is legible against every felt; the chip
-   it belongs to is named by the dot in front of it, which is the denomination
-   colour. A dot survives being the black 100 (#1c1c2e) in a way tinted text
-   does not, hence the light rim on it. */
-.pot-display__pile-counts {
-  position: absolute;
-  top: calc(100% + 1px);
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  white-space: nowrap;
-  pointer-events: none;
-}
-
-.pot-display__pile-multi {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  font-size: 0.55rem;
-  font-weight: 800;
-  line-height: 1;
-  color: var(--pd-gold, #ffd700);
-  font-family: 'JetBrains Mono', monospace;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
-  white-space: nowrap;
-}
-
-/* Which chip this count belongs to. Was the badge's POSITION, which stopped
-   working the moment two groups were clamped; a colour cannot collide. */
-.pot-display__pile-multi::before {
-  content: '';
-  display: inline-block;
-  width: 0.5em;
-  height: 0.5em;
-  flex: 0 0 auto;
-  border-radius: 50%;
-  background: var(--pile-chip-color, #f2f3f5);
-  border: 1px solid rgba(255, 255, 255, 0.55);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
-}
+/* NO COUNT BADGES. Owner ruling 2026-10-04 removed the row of per-denomination
+   true counts that used to hang under the spread: the pile is an illustration
+   that only has to be close, and the pot pill's number is the truth. */
 
 /* No per-place chip size any more. Dan 2026-08-24: "all chips should be the
    same size" - the street chips, the collected pot's chips and the chips in

@@ -1,0 +1,27 @@
+{
+  "_owner": "agent/claude-horse-brain/audit-accepted-roster-20261008: the daily commitment audit classifies horse seats by the P14-A accepted roster (20261008041707): the roster epoch, the shared identity-basis rule and the per-pass identity counters. Native PG17 qualified by scripts/ci/test-horse-commitment-audit.py jobs roster_identity_retained58 and roster_basis40; a declaration pending protected merge and exact production installation/readback, not a live installation claim.",
+  "tables": ["horse_commitment_roster_epoch"],
+  "functions": ["fn_horse_commitment_roster_epoch_immutable", "fn_horse_commitment_identity_basis"],
+  "columns": {
+    "horse_commitment_roster_epoch": [
+      "singleton",
+      "first_captured_at",
+      "table_id",
+      "hand_number",
+      "hand_id",
+      "recorded_at"
+    ],
+    "horse_commitment_audit_days": [
+      "roster_identity_hands",
+      "profile_identity_hands",
+      "roster_unavailable_hands",
+      "roster_missing_hands"
+    ],
+    "horse_commitment_audit_passes": [
+      "roster_identity_hands",
+      "profile_identity_hands",
+      "roster_unavailable_hands",
+      "roster_missing_hands"
+    ]
+  }
+}

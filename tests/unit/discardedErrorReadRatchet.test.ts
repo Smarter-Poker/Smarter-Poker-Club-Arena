@@ -63,17 +63,19 @@ const countsByFile = (): Map<string, number> => {
 
 /** Frozen 2026-08-30 (Community Command Center). 262 occurrences. Only ever shrink. */
 const BASELINE = new Map<string, number>([
-  ['src/services/HorseOrchestrator.ts', 8],
   // 13 -> 12: phase 3 of 7 removed distributeFromTreasury, distributeChips and
   // transferToAgent, and rewired transferToPlayer onto fn_agent_wallet_send.
   // 12 -> 11 on 2026-09-03: phase 3 removed clawbackDistribution and
   // getRecentDistributions, a dead parallel implementation of agent undo whose
   // reads went nowhere anyway.
-  ['src/services/AgentService.ts', 7],
+  ['src/services/AgentService.ts', 2],
   // 10 -> 8: union route/account authorization now reports both canonical
   // operator lookup failures instead of discarding them during a stale load.
   ['src/pages/UnionDashboardPage.tsx', 7],
-  ['src/services/UnionService.ts', 11],
+  // 11 -> 9: Table Management's owner/admin authority read now binds both
+  // the union-owner and appointed-admin query errors instead of converting an
+  // unreadable answer into a confident access denial.
+  ['src/services/UnionService.ts', 9],
   ['src/pages/AdminDashboardPage.tsx', 6],
   ['src/services/ClubsService.ts', 5],
   ['src/services/PromotionService.ts', 2],
@@ -101,8 +103,10 @@ const BASELINE = new Map<string, number>([
   // 3 -> 1 on 2026-09-20: submitDispute and withdrawDispute stopped doing raw
   // table writes and now call fn_dispute_submit / fn_dispute_withdraw, which
   // report a reason instead of an ignored error.
-  ['src/services/DisputeService.ts', 1],
-  ['src/services/DiamondService.ts', 1],
+  ['src/services/DisputeService.ts', 0],
+  // 1 -> 0 on 2026-10-01: the balance read goes through the owner door
+  // (ruling 25) and reports its error.
+  ['src/services/DiamondService.ts', 0],
   // 3 -> 2 on 2026-09-01: executePayout is gone, and with it the discarded
   // read it did on agent_commissions after calling execute_commission_payout.
   ['src/services/CommissionService.ts', 1],
@@ -120,12 +124,23 @@ const BASELINE = new Map<string, number>([
      accident. Kept at 0 rather than deleted so a reintroduction is a diff on
      this line. */
   ['src/pages/tournament/TournamentLobbyPage.tsx', 0],
-  ['src/pages/VIPPage.tsx', 2],
+  /* ZERO SINCE 2026-09-30 (was 2). Both were on the diamond wallet's own page
+     and both were the shape this ratchet exists for: the `profiles.diamonds`
+     read and the `vip_points` read discarded their errors, so a failed read
+     became `profData?.diamonds || 0` and a player was shown a balance of 0 for
+     money that was still in their wallet. Both now bind the error, report it,
+     and carry a separate 'error' state that prints "Unavailable" - a real zero
+     and an unreadable figure are no longer the same pixels. Kept at 0 rather
+     than deleted so a reintroduction is a diff on this line. */
+  ['src/pages/VIPPage.tsx', 0],
   ['src/pages/NotificationsPage.tsx', 0],
   ['src/pages/ClubRulesPage.tsx', 0],
   ['src/pages/CashierTradePage.tsx', 0],
   ['src/pages/AntiCheatPage.tsx', 3],
-  ['src/components/wallet/ChipMintModal.tsx', 2],
+  // 2 -> 0 on 2026-10-09 (Cashier launch audit S-07): the mint pre-flight
+  // reads the club through fn_club_money_panel and binds every error; the
+  // membership-role read binds and reports its error and falls to denied.
+  ['src/components/wallet/ChipMintModal.tsx', 0],
   // 3 -> 2 in phase 7: the sub-agent read that discarded its error is gone with
   // the dropped column it was reading, and its replacement binds the error.
   ['src/components/agent/AgentCommissionDashboard.tsx', 0],
@@ -142,7 +157,6 @@ const BASELINE = new Map<string, number>([
   // 2 -> 0 in chip-std cash (2026-09-02, C2): both discarded reads lived in
   // seatHorse, the browser-side seat creator that minted a stack; it is gone
   // with its reads, and the server fleet is the one seat creator for horses.
-  ['src/services/HydraService.ts', 0],
   ['src/services/FinancialExportService.ts', 0],
   // BonusService.ts was deleted 2026-09-07 with the chip daily-bonus ladder.
   /* 0 since 2026-09-05: the last unbound read here was the player_stats
@@ -150,13 +164,16 @@ const BASELINE = new Map<string, number>([
      reports. See the note in that function - it was also asking a per-club
      table for a single row. */
   ['src/services/AchievementTriggerService.ts', 0],
-  ['src/pages/UnionGamesPage.tsx', 2],
+  // 2 -> 0 on 2026-10-04: union discovery now binds both membership reads and
+  // exits its loading state with a visible fail-closed authority error.
+  ['src/pages/UnionGamesPage.tsx', 0],
   ['src/pages/MultiTablePage.tsx', 1],
   ['src/pages/FlashPoolPage.tsx', 0],
   ['src/pages/CreditAdminPanel.tsx', 0],
-  ['src/pages/ClubAnnouncementsPage.tsx', 1],
+  ['src/pages/ClubAnnouncementsPage.tsx', 0],
   ['src/components/tournament/TournamentStartingTicker.tsx', 0],
-  ['src/components/social/OnlineFriendsPill.tsx', 2],
+  // 2 -> 1 on 2026-10-01: the profiles read binds its error (ruling 25 moved it).
+  ['src/components/social/OnlineFriendsPill.tsx', 1],
   ['src/components/social/FriendListPanel.tsx', 1],
   ['src/components/gameplay/PlayerNotesPanel.tsx', 1],
   ['src/components/common/UnionSkinGuard.tsx', 2],
@@ -178,20 +195,24 @@ const BASELINE = new Map<string, number>([
   // PostgREST failures so retryable deadlocks cannot disappear into `void`.
   ['src/services/DailyChallengeService.ts', 0],
   ['src/services/BlockService.ts', 1],
-  ['src/services/AvatarService.ts', 1],
+  // 1 -> 0 on 2026-10-05. VIP access now binds and reports its PostgREST
+  // failure instead of treating an unreadable account as a non-VIP account.
+  ['src/services/AvatarService.ts', 0],
   ['src/services/AdService.ts', 1],
   ['src/services/AchievementService.ts', 1],
   ['src/pages/admin/AnalyticsDashboard.tsx', 0],
   ['src/pages/XMTTPage.tsx', 0],
-  ['src/pages/UnionStatementsPage.tsx', 1],
+  // 1 -> 0 on 2026-10-03. Statement issuing now refuses and reports a session
+  // read failure instead of treating it as an ordinary signed-out response.
+  ['src/pages/UnionStatementsPage.tsx', 0],
   ['src/pages/TournamentPage.tsx', 1],
   ['src/pages/TableConfigPage.tsx', 1],
   ['src/pages/SettingsPage.tsx', 1],
   ['src/pages/PromotionsPage.tsx', 0],
-  ['src/pages/PromoVaultPage.tsx', 1],
+  ['src/pages/PromoVaultPage.tsx', 0],
   ['src/pages/ProfilePage.tsx', 0],
   ['src/pages/PlayerStatsPage.tsx', 0],
-  ['src/pages/MemberManagementPage.tsx', 1],
+  ['src/pages/MemberManagementPage.tsx', 0],
   ['src/pages/MarketplacePage.tsx', 0],
   ['src/pages/InvitePage.tsx', 1],
   ['src/pages/CreateUnionPage.tsx', 1],
@@ -202,7 +223,8 @@ const BASELINE = new Map<string, number>([
   ['src/components/tournament/TournamentRankingCard.tsx', 1],
   ['src/components/tournament/MysteryBountyPanel.tsx', 1],
   ['src/components/tournament/MysteryBountyCelebration.tsx', 1],
-  ['src/components/social/PresenceIndicator.tsx', 1],
+  // 1 -> 0 on 2026-10-01: presence comes from the presence door, which throws.
+  ['src/components/social/PresenceIndicator.tsx', 0],
   ['src/components/session/SessionSummaryHost.tsx', 1],
   ['src/components/navigation/NotificationDropdown.tsx', 1],
   ['src/components/navigation/HamburgerMenu.tsx', 1],
@@ -236,6 +258,16 @@ const AUDITED_ZERO = [
 
 describe('discarded-error-read ratchet', () => {
   const current = countsByFile();
+
+  it('the Club Data promise reader keeps its resolved Supabase error bound', () => {
+    const clubData = readFileSync(join(SRC_ROOT, 'pages', 'club', 'ClubDataPage.tsx'), 'utf8');
+    const dataOnlyThen = /\.then\(\s*\(\{\s*data(?:\s*:\s*[A-Za-z_$][\w$]*)?\s*\}\)/g;
+
+    expect(
+      clubData.match(dataOnlyThen) ?? [],
+      'ClubDataPage may not turn a resolved Supabase failure into an empty club name'
+    ).toEqual([]);
+  });
 
   it('the audited surfaces stay at zero', () => {
     for (const file of AUDITED_ZERO) {

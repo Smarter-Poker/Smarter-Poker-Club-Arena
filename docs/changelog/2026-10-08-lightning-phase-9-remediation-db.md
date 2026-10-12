@@ -1,0 +1,29 @@
+# Lightning Phase 9 Remediation: The Ended Session Answers, the Reaper Clamps and Skips the Frozen, and Presence Self-Heals
+
+Migration `20261008142857_lightning_phase_9_remediation_the_ended_session_answers_the_.sql` (the database side). The adversarial deep-dive review of the Phase 9 disconnect and reconnect work (`20261008050805`) found four database defects; this file closes them after the app-side half merged (#6499) and Phase 10 (`20261008111425`) applied. One transaction with `SET LOCAL lock_timeout`. No table is created, altered or locked: every change is an asserted substitution into the body PokerIQ-Production carries, read with `pg_get_functiondef` on 2026-10-08, each anchor counted or the file refuses, grants carried per role. Not applied to production by this change.
+
+## Finding 1: The Ended Session Answers Its Ending
+
+`fn_lightning_reconnect_state` answered NULL for a player whose session ended, so a returning client could not tell a timed-out disconnect from a deliberate stop from merely gone: no `exit_reason`, no seat pointer, and the Phase 9 "Your Lightning Session Timed Out" ending was unreachable. With no open session in the Cluster, the caller's MOST RECENT exited session now answers: `{pool_session_id, state 'ended', in_hand false, hand_id null, disconnected_at, stop_requested, seat_table_id, seat_number, stack, joinable, exit_reason}`, with `exit_reason` verbatim from the row (`disconnect_expired`, `stop_playing`, `cluster_unfrozen` and the rest). The seat pointer answers only while the caller still owns the anchor seat (the reaper never stands it up, so VIEW GAME can point at it); stood up or re-owned since, both seat keys are null, never another player's chair. Still `auth.uid()` scoped, and a caller who never had a session in the Cluster still reads NULL. The open-session answer keeps its exact prior shape plus `exit_reason` null (the merged client reads the extra key); the merged client keys timed out on `exit_reason` `disconnect_expired` and stopped on `stop_playing`.
+
+## Finding 4: The Snapshot Points at a Dealt Hand Alone
+
+The open-session branch could leak a `lightning_instance` id through the `hand_id` key, because `fn_lightning_player_live_hand`'s first branch answers `coalesce(i.hand_id, i.id)` for a committed reservation on a still-forming instance. That coalesce is load-bearing for the reader's other callers (the anchor guard and the engine's departure gate read null versus not-null as engaged, a committed reservation on a forming instance included), so the shared body is untouched; the reconnect snapshot alone scopes the key to an id `public.lightning_hand` actually carries. While the instance forms the snapshot answers `in_hand` true and `hand_id` null.
+
+## Finding 3: The Reaper Clamps Above and Below
+
+`fn_lightning_reap_expired_disconnects` took any `p_limit` (`LIMIT GREATEST(1, coalesce(p_limit, 200))`), so one call could lock an unbounded worklist. It is now `LIMIT LEAST(GREATEST(1, coalesce(p_limit, 200)), 2000)`, keeping `FOR UPDATE OF ps SKIP LOCKED`.
+
+## Finding 6: A Frozen Cluster Is Evidence
+
+A Cluster frozen by the settlement freeze (`cluster_mode` `frozen`, `fn_lightning_settlement_freeze`) is under forensic investigation and its `lightning_pool_session` rows must not be mutated. The reaper now skips a frozen Cluster entirely, a timed-out disconnect and a standing Stop Playing request alike (an idle stopper waits out the freeze; consistency beats speed), and `fn_lightning_stop_playing` defers its immediate idle exit the same way while still recording the stop mark, because a responsible-gaming request is never dropped. `fn_cash_cluster_unfreeze` owns the frozen Cluster's recovery and exits its sessions itself (`cluster_unfrozen`); a thawed Cluster's expired disconnects are reaped on the next pass. The formation reaper's recovery-during-the-break doctrine covers buried instances, never session exits.
+
+## Finding 2: An Action Is a Heartbeat (The Database Half)
+
+The app now retries lost reconnect reports (#6499); the database adds its own self-heal at the doors a connected player's own action reaches. `fn_lightning_fast_fold` (the engine relays the player's own fold with the player's id) and `fn_lightning_stop_playing` (the player's own tap) clear the caller's own stale `disconnected_at` stamp and return `disconnected` to `active` as a side effect, because a player taking an action is connected. Guarded (only when the stamp is set, never an exited row, never on a frozen Cluster) and event-light (one `player_reconnected` event in `fn_lightning_presence_report`'s own ledger shape). The engine-spoken doors (`fn_lightning_presence_report`, the reapers, `fn_lightning_auto_rebuy`, settlement) are untouched: the engine speaks for itself.
+
+## Proof
+
+- `scripts/dev/test-lightning-phase9r-remediation.sh`: 14 sections on PostgreSQL 17, port 55558, over the real Lightning chain through Phase 10 (`20261008111425`), with humans and horses in every Cluster. No predecessor live proof is falsified. A reaped human and horse each read their own ended session with the seat pointer and the ending stack; an idle Stop Playing reads `stop_playing` and the most recent exited session wins; the seat pointer is null once the chair is stood up or re-owned; the open answer keeps its shape plus `exit_reason` null; a forming instance answers `hand_id` null while the shared reader keeps vouching for its other callers; the reaper clamps 0 up to one and an absurd limit down to the 2000 the body carries; a frozen Cluster's rows are never mutated and the thaw lets the exits finish with no `player_expired` for the stop; the fold and stop doors self-heal the caller's own stamp with one `player_reconnected` event; non-Lightning play is untouched; every live proof holds and the file is re-appliable.
+- `tests/lightning-phase-9r-remediation.test.ts`: the static contract.
+- CI: shard 1, right after the Phase 10 harness.

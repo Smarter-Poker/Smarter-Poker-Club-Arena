@@ -45,6 +45,13 @@ describe('the rigged throwables', () => {
     }
   });
 
+  it('scales every rig payload graphic above the seat avatar while preserving the water-gun reference', () => {
+    const player = read('src/components/table/ThrowablePlayer.css');
+    expect(player).toMatch(/\.thr__payload > svg\s*\{[^}]*transform: scale\(1\.22\)/);
+    expect(player).toMatch(/\.thr--water_gun \.thr__payload > svg\s*\{[^}]*transform: scale\(1\)/);
+    expect(player).not.toMatch(/\.thr__proj > svg\s*\{[^}]*transform: scale\(1\.22\)/);
+  });
+
   it('every rig id is a REAL catalogue id, so the wire still resolves it', () => {
     // `[THROW:<id>:<seat>]` goes over the engine's chat channel and the
     // receiving client looks the id up in ThrowableService. A rig for an id
@@ -132,6 +139,19 @@ describe('the grammar bounds, from the measured reference', () => {
     }
   });
 
+  it('every rigged throwable schedules at least one catalogued sound', () => {
+    for (const spec of specs) {
+      expect(spec.audio.length, `${spec.id} has no sound effects`).toBeGreaterThan(0);
+      expect(
+        spec.audio.some(
+          (cue) =>
+            THROWABLE_CUE_MANIFEST[cue.sample] && !THROWABLE_CUE_MANIFEST[cue.sample].placeholder
+        ),
+        `${spec.id} has no shipped sound effect`
+      ).toBe(true);
+    }
+  });
+
   it('every audio cue exists in the built manifest, placeholders included', () => {
     // A spec that names a cue in neither the file list nor the placeholder
     // list is silent, and silence is the one thing the animation law forbids.
@@ -140,6 +160,41 @@ describe('the grammar bounds, from the measured reference', () => {
         expect(THROWABLE_CUE_MANIFEST[cue.sample], `${s.id} cue '${cue.sample}'`).toBeTruthy();
       }
     }
+  });
+
+  it('pairs expressive character beats with audible action-specific performances', () => {
+    const byId = new Map(specs.map((spec) => [spec.id, spec]));
+    const requires = (id: string, sample: string, beat: number) => {
+      const spec = byId.get(id);
+      expect(spec, `${id} spec exists`).toBeTruthy();
+      expect(
+        spec!.audio.some((cue) => cue.sample === sample && cue.at === beat),
+        `${id} must play ${sample} at ${beat}ms`
+      ).toBe(true);
+    };
+
+    requires('sleeping', 'snore_soft', 3500);
+    requires('screaming', 'scream_short', 900);
+    requires('laughing_emoji', 'laugh_short', 867);
+    requires('laughing_emoji', 'laugh_swell', 2867);
+    requires('sloth', 'yawn_breath', 2700);
+    requires('party_face', 'cheer_ooh', 1167);
+    requires('rat_card', 'cheer_ooh', 3000);
+    requires('facepalm', 'sigh_soft', 1400);
+    requires('surrender', 'sad_trombone', 1200);
+    requires('surrender', 'flag_flap', 2800);
+    requires('vomit_rainbow', 'comic_burp', 1300);
+    requires('fish', 'water_lap', 700);
+    requires('blush', 'laugh_short', 1500);
+    requires('loser_hand', 'sad_trombone', 1800);
+    requires('thinking', 'cheer_ooh', 2400);
+    requires('pizza_slice', 'squirt_loop', 1800);
+    requires('energy_ball', 'magnet_hum', 700);
+
+    const cues = JSON.parse(read('scripts/audio/throwable-cues.manifest.json')).cues;
+    expect(cues.laugh_short.trimEnd).toBeLessThanOrEqual(1.35);
+    expect(cues.laugh_swell.trimEnd).toBeLessThanOrEqual(1.2);
+    expect(cues.yawn_breath.trimEnd).toBeLessThanOrEqual(0.5);
   });
 
   it('every cue fires while something is on screen', () => {

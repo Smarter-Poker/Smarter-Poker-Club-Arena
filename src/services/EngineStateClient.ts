@@ -32,6 +32,9 @@ import {
   type MuxAccessRefusalCode,
 } from './EngineSocketMux';
 import type { Operation } from 'fast-json-patch';
+import { NATIVE_RESUME_EVENT } from '../lib/nativeResume';
+import { withLightningDevice } from '../lightning/lightningDeviceReport';
+import { noteLightningUserEvent } from '../lightning/lightningDecisionQueue';
 const { applyPatch } = jsonPatch;
 
 /** The socket watchdog cannot run until authentication has returned a token. */
@@ -641,7 +644,8 @@ export class EngineStateClient {
         if (this.status === 'connected') {
           // pageshow can be the only wake event after Home Screen/BFCache
           // restoration. A healthy link keeps its existing bounded resync.
-          if (event.type === 'pageshow') this.onVisibility?.();
+          if (event.type === 'pageshow' || event.type === NATIVE_RESUME_EVENT)
+            this.onVisibility?.();
           return;
         }
         // Browser wake does not necessarily produce an online event. Do not
@@ -650,6 +654,7 @@ export class EngineStateClient {
         this.onOnline?.();
       };
       window.addEventListener('pageshow', this.onResume);
+      window.addEventListener(NATIVE_RESUME_EVENT, this.onResume);
       document.addEventListener('visibilitychange', this.onResume);
     }
     await this.openOnce();
@@ -674,6 +679,7 @@ export class EngineStateClient {
     }
     if (this.onResume !== null && typeof window !== 'undefined') {
       window.removeEventListener('pageshow', this.onResume);
+      window.removeEventListener(NATIVE_RESUME_EVENT, this.onResume);
       document.removeEventListener('visibilitychange', this.onResume);
       this.onResume = null;
     }
@@ -774,7 +780,11 @@ export class EngineStateClient {
       return;
     }
 
-    const wsUrl = engineSocketUrl(this.opts.baseUrl, '/ws/table/' + this.opts.tableId);
+    // LIGHTNING PHASE 8: a Lightning room says which device this is (?p=).
+    const wsUrl = withLightningDevice(
+      engineSocketUrl(this.opts.baseUrl, '/ws/table/' + this.opts.tableId),
+      this.opts.tableId
+    );
     // Subprotocol carries auth. Two entries: the literal "bearer", then the JWT.
     //
     // Roadmap batch 6 (2026-08-21), DEFAULT ON since 2026-08-24: all tables
@@ -1159,6 +1169,9 @@ export class EngineStateClient {
       this.noteScheduledRestart(p.resume_expected_at);
     }
     if (msg.type === 'USER_EVENT') {
+      // LIGHTNING PHASE 8: a decision-queue frame feeds the shared queue and
+      // stops here; it is not this table's private state.
+      if (noteLightningUserEvent(msg.payload)) return;
       // Private, unsequenced, idempotent: straight through, never queued.
       try {
         this.opts.onUserEvent(msg.payload);
@@ -1379,9 +1392,46 @@ export class EngineStateClient {
     this.requestResync();
   }
 
+  /**
+   * Ask a socket that reads OPEN to prove it (2026-10-04).
+   *
+   * For a caller holding evidence the transport cannot see: TablePage's
+   * heartbeat is a second, independent path to the same engine, and when two
+   * beats in a row get no answer the link is very likely gone even though
+   * this socket has not closed. Left to itself the watchdog needs 35 seconds
+   * of silence before its first question and about 50 before it gives up,
+   * and for all of that the felt looks live and is not.
+   *
+   * This is the wake probe, unchanged: one RESYNC, five seconds to answer,
+   * then the ordinary reconnect ladder. It is single-flight and does nothing
+   * unless the socket is open, the page is visible and no announced restart
+   * explains the silence - so a wrong guess costs one snapshot.
+   */
+  probeLink(): void {
+    this.beginForegroundStateProbe();
+  }
+
   /** Refresh authoritative state after a confirmed server purchase. */
   requestSnapshot(): void {
     this.requestResync();
+  }
+
+  /**
+   * LIGHTNING PHASE 12: this room's hand reached the screen (RENDER_ACK). A
+   * hand id and a bounded client delta only - never a card; the engine times
+   * the leg on its own clock and ignores the delta. Sent only on an open
+   * socket; a failure is silent (telemetry).
+   */
+  sendRenderAck(handId: string, deltaMs: number): void {
+    if (!handId || this.ws?.readyState !== 1) return;
+    const d = Number.isFinite(deltaMs) ? Math.max(0, Math.min(60_000, Math.round(deltaMs))) : 0;
+    try {
+      this.ws.send(
+        JSON.stringify({ type: 'RENDER_ACK', tableId: this.opts.tableId, hand_id: handId, d })
+      );
+    } catch {
+      /* onclose will reconnect; a lost ack is no sample */
+    }
   }
 
   /**
@@ -2063,7 +2113,8 @@ export class EngineChannelClient {
         if (this.status === 'connected') {
           // pageshow can be the only wake event after Home Screen/BFCache
           // restoration. A healthy link keeps its existing bounded resync.
-          if (event.type === 'pageshow') this.onVisibility?.();
+          if (event.type === 'pageshow' || event.type === NATIVE_RESUME_EVENT)
+            this.onVisibility?.();
           return;
         }
         // Browser wake does not necessarily produce an online event. Do not
@@ -2072,6 +2123,7 @@ export class EngineChannelClient {
         this.onOnline?.();
       };
       window.addEventListener('pageshow', this.onResume);
+      window.addEventListener(NATIVE_RESUME_EVENT, this.onResume);
       document.addEventListener('visibilitychange', this.onResume);
     }
     await this.openOnce();
@@ -2095,6 +2147,7 @@ export class EngineChannelClient {
     }
     if (this.onResume !== null && typeof window !== 'undefined') {
       window.removeEventListener('pageshow', this.onResume);
+      window.removeEventListener(NATIVE_RESUME_EVENT, this.onResume);
       document.removeEventListener('visibilitychange', this.onResume);
       this.onResume = null;
     }

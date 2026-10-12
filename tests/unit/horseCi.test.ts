@@ -147,6 +147,41 @@ describe('Horse Git fixtures stay inside their disposable repository', () => {
 
 describe('Horse Phase 4 changes admit their PostgreSQL parent job', () => {
   it.each([
+    'supabase/migrations/20261007043848_v4_policy_schema_is_immutable_input_metadata.sql',
+    'supabase/migrations/20261007043945_solver_v4_nodes_prove_complete_public_state.sql',
+    'supabase/migrations/20261007051641_v4_consumers_bind_the_immutable_policy_schema.sql',
+    'scripts/ci/test-v4-policy-metadata.mjs',
+    'server/src/scripts/gtoV31Evaluate.ts',
+    'server/src/benchmark/GtoV31EvaluationConfig.ts',
+    'server/src/benchmark/GtoV31EvaluationConfig.test.ts',
+  ])('selects the owning V4 qualification for a sole input edit: %s', (path) => {
+    const flags = classifyChangedPaths([path]);
+    expect(flags.server).toBe(true);
+    expect(flags.phase4).toBe(true);
+  });
+
+  it('executes metadata identity tests before the existing PostgreSQL gate', () => {
+    const step = ci.jobs.accounting_postgres.steps.find(
+      (candidate: { name?: string }) =>
+        candidate.name === 'Certified V31 PostgreSQL 17 behavior gate'
+    );
+    expect(step.run.trim().split('\n')).toEqual([
+      'node --test scripts/ci/test-v4-policy-metadata.mjs',
+      'bash scripts/ci/probes/horse-phase4-certified-solver/run-pg17.sh',
+    ]);
+  });
+
+  it.each([
+    'scripts/ci/test-v4-policy-metadata.mjs.example',
+    'supabase/migrations/20261007043848_v4_policy_schema_is_immutable_input_metadata.sql.example',
+    'supabase/migrations/20261007043945_unrelated.sql',
+    'server/src/scripts/gtoV31Evaluate.ts.example',
+    'server/src/benchmark/GtoV31EvaluationConfigOther.ts',
+  ])('does not select V4 qualification for a similarly named neighbor: %s', (path) => {
+    expect(classifyChangedPaths([path]).phase4).toBe(false);
+  });
+
+  it.each([
     'scripts/ci/probes/horse-phase4-certified-solver/run-pg17.sh',
     'scripts/ci/probes/horse-phase4-certified-solver/certified-v31.sql',
     'scripts/ci/probes/horse-phase4-certified-solver/setup.sql',
@@ -209,10 +244,16 @@ describe('Horse commitment audit remains in the existing accounting PostgreSQL g
     'scripts/ci/probes/horse-commitment-audit/roster-identity.sql',
     'scripts/ci/probes/horse-commitment-audit/reader-auth.sql',
     'scripts/ci/probes/horse-commitment-audit/reader-page.sql',
+    'scripts/ci/probes/horse-commitment-audit/selection-setup.sql',
+    'scripts/ci/probes/horse-commitment-audit/selection-receipts.sql',
+    'scripts/ci/probes/horse-commitment-audit/roster-basis-setup.sql',
+    'scripts/ci/probes/horse-commitment-audit/roster-basis.sql',
     'scripts/ci/probes/horse-commitment-audit/README.md',
     'supabase/migrations/20260914161209_horse_committed_pot_daily_audit.sql',
     'supabase/migrations/20260917051350_horse_commitment_reviews_preserve_format_and_canonical_rosters.sql',
     'supabase/migrations/20260917052511_horse_private_commitment_review_reader.sql',
+    'supabase/migrations/20261007075304_horse_commitment_selection_receipts.sql',
+    'supabase/migrations/20261008041707_horse_commitment_audit_accepted_roster_identity.sql',
     'tests/unit/horseCi.test.ts',
   ])('admits the parent job and routing tests for a sole dependency edit: %s', (path) => {
     const flags = classifyChangedPaths([path]);

@@ -43,25 +43,37 @@ let latestToken: string | null = null;
 const tokenWaiters = new Set<(t: string) => void>();
 const registrationErrors = new Set<(e: Error) => void>();
 
+/* NEVER RESOLVE A PROMISE WITH A CAPACITOR PLUGIN (2026-09-29, found on the
+   Android emulator). A plugin object is a Proxy that turns EVERY property into
+   a native call - `then` included. These two helpers used to `return` the
+   plugin from an async function; returning a value that has a `then` makes
+   the promise adopt it, so the runtime called PushNotifications.then(), the
+   native side answered '"PushNotifications.then()" is not implemented on
+   android', and every await below rejected. On a real phone that meant: the
+   shell's push listeners were never attached at launch (an unhandled rejection
+   on every start), Enable in the notifications sheet spun on "Enabling..."
+   forever, and the device token was never stored. The unit tests could not
+   see it because their mocks were plain objects. So the plugins travel inside
+   a wrapper object, which has no `then`, and are destructured where used. */
 async function plugin() {
   const { PushNotifications } = await import('@capacitor/push-notifications');
-  return PushNotifications;
+  return { PushNotifications };
 }
 
 async function prefs() {
   const { Preferences } = await import('@capacitor/preferences');
-  return Preferences;
+  return { Preferences };
 }
 
 async function rememberToken(token: string | null): Promise<void> {
-  const Preferences = await prefs();
+  const { Preferences } = await prefs();
   if (token) await Preferences.set({ key: TOKEN_KEY, value: token });
   else await Preferences.remove({ key: TOKEN_KEY });
 }
 
 export async function storedToken(): Promise<string | null> {
   try {
-    const Preferences = await prefs();
+    const { Preferences } = await prefs();
     const { value } = await Preferences.get({ key: TOKEN_KEY });
     return value || null;
   } catch {
@@ -78,7 +90,7 @@ export async function storedToken(): Promise<string | null> {
 export async function initNativePush(): Promise<ListenerHandle[]> {
   if (wired) return [];
   wired = true;
-  const PushNotifications = await plugin();
+  const { PushNotifications } = await plugin();
   const handles: ListenerHandle[] = [];
 
   handles.push(
@@ -107,7 +119,7 @@ export async function initNativePush(): Promise<ListenerHandle[]> {
 /** Ask the OS for a token. Resolves with the token or rejects on error/timeout. */
 async function registerForToken(): Promise<string> {
   await initNativePush();
-  const PushNotifications = await plugin();
+  const { PushNotifications } = await plugin();
   return new Promise<string>((resolve, reject) => {
     const timer = setTimeout(() => {
       tokenWaiters.delete(onToken);
@@ -134,12 +146,21 @@ export interface NativePushResult {
   ok: boolean;
   error?: string;
   permission?: 'granted' | 'denied' | 'default';
+  code?: string;
 }
 
-/** Permission prompt, token, then the Hub row. Call from a tap handler. */
-export async function enableNativePush(): Promise<NativePushResult> {
-  const PushNotifications = await plugin();
+/**
+ * Permission prompt, token, then the Hub row. Call from a tap handler.
+ * `repairOnly` is the silent sync: it never prompts and the server refreshes
+ * only an enrollment this account already holds on this device.
+ */
+export async function enableNativePush(
+  options: { repairOnly?: boolean } = {}
+): Promise<NativePushResult> {
+  const repairOnly = options.repairOnly === true;
+  const { PushNotifications } = await plugin();
   let status = (await PushNotifications.checkPermissions()).receive;
+  if (repairOnly && status !== 'granted') return { ok: false, code: 'not_granted' };
   if (status === 'prompt' || status === 'prompt-with-rationale') {
     status = (await PushNotifications.requestPermissions()).receive;
   }
@@ -171,10 +192,14 @@ export async function enableNativePush(): Promise<NativePushResult> {
       deviceLabel: nativePlatform() === 'ios' ? 'iPhone' : 'Android',
       deviceId: pushDeviceId() || undefined,
       replacesEndpoint: previous && previous !== token ? previous : undefined,
+      repairOnly: repairOnly ? true : undefined,
     }),
   });
   if (res.status === 401) {
     return { ok: false, error: 'You need to be signed in to enable notifications.' };
+  }
+  if (res.status === 409 && repairOnly) {
+    return { ok: false, code: 'repair_not_enrolled' };
   }
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -197,7 +222,7 @@ export async function disableNativePush(): Promise<NativePushResult> {
   await rememberToken(null);
   latestToken = null;
   try {
-    const PushNotifications = await plugin();
+    const { PushNotifications } = await plugin();
     await PushNotifications.unregister();
   } catch {
     /* the OS may refuse; the row is already retired */
@@ -216,7 +241,7 @@ export async function hasNativeSubscription(): Promise<boolean> {
  */
 export async function nativeNotificationPermission(): Promise<'granted' | 'denied' | 'default'> {
   try {
-    const PushNotifications = await plugin();
+    const { PushNotifications } = await plugin();
     const { receive } = await PushNotifications.checkPermissions();
     if (receive === 'granted') return 'granted';
     if (receive === 'denied') return 'denied';

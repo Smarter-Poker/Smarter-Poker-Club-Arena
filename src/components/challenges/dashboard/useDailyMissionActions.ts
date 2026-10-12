@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Dispatch, RefObject, SetStateAction } from 'react';
+import { holdShellReload } from '../../../lib/shellReloadBlocker';
 import { masterBus } from '../../../core/MasterBus';
 import { triggerHaptic } from '../../../services/HapticService';
 import {
@@ -72,7 +73,7 @@ export function useDailyMissionActions({
   /* No `chips` field: a mission reward is diamonds, and since migration
      20260905114421 the RPC returns a literal 0 for every chip figure. A field
      that can only ever be zero is an invitation to render "+0 Chips". */
-  const [reward, setReward] = useState<{
+  const [reward, updateReward] = useState<{
     name: string;
     diamonds: number;
     challengeDiamonds: number;
@@ -80,6 +81,40 @@ export function useDailyMissionActions({
     diamondBalance: number;
     returnFocusId: string;
   } | null>(null);
+
+  const reloadLeasesRef = useRef(new Set<() => void>());
+  const rewardReloadLeaseRef = useRef<(() => void) | null>(null);
+  const actionsMountedRef = useRef(true);
+  const retainReload = useCallback(() => {
+    const release = holdShellReload();
+    const retire = () => {
+      release();
+      reloadLeasesRef.current.delete(retire);
+    };
+    reloadLeasesRef.current.add(retire);
+    return retire;
+  }, []);
+  const setReward = useCallback(
+    (next: typeof reward) => {
+      if (!actionsMountedRef.current) return;
+      if (next && !rewardReloadLeaseRef.current) rewardReloadLeaseRef.current = retainReload();
+      updateReward(next);
+      if (!next) {
+        rewardReloadLeaseRef.current?.();
+        rewardReloadLeaseRef.current = null;
+      }
+    },
+    [retainReload]
+  );
+  useEffect(() => {
+    const leases = reloadLeasesRef.current;
+    actionsMountedRef.current = true;
+    return () => {
+      actionsMountedRef.current = false;
+      for (const release of leases) release();
+      rewardReloadLeaseRef.current = null;
+    };
+  }, []);
 
   // Escape always cancels the active reroll confirmation, even after focus
   // moves to another card. The inline control still owns the visible prompt,
@@ -111,6 +146,7 @@ export function useDailyMissionActions({
       if (!userId) return;
       if (claimGuardRef.current.has(challenge.id) || economyGuardRef.current) return;
       economyGuardRef.current = true;
+      const releaseReload = retainReload();
       setEconomyBusy(true);
       claimGuardRef.current.add(challenge.id);
       setClaimingIds((prev) => new Set(prev).add(challenge.id));
@@ -201,6 +237,7 @@ export function useDailyMissionActions({
         }
         loadChallenges(userId, 'silent');
       } finally {
+        releaseReload();
         claimGuardRef.current.delete(challenge.id);
         economyGuardRef.current = false;
         if (isMountedRef.current) {
@@ -215,6 +252,8 @@ export function useDailyMissionActions({
     },
     [
       userId,
+      retainReload,
+      setReward,
       installDashboardProjection,
       loadChallenges,
       toast,
@@ -275,6 +314,7 @@ export function useDailyMissionActions({
     freezeFocusRestorePendingRef.current = true;
     buyFreezeGuardRef.current = true;
     economyGuardRef.current = true;
+    const releaseReload = retainReload();
     mutationEpochRef.current += 1;
     setBuyingFreeze(true);
     setEconomyBusy(true);
@@ -326,6 +366,7 @@ export function useDailyMissionActions({
       toast.error('Streak Freeze Status Could Not Be Confirmed. Refreshing Your Diamond Balance.');
       loadChallenges(userId, 'silent');
     } finally {
+      releaseReload();
       buyFreezeGuardRef.current = false;
       economyGuardRef.current = false;
       if (isMountedRef.current) {
@@ -334,7 +375,16 @@ export function useDailyMissionActions({
         setEconomyBusy(false);
       }
     }
-  }, [userId, buyingFreeze, diamondBalance, toast, loadChallenges, isMountedRef, mutationEpochRef]);
+  }, [
+    retainReload,
+    userId,
+    buyingFreeze,
+    diamondBalance,
+    toast,
+    loadChallenges,
+    isMountedRef,
+    mutationEpochRef,
+  ]);
 
   const handleReroll = useCallback(
     async (challenge: TieredUserChallenge) => {
@@ -347,6 +397,7 @@ export function useDailyMissionActions({
       }
 
       economyGuardRef.current = true;
+      const releaseReload = retainReload();
       setEconomyBusy(true);
       rerollGuardRef.current.add(challenge.id);
       setRerollingIds((prev) => new Set(prev).add(challenge.id));
@@ -413,6 +464,7 @@ export function useDailyMissionActions({
         }
         loadChallenges(userId, 'silent');
       } finally {
+        releaseReload();
         rerollGuardRef.current.delete(challenge.id);
         economyGuardRef.current = false;
         if (isMountedRef.current) {
@@ -425,11 +477,12 @@ export function useDailyMissionActions({
         }
       }
     },
-    [userId, diamondBalance, loadChallenges, toast, isMountedRef, mutationEpochRef]
+    [retainReload, userId, diamondBalance, loadChallenges, toast, isMountedRef, mutationEpochRef]
   );
 
   const handleClaimAll = useCallback(async () => {
     if (!userId || claimAllGuardRef.current || economyGuardRef.current) return;
+    const releaseReload = retainReload();
     claimAllGuardRef.current = true;
     economyGuardRef.current = true;
 
@@ -527,6 +580,7 @@ export function useDailyMissionActions({
       toast.error('Reward Status Could Not Be Confirmed. Refreshing Your Challenge Ledger.');
       loadChallenges(userId, 'silent');
     } finally {
+      releaseReload();
       readyIds.forEach((id) => claimGuardRef.current.delete(id));
       claimAllGuardRef.current = false;
       economyGuardRef.current = false;
@@ -542,6 +596,8 @@ export function useDailyMissionActions({
     }
   }, [
     userId,
+    retainReload,
+    setReward,
     toast,
     installDashboardProjection,
     loadChallenges,

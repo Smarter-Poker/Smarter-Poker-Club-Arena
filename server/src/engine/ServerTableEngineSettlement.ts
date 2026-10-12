@@ -1,4 +1,6 @@
+import { readCommittedSeatStacks } from './committedSeatStackRead.js';
 import { assertDiamondAcceptedHand } from '../domain/DiamondCashBoundary.js';
+import { diamondCashRakeFactsFor } from './diamondCashRakeFacts.js';
 import { pendingSeatMoves, type PendingSeatMove } from '../services/supabase/seatMoves.js';
 /**
  * ServerTableEngine, layer 6/8 — the HAND_COMPLETE settlement pipeline and post-hand tasks.
@@ -55,6 +57,7 @@ import { selectRevealedShowdownResults } from './revealedShowdown.js';
 import { ServerTableEngineDealing } from './ServerTableEngineDealing.js';
 import { ServerTableEngineBase } from './ServerTableEngineBase.js';
 import { atRebuyStopLoss, horseRebuyAmount } from '../services/HorseRebuyPolicy.js';
+import { buildTableTalkInput, speakAtTheFelt } from '../services/HorseTableTalk.js';
 import { buildDailyMissionHandEvents } from './dailyMissionEvents.js';
 import { checkTournamentChipConservation } from './tournamentChipConservation.js';
 import { checkTournamentWholeChips, describeFractionalSeats } from './tournamentWholeChips.js';
@@ -1246,7 +1249,9 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
                 this.tableInfo.big_blind,
                 dealtInPlayerIds.length,
                 dealtInPlayerIds,
-                { doubleBoard: this.currentHandCommunityCards2.length > 0 }
+                /* `board` carries Dan's 2026-10-11 rule into the mini: both
+                   hole cards must play, exactly as for the main. */
+                { doubleBoard: this.currentHandCommunityCards2.length > 0, board: bbjBoard }
               );
 
         if (miniResult.hit) {
@@ -1380,7 +1385,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
                 this.currentHandPotSize,
                 this.tableInfo.big_blind,
                 dealtInPlayerIds.length,
-                { doubleBoard: this.currentHandCommunityCards2.length > 0 }
+                { doubleBoard: this.currentHandCommunityCards2.length > 0, board: bbjBoard }
               );
           if (miniNearMiss.nearMiss) {
             console.log(
@@ -1597,6 +1602,8 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       pots: this.currentHandPots,
       actions: [...this.currentHandActions],
       contributions: new Map(this.currentHandContributions),
+      sawFlopForMoney: this.currentHandSawFlopForMoney,
+      diamondRakeSchedule: this.currentHandDiamondRakeSchedule,
       holeCards: new Map(this.currentHandHoleCards),
       dealerSeat: this.currentHandDealerSeat,
       perPotAwards: [...this.currentHandPerPotAwards],
@@ -1661,8 +1668,8 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
                      promo_playthrough -> insurance_ledger -> bbj_mini_payout
                      -> bbj_payout -> tournament_chip_sync
          THE SEATS   pending_addons -> horse_rebuys -> chip_continuity ->
-                     horse_cashouts -> deferred_sitouts -> leave_pending ->
-                     table_unlock
+                     horse_cashouts -> horse_table_talk -> deferred_sitouts ->
+                     leave_pending -> table_unlock
 
        runStep files each step by NAME into its lane (STEP_LANE) and returns
        at once; a step is run after the previous step of its own lane, in
@@ -1699,6 +1706,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       horse_rebuys: 'seats',
       chip_continuity: 'seats',
       horse_cashouts: 'seats',
+      horse_table_talk: 'seats',
       deferred_sitouts: 'seats',
       leave_pending: 'seats',
       table_unlock: 'seats',
@@ -1727,6 +1735,40 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       leave_pending: 2,
       // Retry only the original captured request inside logHandHistory.
       // This mutable callback also contains reflection and must run once.
+    };
+    /* A STEP THAT CANNOT LOSE A CHIP DOES NOT PAGE AS IF IT HAD (2026-10-01).
+       `leave_pending` is moneyCritical because it is the step that returns
+       a leaver's whole stack to their wallet - and that is why its FAILURE
+       is not a money event. Read the step: the only things that can throw
+       out of it are the departures ENUMERATION read (table_seats, before any
+       write), the seat-move read and the seat-move execution (a move is not
+       a leave: no cash-out, no money). The cash-out itself,
+       fn_cashout_seat_occupancy, is one transaction per seat and
+       processLeavePending swallows its failure per seat (atomicCashout's
+       onFailed), so a refused cash-out never throws here; the seat simply
+       keeps leave_pending = true, and the next boundary - this generation's
+       or a successor's - re-reads it and tries again. Every path that throws
+       leaves every pending seat exactly where it was.
+
+       Measured 2026-09-28 to 2026-09-30: 14 leave_pending_failed criticals,
+       14 drift incidents, 6 of them supabase_timeout and 8 lock timeout, all
+       on the enumeration or move READ; fn_unaccounted_seat_exits(4 days)
+       returned 0 rows and no live seat on any of the 14 tables still
+       carried leave_pending. Nothing was owed. The board carried fourteen
+       criticals for fourteen deferred boundaries.
+
+       So the step's failure alert is a warning that says what it is - a
+       boundary deferred, no chips at stake - and asserts moves_chips:false,
+       which fn_ca_financial_alert_to_incident reads as "do not file a
+       critical drift incident". A persistent cash-out refusal has its own
+       witness: the seat stays leave_pending with its stack intact and
+       atomicCashout logs every refusal; a leave that never completes is
+       visible on the table, not lost. */
+    const STEP_FAILURE_SEVERITY: Record<string, 'critical' | 'warning'> = {
+      leave_pending: 'warning',
+    };
+    const STEP_FAILURE_MOVES_CHIPS: Record<string, boolean> = {
+      leave_pending: false,
     };
     /* Two short waits, inside one hand boundary. The felt already holds for
        2.1-3.5s between hands, so 250ms + 1s costs nothing a player can see,
@@ -1805,18 +1847,22 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             handNumber: snap.handNumber,
           });
           if (moneyCritical) {
+            const movesChips = STEP_FAILURE_MOVES_CHIPS[stepName] ?? true;
             await raiseFinancialAlert(
-              'critical',
+              STEP_FAILURE_SEVERITY[stepName] ?? 'critical',
               `postHandTasks.${stepName}_failed`,
               `Post-hand step ${stepName} threw for hand #${snap.handNumber}` +
                 (attempts > 1 ? ` after ${attempts} attempts` : '') +
-                '; later steps continued',
+                (movesChips
+                  ? '; later steps continued'
+                  : '; later steps continued. No chips moved and none can be lost on this path: every pending departure stays leave_pending with its stack and is re-read at the next hand boundary'),
               {
                 table_id: this.tableId,
                 hand_number: snap.handNumber,
                 error: describeError(err),
                 attempts,
                 retry_budget: budget,
+                moves_chips: movesChips,
                 ...(stepName === 'hand_history'
                   ? { hand_request_identity_v1: handRequestIdentity }
                   : {}),
@@ -2010,10 +2056,39 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     await runStep('hand_history', true, async () => {
       if (this.tableInfo) {
         const tableInfo = this.tableInfo;
+        /* ═══ THE RAKE IS RE-PRICED FROM THE ROSTER THAT IS SENT ═════════
+           `fn_poker_diamond_settle_cash_hand` recomputes the rake from
+           `sum(contributed)` and `count(dealt_in)` over the stacks payload
+           built below, and refuses the hand when the engine's number differs.
+           So the guard is given those same three facts, derived from the SAME
+           roster and the SAME maps the payload reads - not from `snap.potSize`
+           or a seat count, which are different questions that usually have
+           the same answer. A mismatch is then named here, by the engine that
+           produced it, with the hand not yet submitted.
+
+           Summed RAW, and whole only because the guard says so: the guard
+           holds every contribution to a whole Diamond (it always has, through
+           `amounts`) BEFORE it re-prices, so by the time the pot is used it is
+           the same integer sum the settler will add up. Normalising here
+           instead would quietly round a fractional contribution into a rake,
+           which is the one thing this payload must never do. */
+        const diamondRakeFacts = isDiamondCash
+          ? {
+              pot: playersForRecord.reduce(
+                (total, player) => total + (snap.contributions.get(player.user_id) ?? 0),
+                0
+              ),
+              dealtIn: playersForRecord.filter((player) => snap.dealtStacks.has(player.user_id))
+                .length,
+              sawFlop: snap.sawFlopForMoney,
+            }
+          : null;
         assertDiamondAcceptedHand({
           arena: tableInfo.arena,
           verifiedLease: durablePostCommitObligations,
           variant: snap.variant || tableInfo.game_variant || 'nlh',
+          rakeSchedule: snap.diamondRakeSchedule,
+          rakeFacts: diamondRakeFacts,
           rake: snap.rake,
           bbj: snap.bbjFee,
           inflow: snap.insuranceNet,
@@ -2399,6 +2474,31 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
                 stack_before: cents(
                   handStackBefore(snap.seatGenerations, snap.dealtStacks, p.user_id, p.stack)
                 ),
+                /* ═══ A DIAMOND CASH HAND SENDS ITS RAKE FACTS (2026-10-05) ══
+                   Migration 20261005183028 made the Diamond settler recompute
+                   the rake from the owner's published economics, and with
+                   `cash_rake_enabled` reading `yes` it refuses by name
+                   (`diamond_cash_rake_facts_required`) any hand whose roster
+                   does not carry `contributed`, `dealt_in` and
+                   `hand_saw_flop`. The router forwards this payload unchanged,
+                   so the facts ride on it.
+
+                   DIAMOND ONLY, DELIBERATELY. The chip path builds its own
+                   canonical roster from a fixed key list, so these keys are
+                   additive there too - but a chip hand has nothing to say with
+                   them, and the chip payload stays byte-identical rather than
+                   "probably ignored".
+
+                   Nothing is computed here: diamondCashRakeFacts.ts reads each
+                   fact from the one place the engine already keeps it. */
+                ...(isDiamondCash
+                  ? diamondCashRakeFactsFor({
+                      userId: p.user_id,
+                      contributions: snap.contributions,
+                      dealtStacks: snap.dealtStacks,
+                      handSawFlop: snap.sawFlopForMoney,
+                    })
+                  : {}),
               })),
               rake: this.isTournamentTable() ? 0 : snap.rake,
               bbj: this.isTournamentTable() ? 0 : snap.bbjFee,
@@ -2416,13 +2516,22 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
                   throw new Error('atomic hand commit refused (lease_proof_expired)');
                 }
               },
+              /* A FINISHED HAND OUTLIVES ITS DEALER'S PROOF (2026-10-04). This
+                 hand was dealt, played and shown under a valid lease. If the
+                 proof lapses before it is retained (a database stall longer
+                 than the stale window: 55 such cash hands were disposed at
+                 2026-10-03 23:43), the writer still retains the exact
+                 original under this generation, then refuses. The successor
+                 settles it through fn_ca_resume_hand_submission. Cash only:
+                 a tournament retention keeps the fresh-heartbeat rule. */
+              retainWhenLeaseLapses:
+                leaseAuthority?.verified === true && leaseAuthority.scope === 'cash',
             },
           });
         let result: Awaited<ReturnType<typeof commitAuthoritativeHand>>;
         try {
-          if (!this.hasCurrentEngineLeaseAuthority()) {
-            throw new Error('atomic hand commit refused (lease_proof_expired)');
-          }
+          // The writer proves authority before its first request and, for a
+          // lapsed cash proof, retains the original before refusing.
           result = await commitAuthoritativeHand();
           if (!result.settlementCommitted || !result.handId) {
             throw new Error('atomic hand commit refused (missing_commit_receipt)');
@@ -2755,11 +2864,28 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
            the resulting stacks rather than incrementing engine memory from a
            response: a concurrent worker may have completed the row first, and
            its replay receipt intentionally does not claim which process did it. */
-        const { data: persistedSeats, error: persistedSeatError } = await supabase
-          .from('table_seats')
-          .select('user_id,stack')
-          .eq('table_id', this.tableId)
-          .is('left_at', null);
+        let persistedSeats: Awaited<ReturnType<typeof readCommittedSeatStacks>> = null;
+        let persistedSeatError: unknown = null;
+        try {
+          persistedSeats = await readCommittedSeatStacks({
+            read: () =>
+              supabase
+                .from('table_seats')
+                .select('user_id,stack')
+                .eq('table_id', this.tableId)
+                .is('left_at', null),
+            canReflect: () => this.lifecycleCanMutate(),
+            progress: () => this.markProgress(),
+            sleep: (ms) => this.sleep(ms),
+            report: (error, attempt) =>
+              reportError(error, 'ServerTableEngine.post_commit_stack_refresh_failed', {
+                tableId: this.tableId,
+                attempt,
+              }),
+          });
+        } catch (error) {
+          persistedSeatError = error;
+        }
         if (!this.lifecycleCanMutate()) {
           postCommitStateCanReflect = false;
         } else if (persistedSeatError) {
@@ -3620,6 +3746,21 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           );
         }
       }
+    });
+    if (!this.lifecycleCanMutate()) return;
+
+    // 5.6 TABLE TALK (Phase 10, 2026-10-06): one ordinary chat line from a
+    // seated horse after a cash hand, exactly the table_chat row a browser
+    // writes. Settlement hands over the hand it captured above and never
+    // waits for the network: the gate (both owner switches, cached 30 s,
+    // fail closed), the claim ledger and the chat write all live in
+    // services/HorseTableTalk.ts, and the mode ships disabled. Not a money
+    // step; diamond cash and tournaments are skipped like the horse steps
+    // above it.
+    await runStep('horse_table_talk', false, async () => {
+      if (isDiamondCash || this.isTournamentTable()) return;
+      if (!this.lifecycleCanMutate()) return;
+      void speakAtTheFelt(buildTableTalkInput(snap, players, this.tableInfo));
     });
     if (!this.lifecycleCanMutate()) return;
 

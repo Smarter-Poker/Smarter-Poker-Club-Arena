@@ -34,6 +34,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { STORAGE_KEYS } from '../../lib/storage';
 import { SpadeConsole } from '../console/SpadeConsole';
 import styles from './ClubArenaWelcomeModal.module.css';
@@ -60,7 +61,17 @@ export default function ClubArenaWelcomeModal({ isOpen, onAccept }: ClubArenaWel
 
   if (!isOpen) return null;
 
-  return (
+  // PORTALED TO <body>, ABOVE THE BOTTOM NAV (Dan 2026-10-05: "THE FOOTER IS
+  // BLOCKING USERS FROM FINISHING AND CLICKING THE AGREEMENT"). This overlay
+  // and ClubBottomNav's `.bottomNav` were both `z-index: 1000`, and the nav
+  // is mounted after <Routes> in App.tsx, so on a tie it painted over the
+  // console's last rows: the agree box and ENTER sat under the footer and
+  // could not be reached. A first-run gate that blocks the whole arena must
+  // not depend on where AppLayout happens to sit in the tree, so it renders
+  // straight into <body> at the app-modal layer (9999 - above the footer,
+  // still below CompleteProfileModal's 10000 so the profile gate keeps its
+  // order). Pinned by tests/unit/welcomeModalClearsTheFooter.test.ts.
+  return createPortal(
     <div className={styles.overlay}>
       <div
         className={styles.modal}
@@ -155,7 +166,8 @@ export default function ClubArenaWelcomeModal({ isOpen, onAccept }: ClubArenaWel
           </SpadeConsole>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

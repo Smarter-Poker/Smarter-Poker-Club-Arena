@@ -1,0 +1,4 @@
+{
+  "_owner": "p5-alerts-and-main. Migration 20261003095111_the_money_conservation_scan_reads_every_event_in_one_pass (phase 5 of 9). public.fn_tournament_conservation_deltas returns every scanned event's conservation delta in one set-based read, equal to fn_tournament_conservation_delta for each event.",
+  "functions": ["fn_tournament_conservation_deltas"]
+}

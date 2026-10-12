@@ -5,6 +5,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
+import { arenaDisplayText } from '../lib/arenaDisplay/text';
 import { supabase } from '../lib/supabase';
 import type { RealtimeChannel, RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 import { masterBus } from '../core/MasterBus';
@@ -621,8 +622,8 @@ class NotificationServiceClass {
     }
 
     if (Notification.permission === 'granted') {
-      new Notification(notification.title, {
-        body: notification.message,
+      new Notification(arenaDisplayText(notification.title), {
+        body: arenaDisplayText(notification.message),
         icon: '/favicon.ico',
         tag: notification.id,
       });

@@ -11,7 +11,7 @@
  * "the rail badges every tool" was a claim with nothing holding it up. Three of
  * the defects this file pins were found by writing it.
  */
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ClubWorkspaceValue } from '../../src/contexts/ClubWorkspaceContext';
@@ -242,12 +242,25 @@ function mountWorkspace(kind: 'finance' | 'control') {
 }
 
 describe('the finance sub-workspace reads its own group', () => {
+  it('keeps cached finance readings visibly stale after a failed refresh', async () => {
+    rpcMock.mockResolvedValueOnce({ data: payload(), error: null });
+    mountWorkspace('finance');
+    await waitFor(() => expect(screen.getByText('2M')).toBeTruthy());
+    rpcMock.mockResolvedValue({ data: null, error: { code: '57014', message: 'timeout' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh Club Readings' }));
+    await waitFor(() =>
+      expect(screen.getByText(/Live Readings Unavailable, Last Read/)).toBeTruthy()
+    );
+    expect(screen.getByText('2M')).toBeTruthy();
+    expect(screen.getByText('Cashier')).toBeTruthy();
+  });
+
   it('paints the money and the outstanding tickets', async () => {
     mountWorkspace('finance');
     await waitFor(() => expect(screen.getByText('Club Bank')).toBeTruthy());
-    expect(screen.getByText('2,096,087.81')).toBeTruthy();
-    expect(screen.getByText('4,418,693.40')).toBeTruthy();
-    expect(screen.getByText('126,140.93')).toBeTruthy();
+    expect(screen.getByText('2M')).toBeTruthy();
+    expect(screen.getByText('4.4M')).toBeTruthy();
+    expect(screen.getByText('126.1K')).toBeTruthy();
     expect(screen.getByText('Tickets Outstanding')).toBeTruthy();
     expect(screen.getByText('9')).toBeTruthy();
   });
@@ -271,7 +284,7 @@ describe('the finance sub-workspace reads its own group', () => {
     rpcMock.mockResolvedValue({ data: null, error: { code: 'PGRST301', message: 'boom' } });
     mountWorkspace('finance');
     await waitFor(() => expect(screen.getByText('Cashier')).toBeTruthy());
-    expect(screen.getByText(/Live Systems Remain Authoritative/i)).toBeTruthy();
+    await waitFor(() => expect(screen.getByText('Live Readings Unavailable')).toBeTruthy());
     expect(screen.queryByText(/Read Live From This Club/i)).toBeNull();
   });
 });

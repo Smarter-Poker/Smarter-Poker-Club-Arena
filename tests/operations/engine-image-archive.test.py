@@ -1,6 +1,7 @@
 """Exercise real tar bytes and atomic output; no Docker or host import."""
 import copy
 import hashlib
+import gzip
 import importlib.util
 import io
 import json
@@ -104,6 +105,74 @@ class ArchiveTests(unittest.TestCase):
                 digests.append(receipt['archive_sha256'])
                 self.output.unlink()
         self.assertEqual(digests[0], digests[1])
+
+    def compressed_fixture(self, *, truncate=False, concatenate=False, foreign_digest=False):
+        manifest = json.loads(self.entries[0][1])
+        entries = self.entries[:2]
+        for i,(name,raw) in enumerate(self.entries[2:4]):
+            packed = gzip.compress(raw,mtime=0)
+            if truncate and i == 0: packed = packed[:-1]
+            if concatenate and i == 0: packed += gzip.compress(b'opaque',mtime=0)
+            blob = 'blobs/sha256/'+('f'*64 if foreign_digest and i == 0 else digest(packed))
+            manifest[0]['Layers'][i] = blob
+            entries.append((blob,packed))
+        entries[0] = ('manifest.json',json.dumps(manifest).encode())
+        return entries
+
+    def native_manifest_fixture(self, annotations=None):
+        entries=self.compressed_fixture();raw=entries[1][1];config_id='sha256:'+digest(raw)
+        native={'schemaVersion':2,'mediaType':'application/vnd.oci.image.manifest.v1+json','config':{'mediaType':'application/vnd.oci.image.config.v1+json','digest':config_id,'size':len(raw)},'layers':[{'mediaType':'application/vnd.oci.image.layer.v1.tar+gzip','digest':'sha256:'+name.split('/')[-1],'size':len(data)} for name,data in entries[2:]]}
+        native_raw=json.dumps(native).encode();image='sha256:'+digest(native_raw)
+        index={'schemaVersion':2,'mediaType':'application/vnd.oci.image.index.v1+json','manifests':[{'mediaType':'application/vnd.oci.image.manifest.v1+json','digest':image,'size':len(native_raw)}]}
+        if annotations is not None:index['manifests'][0]['annotations']=annotations
+        entries += [('blobs/sha256/'+image[7:],native_raw),('index.json',json.dumps(index).encode()),('oci-layout',b'{"imageLayoutVersion":"1.0.0"}')]
+        return entries,image
+
+    def test_native_oci_manifest_identity_preserves_all_immutable_bytes(self):
+        self.entries,self.image=self.native_manifest_fixture();write_tar(self.source,self.entries)
+        actual=self.normalize();self.assertEqual(actual['image_id'],self.image)
+        original=dict(self.entries)
+        with tarfile.open(self.output) as tar:
+            self.assertEqual(set(tar.getnames()),set(original))
+            for name in tar.getnames():self.assertEqual(tar.extractfile(name).read(),original[name])
+            self.assertEqual('sha256:'+digest(tar.extractfile('blobs/sha256/'+self.image[7:]).read()),self.image)
+
+    def test_bound_native_index_annotations_preserve_bytes(self):
+        annotations={'io.containerd.image.name':'docker.io/library/club-arena-engine:'+SHA,
+                     'org.opencontainers.image.ref.name':SHA,
+                     'org.opencontainers.image.created':'2026-10-08T07:40:49.123Z'}
+        self.entries,self.image=self.native_manifest_fixture(annotations);write_tar(self.source,self.entries)
+        self.normalize()
+        with tarfile.open(self.output) as tar:
+            self.assertEqual(tar.extractfile('index.json').read(),dict(self.entries)['index.json'])
+        self.output.unlink()
+        for key,value in [('io.containerd.image.name','foreign:tag'),('org.opencontainers.image.ref.name','f'*40),('org.opencontainers.image.created','2026-02-30T00:00:00Z'),('org.opencontainers.image.created','2026-10-08T07:40:49+00:99'),('org.opencontainers.image.created',7),('unknown.annotation','opaque')]:
+            self.entries,self.image=self.native_manifest_fixture({**annotations,key:value});write_tar(self.source,self.entries)
+            with self.subTest(key=key,value=value),self.assertRaises(ValueError):self.normalize()
+
+    def test_native_oci_foreign_index_and_graph_refuse(self):
+        for name in ['index.json','blobs/sha256/native']:
+            entries,self.image=self.native_manifest_fixture()
+            index=next(i for i,(n,_) in enumerate(entries) if n==('index.json' if name=='index.json' else 'blobs/sha256/'+self.image[7:]))
+            n,raw=entries[index];value=json.loads(raw)
+            if name=='index.json':value['manifests'][0]['digest']='sha256:'+'f'*64
+            else:value['config']['size']+=1
+            entries[index]=(n,json.dumps(value).encode());write_tar(self.source,entries);self.refused('OCI_')
+
+    def test_oci_gzip_preserves_config_and_writes_exact_rootfs(self):
+        write_tar(self.source,self.entries)
+        plain = self.normalize()['archive_sha256']; self.output.unlink()
+        write_tar(self.source,self.compressed_fixture())
+        actual = self.normalize()
+        self.assertEqual(actual['image_id'],self.image)
+        self.assertEqual(actual['archive_sha256'],plain)
+
+    def test_oci_gzip_partial_digest_expansion_and_multimember_refuse(self):
+        for opts in [dict(truncate=True),dict(concatenate=True),dict(foreign_digest=True)]:
+            with self.subTest(opts=opts):
+                write_tar(self.source,self.compressed_fixture(**opts)); self.refused()
+        write_tar(self.source,self.compressed_fixture())
+        with patch.object(m,'MEMBER_LIMIT',1000): self.refused('DECODED_LAYER_SIZE')
 
     def test_directories_are_accepted_but_not_copied(self):
         directory = tarfile.TarInfo('blobs/')

@@ -1,0 +1,28 @@
+{
+  "read_from": "production project kuklfnapbkmacvwxktbh, 2026-10-04, SELECT only inside BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY",
+  "what": "md5(pg_get_functiondef(oid)) of each reader this fixture loads from diamond-cross-format-conservation-doors.sql. The runner refuses to certify when a loaded function does not match, so the fixture can never drift into proving its own paraphrase.",
+  "pins": {
+    "public.fn_ca_arena_diamonds()": "86863a1208455e92803777829bc9a668",
+    "public.fn_ca_capture_freeze_mark(text)": "fdc0550ae20fd6b10979858c7608a1ec",
+    "public.fn_ca_diamond_register_vs_supply()": "4831173c57fc3d4e2bc0fa5eea346ee2",
+    "public.fn_ca_circulation_total()": "f4a6ddceec4e02cffd220c0db26d1019",
+    "public.fn_club_chip_circulation(uuid)": "f71a1a5f26ffc70cc639777b232635cd",
+    "public.fn_snapshot_chip_supply()": "450da5111403dde7283f46499ad8ef8a"
+  },
+  "changed_by_the_migration": [
+    "public.fn_ca_circulation_total()",
+    "public.fn_club_chip_circulation(uuid)",
+    "public.fn_snapshot_chip_supply()"
+  ],
+  "read_not_changed": [
+    "public.fn_ca_arena_diamonds()",
+    "public.fn_ca_capture_freeze_mark(text)",
+    "public.fn_ca_diamond_register_vs_supply()"
+  ],
+  "not_loaded": {
+    "public.fn_ca_record_break_scorecard(timestamptz)": {
+      "md5": "0d9eb4d63244cfc69879f87596439c99",
+      "why": "It is the reader of ca_freeze_circulation_marks that turns the marks into the break's conservation verdict, and it is why the mixed figure matters. Loading it would pull hand_history, the deploy attempts and the scorecard tables into this fixture. The runner reproduces its verdict arithmetic verbatim instead, over the marks the pinned fn_ca_capture_freeze_mark actually wrote."
+    }
+  }
+}

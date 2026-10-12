@@ -73,8 +73,11 @@ const T = (n: number) => `aaaaaaaa-0000-4000-8000-${n.toString(16).padStart(12, 
 const GEN = 'bbbbbbbb-0000-4000-8000-000000000001';
 const OTHER_GEN = 'bbbbbbbb-0000-4000-8000-000000000002';
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.resetModules();
+  // Written against the earlier 500-claim bound; the production bound (50)
+  // is pinned in aSlowHeartbeatHoldsOnlyItsOwnBatch.law.test.ts.
+  (await import('./leaseHeartbeatBatches.js'))._setHeartbeatClaimsPerRequestForTests(500);
   rpc.mockReset();
   vi.spyOn(console, 'warn').mockImplementation(() => {});
   process.env.ENGINE_TOURNAMENT_LEASE_ENFORCE = 'on';

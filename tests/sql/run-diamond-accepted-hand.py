@@ -38,4 +38,6 @@ assert all(r.get('success') is True and r.get('atomic_hand_commit') is True for 
 assert sum(r.get('replay') is True for r in results)==1,results
 print('PASS: concurrent full accepted-hand delivery commits once and returns replay')
 run('\\ir poker-diamond-accepted-hand-acceptance.sql')
+# Phase 11: the table changes engines (crash, takeover, late delivery, re-delivery, release).
+run('\\ir poker-diamond-accepted-hand-handover.sql')
 print('Diamond accepted-hand integration passed; public gameplay remains gated.')

@@ -10,26 +10,45 @@
  */
 import { useNavigate } from 'react-router-dom';
 import type { FinancialAdminScope } from '../../hooks/useFinancialAdminScope';
-import { ErrorState, LoadingState, PermissionState } from './EmptyState';
+import { SpadeConsole } from '../console/SpadeConsole';
+import styles from './FinancialAdminScopeState.module.css';
 
 export default function FinancialAdminScopeState({ scope }: { scope: FinancialAdminScope }) {
   const navigate = useNavigate();
-  if (scope.status === 'denied') {
-    return (
-      <PermissionState
-        title="This Page Is Restricted"
-        description={scope.message || 'Your Role Does Not Include Finance Access.'}
-        onBack={() => navigate(-1)}
-      />
-    );
-  }
-  if (scope.status === 'error') {
-    return (
-      <ErrorState
-        message={scope.message || 'Your Club Access Could Not Be Verified.'}
-        onRetry={scope.reload}
-      />
-    );
-  }
-  return <LoadingState message="Checking Your Club Access" />;
+  const denied = scope.status === 'denied';
+  const failed = scope.status === 'error';
+  const message = denied
+    ? scope.message || 'Your Role Does Not Include Finance Access.'
+    : failed
+      ? scope.message || 'Your Club Access Could Not Be Verified.'
+      : 'Checking Your Club Finance Access.';
+
+  return (
+    <main className={styles.page}>
+      <SpadeConsole
+        family={failed ? 'riveted' : denied ? 'shark' : 'spade'}
+        crest={denied ? 'flat' : 'spade'}
+        eyebrow="Club Arena Data"
+        title={denied ? 'Financial Access Restricted' : 'Financial Access'}
+        subtitle={message}
+        pill={denied ? 'Restricted' : failed ? 'Unavailable' : 'Checking'}
+        pillInk={denied || failed ? 'red' : 'blue'}
+        foot={failed || denied ? 'plates' : 'foot'}
+        plates={
+          failed
+            ? {
+                secondary: { label: 'Back', onClick: () => navigate(-1) },
+                primary: { label: 'Retry', onClick: scope.reload },
+              }
+            : denied
+              ? { primary: { label: 'Back', onClick: () => navigate(-1) } }
+              : undefined
+        }
+      >
+        <p className="sc-copy sc-copy--center" role={denied || failed ? 'alert' : 'status'}>
+          {message}
+        </p>
+      </SpadeConsole>
+    </main>
+  );
 }

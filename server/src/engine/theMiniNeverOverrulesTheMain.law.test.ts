@@ -29,8 +29,9 @@ const settlement = read('./ServerTableEngineSettlement.ts');
 const bbjService = read('../services/supabase/bbj.ts');
 
 const card = (rank: string, suit = 'spades') => ({ rank, suit });
-/** A five-card board is irrelevant to the mini (it drops both-cards-play), but
- *  the shape is kept so these read like the main detector's tests. */
+/** Since Dan's 2026-10-11 ruling ("BOTH cards must play for BBJ or Mini BBJ")
+ *  the board matters to the mini exactly as it does to the main, so every
+ *  hold'em fixture here carries real hole cards on a real board. */
 const player = (
   userId: string,
   handRanking: number,
@@ -43,10 +44,20 @@ const QUADS = 8;
 const FULL_HOUSE = 7;
 const STRAIGHT_FLUSH = 9;
 
-/** Aces full of sevens losing to quad deuces: the archetypal mini. */
+/** Board A 7 2 2 K: pocket aces make aces full of deuces, pocket deuces make
+ *  quads, and both players use both hole cards. */
+const BOARD = [
+  card('A', 'clubs'),
+  card('7', 'hearts'),
+  card('2', 'clubs'),
+  card('2', 'hearts'),
+  card('K', 'diamonds'),
+];
+
+/** Aces full of deuces losing to quad deuces: the archetypal mini. */
 const holdemAcesFullBeaten = () => [
-  player('loser', FULL_HOUSE, 'Full House', [14, 7]),
-  player('winner', QUADS, 'Four of a Kind', [2]),
+  player('loser', FULL_HOUSE, 'Full House', [14, 14, 14, 2, 2], [card('A'), card('A', 'diamonds')]),
+  player('winner', QUADS, 'Four of a Kind', [2, 2, 2, 2, 14], [card('2'), card('2', 'diamonds')]),
 ];
 
 const fire = (
@@ -54,8 +65,12 @@ const fire = (
   variant = 'nlh',
   pot = 1000,
   bb = 10,
-  dealt = 4
-) => detectMiniBBJHit(results, 'winner', variant, pot, bb, dealt, ['loser', 'winner', 'a', 'b']);
+  dealt = 4,
+  board = BOARD
+) =>
+  detectMiniBBJHit(results, 'winner', variant, pot, bb, dealt, ['loser', 'winner', 'a', 'b'], {
+    board,
+  });
 
 describe('the bar Dan set, per game', () => {
   it("hold'em: aces full losing to quads is a mini", () => {
@@ -67,21 +82,132 @@ describe('the bar Dan set, per game', () => {
 
   it("hold'em: kings full is BELOW the bar and pays nothing", () => {
     const r = fire([
-      player('loser', FULL_HOUSE, 'Full House', [13, 13]),
-      player('winner', QUADS, 'Four of a Kind', [2]),
+      player(
+        'loser',
+        FULL_HOUSE,
+        'Full House',
+        [13, 13, 13, 2, 2],
+        [card('K'), card('K', 'hearts')]
+      ),
+      player(
+        'winner',
+        QUADS,
+        'Four of a Kind',
+        [2, 2, 2, 2, 14],
+        [card('2'), card('2', 'diamonds')]
+      ),
     ]);
     expect(r.hit).toBe(false);
   });
 
-  it("hold'em: no Ace in hand and no both-cards-play is STILL a mini", () => {
-    /* This is the whole point of the second tier. The main rule refuses these
-       on exactly those two conditions, and they are the hands a player would
-       swear was a bad beat. */
-    const r = fire([
-      player('loser', FULL_HOUSE, 'Full House', [14, 7], [card('7'), card('2', 'hearts')]),
-      player('winner', QUADS, 'Four of a Kind', [2], [card('3'), card('4', 'hearts')]),
-    ]);
+  it("hold'em: no Ace in hand is STILL a mini when both cards play", () => {
+    /* Board A A A 9 2. Kings in the hole make aces full of kings with no Ace
+       in hand - the main refuses that, the mini takes it - and A-Q makes quad
+       aces with both cards playing (the Q out-kicks the board's 9). */
+    const board = [
+      card('A', 'clubs'),
+      card('A', 'hearts'),
+      card('A', 'diamonds'),
+      card('9'),
+      card('2', 'hearts'),
+    ];
+    const r = fire(
+      [
+        player(
+          'loser',
+          FULL_HOUSE,
+          'Full House',
+          [14, 14, 14, 13, 13],
+          [card('K'), card('K', 'hearts')]
+        ),
+        player(
+          'winner',
+          QUADS,
+          'Four of a Kind',
+          [14, 14, 14, 14, 12],
+          [card('A'), card('Q', 'hearts')]
+        ),
+      ],
+      'nlh',
+      1000,
+      10,
+      4,
+      board
+    );
     expect(r.hit).toBe(true);
+  });
+
+  it("hold'em: BOTH hole cards must play for the mini (Dan 2026-10-11)", () => {
+    /* Board A A A 7 7: the board alone is aces full, so a K-2 "holds" aces
+       full without either card doing anything. Dan: "BOTH cards must play for
+       BBJ or Mini BBJ". Pocket sevens make quads and play both, so the only
+       thing refusing this is the loser's dead hole cards. */
+    const board = [
+      card('A', 'clubs'),
+      card('A', 'hearts'),
+      card('A', 'diamonds'),
+      card('7'),
+      card('7', 'hearts'),
+    ];
+    const r = fire(
+      [
+        player(
+          'loser',
+          FULL_HOUSE,
+          'Full House',
+          [14, 14, 14, 7, 7],
+          [card('K'), card('2', 'hearts')]
+        ),
+        player(
+          'winner',
+          QUADS,
+          'Four of a Kind',
+          [7, 7, 7, 7, 14],
+          [card('7', 'clubs'), card('7', 'diamonds')]
+        ),
+      ],
+      'nlh',
+      1000,
+      10,
+      4,
+      board
+    );
+    expect(r.hit).toBe(false);
+  });
+
+  it("hold'em: a board-quads hand is never a mini - the winner's cards must play too", () => {
+    /* Board 3 3 3 3 5: everybody "has" quads. Paid live on 2026-10-11 before
+       the rule reached the mini. */
+    const board = [
+      card('3', 'clubs'),
+      card('5', 'clubs'),
+      card('3', 'hearts'),
+      card('3'),
+      card('3', 'diamonds'),
+    ];
+    const r = fire(
+      [
+        player('loser', QUADS, 'Four of a Kind', [3, 3, 3, 3, 8], [card('8'), card('8', 'hearts')]),
+        player(
+          'winner',
+          QUADS,
+          'Four of a Kind',
+          [3, 3, 3, 3, 13],
+          [card('K'), card('T', 'clubs')]
+        ),
+      ],
+      'nlh',
+      1000,
+      10,
+      4,
+      board
+    );
+    expect(r.hit).toBe(false);
+  });
+
+  it('fails closed without a board, exactly as the main does', () => {
+    const r = detectMiniBBJHit(holdemAcesFullBeaten(), 'winner', 'nlh', 1000, 10, 4, []);
+    expect(r.hit).toBe(false);
   });
 
   it('PLO: any quads losing is a mini, including below the main quad-kings bar', () => {
@@ -113,8 +239,20 @@ describe('what the mini refuses to drop', () => {
     /* Aces full losing to a bigger boat is a cooler, not a bad beat. Paying it
        was the 2026-08-18 finding that had cost $99,066 across 25 hits. */
     const r = fire([
-      player('loser', FULL_HOUSE, 'Full House', [14, 7]),
-      player('winner', FULL_HOUSE, 'Full House', [14, 13]),
+      player(
+        'loser',
+        FULL_HOUSE,
+        'Full House',
+        [14, 14, 14, 2, 2],
+        [card('A'), card('A', 'diamonds')]
+      ),
+      player(
+        'winner',
+        FULL_HOUSE,
+        'Full House',
+        [14, 14, 14, 13, 13],
+        [card('A', 'hearts'), card('K')]
+      ),
     ]);
     expect(r.hit).toBe(false);
   });
@@ -135,6 +273,7 @@ describe('what the mini refuses to drop', () => {
   it('a double-board bomb pot is excluded exactly as it is for the main', () => {
     const r = detectMiniBBJHit(holdemAcesFullBeaten(), 'winner', 'nlh', 1000, 10, 4, [], {
       doubleBoard: true,
+      board: BOARD,
     });
     expect(r.hit).toBe(false);
   });

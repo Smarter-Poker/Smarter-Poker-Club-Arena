@@ -10,7 +10,7 @@
 
 import nodeCrypto from 'node:crypto';
 import { UUID_SHAPE as UUID } from '../lib/uuidShape.js';
-import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
+import { isMaintenanceFrozen, isTerminalSettlementFrozen } from '../maintenance/freezeState.js';
 import { supabase } from '../services/supabase.js';
 import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { reportError } from '../services/errorReporter.js';
@@ -21,7 +21,7 @@ import {
 } from '../config/mysteryChestSpec.js';
 import { MYSTERY_BOUNTY_REVEAL_DELAY_MS, formatBountyTier } from '../config/mysteryBountySpec.js';
 import { buildRecipientClaims } from './mysteryBountyDraw.js';
-import { buildPrizeLadder, prizeRankOf, isMysteryCollectMode } from './mysteryPrizeLadder.js';
+import { buildPrizeLadder, prizeRankOf } from './mysteryPrizeLadder.js';
 import {
   acceptedZeroStackSettlement,
   persistedKnockoutEvidence,
@@ -54,6 +54,7 @@ import {
   requestSatelliteQualifierReceipt,
 } from './satelliteQualifierRpc.js';
 import { TournamentSweepWorkCursor } from './TournamentSweepWorkCursor.js';
+import { isBudgetYieldedRetirement } from './retirementYield.js';
 import {
   reconcileTournamentManagerWakeAcknowledgement,
   type TournamentManagerWakeReceipt,
@@ -124,6 +125,31 @@ interface CandidateBackedKnockoutEvidence extends PersistedKnockoutEvidence {
  * event's tables as its source (`f06_source_guard`). Only the balance stage
  * can finish that break, so the refusal must not keep the sweep from it.
  */
+/** How long after a rebuy deadline the next elimination pass is asked for. */
+export const REBUY_DEADLINE_MARGIN_MS = 250;
+
+/**
+ * The open rebuy deadline of every row fn_open_tournament_rebuy_decisions
+ * returned, in epoch ms. A row with no deadline, an unreadable one, or one
+ * whose decision is closed is left out.
+ */
+export function rebuyDecisionDeadlines(rows: unknown): Map<string, number> {
+  const out = new Map<string, number>();
+  if (!Array.isArray(rows)) return out;
+  for (const raw of rows) {
+    const row = (raw ?? {}) as {
+      user_id?: unknown;
+      decision_open?: unknown;
+      rebuy_prompt_until?: unknown;
+    };
+    if (row.decision_open !== true || typeof row.user_id !== 'string') continue;
+    const ms =
+      typeof row.rebuy_prompt_until === 'string' ? Date.parse(row.rebuy_prompt_until) : NaN;
+    if (Number.isFinite(ms)) out.set(row.user_id, ms);
+  }
+  return out;
+}
+
 export function isTableBreakExclusion(error: unknown): boolean {
   return error instanceof Error && /\bF06_SOURCE_EXCLUDED\b/.test(error.message);
 }
@@ -156,6 +182,9 @@ class TerminalSettlementCommittedError extends Error {
   }
 }
 
+/** The sweep stage that asks the terminal authority to finish the event (see finishStage). */
+export const FINISH_STAGE = 2;
+
 export abstract class TournamentManagerEliminations extends TournamentManagerBase {
   /**
    * Cooperative continuation through the bounded manager work unit. A slow
@@ -163,8 +192,27 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
    * the next admission never restarts the same prefix forever.
    */
   private readonly eliminationSweepCursor = new TournamentSweepWorkCursor();
+  /** Exposed for the law test only: where the sweep cursor will resume. */
+  get eliminationSweepNextStage(): number {
+    return this.eliminationSweepCursor.nextStage;
+  }
   /** A queued continuation can finish later stages without revisiting these busts. */
   private unresolvedBustsInSweepCycle = false;
+
+  /**
+   * A BUST IS RECORDED BEFORE THE BREAK IT BLOCKS IS RETRIED (2026-09-29).
+   *
+   * A busted player keeps a `playing` registration with 0 chips and no live
+   * seat until the bust stage (1) records the elimination. The table break
+   * door counts that registration, so no break of that player's last table can
+   * begin until then. The recovery stage (0) settles earlier bounty
+   * obligations before any bust is admitted, so the rewind is to 0. The
+   * cursor applies it at the next admission and never twice in a row (see
+   * TournamentSweepWorkCursor), so the balance stage keeps its turn too.
+   */
+  protected override bustAwaitsItsStage(): void {
+    this.eliminationSweepCursor.rewindTo(0);
+  }
   /** Latest level-triggered generation observed for each durable wake identity. */
   private readonly pendingManagerWakeGenerations = new Map<number, number>();
   /**
@@ -390,6 +438,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
   private async runEliminationSweep(signal: AbortSignal): Promise<void> {
     let budgetRequeued = false;
     let completedWholeSweep = false;
+    /** This pass recorded the bust that left at most one player standing. */
+    let lastBustRecordedThisPass = false;
     const durableWakes = new Map(this.pendingManagerWakes);
     const durableWakeIds = [...durableWakes.keys()];
     const durableWakeReceipts: TournamentManagerWakeReceipt[] = durableWakeIds.map((id) => ({
@@ -448,6 +498,32 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     const completedStage = (nextStage: number): boolean => {
       this.eliminationSweepCursor.advanceTo(nextStage);
       if (!this.eliminationWorkBudgetExpired()) return false;
+      /**
+       * A DECIDED GAME IS PAID IN THE ADMISSION THAT RECORDS ITS LAST BUST
+       * (2026-10-02).
+       *
+       * Read on production 16:17-16:32 UTC on 2026-10-02, engine 1-b4b20b86:
+       * 271 managers registered, 220 queued, the decided lane 119 deep and its
+       * oldest waiter 516 s. Of 896 Spins and Sit & Gos completed in the hour
+       * before, the admission that recorded the final bust waited a median
+       * 221 s for its slot (3 of 896 inside 15 s), and 410 of them (46%) were
+       * then sent to the BACK of that queue by this budget check, between the
+       * bust stage and the finish stage, and paid a median 549 s later. Spin
+       * 9ed8878f dealt its last hand at 16:18:14, recorded both busts at
+       * 16:24:46 and paid at 16:31:44; the work itself took four seconds.
+       *
+       * The budget exists so one tournament cannot hold a slot while others
+       * wait. A decided field has nothing left to share a slot for: no table
+       * can deal, the remaining work is bounded (the busts of one table, then
+       * the one terminal settlement), and every extra admission it is made to
+       * queue for is a full cycle of the whole platform's queue plus another
+       * slot spent re-reading what this pass already knows. So a decided field
+       * does not yield on the clock before its finish stage; it yields as
+       * usual after it. Manager stop and the scheduler's abort still end the
+       * pass at once.
+       */
+      if (nextStage <= FINISH_STAGE && (lastBustRecordedThisPass || this.fieldIsDecided()))
+        return false;
       if (!budgetRequeued) {
         budgetRequeued = true;
         this.requestEliminationSweep();
@@ -463,6 +539,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     if (this.isProcessingEliminations) return;
 
     this.isProcessingEliminations = true;
+    // A bust that arrived while a later stage held the continuation takes its
+    // turn here, before that stage is admitted again (see bustAwaitsItsStage).
+    this.eliminationSweepCursor.beginAdmission();
     this.eliminationSweepSignal = signal;
     this.eliminationSweepDeadlineAt = Date.now() + TournamentManagerBase.SWEEP_WORK_BUDGET_MS;
     // The bust batch window is opened by the assignment pass alone and closed
@@ -770,9 +849,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             bustBatchHasMore = true;
           }
 
-          const { rebought, answered } = await this.tryTournamentRebuys(
-            busted.map((b) => b.user_id)
-          );
+          const { rebought } = await this.tryTournamentRebuys(busted.map((b) => b.user_id));
           if (sweepStopped()) return;
           if (rebought.size > 0) {
             busted = busted.filter((b) => !rebought.has(b.user_id));
@@ -834,14 +911,33 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
                 row.decision_open === true,
               ])
             );
+            /* A DECLINE DOES NOT CLOSE THE WINDOW, SO IT WAITS IT OUT
+               (2026-10-09). This let an `answered` horse through to the knockout
+               door the moment it declined. The door refuses any bust whose
+               knockout generation still has an open rebuy deadline
+               (`rebuy_decision_open`), and nothing here closes that deadline,
+               so every declining horse was refused on every pass for the rest
+               of its 30 seconds: 345 refusals in three hours on two Free Buy
+               events, each one reported as Tournament.elimination_write_failed,
+               counted toward the bust-refusal streak, and ending the assignment
+               pass for everybody busted after it. A player whose decision is
+               still open, human or horse, is now left for the pass that runs
+               when the deadline it was given has passed. */
+            const openUntilMs = rebuyDecisionDeadlines(decisionsRaw);
+            const nowMs = Date.now();
             busted = busted.filter((b) => {
-              if (answered.has(b.user_id)) return true;
               // Omitted means the locked row was no longer a playing zero -
               // most commonly a concurrent rebuy. Never eliminate from the
               // stale snapshot captured before that transaction committed.
               if (!decisions.has(b.user_id)) return false;
               return decisions.get(b.user_id) !== true;
             });
+            const nextDeadline = [...openUntilMs.values()].filter((ms) => ms > nowMs);
+            if (nextDeadline.length > 0) {
+              this.requestUrgentEliminationSweepAfter(
+                Math.min(...nextDeadline) - nowMs + REBUY_DEADLINE_MARGIN_MS
+              );
+            }
             if (busted.length === 0) return;
           }
 
@@ -1096,11 +1192,27 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
                   break;
                 }
                 place = up;
-                reportError(
-                  new Error(
-                    `[Tournament:${this.tournamentId.slice(0, 8)}] finishing ladder exhausted downward at seed ${nextPosition} - ${bustedOrdered[i].user_id.slice(0, 8)} placed at ${place} instead. Places already handed out are one or more too high; the event will still finish but the standings need renumbering.`
-                  ),
-                  'TournamentManager.finishing_ladder_exhausted'
+                /* A LADDER THAT RUNS OUT DOWNWARD IS A FIELD THAT GREW
+                   (2026-10-11). Places are unique, and the seed is the count of
+                   players who hold none, so every place from the seed down to 2
+                   can only be taken when places were handed out while the field
+                   was smaller: a bust recorded during late registration took the
+                   place the field had then, and every later entrant moved its
+                   true place up by one. Coffee Break Freeroll 7aace408: 178
+                   entrants, busts from 17:44 while late registration ran to
+                   17:51, so the ladder ran 15 places low and ran out at seed 16
+                   at 18:06; this was reported 15 times as an error asking for a
+                   renumbering. Nobody has to renumber anything: every place
+                   handed out here is provisional, and the finish
+                   (fn_settle_tournament_places for a cash ladder, and through
+                   fn_ca_tournament_bust_at the satellite cohort, the final table
+                   deal and the bubble) derives every place again from when each
+                   bust happened before a chip is paid. 7aace408 finished with 178
+                   distinct places in bust order and its 18 prizes paid at the
+                   finish. So this is a line in the log, not an error report; a
+                   ladder with no free place at all is still critical above. */
+                console.log(
+                  `[Tournament:${this.tournamentId.slice(0, 8)}] [TournamentManager.finishing_ladder_exhausted] provisional place ${place} for ${bustedOrdered[i].user_id.slice(0, 8)} (seed ${nextPosition}): places handed out while late registration grew the field fill the ladder below the seed; the finish ranks every bust again by when it happened`
                 );
               }
 
@@ -1198,6 +1310,15 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           } finally {
             this.closeEliminationMutationBatch();
           }
+          // The bust that leaves one player standing decides the field. The
+          // finish stage is reached in this admission (see completedStage), and
+          // any later wake this manager receives is served from the decided
+          // lane. Rebought players were never in this batch, so they still
+          // count as playing here.
+          if (committedThisPass > 0 && playingCount - committedThisPass <= 1) {
+            lastBustRecordedThisPass = true;
+            this.declareFieldDecided();
+          }
           // The pass recorded what it prepared; the clock decides the yield
           // from here, exactly as for every other stage.
           if (committedThisPass > 0 && this.eliminationWorkBudgetExpired()) {
@@ -1229,7 +1350,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       }
 
       finishStage: {
-        if (this.eliminationSweepCursor.nextStage > 2) break finishStage;
+        if (this.eliminationSweepCursor.nextStage > FINISH_STAGE) break finishStage;
         const satelliteFinish = await this.checkSatelliteQualifierCompletion();
         if (sweepStopped() || satelliteFinish === 'complete') return;
         if (satelliteFinish === 'pending') {
@@ -1274,6 +1395,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           );
           this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
         } else if (remainingCount > 1) {
+          this.mysteryPlayersRemainingHint = remainingCount;
           // MYSTERY BOUNTY ACTIVATION (2026-08-25). This is the only place in
           // the engine that knows, between hands and from a count it has just
           // verified, how many players can still be knocked out — which is
@@ -1281,8 +1403,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           // inventory. Guarded on `> 1` so the phase can never open on the
           // heads-up hand that ends the event.
           try {
-            await this.maybeActivateMysteryBounty(remainingCount);
+            const awaitingBoundary = await this.maybeActivateMysteryBounty(remainingCount);
             if (sweepStopped()) return;
+            // Hold the parked boundary only while a hand is still in the air;
+            // every other answer is final for this count, so deal on.
+            if (awaitingBoundary !== true) this.releaseMysteryActivationBoundary();
           } catch (mbErr) {
             reportError(mbErr, 'Tournament.mystery_bounty_activation_sweep');
             this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
@@ -1348,6 +1473,53 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               } else {
                 // Without a committed winner, use the durable elimination sequence.
                 // Timestamp ties and out-of-order callbacks cannot nominate a winner.
+                /* AN UNSEQUENCED BUST MAKES THE LAST BUST UNKNOWABLE (2026-10-07).
+                   The "last sequenced elimination" is only the last elimination
+                   when EVERY elimination carries a sequence. On 2026-10-06 at
+                   15:33 a platform retirement marked tournament 62a15104's two
+                   live players eliminated with no sequence; this branch then
+                   read the only sequenced row - ca905025, the FIRST player out
+                   (15:29, third place) - and submitted them as the winner. The
+                   database refused it (fn_settle_tournament_places voids the
+                   witness whenever any eliminated row has a NULL or later
+                   sequence), and the refusal ran for ten and a half hours.
+                   A row without a sequence could have gone out before or after
+                   every sequenced one, so no bust can be named. Ask the same
+                   question the database asks, and name nobody. The field only
+                   changes when a recovery restores or sequences those rows, so
+                   the re-check runs at a slow cadence instead of every 5 s. */
+                const { count: unsequencedCount, error: unsequencedErr } = await supabase
+                  .from('tournament_players')
+                  .select('*', { count: 'exact', head: true })
+                  .eq('tournament_id', this.tournamentId)
+                  .eq('status', 'eliminated')
+                  .is('elimination_sequence', null);
+                if (sweepStopped()) return;
+                if (unsequencedErr || unsequencedCount === null || unsequencedCount === undefined) {
+                  reportError(
+                    unsequencedErr ??
+                      new Error(
+                        `[Tournament:${this.tournamentId.slice(0, 8)}] unsequenced-elimination count unavailable`
+                      ),
+                    'Tournament.unsequenced_elimination_count_unreadable'
+                  );
+                  this.requestUrgentEliminationSweepAfter(
+                    TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS
+                  );
+                  return;
+                }
+                if (unsequencedCount > 0) {
+                  reportError(
+                    new Error(
+                      `[Tournament:${this.tournamentId.slice(0, 8)}] No survivor and ${unsequencedCount} elimination(s) without a durable sequence - no final elimination can be named`
+                    ),
+                    'Tournament.finish_elimination_witness_unsequenced'
+                  );
+                  this.requestUrgentEliminationSweepAfter(
+                    TournamentManagerBase.UNSEQUENCED_WITNESS_RETRY_MS
+                  );
+                  return;
+                }
                 const { data: lastEliminated, error: lastEliminatedErr } = await supabase
                   .from('tournament_players')
                   .select('user_id')
@@ -1450,19 +1622,35 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         // balance operation closes one live seat and opens another, so it may
         // only run after the same maintenance predicate used by the table
         // engines has proved the platform thawed.
+        // A retry asked for inside the balancer is a break or a seat move
+        // that is not finished. While one is outstanding, every sweep this
+        // manager is owed comes from the scheduler's consolidation lane,
+        // because a field spread one player to a table cannot deal until
+        // this stage has merged it (DEFAULT_CONSOLIDATION_SLOTS).
+        const redrivesBeforeBalance = this.urgentRedrivesRequested;
         if (!isMaintenanceFrozen()) {
           let progress: TournamentBalanceProgress | void;
           do {
             progress = await this.checkTableBalance();
             if (sweepStopped()) return;
             // A slow move/read still owns this stage on the next admission.
-            if (this.eliminationWorkBudgetExpired()) return;
+            if (this.eliminationWorkBudgetExpired()) {
+              this.declareConsolidationOutstanding(true);
+              return;
+            }
             // Only a fully receipted retirement permits another fresh plan
             // inside this admission. Unknown/blocked work returns through the
             // remaining stages, so the next sweep can process new busts and
             // release their reserved roster chairs. Each success removes one
             // table; the existing deadline bounds even a changing field.
           } while (progress?.kind === 'table-retired' && !isMaintenanceFrozen());
+          // A held qualifier boundary keeps the lane: its tables are parked
+          // until the satellite stage releases them.
+          this.declareConsolidationOutstanding(
+            this.satelliteQualifierBoundaryPending ||
+              this.urgentRedrivesRequested !== redrivesBeforeBalance ||
+              progress?.kind === 'table-retired'
+          );
 
           // The old five-second manager interval also happened to poll final
           // table deal votes. Preserve the feature's intended ten-second
@@ -1700,7 +1888,27 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       }
       completedWholeSweep = true;
     } catch (err) {
-      reportError(err, 'Tournament.elimination_check_error');
+      /* A BREAK RETIREMENT THAT RAN OUT OF SWEEP BUDGET HAS YIELDED, NOT FAILED
+         (2026-10-11). The retirement custody's `current()` includes
+         eliminationMutationAllowed(), so when a slow RPC spends the sweep's
+         work budget mid-retirement, assertCurrent throws
+         retirement_custody_stale (or admission_revision_stale). The custody
+         keeps its reservation for this generation to replay, and the finally
+         block below requeues the sweep because the budget expired: that is
+         the designed yield, and it was reported as
+         Tournament.elimination_check_error (18:00:43 UTC on 2026-10-11, the
+         first sweep after the thaw). Only that case is quiet here: any other
+         failure, such as the 56 fn_f06_discover_breaks timeouts of the
+         18:15-18:53 database slowdown, and a stale custody while the budget
+         still had time (a lost lease, a replaced lifecycle), is still
+         reported. */
+      if (isBudgetYieldedRetirement(err, this.running && this.eliminationWorkBudgetExpired())) {
+        console.log(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] break retirement yielded at the end of the sweep budget (${(err as Error).message}); the custody reservation is kept and the next sweep replays it`
+        );
+      } else {
+        reportError(err, 'Tournament.elimination_check_error');
+      }
       // A detached/event wake is consumable: once this invocation throws,
       // the causal work is still unresolved. Re-drive only this manager after
       // a short bounded delay. Healthy tournaments do not poll; a known failed
@@ -2967,19 +3175,15 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             }))
           : undefined;
 
-      // NOTE: When an event is both PKO and mystery, `fn_collect_bounty` returns
-      // 'pko'. In that case `res.paid_cash` is half a head, so ranking it against
-      // the mystery ladder would report a rung nobody pulled.
-      //
-      // RESOLVED — Dan 2026-08-26, verbatim: "no, never pko+mystery bounty
-      // ever." The hybrid is now IMPOSSIBLE to configure: the DB constraint
-      // `tournaments_never_pko_and_mystery` (migration 20260826210000,
-      // applied and probe-verified) refuses any row carrying both flags.
-      // This branch is therefore defense-in-depth for a state the schema
-      // forbids, and a PKO knockout correctly gets no mystery prize rank.
-      const prizeRank = isMysteryCollectMode(res.mode)
-        ? await this.preMysteryPrizeRank(res.paid_cash)
-        : undefined;
+      /* NO RANK ON A HEAD (2026-10-05). A `bounty_collected` knockout is a
+         head - a pko half, a regular head, or a mystery event's flat
+         pre-phase head (`mystery_pre`). None of them is a draw from a prize
+         ladder: the pre-phase heads were all the same flat figure, so ranking
+         one against the others made every routine knockout "rank 1", and the
+         table announced "X Just Pulled The Top Mystery Bounty" for the
+         ordinary bounty on every bust before the chests opened. A rank
+         belongs to the chest (settleMysteryBountyAward / chestPrizeRank), and
+         only there. */
 
       // ── THE EVENT NAME IS A CONSTANT, AND THAT IS THE FIX ────────────────
       //
@@ -3004,12 +3208,6 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       await this.broadcast('bounty_collected', {
         mode: res.mode,
         amount: res.paid_cash,
-        // THE RANK, FROM THE SERVER (Dan 2026-08-25). Which rung of this
-        // event's prize ladder was just pulled, 1 being the largest. Only a
-        // mystery pull gets one: on a pko knockout `paid_cash` is half the
-        // head, and half a head has no rung. Undefined drops off the wire,
-        // and the client falls back to deriving it, exactly as it does today.
-        prizeRank,
         addedToHead: res.added_to_head,
         // playerName = whose head was revealed/claimed
         playerName: nameOf(eliminatedUserId),
@@ -3517,62 +3715,18 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
    *  HOW BIG WAS THAT, COMPARED TO EVERYTHING ELSE IN THE EVENT
    * ═════════════════════════════════════════════════════════════════════════
    *
-   * Two ladders, because a mystery event has two prize pools in sequence and
-   * they are stored in different tables and different units:
+   * Only a chest has a rung. Before the mystery phase opens a knockout pays
+   * the flat head, and a flat head ranked against a ladder of flat heads is
+   * "rank 1" every time, which is how every routine pre-phase knockout was
+   * announced as the top mystery bounty. The pre-phase ladder was removed on
+   * 2026-10-05; `bounty_collected` carries no rank.
    *
-   *   - BEFORE the mystery phase opens, the prize is the head drawn at
-   *     registration, in whole currency, living on `tournament_players.
-   *     current_bounty` until it is claimed and on `tournament_bounties.
-   *     bounty_amount` afterwards;
-   *   - AFTER it opens, the prize is a chest from the sealed inventory, in
-   *     cents, on `tournament_bounty_chests.amount_cents`.
-   *
-   * Both return `undefined` rather than a number they are not sure of, and
-   * both swallow their own errors: a missing rank costs a celebration, and a
-   * thrown lookup would cost a knockout its broadcast.
-   *
-   * THE TOP SLICE. Each read is ordered largest-first and capped, rather than
+   * THE TOP SLICE. The read is ordered largest-first and capped, rather than
    * pulling a whole field. PostgREST caps an uncapped select at 1,000 rows in
-   * an unspecified order, so a big field could have hidden the largest prize
-   * from a query that looked complete. Ordering makes the slice the TOP of the
-   * ladder by construction, which is the only part any of this decides on: a
-   * prize outside the slice comes back ranked past the end of it, and every
-   * consumer reads that as "not the top three".
-   */
-  private async preMysteryPrizeRank(amount: number | undefined): Promise<number | undefined> {
-    try {
-      const [live, claimed] = await Promise.all([
-        supabase
-          .from('tournament_players')
-          .select('current_bounty')
-          .eq('tournament_id', this.tournamentId)
-          .order('current_bounty', { ascending: false })
-          .limit(200),
-        supabase
-          .from('tournament_bounties')
-          .select('bounty_amount')
-          .eq('tournament_id', this.tournamentId)
-          .order('bounty_amount', { ascending: false })
-          .limit(200),
-      ]);
-
-      // The head just pulled is on this ladder either way: fn_collect_bounty
-      // zeroes `current_bounty` and writes `tournament_bounties` in the same
-      // transaction, which has committed by the time this runs.
-      const ladder = buildPrizeLadder([
-        ...((live.data ?? []) as Array<{ current_bounty: unknown }>).map((r) => r.current_bounty),
-        ...((claimed.data ?? []) as Array<{ bounty_amount: unknown }>).map((r) => r.bounty_amount),
-      ]);
-
-      const rank = prizeRankOf(amount, ladder);
-      return rank > 0 ? rank : undefined;
-    } catch {
-      /* no rank is a quiet celebration; a throw would be a lost knockout */
-      return undefined;
-    }
-  }
-
-  /**
+   * an unspecified order, so ordering makes the slice the TOP of the ladder by
+   * construction: a prize outside it comes back ranked past the end of it,
+   * which every consumer reads as "not the top three".
+   *
    * The chest's rung, in CENTS, against the inventory seeded at activation.
    *
    * The inventory is immutable once seeded — `fn_mystery_bounty_reserve` only
@@ -3974,7 +4128,31 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
    */
   private rearmIfTheFinishWasRefused(): void {
     if (this.tournamentFinished) return;
-    this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+    /* THE RETRY GOES STRAIGHT BACK TO THE FINISH (2026-10-01).
+       A refused finish has already spent this admission's budget (five
+       attempts and the resolver against the finish lane, ~48 s), so
+       completedStage(3) below advances the cursor PAST the finish stage.
+       Without this rewind the re-armed admission ran stages 3..8, reset the
+       cursor, and the finish was only asked again on the admission after
+       that - two trips through a scheduler queue whose oldest wait was
+       measured at 589-1,121 s between 14:30 and 14:52 UTC on 2026-10-01.
+       Tournament 028268d1 was refused at 14:36:56 and paid at 15:04:23. The
+       winner is owed the next admission, not the one after. The cursor's
+       own fairness rule still holds: a rewind is applied once, and the
+       interrupted stage gets the admission after it. */
+    this.eliminationSweepCursor.rewindTo(FINISH_STAGE);
+    /* THE RE-ARM KEEPS THE REFUSAL'S OWN DELAY (2026-10-07).
+       This line used the fixed five seconds. The scheduler keeps the EARLIEST
+       pending wake per tournament, so it overrode the doubled delay
+       releaseFinishGuard had just asked for (2026-09-18,
+       aRuleRefusalStopsAskingEveryFiveSeconds): every rule refusal went back
+       to a five-second clock. Measured 2026-10-07: four Spins whose field can
+       never settle (P0404 "no complete durable elimination sequence") asked
+       about 2,900 times an hour for eighteen hours, ~313 ms of roster locks
+       each. finishRetryDelayMs() is still the base five seconds for a
+       transient refusal (deadlock, timeout) and for the first refusal of any
+       kind, so the winner owed the next admission still gets it. */
+    this.requestUrgentEliminationSweepAfter(this.finishRetryDelayMs());
   }
 
   // ── FINAL TABLE DEAL (2026-08-22 parity) ─────────────────────────────────
@@ -4005,7 +4183,33 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     proposalId: string | null;
     revision: string | null;
     closingReason?: 'stale' | 'expired' | 'cancelled';
+    /** When this manager opened the review and parked its dealer. */
+    openedAtMs?: number;
   } | null = null;
+
+  /**
+   * An open final-table deal review is a deliberate hold, by its own
+   * authority and inside its own bound (2026-10-12). The review parks the
+   * dealer for at most FINAL_TABLE_DEAL_PAUSE_MS while players read and vote;
+   * past that bound plus the last-hand grace, or once it is closing, it is no
+   * longer a reason to deal nothing. See TournamentManagerBase.
+   */
+  override deliberateDealingHold(nowMs: number): string | null {
+    const inherited = super.deliberateDealingHold(nowMs);
+    if (inherited) return inherited;
+    const review = this.finalTableDealReview;
+    if (
+      review &&
+      !review.closingReason &&
+      review.openedAtMs !== undefined &&
+      nowMs - review.openedAtMs <
+        TournamentManagerEliminations.FINAL_TABLE_DEAL_PAUSE_MS +
+          TournamentManagerBase.LAST_HAND_GRACE_MS
+    ) {
+      return 'final_table_deal_review';
+    }
+    return null;
+  }
 
   protected override async adoptCommittedTerminalOutcome(): Promise<boolean> {
     const lifecycle = this.captureLifecycleToken();
@@ -4281,15 +4485,153 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     return cleaned;
   }
 
+  /**
+   * A SATELLITE THAT HAS BUSTED NOBODY IS NOT ASKED AGAIN UNDER THE WHOLE
+   * FINISH LANE (2026-10-03).
+   *
+   * fn_get_satellite_qualifier_state is answered under the satellite finish
+   * lane, which takes ca:tournament-finish-lane:v1 EXCLUSIVELY: every ordinary
+   * Spin, Sit & Go and MTT finish on the platform (which holds that key
+   * shared) drains before it and queues behind it. Every sweep of a cohort
+   * satellite asked it at its finish stage, whatever woke the sweep. Read on
+   * production 13:03-13:33 UTC on 2026-10-03: four running cohort satellites
+   * with three eliminations between them in ten minutes asked ~6.7 times a
+   * minute, each waiting a mean 3.3 s for the exclusive lane, and 96 finishes
+   * waited a mean 3.6 s behind those asks (12 and 17 in the half hour before
+   * the elimination scheduler stopped rationing sweeps).
+   *
+   * Only a bust can bring the field to its qualifier boundary: qualifying
+   * needs the live field (playing, chips > 0) at or under the full-ticket
+   * count, the ticket count is frozen with the prize pool, and nothing but a
+   * hand that leaves a zero stack shrinks the field. Every such hand holds
+   * the boundary first (onHandComplete -> holdSatelliteQualifierBoundary),
+   * which advances the boundary generation. So an authoritative 'continuing'
+   * answer, read while no boundary was held, with the field more than one
+   * player above the ticket count, stays true for its generation: the sweep
+   * reuses it instead of taking the lane again. Any held boundary, any other
+   * state, a field within one player of the tickets, or five minutes, and
+   * the serialized read runs exactly as before.
+   */
+  private satelliteContinuation: {
+    generation: number;
+    readAt: number;
+    answer: 'legacy' | 'continue';
+  } | null = null;
+  static readonly SATELLITE_CONTINUATION_REUSE_MS = 5 * 60_000;
+
+  /**
+   * A SETTLEMENT THAT IS REFUSED THE SAME WAY EVERY SWEEP IS A FINANCIAL
+   * INCIDENT, NOT A LOG LINE (2026-10-08).
+   *
+   * The qualifier settlement is asked once per elimination sweep, and a
+   * refusal (P0404 / 55000: the database could not prove its own receipt)
+   * answers 'pending', which holds the qualifier boundary - every table
+   * parked, no hand dealt - and asks again on the next sweep. That is the
+   * right answer for a refusal that can change (a seat write racing a table
+   * break, a target still activating). It is the wrong SILENCE for one that
+   * cannot: satellite 32190e8c "Sunday Deep Stack Satellite $25" was refused
+   * with `has missing or extra obligation evidence` ~500 times between
+   * 2026-10-07 17:38Z and 2026-10-08 11:05Z, three qualifiers unpaid, its
+   * one table killed and rebuilt as a zombie every ten minutes, and nothing
+   * but an error-reporter line per sweep said so. The receipt replay had a
+   * defect (migration 20261008113442); the manager's job is to make sure a
+   * defect like it is SEEN within minutes, not found by a human reading the
+   * engine log the next morning.
+   *
+   * So a refusal is counted here. The first repeat raises a CRITICAL
+   * financial alert (dedupe-keyed on the tournament so it is one incident,
+   * not one per sweep) and the alert is refreshed every
+   * SATELLITE_REFUSAL_ALERT_EVERY_MS for as long as the refusals continue.
+   * A settlement that goes through clears the count. Nothing about the
+   * retry itself changes: the boundary stays held and the next sweep asks
+   * the door again, exactly as before.
+   */
+  private satelliteRefusals: {
+    count: number;
+    firstAt: number;
+    lastAlertAt: number;
+    message: string;
+  } | null = null;
+  static readonly SATELLITE_REFUSAL_ALERT_EVERY_MS = 10 * 60_000;
+
+  private async recordSatelliteSettlementRefusal(
+    error: SatelliteSettlementRefusedError,
+    qualifierCount: number
+  ): Promise<void> {
+    const now = Date.now();
+    const prior = this.satelliteRefusals;
+    const refusals =
+      prior && prior.message === error.message
+        ? { ...prior, count: prior.count + 1 }
+        : { count: 1, firstAt: now, lastAlertAt: 0, message: error.message };
+    this.satelliteRefusals = refusals;
+    if (refusals.count < 2) return;
+    if (
+      refusals.lastAlertAt > 0 &&
+      now - refusals.lastAlertAt < TournamentManagerEliminations.SATELLITE_REFUSAL_ALERT_EVERY_MS
+    )
+      return;
+    refusals.lastAlertAt = now;
+    try {
+      await raiseFinancialAlert(
+        'critical',
+        'Tournament.satellite_qualifiers_refused_repeatedly',
+        `Satellite qualifier settlement refused ${refusals.count} times over ${Math.round(
+          (now - refusals.firstAt) / 60_000
+        )} min; the event is held at its qualifier boundary and cannot finish until the refusal is fixed`,
+        {
+          tournament_id: this.tournamentId,
+          qualifier_count: qualifierCount,
+          refusal_count: refusals.count,
+          first_refused_at: new Date(refusals.firstAt).toISOString(),
+          refusal: error.message,
+        },
+        `satellite-qualifiers-refused:${this.tournamentId}`,
+        this.tournamentId
+      );
+    } catch (alertError) {
+      reportError(alertError, 'Tournament.satellite_qualifiers_refused_alert_failed', {
+        tournamentId: this.tournamentId,
+      });
+    }
+  }
+
   /** The frozen full-ticket plan, not cash-remainder depth, owns this finish. */
+  /**
+   * True while a table break that has not been acknowledged names this table
+   * as its source. Only the balance stage finishes such a break. The manager
+   * that owns the durable break state answers; this base knows of none.
+   */
+  protected tableBreakOwnsSource(_tableId: string): boolean {
+    return false;
+  }
+
   private async checkSatelliteQualifierCompletion(): Promise<
     'legacy' | 'continue' | 'pending' | 'complete'
   > {
     if (!this.isCohortSatellite()) return 'legacy';
     if (!this.isRunning() || isMaintenanceFrozen() || !this.eliminationMutationAllowed())
       return 'pending';
+    const known = this.satelliteContinuation;
+    this.satelliteContinuation = null;
+    if (
+      known &&
+      !this.satelliteQualifierBoundaryPending &&
+      known.generation === this.satelliteQualifierBoundaryGeneration &&
+      Date.now() - known.readAt < TournamentManagerEliminations.SATELLITE_CONTINUATION_REUSE_MS
+    ) {
+      this.satelliteContinuation = known;
+      return known.answer;
+    }
+    let readGeneration = this.satelliteQualifierBoundaryGeneration;
+    let readAt = Date.now();
+    const readState = (): ReturnType<typeof readSatelliteQualifierState> => {
+      readGeneration = this.satelliteQualifierBoundaryGeneration;
+      readAt = Date.now();
+      return readSatelliteQualifierState(this.tournamentId);
+    };
     try {
-      let state = await readSatelliteQualifierState(this.tournamentId);
+      let state = await readState();
       const cleanCommitted = async (): Promise<boolean> => {
         if (state.state === 'completed') {
           await this.cleanupCommittedSatelliteQualifiers(state.receipt);
@@ -4320,10 +4662,37 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           engine: this.tableEngines.get(table.id),
         }));
         for (const { tableId, engine } of owned) {
+          if (!this.isRunning() || isMaintenanceFrozen() || !this.eliminationMutationAllowed())
+            return 'pending';
+          /*
+           * A BREAK SOURCE THE BOUNDARY CANNOT PARK FINISHES ITS BREAK
+           * (2026-10-12).
+           *
+           * A table break stops its source dealer before it closes the source
+           * table, and the table row stays 'running' until that close commits.
+           * If the close does not land (a statement timeout, a lost reply), the
+           * source has no running dealer and can never park here, so this
+           * answered 'pending' on every sweep. 'pending' resets the cursor to
+           * the elimination stage, and the balance stage, the only code that
+           * retries the close, was never reached again: the boundary waited for
+           * the break and the break waited for the boundary.
+           *
+           * Production 2026-10-12: satellite 61961519 (Sunday Funday Six-Card
+           * Closer Satellite), break 444d8b63 moved every player off table
+           * c01b0657 at 23:52:12Z, fn_f06_close_break hit a statement timeout at
+           * 23:52:21Z, and 9 players sat on table 4af8f60c dealt nothing for
+           * over three hours while the sweep re-read the same two tables every
+           * five seconds.
+           *
+           * The boundary stays held, so no hand is dealt; the sweep goes on to
+           * the stage that owns the break (as for F06_SOURCE_EXCLUDED below),
+           * and the next pass parks the tables that are left.
+           */
+          if (!engine?.isRunning() && this.tableBreakOwnsSource(tableId)) {
+            this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+            return 'continue';
+          }
           if (
-            !this.isRunning() ||
-            isMaintenanceFrozen() ||
-            !this.eliminationMutationAllowed() ||
             !engine?.isRunning() ||
             this.gameServer.getTableEngine(tableId) !== engine ||
             !(await engine.parkForTerminalCloseout(0))
@@ -4332,7 +4701,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         }
         // All accepted writers and in-flight hands are drained now. The
         // second serialized read owns cohort membership for this boundary.
-        state = await readSatelliteQualifierState(this.tournamentId);
+        state = await readState();
         if (await cleanCommitted()) return 'complete';
         if (
           !this.isRunning() ||
@@ -4355,6 +4724,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               this.tournamentId,
               state.qualifierIds
             );
+            this.satelliteRefusals = null;
             await this.cleanupCommittedSatelliteQualifiers(receipt);
             return 'complete';
           } catch (error) {
@@ -4364,6 +4734,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
                 tournamentId: this.tournamentId,
                 qualifierCount: state.qualifierIds.length,
               });
+              await this.recordSatelliteSettlementRefusal(error, state.qualifierIds.length);
               /*
                * A TABLE BREAK THAT EXCLUDES A SOURCE IS FINISHED, NOT WAITED
                * ON (2026-09-28).
@@ -4426,7 +4797,16 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         this.holdSatelliteQualifierBoundary();
         return 'pending';
       }
-      return state.state === 'continuing' && state.fullTicketCount < 2 ? 'legacy' : 'continue';
+      const answer =
+        state.state === 'continuing' && state.fullTicketCount < 2 ? 'legacy' : 'continue';
+      if (
+        state.state === 'continuing' &&
+        state.qualifierIds.length > state.fullTicketCount + 1 &&
+        !this.satelliteQualifierBoundaryPending &&
+        readGeneration === this.satelliteQualifierBoundaryGeneration
+      )
+        this.satelliteContinuation = { generation: readGeneration, readAt, answer };
+      return answer;
     } catch (error) {
       // An unreadable state can neither select winners nor release a bust
       // boundary. The existing manager continuation retains its work.
@@ -4741,6 +5121,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           engine,
           proposalId: consensus.proposalId,
           revision: consensus.revision,
+          openedAtMs: Date.now(),
         };
         const parked = await engine.parkForTerminalCloseout(
           TournamentManagerEliminations.FINAL_TABLE_DEAL_PAUSE_MS
@@ -5279,7 +5660,25 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     // while the platform freeze is active. A decided event has no later hand
     // or elimination to wake it, so make the deferral visible and explicitly
     // re-arm the same bounded manager work after the thaw.
-    if (isMaintenanceFrozen()) {
+    //
+    // THE LAST HAND PAYS (2026-10-03). Between the :53 announcement and a
+    // reserve before :55 the tables are finishing their hands and the database
+    // freeze is not armed; an event that hand decided settles now. This read
+    // used isMaintenanceFrozen(), so every event decided after :53 waited for
+    // the thaw (~:00:30) with its winner unpaid. See freezeState. A satellite
+    // keeps the full freeze: its settlement can admit a seat into a running
+    // target, and every seat door is closed from the announcement.
+    const terminalIdentity = this.tournamentCache as {
+      variant?: string;
+      tournament_type?: string;
+      satellite_target_id?: string | null;
+      satellite_target?: string | null;
+    } | null;
+    const terminalIsSatellite =
+      String(terminalIdentity?.variant ?? '').toLowerCase() === 'satellite' ||
+      String(terminalIdentity?.tournament_type ?? '').toUpperCase() === 'SATELLITE' ||
+      Boolean(terminalIdentity?.satellite_target_id || terminalIdentity?.satellite_target);
+    if (terminalIsSatellite ? isMaintenanceFrozen() : isTerminalSettlementFrozen()) {
       console.log(
         `[Tournament:${this.tournamentId.slice(0, 8)}] finish deferred: the platform is frozen for the maintenance break; resuming after the thaw`
       );

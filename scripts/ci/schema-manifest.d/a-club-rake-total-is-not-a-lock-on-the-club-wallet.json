@@ -1,0 +1,15 @@
+{
+  "_owner": "fix/club-rake-total-is-not-a-lock-on-the-club-wallet. Migration 20261002194128_a_club_rake_total_is_not_a_lock_on_the_club_wallet, applied to production 2026-10-02 20:04Z (schema_migrations 20261002200408). public.club_table_rake_totals holds the per (club, table) raked cash-hand totals atomic_distribute_rake used to add to the club's one club_wallets row; atomic_distribute_rake and fn_club_money_panel changed by asserted substitutions.",
+  "tables": ["club_table_rake_totals"],
+  "columns": {
+    "club_table_rake_totals": [
+      "club_id",
+      "table_id",
+      "rake_collected",
+      "bbj_contribution",
+      "hands",
+      "created_at",
+      "updated_at"
+    ]
+  }
+}

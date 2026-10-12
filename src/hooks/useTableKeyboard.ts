@@ -21,6 +21,13 @@
  *        a multi-tabler is a hotkey; ours runs the tile's own reveal, and
  *        does nothing when no offer is up)
  *    (FIX 199: H key for hand strength REMOVED — not allowed for live play)
+ *
+ *  LIGHTNING KEYS (Lightning Phase 12; only in a Lightning room, only when
+ *  the platform row offers hotkeys). Safe modifier combinations, never a
+ *  single letter (spec HOTKEYS): Shift+F = LIGHTNING FOLD, Shift+V = FOLD &
+ *  WATCH. Both run the fold strip's own handler, which the engine validates
+ *  (a fold that is not available is refused there, never guessed here); they
+ *  work before the player's turn too, exactly like the strip.
  *    Escape = Close any open panel or modal
  *
  * OPTIMIZATION: Uses refs for all callbacks and state to prevent
@@ -52,6 +59,8 @@
  */
 
 import { useEffect, useRef } from 'react';
+import { readLightningPrefs } from '../lightning/lightningPrefs';
+import { lightningShortcut } from '../lightning/lightningShortcuts';
 
 export interface UseTableKeyboardOptions {
   /**
@@ -91,12 +100,57 @@ export interface UseTableKeyboardOptions {
    * whether a hunt is purchasable.
    */
   onRabbitHunt?: () => void;
+  /**
+   * LIGHTNING PHASE 12: Shift+F (LIGHTNING FOLD) and Shift+V (FOLD & WATCH).
+   * Passed only in a Lightning room whose platform offers hotkeys; absent,
+   * the keys do nothing and Shift+F stays an ordinary F.
+   */
+  onLightningFold?: () => void;
+  onLightningFoldWatch?: () => void;
+}
+
+/**
+ * WHO OWNS THE NUMBER ROW RIGHT NOW (launch audit 2026-10-05).
+ *
+ * 1-4 size a bet while the sizing panel is open and switch tables otherwise.
+ * Both listeners sit on `window`, and the switcher's ran regardless of what
+ * this one did: with two tables open, pressing 2 for half pot also flipped to
+ * table two and left the raise unconfirmed. Which listener runs first depends
+ * on mount order, so `defaultPrevented` cannot settle it. The switcher asks
+ * this instead, and the answer is computed from the same options, by the same
+ * conditions, as the branch below that takes the key.
+ */
+const mountedTableKeyboards = new Set<{ current: UseTableKeyboardOptions }>();
+
+export function tableSizingOwnsNumberRow(): boolean {
+  for (const ref of mountedTableKeyboards) {
+    const o = ref.current;
+    if (o.isActive && o.isHeroTurn && !o.isSpectator && !o.isModalOpen && o.isSizingOpen) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** New navigation gestures respect the same active-table modal/sizing owner. */
+export function tableBlocksLightningNavigation(): boolean {
+  for (const ref of mountedTableKeyboards) {
+    if (ref.current.isActive && (ref.current.isModalOpen || ref.current.isSizingOpen)) return true;
+  }
+  return false;
 }
 
 export function useTableKeyboard(options: UseTableKeyboardOptions): void {
   // Store all options in a ref — updated every render, always fresh in the listener
   const optionsRef = useRef(options);
   optionsRef.current = options;
+
+  useEffect(() => {
+    mountedTableKeyboards.add(optionsRef);
+    return () => {
+      mountedTableKeyboards.delete(optionsRef);
+    };
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -127,6 +181,34 @@ export function useTableKeyboard(options: UseTableKeyboardOptions): void {
         opts.onClosePanel?.();
         return;
       }
+      if (
+        (opts.onLightningFold || opts.onLightningFoldWatch) &&
+        document.querySelector('[aria-modal="true"]')
+      )
+        return;
+
+      // ── Lightning keys: Shift+F / Shift+V, before the single-letter row ──
+      const shortcut = lightningShortcut(e, readLightningPrefs().shortcutModifier);
+      if (
+        !opts.isSpectator &&
+        !opts.isModalOpen &&
+        (shortcut === 'fold' || shortcut === 'watch') &&
+        (opts.onLightningFold || opts.onLightningFoldWatch)
+      ) {
+        const run = shortcut === 'fold' ? opts.onLightningFold : opts.onLightningFoldWatch;
+        if (run) {
+          e.preventDefault();
+          run();
+        }
+        return;
+      }
+      // In a Lightning room a rejected modifier chord must not become a
+      // different single-letter action, including held keys and disabled shortcuts.
+      if (
+        (opts.onLightningFold || opts.onLightningFoldWatch) &&
+        (e.shiftKey || e.altKey || e.ctrlKey || e.metaKey || e.repeat || e.isComposing)
+      )
+        return;
 
       // ── Toggle keys: always active (unless spectator) ──
       if (!opts.isSpectator) {

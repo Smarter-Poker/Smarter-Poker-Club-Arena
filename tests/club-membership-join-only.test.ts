@@ -1,13 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const sql = readFileSync(
   resolve(__dirname, '../supabase/migrations/20260901090000_club_card_human_realtime_stats.sql'),
-  'utf8'
-);
-const orchestrator = readFileSync(
-  resolve(__dirname, '../src/services/HorseOrchestrator.ts'),
   'utf8'
 );
 
@@ -28,8 +24,9 @@ describe('Club membership provenance', () => {
   });
 
   it('does not batch-enroll the horse fleet as club members', () => {
-    expect(orchestrator).not.toContain('ensureHorsesInBothClubs');
-    expect(orchestrator).not.toMatch(/from\(['"]club_members['"]\)\s*\.(?:insert|upsert)/);
+    // The browser orchestrator that did (ensureHorsesInBothClubs) was deleted
+    // on 2026-10-05 with the rest of the browser's horse management.
+    expect(existsSync(resolve(__dirname, '../src/services/HorseOrchestrator.ts'))).toBe(false);
   });
 
   it('keeps live-seat cleanup out of the schema transaction', () => {

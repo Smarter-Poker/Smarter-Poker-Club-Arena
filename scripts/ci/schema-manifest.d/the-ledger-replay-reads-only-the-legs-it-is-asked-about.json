@@ -1,0 +1,4 @@
+{
+  "_owner": "p5-alerts-and-main. Migration 20261003112214_the_journal_can_be_read_for_the_accounts_that_ask (phase 5 of 9). public.fn_ca_leg_accounts_since_snapshot_for reads the journal since a reading for the given entities only, so the nightly ledger replay no longer reads the whole journal once per stale reading.",
+  "functions": ["fn_ca_leg_accounts_since_snapshot_for"]
+}

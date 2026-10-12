@@ -35,7 +35,14 @@ import { reportError } from '../../utils/errorReporter';
 import { isUUID } from '../../utils/clubIdResolver';
 import { LoadingState, PermissionState } from '../common/EmptyState';
 
-export default function UnionOverseerGuard({ children }: { children: ReactNode }) {
+export default function UnionOverseerGuard({
+  children,
+  authority = 'overseer',
+}: {
+  children: ReactNode;
+  /** Table Management deliberately admits only the owner or appointed union admins. */
+  authority?: 'overseer' | 'game-management';
+}) {
   const { user, isHydrating } = useAuthUser();
   const { unionId, unionRef } = useUnionRouteId();
   const navigate = useNavigate();
@@ -50,20 +57,31 @@ export default function UnionOverseerGuard({ children }: { children: ReactNode }
     }
     (async () => {
       try {
-        const { data, error } = await supabase.rpc('ca_can_oversee_union', {
-          p_union_id: unionId,
-        });
+        const { data, error } =
+          authority === 'game-management'
+            ? await supabase.rpc('fn_is_union_operator', {
+                p_union_id: unionId,
+                p_user_id: user.id,
+              })
+            : await supabase.rpc('ca_can_oversee_union', {
+                p_union_id: unionId,
+              });
         if (error) throw error;
         if (!cancelled) setVerdict({ unionId, allowed: data === true });
       } catch (e) {
-        reportError(e, 'UnionOverseerGuard.ca_can_oversee_union');
+        reportError(
+          e,
+          authority === 'game-management'
+            ? 'UnionOverseerGuard.fn_is_union_operator'
+            : 'UnionOverseerGuard.ca_can_oversee_union'
+        );
         if (!cancelled) setVerdict({ unionId, allowed: false });
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [user?.id, unionId]);
+  }, [authority, user?.id, unionId]);
 
   if (!unionRef) return <>{children}</>;
 

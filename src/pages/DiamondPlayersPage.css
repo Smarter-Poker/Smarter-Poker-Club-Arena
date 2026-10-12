@@ -1,0 +1,27 @@
+/*
+ * The Diamond Arena Players page wears the chip roster's stylesheet
+ * (ClubMembersPage.css) whole, so the arena looks like the Club Arena it
+ * clones. This file only adds what the Diamond page needs and the chip page
+ * does not: a row that opens nothing, a fourth figure for tables, and a list
+ * that pages by a button.
+ */
+.member-row__open.diamond-player-row__body {
+  grid-template-columns: 58px minmax(0, 1fr);
+  cursor: default;
+}
+
+.summary-stat--tables {
+  box-shadow: inset 0 -2px 0 var(--members-blue);
+}
+
+.summary-stat--tables .stat-value {
+  color: #a8baff;
+}
+
+.members-count.diamond-players__more {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}

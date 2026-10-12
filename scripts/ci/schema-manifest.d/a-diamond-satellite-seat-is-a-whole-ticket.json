@@ -1,0 +1,8 @@
+{
+  "_owner": "agent/claude-diamond-phase-9/feature/satellites. Diamond Phase 9, satellites: a Diamond satellite seat is a whole ticket moved custody to custody from the satellite's prize bank into a new entry custody row in its Diamond target (fn_poker_diamond_tournament_seat_transfer, registered in ca_money_rpc_registry above its own CREATE and on the guard watchlist); the asset rule both settlement authorities call (fn_ca_assert_satellite_asset); and the Diamond feeder predicate the creation guard and the Diamond creation door use (fn_ca_diamond_satellite_target_accepts_new_feeder). Applied to kuklfnapbkmacvwxktbh on 2026-09-29 as 20260929161500. No new table or column.",
+  "functions": [
+    "fn_poker_diamond_tournament_seat_transfer",
+    "fn_ca_assert_satellite_asset",
+    "fn_ca_diamond_satellite_target_accepts_new_feeder"
+  ]
+}

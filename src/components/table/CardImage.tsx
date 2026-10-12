@@ -14,6 +14,8 @@ import { useDeckStyle } from '../../hooks/useDeckStyle';
 import './CardImage.css';
 import { reportError } from '../../utils/errorReporter';
 import { cardWords, FACE_DOWN_WORDS } from '../../utils/cardWords';
+import { normalizeFaceDeckId, type FaceDeckId } from '../../lib/faceDeck';
+import { useTableFaceDeck } from './faceDeckContext';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -29,6 +31,12 @@ export interface Card {
 export interface CardImageProps {
   card: Card;
   deckStyle?: DeckStyle;
+  /**
+   * Optional per-card override (the Table Studio preview). Without it a card
+   * takes the deck of the table it sits on (faceDeckContext.ts); only a card
+   * outside any table inherits from its nearest `[data-face-deck]` ancestor.
+   */
+  faceDeckId?: FaceDeckId | string;
   size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
   isHighlighted?: boolean;
   isFolded?: boolean;
@@ -206,6 +214,7 @@ export const SUIT_COLOR: Record<string, string> = {
 export function CardImage({
   card,
   deckStyle,
+  faceDeckId,
   size = 'md',
   isHighlighted = false,
   isFolded = false,
@@ -226,6 +235,15 @@ export function CardImage({
   // wins, which is what the felt passes.
   const preferredDeckStyle = useDeckStyle();
   const effectiveDeckStyle = deckStyle ?? preferredDeckStyle;
+  // The table's own deck (faceDeckContext.ts) unless the caller names one: a
+  // felt card says which deck it was drawn with instead of leaving it to be
+  // inferred from whichever ancestor happens to carry the attribute.
+  const tableFaceDeckId = useTableFaceDeck();
+  const explicitFaceDeckId = faceDeckId
+    ? normalizeFaceDeckId(faceDeckId)
+    : tableFaceDeckId
+      ? normalizeFaceDeckId(tableFaceDeckId)
+      : undefined;
   const imagePath = getCardImagePath(card, effectiveDeckStyle);
   const sizeClass = SIZE_CLASSES[size];
   /* `null` means the card could not be read at all. See getCardImagePath:
@@ -269,6 +287,9 @@ export function CardImage({
      rank and suit are exactly what we failed to read. */
   if (unreadable) {
     return (
+      /* No data-face-deck: this tile paints no face-deck finish (CardImage.css
+         excludes --unreadable from it), so naming a deck here would report a
+         finish that is not on screen. A deck is only claimed by a real face. */
       <div
         className={classes}
         role="img"
@@ -283,7 +304,7 @@ export function CardImage({
   }
 
   return (
-    <div className={classes}>
+    <div className={classes} data-face-deck={explicitFaceDeckId}>
       <img
         loading={loading}
         decoding="async"

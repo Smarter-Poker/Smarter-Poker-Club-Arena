@@ -1,0 +1,4 @@
+{
+  "_owner": "agent/claude-diamond-phase-9/fix/the-chip-legs-refuse-a-diamond-row",
+  "functions": ["fn_poker_reject_diamond_chip_money"]
+}

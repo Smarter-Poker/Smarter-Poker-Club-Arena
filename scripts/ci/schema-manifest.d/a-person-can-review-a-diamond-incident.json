@@ -1,0 +1,24 @@
+{
+  "_owner": "agent/claude-diamond-phase-10/feat/a-person-can-review-a-diamond-incident",
+  "_comment": "20260929211500 a_person_can_review_a_diamond_incident: the append-only review trail of ca_diamond_incidents, the reviewer columns on the row, the person hold trigger, and four platform-staff doors (board, trail, review, resolve_family).",
+  "tables": ["ca_diamond_incident_events"],
+  "functions": [
+    "fn_ca_diamond_incident_events_append_only",
+    "fn_ca_diamond_incident_person_hold",
+    "fn_ca_diamond_incident_actor_label",
+    "fn_ca_diamond_incident_json",
+    "fn_ca_diamond_incident_board",
+    "fn_ca_diamond_incident_trail",
+    "fn_ca_diamond_incident_review",
+    "fn_ca_diamond_incident_resolve_family"
+  ],
+  "columns": {
+    "ca_diamond_incidents": [
+      "acknowledged_at",
+      "acknowledged_by",
+      "resolved_by",
+      "reopened_at",
+      "reopened_by"
+    ]
+  }
+}

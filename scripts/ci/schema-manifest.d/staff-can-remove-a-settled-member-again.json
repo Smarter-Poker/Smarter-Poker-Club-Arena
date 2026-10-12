@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/staff-can-remove-a-settled-member - migration 20260929062121_staff_can_remove_a_settled_member_again replaces public.fn_remove_settled_club_member in place (the three club_members.id reads corrected to (club_id, user_id)).",
+  "functions": ["fn_remove_settled_club_member"]
+}

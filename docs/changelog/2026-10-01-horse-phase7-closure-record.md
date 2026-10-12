@@ -1,0 +1,7 @@
+# Horse Phase 7 closure record
+
+Phase 7A (stage 1 of 2) is closed against the serving engine `2a8ac77c`, which contains #5660, #5662, #5672, #5677 and #5688 and whose Horse runtime sources are unchanged since the sealed `8068df7e`. The exact-engine live-table certificate for `2a8ac77c` passed four of four cases at 14:13:56Z (run 36872559512; its separate client-browser job failed and is not claimed).
+
+A predeclared five-minute natural window (14:50Z to 14:55Z, declared 15:01:55Z before any read) was observed with the reviewed read-only observer on the serving image: 1,024 completed hands reconciled with zero gaps, 1,151 Phase 7 utility receipts, 1,118 intended and accepted by the controller, 33 retired, 0 coerced, 0 invalid, 0 unreconciled, all original read-frame digests matched; every receipt names its response model as uncalibrated. The aggregate-only artifact lives under `docs/evidence/phase7/`, with the earlier `8068df7e` sample retained as historical.
+
+Phase 7B (stage 2 of 2) is implemented, published and locally verified; its natural accepted-use proof is unavailable because production has zero bomb-pot-enabled tournament tables (read-only count 2026-10-01T15:01:42Z, 0 of 670). No table or wager was created to manufacture proof, and the stage is not closed by writing that exclusion. The build plan's status table now says so, and the new `docs/horse-brain-phase7-completion-2026-10-01.md` carries the G1 to G10 ledger for both stages.

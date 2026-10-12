@@ -101,6 +101,9 @@ export async function assertRendered(
     .toBeGreaterThan(0);
 
   const body = await page.locator('body').innerText();
+  expect(body, `${path}: dollar signs are forbidden in both arenas`).not.toMatch(
+    /[$＄﹩\u{1F4B2}\u{1F4B0}\u{1F4B5}]/u
+  );
   expect(
     body,
     `${path} fell through to the catch-all 404 — the route does not exist`

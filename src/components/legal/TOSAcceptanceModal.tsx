@@ -8,6 +8,7 @@
 import { useState, useEffect } from 'react';
 import { SpadeConsole } from '../console/SpadeConsole';
 import './TOSAcceptanceModal.css';
+import { TERMS_LAST_UPDATED } from './legalDates';
 import { reportError } from '../../utils/errorReporter';
 
 interface TOSAcceptanceModalProps {
@@ -83,7 +84,7 @@ export default function TOSAcceptanceModal({ onAccept }: TOSAcceptanceModalProps
         >
           <div className="tosc__terms" onScroll={handleScroll}>
             <h2>Club Arena Terms Of Service</h2>
-            <p className="tosc__updated sc-ink--muted">Last Updated: January 2026</p>
+            <p className="tosc__updated sc-ink--muted">Last Updated: {TERMS_LAST_UPDATED}</p>
 
             <h3>1. Acceptance Of Terms</h3>
             <p>

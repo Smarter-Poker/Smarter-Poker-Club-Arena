@@ -170,6 +170,7 @@
 
 .mm-identity__line {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.4rem;
 }
@@ -1008,7 +1009,7 @@
 }
 
 .mm-header {
-  width: min(1180px, calc(100vw - 24px));
+  width: min(1180px, calc(100% - 24px));
   margin: 0 auto;
   padding: 12px 0;
   border-bottom-color: rgba(86, 101, 117, 0.55);
@@ -1048,7 +1049,7 @@
 
 .mm-credential {
   position: relative;
-  width: min(1180px, calc(100vw - 24px));
+  width: min(1180px, calc(100% - 24px));
   min-height: 310px;
   margin: 14px auto 18px;
   overflow: hidden;
@@ -1207,7 +1208,7 @@
 
 .mm-ledger-grid {
   display: grid;
-  width: min(1180px, calc(100vw - 24px));
+  width: min(1180px, calc(100% - 24px));
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
   margin: 0 auto;
@@ -1400,6 +1401,20 @@
 }
 
 @media (max-width: 760px) {
+  /* Identity and ID own separate grid rows; role/status can wrap on phones. */
+  .mm-identity {
+    display: grid;
+    grid-template-columns: 78px minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .mm-player-id {
+    grid-column: 2;
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
   .mm-credential {
     min-height: 330px;
   }
@@ -1479,4 +1494,30 @@
     scroll-behavior: auto;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* Definitions use the existing card, inks and text flow. */
+.mm-metric-guide {
+  margin: 0 0 0.75rem;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--ca-text-dim);
+  overflow-wrap: anywhere;
+}
+.mm-metric-guide summary {
+  cursor: pointer;
+  min-height: 44px;
+  display: list-item;
+  align-content: center;
+  color: var(--ca-cyan);
+}
+.mm-metric-guide p {
+  margin: 0.5rem 0;
+}
+.mm-range__draft {
+  margin: 0.5rem 0 0;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--ca-cyan);
+  overflow-wrap: anywhere;
 }

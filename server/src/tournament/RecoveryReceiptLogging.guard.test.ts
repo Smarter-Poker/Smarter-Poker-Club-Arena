@@ -20,12 +20,15 @@ describe('stuck-tournament recovery logs only receipt-backed settlement counts',
     expect(receiptRpc).toContain("rpc('fn_resolve_tournament_terminal_outcome'");
     // The original request, resolver and stored-parameter replay remain
     // verified. External completion adoption adds its own fourth verification.
-    expect(receiptRpc.match(/verifyTournamentCompletionReceipt\(/g)).toHaveLength(4);
+    // Each goes through verifyTerminalReceipt, which hands the one verifier
+    // the custody origin the database holds for a version 3 receipt.
+    expect(receiptRpc.match(/await verifyTerminalReceipt\(/g)).toHaveLength(4);
+    expect(receiptRpc.match(/verifyTournamentCompletionReceipt\(/g)).toHaveLength(1);
     const adoption = sliceMethod(
       receiptRpc,
       'export async function readCommittedTournamentTerminalReceipt('
     );
-    expect(adoption).toContain('verifyTournamentCompletionReceipt(');
+    expect(adoption).toContain('await verifyTerminalReceipt(');
     expect(adoption).toContain("rpc('fn_resolve_tournament_terminal_outcome'");
     expect(adoption).not.toContain("rpc('fn_complete_tournament_terminal'");
     expect(receiptRpc).toContain('terminal_committed === true');

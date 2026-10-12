@@ -39,7 +39,7 @@ const read = (p: string) => readFileSync(join(root, p), 'utf8');
 const ci = parse(read('.github/workflows/ci.yml'));
 const wrapper = read(WRAPPER);
 
-/* THE TWENTY-THREE RUNNERS, NAMED, AND COUNTED IN WORDS.
+/* THE THIRTY RUNNERS, NAMED, AND COUNTED IN WORDS.
 
    Every other assertion here derives the population from the directory, which
    is right and is not enough on its own: a directory read agrees with itself
@@ -49,9 +49,11 @@ const wrapper = read(WRAPPER);
    money door nobody executes. */
 const EVERY_DIAMOND_RUNNER = [
   'run-diamond-accepted-hand.py',
+  'run-diamond-bad-beat-jackpot.py',
   'run-diamond-bomb-pot.py',
   'run-diamond-cash-admission.py',
   'run-diamond-cash-custody.py',
+  'run-diamond-cash-rake.py',
   'run-diamond-club-commerce-admission.py',
   'run-diamond-club-commerce-completion.py',
   'run-diamond-club-commerce-earnings.py',
@@ -59,22 +61,29 @@ const EVERY_DIAMOND_RUNNER = [
   'run-diamond-club-commerce-recovery.py',
   'run-diamond-club-commerce-refunds.py',
   'run-diamond-club-commerce.py',
+  'run-diamond-concurrency.py',
   'run-diamond-controlled-play.py',
+  'run-diamond-cross-format-conservation.py',
+  'run-diamond-engine-hand-proof.py',
   'run-diamond-incident-resolution.py',
   'run-diamond-plain-cash-rule.py',
   'run-diamond-run-it-twice.py',
+  'run-diamond-scheduled-tournaments.py',
   'run-diamond-stats-asset-dimension.py',
   'run-diamond-straddle.py',
   'run-diamond-top-up.py',
   'run-diamond-tournament-doors.py',
+  'run-diamond-tournament-lane-journal.py',
   'run-diamond-tournament-lifecycle.py',
   'run-diamond-transfer-door-and-dr16.py',
   'run-diamond-wallet-transfer.py',
   'run-poker-diamond-custody.py',
 ];
-/* The ten that stand up a cluster of their own. Declared in the wrapper and
-   repeated here, so the split cannot move in one file alone. */
+/* The seventeen that stand up a cluster of their own. Declared in the wrapper
+   and repeated here, so the split cannot move in one file alone. */
 const A_PRIVATE_CLUSTER = [
+  'run-diamond-bad-beat-jackpot.py',
+  'run-diamond-cash-rake.py',
   'run-diamond-club-commerce-admission.py',
   'run-diamond-club-commerce-completion.py',
   'run-diamond-club-commerce-earnings.py',
@@ -82,12 +91,17 @@ const A_PRIVATE_CLUSTER = [
   'run-diamond-club-commerce-recovery.py',
   'run-diamond-club-commerce-refunds.py',
   'run-diamond-club-commerce.py',
+  'run-diamond-concurrency.py',
+  'run-diamond-cross-format-conservation.py',
+  'run-diamond-engine-hand-proof.py',
+  'run-diamond-scheduled-tournaments.py',
   'run-diamond-stats-asset-dimension.py',
   'run-diamond-tournament-doors.py',
+  'run-diamond-tournament-lane-journal.py',
   'run-diamond-tournament-lifecycle.py',
 ];
-const HOW_MANY_RUNNERS = 23;
-const HOW_MANY_ON_A_PRIVATE_CLUSTER = 10;
+const HOW_MANY_RUNNERS = 30;
+const HOW_MANY_ON_A_PRIVATE_CLUSTER = 17;
 const HOW_MANY_ON_THE_WRAPPER_CLUSTER = 13;
 /* No environment variable but PG_BIN may choose a runner's server. PG17_BINDIR
    is the estate's other name for a bin directory, and two variables naming one
@@ -178,6 +192,22 @@ describe('every Diamond SQL runner is run by the accounting job', () => {
     expect(wrapper).toContain('if result.returncode or not proved:');
   });
 
+  it('requires the complete 34-case transfer and deletion qualification result', () => {
+    const proof = runnerProofsInWrapper(wrapper).find(
+      ([name]) => name === 'run-diamond-transfer-door-and-dr16.py'
+    );
+    expect(proof?.[1]).toBe(
+      '34 isolated transfer door and DR16 checks passed; this is not a production certification.'
+    );
+    const runner = read('tests/sql/run-diamond-transfer-door-and-dr16.py');
+    expect(runner).toContain('EXPECTED_CHECKS = 34');
+    expect(runner).toContain('qualification_checks = passed - int(started_here is not None)');
+    expect(runner).toContain('if qualification_checks != EXPECTED_CHECKS:');
+    expect(runner).toContain(
+      "raise AssertionError(f'Transfer qualification completed {qualification_checks} checks, expected {EXPECTED_CHECKS}')"
+    );
+  });
+
   it('runs the wrapper in the accounting job, once, without a bypass, on PostgreSQL 17', () => {
     const job = ci.jobs.accounting_postgres;
     const steps = job.steps.filter((s: { id?: string }) => s.id === 'diamond_sql_acceptance');
@@ -245,6 +275,15 @@ describe('a Diamond acceptance input routes to the accounting job', () => {
     'tests/sql/diamond-tournament-lifecycle-doors.manifest.json',
     'tests/sql/diamond-tournament-lifecycle-seed.sql',
     'tests/sql/diamond-tournament-lifecycle-cases.sql',
+    /* Every file the concurrency runner loads out of tests/sql: the captured
+       money doors and their pins, the production-shape tables and the seed. */
+    'tests/sql/diamond-concurrency-doors.sql',
+    'tests/sql/diamond-concurrency-doors.manifest.json',
+    'tests/sql/diamond-concurrency-schema.sql',
+    'tests/sql/diamond-concurrency-seed.sql',
+    /* The cross-format conservation runner's md5 pin list. Its two .sql
+       fixtures are poker-diamond-* and are swept up by the glob above. */
+    'tests/sql/diamond-cross-format-conservation-doors.manifest.json',
     'scripts/ci/run-diamond-sql-acceptance.py',
     'scripts/ci/check-diamond-runners-listed.mjs',
   ])('%s selects the PostgreSQL accounting job', (path) => {
@@ -266,8 +305,8 @@ const socketPort = /^PORT = '([0-9]+)'$/m.exec(wrapper)?.[1];
 
 /* TWO SHAPES OF RUNNER, AND EVERY RUNNER IS EXACTLY ONE OF THEM.
  *
- * Thirteen are hard-wired to the wrapper's socket and port. Four stand up a
- * private cluster of their own, because they load the estate's historical
+ * Thirteen are hard-wired to the wrapper's socket and port. Seventeen stand up
+ * a private cluster of their own, because they load the estate's historical
  * schema base and pin the installed doors against it: they need a cluster
  * nothing else has written to, and two postmasters cannot own one socket and
  * one port, so they cannot be moved onto the shared one.

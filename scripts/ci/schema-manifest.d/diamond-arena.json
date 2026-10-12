@@ -1,11 +1,8 @@
 {
-  "_owner": "fix/diamond-arena-foundation (Diamond Accounting Standard roadmap phase 5, rulings 14 and 16; 2026-09-08). Applied to production as 20260908034530_the_diamond_arena_accounting_foundation. It creates no club and moves no diamond: it is the accounting shape the arena needs before its first table.",
+  "_owner": "fix/diamond-arena-foundation (Diamond Accounting Standard roadmap phase 5, rulings 14 and 16; 2026-09-08). Applied to production as 20260908034530_the_diamond_arena_accounting_foundation. It creates no club and moves no diamond: it is the accounting shape the arena needs before its first table. AMENDED 2026-10-04: fn_arena_deposit and fn_arena_withdraw are withdrawn from this declaration; 20261004214251_the_legacy_diamond_arena_database_objects_are_dropped drops both, and the-legacy-diamond-arena-database-objects-are-dropped.json carries their tombstones (a name cannot be both added and removed).",
   "tables": ["ca_arena_settings"],
-  "functions": [
-    "fn_arena_deposit",
-    "fn_arena_withdraw",
-    "fn_ca_arena_seat_is_same_asset",
-    "fn_ca_arena_diamonds"
-  ],
-  "columns": { "clubs": ["asset", "is_platform"] }
+  "functions": ["fn_ca_arena_seat_is_same_asset", "fn_ca_arena_diamonds"],
+  "columns": {
+    "clubs": ["asset", "is_platform"]
+  }
 }

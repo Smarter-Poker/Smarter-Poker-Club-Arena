@@ -112,6 +112,120 @@ ALTER TABLE public.tournaments ADD CONSTRAINT tournament_prize_math_contract_val
 ALTER TABLE public.diamond_purchase_lots ADD COLUMN arena_reserved bigint NOT NULL DEFAULT 0
   CHECK (arena_reserved >= 0 AND arena_reserved <= issued);
 
+-- ---------------------------------------------------------------------------
+-- WHAT THE BASE LACKS FOR THE PHASE 9 FORMATS AND TODAY'S INSERT CHAIN
+-- ---------------------------------------------------------------------------
+-- Added 2026-09-29, when the create door began admitting satellites and
+-- Spins. Every production tournament insert now records its acceptance
+-- (trg_tournaments_record_acceptance, 20260924025555), which reads the
+-- capability registry and writes one acceptance row; a Diamond Spin is created
+-- against its authorized reserve source and pins its multiplier table in a
+-- contract row (20260929163000). Sliced verbatim, statement by statement; the
+-- contract table's immutability trigger is attached beside its captured
+-- function in the lifecycle capture.
+-- ---------------------------------------------------------------------------
+
+-- Sliced from 20260924025555_one_capability_registry_and_accepted_event_continuation.sql.
+CREATE TABLE public.platform_capabilities (
+  capability_id      text PRIMARY KEY
+                     CHECK (capability_id ~ '^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$'),
+  rule_version       text NOT NULL CHECK (btrim(rule_version) <> ''),
+  title              text NOT NULL CHECK (btrim(title) <> '' AND strpos(title, chr(8212)) = 0),
+  scope              text NOT NULL
+                     CHECK (scope IN ('platform','club','union','cash_table','tournament')),
+  supported_variants text[] NOT NULL DEFAULT '{}',
+  compatibility      jsonb NOT NULL DEFAULT '{}'::jsonb
+                     CHECK (jsonb_typeof(compatibility) = 'object'),
+  readiness          text NOT NULL
+                     CHECK (readiness IN ('excluded','planned','implemented','tested','deployed','production_verified')),
+  readiness_evidence jsonb NOT NULL DEFAULT '{}'::jsonb
+                     CHECK (jsonb_typeof(readiness_evidence) = 'object'),
+  revision           bigint NOT NULL DEFAULT 1 CHECK (revision >= 1),
+  updated_at         timestamptz NOT NULL DEFAULT now(),
+  -- An available rung is a claim about what is running; it carries its proof.
+  CONSTRAINT platform_capabilities_available_carries_evidence
+    CHECK (readiness NOT IN ('deployed','production_verified') OR readiness_evidence <> '{}'::jsonb)
+);
+
+-- Sliced from 20260924025555_one_capability_registry_and_accepted_event_continuation.sql.
+CREATE TABLE public.accepted_event_operations (
+  event_kind          text NOT NULL CHECK (event_kind IN ('tournament')),
+  event_id            uuid NOT NULL,
+  parent_event_id     uuid NULL,
+  club_id             uuid NULL,
+  union_id            uuid NULL,
+  accepted_at         timestamptz NOT NULL,
+  accepted_by         uuid NULL,
+  authorization_basis jsonb NOT NULL DEFAULT '{}'::jsonb
+                      CHECK (jsonb_typeof(authorization_basis) = 'object'),
+  capability_versions jsonb NOT NULL DEFAULT '{}'::jsonb
+                      CHECK (jsonb_typeof(capability_versions) = 'object'),
+  continuation        text NOT NULL DEFAULT 'through_conclusion'
+                      CHECK (continuation IN ('through_conclusion')),
+  concluded_at        timestamptz NULL,
+  conclusion          text NULL CHECK (conclusion IN ('completed','cancelled')),
+  PRIMARY KEY (event_kind, event_id),
+  CONSTRAINT accepted_event_operations_conclusion_is_whole
+    CHECK ((concluded_at IS NULL) = (conclusion IS NULL))
+);
+
+CREATE INDEX accepted_event_operations_parent_idx
+  ON public.accepted_event_operations (event_kind, parent_event_id)
+  WHERE parent_event_id IS NOT NULL;
+ALTER TABLE public.platform_capabilities ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.accepted_event_operations ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.platform_capabilities FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON TABLE public.accepted_event_operations FROM PUBLIC, anon, authenticated, service_role;
+GRANT SELECT ON TABLE public.platform_capabilities TO service_role;
+GRANT SELECT ON TABLE public.accepted_event_operations TO service_role;
+
+-- Sliced from 20260929163000_a_diamond_spin_draws_a_whole_prize.sql.
+CREATE TABLE public.poker_diamond_spin_reserve_source (
+  id smallint PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  source_account text NOT NULL CHECK (source_account = 'diamond_house'),
+  max_underwrite_per_spin bigint NOT NULL
+    CHECK (max_underwrite_per_spin >= 1 AND max_underwrite_per_spin <= 2147483647),
+  authorized_by text NOT NULL CHECK (length(btrim(authorized_by)) >= 2),
+  ruling text NOT NULL CHECK (length(btrim(ruling)) >= 10),
+  authorized_at timestamptz NOT NULL DEFAULT now()
+);
+COMMENT ON TABLE public.poker_diamond_spin_reserve_source IS
+  'DIAMOND SPIN RESERVE SOURCE (Phase 9). One row or none, written by a values migration that quotes Dan, never by code. '
+  'It names the Diamond account that underwrites a Spin prize pool above its three entries and receives the entries above a '
+  'smaller pool (the only account the draw can move against today: the house, ca_diamond_house), and the most one Spin may '
+  'take from it. No row: every Diamond Spin is refused at creation and at the draw (diamond_spin_reserve_source_not_authorized). '
+  'CLAUDE.md 10.9: the source and the number are Dan''s.';
+ALTER TABLE public.poker_diamond_spin_reserve_source ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.poker_diamond_spin_reserve_source FROM PUBLIC, anon, authenticated, service_role;
+GRANT SELECT ON TABLE public.poker_diamond_spin_reserve_source TO service_role;
+
+-- Sliced from 20260929163000_a_diamond_spin_draws_a_whole_prize.sql.
+CREATE TABLE public.poker_diamond_spin_contracts (
+  -- No foreign key: adding one takes a lock that stops every tournament write
+  -- for the length of this migration. The creation door writes the contract
+  -- in the same transaction as its tournament, and a tournament is never
+  -- deleted.
+  tournament_id uuid PRIMARY KEY,
+  buy_in bigint NOT NULL CHECK (buy_in >= 1 AND buy_in <= 2147483647),
+  starting_chips integer NOT NULL CHECK (starting_chips >= 1),
+  rake_rate numeric NOT NULL CHECK (rake_rate >= 0 AND rake_rate < 1),
+  rule_manifest jsonb NOT NULL CHECK (jsonb_typeof(rule_manifest) = 'object'),
+  rule_sha256 text NOT NULL CHECK (rule_sha256 ~ '^[0-9a-f]{64}$'),
+  worst_excess bigint NOT NULL CHECK (worst_excess >= 0),
+  required_cover bigint NOT NULL CHECK (required_cover >= worst_excess),
+  created_by uuid,
+  created_at timestamptz NOT NULL DEFAULT transaction_timestamp()
+);
+COMMENT ON TABLE public.poker_diamond_spin_contracts IS
+  'DIAMOND SPIN CONTRACT (Phase 9). The multiplier table a Diamond Spin was created with, validated by '
+  'fn_poker_diamond_spin_contract at its buy-in and pinned by sha256. The draw rolls over this table and nothing else; '
+  'the engine''s compiled manifest cannot change it. worst_excess is the most the source can pay into the pool above the '
+  'three entries; required_cover is what the source must hold for every tier to be drawable (the pool above the entries, '
+  'and a tier''s reserve threshold times its pool - the chip reserve gate, with the event''s own buy-in as its stake).';
+ALTER TABLE public.poker_diamond_spin_contracts ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.poker_diamond_spin_contracts FROM PUBLIC, anon, authenticated, service_role;
+GRANT SELECT ON TABLE public.poker_diamond_spin_contracts TO service_role;
+
 DO $delta$
 BEGIN
   IF to_regclass('public.union_pnl_transaction_frames') IS NULL
@@ -128,7 +242,11 @@ BEGIN
      OR (SELECT attnotnull FROM pg_attribute
           WHERE attrelid='public.tournaments'::regclass AND attname='max_players')
      OR NOT EXISTS (SELECT 1 FROM pg_attribute
-          WHERE attrelid='public.diamond_purchase_lots'::regclass AND attname='arena_reserved') THEN
+          WHERE attrelid='public.diamond_purchase_lots'::regclass AND attname='arena_reserved')
+     OR to_regclass('public.platform_capabilities') IS NULL
+     OR to_regclass('public.accepted_event_operations') IS NULL
+     OR to_regclass('public.poker_diamond_spin_reserve_source') IS NULL
+     OR to_regclass('public.poker_diamond_spin_contracts') IS NULL THEN
     RAISE EXCEPTION 'public.tournaments does not carry the columns and constraints production carries';
   END IF;
   RAISE NOTICE 'PASS: the Diamond tournament lifecycle delta is present';

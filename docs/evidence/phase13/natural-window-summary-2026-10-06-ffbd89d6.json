@@ -1,0 +1,106 @@
+{
+  "declaration": "docs/evidence/phase13/declaration-p13-3-completion.txt",
+  "readersAt": "886cc9655461c1049ece829c1fc86c14e2d3ba75",
+  "release": "ffbd89d60094041d4bd8af49bea28f90b371b469",
+  "releaseCheckedAt": ["2026-10-06T09:02:30Z", "2026-10-06T09:50:21Z"],
+  "releaseStartedAt": "2026-10-06T08:55:19.997907879Z",
+  "schema": "horse-phase13-natural-window-summary-v1",
+  "stage1Sha256": "183b5e03aafc9b2c1a83d4410278eb910164fbb727144e4f019cb520637e25f7",
+  "variants": {
+    "flh": {
+      "record": null,
+      "stage1": {
+        "segments_read": 241745
+      },
+      "stage2": "refused no_records (zero journaled decisions of this variant on the release in the window)"
+    },
+    "flo8": {
+      "record": null,
+      "stage1": {
+        "segments_read": 241748
+      },
+      "stage2": "refused no_records (zero journaled decisions of this variant on the release in the window)"
+    },
+    "nlh": {
+      "record": "docs/evidence/phase13/phase13-completion-2026-10-06-nlh.json",
+      "stage1": {
+        "bomb_records": 1009,
+        "excluded_deep_second_look": 2356,
+        "multiboard_records": 1009,
+        "records": 49375,
+        "segments_read": 241796
+      },
+      "stage2": "written"
+    },
+    "pineapple": {
+      "record": "docs/evidence/phase13/phase13-completion-2026-10-06-pineapple.json",
+      "stage1": {
+        "excluded_deep_second_look": 3,
+        "excluded_discard_decision": 10,
+        "records": 46,
+        "segments_read": 241744
+      },
+      "stage2": "written"
+    },
+    "plo4": {
+      "record": "docs/evidence/phase13/phase13-completion-2026-10-06-plo4.json",
+      "stage1": {
+        "bomb_records": 248,
+        "excluded_deep_second_look": 876,
+        "multiboard_records": 248,
+        "records": 40279,
+        "segments_read": 241758
+      },
+      "stage2": "written"
+    },
+    "plo5": {
+      "record": "docs/evidence/phase13/phase13-completion-2026-10-06-plo5.json",
+      "stage1": {
+        "bomb_records": 318,
+        "excluded_deep_second_look": 567,
+        "multiboard_records": 318,
+        "records": 23327,
+        "segments_read": 241747
+      },
+      "stage2": "written"
+    },
+    "plo6": {
+      "record": "docs/evidence/phase13/phase13-completion-2026-10-06-plo6.json",
+      "stage1": {
+        "bomb_records": 87,
+        "excluded_deep_second_look": 608,
+        "multiboard_records": 87,
+        "records": 23175,
+        "segment_retired_during_scan": 1,
+        "segments_read": 241746
+      },
+      "stage2": "written"
+    },
+    "plo8": {
+      "record": "docs/evidence/phase13/phase13-completion-2026-10-06-plo8.json",
+      "stage1": {
+        "bomb_records": 191,
+        "excluded_deep_second_look": 132,
+        "multiboard_records": 191,
+        "records": 2171,
+        "segments_read": 241744
+      },
+      "stage2": "written"
+    },
+    "short_deck": {
+      "record": "docs/evidence/phase13/phase13-completion-2026-10-06-short_deck.json",
+      "stage1": {
+        "bomb_records": 9,
+        "excluded_deep_second_look": 5,
+        "multiboard_records": 9,
+        "records": 157,
+        "segments_read": 241746
+      },
+      "stage2": "written"
+    }
+  },
+  "window": {
+    "from": "2026-10-06T09:02:00Z",
+    "to": "2026-10-06T09:50:00Z"
+  }
+}

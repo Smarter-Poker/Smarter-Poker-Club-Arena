@@ -118,6 +118,44 @@
       "url": "https://opengameart.org/content/applause-in-a-large-hall-or-church",
       "dir": "oga-applause",
       "download": "https://opengameart.org/sites/default/files/applause-clapping-church-crowd-immersive.wav"
+    },
+    "oga-creature-sfx": {
+      "kind": "opengameart",
+      "slug": "80-cc0-creature-sfx",
+      "title": "OpenGameArt - 80 CC0 creature SFX",
+      "author": "rubberduck (opengameart.org/users/rubberduck)",
+      "license": "CC0-1.0",
+      "url": "https://opengameart.org/content/80-cc0-creature-sfx",
+      "zip": "https://opengameart.org/sites/default/files/80-CC0-creature-SFX_0.zip",
+      "dir": "80-cc0-creature-sfx/pack"
+    },
+    "oga-tiny-creature-laugh": {
+      "kind": "opengameart",
+      "title": "OpenGameArt - Tiny creatures sounds",
+      "author": "fvcalderan (opengameart.org/users/fvcalderan)",
+      "license": "CC0-1.0",
+      "url": "https://opengameart.org/content/tiny-creatures-sounds",
+      "download": "https://opengameart.org/sites/default/files/laugh.ogg",
+      "dir": "oga-tiny-creature-laugh"
+    },
+    "oga-gameover-trumpet": {
+      "kind": "opengameart",
+      "title": "OpenGameArt - Game Over Trumpet SFX",
+      "author": "0new4y (opengameart.org/users/0new4y)",
+      "license": "CC0-1.0",
+      "url": "https://opengameart.org/content/game-over-trumpet-sfx",
+      "download": "https://opengameart.org/sites/default/files/losetrumpet_0.ogg",
+      "dir": "oga-gameover-trumpet"
+    },
+    "oga-more-sounds": {
+      "kind": "opengameart",
+      "slug": "MoreSounds",
+      "title": "OpenGameArt - 202 More Sound Effects",
+      "author": "OwlishMedia (opengameart.org/users/owlishmedia)",
+      "license": "CC0-1.0",
+      "url": "https://opengameart.org/content/202-more-sound-effects",
+      "zip": "https://opengameart.org/sites/default/files/MoreSounds.zip",
+      "dir": "oga-more-sounds"
     }
   },
   "cues": {
@@ -1361,6 +1399,134 @@
           "gain": 1
         }
       ]
+    },
+    "laugh_short": {
+      "$comment": "laughing_emoji 867: CC0 character laugh under the two laughter poses; 1.35s ends before the later laugh swell.",
+      "levelDb": -4,
+      "source": "oga-tiny-creature-laugh",
+      "layers": [
+        {
+          "file": "laugh.ogg",
+          "at": 0,
+          "gain": 1
+        }
+      ],
+      "trimEnd": 1.35
+    },
+    "laugh_swell": {
+      "$comment": "laughing_emoji 2867: the visible final laugh swell; trimmed to 1.2s so it resolves before the 4200ms cut.",
+      "levelDb": -4,
+      "source": "oga-tiny-creature-laugh",
+      "layers": [
+        {
+          "file": "laugh.ogg",
+          "at": 0,
+          "gain": 1
+        }
+      ],
+      "trimEnd": 1.2
+    },
+    "snore_soft": {
+      "$comment": "sleeping 3500: short recorded snore under the held Zzz pose, resolves before the 4000ms cut.",
+      "levelDb": -5,
+      "source": "oga-creature-sfx",
+      "layers": [
+        {
+          "file": "snore.ogg",
+          "at": 0,
+          "gain": 1
+        }
+      ]
+    },
+    "scream_short": {
+      "$comment": "screaming 900: recorded creature scream starts with the open-mouth pose and resolves during the shake.",
+      "levelDb": -4,
+      "source": "oga-creature-sfx",
+      "layers": [
+        {
+          "file": "scream_01.ogg",
+          "at": 0,
+          "gain": 1
+        }
+      ]
+    },
+    "yawn_breath": {
+      "$comment": "sloth 2700: a breathy recorded exhale on the wide yawn; trimmed to land with the 3200ms settle.",
+      "levelDb": -7,
+      "source": "oga-creature-sfx",
+      "layers": [
+        {
+          "file": "breath.ogg",
+          "at": 0,
+          "gain": 1
+        }
+      ],
+      "trimEnd": 0.5
+    },
+    "cheer_ooh": {
+      "$comment": "party_face 1167 and rat_card 3000: a brief voiced cheer/laugh response timed to each character reaction.",
+      "levelDb": -5,
+      "source": "oga-creature-sfx",
+      "layers": [
+        {
+          "file": "ooh.ogg",
+          "at": 0,
+          "gain": 1
+        }
+      ],
+      "trimEnd": 0.65
+    },
+    "sigh_soft": {
+      "$comment": "facepalm 1400: quiet breath release after the slap; trimmed to resolve under the eye-peek beat.",
+      "levelDb": -8,
+      "source": "oga-creature-sfx",
+      "layers": [
+        {
+          "file": "breath.ogg",
+          "at": 0,
+          "gain": 1
+        }
+      ],
+      "trimEnd": 0.55
+    },
+    "comic_burp": {
+      "$comment": "vomit_rainbow 1300: brief comic burp lands as the cheeks puff, before the rainbow pour.",
+      "levelDb": -5,
+      "source": "oga-creature-sfx",
+      "layers": [
+        {
+          "file": "burp_01.ogg",
+          "at": 0,
+          "gain": 1
+        }
+      ],
+      "trimEnd": 0.65
+    },
+    "sad_trombone": {
+      "$comment": "surrender 1200 and loser_hand 1800: licensed game-over trumpet punctuates the droop / first word without extending past the gag.",
+      "levelDb": -5,
+      "source": "oga-gameover-trumpet",
+      "layers": [
+        {
+          "file": "losetrumpet.ogg",
+          "at": 0,
+          "gain": 1
+        }
+      ],
+      "trimEnd": 1.1
+    },
+    "flag_flap": {
+      "$comment": "surrender 2800: short CC0 cloth flutter repeats only during the visible flag wave and stops at the 4000ms cut.",
+      "levelDb": -9,
+      "source": "oga-more-sounds",
+      "layers": [
+        {
+          "file": "Cloth/Cloth_05.wav",
+          "at": 0,
+          "gain": 1
+        }
+      ],
+      "trimEnd": 0.396
     }
   }
 }

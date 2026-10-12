@@ -79,6 +79,8 @@ import type { KillTableRule } from '../../utils/killPot';
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 export interface TableModalsLayerProps {
+  /** Keyboard ownership follows the visible table, including off-route tabs. */
+  isActive?: boolean;
   // Core context
   tableId: string | undefined;
   userId: string;
@@ -346,17 +348,7 @@ export interface TableModalsLayerProps {
   // Bust Rebuy
   bustRebuyOpen: boolean;
   bustWalletBalance: number | null;
-  /**
-   * Audit 2026-08-25: also unread here, but for a different reason than the
-   * three above — this one has real work to do and nowhere to do it. The bust
-   * rebuy renders through BuyInModal, and BuyInModal has no `isProcessing`
-   * prop at all (RebuyModal does, and gets one). So the confirm button on a
-   * bust rebuy stays live while the buy-in is in flight and can be pressed
-   * twice. The server's `atomic_table_buyin` is the guard that actually stops
-   * a double buy-in; what the player loses is the feedback, not the chips.
-   * Fixing it means adding `isProcessing` to BuyInModal, which is another
-   * agent's file this pass — carried in the report instead.
-   */
+  /** External purchase activity also disables the cash rebuy controls. */
   bustRebuyProcessing: boolean;
   onCancelBustRebuy: () => void;
   onRetryBustBalance: () => void;
@@ -402,6 +394,9 @@ export interface TableModalsLayerProps {
     isCurrentUser?: boolean;
   }>;
   leaderboardPeriod: 'session' | 'day' | 'week' | 'month' | 'allTime';
+  /** A Diamond table's board (Phase 10, line 1): still asking, answered, or
+   *  could not tell. A chip table passes nothing and renders as it always has. */
+  leaderboardDiamondState?: 'loading' | 'ready' | 'failed';
   onCloseLeaderboard: () => void;
   onLeaderboardPeriodChange: (p: 'session' | 'day' | 'week' | 'month' | 'allTime') => void;
 
@@ -445,6 +440,9 @@ export interface TableModalsLayerProps {
   // Share Hand
   showShareHand: boolean;
   sharedHandData: any;
+  /** The hand_history id behind `sharedHandData` when the share came from
+      a stored record (Previous Hand detail); null for the live snapshot. */
+  sharedHandId?: string | null;
   onCloseShareHand: () => void;
 
   // Tournament Add-On
@@ -651,6 +649,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     // Bust Rebuy
     bustRebuyOpen,
     bustWalletBalance,
+    bustRebuyProcessing,
     onCancelBustRebuy,
     onRetryBustBalance,
     onConfirmBustRebuy,
@@ -671,6 +670,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     showLeaderboard,
     leaderboardPlayers,
     leaderboardPeriod,
+    leaderboardDiamondState,
     onCloseLeaderboard,
     onLeaderboardPeriodChange,
     // Leave Confirm
@@ -688,6 +688,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     // Share Hand
     showShareHand,
     sharedHandData,
+    sharedHandId = null,
     onCloseShareHand,
     // Add-On
     addOnPeriod,
@@ -707,6 +708,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     onDismissAnnouncement,
     // Tournament Winner
     tournamentWinner,
+    isActive = true,
     onDismissTournamentWinner,
     // Hand History
     showHandHistory,
@@ -1146,6 +1148,10 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         onAddChips={onAddChips}
         currentStack={heroStack}
         accountBalance={accountBalance}
+        /* The in-table Retry for an unread balance (cashier launch B-1). The
+           buy-in sheet already had it; without it here the top-up sheet sat on
+           "Balance Unavailable" with no way forward but closing. */
+        onRetryBalance={onRetryAccountBalance}
         maxBuyIn={maxBuyIn}
         maxStack={maxBuyIn}
       />
@@ -1154,6 +1160,8 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
            `fn_poker_diamond_top_up`, so the prompt is no longer chip-only.
            `currency` is what makes the slider, the cap and the balance read in
            whole Diamonds, exactly as the ordinary buy-in sheet does. */
+        purchaseKind="rebuy"
+        externalProcessing={bustRebuyProcessing}
         isOpen={bustRebuyOpen && (arenaAsset === 'chips' || arenaAsset === 'diamonds')}
         currency={arenaAsset === 'diamonds' ? 'diamonds' : ''}
         onClose={onCancelBustRebuy}
@@ -1212,6 +1220,9 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         players={leaderboardPlayers}
         period={leaderboardPeriod}
         onPeriodChange={onLeaderboardPeriodChange}
+        isLoading={leaderboardDiamondState === 'loading'}
+        unavailable={leaderboardDiamondState === 'failed'}
+        currency={leaderboardDiamondState ? 'Diamonds' : undefined}
       />
 
       {/* Leave Table Confirmation */}
@@ -1308,7 +1319,12 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
 
       {/* Share Hand */}
       {showShareHand && sharedHandData && (
-        <ShareHand isOpen={showShareHand} onClose={onCloseShareHand} hand={sharedHandData} />
+        <ShareHand
+          isOpen={showShareHand}
+          onClose={onCloseShareHand}
+          hand={sharedHandData}
+          handId={sharedHandId}
+        />
       )}
 
       {/* Tournament Add-On Modal */}
@@ -1335,7 +1351,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
           rebuyCost={rebuyData.cost}
           rebuyFee={rebuyData.fee ?? 0}
           rebuyChips={rebuyData.chips}
-          walletBalance={accountBalance || 0}
+          walletBalance={accountBalance}
           onConfirm={onConfirmRebuy}
           onClose={onCloseRebuyModal}
           isProcessing={rebuyProcessing}
@@ -1376,6 +1392,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
       {isTournament && tournamentWinner && (
         <TournamentWinnerOverlay
           isWinner={true}
+          isActive={isActive}
           prize={tournamentWinner.prize}
           unitCents={tournamentPrizeUnitCents}
           tournamentName={tournamentWinner.name}

@@ -48,7 +48,23 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
+/* Being inside the app is two facts now: the APP BUILD (IS_NATIVE_BUILD, a
+   compile-time constant, so the web build carries none of the native code -
+   docs/changelog/2026-09-29-the-web-build-carries-no-app-code.md) and the
+   Capacitor bridge at runtime. pretendNative() sets both. */
+const appBuild = vi.hoisted(() => ({ native: false }));
+vi.mock('../src/lib/appBase', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/lib/appBase')>();
+  return {
+    ...actual,
+    get IS_NATIVE_BUILD() {
+      return appBuild.native;
+    },
+  };
+});
+
 function pretendNative(on: boolean) {
+  appBuild.native = on;
   const w = window as unknown as { Capacitor?: unknown };
   if (on) w.Capacitor = { isNativePlatform: () => true, getPlatform: () => 'ios' };
   else delete w.Capacitor;

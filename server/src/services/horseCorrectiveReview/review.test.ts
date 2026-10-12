@@ -1,15 +1,17 @@
 import { describe, expect, it, vi } from 'vitest';
-import { journalHash } from '../horseDecisionJournal/record.js';
+import { sign } from 'node:crypto';
+import { horseJournalJson, journalHash } from '../horseDecisionJournal/record.js';
 import * as journalRecord from '../horseDecisionJournal/record.js';
 import { reviewHorseCorrectiveHand } from './review.js';
-import { evidenceDigest, verifyCorrectiveAuthority } from './authority.js';
+import { authoritySigningBytes, evidenceDigest, verifyCorrectiveAuthority } from './authority.js';
 import {
   correctiveFixture,
   authorize,
   HAND_KEY,
   TRUSTED_KEY_DIGEST,
 } from './fixture.test-support.js';
-import type { CorrectiveReviewInput } from './contract.js';
+import type { CorrectiveReviewInput, CorrectiveReviewAuthority } from './contract.js';
+import { CORRECTIVE_DOMAINS, correctiveDecisionDomain } from './domain.js';
 
 function input(f = correctiveFixture()): CorrectiveReviewInput {
   return {
@@ -324,4 +326,267 @@ describe('source-bound private corrective review', () => {
       expect(reviewHorseCorrectiveHand(input(f)).actors[0]?.eligibility).toBe('over_10bb');
     }
   );
+
+  describe('Phase 14.4 domain, generation, expiry and evidence-class binding', () => {
+    const NOW = Date.parse('2026-10-07T12:00:00.000Z');
+    const signed = (
+      f: ReturnType<typeof correctiveFixture>,
+      overrides: Partial<CorrectiveReviewAuthority>,
+      references: readonly unknown[] = [f.reference]
+    ) => {
+      const a = authorize(f.commitments, references, overrides);
+      return { ...input(f), references: [...references], authority: a.authority };
+    };
+
+    it('binds the candidate to the decision domain, its menu and the reference provenance', () => {
+      const f = correctiveFixture('plo4', 'mtt');
+      const result = reviewHorseCorrectiveHand(input(f), { nowMs: NOW });
+      const candidate = decision(result)!.candidate!;
+      expect(candidate).toMatchObject({
+        status: 'proposed_inactive',
+        activationAllowed: false,
+        domain: { variant: 'plo4', format: 'mtt', mode: 'tournament' },
+        samplingContractDigest: f.reference.samplingContractDigest,
+        producerDigest: f.reference.producerDigest,
+        evidenceClass: 'synthetic_fixture',
+      });
+      expect(candidate.binding).toEqual(f.reference.binding);
+      expect(candidate.menu).toEqual(f.reference.alternatives.map((a) => a.choice));
+      expect(result.handKey).toBe(HAND_KEY);
+    });
+
+    it.each([
+      ['variant', { variant: 'plo5' }],
+      ['format', { format: 'sng', mode: 'tournament' }],
+      ['mode', { mode: 'tournament' }],
+    ] as const)('refuses a reference whose %s does not match the decision', (_label, change) => {
+      const f = correctiveFixture();
+      Object.assign(f.reference.domain, change);
+      const d = decision(reviewHorseCorrectiveHand(input(f), { nowMs: NOW }));
+      expect(d).toMatchObject({ candidate: null, disposition: 'reference_unavailable' });
+      // An inconsistent mode is not a domain at all; a consistent other one is a mismatch.
+      expect(['reference_domain_mismatch', 'reference_domain_invalid']).toContain(d!.reason);
+      if (_label !== 'mode') expect(d!.reason).toBe('reference_domain_mismatch');
+    });
+
+    it('refuses a reference whose matching domain the signed authority does not cover', () => {
+      const f = correctiveFixture('nlh', 'cash');
+      const result = reviewHorseCorrectiveHand(
+        signed(f, { domains: [{ variant: 'nlh', format: 'mtt', mode: 'tournament' }] }),
+        { nowMs: NOW }
+      );
+      expect(decision(result)).toMatchObject({
+        disposition: 'reference_unavailable',
+        reason: 'reference_domain_not_authorized',
+        candidate: null,
+      });
+      expect(result.status).toBe('incomplete');
+    });
+
+    it.each([
+      ['no variant', { format: 'cash', gameMode: 'cash' }],
+      ['no format', { gameVariant: 'nlh', gameMode: 'cash' }],
+      ['no game mode', { gameVariant: 'nlh', format: 'cash' }],
+      [
+        'a cash format in tournament mode',
+        { gameVariant: 'nlh', format: 'cash', gameMode: 'tournament' },
+      ],
+      ['a tournament format in cash mode', { gameVariant: 'nlh', format: 'mtt', gameMode: 'cash' }],
+      ['an unknown variant', { gameVariant: 'razz', format: 'cash', gameMode: 'cash' }],
+      ['an upper-case variant', { gameVariant: 'NLH', format: 'cash', gameMode: 'cash' }],
+    ] as const)('reads no domain from an original decision with %s (never a default)', (_l, gs) => {
+      expect(correctiveDecisionDomain(gs)).toBeNull();
+    });
+
+    it('reads every known variant and format as its own domain', () => {
+      expect(CORRECTIVE_DOMAINS).toHaveLength(45);
+      for (const d of CORRECTIVE_DOMAINS)
+        expect(
+          correctiveDecisionDomain({ gameVariant: d.variant, format: d.format, gameMode: d.mode })
+        ).toEqual(d);
+    });
+
+    it.each([
+      ['an expired authority', { expiresAt: '2026-10-07T12:00:00.000Z' }, 'authority_expired'],
+      ['an inexact expiry', { expiresAt: '2026-10-08' }, 'authority_expiry_invalid'],
+      ['generation zero', { approvalGeneration: 0 }, 'authority_generation_invalid'],
+      ['a negative generation', { approvalGeneration: -3 }, 'authority_generation_invalid'],
+      ['a fractional generation', { approvalGeneration: 1.5 }, 'authority_generation_invalid'],
+      ['no signed domains', { domains: [] }, 'authority_domains_invalid'],
+      [
+        'a malformed signed domain',
+        { domains: [{ variant: 'nlh', format: 'cash', mode: 'tournament' }] },
+        'authority_domains_invalid',
+      ],
+      [
+        'a duplicated signed domain',
+        {
+          domains: [
+            { variant: 'nlh', format: 'cash', mode: 'cash' },
+            { variant: 'nlh', format: 'cash', mode: 'cash' },
+          ],
+        },
+        'authority_domains_invalid',
+      ],
+    ] as const)('refuses %s by name even with a valid signature', (_label, overrides, reason) => {
+      const f = correctiveFixture();
+      const i = signed(f, overrides as Partial<CorrectiveReviewAuthority>);
+      expect(i.authority).not.toBeUndefined();
+      const result = reviewHorseCorrectiveHand(i, { nowMs: NOW });
+      expect(result.status).toBe('incomplete');
+      expect(result.reasons).toContain(reason);
+      expect(result.actors[0]?.eligibility).toBe('unknown');
+      expect(result.actors.flatMap((a) => a.decisions).every((d) => d.candidate === null)).toBe(
+        true
+      );
+    });
+
+    it('admits an authority one millisecond before its expiry', () => {
+      const f = correctiveFixture();
+      const i = signed(f, { expiresAt: '2026-10-07T12:00:00.001Z' });
+      expect(decision(reviewHorseCorrectiveHand(i, { nowMs: NOW }))?.disposition).toBe('finding');
+    });
+
+    it('refuses mixed synthetic and reviewed evidence between a reference and its authority', () => {
+      const f = correctiveFixture();
+      f.reference.evidenceClass = 'reviewed_reference';
+      const result = reviewHorseCorrectiveHand(input(f), { nowMs: NOW });
+      expect(result.reasons).toContain('mixed_synthetic_and_reviewed_evidence');
+      expect(result.evidenceClass).toBe('synthetic_fixture');
+      expect(result.status).toBe('incomplete');
+      expect(decision(result)?.candidate ?? null).toBeNull();
+    });
+
+    it('refuses mixed evidence across references, even an unmatched one', () => {
+      const f = correctiveFixture();
+      const stray = structuredClone(f.reference) as typeof f.reference;
+      stray.evidenceClass = 'reviewed_reference';
+      stray.binding.decisionEventId = 'unrelated-decision';
+      const result = reviewHorseCorrectiveHand(signed(f, {}, [f.reference, stray]), {
+        nowMs: NOW,
+      });
+      expect(result.reasons).toContain('mixed_synthetic_and_reviewed_evidence');
+      expect(result.status).toBe('incomplete');
+      expect(decision(result)?.candidate ?? null).toBeNull();
+    });
+
+    it('a reviewed-labelled authority with a synthetic reference is mixed, never a real-history claim', () => {
+      const f = correctiveFixture();
+      const result = reviewHorseCorrectiveHand(signed(f, { evidenceClass: 'reviewed_reference' }), {
+        nowMs: NOW,
+      });
+      expect(result.reasons).toContain('mixed_synthetic_and_reviewed_evidence');
+      expect(result.evidenceClass).toBe('synthetic_fixture');
+      expect(decision(result)?.candidate ?? null).toBeNull();
+    });
+
+    it.each([
+      ['v1', (r: any): void => void (r.version = 1), 'reference_version_unsupported'],
+      ['missing domain', (r: any): void => void delete r.domain, 'reference_domain_invalid'],
+      [
+        'unknown variant',
+        (r: any): void => void (r.domain.variant = 'razz'),
+        'reference_domain_invalid',
+      ],
+      [
+        'extra domain key',
+        (r: any): void => void (r.domain.stakes = 'any'),
+        'reference_domain_invalid',
+      ],
+      [
+        'missing sampling contract',
+        (r: any): void => void delete r.samplingContractDigest,
+        'reference_provenance_missing',
+      ],
+      [
+        'malformed producer',
+        (r: any): void => void (r.producerDigest = 'abc'),
+        'reference_provenance_missing',
+      ],
+      [
+        'unknown evidence class',
+        (r: any): void => void (r.evidenceClass = 'approximate'),
+        'reference_evidence_class_invalid',
+      ],
+    ] as const)('refuses a reference with %s by name', (_label, mutate, reason) => {
+      const f = correctiveFixture();
+      mutate(f.reference);
+      const result = reviewHorseCorrectiveHand(input(f), { nowMs: NOW });
+      expect(decision(result)).toMatchObject({
+        disposition: 'reference_unavailable',
+        reason,
+        candidate: null,
+      });
+      expect(result.rejectedReferences[0]?.referenceId).toBe(evidenceDigest(f.reference));
+    });
+
+    it('never verifies a v1 envelope or a v2 authority signed under the v1 message', () => {
+      const f = correctiveFixture();
+      const a = authorize(f.commitments, [f.reference]);
+      const v1 = {
+        version: 1,
+        role: a.authority.role,
+        handKey: a.authority.handKey,
+        qualificationId: a.authority.qualificationId,
+        evidenceClass: a.authority.evidenceClass,
+        commitmentDigest: a.authority.commitmentDigest,
+        referenceDigests: [...a.authority.referenceDigests],
+      };
+      const v1Signature = sign(
+        null,
+        Buffer.from(horseJournalJson(['horse-corrective-review-authority-v1', v1])),
+        a.privateKey
+      ).toString('base64');
+      expect(
+        verifyCorrectiveAuthority(
+          { authority: v1, publicKeyPem: a.envelope.publicKeyPem, signature: v1Signature },
+          TRUSTED_KEY_DIGEST
+        )
+      ).toBeNull();
+      const v2UnderOldMessage = JSON.parse(JSON.stringify(a.envelope.authority));
+      const oldMessage = sign(
+        null,
+        Buffer.from(horseJournalJson(['horse-corrective-review-authority-v1', v2UnderOldMessage])),
+        a.privateKey
+      ).toString('base64');
+      expect(
+        verifyCorrectiveAuthority(
+          { ...a.envelope, authority: v2UnderOldMessage, signature: oldMessage },
+          TRUSTED_KEY_DIGEST
+        )
+      ).toBeNull();
+      // The current envelope verifies; the signed bytes name the v2 message.
+      expect(verifyCorrectiveAuthority(a.envelope, TRUSTED_KEY_DIGEST)).not.toBeNull();
+      expect(authoritySigningBytes(a.envelope.authority).toString()).toContain(
+        'horse-corrective-review-authority-v2'
+      );
+    });
+
+    it.each([
+      ['approvalGeneration', (x: any): void => void (x.approvalGeneration = 2)],
+      ['expiresAt', (x: any): void => void (x.expiresAt = '2100-01-01T00:00:00.000Z')],
+      ['domains', (x: any): void => void x.domains.pop()],
+      ['a domain field', (x: any): void => void (x.domains[0].format = 'mtt')],
+    ] as const)('the signature covers %s', (_label, mutate) => {
+      const f = correctiveFixture();
+      const a = authorize(f.commitments, [f.reference]);
+      mutate(a.envelope.authority);
+      expect(verifyCorrectiveAuthority(a.envelope, TRUSTED_KEY_DIGEST)).toBeNull();
+    });
+
+    it('trust stays out of the envelope: no trust key, generation or approval is read from it', () => {
+      const f = correctiveFixture();
+      const a = authorize(f.commitments, [f.reference]);
+      const withTrust = {
+        ...a.envelope,
+        trustedPublicKeyDigest: TRUSTED_KEY_DIGEST,
+        activationAllowed: true,
+      };
+      expect(verifyCorrectiveAuthority(withTrust, undefined)).toBeNull();
+      const verified = verifyCorrectiveAuthority(withTrust, TRUSTED_KEY_DIGEST)!;
+      expect(Object.keys(verified)).not.toContain('trustedPublicKeyDigest');
+      expect(Object.keys(verified)).not.toContain('activationAllowed');
+      expect(Object.isFrozen(verified.domains)).toBe(true);
+    });
+  });
 });

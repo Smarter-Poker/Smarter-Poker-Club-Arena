@@ -23,7 +23,10 @@ import { useGameManagementRealtime } from '../hooks/useGameManagementRealtime';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useDialogEscape } from '../hooks/useDialogEscape';
 import { supabase } from '../lib/supabase';
+import { withGameManagementReadDeadline } from '../lib/gameManagementReadDeadline';
+import { GAME_CREATION_DENIED } from '../lib/gameCreationAccess';
 import { fetchGameCreationAccess } from '../services/GameAccessService';
+import type { GameCreationAccess } from '../lib/gameCreationAccess';
 import {
   gameManagementService,
   type ManagedGameCommandReceipt,
@@ -38,6 +41,9 @@ import { unionService } from '../services/UnionService';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { mergeById } from '../utils/mergeById';
 import { reportError } from '../utils/errorReporter';
+import { safeErrorMessage } from '../utils/safeErrorMessage';
+import { titleCase } from '../utils/titleCase';
+import { holdInAppNavigation } from '../lib/navigationGuard';
 import CreateTablePage, { isCreateTableGameType } from './CreateTablePage';
 import TableConfigPage from './TableConfigPage';
 import { SpadeConsole } from '../components/console/SpadeConsole';
@@ -58,6 +64,26 @@ import { DAY_COMPLETE_LABEL, isBaggedStatus } from '../utils/multiDaySchedule';
 type Scope = 'club' | 'union';
 type View = 'all' | 'running' | 'scheduled' | 'closed';
 type ManagementSurface = 'games' | 'ticker' | 'messages';
+
+/**
+ * EACH SECTION IS ITS OWN PAGE (Dan 2026-09-20): "IT DOESN'T NEED TO BE A ONE
+ * TO ONE CLONE WITH EVERYTHING CONNECTED... JUST THE SAME LOOK AND FEEL!! DO
+ * NOT ATTACH EVERYTHING TOGETHER WITH THE SAME DISPLAY WINDOWS."
+ *
+ * The Game Board, Ticker Management and Club Messages used to be three
+ * interchangeable screens inside ONE console whose title changed. They are
+ * three addresses now - /table-management, ?section=ticker and
+ * ?section=messages - and each one is drawn on its own approved frame family.
+ * One route keeps this component mounted across all three, so the realtime
+ * feed, access state and draft guard below are shared while the pictures are
+ * not. A query rather than a path segment on purpose: the club and union
+ * routes, their guards and every law that reads them stay exactly as they are.
+ */
+function surfaceFromSection(section: string | null): ManagementSurface {
+  if (section === 'ticker') return 'ticker';
+  if (section === 'messages') return 'messages';
+  return 'games';
+}
 
 interface HostClub {
   id: string;
@@ -284,20 +310,20 @@ export function ScheduleCloseDialog({
           subtitle="Occupied Or Registered Games Stay Locked"
           pill="Guarded"
           pillInk="gold"
-          crest="club"
+          crest="flat"
           plates={{
             secondary: { label: 'Cancel', type: 'button', onClick: onClose, disabled: busy },
             primary: {
               label: busy ? 'Scheduling…' : 'Schedule Close',
               type: 'submit',
               disabled: busy || !executeAt,
-              ink: 'blue',
+              ink: 'white',
             },
           }}
         >
           <p className="sc-copy sc-copy--center">
-            {game.name} Will Close Only If Its Contract Is Unchanged And No Players Are Seated Or
-            Registered When The Command Runs.
+            {titleCase(game.name)} Will Close Only If Its Contract Is Unchanged And No Players Are
+            Seated Or Registered When The Command Runs.
           </p>
           <label className={styles.dialogField}>
             Execute At
@@ -461,14 +487,14 @@ export function EditGameDialog({
           titleId="edit-game-title"
           subtitle="Structural Changes Lock When Play Begins"
           pill={game.kind === 'table' ? 'Table' : 'Event'}
-          crest="club"
+          family="riveted"
           plates={{
             secondary: { label: 'Cancel', type: 'button', onClick: requestClose, disabled: busy },
             primary: {
               label: busy ? 'Saving…' : 'Save Changes',
               type: 'submit',
               disabled: busy,
-              ink: 'blue',
+              ink: 'white',
             },
           }}
         >
@@ -607,11 +633,11 @@ export function ContractHistoryDialog({
         <SpadeConsole
           onClose={onClose}
           eyebrow="Published Contract History"
-          title={game.name}
+          title={titleCase(game.name)}
           titleId="contract-title"
           subtitle="Hashed, Versioned, Append-Only"
           pill={`V${game.contract?.version || versions[0]?.version || 0}`}
-          crest="diamond"
+          family="shark"
           plates={{ primary: { label: 'Close', type: 'button', onClick: onClose } }}
         >
           <p className="sc-copy sc-copy--center">
@@ -622,7 +648,7 @@ export function ContractHistoryDialog({
             <div className={styles.readinessGrid} aria-label="Tournament Guarantee Readiness">
               <span>
                 <small>Readiness</small>
-                <strong>{game.contract.readiness.state.replace(/_/g, ' ')}</strong>
+                <strong>{titleCase(game.contract.readiness.state.replace(/_/g, ' '))}</strong>
               </span>
               <span>
                 <small>Effective Guarantee</small>
@@ -670,7 +696,7 @@ export function ContractHistoryDialog({
                     <code>{version.contractHash.slice(0, 12)}</code>
                   </summary>
                   <div className={styles.contractMeta}>
-                    <span>{version.changeReason.replace(/_/g, ' ')}</span>
+                    <span>{titleCase(version.changeReason.replace(/_/g, ' '))}</span>
                     <span>SHA-256 {version.contractHash}</span>
                   </div>
                   <pre>{JSON.stringify(version.contract, null, 2)}</pre>
@@ -702,6 +728,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   const requestedGameType =
     requestedCreate === 'table' && isCreateTableGameType(gameParam) ? gameParam : null;
   const [allowed, setAllowed] = useState<boolean | null>(null);
+  const [clubAccess, setClubAccess] = useState<GameCreationAccess | null>(null);
   const [scopeId, setScopeId] = useState<string | null>(null);
   const [scopeName, setScopeName] = useState(scope === 'union' ? 'Union' : 'Club');
   const [hosts, setHosts] = useState<HostClub[]>([]);
@@ -715,12 +742,14 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
     closedWithinHorizon: 0,
     closedHorizonDays: 7,
   });
+  const [countsKnown, setCountsKnown] = useState(false);
   const [nextCursor, setNextCursor] = useState<ManagedGameListCursor | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [view, setView] = useState<View>('all');
-  const [surface, setSurface] = useState<ManagementSurface>('games');
+  // The section is read from the address, never held as a private tab.
+  const surface = surfaceFromSection(searchParams.get('section'));
   const [surfaceDirty, setSurfaceDirty] = useState(false);
   const [editing, setEditing] = useState<ManagedGame | null>(null);
   const [scheduling, setScheduling] = useState<ManagedGame | null>(null);
@@ -744,8 +773,11 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   */
   const [healthFailed, setHealthFailed] = useState(false);
   const loadEpochRef = useRef(0);
+  const contractEpochRef = useRef(0);
   const loadedRouteRef = useRef('');
   const loadedViewRef = useRef<View>('all');
+  /** Includes union member clubs, which are labels on rows but never creation hosts. */
+  const hostNamesRef = useRef<Record<string, string>>({});
   /** Latest rows, so the refresh below never closes over a stale board. */
   const gamesRef = useRef<ManagedGame[]>([]);
   /** Games named by events since the last flush, deduplicated by kind and id. */
@@ -786,7 +818,9 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
     setBusyKeys(new Set(busyKeysRef.current));
   }, []);
 
-  const clearCreate = () => setSearchParams({}, { replace: true });
+  // Closing a creator keeps the operator on the section they are on.
+  const clearCreate = () =>
+    setSearchParams(surface === 'games' ? {} : { section: surface }, { replace: true });
   const openTableSelector = () => setSearchParams({ create: 'table' }, { replace: true });
   const openTableConfig = (gameTypeId: string) =>
     setSearchParams({ create: 'table', game: gameTypeId }, { replace: true });
@@ -799,6 +833,54 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   const load = useCallback(
     async (silent = false) => {
       if (!user?.id) return;
+      /*
+       * Invalidate the previous answer BEFORE consulting the in-flight
+       * coalescer. A route or bucket can change while the old request is still
+       * running; if its epoch is not retired here, that old response is still
+       * considered current and can briefly publish on the new page.
+       */
+      const routeKey = `${scope}:${scope === 'union' ? unionRef || unionId || '' : clubId || ''}`;
+      const routeChanged = loadedRouteRef.current !== routeKey;
+      const viewChanged = loadedViewRef.current !== view;
+      if (routeChanged || viewChanged) loadEpochRef.current += 1;
+      if (viewChanged) {
+        loadedViewRef.current = view;
+        setGames([]);
+        setNextCursor(null);
+      }
+      if (routeChanged) {
+        loadedRouteRef.current = routeKey;
+        contractEpochRef.current += 1;
+        hostNamesRef.current = {};
+        setAllowed(null);
+        setClubAccess(null);
+        setScopeId(null);
+        setHosts([]);
+        setHostClubId('');
+        setGames([]);
+        setCounts({
+          total: 0,
+          live: 0,
+          scheduled: 0,
+          closed: 0,
+          closedWithinHorizon: 0,
+          closedHorizonDays: 7,
+        });
+        setCountsKnown(false);
+        setNextCursor(null);
+        setLoadingMore(false);
+        setHealth(null);
+        setHealthFailed(false);
+        setSurfaceDirty(false);
+        setEditing(null);
+        setScheduling(null);
+        setContractGame(null);
+        setContractVersions([]);
+        setContractLoading(false);
+        busyKeysRef.current.clear();
+        setBusyKeys(new Set());
+      }
+      if (!silent || routeChanged || viewChanged) setLoading(true);
       // A slug in the URL is still being resolved; the resolved id re-arms load.
       if (scope === 'union' && !unionId) return;
       // Coalesce instead of stacking. Every management event for this scope
@@ -822,41 +904,6 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
       loadInFlightRef.current = true;
       const requestId = ++loadEpochRef.current;
       const isCurrent = () => loadEpochRef.current === requestId;
-      const routeKey = `${scope}:${scope === 'union' ? unionId || '' : clubId || ''}`;
-      // A different club or union than the one on screen. The reset below empties
-      // the board, so this can never be served silently: without the spinner the
-      // operator reads the empty board as "this club has no games".
-      const routeChanged = loadedRouteRef.current !== routeKey;
-      // Switching tabs asks a different question of the server, so the rows on
-      // screen belong to the previous answer. Clear them and show the spinner
-      // rather than leaving the old tab's games under the new tab's heading.
-      const viewChanged = loadedViewRef.current !== view;
-      if (viewChanged) {
-        loadedViewRef.current = view;
-        setGames([]);
-        setNextCursor(null);
-      }
-      if (routeChanged) {
-        loadedRouteRef.current = routeKey;
-        setAllowed(null);
-        setScopeId(null);
-        setHosts([]);
-        setHostClubId('');
-        setGames([]);
-        setCounts({
-          total: 0,
-          live: 0,
-          scheduled: 0,
-          closed: 0,
-          closedWithinHorizon: 0,
-          closedHorizonDays: 7,
-        });
-        setNextCursor(null);
-        setHealth(null);
-        setHealthFailed(false);
-        setSurfaceDirty(false);
-      }
-      if (!silent || routeChanged || viewChanged) setLoading(true);
       setLoadError(null);
       try {
         let resolvedScopeId: string;
@@ -867,15 +914,20 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
            the club it runs under. Naming is not hosting. */
         let nextMemberNames: Record<string, string> = {};
         if (scope === 'club') {
-          resolvedScopeId = await resolveClubUUID(clubId || '');
-          const [access, clubResult] = await Promise.all([
-            fetchGameCreationAccess(resolvedScopeId),
-            supabase.from('clubs').select('id,name').eq('id', resolvedScopeId).maybeSingle(),
-          ]);
+          resolvedScopeId = await withGameManagementReadDeadline((signal) =>
+            resolveClubUUID(clubId || '', signal)
+          );
+          const [access, clubResult] = await withGameManagementReadDeadline((signal) =>
+            Promise.all([
+              fetchGameCreationAccess(resolvedScopeId, signal),
+              supabase.from('clubs').select('id,name').eq('id', resolvedScopeId).maybeSingle(),
+            ])
+          );
           if (!isCurrent()) return;
           // A member club is operated from its union console, even for a union
           // owner who technically has authority over the underlying rows.
           const standaloneAccess = access.allowed && !access.unionId;
+          setClubAccess(access);
           setAllowed(standaloneAccess);
           if (!standaloneAccess) {
             setScopeId(resolvedScopeId);
@@ -894,7 +946,9 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         } else {
           if (!unionId) throw new Error('Union not found');
           resolvedScopeId = unionId;
-          const canManage = await unionService.isUnionAdmin(unionId, user.id);
+          const canManage = await withGameManagementReadDeadline(() =>
+            unionService.isUnionAdmin(unionId, user.id)
+          );
           if (!isCurrent()) return;
           setAllowed(canManage);
           if (!canManage) {
@@ -966,6 +1020,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
           ...nextMemberNames,
           ...Object.fromEntries(nextHosts.map((host) => [host.id, host.name])),
         };
+        hostNamesRef.current = hostNames;
         const rows: ManagedGame[] = page.items.map((row: any) =>
           toManagedGame(row, hostNames, resolvedScopeName)
         );
@@ -978,7 +1033,10 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         setGames((current) => mergeManagedGames(current, rows));
         // Null counts mean unchanged, not zero: a paged read does not recount
         // the scope, and reading null as 0 would blank the header.
-        if (page.counts) setCounts(page.counts);
+        if (page.counts) {
+          setCounts(page.counts);
+          setCountsKnown(true);
+        }
         setNextCursor(page.nextCursor);
         /*
           A refused read must not silently replace the numbers already on
@@ -990,13 +1048,21 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
       } catch (error) {
         if (!isCurrent()) return;
         reportError(error, 'GameManagementPage.load');
-        setLoadError(error instanceof Error ? error.message : 'Could not load games.');
+        // A failed read before an authority result must retire Checking. Keep
+        // a previously granted board for its own data-error surface.
+        setAllowed((current) => (current === null ? false : current));
+        setClubAccess((current) => current ?? GAME_CREATION_DENIED);
+        /* The board prints a plain Title Case sentence, never "TypeError:
+           Failed to fetch" (safeErrorMessage keeps the raw text in dev, and the
+           report above keeps it for us). The health read rode in the same wave
+           and never landed, so the rail says Unavailable instead of reading
+           forever. */
+        setLoadError(titleCase(safeErrorMessage(error, 'Games Could Not Be Loaded.')));
+        setHealthFailed(true);
       } finally {
         loadInFlightRef.current = false;
-        // Unconditional. The in-flight guard means the load that reaches this
-        // line is the only one running, so it is always the one that raised the
-        // flag. Gating this on isCurrent() is exactly what starved it before.
-        setLoading(false);
+        // A superseded request must not lower the new route's loading curtain.
+        if (isCurrent()) setLoading(false);
         if (rerunRef.current && mountedRef.current) {
           rerunRef.current = false;
           const rerunSilent = rerunSilentRef.current;
@@ -1012,7 +1078,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         }
       }
     },
-    [clubId, scope, unionId, user?.id, view]
+    [clubId, scope, unionId, unionRef, user?.id, view]
   );
   loadRef.current = load;
 
@@ -1027,40 +1093,84 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
     return () => {
       mountedRef.current = false;
       loadEpochRef.current += 1;
+      contractEpochRef.current += 1;
     };
   }, []);
 
   const loadMore = useCallback(async () => {
     if (!scopeId || !nextCursor || loadingMore) return;
+    const requestEpoch = loadEpochRef.current;
+    const requestScopeId = scopeId;
     setLoadingMore(true);
     try {
       const page = await gameManagementService.list(scope, scopeId, nextCursor, VIEW_BUCKET[view]);
+      if (loadEpochRef.current !== requestEpoch || scopeId !== requestScopeId) return;
       // Same as the first page: the rows already carry their contract and
       // their last command, so Load More is one request, not five.
-      const hostNames = Object.fromEntries(hosts.map((host) => [host.id, host.name]));
       const rows: ManagedGame[] = page.items.map((row: any) =>
-        toManagedGame(row, hostNames, scopeName)
+        toManagedGame(row, hostNamesRef.current, scopeName)
       );
       setGames((current) => {
         const seen = new Set(current.map(managedGameKey));
         return [...current, ...rows.filter((game) => !seen.has(managedGameKey(game)))];
       });
       // Null on a paged read means unchanged, not zero.
-      if (page.counts) setCounts(page.counts);
+      if (page.counts) {
+        setCounts(page.counts);
+        setCountsKnown(true);
+      }
       setNextCursor(page.nextCursor);
     } catch (error) {
+      if (loadEpochRef.current !== requestEpoch) return;
       toast.error(error instanceof Error ? error.message : 'Could not load more games.');
     } finally {
-      setLoadingMore(false);
+      if (loadEpochRef.current === requestEpoch) setLoadingMore(false);
     }
-  }, [hosts, loadingMore, nextCursor, scope, scopeId, scopeName, toast, view]);
+  }, [loadingMore, nextCursor, scope, scopeId, scopeName, toast, view]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
+  // The hamburger menu navigates with buttons, not links, so the click guard
+  // below never sees it. It asks this question before it leaves instead.
+  useEffect(() => {
+    if (!surfaceDirty) return;
+    return holdInAppNavigation(() =>
+      window.confirm('Leave Table Management And Discard Your Unsaved Changes?')
+    );
+  }, [surfaceDirty]);
+
+  // popstate has already moved the browser by the time React Router hears it.
+  // Stop that event when the operator refuses, then put the history cursor
+  // back on the exact entry where the draft was created.
+  useEffect(() => {
+    if (!surfaceDirty) return;
+    const anchorUrl = window.location.href;
+    const anchorState = window.history.state;
+    const anchorIndex = Number.isInteger(anchorState?.idx) ? anchorState.idx : null;
+    let restoring = false;
+    const onPopState = (event: PopStateEvent) => {
+      if (restoring) {
+        restoring = false;
+        return;
+      }
+      if (window.confirm('Leave Table Management And Discard Your Unsaved Changes?')) return;
+      event.stopImmediatePropagation();
+      const destinationIndex = Number.isInteger(event.state?.idx) ? event.state.idx : null;
+      if (anchorIndex !== null && destinationIndex !== null && destinationIndex !== anchorIndex) {
+        restoring = true;
+        window.history.go(anchorIndex - destinationIndex);
+      } else {
+        window.history.pushState(anchorState, '', anchorUrl);
+      }
+    };
+    window.addEventListener('popstate', onPopState, true);
+    return () => window.removeEventListener('popstate', onPopState, true);
+  }, [surfaceDirty]);
+
   // BrowserRouter links do not fire beforeunload. Protect drafts when an
-  // operator leaves through the hamburger menu or any other in-app link.
+  // operator leaves through any in-app link.
   useEffect(() => {
     if (!surfaceDirty) return;
     const onClickCapture = (event: MouseEvent) => {
@@ -1140,6 +1250,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
    *   - a changed game is not on the board (created, or on another page)
    *   - the row is gone from this scope (null)
    *   - the row changed BUCKET, so it belongs under a different tab now
+   *   - a tournament's start time changed, so its ordered position moved
    *   - more games changed at once than a full read is worth
    * The bucket case matters twice over: the counters are per-bucket totals, so
    * a row that stays in its bucket cannot move any of them, and one that
@@ -1165,13 +1276,22 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
       requestBoardRefresh();
       return;
     }
+    const requestEpoch = loadEpochRef.current;
+    const requestScopeId = scopeId;
     try {
-      const hostNames = Object.fromEntries(hosts.map((host) => [host.id, host.name]));
       const fresh = await Promise.all(
         known.map((game) => gameManagementService.getGame(scope, scopeId, game.kind, game.id))
       );
-      const mapped = fresh.map((row) => (row ? toManagedGame(row, hostNames, scopeName) : null));
-      const splicable = mapped.every((row, index) => row && row.bucket === known[index].bucket);
+      if (loadEpochRef.current !== requestEpoch || scopeId !== requestScopeId) return;
+      const mapped = fresh.map((row) =>
+        row ? toManagedGame(row, hostNamesRef.current, scopeName) : null
+      );
+      const splicable = mapped.every(
+        (row, index) =>
+          row &&
+          row.bucket === known[index].bucket &&
+          (row.kind !== 'tournament' || row.startTime === known[index].startTime)
+      );
       if (!splicable) {
         requestBoardRefresh();
         return;
@@ -1183,7 +1303,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
       reportError(error, 'GameManagementPage.refreshChangedGames');
       requestBoardRefresh();
     }
-  }, [hosts, requestBoardRefresh, scope, scopeId, scopeName]);
+  }, [requestBoardRefresh, scope, scopeId, scopeName]);
 
   // Accumulate every event. The decider below is debounced, and a debounced
   // subscription only ever sees the LAST payload of a burst - which would
@@ -1280,7 +1400,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
     A zero next to the word Live is read as "counting"; a sentence is read as
     an answer. The sentence waits for the read.
   */
-  const countsAreKnown = !loading;
+  const countsCanBeExplained = countsKnown && !loadError;
   /* The tab decides what "of" means: paging the Closed tab reaches the closed
      games within the horizon, not the whole board. */
   const viewTotal =
@@ -1308,7 +1428,9 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
     )
       return false;
     setSurfaceDirty(false);
-    setSurface(nextSurface);
+    // Replace, not push: Back still leaves Table Management exactly as it did
+    // when the section was a tab, so no new history step can strand a draft.
+    setSearchParams(nextSurface === 'games' ? {} : { section: nextSurface }, { replace: true });
     return true;
   };
 
@@ -1335,8 +1457,8 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
       const confirmed = await confirmDialog({
         message:
           game.kind === 'table'
-            ? `Close ${game.name}? Only an empty table can be closed.`
-            : `Cancel ${game.name}? This is allowed only before the first registration.`,
+            ? `Close ${titleCase(game.name)}? Only an empty table can be closed.`
+            : `Cancel ${titleCase(game.name)}? This is allowed only before the first registration.`,
         variant: 'danger',
       });
       if (!confirmed) return;
@@ -1353,17 +1475,28 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   };
 
   const openContractHistory = async (game: ManagedGame) => {
+    const requestEpoch = ++contractEpochRef.current;
     setContractGame(game);
     setContractVersions([]);
     setContractLoading(true);
     try {
-      setContractVersions(await gameManagementService.getContractHistory(game.kind, game.id));
+      const versions = await gameManagementService.getContractHistory(game.kind, game.id);
+      if (contractEpochRef.current !== requestEpoch) return;
+      setContractVersions(versions);
     } catch (error) {
+      if (contractEpochRef.current !== requestEpoch) return;
       toast.error(error instanceof Error ? error.message : 'Could not load contract history.');
       setContractGame(null);
     } finally {
-      setContractLoading(false);
+      if (contractEpochRef.current === requestEpoch) setContractLoading(false);
     }
+  };
+
+  const closeContractHistory = () => {
+    contractEpochRef.current += 1;
+    setContractGame(null);
+    setContractVersions([]);
+    setContractLoading(false);
   };
 
   if (allowed === null) {
@@ -1372,27 +1505,73 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         <SpadeConsole
           eyebrow="Security Check"
           title="Table Management"
-          subtitle="Verifying Game-Management Access"
+          subtitle="Reading Your Management Authority"
           pill="Checking"
-          crest="club"
+          crest="flat"
+          className={styles.stateConsole}
         >
-          <section className={styles.empty}>Verifying Game-Management Access…</section>
+          <section className={styles.empty} role="status" aria-live="polite">
+            Verifying Game-Management Access…
+          </section>
         </SpadeConsole>
       </main>
     );
   }
 
   if (allowed === false) {
+    const unionManagedClub =
+      scope === 'club' && Boolean(clubAccess?.unionId || clubAccess?.reason === 'union_only');
+    const accessUnverified =
+      (scope === 'club' && clubAccess?.reason === 'check_failed') ||
+      (scope === 'union' && loadError !== null);
+    const clubAccessTitle = unionManagedClub
+      ? 'This Club Is Managed By Its Union'
+      : accessUnverified
+        ? 'Management Access Could Not Be Verified'
+        : clubAccess?.reason === 'unknown_club'
+          ? 'Club Not Found'
+          : clubAccess?.reason === 'not_signed_in'
+            ? 'Sign In Required'
+            : 'Club Staff Access Required';
+    const clubAccessMessage = unionManagedClub
+      ? 'When A Club Joins A Union, Its Staff Can No Longer Create, Change, Close, Or View Management Controls For Games. Use The Union Console Instead.'
+      : accessUnverified
+        ? 'The Authoritative Game-Management Access Check Is Unavailable. Try Again Before Making Changes.'
+        : clubAccess?.reason === 'unknown_club'
+          ? 'This Club Could Not Be Found, So Its Game-Management Controls Cannot Be Opened.'
+          : clubAccess?.reason === 'not_signed_in'
+            ? 'Sign In Before Opening Club Game-Management Controls.'
+            : 'Only The Club Owner And Club Admins Can Manage Games For A Standalone Club.';
     return (
       <main className={styles.page}>
         <SpadeConsole
           eyebrow="Management Locked"
-          title={scope === 'club' ? 'This Club Is Managed By Its Union' : 'Union Admin Required'}
-          subtitle="Game Creation And Management Are Restricted"
+          title={
+            accessUnverified
+              ? 'Management Access Could Not Be Verified'
+              : scope === 'club'
+                ? clubAccessTitle
+                : 'Union Admin Required'
+          }
+          subtitle="Game Management Is Restricted"
           pill="Locked"
           pillInk="red"
-          crest="club"
+          family={accessUnverified ? 'spade' : 'shark'}
+          className={styles.stateConsole}
           plates={{
+            ...(accessUnverified
+              ? {
+                  secondary: {
+                    label: 'Retry',
+                    type: 'button' as const,
+                    onClick: () => {
+                      setAllowed(null);
+                      setClubAccess(null);
+                      void load();
+                    },
+                  },
+                }
+              : {}),
             primary: {
               label: 'Return',
               type: 'button',
@@ -1400,11 +1579,13 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
             },
           }}
         >
-          <section className={styles.denied}>
+          <section className={styles.denied} role="alert">
             <p className="sc-copy sc-copy--center">
-              {scope === 'club'
-                ? 'When A Club Joins A Union, Its Staff Can No Longer Create, Change, Close, Or View Management Controls For Games. Use The Union Console Instead.'
-                : 'Only The Union Owner And Union Admins Can Manage Union Games.'}
+              {accessUnverified
+                ? 'The Authoritative Game-Management Access Check Is Unavailable. Try Again Before Making Changes.'
+                : scope === 'club'
+                  ? clubAccessMessage
+                  : 'Only The Union Owner And Union Admins Can Manage Union Games.'}
             </p>
           </section>
         </SpadeConsole>
@@ -1412,171 +1593,187 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
     );
   }
 
+  /* A creator is its own page composition. It replaces the Game Board on
+     screen instead of printing inside the board's console, and the board's
+     console is never drawn around it. */
+  const creatorStage: 'selector' | 'config' | null =
+    surface === 'games' && requestedCreate === 'table' && hostClubId
+      ? requestedGameType
+        ? 'config'
+        : 'selector'
+      : null;
+  const unionHostUnavailable = scope === 'union' && !loading && hosts.length === 0;
+  const creationDisabledReason = unionHostUnavailable
+    ? 'Game Creation Is Unavailable Until This Union Has A House Club Row.'
+    : undefined;
+
   return (
-    <main className={styles.page}>
-      <SpadeConsole
-        eyebrow={scope === 'union' ? 'Union Command' : 'Standalone Club Command'}
-        title={
-          surface === 'games'
-            ? 'Table Management'
-            : surface === 'ticker'
-              ? 'Ticker Management'
-              : 'Club Messages'
-        }
-        titleId="table-management-title"
-        subtitle={`${scopeName} · Governed Live Operations`}
-        pill={`${reachableTotal} Games`}
-        crest="club"
-        className={styles.managementConsole}
-        aria-labelledby="table-management-title"
-      >
-        <header className={styles.commandHeader}>
-          <div className={styles.heroCopy}>
-            <span className={styles.safetyLine}>Live Contract · Occupied Games Stay Locked</span>
-          </div>
-          <div className={styles.headerRight}>
-            <div className={styles.countRail}>
-              <span
-                className={realtimeStatus === 'current' ? styles.healthGood : styles.healthWarn}
-                role="status"
-                aria-live="polite"
-              >
-                <strong>{realtimeStatus === 'current' ? 'Updated' : 'Recovering'}</strong>{' '}
-                Automatically
-              </span>
-              <span>
-                <strong>{liveCount}</strong> Live
-              </span>
-              <span>
-                <strong>{scheduledCount}</strong> Scheduled
-              </span>
-              <span
-                title={
-                  archivedBeyondHorizon
-                    ? `${archivedBeyondHorizon} More Closed Games Are Older Than The ${counts.closedHorizonDays}-Day Board Horizon And Are Not Listed`
-                    : countsAreKnown
-                      ? 'Every Game In This Scope Is On The Board'
-                      : undefined
-                }
-              >
-                <strong>{reachableTotal}</strong> Total
-              </span>
+    <main className={styles.page} data-management-surface={surface}>
+      <nav className={styles.surfaceNav} aria-label="Management Sections">
+        {(
+          [
+            ['games', 'Game Board', 'Running & Scheduled'],
+            ['ticker', 'Ticker Management', 'Live Message Rail'],
+            ['messages', 'Club Messages', 'Identity & Announcements'],
+          ] as Array<[ManagementSurface, string, string]>
+        ).map(([key, label, detail], index) => (
+          <button
+            key={key}
+            type="button"
+            className={surface === key ? styles.surfaceActive : ''}
+            aria-current={surface === key ? 'page' : undefined}
+            onClick={() => {
+              // A creator page REPLACES the board rather than sitting inside
+              // it, so the Game Board button is also its way back.
+              if (key === 'games' && surface === 'games' && requestedCreate) {
+                clearCreate();
+                return;
+              }
+              void changeSurface(key);
+            }}
+            title={
+              surfaceDirty && surface !== key ? 'Unsaved Changes Will Need Confirmation' : undefined
+            }
+          >
+            <span>0{index + 1}</span>
+            <strong>{label}</strong>
+            <small>{detail}</small>
+          </button>
+        ))}
+      </nav>
+
+      {surface !== 'games' && !creatorStage && (
+        <section className={styles.sectionCreationActions} aria-label="Game Creation Controls">
+          <GameCreationActions
+            managementPath={managementPath}
+            disabled={!hostClubId}
+            disabledReason={creationDisabledReason}
+            onNavigate={(path) => void openCreationFromHeader(path)}
+          />
+          {unionHostUnavailable && (
+            <p className={styles.creationUnavailable} role="status" aria-live="polite">
+              {creationDisabledReason}
+            </p>
+          )}
+        </section>
+      )}
+
+      {surface === 'games' && !creatorStage && (
+        <SpadeConsole
+          eyebrow={scope === 'union' ? 'Union Command' : 'Club Command'}
+          title="Table Management"
+          titleId="table-management-title"
+          /* The club or union name alone: with a suffix, a long union name
+             fitted down to seven pixels. The line under it says the rest. */
+          subtitle={titleCase(scopeName)}
+          /* A board that has not read yet, or could not, does not claim to
+             hold zero games. */
+          pill={loadError ? 'Unavailable' : loading ? 'Loading' : `${reachableTotal} Games`}
+          className={styles.boardConsole}
+          aria-labelledby="table-management-title"
+          aria-busy={loading}
+        >
+          <header className={styles.commandHeader}>
+            <div className={styles.heroCopy}>
+              <span className={styles.safetyLine}>Live Contract · Occupied Games Stay Locked</span>
             </div>
-            <div className={styles.healthRail} aria-label="Management Health">
-              {/*
+            <div className={styles.headerRight}>
+              <div className={styles.countRail}>
+                <span
+                  className={realtimeStatus === 'current' ? styles.healthGood : styles.healthWarn}
+                  role="status"
+                  aria-live="polite"
+                >
+                  <strong>{realtimeStatus === 'current' ? 'Updated' : 'Recovering'}</strong>{' '}
+                  Automatically
+                </span>
+                {countsKnown ? (
+                  <>
+                    <span>
+                      <strong>{liveCount}</strong> Live
+                    </span>
+                    <span>
+                      <strong>{scheduledCount}</strong> Scheduled
+                    </span>
+                    <span
+                      title={
+                        archivedBeyondHorizon
+                          ? `${archivedBeyondHorizon} More Closed Games Are Older Than The ${counts.closedHorizonDays}-Day Board Horizon And Are Not Listed`
+                          : countsCanBeExplained
+                            ? 'Every Game In This Scope Is On The Board'
+                            : undefined
+                      }
+                    >
+                      <strong>{reachableTotal}</strong> Total
+                    </span>
+                  </>
+                ) : (
+                  <span>
+                    <strong>{loadError ? 'Unavailable' : 'Reading'}</strong> Game Counts
+                  </span>
+                )}
+              </div>
+              <div className={styles.healthRail} aria-label="Management Health">
+                {/*
               A health read that FAILED must not render as zeros. `?? 0` used to
               paint "0 Integrity Alerts" whether the answer was zero or whether
               nobody could be asked - and the operator has no way to tell those
               apart. Health is telemetry, so a failed read still never blocks the
               board; it just says so instead of impersonating an all-clear.
             */}
-              {healthFailed ? (
-                <span className={styles.healthAlert}>Management Health Unavailable</span>
-              ) : health === null ? (
-                /* Still in flight. Not an alarm, and not a row of zeros either. */
-                <span>Reading Management Health</span>
-              ) : (
-                <>
-                  <span>{health.commandsLast24h} Commands / 24h</span>
-                  <span>{health.rejectedLast24h} Rejected</span>
-                  <span className={health.integrityAlerts ? styles.healthAlert : undefined}>
-                    {health.integrityAlerts} Integrity Alerts
-                  </span>
-                  <span>{health.scheduledPending} Pending Schedules</span>
-                  <span className={health.scheduledRejected24h ? styles.healthAlert : undefined}>
-                    {health.scheduledRejected24h} Schedule Rejects
-                  </span>
-                  <span title={formatEventClock(health.lastEventAt)}>
-                    {health.eventsLastHour} Events / Hour
-                  </span>
-                  <span title={`${health.retentionDays}-Day Realtime Retention`}>
-                    {health.eventRows} Realtime Events
-                  </span>
-                </>
-              )}
+                {healthFailed ? (
+                  <span className={styles.healthAlert}>Management Health Unavailable</span>
+                ) : health === null ? (
+                  /* Still in flight. Not an alarm, and not a row of zeros either. */
+                  <span>Reading Management Health</span>
+                ) : (
+                  <>
+                    <span>{health.commandsLast24h} Commands / 24h</span>
+                    <span>{health.rejectedLast24h} Rejected</span>
+                    <span className={health.integrityAlerts ? styles.healthAlert : undefined}>
+                      {health.integrityAlerts} Integrity Alerts
+                    </span>
+                    <span>{health.scheduledPending} Pending Schedules</span>
+                    <span className={health.scheduledRejected24h ? styles.healthAlert : undefined}>
+                      {health.scheduledRejected24h} Schedule Rejects
+                    </span>
+                    <span title={formatEventClock(health.lastEventAt)}>
+                      {health.eventsLastHour} Events / Hour
+                    </span>
+                    <span title={`${health.retentionDays}-Day Realtime Retention`}>
+                      {health.eventRows.toLocaleString()}
+                      {health.eventRowsCapped ? '+' : ''} Realtime Events
+                    </span>
+                  </>
+                )}
+              </div>
+              <GameCreationActions
+                managementPath={managementPath}
+                disabled={!hostClubId}
+                disabledReason={creationDisabledReason}
+                onNavigate={(path) => void openCreationFromHeader(path)}
+              />
             </div>
-            <GameCreationActions
-              managementPath={managementPath}
-              onNavigate={(path) => void openCreationFromHeader(path)}
-            />
-          </div>
-        </header>
+          </header>
 
-        <nav className={styles.surfaceNav} aria-label="Management Sections">
-          {(
-            [
-              ['games', 'Game Board', 'Running & Scheduled'],
-              ['ticker', 'Ticker Management', 'Live Message Rail'],
-              ['messages', 'Club Messages', 'Identity & Announcements'],
-            ] as Array<[ManagementSurface, string, string]>
-          ).map(([key, label, detail], index) => (
-            <button
-              key={key}
-              type="button"
-              className={surface === key ? styles.surfaceActive : ''}
-              aria-current={surface === key ? 'page' : undefined}
-              onClick={() => void changeSurface(key)}
-              title={
-                surfaceDirty && surface !== key
-                  ? 'Unsaved Changes Will Need Confirmation'
-                  : undefined
-              }
-            >
-              <span>0{index + 1}</span>
-              <strong>{label}</strong>
-              <small>{detail}</small>
-            </button>
-          ))}
-        </nav>
-
-        {scope === 'union' && hostClubId && (
-          /* NO HOST SWITCHING (Dan 2026-09-04): "when you are on this page, it
+          {scope === 'union' && hostClubId && (
+            /* NO HOST SWITCHING (Dan 2026-09-04): "when you are on this page, it
            must be only for the page you opened it in, you can't jump from club
            to club." The host is the union itself, stated, not selectable. */
-          <p className={styles.hostPicker} aria-label="Host">
-            Host
-            <strong>{hosts.find((host) => host.id === hostClubId)?.name || scopeName}</strong>
-          </p>
-        )}
+            <p className={styles.hostPicker} aria-label="Host">
+              Host
+              <strong>
+                {titleCase(hosts.find((host) => host.id === hostClubId)?.name || scopeName)}
+              </strong>
+            </p>
+          )}
 
-        {surface === 'games' && requestedCreate === 'table' && hostClubId && !requestedGameType && (
-          <section className={styles.creatorDeck} aria-label="Create Table">
-            <CreateTablePage
-              clubIdOverride={hostClubId}
-              onBack={clearCreate}
-              onSelectGameType={openTableConfig}
-            />
-          </section>
-        )}
-        {surface === 'games' && requestedGameType && hostClubId && (
-          <section className={styles.creatorDeck} aria-label="Table Config">
-            <button
-              type="button"
-              className={styles.creatorBack}
-              onClick={openTableSelector}
-              aria-label="Back To Game Types"
-            >
-              ‹‹
-            </button>
-            <TableConfigPage
-              key={`${hostClubId}:${requestedGameType}`}
-              clubIdOverride={hostClubId}
-              gameTypeOverride={requestedGameType}
-              embedded
-              onExit={(exit) => {
-                clearCreate();
-                if (exit !== 'denied') void load();
-              }}
-            />
-          </section>
-        )}
-        {scope === 'union' && hosts.length === 0 && !loading && allowed && (
-          <section className={styles.empty}>
-            This Union Has No House Club Row Yet, So It Cannot Host Games Of Its Own.
-          </section>
-        )}
+          {scope === 'union' && hosts.length === 0 && !loading && allowed && (
+            <section className={styles.empty}>
+              This Union Has No House Club Row Yet, So It Cannot Host Games Of Its Own.
+            </section>
+          )}
 
-        {surface === 'games' && (
           <nav className={styles.filters} aria-label="Game Status">
             {(['all', 'running', 'scheduled', 'closed'] as View[]).map((item) => (
               <button
@@ -1588,24 +1785,19 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                 {item}
               </button>
             ))}
-            {requestedCreate && (
-              <button className={styles.dismissCreator} onClick={clearCreate}>
-                Close Creator
-              </button>
-            )}
           </nav>
-        )}
 
-        {surface === 'games' &&
-          (loadError ? (
-            <section className={styles.empty}>
+          {loadError ? (
+            <section className={styles.empty} role="alert">
               <p>{loadError}</p>
               <button onClick={() => void load()}>Try Again</button>
             </section>
           ) : loading ? (
-            <section className={styles.empty}>Loading Live Game Controls…</section>
+            <section className={styles.empty} role="status" aria-live="polite">
+              Loading Live Game Controls…
+            </section>
           ) : filteredGames.length === 0 ? (
-            <section className={styles.empty}>
+            <section className={styles.empty} role="status" aria-live="polite">
               <h2>No Games In This View</h2>
               <p>Use The Controls Above To Add The First One.</p>
             </section>
@@ -1628,8 +1820,8 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                       data={{
                         id: game.id,
                         family: managedGameFamily(game),
-                        title: game.name,
-                        subtitle: game.hostName,
+                        title: titleCase(game.name),
+                        subtitle: titleCase(game.hostName),
                         gameType: game.variant.toUpperCase(),
                         stakes:
                           game.kind === 'table' ? `${game.smallBlind}/${game.bigBlind}` : undefined,
@@ -1647,7 +1839,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                         status: managedGameStatus(game),
                         statusLabel: isBaggedStatus(game.status)
                           ? DAY_COMPLETE_LABEL
-                          : game.status.replace(/_/g, ' '),
+                          : titleCase(game.status.replace(/_/g, ' ')),
                         rules: [],
                       }}
                       actions={{
@@ -1692,7 +1884,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                             >
                               {game.contract.readiness.state === 'funding_blocked'
                                 ? `Funding Short ${game.contract.readiness.shortBy.toLocaleString()}`
-                                : game.contract.readiness.state.replace(/_/g, ' ')}
+                                : titleCase(game.contract.readiness.state.replace(/_/g, ' '))}
                             </span>
                           )}
                         </div>
@@ -1710,8 +1902,8 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                           <span>
                             {game.lastCommand.status === 'succeeded'
                               ? 'Confirmed'
-                              : game.lastCommand.status}{' '}
-                            {game.lastCommand.action}
+                              : titleCase(game.lastCommand.status.replace(/_/g, ' '))}{' '}
+                            {titleCase(game.lastCommand.action.replace(/_/g, ' '))}
                           </span>
                           <code>{game.lastCommand.commandId.slice(0, 8)}</code>
                           <span>
@@ -1885,20 +2077,81 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                 </button>
               )}
             </section>
-          ))}
+          )}
+        </SpadeConsole>
+      )}
 
-        {surface === 'ticker' && allowed && scopeId && (
-          <TickerManagementPanel scope={scope} scopeId={scopeId} onDirtyChange={setSurfaceDirty} />
-        )}
+      {creatorStage === 'selector' && (
+        <section className={styles.creatorStage} aria-label="Create Table">
+          <CreateTablePage
+            clubIdOverride={hostClubId}
+            onBack={clearCreate}
+            onSelectGameType={openTableConfig}
+          />
+        </section>
+      )}
+      {creatorStage === 'config' && requestedGameType && (
+        <section className={styles.creatorStage} aria-label="Table Config">
+          <button
+            type="button"
+            className={styles.creatorBack}
+            onClick={openTableSelector}
+            aria-label="Back To Game Types"
+          >
+            Back
+          </button>
+          <TableConfigPage
+            key={`${hostClubId}:${requestedGameType}`}
+            clubIdOverride={hostClubId}
+            gameTypeOverride={requestedGameType}
+            embedded
+            onExit={(exit) => {
+              clearCreate();
+              if (exit !== 'denied') void load();
+            }}
+          />
+        </section>
+      )}
 
-        {surface === 'messages' && allowed && hostClubId && (
+      {surface === 'ticker' && allowed && scopeId && (
+        <TickerManagementPanel
+          scope={scope}
+          scopeId={scopeId}
+          scopeName={titleCase(scopeName)}
+          onDirtyChange={setSurfaceDirty}
+        />
+      )}
+
+      {surface === 'messages' &&
+        allowed &&
+        (hostClubId ? (
           <ClubMessageManagementPanel
             clubId={hostClubId}
-            clubName={hosts.find((host) => host.id === hostClubId)?.name || scopeName}
+            clubName={titleCase(hosts.find((host) => host.id === hostClubId)?.name || scopeName)}
             onDirtyChange={setSurfaceDirty}
           />
-        )}
-      </SpadeConsole>
+        ) : (
+          <SpadeConsole
+            eyebrow={scope === 'union' ? 'Union Communications' : 'Club Communications'}
+            title="Club Messages"
+            subtitle={titleCase(scopeName)}
+            pill={loading ? 'Loading' : 'Unavailable'}
+            pillInk={loading ? 'blue' : 'gold'}
+            family="riveted"
+            foot="foot"
+            aria-busy={loading}
+          >
+            <section
+              className={styles.empty}
+              role={loading ? 'status' : 'alert'}
+              aria-live={loading ? 'polite' : undefined}
+            >
+              {loading
+                ? 'Reading The Club Message Host…'
+                : 'Club Messages Are Unavailable Until This Union Has A House Club Row.'}
+            </section>
+          </SpadeConsole>
+        ))}
 
       {tournamentModalOpen && hostClubId && (
         <CreateTournamentModal
@@ -1972,7 +2225,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
           game={contractGame}
           versions={contractVersions}
           loading={contractLoading}
-          onClose={() => setContractGame(null)}
+          onClose={closeContractHistory}
         />
       )}
     </main>

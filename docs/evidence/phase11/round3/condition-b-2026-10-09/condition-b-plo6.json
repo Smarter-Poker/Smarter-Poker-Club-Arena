@@ -1,0 +1,143 @@
+{
+  "schema": "horse-human-calibrated-check-summary-v1",
+  "variant": "plo6",
+  "population": "human-calibrated-v1-20261008",
+  "packVersion": "plo6-high-round3-v2",
+  "sourceSha": "91fd2864f1a74d8b97a153c8e0d5ebbbabc73e74",
+  "seeds": [19201101, 19202203, 19203307],
+  "handsPerSeed": 3456,
+  "runs": 15,
+  "hands": 51840,
+  "rakeModel": "published rake per profile (publishedRake, the cap ladder and BBJ drop), omaha-variant-strength-contract-v1",
+  "candidate": {
+    "bbPer100": 20.9627700617284,
+    "lower99": -11.118543406948177,
+    "upper99": 53.044083530404976,
+    "profiles": [
+      {
+        "profileId": "p11c-plo6-6max-2dealt-100bb",
+        "hands": 10368,
+        "bbPer100": 47.15499614197531,
+        "sdBBPerHand": 12.490807796723669
+      },
+      {
+        "profileId": "p11c-plo6-6max-4dealt-100bb",
+        "hands": 10368,
+        "bbPer100": -20.638117283950617,
+        "sdBBPerHand": 21.228214461027942
+      },
+      {
+        "profileId": "p11c-plo6-6max-40bb",
+        "hands": 10368,
+        "bbPer100": -27.686583719135804,
+        "sdBBPerHand": 14.50586328962238
+      },
+      {
+        "profileId": "p11c-plo6-6max-100bb",
+        "hands": 10368,
+        "bbPer100": 8.042438271604938,
+        "sdBBPerHand": 29.692047532502617
+      },
+      {
+        "profileId": "p11c-plo6-6max-200bb",
+        "hands": 10368,
+        "bbPer100": 97.94111689814815,
+        "sdBBPerHand": 48.18751718651395
+      }
+    ]
+  },
+  "reference": {
+    "bbPer100": 16.590653935185188,
+    "lower99": -15.425827782972135,
+    "upper99": 48.60713565334251,
+    "profiles": [
+      {
+        "profileId": "p11c-plo6-6max-2dealt-100bb",
+        "hands": 10368,
+        "bbPer100": 25.29441550925926,
+        "sdBBPerHand": 11.823115074427255
+      },
+      {
+        "profileId": "p11c-plo6-6max-4dealt-100bb",
+        "hands": 10368,
+        "bbPer100": -20.638117283950617,
+        "sdBBPerHand": 21.228214461027942
+      },
+      {
+        "profileId": "p11c-plo6-6max-40bb",
+        "hands": 10368,
+        "bbPer100": -27.686583719135804,
+        "sdBBPerHand": 14.50586328962238
+      },
+      {
+        "profileId": "p11c-plo6-6max-100bb",
+        "hands": 10368,
+        "bbPer100": 8.042438271604938,
+        "sdBBPerHand": 29.692047532502617
+      },
+      {
+        "profileId": "p11c-plo6-6max-200bb",
+        "hands": 10368,
+        "bbPer100": 97.94111689814815,
+        "sdBBPerHand": 48.18751718651395
+      }
+    ]
+  },
+  "difference": {
+    "bbPer100": 4.372116126543211,
+    "lower99": 2.0304308321055036,
+    "upper99": 6.713801420980918,
+    "profiles": [
+      {
+        "profileId": "p11c-plo6-6max-2dealt-100bb",
+        "hands": 10368,
+        "bbPer100": 21.86058063271605,
+        "sdBBPerHand": 4.6283793539838705
+      },
+      {
+        "profileId": "p11c-plo6-6max-4dealt-100bb",
+        "hands": 10368,
+        "bbPer100": 0,
+        "sdBBPerHand": 0
+      },
+      {
+        "profileId": "p11c-plo6-6max-40bb",
+        "hands": 10368,
+        "bbPer100": 0,
+        "sdBBPerHand": 0
+      },
+      {
+        "profileId": "p11c-plo6-6max-100bb",
+        "hands": 10368,
+        "bbPer100": 0,
+        "sdBBPerHand": 0
+      },
+      {
+        "profileId": "p11c-plo6-6max-200bb",
+        "hands": 10368,
+        "bbPer100": 0,
+        "sdBBPerHand": 0
+      }
+    ]
+  },
+  "integrity": {
+    "illegalCandidates": 0,
+    "illegalActions": 0,
+    "conservationErrors": 0,
+    "cardErrors": 0,
+    "incompleteHands": 0,
+    "truncatedHands": 0
+  },
+  "adequacy": {
+    "family": "omaha",
+    "adequate": false,
+    "reasons": [
+      "seat_hands_608_below_10000",
+      "distinct_humans_5_below_20",
+      "top_human_share_0.685_above_0.25"
+    ]
+  },
+  "lowerBoundAboveZero": false,
+  "conditionB": "unavailable_external_input",
+  "reasons": []
+}

@@ -122,9 +122,21 @@ describe('HorseDataLedger - the contract holds against the source', () => {
       }
       if (e.ratioOf) {
         expect(e.kind, `${k}: ratioOf only on receipts`).toBe('receipt');
+        // A registered receipt, or one member of a registered receipt family
+        // (2026-10-05: v16_reads_tell is measured per phase13_utility_cash,
+        // the cash member of phase13_utility_*). fn_ledger_fires reads an
+        // exact member by name, so the member is a real population.
+        const ratioOf = e.ratioOf;
         expect(
-          HORSE_DATA_LEDGER.some((r) => r.kind === 'receipt' && r.key === e.ratioOf),
-          `${k}: ratioOf ${e.ratioOf} is not a registered receipt`
+          HORSE_DATA_LEDGER.some(
+            (r) =>
+              r.kind === 'receipt' &&
+              (r.key === ratioOf ||
+                (r.key.endsWith('*') &&
+                  !ratioOf.endsWith('*') &&
+                  ratioOf.startsWith(r.key.slice(0, -1))))
+          ),
+          `${k}: ratioOf ${ratioOf} is not a registered receipt or receipt-family member`
         ).toBe(true);
       }
       if (e.key.endsWith('*')) {

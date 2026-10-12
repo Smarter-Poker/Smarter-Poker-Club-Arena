@@ -121,9 +121,6 @@ const SELECT_EXEMPT: Record<string, string> = {
   // column and never displays it.
   'src/components/social/FriendListPanel.tsx': 'username lookup, renders nothing',
   'src/pages/AuthPage.tsx': 'sign-up existence check',
-  // Horse orchestration: creates, seats and rotates the fleet. Legitimate
-  // horse plumbing under CLAUDE.md 10.5, and neither query renders a name.
-  'src/services/HorseOrchestrator.ts': 'fleet orchestration, renders nothing',
 };
 
 describe('the arena is always the alias', () => {

@@ -215,7 +215,13 @@ export default function GlobalHeader({ inTab = null }: { inTab?: InTabLobbyNav |
     (payload: any) => {
       if (authUser?.id) {
         if (payload?.newBalance !== undefined) {
-          useWalletStore.setState({ diamonds: payload.newBalance });
+          // The figure is this account's, now: say so, so the store never
+          // mistakes it for a stale or foreign one (see useWalletStore).
+          useWalletStore.setState({
+            diamonds: payload.newBalance,
+            _diamondsUserId: authUser.id,
+            _diamondsAt: Date.now(),
+          });
         } else {
           loadDiamonds(authUser.id, { force: true });
         }

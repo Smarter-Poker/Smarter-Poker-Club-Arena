@@ -1,0 +1,31 @@
+Horse Brain Phase 12 FLH: Natural Completion Window, Corrected Predeclaration
+============================================================================
+
+Declared 2026-10-09 at 20:31Z. The commit and push time of this file is the
+declaration time. It supersedes the serving-release clause of
+declaration-completion-2026-10-09-flh.txt (written 20:12Z), which named release
+1235b47a as serving. That was wrong when it was written: release 15d25de1
+(#6597) replaced 1235b47a at 19:55:28Z, and the earlier file was not checked
+against the serving release first. Nothing has been read under either file.
+
+1. Serving Release
+------------------
+15d25de158e0effeec72f3b6806943dca58fae99 (StartedAt 2026-10-09T19:55:28.50239333Z,
+read 20:29:58Z). Every Phase 11 and Phase 12 policy digest source file is
+identical between 1235b47a and 15d25de1 (git diff --stat empty), so its FLH
+policy digest is a55db7fe..., the digest of the 1235b47a FLH matrix. It must be
+unchanged from before 21:02Z to after 22:50Z. If it is replaced, the window
+moves to the first two full hours of the next release with that FLH digest.
+
+2. Window And Population
+------------------------
+Two spans, pooled: 21:02:00.000Z to 21:50:00.000Z and 22:02:00.000Z to
+22:50:00.000Z (the 21:55 break and its thaw excluded). The record's window is
+written 21:02:00.000Z to 22:50:00.000Z with both spans named in its source.
+Everything else as in declaration-completion-2026-10-09.txt sections 2 and 3.
+
+3. Verdict
+----------
+Every street's Wilson lower bound at the contract z must clear 0.95 with at
+least 127 eligible decisions. Recorded whatever it shows; not re-measured on
+another window of this release.

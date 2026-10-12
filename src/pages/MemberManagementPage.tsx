@@ -42,7 +42,11 @@ import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { sizedStorageUrl, generateAvatarSvg } from '../utils/avatarGenerator';
 import { masterBus } from '../core/MasterBus';
+import { useRosterWalletUpdates } from '../hooks/useRosterWalletUpdates';
+import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
+import { useMasterBusBroadcastChannel } from '../hooks/useMasterBusBroadcastChannel';
 import { useAuthUser } from '../hooks/useAuthUser';
+import { useOnlineNow } from '../hooks/useProfilePresence';
 import { useToast } from '../components/common/Toast';
 import PageSkeleton from '../components/common/PageSkeleton';
 import RoleBadge, { roleColor } from '../components/club/RoleBadge';
@@ -50,6 +54,8 @@ import ChipTransferModal from '../components/agent/ChipTransferModal';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
 import { safeErrorMessage } from '../utils/safeErrorMessage';
+import { runWithRequestDeadline } from '../utils/requestDeadline';
+import { runRosterReadWithRetry } from '../utils/rosterReadReliability';
 import { toTitleCase } from '../utils/titleCase';
 import { isUUID } from '../utils/clubIdResolver';
 import { ClubNotFoundError, resolveClubUUIDStrict } from '../utils/strictClubIdResolver';
@@ -63,6 +69,7 @@ import {
   type ClubRole,
 } from '../types/clubRoles';
 import ClubRosterService, {
+  MemberAccessDeniedError,
   RANGE_OVERALL,
   lastDaysRange,
   isoDate,
@@ -144,6 +151,7 @@ export default function MemberManagementPage() {
   // "The Member Ledger Did Not Respond", which reads as an outage.
   const [notFound, setNotFound] = useState(false);
   const [myRole, setMyRole] = useState<ClubRole>('player');
+  const detailAbortRef = useRef<AbortController | null>(null);
   const [downlineShown, setDownlineShown] = useState(DOWNLINE_RENDER_CAP);
 
   const [rangeMode, setRangeMode] = useState<RangeMode>('overall');
@@ -151,10 +159,167 @@ export default function MemberManagementPage() {
   const [customTo, setCustomTo] = useState<string>(() => isoDate(new Date()));
   const [range, setRange] = useState<MemberRange>(RANGE_OVERALL);
 
+  type WalletRow = {
+    user_id: string;
+    can_view_financials: boolean;
+    chip_balance: number | null;
+    player_wallet: number | null;
+    agent_wallet: number | null;
+    promo_wallet: number | null;
+  };
+  const walletScopeKey = `${clubId ?? ''}:${userId ?? ''}:${user?.id ?? ''}`;
+  const detailOwnerRef = useRef<string | null>(null);
+  const walletRowsRef = useRef<WalletRow[]>([]);
+  const toWalletRow = (value: MemberDetail): WalletRow[] =>
+    value.identity?.user_id
+      ? [
+          {
+            user_id: value.identity.user_id,
+            can_view_financials: value.capabilities.can_view_financials,
+            chip_balance: value.wallets?.chip_balance ?? null,
+            player_wallet: value.wallets?.player_wallet ?? null,
+            agent_wallet: value.wallets?.agent_wallet ?? null,
+            promo_wallet: value.wallets?.promo_wallet ?? null,
+          },
+        ]
+      : [];
+  walletRowsRef.current =
+    detail && detailOwnerRef.current === walletScopeKey ? toWalletRow(detail) : [];
+  const applyWalletRow = (value: MemberDetail, row?: WalletRow): MemberDetail => {
+    if (!row || value.identity?.user_id !== row.user_id) return value;
+    return {
+      ...value,
+      capabilities: { ...value.capabilities, can_view_financials: row.can_view_financials },
+      // A financial denial withdraws the entire financial record, not only its wallet totals.
+      ...(!row.can_view_financials
+        ? {
+            stats: null,
+            downline: null,
+            identity: value.identity
+              ? {
+                  ...value.identity,
+                  last_login: null,
+                  upline_user_id: null,
+                  upline_name: null,
+                  upline_player_number: null,
+                }
+              : value.identity,
+          }
+        : {}),
+      wallets:
+        row.can_view_financials &&
+        row.chip_balance !== null &&
+        row.player_wallet !== null &&
+        row.agent_wallet !== null &&
+        row.promo_wallet !== null
+          ? {
+              chip_balance: row.chip_balance,
+              player_wallet: row.player_wallet,
+              agent_wallet: row.agent_wallet,
+              promo_wallet: row.promo_wallet,
+            }
+          : null,
+    };
+  };
+  const accessDenialRef = useRef<{ key: string; revision: number; detail: MemberDetail | null }>({
+    key: walletScopeKey,
+    revision: 0,
+    detail: null,
+  });
+  if (accessDenialRef.current.key !== walletScopeKey)
+    accessDenialRef.current = { key: walletScopeKey, revision: 0, detail: null };
+  const applyAccessDenial = (value: MemberDetail, denied: MemberDetail): MemberDetail => ({
+    ...value,
+    capabilities: { ...denied.capabilities },
+    identity: value.identity
+      ? {
+          ...value.identity,
+          ...(!denied.capabilities.can_view_notes ? { nickname: null, remark: null } : {}),
+        }
+      : value.identity,
+  });
+  const withdrawRecordAccess = (denied: MemberDetail | null) => {
+    if (!isMountedRef.current || accessDenialRef.current.key !== walletScopeKey) return;
+    accessDenialRef.current = {
+      key: walletScopeKey,
+      revision: accessDenialRef.current.revision + 1,
+      detail: denied,
+    };
+    if (!denied || !denied.identity?.user_id) {
+      // An authoritative access withdrawal cancels the obsolete read owner.
+      detailAbortRef.current?.abort();
+      detailOwnerRef.current = null;
+      walletRowsRef.current = [];
+      setDetail(null);
+      setDownline([]);
+      setNotFound(true);
+      setLoadError(false);
+      setLoading(false);
+    } else {
+      setDetail((current) => (current ? applyAccessDenial(current, denied) : current));
+    }
+  };
+  const walletUpdates = useRosterWalletUpdates(
+    walletScopeKey,
+    resolvedClubId,
+    walletRowsRef,
+    (rows) => {
+      if (detailOwnerRef.current !== walletScopeKey) return;
+      if (rows[0]?.can_view_financials === false) setDownline([]);
+      setDetail((current) => (current ? applyWalletRow(current, rows[0]) : current));
+    },
+    () => toast.error('The Live Wallet Update Could Not Be Loaded.'),
+    withdrawRecordAccess
+  );
+  const walletUpdatesRef = useRef(walletUpdates);
+  walletUpdatesRef.current = walletUpdates;
+  useMasterBusChannel({
+    channelName: resolvedClubId
+      ? `member-record-wallet-${resolvedClubId}-${userId}-${user?.id}`
+      : null,
+    table: 'club_members',
+    filter: resolvedClubId ? `club_id=eq.${resolvedClubId}` : null,
+    event: 'UPDATE',
+    enabled: !!resolvedClubId && !!user?.id,
+    onPayload: (value) => {
+      if (value?.new) walletUpdates.membership(value.new);
+    },
+    onSubscriptionStatus: (status) => {
+      if (status === 'SUBSCRIBED') walletUpdates.refresh(userId);
+    },
+    onSubscriptionError: () => toast.error('The Live Wallet Connection Could Not Be Established.'),
+  });
+  useMasterBusBroadcastChannel({
+    channelName: resolvedClubId ? `club-roster-wallet:${resolvedClubId}` : null,
+    event: 'wallet_changed',
+    enabled: !!resolvedClubId && !!user?.id,
+    onPayload: (value) => {
+      const payload = (value as { payload?: { club_id?: string; user_id?: string } } | null)
+        ?.payload;
+      if (payload?.club_id === resolvedClubId && payload.user_id === userId)
+        walletUpdates.refresh(userId);
+    },
+    onSubscriptionStatus: (status) => {
+      if (status === 'SUBSCRIBED') walletUpdates.refresh(userId);
+    },
+    onSubscriptionError: () => toast.error('The Live Wallet Connection Could Not Be Established.'),
+  });
+
   /* ── Load ───────────────────────────────────────────────────────────────── */
+
+  useEffect(() => {
+    setDetail(null);
+    setDownline([]);
+    setMyRole('player');
+    setResolvedClubId(null);
+    setNotFound(false);
+  }, [clubId, userId, user?.id]);
 
   const loadDetail = useCallback(
     async (activeRange: MemberRange, getIsMounted?: () => boolean) => {
+      detailAbortRef.current?.abort();
+      const controller = new AbortController();
+      detailAbortRef.current = controller;
       if (!clubId || !userId) {
         if (!getIsMounted || getIsMounted()) {
           setNotFound(true);
@@ -163,7 +328,10 @@ export default function MemberManagementPage() {
         }
         return;
       }
-      const live = () => (getIsMounted ? getIsMounted() : true) && isMountedRef.current;
+      const live = () =>
+        !controller.signal.aborted &&
+        (getIsMounted ? getIsMounted() : true) &&
+        isMountedRef.current;
 
       if (live()) {
         setLoading(true);
@@ -197,29 +365,57 @@ export default function MemberManagementPage() {
         setNotFound(false);
         setResolvedClubId(resolved);
 
+        const walletSnapshot = walletUpdatesRef.current.snapshot();
+        const accessRevision = accessDenialRef.current.revision;
         const [memberDetail, memberDownline] = await Promise.all([
-          ClubRosterService.getMemberDetail(resolved, userId, activeRange),
-          ClubRosterService.getDownline(resolved, userId),
+          ClubRosterService.getMemberDetail(resolved, userId, activeRange, controller.signal),
+          ClubRosterService.getDownline(resolved, userId, controller.signal),
         ]);
         if (!live()) return;
-        setDetail(memberDetail);
-        setDownline(memberDownline);
+        detailOwnerRef.current = `${clubId ?? ''}:${userId ?? ''}:${user?.id ?? ''}`;
+        const reconciledWallets = walletUpdatesRef.current.reconcile(
+          toWalletRow(memberDetail),
+          walletSnapshot
+        );
+        let currentDetail = applyWalletRow(memberDetail, reconciledWallets[0]);
+        const newerDenial = accessDenialRef.current;
+        if (
+          newerDenial.key === `${clubId ?? ''}:${userId ?? ''}:${user?.id ?? ''}` &&
+          newerDenial.revision > accessRevision
+        ) {
+          if (!newerDenial.detail) return;
+          currentDetail = applyAccessDenial(currentDetail, newerDenial.detail);
+        }
+        setDetail(currentDetail);
+        setDownline(currentDetail.capabilities.can_view_financials ? memberDownline : []);
         setDownlineShown(DOWNLINE_RENDER_CAP);
 
         // Whoever is reading decides what this page lets them do. One row, and
         // only for the viewer, so it costs a single indexed lookup.
         if (user?.id) {
-          const { data: mine } = await supabase
-            .from('club_members')
-            .select('role')
-            .eq('club_id', resolved)
-            .eq('user_id', user.id)
-            .maybeSingle();
-          if (live() && mine) setMyRole(normaliseRole(mine.role));
+          const mine = await runRosterReadWithRetry(
+            async (signal) => {
+              const result = await supabase
+                .from('club_members')
+                .select('role')
+                .eq('club_id', resolved)
+                .eq('user_id', user.id)
+                .abortSignal(signal)
+                .maybeSingle();
+              if (result.error) throw result.error;
+              return result.data;
+            },
+            { attempts: 1, timeoutMs: 8_000, signal: controller.signal }
+          );
+          if (live()) setMyRole(normaliseRole(mine?.role));
         }
       } catch (error) {
-        reportError(error, 'MemberManagementPage.loadDetail');
         if (live()) {
+          if (error instanceof MemberAccessDeniedError) {
+            withdrawRecordAccess(null);
+            return;
+          }
+          reportError(error, 'MemberManagementPage.loadDetail');
           setLoadError(true);
           toast.error('Failed To Load This Member');
         }
@@ -235,6 +431,7 @@ export default function MemberManagementPage() {
     loadDetail(range, () => mounted);
     return () => {
       mounted = false;
+      detailAbortRef.current?.abort();
     };
   }, [loadDetail, range]);
 
@@ -268,6 +465,14 @@ export default function MemberManagementPage() {
 
   const identity = detail?.identity;
   const found = !notFound && !!identity?.user_id;
+  /* ca_club_member_detail answers "seated OR fresh presence"; off a seat it is
+     the presence door's answer, re-asked every minute while shown so it goes
+     dark when the heartbeat does (presence-has-one-definition law). */
+  const onlineNow = useOnlineNow(identity?.user_id, detail?.presence.is_online === true);
+  /* Seated is online, exactly as the roster and the status line below say it.
+     The re-asked door answers heartbeats only, and a ring lit by it alone
+     would light a seated person and not a seated horse (2026-10-05 audit). */
+  const avatarLit = detail?.presence.is_seated === true || onlineNow;
 
   const shownDownline = downline.slice(0, downlineShown);
 
@@ -282,7 +487,7 @@ export default function MemberManagementPage() {
     );
   }
 
-  if (loadError && !detail) {
+  if (loadError) {
     return (
       <div className="member-mgmt-page">
         <PageHeader onBack={() => navigate(-1)} />
@@ -292,11 +497,26 @@ export default function MemberManagementPage() {
           </span>
           <p className="mm-empty__heading">The Member Ledger Did Not Respond</p>
           <p className="mm-empty__body">
-            Your Access Has Not Changed. Retry The Live Record Without Leaving This Page.
+            The Latest Record Could Not Be Verified. Retry Without Leaving This Page.
           </p>
           <button type="button" className="mm-empty__retry" onClick={reload}>
             Retry Member
           </button>
+        </div>
+        {/* Keep the note owner mounted through a recoverable read failure.
+            Financial sections stay absent and edits wait for verification. */}
+        <div className="mm-ledger-grid" key={`ledger:${clubId}:${userId}:${user?.id}`}>
+          {identity?.user_id && detail?.capabilities.can_view_notes && (
+            <NotesEditor
+              key={`notes:${resolvedClubId}:${identity.user_id}`}
+              clubId={resolvedClubId}
+              userId={identity.user_id}
+              initialNickname={identity.nickname}
+              initialRemark={identity.remark}
+              editable={detail.capabilities.can_edit_notes}
+              disabled
+            />
+          )}
         </div>
       </div>
     );
@@ -319,9 +539,9 @@ export default function MemberManagementPage() {
     );
   }
 
-  const stats = detail!.stats;
-  const wallets = detail!.wallets;
-  const counts = detail!.downline;
+  const stats = detail!.capabilities.can_view_financials ? detail!.stats : null;
+  const wallets = detail!.capabilities.can_view_financials ? detail!.wallets : null;
+  const counts = detail!.capabilities.can_view_financials ? detail!.downline : null;
   const alias = identity!.alias || 'Unknown';
   const initial = alias[0]?.toUpperCase() ?? '?';
 
@@ -347,7 +567,7 @@ export default function MemberManagementPage() {
         <div className="mm-credential__content">
           <span className="mm-eyebrow">Audited Player Credential</span>
           <div className="mm-identity">
-            <div className={`mm-avatar${detail!.presence.is_online ? ' mm-avatar--online' : ''}`}>
+            <div className={`mm-avatar${avatarLit ? ' mm-avatar--online' : ''}`}>
               {identity!.avatar_url ? (
                 <img
                   src={sizedStorageUrl(identity!.avatar_url!, 96)}
@@ -373,16 +593,12 @@ export default function MemberManagementPage() {
                   className={`mm-presence${
                     detail!.presence.is_seated
                       ? ' mm-presence--seated'
-                      : detail!.presence.is_online
+                      : onlineNow
                         ? ' mm-presence--online'
                         : ''
                   }`}
                 >
-                  {detail!.presence.is_seated
-                    ? 'At A Table'
-                    : detail!.presence.is_online
-                      ? 'Online Now'
-                      : 'Offline'}
+                  {detail!.presence.is_seated ? 'At A Table' : onlineNow ? 'Online Now' : 'Offline'}
                 </span>
               </div>
               <h2 id="mm-player-name" className="mm-alias">
@@ -401,12 +617,12 @@ export default function MemberManagementPage() {
         </div>
       </section>
 
-      <div className="mm-ledger-grid">
+      <div className="mm-ledger-grid" key={`ledger:${clubId}:${userId}:${user?.id}`}>
         {/* ── Nickname and remark ──────────────────────────────────────────── */}
 
         {detail!.capabilities.can_view_notes && (
           <NotesEditor
-            key={identity!.user_id!}
+            key={`notes:${resolvedClubId}:${identity!.user_id!}`}
             clubId={resolvedClubId}
             userId={identity!.user_id!}
             initialNickname={identity!.nickname}
@@ -495,13 +711,26 @@ export default function MemberManagementPage() {
             {/* The caption names the range the numbers BELONG to, which is the
               one the server answered for, not the tab just pressed. While a
               new range loads the figures are dimmed and say so. */}
-            <p className="mm-range__caption" aria-live="polite">
+            <p
+              className="mm-range__caption"
+              role="status"
+              aria-label="Displayed Activity Scope"
+              aria-live="polite"
+            >
               {loading
                 ? 'Loading The Selected Range...'
                 : detail!.range.is_overall
-                  ? 'Showing Lifetime Totals'
-                  : `Showing ${detail!.range.from ?? '?'} To ${detail!.range.to ?? '?'}`}
+                  ? 'Showing All Recorded Activity'
+                  : `Showing ${detail!.range.from ?? '?'} To ${detail!.range.to ?? '?'} UTC`}
             </p>
+            <p className="mm-range__caption">
+              UTC Dates Include Both From And To. Custom Dates Need Confirm.
+            </p>
+            {rangeMode === 'custom' && (customFrom !== range.from || customTo !== range.to) && (
+              <p className="mm-range__draft" role="status">
+                Draft Dates Not Applied. Confirm To Update The Displayed Range.
+              </p>
+            )}
           </section>
         )}
 
@@ -513,6 +742,26 @@ export default function MemberManagementPage() {
             aria-busy={loading}
           >
             <h2 className="mm-card__title">Activity</h2>
+            <details className="mm-metric-guide" aria-label="Activity Metric Definitions">
+              <summary>Metric Definitions</summary>
+              <p>
+                Hand Counts And Fees Come From Recorded Hands In This Club. Total Fee Is Cash Rake
+                Paid; MTT Fee Is Tournament-Hand Rake Paid.
+              </p>
+              <p>
+                Total Winnings Is The Cash Net Result; MTT Winnings Is The Tournament-Hand Net
+                Result. These Are Signed Hand Results, Not Gross Prizes Or Wallet Balances.
+              </p>
+              <p>
+                Claimed Back Counts Incoming Rakeback And Commission Transactions. Sent Out Counts
+                Outgoing Transfer, Send And Distribution Transactions In The Displayed UTC Window.
+              </p>
+              <p>Fees, Net Results And Transaction Totals Use Club Chips.</p>
+              <p>
+                Overall Means All Currently Recorded Activity. Older Activity May No Longer Be
+                Retained. Wallets And Downline Counts Are Current, Not Date-Filtered.
+              </p>
+            </details>
             {/* The RPC splits hands by tournament_id, and every other pair on
               this card is shown as cash / MTT. "Hands" was the cash half
               labelled as the whole; mtt_hands was fetched and never drawn. */}
@@ -605,6 +854,7 @@ export default function MemberManagementPage() {
 
         {detail!.capabilities.can_manage_role && identity!.home_club_id && (
           <RoleSection
+            key={`roles:${identity!.home_club_id}:${identity!.user_id!}`}
             resolvedClubId={identity!.home_club_id}
             targetUserId={identity!.user_id!}
             targetName={alias}
@@ -691,12 +941,14 @@ function NotesEditor({
   initialNickname,
   initialRemark,
   editable,
+  disabled = false,
 }: {
   clubId: string | null;
   userId: string;
   initialNickname: string | null;
   initialRemark: string | null;
   editable: boolean;
+  disabled?: boolean;
 }) {
   const toast = useToast();
   const isMountedRef = useIsMounted();
@@ -706,6 +958,7 @@ function NotesEditor({
   const [nicknameUnsaved, setNicknameUnsaved] = useState(false);
   const [remarkUnsaved, setRemarkUnsaved] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveUnconfirmed, setSaveUnconfirmed] = useState(false);
 
   // The saved values, so a blur that changed nothing does not write anything.
   const savedRef = useRef({
@@ -718,41 +971,55 @@ function NotesEditor({
   });
   const savingRef = useRef(false);
   const queuedSaveRef = useRef(false);
+  // An unknown acknowledgement retains the original payload and receipt key.
+  const pendingNoteRef = useRef<{ nickname: string; remark: string; requestId: string } | null>(
+    null
+  );
 
   useEffect(() => {
-    setNickname(initialNickname ?? '');
-    setRemark(initialRemark ?? '');
-    savedRef.current = { nickname: initialNickname ?? '', remark: initialRemark ?? '' };
-    draftRef.current = { nickname: initialNickname ?? '', remark: initialRemark ?? '' };
-    queuedSaveRef.current = false;
-    setNicknameUnsaved(false);
-    setRemarkUnsaved(false);
+    // A range refresh may carry another editor's newer notes. Keep local
+    // unsaved fields and unresolved operation payloads until explicitly saved.
+    const incoming = { nickname: initialNickname ?? '', remark: initialRemark ?? '' };
+    const previous = savedRef.current;
+    const draft = draftRef.current;
+    if (!pendingNoteRef.current && !savingRef.current) {
+      if (draft.nickname === previous.nickname) {
+        draft.nickname = incoming.nickname;
+        setNickname(incoming.nickname);
+      }
+      if (draft.remark === previous.remark) {
+        draft.remark = incoming.remark;
+        setRemark(incoming.remark);
+      }
+      savedRef.current = incoming;
+    }
+    setNicknameUnsaved(draft.nickname !== savedRef.current.nickname);
+    setRemarkUnsaved(draft.remark !== savedRef.current.remark);
   }, [initialNickname, initialRemark, userId]);
 
   const save = useCallback(async () => {
-    if (!clubId) return;
+    if (!clubId || disabled) return;
     if (savingRef.current) {
       queuedSaveRef.current = true;
       return;
     }
-    const draft = { ...draftRef.current };
+    const draft = pendingNoteRef.current ?? { ...draftRef.current, requestId: crypto.randomUUID() };
     if (savedRef.current.nickname === draft.nickname && savedRef.current.remark === draft.remark)
       return;
 
     savingRef.current = true;
     setSaving(true);
     try {
-      const requestId =
-        typeof crypto.randomUUID === 'function'
-          ? crypto.randomUUID()
-          : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      pendingNoteRef.current = draft;
       const result = await ClubRosterService.updateMemberNotes(
         clubId,
         userId,
         draft.nickname,
         draft.remark,
-        requestId
+        draft.requestId
       );
+      pendingNoteRef.current = null;
+      if (isMountedRef.current) setSaveUnconfirmed(false);
       const persisted = {
         nickname: result.nickname ?? '',
         remark: result.remark ?? '',
@@ -779,8 +1046,10 @@ function NotesEditor({
       }
       toast.success('Member Notes Saved');
     } catch (e) {
+      queuedSaveRef.current = false; // Unknown writes require an explicit retry of the same receipt.
       reportError(e, 'MemberManagementPage.saveNotes');
       if (!isMountedRef.current) return;
+      setSaveUnconfirmed(true);
       setNicknameUnsaved(savedRef.current.nickname !== draftRef.current.nickname);
       setRemarkUnsaved(savedRef.current.remark !== draftRef.current.remark);
       toast.error(safeErrorMessage(e, 'Could Not Save. Your Text Is Still Here'));
@@ -792,7 +1061,9 @@ function NotesEditor({
         queueMicrotask(() => void save());
       }
     }
-  }, [clubId, isMountedRef, toast, userId]);
+  }, [clubId, disabled, isMountedRef, toast, userId]);
+
+  const discardButtonRef = useRef<HTMLButtonElement>(null);
 
   const discardDraft = useCallback(() => {
     const saved = savedRef.current;
@@ -825,6 +1096,8 @@ function NotesEditor({
         <input
           type="text"
           value={nickname}
+          aria-label="Nickname"
+          disabled={disabled}
           maxLength={64}
           placeholder={toTitleCase('enter the nickname here...')}
           onChange={(e) => {
@@ -832,7 +1105,10 @@ function NotesEditor({
             draftRef.current.nickname = e.target.value;
             setNicknameUnsaved(savedRef.current.nickname !== e.target.value);
           }}
-          onBlur={() => void save()}
+          onBlur={(event) => {
+            // Moving to Revert must not start a write before its click or keyboard activation.
+            if (event.relatedTarget !== discardButtonRef.current) void save();
+          }}
         />
         {nicknameUnsaved && <span className="mm-field__unsaved">Not Saved Yet</span>}
       </label>
@@ -842,6 +1118,8 @@ function NotesEditor({
         <input
           type="text"
           value={remark}
+          aria-label="Remark"
+          disabled={disabled}
           maxLength={240}
           placeholder={toTitleCase('enter remark here...')}
           onChange={(e) => {
@@ -849,7 +1127,10 @@ function NotesEditor({
             draftRef.current.remark = e.target.value;
             setRemarkUnsaved(savedRef.current.remark !== e.target.value);
           }}
-          onBlur={() => void save()}
+          onBlur={(event) => {
+            // Moving to Revert must not start a write before its click or keyboard activation.
+            if (event.relatedTarget !== discardButtonRef.current) void save();
+          }}
         />
         {remarkUnsaved && <span className="mm-field__unsaved">Not Saved Yet</span>}
       </label>
@@ -858,15 +1139,22 @@ function NotesEditor({
         <span className="mm-notes__status" role="status" aria-live="polite">
           {saving
             ? 'Saving Through The Audited Club Ledger...'
-            : nicknameUnsaved || remarkUnsaved
-              ? 'Changes Are Still Local To This Device.'
-              : 'Notes Match The Audited Club Record.'}
+            : saveUnconfirmed
+              ? 'Save Outcome Is Unconfirmed. Retry The Same Request.'
+              : nicknameUnsaved || remarkUnsaved
+                ? 'Changes Are Still Local To This Device.'
+                : 'Notes Match The Audited Club Record.'}
         </span>
         <button
           type="button"
           className="mm-notes__discard"
+          ref={discardButtonRef}
+          onPointerDown={(event) => {
+            // Keep pointer activation from blurring the draft before Revert runs.
+            event.preventDefault();
+          }}
           onClick={discardDraft}
-          disabled={saving || (!nicknameUnsaved && !remarkUnsaved)}
+          disabled={disabled || saving || saveUnconfirmed || (!nicknameUnsaved && !remarkUnsaved)}
         >
           Revert
         </button>
@@ -874,7 +1162,7 @@ function NotesEditor({
           type="button"
           className="mm-notes__save"
           onClick={() => void save()}
-          disabled={saving || (!nicknameUnsaved && !remarkUnsaved)}
+          disabled={disabled || saving || (!saveUnconfirmed && !nicknameUnsaved && !remarkUnsaved)}
         >
           {saving ? 'Saving...' : 'Save Notes'}
         </button>
@@ -907,8 +1195,26 @@ function RoleSection({
   onRoleChanged: () => void;
 }) {
   const toast = useToast();
+  const isMountedRef = useIsMounted();
   const [promoting, setPromoting] = useState(false);
   const [confirmRole, setConfirmRole] = useState<ClubRole | null>(null);
+  const roleConfirmationRef = useRef<HTMLDivElement>(null);
+  const roleButtonsRef = useRef(new Map<ClubRole, HTMLButtonElement>());
+  const cancelledRoleRef = useRef<ClubRole | null>(null);
+  useEffect(() => {
+    // Choosing or cancelling a role removes the focused button from the DOM.
+    // Keep keyboard navigation in the same role interaction after each render.
+    if (confirmRole) {
+      roleConfirmationRef.current
+        ?.querySelector<HTMLElement>(
+          'input:not([disabled]):not([tabindex="-1"]), button:not([disabled]):not([tabindex="-1"])'
+        )
+        ?.focus();
+    } else if (cancelledRoleRef.current) {
+      roleButtonsRef.current.get(cancelledRoleRef.current)?.focus();
+      cancelledRoleRef.current = null;
+    }
+  }, [confirmRole]);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   // Percentages, not fractions. Blank on purpose: a rate that arrives
@@ -954,40 +1260,48 @@ function RoleSection({
   // which the client has no way to answer, is answered where the tree lives.
   const [promotableRoles, setPromotableRoles] = useState<ClubRole[]>([]);
   const [rolesLoading, setRolesLoading] = useState(true);
+  const [rolesLoadFailed, setRolesLoadFailed] = useState(false);
+  const [rolesLoadAttempt, setRolesLoadAttempt] = useState(0);
 
   useEffect(() => {
     let live = true;
+    const controller = new AbortController();
     (async () => {
       setRolesLoading(true);
+      setRolesLoadFailed(false);
       try {
-        const { data, error: rolesErr } = await supabase.rpc('ca_club_grantable_roles', {
-          p_club_id: resolvedClubId,
-          p_target_user_id: targetUserId,
-        });
+        const roles = await ClubRosterService.getGrantableRoles(
+          resolvedClubId,
+          targetUserId,
+          controller.signal
+        );
         if (!live) return;
-        if (rolesErr) throw rolesErr;
-        const roles = (data as { roles?: string[] } | null)?.roles ?? [];
-        setPromotableRoles(roles.map(normaliseRole));
+        setPromotableRoles(roles);
       } catch (e) {
-        reportError(e, 'MemberManagementPage.grantable_roles');
+        if (live) reportError(e, 'MemberManagementPage.grantable_roles');
         // Offering nothing is the safe direction to be wrong in: the user is
         // told, rather than shown a button the server will refuse.
-        if (live) setPromotableRoles([]);
+        if (live) {
+          setPromotableRoles([]);
+          setRolesLoadFailed(true);
+        }
       } finally {
         if (live) setRolesLoading(false);
       }
     })();
     return () => {
       live = false;
+      controller.abort();
     };
     // targetRole is a dependency because the answer changes once the role does:
     // after promoting a player to agent, "agent" must stop being on offer.
-  }, [resolvedClubId, targetUserId, targetRole]);
+  }, [resolvedClubId, targetUserId, targetRole, rolesLoadAttempt]);
 
   const canManage = promotableRoles.length > 0 && targetRole !== 'owner';
 
-  const noRolesReason =
-    targetRole === 'owner'
+  const noRolesReason = rolesLoadFailed
+    ? 'Role Options Could Not Be Loaded. Retry To Check Them Again.'
+    : targetRole === 'owner'
       ? 'The Club Owner Cannot Be Changed From Here.'
       : roleRank(myRole) <= roleRank('sub_agent')
         ? 'Your Role Does Not Allow Changing Anyone Else’s.'
@@ -1079,17 +1393,24 @@ function RoleSection({
       // a co-owner, or promote outside their downline, by making one request
       // fail. A trigger on club_members now refuses that update outright, so
       // the fallback could not work even if someone put it back.
-      const { data, error: rpcError } = await supabase.rpc('fn_club_set_member_role', {
-        p_club_id: resolvedClubId,
-        p_user_id: targetUserId,
-        p_role: newRole,
-        ...(rates ?? {}),
-      });
+      const { data, error: rpcError } = await runWithRequestDeadline(
+        (signal) =>
+          supabase
+            .rpc('fn_club_set_member_role', {
+              p_club_id: resolvedClubId,
+              p_user_id: targetUserId,
+              p_role: newRole,
+              ...(rates ?? {}),
+            })
+            .abortSignal(signal),
+        { timeoutMs: 40_000 }
+      );
       if (rpcError) throw rpcError;
 
       const result = data as { success?: boolean; error?: string } | null;
       if (!result?.success) throw new Error(result?.error || 'Role Change Refused');
 
+      if (!isMountedRef.current) return;
       setSuccess(`${targetName} Is Now ${roleLabel(newRole)}`);
       setConfirmRole(null);
       toast.success(`${targetName} Is Now ${roleLabel(newRole)}`);
@@ -1113,14 +1434,19 @@ function RoleSection({
       // when the wallet really is empty, so re-grading an agent who is already
       // carrying float does not ask a question with an obvious answer.
       if (isAgentRole(newRole)) {
-        let float_ = 0;
+        let float_: number | null = null;
         try {
-          const { data: agentRow, error: balanceError } = await supabase
-            .from('agents')
-            .select('agent_wallet_balance')
-            .eq('club_id', resolvedClubId)
-            .eq('user_id', targetUserId)
-            .maybeSingle();
+          const { data: agentRow, error: balanceError } = await runWithRequestDeadline(
+            (signal) =>
+              supabase
+                .from('agents')
+                .select('agent_wallet_balance')
+                .eq('club_id', resolvedClubId)
+                .eq('user_id', targetUserId)
+                .abortSignal(signal)
+                .maybeSingle(),
+            { timeoutMs: 8_000 }
+          );
           // Bound and acted on rather than discarded. supabase-js returns the
           // failure, it does not throw one, so an unbound `error` here would
           // read a missing row and a denied read as the same thing: zero. That
@@ -1134,7 +1460,8 @@ function RoleSection({
           // the transfer screen reads the real number itself.
           reportError(e, 'MemberManagementPage.fundPromptBalance');
         }
-        if (float_ <= 0) {
+        if (!isMountedRef.current) return;
+        if (float_ === null || float_ <= 0) {
           setFundPrompt({ role: newRole });
           return; // The prompt owns what happens next, including the refresh.
         }
@@ -1146,9 +1473,9 @@ function RoleSection({
         onRoleChanged();
       }, 1200);
     } catch (err) {
-      setError(safeErrorMessage(err, 'Failed To Update Role'));
+      if (isMountedRef.current) setError(safeErrorMessage(err, 'Failed To Update Role'));
     } finally {
-      setPromoting(false);
+      if (isMountedRef.current) setPromoting(false);
     }
   };
 
@@ -1172,7 +1499,7 @@ function RoleSection({
             {targetName} Is Now {roleLabel(fundPrompt.role)}
           </p>
           <p className="mm-roles__fund-note">
-            Their Agent Wallet Is Empty, So They Cannot Send Chips To Anybody Yet. Fund Them Now?
+            Review Their Agent Wallet And Send Chips If Funding Is Needed. Fund Them Now?
           </p>
           <div className="mm-roles__confirm-actions">
             <button
@@ -1197,9 +1524,20 @@ function RoleSection({
       ) : rolesLoading ? (
         <p className="mm-roles__note">Checking What You May Grant...</p>
       ) : !canManage ? (
-        <p className="mm-roles__note">{noRolesReason}</p>
+        <>
+          <p className="mm-roles__note">{noRolesReason}</p>
+          {rolesLoadFailed && (
+            <button
+              type="button"
+              className="mm-roles__confirm-no"
+              onClick={() => setRolesLoadAttempt((attempt) => attempt + 1)}
+            >
+              Retry Role Options
+            </button>
+          )}
+        </>
       ) : confirmRole ? (
-        <div className="mm-roles__confirm">
+        <div className="mm-roles__confirm" ref={roleConfirmationRef}>
           <p>
             Change <strong>{targetName}</strong> To{' '}
             <strong style={{ color: roleColor(confirmRole) }}>{roleLabel(confirmRole)}</strong>?
@@ -1317,7 +1655,10 @@ function RoleSection({
             <button
               type="button"
               className="mm-roles__confirm-no"
-              onClick={() => setConfirmRole(null)}
+              onClick={() => {
+                cancelledRoleRef.current = confirmRole;
+                setConfirmRole(null);
+              }}
               disabled={promoting}
             >
               Cancel
@@ -1330,6 +1671,10 @@ function RoleSection({
             <button
               key={role}
               type="button"
+              ref={(button) => {
+                if (button) roleButtonsRef.current.set(role, button);
+                else roleButtonsRef.current.delete(role);
+              }}
               className={`mm-roles__option${role === targetRole ? ' mm-roles__option--current' : ''}`}
               onClick={() => {
                 setError('');
@@ -1346,7 +1691,7 @@ function RoleSection({
                 <span className="mm-roles__option-name" style={{ color: roleColor(role) }}>
                   {roleLabel(role)}
                 </span>
-                <span className="mm-roles__option-desc">{ROLE_DESCRIPTION[role]}</span>
+                <span className="mm-roles__option-desc">{toTitleCase(ROLE_DESCRIPTION[role])}</span>
               </span>
             </button>
           ))}

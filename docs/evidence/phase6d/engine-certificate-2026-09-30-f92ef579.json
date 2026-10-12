@@ -1,0 +1,112 @@
+{
+  "sourceRelease": "f92ef5798bbc968f19a33f8515a5025a62e840d5",
+  "receivingRun": 36637586608,
+  "certificateRun": 36667498638,
+  "certificateJob": 109735290423,
+  "conclusion": "success",
+  "completedAt": "2026-09-30T04:23:15Z",
+  "tests": {
+    "passed": 4,
+    "failed": 0,
+    "skipped": 0,
+    "flaky": 0,
+    "cases": [
+      "MTT live and reconnect plus naturalblindlevelchange",
+      "SPIN live and reconnect",
+      "SNG live and reconnect",
+      "cash live and networklossrecovery"
+    ]
+  },
+  "fixtureCleanup": "hard-deleted and absence verified",
+  "clientSha": "c8dba952d97807950e48ae21db021737f810775f",
+  "identityQualification": "Exact engine expected by each engine health precondition; fresh health after certificate reports same release and continuous uptime. Final workflow provenance step checks the client separately.",
+  "logSha256": "9361cce4d961b67d93fba4a3bf33d7365e8f72663d82b58097478e7253305c32",
+  "reusedRatherThanRerun": true,
+  "otherClientJob": "separate failure; not represented as passing",
+  "exactJobSteps": [
+    {
+      "name": "Set up job",
+      "conclusion": "success"
+    },
+    {
+      "name": "Checkout",
+      "conclusion": "success"
+    },
+    {
+      "name": "Setup Node 20",
+      "conclusion": "success"
+    },
+    {
+      "name": "Install Dependencies",
+      "conclusion": "success"
+    },
+    {
+      "name": "Prove every club foreign key remains deletable",
+      "conclusion": "success"
+    },
+    {
+      "name": "Audit the remaining live schema from trusted code",
+      "conclusion": "success"
+    },
+    {
+      "name": "Resolve the exact protected-main engine component",
+      "conclusion": "success"
+    },
+    {
+      "name": "Require the exact engine before opening production browser fixtures",
+      "conclusion": "success"
+    },
+    {
+      "name": "Install Chromium and WebKit",
+      "conclusion": "success"
+    },
+    {
+      "name": "Confirm production is serving, and record what we are testing",
+      "conclusion": "success"
+    },
+    {
+      "name": "Take the specs from the commit production is actually serving",
+      "conclusion": "success"
+    },
+    {
+      "name": "Wait for the same engine to resume gameplay",
+      "conclusion": "success"
+    },
+    {
+      "name": "Provision an isolated production E2E account",
+      "conclusion": "success"
+    },
+    {
+      "name": "Certify live-table continuity against the exact serving engine",
+      "conclusion": "success"
+    },
+    {
+      "name": "Did the live-table certificate actually execute?",
+      "conclusion": "success"
+    },
+    {
+      "name": "Hard-delete the isolated production E2E account",
+      "conclusion": "success"
+    },
+    {
+      "name": "Prove production stayed on one exact release during certification",
+      "conclusion": "success"
+    },
+    {
+      "name": "Upload the report when something is wrong on production",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "Post Setup Node 20",
+      "conclusion": "success"
+    },
+    {
+      "name": "Post Checkout",
+      "conclusion": "success"
+    },
+    {
+      "name": "Complete job",
+      "conclusion": "success"
+    }
+  ]
+}

@@ -241,6 +241,15 @@
     0 0 16px rgba(53, 186, 255, 0.18);
 }
 
+/* The unknown-balance word, not a figure: it is longer than any number this
+   slot ever holds, so it steps down to a size that still fits beside the two
+   action buttons at 375px. */
+.diamond-count--unknown {
+  font-size: clamp(15px, 3.2vw, 20px);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .diamond-label {
   margin-top: 5px;
   color: #86cfff;

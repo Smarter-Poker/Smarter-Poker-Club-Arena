@@ -52,7 +52,9 @@ function receipt(
   return value as DiamondCustodyReceipt;
 }
 /** A failed response can follow a committed transaction. Report uncertainty,
- * preserve the original error and identity, and never issue a compensating write. */
+ * preserve the original error and identity, and never issue a compensating write.
+ * The context carries `amount`, the Diamonds in doubt: the incident pipe files it as
+ * the discrepancy, and a critical with none is withheld as "nothing is unaccounted for". */
 async function verifiedCustodyCall<T>(
   operation: 'reserve' | 'release',
   context: Record<string, unknown>,
@@ -78,7 +80,12 @@ export async function reserveDiamondEntry(
     throw new Error('Invalid Diamond Amount');
   return verifiedCustodyCall(
     'reserve',
-    { userId: input.userId, targetId: input.targetId, requestId: input.requestId },
+    {
+      userId: input.userId,
+      targetId: input.targetId,
+      requestId: input.requestId,
+      amount: input.amount,
+    },
     async () => {
       const { data, error } = await supabase.rpc('fn_poker_diamond_reserve', {
         p_user_id: input.userId,
@@ -97,12 +104,16 @@ export async function reserveDiamondEntry(
     }
   );
 }
-/** Stable requestId must be retained across network failures; no compensating credit. */
+/** Stable requestId must be retained across network failures; no compensating credit.
+ * `amount` is the Diamonds this release returns, as the caller holds them. It is not
+ * sent to the database; an unverified release carries it as the amount in doubt, so
+ * the alert pages with its size instead of being withheld as 0 (Diamond Phase 10). */
 export async function releaseDiamondEntry(
   custodyId: string,
-  requestId: string
+  requestId: string,
+  amount: number
 ): Promise<DiamondCustodyReceipt> {
-  return verifiedCustodyCall('release', { custodyId, requestId }, async () => {
+  return verifiedCustodyCall('release', { custodyId, requestId, amount }, async () => {
     const { data, error } = await supabase.rpc('fn_poker_diamond_release', {
       p_custody_id: custodyId,
       p_request_id: requestId,

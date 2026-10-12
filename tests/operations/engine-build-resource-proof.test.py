@@ -15,8 +15,44 @@ class OriginalBuildResourceEvidenceTests(unittest.TestCase):
     def output(self, peak, boundary=None):
         return f'{boundary if boundary is not None else self.boundary}\nENGINE_BUILD_MEMORY_PEAK_BYTES={peak}\n'
 
+    def test_disposable_builder_retains_limits_and_source_refs(self):
+        from unittest.mock import patch
+        import tempfile
+        with tempfile.TemporaryDirectory() as temp, patch.object(proof, 'run') as run:
+            proof.prepare_cached_builder(Path(temp) / 'buildkitd.toml')
+            config = (Path(temp) / 'buildkitd.toml').read_text()
+            self.assertIn('[registry."docker.io"]\n  mirrors = ["mirror.gcr.io"]', config)
+            self.assertIn('max-parallelism = 1', config)
+            args = run.call_args_list[-1].args[0]
+            for value in (f'memory={proof.LIMIT}', f'memory-swap={proof.LIMIT}',
+                          'cpu-period=100000', 'cpu-quota=100000', 'restart-policy=no'):
+                self.assertIn(value, args)
+            self.assertIn('image=moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8', args)
+            self.assertEqual(proof.NODE, 'mirror.gcr.io/library/node:22-slim@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5')
+
+    def test_daemon_route_refuses_local_execution(self):
+        from unittest.mock import patch
+        with patch.object(proof.sys, 'platform', 'darwin'), patch.object(proof, 'run') as run:
+            with self.assertRaisesRegex(RuntimeError, 'disposable Linux Actions'):
+                proof.route_disposable_daemon(Path('/unused'))
+            run.assert_not_called()
+
+    def test_daemon_route_preserves_and_restores_original_fields(self):
+        from unittest.mock import patch
+        from types import SimpleNamespace
+        import tempfile
+        original = '{"log-driver":"json-file", "registry-mirrors":["https://original"]}'
+        def response(args, **kwargs):
+            return SimpleNamespace(returncode=0, stdout=original if 'cat' in args else '')
+        with tempfile.TemporaryDirectory() as temp, patch.object(proof.sys, 'platform', 'linux'), patch.dict(proof.os.environ, {'GITHUB_ACTIONS':'true'}), patch.object(proof, 'run', side_effect=response):
+            out = Path(temp)
+            proof.route_disposable_daemon(out)
+            self.assertEqual(proof.json.loads((out / 'daemon-cache.json').read_text())['log-driver'], 'json-file')
+            proof.restore_disposable_daemon(out)
+            self.assertEqual((out / 'daemon-restore.json').read_text(), original)
+
     def test_retains_raw_peak_including_documented_transient_excess(self):
-        for peak in (proof.LIMIT - 4096, proof.LIMIT, 671092736):
+        for peak in (proof.LIMIT - 4096, proof.LIMIT, proof.LIMIT + 4096):
             with self.subTest(peak=peak):
                 receipt = proof.verified_build_resources(self.output(peak))
                 self.assertEqual(receipt['engine_build_memory_peak'], peak)
@@ -45,7 +81,7 @@ class OriginalBuildResourceEvidenceTests(unittest.TestCase):
                 proof.verified_build_resources(self.output(proof.LIMIT, boundary))
 
     def test_refuses_missing_duplicate_or_unreadable_peak(self):
-        for peak in ('', '-1', '0', 'NaN', '671092736.0',
+        for peak in ('', '-1', '0', 'NaN', f'{proof.LIMIT + 4096}.0',
                      f'{proof.LIMIT}\nENGINE_BUILD_MEMORY_PEAK_BYTES={proof.LIMIT}'):
             with self.subTest(peak=peak), self.assertRaisesRegex(RuntimeError, 'memory peak'):
                 proof.verified_build_resources(self.output(peak))

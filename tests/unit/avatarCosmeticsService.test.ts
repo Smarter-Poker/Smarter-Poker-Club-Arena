@@ -102,6 +102,32 @@ describe('getCosmetics', () => {
   });
 });
 
+describe('hasVipAccess', () => {
+  it('refuses an expired monthly membership even when is_vip is still true', async () => {
+    state.profileSelect = {
+      data: {
+        is_vip: true,
+        vip_tier: 'monthly',
+        vip_expires_at: new Date(Date.now() - 60_000).toISOString(),
+      },
+      error: null,
+    };
+    await expect(avatarService.hasVipAccess(USER)).resolves.toBe(false);
+  });
+
+  it('keeps lifetime membership active without trusting its stale expiry', async () => {
+    state.profileSelect = {
+      data: {
+        is_vip: true,
+        vip_tier: 'lifetime',
+        vip_expires_at: new Date(Date.now() - 60_000).toISOString(),
+      },
+      error: null,
+    };
+    await expect(avatarService.hasVipAccess(USER)).resolves.toBe(true);
+  });
+});
+
 describe('getCosmeticCatalog', () => {
   it('marks every PAID cosmetic unowned for a plain account, and every free one owned', async () => {
     /* 2026-08-27: the catalog gained a free tier (three frames, three auras)
@@ -111,7 +137,7 @@ describe('getCosmeticCatalog', () => {
        account with no VIP and no ledger row. */
     const { cosmetics, ok } = await avatarService.getCosmeticCatalog(USER);
     expect(ok).toBe(true);
-    expect(cosmetics).toHaveLength(12);
+    expect(cosmetics).toHaveLength(20);
     expect(cosmetics.filter((c) => c.tier === 'vip').every((c) => !c.isOwned)).toBe(true);
     expect(cosmetics.filter((c) => c.tier === 'free').every((c) => c.isOwned)).toBe(true);
     expect(cosmetics.filter((c) => c.tier === 'free')).toHaveLength(6);
@@ -124,10 +150,38 @@ describe('getCosmeticCatalog', () => {
     expect(cosmetics.every((c) => c.isOwned)).toBe(true);
   });
 
+  it('does not treat an expired monthly VIP flag as an active entitlement', async () => {
+    state.profileSelect = {
+      data: {
+        is_vip: true,
+        vip_tier: 'monthly',
+        vip_expires_at: new Date(Date.now() - 60_000).toISOString(),
+      },
+      error: null,
+    };
+    const { cosmetics, ok } = await avatarService.getCosmeticCatalog(USER);
+    expect(ok).toBe(true);
+    expect(cosmetics.filter((c) => c.tier === 'vip').every((c) => !c.isOwned)).toBe(true);
+  });
+
+  it('keeps lifetime VIP active even when a stale expiry remains', async () => {
+    state.profileSelect = {
+      data: {
+        is_vip: true,
+        vip_tier: 'lifetime',
+        vip_expires_at: new Date(Date.now() - 60_000).toISOString(),
+      },
+      error: null,
+    };
+    const { cosmetics, ok } = await avatarService.getCosmeticCatalog(USER);
+    expect(ok).toBe(true);
+    expect(cosmetics.every((c) => c.isOwned)).toBe(true);
+  });
+
   it('honours a shop grant for a non-VIP', async () => {
-    state.unlockSelect = { data: [{ avatar_id: 'frame_hellfire' }], error: null };
+    state.unlockSelect = { data: [{ avatar_id: 'frame_emerald' }], error: null };
     const { cosmetics } = await avatarService.getCosmeticCatalog(USER);
-    expect(cosmetics.find((c) => c.id === 'frame-hellfire')?.isOwned).toBe(true);
+    expect(cosmetics.find((c) => c.id === 'frame-emerald')?.isOwned).toBe(true);
     expect(cosmetics.find((c) => c.id === 'frame-gold')?.isOwned).toBe(false);
   });
 

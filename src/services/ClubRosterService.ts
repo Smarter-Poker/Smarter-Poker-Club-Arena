@@ -26,6 +26,31 @@
 import { supabase } from '../lib/supabase';
 import { normaliseRole, type ClubRole } from '../types/clubRoles';
 
+/** Successful SQL NULL is an explicit authorization/scope denial, not a read outage. */
+export class MemberAccessDeniedError extends Error {
+  constructor() {
+    super('You Cannot View This Member');
+    this.name = 'MemberAccessDeniedError';
+  }
+}
+
+/** Each subpage read owns one deadline, including auth and response decoding. */
+async function readMemberRpc(
+  name: string,
+  parameters: Record<string, unknown>,
+  signal?: AbortSignal
+): Promise<unknown> {
+  const { runRosterReadWithRetry } = await import('../utils/rosterReadReliability');
+  return runRosterReadWithRetry(
+    async (attemptSignal) => {
+      const { data, error } = await supabase.rpc(name, parameters).abortSignal(attemptSignal);
+      if (error) throw error;
+      return data;
+    },
+    { attempts: 1, timeoutMs: 40_000, signal }
+  );
+}
+
 /** PostgREST hands back `numeric` as a string. Make it a number, exactly once. */
 function num(value: unknown): number {
   if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
@@ -38,6 +63,31 @@ function num(value: unknown): number {
 
 function nullableNum(value: unknown): number | null {
   return value === null || value === undefined ? null : num(value);
+}
+
+function isRosterCount(value: unknown): boolean {
+  return (
+    (typeof value === 'number' || (typeof value === 'string' && value.trim() !== '')) &&
+    Number.isSafeInteger(Number(value)) &&
+    Number(value) >= 0
+  );
+}
+
+/** An unreadable metric must never be rendered as a verified zero. */
+function isMetric(value: unknown): boolean {
+  return (
+    (typeof value === 'number' || (typeof value === 'string' && value.trim() !== '')) &&
+    Number.isFinite(Number(value))
+  );
+}
+
+function hasMetrics(value: unknown, fields: string[]): boolean {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    fields.every((key) => isMetric((value as Record<string, unknown>)[key]))
+  );
 }
 
 const MAX_ROSTER_SEARCH_LENGTH = 120;
@@ -175,25 +225,25 @@ export function mapRosterRow(row: Record<string, unknown>): RosterMember {
 }
 
 export interface MemberRange {
-  /** ISO date, yyyy-mm-dd. Both null means Overall (lifetime). */
+  /** UTC calendar date, yyyy-mm-dd, inclusive at both ends. Both null means all recorded activity. */
   from: string | null;
   to: string | null;
 }
 
 export const RANGE_OVERALL: MemberRange = { from: null, to: null };
 
-/** The last N days inclusive of today, as the RPCs want it. */
+/** The last N UTC calendar days inclusive of today, matching the RPC day buckets. */
 export function lastDaysRange(days: number): MemberRange {
   const to = new Date();
-  const from = new Date();
-  from.setDate(from.getDate() - (days - 1));
+  const from = new Date(to);
+  from.setUTCDate(from.getUTCDate() - (days - 1));
   return { from: isoDate(from), to: isoDate(to) };
 }
 
 export function isoDate(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
 }
 
@@ -295,8 +345,22 @@ export const ClubRosterService = {
         }
         const { data, error } = await request;
         if (error) throw error;
-        if (!data) return null;
+        if (data === null) return null;
         const d = data as Record<string, any>;
+        if (
+          !d ||
+          typeof d !== 'object' ||
+          typeof d.viewer_role !== 'string' ||
+          !d.capabilities ||
+          !d.counts ||
+          !['can_view_financials', 'can_export', 'can_manage_members', 'can_view_notes'].every(
+            (key) => typeof d.capabilities[key] === 'boolean'
+          ) ||
+          !['total', 'online', 'seated', 'agents', 'admins'].every((key) =>
+            isRosterCount(d.counts[key])
+          )
+        )
+          throw new Error('The Roster Summary Response Was Incomplete');
         return {
           viewer_role: normaliseRole(d.viewer_role),
           capabilities: {
@@ -337,7 +401,26 @@ export const ClubRosterService = {
         }
         const { data, error } = await request;
         if (error) throw error;
-        const d = (data ?? {}) as Record<string, any>;
+        const d = data as Record<string, any>;
+        if (
+          !d ||
+          typeof d !== 'object' ||
+          !Array.isArray(d.items) ||
+          typeof d.has_more !== 'boolean' ||
+          !isRosterCount(d.filtered_total) ||
+          Number(d.filtered_total) < d.items.length ||
+          !d.items.every(
+            (row: unknown) =>
+              row !== null &&
+              typeof row === 'object' &&
+              'user_id' in row &&
+              typeof row.user_id === 'string' &&
+              row.user_id.length > 0
+          ) ||
+          (d.has_more &&
+            (!d.next_cursor || typeof d.next_cursor !== 'object' || Array.isArray(d.next_cursor)))
+        )
+          throw new Error('The Roster Page Response Was Incomplete');
         return {
           items: Array.isArray(d.items)
             ? d.items.map((row: Record<string, unknown>) => mapRosterRow(row))
@@ -362,30 +445,80 @@ export const ClubRosterService = {
    * callers resolve a slug with utils/clubIdResolver first, because this
    * service has no opinion about routing.
    */
-  async getRoster(clubId: string): Promise<RosterMember[]> {
-    const { data, error } = await supabase.rpc('ca_club_members_overview', {
-      p_club_id: clubId,
-    });
-    if (error) throw error;
-    return (data ?? []).map((row: Record<string, unknown>) => mapRosterRow(row));
+  async getRoster(clubId: string, signal?: AbortSignal): Promise<RosterMember[]> {
+    const data = await readMemberRpc('ca_club_members_overview', { p_club_id: clubId }, signal);
+    if (!Array.isArray(data)) throw new Error('The Roster Response Was Incomplete');
+    return data.map((row: Record<string, unknown>) => mapRosterRow(row));
   },
 
   async getMemberDetail(
     clubId: string,
     userId: string,
-    range: MemberRange = RANGE_OVERALL
+    range: MemberRange = RANGE_OVERALL,
+    signal?: AbortSignal
   ): Promise<MemberDetail> {
-    const { data, error } = await supabase.rpc('ca_club_member_detail', {
-      p_club_id: clubId,
-      p_user_id: userId,
-      p_from: range.from,
-      p_to: range.to,
-    });
-    if (error) throw error;
+    const data = await readMemberRpc(
+      'ca_club_member_detail',
+      {
+        p_club_id: clubId,
+        p_user_id: userId,
+        p_from: range.from,
+        p_to: range.to,
+      },
+      signal
+    );
+    if (data === null) throw new MemberAccessDeniedError();
+    if (!data || typeof data !== 'object' || !('identity' in data)) {
+      throw new Error('The Member Response Was Incomplete');
+    }
     const d = (data ?? {}) as Record<string, any>;
-    // The RPC already guarantees numbers rather than strings and zeros rather
-    // than nulls, but a missing member returns an object with null identity, so
-    // every field is still defaulted here rather than trusted.
+    // SQL deliberately redacts the three sensitive objects to null for an
+    // identity-only viewer. A populated object must carry every owning SQL metric.
+    const sensitive = d.capabilities?.can_view_financials === true;
+    if (
+      (d.identity !== null &&
+        (!d.identity ||
+          typeof d.identity !== 'object' ||
+          Array.isArray(d.identity) ||
+          typeof d.identity.user_id !== 'string' ||
+          d.identity.user_id.length === 0)) ||
+      (d.stats !== null && !['hands', 'mtt_hands'].every((key) => isRosterCount(d.stats?.[key]))) ||
+      (d.downline !== null &&
+        !['downline_direct', 'downline_total'].every((key) => isRosterCount(d.downline?.[key]))) ||
+      !d.capabilities ||
+      !['none', 'identity', 'downline', 'staff', 'service'].includes(d.capabilities.access) ||
+      !['can_view_financials', 'can_view_notes', 'can_edit_notes', 'can_manage_role'].every(
+        (key) => typeof d.capabilities[key] === 'boolean'
+      ) ||
+      !d.presence ||
+      typeof d.presence.is_online !== 'boolean' ||
+      typeof d.presence.is_seated !== 'boolean' ||
+      !d.range ||
+      !('from' in d.range) ||
+      !('to' in d.range) ||
+      typeof d.range.is_overall !== 'boolean' ||
+      !['wallets', 'downline', 'stats'].every((key) => key in d) ||
+      ![
+        ['wallets', ['chip_balance', 'player_wallet', 'agent_wallet', 'promo_wallet']],
+        ['downline', ['downline_direct', 'downline_total']],
+        [
+          'stats',
+          [
+            'hands',
+            'mtt_hands',
+            'total_fee',
+            'mtt_fee',
+            'claimed_back',
+            'sent_out',
+            'total_winnings',
+            'mtt_winnings',
+          ],
+        ],
+      ].every(([key, fields]) =>
+        d[key as string] === null ? !sensitive : hasMetrics(d[key as string], fields as string[])
+      )
+    )
+      throw new Error('The Member Response Was Incomplete');
     return {
       identity: {
         user_id: d.identity?.user_id ?? null,
@@ -455,19 +588,59 @@ export const ClubRosterService = {
     clubId: string,
     userId: string,
     variant: string | null = null,
-    range: MemberRange = RANGE_OVERALL
+    range: MemberRange = RANGE_OVERALL,
+    signal?: AbortSignal
   ): Promise<MemberStatistics> {
-    const { data, error } = await supabase.rpc('ca_club_member_statistics', {
-      p_club_id: clubId,
-      p_user_id: userId,
-      p_variant: variant,
-      p_from: range.from,
-      p_to: range.to,
-    });
-    if (error) throw error;
+    const data = await readMemberRpc(
+      'ca_club_member_statistics',
+      {
+        p_club_id: clubId,
+        p_user_id: userId,
+        p_variant: variant,
+        p_from: range.from,
+        p_to: range.to,
+      },
+      signal
+    );
+    if (
+      !data ||
+      typeof data !== 'object' ||
+      !('authorized' in data) ||
+      typeof data.authorized !== 'boolean'
+    ) {
+      throw new Error('The Statistics Response Was Incomplete');
+    }
     const d = (data ?? {}) as Record<string, any>;
+    if (
+      d.authorized === true &&
+      (!['hands', 'hands_won', 'three_bets', 'faced_three_bets', 'cbet_opportunities'].every(
+        (key) => isRosterCount(d[key])
+      ) ||
+        !hasMetrics(d, [
+          'hands',
+          'hands_won',
+          'win_rate',
+          'vpip',
+          'pfr',
+          'three_bet',
+          'three_bets',
+          'fold_to_three_bet',
+          'faced_three_bets',
+          'cbet',
+          'cbet_opportunities',
+          'net',
+          'fees',
+        ]) ||
+        typeof d.variant !== 'string' ||
+        !Array.isArray(d.variants) ||
+        !d.variants.every((value: unknown) => typeof value === 'string') ||
+        !('from' in d) ||
+        !('to' in d) ||
+        typeof d.is_overall !== 'boolean')
+    )
+      throw new Error('The Statistics Response Was Incomplete');
     return {
-      authorized: d.authorized !== false,
+      authorized: d.authorized === true,
       reason: d.reason === 'not_member' || d.reason === 'restricted' ? d.reason : null,
       variant: d.variant ?? 'all',
       variants: Array.isArray(d.variants) ? d.variants.filter(Boolean) : [],
@@ -490,13 +663,21 @@ export const ClubRosterService = {
     };
   },
 
-  async getDownline(clubId: string, userId: string): Promise<DownlineMember[]> {
-    const { data, error } = await supabase.rpc('ca_club_member_downline', {
-      p_club_id: clubId,
-      p_user_id: userId,
-    });
-    if (error) throw error;
-    return (data ?? []).map((row: Record<string, unknown>) => ({
+  async getDownline(
+    clubId: string,
+    userId: string,
+    signal?: AbortSignal
+  ): Promise<DownlineMember[]> {
+    const data = await readMemberRpc(
+      'ca_club_member_downline',
+      {
+        p_club_id: clubId,
+        p_user_id: userId,
+      },
+      signal
+    );
+    if (!Array.isArray(data)) throw new Error('The Downline Response Was Incomplete');
+    return data.map((row: Record<string, unknown>) => ({
       user_id: String(row.user_id ?? ''),
       player_number: (row.player_number as string) ?? null,
       alias: (row.alias as string) || 'Unknown',
@@ -510,21 +691,57 @@ export const ClubRosterService = {
     }));
   },
 
+  async getGrantableRoles(
+    clubId: string,
+    userId: string,
+    signal?: AbortSignal
+  ): Promise<ClubRole[]> {
+    const data = await readMemberRpc(
+      'ca_club_grantable_roles',
+      {
+        p_club_id: clubId,
+        p_target_user_id: userId,
+      },
+      signal
+    );
+    if (!data || typeof data !== 'object' || !('roles' in data) || !Array.isArray(data.roles)) {
+      throw new Error('The Role Options Response Was Incomplete');
+    }
+    return data.roles.map(normaliseRole);
+  },
+
   async exportRoster(
     clubId: string,
     query: Pick<RosterQuery, 'search' | 'filter' | 'sort'>,
-    userIds: string[] | null = null
+    userIds: string[] | null = null,
+    signal?: AbortSignal
   ): Promise<{ rows: Record<string, unknown>[]; row_count: number; audit_id: string }> {
-    const { data, error } = await supabase.rpc('ca_club_members_export', {
-      p_club_id: clubId,
-      p_search: normalizeRosterSearch(query.search),
-      p_filter: query.filter ?? 'all',
-      p_sort: query.sort ?? 'hierarchy',
-      p_user_ids: userIds,
-    });
-    if (error) throw error;
+    const { runWithRequestDeadline } = await import('../utils/requestDeadline');
+    const data = await runWithRequestDeadline(
+      async (signal) => {
+        const { data, error } = await supabase
+          .rpc('ca_club_members_export', {
+            p_club_id: clubId,
+            p_search: normalizeRosterSearch(query.search),
+            p_filter: query.filter ?? 'all',
+            p_sort: query.sort ?? 'hierarchy',
+            p_user_ids: userIds,
+          })
+          .abortSignal(signal);
+        if (error) throw error;
+        return data;
+      },
+      { timeoutMs: 40_000, signal }
+    );
     const d = (data ?? {}) as Record<string, any>;
     if (d.success !== true) throw new Error(d.error || 'Roster export failed');
+    if (
+      !Array.isArray(d.rows) ||
+      !d.audit_id ||
+      !Number.isFinite(Number(d.row_count)) ||
+      Number(d.row_count) !== d.rows.length
+    )
+      throw new Error('The Roster Export Response Was Incomplete');
     return {
       rows: Array.isArray(d.rows) ? d.rows : [],
       row_count: num(d.row_count),
@@ -539,14 +756,23 @@ export const ClubRosterService = {
     remark: string,
     requestId: string
   ): Promise<{ nickname: string | null; remark: string | null; replayed: boolean }> {
-    const { data, error } = await supabase.rpc('ca_club_member_notes_update', {
-      p_club_id: clubId,
-      p_target_user_id: userId,
-      p_nickname: nickname,
-      p_remark: remark,
-      p_request_id: requestId,
-    });
-    if (error) throw error;
+    const { runWithRequestDeadline } = await import('../utils/requestDeadline');
+    const data = await runWithRequestDeadline(
+      async (signal) => {
+        const { data, error } = await supabase
+          .rpc('ca_club_member_notes_update', {
+            p_club_id: clubId,
+            p_target_user_id: userId,
+            p_nickname: nickname,
+            p_remark: remark,
+            p_request_id: requestId,
+          })
+          .abortSignal(signal);
+        if (error) throw error;
+        return data;
+      },
+      { timeoutMs: 40_000 }
+    );
     const d = (data ?? {}) as Record<string, any>;
     if (d.success !== true) throw new Error(d.error || 'Member note update failed');
     return {

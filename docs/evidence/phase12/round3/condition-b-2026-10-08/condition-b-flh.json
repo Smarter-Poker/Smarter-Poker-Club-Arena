@@ -1,0 +1,179 @@
+{
+  "schema": "horse-human-calibrated-check-summary-v1",
+  "variant": "flh",
+  "population": "human-calibrated-v1-20261008",
+  "packVersion": "fixed-limit-holdem-round3-v1",
+  "sourceSha": "022e1e4f8172de48eb4f81dca6c69bc2b0b0b2b1",
+  "seeds": [19201101, 19202203, 19203307],
+  "handsPerSeed": 3888,
+  "runs": 21,
+  "hands": 81648,
+  "rakeModel": "published rake per profile (publishedRake, the cap ladder and BBJ drop), remaining-variant-strength-contract-v1",
+  "candidate": {
+    "bbPer100": 8.582016705859298,
+    "lower99": 4.171497652947543,
+    "upper99": 12.992535758771051,
+    "profiles": [
+      {
+        "profileId": "p12c-flh-6max-2dealt-100bb",
+        "hands": 11664,
+        "bbPer100": 7.576517489711934,
+        "sdBBPerHand": 2.8789392644395644
+      },
+      {
+        "profileId": "p12c-flh-6max-4dealt-100bb",
+        "hands": 11664,
+        "bbPer100": -5.105281207133059,
+        "sdBBPerHand": 3.771809849810178
+      },
+      {
+        "profileId": "p12c-flh-6max-40bb",
+        "hands": 11664,
+        "bbPer100": 11.673653978052126,
+        "sdBBPerHand": 5.0150533262018016
+      },
+      {
+        "profileId": "p12c-flh-6max-100bb",
+        "hands": 11664,
+        "bbPer100": 10.421639231824416,
+        "sdBBPerHand": 5.111032369392336
+      },
+      {
+        "profileId": "p12c-flh-6max-200bb",
+        "hands": 11664,
+        "bbPer100": 9.441700960219478,
+        "sdBBPerHand": 5.2158771955885115
+      },
+      {
+        "profileId": "p12c-flh-9max-100bb",
+        "hands": 11664,
+        "bbPer100": 16.547025034293554,
+        "sdBBPerHand": 6.269877613080188
+      },
+      {
+        "profileId": "p12c-flh-6max-1000bb",
+        "hands": 11664,
+        "bbPer100": 9.51886145404664,
+        "sdBBPerHand": 5.221315863808362
+      }
+    ]
+  },
+  "reference": {
+    "bbPer100": 8.544820448755633,
+    "lower99": 4.054437899978256,
+    "upper99": 13.03520299753301,
+    "profiles": [
+      {
+        "profileId": "p12c-flh-6max-2dealt-100bb",
+        "hands": 11664,
+        "bbPer100": 3.0424811385459534,
+        "sdBBPerHand": 2.7688245179472397
+      },
+      {
+        "profileId": "p12c-flh-6max-4dealt-100bb",
+        "hands": 11664,
+        "bbPer100": -6.354038065843621,
+        "sdBBPerHand": 4.049619397159697
+      },
+      {
+        "profileId": "p12c-flh-6max-40bb",
+        "hands": 11664,
+        "bbPer100": 12.823131001371744,
+        "sdBBPerHand": 5.096297767135952
+      },
+      {
+        "profileId": "p12c-flh-6max-100bb",
+        "hands": 11664,
+        "bbPer100": 11.816100823045268,
+        "sdBBPerHand": 5.204250701768192
+      },
+      {
+        "profileId": "p12c-flh-6max-200bb",
+        "hands": 11664,
+        "bbPer100": 10.97119341563786,
+        "sdBBPerHand": 5.311574680632487
+      },
+      {
+        "profileId": "p12c-flh-9max-100bb",
+        "hands": 11664,
+        "bbPer100": 16.500814471879288,
+        "sdBBPerHand": 6.331278175375136
+      },
+      {
+        "profileId": "p12c-flh-6max-1000bb",
+        "hands": 11664,
+        "bbPer100": 11.01406035665295,
+        "sdBBPerHand": 5.316984860711755
+      }
+    ]
+  },
+  "difference": {
+    "bbPer100": 0.03719625710366453,
+    "lower99": -0.9094687335241161,
+    "upper99": 0.983861247731445,
+    "profiles": [
+      {
+        "profileId": "p12c-flh-6max-2dealt-100bb",
+        "hands": 11664,
+        "bbPer100": 4.534036351165981,
+        "sdBBPerHand": 0.8198731061622169
+      },
+      {
+        "profileId": "p12c-flh-6max-4dealt-100bb",
+        "hands": 11664,
+        "bbPer100": 1.2487568587105624,
+        "sdBBPerHand": 1.556533738009331
+      },
+      {
+        "profileId": "p12c-flh-6max-40bb",
+        "hands": 11664,
+        "bbPer100": -1.1494770233196159,
+        "sdBBPerHand": 0.9138184462810567
+      },
+      {
+        "profileId": "p12c-flh-6max-100bb",
+        "hands": 11664,
+        "bbPer100": -1.3944615912208504,
+        "sdBBPerHand": 0.9868262484371124
+      },
+      {
+        "profileId": "p12c-flh-6max-200bb",
+        "hands": 11664,
+        "bbPer100": -1.5294924554183813,
+        "sdBBPerHand": 1.0096671178583891
+      },
+      {
+        "profileId": "p12c-flh-9max-100bb",
+        "hands": 11664,
+        "bbPer100": 0.04621056241426612,
+        "sdBBPerHand": 0.8810778116596617
+      },
+      {
+        "profileId": "p12c-flh-6max-1000bb",
+        "hands": 11664,
+        "bbPer100": -1.49519890260631,
+        "sdBBPerHand": 1.0100118773454065
+      }
+    ]
+  },
+  "integrity": {
+    "illegalCandidates": 0,
+    "illegalActions": 0,
+    "conservationErrors": 0,
+    "cardErrors": 0,
+    "incompleteHands": 0,
+    "truncatedHands": 0
+  },
+  "adequacy": {
+    "family": "other",
+    "adequate": false,
+    "reasons": [
+      "seat_hands_85_below_10000",
+      "distinct_humans_5_below_20",
+      "top_human_share_0.685_above_0.25"
+    ]
+  },
+  "lowerBoundAboveZero": true,
+  "conditionB": "unavailable_external_input",
+  "reasons": []
+}

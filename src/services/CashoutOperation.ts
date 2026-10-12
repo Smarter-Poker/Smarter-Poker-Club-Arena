@@ -11,7 +11,12 @@ import {
   type AdmittedAgentCashoutStart,
 } from './AgentWalletIntent';
 import { resolveClubUUIDStrict } from '../utils/strictClubIdResolver';
-import { cashoutService, captureCashoutAccountGuard, type CashoutRequest } from './CashoutService';
+import {
+  cashoutService,
+  captureCashoutAccountGuard,
+  CashoutRefusedError,
+  type CashoutRequest,
+} from './CashoutService';
 
 export type CashoutKind = AgentCashoutIntent['kind'];
 export interface CashoutOperationIntent<K extends CashoutKind = CashoutKind> {
@@ -58,6 +63,9 @@ interface Preparation {
 interface Start {
   intent: CanonicalCashoutIntent;
   operation: CapturedAgentCashoutStart;
+  /** The preparation this payer start was captured from, and the generation it pinned. */
+  preparation?: Preparation;
+  preparedOperation?: PreparedAgentCashoutOperation;
   receiptScope: () => boolean;
   receiptOnly?: boolean;
   isCurrent: () => boolean;
@@ -173,6 +181,8 @@ export function captureCashoutStart<K extends CashoutKind>(
   starts.set(start, {
     intent: preparation.intent,
     operation,
+    preparation,
+    preparedOperation: preparation.operation,
     isCurrent,
     receiptScope: preparation.receiptScope,
   });
@@ -305,6 +315,42 @@ export async function confirmCashoutOperation(
   return outcome as CashoutRecoveryResult<'cashout_request'>;
 }
 
+/**
+ * A definitive refusal (CashoutRefusedError, 2026-10-09, S-01) rolled the whole
+ * transaction back: the server kept no event for this op id (for an operation
+ * conflict the id belongs to another intent for good). Holding the id would
+ * replay its lookup and re-send the refused intent forever, so the durable
+ * generation is acknowledged and a repeatable request's preparation moves to a
+ * fresh generation: the next attempt, edited or not, mints a new id. A tap
+ * after a refusal never reuses a generation the shared history already calls
+ * settled, so a later uncertain response keeps its own id across tabs.
+ * Storage failure keeps the old id, which can only replay. Unknown outcomes
+ * never come here: they keep their id for the exact receipt lookup.
+ */
+async function settleRefusedCashout(
+  captured: Start,
+  admitted: AdmittedAgentCashoutStart
+): Promise<void> {
+  if (!(await acknowledgeAgentCashoutStart(admitted))) return;
+  const preparation = captured.preparation;
+  // Only a request repeats; a terminal action keeps its single operation id.
+  if (
+    !preparation ||
+    captured.intent.kind !== 'cashout_request' ||
+    preparation.operation !== captured.preparedOperation ||
+    !preparation.isCurrent()
+  )
+    return;
+  try {
+    const next = await prepareAgentCashoutOperation(preparation.intent, preparation.isCurrent);
+    if (preparation.operation === captured.preparedOperation && preparation.isCurrent())
+      preparation.operation = next;
+  } catch {
+    // A retired view or unavailable storage keeps the settled generation; its
+    // id was refused outright, so re-sending it is safe, just not fresh.
+  }
+}
+
 async function submitCashout(start: Start, operationId: string): Promise<CashoutRequest | true> {
   const intent = start.intent;
   assertCurrent(start.isCurrent);
@@ -389,7 +435,13 @@ export async function runCashoutOperation<K extends CashoutKind>(
         submission = { result: current, isCurrent: captured.isCurrent };
         submissions.set(key, submission);
       }
-      const result = await submission.result;
+      let result: CashoutRequest | true;
+      try {
+        result = await submission.result;
+      } catch (error) {
+        if (error instanceof CashoutRefusedError) await settleRefusedCashout(captured, admitted);
+        throw error;
+      }
       assertCurrent(captured.isCurrent);
       // This acknowledges operation coordination only. The service returned the
       // canonical financial outcome; a storage failure must not erase that fact.

@@ -1,3 +1,4 @@
+import { arenaDisplayText } from './arenaDisplay/text';
 /**
  * Route-level SEO for the Club Arena SPA.
  *
@@ -271,7 +272,8 @@ function setJsonLd(jsonLd: SeoEntry['jsonLd']) {
 }
 
 export function fullTitle(title: string): string {
-  return title.includes(SITE_NAME) ? title : `${title} | ${SITE_NAME}`;
+  const display = arenaDisplayText(title);
+  return display.includes(SITE_NAME) ? display : `${display} | ${SITE_NAME}`;
 }
 
 /**

@@ -6,6 +6,7 @@ import {
   type AccountingObservationInput,
   type AccountingScopeKind,
 } from '../../services/AccountingObservationService';
+import styles from './UnionAccountingRunStatus.module.css';
 
 export function AccountingRunStatus({
   scopeKind,
@@ -48,7 +49,7 @@ export function AccountingRunStatus({
         : state === 'running'
           ? 'Weekly Accounting Recorded As Running'
           : state === 'no_recorded_run'
-            ? 'No Accounting Run Recorded For This Union Week'
+            ? `No Accounting Run Recorded For This ${scopeKind === 'club' ? 'Club' : 'Union'} Week`
             : 'Automatic Accounting Status Unavailable';
   return (
     <section
@@ -58,9 +59,19 @@ export function AccountingRunStatus({
           ? 'alert'
           : 'status'
       }
-      style={{ margin: '12px 0', padding: 16, border: '1px solid #68748a', borderRadius: 8 }}
+      className={styles.status}
     >
-      <strong>{message}</strong>
+      <strong
+        className={
+          state === 'posted'
+            ? 'sc-ink--green'
+            : state === 'incomplete'
+              ? 'sc-ink--red'
+              : 'sc-ink--silver'
+        }
+      >
+        {message}
+      </strong>
       {state === 'incomplete' && (
         <p>Accounting Review Is Required Before This Week Can Be Treated As Complete.</p>
       )}
@@ -93,7 +104,7 @@ export function AccountingRunStatus({
           Separately.
         </p>
       )}
-      <button type="button" disabled={loading} onClick={refresh}>
+      <button type="button" className={styles.word} disabled={loading} onClick={refresh}>
         Refresh Status
       </button>
     </section>

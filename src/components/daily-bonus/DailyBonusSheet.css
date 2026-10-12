@@ -501,3 +501,28 @@
     display: none;
   }
 }
+
+/* The crystal stays a rendered asset; motion lets its facets catch the eye. */
+.dbs-row__render--diamond img {
+  animation: dbs-diamond-float calc(4s * var(--animation-speed, 1)) ease-in-out infinite;
+}
+@keyframes dbs-diamond-float {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-3deg);
+  }
+  50% {
+    transform: translateY(-3px) rotate(3deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dbs-row__render--diamond img {
+    animation: none;
+  }
+}
+.dbs__claim-all {
+  align-self: center;
+  min-height: 44px;
+  padding: 2cqw 4cqw;
+  font-size: 4cqw;
+}

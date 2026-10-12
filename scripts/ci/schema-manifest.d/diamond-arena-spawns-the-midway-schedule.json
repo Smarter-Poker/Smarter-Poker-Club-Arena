@@ -1,0 +1,13 @@
+{
+  "_owner": "agent/claude-dtdb/feat/diamond-scheduled-tournaments-db. Declared by migration 20261007000010_the_diamond_arena_spawns_the_midway_schedule, NOT YET APPLIED to production: the lead applies it after review. Until then these names are a promise, not an observation.",
+  "tables": ["ca_diamond_scheduled_spawns"],
+  "functions": [
+    "fn_poker_diamond_create_tournament_core",
+    "fn_poker_diamond_spawn_scheduled_tournament",
+    "fn_poker_diamond_tournament_settle_overlay",
+    "fn_poker_diamond_guarantee_release",
+    "fn_poker_diamond_tournament_free_entry",
+    "fn_poker_diamond_tournament_effective_guarantee",
+    "fn_ca_diamond_scheduled_spawns_append_only"
+  ]
+}

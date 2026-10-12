@@ -12,8 +12,13 @@ import {
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
+import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { cashoutService, CashoutRequest } from '../../services/CashoutService';
-import { CashoutReceiptChecks, useCashoutReceiptChecks } from './CashoutReceiptChecks';
+import {
+  outcomeNeedsReceiptCheck,
+  CashoutReceiptChecks,
+  useCashoutReceiptChecks,
+} from './CashoutReceiptChecks';
 import { useCashoutScope, useCashoutScopeKey } from '../../hooks/useCashoutScope';
 import {
   runCashoutOperation,
@@ -28,7 +33,7 @@ import {
 } from '../../hooks/usePreparedCashoutOperations';
 import { masterBus } from '../../core/MasterBus';
 import { checkSettlementLock } from '../../utils/settlementLock';
-import { formatRelativeShort as formatTime } from '@/lib/date';
+import { formatRelativeShort } from '@/lib/date';
 import { SpadeConsole } from '../console/SpadeConsole';
 import './CashoutRequestModal.css';
 import { reportError } from '../../utils/errorReporter';
@@ -49,6 +54,12 @@ const presetFigure = (cents: string): string => {
     ? n.toLocaleString('en-US')
     : n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 };
+/**
+ * The exact figures on this sheet (the balance and each pending request) print
+ * whole when they are whole and to two places when they are not: a bare
+ * `toLocaleString()` printed 18,400.50 as "18,400.5 Chips" (launch audit R-10).
+ */
+const TWO_PLACES = { minimumFractionDigits: 2, maximumFractionDigits: 2 } as const;
 // Haptic feedback for mobile-first financial interactions
 const triggerHaptic = (pattern: number | number[] = 10) => {
   try {
@@ -299,7 +310,7 @@ function CashoutRequestContent({
       if (e.key !== 'Tab' || !modalRef.current) return;
 
       const focusable = modalRef.current.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        'button:not([disabled]), input:not([disabled]):not([tabindex="-1"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
       );
       if (focusable.length === 0) return;
 
@@ -329,7 +340,7 @@ function CashoutRequestContent({
       const t = setTimeout(() => {
         if (modalRef.current) {
           const first = modalRef.current.querySelector<HTMLElement>(
-            'input:not([disabled]), button:not([disabled])'
+            'input:not([disabled]):not([tabindex="-1"]), button:not([disabled])'
           );
           first?.focus();
         }
@@ -381,28 +392,53 @@ function CashoutRequestContent({
     const channelKey = `cashout-modal-${playerId}`;
     // The returned channel was bound to a `channel` const nobody read. Teardown
     // goes through masterBus.removeRegisteredChannel(channelKey), not the handle.
-    masterBus
-      .getOrCreateChannel(channelKey)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'cashout_requests',
-          filter: `player_id=eq.${playerId}`,
-        },
-        () => {
-          loadPendingCashouts();
-        }
-      )
-      .subscribe((status: string, err?: Error) => {
-        if (status === 'CHANNEL_ERROR') {
-          if (err) reportError(err?.message || err, 'CashoutRequestModal._Realtime_channel_error');
-        }
-        if (status === 'TIMED_OUT') {
-          console.warn('[CashoutRequestModal] Realtime channel timed out');
-        }
-      });
+    /* SCOPED TO THIS PLAYER, RELOADED FOR THIS CLUB (launch audit D-23,
+       regression review G-02). A player-only filter woke this sheet for the
+       player's cashouts in every club they belong to; the reload is
+       club-scoped, so nothing wrong was shown, only read for nothing. The
+       first fix moved the filter to `club_id`, which is WIDER, not narrower:
+       RLS delivers every member's cashout in the club to a staff viewer, so
+       an owner's own sheet reloaded for the whole club. Postgres filters take
+       one column, so the filter stays on the player and the club is checked
+       on the payload: resolved to a uuid first (a code or slug matches
+       nothing), and an unresolvable club reloads on every own-row change. */
+    let cancelled = false;
+    (async () => {
+      const resolved = clubId ? await resolveClubUUID(clubId) : null;
+      if (cancelled || !isMounted.current) return;
+      masterBus
+        .getOrCreateChannel(channelKey)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'cashout_requests',
+            filter: `player_id=eq.${playerId}`,
+          },
+          (payload: { new?: { club_id?: unknown }; old?: { club_id?: unknown } }) => {
+            // A DELETE carries `new: {}` and, without REPLICA IDENTITY FULL,
+            // an `old` with the key only: a row whose club is not on the
+            // payload is not known to be another club's, so it reloads.
+            const rowClub = payload?.new?.club_id ?? payload?.old?.club_id;
+            if (!resolved || rowClub === undefined || rowClub === resolved) {
+              loadPendingCashouts();
+            }
+          }
+        )
+        .subscribe((status: string, err?: Error) => {
+          if (status === 'CHANNEL_ERROR') {
+            if (err)
+              reportError(err?.message || err, 'CashoutRequestModal._Realtime_channel_error');
+          }
+          if (status === 'TIMED_OUT') {
+            reportError(
+              'Realtime channel timed out',
+              'CashoutRequestModal._Realtime_channel_timeout'
+            );
+          }
+        });
+    })();
 
     // Bus listener: reload when balance changes
     const unsubBalance = masterBus.subscribeDebounced(
@@ -414,10 +450,11 @@ function CashoutRequestContent({
     );
 
     return () => {
+      cancelled = true;
       masterBus.removeRegisteredChannel(channelKey);
       unsubBalance();
     };
-  }, [isOpen, playerId, clubId, loadPendingCashouts]);
+  }, [isOpen, playerId, clubId, loadPendingCashouts, isMounted]);
 
   const handleSubmit = async () => {
     if (submitLockRef.current || !isCurrent()) return;
@@ -514,7 +551,7 @@ function CashoutRequestContent({
       void loadPendingCashouts();
       onComplete?.();
     } catch (err) {
-      if (checkingOutcome && start && isCurrent())
+      if (checkingOutcome && start && isCurrent() && outcomeNeedsReceiptCheck(err))
         receiptChecks.retain(cashout.id, cashout.amount, 'Cashout Cancellation', start);
       if (isCurrent() && (!start || isCashoutStartCurrent(start))) {
         setSuccess(false);
@@ -624,7 +661,13 @@ function CashoutRequestContent({
           <div className="cro-row">
             <span className="sc-label sc-ink--blue">Available Balance</span>
             <strong className={`cro-value ${balanceAvailable ? 'sc-ink--silver' : 'sc-ink--red'}`}>
-              {balanceAvailable ? `${currentBalance!.toLocaleString()} Chips` : 'Unavailable'}
+              {balanceAvailable
+                ? `${
+                    Number.isInteger(currentBalance)
+                      ? currentBalance!.toLocaleString()
+                      : currentBalance!.toLocaleString(undefined, TWO_PLACES)
+                  } Chips`
+                : 'Unavailable'}
             </strong>
           </div>
 
@@ -653,9 +696,14 @@ function CashoutRequestContent({
                 <div key={cashout.id} className="cro-pending">
                   <div className="cro-row cro-row--plain">
                     <strong className="cro-value sc-ink--gold">
-                      {cashout.amount.toLocaleString()} Chips
+                      {Number.isInteger(cashout.amount)
+                        ? cashout.amount.toLocaleString()
+                        : cashout.amount.toLocaleString(undefined, TWO_PLACES)}{' '}
+                      Chips
                     </strong>
-                    <span className="cro-when sc-ink--muted">{formatTime(cashout.createdAt)}</span>
+                    <span className="cro-when sc-ink--muted">
+                      {titleCase(formatRelativeShort(cashout.createdAt))}
+                    </span>
                   </div>
                   <CashoutStepTracker status={cashout.status} />
                   <button

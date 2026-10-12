@@ -1,0 +1,25 @@
+{
+  "measurement": "2026-10-06 candidate production Vite build, gzip level 9; inherited baselines retained from 2026-10-03",
+  "overviewRoute": {
+    "chunks": ["PlayerStatsPage", "OverviewTab"],
+    "baselineGzipKb": 19.2,
+    "maxGzipKb": 25
+  },
+  "chunks": {
+    "PlayerStatsPage": { "baselineGzipKb": 17.08, "maxGzipKb": 22 },
+    "OverviewTab": { "baselineGzipKb": 2.12, "maxGzipKb": 3 },
+    "PerformanceTab": { "baselineGzipKb": 1.75, "maxGzipKb": 3 },
+    "PositionsTab": { "baselineGzipKb": 0.66, "maxGzipKb": 2 },
+    "HandsTab": { "baselineGzipKb": 0.79, "maxGzipKb": 2 },
+    "RakeTab": { "baselineGzipKb": 1.43, "maxGzipKb": 2 },
+    "TrophiesTab": { "baselineGzipKb": 0.96, "maxGzipKb": 2 },
+    "TournamentsTab": { "baselineGzipKb": 1.57, "maxGzipKb": 2 },
+    "AnalysisTab": { "baselineGzipKb": 5.43, "maxGzipKb": 7 },
+    "StatsCharts": { "baselineGzipKb": 1.52, "maxGzipKb": 3 },
+    "StatsPositionPiePlot": { "baselineGzipKb": 5.27, "maxGzipKb": 6 },
+    "EVLuckChart": { "baselineGzipKb": 2.97, "maxGzipKb": 4 },
+    "BankrollTracker": { "baselineGzipKb": 1.99, "maxGzipKb": 3 },
+    "PositionWinRates": { "baselineGzipKb": 2.53, "maxGzipKb": 4 },
+    "PositionalRadar": { "baselineGzipKb": 2.4, "maxGzipKb": 3 }
+  }
+}

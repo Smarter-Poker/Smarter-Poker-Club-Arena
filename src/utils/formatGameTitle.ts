@@ -1,3 +1,4 @@
+import { arenaDisplayText } from '../lib/arenaDisplay/text';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  formatGameTitle — game variants are acronyms, so print them as acronyms
@@ -61,7 +62,7 @@ const VARIANT_TOKENS = new Set([
  */
 export function formatGameTitle(name: string | null | undefined): string {
   if (!name) return '';
-  return name
+  return arenaDisplayText(name)
     .replace(/[a-z0-9+]+/gi, (token) => {
       const lower = token.toLowerCase();
       if (VARIANT_TOKENS.has(lower)) return lower.toUpperCase();

@@ -5,6 +5,17 @@ import { useAuthUser } from './useAuthUser';
 import { masterBus } from '../core/MasterBus';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 
+/**
+ * Coming back to the tab fires focus and visibilitychange together, and a
+ * player flicking between tabs fires them again and again. Neither moves a
+ * balance, so a return inside this long after the last read is answered by the
+ * read already on screen. fn_diamond_games_entry ran 4,709 times in three days
+ * of test traffic before this.
+ */
+export const RETURN_FRESH_MS = 15_000;
+/** A settled hand can land several wallet events at once: one read answers the burst. */
+export const EVENT_COALESCE_MS = 250;
+
 /** Account-scoped, event-driven eligibility. Unknown balances never mean bust. */
 export function useDiamondGamesEntry(clubId: string | null | undefined, enabled = true) {
   const { user } = useAuthUser();
@@ -20,9 +31,12 @@ export function useDiamondGamesEntry(clubId: string | null | undefined, enabled 
     generation = useRef(0);
   // The club this hook last read, as the server knows it (its UUID).
   const resolved = useRef<string | null>(null);
+  // When the last read set off, so a tab return can tell whether it is news.
+  const lastRead = useRef(0);
   const refresh = useCallback(async () => {
     if (!clubId || !user?.id || !enabled) return;
     const g = ++generation.current;
+    lastRead.current = Date.now();
     setLoading(true);
     try {
       // Callers pass whatever their route carries: a UUID, a club code or a
@@ -45,11 +59,24 @@ export function useDiamondGamesEntry(clubId: string | null | undefined, enabled 
   }, [clubId, enabled, user?.id, scope]);
   useEffect(() => {
     alive.current = true;
+    let burst: ReturnType<typeof setTimeout> | null = null;
     const read = () => {
       void refresh();
     };
+    // A wallet or seat event always reads, once per burst.
+    const soon = () => {
+      if (burst !== null) return;
+      burst = setTimeout(() => {
+        burst = null;
+        read();
+      }, EVENT_COALESCE_MS);
+    };
+    const returned = () => {
+      if (Date.now() - lastRead.current < RETURN_FRESH_MS) return;
+      read();
+    };
     const visible = () => {
-      if (!document.hidden) read();
+      if (!document.hidden) returned();
     };
     read();
     const off = [
@@ -57,20 +84,21 @@ export function useDiamondGamesEntry(clubId: string | null | undefined, enabled 
         if (typeof event.payload.userId === 'string' && event.payload.userId !== user?.id) return;
         const club = event.payload.clubId;
         if (typeof club === 'string' && club !== clubId && club !== resolved.current) return;
-        read();
+        soon();
       }),
-      masterBus.subscribe('DIAMOND_BALANCE_CHANGED', read),
+      masterBus.subscribe('DIAMOND_BALANCE_CHANGED', soon),
       masterBus.subscribe('TABLE_LEFT', (event) => {
-        if (!event.payload.userId || event.payload.userId === user?.id) read();
+        if (!event.payload.userId || event.payload.userId === user?.id) soon();
       }),
     ];
-    window.addEventListener('focus', read);
+    window.addEventListener('focus', returned);
     document.addEventListener('visibilitychange', visible);
     return () => {
       alive.current = false;
       ++generation.current;
+      if (burst !== null) clearTimeout(burst);
       off.forEach((stop) => stop());
-      window.removeEventListener('focus', read);
+      window.removeEventListener('focus', returned);
       document.removeEventListener('visibilitychange', visible);
     };
   }, [refresh, user?.id, clubId]);

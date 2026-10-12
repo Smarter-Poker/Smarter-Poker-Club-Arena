@@ -37,7 +37,12 @@ vi.mock('../../src/utils/strictClubIdResolver', () => ({
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 vi.mock('../../src/utils/avatarGenerator', () => ({ generateDefaultAvatar: () => '' }));
 vi.mock('../../src/lib/date', () => ({ formatRelativeShort: () => 'Recently' }));
-vi.mock('../../src/utils/vibrationGate', () => ({ fireVibration: vi.fn() }));
+// Only the buzz is stubbed; the rest of the gate (TapHaptic asks it whether
+// this is an iPhone browser) stays real.
+vi.mock('../../src/utils/vibrationGate', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/utils/vibrationGate')>()),
+  fireVibration: vi.fn(),
+}));
 vi.mock('../../src/utils/settlementLock', () => ({
   checkSettlementLock: vi.fn(async () => ({ locked: false })),
 }));

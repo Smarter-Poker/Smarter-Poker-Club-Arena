@@ -96,6 +96,16 @@
   color: #e4e7ec;
   margin-bottom: 0.4em;
 }
+.leaderboard-page .lb-position-warning {
+  display: grid;
+  gap: 0.35em;
+  color: #ff5b6e;
+  overflow-wrap: anywhere;
+}
+.leaderboard-page .lb-position-warning button {
+  justify-self: start;
+  color: #45adff;
+}
 .leaderboard-page .lb-control-deck,
 .leaderboard-page .leaderboard-filters,
 .leaderboard-page .lb-control-group {

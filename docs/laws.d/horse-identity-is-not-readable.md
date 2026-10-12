@@ -19,3 +19,60 @@ pins that the closing migrations exist, assert their own effect, and are never
 re-granted by a later "restore client read grants" pass - which is how the
 grant got there. It also pins that exactly one god account exists, enforced by
 a partial unique index rather than by every writer remembering.
+
+2026-10-05: the fourth and fifth doors. `table_seats.horse_id` (965,180 of
+1,303,476 seat rows) and `club_members.is_bot` were still readable by `anon` and
+`authenticated` through a TABLE-level SELECT, under which a column REVOKE does
+nothing - which is why the 2026-09-07 attempt on `table_seats` rolled itself
+back. Migration 20261005115325 replaces the table-level grant with a column list
+built from the catalogue less the one column, refuses to run while any reader a
+browser can reach still names either column, and asserts the result. The
+browser stopped naming both columns first (`tests/unit/tableSeatsCountNamesAColumn`
+scans every `src` file and bans them). The law pins the migration and that no
+later migration hands either table back whole.
+
+Because those two tables are now granted column by column, a column added to
+either later is unreadable by the browser roles until it is granted. The law
+therefore also requires every later `ADD COLUMN` on `table_seats` or
+`club_members` to carry its own `GRANT SELECT (column)` to `anon` and
+`authenticated` in the same migration, or to say `WITHHELD` beside it.
+
+2026-10-05: the sixth door. `content_authors` is the roster itself (1,000 of
+1,000 profile ids are horses) and was readable logged out through "Public can
+read authors" plus a table-level grant of every privilege to `anon` and
+`authenticated`; `clip_usage_log` says which clip each horse posted. The World
+Hub stopped reading either from a browser (World Hub #2127: presence and the
+operator roster moved behind server routes). Migration 20261005162843 drops
+every policy on both tables, revokes them, their sequence and the five roster
+RPCs from every browser role, keeps the service role whole, and asserts the
+result. The law pins the migration and that no later migration re-opens any of
+them to `anon`, `authenticated` or `PUBLIC`.
+
+2026-10-06: the ninth and tenth doors. `social_reels.origin_type` was 'horse'
+on every Reel a horse published and readable by both browser roles; World Hub
+#2144 stopped every browser read and API response carrying it, and migration
+20261006004137 grants the browser roles every column but it. `horse_post_modes`
+had a SELECT policy of `true`; migration 20261006004222 closes it to every
+browser role. The law pins both and that no later migration re-opens them.
+
+2026-10-05: the bundle stops asking. The grants make the database refuse, but
+a browser query that NAMES a horse column still ships the question to every
+player, and fails closed into a feature that silently does nothing.
+HydraService (imported by TablePage and run on every buy-in and every 15s
+waitlist poll) and HorseOrchestrator (imported by UnionDetailPage) still
+selected and filtered `profiles.is_horse`, `horse_status` and `horse_profile`.
+Both were dead browser-side horse management - the engine owns horses, and the
+fleet releases a horse seat for queued humans itself - so both were deleted.
+The law now walks every `.from(...)` query chain under `src/` and fails on any
+that names `is_horse`, `horse_status`, `horse_profile`, `horse_id` or `is_bot`
+(the one exemption is `horse_bug_reports`, whose `horse_id` is a free-text
+reporter label, not the identity mark), and pins that both services stay
+deleted.
+
+2026-10-06: the eleventh door. `bot_profiles` (139 rows, 100 usernames matching
+live profiles) and `personas` were readable by anyone, as were the content
+engine's settings, runs, schedule, stats and clip library; trivia PvP
+participants could read `horse_side`. World Hub #2151 moved the last browser
+readers behind operator routes; migration 20261006024500 closes the tables and
+the `pipeline_stats` view to every browser role and grants the trivia tables
+column by column less the horse columns. The law pins it.

@@ -267,7 +267,6 @@ export default function AuthPage() {
             .update({
               last_login: new Date().toISOString(),
               last_active: new Date().toISOString(),
-              is_online: true,
             })
             .eq('id', emailMatch.id);
           if (linkError) {
@@ -286,7 +285,8 @@ export default function AuthPage() {
             created_at: new Date().toISOString(),
             last_login: new Date().toISOString(),
             last_active: new Date().toISOString(),
-            is_online: true,
+            // No is_online here: presence is written only by the heartbeat
+            // (src/lib/presenceHeartbeat.ts), which stamps last_seen with it.
           });
 
           if (profileError) {

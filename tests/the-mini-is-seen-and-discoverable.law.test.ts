@@ -399,8 +399,10 @@ describe('the popup: three pages, each with a mini of its own', () => {
     expect(qualifying).toMatch(/const blocks = kind === 'mini' \? MINI_BLOCKS : BLOCKS;/);
     expect(qualifying).toMatch(/\{blocks\.map\(\(b\) => \{/);
     expect(modal).toMatch(/<BBJQualifyingHands\s+kind=\{tier\}/);
-    // and it says what the mini drops, which is the whole point of the tier
-    expect(qualifying).toContain('No Ace-In-The-Hole Rule And No Both-Cards-Must-Play Rule');
+    // and it says the rule the mini keeps (Dan 2026-10-11: "BOTH cards must
+    // play for BBJ or Mini BBJ") - the mini no longer drops it.
+    expect(qualifying).toContain('With Both Hole Cards Playing');
+    expect(qualifying).not.toContain('No Both-Cards-Must-Play Rule');
   });
 
   it('the header follows the row rather than showing the main pool under a mini tab', () => {
@@ -581,7 +583,10 @@ describe('a club without a union owns its mini switch (Dan 2026-09-11)', () => {
     expect(panel).toMatch(
       /if \(!res\.ok\) \{[\s\S]{0,160}?toast\.error\(refusalText\(res\.reason\)/
     );
-    expect(read('src/pages/ClubSettingsPage.tsx')).toContain('<BBJMiniPanel clubId={clubId}');
+    expect(read('src/pages/ClubSettingsPage.tsx')).toContain('<BBJMiniPanel clubId={clubUUID}');
+    expect(read('src/pages/ClubSettingsPage.tsx')).toContain(
+      'resolvedClubIdentity.route === clubId'
+    );
   });
 
   it('a switched-off mini is still written down, through the reason the engine already records', () => {

@@ -1,0 +1,11 @@
+{
+  "_owner": "fix/weekly-close-scale. NOT YET APPLIED when pushed (2026-09-28): migration 20260928164258_a_weekly_close_proves_each_book_once_and_never_holds_a_long_ is applied to production by the accounting coordinator after review (STEP 1 CONCURRENTLY outside a transaction, then STEP 2). Until then the credentialed CI run of check-migrations-applied correctly reports these names absent.",
+  "tables": [],
+  "functions": [
+    "fn_settle_accounting_commission_stage_v3",
+    "fn_accounting_union_earned_plan_v3",
+    "fn_weekly_accounting_attempt_begin",
+    "fn_weekly_accounting_deadline_check",
+    "fn_weekly_accounting_attempt_end"
+  ]
+}

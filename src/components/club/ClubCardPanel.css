@@ -66,12 +66,23 @@
 
 /* ── The club's own art, on the glass ─────────────────────────────────── */
 
+/* THE WELL IS A CLIPPED SQUARE BEFORE ANY PICTURE EXISTS (2026-10-04). Its
+   size comes from the card's width and this ratio alone, never from the image
+   inside it, and whatever the image's natural size it is cut to the well. An
+   image that has not arrived shows the master's own glass tone (#0a0b0d, the
+   same tone .sc__body paints behind it, so a loaded card is unchanged).
+
+   These rules must be on the page BEFORE the card mounts: without them the
+   <img> prints at its natural size (896x1200 for the Shark Club art). That is
+   why CarouselSection imports the cards statically; see the note there and
+   tests/components/clubCardGeometryFromFirstPaint.test.tsx. */
 .club-card-viewport {
   display: grid;
   place-items: center;
   width: 100%;
   aspect-ratio: 1 / 1;
   overflow: hidden;
+  background: #0a0b0d;
 }
 
 .club-card-viewport-img,
@@ -321,36 +332,6 @@
     font-size: clamp(11px, 8cqw, 16px);
     letter-spacing: clamp(0.8px, 1cqw, 2px);
   }
-}
-
-/* ── Diamond Arena variant (Dan 2026-09-09) ───────────────────────────────
-   "THE DIAMOND ARENA CARD HAS TO LOOK AND FEEL EXACTLY LIKE THE CLUB ARENA
-   CARDS DO, SAME SQUARE SHAPE, ON THE BOTTOM HAVE AN ACTIVE PLAYERS TAB, AND
-   NEXT FREE ROLL STARTS IN X:XX TIMER."
-
-   Same chassis as every club card. The dress is the diamond's: an ice-white
-   exterior where a club is nickel and a union is gold, and the countdown in
-   the console's gold, red inside the last ten seconds. Nothing structural
-   changes - the frame, the plates, the square viewport and the rail are the
-   rules above, untouched. */
-.club-card-panel--arena {
-  border-color: rgba(214, 236, 255, 0.95); /* Diamond ice exterior */
-}
-
-.club-card-panel--arena .club-card-id-plate {
-  border-bottom: 2px solid rgba(214, 236, 255, 0.7);
-}
-
-.club-card-panel--arena .club-card-id-text {
-  color: #e8f6ff;
-  text-shadow:
-    0 0 6px rgba(0, 0, 0, 0.8),
-    0 0 10px rgba(120, 200, 255, 0.45);
-}
-
-.club-card-panel--arena .club-card-name-plate,
-.club-card-panel--arena .club-card-stats-bar {
-  border-top: 2px solid rgba(214, 236, 255, 0.7);
 }
 
 /* Two figures share the rail, so each gets half of it instead of a third. */

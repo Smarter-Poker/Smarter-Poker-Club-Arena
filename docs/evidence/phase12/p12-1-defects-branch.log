@@ -1,0 +1,15 @@
+# P12.1 evidence: defects-branch (see docs/horse-brain-phase12-1-input-binding-2026-10-05.md)
+DEFECT dead button short_deck (dealer 5 empty; engine blinds 6/7): seat 8: preflop_entry_declined position=early | seat 1: preflop_entry_declined position=middle | seat 2: preflop_entry_declined position=cutoff | seat 4: preflop_entry_declined position=button | seat 6: preflop_entry_declined position=small_blind | seat 7: preflop_entry_declined position=big_blind
+DEFECT dead small blind short_deck (button 2 occupied; BB 4 posts alone; engine order 5,1,2,4 = early,cutoff,button,big_blind): seat 5: preflop_entry position=early | seat 1: preflop_entry_declined position=cutoff | seat 2: preflop_entry position=button | seat 4: preflop_entry_declined position=big_blind
+DEFECT dead button flh (dealer 5 empty; engine blinds 6/7): seat 8: preflop_entry_declined position=early | seat 1: preflop_entry_declined position=middle | seat 2: preflop_entry_declined position=cutoff | seat 4: preflop_entry_declined position=button | seat 6: preflop_entry_declined position=small_blind | seat 7: preflop_entry_declined position=big_blind
+DEFECT dead small blind flh (button 2 occupied; BB 4 posts alone; engine order 5,1,2,4 = early,cutoff,button,big_blind): seat 5: preflop_entry_declined position=early | seat 1: preflop_entry position=cutoff | seat 2: preflop_entry_declined position=button | seat 4: preflop_entry_declined position=big_blind
+DEFECT dead button flo8 (dealer 5 empty; engine blinds 6/7): seat 8: preflop_entry_declined position=early | seat 1: preflop_entry_declined position=middle | seat 2: preflop_entry_declined position=cutoff | seat 4: preflop_entry_declined position=button | seat 6: preflop_entry_declined position=small_blind | seat 7: preflop_entry_declined position=big_blind
+DEFECT dead small blind flo8 (button 2 occupied; BB 4 posts alone; engine order 5,1,2,4 = early,cutoff,button,big_blind): seat 5: preflop_entry_declined position=early | seat 1: preflop_entry_declined position=cutoff | seat 2: preflop_entry_declined position=button | seat 4: preflop_entry_declined position=big_blind
+DEFECT census above ceiling short_deck cash 10 dealt: seat_count_outside_pack
+DEFECT census above ceiling pineapple cash 10 dealt: seat_count_outside_pack
+DEFECT census above ceiling flh cash 10 dealt: seat_count_outside_pack
+DEFECT census above ceiling flo8 cash 9 dealt: seat_count_outside_pack
+DEFECT preflop receipt echoes caller evidence short_deck: false
+DEFECT preflop receipt echoes caller evidence pineapple: false
+DEFECT preflop receipt echoes caller evidence flh: false
+DEFECT preflop receipt echoes caller evidence flo8: false

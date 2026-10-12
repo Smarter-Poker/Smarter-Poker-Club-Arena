@@ -97,6 +97,56 @@ describe('dedicated authenticated tournament observation route', () => {
     });
   });
 
+  it('retains the original recovery refusal and movement evidence without exporting unknown fields', async () => {
+    const movements = [
+      { claimedBoundary: true, retainedPermit: { status: 'retained', phase: 'reserved' } },
+      { claimedBoundary: false, retainedPermit: { status: 'none', phase: null } },
+      { claimedBoundary: null, retainedPermit: { status: 'unavailable', phase: null } },
+    ];
+    const snapshot = {
+      seatMoveQuarantineRefusal: 'recovery:f06_permit_retained',
+      absentSeatMoveRefusalMeans: 'unobserved_or_cleared',
+      originals: movements.map((movement, index) => ({
+        tableId: TABLE.slice(0, -1) + String(index + 2),
+        movement,
+      })),
+    };
+    const capture = vi.fn(() =>
+      evidence({
+        unknownRoot: 'must-not-export',
+        owners: [
+          {
+            roles: ['current'],
+            snapshot: {
+              ...snapshot,
+              unknownManager: 'must-not-export',
+              originals: snapshot.originals.map((original) => ({
+                ...original,
+                movement: {
+                  ...original.movement,
+                  retainedPermit: {
+                    ...original.movement.retainedPermit,
+                    binding: { custody_id: TABLE },
+                  },
+                },
+              })),
+            },
+          },
+        ],
+      })
+    );
+    const result = await request(
+      path + '?table_ids=' + snapshot.originals.map((original) => original.tableId).join(','),
+      { getTournamentLifecycleDiagnostic: capture }
+    );
+    expect(result.status).toBe(200);
+    expect(capture).toHaveBeenCalledOnce();
+    expect(JSON.parse(result.body).owners).toEqual([{ roles: ['current'], snapshot }]);
+    expect(result.body).not.toContain('must-not-export');
+    expect(result.body).not.toContain('binding');
+    expect(result.body).not.toContain('custody_id');
+  });
+
   it.each([
     '/internal/tournament-diagnostics/not-a-uuid',
     path + '?unknown=true',

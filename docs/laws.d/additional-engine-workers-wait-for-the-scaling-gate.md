@@ -1,0 +1,3 @@
+# tests/additional-engine-workers-wait-for-the-scaling-gate.law.test.ts
+
+Diamond Phase 11 line 6. Two engines cannot double-deal a table (the leases hold), but nothing routes a player to the engine that owns the table, the channel hub is in-process and server/src/scale/ is not wired, so the estate serves from one engine. The law pins that: nothing outside server/src/scale/ imports it, Caddy has exactly one engine upstream, and the sealed release refuses a second engine container. Enabling an additional engine worker is a visible edit to this law, made with the gate in docs/evidence/diamond-phase-11/engine-ownership-and-scaling.md.

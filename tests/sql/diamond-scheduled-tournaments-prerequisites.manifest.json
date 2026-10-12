@@ -1,0 +1,112 @@
+{
+  "captured_at": "2026-10-06",
+  "project": "kuklfnapbkmacvwxktbh",
+  "what": "live bodies migration 20261007000010 reads or substitutes into, as production held them",
+  "doors": [
+    {
+      "identity": "fn_ca_diamond_economics_units_of(p_name text)",
+      "md5": "83ab17bb45177bf70500bbab7ba9315b",
+      "len": 3924
+    },
+    {
+      "identity": "fn_ca_diamond_economics_append_only()",
+      "md5": "15ef51901919cb6a0e60c4c86060d3a9",
+      "len": 313
+    },
+    {
+      "identity": "fn_ca_diamond_economic(p_name text, p_scope text)",
+      "md5": "dbf6c888e109b7970b05239bf636e619",
+      "len": 1294
+    },
+    {
+      "identity": "fn_ca_diamond_economic_text(p_name text, p_scope text)",
+      "md5": "fae313d042da5ac374be5b2169c14d01",
+      "len": 1238
+    },
+    {
+      "identity": "fn_ca_diamond_economic_on(p_name text, p_scope text)",
+      "md5": "ac9ae10f2ae1f2551682d274391c3f1e",
+      "len": 280
+    },
+    {
+      "identity": "fn_ca_diamond_house_earmarks_append_only()",
+      "md5": "790baf3d6805a915ba783cf822627fb8",
+      "len": 356
+    },
+    {
+      "identity": "fn_ca_diamond_earmark_open(p_key text)",
+      "md5": "ca2f780d328b471f01daae5183a215ae",
+      "len": 344
+    },
+    {
+      "identity": "fn_ca_diamond_earmarks_open(p_purpose text)",
+      "md5": "0ad305f598bcb7a9e9054707f81199a1",
+      "len": 389
+    },
+    {
+      "identity": "fn_ca_diamond_house_available()",
+      "md5": "9ff2bf1983563ce706cfa786f5d0b73e",
+      "len": 301
+    },
+    {
+      "identity": "fn_ca_diamond_earmark_guard()",
+      "md5": "706844d861f90e21e9c8602d239c1a8f",
+      "len": 5392
+    },
+    {
+      "identity": "fn_ca_guard_watchlist()",
+      "md5": "ab4f9d0e402186fff9b4af288e443609",
+      "len": 3499
+    },
+    {
+      "identity": "fn_ca_declare_guard_redefinition(p_proname text, p_ref text)",
+      "md5": "3a3746dc6e0a5b7a1db97805588c0eb8",
+      "len": 2019
+    },
+    {
+      "identity": "trg_tournaments_guarantee_affordable()",
+      "md5": "df859238ed5ef32a565a44b6bd7143ea",
+      "len": 3803
+    },
+    {
+      "identity": "fn_ca_fund_overlay_on_lock()",
+      "md5": "3f55869778cc3c02ca1406fa22c908d4",
+      "len": 11178
+    },
+    {
+      "identity": "fn_ca_return_excess_start_overlay_locked(p_tournament_id uuid)",
+      "md5": "2e670daae9319aed70b3477283aacba5",
+      "len": 6567
+    },
+    {
+      "identity": "fn_ca_apply_prize_guarantee_core(p_tournament_id uuid, p_source text)",
+      "md5": "f7eb032cfb11ef3fd0275e4b390047f9",
+      "len": 11226
+    },
+    {
+      "identity": "fn_apply_prize_guarantee(p_tournament_id uuid, p_source text)",
+      "md5": "c11535297ab88cfdc254f9336fdc5110",
+      "len": 2871
+    },
+    {
+      "identity": "fn_tournament_management_readiness_for_row(p_row jsonb)",
+      "md5": "885132de6733f2c3d9c79c33345af45c",
+      "len": 9344
+    },
+    {
+      "identity": "fn_register_horse_for_tournament_before_maintenance_gate(p_tournament_id uuid, p_user_id uuid)",
+      "md5": "7afb8f82f3d9de26ddec4d6c13ff9d45",
+      "len": 13768
+    },
+    {
+      "identity": "fn_register_horse_for_tournament(p_tournament_id uuid, p_user_id uuid, p_allow_wallet_charge boolean)",
+      "md5": "026901ecf8d4c4909cea685dc51c69ee",
+      "len": 2498
+    },
+    {
+      "identity": "fn_settle_tournament_rake(p_tournament_id uuid, p_source text)",
+      "md5": "15acb041213e75e30cefdff37e04179b",
+      "len": 15073
+    }
+  ]
+}

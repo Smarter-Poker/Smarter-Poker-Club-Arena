@@ -1,4 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+const satelliteRpc = vi.hoisted(() => ({ read: vi.fn(), settle: vi.fn() }));
+vi.mock('./satelliteQualifierRpc.js', () => ({
+  readSatelliteQualifierState: satelliteRpc.read,
+  requestSatelliteQualifierReceipt: satelliteRpc.settle,
+}));
+import { supabase } from '../services/supabase.js';
+import { TournamentManagerBase } from './TournamentManagerBase.js';
 import { TournamentManager } from './TournamentManager.js';
 import * as movement from './tournamentSeatMoveRpc.js';
 import { TournamentRetirementCustody } from '../services/TournamentRetirementCustody.js';
@@ -171,7 +178,9 @@ describe('actual Manager durable close through actual Lease custody', () => {
     // Stop after recovery so unrelated board fixtures cannot supply completion.
     f.manager.redrivePendingTournamentSeatMoveOutcomes = vi.fn(async () => false);
     await f.manager.checkTableBalance();
-    expect(f.api.discover).toHaveBeenCalledWith('0', 1);
+    // The manager asks for the whole page and still visits one operation per
+    // unit; see aBalancerIsNotStarvedByBreakDiscovery.law.test.ts.
+    expect(f.api.discover).toHaveBeenCalledWith('0', 32);
     expect(f.api.close).toHaveBeenCalledTimes(1);
     expect(f.api.ackCleanup).toHaveBeenCalledTimes(1);
   });
@@ -264,6 +273,72 @@ describe('actual Manager durable close through actual Lease custody', () => {
       expect(f.server.unregisterTableEngine).not.toHaveBeenCalled();
       expect(f.api.ackCleanup).not.toHaveBeenCalled();
       expect(f.custody.admissionAllowed(source)).toBe(false);
+    }
+  );
+});
+
+describe('a held satellite boundary finishes its already moved table break', () => {
+  it.each(['confirmed', 'lost-close-reply'])(
+    'retires the stopped empty source with %s before releasing the surviving dealer',
+    async (outcome) => {
+      const f = fixture();
+      f.manager.isCohortSatellite = () => true;
+      f.engine.isRunning = () => false;
+      f.engine.parkForTerminalCloseout = vi.fn(async () => true);
+      f.engine.releaseTerminalCloseoutPause = vi.fn();
+      const destination = {
+        isRunning: () => true,
+        parkForTerminalCloseout: vi.fn(async () => true),
+        releaseTerminalCloseoutPause: vi.fn(),
+      };
+      f.global.set(id(9), destination as any);
+      f.manager.tableEngines.set(id(9), destination);
+      f.manager.satelliteQualifierBoundaryPending = true;
+      f.manager.satelliteQualifierBoundaryGeneration = 4;
+      f.manager.satelliteQualifierEngines.set(source, f.engine);
+      f.manager.satelliteQualifierEngines.set(id(9), destination);
+      f.manager.retireManagedTableFromHandForHand = (
+        TournamentManagerBase.prototype as any
+      ).retireManagedTableFromHandForHand.bind(f.manager);
+      satelliteRpc.read.mockResolvedValue({
+        state: 'continuing',
+        fullTicketCount: 7,
+        qualifierIds: Array.from({ length: 9 }, (_, index) => id(100 + index)),
+      });
+      const query: any = {
+        select: () => query,
+        eq: () => query,
+        in: async () => ({ data: [...f.global.keys()].map((key) => ({ id: key })), error: null }),
+      };
+      vi.spyOn(supabase, 'from').mockReturnValue(query);
+      f.manager.rememberTournamentBreak(f.state());
+      f.manager.isFinalTable = true;
+      f.manager.liveTournamentTableIdsWithPlayers = vi.fn(async () => [id(9)]);
+      if (outcome === 'lost-close-reply') {
+        const close = f.api.close.getMockImplementation()!;
+        f.api.close.mockImplementationOnce(async () => {
+          await close();
+          throw new Error('committed close response lost');
+        });
+        expect(await f.manager.checkSatelliteQualifierCompletion()).toBe('continue');
+        await f.manager.checkTableBalance();
+        expect(f.api.ackCleanup).not.toHaveBeenCalled();
+        expect(f.global.has(source)).toBe(true);
+        expect(f.custody.admissionAllowed(source)).toBe(false);
+        expect(destination.releaseTerminalCloseoutPause).not.toHaveBeenCalled();
+      }
+      expect(await f.manager.checkSatelliteQualifierCompletion()).toBe('continue');
+      await f.manager.checkTableBalance();
+      expect(f.api.close).toHaveBeenCalledTimes(1);
+      expect(f.api.ackCleanup).toHaveBeenCalledTimes(1);
+      expect(f.global.has(source)).toBe(false);
+      expect(f.manager.satelliteQualifierBoundaryPending).toBe(true);
+      expect(destination.releaseTerminalCloseoutPause).not.toHaveBeenCalled();
+      expect(await f.manager.checkSatelliteQualifierCompletion()).toBe('continue');
+      expect(f.manager.satelliteQualifierBoundaryPending).toBe(false);
+      expect(destination.releaseTerminalCloseoutPause).toHaveBeenCalledTimes(1);
+      expect(f.engine.releaseTerminalCloseoutPause).not.toHaveBeenCalled();
+      expect(satelliteRpc.settle).not.toHaveBeenCalled();
     }
   );
 });

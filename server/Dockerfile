@@ -13,6 +13,11 @@ RUN npm ci --include=dev --no-audit --no-fund
 # Copy source
 COPY tsconfig.json tsconfig.runtime.json tsconfig.emit.json ./
 COPY src/ ./src/
+# Committed admission evidence for the Horse Brain protected release selections
+# (qualification, strength and completion records). The image is built from the
+# server tree alone, so these are the only copies the running engine can read;
+# repositoryEvidenceReader reads /app/release-evidence/ first.
+COPY release-evidence/ ./release-evidence/
 
 # Exact-source release preflight performs the full typecheck and tests in CI.
 # Emit every runtime root here without loading dependency type declarations or
@@ -21,9 +26,13 @@ COPY src/ ./src/
 # Resource CI compares every emitted runtime file to the full checked build.
 # The runtime project omits unit-test entrypoints and unused declarations.
 # Full test compilation and execution remain in the exact-source CI preflight.
-# The 512 MiB V8 heap leaves native/compiler and BuildKit room inside the
-# canonical 640 MiB no-swap builder. Resource CI proves exact runtime output.
-RUN ulimit -c 0 && node --max-old-space-size=512 ./node_modules/typescript/bin/tsc --project tsconfig.emit.json
+# The 1024 MiB V8 heap leaves native/compiler and BuildKit room inside the
+# canonical 2048 MiB no-swap builder. On 2026-10-09 the emit outgrew a 512 MiB
+# heap; it completes at 544 MiB and peaks near 830 MiB RSS. The first bounded
+# Linux build at this heap peaked at 1261 MiB of cgroup memory including page
+# cache, so the heap sits 88% and the builder 62% above the measured need.
+# Resource CI proves exact runtime output.
+RUN ulimit -c 0 && node --max-old-space-size=1024 ./node_modules/typescript/bin/tsc --project tsconfig.emit.json
 
 # Remove dev dependencies
 RUN npm prune --omit=dev --no-audit --no-fund

@@ -66,7 +66,7 @@ describe('Diamond custody server contract', () => {
       error: 'diamond_release_pending',
     };
     rpc.mockResolvedValue({ data: pending, error: null });
-    await expect(releaseDiamondEntry('custody', 'request')).rejects.toThrow(
+    await expect(releaseDiamondEntry('custody', 'request', 100)).rejects.toThrow(
       'Invalid Diamond Custody Receipt'
     );
     expect(rpc).toHaveBeenCalledTimes(1);
@@ -75,14 +75,14 @@ describe('Diamond custody server contract', () => {
     rpc
       .mockResolvedValueOnce({ data: null, error: { message: 'connection lost' } })
       .mockResolvedValueOnce({ data: { ...receipt, custody_balance: 0 }, error: null });
-    await expect(releaseDiamondEntry('custody', 'request')).rejects.toThrow('connection lost');
-    expect(await releaseDiamondEntry('custody', 'request')).toMatchObject({ success: true });
+    await expect(releaseDiamondEntry('custody', 'request', 100)).rejects.toThrow('connection lost');
+    expect(await releaseDiamondEntry('custody', 'request', 100)).toMatchObject({ success: true });
     expect(rpc.mock.calls[0]).toEqual(rpc.mock.calls[1]);
   });
   it('accepts a busted zero release without inventing a wallet journal', async () => {
     const zero = { ...receipt, amount: 0, custody_balance: 0, journal_id: null, debt_settled: 0 };
     rpc.mockResolvedValue({ data: zero, error: null });
-    expect(await releaseDiamondEntry('custody', 'request')).toEqual(zero);
+    expect(await releaseDiamondEntry('custody', 'request', 100)).toEqual(zero);
     expect(alert).not.toHaveBeenCalled();
   });
   it.each([
@@ -91,25 +91,25 @@ describe('Diamond custody server contract', () => {
     { amount: 0, journal_id: null, debt_settled: 1 },
   ])('rejects an incoherent release journal or debt: %j', async (fields) => {
     rpc.mockResolvedValue({ data: { ...receipt, custody_balance: 0, ...fields }, error: null });
-    await expect(releaseDiamondEntry('custody', 'request')).rejects.toThrow(
+    await expect(releaseDiamondEntry('custody', 'request', 100)).rejects.toThrow(
       'Invalid Diamond Custody Receipt'
     );
   });
   it('rejects release receipts belonging to another custody', async () => {
     rpc.mockResolvedValue({ data: { ...receipt, custody_id: 'other' }, error: null });
-    await expect(releaseDiamondEntry('custody', 'request')).rejects.toThrow(
+    await expect(releaseDiamondEntry('custody', 'request', 100)).rejects.toThrow(
       'Diamond Release Custody Mismatch'
     );
   });
   it('rejects a release receipt that still retains custody', async () => {
     rpc.mockResolvedValue({ data: receipt, error: null });
-    await expect(releaseDiamondEntry('custody', 'request')).rejects.toThrow(
+    await expect(releaseDiamondEntry('custody', 'request', 100)).rejects.toThrow(
       'Diamond Release Balance Mismatch'
     );
   });
   it.each([-1, 101, 1.5, NaN])('rejects invalid settled debt %s', async (debt_settled) => {
     rpc.mockResolvedValue({ data: { ...receipt, custody_balance: 0, debt_settled }, error: null });
-    await expect(releaseDiamondEntry('custody', 'request')).rejects.toThrow(
+    await expect(releaseDiamondEntry('custody', 'request', 100)).rejects.toThrow(
       'Invalid Diamond Custody Receipt'
     );
   });
@@ -124,7 +124,7 @@ describe('Diamond custody server contract', () => {
 describe('custody failures stay visible without a second money writer', () => {
   it('reports a lost response with its stable identity and does not retry the RPC', async () => {
     rpc.mockRejectedValue(new Error('response lost'));
-    await expect(releaseDiamondEntry('custody', 'request')).rejects.toThrow('response lost');
+    await expect(releaseDiamondEntry('custody', 'request', 100)).rejects.toThrow('response lost');
     expect(rpc).toHaveBeenCalledTimes(1);
     expect(alert).toHaveBeenCalledWith(
       'critical',
@@ -133,6 +133,7 @@ describe('custody failures stay visible without a second money writer', () => {
       expect.objectContaining({
         custodyId: 'custody',
         requestId: 'request',
+        amount: 100,
         asset: 'diamonds',
         operation: 'release',
         error: 'response lost',
@@ -142,7 +143,7 @@ describe('custody failures stay visible without a second money writer', () => {
   it('retains the original failure when durable alert delivery fails', async () => {
     alert.mockResolvedValue({ persisted: false, alertId: null });
     rpc.mockResolvedValue({ data: null, error: { message: 'credit refused' } });
-    await expect(releaseDiamondEntry('custody', 'request')).rejects.toThrow('credit refused');
+    await expect(releaseDiamondEntry('custody', 'request', 100)).rejects.toThrow('credit refused');
     expect(rpc).toHaveBeenCalledTimes(1);
     expect(alert).toHaveBeenCalledTimes(1);
   });
@@ -157,6 +158,7 @@ describe('custody failures stay visible without a second money writer', () => {
         userId: 'user',
         targetId: 'table',
         requestId: 'request',
+        amount: 100,
         asset: 'diamonds',
       })
     );

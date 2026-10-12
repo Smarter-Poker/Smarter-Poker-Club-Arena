@@ -1,0 +1,190 @@
+# Horse Brain Phase 10 And Phase 11, Round 3: Omaha Packs That Beat The Reference (October 8, 2026)
+
+Horse Brain only. Scope: the Phase 10 PLO4 pack and the Phase 11 PLO5, PLO6 and PLO8 packs. Status words are the maintained vocabulary: verified now, historical only, implemented but unverified, defective, unavailable external input, not applicable with reason. Every measured claim names its opponent population, rake model, sample size and 99% interval. No held-out seed was used for anything in the diagnosis or the design; held-out seeds run only in the locked matrices named below.
+
+The owner's target for every strategy upgrade: it beats the brain horses use today, and it wins after rake against the opponents horses actually face for money, the human players. Horse-versus-horse results alone are not the target.
+
+## Starting Point
+
+Closure records: [Phase 10](horse-brain-phase10-completion-2026-10-03.md), [Phase 11](horse-brain-phase11-closure-2026-10-05.md). Every pack lost to the reference on its locked held-out matrix (cash after rake, horse population, published 1/2 rake rows): PLO4 pooled -0.16 bb/100 with the two-dealt profile at -25.6; PLO5 -4.02 [-7.18, -0.86], PLO6 -4.91 [-7.92, -1.91], PLO8 -9.21 [-12.20, -6.23]. Every selection is `null`.
+
+## Method (Development Seeds Only)
+
+Two development tools, committed with this round and refusing every held-out seed:
+
+- `server/src/scripts/omahaLeakDiagnose.ts`: plays the contract league's paired hands (the real `playPlo4PolicyHand`, the contract profile, production styles, published rake, mood clock) and attributes each pair's net difference to the hero's first applied change, where the arms diverge. It also counts HorseLogic's `illegal_candidate` refusals.
+- `server/src/scripts/omahaCounterfactual.ts`: a one-step counterfactual of the reference brain. For each pair it plays the reference arm (pack in shadow, receipt recorded), picks one eligible hero decision, then replays the identical deal once per alternative at that decision (fold or check, call, half-pot wager, pot wager) with the reference everywhere else. The difference is Q(state, alternative) minus Q(state, reference) for that one decision.
+
+Opponent population in every development run: the horse population as the locked contracts define it (every seat `HorseLogic.decide` with production styles, empty modifiers, fresh HorseMind, deterministic mood clock). Rake: the published 1/2 rows (`getFullRakeConfig`, player-count caps, BBJ drop where the variant has one). Development seeds: PLO4 10101101, 10102203, 10103307; PLO5, PLO6, PLO8 11101101, 11102203, 11103307. Evidence: `/Volumes/SmarterArchives/agent-evidence/horse-brain-finish-20261008/win-omaha/` (`diag1/`, `cf1/`, `cfhu/`, `cfpost/`, `v1/`, `v2hu/`, `v2ring/` for the first source; `hc1/` for its human-calibrated check; `v3-horse/`, `v3-ring/`, `v3-human/`, `v3-ring-human/` for the final source; the analysis scripts `analyze2.py` and `acf.py`).
+
+## Where The Round 1 Packs Lost
+
+First-divergence attribution, round 1 source, 10,080 pairs per profile per variant on seeds 1 and 2:
+
+- The losses start preflop. The packs replaced the reference's preflop with their own entry atlas. Heads-up they fold hands the reference plays profitably (PLO5 two-dealt: `preflop_entry_declined` raise to fold, 4,370 pairs, -0.52 BB per pair; PLO4 two-dealt: the button fold -0.42 BB and the big blind fold -0.95 BB per pair), and in every profile they open smaller than the reference (PLO4 `rfi` raise to a smaller raise: -1.2 to -2.8 BB per pair in all five profiles).
+- Postflop, every call or raise the packs make is priced against `sampleOmahaVariantEquity`, 32 samples drawn from a public-line prior that escapes to a uniform hand after two rejections. Against a betting range this overstates the hand. The counterfactual shows it directly: at six-max, where the reference folds facing a bet, calling instead loses on every variant (PLO4 -10.00 +/- 2.82 BB per decision, n = 764; PLO5 -10.89 +/- 2.19, n = 638; PLO6 -12.17 +/- 4.39, n = 329; PLO8 -8.46 +/- 4.30, n = 244), including where the sampled equity clears the price (PLO5 facing a bet with sampled margin +0.1: call -19.67 +/- 11.90, n = 66).
+
+## The Earlier Defect Class
+
+The 2026-10-05 audit defect (candidate sizes the legalizer rewrites, `illegal_candidate` playing the reference) is fully gone: 0 `illegal_candidate` refusals on every development pair counted on the final source (176,256 pairs over both populations: 60,480 two-dealt and 23,040 four-dealt and six-max against horses, 60,480 two-dealt and 32,256 four-dealt and six-max at the human-calibrated table), and `OmahaLegalFormCandidates.test.ts` pins it on real heads-up league hands for all four packs.
+
+## River Net-Chip Economics (#6444)
+
+`omahaVariantActionEconomics` is computed after `finish` on the river and recorded on the receipt; it never chooses an action. It settles the same showdowns the sampler drew, so it inherits the sampler's unconditioned opponent range: using it to choose actions would repeat the postflop loss above. It stays recorded only, unchanged by this round.
+
+## The Reference Is Close To Locally Optimal At Four And Six Dealt
+
+One-step counterfactuals at four-dealt and six-max (40, 100 and 200 BB), all variants, about 4,000 to 7,700 probed decisions per variant and street class: no alternative beats the reference at 99% in any preflop class, and none postflop where the reference faces a bet. Of about 40 cells per variant, one is nominally positive (PLO4 checked-to, where the reference bets, a half-pot bet +1.58 +/- 1.18 BB), which is what chance gives across that many cells and did not replicate on the other variants (PLO5 +0.46, PLO6 -0.44, PLO8 +1.20, none significant). No ring deviation is made.
+
+## The Actions That Beat The Reference
+
+Heads-up, three actions beat the reference against the horse population on every variant (counterfactual, seeds 1 and 2, two-dealt profile; BB per decision, 99% interval):
+
+| Spot (the reference folds or checks) | Alternative   | PLO4                                           | PLO5                       | PLO6                     | PLO8                     |
+| ------------------------------------ | ------------- | ---------------------------------------------- | -------------------------- | ------------------------ | ------------------------ |
+| Button, first to act preflop         | minimum raise | +0.62 +/- 0.33 (n = 3,157, quality 0.1 to 0.2) | +0.69 +/- 0.34 (n = 3,736) | +0.49 +/- 0.99 (n = 496) | +0.77 +/- 0.71 (n = 660) |
+| Big blind facing the button's raise  | pot three-bet | +0.51 +/- 0.99 (n = 2,232, quality 0.1 to 0.2) | +1.88 +/- 0.78 (n = 3,501) | +2.28 +/- 2.11 (n = 508) | +0.72 +/- 1.77 (n = 415) |
+| Button checked to, river             | pot bet       | +4.92 +/- 3.50 (n = 158)                       | +3.21 +/- 2.52 (n = 188)   | (too few)                | (too few)                |
+| Button checked to, turn              | pot bet       | +4.59 +/- 3.10 (n = 121)                       | +1.79 +/- 2.30 (n = 141)   | (too few)                | (too few)                |
+
+## The Human-Calibrated Check Removed One Of Them
+
+The winning contract ([addendum](horse-brain-winning-contract-2026-10-08.md), #6515) adds a second condition: a pack must also win after rake at the human-calibrated table (`human-calibrated-v1-20261008`). Its qualifying form is unavailable external input today (calibration inadequate: 5 human accounts, 608 Omaha human seat-hands), but development runs at that table are allowed and were made here, on the same development seeds, through `omahaLeakDiagnose.ts --population=human`.
+
+The first round 3 source (#6513, `omaha-reference-deviations-v1`, all three actions) beat the reference heads-up against horses by +44 to +65 bb/100 and LOST to it at the human-calibrated table (seed 3, 5,040 pairs each: PLO4 -17.7 +/- 27.1, PLO5 -18.9 +/- 27.4, PLO6 -11.4 +/- 23.8, PLO8 -24.6 +/- 22.7). First-divergence attribution names the cause: the big-blind three-bet lost 5.1 to 6.1 BB every time it fired at the human-calibrated table, on every variant (PLO4 -5.06 +/- 2.59, n = 435; PLO5 -6.12 +/- 2.28, n = 420; PLO6 -6.03 +/- 2.63, n = 368; PLO8 -5.15 +/- 2.22, n = 429), while the button open (+0.64 to +1.33 BB per firing) and the turn stab (+2.0 to +5.7) still won there. The three-bet won against horses only because the reference horse over-folds to three-bets; that is a read of the horse brain, not a winning strategy, and it was removed at the root (`omaha-reference-deviations-v2`, pack versions `round3-v2`).
+
+## The Round 3 Packs (v2)
+
+`plo4ReferenceDeviation` (`server/src/engine/plo4/Plo4LivePolicy.ts`) with `OMAHA_REFERENCE_DEVIATIONS` (`omaha-reference-deviations-v2`, `server/src/engine/plo4/Plo4PolicyPack.ts`), used by `evaluatePlo4LivePolicy` and `evaluateOmahaVariantPolicy`. The decision is the reference's, except at a table dealt exactly two seats with one live opponent, where a reference fold or check becomes:
+
+- `heads_up_button_open`: button, first to act preflop, the controller's minimum raise;
+- `heads_up_position_stab`: button, checked to on the turn or river, a pot-sized bet.
+
+A wager the legal menu cannot hold retains the reference (never a call). Everything else, the big blind included, is `reference_retained`. Every safety gate, refusal, input binding, the 4 ms budget, the sampler and the river economics are unchanged; the receipts still record the equity sample and features. The same rules apply to all four packs, so nothing is tuned per variant. Pack versions: `plo4-policy-round3-v2`, `plo5-high-round3-v2`, `plo6-high-round3-v2`, `plo8-split-round3-v2`. The policy digests move with them, and the contract digests move only through the pack versions they read (PLO4 `83ab185b...f838`, Phase 11 `5b93ae20...57fc`); every other term of both locked contracts is unchanged.
+
+## Development Result On The Final Source
+
+Paired league, published 1/2 rake rows, bb/100 with 99% interval, 5,040 two-dealt pairs per seed (seed 3 was never probed by the counterfactual):
+
+| Pack | Against the horse population, seeds 1, 2, 3    | Against the human-calibrated table, seeds 1, 2, 3 |
+| ---- | ---------------------------------------------- | ------------------------------------------------- |
+| PLO4 | +37.5 +/- 18.9; +40.3 +/- 17.1; +42.1 +/- 18.4 | +24.4 +/- 12.9; +30.5 +/- 16.6; +26.0 +/- 14.4    |
+| PLO5 | +32.8 +/- 17.9; +33.3 +/- 21.8; +30.6 +/- 18.9 | +27.9 +/- 13.9; +26.6 +/- 15.2; +32.1 +/- 18.7    |
+| PLO6 | +21.8 +/- 23.9; +10.7 +/- 19.7; +31.9 +/- 19.5 | +18.4 +/- 16.9; +19.1 +/- 12.9; +32.6 +/- 12.7    |
+| PLO8 | +37.9 +/- 18.4; +38.1 +/- 19.1; +40.5 +/- 15.3 | +29.8 +/- 13.7; +16.9 +/- 13.4; +19.3 +/- 11.3    |
+
+At four-dealt and six-max (seed 3, 1,440 pairs per profile against horses and 2,016 at the human-calibrated table) the arms are identical hand for hand: exactly 0. Attribution on the final source puts every rule positive in both populations (BB per firing; horses: button open +0.72 to +1.15, turn stab +1.28 to +3.16, river stab +1.57 to +4.77; human-calibrated: button open +0.74 to +1.07, turn stab +1.75 to +5.27, river stab +0.91 to +7.15 on 34 to 56 firings).
+
+Pooled with equal weight over the five contract profiles (seed 3), the candidate minus the reference at the human-calibrated table is PLO4 +5.2 [+2.3, +8.1], PLO5 +6.4 [+2.7, +10.2], PLO6 +6.5 [+4.0, +9.1], PLO8 +3.9 [+1.6, +6.1] bb/100. The absolute after-rake result of the candidate there, the contract's condition (b) statistic, is PLO4 +34.8 [-62.7, +132.2], PLO5 -2.6 [-83.0, +77.7], PLO6 +44.9 [-41.3, +131.1], PLO8 +30.8 [-41.7, +103.3]: a development measurement on a few thousand hands, far from the 10,000 hands per profile and the adequate calibration a qualifying claim needs.
+
+Against the horse population the expected primary estimate of each locked matrix is about one fifth of the two-dealt result (about +4 to +8 bb/100). At the matrix sizes the planned intervals and the interval trust checks hold: the two-dealt per-pair skewness is -0.4 to -5.1 (button offset -0.8 to -2.4), so every cell's Edgeworth term is at most 0.0005 against the 0.001 bound, and every cell without a deviation (the big blind, four-dealt, six-max) carries a zero difference with zero variance.
+
+## Evaluation Contract For The Held-Out Runs (Committed Before Any Run It Governs)
+
+- **Condition (a), the locked matrices, unchanged.** `PLO4_STRENGTH_CONTRACT` (`plo4-strength-contract-v1`) and `OMAHA_VARIANT_STRENGTH_CONTRACT` (`omaha-variant-strength-contract-v1`): every profile, held-out seed, pairs per shard, shard count, statistic, threshold, interval and trust check as committed; the digests move only through the pack versions they read (PLO4 `83ab185b...f838`, Phase 11 `5b93ae20...57fc`). Opponent population: the horse brain at the evaluated source with the production style mix; rake: the published 1/2 cash rows. Dispatched once on the merge commit `c8bfc617` (#6526): PLO4 [run 37824479137](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37824479137) and PLO8 [run 37824483446](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37824483446) at 2026-10-08T18:27Z, PLO5 [run 37837891124](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37837891124) and PLO6 [run 37837895674](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37837895674) at 2026-10-08T20:14Z. Each pack's verdict is the real assembler's (`server/scripts/phase10-strength-assemble.mjs`, `server/scripts/phase11-strength-assemble.mjs`), recorded whatever it shows.
+- **Seed disclosure.** The held-out seeds are the round-1 seeds. Only the committed cell-level aggregates of the round-1 held-out runs were read for the diagnosis; every rule was chosen and confirmed on development seeds before #6513 and #6526.
+- **Condition (b), the winning contract, run once.** `server/src/scripts/omahaHumanCalibratedCheck.ts`, with the statistic, interval, gate and completeness of `server/src/benchmark/HumanCalibratedCheck.ts` (the Phase 12 check's, unchanged): every Phase 10 and Phase 11 cash contract profile (five per pack) through `withHumanCalibratedOpponents`, opponent population `human-calibrated-v1-20261008` in every non-hero seat, the held-out human seeds 19201101, 19202203 and 19203307, the strength league's deal and seat rotation, 3,456 hands per seed (six rotation blocks of 576; 10,368 hands per profile, at least the contract's 10,000), the candidate arm in the rotating hero seat at the profile's published rake (cap ladder and BBJ drop), and the reference arm on the same deals as context outside the gate. Statistic: the hero's net after rake in bb/100, equal weight per profile, two-sided 99% Wald interval; gate: lower bound above zero on an adequate calibration. It runs once, on the commit of this pull request that carries this sentence (its full SHA is recorded in every run file), not on a later merge, so that no later change on main can enter it: every one of the 162 source files the script imports (its esbuild import closure) is byte-identical to `c8bfc617` except the script itself and the `phase` field and comment of `HumanCalibratedCheck.ts`, so the packs, leagues and policy digests measured are exactly those of the locked matrices. The human-calibrated held-out seeds are dealt by nothing else, and every run is kept.
+- **What a result can do.** The calibration is inadequate today (608 Omaha human seat-hands against 10,000, 5 accounts against 20, the most active account 68.5% of human seat-hands against 25%), so condition (b) reads **unavailable external input** for every pack whatever its interval, and no pack can qualify. Every selection stays `null`.
+
+## Results
+
+### Condition (a): The Locked Matrices On `c8bfc617`
+
+Opponent population: the horse population at the evaluated source (production style mix); rake: the published 1/2 cash rows (cap ladder, BBJ drop); statistic: candidate minus reference net per pair after rake, equal weight over the five contract profiles, 99% interval. Assembled by the real assemblers from every attempt the workflows uploaded; every shard complete on its first attempt, no shard declared defective, every validity counter 0 on every shard (illegal actions, conservation, card, truncation, settlement, deduction and paired-replay mismatches).
+
+| Pack | Shards                         | Pairs     | Primary, bb/100 (99% interval) | Assembler verdict | Changed pairs | Evidence                                                                              |
+| ---- | ------------------------------ | --------- | ------------------------------ | ----------------- | ------------- | ------------------------------------------------------------------------------------- |
+| PLO4 | 111/111                        | 2,557,440 | +6.94 [+6.25, +7.62]           | qualified         | 36,601        | `docs/evidence/phase10/strength-2026-10-09/` (`strength.json` `0b56fce6...5a31`)      |
+| PLO8 | 114/114                        | 1,116,288 | +7.84 [+6.84, +8.84]           | qualified         | 16,297        | `docs/evidence/phase11/strength-2026-10-09-plo8/` (`strength.json` `6bca9b49...c719`) |
+| PLO5 | 100/243 at 03:05Z on October 9 |           |                                | pending           |               | run 37837891124, still queued or running on the shared hosted runners                 |
+| PLO6 | 82/243 at 03:05Z on October 9  |           |                                | pending           |               | run 37837895674, still queued or running on the shared hosted runners                 |
+
+Where the gain comes from, as designed: only the two-dealt profile changes (PLO4 +34.68 [+31.25, +38.10], PLO8 +39.20 [+34.20, +44.21] bb/100); every four-dealt and six-max profile and every position but the button is exactly 0. PLO4 by street of first divergence: preflop +4.50 [+4.01, +5.00], turn +0.90 [+0.58, +1.22], river +1.53 [+1.18, +1.88], flop 0. Every PLO4 seed interval is trusted and positive (+7.03, +6.47, +7.30); PLO8's seeds are +8.23, +7.18 and +8.11, two of them with intervals the contract marks untrusted; its seed replication rule asks only for a positive point estimate per seed, and the primary and all 14 gating cells are trusted. The round 1 packs lost on the same seeds (PLO4 pooled -0.16, PLO8 -9.21 [-12.20, -6.23] bb/100).
+
+The assembler verdict `qualified: true` in these strength records is condition (a) alone. Under the winning contract no pack qualifies without condition (b), so no `horse-phase10-qualification-v1` or `horse-phase11-qualification-v1` file is committed for PLO4 or PLO8: a qualification file is the admission input, a file saying `qualified: true` would claim a qualification the winning contract denies, and the P10.3 and P11.3 null proofs on main (`HorsePhase10Authority.test.ts`, `HorsePhase11Authority.test.ts`) refuse one while the selections are `null`. The assemblers reproduce them from the committed strength records when both conditions pass. No protected-release step is taken.
+
+### Condition (b): Human-Calibrated Population On The Held-Out Human Seeds
+
+Run once on `91fd2864f1a74d8b97a153c8e0d5ebbbabc73e74`, the commit that fixed it, with `server/src/scripts/omahaHumanCalibratedCheck.ts`. Opponent population `human-calibrated-v1-20261008` in every non-hero seat; rake: each profile's published rake (1/2 cash rows, the cap ladder and BBJ drop), net after rake; held-out seeds 19201101, 19202203 and 19203307, each dealt here for the first time; every Phase 10 and Phase 11 cash contract profile, 3,456 hands per seed (10,368 per profile, 51,840 per pack); statistic: equal-weight stratified mean of the hero's after-rake net in bb/100 with its two-sided 99% Wald interval. All 60 runs complete; 0 illegal candidates, illegal actions, conservation errors, card errors, incomplete or truncated hands. Driver, job list, import closure, the 60 run files and the four summaries: `docs/evidence/phase11/round3/condition-b-2026-10-09/`.
+
+| Pack | Hands  | Round 3 pack after rake (the (b) statistic) | Current brain after rake, same deals | Pack minus current brain | (b) interval gate | (b) status                 |
+| ---- | ------ | ------------------------------------------- | ------------------------------------ | ------------------------ | ----------------- | -------------------------- |
+| PLO4 | 51,840 | +41.45 [+6.43, +76.47]                      | +35.67 [+0.72, +70.61]               | +5.78 [+3.53, +8.04]     | lower bound > 0   | unavailable external input |
+| PLO5 | 51,840 | +12.74 [-19.60, +45.09]                     | +8.95 [-23.35, +41.25]               | +3.79 [+2.08, +5.51]     | fails             | unavailable external input |
+| PLO6 | 51,840 | +20.96 [-11.12, +53.04]                     | +16.59 [-15.43, +48.61]              | +4.37 [+2.03, +6.71]     | fails             | unavailable external input |
+| PLO8 | 51,840 | +24.75 [-2.87, +52.36]                      | +20.98 [-6.56, +48.52]               | +3.76 [+1.84, +5.69]     | fails             | unavailable external input |
+
+- **Status of the measurement:** verified now as a measurement against this population. Condition (b) itself is **unavailable external input** for every pack: the Omaha calibration fails all three adequacy minimums (608 human seat-hands against 10,000, 5 accounts against 20, the most active account 68.5% against 25%), so no interval here can qualify a pack.
+- **Every pack beats the current brain at the human-calibrated table**, with the 99% lower bound above zero (+3.76 to +5.78 bb/100). The whole difference is the heads-up profile (PLO4 +28.92, PLO5 +18.97, PLO6 +21.86, PLO8 +18.81 bb/100 there); every other profile is exactly 0, as designed. This is the same result the development seeds gave, now on held-out human seeds.
+- **Only PLO4 clears the (b) interval.** PLO5, PLO6 and PLO8 have positive point estimates after rake, but their lower bounds are below zero. The width comes from the profiles the round 3 packs do not change: the current brain itself loses after rake at the four-dealt and 40 BB six-max human-calibrated tables in PLO5 (-26.99, -25.26 bb/100) and PLO6 (-20.64, -27.69) and wins large amounts deep (PLO4 200 BB +137.47, PLO6 200 BB +97.94), so the equal-weight interval spans zero.
+- **The absolute numbers measure a calibration the contract declares inadequate** (five accounts). They say the Omaha horses take money from this fitted table with either brain and that the round 3 change adds to it; they are not an estimate of a real player pool's win rate.
+
+### Selection
+
+Every Phase 10 and Phase 11 selection stays `null`. Condition (b) is unavailable external input for every pack, and PLO5, PLO6 and PLO8 also fail its interval. No qualification file is committed or shipped for selection and no protected-release step is taken, so natural accepted use and the withdrawal path are not applicable with reason (nothing is selected).
+
+### Next Root Causes
+
+- **Ring tables against humans.** The round 3 packs change only heads-up play, so at four-dealt and six-max they are the current brain, which loses after rake at the four-dealt and 40 BB human-calibrated tables in PLO5 and PLO6. Against the horse population no coarse alternative beat the reference there; whether one does against humans needs that diagnosis run against an adequate human calibration, because tuning ring play to a population fitted to five accounts would fit those five accounts.
+- **Condition (b) for every pack:** an adequate human calibration (at least 20 accounts, 10,000 Omaha seat-hands, no account above 25%), which only real human play in production can supply.
+
+## Status
+
+| Item                                                         | Status                                                                                                                                                                                                                                                      |
+| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Diagnosis of the round 1 losses                              | verified now (development seeds, above)                                                                                                                                                                                                                     |
+| `illegal_candidate` defect class gone                        | verified now (0 refusals on 176,256 development pairs; pinned by test)                                                                                                                                                                                      |
+| River economics used to choose actions                       | not applicable with reason: recorded only; it inherits the uncalibrated sampler range                                                                                                                                                                       |
+| Round 3 v2 beats the reference against the horse population  | verified now for PLO4 (+6.94 [+6.25, +7.62]) and PLO8 (+7.84 [+6.84, +8.84]) on the locked matrices; implemented but unverified for PLO5 and PLO6 until their matrices complete                                                                             |
+| Round 3 v2 beats the reference at the human-calibrated table | verified now on the held-out human seeds (+3.76 to +5.78 bb/100, every lower bound above zero), against a calibration the contract declares inadequate                                                                                                      |
+| Winning contract condition (b), qualifying                   | unavailable external input: the human calibration is inadequate (5 accounts, the most active 68.5% of human seat-hands, 608 Omaha human seat-hands), so no pack can qualify today; measured anyway, PLO4 clears the interval and PLO5, PLO6 and PLO8 do not |
+| Selection                                                    | every selection stays `null`: no pack can meet condition (b)                                                                                                                                                                                                |
+
+## Status Under The October 9 Amendment
+
+The owner amended the winning contract on October 9, 2026 ([amendment](horse-brain-winning-contract-2026-10-08.md#amendment-of-october-9-2026-owner-decision)): a pack qualifies on condition (a) alone, and condition (b) is post-launch monitoring that can only withdraw a selected pack. The selection lines above are superseded as follows.
+
+| Pack | Condition (a)                                                                                                                      | Selection                                                                                                                                                                                                             |
+| ---- | ---------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PLO4 | qualified, +6.94 [+6.25, +7.62] bb/100 on `c8bfc617`                                                                               | **selected**, approval generation 1: `PHASE10_PROTECTED_RELEASE_SELECTION`, qualification `docs/evidence/phase10/phase10-qualification-2026-10-09.json` (`3d88e47f...d3c0`), shipped under `server/release-evidence/` |
+| PLO8 | qualified, +7.84 [+6.84, +8.84] bb/100 on `c8bfc617`                                                                               | implemented but unverified: selected through P11.3 once its natural completion record (predeclared window, `docs/evidence/phase12/declaration-completion-2026-10-09.txt`) meets the floor                             |
+| PLO5 | qualified, +5.37 [+4.25, +6.49] bb/100, 2,379,456 pairs on `c8bfc617` (run 37837891124 finished on October 9; every shard counted) | as PLO8                                                                                                                                                                                                               |
+| PLO6 | matrix finishing (run 37837895674)                                                                                                 | recorded when assembled                                                                                                                                                                                               |
+
+Natural accepted use and the withdrawal path for each selected pack are recorded in the follow-up records once its release serves.
+
+## PLO4 Natural Accepted Use (October 9, 2026)
+
+Release `fc7be6e7` (#6583, the PLO4 selection) served from 16:55:54Z. Predeclared read-only window (`/Volumes/SmarterArchives/agent-evidence/horse-brain-select-20261009/plo4-use/declaration-plo4-natural-use-2026-10-09.txt`, written 16:56Z), 17:02 to 17:50Z, release unchanged (StartedAt read before and after):
+
+| PLO4 DECIDE_FAST decisions in the window (journal, sourceRelease `fc7be6e7`)  | Count  |
+| ----------------------------------------------------------------------------- | ------ |
+| cash, candidate mode, authority usable, applied (the pack changed the action) | 202    |
+| cash, candidate mode, authority usable, unchanged (the pack kept the action)  | 4,752  |
+| tournament, shadow mode (Phase 7 keeps the tournament objective)              | 33,879 |
+
+Every cash PLO4 decision ran in candidate mode on usable authority. `horse_brain_telemetry` for 2026-10-09 went from 0 to 216 `phase10_selection_selected`, 216 `phase10_applied` and 218 `phase10_selection_controller_accepted` between 16:57Z and 17:52Z (controller acceptance counts the deep second looks too). Status: **verified now**. Withdrawal path: verified in source tests (`HorsePhase10Authority.test.ts`, the committed selection with `withdrawn` set is admitted as `withdrawn` and its gate reads `withdrawn`).
+
+## Full-Sample Samplers And The Completion Floor (October 9, 2026)
+
+The first predeclared natural window (release `c1deef24`, 15:02 to 15:50Z; records in `docs/evidence/phase11/c1deef24/` and `docs/evidence/phase12/c1deef24/`) put every pack below the 0.95 floor, mostly through governor-reduced samples (about 4% of postflop decisions). #6592 (merge `1235b47a`) makes the Omaha and remaining-variant samplers always request the full 32 samples (owner decision, October 9). The locked matrices were re-run unchanged on `1235b47a` and the second predeclared window (`declaration-completion-2026-10-09-full-samples.txt`, release `1235b47a`, 19:02 to 19:50Z, unchanged before and after) was read:
+
+| Pack | Condition (a) on `1235b47a`                                  | Completion lower bounds (preflop, flop, turn, river) | Status                               |
+| ---- | ------------------------------------------------------------ | ---------------------------------------------------- | ------------------------------------ |
+| PLO8 | +7.84 [+6.84, +8.84] bb/100, 1,116,288 pairs, 114/114 shards | 0.995, 0.988, 0.984, 0.982                           | **selected** (approval generation 1) |
+| PLO5 | +5.37 [+4.25, +6.49] bb/100, 2,379,456 pairs, 243 shards     | 0.999, 0.993, 0.993, 0.987                           | **selected** (approval generation 1) |
+| PLO6 | +3.68 [+2.89, +4.47] bb/100, 2,519,424 pairs                 | 0.998, 0.990, 0.990, 0.989                           | **selected** (approval generation 1) |
+
+The completion record writers now refuse a window spelled in any form other than the canonical `toISOString` form admission reads (the first records used `...:00Z`, which `isoMs` refuses as `completion_window_invalid`); the records used for selection carry `...:00.000Z`.
+
+## PLO8, PLO5 And PLO6 Natural Accepted Use (October 9 To 10, 2026)
+
+Release `1406d401` (#6604, the PLO8, PLO5 and PLO6 selections) served from 2026-10-09T22:55:38Z. Predeclared read-only window (`/Volumes/SmarterArchives/agent-evidence/horse-brain-select-20261009/omaha-use/declaration-phase11-natural-use-2026-10-09.txt`, written before 23:38Z), 2026-10-10 00:02 to 00:50Z, release unchanged (StartedAt read before and after):
+
+| Phase 11 DECIDE_FAST decisions in the window (journal, sourceRelease `1406d401`) | PLO5   | PLO6   | PLO8  |
+| -------------------------------------------------------------------------------- | ------ | ------ | ----- |
+| cash, candidate mode, authority usable, applied (the pack changed the action)    | 200    | 141    | 139   |
+| cash, candidate mode, authority usable, unchanged (the pack kept the action)     | 5,836  | 4,937  | 3,129 |
+| tournament, shadow mode (Phase 7 keeps the tournament objective)                 | 19,870 | 19,621 | 0     |
+
+Every cash decision of each pack ran in candidate mode on usable authority, and no tournament decision left shadow. `horse_brain_telemetry` from the baseline (2026-10-09 23:38Z) to 2026-10-10 00:54Z: `phase11_selection_selected`, `phase11_applied` and `phase11_selection_controller_accepted` each rose by 640 (2026-10-09: 277 to 394; 2026-10-10: 0 to 523), so every applied decision was accepted by the table controller. Status: **verified now** for PLO8, PLO5 and PLO6. Withdrawal path: verified in source tests (`HorsePhase11Authority.test.ts`, each committed selection with `withdrawn` set is admitted as `withdrawn`).

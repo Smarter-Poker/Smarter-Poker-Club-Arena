@@ -1,0 +1,173 @@
+{
+  "schema": "horse-phase13-strength-shard-v1",
+  "variant": "plo8",
+  "contractVersion": "joint-strength-contract-v1",
+  "contractDigest": "a036e702e7659334a2c531f8bf90fb5e3a852686028fad47f182e486b57bb754",
+  "packVersion": "joint-action-response-round2-v1",
+  "domainVersion": "joint-multiway-round1-v4",
+  "rangePackVersion": "joint-public-range-round1-v1",
+  "evidenceMode": "contract",
+  "profileId": "p13c-plo8-bomb3-6max-100bb",
+  "seed": 13283347,
+  "shard": 3,
+  "firstPair": 19008,
+  "requestedPairs": 6336,
+  "pairs": 6336,
+  "complete": true,
+  "positionCoverageComplete": true,
+  "offsetCounts": [1056, 1056, 1056, 1056, 1056, 1056],
+  "strata": {
+    "0|flop": {
+      "n": 1053,
+      "s1": "-265952",
+      "s2": "36368230580",
+      "s3": "-226407917234324",
+      "s4": "7056465413800811204"
+    },
+    "0|none": {
+      "n": 2,
+      "s1": "0",
+      "s2": "0",
+      "s3": "0",
+      "s4": "0"
+    },
+    "0|turn": {
+      "n": 1,
+      "s1": "-2058",
+      "s2": "4235364",
+      "s3": "-8716379112",
+      "s4": "17938308212496"
+    },
+    "1|flop": {
+      "n": 1053,
+      "s1": "-469255",
+      "s2": "41271322273",
+      "s3": "-201018645686653",
+      "s4": "6795357081400288813"
+    },
+    "1|turn": {
+      "n": 3,
+      "s1": "-3609",
+      "s2": "61921305",
+      "s3": "-311707586853",
+      "s4": "2638817872909137"
+    },
+    "2|flop": {
+      "n": 1054,
+      "s1": "-588183",
+      "s2": "44665040597",
+      "s3": "-242698402535265",
+      "s4": "8402305965298474121"
+    },
+    "2|none": {
+      "n": 1,
+      "s1": "0",
+      "s2": "0",
+      "s3": "0",
+      "s4": "0"
+    },
+    "2|turn": {
+      "n": 1,
+      "s1": "0",
+      "s2": "0",
+      "s3": "0",
+      "s4": "0"
+    },
+    "3|flop": {
+      "n": 1053,
+      "s1": "-554462",
+      "s2": "38357237126",
+      "s3": "-232822685031434",
+      "s4": "6571744581237167366"
+    },
+    "3|none": {
+      "n": 1,
+      "s1": "0",
+      "s2": "0",
+      "s3": "0",
+      "s4": "0"
+    },
+    "3|turn": {
+      "n": 2,
+      "s1": "-600",
+      "s2": "360000",
+      "s3": "-216000000",
+      "s4": "129600000000"
+    },
+    "4|flop": {
+      "n": 1056,
+      "s1": "-608573",
+      "s2": "37695133071",
+      "s3": "-199633020108731",
+      "s4": "6934651952663738859"
+    },
+    "5|flop": {
+      "n": 1051,
+      "s1": "-936491",
+      "s2": "41188277443",
+      "s3": "-359160089735861",
+      "s4": "8152290577040590255"
+    },
+    "5|none": {
+      "n": 5,
+      "s1": "0",
+      "s2": "0",
+      "s3": "0",
+      "s4": "0"
+    }
+  },
+  "pairDigest": "07e5dd74a3780f3d72b7cb73babc002216302f747d18f2f12181b161def3b257",
+  "candidateNetCents": -3999857,
+  "referenceNetCents": -570674,
+  "changedPairs": 6327,
+  "decisions": 197741,
+  "eligible": 15633,
+  "fired": 15633,
+  "changed": 13501,
+  "illegalCandidates": 0,
+  "earlierPhaseRefusals": 0,
+  "workBudgetRefusals": 0,
+  "responseBranchUnavailable": 0,
+  "insufficientSamples": 0,
+  "eligibleByBoards": {
+    "3": 15633
+  },
+  "discards": 0,
+  "illegalActions": 0,
+  "conservationErrors": 0,
+  "cardErrors": 0,
+  "truncatedHands": 0,
+  "settlementMismatches": 0,
+  "deductionMismatches": 0,
+  "pairedReplayMismatches": 0,
+  "showdownsChecked": 8871,
+  "multiBoardShowdownsChecked": 8871,
+  "foldWinsChecked": 3801,
+  "lowHalvesChecked": 8071,
+  "totalRake": 49237.1,
+  "totalBbj": 6336,
+  "nodeCounts": {
+    "cash/flop/joint-board-3": 6589,
+    "cash/turn/joint-board-3": 4881,
+    "cash/river/joint-board-3": 4163
+  },
+  "reasons": {
+    "joint_cash_action_distribution": 15181,
+    "protected_dominated_commitment_floor": 285,
+    "protected_multiway_commitment_floor": 167
+  },
+  "equityWork": {
+    "127": 150515,
+    "150": 47226
+  },
+  "fixedWork": {
+    "governor": "off",
+    "scale": 1,
+    "policyClock": "phase13_evidence_mode_fixed_clock",
+    "moodClock": "deal_seed_time_of_day"
+  },
+  "durationMs": 2499201,
+  "promotionEligible": false,
+  "sourceUnchanged": true,
+  "cancelled": false
+}

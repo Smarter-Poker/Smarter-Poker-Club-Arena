@@ -1,21 +1,53 @@
 /**
- * Route-level form of `useFinancialAdminScope` for a money page that does
- * its own reads through a gated RPC and only needs the DOOR closed.
- *
- * /financial-incidents had no role check at all. Its data comes from
- * `fn_ca_incident_dashboard`, which answers club owners, union owners,
- * incident recipients and platform admins and returns nothing to anybody
- * else - so the leak was an empty admin page, and the page was still
- * advertised to every signed-in account. This gate asks the same question
- * the other money pages ask (a finance role in some club, or platform staff)
- * before the page mounts; the RPC stays authoritative underneath.
+ * The Drift console is not a generic club-finance page. Its platform readers
+ * are platform staff and the explicit ca_incident_recipients registry; a club
+ * role by itself grants neither global supply data nor another club's incident.
+ * Ask the same server capability the reader RPCs enforce and fail closed.
  */
-import type { ReactNode } from 'react';
-import { useFinancialAdminScope } from '../../hooks/useFinancialAdminScope';
-import FinancialAdminScopeState from '../common/FinancialAdminScopeState';
+import { useEffect, useState, type ReactNode } from 'react';
+import { Navigate } from 'react-router-dom';
+import { useAuthUser } from '../../hooks/useAuthUser';
+import { supabase } from '../../lib/supabase';
+import { reportError } from '../../utils/errorReporter';
+import { LoadingState } from '../common/EmptyState';
 
 export default function FinancialAdminGate({ children }: { children: ReactNode }) {
-  const scope = useFinancialAdminScope();
-  if (scope.status !== 'ready') return <FinancialAdminScopeState scope={scope} />;
+  const { user, isHydrating } = useAuthUser();
+  const [decision, setDecision] = useState<{
+    userId: string | null;
+    allowed: boolean;
+  } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (isHydrating) {
+      setDecision(null);
+      return undefined;
+    }
+    if (!user?.id) {
+      setDecision({ userId: null, allowed: false });
+      return undefined;
+    }
+    const verifiedUserId = user.id;
+    setDecision(null);
+    void (async () => {
+      try {
+        const { data, error } = await supabase.rpc('fn_ca_can_view_drift_console');
+        if (error) throw error;
+        if (!cancelled) setDecision({ userId: verifiedUserId, allowed: data === true });
+      } catch (error) {
+        reportError(error, 'FinancialAdminGate.drift_console_authority');
+        if (!cancelled) setDecision({ userId: verifiedUserId, allowed: false });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, isHydrating]);
+
+  const activeUserId = user?.id ?? null;
+  const allowed = !isHydrating && decision?.userId === activeUserId ? decision.allowed : null;
+  if (allowed === null) return <LoadingState message="Checking Your Access" />;
+  if (!allowed) return <Navigate to="/financial-admin" replace />;
   return <>{children}</>;
 }

@@ -56,8 +56,55 @@
  * before this file existed: they are on the old bundle and nothing loops.
  */
 import { useEffect } from 'react';
+import { isShellReloadBlocked } from '../lib/shellReloadBlocker';
 import { masterBus } from '../core/MasterBus';
 import { readDeployedShell } from '../lib/readDeployedShell';
+
+/** The longest a reload waits for a waiting worker to take control. */
+export const HANDOVER_TIMEOUT_MS = 3000;
+
+type WorkerContainer = Pick<
+  ServiceWorkerContainer,
+  'getRegistration' | 'addEventListener' | 'removeEventListener'
+>;
+
+/**
+ * A NEW WORKER TAKES OVER ONLY WHEN THIS TAB IS READY FOR IT (2026-10-07).
+ *
+ * public/sw-bus.js no longer calls skipWaiting() at install: activating under
+ * an open tab while that tab was navigating left the navigation uncommitted
+ * for a minute or more (Post-Deploy E2E run 37620236888). A deployed worker
+ * therefore waits, and the one moment it is handed control is here, right
+ * before this tab reloads anyway: ask it to activate, wait for it to become
+ * this tab's controller, then reload. Resolves at once when nothing is
+ * waiting, and after HANDOVER_TIMEOUT_MS at the latest; the reload is correct
+ * either way, because the old worker's freshness race serves the new shell.
+ */
+export function handOverToWaitingWorker(
+  container: WorkerContainer | undefined,
+  timeoutMs: number = HANDOVER_TIMEOUT_MS
+): Promise<'handed-over' | 'nothing-waiting' | 'timed-out'> {
+  if (!container) return Promise.resolve('nothing-waiting');
+  return container
+    .getRegistration()
+    .then((reg) => {
+      const waiting = reg?.waiting;
+      if (!waiting) return 'nothing-waiting' as const;
+      return new Promise<'handed-over' | 'timed-out'>((resolve) => {
+        let timer = 0;
+        const done = (outcome: 'handed-over' | 'timed-out') => {
+          container.removeEventListener('controllerchange', onChange);
+          window.clearTimeout(timer);
+          resolve(outcome);
+        };
+        const onChange = () => done('handed-over');
+        container.addEventListener('controllerchange', onChange);
+        timer = window.setTimeout(() => done('timed-out'), timeoutMs);
+        waiting.postMessage({ type: 'SKIP_WAITING' });
+      });
+    })
+    .catch(() => 'nothing-waiting' as const);
+}
 
 /** How long before another shell reload may be attempted in this tab. */
 export const RELOAD_COOLDOWN_MS = 10 * 60 * 1000;
@@ -116,6 +163,35 @@ export function mayReloadForShell(opts: {
 export const STALE_CHECK_MIN_INTERVAL_MS = 60 * 1000;
 
 /**
+ * ── A VISIBLE TAB THAT NEVER NAVIGATES (2026-10-05) ───────────────────────
+ *
+ * Every trigger above needs the page to navigate, resume or change
+ * visibility. A desktop tab left open on a club page - visible the whole
+ * time on a second monitor, nobody clicking - does none of those, so it ran
+ * the 2026-10-04 build into 2026-10-05 and, once table_seats.horse_id
+ * stopped being readable by a browser, asked for it once a minute and was
+ * refused (50 permission-denied reports from one account in an hour). The
+ * check also runs when the window regains focus, when the in-app route
+ * changes, and at most every STALE_CHECK_IDLE_MS while the page is visible.
+ * None of these reload anything by themselves: a stale result arms the same
+ * gate, which still never reloads at a table, hidden, or inside the
+ * cooldown.
+ */
+export const STALE_CHECK_IDLE_MS = 15 * 60 * 1000;
+
+/** Should the 5 s poll ask the server for the deployed shell now? */
+export function staleCheckDue(opts: {
+  pathname: string;
+  lastPathname: string;
+  visible: boolean;
+  lastCheckAt: number;
+  now: number;
+}): boolean {
+  if (opts.pathname !== opts.lastPathname) return true;
+  return opts.visible && opts.now - opts.lastCheckAt >= STALE_CHECK_IDLE_MS;
+}
+
+/**
  * The entry chunk named by a shell document. Vite writes exactly one
  * `assets/index-<hash>.js` module script into index.html per build, so the
  * name IS the build identity — two shells naming different entries are two
@@ -168,6 +244,7 @@ export function useShellUpdateGate(): void {
 
     let pending = false;
     let armed = true;
+    let handingOver = false;
     let timer = 0;
 
     const readLastReload = (): number | null => {
@@ -184,7 +261,7 @@ export function useShellUpdateGate(): void {
     };
 
     const attempt = () => {
-      if (!pending || !armed) return;
+      if (!pending || !armed || handingOver || isShellReloadBlocked()) return;
       const ok = mayReloadForShell({
         pathname: window.location.pathname,
         visible: document.visibilityState === 'visible',
@@ -199,7 +276,7 @@ export function useShellUpdateGate(): void {
       // asynchronously and still re-checks every condition.
       window.clearTimeout(timer);
       timer = window.setTimeout(() => {
-        if (!pending || !armed) return;
+        if (!pending || !armed || handingOver || isShellReloadBlocked()) return;
         if (
           !mayReloadForShell({
             pathname: window.location.pathname,
@@ -210,19 +287,38 @@ export function useShellUpdateGate(): void {
         ) {
           return;
         }
-        armed = false;
-        try {
-          sessionStorage.setItem(RELOAD_KEY, String(Date.now()));
-        } catch {
-          /* storage blocked - the disarm above is the real guard */
-        }
-        /* 2026-08-29 telemetry: every shell reload is counted, with the page
+        handingOver = true;
+        void handOverToWaitingWorker(navigator.serviceWorker).then(() => {
+          handingOver = false;
+          if (
+            !pending ||
+            !armed ||
+            isShellReloadBlocked() ||
+            !mayReloadForShell({
+              pathname: window.location.pathname,
+              visible: document.visibilityState === 'visible',
+              lastReloadAt: readLastReload(),
+              now: Date.now(),
+            })
+          )
+            return;
+          armed = false;
+          try {
+            sessionStorage.setItem(RELOAD_KEY, String(Date.now()));
+          } catch {
+            /* storage blocked - the disarm above is the real guard */
+          }
+          /* 2026-08-29 telemetry: every shell reload is counted, with the page
            age at the moment it fired. A reload inside the startup window is
            the fix working (adopt before the player settles in); one long
            after paint is the glitch Dan reported — the rate of the latter is
            what must stay at zero. */
-        masterBus.emit('SHELL_RELOADED', { pageAgeMs: Math.round(performance.now()) });
-        window.location.reload();
+          /* The new worker waits for this tab (public/sw-bus.js, install): hand
+           over to it first, then reload onto it, so its activation never
+           overlaps a navigation. */
+          masterBus.emit('SHELL_RELOADED', { pageAgeMs: Math.round(performance.now()) });
+          window.location.reload();
+        });
       }, settleDelayMs(performance.now()));
     };
 
@@ -288,10 +384,11 @@ export function useShellUpdateGate(): void {
 
     /* The resume-path probe. See the block comment above the hook. */
     let lastStaleCheckAt = 0;
-    const checkStaleness = () => {
-      if (!armed) return;
+    /** Returns whether the probe ran (false: unmounted or inside the throttle). */
+    const checkStaleness = (): boolean => {
+      if (!armed) return false;
       const now = Date.now();
-      if (now - lastStaleCheckAt < STALE_CHECK_MIN_INTERVAL_MS) return;
+      if (now - lastStaleCheckAt < STALE_CHECK_MIN_INTERVAL_MS) return false;
       lastStaleCheckAt = now;
 
       // 1. Let the browser discover a rotated sw-bus.js without a navigation.
@@ -302,7 +399,7 @@ export function useShellUpdateGate(): void {
 
       // 2. Compare the deployed shell's entry chunk against the one running.
       const running = extractEntryScript(document.documentElement.outerHTML);
-      if (!running) return; // dev server or a shell shape we do not recognise
+      if (!running) return true; // dev server or a shell shape we do not recognise
       const base =
         import.meta.env.BASE_URL && import.meta.env.BASE_URL !== '/'
           ? import.meta.env.BASE_URL
@@ -329,6 +426,7 @@ export function useShellUpdateGate(): void {
         .catch(() => {
           /* offline or blocked: nothing to adopt, nothing to do */
         });
+      return true;
     };
 
     const onVisibility = () => {
@@ -338,16 +436,39 @@ export function useShellUpdateGate(): void {
     /* pageshow fires when a PWA or bfcache page resumes without a real
        navigation — the exact case the probe exists for. */
     const onPageShow = () => checkStaleness();
+    /* Focus returns without a visibility change on a desktop window that was
+       merely behind another one. */
+    const onFocus = () => checkStaleness();
+    let lastPathname = window.location.pathname;
     /* Leaving a table is the single most likely moment for this to become
        safe, and it produces no event of its own — the router replaces the
        path without touching the SW. Poll cheaply instead of reaching into
        the router from the app root. */
-    const poll = window.setInterval(attempt, 5000);
+    const poll = window.setInterval(() => {
+      /* A route change is consumed only by a probe that actually ran: one
+         that lands inside the throttle (say, a minute after a focus check)
+         stays due and is retried on the next tick, rather than being
+         forgotten until the 15-minute idle check. */
+      if (
+        staleCheckDue({
+          pathname: window.location.pathname,
+          lastPathname,
+          visible: document.visibilityState === 'visible',
+          lastCheckAt: lastStaleCheckAt,
+          now: Date.now(),
+        }) &&
+        checkStaleness()
+      ) {
+        lastPathname = window.location.pathname;
+      }
+      attempt();
+    }, 5000);
 
     navigator.serviceWorker.addEventListener('message', onMessage);
     navigator.serviceWorker.addEventListener('controllerchange', onControllerChange);
     document.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('pageshow', onPageShow);
+    window.addEventListener('focus', onFocus);
 
     // Home Screen startup can finish pageshow before React mounts this hook.
     // Check once now as well as on later resumes; the existing throttle and
@@ -360,6 +481,7 @@ export function useShellUpdateGate(): void {
       navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange);
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('pageshow', onPageShow);
+      window.removeEventListener('focus', onFocus);
       window.clearInterval(poll);
       window.clearTimeout(timer);
     };

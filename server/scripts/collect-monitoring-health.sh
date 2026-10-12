@@ -154,6 +154,54 @@ print("\n".join(lines))
 PY
 ) || die "could not render the snapshot"
 
+# ── Client error gauges (2026-10-03) ─────────────────────────────────────
+# What players' browsers report through public.fn_report_client_errors, read
+# back as three gauges for the ClientErrorSpike alert. This half is NOT fail
+# closed, on purpose: the money, settlement and cron gauges above must never be
+# withheld because the client-error read failed, so a failure here only drops
+# these series and sets poker_client_error_collect_ok to 0.
+CLIENT_BODY=$(curl -sS --max-time "$TIMEOUT_SEC" \
+  -X POST "$SUPABASE_URL/rest/v1/rpc/fn_client_error_health" \
+  -H "apikey: $SERVICE_KEY" \
+  -H "Authorization: Bearer $SERVICE_KEY" \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json' \
+  -d '{}' 2>&1) || CLIENT_BODY=''
+CLIENT_RENDERED=$(python3 - "$CLIENT_BODY" <<'PY'
+import json, sys
+
+GAUGES = [
+    ("poker_client_errors_10m", "client_errors_10m",
+     "Client errors reported by players' browsers in the last 10 minutes (occurrences, automated sessions excluded)."),
+    ("poker_client_error_users_10m", "client_error_users_10m",
+     "Distinct players who reported any client error in the last 10 minutes."),
+    ("poker_client_error_top_code_users_10m", "client_error_top_code_users_10m",
+     "Distinct players who hit the single most widespread client error code in the last 10 minutes."),
+]
+
+lines = []
+collected = 1
+try:
+    payload = json.loads(sys.argv[1])
+    row = payload[0] if isinstance(payload, list) else payload
+    for metric, column, help_text in GAUGES:
+        value = float(row[column])
+        lines += [f"# HELP {metric} {help_text}", f"# TYPE {metric} gauge", f"{metric} {value:g}"]
+except Exception as exc:
+    sys.stderr.write(f"collect-monitoring-health: client error gauges skipped: {exc}\n")
+    lines = []
+    collected = 0
+lines += [
+    "# HELP poker_client_error_collect_ok 1 when the client error gauges were read this run, else 0.",
+    "# TYPE poker_client_error_collect_ok gauge",
+    f"poker_client_error_collect_ok {collected}",
+]
+print("\n".join(lines))
+PY
+) || CLIENT_RENDERED='poker_client_error_collect_ok 0'
+RENDERED="$RENDERED
+$CLIENT_RENDERED"
+
 if [ -n "${DRY_RUN:-}" ]; then
   printf '%s\n' "$RENDERED"
   exit 0

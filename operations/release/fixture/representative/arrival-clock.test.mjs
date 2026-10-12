@@ -1,0 +1,6 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {observeArrivalClock} from './arrival-clock.mjs';
+const state={hand_number:10,turn_start_time_ms:100,stage:'preflop',current_player:'a',players:[{user_id:'a',stack:100,is_folded:false,is_all_in:false}]};
+test('old arrival clock and changed context cannot authorize action; newer authoritative clock can',()=>{const a={};assert.equal(observeArrivalClock(a,state),true);assert.equal(observeArrivalClock(a,{...state,action_context:'different'}),true);assert.equal(a.arrivalReady,undefined);assert.equal(observeArrivalClock(a,{...state,turn_start_time_ms:101}),false);assert.equal(a.arrivalReady,true);});
+test('inactive new pointer stays nonacting and hand regression refuses',()=>{const a={};observeArrivalClock(a,state);assert.equal(observeArrivalClock(a,{...state,turn_start_time_ms:101,players:[{...state.players[0],is_folded:true}]}),true);assert.equal(a.arrivalReady,undefined);assert.throws(()=>observeArrivalClock(a,{...state,hand_number:9}),/regressed/);});
+
+test('first inactive snapshot is observation only and later valid new clock becomes actionable',()=>{const a={};assert.equal(observeArrivalClock(a,{...state,players:[{...state.players[0],is_folded:true}]}),true);assert.equal(a.arrivalReady,undefined);assert.equal(observeArrivalClock(a,{...state,turn_start_time_ms:101}),false);});

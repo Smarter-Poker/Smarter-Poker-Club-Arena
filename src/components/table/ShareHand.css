@@ -420,6 +420,89 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
+   SHARE AS VIDEO (Phase 9.1, 2026-09-30)
+   The clip panel under the tabs: one button, one status line, the preview
+   and the caption when the clip is ready. Same chrome as the Link tab.
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.share-hand__video {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 20px 20px;
+}
+
+.share-hand__video-btn {
+  padding: 14px;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, #1877f2 0%, #0d5cb8 100%);
+  border: none;
+  border-radius: 12px;
+  color: #ffffff;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.share-hand__video-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.share-hand__video-status {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: #e6edf3;
+  text-align: center;
+}
+
+.share-hand__video-status--failed {
+  color: #ff6b6b;
+}
+
+.share-hand__video-status--done {
+  color: #3fb950;
+}
+
+.share-hand__video-hint {
+  margin: 0;
+  font-size: 0.75rem;
+  color: #8b949e;
+  text-align: center;
+}
+
+.share-hand__video-preview {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 12px;
+  background: #000;
+}
+
+.share-hand__video-caption {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  font-size: 0.875rem;
+  color: #e6edf3;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+}
+
+.share-hand__video-link {
+  align-self: center;
+  color: #58a6ff;
+  font-size: 0.875rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.share-hand__video-link:focus-visible {
+  text-decoration: underline;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
    RESPONSIVE
    ═══════════════════════════════════════════════════════════════════════════════ */
 

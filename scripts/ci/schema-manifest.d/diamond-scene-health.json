@@ -1,0 +1,5 @@
+{
+  "_owner": "agent/fable/scene-health-reaches-the-platform. Applied to production as migration 20261001220527_diamond_scene_health_is_recorded_where_the_platform_can_read: the diamond_scene_daily rollup, its write and its platform-admin read.",
+  "tables": ["diamond_scene_daily"],
+  "functions": ["fn_record_diamond_scene", "fn_diamond_scene_health"]
+}

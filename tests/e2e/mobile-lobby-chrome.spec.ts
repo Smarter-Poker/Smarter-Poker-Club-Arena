@@ -33,6 +33,81 @@ import { dismissClubEntryMessage } from './global-setup';
 
 const css = (p: string) => readFileSync(p, 'utf8');
 
+// Real tournament styles, including the later shared .tl-scroll rule that
+// previously trapped gestures over lists even when their content fit.
+test.describe('tournament scroll gestures', () => {
+  // Playwright cannot deliver a mouse wheel in mobile WebKit. Use desktop
+  // input in both engines at the same narrow/wide responsive viewport sizes.
+  // This override is scoped here; existing iPhone chrome tests keep touch mode.
+  test.use({ isMobile: false, hasTouch: false });
+  for (const width of [375, 1518]) {
+    test(`tournament tabs scroll from centre and sides at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 812 });
+      const sheets = [
+        'src/pages/tournament/TournamentDetails.css',
+        'src/styles/tournament-lobby-3d.css',
+        ...[
+          'DetailOverviewTab',
+          'BlindsTab',
+          'RankingTab',
+          'EntriesTab',
+          'UnionsTab',
+          'TablesTab',
+          'RewardsTab',
+        ].map((name) => `src/components/tournament/details/${name}.css`),
+      ]
+        .map(css)
+        .join('\n');
+      for (const [name, root, list] of [
+        ['Details', 'dov', 'dov-info dov-info--band tl-scroll'],
+        ['Blinds', 'blinds-tab', 'blinds-list'],
+        ['Ranking', 'tl-panel rk-panel', 'tl-list tl-scroll rk-list'],
+        ['Entries', 'tl-panel et-panel', 'tl-list tl-scroll et-scroll'],
+        ['Unions', 'tl-panel un-panel', 'tl-list tl-scroll un-clubs'],
+        ['Tables', 'tl-panel tt-panel', 'tl-list tl-scroll tt-list'],
+        ['Rewards', 'rw', 'rw-list'],
+      ]) {
+        await test.step(name, async () => {
+          await page.setContent(`<style>${sheets}</style>
+          <section class="tournament-details" style="--details-h:780px">
+            <header class="details-header"><h1 class="tournament-name">Tournament</h1></header>
+            <nav class="details-tabs"><button class="tab">${name}</button></nav>
+            <div class="details-content"><div class="${root}">
+              <ol class="${list}" style="margin:0;padding:0;list-style:none">
+                ${Array.from({ length: 40 }, (_, i) => `<li style="height:64px;flex-shrink:0">Row ${i + 1}</li>`).join('')}
+              </ol></div></div>
+            <footer class="details-footer"><button>Share</button></footer>
+          </section>`);
+          const panel = page.locator('.details-content');
+          const box = await panel.boundingBox();
+          expect(box).not.toBeNull();
+          const footer = await page.locator('.details-footer').boundingBox();
+          for (const x of [box!.x + box!.width / 2, box!.x + 8]) {
+            await page.mouse.move(x, box!.y + box!.height / 2);
+            const before = await panel.evaluate((el) => el.scrollTop);
+            await page.mouse.wheel(0, 300);
+            // WebKit animates wheel input. Reading its first changed pixel
+            // and immediately reversing races the rest of the downward gesture.
+            // Wait for the requested distance before testing the reverse gesture.
+            await expect
+              .poll(() => panel.evaluate((el) => el.scrollTop))
+              .toBeGreaterThanOrEqual(before + 299);
+            const after = await panel.evaluate((el) => el.scrollTop);
+            await page.mouse.wheel(0, -250);
+            await expect
+              .poll(() => panel.evaluate((el) => el.scrollTop))
+              .toBeLessThanOrEqual(Math.max(0, after - 250) + 1);
+          }
+          expect(await page.locator('.details-footer').boundingBox()).toEqual(footer);
+          expect(await panel.evaluate((el) => getComputedStyle(el).overscrollBehaviorY)).toBe(
+            'contain'
+          );
+        });
+      }
+    });
+  }
+});
+
 test('production setup persists the club message through an eligible Diamond invitation', async ({
   page,
 }) => {
@@ -113,6 +188,55 @@ test('cash navigation finishes a late invitation before its short visibility ass
   await expect(page.getByRole('button', { name: 'View Table', exact: true })).toBeVisible();
   await expect(page.locator('#declines')).toHaveText('1');
   await expect(page.getByRole('dialog', { name: 'Diamond Spins', exact: true })).toBeHidden();
+});
+
+test('cash navigation retires an already running invitation without a second decline', async ({
+  page,
+}) => {
+  await page.setContent(`<button>View Table</button><output id="declines">0</output>
+    <div role="dialog" aria-label="Diamond Spins"><button disabled>Not Now</button></div>`);
+  let invitationError: unknown;
+  const handler = await registerDiamondInvitationDismissal(page, {
+    onFailure: (error) => {
+      invitationError = error;
+    },
+  });
+  await page.evaluate(() => {
+    const prompt = document.querySelector('[role="dialog"]')!;
+    const decline = prompt.querySelector('button')!;
+    decline.onclick = () => {
+      document.getElementById('declines')!.textContent = '1';
+      prompt.remove();
+    };
+    setTimeout(() => {
+      decline.disabled = false;
+    }, 1_500);
+  });
+  // This short action expires while its real invitation handler is waiting
+  // for the control to enable. Removal must drain that original owner before
+  // an explicit readiness flow decides whether another decline is needed.
+  const trigger = page
+    .getByRole('button', { name: 'View Table', exact: true })
+    .click({ timeout: 500 })
+    .then(
+      () => null,
+      (error: unknown) => error
+    );
+  expect(await trigger).toBeTruthy();
+  let originalFinished = false;
+  const original = handler.idle().then(() => {
+    originalFinished = true;
+  });
+  // A real page round trip gives an idle handler's microtask time to finish.
+  // Require the original callback to be pending, not merely registered.
+  await page.evaluate(() => document.readyState);
+  expect(originalFinished).toBe(false);
+  await prepareCashLobbyActions(page, { retainInvitationHandler: false });
+  await original;
+  expect(invitationError).toBeUndefined();
+  await expect(page.locator('#declines')).toHaveText('1');
+  await expect(page.getByRole('dialog', { name: 'Diamond Spins', exact: true })).toBeHidden();
+  await expect(page.getByRole('button', { name: 'View Table', exact: true })).toBeVisible();
 });
 
 /**

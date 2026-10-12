@@ -25,7 +25,7 @@
  * not know the app exists) and is loaded only when the bridge says native.
  */
 
-import { isNativePlatform, publicOrigin } from './appBase';
+import { IS_NATIVE_BUILD, isNativePlatform, publicOrigin } from './appBase';
 import { reportError } from '../utils/errorReporter';
 
 function absolute(pathOrUrl: string): string {
@@ -46,7 +46,7 @@ export interface LeaveOptions {
 
 /** Navigate to a World Hub page (web) or open it beside the app (native). */
 export function leaveForHub(pathOrUrl: string, opts: LeaveOptions = {}): void {
-  if (isNativePlatform()) {
+  if (IS_NATIVE_BUILD && isNativePlatform()) {
     void nativeOpen(absolute(pathOrUrl)).catch((err) =>
       reportError(err, 'openExternal.leaveForHub_native_failed')
     );
@@ -58,7 +58,7 @@ export function leaveForHub(pathOrUrl: string, opts: LeaveOptions = {}): void {
 
 /** window.open on the web; the in-app browser on native. */
 export function openInBrowser(url: string, features = 'noopener,noreferrer'): void {
-  if (isNativePlatform()) {
+  if (IS_NATIVE_BUILD && isNativePlatform()) {
     void nativeOpen(absolute(url)).catch((err) =>
       reportError(err, 'openExternal.openInBrowser_native_failed')
     );

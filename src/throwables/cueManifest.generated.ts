@@ -76,6 +76,16 @@ export const THROWABLE_CUE_MANIFEST: Record<string, CueManifestEntry> = {
   ambulance_siren_small: { placeholder: false, license: 'Own-Synthesis' },
   pressure_rise: { placeholder: false, license: 'Own-Synthesis' },
   reel_spin_loop: { placeholder: false, license: 'Own-Synthesis' },
+  laugh_short: { placeholder: false, license: 'CC0-1.0' },
+  laugh_swell: { placeholder: false, license: 'CC0-1.0' },
+  snore_soft: { placeholder: false, license: 'CC0-1.0' },
+  scream_short: { placeholder: false, license: 'CC0-1.0' },
+  yawn_breath: { placeholder: false, license: 'CC0-1.0' },
+  cheer_ooh: { placeholder: false, license: 'CC0-1.0' },
+  sigh_soft: { placeholder: false, license: 'CC0-1.0' },
+  comic_burp: { placeholder: false, license: 'CC0-1.0' },
+  sad_trombone: { placeholder: false, license: 'CC0-1.0' },
+  flag_flap: { placeholder: false, license: 'CC0-1.0' },
 };
 
 export const THROWABLE_CUE_ALLOWED_LICENSES: readonly string[] = [

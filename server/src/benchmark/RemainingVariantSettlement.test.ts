@@ -6,20 +6,22 @@ import { calculatePots, determineWinners } from '../engine/PokerEngine.js';
 import { remainingVariantReferenceSpots } from './RemainingVariantReferenceSpots.js';
 
 describe('independent remaining-variant refunds, pot layers and settlement', () => {
-  it('contrasts value, protected ties, known-discard losses and low-only quarters in the real policy', () => {
+  it('the real policy consumes the exact known-card share of every contrast spot (round 3 keeps the reference there)', () => {
     const spots = remainingVariantReferenceSpots();
     expect(spots).toHaveLength(8);
-    expect(
-      spots.find((s) => s.name === 'pineapple-known-discard-cannot-make-quads')?.policy.proposal
-        .action
-    ).toBe('fold');
-    expect(spots.find((s) => s.name === 'flo8-quartered-low')?.policy.proposal.action).toBe('call');
-    expect(spots.find((s) => s.name === 'flh-board-royal-tie')?.policy.proposal.action).toBe(
-      'call'
-    );
-    expect(
-      spots.find((s) => s.name === 'short-deck-flush-beats-full-house')?.policy.proposal.action
-    ).toBe('raise');
+    for (const s of spots) {
+      const r = s.policy.receipt;
+      expect(r.fired, s.name).toBe(true);
+      // Flush over full house, the A-6-7-8-9 wheel, a known discard that
+      // cannot make quads, quartered lows and board ties all reach the policy
+      // as the independently settled share.
+      expect(r.equity?.equity, s.name).toBeCloseTo(s.expectedShare, 12);
+      // Round 3 decides no river or facing-a-bet node from sampled equity:
+      // these spots keep the reference action.
+      expect(r.reason, s.name).toBe('round3_reference_retained');
+      expect(r.proposalAction, s.name).toBe(r.baselineAction);
+      expect(r.changed, s.name).toBe(false);
+    }
   });
   it.each(['short_deck', 'pineapple', 'flh', 'flo8'] as const)(
     '%s matches independently constructed layers, card rules and awards',

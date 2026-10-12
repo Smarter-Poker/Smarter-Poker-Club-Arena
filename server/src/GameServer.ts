@@ -1,6 +1,9 @@
+import { readPendingOperatorCashClose } from './services/operatorCashClose.js';
+import { type OperatorCommand, acknowledgeMaintenance } from './maintenance/OperatorCommands.js';
 import {
   findMixedF06Transfer,
   admitMixedF06Transfer,
+  disposeDeadOriginMixedF06Originals,
   mixedF06PendingOriginals,
   type MixedF06Transfer,
 } from './tournament/mixedF06Custody.js';
@@ -8,6 +11,7 @@ import { channelHub } from './hub/ChannelHub.js';
 import { BoundedLeaseRenewalScope } from './services/BoundedLeaseRenewalScope.js';
 import {
   TournamentRetirementCustody,
+  type AbandonedRetirement,
   type RetirementBinding,
   type RetirementCustody,
 } from './services/TournamentRetirementCustody.js';
@@ -20,6 +24,7 @@ import {
 import { horseAdaptiveJournalWorker } from './services/HorseAdaptiveJournalWorker.js';
 import { bindToProcessRoot } from './services/supabase/dataActorContext.js';
 import {
+  F06DrainedCustodyUnprovenError,
   f06CustodyRefusalKey,
   f06RecoveryDispositionOwner,
   prepareF06SuccessorAdmission,
@@ -51,6 +56,7 @@ import {
 } from './observability/PublicTableLiveness.js';
 import { AsyncResource } from 'node:async_hooks';
 
+import { markRetainedHandHold, clearRetainedHandHold } from './engine/retainedHandHolds.js';
 import { ServerTableEngine } from './engine/ServerTableEngine.js';
 import { equityGovernor } from './engine/EquityLoadGovernor.js';
 import { stopBrainTelemetryFlush } from './services/BrainTelemetryFlush.js';
@@ -78,11 +84,25 @@ import {
   supabase,
   startHandProjectionWorker,
   stopHandProjectionWorker,
+  RetainedHandSubmissionRefusedError,
 } from './services/supabase.js';
 import { HorseFleetManager } from './services/HorseFleetManager.js';
 import { ClusterController } from './cluster/ClusterController.js';
+import { LightningOperatorEvents } from './lightning/LightningOperatorEvents.js';
 import { LightningSupervisor } from './lightning/LightningSupervisor.js';
 import type { PresenceTableReport } from './lightning/LightningPresence.js';
+import { LightningHosting, LightningRegistry } from './lightning/LightningRegistry.js';
+import { LightningPresenceReporter } from './lightning/LightningPresenceReporter.js';
+import { LightningAutoRebuyExecutor } from './lightning/LightningAutoRebuy.js';
+import {
+  LIGHTNING_PRESENCE_RECONCILE_DELAY_MS,
+  reconcileLightningPresence,
+} from './lightning/LightningPresenceReconciliation.js';
+import { createSupabaseLightningHandBackend } from './lightning/LightningHandBackend.js';
+import { lightningAnchorSeat } from './services/supabase/lightningAnchor.js';
+import type { LightningLease } from './lightning/LightningHandHost.js';
+import type { ActionEngine } from './handlers/action.js';
+import type { LightningSeatProxy } from './lightning/LightningSeatProxy.js';
 import { clusterMetrics } from './cluster/ClusterMetrics.js';
 import {
   HorseTopUpPass,
@@ -92,6 +112,10 @@ import {
   MTT_PRESTART_TICK_MS,
   seatFirstStartStalled,
   SEAT_FIRST_START_STALL_MS,
+  seatFirstHumanPartnerHoldUntilMs,
+  seatFirstHumanPartnerHoldJitterMs,
+  firstHumanSeatedAtMs,
+  HUMAN_SEAT_DEMAND_TTL_MS,
 } from './services/TournamentRecurringService.js';
 import { ScheduledTournamentService } from './services/ScheduledTournamentService.js';
 import { TournamentMetrics } from './services/TournamentMetrics.js';
@@ -102,6 +126,7 @@ import { ReplicationMetrics } from './services/ReplicationMetrics.js';
 import { HandOutboxListener } from './services/supabase/handOutboxListener.js';
 import {
   leaseHeartbeatSessionsToPrometheus,
+  resolveLeaseHeartbeatSessionUrl,
   stopLeaseHeartbeatSessions,
 } from './services/leaseHeartbeatSession.js';
 import { HandOutboxMetrics } from './services/supabase/handOutboxMetrics.js';
@@ -151,6 +176,7 @@ import { processMemoryHealth } from './observability/processMemory.js';
 import { clientConnectionPrometheusLines } from './observability/ClientConnectionEvents.js';
 import {
   planTableReopens,
+  reopenSweepIdChunks,
   freshHumanWindowMs,
   type LiveTournamentRow,
   type TournamentTableRow,
@@ -190,6 +216,7 @@ import {
   auditGuaranteesKept,
 } from './services/FeeReconciler.js';
 import { reportError } from './services/errorReporter.js';
+import { raiseFinancialAlert } from './services/financialAlerts.js';
 import { startRakeSpecGuard, stopRakeSpecGuard } from './services/rakeSpecGuard.js';
 import { rakeSpecDriftState } from './config/rakeSpec.js';
 import {
@@ -239,6 +266,7 @@ import {
 } from './observability/engineInstruments.js';
 import { runMaintenanceThawV3 } from './maintenance/maintenanceThawV3.js';
 import { ENGINE_START_BUDGET_MAX, nextEngineStartBudget } from './engineStartBudget.js';
+import { decisionPipelineDistress } from './decisionPipelinePressure.js';
 import { isFleetWideStall } from './fleetWideZombieVerdict.js';
 import {
   RunningResumeCooldowns,
@@ -269,6 +297,7 @@ import {
   leaseDiagnostics,
   TABLE_LEASE_PROOF_WINDOW_MS,
 } from './services/tableLease.js';
+import { launchSeatingBudgetMs, launchWouldCrossLastHand } from './tournament/launchBreakHold.js';
 
 export { TournamentManager };
 
@@ -369,8 +398,19 @@ type DirectTableAdmission =
   | 'ready'
   | 'not_wakeable'
   | 'policy_closed'
+  | 'retained_hand_refused'
   | 'owned_elsewhere'
   | 'retryable_failure';
+
+/**
+ * How long a cash table whose retained hand the door refused from durable
+ * state is held before it is asked again. The answer changes only when a row
+ * changes (a chair leaves, a migration lands, an operator disposes the hand),
+ * and nothing announces that, so the table is asked again on this clock -
+ * once per ten minutes instead of once per five seconds - and every hourly
+ * engine restart asks afresh. 2026-09-29.
+ */
+const RETAINED_HAND_REFUSAL_RECHECK_MS = 10 * 60_000;
 /**
  * `stage_resume` (multi-day, 2026-09-24): a BAGGED event whose next stage is
  * due. The manager claims the stage resume receipt, seats every entitlement,
@@ -495,6 +535,21 @@ const PER_TABLE_LIVENESS_SAMPLE_CAP = 40;
 // GAME SERVER — Main Orchestrator
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/**
+ * Consecutive short fills before a horse-only seat-first board is reported
+ * stuck: 12 s, 24 s ... 384 s of backoff, about 12 minutes in all. See the
+ * alarm in topUpPartialSeatFirst.
+ */
+export const SEAT_FIRST_STUCK_AFTER_MISSES = 6;
+
+/** Who sits at a REGISTERING seat-first game, as the fast lane needs it. */
+interface SeatFirstOccupancy {
+  paid: number;
+  hasHuman: boolean;
+  /** Earliest live human seat, ms; NaN when no human sits. */
+  firstHumanAtMs: number;
+}
+
 export class GameServer {
   private tableEngines: Map<string, ServerTableEngine> = new Map();
   /** One shared, classified readiness promise per on-demand engine start. */
@@ -512,6 +567,12 @@ export class GameServer {
   /** One causal retry timer per table after a classified transient failure. */
   private directTableRecoveryTimers: Map<string, NodeJS.Timeout> = new Map();
   private directTableRecoveryAttempts: Map<string, number> = new Map();
+  /**
+   * Cash tables held because the retained-hand door refused their start from
+   * durable state: the refusal code and when the table may be asked again.
+   * Optional so a bare test server needs no setup; created on first hold.
+   */
+  private retainedHandHolds?: Map<string, { code: string; until: number }>;
   /** One caller-selected protocol-2 generation reused by one causal admission retry. */
   private directTableAdmissionLeaseGenerations = new Map<string, string>();
   /** Exact acquired generations whose local proof expired before admission. */
@@ -784,6 +845,9 @@ export class GameServer {
             this.tableEngines.get(tableId) === captured &&
             captured.getEngineLeaseAuthority()?.generation === generations.get(tableId)
           ) {
+            // The database ANSWERED and named another holder, a stale row or
+            // none: the only way a cash heartbeat can say "taken".
+            (this.cashLeasesRefutedByDatabase ??= new WeakSet()).add(captured);
             lostEngines.set(tableId, captured);
           }
         }
@@ -1168,9 +1232,21 @@ export class GameServer {
       if (this.tableEngines.get(tableId) !== engine || this.tournamentOwnedTables.has(tableId)) {
         continue;
       }
+      /* "I COULD NOT TELL" IS NOT "ANOTHER INSTANCE TOOK IT" (2026-10-02).
+         The tournament half has said which since 2026-09-26; the cash half
+         still blamed "another engine instance" for every loss. In the
+         2026-10-02 22:27Z storm ~340 tables reported that while one instance
+         existed and its rows still named it: the proof had simply run out
+         while PostgREST's pool answered nobody. Both are fenced the same. */
+      const refuted = this.cashLeasesRefutedByDatabase?.has(engine) === true;
       reportError(
-        new Error(`Lost the deal-lease on table ${tableId} to another engine instance`),
-        'GameServer.table_lease_lost'
+        new Error(
+          refuted
+            ? `Lost the deal-lease on table ${tableId}: the database named another holder, a stale row or none`
+            : `Table ${tableId} could not prove its deal-lease inside its window: no heartbeat answer arrived, and the database did not say it moved`
+        ),
+        'GameServer.table_lease_lost',
+        { tableId, verdict: refuted ? 'refuted' : 'unproven' }
       );
       engine.fenceForEngineLeaseLoss('cash_table_lease_lost', false);
       lostCashEngines.push([tableId, engine]);
@@ -1570,6 +1646,15 @@ export class GameServer {
    */
   private tournamentResumeBudget: number = ENGINE_START_BUDGET_MAX;
   /**
+   * Live horse-decision expiries as of the previous re-adoption pass, so only
+   * NEW ones count as distress (decisionPipelinePressure.ts). A recovery that
+   * expires in-flight decisions is not a recovery, and before 2026-09-27 the
+   * budget above could not see that happening: every resume on 2026-09-22
+   * 13:24 SUCCEEDED while the pipeline went to 1,320 expiries and 9,274 ms of
+   * queue age, so the pass was never distressed and the budget climbed.
+   */
+  private decisionPipelineExpiredBaseline: number = 0;
+  /**
    * Distress since the last tournament pass, read and cleared once per pass:
    * a discovery resume that threw or had to schedule a retry, and each manager
    * the lease renewal pass found had lost its lease - once per manager, and
@@ -1584,6 +1669,8 @@ export class GameServer {
   private readonly tournamentManagersJudgedLost = new WeakSet<TournamentManager>();
   /** Managers a heartbeat ANSWER refuted (taken, stale, missing, other generation). */
   private tournamentLeasesRefutedByDatabase?: WeakSet<TournamentManager>;
+  /** Cash engines a heartbeat ANSWER refuted (taken, stale, missing, other generation). */
+  private cashLeasesRefutedByDatabase?: WeakSet<ServerTableEngine>;
   /** Discovery-launched resume admissions not yet settled, by launch time. */
   private tournamentResumesInFlight = new Map<string, number>();
   /**
@@ -1630,6 +1717,51 @@ export class GameServer {
     this.directTableRecoveryTimers.delete(tableId);
     this.directTableRecoveryAttempts.delete(tableId);
     this.directTableAdmissionLeaseGenerations.delete(tableId);
+  }
+
+  /**
+   * A STANDING REFUSAL IS SAID ONCE AND HELD, NOT REBUILT EVERY FIVE SECONDS
+   * (2026-09-29). The retained-hand door refused this cash table's start from
+   * durable state. Record the hold, and report only when the refusal is new
+   * or its code changed; an unchanged answer on recheck extends the hold in
+   * silence.
+   */
+  private holdRetainedHandRefusal(tableId: string, code: string): void {
+    const holds = (this.retainedHandHolds ??= new Map());
+    const previous = holds.get(tableId);
+    holds.set(tableId, { code, until: Date.now() + RETAINED_HAND_REFUSAL_RECHECK_MS });
+    // The horse fleet reads this before it seats anyone (retainedHandHolds.ts).
+    markRetainedHandHold(tableId);
+    if (previous?.code === code) return;
+    reportError(
+      new Error(
+        `Retained hand refused this cash table's start: ${code}. The table is held, ` +
+          `not rebuilt, and asked again every ${RETAINED_HAND_REFUSAL_RECHECK_MS / 60_000} minutes.`
+      ),
+      'GameServer.retained_hand_refusal_holds_table',
+      { tableId, code, previousCode: previous?.code ?? null }
+    );
+  }
+
+  /** The table started: its hold ends, and if it had been reported, so does that. */
+  private releaseRetainedHandHold(tableId: string): void {
+    clearRetainedHandHold(tableId);
+    const previous = this.retainedHandHolds?.get(tableId);
+    if (!previous) return;
+    this.retainedHandHolds!.delete(tableId);
+    console.log(
+      `[GameServer] Cash table ${tableId} started; its retained-hand hold (${previous.code}) is released.`
+    );
+  }
+
+  private retainedHandHeld(tableId: string): boolean {
+    const hold = this.retainedHandHolds?.get(tableId);
+    return hold !== undefined && Date.now() < hold.until;
+  }
+
+  /** Read-only view for /health and tests. */
+  getRetainedHandHolds(): ReadonlyMap<string, { code: string; until: number }> {
+    return this.retainedHandHolds ?? new Map();
   }
 
   /**
@@ -1695,7 +1827,28 @@ export class GameServer {
     engine: ServerTableEngine
   ): Promise<DirectTableAdmission> {
     const outcome = engine.ready.then<DirectTableAdmission>(async (ready) => {
-      if (ready) return 'ready';
+      if (ready) {
+        this.releaseRetainedHandHold(tableId);
+        return 'ready';
+      }
+      if (engine.getStartupRetainedHandRefusal()) {
+        try {
+          // Exact teardown and lease release first, exactly as for a closed
+          // policy; the hold was recorded when start() rejected.
+          await this.recoverDirectTableEngine(
+            tableId,
+            engine,
+            'startup_retained_hand_refused',
+            true
+          );
+          return 'retained_hand_refused';
+        } catch (cleanupError) {
+          reportError(cleanupError, 'GameServer.retained_hand_refused_cleanup_unconfirmed', {
+            tableId,
+          });
+          return 'retryable_failure';
+        }
+      }
       if (!engine.getStartupPolicyRefusal()) return 'retryable_failure';
       try {
         // Boolean readiness is already false. Keep the classified admission
@@ -1817,9 +1970,10 @@ export class GameServer {
     tableStateHub.dropTable(tableId);
     if (!this.running) return;
 
-    if (engine.getStartupPolicyRefusal()) {
-      // Closure is not a crash. Cleanup and exact lease release above still
-      // apply; an unavailable cleanup result must never reach this branch.
+    if (engine.getStartupPolicyRefusal() || engine.getStartupRetainedHandRefusal()) {
+      // Closure is not a crash, and neither is a standing retained-hand
+      // refusal. Cleanup and exact lease release above still apply; an
+      // unavailable cleanup result must never reach this branch.
       this.clearDirectTableRecovery(tableId);
       return;
     }
@@ -2072,6 +2226,30 @@ export class GameServer {
       }),
       missingMeans: 'unknown' as const,
     });
+  }
+
+  /**
+   * A manager asks for this when one of its stopped tables holds a hand only a
+   * different lease generation may resolve (tournament/unprovedHandSuccessor.ts).
+   * The exact manager is stopped and its lease released through the same
+   * identity-CAS owner a lost lease uses; the running-event discovery then
+   * admits a manager under a fresh generation. A stop already in flight, or
+   * one the quarantine is retrying, is left to its owner.
+   */
+  handTournamentToSuccessorGeneration(tournamentId: string, manager: unknown): void {
+    const exact = this.tournamentEngines.get(tournamentId);
+    if (!exact || exact !== manager) return;
+    if (this.tournamentManagerRetirementOperations.has(exact)) return;
+    if (this.tournamentManagerQuarantine?.heldBy(tournamentId) === exact) return;
+    this.launchServerLifecycleJob(
+      this.stopTournamentManagerIfOwned(
+        tournamentId,
+        exact,
+        'GameServer.unproved_hand_successor_stop_failed'
+      ),
+      'GameServer.unproved_hand_successor_handoff_failed',
+      { tournamentId }
+    );
   }
 
   /**
@@ -2714,7 +2892,18 @@ export class GameServer {
     }
     // A top-up still owns this event's entry transaction. Unrelated events
     // may start, but this event is re-read only after its real outcome settles.
-    if (mode === 'start' && this.tournamentTopUpsInFlight.has(tournamentId)) {
+    /* AND THE START IS KEPT FOR THAT MOMENT, NOT DROPPED (2026-10-11).
+       This returned and forgot the ask, so a full board waited for the next
+       poll after the top-up settled. Measured 19:00-19:50 UTC 2026-10-11:
+       61 Spins whose last seat was bought while another lane's top-up of the
+       same board was in flight, 59 of them late (lag p50 826 ms), every one
+       waiting 1.7 s for a fill that could only find the table full. The
+       start now runs the instant that top-up settles, through this same
+       door, so every gate above is asked again at that moment. */
+    const fillInFlight =
+      mode === 'start' ? this.tournamentTopUpsInFlight.get(tournamentId) : undefined;
+    if (fillInFlight) {
+      this.startWhenTopUpSettles(tournamentId, fillInFlight, description, generation);
       return Promise.resolve();
     }
 
@@ -2731,6 +2920,42 @@ export class GameServer {
     });
     this.tournamentManagerAdmissionOperations.set(tournamentId, tracked);
     return tracked;
+  }
+
+  /** Starts asked for while a top-up owned the event, keyed by that top-up. */
+  private startsAwaitingTopUp?: Map<string, Promise<void>>;
+
+  /**
+   * Run a refused start the moment the top-up that refused it settles. One
+   * waiter per top-up: the fast lane asks every second, and a second ask for
+   * the same settle is the same start. The waiter re-enters the front door,
+   * so a stopped generation, a freeze, a park or an admitted manager still
+   * refuses it there.
+   */
+  private startWhenTopUpSettles(
+    tournamentId: string,
+    topUp: Promise<void>,
+    description: string,
+    generation: number
+  ): void {
+    const waiting = (this.startsAwaitingTopUp ??= new Map());
+    if (waiting.get(tournamentId) === topUp) return;
+    waiting.set(tournamentId, topUp);
+    void topUp
+      .catch(() => undefined)
+      .then(() => {
+        if (waiting.get(tournamentId) !== topUp) return;
+        waiting.delete(tournamentId);
+        if (!this.directAdmissionIsCurrent(generation) || isMaintenanceFrozen()) return;
+        this.launchDiscoveryJob(
+          this.ensureTournamentManagerAdmission(tournamentId, 'start', description, generation),
+          'GameServer.seat_first_fast_start_failed',
+          { tournamentId }
+        );
+      })
+      .catch((error) =>
+        reportError(error, 'GameServer.seat_first_fast_start_failed', { tournamentId })
+      );
   }
 
   private async performTournamentManagerAdmission(
@@ -2832,6 +3057,22 @@ export class GameServer {
     let mixedTerminalProof: unknown = null;
     if (mode === 'resume' || packet || durableMixed) {
       try {
+        if (!packet && durableMixed && mixedF06PendingOriginals(durableMixed).length > 0) {
+          // The process that held these originals is gone; only this
+          // successor can give them a terminal disposition. See
+          // disposeDeadOriginMixedF06Originals (2026-10-04).
+          const disposed = await disposeDeadOriginMixedF06Originals(
+            tournamentId,
+            lease.leaseGeneration,
+            durableMixed
+          );
+          if (disposed.absentReleased > 0 || disposed.handsVoided > 0)
+            console.warn(
+              `[GameServer] tournament ${tournamentId.slice(0, 8)}: dead origin of transfer ` +
+                `${durableMixed.transferId.slice(0, 8)} disposed - ${disposed.handsVoided} reserved ` +
+                `hand(s) voided as misdeals, ${disposed.absentReleased} never-begun permit(s) released`
+            );
+        }
         const state =
           !packet && durableMixed
             ? await admitMixedF06Transfer(tournamentId, lease.leaseGeneration, durableMixed)
@@ -3116,6 +3357,8 @@ export class GameServer {
    * and each distinct refusal is reported once. Pruned with lastMttRampAt.
    */
   private finalizedFinishAttempt: Map<string, number> = new Map();
+  /** Starts held for the coming :53, keyed by id, valued by the hold's :53 instant (logged once). */
+  private launchHeldForBreak: Map<string, number> = new Map();
   /**
    * When each seat-first game was FIRST seen holding every seat it sells.
    *
@@ -3129,6 +3372,16 @@ export class GameServer {
   private lastSeatFirstFinishSweepAt = 0;
   /** One reopen sweep per minute for tables closed under a live tournament. */
   private lastClosedTableReopenSweepAt = 0;
+  private lastDarkTournamentSweepAt = 0;
+  /** When each dark tournament's manager was last retired for a rebuild. */
+  private readonly darkTournamentRebuiltAtMs = new Map<string, number>();
+  /** When each long-failing resume / repeat-dark event was last paged. */
+  private readonly failingResumePagedAtMs = new Map<string, number>();
+  private readonly darkAfterRebuildPagedAtMs = new Map<string, number>();
+  static readonly DARK_TOURNAMENT_LIVE_MINUTES = 15;
+  static readonly DARK_TOURNAMENT_REBUILD_EVERY_MS = 30 * 60 * 1000;
+  static readonly FAILING_RESUME_PAGE_AFTER_MS = 10 * 60 * 1000;
+  static readonly FAILING_RESUME_PAGE_EVERY_MS = 30 * 60 * 1000;
   /** Last fn_tournament_money_conservation pass (2026-08-27 phase 3). */
   private lastConservationAt = 0;
   /** Last fn_detect_results_without_a_hand pass (2026-09-01 phase 7). */
@@ -3178,9 +3431,49 @@ export class GameServer {
    * 'off' - none today. A worker in 'form' mode refuses to run until a
    * dealing host exists. See src/lightning/LightningSupervisor.ts.
    */
+  /**
+   * Lightning Phase 6 (2026-09-27): the hands this process deals across
+   * anchor tables, by room (pool_session_id), and the hosting that builds a
+   * LightningHandHost for each hand a 'form' worker forms. Settlement fences
+   * on the host table's lease, which is only ever this process's own engine
+   * lease (lightningLeaseFor). Dark: no Cluster is Lightning-enabled and
+   * worker_mode defaults to 'off'.
+   */
+  // Lightning Phase 9: presence TRANSITIONS are reported to the database
+  // (fn_lightning_presence_report), batched per Cluster, never per pass. The
+  // reporter is held here so shutdown can flush and stop it, and so the boot
+  // reconciliation pass can feed it (Phase 9 remediation).
+  private readonly lightningPresenceReporter = new LightningPresenceReporter();
+  readonly lightningRooms = new LightningRegistry({
+    presenceReport: this.lightningPresenceReporter,
+  });
+  /** The one post-boot presence reconciliation pass (Phase 9 remediation). */
+  private lightningPresenceReconcileTimer: ReturnType<typeof setTimeout> | null = null;
+  private lightningHosting = new LightningHosting({
+    registry: this.lightningRooms,
+    backend: createSupabaseLightningHandBackend(),
+    hub: tableStateHub,
+    leaseFor: (hostTableId) => this.lightningLeaseFor(hostTableId),
+    // Lightning Phase 10: auto-rebuy is asked for between hands only, at the
+    // settled boundary; the database validates and moves every chip.
+    autoRebuy: new LightningAutoRebuyExecutor(),
+  });
+  private lightningOperatorEvents = new LightningOperatorEvents();
   private lightningSupervisor = new LightningSupervisor({
     presenceSource: () => this.lightningPresenceReports(),
+    hosting: this.lightningHosting,
+    // Ended pool sessions: their rooms' sockets are closed (every 5 s).
+    sweepRooms: () => this.lightningRooms.sweepEndedRooms(),
+    // Lightning Phase 13: a drained, reverting or paused Cluster's rooms are
+    // told so (lightning_cluster_status), once per change and on RESYNC.
+    clusterStatus: (clusterId, status) => this.lightningRooms.setClusterStatus(clusterId, status),
   });
+  /* Lightning Phase 12 (surge protection): a room's first socket is a player
+     arriving in the pool, so their Cluster's worker forms within the admission
+     window instead of up to a pass interval later. */
+  private readonly lightningArrivalWired = this.lightningRooms.setArrivalListener((clusterId) =>
+    this.lightningSupervisor.admit(clusterId)
+  );
   private tournamentRecurring = new TournamentRecurringService();
   // Data-driven recurring schedules (tournament_schedules) - runs alongside the
   // hardcoded recurring blocks, acting only on rows written into the database.
@@ -3271,11 +3564,81 @@ export class GameServer {
     this.maintenanceBreak.replay(tableId);
   }
 
+  private async resumePendingOperatorCashCloses(generation: number): Promise<void> {
+    const { data, error } = await supabase
+      .from('ca_operator_table_closes')
+      .select('table_id')
+      .eq('status', 'pending');
+    if (error || !Array.isArray(data)) throw new Error('operator_cash_close_targets_unknown');
+    for (const row of data) {
+      if (!this.dealerAdmissionIsCurrent(generation)) return;
+      if (!(await this.ensureCashTableEngine(row.table_id)))
+        reportError(
+          new Error('operator_cash_close_dealer_unconfirmed'),
+          'GameServer.operator_cash_close_startup_refused',
+          { tableId: row.table_id }
+        );
+    }
+  }
+
+  async applyOperatorFloorCommand(command: OperatorCommand) {
+    // Persisted state was committed first; each original dealer reads its own
+    // hold and closes only after its settlement barrier. No second dealer.
+    const settled = await Promise.allSettled(
+      [...this.tableEngines.values()].map((engine) => engine.refreshOperatorFloor())
+    );
+    if (command.action === 'close_cash') {
+      const { data, error } = await supabase
+        .from('ca_operator_table_closes')
+        .select('table_id')
+        .eq('operation_id', command.id)
+        .eq('status', 'pending');
+      if (error || !Array.isArray(data)) throw new Error('operator_close_targets_unknown');
+      let unconfirmed = false;
+      for (const row of data) {
+        try {
+          if (!(await this.ensureCashTableEngine(row.table_id))) unconfirmed = true;
+        } catch (admissionError) {
+          unconfirmed = true;
+          reportError(admissionError, 'GameServer.operator_cash_close_admission_unknown', {
+            tableId: row.table_id,
+          });
+        }
+      }
+      if (unconfirmed) throw new Error('operator_cash_close_dealer_unconfirmed');
+    }
+    return {
+      observed: settled.filter((result) => result.status === 'fulfilled').length,
+      unknown: settled.filter((result) => result.status === 'rejected').length,
+      source: 'original_table_dealers',
+    };
+  }
+
+  async endOperatorMaintenance(command: OperatorCommand) {
+    const announcement = Date.parse(command.announced_at ?? '');
+    if (!Number.isFinite(announcement) || Date.now() < announcement + 420_000)
+      throw new Error('maintenance_original_deadline_not_reached');
+    const state = this.maintenanceBreak.snapshot();
+    if (state.active && state.breakEndsAt !== announcement + 420_000)
+      throw new Error('maintenance_owner_identity_changed');
+    if (state.active) await this.maintenanceBreak.end();
+    return this.maintenanceBreak.snapshot();
+  }
+
   requestMaintenanceRecoveryWindow(announcedAt: number) {
     return this.maintenanceBreak.requestRecoveryWindow(announcedAt);
   }
 
   private readonly maintenanceBreak = new MaintenanceBreak({
+    claimOperatorAnnouncement: async (announcedAt) => {
+      const { data, error } = await supabase.rpc('fn_ca_engine_operator_claim_hourly', {
+        p_announced_at: new Date(announcedAt).toISOString(),
+      });
+      if (error) throw new Error('operator_announcement_claim_unknown');
+      return data;
+    },
+    observeOperatorAnnouncement: (operationId, announcedAt) =>
+      acknowledgeMaintenance(operationId, announcedAt, 'active'),
     assertRecoveryWindowContract: bindToProcessRoot(async () => {
       const { data, error } = await supabase.rpc('fn_engine_recovery_window_contract');
       if (error || data !== 'engine-recovery-window-v1') {
@@ -3380,13 +3743,25 @@ export class GameServer {
          down that same absolute instant, so both must adopt the committed row
          before any table resumes. Managers without an active window return
          without I/O; failures are isolated per event and their live timer
-         keeps re-reading the durable deadline. */
+         keeps re-reading the durable deadline.
+
+         It has also moved level_started_at for every running event that was
+         not on the synchronized break, whose level wake was armed from the
+         pre-freeze anchor and would otherwise fire the frozen minutes early.
+         The same pass tells the Horse tournament context to reread the
+         committed clock. A manager on the break, or with no armed level
+         clock, makes no level-clock read. */
       await Promise.all(
         [...this.tournamentEngines.values()].map(async (manager) => {
           try {
             await manager.resyncAddOnPeriodAfterMaintenanceThaw();
           } catch (error) {
             reportError(error, 'GameServer.addon_period_thaw_resync_failed');
+          }
+          try {
+            await manager.resyncLevelClockAfterMaintenanceThaw();
+          } catch (error) {
+            reportError(error, 'GameServer.level_clock_thaw_resync_failed');
           }
         })
       );
@@ -3487,6 +3862,10 @@ export class GameServer {
 
   private async performStart(generation: number): Promise<void> {
     const maintenanceMode = process.env.MAINTENANCE_MODE === 'true';
+    // The lease heartbeat's own login, read from Vault when the host sets no
+    // ENGINE_PG_LISTEN_URL (migration 20261002223745). Not awaited: until it
+    // answers, heartbeats use the shared client exactly as before.
+    void resolveLeaseHeartbeatSessionUrl();
     // E2E test mode — when set, MAINTENANCE_MODE still applies (no auto-spawn,
     // no recurring tournaments, no horse fleet) but a single table engine is
     // booted for this exact tableId so a tester can sit down and play hands
@@ -3786,6 +4165,24 @@ export class GameServer {
       // Lightning 2.0: the shadow matcher workers, beside the Cluster
       // controller, behind the same leader gate. Dark until a Cluster qualifies.
       this.lightningSupervisor.start();
+      this.lightningOperatorEvents.start();
+      this.lightningOperatorEvents.start();
+      // Lightning Phase 9 remediation: a restart loses the registry's socket
+      // counts, so a player who left BEFORE the restart would never be
+      // reported disconnected and their open pool session would sit until
+      // the anchor-seat backstop. One pass, shortly after boot (returning
+      // sockets land first), reports every open session whose player holds
+      // no socket here through the ordinary reporter path. The presence door
+      // is idempotent, so over-reporting an already-stamped player is free.
+      this.lightningPresenceReconcileTimer = setTimeout(() => {
+        this.lightningPresenceReconcileTimer = null;
+        void reconcileLightningPresence({
+          isConnected: (clusterId, playerId) =>
+            this.lightningRooms.hasClusterSocket(clusterId, playerId),
+          report: this.lightningPresenceReporter,
+        });
+      }, LIGHTNING_PRESENCE_RECONCILE_DELAY_MS);
+      (this.lightningPresenceReconcileTimer as { unref?: () => void }).unref?.();
 
       // Step 3: Start tournament recurring service (creates MTTs, SNGs, Spins)
       this.tournamentRecurring.start();
@@ -3866,6 +4263,11 @@ export class GameServer {
       this.handOutboxListener.start();
 
       if (!this.publishDealerPrerequisitesReady(generation)) return;
+      // Finite startup recovery uses the original dealer, not a repair interval.
+      this.launchServerLifecycleJob(
+        this.resumePendingOperatorCashCloses(generation),
+        'GameServer.operator_cash_close_startup_unknown'
+      );
       this.leaderBootComplete = true;
       console.log('[GameServer] Running. All services started.');
     } else if (testTableId) {
@@ -3991,6 +4393,20 @@ export class GameServer {
         ['HorseFleetManager', () => this.horseFleet.stop()],
         ['ClusterController', () => this.clusterController.stop()],
         ['LightningSupervisor', () => this.lightningSupervisor.stop()],
+        ['LightningOperatorEvents', () => this.lightningOperatorEvents.stop()],
+        // Phase 9 remediation: the presence reporter is flushed and stopped
+        // with the other producers, and a reconciliation pass that has not
+        // run yet never runs into a shutdown.
+        [
+          'LightningPresenceReporter',
+          () => {
+            if (this.lightningPresenceReconcileTimer) {
+              clearTimeout(this.lightningPresenceReconcileTimer);
+              this.lightningPresenceReconcileTimer = null;
+            }
+            return this.lightningPresenceReporter.stop();
+          },
+        ],
         ['TournamentRecurringService', () => this.tournamentRecurring.stop()],
         ['ScheduledTournamentService', () => this.scheduledTournaments.stop()],
         ['HorseLifecycleManager', () => this.lifecycle.stop()],
@@ -4415,13 +4831,30 @@ export class GameServer {
     // Per-table liveness first — everything below is aggregate telemetry that
     // cannot distinguish a dealing table from a frozen one.
     const tableLiveness = this.tableLivenessSnapshot();
-    const stalledTables = tableLiveness
+    const liveStalledTables = tableLiveness
       .filter((t) => t.dealable >= 2 && !t.paused && t.msSinceProgress > 120_000)
       .map((t) => ({
         tableId: t.tableId,
         dealable: t.dealable,
         secsIdle: Math.round(t.msSinceProgress / 1000),
       }));
+    /* A tournament table its manager has been failing to admit for over two
+       minutes is stalled too, though it has no engine to sample between
+       retries (2026-10-03, b290375a: 6.5 hours RUNNING, 0 hands,
+       stalledTableCount 0). Counted here and named in the list, kept out of
+       the liveness verdict below: identification only, it restarts nothing. */
+    const liveStalledIds = new Set(liveStalledTables.map((t) => t.tableId));
+    const stalledTables = [
+      ...liveStalledTables,
+      ...this.tournamentTablesFailingAdmission(now)
+        .filter((t) => !liveStalledIds.has(t.tableId))
+        .map((t) => ({
+          tableId: t.tableId,
+          dealable: 0,
+          secsIdle: Math.round(t.msFailing / 1000),
+          admission: 'failing' as const,
+        })),
+    ];
     // LIVENESS RACE FIX (2026-08-22): the per-table recovery chain (watchdog
     // Tier 1-3 -> killForRestart -> 180s zombie reaper -> discovery rebuild)
     // needs up to ~3 minutes end to end. Flipping the whole process 'dead' at
@@ -4986,6 +5419,7 @@ export class GameServer {
       (t) => t.dealable >= 2 && !t.paused && t.msSinceProgress > 120_000
     );
     const pausedCount = liveness.filter((t) => t.paused).length;
+    const failingAdmission = this.tournamentTablesFailingAdmission(now);
     /**
      * ── THE TABLES NOBODY WAS COUNTING (2026-09-18) ───────────────────────
      *
@@ -5093,6 +5527,15 @@ export class GameServer {
       '# HELP poker_tournament_table_never_started_oldest_seconds Age of the oldest never-started tournament table engine',
       '# TYPE poker_tournament_table_never_started_oldest_seconds gauge',
       `poker_tournament_table_never_started_oldest_seconds ${neverStartedOldestSeconds}`,
+      /* A tournament table its manager has failed to admit for over 120 s.
+         Between retries it has no engine, so none of the gauges above can see
+         it (2026-10-03, b290375a). Identification only. */
+      '# HELP poker_tournament_tables_failing_admission Tournament tables their manager has failed to admit for over 2 minutes',
+      '# TYPE poker_tournament_tables_failing_admission gauge',
+      `poker_tournament_tables_failing_admission ${failingAdmission.length}`,
+      '# HELP poker_tournament_table_failing_admission_oldest_seconds How long the oldest such table has been failing admission',
+      '# TYPE poker_tournament_table_failing_admission_oldest_seconds gauge',
+      `poker_tournament_table_failing_admission_oldest_seconds ${Math.round((failingAdmission[0]?.msFailing ?? 0) / 1000)}`,
       // The maintenance break, as numbers an alert rule can silence itself
       // with. `active` exists first and foremost so every fleet-level alarm
       // (deal rate, hands/min, fleet floor) can carry `unless
@@ -5543,6 +5986,23 @@ export class GameServer {
         (timedOut ? ' - budget expired, stopping anyway' : '')
     );
     return { drained, total, timedOut };
+  }
+
+  /**
+   * Tournament tables a manager has been failing to admit for longer than the
+   * 120 s stall threshold, oldest first. Between retries such a table has no
+   * engine, so tableLivenessSnapshot() cannot see it.
+   */
+  private tournamentTablesFailingAdmission(
+    now: number
+  ): Array<{ tableId: string; msFailing: number }> {
+    const failing: Array<{ tableId: string; msFailing: number }> = [];
+    for (const manager of this.tournamentEngines.values()) {
+      for (const table of manager.getTablesFailingAdmission?.(now) ?? []) {
+        if (table.msFailing > 120_000) failing.push(table);
+      }
+    }
+    return failing.sort((x, y) => y.msFailing - x.msFailing);
   }
 
   private tableLivenessSnapshot() {
@@ -6781,6 +7241,9 @@ export class GameServer {
 
           // Skip if already running
           if (this.tableEngines.has(row.table_id)) continue;
+          // Held on a standing retained-hand refusal: not a start, not a
+          // spent budget slot, not a log line (2026-09-29).
+          if (this.retainedHandHeld(row.table_id)) continue;
 
           if (startedThisSweep > 0) await this.sleep(ENGINE_START_STAGGER_MS);
           startedThisSweep++;
@@ -6922,7 +7385,12 @@ export class GameServer {
           // table is between hands, so a frozen hand is reaped on its usual
           // clock and its replacement arrives parked (maintenanceBreak.adopt,
           // prepareManagedTableEngineForPlay).
-          const pausedTooLong = engine.msPaused() > GameServer.MAX_HEALTHY_PAUSE_MS;
+          // ...and not while the maintenance break still holds the table
+          // (2026-10-02): see MaintenanceBreak.isHoldingTable.
+          const heldByMaintenanceBreak =
+            engine.isMaintenancePaused() && this.maintenanceBreak.isHoldingTable(id);
+          const pausedTooLong =
+            !heldByMaintenanceBreak && engine.msPaused() > GameServer.MAX_HEALTHY_PAUSE_MS;
           const parkedOnPurpose = engine.isParkedByDesign() && !pausedTooLong;
           if (shouldBeDealing && !parkedOnPurpose) zombieCandidates += 1;
           if (shouldBeDealing && !parkedOnPurpose && engine.msSinceProgress() > 180_000) {
@@ -7393,6 +7861,26 @@ export class GameServer {
               ]);
               if (ownedAdmissions.size >= this.engineStartBudget) continue;
             }
+            if (!finishingADealtGame) {
+              const msUntilLastHand =
+                this.maintenanceBreak?.msUntilNextLastHand?.() ?? Number.POSITIVE_INFINITY;
+              if (launchWouldCrossLastHand(fieldCount, msUntilLastHand)) {
+                const lastHandAt = Math.round((now + msUntilLastHand) / 60_000);
+                this.launchHeldForBreak ??= new Map();
+                if (this.launchHeldForBreak.get(tournament.id) !== lastHandAt) {
+                  this.launchHeldForBreak.set(tournament.id, lastHandAt);
+                  console.log(
+                    `[GameServer] Start held for the maintenance break: ${tournament.name} ` +
+                      `(${String(tournament.id).slice(0, 8)}) needs ~${Math.round(
+                        launchSeatingBudgetMs(fieldCount) / 1000
+                      )}s to seat ${fieldCount} and the break announces in ` +
+                      `${Math.round(msUntilLastHand / 1000)}s; it starts after the thaw`
+                  );
+                }
+                continue;
+              }
+              this.launchHeldForBreak?.delete(tournament.id);
+            }
             if (finishingADealtGame) this.finalizedFinishAttempt.set(tournament.id, now);
             /* Report the number the decision was actually made on. A Spin is
                gated on SEATS, and current_players can disagree with those —
@@ -7557,14 +8045,30 @@ export class GameServer {
                     target,
                     { pass: topUpPass }
                   );
+                  /* A partner hold refusing the ask is a deliberate wait,
+                     not an empty pool: it does not back the event off. */
+                  const held =
+                    added === 0 &&
+                    this.tournamentRecurring.seatFirstPartnerHoldUntil(tournament.id) > Date.now();
                   this.pastStartTopUpClock.set(tournament.id, {
                     at: now,
-                    misses: added > 0 ? 0 : misses + 1,
+                    misses: added > 0 ? 0 : held ? misses : misses + 1,
                   });
                   if (added > 0) {
                     console.log(
                       `[GameServer] Filled "${tournament.name}" with ${added} player(s) toward ${target} seats - running it instead of cancelling`
                     );
+                  }
+                  /* A SEAT-FIRST BOARD THIS TOP-UP COMPLETED STARTS NOW
+                     (2026-10-11), exactly as the fast lane's fill does. It
+                     waited for the next fast-lane poll: 237 Spins in 50
+                     minutes, 71 late, the start 0.77 s behind the fill at
+                     p50. Seats are never unsold on a REGISTERING board, so
+                     the count this pass read plus what this top-up added is
+                     a floor; a board this cannot prove full is left to the
+                     fast lane. The ask is kept until this top-up settles. */
+                  if (isSngOrSpin && added > 0 && paidSeats + added >= target) {
+                    this.startFilledSeatFirstBoard(tournament.id, target);
                   }
                 },
                 'GameServer.past_start_top_up_failed'
@@ -7868,6 +8372,26 @@ export class GameServer {
         }
 
         /**
+         * ── A DARK EVENT GETS ITS MANAGER REBUILT, AND A FAILING RESUME IS
+         *    PAGED (2026-10-08) ────────────────────────────────────────────
+         *
+         * See rebuildManagersOfDarkTournaments() and
+         * pageLongFailingResumes(). Same cadence and shape as the sweeps
+         * above; one bounded RPC on a healthy board.
+         */
+        if (Date.now() - this.lastDarkTournamentSweepAt > 60 * 1000) {
+          this.lastDarkTournamentSweepAt = Date.now();
+          this.launchDiscoveryJob(
+            this.rebuildManagersOfDarkTournaments(),
+            'GameServer.dark_tournament_sweep_error'
+          );
+          this.launchDiscoveryJob(
+            this.pageLongFailingResumes(),
+            'GameServer.failing_resume_page_error'
+          );
+        }
+
+        /**
          * ── A STRANDED PLAYER IS BROUGHT BACK TO THE FELT (2026-09-01) ──────
          *
          * The reopen sweep above declines when the tournament still owns an
@@ -8105,6 +8629,13 @@ export class GameServer {
             this.noteDecidedEventHeld(String(t.id), String(t.name), playingCount, decidedAction);
             continue;
           }
+          /* A REFUSED FINISH IS NOT A STALLED ONE (2026-10-07). This recovery
+             is for a finish that never ran. A manager whose finish the
+             database refused already holds its own retry at the refusal's
+             delay; waking it here (delay zero, earliest wake wins) re-asked
+             four Spins every ~10.6 s for a day. Skip it before the stagger,
+             so it costs this pass nothing. See awaitsItsOwnFinishRetry. */
+          if (this.tournamentEngines.get(String(t.id))?.awaitsItsOwnFinishRetry?.()) continue;
           /* The per-tournament reads were this sweep's only brake: no two
              recoveries could land closer than one round trip apart. Keep that
              spacing, or a board of decided tournaments becomes one burst of
@@ -8119,7 +8650,7 @@ export class GameServer {
           );
           const idleTm = this.tournamentEngines.get(String(t.id));
           if (idleTm) {
-            idleTm.requestEliminationSweep('stalled_decided_survivor');
+            idleTm.requestDecidedEliminationSweep('stalled_decided_survivor');
           } else {
             this.launchDiscoveryJob(
               this.ensureTournamentManagerAdmission(
@@ -8608,7 +9139,15 @@ export class GameServer {
       // the finally below on every path, as C20 does for the cash fleet.
       const resumeDistressSinceLastPass = this.tournamentResumeDistress;
       this.tournamentResumeDistress = 0;
-      let resumePassDistressed = resumeDistressSinceLastPass > 0;
+      // Horses are players: a table whose players cannot decide is not a
+      // recovered table. The pipeline's own health is a distress input to the
+      // same AIMD law, beside the resume outcomes (decisionPipelinePressure).
+      const decisionPressure = decisionPipelineDistress(
+        liveHorseDecisionWorkerStatus(),
+        this.decisionPipelineExpiredBaseline
+      );
+      this.decisionPipelineExpiredBaseline = decisionPressure.expiredBaseline;
+      let resumePassDistressed = resumeDistressSinceLastPass > 0 || decisionPressure.distressed;
       try {
         // The gateway silently caps a SELECT at 1,000 rows. On 2026-09-14
         // the exact RUNNING read returned 0-999/1283 and omitted an event whose
@@ -9659,7 +10198,7 @@ export class GameServer {
           // prize_pool_finalized: a board whose pool is finalized has left
           // registration (see the fill gate below), whatever its status says.
           .select(
-            'format_contract, id, name, max_players, variant, start_time, prize_pool_finalized'
+            'format_contract, id, name, max_players, variant, start_time, created_at, prize_pool_finalized'
           )
           .eq('status', 'REGISTERING')
           .in('variant', ['spin', 'sng']);
@@ -9726,7 +10265,9 @@ export class GameServer {
              * from the first seconds of boot — now owns the human case too:
              * a partially-paid seat-first game with a HUMAN in a seat is
              * topped up immediately, per Dan's 2026-08-26 rule ("the moment
-             * one does, topUpWithHorses fills the remaining seats"). A
+             * one does, topUpWithHorses fills the remaining seats") - since
+             * 2026-10-04 the moment that human's partner hold ends, so two
+             * people can meet at one table (seatFirstHumanPartnerHoldUntilMs). A
              * partial game with only horses is left alone on purpose: that
              * is the horse-opened board holding its last seat for a human
              * (60-150s window), and the held-empty rotation — filling those
@@ -9752,7 +10293,14 @@ export class GameServer {
               const startMs = t.start_time ? Date.parse(String(t.start_time)) : NaN;
               const windowClosed = Number.isFinite(startMs) && startMs <= Date.now();
               this.launchDiscoveryJob(
-                this.fillPartialSeatFirstGame(id, seats, paid, windowClosed),
+                this.fillPartialSeatFirstGame(
+                  id,
+                  seats,
+                  paid,
+                  windowClosed,
+                  startMs,
+                  Date.parse(String((t as { created_at?: string | null }).created_at ?? ''))
+                ),
                 'GameServer.human_seat_first_fill_error',
                 { tournamentId: id }
               );
@@ -9852,36 +10400,46 @@ export class GameServer {
    * reopen a no-op if something opened the table in the meantime.
    */
   private async reopenTablesClosedUnderLiveTournaments(): Promise<void> {
-    const { data: liveRows, error: liveErr } = await supabase
-      .from('tournaments')
-      .select('id, status, start_time')
-      .in('status', ['REGISTERING', 'RUNNING'])
-      .limit(500);
-    if (liveErr) {
-      reportError(
-        new Error(`[GameServer] reopen sweep tournament read failed: ${liveErr.message}`),
-        'GameServer.reopen_sweep_tournament_read_failed'
-      );
-      return;
+    /* Every live tournament, a page at a time: one 500-row read left the
+       tail of a 594-tournament board out of the sweep entirely. */
+    const tournaments: LiveTournamentRow[] = [];
+    const PAGE = 500;
+    for (let from = 0; ; from += PAGE) {
+      const { data: liveRows, error: liveErr } = await supabase
+        .from('tournaments')
+        .select('id, status, start_time')
+        .in('status', ['REGISTERING', 'RUNNING'])
+        .order('id')
+        .range(from, from + PAGE - 1);
+      if (liveErr) {
+        reportError(
+          new Error(`[GameServer] reopen sweep tournament read failed: ${liveErr.message}`),
+          'GameServer.reopen_sweep_tournament_read_failed'
+        );
+        return;
+      }
+      const page = (liveRows ?? []) as LiveTournamentRow[];
+      tournaments.push(...page);
+      if (page.length < PAGE) break;
     }
-    const tournaments = (liveRows ?? []) as LiveTournamentRow[];
     if (tournaments.length === 0) return;
 
-    const { data: tableRows, error: tableErr } = await supabase
-      .from('tables')
-      .select('id, tournament_id, status, is_deleted, created_at')
-      .in(
-        'tournament_id',
-        tournaments.map((t) => String(t.id))
-      );
-    if (tableErr) {
-      reportError(
-        new Error(`[GameServer] reopen sweep table read failed: ${tableErr.message}`),
-        'GameServer.reopen_sweep_table_read_failed'
-      );
-      return;
+    // Bounded `in.(...)` lists: see REOPEN_SWEEP_ID_CHUNK.
+    const tables: TournamentTableRow[] = [];
+    for (const chunk of reopenSweepIdChunks(tournaments.map((t) => String(t.id)))) {
+      const { data: tableRows, error: tableErr } = await supabase
+        .from('tables')
+        .select('id, tournament_id, status, is_deleted, created_at')
+        .in('tournament_id', chunk);
+      if (tableErr) {
+        reportError(
+          new Error(`[GameServer] reopen sweep table read failed: ${tableErr.message}`),
+          'GameServer.reopen_sweep_table_read_failed'
+        );
+        return;
+      }
+      tables.push(...((tableRows ?? []) as TournamentTableRow[]));
     }
-    const tables = (tableRows ?? []) as TournamentTableRow[];
 
     /* Seat counts for the CLOSED candidates only. A seat row survives its
        table being closed - that is exactly what stranded 411 of them on
@@ -9890,11 +10448,11 @@ export class GameServer {
       .filter((t) => t.is_deleted !== true && String(t.status ?? '').toLowerCase() === 'closed')
       .map((t) => String(t.id));
     const openSeatsByTable = new Map<string, number>();
-    if (closedIds.length > 0) {
+    for (const chunk of reopenSweepIdChunks(closedIds)) {
       const { data: seatRows, error: seatErr } = await supabase
         .from('table_seats')
         .select('table_id')
-        .in('table_id', closedIds)
+        .in('table_id', chunk)
         .is('left_at', null);
       if (seatErr) {
         reportError(
@@ -10007,6 +10565,243 @@ export class GameServer {
 
   /**
    * ═══════════════════════════════════════════════════════════════════════
+   *  A DARK EVENT GETS ITS MANAGER REBUILT (2026-10-08)
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * Three unrelated causes left RUNNING events with two or more live players
+   * dealing nothing for hours in the seven days to 2026-10-08: a lost lease
+   * whose re-admission was refused (16 events, 14.4 h), live players marked
+   * eliminated without a sequence by a foreign session (55 events, 8-23 h),
+   * and a settlement refused by its own receipt (satellite 32190e8c, 17 h).
+   * The never-dealt sweep above only knows an event that never dealt at
+   * all, the decided sweep only one down to a single player, and the zombie
+   * reaper rebuilds TABLE engines, never the manager whose state is wedged.
+   *
+   * The database already defines "dark" (fn_ca_tournament_dark_candidates:
+   * RUNNING, not on its own break, 2+ players playing, no table write and no
+   * bust for N LIVE minutes, maintenance breaks excluded). For each dark
+   * event this process owns, the exact manager is retired the way the
+   * never-dealt sweep retires one, and the RUNNING resume lane re-admits it
+   * from durable state on its next pass: a brand-new manager, brand-new
+   * table engines, every in-memory claim gone. Bounded to one rebuild per
+   * tournament per DARK_TOURNAMENT_REBUILD_EVERY_MS. A manager still dark
+   * after its rebuild is something a rebuild cannot cure (a refused
+   * settlement, a custody refusal): that is paged as a CRITICAL financial
+   * alert, once per tournament per rebuild window, on top of the database's
+   * own page at twenty minutes.
+   *
+   * Never touches: a manager this process does not hold (the resume lane
+   * owns it), a quarantined manager (its own retry schedule owns it), a
+   * manager admitted inside the dark window (it has not had its chance), an
+   * event on a break shorter than thirty minutes (the candidate read excludes
+   * it), or an event a NAMED deliberate authority is holding inside its own
+   * bound (darkEventHeldOnPurpose: the maintenance break, an operator floor
+   * hold, the add-on break, an open final-table deal review).
+   *
+   * ── THE DARK CLOCK IS DEALING, NOT A PAUSE TIMER (2026-10-12) ──────────
+   *
+   * Until this date the last exemption read "every open table is parked on
+   * purpose for less than MAX_HEALTHY_PAUSE_MS". Satellite 61961519 sat dark
+   * from 23:52 to 05:00 UTC on 2026-10-11 under it, while the database paged
+   * it dark at 00:18:
+   *
+   *   - its source table's dealer had been stopped by a break whose close
+   *     timed out, and a stopped engine was not counted at all;
+   *   - its one live table was parked by the satellite qualifier boundary
+   *     (a terminal closeout fence). Past ten minutes the zombie reaper
+   *     condemned it, the manager rebuilt the table engine, the boundary
+   *     re-parked the replacement, and msPaused() started again from zero:
+   *     25 zombie rebuilds in 4.7 hours, each one resetting the very timer
+   *     this sweep was trusting;
+   *   - so "every open table parked for under ten minutes" was true almost
+   *     every minute, and the manager was never rebuilt. Only the 04:56
+   *     engine release rebuilt it, and the event finished at 05:02.
+   *
+   * A park is what every wedge looks like from outside, and its timer is
+   * reset by the recovery that is supposed to end it. The clock here is the
+   * database's: no hand, no bust and no table write for the dark window in
+   * LIVE minutes (maintenance breaks already excluded). Once that clock says
+   * dark, only an authority that is deliberately holding the event, asked by
+   * name and inside its own bound, stands this sweep down.
+   */
+  private async rebuildManagersOfDarkTournaments(): Promise<void> {
+    if (!this.running || isMaintenanceFrozen()) return;
+    const now = Date.now();
+    const { data, error } = await supabase.rpc('fn_ca_tournament_dark_candidates', {
+      p_minutes: GameServer.DARK_TOURNAMENT_LIVE_MINUTES,
+    });
+    if (error) {
+      reportError(
+        new Error(`[GameServer] dark tournament read failed: ${error.message}`),
+        'GameServer.dark_tournament_read_failed'
+      );
+      return;
+    }
+    const rows = Array.isArray(data) ? (data as Array<Record<string, unknown>>) : [];
+    for (const row of rows) {
+      const tournamentId = String(row.tournament_id ?? '');
+      if (!tournamentId) continue;
+      const manager = this.tournamentEngines.get(tournamentId);
+      if (!manager) continue; // the RUNNING resume lane owns an unowned event
+      if (this.tournamentManagerQuarantine?.heldBy(tournamentId) === manager) continue;
+      const admittedAt = this.tournamentManagerAdmittedAtMs?.get(manager);
+      if (
+        admittedAt !== undefined &&
+        now - admittedAt < GameServer.DARK_TOURNAMENT_LIVE_MINUTES * 60 * 1000
+      ) {
+        continue;
+      }
+      /* NO BREAK SKIP HERE, ON PURPOSE (2026-10-08). The candidate read
+         already excludes every healthy break: a RUNNING event is a candidate
+         while on_break only once that break has run thirty minutes
+         (20261008145619), against five plus a last-hand grace for a real one.
+         Trusting the manager's own in-memory flag would protect exactly the
+         break that never ended, which a rebuild cures: a resumed manager
+         clears an expired break and deals. */
+      if (this.darkEventHeldOnPurpose(manager, now)) continue;
+
+      const rebuiltAt = this.darkTournamentRebuiltAtMs.get(tournamentId);
+      const name = String(row.name ?? tournamentId.slice(0, 8));
+      const liveMinutes = Number(row.live_minutes ?? 0);
+      if (
+        rebuiltAt !== undefined &&
+        now - rebuiltAt < GameServer.DARK_TOURNAMENT_REBUILD_EVERY_MS
+      ) {
+        continue;
+      }
+      if (rebuiltAt !== undefined) {
+        const pagedAt = this.darkAfterRebuildPagedAtMs.get(tournamentId) ?? 0;
+        if (now - pagedAt >= GameServer.DARK_TOURNAMENT_REBUILD_EVERY_MS) {
+          this.darkAfterRebuildPagedAtMs.set(tournamentId, now);
+          try {
+            await raiseFinancialAlert(
+              'critical',
+              'GameServer.tournament_dark_after_rebuild',
+              `Tournament ${name} (${tournamentId}) is still dealing nothing ${Math.round(
+                liveMinutes
+              )} live minutes after its manager was rebuilt at ${new Date(
+                rebuiltAt
+              ).toISOString()}; a rebuild cannot cure it, read its engine log`,
+              {
+                tournament_id: tournamentId,
+                alive: row.alive ?? null,
+                live_minutes: liveMinutes,
+                last_activity: row.last_activity ?? null,
+                rebuilt_at: new Date(rebuiltAt).toISOString(),
+              },
+              `tournament-dark-after-rebuild:${tournamentId}`,
+              tournamentId
+            );
+          } catch (alertError) {
+            reportError(alertError, 'GameServer.tournament_dark_after_rebuild_alert_failed', {
+              tournamentId,
+            });
+          }
+        }
+      }
+      this.darkTournamentRebuiltAtMs.set(tournamentId, now);
+      const message =
+        `[GameServer] RUNNING ${name} (${tournamentId.slice(0, 8)}) has ${String(
+          row.alive ?? '?'
+        )} live players and has dealt nothing for ${Math.round(liveMinutes)} live minute(s) - ` +
+        `retiring its manager so RUNNING resume rebuilds it`;
+      console.warn(message);
+      reportError(new Error(message), 'GameServer.dark_tournament_manager_rebuilt', {
+        tournamentId,
+      });
+      this.retireTournamentManagerInDiscovery(
+        tournamentId,
+        manager,
+        'GameServer.dark_tournament_manager_rebuild'
+      );
+    }
+    for (const [tournamentId, rebuiltAt] of this.darkTournamentRebuiltAtMs) {
+      if (now - rebuiltAt > 6 * 60 * 60 * 1000) {
+        this.darkTournamentRebuiltAtMs.delete(tournamentId);
+        this.darkAfterRebuildPagedAtMs.delete(tournamentId);
+      }
+    }
+  }
+
+  /**
+   * The named authority deliberately holding a dark event, or null
+   * (2026-10-12). See rebuildManagersOfDarkTournaments for why this asks
+   * authorities by name and never "is a table parked": a park and its timer
+   * are what a wedge looks like, and a zombie rebuild resets that timer.
+   *
+   *   - the manager's own: the add-on break and an open final-table deal
+   *     review, each inside its own bound (TournamentManagerBase.
+   *     deliberateDealingHold);
+   *   - the maintenance break, while it is still holding the table (the
+   *     freeze itself returns before this is asked);
+   *   - an operator floor hold that was read, not one that could not be.
+   *
+   * A table with no running dealer holds nothing: it is counted as nothing,
+   * never as a reason to wait.
+   */
+  private darkEventHeldOnPurpose(manager: TournamentManager, nowMs: number): string | null {
+    const managerHold = manager.deliberateDealingHold(nowMs);
+    if (managerHold) return managerHold;
+    for (const tableId of manager.getTableIds()) {
+      const engine = this.tableEngines.get(tableId);
+      if (!engine || !engine.isRunning()) continue;
+      if (engine.isMaintenancePaused() && this.maintenanceBreak.isHoldingTable(tableId)) {
+        return 'maintenance_break';
+      }
+      if (engine.isHeldByOperatorFloor()) return 'operator_floor_hold';
+    }
+    return null;
+  }
+
+  /**
+   * A RESUME THAT KEEPS FAILING IS PAGED (2026-10-08). See
+   * RunningResumeCooldowns.longStreaks for the 14.4-hour outage this exists
+   * for. One CRITICAL financial alert per tournament whose resume has been
+   * failing for FAILING_RESUME_PAGE_AFTER_MS, refreshed every
+   * FAILING_RESUME_PAGE_EVERY_MS while it goes on. The retry itself is
+   * unchanged.
+   */
+  private async pageLongFailingResumes(): Promise<void> {
+    if (!this.running) return;
+    const now = Date.now();
+    const streaks = this.tournamentResumeCooldowns.longStreaks(
+      now,
+      GameServer.FAILING_RESUME_PAGE_AFTER_MS
+    );
+    const live = new Set(streaks.map((streak) => streak.tournamentId));
+    for (const tournamentId of [...this.failingResumePagedAtMs.keys()]) {
+      if (!live.has(tournamentId)) this.failingResumePagedAtMs.delete(tournamentId);
+    }
+    for (const streak of streaks) {
+      if (this.tournamentEngines.has(streak.tournamentId)) continue;
+      const pagedAt = this.failingResumePagedAtMs.get(streak.tournamentId) ?? 0;
+      if (now - pagedAt < GameServer.FAILING_RESUME_PAGE_EVERY_MS) continue;
+      this.failingResumePagedAtMs.set(streak.tournamentId, now);
+      const minutes = Math.round((now - streak.firstFailedAtMs) / 60_000);
+      try {
+        await raiseFinancialAlert(
+          'critical',
+          'GameServer.tournament_resume_failing_repeatedly',
+          `Tournament ${streak.tournamentId} is RUNNING and this engine has failed to resume it ${streak.failures} time(s) over ${minutes} min; its players are seated with no dealer. Read the engine log for its admission refusal`,
+          {
+            tournament_id: streak.tournamentId,
+            failures: streak.failures,
+            first_failed_at: new Date(streak.firstFailedAtMs).toISOString(),
+            failing_for_minutes: minutes,
+          },
+          `tournament-resume-failing:${streak.tournamentId}`,
+          streak.tournamentId
+        );
+      } catch (alertError) {
+        reportError(alertError, 'GameServer.tournament_resume_failing_alert_failed', {
+          tournamentId: streak.tournamentId,
+        });
+      }
+    }
+  }
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
    *  FINISH THE SEAT-FIRST GAMES THAT ARE ALREADY OVER (round 18)
    * ═══════════════════════════════════════════════════════════════════════
    *
@@ -10058,6 +10853,9 @@ export class GameServer {
 
     for (const t of candidates) {
       const id = String(t.id);
+      // Its own refused finish is already due again at the refusal's delay;
+      // three reads and a zero-delay wake here would only pull it forward.
+      if (this.tournamentEngines.get(id)?.awaitsItsOwnFinishRetry?.()) continue;
       try {
         const { data: tables, error: tablesErr } = await supabase
           .from('tables')
@@ -10098,7 +10896,7 @@ export class GameServer {
         if (seatFirstAction.kind === 'held') {
           this.noteDecidedEventHeld(id, String(t.name), liveStacks, seatFirstAction);
         } else if (claimedManager) {
-          claimedManager.requestEliminationSweep('seat_first_terminal_stack');
+          claimedManager.requestDecidedEliminationSweep('seat_first_terminal_stack');
         } else {
           await this.ensureTournamentManagerAdmission(
             id,
@@ -10108,6 +10906,18 @@ export class GameServer {
           );
         }
       } catch (err) {
+        /* ENDED WHILE WE LOOKED (2026-10-02). The custody read answers
+           F06_DRAINED_CUSTODY_EVENT_CHANGED only when the event is no longer
+           RUNNING: its own manager finished it between this pass's board read
+           and here (22 of them in the first pass after the 12:02Z thaw). That
+           is the outcome this sweep exists for, not a failure. */
+        if (
+          err instanceof F06DrainedCustodyUnprovenError &&
+          err.outcome === 'refused' &&
+          err.code === 'F06_DRAINED_CUSTODY_EVENT_CHANGED'
+        ) {
+          continue;
+        }
         reportError(err, 'GameServer.seat_first_finish_sweep_failed', { tournamentId: id });
       }
     }
@@ -10122,6 +10932,8 @@ export class GameServer {
   private seatFirstFillMisses = new Map<string, number>();
   /** Per-game throttle for the human-waiting alarm - one report per 60s. */
   private lastHumanWaitReportAt = new Map<string, number>();
+  /** Horse-only boards already reported stuck (once each; cleared when filled). */
+  private seatFirstStuckReported = new Set<string>();
 
   /**
    * ═══════════════════════════════════════════════════════════════════════
@@ -10132,7 +10944,10 @@ export class GameServer {
    * with SOME seats paid but not all. If one of those seats belongs to a
    * HUMAN, the game is committed (Dan 2026-08-26: "The moment one does,
    * topUpWithHorses fills the remaining seats") and the remaining seats are
-   * filled immediately. If every occupant is a horse, this does nothing -
+   * filled the moment its partner hold ends (2026-10-04: the open seats are
+   * kept for people until the board's window closes, and for at least 90 s
+   * after the first human sat, so two players can meet at one table - see
+   * seatFirstHumanPartnerHoldUntilMs). If every occupant is a horse, this does nothing -
    * that partial game is the horse-opened board deliberately holding its
    * last seat for a human, and taking it here would erase that design.
    *
@@ -10145,10 +10960,10 @@ export class GameServer {
     tournamentId: string,
     seats: number,
     paid: number,
-    windowClosed: boolean
+    windowClosed: boolean,
+    startMs: number = NaN,
+    createdAtMs: number = NaN
   ): Promise<void> {
-    const now = Date.now();
-    const last = this.lastHumanFillAt.get(tournamentId) ?? 0;
     /* BACK OFF A BOARD THAT WILL NOT FILL (2026-09-02).
 
        Measured on the live engine: 96 Deep Stack Society seat-first boards
@@ -10168,21 +10983,115 @@ export class GameServer {
        board with a HUMAN in a seat keeps the 12 s cadence - Dan 2026-08-29,
        a human is never left waiting - and if that board cannot fill either,
        seat_first_human_waiting still says so once a minute. */
-    const misses = windowClosed ? (this.seatFirstFillMisses.get(tournamentId) ?? 0) : 0;
+    /* WHO IS SITTING IS KNOWN BEFORE THE CADENCE IS CHOSEN (2026-10-03).
+       A human's board keeps the 12 s cadence and first claim on free horses
+       whatever its window says; only a horse-only board backs off. The answer
+       is cached per paid count (seatFirstHasHuman), so a board is asked "who
+       is here" once per change in its seats, not once per attempt - which
+       keeps the saving round 15 bought for the stuck-board case. */
+    const occupancy = await this.seatFirstHasHuman(tournamentId, paid);
+    if (occupancy === null) return;
+    const hasHuman = occupancy.hasHuman;
+    if (!hasHuman && !windowClosed) return;
+    /* A HUMAN'S OPPONENT SEAT IS KEPT FOR PEOPLE FIRST (2026-10-04, Dan: "HEADS
+       UP SIT N GO'S DID NOT WORK WHEN 2 HUMAN PLAYERS TRIED TO SIT DOWN AND
+       PLAY TOGETHER"). See seatFirstHumanPartnerHoldUntilMs: a seated human's
+       board keeps its open seats for people until its window closes, and for
+       at least 90 s after the first human sat. topUpWithHorses refuses inside
+       the hold too; asking it here would only count a "miss" and raise the
+       CANNOT FILL alarm for a board that is waiting on purpose. In the hold's
+       last HUMAN_SEAT_DEMAND_TTL_MS the seats are declared, so the horses
+       this human will need are still free the moment the hold ends. */
+    if (hasHuman) {
+      const holdUntil = seatFirstHumanPartnerHoldUntilMs(
+        startMs,
+        occupancy.firstHumanAtMs,
+        seatFirstHumanPartnerHoldJitterMs(tournamentId),
+        createdAtMs
+      );
+      const now = Date.now();
+      if (holdUntil > now) {
+        if (holdUntil - now <= HUMAN_SEAT_DEMAND_TTL_MS) {
+          this.tournamentRecurring.noteHumanSeatDemand(tournamentId, seats - paid);
+        }
+        return;
+      }
+    }
+    const misses = hasHuman ? 0 : (this.seatFirstFillMisses.get(tournamentId) ?? 0);
     const interval = Math.min(12_000 * 2 ** Math.min(misses, 6), 10 * 60_000);
-    if (now - last < interval) return;
+    // Check and set with no await between, after the read: two passes that
+    // both awaited the occupancy answer can never both ask for this board.
+    const now = Date.now();
+    /* ONE FILLER PER BOARD (2026-10-11). The discovery walk tops up the same
+       window-closed board through launchDiscoveryTopUp, and the two lanes ran
+       side by side: one bought the last seat, the other spent 1.5 s finding
+       the table full, and the start the first one asked for was refused while
+       the second was in flight (see ensureTournamentManagerAdmission). A
+       board another lane is filling is left to it; that lane's start is kept
+       for the moment it settles. This lane's own fill holds the same claim,
+       so the walk leaves the board alone while it runs. */
+    if (this.tournamentTopUpsInFlight.has(tournamentId)) return;
+    if (now - (this.lastHumanFillAt.get(tournamentId) ?? 0) < interval) return;
     this.lastHumanFillAt.set(tournamentId, now);
 
-    /* ROUND 15 OPTIMISATION. When the human window has already closed the
-       board fills regardless of WHO is sitting in it, so the two reads that
-       exist purely to answer "is one of them a human" are pure waste. Skip
-       straight to the top-up and spend nothing. Only a board still inside its
-       window has to ask, because there the answer decides. */
-    if (windowClosed) {
-      await this.topUpPartialSeatFirst(tournamentId, seats, paid, 'window closed');
-      return;
+    let settle!: () => void;
+    const claim = new Promise<void>((resolve) => {
+      settle = resolve;
+    });
+    this.tournamentTopUpsInFlight.set(tournamentId, claim);
+    try {
+      await this.topUpPartialSeatFirst(
+        tournamentId,
+        seats,
+        paid,
+        hasHuman ? 'a human is waiting' : 'window closed',
+        hasHuman
+      );
+    } finally {
+      // Released before it settles, so a start waiting on it finds the door open.
+      if (this.tournamentTopUpsInFlight.get(tournamentId) === claim) {
+        this.tournamentTopUpsInFlight.delete(tournamentId);
+      }
+      settle();
     }
+  }
 
+  /** Last "is a human seated here" answer per seat-first game, keyed by its paid count. */
+  private seatFirstOccupancy = new Map<
+    string,
+    { paid: number; hasHuman: boolean; firstHumanAtMs: number }
+  >();
+
+  /**
+   * Is a live seat on this seat-first game held by a human? Read once per
+   * change in the game's paid-seat count: seats on a REGISTERING seat-first
+   * game only change through a buy-in or an exit, both of which move the
+   * count the fast lane already reads every second. null = could not tell
+   * (reported); the caller then does nothing this pass rather than guess.
+   * is_horse is used to IDENTIFY the occupant only (CLAUDE.md 10.5).
+   */
+  private seatFirstOccupancyReads = new Map<string, Promise<SeatFirstOccupancy | null>>();
+
+  private seatFirstHasHuman(
+    tournamentId: string,
+    paid: number
+  ): Promise<SeatFirstOccupancy | null> {
+    const cached = this.seatFirstOccupancy.get(tournamentId);
+    if (cached && cached.paid === paid) return Promise.resolve(cached);
+    // The fast lane asks every second; one read per board is in flight at a time.
+    const inFlight = this.seatFirstOccupancyReads.get(tournamentId);
+    if (inFlight) return inFlight;
+    const read = this.readSeatFirstHasHuman(tournamentId, paid).finally(() =>
+      this.seatFirstOccupancyReads.delete(tournamentId)
+    );
+    this.seatFirstOccupancyReads.set(tournamentId, read);
+    return read;
+  }
+
+  private async readSeatFirstHasHuman(
+    tournamentId: string,
+    paid: number
+  ): Promise<SeatFirstOccupancy | null> {
     const { data: primaryId, error: primErr } = await supabase.rpc('fn_tournament_primary_table', {
       p_tournament_id: tournamentId,
     });
@@ -10193,12 +11102,12 @@ export class GameServer {
           'GameServer.human_fill_primary_table_read_failed'
         );
       }
-      return;
+      return null;
     }
 
     const { data: occupants, error: occErr } = await supabase
       .from('table_seats')
-      .select('user_id')
+      .select('user_id, joined_at')
       .eq('table_id', String(primaryId))
       .is('left_at', null);
     if (occErr) {
@@ -10206,12 +11115,14 @@ export class GameServer {
         new Error(`[GameServer] human-fill occupant read failed: ${occErr.message}`),
         'GameServer.human_fill_occupant_read_failed'
       );
-      return;
+      return null;
     }
     const ids = (occupants || [])
       .map((o) => String((o as { user_id?: string }).user_id ?? ''))
       .filter((v) => v.length > 0);
-    if (ids.length === 0) return;
+    // Nobody on the primary table (seats split onto a duplicate): no human to
+    // serve here, and a closed window still fills it, exactly as before.
+    if (ids.length === 0) return { paid, hasHuman: false, firstHumanAtMs: NaN };
 
     const { data: profiles, error: profErr } = await supabase
       .from('profiles')
@@ -10222,12 +11133,23 @@ export class GameServer {
         new Error(`[GameServer] human-fill profile read failed: ${profErr.message}`),
         'GameServer.human_fill_profile_read_failed'
       );
-      return;
+      return null;
     }
-    const hasHuman = (profiles || []).some((p) => !(p as { is_horse?: boolean }).is_horse);
-    if (!hasHuman) return;
-
-    await this.topUpPartialSeatFirst(tournamentId, seats, paid, 'a human is waiting');
+    const humans = new Set(
+      (profiles || [])
+        .filter((p) => !(p as { is_horse?: boolean }).is_horse)
+        .map((p) => String((p as { id?: string }).id ?? ''))
+    );
+    const answer: SeatFirstOccupancy = {
+      paid,
+      hasHuman: humans.size > 0,
+      firstHumanAtMs: firstHumanSeatedAtMs(
+        (occupants || []) as Array<{ user_id?: string | null; joined_at?: string | null }>,
+        (id) => humans.has(id)
+      ),
+    };
+    this.seatFirstOccupancy.set(tournamentId, answer);
+    return answer;
   }
 
   /**
@@ -10237,13 +11159,79 @@ export class GameServer {
    * filled is exactly the situation that must never be silent, whichever
    * trigger asked for it.
    */
+  /**
+   * A BOARD THE FILL JUST COMPLETED STARTS NOW (2026-10-09).
+   *
+   * Measured on production over 24 hours: all 17,636 Spins overran their own
+   * reveal window (lag p50 838 ms, p90 2,020 ms, p99 6,018 ms), and every one
+   * was a horse-filled board. The reveal is anchored to the last payment plus
+   * SPIN_REVEAL.LEAD_IN_MS (one second then, two since 2026-10-09), and about 0.85 s of that is the start
+   * work itself. The rest was detection: the last seat is bought by this
+   * lane's fill job, and nothing told the start path, so the board waited for
+   * the next discoverSeatFirstStarts pass (one second of sleep plus about
+   * 0.37 s of reads, two passes when the read was stale; worst seen 3.1 s).
+   *
+   * So the fill that completes a board asks for its start itself, through the
+   * same front door the fast lane uses. ensureTournamentManagerAdmission is
+   * idempotent (one operation per id, an admitted manager is left alone) and
+   * carries every start gate (a parked launch, a top-up still in flight), so a
+   * pass that sees the same board a moment later does nothing.
+   */
+  private startFilledSeatFirstBoard(tournamentId: string, seats: number): void {
+    const generation = this.lifecycleGeneration;
+    if (!this.directAdmissionIsCurrent(generation)) return;
+    // THE FREEZE IS TOTAL (Dan 2026-09-03), exactly as in the fast lane.
+    if (isMaintenanceFrozen()) return;
+    if (spinLaunchParks.isParked(tournamentId)) return;
+    // A held manager, live or stale, is the fast lane's to judge.
+    if (this.tournamentEngines.has(tournamentId)) return;
+    this.launchDiscoveryJob(
+      this.ensureTournamentManagerAdmission(
+        tournamentId,
+        'start',
+        `Fast-starting seat-first game the fill just completed: ${tournamentId.slice(0, 8)} (${seats}/${seats} seats sold)`,
+        generation
+      ),
+      'GameServer.seat_first_fast_start_failed',
+      { tournamentId }
+    );
+  }
+
   private async topUpPartialSeatFirst(
     tournamentId: string,
     seats: number,
     paid: number,
-    why: string
+    why: string,
+    forHuman: boolean
   ): Promise<void> {
-    const added = await this.tournamentRecurring.topUpWithHorses(tournamentId, seats);
+    /* A HUMAN'S BOARD FILLS FIRST (2026-10-03). The seats a waiting human
+       still needs are declared before the ask, so every horse-only claim on
+       the pool (board openers, window-closed fills, SNG and MTT top-ups)
+       leaves them free; this ask may also draw on the cash lane and on the
+       cash-room floor. See TournamentRecurringService.noteHumanSeatDemand. */
+    if (forHuman) this.tournamentRecurring.noteHumanSeatDemand(tournamentId, seats - paid);
+    const added = await this.tournamentRecurring.topUpWithHorses(tournamentId, seats, {
+      forHuman,
+    });
+    /* THE HOLD REFUSED IT, THE POOL DID NOT (2026-10-04 audit). This lane's
+       "who is seated" answer is cached per paid count, so it can be stale -
+       a human who left and another who sat at the same count, or a board
+       first read as horse-only. topUpWithHorses always reads the seats fresh
+       and refuses inside a running partner hold. That refusal is a
+       deliberate wait: forget the cached answer so the next pass re-reads
+       who is here, and neither count a miss (which backs the board off for
+       minutes) nor raise CANNOT FILL. */
+    if (
+      added === 0 &&
+      this.tournamentRecurring.seatFirstPartnerHoldUntil(tournamentId) > Date.now()
+    ) {
+      this.seatFirstOccupancy.delete(tournamentId);
+      this.seatFirstFillMisses.delete(tournamentId);
+      // Declared from a stale answer: the next pass re-declares it in the
+      // hold's last stretch if the board still needs it.
+      this.tournamentRecurring.clearHumanSeatDemand(tournamentId);
+      return;
+    }
     let shortfall = seats - paid;
     /* THE ALARM IS JUDGED ON WHAT THE TOP-UP SAW, NOT ON THE COUNT THIS LANE
        READ A SECOND EARLIER (2026-09-11). `paid` is this lane's read; the
@@ -10261,8 +11249,14 @@ export class GameServer {
     }
     // See the backoff in fillPartialSeatFirstGame: a filled board forgets its
     // misses, a short one counts another.
-    if (added >= shortfall) this.seatFirstFillMisses.delete(tournamentId);
-    else
+    if (added >= shortfall) {
+      this.seatFirstFillMisses.delete(tournamentId);
+      this.seatFirstStuckReported.delete(tournamentId);
+      this.seatFirstOccupancy.delete(tournamentId);
+      this.tournamentRecurring.clearHumanSeatDemand(tournamentId);
+      // The board is full now: start it now, not on the next poll.
+      this.startFilledSeatFirstBoard(tournamentId, seats);
+    } else
       this.seatFirstFillMisses.set(
         tournamentId,
         (this.seatFirstFillMisses.get(tournamentId) ?? 0) + 1
@@ -10274,16 +11268,42 @@ export class GameServer {
       );
     }
     if (added < shortfall) {
+      /* THE ALARM IS FOR A PERSON WHO IS WAITING (2026-10-05). It was raised
+         for every short board, and almost all of them have nobody in them:
+         measured after the 02:03 UTC break on 2026-10-05, 7-10 "CANNOT FILL"
+         a minute, every one a horse-only board whose window had closed while
+         the fleet was still re-seating ("the pool is thin"), not one with a
+         human seated. Those boards are not failing - they wait, backed off,
+         for the next free horse and fill within minutes. A human in a seat
+         keeps the once-a-minute alarm. A horse-only board says so ONCE, and
+         only when it has stayed short through the whole backoff ladder
+         (SEAT_FIRST_STUCK_AFTER_MISSES, about 12 minutes) - the shape of the
+         2026-09-02 boards stuck for hours, which is the case worth a line. */
       const now = Date.now();
-      const lastReport = this.lastHumanWaitReportAt.get(tournamentId) ?? 0;
-      if (now - lastReport >= 60_000) {
-        this.lastHumanWaitReportAt.set(tournamentId, now);
+      if (forHuman) {
+        const lastReport = this.lastHumanWaitReportAt.get(tournamentId) ?? 0;
+        if (now - lastReport >= 60_000) {
+          this.lastHumanWaitReportAt.set(tournamentId, now);
+          reportError(
+            new Error(
+              `[GameServer] SEAT-FIRST BOARD CANNOT FILL ${tournamentId.slice(0, 8)}: ` +
+                `${paid}/${seats} paid, top-up added ${added} of ${shortfall} needed (${why})`
+            ),
+            'GameServer.seat_first_human_waiting'
+          );
+        }
+      } else if (
+        (this.seatFirstFillMisses.get(tournamentId) ?? 0) >= SEAT_FIRST_STUCK_AFTER_MISSES &&
+        !this.seatFirstStuckReported.has(tournamentId)
+      ) {
+        if (this.seatFirstStuckReported.size > 1000) this.seatFirstStuckReported.clear();
+        this.seatFirstStuckReported.add(tournamentId);
         reportError(
           new Error(
-            `[GameServer] SEAT-FIRST BOARD CANNOT FILL ${tournamentId.slice(0, 8)}: ` +
-              `${paid}/${seats} paid, top-up added ${added} of ${shortfall} needed (${why})`
+            `[GameServer] SEAT-FIRST BOARD STUCK ${tournamentId.slice(0, 8)}: ` +
+              `${paid}/${seats} paid, still short after ${SEAT_FIRST_STUCK_AFTER_MISSES} backed-off fills (${why})`
           ),
-          'GameServer.seat_first_human_waiting'
+          'GameServer.seat_first_board_stuck'
         );
       }
     }
@@ -10311,6 +11331,104 @@ export class GameServer {
       work,
       prepare
     );
+  }
+
+  /**
+   * A RETIREMENT RESERVATION OUTLIVES ITS GENERATION ONLY UNTIL THE NEXT ONE
+   * ASKS (2026-09-29).
+   *
+   * `withCustody` keeps a reservation it could not acknowledge so the SAME
+   * generation can replay it (a roster that does not fit yet, a lost close or
+   * ACK reply). A lost lease retires that generation; nothing can present its
+   * identity again, and `admissionAllowed` refused every successor's dealer on
+   * that table forever. Production 2026-09-29 01:14Z: cb8f2dd1 generation
+   * 83b3ec21 held break e487977d (table b6af1747, park_requested, custody
+   * claimed at revision 1), lost its lease, was stopped and released; every
+   * later admission (one every ~20-40 s) resumed, threw
+   * `f06_retirement_custody_held` and was released again, with 171 players
+   * seated and no hand dealt. 87a68e55, 6a18ddaa, 1f918c8c and 4ed38a9f were
+   * in the same loop.
+   *
+   * The live manager asks here before it builds any dealer. A reservation is
+   * yielded only when (a) the asking manager is the one registered for the
+   * event and holds a different generation, (b) nothing of the reservation's
+   * generation is left in this process: no registered, stopping or
+   * quarantined manager, no unconfirmed lease release, and no drained or
+   * mixed transfer (the explicit transfer contract owns those), (c) `confirm`
+   * read the durable break row under the live lease (the receipt: the read is
+   * lease-fenced and locks the row, so the dead generation can no longer
+   * change it) and it names the same break, table and lifecycle, and (d) the
+   * exact identity is still pending with no work running and no engine
+   * registered on the table. Every other case keeps refusing admission.
+   */
+  async yieldAbandonedRetirementCustody(
+    tournamentId: string,
+    manager: TournamentManager,
+    confirm: (reservation: AbandonedRetirement) => Promise<boolean>
+  ): Promise<AbandonedRetirement[]> {
+    const liveGeneration = manager.getTournamentLeaseGeneration();
+    if (!liveGeneration) return [];
+    const yielded: AbandonedRetirement[] = [];
+    for (const reservation of this.tournamentRetirementCustody.abandonedReservations(
+      tournamentId,
+      liveGeneration
+    )) {
+      if (!this.retirementGenerationIsGone(tournamentId, manager, reservation.leaseGeneration))
+        continue;
+      let confirmed = false;
+      try {
+        confirmed = await confirm(reservation);
+      } catch (error) {
+        reportError(error, 'GameServer.abandoned_retirement_unconfirmed', {
+          tournamentId,
+          tableId: reservation.tableId,
+          breakId: reservation.breakId,
+          generation: reservation.leaseGeneration,
+        });
+        continue;
+      }
+      if (
+        !confirmed ||
+        manager.getTournamentLeaseGeneration() !== liveGeneration ||
+        !this.retirementGenerationIsGone(tournamentId, manager, reservation.leaseGeneration)
+      )
+        continue;
+      if (
+        this.tournamentRetirementCustody.yieldAbandoned(
+          reservation,
+          liveGeneration,
+          this.tableEngines
+        )
+      )
+        yielded.push(reservation);
+    }
+    return yielded;
+  }
+
+  /** Nothing of `generation` remains in this process for this tournament. */
+  private retirementGenerationIsGone(
+    tournamentId: string,
+    live: TournamentManager,
+    generation: string
+  ): boolean {
+    if (!generation || this.tournamentEngines.get(tournamentId) !== live) return false;
+    if (live.getTournamentLeaseGeneration() === generation) return false;
+    if (this.tournamentManagerPendingLeaseReleases.get(tournamentId) === generation) return false;
+    if (this.tournamentManagerLeaseReleaseOperations.has(tournamentId)) return false;
+    if (
+      this.drainedF06TournamentCustody?.has(tournamentId) ||
+      this.durableMixedF06Custody?.has(tournamentId) ||
+      this.mixedF06AdmissionContinuations?.has(tournamentId)
+    )
+      return false;
+    for (const retiring of this.tournamentDiagnosticRetirements?.get(tournamentId) ?? [])
+      if (retiring.getTournamentLeaseGeneration() === generation) return false;
+    const quarantined = this.tournamentManagerQuarantine?.heldBy(tournamentId) as
+      | TournamentManager
+      | null
+      | undefined;
+    if (quarantined && quarantined.getTournamentLeaseGeneration?.() === generation) return false;
+    return true;
   }
 
   registerTableEngine(tableId: string, engine: ServerTableEngine): boolean {
@@ -10502,6 +11620,22 @@ export class GameServer {
         reportError(err, 'GameServer.lightning_presence_report_failed');
       }
     }
+    // Players watching from their own Lightning room (pool_session_id).
+    yield* this.lightningRooms.presenceReports();
+  }
+
+  /**
+   * The verified cash lease this process holds on a Lightning host table (the
+   * Cluster's front table), or null. A hand is dealt and settled only under
+   * it: its loss abandons the hand before any chip moves.
+   */
+  private lightningLeaseFor(hostTableId: string): LightningLease | null {
+    const engine = this.tableEngines.get(hostTableId);
+    if (!engine || !engine.isRunning() || !engine.hasCurrentEngineLeaseAuthority()) return null;
+    const authority = engine.getEngineLeaseAuthority();
+    if (!authority || authority.scope !== 'cash' || !authority.verified || !authority.generation)
+      return null;
+    return { instance: INSTANCE_ID, generation: authority.generation };
   }
 
   /**
@@ -10619,6 +11753,9 @@ export class GameServer {
 
     await this.awaitDirectTableLeaseRelease(tableId);
     if (!this.dealerAdmissionIsCurrent(generation)) return 'not_wakeable';
+    // A table the retained-hand door refused is held, not rebuilt: no read,
+    // no lease, no engine and no log until its recheck is due.
+    if (this.retainedHandHeld(tableId)) return 'retained_hand_refused';
 
     let table: CashTablePlayRow | null;
     let error: { message: string } | null = null;
@@ -10653,6 +11790,7 @@ export class GameServer {
       return 'not_wakeable';
     }
 
+    let closureOperationId: string | undefined;
     try {
       // Both discovery and direct wake use this path. A disabled arena must
       // not acquire a lease or construct an engine merely to refuse its start.
@@ -10660,10 +11798,17 @@ export class GameServer {
     } catch (policyError) {
       if (!this.dealerAdmissionIsCurrent(generation)) return 'not_wakeable';
       if (policyError instanceof DiamondCashPolicyClosedError && policyError.tableId === tableId) {
-        return 'policy_closed';
+        try {
+          closureOperationId = (await readPendingOperatorCashClose(tableId)) ?? undefined;
+        } catch (closeError) {
+          reportError(closeError, 'GameServer.cash_close_authority_unknown', { tableId });
+          return 'retryable_failure';
+        }
+        if (!closureOperationId) return 'policy_closed';
+      } else {
+        reportError(policyError, 'GameServer.cash_table_play_eligibility_unavailable', { tableId });
+        return 'retryable_failure';
       }
-      reportError(policyError, 'GameServer.cash_table_play_eligibility_unavailable', { tableId });
-      return 'retryable_failure';
     }
     if (!this.dealerAdmissionIsCurrent(generation)) return 'not_wakeable';
 
@@ -10755,6 +11900,7 @@ export class GameServer {
     }
 
     const engine = new ServerTableEngine(tableId, {
+      closureOperationId,
       scope: 'cash',
       verified: true,
       generation: lease.leaseGeneration,
@@ -10775,7 +11921,13 @@ export class GameServer {
     void engine
       .start()
       .catch(async (startError) => {
-        if (
+        const retainedRefusal =
+          startError instanceof RetainedHandSubmissionRefusedError
+            ? engine.getStartupRetainedHandRefusal()
+            : null;
+        if (retainedRefusal) {
+          this.holdRetainedHandRefusal(tableId, retainedRefusal.code);
+        } else if (
           !(startError instanceof DiamondCashPolicyClosedError && engine.getStartupPolicyRefusal())
         ) {
           this.engineStartFailures++;
@@ -10814,6 +11966,45 @@ export class GameServer {
    */
   getTableEngine(tableId: string): ServerTableEngine | undefined {
     return this.tableEngines.get(tableId);
+  }
+
+  /**
+   * POST /action's engine: the table engine, or - when the id is a Lightning
+   * pool_session_id - the seat proxy that routes to the hand being dealt in
+   * that room (Lightning Phase 6). getTableEngine keeps its ServerTableEngine
+   * type for its ~850 engine-only callers.
+   */
+  getActionEngine(tableId: string): ActionEngine | undefined {
+    return this.tableEngines.get(tableId) ?? this.lightningRooms.actionEngineFor(tableId);
+  }
+
+  /** POST /preaction's engine: the table engine, or a Lightning room's seat proxy. */
+  getPreActionEngine(tableId: string): ServerTableEngine | LightningSeatProxy | undefined {
+    return this.tableEngines.get(tableId) ?? this.lightningRooms.actionEngineFor(tableId);
+  }
+
+  /**
+   * A Lightning room's anchor seat (Lightning Phase 6 remediation): leave and
+   * add chips from a pool_session_id act on the seat the chips sit in. Null
+   * for a real table id, for a room that is not the caller's, and when the
+   * read fails (the caller then answers as for an unknown table).
+   */
+  async lightningAnchorFor(
+    roomId: string,
+    userId: string
+  ): Promise<{ anchorTableId: string; seatNumber: number; occupancyId: string } | null> {
+    if (this.tableEngines.has(roomId)) return null;
+    try {
+      return await lightningAnchorSeat(roomId, userId);
+    } catch (err) {
+      reportError(err, 'GameServer.lightning_anchor_lookup_failed');
+      return null;
+    }
+  }
+
+  /** Is this id a table engine here, or a Lightning room this process serves? */
+  hasTableOrLightningRoom(tableId: string): boolean {
+    return this.tableEngines.has(tableId) || this.lightningRooms.isRoom(tableId);
   }
 
   /**

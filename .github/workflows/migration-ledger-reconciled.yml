@@ -1,0 +1,108 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# THE REPOSITORY AND THE DATABASE AGREE, CHECKED WHERE THE DRIFT IS MADE
+#
+# 2026-09-27. Both directions of the migration ledger were only ever asked on a
+# schedule (applied-migrations-recorded.yml twice a day, and the "Every merged
+# migration is live" job of production-integrity-audit.yml). By the time the
+# repository was reconciled on 2026-09-27, 1,270 installed migrations had no
+# file in it: a rebuild from this repository would have silently lost every
+# one. A twice-daily issue nobody read did not stop a single one.
+#
+# So the same two questions now run on every pull request into main and every
+# push to main - an event, never a timer:
+#
+#   1. An INSTALLED migration must have a file. A gap younger than 24 hours is
+#      in flight (its pull request may simply not have landed yet) and is only
+#      listed; an older one fails. A branch that ADDS the missing file passes:
+#      its migration filenames are passed in as names, nothing more.
+#   2. A MERGED migration must be installed within 24 hours, or carry
+#      "-- SUPERSEDED BY <version>" naming the file that replaced it.
+#
+# TRUSTED BY CONSTRUCTION. This needs production credentials, so it runs as
+# pull_request_target and checks out the DEFAULT BRANCH ONLY - never the pull
+# request's head. Nothing from the branch is executed; the only thing read from
+# it is its list of changed filenames through the API, and each name is
+# validated against ^[0-9A-Za-z_.-]+\.sql$ before use. The same shape as
+# money-trigger-recovery.yml.
+#
+# NOT A SCHEDULE, NOT A WATCHER (hardening standard). It answers once per
+# event and repairs nothing. The scheduled audits stay exactly as strict as
+# they were; this adds the pull-request moment they never had.
+# ─────────────────────────────────────────────────────────────────────────────
+name: Migration Ledger Is Reconciled
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: migration-ledger-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  ledger:
+    name: Installed and merged migrations agree
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout the default branch (never the pull request head)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: Use Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # The World Hub half of the shared migration ledger (see the header of
+      # check-applied-migrations-are-recorded.mjs). Read-only, short-lived.
+      - name: Mint a read-only estate token for the sibling migration index
+        id: estate-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.AUTOPILOT_APP_ID }}
+          private-key: ${{ secrets.AUTOPILOT_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: Smarter-Poker-World-Hub
+          permission-contents: read
+
+      - name: Read the migration filenames this pull request adds
+        id: added
+        if: github.event_name == 'pull_request_target'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[] | select(.status != "removed") | .filename' \
+            | grep -E '^supabase/migrations/[0-9A-Za-z_.-]+\.sql$' \
+            | sed 's|^supabase/migrations/||' > /tmp/added.txt || true
+          echo "count=$(wc -l < /tmp/added.txt | tr -d ' ')" >> "$GITHUB_OUTPUT"
+
+      - name: Every installed migration has a file (24h grace for work in flight)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          GH_TOKEN: ${{ steps.estate-token.outputs.token }}
+        run: |
+          set -uo pipefail
+          touch /tmp/added.txt
+          MIGRATION_EXTRA_FILES="$(cat /tmp/added.txt)" \
+            node scripts/ci/check-applied-migrations-are-recorded.mjs --fail --grace-hours 24
+
+      - name: Every merged migration is installed within 24h or marked superseded
+        # Answered even when the first question fails: they are independent.
+        if: always()
+        env:
+          SUPABASE_DB_URL: ${{ secrets.DATABASE_URL }}
+        run: node scripts/ci/check-migrations-are-live.mjs --min-age-hours 24

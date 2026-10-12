@@ -56,7 +56,14 @@ describe('customization commerce certification', () => {
     expect(helper).toContain('PGRST00[0123]');
     expect(helper).toContain('CLEANUP_RETRY_DELAYS_MS');
     expect(helper).toContain("reason !== 'platform_is_frozen'");
-    expect(helper).toContain('PLATFORM_FREEZE_CLEANUP_ATTEMPTS');
+    // The freeze is waited OUT on its own end condition, never counted down.
+    // `PLATFORM_FREEZE_CLEANUP_ATTEMPTS` was 37 ticks of ten seconds, and none
+    // of the 435 breaks measured to 2026-09-30 was ever that short.
+    expect(helper).not.toContain('PLATFORM_FREEZE_CLEANUP_ATTEMPTS');
+    expect(helper).toContain('awaitPlatformThaw');
+    expect(helper).toContain("'fn_platform_frozen'");
+    expect(helper).toContain('engine_maintenance_break');
+    expect(helper).toContain('PLATFORM_FREEZE_MAX_WAITS');
   });
 
   it('certifies all live SKUs, double-buy serialization, realtime delivery and RLS', () => {

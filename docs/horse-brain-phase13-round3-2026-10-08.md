@@ -1,0 +1,257 @@
+# Horse Brain Phase 13 Round 3: Responses The Population Actually Makes (October 8, 2026)
+
+Horse Brain only. This record covers round 3 of the Phase 13 joint multiway owner (`server/src/engine/multiway/*`): the response model rebuilt on the response the horse population actually makes, the decision rule that turned a modeled edge into a wager, the development-seed evidence, the predeclared held-out matrix and the human-population check. Statuses use the maintained vocabulary: verified now, historical only, implemented but unverified, defective, unavailable external input, not applicable with reason.
+
+**Target.** The owner switches on no strategy that loses. A round-3 variant is a candidate for selection only if it beats the brain horses use today on the unchanged P13.2 held-out matrix (cash, after the published rake, the horse population) and, once the human-population contract is merged, wins after rake against human opponents. Horse-versus-horse results alone never select anything. Every number below states its opponent population, rake model, sample size and 99% interval.
+
+## Identities
+
+| Item                       | Round 2 (October 6 matrices)                                                                 | Round 3                                                                                                                                                       |
+| -------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Response pack              | `joint-action-response-round2-v1` (kept as a comparison identity, `responseModel: 'round2'`) | `joint-action-response-round3-v1`                                                                                                                             |
+| Response calibration       | none (`present_board_strength_price_public_line_uncalibrated`)                               | `joint-response-calibration-round3-v1`                                                                                                                        |
+| Bounded raise tree streets | turn, river                                                                                  | flop, turn, river                                                                                                                                             |
+| Selection                  | highest `expectedNetChips - 0.5 x standardError`                                             | `paired_edge_over_baseline_lower_bound`, z 2, 0.1 big blind, nothing to call                                                                                  |
+| Domain, range pack         | `joint-multiway-round1-v4`, `joint-public-range-round1-v1`                                   | unchanged                                                                                                                                                     |
+| P13.2 contract digest      | `a036e702...b57bb754`                                                                        | `1d0dd99b...6dc5dd96`: only the candidate pack identity moved; population, rake model, profiles, held-out seeds, pairs per shard and thresholds are unchanged |
+
+## 1. The diagnosis, reproduced on development seeds
+
+Harness: `server/src/scripts/jointResponseCalibration.ts`, the P13.2 paired league itself (`playPlo4PolicyHand`, the real HandController, each contract profile with its published 1/2 pricing and BBJ row, the contract deal seeds, buttons and hero seats), development seeds 13101101 and 13102203 only (the harness refuses every held-out seed of Phases 10 to 13), 1,200 pairs per profile, the round-2 source of `origin/main` 68fa6072. Opponents: the five production horse styles. Rake: the published cash pricing of each variant.
+
+Paired candidate minus reference, cash after rake (bb/100, 99% interval). The held-out October 6 numbers are beside them:
+
+| Variant         | Pairs  | Development seeds           | Held-out matrix (Oct 6) |
+| --------------- | ------ | --------------------------- | ----------------------- |
+| NLH             | 19,200 | -663.01 [-734.03, -592.00]  | -682.93                 |
+| PLO4            | 19,200 | -516.11 [-584.23, -448.00]  | -547.42                 |
+| PLO5            | 19,200 | -544.41 [-611.44, -477.38]  | -531.05                 |
+| PLO6            | 19,200 | -465.37 [-529.46, -401.28]  | -487.70                 |
+| PLO8            | 19,200 | -283.55 [-341.20, -225.89]  | -305.12                 |
+| FLO8            | 21,600 | -92.29 [-101.26, -83.31]    | -98.53                  |
+| FLH             | 21,600 | -98.00 [-106.40, -89.60]    | -108.10                 |
+| Short Deck      | 19,200 | -642.33 [-744.28, -540.37]  | -560.81                 |
+| Crazy Pineapple | 19,200 | -952.58 [-1058.68, -846.48] | -973.83                 |
+
+Predicted against realized response to the candidate's applied wagers (first responses to each applied hero wager; per-opponent continue, then the share of wagers every opponent folded to):
+
+| Variant         | Street  | Wagers | Continue predicted / realized | All-fold predicted / realized |
+| --------------- | ------- | ------ | ----------------------------- | ----------------------------- |
+| NLH             | preflop | 6,924  | 0.22 / 0.25                   | 0.65 / 0.47                   |
+| NLH             | flop    | 7,975  | 0.10 / 0.23                   | 0.88 / 0.38                   |
+| NLH             | turn    | 3,185  | 0.24 / 0.83                   | 0.85 / 0.12                   |
+| NLH             | river   | 1,297  | 0.30 / 0.74                   | 0.81 / 0.23                   |
+| PLO4            | flop    | 10,575 | 0.16 / 0.37                   | 0.73 / 0.24                   |
+| PLO4            | turn    | 5,407  | 0.27 / 0.84                   | 0.74 / 0.07                   |
+| PLO8            | flop    | 10,725 | 0.17 / 0.37                   | 0.72 / 0.25                   |
+| FLH             | flop    | 8,701  | 0.25 / 0.75                   | 0.41 / 0.01                   |
+| FLO8            | flop    | 11,555 | 0.28 / 0.86                   | 0.38 / 0.00                   |
+| Short Deck      | flop    | 8,187  | 0.14 / 0.26                   | 0.77 / 0.37                   |
+| Crazy Pineapple | flop    | 7,779  | 0.13 / 0.33                   | 0.80 / 0.24                   |
+
+Every variant, street, bet-size band (a third of the pot, two thirds, the pot, over the pot) and opponent count (one to four or more) is in `round2-dev-reproduction.json` in the evidence directory below. The error is the same everywhere: the model priced fold equity that the population does not give, worst at turn and river and in fixed limit. The first applied change of each pair was priced at a large edge and realized a loss (NLH flop, check to bet: predicted +16.9 chips, realized -15.7 over 3,085 pairs; fold to raise: +29.9 against -91.8 over 1,055).
+
+## 2. The root fixes
+
+### 2.1 Responses measured on the population (`JointResponseCalibration.ts`)
+
+For every variant and street, two frequencies are a logistic fit of every horse response that faced a price in the same paired league on development seeds 13101101 and 13102203 (296 runs, 1,200 pairs per profile, both arms; 12,000 to 125,000 responses per cell):
+
+- continue frequency: the share of responders that call or raise;
+- raise share: the share of continuing responders that raise (zero when calling puts the responder all in).
+
+The features are public and the responder's own: the pot price, the live players beside it, whether the street already holds a raise, whether its own line holds a wager, a bomb hand, and whether calling puts it all in. The coefficients are frozen in the source with their sample counts.
+
+Which sampled hands continue: the strongest continue-frequency share of the responder's own sampled range, and the strongest continue x raise share of those raise. The order is the strength each sampled hand reaches on its sample's runout (high, or the better of high and low in split games). The present-board read round 2 used misorders the population: on the NLH bomb flops only 41 to 49 percent of the responders that continued sat in its top share, and a jam priced with that order met callers far weaker than the table produced (predicted edge +15.9 chips, realized 0.0 over 298 jams, while the all-fold frequency itself was measured exactly, 0.75 against 0.76). The runout order errs the other way: a called wager meets the strongest continuing range the sample allows, so its error can only make a wager look worse. It never changes how often a responder continues.
+
+### 2.2 The decision rule
+
+- **Paired edge, not a noisy maximum.** Round 2 acted on the highest `expectedNetChips - 0.5 x standardError` among up to twelve rows priced on 8 to 16 shared samples, a winner's curse on whichever wager the noise favored. Round 3 pairs every row with the baseline row on the same samples and keeps the baseline unless a row's paired edge clears two paired standard errors by more than 0.1 big blind (`jointSelectedRow`).
+- **Nothing to call.** Facing a wager, every candidate's price rests on hero's equity against the wagerer's sampled range, and the public-range prior barely narrows a range for its own aggression. On the development seeds every family that answered a wager with a raise, a jam or a call the baseline folds was priced at a large edge and realized a loss (NLH bomb flop fold to raise: predicted +79 chips, realized -183). That prior is shared with the live Phase 7 tournament owner, so it is not changed here; the joint owner keeps the baseline whenever something is owed.
+- **Same horizon on the flop.** The bounded raise tree (one legal raise, hero's answer, the river continuation from the turn) now prices the flop too, where round 2 applied most of its wagers with one response and no raise.
+
+### 2.3 The four-millisecond budget
+
+The rule cannot act facing a wager, so a cash decision facing a wager is decided without pricing any candidate (reason `joint_cash_facing_wager_baseline`, `fired: true`); the samples are still acquired and bound. That removes the response model from every such decision inside the live budget, which is where 31 percent of decisions were refused on October 6. The completion definition is unchanged. Whether the remaining nothing-to-call decisions meet the P13.3 floor on the engine host is measured only by a natural window after an engine release.
+
+## 3. Development iterations
+
+All on development seeds, never a held-out seed. Paired candidate minus reference, cash after rake (bb/100, 99% interval), equal pairs per profile, horse population, published rake.
+
+| Iteration                                                | Seed (pairs per profile)    | NLH                          |
+| -------------------------------------------------------- | --------------------------- | ---------------------------- |
+| Round 2                                                  | 13101101 + 13102203 (1,200) | -663.01 ± 71.02              |
+| Calibrated frequencies, present-board order, paired rule | 13103307 (400)              | -58.94 ± 66.21               |
+| plus nothing to call                                     | 13103307 (2,000 to 2,400)   | -3.52 ± 21.66 (18,700 pairs) |
+| plus runout order (round 3 as committed)                 | 13103307 (600)              | +10.63 [-26.54, +47.81]      |
+
+Round 3 as committed, every variant, two independent development seeds (600 pairs per profile each):
+
+| Variant         | Seed 13103307            | Seed 13104409            |
+| --------------- | ------------------------ | ------------------------ |
+| NLH             | +10.63 [-26.54, +47.81]  | +39.31 [+4.86, +73.76]   |
+| PLO4            | +7.67 [-34.47, +49.81]   | +28.80 [-4.20, +61.80]   |
+| PLO5            | +3.48 [-31.53, +38.50]   | +25.04 [-6.49, +56.57]   |
+| PLO6            | +31.59 [-10.94, +74.13]  | +27.36 [-8.48, +63.20]   |
+| PLO8            | +60.95 [+18.58, +103.32] | +78.79 [+38.29, +119.29] |
+| FLO8            | +3.05 [+1.51, +4.60]     | +2.91 [+0.75, +5.08]     |
+| FLH             | +0.29 [-1.36, +1.93]     | +0.29 [-0.88, +1.46]     |
+| Short Deck      | +16.67 [-28.78, +62.13]  | +12.62 [-27.97, +53.21]  |
+| Crazy Pineapple | -7.33 [-39.77, +25.11]   | +18.72 [-11.72, +49.16]  |
+
+Seed 13104409 was run once, after the source was final, as a confirmation. Response calibration on it (predicted / realized per-opponent continue, then all-fold, for applied wagers): NLH flop 0.12 / 0.13 and 0.56 / 0.54; PLO8 flop 0.14 / 0.15 and 0.49 / 0.46; Short Deck flop 0.14 / 0.13 and 0.54 / 0.54; FLO8 river 0.71 / 0.72 and 0.03 / 0.00. The applied changes are now almost all checks turned into a bet on bomb-pot flops, priced at about +12 chips and realizing +7 to +14 (PLO8 three-board flop: predicted +12.02, realized +10.49 ± 7.19 over 323 changes).
+
+What this does not show. The development edge is concentrated in bomb-pot flops; FLH barely changes a decision (+0.29); the ordinary multiway profiles change little. No development seed is a qualification. The held-out matrix decides.
+
+## 4. The predeclared held-out matrix
+
+Written and committed before any run it governs: the unchanged P13.2 contract (`JOINT_STRENGTH_CONTRACT`, digest `1d0dd99be2fedd7ec50e502cf4241611818dd30aec794714808888616dc5dd96`, which differs from the October 6 digest only in the candidate pack identity), its nine variants, profiles, held-out seeds, pairs per shard, primary gate (cash after rake 99% lower bound above 0 bb/100), seed replication (each held-out seed block above 0), non-regression (every gating cell 99% lower bound at or above -10 bb/100, -4 for FLH and FLO8), the horse population and the published rake. It is dispatched once per variant on the merge commit of this change through `.github/workflows/horse-phase13-strength-league.yml` and assembled with `server/scripts/phase13-strength-assemble.mjs`. Unfavorable runs are kept. Results are recorded in a dated section appended to this record.
+
+## 5. The human-population check
+
+The owner's target is beating the human players horses face for money. The winning contract (`docs/horse-brain-winning-contract-2026-10-08.md`, merged in #6515 while round 3 was in review) adds condition (b): a pack qualifies only if its after-rake win rate against the human-calibrated population `human-calibrated-v1-20261008` has a 99% lower bound above zero on the contract's held-out seeds, **and** that population's calibration is adequate (at least 20 human accounts, no account above 25%, 10,000 human seat-hands per family). On the calibration committed today every family fails adequacy (5 accounts, the most active 68.5%, 1,718 / 608 / 85 seat-hands), so condition (b) is unavailable external input for every pack, Phase 13 included. No round-3 variant can qualify until production has an adequate human population and a new population is committed.
+
+Development measurement, not qualification (the contract allows development-seed runs to steer development). Harness `jointResponseCalibration.ts --human`: the same paired league with every non-hero seat on the human-calibrated profile of its family (`withHumanCalibratedOpponents`), the contract profiles and their published rake, development seed 13104409 (never a held-out seed of Phases 10 to 13 or of the human-calibrated contract), 600 pairs per profile, the round-3 source as merged. Hero net after rake, bb/100, equal weight per profile, 99% interval:
+
+| Variant         | Round 3 (candidate)         | Current brain (reference)   | Paired difference        |
+| --------------- | --------------------------- | --------------------------- | ------------------------ |
+| NLH             | +181.13 [+56.64, +305.61]   | +209.37 [+102.48, +316.26]  | -28.24 [-89.73, +33.25]  |
+| PLO4            | +30.75 [-104.47, +165.97]   | +44.82 [-88.85, +178.50]    | -14.08 [-42.95, +14.80]  |
+| PLO5            | +56.60 [-65.66, +178.86]    | +60.73 [-60.11, +181.57]    | -4.13 [-35.10, +26.84]   |
+| PLO6            | +50.18 [-63.19, +163.54]    | +42.46 [-67.39, +152.32]    | +7.71 [-28.12, +43.55]   |
+| PLO8            | +58.12 [-53.55, +169.79]    | +40.66 [-64.91, +146.23]    | +17.46 [-24.39, +59.31]  |
+| FLO8            | +15.51 [-3.86, +34.88]      | +13.80 [-5.54, +33.13]      | +1.72 [-0.00, +3.44]     |
+| FLH             | +35.01 [+12.62, +57.40]     | +34.00 [+11.53, +56.48]     | +1.01 [-0.43, +2.45]     |
+| Short Deck      | +449.26 [+243.95, +654.58]  | +425.59 [+242.94, +608.23]  | +23.67 [-76.96, +124.31] |
+| Crazy Pineapple | +856.92 [+586.19, +1127.66] | +870.33 [+599.62, +1141.05] | -13.41 [-88.16, +61.34]  |
+
+Against the human-calibrated tables both brains win after rake in several variants (the fitted population is loose and passive and easy to beat, as its own record says), and round 3 is not distinguishable from the current brain in any variant. Its development edge is specific to the horse population: it bets where horses fold, and the human-calibrated seats call. The next root cause for the human objective is therefore the response model's population, not its mechanics: a responder that is a human should answer with human frequencies (the human-calibrated fit), which needs both an adequate human calibration and a way for the league and the live state to tell a human seat from a horse seat (every league seat is `is_horse: true` today). Neither is available, so this is recorded and not built. Evidence: `round3-dev-human-calibrated-13104409.json`.
+
+## 6. Held-Out Matrix Dispatch
+
+Dispatched on 2026-10-08 at 16:38Z for the merge commit `5adefba4ac868bf138bee41bda24ae4b1754e456` (#6520), one run per variant, through `.github/workflows/horse-phase13-strength-league.yml` with the unchanged contract above: NLH [37810344257](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37810344257), Short Deck [37810347912](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37810347912), FLH [37810351762](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37810351762), Crazy Pineapple [37810355657](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37810355657), PLO4 [37810359405](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37810359405), PLO5 [37810363332](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37810363332), PLO6 [37810367050](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37810367050), PLO8 [37810370548](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37810370548), FLO8 [37810374138](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37810374138). The contract's hosted estimate is about 504 runner-hours for the nine variants (2.2 to 3 wall hours each at twenty concurrent jobs); the organization's shared runner pool was carrying 69 queued runs and the Phase 8 strength league at dispatch. A round-3 shard costs about 1.1 times a round-2 shard on the same machine (PLO8 three-board bomb, 100 development pairs: 37.3 s against 33.7 s), inside the 120-minute job limit. Each variant is assembled with `server/scripts/phase13-strength-assemble.mjs` on a clean checkout of `5adefba4` and recorded in a dated section appended here, favorable or not. Whatever condition (a) returns, no variant is selected while condition (b) is unavailable external input.
+
+## 7. Held-Out Matrix Results (October 9, 2026)
+
+Assembled with `server/scripts/phase13-strength-assemble.mjs` (real contract, no `--development`) on a clean detached checkout of `5adefba4ac868bf138bee41bda24ae4b1754e456`, from every attempt `gh run download` returned. Output dated 2026-10-08, the dispatch date. Cash after the published rake, horse population, paired candidate minus reference, equal weight per profile, 99% interval. Condition (b) is unavailable external input for every variant (section 5 and `docs/horse-brain-winning-contract-2026-10-08.md`). Every `PHASE13_PROTECTED_RELEASE_SELECTIONS` entry stays `null`.
+
+### FLH: Assembled
+
+| Variant | Run                                                                                               | Pairs     | Primary, cash after rake (bb/100, 99%) | Seed blocks (point)                            | Worst gating cell 99% lower bound                            | Condition (a) |
+| ------- | ------------------------------------------------------------------------------------------------- | --------- | -------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------ | ------------- |
+| FLH     | [37810351762](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37810351762) | 2,079,108 | +0.03 [-0.03, +0.10]                   | 13231151 -0.04, 13232299 +0.15, 13233373 -0.01 | -1.64 `profile:p13c-flh-bomb1-6max-100bb` (0 of 22 below -4) | not qualified |
+
+- FLH: shards 69, attempts 69, defective 0, changed 50,403, illegal candidates 0, earlier-phase refusals 0, work-budget refusals 0; evidence sha256 `29b72d0e92303c2a35d77b0fddf7b0aae230892031170a359f2767eb85c0f77d`; reasons: `cash:primary:lower_bound_not_above_zero`, `cash:seed:13231151:point_estimate_not_above_zero`, `cash:seed:13233373:point_estimate_not_above_zero`.
+
+FLH, condition (a): not qualified. The primary interval contains zero and two of the three seed blocks are not above zero; non-regression held in every gating cell (worst 99% lower bound -1.64 bb/100 against the -4 margin). Condition (b): unavailable external input. Selection: `null`. Evidence: `docs/evidence/phase13/strength-2026-10-08-flh/strength.json` and `docs/evidence/phase13/phase13-qualification-2026-10-08-flh.json`. Verified now.
+
+### The Other Eight Variants: Cancelled Before Completion
+
+The eight other runs were cancelled between 2026-10-09T03:37:40Z and 03:39:03Z by an actor outside the Horse Brain closeout lane, with most of their remaining shards still queued for runners. Shards with a complete result at cancellation (attempt 1):
+
+| Variant         | Run                                                                                               | Shards complete | Shards cancelled |
+| --------------- | ------------------------------------------------------------------------------------------------- | --------------- | ---------------- |
+| NLH             | [37810344257](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37810344257) | 93 of 105       | 12               |
+| Short Deck      | [37810347912](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37810347912) | 100 of 120      | 20               |
+| Crazy Pineapple | [37810355657](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37810355657) | 99 of 132       | 33               |
+| PLO4            | [37810359405](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37810359405) | 100 of 153      | 53               |
+| PLO5            | [37810363332](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37810363332) | 99 of 159       | 60               |
+| PLO6            | [37810367050](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37810367050) | 89 of 141       | 52               |
+| PLO8            | [37810370548](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37810370548) | 84 of 138       | 54               |
+| FLO8            | [37810374138](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37810374138) | 80 of 192       | 112              |
+
+A second attempt of each (`gh run rerun --failed`, same seeds) was started at 03:57Z and cancelled by this lane at 04:20Z on the program coordinator's instruction to leave the runs cancelled; it completed no shard. None of the eight is assembled: the assembler refuses a variant with a required shard that has no complete result, and no partial matrix is reported as a result. Condition (a) for these eight: historical only (cancelled before completion, not assembled). Condition (b): unavailable external input. Selection: `null`.
+
+## 8. Held-Out Matrices On The Running Source (October 10, 2026)
+
+The five-day-old runs on `5adefba4` measured code that no longer runs: #6517, #6526 and #6592 changed Phase 13 policy digest files after it, so a qualification assembled from them could never be admitted. Each interrupted variant therefore runs the locked contract unchanged (same profiles, held-out seeds, pairs and thresholds) on `1235b47a`, whose Phase 13 policy digests are main's, under the owner's October 9 confirmation of the handoff (rerun the interrupted matrices when runners allow). Assembled with `server/scripts/phase13-strength-assemble.mjs` on a clean checkout of `1235b47a`; every result is kept.
+
+### NLH
+
+Run [37994385464](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37994385464): 105 of 105 shards, 105 attempts, 0 defective, 4,762,800 pairs. Cash after the published rake, horse population:
+
+| Cell                   | bb/100, 99% interval    |
+| ---------------------- | ----------------------- |
+| primary (pooled)       | +5.16 [+3.99, +6.33]    |
+| bomb 3 boards, 6max    | +82.77 [+77.15, +88.39] |
+| bomb 2 boards, 6max    | +13.69 [+7.28, +20.09]  |
+| bomb 1 board, 6max     | -38.58 [-41.44, -35.72] |
+| 6max 200bb             | -6.36 [-7.61, -5.10]    |
+| 9max 100bb             | -4.74 [-6.38, -3.09]    |
+| 6max 100bb             | -3.57 [-4.71, -2.44]    |
+| small blind (position) | -29.48 [-33.12, -25.83] |
+| big blind (position)   | -12.14 [-15.62, -8.67]  |
+
+Condition (a): **not qualified** (`cash:profile:p13c-nlh-bomb1-6max-100bb:regression_margin_exceeded`, `cash:position:small_blind:regression_margin_exceeded`, `cash:position:big_blind:regression_margin_exceeded`, `cash:profile:p13c-nlh-3dealt-100bb:interval_not_trusted`). The pooled gain is the multi-board bomb pots; single-board bomb pots and both blinds lose beyond the margin. Why the blinds lose is not yet diagnosed (it is the next root cause for this variant, to be measured on development seeds only). Selection stays `null`. Status: verified now. Evidence: `docs/evidence/phase13/1235b47a/strength-2026-10-10-nlh/` (`strength.json` `54ca0c4c...9ee4`), `docs/evidence/phase13/1235b47a/phase13-qualification-2026-10-10-nlh.json` (`qualified: false`).
+
+### PLO8
+
+Run [38011357161](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/38011357161): 138 of 138 shards, 146 attempts (the attempt rule kept one complete result per shard), 0 defective, 874,368 pairs. Assembled 2026-10-11. Cash after the published rake, horse population:
+
+| Cell                        | bb/100, 99% interval       |
+| --------------------------- | -------------------------- |
+| primary (pooled)            | +55.70 [+53.04, +58.37]    |
+| 3 dealt, 100bb              | +2.88 [+0.46, +5.30]       |
+| 8max 100bb                  | +3.35 [+0.15, +6.55]       |
+| 6max 40bb                   | +1.47 [-0.41, +3.35]       |
+| 6max 100bb                  | +1.87 [-1.69, +5.42]       |
+| 6max 200bb                  | +3.74 [-1.03, +8.51]       |
+| bomb 1 board, 6max          | +60.78 [+52.60, +68.97]    |
+| bomb 2 boards, 6max         | +154.09 [+143.00, +165.18] |
+| bomb 3 boards, 6max         | +217.46 [+202.97, +231.95] |
+| lowest position (big blind) | +45.45 [+38.12, +52.79]    |
+
+Every cell's interval is trusted and none is near the -10 regression margin; each held-out seed alone is above +49. Condition (a): **qualified** (`qualified: true`, no reasons). Policy digest `e8aca233...2a76` (`horse-phase13-policy-digest-v1`), unchanged on main. Condition (b): unavailable external input (calibration inadequate). Tournament: unavailable dependency (no joint tournament outcome model), so PLO8 tournaments stay shadow. Status: verified now. Evidence: `docs/evidence/phase13/1235b47a/strength-2026-10-10-plo8/` (`strength.json` `33f5bb29...0cdf`), `docs/evidence/phase13/1235b47a/phase13-qualification-2026-10-10-plo8.json` (`27039934...2366`).
+
+Selection still needs P13.3: a natural completion record on a release with this digest that meets the floor in every street and every board count. The window is predeclared (`docs/evidence/phase13/declaration-completion-2026-10-11-p13-plo8.txt`). Production telemetry for October 10 already shows the two risks: about 19% of eligible PLO8 joint decisions fell back on the work budget (7,403 of 39,315), and no three-board bomb hand was dealt at any cash table that day, so the three-board cell can have no evidence and fails closed by design.
+
+### The Other Six Variants
+
+PLO4, PLO5, PLO6, Short Deck, Crazy Pineapple and FLO8 run on `1235b47a` one at a time as runners free. Each is added here when assembled.
+
+### PLO8 Natural Completion On 1235b47a (October 11, 2026)
+
+The predeclared window (`docs/evidence/phase13/declaration-completion-2026-10-11-p13-plo8.txt`): PLO8 cash decisions decided in [2026-10-11T20:02:00.000Z, 20:50:00.000Z) on release `f47ad93c`, which served unchanged through the window and carries the qualified source's Phase 13 policy digest (`e8aca233...2a76`). Read from closed journal segments only (199,485 segments, sha256 names verified, nice 19 / ionice idle), counted by the authority's own `horsePhase13CompletionCounts`. The record is committed byte-identical as `docs/evidence/phase13/f47ad93c/phase13-completion-2026-10-11-plo8.json` (`horse-phase13-completion-v1`, definition v2, sha256 `8724540b4b32e5f0b04f44c99416aedbde0f6714915a15224e8a3110ee1dcada`).
+
+| Cell     | Eligible | Completed | Work budget | Sampler exhausted | Sample unavailable | Governor reduced | Wilson lower bound | Clears 0.95 |
+| -------- | -------- | --------- | ----------- | ----------------- | ------------------ | ---------------- | ------------------ | ----------- |
+| preflop  | 835      | 765       | 2           | 5                 | 2                  | 61               | 0.8881             | no          |
+| flop     | 213      | 106       | 87          | 2                 | 0                  | 18               | 0.4108             | no          |
+| turn     | 151      | 55        | 84          | 1                 | 0                  | 11               | 0.2711             | no          |
+| river    | 96       | 45        | 47          | 0                 | 0                  | 4                | 0.3439             | no          |
+| 1 board  | 1,007    | 841       | 88          | 5                 | 2                  | 71               | 0.8029             | no          |
+| 2 boards | 288      | 130       | 132         | 3                 | 0                  | 23               | 0.3778             | no          |
+| 3 boards | 0        | 0         | 0           | 0                 | 0                  | 0                | 0                  | no          |
+
+No response-branch refusals and no analysis failures. Verdict: **below the floor in every cell**; the PLO8 selection stays `null`. Status: verified now.
+
+Causes, each measured:
+
+1. The 4 ms wall-clock work budget sat at the engine host's median cost of the decisions the policy prices. 220 of 1,295 eligible decisions fell back to the baseline on it, almost all with nothing to call (the only decisions the round 3 rule prices). The decision workers were not waiting for a CPU (scheduler run-queue wait 1% of their run time); the cut decisions were real work, about 4 ms at the median on the host. The 2.5 ms sampler deadline cut 8 more.
+2. Governor-reduced samples: 94 decisions drew 9 of 16 samples because the equity governor was below 1, and a reduced request is not the measured policy.
+3. Three-board hands were never dealt: the three-board cell had no evidence, and production has never dealt a three-board joint decision (`phase13_board_3` absent from `horse_brain_telemetry` since 2026-09-12), so under the all-cells rule no variant could ever be admitted.
+
+What the change on branch `agent/claude-horse-brain/p13-work-budget-20261011` does about each (local, unpushed):
+
+1. The live policy does exactly the matrix's fixed work: no wall-clock fallback and no sampler deadline; the work is bounded by the declared sample count, rejection attempts, candidates and terminal branches (`docs/changelog/2026-10-11-phase13-live-work-is-the-measured-work.md`). Status: implemented but unverified (needs a natural window on a release containing it).
+2. The joint request is always the full count, whatever the governor says (the #6592 rule). Status: implemented but unverified.
+3. Admission requires every street and admits only the board counts whose own cells clear the floor; the candidate acts only on those (`docs/changelog/2026-10-11-phase13-admits-the-board-counts-it-measured.md`). Status: implemented but unverified.
+
+### PLO4 On 1235b47a (October 11, 2026)
+
+Run [38168772842](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/38168772842): 153 of 153 shards, 2,115,072 pairs. Cash after the published rake, horse population: primary (pooled) **+16.06 [+14.47, +17.64]** bb/100, condition (a) **qualified**. The single-board cells are slightly negative (8max -3.63 [-5.50, -1.77], 1 board -1.72 [-2.85, -0.60]); the whole gain is in the bomb pots with 2 and 3 boards (+44.37, +94.44). Status: historical only, because the change above replaces the measured code. The assembled evidence is not committed: it stays in the measured worktree `/Volumes/SmarterWork/agent-work/horse-brain-select-20261009/measured-1235b47a/docs/evidence/phase13/1235b47a/` (`phase13-qualification-2026-10-11-plo4.json`, `strength-2026-10-11-plo4/`), with the run artifacts in `/Volumes/SmarterArchives/agent-evidence/horse-brain-select-20261009/runs-p13-plo4-38168772842/`.
+
+### The 1235b47a Qualifications After This Change
+
+The change above moves every Phase 13 policy digest and the P13.2 contract digest (`1d0dd99b...` to `0cd88d97...`; only the `policy_clock_and_sampling` live description changed). The 1235b47a PLO8 qualification (`qualified: true`) and the PLO4 result therefore no longer bind the running code once it ships; both will be re-measured on the new source under the new contract, and a new natural completion window read on a release that carries it.
+
+## Gate status
+
+- Round-2 response model: defective (uncalibrated; measured above as the cause of the loss on every variant).
+- Round-3 responses: verified now on development seeds (frequencies agree within a few points per street; JointResponseCalibration.test.ts pins coverage, monotone price response, the ranked responder order and the measured share).
+- Selection rule (paired edge, nothing to call): verified now (JointResponseCalibration.test.ts, JointLegalForm.test.ts, the worker and client boundary suites).
+- Strength, condition (a): FLH not qualified (verified now, section 7); the other eight variants historical only (their held-out runs were cancelled before completion and are not assembled, section 7).
+- Human population, condition (b): unavailable external input (calibration inadequate on every family); development measurement above: round 3 not distinguishable from the current brain against the human-calibrated tables.
+- Selection: every `PHASE13_PROTECTED_RELEASE_SELECTIONS` entry stays `null`.
+
+Evidence: `/Volumes/SmarterArchives/agent-evidence/horse-brain-finish-20261008/win-p13/` (`round2-dev-reproduction.json`, `round3-dev-evalD.json`, `round3-dev-evalE.json`, `round3-dev-evalF.json`, `round3-dev-human-calibrated-13104409.json`, `response-fit.json`).

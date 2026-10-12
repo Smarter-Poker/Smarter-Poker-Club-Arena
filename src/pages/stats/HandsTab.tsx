@@ -10,20 +10,30 @@
  */
 import { lazy } from 'react';
 import PanelBoundary from '../../components/stats/PanelBoundary';
+import { CHIP_STATS, type StatsClubId, type StatsScope } from '../../services/statsScope';
 
 const HoleCardHeatmap = lazy(() => import('../../components/stats/HoleCardHeatmap'));
 
 export interface HandsTabProps {
+  /** The asset the page reads: chips, or Diamonds in the Diamond Arena. */
+  scope?: StatsScope;
+  clubId?: StatsClubId;
   panelResetKey: string;
   targetUserId: string | undefined;
   windowDays: number | null;
 }
 
-export default function HandsTab({ panelResetKey, targetUserId, windowDays }: HandsTabProps) {
+export default function HandsTab({
+  scope = CHIP_STATS,
+  clubId = null,
+  panelResetKey,
+  targetUserId,
+  windowDays,
+}: HandsTabProps) {
   return (
     <div>
       <PanelBoundary name="Starting Hands" resetKey={panelResetKey}>
-        <HoleCardHeatmap userId={targetUserId} days={windowDays} />
+        <HoleCardHeatmap userId={targetUserId} days={windowDays} scope={scope} clubId={clubId} />
       </PanelBoundary>
     </div>
   );

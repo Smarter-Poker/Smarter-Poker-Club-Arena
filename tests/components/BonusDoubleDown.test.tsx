@@ -20,14 +20,16 @@ function Entry({
   change,
   answered = null,
   game = 'crash',
+  startingBudget = initial,
 }: {
   diamonds: number;
   change: (budget: BonusBudget) => void;
   /** The award whose offer has already been answered, as the page remembers it. */
   answered?: string | null;
-  game?: 'crash' | 'plinko';
+  game?: 'crash' | 'plinko' | 'crossing' | 'mines';
+  startingBudget?: BonusBudget;
 }) {
-  const [budget, setBudget] = useState(initial);
+  const [budget, setBudget] = useState(startingBudget);
   const [answeredFor, setAnsweredFor] = useState<string | null>(answered);
   const location = useLocation();
   const navigate = useNavigate();
@@ -81,6 +83,30 @@ function showOffer(
  * lands on the next step, and only then is the game's own setup offered.
  */
 describe('the Double Your Diamonds step', () => {
+  it.each(
+    (['crash', 'plinko', 'crossing', 'mines'] as const).flatMap((game) =>
+      ([1, 2] as const).map((boost) => ({ game, boost }))
+    )
+  )(
+    'offers the maximum $game award with boost $boost and adds only the original 2500',
+    ({ game, boost }) => {
+      const startingBudget: BonusBudget = {
+        ...initial,
+        base: 2500 * boost,
+        award: { ...initial.award!, entryDiamonds: 2500, boostMultiplier: boost },
+      };
+      const { dialog, change, reveal } = showOffer(2500, vi.fn(), { game, startingBudget });
+      expect(dialog).toHaveTextContent(
+        `Add 2,500 Diamonds To Your ${(2500 * boost).toLocaleString()} Diamond Bonus.`
+      );
+      expect(change).not.toHaveBeenCalled();
+      reveal();
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Add The Diamonds' }));
+      expect(change).toHaveBeenCalledExactlyOnceWith({ ...startingBudget, doubled: true });
+      expect(screen.getByLabelText('Selected Entry')).toHaveTextContent(String(2500 * (boost + 1)));
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    }
+  );
   it('is the first step of an unanswered award and changes the entry only after an explicit choice', () => {
     const { dialog, change, reveal } = showOffer(500);
     expect(bonusEntryStep(initial, false)).toBe('offer');

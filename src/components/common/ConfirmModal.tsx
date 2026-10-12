@@ -75,7 +75,7 @@ export function ConfirmModal({
       if (!root) return;
       const focusable = Array.from(
         root.querySelectorAll<HTMLElement>(
-          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+          'button:not([disabled]), [href], input:not([disabled]):not([tabindex="-1"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
         )
       ).filter((el) => el.offsetParent !== null || el === document.activeElement);
       if (focusable.length === 0) {

@@ -106,12 +106,15 @@ describe('there is one shove path', () => {
 
   it('keeps the guarantees that implementation carried, in the surviving path', () => {
     // Sanity that the delete removed drift and not behaviour: the panel path
-    // must still take the lock, validate, mark all-in mode and revert on refusal.
+    // must still take the lock, validate and revert on refusal.
     const at = CODE.indexOf('const handleActionPanelAction');
     expect(at).toBeGreaterThan(-1);
     const body = sliceStatement(CODE, 'const handleActionPanelAction');
     expect(body).toMatch(/validateAndExecuteAction\('allin'\)/);
-    expect(body).toMatch(/setIsAllInMode\(true\)/);
+    // 2026-10-04: the BUTTON no longer marks all-in mode. The engine may play
+    // an ALL IN press as a call, so the mode follows the engine's echo
+    // (tests/unit/allInPressIsNotAllInMode.test.ts).
+    expect(body).not.toMatch(/setIsAllInMode\(true\)/);
     expect(body).toMatch(/applyOptimisticHeroAction\('allin'/);
   });
 });

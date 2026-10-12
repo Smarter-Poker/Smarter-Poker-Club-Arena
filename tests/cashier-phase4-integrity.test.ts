@@ -88,8 +88,10 @@ describe('cashier integrity and wallet launcher', () => {
   });
 
   it('keeps retry ids for claim and reverse operations', () => {
-    expect(modal).toContain('claimOpIdsRef.current.get(row.transaction_id) || newOpId()');
-    expect(modal).toContain('reverseOpIdsRef.current.get(row.id) || newOpId()');
+    expect(modal).toContain('reserveCashierWalletOperation(');
+    expect(modal).toContain('claimOpIdsRef.current.set(row.transaction_id, opId)');
+    expect(modal).toContain('reverseOpIdsRef.current.set(row.id, opId)');
+    expect(modal).toContain('clearCashierWalletOperation(operation)');
     expect(modal).not.toContain('p_op_id: newOpId()');
   });
 

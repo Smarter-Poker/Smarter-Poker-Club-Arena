@@ -1,0 +1,18 @@
+# main 1157cf08 policy (left) - 7 rounds, median per-call microseconds, three seats, fixed clock (now = () => 0), 2-CPU shared container
+BENCH short_deck preflop median_us=32.3 min_us=5.7 max_us=42.7
+BENCH short_deck river median_us=1354.4 min_us=559.7 max_us=1913.3
+BENCH pineapple preflop median_us=13.7 min_us=6.1 max_us=34.0
+BENCH pineapple river median_us=2736.9 min_us=2534.9 max_us=5407.7
+BENCH flh preflop median_us=21.0 min_us=10.5 max_us=28.8
+BENCH flh river median_us=883.0 min_us=543.5 max_us=2348.1
+BENCH flo8 preflop median_us=19.0 min_us=11.3 max_us=39.9
+BENCH flo8 river median_us=3171.7 min_us=2276.3 max_us=5076.5
+# P12.1 branch policy
+BENCH short_deck preflop median_us=52.8 min_us=19.4 max_us=72.8
+BENCH short_deck river median_us=1201.3 min_us=576.3 max_us=2492.0
+BENCH pineapple preflop median_us=18.6 min_us=10.2 max_us=55.4
+BENCH pineapple river median_us=2877.6 min_us=2529.3 max_us=4900.7
+BENCH flh preflop median_us=31.1 min_us=9.5 max_us=35.5
+BENCH flh river median_us=757.6 min_us=545.1 max_us=1630.7
+BENCH flo8 preflop median_us=32.4 min_us=10.5 max_us=41.9
+BENCH flo8 river median_us=2503.6 min_us=2307.5 max_us=4620.4

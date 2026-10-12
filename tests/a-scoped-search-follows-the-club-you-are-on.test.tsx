@@ -145,15 +145,17 @@ describe('a scoped search follows the club you are on', () => {
     const { rerender } = render(<PlayerSearch clubId="club-a" />);
 
     await searchFor(user, 'a');
-    await waitFor(() => expect(screen.getByText('aces@clubA.example')).toBeInTheDocument());
+    // The roster shows handles only: a player's email is theirs and platform
+    // staff's alone (ruling 25), so the search no longer selects it.
+    await waitFor(() => expect(screen.getByText('aces_only')).toBeInTheDocument());
+    expect(screen.queryByText('aces@clubA.example')).not.toBeInTheDocument();
 
     rerender(<PlayerSearch clubId="club-b" />);
 
     // Nothing has been searched in club B yet, so club B's tab must show
-    // nothing - not club A's roster with its email column.
+    // nothing - not club A's roster.
     await waitFor(() => {
       expect(screen.queryByText('aces_only')).not.toBeInTheDocument();
-      expect(screen.queryByText('aces@clubA.example')).not.toBeInTheDocument();
     });
     expect(screen.getByText('Search For Players To Manage')).toBeInTheDocument();
   });

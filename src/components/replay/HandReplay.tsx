@@ -72,6 +72,7 @@ import { getAnimationSpeed } from '../../utils/animationSpeed';
 import { soundService } from '../../services/SoundService';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { reportError } from '../../utils/errorReporter';
+import { fitClipRate, type ClipFit } from '../../lib/clipMode';
 import './HandReplay.css';
 
 /**
@@ -123,6 +124,54 @@ interface HandReplayProps {
    */
   source?: ReplaySource | null;
   onClose?: () => void;
+  /**
+   * CLIP MODE (Phase 9.1, 2026-09-30): the replay as a camera subject.
+   *
+   * The hand clip renderer opens the public share route in a headless
+   * browser (a 4:5 portrait viewport, 1080x1350, since 2026-10-07) with a
+   * `source` built exactly as this component builds one for a hand fetched
+   * by id (`clipSourceFrom`, src/lib/clipMode.ts) and takes one still per
+   * frame. THE CLIP IS THIS REPLAYER AS THE ARENA SHOWS IT, PIXEL FOR PIXEL
+   * (owner decision, Dan, 2026-10-07): `clip` hides nothing and adds
+   * nothing a viewer can see. Until then it hid the header, the tabs, the
+   * street jumps, the transport, the rate buttons and the seat strip and
+   * printed a blinds line of its own in a fixed 1280x720 stage; all of that
+   * is gone. What `clip` still does is the camera contract, none of it
+   * visible: on mount the replay rate is chosen so the whole hand plus a
+   * 1,500 ms end hold fits between `minMs` and `maxMs` (`fitClipRate`),
+   * never read from a remembered setting; the stage root carries
+   * `data-clip-state` (ready, too_long, playing, done) and `data-clip-step`
+   * (the frame on the felt); `window.__spClip` exposes the plan (`beats`,
+   * `holdMs`), `seek(i)` (the camera's way: frame i, no motion, no sound)
+   * and `start()` (wall-clock playback at animation speed 1, the speed the
+   * fit timed); and no sound cue plays. Nothing here changes for a caller
+   * that does not pass it. MEMOISE IT like `source`.
+   */
+  clip?: { minMs: number; maxMs: number } | null;
+}
+
+/** What the stage root says to the camera, in `data-clip-state`. */
+export type ClipStageState = 'ready' | 'too_long' | 'playing' | 'done';
+
+/** `window.__spClip`, the renderer's handle on the page (contract C3). */
+export interface ClipHandle {
+  v: 1;
+  state: ClipStageState;
+  frames: number;
+  rate: ReplayRate;
+  /** The beat of every frame at `rate`, in frame order (empty when too_long). */
+  beats: number[];
+  /** The end hold after the last frame's beat (0 when too_long). */
+  holdMs: number;
+  /** Sum of beats plus holdMs. */
+  plannedMs: number;
+  /**
+   * Show frame `index` with no motion and no sound, as a scrub does, and
+   * stop any playback. True when the frame exists and the hand fits; the
+   * stage root's `data-clip-step` says when the frame is on the felt.
+   */
+  seek: (index: number) => boolean;
+  start: () => boolean;
 }
 
 /** How many face-down cards an unrevealed seat shows: the variant's holding. */
@@ -592,7 +641,9 @@ export default function HandReplay({
   handId: propHandId,
   source: propSource = null,
   onClose,
+  clip = null,
 }: HandReplayProps) {
+  const clipMode = clip !== null && clip !== undefined;
   // Route-based usage: /replay/<id>
   const pathParts = typeof window !== 'undefined' ? window.location.pathname.split('/') : [];
   const routeHandId = pathParts[pathParts.indexOf('replay') + 1];
@@ -618,7 +669,8 @@ export default function HandReplay({
   const step = cursor.step;
   const [isPlaying, setIsPlaying] = useState(false);
   const [rate, setRate] = useState<ReplayRate>(() =>
-    readReplayRate(typeof window !== 'undefined' ? window.localStorage : null)
+    /* A clip's rate is chosen by the fit below, never by a remembered setting. */
+    clipMode ? 1 : readReplayRate(typeof window !== 'undefined' ? window.localStorage : null)
   );
   const playbackRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -728,7 +780,9 @@ export default function HandReplay({
   useEffect(() => {
     if (!frame || !motionPrev || !model) return;
     const cue = frameCue(motionPrev, frame);
-    if (cue) playCue(cue, Math.abs(frame.row?.amount ?? 0), model.bigBlind);
+    /* A clip is silent: the camera records no audio and the renderer's
+       browser has no player to play to. */
+    if (cue && !clipMode) playCue(cue, Math.abs(frame.row?.amount ?? 0), model.bigBlind);
     // One cue per arrival at a frame, not per re-render of it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cursor]);
@@ -749,12 +803,14 @@ export default function HandReplay({
       setIsPlaying(false);
       return;
     }
-    const beat = replayBeatMs(frame, getAnimationSpeed(), rate);
+    /* The clip was timed at animation speed 1 (`fitClipRate`), so that is
+       the speed start() plays it at, whatever the viewer's setting says. */
+    const beat = replayBeatMs(frame, clipMode ? 1 : getAnimationSpeed(), rate);
     playbackRef.current = setTimeout(() => go((s) => Math.min(last, s + 1), true), beat);
     return () => {
       if (playbackRef.current) clearTimeout(playbackRef.current);
     };
-  }, [isPlaying, tab, step, last, frames.length, frame, rate, go]);
+  }, [isPlaying, tab, step, last, frames.length, frame, rate, go, clipMode]);
 
   const togglePlay = useCallback(() => {
     if (step >= last) go(0, false);
@@ -776,6 +832,98 @@ export default function HandReplay({
     },
     [last, go]
   );
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  CLIP MODE (Phase 9.1) — the rate fit, the state the camera reads,
+   *  and `window.__spClip`. Every hook here is a no-op without `clip`.
+   * ═══════════════════════════════════════════════════════════════════════
+   */
+  const clipFit = useMemo<ClipFit | null>(
+    () =>
+      clip && frames.length > 0 ? fitClipRate(frames, REPLAY_RATES, clip.minMs, clip.maxMs) : null,
+    [clip, frames]
+  );
+  const [clipState, setClipState] = useState<ClipStageState>('ready');
+  useEffect(() => {
+    if (!clipFit) return;
+    setRate(clipFit.rate);
+    setIsPlaying(false);
+    setCursor({ step: 0, motion: false });
+    setClipState(clipFit.tooLong ? 'too_long' : 'ready');
+  }, [clipFit]);
+  /* start(): rewind to the first frame and play at the chosen rate. False,
+     and nothing plays, when the hand does not fit the window. */
+  const startClip = useCallback((): boolean => {
+    if (!clipFit || clipFit.tooLong) return false;
+    setCursor({ step: 0, motion: false });
+    setIsPlaying(true);
+    setClipState('playing');
+    return true;
+  }, [clipFit]);
+  const startClipRef = useRef(startClip);
+  startClipRef.current = startClip;
+  /* seek(i): the camera's step. Frame i goes on the felt the way a scrub
+     puts it there - no motion, no cue - and playback, if any, stops. The
+     renderer reads `data-clip-step` to know the frame has been committed
+     before it takes the still. */
+  const seekClip = useCallback(
+    (index: number): boolean => {
+      if (!clipFit || clipFit.tooLong) return false;
+      if (!Number.isInteger(index) || index < 0 || index > last) return false;
+      if (playbackRef.current) clearTimeout(playbackRef.current);
+      setIsPlaying(false);
+      setClipState('ready');
+      setCursor((c) => (c.step === index && !c.motion ? c : { step: index, motion: false }));
+      return true;
+    },
+    [clipFit, last]
+  );
+  const seekClipRef = useRef(seekClip);
+  seekClipRef.current = seekClip;
+  /* Done: the last frame has been reached, its own beat has passed (the
+     motion it owes has settled) and the end hold is over. The hold is the
+     fit's: 1,500 ms, or longer when the run alone was shorter than minMs. */
+  useEffect(() => {
+    if (!clipMode || clipState !== 'playing' || !clipFit || clipFit.tooLong) return;
+    if (step < last) return;
+    const settle = replayBeatMs(frames[last] ?? null, 1, rate) + clipFit.holdMs;
+    const t = setTimeout(() => setClipState('done'), settle);
+    return () => clearTimeout(t);
+  }, [clipMode, clipState, clipFit, step, last, frames, rate]);
+  /* The handle the renderer calls, kept current. One object for the life of
+     the stage, so a poller never reads it between a removal and a reset. */
+  const clipHandleRef = useRef<ClipHandle | null>(null);
+  useEffect(() => {
+    if (!clipMode || typeof window === 'undefined') return;
+    const w = window as unknown as { __spClip?: ClipHandle };
+    const handle: ClipHandle = clipHandleRef.current ?? {
+      v: 1,
+      state: clipState,
+      frames: frames.length,
+      rate,
+      beats: [],
+      holdMs: 0,
+      plannedMs: 0,
+      seek: (index: number) => seekClipRef.current(index),
+      start: () => startClipRef.current(),
+    };
+    handle.state = clipState;
+    handle.frames = frames.length;
+    handle.rate = rate;
+    handle.beats = clipFit && !clipFit.tooLong ? [...clipFit.beats] : [];
+    handle.holdMs = clipFit && !clipFit.tooLong ? clipFit.holdMs : 0;
+    handle.plannedMs = clipFit?.plannedMs ?? 0;
+    clipHandleRef.current = handle;
+    w.__spClip = handle;
+  }, [clipMode, clipState, clipFit, frames.length, rate]);
+  useEffect(() => {
+    if (!clipMode || typeof window === 'undefined') return;
+    return () => {
+      const w = window as unknown as { __spClip?: ClipHandle };
+      if (w.__spClip === clipHandleRef.current) delete w.__spClip;
+    };
+  }, [clipMode]);
 
   /**
    * THE TABLIST'S OWN KEYS. Left/Right move between the two tabs and WRAP,
@@ -864,6 +1012,8 @@ export default function HandReplay({
   return (
     <div
       className="hand-replay"
+      data-clip-state={clipMode ? clipState : undefined}
+      data-clip-step={clipMode ? at : undefined}
       onKeyDown={onKeyDown}
       tabIndex={0}
       /* A `tabIndex={0}` div is a focus stop, and an unnamed one is a stop
@@ -895,14 +1045,14 @@ export default function HandReplay({
           <span className="hand-replay__when">{stamp(model.playedAt)}</span>
         </div>
         {/* THE TABLIST PATTERN, FINISHED. It had `role="tablist"` and two
-            `role="tab"` buttons and none of what makes those roles true: both
-            tabs were tabbable, neither named its panel, neither panel named
-            its tab, and the arrow keys did nothing. A screen reader announced
-            "tab 1 of 2" and then could not move between them.
-            One tabbable tab, arrows to move (wrapping), Home/End to the ends,
-            and focus follows selection - the same pattern
-            `tests/unit/tournamentLobbyShellIsAccessible.test.ts` pins for the
-            tournament lobby. */}
+          `role="tab"` buttons and none of what makes those roles true: both
+          tabs were tabbable, neither named its panel, neither panel named
+          its tab, and the arrow keys did nothing. A screen reader announced
+          "tab 1 of 2" and then could not move between them.
+          One tabbable tab, arrows to move (wrapping), Home/End to the ends,
+          and focus follows selection - the same pattern
+          `tests/unit/tournamentLobbyShellIsAccessible.test.ts` pins for the
+          tournament lobby. */}
         <div
           className="hand-replay__tabs"
           role="tablist"
@@ -1073,8 +1223,8 @@ export default function HandReplay({
               const high = rows.find((r) => !r.low);
               const low = rows.find((r) => r.low);
               /* A MULTI-BOARD HAND NAMES EVERY RUN (2026-09-13). This strip
-                 read board one only, so a player who took run 2 with a flush
-                 sat under "Two Pair" beside a felt drawing both runs. */
+               read board one only, so a player who took run 2 with a flush
+               sat under "Two Pair" beside a felt drawing both runs. */
               const perRun = model.boards.length > 1 ? perRunHandLabel(model, p.userId) : null;
               return (
                 <div

@@ -38,6 +38,27 @@ describe('every live dealer carries and re-checks distributed authority', () => 
     expect(postHand).toContain('leaseGeneration: leaseAuthority.generation');
   });
 
+  /* 2026-10-04: 55 finished cash hands were disposed at 2026-10-03 23:43
+     because a lapsed proof refused them before retention. The writer is now
+     the one place a lapsed proof is judged, and it retains a verified cash
+     generation's original before refusing (handHistory.test.ts pins how). */
+  it('lets a lapsed verified cash generation retain its finished hand before refusing', () => {
+    const postHand = sliceMethod(settlement, 'protected async postHandTasks(');
+    expect(postHand).toContain(
+      "retainWhenLeaseLapses:\n                leaseAuthority?.verified === true && leaseAuthority.scope === 'cash',"
+    );
+    const call = postHand.indexOf('result = await commitAuthoritativeHand();');
+    const tryStart = postHand.lastIndexOf('try {', call);
+    expect(call).toBeGreaterThan(-1);
+    expect(postHand.slice(tryStart, call)).not.toContain('hasCurrentEngineLeaseAuthority');
+
+    const writer = sliceMethod(handHistory, 'async function insertHandHistoryRow(');
+    const lapse = writer.indexOf('atomicCommit.retainWhenLeaseLapses === true');
+    expect(lapse).toBeGreaterThan(writer.indexOf('atomicCommit.assertLeaseAuthority?.();'));
+    expect(lapse).toBeLessThan(writer.indexOf("supabase.rpc('fn_ca_retain_hand_submission'"));
+    expect(writer).toContain('throw await retainLapsedOriginalForSuccessor(payload, lapse);');
+  });
+
   it('refuses human, horse, and deadline actions after local authority expires', () => {
     const human = sliceMethod(turns, '  handlePlayerAction(');
     expect(human).toContain('if (!this.lifecycleCanMutate())');

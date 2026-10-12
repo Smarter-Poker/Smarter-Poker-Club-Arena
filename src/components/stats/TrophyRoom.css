@@ -12,13 +12,10 @@
 .trophy-card {
   margin: 0 0.75rem;
   padding: 1rem;
-  border-radius: 2px;
-  background: linear-gradient(155deg, rgba(18, 27, 36, 0.95), rgba(3, 7, 11, 0.99));
-  border: 1px solid rgba(199, 210, 220, 0.15);
-  box-shadow:
-    inset 3px 0 0 rgba(22, 140, 255, 0.42),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05),
-    0 12px 28px rgba(0, 0, 0, 0.26);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .trophy-head-row {
@@ -172,6 +169,35 @@
   font-weight: 600;
   color: rgba(0, 212, 255, 0.85);
   font-variant-numeric: tabular-nums;
+}
+
+.trophy-evidence {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.45rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid rgb(255 255 255 / 8%);
+  box-shadow: inset 0 1px 0 rgb(0 0 0 / 55%);
+  color: #9aa5b3;
+  font-size: 0.68rem;
+}
+
+.trophy-evidence-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 0.5rem;
+  align-items: center;
+  min-height: 44px;
+  color: #e4e7ec;
+  text-decoration: none;
+  border-top: 1px solid rgb(255 255 255 / 6%);
+  box-shadow: inset 0 1px 0 rgb(0 0 0 / 55%);
+}
+
+.trophy-evidence-row:focus-visible {
+  outline: 2px solid #45adff;
+  outline-offset: 2px;
 }
 
 .trophy-note {

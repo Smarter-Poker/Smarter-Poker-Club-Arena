@@ -1,0 +1,50 @@
+{
+  "schema": "horse-phase12-completion-v1",
+  "definition": "horse-phase12-completion-definition-v1",
+  "variant": "flo8",
+  "packVersion": "fixed-limit-omaha8-round1-v3",
+  "releaseSha": "e187377e21eb0f408d2287e8022821a1f83f58c1",
+  "policyDigestDefinition": "horse-phase12-policy-digest-v1",
+  "policyDigest": "3c4b0700146995592afb13d41e370f1dcfd0d3c5f6d3442dcf6fbe70c4baf274",
+  "gameMode": "cash",
+  "window": {
+    "from": "2026-10-05T17:02:00Z",
+    "to": "2026-10-05T17:50:00Z",
+    "releaseUnchanged": true,
+    "source": "engine.smarter.poker horse-decisions archive segments (archive, archive-shard-1), closed segment files, read-only; release e187377e StartedAt 2026-10-05T16:55:40.466171773Z read at 17:00:05Z and 17:51:15Z; readers at 7ce58e54 (#6169); predeclared in docs/evidence/phase12/declaration-p12-3-completion.txt (#6157, amended #6168)"
+  },
+  "streets": {
+    "preflop": {
+      "eligible": 634,
+      "completed": 634,
+      "workBudget": 0,
+      "samplerBudgetExhausted": 0,
+      "sampleUnavailable": 0,
+      "governorReduced": 0
+    },
+    "flop": {
+      "eligible": 423,
+      "completed": 267,
+      "workBudget": 1,
+      "samplerBudgetExhausted": 19,
+      "sampleUnavailable": 1,
+      "governorReduced": 135
+    },
+    "turn": {
+      "eligible": 379,
+      "completed": 224,
+      "workBudget": 3,
+      "samplerBudgetExhausted": 15,
+      "sampleUnavailable": 1,
+      "governorReduced": 136
+    },
+    "river": {
+      "eligible": 322,
+      "completed": 208,
+      "workBudget": 1,
+      "samplerBudgetExhausted": 5,
+      "sampleUnavailable": 1,
+      "governorReduced": 107
+    }
+  }
+}

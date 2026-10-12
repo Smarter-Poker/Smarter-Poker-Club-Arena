@@ -528,7 +528,8 @@ describe('every player rebuy prompt owns one required idempotency token', () => 
     expect(canRebuy).toContain('chips, status, prize, rebuys, rebuy_prompt_until');
     expect(canRebuy).toContain('Number(player.chips ?? 0) !== 0');
     expect(canRebuy).toContain('Number(player.prize ?? 0) > 0');
-    expect(canRebuy).toContain("playerStatus !== 'playing'");
+    expect(canRebuy).toContain("!['playing', 'eliminated'].includes(playerStatus)");
+    expect(canRebuy).toContain("purchaseType === 'rebuy' && playerStatus === 'playing'");
     expect(canRebuy).toContain('promptUntil <= Date.now()');
     expect(canRebuy).toContain('tournament.max_reentries');
     expect(canRebuy).toContain('tournament.max_rebuys');

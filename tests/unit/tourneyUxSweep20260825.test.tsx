@@ -86,7 +86,9 @@ describe('Item 1 - a running tournament can be watched', () => {
 
   it('watching ADDS a screen rather than replacing the one in front of you', () => {
     const src = code(read(DETAILS));
-    expect(src).toMatch(/openTableAsObserver\(navigate, \{ tableId \}\)/);
+    /* 2026-10-04: the tab's label rides along, because Ranking and Tables now
+       open through this one door instead of calling the helper themselves. */
+    expect(src).toMatch(/openTableAsObserver\(navigate, \{ tableId, tableName \}\)/);
     expect(src).not.toMatch(/navigate\(`\/table\/\$\{tableId\}`\)/);
   });
 
@@ -132,7 +134,7 @@ describe('Item 1 - a running tournament can be watched', () => {
     }
 
     const contract = code(read(TAB_TYPES));
-    expect(contract).toMatch(/onWatchPlayer\?: \(tableId: string\) => void/);
+    expect(contract).toMatch(/onWatchPlayer\?: \(tableId: string, tableName\?: string\) => void/);
 
     // Only rows that really have a table become buttons.
     const tab = code(read(RANKING_TAB));
@@ -312,7 +314,12 @@ describe('Item 6 - the action countdown stays neon blue', () => {
   });
 
   it('the urgent and critical states do not repaint the ring', () => {
-    const start = css.indexOf('.seat--timer-urgent .seat__info::before');
+    // 2026-10-04: the ring moved from `.seat__info::before` to a real element,
+    // `.seat__timer-ring-arc` (owner ruling 2026-10-04, "YOU NEED TO SLOW IT
+    // DOWN SO IT TAKES 15 SECONDS TO DISAPPEAR": the sweep is now linear
+    // along the border, which needs a size container). Same pin, new selector.
+    const start = css.indexOf('.seat--timer-urgent .seat__timer-ring-arc');
+    expect(start).toBeGreaterThan(-1);
     const block = css.slice(start, css.indexOf('}', start));
     expect(block).not.toMatch(/#ff6b35/);
     expect(block).not.toMatch(/#ef4444/);

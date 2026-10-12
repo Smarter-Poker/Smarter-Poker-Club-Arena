@@ -144,7 +144,12 @@ describe('LAW: a Diamond tournament pays from its own custody', () => {
       );
       expect((DRAIN.match(/diamond_tournament_custody_short/g) ?? []).length).toBe(2);
     });
-    it("journals a fee drain as that player's own spend, bound for the house", () => {
+    // HISTORY, NOT THE LIVE RULE: this pins the 20260914032315 text. From
+    // 20261007132503 (#6411) a house-bound drain writes NO journal row - the fee
+    // left the wallet inside the entry's arena_deposit - and retires the fee in
+    // the register directly. tests/the-journal-explains-the-balance.law.test.ts
+    // pins the live definition.
+    it("journals a fee drain as that player's own spend, bound for the house (as written 2026-09-14)", () => {
       expect(DRAIN).toMatch(/'tournament_fee','tournament_fee',-v_take::integer/);
       expect(DRAIN).toContain("'poker_arena','spend','house'");
     });

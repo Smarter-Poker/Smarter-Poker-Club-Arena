@@ -1,0 +1,22 @@
+# Phase 10 check: planned half-width and smallest per-profile pairs per gating cell for the locked P10.2 matrix (matches docs/horse-brain-phase10-2-strength-contract-2026-10-03.md), then per pack and blocks-per-shard k: pairsPerShard, per-profile lower bounds, chosen shards, jobs and estimated hosted minutes for the slowest profile.
+profile:2dealt 6.3 138240
+profile:4dealt 6.7 552960
+profile:40bb 5.4 276480
+profile:100bb 5.6 552960
+profile:200bb 6.5 1036800
+position:button 5.9 46080
+position:small_blind 7.1 46080
+position:big_blind 5.9 46080
+position:cutoff 7.1 46080
+position:middle 8.3 46080
+position:early 8.3 46080
+depth:short 5.4 276480
+depth:standard 3.6 138240
+depth:deep 6.5 1036800
+feasible True
+plo5 17 9792 lb [2, 8, 5, 13, 22] best [2, 8, 16, 25, 30] jobs 243 hosted max min 23.7
+plo6 15 8640 lb [6, 9, 5, 15, 27] best [6, 9, 17, 28, 37] jobs 291 hosted max min 23.8
+plo6 16 9216 lb [5, 8, 5, 14, 25] best [5, 8, 17, 26, 34] jobs 270 hosted max min 25.3
+plo6 17 9792 lb [5, 8, 5, 13, 24] best [5, 8, 16, 27, 30] jobs 258 hosted max min 26.9
+plo6 18 10368 lb [5, 7, 5, 12, 22] best [5, 7, 16, 24, 29] jobs 243 hosted max min 28.5
+plo8 17 9792 lb [2, 4, 3, 6, 9] best [2, 4, 9, 11, 12] jobs 114 hosted max min 24.4

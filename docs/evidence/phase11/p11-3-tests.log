@@ -1,0 +1,187 @@
+# P11.3 test evidence, 2026-10-04 (this container: 2 vCPU Linux, vitest 2.1.9). Summary lines only; console noise removed.
+
+## 1. Base counts: unmodified base fb9c43ea (git archive copy), the five existing suites P11.3 extends
+ ✓ src/engine/horseDecision/workerRuntime.test.ts (190 tests)
+ ✓ src/engine/horseDecision/client.test.ts (93 tests)
+ ✓ src/engine/HorseDecisionEffectCommit.test.ts (138 tests)
+ ✓ src/services/horseDecisionJournal/review.test.ts (130 tests)
+ ✓ src/engine/HorseExecutionWitness.test.ts (27 tests)
+ Test Files  5 passed (5)
+      Tests  578 passed (578)
+
+## 2. Before: the same base copy with the P11.3 test files (and test support) copied in, no source change
+      Tests  3 failed | 27 passed (30)
+ Test Files  7 failed (7)
+ ❯ src/engine/HorseDecisionEffectCommit.test.ts (0 test)
+ ❯ src/engine/HorseDecisionEffectCommit.test.ts:111:25
+ ❯ src/engine/HorseExecutionWitness.test.ts (30 tests | 3 failed)
+ ❯ src/engine/HorseExecutionWitness.test.ts:319:23
+ ❯ src/engine/HorsePhase11Authority.test.ts (0 test)
+ ❯ src/engine/horseDecision/client.test.ts (0 test)
+ ❯ src/engine/horseDecision/client.test.ts:57:26
+ ❯ src/engine/horseDecision/workerRuntime.test.ts (0 test)
+ ❯ src/engine/omaha/OmahaVariantPhase11Selection.test.ts (0 test)
+ ❯ src/services/horseDecisionJournal/review.test.ts (0 test)
+Caused by: Error: Failed to load url ../HorsePhase11Authority.js (resolved id: ../HorsePhase11Authority.js) in src/engine/horseDecision/workerRuntime.test.ts. Does the file exist?
+Caused by: Error: Failed to load url ./HorsePhase11Authority.js (resolved id: ./HorsePhase11Authority.js) in src/engine/HorseDecisionEffectCommit.test.ts. Does the file exist?
+Error: Failed to load url ../HorsePhase11Authority.js (resolved id: ../HorsePhase11Authority.js) in src/engine/horseDecision/workerRuntime.test.ts. Does the file exist?
+Error: Failed to load url ./HorsePhase11Authority.js (resolved id: ./HorsePhase11Authority.js) in src/engine/HorseDecisionEffectCommit.test.ts. Does the file exist?
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+src/engine/HorseExecutionWitness.test.ts > private execution witness > P11.3 binds the plo5 selection: selected proposal, shadow baseline and the accepted action
+src/engine/HorseExecutionWitness.test.ts > private execution witness > P11.3 binds the plo6 selection: selected proposal, shadow baseline and the accepted action
+src/engine/HorseExecutionWitness.test.ts > private execution witness > P11.3 binds the plo8 selection: selected proposal, shadow baseline and the accepted action
+
+## 3. Admission module only: base copy + HorsePhase11Authority.ts + HorseQualifiedAuthority.ts, none of the wiring
+ ❯ src/engine/horseDecision/workerRuntime.test.ts (216 tests | 25 failed)
+ ❯ src/engine/horseDecision/client.test.ts (98 tests | 5 failed)
+ ❯ src/engine/HorseDecisionEffectCommit.test.ts (148 tests | 10 failed)
+ ❯ src/services/horseDecisionJournal/review.test.ts (145 tests | 15 failed)
+ ✓ src/engine/HorsePhase11Authority.test.ts (94 tests)
+ ❯ src/engine/HorseExecutionWitness.test.ts (30 tests | 3 failed)
+ ❯ src/engine/omaha/OmahaVariantPhase11Selection.test.ts (13 tests | 13 failed)
+⎯⎯⎯⎯⎯⎯ Failed Tests 71 ⎯⎯⎯⎯⎯⎯⎯
+ ❯ src/engine/HorseDecisionEffectCommit.test.ts:2160:23
+ ❯ src/engine/HorseDecisionEffectCommit.test.ts:2227:55
+ ❯ src/engine/HorseDecisionEffectCommit.test.ts:2269:53
+ ❯ src/engine/HorseDecisionEffectCommit.test.ts:2299:58
+ ❯ src/engine/HorseDecisionEffectCommit.test.ts:2339:38
+ ❯ src/engine/HorseExecutionWitness.test.ts:319:23
+ ❯ src/engine/horseDecision/client.test.ts:2620:41
+ ❯ src/engine/horseDecision/client.test.ts:2661:44
+ ❯ src/engine/horseDecision/client.test.ts:2687:27
+ ❯ src/engine/horseDecision/workerRuntime.test.ts:3479:51
+ ❯ src/engine/horseDecision/workerRuntime.test.ts:3516:49
+ ❯ src/engine/horseDecision/workerRuntime.test.ts:3562:53
+ ❯ src/engine/horseDecision/workerRuntime.test.ts:3584:55
+ ❯ src/engine/horseDecision/workerRuntime.test.ts:3645:49
+ ❯ src/engine/horseDecision/workerRuntime.test.ts:3688:70
+ ❯ src/engine/horseDecision/workerRuntime.test.ts:3751:55
+ ❯ src/engine/omaha/OmahaVariantPhase11Selection.test.ts:121:23
+ ❯ src/engine/omaha/OmahaVariantPhase11Selection.test.ts:121:23
+ ❯ src/engine/omaha/OmahaVariantPhase11Selection.test.ts:174:14
+ ❯ src/engine/omaha/OmahaVariantPhase11Selection.test.ts:203:41
+ ❯ src/services/horseDecisionJournal/review.test.ts:1210:9
+ ❯ src/services/horseDecisionJournal/review.test.ts:1277:7
+ ❯ src/services/horseDecisionJournal/review.test.ts:1293:7
+ ❯ src/services/horseDecisionJournal/review.test.ts:1317:41
+ Test Files  6 failed | 1 passed (7)
+      Tests  71 failed | 673 passed (744)
+### failing tests
+src/engine/HorseDecisionEffectCommit.test.ts > P11.3 acceptance-time Phase 11 authority recheck (the Phase 8 law, one gate per pack) > Phase 11 authority refresh_failed during think time executes the shadow baseline exactly
+src/engine/HorseDecisionEffectCommit.test.ts > P11.3 acceptance-time Phase 11 authority recheck (the Phase 8 law, one gate per pack) > Phase 11 authority restarted during think time executes the shadow baseline exactly
+src/engine/HorseDecisionEffectCommit.test.ts > P11.3 acceptance-time Phase 11 authority recheck (the Phase 8 law, one gate per pack) > Phase 11 authority stale_generation during think time executes the shadow baseline exactly
+src/engine/HorseDecisionEffectCommit.test.ts > P11.3 acceptance-time Phase 11 authority recheck (the Phase 8 law, one gate per pack) > Phase 11 authority withdrawn during think time executes the shadow baseline exactly
+src/engine/HorseDecisionEffectCommit.test.ts > P11.3 acceptance-time Phase 11 authority recheck (the Phase 8 law, one gate per pack) > a controller refusal of a selected proposal withdraws that pack only, for this process
+src/engine/HorseDecisionEffectCommit.test.ts > P11.3 acceptance-time Phase 11 authority recheck (the Phase 8 law, one gate per pack) > a selected receipt is checked at its own pack gate: usable PLO5 authority never accepts a PLO8 proposal
+src/engine/HorseDecisionEffectCommit.test.ts > P11.3 acceptance-time Phase 11 authority recheck (the Phase 8 law, one gate per pack) > a shadow Phase 11 receipt is never rechecked and executes the baseline it already carries
+src/engine/HorseDecisionEffectCommit.test.ts > P11.3 acceptance-time Phase 11 authority recheck (the Phase 8 law, one gate per pack) > accepts a selected plo5 proposal under usable authority and records selected, accepted and baseline actions
+src/engine/HorseDecisionEffectCommit.test.ts > P11.3 acceptance-time Phase 11 authority recheck (the Phase 8 law, one gate per pack) > accepts a selected plo6 proposal under usable authority and records selected, accepted and baseline actions
+src/engine/HorseDecisionEffectCommit.test.ts > P11.3 acceptance-time Phase 11 authority recheck (the Phase 8 law, one gate per pack) > accepts a selected plo8 proposal under usable authority and records selected, accepted and baseline actions
+src/engine/HorseExecutionWitness.test.ts > private execution witness > P11.3 binds the plo5 selection: selected proposal, shadow baseline and the accepted action
+src/engine/HorseExecutionWitness.test.ts > private execution witness > P11.3 binds the plo6 selection: selected proposal, shadow baseline and the accepted action
+src/engine/HorseExecutionWitness.test.ts > private execution witness > P11.3 binds the plo8 selection: selected proposal, shadow baseline and the accepted action
+src/engine/horseDecision/client.test.ts > P11.3 per-pack authority at the client boundary > a PLO8 withdrawal reported by a later result stales already returned PLO8 work
+src/engine/horseDecision/client.test.ts > P11.3 per-pack authority at the client boundary > refuses an applied PLO8 receipt whose worker authority is another pack
+src/engine/horseDecision/client.test.ts > P11.3 per-pack authority at the client boundary > refuses an applied PLO8 receipt whose worker authority is missing
+src/engine/horseDecision/client.test.ts > P11.3 per-pack authority at the client boundary > refuses an applied PLO8 receipt whose worker authority is withdrawn
+src/engine/horseDecision/client.test.ts > P11.3 per-pack authority at the client boundary > stamps the receipt at its own pack gate, binds the witness, and a worker exit restarts it
+src/engine/horseDecision/workerRuntime.test.ts > P11.3 worker-owned PLO5/PLO6/PLO8 authority (the Phase 8 path, reused per pack) > a PLO5 selection never selects a PLO6 or PLO8 decision
+src/engine/horseDecision/workerRuntime.test.ts > P11.3 worker-owned PLO5/PLO6/PLO8 authority (the Phase 8 path, reused per pack) > a below-floor PLO6 admission keeps the pack in shadow and the reference action
+src/engine/horseDecision/workerRuntime.test.ts > P11.3 worker-owned PLO5/PLO6/PLO8 authority (the Phase 8 path, reused per pack) > a decision of another variant carries no Phase 11 authority
+src/engine/horseDecision/workerRuntime.test.ts > P11.3 worker-owned PLO5/PLO6/PLO8 authority (the Phase 8 path, reused per pack) > a no-completion PLO6 admission keeps the pack in shadow and the reference action
+src/engine/horseDecision/workerRuntime.test.ts > P11.3 worker-owned PLO5/PLO6/PLO8 authority (the Phase 8 path, reused per pack) > a other-policy completion PLO6 admission keeps the pack in shadow and the reference action
+src/engine/horseDecision/workerRuntime.test.ts > P11.3 worker-owned PLO5/PLO6/PLO8 authority (the Phase 8 path, reused per pack) > a plo5 tournament decision keeps Phase 7 ownership even when the pack would be selected
+src/engine/horseDecision/workerRuntime.test.ts > P11.3 worker-owned PLO5/PLO6/PLO8 authority (the Phase 8 path, reused per pack) > a plo8 tournament decision keeps Phase 7 ownership even when the pack would be selected
+src/engine/horseDecision/workerRuntime.test.ts > P11.3 worker-owned PLO5/PLO6/PLO8 authority (the Phase 8 path, reused per pack) > a qualified:false PLO6 admission keeps the pack in shadow and the reference action
+src/engine/horseDecision/workerRuntime.test.ts > P11.3 worker-owned PLO5/PLO6/PLO8 authority (the Phase 8 path, reused per pack) > a valid plo5 qualification and completion record (test fixture only) select the cash proposal and record selected and baseline actions
+src/engine/horseDecision/workerRuntime.test.ts > P11.3 worker-owned PLO5/PLO6/PLO8 authority (the Phase 8 path, reused per pack) > a valid plo6 qualification and completion record (test fixture only) select the cash proposal and record selected and baseline actions
+src/engine/horseDecision/workerRuntime.test.ts > P11.3 worker-owned PLO5/PLO6/PLO8 authority (the Phase 8 path, reused per pack) > a valid plo8 qualification and completion record (test fixture only) select the cash proposal and record selected and baseline actions
+src/engine/horseDecision/workerRuntime.test.ts > P11.3 worker-owned PLO5/PLO6/PLO8 authority (the Phase 8 path, reused per pack) > a wrong-source PLO6 admission keeps the pack in shadow and the reference action
+src/engine/horseDecision/workerRuntime.test.ts > P11.3 worker-owned PLO5/PLO6/PLO8 authority (the Phase 8 path, reused per pack) > live behaviour is unchanged today: plo5 cash Ah 7c 2s 3d 9h executes the same action as before P11.3
+src/engine/horseDecision/workerRuntime.test.ts > P11.3 worker-owned PLO5/PLO6/PLO8 authority (the Phase 8 path, reused per pack) > live behaviour is unchanged today: plo5 cash As Ad Ks Kd Qs executes the same action as before P11.3
+src/engine/horseDecision/workerRuntime.test.ts > P11.3 worker-owned PLO5/PLO6/PLO8 authority (the Phase 8 path, reused per pack) > live behaviour is unchanged today: plo5 cash Qs Qh 4c 4d 8s executes the same action as before P11.3
+src/engine/horseDecision/workerRuntime.test.ts > P11.3 worker-owned PLO5/PLO6/PLO8 authority (the Phase 8 path, reused per pack) > live behaviour is unchanged today: plo5 tournament As Ad Ks Kd Qs executes the same action as before P11.3
+src/engine/horseDecision/workerRuntime.test.ts > P11.3 worker-owned PLO5/PLO6/PLO8 authority (the Phase 8 path, reused per pack) > live behaviour is unchanged today: plo6 cash Ah 7c 2s 3d 9h 5c executes the same action as before P11.3
+src/engine/horseDecision/workerRuntime.test.ts > P11.3 worker-owned PLO5/PLO6/PLO8 authority (the Phase 8 path, reused per pack) > live behaviour is unchanged today: plo6 cash As Ad Ks Kd Qs Jd executes the same action as before P11.3
+src/engine/horseDecision/workerRuntime.test.ts > P11.3 worker-owned PLO5/PLO6/PLO8 authority (the Phase 8 path, reused per pack) > live behaviour is unchanged today: plo6 cash Qs Qh 4c 4d 8s 9c executes the same action as before P11.3
+src/engine/horseDecision/workerRuntime.test.ts > P11.3 worker-owned PLO5/PLO6/PLO8 authority (the Phase 8 path, reused per pack) > live behaviour is unchanged today: plo6 tournament As Ad Ks Kd Qs Jd executes the same action as before P11.3
+src/engine/horseDecision/workerRuntime.test.ts > P11.3 worker-owned PLO5/PLO6/PLO8 authority (the Phase 8 path, reused per pack) > live behaviour is unchanged today: plo8 cash Ah 7c Ks 9d executes the same action as before P11.3
+src/engine/horseDecision/workerRuntime.test.ts > P11.3 worker-owned PLO5/PLO6/PLO8 authority (the Phase 8 path, reused per pack) > live behaviour is unchanged today: plo8 cash As 2s 3d Ac executes the same action as before P11.3
+src/engine/horseDecision/workerRuntime.test.ts > P11.3 worker-owned PLO5/PLO6/PLO8 authority (the Phase 8 path, reused per pack) > live behaviour is unchanged today: plo8 cash Qs Qh 4c 4d executes the same action as before P11.3
+src/engine/horseDecision/workerRuntime.test.ts > P11.3 worker-owned PLO5/PLO6/PLO8 authority (the Phase 8 path, reused per pack) > live behaviour is unchanged today: plo8 tournament As 2s 3d Ac executes the same action as before P11.3
+src/engine/horseDecision/workerRuntime.test.ts > P11.3 worker-owned PLO5/PLO6/PLO8 authority (the Phase 8 path, reused per pack) > the caller may turn the packs off; deep think-time work admits afresh
+src/engine/omaha/OmahaVariantPhase11Selection.test.ts > P11.3 Phase 7 keeps tournament objective ownership > a plo5 preflop tournament decision under usable Phase 11 authority is Phase 7’s decision
+src/engine/omaha/OmahaVariantPhase11Selection.test.ts > P11.3 Phase 7 keeps tournament objective ownership > a plo5 turn tournament decision under usable Phase 11 authority is Phase 7’s decision
+src/engine/omaha/OmahaVariantPhase11Selection.test.ts > P11.3 Phase 7 keeps tournament objective ownership > a plo6 preflop tournament decision under usable Phase 11 authority is Phase 7’s decision
+src/engine/omaha/OmahaVariantPhase11Selection.test.ts > P11.3 Phase 7 keeps tournament objective ownership > a plo6 turn tournament decision under usable Phase 11 authority is Phase 7’s decision
+src/engine/omaha/OmahaVariantPhase11Selection.test.ts > P11.3 Phase 7 keeps tournament objective ownership > a plo8 preflop tournament decision under usable Phase 11 authority is Phase 7’s decision
+src/engine/omaha/OmahaVariantPhase11Selection.test.ts > P11.3 Phase 7 keeps tournament objective ownership > even the offline candidate control cannot carry a plo5 preflop tournament selection across the worker boundary
+src/engine/omaha/OmahaVariantPhase11Selection.test.ts > P11.3 Phase 7 keeps tournament objective ownership > even the offline candidate control cannot carry a plo5 turn tournament selection across the worker boundary
+src/engine/omaha/OmahaVariantPhase11Selection.test.ts > P11.3 Phase 7 keeps tournament objective ownership > even the offline candidate control cannot carry a plo6 preflop tournament selection across the worker boundary
+src/engine/omaha/OmahaVariantPhase11Selection.test.ts > P11.3 Phase 7 keeps tournament objective ownership > even the offline candidate control cannot carry a plo6 turn tournament selection across the worker boundary
+src/engine/omaha/OmahaVariantPhase11Selection.test.ts > P11.3 Phase 7 keeps tournament objective ownership > even the offline candidate control cannot carry a plo8 preflop tournament selection across the worker boundary
+src/engine/omaha/OmahaVariantPhase11Selection.test.ts > P11.3 illegal candidate retention > an applied plo5 candidate the legalizer would rewrite is not selected; the reference is executed
+src/engine/omaha/OmahaVariantPhase11Selection.test.ts > P11.3 illegal candidate retention > an applied plo6 candidate the legalizer would rewrite is not selected; the reference is executed
+src/engine/omaha/OmahaVariantPhase11Selection.test.ts > P11.3 illegal candidate retention > an applied plo8 candidate the legalizer would rewrite is not selected; the reference is executed
+src/services/horseDecisionJournal/review.test.ts > private retained-hand journal consumer > P11.3 PLO5/PLO6/PLO8 selection reconciliation > reconciles a Phase 11 selection withdrawn before acceptance (claims_acceptance)
+src/services/horseDecisionJournal/review.test.ts > private retained-hand journal consumer > P11.3 PLO5/PLO6/PLO8 selection reconciliation > reconciles a Phase 11 selection withdrawn before acceptance (honest)
+src/services/horseDecisionJournal/review.test.ts > private retained-hand journal consumer > P11.3 PLO5/PLO6/PLO8 selection reconciliation > reconciles a Phase 11 selection withdrawn before acceptance (tampered_reference)
+src/services/horseDecisionJournal/review.test.ts > private retained-hand journal consumer > P11.3 PLO5/PLO6/PLO8 selection reconciliation > reconciles a Phase 11 selection withdrawn before acceptance (unusable_verdict_missing)
+src/services/horseDecisionJournal/review.test.ts > private retained-hand journal consumer > P11.3 PLO5/PLO6/PLO8 selection reconciliation > reconciles a shadow change and rejects one relabelled as selected
+src/services/horseDecisionJournal/review.test.ts > private retained-hand journal consumer > P11.3 PLO5/PLO6/PLO8 selection reconciliation > reconciles an accepted plo5 selection: the reviewer recomputes the selected and baseline actions
+src/services/horseDecisionJournal/review.test.ts > private retained-hand journal consumer > P11.3 PLO5/PLO6/PLO8 selection reconciliation > reconciles an accepted plo6 selection: the reviewer recomputes the selected and baseline actions
+src/services/horseDecisionJournal/review.test.ts > private retained-hand journal consumer > P11.3 PLO5/PLO6/PLO8 selection reconciliation > reconciles an accepted plo8 selection: the reviewer recomputes the selected and baseline actions
+src/services/horseDecisionJournal/review.test.ts > private retained-hand journal consumer > P11.3 PLO5/PLO6/PLO8 selection reconciliation > rejects a changed selected proposal even when the accepted action matches
+src/services/horseDecisionJournal/review.test.ts > private retained-hand journal consumer > P11.3 PLO5/PLO6/PLO8 selection reconciliation > rejects a changed shadow baseline even when the accepted action matches
+src/services/horseDecisionJournal/review.test.ts > private retained-hand journal consumer > P11.3 PLO5/PLO6/PLO8 selection reconciliation > rejects a dropped binding even when the accepted action matches
+src/services/horseDecisionJournal/review.test.ts > private retained-hand journal consumer > P11.3 PLO5/PLO6/PLO8 selection reconciliation > rejects a forged worker authority even when the accepted action matches
+src/services/horseDecisionJournal/review.test.ts > private retained-hand journal consumer > P11.3 PLO5/PLO6/PLO8 selection reconciliation > rejects acceptance without a usable verdict even when the accepted action matches
+src/services/horseDecisionJournal/review.test.ts > private retained-hand journal consumer > P11.3 PLO5/PLO6/PLO8 selection reconciliation > rejects another pack version even when the accepted action matches
+src/services/horseDecisionJournal/review.test.ts > private retained-hand journal consumer > P11.3 PLO5/PLO6/PLO8 selection reconciliation > rejects the binding moved to the Phase 10 slot even when the accepted action matches
+
+## 4. After: the branch (b8d70dcc plus the client effect-commit test), 29 touched, new and reused suites
+# command: cd server && npx vitest run <the 29 files below>
+      Tests  1279 passed (1279)
+ Test Files  29 passed (29)
+ ✓ src/benchmark/OmahaVariantPolicyLeague.test.ts (21 tests)
+ ✓ src/benchmark/OmahaVariantPolicyProgram.test.ts (21 tests)
+ ✓ src/benchmark/OmahaVariantStrengthContract.test.ts (23 tests)
+ ✓ src/benchmark/OmahaVariantStrengthLeague.test.ts (13 tests)
+ ✓ src/benchmark/phase10StrengthAssemble.test.ts (9 tests)
+ ✓ src/benchmark/phase11StrengthAssemble.test.ts (11 tests)
+ ✓ src/engine/HorseDataLedger.test.ts (10 tests)
+ ✓ src/engine/HorseDecisionEffectCommit.test.ts (148 tests)
+ ✓ src/engine/HorseExecutionWitness.test.ts (30 tests)
+ ✓ src/engine/HorsePhase10Authority.test.ts (36 tests)
+ ✓ src/engine/HorsePhase11Authority.test.ts (94 tests)
+ ✓ src/engine/HorsePhase8Replay.test.ts (10 tests)
+ ✓ src/engine/HorsePolicyGraph.test.ts (23 tests)
+ ✓ src/engine/HorsePolicyGraphTelemetry.test.ts (6 tests)
+ ✓ src/engine/HorsePolicyRegistry.test.ts (35 tests)
+ ✓ src/engine/HorseQualifiedAuthority.test.ts (26 tests)
+ ✓ src/engine/horseDecision/client.test.ts (101 tests)
+ ✓ src/engine/horseDecision/replay/HorseDecisionReplay.test.ts (8 tests)
+ ✓ src/engine/horseDecision/responseValidation.test.ts (79 tests)
+ ✓ src/engine/horseDecision/workerRuntime.test.ts (216 tests)
+ ✓ src/engine/omaha/OmahaVariantDimensions.test.ts (4 tests)
+ ✓ src/engine/omaha/OmahaVariantEquity.test.ts (7 tests)
+ ✓ src/engine/omaha/OmahaVariantInputBinding.test.ts (70 tests)
+ ✓ src/engine/omaha/OmahaVariantLivePolicy.test.ts (27 tests)
+ ✓ src/engine/omaha/OmahaVariantPhase11Selection.test.ts (13 tests)
+ ✓ src/engine/omaha/OmahaVariantPolicyPack.test.ts (5 tests)
+ ✓ src/engine/plo4/Plo4LivePolicy.test.ts (84 tests)
+ ✓ src/engine/plo4/Plo4Phase10Selection.test.ts (4 tests)
+ ✓ src/services/horseDecisionJournal/review.test.ts (145 tests)
+EXIT 0
+
+## 5. vitest related over the 12 changed sources at b8d70dcc (started before the client effect-commit test was added: client.test.ts ran 98 of its 101)
+# command: cd server && npx vitest related --run src/engine/HorsePhase11Authority.ts src/engine/HorseDataLedger.ts src/engine/HorseExecutionWitness.ts src/engine/HorseLogic.ts src/engine/HorseQualifiedAuthority.ts src/engine/ServerTableEngineTurns.ts src/engine/horseDecision/client.ts src/engine/horseDecision/protocol.ts src/engine/horseDecision/responseValidation.ts src/engine/horseDecision/workerRuntime.ts src/engine/omaha/OmahaVariantLivePolicy.ts src/services/horseDecisionJournal/review.ts
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+ Test Files  1 failed | 585 passed | 1 skipped (587)
+      Tests  4 failed | 10629 passed | 166 skipped (10799)
+EXIT 1
+### failing (lane.test.ts fails identically on unmodified main in this container: a 2-CPU host gives LiveHorseDecisionWorkerPool one worker where the tests expect two)
+src/engine/horseDecision/lane.test.ts > LiveHorseDecisionWorkerPool > refuses readiness when a worker loaded a different solver corpus
+src/engine/horseDecision/lane.test.ts > LiveHorseDecisionWorkerPool > reports the fleet: sums, the oldest wait, the worst phase and the most throttled governor
+src/engine/horseDecision/lane.test.ts > LiveHorseDecisionWorkerPool > routes every job for one table to the same worker, in order
+src/engine/horseDecision/lane.test.ts > LiveHorseDecisionWorkerPool > starts one client per worker and is ready only when every worker is

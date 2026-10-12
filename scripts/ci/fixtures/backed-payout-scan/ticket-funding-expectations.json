@@ -1,0 +1,30 @@
+{
+  "migration": "supabase/migrations/20261003034305_a_tournament_book_reads_its_tickets_and_its_house_funding.sql",
+  "scalarBeforeMD5": "46647067aa049dcb9bda93fa0a1a35b3",
+  "scalarDefinitionMD5": "bfbb3e617d7c8290ac8916e21bf0c2a4",
+  "scalarBodyMD5": "b07e9e3c721b03f91f7d8d874bf77763",
+  "batchBeforeMD5": "9078403312e51a873e6e7462555dcf7e",
+  "batchAfterMD5": "10c5a2d39477380157d133a7b5bc113d",
+  "replacements": [
+    {
+      "old": "LEFT JOIN public.tournament_tickets k ON k.id = a.ticket_id",
+      "new": "LEFT JOIN public.tournament_tickets k ON k.id = COALESCE(a.ticket_id, CASE WHEN sp.metadata->>'ticket_id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN (sp.metadata->>'ticket_id')::uuid END) -- no award row: the payout carries its ticket (2026-10-03)",
+      "count": 2
+    },
+    {
+      "old": "    ), seat_income AS MATERIALIZED (",
+      "new": "    ), house_corrections AS MATERIALIZED (\n      SELECT l.tournament_id AS id, sum(l.amount) AS amount\n      FROM public.chip_ledger l JOIN eligible e ON e.id = l.tournament_id\n      WHERE l.category = 'correction' AND l.to_type = 'prize_liability'\n        AND l.from_type IN ('union_bank','club_treasury')\n      GROUP BY l.tournament_id\n    ), seat_income AS MATERIALIZED (",
+      "count": 1
+    },
+    {
+      "old": "          + GREATEST(COALESCE(l.overlay, 0), COALESCE(o.amount, 0)) - COALESCE(ro.returned, 0)\n",
+      "new": "          + GREATEST(COALESCE(l.overlay, 0), COALESCE(o.amount, 0)) - COALESCE(ro.returned, 0)\n          + COALESCE(hc.amount, 0)\n",
+      "count": 1
+    },
+    {
+      "old": "      LEFT JOIN returned_overlays ro ON ro.id = e.id\n",
+      "new": "      LEFT JOIN returned_overlays ro ON ro.id = e.id\n      LEFT JOIN house_corrections hc ON hc.id = e.id\n",
+      "count": 1
+    }
+  ]
+}

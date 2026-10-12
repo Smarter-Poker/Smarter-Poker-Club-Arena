@@ -13,6 +13,9 @@
  * half — no reset at all, so a backgrounded tab tore down a healthy link.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
+import { announceNativeResume } from '../src/lib/nativeResume';
 
 class FakeWebSocket {
   static instances: FakeWebSocket[] = [];
@@ -1443,5 +1446,63 @@ describe('a browser offline signal retires the transport immediately', () => {
       c.disconnect();
       online.mockRestore();
     }
+  });
+});
+
+/* THE NATIVE APP COMING TO THE FOREGROUND IS A RESUME (2026-10-05).
+   Inside the Capacitor shell `pageshow` and `visibilitychange` are not
+   guaranteed when the OS brings the app back; nativeShell announces
+   appStateChange { isActive: true } as NATIVE_RESUME_EVENT, and the
+   transports treat it exactly as a pageshow. */
+describe('a native foreground resume reaches the table transport', () => {
+  for (const kind of ['table', 'channel'] as const) {
+    it(`${kind}: replaces a closed connection during a long retry`, async () => {
+      const c =
+        kind === 'table'
+          ? client({ initialDelay: 30_000, maxDelay: 30_000 }).c
+          : new EngineChannelClient({
+              baseUrl: 'https://engine.example',
+              getToken: async () => 'tok',
+              initialDelay: 30_000,
+              maxDelay: 30_000,
+            });
+      try {
+        void c.connect();
+        await flush();
+        live()._serverClose(1006);
+        const before = FakeWebSocket.instances.length;
+        announceNativeResume();
+        await flush();
+        expect(FakeWebSocket.instances.length).toBe(before + 1);
+      } finally {
+        c.disconnect();
+      }
+    });
+  }
+
+  it('table: a live link is asked to prove itself with a RESYNC, as on pageshow', async () => {
+    localStorage.setItem('ca_ws_mux', '0');
+    const { c } = client();
+    try {
+      await c.connect();
+      const ws = live();
+      ws._open();
+      ws._frame({ type: 'SNAPSHOT', tableId: TABLE, seq: 10, state: { pot: 0 } });
+      await vi.advanceTimersByTimeAsync(100);
+      announceNativeResume();
+      expect(ws.sent.map((raw) => JSON.parse(raw)).some((f) => f.type === 'RESYNC')).toBe(true);
+    } finally {
+      c.disconnect();
+      localStorage.removeItem('ca_ws_mux');
+    }
+  });
+
+  it('the shell announces it on the foreground edge, beside the audio resume', () => {
+    const shell = readFileSync(resolve(__dirname, '..', 'src/lib/nativeShell.ts'), 'utf8');
+    const i = shell.indexOf("App.addListener('appStateChange'");
+    expect(i).toBeGreaterThan(-1);
+    const body = shell.slice(i, shell.indexOf('});', i));
+    expect(body).toContain('resumeTrackedAudioContexts()');
+    expect(body).toContain('announceNativeResume()');
   });
 });

@@ -14,6 +14,7 @@ const m = vi.hoisted(() => ({
   rpc: vi.fn(),
   rows: [] as any[],
   calls: [] as unknown[][],
+  reportError: vi.fn(),
 }));
 vi.mock('../../src/core/IdentityDNA', () => ({
   getIdentityDNAStatus: () => ({ loaded: !!m.id, authenticated: !!m.id, userId: m.id }),
@@ -30,7 +31,7 @@ vi.mock('../../src/core/MasterBus', () => ({
 vi.mock('../../src/hooks/useAuthUser', () => ({
   useAuthUser: () => ({ user: m.id ? { id: m.id } : null, isHydrating: false }),
 }));
-vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
+vi.mock('../../src/utils/errorReporter', () => ({ reportError: m.reportError }));
 vi.mock('../../src/utils/clubIdResolver', () => ({ resolveClubUUID: async (id: string) => id }));
 vi.mock('../../src/utils/unionIdResolver', () => ({ resolveUnionUUID: async (id: string) => id }));
 vi.mock('../../src/lib/supabase', () => ({
@@ -69,6 +70,7 @@ beforeEach(() => {
   m.rpc.mockReset();
   m.rows = [];
   m.calls = [];
+  m.reportError.mockReset();
   auth(null);
   auth(ID.actor);
 });
@@ -95,6 +97,7 @@ it.each([
   render(<UnionAccountingRunStatus unionId={ID.union} periodEnd="2026-09-14" />);
   expect(await screen.findByText('Automatic Accounting Status Unavailable')).toBeInTheDocument();
   expect(screen.queryByText('Automatic Weekly Accounting Posted')).not.toBeInTheDocument();
+  expect(m.reportError).toHaveBeenCalledWith(expect.anything(), 'useAccountingRunObservation.read');
 });
 it('does not display a late result after union A to B to A route changes', async () => {
   let resolve!: (value: unknown) => void;
@@ -160,10 +163,10 @@ it('mounts the actual shared workspace and weekly reader even when club applicab
   fireEvent.change(await screen.findByLabelText('Week Ending Monday'), {
     target: { value: '2026-09-14' },
   });
-  expect(await screen.findByText('100.25 Chips')).toBeInTheDocument();
-  expect(screen.getByText('60.20 Chips')).toBeInTheDocument();
-  expect(screen.getByText('40.05 Chips')).toBeInTheDocument();
-  expect(screen.queryByText('999.00 Chips')).not.toBeInTheDocument();
+  expect(await screen.findByText('100 Chips')).toBeInTheDocument();
+  expect(screen.getByText('60 Chips')).toBeInTheDocument();
+  expect(screen.getByText('40 Chips')).toBeInTheDocument();
+  expect(screen.queryByText('999 Chips')).not.toBeInTheDocument();
   expect(
     await screen.findByText(/A Standalone Club Run Could Not Be Established/)
   ).toBeInTheDocument();
@@ -187,6 +190,6 @@ it('keeps weekly statements visible when an invalid date is chosen without query
   });
   const calls = m.rpc.mock.calls.length;
   expect(screen.getByText('Choose A Valid Monday For The Accounting Week.')).toBeInTheDocument();
-  expect(await screen.findByText('40.05 Chips')).toBeInTheDocument();
+  expect(await screen.findByText('40 Chips')).toBeInTheDocument();
   expect(m.rpc).toHaveBeenCalledTimes(calls);
 });

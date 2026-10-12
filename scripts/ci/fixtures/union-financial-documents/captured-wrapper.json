@@ -1,0 +1,23 @@
+[
+  {
+    "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+    "md5": "f16c14bc47eb6e6db203412b683ea5f4",
+    "owner": "postgres",
+    "signature": "fn_is_union_overseer(uuid,uuid)",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_is_union_overseer(p_union_id uuid, p_user_id uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\n  SELECT p_user_id IS NOT NULL\n     AND (public.fn_caller_is_engine() OR auth.uid() IS NOT DISTINCT FROM p_user_id)\n     AND public.fn_union_overseer_of_record(p_union_id, p_user_id);\n$function$\n"
+  },
+  {
+    "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+    "md5": "79cb90482aa4af61ea4e6a286768efa4",
+    "owner": "postgres",
+    "signature": "ca_can_oversee_union(uuid)",
+    "definition": "CREATE OR REPLACE FUNCTION public.ca_can_oversee_union(p_union_id uuid)\n RETURNS boolean\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE v_uid uuid := auth.uid();\nBEGIN\n  IF v_uid IS NULL OR p_union_id IS NULL THEN RETURN false; END IF;\n  IF fn_is_union_overseer(p_union_id, v_uid) THEN RETURN true; END IF;\n  RETURN EXISTS (SELECT 1 FROM profiles p\n                  WHERE p.id = v_uid AND COALESCE(p.is_admin, false));\nEND;\n$function$\n"
+  },
+  {
+    "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+    "md5": "693497ac17fae9b9ed089cd9c15aedb4",
+    "owner": "postgres",
+    "signature": "ca_union_record_presettlement(uuid,uuid,numeric,text,text,text)",
+    "definition": "CREATE OR REPLACE FUNCTION public.ca_union_record_presettlement(p_union_id uuid, p_club_id uuid, p_amount numeric, p_method text DEFAULT NULL::text, p_reference text DEFAULT NULL::text, p_note text DEFAULT NULL::text)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_res jsonb;\n  v_total numeric;\nBEGIN\n  IF NOT ca_can_oversee_union(p_union_id) THEN\n    RAISE EXCEPTION 'not authorized for this union' USING ERRCODE = '42501';\n  END IF;\n\n  IF p_amount IS NULL OR p_amount <= 0 THEN\n    RETURN jsonb_build_object('success', false, 'error', 'enter an amount greater than zero');\n  END IF;\n\n  -- The underlying function does its own membership and authorization checks\n  -- and returns a jsonb result rather than raising; pass it straight through.\n  v_res := fn_union_record_presettlement(p_union_id, p_club_id, p_amount,\n                                         p_method, p_reference, p_note);\n  IF NOT COALESCE((v_res->>'success')::boolean, false) THEN\n    RETURN v_res;\n  END IF;\n\n  -- What this club has been credited that is not yet tied to a statement -\n  -- i.e. what the next square-up will subtract.\n  SELECT COALESCE(SUM(amount), 0) INTO v_total\n    FROM union_presettlements\n   WHERE union_id = p_union_id AND club_id = p_club_id\n     AND applied_settlement_id IS NULL;\n\n  RETURN v_res || jsonb_build_object('unapplied_total', round(v_total, 2));\nEND;\n$function$\n"
+  }
+]

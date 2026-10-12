@@ -1,0 +1,663 @@
+{
+  "version": "phase9-natural-classic-v1",
+  "generatedAt": "2026-10-03T09:59:02Z",
+  "declaration": {
+    "path": "docs/evidence/phase9/declaration-classic.txt",
+    "sha256": "51df358f519a1c8f6fac597e1bd81d8749560a32b82d92ef0215eb2129ff48f6",
+    "declaredAt": "2026-10-03T09:54:02Z",
+    "commit": "b13760110e5678bf6280c4002c4704b6d7fc3c12",
+    "pushedAt": "2026-10-03T09:54:15Z",
+    "firstRecordRead": "after 09:54:15Z (population count through execute_sql)"
+  },
+  "releases": {
+    "windowServedBy": "f5322827e41832f2023ca3f9e52b77d1be7e735b (container started 2026-10-02T23:56:01Z; same container at 03:08:06Z, 03:29:12Z, 03:34:39Z)",
+    "servingNow": "d0a1775967349ec305f18c7ff135b4a6e014bcbd (container started 2026-10-03T08:55:56Z; read 09:52:27Z and 09:58:29Z; descendant of f5322827)"
+  },
+  "dataRoutes": {
+    "counts": "Supabase MCP execute_sql, SELECT only",
+    "export": "psql on the operator Mac, SET default_transaction_read_only=on + BEGIN READ ONLY ... ROLLBACK, statement_timeout 170 s, one 15-minute slice per statement (12 statements, none split, none failed); export kept on the operator SSD"
+  },
+  "scripts": {
+    "p9-export-classic.sql": {
+      "sha256": "0e91ce0f838f651efbd5bd4af57cef8eb35310f0b56854c77d3944f73167d4bc"
+    },
+    "p9-natural-classic-compare.mts": {
+      "sha256": "b5cf3b1200ee376f528243b8e75abeb8c0c223ee38937ef25dee86d063de65a1"
+    }
+  },
+  "reference": {
+    "module": "server/src/benchmark/OmahaReference.ts",
+    "version": "omaha-reference-round1-v1"
+  },
+  "population": {
+    "definition": "hand_history, created_at in [2026-10-03T00:00:00Z, 2026-10-03T03:00:00Z), effective variant plo4/plo5/plo6/plo8/flo8, no rit_boards, no community_cards2, bomb_pot null",
+    "exportRows": 101128,
+    "exportFiles": {
+      "c-0000.ndjson": {
+        "rows": 7355,
+        "sha256": "8adbe80434c0bc69b183d08f8f8a61902b1620bccb9a9a7fc12d9b5e342ae14d"
+      },
+      "c-0015.ndjson": {
+        "rows": 9228,
+        "sha256": "fc6838515cddf2470a396d5d3902618e4451ba6cbe0ac91fa5e8b3f42066f748"
+      },
+      "c-0030.ndjson": {
+        "rows": 7650,
+        "sha256": "b14b5f16b368296c8ab1f5c53070fb8b31c5b3f77e7b884a7e0c656d9747dfbb"
+      },
+      "c-0045.ndjson": {
+        "rows": 3956,
+        "sha256": "87ca4c93265f6b0a779af6e5b095b84dbcd2403b923950a82801f25d327cef14"
+      },
+      "c-0100.ndjson": {
+        "rows": 8229,
+        "sha256": "6feeda505b6a9511b36e9f7eee11113b76c26cf16b314b755c4fd4753f76b533"
+      },
+      "c-0115.ndjson": {
+        "rows": 11320,
+        "sha256": "30754f54b884f882440251910cfbe0590981e191495dee9eb4ecbde080b15b04"
+      },
+      "c-0130.ndjson": {
+        "rows": 11036,
+        "sha256": "9dc8a67e62474f5fa6fbdfbfa096362e612f31925dc16943b65e7afc529991c2"
+      },
+      "c-0145.ndjson": {
+        "rows": 5837,
+        "sha256": "bb27c91c8b387c0112da6f068db1c51d5f49030559b597f593433c4f45724611"
+      },
+      "c-0200.ndjson": {
+        "rows": 9092,
+        "sha256": "3394b69fc938c4a0c84285aa34b7ff5dc2fe361b753e62fa8fa22391435d492b"
+      },
+      "c-0215.ndjson": {
+        "rows": 11234,
+        "sha256": "e11865bb6dc9453daad73a67456a786ffe303b48964512d306d50af777760cba"
+      },
+      "c-0230.ndjson": {
+        "rows": 9831,
+        "sha256": "0a0384d163fe6be4d679ab89534fcec7daa566b771e9519ccc6d97f8ad90fec8"
+      },
+      "c-0245.ndjson": {
+        "rows": 6360,
+        "sha256": "88641d06018612370fe513b20fd2a68174232154695307c1f88a1d5677a5bbef"
+      }
+    },
+    "outsideC1InTheSameWindow": {
+      "bombPotRows (single- or multi-board)": 1051,
+      "multiBoardNonBomb (run-it-N)": 227,
+      "note": "counted by execute_sql; not re-settled here (multi-board hands are in phase9-natural-evidence-2026-10-03-f5322827.json)"
+    },
+    "domain": "all rows horse-only (has_human false); chip cash and tournament chips; no diamond cash; no PLO8/FLO8 tournament hands in the window"
+  },
+  "total": 101128,
+  "resettleable": 98066,
+  "verdicts": {
+    "MATCH_PARTIAL": 97554,
+    "MATCH": 503,
+    "MISMATCH": 9
+  },
+  "excludedByReason": {
+    "live_eligible_cards_not_recorded": 2670,
+    "pooled_dead_money_encoding_does_not_hold": 392
+  },
+  "mismatchByFailedChecks": {
+    "payout+pots": 9
+  },
+  "contested": {
+    "contested": 10136,
+    "uncontested": 87930
+  },
+  "deductions": {
+    "counts": {
+      "match": 90947,
+      "mismatch": 7119
+    },
+    "mismatchPattern": {
+      "noFlop_rake0_bbjExpectedRecorded0": 7119
+    }
+  },
+  "notes": {
+    "uncontested_board_completed_by_standin": 84917,
+    "half_record_absent_high_only_variant:uncontested": 84402,
+    "captured_ante_type": 98066,
+    "payout_strict_ok": 22593,
+    "deduction_mismatch_detail": 7119,
+    "half_record_absent_high_only_variant:contested": 9386,
+    "half_record_absent_no_low_awarded:contested": 247,
+    "half_record_absent_reference_awards_low:uncontested": 1862,
+    "pooled_shared_bb_ante": 1639,
+    "half_record_absent_no_low_awarded:uncontested": 1666,
+    "reference_refund_present": 9,
+    "pooled_dead_blind_post": 2,
+    "pooled_dead_money": 2
+  },
+  "raiseAmountReadings": {
+    "raise_street_total": 32373,
+    "raise_additional": 16555,
+    "all_in_additional": 3187,
+    "all_in_unambiguous": 2298,
+    "all_in_street_total": 1385,
+    "last_street_total_by_pot_size": 1523,
+    "raise_unambiguous": 52
+  },
+  "maxPayoutDeviationCents": 150000,
+  "byModeAndVariant": [
+    {
+      "mode": "cash_chips",
+      "variant": "flo8",
+      "total": 2202,
+      "resettleable": 1682,
+      "match": 304,
+      "matchPartial": 1378,
+      "mismatch": 0,
+      "contested": {
+        "resettleable": 423,
+        "match": 304,
+        "matchPartial": 119,
+        "mismatch": 0
+      },
+      "uncontested": {
+        "resettleable": 1259,
+        "match": 0,
+        "matchPartial": 1259,
+        "mismatch": 0
+      },
+      "excluded": {
+        "live_eligible_cards_not_recorded": 447,
+        "pooled_dead_money_encoding_does_not_hold": 73
+      },
+      "deduction": {
+        "match": 1154,
+        "mismatch": 528
+      }
+    },
+    {
+      "mode": "cash_chips",
+      "variant": "plo4",
+      "total": 7563,
+      "resettleable": 6776,
+      "match": 0,
+      "matchPartial": 6776,
+      "mismatch": 0,
+      "contested": {
+        "resettleable": 614,
+        "match": 0,
+        "matchPartial": 614,
+        "mismatch": 0
+      },
+      "uncontested": {
+        "resettleable": 6162,
+        "match": 0,
+        "matchPartial": 6162,
+        "mismatch": 0
+      },
+      "excluded": {
+        "live_eligible_cards_not_recorded": 669,
+        "pooled_dead_money_encoding_does_not_hold": 118
+      },
+      "deduction": {
+        "match": 4149,
+        "mismatch": 2627
+      }
+    },
+    {
+      "mode": "tournament_chips",
+      "variant": "plo4",
+      "total": 53087,
+      "resettleable": 53087,
+      "match": 0,
+      "matchPartial": 53082,
+      "mismatch": 5,
+      "contested": {
+        "resettleable": 4765,
+        "match": 0,
+        "matchPartial": 4765,
+        "mismatch": 0
+      },
+      "uncontested": {
+        "resettleable": 48322,
+        "match": 0,
+        "matchPartial": 48317,
+        "mismatch": 5
+      },
+      "excluded": {},
+      "deduction": {
+        "match": 53087
+      }
+    },
+    {
+      "mode": "cash_chips",
+      "variant": "plo5",
+      "total": 7596,
+      "resettleable": 6723,
+      "match": 0,
+      "matchPartial": 6723,
+      "mismatch": 0,
+      "contested": {
+        "resettleable": 710,
+        "match": 0,
+        "matchPartial": 710,
+        "mismatch": 0
+      },
+      "uncontested": {
+        "resettleable": 6013,
+        "match": 0,
+        "matchPartial": 6013,
+        "mismatch": 0
+      },
+      "excluded": {
+        "live_eligible_cards_not_recorded": 799,
+        "pooled_dead_money_encoding_does_not_hold": 74
+      },
+      "deduction": {
+        "match": 3979,
+        "mismatch": 2744
+      }
+    },
+    {
+      "mode": "tournament_chips",
+      "variant": "plo5",
+      "total": 14903,
+      "resettleable": 14903,
+      "match": 0,
+      "matchPartial": 14899,
+      "mismatch": 4,
+      "contested": {
+        "resettleable": 1984,
+        "match": 0,
+        "matchPartial": 1984,
+        "mismatch": 0
+      },
+      "uncontested": {
+        "resettleable": 12919,
+        "match": 0,
+        "matchPartial": 12915,
+        "mismatch": 4
+      },
+      "excluded": {},
+      "deduction": {
+        "match": 14903
+      }
+    },
+    {
+      "mode": "cash_chips",
+      "variant": "plo6",
+      "total": 5466,
+      "resettleable": 4816,
+      "match": 0,
+      "matchPartial": 4816,
+      "mismatch": 0,
+      "contested": {
+        "resettleable": 461,
+        "match": 0,
+        "matchPartial": 461,
+        "mismatch": 0
+      },
+      "uncontested": {
+        "resettleable": 4355,
+        "match": 0,
+        "matchPartial": 4355,
+        "mismatch": 0
+      },
+      "excluded": {
+        "live_eligible_cards_not_recorded": 566,
+        "pooled_dead_money_encoding_does_not_hold": 84
+      },
+      "deduction": {
+        "match": 4816
+      }
+    },
+    {
+      "mode": "tournament_chips",
+      "variant": "plo6",
+      "total": 7483,
+      "resettleable": 7483,
+      "match": 0,
+      "matchPartial": 7483,
+      "mismatch": 0,
+      "contested": {
+        "resettleable": 852,
+        "match": 0,
+        "matchPartial": 852,
+        "mismatch": 0
+      },
+      "uncontested": {
+        "resettleable": 6631,
+        "match": 0,
+        "matchPartial": 6631,
+        "mismatch": 0
+      },
+      "excluded": {},
+      "deduction": {
+        "match": 7483
+      }
+    },
+    {
+      "mode": "cash_chips",
+      "variant": "plo8",
+      "total": 2828,
+      "resettleable": 2596,
+      "match": 199,
+      "matchPartial": 2397,
+      "mismatch": 0,
+      "contested": {
+        "resettleable": 327,
+        "match": 199,
+        "matchPartial": 128,
+        "mismatch": 0
+      },
+      "uncontested": {
+        "resettleable": 2269,
+        "match": 0,
+        "matchPartial": 2269,
+        "mismatch": 0
+      },
+      "excluded": {
+        "live_eligible_cards_not_recorded": 189,
+        "pooled_dead_money_encoding_does_not_hold": 43
+      },
+      "deduction": {
+        "mismatch": 1220,
+        "match": 1376
+      }
+    }
+  ],
+  "cells": {
+    "plo4|tournament_chips|classic|horse_only": {
+      "total": 53087,
+      "MATCH_PARTIAL": 53082,
+      "uncontested:MATCH_PARTIAL": 48317,
+      "deduction:match": 53087,
+      "contested:MATCH_PARTIAL": 4765,
+      "MISMATCH": 5,
+      "uncontested:MISMATCH": 5
+    },
+    "plo5|cash_chips|classic|horse_only": {
+      "total": 7596,
+      "MATCH_PARTIAL": 6723,
+      "uncontested:MATCH_PARTIAL": 6013,
+      "deduction:match": 3979,
+      "excluded:live_eligible_cards_not_recorded": 799,
+      "deduction:mismatch": 2744,
+      "contested:MATCH_PARTIAL": 710,
+      "excluded:pooled_dead_money_encoding_does_not_hold": 74
+    },
+    "plo5|tournament_chips|classic|horse_only": {
+      "total": 14903,
+      "MATCH_PARTIAL": 14899,
+      "uncontested:MATCH_PARTIAL": 12915,
+      "deduction:match": 14903,
+      "contested:MATCH_PARTIAL": 1984,
+      "MISMATCH": 4,
+      "uncontested:MISMATCH": 4
+    },
+    "plo4|cash_chips|classic|horse_only": {
+      "total": 7563,
+      "MATCH_PARTIAL": 6776,
+      "uncontested:MATCH_PARTIAL": 6162,
+      "deduction:match": 4149,
+      "deduction:mismatch": 2627,
+      "excluded:live_eligible_cards_not_recorded": 669,
+      "contested:MATCH_PARTIAL": 614,
+      "excluded:pooled_dead_money_encoding_does_not_hold": 118
+    },
+    "plo6|cash_chips|classic|horse_only": {
+      "total": 5466,
+      "MATCH_PARTIAL": 4816,
+      "uncontested:MATCH_PARTIAL": 4355,
+      "deduction:match": 4816,
+      "contested:MATCH_PARTIAL": 461,
+      "excluded:live_eligible_cards_not_recorded": 566,
+      "excluded:pooled_dead_money_encoding_does_not_hold": 84
+    },
+    "flo8|cash_chips|classic|horse_only": {
+      "total": 2202,
+      "MATCH_PARTIAL": 1378,
+      "contested:MATCH_PARTIAL": 119,
+      "deduction:match": 1154,
+      "uncontested:MATCH_PARTIAL": 1259,
+      "deduction:mismatch": 528,
+      "excluded:live_eligible_cards_not_recorded": 447,
+      "MATCH": 304,
+      "contested:MATCH": 304,
+      "excluded:pooled_dead_money_encoding_does_not_hold": 73
+    },
+    "plo8|cash_chips|classic|horse_only": {
+      "total": 2828,
+      "MATCH_PARTIAL": 2397,
+      "uncontested:MATCH_PARTIAL": 2269,
+      "deduction:mismatch": 1220,
+      "excluded:live_eligible_cards_not_recorded": 189,
+      "deduction:match": 1376,
+      "MATCH": 199,
+      "contested:MATCH": 199,
+      "contested:MATCH_PARTIAL": 128,
+      "excluded:pooled_dead_money_encoding_does_not_hold": 43
+    },
+    "plo6|tournament_chips|classic|horse_only": {
+      "total": 7483,
+      "MATCH_PARTIAL": 7483,
+      "uncontested:MATCH_PARTIAL": 6631,
+      "deduction:match": 7483,
+      "contested:MATCH_PARTIAL": 852
+    }
+  },
+  "mismatches": [
+    {
+      "hand": "2689a204232f",
+      "createdAt": "2026-10-03T01:03:14Z",
+      "cell": "plo4|tournament_chips|classic|horse_only",
+      "failedChecks": "payout+pots",
+      "detail": [
+        "pots reference 24000[s1] recorded 84000[s1]",
+        "payout s1 reference pre 24000 exact 24000.0000 recorded 84000 cents"
+      ]
+    },
+    {
+      "hand": "bc2abaac0e6e",
+      "createdAt": "2026-10-03T01:03:46Z",
+      "cell": "plo4|tournament_chips|classic|horse_only",
+      "failedChecks": "payout+pots",
+      "detail": [
+        "pots reference 75000[s6] recorded 175000[s6]",
+        "payout s6 reference pre 75000 exact 75000.0000 recorded 175000 cents"
+      ]
+    },
+    {
+      "hand": "9d0aee56ad64",
+      "createdAt": "2026-10-03T01:06:12Z",
+      "cell": "plo4|tournament_chips|classic|horse_only",
+      "failedChecks": "payout+pots",
+      "detail": [
+        "pots reference 100000[s4] recorded 250000[s4]",
+        "payout s4 reference pre 100000 exact 100000.0000 recorded 250000 cents"
+      ]
+    },
+    {
+      "hand": "66b660cef1e7",
+      "createdAt": "2026-10-03T01:45:28Z",
+      "cell": "plo5|tournament_chips|classic|horse_only",
+      "failedChecks": "payout+pots",
+      "detail": [
+        "pots reference 12000[s1] recorded 27000[s1]",
+        "payout s1 reference pre 12000 exact 12000.0000 recorded 27000 cents"
+      ]
+    },
+    {
+      "hand": "0ce7f33be471",
+      "createdAt": "2026-10-03T02:09:27Z",
+      "cell": "plo4|tournament_chips|classic|horse_only",
+      "failedChecks": "payout+pots",
+      "detail": [
+        "pots reference 15000[s8] recorded 40000[s8]",
+        "payout s8 reference pre 15000 exact 15000.0000 recorded 40000 cents"
+      ]
+    },
+    {
+      "hand": "201a3a7c048d",
+      "createdAt": "2026-10-03T02:11:05Z",
+      "cell": "plo5|tournament_chips|classic|horse_only",
+      "failedChecks": "payout+pots",
+      "detail": [
+        "pots reference 21000[s8] recorded 51000[s8]",
+        "payout s8 reference pre 21000 exact 21000.0000 recorded 51000 cents"
+      ]
+    },
+    {
+      "hand": "ab83f076a651",
+      "createdAt": "2026-10-03T02:11:28Z",
+      "cell": "plo5|tournament_chips|classic|horse_only",
+      "failedChecks": "payout+pots",
+      "detail": [
+        "pots reference 18000[s5] recorded 48000[s5]",
+        "payout s5 reference pre 18000 exact 18000.0000 recorded 48000 cents"
+      ]
+    },
+    {
+      "hand": "e71278e0ebfe",
+      "createdAt": "2026-10-03T02:13:29Z",
+      "cell": "plo5|tournament_chips|classic|horse_only",
+      "failedChecks": "payout+pots",
+      "detail": [
+        "pots reference 30000[s6] recorded 70000[s6]",
+        "payout s6 reference pre 30000 exact 30000.0000 recorded 70000 cents"
+      ]
+    },
+    {
+      "hand": "0dc8555abe87",
+      "createdAt": "2026-10-03T02:13:44Z",
+      "cell": "plo4|tournament_chips|classic|horse_only",
+      "failedChecks": "payout+pots",
+      "detail": [
+        "pots reference 30000[s6] recorded 70000[s6]",
+        "payout s6 reference pre 30000 exact 30000.0000 recorded 70000 cents"
+      ]
+    }
+  ],
+  "deductionMismatchesSample": [
+    {
+      "hand": "750fffe42162",
+      "cell": "plo4|cash_chips|classic|horse_only",
+      "detail": ["deduction expected rake 0 bbj 50 recorded rake 0 bbj 0 cents, dealt 3"]
+    },
+    {
+      "hand": "a44a72348db6",
+      "cell": "plo4|cash_chips|classic|horse_only",
+      "detail": ["deduction expected rake 0 bbj 30 recorded rake 0 bbj 0 cents, dealt 6"]
+    },
+    {
+      "hand": "f1de394b813c",
+      "cell": "plo4|cash_chips|classic|horse_only",
+      "detail": ["deduction expected rake 0 bbj 50 recorded rake 0 bbj 0 cents, dealt 6"]
+    },
+    {
+      "hand": "6a4e303a6866",
+      "cell": "plo5|cash_chips|classic|horse_only",
+      "detail": ["deduction expected rake 0 bbj 50 recorded rake 0 bbj 0 cents, dealt 6"]
+    },
+    {
+      "hand": "bf901d11af5d",
+      "cell": "plo4|cash_chips|classic|horse_only",
+      "detail": ["deduction expected rake 0 bbj 60 recorded rake 0 bbj 0 cents, dealt 6"]
+    },
+    {
+      "hand": "9f16c6bf7a44",
+      "cell": "plo5|cash_chips|classic|horse_only",
+      "detail": ["deduction expected rake 0 bbj 25 recorded rake 0 bbj 0 cents, dealt 6"]
+    },
+    {
+      "hand": "bb95ff740eba",
+      "cell": "plo5|cash_chips|classic|horse_only",
+      "detail": ["deduction expected rake 0 bbj 60 recorded rake 0 bbj 0 cents, dealt 5"]
+    },
+    {
+      "hand": "2a500f9a3286",
+      "cell": "plo8|cash_chips|classic|horse_only",
+      "detail": ["deduction expected rake 0 bbj 25 recorded rake 0 bbj 0 cents, dealt 6"]
+    },
+    {
+      "hand": "0606e89bd71f",
+      "cell": "plo4|cash_chips|classic|horse_only",
+      "detail": ["deduction expected rake 0 bbj 50 recorded rake 0 bbj 0 cents, dealt 6"]
+    },
+    {
+      "hand": "ff6d7ec64c77",
+      "cell": "plo4|cash_chips|classic|horse_only",
+      "detail": ["deduction expected rake 0 bbj 30 recorded rake 0 bbj 0 cents, dealt 3"]
+    },
+    {
+      "hand": "f170c30464df",
+      "cell": "plo8|cash_chips|classic|horse_only",
+      "detail": ["deduction expected rake 0 bbj 30 recorded rake 0 bbj 0 cents, dealt 3"]
+    },
+    {
+      "hand": "6b0a8c5f4445",
+      "cell": "flo8|cash_chips|classic|horse_only",
+      "detail": ["deduction expected rake 0 bbj 30 recorded rake 0 bbj 0 cents, dealt 3"]
+    },
+    {
+      "hand": "c27123c8c8cc",
+      "cell": "plo4|cash_chips|classic|horse_only",
+      "detail": ["deduction expected rake 0 bbj 30 recorded rake 0 bbj 0 cents, dealt 6"]
+    },
+    {
+      "hand": "1e6b2a617b1d",
+      "cell": "plo8|cash_chips|classic|horse_only",
+      "detail": ["deduction expected rake 0 bbj 25 recorded rake 0 bbj 0 cents, dealt 6"]
+    },
+    {
+      "hand": "5f7a9dc14d80",
+      "cell": "plo4|cash_chips|classic|horse_only",
+      "detail": ["deduction expected rake 0 bbj 60 recorded rake 0 bbj 0 cents, dealt 6"]
+    },
+    {
+      "hand": "4f6e11fbc1d4",
+      "cell": "plo8|cash_chips|classic|horse_only",
+      "detail": ["deduction expected rake 0 bbj 25 recorded rake 0 bbj 0 cents, dealt 6"]
+    },
+    {
+      "hand": "8061b5f9b39f",
+      "cell": "plo5|cash_chips|classic|horse_only",
+      "detail": ["deduction expected rake 0 bbj 15 recorded rake 0 bbj 0 cents, dealt 4"]
+    },
+    {
+      "hand": "c0aa1011e135",
+      "cell": "plo5|cash_chips|classic|horse_only",
+      "detail": ["deduction expected rake 0 bbj 25 recorded rake 0 bbj 0 cents, dealt 6"]
+    },
+    {
+      "hand": "0a0199efb202",
+      "cell": "plo5|cash_chips|classic|horse_only",
+      "detail": ["deduction expected rake 0 bbj 50 recorded rake 0 bbj 0 cents, dealt 6"]
+    },
+    {
+      "hand": "c7f6ad0f694f",
+      "cell": "plo5|cash_chips|classic|horse_only",
+      "detail": ["deduction expected rake 0 bbj 15 recorded rake 0 bbj 0 cents, dealt 3"]
+    }
+  ],
+  "findings": [
+    {
+      "id": "C-F1-uncalled-big-blind-kept-as-pot",
+      "hands": 9,
+      "mode": "tournament_chips (plo4 5, plo5 4)",
+      "numbers": "Uncontested walks where only the big blind was posted (no small blind) and antes were individual: recorded one pot equal to pot_size, eligible to the big blind only, paid in full (for example 2689a204232f: pot 840 = antes 3 x 80 + big blind 600; recorded pot 840 [s1], payout 840). Reference: pot 240 [s1] and 600 uncalled returned. The player receives 840 either way and tournaments take no rake, so no chip moved differently.",
+      "meaning": "MISMATCH on (a) and (c) under the declaration. Same class as the multi-board finding F1 (an uncalled amount left in the pot instead of returned, contrary to the stated returnUncalledBet rule); here it has no money effect. In cash the same shape would be a walk with no flop, which takes no rake."
+    },
+    {
+      "id": "C-F2-bbj-on-no-flop-hands",
+      "hands": 7119,
+      "mode": "cash_chips (plo4, plo5, plo8, flo8)",
+      "numbers": "Every cash deduction mismatch is a hand with three or more dealt and no flop: expected (declared rule) rake 0 and BBJ feeBB x big blind; recorded rake 0 and BBJ 0.",
+      "meaning": "The declared BBJ rule omitted the engine's stated collection condition (HandController.priceDeductions, Dan verbatim: \"IF THERE IS A FLOP, BBJ SHOULD BE RAKED (3 OR MORE PLAYERS DEALT INTO THE HAND)\"). Production followed its stated rule; the declaration was incomplete. Reported as mismatch under the declaration; no hand with a flop shows a BBJ or rake difference."
+    }
+  ],
+  "limitations": [
+    "Window is 3 hours (00:00-03:00Z 2026-10-03), chosen to sit wholly on one verified release (f5322827); it is complete for that window, not a sample, and says nothing about other days or releases.",
+    "MATCH_PARTIAL means (d) unknown because no per-half record exists. Production writes that record for a single board only when a low half is awarded: 9,386 contested high-only hands and 247 contested hi-lo hands with no low awarded are MATCH_PARTIAL by that design with (a)-(c) exact; uncontested hands are MATCH_PARTIAL for the same reason. Every contested hi-lo hand where the reference awards a low has the record and matches (503).",
+    "Uncontested hands (87,930 re-settleable) prove conservation and pot assignment only; no hand is scored. Contested hands: 10,136 re-settleable, 0 mismatches.",
+    "Excluded, never zero-filled: 2,670 cash hands with a mucked live player (cards never stored) and 392 cash hands where a live contributor is below the pooled shared big blind ante (stand-in encoding does not hold).",
+    "All hands are horse-only; no PLO8/FLO8 tournament or diamond cash hand exists in the window; cells stand on their own counts.",
+    "Cash payouts: all 22,593 re-settleable cash hands are strictly within one cent of the exact share (secondary band <= 1 cent: also 22,593)."
+  ]
+}

@@ -1,5 +1,5 @@
 import { parse } from 'yaml';
-import { afterEach, expect, test } from 'vitest';
+import { afterEach, expect, test, vi } from 'vitest';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -16,6 +16,13 @@ const source = readFileSync(path.join(sourceRoot, 'scripts/stamp-build-provenanc
 const workflow =
   readFileSync(path.join(sourceRoot, '.github/workflows/publish-club-arena.yml'), 'utf8') +
   readFileSync(path.join(sourceRoot, '.github/scripts/publish-origin-activate.sh'), 'utf8');
+// Every test builds a real git fixture (init, commits, a fetched origin and a
+// captured PR merge) and runs the stamper as a child process. That is about
+// 300 ms on an idle machine and crossed the 5,000 ms default on a loaded CI
+// shard (job 111181226645, 2026-10-03), failing a pull request that touched
+// none of this. The budget is for the real git work, as in the other git-fixture
+// tests (vi.setConfig 90_000); no assertion waits on a clock.
+vi.setConfig({ testTimeout: 90_000 });
 const owned: string[] = [];
 afterEach(() => {
   for (const dir of owned.splice(0)) rmSync(dir, { recursive: true, force: true });

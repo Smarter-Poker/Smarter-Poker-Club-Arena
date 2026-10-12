@@ -1,0 +1,10 @@
+{
+  "_owner": "agent/claude-horse-brain/p14-2-accepted-roster: P14.2 accepted roster produced inside the hand-settlement transaction (20261007024757). Native PG17 qualified by scripts/ci/test-accepted-hand-roster.py; a declaration pending protected merge and exact production installation/readback, not a live installation claim.",
+  "tables": ["smarter_private.accepted_hand_rosters"],
+  "functions": [
+    "smarter_private.accepted_hand_roster_guard",
+    "smarter_private.accepted_hand_roster_build",
+    "smarter_private.accepted_hand_roster_first",
+    "smarter_private.accepted_hand_roster_replay"
+  ]
+}

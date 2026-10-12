@@ -15,6 +15,9 @@ import {
 import { SettlementService, type SettlementPeriod } from '../../services/SettlementService';
 import { AccountingRunStatus } from '../agent/UnionAccountingRunStatus';
 import ClubWeeklyAccountingSummary from './ClubWeeklyAccountingSummary';
+import { reportError } from '../../utils/errorReporter';
+import { titleCase } from '../../utils/titleCase';
+import styles from './WeeklyAccountingWorkspace.module.css';
 
 function UnionPeriodRecords({ unionId, actorId }: { unionId: string; actorId: string }) {
   const scope = useCashoutScope(actorId, `union-period-records:${unionId}`);
@@ -38,33 +41,42 @@ function UnionPeriodRecords({ unionId, actorId }: { unionId: string; actorId: st
       .then((rows) => {
         if (current()) setResult({ scope, read, rows });
       })
-      .catch(() => {
-        if (current()) setResult({ scope, read, rows: null });
+      .catch((error) => {
+        if (current()) {
+          reportError(error, 'WeeklyAccountingWorkspace.union_period_records');
+          setResult({ scope, read, rows: null });
+        }
       });
     return () => {
-      ++sequence.current;
+      if (sequence.current === read) sequence.current = read + 1;
     };
   }, [unionId, actorId, scope, revision]);
   const visible =
     scope() && result?.scope === scope && result.read === sequence.current ? result : null;
   return (
-    <section aria-label="Union Period Records">
-      <h2>Recorded Union Periods</h2>
-      <p>
+    <section className={styles.section} aria-label="Union Period Records">
+      <h3 className={styles.sectionTitle}>Recorded Union Periods</h3>
+      <p className={styles.copy}>
         Latest Up To 12 Records. Recorded Period Status Alone Does Not Prove Payment Or Complete
         Weekly Accounting.
       </p>
-      <button type="button" onClick={() => setRevision((r) => r + 1)}>
+      <button type="button" className={styles.word} onClick={() => setRevision((r) => r + 1)}>
         Refresh Period Records
       </button>
       {!scope() || visible?.rows === null ? (
-        <p role="alert">Period Records Are Unavailable.</p>
+        <p className={`${styles.state} sc-ink--red`} role="alert">
+          Period Records Are Unavailable.
+        </p>
       ) : !visible ? (
-        <p role="status">Loading Period Records…</p>
+        <p className={`${styles.state} sc-ink--muted`} role="status">
+          Loading Period Records...
+        </p>
       ) : visible.rows.length === 0 ? (
-        <p>No Recorded Periods Were Found For This Union.</p>
+        <p className={`${styles.state} sc-ink--muted`}>
+          No Recorded Periods Were Found For This Union.
+        </p>
       ) : (
-        <ul>
+        <ul className={styles.records}>
           {visible.rows.map((row) => (
             <li key={row.id}>
               {new Date(row.startAt).toLocaleDateString(undefined, {
@@ -74,7 +86,7 @@ function UnionPeriodRecords({ unionId, actorId }: { unionId: string; actorId: st
               {new Date(row.endAt).toLocaleDateString(undefined, {
                 timeZone: 'America/Los_Angeles',
               })}
-              : {row.status}
+              : {titleCase(row.status)}
             </li>
           ))}
         </ul>
@@ -100,6 +112,9 @@ export default function WeeklyAccountingWorkspace({
     null
   );
   const [ending, setEnding] = useState(() => accountingWeekEndDate(latestClosedAccountingWeek()));
+  useEffect(() => {
+    setEnding(accountingWeekEndDate(latestClosedAccountingWeek()));
+  }, [scopeKind, scopeRef, user?.id]);
   useEffect(() => {
     let active = true;
     setResolved(null);
@@ -128,21 +143,30 @@ export default function WeeklyAccountingWorkspace({
     /* Keep the selected invalid week visibly unavailable. */
   }
   if (!user?.id || isHydrating || !guard())
-    return <p role="alert">Accounting Is Unavailable Until This Account Is Ready.</p>;
+    return (
+      <p className={`${styles.state} sc-ink--red`} role="alert">
+        Accounting Is Unavailable Until This Account Is Ready.
+      </p>
+    );
   if (!id)
     return (
-      <p role={resolved?.guard === guard ? 'alert' : 'status'}>
+      <p
+        className={`${styles.state} sc-ink--muted`}
+        role={resolved?.guard === guard ? 'alert' : 'status'}
+      >
         {resolved?.guard === guard
           ? 'This Accounting Scope Is Unavailable.'
           : 'Loading Accounting Scope…'}
       </p>
     );
   return (
-    <div>
-      <h2>{scopeKind === 'club' ? 'Club' : 'Union'} Weekly Accounting</h2>
-      <p>Weekly Accounting Runs Automatically. Select A Week To Read Its Recorded Status.</p>
-      <label>
-        Week Ending Monday{' '}
+    <div className={styles.workspace}>
+      <h2 className={styles.title}>{scopeKind === 'club' ? 'Club' : 'Union'} Weekly Accounting</h2>
+      <p className={styles.copy}>
+        Weekly Accounting Runs Automatically. Select A Week To Read Its Recorded Status.
+      </p>
+      <label className={styles.dateField}>
+        <span>Week Ending Monday</span>
         <input
           aria-label="Week Ending Monday"
           type="date"
@@ -158,15 +182,18 @@ export default function WeeklyAccountingWorkspace({
           {...week}
         />
       ) : (
-        <p role="alert">Choose A Valid Monday For The Accounting Week.</p>
+        <p className={`${styles.state} sc-ink--red`} role="alert">
+          Choose A Valid Monday For The Accounting Week.
+        </p>
       )}
       {scopeKind === 'club' ? (
         <ClubWeeklyAccountingSummary key={`${id}:${user.id}`} clubId={id} />
       ) : (
         <UnionPeriodRecords key={`${id}:${user.id}`} unionId={id} actorId={user.id} />
       )}
-      <p>
+      <p className={styles.linkRow}>
         <Link
+          className={styles.link}
           to={
             scopeKind === 'club'
               ? `/clubs/${encodeURIComponent(scopeRef)}/cashier`
@@ -176,7 +203,9 @@ export default function WeeklyAccountingWorkspace({
           {scopeKind === 'club' ? 'Open Club Cashier And Records' : 'Open Union Weekly Statements'}
         </Link>
       </p>
-      <p>Invoices And Individual Receipts Remain In Messenger’s Club Arena Accounting Area.</p>
+      <p className={styles.footnote}>
+        Invoices And Individual Receipts Remain In Messenger’s Club Arena Accounting Area.
+      </p>
     </div>
   );
 }

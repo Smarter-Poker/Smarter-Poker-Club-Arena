@@ -13,6 +13,7 @@ import type { AgentRoleRow } from '../../services/AgentRakeService';
 import type { PlayerRakeStats } from '../../services/StatsFactsService';
 import PanelBoundary from '../../components/stats/PanelBoundary';
 import { StatRow } from './StatRow';
+import { compactChips } from '../../utils/format';
 
 const DownlineRakePanel = lazy(() => import('../../components/agent/DownlineRakePanel'));
 
@@ -77,6 +78,13 @@ export default function RakeTab({
         </div>
       )}
 
+      {!rakeLoading && !rakeError && isOwnProfile && (
+        <div className="stats-notice" role="status">
+          Coverage: Captured Settlement Facts Only. Rakeback Payments And Earlier Uncaptured Hands
+          Are Not Included In This Readout.
+        </div>
+      )}
+
       {/* "Empty" is a statement about the ledger, so it needs both reads to
           have succeeded: an unreadable rake figure is not zero rake, and an
           unreadable roles list is not "no downline". */}
@@ -101,40 +109,34 @@ export default function RakeTab({
           <div className="stats-grid">
             <StatRow
               label="Rake Paid"
-              value={rakeStats.rake_paid.toLocaleString(undefined, {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })}
-              color="#f59e0b"
+              value={compactChips(rakeStats.rake_paid)}
+              color="#ffd700"
               highlight
             />
             <StatRow
               label="Rake Per 100 Hands"
-              value={rakeStats.rake_per_100.toLocaleString(undefined, {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })}
-              color="#00d4ff"
+              value={compactChips(rakeStats.rake_per_100)}
+              color="#45adff"
             />
             <StatRow
               label="Rake In Big Blinds"
-              value={rakeStats.rake_in_bb.toFixed(2)}
-              color="#8b5cf6"
+              value={`${rakeStats.rake_in_bb.toFixed(1)} BB`}
+              color="#e4e7ec"
             />
             <StatRow
               label="Raked Hands"
-              value={rakeStats.raked_hands.toLocaleString()}
-              color="#22c55e"
+              value={compactChips(rakeStats.raked_hands)}
+              color="#c8ffd2"
             />
             <StatRow
               label="Average Per Raked Hand"
-              value={rakeStats.avg_rake_per_raked_hand.toFixed(4)}
-              color="#06b6d4"
+              value={compactChips(rakeStats.avg_rake_per_raked_hand)}
+              color="#45adff"
             />
             <StatRow
               label="Cash Hands Counted"
-              value={rakeStats.hands.toLocaleString()}
-              color="#4169E1"
+              value={compactChips(rakeStats.hands)}
+              color="#e4e7ec"
             />
           </div>
         </PanelBoundary>

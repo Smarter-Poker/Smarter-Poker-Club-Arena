@@ -415,10 +415,16 @@ describe('the client asks the right server', () => {
       'fn_cashout_approve_v2',
       'fn_cashout_release_v2',
       'fn_cashout_queue',
-      'fn_agent_wallet_send',
-      'fn_agent_wallet_claim_back',
     ]) {
       expect(SERVICE).toContain(`'${rpc}'`);
+    }
+    // 2026-10-09 (launch audit S-08): the agent wallet send and claw back are
+    // no longer wrapped by CashoutService (the dead wrappers minted their own op
+    // id when a caller forgot one). The cashier modal calls both RPCs itself
+    // with a retained op id, so the pin moved to the surface that owns it.
+    for (const rpc of ['fn_agent_wallet_send', 'fn_agent_wallet_claim_back']) {
+      expect(MODAL).toContain(`'${rpc}'`);
+      expect(SERVICE).not.toContain(`'${rpc}'`);
     }
   });
 

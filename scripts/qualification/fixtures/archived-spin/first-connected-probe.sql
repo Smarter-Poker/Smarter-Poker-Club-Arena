@@ -32,7 +32,7 @@ DECLARE name text; rows jsonb; result jsonb:='{}'; BEGIN
 CREATE TEMP TABLE archive_before ON COMMIT PRESERVE ROWS AS SELECT pg_temp.archive_financial_snapshot() value;
 BEGIN;
 SET LOCAL timezone='UTC';
-DO $$ BEGIN IF transaction_timestamp()<'2026-09-28T07:00:00Z'::timestamptz OR transaction_timestamp()>='2026-10-05T07:00:00Z'::timestamptz THEN RAISE EXCEPTION 'ARCHIVE_RECOGNITION_PERIOD_CAPTURE_EXPIRED'; END IF; END $$;
+DO $$ BEGIN IF transaction_timestamp()<'2026-10-05T07:00:00Z'::timestamptz OR transaction_timestamp()>='2026-10-12T07:00:00Z'::timestamptz THEN RAISE EXCEPTION 'ARCHIVE_RECOGNITION_PERIOD_CAPTURE_EXPIRED'; END IF; END $$;
 SET LOCAL request.jwt.claims='{"role":"service_role"}';
 SET LOCAL request.headers='{"x-smarter-data-actor":"service","x-smarter-data-protocol":"1"}';
 SET LOCAL request.method='POST';

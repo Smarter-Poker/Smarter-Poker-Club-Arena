@@ -33,7 +33,6 @@ import {
 import {
   buildPrizeLadder,
   prizeRankOf,
-  isMysteryCollectMode,
   isTopPrize,
 } from '../../server/src/tournament/mysteryPrizeLadder';
 
@@ -56,14 +55,17 @@ const CHEST_REVEAL = {
   },
 };
 
-/** The pre-phase knockout the engine sends today, field for field. */
-const PRE_PHASE_PULL = {
+/**
+ * The pre-phase knockout: the flat head paid before the chests open. Since
+ * 2026-10-05 the engine sends it with no `prizeRank`; it used to send rank 1
+ * for every one (a flat head ranked against flat heads), which raised "The Top
+ * Mystery Bounty" on every routine bust.
+ */
+const PRE_PHASE_KNOCKOUT = {
   type: 'bounty_collected',
   payload: {
     mode: 'mystery_pre',
-    amount: 130,
-    // ADDED 2026-08-26.
-    prizeRank: 1,
+    amount: 8,
     playerName: 'Bob',
     eliminatedName: 'Bob',
     knockerName: 'Kingfish',
@@ -76,15 +78,22 @@ describe('the engine payloads reach the celebration', () => {
     expect(isMysteryPull(CHEST_REVEAL.type, CHEST_REVEAL.payload)).toBe(true);
   });
 
-  it('accepts the pre-phase pull, which arrives under the ordinary name', () => {
-    expect(isMysteryPull(PRE_PHASE_PULL.type, PRE_PHASE_PULL.payload)).toBe(true);
+  it('does NOT treat a pre-phase flat head as a mystery pull (2026-10-05)', () => {
+    expect(isMysteryPull(PRE_PHASE_KNOCKOUT.type, PRE_PHASE_KNOCKOUT.payload)).toBe(false);
+    // Even an older engine that still stamps rank 1 on the head is ignored.
+    expect(
+      isMysteryPull(PRE_PHASE_KNOCKOUT.type, { ...PRE_PHASE_KNOCKOUT.payload, prizeRank: 1 })
+    ).toBe(false);
+  });
+
+  it('the engine sends the pre-phase head with no rank', () => {
+    expect('prizeRank' in PRE_PHASE_KNOCKOUT.payload).toBe(false);
   });
 
   it('carries a positive amount, which is the check that used to fail', () => {
     // The banner returns early on `amount <= 0`. Before 2026-08-26 the chest
     // payload had no `amount` at all, so every top prize died on this line.
     expect(Number(CHEST_REVEAL.payload.amount)).toBeGreaterThan(0);
-    expect(Number(PRE_PHASE_PULL.payload.amount)).toBeGreaterThan(0);
   });
 
   it('states the chest amount in the same money as amountCents', () => {
@@ -93,10 +102,8 @@ describe('the engine payloads reach the celebration', () => {
 
   it("names who pulled it and what it was worth, which is Dan's sentence", () => {
     // "KINGFISH JUST PULLED THE TOP MYSTERY BOUNTY WORTH XXX"
-    for (const p of [CHEST_REVEAL.payload, PRE_PHASE_PULL.payload]) {
-      expect(String(p.knockerName).length).toBeGreaterThan(0);
-      expect(Number(p.amount)).toBeGreaterThan(0);
-    }
+    expect(String(CHEST_REVEAL.payload.knockerName).length).toBeGreaterThan(0);
+    expect(Number(CHEST_REVEAL.payload.amount)).toBeGreaterThan(0);
   });
 
   it('is not fooled by a knockout that is not a mystery pull', () => {
@@ -106,26 +113,21 @@ describe('the engine payloads reach the celebration', () => {
   });
 });
 
-describe('the mode gate matches what fn_collect_bounty can return', () => {
+describe('no mode fn_collect_bounty returns is a mystery pull', () => {
   /**
    * Read from the live function body on 2026-08-26. It is NOT called here:
    * fn_collect_bounty moves chips, and CLAUDE.md 11.5 forbids probing a money
-   * path to check a rule.
+   * path to check a rule. Every one of them is a HEAD (pko half, regular head,
+   * flat pre-phase head); a pull is a chest, which arrives as
+   * mystery_bounty_revealed.
    */
-  const MODES_THE_FUNCTION_RETURNS = ['pko', 'mystery_pre', 'regular'];
+  const MODES_THE_FUNCTION_RETURNS = ['pko', 'mystery_pre', 'regular', 'mystery'];
 
-  it('the client and the engine agree on every one of them', () => {
+  it('rejects every knockout mode, and accepts only the chest reveal', () => {
     for (const mode of MODES_THE_FUNCTION_RETURNS) {
-      expect(isMysteryPull('bounty_collected', { mode })).toBe(isMysteryCollectMode(mode));
+      expect(isMysteryPull('bounty_collected', { mode })).toBe(false);
     }
-  });
-
-  it("'mystery' - the value the engine used to test for - is in neither camp alone", () => {
-    // The dead test was `res.mode === 'mystery'`. Both sides accept the name so
-    // a future rename of the DB mode lands already handled, but the value the
-    // function really sends is mystery_pre and that is what must work.
-    expect(isMysteryCollectMode('mystery_pre')).toBe(true);
-    expect(isMysteryPull('bounty_collected', { mode: 'mystery_pre' })).toBe(true);
+    expect(isMysteryPull('mystery_bounty_revealed', {})).toBe(true);
   });
 });
 
@@ -170,8 +172,7 @@ describe('the fallback ladder agrees with the engine, rung for rung', () => {
 });
 
 describe('the ranks the engine sends are top-three ranks', () => {
-  it('marks the chest reveal and the pre-phase pull as celebrations', () => {
+  it('marks the chest reveal as a celebration', () => {
     expect(isTopPrize(CHEST_REVEAL.payload.prizeRank)).toBe(true);
-    expect(isTopPrize(PRE_PHASE_PULL.payload.prizeRank)).toBe(true);
   });
 });

@@ -30,7 +30,7 @@ assert len(migrations) == 1, 'Expected one recorded entry-receipt migration'
 migration = migrations[0]
 configured = os.environ.get('POKER_AUDIT_PG_BIN') or os.environ.get('PGBIN')
 pg = Path(configured) if configured else Path(subprocess.check_output(['brew','--prefix','postgresql@17'],text=True).strip())/'bin'
-root = Path(tempfile.mkdtemp(prefix='ca-registration-funding-pg17-'))
+root = Path(tempfile.mkdtemp(prefix='ca-fund-'))
 cluster, sock = root/'cluster', root/'socket'
 sock.mkdir()
 port = str(35000 + os.getpid() % 10000)
@@ -242,7 +242,12 @@ with (root/'results.log').open('w') as log:
             verify(q,fresh,overlap,call,check)
         elif '--purchases-only' in sys.argv:
             from tournament_purchase_funding_cases import verify
-            verify(q,fresh,overlap,call,check)
+            if '--lobby-rebuy' in sys.argv:
+                lobby_migration = list((repo/'supabase/migrations').glob('*_a_declined_tournament_rebuy_remains_available_in_the_lobby.sql'))
+                assert len(lobby_migration) == 1
+                verify(q,fresh,overlap,call,check,prepare=lambda query: query(lobby_migration[0].read_text()))
+            else:
+                verify(q,fresh,overlap,call,check)
         elif '--cross-club' in sys.argv:
             cross_club()
         else:

@@ -10,37 +10,49 @@
 
 import { test, expect } from '@playwright/test';
 import { assertRendered } from './utils';
+import { observeCashierFailure } from '../support/cashierFailureDiagnostics';
 
 test.describe('Cashier Page — Financial UI', () => {
-  test('should load without console errors', async ({ page }) => {
-    const consoleErrors: string[] = [];
-    page.on('console', (msg) => {
-      if (msg.type() === 'error' && !msg.text().includes('[HMR]')) {
-        consoleErrors.push(msg.text());
-      }
-    });
+  test('should load without console errors', async ({ page }, testInfo) => {
+    const diagnostics = observeCashierFailure(page);
+    try {
+      const consoleErrors: string[] = [];
+      page.on('console', (msg) => {
+        if (msg.type() === 'error' && !msg.text().includes('[HMR]')) {
+          consoleErrors.push(msg.text());
+        }
+      });
 
-    await page.goto('cashier');
-    await page.waitForTimeout(2000);
+      await page.goto('cashier');
+      await page.waitForTimeout(2000);
 
-    // Page should render (may redirect to login if not authenticated)
-    await assertRendered(page, 'cashier');
+      // Page should render (may redirect to login if not authenticated)
+      await assertRendered(page, 'cashier');
 
-    // Filter out known non-critical errors (auth redirects, etc.)
-    const criticalErrors = consoleErrors.filter(
-      (e) =>
-        !e.includes('401') &&
-        !e.includes('auth') &&
-        !e.includes('not authenticated') &&
-        !e.includes('AuthSessionMissing') &&
-        !e.includes('Invalid Refresh Token') &&
-        // A report-only CSP that carries upgrade-insecure-requests makes the
-        // browser log that it ignored the directive. It is a notice about our
-        // header, not a page error, and it fired on every route.
-        !e.includes('Content Security Policy')
-    );
+      // Filter out known non-critical errors (auth redirects, etc.)
+      const criticalErrors = consoleErrors.filter(
+        (e) =>
+          !e.includes('401') &&
+          !e.includes('auth') &&
+          !e.includes('not authenticated') &&
+          !e.includes('AuthSessionMissing') &&
+          !e.includes('Invalid Refresh Token') &&
+          // A report-only CSP that carries upgrade-insecure-requests makes the
+          // browser log that it ignored the directive. It is a notice about our
+          // header, not a page error, and it fired on every route.
+          !e.includes('Content Security Policy')
+      );
 
-    expect(criticalErrors).toHaveLength(0);
+      expect(criticalErrors).toHaveLength(0);
+    } catch (error) {
+      await testInfo.attach('cashier-network-diagnostics', {
+        body: Buffer.from(JSON.stringify(diagnostics.snapshot())),
+        contentType: 'application/json',
+      });
+      throw error;
+    } finally {
+      diagnostics.stop();
+    }
   });
 
   test('should render without crash (error boundary not triggered)', async ({ page }) => {

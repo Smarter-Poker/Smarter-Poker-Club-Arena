@@ -3,7 +3,7 @@ import { RIG_VIEWBOX, type RigProps, type ThrowableRig } from '../rig';
 import type { ThrowableSpec } from '../spec';
 import { preloadThrowableCues } from '../cues';
 import './screaming.css';
-// Dedicated recorded cues still pending: scream_short, scream_long.
+// A licensed recorded scream now lands on the visible open-mouth pose.
 export const spec: ThrowableSpec = {
   id: 'screaming',
   name: 'Screaming',
@@ -25,7 +25,10 @@ export const spec: ThrowableSpec = {
     { at: 3550, marker: 'jaw-extended' },
     { at: 4000, marker: 'cut' },
   ],
-  audio: [{ at: 433, sample: 'pop_soft', gain: 0.3 }],
+  audio: [
+    { at: 433, sample: 'pop_soft', gain: 0.3 },
+    { at: 900, sample: 'scream_short' },
+  ],
 };
 preloadThrowableCues(spec.audio.map((cue) => cue.sample));
 const RECTS: [number, number, number, number][] = [

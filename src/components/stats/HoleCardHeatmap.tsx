@@ -29,17 +29,23 @@
  * grid. Rather than render an empty 13x13, the component explains why.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import StatsFactsService, {
   type HandGridCell,
   type ClassHand,
 } from '../../services/StatsFactsService';
-import { CHIP_STATS } from '../../services/statsScope';
+import { CHIP_STATS, type StatsClubId, type StatsScope } from '../../services/statsScope';
+import { buildStatsHandEvidencePath } from '../../lib/statsEvidenceNavigation';
+import StatsEvidenceLink from './StatsEvidenceLink';
 import './HoleCardHeatmap.css';
 
 interface Props {
   userId?: string;
   days?: number | null;
+  /** The asset the figures are in: chips by default, Diamonds in the Diamond Arena. */
+  scope?: StatsScope;
+  /** Null reads All Clubs; a UUID reads the selected authorized club. */
+  clubId?: StatsClubId;
 }
 
 const RANKS = ['A', 'K', 'Q', 'J', 'T', '9', '8', '7', '6', '5', '4', '3', '2'];
@@ -89,7 +95,12 @@ function signedColor(value: number, scale: number, confidence: number): string {
     : `rgba(239, 68, 68, ${alpha.toFixed(3)})`;
 }
 
-export default function HoleCardHeatmap({ userId, days = null }: Props) {
+export default function HoleCardHeatmap({
+  userId,
+  days = null,
+  scope = CHIP_STATS,
+  clubId = null,
+}: Props) {
   const [cells, setCells] = useState<HandGridCell[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [readError, setReadError] = useState<string | null>(null);
@@ -99,6 +110,8 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
   const [position, setPosition] = useState<string | null>(null);
   const [variant, setVariant] = useState<string | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
+  const [activeCell, setActiveCell] = useState('AA');
+  const gridRef = useRef<HTMLDivElement>(null);
   // Drill-down: the individual hands behind one cell.
   const [selected, setSelected] = useState<string | null>(null);
   const [classHands, setClassHands] = useState<ClassHand[] | null>(null);
@@ -112,7 +125,7 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
     setLoading(true);
     setHovered(null); // a key from the previous filter would read "never dealt"
     setSelected(null);
-    StatsFactsService.getHandGrid(userId, CHIP_STATS, { position, variant, days })
+    StatsFactsService.getHandGrid(userId, scope, { position, variant, days }, clubId)
       .then((payload) => {
         if (cancelled) return;
         // Cells with no hands are noise for "classes seen" and for the scale.
@@ -125,7 +138,7 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [userId, position, variant, days, attempt]);
+  }, [userId, position, variant, days, attempt, scope, clubId]);
 
   useEffect(() => {
     if (!userId || !selected) {
@@ -139,7 +152,7 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
     let cancelled = false;
     setHandsLoading(true);
     setDrillError(null);
-    StatsFactsService.getClassHands(userId, CHIP_STATS, selected, { position, variant, days })
+    StatsFactsService.getClassHands(userId, scope, selected, { position, variant, days }, clubId)
       .then((p) => {
         if (cancelled) return;
         setClassHands(p.hands ?? []);
@@ -151,7 +164,7 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [userId, selected, position, variant, days]);
+  }, [userId, selected, position, variant, days, scope, clubId]);
 
   const byClass = useMemo(() => {
     const m = new Map<string, HandGridCell>();
@@ -282,6 +295,7 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
 
       <div className="heatmap-scroll">
         <div
+          ref={gridRef}
           className="heatmap-grid"
           role="grid"
           aria-label="Starting Hand Grid, 13 By 13"
@@ -318,12 +332,39 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
                     key={key}
                     type="button"
                     role="gridcell"
+                    data-row={rowIdx}
+                    data-column={colIdx}
+                    tabIndex={activeCell === key ? 0 : -1}
                     className={`heatmap-cell${rowIdx === colIdx ? ' is-pair' : ''}${
                       hovered === key ? ' is-hovered' : ''
                     }${cell && mode !== 'frequency' && !confident ? ' is-thin' : ''}`}
                     style={{ background: bg }}
                     onMouseEnter={() => setHovered(key)}
-                    onFocus={() => setHovered(key)}
+                    onFocus={() => {
+                      setActiveCell(key);
+                      setHovered(key);
+                    }}
+                    onKeyDown={(event) => {
+                      let nextRow = rowIdx;
+                      let nextColumn = colIdx;
+                      if (event.key === 'ArrowUp') nextRow -= 1;
+                      else if (event.key === 'ArrowDown') nextRow += 1;
+                      else if (event.key === 'ArrowLeft') nextColumn -= 1;
+                      else if (event.key === 'ArrowRight') nextColumn += 1;
+                      else if (event.key === 'Home') nextColumn = 0;
+                      else if (event.key === 'End') nextColumn = RANKS.length - 1;
+                      else return;
+                      event.preventDefault();
+                      nextRow = Math.max(0, Math.min(RANKS.length - 1, nextRow));
+                      nextColumn = Math.max(0, Math.min(RANKS.length - 1, nextColumn));
+                      const nextKey = classFor(nextRow, nextColumn);
+                      setActiveCell(nextKey);
+                      gridRef.current
+                        ?.querySelector<HTMLButtonElement>(
+                          `[data-row="${nextRow}"][data-column="${nextColumn}"]`
+                        )
+                        ?.focus();
+                    }}
                     // Touch has no hover. Without a click handler the readout
                     // never populated on a phone, on a mobile-first product.
                     // A click also opens the hands behind the cell.
@@ -332,6 +373,7 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
                       setSelected((cur) => (cur === key && cell ? null : cell ? key : null));
                     }}
                     aria-expanded={cell ? selected === key : undefined}
+                    aria-selected={selected === key}
                     aria-label={
                       !cell
                         ? `${key}, Never Dealt`
@@ -415,6 +457,13 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
                     {h.net_bb >= 0 ? '+' : ''}
                     {n(h.net_bb).toFixed(1)} BB
                   </span>
+                  <StatsEvidenceLink
+                    className="stats-evidence-action"
+                    to={buildStatsHandEvidencePath(h.hand_id, clubId)}
+                    aria-label={`Open ${selected} Hand Evidence`}
+                  >
+                    Open Hand
+                  </StatsEvidenceLink>
                 </li>
               ))}
             </ul>

@@ -10,9 +10,16 @@ import {
 } from '../../engine/HorseDecisionHandBinding.js';
 import {
   createHorseExecutionWitness,
+  expectedHorseExecutionAmount,
   type HorseExecutionWitness,
+  type HorseWitnessPhase8Authority,
 } from '../../engine/HorseExecutionWitness.js';
 import { decodeHorseDecisionReads } from '../../engine/HorseDecisionReadFrame.js';
+import {
+  horsePlanEffectReceiptIsValid,
+  horsePlanIssuedBatchDigest,
+  type HorsePlanEffectReceipt,
+} from '../../engine/HorsePlanEffectReceipt.js';
 import {
   buildHorseDecisionKey,
   type CompletedHandObservation,
@@ -24,6 +31,7 @@ import {
   horseComputeMetadataIsValid,
   horseDecisionReceiptIsValid,
   horseSamplingStateIsValid,
+  horsePhase7EvidenceMismatch,
 } from '../../engine/horseDecision/responseValidation.js';
 import {
   horseJournalJson,
@@ -32,7 +40,7 @@ import {
   type HorseJournalRecord,
 } from './record.js';
 import { HorseDecisionJournalStore } from './store.js';
-import { readonlyHorseJournalStoreOptions } from './config.js';
+import { horseJournalArchiveDirectoryNames, readonlyHorseJournalStoreOptions } from './config.js';
 import {
   horseLifecycleKeys,
   horseLifecycleRequestDigest,
@@ -131,6 +139,59 @@ const key = (x: {
     JSON.stringify([x.generation, x.fence, x.requestId, x.decisionKey, x.decisionTimeMs])
   );
 const same = (a: unknown, b: unknown) => horseJournalJson(a) === horseJournalJson(b);
+
+/**
+ * The executed witness may differ from one rebuilt from the decision record in
+ * exactly one owned way: the main scheduler's acceptance-time Phase 8 verdict
+ * (and, by the same law, the P10.3 Phase 10, P11.3 Phase 11, P12.3 Phase 12
+ * and P13.3 Phase 13 verdicts: `phase10Authority`, `phase11Authority`,
+ * `phase12Authority` and `phase13Authority` have the same shape, with the
+ * pack or joint receipt version, proposal and shadow baseline).
+ * The worker-bound authority (less the main stamp), continuation version,
+ * candidate and reference must match; a selected candidate may only end
+ * selected, controller-accepted or withdrawn before acceptance.
+ */
+function phase8BindingMatches(
+  actual: HorseWitnessPhase8Authority | null | undefined,
+  expected: HorseWitnessPhase8Authority | null | undefined
+): boolean {
+  if (!actual || !expected) return !actual && !expected;
+  const worker = (r: HorseWitnessPhase8Authority['authority']) =>
+    r ? { ...r, mainGeneration: null } : null;
+  return (
+    actual.continuationVersion === expected.continuationVersion &&
+    actual.mode === expected.mode &&
+    same(actual.candidate, expected.candidate) &&
+    same(actual.reference, expected.reference) &&
+    same(worker(actual.authority), worker(expected.authority)) &&
+    (expected.selection === 'selected'
+      ? ['selected', 'controller_accepted', 'withdrawn_before_acceptance'].includes(
+          actual.selection
+        )
+      : actual.selection === expected.selection)
+  );
+}
+/**
+ * P10.3: the final PLO4 selection must agree with the acceptance facts the
+ * witness itself records: controller acceptance only after a usable verdict
+ * and an intended execution, a withdrawal only with an unusable verdict, and a
+ * selection still open only when it never reached a usable, intended action.
+ * P11.3 applies the same law to the PLO5/PLO6/PLO8 binding, P12.3 to the
+ * Short Deck/Pineapple/FLH/FLO8 binding, and P13.3 to the joint binding.
+ */
+function qualifiedOutcomeIsCoherent(
+  w: HorseExecutionWitness,
+  binding: HorseWitnessPhase8Authority | null | undefined
+): boolean {
+  if (!binding) return true;
+  if (binding.selection === 'controller_accepted')
+    return binding.verdict === 'usable' && w.executionStatus === 'intended';
+  if (binding.selection === 'withdrawn_before_acceptance')
+    return binding.verdict !== null && binding.verdict !== 'usable';
+  if (binding.selection === 'selected')
+    return !(binding.verdict === 'usable' && w.executionStatus === 'intended');
+  return binding.verdict === null;
+}
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const uint = (x: unknown): x is number => Number.isSafeInteger(x) && Number(x) >= 0;
 // RIT appends private board metadata to accepted history after play. It is
@@ -267,6 +328,9 @@ export function reconcileHorseJournalHand(
           bigBlind: raw.bigBlind,
           showdown: raw.showdown,
           scope: raw.scope,
+          // P14.2: two retained acceptances of one hand must agree on the
+          // private accepted roster too (absent stays absent).
+          acceptedActorRoster: raw.acceptedActorRoster,
         };
         const coordinate = horseCompletedHandKey(candidate);
         if (
@@ -300,6 +364,10 @@ export function reconcileHorseJournalHand(
         (row.kind === 'discard_decision' ? turn.decisions : turn.executions).push(row);
         if (row.kind === 'discard_decision') out.discardDecisions++;
         discards.set(k, turn);
+      } else if (row.kind === 'plan_receipt') {
+        // Phase 15.1 durable accepted-effect receipts are never an execution
+        // or a decision of this turn join.
+        continue;
       } else {
         const k = `${row.producerId}:${row.turnKey}`;
         const turn = turns.get(k) ?? { decisions: [], executions: [] };
@@ -369,6 +437,7 @@ export function reconcileHorseJournalHand(
               admission.request.gameState.gameVariant
             ) ||
             !horsePhase6AttributionMatchesSnapshot(capture.decision, admission.request) ||
+            horsePhase7EvidenceMismatch(capture.decision, admission.request) !== null ||
             !effectsMatch(capture, admission.request)
           ) {
             throw Error();
@@ -523,7 +592,11 @@ export function reconcileHorseJournalHand(
           decisionRecord.sourceRelease !== executionRecord.sourceRelease
         )
           throw Error();
-        if (!horsePhase6AttributionMatchesSnapshot(d.decision, s)) throw Error();
+        if (
+          !horsePhase6AttributionMatchesSnapshot(d.decision, s) ||
+          horsePhase7EvidenceMismatch(d.decision, s) !== null
+        )
+          throw Error();
         const anchor = anchorHorseDecisionHand(s);
         if (anchor.status !== 'anchored' || journalHash(horseHandAnchorKey(anchor)) !== handKey)
           throw Error();
@@ -533,17 +606,61 @@ export function reconcileHorseJournalHand(
           computeMs: d.computeMs,
           governorScale: d.governorScale,
         });
+        // A Phase 8, 10, 11 or 12 authority withdrawal re-selected the
+        // reference before acceptance; the executed intent and its amount follow it.
+        const phase8Withdrawn = w.phase8Authority?.selection === 'withdrawn_before_acceptance';
+        const phase10Withdrawn = w.phase10Authority?.selection === 'withdrawn_before_acceptance';
+        const phase11Withdrawn = w.phase11Authority?.selection === 'withdrawn_before_acceptance';
+        const phase12Withdrawn = w.phase12Authority?.selection === 'withdrawn_before_acceptance';
+        const phase13Withdrawn = w.phase13Authority?.selection === 'withdrawn_before_acceptance';
+        const expectedSelected = phase8Withdrawn
+          ? expectedWitness.phase8Authority?.reference
+          : phase10Withdrawn
+            ? expectedWitness.phase10Authority?.reference
+            : phase11Withdrawn
+              ? expectedWitness.phase11Authority?.reference
+              : phase12Withdrawn
+                ? expectedWitness.phase12Authority?.reference
+                : phase13Withdrawn
+                  ? expectedWitness.phase13Authority?.reference
+                  : expectedWitness.selected;
+        const expectedAmount =
+          (phase8Withdrawn ||
+            phase10Withdrawn ||
+            phase11Withdrawn ||
+            phase12Withdrawn ||
+            phase13Withdrawn) &&
+          expectedSelected
+            ? expectedHorseExecutionAmount(s, {
+                action: expectedSelected.action,
+                amount: expectedSelected.amount ?? undefined,
+              })
+            : expectedWitness.expectedExecutionAmount;
         if (
           w.version !== 'horse-execution-witness-v4' ||
           key(w.identity) !== executionRecord.turnKey ||
           !same(w.handAnchor, anchor) ||
           !same(w.identity, expectedWitness.identity) ||
-          !same(w.selected, expectedWitness.selected) ||
+          !same(w.selected, expectedSelected) ||
+          !phase8BindingMatches(w.phase8Authority, expectedWitness.phase8Authority) ||
+          !phase8BindingMatches(w.phase10Authority, expectedWitness.phase10Authority) ||
+          !qualifiedOutcomeIsCoherent(w, w.phase10Authority) ||
+          !phase8BindingMatches(w.phase11Authority, expectedWitness.phase11Authority) ||
+          !qualifiedOutcomeIsCoherent(w, w.phase11Authority) ||
+          !phase8BindingMatches(w.phase12Authority, expectedWitness.phase12Authority) ||
+          !qualifiedOutcomeIsCoherent(w, w.phase12Authority) ||
+          !phase8BindingMatches(w.phase13Authority, expectedWitness.phase13Authority) ||
+          !qualifiedOutcomeIsCoherent(w, w.phase13Authority) ||
           !same(w.policyOwnership, expectedWitness.policyOwnership) ||
           !same(w.policyGraph, expectedWitness.policyGraph) ||
           !same(w.phase6Attribution ?? null, expectedWitness.phase6Attribution ?? null) ||
+          !same(w.phase7Evidence ?? null, expectedWitness.phase7Evidence ?? null) ||
+          !same(w.phase10Inputs ?? null, expectedWitness.phase10Inputs ?? null) ||
+          !same(w.phase11Inputs ?? null, expectedWitness.phase11Inputs ?? null) ||
+          !same(w.phase12Inputs ?? null, expectedWitness.phase12Inputs ?? null) ||
+          !same(w.phase13Inputs ?? null, expectedWitness.phase13Inputs ?? null) ||
           w.policyFallback !== expectedWitness.policyFallback ||
-          w.expectedExecutionAmount !== expectedWitness.expectedExecutionAmount ||
+          w.expectedExecutionAmount !== expectedAmount ||
           w.computeMs !== d.computeMs ||
           w.governorScale !== d.governorScale ||
           !Array.isArray(w.acceptedActions)
@@ -559,6 +676,16 @@ export function reconcileHorseJournalHand(
             horsePlanHandKey(s.gameState.actionHistory, planContext),
             planContext
           );
+          if (
+            d.decision.tournamentUtility?.evidence &&
+            d.decision.tournamentUtility.readFrameSha256 !== d.readFrame.sha256
+          )
+            throw Error('Phase 7 original observation read frame does not match');
+          if (
+            d.decision.plo4Policy?.inputs &&
+            d.decision.plo4Policy.readFrameSha256 !== d.readFrame.sha256
+          )
+            throw Error('Phase 10 original read frame does not match');
         } catch {
           gap('read_frame_unavailable');
           continue;
@@ -623,20 +750,225 @@ export function reconcileHorseJournalHand(
   }
 }
 
+/** One hand's records live in exactly one decision-shard's catalog (the lane
+ * shards by table id, and every fence for a table begins with it - see
+ * lane.ts), so a reader with no other way to know which shard captured a
+ * given hand tries each existing archive directory in turn and keeps the
+ * first that actually holds the hand. Unsharded deployments (the overwhelming
+ * common case) have exactly one candidate, 'archive', and this is then
+ * byte-for-byte what a single `new HorseDecisionJournalStore` + `readHand`
+ * always did: one attempt, its own error or its own (possibly empty) result. */
+export function readHorseJournalHandRecords(
+  directory: string,
+  handKey: string
+): readonly HorseJournalRecord[] {
+  const names = horseJournalArchiveDirectoryNames(directory);
+  const candidates = names.length ? names : ['archive'];
+  let lastError: unknown;
+  for (const name of candidates) {
+    let store: HorseDecisionJournalStore | undefined;
+    try {
+      store = new HorseDecisionJournalStore(
+        directory,
+        readonlyHorseJournalStoreOptions(directory, name)
+      );
+      const records = store.readHand(handKey);
+      if (records.length) return records;
+    } catch (error) {
+      lastError = error;
+      continue;
+    } finally {
+      try {
+        store?.close();
+      } catch {
+        /* read-only connection cleanup */
+      }
+    }
+  }
+  if (lastError !== undefined) throw lastError;
+  return [];
+}
+
 /** Explicit offline reader. No implicit creation, migration, export, deletion,
  * journal write or policy activation is permitted by this entry point. */
 export function readHorseJournalHand(directory: string, handKey: string): HorseJournalHandReview {
-  let store: HorseDecisionJournalStore | undefined;
   try {
-    store = new HorseDecisionJournalStore(directory, readonlyHorseJournalStoreOptions(directory));
-    return reconcileHorseJournalHand(store.readHand(handKey), handKey);
+    return reconcileHorseJournalHand(readHorseJournalHandRecords(directory, handKey), handKey);
   } catch {
     return { ...empty(), gaps: ['storage_unavailable'] };
-  } finally {
-    try {
-      store?.close();
-    } catch {
-      /* read-only connection cleanup */
+  }
+}
+
+/** Phase 15.1 plan-effect ledger gaps. A gap is never a repair instruction. */
+export type HorsePlanEffectsGap =
+  | 'invalid_records'
+  | 'execution_conflict'
+  | 'plan_receipt_missing'
+  | 'plan_receipt_unbound'
+  | 'plan_receipt_conflict';
+/**
+ * One retained hand's nonempty FAST plan batches, classified from retained
+ * records only. `issued` counts every retained nonempty batch; `accepted` the
+ * ones whose execution witness holds exactly one intended accepted bet or
+ * raise equal to the decision; `durable` the accepted ones with a valid
+ * receipt bound to the decision's binding, effects and that accepted wager;
+ * `applied` and `failed` that receipt's disposition; `unknown` accepted
+ * batches without a binding receipt once the accepted hand is retained.
+ */
+export interface HorsePlanEffectsReview {
+  version: 1;
+  scope: 'single_retained_hand';
+  acceptedHandRetained: boolean;
+  issued: number;
+  accepted: number;
+  durable: number;
+  applied: number;
+  failed: number;
+  unknown: number;
+  gaps: HorsePlanEffectsGap[];
+  /** True only from authoritative receipts: every accepted batch of a
+   * retained hand is durably applied and nothing is unknown or failed. */
+  applicationVerified: boolean;
+  replayVerified: false;
+  completePopulation: false;
+  activationAllowed: false;
+}
+const emptyPlanEffects = (): HorsePlanEffectsReview => ({
+  version: 1,
+  scope: 'single_retained_hand',
+  acceptedHandRetained: false,
+  issued: 0,
+  accepted: 0,
+  durable: 0,
+  applied: 0,
+  failed: 0,
+  unknown: 0,
+  gaps: [],
+  applicationVerified: false,
+  replayVerified: false,
+  completePopulation: false,
+  activationAllowed: false,
+});
+
+/** Read-only. Journal corruption, absence or a forged record can lower these
+ * counts or add a gap; it can never produce `applied` or strategy authority. */
+export function reviewHorsePlanEffects(
+  records: readonly HorseJournalRecord[],
+  handKey: string
+): HorsePlanEffectsReview {
+  const out = emptyPlanEffects();
+  const gap = (reason: HorsePlanEffectsGap) => {
+    if (!out.gaps.includes(reason)) out.gaps.push(reason);
+  };
+  try {
+    if (!/^[0-9a-f]{64}$/.test(handKey) || !Array.isArray(records) || records.length > 256)
+      throw Error();
+    const unique = new Map<string, HorseJournalRecord>();
+    for (const record of records) {
+      validateHorseJournalRecord(record);
+      if (record.handKey !== handKey) throw Error();
+      const old = unique.get(record.eventId);
+      if (old && !same(old, record)) throw Error();
+      unique.set(record.eventId, record);
     }
+    const turns = new Map<
+      string,
+      { decisions: HorseJournalRecord[]; executions: HorseJournalRecord[]; receipts: string[] }
+    >();
+    for (const row of unique.values()) {
+      if (row.kind === 'accepted_hand') out.acceptedHandRetained = true;
+      if (row.kind !== 'decision' && row.kind !== 'execution' && row.kind !== 'plan_receipt')
+        continue;
+      const k = `${row.producerId}:${row.turnKey}`;
+      const turn = turns.get(k) ?? { decisions: [], executions: [], receipts: [] };
+      if (row.kind === 'decision') turn.decisions.push(row);
+      else if (row.kind === 'execution') turn.executions.push(row);
+      else if (!turn.receipts.includes(row.body)) turn.receipts.push(row.body);
+      turns.set(k, turn);
+    }
+    let pendingUnknown = 0;
+    for (const turn of turns.values()) {
+      const capture =
+        turn.decisions.length === 1
+          ? (JSON.parse(turn.decisions[0]!.body) as Record<string, any>)
+          : null;
+      const binding = capture?.planBinding;
+      const digest =
+        capture?.snapshot?.type === 'DECIDE_FAST' &&
+        Array.isArray(capture.effects) &&
+        capture.effects.length > 0
+          ? horsePlanIssuedBatchDigest(binding, capture.effects)
+          : null;
+      if (!digest) {
+        if (turn.receipts.length) gap('plan_receipt_unbound');
+        continue;
+      }
+      out.issued++;
+      let accepted: { action: string; amount: unknown; requestId: unknown } | null = null;
+      if (turn.executions.length > 1) gap('execution_conflict');
+      else if (turn.executions.length === 1) {
+        const witness = JSON.parse(turn.executions[0]!.body) as Record<string, any>;
+        const actions = Array.isArray(witness?.acceptedActions) ? witness.acceptedActions : [];
+        const record =
+          actions.length === 1 && actions[0]?.intended === true ? actions[0].record : null;
+        if (
+          record &&
+          (record.action === 'bet' || record.action === 'raise') &&
+          record.action === capture!.decision?.action &&
+          record.amount === (capture!.decision?.amount ?? null) &&
+          witness.identity?.requestId === binding.fastRequestId &&
+          witness.identity?.decisionKey === binding.decisionKey
+        )
+          accepted = {
+            action: record.action,
+            amount: record.amount,
+            requestId: witness.identity.requestId,
+          };
+      }
+      if (accepted) out.accepted++;
+      if (turn.receipts.length > 1) {
+        gap('plan_receipt_conflict');
+        if (accepted) pendingUnknown++;
+        continue;
+      }
+      const receipt: unknown = turn.receipts.length ? JSON.parse(turn.receipts[0]!) : null;
+      const binds =
+        accepted !== null &&
+        horsePlanEffectReceiptIsValid(receipt) &&
+        receipt.issuedBatchDigest === digest &&
+        receipt.acceptance.action === accepted.action &&
+        receipt.acceptance.amount === accepted.amount &&
+        (receipt.acceptance.witness === null ||
+          receipt.acceptance.witness.requestId === accepted.requestId);
+      if (receipt !== null && !binds) gap('plan_receipt_unbound');
+      if (binds) {
+        out.durable++;
+        if ((receipt as HorsePlanEffectReceipt).disposition === 'applied') out.applied++;
+        else out.failed++;
+      } else if (accepted) pendingUnknown++;
+    }
+    if (out.acceptedHandRetained) {
+      out.unknown = pendingUnknown;
+      if (pendingUnknown) gap('plan_receipt_missing');
+    }
+    out.applicationVerified =
+      out.acceptedHandRetained &&
+      out.accepted > 0 &&
+      out.applied === out.accepted &&
+      out.unknown === 0 &&
+      out.failed === 0 &&
+      out.gaps.length === 0;
+    return out;
+  } catch {
+    return { ...emptyPlanEffects(), gaps: ['invalid_records'] };
+  }
+}
+
+/** Explicit offline reader for the plan-effect ledger of one retained hand. */
+export function readHorsePlanEffects(directory: string, handKey: string): HorsePlanEffectsReview {
+  try {
+    return reviewHorsePlanEffects(readHorseJournalHandRecords(directory, handKey), handKey);
+  } catch {
+    return { ...emptyPlanEffects(), gaps: ['invalid_records'] };
   }
 }

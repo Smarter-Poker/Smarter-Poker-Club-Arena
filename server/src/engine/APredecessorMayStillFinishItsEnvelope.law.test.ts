@@ -268,4 +268,34 @@ describe('a predecessor may still finish its own envelope', () => {
     expect(envelopeAlerts()).toHaveLength(0);
     expect(engine.announceEnvelopeResolvedAddOns).toHaveBeenCalled();
   });
+  it('does not rebuild or replay a committed hand when its stack read briefly fails', async () => {
+    const { engine, players } = committingTable();
+    mocks.commit.mockResolvedValue({ handId, settlementCommitted: true });
+    const read = vi
+      .fn()
+      .mockResolvedValueOnce({
+        data: null,
+        error: { code: 'PGRST002', message: 'cache unavailable' },
+      })
+      .mockResolvedValue({
+        data: [
+          { user_id: 'a', stack: 93 },
+          { user_id: 'b', stack: 107 },
+        ],
+        error: null,
+      });
+    vi.mocked(supabase.from).mockImplementation((() => {
+      const chain: any = { select: vi.fn(), eq: vi.fn(), is: read };
+      chain.select.mockReturnValue(chain);
+      chain.eq.mockReturnValue(chain);
+      return chain;
+    }) as any);
+    await engine.postHandTasks(players, 1);
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(mocks.commit).toHaveBeenCalledOnce();
+    expect(mocks.obligations).toHaveBeenCalledOnce();
+    expect(engine.killForRestart).not.toHaveBeenCalled();
+    expect(players.map((player) => player.stack)).toEqual([93, 107]);
+    expect(engine.announceEnvelopeResolvedAddOns).toHaveBeenCalledOnce();
+  });
 });

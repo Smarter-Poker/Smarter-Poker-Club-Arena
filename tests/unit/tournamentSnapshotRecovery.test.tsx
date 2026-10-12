@@ -298,8 +298,8 @@ describe('Tournament details snapshot recovery', () => {
           new: { id: 'a', level_started_at: new Date(now - 29_000).toISOString() },
         })
       );
-      expect(screen.getByText('Level 2 Ends In')).toBeInTheDocument();
-      expect(rendered.container.querySelector('.dov-hero__time')?.textContent).toBe('7:00');
+      expect(screen.getByText('Late Reg Closed')).toBeInTheDocument();
+      expect(rendered.container.querySelector('.dov-hero__time')?.textContent).toBe('-');
       expect(rendered.container.querySelector('.dov-blind__value')?.textContent).toBe('75 / 150');
     }
   );

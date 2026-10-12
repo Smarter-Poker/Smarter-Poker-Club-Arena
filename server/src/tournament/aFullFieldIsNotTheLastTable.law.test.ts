@@ -109,6 +109,15 @@ async function fixture(openTables: string[]) {
     neq: () => query,
     or: async () => ({ data: openTables.map((table) => ({ id: table })), error: null }),
     is: async () => ({ data: seats, error: null }),
+    in: async () => ({
+      data: seats.map((s) => ({
+        user_id: s.user_id,
+        status: 'playing',
+        chips: s.stack,
+        seat_number: s.seat_number,
+      })),
+      error: null,
+    }),
   };
   vi.spyOn(supabase, 'from').mockReturnValue(query);
   vi.stubGlobal(

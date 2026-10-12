@@ -55,6 +55,24 @@ jobs:
           [[ "$LATEST_REQUIRED" =~ ^[0-9a-f]{40}$ ]] \
             || { echo "::error::Could not resolve one engine-runtime commit from protected main."; exit 1; }
 
+          # A TEST-ONLY FIX MOVES THE OFFERED TREE FORWARD (2026-10-09).
+          #
+          # LATEST_REQUIRED decides WHETHER a release is owed: only runtime code
+          # owes one. But the receiver compiles and tests the tree of the SHA it
+          # is offered, tests included. From 19:38 UTC on 2026-10-08 every
+          # receiver failed on one stale test at c79f08d347 (the newest runtime
+          # commit), and its fix 3353d64d5f was test-only, so every later push
+          # offered c79f08d347 again with the same broken test: the release lane
+          # could never ship, and the tournament self-heal in 27d2776a58 sat
+          # merged and undeployed for ten hours. So the SHA offered is the
+          # newest commit on main that touched anything under server/, which
+          # always contains LATEST_REQUIRED and the newest server test fixes.
+          TARGET_SHA=$(git log "$AFTER_SHA" -1 --format=%H -- 'server/**')
+          [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]] \
+            || { echo "::error::Could not resolve one server-tree commit from protected main."; exit 1; }
+          git merge-base --is-ancestor "$LATEST_REQUIRED" "$TARGET_SHA" \
+            || { echo "::error::The offered server tree $TARGET_SHA does not contain engine $LATEST_REQUIRED."; exit 1; }
+
           RELEASE_REQUIRED=true
           if [[ "$BEFORE_SHA" =~ ^[0-9a-f]{40}$ ]] && \
              [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ] && \
@@ -123,10 +141,11 @@ jobs:
           fi
 
           echo "release_required=$RELEASE_REQUIRED" >> "$GITHUB_OUTPUT"
-          echo "target_sha=$LATEST_REQUIRED" >> "$GITHUB_OUTPUT"
+          echo "target_sha=$TARGET_SHA" >> "$GITHUB_OUTPUT"
           echo "offer_reason=$OFFER_REASON" >> "$GITHUB_OUTPUT"
           echo "Engine runtime release required: $RELEASE_REQUIRED ($OFFER_REASON)"
           echo "Exact engine component SHA: $LATEST_REQUIRED"
+          echo "Offered server tree SHA: $TARGET_SHA"
 
   signal:
     name: Dispatch The Exact Main SHA

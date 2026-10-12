@@ -158,6 +158,7 @@ function discoveryHarness(boards: ReturnType<typeof boardRow>[][]) {
         allFunding.push(operation);
         return operation.promise;
       }),
+      seatFirstPartnerHoldUntil: vi.fn(() => -Infinity),
     },
   });
   vi.spyOn(supabase, 'from').mockImplementation((table: string) => {
@@ -383,7 +384,7 @@ describe('the REGISTERING walk', () => {
     // Keep the existing empty-funding backoff, not a new retry clock.
     expect(walk).toContain('MTT_PRESTART_TICK_MS * 2 ** Math.min(misses, 4)');
     expect(walk).toContain('PAST_START_TOP_UP_MAX_INTERVAL_MS');
-    expect(walk).toContain('misses: added > 0 ? 0 : misses + 1');
+    expect(walk).toContain('misses: added > 0 ? 0 : held ? misses : misses + 1');
   });
 
   it('launches both funding callbacks under ownership without awaiting them in the walk', () => {

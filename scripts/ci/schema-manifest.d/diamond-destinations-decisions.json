@@ -1,0 +1,16 @@
+{
+  "_owner": "claude/diamond-destinations-decisions-20261005. Phase 9 line (a) spine: migrations 20261005151918_diamond_economics_records_the_owner_answers (the settings table Dan owns, its refusing reader and the twenty answers to A1 to A20 of docs/DIAMOND-DESTINATIONS-DESIGN-2026-09-21.md) and 20261005152200_the_house_earmarks_what_it_has_promised (the append-only earmark ledger on ca_diamond_house, available = balance less open earmarks). ca_diamond_economics is SHARED with the Diamond cash rake lane (B rows), the Diamond BBJ lane (B rows) and the budget-lines lane: its closed name list already carries every name in section 1, so those lanes add rows and never alter the list.",
+  "tables": ["ca_diamond_economics", "ca_diamond_house_earmarks"],
+  "functions": [
+    "fn_ca_diamond_economic",
+    "fn_ca_diamond_economic_text",
+    "fn_ca_diamond_economic_on",
+    "fn_ca_diamond_economics_units_of",
+    "fn_ca_diamond_economics_append_only",
+    "fn_ca_diamond_earmark_open",
+    "fn_ca_diamond_earmarks_open",
+    "fn_ca_diamond_house_available",
+    "fn_ca_diamond_earmark_guard",
+    "fn_ca_diamond_house_earmarks_append_only"
+  ]
+}

@@ -63,8 +63,10 @@ describe('pre-start seat-first tables draw no hands', () => {
   });
 
   it('TablePage feeds it from the live hand, not from the seat', () => {
-    expect(table).toContain(
-      'handInPlay={tableState.isHandInProgress || (tableState.handNumber ?? 0) > 0}'
+    // 2026-10-04: still the live hand, never the seat - and no longer a hand
+    // that has finished (a-finished-hands-cards-leave-the-felt.law).
+    expect(table).toMatch(
+      /handInPlay=\{\s*\(tableState\.isHandInProgress \|\| \(tableState\.handNumber \?\? 0\) > 0\) &&\s*!feltShowsNoHand\s*\}/
     );
   });
 });

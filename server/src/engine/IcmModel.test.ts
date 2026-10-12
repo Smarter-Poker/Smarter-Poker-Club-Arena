@@ -1,7 +1,7 @@
 /**
  * V16 ICM — Malmuth-Harville ground truth.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   bubbleFactor,
   createIcmEquityEstimator,
@@ -44,6 +44,57 @@ describe('icmEquity', () => {
     expect(e0).toBeCloseTo(e1, 6);
     expect(e1).toBeCloseTo(e2, 6);
     expect(e0 + e1 + e2).toBeCloseTo(100, 6);
+  });
+
+  it('prices a live all-in seat after an award crosses the ten-player exact boundary', () => {
+    // The eleventh entrant has committed its chips, not been eliminated.
+    // Both opponents can survive a split while the remote field stays fixed.
+    const stacks = Array.from({ length: 10 }, () => 100).concat(0);
+    const prizes = [100];
+    const mutable = [0, 10];
+    const workspace = createIcmEquityEstimator(stacks, prizes, 0, mutable, 128);
+    const reference = stacks.slice();
+    const restored = reference.slice();
+    restored[10] = 100;
+    Object.freeze(restored);
+    expect(workspace.estimate(reference).equity).toBeCloseTo(10, 12);
+    expect(workspace.estimate(reference).errorBound).toBe(0);
+
+    // Winner-take-all equity has the independent closed form stack / total.
+    const result = workspace.estimate(restored);
+    expect(result.method).toBe('plackett_luce_mc');
+    expect(result.modeledPlayers).toBe(11);
+    expect(result.equity).toBeGreaterThan(0);
+    expect(Math.abs(result.equity - 100 / 11)).toBeLessThanOrEqual(result.errorBound);
+    expect(result.errorBound).toBeGreaterThan(0);
+    expect(result.trials).toBe(128);
+    expect(workspace.method).toBe('plackett_luce_mc');
+    expect(workspace.trials).toBe(128);
+    expect(workspace.randomClockDraws).toBe(128 * 11);
+
+    // The fallback owns its original inputs and generates common clocks only
+    // once. A bounded continuation is the same prefix, never another sample.
+    const direct = createIcmEquityEstimator(restored, prizes, 0, mutable, 128);
+    const expectedPrefix = direct.estimate(restored, 96);
+    expect(result).toEqual(direct.estimate(restored));
+    stacks.fill(0);
+    prizes.fill(0);
+    mutable.fill(9);
+    const log = vi.spyOn(Math, 'log');
+    try {
+      expect(workspace.estimate(restored, 96)).toEqual(expectedPrefix);
+      expect(workspace.estimate(restored, 96)).toEqual(expectedPrefix);
+      expect(workspace.estimate(restored, 10_000)).toEqual(result);
+      expect(log.mock.calls.length).toBeLessThanOrEqual(1);
+      // Returning below the boundary still receives exact arithmetic.
+      expect(workspace.estimate(reference).equity).toBeCloseTo(10, 12);
+      expect(workspace.estimate(reference).errorBound).toBe(0);
+      const drifted = restored.slice();
+      drifted[1] += 1;
+      expect(() => workspace.estimate(drifted)).toThrow('ICM remote stack changed');
+    } finally {
+      log.mockRestore();
+    }
   });
 
   it('prices every finishing place symmetrically at the ten-player exact boundary', () => {

@@ -26,7 +26,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { sliceMethod } from '../helpers/sourceWindow';
 
@@ -40,14 +40,12 @@ const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \
 
 const recurringRaw = read('server/src/services/TournamentRecurringService.ts');
 const engineRaw = read('server/src/tournament/TournamentManagerBase.ts');
-const orchestratorRaw = read('src/services/HorseOrchestrator.ts');
 const tournamentServiceRaw = read('src/services/TournamentService.ts');
 
 const recurring = code(recurringRaw);
 const engine = code(engineRaw);
 const parking = code(read('server/src/tournament/spinLaunchParking.ts'));
 const receipt = code(read('server/src/tournament/SpinDrawReceipt.ts'));
-const orchestrator = code(orchestratorRaw);
 const tournamentService = code(tournamentServiceRaw);
 
 /**
@@ -101,7 +99,6 @@ describe('one multiplier table, in one place: the spec', () => {
     for (const [name, src] of [
       ['TournamentManagerBase', engine],
       ['TournamentRecurringService', recurring],
-      ['HorseOrchestrator', orchestrator],
       ['TournamentService', tournamentService],
     ] as const) {
       const weighted = src.match(/\{\s*multiplier:\s*[\d.]+\s*,\s*weight:\s*[\d.]/g) ?? [];
@@ -124,12 +121,11 @@ describe('the draw happens at START, nowhere else', () => {
     expect(engine).not.toMatch(/supabase\.rpc\('fn_spin_(?:draw_multiplier|settle_game)'/);
   });
 
-  it('creation does NOT draw — not the recurring service, not the orchestrator', () => {
+  it('creation does NOT draw in the recurring service', () => {
     // A creation-time multiplier is readable for a minute before start, and
     // prize_pool = buyIn x multiplier leaks it arithmetically even when
     // every label is hidden. See guard file header, mistake 5.
     expect(recurring).not.toMatch(/fn_spin_draw_multiplier/);
-    expect(orchestrator).not.toMatch(/fn_spin_draw_multiplier/);
   });
 
   it('creation writes a NULL multiplier for the start path to key on', () => {
@@ -146,8 +142,8 @@ describe('the draw happens at START, nowhere else', () => {
    * the pin moved from "creates safely" to "does not create at all".
    */
   it('the client orchestrator does not create Spins at all', () => {
-    expect(orchestratorRaw).not.toMatch(/tournament_type:\s*'SPIN'/);
-    expect(orchestratorRaw).toMatch(/launchSpin is retired/);
+    // Stronger again (2026-10-05): the whole browser orchestrator is deleted.
+    expect(existsSync(resolve(__dirname, '../../src/services/HorseOrchestrator.ts'))).toBe(false);
   });
 
   it('creation does not put a multiplier-derived amount in prize_pool', () => {

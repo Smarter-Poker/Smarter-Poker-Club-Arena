@@ -1,0 +1,5 @@
+{
+  "_owner": "agent/claude-horse-brain/review-receipts-retention-20261008",
+  "_comment": "20261008041150 horse_hand_review_receipts_retention (Horse Brain P14.1 follow-up): the receipts' own bounded prune, called by the engine after sp_prune_horse_hand_reviews once installed.",
+  "functions": ["sp_prune_horse_hand_review_receipts"]
+}

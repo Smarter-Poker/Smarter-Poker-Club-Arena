@@ -1,0 +1,179 @@
+diff --git a/server/src/engine/remainingVariants/RemainingVariantLivePolicy.ts b/server/src/engine/remainingVariants/RemainingVariantLivePolicy.ts
+index a5cb3a0..2dd3fb2 100644
+--- a/server/src/engine/remainingVariants/RemainingVariantLivePolicy.ts
++++ b/server/src/engine/remainingVariants/RemainingVariantLivePolicy.ts
+@@ -1590,6 +1590,10 @@ export function evaluateRemainingVariantPolicy(
+     postDiscard && 'private_discard_excluded',
+     active.length > 1 && 'multiway',
+   ].filter(Boolean) as string[];
++  // EXPERIMENT (round 3 development only; replaced before commit).
++  const X = ((globalThis as Record<string, unknown>).__p12r3 ?? {}) as Record<string, any>;
++  const XV = (X[variant] ?? {}) as Record<string, any>;
++  const baselineWager = ['bet', 'raise', 'all_in'].includes(baseline.action);
+   if (s.stage === 'preflop') {
+     const bars = remainingVariantEntryBars(variant, {
+       position: receipt.position,
+@@ -1601,21 +1605,65 @@ export function evaluateRemainingVariantPolicy(
+       anteBB: (s.ante ?? 0) / s.bigBlind,
+       straddle: Boolean(s.straddleActive),
+     });
+-    const choice = plo4PreflopChoice(
+-      shape.quality,
+-      bars,
+-      receipt.role,
+-      callCost / s.bigBlind,
+-      hero.stack / s.bigBlind
+-    );
+-    return finish(
+-      choice.reason,
+-      choice.action === 'wager'
+-        ? wager(choice.fraction)
+-        : choice.action === 'call'
+-          ? call()
+-          : passive()
+-    );
++    if (XV.legacy) {
++      const choice = plo4PreflopChoice(
++        shape.quality,
++        bars,
++        receipt.role,
++        callCost / s.bigBlind,
++        hero.stack / s.bigBlind
++      );
++      return finish(
++        choice.reason,
++        choice.action === 'wager'
++          ? wager(choice.fraction)
++          : choice.action === 'call'
++            ? call()
++            : passive()
++      );
++    }
++    const tighten = XV.tighten as Record<string, number> | undefined;
++    if (
++      tighten &&
++      receipt.role === 'rfi' &&
++      baselineWager &&
++      tighten[receipt.position] !== undefined &&
++      seats.length >= (XV.tightenMinDealt ?? 2) &&
++      shape.quality < bars.open + tighten[receipt.position]
++    )
++      return finish('round3_open_tightened', passive());
++    const dw = XV.defendWider as Record<string, number> | undefined;
++    if (
++      dw &&
++      receipt.role === 'defense' &&
++      receipt.position === 'big_blind' &&
++      baseline.action === 'fold' &&
++      shape.quality >= bars.call + (dw.offset ?? 0)
++    )
++      return finish('round3_defend_wider', call());
++    const owa = XV.openWider as { positions: string[]; offset?: number } | undefined;
++    if (
++      owa &&
++      owa.positions.includes(receipt.position) &&
++      (receipt.role === 'rfi' ||
++        (receipt.role === 'limp_option' && receipt.position === 'small_blind')) &&
++      !(s.actionHistory ?? []).some(
++        (a) => a.stage === 'preflop' && (a.action === 'call' || a.action === 'raise' || a.action === 'bet')
++      ) &&
++      !baselineWager &&
++      shape.quality >= bars.open + (owa.offset ?? 0)
++    )
++      return finish('round3_open_wider', wager(0.75));
++    const ow = XV.openWiderHU as Record<string, number> | undefined;
++    if (
++      ow &&
++      seats.length === 2 &&
++      (receipt.role === 'rfi' || receipt.role === 'limp_option') &&
++      !baselineWager &&
++      shape.quality >= bars.open + (ow.offset ?? 0)
++    )
++      return finish('round3_open_wider_hu', wager(0.75));
++    return finish('round3_reference_retained', baseline);
+   }
+   // Reserve the sampler's remaining time after computing exact card facts.
+   // Doing the FLO8 facts after sampling spent a fresh millisecond after the
+@@ -1758,34 +1806,55 @@ export function evaluateRemainingVariantPolicy(
+     if (dominated) receipt.features.push('higher_flush_available');
+   }
+   if (e.perPot.length > 1) receipt.features.push('separate_pot_eligibility');
+-  if (!callCost) {
+-    if (!lowOnly && !quarterRisk && lower > pack.value + pressure)
+-      return finishPriced('variant_value_bet', wager(0.66));
+-    if (
+-      s.stage !== 'river' &&
+-      !limit &&
+-      !dominated &&
+-      draw &&
+-      active.length === 1 &&
+-      receipt.position === 'button' &&
+-      equity > 0.4
+-    )
+-      return finishPriced('variant_draw_pressure', wager(0.5));
+-    return finishPriced(
+-      lowOnly ? 'low_only_protected_check' : 'variant_protected_check',
+-      passive()
+-    );
+-  }
+-  if (upper < price + pressure) return finishPriced('variant_price_fold', passive());
+-  if (lowOnly || quarterRisk)
++  if (XV.legacy) {
++    if (!callCost) {
++      if (!lowOnly && !quarterRisk && lower > pack.value + pressure)
++        return finishPriced('variant_value_bet', wager(0.66));
++      if (
++        s.stage !== 'river' &&
++        !limit &&
++        !dominated &&
++        draw &&
++        active.length === 1 &&
++        receipt.position === 'button' &&
++        equity > 0.4
++      )
++        return finishPriced('variant_draw_pressure', wager(0.5));
++      return finishPriced(
++        lowOnly ? 'low_only_protected_check' : 'variant_protected_check',
++        passive()
++      );
++    }
++    if (upper < price + pressure) return finishPriced('variant_price_fold', passive());
++    if (lowOnly || quarterRisk)
++      return finishPriced(
++        equity >= price + pressure ? 'split_price_call' : 'split_price_fold',
++        equity >= price + pressure ? call() : passive()
++      );
++    if (lower > Math.max(pack.value + pressure, price + pressure) && receipt.role !== 'call_off')
++      return finishPriced('variant_value_raise', wager(0.66));
+     return finishPriced(
+-      equity >= price + pressure ? 'split_price_call' : 'split_price_fold',
++      equity >= price + pressure ? 'variant_price_call' : 'variant_price_fold',
+       equity >= price + pressure ? call() : passive()
+     );
+-  if (lower > Math.max(pack.value + pressure, price + pressure) && receipt.role !== 'call_off')
+-    return finishPriced('variant_value_raise', wager(0.66));
+-  return finishPriced(
+-    equity >= price + pressure ? 'variant_price_call' : 'variant_price_fold',
+-    equity >= price + pressure ? call() : passive()
+-  );
++  }
++  const st = s.stage as string;
++  const on = (rule: Record<string, any> | undefined) =>
++    rule && (!rule.streets || rule.streets.includes(st)) && (!rule.maxOpp || active.length <= rule.maxOpp);
++  if (!callCost) {
++    const cw = XV.checkWeak;
++    if (on(cw) && baselineWager && equity < cw.below)
++      return finishPriced('round3_weak_bet_checked', passive());
++    const vb = XV.valueBet;
++    if (on(vb) && !baselineWager && !lowOnly && lower > vb.above)
++      return finishPriced('round3_value_bet', wager(vb.fraction ?? 0.66));
++    return finishPriced('round3_reference_retained', baseline);
++  }
++  const vr = XV.valueRaise;
++  if (on(vr) && baseline.action === 'call' && !lowOnly && lower > vr.above && receipt.role !== 'call_off')
++    return finishPriced('round3_value_raise', wager(vr.fraction ?? 0.66));
++  const fc = XV.foldWeak;
++  if (on(fc) && baseline.action === 'call' && upper < price + (fc.margin ?? 0))
++    return finishPriced('round3_weak_call_folded', passive());
++  return finishPriced('round3_reference_retained', baseline);
+ }

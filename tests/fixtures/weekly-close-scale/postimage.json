@@ -1,0 +1,14 @@
+{
+  "fn_accounting_union_earned_plan(uuid,timestamp with time zone,timestamp with time zone)": "409eade1f18decea288db84784f127b2",
+  "fn_accounting_union_earned_plan_v3(uuid,timestamp with time zone,timestamp with time zone)": "e16d7ddd96e4d349d15973bb71a19036",
+  "fn_assert_cash_commission_period(uuid,uuid,timestamp with time zone,timestamp with time zone)": "49ef927cb15979fea12511890e520542",
+  "fn_club_weekly_accounting_summary(uuid)": "1f2d91e88471ab5ef8cd481d3ec7f32b",
+  "fn_process_weekly_accounting_scope(uuid,uuid)": "6e8a3d775891ae1d4685231a07ff72d3",
+  "fn_settle_accounting_commission_stage(text,uuid,timestamp with time zone,timestamp with time zone)": "ec2dd57271b8061b8ac9f7e7b531d964",
+  "fn_settle_accounting_commission_stage_v3(text,uuid,timestamp with time zone,timestamp with time zone)": "9a7515813a8f48c4430c6ca60378f941",
+  "fn_settle_accounting_rakeback_stage(text,uuid,timestamp with time zone,timestamp with time zone)": "292225abed2d6783c0f3ee0009a05fa3",
+  "fn_union_settlement_cascade(uuid,timestamp with time zone,timestamp with time zone)": "1adc53784a37e366e50cc01832df4521",
+  "fn_weekly_accounting_attempt_begin(boolean)": "96e8c69092908fbe9526963e9012b3e0",
+  "fn_weekly_accounting_attempt_end()": "b7d27aa978a1b8db3a98921d6af82588",
+  "fn_weekly_accounting_deadline_check()": "cc0ab45c0c4fdcfed6dd050580d47acf"
+}

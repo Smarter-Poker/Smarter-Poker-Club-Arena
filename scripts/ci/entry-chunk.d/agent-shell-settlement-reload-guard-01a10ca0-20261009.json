@@ -1,0 +1,4 @@
+{
+  "_owner": "agent/shell-settlement-reload-guard-01a10ca0-20261009 - The app-root shell adoption gate must synchronously observe scoped financial-action and settlement-dialog leases before scheduling, at the settle timer, and after worker handover. Lazy-loading this import-free 372-byte registry would introduce an async gap in the reload safety decision; every route uses the gate.",
+  "modules": ["src/lib/shellReloadBlocker.ts"]
+}

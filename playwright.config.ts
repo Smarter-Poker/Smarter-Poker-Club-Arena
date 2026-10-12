@@ -1,5 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
 import { cpus } from 'node:os';
+import { installStaticOriginDirect } from './tests/e2e/support/staticOriginDirect';
 
 const isCI = !!process.env.CI;
 /**
@@ -21,6 +22,16 @@ const baseURL = rawBaseURL.endsWith('/') ? rawBaseURL : `${rawBaseURL}/`;
 const baseHostname = new URL(baseURL).hostname.toLowerCase();
 const targetsLocalDevServer =
   baseHostname === 'localhost' || baseHostname === '127.0.0.1' || baseHostname === '[::1]';
+
+/**
+ * A production run reads the arena's static files from the arena origin
+ * instead of pulling every image, font and chunk through the World Hub's
+ * Vercel project on every cold test (tests/e2e/support/staticOriginDirect.ts
+ * has the measurements). The document, the service worker script, build-info
+ * and every API call still travel the public path. This does nothing for a
+ * local or preview target.
+ */
+installStaticOriginDirect(baseURL);
 
 export default defineConfig({
   testDir: './tests/e2e',

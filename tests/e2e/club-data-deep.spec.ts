@@ -6,7 +6,7 @@ const CLUB_DATA_PATH = 'clubs/shark-club/data';
 type ClubDataAccess = 'authorized' | 'restricted';
 
 interface ObservedPlayerPage {
-  rows: Array<{ user_id: string }>;
+  rows: Array<{ user_id: string; hands?: number }>;
   next_cursor: Record<string, unknown> | null;
 }
 
@@ -27,7 +27,7 @@ export function playerPageUnion(...pages: ObservedPlayerPage[]): string[] {
 
 async function observePlayerPage(
   page: Page,
-  sort: 'winners' | 'losers',
+  sort: 'winners' | 'losers' | 'hands',
   cursor: Record<string, unknown> | null,
   action: () => Promise<unknown>
 ): Promise<ObservedPlayerPage> {
@@ -125,6 +125,7 @@ test.describe('Club Data production experience', () => {
     for (const viewport of [
       { width: 1280, height: 900 },
       { width: 768, height: 1024 },
+      { width: 393, height: 852 },
       { width: 390, height: 844 },
       { width: 320, height: 568 },
     ]) {
@@ -133,6 +134,11 @@ test.describe('Club Data production experience', () => {
         await page.evaluate(
           () => document.documentElement.scrollWidth - document.documentElement.clientWidth
         )
+      ).toBeLessThanOrEqual(1);
+      expect(
+        await page
+          .locator('[data-page="club-data"]')
+          .evaluate((root) => root.scrollWidth - root.clientWidth)
       ).toBeLessThanOrEqual(1);
     }
 
@@ -158,10 +164,13 @@ test.describe('Club Data production experience', () => {
         buttons
           .map((button) => {
             const rect = button.getBoundingClientRect();
+            const target = getComputedStyle(button, '::after');
+            const targetWidth = Number.parseFloat(target.width);
+            const targetHeight = Number.parseFloat(target.height);
             return {
               label: button.getAttribute('aria-label') || (button.textContent || '').trim(),
-              width: rect.width,
-              height: rect.height,
+              width: Math.max(rect.width, Number.isFinite(targetWidth) ? targetWidth : 0),
+              height: Math.max(rect.height, Number.isFinite(targetHeight) ? targetHeight : 0),
             };
           })
           .filter((button) => button.width < 44 || button.height < 44)
@@ -169,14 +178,14 @@ test.describe('Club Data production experience', () => {
     expect(shortTargets).toEqual([]);
 
     const undersizedInputs = await page
-      .locator('[data-page="club-data"] input:visible')
-      .evaluateAll((inputs) =>
-        inputs
-          .map((input) => ({
-            label: input.getAttribute('aria-label') || input.getAttribute('placeholder') || '',
-            fontSize: Number.parseFloat(getComputedStyle(input).fontSize),
+      .locator('[data-page="club-data"] input:visible, [data-page="club-data"] select:visible')
+      .evaluateAll((controls) =>
+        controls
+          .map((control) => ({
+            label: control.getAttribute('aria-label') || control.getAttribute('placeholder') || '',
+            fontSize: Number.parseFloat(getComputedStyle(control).fontSize),
           }))
-          .filter((input) => input.fontSize < 16)
+          .filter((control) => control.fontSize < 16)
       );
     expect(undersizedInputs).toEqual([]);
   });
@@ -208,19 +217,24 @@ test.describe('Club Data production experience', () => {
     await highestFee.click();
     await expect(highestFee).toHaveAttribute('aria-pressed', 'true');
     await expect(gamesList.getByRole('listitem').first()).toBeVisible({ timeout: 60_000 });
+    // The preceding rows remain visible while the ranked ledger is being
+    // replaced. Visibility alone therefore does not mean the new sort is
+    // ready, and clicking its disabled continuation can consume this test's
+    // entire timeout without identifying the failed read.
+    await expect(gamesList).toHaveAttribute('aria-busy', 'false', { timeout: 60_000 });
 
     const loadMoreGames = page.getByRole('button', { name: /Load More Games/i });
-    if (await loadMoreGames.isVisible()) {
-      const before = (await loadMoreGames.textContent()) || '';
-      await loadMoreGames.click();
-      await expect
-        .poll(
-          async () =>
-            (await loadMoreGames.count()) === 0 || (await loadMoreGames.textContent()) !== before,
-          { timeout: 60_000 }
-        )
-        .toBe(true);
-    }
+    await expect(loadMoreGames).toBeVisible({ timeout: 60_000 });
+    await expect(loadMoreGames).toBeEnabled({ timeout: 60_000 });
+    const before = (await loadMoreGames.textContent()) || '';
+    await loadMoreGames.click();
+    await expect
+      .poll(
+        async () =>
+          (await loadMoreGames.count()) === 0 || (await loadMoreGames.textContent()) !== before,
+        { timeout: 60_000 }
+      )
+      .toBe(true);
 
     // Keep a bounded, identity-free receipt if player pagination stalls. The
     // failure screenshot alone cannot distinguish a refused/slow request from
@@ -355,6 +369,41 @@ test.describe('Club Data production experience', () => {
       // Unlike switching sorts above, refresh must not reset its cardinality.
       await expect(loadMorePlayers).toContainText(`- ${expandedPlayerCount.toLocaleString()} Of`);
     }
+
+    // The live union projection belongs to the union-root game scope while
+    // this route is scoped to the member club. The hands reader must bridge
+    // those scopes, and the virtual list must expose rows beyond its first
+    // mounted window rather than collapsing its measured spacer in flexbox.
+    const mostHands = page.getByRole('button', { name: 'Most Hands' });
+    const handsPage = await observePlayerPage(page, 'hands', null, () => mostHands.click());
+    expect(
+      handsPage.rows.some((row) => Number.isSafeInteger(row.hands) && Number(row.hands) > 0),
+      'the club-scoped player projection returned no recorded hands'
+    ).toBe(true);
+    await expect(mostHands).toHaveAttribute('aria-pressed', 'true');
+    await expect(playersList.getByRole('listitem').first()).toBeVisible({ timeout: 60_000 });
+
+    const mountedStart = await playersList
+      .getByRole('listitem')
+      .evaluateAll((rows) =>
+        Math.max(...rows.map((row) => Number(row.getAttribute('aria-posinset') || 0)))
+      );
+    expect(mountedStart).toBeLessThan(handsPage.rows.length);
+    await playersList.evaluate((list) => {
+      list.scrollTop = list.scrollHeight;
+      list.dispatchEvent(new Event('scroll'));
+    });
+    await expect
+      .poll(
+        () =>
+          playersList
+            .getByRole('listitem')
+            .evaluateAll((rows) =>
+              Math.max(...rows.map((row) => Number(row.getAttribute('aria-posinset') || 0)))
+            ),
+        { timeout: 60_000 }
+      )
+      .toBeGreaterThanOrEqual(handsPage.rows.length);
   });
 
   test('keeps verified rows through the 60-second recovery heartbeat', async ({
@@ -381,7 +430,7 @@ test.describe('Club Data production experience', () => {
 
     await expect(page.getByText(/Could Not Load Club Data\./i)).toHaveCount(0);
     await expect(gamesList.getByRole('listitem').first()).toContainText(identity.slice(0, 12));
-    await expect(page.getByText(/Showing [\d,]+ Of [\d,]+ Games/i)).toBeVisible();
+    await expect(page.getByText(/Loaded [\d,]+ Of [\d,]+ Games/i)).toBeVisible();
     if (expandedCount) await expect(loadMore).toContainText(`- ${expandedCount} Of`);
   });
 

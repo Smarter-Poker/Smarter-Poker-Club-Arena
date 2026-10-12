@@ -1,0 +1,12 @@
+{
+  "migration": "supabase/migrations/20261003095111_the_money_conservation_scan_reads_every_event_in_one_pass.sql",
+  "scalarMD5": "bfbb3e617d7c8290ac8916e21bf0c2a4",
+  "moneyBeforeMD5": "2bbb578e5258b91564d5f29dfdc5e0ec",
+  "moneyAfterMD5": "1a0bc1bd70d39192e13fa7fb946a7103",
+  "deltasDefinitionMD5": "365e9948c804059253d73cd35ed6e3d4",
+  "replacement": {
+    "old": "    WITH scan AS (\n      SELECT t.id, t.name, t.variant, t.ended_at,\n             public.fn_tournament_conservation_delta(t.id) AS delta\n        FROM public.tournaments t\n       WHERE t.status IN ('COMPLETED','CANCELLED')\n         AND t.ended_at > now() - make_interval(days => v_days)\n         AND t.ended_at < now() - interval '30 minutes'\n         AND COALESCE(t.variant, '') NOT IN ('spin')\n         AND COALESCE(t.buy_in_amount, 0) + COALESCE(t.buy_in_fee, 0) > 0\n    )\n",
+    "new": "    WITH scan AS (\n      -- ONE READ FOR THE WHOLE WINDOW (2026-10-03). The scalar ran once per\n      -- event: 143,479 events over 45 days, about 4 ms each, so the deep\n      -- daily pass was cancelled at its budget on 3 of its last 4 nights and\n      -- returned no verdict. fn_tournament_conservation_deltas is the same\n      -- arithmetic summed once per table; it matched the scalar on every one\n      -- of 143,543 production events and reads all 45 days in about 24 s.\n      SELECT d.id, d.name, d.variant, d.ended_at, d.delta\n        FROM public.fn_tournament_conservation_deltas(\n               now() - make_interval(days => v_days),\n               now() - interval '30 minutes') d\n    )\n",
+    "count": 1
+  }
+}

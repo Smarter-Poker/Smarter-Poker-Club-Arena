@@ -1,27 +1,56 @@
 import type { HandRecord } from '../services/HandHistoryService';
+import {
+  isCashEvidenceMetric,
+  type CashEvidenceMetric,
+  type StatsEvidenceQuery,
+} from '../services/StatsEvidenceService';
 
 export interface StatsHandDrilldown {
+  clubId?: string;
   variant?: string;
   position?: string;
   bigBlind?: number;
   from?: string;
   to?: string;
+  statsMetric?: CashEvidenceMetric;
+  statsSession?: string;
 }
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export function readStatsDrilldown(params: URLSearchParams): StatsHandDrilldown {
+  const clubId = params.get('statsClub')?.trim();
   const variant = params.get('variant')?.trim().toLowerCase();
   const position = params.get('position')?.trim().toUpperCase();
   const bigBlindRaw = Number(params.get('bigBlind'));
   const fromRaw = params.get('from') || '';
   const toRaw = params.get('to') || '';
+  const statsMetricRaw = params.get('statsMetric')?.trim().toLowerCase();
+  const statsSessionRaw = params.get('statsSession')?.trim();
   return {
+    ...(clubId ? { clubId } : {}),
     ...(variant ? { variant } : {}),
     ...(position ? { position } : {}),
     ...(Number.isFinite(bigBlindRaw) && bigBlindRaw > 0 ? { bigBlind: bigBlindRaw } : {}),
     ...(DATE_ONLY.test(fromRaw) ? { from: fromRaw } : {}),
     ...(DATE_ONLY.test(toRaw) ? { to: toRaw } : {}),
+    ...(isCashEvidenceMetric(statsMetricRaw) ? { statsMetric: statsMetricRaw } : {}),
+    ...(statsSessionRaw && UUID.test(statsSessionRaw) ? { statsSession: statsSessionRaw } : {}),
+  };
+}
+
+export function statsEvidenceQueryFromDrilldown(drilldown: StatsHandDrilldown): StatsEvidenceQuery {
+  const toExclusive = drilldown.to
+    ? new Date(`${drilldown.to}T00:00:00.000Z`).getTime() + 86_400_000
+    : null;
+  return {
+    variant: drilldown.variant,
+    position: drilldown.position,
+    bigBlind: drilldown.bigBlind,
+    from: drilldown.from ? `${drilldown.from}T00:00:00.000Z` : null,
+    to: toExclusive === null ? null : new Date(toExclusive).toISOString(),
+    cashMetric: drilldown.statsMetric,
   };
 }
 

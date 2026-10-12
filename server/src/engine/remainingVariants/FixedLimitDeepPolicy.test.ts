@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { remainingVariantSpot } from '../../benchmark/RemainingVariantPolicyEvidence.js';
+import { occupiedButtonBlinds } from '../../benchmark/OmahaVariantPolicyEvidence.js';
 import { evaluateRemainingVariantPolicy } from './RemainingVariantLivePolicy.js';
 import { seedFastRandom } from '../HorseEval.js';
 import { HorseLogic } from '../HorseLogic.js';
@@ -34,6 +35,11 @@ describe('actual legacy fixed-limit deep-stack domain', () => {
               for (const button of [1, seats]) {
                 const s = deepSpot(variant, street, seats, depth, mode);
                 s.state.dealerSeat = button;
+                // P12.1: the blinds move with the button, as the engine posts them.
+                s.state.blindSeats = occupiedButtonBlinds(
+                  button,
+                  s.state.players.map((p) => p.seat)
+                );
                 for (const capped of [false, true]) {
                   s.state.wagersCapped = capped;
                   s.state.legalActions = capped ? ['fold', 'call'] : ['fold', 'call', 'raise'];

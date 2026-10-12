@@ -359,8 +359,9 @@ describe('the client asks the server for the money', () => {
 
   it('shows the server refusal as a permission gate, not as zeros', () => {
     expect(FINANCIALS).toContain('isAuthzError(error)');
-    expect(FINANCIALS).toContain('setDenied(true)');
-    expect(FINANCIALS).toContain('<PermissionState');
+    expect(FINANCIALS).toContain('{ ...current, denied: true }');
+    expect(FINANCIALS).toContain('title="Financials Are Restricted"');
+    expect(FINANCIALS).not.toContain('<PermissionState');
   });
 
   it('labels raked hands, the drop and the union line honestly', () => {
@@ -422,7 +423,8 @@ describe('the client asks the server for the money', () => {
     ] as const) {
       expect(src, name).toContain('resolveClubUUIDStrict(clubId)');
       expect(src, name).toContain('p_club_id: resolved');
-      expect(src, name).toContain('setNotFound(true)');
+      expect(src, name).toContain('{ ...current, notFound: true }');
+      expect(src, name).toContain('current.scope === requestScope');
     }
   });
 

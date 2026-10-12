@@ -1,0 +1,1195 @@
+{
+  "machine": {
+    "host": "league host C, Hetzner ccx23",
+    "cpu": "AMD EPYC-Milan Processor",
+    "cpus": 4,
+    "platform": "linux 6.8.0-138-generic x64",
+    "node": "v26.10.0",
+    "v8": "14.6.202.34-node.34",
+    "clocksource": "kvm-clock"
+  },
+  "revisions": {
+    "before": "03bdd28344 (Horse code identical to league source 216a383f)",
+    "after": "9b4d7b3f78"
+  },
+  "runs": [
+    {
+      "phase": "initial",
+      "tree": "before",
+      "run": "base-cold-1",
+      "node": "v26.10.0",
+      "load": "0.61",
+      "eligible": 181,
+      "fired": 79,
+      "completed": 79,
+      "refusals": {
+        "continuation_operation_budget": 100,
+        "continuation_sample_calibration": 2
+      },
+      "finalGate": {},
+      "latch": null,
+      "budgetStops": {
+        "future_rollout": 50,
+        "icm": 24,
+        "sample": 26,
+        "none": 81
+      },
+      "p50": 4.007,
+      "p99": 4.48,
+      "max": 4.685,
+      "policyMax": 0.64,
+      "refusedMedianWork": {
+        "rollouts": 134,
+        "samplesVisited": 78,
+        "estimates": 124,
+        "candidatesCompleted": 4,
+        "candidateCount": 8
+      }
+    },
+    {
+      "phase": "initial",
+      "tree": "before",
+      "run": "base-warm-1",
+      "node": "v26.10.0",
+      "load": "0.34",
+      "eligible": 0,
+      "fired": 0,
+      "completed": 0,
+      "refusals": {},
+      "finalGate": {},
+      "latch": "eligible_but_silent",
+      "budgetStops": {},
+      "p50": null,
+      "p99": null,
+      "max": null,
+      "policyMax": null,
+      "refusedMedianWork": {
+        "rollouts": null,
+        "samplesVisited": null,
+        "estimates": null,
+        "candidatesCompleted": null,
+        "candidateCount": null
+      }
+    },
+    {
+      "phase": "final_interleaved",
+      "tree": "before",
+      "run": "base-cold-1",
+      "node": "v26.10.0",
+      "load": "0.36",
+      "eligible": 32,
+      "fired": 0,
+      "completed": 0,
+      "refusals": {
+        "continuation_operation_budget": 31,
+        "continuation_sample_calibration": 1
+      },
+      "finalGate": {},
+      "latch": "eligible_but_silent",
+      "budgetStops": {
+        "future_rollout": 21,
+        "icm": 6,
+        "sample": 4,
+        "none": 1
+      },
+      "p50": 4.018,
+      "p99": 4.538,
+      "max": 4.538,
+      "policyMax": 0.627,
+      "refusedMedianWork": {
+        "rollouts": 105,
+        "samplesVisited": 63,
+        "estimates": 101,
+        "candidatesCompleted": 3,
+        "candidateCount": 8
+      }
+    },
+    {
+      "phase": "final_interleaved",
+      "tree": "after",
+      "run": "fix-cold-1",
+      "node": "v26.10.0",
+      "load": "0.36",
+      "eligible": 181,
+      "fired": 115,
+      "completed": 115,
+      "refusals": {
+        "continuation_operation_budget": 64,
+        "continuation_sample_calibration": 2
+      },
+      "finalGate": {},
+      "latch": null,
+      "budgetStops": {
+        "icm": 9,
+        "future_rollout": 37,
+        "sample": 18,
+        "none": 117
+      },
+      "p50": 3.484,
+      "p99": 4.223,
+      "max": 4.577,
+      "policyMax": 0.654,
+      "refusedMedianWork": {
+        "rollouts": 143,
+        "samplesVisited": 87,
+        "estimates": 135,
+        "candidatesCompleted": 5,
+        "candidateCount": 8
+      }
+    },
+    {
+      "phase": "final_interleaved",
+      "tree": "after",
+      "run": "fix-warm-1",
+      "node": "v26.10.0",
+      "load": "0.41",
+      "eligible": 181,
+      "fired": 146,
+      "completed": 146,
+      "refusals": {
+        "continuation_operation_budget": 33,
+        "continuation_sample_calibration": 2
+      },
+      "finalGate": {},
+      "latch": null,
+      "budgetStops": {
+        "icm": 9,
+        "sample": 6,
+        "none": 148,
+        "future_rollout": 18
+      },
+      "p50": 3.001,
+      "p99": 4.157,
+      "max": 4.159,
+      "policyMax": 0.179,
+      "refusedMedianWork": {
+        "rollouts": 208,
+        "samplesVisited": 118,
+        "estimates": 190,
+        "candidatesCompleted": 5,
+        "candidateCount": 8
+      }
+    },
+    {
+      "phase": "final_interleaved",
+      "tree": "before",
+      "run": "base-warm-1",
+      "node": "v26.10.0",
+      "load": "0.46",
+      "eligible": 0,
+      "fired": 0,
+      "completed": 0,
+      "refusals": {},
+      "finalGate": {},
+      "latch": "eligible_but_silent",
+      "budgetStops": {},
+      "p50": null,
+      "p99": null,
+      "max": null,
+      "policyMax": null,
+      "refusedMedianWork": {
+        "rollouts": null,
+        "samplesVisited": null,
+        "estimates": null,
+        "candidatesCompleted": null,
+        "candidateCount": null
+      }
+    },
+    {
+      "phase": "final_interleaved",
+      "tree": "before",
+      "run": "base-cold-2",
+      "node": "v26.10.0",
+      "load": "0.50",
+      "eligible": 32,
+      "fired": 0,
+      "completed": 0,
+      "refusals": {
+        "continuation_operation_budget": 31,
+        "continuation_sample_calibration": 1
+      },
+      "finalGate": {},
+      "latch": "eligible_but_silent",
+      "budgetStops": {
+        "icm": 6,
+        "future_rollout": 20,
+        "sample": 5,
+        "none": 1
+      },
+      "p50": 4.017,
+      "p99": 4.152,
+      "max": 4.152,
+      "policyMax": 0.625,
+      "refusedMedianWork": {
+        "rollouts": 118,
+        "samplesVisited": 67,
+        "estimates": 112,
+        "candidatesCompleted": 4,
+        "candidateCount": 8
+      }
+    },
+    {
+      "phase": "final_interleaved",
+      "tree": "after",
+      "run": "fix-cold-2",
+      "node": "v26.10.0",
+      "load": "0.54",
+      "eligible": 181,
+      "fired": 111,
+      "completed": 111,
+      "refusals": {
+        "continuation_operation_budget": 68,
+        "continuation_sample_calibration": 2
+      },
+      "finalGate": {},
+      "latch": null,
+      "budgetStops": {
+        "icm": 24,
+        "future_rollout": 34,
+        "sample": 10,
+        "none": 113
+      },
+      "p50": 3.26,
+      "p99": 4.261,
+      "max": 4.412,
+      "policyMax": 0.67,
+      "refusedMedianWork": {
+        "rollouts": 150,
+        "samplesVisited": 93,
+        "estimates": 142,
+        "candidatesCompleted": 5,
+        "candidateCount": 8
+      }
+    },
+    {
+      "phase": "final_interleaved",
+      "tree": "after",
+      "run": "fix-warm-2",
+      "node": "v26.10.0",
+      "load": "0.54",
+      "eligible": 181,
+      "fired": 138,
+      "completed": 138,
+      "refusals": {
+        "continuation_operation_budget": 41,
+        "continuation_sample_calibration": 2
+      },
+      "finalGate": {},
+      "latch": null,
+      "budgetStops": {
+        "future_rollout": 26,
+        "none": 140,
+        "icm": 6,
+        "sample": 9
+      },
+      "p50": 3.271,
+      "p99": 4.147,
+      "max": 4.161,
+      "policyMax": 0.212,
+      "refusedMedianWork": {
+        "rollouts": 180,
+        "samplesVisited": 109,
+        "estimates": 172,
+        "candidatesCompleted": 5,
+        "candidateCount": 8
+      }
+    },
+    {
+      "phase": "final_interleaved",
+      "tree": "before",
+      "run": "base-warm-2",
+      "node": "v26.10.0",
+      "load": "0.61",
+      "eligible": 0,
+      "fired": 0,
+      "completed": 0,
+      "refusals": {},
+      "finalGate": {},
+      "latch": "eligible_but_silent",
+      "budgetStops": {},
+      "p50": null,
+      "p99": null,
+      "max": null,
+      "policyMax": null,
+      "refusedMedianWork": {
+        "rollouts": null,
+        "samplesVisited": null,
+        "estimates": null,
+        "candidatesCompleted": null,
+        "candidateCount": null
+      }
+    },
+    {
+      "phase": "final_interleaved",
+      "tree": "before",
+      "run": "base-cold-3",
+      "node": "v26.10.0",
+      "load": "0.65",
+      "eligible": 32,
+      "fired": 0,
+      "completed": 0,
+      "refusals": {
+        "continuation_operation_budget": 31,
+        "continuation_sample_calibration": 1
+      },
+      "finalGate": {},
+      "latch": "eligible_but_silent",
+      "budgetStops": {
+        "icm": 5,
+        "future_rollout": 24,
+        "sample": 2,
+        "none": 1
+      },
+      "p50": 4.017,
+      "p99": 4.123,
+      "max": 4.123,
+      "policyMax": 0.6,
+      "refusedMedianWork": {
+        "rollouts": 116,
+        "samplesVisited": 73,
+        "estimates": 116,
+        "candidatesCompleted": 4,
+        "candidateCount": 8
+      }
+    },
+    {
+      "phase": "final_interleaved",
+      "tree": "after",
+      "run": "fix-cold-3",
+      "node": "v26.10.0",
+      "load": "0.65",
+      "eligible": 181,
+      "fired": 108,
+      "completed": 108,
+      "refusals": {
+        "continuation_operation_budget": 71,
+        "continuation_sample_calibration": 2
+      },
+      "finalGate": {},
+      "latch": null,
+      "budgetStops": {
+        "future_rollout": 33,
+        "icm": 22,
+        "sample": 16,
+        "none": 110
+      },
+      "p50": 3.471,
+      "p99": 4.477,
+      "max": 4.495,
+      "policyMax": 0.602,
+      "refusedMedianWork": {
+        "rollouts": 156,
+        "samplesVisited": 100,
+        "estimates": 149,
+        "candidatesCompleted": 5,
+        "candidateCount": 8
+      }
+    },
+    {
+      "phase": "final_interleaved",
+      "tree": "after",
+      "run": "fix-warm-3",
+      "node": "v26.10.0",
+      "load": "0.67",
+      "eligible": 181,
+      "fired": 132,
+      "completed": 132,
+      "refusals": {
+        "continuation_operation_budget": 47,
+        "continuation_sample_calibration": 2
+      },
+      "finalGate": {},
+      "latch": null,
+      "budgetStops": {
+        "icm": 9,
+        "future_rollout": 29,
+        "none": 134,
+        "sample": 9
+      },
+      "p50": 3.277,
+      "p99": 4.301,
+      "max": 4.593,
+      "policyMax": 0.196,
+      "refusedMedianWork": {
+        "rollouts": 186,
+        "samplesVisited": 110,
+        "estimates": 171,
+        "candidatesCompleted": 6,
+        "candidateCount": 8
+      }
+    },
+    {
+      "phase": "final_interleaved",
+      "tree": "before",
+      "run": "base-warm-3",
+      "node": "v26.10.0",
+      "load": "0.78",
+      "eligible": 32,
+      "fired": 0,
+      "completed": 0,
+      "refusals": {
+        "continuation_operation_budget": 31,
+        "continuation_sample_calibration": 1
+      },
+      "finalGate": {},
+      "latch": "eligible_but_silent",
+      "budgetStops": {
+        "sample": 6,
+        "icm": 9,
+        "future_rollout": 16,
+        "none": 1
+      },
+      "p50": 4.01,
+      "p99": 4.62,
+      "max": 4.62,
+      "policyMax": 0.08,
+      "refusedMedianWork": {
+        "rollouts": 125,
+        "samplesVisited": 69,
+        "estimates": 114,
+        "candidatesCompleted": 4,
+        "candidateCount": 8
+      }
+    }
+  ],
+  "fullWorkCostMs": {
+    "note": "p8cost: per eligible decision, median of 5 (decide candidate) minus median of 5 (decide off), clock frozen at 0, one process",
+    "before": [
+      {
+        "eligible": 181,
+        "sumMs": 679.3385460525751,
+        "p25": 2.8769020065665245,
+        "p50": 3.5532329976558685,
+        "p75": 4.501030996441841,
+        "p90": 5.259033001959324,
+        "p99": 8.689900003373623,
+        "max": 11.287351995706558,
+        "under4": 116,
+        "under3_5": 88
+      },
+      {
+        "eligible": 181,
+        "sumMs": 683.733150973916,
+        "p25": 2.927845001220703,
+        "p50": 3.4868730008602142,
+        "p75": 4.416227996349335,
+        "p90": 5.586625002324581,
+        "p99": 9.034929007291794,
+        "max": 10.929716996848583,
+        "under4": 119,
+        "under3_5": 91
+      }
+    ],
+    "after": [
+      {
+        "eligible": 181,
+        "sumMs": 515.059392079711,
+        "p25": 2.1398009955883026,
+        "p50": 2.6524949967861176,
+        "p75": 3.5238419994711876,
+        "p90": 4.18623199313879,
+        "p99": 7.1297769993543625,
+        "max": 8.510150998830795,
+        "under4": 156,
+        "under3_5": 133
+      }
+    ],
+    "heldExperimentPokerEngineCalculatePots": {
+      "eligible": 181,
+      "sumMs": 477.61459701508284,
+      "p25": 2.052840009331703,
+      "p50": 2.3865649923682213,
+      "p75": 3.161821998655796,
+      "p90": 4.101023994386196,
+      "p99": 6.313374005258083,
+      "max": 9.856876000761986,
+      "under4": 161,
+      "under3_5": 148
+    }
+  },
+  "digest": {
+    "clock": "frozen_at_zero",
+    "before": {
+      "sha256": "7d1eb21db8ecd7356066cad1ca633b00f820ad94481d4f9395df4b0f761c9fbf",
+      "sourceRevision": "03bdd28344b0556f8b41a9b49010d915a8e0d47f"
+    },
+    "after": {
+      "sha256": "7d1eb21db8ecd7356066cad1ca633b00f820ad94481d4f9395df4b0f761c9fbf",
+      "sourceRevision": "9b4d7b3f78371fdffaf60da0fc05fcd5ae5d4dc2"
+    },
+    "identicalRows": 182,
+    "rows": 182
+  },
+  "league": {
+    "before": {
+      "objective": "mtt",
+      "seed": 8101101,
+      "pairs": 4,
+      "decisions": 3058,
+      "eligible": 14,
+      "fired": 0,
+      "completed": 0,
+      "refusals": {
+        "continuation_operation_budget": 14
+      },
+      "latencyMs": {
+        "p50": 4.040131999998266,
+        "p95": 4.315956999998889,
+        "p99": 4.315956999998889,
+        "max": 4.315956999998889
+      },
+      "medianWork": {
+        "rollouts": 96,
+        "samplesVisited": 52,
+        "estimates": 92,
+        "candidatesCompleted": 3,
+        "candidateCount": 8
+      },
+      "diagnostics": [
+        {
+          "street": "flop",
+          "localPlayers": 6,
+          "fieldPlayers": 18,
+          "completed": false,
+          "reason": "continuation_operation_budget",
+          "latencyMs": 4.122507000000041,
+          "work": {
+            "attempts": 1,
+            "candidateCount": 9,
+            "candidatesCompleted": 0,
+            "outcomeSamples": 16,
+            "samplesVisited": 3,
+            "rollouts": 6,
+            "rolloutCacheHits": 0,
+            "estimates": 6,
+            "estimateCacheHits": 0,
+            "icmMethod": "plackett_luce_mc",
+            "levelBounds": 2,
+            "budgetStop": "sample"
+          }
+        },
+        {
+          "street": "turn",
+          "localPlayers": 6,
+          "fieldPlayers": 18,
+          "completed": false,
+          "reason": "continuation_operation_budget",
+          "latencyMs": 4.049708000000464,
+          "work": {
+            "attempts": 1,
+            "candidateCount": 8,
+            "candidatesCompleted": 1,
+            "outcomeSamples": 16,
+            "samplesVisited": 27,
+            "rollouts": 53,
+            "rolloutCacheHits": 0,
+            "estimates": 51,
+            "estimateCacheHits": 1,
+            "icmMethod": "plackett_luce_mc",
+            "levelBounds": 2,
+            "budgetStop": "future_rollout"
+          }
+        },
+        {
+          "street": "flop",
+          "localPlayers": 6,
+          "fieldPlayers": 17,
+          "completed": false,
+          "reason": "continuation_operation_budget",
+          "latencyMs": 4.049918000000616,
+          "work": {
+            "attempts": 1,
+            "candidateCount": 8,
+            "candidatesCompleted": 1,
+            "outcomeSamples": 16,
+            "samplesVisited": 16,
+            "rollouts": 32,
+            "rolloutCacheHits": 0,
+            "estimates": 30,
+            "estimateCacheHits": 2,
+            "icmMethod": "plackett_luce_mc",
+            "levelBounds": 2,
+            "budgetStop": "sample"
+          }
+        },
+        {
+          "street": "flop",
+          "localPlayers": 6,
+          "fieldPlayers": 17,
+          "completed": false,
+          "reason": "continuation_operation_budget",
+          "latencyMs": 4.023817999999665,
+          "work": {
+            "attempts": 1,
+            "candidateCount": 10,
+            "candidatesCompleted": 2,
+            "outcomeSamples": 16,
+            "samplesVisited": 36,
+            "rollouts": 72,
+            "rolloutCacheHits": 0,
+            "estimates": 70,
+            "estimateCacheHits": 2,
+            "icmMethod": "plackett_luce_mc",
+            "levelBounds": 2,
+            "budgetStop": "sample"
+          }
+        },
+        {
+          "street": "flop",
+          "localPlayers": 6,
+          "fieldPlayers": 18,
+          "completed": false,
+          "reason": "continuation_operation_budget",
+          "latencyMs": 4.028384999997797,
+          "work": {
+            "attempts": 1,
+            "candidateCount": 8,
+            "candidatesCompleted": 1,
+            "outcomeSamples": 16,
+            "samplesVisited": 30,
+            "rollouts": 60,
+            "rolloutCacheHits": 0,
+            "estimates": 59,
+            "estimateCacheHits": 0,
+            "icmMethod": "plackett_luce_mc",
+            "levelBounds": 2,
+            "budgetStop": "future_rollout"
+          }
+        },
+        {
+          "street": "turn",
+          "localPlayers": 6,
+          "fieldPlayers": 18,
+          "completed": false,
+          "reason": "continuation_operation_budget",
+          "latencyMs": 4.018841999997676,
+          "work": {
+            "attempts": 1,
+            "candidateCount": 9,
+            "candidatesCompleted": 3,
+            "outcomeSamples": 16,
+            "samplesVisited": 52,
+            "rollouts": 99,
+            "rolloutCacheHits": 4,
+            "estimates": 94,
+            "estimateCacheHits": 8,
+            "icmMethod": "plackett_luce_mc",
+            "levelBounds": 2,
+            "budgetStop": "future_rollout"
+          }
+        },
+        {
+          "street": "flop",
+          "localPlayers": 5,
+          "fieldPlayers": 17,
+          "completed": false,
+          "reason": "continuation_operation_budget",
+          "latencyMs": 4.134414000000106,
+          "work": {
+            "attempts": 1,
+            "candidateCount": 8,
+            "candidatesCompleted": 3,
+            "outcomeSamples": 16,
+            "samplesVisited": 53,
+            "rollouts": 96,
+            "rolloutCacheHits": 10,
+            "estimates": 89,
+            "estimateCacheHits": 16,
+            "icmMethod": "plackett_luce_mc",
+            "levelBounds": 2,
+            "budgetStop": "icm"
+          }
+        },
+        {
+          "street": "flop",
+          "localPlayers": 5,
+          "fieldPlayers": 17,
+          "completed": false,
+          "reason": "continuation_operation_budget",
+          "latencyMs": 4.040131999998266,
+          "work": {
+            "attempts": 1,
+            "candidateCount": 9,
+            "candidatesCompleted": 3,
+            "outcomeSamples": 16,
+            "samplesVisited": 50,
+            "rollouts": 96,
+            "rolloutCacheHits": 4,
+            "estimates": 92,
+            "estimateCacheHits": 6,
+            "icmMethod": "plackett_luce_mc",
+            "levelBounds": 2,
+            "budgetStop": "icm"
+          }
+        },
+        {
+          "street": "turn",
+          "localPlayers": 5,
+          "fieldPlayers": 17,
+          "completed": false,
+          "reason": "continuation_operation_budget",
+          "latencyMs": 4.018168999999034,
+          "work": {
+            "attempts": 1,
+            "candidateCount": 8,
+            "candidatesCompleted": 4,
+            "outcomeSamples": 16,
+            "samplesVisited": 79,
+            "rollouts": 134,
+            "rolloutCacheHits": 24,
+            "estimates": 128,
+            "estimateCacheHits": 30,
+            "icmMethod": "plackett_luce_mc",
+            "levelBounds": 2,
+            "budgetStop": "sample"
+          }
+        },
+        {
+          "street": "river",
+          "localPlayers": 5,
+          "fieldPlayers": 17,
+          "completed": false,
+          "reason": "continuation_operation_budget",
+          "latencyMs": 4.315956999998889,
+          "work": {
+            "attempts": 1,
+            "candidateCount": 8,
+            "candidatesCompleted": 4,
+            "outcomeSamples": 16,
+            "samplesVisited": 79,
+            "rollouts": 120,
+            "rolloutCacheHits": 38,
+            "estimates": 113,
+            "estimateCacheHits": 44,
+            "icmMethod": "plackett_luce_mc",
+            "levelBounds": 2,
+            "budgetStop": "future_rollout"
+          }
+        },
+        {
+          "street": "flop",
+          "localPlayers": 5,
+          "fieldPlayers": 17,
+          "completed": false,
+          "reason": "continuation_operation_budget",
+          "latencyMs": 4.024551000002248,
+          "work": {
+            "attempts": 1,
+            "candidateCount": 8,
+            "candidatesCompleted": 5,
+            "outcomeSamples": 16,
+            "samplesVisited": 90,
+            "rollouts": 126,
+            "rolloutCacheHits": 54,
+            "estimates": 120,
+            "estimateCacheHits": 60,
+            "icmMethod": "plackett_luce_mc",
+            "levelBounds": 2,
+            "budgetStop": "sample"
+          }
+        },
+        {
+          "street": "turn",
+          "localPlayers": 5,
+          "fieldPlayers": 17,
+          "completed": false,
+          "reason": "continuation_operation_budget",
+          "latencyMs": 4.014404000001377,
+          "work": {
+            "attempts": 1,
+            "candidateCount": 8,
+            "candidatesCompleted": 4,
+            "outcomeSamples": 16,
+            "samplesVisited": 75,
+            "rollouts": 110,
+            "rolloutCacheHits": 40,
+            "estimates": 106,
+            "estimateCacheHits": 42,
+            "icmMethod": "plackett_luce_mc",
+            "levelBounds": 2,
+            "budgetStop": "icm"
+          }
+        },
+        {
+          "street": "river",
+          "localPlayers": 5,
+          "fieldPlayers": 17,
+          "completed": false,
+          "reason": "continuation_operation_budget",
+          "latencyMs": 4.016026999997848,
+          "work": {
+            "attempts": 1,
+            "candidateCount": 8,
+            "candidatesCompleted": 5,
+            "outcomeSamples": 16,
+            "samplesVisited": 87,
+            "rollouts": 124,
+            "rolloutCacheHits": 50,
+            "estimates": 115,
+            "estimateCacheHits": 58,
+            "icmMethod": "plackett_luce_mc",
+            "levelBounds": 2,
+            "budgetStop": "icm"
+          }
+        },
+        {
+          "street": "flop",
+          "localPlayers": 5,
+          "fieldPlayers": 17,
+          "completed": false,
+          "reason": "continuation_operation_budget",
+          "latencyMs": 4.272102000002633,
+          "work": {
+            "attempts": 1,
+            "candidateCount": 9,
+            "candidatesCompleted": 3,
+            "outcomeSamples": 16,
+            "samplesVisited": 50,
+            "rollouts": 92,
+            "rolloutCacheHits": 6,
+            "estimates": 91,
+            "estimateCacheHits": 6,
+            "icmMethod": "plackett_luce_mc",
+            "levelBounds": 2,
+            "budgetStop": "icm"
+          }
+        }
+      ]
+    },
+    "after": {
+      "objective": "mtt",
+      "seed": 8101101,
+      "pairs": 4,
+      "decisions": 3058,
+      "eligible": 14,
+      "fired": 0,
+      "completed": 0,
+      "refusals": {
+        "continuation_operation_budget": 14
+      },
+      "latencyMs": {
+        "p50": 4.022994999999355,
+        "p95": 4.914832999998907,
+        "p99": 4.914832999998907,
+        "max": 4.914832999998907
+      },
+      "medianWork": {
+        "rollouts": 127,
+        "samplesVisited": 75,
+        "estimates": 120,
+        "candidatesCompleted": 4,
+        "candidateCount": 8
+      },
+      "diagnostics": [
+        {
+          "street": "flop",
+          "localPlayers": 6,
+          "fieldPlayers": 18,
+          "completed": false,
+          "reason": "continuation_operation_budget",
+          "latencyMs": 4.126401999999871,
+          "work": {
+            "attempts": 1,
+            "candidateCount": 9,
+            "candidatesCompleted": 0,
+            "outcomeSamples": 16,
+            "samplesVisited": 6,
+            "rollouts": 11,
+            "rolloutCacheHits": 0,
+            "estimates": 10,
+            "estimateCacheHits": 0,
+            "icmMethod": "plackett_luce_mc",
+            "levelBounds": 2,
+            "budgetStop": "future_rollout"
+          }
+        },
+        {
+          "street": "turn",
+          "localPlayers": 6,
+          "fieldPlayers": 18,
+          "completed": false,
+          "reason": "continuation_operation_budget",
+          "latencyMs": 4.022615999998379,
+          "work": {
+            "attempts": 1,
+            "candidateCount": 8,
+            "candidatesCompleted": 1,
+            "outcomeSamples": 16,
+            "samplesVisited": 29,
+            "rollouts": 57,
+            "rolloutCacheHits": 0,
+            "estimates": 55,
+            "estimateCacheHits": 1,
+            "icmMethod": "plackett_luce_mc",
+            "levelBounds": 2,
+            "budgetStop": "future_rollout"
+          }
+        },
+        {
+          "street": "flop",
+          "localPlayers": 6,
+          "fieldPlayers": 17,
+          "completed": false,
+          "reason": "continuation_operation_budget",
+          "latencyMs": 4.067191999998613,
+          "work": {
+            "attempts": 1,
+            "candidateCount": 8,
+            "candidatesCompleted": 1,
+            "outcomeSamples": 16,
+            "samplesVisited": 30,
+            "rollouts": 56,
+            "rolloutCacheHits": 4,
+            "estimates": 50,
+            "estimateCacheHits": 8,
+            "icmMethod": "plackett_luce_mc",
+            "levelBounds": 2,
+            "budgetStop": "icm"
+          }
+        },
+        {
+          "street": "flop",
+          "localPlayers": 6,
+          "fieldPlayers": 17,
+          "completed": false,
+          "reason": "continuation_operation_budget",
+          "latencyMs": 4.024749000000156,
+          "work": {
+            "attempts": 1,
+            "candidateCount": 10,
+            "candidatesCompleted": 2,
+            "outcomeSamples": 16,
+            "samplesVisited": 36,
+            "rollouts": 71,
+            "rolloutCacheHits": 0,
+            "estimates": 68,
+            "estimateCacheHits": 2,
+            "icmMethod": "plackett_luce_mc",
+            "levelBounds": 2,
+            "budgetStop": "future_rollout"
+          }
+        },
+        {
+          "street": "flop",
+          "localPlayers": 6,
+          "fieldPlayers": 18,
+          "completed": false,
+          "reason": "continuation_operation_budget",
+          "latencyMs": 4.016207000000577,
+          "work": {
+            "attempts": 1,
+            "candidateCount": 8,
+            "candidatesCompleted": 1,
+            "outcomeSamples": 16,
+            "samplesVisited": 30,
+            "rollouts": 59,
+            "rolloutCacheHits": 0,
+            "estimates": 58,
+            "estimateCacheHits": 0,
+            "icmMethod": "plackett_luce_mc",
+            "levelBounds": 2,
+            "budgetStop": "future_rollout"
+          }
+        },
+        {
+          "street": "turn",
+          "localPlayers": 6,
+          "fieldPlayers": 18,
+          "completed": false,
+          "reason": "continuation_operation_budget",
+          "latencyMs": 4.076997000000119,
+          "work": {
+            "attempts": 1,
+            "candidateCount": 9,
+            "candidatesCompleted": 2,
+            "outcomeSamples": 16,
+            "samplesVisited": 43,
+            "rollouts": 84,
+            "rolloutCacheHits": 2,
+            "estimates": 78,
+            "estimateCacheHits": 6,
+            "icmMethod": "plackett_luce_mc",
+            "levelBounds": 2,
+            "budgetStop": "icm"
+          }
+        },
+        {
+          "street": "flop",
+          "localPlayers": 5,
+          "fieldPlayers": 17,
+          "completed": false,
+          "reason": "continuation_operation_budget",
+          "latencyMs": 4.0244779999993625,
+          "work": {
+            "attempts": 1,
+            "candidateCount": 8,
+            "candidatesCompleted": 3,
+            "outcomeSamples": 16,
+            "samplesVisited": 55,
+            "rollouts": 100,
+            "rolloutCacheHits": 10,
+            "estimates": 93,
+            "estimateCacheHits": 16,
+            "icmMethod": "plackett_luce_mc",
+            "levelBounds": 2,
+            "budgetStop": "icm"
+          }
+        },
+        {
+          "street": "flop",
+          "localPlayers": 5,
+          "fieldPlayers": 17,
+          "completed": false,
+          "reason": "continuation_operation_budget",
+          "latencyMs": 4.914832999998907,
+          "work": {
+            "attempts": 1,
+            "candidateCount": 9,
+            "candidatesCompleted": 6,
+            "outcomeSamples": 16,
+            "samplesVisited": 108,
+            "rollouts": 162,
+            "rolloutCacheHits": 54,
+            "estimates": 158,
+            "estimateCacheHits": 58,
+            "icmMethod": "plackett_luce_mc",
+            "levelBounds": 2,
+            "budgetStop": "sample"
+          }
+        },
+        {
+          "street": "turn",
+          "localPlayers": 5,
+          "fieldPlayers": 17,
+          "completed": false,
+          "reason": "continuation_operation_budget",
+          "latencyMs": 4.014622999999119,
+          "work": {
+            "attempts": 1,
+            "candidateCount": 8,
+            "candidatesCompleted": 4,
+            "outcomeSamples": 16,
+            "samplesVisited": 75,
+            "rollouts": 127,
+            "rolloutCacheHits": 22,
+            "estimates": 120,
+            "estimateCacheHits": 28,
+            "icmMethod": "plackett_luce_mc",
+            "levelBounds": 2,
+            "budgetStop": "future_rollout"
+          }
+        },
+        {
+          "street": "river",
+          "localPlayers": 5,
+          "fieldPlayers": 17,
+          "completed": false,
+          "reason": "continuation_operation_budget",
+          "latencyMs": 4.013831000000209,
+          "work": {
+            "attempts": 1,
+            "candidateCount": 8,
+            "candidatesCompleted": 7,
+            "outcomeSamples": 16,
+            "samplesVisited": 120,
+            "rollouts": 164,
+            "rolloutCacheHits": 76,
+            "estimates": 157,
+            "estimateCacheHits": 82,
+            "icmMethod": "plackett_luce_mc",
+            "levelBounds": 2,
+            "budgetStop": "future_rollout"
+          }
+        },
+        {
+          "street": "flop",
+          "localPlayers": 5,
+          "fieldPlayers": 17,
+          "completed": false,
+          "reason": "continuation_operation_budget",
+          "latencyMs": 4.014281999996456,
+          "work": {
+            "attempts": 1,
+            "candidateCount": 8,
+            "candidatesCompleted": 7,
+            "outcomeSamples": 16,
+            "samplesVisited": 127,
+            "rollouts": 160,
+            "rolloutCacheHits": 92,
+            "estimates": 153,
+            "estimateCacheHits": 98,
+            "icmMethod": "plackett_luce_mc",
+            "levelBounds": 2,
+            "budgetStop": "icm"
+          }
+        },
+        {
+          "street": "turn",
+          "localPlayers": 5,
+          "fieldPlayers": 17,
+          "completed": false,
+          "reason": "continuation_operation_budget",
+          "latencyMs": 4.022994999999355,
+          "work": {
+            "attempts": 1,
+            "candidateCount": 8,
+            "candidatesCompleted": 7,
+            "outcomeSamples": 16,
+            "samplesVisited": 118,
+            "rollouts": 156,
+            "rolloutCacheHits": 80,
+            "estimates": 154,
+            "estimateCacheHits": 82,
+            "icmMethod": "plackett_luce_mc",
+            "levelBounds": 2,
+            "budgetStop": "sample"
+          }
+        },
+        {
+          "street": "river",
+          "localPlayers": 5,
+          "fieldPlayers": 17,
+          "completed": false,
+          "reason": "continuation_operation_budget",
+          "latencyMs": 4.010376999998698,
+          "work": {
+            "attempts": 1,
+            "candidateCount": 8,
+            "candidatesCompleted": 7,
+            "outcomeSamples": 16,
+            "samplesVisited": 117,
+            "rollouts": 158,
+            "rolloutCacheHits": 76,
+            "estimates": 150,
+            "estimateCacheHits": 84,
+            "icmMethod": "plackett_luce_mc",
+            "levelBounds": 2,
+            "budgetStop": "sample"
+          }
+        },
+        {
+          "street": "flop",
+          "localPlayers": 5,
+          "fieldPlayers": 17,
+          "completed": false,
+          "reason": "continuation_operation_budget",
+          "latencyMs": 4.015846000002057,
+          "work": {
+            "attempts": 1,
+            "candidateCount": 9,
+            "candidatesCompleted": 5,
+            "outcomeSamples": 16,
+            "samplesVisited": 95,
+            "rollouts": 162,
+            "rolloutCacheHits": 20,
+            "estimates": 164,
+            "estimateCacheHits": 22,
+            "icmMethod": "plackett_luce_mc",
+            "levelBounds": 2,
+            "budgetStop": "sample"
+          }
+        }
+      ]
+    }
+  }
+}

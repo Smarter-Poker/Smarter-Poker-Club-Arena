@@ -1,0 +1,5 @@
+{
+  "_owner": "fix/db-timeouts-20261002",
+  "_comment": "Migration 20261002083400_a_table_start_reads_only_the_hands_after_its_settled_mark_an creates the per-table settled mark fn_ca_resume_hand_submission resumes above. Applied by apply-merged-migration.yml after merge.",
+  "tables": ["smarter_private.hand_submission_resume_marks"]
+}

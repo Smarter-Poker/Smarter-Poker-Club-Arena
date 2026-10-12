@@ -20,8 +20,11 @@
  * into a raise, a dominated pair calling down, a blown-off big bluff.
  *
  * Fire-and-forget, never throws, and deliberately NOT awaited by settlement.
- * A permanent per-horse/day rollup is maintained via fn_hhr_rollup_add;
- * raw rows are pruned at 30 days by sp_prune_horse_hand_reviews().
+ * The rows, their replay receipts and the per-horse/day rollup are written
+ * together by ONE call to fn_hhr_record_atomic (P14.1); raw rows are pruned
+ * at 30 days by sp_prune_horse_hand_reviews(), and a receipt whose review is
+ * gone and whose hand is past the 30-day publication horizon by
+ * sp_prune_horse_hand_review_receipts() (20261008041150).
  */
 
 import { supabase } from './supabase/client.js';
@@ -35,6 +38,7 @@ import {
   nlhNutStatus,
   scoreOmahaHiPartial,
   omahaDrawQuality,
+  scoreOmahaLow,
 } from '../engine/HorseEval.js';
 import { RANK_VALUES, RANKS, SUITS } from '../engine/PokerEngine.js';
 import type { Card } from '../types.js';
@@ -50,6 +54,13 @@ export interface HorseReviewInput {
   potSize?: number;
   /** Card objects OR the engine's board strings ("Khearts", "10spades"). */
   board?: unknown[] | null;
+  /**
+   * Every board the hand was dealt, board 1 included: double/triple-board
+   * bomb pots and run-it-twice runs. Absent or one entry = a single-board
+   * hand. The Omaha made-hand tags judge ONE board, so they stand down when
+   * this holds more than one (2026-09-30).
+   */
+  boards?: unknown[][] | null;
   /** Every seat dealt in: userId -> { seat, cards }. */
   holeCardsAll: Map<string, { seat: number; cards: unknown }>;
   /** userId -> totalInvested (blinds/antes included, net of uncalled refund). */
@@ -328,6 +339,42 @@ export function boardAsOf(board: Card[], street: CommitStreet | null): Card[] {
 }
 
 /**
+ * Omaha top pair: a hole card pairs the HIGHEST board rank. The caller has
+ * already established the hand is exactly one pair, so a hole card on the top
+ * rank means that pair is the top pair (an overpair, a middle pair or a
+ * bottom pair has no hole card there).
+ */
+export function isOmahaTopPair(hole: Card[], board: Card[]): boolean {
+  if (board.length === 0) return false;
+  const top = Math.max(...board.map((bc) => RANK_VALUES[bc.rank]));
+  return hole.some((hc) => RANK_VALUES[hc.rank] === top);
+}
+
+/**
+ * Hi-lo: does hero hold a qualifying low, or (with cards to come) a low draw?
+ * A low draw is two distinct hole ranks of eight or under plus at least two
+ * OTHER distinct board ranks of eight or under, so one more low card makes
+ * the five distinct low ranks Omaha 8-or-better needs.
+ */
+export function omahaLowLive(hole: Card[], board: Card[]): boolean {
+  if (board.length >= 3 && scoreOmahaLow(hole, board) !== Infinity) return true;
+  if (board.length >= 5) return false;
+  const low = (card: Card): number => {
+    const v = RANK_VALUES[card.rank];
+    return v === 14 ? 1 : v;
+  };
+  const holeLows = [...new Set(hole.map(low).filter((v) => v <= 8))];
+  const boardLows = [...new Set(board.map(low).filter((v) => v <= 8))];
+  for (let i = 0; i < holeLows.length; i++) {
+    for (let j = i + 1; j < holeLows.length; j++) {
+      const others = boardLows.filter((v) => v !== holeLows[i] && v !== holeLows[j]);
+      if (others.length >= 2) return true;
+    }
+  }
+  return false;
+}
+
+/**
  * What the FINAL board makes available to somebody else. Omaha plays exactly
  * two hole cards and three board cards, which is what each test below counts:
  *
@@ -388,6 +435,8 @@ export function detectLeaks(row: {
   board: Card[] | null;
   heroActions: Array<{ action: string; stage: string; amount?: number; isFullRaise?: boolean }>;
   wentToShowdown: boolean;
+  /** More than one board was dealt (double-board bomb pot, run it twice). */
+  multiBoard?: boolean;
 }): string[] {
   const tags: string[] = [];
   const vi = variantInfo(row.variant);
@@ -509,7 +558,21 @@ export function detectLeaks(row: {
   // Omaha nut discipline: the horse lost a 20bb+ pot at showdown holding a
   // non-nut flush or a dominated straight on the final board — the exact
   // "small flush pays off the bigger one" hand.
-  if (vi.isOmaha && row.wentToShowdown && row.holeCards && row.board && row.board.length >= 3) {
+  // ── ONE BOARD OF SEVERAL IS NOT THE HAND (2026-09-30) ──
+  // A double-board bomb pot is split between two boards, and `row.board` is
+  // board 1 only. Judging hero's made hand there tagged top set on board 2
+  // (review 797943) and a set on board 2 (798911) as one-pair stack-offs.
+  // Double-board hands were 22% of plo_toppair_no_redraw_stackoff against
+  // 5.5% of PLO reviews. The Omaha made-hand blocks stand down when more
+  // than one board was dealt.
+  if (
+    vi.isOmaha &&
+    !row.multiBoard &&
+    row.wentToShowdown &&
+    row.holeCards &&
+    row.board &&
+    row.board.length >= 3
+  ) {
     try {
       const st = omahaNutStatus(row.holeCards, row.board);
       if (st.category === 6 && st.higherFlushRanks >= 2) {
@@ -754,6 +817,7 @@ export function detectLeaks(row: {
   // rule. A detector is a measurement.
   if (
     vi.isOmaha &&
+    !row.multiBoard &&
     row.wentToShowdown &&
     row.holeCards &&
     row.board &&
@@ -805,18 +869,25 @@ export function detectLeaks(row: {
         if (!omahaBoatIsNut(row.holeCards, boardAt)) {
           flag('plo_underfull_stackoff');
         }
-      } else if (st.category <= CAT_ONE_PAIR) {
-        // At most one pair with a full stack in. On the river every redraw has
+      } else if (st.category === CAT_ONE_PAIR && isOmahaTopPair(row.holeCards, boardAt)) {
+        // TOP pair with a full stack in. On the river every redraw has
         // resolved, so a hand that still shows one pair is one that had no
         // wrap, no flush and no nut redraw arrive - the second shape the audit
         // panel proposed (plo_toppair_no_redraw_stackoff). On a flop or turn
         // commit the redraw is still live, so a flush draw or eight or more
         // straight outs is a different decision and is not this tag.
+        //
+        // 2026-09-30: the test was `category <= CAT_ONE_PAIR`, so overpairs,
+        // middle and bottom pairs and high card all carried a TOP-pair tag
+        // (reviews 796401, 802448, 804424, 814544). It now requires the
+        // name. And in a hi-lo game a made low, or a low draw on a flop or
+        // turn commit, is half the pot: that is a redraw too (812864).
         let redrawLive = false;
         if (boardAt.length < 5) {
           const draw = omahaDrawQuality(row.holeCards, boardAt, vi.isHiLo);
           redrawLive = draw.nutFlushDraw || draw.dominatedFlushDraw || draw.straightOuts >= 8;
         }
+        if (vi.isHiLo && omahaLowLive(row.holeCards, boardAt)) redrawLive = true;
         if (!redrawLive) flag('plo_toppair_no_redraw_stackoff');
       }
     } catch {
@@ -844,6 +915,14 @@ export function buildReviewRows(input: HorseReviewInput): HorseReviewRow[] {
   const bb = input.bigBlind > 0 ? input.bigBlind : 1;
   const dealtCount = input.holeCardsAll.size || input.roster.length;
   const format = input.tournamentId ? 'tournament' : dealtCount === 2 ? 'hu_cash' : 'cash';
+
+  // Distinct non-empty boards: board 1 is repeated inside some callers' lists.
+  const multiBoard =
+    new Set(
+      (input.boards ?? [])
+        .filter((b) => Array.isArray(b) && b.length > 0)
+        .map((b) => JSON.stringify(b))
+    ).size > 1;
 
   const rows: HorseReviewRow[] = [];
   for (const uid of horses) {
@@ -875,6 +954,7 @@ export function buildReviewRows(input: HorseReviewInput): HorseReviewRow[] {
       board,
       heroActions,
       wentToShowdown: !folded,
+      multiBoard,
     });
 
     rows.push({
@@ -1248,6 +1328,64 @@ async function flushHorsePlay(): Promise<void> {
   }
 }
 
+/**
+ * The exact key set fn_hhr_record_atomic accepts: every HorseReviewRow
+ * column, no more and no fewer. The function refuses unknown OR missing keys,
+ * and JSON drops a key whose value is undefined, so a field left undefined
+ * would reach the database as a missing key and refuse the whole hand. The
+ * Record type makes the compiler fail here if the interface gains or loses a
+ * column without this list following it.
+ */
+const REVIEW_ROW_KEY_SET: Record<keyof HorseReviewRow, true> = {
+  hand_id: true,
+  table_id: true,
+  tournament_id: true,
+  club_id: true,
+  played_at: true,
+  game_variant: true,
+  format: true,
+  big_blind: true,
+  horse_user_id: true,
+  seat: true,
+  net_amount: true,
+  net_bb: true,
+  pot_size: true,
+  hole_cards: true,
+  board: true,
+  actions: true,
+  leak_tags: true,
+};
+export const REVIEW_ROW_KEYS = Object.keys(REVIEW_ROW_KEY_SET) as Array<keyof HorseReviewRow>;
+
+/** One row as fn_hhr_record_atomic receives it: every key present, undefined -> null. */
+export function toAtomicPayloadRow(row: HorseReviewRow): Record<keyof HorseReviewRow, unknown> {
+  const out = {} as Record<keyof HorseReviewRow, unknown>;
+  for (const k of REVIEW_ROW_KEYS) out[k] = row[k] === undefined ? null : row[k];
+  return out;
+}
+
+interface AtomicReply {
+  version: 1;
+  rows: unknown[];
+}
+
+function isAtomicReply(v: unknown): v is AtomicReply {
+  return (
+    !!v &&
+    typeof v === 'object' &&
+    (v as { version?: unknown }).version === 1 &&
+    Array.isArray((v as { rows?: unknown }).rows)
+  );
+}
+
+function safeJson(v: unknown): string {
+  try {
+    return String(JSON.stringify(v)).slice(0, 300);
+  } catch {
+    return String(v);
+  }
+}
+
 let pruneArmed = false;
 
 /**
@@ -1262,39 +1400,37 @@ export async function recordHorseHandReviews(input: HorseReviewInput): Promise<v
     const rows = buildReviewRows(input);
     if (rows.length === 0) return;
 
-    // ignoreDuplicates = ON CONFLICT DO NOTHING, and .select() returns only
-    // the rows actually INSERTED — so a re-processed hand (settlement retry)
-    // inserts nothing, returns nothing, and the rollup below adds nothing.
-    // Without this, a retry would dedupe the rows but double-count the
-    // rollup.
-    const { data: inserted, error } = await supabase
-      .from('horse_hand_reviews')
-      .upsert(rows as never[], { onConflict: 'hand_id,horse_user_id', ignoreDuplicates: true })
-      .select('horse_user_id');
-    if (error) {
-      reportError(new Error(error.message), 'HorseHandReview.insert');
+    // ONE ATOMIC PUBLICATION (P14.1, 2026-10-06). The review rows, their
+    // permanent receipts and the per-horse/day rollup are written by ONE
+    // database function in ONE transaction. This used to be an upsert of the
+    // reviews followed by one fn_hhr_rollup_add call per inserted horse: a
+    // failed or unanswered second call left a review with no rollup (and the
+    // `break` dropped every later horse's rollup with it), and a resend could
+    // never reconcile it because the review already existed. Now either all
+    // of it lands or none of it does, and a resend of the same hand - a
+    // settlement retry, or a reply lost on the wire - finds its receipts and
+    // answers 'replayed' without adding anything. So there is deliberately no
+    // additive retry here: an error is reported and the hand is left to a
+    // later resend, which is safe.
+    const payload = rows.map(toAtomicPayloadRow);
+    let reply: unknown;
+    try {
+      const { data, error } = await supabase.rpc('fn_hhr_record_atomic', { p_rows: payload });
+      if (error) {
+        reportError(new Error(error.message), 'HorseHandReview.record_atomic');
+        return;
+      }
+      reply = data;
+    } catch (err) {
+      reportError(err, 'HorseHandReview.record_atomic');
       return;
     }
-    const insertedIds = new Set(
-      ((inserted ?? []) as Array<{ horse_user_id: string }>).map((r) => r.horse_user_id)
-    );
-
-    // Rollup, one RPC per INSERTED row (rows per hand are 1-3; volume tiny).
-    const day = input.playedAt.slice(0, 10);
-    for (const row of rows) {
-      if (!insertedIds.has(row.horse_user_id)) continue;
-      const { error: rerr } = await supabase.rpc('fn_hhr_rollup_add', {
-        p_horse: row.horse_user_id,
-        p_day: day,
-        p_variant: row.game_variant,
-        p_is_win: row.net_bb > 0,
-        p_net_bb: row.net_bb,
-        p_tags: row.leak_tags,
-      });
-      if (rerr) {
-        reportError(new Error(rerr.message), 'HorseHandReview.rollup');
-        break;
-      }
+    if (!isAtomicReply(reply)) {
+      reportError(
+        new Error(`fn_hhr_record_atomic returned an unreadable reply: ${safeJson(reply)}`),
+        'HorseHandReview.record_atomic'
+      );
+      return;
     }
 
     // Retention: prune once per process lifetime, well after boot.
@@ -1317,7 +1453,20 @@ export async function recordHorseHandReviews(input: HorseReviewInput): Promise<v
           void (async () => {
             const { error: perr } = await supabase.rpc('sp_prune_horse_hand_reviews');
             if (perr) reportError(new Error(perr.message), 'HorseHandReview.prune');
-          })().catch((err: unknown) => reportError(err, 'HorseHandReview.prune'));
+          })()
+            .catch((err: unknown) => reportError(err, 'HorseHandReview.prune'))
+            // RECEIPT RETENTION (20261008041150). The replay receipts are
+            // pruned after the reviews, in their own statement: the review
+            // prune already spends most of service_role's 8 s statement
+            // timeout, and a receipt delete inside it could roll it back.
+            // The receipt prune removes at most 25,000 receipts whose review
+            // row is gone and whose hand is past the 30-day publication
+            // horizon, so it runs whether or not the review prune succeeded.
+            .then(async () => {
+              const { error: rerr } = await supabase.rpc('sp_prune_horse_hand_review_receipts');
+              if (rerr) reportError(new Error(rerr.message), 'HorseHandReview.prune_receipts');
+            })
+            .catch((err: unknown) => reportError(err, 'HorseHandReview.prune_receipts'));
         }),
         10 * 60 * 1000
       );

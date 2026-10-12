@@ -9,7 +9,7 @@ from pathlib import Path
 import re
 HERE=Path(__file__).resolve().parent
 OBSERVER_SHA='a620e6c8e3c6db5a5d1d37ed2a2d84e5f3caab55aa52c92bdca87c9ec7bcfdd7'
-QUERY_SHA='36ede6edf644397d916295f76870f00140897f0a8fac369dc735824aa0978e18'
+QUERY_SHA='4791de1152451eec22324a962d3c3dae9bc7d45809a8008249dde246749d606d'
 OPERATION='341f02a3-4655-420c-b43b-3930b6d9ad8f'
 EVENT='2aa4cba1-506f-426b-a1ba-d8e22e018533'
 
@@ -23,7 +23,7 @@ QUERY=(HERE/'fixtures/archived-spin/first-postabort-bank-readback.sql').read_tex
 require(hashlib.sha256(QUERY.encode()).hexdigest()==QUERY_SHA,'query source drift')
 SCOPED=frozenset(re.findall(r"^'((?:public|smarter_private)\.[^']+)',",QUERY,re.M))
 AUTHORITY=frozenset(re.findall(r"'([^']+)',NOT EXISTS",QUERY)) - {'admission_empty','tournament_lease_absent'}
-require(len(SCOPED)==21 and len(AUTHORITY)==18,'draft query inventory differs')
+require(len(SCOPED)==23 and len(AUTHORITY)==18,'draft query inventory differs')
 
 def equal(a,b):
     if isinstance(a,bool) or isinstance(b,bool):return type(a) is bool and type(b) is bool and a is b
@@ -71,7 +71,7 @@ def validate(detail,evidence,expected_preimage,expected_funding):
     require(equal(evidence['original_funding'],expected_funding),'original funding changed')
     rows=evidence['scoped_rows']
     for item in (rows,detail['before'],detail['inside'],detail['replay_state']):
-        require(isinstance(item,dict) and set(item)==SCOPED and all(isinstance(v,list) for v in item.values()),'exact21 scoped rowset inventory differs')
+        require(isinstance(item,dict) and set(item)==SCOPED and all(isinstance(v,list) for v in item.values()),'exact23 scoped rowset inventory differs')
     witness=evidence['postabort_bank_witness']
     require(isinstance(witness,dict) and set(witness)=={'reference_transaction_id','reference_status','observer_transaction_id','snapshot','bank_observation'},'postabort witness inventory differs')
     require(witness['reference_transaction_id']==top and witness['reference_status']=='aborted','original transaction not observed aborted')
@@ -96,7 +96,8 @@ def validate(detail,evidence,expected_preimage,expected_funding):
     for name in SCOPED-{B.RELATION}:
         require(equal(detail['before'][name],rows[name]),'nonbank durable rows changed: '+name)
     require(rows['smarter_private.spin_archived_first_admission']==[] and rows['public.engine_tournament_leases']==[],'durable operation rows remain')
-    return {'bank_transition':transition,'nonbank_rowsets_exact':20,'later_authority_absent':18,
+    require(all(rows.get(name)==[] and detail[stage].get(name)==[] for stage in ('before','inside','replay_state') for name in ('public.accounting_tournament_fee_owner_bases', 'public.accounting_tournament_fee_owner_operations')),'fee owner basis must remain absent')
+    return {'bank_transition':transition,'nonbank_rowsets_exact':22,'later_authority_absent':18,
         'original_probe_xid_observed_aborted':True,'single_statement_witness':True,
         'candidate_only':True,'production_qualified':False,'sequence_rollback_claimed':False}
 

@@ -1,0 +1,18 @@
+{
+  "_owner": "agent/fleet-p10e/feat/phase10-table-talk",
+  "tables": ["horse_table_talk_ledger"],
+  "functions": [],
+  "columns": {
+    "horse_table_talk_ledger": [
+      "id",
+      "table_id",
+      "hand_number",
+      "horse_id",
+      "event",
+      "voice",
+      "phrase_norm",
+      "said_at",
+      "chat_id"
+    ]
+  }
+}

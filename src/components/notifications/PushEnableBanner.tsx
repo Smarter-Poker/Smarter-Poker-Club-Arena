@@ -76,8 +76,15 @@ export default function PushEnableBanner() {
       return;
     }
 
-    const subscribed = await hasLocalSubscription();
-    if (mounted.current) setState(subscribed ? null : 'ask');
+    try {
+      const subscribed = await hasLocalSubscription();
+      if (mounted.current) setState(subscribed ? null : 'ask');
+    } catch {
+      if (mounted.current) {
+        setState('ask');
+        setError('Device Alert Status Could Not Be Confirmed.');
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -93,18 +100,23 @@ export default function PushEnableBanner() {
     if (busy) return;
     setBusy(true);
     setError(null);
-    const result = await enablePush();
-    if (!mounted.current) return;
-    setBusy(false);
-    if (result.ok) {
-      setState(null);
-      return;
+    try {
+      const result = await enablePush();
+      if (!mounted.current) return;
+      if (result.ok) {
+        setState(null);
+        return;
+      }
+      if (notificationPermission() === 'denied') {
+        setState('blocked');
+        return;
+      }
+      setError(result.error || 'Could Not Enable Notifications.');
+    } catch {
+      if (mounted.current) setError('Could Not Enable Notifications. Please Try Again.');
+    } finally {
+      if (mounted.current) setBusy(false);
     }
-    if (notificationPermission() === 'denied') {
-      setState('blocked');
-      return;
-    }
-    setError(result.error || 'Could Not Enable Notifications.');
   };
 
   if (!state) return null;
@@ -149,7 +161,11 @@ export default function PushEnableBanner() {
         {/* The one string on this surface that is not a literal: whatever the
             push service said. Title Cased where it is printed, because the
             copy gates cannot see it. */}
-        {error && <span className="ca-push-banner__error sc-ink--red">{titleCase(error)}</span>}
+        {error && (
+          <span className="ca-push-banner__error sc-ink--red" role="alert">
+            {titleCase(error)}
+          </span>
+        )}
       </div>
       <button
         type="button"

@@ -170,7 +170,17 @@ export function captureHorsePublicActionNode(
       ] as [number, number, number, number, number, number, number])
     );
   }
-  if (!seenSeats.has(state.dealerSeat) || !seenSeats.has(rights.heroSeat)) return unavailable();
+  // A three-or-more-handed tournament may have a dead button after a seat
+  // empties. Preserve that physical seat; it need not be a dealt player.
+  // Heads-up still requires the live button/small blind.
+  if (
+    !Number.isSafeInteger(state.dealerSeat) ||
+    state.dealerSeat < 1 ||
+    state.dealerSeat > 10 ||
+    (seenSeats.size === 2 && !seenSeats.has(state.dealerSeat)) ||
+    !seenSeats.has(rights.heroSeat)
+  )
+    return unavailable();
   seats.sort((a, b) => a[0] - b[0]);
   const expectedCards =
     state.stage === 'preflop' ? 0 : state.stage === 'flop' ? 3 : state.stage === 'turn' ? 4 : 5;

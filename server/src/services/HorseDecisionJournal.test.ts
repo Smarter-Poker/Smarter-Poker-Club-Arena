@@ -38,6 +38,7 @@ import {
   HorseDecisionJournalPublisher,
   horseDecisionJournalHealth,
   relayHorseDecisionJournalHealth,
+  HORSE_JOURNAL_QUEUE_MAX_RECORDS,
   type HorseJournalWorker,
 } from './HorseDecisionJournal.js';
 import {
@@ -270,6 +271,38 @@ describe('bounded isolated Horse journal publisher', () => {
       'phase15_journal_replayed',
     ]);
   });
+  it('counts a Phase 15.1 plan receipt durable only on its exact fsynced ACK, never on enqueue', async () => {
+    const w = new FakeWorker(),
+      notes: string[] = [],
+      p = new HorseDecisionJournalPublisher(w, (x) => notes.push(x));
+    p.record('plan_receipt', 'hand', 'turn', { receipt: 1 });
+    w.emit({ type: 'READY' });
+    expect(notes).toEqual(['phase15_journal_enqueued']);
+    const head = (w.sent[0] as { records: HorseJournalRecord[] }).records[0]!;
+    expect(head.kind).toBe('plan_receipt');
+    expect(() => validateHorseJournalRecord(head)).not.toThrow();
+    w.emit({
+      type: 'ACK',
+      receipts: [{ eventId: head.eventId, sha256: 'wrong', status: 'recorded' }],
+    });
+    expect(notes).not.toContain('phase15_plan_receipt_durable');
+    await p.stop();
+    const w2 = new FakeWorker(),
+      notes2: string[] = [],
+      p2 = new HorseDecisionJournalPublisher(w2, (x) => notes2.push(x));
+    p2.record('plan_receipt', 'hand', 'turn', { receipt: 2 });
+    p2.record('decision', 'hand', 'turn', { decision: 1 });
+    w2.emit({ type: 'READY' });
+    const records = (w2.sent[0] as { records: HorseJournalRecord[] }).records;
+    w2.emit({
+      type: 'ACK',
+      receipts: records.map((r) => ({ eventId: r.eventId, sha256: r.sha256, status: 'recorded' })),
+    });
+    expect(notes2.filter((x) => x === 'phase15_plan_receipt_durable')).toHaveLength(1);
+    const stopping = p2.stop();
+    w2.emit({ type: 'STOPPED' });
+    await stopping;
+  });
   it.each(['wrong_id', 'wrong_hash', 'unavailable'])(
     'does not claim a durable write from %s',
     async (mode) => {
@@ -302,9 +335,12 @@ describe('bounded isolated Horse journal publisher', () => {
     const w = new FakeWorker(),
       notes: string[] = [],
       p = new HorseDecisionJournalPublisher(w, (x) => notes.push(x));
-    for (let i = 0; i < 65; i++) p.record('decision', 'hand', 'turn', {});
+    for (let i = 0; i < HORSE_JOURNAL_QUEUE_MAX_RECORDS + 1; i++)
+      p.record('decision', 'hand', 'turn', {});
     p.record('decision', null, 'turn', {});
-    expect(notes.filter((x) => x === 'phase15_journal_enqueued')).toHaveLength(64);
+    expect(notes.filter((x) => x === 'phase15_journal_enqueued')).toHaveLength(
+      HORSE_JOURNAL_QUEUE_MAX_RECORDS
+    );
     expect(notes).toContain('phase15_journal_queue_capacity');
     expect(notes).toContain('phase15_journal_capture_unavailable');
     w.emit({ type: 'UNAVAILABLE' });
@@ -1483,6 +1519,17 @@ describe('capacity is a condition: the journal pauses at its quota and says so',
     async (reason) => {
       vi.useFakeTimers();
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      // Count THIS publisher's pause/resume lines, not every journal line in
+      // the worker. A publisher left by an earlier test keeps a real 1 s
+      // watchdog that reads real performance.now(); on a loaded runner more
+      // than 5 real seconds pass and it logs its own "capture stopped" inside
+      // this test (seen twice on 2026-10-05). This publisher cannot: its
+      // watchdog was created under fake timers and is advanced only while it
+      // is paused, and the health/replay checks below catch it stopping.
+      const pauseResumeWarns = () =>
+        warn.mock.calls.filter((c) =>
+          /^\[HorseDecisionJournal\] capture (paused|resumed) /.test(String(c[0]))
+        );
       try {
         const w = new FakeWorker(),
           notes: string[] = [],
@@ -1501,7 +1548,7 @@ describe('capacity is a condition: the journal pauses at its quota and says so',
           failedSince: null,
           queued: 1,
         });
-        expect(warn).toHaveBeenCalledTimes(1);
+        expect(pauseResumeWarns()).toHaveLength(1);
         expect(warn).toHaveBeenCalledWith(
           `[HorseDecisionJournal] capture paused mode=paused reason=${reason} queued=1`
         );
@@ -1540,10 +1587,10 @@ describe('capacity is a condition: the journal pauses at its quota and says so',
           pausedSince: null,
           lastFailureReason: null,
         });
-        expect(warn).toHaveBeenCalledTimes(2);
-        expect(warn).toHaveBeenLastCalledWith(
-          `[HorseDecisionJournal] capture resumed mode=ready after=${reason} queued=2`
-        );
+        expect(pauseResumeWarns()).toHaveLength(2);
+        expect(pauseResumeWarns().at(-1)).toEqual([
+          `[HorseDecisionJournal] capture resumed mode=ready after=${reason} queued=2`,
+        ]);
         expect(notes).toContain('phase15_journal_capacity_resumed');
         const replay = sentOf(w, 'APPEND')[1]!.records;
         expect(identities(replay)).toEqual(identities(probed));
@@ -1581,10 +1628,16 @@ describe('capacity is a condition: the journal pauses at its quota and says so',
       p.record('decision', 'hand', 'turn', {});
       w.emit({ type: 'READY' });
       w.emit({ type: 'UNAVAILABLE', reason: 'archive_segments' });
-      for (let i = 0; i < 70; i++) p.record('decision', 'hand', 'turn', { i });
-      expect(p.health().queued).toBe(64);
-      expect(notes.filter((x) => x === 'phase15_journal_queue_capacity')).toHaveLength(7);
-      expect(notes.filter((x) => x === 'phase15_journal_capture_paused_capacity')).toHaveLength(70);
+      // Queue starts at 1 (the batch in flight when the pause landed); fill it
+      // to its bound and run a fixed 7 more past it.
+      const overflow = 7;
+      const iterations = HORSE_JOURNAL_QUEUE_MAX_RECORDS - 1 + overflow;
+      for (let i = 0; i < iterations; i++) p.record('decision', 'hand', 'turn', { i });
+      expect(p.health().queued).toBe(HORSE_JOURNAL_QUEUE_MAX_RECORDS);
+      expect(notes.filter((x) => x === 'phase15_journal_queue_capacity')).toHaveLength(overflow);
+      expect(notes.filter((x) => x === 'phase15_journal_capture_paused_capacity')).toHaveLength(
+        iterations
+      );
       // Stopping while paused is prompt and names the gap it leaves.
       const stopping = p.stop();
       expect(w.sent.at(-1)).toEqual({ type: 'STOP' });

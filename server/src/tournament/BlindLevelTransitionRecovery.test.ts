@@ -1,6 +1,37 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setMaintenanceFrozen } from '../maintenance/freezeState.js';
 
+/**
+ * A PostgREST-shaped update: `.eq` filters chain, and the write lands only on
+ * a row every non-id filter still matches (the level-clock persist is fenced
+ * on status and current_level).
+ */
+function fencedUpdate(row: Record<string, any>, patch: Record<string, unknown>) {
+  const filters: Array<[string, unknown]> = [];
+  const builder: any = {
+    eq(column: string, value: unknown) {
+      filters.push([column, value]);
+      return builder;
+    },
+    then(resolve: (value: { error: null }) => unknown, reject?: (reason: unknown) => unknown) {
+      const matches = filters.every(
+        ([column, value]) => column === 'id' || row[column] === undefined || row[column] === value
+      );
+      if (matches) Object.assign(row, patch);
+      return Promise.resolve({ error: null }).then(resolve, reject);
+    },
+  };
+  return builder;
+}
+
+// The Horse tournament context reads the committed clock through its own
+// lifecycle; these tests pin the manager's clock writes, not that read.
+const brainContext = vi.hoisted(() => ({ refreshAfterClockCommit: vi.fn() }));
+vi.mock('../services/TournamentBrainContext.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../services/TournamentBrainContext.js')>()),
+  refreshTournamentBrainContextAfterClockCommit: brainContext.refreshAfterClockCommit,
+}));
+
 let TournamentManagerBase: (typeof import('./TournamentManagerBase.js'))['TournamentManagerBase'];
 let TournamentManagerEliminations: (typeof import('./TournamentManagerEliminations.js'))['TournamentManagerEliminations'];
 let supabase: (typeof import('../services/supabase.js'))['supabase'];
@@ -15,6 +46,7 @@ beforeAll(async () => {
 });
 beforeEach(() => {
   setMaintenanceFrozen(false);
+  brainContext.refreshAfterClockCommit.mockReset();
   vi.useFakeTimers();
   vi.setSystemTime(new Date('2026-09-10T12:10:00.000Z'));
   vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -81,12 +113,7 @@ function fixture() {
   }));
   const writes = vi.spyOn(supabase, 'from').mockReturnValue({
     select: () => ({ eq: () => ({ maybeSingle: read }) }),
-    update: (patch: Record<string, unknown>) => ({
-      eq: async () => {
-        Object.assign(row, patch);
-        return { error: null };
-      },
-    }),
+    update: (patch: Record<string, unknown>) => fencedUpdate(row, patch),
   } as never);
   const publish = (args: any) => {
     if (row.current_level !== args.p_next_level)
@@ -255,6 +282,45 @@ describe('durable atomic blind-level transition', () => {
     expect(state.blindTimer.delay).toBe(600000);
   });
 
+  it('asks the Horse tournament context to read the thawed anchor once the resync adopts it', async () => {
+    const { row, state, rpc, read } = fixture();
+    const seen: Array<{ anchor: number; cached: unknown }> = [];
+    brainContext.refreshAfterClockCommit.mockImplementation(() => {
+      seen.push({
+        anchor: state.blindTimerStartedAt,
+        cached: state.tournamentCache.level_started_at,
+      });
+    });
+    setMaintenanceFrozen(true);
+    await state.advanceBlindLevel(structure);
+    await state.blindTimer.callback();
+    // A clock held inside the freeze replaces nothing yet.
+    expect(brainContext.refreshAfterClockCommit).not.toHaveBeenCalled();
+
+    // The database thaw moved the anchor by the seven frozen minutes. The
+    // level still has five minutes to run, so the resync returns early
+    // without publishing anything.
+    row.level_started_at = '2026-09-10T12:07:00.000Z';
+    vi.setSystemTime(new Date('2026-09-10T12:12:00.000Z'));
+    setMaintenanceFrozen(false);
+    await state.blindTimer.callback();
+    expect(rpc).not.toHaveBeenCalled();
+    expect(state.blindTimer.delay).toBe(300000);
+    // The cache would otherwise keep the pre-thaw anchor for up to one
+    // refresh interval, and its elapsed time would include the frozen minutes.
+    expect(brainContext.refreshAfterClockCommit).toHaveBeenCalledOnce();
+    expect(brainContext.refreshAfterClockCommit).toHaveBeenCalledWith('level-restart');
+    expect(read.mock.invocationCallOrder[0]).toBeLessThan(
+      brainContext.refreshAfterClockCommit.mock.invocationCallOrder[0]!
+    );
+    expect(seen).toEqual([
+      {
+        anchor: Date.parse('2026-09-10T12:07:00.000Z'),
+        cached: '2026-09-10T12:07:00.000Z',
+      },
+    ]);
+  });
+
   it('replays a lost publication after thaw using the same level and shifted receipt', async () => {
     const { row, state, rpc, publish, writes } = fixture();
     rpc.mockImplementationOnce(async (_name, args) => {
@@ -318,6 +384,8 @@ describe('durable atomic blind-level transition', () => {
       await state.blindTimer.callback();
       expect(rpc).not.toHaveBeenCalled();
       expect(state.currentLevel).toBe(0);
+      // No durable anchor was adopted, so there is no new clock to read.
+      expect(brainContext.refreshAfterClockCommit).not.toHaveBeenCalled();
       if (fault === 'replacement') expect(state.blindTimer).toBeNull();
       else expect(state.blindTimer.delay).toBe(1000);
     }
@@ -343,6 +411,9 @@ describe('durable atomic blind-level transition', () => {
     expect(state.currentLevel).toBe(1);
     expect(state.blindTimer.delay).toBe(600000);
     expect(tableStateHub.emitEvent).toHaveBeenCalledTimes(2);
+    // The Horse tournament context reads the committed level now, not one
+    // refresh interval later while new hands are already dealt at it.
+    expect(brainContext.refreshAfterClockCommit).toHaveBeenCalledWith('level-restart');
   });
 
   it.each(['write failure', 'lost response'])(
@@ -497,19 +568,22 @@ describe('blind rows at manager recovery', () => {
       vi.spyOn(supabase, 'from').mockImplementation(
         (relation: string) =>
           ({
-            update: (patch: Record<string, unknown>) => ({
-              eq: async (_column: string, id: string) => {
-                if (relation === 'tournaments') Object.assign(row, patch);
-                else if (relation === 'tables') {
-                  if (recovering) recoveryWrites.push(id);
-                  if (id === 'table-two' && (!recovering || mode === 'unavailable')) {
-                    return { error: { message: 'table blind write unavailable' } };
-                  }
-                  Object.assign(tables.get(id)!, patch);
-                } else throw new Error('unexpected write: ' + relation);
-                return { error: null };
-              },
-            }),
+            update: (patch: Record<string, unknown>) =>
+              relation === 'tournaments'
+                ? fencedUpdate(row, patch)
+                : {
+                    eq: async (_column: string, id: string) => {
+                      if (relation === 'tournaments') Object.assign(row, patch);
+                      else if (relation === 'tables') {
+                        if (recovering) recoveryWrites.push(id);
+                        if (id === 'table-two' && (!recovering || mode === 'unavailable')) {
+                          return { error: { message: 'table blind write unavailable' } };
+                        }
+                        Object.assign(tables.get(id)!, patch);
+                      } else throw new Error('unexpected write: ' + relation);
+                      return { error: null };
+                    },
+                  },
             select: () => ({
               eq: () => ({
                 maybeSingle: async () => ({ data: structuredClone(row), error: null }),

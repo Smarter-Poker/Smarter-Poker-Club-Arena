@@ -280,7 +280,7 @@ describe('the client asks the ledger', () => {
     // The refusal is now a permission state, not a zero: a denied read and a
     // club that has accrued nothing are still not the same thing.
     expect(FINANCIALS).toMatch(/isAuthzError\(error\)/);
-    expect(FINANCIALS).toMatch(/setDenied\(true\)/);
+    expect(FINANCIALS).toContain('{ ...current, denied: true }');
     expect(FINANCIALS).toMatch(/ClubFinancialsPage\.load/);
   });
 });

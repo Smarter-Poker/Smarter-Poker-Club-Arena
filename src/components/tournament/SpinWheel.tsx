@@ -9,19 +9,16 @@
  *   1. The TABLE STAYS VISIBLE. No full-screen takeover: the felt dims and a
  *      spotlight beam falls from the top of the screen onto the table.
  *   2. A big gold COUNTDOWN (3·2·1) pops centre-felt.
- *   3. A gold-rimmed DISC sits on the felt — a pie of coloured segments with
- *      the format wordmark in the hub. It does NOT rotate: the segments
- *      LIGHT UP one at a time, a chase that runs fast and decelerates, each
- *      lit segment fading behind the runner.
+ *   3. A rendered chrome DISC rotates on the felt, displaying actual prizes
+ *      for this buy-in and the table currency in its hub. The shared chase
+ *      lights each segment, running fast before decelerating to the result.
  *   4. The chase settles on the winner. That segment stays lit and flashes;
  *      every other segment desaturates to grey.
  *   5. The disc fades away, the table brightens, and the masthead now carries
  *      the prize pool.
  *
- * The chase reads better than a rotating wheel at table scale — nothing
- * spins under a pointer, so there is no moment where the eye loses the
- * geometry — and the decelerating runner gives the same genuine near-miss:
- * it walks THROUGH the big tiers on its way to the result.
+ * The rotor and chase share the existing reveal clock and settle the
+ * server-selected prize beneath the fixed selector.
  *
  * ─── Honesty (unchanged from v1) ────────────────────────────────────────────
  * The result is decided by the SERVER (reserve-gated draw at game start) and
@@ -53,6 +50,7 @@ import {
   spinPostRevealMs,
 } from '../../config/spinSpec';
 import './SpinWheel.css';
+import { moneyWordAtUnit } from '../../utils/format';
 
 export interface SpinTier {
   multiplier: number;
@@ -146,6 +144,8 @@ export interface SpinWheelProps {
   playSounds?: boolean;
   /** Keep the reveal inside its table when several tables share the screen. */
   contained?: boolean;
+  /** The table's read currency; null withholds the currency noun. */
+  unitCents?: number | null;
 }
 
 type Phase = 'idle' | 'countdown' | 'chase' | 'result';
@@ -365,6 +365,7 @@ export default function SpinWheel({
   onDone,
   playSounds = true,
   contained = false,
+  unitCents = null,
 }: SpinWheelProps) {
   const lockedDetail = useMemo(() => {
     const map = new Map<number, SpinLockedTier>();
@@ -402,6 +403,10 @@ export default function SpinWheel({
   /** Index of the currently lit segment; -1 = nothing lit yet. */
   const [litIndex, setLitIndex] = useState(-1);
   const [displayPrize, setDisplayPrize] = useState(0);
+  const [rotorTiming, setRotorTiming] = useState<{ duration: number; elapsed: number }>({
+    duration: CHASE_MS,
+    elapsed: 0,
+  });
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const rafRef = useRef<number | null>(null);
   const onDoneRef = useRef(onDone);
@@ -525,6 +530,7 @@ export default function SpinWheel({
     const countdownMs = (reduced ? 200 : COUNTDOWN_FROM * COUNTDOWN_STEP_MS) * speed;
     const chaseMs = (reduced ? 400 : CHASE_MS) * speed;
     const resultAtMs = leadInMs + countdownMs + chaseMs;
+    setRotorTiming({ duration: chaseMs, elapsed: Math.max(0, elapsed - leadInMs - countdownMs) });
     /* A reconnect at the result boundary must never paint a private countdown
        for one frame. useLayoutEffect applies this before browser paint. */
     const resultOnly = sharedClock && elapsed >= Math.max(0, resultAtMs - 250);
@@ -753,6 +759,13 @@ export default function SpinWheel({
       role="region"
       aria-label="Spin Multiplier Draw"
     >
+      {/* Request the rendered housing during the countdown, before the disc enters. */}
+      <link
+        rel="preload"
+        as="image"
+        href={`${import.meta.env.BASE_URL}assets/diamond-spins/wheel-chrome-housing-v1.png`}
+      />
+
       {/* Rendered from the first frame and never removed: a live region that
           appears at the same moment as its text is missed by several screen
           readers. See "WHAT A PLAYER WHO CANNOT SEE THE DISC IS TOLD". */}
@@ -800,8 +813,26 @@ export default function SpinWheel({
                 className="sw__svg"
                 viewBox={`0 0 ${SW_VIEWBOX} ${SW_VIEWBOX}`}
                 aria-hidden="true"
+                data-motion="keep"
+                style={
+                  {
+                    '--sw-turn': `${CHASE_LOOPS * 360 - (targetIndex * 360) / Math.max(1, order.length)}deg`,
+                    '--sw-spin-ms': `${rotorTiming.duration}ms`,
+                    '--sw-elapsed': `${-rotorTiming.elapsed}ms`,
+                  } as React.CSSProperties
+                }
               >
                 <defs>
+                  <linearGradient id="swMetal" x1="0" y1="0" x2="1" y2="1">
+                    <stop stopColor="#e4e7ec" />
+                    <stop offset=".35" stopColor="#9aa5b3" />
+                    <stop offset="1" stopColor="#050607" />
+                  </linearGradient>
+                  <radialGradient id="swGlass" cx=".25" cy=".1" r=".9">
+                    <stop stopColor="#9aa5b3" stopOpacity=".5" />
+                    <stop offset=".35" stopColor="#050607" />
+                    <stop offset="1" stopColor="#000" />
+                  </radialGradient>
                   {/* Two blur radii on purpose. The travelling chase light is
                       allowed to bloom; the winner's outline is NOT, because a
                       wide blur bleeds onto its neighbours and Dan's note was
@@ -833,6 +864,9 @@ export default function SpinWheel({
                     i === (litIndex - 1 + order.length) % order.length;
                   const isWinner = phase === 'result' && i === targetIndex;
                   const label = segmentPoint(i, order.length, 78);
+                  const prizeLabel = Math.round(data.buyIn * tier.multiplier).toLocaleString(
+                    'en-US'
+                  );
                   const unlocksAt = lockedDetail.get(tier.multiplier)?.unlocksAt;
                   return (
                     <g
@@ -848,9 +882,23 @@ export default function SpinWheel({
                         .filter(Boolean)
                         .join(' ')}
                     >
-                      <path className="sw__seg-face" d={wedgePath(i, order.length)} />
-                      <text className="sw__seg-label" x={label.x} y={label.y + 7}>
-                        {tier.multiplier}
+                      <path
+                        className="sw__seg-metal"
+                        d={wedgePath(i, order.length)}
+                        fill="url(#swMetal)"
+                      />
+                      <path
+                        className="sw__seg-face"
+                        d={wedgePath(i, order.length, SW_R - 4)}
+                        fill="url(#swGlass)"
+                      />
+                      <text
+                        className="sw__seg-label"
+                        x={label.x}
+                        y={label.y + 7}
+                        style={{ fontSize: `${Math.min(18, 75 / prizeLabel.length)}px` }}
+                      >
+                        {prizeLabel}
                       </text>
                       {unlocksAt ? (
                         <title>
@@ -902,12 +950,26 @@ export default function SpinWheel({
                 )}
               </svg>
 
+              <img
+                className="sw__housing"
+                src={`${import.meta.env.BASE_URL}assets/diamond-spins/wheel-chrome-housing-v1.png`}
+                alt=""
+                draggable={false}
+              />
+              <img
+                className="sw__selector"
+                src={`${import.meta.env.BASE_URL}assets/diamond-spins/wheel-selector-pointer-v2.webp`}
+                alt=""
+                draggable={false}
+              />
               <div className="sw__gloss" aria-hidden="true" />
               <div className="sw__hub">
                 {phase === 'result' ? (
                   <span className="sw__hub-mult">{won?.multiplier ?? data.multiplier}×</span>
                 ) : (
-                  <span className="sw__hub-brand">SPIN-IT</span>
+                  <span className="sw__hub-brand">
+                    {unitCents == null ? 'PRIZE POOL' : moneyWordAtUnit(unitCents).toUpperCase()}
+                  </span>
                 )}
               </div>
             </div>

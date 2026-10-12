@@ -66,9 +66,11 @@ export const TimebankCounter: React.FC<TimebankCounterProps> = ({
   const contents = (
     <div className="tbc-img-wrap" aria-hidden="true">
       <img src={timebankIcon} className="tbc-icon-img" alt="" draggable={false} />
-      <span className={`tbc-count-overlay${!unlimited && low ? ' tbc-count-overlay--low' : ''}`}>
-        {unlimited ? 'VIP' : count === null ? '-' : count}
-      </span>
+      {!unlimited && (
+        <span className={`tbc-count-overlay${low ? ' tbc-count-overlay--low' : ''}`}>
+          {count === null ? '-' : count}
+        </span>
+      )}
     </div>
   );
 

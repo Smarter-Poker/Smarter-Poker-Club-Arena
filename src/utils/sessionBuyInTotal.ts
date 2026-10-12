@@ -26,3 +26,54 @@ export function sessionBuyInTotal(input: {
   const addedSinceAsk = Math.max(0, input.totalNow - input.totalAtAsk);
   return Math.round((baseline + addedSinceAsk) * 100) / 100;
 }
+
+/**
+ * THE REST OF THE CARD, FROM THE SERVER (Dan 2026-10-12: "THE END OF SESSION
+ * RECAP WAS NOT ACCURATE, I 100% LOST, AND ITS SAYING I WON ... AMOUNT OF
+ * HANDS PLAYED, EVERYTHING IS 100% WRONG").
+ *
+ * The page counts hands, wins, the peak and the start time from the moment it
+ * MOUNTED, so a reload or a reconnect restarted all four. The server keeps
+ * the whole open session (`fn_my_table_session_facts`). Merge rule, applied
+ * once per table: the server's figure as of the ask, plus whatever this tab
+ * has counted SINCE the ask, so nothing is lost and nothing is counted twice.
+ * Anything unreadable leaves the page's own figure alone.
+ */
+export interface SessionFactsSeed {
+  startMs: number;
+  handsPlayed: number;
+  handsWon: number;
+  peakStack: number;
+}
+
+export function mergeSessionFacts(input: {
+  serverFacts: unknown;
+  atAsk: SessionFactsSeed;
+  now: SessionFactsSeed;
+}): SessionFactsSeed {
+  const f = input.serverFacts as {
+    started_at?: unknown;
+    hands_played?: unknown;
+    hands_won?: unknown;
+    peak_stack?: unknown;
+  } | null;
+  if (!f || typeof f !== 'object') return input.now;
+  const count = (v: unknown): number | null => {
+    const n = Number(v);
+    return Number.isFinite(n) && n >= 0 ? Math.floor(n) : null;
+  };
+  const started = typeof f.started_at === 'string' ? Date.parse(f.started_at) : Number.NaN;
+  const played = count(f.hands_played);
+  const won = count(f.hands_won);
+  const peak = Number(f.peak_stack);
+  const playedSince = Math.max(0, input.now.handsPlayed - input.atAsk.handsPlayed);
+  const wonSince = Math.max(0, input.now.handsWon - input.atAsk.handsWon);
+  return {
+    startMs:
+      Number.isFinite(started) && started > 0 ? Math.min(started, input.now.startMs) : input.now.startMs,
+    handsPlayed: played === null ? input.now.handsPlayed : played + playedSince,
+    handsWon: won === null ? input.now.handsWon : won + wonSince,
+    peakStack:
+      Number.isFinite(peak) && peak > 0 ? Math.max(peak, input.now.peakStack) : input.now.peakStack,
+  };
+}

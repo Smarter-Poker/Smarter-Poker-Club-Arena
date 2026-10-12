@@ -129,7 +129,7 @@ import {
   PHASE12_PROTECTED_RELEASE_SELECTIONS,
 } from '../HorsePhase12Authority.js';
 import {
-  P12_TEST_CONTRACT_DIGEST,
+  p12TestContractDigest,
   P12_TEST_NOW,
   p12CompletionBytes,
   p12CompletionObject,
@@ -448,14 +448,14 @@ describe('Phase 13 cross-board worker boundary', () => {
       });
       expect(copy.decision.jointPolicy?.finalAction).toBe(copy.decision.action);
       expect(copy.decision.jointPolicy?.completedSamples).toBeGreaterThanOrEqual(0);
-      // A contended test runner may exhaust the production deadline; it may
-      // never forge an offline clock or serialize private opponent deals.
-      expect([
-        'work_budget',
-        'insufficient_joint_samples',
-        'joint_samples_unavailable',
-        'joint_cash_action_distribution',
-      ]).toContain(copy.decision.jointPolicy?.reason);
+      // No clock decides the joint work (2026-10-11), so even a contended
+      // runner prices the full declared population: never work_budget, never
+      // a population cut short. It may never forge an offline clock or
+      // serialize private opponent deals.
+      expect(['joint_samples_unavailable', 'joint_cash_action_distribution']).toContain(
+        copy.decision.jointPolicy?.reason
+      );
+      expect(copy.decision.jointPolicy?.sampleBudgetExhausted).toBe(false);
       expect(JSON.stringify(copy.decision.jointPolicy)).not.toMatch(
         /"rank"|"suit"|originalHands|availableCards/
       );
@@ -4223,7 +4223,7 @@ describe('P12.3 worker-owned Short Deck/Pineapple/FLH/FLO8 authority (the Phase 
         p12Selection('flh', q, c),
         p12Reader('flh', q, c),
         P12_TEST_NOW,
-        P12_TEST_CONTRACT_DIGEST
+        p12TestContractDigest('flh')
       );
   };
   it.each([

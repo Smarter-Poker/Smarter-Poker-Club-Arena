@@ -56,6 +56,7 @@ const NEAR_MISS_LABELS: Record<string, string> = {
   mini_winner_not_quads: 'Mini: Winning Hand Was Not Quads Or Better',
   mini_loser_below_bar: 'Mini: Losing Hand Below The Qualifying Bar',
   mini_double_board: 'Mini: Double Board Hand',
+  mini_both_cards_must_play: 'Mini: Both Hole Cards Did Not Play',
   unspecified: 'Reason Not Recorded',
 };
 

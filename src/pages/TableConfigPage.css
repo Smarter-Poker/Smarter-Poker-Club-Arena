@@ -39,11 +39,10 @@
   overflow-x: clip;
   /* keep the in-flow footer above the fixed app bottom nav */
   padding-bottom: max(var(--bottom-nav-clearance, 74px), env(safe-area-inset-bottom));
-  /* The form always prints on the console's black glass, in either room: the
-     Diamond Arena publishes html[data-arena-scheme='light'], which sets
-     color-scheme: light (club-engine.css), and a light scheme draws every
-     native part here (select arrows and popups, number spinners, radios,
-     date and time pickers) for a white page, dark on this dark field. */
+  /* The form always prints on the console's black glass: a light
+     color-scheme would draw every native part here (select arrows and popups,
+     number spinners, radios, date and time pickers) for a white page, dark on
+     this dark field. */
   color-scheme: dark;
 }
 

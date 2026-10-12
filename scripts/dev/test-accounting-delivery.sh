@@ -336,5 +336,23 @@ run_game_probe diamond-choice-progressive-loss 'NOTICE:  PASS Progressive choice
 "${diamond_psql[@]}" -At -f "$diamond/snapshot.sql" > "$fixture/diamond-before.jsonl"
 run_game_probe diamond-wheel-atomic-batch 'NOTICE:  PASS Atomic paid batches: 5/10/25 maximum-entry runs, sealed before payment, full cost withdrawn once, every spin fulfilled, exact immutable receipt replay'
 
+# One wheel for everyone (owner request 2026-10-12): applied last, on the exact
+# installed preimages, then every player is dealt the item-free table for real,
+# and the batch probe is run again on the patched spin.
+"${diamond_psql[@]}" -f "$root/supabase/migrations/20261012041752_one_wheel_for_everyone.sql"
+"${diamond_psql[@]}" -At -f "$diamond/snapshot.sql" > "$fixture/diamond-before.jsonl"
+run_game_probe diamond-wheel-one-table 'NOTICE:  PASS One wheel for everyone: a member and a lifetime VIP shown the identical item-free table and both told vip true; the member paid 0.2x/0.25x/0.3x chips on ords 3/6/9 with no grant; 300 real member spins with no item, no repeat and the published row'
+run_game_probe diamond-wheel-atomic-batch 'NOTICE:  PASS Atomic paid batches: 5/10/25 maximum-entry runs, sealed before payment, full cost withdrawn once, every spin fulfilled, exact immutable receipt replay'
+
+# Owner's October 11 fair coin: Donkey Cross becomes contract 6. A contract-5
+# road left open across the install (hit on street two by its own roll) must
+# settle under contract 5, pay once, and replay contract 5's street.
+"${diamond_psql[@]}" -v survive=false -f "$diamond/crossing-v5-before-v6.sql" \
+  -f "$root/supabase/migrations/20261012050006_donkey_cross_flips_a_fair_coin_every_street.sql" \
+  -f "$diamond/crossing-v5-after-v6.sql"
+"${diamond_psql[@]}" -At -f "$diamond/snapshot.sql" > "$fixture/diamond-before.jsonl"
+run_game_probe diamond-crossing-fair-coin 'NOTICE:  PASS Donkey Cross fair coin: contract6 quote and 400 real rounds, every street its own sealed coin, street one a coin, 50/50 per street and independent over 65536 coins, coins and road end revealed on finish, losses keep half the last prize, every stop worth at most 0.80 on every stake and floor, Mines untouched'
+run_game_probe diamond-choice-progressive-loss 'NOTICE:  PASS Progressive choice losses: new contract5 Mines and Crossing, first step safe, increasing half-last-prize guarantee, exact Promo settlement, duplicate move replay, historical contracts preserved, probability and ladder martingales retain initial 80 percent'
+
 # Exact qualified postimages for installation readback, from this private cluster.
-"${diamond_psql[@]}" -At -c "SELECT jsonb_build_object('qualified_postimages',jsonb_agg(jsonb_build_object('signature',p.oid::regprocedure::text,'md5',md5(pg_get_functiondef(p.oid)),'owner',pg_get_userbyid(p.proowner),'security_definer',p.prosecdef,'config',p.proconfig,'acl',p.proacl))) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname IN ('fn_choice_start','fn_choice_state','fn_choice_act','fn_choice_prizes','fn_choice_prizes_v5','fn_choice_road_probability_v5','fn_choice_loss_floor_v5','fn_wheel_bonus_state','fn_diamond_game_lifetime','fn_wheel_spin_v2','fn_wheel_bonus_start','fn_wheel_bonus_public_award','fn_wheel_card_public','fn_wheel_diamond_cards_pick','fn_wheel_batch_immutable','fn_wheel_batch_active','fn_wheel_batch_prepare','fn_wheel_batch_begin','fn_wheel_batch_read','fn_wheel_prize_order','fn_wheel_next_unplayed');"
+"${diamond_psql[@]}" -At -c "SELECT jsonb_build_object('qualified_postimages',jsonb_agg(jsonb_build_object('signature',p.oid::regprocedure::text,'md5',md5(pg_get_functiondef(p.oid)),'owner',pg_get_userbyid(p.proowner),'security_definer',p.prosecdef,'config',p.proconfig,'acl',p.proacl))) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname IN ('fn_choice_start','fn_choice_state','fn_choice_act','fn_choice_result','fn_diamond_bonus_replay','fn_choice_prizes_v6','fn_choice_road_prizes_v6','fn_choice_road_coin_v6','fn_choice_road_coins_v6','fn_choice_road_end_v6','fn_choice_prizes','fn_choice_prizes_v5','fn_choice_road_probability_v5','fn_choice_loss_floor_v5','fn_wheel_bonus_state','fn_diamond_game_lifetime','fn_wheel_spin_v2','fn_wheel_bonus_start','fn_wheel_bonus_public_award','fn_wheel_card_public','fn_wheel_diamond_cards_pick','fn_wheel_batch_immutable','fn_wheel_batch_active','fn_wheel_batch_prepare','fn_wheel_batch_begin','fn_wheel_batch_read','fn_wheel_prize_order','fn_wheel_next_unplayed','fn_wheel_state_v2','fn_wheel_v4_model');"

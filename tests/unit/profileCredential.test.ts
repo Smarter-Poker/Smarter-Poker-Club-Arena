@@ -373,6 +373,7 @@ describe('the VIP ring shows VIP, and only when there is one', () => {
     // AND LIFETIME VIP." addVIPPoints derived a tier from a vip_points column
     // that does not exist and wrote it to the wrong column. Both are gone.
     expect(PROFILE_SERVICE).not.toContain('addVIPPoints(');
+    expect(PROFILE_SERVICE).not.toContain('vipPoints');
     expect(PROFILE_SERVICE).not.toMatch(/const VIP_THRESHOLDS\s*=/);
     expect(PROFILE_SERVICE).not.toContain('update({ tier:');
   });

@@ -32,7 +32,6 @@ export interface UserProfile {
 
   // VIP
   vipTier: 'bronze' | 'silver' | 'gold' | 'platinum' | 'diamond';
-  vipPoints: number;
 
   // Streaks
   currentStreak: number;
@@ -48,11 +47,6 @@ export interface UserProfile {
   createdAt: string;
   updatedAt: string;
 }
-
-// REMOVED 2026-09-05 with its only reader, `addVIPPoints`: a bronze -> diamond
-// points ladder for a `vip_points` column that does not exist, contradicting
-// both Dan's 2026-09-04 ruling (VIP and Lifetime VIP, nothing else) and
-// src/constants/vipTiers.ts, which disagreed with it at every rung above 5000.
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SERVICE CLASS
@@ -174,27 +168,6 @@ class ProfileServiceClass {
     }
     return !error;
   }
-
-  /*
-   * REMOVED 2026-09-05: `addVIPPoints(userId, points)`.
-   *
-   * It had no callers anywhere in src/, server/ or tests/, and it was wrong in
-   * three independent ways that only a caller would ever have discovered:
-   *
-   *   1. It started from `profile.vipPoints`, which `getProfile` hardcodes to
-   *      0 ("there is no points column") - because `profiles` genuinely has no
-   *      vip_points column. So `newPoints` was always just `points`.
-   *   2. It derived a bronze/silver/gold/platinum/diamond tier from that, but
-   *      Dan ruled on 2026-09-04: "THERE IS NO SUCH THING AS 'PLATINUM VIP'
-   *      BTW. JUST VIP, AND LIFETIME VIP." The ladder does not exist.
-   *   3. It wrote the result to `profiles.tier`, which is a RANK label reading
-   *      'Newcomer' on all 1,310 rows - not the VIP column. The VIP columns
-   *      are is_vip / vip_tier / vip_expires_at, resolved by utils/vipStatus.
-   *
-   * Anything that needs to move a player's VIP standing goes through the VIP
-   * membership path, not a points ladder. Keeping a dead ladder in a service
-   * file is how the next agent revives one.
-   */
 
   /**
    * Update daily streak
@@ -390,7 +363,6 @@ class ProfileServiceClass {
          that need the membership read `vipStatus`, which resolveVipStatus
          answers from is_vip + vip_tier + vip_expires_at. */
       vipTier: 'bronze',
-      vipPoints: 0, // vip_points is its own table; this mapper does not read it
       currentStreak: (data.login_streak as number) || 0, // DB column is `login_streak`
       longestStreak: (data.streak_days as number) || 0, // DB column is `streak_days`
       lastLoginDate: data.last_login_date as string | undefined,

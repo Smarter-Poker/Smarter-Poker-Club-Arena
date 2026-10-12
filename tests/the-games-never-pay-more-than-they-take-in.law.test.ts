@@ -77,6 +77,16 @@ import {
   crashPointCentsFromRoll,
   crashPointFloorCents,
 } from '../src/utils/diamondGamesFairness';
+import {
+  ROAD_COIN_MAX_STREETS,
+  ROAD_COIN_TOP_MULTIPLE,
+  ROAD_COIN_VERSION,
+  roadCoin,
+  roadCoinEnd,
+  roadCoinPrizeFifths,
+  roadCoinStopValue,
+} from '../src/utils/roadCoin';
+import { choiceNextOdds } from '../src/utils/choiceProgressiveGuarantee';
 
 const DIR = resolve(__dirname, '..', 'supabase/migrations');
 const files = readdirSync(DIR);
@@ -219,6 +229,26 @@ const AUDIT = body(games.sql, 'fn_plinko_table_audit');
  * Every number is still computed from the exported constants, exactly.
  */
 const rules = latest('the_first_step_of_a_bonus_game_never_ruins_it_and_the_floor_');
+/**
+ * AMENDED 2026-10-12 - DONKEY CROSS FLIPS A FAIR COIN ON EVERY STREET (owner
+ * request 2026-10-11, contract 6). Dan, verbatim: "DONKEY CROSS ALWAYS RUNS THE
+ * DONKEY OVER ON THE 2ND STREET. IT NEEDS TO LITERALLY BE A 50/50 CHANCE TO
+ * CROSS THE NEXT STREET. 'A VIRTUAL COIN' MUST FLIP THAT IS TRULY RANDOM TO BE
+ * SAFE OR SMASH FOR EACH STREET EVERY TIME." And his money ruling the same
+ * night: "Smaller prizes, keep 80%".
+ *
+ * This repeals R3 FOR THE ROAD ONLY: under contract 6 street one is a coin like
+ * every other, because the owner asked for a coin on "EACH STREET EVERY TIME".
+ * Mines (first tile always a gem) and Crash (never below 1.10x) keep R3. Sealed
+ * contract-4 and contract-5 roads keep their certain first street and verify
+ * exactly as before; every pin on them below still holds.
+ *
+ * The 0.80 promise is kept by the ladder instead of by the odds: with a fair
+ * coin, a stop after street k is worth L/2 + ... + prize_k/2^k, and the ladder
+ * prize_1 = 1.6B - L, prize_(k+1) = 2 prize_k - loss_k (loss_k the contract-5
+ * rule) makes every stop exactly 0.80B, the 20x top a little less.
+ */
+const coin = latest('donkey_cross_flips_a_fair_coin_every_street');
 
 /**
  * THE BOARD, DERIVED. A Plinko board is sixteen rows, so it has seventeen slots
@@ -1552,5 +1582,160 @@ describe('the calibration is installed server-side exactly as the client mirrors
     expect(rules.sql).toContain(
       `IF cardinality(p)<>${25 - Number(CHOICE_MODE.mines)} OR p[1]<>0.8`
     );
+  });
+});
+
+/**
+ * ITEM 9. DONKEY CROSS UNDER CONTRACT 6: A FAIR COIN ON EVERY STREET, AND
+ * EVERY STOP STILL WORTH AT MOST 0.80 (owner request 2026-10-11; see `coin`).
+ *
+ * Proven exactly, in integers, for every stake an award or a paid round can
+ * carry (25 to 7,500 diamonds) on every floor a round can be sealed with: half
+ * the stake, two thirds of it (a Super award with the add-on) and the clamp a
+ * cent under 0.80B. Then the coin itself: one byte of a per-street HMAC, so
+ * half of every byte value is safe, and over many seeds every street survives
+ * half the time, independently of the street before it.
+ */
+describe('Donkey Cross flips a fair coin on every street and keeps 0.80 wherever a player stops', () => {
+  /** Every floor a stake of `bet` cents can carry, in cents. */
+  const floorsOf = (bet: number) =>
+    [...new Set([Math.ceil(bet / 2), Math.ceil((2 * bet) / 3), Math.ceil(bet * 0.8) - 1])].filter(
+      (l) => l * 5 < 4 * bet
+    );
+
+  it('every stopping point on every stake and floor returns at most 0.80, exactly 0.80 below the 20x top', () => {
+    let checked = 0;
+    for (let bet = MIN_DIAMOND_SPIN; bet <= MAX_DIAMOND_SPIN * 3; bet++) {
+      for (const floor of floorsOf(bet)) {
+        const ladder = roadCoinPrizeFifths(bet / CHIP_CENTS, floor / CHIP_CENTS);
+        const top = ROAD_COIN_TOP_MULTIPLE * bet * 5;
+        expect(ladder.length, `${bet}/${floor}`).toBeLessThanOrEqual(ROAD_COIN_MAX_STREETS);
+        expect(ladder[ladder.length - 1], `${bet}/${floor} above 20x`).toBeLessThanOrEqual(top);
+        for (let k = 1; k <= ladder.length; k++) {
+          if (k > 1) expect(ladder[k - 1]).toBeGreaterThan(ladder[k - 2]);
+          // The prize beats what a smash on the next street keeps.
+          expect(ladder[k - 1]).toBeGreaterThan(5 * floor);
+          const v = roadCoinStopValue(bet / CHIP_CENTS, floor / CHIP_CENTS, k);
+          // value <= 4/5, and == 4/5 at every rung below the capped top.
+          expect(
+            v.numerator * RETURN_DEN,
+            `${bet}/${floor} stop ${k} pays more than 0.80`
+          ).toBeLessThanOrEqual(v.denominator * RETURN_NUM);
+          if (ladder[k - 1] < top)
+            expect(v.numerator * RETURN_DEN, `${bet}/${floor} stop ${k} is not 0.80`).toBe(
+              v.denominator * RETURN_NUM
+            );
+          checked++;
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(150000);
+  }, 120000);
+
+  it('the standard and Super ladders are the ones the owner was shown', () => {
+    // Exact chips per street (fifths of a cent / 500), no float rounding.
+    const chips = (bet: number, floor: number) =>
+      roadCoinPrizeFifths(bet, floor).map((p) => p / 500);
+    // Standard, one chip (floor half): 1.10x 1.65x 2.47x 3.70x 5.55x 8.32x 12.48x 18.72x 20x.
+    expect(chips(1, 0.5)).toEqual([1.1, 1.65, 2.47, 3.7, 5.55, 8.32, 12.48, 18.72, 20]);
+    // Standard 2,500-diamond award (25 chips, floor 12.50).
+    expect(chips(25, 12.5)).toEqual([27.5, 41.25, 61.87, 92.8, 139.2, 208.8, 313.2, 469.8, 500]);
+    // Super without the add-on (50 chips) keeps the half floor, so the standard
+    // shape; each half-prize loss rounds up on its own cents, hence not exactly 2x.
+    expect(chips(50, 25)).toEqual([55, 82.5, 123.75, 185.62, 278.43, 417.64, 626.46, 939.69, 1000]);
+    // Super with Double Diamonds (75 chips, floor 50): smaller early prizes, ten streets.
+    expect(chips(75, 50)).toEqual([70, 90, 130, 195, 292.5, 438.75, 658.12, 987.18, 1480.77, 1500]);
+  });
+
+  it('the coin is one HMAC byte per street: exactly half of all byte values are safe', () => {
+    // Half of the 256 first-byte values are SAFE, so the coin is exactly 50/50
+    // whatever HMAC-SHA256 produces. Read off the SQL as well as the mirror.
+    expect(coin.sql).toContain(
+      "SELECT get_byte(extensions.hmac(p_client_seed||':'||p_nonce||':street:'||p_street,p_server_seed,'sha256'),0)<128"
+    );
+    const safeBytes = Array.from({ length: 256 }, (_, b) => b).filter((b) => b < 128).length;
+    expect(safeBytes * 2).toBe(256);
+    expect(ROAD_COIN_VERSION).toBe(6);
+    // The per-street odds the page prints read 50% on every street, street one too.
+    for (let s = 0; s < 9; s++)
+      expect(choiceNextOdds('crossing', s, Array(9).fill(1), 0.5, ROAD_COIN_VERSION)).toEqual({
+        safe: 50,
+        loss: 50,
+      });
+  });
+
+  it('over many seeds every street survives half the time, independently of the last', async () => {
+    const SEEDS = 2048;
+    const STREETS = 10;
+    const safe = Array(STREETS).fill(0);
+    let afterSafe = 0;
+    let afterSafeSafe = 0;
+    let firstSmash = 0;
+    for (let s = 0; s < SEEDS; s++) {
+      let previous: boolean | null = null;
+      for (let k = 1; k <= STREETS; k++) {
+        const c = await roadCoin(`law-seed-${s}`, 'law-client', s + 1, k);
+        if (c) safe[k - 1]++;
+        if (k === 1 && !c) firstSmash++;
+        if (previous === true) {
+          afterSafe++;
+          if (c) afterSafeSafe++;
+        }
+        previous = c;
+      }
+    }
+    // Four standard deviations of a fair coin: sqrt(0.25 / n).
+    const band = (n: number) => 4 * Math.sqrt(0.25 / n);
+    for (let k = 0; k < STREETS; k++)
+      expect(Math.abs(safe[k] / SEEDS - 0.5), `street ${k + 1}`).toBeLessThan(band(SEEDS));
+    expect(Math.abs(afterSafeSafe / afterSafe - 0.5)).toBeLessThan(band(afterSafe));
+    // Street one is a coin too: it smashes about half the time, not never.
+    expect(Math.abs(firstSmash / SEEDS - 0.5)).toBeLessThan(band(SEEDS));
+    expect(roadCoinEnd([true, true, false, true])).toBe(2);
+    expect(roadCoinEnd([true, true])).toBe(2);
+    expect(roadCoinEnd([false])).toBe(0);
+  }, 60000);
+
+  it('the migration installs exactly this contract, for crossing only, with sealed rounds untouched', () => {
+    // The ladder is the mirror's: 1.6B - L, then 2 prize - loss (the contract-5 rule), capped at 20B and 20 streets.
+    expect(coin.sql).toContain(' v_top:=p_bet*20;');
+    expect(coin.sql).toContain(' v_next:=p_bet*1.6-p_floor;');
+    expect(coin.sql).toContain(
+      '  v_next:=2*v_next-public.fn_choice_loss_floor_v5(v_out,cardinality(v_out),p_floor);'
+    );
+    expect(coin.sql).toContain('  EXIT WHEN cardinality(v_out)=20;');
+    // New crossing rounds are contract 6, mines stays on contract 5.
+    expect(coin.sql).toContain(
+      "  CASE WHEN p_game='crossing' THEN 6 ELSE 5 END) RETURNING * INTO r;"
+    );
+    expect(coin.sql).toContain(' RETURN public.fn_choice_prizes_v5(p_game,p_mode,p_bet,p_floor);');
+    // Each sealed contract keeps its own survival rule, byte for byte.
+    const act = body(coin.sql, 'fn_choice_act');
+    expect(act).toContain(
+      '  ELSIF r.payout_version=6 THEN safe:=public.fn_choice_road_coin_v6(r.server_seed,r.client_seed,r.nonce,n+1);'
+    );
+    expect(act).toContain(
+      '  ELSIF r.payout_version=5 THEN safe:=(r.road_roll::numeric+1)<=public.fn_choice_road_probability_v5(r.prizes,n+1,r.minimum_payout_chips)*281474976710656;'
+    );
+    expect(act).toContain(
+      '  ELSE safe:=(r.road_roll::numeric+1)*(r.prizes[n+1]-r.minimum_payout_chips) <= (r.bet_chips*.8-r.minimum_payout_chips)*281474976710656; END IF;'
+    );
+    // Every replaced door is guarded by the exact production body it replaces.
+    for (const [sig, md5] of [
+      [
+        'fn_choice_start(uuid,text,text,integer,uuid,text,integer)',
+        'e7d64de5795704bc19226857fe27bc40',
+      ],
+      ['fn_choice_act(uuid,text,integer,integer)', '746d3945a7912a68856d125802087796'],
+      ['fn_choice_result(diamond_choice_rounds)', '7ba40c68622df3ca6011e186bf74bab3'],
+      ['fn_diamond_bonus_replay(uuid)', '0f8a416e05bb7dda955a9f468bb96e29'],
+    ])
+      expect(coin.sql).toContain(`('public.${sig}','${md5}')`);
+    // The replay names each contract's own street.
+    expect(coin.sql).toContain("  IF e.game='crossing' AND d.payout_version=6 THEN");
+    expect(coin.sql).toContain("  ELSIF e.game='crossing' AND d.payout_version=5 THEN");
+    // One transaction.
+    expect(coin.sql.match(/^BEGIN;$/gm)?.length).toBe(1);
+    expect(coin.sql.match(/^COMMIT;$/gm)?.length).toBe(1);
   });
 });

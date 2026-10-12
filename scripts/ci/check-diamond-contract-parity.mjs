@@ -563,6 +563,10 @@ export function baseRef(argv = process.argv.slice(2)) {
  * CLAUDE.md is explicit about what a gate with that hit rate becomes: switched
  * off. So a fact counts only where it is declared.
  */
+/** The bonus lifecycle functions named above: start, state, latest, the
+ *  immutability trigger, replays and shares, and the spin ticket guard. */
+export const BONUS_LIFECYCLE =
+  /^fn_diamond_bonus_(start|state|latest|immutable|replay|replays|share|share_to_feed|spin_ticket_guard)$/;
 export function functionChunks(sql) {
   const text = String(sql);
   const marks = [
@@ -619,7 +623,14 @@ export function contractFactsInSql(sql) {
       all(text, /create\s+(?:or\s+replace\s+)?function\s+(?:public\.)?(fn_diamond_bonus_[a-z_]+)/gi, (x) =>
         x.toLowerCase()
       )
-    ).sort(),
+    )
+      /* The bonus LIFECYCLE is not a floor rule (see functionChunks above). On
+         2026-10-12 the Donkey Cross fair-coin migration recreated
+         fn_diamond_bonus_replay and named fn_diamond_bonus_floor in the same
+         file (fn_choice_start keeps using it), and was accused of moving the
+         floor it had not touched. */
+      .filter((name) => !BONUS_LIFECYCLE.test(name))
+      .sort(),
   };
   lastContractFacts = { text, facts };
   return copyContractFacts(facts);

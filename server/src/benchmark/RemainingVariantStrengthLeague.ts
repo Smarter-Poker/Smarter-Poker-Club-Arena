@@ -33,11 +33,11 @@ import { isOmahaVariantHoldoutSeed } from './OmahaVariantStrengthContract.js';
 import { isJointHoldoutSeed } from './JointStrengthContract.js';
 import {
   REMAINING_VARIANT_STRENGTH_BB,
-  REMAINING_VARIANT_STRENGTH_CONTRACT,
   isRemainingVariantHoldoutSeed,
   isRemainingVariantHoldoutSeedOf,
   isRemainingVariantStrengthVariant,
   remainingVariantStrengthContractDigest,
+  remainingVariantStrengthContractFor,
   remainingVariantStrengthPack,
   remainingVariantStrengthProfile,
   type RemainingVariantStrengthShardResult,
@@ -106,7 +106,7 @@ export async function runRemainingVariantStrengthShard(
 ): Promise<RemainingVariantStrengthShardResult> {
   if (!isRemainingVariantStrengthVariant(variant))
     throw new Error('Unknown P12.2 strength variant');
-  const c = REMAINING_VARIANT_STRENGTH_CONTRACT;
+  const c = remainingVariantStrengthContractFor(variant);
   const pack = remainingVariantStrengthPack(variant);
   if (request.mode !== 'contract' && request.mode !== 'development')
     throw new Error('Unknown P12.2 shard mode');
@@ -146,7 +146,7 @@ export async function runRemainingVariantStrengthShard(
     schema: 'horse-phase12-strength-shard-v1',
     variant,
     contractVersion: c.version,
-    contractDigest: remainingVariantStrengthContractDigest(),
+    contractDigest: remainingVariantStrengthContractDigest(variant),
     packVersion: REMAINING_VARIANT_PACKS[variant].version,
     evidenceMode: request.mode,
     profileId: profile.id,

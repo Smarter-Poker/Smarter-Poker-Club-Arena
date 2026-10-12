@@ -84,7 +84,10 @@ function WorkspacePage({
      id="main-content"> around the router outlet, so every one of these pages
      was shipping two main landmarks and an ambiguous skip link. */
   return (
-    <section className={styles.page}>
+    <section
+      className={styles.page}
+      data-workspace={title === 'Rewards Center' ? 'rewards' : undefined}
+    >
       <header className={styles.hero}>
         <div className={styles.heroCopy}>
           <span className={styles.eyebrow}>{eyebrow}</span>
@@ -253,7 +256,7 @@ export function RewardsWorkspacePage() {
           description: 'Complete Account Transaction History',
           path: '/transactions',
         },
-        { label: 'VIP Status', description: 'Tier, Benefits, And Progress', path: '/vip' },
+        { label: 'VIP Status', description: 'Membership And Included Benefits', path: '/vip' },
         { label: 'Rakeback', description: 'Current Rate And Payment History', path: '/rakeback' },
         { label: 'Promotions', description: 'Live And Upcoming Offers', path: '/promotions' },
         { label: 'Bonuses', description: 'Available Bonus Inventory', path: '/bonuses' },

@@ -165,6 +165,27 @@ export { overlapsBoard };
  * unchanged, exactly as before: this can still never make a seat worse than
  * the geometry already had it.
  */
+/**
+ * THE RETREAT STAYS BESIDE ITS OWN SEAT (Dan 2026-10-12, with a screenshot of
+ * a 9-max table on a phone: "BUTTON JUST RANDOMLY IN THE MIDDLE OF THE TABLE").
+ *
+ * The retreat used to walk up to 30% of the table's width toward the middle.
+ * On a phone the two middle side seats of a 9-max ring sit level with the
+ * felt printing, so every step of that walk stood on the masthead keep-out
+ * until the puck had climbed past it - and it was accepted at x 44 / x 56,
+ * y 51: the dead centre of the table, belonging to nobody. The upper side
+ * seats on both rings did the same thing more mildly (x 30 / x 70). Capped at
+ * 8, the retreat can only nudge the puck off its own plate; when that is not
+ * enough the bounded swing below moves it along its own rail instead, which is
+ * where it lands beside the player on every ring and width measured
+ * (tests/the-dealer-button-stays-beside-its-seat.law.test.ts).
+ */
+export const RETREAT_MAX_WIDTH_PCT = 8;
+
+/** How far from its own seat (square space, % of table width) the puck may
+ *  look for a clear spot before the last-resort swing. */
+export const NEIGHBOURHOOD_WIDTH_PCT = 24;
+
 export function dealerButtonPositionClearOfSeat(
   seat: Pos,
   size: Size = NOMINAL_SCALER,
@@ -222,7 +243,7 @@ export function dealerButtonPositionClearOfSeat(
     if (Number.isFinite(len) && len > 1e-6) {
       const ux = dx / len;
       const uy = dy / len;
-      for (let step = 2; step <= 30; step += 2) {
+      for (let step = 2; step <= RETREAT_MAX_WIDTH_PCT; step += 2) {
         const walked: Pos = {
           x: pv.x + ux * step,
           y: ((pv.y + uy * step) * size.w) / size.h,
@@ -231,6 +252,37 @@ export function dealerButtonPositionClearOfSeat(
         if (clear(cand)) return cand;
       }
     }
+  }
+
+  /* STEP 1.5 — BESIDE THE PLATE, NOT ACROSS THE FELT (Dan 2026-10-12:
+     "BUTTON JUST RANDOMLY IN THE MIDDLE OF THE TABLE"). When the short
+     retreat cannot clear the seat's own plate - the side seats on a phone,
+     whose plates widened the same day - the old swing pivoted round the
+     middle of the felt and could only clear the masthead by landing a third of
+     the way across the table. Instead, look in the seat's own neighbourhood:
+     every felt point within NEIGHBOURHOOD_WIDTH_PCT of the seat that satisfies
+     everything `clear` asks, nearest to where the rail put it. Above or below
+     the plate, hard by the player, is what it finds. */
+  {
+    let near: Pos | null = null;
+    let nearDist = Infinity;
+    const R = NEIGHBOURHOOD_WIDTH_PCT;
+    for (let gx = -R; gx <= R; gx += 1) {
+      for (let gy = -R; gy <= R; gy += 1) {
+        if (gx * gx + gy * gy > R * R) continue;
+        // Square space around the seat, back to scaler percentages.
+        const raw: Pos = { x: sv.x + gx, y: ((sv.y + gy) * size.w) / size.h };
+        const cand = clampIntoFelt(raw, size, BUTTON_FELT_MARGIN_WIDTH_PCT);
+        const cs = sq(cand, size);
+        if (Math.hypot(cs.x - sv.x, cs.y - sv.y) > R) continue;
+        const d = Math.hypot(cs.x - pv.x, cs.y - pv.y);
+        if (d < nearDist && clear(cand)) {
+          near = cand;
+          nearDist = d;
+        }
+      }
+    }
+    if (near) return near;
   }
 
   /* STEP 2 — and only then, the swing. Capped at 24 degrees (16 steps of
@@ -260,7 +312,33 @@ export function dealerButtonPositionClearOfSeat(
       }
     }
   }
-  return best ?? placed;
+  if (best) return best;
+
+  // A larger nameplate can close both the straight retreat and the rim swing.
+  // Search their combination within the same finite bounds, retaining every
+  // chip, board, masthead and seat-ownership predicate above.
+  for (let retreat = 2; retreat <= 30; retreat += 2) {
+    const vx = pv.x - cv.x;
+    const vy = pv.y - cv.y;
+    const length = Math.hypot(vx, vy);
+    if (length <= retreat) break;
+    const scale = (length - retreat) / length;
+    for (let i = 1; i <= 16; i++) {
+      for (const dir of [1, -1]) {
+        const phi = dir * i * 1.5 * (Math.PI / 180);
+        const cand = clampIntoFelt(
+          {
+            x: cv.x + scale * (vx * Math.cos(phi) - vy * Math.sin(phi)),
+            y: ((cv.y + scale * (vx * Math.sin(phi) + vy * Math.cos(phi))) * size.w) / size.h,
+          },
+          size,
+          BUTTON_FELT_MARGIN_WIDTH_PCT
+        );
+        if (clear(cand)) return cand;
+      }
+    }
+  }
+  return placed;
 }
 
 export interface DealerButtonProps {
@@ -385,7 +463,7 @@ export function DealerButton({
     scalerSize ?? undefined,
     typeof window === 'undefined'
       ? undefined
-      : seatPodPx(window.innerWidth, pos.y >= 100 && pos.x === 50),
+      : seatPodPx(window.innerWidth, pos.y >= 100 && pos.x === 50, scalerSize?.w),
     // Dan 2026-09-07, item 10: the whole ring, so the search can refuse any
     // position that reads as another player's button. This component is
     // already handed every seat; the constraint just needed to be given them.

@@ -942,7 +942,7 @@ export function ThemeSettingsModal({
   }, [isOpen, userId]);
 
   // ── Which premium assets does this player actually own? ──
-  // A club redemption and a VIP-points reward now issue category-specific
+  // Club redemptions issue category-specific
   // rows for the complete preset bundle. Reading only feature_purchases made
   // those legitimately purchased felts/buttons/backgrounds look VIP-locked.
   useEffect(() => {

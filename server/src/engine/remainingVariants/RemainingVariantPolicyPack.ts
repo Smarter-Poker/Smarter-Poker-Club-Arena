@@ -57,6 +57,18 @@ export type RemainingPolicyVariant = 'short_deck' | 'pineapple' | 'flh' | 'flo8'
  *
  * These are heuristic choices measured on development seeds, not solver
  * frequencies, and nothing here is calibrated (`calibratedConfidence: null`).
+ *
+ * Round 4, no limit only (docs/horse-brain-phase12-round4-2026-10-11.md):
+ * `bigBlindDefendMaxDealt` caps the big blind defence at four dealt seats.
+ * At five or more dealt it was the only round-3 rule that could fire, and it
+ * changed fewer than 1 pair in 600 there (Short Deck 0.01% to 0.15%, Crazy
+ * Pineapple 0% to 0.14% of the locked matrices' 6-max and seat-ceiling
+ * pairs): too rare to measure, so rare that its handful of large paired
+ * differences failed the contract's normal-approximation check in every such
+ * cell, while the whole measured gain sat at two and four dealt. Full tables
+ * now play the reference exactly; two and four dealt are unchanged. The
+ * fixed-limit rules (FLH, FLO8) keep no cap (null) and decide exactly as in
+ * round 3.
  */
 export interface RemainingVariantRound3Rules {
   readonly openTighten: readonly ('early' | 'middle' | 'cutoff' | 'button')[];
@@ -64,6 +76,8 @@ export interface RemainingVariantRound3Rules {
   readonly headsUpOpenBelowBar: number | null;
   readonly smallBlindStealBelowBar: number | null;
   readonly bigBlindDefendBelowCallBar: number | null;
+  /** The most dealt seats at which the big blind defence applies; null for no cap. */
+  readonly bigBlindDefendMaxDealt: number | null;
 }
 const REMAINING_VARIANT_NO_LIMIT_ROUND3: RemainingVariantRound3Rules = Object.freeze({
   openTighten: Object.freeze([] as const),
@@ -71,6 +85,7 @@ const REMAINING_VARIANT_NO_LIMIT_ROUND3: RemainingVariantRound3Rules = Object.fr
   headsUpOpenBelowBar: 0.15,
   smallBlindStealBelowBar: null,
   bigBlindDefendBelowCallBar: 0.15,
+  bigBlindDefendMaxDealt: 4,
 });
 const REMAINING_VARIANT_FIXED_LIMIT_ROUND3: RemainingVariantRound3Rules = Object.freeze({
   openTighten: Object.freeze(['middle', 'cutoff', 'button'] as const),
@@ -78,10 +93,11 @@ const REMAINING_VARIANT_FIXED_LIMIT_ROUND3: RemainingVariantRound3Rules = Object
   headsUpOpenBelowBar: 0.15,
   smallBlindStealBelowBar: 0.2,
   bigBlindDefendBelowCallBar: 0.15,
+  bigBlindDefendMaxDealt: null,
 });
 export const REMAINING_VARIANT_PACKS = Object.freeze({
   short_deck: Object.freeze({
-    version: 'short-deck-round3-v1',
+    version: 'short-deck-round4-v1',
     holes: 2,
     deck: 36,
     splitLow: false,
@@ -103,7 +119,7 @@ export const REMAINING_VARIANT_PACKS = Object.freeze({
     round3: REMAINING_VARIANT_NO_LIMIT_ROUND3,
   }),
   pineapple: Object.freeze({
-    version: 'crazy-pineapple-round3-v1',
+    version: 'crazy-pineapple-round4-v1',
     holes: 3,
     deck: 52,
     splitLow: false,

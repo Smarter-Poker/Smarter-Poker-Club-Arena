@@ -2,18 +2,26 @@ import { describe, expect, it } from 'vitest';
 import {
   REMAINING_VARIANT_MATRIX_JOB_CEILING,
   REMAINING_VARIANT_STRENGTH_CONTRACT,
+  REMAINING_VARIANT_STRENGTH_CONTRACT_V1,
+  REMAINING_VARIANT_STRENGTH_V2_VARIANTS,
   REMAINING_VARIANT_STRENGTH_VARIANTS,
   isRemainingVariantHoldoutSeed,
   isRemainingVariantHoldoutSeedOf,
   remainingVariantCellStatistic,
   remainingVariantMoodClockMs,
   remainingVariantStrengthContractDigest,
+  remainingVariantStrengthContractFor,
   remainingVariantStrengthPack,
   remainingVariantStrengthRequiredShards,
   remainingVariantStrengthShardReasons,
   summarizeRemainingVariantStrength,
   type RemainingVariantStrengthShardResult,
 } from './RemainingVariantStrengthContract.js';
+import {
+  REMAINING_VARIANT_STRENGTH_CONTRACT_V1_DIGEST,
+  REMAINING_VARIANT_STRENGTH_CONTRACT_V1_JSON,
+} from './RemainingVariantStrengthContractV1.js';
+import { createHash } from 'node:crypto';
 import {
   PLO4_STRENGTH_CONTRACT,
   Plo4PowerAccumulator,
@@ -104,8 +112,8 @@ function shard(
   return {
     schema: 'horse-phase12-strength-shard-v1',
     variant,
-    contractVersion: C.version,
-    contractDigest: remainingVariantStrengthContractDigest(),
+    contractVersion: remainingVariantStrengthContractFor(variant).version,
+    contractDigest: remainingVariantStrengthContractDigest(variant),
     packVersion: pack.candidate.packVersion,
     evidenceMode: 'contract',
     profileId,
@@ -162,35 +170,143 @@ const fullMatrix = (
 ) => remainingVariantStrengthRequiredShards(variant).map((s) => make(s.profileId, s.seed, s.shard));
 
 describe('P12.2 Phase 12 strength contract object', () => {
-  it('is versioned, deeply immutable, and bound by a stable digest', () => {
-    expect(C.schema).toBe('horse-phase12-strength-contract');
-    expect(C.version).toBe('remaining-variant-strength-contract-v1');
-    expect(C.phase).toBe('P12.2');
-    expect(remainingVariantStrengthContractDigest()).toMatch(/^[0-9a-f]{64}$/);
-    expect(remainingVariantStrengthContractDigest()).toBe(remainingVariantStrengthContractDigest());
-    expect(Object.isFrozen(C)).toBe(true);
-    expect(Object.isFrozen(C.packs.flo8.matrix.profiles[6])).toBe(true);
-    expect(Object.isFrozen(C.liveConditions.differences[0])).toBe(true);
+  it('is versioned, deeply immutable, and bound by a stable digest per pack', () => {
+    for (const c of [C, REMAINING_VARIANT_STRENGTH_CONTRACT_V1]) {
+      expect(c.schema).toBe('horse-phase12-strength-contract');
+      expect(c.phase).toBe('P12.2');
+      expect(Object.isFrozen(c)).toBe(true);
+      expect(Object.isFrozen(c.liveConditions.differences[0])).toBe(true);
+      expect(c.promotionEligible).toBe(false);
+    }
+    expect(C.version).toBe('remaining-variant-strength-contract-v2');
+    expect(REMAINING_VARIANT_STRENGTH_CONTRACT_V1.version).toBe(
+      'remaining-variant-strength-contract-v1'
+    );
+    for (const variant of VARIANTS) {
+      expect(remainingVariantStrengthContractDigest(variant)).toMatch(/^[0-9a-f]{64}$/);
+      expect(remainingVariantStrengthContractDigest(variant)).toBe(
+        createHash('sha256')
+          .update(JSON.stringify(remainingVariantStrengthContractFor(variant)))
+          .digest('hex')
+      );
+    }
+    expect(Object.isFrozen(C.packs.flo8!.matrix.profiles[6])).toBe(true);
     expect(() => {
       (
-        C.packs.flh.regressionMargin as { lowerBoundAtLeastBbPer100: number }
+        REMAINING_VARIANT_STRENGTH_CONTRACT_V1.packs.flh!.regressionMargin as {
+          lowerBoundAtLeastBbPer100: number;
+        }
       ).lowerBoundAtLeastBbPer100 = -100;
     }).toThrow();
-    expect(C.promotionEligible).toBe(false);
   });
 
-  it('pins the contract digest, so a silent contract edit fails CI (Phase 10 audit F9)', () => {
-    // A deliberate contract change must update this pin and say why. Anything
-    // the contract reads (pack versions, the published rake rows, the buy-in
+  it('binds FLH to contract v1, frozen byte for byte, and the other three packs to v2', () => {
+    expect(remainingVariantStrengthContractFor('flh')).toBe(REMAINING_VARIANT_STRENGTH_CONTRACT_V1);
+    for (const variant of ['short_deck', 'pineapple', 'flo8'] as const)
+      expect(remainingVariantStrengthContractFor(variant), variant).toBe(C);
+    expect([...REMAINING_VARIANT_STRENGTH_V2_VARIANTS]).toEqual([
+      'short_deck',
+      'pineapple',
+      'flo8',
+    ]);
+    expect(Object.keys(C.packs)).toEqual(['short_deck', 'pineapple', 'flo8']);
+    // The frozen bytes are exactly what FLH was measured, assembled and
+    // selected under, and parsing them gives the same bytes back.
+    expect(
+      createHash('sha256').update(REMAINING_VARIANT_STRENGTH_CONTRACT_V1_JSON).digest('hex')
+    ).toBe(REMAINING_VARIANT_STRENGTH_CONTRACT_V1_DIGEST);
+    expect(JSON.stringify(REMAINING_VARIANT_STRENGTH_CONTRACT_V1)).toBe(
+      REMAINING_VARIANT_STRENGTH_CONTRACT_V1_JSON
+    );
+    expect(C.supersedes).toEqual(
+      expect.objectContaining({
+        version: 'remaining-variant-strength-contract-v1',
+        digest: REMAINING_VARIANT_STRENGTH_CONTRACT_V1_DIGEST,
+        stillBinds: ['flh'],
+      })
+    );
+    // v1's FLH section is the one FLH runs: same seeds, pairs and margin.
+    const flh = remainingVariantStrengthPack('flh');
+    expect([...flh.holdout.seeds]).toEqual([12401129, 12402257, 12403381]);
+    expect(flh.matrix.pairsPerShard).toBe(12_960);
+    expect(flh.matrix.requiredShards).toBe(42);
+    expect(flh.candidate.packVersion).toBe(REMAINING_VARIANT_PACKS.flh.version);
+  });
+
+  it('pins each contract digest, so a silent contract edit fails CI (Phase 10 audit F9)', () => {
+    // A deliberate contract change must update its pin and say why. Anything
+    // contract v2 reads (pack versions, the published rake rows, the buy-in
     // band, the seat law, the pack domain) moves it too, which fails closed:
-    // evidence made under the old digest is then refused by name.
-    // Round 3 (docs/horse-brain-phase12-round3-2026-10-08.md): moved only by
-    // the four pack versions (round1 to round3); every profile, seed, pair
-    // count, margin and threshold is the locked round-1 value. The round-1
-    // digest was d85d7569c31a1cd583a2397c2f598e448859ff66b417ba8e549ba00bcc6e19f1.
-    expect(remainingVariantStrengthContractDigest()).toBe(
+    // evidence made under the old digest is then refused by name. Contract v1
+    // is frozen bytes and can no longer move.
+    // Round 3 (docs/horse-brain-phase12-round3-2026-10-08.md): v1 moved only by
+    // the four pack versions; the round-1 digest was
+    // d85d7569c31a1cd583a2397c2f598e448859ff66b417ba8e549ba00bcc6e19f1.
+    // Round 4 (docs/horse-brain-phase12-round4-2026-10-11.md): v2 for Short
+    // Deck, Crazy Pineapple and FLO8 (fresh held-out seeds, the round-4 Short
+    // Deck and Pineapple packs, FLO8 shard counts sized for the trust check).
+    expect(remainingVariantStrengthContractDigest('flh')).toBe(
       'fafbba8dc23ebc59b5aadf78fdcc47cd6f504baf9bcd10b07970ad7fbea501c0'
     );
+    for (const variant of ['short_deck', 'pineapple', 'flo8'] as const)
+      expect(remainingVariantStrengthContractDigest(variant), variant).toBe(
+        '6c50e71707addc7b9f740493840e5d59053773d63ea7af5cdf33a6108036b16f'
+      );
+  });
+
+  it('round 4: sizes FLO8 for the trust check and keeps the Short Deck and Pineapple matrices', () => {
+    const shards = (variant: RemainingPolicyVariant) =>
+      remainingVariantStrengthPack(variant).matrix.profiles.map((p) => p.shards);
+    expect(shards('flo8')).toEqual([5, 26, 5, 16, 5, 10, 5]);
+    expect(remainingVariantStrengthPack('flo8').matrix.requiredShards).toBe(216);
+    // Short Deck and Pineapple keep the v1 shard counts: their failing cells
+    // are now played by the reference in both arms.
+    for (const variant of ['short_deck', 'pineapple'] as const) {
+      const v1 = REMAINING_VARIANT_STRENGTH_CONTRACT_V1.packs[variant]!;
+      expect(shards(variant), variant).toEqual(v1.matrix.profiles.map((p) => p.shards));
+      expect(remainingVariantStrengthPack(variant).matrix.pairsPerShard).toBe(
+        v1.matrix.pairsPerShard
+      );
+    }
+    expect(C.matrixRules.coveragePlanningRule).toContain('at most 0.0007');
+    expect(C.interval.edgeworthCoverageErrorMax).toBe(
+      REMAINING_VARIANT_STRENGTH_CONTRACT_V1.interval.edgeworthCoverageErrorMax
+    );
+  });
+
+  it('refuses a v1 shard in a v2 pack and a v2 shard in FLH by name', () => {
+    const sd = 'short_deck';
+    const sdProfile = `p12c-${sd}-6max-2dealt-100bb`;
+    const v1Seed = REMAINING_VARIANT_STRENGTH_CONTRACT_V1.packs.short_deck!.holdout.seeds[0];
+    const asV1 = {
+      ...shard(sd, sdProfile, remainingVariantStrengthPack(sd).holdout.seeds[0], 0),
+      seed: v1Seed,
+      contractVersion: REMAINING_VARIANT_STRENGTH_CONTRACT_V1.version,
+      contractDigest: REMAINING_VARIANT_STRENGTH_CONTRACT_V1_DIGEST,
+    };
+    expect(remainingVariantStrengthShardReasons(sd, asV1)).toEqual(
+      expect.arrayContaining([
+        `${sdProfile}-${v1Seed}-s0:contract_version_mismatch`,
+        `${sdProfile}-${v1Seed}-s0:contract_digest_mismatch`,
+        `${sdProfile}-${v1Seed}-s0:not_holdout_seed`,
+      ])
+    );
+    const flhProfile = 'p12c-flh-6max-2dealt-100bb';
+    const flhSeed = remainingVariantStrengthPack('flh').holdout.seeds[0];
+    const asV2 = {
+      ...shard('flh', flhProfile, flhSeed, 0),
+      contractVersion: C.version,
+      contractDigest: remainingVariantStrengthContractDigest(sd),
+    };
+    expect(remainingVariantStrengthShardReasons('flh', asV2)).toEqual(
+      expect.arrayContaining([
+        `${flhProfile}-${flhSeed}-s0:contract_version_mismatch`,
+        `${flhProfile}-${flhSeed}-s0:contract_digest_mismatch`,
+      ])
+    );
+    expect(
+      remainingVariantStrengthShardReasons('flh', shard('flh', flhProfile, flhSeed, 0))
+    ).toEqual([]);
   });
 
   it('leaves the Phase 10 and Phase 11 contracts and their pinned digests untouched', () => {
@@ -271,6 +387,15 @@ describe('P12.2 Phase 12 strength contract object', () => {
   });
 
   it('holds out three new seeds per pack, disjoint from every seed in the repository', () => {
+    // Round 4: the v1 seeds of the packs now on v2 are earlier held-out seeds;
+    // they stay held out and never return as a v2 seed.
+    const v1Retired = REMAINING_VARIANT_STRENGTH_V2_VARIANTS.flatMap((v) => [
+      ...REMAINING_VARIANT_STRENGTH_CONTRACT_V1.packs[v]!.holdout.seeds,
+    ]);
+    expect(v1Retired).toEqual([
+      12201119, 12202241, 12203363, 12301123, 12302251, 12303373, 12501131, 12502263, 12503387,
+    ]);
+    for (const seed of v1Retired) expect(isRemainingVariantHoldoutSeed(seed)).toBe(true);
     const others = [
       ...PLO4_LEAGUE_SEEDS,
       ...PLO4_STRENGTH_CONTRACT.holdout.seeds,
@@ -284,13 +409,17 @@ describe('P12.2 Phase 12 strength contract object', () => {
     ];
     const all = VARIANTS.flatMap((v) => [...remainingVariantStrengthPack(v).holdout.seeds]);
     expect(new Set(all).size).toBe(12);
-    const prefixes = { short_deck: '122', pineapple: '123', flh: '124', flo8: '125' };
+    for (const seed of all) expect(v1Retired).not.toContain(seed);
+    // Round 4 (v2): 1261, 1262, 1263; FLH keeps its v1 seeds (124).
+    const prefixes = { short_deck: '1261', pineapple: '1262', flh: '124', flo8: '1263' };
     for (const variant of VARIANTS) {
       const pack = remainingVariantStrengthPack(variant);
       expect([...pack.holdout.developmentSeeds]).toEqual([...REMAINING_VARIANT_LEAGUE_SEEDS]);
       expect([...pack.matrix.seeds]).toEqual([...pack.holdout.seeds]);
       for (const seed of pack.holdout.seeds) {
-        expect(String(seed)).toMatch(new RegExp(`^${prefixes[variant]}\\d{5}$`));
+        expect(String(seed)).toMatch(
+          new RegExp(`^${prefixes[variant]}\\d{${8 - prefixes[variant].length}}$`)
+        );
         expect(others).not.toContain(seed);
         expect(isRemainingVariantHoldoutSeed(seed)).toBe(true);
         expect(isRemainingVariantHoldoutSeedOf(variant, seed)).toBe(true);
@@ -301,6 +430,16 @@ describe('P12.2 Phase 12 strength contract object', () => {
       }
     }
     for (const seed of others) expect(isRemainingVariantHoldoutSeed(seed)).toBe(false);
+    // A v2 seed never deals a v1 matrix deal either.
+    const v1Deals = new Set(
+      v1Retired.flatMap((s) =>
+        Array.from({ length: 4096 }, (_, i) => (s ^ Math.imul(i + 1, 2654435761)) >>> 0 || 1)
+      )
+    );
+    for (const variant of REMAINING_VARIANT_STRENGTH_V2_VARIANTS)
+      for (const seed of remainingVariantStrengthPack(variant).holdout.seeds)
+        for (let i = 0; i < 4096; i++)
+          expect(v1Deals.has((seed ^ Math.imul(i + 1, 2654435761)) >>> 0 || 1)).toBe(false);
     // No held-out deal seed repeats a deal seed any development league or an
     // earlier matrix can deal (first 32 pairs of a development seed, the
     // development league maximum; first 4,096 of every held-out seed).
@@ -691,7 +830,9 @@ describe('P12.2 interval and per-pack verdict', () => {
 
   it('exposes the four packs and nothing else', () => {
     expect([...REMAINING_VARIANT_STRENGTH_VARIANTS]).toEqual(VARIANTS);
-    expect(Object.keys(C.packs)).toEqual(VARIANTS);
+    expect(
+      VARIANTS.filter((v) => remainingVariantStrengthContractFor(v).packs[v] !== undefined)
+    ).toEqual(VARIANTS);
     expect(() => remainingVariantStrengthPack('plo4' as RemainingPolicyVariant)).toThrow(
       'Unknown Phase 12 strength variant'
     );

@@ -64,14 +64,22 @@ export async function readSpinContext(activeTableId: string | null): Promise<{
     .select('id, tournament_id')
     .eq('id', activeTableId)
     .maybeSingle();
-  if (tblErr || !tbl?.tournament_id) return null;
+  if (tblErr) {
+    reportError(tblErr, 'QuickJoinSpins.table_read_failed', { activeTableId });
+    return null;
+  }
+  if (!tbl?.tournament_id) return null;
 
   const { data: t, error: tErr } = await supabase
     .from('tournaments')
     .select('id, club_id, buy_in_amount, game_type, variant, tournament_type')
     .eq('id', tbl.tournament_id as string)
     .maybeSingle();
-  if (tErr || !t) return null;
+  if (tErr) {
+    reportError(tErr, 'QuickJoinSpins.tournament_read_failed', { activeTableId });
+    return null;
+  }
+  if (!t) return null;
 
   /* The same two-column test every other seat-first gate uses — variant OR
      tournament_type. Reading only one is how a satellite heads-up got filed
@@ -103,13 +111,15 @@ export async function quickJoinSpinRows(
   openTableIds: Set<string>
 ): Promise<SpinQuickJoinRow[] | null> {
   try {
+    // Missing club context cannot turn a scoped recommendation into a global list.
+    if (scopeClubIds.length === 0) return null;
     const ctx = await readSpinContext(activeTableId);
     if (!ctx) return null;
 
     let q = supabase
       .from('tournaments')
       .select('id, name, buy_in_amount, buy_in_fee, max_players, game_type, current_players')
-      .eq('variant', 'spin')
+      .or('variant.eq.spin,tournament_type.eq.SPIN')
       .in('status', ['REGISTERING', 'ANNOUNCED'])
       .neq('id', ctx.tournamentId)
       .order('created_at', { ascending: true })

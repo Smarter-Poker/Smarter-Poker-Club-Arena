@@ -1712,6 +1712,31 @@
   }
 }
 
+/* THE CLUB LINE AND THE HAND NUMBER READ AT A GLANCE (Dan 2026-10-12,
+   with the Diamond Arena felt: "'DIAMOND ARENA' AND HAND NUMBER SHOULD BE
+   LARGER AS WELL"). Every table prints the same masthead, so both rooms get
+   it. Declared after the 375px ladder above with one more class of
+   specificity, so the phone steps cannot quietly take them back down. The
+   short-viewport identity size further down still wins on a squashed
+   landscape table, where the room genuinely is not there. FELT_TEXT_BAND's
+   lineHeightPx in tableGeometry.ts grew with these rows so the dealer button
+   keeps clear of the taller printing. */
+.table-page .table-brand__line--identity {
+  font-size: 0.66rem;
+}
+.table-page .table-brand__line--hand {
+  font-size: 0.58rem;
+  color: rgba(198, 210, 228, 0.55);
+}
+@media (max-width: 380px) {
+  .table-page .table-brand__line--identity {
+    font-size: 0.6rem;
+  }
+  .table-page .table-brand__line--hand {
+    font-size: 0.54rem;
+  }
+}
+
 /* Fade the brand out while the drama is on the pot, not the felt. */
 .table-page--allin-mode .table-brand {
   opacity: 0.35;
@@ -2891,119 +2916,6 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   SPIN MULTIPLIER BADGE
-   ═══════════════════════════════════════════════════════════════════════════════ */
-
-.spinMultiplierBadge {
-  position: absolute;
-  top: 12px;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 16px;
-  background: linear-gradient(135deg, #f59e0b, #d97706);
-  border-radius: 20px;
-  font-weight: 800;
-  font-size: 1.1rem;
-  color: #1a1a2e;
-  box-shadow: 0 4px 15px rgba(245, 158, 11, 0.4);
-  z-index: 50;
-  animation: spinBadgeGlow 2s ease-in-out infinite alternate;
-}
-
-.spinMultiplierIcon {
-  font-size: 1.2rem;
-}
-
-.spinMultiplierValue {
-  font-size: 1.2rem;
-  letter-spacing: 0.05em;
-}
-
-/* THE PRIZE, BESIDE THE MULTIPLIER (Dan 2026-09-05). Separated by a hairline
-   rather than a gap so the pair reads as one badge — "12x | 36,000" — and set
-   a step down from the multiplier, which stays the headline. `tabular-nums`
-   because this number changes on nothing and must not jitter the badge width
-   between tables. */
-.spinMultiplierPrize {
-  font-size: 1rem;
-  font-weight: 800;
-  letter-spacing: 0.03em;
-  padding-left: 8px;
-  border-left: 1px solid rgba(26, 26, 46, 0.35);
-  font-variant-numeric: tabular-nums;
-}
-
-/* Premium spins (100x+) get special styling */
-.spinMultiplierBadge.premium {
-  background: linear-gradient(135deg, #ec4899, #8b5cf6);
-  box-shadow: 0 4px 20px rgba(236, 72, 153, 0.5);
-  animation: premiumSpinGlow 1.5s ease-in-out infinite alternate;
-}
-
-@keyframes spinBadgeGlow {
-  from {
-    box-shadow: 0 4px 15px rgba(245, 158, 11, 0.3);
-  }
-  to {
-    box-shadow: 0 4px 25px rgba(245, 158, 11, 0.6);
-  }
-}
-
-@keyframes premiumSpinGlow {
-  from {
-    box-shadow: 0 4px 15px rgba(236, 72, 153, 0.4);
-  }
-  to {
-    box-shadow: 0 4px 30px rgba(236, 72, 153, 0.7);
-  }
-}
-
-@media (max-width: 768px) {
-  .spinMultiplierBadge {
-    padding: 5px 12px;
-    font-size: 0.95rem;
-    top: 10px;
-  }
-
-  .spinMultiplierIcon {
-    font-size: 1rem;
-  }
-
-  .spinMultiplierValue {
-    font-size: 1rem;
-  }
-
-  .spinMultiplierPrize {
-    font-size: 0.85rem;
-    padding-left: 6px;
-  }
-}
-
-@media (max-width: 480px) {
-  .spinMultiplierBadge {
-    padding: 4px 12px;
-    font-size: 0.9rem;
-    top: 8px;
-  }
-
-  .spinMultiplierIcon {
-    font-size: 0.95rem;
-  }
-
-  .spinMultiplierValue {
-    font-size: 0.95rem;
-  }
-
-  .spinMultiplierPrize {
-    font-size: 0.8rem;
-    padding-left: 6px;
-  }
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════════
    ALL-IN DRAMATIC MODE — Vignette overlay + slow board dealing
    ═══════════════════════════════════════════════════════════════════════════════ */
 
@@ -3579,18 +3491,7 @@
     height: 70px;
   }
 
-  /* Compact seat info */
-  .seat__info {
-    padding: 3px 6px;
-  }
-
-  .seat__name {
-    font-size: 0.5625rem;
-  }
-
-  .seat__stack {
-    font-size: 0.5625rem;
-  }
+  /* Player label dimensions and readable type are owned by SeatSlot.css. */
 
   /* Landscape header buttons */
   .header-btn {
@@ -3640,17 +3541,7 @@
      slot, was off. Avatar size is owned by `--seat-avatar-size` alone; never
      size `.seat__avatar-img` here again. */
 
-  .seat__info {
-    padding: 6px 12px;
-  }
-
-  .seat__name {
-    font-size: 0.8125rem;
-  }
-
-  .seat__stack {
-    font-size: 0.8125rem;
-  }
+  /* Player label dimensions and readable type are owned by SeatSlot.css. */
 
   /* DELETED 2026-08-28 — `.action-btn { height: 56px }`. Same specificity trap
      as the landscape copy above, and it is the rule Dan's report was actually
@@ -4707,7 +4598,8 @@ button.post-bb-overlay-button {
        14px in the same commit, so the oval slides 6px down and the top villain
        gets the room. On Dan's phone the reserve frees 11.1px, 6 of it buys the
        slide, and the felt still ends up ~5px longer than it was. */
-    --sp-hero-clear: clamp(50px, 14.6vw, 68px);
+    /* The taller readable player plate needs seven more pixels below the felt. */
+    --sp-hero-clear: clamp(57px, calc(14.6vw + 7px), 75px);
     /* 2026-08-26: gutters removed per Dan — edge-to-edge felt at 375px
        measures 375x619.8 (up from 367x606.6 with 4px gutters). Side-seat
        overhang at narrow viewports is addressed by the max-width: 340px
@@ -5059,3 +4951,32 @@ button.post-bb-overlay-button {
    not also declare, the banner vanishes for every reduced-motion player, and
    CLAUDE.md §10.6 is explicit that reduced motion collapses motion but never
    meaning. Deleting the override is the fix; the global rule is the mechanism. */
+
+/* Spins and Heads Up take the full available table canvas. This class is
+   table identity, so no action, dock toggle or hand phase can resize it. */
+.table-page.table-page--short-match .table-scaler {
+  --sp-table-ar-w: 700;
+  --sp-table-ar-h: 1000;
+  --sp-short-table-drop: 0px;
+  max-width: min(100%, 760px);
+}
+.table-brand__prize {
+  color: #e4e7ec;
+  font-weight: 800;
+}
+@media (max-width: 768px) {
+  .table-page.table-page--short-match .table-scaler {
+    width: 100%;
+    height: var(--sp-table-h);
+    margin-top: 0;
+  }
+  .table-page--short-match .table-container {
+    --sp-table-top: calc(var(--sp-page-inset-top) + var(--sp-bbj-h, 22px) + 22px);
+  }
+  .table-page--short-match .table-brand__meta {
+    width: 100%;
+  }
+  .table-page--short-match .table-brand__line--identity {
+    font-size: 10px;
+  }
+}

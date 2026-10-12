@@ -1141,10 +1141,22 @@
     font-size: 0.53rem;
     letter-spacing: 0.08em;
   }
+  /* On a phone the console is most of the screen tall (search, saved views,
+     sort, five controls, the export scope and Metric Definitions), so pinning
+     it hid the roster beneath it and, with Metric Definitions open, pushed its
+     own last definitions under the bottom navigation where no scroll could
+     reach them. It scrolls with the page here; the roster keeps its own
+     scrolling viewport. tests/e2e/css/club-members-containment.spec.ts. */
   .members-console {
-    top: 0;
+    position: relative;
+    top: auto;
     margin-bottom: 9px;
     padding: 15px 12px 12px;
+  }
+  /* With the console no longer pinned above it, the selection bar pins
+     directly under the header instead of 306px down the screen. */
+  .members-bulk {
+    top: calc(var(--top-nav-height, 62px) + 6px);
   }
   .members-console__heading {
     align-items: center;

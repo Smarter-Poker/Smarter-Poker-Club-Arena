@@ -148,10 +148,40 @@ afterEach(() => {
   cleanup();
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
   vi.restoreAllMocks();
 });
 
 describe('The mounted notification feed owns recovery and account state', () => {
+  it('viewing the inbox preserves unread signals until an explicit read is confirmed', async () => {
+    const stored = { ...row('actionable', 'Actionable Signal'), is_read: false };
+    fixture.fetch.mockImplementation(async (url: string) => {
+      if (url.includes('/feed?')) return response([{ ...stored }]);
+      // The real mark-seen endpoint marks the entire account read. It is
+      // not a cosmetic badge acknowledgement and must not run on mount.
+      if (url === '/api/notifications/mark-seen' || url === '/api/notifications/mark-read') {
+        stored.read = true;
+        stored.is_read = true;
+      }
+      return response();
+    });
+    mount();
+    await flush();
+    expect(stored.read).toBe(false);
+    expect(stored.is_read).toBe(false);
+    expect(fixture.emit).not.toHaveBeenCalledWith('NOTIFICATION_READ', expect.anything());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mark All Read', exact: true }));
+    await flush();
+    expect(stored.read).toBe(true);
+    expect(stored.is_read).toBe(true);
+    expect(fixture.emit).toHaveBeenCalledWith('NOTIFICATION_READ', {
+      notifId: null,
+      allRead: true,
+    });
+    expect(screen.queryByRole('button', { name: 'Mark All Read', exact: true })).toBeNull();
+  });
+
   it('does not paint a personal feed cached before operational destination cutover', async () => {
     localStorage.setItem(
       'ca-notif-cache:v1:account-a',
@@ -341,6 +371,10 @@ describe('The mounted notification feed owns recovery and account state', () => 
     fireEvent.click(screen.getByRole('button', { name: /Dismiss/ }));
     await flush();
     expect(screen.queryByText('Await Confirmation', { exact: false })).not.toBeNull();
+    expect(screen.getByRole('button', { name: /Dismiss/ }).hasAttribute('disabled')).toBe(true);
+    expect(document.querySelector('[data-notif-id="delete-one"]')?.getAttribute('aria-busy')).toBe(
+      'true'
+    );
     await act(async () => deletion.resolve(response()));
     await flush();
     expect(screen.queryByText('Await Confirmation', { exact: false })).toBeNull();
@@ -501,6 +535,7 @@ describe('The mounted notification feed owns recovery and account state', () => 
     });
     await flush();
     expect(screen.queryByText('Keep This Signal', { exact: false })).not.toBeNull();
+    expect(screen.getByRole('alert').textContent).toMatch(/Dismissal Could Not Be Confirmed/);
   });
   it('a read refusal reconciles the optimistic read marker', async () => {
     const n = row('unread', 'Unread Signal');
@@ -515,5 +550,54 @@ describe('The mounted notification feed owns recovery and account state', () => 
         .querySelector('[data-notif-id="unread"]')
         ?.classList.contains('ca-notif__row--unread')
     ).toBe(true);
+    expect(screen.getByRole('alert').textContent).toMatch(/Read Status Could Not Be Confirmed/);
+  });
+  it.each([
+    ['2026-11-02T06:30:00Z', '2026-11-01T05:30:00Z', 'Yesterday'],
+    ['2026-03-09T05:30:00Z', '2026-03-08T05:30:00Z', 'This Week'],
+  ])('groups local calendar days across daylight saving: %s', async (now, createdAt, heading) => {
+    vi.stubEnv('TZ', 'America/Chicago');
+    vi.setSystemTime(new Date(now));
+    feeds.push(response([{ ...row('calendar'), created_at: createdAt }]));
+    mount();
+    await flush();
+    expect(screen.getByRole('heading', { name: `${heading} Notifications` })).not.toBeNull();
+  });
+  it.each([null, undefined])('preserves an undated canonical signal: %s', async (createdAt) => {
+    feeds.push(response([{ ...row('undated', 'Undated Signal'), created_at: createdAt }]));
+    mount();
+    await flush();
+    expect(screen.queryByText('Undated Signal', { exact: false })).not.toBeNull();
+    expect(screen.getByRole('heading', { name: 'Earlier Notifications' })).not.toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+  it.each(['message', 'type'])(
+    'retains confirmed rows when a successful feed contains malformed %s',
+    async (field) => {
+      feeds.push(
+        response([row('confirmed', 'Confirmed Signal')]),
+        response([{ ...row('bad'), [field]: { text: 'Not Display Text' } }])
+      );
+      mount();
+      await flush();
+      act(() => {
+        fixture.visibility();
+      });
+      await flush();
+      expect(screen.queryByText('Confirmed Signal', { exact: false })).not.toBeNull();
+      expect(screen.getByRole('alert').textContent).toMatch(/Could Not Be Refreshed/);
+    }
+  );
+  it('rejects malformed cached rows before first paint and accepts the confirmed feed', async () => {
+    localStorage.setItem(
+      'ca-notif-cache:v2:account-a',
+      JSON.stringify([
+        { ...row('bad'), message: { text: 'Not Display Text' }, _cache_ts: Date.now() },
+      ])
+    );
+    feeds.push(response([row('confirmed', 'Confirmed Signal')]));
+    mount();
+    await flush();
+    expect(screen.queryByText('Confirmed Signal', { exact: false })).not.toBeNull();
   });
 });

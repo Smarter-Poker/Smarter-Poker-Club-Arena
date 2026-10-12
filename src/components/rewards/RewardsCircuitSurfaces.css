@@ -20,18 +20,9 @@
  * The wallet owns its ground now. The other six destinations keep the shared
  * convergence exactly as it was.
  */
-:is(
-  .transaction-history-page,
-  .vip-page,
-  .rakeback-page,
-  .promotions-page,
-  .bonus-page,
-  .achievements-page
-) {
+:is(.transaction-history-page, .rakeback-page, .promotions-page, .bonus-page, .achievements-page) {
   color: var(--realism-chrome-hot, #eaf3f9);
-  background:
-    radial-gradient(circle at 82% 4%, rgba(0, 212, 255, 0.09), transparent 28rem),
-    linear-gradient(180deg, var(--realism-obsidian, #05080c) 0%, #020407 100%) !important;
+  background: #000 !important;
 }
 
 /* The wallet takes the family's TEXT colour and nothing else, so it stays part
@@ -53,11 +44,6 @@
 :is(
   .transaction-history-page .summary-card,
   .transaction-history-page .transaction-row,
-  .vip-page .current-status,
-  .vip-page .tier-card,
-  .vip-page .vip-benefit,
-  .vip-page .vip-card-active,
-  .vip-page .vip-card-inactive,
   .rakeback-page .rakeback-promo-banner,
   .rakeback-page .summary-card,
   .rakeback-page .rakeback-chart,
@@ -126,9 +112,6 @@
 :is(
   .transaction-history-page .export-btn,
   .transaction-history-page .load-more-btn,
-  .vip-page .vip-purchase-btn,
-  .vip-page .diamond-buy-btn,
-  .vip-page .vip-extend-btn,
   .rakeback-page .claim-btn,
   .bonus-page .claim-btn,
   .bonus-page .btn-sm,
@@ -156,7 +139,6 @@
 @media (max-width: 640px) {
   :is(
     .transaction-history-page .tx-summary,
-    .vip-page .vip-section,
     .rakeback-page .rakeback-summary,
     .rakeback-page .rakeback-chart,
     .bonus-page .bonus-section

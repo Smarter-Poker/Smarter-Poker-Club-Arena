@@ -84,6 +84,10 @@ export interface HorseQualifiedAuthority {
   /** Phases 11 to 13: the committed natural completion evidence admitted with it. */
   readonly completionPath?: string;
   readonly completionSha256?: string;
+  /** Phase 13: the board counts (1, 2, 3) whose natural completion cell cleared
+   * the floor; the joint candidate acts only on a hand with one of them
+   * (`HORSE_PHASE13_COMPLETION_ADMISSION`). */
+  readonly admittedBoardCounts?: readonly number[];
   /** Phase 14: the inactive corrective catalog and holdout the qualification binds. */
   readonly catalogDigest?: string;
   readonly holdoutDigest?: string;
@@ -601,6 +605,11 @@ export class HorsePhase8AuthorityGate {
 
   mainState(): HorseAuthorityState {
     return this.main.currentState();
+  }
+
+  /** The main holder's usable authority, or null (read-only). */
+  mainAuthority(): HorseQualifiedAuthority | null {
+    return this.main.current();
   }
 
   /** Record a worker's latest receipt. A worker withdrawal withdraws main too,

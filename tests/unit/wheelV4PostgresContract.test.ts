@@ -6,6 +6,13 @@
  * accounting fixture and prints its own WHEEL_SAMPLE notices. The whole fixture
  * is rolled back and every seed is synthetic, so nothing here is a hand-written
  * idea of what the server sends (owner rulings 2026-09-21, R2/R12/R13/R15/R18).
+ *
+ * ONE WHEEL FOR EVERYONE (owner request 2026-10-12). The `wheel-one-*` records
+ * come from tests/sql/diamond-wheel-one-table.sql, which spins the PATCHED
+ * fn_wheel_spin_v2 for a member who is not a VIP after
+ * 20261012041752_one_wheel_for_everyone.sql. Every other record was sealed
+ * before that migration; they stay here because a stored `vip: false` receipt
+ * is replayed and recovered for as long as it exists and must keep verifying.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import fixture from '../fixtures/diamond-spins/wheel-v4-postgres-receipts.json';
@@ -30,8 +37,12 @@ type Entry = { kind: string; stake: number; value: unknown };
 const records = fixture.records as unknown as Entry[];
 const by = (kind: string) => records.find((r) => r.kind === kind)!.value;
 const spins = records
-  .filter((r) => /^wheel-v4-(\d+|first|cross-tier|upgrade-|vip-\d+|cards)/.test(r.kind))
+  .filter((r) =>
+    /^wheel-(?:v4-(\d+|first|cross-tier|upgrade-|vip-\d+|cards)|one-(\d+|first)$)/.test(r.kind)
+  )
   .map((r) => ({ kind: r.kind, value: r.value as WheelSpinResult }));
+const sealedBefore = spins.filter((r) => r.kind.startsWith('wheel-v4-'));
+const oneTable = spins.filter((r) => r.kind.startsWith('wheel-one-'));
 
 beforeEach(() => rpc.mockReset());
 
@@ -44,7 +55,9 @@ describe('real PostgreSQL wheel v4 receipts', () => {
     expect(spins.every((r) => r.value.fairness.domain === 'wheel-v4')).toBe(true);
     expect(spins.some((r) => r.value.secondary?.outcome.kind === 'bonus')).toBe(true);
     expect(spins.some((r) => r.value.secondary?.outcome.kind === 'chips')).toBe(true);
-    expect(spins.filter((r) => r.value.vip).length).toBe(3);
+    expect(sealedBefore.filter((r) => r.value.vip).length).toBe(3);
+    expect(oneTable.length).toBe(4);
+    expect(oneTable.every((r) => r.value.vip === true)).toBe(true);
     expect(spins.some((r) => r.value.outcome.cards)).toBe(true);
   });
 
@@ -122,7 +135,7 @@ describe('real PostgreSQL wheel v4 receipts', () => {
   });
 
   it('a VIP is shown chips where the items were, and paid them', () => {
-    const vip = spins.filter((r) => r.value.vip);
+    const vip = sealedBefore.filter((r) => r.value.vip);
     expect(vip.map((r) => r.value.outcome.ord).sort((a, b) => a - b)).toEqual([3, 6, 9]);
     for (const { value } of vip) {
       expect(value.outcome.kind).toBe('chips');
@@ -240,5 +253,49 @@ describe('real PostgreSQL wheel v4 receipts', () => {
       expect(verdict.lawMatches).toBe(true);
       expect(verdict.fair).toBe(true);
     }
+  });
+
+  it('ONE WHEEL: a member who is not a VIP is now dealt the item-free table and paid chips', () => {
+    const member = oneTable.filter((r) => /^wheel-one-\d+$/.test(r.kind));
+    expect(member.map((r) => r.value.outcome.ord).sort((a, b) => a - b)).toEqual([3, 6, 9]);
+    const vipTable = (by('wheel-v4-vip-state') as { segments: unknown[] }).segments;
+    for (const { value } of member) {
+      expect(value.vip).toBe(true);
+      expect(value.outcome.kind).toBe('chips');
+      expect(value.outcome.grants).toBeUndefined();
+      expect(
+        value.segments!.some((s) =>
+          ['throwables', 'time_bank', 'rabbit_hunt'].includes(s.kind as string)
+        )
+      ).toBe(false);
+      const expected = { 3: 0.2, 6: 0.25, 9: 0.3 }[value.outcome.ord as 3 | 6 | 9];
+      expect(value.outcome.multiplier).toBe(expected);
+      expect(value.outcome.amount).toBeCloseTo((value.entry_value_diamonds! * expected) / 100, 10);
+    }
+    // The state a member is shown is, card for card, the table a VIP was shown.
+    const state = by('wheel-one-state') as { vip: boolean; segments: unknown[] };
+    expect(state.vip).toBe(true);
+    expect(state.segments).toEqual(vipTable);
+  });
+
+  it('a receipt sealed before the change on the item table still verifies as what it is', async () => {
+    const items = sealedBefore.filter((r) =>
+      ['throwables', 'time_bank', 'rabbit_hunt'].includes(r.value.outcome.kind as string)
+    );
+    expect(items.map((r) => r.value.outcome.ord).sort((a, b) => a - b)).toEqual([3, 6, 9]);
+    for (const { value } of items) {
+      expect(value.vip).toBe(false);
+      expect(() => assertWheelAward(value)).not.toThrow();
+      const verdict = await verifyWheelReceiptFairness(value);
+      expect(verdict.fair).toBe(true);
+    }
+    // And the two tables cannot be mixed: an item receipt relabelled as drawn
+    // from the item-free table is refused, as is a chip receipt relabelled back.
+    const relabelled = JSON.parse(JSON.stringify(items[0].value)) as WheelSpinResult;
+    relabelled.vip = true;
+    expect(() => assertWheelAward(relabelled)).toThrow(/Could Not Be Confirmed/);
+    const back = JSON.parse(JSON.stringify(oneTable[0].value)) as WheelSpinResult;
+    back.vip = false;
+    expect(() => assertWheelAward(back)).toThrow(/Could Not Be Confirmed/);
   });
 });

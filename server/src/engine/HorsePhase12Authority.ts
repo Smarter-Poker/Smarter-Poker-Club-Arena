@@ -59,6 +59,7 @@ import {
 import {
   REMAINING_VARIANT_STRENGTH_CONTRACT,
   remainingVariantStrengthContractDigest,
+  remainingVariantStrengthContractFor,
   remainingVariantStrengthPack,
 } from '../benchmark/RemainingVariantStrengthContract.js';
 
@@ -66,8 +67,6 @@ import {
 export const HORSE_PHASE12_EVIDENCE_DIRECTORY = 'docs/evidence/phase12/';
 /** P12.2 assembler `QUALIFICATION_SCHEMA`. */
 export const HORSE_PHASE12_QUALIFICATION_SCHEMA = 'horse-phase12-qualification-v1';
-/** P12.2 `REMAINING_VARIANT_STRENGTH_CONTRACT.version`. */
-export const HORSE_PHASE12_CONTRACT_VERSION = REMAINING_VARIANT_STRENGTH_CONTRACT.version;
 /** The four Phase 12 packs, in a fixed order. */
 export const HORSE_PHASE12_VARIANTS: readonly RemainingPolicyVariant[] = Object.freeze([
   'short_deck',
@@ -77,11 +76,32 @@ export const HORSE_PHASE12_VARIANTS: readonly RemainingPolicyVariant[] = Object.
 ]);
 
 /**
- * The running P12.2 contract digest (`remainingVariantStrengthContractDigest()`).
- * A qualification is admitted only for this exact digest, so evidence made
- * under any other contract can never select a pack in this code.
+ * The P12.2 contract version each pack runs
+ * (`remainingVariantStrengthContractFor(variant).version`): since round 4,
+ * FLH the frozen contract v1 and Short Deck, Crazy Pineapple and FLO8
+ * contract v2.
  */
-export const PHASE12_RUNNING_CONTRACT_DIGEST: string = remainingVariantStrengthContractDigest();
+export const HORSE_PHASE12_CONTRACT_VERSIONS: Readonly<Record<RemainingPolicyVariant, string>> =
+  Object.freeze(
+    Object.fromEntries(
+      HORSE_PHASE12_VARIANTS.map((v) => [v, remainingVariantStrengthContractFor(v).version])
+    ) as Record<RemainingPolicyVariant, string>
+  );
+
+/**
+ * The running P12.2 contract digest of each pack
+ * (`remainingVariantStrengthContractDigest(variant)`). A qualification is
+ * admitted only for its own pack's exact digest, so evidence made under any
+ * other contract can never select a pack in this code, and a change to one
+ * pack's contract never moves another pack's (round 4: FLH's stays
+ * fafbba8dc23ebc59b5aadf78fdcc47cd6f504baf9bcd10b07970ad7fbea501c0).
+ */
+export const PHASE12_RUNNING_CONTRACT_DIGESTS: Readonly<Record<RemainingPolicyVariant, string>> =
+  Object.freeze(
+    Object.fromEntries(
+      HORSE_PHASE12_VARIANTS.map((v) => [v, remainingVariantStrengthContractDigest(v)])
+    ) as Record<RemainingPolicyVariant, string>
+  );
 
 /** The keys the P12.2 assembler writes into a qualification file, exactly. */
 export const HORSE_PHASE12_QUALIFICATION_KEYS = Object.freeze([
@@ -373,46 +393,39 @@ export interface HorsePhase12AuthoritySelection {
 }
 
 /**
- * THE PROTECTED RELEASE SELECTIONS, one per pack.
+ * THE PROTECTED RELEASE SELECTIONS, one per pack. All four are null.
  *
- * FLH (`fixed-limit-holdem-round3-v1`), approval generation 1: qualified on
- * condition (a) of the winning contract as amended by the owner on October 9,
- * 2026 (docs/horse-brain-winning-contract-2026-10-08.md): the locked P12.2
- * matrix re-run unchanged on `1235b47a` (#6592), 42 of 42 shards, 544,320
- * pairs, cash after rake against the horse population, +1.11 [+0.70, +1.52]
- * bb/100. Its natural completion record on release `15d25de1` (predeclared,
- * 21:02 to 22:50Z, the 21:55 break excluded) completed every one of 2,218
- * eligible decisions; the lowest street Wilson bound is 0.982 against the 0.95
- * floor. Short Deck and FLO8 do not qualify on (a) (trust-check cells);
- * Pineapple is below the completion floor; all three stay null. Every file a
- * selection names, and the strength record its qualification names, is
- * committed under docs/evidence/phase12/ and shipped in the engine image
- * under server/release-evidence/. Withdrawal is a reviewed change of
- * `withdrawn` to `{ at, reason }`; a withdrawn generation never returns.
+ * FLH (`fixed-limit-holdem-round3-v1`) was selected at approval generation 1
+ * (#6611, sourceSha 1235b47a63c439da9bdf8427148bc0818499378c, qualification
+ * docs/evidence/phase12/1235b47a/phase12-qualification-2026-10-09-flh.json,
+ * completion docs/evidence/phase12/15d25de1/phase12-completion-2026-10-09-flh.json,
+ * contract v1 fafbba8d..., issued 2026-10-10T00:00:00.000Z) on the locked
+ * P12.2 matrix re-run on 1235b47a (42 of 42 shards, 544,320 pairs, +1.11
+ * [+0.70, +1.52] bb/100) and its natural completion window on release 15d25de1.
+ * Round 4 (docs/horse-brain-phase12-round4-2026-10-11.md) changes the bytes of
+ * the Phase 12 policy digest's files: the sampler's exact kernels (which leave
+ * every decision bit-identical) and the scoped no-limit packs. The FLH policy
+ * digest that evidence measured (a55db7fe...) is therefore not the running one,
+ * and the selection would be refused policy_digest_mismatch, so it is removed
+ * here rather than left committed and refused: FLH plays shadow until it is
+ * re-measured under its unchanged contract v1 on the merged source (expected
+ * pair-identical to run 37969578926), its natural completion is read again in a
+ * predeclared window, and it is selected at approval generation 2. Its
+ * committed evidence files stay in place, in docs/ and server/release-evidence/.
+ *
+ * Short Deck, Crazy Pineapple and FLO8 have no qualification under contract v2
+ * yet. Every file a future selection names, and the strength record its
+ * qualification names, must be committed under docs/evidence/phase12/ and
+ * shipped in the engine image under server/release-evidence/. Withdrawal is a
+ * reviewed change of `withdrawn` to `{ at, reason }`; a withdrawn generation
+ * never returns.
  */
 export const PHASE12_PROTECTED_RELEASE_SELECTIONS: Readonly<
   Record<RemainingPolicyVariant, HorsePhase12AuthoritySelection | null>
 > = Object.freeze({
   short_deck: null,
   pineapple: null,
-  flh: Object.freeze({
-    schema: 'horse-qualified-authority-selection-v1',
-    phase: 'phase12',
-    variant: 'flh',
-    sourceSha: '1235b47a63c439da9bdf8427148bc0818499378c',
-    packVersion: 'fixed-limit-holdem-round3-v1',
-    contractVersion: 'remaining-variant-strength-contract-v1',
-    contractDigest: 'fafbba8dc23ebc59b5aadf78fdcc47cd6f504baf9bcd10b07970ad7fbea501c0',
-    domain: 'flh-cash-single-board-after-rake-horse-population',
-    qualificationPath: 'docs/evidence/phase12/1235b47a/phase12-qualification-2026-10-09-flh.json',
-    qualificationSha256: '6849ff7f3d7390f885615c7c1daa5e19aae815ec64930b01fcb72b0d0754ada5',
-    completionPath: 'docs/evidence/phase12/15d25de1/phase12-completion-2026-10-09-flh.json',
-    completionSha256: 'fcda72ee6754b5e35d2f4fe8292e4956e3b5f94435d58b02c77f1a344a3eee17',
-    approvalGeneration: 1,
-    issuedAt: '2026-10-10T00:00:00.000Z',
-    expiresAt: null,
-    withdrawn: null,
-  } as const),
+  flh: null,
   flo8: null,
 });
 
@@ -661,12 +674,14 @@ export function admitHorsePhase12QualifiedAuthority(
   if (file.variant !== variant || file.packVersion !== packVersion || file.domain !== domain)
     return refuse('continuation_mismatch');
   if (
-    file.contractVersion !== HORSE_PHASE12_CONTRACT_VERSION ||
+    file.contractVersion !== remainingVariantStrengthContractFor(variant).version ||
     file.contractVersion !== selection.contractVersion ||
     cash.regressionMarginBbPer100 !== pack.regressionMargin.lowerBoundAtLeastBbPer100 ||
     tournament.qualified !== false ||
     JSON.stringify(file.admissionAlsoRequires) !==
-      JSON.stringify(REMAINING_VARIANT_STRENGTH_CONTRACT.liveConditions.admissionAlsoRequires) ||
+      JSON.stringify(
+        remainingVariantStrengthContractFor(variant).liveConditions.admissionAlsoRequires
+      ) ||
     !evidencePathIsSafe(file.evidencePath) ||
     typeof file.evidenceSha256 !== 'string' ||
     !HEX64.test(file.evidenceSha256)
@@ -753,7 +768,9 @@ export function admitHorsePhase12ReleaseAuthority(
     ? PHASE12_PROTECTED_RELEASE_SELECTIONS[variant]
     : null,
   reader: HorseAuthorityEvidenceReader = repositoryEvidenceReader,
-  runningContractDigest: string | null = PHASE12_RUNNING_CONTRACT_DIGEST,
+  runningContractDigest: string | null = isRemainingPolicyVariant(variant)
+    ? PHASE12_RUNNING_CONTRACT_DIGESTS[variant]
+    : null,
   runningPolicyDigest?: string | null
 ): HorseAuthorityAdmission {
   try {

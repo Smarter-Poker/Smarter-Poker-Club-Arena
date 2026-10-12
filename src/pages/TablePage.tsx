@@ -1,3 +1,4 @@
+import { formatPrizeAtUnit } from '../utils/format';
 import {
   getTournamentFormatKind,
   getTournamentEntryCapacity,
@@ -281,7 +282,7 @@ import { sessionStatsService } from '../services/SessionStatsService';
 import { parseTableArenaIdentity, seatCanAddFunds } from '../../server/src/domain/ArenaContext';
 import { arenaAssetUnitCents, arenaAssetUnitCentsIfRead } from '../lib/arenaUnitCents';
 import { topUpCashierPath } from '../utils/topUpCashierPath';
-import { sessionBuyInTotal } from '../utils/sessionBuyInTotal';
+import { mergeSessionFacts, sessionBuyInTotal } from '../utils/sessionBuyInTotal';
 import { bustPromptMustWait } from '../utils/bustPromptGate';
 import { bootExplanation, seatCopy } from '../components/table/seatExitCopy';
 import { readTableFundingBalance } from '../services/TableFundingService';
@@ -316,6 +317,7 @@ import {
   chipCollectOffsetPx,
   POT_ANCHOR_PCT,
   seatPodPx,
+  fitSeatToViewport,
 } from '../components/table/tableGeometry';
 import PreActionBar from '../components/table/PreActionBar';
 import LightningFoldBar from '../components/table/LightningFoldBar';
@@ -2674,6 +2676,38 @@ function LiveTablePage({
         const totalAtAsk = totalBuyInRef.current;
         if (askedFor && userId && sessionBaselineAskedRef.current !== askedFor) {
           sessionBaselineAskedRef.current = askedFor;
+          /* The rest of the Session Complete card from the same open session
+             (Dan 2026-10-12): start time, hands, wins and peak survive a
+             reload too. See utils/sessionBuyInTotal mergeSessionFacts. */
+          const factsAtAsk = {
+            startMs: sessionStartRef.current,
+            handsPlayed: handsPlayedRef.current,
+            handsWon: handsWonRef.current,
+            peakStack: peakStackRef.current,
+          };
+          void Promise.resolve(
+            supabase.rpc('fn_my_table_session_facts', { p_table_id: askedFor })
+          )
+            .then(({ data, error }) => {
+              if (error || sessionBaselineTableRef.current !== askedFor) return;
+              const merged = mergeSessionFacts({
+                serverFacts: data,
+                atAsk: factsAtAsk,
+                now: {
+                  startMs: sessionStartRef.current,
+                  handsPlayed: handsPlayedRef.current,
+                  handsWon: handsWonRef.current,
+                  peakStack: peakStackRef.current,
+                },
+              });
+              sessionStartRef.current = merged.startMs;
+              handsPlayedRef.current = merged.handsPlayed;
+              handsWonRef.current = merged.handsWon;
+              peakStackRef.current = merged.peakStack;
+            })
+            .catch(() => {
+              /* the page's own counts stand */
+            });
           void Promise.resolve(
             supabase.rpc('fn_my_cash_session_baseline', { p_table_id: askedFor })
           )
@@ -4434,6 +4468,9 @@ function LiveTablePage({
    * an effect — and the hero's own half of it is mirrored here.
    */
   const [heroSitsOutPerRow, setHeroSitsOutPerRow] = useState(false);
+  /** The hero's `table_seats.stack`, mirrored by the seat poll for the
+   *  placeholder seat drawn while the hero is not in the hand's player list. */
+  const [heroRowStack, setHeroRowStack] = useState(0);
   /**
    * A 1 Hz clock, and ONLY while a cash sit-out deadline is actually running.
    *
@@ -13284,11 +13321,15 @@ function LiveTablePage({
         if (table.club_id) {
           supabase
             .from('clubs')
-            .select('name, unions:union_id (name)')
+            .select('name, union_id, unions:union_id (name)')
             .eq('id', table.club_id)
             .maybeSingle()
-            .then(async ({ data: clubData }) => {
-              if (!clubData?.name) return;
+            .then(async ({ data: clubData, error: clubIdentityError }) => {
+              if (clubIdentityError) {
+                reportError(clubIdentityError, 'TablePage.masthead_club_read_failed');
+                return;
+              }
+              if (!clubData?.name || !isMounted) return;
               const rawUnion = (clubData as { unions?: { name?: string } | { name?: string }[] })
                 .unions;
               const unionName = Array.isArray(rawUnion) ? rawUnion[0]?.name : rawUnion?.name;
@@ -13299,7 +13340,13 @@ function LiveTablePage({
               // union next to it. Fall back to the table's own club, and never
               // print the same name twice.
               let clubName: string | undefined = clubData.name;
-              const viewerClubId = useUserStore.getState().currentClubId;
+              // A direct reload may not have a current-club store value yet.
+              // Use the same account-scoped, union-filtered resolution as the
+              // lobby destination, including the persisted last entered club.
+              const viewerClubId =
+                unionName && clubName === unionName
+                  ? await resolveLobbyClubId({ ...lobbyClubArgs, unionId: clubData.union_id })
+                  : null;
               if (
                 unionName &&
                 clubName === unionName &&
@@ -13308,7 +13355,7 @@ function LiveTablePage({
               ) {
                 const { data: viewerClub, error: viewerClubErr } = await supabase
                   .from('clubs')
-                  .select('name')
+                  .select('name, union_id, is_union')
                   .eq('id', viewerClubId)
                   .maybeSingle();
                 // ROUND 9 (2026-08-29): cosmetic masthead fallback is fine;
@@ -13316,12 +13363,22 @@ function LiveTablePage({
                 if (viewerClubErr) {
                   reportError(viewerClubErr, 'TablePage.masthead_viewer_club_read_failed');
                 }
-                if (viewerClub?.name) clubName = viewerClub.name;
+                // A persisted/current club may belong to a different table or
+                // to no union at all. Routing metadata alone is not affiliation.
+                if (
+                  viewerClub?.name &&
+                  viewerClub.is_union === false &&
+                  clubData.union_id &&
+                  viewerClub.union_id === clubData.union_id
+                ) {
+                  clubName = viewerClub.name;
+                }
               }
               if (unionName && clubName === unionName) {
                 // Still identical (no distinct viewer club) — show it once.
                 clubName = undefined;
               }
+              if (!isMounted) return;
               setTableState((prev) => ({
                 ...prev,
                 clubName,
@@ -20107,7 +20164,19 @@ function LiveTablePage({
     [tableState.blinds, tableState.gameType]
   );
 
-  const seatPositions = useMemo(() => seatRotationMap.map((s) => s.pos), [seatRotationMap]);
+  const seatViewportWidth = typeof window === 'undefined' ? 1024 : window.innerWidth;
+  const seatPositions = useMemo(() => {
+    const canvasLeft = tableScalerRef.current?.getBoundingClientRect().left;
+    return seatRotationMap.map(({ pos }) =>
+      fitSeatToViewport(
+        pos,
+        scalerSize,
+        seatViewportWidth,
+        seatPodPx(seatViewportWidth, pos.y >= 100 && pos.x === 50, scalerSize.w),
+        canvasLeft
+      )
+    );
+  }, [seatRotationMap, scalerSize, seatViewportWidth]);
   // Published for the deferred chip flights; the ref is declared far above
   // (see seatPositionsRef) so the event handlers can read it.
   seatPositionsRef.current = seatPositions;
@@ -21554,7 +21623,7 @@ function LiveTablePage({
       try {
         const { data, error } = await supabase
           .from('table_seats')
-          .select('user_id, is_sitting_out, sit_out_at, leave_pending')
+          .select('user_id, is_sitting_out, sit_out_at, leave_pending, stack')
           .eq('table_id', tableId)
           .is('left_at', null);
         if (error || cancelled || !data) return;
@@ -21563,6 +21632,7 @@ function LiveTablePage({
           is_sitting_out: boolean | null;
           sit_out_at: string | null;
           leave_pending: boolean | null;
+          stack: number | string | null;
         }>;
         /* `leave_pending` is read here for the same reason the mount restore
            reads it: between the leave and settlement the row is still live and
@@ -21573,6 +21643,16 @@ function LiveTablePage({
            countdown, on a seat they already left (Dan 2026-09-05). */
         const heroRow = userId ? rows.find((r) => String(r.user_id) === String(userId)) : undefined;
         if (heroRow?.leave_pending) leftSeatPendingRef.current = true;
+        /* THE HERO'S OWN STACK, FROM THE ROW (Dan 2026-10-12). A seated hero
+           who is not in the current hand's player list (sitting out, or
+           waiting to be dealt in) is drawn from a placeholder, and that
+           placeholder printed 0.00 over a seat holding 3,632. The row is the
+           authority for what is in front of them between hands. */
+        {
+          const rowStack = Number(heroRow?.stack ?? 0);
+          const next = Number.isFinite(rowStack) && rowStack > 0 ? rowStack : 0;
+          setHeroRowStack((prev) => (prev === next ? prev : next));
+        }
         const stillSeated = new Set(rows.map((r) => String(r.user_id)).filter(Boolean));
 
         /**
@@ -23105,6 +23185,7 @@ function LiveTablePage({
     isSizingOpen: raiseIntent.open,
     isSpectator: !tableState.players.some((p) => p?.isHero),
     isModalOpen:
+      !!tournamentWinner ||
       showMustMoveLobby ||
       showSettings ||
       showInsurance ||
@@ -23952,7 +24033,7 @@ function LiveTablePage({
 
          Embedded instances now fill their slot instead of the viewport; the
          route case is untouched. */
-      className={`table-page${tableState.isTournament ? ' table-page--tournament' : ''}${embeddedTableId ? ' table-page--embedded' : ''}${isAllInMode ? ' table-page--allin-mode' : ''}${heroPromptedToAct ? ' table-page--hero-turn' : ''}${winnerBandActive ? ' table-page--winner-flash' : ''}`}
+      className={`table-page${tableState.isTournament ? ' table-page--tournament' : ''}${tableState.isTournament && (tournamentFormat === 'spin' || (tournamentFormat === 'sng' && Number(tableState.maxPlayers) === 2)) ? ' table-page--short-match' : ''}${embeddedTableId ? ' table-page--embedded' : ''}${isAllInMode ? ' table-page--allin-mode' : ''}${heroPromptedToAct ? ' table-page--hero-turn' : ''}${winnerBandActive ? ' table-page--winner-flash' : ''}`}
       /* Dan 2026-08-24: a spectator has no hero plate hanging below the
          scaler, so the --sp-hero-clear bottom reserve is dead space for them.
          CSS collapses it via [data-hero='false'] (see TablePage.css). */
@@ -24142,6 +24223,7 @@ function LiveTablePage({
       />
       <SpinWheel
         data={spinDraw}
+        unitCents={arenaAssetUnitCentsIfRead(tableState.arenaAsset)}
         contained={isMultiTable}
         onDone={() => {
           /* D1: the shared sessionStorage key is stamped HERE, at completion,
@@ -24889,50 +24971,70 @@ function LiveTablePage({
                            bleeding past the rail. */
                         return (
                           <>
-                            <span className="table-brand__line">
-                              {tableState.clubName && (
-                                <span className="table-brand__club">{tableState.clubName}</span>
-                              )}
-                              {tableState.unionName && (
-                                <span className="table-brand__union">
-                                  {tableState.clubName ? ' - ' : ''}
-                                  {tableState.unionName}
+                            <span className="table-brand__line table-brand__line--identity">
+                              <span className="table-brand__club">
+                                <span className="table-brand__club-name">
+                                  {tableState.clubName}
                                 </span>
-                              )}
-                            </span>
-                            <span className="table-brand__line table-brand__line--level">
-                              <span className="table-brand__game">
-                                {gameShort} {formatWord}
-                                {' \u00B7 '}
-                                Level {tableState.currentLevel || 1}
-                                {' \u00B7 '}
-                                {tableState.blinds || '10/20'}
+                                {tableState.unionName && (
+                                  <>
+                                    {' '}
+                                    {tableState.clubName ? ' - ' : ''}
+                                    <span className="table-brand__union">
+                                      {tableState.unionName}
+                                    </span>
+                                  </>
+                                )}
                               </span>
-                              {(tableState.handNumber ?? 0) > 0 && (
-                                <span className="table-brand__hand">
-                                  {'\u00B7 '}Hand #{tableState.handNumber}
-                                </span>
-                              )}
                             </span>
-                            {/* Dan 2026-08-30: the round-end countdown is GONE from the
-                                felt. In its place: the NEXT BLINDS, and a
-                                BREAK STARTS IN clock computed from the blind
-                                structure - the two numbers a player actually
-                                plans around between hands. Renders only while
-                                a level clock exists, same guard as before (no
-                                phantom clocks pre-start or post-finish). */}
-                            {(levelClock || tournamentBreak?.active) && (
-                              <MastheadNextInfo
-                                startedAtMs={levelClock?.startedAtMs ?? 0}
-                                durationSec={levelClock?.durationSec ?? 0}
-                                struct={blindStructRef.current}
-                                levelIdx={(tableState.currentLevel || 1) - 1}
-                                onBreak={!!tournamentBreak?.active}
-                                breakEndsAtMs={
-                                  (tournamentBreak as { breakEndsAtMs?: number | null })
-                                    ?.breakEndsAtMs ?? null
-                                }
-                              />
+                            {tournamentFormat === 'spin' ||
+                            (tournamentFormat === 'sng' && Number(tableState.maxPlayers) === 2) ? (
+                              <>
+                                {!spinDraw &&
+                                  (tableState.spinPrizePool ?? 0) > 0 &&
+                                  arenaAssetUnitCentsIfRead(tableState.arenaAsset) != null && (
+                                    <span className="table-brand__line table-brand__prize">
+                                      {formatPrizeAtUnit(
+                                        tableState.spinPrizePool as number,
+                                        arenaAssetUnitCents(tableState.arenaAsset)
+                                      )}{' '}
+                                      {moneyWordAtUnit(arenaAssetUnitCents(tableState.arenaAsset))}
+                                    </span>
+                                  )}
+                                {(tableState.handNumber ?? 0) > 0 && (
+                                  <span className="table-brand__line table-brand__hand">
+                                    Hand #{tableState.handNumber}
+                                  </span>
+                                )}
+                              </>
+                            ) : (
+                              <>
+                                <span className="table-brand__line table-brand__line--level">
+                                  <span className="table-brand__game">
+                                    {gameShort} {formatWord} · Level {tableState.currentLevel || 1}{' '}
+                                    · {tableState.blinds || '10/20'}
+                                  </span>
+                                  {(tableState.handNumber ?? 0) > 0 && (
+                                    <span className="table-brand__hand">
+                                      {' '}
+                                      · Hand #{tableState.handNumber}
+                                    </span>
+                                  )}
+                                </span>
+                                {(levelClock || tournamentBreak?.active) && (
+                                  <MastheadNextInfo
+                                    startedAtMs={levelClock?.startedAtMs ?? 0}
+                                    durationSec={levelClock?.durationSec ?? 0}
+                                    struct={blindStructRef.current}
+                                    levelIdx={(tableState.currentLevel || 1) - 1}
+                                    onBreak={!!tournamentBreak?.active}
+                                    breakEndsAtMs={
+                                      (tournamentBreak as { breakEndsAtMs?: number | null })
+                                        ?.breakEndsAtMs ?? null
+                                    }
+                                  />
+                                )}
+                              </>
                             )}
                           </>
                         );
@@ -25448,40 +25550,6 @@ function LiveTablePage({
                     SpectatorBadge and SpectatorOverlay components still exist for
                     future integration into the chat panel. */}
 
-                {/* Spin Multiplier Badge.
-                    HELD BACK WHILE THE WHEEL IS UP (2026-08-20). This badge
-                    and the SpinWheel render in the same view, so the badge was
-                    sitting on the felt printing "4x" for the entire time the
-                    wheel was dramatically deciding whether the answer was 4x.
-                    `spinDraw` is non-null exactly while the wheel is on screen
-                    and is cleared by its onDone, so the wheel's landing IS the
-                    reveal and this becomes the persistent reminder afterwards.
-                    On a rejoin the wheel does not replay, spinDraw is already
-                    null, and the badge shows immediately — which is right. */}
-                {tableState.isTournament &&
-                  !spinDraw &&
-                  tableState.spinMultiplier &&
-                  tableState.spinMultiplier > 1 && (
-                    <div
-                      className={`spinMultiplierBadge ${tableState.spinMultiplier >= 100 ? 'premium' : ''}`}
-                    >
-                      <span className="spinMultiplierIcon">X</span>
-                      <span className="spinMultiplierValue">{tableState.spinMultiplier}x</span>
-                      {/* Dan 2026-09-05: "THE TOTAL PRIZE OR MULTIPLIER FOR THE
-                          SPIN NEEDS TO BE PRESENT ON THE FELT AFTER THE SPIN
-                          RUNS." The multiplier is the abstraction; the prize is
-                          the number a player is actually playing for, so both
-                          ride the badge. Only when it is known — an older row
-                          with no prize_pool keeps the multiplier alone rather
-                          than printing a confident 0. */}
-                      {(tableState.spinPrizePool ?? 0) > 0 && (
-                        <span className="spinMultiplierPrize">
-                          {Math.round(tableState.spinPrizePool as number).toLocaleString()}
-                        </span>
-                      )}
-                    </div>
-                  )}
-
                 {/* FIX 194: HandStrengthIndicator REMOVED — not allowed for live online gameplay */}
               </div>
             </div>
@@ -25853,7 +25921,7 @@ function LiveTablePage({
                 id: userId,
                 name: username || 'You',
                 avatar: heroAvatarUrl || '',
-                stack: pendingSeatStackRef.current || 0,
+                stack: pendingSeatStackRef.current || heroRowStack || 0,
                 status: 'sitting_out',
                 isHero: true,
                 showCards: false,
@@ -25895,7 +25963,8 @@ function LiveTablePage({
             // index means a different chair on every ring.
             const seatPod = seatPodPx(
               typeof window === 'undefined' ? Infinity : window.innerWidth,
-              pos.y >= 100 && pos.x === 50
+              pos.y >= 100 && pos.x === 50,
+              scalerSize.w
             );
             const dx = 50 - pos.x;
             const dy = 50 - pos.y;
@@ -26715,7 +26784,16 @@ function LiveTablePage({
              for. If the roster read then failed or was RLS-denied, that state
              lasted the whole session. A held seat-first seat is never a
              spectator; say so here rather than racing a query. */
-          !(seatFirstBuyIn && tableState.heroSeat > 0) ? (
+          !(seatFirstBuyIn && tableState.heroSeat > 0) &&
+          /* I'M BACK IS NEVER SHADOWED (Dan 2026-10-12): "THERE IS NO 'I'M
+             BACK' BUTTON TO CLICK FOR THE DIAMOND ARENA WHEN YOU ARE SITTING
+             OUT." A sat-out hero is not in the hand's player list, so this
+             branch matched first and printed "Seat Reserved, You'll Be Dealt
+             In Next Hand" while the seat itself read SITTING OUT - and the
+             sitting-out bar with its I'm Back button further down the chain
+             was never reached. The seat row says they are sitting out; that
+             bar owns this state. */
+          !heroIsSittingOut ? (
           /* Dan 2026-08-17 (audit): heroSeat is reserved but the server hasn't
              dealt the hero in yet (waiting on next hand / BB post). The old
              branch fell through to "Spectating - tap an open seat" which
@@ -27772,6 +27850,7 @@ function LiveTablePage({
         reason={maintenanceBreak.reason}
       />
       <TableModalsLayer
+        isActive={isActive}
         /* THE DIAMONDS-TO-CHIPS DOOR (Dan 2026-09-10). The club the player
            came in through, never the union that hosts the table: membership,
            and therefore the games' own admission check, is against that one.

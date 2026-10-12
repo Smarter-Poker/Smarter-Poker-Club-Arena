@@ -193,8 +193,13 @@ describe('P13.2 joint strength contract object', () => {
     // moved, to joint-action-response-round3-v1; the population, rake model,
     // profiles, held-out seeds, matrix and thresholds are unchanged. The
     // October 6 matrices measured a036e702e7659334a2c531f8bf90fb5e3a852686028fad47f182e486b57bb754.
+    // October 11, 2026: only liveConditions policy_clock_and_sampling.live
+    // changed, to describe the live source as it now is (the matrix's fixed
+    // work, no clock or governor cut); everything else is byte-identical. The
+    // round 3 matrices on 1235b47a measured
+    // 1d0dd99be2fedd7ec50e502cf4241611818dd30aec794714808888616dc5dd96.
     expect(jointStrengthContractDigest()).toBe(
-      '1d0dd99be2fedd7ec50e502cf4241611818dd30aec794714808888616dc5dd96'
+      '0cd88d970c600fb64933337672af349e9d106402d4edfcc3510e1f26374741f8'
     );
   });
 

@@ -22,7 +22,7 @@ interface PositionStat {
   vpip_pct: number; // Computed client-side from vpip_count / hands_played
 }
 
-interface VipLedgerEntry {
+interface DiamondLedgerEntry {
   id: string;
   user_id: string;
   amount: number;
@@ -35,7 +35,7 @@ interface ClubAggregate {
   totalHands: number;
   totalRake: number;
   activePlayers: number;
-  totalVipPointsIssued: number;
+  totalDiamondsIssued: number;
   livePlayersNow: number; // Enhancement #9: real-time count
 }
 
@@ -83,12 +83,12 @@ function getTimeRangeCutoff(range: TimeRange): string | null {
 
 export default function AnalyticsDashboard() {
   const [positionStats, setPositionStats] = useState<PositionStat[]>([]);
-  const [vipLedger, setVipLedger] = useState<VipLedgerEntry[]>([]);
+  const [diamondLedger, setDiamondLedger] = useState<DiamondLedgerEntry[]>([]);
   const [aggregate, setAggregate] = useState<ClubAggregate>({
     totalHands: 0,
     totalRake: 0,
     activePlayers: 0,
-    totalVipPointsIssued: 0,
+    totalDiamondsIssued: 0,
     livePlayersNow: 0,
   });
   const [lastRefresh, setLastRefresh] = useState(new Date());
@@ -161,7 +161,7 @@ export default function AnalyticsDashboard() {
     live_players: number | string | null;
   }
 
-  const loadVipLedger = useCallback(async () => {
+  const loadDiamondLedger = useCallback(async () => {
     try {
       /* Same wrong table as the aggregate below: `diamond_ledger` has 0 rows
          and no writer, so this operator-facing feed was permanently empty and
@@ -189,7 +189,7 @@ export default function AnalyticsDashboard() {
       if (error) throw error;
 
       if (data && mountedRef.current) {
-        setVipLedger(
+        setDiamondLedger(
           data.map((row) => ({
             ...row,
             transaction_type: row.transaction_type || row.type || '',
@@ -197,8 +197,8 @@ export default function AnalyticsDashboard() {
         );
       }
     } catch (err) {
-      reportError(err, 'AnalyticsDashboard.Error_loading_VIP_ledger');
-      toast.error('Failed to load VIP ledger');
+      reportError(err, 'AnalyticsDashboard.Error_loading_diamond_activity');
+      toast.error('Failed to load Diamond ledger');
     }
   }, [timeRange]);
 
@@ -216,7 +216,7 @@ export default function AnalyticsDashboard() {
    *     truncated hand count, rounded to two decimals so it looked measured.
    *     `rake_records` (1,681,381 rows, 4,792,230.11 chips) was never read.
    *
-   *   totalVipPointsIssued — summed `diamond_ledger`, a table with **0 rows**
+   *   totalDiamondsIssued — summed `diamond_ledger`, a table with **0 rows**
    *     and no writer. The live ledger is `diamond_transactions`.
    *
    *   livePlayersNow — filtered `.is('horse_id', null)`. That is an exclusion
@@ -257,7 +257,7 @@ export default function AnalyticsDashboard() {
           totalHands: Number(data.total_hands ?? 0),
           totalRake: Math.round(Number(data.total_rake ?? 0) * 100) / 100,
           activePlayers: Number(data.active_players ?? 0),
-          totalVipPointsIssued: Number(data.vip_diamonds ?? 0),
+          totalDiamondsIssued: Number(data.vip_diamonds ?? 0),
           livePlayersNow: Number(data.live_players ?? 0),
         });
       }
@@ -269,12 +269,12 @@ export default function AnalyticsDashboard() {
 
   const refreshAll = useCallback(async () => {
     setIsLoading(true);
-    await Promise.all([loadPositionStats(), loadVipLedger(), loadAggregates()]);
+    await Promise.all([loadPositionStats(), loadDiamondLedger(), loadAggregates()]);
     if (mountedRef.current) {
       setLastRefresh(new Date());
       setIsLoading(false);
     }
-  }, [loadPositionStats, loadVipLedger, loadAggregates]);
+  }, [loadPositionStats, loadDiamondLedger, loadAggregates]);
 
   // ── Mount & Bus listeners ───────────────────────────────────────────────
 
@@ -329,9 +329,9 @@ export default function AnalyticsDashboard() {
       )
       .join('\n');
 
-    // VIP Ledger CSV
-    const vipHeader = '\n\nVIP Ledger\nTime,Type,Amount,Description\n';
-    const vipRows = vipLedger
+    // Diamond Ledger CSV
+    const diamondHeader = '\n\nDiamond Ledger\nTime,Type,Amount,Description\n';
+    const diamondRows = diamondLedger
       .map(
         (e) =>
           `${new Date(e.created_at).toLocaleString()},${e.transaction_type},${e.amount},"${e.description || ''}"`
@@ -344,14 +344,14 @@ export default function AnalyticsDashboard() {
       '\n\nPosition Stats\n' +
       posHeader +
       posRows +
-      vipHeader +
-      vipRows;
+      diamondHeader +
+      diamondRows;
 
     downloadCsv(
       `club-analytics-${timeRange}-${new Date().toISOString().slice(0, 10)}.csv`,
       csvContent
     );
-  }, [positionStats, vipLedger, timeRange]);
+  }, [positionStats, diamondLedger, timeRange]);
 
   // ── Computed values ─────────────────────────────────────────────────────
 
@@ -364,7 +364,7 @@ export default function AnalyticsDashboard() {
       <header className="analytics-header">
         <h1>Club Analytics Dashboard</h1>
         <p>
-          Real-Time Player Position Stats And VIP Economy Overview
+          Real-Time Player Position Stats And Diamond Economy Overview
           <span className="refresh-indicator">
             <span className="refresh-dot" />
             Live - Updated {lastRefresh.toLocaleTimeString()}
@@ -389,7 +389,7 @@ export default function AnalyticsDashboard() {
           <button
             className="export-btn"
             onClick={handleExportCSV}
-            disabled={positionStats.length === 0 && vipLedger.length === 0}
+            disabled={positionStats.length === 0 && diamondLedger.length === 0}
           >
             Export CSV
           </button>
@@ -431,9 +431,9 @@ export default function AnalyticsDashboard() {
               <div className="value text-amber">{aggregate.totalRake.toLocaleString()} Chips</div>
             </div>
             <div className="summary-card">
-              <div className="label">VIP Points Issued</div>
+              <div className="label">Diamonds Issued</div>
               <div className="value text-purple">
-                {aggregate.totalVipPointsIssued.toLocaleString()}
+                {aggregate.totalDiamondsIssued.toLocaleString()} Diamonds
               </div>
             </div>
             {/* Enhancement #9: Live Players Now */}
@@ -556,8 +556,8 @@ export default function AnalyticsDashboard() {
         </div>
       </div>
 
-      {/* ── VIP Points Ledger ───────────────────────────────────────────── */}
-      <h2 className="section-header">Recent VIP Points Activity</h2>
+      {/* ── Diamond Ledger ───────────────────────────────────────────── */}
+      <h2 className="section-header">Recent Diamond Activity</h2>
       {isLoading ? (
         <div className="chart-card">
           <div className="skeleton-table">
@@ -568,9 +568,9 @@ export default function AnalyticsDashboard() {
             ))}
           </div>
         </div>
-      ) : vipLedger.length > 0 ? (
+      ) : diamondLedger.length > 0 ? (
         <div className="chart-card">
-          <table className="vip-table">
+          <table className="diamond-table">
             <thead>
               <tr>
                 <th>Time</th>
@@ -580,7 +580,7 @@ export default function AnalyticsDashboard() {
               </tr>
             </thead>
             <tbody>
-              {vipLedger.map((entry) => (
+              {diamondLedger.map((entry) => (
                 <tr key={entry.id}>
                   <td>
                     {new Date(entry.created_at).toLocaleString(undefined, {
@@ -591,7 +591,7 @@ export default function AnalyticsDashboard() {
                     })}
                   </td>
                   <td>
-                    <span className={`vip-type-badge ${entry.transaction_type}`}>
+                    <span className={`diamond-type-badge ${entry.transaction_type}`}>
                       {(entry.transaction_type || 'unknown').toUpperCase()}
                     </span>
                   </td>
@@ -614,7 +614,7 @@ export default function AnalyticsDashboard() {
         <div className="chart-card">
           <div className="empty-state">
             <div className="icon">◆</div>
-            <p>No VIP Points Transactions Yet.</p>
+            <p>No Diamond Transactions Yet.</p>
           </div>
         </div>
       )}

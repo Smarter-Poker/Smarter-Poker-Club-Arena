@@ -1,0 +1,1509 @@
+{
+  "_comment": "Every custom SQLSTATE 40001 raise site in public and smarter_private on 2026-10-12 before migration 20261012061427, with what it became. keep_40001 rows carry the reason they may stay. Read from the live catalog (PostgREST 14.5 and 14.18 re-run 40001 without limit).",
+  "postgrest_versions": ["14.5", "14.18"],
+  "sites": [
+    {
+      "signature": "public.apply_venue_directory_enrichment(integer,timestamp with time zone,text,text,text,text,text,text,numeric,text,uuid)",
+      "message": "venue revision changed",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.atomic_cancel_tournament(uuid,uuid)",
+      "message": "Spin % reserve vanished during draw reversal",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.atomic_cancel_tournament(uuid,uuid)",
+      "message": "Spin % reserve vanished during contribution reversal",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.atomic_cancel_tournament(uuid,uuid)",
+      "message": "tournament % lost its exact-zero escrow close",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.atomic_cancel_tournament(uuid,uuid)",
+      "message": "tournament % lost its cancellation lifecycle claim",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.atomic_cancel_tournament(uuid,uuid)",
+      "message": "tournament % did not close every table",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.ca_rake_export_start(text,uuid,date,date,uuid,text,text,uuid)",
+      "message": "Rake Snapshot export changed while it was being prepared",
+      "postgrest_roles": ["authenticated", "service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.complete_rights_cleared_youtube_transcode(text,uuid,text,text,text)",
+      "message": "(none)",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.complete_rights_cleared_youtube_transcode(text,uuid,text,text,text)",
+      "message": "(none)",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_bag_tournament_stage(uuid,uuid,integer,jsonb)",
+      "message": "MULTI_DAY_BAG_SEAT_COUNT_CHANGED: % vacated, % expected",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_begin_tournament_launch_atomic(uuid,uuid,timestamp with time zone,uuid)",
+      "message": "tournament launch receipt changed during lease adoption",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_begin_tournament_launch_atomic(uuid,uuid,timestamp with time zone,uuid,text)",
+      "message": "tournament launch receipt changed during lease adoption",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_ca_assign_tournament_player_seat_locked(uuid,uuid,uuid,integer)",
+      "message": "vacated tournament seat changed during assignment",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_ca_assign_tournament_player_seat_locked(uuid,uuid,uuid,integer)",
+      "message": "tournament roster changed during seat assignment",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_ca_assign_tournament_player_seat_locked(uuid,uuid,uuid,integer)",
+      "message": "tournament table vanished during seat assignment",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_ca_choose_tournament_seat_locked(uuid,uuid,uuid,integer)",
+      "message": "chosen tournament table lost its legal chair",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_ca_dispose_superseded_hand_submissions(uuid,uuid,text,integer)",
+      "message": "HAND_DISPOSAL_TABLE_BUSY",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55P03"
+    },
+    {
+      "signature": "public.fn_ca_escrow_on_wallet_tx()",
+      "message": "exact refund authorization was not consumed once",
+      "postgrest_roles": ["service_role"],
+      "trigger": true,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_ca_legacy_period_maturity()",
+      "message": "Legacy period payment requires a closed earning period",
+      "postgrest_roles": [],
+      "trigger": true,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_ca_legacy_round3_wallet_receipt()",
+      "message": "Legacy period payment requires a closed earning period",
+      "postgrest_roles": [],
+      "trigger": true,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_ca_operator_cancel_tournament(uuid,uuid,text,uuid,text)",
+      "message": "tournament_review_changed",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_ca_process_tournament_chip_purchase_money_v1(uuid,uuid,text,numeric,numeric,integer,text)",
+      "message": "Exact tournament funding wallet changed during debit",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_ca_process_tournament_chip_purchase_money_v1(uuid,uuid,text,numeric,numeric,integer,text)",
+      "message": "Locked tournament roster changed during chip grant",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_ca_process_tournament_chip_purchase_money_v1(uuid,uuid,text,numeric,numeric,integer,text)",
+      "message": "Tournament vanished during chip-purchase pool booking",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_ca_recognize_held_tournament_fees_by_owner_basis(uuid,jsonb)",
+      "message": "owner_fee_operation_replayed_with_different_events",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_ca_reprice_unpaid_tournament_place(uuid,uuid,numeric,numeric)",
+      "message": "tournament prize changed from expected % to %",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_ca_reprice_unpaid_tournament_place(uuid,uuid,numeric,numeric)",
+      "message": "tournament prize compare-and-set lost its locked row",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_ca_resume_hand_submission(uuid,text,uuid)",
+      "message": "F06_HAND_DISPATCH_BUSY",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55P03"
+    },
+    {
+      "signature": "public.fn_ca_resume_hand_submission(uuid,text,uuid)",
+      "message": "HAND_SUBMISSION_ADMISSION_CHANGED: %",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55P03"
+    },
+    {
+      "signature": "public.fn_ca_resume_original_paid_tournament_entry(uuid,jsonb)",
+      "message": "ORIGINAL_PAID_CANDIDATE_CHANGED",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": false,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_ca_retain_hand_submission(jsonb)",
+      "message": "F06_HAND_DISPATCH_BUSY",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55P03"
+    },
+    {
+      "signature": "public.fn_ca_return_excess_start_overlay_locked(uuid)",
+      "message": "excess overlay return did not credit its bank exactly",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_ca_set_emergency_stop(text,boolean,bigint,text,uuid,uuid,text)",
+      "message": "stop_version_changed",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_ca_settle_bounty_rebuy_generation_v1(uuid,uuid,uuid)",
+      "message": "Atomic mystery-bounty rebuy award changed before reveal",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_ca_settle_bounty_rebuy_generation_v1(uuid,uuid,uuid)",
+      "message": "Atomic mystery-bounty rebuy chest changed before reveal",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_ca_settle_bounty_rebuy_generation_v1(uuid,uuid,uuid)",
+      "message": "Bounty rebuy old head changed before retirement",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_ca_settle_hand_stacks_absolute(uuid,bigint,jsonb,numeric,numeric,text,numeric)",
+      "message": "tournament table % changed while hand % was locking",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": false,
+      "decision": "keep_40001",
+      "reason": "Reached only inside the hand commit envelope (fn_ca_commit_hand_settlement_before_lease_generation WHEN OTHERS), which returns it as atomic_hand_rolled_back; the engine retries that envelope with bounded delays only for 40001 or 40P01."
+    },
+    {
+      "signature": "public.fn_ca_settle_satellite_cohort(uuid,uuid[])",
+      "message": "tournament % disappeared while being locked",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_ca_settle_satellite_cohort(uuid,uuid[])",
+      "message": "satellite % target changed while settlement acquired locks",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_ca_settle_satellite_cohort(uuid,uuid[])",
+      "message": "satellite % could not claim its atomic settlement",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_ca_settle_satellite_cohort(uuid,uuid[])",
+      "message": "satellite % target roster changed outside its locked delivery plan",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_ca_settle_satellite_cohort(uuid,uuid[])",
+      "message": "satellite % could not commit its exact escrow close",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_ca_settle_satellite_cohort(uuid,uuid[])",
+      "message": "satellite % released % source seats, expected %",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_ca_settle_satellite_cohort(uuid,uuid[])",
+      "message": "satellite % could not commit COMPLETING to COMPLETED",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_ca_settle_satellite_cohort(uuid,uuid[])",
+      "message": "satellite % did not durably release every source seat and close every source table",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_ca_unregister_tournament_player_exact(uuid,uuid,uuid,text,uuid)",
+      "message": "registration % tournament cache changed",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_ca_unregister_tournament_player_exact(uuid,uuid,uuid,text,uuid)",
+      "message": "registration % was not deleted after settlement",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_cash_seat_move_execute(uuid)",
+      "message": "SEAT_MOVE_PARTNER_CHANGED",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_cashier_lock_authority(uuid,uuid,uuid,uuid)",
+      "message": "cashier_authority_changed_during_lock",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_claim_bounty_legacy_candidate_20260907(uuid,uuid,integer,numeric,uuid,uuid,bigint,timestamp with time zone,uuid,jsonb,numeric,boolean)",
+      "message": "bounty elimination CAS missed after locked claim",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_claim_final_table_transition(uuid,uuid)",
+      "message": "FINAL_TABLE_CLAIM_CORRUPT: an untriggered tournament already has another owner",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_claim_tournament_bounty_elimination(uuid,uuid,integer,numeric,uuid,uuid,bigint,timestamp with time zone,uuid,jsonb,numeric,boolean)",
+      "message": "bounty knockout generation changed while claim committed",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_claim_tournament_bounty_elimination(uuid,uuid,integer,numeric,uuid,uuid,bigint,timestamp with time zone,uuid,jsonb,numeric,boolean)",
+      "message": "a bought-back knockout generation changed while the bounty claim committed",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_claim_tournament_finish(uuid,uuid,text)",
+      "message": "finish claim CAS changed % rows for tournament %",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_close_settlement_period(uuid)",
+      "message": "Rakeback period scope changed during admission",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": false,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_club_set_member_status(uuid,uuid,text,text)",
+      "message": "membership changed during status change",
+      "postgrest_roles": ["authenticated"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_complete_breakfast_original_witness(uuid,jsonb)",
+      "message": "BREAKFAST_REPLAY_MISMATCH",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_complete_breakfast_original_witness(uuid,jsonb)",
+      "message": "BREAKFAST_EVENT_CHANGED",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_complete_breakfast_original_witness(uuid,jsonb)",
+      "message": "BREAKFAST_MANAGER_CHANGED",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_complete_breakfast_original_witness(uuid,jsonb)",
+      "message": "BREAKFAST_ORIGINAL_ROSTER_OR_ENTRY_CHANGED",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_complete_breakfast_original_witness(uuid,jsonb)",
+      "message": "BREAKFAST_PAID_EVIDENCE_CHANGED",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_complete_breakfast_original_witness(uuid,jsonb)",
+      "message": "BREAKFAST_OBLIGATIONS_CHANGED",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_complete_breakfast_original_witness(uuid,jsonb)",
+      "message": "BREAKFAST_CREDIT_EVIDENCE_CHANGED",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_complete_breakfast_original_witness(uuid,jsonb)",
+      "message": "BREAKFAST_FEE_CHARGE_CHANGED",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_complete_breakfast_original_witness(uuid,jsonb)",
+      "message": "BREAKFAST_PHYSICAL_ROSTER_CHANGED",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_complete_breakfast_original_witness(uuid,jsonb)",
+      "message": "BREAKFAST_LATER_AUTHORITY_OR_HAND_STATE",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_complete_breakfast_original_witness(uuid,jsonb)",
+      "message": "BREAKFAST_FUNDING_CHANGED",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_complete_breakfast_original_witness(uuid,jsonb)",
+      "message": "BREAKFAST_ZERO_SEAT_EXIT_LOST",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_complete_breakfast_original_witness(uuid,jsonb)",
+      "message": "BREAKFAST_ORIGINAL_RANK_LOST",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_complete_first_archived_spin(uuid,text)",
+      "message": "ARCHIVED_SPIN_REPLAY_MISMATCH",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_complete_first_archived_spin(uuid,text)",
+      "message": "ARCHIVED_SPIN_COMPETING_OWNER",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_complete_first_archived_spin(uuid,text)",
+      "message": "ARCHIVED_SPIN_REPLAY_MISMATCH",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_complete_first_archived_spin(uuid,text)",
+      "message": "ARCHIVED_SPIN_LATER_AUTHORITY",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_complete_sep8_spin_original_standings(uuid,jsonb)",
+      "message": "SPIN_ORIGINAL_REPLAY_MISMATCH",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_complete_sep8_spin_original_standings(uuid,jsonb)",
+      "message": "SPIN_ORIGINAL_EXPECTED_OR_MANAGER_CHANGED",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_complete_sep8_spin_original_standings(uuid,jsonb)",
+      "message": "SPIN_ORIGINAL_PREIMAGE_CHANGED",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_complete_sep8_spin_original_standings(uuid,jsonb)",
+      "message": "SPIN_ORIGINAL_LATER_AUTHORITY",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_complete_stage_resume(uuid,uuid,uuid)",
+      "message": "MULTI_DAY_RESUME_STATUS_NOT_ACKNOWLEDGED",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_complete_tournament_launch_before_lease_generation(uuid,uuid)",
+      "message": "tournament launch status changed inside its completion transaction",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_complete_tournament_terminal_pre_seat_guard(uuid,uuid,text)",
+      "message": "club % changed union while tournament % claimed terminal banks",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_complete_tournament_terminal_pre_seat_guard(uuid,uuid,text)",
+      "message": "tournament % lost its exact zero escrow close",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_complete_tournament_terminal_pre_seat_guard(uuid,uuid,text)",
+      "message": "tournament % lost its terminal lifecycle claim",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_complete_tournament_terminal_pre_seat_guard(uuid,uuid,text)",
+      "message": "tournament % did not durably release every seat and close every table",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_credit_maintenance_thaw_targets(timestamp with time zone,numeric)",
+      "message": "MAINTENANCE_THAW_TARGET_CHANGED: % moved %, receipted %",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_eliminate_player_legacy_candidate_20260907(uuid,uuid,integer,numeric,numeric)",
+      "message": "zero-stack elimination CAS changed % rows",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_eliminate_tournament_player_atomic(uuid,uuid,integer,numeric,numeric)",
+      "message": "knockout generation changed while elimination committed",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_eliminate_tournament_player_atomic(uuid,uuid,integer,numeric,numeric)",
+      "message": "a bought-back knockout generation changed while elimination committed",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_f06_abort_abandoned_generation(uuid,uuid,uuid,text,boolean)",
+      "message": "F06_HAND_DISPATCH_BUSY",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55P03"
+    },
+    {
+      "signature": "public.fn_f06_abort_abandoned_generation(uuid,uuid,uuid,text,boolean)",
+      "message": "F06_ABORT_RETRY_PLAYER_LANE",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55P03"
+    },
+    {
+      "signature": "public.fn_f06_abort_mixed_unsettled_generation(uuid,jsonb)",
+      "message": "F06_HAND_DISPATCH_BUSY",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55P03"
+    },
+    {
+      "signature": "public.fn_f06_abort_mixed_unsettled_generation(uuid,jsonb)",
+      "message": "F06_ABORT_RETRY_PLAYER_LANE",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55P03"
+    },
+    {
+      "signature": "public.fn_f06_abort_successor_unsettled_hand(uuid,jsonb)",
+      "message": "F06_HAND_DISPATCH_BUSY",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55P03"
+    },
+    {
+      "signature": "public.fn_f06_abort_successor_unsettled_hand(uuid,jsonb)",
+      "message": "F06_ABORT_RETRY_PLAYER_LANE",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55P03"
+    },
+    {
+      "signature": "public.fn_f06_abort_unsettled_generation(uuid,jsonb)",
+      "message": "F06_HAND_DISPATCH_BUSY",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55P03"
+    },
+    {
+      "signature": "public.fn_f06_abort_unsettled_generation(uuid,jsonb)",
+      "message": "F06_ABORT_RETRY_PLAYER_LANE",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55P03"
+    },
+    {
+      "signature": "public.fn_f06_abort_unsettled_hand(uuid,jsonb)",
+      "message": "F06_HAND_DISPATCH_BUSY",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55P03"
+    },
+    {
+      "signature": "public.fn_f06_abort_unsettled_hand(uuid,jsonb)",
+      "message": "F06_ABORT_RETRY_PLAYER_LANE",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55P03"
+    },
+    {
+      "signature": "public.fn_f06_continue_no_start_last_table(uuid,uuid,uuid,bigint,uuid,uuid,bigint)",
+      "message": "F06_HAND_DISPATCH_BUSY",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55P03"
+    },
+    {
+      "signature": "public.fn_f06_prepare_mixed_manager_custody(uuid,uuid,uuid,uuid,jsonb,jsonb)",
+      "message": "F06_RETRY_MAINTENANCE_LANE",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55P03"
+    },
+    {
+      "signature": "public.fn_f06_void_stranded_mixed_original(uuid)",
+      "message": "F06_STRANDED_EVENT_OWNED",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55P03"
+    },
+    {
+      "signature": "public.fn_f06_void_stranded_mixed_original(uuid)",
+      "message": "F06_HAND_DISPATCH_BUSY",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55P03"
+    },
+    {
+      "signature": "public.fn_f06_void_stranded_mixed_original(uuid)",
+      "message": "F06_ABORT_RETRY_PLAYER_LANE",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55P03"
+    },
+    {
+      "signature": "public.fn_f06_void_stranded_mixed_original(uuid)",
+      "message": "F06_STRANDED_PERMIT_CLAIM_LOST",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_f06_void_stranded_mixed_original(uuid)",
+      "message": "F06_STRANDED_SNAPSHOT_CLAIM_LOST",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_f06_withdraw_unplaceable_park(uuid,uuid,uuid,bigint,uuid,uuid,bigint)",
+      "message": "F06_HAND_DISPATCH_BUSY",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55P03"
+    },
+    {
+      "signature": "public.fn_join_club(uuid)",
+      "message": "membership lifecycle changed during rejoin",
+      "postgrest_roles": ["authenticated", "service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_lightning_form_hand(uuid,uuid[],smallint,smallint,uuid,interval,interval,timestamp with time zone,text,uuid,jsonb)",
+      "message": "LIGHTNING_MULTI_TABLE_LIMIT: player % would hold % live Lightning hands against a % limit of %",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": false,
+      "decision": "keep_40001",
+      "reason": "Raised inside a block of the same function that catches it and returns it as a result (retryable flag or formation retry); it never reaches PostgREST."
+    },
+    {
+      "signature": "public.fn_lock_tournament_launch_proof_parents(uuid[])",
+      "message": "TOURNAMENT_TRANSITION_BUSY: launch proof receipt is changing",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "keep_40001",
+      "reason": "NOWAIT on launch proof receipt rows held only by the one short launch transaction; raised from row triggers on engine table inserts that have no retry of their own; measured 8 to 50 re-runs a day, each burst cleared within one second."
+    },
+    {
+      "signature": "public.fn_move_tournament_player(uuid,uuid,uuid,uuid,integer,uuid,text)",
+      "message": "tournament move lost its locked source seat",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_move_tournament_player(uuid,uuid,uuid,uuid,integer,uuid,text)",
+      "message": "tournament move could not reuse destination seat",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_move_tournament_player(uuid,uuid,uuid,uuid,integer,uuid,text)",
+      "message": "tournament move lost its locked roster row",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_patch_account_settings(uuid,uuid,jsonb,text)",
+      "message": "Mutation is still in progress; retry with the same mutation id",
+      "postgrest_roles": ["authenticated", "service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55P03"
+    },
+    {
+      "signature": "public.fn_patch_table_appearance(uuid,uuid,text,jsonb)",
+      "message": "Mutation is still in progress; retry with the same mutation id",
+      "postgrest_roles": ["authenticated", "service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55P03"
+    },
+    {
+      "signature": "public.fn_poker_diamond_tournament_cancel(uuid,uuid)",
+      "message": "tournament % lost its cancellation lifecycle claim",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_poker_diamond_tournament_cancel(uuid,uuid)",
+      "message": "tournament % did not close every table",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_poker_diamond_tournament_unregister(uuid,uuid,uuid)",
+      "message": "tournament vanished during unregistration",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_publish_leaderboard_reward_program(uuid,boolean,text,jsonb,jsonb,text,integer,uuid,boolean)",
+      "message": "Leaderboard Prize Setup Changed In Another Session",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_publish_tournament_blind_level(uuid,uuid,integer,integer,numeric,numeric,numeric)",
+      "message": "Tournament blind transition does not follow its committed level",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_publish_tournament_blind_level(uuid,uuid,integer,integer,numeric,numeric,numeric)",
+      "message": "Tournament blind publication was not fully acknowledged",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_refuse_new_entries_while_frozen()",
+      "message": "ENTRY_BOUNDARY_BUSY: maintenance announcement owns the entry boundary",
+      "postgrest_roles": ["service_role"],
+      "trigger": true,
+      "reaches_postgrest_uncaught": true,
+      "decision": "keep_40001",
+      "reason": "Shared try-lock on the maintenance entry boundary, held exclusively only by the short claim, save, clear and thaw transactions; raised from entry triggers whose callers have no retry of their own; measured 107 re-runs on 2026-10-08 and none since, each cleared at once."
+    },
+    {
+      "signature": "public.fn_register_for_tournament_before_atomic_capacity_20260907(uuid,boolean)",
+      "message": "Tournament registration identity changed after its atomic debit; retry the complete transaction",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_register_for_tournament_before_atomic_capacity_20260907(uuid,boolean)",
+      "message": "Tournament roster cache changed during registration",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_register_horse_for_tournament_before_maintenance_gate(uuid,uuid)",
+      "message": "Horse tournament registration identity changed after its atomic debit; retry the complete transaction",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_register_horse_for_tournament_before_maintenance_gate(uuid,uuid)",
+      "message": "Tournament roster cache changed during horse registration",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_remove_settled_club_member(uuid,uuid)",
+      "message": "membership changed during departure",
+      "postgrest_roles": ["authenticated", "service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_resolve_satellite_settlement_outcome(uuid,uuid)",
+      "message": "satellite % target changed while outcome acquired locks",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_retire_settled_club(uuid,text,text)",
+      "message": "CLUB_OPENING_GRANT_CHANGED_DURING_RETIREMENT",
+      "postgrest_roles": ["authenticated", "service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_retire_settled_club_core_20260906(uuid,text,text)",
+      "message": "club lifecycle changed during retirement",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_save_engine_maintenance_break(text,timestamp with time zone,timestamp with time zone,timestamp with time zone,text,text,uuid)",
+      "message": "MAINTENANCE_OWNERSHIP_LOST: save refused",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_seat_stage_entitlement(uuid,uuid,uuid,uuid,uuid,integer)",
+      "message": "vacated tournament seat changed during stage seating",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_serialize_entry_statement()",
+      "message": "ENTRY_BOUNDARY_BUSY: maintenance announcement owns the entry boundary",
+      "postgrest_roles": [],
+      "trigger": true,
+      "reaches_postgrest_uncaught": true,
+      "decision": "keep_40001",
+      "reason": "Shared try-lock on the maintenance entry boundary, held exclusively only by the short claim, save, clear and thaw transactions; raised from entry triggers whose callers have no retry of their own; measured 107 re-runs on 2026-10-08 and none since, each cleared at once."
+    },
+    {
+      "signature": "public.fn_set_capability_readiness(text,text,text,bigint,jsonb)",
+      "message": "CAPABILITY_REVISION_STALE: % expected revision %, current %",
+      "postgrest_roles": ["authenticated", "service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_set_interface_theme(uuid,uuid,text)",
+      "message": "Mutation is still in progress; retry with the same mutation id",
+      "postgrest_roles": ["authenticated", "service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55P03"
+    },
+    {
+      "signature": "public.fn_settle_final_table_deal_atomic(uuid)",
+      "message": "RUNNING claim was lost before deal settlement",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": false,
+      "decision": "keep_40001",
+      "reason": "Raised inside a block of the same function that catches it and returns it as a result (retryable flag or formation retry); it never reaches PostgREST."
+    },
+    {
+      "signature": "public.fn_settle_final_table_deal_atomic(uuid)",
+      "message": "live deal player %s changed before standings were stamped",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": false,
+      "decision": "keep_40001",
+      "reason": "Raised inside a block of the same function that catches it and returns it as a result (retryable flag or formation retry); it never reaches PostgREST."
+    },
+    {
+      "signature": "public.fn_settle_final_table_deal_atomic(uuid)",
+      "message": "the final-table-deal batch changed before completion",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": false,
+      "decision": "keep_40001",
+      "reason": "Raised inside a block of the same function that catches it and returns it as a result (retryable flag or formation retry); it never reaches PostgREST."
+    },
+    {
+      "signature": "public.fn_settle_final_table_deal_atomic(uuid)",
+      "message": "RUNNING claim was lost before deal completion",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": false,
+      "decision": "keep_40001",
+      "reason": "Raised inside a block of the same function that catches it and returns it as a result (retryable flag or formation retry); it never reaches PostgREST."
+    },
+    {
+      "signature": "public.fn_settle_satellite_finish_atomic_before_maintenance_gate(uuid,text)",
+      "message": "satellite prize stamp CAS changed % rows",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": false,
+      "decision": "keep_40001",
+      "reason": "Raised inside a block of the same function that catches it and returns it as a result (retryable flag or formation retry); it never reaches PostgREST."
+    },
+    {
+      "signature": "public.fn_settle_satellite_finish_atomic_before_maintenance_gate(uuid,text)",
+      "message": "satellite batch settle CAS changed % rows",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": false,
+      "decision": "keep_40001",
+      "reason": "Raised inside a block of the same function that catches it and returns it as a result (retryable flag or formation retry); it never reaches PostgREST."
+    },
+    {
+      "signature": "public.fn_settle_satellite_finish_atomic_before_maintenance_gate(uuid,text)",
+      "message": "satellite completion CAS changed % rows",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": false,
+      "decision": "keep_40001",
+      "reason": "Raised inside a block of the same function that catches it and returns it as a result (retryable flag or formation retry); it never reaches PostgREST."
+    },
+    {
+      "signature": "public.fn_settle_satellite_tournament_pre_money_path_gate(uuid,uuid)",
+      "message": "tournament % disappeared while being locked",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_settle_satellite_tournament_pre_money_path_gate(uuid,uuid)",
+      "message": "satellite % target changed while settlement acquired locks",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_settle_satellite_tournament_pre_money_path_gate(uuid,uuid)",
+      "message": "satellite % could not claim its atomic settlement",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_settle_satellite_tournament_pre_money_path_gate(uuid,uuid)",
+      "message": "satellite % target roster changed outside its locked delivery plan",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_settle_satellite_tournament_pre_money_path_gate(uuid,uuid)",
+      "message": "satellite % could not commit its exact escrow close",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_settle_satellite_tournament_pre_money_path_gate(uuid,uuid)",
+      "message": "satellite % released % source seats, expected %",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_settle_satellite_tournament_pre_money_path_gate(uuid,uuid)",
+      "message": "satellite % could not commit COMPLETING to COMPLETED",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_settle_satellite_tournament_pre_money_path_gate(uuid,uuid)",
+      "message": "satellite % did not durably release every source seat and close every source table",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_settle_tournament_places(uuid,uuid)",
+      "message": "tournament % lost its RUNNING finish claim",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_settle_tournament_places_atomic(uuid,text)",
+      "message": "the prepared batch changed before settlement",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": false,
+      "decision": "keep_40001",
+      "reason": "Raised inside a block of the same function that catches it and returns it as a result (retryable flag or formation retry); it never reaches PostgREST."
+    },
+    {
+      "signature": "public.fn_settle_tournament_places_atomic(uuid,text)",
+      "message": "COMPLETING claim was lost before completion",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": false,
+      "decision": "keep_40001",
+      "reason": "Raised inside a block of the same function that catches it and returns it as a result (retryable flag or formation retry); it never reaches PostgREST."
+    },
+    {
+      "signature": "public.fn_settle_tournament_places_by_ruling(uuid,text,text)",
+      "message": "the COMPLETING claim was lost before the ruling could complete the event",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_settle_tournament_refund_exact(uuid,uuid,uuid,numeric,numeric,numeric,numeric,text,text)",
+      "message": "exact source wallet changed during refund",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_settle_tournament_refund_exact(uuid,uuid,uuid,numeric,numeric,numeric,numeric,text,text)",
+      "message": "exact refund obligation did not close at %",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_stamp_tournament_terminal_evidence_markers()",
+      "message": "terminal tournament % did not stamp every mutable evidence row",
+      "postgrest_roles": [],
+      "trigger": true,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.fn_union_pnl_original_frame()",
+      "message": "pnl_frame_clock_crossed_twice",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "keep_40001",
+      "reason": "Raised only when the clock crosses two union week boundaries inside one call; an immediate re-run cannot meet the same condition."
+    },
+    {
+      "signature": "public.process_tournament_rebuy(uuid,uuid,text,numeric,numeric,integer,text)",
+      "message": "Add-on live table changed after its atomic-table lock",
+      "postgrest_roles": ["authenticated", "service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.process_tournament_rebuy(uuid,uuid,text,numeric,numeric,integer,text)",
+      "message": "exact knockout generation did not close with its purchase",
+      "postgrest_roles": ["authenticated", "service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.process_tournament_rebuy(uuid,uuid,text,numeric,numeric,integer,text)",
+      "message": "rebuy could not advance the live seat generation",
+      "postgrest_roles": ["authenticated", "service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.resolve_venue_location_integrity(integer,timestamp with time zone,text,text,text,double precision,double precision,text,uuid,text,text)",
+      "message": "venue revision changed",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.retire_duplicate_poker_venue(integer,integer,timestamp with time zone,text,uuid)",
+      "message": "venue revision changed",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "public.trivia_paid_skip_adopt_legacy_v1(uuid,uuid)",
+      "message": "legacy paid-skip answer binding changed concurrently",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "smarter_private.f06_dispose_dead_origin(uuid)",
+      "message": "F06_STRANDED_EVENT_OWNED",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55P03"
+    },
+    {
+      "signature": "smarter_private.f06_hand_dispatch_guard(uuid,bigint)",
+      "message": "F06_HAND_DISPATCH_BUSY",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55P03"
+    },
+    {
+      "signature": "smarter_private.f06_historical_loss_bank_proof(uuid,jsonb,jsonb)",
+      "message": "F06_HISTORICAL_LOSS_ALLOWANCE_BUSY",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55P03"
+    },
+    {
+      "signature": "smarter_private.f06_historical_loss_pending(uuid,jsonb,boolean)",
+      "message": "F06_HISTORICAL_LOSS_ALLOWANCE_BUSY",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55P03"
+    },
+    {
+      "signature": "smarter_private.f06_retained_mtt_abort_snapshot(jsonb)",
+      "message": "F06_HAND_DISPATCH_BUSY",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55P03"
+    },
+    {
+      "signature": "smarter_private.f06_retained_mtt_abort_snapshot(jsonb)",
+      "message": "F06_ABORT_RETRY_PLAYER_LANE",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55P03"
+    },
+    {
+      "signature": "smarter_private.f06_retired_origin_begin(jsonb)",
+      "message": "F06_RETRY_MAINTENANCE_LANE",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55P03"
+    },
+    {
+      "signature": "smarter_private.f06_retired_origin_lock(uuid)",
+      "message": "F06_RETIRED_CLAIM_BUSY",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55P03"
+    },
+    {
+      "signature": "smarter_private.f06_retired_origin_snapshot(jsonb)",
+      "message": "F06_HAND_DISPATCH_BUSY",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55P03"
+    },
+    {
+      "signature": "smarter_private.f06_retired_origin_snapshot(jsonb)",
+      "message": "F06_ABORT_RETRY_PLAYER_LANE",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55P03"
+    },
+    {
+      "signature": "smarter_private.f06_void_retired_mixed_custody_event(uuid,text)",
+      "message": "F06_VOID_BUST_NOT_RECORDED",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "smarter_private.f06_void_retired_mixed_custody_event(uuid,text)",
+      "message": "F06_VOID_LEASE_NOT_RELEASED",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "smarter_private.f06_void_retired_mixed_custody_event(uuid,text)",
+      "message": "F06_VOID_OVERLAY_SOURCE_CHANGED",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "smarter_private.f06_void_retired_mixed_custody_event(uuid,text)",
+      "message": "F06_VOID_ESCROW_CLOSE_LOST",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "smarter_private.f06_void_retired_mixed_custody_event(uuid,text)",
+      "message": "F06_VOID_LIFECYCLE_CLAIM_LOST",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "smarter_private.f06_void_retired_mixed_custody_event(uuid,text)",
+      "message": "F06_VOID_TABLES_NOT_CLOSED",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "smarter_private.f06_void_retired_mixed_custody_event(uuid,text)",
+      "message": "F06_VOID_CLAIM_LOST",
+      "postgrest_roles": ["service_role"],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "smarter_private.spin_archived_first_launch_witness(uuid,timestamp with time zone)",
+      "message": "ARCHIVED_SPIN_LAUNCH_AUTHORITY_CHANGED",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "smarter_private.spin_archived_first_launch_witness(uuid,timestamp with time zone)",
+      "message": "ARCHIVED_SPIN_FIRST_HAND_IDENTITY",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "smarter_private.spin_archived_first_preimage()",
+      "message": "ARCHIVED_SPIN_PREIMAGE_CHANGED",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "smarter_private.spin_archived_first_standings(uuid,uuid)",
+      "message": "ARCHIVED_SPIN_ROSTER_CHANGED",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "smarter_private.spin_archived_first_standings(uuid,uuid)",
+      "message": "ARCHIVED_SPIN_ROSTER_CLOSURE_CHANGED",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "smarter_private.spin_archived_first_standings(uuid,uuid)",
+      "message": "ARCHIVED_SPIN_WINNER_CHANGED",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    },
+    {
+      "signature": "smarter_private.spin_archived_first_standings(uuid,uuid)",
+      "message": "ARCHIVED_SPIN_RECORDED_PLACE_CHANGED",
+      "postgrest_roles": [],
+      "trigger": false,
+      "reaches_postgrest_uncaught": true,
+      "decision": "to_55000"
+    }
+  ]
+}

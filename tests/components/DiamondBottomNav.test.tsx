@@ -117,12 +117,16 @@ describe('the rendered bar', () => {
     expect(screen.getByRole('link', { name: 'Lobby' }).getAttribute('aria-current')).toBe('page');
   });
 
-  it('prints every label as live text in the master ink, not as an icon glyph', async () => {
+  it('paints its doors in the art like the club footer, with names for assistive tech only', async () => {
+    /* Dan 2026-10-12: "THE FOOTER NEEDS THE IMAGES LIKE THE CLUB ARENA, NOT
+       JUST WORDS." Icon and word are painted in v2; the DOM names each door
+       once, visually hidden, and draws nothing on top of the art. */
     await renderAt('/clubs/diamond-arena');
     for (const label of LABELS) {
-      // The visually hidden name for assistive tech AND the printed word.
-      expect(screen.getAllByText(label)).toHaveLength(2);
+      expect(screen.getAllByText(label)).toHaveLength(1);
     }
+    const art = document.querySelector('img');
+    expect(art?.getAttribute('src')).toContain('diamond-arena-footer-v2.webp');
     expect(document.querySelector('svg')).toBeNull();
   });
 });

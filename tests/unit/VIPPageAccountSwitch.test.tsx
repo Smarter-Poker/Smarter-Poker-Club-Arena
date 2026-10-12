@@ -116,9 +116,6 @@ vi.mock('../../src/components/vip/DiamondTopUpModal', () => ({ DiamondTopUpModal
 vi.mock('../../src/components/vip/VIPMembershipPlate', () => ({
   VIPMembershipPlate: () => null,
 }));
-vi.mock('../../src/components/vip/RewardsMarketplace', () => ({
-  RewardsMarketplace: () => null,
-}));
 vi.mock('../../src/components/vip/VIPActivityHistory', () => ({
   VIPActivityHistory: (props: {
     activities: Array<{ id: string; description: string; diamonds: number }>;

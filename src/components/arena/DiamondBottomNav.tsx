@@ -26,15 +26,21 @@
  * allowlist in `diamondArenaRoutes.ts` are the same list, and
  * tests/unit/clubFooterRouteAudit.test.ts holds them together.
  *
- * The frame is the chip master with its painted doors removed by surgery
- * (see the stylesheet); the words are printed, fitted and centred in six
- * equal cells. Nothing is drawn.
+ * THE DOORS ARE PAINTED, LIKE THE CLUB ARENA'S (Dan 2026-10-12): "THE FOOTER
+ * NEEDS THE IMAGES LIKE THE CLUB ARENA, NOT JUST WORDS." The frame is v2: the
+ * same derived quilted well with six painted doors, each an icon over its word
+ * in the chip master's own white Roboto caps, centred in six equal cells.
+ * Players and Stats are the chip master's own icons; Lobby is the master's
+ * Cashier chip with its word lifted off the face; Hand History, Messages and
+ * Wallet are built from approved silver art. The DOM carries only six
+ * full-cell targets with their names for assistive tech, exactly as the chip
+ * footer does. Source and method:
+ * docs/changelog/2026-10-12-the-diamond-arena-matches-the-club-arena.md.
  */
 import { lazy, Suspense, useMemo, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { DIAMOND_ARENA_SLUG } from '../../lib/constants';
 import { withClubContext } from '../../utils/clubScopedPath';
-import { useFitText } from '../lobby/game-cards/useFitText';
 import { usePublishBottomChromeHeight } from '../club/ClubBottomNav';
 import {
   DIAMOND_HAND_HISTORY_PARAM,
@@ -59,8 +65,8 @@ interface DiamondDoor {
   to: string | null;
 }
 
-/** The derived frame: the chip master's chrome with the painted doors removed. */
-const DIAMOND_FOOTER_ART = `${import.meta.env.BASE_URL}images/club-footer/diamond-arena-footer-v1.webp`;
+/** The painted frame: six doors, icon over word, on the derived quilted well. */
+const DIAMOND_FOOTER_ART = `${import.meta.env.BASE_URL}images/club-footer/diamond-arena-footer-v2.webp`;
 
 const ARENA_ROOT = `/clubs/${DIAMOND_ARENA_SLUG}`;
 
@@ -89,16 +95,6 @@ export function activeDiamondTabForPath(pathname: string): DiamondTabKey | null 
   if (segment === 'members') return 'players';
   if (segment === 'messages') return 'messages';
   return null;
-}
-
-/** One fitted word, centred in its cell's face. */
-function DoorLabel({ text }: { text: string }) {
-  const ref = useFitText<HTMLSpanElement>(text, 1, 0.6);
-  return (
-    <span ref={ref} className={styles.label} aria-hidden="true">
-      {text}
-    </span>
-  );
 }
 
 export default function DiamondBottomNav() {
@@ -147,7 +143,6 @@ export default function DiamondBottomNav() {
                       onClick={() => setWallet('wallet')}
                     >
                       <span className={chassis.visuallyHidden}>{door.label}</span>
-                      <DoorLabel text={door.label} />
                     </button>
                   ) : (
                     <Link
@@ -158,7 +153,6 @@ export default function DiamondBottomNav() {
                       data-footer-control={door.key}
                     >
                       <span className={chassis.visuallyHidden}>{door.label}</span>
-                      <DoorLabel text={door.label} />
                     </Link>
                   )}
                 </li>

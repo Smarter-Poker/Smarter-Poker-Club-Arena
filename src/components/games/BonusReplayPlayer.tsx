@@ -157,6 +157,12 @@ export default function BonusReplayPlayer({ replay }: { replay: BonusReplay }) {
             phase={terminal ? replay.data.status : epoch ? 'open' : 'idle'}
             mines={terminal ? replay.data.mine_cells : null}
             roadEnd={terminal ? replay.data.road_end : null}
+            // A contract-6 road carries its own ladder; older roads paint the table.
+            ladder={
+              replay.game === 'crossing' && replay.data.street_multipliers
+                ? replay.data.street_multipliers.map((m) => Math.round(m * 100))
+                : undefined
+            }
             busy
             onPick={() => undefined}
             roundId={`replay-${epoch}`}

@@ -68,7 +68,11 @@ describe('a pre-start seat-first seat leaves through its refund', () => {
 
 describe('the footer never hides a paid seat behind "Spectating"', () => {
   it('the no-hero-in-players branch yields to a held seat-first seat', () => {
-    expect(table).toContain('!(seatFirstBuyIn && tableState.heroSeat > 0) ? (');
+    /* 2026-10-12: the same branch also stands aside for a sitting-out hero
+       (tests/im-back-is-never-shadowed.law.test.ts), so the guard continues
+       with `&& !heroIsSittingOut` before the branch opens. */
+    expect(table).toContain('!(seatFirstBuyIn && tableState.heroSeat > 0) &&');
+    expect(table).toContain('!heroIsSittingOut ? (');
   });
 });
 

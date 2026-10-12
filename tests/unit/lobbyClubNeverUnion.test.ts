@@ -26,7 +26,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 // Chain used by isUnionClubId: .from().select().eq().maybeSingle()
 const maybeSingleMock = vi.fn();
-const eqMock = vi.fn(() => ({ maybeSingle: maybeSingleMock }));
+const eqMock = vi.fn((_key: string, _value: unknown) => ({ maybeSingle: maybeSingleMock }));
 const selectMock = vi.fn(() => ({ eq: eqMock }));
 vi.mock('@/lib/supabase', () => ({
   supabase: { from: vi.fn(() => ({ select: selectMock })) },
@@ -101,6 +101,37 @@ describe('isUnionClubId', () => {
 });
 
 describe('resolveLobbyClubId — the reported bug', () => {
+  it('skips an unrelated remembered club and resolves an account club in the requested union', async () => {
+    localStorage.setItem(STORAGE_KEYS.LAST_CLUB, CLUB_JAQK.id);
+    writeCachedQuickLinkClubs(VIEWER_ID, [CLUB_JAQK, SHARK_CLUB]);
+    maybeSingleMock.mockImplementation(async () => {
+      const id = eqMock.mock.calls.at(-1)?.[1];
+      return {
+        data: {
+          is_union: id === MIDWAY_UNION.id,
+          union_id: id === SHARK_CLUB.id ? MIDWAY_UNION.id : null,
+        },
+        error: null,
+      };
+    });
+    await expect(
+      resolveLobbyClubId({
+        userId: VIEWER_ID,
+        tableClubId: MIDWAY_UNION.id,
+        unionId: MIDWAY_UNION.id,
+      })
+    ).resolves.toBe(SHARK_CLUB.id);
+  });
+  it('withholds an unreadable or unrelated candidate under a requested union', async () => {
+    maybeSingleMock.mockResolvedValue({ data: { is_union: false, union_id: null }, error: null });
+    await expect(
+      resolveLobbyClubId({ viewerClubId: CLUB_JAQK.id, unionId: MIDWAY_UNION.id })
+    ).resolves.toBeNull();
+    maybeSingleMock.mockResolvedValue({ data: null, error: { message: 'unavailable' } });
+    await expect(
+      resolveLobbyClubId({ viewerClubId: SHARK_CLUB.id, unionId: MIDWAY_UNION.id })
+    ).resolves.toBeNull();
+  });
   it('sends a SHARK CLUB player at a MIDWAY UNION table back to SHARK CLUB', async () => {
     const club = await resolveLobbyClubId({
       viewerClubId: SHARK_CLUB.id, // the club they entered through
@@ -135,6 +166,23 @@ describe('resolveLobbyClubId — the reported bug', () => {
       tableClubId: MIDWAY_UNION.id,
     });
     expect(club).toBe(SHARK_CLUB.id);
+  });
+
+  it('recovers the entered club on a direct union-table reload with a cold store and cache', async () => {
+    clearUnionFlagCache();
+    localStorage.setItem(STORAGE_KEYS.LAST_CLUB, SHARK_CLUB.id);
+    maybeSingleMock
+      .mockResolvedValueOnce({ data: { is_union: true, entity_type: 'union' }, error: null })
+      .mockResolvedValueOnce({ data: { is_union: false, entity_type: 'club' }, error: null });
+    await expect(
+      resolveLobbyClubId({
+        userId: VIEWER_ID,
+        viewerClubId: null,
+        tableClubId: MIDWAY_UNION.id,
+      })
+    ).resolves.toBe(SHARK_CLUB.id);
+    expect(eqMock).toHaveBeenNthCalledWith(1, 'id', MIDWAY_UNION.id);
+    expect(eqMock).toHaveBeenNthCalledWith(2, 'id', SHARK_CLUB.id);
   });
 
   it('falls back to the cached club list, unions filtered out', async () => {

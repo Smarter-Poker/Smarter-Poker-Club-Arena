@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { ComponentProps } from 'react';
-import type { BonusReplay } from '../../src/services/DiamondReplayService';
+import { parseBonusReplay, type BonusReplay } from '../../src/services/DiamondReplayService';
+import coinReceipts from '../fixtures/diamond-spins/crossing-coin-postgres-receipts.json';
 import BonusReplayPlayer from '../../src/components/games/BonusReplayPlayer';
 
 type CrashProps = ComponentProps<typeof import('../../src/components/crash/CrashCurve').default>;
@@ -162,6 +163,27 @@ describe('immutable bonus replay playback', () => {
       expect(screen.getByText('Prize Awarded: 1.23 Chips')).toBeInTheDocument();
     }
   );
+  it('paints a contract-6 road with its own ladder and reveals the road the coins ran', () => {
+    // A real replay from the installed fair-coin migration: booked at street 2,
+    // the coins carry the donkey to street 5.
+    const replay = parseBonusReplay(
+      (coinReceipts as { kind: string; value: unknown }[]).find(
+        (r) => r.kind === 'cashed_ran_on_replay'
+      )!.value
+    );
+    if (replay.game !== 'crossing') throw new Error('not a road');
+    render(<BonusReplayPlayer replay={replay} />);
+    expect(scenes.choice?.ladder?.slice(0, 3)).toEqual([110, 165, 247]);
+    fireEvent.click(screen.getByRole('button', { name: 'Watch Replay' }));
+    step(1500);
+    step(1500);
+    expect(scenes.choice?.phase).toBe('cashed');
+    expect(scenes.choice?.roadEnd).toBe(5);
+  });
+  it('paints an older road from its fixed table', () => {
+    render(<BonusReplayPlayer replay={choice('crossing')} />);
+    expect(scenes.choice?.ladder).toBeUndefined();
+  });
   it('does not consume replay time while hidden, including repeated hidden notifications', () => {
     const hidden = vi.spyOn(document, 'hidden', 'get');
     hidden.mockReturnValue(false);

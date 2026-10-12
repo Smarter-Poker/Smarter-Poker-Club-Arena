@@ -1,0 +1,548 @@
+[
+    {
+        "kind": "cashed_next_hit",
+        "value": {
+            "id": "c4fd85e3-fc7c-480d-b4cd-7da0b95fa5c6",
+            "ok": true,
+            "game": "crossing",
+            "mode": "road",
+            "nonce": 6,
+            "proof": {
+                "game": "crossing",
+                "coins": [
+                    true,
+                    true,
+                    false,
+                    true,
+                    true,
+                    true,
+                    true,
+                    true,
+                    true
+                ],
+                "mines": 0,
+                "nonce": 6,
+                "road_end": 2,
+                "road_roll": "0",
+                "first_pick": null,
+                "mine_cells": [
+                ],
+                "client_seed": "receipt-v6-8",
+                "server_seed": "e489ef82a37ccfae1ff2055dbc8b4fb65608634b97f3425e634cb4d8eddd98c3",
+                "payout_version": 6,
+                "server_seed_hash": "8d752fce3c9211de8410171141808c3c0f626131d7fa077f1f2c8c3d19963738"
+            },
+            "picked": [
+                0,
+                1
+            ],
+            "prizes": [
+                27.5000000000000000,
+                41.2500000000000000,
+                61.8700000000000000,
+                92.8000000000000000,
+                139.2000000000000000,
+                208.8000000000000000,
+                313.2000000000000000,
+                469.8000000000000000,
+                500.00
+            ],
+            "status": "cashed",
+            "club_id": "d1000000-0000-4000-8000-000000000003",
+            "bet_chips": 25.00,
+            "commit_id": "96436f52-4f1c-4515-8442-6f1bd19aeccc",
+            "max_steps": 9,
+            "client_seed": "receipt-v6-8",
+            "bet_diamonds": 2500,
+            "payout_chips": 41.25,
+            "payout_version": 6,
+            "server_seed_hash": "8d752fce3c9211de8410171141808c3c0f626131d7fa077f1f2c8c3d19963738",
+            "diamonds_per_chip": 100,
+            "minimum_payout_chips": 12.50
+        }
+    },
+    {
+        "kind": "cashed_next_hit_replay",
+        "value": {
+            "data": {
+                "mode": "road",
+                "coins": [
+                    true,
+                    true,
+                    false,
+                    true,
+                    true,
+                    true,
+                    true,
+                    true,
+                    true
+                ],
+                "picked": [
+                    0,
+                    1
+                ],
+                "prizes": [
+                    27.5000000000000000,
+                    41.2500000000000000,
+                    61.8700000000000000,
+                    92.8000000000000000,
+                    139.2000000000000000,
+                    208.8000000000000000,
+                    313.2000000000000000,
+                    469.8000000000000000,
+                    500.00
+                ],
+                "status": "cashed",
+                "road_end": 2,
+                "mine_cells": [
+                ],
+                "payout_version": 6,
+                "street_multipliers": [
+                    1.1000,
+                    1.6500,
+                    2.4748,
+                    3.7120,
+                    5.5680,
+                    8.3520,
+                    12.5280,
+                    18.7920,
+                    20.0000
+                ]
+            },
+            "game": "crossing",
+            "boost": 1,
+            "version": 1,
+            "diamonds": 2500,
+            "completed_at": "2026-10-12T01:53:06.4997-05:00",
+            "payout_chips": 41.25
+        }
+    },
+    {
+        "kind": "cashed_ran_on",
+        "value": {
+            "id": "c549841d-c7cf-4a88-a1ac-79af42bd096c",
+            "ok": true,
+            "game": "crossing",
+            "mode": "road",
+            "nonce": 4,
+            "proof": {
+                "game": "crossing",
+                "coins": [
+                    true,
+                    true,
+                    true,
+                    true,
+                    true,
+                    false,
+                    true,
+                    true,
+                    false
+                ],
+                "mines": 0,
+                "nonce": 4,
+                "road_end": 5,
+                "road_roll": "0",
+                "first_pick": null,
+                "mine_cells": [
+                ],
+                "client_seed": "receipt-v6-2",
+                "server_seed": "e6e5f2e5bac661f1c13488a5188e8e51a201d761d7f9655d1a5dd3173924e8a0",
+                "payout_version": 6,
+                "server_seed_hash": "4fb620a969098883fcab2857d483060abf2c92f956c5977710635094b77655f3"
+            },
+            "picked": [
+                0,
+                1
+            ],
+            "prizes": [
+                27.5000000000000000,
+                41.2500000000000000,
+                61.8700000000000000,
+                92.8000000000000000,
+                139.2000000000000000,
+                208.8000000000000000,
+                313.2000000000000000,
+                469.8000000000000000,
+                500.00
+            ],
+            "status": "cashed",
+            "club_id": "d1000000-0000-4000-8000-000000000003",
+            "bet_chips": 25.00,
+            "commit_id": "2e344a6a-7207-441a-b1a2-0a846b12c1de",
+            "max_steps": 9,
+            "client_seed": "receipt-v6-2",
+            "bet_diamonds": 2500,
+            "payout_chips": 41.25,
+            "payout_version": 6,
+            "server_seed_hash": "4fb620a969098883fcab2857d483060abf2c92f956c5977710635094b77655f3",
+            "diamonds_per_chip": 100,
+            "minimum_payout_chips": 12.50
+        }
+    },
+    {
+        "kind": "cashed_ran_on_replay",
+        "value": {
+            "data": {
+                "mode": "road",
+                "coins": [
+                    true,
+                    true,
+                    true,
+                    true,
+                    true,
+                    false,
+                    true,
+                    true,
+                    false
+                ],
+                "picked": [
+                    0,
+                    1
+                ],
+                "prizes": [
+                    27.5000000000000000,
+                    41.2500000000000000,
+                    61.8700000000000000,
+                    92.8000000000000000,
+                    139.2000000000000000,
+                    208.8000000000000000,
+                    313.2000000000000000,
+                    469.8000000000000000,
+                    500.00
+                ],
+                "status": "cashed",
+                "road_end": 5,
+                "mine_cells": [
+                ],
+                "payout_version": 6,
+                "street_multipliers": [
+                    1.1000,
+                    1.6500,
+                    2.4748,
+                    3.7120,
+                    5.5680,
+                    8.3520,
+                    12.5280,
+                    18.7920,
+                    20.0000
+                ]
+            },
+            "game": "crossing",
+            "boost": 1,
+            "version": 1,
+            "diamonds": 2500,
+            "completed_at": "2026-10-12T01:53:06.472512-05:00",
+            "payout_chips": 41.25
+        }
+    },
+    {
+        "kind": "lost_later",
+        "value": {
+            "id": "b7567222-0810-4ee3-8a50-22b8924c6237",
+            "ok": true,
+            "game": "crossing",
+            "mode": "road",
+            "nonce": 3,
+            "proof": {
+                "game": "crossing",
+                "coins": [
+                    true,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    true,
+                    false,
+                    false
+                ],
+                "mines": 0,
+                "nonce": 3,
+                "road_end": 1,
+                "road_roll": "0",
+                "first_pick": null,
+                "mine_cells": [
+                ],
+                "client_seed": "receipt-v6-1",
+                "server_seed": "cd1c04bc611918041f89ec73903118b93ed6b72e18b0be4a1b641da08dd99f01",
+                "payout_version": 6,
+                "server_seed_hash": "2e6dcb888773aa2348b29fa70cd04ba860326f1d2ad6056a74ab99a8888980ec"
+            },
+            "picked": [
+                0,
+                1
+            ],
+            "prizes": [
+                27.5000000000000000,
+                41.2500000000000000,
+                61.8700000000000000,
+                92.8000000000000000,
+                139.2000000000000000,
+                208.8000000000000000,
+                313.2000000000000000,
+                469.8000000000000000,
+                500.00
+            ],
+            "status": "lost",
+            "club_id": "d1000000-0000-4000-8000-000000000003",
+            "bet_chips": 25.00,
+            "commit_id": "22637ada-9fb9-4978-960b-8fe4d16baf5b",
+            "max_steps": 9,
+            "client_seed": "receipt-v6-1",
+            "bet_diamonds": 2500,
+            "payout_chips": 13.75,
+            "payout_version": 6,
+            "server_seed_hash": "2e6dcb888773aa2348b29fa70cd04ba860326f1d2ad6056a74ab99a8888980ec",
+            "diamonds_per_chip": 100,
+            "minimum_payout_chips": 12.50
+        }
+    },
+    {
+        "kind": "lost_later_replay",
+        "value": {
+            "data": {
+                "mode": "road",
+                "coins": [
+                    true,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    true,
+                    false,
+                    false
+                ],
+                "picked": [
+                    0,
+                    1
+                ],
+                "prizes": [
+                    27.5000000000000000,
+                    41.2500000000000000,
+                    61.8700000000000000,
+                    92.8000000000000000,
+                    139.2000000000000000,
+                    208.8000000000000000,
+                    313.2000000000000000,
+                    469.8000000000000000,
+                    500.00
+                ],
+                "status": "lost",
+                "road_end": 1,
+                "mine_cells": [
+                ],
+                "payout_version": 6,
+                "street_multipliers": [
+                    1.1000,
+                    1.6500,
+                    2.4748,
+                    3.7120,
+                    5.5680,
+                    8.3520,
+                    12.5280,
+                    18.7920,
+                    20.0000
+                ]
+            },
+            "game": "crossing",
+            "boost": 1,
+            "version": 1,
+            "diamonds": 2500,
+            "completed_at": "2026-10-12T01:53:06.452809-05:00",
+            "payout_chips": 13.75
+        }
+    },
+    {
+        "kind": "lost_street_one",
+        "value": {
+            "id": "2ed84222-9e0f-40b3-8b29-f3427f0be3eb",
+            "ok": true,
+            "game": "crossing",
+            "mode": "road",
+            "nonce": 5,
+            "proof": {
+                "game": "crossing",
+                "coins": [
+                    false,
+                    false,
+                    false,
+                    false,
+                    true,
+                    true,
+                    false,
+                    true,
+                    false
+                ],
+                "mines": 0,
+                "nonce": 5,
+                "road_end": 0,
+                "road_roll": "0",
+                "first_pick": null,
+                "mine_cells": [
+                ],
+                "client_seed": "receipt-v6-3",
+                "server_seed": "f09ffc48eada69e89e91e43f0e20f1279d70f8a2ff3e352ec24140fcc423e740",
+                "payout_version": 6,
+                "server_seed_hash": "54311f6f40796fc32cf97b6222ac7d1d52db54c514787dc787c2a17e8fb795e4"
+            },
+            "picked": [
+                0
+            ],
+            "prizes": [
+                27.5000000000000000,
+                41.2500000000000000,
+                61.8700000000000000,
+                92.8000000000000000,
+                139.2000000000000000,
+                208.8000000000000000,
+                313.2000000000000000,
+                469.8000000000000000,
+                500.00
+            ],
+            "status": "lost",
+            "club_id": "d1000000-0000-4000-8000-000000000003",
+            "bet_chips": 25.00,
+            "commit_id": "13ef3d5f-98cc-4ce6-a3ec-71f8d06da09c",
+            "max_steps": 9,
+            "client_seed": "receipt-v6-3",
+            "bet_diamonds": 2500,
+            "payout_chips": 12.50,
+            "payout_version": 6,
+            "server_seed_hash": "54311f6f40796fc32cf97b6222ac7d1d52db54c514787dc787c2a17e8fb795e4",
+            "diamonds_per_chip": 100,
+            "minimum_payout_chips": 12.50
+        }
+    },
+    {
+        "kind": "lost_street_one_replay",
+        "value": {
+            "data": {
+                "mode": "road",
+                "coins": [
+                    false,
+                    false,
+                    false,
+                    false,
+                    true,
+                    true,
+                    false,
+                    true,
+                    false
+                ],
+                "picked": [
+                    0
+                ],
+                "prizes": [
+                    27.5000000000000000,
+                    41.2500000000000000,
+                    61.8700000000000000,
+                    92.8000000000000000,
+                    139.2000000000000000,
+                    208.8000000000000000,
+                    313.2000000000000000,
+                    469.8000000000000000,
+                    500.00
+                ],
+                "status": "lost",
+                "road_end": 0,
+                "mine_cells": [
+                ],
+                "payout_version": 6,
+                "street_multipliers": [
+                    1.1000,
+                    1.6500,
+                    2.4748,
+                    3.7120,
+                    5.5680,
+                    8.3520,
+                    12.5280,
+                    18.7920,
+                    20.0000
+                ]
+            },
+            "game": "crossing",
+            "boost": 1,
+            "version": 1,
+            "diamonds": 2500,
+            "completed_at": "2026-10-12T01:53:06.486901-05:00",
+            "payout_chips": 12.50
+        }
+    },
+    {
+        "kind": "open",
+        "value": {
+            "id": "b7567222-0810-4ee3-8a50-22b8924c6237",
+            "ok": true,
+            "game": "crossing",
+            "mode": "road",
+            "nonce": 3,
+            "proof": null,
+            "picked": [
+            ],
+            "prizes": [
+                27.5000000000000000,
+                41.2500000000000000,
+                61.8700000000000000,
+                92.8000000000000000,
+                139.2000000000000000,
+                208.8000000000000000,
+                313.2000000000000000,
+                469.8000000000000000,
+                500.00
+            ],
+            "status": "open",
+            "club_id": "d1000000-0000-4000-8000-000000000003",
+            "bet_chips": 25.00,
+            "commit_id": "22637ada-9fb9-4978-960b-8fe4d16baf5b",
+            "max_steps": 9,
+            "client_seed": "receipt-v6-1",
+            "bet_diamonds": 2500,
+            "payout_chips": 0.00,
+            "payout_version": 6,
+            "server_seed_hash": "2e6dcb888773aa2348b29fa70cd04ba860326f1d2ad6056a74ab99a8888980ec",
+            "diamonds_per_chip": 100,
+            "minimum_payout_chips": 12.50
+        }
+    },
+    {
+        "kind": "quote",
+        "value": {
+            "ok": true,
+            "bets": [
+                25,
+                50,
+                100,
+                250,
+                500,
+                1000,
+                2500,
+                5000
+            ],
+            "frozen": false,
+            "prizes": [
+                27.50000000000000000,
+                41.25000000000000000,
+                61.87000000000000000,
+                92.80000000000000000,
+                139.20000000000000000,
+                208.80000000000000000,
+                313.20000000000000000,
+                469.80000000000000000,
+                500.0000000000000000
+            ],
+            "reason": null,
+            "diamonds": 92500,
+            "available": true,
+            "is_member": true,
+            "max_steps": 9,
+            "daily_limit": 500,
+            "member_chips": 52.50,
+            "rounds_today": 2,
+            "diamonds_today": 7500,
+            "payout_version": 6,
+            "diamonds_per_chip": 100,
+            "seconds_until_next": 0
+        }
+    }
+]

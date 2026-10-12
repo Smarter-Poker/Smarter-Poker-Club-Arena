@@ -63,7 +63,6 @@ export type BusEventType =
   // subscribe sites carried `as any` to compile - which switches OFF payload
   // checking on a ledger event, the one place a wrong shape is money.
   | 'TRANSACTION_LOGGED'
-  | 'VIP_POINTS_UPDATED'
   | 'WALLET_REFRESHED'
   | 'REALTIME_CONNECTED'
   | 'REALTIME_DISCONNECTED'
@@ -161,8 +160,6 @@ export type BusEventType =
   // Tournament notification hooks
   | 'TOURNAMENT_STARTING_24H'
   | 'TOURNAMENT_STARTING_1H'
-  // VIP points events — @deprecated: superseded by VIP_POINTS_UPDATED (no emitters or subscribers)
-  | 'VIP_POINTS_AWARDED'
   // Horse fleet events
   | 'HORSE_SEATED'
   | 'HORSE_REMOVED'
@@ -444,7 +441,6 @@ export interface BusPayloadMap {
   TABLE_CAP_BLOCKED: { tableId: string };
   BALANCE_UPDATED: { source: string; [key: string]: unknown };
   TRANSACTION_LOGGED: { entry: Record<string, unknown>; direction: 'in' | 'out' };
-  VIP_POINTS_UPDATED: { userId: string; added: number; source: string; [key: string]: unknown };
   WALLET_REFRESHED: BalancePayload;
   REALTIME_CONNECTED: { channelName: string };
   REALTIME_DISCONNECTED: { channelName: string; reason?: string };
@@ -708,8 +704,6 @@ export interface BusPayloadMap {
   // Tournament notification hooks
   TOURNAMENT_STARTING_24H: { tournamentId: string; name: string; startsAt: string };
   TOURNAMENT_STARTING_1H: { tournamentId: string; name: string; startsAt: string };
-  /** @deprecated superseded by VIP_POINTS_UPDATED */
-  VIP_POINTS_AWARDED: { userId: string; amount: number; source: string };
   // Horse fleet events
   HORSE_SEATED: { tableId: string; horseId: string; horseName: string };
   HORSE_REMOVED: { tableId: string; horseId: string; reason: string };
@@ -1310,7 +1304,6 @@ let _eventLogIdCounter = 0;
 // Critical events that trigger SW notification + Supabase log
 const CRITICAL_EVENTS: BusEventType[] = [
   'BALANCE_UPDATED',
-  'VIP_POINTS_UPDATED',
   'CLUB_JOINED',
   'CLUB_LEFT',
   'TABLE_SEATED',
@@ -1363,7 +1356,6 @@ class MasterBusCore {
   // Events that must NEVER be deduplicated (financial, errors, auth)
   private static readonly DEDUP_BYPASS: BusEventType[] = [
     'BALANCE_UPDATED',
-    'VIP_POINTS_UPDATED',
     'WALLET_REFRESHED',
     'SYSTEM_ERROR',
     'AUTH_STATE_CHANGED',

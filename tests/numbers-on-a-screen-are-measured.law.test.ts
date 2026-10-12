@@ -77,6 +77,16 @@ describe('LAW: diamonds are read from the ledger that has rows', () => {
     expect(source).not.toContain('Total Spent');
   });
 
+  it('reports the admin Diamond ledger in its actual currency, including export', () => {
+    const source = code(ANALYTICS);
+    expect(source).toContain('Diamonds Issued');
+    expect(source).toContain('Recent Diamond Activity');
+    expect(source).toContain('Diamond Ledger');
+    expect(source).toContain('vip_diamonds'); // Existing aggregate RPC field contains Diamonds.
+    expect(source).not.toContain('VIP Points');
+    expect(source).not.toContain('VIP Ledger');
+  });
+
   it('shows an explicit verification failure instead of an empty-history claim', () => {
     const activity = code(VIP_ACTIVITY);
     const page = code(VIP_PAGE);

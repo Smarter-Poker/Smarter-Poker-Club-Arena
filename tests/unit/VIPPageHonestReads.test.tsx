@@ -142,7 +142,6 @@ vi.mock('../../src/components/vip/VIPMembershipPlate', () => ({
     return null;
   },
 }));
-vi.mock('../../src/components/vip/RewardsMarketplace', () => ({ RewardsMarketplace: () => null }));
 vi.mock('../../src/components/vip/VIPActivityHistory', () => ({
   VIPActivityHistory: (props: { activities: Array<{ id: string; description: string }> }) => {
     mocks.activityProps = props;
@@ -218,74 +217,14 @@ describe('the VIP page keeps a failed read apart from a real zero', () => {
     ).toBe(false);
   });
 
-  it('VIP points that could not be read reach the plate and the header as unknown', async () => {
-    mocks.vipPointsResponse.mockImplementation(() =>
-      Promise.resolve({
-        data: null as never,
-        error: { message: 'could not connect' } as never,
-      })
-    );
-
-    render(<VIPPage />);
-
-    await waitFor(() => expect(mocks.platePoints?.pointsState).toBe('error'));
-    expect(screen.getByTestId('metric-Current Points').textContent).toBe('Unavailable');
-    expect(
-      mocks.reportError.mock.calls.some((call) => call[1] === 'VIPPage.Vip_points_load_failed')
-    ).toBe(true);
-  });
-
-  it('VIP points that read as zero are ready, not unknown', async () => {
-    mocks.vipPointsResponse.mockImplementation(() =>
-      Promise.resolve({ data: { current_points: 0, lifetime_points: 0 }, error: null })
-    );
-
-    render(<VIPPage />);
-
-    await waitFor(() => expect(mocks.platePoints?.pointsState).toBe('ready'));
-    expect(screen.getByTestId('metric-Current Points').textContent).toBe('0');
-  });
-});
-
-/**
- * 2026-09-30. The header carried a "Monthly" and an "Active Streak" metric,
- * and the plate a "This Month" and an "Active Streak" cell. Nothing wrote
- * any of them: `vip_points` returns only current_points and lifetime_points,
- * and no other writer existed, so all four printed a permanent fabricated
- * zero. They are gone, and the state fields behind them are gone with them
- * so a later reader cannot resurrect the zero.
- *
- * The removal assertions below are deliberately paired with a genuine-zero
- * assertion. A suite that only proved the fabricated figures were absent
- * would pass just as happily against a page that had stopped reporting real
- * figures at all, which is the opposite failure and just as dishonest.
- */
-describe('the VIP page offers no figure the platform does not compute', () => {
-  it('has no Monthly or Active Streak metric, and passes neither to the plate', async () => {
-    render(<VIPPage />);
-
-    await waitFor(() => expect(mocks.platePoints?.pointsState).toBe('ready'));
-
-    expect(screen.queryByTestId('metric-Monthly')).toBeNull();
-    expect(screen.queryByTestId('metric-Active Streak')).toBeNull();
-
-    const passed = mocks.platePoints?.points as Record<string, unknown> | undefined;
-    expect(passed).toBeTruthy();
-    expect(Object.keys(passed as Record<string, unknown>).sort()).toEqual(['current', 'lifetime']);
-  });
-
-  it('still reports the two figures it does compute, including real zeros', async () => {
-    mocks.vipPointsResponse.mockImplementation(() =>
-      Promise.resolve({ data: { current_points: 0, lifetime_points: 0 }, error: null })
-    );
-
-    render(<VIPPage />);
-
-    // A player who genuinely holds nothing is still told so, by both figures.
-    await waitFor(() => expect(mocks.platePoints?.points.current).toBe(0));
-    expect(mocks.platePoints?.points.lifetime).toBe(0);
-    expect(mocks.platePoints?.pointsState).toBe('ready');
-    expect(screen.getByTestId('metric-Current Points').textContent).toBe('0');
+  it('never reads or advertises a points currency', async () => {
+    const { container } = render(<VIPPage />);
+    await waitFor(() => expect(balanceText(container)).toBe('100'));
+    expect(mocks.vipPointsResponse).not.toHaveBeenCalled();
+    await waitFor(() => expect(mocks.platePoints).not.toBeNull());
+    expect(mocks.platePoints).not.toHaveProperty('points');
+    expect(screen.queryByTestId('metric-Current Points')).toBeNull();
+    expect(container.textContent).not.toContain('Points');
   });
 });
 

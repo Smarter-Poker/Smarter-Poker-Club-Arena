@@ -147,8 +147,8 @@ async function measure(
       rowCentreX: row.left + row.width / 2,
       rowCentreY: row.top + row.height / 2,
       rowBottom: row.bottom,
-      cardW: cardEl.offsetWidth,
-      cardH: cardEl.offsetHeight,
+      cardW: parseFloat(getComputedStyle(cardEl).width),
+      cardH: parseFloat(getComputedStyle(cardEl).height),
       feltW: scaler.width,
       /* RESOLVED THROUGH A REAL PROPERTY, NEVER READ AS TEXT (2026-08-28).
          This was
@@ -377,5 +377,106 @@ for (const bp of BREAKPOINTS) {
         `hold-em vs PLO4 height at ${bp.label}`
       ).toBeLessThanOrEqual(2);
     });
+  });
+}
+
+import { buildCss, buildHtml } from './support/feltHarness.mjs';
+
+const spinsCss =
+  fs.readFileSync('src/styles/club-engine.css', 'utf8').replace(/@import\s+[^;]+;/g, '') +
+  buildCss(process.cwd()) +
+  [
+    'src/components/tournament/TournamentHUD.css',
+    'src/components/table/TableHUD.css',
+    'src/components/table/PreviousHandCard.css',
+    'src/components/table/TimebankCounter.css',
+    'src/components/table/RabbitHunt.css',
+  ]
+    .map((p) => fs.readFileSync(p, 'utf8'))
+    .join('\n');
+const overlaps = (a: any, b: any) =>
+  a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+for (const width of [320, 375, 393, 430, 768, 1440]) {
+  test(`Spins and Heads Up fit at ${width}px with a bottom safe area`, async ({ page }) => {
+    await page.setViewportSize({ width, height: width === 320 ? 667 : 852 });
+    // Model the actual iPhone inset; desktop browser emulation reports env()=0.
+    const realCss = spinsCss.replace(/env\(safe-area-inset-bottom,\s*0px\)/g, '34px');
+    await page.setContent(buildHtml(realCss));
+    await page.evaluate(() => {
+      const root = document.querySelector('.table-page')!;
+      root.classList.add('table-page--tournament', 'table-page--short-match');
+      root.setAttribute('data-seats', '3');
+      root.setAttribute('data-tdock', 'expanded');
+      root.insertAdjacentHTML(
+        'beforeend',
+        `<div class="table-hud"><div class="table-hud__upper"></div><div class="table-hud__lower"><div class="table-hud__corner"><div class="hud-bl-row" style="display:flex"><div class="prev-hand-card"></div><div class="tbc-widget"></div></div></div></div></div><div class="tournament-dock"><div class="tournament-dock__line">Tournament Info</div><div class="tournament-dock__row">Level 1 · 10/20 · Prize 500</div></div>`
+      );
+      const scaler = document.querySelector('.table-scaler') as HTMLElement;
+      scaler.style.setProperty('--table-w', `${scaler.getBoundingClientRect().width}px`);
+    });
+    const initial = await page.locator('.table-scaler').boundingBox();
+    expect(initial).not.toBeNull();
+    expect(await page.locator('.table-scaler').evaluate((e) => getComputedStyle(e).marginTop)).toBe(
+      '0px'
+    );
+    expect(
+      await page
+        .locator('.table-scaler')
+        .evaluate((e) => getComputedStyle(e).getPropertyValue('--sp-table-ar-h').trim())
+    ).toBe('1000');
+    expect(
+      await page
+        .locator('.table-scaler')
+        .evaluate((e) => getComputedStyle(e).getPropertyValue('--sp-table-ar-w').trim())
+    ).toBe('700');
+    if (width <= 480) expect(initial!.width).toBeGreaterThanOrEqual(width - 2);
+    for (const seats of [2, 3])
+      for (const n of [4, 5, 6])
+        for (const revealed of [false, true]) {
+          await page.evaluate(
+            ({ seats, n, revealed }) => {
+              document.querySelector('.table-page')!.setAttribute('data-seats', String(seats));
+              const row = document.querySelector('.seat--hero .seat__cards--hero')!;
+              row.classList.toggle('seat__cards--revealed', revealed);
+              row.innerHTML = Array.from(
+                { length: n },
+                () =>
+                  '<span class="seat__card-pick"><div class="seat__card seat__card--face"></div></span>'
+              ).join('');
+            },
+            { seats, n, revealed }
+          );
+          const m = await page.evaluate(() => {
+            const rect = (s: string) => {
+              const r = document.querySelector(s)!.getBoundingClientRect();
+              return { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+            };
+            return {
+              plate: rect('.seat--hero .seat__info'),
+              hud: rect('.hud-bl-row'),
+              dock: rect('.tournament-dock'),
+              cards: Array.from(document.querySelectorAll('.seat--hero .seat__card-pick')).map(
+                (e) => {
+                  const r = e.getBoundingClientRect();
+                  return { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+                }
+              ),
+              scroll: document.documentElement.scrollWidth,
+              client: document.documentElement.clientWidth,
+            };
+          });
+          for (const card of m.cards) {
+            expect(card.left).toBeGreaterThanOrEqual(0);
+            expect(card.right, `${n} cards, revealed=${revealed}`).toBeLessThanOrEqual(width);
+            expect(overlaps(card, m.plate)).toBe(false);
+          }
+          expect(overlaps(m.hud, m.plate), 'utility controls cover the player plate').toBe(false);
+          expect(m.dock.bottom).toBeCloseTo(width === 320 ? 667 : 852, 0);
+          expect(m.scroll).toBeLessThanOrEqual(m.client);
+        }
+    await page.evaluate(() =>
+      document.querySelector('.table-page')!.setAttribute('data-tdock', 'collapsed')
+    );
+    expect(await page.locator('.table-scaler').boundingBox()).toEqual(initial);
   });
 }

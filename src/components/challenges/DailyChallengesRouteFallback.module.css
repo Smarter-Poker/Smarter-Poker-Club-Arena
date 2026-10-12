@@ -177,6 +177,7 @@
 }
 
 .heroCopy {
+  min-width: 0;
   position: relative;
   z-index: 4;
   display: flex;
@@ -212,7 +213,7 @@
   font-size: clamp(3.6rem, 7vw, 6rem);
   font-weight: 600;
   letter-spacing: 0.025em;
-  line-height: 0.86;
+  line-height: 1.2;
   text-transform: uppercase;
   text-shadow:
     0 2px 0 #000,

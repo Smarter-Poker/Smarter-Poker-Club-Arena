@@ -21,7 +21,7 @@ import {
   horsePhase12CompletionOutcome,
   liveHorsePhase12Authorities,
   PHASE12_PROTECTED_RELEASE_SELECTIONS,
-  PHASE12_RUNNING_CONTRACT_DIGEST,
+  PHASE12_RUNNING_CONTRACT_DIGESTS,
   selectedHorsePhase12Authority,
   type HorsePhase12AuthoritySelection,
 } from './HorsePhase12Authority.js';
@@ -34,7 +34,7 @@ import {
 import { memoryReader } from './HorseQualifiedAuthority.test-support.js';
 import { qualifiedPhase11TestAdmission } from './HorsePhase11Authority.test-support.js';
 import {
-  P12_TEST_CONTRACT_DIGEST,
+  p12TestContractDigest,
   P12_TEST_ISSUED_AT,
   P12_TEST_NOW,
   P12_TEST_SOURCE_SHA,
@@ -77,7 +77,7 @@ function admit(
   selection: HorsePhase12AuthoritySelection | null,
   qualification: Buffer = p12QualificationBytes(variant),
   completion: Buffer | null = p12CompletionBytes(variant),
-  runningDigest: string | null = P12_TEST_CONTRACT_DIGEST,
+  runningDigest: string | null = p12TestContractDigest(variant),
   runningPolicyDigest?: string | null
 ): HorseAuthorityAdmission {
   return admitHorsePhase12QualifiedAuthority(
@@ -123,12 +123,30 @@ describe('P12.3 committed selections: every pack qualified on condition (a) whos
     (v) => PHASE12_PROTECTED_RELEASE_SELECTIONS[v] === null
   );
 
-  it('FLH is selected on its 1235b47a matrix; Short Deck, Pineapple and FLO8 stay null; the running digest is the P12.2 contract digest', () => {
+  it('round 4: every pack is null until it is measured on the running policy; each pack runs its own contract digest, FLH the frozen v1', () => {
     expect(Object.isFrozen(PHASE12_PROTECTED_RELEASE_SELECTIONS)).toBe(true);
     expect([...HORSE_PHASE12_VARIANTS]).toEqual(['short_deck', 'pineapple', 'flh', 'flo8']);
-    expect(selected).toEqual(['flh']);
-    expect(PHASE12_RUNNING_CONTRACT_DIGEST).toBe(remainingVariantStrengthContractDigest());
-    expect(PHASE12_RUNNING_CONTRACT_DIGEST).toMatch(/^[0-9a-f]{64}$/);
+    // FLH's generation-1 selection measured policy digest a55db7fe..., which
+    // the round-4 sampler kernels and scoped packs moved: it is re-measured
+    // under contract v1 and selected again at generation 2.
+    expect(selected).toEqual([]);
+    expect(Object.isFrozen(PHASE12_RUNNING_CONTRACT_DIGESTS)).toBe(true);
+    for (const variant of HORSE_PHASE12_VARIANTS) {
+      expect(PHASE12_RUNNING_CONTRACT_DIGESTS[variant], variant).toBe(
+        remainingVariantStrengthContractDigest(variant)
+      );
+      expect(PHASE12_RUNNING_CONTRACT_DIGESTS[variant], variant).toMatch(/^[0-9a-f]{64}$/);
+    }
+    expect(PHASE12_RUNNING_CONTRACT_DIGESTS.flh).toBe(
+      'fafbba8dc23ebc59b5aadf78fdcc47cd6f504baf9bcd10b07970ad7fbea501c0'
+    );
+    for (const variant of ['short_deck', 'pineapple', 'flo8'] as const)
+      expect(PHASE12_RUNNING_CONTRACT_DIGESTS[variant], variant).toBe(
+        remainingVariantStrengthContractDigest('short_deck')
+      );
+    expect(PHASE12_RUNNING_CONTRACT_DIGESTS.short_deck).not.toBe(
+      PHASE12_RUNNING_CONTRACT_DIGESTS.flh
+    );
     for (const variant of HORSE_PHASE12_VARIANTS) {
       const selection = PHASE12_PROTECTED_RELEASE_SELECTIONS[variant];
       const release = admitHorsePhase12ReleaseAuthority(variant);
@@ -146,7 +164,7 @@ describe('P12.3 committed selections: every pack qualified on condition (a) whos
         phase: 'phase12',
         variant,
         packVersion: REMAINING_VARIANT_PACKS[variant].version,
-        contractDigest: PHASE12_RUNNING_CONTRACT_DIGEST,
+        contractDigest: PHASE12_RUNNING_CONTRACT_DIGESTS[variant],
         approvalGeneration: 1,
         expiresAt: null,
         withdrawn: null,
@@ -221,9 +239,10 @@ describe('P12.3 committed selections: every pack qualified on condition (a) whos
   });
 
   it('withdrawal is a committed record: a selection with withdrawn set is a withdrawal, never a selection', () => {
-    for (const variant of selected) {
+    // Every pack: its committed selection, or (none committed) the test one.
+    for (const variant of HORSE_PHASE12_VARIANTS) {
       const withdrawn = {
-        ...PHASE12_PROTECTED_RELEASE_SELECTIONS[variant]!,
+        ...(PHASE12_PROTECTED_RELEASE_SELECTIONS[variant] ?? p12Selection(variant)),
         withdrawn: { at: '2026-10-10T00:00:00.000Z', reason: 'condition_b_lost_after_rake' },
       };
       const release = admitHorsePhase12ReleaseAuthority(variant, Date.now(), withdrawn);
@@ -236,10 +255,33 @@ describe('P12.3 committed selections: every pack qualified on condition (a) whos
     }
   });
 
+  it('a pack under one contract is refused another contract: FLH v1 evidence never admits Short Deck, v2 evidence never admits FLH', () => {
+    const v1 = PHASE12_RUNNING_CONTRACT_DIGESTS.flh;
+    const v2 = PHASE12_RUNNING_CONTRACT_DIGESTS.short_deck;
+    for (const [variant, foreign] of [
+      ['short_deck', v1],
+      ['flh', v2],
+    ] as const) {
+      const q = p12QualificationBytes(variant, { contractDigest: foreign });
+      expect(
+        admitHorsePhase12ReleaseAuthority(
+          variant,
+          P12_TEST_NOW,
+          p12Selection(variant, q, undefined, { contractDigest: foreign }),
+          p12Reader(variant, q)
+        ),
+        variant
+      ).toEqual({ status: 'refused', reason: 'contract_digest_mismatch', transient: false });
+      // With its own contract the same pack is admitted from the same files.
+      expect(qualifiedPhase12TestAdmission(variant).status, variant).toBe('admitted');
+    }
+  });
+
   // A MEASURED PACK IS NOT A PROMOTED PACK (2026-10-05), kept since the FLH
   // selection (2026-10-10): a qualification that says qualified:true is
-  // exactly the one its pack's selection names.
-  it('the only qualified:true qualification of each pack is the one its selection names', () => {
+  // exactly the one its pack's selection names, or (round 4) one whose
+  // measured policy digest no longer runs, which no admission can accept.
+  it('the only qualified:true qualification of each pack is the one its selection names, or one measured on a policy that no longer runs', () => {
     const dir = fileURLToPath(new URL('../../../docs/evidence/phase12/', import.meta.url));
     const files = existsSync(dir)
       ? readdirSync(dir, { recursive: true, encoding: 'utf8' }).filter((f) => f.endsWith('.json'))
@@ -248,9 +290,10 @@ describe('P12.3 committed selections: every pack qualified on condition (a) whos
       const parsed = JSON.parse(readFileSync(`${dir}${file}`, 'utf8')) as Record<string, unknown>;
       if (parsed.schema === HORSE_PHASE12_QUALIFICATION_SCHEMA && parsed.qualified === true) {
         const variant = parsed.variant as keyof typeof PHASE12_PROTECTED_RELEASE_SELECTIONS;
-        expect(PHASE12_PROTECTED_RELEASE_SELECTIONS[variant]?.qualificationPath, file).toBe(
-          `docs/evidence/phase12/${file}`
-        );
+        const named =
+          PHASE12_PROTECTED_RELEASE_SELECTIONS[variant]?.qualificationPath ===
+          `docs/evidence/phase12/${file}`;
+        if (!named) expect(parsed.policyDigest, file).not.toBe(horsePhase12PolicyDigest(variant));
       }
       if (parsed.schema === HORSE_PHASE12_COMPLETION_SCHEMA)
         expect(HORSE_PHASE12_VARIANTS as readonly string[], file).toContain(parsed.variant);
@@ -381,7 +424,7 @@ describe('P12.3 admission refuses by name unless the pack qualifies and complete
           p12Selection(V),
           memoryReader({}),
           P12_TEST_NOW,
-          P12_TEST_CONTRACT_DIGEST
+          p12TestContractDigest(V)
         ),
       'missing_evidence',
     ],
@@ -536,7 +579,7 @@ describe('P12.3 admission refuses by name unless the pack qualifies and complete
             [p12CompletionPath(V)]: p12CompletionBytes(V),
           }),
           P12_TEST_NOW,
-          P12_TEST_CONTRACT_DIGEST
+          p12TestContractDigest(V)
         ),
       'missing_evidence',
     ],
@@ -552,7 +595,7 @@ describe('P12.3 admission refuses by name unless the pack qualifies and complete
             [p12CompletionPath(V)]: p12CompletionBytes(V),
           }),
           P12_TEST_NOW,
-          P12_TEST_CONTRACT_DIGEST
+          p12TestContractDigest(V)
         ),
       'hash_mismatch',
     ],
@@ -762,7 +805,7 @@ describe('P12.3 admission refuses by name unless the pack qualifies and complete
         p12Selection(V),
         memoryReader(files),
         P12_TEST_NOW,
-        P12_TEST_CONTRACT_DIGEST
+        p12TestContractDigest(V)
       )
     ).toEqual({ status: 'refused', reason: 'unreadable_evidence', transient: true });
   });
@@ -834,7 +877,7 @@ describe('P12.3 admission refuses by name unless the pack qualifies and complete
         approvalGeneration: 1,
         issuedAt: P12_TEST_ISSUED_AT,
         expiresAt: null,
-        contractDigest: P12_TEST_CONTRACT_DIGEST,
+        contractDigest: p12TestContractDigest(variant),
       };
       expect(authority).toEqual({
         ...identity,
@@ -885,7 +928,7 @@ describe('P12.3 one pack never admits another', () => {
           p12Selection('short_deck'),
           p12Reader('short_deck'),
           P12_TEST_NOW,
-          P12_TEST_CONTRACT_DIGEST
+          p12TestContractDigest(other)
         )
       ).toMatchObject({ status: 'refused', reason: 'continuation_mismatch' });
       // The release path for another pack reads only its own selection: with

@@ -4,6 +4,10 @@ The staged path from dark to general availability, the evidence that must exist 
 
 Enabling Lightning for real players is the single biggest outward action in the program. Every stage is entered by an operator action through the control door (reason required, a fresh request id, one audited `operator_<action>` event), never by editing a row by hand, and every stage has a rehearsed way back.
 
+## Owner Update: Evidence-Based Progression
+
+On 2026-10-12 the owner removed the fixed pilot and limited-club calendar waits. No minimum elapsed-day or batch-age requirement applies. Advance on completed active-play samples, workload coverage, recovery rehearsals and recorded readiness, not time spent with an empty pool. The retained 5,000-hand target, five-club coverage, both table sizes, calibration and latency sample/ceiling requirements remain. The bounded shadow-stage time box is a safety limit, not a waiting period. Historical handoffs cannot restore the removed waits.
+
 ## Ground Rules For Every Stage
 
 - **One door.** Every change is `fn_lightning_operator_control(cluster, action, reason, {request_id, ...})`, called by a platform admin, a club control member (owner, co_owner, admin) or the service. Hand-written config or `cash_games` updates are out of bounds.
@@ -18,7 +22,7 @@ The state on 2026-10-09: all 166 Clusters `must_move`, `lightning_enabled` false
 
 **Go / No-Go Evidence**
 
-- Every Lightning migration applied, every live proof true except the documented expected-false list (`bin/proofs.sh` over each file), and `fn_lightning_rollout_readiness` reporting `migrations.missing = []` and its evaluated invariants (`seven_tables`, `anti_manipulation`, `law_10_5`, `no_anon_door`) true. `proofs_evaluated_in_sql` must remain false: the readiness call does not evaluate live proofs. Separate exact installed-migration proof readback is required; the readiness badge cannot replace it.
+- Every Lightning migration applied, every live proof true except the documented expected-false list (evaluate each declared `@live-proof` through the configured read-only database tool, recording every documented supersession separately), and `fn_lightning_rollout_readiness` reporting `migrations.missing = []` and its evaluated invariants (`seven_tables`, `anti_manipulation`, `law_10_5`, `no_anon_door`) true. `proofs_evaluated_in_sql` must remain false: the readiness call does not evaluate live proofs. Separate exact installed-migration proof readback is required; the readiness badge cannot replace it.
 - The Phase 13 engine and client releases live and verified (engine `/health` liveness ok, latest `table-socket-probe` ok, build-info SHAs containing the merges).
 - `lightning-alert-sweep-1m` active and no open `lightning_alerts`, `lightning_formation` or `lightning_settlement` page.
 - The harness evidence of the phase: `scripts/dev/test-lightning-phase13-rollout-drain.sh` and the Phase 12 load, stress and chaos rig over the Phase 13 chain green in CI.
@@ -41,12 +45,12 @@ One internal pilot Cluster (below), Lightning enabled with the worker in shadow 
 
 - Readiness on the pilot Cluster: no blocking reason; `WORKER_SHADOW_ONLY`, `NO_AA_CALIBRATION` and `NO_LATENCY_EVIDENCE` are expected and accepted here.
 - The pilot Cluster is non-public (`club_is_public` false, or the game marked private) and seats only internal accounts and horses.
-- A shadow worker plans and forms nothing, so pool players receive no hands while it runs. The stage is time-boxed: at most 60 minutes, enough for 30 or more comparison windows (`shadow_window_ms` 60000 → 300000).
+- A shadow worker plans and forms nothing, so pool players receive no hands while it runs. The stage is time-boxed: at most 60 minutes. Before starting, verify the effective `shadow_window_ms` can produce at least 30 nonempty comparisons within that budget (a 60000ms setting can; 300000ms windows cannot). The installed default is 300000ms. Before starting the pilot, use `set_shadow_window {shadow_window_ms: 60000}` through `fn_lightning_operator_control`, while drained in MUST-MOVE with the worker off. An unsuitable configuration must be corrected through its maintained qualified path before the stage starts; never extend the time box or fabricate comparisons.
 
 **Exit Criteria (Required For Stage 2)**
 
 - `fn_lightning_shadow_report(cluster)` shows the m1 against m1-port pair with at least 30 comparisons and verdict `calibrated` (mean quality delta within 1 point).
-- Latency windows recorded for the Cluster with every leg's p95 under its `alert_latency_p95_ms` ceiling.
+- Hand-latency evidence is collected in Stage 2, not fabricated in Stage 1. The shadow worker forms no hands: its `LightningLatencyLedger` writes no window when it has no hand samples. `NO_LATENCY_EVIDENCE` remains expected at this boundary; zero samples are missing evidence, never a passing p95. Existing measured regressions still stop progression.
 - No `lightning_drive_error`, no reaper failure, no freeze, no integrity spike in the window; every pool session's reconcile row `ok`.
 
 **Rollback**
@@ -71,8 +75,8 @@ The same pilot Cluster, now forming real hands with the live SQL matcher (m1), i
 
 **Exit Criteria (Required For Stage 3)**
 
-- At least 7 days and 5,000 Lightning hands on the pilot Cluster with: zero `LIGHTNING_*_MOVED_MONEY`, zero unexplained freeze, zero orphan reservation on the dashboard, zero open `lightning_alerts` page older than its resolution, every settled hand's replay check passing (`fn_lightning_operator_hand_replay`).
-- Latency p95 under every ceiling over the last `alert_latency_windows` windows, every day.
+- At least 5,000 actual completed Lightning hands on the pilot Cluster with: zero `LIGHTNING_*_MOVED_MONEY`, zero unexplained freeze, zero orphan reservation on the dashboard, zero open `lightning_alerts` page older than its resolution, every settled hand's replay check passing (`fn_lightning_operator_hand_replay`).
+- Actual hand-latency windows cover every configured leg with nonzero samples; p95 stays under every ceiling over the last `alert_latency_windows` windows during the tested workloads. An absent leg is missing evidence, never a zero or a pass.
 - No high-severity integrity signal left open.
 - Readiness `go`.
 
@@ -91,7 +95,7 @@ Lightning enabled on a small set of Clusters in clubs that opt in, a few Cluster
 
 - Readiness `go` read and recorded immediately before `enable_lightning`.
 - The club's control members have the operator dashboard and know the drain, pause and joins controls.
-- The previous batch has run at least 72 hours with the Stage 2 exit criteria holding for each of its Clusters.
+- The previous batch has completed the applicable active-play, latency and recovery checks with the Stage 2 exit criteria holding for each of its Clusters. There is no minimum batch-age wait.
 - Candidate shadow evidence (m1 against m2) is informational only: the live matcher stays m1 until a matcher change is proposed with at least 30 comparisons and verdict `shadow_leads`, and that change ships as its own reviewed phase, not as a flag.
 
 **Rollback**
@@ -100,13 +104,17 @@ Lightning enabled on a small set of Clusters in clubs that opt in, a few Cluster
 - One club: `drain` each of its Clusters (each is its own drain; the dashboard shows progress per Cluster).
 - Everywhere: `drain` every Lightning Cluster; Lightning returns to Stage 0 with every player at their seat.
 
+## Phase 14: Final Regression And Production Release Review
+
+[The 54-item requirement catalog](release-gates.json) maps the original final gate to maintained qualification sources. [The release review](FINAL-RELEASE-REVIEW.md) records execution evidence and what remains pending. Source presence and an isolated test do not complete the active-play pilot or limited-club qualification. An unavailable, cancelled, skipped or stale result is not PASS. Starting Phase 14 does not enable a Cluster or change the rules above.
+
 ## Stage 4: General
 
 Lightning available to every club whose Clusters pass readiness.
 
 **Go / No-Go Evidence**
 
-- Stage 3 has run at least 14 days across at least five clubs and both table sizes with the Stage 2 exit criteria holding everywhere.
+- Stage 3 has completed active-play qualification across at least five clubs and both table sizes with the Stage 2 exit criteria holding everywhere. There is no minimum elapsed-day wait.
 - The Final Release Gate checklist (Phase 14) passes with evidence, including emergency drain, Cluster freeze, rollback, shadow matcher, alerts and the operator dashboard.
 
 **Rollback**
@@ -115,7 +123,7 @@ Lightning available to every club whose Clusters pass readiness.
 
 ## The Pilot Cluster
 
-The pilot must be a non-public Cluster that no real player outside the team can reach. Read from PokerIQ-Production on 2026-10-09: no non-public club exists (the two clubs with cash games, Midway Union and Deep Stack Society, are public; Diamond Arena is the platform club and has no cash game). Several Midway Union must-move Clusters have had no human seated in 14 days and only horses now (for example NLH 1/2 Action, 6-max, about 53 horses; NLH 1/2 Classic, 9-max, about 81 horses), but they are in a public club, so they are not pilot candidates as they stand. The pilot therefore needs a Cluster made private first (a non-public test club, or the game's `ruleset_snapshot.options.is_private` set through the reviewed path), which is an owner decision recorded before Stage 1.
+The pilot must be a non-public Cluster that no real player outside the team can reach. Read from PokerIQ-Production on 2026-10-09: no non-public club exists (the two clubs with cash games, Midway Union and Deep Stack Society, are public; Diamond Arena is the platform club and has no cash game). Several Midway Union must-move Clusters have had no human seated in 14 days and only horses now (for example NLH 1/2 Action, 6-max, about 53 horses; NLH 1/2 Classic, 9-max, about 81 horses), but they are in a public club, so they are not pilot candidates as they stand. The pilot therefore needs a Cluster made private first (a non-public test club, or the game's `ruleset_snapshot.options.is_private` set through the reviewed path), which is an owner decision recorded before Stage 1. This dated reconnaissance is superseded by the private pilot prepared on 2026-10-12: club `e14bc9f7-736d-425f-8f2c-e78305ebac1d`, Cluster `babb43f1-368e-406f-a97a-a0d5013648b2`, private NLH 6-max, effective `shadow_window_ms` 60000. Preparation leaves Lightning and the worker off; participant admission, authenticated access checks and actual play remain pending.
 
 ## Evidence Record
 

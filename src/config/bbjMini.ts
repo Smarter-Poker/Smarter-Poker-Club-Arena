@@ -13,7 +13,8 @@
  * and in both, the winner still holds QUADS OR BETTER - aces full losing to a
  * bigger boat is a cooler, not a bad beat. The mini keeps every floor the main
  * has (pot, players dealt, no double board, variant eligibility) and drops the
- * main's two technicalities: the Ace-in-the-hole and the both-cards-play rule.
+ * main's Jacks floor and Ace-in-the-hole rule. Both hole cards must still play
+ * (Dan 2026-10-11: "BOTH cards must play for BBJ or Mini BBJ").
  * The engine picks the family the same way this file does - by the MAIN rule's
  * hand rank for the variant (`full_house` means hold'em, anything else means
  * Omaha) - so the two cannot disagree about which bar a table is under.
@@ -198,7 +199,7 @@ export function getBBJMiniQualifyingInfo(
       eligible: true,
       rule,
       shortLabel: 'Aces full or better must lose to Quads or better',
-      subLabel: 'No Ace-in-the-hole rule and no both-cards-must-play rule for the mini.',
+      subLabel: 'Any aces full counts for the mini. Both hole cards must still play.',
       variantLabel: q.label,
       minLosingHandCards: ACES_FULL_OF_DEUCES,
       qualifyingHandLabel: BBJ_MINI_QUALIFYING_LABELS[rule],

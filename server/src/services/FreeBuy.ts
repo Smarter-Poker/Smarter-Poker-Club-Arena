@@ -495,6 +495,27 @@ export const FREE_BUY_KNOWN_HOSTS: readonly FreeBuyHost[] = [
 ];
 
 /**
+ * The Free Buy guarantee one host's bank really has to fund each day.
+ *
+ * A HOST THE BOARD DOES NOT PUBLISH FOR OWES THE BOARD NOTHING (2026-10-12).
+ * dailyGuaranteePerHost() is the board's exposure for a host it publishes
+ * for. StableHandExecutor.checkBanks used it for EVERY host on the floor, so
+ * Deep Stack Society - held off the board since 2026-10-04 and listed in
+ * FREE_BUY_HELD_HOSTS, every schedule inactive, no open event - was measured
+ * against 1,500 a day it does not owe. When its bank moved to the Midway Union
+ * bank on 2026-10-12 ahead of the join Dan decided on 2026-10-11, the runway
+ * read 0.0 days and a critical page told an operator to refill a bank that
+ * funds nothing. Only FREE_BUY_HOSTS is published for, so only those hosts
+ * carry the board's daily guarantee; every other host carries none.
+ */
+export function dailyGuaranteeForHost(
+  hostId: string,
+  hosts: readonly FreeBuyHost[] = FREE_BUY_HOSTS
+): number {
+  return hosts.some((h) => h.hostId === hostId) ? dailyGuaranteePerHost() : 0;
+}
+
+/**
  * Minutes of ladder from level 1 up to and including `level`.
  */
 export function ladderMinutesThrough(

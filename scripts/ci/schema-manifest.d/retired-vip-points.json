@@ -1,0 +1,5 @@
+{
+  "_owner": "rewards-cleanup-20261012",
+  "_comment": "VIP points history remains archived; all new earning and redemption is retired.",
+  "functions": ["fn_guard_retired_vip_points_write"]
+}

@@ -123,7 +123,8 @@ describe('immediate ownership refresh', () => {
   });
 
   it('broadcasts rewards and club redemptions to every open Studio', () => {
-    expect(VIP).toContain("masterBus.emit('COSMETIC_OWNERSHIP_CHANGED'");
+    expect(VIP).not.toContain('fn_redeem_vip_points');
+    expect(VIP).not.toContain('RewardsMarketplace');
     expect(ITEMS).toContain("masterBus.emit('COSMETIC_OWNERSHIP_CHANGED'");
     expect(MODAL).toContain("masterBus.subscribe('COSMETIC_OWNERSHIP_CHANGED'");
     expect(AVATAR_GALLERY).toContain("masterBus.subscribe('COSMETIC_OWNERSHIP_CHANGED'");

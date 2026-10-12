@@ -11,7 +11,10 @@ BEGIN
  INSERT INTO public.diamond_game_configs(host_id,host_kind,game,enabled,exposure_allowance_chips) SELECT club,'club',g,true,10000 FROM unnest(ARRAY['mines','crossing']) g ON CONFLICT DO NOTHING;
  INSERT INTO public.diamond_game_pools(host_id,game) SELECT club,g FROM unnest(ARRAY['mines','crossing']) g ON CONFLICT DO NOTHING;
  UPDATE public.diamond_game_configs SET enabled=true,exposure_allowance_chips=10000,min_seconds_between_rounds=0 WHERE host_id=club;
- FOREACH game IN ARRAY ARRAY['mines','crossing'] LOOP
+ -- Contract 5 is installed alone first. Once contract 6 is installed (2026-10-12,
+ -- Donkey Cross's fair coin) a NEW crossing round is contract 6, which
+ -- diamond-crossing-fair-coin.sql proves; Mines stays on contract 5 here.
+ FOREACH game IN ARRAY CASE WHEN to_regprocedure('public.fn_choice_road_coin_v6(text,text,bigint,integer)') IS NULL THEN ARRAY['mines','crossing'] ELSE ARRAY['mines'] END LOOP
   mode:=CASE WHEN game='mines' THEN '6' ELSE 'road' END;
   prizes:=public.fn_choice_prizes_v5(game,mode,25,12.5);chance:=1;expected:=0;
   -- Independently accumulate the loss payouts plus each possible stopping prize.

@@ -297,3 +297,13 @@
   right: 6px;
   left: auto;
 }
+
+/* Rest on the bottom chrome and fit inside the clear lane left of the hero. */
+.table-page {
+  --sp-hud-line: calc(var(--sp-action-reserve, 96px) + 2px);
+}
+@media (max-width: 768px) {
+  .table-hud {
+    --sp-hud-tile-size: clamp(44px, 13.5vw, 66px);
+  }
+}

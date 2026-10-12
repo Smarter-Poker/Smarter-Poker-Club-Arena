@@ -783,6 +783,13 @@ export class TournamentManager extends TournamentManagerEliminations {
     } else this.durableTournamentBreaks.set(state.break_id, state);
   }
 
+  /** Every remembered break is unacknowledged; acknowledged ones are forgotten above. */
+  protected override tableBreakOwnsSource(tableId: string): boolean {
+    for (const state of this.durableTournamentBreaks.values())
+      if (state.source_table_id === tableId) return true;
+    return false;
+  }
+
   private readonly tournamentBreakArrivalWakes = new Map<string, Map<string, ServerTableEngine>>();
 
   /** Direct and reconciled receipts name the same committed arrival. */

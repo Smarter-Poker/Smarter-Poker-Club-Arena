@@ -208,3 +208,36 @@
     width: 104px;
   }
 }
+
+/* Benefits remain distinct rows. A value is copy, not another framed button. */
+.vip-perks-grid .perk-card {
+  grid-template-columns: 64px minmax(0, 1fr);
+  border: 0;
+  border-top: 1px solid #26333d;
+  padding: 18px 0;
+  min-height: 0;
+  background: transparent;
+  overflow: visible;
+}
+.vip-perks-grid .perk-card--artwork {
+  grid-template-columns: 64px minmax(0, 1fr);
+}
+.vip-perks-grid .perk-value {
+  display: block;
+  width: auto;
+  min-width: 0;
+  aspect-ratio: auto;
+  padding: 0;
+  background: transparent;
+  color: #45adff;
+  text-align: left;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.vip-perks-grid .perk-content h4 {
+  text-wrap: wrap;
+  overflow-wrap: anywhere;
+}
+.vip-perks-grid .perk-artwork {
+  max-height: 72px;
+}

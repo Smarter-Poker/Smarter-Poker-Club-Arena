@@ -71,8 +71,9 @@ export function wheelCardLabel(segment: WheelSegment, upgraded = false): string 
 
 /**
  * The card art follows the segment's KIND, never its position: the server may
- * put a different prize on an ord (a VIP sees chips where others see
- * Throwables, Time Bank and Rabbit Hunt), and weights never enter into it.
+ * put a different prize on an ord (since 2026-10-12 every player sees chips on
+ * ords 3, 6 and 9, where a receipt sealed before then may still show Throwables,
+ * Time Bank and Rabbit Hunt), and weights never enter into it.
  */
 function cardIndex(segment: WheelSegment, upgraded: boolean): number {
   if (segment.kind === 'bonus') return GAME_CARDS[segment.game ?? 'plinko'] ?? 0;

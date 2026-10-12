@@ -53,9 +53,9 @@ function HistoryChannel(options: HistoryChannelOptions) {
 
 /** One scoped reader per disclosure. Persisted audit records remain authoritative. */
 export default function PlayerChangeHistory({
-  clubId,
-  playerId,
-  viewerId,
+  clubId: routeClubId,
+  playerId: routePlayerId,
+  viewerId: accountId,
   enabled,
 }: {
   clubId: string;
@@ -63,6 +63,9 @@ export default function PlayerChangeHistory({
   viewerId: string;
   enabled: boolean;
 }) {
+  const clubId = routeClubId.toLowerCase();
+  const playerId = routePlayerId?.toLowerCase();
+  const viewerId = accountId.toLowerCase();
   const [open, setOpen] = useState(false);
   const [kind, setKind] = useState<HistoryKind>('all');
   const [fromDraft, setFromDraft] = useState('');
@@ -77,6 +80,10 @@ export default function PlayerChangeHistory({
   const controllerRef = useRef<AbortController | null>(null);
   const alive = useRef(true);
   const connectionScope = `${clubId}:${playerId ?? ''}:${viewerId}:${enabled}:${open}`;
+  const authorizedScopes = useRef({ scope: connectionScope, ids: [] as string[] });
+  if (authorizedScopes.current.scope !== connectionScope) {
+    authorizedScopes.current = { scope: connectionScope, ids: [] };
+  }
   const connections = useRef({
     scope: connectionScope,
     joined: new Set<string>(),
@@ -89,7 +96,6 @@ export default function PlayerChangeHistory({
       failed: new Set<string>(),
     };
   }
-  const liveUnavailable = connections.current.failed.size > 0;
   const eventRevision = useRef(0);
   const identity = `${clubId}:${playerId ?? ''}:${viewerId}:${enabled}:${open}:${kind}:${dates.from}:${dates.to}:${revision}`;
   const ownership = useRef({ identity, epoch: 0 });
@@ -137,7 +143,10 @@ export default function PlayerChangeHistory({
           controller.signal
         );
         if (!current()) return;
-        const previous = older?.rows ?? [];
+        authorizedScopes.current = { scope: connectionScope, ids: next.scopeClubIds };
+        const previous = (older?.rows ?? []).filter((row) =>
+          next.scopeClubIds.includes(row.clubId)
+        );
         const seen = new Set(previous.map((row) => row.id));
         setResult({
           owner,
@@ -149,6 +158,7 @@ export default function PlayerChangeHistory({
         reportError(failure, 'PlayerChangeHistory.read');
         // An unreadable or denied read is never a verified empty history.
         setResult(null);
+        authorizedScopes.current = { scope: connectionScope, ids: [] };
         setError({
           owner,
           message:
@@ -158,7 +168,7 @@ export default function PlayerChangeHistory({
         if (current()) setBusyOwner(null);
       }
     },
-    [clubId, playerId, enabled, open, owner, kind, dates.from, dates.to]
+    [clubId, playerId, enabled, open, owner, kind, dates.from, dates.to, connectionScope]
   );
   useEffect(() => {
     if (enabled && open) void load();
@@ -169,9 +179,19 @@ export default function PlayerChangeHistory({
     return () => controllerRef.current?.abort();
   }, [enabled, open, load]);
 
-  const scopeIds = page?.scopeClubIds ?? [clubId];
+  const scopeIds = authorizedScopes.current.ids;
+  const scopeIdsRef = useRef(scopeIds);
+  scopeIdsRef.current = scopeIds;
+  const liveScopeUnavailable = scopeIds.some((scopeId) => connections.current.failed.has(scopeId));
   const connectionError = (scopeId: string) => {
-    if (!alive.current || !enabled || !open || ownerRef.current !== owner) return;
+    if (
+      !alive.current ||
+      !enabled ||
+      !open ||
+      ownerRef.current !== owner ||
+      !scopeIdsRef.current.includes(scopeId)
+    )
+      return;
     connections.current.failed.add(scopeId);
     setConnectionRevision((value) => value + 1);
   };
@@ -181,6 +201,7 @@ export default function PlayerChangeHistory({
       !enabled ||
       !open ||
       ownerRef.current !== owner ||
+      !scopeIdsRef.current.includes(scopeId) ||
       status !== 'SUBSCRIBED'
     )
       return;
@@ -190,10 +211,10 @@ export default function PlayerChangeHistory({
     setConnectionRevision((value) => value + 1);
   };
   const channel: HistoryChannelOptions = {
-    channelName: enabled && open ? `player-history:${scopeIds[0]}` : null,
+    channelName: enabled && open && scopeIds.length > 0 ? `player-history:${scopeIds[0]}` : null,
     event: 'history_changed',
     private: true,
-    enabled: enabled && open,
+    enabled: enabled && open && scopeIds.length > 0,
     onPayload: (payload) => {
       if (!alive.current || !enabled || !open || ownerRef.current !== owner) return;
       const row = (
@@ -203,10 +224,11 @@ export default function PlayerChangeHistory({
         !row ||
         typeof row.club_id !== 'string' ||
         typeof row.action !== 'string' ||
-        !scopeIds.includes(row.club_id) ||
+        !scopeIdsRef.current.includes(row.club_id) ||
         !Object.prototype.hasOwnProperty.call(ACTIONS, String(row.action))
       )
         return;
+      if (playerId && row.target_id !== playerId && row.target_id !== viewerId) return;
       eventRevision.current += 1;
       if (row.target_id === viewerId && row.action !== 'export_club_roster') {
         controllerRef.current?.abort();
@@ -301,7 +323,7 @@ export default function PlayerChangeHistory({
         )}
         {invalidDates && <p role="alert">The From Date Must Not Be After The To Date.</p>}
         {updates && <p role="status">New Changes Are Available. Refresh History To Read Them.</p>}
-        {liveUnavailable && (
+        {liveScopeUnavailable && (
           <p role="status">
             Live Changes Could Not Be Confirmed. Refresh History To Read The Latest Records.
           </p>

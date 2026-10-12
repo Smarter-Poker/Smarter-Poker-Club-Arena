@@ -244,10 +244,12 @@ it('retires private rows and the active read on a viewer authority event, then r
   await act(async () => authorized.reject(new Error('denied')));
   await screen.findByRole('alert');
 });
-it('retains a new-change notice when an older first-read answer finishes after the event', async () => {
+it('retains a new-change notice when a refresh answer finishes after the event', async () => {
   const old = deferred<HistoryPage>();
-  state.read.mockReturnValueOnce(old.promise);
+  state.read.mockResolvedValueOnce(page()).mockReturnValueOnce(old.promise);
   await open();
+  await screen.findByText('No Recorded Changes Match This Scope.');
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh History' }));
   act(() =>
     state.channel.onPayload({
       payload: { club_id: 'club-a', action: 'set_member_status', target_id: 'player-a' },
@@ -256,7 +258,7 @@ it('retains a new-change notice when an older first-read answer finishes after t
   await settle(old, page([entry('snapshot')]));
   expect(screen.getByText(/New Changes Are Available/)).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Refresh History' }));
-  await waitFor(() => expect(state.read).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(state.read).toHaveBeenCalledTimes(3));
   await waitFor(() =>
     expect(screen.queryByText(/New Changes Are Available/)).not.toBeInTheDocument()
   );
@@ -422,4 +424,53 @@ it('does not hide a failed union child channel when another authorized channel r
   expect(screen.queryByText(/Live Changes Could Not Be Confirmed/)).not.toBeInTheDocument();
   expect(screen.getByText(/New Changes Are Available/)).toBeInTheDocument();
   expect(state.read).toHaveBeenCalledTimes(1);
+});
+
+it('retires prior child-club rows when a continuation withdraws that authorized scope', async () => {
+  const privateRow = { ...entry('child-private'), clubId: 'club-b' };
+  state.read
+    .mockResolvedValueOnce({
+      ...page([entry('kept'), privateRow], true),
+      scopeClubIds: ['club-a', 'club-b'],
+    })
+    .mockResolvedValueOnce(page([entry('older')]));
+  await open();
+  await screen.findByText('By Child-Private (Admin)');
+  const retiredChild = state.channels.get('player-history:club-b');
+  fireEvent.click(screen.getByRole('button', { name: 'Show Older Changes' }));
+  await screen.findByText('By Older (Admin)');
+  expect(screen.queryByText('By Child-Private (Admin)')).not.toBeInTheDocument();
+  expect(screen.getByText('By Kept (Admin)')).toBeInTheDocument();
+  const calls = state.read.mock.calls.length;
+  act(() => {
+    retiredChild.onPayload({
+      payload: { club_id: 'club-b', action: 'set_member_role', target_id: 'viewer-a' },
+    });
+    retiredChild.onSubscriptionError('CLOSED');
+    retiredChild.onSubscriptionStatus('SUBSCRIBED');
+  });
+  expect(screen.getByText('By Kept (Admin)')).toBeInTheDocument();
+  expect(state.read).toHaveBeenCalledTimes(calls);
+  expect(
+    screen.queryByText(/Live Changes Could Not Be Confirmed|New Changes Are Available/)
+  ).not.toBeInTheDocument();
+});
+it('subscribes with canonical route UUID casing', async () => {
+  const view = render(<PlayerChangeHistory {...props} clubId="CLUB-A" />);
+  toggle(view.container);
+  await waitFor(() => expect(state.read).toHaveBeenCalledTimes(1));
+  await screen.findByText('No Recorded Changes Match This Scope.');
+  expect(state.read.mock.calls[0][0]).toBe('club-a');
+  expect(state.channels.get('player-history:club-a').enabled).toBe(true);
+});
+
+it('waits for authorized child scope before joining private union topics', async () => {
+  const permission = deferred<HistoryPage>();
+  state.read.mockReturnValueOnce(permission.promise);
+  const view = await open();
+  expect(state.channel.enabled).toBe(false);
+  await settle(permission, { ...page(), scopeClubIds: ['club-b'] });
+  expect(state.channels.get('player-history:club-b').enabled).toBe(true);
+  expect(state.channels.get('player-history:club-a')).toBeUndefined();
+  view.unmount();
 });

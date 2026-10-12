@@ -204,3 +204,22 @@ it('propagates external cancellation', async () => {
   controller.abort();
   await assertion;
 });
+
+it('canonicalizes valid mixed-case route UUIDs before scoped reads', async () => {
+  const scopedClub = 'abcdef00-1234-4000-8000-000000000001';
+  const player = 'bcdefa00-1234-4000-8000-000000000001';
+  answer({
+    ...page,
+    club_id: scopedClub,
+    scope_club_ids: [scopedClub],
+    rows: [{ ...entry, club_id: scopedClub, target_user_id: player }],
+  });
+  const result = await service.getPlayerHistory(scopedClub.toUpperCase(), {
+    playerId: player.toUpperCase(),
+  });
+  expect(result.rows[0].targetUserId).toBe(player);
+  expect(JSON.parse(fixture.fetch.mock.calls[0][1].body)).toMatchObject({
+    p_club_id: scopedClub,
+    p_target_user_id: player,
+  });
+});

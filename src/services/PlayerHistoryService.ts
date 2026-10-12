@@ -203,7 +203,12 @@ function decode(
     (nextCursor && (!last || nextCursor.id !== last.id || nextCursor.createdAt !== last.createdAt))
   )
     return invalid();
-  return { rows, nextCursor, hasMore: value.has_more, scopeClubIds: [...scope] as string[] };
+  return {
+    rows,
+    nextCursor,
+    hasMore: value.has_more,
+    scopeClubIds: ([...scope] as string[]).sort(),
+  };
 }
 function date(v: string | undefined): string | null {
   if (v === undefined) return null;
@@ -229,6 +234,14 @@ export default {
     if (from && to && from > to) throw new Error('Invalid History Date Range');
     if (options.cursor && (!uuid(options.cursor.id) || !timestamp(options.cursor.createdAt)))
       throw new Error('Invalid History Cursor');
+    clubId = clubId.toLowerCase();
+    options = {
+      ...options,
+      playerId: options.playerId?.toLowerCase(),
+      cursor: options.cursor
+        ? { ...options.cursor, id: options.cursor.id.toLowerCase() }
+        : options.cursor,
+    };
     const { runRosterReadWithRetry } = await import('../utils/rosterReadReliability');
     return runRosterReadWithRetry(
       async (attemptSignal) => {

@@ -5,7 +5,7 @@ from pathlib import Path
 import json,subprocess,time
 from satellite_qualifier_fixture import module,sha,lit
 MIG=Path('supabase/migrations/20261012174400_horse_fact_cards_retire_in_one_bounded_original_update.sql')
-def qualify(e,template):
+def qualify(e,template,keep_template=False):
  root=e.root;base=e.database(template);passed=[]
  e.report['source_sha256'].update({str(MIG):sha(root/MIG),'scripts/verification-harness/horse-fact-card-batch.py':sha(Path(__file__))})
  old=module(root/'scripts/ci/test-hand-submission-retention-disposal.py','batch_old')
@@ -68,4 +68,6 @@ def qualify(e,template):
  code,_,err=e.sql(seeded,'SET ROLE service_role;SELECT smarter_private.compact_horse_fact_cards(ARRAY[]::uuid[]);',label='factbatch-helper-authority',check=False);assert code and 'permission denied' in err;passed.append('original-helper-authority-preserved')
  _,catalog,_=e.sql(base,"SELECT jsonb_build_object('md5',md5(pg_get_functiondef(oid)),'owner',pg_get_userbyid(proowner),'acl',proacl::text,'secdef',prosecdef,'config',proconfig) FROM pg_proc WHERE oid='smarter_private.compact_horse_fact_cards(uuid[])'::regprocedure;",label='factbatch-qualified-postimage')
  e.report['fact_card_batch_postimage']=json.loads(catalog);e.report['fact_card_batch_proven']=passed;e.report['fact_card_batch_timing']={'before_seconds':before_time,'after_seconds':after_time,'isolated_250_hand_fixture_only':True,'production_throughput_verified':False}
- e.discard(seeded);e.discard(base);return passed
+ e.discard(seeded)
+ if keep_template:return base
+ e.discard(base);return passed

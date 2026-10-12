@@ -4,7 +4,7 @@ No production connection or schedule is used. Original activation is preserved.
 import json,subprocess,shlex,time
 from pathlib import Path
 from satellite_qualifier_fixture import module,sha,lit
-MIG=Path('supabase/migrations/20261012174649_existing_horse_retention_cadence_follows_measured_bounded_wo.sql')
+MIG=Path('supabase/migrations/20261012181304_existing_horse_retention_cadence_follows_measured_bounded_wo.sql')
 COMMAND="\nselect case\n         when pg_try_advisory_lock(hashtext('sp-prune-hand-history'))\n           then (select set_config('statement_timeout','30s',true) is not null\n                    and public.sp_prune_hand_history(5000) >= 0)::text\n         else 'skipped: previous run still in progress'\n       end;\n"
 def qualify(parent,template):
  # Provider postgres is not initdb's immutable bootstrap superuser. Keep this

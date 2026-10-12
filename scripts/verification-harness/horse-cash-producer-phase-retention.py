@@ -5,10 +5,10 @@ No production access, invented live witness or financial restoration.
 from pathlib import Path
 import json,subprocess
 from satellite_qualifier_fixture import module,sha
-MIG=Path('supabase/migrations/20261012174519_horse_cash_retention_uses_its_original_completed_boundary.sql')
+MIG=Path('supabase/migrations/20261012180419_horse_cash_retention_uses_its_original_completed_boundary.sql')
 T='c1000000-0000-4000-8000-000000000001';H='c2000000-0000-4000-8000-000000000001';U='c5000000-0000-4000-8000-000000000001'
 IDS="ARRAY['"+H+"'::uuid]"; P="'"+T+"',1000001"
-def qualify(e,template):
+def qualify(e,template,keep_template=False):
  root=e.root;passed=[];base=e.database(template)
  _,batch_hash,_=e.sql(base,"SELECT md5(pg_get_functiondef('smarter_private.compact_horse_fact_cards(uuid[])'::regprocedure));",label='actual-batch-parent-identity');assert batch_hash.strip()=='05dc7e667f5d8353c63212c708103c58';e.report['cash_phase_batch_parent_md5']=batch_hash.strip()
  e.report.setdefault('source_sha256',{}).update({str(MIG):sha(root/MIG),'scripts/verification-harness/horse-cash-producer-phase-retention.py':sha(Path(__file__))})
@@ -93,4 +93,6 @@ def qualify(e,template):
  yes(blocked,"SELECT EXISTS(SELECT 1 FROM hand_history) AND EXISTS(SELECT 1 FROM hand_atomic_commits) AND EXISTS(SELECT 1 FROM hand_state_snapshots) AND NOT EXISTS(SELECT 1 FROM smarter_private.horse_cash_postprune_certificates) AND (SELECT request<>'{}'::jsonb FROM smarter_private.hand_submissions) AND accepted_request#>'{hand_row,actions}' IS NOT NULL FROM cash_hand_provenance_receipts;",'blocked-accounting-keeps-raw-history-atomic-snapshot-cash-originals')
  e.discard(blocked);e.discard(original);e.discard(retired)
  _,cat,_=e.sql(base,"SELECT jsonb_object_agg(p.oid::regprocedure::text,jsonb_build_object('md5',md5(pg_get_functiondef(p.oid)),'owner',pg_get_userbyid(proowner),'acl',proacl::text,'secdef',prosecdef,'config',proconfig)) FROM pg_proc p WHERE p.oid=ANY(ARRAY['smarter_private.horse_cash_retention_accounting_ready(uuid,bigint)'::regprocedure,'smarter_private.horse_cash_retained_boundary_digest(uuid,bigint)'::regprocedure,'smarter_private.horse_cash_postprune_certificate_immutable()'::regprocedure,'smarter_private.compact_horse_cash_play_contents(uuid[])'::regprocedure,'smarter_private.horse_cash_retained_request_matches(uuid,bigint,text,jsonb)'::regprocedure,'smarter_private.horse_cash_retained_atomic_matches(uuid,bigint,jsonb,jsonb,jsonb)'::regprocedure,'public.fn_cash_provenance_immutable()'::regprocedure,'smarter_private.hand_submission_immutable()'::regprocedure,'public.sp_prune_hand_history(integer)'::regprocedure,'smarter_private.horse_snapshot_disposable(uuid)'::regprocedure]);",label='final-qualified-postimages')
- e.report['cash_producer_phase_postimages']=json.loads(cat);e.report['cash_producer_phase_proven']=passed;e.discard(base);return passed
+ e.report['cash_producer_phase_postimages']=json.loads(cat);e.report['cash_producer_phase_proven']=passed
+ if keep_template:return base
+ e.discard(base);return passed

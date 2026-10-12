@@ -585,9 +585,20 @@ try:
     refused("conservation-ledger-pending-status-not-a-booked-leg",f"INSERT INTO chip_ledger(status) VALUES ('pending');","23514")
     refused("conservation-ledger-null-status-refused","INSERT INTO chip_ledger(status) VALUES (NULL);","23502")
     run("conservation-shipped-migration", (ROOT / "supabase/migrations/20261011162855_cashier_club_baseline_conservation_report.sql").read_text())
+    run("pressure-original-function", (ROOT / "supabase/migrations/20261011162855_cashier_club_baseline_conservation_report.sql").read_text().replace("fn_cashier_conservation_report", "fn_cashier_conservation_report_original"))
+    replacement_sql = (ROOT / "supabase/migrations/20261012113652_cashier_conservation_aggregates_wallet_legs_before_materiali.sql").read_text()
+    run("conservation-pressure-changed-preimage", "ALTER FUNCTION public.fn_cashier_conservation_report(uuid) SET statement_timeout='7s';")
+    refused("conservation-pressure-changed-preimage-refused", replacement_sql, "55000")
+    run("conservation-pressure-refusal-preserves-preimage", "SELECT proconfig @> ARRAY['statement_timeout=7s'] FROM pg_proc WHERE oid='public.fn_cashier_conservation_report(uuid)'::regprocedure;", "t")
+    run("conservation-pressure-restore-qualified-preimage", "ALTER FUNCTION public.fn_cashier_conservation_report(uuid) RESET statement_timeout;")
+    run("conservation-pressure-installed-once", replacement_sql)
+    refused("conservation-pressure-replay-refused", replacement_sql, "55000")
+    run("conservation-pressure-replay-preserves-postimage", "SELECT md5(pg_get_functiondef('public.fn_cashier_conservation_report(uuid)'::regprocedure));", "68e55e37885c51afd37d532753cb5ba1")
     report_call = f"public.fn_cashier_conservation_report('{report_club}')"
     def witness(name, expression, expected):
-        return run(name, as_role(OWNER,f"SELECT {expression} FROM (SELECT {report_call} AS r) x;"),expected)
+        value=run(name, as_role(OWNER,f"SELECT {expression} FROM (SELECT {report_call} AS r) x;"),expected)
+        run(name+"-exact-pre-post", as_role(OWNER,f"SELECT ({report_call}-'as_of')=(public.fn_cashier_conservation_report_original('{report_club}')-'as_of');"),"t")
+        return value
     witness("conservation-bank-exact", "r->'bank'->>'status'||'|'||(r->'bank'->>'actual')||'|'||(r->'bank'->>'expected')", "verified|485|485")
     witness("conservation-individual-cutovers-and-peer-sides", "r->'players'->>'status'||'|'||(r->'players'->>'checked')||'|'||(r->'players'->>'absolute_drift')", "verified|3|0")
     witness("conservation-inventory-no-tournament-or-exited-stacks", "r->'inventory'->>'cash_stacks'||'|'||(r->'inventory'->>'agent_wallets')||'|'||(r->'inventory'->>'promo_wallets')", "25|15|7")
@@ -626,6 +637,57 @@ try:
     run("conservation-restore-chip-asset",f"UPDATE clubs SET asset='chips' WHERE id='{report_club}';")
     run("conservation-read-only-transaction", "BEGIN READ ONLY;"+as_role(OWNER,f"SELECT {report_call}->>'scope';")+"COMMIT;", "bank_and_player_baselines")
     run("conservation-read-only-repeat",as_role(OWNER,f"SELECT {report_call}={report_call};"),"t")
+
+    run("pressure-large-independent-fixture", f"""
+      INSERT INTO club_members(club_id,user_id,role,status,chip_balance)
+       SELECT '{report_club}',md5('pressure-user-'||i)::uuid,'player','active',0 FROM generate_series(1,590)i;
+      INSERT INTO ca_chip_baseline(club_id,user_id,opening_balance,taken_at)
+       SELECT '{report_club}',md5('pressure-user-'||i)::uuid,0,'2026-01-01' FROM generate_series(1,590)i;
+      INSERT INTO chip_ledger(club_id,from_type,from_entity_id,to_type,to_entity_id,amount,created_at,status)
+       SELECT '{report_club}','player_wallet',md5('pressure-user-'||(i%590+1))::uuid,
+        'player_wallet',md5('pressure-user-'||(i%590+1))::uuid,(i%700+1)::numeric/100,
+        '2026-01-03'::timestamptz+((i%7000)||' seconds')::interval,
+        (ARRAY['posted','correction','reversal'])[i%3+1] FROM generate_series(1,400000)i;
+      -- Match the installed idx_chip_ledger_player_wallet_legs exactly.
+      CREATE INDEX pressure_cover ON chip_ledger(created_at)
+       INCLUDE(club_id,to_type,from_type,to_entity_id,from_entity_id,amount)
+       WHERE club_id IS NOT NULL AND (to_type='player_wallet' OR from_type='player_wallet');
+      -- Include production's non-covering entity indexes so a regression may
+      -- not silently choose hundreds of repeated heap probes per position.
+      CREATE INDEX pressure_to_entity ON chip_ledger(club_id,to_entity_id,created_at);
+      CREATE INDEX pressure_from_entity ON chip_ledger(club_id,from_entity_id,created_at);
+      ANALYZE chip_ledger; ANALYZE ca_chip_baseline; ANALYZE club_members;
+    """,timeout=180)
+    run("pressure-cover-visible", "VACUUM ANALYZE chip_ledger;",timeout=180)
+    witness("pressure-independent-cancelled-both-legs", "(r->'players'->>'checked')::int=593 AND (r->'players'->>'missing')::int=2 AND (r->'players'->>'actual')::numeric=300 AND (r->'players'->>'expected')::numeric=300 AND (r->'players'->>'absolute_drift')::numeric=0", "t")
+    pressure={}
+    original_source = (ROOT / "supabase/migrations/20261011162855_cashier_club_baseline_conservation_report.sql").read_text()
+    installed_source = run("pressure-qualified-function-definition", "SELECT pg_get_functiondef('public.fn_cashier_conservation_report(uuid)'::regprocedure);")
+    for label,source in [('before',original_source),('after',installed_source)]:
+        query=source[source.index('  WITH bank AS MATERIALIZED ('):source.index('  IF v_report IS NULL THEN')]
+        query=query.replace(' INTO v_report','').replace('p_club_id',f"'{report_club}'::uuid").strip()
+        raw=run('pressure-plan-'+label,"SET work_mem='4MB'; EXPLAIN (ANALYZE,BUFFERS,FORMAT JSON) "+query,timeout=180)
+        plan=json.loads(raw)[0]
+        pressure[label]={'execution_ms':plan['Execution Time'],'temp_written':plan['Plan'].get('Temp Written Blocks',0),'temp_read':plan['Plan'].get('Temp Read Blocks',0)}
+        (out/('pressure-'+label+'.json')).write_text(json.dumps(plan,indent=2))
+    def plan_nodes(node):
+        yield node
+        for child in node.get('Plans', []):
+            yield from plan_nodes(child)
+    moves_node = next(node for node in plan_nodes(plan['Plan']) if node.get('Subplan Name') == 'CTE moves')
+    journal_scans = [node for node in plan_nodes(moves_node) if node.get('Relation Name') == 'chip_ledger']
+    require(len(journal_scans) == 1 and journal_scans[0].get('Node Type') == 'Index Only Scan'
+            and journal_scans[0].get('Index Name') == 'pressure_cover'
+            and journal_scans[0].get('Actual Loops') == 1
+            and journal_scans[0].get('Heap Fetches') == 0,
+            'wallet legs must use one covering pass, not per-position heap probes')
+    results['cases'].append({'name':'pressure-wallet-legs-one-covering-pass','passed':True})
+    (out/'pressure-journal-scan.json').write_text(json.dumps(journal_scans,indent=2))
+    run('pressure-current-report-readonly',"BEGIN READ ONLY;"+as_role(OWNER,f"SELECT ({report_call}->'players'->>'absolute_drift')::numeric=0;")+"COMMIT;",'t',timeout=180)
+    require(pressure['before']['temp_written']>0,'original materialization did not reproduce spills')
+    require(pressure['after']['temp_written']==0,'candidate still spills raw ledger rows')
+    results['cases'].append({'name':'pressure-baseline-spills-candidate-does-not','passed':True})
+    Path(out/'pressure-summary.json').write_text(json.dumps(pressure,indent=2))
 
     hashes = run("source-binding-hashes", "SELECT p.oid::regprocedure::text||'|'||md5(p.prosrc)||'|'||md5(pg_get_functiondef(p.oid)) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname IN ('fn_cashier_conservation_report','fn_cashier_recovery_receipts','fn_cashier_member_is_active','fn_club_active_cashier_edges','fn_club_bank_role','fn_club_is_in_downline','fn_cashier_assert_active_actor','fn_cashier_agent_status_mutex','fn_cashier_balance_actor_guard','fn_cashier_operation_mutex_guard','fn_cashier_operation_intent_guard','fn_cashier_exact_intent_begin','fn_cashier_exact_intent_finish','fn_club_bank_send','fn_club_bank_claim_back','fn_club_bank_reverse','fn_admin_remove_player_chips','fn_promo_wallet_send','fn_club_promo_wallet_send','fn_agent_wallet_send','fn_agent_wallet_claim_back','fn_request_chips','fn_club_bank_send_core_20261004','fn_club_bank_claim_core_20261004','fn_club_bank_reverse_core_20261004','fn_admin_remove_chips_core_20261004','fn_promo_wallet_send_core_20261004','fn_club_promo_send_core_20261004','fn_agent_wallet_send_core_20261004','fn_agent_wallet_claim_back_core_20261004','fn_request_chips_core_20261004','fn_club_cashier_members','fn_cashier_statement_downline','fn_cashier_statement_scope','fn_club_trade_ledger') ORDER BY p.oid::regprocedure::text;")
     (out / "source-binding-hashes.txt").write_text(hashes + "\n")

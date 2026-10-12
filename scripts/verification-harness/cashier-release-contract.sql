@@ -72,7 +72,10 @@ BEGIN
   v_contract := jsonb_build_array(
     jsonb_build_object(
       'signature', 'public.fn_cashier_conservation_report(uuid)',
-      'hash', '070c95f0e89b41685aaf584068e76fce'
+      -- Same report contract; the qualified replacement aggregates both sides
+      -- before materializing, preventing a full-journal temporary spill.
+      'hash', '070c95f0e89b41685aaf584068e76fce',
+      'replacement_hash', '68e55e37885c51afd37d532753cb5ba1'
     ),
     jsonb_build_object(
       'signature', 'public.fn_cashier_recovery_receipts(uuid,uuid[],text[])',

@@ -329,6 +329,8 @@ describe('CashierTradePage club load ordering', () => {
     );
 
     await waitFor(() => expect(screen.getByText('Balances Synchronized')).toBeInTheDocument());
+    if (screen.queryByRole('button', { name: /^Advanced/ }))
+      fireEvent.click(screen.getByRole('button', { name: /^Advanced/ }));
     fireEvent.click(screen.getByRole('tab', { name: 'Trade Record' }));
     expect(await screen.findByText('Transfer Alice Agent To Bob Player')).toBeInTheDocument();
     expect(screen.getAllByText('50')).toHaveLength(2);
@@ -423,6 +425,7 @@ describe('CashierTradePage club load ordering', () => {
 
     await waitFor(() => expect(screen.getByText('Loaded Player')).toBeInTheDocument());
     expect(screen.queryByText('Loading Members...')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /^Advanced/ }));
     expect(screen.getByRole('tab', { name: /^Trade$/ })).toHaveAttribute('aria-selected', 'true');
   });
 
@@ -840,6 +843,7 @@ describe('CashierTradePage club load ordering', () => {
 
     const firstMount = renderCashier();
     await waitFor(() => expect(screen.getByText('Balances Synchronized')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /^Advanced/ }));
     fireEvent.click(await screen.findByRole('tab', { name: 'Chip Requests' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Request Chips From Your Agent' }));
     fireEvent.change(screen.getByRole('spinbutton', { name: 'Chips Requested' }), {
@@ -857,6 +861,7 @@ describe('CashierTradePage club load ordering', () => {
     firstMount.unmount();
     const secondMount = renderCashier();
     await waitFor(() => expect(screen.getByText('Balances Synchronized')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /^Advanced/ }));
     fireEvent.click(await screen.findByRole('tab', { name: 'Chip Requests' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Request Chips From Your Agent' }));
     fireEvent.change(screen.getByRole('spinbutton', { name: 'Chips Requested' }), {

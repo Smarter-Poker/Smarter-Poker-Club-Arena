@@ -113,6 +113,7 @@ async function openRecord() {
     </MemoryRouter>
   );
   await waitFor(() => expect(screen.getByText('Balances Synchronized')).toBeInTheDocument());
+  fireEvent.click(screen.getByRole('button', { name: /^Advanced/ }));
   fireEvent.click(screen.getByRole('tab', { name: 'Trade Record' }));
 }
 

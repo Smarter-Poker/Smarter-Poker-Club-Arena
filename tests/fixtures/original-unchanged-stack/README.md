@@ -1,0 +1,19 @@
+# Native original unchanged-stack qualification
+
+Run `bash scripts/dev/probe-original-unchanged-stack-pg17.sh`. PostgreSQL 17 is mandatory; set `PGBIN` to its binary directory on Linux. The probe creates a private Unix-socket-only cluster, uses explicit local connection arguments, and removes its own cluster on exit. On the Mac every scratch byte is on the mounted external SSD. No remote connection URL is accepted.
+
+The existing Sept28 blocked-resolution fixture supplies the original table/consumer/late-credit components. Its unrelated whole-week report readers are stubs; this probe claims per-hand evidence qualification only. The funding-lineage helper is the exact current Oct12 live definition, independently pinned as `bb74ae7693dc40b812fce685cfc3c294`; its ledger/funding/application/move implementation runs natively. The exact current monetary evidence converter is also captured (`8d712bd799c3dfa691f2d8d9ff5101e8`) and runs natively, including string/malformed/subcent original move-stack refusals. No current membership or seat tables are used.
+
+Two databases are exercised. The synthetic case independently expects 139.55 before/after the accepted predecessor; the retained actual capture contains three complete current hands, their latest accepted predecessors, all referenced original funding receipts/debit ledger rows, move receipts and transaction frames. The .jsonb extension preserves raw original bytes through mandatory code formatting. JSON is loaded from exact captured JSONB text without parsing/reserializing numbers: numeric scale is part of the signed request hash. It contains historical IDs and original financial evidence, no credentials. `load-captured.py` loads primary rows into the isolated fixture tables; it does not replace missing production evidence.
+
+| Current hand | Predecessor | Original unchanged stack | Result proof MD5                 |
+| ------------ | ----------- | ------------------------ | -------------------------------- |
+| 26114212     | 26113880    | 139.55                   | f01d156c87b26998f83d98413e4040d6 |
+| 26114214     | 26112730    | 35.99                    | 742a7196ecaaafbbb8a859368b0235de |
+| 26114243     | 26113136    | 621.8                    | 02ed648a6619cd4a99b14eed28942c1e |
+
+For every actual case the unchanged late-credit helper still refuses `starting_stack_not_explained_by_receipts`; the new route proves original unchanged-stack continuity and the existing hash-bound consumer accepts its separate certificate in a rolled-back native transaction. The original moved participant in hand26114243 requires the real `game_id` column in the native move schema; omitting it changes `to_jsonb(move_row)` and correctly refuses the proof. No production guard was weakened to fix that fixture omission.
+
+The harness also asserts installation rollback leaves the old constraint/no new functions; exact postimage hashes; replay refusal; 20 realistic negative controls (NULL/malformed fields, signatures, original scope/ownership/earning club, pending receipts, population, conservation, predecessor acceptance and unrelated fourth-case defect); writer/consumer/hash drift, service-role-only execution, evidence RLS/table grants, duplicate idempotence and unchanged original ledger. Concurrent sessions are coordinated by a first open transaction and observation of the second's actual advisory wait, then first commit. No sleep duration or elapsed-time threshold determines correctness.
+
+This proves only the separate original unchanged-stack class. It does not qualify the fourth pending-application case, 31 original flows,245 inventory issues, whole-week P&L, production installation, or future financial launch readiness. Hosted execution, protected merge, exact migration installation/readback and finite real certificate admission are separate required delivery evidence.

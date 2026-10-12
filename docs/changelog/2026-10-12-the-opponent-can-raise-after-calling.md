@@ -13,7 +13,7 @@ model. The regression covers ordinary opens and limp-reraises, duplicate
 worker delivery, the pooled/scoped counts and the actual range reader's
 confidence-weighted widening.
 
-Focused checks: 44 tests passed across four files and the server TypeScript
+Focused checks: 197 tests passed across eight files and the server TypeScript
 check passed. This is a local source repair, not a production release.
 
 ## Qualification boundary
@@ -21,8 +21,11 @@ check passed. This is a local source repair, not a production release.
 HorseMind is hashed by Phase 10, Phase 11 and Phase 12. The current Phase 10
 PLO4 and Phase 11 PLO5/PLO6/PLO8 generation-one selections admit on the
 unchanged source and refuse this modified source as `policy_digest_mismatch`.
-Their evidence is preserved. No digest file, selection or admission guard is
-changed by this repair. All Phase 12 selections are currently null. Phase 13
+Their evidence is preserved. Those four selections are explicitly null while
+the modified source awaits requalification. Tests prove the unselected gates
+remain in shadow and retained evidence still refuses the modified digest.
+No digest file or admission guard is changed. All Phase 12 selections are
+currently null. Phase 13
 explicitly excludes HorseMind from its own digest; its nine digests remain
 unchanged.
 

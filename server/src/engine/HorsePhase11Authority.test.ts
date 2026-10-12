@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { PREVIOUS_PHASE11_SELECTIONS } from './HorsePreviousSelections.test-support.js';
 import {
   admitHorsePhase11QualifiedAuthority,
   admitHorsePhase11ReleaseAuthority,
@@ -103,28 +104,21 @@ function expectedKey(identity: Record<string, unknown>): string {
   return createHash('sha256').update(JSON.stringify(sorted)).digest('hex');
 }
 
-describe('P11.3 committed selections: every pack qualified on condition (a) whose completion record meets the floor', () => {
+describe('P11.3 the PFR repair requires fresh qualification of every previously selected pack', () => {
   const selected = HORSE_PHASE11_VARIANTS.filter(
-    (v) => PHASE11_PROTECTED_RELEASE_SELECTIONS[v] !== null
+    (v) => PREVIOUS_PHASE11_SELECTIONS[v] !== null
   );
 
-  it('the committed selections name their c8bfc617-or-later matrices and the running digest is the P11.2 contract digest', () => {
+  it('keeps current selections null and refuses retained generation-one evidence under the unchanged contract', () => {
     expect(Object.isFrozen(PHASE11_PROTECTED_RELEASE_SELECTIONS)).toBe(true);
     expect(selected.length).toBeGreaterThan(0);
     expect(PHASE11_RUNNING_CONTRACT_DIGEST).toBe(omahaVariantStrengthContractDigest());
     expect(PHASE11_RUNNING_CONTRACT_DIGEST).toMatch(/^[0-9a-f]{64}$/);
     for (const variant of HORSE_PHASE11_VARIANTS) {
-      const selection = PHASE11_PROTECTED_RELEASE_SELECTIONS[variant];
-      const release = admitHorsePhase11ReleaseAuthority(variant);
-      if (selection === null) {
-        expect(release, variant).toEqual({
-          status: 'refused',
-          reason: 'unselected',
-          transient: false,
-        });
-        expect(selectedHorsePhase11Authority(variant, release)).toBeNull();
-        continue;
-      }
+      expect(PHASE11_PROTECTED_RELEASE_SELECTIONS[variant]).toBeNull();
+      expect(admitHorsePhase11ReleaseAuthority(variant), variant).toEqual({ status: 'refused', reason: 'unselected', transient: false });
+      const selection = PREVIOUS_PHASE11_SELECTIONS[variant]!;
+      const release = admitHorsePhase11ReleaseAuthority(variant, Date.now(), selection);
       expect(selection, variant).toMatchObject({
         schema: 'horse-qualified-authority-selection-v1',
         phase: 'phase11',
@@ -135,15 +129,12 @@ describe('P11.3 committed selections: every pack qualified on condition (a) whos
         expiresAt: null,
         withdrawn: null,
       });
-      expect(release.status, variant).toBe('admitted');
-      expect(selectedHorsePhase11Authority(variant, release), variant).toMatchObject({
-        phase: 'phase11',
-        sourceSha: selection.sourceSha,
-        continuationVersion: OMAHA_VARIANT_PACKS[variant].version,
-        policyDigest: horsePhase11PolicyDigest(variant),
-        evidenceSha256: selection.qualificationSha256,
-        approvalGeneration: 1,
-      });
+      expect(release, variant).toEqual({ status: 'refused', reason: 'policy_digest_mismatch', transient: false });
+      expect(selectedHorsePhase11Authority(variant, release)).toBeNull();
+      for (const [path, digest] of [[selection.qualificationPath, selection.qualificationSha256], [selection.completionPath!, selection.completionSha256!]]) {
+        const bytes = readFileSync(fileURLToPath(new URL(`../../../${path}`, import.meta.url)));
+        expect(createHash('sha256').update(bytes).digest('hex'), path).toBe(digest);
+      }
     }
   });
 
@@ -179,7 +170,7 @@ describe('P11.3 committed selections: every pack qualified on condition (a) whos
   it('withdrawal is a committed record: a selection with withdrawn set is a withdrawal, never a selection', () => {
     for (const variant of selected) {
       const withdrawn = {
-        ...PHASE11_PROTECTED_RELEASE_SELECTIONS[variant]!,
+        ...PREVIOUS_PHASE11_SELECTIONS[variant]!,
         withdrawn: { at: '2026-10-10T00:00:00.000Z', reason: 'condition_b_lost_after_rake' },
       };
       const release = admitHorsePhase11ReleaseAuthority(variant, Date.now(), withdrawn);
@@ -196,7 +187,7 @@ describe('P11.3 committed selections: every pack qualified on condition (a) whos
   // selections (2026-10-09): a committed qualification that says
   // qualified:true is exactly the one its pack's selection names, and a
   // completion record exists for a selected pack or an unpromoted one.
-  it('the only qualified:true qualification of each pack is the one its selection names', () => {
+  it('retains each previously qualified file while its selection is null', () => {
     const dir = fileURLToPath(new URL('../../../docs/evidence/phase11/', import.meta.url));
     const files = existsSync(dir)
       ? readdirSync(dir, { recursive: true, encoding: 'utf8' }).filter((f) => f.endsWith('.json'))
@@ -205,7 +196,7 @@ describe('P11.3 committed selections: every pack qualified on condition (a) whos
       const parsed = JSON.parse(readFileSync(`${dir}${file}`, 'utf8')) as Record<string, unknown>;
       if (parsed.schema === HORSE_PHASE11_QUALIFICATION_SCHEMA && parsed.qualified === true) {
         const variant = parsed.variant as OmahaPolicyVariant;
-        expect(PHASE11_PROTECTED_RELEASE_SELECTIONS[variant]?.qualificationPath, file).toBe(
+        expect(PREVIOUS_PHASE11_SELECTIONS[variant]?.qualificationPath, file).toBe(
           `docs/evidence/phase11/${file}`
         );
       }

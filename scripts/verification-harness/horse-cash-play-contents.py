@@ -4,7 +4,7 @@ Every database is cloned from its new isolated PG17 source; no production access
 from pathlib import Path
 import json,subprocess
 from satellite_qualifier_fixture import sha
-MIG='supabase/migrations/20261012161345_settled_horse_cash_provenance_erases_original_play_contents.sql'
+MIG='supabase/migrations/20261012162707_settled_horse_cash_provenance_erases_original_play_contents.sql'
 FIX='scripts/verification-harness/fixtures/horse-cash-play-contents'
 H="ARRAY['c2000000-0000-4000-8000-000000000001'::uuid]"
 P="'c1000000-0000-4000-8000-000000000001',1000001"

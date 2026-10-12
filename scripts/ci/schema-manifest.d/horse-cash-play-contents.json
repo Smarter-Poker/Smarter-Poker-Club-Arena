@@ -1,9 +1,12 @@
 {
   "_owner": "fix/horse-cash-provenance-retention-20261012",
-  "_comment": "Qualified cash play-copy compaction declarations; installation and physical reclamation recorded separately.",
+  "_comment": "Installed 20261012162707 with exact qualified function readback; this fragment records object names, not physical reclamation or financial qualification.",
+  "tables": ["smarter_private.horse_cash_payload_certificates"],
   "functions": [
     "smarter_private.compact_horse_cash_play_contents",
     "smarter_private.horse_cash_retained_request_matches",
-    "smarter_private.horse_cash_retained_atomic_matches"
+    "smarter_private.horse_cash_retained_atomic_matches",
+    "smarter_private.horse_cash_compact_request",
+    "smarter_private.horse_cash_compact_atomic"
   ]
 }

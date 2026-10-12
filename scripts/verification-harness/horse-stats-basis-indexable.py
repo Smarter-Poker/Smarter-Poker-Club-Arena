@@ -2,7 +2,7 @@
 from pathlib import Path
 import json,re
 from satellite_qualifier_fixture import module,sha,lit
-MIGRATION=Path('supabase/migrations/20261012212443_horse_stats_basis_checks_use_their_original_hand_key.sql')
+MIGRATION=Path('supabase/migrations/20261012213920_horse_stats_basis_checks_use_their_original_hand_key.sql')
 def qualify(e,template,keep_template=False):
  root=e.root;db=e.database(template);passed=[]
  e.report.setdefault('source_sha256',{}).update({str(MIGRATION):sha(root/MIGRATION),'scripts/verification-harness/horse-stats-basis-indexable.py':sha(Path(__file__))})

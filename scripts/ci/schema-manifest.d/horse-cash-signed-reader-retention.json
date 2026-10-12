@@ -1,0 +1,5 @@
+{
+  "_owner": "fix/horse-cash-signed-reader-retention-20261012",
+  "_comment": "Service-only boolean bridge to the unchanged original private cash certificate matcher. Declaration is not installation evidence.",
+  "functions": ["public.fn_cash_signed_retained_request_matches"]
+}

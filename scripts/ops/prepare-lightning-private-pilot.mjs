@@ -1,5 +1,6 @@
 import { writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
+import { supabaseServerHeaders } from '../ci/supabase-auth-headers.mjs';
 
 export const PILOT = Object.freeze({
   ownerId: '2d1cd6c3-5700-4af9-a271-d4863fdab20d',
@@ -38,6 +39,14 @@ export function assertPilotGame(game, clubId) {
   }
 }
 
+export function pilotServiceFetch(key, fetchImpl = fetch) {
+  return (input, init = {}) =>
+    fetchImpl(input, {
+      ...init,
+      headers: supabaseServerHeaders(key, Object.fromEntries(new Headers(init.headers))),
+    });
+}
+
 export async function preparePilot(env = process.env) {
   const { createClient } = await import('@supabase/supabase-js');
   if (
@@ -49,7 +58,10 @@ export async function preparePilot(env = process.env) {
     throw new Error('Configured Verified Service Credentials Are Required');
   }
   const options = { auth: { persistSession: false, autoRefreshToken: false } };
-  const admin = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, options);
+  const admin = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
+    ...options,
+    global: { fetch: pilotServiceFetch(env.SUPABASE_SERVICE_ROLE_KEY) },
+  });
   const player = createClient(
     env.SUPABASE_URL,
     'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx',

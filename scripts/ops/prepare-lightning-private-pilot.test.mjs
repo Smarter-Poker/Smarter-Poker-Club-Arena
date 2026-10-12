@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { assertPilotClub, assertPilotGame, PILOT } from './prepare-lightning-private-pilot.mjs';
+import {
+  assertPilotClub,
+  assertPilotGame,
+  PILOT,
+  pilotServiceFetch,
+} from './prepare-lightning-private-pilot.mjs';
 const club = {
   id: 'private-club',
   owner_id: PILOT.ownerId,
@@ -45,5 +50,26 @@ test('refuses unrelated games, public games and activation during provisioning r
     { cluster_mode: 'lightning' },
   ]) {
     assert.throws(() => assertPilotGame({ ...game, ...patch }, club.id));
+  }
+});
+
+test('service readback uses the configured key generation and drops caller authentication', async () => {
+  for (const key of ['sb_secret_current', 'legacy.jwt.key']) {
+    let seen;
+    const run = pilotServiceFetch(key, async (_url, init) => {
+      seen = init.headers;
+      return { ok: true };
+    });
+    await run('https://configured-project/rest/v1/profiles', {
+      headers: {
+        Authorization: 'Bearer wrong-user',
+        'Content-Type': 'application/json',
+        'x-smarter-data-actor': 'wrong-actor',
+      },
+    });
+    assert.equal(seen.apikey, key);
+    assert.equal(seen.Authorization, key.startsWith('sb_secret_') ? undefined : `Bearer ${key}`);
+    assert.equal(seen['x-smarter-data-actor'], 'service');
+    assert.equal(seen['Content-Type'] || seen['content-type'], 'application/json');
   }
 });

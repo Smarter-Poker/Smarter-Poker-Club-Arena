@@ -132,17 +132,14 @@ export default function ClubControlActions() {
             </p>
             <Link to={`/clubs/${workspace.routeClubId}/applicants`}>Review Applicants</Link>
             <Link to={`/clubs/${workspace.routeClubId}/settings#settings-privacy`}>
-              Edit Joining Policy
+              Joining Policy
             </Link>
           </>
         )}
       </div>
       <div className="control-message">
         <h2>Club Entry Message</h2>
-        <p>
-          This Message Greets Members When They Enter The Club. Saving A New Message Creates A New
-          Revision.
-        </p>
+        <p>This Message Greets Members When They Enter The Club. Updates Show Again To Members.</p>
         <label htmlFor="control-club-message">Message</label>
         <textarea
           id="control-club-message"

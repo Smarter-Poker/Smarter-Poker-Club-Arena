@@ -1,0 +1,810 @@
+{
+  "capturedAt": "2026-10-12",
+  "project": "kuklfnapbkmacvwxktbh",
+  "functions": [
+    {
+      "signature": "fn_ca_hand_facts_strip_unpaid_holding()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_hand_facts_strip_unpaid_holding()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public'\nAS $function$\nBEGIN\n  IF COALESCE(NEW.invested, 0) = 0 THEN\n    NEW.hole_cards := NULL;\n  END IF;\n  RETURN NEW;\nEND\n$function$\n",
+      "definition_md5": "0087000e038b20db248859abb5a87b1a",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "proconfig": ["search_path=public"],
+      "prosecdef": false,
+      "owner": "postgres"
+    },
+    {
+      "signature": "fn_club_member_daily_facts_delete()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_club_member_daily_facts_delete()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nBEGIN\n  INSERT INTO public.club_member_daily_facts AS totals(club_id,user_id,played_on,game_variant,is_mtt,hands,wins,vpip_hands,pfr_hands,tb_hands,faced_tb,folded_tb,cb_hands,cb_opps,fees,net)\n  SELECT club_id,user_id,played_on,game_variant,is_mtt,sum(hands)::bigint,sum(wins)::bigint,sum(vpip_hands)::bigint,sum(pfr_hands)::bigint,sum(tb_hands)::bigint,sum(faced_tb)::bigint,sum(folded_tb)::bigint,sum(cb_hands)::bigint,sum(cb_opps)::bigint,sum(fees),sum(net)\n  FROM (SELECT club_id,user_id,(played_at AT TIME ZONE 'UTC')::date AS played_on,lower(game_variant) AS game_variant,(tournament_id IS NOT NULL) AS is_mtt,(1)*(-1) AS hands,(CASE WHEN net>0 THEN 1 ELSE 0 END)*(-1) AS wins,(CASE WHEN vpip THEN 1 ELSE 0 END)*(-1) AS vpip_hands,(CASE WHEN pfr THEN 1 ELSE 0 END)*(-1) AS pfr_hands,(CASE WHEN three_bet THEN 1 ELSE 0 END)*(-1) AS tb_hands,(CASE WHEN faced_three_bet THEN 1 ELSE 0 END)*(-1) AS faced_tb,(CASE WHEN folded_to_three_bet THEN 1 ELSE 0 END)*(-1) AS folded_tb,(CASE WHEN cbet_flop THEN 1 ELSE 0 END)*(-1) AS cb_hands,(CASE WHEN had_cbet_flop_opp THEN 1 ELSE 0 END)*(-1) AS cb_opps,(rake_paid)*(-1) AS fees,(coalesce(net,0))*(-1) AS net FROM old_facts) changes\n  WHERE club_id IS NOT NULL GROUP BY club_id,user_id,played_on,game_variant,is_mtt\n  HAVING sum(hands)<>0 OR sum(wins)<>0 OR sum(vpip_hands)<>0 OR sum(pfr_hands)<>0 OR sum(tb_hands)<>0 OR sum(faced_tb)<>0 OR sum(folded_tb)<>0 OR sum(cb_hands)<>0 OR sum(cb_opps)<>0 OR sum(fees)<>0 OR sum(net)<>0\n  ORDER BY club_id,user_id,played_on,game_variant,is_mtt\n  ON CONFLICT(club_id,user_id,played_on,game_variant,is_mtt) DO UPDATE SET\n    hands=totals.hands+EXCLUDED.hands,\n    wins=totals.wins+EXCLUDED.wins,\n    vpip_hands=totals.vpip_hands+EXCLUDED.vpip_hands,\n    pfr_hands=totals.pfr_hands+EXCLUDED.pfr_hands,\n    tb_hands=totals.tb_hands+EXCLUDED.tb_hands,\n    faced_tb=totals.faced_tb+EXCLUDED.faced_tb,\n    folded_tb=totals.folded_tb+EXCLUDED.folded_tb,\n    cb_hands=totals.cb_hands+EXCLUDED.cb_hands,\n    cb_opps=totals.cb_opps+EXCLUDED.cb_opps,\n    fees=totals.fees+EXCLUDED.fees,\n    net=totals.net+EXCLUDED.net;\n  RETURN NULL;\nEND;\n$function$\n",
+      "definition_md5": "3afe288845bb55c00c68ce9b055b4998",
+      "acl": "{postgres=X/postgres}",
+      "proconfig": ["search_path=public, pg_temp"],
+      "prosecdef": true,
+      "owner": "postgres"
+    },
+    {
+      "signature": "fn_club_member_daily_facts_insert()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_club_member_daily_facts_insert()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nBEGIN\n  INSERT INTO public.club_member_daily_facts AS totals(club_id,user_id,played_on,game_variant,is_mtt,hands,wins,vpip_hands,pfr_hands,tb_hands,faced_tb,folded_tb,cb_hands,cb_opps,fees,net)\n  SELECT club_id,user_id,played_on,game_variant,is_mtt,sum(hands)::bigint,sum(wins)::bigint,sum(vpip_hands)::bigint,sum(pfr_hands)::bigint,sum(tb_hands)::bigint,sum(faced_tb)::bigint,sum(folded_tb)::bigint,sum(cb_hands)::bigint,sum(cb_opps)::bigint,sum(fees),sum(net)\n  FROM (SELECT club_id,user_id,(played_at AT TIME ZONE 'UTC')::date AS played_on,lower(game_variant) AS game_variant,(tournament_id IS NOT NULL) AS is_mtt,(1)*(1) AS hands,(CASE WHEN net>0 THEN 1 ELSE 0 END)*(1) AS wins,(CASE WHEN vpip THEN 1 ELSE 0 END)*(1) AS vpip_hands,(CASE WHEN pfr THEN 1 ELSE 0 END)*(1) AS pfr_hands,(CASE WHEN three_bet THEN 1 ELSE 0 END)*(1) AS tb_hands,(CASE WHEN faced_three_bet THEN 1 ELSE 0 END)*(1) AS faced_tb,(CASE WHEN folded_to_three_bet THEN 1 ELSE 0 END)*(1) AS folded_tb,(CASE WHEN cbet_flop THEN 1 ELSE 0 END)*(1) AS cb_hands,(CASE WHEN had_cbet_flop_opp THEN 1 ELSE 0 END)*(1) AS cb_opps,(rake_paid)*(1) AS fees,(coalesce(net,0))*(1) AS net FROM new_facts) changes\n  WHERE club_id IS NOT NULL GROUP BY club_id,user_id,played_on,game_variant,is_mtt\n  HAVING sum(hands)<>0 OR sum(wins)<>0 OR sum(vpip_hands)<>0 OR sum(pfr_hands)<>0 OR sum(tb_hands)<>0 OR sum(faced_tb)<>0 OR sum(folded_tb)<>0 OR sum(cb_hands)<>0 OR sum(cb_opps)<>0 OR sum(fees)<>0 OR sum(net)<>0\n  ORDER BY club_id,user_id,played_on,game_variant,is_mtt\n  ON CONFLICT(club_id,user_id,played_on,game_variant,is_mtt) DO UPDATE SET\n    hands=totals.hands+EXCLUDED.hands,\n    wins=totals.wins+EXCLUDED.wins,\n    vpip_hands=totals.vpip_hands+EXCLUDED.vpip_hands,\n    pfr_hands=totals.pfr_hands+EXCLUDED.pfr_hands,\n    tb_hands=totals.tb_hands+EXCLUDED.tb_hands,\n    faced_tb=totals.faced_tb+EXCLUDED.faced_tb,\n    folded_tb=totals.folded_tb+EXCLUDED.folded_tb,\n    cb_hands=totals.cb_hands+EXCLUDED.cb_hands,\n    cb_opps=totals.cb_opps+EXCLUDED.cb_opps,\n    fees=totals.fees+EXCLUDED.fees,\n    net=totals.net+EXCLUDED.net;\n  RETURN NULL;\nEND;\n$function$\n",
+      "definition_md5": "eb43a3d872cfca98b321442b53565821",
+      "acl": "{postgres=X/postgres}",
+      "proconfig": ["search_path=public, pg_temp"],
+      "prosecdef": true,
+      "owner": "postgres"
+    },
+    {
+      "signature": "fn_club_member_daily_facts_update()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_club_member_daily_facts_update()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nBEGIN\n  INSERT INTO public.club_member_daily_facts AS totals(club_id,user_id,played_on,game_variant,is_mtt,hands,wins,vpip_hands,pfr_hands,tb_hands,faced_tb,folded_tb,cb_hands,cb_opps,fees,net)\n  SELECT club_id,user_id,played_on,game_variant,is_mtt,sum(hands)::bigint,sum(wins)::bigint,sum(vpip_hands)::bigint,sum(pfr_hands)::bigint,sum(tb_hands)::bigint,sum(faced_tb)::bigint,sum(folded_tb)::bigint,sum(cb_hands)::bigint,sum(cb_opps)::bigint,sum(fees),sum(net)\n  FROM (SELECT club_id,user_id,(played_at AT TIME ZONE 'UTC')::date AS played_on,lower(game_variant) AS game_variant,(tournament_id IS NOT NULL) AS is_mtt,(1)*(1) AS hands,(CASE WHEN net>0 THEN 1 ELSE 0 END)*(1) AS wins,(CASE WHEN vpip THEN 1 ELSE 0 END)*(1) AS vpip_hands,(CASE WHEN pfr THEN 1 ELSE 0 END)*(1) AS pfr_hands,(CASE WHEN three_bet THEN 1 ELSE 0 END)*(1) AS tb_hands,(CASE WHEN faced_three_bet THEN 1 ELSE 0 END)*(1) AS faced_tb,(CASE WHEN folded_to_three_bet THEN 1 ELSE 0 END)*(1) AS folded_tb,(CASE WHEN cbet_flop THEN 1 ELSE 0 END)*(1) AS cb_hands,(CASE WHEN had_cbet_flop_opp THEN 1 ELSE 0 END)*(1) AS cb_opps,(rake_paid)*(1) AS fees,(coalesce(net,0))*(1) AS net FROM new_facts UNION ALL SELECT club_id,user_id,(played_at AT TIME ZONE 'UTC')::date AS played_on,lower(game_variant) AS game_variant,(tournament_id IS NOT NULL) AS is_mtt,(1)*(-1) AS hands,(CASE WHEN net>0 THEN 1 ELSE 0 END)*(-1) AS wins,(CASE WHEN vpip THEN 1 ELSE 0 END)*(-1) AS vpip_hands,(CASE WHEN pfr THEN 1 ELSE 0 END)*(-1) AS pfr_hands,(CASE WHEN three_bet THEN 1 ELSE 0 END)*(-1) AS tb_hands,(CASE WHEN faced_three_bet THEN 1 ELSE 0 END)*(-1) AS faced_tb,(CASE WHEN folded_to_three_bet THEN 1 ELSE 0 END)*(-1) AS folded_tb,(CASE WHEN cbet_flop THEN 1 ELSE 0 END)*(-1) AS cb_hands,(CASE WHEN had_cbet_flop_opp THEN 1 ELSE 0 END)*(-1) AS cb_opps,(rake_paid)*(-1) AS fees,(coalesce(net,0))*(-1) AS net FROM old_facts) changes\n  WHERE club_id IS NOT NULL GROUP BY club_id,user_id,played_on,game_variant,is_mtt\n  HAVING sum(hands)<>0 OR sum(wins)<>0 OR sum(vpip_hands)<>0 OR sum(pfr_hands)<>0 OR sum(tb_hands)<>0 OR sum(faced_tb)<>0 OR sum(folded_tb)<>0 OR sum(cb_hands)<>0 OR sum(cb_opps)<>0 OR sum(fees)<>0 OR sum(net)<>0\n  ORDER BY club_id,user_id,played_on,game_variant,is_mtt\n  ON CONFLICT(club_id,user_id,played_on,game_variant,is_mtt) DO UPDATE SET\n    hands=totals.hands+EXCLUDED.hands,\n    wins=totals.wins+EXCLUDED.wins,\n    vpip_hands=totals.vpip_hands+EXCLUDED.vpip_hands,\n    pfr_hands=totals.pfr_hands+EXCLUDED.pfr_hands,\n    tb_hands=totals.tb_hands+EXCLUDED.tb_hands,\n    faced_tb=totals.faced_tb+EXCLUDED.faced_tb,\n    folded_tb=totals.folded_tb+EXCLUDED.folded_tb,\n    cb_hands=totals.cb_hands+EXCLUDED.cb_hands,\n    cb_opps=totals.cb_opps+EXCLUDED.cb_opps,\n    fees=totals.fees+EXCLUDED.fees,\n    net=totals.net+EXCLUDED.net;\n  RETURN NULL;\nEND;\n$function$\n",
+      "definition_md5": "20587bfe49aecb48cb05845b5ea30246",
+      "acl": "{postgres=X/postgres}",
+      "proconfig": ["search_path=public, pg_temp"],
+      "prosecdef": true,
+      "owner": "postgres"
+    },
+    {
+      "signature": "fn_club_member_play_totals_delete()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_club_member_play_totals_delete()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nBEGIN\n  INSERT INTO public.club_member_play_totals AS totals(club_id,user_id,hands,mtt_hands,fees,mtt_fees,net,mtt_net)\n  SELECT club_id,user_id,sum(hands)::bigint,sum(mtt_hands)::bigint,sum(fees),sum(mtt_fees),sum(net),sum(mtt_net)\n  FROM (SELECT club_id,user_id,-(CASE WHEN tournament_id IS NULL THEN 1 ELSE 0 END) AS hands,-(CASE WHEN tournament_id IS NOT NULL THEN 1 ELSE 0 END) AS mtt_hands,-(CASE WHEN tournament_id IS NULL THEN rake_paid ELSE 0 END) AS fees,-(CASE WHEN tournament_id IS NOT NULL THEN rake_paid ELSE 0 END) AS mtt_fees,-(CASE WHEN tournament_id IS NULL THEN coalesce(net,0) ELSE 0 END) AS net,-(CASE WHEN tournament_id IS NOT NULL THEN coalesce(net,0) ELSE 0 END) AS mtt_net FROM old_facts) changes\n  WHERE club_id IS NOT NULL GROUP BY club_id,user_id\n  HAVING sum(hands)<>0 OR sum(mtt_hands)<>0 OR sum(fees)<>0 OR sum(mtt_fees)<>0 OR sum(net)<>0 OR sum(mtt_net)<>0\n  ORDER BY club_id,user_id\n  ON CONFLICT(club_id,user_id) DO UPDATE SET\n    hands=totals.hands+EXCLUDED.hands,mtt_hands=totals.mtt_hands+EXCLUDED.mtt_hands,fees=totals.fees+EXCLUDED.fees,mtt_fees=totals.mtt_fees+EXCLUDED.mtt_fees,net=totals.net+EXCLUDED.net,mtt_net=totals.mtt_net+EXCLUDED.mtt_net;\n  RETURN NULL;\nEND;\n$function$\n",
+      "definition_md5": "a4416aee72dfbad249800afaf996c127",
+      "acl": "{postgres=X/postgres}",
+      "proconfig": ["search_path=public, pg_temp"],
+      "prosecdef": true,
+      "owner": "postgres"
+    },
+    {
+      "signature": "fn_club_member_play_totals_insert()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_club_member_play_totals_insert()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nBEGIN\n  INSERT INTO public.club_member_play_totals AS totals(club_id,user_id,hands,mtt_hands,fees,mtt_fees,net,mtt_net)\n  SELECT club_id,user_id,sum(hands)::bigint,sum(mtt_hands)::bigint,sum(fees),sum(mtt_fees),sum(net),sum(mtt_net)\n  FROM (SELECT club_id,user_id,CASE WHEN tournament_id IS NULL THEN 1 ELSE 0 END AS hands,CASE WHEN tournament_id IS NOT NULL THEN 1 ELSE 0 END AS mtt_hands,CASE WHEN tournament_id IS NULL THEN rake_paid ELSE 0 END AS fees,CASE WHEN tournament_id IS NOT NULL THEN rake_paid ELSE 0 END AS mtt_fees,CASE WHEN tournament_id IS NULL THEN coalesce(net,0) ELSE 0 END AS net,CASE WHEN tournament_id IS NOT NULL THEN coalesce(net,0) ELSE 0 END AS mtt_net FROM new_facts) changes\n  WHERE club_id IS NOT NULL GROUP BY club_id,user_id\n  HAVING sum(hands)<>0 OR sum(mtt_hands)<>0 OR sum(fees)<>0 OR sum(mtt_fees)<>0 OR sum(net)<>0 OR sum(mtt_net)<>0\n  ORDER BY club_id,user_id\n  ON CONFLICT(club_id,user_id) DO UPDATE SET\n    hands=totals.hands+EXCLUDED.hands,mtt_hands=totals.mtt_hands+EXCLUDED.mtt_hands,fees=totals.fees+EXCLUDED.fees,mtt_fees=totals.mtt_fees+EXCLUDED.mtt_fees,net=totals.net+EXCLUDED.net,mtt_net=totals.mtt_net+EXCLUDED.mtt_net;\n  RETURN NULL;\nEND;\n$function$\n",
+      "definition_md5": "993dae61e1b150fd6155ce9cd62b68c3",
+      "acl": "{postgres=X/postgres}",
+      "proconfig": ["search_path=public, pg_temp"],
+      "prosecdef": true,
+      "owner": "postgres"
+    },
+    {
+      "signature": "fn_club_member_play_totals_update()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_club_member_play_totals_update()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nBEGIN\n  INSERT INTO public.club_member_play_totals AS totals(club_id,user_id,hands,mtt_hands,fees,mtt_fees,net,mtt_net)\n  SELECT club_id,user_id,sum(hands)::bigint,sum(mtt_hands)::bigint,sum(fees),sum(mtt_fees),sum(net),sum(mtt_net)\n  FROM (SELECT club_id,user_id,CASE WHEN tournament_id IS NULL THEN 1 ELSE 0 END AS hands,CASE WHEN tournament_id IS NOT NULL THEN 1 ELSE 0 END AS mtt_hands,CASE WHEN tournament_id IS NULL THEN rake_paid ELSE 0 END AS fees,CASE WHEN tournament_id IS NOT NULL THEN rake_paid ELSE 0 END AS mtt_fees,CASE WHEN tournament_id IS NULL THEN coalesce(net,0) ELSE 0 END AS net,CASE WHEN tournament_id IS NOT NULL THEN coalesce(net,0) ELSE 0 END AS mtt_net FROM new_facts UNION ALL SELECT club_id,user_id,-(CASE WHEN tournament_id IS NULL THEN 1 ELSE 0 END) AS hands,-(CASE WHEN tournament_id IS NOT NULL THEN 1 ELSE 0 END) AS mtt_hands,-(CASE WHEN tournament_id IS NULL THEN rake_paid ELSE 0 END) AS fees,-(CASE WHEN tournament_id IS NOT NULL THEN rake_paid ELSE 0 END) AS mtt_fees,-(CASE WHEN tournament_id IS NULL THEN coalesce(net,0) ELSE 0 END) AS net,-(CASE WHEN tournament_id IS NOT NULL THEN coalesce(net,0) ELSE 0 END) AS mtt_net FROM old_facts) changes\n  WHERE club_id IS NOT NULL GROUP BY club_id,user_id\n  HAVING sum(hands)<>0 OR sum(mtt_hands)<>0 OR sum(fees)<>0 OR sum(mtt_fees)<>0 OR sum(net)<>0 OR sum(mtt_net)<>0\n  ORDER BY club_id,user_id\n  ON CONFLICT(club_id,user_id) DO UPDATE SET\n    hands=totals.hands+EXCLUDED.hands,mtt_hands=totals.mtt_hands+EXCLUDED.mtt_hands,fees=totals.fees+EXCLUDED.fees,mtt_fees=totals.mtt_fees+EXCLUDED.mtt_fees,net=totals.net+EXCLUDED.net,mtt_net=totals.mtt_net+EXCLUDED.mtt_net;\n  RETURN NULL;\nEND;\n$function$\n",
+      "definition_md5": "8ef370c5fa7a7f2ad9517934f3e2d889",
+      "acl": "{postgres=X/postgres}",
+      "proconfig": ["search_path=public, pg_temp"],
+      "prosecdef": true,
+      "owner": "postgres"
+    },
+    {
+      "signature": "fn_club_roster_hand_totals_delete()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_club_roster_hand_totals_delete()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nBEGIN\n  INSERT INTO public.club_roster_hand_totals AS totals (club_id,user_id,fees,hands)\n  SELECT club_id,user_id,sum(fee),sum(n)::bigint\n  FROM (SELECT club_id,user_id,-rake_paid AS fee,(-1)::bigint AS n FROM old_facts) changes\n  WHERE club_id IS NOT NULL\n  GROUP BY club_id,user_id\n  HAVING sum(fee) <> 0 OR sum(n) <> 0\n  ORDER BY club_id,user_id\n  ON CONFLICT (club_id,user_id) DO UPDATE\n    SET fees = totals.fees + EXCLUDED.fees,\n        hands = totals.hands + EXCLUDED.hands;\n  RETURN NULL;\nEND;\n$function$\n",
+      "definition_md5": "5c15d9c155b934bb01b9f4bc53279392",
+      "acl": "{postgres=X/postgres}",
+      "proconfig": ["search_path=public, pg_temp"],
+      "prosecdef": true,
+      "owner": "postgres"
+    },
+    {
+      "signature": "fn_club_roster_hand_totals_insert()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_club_roster_hand_totals_insert()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nBEGIN\n  INSERT INTO public.club_roster_hand_totals AS totals (club_id,user_id,fees,hands)\n  SELECT club_id,user_id,sum(fee),sum(n)::bigint\n  FROM (SELECT club_id,user_id,rake_paid AS fee,1::bigint AS n FROM new_facts) changes\n  WHERE club_id IS NOT NULL\n  GROUP BY club_id,user_id\n  HAVING sum(fee) <> 0 OR sum(n) <> 0\n  ORDER BY club_id,user_id\n  ON CONFLICT (club_id,user_id) DO UPDATE\n    SET fees = totals.fees + EXCLUDED.fees,\n        hands = totals.hands + EXCLUDED.hands;\n  RETURN NULL;\nEND;\n$function$\n",
+      "definition_md5": "6eb41e7e732cc837066a910d35f0e644",
+      "acl": "{postgres=X/postgres}",
+      "proconfig": ["search_path=public, pg_temp"],
+      "prosecdef": true,
+      "owner": "postgres"
+    },
+    {
+      "signature": "fn_club_roster_hand_totals_update()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_club_roster_hand_totals_update()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nBEGIN\n  INSERT INTO public.club_roster_hand_totals AS totals (club_id,user_id,fees,hands)\n  SELECT club_id,user_id,sum(fee),sum(n)::bigint\n  FROM (SELECT club_id,user_id,rake_paid AS fee,1::bigint AS n FROM new_facts UNION ALL SELECT club_id,user_id,-rake_paid AS fee,(-1)::bigint AS n FROM old_facts) changes\n  WHERE club_id IS NOT NULL\n  GROUP BY club_id,user_id\n  HAVING sum(fee) <> 0 OR sum(n) <> 0\n  ORDER BY club_id,user_id\n  ON CONFLICT (club_id,user_id) DO UPDATE\n    SET fees = totals.fees + EXCLUDED.fees,\n        hands = totals.hands + EXCLUDED.hands;\n  RETURN NULL;\nEND;\n$function$\n",
+      "definition_md5": "0204331d58f0e2a0c51002a3b9797a21",
+      "acl": "{postgres=X/postgres}",
+      "proconfig": ["search_path=public, pg_temp"],
+      "prosecdef": true,
+      "owner": "postgres"
+    },
+    {
+      "signature": "fn_prune_ca_hand_facts(integer)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_prune_ca_hand_facts(p_limit integer DEFAULT 200000)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_days    integer;\n  v_cutoff  timestamptz;\n  v_deleted integer;\n  v_lim     integer;\nBEGIN\n  v_lim := GREATEST(COALESCE(p_limit, 200000), 1);\n\n  SELECT COALESCE(horse_retention_days, 8) INTO v_days\n    FROM public.hand_history_retention_policy LIMIT 1;\n  v_days := GREATEST(COALESCE(v_days, 8), 1);\n  v_cutoff := now() - make_interval(days => v_days);\n\n  WITH doomed AS (\n    SELECT f.hand_id, f.user_id\n      FROM public.ca_hand_facts f\n      JOIN public.profiles p ON p.id = f.user_id\n     WHERE COALESCE(p.is_horse, false)\n       AND f.played_at < v_cutoff\n     LIMIT v_lim\n  )\n  DELETE FROM public.ca_hand_facts f\n   USING doomed d\n   WHERE f.hand_id = d.hand_id AND f.user_id = d.user_id;\n  GET DIAGNOSTICS v_deleted = ROW_COUNT;\n\n  RETURN jsonb_build_object(\n    'deleted', v_deleted,\n    'cutoff', v_cutoff,\n    'retention_days', v_days,\n    'more', v_deleted >= v_lim\n  );\nEND;\n$function$\n",
+      "definition_md5": "759f77b0f2db91ee882d4520419618db",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "proconfig": ["search_path=public, pg_temp"],
+      "prosecdef": true,
+      "owner": "postgres"
+    },
+    {
+      "signature": "smarter_private.hand_submission_retention_disposal(uuid[],text)",
+      "definition": "CREATE OR REPLACE FUNCTION smarter_private.hand_submission_retention_disposal(p_hand_ids uuid[], p_reason text)\n RETURNS integer\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public', 'smarter_private'\nAS $function$\nDECLARE v_rows integer := 0;\nBEGIN\n  IF p_hand_ids IS NULL OR cardinality(p_hand_ids) = 0 THEN RETURN 0; END IF;\n  IF length(btrim(COALESCE(p_reason, ''))) < 40 THEN\n    RAISE EXCEPTION 'HAND_DISPOSAL_IDENTITY_REQUIRED' USING ERRCODE = '22023';\n  END IF;\n\n  INSERT INTO smarter_private.hand_submission_disposals\n    (table_id, hand_number, submission_id, receipt_id, witness_hand_number, reason, expected)\n  SELECT s.table_id, s.hand_number, s.submission_id,\n         md5('hand:disposal:retention:' || s.submission_id::text)::uuid,\n         s.hand_number, p_reason,\n         jsonb_build_object(\n           'kind', 'retention_pruned_settled_hand',\n           'table_id', s.table_id, 'hand_number', s.hand_number,\n           'submission_id', s.submission_id, 'retained_at', s.retained_at,\n           'dealer_generation', s.lease_generation, 'request_hash', s.request_hash,\n           'pruned_hand_id', hh.id, 'hand_created_at', hh.created_at,\n           'settled', EXISTS (SELECT 1 FROM public.hand_atomic_commits a\n                               WHERE a.table_id = s.table_id AND a.hand_number = s.hand_number),\n           'settlement_completed_at', (SELECT a.post_commit_completed_at FROM public.hand_atomic_commits a WHERE a.table_id=s.table_id AND a.hand_number=s.hand_number AND a.hand_id=s.submission_id),\n           'settlement_completed', EXISTS (SELECT 1 FROM public.hand_atomic_commits a WHERE a.table_id=s.table_id AND a.hand_number=s.hand_number AND a.hand_id=s.submission_id AND a.post_commit_completed_at IS NOT NULL AND a.post_commit_result->>'ok'='true'),\n           'disposed_at', clock_timestamp())\n    FROM public.hand_history hh\n    JOIN smarter_private.hand_submissions s\n      ON s.table_id = hh.table_id AND s.hand_number = hh.hand_number\n   WHERE hh.id = ANY (p_hand_ids)\n     AND NOT EXISTS (SELECT 1 FROM smarter_private.hand_submission_disposals dd\n                      WHERE dd.table_id = s.table_id AND dd.hand_number = s.hand_number)\n  ON CONFLICT DO NOTHING;\n  GET DIAGNOSTICS v_rows = ROW_COUNT;\n  PERFORM smarter_private.compact_settled_horse_requests(p_hand_ids);\n  RETURN v_rows;\nEND\n$function$\n",
+      "definition_md5": "090cb22f79a4820fa13a967969922b07",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "proconfig": ["search_path=pg_catalog, public, smarter_private"],
+      "prosecdef": true,
+      "owner": "postgres"
+    }
+  ],
+  "columns": [
+    {
+      "relname": "ca_hand_facts",
+      "attname": "hand_id",
+      "type": "uuid",
+      "attnotnull": true,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "user_id",
+      "type": "uuid",
+      "attnotnull": true,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "club_id",
+      "type": "uuid",
+      "attnotnull": false,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "table_id",
+      "type": "uuid",
+      "attnotnull": false,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "tournament_id",
+      "type": "uuid",
+      "attnotnull": false,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "played_at",
+      "type": "timestamp with time zone",
+      "attnotnull": true,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "game_variant",
+      "type": "text",
+      "attnotnull": true,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "big_blind",
+      "type": "numeric",
+      "attnotnull": true,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "seat",
+      "type": "smallint",
+      "attnotnull": false,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "position",
+      "type": "text",
+      "attnotnull": true,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "players_dealt",
+      "type": "smallint",
+      "attnotnull": true,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "hole_cards",
+      "type": "jsonb",
+      "attnotnull": false,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "hand_class",
+      "type": "text",
+      "attnotnull": false,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "invested",
+      "type": "numeric",
+      "attnotnull": true,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "returned",
+      "type": "numeric",
+      "attnotnull": true,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "net",
+      "type": "numeric",
+      "attnotnull": true,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "net_bb",
+      "type": "numeric",
+      "attnotnull": true,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "rake_paid",
+      "type": "numeric",
+      "attnotnull": true,
+      "default_expression": "0"
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "vpip",
+      "type": "boolean",
+      "attnotnull": true,
+      "default_expression": "false"
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "pfr",
+      "type": "boolean",
+      "attnotnull": true,
+      "default_expression": "false"
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "three_bet",
+      "type": "boolean",
+      "attnotnull": true,
+      "default_expression": "false"
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "faced_three_bet",
+      "type": "boolean",
+      "attnotnull": true,
+      "default_expression": "false"
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "folded_to_three_bet",
+      "type": "boolean",
+      "attnotnull": true,
+      "default_expression": "false"
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "had_cbet_flop_opp",
+      "type": "boolean",
+      "attnotnull": true,
+      "default_expression": "false"
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "cbet_flop",
+      "type": "boolean",
+      "attnotnull": true,
+      "default_expression": "false"
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "saw_flop",
+      "type": "boolean",
+      "attnotnull": true,
+      "default_expression": "false"
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "went_to_showdown",
+      "type": "boolean",
+      "attnotnull": true,
+      "default_expression": "false"
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "won_at_showdown",
+      "type": "boolean",
+      "attnotnull": true,
+      "default_expression": "false"
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "aggressive_actions",
+      "type": "smallint",
+      "attnotnull": true,
+      "default_expression": "0"
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "passive_actions",
+      "type": "smallint",
+      "attnotnull": true,
+      "default_expression": "0"
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "was_all_in",
+      "type": "boolean",
+      "attnotnull": true,
+      "default_expression": "false"
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "all_in_street",
+      "type": "text",
+      "attnotnull": false,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "all_in_at_risk",
+      "type": "numeric",
+      "attnotnull": false,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "all_in_equity",
+      "type": "numeric",
+      "attnotnull": false,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "ev_returned",
+      "type": "numeric",
+      "attnotnull": false,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "ev_net",
+      "type": "numeric",
+      "attnotnull": true,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "ev_net_bb",
+      "type": "numeric",
+      "attnotnull": true,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "created_at",
+      "type": "timestamp with time zone",
+      "attnotnull": true,
+      "default_expression": "now()"
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "opponent_ids",
+      "type": "uuid[]",
+      "attnotnull": false,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "four_bet",
+      "type": "boolean",
+      "attnotnull": true,
+      "default_expression": "false"
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "all_in_equity_owed",
+      "type": "boolean",
+      "attnotnull": true,
+      "default_expression": "false"
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "source_hash",
+      "type": "text",
+      "attnotnull": false,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "effective_stack_bb_at_deal",
+      "type": "numeric",
+      "attnotnull": false,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "hero_in_position",
+      "type": "boolean",
+      "attnotnull": false,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "aggressive_actions_preflop",
+      "type": "smallint",
+      "attnotnull": false,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "passive_actions_preflop",
+      "type": "smallint",
+      "attnotnull": false,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "aggressive_actions_flop",
+      "type": "smallint",
+      "attnotnull": false,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "passive_actions_flop",
+      "type": "smallint",
+      "attnotnull": false,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "aggressive_actions_turn",
+      "type": "smallint",
+      "attnotnull": false,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "passive_actions_turn",
+      "type": "smallint",
+      "attnotnull": false,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "aggressive_actions_river",
+      "type": "smallint",
+      "attnotnull": false,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "passive_actions_river",
+      "type": "smallint",
+      "attnotnull": false,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "three_bet_opportunity",
+      "type": "boolean",
+      "attnotnull": false,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "four_bet_opportunity",
+      "type": "boolean",
+      "attnotnull": false,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "steal_opportunity",
+      "type": "boolean",
+      "attnotnull": false,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "stole",
+      "type": "boolean",
+      "attnotnull": false,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "squeeze_opportunity",
+      "type": "boolean",
+      "attnotnull": false,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "squeezed",
+      "type": "boolean",
+      "attnotnull": false,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "blind_defense_opportunity",
+      "type": "boolean",
+      "attnotnull": false,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "defended_blind",
+      "type": "boolean",
+      "attnotnull": false,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "cbet_flop_opportunity",
+      "type": "boolean",
+      "attnotnull": false,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "barrel_turn_opportunity",
+      "type": "boolean",
+      "attnotnull": false,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "barreled_turn",
+      "type": "boolean",
+      "attnotnull": false,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "barrel_river_opportunity",
+      "type": "boolean",
+      "attnotnull": false,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "barreled_river",
+      "type": "boolean",
+      "attnotnull": false,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "check_raise_opportunity",
+      "type": "boolean",
+      "attnotnull": false,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "check_raised",
+      "type": "boolean",
+      "attnotnull": false,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "donk_opportunity",
+      "type": "boolean",
+      "attnotnull": false,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "donk_bet",
+      "type": "boolean",
+      "attnotnull": false,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "probe_opportunity",
+      "type": "boolean",
+      "attnotnull": false,
+      "default_expression": null
+    },
+    {
+      "relname": "ca_hand_facts",
+      "attname": "probe_bet",
+      "type": "boolean",
+      "attnotnull": false,
+      "default_expression": null
+    },
+    {
+      "relname": "club_member_daily_facts",
+      "attname": "club_id",
+      "type": "uuid",
+      "attnotnull": true,
+      "default_expression": null
+    },
+    {
+      "relname": "club_member_daily_facts",
+      "attname": "user_id",
+      "type": "uuid",
+      "attnotnull": true,
+      "default_expression": null
+    },
+    {
+      "relname": "club_member_daily_facts",
+      "attname": "played_on",
+      "type": "date",
+      "attnotnull": false,
+      "default_expression": null
+    },
+    {
+      "relname": "club_member_daily_facts",
+      "attname": "game_variant",
+      "type": "text",
+      "attnotnull": false,
+      "default_expression": null
+    },
+    {
+      "relname": "club_member_daily_facts",
+      "attname": "is_mtt",
+      "type": "boolean",
+      "attnotnull": true,
+      "default_expression": null
+    },
+    {
+      "relname": "club_member_daily_facts",
+      "attname": "hands",
+      "type": "bigint",
+      "attnotnull": true,
+      "default_expression": "0"
+    },
+    {
+      "relname": "club_member_daily_facts",
+      "attname": "wins",
+      "type": "bigint",
+      "attnotnull": true,
+      "default_expression": "0"
+    },
+    {
+      "relname": "club_member_daily_facts",
+      "attname": "vpip_hands",
+      "type": "bigint",
+      "attnotnull": true,
+      "default_expression": "0"
+    },
+    {
+      "relname": "club_member_daily_facts",
+      "attname": "pfr_hands",
+      "type": "bigint",
+      "attnotnull": true,
+      "default_expression": "0"
+    },
+    {
+      "relname": "club_member_daily_facts",
+      "attname": "tb_hands",
+      "type": "bigint",
+      "attnotnull": true,
+      "default_expression": "0"
+    },
+    {
+      "relname": "club_member_daily_facts",
+      "attname": "faced_tb",
+      "type": "bigint",
+      "attnotnull": true,
+      "default_expression": "0"
+    },
+    {
+      "relname": "club_member_daily_facts",
+      "attname": "folded_tb",
+      "type": "bigint",
+      "attnotnull": true,
+      "default_expression": "0"
+    },
+    {
+      "relname": "club_member_daily_facts",
+      "attname": "cb_hands",
+      "type": "bigint",
+      "attnotnull": true,
+      "default_expression": "0"
+    },
+    {
+      "relname": "club_member_daily_facts",
+      "attname": "cb_opps",
+      "type": "bigint",
+      "attnotnull": true,
+      "default_expression": "0"
+    },
+    {
+      "relname": "club_member_daily_facts",
+      "attname": "fees",
+      "type": "numeric",
+      "attnotnull": true,
+      "default_expression": "0"
+    },
+    {
+      "relname": "club_member_daily_facts",
+      "attname": "net",
+      "type": "numeric",
+      "attnotnull": true,
+      "default_expression": "0"
+    },
+    {
+      "relname": "club_member_play_totals",
+      "attname": "club_id",
+      "type": "uuid",
+      "attnotnull": true,
+      "default_expression": null
+    },
+    {
+      "relname": "club_member_play_totals",
+      "attname": "user_id",
+      "type": "uuid",
+      "attnotnull": true,
+      "default_expression": null
+    },
+    {
+      "relname": "club_member_play_totals",
+      "attname": "hands",
+      "type": "bigint",
+      "attnotnull": true,
+      "default_expression": "0"
+    },
+    {
+      "relname": "club_member_play_totals",
+      "attname": "mtt_hands",
+      "type": "bigint",
+      "attnotnull": true,
+      "default_expression": "0"
+    },
+    {
+      "relname": "club_member_play_totals",
+      "attname": "fees",
+      "type": "numeric",
+      "attnotnull": true,
+      "default_expression": "0"
+    },
+    {
+      "relname": "club_member_play_totals",
+      "attname": "mtt_fees",
+      "type": "numeric",
+      "attnotnull": true,
+      "default_expression": "0"
+    },
+    {
+      "relname": "club_member_play_totals",
+      "attname": "net",
+      "type": "numeric",
+      "attnotnull": true,
+      "default_expression": "0"
+    },
+    {
+      "relname": "club_member_play_totals",
+      "attname": "mtt_net",
+      "type": "numeric",
+      "attnotnull": true,
+      "default_expression": "0"
+    },
+    {
+      "relname": "club_roster_hand_totals",
+      "attname": "club_id",
+      "type": "uuid",
+      "attnotnull": true,
+      "default_expression": null
+    },
+    {
+      "relname": "club_roster_hand_totals",
+      "attname": "user_id",
+      "type": "uuid",
+      "attnotnull": true,
+      "default_expression": null
+    },
+    {
+      "relname": "club_roster_hand_totals",
+      "attname": "fees",
+      "type": "numeric",
+      "attnotnull": true,
+      "default_expression": "0"
+    },
+    {
+      "relname": "club_roster_hand_totals",
+      "attname": "hands",
+      "type": "bigint",
+      "attnotnull": true,
+      "default_expression": "0"
+    }
+  ],
+  "capturePrecision": "date; exact live standalone read-only function and catalog queries"
+}

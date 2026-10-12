@@ -715,6 +715,137 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/5008",
       "refusedBy": [],
       "liveVerdict": "Read live 2026-10-11T14:35:10Z: tournament_players.zz_restriction_tourney_paid_guard is declared; fn_undeclared_money_triggers() returns no rows. Existing data-only declaration, no money moved and no trigger created. Production body MD5 f7e1dfbfdbe3037d015a73255f58228d, 1882 bytes. Recording only; do not replay."
+    },
+    {
+      "version": "20261012154646",
+      "name": "horse_history_retention_bounds_each_compaction_batch",
+      "file": "supabase/migrations/20261012154646_horse_history_retention_bounds_each_compaction_batch.sql",
+      "md5": "0934a1f2be4347b19a0de3845550936b",
+      "appliedToProductionAt": "2026-10-12T15:46:46Z",
+      "recoveredOn": "2026-10-12",
+      "recoveredFrom": "Exact source bytes verified against installed schema_migrations statements and fn_ca_migration_text",
+      "refusedBy": [
+        "retention config source contract: anchored patch preserves existing config read"
+      ],
+      "liveVerdict": "Production readback2026-10-12: exact ledger hash as recorded; current prune278219bbf58cb30cfad6aa63017a407c retains horse_retention_days config, bounded250-row iteration and earning sources. Native37 original-classification,44 F06 safety,35 replay-certificate and34 cash qualification pass. Ownerpostgres, invokerprune ACLpostgres; financial consumer ACLpreserved. Records immutable installed SQL; does not authorize replay or exempt new SQL."
+    },
+    {
+      "version": "20261012161152",
+      "name": "horse_retention_requires_original_no_human_evidence",
+      "file": "supabase/migrations/20261012161152_horse_retention_requires_original_no_human_evidence.sql",
+      "md5": "fac686ddecd7741307ae9d14cea68918",
+      "appliedToProductionAt": "2026-10-12T16:11:52Z",
+      "recoveredOn": "2026-10-12",
+      "recoveredFrom": "Exact source bytes verified against installed schema_migrations statements and fn_ca_migration_text",
+      "refusedBy": [
+        "retention config source contract: anchored patch preserves existing config read"
+      ],
+      "liveVerdict": "Production readback2026-10-12: exact ledger hash as recorded; current prune278219bbf58cb30cfad6aa63017a407c retains horse_retention_days config, bounded250-row iteration and earning sources. Native37 original-classification,44 F06 safety,35 replay-certificate and34 cash qualification pass. Ownerpostgres, invokerprune ACLpostgres; financial consumer ACLpreserved. Records immutable installed SQL; does not authorize replay or exempt new SQL."
+    },
+    {
+      "version": "20261012161313",
+      "name": "settled_horse_settlement_keys_retain_compact_replay_certificates",
+      "file": "supabase/migrations/20261012161313_settled_horse_settlement_keys_retain_compact_replay_certificates.sql",
+      "md5": "f10ccb49a5533a3762dbe364c89f00f4",
+      "appliedToProductionAt": "2026-10-12T16:13:13Z",
+      "recoveredOn": "2026-10-12",
+      "recoveredFrom": "Exact source bytes verified against installed schema_migrations statements and fn_ca_migration_text",
+      "refusedBy": [
+        "retention config source contract: anchored patch preserves existing config read"
+      ],
+      "liveVerdict": "Production readback2026-10-12: exact ledger hash as recorded; current prune278219bbf58cb30cfad6aa63017a407c retains horse_retention_days config, bounded250-row iteration and earning sources. Native37 original-classification,44 F06 safety,35 replay-certificate and34 cash qualification pass. Ownerpostgres, invokerprune ACLpostgres; financial consumer ACLpreserved. Records immutable installed SQL; does not authorize replay or exempt new SQL."
+    },
+    {
+      "version": "20261012162707",
+      "name": "settled_horse_cash_provenance_erases_original_play_contents",
+      "file": "supabase/migrations/20261012162707_settled_horse_cash_provenance_erases_original_play_contents.sql",
+      "md5": "8f4012e8626eb81b19e825d06d8d8b1d",
+      "appliedToProductionAt": "2026-10-12T16:27:07Z",
+      "recoveredOn": "2026-10-12",
+      "recoveredFrom": "Exact source bytes verified against installed schema_migrations statements and fn_ca_migration_text",
+      "refusedBy": [
+        "retention config source contract: anchored patch preserves existing config read"
+      ],
+      "liveVerdict": "Production readback2026-10-12: exact ledger hash as recorded; current prune278219bbf58cb30cfad6aa63017a407c retains horse_retention_days config, bounded250-row iteration and earning sources. Native37 original-classification,44 F06 safety,35 replay-certificate and34 cash qualification pass. Ownerpostgres, invokerprune ACLpostgres; financial consumer ACLpreserved. Records immutable installed SQL; does not authorize replay or exempt new SQL."
+    },
+    {
+      "version": "20261012170919",
+      "name": "horse_fact_cards_age_out_without_erasing_player_totals",
+      "file": "supabase/migrations/20261012170919_horse_fact_cards_age_out_without_erasing_player_totals.sql",
+      "md5": "ce3f09f07cf30260cd7069e3e5df84e5",
+      "appliedToProductionAt": "2026-10-12T17:09:19Z",
+      "recoveredOn": "2026-10-12",
+      "recoveredFrom": "Applying session immutable SQL bytes; installed schema_migrations statement digest and exact thirteen function/two table native readback verified. No SQL changed or replayed.",
+      "refusedBy": [
+        "check-definer-authorization: CREATE OR REPLACE preserves existing engine-only ACL, not printed in replacement body"
+      ],
+      "liveVerdict": "Production read2026-10-12T17:38UTC: fn_prune_ca_hand_facts(integer) md557ee12dc090b78191b9b459913e66b7b, ownerpostgres, SECURITY DEFINER, search_path public/pg_temp, ACLpostgres/service_role only; has_function_privilege anon=false/authenticated=false. Full connected53 native assertions enforce identical owner/ACL and cards-only exact earned summary preservation. This records immutable installed SQL through the existing recording path, does not exempt new SQL or authorize replay."
+    },
+    {
+      "version": "20261012170542",
+      "name": "horse_adaptive_raw_facts_become_exact_sufficient_statistics",
+      "file": "supabase/migrations/20261012170542_horse_adaptive_raw_facts_become_exact_sufficient_statistics.sql",
+      "md5": "e5cf80614aa40006c3cc4a2c0fc04259",
+      "appliedToProductionAt": "2026-10-12T17:05:42Z",
+      "recoveredOn": "2026-10-12",
+      "recoveredFrom": "Applying session immutable SQL bytes; fn_ca_migration_text md5 e5cf80614aa40006c3cc4a2c0fc04259 and36200bytes verified17:39UTC. Exact16 postimages independently read back after native qualification. No SQL edits or replay.",
+      "refusedBy": [
+        "check-definer-authorization: CREATE OR REPLACE preserves existing engine-only prune ACL, absent from replacement body"
+      ],
+      "liveVerdict": "Production read17:39UTC fn_prune_horse_adaptive_journal() md5a18ca77098d2d4f9e8af3334013d3153, ownerpostgres SECURITY DEFINER, search_path pg_catalog/public/smarter_private lock_timeout2s, ACLpostgres/service_role only, anon/authenticated execute bothfalse. Native34 verifies exact16 function owners/ACLs and raw retirement authority; activation remainsfalse pendingversionedconsumerpublication. Recording immutable installedbytes is not replay permission or exemption for new SQL."
+    },
+    {
+      "version": "20261012174400",
+      "name": "horse_fact_cards_retire_in_one_bounded_original_update",
+      "file": "supabase/migrations/20261012174400_horse_fact_cards_retire_in_one_bounded_original_update.sql",
+      "md5": "5c606478d8f3058d86f5f765e5e2ef4b",
+      "appliedToProductionAt": "2026-10-12T17:44:00Z",
+      "recoveredOn": "2026-10-12",
+      "recoveredFrom": "Exact immutable applying-session source bytes independently matched against schema_migrations statement digest and public.fn_ca_migration_text. No installed SQL changed or replayed.",
+      "refusedBy": [
+        "checkable migration source contract: anchored update/cron configuration creates no new object"
+      ],
+      "liveVerdict": "Production read2026-10-12: exact ledger/file md5 5c606478d8f3058d86f5f765e5e2ef4b; actual private compact_horse_fact_cards postimage05dc7e667f5d8353c63212c708103c58 and native18 qualification supplied by applying operation. The batch successor preserves original fact/counter/capsule guards and changes only bounded raw-card update batching; this is immutable installed evidence, not permission to replay or exempt new SQL."
+    },
+    {
+      "version": "20261012181304",
+      "name": "existing_horse_retention_cadence_follows_measured_bounded_wo",
+      "file": "supabase/migrations/20261012181304_existing_horse_retention_cadence_follows_measured_bounded_wo.sql",
+      "md5": "eed8b99890d22ec62e5bb2ac50a95b38",
+      "appliedToProductionAt": "2026-10-12T18:13:04Z",
+      "recoveredOn": "2026-10-12",
+      "recoveredFrom": "Exact immutable applying-session source bytes independently matched against schema_migrations statement digest and public.fn_ca_migration_text. No installed SQL changed or replayed.",
+      "refusedBy": [
+        "checkable migration source contract: anchored update/cron configuration creates no new object",
+        "retention config source contract: observes existing pruner budget without redefining retention policy"
+      ],
+      "liveVerdict": "Production read2026-10-12: exact ledger/file md5 eed8b99890d22ec62e5bb2ac50a95b38; original job117 activeTRUE at every-minute cadence, original command96244362bf46b39e75ef1100b1372203/ownerpostgres/database/node/port preserved according to applying operation readback and native15 least-privilege qualification. Migration observes the existing twenty-second budget and250-row cap and does not redefine the configured eight-day retention policy. The earlier reserved174649 SQL never installed; only actual81304 is recorded here. This records immutable installed SQL and grants no bypass for new SQL."
+    },
+    {
+      "version": "20261012190754",
+      "name": "horse_adaptive_retention_commits_a_larger_time_bounded_original_pass",
+      "file": "supabase/migrations/20261012190754_horse_adaptive_retention_commits_a_larger_time_bounded_original_pass.sql",
+      "md5": "c7605a77c0613ab6d0193598c08879bf",
+      "appliedToProductionAt": "2026-10-12T19:07:54Z",
+      "recoveredOn": "2026-10-12",
+      "recoveredFrom": "Exact qualified applying-session source; schema_migrations statement digest c7605a77c0613ab6d0193598c08879bf verified19:08:03UTC. Immutable bytes restamped to actual installed version without replay.",
+      "refusedBy": [
+        "check-definer-authorization: CREATE OR REPLACE preserves existing engine-only prune ACL, absent from replacement body"
+      ],
+      "liveVerdict": "Production19:08:03UTC fn_prune_horse_adaptive_journal() md5ae358dd5be5586e0fbdf44f083afe92d ownerpostgres SECURITY DEFINER search_path pg_catalog/public/smarter_private lock_timeout2s ACLpostgres/service_role only anon/authenticated false; original privateactivation ACLpostgres only, pairconstraints and nullable cursors read back. Native27 qualifies exact SQL,250 cap,16MiB,time,originalhelperidentity,protectedprefix/restart/rollback. ActivationFALSE pending exact versioned serving consumer proof; no installed replay."
+    },
+    {
+      "version": "20261012192304",
+      "name": "horse_adaptive_batch_membership_validates_once_and_records_as_one_set",
+      "file": "supabase/migrations/20261012192304_horse_adaptive_batch_membership_validates_once_and_records_as_one_set.sql",
+      "md5": "7b6bf06fb0dac33a49d9592e00c1e73e",
+      "appliedToProductionAt": "2026-10-12T19:23:04Z",
+      "recoveredOn": "2026-10-12",
+      "recoveredFrom": "Exact immutable applying-session source; schema_migrations source/name readback19:23:12 and public.fn_ca_migration_text19:41:44 verify the same full69-character ledger name and md57b6bf06fb0dac33a49d9592e00c1e73e, without truncation or replay.",
+      "refusedBy": [
+        "check-new-migration-version-collisions:69-character new name; this is now an exact already-installed ledger recording whose actual full name is verified"
+      ],
+      "liveVerdict": "Production19:23:12 helper02b1038d96aef58c02af6fd7c41bdf5c ownerpostgres SECURITY DEFINER search_path pg_catalog/public/smarter_private ACLpostgres-only; anon/authenticated/service_roleEXECUTEfalse. Exact finalnative34+24+27 validates original predicates, all-element validation before distinct insertion, byte ceilings, original locks, protected raw/replay and rollback. Name/source verified again19:41:44 through maintained fn_ca_migration_text. This records immutable installed bytes; the naming guard explicitly supports verified recordings and is not weakened."
     }
   ]
 }

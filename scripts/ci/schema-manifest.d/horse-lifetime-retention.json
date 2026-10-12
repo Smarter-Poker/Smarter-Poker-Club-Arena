@@ -1,0 +1,9 @@
+{
+  "_owner": "fix/horse-lifetime-retention-basis-20261012",
+  "_comment": "Compact exact archived index counts/timestamps; published RPC retains its original authority. Historical removed counts remain unknown.",
+  "tables": [
+    "smarter_private.hand_index_retention_totals",
+    "smarter_private.hand_index_retention_coverage"
+  ],
+  "functions": ["smarter_private.archive_pruned_hand_index"]
+}

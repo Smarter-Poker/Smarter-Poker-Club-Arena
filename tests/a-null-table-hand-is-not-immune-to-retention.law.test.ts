@@ -90,23 +90,25 @@ describe('a null-table hand is not immune to retention', () => {
   it('a candidate with no table and no tournament is admitted without the tables EXISTS check', () => {
     const { file, stmt } = pruneJob();
     expect(
-      /hh\.table_id\s+is\s+null\s+and\s+hh\.tournament_id\s+is\s+null/i.test(stmt),
+      /hh\.table_id\s+is\s+null\s+and\s+hh\.tournament_id\s+is\s+null\s+and\s+hh\.players\s*=\s*'\[\]'::jsonb/i.test(
+        stmt
+      ),
       `${file}: sp_prune_hand_history must treat (table_id IS NULL AND tournament_id IS NULL) ` +
-        'as a candidate on its own - otherwise NULL never equals NULL in the tables EXISTS ' +
+        'with an empty original roster - otherwise NULL never equals NULL in the tables EXISTS ' +
         'join below and such a row is excluded from every run, forever, at any age'
     ).toBe(true);
   });
 
   it('that admission sits ahead of the original tables/tournament EXISTS check, not in place of it', () => {
     const { file, stmt } = pruneJob();
-    // The original clause must still be present verbatim as the OTHER arm of
-    // the OR - a row that DOES reference a table is checked exactly as
-    // before. This is what makes the fix additive rather than a relaxation.
+    // Only the unattached empty fixture bypasses the table lookup. Real table
+    // hands keep the original join and tournament checks; a nonempty or
+    // unknown roster cannot acquire this admission merely from NULL ids.
     expect(
-      /\(\s*hh\.table_id\s+is\s+null\s+and\s+hh\.tournament_id\s+is\s+null\s*\)\s*\n?\s*or\s+exists\s*\(\s*select\s+1\s+from\s+public\.tables\s+tb/i.test(
+      /\(\s*hh\.table_id\s+is\s+null\s+and\s+hh\.tournament_id\s+is\s+null\s+and\s+hh\.players\s*=\s*'\[\]'::jsonb\s*\)\s*or\s+exists\s*\(\s*select\s+1\s+from\s+public\.tables\s+tb/i.test(
         stmt
       ),
-      `${file}: the new admission must be OR'd ahead of "EXISTS (SELECT 1 FROM public.tables ` +
+      `${file}: the empty-fixture admission must be OR'd ahead of "EXISTS (SELECT 1 FROM public.tables ` +
         'tb ...)", so a table-bearing row keeps requiring exactly the check it always did'
     ).toBe(true);
     expect(
@@ -136,12 +138,12 @@ describe('a null-table hand is not immune to retention', () => {
     ).toBe(true);
   });
 
-  it('retention still requires has_human is not true, so no real player hand is ever touched', () => {
+  it('retention requires explicit original has_human=false, protecting humans and unknowns', () => {
     const { file, stmt } = pruneJob();
     expect(
-      /hh\.has_human\s+is\s+distinct\s+from\s+true/i.test(stmt),
-      `${file}: only has_human IS DISTINCT FROM true rows may be pruned - a real hand a human ` +
-        'played must never become eligible through this change'
+      /hh\.has_human\s+is\s+false/i.test(stmt),
+      `${file}: only original has_human IS FALSE rows may be pruned; NULL/unknown and human ` +
+        'hands must never become eligible through this change'
     ).toBe(true);
   });
 

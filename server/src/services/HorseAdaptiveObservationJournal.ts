@@ -308,7 +308,9 @@ export async function readAdaptiveJournalBatch(
     if (data?.version !== 1) return refusal('invalid_receipt');
     if (data.status === 'unavailable')
       return refusal(
-        ['batch_not_found', 'legacy_batch_payload_unavailable'].includes(data.reason)
+        ['batch_not_found', 'legacy_batch_payload_unavailable', 'retention_compacted'].includes(
+          data.reason
+        )
           ? data.reason
           : 'invalid_receipt'
       );

@@ -1,3 +1,9 @@
+import {
+  adaptiveHandDigest,
+  statisticTuple,
+  validAdaptiveStatistic,
+  type AdaptiveStatistic,
+} from './HorseAdaptiveStatistics.js';
 import { createHash } from 'node:crypto';
 import {
   adaptiveSessionPartition,
@@ -28,6 +34,7 @@ export const SCOPED_MODEL_ACTIONS = Object.freeze([
 type Distribution = Readonly<Record<AdaptiveAction, number>>;
 export interface ScopedOpponentModelInput {
   readonly observations: readonly QualifiedAdaptiveObservation[];
+  readonly statistics?: readonly AdaptiveStatistic[];
   readonly scopeKey: string;
   readonly opponentKey: string;
   readonly observerKey: string;
@@ -123,7 +130,10 @@ export function buildScopedOpponentModel(
 
 export function buildJournaledOpponentModel(input: JournaledOpponentModelInput) {
   return Object.freeze({
-    population: 'journaled_qualified_observations' as const,
+    population:
+      input.statistics === undefined
+        ? ('journaled_qualified_observations' as const)
+        : ('journaled_qualified_observations_and_disposed_statistics' as const),
     sourceCoverage: 'not_established' as const,
     activationAuthorized: false as const,
     model: fitScopedOpponentModel(input, true),
@@ -171,6 +181,7 @@ function fitScopedOpponentModel(
       : !(input as ScopedOpponentModelInput).window.complete
   )
     return unavailable('incomplete_window');
+  if (!journalOnly && input.statistics !== undefined) return unavailable('invalid_input');
   if (!journalOnly && input.opponentKey === (input as ScopedOpponentModelInput).observerKey)
     return unavailable('self_observation');
   if (input.observations.length > SCOPED_MODEL_POLICY.maxInputObservations)
@@ -219,7 +230,40 @@ function fitScopedOpponentModel(
   const ordered = [...unique.values()].sort((a, b) =>
     a.observation.observationId.localeCompare(b.observation.observationId)
   );
-  const evidenceDigest = hash(ordered.map((o) => o.fingerprint));
+  if (
+    input.statistics !== undefined &&
+    (!Array.isArray(input.statistics) ||
+      input.statistics.length > SCOPED_MODEL_POLICY.maxInputObservations)
+  )
+    return unavailable('invalid_input');
+  const selectedStatistics: readonly AdaptiveStatistic[] = (input.statistics ?? []).filter(
+    (s) =>
+      s &&
+      s.scopeKey === input.scopeKey &&
+      s.actorKey === input.opponentKey &&
+      s.partition === input.partition &&
+      (input.cohort === 'human'
+        ? s.origin === 'player' || s.origin === 'pre_action'
+        : s.origin === 'horse_policy')
+  );
+  if (selectedStatistics.some((s) => !validAdaptiveStatistic(s)))
+    return unavailable('invalid_observation');
+  const statistics: readonly AdaptiveStatistic[] = selectedStatistics
+    .filter((s) => s.observedAtMs >= input.window.fromMs && s.observedAtMs < input.window.toMs)
+    .sort((a, b) =>
+      JSON.stringify(statisticTuple(a)).localeCompare(JSON.stringify(statisticTuple(b)))
+    );
+  const represented = unique.size + statistics.reduce((n, s) => n + s.observations, 0);
+  if (represented > SCOPED_MODEL_POLICY.maxInputObservations)
+    return unavailable('input_budget_exceeded');
+  const evidenceDigest =
+    input.statistics === undefined
+      ? hash(ordered.map((o) => o.fingerprint))
+      : hash([
+          'disposed-statistics-v1',
+          ordered.map((o) => o.fingerprint),
+          statistics.map(statisticTuple),
+        ]);
   interface Hand {
     count: number;
     mass: number;
@@ -228,27 +272,57 @@ function fitScopedOpponentModel(
   const sessions = new Map<string, Map<string, Hand>>();
   const hands = new Set<string>();
   const handSessions = new Map<string, string>();
+  const rawHands = new Set<string>();
   for (const { observation: o } of ordered) {
+    const handIdentity = input.statistics === undefined ? o.handId : adaptiveHandDigest(o.handId);
+    rawHands.add(handIdentity);
     if (input.prior.probabilities[o.action] === 0) return unavailable('prior_support_mismatch');
-    const priorSession = handSessions.get(o.handId);
+    const priorSession = handSessions.get(handIdentity);
     if (priorSession !== undefined && priorSession !== o.sessionKey)
       return unavailable('conflicting_observation');
-    handSessions.set(o.handId, o.sessionKey);
+    handSessions.set(handIdentity, o.sessionKey);
     let session = sessions.get(o.sessionKey);
     if (!session) {
       session = new Map();
       sessions.set(o.sessionKey, session);
     }
-    let hand = session.get(o.handId);
+    let hand = session.get(handIdentity);
     if (!hand) {
       hand = { count: 0, mass: 0, actions: empty() };
-      session.set(o.handId, hand);
+      session.set(handIdentity, hand);
     }
     const decay = 2 ** (-(input.window.toMs - o.observedAtMs) / SCOPED_MODEL_POLICY.halfLifeMs);
     hand.count++;
     hand.mass += decay;
     hand.actions[o.action] += decay;
-    hands.add(o.handId);
+    hands.add(handIdentity);
+  }
+  const statisticKeys = new Set<string>();
+  for (const s of statistics) {
+    const key = JSON.stringify(statisticTuple(s).slice(0, 9));
+    if (statisticKeys.has(key) || rawHands.has(s.handDigest))
+      return unavailable('conflicting_observation');
+    statisticKeys.add(key);
+    if (input.prior.probabilities[s.action] === 0) return unavailable('prior_support_mismatch');
+    const priorSession = handSessions.get(s.handDigest);
+    if (priorSession !== undefined && priorSession !== s.sessionKey)
+      return unavailable('conflicting_observation');
+    handSessions.set(s.handDigest, s.sessionKey);
+    let session = sessions.get(s.sessionKey);
+    if (!session) {
+      session = new Map();
+      sessions.set(s.sessionKey, session);
+    }
+    let hand = session.get(s.handDigest);
+    if (!hand) {
+      hand = { count: 0, mass: 0, actions: empty() };
+      session.set(s.handDigest, hand);
+    }
+    const decay = 2 ** (-(input.window.toMs - s.observedAtMs) / SCOPED_MODEL_POLICY.halfLifeMs);
+    hand.count += s.observations;
+    hand.mass += decay * s.observations;
+    hand.actions[s.action] += decay * s.observations;
+    hands.add(s.handDigest);
   }
   const counts = empty();
   let mass = 0;
@@ -300,14 +374,20 @@ function fitScopedOpponentModel(
     );
   }
   const status =
-    unique.size >= SCOPED_MODEL_POLICY.minimumObservations &&
+    represented >= SCOPED_MODEL_POLICY.minimumObservations &&
     hands.size >= SCOPED_MODEL_POLICY.minimumHands &&
     sessions.size >= SCOPED_MODEL_POLICY.minimumSessions &&
     mass >= SCOPED_MODEL_POLICY.minimumEffectiveSessions
       ? 'estimated'
       : 'insufficient_evidence';
   const identity = [
-    ...(journalOnly ? ['journaled-population-v1'] : []),
+    ...(journalOnly
+      ? [
+          input.statistics === undefined
+            ? 'journaled-population-v1'
+            : 'journaled-population-and-disposed-statistics-v1',
+        ]
+      : []),
     SCOPED_MODEL_POLICY,
     input.scopeKey,
     input.opponentKey,
@@ -331,7 +411,7 @@ function fitScopedOpponentModel(
     priorVersion: input.prior.version,
     evidenceDigest,
     status,
-    observations: unique.size,
+    observations: represented,
     hands: hands.size,
     sessions: sessions.size,
     effectiveSessions: mass,

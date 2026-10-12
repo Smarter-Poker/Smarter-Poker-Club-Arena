@@ -1,0 +1,15 @@
+# Existing bounded horse retention runs every minute
+
+One observed ten-minute interval added 7,468 retained requests while cleanup compacted approximately 1,000. Successful executions did not demonstrate enough capacity at the original ten-minute cadence. The bounded owner remains unchanged: 20 seconds of loop work, no more than 250 hands in an iteration, and the original command's 30-second timeout and advisory lock.
+
+A separate guarded configuration migration changes only existing job117's schedule from `3,13,23,33,43,53 * * * *` to `* * * * *`. Its identity, command, owner, database, host, port and active flag must match the captured original image. The postimage must differ only in schedule. A safety-held job remains held; this migration never enables it. The root delivery owner resumes it only after the separately identified cash evidence defect is fixed and read back. No job, repair loop, watcher or release scheduler is added.
+
+The actual native pg_cron C API passed configuration rollback, job/command/owner/schedule/database drift refusals, exact postimage, held-state preservation, unchanged unrelated job, replay refusal and the original command's real advisory-lock overlap refusal. The local installed extension reported1.6; production reported1.6.4. This verifies the supported configuration interface using a real scheduler library, not a modeled cron table. Scheduler execution was disabled throughout this isolated configuration proof.
+
+The maintained pg_cron [one-instance contract](https://github.com/citusdata/pg_cron#how-pg_cron-works) serializes executions of the same job; an additional trigger queues behind the active instance. The original advisory lock also refuses a competing owner. These limits remain effective at the new cadence. Actual production capacity, database load and backlog age still require observation after installation and safe resumption. A theoretical tenfold increase in invocation opportunities is not a measured throughput result.
+
+## Provider permission correction
+
+The first configuration installation was refused before mutation because `SELECT FOR UPDATE` requires table UPDATE privilege. Production's postgres role can SELECT jobs and invoke the supported C API, but cannot directly UPDATE the Supabase-admin-owned cron table. The migration was not recorded and its original schedule remained unchanged.
+
+The uninstalled source now reads without FOR UPDATE. The supported API obtains its own row lock; the exact full before/after comparison still refuses unexpected changes and rolls back its schedule update. The focused native qualification now creates a nonbootstrap, nonsuperuser postgres caller, a Supabase-admin-owned extension/job/API and only the actual SELECT/API permissions. It proves both active and safety-held state preservation, and a real concurrent administrator changing the command while the API waits: the foreign command commits intact, while our schedule update is refused and rolls back. No production privilege grant is added. Scheduler execution remains disabled in this separate tiny configuration fixture; it does not rerun the financial world.

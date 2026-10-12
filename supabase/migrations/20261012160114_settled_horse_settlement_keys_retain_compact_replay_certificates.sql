@@ -29,6 +29,32 @@ CREATE TRIGGER horse_settlement_certificate_immutable BEFORE UPDATE OR DELETE
 CREATE TRIGGER horse_settlement_certificate_no_truncate BEFORE TRUNCATE
  ON smarter_private.horse_settlement_key_certificates FOR EACH STATEMENT EXECUTE FUNCTION smarter_private.horse_settlement_certificate_immutable();
 
+-- A compacted key is a permanent replay fence. Preserve its identity/status
+-- against later generic key edits/deletion; permit only the original certified
+-- full-result to compact-result transition, with every other column identical.
+CREATE FUNCTION smarter_private.horse_settlement_key_guard() RETURNS trigger
+ LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $$
+DECLARE cert smarter_private.horse_settlement_key_certificates;
+BEGIN
+ IF TG_OP='TRUNCATE' THEN
+  IF EXISTS(SELECT 1 FROM smarter_private.horse_settlement_key_certificates) THEN
+   RAISE EXCEPTION 'HORSE_SETTLEMENT_KEY_PERMANENT' USING ERRCODE='55000'; END IF;
+  RETURN NULL;
+ END IF;
+ SELECT * INTO cert FROM smarter_private.horse_settlement_key_certificates WHERE table_id=OLD.table_id AND stack_hand_id=OLD.hand_id;
+ IF NOT FOUND THEN RETURN CASE WHEN TG_OP='DELETE' THEN OLD ELSE NEW END; END IF;
+ IF TG_OP='UPDATE' AND (to_jsonb(NEW)-'result') IS NOT DISTINCT FROM (to_jsonb(OLD)-'result')
+ AND NEW.result IS NOT DISTINCT FROM cert.compact_result
+ AND encode(extensions.digest(convert_to(OLD.result::text,'UTF8'),'sha256'),'hex')=cert.original_result_sha256 THEN RETURN NEW; END IF;
+ RAISE EXCEPTION 'HORSE_SETTLEMENT_KEY_PERMANENT' USING ERRCODE='55000';
+END $$;
+ALTER FUNCTION smarter_private.horse_settlement_key_guard() OWNER TO postgres;
+REVOKE ALL ON FUNCTION smarter_private.horse_settlement_key_guard() FROM PUBLIC,anon,authenticated,service_role;
+CREATE TRIGGER horse_settlement_key_guard BEFORE UPDATE OR DELETE ON public.settlement_idempotency_keys
+ FOR EACH ROW EXECUTE FUNCTION smarter_private.horse_settlement_key_guard();
+CREATE TRIGGER horse_settlement_keys_no_truncate BEFORE TRUNCATE ON public.settlement_idempotency_keys
+ FOR EACH STATEMENT EXECUTE FUNCTION smarter_private.horse_settlement_key_guard();
+
 -- Preserve the exact pre-compaction replay response and accounting comparison.
 -- Missing/conflicting retained originals fail closed, never return an empty success.
 CREATE FUNCTION smarter_private.horse_settlement_original_result(p_table uuid,p_stack_hand uuid,p_result jsonb)
@@ -120,7 +146,10 @@ BEGIN
 ','')))/length('    IF v_prior.status = ''succeeded'' THEN
 ')<>1 THEN RAISE EXCEPTION 'HORSE_SETTLEMENT_ANCHOR_CHANGED' USING ERRCODE='55000'; END IF;
  EXECUTE replace(source,'    IF v_prior.status = ''succeeded'' THEN
-','    IF v_prior.status = ''succeeded'' THEN
+','    IF EXISTS(SELECT 1 FROM smarter_private.horse_settlement_key_certificates c WHERE c.table_id=p_table_id AND c.stack_hand_id=v_hand) AND v_prior.status IS DISTINCT FROM ''succeeded'' THEN
+      RAISE EXCEPTION ''HORSE_SETTLEMENT_COMPACT_STATUS_CONFLICT'' USING ERRCODE=''55000'';
+    END IF;
+    IF v_prior.status = ''succeeded'' THEN
       v_prior.result:=smarter_private.horse_settlement_original_result(p_table_id,v_hand,v_prior.result);
 ');
  SELECT jsonb_build_object('owner',proowner,'acl',proacl,'secdef',prosecdef,'settings',proconfig) INTO actual FROM pg_proc WHERE oid=target;

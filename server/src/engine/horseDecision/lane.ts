@@ -1,5 +1,9 @@
 import { availableParallelism } from 'node:os';
 import {
+  isHorseSolverStoreIdentity,
+  sameSolverStoreIdentity,
+} from '../../gto/SolverStoreIdentity.js';
+import {
   LiveHorseDecisionWorkerClient,
   type HorseDecisionJobOptions,
   type LiveHorseDecisionWorkerClientOptions,
@@ -270,8 +274,21 @@ export class LiveHorseDecisionWorkerPool implements LiveHorseDecisionLane {
         r.solverPolicyArtifact.totalPolicies,
       ]);
     const expected = identity(first);
-    const divergent = readiness.findIndex((r) => identity(r) !== expected);
-    if (divergent > 0) {
+    const sameCorpus = (r: HorseDecisionWorkerReadiness): boolean => {
+      const a = first.solverStoreIdentity;
+      const b = r.solverStoreIdentity;
+      // Preserve legacy handshakes without identity, but never equate a missing
+      // or malformed identity to a genuinely loaded content-addressed corpus.
+      if (a === undefined && b === undefined) return true;
+      return (
+        isHorseSolverStoreIdentity(a) &&
+        isHorseSolverStoreIdentity(b) &&
+        sameSolverStoreIdentity(a.charts, b.charts) &&
+        sameSolverStoreIdentity(a.postflop, b.postflop)
+      );
+    };
+    const divergent = readiness.findIndex((r) => identity(r) !== expected || !sameCorpus(r));
+    if (divergent >= 0) {
       // Two brains with different corpora would make a table's play depend on
       // its shard. Refuse readiness; GameServer treats that as a boot failure
       // and stops the lane, which joins these already-started stops.

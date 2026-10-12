@@ -33,3 +33,5 @@ plan effect receipt is backfilled or edited by replay. In the current sample,
 candidate changes retired reference plan effects rather than issuing them;
 empty candidate lists on retained reference receipts do not prove candidate
 withdrawal recovery was exercised.
+
+Pool readiness now retains the worker's existing solver-store identity through the client handshake and compares validated chart and postflop content digests, preserving unknown-revision semantics. Equal row counts cannot admit different loaded content. Regressions cover altered frequencies/equity at equal counts, missing and malformed peer identity, conflicting known revisions and identical content with an unknown revision. Public status and strategy hashes are unchanged.

@@ -1064,4 +1064,22 @@ END
 $function$
 ;
 
+-- The access each redefined door already has in production, restated so this
+-- file says what is live (CREATE OR REPLACE keeps a function's grants, and a
+-- reader of this file alone could not otherwise tell). Nothing changes.
+REVOKE ALL ON FUNCTION public.fn_tournament_club_for_user(uuid, uuid, uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.fn_tournament_club_for_user(uuid, uuid, uuid) TO authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_register_for_tournament(uuid, boolean) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_register_for_tournament(uuid, boolean) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_register_horse_for_tournament(uuid, uuid, boolean) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_register_horse_for_tournament(uuid, uuid, boolean) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_player_spendable_balance(uuid, uuid, uuid, uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.fn_player_spendable_balance(uuid, uuid, uuid, uuid) TO authenticated, service_role;
+REVOKE ALL ON FUNCTION public.atomic_table_buyin(uuid, uuid, integer, numeric, boolean, uuid, uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.atomic_table_buyin(uuid, uuid, integer, numeric, boolean, uuid, uuid) TO authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_cash_game_join(uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.fn_cash_game_join(uuid) TO authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_offer_open_seat(uuid, interval, interval) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_offer_open_seat(uuid, interval, interval) TO service_role;
+
 COMMIT;

@@ -658,7 +658,7 @@ try:
       CREATE INDEX pressure_from_entity ON chip_ledger(club_id,from_entity_id,created_at);
       ANALYZE chip_ledger; ANALYZE ca_chip_baseline; ANALYZE club_members;
     """,timeout=180)
-    run("pressure-cover-visible", "VACUUM ANALYZE chip_ledger;",timeout=180)
+    run("pressure-cover-visible", "VACUUM (FREEZE, ANALYZE) chip_ledger;",timeout=180)
     witness("pressure-independent-cancelled-both-legs", "(r->'players'->>'checked')::int=593 AND (r->'players'->>'missing')::int=2 AND (r->'players'->>'actual')::numeric=300 AND (r->'players'->>'expected')::numeric=300 AND (r->'players'->>'absolute_drift')::numeric=0", "t")
     pressure={}
     original_source = (ROOT / "supabase/migrations/20261011162855_cashier_club_baseline_conservation_report.sql").read_text()
@@ -688,6 +688,63 @@ try:
     require(pressure['after']['temp_written']==0,'candidate still spills raw ledger rows')
     results['cases'].append({'name':'pressure-baseline-spills-candidate-does-not','passed':True})
     Path(out/'pressure-summary.json').write_text(json.dumps(pressure,indent=2))
+
+    # A global created_at cover still scans every club before filtering. Keep
+    # the original spill/pass witness above, then qualify the club-key cover
+    # against unrelated booked legs using the same users and time range.
+    unrelated_rows = 800000
+    report_snapshot = run("pressure-club-cover-before-snapshot", as_role(OWNER,
+        f"SELECT ({report_call}-'as_of')::text;"), timeout=180)
+    run("pressure-unrelated-club-fixture", f"""
+      INSERT INTO chip_ledger(club_id,from_type,from_entity_id,to_type,to_entity_id,amount,created_at,status)
+       SELECT '{CLUB}','player_wallet',md5('pressure-user-'||(i%590+1))::uuid,
+        'agent_wallet','{OWNER}',1,'2026-01-03'::timestamptz+((i%7000)||' seconds')::interval,
+        (ARRAY['posted','correction','reversal'])[i%3+1]
+       FROM generate_series(1,{unrelated_rows})i;
+    """, timeout=180)
+    run("pressure-unrelated-cover-visible", "VACUUM (FREEZE, ANALYZE) chip_ledger;", timeout=180)
+    qualified_query = installed_source[installed_source.index('  WITH bank AS MATERIALIZED ('):installed_source.index('  IF v_report IS NULL THEN')]
+    qualified_query = qualified_query.replace(' INTO v_report','').replace('p_club_id',f"'{report_club}'::uuid").strip()
+    global_plan = json.loads(run("pressure-global-cover-unrelated-plan",
+        "SET work_mem='4MB'; EXPLAIN (ANALYZE,BUFFERS,FORMAT JSON) " + qualified_query, timeout=180))[0]
+    global_moves = next(node for node in plan_nodes(global_plan['Plan']) if node.get('Subplan Name') == 'CTE moves')
+    global_scan = next(node for node in plan_nodes(global_moves) if node.get('Relation Name') == 'chip_ledger')
+    require((global_scan.get('Index Name') == 'pressure_cover'
+             and global_scan.get('Rows Removed by Filter',0) >= unrelated_rows)
+            or (global_scan.get('Node Type') in ('Index Scan','Bitmap Heap Scan')
+                and global_scan.get('Actual Rows') == 400008
+                and (global_scan.get('Node Type') == 'Index Scan'
+                     or global_scan.get('Exact Heap Blocks',0) > 0)),
+            'unscoped cover must reproduce foreign scans or own heap reads')
+    results['cases'].append({'name':'pressure-existing-index-reads-foreign-or-heap-legs','passed':True})
+    (out/'pressure-global-unrelated.json').write_text(json.dumps(global_plan,indent=2))
+    # The maintained concurrent preamble is issued as its own statement by
+    # this disposable native psql runner, never inside the fixture transaction.
+    index_sql = (ROOT / "supabase/migrations/20261012144405_cashier_conservation_reads_only_the_requested_club_journal.sql").read_text()
+    run("pressure-club-cover-shipped-migration", index_sql, timeout=180)
+    run("pressure-club-cover-function-byte-identical", "SELECT md5(pg_get_functiondef('public.fn_cashier_conservation_report(uuid)'::regprocedure));", "68e55e37885c51afd37d532753cb5ba1")
+    club_plan = json.loads(run("pressure-club-cover-bounded-plan",
+        "SET work_mem='4MB'; EXPLAIN (ANALYZE,BUFFERS,FORMAT JSON) " + qualified_query, timeout=180))[0]
+    club_moves = next(node for node in plan_nodes(club_plan['Plan']) if node.get('Subplan Name') == 'CTE moves')
+    club_scans = [node for node in plan_nodes(club_moves) if node.get('Relation Name') == 'chip_ledger']
+    require(len(club_scans) == 1 and club_scans[0].get('Node Type') == 'Index Only Scan'
+            and club_scans[0].get('Index Name') == 'idx_chip_ledger_club_player_legs_cover'
+            and club_scans[0].get('Actual Loops') == 1
+            and club_scans[0].get('Actual Rows') == 400008
+            and club_scans[0].get('Heap Fetches') == 0
+            and club_scans[0].get('Rows Removed by Filter',0) == 0
+            and 'club_id =' in club_scans[0].get('Index Cond','')
+            and 'created_at >=' in club_scans[0].get('Index Cond',''),
+            'club cover must bound one index-only pass by club and baseline')
+    results['cases'].append({'name':'pressure-club-cover-excludes-unrelated-legs','passed':True})
+    run("pressure-club-cover-exact-report-preserved", as_role(OWNER,
+        f"SELECT ({report_call}-'as_of')::text;"), report_snapshot, timeout=180)
+    (out/'pressure-club-bounded.json').write_text(json.dumps(club_plan,indent=2))
+    run("pressure-club-cover-wrong-definition-fixture", "DROP INDEX public.idx_chip_ledger_club_player_legs_cover; CREATE INDEX idx_chip_ledger_club_player_legs_cover ON public.chip_ledger(created_at);")
+    refused("pressure-club-cover-wrong-definition-refused", index_sql, "55000")
+    run("pressure-club-cover-refusal-preserves-function", "SELECT md5(pg_get_functiondef('public.fn_cashier_conservation_report(uuid)'::regprocedure));", "68e55e37885c51afd37d532753cb5ba1")
+    run("pressure-club-cover-remove-isolated-wrong-index", "DROP INDEX public.idx_chip_ledger_club_player_legs_cover;")
+    run("pressure-club-cover-restore-qualified-migration", index_sql, timeout=180)
 
     hashes = run("source-binding-hashes", "SELECT p.oid::regprocedure::text||'|'||md5(p.prosrc)||'|'||md5(pg_get_functiondef(p.oid)) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname IN ('fn_cashier_conservation_report','fn_cashier_recovery_receipts','fn_cashier_member_is_active','fn_club_active_cashier_edges','fn_club_bank_role','fn_club_is_in_downline','fn_cashier_assert_active_actor','fn_cashier_agent_status_mutex','fn_cashier_balance_actor_guard','fn_cashier_operation_mutex_guard','fn_cashier_operation_intent_guard','fn_cashier_exact_intent_begin','fn_cashier_exact_intent_finish','fn_club_bank_send','fn_club_bank_claim_back','fn_club_bank_reverse','fn_admin_remove_player_chips','fn_promo_wallet_send','fn_club_promo_wallet_send','fn_agent_wallet_send','fn_agent_wallet_claim_back','fn_request_chips','fn_club_bank_send_core_20261004','fn_club_bank_claim_core_20261004','fn_club_bank_reverse_core_20261004','fn_admin_remove_chips_core_20261004','fn_promo_wallet_send_core_20261004','fn_club_promo_send_core_20261004','fn_agent_wallet_send_core_20261004','fn_agent_wallet_claim_back_core_20261004','fn_request_chips_core_20261004','fn_club_cashier_members','fn_cashier_statement_downline','fn_cashier_statement_scope','fn_club_trade_ledger') ORDER BY p.oid::regprocedure::text;")
     (out / "source-binding-hashes.txt").write_text(hashes + "\n")

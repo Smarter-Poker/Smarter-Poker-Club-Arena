@@ -60,6 +60,19 @@ describe('the union owner is a member of every club in the union', () => {
     );
   });
 
+  it('registers the zero-chip writer before CREATE under the actual production DDL guard', () => {
+    const registration = MIG.indexOf('INSERT INTO public.ca_money_rpc_registry');
+    expect(registration).toBeGreaterThan(0);
+    expect(registration).toBeLessThan(
+      MIG.indexOf('CREATE OR REPLACE FUNCTION public.fn_union_owner_holds_membership')
+    );
+    expect(MIG).toContain("VALUES ('fn_union_owner_holds_membership', 'system',");
+    const harness = read('scripts/ci/test-union-owner-membership-db-postgres.py');
+    expect(harness).toContain('fn_ca_money_rpc_registry_guard');
+    expect(harness).toContain('CREATE EVENT TRIGGER ab_ca_money_rpc_registered');
+    expect(harness).toContain('without_registration');
+  });
+
   it('runs on every join path and on a change of union owner', () => {
     expect(MIG).toMatch(
       /CREATE OR REPLACE TRIGGER trg_union_owner_joins_every_club\s+AFTER INSERT OR UPDATE OF union_id, club_id ON public\.union_clubs/
@@ -67,6 +80,18 @@ describe('the union owner is a member of every club in the union', () => {
     expect(MIG).toMatch(
       /CREATE OR REPLACE TRIGGER trg_union_new_owner_joins_every_club\s+AFTER UPDATE OF owner_id ON public\.unions/
     );
+  });
+
+  it('serializes ownership transfer with the joining club before choosing the owner', () => {
+    expect(MIG).toContain(
+      'SELECT u.owner_id INTO v_owner FROM public.unions u WHERE u.id = p_union_id FOR SHARE;'
+    );
+    expect(MIG.indexOf('WHERE u.id = p_union_id FOR SHARE;')).toBeLessThan(
+      MIG.indexOf('PERFORM public.fn_club_membership_lock(v_owner);')
+    );
+    const harness = read('scripts/ci/test-union-owner-membership-db-postgres.py');
+    expect(harness).toContain('union_owner_join_race("race_before", unlocked)');
+    expect(harness).toContain('union_owner_join_race("race_after", MIGRATION)');
   });
 
   it('makes an ordinary zero-chip player membership and never lifts club discipline', () => {

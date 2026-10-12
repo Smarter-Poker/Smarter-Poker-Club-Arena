@@ -1916,6 +1916,11 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-union-owner-membership-db-postgres.py
+      - name: Only club staff can remove a member
+        if: matrix.shard == 2
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-only-staff-remove-member-db-postgres.py
       - name: Accounting agreement changes preserve immutable observed history
         if: matrix.shard == 1
         env:

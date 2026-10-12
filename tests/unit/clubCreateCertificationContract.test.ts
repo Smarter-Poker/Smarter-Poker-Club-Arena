@@ -321,6 +321,28 @@ describe('Create Club production certification contract', () => {
     expect(spec).toContain("getByText('Daily 25 Chip Freezeout · 7 PM UTC', { exact: true })");
   });
 
+  it('expects the welcome schedule the live package config writes, with no dollar sign', () => {
+    // 20261011200429 renamed the welcome schedule (Dan 2026-10-09: no dollar
+    // sign anywhere in the Club Arena). The certifier kept asserting the old
+    // name and failed every run after the migration applied, so it reads the
+    // stored row against the migration's own expected result.
+    const script = read('scripts/ci/certify-club-create.mjs');
+    const rename = read(
+      'supabase/migrations/20261011200429_the_jackpot_notice_and_search_show_no_dollar.sql'
+    );
+    expect(rename).toContain(
+      "v_welcome #>> '{tournament_schedule,name}' IS DISTINCT FROM 'Daily 25 Chip Freezeout'"
+    );
+    expect(script).toContain("schedule?.name !== 'Daily 25 Chip Freezeout'");
+    expect(script).toContain("schedule?.config?.name !== 'Daily 25 Chip Freezeout'");
+    expect(script).toContain("JSON.stringify(schedule).includes('$')");
+    expect(script).toContain(
+      "JSON.stringify(schedule?.start_times_utc) !== JSON.stringify(['19:00'])"
+    );
+    expect(script).toContain('Number(schedule?.config?.buyIn) !== 25');
+    expect(script).not.toContain('Daily $25');
+  });
+
   it('fails closed around independent reset preimages and exact residue cleanup', () => {
     const script = read('scripts/ci/certify-club-create.mjs');
 

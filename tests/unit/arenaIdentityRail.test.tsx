@@ -80,8 +80,9 @@ describe('The arena identity rail', () => {
       />
     );
     expect(container.querySelector('.club-identity__playing')).toBeNull();
-    expect(container.querySelector('.club-identity__level')).toBeNull();
+    expect(container.querySelector('.club-identity__invite')).toBeNull();
     expect(screen.queryByText('Level 9')).toBeNull();
+    expect(screen.queryByText('Share & Invite')).toBeNull();
   });
 
   it('leaves a chip club exactly as it was', () => {
@@ -89,14 +90,16 @@ describe('The arena identity rail', () => {
       <ClubIdentityCard {...base} clubName="Shark Club" level={29} playersPlaying={514} />
     );
     expect(container.querySelector('.club-identity__playing')).toBeTruthy();
-    expect(screen.getByText('Level 29')).toBeTruthy();
+    /* Dan 2026-10-11: the blue plate says "Share & Invite", not the level. */
+    expect(screen.queryByText('Level 29')).toBeNull();
+    expect(screen.getByText('Share & Invite')).toBeTruthy();
     expect(container.querySelector('.club-identity__arena')).toBeNull();
     expect(screen.queryByText('ACTIVE')).toBeNull();
   });
 
   it('covers both painted zones completely', () => {
     const rail = CLUB_IDENTITY_ZONES.arenaStats;
-    for (const zone of [CLUB_IDENTITY_ZONES.playing, CLUB_IDENTITY_ZONES.level]) {
+    for (const zone of [CLUB_IDENTITY_ZONES.playing, CLUB_IDENTITY_ZONES.invite]) {
       expect(zone.x, 'the rail starts left of the zone it covers').toBeGreaterThanOrEqual(rail.x);
       expect(zone.x + zone.width).toBeLessThanOrEqual(rail.x + rail.width);
       expect(zone.y).toBeGreaterThanOrEqual(rail.y);

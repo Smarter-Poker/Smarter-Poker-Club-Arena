@@ -126,7 +126,7 @@ const MINI_BLOCKS: VariantBlock[] = BLOCKS.map((b) => {
     ...b,
     cards: info.minLosingHandCards,
     note: holdem
-      ? 'Aces Full Or Better Must Lose To Quads Or Better. No Ace-In-The-Hole Rule And No Both-Cards-Must-Play Rule: The Mini Catches The Beats The Main Rule Refuses On A Technicality.'
+      ? 'Any Aces Full Or Better Must Lose To Quads Or Better, With Both Hole Cards Playing. The Mini Catches The Aces Full Hands Below The Main Bar Of Aces Full Of Jacks.'
       : hiLo
         ? 'Any Four Of A Kind Or Better Must Lose To Bigger Quads Or Better, Judged On The High Hand Only. The Low Hand Never Qualifies.'
         : 'Any Four Of A Kind Or Better Must Lose To Bigger Quads Or Better. Not Only Quad Kings: Every Quad Below The Main Bar Pays The Mini.',
@@ -166,8 +166,8 @@ export function BBJQualifyingHands({
         <p className="bbj-qh__intro">
           The Mini Jackpot Pays A Flat Amount For The Beats The Main Rule Turns Away. The Losing
           Player Must Hold At Least The Hand Below And The Winner Must Still Hold Quads Or Better.
-          The Same Pot, Player And Board Conditions Apply As For The Main Jackpot; The
-          Ace-In-The-Hole And Both-Cards-Must-Play Rules Do Not.
+          The Same Pot, Player And Board Conditions Apply As For The Main Jackpot, And Both Hole
+          Cards Must Play For The Losing Hand And The Winning Hand.
         </p>
       ) : (
         <p className="bbj-qh__intro">

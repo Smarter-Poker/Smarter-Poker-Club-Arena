@@ -1249,7 +1249,9 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
                 this.tableInfo.big_blind,
                 dealtInPlayerIds.length,
                 dealtInPlayerIds,
-                { doubleBoard: this.currentHandCommunityCards2.length > 0 }
+                /* `board` carries Dan's 2026-10-11 rule into the mini: both
+                   hole cards must play, exactly as for the main. */
+                { doubleBoard: this.currentHandCommunityCards2.length > 0, board: bbjBoard }
               );
 
         if (miniResult.hit) {
@@ -1383,7 +1385,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
                 this.currentHandPotSize,
                 this.tableInfo.big_blind,
                 dealtInPlayerIds.length,
-                { doubleBoard: this.currentHandCommunityCards2.length > 0 }
+                { doubleBoard: this.currentHandCommunityCards2.length > 0, board: bbjBoard }
               );
           if (miniNearMiss.nearMiss) {
             console.log(

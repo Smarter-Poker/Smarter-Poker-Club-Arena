@@ -82,6 +82,7 @@ describe('the near-miss log has a reader', () => {
        spelled out so the diff says which gate changed. */
     expect(enginesReasons()).toEqual([
       'both_cards_must_play',
+      'mini_both_cards_must_play',
       'mini_double_board',
       'mini_loser_below_bar',
       'mini_not_enough_players',

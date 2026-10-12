@@ -9,9 +9,11 @@ halves of why it cannot: settlement may call the mini only where detectBBJHit
 has already refused, and the mini's money may come only from `backup_balance`
 through `fn_bbj_mini_payout`, never from the jackpot itself. It also pins the
 gates the mini keeps (winner holds quads or better, the pot floor, the
-players-dealt floor, variant eligibility, double-board exclusion) and the two it
-deliberately drops (Ace in hand, both cards play), because those two are what
-make it the near-miss catcher rather than a second main jackpot.
+players-dealt floor, variant eligibility, double-board exclusion and, since
+Dan's 2026-10-11 ruling "BOTH cards must play for BBJ or Mini BBJ", both hole
+cards playing for the loser and the winner) and what it deliberately drops (the
+Jacks floor and the Ace in hand), because that is what makes it the near-miss
+catcher rather than a second main jackpot.
 
 It also pins the mini's own counters: a mini is counted as a mini and never as
 a main, so `detected == paid` keeps meaning what it means for each jackpot, and

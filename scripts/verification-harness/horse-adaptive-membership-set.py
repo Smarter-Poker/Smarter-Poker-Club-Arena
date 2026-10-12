@@ -2,7 +2,7 @@
 from pathlib import Path
 import json,hashlib,time,subprocess
 from satellite_qualifier_fixture import module,sha,lit
-MIGRATION=Path('supabase/migrations/20261012191611_horse_adaptive_batch_membership_validates_once_and_records_as_one_set.sql')
+MIGRATION=Path('supabase/migrations/20261012192304_horse_adaptive_batch_membership_validates_once_and_records_as_one_set.sql')
 def qualify(e,template,keep_template=False):
  root=Path(__file__).resolve().parents[2];base=e.database(template);passed=[]
  def read(d,q,label):return e.sql(d,q,label=label)[1].strip()

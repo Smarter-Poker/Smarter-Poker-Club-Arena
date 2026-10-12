@@ -1884,6 +1884,17 @@ function CashierTradeWorkspace() {
      * and moves nothing; change either input and a fresh id is minted, because
      * that is a genuinely new intent and must be allowed through.
      */
+    // A different action is a new intent even when its amount and players
+    // match. Retain the unresolved original journal, but never reuse a Send
+    // Out submission identity for a ticket (or the reverse).
+    const retainedIntent = submissionIdRef.current
+      ? readCashierTransferRecoveryBySubmission(user.id, clubUuid, submissionIdRef.current)
+      : null;
+    if (retainedIntent && retainedIntent.kind !== kind) {
+      submissionIdRef.current = null;
+      opIdsRef.current = new Map();
+      transferRecoveryScopeRef.current = null;
+    }
     if (!submissionIdRef.current) {
       submissionIdRef.current = newOpId();
     }
@@ -1903,7 +1914,8 @@ function CashierTradeWorkspace() {
     // reloaded page can replay the identical intent even if this component
     // never reaches its finally block.
     if (kind === 'send') targets.forEach((target) => opIdFor(target.userId));
-    const recoveryCreatedAt = transferRecovery?.createdAt ?? Date.now();
+    const recoveryCreatedAt =
+      transferRecovery?.submissionId === submissionId ? transferRecovery.createdAt : Date.now();
     const uncertainRecovery: CashierTransferRecovery = {
       version: 1,
       userId: user.id,
@@ -2114,7 +2126,8 @@ function CashierTradeWorkspace() {
         if (transferView.current === owningView) {
           submissionIdRef.current = null;
           opIdsRef.current = new Map();
-          if (isMounted.current) setTransferRecovery(null);
+          if (isMounted.current)
+            setTransferRecovery(readCashierTransferRecovery(user.id, clubUuid));
         }
       }
       const recovery: CashierTransferRecovery | null =
@@ -2198,23 +2211,25 @@ function CashierTradeWorkspace() {
     const requestedClub = clubUuid;
     setReversibleLoading(true);
     setReversibleError(null);
-    const { data, error } = await supabase.rpc('fn_agent_wallet_reversible', {
-      p_club_id: requestedClub,
-    });
-    if (!isMounted.current || seq !== reversibleSeqRef.current) return;
-    if (error) {
-      reportError(error, 'CashierTradePage.loadReversible');
-      // "Nothing Is Claimable" is a different statement from "we could not read
-      // it", and on a screen about taking money back the difference matters.
-      setReversible([]);
-      setReversibleAnchor(null);
-      setReversibleError('Could Not Read Your Recent Sends.');
-    } else {
+    try {
+      const { data, error } = await supabase.rpc('fn_agent_wallet_reversible', {
+        p_club_id: requestedClub,
+      });
+      if (!isMounted.current || seq !== reversibleSeqRef.current) return;
+      if (error) throw error;
       setReversible(((data || []) as ReversibleSend[]).map((r) => ({ ...r })));
       // Anchor the server's countdown against a monotonic local stopwatch.
       setReversibleAnchor(performance.now());
+    } catch (error) {
+      if (!isMounted.current || seq !== reversibleSeqRef.current) return;
+      reportError(error, 'CashierTradePage.loadReversible');
+      // An unreadable result is not an empty list of claimable sends.
+      setReversible([]);
+      setReversibleAnchor(null);
+      setReversibleError('Could Not Read Your Recent Sends.');
+    } finally {
+      if (isMounted.current && seq === reversibleSeqRef.current) setReversibleLoading(false);
     }
-    setReversibleLoading(false);
   }, [clubUuid]);
 
   const claimBack = async (row: ReversibleSend) => {
@@ -4359,7 +4374,7 @@ function CashierTradeWorkspace() {
                       }
                     </div>
                   )}
-                {stillClaimable.length > 0 && (
+                {!reversibleLoading && !reversibleError && stillClaimable.length > 0 && (
                   <div className={styles.claimList}>
                     {stillClaimable
                       .filter((row) => !claimRecipient || row.to_user_id === claimRecipient)

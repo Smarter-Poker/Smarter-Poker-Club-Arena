@@ -79,6 +79,8 @@ import type { KillTableRule } from '../../utils/killPot';
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 export interface TableModalsLayerProps {
+  /** Keyboard ownership follows the visible table, including off-route tabs. */
+  isActive?: boolean;
   // Core context
   tableId: string | undefined;
   userId: string;
@@ -706,6 +708,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     onDismissAnnouncement,
     // Tournament Winner
     tournamentWinner,
+    isActive = true,
     onDismissTournamentWinner,
     // Hand History
     showHandHistory,
@@ -1389,6 +1392,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
       {isTournament && tournamentWinner && (
         <TournamentWinnerOverlay
           isWinner={true}
+          isActive={isActive}
           prize={tournamentWinner.prize}
           unitCents={tournamentPrizeUnitCents}
           tournamentName={tournamentWinner.name}

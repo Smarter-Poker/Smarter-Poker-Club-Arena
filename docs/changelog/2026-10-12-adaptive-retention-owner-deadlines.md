@@ -1,0 +1,7 @@
+# Pending adaptive cleanup keeps its own deadline
+
+`server/src/services/horseAdaptiveJournal/loop.ts` previously used one deadline for three rotating retention owners. In the actual worker, a pending adaptive pass requested five seconds, but the next empty or failed capture pass replaced that deadline with sixty seconds, followed by another sixty-second discovery pass. Adaptive membership qualification could therefore wait about125seconds plus serial work, even though its receipt was pending. The single-owner regression did not exercise that connected shape.
+
+The existing serial loop now keeps one deadline for each existing owner and selects at most one due task per ordinary journal cycle, starting from the rotating cursor. Only the selected owner's deadline changes. Empty/error owners retain their minute backoff, capped/pending owners retain five seconds, and all due owners remain fair. No new worker, scheduler, watcher or correctness repair loop is introduced.
+
+Verified: three new focused clock cases fail before the source correction, then pass after it. They prove pending adaptive work beside empty/error owners, per-owner backoff, three capped owners' fair turns and at most one prune per cycle. All five connected loop suites passed48tests; server TypeScript passed. Existing PostgreSQL/native evidence remains valid because SQL, original locks, financial/retention qualifiers and consumer representation are unchanged. Protected final-source checks, serving identity and real worker proof are still required.

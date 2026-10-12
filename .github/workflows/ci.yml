@@ -2163,6 +2163,48 @@ jobs:
         env:
           POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-hand-submission-retention-disposal.py --pg-bin "$POKER_AUDIT_PG_BIN" --evidence artifacts/hand-submission-retention-disposal
+      - name: Settled horse request payloads expire without reopening settlement
+        id: horse_request_retention
+        if: matrix.shard == 3
+        env:
+          POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/verification-harness/horse-request-retention.py --pg-bin "$POKER_AUDIT_PG_BIN" --evidence artifacts/horse-request-retention
+      - name: Horse settlement keys compact without losing replay or accounting proof
+        id: horse_settlement_key_retention
+        if: matrix.shard == 3
+        env:
+          POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/verification-harness/horse-settlement-key-retention.py --pg-bin "$POKER_AUDIT_PG_BIN" --evidence artifacts/horse-settlement-key-retention
+      - name: Retain horse settlement key compaction proof
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.horse_settlement_key_retention.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: horse-settlement-key-retention-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/horse-settlement-key-retention/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Adaptive raw horse facts become exact sufficient statistics after qualified retention
+        id: horse_adaptive_statistics_retention
+        if: matrix.shard == 3
+        env:
+          POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/verification-harness/horse-adaptive-statistics-retention.py --pg-bin "$POKER_AUDIT_PG_BIN" --evidence artifacts/horse-adaptive-statistics-retention
+      - name: Retain adaptive raw retirement and consumer proof
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.horse_adaptive_statistics_retention.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: horse-adaptive-statistics-retention-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/horse-adaptive-statistics-retention/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Retain original horse payload expiration proof
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.horse_request_retention.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: horse-request-retention-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/horse-request-retention/
+          if-no-files-found: error
+          retention-days: 7
       - name: Retain retention disposal proof
         if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.hand_submission_retention_disposal.outcome)
         uses: actions/upload-artifact@v4
@@ -2341,6 +2383,9 @@ jobs:
           mkdir -p "$RUNNER_TEMP/original-unchanged-stack"
           bash scripts/dev/probe-original-unchanged-stack-pg17.sh \
             2>&1 | tee "$RUNNER_TEMP/original-unchanged-stack/native.log"
+          python3 scripts/verification-harness/horse-cash-signed-reader-retention.py \
+            --evidence "$RUNNER_TEMP/original-unchanged-stack/retained-source-compatibility" \
+            --pg-bin /usr/lib/postgresql/17/bin
       - name: Retain original unchanged-stack native qualification
         if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.original_unchanged_stack.outcome)
         uses: actions/upload-artifact@v4

@@ -963,14 +963,14 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   table(
     'horse_journaled_model_sweep',
     'nightly',
-    'fn_claim_horse_journaled_model and fn_finish_horse_journaled_model via HorseJournaledOpponentModels',
-    'private leased cursor for bounded journal-only diagnostic reconstruction; not a source watermark',
+    'fn_claim_horse_journaled_model_statistics and fn_finish_horse_journaled_model_statistics via HorseJournaledOpponentModels',
+    'private leased cursor for bounded raw and retained sufficient-statistics diagnostic reconstruction; not a source watermark',
     'Phase14'
   ),
   table(
     'horse_journaled_opponent_models',
     'nightly',
-    'fn_finish_horse_journaled_model via HorseJournaledOpponentModels',
+    'fn_finish_horse_journaled_model_statistics via HorseJournaledOpponentModels',
     'private latest scoped frequency and holdout reports; no causal EV, source completeness or activation authority',
     'Phase14'
   ),

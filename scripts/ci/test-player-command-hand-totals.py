@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 
@@ -387,3 +388,10 @@ finally:
     if started:
         run([PG/'pg_ctl', '-D', data, '-m', 'immediate', '-w', 'stop'])
     shutil.rmtree(cluster)
+
+# Run the unchanged history proof only after totals and its cleanup succeed.
+# A history failure or timeout fails this same required accounting step.
+subprocess.run(
+    [sys.executable, str(ROOT / 'scripts/ci/test-player-command-history.py')],
+    check=True, timeout=180, env=env,
+)

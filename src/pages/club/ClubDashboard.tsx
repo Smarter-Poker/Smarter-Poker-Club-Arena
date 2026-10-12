@@ -26,6 +26,7 @@ import { useMasterBusChannel } from '../../hooks/useMasterBusChannel';
 import { getLocalStorage, setLocalStorage } from '../../lib/storage';
 import ClubStatsCards, { DashboardStats } from '../../components/club/ClubStatsCards';
 import ClubActivityFeed from '../../components/club/ClubActivityFeed';
+import ClubDashboardAvatar from '../../components/club/ClubDashboardAvatar';
 import PageSkeleton from '../../components/common/PageSkeleton';
 import { useToast } from '../../components/common/Toast';
 import ClubMemberManagement from '../../components/admin/ClubMemberManagement';
@@ -1004,11 +1005,7 @@ export default function ClubDashboard() {
         />
         <div className={styles.clubInfo}>
           <div className={styles.clubAvatar}>
-            {club.avatarUrl ? (
-              <img src={club.avatarUrl} alt={club.name} loading="lazy" />
-            ) : (
-              <span>{club.name.charAt(0)}</span>
-            )}
+            <ClubDashboardAvatar src={club.avatarUrl} name={club.name} />
           </div>
           <div className={styles.clubMeta}>
             <p className={styles.eyebrow}>Club Dashboard</p>

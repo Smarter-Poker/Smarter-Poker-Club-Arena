@@ -2100,7 +2100,7 @@ const EXPECTED_VIP_PLAN_CONTRACT: Record<
     checkoutPlan: 'vip-lifetime',
     priceUsd: 499,
     priceDiamonds: 49900,
-    cardCheckoutReady: false,
+    cardCheckoutReady: true,
   },
 };
 

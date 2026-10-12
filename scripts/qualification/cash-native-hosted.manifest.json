@@ -231,8 +231,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 210534,
-      "sha256": "f121396e2a47265ac66b95be65b77b88ed4aa128ec8f4230eb28458628cc8631"
+      "bytes": 211448,
+      "sha256": "65ab5c875b5514f798b5ff5cc2e9764a89babf5ea27d1c00c704b59a175755a9"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -2583,6 +2583,26 @@
     "protectedMainWorkflowPin": {
       "bytes": 209626,
       "sha256": "193e61fdf98e93dcef7ae20fbc5fe447d4048a1e8605a452aa239f4a75e0f7dc"
+    }
+  },
+  "originalPosthandEscrowNative20261012": {
+    "reason": "Add actual original posthand escrow PostgreSQL17 qualification and always artifact in existing Accounting3. Preserve every prior native lane and historical pin. SQL/native and public financial projection qualification distinct from production installation or retention permission.",
+    "previousPins": {
+      ".github/workflows/ci.yml": {
+        "bytes": 209558,
+        "sha256": "d37c75bdf8c9f04a356363c8cff9b919f66f0a1640d7748c40f29cc40bd5aea9"
+      }
+    }
+  },
+  "originalPosthandEscrowProtectedMainIntegration20261012": {
+    "reason": "Preserve protected f209 all native qualification lanes and additive histories while integrating one new original posthand escrow probe. Financial SQL/native inputs unchanged. Workflow fingerprint is not installation proof.",
+    "previousBranchWorkflowPin": {
+      "bytes": 210472,
+      "sha256": "2ac563308b4b2a1f2a0bc3a4179d945a96a72d6719160a9c9f66fdb929cf753a"
+    },
+    "protectedMainWorkflowPin": {
+      "bytes": 210534,
+      "sha256": "f121396e2a47265ac66b95be65b77b88ed4aa128ec8f4230eb28458628cc8631"
     }
   }
 }

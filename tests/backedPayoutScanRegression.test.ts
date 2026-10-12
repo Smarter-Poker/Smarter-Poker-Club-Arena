@@ -355,11 +355,15 @@ describe('backed payout discovery is the same accounting question in a batch', (
   });
 
   it('requires renewed batch qualification when the maintained scalar formula changes', () => {
-    const declarations = migrationCorpus().flatMap(({ name: file, sql }) =>
-      declaredFunctions(sql)
-        .filter((fn) => fn.name === name)
-        .map((fn) => ({ file, ...fn }))
-    );
+    // A matching parsed declaration necessarily contains this exact identifier.
+    // Parse only candidate files; preserve every definition and version ordering.
+    const declarations = migrationCorpus()
+      .filter(({ sql }) => sql.includes(name))
+      .flatMap(({ name: file, sql }) =>
+        declaredFunctions(sql)
+          .filter((fn) => fn.name === name)
+          .map((fn) => ({ file, ...fn }))
+      );
     const latest = declarations.at(-1)!;
     // The ticket and house-funding successor (2026-10-03) is the last declared
     // scalar; its native qualification is ticket-funding-native.py. The

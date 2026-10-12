@@ -1,0 +1,2404 @@
+[
+  {
+    "schema": "public",
+    "name": "bbj_payouts",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid"
+      },
+      {
+        "name": "pool_id",
+        "type": "uuid"
+      },
+      {
+        "name": "hand_id",
+        "type": "uuid"
+      },
+      {
+        "name": "table_id",
+        "type": "uuid"
+      },
+      {
+        "name": "hand_number",
+        "type": "bigint"
+      },
+      {
+        "name": "winner_user_id",
+        "type": "uuid"
+      },
+      {
+        "name": "loser_user_id",
+        "type": "uuid"
+      },
+      {
+        "name": "total_amount",
+        "type": "numeric(20,2)"
+      },
+      {
+        "name": "winner_share",
+        "type": "numeric(20,2)"
+      },
+      {
+        "name": "loser_share",
+        "type": "numeric(20,2)"
+      },
+      {
+        "name": "table_share",
+        "type": "numeric(20,2)"
+      },
+      {
+        "name": "table_player_count",
+        "type": "integer"
+      },
+      {
+        "name": "metadata",
+        "type": "jsonb"
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "kind",
+        "type": "text"
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "hand_history",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid"
+      },
+      {
+        "name": "winner_name",
+        "type": "text"
+      },
+      {
+        "name": "pot_size",
+        "type": "numeric(12,2)"
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "table_id",
+        "type": "uuid"
+      },
+      {
+        "name": "tournament_id",
+        "type": "uuid"
+      },
+      {
+        "name": "hand_number",
+        "type": "integer"
+      },
+      {
+        "name": "game_variant",
+        "type": "text"
+      },
+      {
+        "name": "small_blind",
+        "type": "numeric(12,2)"
+      },
+      {
+        "name": "big_blind",
+        "type": "numeric(12,2)"
+      },
+      {
+        "name": "rake_amount",
+        "type": "numeric(12,2)"
+      },
+      {
+        "name": "community_cards",
+        "type": "text[]"
+      },
+      {
+        "name": "winners",
+        "type": "jsonb"
+      },
+      {
+        "name": "players",
+        "type": "jsonb"
+      },
+      {
+        "name": "actions",
+        "type": "jsonb"
+      },
+      {
+        "name": "summary",
+        "type": "text"
+      },
+      {
+        "name": "bbj_amount",
+        "type": "numeric(12,2)"
+      },
+      {
+        "name": "source",
+        "type": "text"
+      },
+      {
+        "name": "hand_name",
+        "type": "text"
+      },
+      {
+        "name": "seed",
+        "type": "text"
+      },
+      {
+        "name": "version",
+        "type": "text"
+      },
+      {
+        "name": "started_at",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "ended_at",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "hole_cards",
+        "type": "jsonb"
+      },
+      {
+        "name": "board",
+        "type": "jsonb"
+      },
+      {
+        "name": "reported",
+        "type": "boolean"
+      },
+      {
+        "name": "reported_at",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "button_seat",
+        "type": "smallint"
+      },
+      {
+        "name": "has_human",
+        "type": "boolean"
+      },
+      {
+        "name": "community_cards2",
+        "type": "text[]"
+      },
+      {
+        "name": "pots",
+        "type": "jsonb"
+      },
+      {
+        "name": "showdown",
+        "type": "jsonb"
+      },
+      {
+        "name": "rit_boards",
+        "type": "jsonb"
+      },
+      {
+        "name": "community_cards3",
+        "type": "text[]"
+      },
+      {
+        "name": "bomb_pot",
+        "type": "jsonb"
+      },
+      {
+        "name": "daily_mission_events",
+        "type": "jsonb"
+      },
+      {
+        "name": "winners_by_board",
+        "type": "jsonb"
+      },
+      {
+        "name": "kill_pot",
+        "type": "jsonb"
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "hand_history_retention_policy",
+    "columns": [
+      {
+        "name": "id",
+        "type": "boolean"
+      },
+      {
+        "name": "horse_retention_days",
+        "type": "integer"
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "note",
+        "type": "text"
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "hand_projection_outbox",
+    "columns": [
+      {
+        "name": "hand_id",
+        "type": "uuid"
+      },
+      {
+        "name": "table_id",
+        "type": "uuid"
+      },
+      {
+        "name": "hand_number",
+        "type": "bigint"
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone"
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "tables",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid"
+      },
+      {
+        "name": "club_id",
+        "type": "uuid"
+      },
+      {
+        "name": "name",
+        "type": "text"
+      },
+      {
+        "name": "game_type",
+        "type": "text"
+      },
+      {
+        "name": "stakes",
+        "type": "text"
+      },
+      {
+        "name": "small_blind",
+        "type": "numeric(15,2)"
+      },
+      {
+        "name": "big_blind",
+        "type": "numeric(15,2)"
+      },
+      {
+        "name": "min_buy_in",
+        "type": "numeric(15,2)"
+      },
+      {
+        "name": "max_buy_in",
+        "type": "numeric(15,2)"
+      },
+      {
+        "name": "max_players",
+        "type": "integer"
+      },
+      {
+        "name": "current_players",
+        "type": "integer"
+      },
+      {
+        "name": "status",
+        "type": "text"
+      },
+      {
+        "name": "is_private",
+        "type": "boolean"
+      },
+      {
+        "name": "settings",
+        "type": "jsonb"
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "game_variant",
+        "type": "text"
+      },
+      {
+        "name": "enable_straddle",
+        "type": "boolean"
+      },
+      {
+        "name": "run_it_twice",
+        "type": "boolean"
+      },
+      {
+        "name": "auto_muck",
+        "type": "boolean"
+      },
+      {
+        "name": "ante",
+        "type": "numeric(15,2)"
+      },
+      {
+        "name": "allow_rabbit_hunt",
+        "type": "boolean"
+      },
+      {
+        "name": "allow_run_it_twice",
+        "type": "boolean"
+      },
+      {
+        "name": "allow_straddle",
+        "type": "boolean"
+      },
+      {
+        "name": "game_mode",
+        "type": "character varying(10)"
+      },
+      {
+        "name": "is_vip_only",
+        "type": "boolean"
+      },
+      {
+        "name": "is_anonymous",
+        "type": "boolean"
+      },
+      {
+        "name": "ban_chat",
+        "type": "boolean"
+      },
+      {
+        "name": "label_as_new",
+        "type": "boolean"
+      },
+      {
+        "name": "is_featured",
+        "type": "boolean"
+      },
+      {
+        "name": "hide_club_name",
+        "type": "boolean"
+      },
+      {
+        "name": "is_template",
+        "type": "boolean"
+      },
+      {
+        "name": "bomb_pot_enabled",
+        "type": "boolean"
+      },
+      {
+        "name": "double_board",
+        "type": "boolean"
+      },
+      {
+        "name": "triple_board",
+        "type": "boolean"
+      },
+      {
+        "name": "pineapple_holdem",
+        "type": "boolean"
+      },
+      {
+        "name": "seven_deuce_enabled",
+        "type": "boolean"
+      },
+      {
+        "name": "nit_game",
+        "type": "boolean"
+      },
+      {
+        "name": "cap_enabled",
+        "type": "boolean"
+      },
+      {
+        "name": "no_rathole",
+        "type": "boolean"
+      },
+      {
+        "name": "action_time_seconds",
+        "type": "integer"
+      },
+      {
+        "name": "ante_bb",
+        "type": "numeric(10,2)"
+      },
+      {
+        "name": "career_percent_min",
+        "type": "integer"
+      },
+      {
+        "name": "maintain_percent_min",
+        "type": "integer"
+      },
+      {
+        "name": "maintain_hands",
+        "type": "integer"
+      },
+      {
+        "name": "auto_start_players",
+        "type": "integer"
+      },
+      {
+        "name": "game_length_hours",
+        "type": "integer"
+      },
+      {
+        "name": "created_by",
+        "type": "uuid"
+      },
+      {
+        "name": "calltime_enabled",
+        "type": "boolean"
+      },
+      {
+        "name": "auto_extension",
+        "type": "boolean"
+      },
+      {
+        "name": "auto_restart",
+        "type": "boolean"
+      },
+      {
+        "name": "auto_create_table",
+        "type": "boolean"
+      },
+      {
+        "name": "auto_utg_straddle",
+        "type": "boolean"
+      },
+      {
+        "name": "voluntary_straddle",
+        "type": "boolean"
+      },
+      {
+        "name": "insurance_enabled",
+        "type": "boolean"
+      },
+      {
+        "name": "run_it_mode",
+        "type": "character varying(20)"
+      },
+      {
+        "name": "rake_percent",
+        "type": "numeric(5,2)"
+      },
+      {
+        "name": "rake_cap_bb",
+        "type": "numeric(5,2)"
+      },
+      {
+        "name": "agent_downline_limit",
+        "type": "integer"
+      },
+      {
+        "name": "buy_in_authorization",
+        "type": "boolean"
+      },
+      {
+        "name": "restrict_device",
+        "type": "boolean"
+      },
+      {
+        "name": "restrict_observers",
+        "type": "boolean"
+      },
+      {
+        "name": "gps_restriction",
+        "type": "boolean"
+      },
+      {
+        "name": "ip_restriction",
+        "type": "boolean"
+      },
+      {
+        "name": "pc_emulator_restriction",
+        "type": "boolean"
+      },
+      {
+        "name": "photo_rotation_verification",
+        "type": "boolean"
+      },
+      {
+        "name": "short_description",
+        "type": "text"
+      },
+      {
+        "name": "accelerated_mtt",
+        "type": "boolean"
+      },
+      {
+        "name": "all_in_or_fold",
+        "type": "boolean"
+      },
+      {
+        "name": "custom_rebuy_reentry_cost",
+        "type": "boolean"
+      },
+      {
+        "name": "number_of_rebuys_reentries",
+        "type": "integer"
+      },
+      {
+        "name": "add_on_multiplier",
+        "type": "numeric(3,1)"
+      },
+      {
+        "name": "custom_add_on",
+        "type": "boolean"
+      },
+      {
+        "name": "add_on_break_length_minutes",
+        "type": "integer"
+      },
+      {
+        "name": "ko_bounty",
+        "type": "boolean"
+      },
+      {
+        "name": "gtd_prize_pool",
+        "type": "boolean"
+      },
+      {
+        "name": "final_table_deal",
+        "type": "boolean"
+      },
+      {
+        "name": "big_blind_ante",
+        "type": "boolean"
+      },
+      {
+        "name": "authorized_to_register",
+        "type": "boolean"
+      },
+      {
+        "name": "late_registration_level",
+        "type": "integer"
+      },
+      {
+        "name": "early_bird_registration",
+        "type": "boolean"
+      },
+      {
+        "name": "bubble_protection",
+        "type": "boolean"
+      },
+      {
+        "name": "featured_tournament",
+        "type": "boolean"
+      },
+      {
+        "name": "min_players_mtt",
+        "type": "integer"
+      },
+      {
+        "name": "max_players_mtt",
+        "type": "integer"
+      },
+      {
+        "name": "multi_day_mtt",
+        "type": "boolean"
+      },
+      {
+        "name": "save_start_time",
+        "type": "boolean"
+      },
+      {
+        "name": "start_time",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "restart_tournament_every",
+        "type": "boolean"
+      },
+      {
+        "name": "tournament_schedule",
+        "type": "boolean"
+      },
+      {
+        "name": "synchronized_breaks",
+        "type": "boolean"
+      },
+      {
+        "name": "sng_buy_in",
+        "type": "numeric(10,2)"
+      },
+      {
+        "name": "blind_structure",
+        "type": "character varying(20)"
+      },
+      {
+        "name": "payout_structure",
+        "type": "character varying(50)"
+      },
+      {
+        "name": "starting_chips",
+        "type": "integer"
+      },
+      {
+        "name": "blinds_up_minutes",
+        "type": "integer"
+      },
+      {
+        "name": "next_step_satellite",
+        "type": "boolean"
+      },
+      {
+        "name": "sng_custom_buy_in",
+        "type": "boolean"
+      },
+      {
+        "name": "sng_player_count",
+        "type": "integer"
+      },
+      {
+        "name": "is_spins",
+        "type": "boolean"
+      },
+      {
+        "name": "spins_multiplier",
+        "type": "integer"
+      },
+      {
+        "name": "is_deleted",
+        "type": "boolean"
+      },
+      {
+        "name": "deleted_at",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "deleted_by",
+        "type": "uuid"
+      },
+      {
+        "name": "bbj_percent",
+        "type": "numeric(5,2)"
+      },
+      {
+        "name": "tournament_id",
+        "type": "uuid"
+      },
+      {
+        "name": "live_state",
+        "type": "jsonb"
+      },
+      {
+        "name": "union_id",
+        "type": "uuid"
+      },
+      {
+        "name": "big_blind_ante_enabled",
+        "type": "boolean"
+      },
+      {
+        "name": "straddle_enabled",
+        "type": "boolean"
+      },
+      {
+        "name": "straddle_type",
+        "type": "text"
+      },
+      {
+        "name": "max_straddles",
+        "type": "integer"
+      },
+      {
+        "name": "run_it_twice_enabled",
+        "type": "boolean"
+      },
+      {
+        "name": "auto_muck_enabled",
+        "type": "boolean"
+      },
+      {
+        "name": "show_hand_enabled",
+        "type": "boolean"
+      },
+      {
+        "name": "disconnect_timeout_seconds",
+        "type": "integer"
+      },
+      {
+        "name": "max_consecutive_timeouts",
+        "type": "integer"
+      },
+      {
+        "name": "prefer_check_over_fold",
+        "type": "boolean"
+      },
+      {
+        "name": "time_bank_max_uses",
+        "type": "integer"
+      },
+      {
+        "name": "time_bank_enabled",
+        "type": "boolean"
+      },
+      {
+        "name": "ante_enabled",
+        "type": "boolean"
+      },
+      {
+        "name": "bomb_pot_frequency",
+        "type": "integer"
+      },
+      {
+        "name": "bomb_pot_ante_multiplier",
+        "type": "integer"
+      },
+      {
+        "name": "wait_for_big_blind",
+        "type": "boolean"
+      },
+      {
+        "name": "seven_deuce_amount",
+        "type": "numeric"
+      },
+      {
+        "name": "hands_dealt",
+        "type": "bigint"
+      },
+      {
+        "name": "avg_pot",
+        "type": "numeric(14,2)"
+      },
+      {
+        "name": "bomb_pot_double_board",
+        "type": "boolean"
+      },
+      {
+        "name": "cap_bb",
+        "type": "numeric(10,2)"
+      },
+      {
+        "name": "bomb_pot_board_count",
+        "type": "smallint"
+      },
+      {
+        "name": "bomb_pot_trigger_mode",
+        "type": "text"
+      },
+      {
+        "name": "bomb_pot_interval_seconds",
+        "type": "integer"
+      },
+      {
+        "name": "bomb_pot_min_players",
+        "type": "smallint"
+      },
+      {
+        "name": "bomb_pot_ante_fixed",
+        "type": "numeric"
+      },
+      {
+        "name": "first_button_seat",
+        "type": "integer"
+      },
+      {
+        "name": "bomb_pot_variant",
+        "type": "text"
+      },
+      {
+        "name": "bomb_pot_next_due_at",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "bomb_pot_sched_state",
+        "type": "jsonb"
+      },
+      {
+        "name": "bomb_pot_manual_pending",
+        "type": "boolean"
+      },
+      {
+        "name": "bomb_pot_button_policy",
+        "type": "text"
+      },
+      {
+        "name": "bomb_pot_announce_seconds",
+        "type": "integer"
+      },
+      {
+        "name": "min_buy_in_bb",
+        "type": "integer"
+      },
+      {
+        "name": "max_buy_in_bb",
+        "type": "integer"
+      },
+      {
+        "name": "min_buyin",
+        "type": "integer"
+      },
+      {
+        "name": "max_buyin",
+        "type": "integer"
+      },
+      {
+        "name": "cluster_id",
+        "type": "uuid"
+      },
+      {
+        "name": "role",
+        "type": "text"
+      },
+      {
+        "name": "main_index",
+        "type": "integer"
+      },
+      {
+        "name": "lifecycle",
+        "type": "text"
+      },
+      {
+        "name": "opened_at",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "live_at",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "break_started_at",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "break_eligible_since",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "promote_pending",
+        "type": "boolean"
+      },
+      {
+        "name": "observer_show_cards",
+        "type": "boolean"
+      },
+      {
+        "name": "terminal_closed_at",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "seat_game_scope",
+        "type": "text"
+      },
+      {
+        "name": "seat_admission_key",
+        "type": "text"
+      },
+      {
+        "name": "f06_lifecycle",
+        "type": "bigint"
+      },
+      {
+        "name": "dealing_halted_at",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "dealing_halted_reason",
+        "type": "text"
+      },
+      {
+        "name": "kill_mode",
+        "type": "text"
+      },
+      {
+        "name": "kill_threshold_bb",
+        "type": "smallint"
+      },
+      {
+        "name": "dealing_halt_observed_at",
+        "type": "timestamp with time zone"
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "tournament_escrow",
+    "columns": [
+      {
+        "name": "tournament_id",
+        "type": "uuid"
+      },
+      {
+        "name": "enforced",
+        "type": "boolean"
+      },
+      {
+        "name": "gross_in",
+        "type": "numeric"
+      },
+      {
+        "name": "fee_entries_in",
+        "type": "numeric"
+      },
+      {
+        "name": "satellite_fee_in",
+        "type": "numeric"
+      },
+      {
+        "name": "bounty_in",
+        "type": "numeric"
+      },
+      {
+        "name": "overlay_in",
+        "type": "numeric"
+      },
+      {
+        "name": "satellite_in",
+        "type": "numeric"
+      },
+      {
+        "name": "prize_out",
+        "type": "numeric"
+      },
+      {
+        "name": "bounty_out",
+        "type": "numeric"
+      },
+      {
+        "name": "fee_out",
+        "type": "numeric"
+      },
+      {
+        "name": "refund_prize",
+        "type": "numeric"
+      },
+      {
+        "name": "refund_bounty",
+        "type": "numeric"
+      },
+      {
+        "name": "refund_fee",
+        "type": "numeric"
+      },
+      {
+        "name": "prize_balance",
+        "type": "numeric(15,2)"
+      },
+      {
+        "name": "bounty_balance",
+        "type": "numeric(15,2)"
+      },
+      {
+        "name": "fee_balance",
+        "type": "numeric(15,2)"
+      },
+      {
+        "name": "opened_at",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "opened_from",
+        "type": "text"
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "closed_at",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "close_note",
+        "type": "text"
+      },
+      {
+        "name": "reserve_out",
+        "type": "numeric"
+      },
+      {
+        "name": "reserve_in",
+        "type": "numeric"
+      },
+      {
+        "name": "terminal_closed_at",
+        "type": "timestamp with time zone"
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "tournament_knockout_candidates",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid"
+      },
+      {
+        "name": "tournament_id",
+        "type": "uuid"
+      },
+      {
+        "name": "eliminated_user_id",
+        "type": "uuid"
+      },
+      {
+        "name": "table_id",
+        "type": "uuid"
+      },
+      {
+        "name": "seat_id",
+        "type": "uuid"
+      },
+      {
+        "name": "seat_joined_at",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "hand_id",
+        "type": "uuid"
+      },
+      {
+        "name": "hand_number",
+        "type": "bigint"
+      },
+      {
+        "name": "stack_before",
+        "type": "numeric(20,2)"
+      },
+      {
+        "name": "stack_after",
+        "type": "numeric(20,2)"
+      },
+      {
+        "name": "state",
+        "type": "text"
+      },
+      {
+        "name": "rebuy_prompt_until",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "resolved_at",
+        "type": "timestamp with time zone"
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "tournaments",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid"
+      },
+      {
+        "name": "name",
+        "type": "text"
+      },
+      {
+        "name": "description",
+        "type": "text"
+      },
+      {
+        "name": "game_type",
+        "type": "text"
+      },
+      {
+        "name": "variant",
+        "type": "text"
+      },
+      {
+        "name": "buy_in_amount",
+        "type": "numeric(15,2)"
+      },
+      {
+        "name": "buy_in_fee",
+        "type": "numeric(15,2)"
+      },
+      {
+        "name": "guaranteed_prize",
+        "type": "numeric(15,2)"
+      },
+      {
+        "name": "start_time",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "status",
+        "type": "text"
+      },
+      {
+        "name": "current_players",
+        "type": "integer"
+      },
+      {
+        "name": "max_players",
+        "type": "integer"
+      },
+      {
+        "name": "late_reg_mins",
+        "type": "integer"
+      },
+      {
+        "name": "starting_chips",
+        "type": "integer"
+      },
+      {
+        "name": "blind_structure",
+        "type": "text"
+      },
+      {
+        "name": "payout_structure",
+        "type": "text"
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "club_id",
+        "type": "uuid"
+      },
+      {
+        "name": "started_at",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "ended_at",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "current_level",
+        "type": "integer"
+      },
+      {
+        "name": "prize_pool",
+        "type": "numeric(18,2)"
+      },
+      {
+        "name": "is_rebuy",
+        "type": "boolean"
+      },
+      {
+        "name": "add_on_available",
+        "type": "boolean"
+      },
+      {
+        "name": "rebuy_cost",
+        "type": "numeric(15,2)"
+      },
+      {
+        "name": "rebuy_chips",
+        "type": "integer"
+      },
+      {
+        "name": "rebuy_levels",
+        "type": "integer"
+      },
+      {
+        "name": "addon_cost",
+        "type": "numeric(15,2)"
+      },
+      {
+        "name": "addon_chips",
+        "type": "integer"
+      },
+      {
+        "name": "min_players",
+        "type": "integer"
+      },
+      {
+        "name": "tournament_type",
+        "type": "text"
+      },
+      {
+        "name": "is_bounty",
+        "type": "boolean"
+      },
+      {
+        "name": "bounty_amount",
+        "type": "numeric(15,2)"
+      },
+      {
+        "name": "is_pko",
+        "type": "boolean"
+      },
+      {
+        "name": "is_mystery_bounty",
+        "type": "boolean"
+      },
+      {
+        "name": "mystery_bounty_min",
+        "type": "numeric(15,2)"
+      },
+      {
+        "name": "mystery_bounty_max",
+        "type": "numeric(15,2)"
+      },
+      {
+        "name": "is_xmtt",
+        "type": "boolean"
+      },
+      {
+        "name": "union_id",
+        "type": "uuid"
+      },
+      {
+        "name": "is_multi_day",
+        "type": "boolean"
+      },
+      {
+        "name": "parent_tournament_id",
+        "type": "uuid"
+      },
+      {
+        "name": "flight_number",
+        "type": "integer"
+      },
+      {
+        "name": "day_number",
+        "type": "integer"
+      },
+      {
+        "name": "total_days",
+        "type": "integer"
+      },
+      {
+        "name": "flight_end_chips_snapshot",
+        "type": "jsonb"
+      },
+      {
+        "name": "survivors_advance_to",
+        "type": "uuid"
+      },
+      {
+        "name": "is_pinned",
+        "type": "boolean"
+      },
+      {
+        "name": "spin_multiplier",
+        "type": "numeric"
+      },
+      {
+        "name": "is_premium_spin",
+        "type": "boolean"
+      },
+      {
+        "name": "prize_pool_finalized",
+        "type": "boolean"
+      },
+      {
+        "name": "is_turbo",
+        "type": "boolean"
+      },
+      {
+        "name": "blind_speed",
+        "type": "text"
+      },
+      {
+        "name": "spin_type",
+        "type": "text"
+      },
+      {
+        "name": "total_rake",
+        "type": "numeric(18,2)"
+      },
+      {
+        "name": "late_reg_levels",
+        "type": "integer"
+      },
+      {
+        "name": "addon_levels",
+        "type": "integer"
+      },
+      {
+        "name": "is_reentry",
+        "type": "boolean"
+      },
+      {
+        "name": "satellite_target",
+        "type": "uuid"
+      },
+      {
+        "name": "max_rebuys",
+        "type": "integer"
+      },
+      {
+        "name": "max_reentries",
+        "type": "integer"
+      },
+      {
+        "name": "level_started_at",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "addon_period_triggered",
+        "type": "boolean"
+      },
+      {
+        "name": "satellite_target_id",
+        "type": "uuid"
+      },
+      {
+        "name": "final_table_triggered",
+        "type": "boolean"
+      },
+      {
+        "name": "bounty_pool",
+        "type": "numeric(18,2)"
+      },
+      {
+        "name": "bounty_pool_paid",
+        "type": "numeric"
+      },
+      {
+        "name": "on_break",
+        "type": "boolean"
+      },
+      {
+        "name": "break_started_at",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "break_ends_at",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "is_private",
+        "type": "boolean"
+      },
+      {
+        "name": "spin_locked_tiers",
+        "type": "jsonb"
+      },
+      {
+        "name": "short_description",
+        "type": "text"
+      },
+      {
+        "name": "is_vip_only",
+        "type": "boolean"
+      },
+      {
+        "name": "ban_chat",
+        "type": "boolean"
+      },
+      {
+        "name": "all_in_or_fold",
+        "type": "boolean"
+      },
+      {
+        "name": "label_as_new",
+        "type": "boolean"
+      },
+      {
+        "name": "hide_club_name",
+        "type": "boolean"
+      },
+      {
+        "name": "action_time_seconds",
+        "type": "integer"
+      },
+      {
+        "name": "table_size",
+        "type": "integer"
+      },
+      {
+        "name": "accelerated_mtt",
+        "type": "boolean"
+      },
+      {
+        "name": "addon_break_minutes",
+        "type": "integer"
+      },
+      {
+        "name": "big_blind_ante",
+        "type": "boolean"
+      },
+      {
+        "name": "authorized_to_register",
+        "type": "boolean"
+      },
+      {
+        "name": "early_bird_enabled",
+        "type": "boolean"
+      },
+      {
+        "name": "early_bird_chips",
+        "type": "integer"
+      },
+      {
+        "name": "bubble_protection",
+        "type": "boolean"
+      },
+      {
+        "name": "final_table_deal_enabled",
+        "type": "boolean"
+      },
+      {
+        "name": "restart_every_minutes",
+        "type": "integer"
+      },
+      {
+        "name": "synchronized_breaks",
+        "type": "boolean"
+      },
+      {
+        "name": "satellite_seats",
+        "type": "integer"
+      },
+      {
+        "name": "schedule_id",
+        "type": "uuid"
+      },
+      {
+        "name": "mystery_bounty_activation",
+        "type": "text"
+      },
+      {
+        "name": "mystery_bounty_activation_value",
+        "type": "numeric"
+      },
+      {
+        "name": "mystery_bounty_profile",
+        "type": "text"
+      },
+      {
+        "name": "mystery_bounty_top_percent",
+        "type": "numeric"
+      },
+      {
+        "name": "mystery_bounty_regular_pool_percent",
+        "type": "numeric"
+      },
+      {
+        "name": "mystery_bounty_pool_percent",
+        "type": "numeric"
+      },
+      {
+        "name": "mystery_bounty_stage",
+        "type": "text"
+      },
+      {
+        "name": "mystery_bounty_activated_at",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "mystery_bounty_activated_players",
+        "type": "integer"
+      },
+      {
+        "name": "mystery_bounty_pool_cents",
+        "type": "bigint"
+      },
+      {
+        "name": "allow_rabbit_hunt",
+        "type": "boolean"
+      },
+      {
+        "name": "spin_reveal_lag_ms",
+        "type": "integer"
+      },
+      {
+        "name": "addon_period_started_at",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "addon_period_ends_at",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "payout_percent",
+        "type": "smallint"
+      },
+      {
+        "name": "free_buy",
+        "type": "boolean"
+      },
+      {
+        "name": "addon_from_start",
+        "type": "boolean"
+      },
+      {
+        "name": "spin_reveal_at",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "mystery_bounty_activation_generation",
+        "type": "bigint"
+      },
+      {
+        "name": "entry_contract_locked",
+        "type": "boolean"
+      },
+      {
+        "name": "blind_level_state",
+        "type": "jsonb"
+      },
+      {
+        "name": "payout_math_version",
+        "type": "smallint"
+      },
+      {
+        "name": "payout_unit_cents",
+        "type": "integer"
+      },
+      {
+        "name": "format_contract",
+        "type": "text"
+      },
+      {
+        "name": "restart_source_id",
+        "type": "uuid"
+      }
+    ]
+  },
+  {
+    "schema": "smarter_private",
+    "name": "f06_hand_permits",
+    "columns": [
+      {
+        "name": "permit_id",
+        "type": "uuid"
+      },
+      {
+        "name": "tournament_id",
+        "type": "uuid"
+      },
+      {
+        "name": "table_id",
+        "type": "uuid"
+      },
+      {
+        "name": "lifecycle",
+        "type": "bigint"
+      },
+      {
+        "name": "hand_number",
+        "type": "bigint"
+      },
+      {
+        "name": "custody_id",
+        "type": "uuid"
+      },
+      {
+        "name": "generation",
+        "type": "uuid"
+      },
+      {
+        "name": "state",
+        "type": "text"
+      },
+      {
+        "name": "evidence_id",
+        "type": "uuid"
+      }
+    ]
+  },
+  {
+    "schema": "smarter_private",
+    "name": "hand_submissions",
+    "columns": [
+      {
+        "name": "submission_id",
+        "type": "uuid"
+      },
+      {
+        "name": "table_id",
+        "type": "uuid"
+      },
+      {
+        "name": "hand_number",
+        "type": "bigint"
+      },
+      {
+        "name": "instance_id",
+        "type": "text"
+      },
+      {
+        "name": "lease_generation",
+        "type": "uuid"
+      },
+      {
+        "name": "request",
+        "type": "jsonb"
+      },
+      {
+        "name": "request_hash",
+        "type": "text"
+      },
+      {
+        "name": "retained_at",
+        "type": "timestamp with time zone"
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "profiles",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid"
+      },
+      {
+        "name": "full_name",
+        "type": "text"
+      },
+      {
+        "name": "display_name",
+        "type": "text"
+      },
+      {
+        "name": "first_name",
+        "type": "text"
+      },
+      {
+        "name": "last_name",
+        "type": "text"
+      },
+      {
+        "name": "username",
+        "type": "text"
+      },
+      {
+        "name": "email",
+        "type": "text"
+      },
+      {
+        "name": "phone",
+        "type": "text"
+      },
+      {
+        "name": "bio",
+        "type": "text"
+      },
+      {
+        "name": "city",
+        "type": "text"
+      },
+      {
+        "name": "state",
+        "type": "text"
+      },
+      {
+        "name": "alias",
+        "type": "text"
+      },
+      {
+        "name": "avatar_url",
+        "type": "text"
+      },
+      {
+        "name": "role",
+        "type": "text"
+      },
+      {
+        "name": "status",
+        "type": "text"
+      },
+      {
+        "name": "is_vip",
+        "type": "boolean"
+      },
+      {
+        "name": "is_horse",
+        "type": "boolean"
+      },
+      {
+        "name": "is_admin",
+        "type": "boolean"
+      },
+      {
+        "name": "is_online",
+        "type": "boolean"
+      },
+      {
+        "name": "player_number",
+        "type": "text"
+      },
+      {
+        "name": "diamonds",
+        "type": "integer"
+      },
+      {
+        "name": "diamond_balance",
+        "type": "integer"
+      },
+      {
+        "name": "diamond_multiplier",
+        "type": "numeric(3,2)"
+      },
+      {
+        "name": "level",
+        "type": "integer"
+      },
+      {
+        "name": "tier",
+        "type": "text"
+      },
+      {
+        "name": "skill_tier",
+        "type": "text"
+      },
+      {
+        "name": "login_streak",
+        "type": "integer"
+      },
+      {
+        "name": "streak_days",
+        "type": "integer"
+      },
+      {
+        "name": "settings",
+        "type": "jsonb"
+      },
+      {
+        "name": "preferences",
+        "type": "jsonb"
+      },
+      {
+        "name": "social_page_id",
+        "type": "uuid"
+      },
+      {
+        "name": "favorite_venue",
+        "type": "uuid"
+      },
+      {
+        "name": "home_poker_club",
+        "type": "uuid"
+      },
+      {
+        "name": "referred_by",
+        "type": "uuid"
+      },
+      {
+        "name": "friends_count",
+        "type": "integer"
+      },
+      {
+        "name": "hendon_total_cashes",
+        "type": "integer"
+      },
+      {
+        "name": "hendon_total_earnings",
+        "type": "numeric"
+      },
+      {
+        "name": "email_verified",
+        "type": "boolean"
+      },
+      {
+        "name": "phone_verified",
+        "type": "boolean"
+      },
+      {
+        "name": "onboarding_complete",
+        "type": "boolean"
+      },
+      {
+        "name": "last_login",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "last_login_date",
+        "type": "date"
+      },
+      {
+        "name": "last_seen",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "training_view_mode",
+        "type": "text"
+      },
+      {
+        "name": "last_trivia_date",
+        "type": "date"
+      },
+      {
+        "name": "trivia_streak",
+        "type": "integer"
+      },
+      {
+        "name": "trivia_high_score",
+        "type": "integer"
+      },
+      {
+        "name": "total_hands_played",
+        "type": "integer"
+      },
+      {
+        "name": "notification_token",
+        "type": "text"
+      },
+      {
+        "name": "referral_code",
+        "type": "text"
+      },
+      {
+        "name": "horse_status",
+        "type": "character varying"
+      },
+      {
+        "name": "horse_profile",
+        "type": "jsonb"
+      },
+      {
+        "name": "sounds_enabled",
+        "type": "boolean"
+      },
+      {
+        "name": "vibrations_enabled",
+        "type": "boolean"
+      },
+      {
+        "name": "show_stack_bb",
+        "type": "boolean"
+      },
+      {
+        "name": "birth_year",
+        "type": "integer"
+      },
+      {
+        "name": "favorite_hand_type",
+        "type": "text"
+      },
+      {
+        "name": "card_back_preference",
+        "type": "text"
+      },
+      {
+        "name": "country",
+        "type": "text"
+      },
+      {
+        "name": "website",
+        "type": "text"
+      },
+      {
+        "name": "twitter",
+        "type": "text"
+      },
+      {
+        "name": "instagram",
+        "type": "text"
+      },
+      {
+        "name": "hendon_url",
+        "type": "text"
+      },
+      {
+        "name": "favorite_game",
+        "type": "text"
+      },
+      {
+        "name": "favorite_hand",
+        "type": "text"
+      },
+      {
+        "name": "home_casino",
+        "type": "text"
+      },
+      {
+        "name": "cover_photo_url",
+        "type": "text"
+      },
+      {
+        "name": "favorite_hand_plo",
+        "type": "text"
+      },
+      {
+        "name": "app_settings",
+        "type": "jsonb"
+      },
+      {
+        "name": "display_name_preference",
+        "type": "text"
+      },
+      {
+        "name": "cover_photo_position",
+        "type": "text"
+      },
+      {
+        "name": "tiktok",
+        "type": "text"
+      },
+      {
+        "name": "telegram",
+        "type": "text"
+      },
+      {
+        "name": "birthday",
+        "type": "date"
+      },
+      {
+        "name": "hendon_biggest_cash",
+        "type": "numeric"
+      },
+      {
+        "name": "use_real_name",
+        "type": "boolean"
+      },
+      {
+        "name": "streak_count",
+        "type": "integer"
+      },
+      {
+        "name": "access_tier",
+        "type": "text"
+      },
+      {
+        "name": "vip_tier",
+        "type": "text"
+      },
+      {
+        "name": "vip_expires_at",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "last_active",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "poker_near_me_preferences",
+        "type": "jsonb"
+      },
+      {
+        "name": "can_review",
+        "type": "boolean"
+      },
+      {
+        "name": "deleted_reviews_count",
+        "type": "integer"
+      },
+      {
+        "name": "kyc_status",
+        "type": "text"
+      },
+      {
+        "name": "kyc_provider",
+        "type": "text"
+      },
+      {
+        "name": "kyc_inquiry_id",
+        "type": "text"
+      },
+      {
+        "name": "kyc_completed_at",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "kyc_rejection_reason",
+        "type": "text"
+      },
+      {
+        "name": "age_verified",
+        "type": "boolean"
+      },
+      {
+        "name": "age_verified_at",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "jurisdiction_country",
+        "type": "text"
+      },
+      {
+        "name": "mfa_required",
+        "type": "boolean"
+      },
+      {
+        "name": "hub_preferences",
+        "type": "jsonb"
+      },
+      {
+        "name": "friend_preferences",
+        "type": "jsonb"
+      },
+      {
+        "name": "store_preferences",
+        "type": "jsonb"
+      },
+      {
+        "name": "messenger_preferences",
+        "type": "jsonb"
+      },
+      {
+        "name": "reels_preferences",
+        "type": "jsonb"
+      },
+      {
+        "name": "over_18_attested_at",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "jurisdiction_region",
+        "type": "text"
+      },
+      {
+        "name": "jurisdiction_acknowledged_at",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "home_games_onboarded_at",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "social_profile_completed",
+        "type": "boolean"
+      },
+      {
+        "name": "is_farming_flagged",
+        "type": "boolean"
+      },
+      {
+        "name": "stripe_customer_id",
+        "type": "text"
+      },
+      {
+        "name": "club_arena_tos_accepted_at",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "bankroll_preferences",
+        "type": "jsonb"
+      },
+      {
+        "name": "memory_games_preferences",
+        "type": "jsonb"
+      },
+      {
+        "name": "news_preferences",
+        "type": "jsonb"
+      },
+      {
+        "name": "video_library_preferences",
+        "type": "jsonb"
+      },
+      {
+        "name": "memory_elo",
+        "type": "integer"
+      },
+      {
+        "name": "arena_avatar_url",
+        "type": "text"
+      },
+      {
+        "name": "equipped_frame",
+        "type": "text"
+      },
+      {
+        "name": "equipped_aura",
+        "type": "text"
+      },
+      {
+        "name": "use_avatar_as_profile_pic",
+        "type": "boolean"
+      },
+      {
+        "name": "status_text",
+        "type": "text"
+      },
+      {
+        "name": "player_tags",
+        "type": "text[]"
+      },
+      {
+        "name": "vip_lifetime_card_purchase_id",
+        "type": "uuid"
+      },
+      {
+        "name": "lifetime_vip_since",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "trivia_preferences",
+        "type": "jsonb"
+      },
+      {
+        "name": "trivia_preferences_revision",
+        "type": "bigint"
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "tournament_cancellation_receipts",
+    "columns": [
+      {
+        "name": "tournament_id",
+        "type": "uuid"
+      },
+      {
+        "name": "actor_id",
+        "type": "uuid"
+      },
+      {
+        "name": "receipt_version",
+        "type": "integer"
+      },
+      {
+        "name": "source_player_count",
+        "type": "integer"
+      },
+      {
+        "name": "source_player_ids",
+        "type": "uuid[]"
+      },
+      {
+        "name": "refunded_count",
+        "type": "integer"
+      },
+      {
+        "name": "refunded_registration_ids",
+        "type": "uuid[]"
+      },
+      {
+        "name": "refund_line_count",
+        "type": "integer"
+      },
+      {
+        "name": "ticket_return_count",
+        "type": "integer"
+      },
+      {
+        "name": "ticket_return_ids",
+        "type": "uuid[]"
+      },
+      {
+        "name": "total_ticket_returned",
+        "type": "numeric(15,2)"
+      },
+      {
+        "name": "zero_refund_count",
+        "type": "integer"
+      },
+      {
+        "name": "zero_refund_registration_ids",
+        "type": "uuid[]"
+      },
+      {
+        "name": "total_refunded",
+        "type": "numeric(15,2)"
+      },
+      {
+        "name": "fees_reversed",
+        "type": "numeric(15,2)"
+      },
+      {
+        "name": "total_rake_before",
+        "type": "numeric(15,2)"
+      },
+      {
+        "name": "total_rake_after",
+        "type": "numeric(15,2)"
+      },
+      {
+        "name": "closed_table_count",
+        "type": "integer"
+      },
+      {
+        "name": "closed_table_ids",
+        "type": "uuid[]"
+      },
+      {
+        "name": "source_seat_count",
+        "type": "integer"
+      },
+      {
+        "name": "source_seat_ids",
+        "type": "uuid[]"
+      },
+      {
+        "name": "released_seat_count",
+        "type": "integer"
+      },
+      {
+        "name": "released_seat_ids",
+        "type": "uuid[]"
+      },
+      {
+        "name": "fee_reversal_ids",
+        "type": "uuid[]"
+      },
+      {
+        "name": "escrow_closed_at",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "escrow_close_note",
+        "type": "text"
+      },
+      {
+        "name": "spin_unwind_tournament_id",
+        "type": "uuid"
+      },
+      {
+        "name": "receipt",
+        "type": "jsonb"
+      },
+      {
+        "name": "settled_at",
+        "type": "timestamp with time zone"
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "tournament_terminal_settlements",
+    "columns": [
+      {
+        "name": "tournament_id",
+        "type": "uuid"
+      },
+      {
+        "name": "winner_id",
+        "type": "uuid"
+      },
+      {
+        "name": "settlement_mode",
+        "type": "text"
+      },
+      {
+        "name": "started_status",
+        "type": "text"
+      },
+      {
+        "name": "prize_pool",
+        "type": "numeric(15,2)"
+      },
+      {
+        "name": "bounty_pool",
+        "type": "numeric(15,2)"
+      },
+      {
+        "name": "cash_payout_count",
+        "type": "integer"
+      },
+      {
+        "name": "cash_payout_total",
+        "type": "numeric(15,2)"
+      },
+      {
+        "name": "bounty_payout_total",
+        "type": "numeric(15,2)"
+      },
+      {
+        "name": "mystery_was_active",
+        "type": "boolean"
+      },
+      {
+        "name": "mystery_pool_cents",
+        "type": "bigint"
+      },
+      {
+        "name": "cash_receipt",
+        "type": "jsonb"
+      },
+      {
+        "name": "mystery_receipt",
+        "type": "jsonb"
+      },
+      {
+        "name": "bounty_receipt",
+        "type": "jsonb"
+      },
+      {
+        "name": "closed_table_count",
+        "type": "integer"
+      },
+      {
+        "name": "closed_table_ids",
+        "type": "uuid[]"
+      },
+      {
+        "name": "source_seat_count",
+        "type": "integer"
+      },
+      {
+        "name": "source_seat_ids",
+        "type": "uuid[]"
+      },
+      {
+        "name": "released_seat_count",
+        "type": "integer"
+      },
+      {
+        "name": "released_seat_ids",
+        "type": "uuid[]"
+      },
+      {
+        "name": "rake_amount",
+        "type": "numeric(15,2)"
+      },
+      {
+        "name": "rake_destination",
+        "type": "text"
+      },
+      {
+        "name": "rake_settled_at",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "rake_attributed_at",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "rake_attributed_users",
+        "type": "integer"
+      },
+      {
+        "name": "escrow_closed_at",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "escrow_close_note",
+        "type": "text"
+      },
+      {
+        "name": "completed_at",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "settled_at",
+        "type": "timestamp with time zone"
+      },
+      {
+        "name": "receipt_version",
+        "type": "integer"
+      },
+      {
+        "name": "accounting_state",
+        "type": "text"
+      }
+    ]
+  }
+]

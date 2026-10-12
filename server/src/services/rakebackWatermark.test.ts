@@ -33,6 +33,18 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { pacificAccountingWeek } from './pacificAccountingWeek.js';
 
+// A CLOSED WEEK'S PAGE IS ITS CLOSE'S WORK (2026-10-12): the settler reads the
+// clock to leave a page of an ended week to its weekly close. Every fixture in
+// this suite is dealt on 2026-08-06 inside an open week, so the suite runs at
+// that instant (Date only; a case that fakes all timers sets its own).
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-08-06T20:00:01.000Z'));
+});
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 type Op = [string, unknown[]];
 interface Recorded {
   table: string;

@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "1fc422b810641eee2149abbdbbf5ddf50c54e87162fbea82f22456c506bd712d",
+    "scripts/ci/classify-ci-changes.mjs": "21bad2287248a7b8cd9b12c585b24d3c5949527340c13b95f4e763d2cebf0032",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "9b68bb22efbd6ed9d857161bf4292ed9746f4ab13edaea3bf6d26bff36a4872e",
@@ -840,6 +840,16 @@
         "path": "scripts/ci/classify-ci-changes.mjs",
         "previous": "89fc5f840a12fe52e11da8990ce81952a41d5fdb97607c9fe18005cf27326e0d",
         "current": "1fc422b810641eee2149abbdbbf5ddf50c54e87162fbea82f22456c506bd712d"
+      }
+    ]
+  },
+  "playerCommandHistoryRebinding20261012": {
+    "reason": "Reviewed only additive exact history qualifier classification and four source-routing assertions. Existing financial inputs, assertions, historical audit entries and qualification status are unchanged. Source identity is not financial runtime certification.",
+    "changes": [
+      {
+        "file": "scripts/ci/classify-ci-changes.mjs",
+        "from": "1fc422b810641eee2149abbdbbf5ddf50c54e87162fbea82f22456c506bd712d",
+        "to": "21bad2287248a7b8cd9b12c585b24d3c5949527340c13b95f4e763d2cebf0032"
       }
     ]
   }

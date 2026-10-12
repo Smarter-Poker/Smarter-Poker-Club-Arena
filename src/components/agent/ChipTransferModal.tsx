@@ -31,9 +31,16 @@
  * It is now the same two calls every other surface makes. The four bank roles
  * spend the CLUB BANK (fn_club_bank_send, self-send permitted - that is how an
  * owner funds their own float); the three agent roles spend their AGENT WALLET
- * (fn_agent_wallet_send, downline enforced server-side). Both derive the
- * destination from the recipient's role, carry a uuid op_id, write one
- * chip_transactions row, and open a ten minute clawback window.
+ * (fn_agent_wallet_send, downline enforced server-side). Both carry a uuid
+ * op_id, write one chip_transactions row, and open a ten minute clawback window.
+ *
+ * WHICH WALLET THE CHIPS LAND IN (Dan 2026-10-11: "CLUB OWNERS CAN PLAY AND
+ * HAVE CHIPS SENT TO THEIR PLAYER WALLETS"). An agent wallet send credits a
+ * staff or agent recipient's float whatever is asked, so it follows the
+ * recipient's role. A Club Bank send honours p_destination, and an owner,
+ * co-owner or super agent holds BOTH wallets - so the sender chooses, through
+ * clubBankRecipientWallets. Deriving it from the role alone paid every owner
+ * into their float and made their own player wallet unreachable.
  */
 
 import { useState, useEffect, useMemo, useRef } from 'react';
@@ -42,6 +49,11 @@ import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
 import { CLUB_BANK_ROLES, canHoldAgentWallet } from '../wallet/walletRows';
+import {
+  clubBankDestinationFor,
+  clubBankRecipientWallets,
+  type ClubBankRecipientWallet,
+} from '../wallet/cashierModes';
 import { normaliseRole } from '../../types/clubRoles';
 import {
   assertChipAmount,
@@ -109,6 +121,9 @@ export default function ChipTransferModal({
      preview: chip_balance for a player, agents.agent_wallet_balance for an
      agent-capable recipient. null while unknown. */
   const [destinationBalance, setDestinationBalance] = useState<number | null>(null);
+  /* The wallet the sender picked, for a Club Bank send to someone who holds
+     two. null means "the recipient's first wallet" (the agent float). */
+  const [chosenWallet, setChosenWallet] = useState<ClubBankRecipientWallet | null>(null);
   /* Latest sender read. A slower read for an earlier club or account must
      not paint its role or balance over the current one. */
   const senderReadRef = useRef(0);
@@ -474,11 +489,27 @@ export default function ChipTransferModal({
     return recipients.find((r) => r.id === selectedRecipient);
   }, [pinnedRecipient, recipients, selectedRecipient]);
 
-  /* The destination follows the recipient's role, and the preview must show
-     the wallet the chips land in. An agent-capable recipient is credited to
-     agents.agent_wallet_balance, not club_members.chip_balance. */
-  const destinationIsAgentWallet =
-    !!selectedRecipientData && canHoldAgentWallet(selectedRecipientData.role);
+  /* The preview must show the wallet the chips land in. An agent wallet send
+     follows the recipient's role (fn_agent_wallet_send credits a staff or
+     agent recipient's float whatever is asked). A Club Bank send credits the
+     wallet the sender chose, out of the ones the recipient holds. */
+  const recipientWallets: ClubBankRecipientWallet[] =
+    selectedRecipientData && viaClubBank
+      ? clubBankRecipientWallets(selectedRecipientData.role)
+      : [];
+  const previewDestination: ClubBankRecipientWallet = !selectedRecipientData
+    ? 'player_wallet'
+    : viaClubBank
+      ? clubBankDestinationFor(selectedRecipientData.role, chosenWallet)
+      : canHoldAgentWallet(selectedRecipientData.role)
+        ? 'agent_wallet'
+        : 'player_wallet';
+  const destinationIsAgentWallet = !!selectedRecipientData && previewDestination === 'agent_wallet';
+
+  // A different recipient starts from their default wallet again.
+  useEffect(() => {
+    setChosenWallet(null);
+  }, [selectedRecipient]);
   useEffect(() => {
     let cancelled = false;
     setDestinationBalance(null);
@@ -543,8 +574,8 @@ export default function ChipTransferModal({
       );
       return;
     }
-    // The destination wallet is decided by the recipient's role and is never
-    // defaulted: an unknown recipient is a refusal, not a player-wallet send.
+    // The destination wallet is decided from the recipient's real row and is
+    // never defaulted: an unknown recipient is a refusal, not a player-wallet send.
     if (!selectedRecipientData) {
       setError(
         pinnedRecipient === 'missing'
@@ -577,14 +608,21 @@ export default function ChipTransferModal({
       const recipientData = selectedRecipientData;
       const description = note || getTransferDescription();
 
-      /* ONE MONEY PATH. The route follows the CALLER's role and the
-         destination follows the RECIPIENT's. fn_club_bank_send HONOURS
+      /* ONE MONEY PATH. The route follows the CALLER's role. The destination
+         is a wallet the RECIPIENT holds: fn_club_bank_send HONOURS
          p_destination (it credits chip_balance for 'player_wallet' and the
          agent wallet otherwise), so the recipient's role is read before this
-         runs and never defaulted. */
+         runs, never defaulted, and an owner may be paid into either wallet. */
       const resolvedForSend = (await resolveClubUUID(clubId)) || clubId;
 
-      const destination = canHoldAgentWallet(recipientData.role) ? 'agent_wallet' : 'player_wallet';
+      // Read from the recipient's real row, after the check above, never
+      // defaulted. The Club Bank honours the wallet the sender chose; an agent
+      // wallet send pays a staff or agent recipient into their float.
+      const destination: ClubBankRecipientWallet = viaClubBank
+        ? clubBankDestinationFor(recipientData.role, chosenWallet)
+        : canHoldAgentWallet(recipientData.role)
+          ? 'agent_wallet'
+          : 'player_wallet';
       const kind = viaClubBank ? 'club_bank_send' : 'agent_send';
       let confirmationHeadline: string | undefined;
       await runAgentWalletOperation(
@@ -750,6 +788,35 @@ export default function ChipTransferModal({
         )}
 
         <div className="chip-transfer-form">
+          {/* WHICH WALLET (Dan 2026-10-11). Offered only when the Club Bank is
+              paying someone who holds two - an owner, co-owner or super agent.
+              The owner's player wallet is the one they sit down with. */}
+          {recipientWallets.length > 1 && (
+            <div className="form-group">
+              <span className="form-label" id="chip-transfer-wallet-label">
+                Which Wallet
+              </span>
+              <div
+                className="quick-amounts chip-transfer-wallets"
+                role="radiogroup"
+                aria-labelledby="chip-transfer-wallet-label"
+              >
+                {recipientWallets.map((wallet) => (
+                  <button
+                    key={wallet}
+                    type="button"
+                    role="radio"
+                    aria-checked={previewDestination === wallet}
+                    className={previewDestination === wallet ? 'is-on' : undefined}
+                    onClick={() => setChosenWallet(wallet)}
+                  >
+                    {wallet === 'agent_wallet' ? 'Into Agent Wallet' : 'Into Player Wallet'}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Recipient Selection */}
           {!recipientId && (
             <div className="form-group">

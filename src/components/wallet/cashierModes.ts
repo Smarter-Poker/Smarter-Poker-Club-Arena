@@ -36,7 +36,7 @@
  * boundary.
  */
 
-import { canSeeClubBank, canHoldAgentWallet } from './walletRows';
+import { canSeeClubBank, canHoldAgentWallet, holdsPlayerWallet } from './walletRows';
 
 export type CashierWalletType = 'club_bank' | 'promo_wallet' | 'agent_wallet';
 export type CashierTab = 'send' | 'claim' | 'ledger';
@@ -244,6 +244,57 @@ export function cashierRefusesSelfSend(
      fn_promo_wallet_send (the agent's own float) still refuses a self-send. */
   if (walletType === 'promo_wallet' && promoSource === 'club_pot') return false;
   return true;
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  A CLUB OWNER IS PAID INTO THE WALLET THEY CHOSE, NOT THE ONE THEIR ROLE IMPLIES
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Dan 2026-10-11: "CLUB OWNERS CAN PLAY AND HAVE CHIPS SENT TO THEIR PLAYER
+ * WALLETS. THEY CURRENTLY AREN'T SELECTABLE TO RECEIVE CHIPS."
+ *
+ * Owners and co-owners have held a player wallet since 2026-09-02, and
+ * fn_club_bank_send has credited one for them ever since (it refuses a
+ * player-wallet credit only to an admin). But the transfer screens that spend
+ * the Club Bank picked the wallet from the recipient's ROLE -
+ * `canHoldAgentWallet(role) ? 'agent_wallet' : 'player_wallet'` - so an owner,
+ * a co-owner or a super agent was always paid into their agent float and never
+ * into the wallet that buys into a game. Production had never recorded a
+ * single Club Bank send into a player wallet.
+ *
+ * So the wallets a Club Bank send may credit are the wallets the recipient
+ * HOLDS, and when there are two the sender chooses. The first one listed is the
+ * default and stays the agent float, because funding a freshly promoted agent
+ * is what the Member Management screen opens this flow to do.
+ *
+ * This is the Club Bank's rule only. fn_agent_wallet_send still credits a
+ * staff or agent recipient's float whatever is asked ("AGENT TO AGENT ALWAYS
+ * CREDIT TO AGENT WALLETS", see coercesToAgentWallet), so an agent wallet
+ * screen keeps deriving the destination from the role.
+ */
+export type ClubBankRecipientWallet = 'agent_wallet' | 'player_wallet';
+
+export function clubBankRecipientWallets(recipientRole: unknown): ClubBankRecipientWallet[] {
+  const wallets: ClubBankRecipientWallet[] = [];
+  if (canHoldAgentWallet(recipientRole)) wallets.push('agent_wallet');
+  if (holdsPlayerWallet(recipientRole)) wallets.push('player_wallet');
+  return wallets;
+}
+
+/**
+ * The wallet a Club Bank send credits: the sender's choice when the recipient
+ * holds it, otherwise the recipient's first wallet. Never a wallet the
+ * recipient does not hold, so a stale choice left over from the previous
+ * recipient cannot route chips somewhere the server would refuse.
+ */
+export function clubBankDestinationFor(
+  recipientRole: unknown,
+  chosen: ClubBankRecipientWallet | null | undefined
+): ClubBankRecipientWallet {
+  const wallets = clubBankRecipientWallets(recipientRole);
+  if (chosen && wallets.includes(chosen)) return chosen;
+  return wallets[0] ?? 'player_wallet';
 }
 
 /**

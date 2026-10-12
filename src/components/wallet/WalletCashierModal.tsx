@@ -101,7 +101,7 @@ import {
 import { readCashierBalances } from '../../services/cashierBalanceRead';
 import { useVisibleRead } from '../../hooks/useVisibleRead';
 import { roleLabel, normaliseRole, roleRank } from '../../types/clubRoles';
-import { canMintInClubBank, canHoldAgentWallet } from './walletRows';
+import { canMintInClubBank, canHoldAgentWallet, holdsPlayerWallet } from './walletRows';
 import {
   cashierTabs,
   cashierDestinations,
@@ -243,6 +243,15 @@ interface WalletCashierModalProps {
   /** The viewer's role in this club. Presentation only; the server re-checks. */
   role: string;
   walletType?: CashierWalletType;
+  /**
+   * Open the Send tab with this member already chosen, once the roster has
+   * them - the Trade page's "To My Player Wallet" on the owner's own row
+   * (Dan 2026-10-11). Only ever a preselection: the row still has to pass
+   * blockFor, and the server re-checks everything.
+   */
+  initialRecipientId?: string | null;
+  /** The wallet to open the Send tab on, when the cashier offers it. */
+  initialDestination?: CashierDestination | null;
 }
 
 /**
@@ -333,6 +342,8 @@ export default function WalletCashierModal({
   clubId,
   role,
   walletType = DEFAULT_CASHIER_WALLET,
+  initialRecipientId = null,
+  initialDestination = null,
 }: WalletCashierModalProps) {
   const { user } = useAuthUser();
   const toast = useToast();
@@ -524,6 +535,10 @@ export default function WalletCashierModal({
   }, [coerceToAgentWallet, destination]);
 
   const balanceScopeRef = useRef(0);
+  /* The member the cashier was opened for (initialRecipientId). Cleared on use
+     so a later roster refresh never re-selects a member the sender has since
+     moved away from. */
+  const presetRecipientRef = useRef<string | null>(null);
 
   // clubs and agents are deliberately excluded from Realtime publication.
   // Read only while this cashier is open and visible, rather than publishing
@@ -784,8 +799,11 @@ export default function WalletCashierModal({
     setPromoPot(null);
     setPromoFloat(null);
     setPromoLedger([]);
-    if (walletType === 'club_bank') setDestination('agent_wallet');
+    if (initialDestination && cashierDestinations(walletType).includes(initialDestination))
+      setDestination(initialDestination);
+    else if (walletType === 'club_bank') setDestination('agent_wallet');
     else setDestination('player_wallet');
+    presetRecipientRef.current = initialRecipientId;
 
     setRecipient(null);
     setAmount('');
@@ -817,6 +835,8 @@ export default function WalletCashierModal({
     setReversibleAnchor(null);
     setUnconfirmed(null);
     opIdRef.current = newOpId();
+    // initialRecipientId/initialDestination are read at open, not followed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, clubId, user?.id, walletType, role]);
 
   // Escape closes, and the page behind stops scrolling. Both are what a person
@@ -1016,9 +1036,26 @@ export default function WalletCashierModal({
         refusesSelfSend: excludeSelf,
         destinationNeedsAgentWallet: AGENT_ONLY.includes(destination),
         memberHoldsAgentWallet: canHoldAgentWallet(m.role),
+        /* An admin holds no player wallet, so fn_club_bank_send refuses that
+           credit. An OWNER does hold one and is sendable (Dan 2026-10-11).
+           The agent wallet cashier is exempt: it pays a staff recipient into
+           their float whatever is asked, so nothing is refused there. */
+        destinationIsPlayerWallet: destination === 'player_wallet' && walletType !== 'agent_wallet',
+        memberHoldsPlayerWallet: holdsPlayerWallet(m.role),
       }),
-    [user?.id, excludeSelf, destination]
+    [user?.id, excludeSelf, destination, walletType]
   );
+
+  /* THE PRESET RECIPIENT (presetRecipientRef), applied once when the roster
+     first contains them. */
+  useEffect(() => {
+    const wanted = presetRecipientRef.current;
+    if (!wanted || tab !== 'send') return;
+    const row = members.find((m) => m.user_id === wanted);
+    if (!row) return;
+    presetRecipientRef.current = null;
+    if (!blockFor(row)) setRecipient(row);
+  }, [members, tab, blockFor]);
 
   const eligible = useMemo(() => {
     const q = search.trim().toLowerCase();

@@ -379,7 +379,10 @@ describe('the cashier never offers a recipient the server will refuse', () => {
     // tests/every-member-is-discoverable-in-the-cashier.law.test.ts.
     expect(TRADE).not.toContain('String(row.user_id) !== viewerId');
     expect(TRADE).toContain('if (r.isSelf || r.userId === user?.id) return;');
-    expect(TRADE).toContain('{r.isSelf ? null : (');
+    // The self row is never a Send Out target; an owner's own row offers the
+    // Club Bank route to their player wallet instead (Dan 2026-10-11).
+    expect(TRADE).toContain('{r.isSelf ? (');
+    expect(TRADE).toContain('selfCanFundPlayerWallet ? (');
   });
 });
 

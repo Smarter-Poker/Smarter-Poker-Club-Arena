@@ -5437,6 +5437,11 @@ function ClubHomePageContent({
             deliberately standing still. Renders nothing outside a break. */}
         <MaintenanceBreakBanner />
         <ClubLobbyCommandTop
+          /* The deck and the sort row leave while the reader travels down the
+             games and come back on the way up (Dan 2026-10-11), but never
+             while the Filters sheet is open over them. */
+          holdFilters={filtersOpen}
+          resetKey={clubId ?? ''}
           welcome={
             /* The welcome block keeps the club name and loses the message.
                The lobby message is a full-screen greeting at the door now

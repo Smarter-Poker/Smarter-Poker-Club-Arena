@@ -54,7 +54,7 @@ export const HORSE_PHASE13_POLICY_SOURCE_REASONS: Readonly<Record<string, string
   'src/engine/multiway/JointLivePolicy.ts':
     'the live wrapper: modes, the fixed declared work (no clock decides it), the legal-form rebuild of candidates, the paired-edge selection rule, the receipt and its validator',
   'src/engine/multiway/JointSampleAcquisition.ts':
-    'JOINT_LIVE_DOMAIN (domain version, sample counts, the declared 4 ms and 2.5 ms values the contract records, depth ceilings), the full-count request and every eligibility refusal',
+    'JOINT_LIVE_DOMAIN (domain version, sample counts, depth ceilings), the full-count request with no clock or governor cut and every eligibility refusal',
   'src/engine/multiway/JointRangeSampler.ts':
     'the joint public-range sampler: the range pack, priors, rejection and uniform escape',
   'src/engine/multiway/JointCardLayout.ts':

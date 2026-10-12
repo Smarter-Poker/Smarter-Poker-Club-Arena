@@ -177,10 +177,10 @@ export const HORSE_PHASE13_COMPLETION_SCHEMA = 'horse-phase13-completion-v1';
  * separately, so `eligible = completed + workBudget + samplerBudgetExhausted +
  * responseBranchUnavailable + sampleUnavailable + governorReduced +
  * analysisUnavailable`, each decision under the first that applies:
- *  - `workBudget`: the policy passed `JOINT_LIVE_DOMAIN.liveBudgetMs` and fell
- *    back to the baseline (reason `work_budget`);
+ *  - `workBudget`: the policy passed the 4 ms live budget releases before
+ *    2026-10-11 ran under and fell back to the baseline (reason `work_budget`);
  *  - `samplerBudgetExhausted`: the sampler's own deadline
- *    (`samplingDeadlineMs`) cut the population short (`sampleBudgetExhausted`);
+ *    (2.5 ms before 2026-10-11) cut the population short (`sampleBudgetExhausted`);
  *  - `responseBranchUnavailable`: the response model's named limit refusals
  *    only (`joint_response_branch_unavailable`, a candidate needing more
  *    terminal branches than the pack allows, and

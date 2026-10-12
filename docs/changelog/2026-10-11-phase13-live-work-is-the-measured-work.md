@@ -19,7 +19,7 @@ On the engine host the priced decisions (nothing to call) cost about 4 ms at the
 - `JointLivePolicy.ts`: the proposal is never replaced by the baseline because of elapsed time, and the response tree's continue check is constant. `latencyMs` is still measured and journaled.
 - `JointSampleAcquisition.ts`: the request is always `jointFullSamples(dealtPlayers)`, never scaled by the governor (the #6592 rule for the Omaha and remaining-variant samplers), and the sampler is never stopped by a clock. `samplingMs` is still measured. `jointRequestedSamples` is removed.
 - The work stays bounded by the declared limits the matrix also enforces, never by time: the full sample count, `JOINT_RANGE_PACK.rejectionAttempts` (3) per opponent per sample, at most 12 legal candidates (`joint_action_no_legal_candidates`), one bounded raise per tree and at most 32 terminal branches per candidate (`joint_response_branch_unavailable`). No new ceiling was added: these already are deterministic work counts the matrix runs under.
-- `JOINT_LIVE_DOMAIN.liveBudgetMs` and `samplingDeadlineMs` stay as declared values: the P13.2 contract text records them (`policy_clock_and_sampling`), so the contract digest is unchanged (1d0dd99b...), and `JOINT_SAMPLE_WORK_BUDGET_MS` remains Phase 7's own tournament allowance in `HorseLogic.ts`, which this change does not touch.
+- `JOINT_LIVE_DOMAIN.liveBudgetMs` and `samplingDeadlineMs` are removed: nothing in the live path reads them. `JOINT_SAMPLE_WORK_BUDGET_MS` stays 4 ms as Phase 7's own tournament allowance in `HorseLogic.ts`, which this change does not touch.
 - The completion definition (`horse-phase13-completion-definition-v2`) is unchanged; its `workBudget`, `samplerBudgetExhausted` and `governorReduced` fields still classify receipts of earlier releases and should read zero on this source.
 
 ## Proof That The Measured Policy Is Unchanged
@@ -43,8 +43,8 @@ Decisions facing a wager are unchanged (host p50 1.15 ms PLO8, 0.59 ms NLH). Abo
 
 ## Records
 
-Every change here is a Phase 13 policy source file, so every Phase 13 policy digest changes (PLO8 e8aca2339a57... on 1235b47a to a8361052fbb0... here). The qualified PLO8 matrix (run 38011357161, measured on 1235b47a) must be re-run on the new source before the PLO8 selection, and a new predeclared natural completion window read on a release with the new digest. Phase 10, 11 and 12 digests are unchanged.
+Every change here is a Phase 13 policy source file, so every Phase 13 policy digest changes (PLO8 e8aca2339a57... on 1235b47a to 4bf6b5034c1a... on this source). The qualified PLO8 matrix (run 38011357161, measured on 1235b47a) must be re-run on the new source before the PLO8 selection, and a new predeclared natural completion window read on a release with the new digest. Phase 10, 11 and 12 digests are unchanged.
 
-The P13.2 contract's `policy_clock_and_sampling` entry still describes the old live clock in its `live` text. It is left byte-identical so the contract digest, and the PLO8 qualification bound to it, stay valid; correcting that text is a contract revision for the lead to decide.
+The P13.2 contract's `policy_clock_and_sampling` entry described the old live clock in its `live` text. That one text field now states the live source as it is (the matrix's fixed work, its declared limits, no clock or governor cut); every other field of `JOINT_STRENGTH_CONTRACT` is byte-identical, and the version stays `joint-strength-contract-v1` as in the round 3 revision. The contract digest moves from 1d0dd99be2fedd7e... to 0cd88d970c600fb6..., so the PLO8 re-run is assembled under the new contract.
 
 Tests: `JointSampleAcquisition.test.ts`, `JointLivePolicy.test.ts`, `HorsePhase13Authority.test.ts` and `workerRuntime.test.ts` now pin that a slow clock, a late deadline and a loaded governor each give the fixed-clock receipt.

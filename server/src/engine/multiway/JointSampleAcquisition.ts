@@ -26,14 +26,11 @@ export const JOINT_LIVE_DOMAIN = Object.freeze({
   fullSampleMaxDealtPlayers: 4,
   largeTableSamples: 8,
   minSamples: 8,
-  // Declared values the P13.2 contract records (JOINT_STRENGTH_CONTRACT,
-  // policy_clock_and_sampling) and the Phase 7 tournament allowance
-  // (JOINT_SAMPLE_WORK_BUDGET_MS). Since 2026-10-11 the Phase 13 policy and the
-  // joint acquisition read no clock to decide their work: a live decision does
+  // No clock budget (2026-10-11): the Phase 13 policy and the joint
+  // acquisition read no clock to decide their work. A live decision does
   // exactly the fixed work the matrix priced (see acquireJointSamples and
-  // evaluateJointLivePolicy), so these two are no longer live cut-offs.
-  liveBudgetMs: 4,
-  samplingDeadlineMs: 2.5,
+  // evaluateJointLivePolicy); the 4 ms and 2.5 ms wall-clock cut-offs that
+  // stood here are gone.
 });
 /**
  * P13.3: the full sample count for a table of `dealtPlayers`: 16 through four
@@ -48,10 +45,10 @@ export function jointFullSamples(dealtPlayers: number): number {
     : JOINT_LIVE_DOMAIN.defaultSamples;
 }
 /** Phase 7's own tournament allowance for pricing its utility on the joint
- * samples (HorseLogic's jointWithinBudget). Phase 7 consumes the same physical
- * samples without enabling the Phase 13 action policy; neither the joint
- * acquisition nor the Phase 13 policy reads it. */
-export const JOINT_SAMPLE_WORK_BUDGET_MS = JOINT_LIVE_DOMAIN.liveBudgetMs;
+ * samples (HorseLogic's jointWithinBudget), unchanged at 4 ms. Phase 7
+ * consumes the same physical samples without enabling the Phase 13 action
+ * policy; neither the joint acquisition nor the Phase 13 policy reads it. */
+export const JOINT_SAMPLE_WORK_BUDGET_MS = 4;
 
 interface JointAcquisitionFacts {
   readonly eligible: boolean;

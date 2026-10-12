@@ -858,7 +858,7 @@ export const JOINT_STRENGTH_CONTRACT = deepFreeze({
       },
       {
         id: 'policy_clock_and_sampling',
-        live: `the real clock: the joint acquisition stops sampling at ${JOINT_LIVE_DOMAIN.samplingDeadlineMs} ms and refuses below ${JOINT_LIVE_DOMAIN.minSamples} samples (insufficient_joint_samples); the whole proposal falls back to the reference beyond ${JOINT_LIVE_DOMAIN.liveBudgetMs} ms (work_budget); the response tree returns null when the budget expires inside it; and the requested sample count scales with the live equity governor`,
+        live: `the same fixed work the matrix prices, never cut by the clock or by load: the joint acquisition always requests the full sample count (${JOINT_LIVE_DOMAIN.defaultSamples} through ${JOINT_LIVE_DOMAIN.fullSampleMaxDealtPlayers} dealt, ${JOINT_LIVE_DOMAIN.largeTableSamples} above), never scaled by the equity governor, draws every sample with at most ${JOINT_RANGE_PACK.rejectionAttempts} rejection attempts per opponent and refuses below ${JOINT_LIVE_DOMAIN.minSamples} samples (insufficient_joint_samples); every legal candidate (at most 12) is priced in full through the bounded response tree (one raise per tree, at most 32 terminal branches per candidate, joint_response_branch_unavailable beyond); the clock is only measured (latencyMs), there is no wall-clock fallback to the reference`,
         harness:
           'phase13EvidenceMode: a fixed policy clock (now = 0), EQUITY_GOVERNOR=off at scale 1, so the full requested samples are drawn (16 through four dealt, 8 above), the tree completes, and work_budget never fires',
         handling:

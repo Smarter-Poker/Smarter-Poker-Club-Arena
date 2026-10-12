@@ -1,0 +1,4 @@
+{
+  "_owner": "claude/fee-baseline-inception (migration 20260927221954; NOT YET APPLIED, the reviewing coordinator applies it before this leaves draft)",
+  "functions": ["fn_accounting_history_in_force_from_inception"]
+}

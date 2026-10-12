@@ -5,6 +5,7 @@ import {
   assertPilotGame,
   PILOT,
   pilotServiceFetch,
+  selectPilotGame,
 } from './prepare-lightning-private-pilot.mjs';
 const club = {
   id: 'private-club',
@@ -72,4 +73,26 @@ test('service readback uses the configured key generation and drops caller authe
     assert.equal(seen['x-smarter-data-actor'], 'service');
     assert.equal(seen['Content-Type'] || seen['content-type'], 'application/json');
   }
+});
+
+test('preserves normal seeded games and recovers only the specifically named private pilot', () => {
+  const defaults = Array.from({ length: 9 }, (_, n) => ({
+    ...game,
+    id: `default-${n}`,
+    name: `Default Game ${n}`,
+    ruleset_snapshot: { options: { is_private: false } },
+  }));
+  assert.equal(selectPilotGame(defaults, club.id), null);
+  assert.equal(selectPilotGame([...defaults, game], club.id), game);
+  assert.throws(() => selectPilotGame([...defaults, game, { ...game, id: 'duplicate' }], club.id));
+  assert.throws(() => selectPilotGame([...defaults, { ...game, club_id: 'other' }], club.id));
+  assert.throws(() =>
+    selectPilotGame(
+      [...defaults, { ...game, ruleset_snapshot: { options: { is_private: false } } }],
+      club.id
+    )
+  );
+  assert.throws(() =>
+    selectPilotGame([...defaults, { ...game, lightning_enabled: true }], club.id)
+  );
 });

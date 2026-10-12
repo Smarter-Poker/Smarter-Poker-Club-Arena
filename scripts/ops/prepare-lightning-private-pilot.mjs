@@ -39,6 +39,19 @@ export function assertPilotGame(game, clubId) {
   }
 }
 
+export function selectPilotGame(games, clubId) {
+  if (!Array.isArray(games) || games.some((game) => game.club_id !== clubId)) {
+    throw new Error('Pilot Game Readback Scope Is Invalid');
+  }
+  // Club creation provisions default games. They remain ordinary games and
+  // must never be adopted, reconfigured or deleted by pilot preparation.
+  const matches = games.filter((game) => game.name === PILOT.gameName);
+  if (matches.length > 1) throw new Error('Pilot Game Readback Is Ambiguous');
+  if (!matches.length) return null;
+  assertPilotGame(matches[0], clubId);
+  return matches[0];
+}
+
 export function pilotServiceFetch(key, fetchImpl = fetch) {
   return (input, init = {}) =>
     fetchImpl(input, {
@@ -119,8 +132,8 @@ export async function preparePilot(env = process.env) {
       await admin.from('cash_games').select('*').eq('club_id', club.id),
       'Pilot Games'
     );
-    if (games.length > 1) throw new Error('Unexpected Pilot Games; Preserve Existing State');
-    if (games.length === 0) {
+    let game = selectPilotGame(games, club.id);
+    if (!game) {
       // One execution, no retry. Unknown acknowledgement is recovered by the
       // unique club/template/variant/stakes identity on the next explicit run.
       const created = must(
@@ -143,9 +156,8 @@ export async function preparePilot(env = process.env) {
         'Pilot Game Readback'
       );
     }
-    if (games.length !== 1) throw new Error('Pilot Game Readback Is Ambiguous');
-    const game = games[0];
-    assertPilotGame(game, club.id);
+    game = selectPilotGame(games, club.id);
+    if (!game) throw new Error('Pilot Game Readback Is Missing');
     const result = must(
       await player.rpc('fn_lightning_operator_control', {
         p_cluster_id: game.id,

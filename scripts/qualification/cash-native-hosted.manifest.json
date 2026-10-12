@@ -56,8 +56,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 203617,
-      "sha256": "2d30f85bad3a22e2c5081fe6e5e0423a9ad219d7753f8f7b7ee4387292d800d7"
+      "bytes": 204491,
+      "sha256": "1a26c373256db12024f2711c4081c3083314827846f8d9a7c8a6fdea09b2ce53"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -2161,6 +2161,13 @@
     "previousWorkflowPin": {
       "bytes": 202788,
       "sha256": "cbecb15da2fd2b57f1c3fcb7a75f9eede415cef9ad40bce2f25257266ca3f732"
+    }
+  },
+  "horseSettlementKeyRetentionIntegration20261012": {
+    "reason": "Add native settlement-key retention qualification to existing Accounting3. Preserve every financial source, historical pin, assertion and qualification outcome; refresh only the reviewed current workflow fingerprint.",
+    "previousWorkflowPin": {
+      "bytes": 203617,
+      "sha256": "2d30f85bad3a22e2c5081fe6e5e0423a9ad219d7753f8f7b7ee4387292d800d7"
     }
   }
 }

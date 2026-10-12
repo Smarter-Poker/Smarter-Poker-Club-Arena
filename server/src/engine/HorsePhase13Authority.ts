@@ -239,11 +239,22 @@ export const HORSE_PHASE13_COMPLETION_DEFINITION = 'horse-phase13-completion-def
  * completing preflop hide a failing river. Why per board count as well: a two
  * or three board hand prices every sample on every board, so its work is a
  * multiple of a one-board hand's, and a pooled share would let the common
- * one-board hands hide failing multi-board ones. Every cell must clear the
- * floor, including the preflop street (ordinary hands only) and the two and
- * three board counts (bomb hands only): a cell with no natural decisions has
- * no evidence and fails closed, because admission would let the candidate act
- * there.
+ * one-board hands hide failing multi-board ones.
+ *
+ * Which cells must clear it (`HORSE_PHASE13_COMPLETION_ADMISSION`, v1 of
+ * October 11, 2026): every street, including the preflop street (ordinary
+ * hands only), and every board count the candidate is admitted to act on. A
+ * board count whose cell does not clear the floor (too few natural decisions,
+ * or too many falling back) is simply not admitted: the joint candidate never
+ * acts on a hand with that many boards, and the variant's current brain keeps
+ * every such decision (`horsePhase13AdmittedMode`, rechecked at acceptance).
+ * At least one board count must be admitted. So a cell with no natural
+ * decisions still has no evidence and the candidate still never acts there,
+ * but it no longer blocks the cells that do have evidence. Before this, every
+ * board count had to clear the floor, and production has never dealt a
+ * three-board joint decision (`phase13_board_3` absent from
+ * `horse_brain_telemetry` since telemetry began on 2026-09-12), so no variant
+ * could ever be admitted however well its measured cells played.
  *
  * Why a lower bound: the Wilson score lower bound at the contract's own z
  * (`JOINT_STRENGTH_Z99`, Phi^-1(0.995)), so a cell whose true share is below
@@ -501,13 +512,55 @@ export function horsePhase13CompletionMeetsFloor(
   );
 }
 
-/** Do both of a record's tallies clear the floor in every cell? */
+/** Do both of a record's tallies clear the floor in every cell? (Reported by
+ * the record writer; admission reads `horsePhase13CompletionAdmittedBoardCounts`.) */
 export function horsePhase13CompletionRecordMeetsFloor(
   record: Pick<HorsePhase13CompletionRecord, 'streets' | 'boardCounts'>
 ): boolean {
   return (
     horsePhase13CompletionMeetsFloor(record.streets) &&
     horsePhase13CompletionMeetsFloor(record.boardCounts)
+  );
+}
+
+/**
+ * How admission reads a completion record (see the floor above). Bump when the
+ * rule changes; it is bound into every Phase 13 authority key.
+ */
+export const HORSE_PHASE13_COMPLETION_ADMISSION = 'horse-phase13-completion-admission-v1';
+
+/** A board count the joint candidate may act on: 1, 2 or 3. */
+export type HorsePhase13BoardCount = 1 | 2 | 3;
+
+/**
+ * The board counts a record admits the candidate to act on, ascending: none
+ * unless every street clears the floor, then each board count whose own cell
+ * clears it. Empty means the record admits nothing (`completion_below_floor`).
+ */
+export function horsePhase13CompletionAdmittedBoardCounts(
+  record: Pick<HorsePhase13CompletionRecord, 'streets' | 'boardCounts'>
+): readonly HorsePhase13BoardCount[] {
+  if (!horsePhase13CompletionMeetsFloor(record.streets)) return [];
+  return HORSE_PHASE13_COMPLETION_BOARD_COUNTS.filter((key) =>
+    horsePhase13CompletionMeetsFloor({ [key]: record.boardCounts[key] })
+  ).map((key) => Number(key) as HorsePhase13BoardCount);
+}
+
+/**
+ * Does `authority` admit the joint candidate on a hand of `boardCount` boards
+ * (absent means one board, as the input binding reads it)? Only a Phase 13
+ * authority with a non-empty `admittedBoardCounts` admits anything.
+ */
+export function horsePhase13BoardCountAdmitted(
+  authority: Pick<HorseQualifiedAuthority, 'phase' | 'admittedBoardCounts'> | null | undefined,
+  boardCount: unknown
+): boolean {
+  const count = boardCount ?? 1;
+  return (
+    !!authority &&
+    authority.phase === 'phase13' &&
+    Array.isArray(authority.admittedBoardCounts) &&
+    authority.admittedBoardCounts.includes(count as number)
   );
 }
 
@@ -732,7 +785,9 @@ function completionIsWellFormed(value: unknown): value is HorsePhase13Completion
  * the completion record: `completion_evidence_missing`, `unreadable_evidence`
  * (transient), `completion_hash_mismatch`, `completion_evidence_mismatch`,
  * `completion_release_mismatch`, `completion_window_invalid`,
- * `completion_below_floor` (any street or any board count below the floor).
+ * `completion_below_floor` (any street below the floor, or no board count
+ * clearing it). An admitted authority carries `admittedBoardCounts`, the board
+ * counts whose cells cleared the floor; the candidate acts only on those.
  *
  * `runningPolicyDigest` defaults to `horsePhase13PolicyDigest(variant)`,
  * recomputed from the running code and read only once a well-formed,
@@ -869,7 +924,8 @@ export function admitHorsePhase13QualifiedAuthority(
     record.window.releaseUnchanged !== true
   )
     return refuse('completion_window_invalid');
-  if (!horsePhase13CompletionRecordMeetsFloor(record)) return refuse('completion_below_floor');
+  const admittedBoardCounts = horsePhase13CompletionAdmittedBoardCounts(record);
+  if (admittedBoardCounts.length === 0) return refuse('completion_below_floor');
 
   const continuationVersion = horsePhase13ContinuationVersion(variant);
   const identity = {
@@ -889,6 +945,7 @@ export function admitHorsePhase13QualifiedAuthority(
     issuedAt: selection.issuedAt,
     expiresAt: selection.expiresAt,
     contractDigest: selection.contractDigest,
+    admittedBoardCounts: Object.freeze([...admittedBoardCounts]),
   };
   return {
     status: 'admitted',
@@ -900,6 +957,7 @@ export function admitHorsePhase13QualifiedAuthority(
             ...identity,
             completionDefinition: HORSE_PHASE13_COMPLETION_DEFINITION,
             completionFloor: HORSE_PHASE13_COMPLETION_FLOOR,
+            completionAdmission: HORSE_PHASE13_COMPLETION_ADMISSION,
           })
         )
       ),
@@ -959,6 +1017,10 @@ export function selectedHorsePhase13Authority(
  * whole-unit cash from every qualified domain, so a decision whose asset is
  * anything but chips (absent means chips, as the input binding reads it) stays
  * shadow under any authority, and the completion record never counts it.
+ *
+ * Board counts (`HORSE_PHASE13_COMPLETION_ADMISSION`): candidate only on a
+ * hand whose board count the usable authority admitted
+ * (`horsePhase13BoardCountAdmitted`); any other board count stays shadow.
  */
 export function horsePhase13AdmittedMode(input: {
   callerMode: JointPolicyMode | undefined;
@@ -966,8 +1028,12 @@ export function horsePhase13AdmittedMode(input: {
   variant: unknown;
   /** The decision's `gameState.asset`; undefined or null is chips. */
   asset: unknown;
+  /** The decision's `gameState.boardCount`; undefined or null is one board. */
+  boardCount: unknown;
   packVariant: JointVariant | null;
   verdict: HorseAuthorityVerdict;
+  /** The worker holder's current authority (the one `verdict` judged). */
+  authority: Pick<HorseQualifiedAuthority, 'phase' | 'admittedBoardCounts'> | null;
 }): JointPolicyMode {
   if (input.callerMode === 'off') return 'off';
   if (
@@ -977,7 +1043,10 @@ export function horsePhase13AdmittedMode(input: {
     input.packVariant !== input.variant
   )
     return 'shadow';
-  return input.verdict === 'usable' ? 'candidate' : 'shadow';
+  return input.verdict === 'usable' &&
+    horsePhase13BoardCountAdmitted(input.authority, input.boardCount)
+    ? 'candidate'
+    : 'shadow';
 }
 
 /**

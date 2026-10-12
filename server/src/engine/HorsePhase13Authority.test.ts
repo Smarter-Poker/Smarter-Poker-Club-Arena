@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   admitHorsePhase13QualifiedAuthority,
   admitHorsePhase13ReleaseAuthority,
+  HORSE_PHASE13_COMPLETION_ADMISSION,
   HORSE_PHASE13_COMPLETION_DEFINITION,
   HORSE_PHASE13_COMPLETION_FLOOR,
   HORSE_PHASE13_COMPLETION_MIN_ELIGIBLE_PER_STREET,
@@ -17,6 +18,8 @@ import {
   HORSE_PHASE13_QUALIFICATION_SCHEMA,
   HORSE_PHASE13_VARIANTS,
   horsePhase13AdmittedMode,
+  horsePhase13BoardCountAdmitted,
+  horsePhase13CompletionAdmittedBoardCounts,
   horsePhase13CompletionBoardCounts,
   horsePhase13CompletionCounts,
   horsePhase13CompletionExclusions,
@@ -78,6 +81,11 @@ import { equityGovernor } from './EquityLoadGovernor.js';
 import { KNOWN_VARIANTS } from './VariantRules.js';
 
 const V: JointVariant = 'plo4';
+/** An admitted Phase 13 authority's board-count admission, every board count. */
+const ALL_BOARDS = Object.freeze({
+  phase: 'phase13' as const,
+  admittedBoardCounts: Object.freeze([1, 2, 3]),
+});
 const json = (value: unknown) => Buffer.from(JSON.stringify(value, null, 2) + '\n');
 
 /** Admit `variant` from a selection over in-memory files. */
@@ -841,32 +849,6 @@ describe('P13.3 admission refuses by name unless the variant qualifies and compl
       'completion_below_floor',
     ],
     [
-      'no three-board decision at all, every street clearing the floor',
-      () =>
-        withCompletion({
-          boardCounts: { '1': p13Street(600), '2': p13Street(200), '3': p13Street(0) },
-        }),
-      'completion_below_floor',
-    ],
-    [
-      'two-board hands whose response model refused on 32 of 400, every street clearing the floor',
-      () =>
-        withCompletion({
-          streets: {
-            preflop: p13Street(1000, 0, 0, 0, 0, 8),
-            flop: p13Street(1000, 0, 0, 0, 0, 8),
-            turn: p13Street(1000, 0, 0, 0, 0, 8),
-            river: p13Street(1000, 0, 0, 0, 0, 8),
-          },
-          boardCounts: {
-            '1': p13Street(3200),
-            '2': p13Street(400, 0, 0, 0, 0, 32),
-            '3': p13Street(400),
-          },
-        }),
-      'completion_below_floor',
-    ],
-    [
       'board counts that do not total the streets',
       () =>
         withCompletion({
@@ -996,6 +978,7 @@ describe('P13.3 admission refuses by name unless the variant qualifies and compl
         issuedAt: P13_TEST_ISSUED_AT,
         expiresAt: null,
         contractDigest: P13_TEST_CONTRACT_DIGEST,
+        admittedBoardCounts: [1, 2, 3],
       };
       expect(authority).toEqual({
         ...identity,
@@ -1003,6 +986,7 @@ describe('P13.3 admission refuses by name unless the variant qualifies and compl
           ...identity,
           completionDefinition: HORSE_PHASE13_COMPLETION_DEFINITION,
           completionFloor: HORSE_PHASE13_COMPLETION_FLOOR,
+          completionAdmission: HORSE_PHASE13_COMPLETION_ADMISSION,
         }),
       });
       const c2 = p13CompletionBytes(variant, { releaseSha: 'd'.repeat(40) });
@@ -1014,6 +998,86 @@ describe('P13.3 admission refuses by name unless the variant qualifies and compl
       expect(other?.authorityKey).not.toBe(authority!.authorityKey);
     }
   );
+
+  // HORSE_PHASE13_COMPLETION_ADMISSION v1 (October 11, 2026): a board count
+  // whose cell does not clear the floor is not admitted, and the candidate
+  // never acts there; it no longer refuses the board counts that do clear it.
+  // Production has never dealt a three-board joint decision.
+  it.each([
+    [
+      'no three-board decision at all, every street clearing the floor',
+      () =>
+        withCompletion({
+          boardCounts: { '1': p13Street(600), '2': p13Street(200), '3': p13Street(0) },
+        }),
+      [1, 2],
+    ],
+    [
+      'two-board hands whose response model refused on 32 of 400, every street clearing the floor',
+      () =>
+        withCompletion({
+          streets: {
+            preflop: p13Street(1000, 0, 0, 0, 0, 8),
+            flop: p13Street(1000, 0, 0, 0, 0, 8),
+            turn: p13Street(1000, 0, 0, 0, 0, 8),
+            river: p13Street(1000, 0, 0, 0, 0, 8),
+          },
+          boardCounts: {
+            '1': p13Street(3200),
+            '2': p13Street(400, 0, 0, 0, 0, 32),
+            '3': p13Street(400),
+          },
+        }),
+      [1, 3],
+    ],
+    [
+      'only one-board hands, every street clearing the floor',
+      () =>
+        withCompletion({
+          boardCounts: { '1': p13Street(800), '2': p13Street(0), '3': p13Street(0) },
+        }),
+      [1],
+    ],
+    ['every board count clearing the floor', () => withCompletion({}), [1, 2, 3]],
+  ] as const)('%s admits exactly the board counts that cleared it', (_name, run, counts) => {
+    const authority = selectedHorsePhase13Authority(V, run());
+    expect(authority?.admittedBoardCounts).toEqual(counts);
+    for (const n of [1, 2, 3])
+      expect(horsePhase13BoardCountAdmitted(authority, n), String(n)).toBe(
+        (counts as readonly number[]).includes(n)
+      );
+  });
+
+  it('a street below the floor admits no board count, whatever the board cells say', () => {
+    const admission = withCompletion({
+      streets: { ...p13CompletionObject(V).streets, river: p13Street(200, 15) },
+    });
+    expect(admission).toEqual({
+      status: 'refused',
+      reason: 'completion_below_floor',
+      transient: false,
+    });
+    expect(
+      horsePhase13CompletionAdmittedBoardCounts({
+        streets: { ...p13CompletionObject(V).streets, river: p13Street(200, 15) },
+        boardCounts: p13CompletionObject(V).boardCounts,
+      } as never)
+    ).toEqual([]);
+  });
+
+  it('the admitted board counts are bound into the authority key', () => {
+    const all = selectedHorsePhase13Authority(V, withCompletion({}));
+    const some = selectedHorsePhase13Authority(
+      V,
+      withCompletion({
+        boardCounts: { '1': p13Street(600), '2': p13Street(200), '3': p13Street(0) },
+      })
+    );
+    expect(all?.authorityKey).toMatch(/^[0-9a-f]{64}$/);
+    expect(some?.authorityKey).toMatch(/^[0-9a-f]{64}$/);
+    expect(some?.authorityKey).not.toBe(all?.authorityKey);
+    expect(Object.isFrozen(some?.admittedBoardCounts)).toBe(true);
+  });
 
   it('an all-complete street of exactly the minimum size passes; one decision fewer does not', () => {
     expect(HORSE_PHASE13_COMPLETION_MIN_ELIGIBLE_PER_STREET).toBe(127);
@@ -1165,13 +1229,66 @@ describe('P13.3 one variant never admits another', () => {
           gameMode,
           variant,
           asset: undefined,
+          boardCount: undefined,
           packVariant: packVariant as JointVariant | null,
           verdict,
+          authority: ALL_BOARDS,
           callerMode,
         })
       ).toBe(expected);
     }
   );
+
+  // HORSE_PHASE13_COMPLETION_ADMISSION v1: candidate only on an admitted board count.
+  it.each([
+    [[1, 2], 1, 'candidate'],
+    [[1, 2], undefined, 'candidate'],
+    [[1, 2], null, 'candidate'],
+    [[1, 2], 2, 'candidate'],
+    [[1, 2], 3, 'shadow'],
+    [[1], 2, 'shadow'],
+    [[2, 3], 1, 'shadow'],
+    [[2, 3], undefined, 'shadow'],
+    [[], 1, 'shadow'],
+    [[1, 2, 3], 4, 'shadow'],
+    [[1, 2, 3], '1', 'shadow'],
+  ] as const)(
+    'usable PLO8 authority admitting boards %j runs a %s-board cash decision in %s mode',
+    (admitted, boardCount, expected) => {
+      expect(
+        horsePhase13AdmittedMode({
+          gameMode: 'cash',
+          variant: 'plo8',
+          asset: undefined,
+          boardCount,
+          packVariant: 'plo8',
+          verdict: 'usable',
+          authority: { phase: 'phase13', admittedBoardCounts: admitted },
+          callerMode: undefined,
+        })
+      ).toBe(expected);
+    }
+  );
+
+  it.each([
+    ['no authority', null],
+    ['an authority of another phase', { phase: 'phase12', admittedBoardCounts: [1, 2, 3] }],
+    ['an authority without admitted board counts', { phase: 'phase13' }],
+  ] as const)('%s never admits a candidate, even with a usable verdict', (_name, authority) => {
+    expect(
+      horsePhase13AdmittedMode({
+        gameMode: 'cash',
+        variant: 'plo8',
+        asset: undefined,
+        boardCount: 1,
+        packVariant: 'plo8',
+        verdict: 'usable',
+        authority: authority as never,
+        callerMode: undefined,
+      })
+    ).toBe('shadow');
+    expect(horsePhase13BoardCountAdmitted(authority as never, 1)).toBe(false);
+  });
 
   // Audit 2026-10-06: the P13.2 contract excludes Diamond NLH from the
   // qualified domain, so no Phase 13 authority covers a Diamond decision.
@@ -1192,8 +1309,10 @@ describe('P13.3 one variant never admits another', () => {
           gameMode: 'cash',
           variant: 'nlh',
           asset,
+          boardCount: 1,
           packVariant: 'nlh',
           verdict: 'usable',
+          authority: ALL_BOARDS,
           callerMode,
         })
       ).toBe(expected);

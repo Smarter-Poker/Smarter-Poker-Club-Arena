@@ -79,7 +79,10 @@ import { liveHorsePhase11Authorities } from './HorsePhase11Authority.js';
 import { isOmahaPolicyVariant } from './omaha/OmahaVariantPolicyPack.js';
 import { liveHorsePhase12Authorities } from './HorsePhase12Authority.js';
 import { isRemainingPolicyVariant } from './remainingVariants/RemainingVariantPolicyPack.js';
-import { liveHorsePhase13Authorities } from './HorsePhase13Authority.js';
+import {
+  horsePhase13BoardCountAdmitted,
+  liveHorsePhase13Authorities,
+} from './HorsePhase13Authority.js';
 import { isJointVariant } from './multiway/JointInputBinding.js';
 import {
   buildHorseDecisionKey,
@@ -3935,9 +3938,17 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           // candidate is never applied on top of an applied earlier-phase
           // candidate, so that baseline is never itself a withdrawn selection.
           if (jointLedger?.applied) {
-            const verdict = isJointVariant(jointLedger.variant)
-              ? liveHorsePhase13Authorities[jointLedger.variant].check(jointLedger.authority)
-              : 'mismatched';
+            const gate = isJointVariant(jointLedger.variant)
+              ? liveHorsePhase13Authorities[jointLedger.variant]
+              : null;
+            const checked = gate ? gate.check(jointLedger.authority) : 'mismatched';
+            // The same board-count admission the worker applied: a candidate
+            // on a board count the authority did not admit never acts.
+            const verdict =
+              checked === 'usable' &&
+              !horsePhase13BoardCountAdmitted(gate?.mainAuthority(), jointLedger.boardCount)
+                ? 'mismatched'
+                : checked;
             jointLedger.authorityVerdict = verdict;
             noteFire(`phase13_authority_verdict_${verdict}`);
             if (verdict === 'usable') {

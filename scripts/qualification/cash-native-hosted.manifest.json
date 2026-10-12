@@ -230,8 +230,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 210534,
-      "sha256": "f121396e2a47265ac66b95be65b77b88ed4aa128ec8f4230eb28458628cc8631"
+      "bytes": 211568,
+      "sha256": "64db57c5ff1d88eb1d481826b622a602e7418d4288458ba7d61cdcf47e76d13f"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -2583,5 +2583,22 @@
       "bytes": 209626,
       "sha256": "193e61fdf98e93dcef7ae20fbc5fe447d4048a1e8605a452aa239f4a75e0f7dc"
     }
+  },
+  "originalInventoryFiniteNative20261012": {
+    "reason": "Add the finite original245 raw/cache/retention/currentseven native qualification in Accounting3, preserving every existing lane, financial assertion and historical fingerprint. Source identity only, not installation or financial admission.",
+    "changes": [
+      {
+        "section": "files",
+        "path": ".github/workflows/ci.yml",
+        "previous": {
+          "bytes": 210534,
+          "sha256": "f121396e2a47265ac66b95be65b77b88ed4aa128ec8f4230eb28458628cc8631"
+        },
+        "current": {
+          "bytes": 211568,
+          "sha256": "64db57c5ff1d88eb1d481826b622a602e7418d4288458ba7d61cdcf47e76d13f"
+        }
+      }
+    ]
   }
 }

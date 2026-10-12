@@ -9,3 +9,5 @@ The native probe demonstrates fail-before/pass-after using actual captured rows,
 The retained private owner functions and all ordinary public financial clauses are byte-identical. The actual unchanged pruner refuses this uncertified original and preserves p/m. Eight days does not authorize pruning uncertified originals. Raw-absence qualification is a strict financial durability test, not production disposal permission or global pruner readiness. This change neither rebuilds original payload nor invents pending IDs.
 
 The existing Accounting shard 3 directly executes this probe and always retains its artifact. Source binding pins every native input. Production installation and the one exact certificate admission remain separate, guarded delivery steps.
+
+The finite certificate PK is joined set-wise in both hand-line routes. An actual prior-candidate query counterexample demonstrates the per-shaped-row original lookup;10000 cache-only uncertified shaped inputs then prove exact ordinary participant retention without original lookup. The real certified hand still projects both+56.25/−60 once and all corrupted certified-row refusals remain.

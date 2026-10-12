@@ -58,6 +58,15 @@ python3 "$F/admission.py" "$PGBIN" "$WORK" "$MIG"
 sed 's/^COMMIT;$/ROLLBACK;/' "$MIG" >"$WORK/rollback.sql"
 "${PSQL[@]}" -f "$WORK/rollback.sql" -f "$F/rollback-readback.sql"
 "${PSQL[@]}" -f "$MIG" -f "$F/writer-boundaries.sql"
+python3 - "$MIG" "$WORK/qualified-hand-lines.sql" <<'PY_READER'
+from pathlib import Path
+import sys
+source=Path(sys.argv[1]).read_text()
+a=source.index('CREATE OR REPLACE FUNCTION public.fn_union_pnl_week_hand_lines(')
+b=source.index('CREATE OR REPLACE FUNCTION public.fn_pnl_cash_hand_evidence',a)
+Path(sys.argv[2]).write_text(source[a:b])
+PY_READER
+"${PSQL[@]}" -v qualified_hand_lines="$WORK/qualified-hand-lines.sql" -f "$F/ordinary-touch-boundary.sql"
 "${PSQL[@]}" -At -c "SELECT jsonb_build_object('proof_md5',md5(public.fn_union_pnl_prove_posthand_escrow('1c531058-25b9-4aad-b4f0-1641d1d085ea',31008564)::text),'original_sha256',encode(extensions.digest(convert_to(smarter_private.posthand_escrow_original_snapshot('1c531058-25b9-4aad-b4f0-1641d1d085ea',31008564)::text,'UTF8'),'sha256'),'hex'));"
 "${PSQL[@]}" -At -c "SELECT pg_get_functiondef('fn_union_pnl_evidence_report(uuid,timestamptz,timestamptz)'::regprocedure)" >"$WORK/report.sql"
 for qualified in false true;do

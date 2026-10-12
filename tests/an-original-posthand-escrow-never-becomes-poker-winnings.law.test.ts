@@ -25,6 +25,11 @@ describe('original posthand escrow stays separate from poker winnings', () => {
     );
     expect(migration).not.toMatch(/CREATE(?: OR REPLACE)? FUNCTION smarter_private\.horse_/i);
     expect(migration).toContain('POSTHAND_ESCROW_SOURCE_POSTIMAGE_CHANGED');
+    expect(
+      migration.match(/LEFT JOIN smarter_private\.posthand_escrow_certificates cert/g)
+    ).toHaveLength(2);
+    expect(migration).toContain('CASE WHEN h.shaped AND cert.hand_number IS NOT NULL THEN');
+    expect(migration).toContain('CASE WHEN cert.hand_number IS NOT NULL THEN');
   });
   it('enforces actual native qualification and always retains a truthful transcript', () => {
     const workflow = read('.github/workflows/ci.yml');

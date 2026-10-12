@@ -1,0 +1,26 @@
+[
+  {
+    "name": "fn_stamp_active_seat_game_scope",
+    "body_md5": "43179b85d6717e3b512dc34cfad9d89c",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_stamp_active_seat_game_scope()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nBEGIN\n  IF NEW.left_at IS NOT NULL THEN\n    NEW.active_game_scope := NULL;\n  ELSE\n    SELECT t.seat_game_scope INTO NEW.active_game_scope FROM public.tables t WHERE t.id=NEW.table_id;\n    IF NOT FOUND OR NEW.user_id IS NULL THEN\n      RAISE EXCEPTION 'Active seat requires an existing table and player' USING ERRCODE='23514';\n    END IF;\n    IF NEW.active_game_scope IS NULL THEN\n      -- A pre-migration empty table has no cached scope. Initialize only that\n      -- parent, inside this admission transaction. Existing occupied tables\n      -- never take this UPDATE path. Concurrent initialization is idempotent.\n      UPDATE public.tables t SET seat_game_scope = CASE WHEN t.cluster_id IS NULL\n        THEN 'table:'||t.id::text ELSE 'cluster:'||t.cluster_id::text END\n      WHERE t.id=NEW.table_id AND t.seat_game_scope IS NULL;\n      SELECT t.seat_game_scope INTO NEW.active_game_scope FROM public.tables t WHERE t.id=NEW.table_id;\n      IF NEW.active_game_scope IS NULL THEN\n        RAISE EXCEPTION 'Active seat parent scope initialization failed' USING ERRCODE='23514';\n      END IF;\n    END IF;\n  END IF;\n  RETURN NEW;\nEND\n$function$\n",
+    "trigger_definition": "CREATE TRIGGER zzzz_stamp_active_seat_game_scope BEFORE INSERT OR UPDATE ON public.table_seats FOR EACH ROW EXECUTE FUNCTION fn_stamp_active_seat_game_scope()"
+  },
+  {
+    "name": "trg_seat_parent_keys_match",
+    "body_md5": "10bd21d1a3e607818ea0a4ad7c0723fd",
+    "definition": "CREATE OR REPLACE FUNCTION public.trg_seat_parent_keys_match()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE v_scope text; v_key text; v_found boolean;\nBEGIN\n  IF TG_OP = 'UPDATE'\n     AND OLD.table_id IS NOT DISTINCT FROM NEW.table_id\n     AND OLD.active_game_scope IS NOT DISTINCT FROM NEW.active_game_scope\n     AND OLD.active_parent_key IS NOT DISTINCT FROM NEW.active_parent_key THEN\n    RETURN NEW; -- an FK re-checks only when a referencing column changes\n  END IF;\n  IF NEW.table_id IS NULL OR (NEW.active_game_scope IS NULL AND NEW.active_parent_key IS NULL) THEN\n    RETURN NEW; -- MATCH SIMPLE\n  END IF;\n  SELECT t.seat_game_scope, t.seat_admission_key, true INTO v_scope, v_key, v_found\n    FROM public.tables t WHERE t.id = NEW.table_id FOR KEY SHARE;\n  IF NEW.active_game_scope IS NOT NULL AND (v_found IS DISTINCT FROM true OR v_scope IS DISTINCT FROM NEW.active_game_scope) THEN\n    RAISE EXCEPTION 'insert or update on table \"table_seats\" violates foreign key constraint \"active_seat_game_scope_parent\"'\n      USING ERRCODE = 'foreign_key_violation', CONSTRAINT = 'active_seat_game_scope_parent',\n            DETAIL = format('Key (table_id, active_game_scope)=(%s, %s) is not present in table \"tables\".', NEW.table_id, NEW.active_game_scope);\n  END IF;\n  IF NEW.active_parent_key IS NOT NULL AND (v_found IS DISTINCT FROM true OR v_key IS DISTINCT FROM NEW.active_parent_key) THEN\n    RAISE EXCEPTION 'insert or update on table \"table_seats\" violates foreign key constraint \"live_seat_parent_cannot_close\"'\n      USING ERRCODE = 'foreign_key_violation', CONSTRAINT = 'live_seat_parent_cannot_close',\n            DETAIL = format('Key (table_id, active_parent_key)=(%s, %s) is not present in table \"tables\".', NEW.table_id, NEW.active_parent_key);\n  END IF;\n  RETURN NEW;\nEND $function$\n",
+    "trigger_definition": "CREATE TRIGGER zzzzz_seat_parent_keys_match BEFORE INSERT OR UPDATE ON public.table_seats FOR EACH ROW EXECUTE FUNCTION trg_seat_parent_keys_match()"
+  },
+  {
+    "name": "fn_stamp_table_game_scope",
+    "body_md5": "bb828ee15e0f4f853aac042a6d8cfa9a",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_stamp_table_game_scope()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nBEGIN\n  NEW.seat_game_scope := CASE WHEN NEW.cluster_id IS NULL\n    THEN 'table:'||NEW.id::text ELSE 'cluster:'||NEW.cluster_id::text END;\n  RETURN NEW;\nEND\n$function$\n",
+    "trigger_definition": "CREATE TRIGGER zzzz_stamp_table_game_scope BEFORE INSERT OR UPDATE ON public.tables FOR EACH ROW EXECUTE FUNCTION fn_stamp_table_game_scope()"
+  },
+  {
+    "name": "trg_table_scope_cascade",
+    "body_md5": "7ee7bf5f706b29ae531daec7a45a968c",
+    "definition": "CREATE OR REPLACE FUNCTION public.trg_table_scope_cascade()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nBEGIN\n  IF OLD.seat_game_scope IS NOT NULL AND NEW.seat_game_scope IS DISTINCT FROM OLD.seat_game_scope THEN\n    UPDATE public.table_seats s SET active_game_scope = NEW.seat_game_scope\n     WHERE s.table_id = NEW.id AND s.active_game_scope = OLD.seat_game_scope;\n  END IF;\n  RETURN NULL;\nEND $function$\n",
+    "trigger_definition": "CREATE TRIGGER zzzzz_table_scope_cascade AFTER UPDATE ON public.tables FOR EACH ROW WHEN ((old.seat_game_scope IS DISTINCT FROM new.seat_game_scope)) EXECUTE FUNCTION trg_table_scope_cascade()"
+  }
+]

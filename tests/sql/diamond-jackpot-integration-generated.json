@@ -1,0 +1,27 @@
+[
+  {
+    "table_name": "ca_seat_stack_rebases",
+    "column_name": "amount",
+    "generated": "s"
+  },
+  {
+    "table_name": "tables",
+    "column_name": "min_buy_in_bb",
+    "generated": "s"
+  },
+  {
+    "table_name": "tables",
+    "column_name": "max_buy_in_bb",
+    "generated": "s"
+  },
+  {
+    "table_name": "tables",
+    "column_name": "min_buyin",
+    "generated": "s"
+  },
+  {
+    "table_name": "tables",
+    "column_name": "max_buyin",
+    "generated": "s"
+  }
+]

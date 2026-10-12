@@ -1,0 +1,11 @@
+# Diamond Arena Must-Move, Jackpots And Final Recap
+
+The owner expanded the original Diamond Arena UI request to finish its remaining must-move and BBJ/Mini BBJ phases. The already published black room, painted footer, dealer placement, larger table labels and I'm Back fixes remain in place.
+
+Diamond cash games now use the existing must-move controller with an independently validated Diamond projection. Transfers retarget the same custody inside the seat transaction, preserving its balance, purchase holds and session identity. The admission door checks settled Diamonds and debt. Staff edits apply to the whole empty game; closing it prevents the controller from reopening it. Existing live tables are adopted only after a qualified engine is serving, and the engine refreshes their cluster identity.
+
+BBJ and Mini BBJ use dedicated whole-Diamond economics and player-funded banks. The accepted-hand transaction owns the drop, payout and receipt; replay cannot credit twice, rounding pays the exact announced total, and the Diamond supply calculation includes the jackpot balances alongside custody, spins and rake. The client reads the dedicated banks and paid history through the existing approved jackpot surfaces. Folded and mucked cards remain private. Compatibility installation leaves the main jackpot switch off until a drained, qualified engine activation permits the appended activation answer.
+
+The final session recap reads the caller's exact custody, including transferred seats and jackpot wallet awards. Actual accepted hand facts count wins and VPIP; top-ups do not become wins and the final hand is included. Missing facts remain unavailable. Loading, errors, account changes and late responses cannot show a stale settled result. The server creates one authoritative session notification.
+
+Qualification retains isolated PostgreSQL fail-before/pass-after cases, transaction and replay refusals, focused runtime and rendered consumer regressions, and all three maintained native runners in the existing required Diamond acceptance workflow. Production installation, protected merge, publication, actual serving identities and affected live proof are recorded separately in the owning archived checkpoint. Source or fixture success alone is not release proof.

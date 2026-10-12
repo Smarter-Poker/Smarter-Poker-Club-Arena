@@ -1313,7 +1313,7 @@ export class HorseFleetManager {
          rule below (the database refuses it too - ALREADY_IN_GAME - but a
          refusal the fleet can avoid should not be tried every 30 s). */
       const clusterByTableId = new Map<string, string>();
-      for (const t of tables) {
+      for (const t of [...tables, ...diamondTables]) {
         if (t.cluster_id) clusterByTableId.set(t.id, t.cluster_id);
       }
 

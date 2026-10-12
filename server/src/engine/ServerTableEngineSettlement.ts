@@ -1,5 +1,6 @@
 import { readCommittedSeatStacks } from './committedSeatStackRead.js';
 import { assertDiamondAcceptedHand } from '../domain/DiamondCashBoundary.js';
+import { diamondCashJackpotVerdict } from './diamondCashJackpot.js';
 import { diamondCashRakeFactsFor } from './diamondCashRakeFacts.js';
 import { pendingSeatMoves, type PendingSeatMove } from '../services/supabase/seatMoves.js';
 /**
@@ -2084,12 +2085,32 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
               sawFlop: snap.sawFlopForMoney,
             }
           : null;
+        const diamondJackpotFacts = diamondRakeFacts
+          ? {
+              ...diamondRakeFacts,
+              variant: snap.variant || tableInfo.game_variant || 'nlh',
+              doubleBoard: snap.communityCards2.length > 0 || snap.communityCards3.length > 0,
+            }
+          : null;
+        const diamondJackpot = diamondJackpotFacts
+          ? diamondCashJackpotVerdict({
+              schedule: snap.diamondRakeSchedule?.jackpot,
+              facts: diamondJackpotFacts,
+              bigBlind: tableInfo.big_blind,
+              showdown: snap.showdownResults,
+              winnerIds: snap.winners.map((winner) => winner.userId),
+              dealtUserIds: [...snap.dealtStacks.keys()],
+              communityCards: snap.communityCards,
+            })
+          : null;
         assertDiamondAcceptedHand({
           arena: tableInfo.arena,
           verifiedLease: durablePostCommitObligations,
           variant: snap.variant || tableInfo.game_variant || 'nlh',
           rakeSchedule: snap.diamondRakeSchedule,
           rakeFacts: diamondRakeFacts,
+          jackpotSchedule: snap.diamondRakeSchedule?.jackpot,
+          jackpotFacts: diamondJackpotFacts,
           rake: snap.rake,
           bbj: snap.bbjFee,
           inflow: snap.insuranceNet,
@@ -2290,6 +2311,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
               contributions: contributionRecord,
               returned_uncalled: returnedUncalledRecord,
               insurance: insuranceRecords,
+              ...(diamondJackpot ? { diamond_jackpot: diamondJackpot } : {}),
             }
           : undefined;
         const postCommitObligations = durablePostCommitObligations
@@ -2493,12 +2515,15 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
                    Nothing is computed here: diamondCashRakeFacts.ts reads each
                    fact from the one place the engine already keeps it. */
                 ...(isDiamondCash
-                  ? diamondCashRakeFactsFor({
-                      userId: p.user_id,
-                      contributions: snap.contributions,
-                      dealtStacks: snap.dealtStacks,
-                      handSawFlop: snap.sawFlopForMoney,
-                    })
+                  ? {
+                      ...diamondCashRakeFactsFor({
+                        userId: p.user_id,
+                        contributions: snap.contributions,
+                        dealtStacks: snap.dealtStacks,
+                        handSawFlop: snap.sawFlopForMoney,
+                      }),
+                      hand_double_board: diamondJackpotFacts?.doubleBoard ?? false,
+                    }
                   : {}),
               })),
               rake: this.isTournamentTable() ? 0 : snap.rake,
@@ -2606,6 +2631,86 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         // valid even if the response crossed our proof deadline. Everything
         // below is reflection or a new decision and belongs to the successor.
         if (!this.lifecycleCanMutate()) return;
+
+        // Reflect only the actual paid receipt. The transaction owns the money;
+        // response-loss replay returns this same receipt without another credit.
+        const jackpotReceipt = result.stackResult?.diamond_jackpot_receipt as
+          | {
+              paid?: boolean;
+              id?: string;
+              kind?: 'main' | 'mini';
+              total?: number;
+              loser?: { userId: string; share: number };
+              winner?: { userId: string; share: number };
+              tableShare?: number;
+              perPlayerShare?: number;
+              tablePlayerIds?: string[];
+            }
+          | null
+          | undefined;
+        if (isDiamondCash && jackpotReceipt?.paid === true) {
+          const emittedAt = Date.now();
+          this.hub?.emitEvent(this.tableId, {
+            type: 'bbj_hit',
+            asset: 'diamonds',
+            kind: jackpotReceipt.kind,
+            table_id: this.tableId,
+            hand_number: snap.handNumber,
+            emitted_at: emittedAt,
+            replay_until: emittedAt + 60_000,
+            loser: {
+              userId: diamondJackpot?.loser_user_id,
+              hand: { name: diamondJackpot?.loser_hand },
+            },
+            winner: {
+              userId: diamondJackpot?.winner_user_id,
+              hand: { name: diamondJackpot?.winner_hand },
+            },
+          });
+          this.hub?.emitEvent(this.tableId, {
+            type: 'bbj_payout_complete',
+            asset: 'diamonds',
+            kind: jackpotReceipt.kind,
+            payout_id: jackpotReceipt.id,
+            table_id: this.tableId,
+            hand_number: snap.handNumber,
+            emitted_at: emittedAt,
+            replay_until: emittedAt + 60_000,
+            totalPayout: jackpotReceipt.total,
+            loser: jackpotReceipt.loser,
+            winner: jackpotReceipt.winner,
+            tableShare: jackpotReceipt.tableShare,
+            perPlayerShare: jackpotReceipt.perPlayerShare,
+            tablePlayerIds: jackpotReceipt.tablePlayerIds,
+          });
+          // The same paid Main receipt fans out through the existing club scope.
+          if (jackpotReceipt.kind === 'main') {
+            const siblings = ServerTableEngineSettlement.liveCashTableIdsInClubs(
+              new Set([this.tableInfo.club_id]),
+              this.tableId
+            );
+            if (!this.lifecycleCanMutate()) return;
+            const holder = players.find((p) => p.user_id === jackpotReceipt.loser?.userId);
+            const announcement = {
+              type: 'bbj_hit_global',
+              asset: 'diamonds',
+              table_id: this.tableId,
+              table_name: this.tableInfo.name || 'Diamond Arena',
+              club_id: this.tableInfo.club_id,
+              hand_number: snap.handNumber,
+              emitted_at: emittedAt,
+              replay_until: emittedAt + 60_000,
+              game_variant: this.tableInfo.game_variant,
+              big_blind: this.tableInfo.big_blind,
+              winner_user_id: jackpotReceipt.loser?.userId,
+              winner_name: holder?.username || 'A Player',
+              amount: jackpotReceipt.loser?.share,
+              total_payout: jackpotReceipt.total,
+              qualifying_hand_label: diamondJackpot?.loser_hand || '',
+            };
+            for (const siblingId of siblings) this.hub?.emitEvent(siblingId, announcement);
+          }
+        }
 
         // Protocol-2 hands carry time banks in the immutable post-commit
         // envelope. The compatibility path retains the old direct write only

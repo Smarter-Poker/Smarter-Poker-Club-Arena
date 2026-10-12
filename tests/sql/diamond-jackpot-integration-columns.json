@@ -1,0 +1,4643 @@
+[
+  {
+    "table_name": "bomb_pot_award_units",
+    "column_name": "id",
+    "sql_type": "bigint",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "bomb_pot_award_units",
+    "column_name": "hand_history_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "bomb_pot_award_units",
+    "column_name": "table_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "bomb_pot_award_units",
+    "column_name": "hand_number",
+    "sql_type": "bigint",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "bomb_pot_award_units",
+    "column_name": "pot_index",
+    "sql_type": "integer",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "bomb_pot_award_units",
+    "column_name": "board",
+    "sql_type": "smallint",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "bomb_pot_award_units",
+    "column_name": "side",
+    "sql_type": "text",
+    "default_sql": "'high'::text",
+    "not_null": true
+  },
+  {
+    "table_name": "bomb_pot_award_units",
+    "column_name": "user_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "bomb_pot_award_units",
+    "column_name": "amount",
+    "sql_type": "numeric(15,2)",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "bomb_pot_award_units",
+    "column_name": "hand_name",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "bomb_pot_award_units",
+    "column_name": "created_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": "now()",
+    "not_null": true
+  },
+  {
+    "table_name": "ca_seat_stack_rebases",
+    "column_name": "id",
+    "sql_type": "bigint",
+    "default_sql": "nextval('ca_seat_stack_rebases_id_seq'::regclass)",
+    "not_null": true
+  },
+  {
+    "table_name": "ca_seat_stack_rebases",
+    "column_name": "settlement_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "ca_seat_stack_rebases",
+    "column_name": "table_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "ca_seat_stack_rebases",
+    "column_name": "hand_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "ca_seat_stack_rebases",
+    "column_name": "hand_number",
+    "sql_type": "bigint",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "ca_seat_stack_rebases",
+    "column_name": "user_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "ca_seat_stack_rebases",
+    "column_name": "engine_before",
+    "sql_type": "numeric",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "ca_seat_stack_rebases",
+    "column_name": "db_before",
+    "sql_type": "numeric",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "ca_seat_stack_rebases",
+    "column_name": "engine_after",
+    "sql_type": "numeric",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "ca_seat_stack_rebases",
+    "column_name": "written",
+    "sql_type": "numeric",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "ca_seat_stack_rebases",
+    "column_name": "amount",
+    "sql_type": "numeric",
+    "default_sql": "(db_before - engine_before)",
+    "not_null": false
+  },
+  {
+    "table_name": "ca_seat_stack_rebases",
+    "column_name": "created_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": "now()",
+    "not_null": true
+  },
+  {
+    "table_name": "ca_settlements",
+    "column_name": "id",
+    "sql_type": "uuid",
+    "default_sql": "gen_random_uuid()",
+    "not_null": true
+  },
+  {
+    "table_name": "ca_settlements",
+    "column_name": "settlement_type",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "ca_settlements",
+    "column_name": "external_ref",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "ca_settlements",
+    "column_name": "state",
+    "sql_type": "text",
+    "default_sql": "'open'::text",
+    "not_null": true
+  },
+  {
+    "table_name": "ca_settlements",
+    "column_name": "club_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "ca_settlements",
+    "column_name": "union_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "ca_settlements",
+    "column_name": "table_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "ca_settlements",
+    "column_name": "tournament_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "ca_settlements",
+    "column_name": "hand_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "ca_settlements",
+    "column_name": "idempotency_key",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "ca_settlements",
+    "column_name": "correlation_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "ca_settlements",
+    "column_name": "epoch_id",
+    "sql_type": "integer",
+    "default_sql": "fn_ca_current_epoch()",
+    "not_null": false
+  },
+  {
+    "table_name": "ca_settlements",
+    "column_name": "totals",
+    "sql_type": "jsonb",
+    "default_sql": "'{}'::jsonb",
+    "not_null": true
+  },
+  {
+    "table_name": "ca_settlements",
+    "column_name": "error_detail",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "ca_settlements",
+    "column_name": "created_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": "now()",
+    "not_null": true
+  },
+  {
+    "table_name": "ca_settlements",
+    "column_name": "updated_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": "now()",
+    "not_null": true
+  },
+  {
+    "table_name": "cash_hand_participant_manifests",
+    "column_name": "id",
+    "sql_type": "uuid",
+    "default_sql": "gen_random_uuid()",
+    "not_null": true
+  },
+  {
+    "table_name": "cash_hand_participant_manifests",
+    "column_name": "table_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "cash_hand_participant_manifests",
+    "column_name": "hand_number",
+    "sql_type": "bigint",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "cash_hand_participant_manifests",
+    "column_name": "captured_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": "clock_timestamp()",
+    "not_null": true
+  },
+  {
+    "table_name": "cash_hand_participant_manifests",
+    "column_name": "lease_instance_id",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "cash_hand_participant_manifests",
+    "column_name": "lease_generation",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "cash_hand_participant_manifests",
+    "column_name": "request",
+    "sql_type": "jsonb",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "cash_hand_participant_manifests",
+    "column_name": "game_scope",
+    "sql_type": "jsonb",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "cash_hand_participant_manifests",
+    "column_name": "participants",
+    "sql_type": "jsonb",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "cash_hand_participant_manifests",
+    "column_name": "issues",
+    "sql_type": "jsonb",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "cash_hand_participant_manifests",
+    "column_name": "funding_provenance_complete",
+    "sql_type": "boolean",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "cash_hand_provenance_receipts",
+    "column_name": "table_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "cash_hand_provenance_receipts",
+    "column_name": "hand_number",
+    "sql_type": "bigint",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "cash_hand_provenance_receipts",
+    "column_name": "hand_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "cash_hand_provenance_receipts",
+    "column_name": "accepted_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": "clock_timestamp()",
+    "not_null": true
+  },
+  {
+    "table_name": "cash_hand_provenance_receipts",
+    "column_name": "payload_hash",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "cash_hand_provenance_receipts",
+    "column_name": "accepted_request",
+    "sql_type": "jsonb",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "cash_hand_provenance_receipts",
+    "column_name": "manifest_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "cash_hand_provenance_receipts",
+    "column_name": "atomic_receipt",
+    "sql_type": "jsonb",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "cash_hand_provenance_receipts",
+    "column_name": "stack_claim",
+    "sql_type": "jsonb",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "cash_hand_provenance_receipts",
+    "column_name": "stack_settlement",
+    "sql_type": "jsonb",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "cash_hand_provenance_receipts",
+    "column_name": "version",
+    "sql_type": "integer",
+    "default_sql": "1",
+    "not_null": true
+  },
+  {
+    "table_name": "cash_hand_provenance_receipts",
+    "column_name": "status",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "cash_hand_provenance_receipts",
+    "column_name": "game_scope",
+    "sql_type": "jsonb",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "cash_hand_provenance_receipts",
+    "column_name": "participants",
+    "sql_type": "jsonb",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "cash_hand_provenance_receipts",
+    "column_name": "signed_external_net",
+    "sql_type": "numeric",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "cash_hand_provenance_receipts",
+    "column_name": "rake",
+    "sql_type": "numeric",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "cash_hand_provenance_receipts",
+    "column_name": "bbj",
+    "sql_type": "numeric",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "cash_hand_provenance_receipts",
+    "column_name": "all_players_included",
+    "sql_type": "boolean",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "cash_hand_provenance_receipts",
+    "column_name": "funding_provenance_complete",
+    "sql_type": "boolean",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "cash_hand_provenance_receipts",
+    "column_name": "issues",
+    "sql_type": "jsonb",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "cash_hand_provenance_receipts",
+    "column_name": "transaction_id",
+    "sql_type": "xid8",
+    "default_sql": "pg_current_xact_id()",
+    "not_null": false
+  },
+  {
+    "table_name": "chip_transactions",
+    "column_name": "id",
+    "sql_type": "uuid",
+    "default_sql": "gen_random_uuid()",
+    "not_null": true
+  },
+  {
+    "table_name": "chip_transactions",
+    "column_name": "club_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "chip_transactions",
+    "column_name": "from_user_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "chip_transactions",
+    "column_name": "to_user_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "chip_transactions",
+    "column_name": "amount",
+    "sql_type": "numeric(14,2)",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "chip_transactions",
+    "column_name": "transaction_type",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "chip_transactions",
+    "column_name": "notes",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "chip_transactions",
+    "column_name": "related_cashout_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "chip_transactions",
+    "column_name": "metadata",
+    "sql_type": "jsonb",
+    "default_sql": "'{}'::jsonb",
+    "not_null": false
+  },
+  {
+    "table_name": "chip_transactions",
+    "column_name": "created_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": "now()",
+    "not_null": false
+  },
+  {
+    "table_name": "chip_transactions",
+    "column_name": "balance_after",
+    "sql_type": "numeric(14,2)",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "chip_transactions",
+    "column_name": "clawed_back",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "chip_transactions",
+    "column_name": "reversible_until",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "chip_transactions",
+    "column_name": "is_reversed",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "chip_transactions",
+    "column_name": "table_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "club_members",
+    "column_name": "club_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "club_members",
+    "column_name": "user_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "club_members",
+    "column_name": "role",
+    "sql_type": "text",
+    "default_sql": "'player'::text",
+    "not_null": false
+  },
+  {
+    "table_name": "club_members",
+    "column_name": "agent_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "club_members",
+    "column_name": "joined_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": "now()",
+    "not_null": false
+  },
+  {
+    "table_name": "club_members",
+    "column_name": "parent_agent_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "club_members",
+    "column_name": "invited_by",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "club_members",
+    "column_name": "notes",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "club_members",
+    "column_name": "last_active_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "club_members",
+    "column_name": "created_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": "now()",
+    "not_null": false
+  },
+  {
+    "table_name": "club_members",
+    "column_name": "updated_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": "now()",
+    "not_null": false
+  },
+  {
+    "table_name": "club_members",
+    "column_name": "is_bot",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "club_members",
+    "column_name": "status",
+    "sql_type": "text",
+    "default_sql": "'active'::text",
+    "not_null": false
+  },
+  {
+    "table_name": "club_members",
+    "column_name": "chip_balance",
+    "sql_type": "numeric(20,2)",
+    "default_sql": "0",
+    "not_null": true
+  },
+  {
+    "table_name": "club_members",
+    "column_name": "diamonds",
+    "sql_type": "integer",
+    "default_sql": "0",
+    "not_null": true
+  },
+  {
+    "table_name": "club_members",
+    "column_name": "is_active",
+    "sql_type": "boolean",
+    "default_sql": "true",
+    "not_null": false
+  },
+  {
+    "table_name": "club_members",
+    "column_name": "orange_ball_status",
+    "sql_type": "text",
+    "default_sql": "'inactive'::text",
+    "not_null": false
+  },
+  {
+    "table_name": "club_members",
+    "column_name": "rank_level",
+    "sql_type": "integer",
+    "default_sql": "1",
+    "not_null": false
+  },
+  {
+    "table_name": "club_members",
+    "column_name": "credit_limit",
+    "sql_type": "numeric(15,2)",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "club_members",
+    "column_name": "credit_used",
+    "sql_type": "numeric(15,2)",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "club_members",
+    "column_name": "nickname",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "club_members",
+    "column_name": "last_active",
+    "sql_type": "timestamp with time zone",
+    "default_sql": "now()",
+    "not_null": false
+  },
+  {
+    "table_name": "club_members",
+    "column_name": "tier",
+    "sql_type": "text",
+    "default_sql": "'bronze'::text",
+    "not_null": false
+  },
+  {
+    "table_name": "club_members",
+    "column_name": "trust_score",
+    "sql_type": "integer",
+    "default_sql": "50",
+    "not_null": false
+  },
+  {
+    "table_name": "club_members",
+    "column_name": "sessions_played",
+    "sql_type": "integer",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "club_members",
+    "column_name": "promo_balance",
+    "sql_type": "numeric(14,2)",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "club_members",
+    "column_name": "chips_won",
+    "sql_type": "bigint",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "club_members",
+    "column_name": "chips_lost",
+    "sql_type": "bigint",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "club_members",
+    "column_name": "commission_rate",
+    "sql_type": "numeric(5,2)",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "club_members",
+    "column_name": "rakeback_rate",
+    "sql_type": "numeric(5,2)",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "club_members",
+    "column_name": "hands_played",
+    "sql_type": "integer",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "club_members",
+    "column_name": "total_rake_paid",
+    "sql_type": "bigint",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "club_members",
+    "column_name": "biggest_pot",
+    "sql_type": "bigint",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "club_members",
+    "column_name": "locked_chips",
+    "sql_type": "integer",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "club_members",
+    "column_name": "player_rakeback_pct",
+    "sql_type": "numeric(5,4)",
+    "default_sql": "0.0000",
+    "not_null": false
+  },
+  {
+    "table_name": "club_members",
+    "column_name": "held_chips",
+    "sql_type": "numeric",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "club_members",
+    "column_name": "display_name",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "club_members",
+    "column_name": "is_prepaid",
+    "sql_type": "boolean",
+    "default_sql": "true",
+    "not_null": false
+  },
+  {
+    "table_name": "club_members",
+    "column_name": "promo_received_total",
+    "sql_type": "numeric(14,2)",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "club_members",
+    "column_name": "promo_wagered",
+    "sql_type": "numeric(14,2)",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "club_members",
+    "column_name": "promo_playthrough_required",
+    "sql_type": "numeric(14,2)",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "club_members",
+    "column_name": "missions_completed",
+    "sql_type": "integer",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "club_members",
+    "column_name": "membership_lifecycle_status",
+    "sql_type": "text",
+    "default_sql": "'active'::text",
+    "not_null": true
+  },
+  {
+    "table_name": "club_members",
+    "column_name": "departed_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "club_members",
+    "column_name": "departed_by",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "club_members",
+    "column_name": "departure_reason",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "id",
+    "sql_type": "uuid",
+    "default_sql": "uuid_generate_v4()",
+    "not_null": true
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "name",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "description",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "owner_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "created_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": "now()",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "is_union",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "club_id",
+    "sql_type": "integer",
+    "default_sql": "(((10000)::double precision + floor((random() * (90000)::double precision))))::integer",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "avatar_url",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "is_public",
+    "sql_type": "boolean",
+    "default_sql": "true",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "requires_approval",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "gps_restricted",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "settings",
+    "sql_type": "jsonb",
+    "default_sql": "'{\"rake_cap\": 15, \"max_buy_in_bb\": 200, \"min_buy_in_bb\": 40, \"allow_straddle\": true, \"time_bank_seconds\": 30, \"allow_run_it_twice\": true, \"default_rake_percent\": 5}'::jsonb",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "updated_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": "now()",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "union_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "color_theme",
+    "sql_type": "text",
+    "default_sql": "'royal-blue'::text",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "slug",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "chip_treasury",
+    "sql_type": "numeric(18,2)",
+    "default_sql": "100000",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "total_rake",
+    "sql_type": "numeric(18,2)",
+    "default_sql": "0",
+    "not_null": true
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "online_count",
+    "sql_type": "integer",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "game_types",
+    "sql_type": "text[]",
+    "default_sql": "ARRAY['NLH'::text]",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "member_count",
+    "sql_type": "integer",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "table_count",
+    "sql_type": "integer",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "promo_balance",
+    "sql_type": "numeric(14,2)",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "code",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "rake_percent",
+    "sql_type": "numeric(5,2)",
+    "default_sql": "5.0",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "rake_cap_bb",
+    "sql_type": "numeric(8,2)",
+    "default_sql": "3.0",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "max_tables",
+    "sql_type": "integer",
+    "default_sql": "20",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "max_members",
+    "sql_type": "integer",
+    "default_sql": "500",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "status",
+    "sql_type": "text",
+    "default_sql": "'active'::text",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "hands_played",
+    "sql_type": "bigint",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "logo_url",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "banner_url",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "game_variants",
+    "sql_type": "text[]",
+    "default_sql": "ARRAY['nlh'::text]",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "settlement_locked",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "settlement_locked_until",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "auto_settlement_enabled",
+    "sql_type": "boolean",
+    "default_sql": "true",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "auto_settlement_day",
+    "sql_type": "text",
+    "default_sql": "'monday'::text",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "auto_settlement_hour",
+    "sql_type": "integer",
+    "default_sql": "10",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "club_commission_rate",
+    "sql_type": "numeric(5,4)",
+    "default_sql": "0.9000",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "insurance_balance",
+    "sql_type": "numeric(14,2)",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "bbj_enabled",
+    "sql_type": "boolean",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "player_level",
+    "sql_type": "integer",
+    "default_sql": "1",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "hierarchy_level",
+    "sql_type": "integer",
+    "default_sql": "1",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "level",
+    "sql_type": "integer",
+    "default_sql": "1",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "player_threshold_current",
+    "sql_type": "integer",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "player_threshold_next",
+    "sql_type": "integer",
+    "default_sql": "30",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "hierarchy_units",
+    "sql_type": "numeric(10,2)",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "hierarchy_units_rounded_up",
+    "sql_type": "integer",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "hierarchy_threshold_current",
+    "sql_type": "integer",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "hierarchy_threshold_next",
+    "sql_type": "integer",
+    "default_sql": "2",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "tags",
+    "sql_type": "text[]",
+    "default_sql": "'{}'::text[]",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "average_rating",
+    "sql_type": "numeric(3,2)",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "game_type",
+    "sql_type": "text",
+    "default_sql": "'Texas Holdem'::text",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "settlement_lock_until",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "card_image_url",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "active_players",
+    "sql_type": "integer",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "default_rake_percent",
+    "sql_type": "numeric(5,2)",
+    "default_sql": "'-1'::integer",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "rake_cap",
+    "sql_type": "numeric(18,4)",
+    "default_sql": "'-1'::integer",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "min_buyin_bb",
+    "sql_type": "integer",
+    "default_sql": "20",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "max_buyin_bb",
+    "sql_type": "integer",
+    "default_sql": "200",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "allow_straddle",
+    "sql_type": "boolean",
+    "default_sql": "true",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "allow_run_it_twice",
+    "sql_type": "boolean",
+    "default_sql": "true",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "allow_rabbit_hunt",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "logo",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "is_private",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "min_buy_in",
+    "sql_type": "numeric(18,4)",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "max_buy_in",
+    "sql_type": "numeric(18,4)",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "default_game_type",
+    "sql_type": "text",
+    "default_sql": "'NLHE'::text",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "allow_insurance",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "auto_approve_agents",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "auto_settlement",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "active_tables",
+    "sql_type": "integer",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "admin_count",
+    "sql_type": "integer",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "super_agent_count",
+    "sql_type": "integer",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "agent_count",
+    "sql_type": "integer",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "chip_pool",
+    "sql_type": "numeric(18,2)",
+    "default_sql": "0",
+    "not_null": true
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "bbj_rake_enabled",
+    "sql_type": "boolean",
+    "default_sql": "true",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "spins_enabled",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "spins_preseed_amount",
+    "sql_type": "integer",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "spins_wallet_funding",
+    "sql_type": "text",
+    "default_sql": "'PROMO'::text",
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "ticker_enabled",
+    "sql_type": "boolean",
+    "default_sql": "true",
+    "not_null": true
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "guarantee_treasury_floor",
+    "sql_type": "numeric",
+    "default_sql": "0",
+    "not_null": true
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "guarantee_enforcement_enabled",
+    "sql_type": "boolean",
+    "default_sql": "true",
+    "not_null": true
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "tagline",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "opening_checklist_started_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "lobby_message",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "lobby_message_updated_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "message_revision",
+    "sql_type": "bigint",
+    "default_sql": "1",
+    "not_null": true
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "lifecycle_status",
+    "sql_type": "text",
+    "default_sql": "'active'::text",
+    "not_null": true
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "retired_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "retired_by",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "retirement_reason",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "asset",
+    "sql_type": "text",
+    "default_sql": "'chips'::text",
+    "not_null": true
+  },
+  {
+    "table_name": "clubs",
+    "column_name": "is_platform",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": true
+  },
+  {
+    "table_name": "engine_table_leases",
+    "column_name": "table_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "engine_table_leases",
+    "column_name": "instance_id",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "engine_table_leases",
+    "column_name": "engine_version",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "engine_table_leases",
+    "column_name": "acquired_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": "now()",
+    "not_null": true
+  },
+  {
+    "table_name": "engine_table_leases",
+    "column_name": "heartbeat_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": "now()",
+    "not_null": true
+  },
+  {
+    "table_name": "engine_table_leases",
+    "column_name": "lease_generation",
+    "sql_type": "uuid",
+    "default_sql": "gen_random_uuid()",
+    "not_null": true
+  },
+  {
+    "table_name": "engine_table_leases",
+    "column_name": "protocol_version",
+    "sql_type": "integer",
+    "default_sql": "1",
+    "not_null": true
+  },
+  {
+    "table_name": "engine_tournament_leases",
+    "column_name": "tournament_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "engine_tournament_leases",
+    "column_name": "instance_id",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "engine_tournament_leases",
+    "column_name": "engine_version",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "engine_tournament_leases",
+    "column_name": "acquired_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": "now()",
+    "not_null": true
+  },
+  {
+    "table_name": "engine_tournament_leases",
+    "column_name": "heartbeat_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": "now()",
+    "not_null": true
+  },
+  {
+    "table_name": "engine_tournament_leases",
+    "column_name": "lease_generation",
+    "sql_type": "uuid",
+    "default_sql": "gen_random_uuid()",
+    "not_null": true
+  },
+  {
+    "table_name": "engine_tournament_leases",
+    "column_name": "protocol_version",
+    "sql_type": "integer",
+    "default_sql": "1",
+    "not_null": true
+  },
+  {
+    "table_name": "hand_atomic_commits",
+    "column_name": "table_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "hand_atomic_commits",
+    "column_name": "hand_number",
+    "sql_type": "bigint",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "hand_atomic_commits",
+    "column_name": "hand_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "hand_atomic_commits",
+    "column_name": "payload_hash",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "hand_atomic_commits",
+    "column_name": "stack_result",
+    "sql_type": "jsonb",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "hand_atomic_commits",
+    "column_name": "committed_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": "clock_timestamp()",
+    "not_null": true
+  },
+  {
+    "table_name": "hand_atomic_commits",
+    "column_name": "post_commit_payload",
+    "sql_type": "jsonb",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "hand_atomic_commits",
+    "column_name": "post_commit_request_hash",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "hand_atomic_commits",
+    "column_name": "post_commit_payload_hash",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "hand_atomic_commits",
+    "column_name": "post_commit_completed_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "hand_atomic_commits",
+    "column_name": "post_commit_result",
+    "sql_type": "jsonb",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "hand_history",
+    "column_name": "id",
+    "sql_type": "uuid",
+    "default_sql": "gen_random_uuid()",
+    "not_null": true
+  },
+  {
+    "table_name": "hand_history",
+    "column_name": "winner_name",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "hand_history",
+    "column_name": "pot_size",
+    "sql_type": "numeric(12,2)",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "hand_history",
+    "column_name": "created_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": "now()",
+    "not_null": false
+  },
+  {
+    "table_name": "hand_history",
+    "column_name": "table_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "hand_history",
+    "column_name": "tournament_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "hand_history",
+    "column_name": "hand_number",
+    "sql_type": "integer",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "hand_history",
+    "column_name": "game_variant",
+    "sql_type": "text",
+    "default_sql": "'nlh'::text",
+    "not_null": false
+  },
+  {
+    "table_name": "hand_history",
+    "column_name": "small_blind",
+    "sql_type": "numeric(12,2)",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "hand_history",
+    "column_name": "big_blind",
+    "sql_type": "numeric(12,2)",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "hand_history",
+    "column_name": "rake_amount",
+    "sql_type": "numeric(12,2)",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "hand_history",
+    "column_name": "community_cards",
+    "sql_type": "text[]",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "hand_history",
+    "column_name": "winners",
+    "sql_type": "jsonb",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "hand_history",
+    "column_name": "players",
+    "sql_type": "jsonb",
+    "default_sql": "'[]'::jsonb",
+    "not_null": false
+  },
+  {
+    "table_name": "hand_history",
+    "column_name": "actions",
+    "sql_type": "jsonb",
+    "default_sql": "'[]'::jsonb",
+    "not_null": false
+  },
+  {
+    "table_name": "hand_history",
+    "column_name": "summary",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "hand_history",
+    "column_name": "bbj_amount",
+    "sql_type": "numeric(12,2)",
+    "default_sql": "0",
+    "not_null": true
+  },
+  {
+    "table_name": "hand_history",
+    "column_name": "source",
+    "sql_type": "text",
+    "default_sql": "'manual'::text",
+    "not_null": false
+  },
+  {
+    "table_name": "hand_history",
+    "column_name": "hand_name",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "hand_history",
+    "column_name": "seed",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "hand_history",
+    "column_name": "version",
+    "sql_type": "text",
+    "default_sql": "'v1'::text",
+    "not_null": false
+  },
+  {
+    "table_name": "hand_history",
+    "column_name": "started_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": "now()",
+    "not_null": false
+  },
+  {
+    "table_name": "hand_history",
+    "column_name": "ended_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "hand_history",
+    "column_name": "hole_cards",
+    "sql_type": "jsonb",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "hand_history",
+    "column_name": "board",
+    "sql_type": "jsonb",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "hand_history",
+    "column_name": "reported",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": true
+  },
+  {
+    "table_name": "hand_history",
+    "column_name": "reported_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "hand_history",
+    "column_name": "button_seat",
+    "sql_type": "smallint",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "hand_history",
+    "column_name": "has_human",
+    "sql_type": "boolean",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "hand_history",
+    "column_name": "community_cards2",
+    "sql_type": "text[]",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "hand_history",
+    "column_name": "pots",
+    "sql_type": "jsonb",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "hand_history",
+    "column_name": "showdown",
+    "sql_type": "jsonb",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "hand_history",
+    "column_name": "rit_boards",
+    "sql_type": "jsonb",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "hand_history",
+    "column_name": "community_cards3",
+    "sql_type": "text[]",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "hand_history",
+    "column_name": "bomb_pot",
+    "sql_type": "jsonb",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "hand_history",
+    "column_name": "daily_mission_events",
+    "sql_type": "jsonb",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "hand_history",
+    "column_name": "winners_by_board",
+    "sql_type": "jsonb",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "hand_history",
+    "column_name": "kill_pot",
+    "sql_type": "jsonb",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "hand_projection_outbox",
+    "column_name": "hand_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "hand_projection_outbox",
+    "column_name": "table_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "hand_projection_outbox",
+    "column_name": "hand_number",
+    "sql_type": "bigint",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "hand_projection_outbox",
+    "column_name": "created_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": "clock_timestamp()",
+    "not_null": true
+  },
+  {
+    "table_name": "settlement_idempotency_keys",
+    "column_name": "table_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "settlement_idempotency_keys",
+    "column_name": "hand_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "settlement_idempotency_keys",
+    "column_name": "status",
+    "sql_type": "text",
+    "default_sql": "'in_flight'::text",
+    "not_null": true
+  },
+  {
+    "table_name": "settlement_idempotency_keys",
+    "column_name": "result",
+    "sql_type": "jsonb",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "settlement_idempotency_keys",
+    "column_name": "error",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "settlement_idempotency_keys",
+    "column_name": "attempt_count",
+    "sql_type": "integer",
+    "default_sql": "1",
+    "not_null": true
+  },
+  {
+    "table_name": "settlement_idempotency_keys",
+    "column_name": "first_attempt_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": "now()",
+    "not_null": true
+  },
+  {
+    "table_name": "settlement_idempotency_keys",
+    "column_name": "last_attempt_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": "now()",
+    "not_null": true
+  },
+  {
+    "table_name": "settlement_idempotency_keys",
+    "column_name": "completed_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "table_pending_addons",
+    "column_name": "id",
+    "sql_type": "uuid",
+    "default_sql": "gen_random_uuid()",
+    "not_null": true
+  },
+  {
+    "table_name": "table_pending_addons",
+    "column_name": "table_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "table_pending_addons",
+    "column_name": "user_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "table_pending_addons",
+    "column_name": "amount",
+    "sql_type": "numeric",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "table_pending_addons",
+    "column_name": "created_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": "now()",
+    "not_null": true
+  },
+  {
+    "table_name": "table_pending_addons",
+    "column_name": "resolved_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "table_pending_addons",
+    "column_name": "applied_to_stack",
+    "sql_type": "numeric",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "table_pending_addons",
+    "column_name": "refunded",
+    "sql_type": "numeric",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "table_pending_addons",
+    "column_name": "kind",
+    "sql_type": "text",
+    "default_sql": "'addon'::text",
+    "not_null": true
+  },
+  {
+    "table_name": "table_seats",
+    "column_name": "id",
+    "sql_type": "uuid",
+    "default_sql": "uuid_generate_v4()",
+    "not_null": true
+  },
+  {
+    "table_name": "table_seats",
+    "column_name": "table_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "table_seats",
+    "column_name": "seat_number",
+    "sql_type": "integer",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "table_seats",
+    "column_name": "user_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "table_seats",
+    "column_name": "player_id",
+    "sql_type": "integer",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "table_seats",
+    "column_name": "member_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "table_seats",
+    "column_name": "stack",
+    "sql_type": "numeric(15,2)",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "table_seats",
+    "column_name": "is_sitting_out",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "table_seats",
+    "column_name": "is_away",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "table_seats",
+    "column_name": "joined_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": "now()",
+    "not_null": false
+  },
+  {
+    "table_name": "table_seats",
+    "column_name": "horse_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "table_seats",
+    "column_name": "scheduled_leave_hands",
+    "sql_type": "integer",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "table_seats",
+    "column_name": "left_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "table_seats",
+    "column_name": "status",
+    "sql_type": "text",
+    "default_sql": "'active'::text",
+    "not_null": false
+  },
+  {
+    "table_name": "table_seats",
+    "column_name": "leave_pending",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "table_seats",
+    "column_name": "auto_rebuy",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "table_seats",
+    "column_name": "time_bank_remaining",
+    "sql_type": "integer",
+    "default_sql": "30",
+    "not_null": false
+  },
+  {
+    "table_name": "table_seats",
+    "column_name": "time_bank_uses_remaining",
+    "sql_type": "integer",
+    "default_sql": "4",
+    "not_null": false
+  },
+  {
+    "table_name": "table_seats",
+    "column_name": "club_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "table_seats",
+    "column_name": "sit_out_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "table_seats",
+    "column_name": "entry_hold",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "table_seats",
+    "column_name": "entry_post_agreed",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": true
+  },
+  {
+    "table_name": "table_seats",
+    "column_name": "occupancy_id",
+    "sql_type": "uuid",
+    "default_sql": "gen_random_uuid()",
+    "not_null": true
+  },
+  {
+    "table_name": "table_seats",
+    "column_name": "active_game_scope",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "table_seats",
+    "column_name": "active_parent_key",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "table_seats",
+    "column_name": "terminal_closed_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "id",
+    "sql_type": "uuid",
+    "default_sql": "gen_random_uuid()",
+    "not_null": true
+  },
+  {
+    "table_name": "tables",
+    "column_name": "club_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "name",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "tables",
+    "column_name": "game_type",
+    "sql_type": "text",
+    "default_sql": "'nlhe'::text",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "stakes",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "small_blind",
+    "sql_type": "numeric(15,2)",
+    "default_sql": "1",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "big_blind",
+    "sql_type": "numeric(15,2)",
+    "default_sql": "2",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "min_buy_in",
+    "sql_type": "numeric(15,2)",
+    "default_sql": "40",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "max_buy_in",
+    "sql_type": "numeric(15,2)",
+    "default_sql": "200",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "max_players",
+    "sql_type": "integer",
+    "default_sql": "9",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "current_players",
+    "sql_type": "integer",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "status",
+    "sql_type": "text",
+    "default_sql": "'waiting'::text",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "is_private",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "settings",
+    "sql_type": "jsonb",
+    "default_sql": "'{}'::jsonb",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "created_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": "now()",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "updated_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": "now()",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "game_variant",
+    "sql_type": "text",
+    "default_sql": "'nlh'::text",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "enable_straddle",
+    "sql_type": "boolean",
+    "default_sql": "true",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "run_it_twice",
+    "sql_type": "boolean",
+    "default_sql": "true",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "auto_muck",
+    "sql_type": "boolean",
+    "default_sql": "true",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "ante",
+    "sql_type": "numeric(15,2)",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "allow_rabbit_hunt",
+    "sql_type": "boolean",
+    "default_sql": "true",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "allow_run_it_twice",
+    "sql_type": "boolean",
+    "default_sql": "true",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "allow_straddle",
+    "sql_type": "boolean",
+    "default_sql": "true",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "game_mode",
+    "sql_type": "character varying(10)",
+    "default_sql": "'regular'::character varying",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "is_vip_only",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "is_anonymous",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "ban_chat",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "label_as_new",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "is_featured",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "hide_club_name",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "is_template",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "bomb_pot_enabled",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "double_board",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "triple_board",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "pineapple_holdem",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "seven_deuce_enabled",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "nit_game",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "cap_enabled",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "no_rathole",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "action_time_seconds",
+    "sql_type": "integer",
+    "default_sql": "15",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "ante_bb",
+    "sql_type": "numeric(10,2)",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "career_percent_min",
+    "sql_type": "integer",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "maintain_percent_min",
+    "sql_type": "integer",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "maintain_hands",
+    "sql_type": "integer",
+    "default_sql": "10",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "auto_start_players",
+    "sql_type": "integer",
+    "default_sql": "2",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "game_length_hours",
+    "sql_type": "integer",
+    "default_sql": "12",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "created_by",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "calltime_enabled",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "auto_extension",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "auto_restart",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "auto_create_table",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "auto_utg_straddle",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "voluntary_straddle",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "insurance_enabled",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "run_it_mode",
+    "sql_type": "character varying(20)",
+    "default_sql": "'none'::character varying",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "rake_percent",
+    "sql_type": "numeric(5,2)",
+    "default_sql": "'-1'::integer",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "rake_cap_bb",
+    "sql_type": "numeric(5,2)",
+    "default_sql": "'-1'::integer",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "agent_downline_limit",
+    "sql_type": "integer",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "buy_in_authorization",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "restrict_device",
+    "sql_type": "boolean",
+    "default_sql": "true",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "restrict_observers",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "gps_restriction",
+    "sql_type": "boolean",
+    "default_sql": "true",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "ip_restriction",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "pc_emulator_restriction",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "photo_rotation_verification",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "short_description",
+    "sql_type": "text",
+    "default_sql": "''::text",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "accelerated_mtt",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "all_in_or_fold",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "custom_rebuy_reentry_cost",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "number_of_rebuys_reentries",
+    "sql_type": "integer",
+    "default_sql": "3",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "add_on_multiplier",
+    "sql_type": "numeric(3,1)",
+    "default_sql": "1.0",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "custom_add_on",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "add_on_break_length_minutes",
+    "sql_type": "integer",
+    "default_sql": "1",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "ko_bounty",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "gtd_prize_pool",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "final_table_deal",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "big_blind_ante",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "authorized_to_register",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "late_registration_level",
+    "sql_type": "integer",
+    "default_sql": "6",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "early_bird_registration",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "bubble_protection",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "featured_tournament",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "min_players_mtt",
+    "sql_type": "integer",
+    "default_sql": "30",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "max_players_mtt",
+    "sql_type": "integer",
+    "default_sql": "300",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "multi_day_mtt",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "save_start_time",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "start_time",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "restart_tournament_every",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "tournament_schedule",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "synchronized_breaks",
+    "sql_type": "boolean",
+    "default_sql": "true",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "sng_buy_in",
+    "sql_type": "numeric(10,2)",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "blind_structure",
+    "sql_type": "character varying(20)",
+    "default_sql": "'standard'::character varying",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "payout_structure",
+    "sql_type": "character varying(50)",
+    "default_sql": "'winner_takes_all'::character varying",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "starting_chips",
+    "sql_type": "integer",
+    "default_sql": "1500",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "blinds_up_minutes",
+    "sql_type": "integer",
+    "default_sql": "10",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "next_step_satellite",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "sng_custom_buy_in",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "sng_player_count",
+    "sql_type": "integer",
+    "default_sql": "9",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "is_spins",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "spins_multiplier",
+    "sql_type": "integer",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "is_deleted",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "deleted_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "deleted_by",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "bbj_percent",
+    "sql_type": "numeric(5,2)",
+    "default_sql": "100",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "tournament_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "live_state",
+    "sql_type": "jsonb",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "union_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "big_blind_ante_enabled",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "straddle_enabled",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "straddle_type",
+    "sql_type": "text",
+    "default_sql": "'utg'::text",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "max_straddles",
+    "sql_type": "integer",
+    "default_sql": "1",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "run_it_twice_enabled",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "auto_muck_enabled",
+    "sql_type": "boolean",
+    "default_sql": "true",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "show_hand_enabled",
+    "sql_type": "boolean",
+    "default_sql": "true",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "disconnect_timeout_seconds",
+    "sql_type": "integer",
+    "default_sql": "30",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "max_consecutive_timeouts",
+    "sql_type": "integer",
+    "default_sql": "3",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "prefer_check_over_fold",
+    "sql_type": "boolean",
+    "default_sql": "true",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "time_bank_max_uses",
+    "sql_type": "integer",
+    "default_sql": "4",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "time_bank_enabled",
+    "sql_type": "boolean",
+    "default_sql": "true",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "ante_enabled",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "bomb_pot_frequency",
+    "sql_type": "integer",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "bomb_pot_ante_multiplier",
+    "sql_type": "integer",
+    "default_sql": "2",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "wait_for_big_blind",
+    "sql_type": "boolean",
+    "default_sql": "true",
+    "not_null": true
+  },
+  {
+    "table_name": "tables",
+    "column_name": "seven_deuce_amount",
+    "sql_type": "numeric",
+    "default_sql": "2",
+    "not_null": true
+  },
+  {
+    "table_name": "tables",
+    "column_name": "hands_dealt",
+    "sql_type": "bigint",
+    "default_sql": "0",
+    "not_null": true
+  },
+  {
+    "table_name": "tables",
+    "column_name": "avg_pot",
+    "sql_type": "numeric(14,2)",
+    "default_sql": "0",
+    "not_null": true
+  },
+  {
+    "table_name": "tables",
+    "column_name": "bomb_pot_double_board",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": true
+  },
+  {
+    "table_name": "tables",
+    "column_name": "cap_bb",
+    "sql_type": "numeric(10,2)",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "bomb_pot_board_count",
+    "sql_type": "smallint",
+    "default_sql": "1",
+    "not_null": true
+  },
+  {
+    "table_name": "tables",
+    "column_name": "bomb_pot_trigger_mode",
+    "sql_type": "text",
+    "default_sql": "'every_n_hands'::text",
+    "not_null": true
+  },
+  {
+    "table_name": "tables",
+    "column_name": "bomb_pot_interval_seconds",
+    "sql_type": "integer",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "bomb_pot_min_players",
+    "sql_type": "smallint",
+    "default_sql": "3",
+    "not_null": true
+  },
+  {
+    "table_name": "tables",
+    "column_name": "bomb_pot_ante_fixed",
+    "sql_type": "numeric",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "first_button_seat",
+    "sql_type": "integer",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "bomb_pot_variant",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "bomb_pot_next_due_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "bomb_pot_sched_state",
+    "sql_type": "jsonb",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "bomb_pot_manual_pending",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": true
+  },
+  {
+    "table_name": "tables",
+    "column_name": "bomb_pot_button_policy",
+    "sql_type": "text",
+    "default_sql": "'regular'::text",
+    "not_null": true
+  },
+  {
+    "table_name": "tables",
+    "column_name": "bomb_pot_announce_seconds",
+    "sql_type": "integer",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "min_buy_in_bb",
+    "sql_type": "integer",
+    "default_sql": "\nCASE\n    WHEN ((tournament_id IS NULL) AND (COALESCE(big_blind, (0)::numeric) > (0)::numeric) AND (min_buy_in IS NOT NULL)) THEN (ceil((min_buy_in / big_blind)))::integer\n    ELSE NULL::integer\nEND",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "max_buy_in_bb",
+    "sql_type": "integer",
+    "default_sql": "\nCASE\n    WHEN ((tournament_id IS NULL) AND (COALESCE(big_blind, (0)::numeric) > (0)::numeric) AND (max_buy_in IS NOT NULL)) THEN (floor((max_buy_in / big_blind)))::integer\n    ELSE NULL::integer\nEND",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "min_buyin",
+    "sql_type": "integer",
+    "default_sql": "\nCASE\n    WHEN ((tournament_id IS NULL) AND (COALESCE(big_blind, (0)::numeric) > (0)::numeric) AND (min_buy_in IS NOT NULL)) THEN (ceil((min_buy_in / big_blind)))::integer\n    ELSE NULL::integer\nEND",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "max_buyin",
+    "sql_type": "integer",
+    "default_sql": "\nCASE\n    WHEN ((tournament_id IS NULL) AND (COALESCE(big_blind, (0)::numeric) > (0)::numeric) AND (max_buy_in IS NOT NULL)) THEN (floor((max_buy_in / big_blind)))::integer\n    ELSE NULL::integer\nEND",
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "cluster_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "role",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "main_index",
+    "sql_type": "integer",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "lifecycle",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "opened_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "live_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "break_started_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "break_eligible_since",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "promote_pending",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": true
+  },
+  {
+    "table_name": "tables",
+    "column_name": "observer_show_cards",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": true
+  },
+  {
+    "table_name": "tables",
+    "column_name": "terminal_closed_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "seat_game_scope",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "seat_admission_key",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "f06_lifecycle",
+    "sql_type": "bigint",
+    "default_sql": "smarter_private.f06_new_lifecycle()",
+    "not_null": true
+  },
+  {
+    "table_name": "tables",
+    "column_name": "dealing_halted_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "dealing_halted_reason",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tables",
+    "column_name": "kill_mode",
+    "sql_type": "text",
+    "default_sql": "'off'::text",
+    "not_null": true
+  },
+  {
+    "table_name": "tables",
+    "column_name": "kill_threshold_bb",
+    "sql_type": "smallint",
+    "default_sql": "10",
+    "not_null": true
+  },
+  {
+    "table_name": "tables",
+    "column_name": "dealing_halt_observed_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tournament_knockout_candidates",
+    "column_name": "id",
+    "sql_type": "uuid",
+    "default_sql": "gen_random_uuid()",
+    "not_null": true
+  },
+  {
+    "table_name": "tournament_knockout_candidates",
+    "column_name": "tournament_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "tournament_knockout_candidates",
+    "column_name": "eliminated_user_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "tournament_knockout_candidates",
+    "column_name": "table_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "tournament_knockout_candidates",
+    "column_name": "seat_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "tournament_knockout_candidates",
+    "column_name": "seat_joined_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "tournament_knockout_candidates",
+    "column_name": "hand_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "tournament_knockout_candidates",
+    "column_name": "hand_number",
+    "sql_type": "bigint",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "tournament_knockout_candidates",
+    "column_name": "stack_before",
+    "sql_type": "numeric(20,2)",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "tournament_knockout_candidates",
+    "column_name": "stack_after",
+    "sql_type": "numeric(20,2)",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "tournament_knockout_candidates",
+    "column_name": "state",
+    "sql_type": "text",
+    "default_sql": "'pending'::text",
+    "not_null": true
+  },
+  {
+    "table_name": "tournament_knockout_candidates",
+    "column_name": "rebuy_prompt_until",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tournament_knockout_candidates",
+    "column_name": "created_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": "clock_timestamp()",
+    "not_null": true
+  },
+  {
+    "table_name": "tournament_knockout_candidates",
+    "column_name": "resolved_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tournament_players",
+    "column_name": "id",
+    "sql_type": "uuid",
+    "default_sql": "gen_random_uuid()",
+    "not_null": true
+  },
+  {
+    "table_name": "tournament_players",
+    "column_name": "tournament_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "tournament_players",
+    "column_name": "user_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "tournament_players",
+    "column_name": "username",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tournament_players",
+    "column_name": "chips",
+    "sql_type": "integer",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "tournament_players",
+    "column_name": "status",
+    "sql_type": "text",
+    "default_sql": "'registered'::text",
+    "not_null": false
+  },
+  {
+    "table_name": "tournament_players",
+    "column_name": "position",
+    "sql_type": "integer",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tournament_players",
+    "column_name": "prize",
+    "sql_type": "numeric(15,2)",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "tournament_players",
+    "column_name": "rebuys",
+    "sql_type": "integer",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "tournament_players",
+    "column_name": "add_on",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tournament_players",
+    "column_name": "registered_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": "now()",
+    "not_null": false
+  },
+  {
+    "table_name": "tournament_players",
+    "column_name": "eliminated_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tournament_players",
+    "column_name": "bounties_collected",
+    "sql_type": "integer",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "tournament_players",
+    "column_name": "bounty_winnings",
+    "sql_type": "numeric(15,2)",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "tournament_players",
+    "column_name": "mystery_bounty_value",
+    "sql_type": "numeric(15,2)",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "tournament_players",
+    "column_name": "current_bounty",
+    "sql_type": "numeric",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "tournament_players",
+    "column_name": "table_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tournament_players",
+    "column_name": "seat_number",
+    "sql_type": "integer",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tournament_players",
+    "column_name": "chip_count",
+    "sql_type": "numeric",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "tournament_players",
+    "column_name": "club_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tournament_players",
+    "column_name": "is_satellite_qualifier",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tournament_players",
+    "column_name": "rebuy_prompt_until",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tournament_players",
+    "column_name": "push_15m_sent",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tournament_players",
+    "column_name": "push_2m_sent",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tournament_players",
+    "column_name": "source_satellite_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tournament_players",
+    "column_name": "elimination_sequence",
+    "sql_type": "bigint",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tournament_players",
+    "column_name": "terminal_closed_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "id",
+    "sql_type": "uuid",
+    "default_sql": "gen_random_uuid()",
+    "not_null": true
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "name",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "description",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "game_type",
+    "sql_type": "text",
+    "default_sql": "'NLH'::text",
+    "not_null": true
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "variant",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "buy_in_amount",
+    "sql_type": "numeric(15,2)",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "buy_in_fee",
+    "sql_type": "numeric(15,2)",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "guaranteed_prize",
+    "sql_type": "numeric(15,2)",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "start_time",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "status",
+    "sql_type": "text",
+    "default_sql": "'ANNOUNCED'::text",
+    "not_null": true
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "current_players",
+    "sql_type": "integer",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "max_players",
+    "sql_type": "integer",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "late_reg_mins",
+    "sql_type": "integer",
+    "default_sql": "60",
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "starting_chips",
+    "sql_type": "integer",
+    "default_sql": "10000",
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "blind_structure",
+    "sql_type": "text",
+    "default_sql": "'Standard'::text",
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "payout_structure",
+    "sql_type": "text",
+    "default_sql": "'Standard'::text",
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "created_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": "now()",
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "updated_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": "now()",
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "club_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "started_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "ended_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "current_level",
+    "sql_type": "integer",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "prize_pool",
+    "sql_type": "numeric(18,2)",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "is_rebuy",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "add_on_available",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "rebuy_cost",
+    "sql_type": "numeric(15,2)",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "rebuy_chips",
+    "sql_type": "integer",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "rebuy_levels",
+    "sql_type": "integer",
+    "default_sql": "4",
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "addon_cost",
+    "sql_type": "numeric(15,2)",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "addon_chips",
+    "sql_type": "integer",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "min_players",
+    "sql_type": "integer",
+    "default_sql": "3",
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "tournament_type",
+    "sql_type": "text",
+    "default_sql": "'MTT'::text",
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "is_bounty",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "bounty_amount",
+    "sql_type": "numeric(15,2)",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "is_pko",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "is_mystery_bounty",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "mystery_bounty_min",
+    "sql_type": "numeric(15,2)",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "mystery_bounty_max",
+    "sql_type": "numeric(15,2)",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "is_xmtt",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "union_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "is_multi_day",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "parent_tournament_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "flight_number",
+    "sql_type": "integer",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "day_number",
+    "sql_type": "integer",
+    "default_sql": "1",
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "total_days",
+    "sql_type": "integer",
+    "default_sql": "1",
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "flight_end_chips_snapshot",
+    "sql_type": "jsonb",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "survivors_advance_to",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "is_pinned",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "spin_multiplier",
+    "sql_type": "numeric",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "is_premium_spin",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "prize_pool_finalized",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "is_turbo",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "blind_speed",
+    "sql_type": "text",
+    "default_sql": "'standard'::text",
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "spin_type",
+    "sql_type": "text",
+    "default_sql": "'standard'::text",
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "total_rake",
+    "sql_type": "numeric(18,2)",
+    "default_sql": "0",
+    "not_null": true
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "late_reg_levels",
+    "sql_type": "integer",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "addon_levels",
+    "sql_type": "integer",
+    "default_sql": "1",
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "is_reentry",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "satellite_target",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "max_rebuys",
+    "sql_type": "integer",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "max_reentries",
+    "sql_type": "integer",
+    "default_sql": "0",
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "level_started_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "addon_period_triggered",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "satellite_target_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "final_table_triggered",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": true
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "bounty_pool",
+    "sql_type": "numeric(18,2)",
+    "default_sql": "0",
+    "not_null": true
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "bounty_pool_paid",
+    "sql_type": "numeric",
+    "default_sql": "0",
+    "not_null": true
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "on_break",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": true
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "break_started_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "break_ends_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "is_private",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": true
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "spin_locked_tiers",
+    "sql_type": "jsonb",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "short_description",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "is_vip_only",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": true
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "ban_chat",
+    "sql_type": "boolean",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "all_in_or_fold",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": true
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "label_as_new",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": true
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "hide_club_name",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": true
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "action_time_seconds",
+    "sql_type": "integer",
+    "default_sql": "15",
+    "not_null": true
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "table_size",
+    "sql_type": "integer",
+    "default_sql": "9",
+    "not_null": true
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "accelerated_mtt",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": true
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "addon_break_minutes",
+    "sql_type": "integer",
+    "default_sql": "1",
+    "not_null": true
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "big_blind_ante",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": true
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "authorized_to_register",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": true
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "early_bird_enabled",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": true
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "early_bird_chips",
+    "sql_type": "integer",
+    "default_sql": "0",
+    "not_null": true
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "bubble_protection",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": true
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "final_table_deal_enabled",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": true
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "restart_every_minutes",
+    "sql_type": "integer",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "synchronized_breaks",
+    "sql_type": "boolean",
+    "default_sql": "true",
+    "not_null": true
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "satellite_seats",
+    "sql_type": "integer",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "schedule_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "mystery_bounty_activation",
+    "sql_type": "text",
+    "default_sql": "'at_the_money'::text",
+    "not_null": true
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "mystery_bounty_activation_value",
+    "sql_type": "numeric",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "mystery_bounty_profile",
+    "sql_type": "text",
+    "default_sql": "'classic'::text",
+    "not_null": true
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "mystery_bounty_top_percent",
+    "sql_type": "numeric",
+    "default_sql": "20",
+    "not_null": true
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "mystery_bounty_regular_pool_percent",
+    "sql_type": "numeric",
+    "default_sql": "50",
+    "not_null": true
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "mystery_bounty_pool_percent",
+    "sql_type": "numeric",
+    "default_sql": "50",
+    "not_null": true
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "mystery_bounty_stage",
+    "sql_type": "text",
+    "default_sql": "'pending'::text",
+    "not_null": true
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "mystery_bounty_activated_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "mystery_bounty_activated_players",
+    "sql_type": "integer",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "mystery_bounty_pool_cents",
+    "sql_type": "bigint",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "allow_rabbit_hunt",
+    "sql_type": "boolean",
+    "default_sql": "true",
+    "not_null": true
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "spin_reveal_lag_ms",
+    "sql_type": "integer",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "addon_period_started_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "addon_period_ends_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "payout_percent",
+    "sql_type": "smallint",
+    "default_sql": "10",
+    "not_null": true
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "free_buy",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": true
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "addon_from_start",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": true
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "spin_reveal_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "mystery_bounty_activation_generation",
+    "sql_type": "bigint",
+    "default_sql": "0",
+    "not_null": true
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "entry_contract_locked",
+    "sql_type": "boolean",
+    "default_sql": "false",
+    "not_null": true
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "blind_level_state",
+    "sql_type": "jsonb",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "payout_math_version",
+    "sql_type": "smallint",
+    "default_sql": "1",
+    "not_null": true
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "payout_unit_cents",
+    "sql_type": "integer",
+    "default_sql": "1",
+    "not_null": true
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "format_contract",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "tournaments",
+    "column_name": "restart_source_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "wallet_credit_idempotency",
+    "column_name": "key",
+    "sql_type": "text",
+    "default_sql": null,
+    "not_null": true
+  },
+  {
+    "table_name": "wallet_credit_idempotency",
+    "column_name": "user_id",
+    "sql_type": "uuid",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "wallet_credit_idempotency",
+    "column_name": "amount",
+    "sql_type": "numeric",
+    "default_sql": null,
+    "not_null": false
+  },
+  {
+    "table_name": "wallet_credit_idempotency",
+    "column_name": "created_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": "now()",
+    "not_null": true
+  }
+]

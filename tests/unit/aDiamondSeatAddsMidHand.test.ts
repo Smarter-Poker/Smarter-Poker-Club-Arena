@@ -100,16 +100,16 @@ describe('a mid-hand Diamond top-up takes nothing until it lands', () => {
   });
 });
 
-describe('what a Diamond table honestly does not have', () => {
-  /* Phase 7 exit: "unsupported features remain honestly unavailable." These
-     two are unavailable BY CONSTRUCTION rather than by omission, and the
-     difference matters: nothing has to be remembered to keep them off. */
-  it('has no cluster, because the boundary refuses one', () => {
+describe('a Diamond table keeps the declared cluster boundary', () => {
+  it('requires the supported cluster shape rather than accepting any cluster id', () => {
     const boundary = at('server/src/domain/DiamondCashBoundary.ts');
-    expect(boundary).toMatch(/table\.cluster_id != null/);
+    expect(boundary).toContain('!hasDiamondCashClusterShape(table)');
+    expect(boundary).toContain("['opening', 'live', 'breaking']");
+    expect(boundary).toContain("table.role === 'feeder'");
+    expect(boundary).toContain("table.role === 'main'");
   });
 
-  it('so the seat change and must-move doors cannot be reached at all', () => {
+  it('retains the historical unclustered creation shape for pre-activation compatibility', () => {
     /* `fn_cash_seat_change_request` looks its game up in `cash_games` and
        refuses a game that is not `must_move`. A Diamond table belongs to no
        cluster, so it has no `cash_games` row, so there is no game id to pass

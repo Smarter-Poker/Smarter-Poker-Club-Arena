@@ -1341,6 +1341,8 @@ export function evaluateRemainingVariantPolicy(
       dealerSeat: s.dealerSeat!,
       rakeConfig: rake,
       bbjConfig: s.bbjConfig ?? null,
+      diamondCashFees: s.diamondCashFees,
+      doubleBoard: (s.communityCards2?.length ?? 0) > 0,
       withinBudget: () => now() - economicsStart < REMAINING_VARIANT_DOMAIN.netActionBudgetMs,
       now,
     });

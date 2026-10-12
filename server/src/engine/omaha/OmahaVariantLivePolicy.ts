@@ -1222,6 +1222,8 @@ export function evaluateOmahaVariantPolicy(
       dealerSeat: s.dealerSeat!,
       rakeConfig: rake,
       bbjConfig: s.bbjConfig ?? null,
+      diamondCashFees: s.diamondCashFees,
+      doubleBoard: (s.communityCards2?.length ?? 0) > 0,
       withinBudget: () => now() - economicsStart < OMAHA_VARIANT_NET_ACTION_BUDGET_MS,
       now,
     });

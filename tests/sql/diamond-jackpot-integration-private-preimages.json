@@ -1,0 +1,14 @@
+[
+  {
+    "name": "smarter_private.assert_retained_hand_submission",
+    "signature": "smarter_private.assert_retained_hand_submission(jsonb)",
+    "body_md5": "1bd5f0f6fc7070e073478bdab317e249",
+    "definition": "CREATE OR REPLACE FUNCTION smarter_private.assert_retained_hand_submission(p_request jsonb)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog'\nAS $function$\nDECLARE s smarter_private.hand_submissions; consumed integer;\nBEGIN\n PERFORM pg_advisory_xact_lock(hashtextextended('hand:submission:'||(p_request->>'p_table_id')||':'||(p_request->>'p_hand_number'),0));\n SELECT * INTO s FROM smarter_private.hand_submissions\n WHERE table_id=(p_request->>'p_table_id')::uuid AND hand_number=(p_request->>'p_hand_number')::bigint;\n IF NOT FOUND OR s.request IS NOT DISTINCT FROM p_request THEN RETURN; END IF;\n IF (s.request-'p_instance_id'-'p_lease_generation') IS NOT DISTINCT FROM\n    (p_request-'p_instance_id'-'p_lease_generation') THEN\n  DELETE FROM smarter_private.hand_submission_dispatch d WHERE d.transaction_id=txid_current()\n   AND d.submission_id=s.submission_id AND d.request_hash=s.request_hash\n   AND d.instance_id=p_request->>'p_instance_id'\n   AND d.lease_generation=(p_request->>'p_lease_generation')::uuid;\n  GET DIAGNOSTICS consumed=ROW_COUNT;\n  IF consumed=1 THEN RETURN; END IF;\n END IF;\n RAISE EXCEPTION 'HAND_SUBMISSION_ORIGINAL_PAYLOAD_REQUIRED' USING ERRCODE='55000';\nEND $function$\n"
+  },
+  {
+    "name": "smarter_private.f06_hand_dispatch_guard",
+    "signature": "smarter_private.f06_hand_dispatch_guard(uuid,bigint)",
+    "body_md5": "0adb860f94a9776de4aa24ffa461af88",
+    "definition": "CREATE OR REPLACE FUNCTION smarter_private.f06_hand_dispatch_guard(tid uuid, hn bigint)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public', 'smarter_private'\nAS $function$\nDECLARE h smarter_private.f06_hand_permits;\nBEGIN\n SELECT * INTO h FROM smarter_private.f06_hand_permits WHERE table_id=tid AND hand_number=hn;\n IF FOUND THEN\n IF h.state IN ('never_started','aborted_unsettled') THEN RAISE EXCEPTION 'F06_HAND_PERMIT_FENCED' USING ERRCODE='55000'; END IF;\n IF h.state='reserved' THEN\n IF NOT pg_try_advisory_xact_lock(hashtextextended('f06:hand:'||h.permit_id::text,0)) THEN RAISE EXCEPTION 'F06_HAND_DISPATCH_BUSY' USING ERRCODE='55P03'; END IF;\n INSERT INTO smarter_private.f06_hand_dispatch VALUES(h.permit_id,txid_current()) ON CONFLICT(permit_id) DO UPDATE SET xid=EXCLUDED.xid;\n END IF;\n ELSIF EXISTS(SELECT 1 FROM smarter_private.f06_operations WHERE source_table_id=tid AND state NOT IN ('acknowledged','withdrawn_before_manifest')) THEN\n RAISE EXCEPTION 'F06_UNPERMITTED_HAND' USING ERRCODE='55000';\n END IF;\nEND $function$\n"
+  }
+]

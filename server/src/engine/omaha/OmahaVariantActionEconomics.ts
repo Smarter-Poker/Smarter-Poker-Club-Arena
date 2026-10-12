@@ -145,6 +145,8 @@ export interface OmahaVariantActionEconomicsInput {
   dealerSeat: number;
   rakeConfig: RakeConfig;
   bbjConfig: HandConfig['bbjConfig'] | null;
+  diamondCashFees?: import('../../domain/diamondCashFeeSnapshot.js').DiamondCashFeeSnapshot;
+  doubleBoard?: boolean;
   /** False stops further work. A line short of the minimum sample count is
    * reported unavailable rather than averaged over whatever finished. */
   withinBudget?: () => boolean;
@@ -327,6 +329,9 @@ export function omahaVariantActionEconomics(
       settlement,
       rakeConfig: input.rakeConfig,
       bbjConfig: input.bbjConfig,
+      diamondCashFees: input.diamondCashFees,
+      variant: input.variant,
+      doubleBoard: input.doubleBoard,
       asset: input.asset,
       gameMode: input.gameMode,
       bigBlind: input.bigBlind,

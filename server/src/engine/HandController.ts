@@ -21,7 +21,12 @@ import {
   compareHands,
   compareLowHands,
 } from './PokerEngine.js';
+import {
+  snapshotDiamondCashFees,
+  type DiamondCashFeeSnapshot,
+} from '../domain/diamondCashFeeSnapshot.js';
 import { priceDiamondCashRake } from '../domain/diamondCashRakeSchedule.js';
+import { priceDiamondCashJackpotDrop } from '../domain/diamondCashJackpotSchedule.js';
 import { wholeDiamondsContributed } from './diamondCashRakeFacts.js';
 import {
   isFixedLimitVariant,
@@ -3924,11 +3929,17 @@ export class HandController {
     asset: 'chips' | 'diamonds';
     chipUnit: 0.01 | 1;
     bbjConfig: HandConfig['bbjConfig'] | null;
+    diamondCashFees?: DiamondCashFeeSnapshot;
   } {
     return {
       asset: this.config.asset === 'diamonds' ? 'diamonds' : 'chips',
       chipUnit: this.config.isTournament || this.config.asset === 'diamonds' ? 1 : 0.01,
       bbjConfig: this.config.bbjConfig ? { ...this.config.bbjConfig } : null,
+      ...(this.config.asset === 'diamonds' &&
+      !this.config.isTournament &&
+      this.config.diamondRakeSchedule
+        ? { diamondCashFees: snapshotDiamondCashFees(this.config.diamondRakeSchedule) }
+        : {}),
     };
   }
 
@@ -4141,11 +4152,23 @@ export class HandController {
            money. The settler reads that same expression as `hand_saw_flop`. */
         sawFlop: flopCounts,
       });
-      /* A Diamond pays no jackpot drop - B14 to B22 are unanswered and the
-         settler refuses a non-zero one by name - so there is nothing for the
-         pot-overage clamp below to yield, and the pricer has already refused
-         a rake larger than the pot. */
-      return { rake: diamondRake, bbjFee: 0 };
+      /* Rake and jackpot drops share the independent whole-Diamond schedule.
+         Refuse an impossible combined deduction rather than clipping a fee. */
+      const bbjFee = diamondSchedule.jackpot
+        ? priceDiamondCashJackpotDrop(diamondSchedule.jackpot, {
+            pot: this.state.players.reduce(
+              (total, player) => total + wholeDiamondsContributed(player.totalInvested ?? 0),
+              0
+            ),
+            dealtIn: this.state.players.length,
+            sawFlop: flopCounts,
+            variant: this.config.gameVariant,
+            doubleBoard:
+              this.state.communityCards2.length > 0 || this.state.communityCards3.length > 0,
+          })
+        : 0;
+      if (diamondRake + bbjFee > pot) throw new Error('diamond_jackpot_deductions_exceed_pot');
+      return { rake: diamondRake, bbjFee };
     }
     const rake = calculateRake(pot, flopCounts, this.config.rakeConfig, playerCount);
 

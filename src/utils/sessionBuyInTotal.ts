@@ -59,6 +59,13 @@ export function mergeSessionFacts(input: {
   } | null;
   if (!f || typeof f !== 'object') return input.now;
   const count = (v: unknown): number | null => {
+    if (
+      v === null ||
+      v === undefined ||
+      (typeof v !== 'number' && typeof v !== 'string') ||
+      (typeof v === 'string' && !v.trim())
+    )
+      return null;
     const n = Number(v);
     return Number.isFinite(n) && n >= 0 ? Math.floor(n) : null;
   };
@@ -70,7 +77,9 @@ export function mergeSessionFacts(input: {
   const wonSince = Math.max(0, input.now.handsWon - input.atAsk.handsWon);
   return {
     startMs:
-      Number.isFinite(started) && started > 0 ? Math.min(started, input.now.startMs) : input.now.startMs,
+      Number.isFinite(started) && started > 0
+        ? Math.min(started, input.now.startMs)
+        : input.now.startMs,
     handsPlayed: played === null ? input.now.handsPlayed : played + playedSince,
     handsWon: won === null ? input.now.handsWon : won + wonSince,
     peakStack:

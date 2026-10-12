@@ -1,0 +1,7 @@
+[
+  {
+    "signature": "fn_bbj_pool_for_club(uuid)",
+    "body_md5": "d6c793b7024df9d031cb93c9879ead75",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_bbj_pool_for_club(p_club_id uuid)\n RETURNS TABLE(pool_id uuid, main_balance numeric, backup_balance numeric, promo_balance numeric, is_union_pool boolean, union_id uuid)\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\n  WITH club AS (\n    SELECT c.id, c.union_id FROM public.clubs c WHERE c.id = p_club_id\n  )\n  SELECT bp.id,\n         bp.main_balance,\n         bp.backup_balance,\n         bp.promo_balance,\n         bp.union_id IS NOT NULL,\n         bp.union_id\n  FROM public.bbj_pools bp, club\n  WHERE bp.status = 'active'\n    AND (\n      (club.union_id IS NOT NULL AND bp.union_id = club.union_id)\n      OR (club.union_id IS NULL AND bp.club_id = club.id)\n    )\n  -- Union pool wins if a stale club-level row also exists (matches the server).\n  ORDER BY (bp.union_id IS NOT NULL) DESC\n  LIMIT 1;\n$function$\n"
+  }
+]

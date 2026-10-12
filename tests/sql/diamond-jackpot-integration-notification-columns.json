@@ -1,0 +1,306 @@
+[
+  {
+    "table_name": "notifications",
+    "column_name": "id",
+    "data_type": "uuid",
+    "udt_name": "uuid",
+    "is_nullable": "NO",
+    "column_default": "gen_random_uuid()"
+  },
+  {
+    "table_name": "notifications",
+    "column_name": "user_id",
+    "data_type": "uuid",
+    "udt_name": "uuid",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "notifications",
+    "column_name": "type",
+    "data_type": "text",
+    "udt_name": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "notifications",
+    "column_name": "title",
+    "data_type": "text",
+    "udt_name": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "notifications",
+    "column_name": "message",
+    "data_type": "text",
+    "udt_name": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "notifications",
+    "column_name": "data",
+    "data_type": "jsonb",
+    "udt_name": "jsonb",
+    "is_nullable": "YES",
+    "column_default": "'{}'::jsonb"
+  },
+  {
+    "table_name": "notifications",
+    "column_name": "read",
+    "data_type": "boolean",
+    "udt_name": "bool",
+    "is_nullable": "YES",
+    "column_default": "false"
+  },
+  {
+    "table_name": "notifications",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "udt_name": "timestamptz",
+    "is_nullable": "YES",
+    "column_default": "now()"
+  },
+  {
+    "table_name": "notifications",
+    "column_name": "updated_at",
+    "data_type": "timestamp with time zone",
+    "udt_name": "timestamptz",
+    "is_nullable": "YES",
+    "column_default": "now()"
+  },
+  {
+    "table_name": "notifications",
+    "column_name": "is_read",
+    "data_type": "boolean",
+    "udt_name": "bool",
+    "is_nullable": "YES",
+    "column_default": "false"
+  },
+  {
+    "table_name": "notifications",
+    "column_name": "action_url",
+    "data_type": "text",
+    "udt_name": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "notifications",
+    "column_name": "metadata",
+    "data_type": "jsonb",
+    "udt_name": "jsonb",
+    "is_nullable": "YES",
+    "column_default": "'{}'::jsonb"
+  },
+  {
+    "table_name": "notifications",
+    "column_name": "actor_id",
+    "data_type": "uuid",
+    "udt_name": "uuid",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "notifications",
+    "column_name": "link",
+    "data_type": "text",
+    "udt_name": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "notifications",
+    "column_name": "read_at",
+    "data_type": "timestamp with time zone",
+    "udt_name": "timestamptz",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "user_notification_preferences",
+    "column_name": "user_id",
+    "data_type": "uuid",
+    "udt_name": "uuid",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "user_notification_preferences",
+    "column_name": "tournament_reminders",
+    "data_type": "boolean",
+    "udt_name": "bool",
+    "is_nullable": "YES",
+    "column_default": "true"
+  },
+  {
+    "table_name": "user_notification_preferences",
+    "column_name": "social_mentions",
+    "data_type": "boolean",
+    "udt_name": "bool",
+    "is_nullable": "YES",
+    "column_default": "true"
+  },
+  {
+    "table_name": "user_notification_preferences",
+    "column_name": "friend_activity",
+    "data_type": "boolean",
+    "udt_name": "bool",
+    "is_nullable": "YES",
+    "column_default": "false"
+  },
+  {
+    "table_name": "user_notification_preferences",
+    "column_name": "venue_alerts",
+    "data_type": "boolean",
+    "udt_name": "bool",
+    "is_nullable": "YES",
+    "column_default": "true"
+  },
+  {
+    "table_name": "user_notification_preferences",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "udt_name": "timestamptz",
+    "is_nullable": "NO",
+    "column_default": "timezone('utc'::text, now())"
+  },
+  {
+    "table_name": "user_notification_preferences",
+    "column_name": "updated_at",
+    "data_type": "timestamp with time zone",
+    "udt_name": "timestamptz",
+    "is_nullable": "NO",
+    "column_default": "timezone('utc'::text, now())"
+  },
+  {
+    "table_name": "user_notification_preferences",
+    "column_name": "tracked_tours",
+    "data_type": "ARRAY",
+    "udt_name": "_text",
+    "is_nullable": "YES",
+    "column_default": "'{}'::text[]"
+  },
+  {
+    "table_name": "user_notification_preferences",
+    "column_name": "home_game_rsvp_confirmations",
+    "data_type": "boolean",
+    "udt_name": "bool",
+    "is_nullable": "YES",
+    "column_default": "true"
+  },
+  {
+    "table_name": "user_notification_preferences",
+    "column_name": "home_game_reminders",
+    "data_type": "boolean",
+    "udt_name": "bool",
+    "is_nullable": "YES",
+    "column_default": "true"
+  },
+  {
+    "table_name": "user_notification_preferences",
+    "column_name": "home_game_announcements",
+    "data_type": "boolean",
+    "udt_name": "bool",
+    "is_nullable": "YES",
+    "column_default": "true"
+  },
+  {
+    "table_name": "user_notification_preferences",
+    "column_name": "home_game_host_requests",
+    "data_type": "boolean",
+    "udt_name": "bool",
+    "is_nullable": "YES",
+    "column_default": "true"
+  },
+  {
+    "table_name": "user_notification_preferences",
+    "column_name": "home_game_new_game_posted",
+    "data_type": "boolean",
+    "udt_name": "bool",
+    "is_nullable": "YES",
+    "column_default": "true"
+  },
+  {
+    "table_name": "user_notification_preferences",
+    "column_name": "home_game_cancellations",
+    "data_type": "boolean",
+    "udt_name": "bool",
+    "is_nullable": "YES",
+    "column_default": "true"
+  },
+  {
+    "table_name": "user_notification_preferences",
+    "column_name": "home_game_review_prompts",
+    "data_type": "boolean",
+    "udt_name": "bool",
+    "is_nullable": "YES",
+    "column_default": "false"
+  },
+  {
+    "table_name": "user_notification_preferences",
+    "column_name": "home_game_post_likes",
+    "data_type": "boolean",
+    "udt_name": "bool",
+    "is_nullable": "NO",
+    "column_default": "true"
+  },
+  {
+    "table_name": "user_notification_preferences",
+    "column_name": "home_game_post_comments",
+    "data_type": "boolean",
+    "udt_name": "bool",
+    "is_nullable": "NO",
+    "column_default": "true"
+  },
+  {
+    "table_name": "user_notification_preferences",
+    "column_name": "live_notifications",
+    "data_type": "boolean",
+    "udt_name": "bool",
+    "is_nullable": "YES",
+    "column_default": "true"
+  },
+  {
+    "table_name": "user_notification_preferences",
+    "column_name": "messenger_alerts",
+    "data_type": "boolean",
+    "udt_name": "bool",
+    "is_nullable": "YES",
+    "column_default": "true"
+  },
+  {
+    "table_name": "user_notification_preferences",
+    "column_name": "daily_challenges",
+    "data_type": "boolean",
+    "udt_name": "bool",
+    "is_nullable": "YES",
+    "column_default": "true"
+  },
+  {
+    "table_name": "user_notification_preferences",
+    "column_name": "diamond_rewards",
+    "data_type": "boolean",
+    "udt_name": "bool",
+    "is_nullable": "YES",
+    "column_default": "true"
+  },
+  {
+    "table_name": "user_notification_preferences",
+    "column_name": "club_updates",
+    "data_type": "boolean",
+    "udt_name": "bool",
+    "is_nullable": "YES",
+    "column_default": "true"
+  },
+  {
+    "table_name": "user_notification_preferences",
+    "column_name": "daily_mission_reminders",
+    "data_type": "boolean",
+    "udt_name": "bool",
+    "is_nullable": "NO",
+    "column_default": "false"
+  }
+]

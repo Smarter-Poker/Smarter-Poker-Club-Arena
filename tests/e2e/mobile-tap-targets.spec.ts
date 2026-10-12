@@ -60,6 +60,8 @@ async function requireDataRouteReady(page: import('@playwright/test').Page, rout
     // supported redirect for a failed navigation. Every other required route
     // remains exact below.
     await expect(page.locator('[data-page="club-data"]')).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole('heading', { name: 'Club Data', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Advanced', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Read The Room', exact: true })).toBeVisible();
     const dataLink = page
       .getByRole('navigation', { name: 'Club Operations Sections' })

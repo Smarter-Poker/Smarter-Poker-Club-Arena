@@ -68,7 +68,7 @@ async function openClubData(page: Page, testInfo: TestInfo): Promise<ClubDataAcc
   await page.goto(new URL(CLUB_DATA_PATH, configuredBase).toString());
   await page.waitForLoadState('domcontentloaded');
   const gate = page.getByRole('heading', { name: /This Tool Is Restricted/i });
-  const workspace = page.getByRole('heading', { name: /Read The Room/i });
+  const workspace = page.getByRole('heading', { name: 'Club Data', exact: true });
   await expect
     .poll(
       async () =>
@@ -88,6 +88,9 @@ async function openClubData(page: Page, testInfo: TestInfo): Promise<ClubDataAcc
 
   await expect(workspace).toBeVisible({ timeout: 60_000 });
   await expect(page.locator('[data-page="club-data"]')).toBeVisible();
+  await expect(page.locator('[data-club-data-mode="simple"]')).toBeVisible();
+  await page.getByRole('button', { name: 'Advanced', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Read The Room', exact: true })).toBeVisible();
   await expect(page.getByRole('list', { name: 'Games' }).getByRole('listitem').first()).toBeVisible(
     {
       timeout: 60_000,

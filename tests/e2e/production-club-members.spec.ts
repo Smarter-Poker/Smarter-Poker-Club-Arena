@@ -401,10 +401,16 @@ test.describe('Production Shark Club Players', () => {
     await openMembers(page, probe);
     const sort = page.getByRole('combobox', { name: 'Sort Players' });
     await completeNextPageRead(probe, () => sort.selectOption('name'), 'workspace name sort');
-    await page.locator('.members-columns summary').click();
+    await page
+      .locator('.members-columns summary')
+      .filter({ hasText: /^Columns$/ })
+      .click();
     const fees = page.getByRole('checkbox', { name: 'Fees', exact: true });
     await fees.uncheck();
-    await page.locator('.members-columns summary').click();
+    await page
+      .locator('.members-columns summary')
+      .filter({ hasText: /^Columns$/ })
+      .click();
     const viewport = page.locator('.members-viewport');
     await viewport.evaluate((node) => {
       node.scrollTop = 448;
@@ -434,9 +440,15 @@ test.describe('Production Shark Club Players', () => {
     await expect
       .poll(() => viewport.evaluate((node) => node.scrollTop), { timeout: 30_000 })
       .toBe(448);
-    await page.locator('.members-columns summary').click();
+    await page
+      .locator('.members-columns summary')
+      .filter({ hasText: /^Columns$/ })
+      .click();
     await expect(fees).not.toBeChecked();
-    await page.locator('.members-columns summary').click();
+    await page
+      .locator('.members-columns summary')
+      .filter({ hasText: /^Columns$/ })
+      .click();
     await expect(page.getByRole('region', { name: 'Selected Players' })).toHaveCount(0);
 
     const search = page.getByRole('searchbox', { name: 'Search Club Members' });
@@ -473,7 +485,7 @@ test.describe('Production Shark Club Players', () => {
         '.members-hero',
         '.members-console',
         '.members-list',
-        '.members-count',
+        '.members-count[role="status"]',
         '.members-search',
         '.members-search input',
         '.members-sort',

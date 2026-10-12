@@ -1,11 +1,11 @@
--- @live-proof: (SELECT count(*) FROM public.tournament_tickets tk WHERE tk.status='issued' AND tk.redemption_mode='tournament_entry_only' AND tk.source_satellite_award_place IS NOT NULL AND tk.source_refund_entitlement_id IS NULL AND tk.created_at>='2026-09-17 21:45:00+00' AND tk.created_at<'2026-09-17 21:45:00+00' AND public.fn_ca_satellite_ticket_target_is_closed(tk.source_tournament_id))=0
+-- @live-proof: (SELECT count(*) FROM public.tournament_tickets tk WHERE tk.status='issued' AND tk.redemption_mode='tournament_entry_only' AND tk.source_satellite_award_place IS NOT NULL AND tk.source_refund_entitlement_id IS NULL AND tk.created_at>='2026-09-12 19:00:00+00' AND tk.created_at<'2026-09-17 21:45:00+00' AND public.fn_ca_satellite_ticket_target_is_closed(tk.source_tournament_id))=0
 --
 -- THE STRANDED SATELLITE TICKETS ARE PAID IN CASH, PART 2 OF 5 (2026-10-12).
 --
 -- 20261012054804 made a closed target pay its satellite tickets in cash at
 -- the moment it closes. Tickets whose target had already closed before that
 -- change were stranded in ticket escrow; this pays the ones issued from
--- 2026-09-17 21:45:00+00 to 2026-09-17 21:45:00+00 through the same door,
+-- 2026-09-12 19:00:00+00 to 2026-09-17 21:45:00+00 through the same door,
 -- fn_ca_pay_closed_target_ticket_in_cash, once each, keyed
 -- ticket:<id>:closed-target-cash. Every holder is a player owed the value
 -- of a satellite seat that could no longer be used; every one is paid
@@ -20,6 +20,25 @@
 BEGIN;
 SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '60s';
+-- Refuse a changed cohort before calling any payment door. This migration
+-- was still uninstalled when its empty lower/upper interval was corrected.
+DO $preimage$
+DECLARE v_count integer; v_amount numeric;
+BEGIN
+  SELECT count(*), COALESCE(sum(tk.value),0) INTO v_count, v_amount
+    FROM public.tournament_tickets tk
+   WHERE tk.status='issued' AND tk.redemption_mode='tournament_entry_only'
+     AND tk.source_satellite_award_place IS NOT NULL
+     AND tk.source_refund_entitlement_id IS NULL
+     AND tk.created_at>='2026-09-12 19:00:00+00'
+     AND tk.created_at<'2026-09-17 21:45:00+00'
+     AND public.fn_ca_satellite_ticket_target_is_closed(tk.source_tournament_id);
+  IF v_count<>190 OR v_amount<>7730.00 THEN
+    RAISE EXCEPTION 'STRANDED_TICKET_CASH_PREIMAGE_CHANGED: part 2 has % tickets worth %',
+      v_count,v_amount;
+  END IF;
+END
+$preimage$;
 DO $settle$
 DECLARE
   v_id uuid;
@@ -34,7 +53,7 @@ BEGIN
   END IF;
   FOR v_id,v_value IN
     SELECT tk.id,tk.value FROM public.tournament_tickets tk
-     WHERE tk.status='issued' AND tk.redemption_mode='tournament_entry_only' AND tk.source_satellite_award_place IS NOT NULL AND tk.source_refund_entitlement_id IS NULL AND tk.created_at>='2026-09-17 21:45:00+00' AND tk.created_at<'2026-09-17 21:45:00+00' AND public.fn_ca_satellite_ticket_target_is_closed(tk.source_tournament_id)
+     WHERE tk.status='issued' AND tk.redemption_mode='tournament_entry_only' AND tk.source_satellite_award_place IS NOT NULL AND tk.source_refund_entitlement_id IS NULL AND tk.created_at>='2026-09-12 19:00:00+00' AND tk.created_at<'2026-09-17 21:45:00+00' AND public.fn_ca_satellite_ticket_target_is_closed(tk.source_tournament_id)
      ORDER BY tk.created_at,tk.id
   LOOP
     v_r:=public.fn_ca_pay_closed_target_ticket_in_cash(v_id,'stranded_ticket_settlement_20261012');
@@ -59,7 +78,7 @@ BEGIN
             SELECT 'ticket:'||x::text||':closed-target-cash' FROM unnest(v_ids) x)
             AND l.from_type='escrow' AND l.to_type='player_wallet'
             AND l.category='ticket_redeem')<>v_sum
-     OR EXISTS (SELECT 1 FROM public.tournament_tickets tk WHERE tk.status='issued' AND tk.redemption_mode='tournament_entry_only' AND tk.source_satellite_award_place IS NOT NULL AND tk.source_refund_entitlement_id IS NULL AND tk.created_at>='2026-09-17 21:45:00+00' AND tk.created_at<'2026-09-17 21:45:00+00' AND public.fn_ca_satellite_ticket_target_is_closed(tk.source_tournament_id)) THEN
+     OR EXISTS (SELECT 1 FROM public.tournament_tickets tk WHERE tk.status='issued' AND tk.redemption_mode='tournament_entry_only' AND tk.source_satellite_award_place IS NOT NULL AND tk.source_refund_entitlement_id IS NULL AND tk.created_at>='2026-09-12 19:00:00+00' AND tk.created_at<'2026-09-17 21:45:00+00' AND public.fn_ca_satellite_ticket_target_is_closed(tk.source_tournament_id)) THEN
     RAISE EXCEPTION 'STRANDED_TICKET_CASH_RESULT_CHANGED: receipts disagree for % tickets worth %',v_n,v_sum;
   END IF;
   RAISE NOTICE 'stranded satellite tickets paid in cash, part 2: % tickets worth %',v_n,v_sum;

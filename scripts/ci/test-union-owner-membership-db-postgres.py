@@ -471,7 +471,7 @@ try:
         require(q("live", f"SELECT md5(pg_get_functiondef('{sig}'::regprocedure)) || md5(prosrc) FROM pg_proc WHERE oid = '{sig}'::regprocedure") == d + s,
                 f"production's {sig} rebuilt from main's migrations byte for byte (definition md5 {d})")
     early = proofs("live")
-    require(len(PROOFS) == 4 and all(p != "true" for p in early), f"no @live-proof is true before the install ({early})")
+    require(len(PROOFS) == 5 and all(p != "true" for p in early), f"no @live-proof is true before the install ({early})")
 
     before = observe("live")
     failing = {k for k, ok in before.items() if not ok}

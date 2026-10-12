@@ -89,3 +89,62 @@ On every table (both arenas share the masthead): the club line 0.48rem to
 and brighter. `FELT_TEXT_BAND.lineHeightPx` grew from 11 to 14 so the dealer
 button keeps clear of the taller printing; the chip-rail and seat-plate
 geometry tests still pass.
+
+## Continuation checkpoint: seated reloads (Codex 01a13096, 2026-10-12)
+
+Scope: finish the listed phase-1 UI and session-recap fixes. Must-move and
+BBJ/Mini BBJ remain separate later phases; their acceptance details were not
+present in the supplied handoff. The original PR #6732 is merged at
+`a09c5f6967daf0dd8234c6bd91b747727f29095c`. Its source is included in the
+published client `514f1116886208d0f36eaee61db7a434351f3d74`, publisher
+`38259327997` (terminal success), verified at both required build-info URLs.
+
+Recovery found migration `20261012062409` already installed under its exact
+name. Both function bodies match the merged migration: baseline source MD5
+`1e9269b437fbce253d2c31e4690d77a1`, facts source MD5
+`2d544bf1d32c7fea07481ea7202f17cd`. Both remain stable SECURITY DEFINER,
+owned by postgres, search_path public/pg_temp, authenticated/service_role
+execution only (anon denied). No migration was replayed. Read-only custody
+and hand-history evidence confirms the reported session: 4,000 reserved,
+1,376 returned, 20 hands, 33.67 minutes, result -2,624.
+
+The remaining connected defect was at the client trigger: restoration was
+inside `mappedHero && mappedHero.stack > 0`, then inside the zero-buy-in seed.
+A cash player reloading while sitting out is absent from the hand roster;
+a busted seat has no positive stack. Neither asked for the recorded session.
+Restoration now follows the occupied cash seat and account/table identity,
+independent of hand participation or stack. Cleanup and identity checks reject
+late answers after departure or account/table changes. Existing server reads,
+counter merge rules and financial transactions are preserved.
+
+Regression: the new occupied-seat gate check failed on the prior source;
+after the repair the exact effect callback restores 4,000/20 hands/the original
+start for absent-hand seats at stacks 1,376 and 0, and ignores a delayed answer
+after cleanup. Focused table laws and recap tests pass (43 tests before adding
+the three effect behavior cases; final recap file 8 tests). App TypeScript
+compilation passes. Required exact-candidate hook/CI, protected merge,
+publication and final affected live proof remain pending for this follow-up.
+
+Live observation of the existing release: black lobby, six loaded painted
+footer doors, larger felt labels, dealer puck beside its seat at desktop and
+375px, document clientWidth=scrollWidth=375. No personal gameplay or financial
+probe was performed. Live-table interoperability job in run `38260238523`
+passed with actual-hand/reconnect cases and isolated-account cleanup. Its
+client browser job failed specifically at Cashier database/browser checks;
+that broad job is not represented as passed and is outside this UI repair.
+
+Owner policies read in full through the canonical reader at
+2026-10-12T14:55:28.290Z, version 2.9, manifest
+`a659f31c5c1c2b0864889508079a635dd5fe2fc98decfbfc9d3f9c80dd45ec3b`.
+Canonical paths: /Users/smarter.poker/Documents/{AGENTS.md,
+AGENT-OPERATING-LAW.md,AGENT-HARDENING-STANDARD.md,AGENT-REFERENCE-INDEX.md}.
+Their hashes respectively: b9478d0331314413d8e12c41210b63479cdcabc1f86ed3fdcb3251efa36e6349,
+a8bc3c04dce3354ebdd51a89c0b7d715af3344edcc794d33f6b3ad64506961d5,
+d5fc451ce5caf6d6b5e64597a13883e1246581678fe53c962339d0a66136993e,
+adce89c3f838f2f373cd504a00329d53906404d1dd42a647f672af6c16f95555.
+Portable canonical comparison passed; repository AGENTS/CLAUDE/playbook,
+PUBLISHING and deploy-paths read. Current checkout instructions match the
+canonical clone. SSD disk7s4 mounted with space. Owner of this follow-up is
+Codex 01a13096 on branch `fix/diamond-recap-seated-reload-01a13096`, base
+`8ab126a4ab2a64bf0ee578a119698da2ca92bcb5`, private checkout under
+/Volumes/SmarterWork/agent-work/diamond-arena-ui-resume-01a13096/repo.

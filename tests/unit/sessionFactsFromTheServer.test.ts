@@ -9,6 +9,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import ts from 'typescript';
 import { mergeSessionFacts, sessionBuyInTotal } from '../../src/utils/sessionBuyInTotal';
 
 const ROOT = join(__dirname, '..', '..');
@@ -20,7 +21,129 @@ const MIGRATION = readFileSync(
   'utf8'
 );
 
+// Execute the owning React effect's actual callback. Only its remote reads
+// are replaced; counter merging and writes to the summary refs stay real.
+function restoreOccupiedSeat(stack: number, delayed = false) {
+  const src = readFileSync(join(ROOT, 'src/pages/TablePage.tsx'), 'utf8');
+  const ast = ts.createSourceFile(
+    'TablePage.tsx',
+    src,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX
+  );
+  let effect: ts.Expression | undefined;
+  const visit = (node: ts.Node) => {
+    if (
+      ts.isCallExpression(node) &&
+      node.expression.getText(ast) === 'useEffect' &&
+      node.arguments[0]?.getText(ast).includes("supabase.rpc('fn_my_table_session_facts'")
+    ) {
+      effect = node.arguments[0];
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(ast);
+  if (!effect) throw new Error('the table session restoration effect is missing');
+  const ref = (current: number) => ({ current });
+  const refs = {
+    totalBuyInRef: ref(0),
+    sessionStartRef: ref(Date.parse('2026-10-12T06:17:00Z')),
+    handsPlayedRef: ref(0),
+    handsWonRef: ref(0),
+    peakStackRef: ref(stack),
+  };
+  let deliver!: () => void;
+  const ready = delayed
+    ? new Promise<void>((resolve) => {
+        deliver = resolve;
+      })
+    : Promise.resolve();
+  const currentKey = { current: 'table:player' as string | null };
+  const context = {
+    ...refs,
+    tableId: 'table',
+    sessionRestoreKey: 'table:player',
+    tableState: { heroSeat: 1, players: [] },
+    heroRowStack: stack,
+    sessionBaselineTableRef: currentKey,
+    mergeSessionFacts,
+    sessionBuyInTotal,
+    supabase: {
+      rpc: async (name: string, args: { p_table_id: string }) => {
+        await ready;
+        if (args.p_table_id !== 'table') return { data: null, error: 'wrong table' };
+        return {
+          error: null,
+          data:
+            name === 'fn_my_cash_session_baseline'
+              ? 4000
+              : {
+                  started_at: '2026-10-12T05:47:04.687Z',
+                  hands_played: 20,
+                  hands_won: 9,
+                  peak_stack: 4099,
+                },
+        };
+      },
+    },
+  };
+  const cleanup = new Function(...Object.keys(context), `return (${effect.getText(ast)})();`)(
+    ...Object.values(context)
+  ) as () => void;
+  return { refs, cleanup, currentKey, deliver: () => deliver?.() };
+}
+
 describe('the Session Complete card reads the whole session', () => {
+  it.each([1376, 0])(
+    'restores the server recap for a seat outside the hand with stack %s',
+    async (stack) => {
+      const { refs } = restoreOccupiedSeat(stack);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(refs.totalBuyInRef.current).toBe(4000);
+      expect(refs.handsPlayedRef.current).toBe(20);
+      expect(refs.sessionStartRef.current).toBe(Date.parse('2026-10-12T05:47:04.687Z'));
+      expect(refs.peakStackRef.current).toBe(4099);
+      expect(1376 - refs.totalBuyInRef.current).toBe(-2624);
+    }
+  );
+
+  it('does not apply a pending answer after the seat is left', async () => {
+    const { refs, cleanup, deliver } = restoreOccupiedSeat(1376, true);
+    cleanup();
+    deliver();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(refs.totalBuyInRef.current).toBe(1376);
+    expect(refs.handsPlayedRef.current).toBe(0);
+  });
+  it('restores an occupied seat even when the hero is absent from the hand or has zero stack', () => {
+    const src = readFileSync(join(ROOT, 'src/pages/TablePage.tsx'), 'utf8');
+    const ast = ts.createSourceFile(
+      'TablePage.tsx',
+      src,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TSX
+    );
+    const gates: string[] = [];
+    const visit = (node: ts.Node) => {
+      if (
+        ts.isCallExpression(node) &&
+        node.expression.getText(ast) === 'supabase.rpc' &&
+        node.arguments[0]?.getText(ast) === "'fn_my_table_session_facts'"
+      ) {
+        for (let parent = node.parent; parent; parent = parent.parent) {
+          if (ts.isIfStatement(parent)) gates.push(parent.expression.getText(ast));
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(ast);
+    expect(
+      gates.some((gate) => /mappedHero|totalBuyInRef/.test(gate)),
+      'a sitting-out or busted occupied seat must not wait for a funded hand participant'
+    ).toBe(false);
+  });
   it("Dan's session: the server's figures replace the counts that restarted at the reload", () => {
     const reloadAt = Date.parse('2026-10-12T06:17:00Z');
     const atAsk = { startMs: reloadAt, handsPlayed: 0, handsWon: 0, peakStack: 976 };
@@ -39,7 +162,9 @@ describe('the Session Complete card reads the whole session', () => {
     expect(merged.handsWon).toBe(10);
     expect(merged.peakStack).toBe(4099);
     // And the buy-in: the server's 4,000, not the 976 on the felt at the reload.
-    expect(sessionBuyInTotal({ serverBaseline: '4000', totalAtAsk: 976, totalNow: 976 })).toBe(4000);
+    expect(sessionBuyInTotal({ serverBaseline: '4000', totalAtAsk: 976, totalNow: 976 })).toBe(
+      4000
+    );
   });
 
   it('an unreadable answer leaves the page figures alone', () => {
@@ -63,7 +188,9 @@ describe('the Session Complete card reads the whole session', () => {
   });
 
   it('the buy-in read answers for a Diamond seat, and both reads are bound to the caller', () => {
-    expect(MIGRATION).toContain("JOIN public.poker_diamond_movements m ON m.custody_id = c.id AND m.action = 'reserve'");
+    expect(MIGRATION).toContain(
+      "JOIN public.poker_diamond_movements m ON m.custody_id = c.id AND m.action = 'reserve'"
+    );
     expect(MIGRATION).toContain("AND c2.purpose = 'cash_seat'");
     expect(MIGRATION.match(/auth\.uid\(\)/g)?.length ?? 0).toBeGreaterThanOrEqual(6);
     expect(MIGRATION).toContain(

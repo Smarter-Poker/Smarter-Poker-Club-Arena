@@ -2623,11 +2623,6 @@ function LiveTablePage({
     };
   }, [tableId, userId]);
 
-  /* Which table the server's session baseline has been asked for, and which
-     table this page is on now (so a late answer for another table is dropped). */
-  const sessionBaselineAskedRef = useRef<string | null>(null);
-  const sessionBaselineTableRef = useRef<string | undefined>(tableId);
-  sessionBaselineTableRef.current = tableId;
   // Phase 1.1 PR-3: apply authoritative engine snapshot to tableState when
   // the feature flag is on. This one effect replaces the entire Supabase-
   // Realtime-as-game-state path (which PR-5 deletes). The mapping is pure
@@ -2666,61 +2661,6 @@ function LiveTablePage({
     if (mappedHero && mappedHero.stack > 0) {
       if (totalBuyInRef.current === 0) {
         totalBuyInRef.current = mappedHero.stack;
-        /* THE STACK IS ONLY A PLACEHOLDER (launch audit 2026-10-05). After a
-           reload the stack at this moment is not what was bought in: a player
-           down 300 was shown roughly break-even at leave. The platform keeps
-           the true figure for the open cash session; ask for it once and use
-           it (see utils/sessionBuyInTotal). A table with no cash session, or
-           a read that fails, leaves the placeholder exactly as before. */
-        const askedFor = tableId;
-        const totalAtAsk = totalBuyInRef.current;
-        if (askedFor && userId && sessionBaselineAskedRef.current !== askedFor) {
-          sessionBaselineAskedRef.current = askedFor;
-          /* The rest of the Session Complete card from the same open session
-             (Dan 2026-10-12): start time, hands, wins and peak survive a
-             reload too. See utils/sessionBuyInTotal mergeSessionFacts. */
-          const factsAtAsk = {
-            startMs: sessionStartRef.current,
-            handsPlayed: handsPlayedRef.current,
-            handsWon: handsWonRef.current,
-            peakStack: peakStackRef.current,
-          };
-          void Promise.resolve(supabase.rpc('fn_my_table_session_facts', { p_table_id: askedFor }))
-            .then(({ data, error }) => {
-              if (error || sessionBaselineTableRef.current !== askedFor) return;
-              const merged = mergeSessionFacts({
-                serverFacts: data,
-                atAsk: factsAtAsk,
-                now: {
-                  startMs: sessionStartRef.current,
-                  handsPlayed: handsPlayedRef.current,
-                  handsWon: handsWonRef.current,
-                  peakStack: peakStackRef.current,
-                },
-              });
-              sessionStartRef.current = merged.startMs;
-              handsPlayedRef.current = merged.handsPlayed;
-              handsWonRef.current = merged.handsWon;
-              peakStackRef.current = merged.peakStack;
-            })
-            .catch(() => {
-              /* the page's own counts stand */
-            });
-          void Promise.resolve(
-            supabase.rpc('fn_my_cash_session_baseline', { p_table_id: askedFor })
-          )
-            .then(({ data, error }) => {
-              if (error || sessionBaselineTableRef.current !== askedFor) return;
-              totalBuyInRef.current = sessionBuyInTotal({
-                serverBaseline: data,
-                totalAtAsk,
-                totalNow: totalBuyInRef.current,
-              });
-            })
-            .catch(() => {
-              /* the placeholder stands */
-            });
-        }
       }
       if (peakStackRef.current === 0) peakStackRef.current = mappedHero.stack;
     }
@@ -4588,6 +4528,67 @@ function LiveTablePage({
     hadShowdownRef,
     resetSession,
   } = useTableSession(tableId);
+  /* A sitting-out or busted cash seat still owns a session. Restore from
+     seat ownership, not from the current hand's funded-player list. */
+  const hasCashSessionSeat = tableState.heroSeat > 0 && !tableState.isTournament;
+  const sessionRestoreKey =
+    tableId && userId && userId !== 'guest' && hasCashSessionSeat ? `${tableId}:${userId}` : null;
+  const sessionBaselineTableRef = useRef<string | null>(sessionRestoreKey);
+  sessionBaselineTableRef.current = sessionRestoreKey;
+  useEffect(() => {
+    if (!sessionRestoreKey || !tableId) return;
+    let active = true;
+    const askedFor = tableId;
+    const askedKey = sessionRestoreKey;
+    const heroStack = tableState.players[tableState.heroSeat - 1]?.stack ?? heroRowStack;
+    if (totalBuyInRef.current === 0 && heroStack > 0) totalBuyInRef.current = heroStack;
+    const totalAtAsk = totalBuyInRef.current;
+    const factsAtAsk = {
+      startMs: sessionStartRef.current,
+      handsPlayed: handsPlayedRef.current,
+      handsWon: handsWonRef.current,
+      peakStack: peakStackRef.current,
+    };
+    void Promise.resolve(supabase.rpc('fn_my_table_session_facts', { p_table_id: askedFor }))
+      .then(({ data, error }) => {
+        if (error || !active || sessionBaselineTableRef.current !== askedKey) return;
+        const merged = mergeSessionFacts({
+          serverFacts: data,
+          atAsk: factsAtAsk,
+          now: {
+            startMs: sessionStartRef.current,
+            handsPlayed: handsPlayedRef.current,
+            handsWon: handsWonRef.current,
+            peakStack: peakStackRef.current,
+          },
+        });
+        sessionStartRef.current = merged.startMs;
+        handsPlayedRef.current = merged.handsPlayed;
+        handsWonRef.current = merged.handsWon;
+        peakStackRef.current = merged.peakStack;
+      })
+      .catch(() => {
+        /* the page's own counts stand */
+      });
+    void Promise.resolve(supabase.rpc('fn_my_cash_session_baseline', { p_table_id: askedFor }))
+      .then(({ data, error }) => {
+        if (error || !active || sessionBaselineTableRef.current !== askedKey) return;
+        totalBuyInRef.current = sessionBuyInTotal({
+          serverBaseline: data,
+          totalAtAsk,
+          totalNow: totalBuyInRef.current,
+        });
+      })
+      .catch(() => {
+        /* the placeholder stands */
+      });
+    return () => {
+      active = false;
+    };
+    // The key changes only with account/table/seat ownership. Stack and hand
+    // updates must not restart a read or re-add already restored counters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionRestoreKey]);
   const actionLockRef = useRef(false); // Debounce rapid action button taps (300ms)
 
   // LIVE E2E FIX 2026-08-15 (first change shipped via the agent-patch

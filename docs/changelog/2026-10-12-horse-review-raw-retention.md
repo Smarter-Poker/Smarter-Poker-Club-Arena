@@ -1,0 +1,7 @@
+# Eight-day raw horse review retention
+
+The existing review store retained cards, board and full action logs for thirty days. The settled original horse-only disposal certificate now removes only these three raw fields after eight days, within the original hand retention transaction. A shared hand reservation prevents concurrent or delayed review publication from restoring expired raw content. Review identities, monetary results, leak tags, diagnostics, rollup values and original replay digests remain unchanged.
+
+The existing review pruner compacts bounded batches and permits its thirty-day whole-row deletion only for qualified original horse-only successful settlements. Human, mixed, unknown, disputed and unresolved originals remain protected. No new schedule, financial correction or release loop is created. Historical records with no independently qualified completion certificate remain unknown and retain their evidence.
+
+Native PostgreSQL qualification uses the real original disposal owner and atomic review publisher, with fail-before/pass-after, exact replay/conflict refusal, concurrent publication, protected originals, exact nonraw/rollup/receipt equality, late publication and migration replay refusal. The maintained adaptive native harness invokes the review qualification directly. Production installation and live readback remain the parent operation owner's responsibility.

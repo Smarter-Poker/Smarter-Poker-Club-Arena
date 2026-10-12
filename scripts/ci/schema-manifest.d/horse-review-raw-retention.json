@@ -1,0 +1,8 @@
+{
+  "functions": [
+    "smarter_private.horse_review_raw_disposable",
+    "smarter_private.horse_review_raw_retention_guard",
+    "smarter_private.compact_horse_review_raw",
+    "smarter_private.horse_review_raw_on_disposal"
+  ]
+}

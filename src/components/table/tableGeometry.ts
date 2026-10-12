@@ -326,13 +326,10 @@ export const CHIP_COLLECT_FRACTION = 0.9;
  * `h` is the avatar slot plus the name plate less `--sp-wrap-overlap`, the
  * negative margin that tucks the avatar into the plate:
  *
- *     <=380   52 + 31 - 4  =  79      seat width 72     hero 79 x 96
- *     <=480   58 + 35 - 5  =  88      seat width 80     hero 88 x 108
- *     <=640   66 + 39 - 6  =  99      seat width 88     hero 101 x 121
- *     else    84 + 44 - 6  = 122      seat width 96     hero 128 x 150
- *
- * The hero column is the same sum with the avatar at `--seat-avatar-hero-ratio`
- * (4/3) and the seat at 8/7 of THAT, which is what `.seat--hero` declares.
+ * Readability update, October 12: the plate fills the seat and is at least
+ * 48px tall on phones and 54px otherwise. The enlarged pod bounds below
+ * preserve chip and dealer-marker clearance. The hero keeps its avatar ratio
+ * and now shares the text-width floor with every other player.
  *
  * NOT MODELLED, deliberately: the action label, the position chip and the
  * hand-name pill. All three are transient, all three are drawn ABOVE or BESIDE
@@ -345,10 +342,10 @@ export const SEAT_POD_LADDER: ReadonlyArray<{
   readonly villain: Size;
   readonly hero: Size;
 }> = [
-  { maxViewportWidthPx: 380, villain: { w: 72, h: 79 }, hero: { w: 79, h: 96 } },
-  { maxViewportWidthPx: 480, villain: { w: 80, h: 88 }, hero: { w: 88, h: 108 } },
-  { maxViewportWidthPx: 640, villain: { w: 88, h: 99 }, hero: { w: 101, h: 121 } },
-  { maxViewportWidthPx: Infinity, villain: { w: 96, h: 122 }, hero: { w: 128, h: 150 } },
+  { maxViewportWidthPx: 380, villain: { w: 100, h: 96 }, hero: { w: 100, h: 113 } },
+  { maxViewportWidthPx: 480, villain: { w: 104, h: 101 }, hero: { w: 104, h: 121 } },
+  { maxViewportWidthPx: 640, villain: { w: 112, h: 108 }, hero: { w: 112, h: 130 } },
+  { maxViewportWidthPx: Infinity, villain: { w: 98, h: 132 }, hero: { w: 128, h: 160 } },
 ];
 
 /**

@@ -260,7 +260,33 @@ export function dealerButtonPositionClearOfSeat(
       }
     }
   }
-  return best ?? placed;
+  if (best) return best;
+
+  // A larger nameplate can close both the straight retreat and the rim swing.
+  // Search their combination within the same finite bounds, retaining every
+  // chip, board, masthead and seat-ownership predicate above.
+  for (let retreat = 2; retreat <= 30; retreat += 2) {
+    const vx = pv.x - cv.x;
+    const vy = pv.y - cv.y;
+    const length = Math.hypot(vx, vy);
+    if (length <= retreat) break;
+    const scale = (length - retreat) / length;
+    for (let i = 1; i <= 16; i++) {
+      for (const dir of [1, -1]) {
+        const phi = dir * i * 1.5 * (Math.PI / 180);
+        const cand = clampIntoFelt(
+          {
+            x: cv.x + scale * (vx * Math.cos(phi) - vy * Math.sin(phi)),
+            y: ((cv.y + scale * (vx * Math.sin(phi) + vy * Math.cos(phi))) * size.w) / size.h,
+          },
+          size,
+          BUTTON_FELT_MARGIN_WIDTH_PCT
+        );
+        if (clear(cand)) return cand;
+      }
+    }
+  }
+  return placed;
 }
 
 export interface DealerButtonProps {

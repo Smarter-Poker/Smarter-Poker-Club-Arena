@@ -40,6 +40,7 @@ import {
   FELT_WINDOW,
   buttonRadiusWidthPct,
   dealerButtonPosition,
+  seatPodPx,
 } from '../src/components/table/tableGeometry';
 
 /**
@@ -95,7 +96,7 @@ const SIZES = [2, 3, 4, 5, 6, 7, 8, 9] as const;
  * 380 / 480 / 640 rungs), because over-stating the box only ever makes these
  * assertions stricter.
  */
-const seatBoxWPx = (feltW: number) => Math.max(96, feltW * 0.158 * 1.143);
+const seatBoxWPx = (feltW: number) => Math.max(98, feltW * 0.158 * 1.143);
 
 const SEAT_CSS = readFileSync(resolve(__dirname, '../src/components/table/SeatSlot.css'), 'utf8');
 
@@ -131,9 +132,10 @@ describe('the seat box this file measures against is the one the stylesheet draw
     expect(width, 'the base `.seat` rule no longer declares a width').toBeTruthy();
     expect(
       width![1].replace(/\s+/g, ' '),
-      'seatBoxWPx() above models max(96px, --seat-avatar-full * 1.143); if this ' +
+      'seatBoxWPx() above models the readable floor and --seat-avatar-full * 1.143; if this ' +
         'changed, update that function and re-read the failures'
-    ).toBe('max(96px, calc(var(--seat-avatar-full) * 1.143))');
+    ).toBe('max(var(--seat-plate-min-width), calc(var(--seat-avatar-full) * 1.143))');
+    expect(seatRule![1]).toMatch(/--seat-plate-min-width:\s*98px/);
   });
 });
 
@@ -275,8 +277,12 @@ describe('the seat BOXES stand clear of the cards, not just the markers', () => 
       const halfH = (cardW * (92 / 64) * (table.w / table.h)) / 2;
       const centreX = FELT_WINDOW.left + FELT_WINDOW.width / 2;
       const centreY = FELT_WINDOW.top + (BOARD_TOP_FELT_PCT / 100) * FELT_WINDOW.height;
-      const seatHalfX = (seatBoxWPx(table.w) / 2 / table.w) * 100;
-      const seatHalfY = (seatBoxWPx(table.w) / 2 / table.h) * 100;
+      const pod = seatPodPx(
+        label.startsWith('phone') ? 375 : label.startsWith('tablet') ? 768 : 1440,
+        false
+      );
+      const seatHalfX = (Math.max(pod.w, table.w * 0.158 * 1.143) / 2 / table.w) * 100;
+      const seatHalfY = (pod.h / 2 / table.h) * 100;
 
       for (const n of SIZES) {
         for (const seat of SEAT_LAYOUTS[n]) {

@@ -757,7 +757,9 @@ try {
   );
   if (
     scheduleError ||
-    schedule?.name !== 'Daily $25 Freezeout' ||
+    schedule?.name !== 'Daily 25 Chip Freezeout' ||
+    schedule?.config?.name !== 'Daily 25 Chip Freezeout' ||
+    JSON.stringify(schedule).includes('$') ||
     schedule?.active !== true ||
     schedule?.interval_minutes !== null ||
     JSON.stringify(schedule?.days_of_week) !== JSON.stringify([0, 1, 2, 3, 4, 5, 6]) ||
@@ -767,7 +769,8 @@ try {
     schedule?.config?.recurrenceCadence !== 'daily'
   ) {
     throw (
-      scheduleError || new Error('Daily 7 PM $25 Welcome Tournament Was Not Configured Exactly.')
+      scheduleError ||
+      new Error('Daily 7 PM 25 Chip Welcome Tournament Was Not Configured Exactly.')
     );
   }
 

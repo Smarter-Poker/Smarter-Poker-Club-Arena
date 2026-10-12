@@ -20,6 +20,40 @@ import {
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 
+describe('bomb reveal starts from an actual engine snapshot', () => {
+  it('ignores bootstrap null and the first snapshot, then arms a later transition once', () => {
+    const page = read('src/pages/TablePage.tsx');
+    const start = page.indexOf('const bombWheelSeenRef');
+    const from = page.indexOf('useEffect(() => {', start) + 'useEffect(() => {'.length;
+    const to = page.indexOf('\n  }, [', from);
+    const body = page.slice(from, to).replace(/ as number/g, '');
+    const seen = { current: undefined as number | null | undefined };
+    const pending = { current: null as number | null };
+    const run = new Function(
+      'engineSnapshot',
+      'tableState',
+      'bombWheelSeenRef',
+      'bombWheelPendingRef',
+      'BOMB_WHEEL_MIN_HANDS',
+      'BOMB_WHEEL_MAX_HANDS',
+      body
+    );
+    const step = (snapshot: { bomb_pot_in: number | null } | null) =>
+      run(snapshot, { bombPotIn: snapshot?.bomb_pot_in ?? null }, seen, pending, 1, 5);
+    step(null);
+    step({ bomb_pot_in: 3 });
+    expect(pending.current).toBeNull();
+    step({ bomb_pot_in: null });
+    step({ bomb_pot_in: 2.5 });
+    expect(pending.current).toBeNull();
+    step({ bomb_pot_in: 5 });
+    expect(pending.current).toBe(5);
+    pending.current = null;
+    step({ bomb_pot_in: 4 });
+    expect(pending.current).toBeNull();
+  });
+});
+
 describe('a multi-board bomb pot is never offered a rabbit hunt (spec §19)', () => {
   const SETTLEMENT = read('server/src/engine/ServerTableEngineSettlement.ts');
 

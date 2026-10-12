@@ -2685,9 +2685,7 @@ function LiveTablePage({
             handsWon: handsWonRef.current,
             peakStack: peakStackRef.current,
           };
-          void Promise.resolve(
-            supabase.rpc('fn_my_table_session_facts', { p_table_id: askedFor })
-          )
+          void Promise.resolve(supabase.rpc('fn_my_table_session_facts', { p_table_id: askedFor }))
             .then(({ data, error }) => {
               if (error || sessionBaselineTableRef.current !== askedFor) return;
               const merged = mergeSessionFacts({
@@ -7806,8 +7804,12 @@ function LiveTablePage({
    */
   const bombWheelSeenRef = useRef<number | null | undefined>(undefined);
   useEffect(() => {
-    const n = tableState.bombPotIn;
-    const inWindow = n != null && n >= BOMB_WHEEL_MIN_HANDS && n <= BOMB_WHEEL_MAX_HANDS;
+    // Bootstrap state is not a server observation. Read the authoritative
+    // frame directly so the mapped-state render cannot consume the first frame.
+    if (!engineSnapshot) return;
+    const n = typeof engineSnapshot.bomb_pot_in === 'number' ? engineSnapshot.bomb_pot_in : null;
+    const inWindow =
+      n != null && Number.isInteger(n) && n >= BOMB_WHEEL_MIN_HANDS && n <= BOMB_WHEEL_MAX_HANDS;
     const wasFirstSnapshot = bombWheelSeenRef.current === undefined;
     const wasInWindow = bombWheelSeenRef.current != null && bombWheelSeenRef.current !== undefined;
     bombWheelSeenRef.current = inWindow ? (n as number) : null;
@@ -7834,7 +7836,7 @@ function LiveTablePage({
     if (wasFirstSnapshot) return;
 
     bombWheelPendingRef.current = n as number;
-  }, [tableState.bombPotIn]);
+  }, [engineSnapshot]);
 
   /* A reveal scheduled at a hand boundary must not fire into an unmounted
      tree (leave table, tab close, table switch). */
@@ -24219,6 +24221,7 @@ function LiveTablePage({
       <BombPotWheel
         handsAway={bombWheelHands}
         contained={isMultiTable}
+        playSounds={ambientSoundsAllowed}
         onDone={() => setBombWheelHands(null)}
       />
       <SpinWheel

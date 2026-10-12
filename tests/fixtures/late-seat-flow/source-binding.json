@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Retained original cash-flow/native inputs only; custody pins do not establish production installation or complete weekly financial basis.",
+  "sourceFiles": {
+    "tests/fixtures/late-seat-flow/README.md": "b0350c74bd53abdb4b5fd0a855a38e890d3d17cdbad678410c57b00f8024f7f0",
+    "tests/fixtures/late-seat-flow/access-preimage.sql": "cf76bce74c69f696cf665cca58c4777a6ec80f222386f2deae80fe414174c160",
+    "tests/fixtures/late-seat-flow/admission-preimages.sql": "1d52d13b0a0ce886986bae451401057c66d17c627eb009614eb8d1b55b9f033b",
+    "tests/fixtures/late-seat-flow/admission-refusals.py": "72b90110925e3384b2fed487abe1a883a5be494d33dd576b80b296092a78aeec",
+    "tests/fixtures/late-seat-flow/after.sql": "2168ad3378acd304652a226d36afd0767a3ca2f5b5b84173910ee4a42e71100d",
+    "tests/fixtures/late-seat-flow/arithmetic-prefix.sql": "9ecbf6cb60fe5dd4eb836a7ff6189d163e2acbe5d731af55724169bf4392c0ed",
+    "tests/fixtures/late-seat-flow/arithmetic.py": "6a7fb98d909f56346507c6690f26038f540fbcd8e5609326c9bbfb475b6d7720",
+    "tests/fixtures/late-seat-flow/before.sql": "d7184ec21b96892cdac5feb49f82bb21ff22a9497398bf502d48f4f190833729",
+    "tests/fixtures/late-seat-flow/boundaries.sql": "4d6c9f1afd7156627cb3c9bf58931013921b5b045f7911ae8b96b00ca095c217",
+    "tests/fixtures/late-seat-flow/captured-moves.jsonb": "188b1433daf396af7be62e74faa776523759c112ca93b84b0d45c59b779cb502",
+    "tests/fixtures/late-seat-flow/captured.jsonb": "c21e1f776edd99a7429e72c919c7a1e2e8f80496b880f821a8f15b718ab2d84f",
+    "tests/fixtures/late-seat-flow/compact-preimages.sql": "41fd661a669365ab09beb67d25fcc216949ba35df93724477cd97a939ca3ccf1",
+    "tests/fixtures/late-seat-flow/consumer-preimage.sql": "48135612968146700d90bf61fad0364aee79262af5ebcdefcb67b2e7745a2625",
+    "tests/fixtures/late-seat-flow/flow-preimage.sql": "cdb83cb3a34be7e2f9b03d0b16792edd57dafb6ab2de76f0ef76e80ed76fb355",
+    "tests/fixtures/late-seat-flow/load-captured.py": "178b17a0ca1c685a029d5ee39b3632df5744f00a1217dc2647e1bd5db327ffe2",
+    "tests/fixtures/late-seat-flow/report-preimage.sql": "2c78575eb5f58d8057ec9932ee0e569242329631f1d117b4bbb16943f7627831",
+    "tests/fixtures/late-seat-flow/retained-cases.sql": "359a233bc9807beb4154b366a8018b199e4fd4146ed6e2f9aaab8580be54c0fe",
+    "tests/fixtures/late-seat-flow/retained-key-preimage.sql": "703d29579b2081d4e68876256bcb2c4ba7fc880fa849a1c3e5469ef614c18653",
+    "tests/fixtures/late-seat-flow/retained-preimages.sql": "0e41b2d97e11a42f32fd838b9251995afc9e527a23ebc69868cd593607017622",
+    "tests/fixtures/late-seat-flow/schema-additions.sql": "f545762dfd546ab3936d7bb7e96f859100ebfe3c04b4f08649f6c8ac66b421c0",
+    "tests/fixtures/late-seat-flow/unused-original-dependencies.sql": "3e32e2b707377d32f910ee97789fbd223a868acb04b0c7c3a4f05bf1a2096345",
+    "scripts/dev/probe-late-seat-flow-pg17.sh": "c3425f94bc8227e9d88fa1c4f58744b862701a48c83144d8939cf23269301d98",
+    "supabase/migrations/20261012201712_late_departed_seat_settlement_proves_its_original_cash_flow.sql": "1d4118810368ba4cf8ab2a702148b34189708f435c6b307baba9fae46980e8b2",
+    "tests/fixtures/union-pnl-blocked-resolution/schema.sql": "3f5650d78cbb5e171283ce9ddff00afd1f5a697c39be251d6557e93bdda94c91",
+    "tests/fixtures/original-unchanged-stack/schema-additions.sql": "e0311274a5580043825a8b53b6eba5bcca8429e394b038522515acaf3a71ef02",
+    "tests/fixtures/original-unchanged-stack/cents-preimage.sql": "b1af50bae98d16e1d4a640193b669b7f174cfdf2819b8177638d44d512235c10",
+    "tests/fixtures/original-unchanged-stack/lineage-preimage.sql": "c49581ca3d55ecfab6499d5d82beb4dab098cb87d35e19d546403323d6003c69"
+  }
+}

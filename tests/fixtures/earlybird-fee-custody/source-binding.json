@@ -15,7 +15,7 @@
     "tests/fixtures/earlybird-fee-custody/credit-originals.json": "76b7a6152c538bd051754e0a17106a14e86458968132bea26f03c339ad77b439",
     "supabase/migrations/20260918122532_five_original_spin_standings_retain_their_recorded_cash_outc.sql": "9f6e0b02abea54394d317c6d20f8e47ae10edefc9ba6c12f6542c23daf4540c4",
     ".prettierignore": "4b3e2f36fddf7498665cf2a3bada347614dd73cfde793f9ab27aad1f38d88c08",
-    "tests/unit/fixtureNativeCi.test.ts": "a551b56b884f8b2b7d1178fcdf3dab45baed2b14e858951e63ef9efb59feaadc",
+    "tests/unit/fixtureNativeCi.test.ts": "1c15f0cb0c8ccafde67739316baa3be1bf6f822aec54c687138afb1c50f1cc09",
     "tests/fixtures/earlybird-fee-custody/README.md": "ae19f37a0179956d0d26c64f626fa401c10b4319f0d7d8453f8993d811e98536"
   },
   "restamp_audit": [
@@ -298,6 +298,63 @@
       "tests/unit/fixtureNativeCi.test.ts": {
         "before": "6f25ef0b33cddfb9b5c0ed46ce689381f2aaedfd7b2ebb2cb8d1c7012463c560",
         "after": "a551b56b884f8b2b7d1178fcdf3dab45baed2b14e858951e63ef9efb59feaadc"
+      }
+    }
+  },
+  "playerCommandGroupedHistoryFormatting20261012": {
+    "reason": "Normal commit formatter wrapped only the reviewed AST wiring assertion. Refresh its active source hash and dependent binding bytes, preserving every historical object, assertion, financial input and status. This is source identity only.",
+    "changes": [
+      {
+        "section": "repository_files",
+        "path": "tests/unit/fixtureNativeCi.test.ts",
+        "previous": "2602f828643e8fd24e26999eaf065198dc41ae3ae841468db11a95d2d9928dfd",
+        "current": "f867b62425be1cbfd13c75afc3122eb1dac05b2ac093d63eb27d87ca0846b572"
+      }
+    ]
+  },
+  "playerCommandGroupedHistoryQualification20261012": {
+    "reason": "Group the unchanged exact history qualifier under the existing Player Command totals owner. Reviewed checked bounded child execution and AST wiring test; shared CI is byte-identical to protected main. Preserve every historical object, financial input and qualification status. Task audit keys reordered without value changes solely to avoid shared append conflicts; active fingerprints are source identity, not production qualification.",
+    "changes": [
+      {
+        "section": "repository_files",
+        "path": "tests/unit/fixtureNativeCi.test.ts",
+        "previous": "630e3537f398803817236eb916d27d256d8a0d89c8dc9aa4ca84e3a25838bddd",
+        "current": "2602f828643e8fd24e26999eaf065198dc41ae3ae841468db11a95d2d9928dfd"
+      }
+    ]
+  },
+  "playerCommandHistoryRebinding20261012": {
+    "reason": "Reviewed only additive exact history qualifier classification and four source-routing assertions. Existing financial inputs, assertions, historical audit entries and qualification status are unchanged. Source identity is not financial runtime certification.",
+    "changes": [
+      {
+        "file": "tests/unit/fixtureNativeCi.test.ts",
+        "from": "1e9a652b80aa851fb95d7780aeb6b62d360a7b61192c27edd9112ecd0b636392",
+        "to": "d87f24e32a12cbf7028887a83b540f36af478c80f30e0c208b7bd274fc849805"
+      }
+    ]
+  },
+  "playerCommandHistoryRecoveryIntegration20261012": {
+    "reason": "Preserve both history and native recovery enforcement, independent historical audit records and qualification status. Refresh only reviewed active workflow/classifier/test and nested source binding hashes; this is source identity, not financial or live qualification.",
+    "changes": [
+      {
+        "section": "repository_files",
+        "path": "tests/unit/fixtureNativeCi.test.ts",
+        "previousOwn": "d87f24e32a12cbf7028887a83b540f36af478c80f30e0c208b7bd274fc849805",
+        "previousMain": "14a67e65f162b0c02c406ae9b24726852f5d5678c28f01ba861633b9c6ea9682",
+        "current": "630e3537f398803817236eb916d27d256d8a0d89c8dc9aa4ca84e3a25838bddd"
+      }
+    ]
+  },
+  "scopedLaunchMainIntegration20261012Final": {
+    "reason": "Preserve protected concurrent qualification and scoped reset source with combined source fingerprints only. All financial inputs, assertions and historical qualification statuses remain intact. Source identity is not runtime proof.",
+    "previous_pins": {
+      ".prettierignore": {
+        "ours": "4b3e2f36fddf7498665cf2a3bada347614dd73cfde793f9ab27aad1f38d88c08",
+        "incoming": "09ce1f38a5e012220b004ee809caf9fdcf0e61d9d72e924fd82341de73d53874"
+      },
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "ours": "a551b56b884f8b2b7d1178fcdf3dab45baed2b14e858951e63ef9efb59feaadc",
+        "incoming": "f867b62425be1cbfd13c75afc3122eb1dac05b2ac093d63eb27d87ca0846b572"
       }
     }
   }

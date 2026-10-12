@@ -1,0 +1,8 @@
+{
+  "_owner": "feat/player-command-phase4-history-20261012: observed through configured Supabase SQL readback after exact qualified installation 20261012150322 at 2026-10-12T15:03Z; reader/helper postgres-owned authenticated-only, producer postgres-only. The task checkpoint retains live catalog, trigger, policy and definition hashes. This fragment is supplemental source identity and does not replace live installation proof.",
+  "functions": [
+    "ca_club_player_history",
+    "ca_player_history_can_read",
+    "fn_publish_player_history_change"
+  ]
+}

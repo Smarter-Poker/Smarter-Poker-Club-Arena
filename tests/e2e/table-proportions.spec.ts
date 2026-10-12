@@ -582,3 +582,55 @@ test.describe('a short ring sits lower and gives up no width (Dan 2026-09-23, it
     expect(offenders).toEqual([]);
   });
 });
+
+test('the enlarged player plates stay inside the phone viewport on every ring', async ({
+  page,
+}) => {
+  const { seatPodPx, fitSeatToViewport } = await import('../../src/components/table/tableGeometry');
+  const { SEAT_LAYOUTS } = await import('../../src/lib/tableSeatGeometry');
+  for (const width of [320, 375, 393, 430, 784]) {
+    await page.setViewportSize({ width, height: 1087 });
+    await page.setContent(buildHtml(css));
+    const canvas = await page.locator('.table-scaler').boundingBox();
+    expect(canvas).not.toBeNull();
+    const size = { w: canvas!.width, h: canvas!.height };
+    for (const [count, ring] of Object.entries(SEAT_LAYOUTS)) {
+      const seats = ring.map((pos) =>
+        fitSeatToViewport(
+          pos,
+          size,
+          width,
+          seatPodPx(width, pos.y >= 100 && pos.x === 50, size.w),
+          canvas!.x
+        )
+      );
+      await page.evaluate(
+        ({ seats, count }) => {
+          const root = document.querySelector('.table-page')!;
+          root.setAttribute('data-seats', count);
+          const scaler = document.querySelector('.table-scaler') as HTMLElement;
+          scaler.style.setProperty('--table-w', scaler.getBoundingClientRect().width + 'px');
+          scaler.innerHTML = seats
+            .map(
+              (pos) =>
+                `<div class="seat-wrapper ${pos.y < 20 ? 'seat-wrapper--top' : ''}" style="left:${pos.x}%;top:${pos.y}%"><div class="seat ${pos.y >= 100 && pos.x === 50 ? 'seat--hero' : ''}"><div class="seat__avatar-wrap"><div class="seat__avatar"></div></div><div class="seat__info"><span class="seat__name">squeeze777</span><span class="seat__stack">123,456</span></div></div></div>`
+            )
+            .join('');
+        },
+        { seats, width, count }
+      );
+      const plates = await page.locator('.seat__info').evaluateAll((elements) =>
+        elements.map((e) => ({
+          left: e.getBoundingClientRect().left,
+          right: e.getBoundingClientRect().right,
+        }))
+      );
+      for (const plate of plates) {
+        expect(plate.left, `${width}px ${count}-max left plate edge`).toBeGreaterThanOrEqual(1.5);
+        expect(plate.right, `${width}px ${count}-max right plate edge`).toBeLessThanOrEqual(
+          width - 1.5
+        );
+      }
+    }
+  }
+});

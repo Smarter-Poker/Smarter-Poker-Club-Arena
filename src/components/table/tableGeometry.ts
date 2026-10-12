@@ -362,11 +362,33 @@ export const SEAT_POD_LADDER: ReadonlyArray<{
  * `outboardCardSide` gives in tableSeatGeometry.ts: an index means a different
  * chair on every ring.
  */
-export function seatPodPx(viewportWidthPx: number, isHero: boolean): Size {
+export function seatPodPx(viewportWidthPx: number, isHero: boolean, canvasWidthPx?: number): Size {
   const rung =
     SEAT_POD_LADDER.find((r) => viewportWidthPx <= r.maxViewportWidthPx) ??
     SEAT_POD_LADDER[SEAT_POD_LADDER.length - 1];
-  return isHero ? rung.hero : rung.villain;
+  const pod = isHero ? rung.hero : rung.villain;
+  if (!canvasWidthPx || !Number.isFinite(canvasWidthPx)) return pod;
+  const avatar = Math.min(124, Math.max(50, canvasWidthPx * 0.158));
+  const proportionalWidth = isHero ? avatar * (4 / 3) * (8 / 7) : avatar * 1.143;
+  return { ...pod, w: Math.max(pod.w, proportionalWidth) };
+}
+
+/** Keep a widened player pod inside the viewport without changing its chair's
+ * vertical position. Every visual consumer uses this same fitted seat ring. */
+export function fitSeatToViewport(
+  seat: Pos,
+  canvas: Size,
+  viewportWidthPx: number,
+  pod: Size,
+  canvasLeftPx = (viewportWidthPx - canvas.w) / 2
+): Pos {
+  if (!Number.isFinite(canvas.w) || canvas.w <= 0 || viewportWidthPx <= 0) return seat;
+  const edge = pod.w / 2 + 2;
+  const minX = ((edge - canvasLeftPx) / canvas.w) * 100;
+  const maxX = ((viewportWidthPx - edge - canvasLeftPx) / canvas.w) * 100;
+  if (minX > maxX) return seat;
+  const x = Math.max(minX, Math.min(maxX, seat.x));
+  return x === seat.x ? seat : { ...seat, x };
 }
 
 /**

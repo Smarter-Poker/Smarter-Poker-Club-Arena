@@ -411,7 +411,7 @@ export function DealerButton({
     scalerSize ?? undefined,
     typeof window === 'undefined'
       ? undefined
-      : seatPodPx(window.innerWidth, pos.y >= 100 && pos.x === 50),
+      : seatPodPx(window.innerWidth, pos.y >= 100 && pos.x === 50, scalerSize?.w),
     // Dan 2026-09-07, item 10: the whole ring, so the search can refuse any
     // position that reads as another player's button. This component is
     // already handed every seat; the constraint just needed to be given them.

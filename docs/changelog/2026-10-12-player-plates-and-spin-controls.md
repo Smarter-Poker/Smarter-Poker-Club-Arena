@@ -4,6 +4,8 @@ Player plates now fill their seat width, have a larger height and retain 12px na
 
 Diamond Spins balances own a full row. Run and Spin share equal native-ratio plates below the balances, with 18px minimum action labels. Increased presets, navigation, labels and values; clipped the plates' opaque exterior to their measured chrome silhouette. No financial behavior, engine contract or database changes.
 
-The 70 existing rendered table/hero/top-rail checks pass. The measured geometry baseline was regenerated and reviewed: wider seat floors and the seven-pixel hero reserve account for the changes.
+The 71 rendered table/hero/top-rail checks pass, including every ring at narrow viewport boundaries. The measured geometry baseline was regenerated and reviewed: wider seat floors and the seven-pixel hero reserve account for the changes.
 
 Validation is recorded in the task checkpoint at /Volumes/SmarterArchives/agent-evidence/player-labels-spins-20261012/CHECKPOINT.md. Required protected integration, static publication and scoped live proof remain part of delivery.
+
+The fitted seat ring now keeps each widened pod inside the actual viewport. TablePage publishes that same ring to avatars, bet chips, dealer markers and deferred animation targets. The pod width uses the actual canvas width; roomy viewports preserve their existing chair positions. This prevents the outer phone plates from being clipped after enlargement.

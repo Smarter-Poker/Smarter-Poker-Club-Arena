@@ -76,6 +76,10 @@ def main():
                        check=True, stdout=subprocess.DEVNULL)
         running = True
         run(file=FIXTURE / 'native-bootstrap.sql')
+        run(file=FIXTURE / 'guard-declaration-bootstrap.sql')
+        declarations = json.loads((FIXTURE / 'guard-declaration-capture.json').read_text())
+        for f in declarations['functions']:
+            assert run("SELECT md5(prosrc) FROM pg_proc WHERE oid='" + f['signature'] + "'::regprocedure") == f['body_md5'], f['signature']
         capture = json.loads((FIXTURE / 'native-capture.json').read_text())
         for function in capture['functions']:
             actual = run("SELECT md5(prosrc) FROM pg_proc WHERE pronamespace='public'::regnamespace "
@@ -97,6 +101,7 @@ def main():
         migration = sorted((ROOT / 'supabase/migrations').glob('*diamond_must_move_keeps_its_custody_and_its_table_rules.sql'))
         assert len(migration) == 1, 'one owning compatible migration is required'
         run(file=migration[0])
+        assert run("SELECT d.def_hash=md5(pg_get_functiondef('public.fn_poker_diamond_plain_cash_table(public.tables)'::regprocedure)) AND d.declared_ref='migration 20261012191248_diamond_must_move_keeps_its_custody_and_its_table_rules.sql' FROM public.ca_guard_defs d WHERE proname='fn_poker_diamond_plain_cash_table'") == 't', 'watched guard declaration omitted exact post-image'
         # A pause retains live tables so existing hands/top-ups can settle,
         # but neither the game door nor a physical new buy-in may fund a seat.
         scene()

@@ -433,4 +433,13 @@ BEGIN
 END;
 $staff$;
 
+-- Baseline this deliberate watched-guard replacement in its owning transaction.
+DO $declare_guard$
+BEGIN
+ PERFORM public.fn_ca_declare_guard_redefinition(
+   'fn_poker_diamond_plain_cash_table',
+   'migration 20261012191248_diamond_must_move_keeps_its_custody_and_its_table_rules.sql');
+END;
+$declare_guard$;
+
 COMMIT;

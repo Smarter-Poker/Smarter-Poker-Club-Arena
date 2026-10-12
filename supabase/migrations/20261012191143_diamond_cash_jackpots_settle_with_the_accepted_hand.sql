@@ -2138,4 +2138,10 @@ $function$;
 REVOKE ALL ON FUNCTION public.fn_poker_diamond_jackpot_hand_detail(uuid) FROM PUBLIC,anon;
 GRANT EXECUTE ON FUNCTION public.fn_poker_diamond_jackpot_hand_detail(uuid) TO authenticated,service_role;
 
+-- Move the existing watched settlement baseline in this same transaction.
+SELECT public.fn_ca_declare_guard_redefinition(
+  'fn_poker_diamond_settle_cash_hand',
+  'migration 20261012191143_diamond_cash_jackpots_settle_with_the_accepted_hand'
+);
+
 COMMIT;

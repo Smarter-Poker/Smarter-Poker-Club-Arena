@@ -180,6 +180,24 @@ def main():
             if f['proname'] == 'sp_prune_hand_history':
                 load(f['definition'], 'exact history authority')
 
+        guard_shape = json.loads((SQL / 'diamond-jackpot-integration-guard-shape.json').read_text())
+        guard_ddl = ['CREATE SEQUENCE public.ca_guard_def_history_id_seq;']
+        for table in sorted({c['table_name'] for c in guard_shape['columns']}):
+            guard_ddl.append('CREATE TABLE public.' + table + ' (' + ','.join(
+                c['column_name'] + ' ' + c['sql_type']
+                + (' DEFAULT ' + c['default_sql'] if c['default_sql'] else '')
+                + (' NOT NULL' if c['not_null'] else '')
+                for c in guard_shape['columns'] if c['table_name'] == table) + ');')
+        guard_ddl.extend('ALTER TABLE public.' + c['table_name'] + ' ADD ' + c['definition'] + ';'
+                         for c in guard_shape['constraints'])
+        load('\n'.join(guard_ddl), 'captured guard declaration dependencies')
+        load('\n'.join(i['indexdef'].replace('CREATE UNIQUE INDEX ', 'CREATE UNIQUE INDEX IF NOT EXISTS ', 1)
+                       .replace('CREATE INDEX ', 'CREATE INDEX IF NOT EXISTS ', 1) + ';'
+                       for i in json.loads((SQL / 'diamond-jackpot-integration-guard-indexes.json').read_text())),
+             'captured guard declaration uniqueness contracts')
+        for f in json.loads((SQL / 'diamond-jackpot-integration-guard-preimages.json').read_text()):
+            load(f['definition'].rstrip() + ';', 'exact guard declaration authority ' + f['proname'])
+
         if args.prepare_only:
             print('PREPARED ONLY: no acceptance verdict; private cluster ' + str(temp), flush=True)
             return
@@ -190,6 +208,7 @@ def main():
                 raise RuntimeError('missing qualification input: ' + str(path))
         load(before.read_text(), 'fail-before counterexamples')
         load(MIGRATION.read_text(), 'complete migration verbatim')
+        load("DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM public.ca_guard_defs d WHERE d.proname='fn_poker_diamond_settle_cash_hand' AND d.declared_ref='migration 20261012191143_diamond_cash_jackpots_settle_with_the_accepted_hand' AND d.def_hash=(SELECT md5(string_agg(pg_get_functiondef(p.oid),'|' ORDER BY p.oid)) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname=d.proname)) THEN RAISE EXCEPTION 'settlement guard declaration disagrees'; END IF; RAISE NOTICE 'PASS: settlement guard declaration records the exact new authority'; END $$;", 'same-transaction guard baseline')
         load(acceptance.read_text(), 'connected accepted-hand regression cases')
         rake_config = json.loads((SQL / 'diamond-jackpot-integration-cash-rake-config.json').read_text())
         config_json = json.dumps(rake_config['rows']).replace("'", "''")

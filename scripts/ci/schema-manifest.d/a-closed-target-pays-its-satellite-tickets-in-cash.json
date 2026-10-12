@@ -1,0 +1,9 @@
+{
+  "_owner": "tickets swarm, fix/a-closed-target-pays-its-tickets-in-cash. Installed by migration 20261012054804_a_closed_target_pays_its_satellite_tickets_in_cash through apply-merged-migration.",
+  "functions": [
+    "fn_ca_satellite_ticket_target_is_closed",
+    "fn_ca_pay_closed_target_ticket_in_cash",
+    "fn_ca_pay_closed_target_tickets_in_cash",
+    "trg_ca_closed_target_pays_its_satellite_tickets"
+  ]
+}

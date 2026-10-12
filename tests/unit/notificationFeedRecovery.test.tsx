@@ -153,6 +153,35 @@ afterEach(() => {
 });
 
 describe('The mounted notification feed owns recovery and account state', () => {
+  it('viewing the inbox preserves unread signals until an explicit read is confirmed', async () => {
+    const stored = { ...row('actionable', 'Actionable Signal'), is_read: false };
+    fixture.fetch.mockImplementation(async (url: string) => {
+      if (url.includes('/feed?')) return response([{ ...stored }]);
+      // The real mark-seen endpoint marks the entire account read. It is
+      // not a cosmetic badge acknowledgement and must not run on mount.
+      if (url === '/api/notifications/mark-seen' || url === '/api/notifications/mark-read') {
+        stored.read = true;
+        stored.is_read = true;
+      }
+      return response();
+    });
+    mount();
+    await flush();
+    expect(stored.read).toBe(false);
+    expect(stored.is_read).toBe(false);
+    expect(fixture.emit).not.toHaveBeenCalledWith('NOTIFICATION_READ', expect.anything());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mark All Read', exact: true }));
+    await flush();
+    expect(stored.read).toBe(true);
+    expect(stored.is_read).toBe(true);
+    expect(fixture.emit).toHaveBeenCalledWith('NOTIFICATION_READ', {
+      notifId: null,
+      allRead: true,
+    });
+    expect(screen.queryByRole('button', { name: 'Mark All Read', exact: true })).toBeNull();
+  });
+
   it('does not paint a personal feed cached before operational destination cutover', async () => {
     localStorage.setItem(
       'ca-notif-cache:v1:account-a',

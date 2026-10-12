@@ -56,8 +56,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 205794,
-      "sha256": "e85cb68743eb7bc58e6b3c089e3f731ba0ae9a96cc9ef3b4b055d7e031fb518d"
+      "bytes": 206770,
+      "sha256": "92db31450a1ff6b93168e418e38eee09b4ecc79ca693d48a969a1e4da18b59fa"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -2277,6 +2277,13 @@
     "previousMainWorkflowPin": {
       "bytes": 204868,
       "sha256": "526ce2cb5ae8c17319b7181238858a9d820a4609f4a90f7572c19d316d552ee9"
+    }
+  },
+  "inventoryCommittedPages20261012": {
+    "reason": "Add required Accounting3 native actual-deferred-FK fail-before/pass-after proof. Preserve all existing financial inputs, assertions and qualification status. Source fingerprint is not production proof.",
+    "previousWorkflowPin": {
+      "bytes": 205794,
+      "sha256": "e85cb68743eb7bc58e6b3c089e3f731ba0ae9a96cc9ef3b4b055d7e031fb518d"
     }
   }
 }

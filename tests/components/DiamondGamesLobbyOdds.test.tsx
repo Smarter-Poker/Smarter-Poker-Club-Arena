@@ -46,7 +46,7 @@ vi.mock('../../src/services/DiamondGamesService', () => ({
 import DiamondGamesPage from '../../src/pages/DiamondGamesPage';
 
 /** What fn_diamond_game_state answers for Crash on a healthy club, trimmed to what the lobby reads. */
-const crashState = (caps: number[]): Partial<GameState> => ({
+const crashState = (caps: number[], payoutVersion?: number): Partial<GameState> => ({
   ok: true,
   available: true,
   game: 'crash',
@@ -63,6 +63,7 @@ const crashState = (caps: number[]): Partial<GameState> => ({
     min_seconds_between_rounds: 0,
     spec_rtp: 0.8,
     house_share: 0.2,
+    ...(payoutVersion === undefined ? {} : { payout_version: payoutVersion }),
   },
   bets: caps.map((cap_cents, i) => ({
     bet_diamonds: [25, 100, 2500, 5000][i] ?? 25,
@@ -105,12 +106,39 @@ describe('the lobby prints the crash odds the server plays', () => {
     expect(rules.textContent).toContain('1 In 1.4 To 2 On A Super Award');
     expect(rules.textContent).not.toContain('1.00x');
     expect(screen.getByText('Instant Crash')).toBeTruthy();
-    expect(screen.getByText('On An Ordinary Award')).toBeTruthy();
+    expect(screen.getAllByText('On An Ordinary Award').length).toBeGreaterThan(0);
     expect(screen.queryByText('1 In 5')).toBeNull();
     // The best multiplier the server is quoting right now, not the 100x ceiling
     // by luck: a thinner quote prints a smaller figure (the next case).
     expect(screen.getByText('100x')).toBeTruthy();
     expect(screen.queryByText('Per Round')).toBeNull();
+  });
+
+  it('prices contract 5 when the server says it deals it: 1.26x, a 2.9x average, the 20x flight (Dan, 2026-10-12)', async () => {
+    mocks.gameState.mockImplementation(async (_club: string, game: string) =>
+      game === 'crash'
+        ? crashState([2000, 2000, 2000, 2000], 5)
+        : { ok: true, available: true, game, bets: [], tables: [], frozen: false }
+    );
+    lobby();
+    // Half the stake kept (13/25 on the smallest odd entry), cash out opening at
+    // 1.26x on the round's own return: 1 - (R - L)/(1.26 - L).
+    await waitFor(() => expect(screen.getByText('1 In 3 To 3.1')).toBeTruthy());
+    // THE AVERAGE CRASH, from the same rule: every award's return is chosen for
+    // a 2.9x average, inside Dan's "2.4 -3.0X", and the page computes it.
+    expect(screen.getByText('Average Crash')).toBeTruthy();
+    expect(screen.getByText('2.9x')).toBeTruthy();
+    expect(screen.getByText('20x')).toBeTruthy();
+    fireEvent.click(screen.getAllByRole('button', { name: 'How It Pays' })[2]);
+    const rules = await screen.findByText(/Ends Before Cash Out Opens/);
+    // A Super award with the add-on keeps two thirds of its stake; its return
+    // rises to 1.137983 so its average is the same 2.9x, and it ends at the
+    // floor less often than an ordinary award, not more.
+    expect(rules.textContent).toContain(
+      'The Average Crash Is 2.9x On An Ordinary Award And 2.9x On A Super Award.'
+    );
+    expect(rules.textContent).toContain('1 In 3 To 4.9 On A Super Award');
+    expect(rules.textContent).not.toMatch(/\u2014/);
   });
 
   it('follows the quote down when the pool can promise less', async () => {

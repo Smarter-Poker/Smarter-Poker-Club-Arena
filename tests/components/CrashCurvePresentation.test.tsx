@@ -586,7 +586,7 @@ describe('the cap and the would-have-gone plate', () => {
       />
     );
     const plate = container.querySelector('[data-reveal="would-have-gone"]') as HTMLElement;
-    expect(plate).toHaveTextContent('It Would Have Gone To 9.50x');
+    expect(plate).toHaveTextContent('It Would Have Crashed At 9.50x');
     expect(plate).toHaveTextContent('You Booked 2.57x');
     frame(100);
     frame(2000);
@@ -597,7 +597,7 @@ describe('the cap and the would-have-gone plate', () => {
     expect(CSS).toContain('@keyframes revealIn');
   });
 
-  it('says when it crashed right after the booking, and when the cap came first', () => {
+  it('says where it would have crashed right after the booking, and when it would have reached the cap (Dan, 2026-10-12)', () => {
     const { tick: frame } = clock();
     const { container, rerender } = render(
       <CrashCurve
@@ -610,7 +610,7 @@ describe('the cap and the would-have-gone plate', () => {
       />
     );
     const plate = () => container.querySelector('[data-reveal="would-have-gone"]')!;
-    expect(plate()).toHaveTextContent('It Crashed Right After You Booked');
+    expect(plate()).toHaveTextContent('It Would Have Crashed At 2.58x');
     rerender(
       <CrashCurve
         {...base}
@@ -621,7 +621,7 @@ describe('the cap and the would-have-gone plate', () => {
         crashCents={3000}
       />
     );
-    expect(plate()).toHaveTextContent('It Would Have Gone To The 25.00x Max');
+    expect(plate()).toHaveTextContent('It Would Have Reached 25.00x');
     expect(plate()).toHaveTextContent('You Booked 4.10x');
     rerender(
       <CrashCurve

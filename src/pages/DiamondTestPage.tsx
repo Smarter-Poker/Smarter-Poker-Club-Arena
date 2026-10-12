@@ -18,10 +18,12 @@ import {
   roadSurvives,
 } from '../utils/diamondChoiceMath';
 import {
+  CRASH_CAP_CENTS,
   CRASH_PAYOUT_VERSION,
   crashMultiplierCents,
   crashPointCentsFromRoll,
   crashPointFloorCents,
+  crashReturnPpm,
   plinkoBitsFromPathBits,
 } from '../utils/diamondGamesFairness';
 import { plinkoAllocations } from '../utils/bonusGameBudget';
@@ -42,10 +44,10 @@ type Game = DiamondBonusGame;
 const ROAD = roadLadder(CHOICE_MODE.crossing, CHOICE_PAYOUT_VERSION) as readonly number[];
 const MINES = Number(CHOICE_MODE.mines);
 const MINE_PICKS = 25 - MINES;
-/** Every crash round is capped at 25.00x, as the server seals it. */
-const CRASH_CAP = 2500;
-/** The live curve: e^(0.10 t), the 25x ceiling in about 32 seconds (migration 20260925215112). */
-const CRASH_K = 0.1;
+/** Every crash round is capped at 20.00x, as the server seals it (contract 5). */
+const CRASH_CAP = CRASH_CAP_CENTS;
+/** The live curve: e^(0.08 t), the 20x cap in about 37 seconds (migration 20261012114801). */
+const CRASH_K = 0.08;
 function roll48() {
   const a = crypto.getRandomValues(new Uint32Array(2));
   return BigInt(a[0]) * 65536n + BigInt(a[1] & 65535);
@@ -132,7 +134,8 @@ export default function DiamondTestPage() {
     const tick = () => {
       const cents = crashMultiplierCents(CRASH_K, performance.now() - started.current, CRASH_CAP);
       setLiveCents(cents);
-      if (cents >= CRASH_CAP && crash.current >= CRASH_CAP) finish(chips * 25, 'cashed');
+      if (cents >= CRASH_CAP && crash.current >= CRASH_CAP)
+        finish((chips * CRASH_CAP) / 100, 'cashed');
       else if (cents >= crash.current) finish(minimum, 'lost');
       else frame = requestAnimationFrame(tick);
     };
@@ -188,7 +191,8 @@ export default function DiamondTestPage() {
           fixedRoll ?? roll48(),
           chips,
           minimum,
-          crashPointFloorCents(CRASH_PAYOUT_VERSION)
+          crashPointFloorCents(CRASH_PAYOUT_VERSION),
+          crashReturnPpm(chips, minimum, CRASH_PAYOUT_VERSION)
         )
       );
     // A fixed road for screenshots and demos: ?roll=0.07 seals the road at that

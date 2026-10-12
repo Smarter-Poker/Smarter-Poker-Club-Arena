@@ -27,6 +27,13 @@ import DiamondSpinsTabs from '../components/games/DiamondSpinsTabs';
  * server is quoting for this game right now, not the configured ceiling: the
  * cap a round gets is set by the award it starts from.
  *
+ * CONTRACT 5 (Dan, 2026-10-12): Crash never ends before 1.25x, flies to 20x and
+ * averages 2.9x, each round's return chosen for that average (0.95 to 1.20).
+ * The server says which contract it deals (config.payout_version) and every
+ * crash figure here is priced by THAT contract, so the lobby is right before
+ * and after the database moves: the odds, and the average crash
+ * (awardAverageCrash, 2.9x on every award), are never typed.
+ *
  * THE PICTURE (#ClubArenaConsole). A balances console that only closes, the
  * week's biggest wins, then one plated console per game: the figures on the
  * glass, the state in the pill, "How It Pays" on the steel plate, the game's
@@ -46,7 +53,12 @@ import DiamondWheelService, {
 } from '../services/DiamondWheelService';
 import DiamondGamesService, { type GameState } from '../services/DiamondGamesService';
 import {
+  CRASH_CAP_CENTS,
+  CRASH_FLOORED_VERSION,
+  CRASH_PAYOUT_VERSION,
+  awardAverageCrash,
   awardInstantCrashChances,
+  averageRangeLabel,
   multiplierLabel,
   oneInRangeLabel,
 } from '../utils/diamondGamesFairness';
@@ -248,12 +260,28 @@ export default function DiamondGamesPage() {
   const crashQuotes = (crash?.bets ?? []).filter((b) => b.playable).map((b) => b.cap_cents);
   const crashTop = crashQuotes.length ? Math.max(...crashQuotes) : null;
   const crashRate = crash?.config?.diamonds_per_chip ?? 0;
+  // The contract the server deals Crash under: it states 5 from 2026-10-12, and
+  // a server that states nothing is still dealing contract 4.
+  const crashContract = crash?.config?.payout_version ?? CRASH_FLOORED_VERSION;
   const crashOdds = crashRate
     ? {
-        ordinary: oneInRangeLabel(awardInstantCrashChances(1, crashRate)),
-        super: oneInRangeLabel(awardInstantCrashChances(2, crashRate)),
+        ordinary: oneInRangeLabel(awardInstantCrashChances(1, crashRate, crashContract)),
+        super: oneInRangeLabel(awardInstantCrashChances(2, crashRate, crashContract)),
       }
     : null;
+  // Every award flight under contract 5 is sealed at exactly 20x (an award that
+  // cannot cover it is refused), so that is the cap its average is priced at;
+  // an older contract is priced at the cap the server quotes.
+  const crashAverageCap = crashContract >= CRASH_PAYOUT_VERSION ? CRASH_CAP_CENTS : crashTop;
+  const crashAverage =
+    crashRate && crashAverageCap !== null
+      ? {
+          ordinary: averageRangeLabel(
+            awardAverageCrash(1, crashRate, crashContract, crashAverageCap)
+          ),
+          super: averageRangeLabel(awardAverageCrash(2, crashRate, crashContract, crashAverageCap)),
+        }
+      : null;
   const welcomeReady = Boolean(wheel?.available && !wheel?.frozen && wheelWelcome?.available);
   const wheelPill = welcomeReady
     ? { pill: 'Welcome Spin', ink: 'gold' as ConsoleInk }
@@ -438,6 +466,14 @@ export default function DiamondGamesPage() {
               meta="Set By Your Award"
             />
           )}
+          {crashAverage ? (
+            <Row
+              label="Average Crash"
+              value={crashAverage.ordinary}
+              ink="white"
+              meta="On An Ordinary Award"
+            />
+          ) : null}
           {crashOdds ? (
             <Row
               label="Instant Crash"
@@ -453,6 +489,9 @@ export default function DiamondGamesPage() {
             Round Pays Exactly Where You Cashed Out. {GUARANTEE_COPY}
             {crashOdds
               ? ` That Minimum Is Paid For Out Of The Odds, So A Round Ends Before Cash Out Opens ${crashOdds.ordinary} On An Ordinary Award And ${crashOdds.super} On A Super Award.`
+              : ''}
+            {crashAverage
+              ? ` The Average Crash Is ${crashAverage.ordinary} On An Ordinary Award And ${crashAverage.super} On A Super Award.`
               : ''}
           </p>
         ) : null}

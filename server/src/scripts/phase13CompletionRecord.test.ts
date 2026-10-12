@@ -64,7 +64,8 @@ const line = (r: unknown, at = AT, eventId = 'e') =>
 
 /** Every street complete `n` times on one board, `n` two-board bomb
  * decisions on the flop and `n` three-board bomb decisions on the turn, plus
- * one work-budget fallback on the river (last). */
+ * one work-budget fallback on the river (last), journaled as a release before
+ * 2026-10-11 wrote it: the live source no longer cuts its work on the clock. */
 function window(variant: JointVariant, n: number) {
   const lines: string[] = [];
   const receipts: unknown[] = [];
@@ -84,7 +85,11 @@ function window(variant: JointVariant, n: number) {
     }
   }
   let t = 0;
-  const slow = receipt(variant, 'river', () => (t += 5));
+  const slow = {
+    ...receipt(variant, 'river', () => (t += 5)),
+    reason: 'work_budget',
+    fired: false,
+  };
   lines.push(line(slow, AT, 'slow'));
   receipts.push(slow);
   return { lines, receipts };

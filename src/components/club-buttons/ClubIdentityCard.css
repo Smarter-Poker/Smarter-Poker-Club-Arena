@@ -53,7 +53,7 @@
 .club-identity__line,
 .club-identity__line-text,
 .club-identity__playing,
-.club-identity__level {
+.club-identity__invite {
   position: absolute;
   z-index: 1;
   display: grid;
@@ -164,14 +164,17 @@
     0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
 }
 
-/* White capitals on the painted blue plate. */
-.club-identity__level {
+/* White capitals on the painted blue plate. Since Dan's 2026-10-11 ruling
+   they read "Share & Invite" instead of the club level, and since 2026-10-12
+   they are the label of the share button (they live inside it, positioned
+   onto the plate), so a tap on the words is a tap on that one control and
+   its 44px band. The plate is paint; this only prints the words. */
+.club-identity__invite {
   justify-items: center;
   text-align: center;
   color: #f1f5fa;
-  font-size: 3.05cqw;
   font-weight: 800;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.04em;
   line-height: 1;
   text-transform: uppercase;
   white-space: nowrap;
@@ -180,8 +183,29 @@
     0 0.3cqw 0.5cqw rgb(0 0 0 / 70%);
 }
 
-.club-identity__level > span {
+/* Fitted by measurement (useFitText writes --fit): "Share & Invite" is
+   nearly twice as long as "Level 29" was, so it shrinks to an inset box inside
+   the plate rather than reaching the painted rim. */
+.club-identity__invite-text {
   display: block;
+  justify-self: center;
+  width: 90%;
+  overflow: hidden;
+}
+
+.club-identity__invite-text > span {
+  display: block;
+  font-size: calc(3.05cqw * var(--fit, 1));
+}
+
+/* Both faces of the share control answer its press and its focus. */
+.club-identity__share:active .club-identity__invite {
+  background: rgb(255 255 255 / 5%);
+}
+
+.club-identity__share:focus-visible .club-identity__invite {
+  outline: 0.4cqw solid #8fd4ff;
+  outline-offset: -0.4cqw;
 }
 
 /* The referral copy frame is painted; this is its hit target. */
@@ -195,6 +219,7 @@
   border-radius: 1cqw;
   background: transparent;
   color: transparent;
+  font-family: inherit;
   cursor: pointer;
 }
 

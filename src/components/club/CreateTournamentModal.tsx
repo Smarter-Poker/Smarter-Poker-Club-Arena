@@ -289,9 +289,15 @@ export default function CreateTournamentModal({
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [shortDescription, setShortDescription] = useState('');
   const [isVipOnly, setIsVipOnly] = useState(false);
-  // MTT chat is closed by default. An owner can review the locked rule in
-  // Advanced Options, but cannot accidentally publish an event with chat on.
-  const [banChat] = useState(true);
+  /* TOURNAMENT CHAT IS OFF BY DEFAULT; SPINS AND SIT N GOS MAY CHAT (Dan,
+     2026-10-11). Every multi-table event (freezeout, rebuy, re-entry, bounty,
+     satellite, freeroll) is sent with chat off, shown as the locked rule in
+     Advanced Options (owner requirement 2026-09-20). A Spin or a Sit N Go
+     starts with chat on and the host may switch it off there; that choice is
+     what is sent. The database applies the same default to any caller that
+     does not say (20261012040851). */
+  const [fixedFormatChatBanned, setFixedFormatChatBanned] = useState(false);
+  const banChat = isSngOrSpin ? fixedFormatChatBanned : true;
   const [allInOrFold, setAllInOrFold] = useState(false);
   const [labelAsNew, setLabelAsNew] = useState(false);
   const [hideClubName, setHideClubName] = useState(false);
@@ -2212,10 +2218,21 @@ export default function CreateTournamentModal({
                     ))}
                   </div>
 
-                  <div className={styles.lockedRule}>
-                    <strong>Chat: Off</strong>
-                    <span>Chat Is Always Disabled In Multi-Table Tournaments.</span>
-                  </div>
+                  {isSngOrSpin ? (
+                    <div className={styles.toggleRow}>
+                      <Toggle
+                        label="Ban Chat"
+                        value={fixedFormatChatBanned}
+                        onChange={setFixedFormatChatBanned}
+                        tooltip="Chat Is On For Spins And Sit N Gos Unless You Switch It Off Here"
+                      />
+                    </div>
+                  ) : (
+                    <div className={styles.lockedRule}>
+                      <strong>Chat: Off</strong>
+                      <span>Chat Is Always Disabled In Multi-Table Tournaments.</span>
+                    </div>
+                  )}
 
                   <div className={styles.row}>
                     <div className={styles.col}>

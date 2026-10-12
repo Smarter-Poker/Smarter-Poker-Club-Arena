@@ -71,11 +71,25 @@ describe('a shadow-only stage cannot manufacture hand evidence', () => {
     expect(stage1).toContain('verdict `calibrated`');
   });
 
-  it('requires actual nonempty hand measurements in form mode, preserving the pilot and club periods', () => {
+  it('requires active-play evidence without reinstating the owner-removed calendar waits', () => {
     expect(stage2).toContain('every configured leg with nonzero samples');
     expect(stage2).toContain('absent leg is missing evidence');
-    expect(stage2).toContain('At least 7 days and 5,000 Lightning hands');
-    expect(rollout).toContain('at least 14 days across at least five clubs and both table sizes');
+    expect(stage2).toContain('At least 5,000 actual completed Lightning hands');
+    expect(rollout).toContain('across at least five clubs and both table sizes');
+    for (const text of [
+      stage2,
+      rollout.split('## Stage 3:')[1].split('## The Pilot Cluster')[0],
+      review.split('## Outstanding Production Evidence')[1],
+    ]) {
+      expect(text).not.toMatch(
+        /(?:at least|requires|has run)\s+(?:7 days|14 days|72 hours|seven actual days|fourteen actual days)/i
+      );
+    }
+    expect(rollout).toContain('No minimum elapsed-day or batch-age requirement applies');
+    expect(review).toContain('No minimum elapsed-day or batch-age requirement applies');
+    expect(rollout).toContain('not time spent with an empty pool');
+    expect(rollout).toContain('There is no minimum batch-age wait');
+    expect(review).toContain('REMAINING-WORK.md');
     expect(review).toContain(
       'No synthetic hands, backdated timestamps or manufactured ledger rows'
     );

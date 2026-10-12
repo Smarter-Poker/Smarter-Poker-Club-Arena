@@ -106,8 +106,7 @@ import styles from './CashierTradePage.module.css';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 import {
   mapCashierRoster,
-  rosterMatchRank,
-  rosterRowMatches,
+  sortCashierRosterMatches,
   type CashierRosterRpcRow,
   type DownlineRow,
 } from '../lib/cashierRoster';
@@ -123,6 +122,7 @@ import {
   cashierBatchAmounts,
   cashierBatchAcknowledgement,
   cashierBatchReceiptText,
+  mergeCashierBatchReceiptRows,
   type CashierBatchReceiptRow,
 } from '../utils/cashierBatch';
 
@@ -1581,8 +1581,10 @@ function CashierTradeWorkspace() {
     [downline]
   );
 
+  const rosterById = useMemo(() => new Map(downline.map((row) => [row.userId, row])), [downline]);
+
   const list = useMemo(() => {
-    let rows = downline.filter((r) => rosterRowMatches(r, search));
+    let rows = downline;
     // "the players assigned to me" - the question an agent actually asks, and
     // one an owner could not ask at all before, because an owner sees the whole
     // club and nothing on the row said which of them were theirs.
@@ -1595,9 +1597,7 @@ function CashierTradeWorkspace() {
     // a search put the owner, at 0.00, twenty-first behind twenty horses
     // whose handles happened to contain the same four letters.
     const q = search.trim();
-    rows = q
-      ? [...rows].sort((a, b) => rosterMatchRank(b, q) - rosterMatchRank(a, q) || bySort(a, b))
-      : [...rows].sort(bySort);
+    rows = sortCashierRosterMatches(rows, search, bySort);
     if (groupByRole && !q) {
       // ROLE_RANK from types/clubRoles, not a local map. The local one listed
       // super_agent/agent/sub_agent/admin/player and OMITTED owner and
@@ -1749,6 +1749,12 @@ function CashierTradeWorkspace() {
     [picked, amount, recipientAmounts]
   );
   const previewTotal = batchPlan.ok ? batchPlan.total : 0;
+  const uniformAmountValue =
+    picked.length === 1 ? (recipientAmounts[picked[0].userId] ?? amount) : amount;
+  const uniformAmountInvalid =
+    uniformAmountValue.trim() !== '' &&
+    !batchPlan.ok &&
+    (picked.length === 1 || recipientAmounts[batchPlan.userId] === undefined);
 
   const transferDestination = (target: DownlineRow): 'agent_wallet' | 'player_wallet' =>
     (transferRecovery?.submissionId === submissionIdRef.current
@@ -1945,6 +1951,7 @@ function CashierTradeWorkspace() {
           ? opIdFor(target.userId)
           : `ticket:${clubUuid}:${submissionId}:${target.userId}:${parsedAmount.amounts[target.userId]}`,
     }));
+    const receiptById = new Map(receiptRows.map((row) => [row.userId, row]));
     const failed: Array<{ userId: string; name: string; message: string }> = [];
     const owningView = transferView.current;
     const owningAuthorityEpoch = transferAuthorityEpoch.current;
@@ -1974,8 +1981,7 @@ function CashierTradeWorkspace() {
         }
         try {
           for (const target of chunk)
-            receiptRows.find((row) => row.userId === target.userId)!.outcome =
-              'Outcome Needs Verification';
+            receiptById.get(target.userId)!.outcome = 'Outcome Needs Verification';
           const items = chunk.map((target) => ({
             user_id: target.userId,
             amount: parsedAmount.amounts[target.userId],
@@ -2019,7 +2025,7 @@ function CashierTradeWorkspace() {
 
           for (const target of chunk) {
             const result = cashierBatchAcknowledgement(envelope.results, target.userId);
-            const receiptRow = receiptRows.find((row) => row.userId === target.userId)!;
+            const receiptRow = receiptById.get(target.userId)!;
             receiptRow.outcome = result.outcome;
             if (result.reference) receiptRow.reference = result.reference;
             if (result.outcome === 'Confirmed') ok++;
@@ -2105,12 +2111,7 @@ function CashierTradeWorkspace() {
           batchId: submissionId,
           rows:
             previous?.batchId === submissionId
-              ? [
-                  ...previous.rows.filter(
-                    (row) => !receiptRows.some((current) => current.userId === row.userId)
-                  ),
-                  ...receiptRows,
-                ]
+              ? mergeCashierBatchReceiptRows(previous.rows, receiptRows)
               : receiptRows,
         }));
         setTransferFailures(failed);
@@ -2382,7 +2383,7 @@ function CashierTradeWorkspace() {
           batchId: saved.submissionId,
           rows: saved.targetIds.map((id) => ({
             userId: id,
-            name: downline.find((row) => row.userId === id)?.name || 'Cashier Recipient',
+            name: rosterById.get(id)?.name || 'Cashier Recipient',
             amount: saved.targetAmounts?.[id] ?? saved.amount,
             destination:
               saved.kind === 'ticket'
@@ -2412,7 +2413,7 @@ function CashierTradeWorkspace() {
       batchId: saved.submissionId,
       rows: saved.targetIds.map((id) => ({
         userId: id,
-        name: downline.find((row) => row.userId === id)?.name || 'Cashier Recipient',
+        name: rosterById.get(id)?.name || 'Cashier Recipient',
         amount: saved.targetAmounts?.[id] ?? saved.amount,
         destination:
           saved.kind === 'ticket'
@@ -4054,11 +4055,9 @@ function CashierTradeWorkspace() {
                       min={0}
                       step="0.01"
                       aria-label="Amount Per Player"
-                      value={
-                        picked.length === 1
-                          ? (recipientAmounts[picked[0].userId] ?? amount)
-                          : amount
-                      }
+                      aria-invalid={uniformAmountInvalid}
+                      aria-describedby="cashier-amount-validation"
+                      value={uniformAmountValue}
                       disabled={busy}
                       onChange={(e) => {
                         setAmount(e.target.value);
@@ -4094,6 +4093,7 @@ function CashierTradeWorkspace() {
                                 step="0.01"
                                 aria-label={`Amount For ${r.name}`}
                                 aria-invalid={!batchPlan.ok && batchPlan.userId === r.userId}
+                                aria-describedby="cashier-amount-validation"
                                 disabled={busy}
                                 value={recipientAmounts[r.userId] ?? amount}
                                 onChange={(event) => {
@@ -4135,7 +4135,7 @@ function CashierTradeWorkspace() {
                         Request A Cash Out.
                       </div>
                     )}
-                    <div className={styles.modalHint} role="status">
+                    <div id="cashier-amount-validation" className={styles.modalHint} role="status">
                       {!batchPlan.ok
                         ? `Amount For ${picked.find((row) => row.userId === batchPlan.userId)?.name || 'Cashier Recipient'}: ${batchPlan.error}`
                         : cashierAuthorityBlocked || !canHoldAgentWallet(myRole)

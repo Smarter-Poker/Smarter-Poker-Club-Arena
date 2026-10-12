@@ -33,10 +33,10 @@ const { playPlo4PolicyHand, plo4LeagueSeating, withHumanCalibratedOpponents } =
 const { remainingVariantStrengthLeagueProfile } =
   await import('../benchmark/RemainingVariantStrengthLeague.js');
 const {
-  REMAINING_VARIANT_STRENGTH_CONTRACT,
   isRemainingVariantHoldoutSeed,
   isRemainingVariantStrengthVariant,
   remainingVariantStrengthContractDigest,
+  remainingVariantStrengthContractFor,
   remainingVariantStrengthPack,
 } = await import('../benchmark/RemainingVariantStrengthContract.js');
 const { isOmahaVariantHoldoutSeed } = await import('../benchmark/OmahaVariantStrengthContract.js');
@@ -94,7 +94,7 @@ if (command === 'run') {
     phase: 'phase12',
     variant,
     packVersion: REMAINING_VARIANT_PACKS[variant].version,
-    contractDigest: remainingVariantStrengthContractDigest(),
+    contractDigest: remainingVariantStrengthContractDigest(variant),
     population: HUMAN_CALIBRATED_POPULATION_ID,
     profileId,
     leagueProfileId: profile.id,
@@ -200,7 +200,7 @@ if (command === 'run') {
     profileIds,
     rotationBlock: pack.matrix.rotationBlock,
     runs,
-    rakeModel: `published rake per profile (publishedRake, the cap ladder and BBJ drop), ${REMAINING_VARIANT_STRENGTH_CONTRACT.version}`,
+    rakeModel: `published rake per profile (publishedRake, the cap ladder and BBJ drop), ${remainingVariantStrengthContractFor(variant).version}`,
   });
   writeFileSync(out, `${JSON.stringify(summary, null, 2)}\n`);
   console.log(

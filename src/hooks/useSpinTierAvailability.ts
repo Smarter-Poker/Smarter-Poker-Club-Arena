@@ -28,6 +28,7 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { reportError } from '../utils/errorReporter';
 
 export interface SpinTierAvailability {
   can_draw_100x: boolean;
@@ -47,7 +48,11 @@ async function refresh(): Promise<void> {
       const { data, error } = await supabase
         .from('v_spin_tier_availability')
         .select('club_id, can_draw_100x');
-      if (error || !Array.isArray(data)) return; // keep the old cache — stale beats wrong-empty
+      if (error) {
+        reportError(error, 'SpinTierAvailability.read');
+        return; // keep the prior club-scoped cache
+      }
+      if (!Array.isArray(data)) return;
       const next = new Map<string, SpinTierAvailability>();
       for (const row of data) {
         if (row?.club_id) {
@@ -58,8 +63,8 @@ async function refresh(): Promise<void> {
       }
       cache = next;
       fetchedAt = Date.now();
-    } catch {
-      /* badge is decoration; a fetch failure must never mark a lobby */
+    } catch (error) {
+      reportError(error, 'SpinTierAvailability.read');
     } finally {
       inflight = null;
     }
@@ -75,20 +80,24 @@ async function refresh(): Promise<void> {
 export function useSpinTierAvailability(
   clubId: string | null | undefined
 ): SpinTierAvailability | null {
-  const [value, setValue] = useState<SpinTierAvailability | null>(() =>
-    clubId ? (cache.get(String(clubId)) ?? null) : null
-  );
+  const key = clubId ? String(clubId) : null;
+  const [snapshot, setSnapshot] = useState<{
+    clubId: string | null;
+    value: SpinTierAvailability | null;
+  }>(() => ({ clubId: key, value: key ? (cache.get(key) ?? null) : null }));
 
   useEffect(() => {
-    if (!clubId) return;
+    if (!key) return;
     let cancelled = false;
+    setSnapshot({ clubId: key, value: cache.get(key) ?? null });
     void refresh().then(() => {
-      if (!cancelled) setValue(cache.get(String(clubId)) ?? null);
+      if (!cancelled) setSnapshot({ clubId: key, value: cache.get(key) ?? null });
     });
     return () => {
       cancelled = true;
     };
-  }, [clubId]);
+  }, [key]);
 
-  return value;
+  // A changed club is a new question, including the render before its effect.
+  return key && snapshot.clubId === key ? snapshot.value : null;
 }

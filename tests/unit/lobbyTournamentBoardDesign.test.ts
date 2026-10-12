@@ -76,7 +76,7 @@ describe('Club Arena Tournament Board lobby design', () => {
     const clubId = zoneOf('clubId');
     const playerId = zoneOf('playerId');
     const playing = zoneOf('playing');
-    const level = zoneOf('level');
+    const invite = zoneOf('invite');
     const share = zoneOf('share');
 
     // Top to bottom on the left: alias, club ID, player ID (Dan's order).
@@ -85,21 +85,32 @@ describe('Club Arena Tournament Board lobby design', () => {
     // The two ID lines share one column and one width past the painted icons.
     expect(clubId.x).toBe(playerId.x);
     expect(clubId.width).toBe(playerId.width);
-    // Right column: the copy frame top right, the count and the level beneath.
+    // Right column: the copy frame top right, the count and the invite plate beneath.
     expect(share.y).toBeLessThan(playing.y);
-    expect(playing.y).toBeLessThan(level.y);
+    expect(playing.y).toBeLessThan(invite.y);
     expect(share.x + share.width).toBeLessThanOrEqual(1566);
     // Nothing is printed outside the master.
-    for (const z of [alias, clubId, playerId, playing, level, share]) {
+    for (const z of [alias, clubId, playerId, playing, invite, share]) {
       expect(z.x + z.width).toBeLessThanOrEqual(1566);
       expect(z.y + z.height).toBeLessThanOrEqual(672);
     }
 
-    /* Dan 2026-09-01: a new club starts at Level 1 in its blue box. The box
-       is painted on the master now; the words are live in the plate. */
-    expect(identityCard).toContain('club-identity__level');
-    expect(identityCard).toContain('Level {level}');
-    expect(identityCardCss).toContain('.club-identity__level');
+    /* Dan 2026-10-11: "Remove the 'Level 29' under the playing Now and
+       replace that with 'Share & Invite'". The blue box is painted on the
+       master; the words are live in the plate, and pressing them shares.
+       Since 2026-10-12 the words are the label INSIDE the share button, not
+       a second button: the plate's centre is 24px below the copy frame's on
+       a 375px card, so two buttons there could never both own a 44px thumb
+       band (the post-deploy sweep measured the plate at 7px, reach 0). */
+    expect(identityCard).toContain('club-identity__invite');
+    expect(identityCard).toContain(
+      'zoneStyleWithin(CLUB_IDENTITY_ZONES.invite, CLUB_IDENTITY_ZONES.share)'
+    );
+    expect(identityCard).not.toMatch(/<button[^>]*className="club-identity__invite"/);
+    expect(identityCard).toContain('aria-label="Share And Invite"');
+    expect(identityCard).toContain("SHARE_AND_INVITE = 'Share & Invite'");
+    expect(identityCard).not.toContain('Level {level}');
+    expect(identityCardCss).toContain('.club-identity__invite');
     expect(identityCardCss).not.toContain('linear-gradient');
 
     /* Dan 2026-09-02: the real name is never printed; the alias is the

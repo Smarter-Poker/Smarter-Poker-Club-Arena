@@ -1,9 +1,17 @@
 #!/usr/bin/env python3
 """The Diamond Wheel v4 model and its follow-up matrix, derived and proved here.
 
-Owner ruling 2026-09-21 (R2, R12, R13, R15): a bonus game 50% of the time, an
-instant chip win 30%, a throwable / time bank / rabbit hunt 20%, the payback
-held at 80%, and never the same prize or game twice in a row.
+Owner ruling 2026-09-21 (R2, R12, R13, R15): a bonus game 50% of the time, the
+payback held at 80%, and never the same prize or game twice in a row.
+
+Owner ruling 2026-10-12 (Dan): "THE VIP WHEEL THAT ONLY AWARDS DIAMONDS, CHIPS
+OR BONUS GAMES SHOULD BE THE SAME WHEEL THAT NON VIP MEMBERS GET. THERE
+SHOULDN'T BE A DIFFERENCE." There is ONE table now, the one a VIP was dealt:
+ords 3, 6 and 9 are 0.2x, 0.25x and 0.3x instant chips for every player, so the
+mix is a game half the time and instant chips the other half, and nobody wins a
+throwable, a time bank or a rabbit hunt from the wheel. The weights did not
+move, so the follow-up matrix did not move either, and the payback is the same
+exact 0.8 it already was on the VIP table.
 
 Nothing downstream retypes these numbers. Run
 
@@ -24,7 +32,7 @@ symmetric F with row sums W makes W stationary: for every j,
     sum_i (W[i]/N) * (F[i][j]/W[i]) = sum_i F[i][j]/N = sum_i F[j][i]/N = W[j]/N
 
 so the unconditional law of EVERY spin is still W. The mix stays exactly
-50/30/20 and the payback exactly 0.8, standard and VIP, while no prize can
+50/50 and the payback exactly 0.8, while no prize can
 follow itself. The continuous seed is the classic "no repeat" kernel
 F[i][j] = N w_i w_j h_i h_j with h_i = (T - sqrt(T^2 - 4 w_i)) / (2 w_i) and T
 solved so the row sums come out right; the integers are then repaired to exact
@@ -43,22 +51,22 @@ from fractions import Fraction as Fr
 N = 100000
 
 LABELS = [
-    'Diamond Plinko', '1x Chips', 'Throwables', 'Diamond Crash', 'Diamonds', 'Time Bank',
-    'Donkey Cross', '2x Chips', 'Rabbit Hunt', 'Diamond Mines', '3x Chips', 'Upgrade',
+    'Diamond Plinko', '1x Chips', '0.2x Chips', 'Diamond Crash', 'Diamonds', '0.25x Chips',
+    'Donkey Cross', '2x Chips', '0.3x Chips', 'Diamond Mines', '3x Chips', 'Upgrade',
 ]
 KINDS = [
-    'bonus', 'chips', 'throwables', 'bonus', 'diamonds', 'time_bank',
-    'bonus', 'chips', 'rabbit_hunt', 'bonus', 'chips', 'upgrade',
+    'bonus', 'chips', 'chips', 'bonus', 'diamonds', 'chips',
+    'bonus', 'chips', 'chips', 'bonus', 'chips', 'upgrade',
 ]
 GAMES = ['plinko', None, None, 'crash', None, None, 'crossing', None, None, 'mines', None, None]
 W = [11950, 29600, 6667, 11950, 1200, 6666, 11950, 240, 6667, 11950, 160, 1000]
 
-# The multiplier column each receipt carries. Chips pay it; an item is worth it;
-# Diamonds risks one entry on the three-card game; Upgrade's award doubles.
-MULT = [Fr(1), Fr(1), Fr(1, 4), Fr(1), Fr(1), Fr(1, 4), Fr(1), Fr(2), Fr(1, 4), Fr(1), Fr(3), Fr(2)]
-# The VIP table: ords 3, 6 and 9 are instant chip wins of exactly equal value.
-VIP_LABELS = {2: '0.2x Chips', 5: '0.25x Chips', 8: '0.3x Chips'}
-VIP_MULT = {2: Fr(1, 5), 5: Fr(1, 4), 8: Fr(3, 10)}
+# The multiplier column each receipt carries. Chips pay it; Diamonds risks one
+# entry on the three-card game; Upgrade's award doubles. Ords 3, 6 and 9 were a
+# throwable, a time bank and a rabbit hunt worth a quarter of the entry each
+# (2026-09-21) and are 0.2x, 0.25x and 0.3x chips for everyone (2026-10-12):
+# 0.2*6667 + 0.25*6666 + 0.3*6667 = 5000 = 0.25*20000, the same money.
+MULT = [Fr(1), Fr(1), Fr(1, 5), Fr(1), Fr(1), Fr(1, 4), Fr(1), Fr(2), Fr(3, 10), Fr(1), Fr(3), Fr(2)]
 
 # The Upgrade wheel, unchanged since 2026-09-17.
 UPGRADE_LABELS = [
@@ -89,11 +97,8 @@ def value(kind: str, multiplier: Fr) -> Fr:
     return multiplier
 
 
-def values(vip: bool) -> list[Fr]:
-    return [
-        value('chips' if vip and i in VIP_MULT else KINDS[i], VIP_MULT[i] if vip and i in VIP_MULT else MULT[i])
-        for i in range(12)
-    ]
+def values() -> list[Fr]:
+    return [value(KINDS[i], MULT[i]) for i in range(12)]
 
 
 def follow_matrix() -> list[list[int]]:
@@ -218,25 +223,24 @@ def prove(f: list[list[int]]) -> dict[str, object]:
     for j in range(n):
         assert sum(Fr(W[i], N) * Fr(f[i][j], W[i]) for i in range(n)) == Fr(W[j], N), 'W must be stationary'
 
-    buckets = (('bonus', 'upgrade', 'diamonds'), ('chips',), ('throwables', 'time_bank', 'rabbit_hunt'))
+    assert not set(KINDS) & {'throwables', 'time_bank', 'rabbit_hunt'}, 'nobody wins an item from the wheel'
+    buckets = (('bonus', 'upgrade', 'diamonds'), ('chips',))
     mix = tuple(sum(Fr(W[j], N) for j in range(n) if KINDS[j] in s) for s in buckets)
-    assert mix == (Fr(1, 2), Fr(3, 10), Fr(1, 5)), 'the long-run mix must be exactly 50/30/20'
+    assert mix == (Fr(1, 2), Fr(1, 2)), 'the long-run mix must be exactly 50/50'
 
     worst = Fr(0)
     rows: list[dict[str, object]] = []
-    for vip in (False, True):
-        v = values(vip)
-        assert sum(Fr(W[i], N) * v[i] for i in range(n)) == Fr(4, 5), 'the payback must be exactly 0.8'
-        for i in range(n):
-            cond = sum(Fr(f[i][j], W[i]) * v[j] for j in range(n))
-            assert cond < 1, 'no conditional expectation may reach the entry'
-            worst = max(worst, cond)
+    v = values()
+    assert sum(Fr(W[i], N) * v[i] for i in range(n)) == Fr(4, 5), 'the payback must be exactly 0.8'
+    for i in range(n):
+        cond = sum(Fr(f[i][j], W[i]) * v[j] for j in range(n))
+        assert cond < 1, 'no conditional expectation may reach the entry'
+        worst = max(worst, cond)
     # The cross-tier rows keep both the row total and the payback.
     for g in ('plinko', 'crash', 'crossing', 'mines'):
         row = cross_tier_main(f[11], g)
         assert sum(row) == W[11], 'the cross-tier main row must keep its total'
         assert row[GAMES.index(g)] == 0, 'the repeated game must be gone'
-        v = values(False)
         assert sum(Fr(row[j], W[11]) * v[j] for j in range(n)) == sum(
             Fr(f[11][j], W[11]) * v[j] for j in range(n)
         ), 'moving weight between equal-value games may not move the payback'
@@ -270,18 +274,14 @@ def emit_sql() -> str:
     f = follow_matrix()
     out: list[str] = []
     out.append('-- GENERATED by scripts/diamond-spins/wheel-v4-follow-matrix.py. Do not hand edit.')
-    out.append('-- The base law: 50% a game, 30% instant chips, 20% an item, payback exactly 0.8.')
+    out.append('-- The one table: 50% a game, 50% instant chips, payback exactly 0.8.')
     out.append('MODEL:')
     for i in range(12):
-        label = VIP_LABELS[i] if i in VIP_LABELS else LABELS[i]
-        kind = 'chips' if i in VIP_MULT else KINDS[i]
-        mult = VIP_MULT[i] if i in VIP_MULT else MULT[i]
         out.append(
-            " (%d,'%s','%s',%s,%s,%s,'%s','%s',%s,%s,%d)"
+            " (%d,'%s','%s',%s,%s,%s,%d)"
             % (
                 i + 1, LABELS[i], KINDS[i], "'%s'" % GAMES[i] if GAMES[i] else 'NULL',
-                decimal(MULT[i]), decimal(sixths(KINDS[i], MULT[i])),
-                label, kind, decimal(mult), decimal(sixths(kind, mult)), W[i],
+                decimal(MULT[i]), decimal(sixths(KINDS[i], MULT[i])), W[i],
             )
         )
     out.append('FOLLOW:')
@@ -297,14 +297,15 @@ def emit_ts() -> str:
     lines.append(' * THE DIAMOND WHEEL v4 LAW, GENERATED, NEVER HAND EDITED.')
     lines.append(' *')
     lines.append(' * Produced by `python3 scripts/diamond-spins/wheel-v4-follow-matrix.py --ts`,')
-    lines.append(' * which also derives and proves it (owner ruling 2026-09-21, R2/R12/R13/R15).')
+    lines.append(' * which also derives and proves it (owner rulings 2026-09-21 R12/R13/R15, and')
+    lines.append(' * 2026-10-12: one wheel for everyone, so no ord ever pays an item).')
     lines.append(' * The migration installs the same numbers, from the same script, so the')
     lines.append(' * browser can recompute a spin without trusting the receipt it is checking.')
     lines.append(' *')
     lines.append(' * WHEEL_V4_WEIGHTS is the base law W out of 100000. WHEEL_V4_FOLLOW[i] is the')
     lines.append(' * law used by the spin AFTER ord i+1: symmetric, zero on the diagonal, and')
     lines.append(' * summing to W[i], which is what keeps every spin\'s unconditional law exactly')
-    lines.append(' * W and so the mix exactly 50/30/20 and the payback exactly 0.8.')
+    lines.append(' * W and so the mix exactly 50/50 and the payback exactly 0.8.')
     lines.append(' */')
     lines.append('')
     lines.append('export const WHEEL_V4_TOTAL = 100000;')
@@ -359,7 +360,9 @@ def check(paths: list[str]) -> int:
     formatter rewrapping a line can never look like the law drifting.
     """
     sql = emit_sql()
-    rows = [line.strip() for line in sql.split('MODEL:')[1].strip().split('\n') if line.strip() and not line.startswith('FOLLOW')]
+    model_text, follow_text = sql.split('MODEL:')[1].split('FOLLOW:')
+    model_rows = [line.strip() for line in model_text.strip().split('\n') if line.strip()]
+    follow_rows = [line.strip() for line in follow_text.strip().split('\n') if line.strip()]
     f = follow_matrix()
     wanted = [list(W)] + [list(row) for row in f] + [list(UPGRADE_W)]
     bad = 0
@@ -367,7 +370,11 @@ def check(paths: list[str]) -> int:
         with open(path, encoding='utf-8') as handle:
             text = handle.read()
         if path.endswith('.sql'):
-            missing = [row for row in rows if row not in text]
+            # A migration carries whichever of the two VALUES lists it installs:
+            # 20260922194123 installed both, 20261012041752 only the one table.
+            rows = (model_rows if 'FUNCTION public.fn_wheel_v4_model(' in text else []) + (
+                follow_rows if 'FUNCTION public.fn_wheel_v4_follow_model(' in text else [])
+            missing = [row for row in rows if row not in text] if rows else ['no wheel v4 VALUES list']
         else:
             found = numbers(text)
             missing = [row for row in wanted if row not in found]
@@ -395,8 +402,8 @@ def main(argv: list[str]) -> int:
         print(json.dumps(report, indent=1))
         return 0
     print('base law            %s' % W)
-    print('long-run mix        games %s chips %s items %s' % tuple(report['mix']))
-    print('payback             4/5 exactly, standard and VIP')
+    print('long-run mix        games %s chips %s' % tuple(report['mix']))
+    print('payback             4/5 exactly, one table for every player')
     print('max conditional EV  %.6f of the entry' % report['max_conditional'])
     for row in report['rows']:
         print('after %-15s %s' % (row['label'], row['weights']))

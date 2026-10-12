@@ -182,6 +182,16 @@ export function useTableChat(
   useEffect(() => {
     if (!tableId) return;
     let isMounted = true;
+    /**
+     * 2026-10-12: a table_chat row is shown ONCE, keyed by its primary key.
+     * Realtime delivery is at-least-once (a channel rejoin replays, and a
+     * stacked listener emits one TABLE_CHAT_INSERT per listener), and this
+     * handler used to append every delivery - one "Good Luck" row in the
+     * database was drawn three times. A row already on screen (from history
+     * or an earlier delivery) is ignored entirely: no second line, no second
+     * unread tick, no second chime.
+     */
+    const shownRowIds = new Set<string>();
 
     const loadMessages = async () => {
       const { data } = await supabase
@@ -193,6 +203,7 @@ export function useTableChat(
 
       if (!isMounted) return;
       if (data) {
+        for (const m of data as any[]) if (m?.id) shownRowIds.add(String(m.id));
         const formatted = data.reverse().map((m: any) => {
           const pName = playersRef.current.find((p) => p && p.id === m.user_id)?.name || 'Player';
           return {
@@ -220,6 +231,11 @@ export function useTableChat(
 
       const m = payload.newRow as any;
       if (!isMounted) return;
+      if (m?.id) {
+        const rowId = String(m.id);
+        if (shownRowIds.has(rowId)) return;
+        shownRowIds.add(rowId);
+      }
 
       /**
        * SIDE EFFECTS LIVE OUTSIDE THE UPDATER 2026-08-28.
@@ -247,6 +263,7 @@ export function useTableChat(
       }
 
       setChatMessages((prev) => {
+        if (m?.id && prev.some((msg) => msg.id === m.id)) return prev;
         // Deduplicate: remove the optimistic local clone, and append the real Supabase record
         let removedOne = false;
         const filtered = prev.filter((msg) => {

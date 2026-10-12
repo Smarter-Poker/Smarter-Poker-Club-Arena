@@ -1,0 +1,3 @@
+# tests/a-treasury-funded-seat-reads-as-a-club-bank-send.db.law.test.ts
+
+A seat the club treasury funds for a horse reads exactly as a person's Club Bank send in the Trade record and the Club Bank ledger (kind club_bank_send, from the Club Bank except to its operator and the member paid, whose own views are unchanged, the recipient by arena name, only a typed reason as its note, only the destination as its metadata, listed, filtered and counted with every other Club Bank send), and its treasury journal leg reads table_funding with no description in the treasury statement, so no cashier read names a horse and none drops one (migration 20261012040542, md5-pinned over production's live text; qualified by scripts/ci/test-horse-reads-db-postgres.py).

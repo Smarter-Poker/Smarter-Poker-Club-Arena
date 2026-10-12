@@ -164,3 +164,51 @@ PYTHON
 "${PSQL[@]}" -f "$fixture/forward-proofs.sql"
 "${PSQL[@]}" -c "DELETE FROM harness.lp8 WHERE phase='own'" -f "$fixture/own-proofs-eval.sql" -f "$fixture/own-proofs.sql"
 echo 'PASS: worker off refuses before completed drain, preserves dealt hands and stacks, admits after real settlement and MUST MOVE, receipts expose mode, request replay, publication, idempotent frozen-deadline restoration, prior proofs and exact reapplication'
+# Qualify the calibrated-window control on the same real retained chain.
+"${PSQL[@]}" <<'SQL'
+BEGIN;
+DO $$ DECLARE g uuid; BEGIN
+ g:=harness.lc('shadow window before');
+ PERFORM harness.refused(harness.ctl('admin',g,'set_shadow_window','{"shadow_window_ms":60000}'),'INVALID_ACTION','missing window door');
+ RAISE NOTICE 'REPRODUCED: the operator cannot shorten a five-minute shadow window';
+END $$;
+ROLLBACK;
+SQL
+shadow_migration="$root/supabase/migrations/20261012040746_lightning_shadow_calibration_window_control.sql"
+"${PSQL[@]}" -f "$shadow_migration"
+"${PSQL[@]}" <<'SQL'
+DO $$
+DECLARE g uuid; r jsonb; req uuid:=gen_random_uuid(); money text; stacks jsonb; n bigint;
+BEGIN
+ g:=harness.lc('shadow calibration window');
+ money:=harness.money(g); stacks:=harness.stacks(g);
+ PERFORM harness.refused(harness.ctl('stranger',g,'set_shadow_window','{"shadow_window_ms":60000}'),'NOT_AUTHORIZED','window outsider');
+ PERFORM harness.refused(harness.ctl('admin',g,'set_shadow_window','{"shadow_window_ms":60000}',''),'REASON_REQUIRED','window reason');
+ FOR r IN SELECT value FROM jsonb_array_elements('[{}, {"shadow_window_ms":"60000"}, {"shadow_window_ms":null}, {"shadow_window_ms":59999}, {"shadow_window_ms":60000.5}, {"shadow_window_ms":3600001}, {"shadow_window_ms":1e99}]') LOOP
+   PERFORM harness.refused(harness.ctl('admin',g,'set_shadow_window',r),'INVALID_ARGS','window invalid');
+ END LOOP;
+ PERFORM harness.refused(harness.ctl('admin',g,'set_shadow_window','{"shadow_window_ms":60000}'),'CLUSTER_BUSY','window live pool');
+ PERFORM harness.must(harness.ctl('admin',g,'drain'),'window drain');
+ PERFORM public.fn_cash_cluster_lightning_drive(g);
+ IF harness.mode(g)<>'must_move' THEN RAISE EXCEPTION 'FAIL window drain'; END IF;
+ PERFORM harness.must(harness.ctl('admin',g,'set_worker_mode','{"mode":"off"}'),'window worker off');
+ r:=harness.must(harness.ctl('admin',g,'set_shadow_window','{"shadow_window_ms":60000}','private calibration',req),'window set');
+ IF public.fn_lightning_config(g)->>'shadow_window_ms'<>'60000' OR r#>>'{detail,shadow_window_ms}'<>'60000'
+    OR (SELECT args->>'shadow_window_ms' FROM public.lightning_operator_request WHERE request_id=req)<>'60000'
+    OR NOT EXISTS(SELECT 1 FROM public.cash_cluster_events WHERE game_id=g AND kind='operator_set_shadow_window' AND request_id=req)
+ THEN RAISE EXCEPTION 'FAIL persisted audited window: %',r; END IF;
+ SELECT count(*) INTO n FROM public.cash_cluster_events WHERE game_id=g AND kind='operator_set_shadow_window';
+ r:=harness.ctl('admin',g,'set_shadow_window','{"shadow_window_ms":60000}','private calibration',req);
+ IF (r->>'replayed')::boolean IS DISTINCT FROM true OR (SELECT count(*) FROM public.cash_cluster_events WHERE game_id=g AND kind='operator_set_shadow_window')<>n THEN RAISE EXCEPTION 'FAIL window replay'; END IF;
+ PERFORM harness.already(harness.ctl('admin',g,'set_shadow_window','{"shadow_window_ms":60000}'),'window unchanged');
+ PERFORM harness.must(harness.ctl('admin',g,'set_shadow_window','{"shadow_window_ms":3600000}'),'window upper bound');
+ PERFORM harness.must(harness.ctl('admin',g,'set_shadow_window','{"shadow_window_ms":60000}'),'window restore calibration');
+ PERFORM harness.must(harness.ctl('admin',g,'set_worker_mode','{"mode":"shadow"}'),'window shadow worker');
+ PERFORM harness.refused(harness.ctl('admin',g,'set_shadow_window','{"shadow_window_ms":120000}'),'CLUSTER_BUSY','window running worker');
+ IF harness.money(g) IS DISTINCT FROM money OR harness.stacks(g) IS DISTINCT FROM stacks THEN RAISE EXCEPTION 'FAIL window moved money or stacks'; END IF;
+END $$;
+SQL
+"${PSQL[@]}" -f "$shadow_migration"
+echo 'PASS: audited calibration window, outsider/reason/type/bounds/live-worker refusals, real drain, one event under replay, unchanged money/stacks and exact migration reapplication'
+
+node --test "$root/scripts/ops/prepare-lightning-private-pilot.test.mjs"

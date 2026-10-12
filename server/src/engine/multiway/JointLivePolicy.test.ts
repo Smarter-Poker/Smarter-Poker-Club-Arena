@@ -3,7 +3,7 @@ import type { Card, GameVariant } from '../../types.js';
 import { horseVariantRulesFor } from '../VariantRules.js';
 import { bettingStructureFor } from '../BettingStructure.js';
 import { calculatePots } from '../PokerEngine.js';
-import { saveFastRandom, seedFastRandom } from '../HorseEval.js';
+import { restoreFastRandom, saveFastRandom, seedFastRandom } from '../HorseEval.js';
 import { jointFixture } from './JointRangeFixture.test-support.js';
 import { evaluateJointLivePolicy } from './JointLivePolicy.js';
 
@@ -104,16 +104,24 @@ describe('bounded Phase13 shadow policy', () => {
       live: true,
     });
   });
-  it('does no sampling when disabled and retains the baseline after time expires', () => {
+  it('does no sampling when disabled and never cuts its fixed work on the clock', () => {
     const { hero, state, baseline } = fixture();
     const off = evaluateJointLivePolicy(hero, state, baseline, 'off', () => 0);
     expect(off.receipt.reason).toBe('off');
     expect(off.receipt.completedSamples).toBe(0);
+    // 2026-10-11: a slow clock is measured in latencyMs and changes nothing
+    // else; the live decision is the one the fixed-clock matrix priced.
+    const rng = saveFastRandom();
+    const fixed = evaluateJointLivePolicy(hero, state, baseline, 'candidate', () => 0);
+    restoreFastRandom(rng);
     let clock = 0;
-    const expired = evaluateJointLivePolicy(hero, state, baseline, 'candidate', () => (clock += 5));
-    expect(expired.receipt.reason).toBe('work_budget');
-    expect(expired.receipt.fired).toBe(false);
-    expect(expired.decision).toBe(baseline);
+    const slow = evaluateJointLivePolicy(hero, state, baseline, 'candidate', () => (clock += 5));
+    expect(slow.receipt.reason).not.toBe('work_budget');
+    expect(slow.receipt.fired).toBe(true);
+    expect(slow.receipt.latencyMs).toBeGreaterThan(4);
+    const stripped = (r: typeof fixed) =>
+      JSON.stringify({ ...r, receipt: { ...r.receipt, latencyMs: 0 }, jointEvidence: null });
+    expect(stripped(slow)).toBe(stripped(fixed));
   });
   it.each([
     ['privacy', 'private_state_rejected'],

@@ -3,8 +3,13 @@ import { WHEEL_V4_TOTAL } from './wheelV4Model';
 
 const gameNames = ['plinko', 'crash', 'crossing', 'mines'] as const;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-/** The three cards a VIP is shown instead of a throwable, a time bank and a rabbit hunt. */
-const vipChipMultipliers: Readonly<Record<number, number>> = { 3: 0.2, 6: 0.25, 9: 0.3 };
+/**
+ * The three chip cards on ords 3, 6 and 9 of the item-free table. Until
+ * 2026-10-12 only a VIP was dealt them, instead of a throwable, a time bank and
+ * a rabbit hunt; from then on every player is (owner request: one wheel for
+ * everyone).
+ */
+const itemFreeChipMultipliers: Readonly<Record<number, number>> = { 3: 0.2, 6: 0.25, 9: 0.3 };
 const fail = (): never => {
   throw new Error('The Wheel Award Could Not Be Confirmed. Recover The Same Spin');
 };
@@ -67,6 +72,13 @@ export function assertWheelAward(receipt: WheelSpinResult): void {
   // no prize may repeat (R12); the three item cards are chip cards for a VIP
   // (R2); and Diamonds pays nothing at the spin, opening a sealed three-card
   // game instead (R15). Contracts 2 and 3 keep every rule they had.
+  //
+  // ONE WHEEL FOR EVERYONE (owner request 2026-10-12). `vip` on a v4 receipt
+  // names the TABLE it was drawn from, not the player: true is the item-free
+  // table, which every spin is drawn from since 2026-10-12, and false is the
+  // item table a non-VIP was dealt before that. A sealed `vip: false` receipt
+  // is replayed and recovered for as long as it exists, so it keeps verifying
+  // against exactly the table it was drawn from.
   const v4 = version === 4;
   const vip = v4 && receipt.vip === true;
   if (v4 && (receipt.model !== 'wheel-v4' || typeof receipt.vip !== 'boolean')) fail();
@@ -105,7 +117,7 @@ export function assertWheelAward(receipt: WheelSpinResult): void {
         )) ||
       ['upgrade', 'diamonds'].some((k) => kinds.filter((v) => v === k).length !== 1) ||
       (vip &&
-        Object.entries(vipChipMultipliers).some(
+        Object.entries(itemFreeChipMultipliers).some(
           ([ord, multiplier]) =>
             table.find((s) => s.ord === Number(ord))?.multiplier !== multiplier ||
             table.find((s) => s.ord === Number(ord))?.kind !== 'chips'

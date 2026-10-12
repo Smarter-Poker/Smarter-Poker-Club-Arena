@@ -37,8 +37,31 @@
  *
  * TOURNAMENT (prize and bounty): refused by name for every pack; Pineapple has
  * no tournament format at all. Nothing here is a calibrated solver claim.
+ *
+ * ROUND 4: ONE CONTRACT PER PACK (2026-10-11,
+ * docs/horse-brain-phase12-round4-2026-10-11.md). Contract v1 was one object
+ * rebuilt at import from the live pack versions, rake rows and seat law, with
+ * one digest for all four packs, so changing any one pack moved the digest the
+ * selected FLH pack is bound to. Now each pack is measured, assembled and
+ * admitted under the contract `remainingVariantStrengthContractFor(variant)`
+ * names, with that contract's own digest:
+ *
+ *  - FLH: contract v1, frozen byte for byte (RemainingVariantStrengthContractV1.ts,
+ *    sha256 fafbba8d...), its seeds, pairs and margin unchanged;
+ *  - Short Deck, Crazy Pineapple and FLO8: contract v2 below, with fresh
+ *    held-out seeds, the round-4 Short Deck and Pineapple packs, and FLO8 shard
+ *    counts sized so the trust check (`edgeworthCoverageErrorMax`) is planned to
+ *    pass (`matrixRules.coveragePlanningRule`).
+ *
+ * The v1 held-out seeds of every pack stay held out
+ * (`isRemainingVariantHoldoutSeed`); a v1 shard is refused by name in a v2
+ * pack's verdict and the reverse.
  */
 import { createHash } from 'node:crypto';
+import {
+  REMAINING_VARIANT_STRENGTH_CONTRACT_V1_DIGEST,
+  REMAINING_VARIANT_STRENGTH_CONTRACT_V1_JSON,
+} from './RemainingVariantStrengthContractV1.js';
 import {
   REMAINING_VARIANT_DOMAIN,
   REMAINING_VARIANT_PACKS,
@@ -185,8 +208,17 @@ const PILOT: Record<
 const SHARDS: Record<RemainingPolicyVariant, readonly number[]> = {
   short_deck: [4, 5, 5, 6, 10, 10],
   pineapple: [7, 8, 6, 15, 14, 15],
+  // FLH is measured under the frozen contract v1; this row is v1's, unused by v2.
   flh: [1, 2, 2, 2, 2, 3, 2],
-  flo8: [3, 4, 5, 5, 5, 7, 5],
+  // Round 4 (v1: [3, 4, 5, 5, 5, 7, 5]). The v1 matrix failed only the trust
+  // check, in position:big_blind (coverage 0.00225 against 0.001). Projected
+  // from the v1 matrix's own per-pair moments (each profile's power sums scaled
+  // by its new shard count), these counts plan every gating cell at or under
+  // 0.0007 (big blind 0.00069, small blind 0.00059): 72 shards per seed, 216
+  // jobs, about 18.4 job-hours at the measured shard times
+  // (matrixRules.coveragePlanningRule). The big blind skewness came from the
+  // 4-dealt and 100 BB profiles, so they take most of the added pairs.
+  flo8: [5, 26, 5, 16, 5, 10, 5],
 };
 /** Rotation blocks per shard, per pack: the largest whole number that keeps
  * the slowest profile's shard under about 25 minutes on a GitHub-hosted runner
@@ -215,10 +247,16 @@ export const REMAINING_VARIANT_MATRIX_JOB_CEILING = 256;
  * runRemainingVariantStrengthShard in contract mode, for its own pack, accepts
  * them. */
 const HOLDOUT: Record<RemainingPolicyVariant, readonly [number, number, number]> = {
-  short_deck: [12201119, 12202241, 12203363],
-  pineapple: [12301123, 12302251, 12303373],
+  // Round 4 (contract v2): fresh numbers, written here before any run. On
+  // 2026-10-11 none occurred anywhere on origin/main or at any of the 1,011
+  // remote branch tips. The v1 seeds (Short Deck 12201119, 12202241,
+  // 12203363; Pineapple 12301123, 12302251, 12303373; FLO8 12501131,
+  // 12502263, 12503387) stay held out through the frozen v1 contract.
+  short_deck: [12611137, 12612269, 12613391],
+  pineapple: [12621143, 12622277, 12623399],
+  // FLH is measured under the frozen contract v1; these are v1's seeds.
   flh: [12401129, 12402257, 12403381],
-  flo8: [12501131, 12502263, 12503387],
+  flo8: [12631151, 12632281, 12633407],
 };
 /** The Phase 12 development league seeds (REMAINING_VARIANT_LEAGUE_SEEDS). */
 const DEVELOPMENT_SEEDS = [12101101, 12102203, 12103307];
@@ -527,10 +565,23 @@ function packSection(variant: RemainingPolicyVariant) {
   };
 }
 
+type RemainingVariantPackSection = ReturnType<typeof packSection>;
+
+/** The packs contract v2 measures. FLH stays on the frozen contract v1. */
+export const REMAINING_VARIANT_STRENGTH_V2_VARIANTS: readonly RemainingPolicyVariant[] =
+  Object.freeze(['short_deck', 'pineapple', 'flo8']);
+
+/** Contract v2 (round 4): Short Deck, Crazy Pineapple and FLO8. */
 export const REMAINING_VARIANT_STRENGTH_CONTRACT = deepFreeze({
   schema: 'horse-phase12-strength-contract',
-  version: 'remaining-variant-strength-contract-v1',
+  version: 'remaining-variant-strength-contract-v2',
   phase: 'P12.2',
+  supersedes: {
+    version: 'remaining-variant-strength-contract-v1',
+    digest: REMAINING_VARIANT_STRENGTH_CONTRACT_V1_DIGEST,
+    stillBinds: ['flh'],
+    why: 'round 4 (docs/horse-brain-phase12-round4-2026-10-11.md): the v1 Short Deck and Crazy Pineapple matrices failed only the trust check, in full-table cells where the round-3 pack changed fewer than 1 pair in 600, and FLO8 failed it only in position:big_blind; FLH qualified under v1 and stays bound to its frozen bytes',
+  },
   locked:
     'by the merge of the pull request that introduced this file; the matrix of a pack is dispatched only against a commit on main that contains it, and no held-out hand is dealt before',
   independence:
@@ -552,14 +603,15 @@ export const REMAINING_VARIANT_STRENGTH_CONTRACT = deepFreeze({
   packs: {
     short_deck: packSection('short_deck'),
     pineapple: packSection('pineapple'),
-    flh: packSection('flh'),
     flo8: packSection('flo8'),
-  },
+  } as Partial<Record<RemainingPolicyVariant, RemainingVariantPackSection>>,
   matrixRules: {
     shardRule: 'shard k plays pair indices [k * pairsPerShard, (k + 1) * pairsPerShard)',
     designPilot:
       'per pack: development seed 12101101, the smallest whole number of rotations (a multiple of seats squared) at or above 288 pairs per profile (288 at 2, 4 and 6 dealt, 320 at 8, 324 at 9), runRemainingVariantStrengthShard development mode, shard 0; recorded paired-difference standard deviation, kurtosis and time per pair only (never a mean, never a held-out seed); logs docs/evidence/phase12/pilot-<variant>.json',
     sizingRule: `shards per profile chosen so every gating cell's planned 99% half-width is at most ${HALF_WIDTH_TO_MARGIN} times the pack's regression margin at ${PLANNING_SD_FACTOR} times the pilot deviations, with at least ${MINIMUM_PAIRS_PER_PROFILE_IN_CELL} pairs per profile in every gating cell; pairsPerShard = rotationBlock x k, k the largest whole number keeping the slowest profile under about 25 minutes per shard on a GitHub-hosted runner at 2.5 times the pilot time per pair`,
+    coveragePlanningRule:
+      "round 4: where a pack's previous matrix failed the trust check, its shard counts are chosen so every gating cell's edgeworthCoverageError, projected from that matrix's own per-pair moments (each profile's exact power sums scaled by its shard factor, which scales the estimator skewness as one over the square root of the pairs), is at most 0.0007, a planning margin under the 0.001 gate because the skewness of a cell with rare large paired differences is itself a noisy estimate; FLO8 only (Short Deck and Crazy Pineapple now play the reference exactly in every full-table cell, so those cells are identically zero)",
     jobCeiling: `a pack's requiredShards is at most ${REMAINING_VARIANT_MATRIX_JOB_CEILING}, the GitHub Actions limit on jobs from one matrix; it overrides the 25-minute budget where both cannot hold`,
     kurtosisCheck:
       'every gating cell member has sqrt((pilot kurtosis - 1) / planned pairs) under 0.1 (matrix.plannedGatingCells), so the 10,000-pair floor assumption holds at the planned sizes',
@@ -745,18 +797,59 @@ export const REMAINING_VARIANT_STRENGTH_CONTRACT = deepFreeze({
 });
 
 export type RemainingVariantStrengthContract = typeof REMAINING_VARIANT_STRENGTH_CONTRACT;
-type PackSection = RemainingVariantStrengthContract['packs'][RemainingPolicyVariant];
+type PackSection = DeepReadonly<RemainingVariantPackSection>;
 
-/** sha256 of the contract's JSON. Runs, assemblies and qualification files bind it. */
-export function remainingVariantStrengthContractDigest(): string {
-  return createHash('sha256')
-    .update(JSON.stringify(REMAINING_VARIANT_STRENGTH_CONTRACT))
-    .digest('hex');
-}
-export function remainingVariantStrengthPack(variant: RemainingPolicyVariant): PackSection {
+const sha256Hex = (text: string) => createHash('sha256').update(text).digest('hex');
+
+/** Contract v1, parsed from its frozen bytes; refused at load if they moved. */
+export const REMAINING_VARIANT_STRENGTH_CONTRACT_V1: RemainingVariantStrengthContract = (() => {
+  if (
+    sha256Hex(REMAINING_VARIANT_STRENGTH_CONTRACT_V1_JSON) !==
+    REMAINING_VARIANT_STRENGTH_CONTRACT_V1_DIGEST
+  )
+    throw new Error('The frozen Phase 12 contract v1 bytes do not match their pinned digest');
+  return deepFreeze(
+    JSON.parse(REMAINING_VARIANT_STRENGTH_CONTRACT_V1_JSON)
+  ) as unknown as RemainingVariantStrengthContract;
+})();
+
+/** The contract each pack is measured, assembled and admitted under. */
+const CONTRACT_BY_VARIANT: Readonly<
+  Record<RemainingPolicyVariant, RemainingVariantStrengthContract>
+> = Object.freeze({
+  short_deck: REMAINING_VARIANT_STRENGTH_CONTRACT,
+  pineapple: REMAINING_VARIANT_STRENGTH_CONTRACT,
+  flh: REMAINING_VARIANT_STRENGTH_CONTRACT_V1,
+  flo8: REMAINING_VARIANT_STRENGTH_CONTRACT,
+});
+const DIGEST_BY_VARIANT: Readonly<Record<RemainingPolicyVariant, string>> = Object.freeze(
+  Object.fromEntries(
+    REMAINING_VARIANT_STRENGTH_VARIANTS.map((v) => [
+      v,
+      sha256Hex(JSON.stringify(CONTRACT_BY_VARIANT[v])),
+    ])
+  ) as Record<RemainingPolicyVariant, string>
+);
+
+/** The contract `variant` is measured, assembled and admitted under. */
+export function remainingVariantStrengthContractFor(
+  variant: RemainingPolicyVariant
+): RemainingVariantStrengthContract {
   if (!isRemainingVariantStrengthVariant(variant))
     throw new Error('Unknown Phase 12 strength variant');
-  return REMAINING_VARIANT_STRENGTH_CONTRACT.packs[variant];
+  return CONTRACT_BY_VARIANT[variant];
+}
+/** sha256 of the JSON of the contract `variant` runs. Runs, assemblies and
+ * qualification files of that pack bind it. */
+export function remainingVariantStrengthContractDigest(variant: RemainingPolicyVariant): string {
+  if (!isRemainingVariantStrengthVariant(variant))
+    throw new Error('Unknown Phase 12 strength variant');
+  return DIGEST_BY_VARIANT[variant];
+}
+export function remainingVariantStrengthPack(variant: RemainingPolicyVariant): PackSection {
+  const pack = remainingVariantStrengthContractFor(variant).packs[variant];
+  if (!pack) throw new Error('Phase 12 contract without that pack');
+  return pack;
 }
 export function remainingVariantStrengthDomain(variant: RemainingPolicyVariant): string {
   return remainingVariantStrengthPack(variant).domain;
@@ -778,9 +871,16 @@ export function isRemainingVariantHoldoutSeedOf(
     (remainingVariantStrengthPack(variant).holdout.seeds as readonly number[]).includes(seed)
   );
 }
-/** True for a held-out seed of any Phase 12 pack. */
+/** Every held-out seed of every Phase 12 contract, v1 and v2, of every pack. */
+const EVERY_HOLDOUT_SEED: ReadonlySet<number> = new Set(
+  [REMAINING_VARIANT_STRENGTH_CONTRACT_V1, REMAINING_VARIANT_STRENGTH_CONTRACT].flatMap((c) =>
+    Object.values(c.packs).flatMap((p) => (p ? [...p.holdout.seeds] : []))
+  )
+);
+/** True for a held-out seed of any Phase 12 pack under any Phase 12 contract
+ * (a seed held out once is never dealt in development). */
 export function isRemainingVariantHoldoutSeed(seed: number): boolean {
-  return REMAINING_VARIANT_STRENGTH_VARIANTS.some((v) => isRemainingVariantHoldoutSeedOf(v, seed));
+  return EVERY_HOLDOUT_SEED.has(seed);
 }
 export function remainingVariantStrengthShardKey(profileId: string, seed: number, shard: number) {
   return `${profileId}-${seed}-s${shard}`;
@@ -957,7 +1057,7 @@ export function remainingVariantStrengthShardReasons(
   variant: RemainingPolicyVariant,
   r: RemainingVariantStrengthShardResult
 ): string[] {
-  const c = REMAINING_VARIANT_STRENGTH_CONTRACT;
+  const c = remainingVariantStrengthContractFor(variant);
   const pack = remainingVariantStrengthPack(variant);
   const key = remainingVariantStrengthShardKey(r.profileId, r.seed, r.shard);
   const out: string[] = [];
@@ -965,7 +1065,7 @@ export function remainingVariantStrengthShardReasons(
   if (r.schema !== 'horse-phase12-strength-shard-v1') out.push(`${key}:schema_mismatch`);
   if (r.variant !== variant) out.push(`${key}:variant_mismatch`);
   if (r.contractVersion !== c.version) out.push(`${key}:contract_version_mismatch`);
-  if (r.contractDigest !== remainingVariantStrengthContractDigest())
+  if (r.contractDigest !== remainingVariantStrengthContractDigest(variant))
     out.push(`${key}:contract_digest_mismatch`);
   if (r.packVersion !== pack.candidate.packVersion) out.push(`${key}:pack_version_mismatch`);
   if (r.evidenceMode !== 'contract') out.push(`${key}:not_contract_mode`);
@@ -1059,7 +1159,7 @@ export function summarizeRemainingVariantStrength(
   variant: RemainingPolicyVariant,
   shards: RemainingVariantStrengthShardResult[]
 ): RemainingVariantStrengthVerdict {
-  const c = REMAINING_VARIANT_STRENGTH_CONTRACT;
+  const c = remainingVariantStrengthContractFor(variant);
   const pack = remainingVariantStrengthPack(variant);
   const reasons: string[] = [];
   const seen = new Map<string, number>();
@@ -1179,7 +1279,7 @@ export function summarizeRemainingVariantStrength(
     packVersion: pack.candidate.packVersion,
     domain: pack.domain,
     contractVersion: c.version,
-    contractDigest: remainingVariantStrengthContractDigest(),
+    contractDigest: remainingVariantStrengthContractDigest(variant),
     // The cash qualification of this pack is the only one this verdict can
     // grant; the tournament objective stays an unavailable dependency.
     qualified: cashQualified,

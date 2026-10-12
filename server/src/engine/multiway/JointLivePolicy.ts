@@ -272,9 +272,9 @@ export function evaluateJointLivePolicy(
   legalForm?: (d: HorseDecision) => HorseDecision
 ) {
   const start = now();
-  // Reuse excludes unrelated Phase 7 wall time, but not the sampling work this
-  // policy would otherwise perform. Fresh acquisitions are already timed by
-  // this wrapper and must not be charged twice.
+  // latencyMs (a measurement only): reuse excludes unrelated Phase 7 wall
+  // time, but not the sampling work this policy would otherwise perform.
+  // Fresh acquisitions are already timed by this wrapper and not counted twice.
   let reusedSamplingMs = 0;
   const elapsed = () => Math.max(0, now() - start) + reusedSamplingMs;
   let proposal = baseline;
@@ -329,12 +329,11 @@ export function evaluateJointLivePolicy(
   const finish = (reason: string) => {
     // Bound inside the timed region: recording the inputs is policy work.
     if (bind) receipt.inputs = bind();
+    // A measurement, never a cut-off (2026-10-11): the live decision does the
+    // fixed work the P13.2 matrix priced, bounded by the declared limits (the
+    // full sample count, at most 12 candidates, the response tree's
+    // maxTerminalBranchesPerCandidate, which refuses by name), never by time.
     receipt.latencyMs = elapsed();
-    if (receipt.latencyMs > JOINT_LIVE_DOMAIN.liveBudgetMs) {
-      reason = 'work_budget';
-      receipt.fired = false;
-      proposal = baseline;
-    }
     if (!receipt.fired) proposal = baseline;
     if (receipt.fired && baseline.action === 'fold' && baseline.continuationGuard) {
       proposal = baseline;
@@ -415,8 +414,8 @@ export function evaluateJointLivePolicy(
   // Round 3 keeps the baseline whenever something is owed
   // (JOINT_SELECTION_RULE.actsWhen), so a cash decision facing a wager is
   // decided without pricing a candidate: the work the rule cannot use is not
-  // done inside the four-millisecond budget. The samples are still acquired
-  // and bound above. A tournament decision is priced for Phase 7 as before.
+  // done at all (the P13.2 matrix skips it the same way). The samples are
+  // still acquired and bound above. A tournament decision is priced for Phase 7 as before.
   if (s.gameMode !== 'tournament' && call > 1e-9) {
     receipt.confidence = 'explicit_joint_heuristic';
     receipt.fired = true;
@@ -442,7 +441,8 @@ export function evaluateJointLivePolicy(
       s,
       baseline,
       jointEvidence,
-      () => elapsed() < JOINT_LIVE_DOMAIN.liveBudgetMs,
+      // The declared work, never a clock: every candidate is priced in full.
+      () => true,
       {
         candidateForm: legalForm
           ? (built) => {
@@ -453,6 +453,8 @@ export function evaluateJointLivePolicy(
           : undefined,
       }
     );
+    // Unreachable while the continue check above is constant; kept so a null
+    // ranking can never be read as a priced one.
     if (!receipt.actionModel) return finish('work_budget');
     const selected = jointSelectedRow(receipt.actionModel, hero, s);
     if (!selected) return finish('joint_baseline_not_priced');

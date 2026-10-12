@@ -312,6 +312,13 @@ function CashierContent() {
   );
   const setAmount = (value: string) => {
     cashoutPreparations.invalidate();
+    const previousAmount =
+      action === 'mint' ? parseWholeChipAmount(amount) : parseChipAmount(amount);
+    if (!previousAmount.ok) {
+      setMessage((previous) =>
+        previous?.type === 'error' && previous.text === previousAmount.error ? null : previous
+      );
+    }
     setAmountState(value);
   };
   const setAction = (value: CashierAction) => {
@@ -853,6 +860,16 @@ function CashierContent() {
   /** The typed amount read by the one rule that moves money (G-01). */
   const typedAmount = parseChipAmount(amount);
   const typedChips = typedAmount.ok ? typedAmount.value : null;
+  const fieldAmount = action === 'mint' ? parseWholeChipAmount(amount) : typedAmount;
+  const amountInvalid = amount.trim() !== '' && !fieldAmount.ok;
+  const duplicateAmountMessage =
+    message && amountInvalid && !fieldAmount.ok && message.text === fieldAmount.error;
+  const amountFeedback =
+    amountInvalid && !fieldAmount.ok ? (
+      <p id="cashier-amount-validation" className="sc-copy sc-ink--red" role="status">
+        {formatPopupText(fieldAmount.error)}
+      </p>
+    ) : null;
 
   const closeSendConfirm = useCallback(() => {
     setSendConfirm({ show: false, value: 0, recipientId: '', recipientName: '' });
@@ -2729,6 +2746,8 @@ function CashierContent() {
                   </label>
                   <input
                     id="cashier-send-amount"
+                    aria-invalid={amountInvalid}
+                    aria-describedby={amountInvalid ? 'cashier-amount-validation' : undefined}
                     className={styles.input}
                     type="number"
                     placeholder="0"
@@ -2739,6 +2758,7 @@ function CashierContent() {
                     max={MAX_CHIP_AMOUNT}
                     inputMode="decimal"
                   />
+                  {amountFeedback}
                 </div>
 
                 {/* Quick amounts */}
@@ -2798,7 +2818,7 @@ function CashierContent() {
                   </div>
                 )}
 
-                {message && (
+                {message && !duplicateAmountMessage && (
                   <div
                     className={`sc-copy ${message.type === 'success' ? 'sc-ink--green' : message.type === 'error' ? 'sc-ink--red' : ''}`}
                   >
@@ -2933,6 +2953,8 @@ function CashierContent() {
                   </label>
                   <input
                     id="cashier-distribute-amount"
+                    aria-invalid={amountInvalid}
+                    aria-describedby={amountInvalid ? 'cashier-amount-validation' : undefined}
                     className={styles.input}
                     type="number"
                     placeholder="Enter Chip Amount"
@@ -2943,9 +2965,10 @@ function CashierContent() {
                     max={MAX_CHIP_AMOUNT}
                     inputMode="decimal"
                   />
+                  {amountFeedback}
                 </div>
 
-                {message && (
+                {message && !duplicateAmountMessage && (
                   <div
                     className={`sc-copy ${message.type === 'success' ? 'sc-ink--green' : message.type === 'error' ? 'sc-ink--red' : ''}`}
                   >
@@ -3281,6 +3304,8 @@ function CashierContent() {
                       12.34 as invalid (P-04). */}
                     <input
                       id="cashier-amount"
+                      aria-invalid={amountInvalid}
+                      aria-describedby={amountInvalid ? 'cashier-amount-validation' : undefined}
                       className={styles.input}
                       type="number"
                       placeholder="0"
@@ -3293,6 +3318,7 @@ function CashierContent() {
                       max={MAX_CHIP_AMOUNT}
                       inputMode={action === 'mint' ? 'numeric' : 'decimal'}
                     />
+                    {amountFeedback}
                   </div>
 
                   {action === 'mint' && amount && (
@@ -3333,7 +3359,7 @@ function CashierContent() {
                     )}
                   </div>
 
-                  {message && (
+                  {message && !duplicateAmountMessage && (
                     <div
                       className={`sc-copy ${message.type === 'success' ? 'sc-ink--green' : message.type === 'error' ? 'sc-ink--red' : ''}`}
                     >

@@ -13,7 +13,8 @@
  * one of these).
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import ts from 'typescript';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { sliceEnclosingBlock, sliceMethod } from '../helpers/sourceWindow';
@@ -127,10 +128,26 @@ describe('the badge outlives the wheel', () => {
     expect(window).toContain('prize_pool');
   });
 
-  it('the felt badge renders the prize beside the multiplier', () => {
-    expect(TABLE_PAGE).toContain('spinMultiplierPrize');
+  it('the felt masthead names the prize without the top multiplier badge', () => {
+    expect(TABLE_PAGE).toContain('table-brand__prize');
+    expect(TABLE_PAGE).not.toContain('spinMultiplierBadge');
     expect(TABLE_PAGE).toContain('(tableState.spinPrizePool ?? 0) > 0');
-    expect(TABLE_CSS).toContain('.spinMultiplierPrize');
+    expect(TABLE_CSS).toContain('.table-brand__prize');
+  });
+
+  it('resolves the entered club on a cold union-table reload before reading its name', () => {
+    const start = TABLE_PAGE.indexOf('// Dan 2026-08-18: the union name');
+    const end = TABLE_PAGE.indexOf('// ─── Load bounty data', start);
+    expect(start).toBeGreaterThan(0);
+    expect(end).toBeGreaterThan(start);
+    const identity = TABLE_PAGE.slice(start, end);
+    expect(identity).toContain(
+      'await resolveLobbyClubId({ ...lobbyClubArgs, unionId: clubData.union_id })'
+    );
+    expect(identity).toContain(".eq('id', viewerClubId)");
+    expect(identity).toContain('viewerClub.union_id === clubData.union_id');
+    expect(identity).toContain('viewerClub.is_union === false');
+    expect(identity).toContain(".select('name, union_id, unions:union_id (name)')");
   });
 
   it('a rejoin reads the prize off the tournament row', () => {
@@ -472,5 +489,87 @@ describe('the spin quick-join sheet is live for as long as it is open', () => {
     // alone is still null at that moment, and never re-runs.
     expect(MULTI_TABLE).toContain('const [spinSheetScope, setSpinSheetScope] = useState<{');
     expect(MULTI_TABLE).toContain('}, [quickJoin.open, spinSheetScope]);');
+  });
+});
+
+// Execute the actual masthead read continuation with controlled club rows.
+// The expected affiliation comes from the fixture, never from the display code.
+const pageAst = ts.createSourceFile(
+  'TablePage.tsx',
+  TABLE_PAGE,
+  ts.ScriptTarget.Latest,
+  true,
+  ts.ScriptKind.TSX
+);
+let identityCallback = '';
+function findIdentityCallback(node: ts.Node) {
+  if (
+    ts.isCallExpression(node) &&
+    ts.isPropertyAccessExpression(node.expression) &&
+    node.expression.name.text === 'then' &&
+    node.arguments[0] &&
+    ts.isArrowFunction(node.arguments[0]) &&
+    node.arguments[0].getText(pageAst).includes("'TablePage.masthead_viewer_club_read_failed'")
+  ) {
+    identityCallback = node.arguments[0].getText(pageAst);
+  }
+  ts.forEachChild(node, findIdentityCallback);
+}
+findIdentityCallback(pageAst);
+
+describe('a table masthead prints only a verified club affiliation', () => {
+  it.each([
+    { name: 'Deep Stack Society', union_id: null, expected: undefined },
+    { name: 'Another Union Club', union_id: 'another-union', expected: undefined },
+    { name: 'SHARK CLUB', union_id: 'midway', expected: 'SHARK CLUB' },
+  ])('handles $name without inventing a union pairing', async ({ name, union_id, expected }) => {
+    expect(identityCallback).not.toBe('');
+    const selected: string[] = [];
+    const query = {
+      select: (columns: string) => {
+        selected.push(columns);
+        return query;
+      },
+      eq: () => query,
+      maybeSingle: async () => ({ data: { name, union_id, is_union: false }, error: null }),
+    };
+    let state: any = {};
+    const resolveClub = vi.fn(async () => 'viewer-club');
+    const script = ts.transpile(`const readIdentity = ${identityCallback};`, {
+      target: ts.ScriptTarget.ES2020,
+    });
+    const readIdentity = Function(
+      'supabase',
+      'table',
+      'isMounted',
+      'reportError',
+      'resolveLobbyClubId',
+      'lobbyClubArgs',
+      'setTableState',
+      `${script}; return readIdentity;`
+    )(
+      { from: () => query },
+      { club_id: 'midway-hub' },
+      true,
+      vi.fn(),
+      resolveClub,
+      {},
+      (update: (previous: any) => any) => {
+        state = update(state);
+      }
+    );
+    await readIdentity({
+      data: {
+        name: 'Midway Union',
+        union_id: 'midway',
+        is_union: true,
+        unions: { name: 'Midway Union' },
+      },
+      error: null,
+    });
+    expect(resolveClub).toHaveBeenCalledWith({ unionId: 'midway' });
+    expect(state.clubName).toBe(expected);
+    expect(state.unionName).toBe('Midway Union');
+    if (expected) expect(selected.some((columns) => columns.includes('union_id'))).toBe(true);
   });
 });

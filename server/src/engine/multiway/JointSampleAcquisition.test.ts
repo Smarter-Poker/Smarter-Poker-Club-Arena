@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { saveFastRandom, seedFastRandom } from '../HorseEval.js';
+import { restoreFastRandom, saveFastRandom, seedFastRandom } from '../HorseEval.js';
+import { equityGovernor } from '../EquityLoadGovernor.js';
 import { jointPolicyFixture, jointFixture } from './JointRangeFixture.test-support.js';
 import * as sampler from './JointRangeSampler.js';
 import {
   acquireJointSamples,
+  jointFullSamples,
   jointSampleAcquisitionMatches,
   JOINT_SAMPLE_WORK_BUDGET_MS,
 } from './JointSampleAcquisition.js';
@@ -185,21 +187,49 @@ describe('decision-local shared joint acquisition', () => {
     );
   });
 
-  it('never promotes fewer than eight complete samples or hides actual acquisition cost', () => {
+  it('draws the declared population whatever the clock or the governor says, and measures it', () => {
+    // 2026-10-11: the live acquisition does the fixed work the P13.2 matrix
+    // priced. No clock stops the sampler and the equity governor never scales
+    // the request; the clock only measures samplingMs.
     const { hero, state } = jointPolicyFixture();
+    const withoutClock = (a: ReturnType<typeof acquireJointSamples>) =>
+      JSON.stringify({ ...a, samplingMs: 0, evidence: { ...a.evidence, analysisMs: 0 } });
+    const rng = saveFastRandom();
+    const fixed = acquireJointSamples(hero, state, { now: () => 0 });
+    expect(fixed.status, fixed.reason).toBe('acquired');
+    expect(fixed.requestedSamples).toBe(jointFullSamples(fixed.dealtPlayers));
+    expect(fixed.evidence!.samples).toHaveLength(fixed.requestedSamples);
+    restoreFastRandom(rng);
     let ticks = 0;
-    const incomplete = acquireJointSamples(hero, state, { now: () => (++ticks <= 8 ? 0 : 3) });
+    // The acquisition reads the clock twice: at its start and for samplingMs.
+    const late = acquireJointSamples(hero, state, { now: () => (++ticks <= 1 ? 0 : 3) });
+    expect(late.samplingMs).toBe(3);
+    restoreFastRandom(rng);
+    let elapsed = 0;
+    const slow = acquireJointSamples(hero, state, { now: () => (elapsed += 5) });
+    expect(slow.samplingMs).toBeGreaterThan(JOINT_SAMPLE_WORK_BUDGET_MS);
+    restoreFastRandom(rng);
+    vi.spyOn(equityGovernor, 'current').mockReturnValue(0.35);
+    const loaded = acquireJointSamples(hero, state, { now: () => 0 });
+    for (const other of [late, slow, loaded]) {
+      expect(other.status, other.reason).toBe('acquired');
+      expect(other.evidence!.sampleBudgetExhausted).toBe(false);
+      expect(withoutClock(other)).toBe(withoutClock(fixed));
+    }
+  });
+
+  it('never promotes fewer than eight complete samples', () => {
+    const { hero, state } = jointPolicyFixture();
+    const draw = sampler.sampleJointRanges;
+    vi.spyOn(sampler, 'sampleJointRanges').mockImplementationOnce((...args) => {
+      const full = draw(...args)!;
+      return { ...full, samples: full.samples.slice(0, 7), sampleBudgetExhausted: true };
+    });
+    const incomplete = acquireJointSamples(hero, state, { now: () => 0 });
     expect(incomplete.status).toBe('refused');
     expect(incomplete.reason).toBe('insufficient_joint_samples');
-    expect(incomplete.evidence!.samples.length).toBeGreaterThan(0);
-    expect(incomplete.evidence!.samples.length).toBeLessThan(8);
-    expect(incomplete.samplingMs).toBe(3);
+    expect(incomplete.evidence!.samples).toHaveLength(7);
     expect(incomplete.provenance).toBeNull();
-    let elapsed = 0;
-    const expired = acquireJointSamples(hero, state, { now: () => (elapsed += 5) });
-    expect(expired.status).toBe('refused');
-    expect(expired.reason).toBe('work_budget');
-    expect(expired.samplingMs).toBeGreaterThan(JOINT_SAMPLE_WORK_BUDGET_MS);
   });
 });
 
@@ -256,15 +286,17 @@ describe('Phase13 reuses the authenticated joint population', () => {
     expect(stale.decision).toBe(baseline);
   });
 
-  it('charges reused sampling time before the Phase13 work gate and does not retry refusals', () => {
+  it('measures reused sampling time in latencyMs, never cuts on it, and does not retry refusals', () => {
     const { hero, state, baseline } = jointPolicyFixture();
+    const original = sampler.sampleJointRanges;
     const draw = vi.spyOn(sampler, 'sampleJointRanges');
     let calls = 0;
     const acquired = acquireJointSamples(hero, state, { now: () => (++calls === 1 ? 0 : 2) });
     expect(acquired.status, acquired.reason).toBe('acquired');
     expect(acquired.samplingMs).toBe(2);
+    const fixed = evaluateJointLivePolicy(hero, state, baseline, 'candidate', () => 0, acquired);
     let clock = 100;
-    const expired = evaluateJointLivePolicy(
+    const slow = evaluateJointLivePolicy(
       hero,
       state,
       baseline,
@@ -272,13 +304,18 @@ describe('Phase13 reuses the authenticated joint population', () => {
       () => (clock += 1),
       acquired
     );
-    expect(expired.receipt.reason).toBe('work_budget');
-    expect(expired.receipt.latencyMs).toBeGreaterThanOrEqual(4);
-    expect(expired.receipt.fired).toBe(false);
-    expect(expired.decision).toBe(baseline);
+    expect(slow.receipt.fired, slow.receipt.reason).toBe(true);
+    // The reused 2 ms plus the wrapper's own measured 1 ms; nothing is cut.
+    expect(fixed.receipt.latencyMs).toBe(2);
+    expect(slow.receipt.latencyMs).toBe(3);
+    expect({ ...slow.receipt, latencyMs: 0 }).toEqual({ ...fixed.receipt, latencyMs: 0 });
+    expect(slow.decision).toEqual(fixed.decision);
     expect(draw).toHaveBeenCalledTimes(1);
-    let ticks = 0;
-    const refused = acquireJointSamples(hero, state, { now: () => (++ticks <= 8 ? 0 : 3) });
+    draw.mockImplementationOnce((...args) => {
+      const full = original(...args)!;
+      return { ...full, samples: full.samples.slice(0, 3), sampleBudgetExhausted: true };
+    });
+    const refused = acquireJointSamples(hero, state, { now: () => 0 });
     expect(refused.status).toBe('refused');
     const refusal = evaluateJointLivePolicy(hero, state, baseline, 'shadow', () => 0, refused);
     expect(refusal.receipt.reason).toBe(refused.reason);

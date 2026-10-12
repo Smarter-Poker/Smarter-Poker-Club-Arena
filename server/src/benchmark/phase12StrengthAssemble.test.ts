@@ -25,8 +25,8 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
-  REMAINING_VARIANT_STRENGTH_CONTRACT,
   remainingVariantStrengthContractDigest,
+  remainingVariantStrengthContractFor,
   remainingVariantStrengthPack,
   remainingVariantStrengthRequiredShards,
 } from './RemainingVariantStrengthContract.js';
@@ -49,7 +49,6 @@ const exec = promisify(execFile);
 const HEAD = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
 const RUN_TIMEOUT_MS = 60_000;
 const DEV_SHARD_TIMEOUT_MS = 240_000;
-const C = REMAINING_VARIANT_STRENGTH_CONTRACT;
 const VARIANT: RemainingPolicyVariant = 'flh';
 const PACK = remainingVariantStrengthPack(VARIANT);
 const write = (file: string, value: unknown) => {
@@ -111,8 +110,8 @@ function writeAttempt(
     sourceSha256: 'f'.repeat(64),
     sourceFiles: 1,
     serverLockSha256: 'e'.repeat(64),
-    contractVersion: C.version,
-    contractDigest: remainingVariantStrengthContractDigest(),
+    contractVersion: remainingVariantStrengthContractFor(variant).version,
+    contractDigest: remainingVariantStrengthContractDigest(variant),
     packVersion: pack.candidate.packVersion,
     profileId,
     seed,
@@ -125,8 +124,8 @@ function writeAttempt(
   write(path.join(dir, key, `${key}.json`), {
     schema: 'horse-phase12-strength-shard-v1',
     variant,
-    contractVersion: C.version,
-    contractDigest: remainingVariantStrengthContractDigest(),
+    contractVersion: remainingVariantStrengthContractFor(variant).version,
+    contractDigest: remainingVariantStrengthContractDigest(variant),
     packVersion: pack.candidate.packVersion,
     evidenceMode: mode,
     profileId,
@@ -204,7 +203,13 @@ describe('phase12-strength-assemble', () => {
       expect(strength.schema).toBe('horse-phase12-strength-v1');
       expect(strength.phase).toBe('P12.2');
       expect(strength.variant).toBe(VARIANT);
-      expect(strength.contractDigest).toBe(remainingVariantStrengthContractDigest());
+      expect(strength.contractDigest).toBe(remainingVariantStrengthContractDigest(VARIANT));
+      // Round 4: FLH is assembled under its own frozen contract v1, embedded whole.
+      expect(strength.contractDigest).toBe(
+        'fafbba8dc23ebc59b5aadf78fdcc47cd6f504baf9bcd10b07970ad7fbea501c0'
+      );
+      expect(strength.contract).toEqual(remainingVariantStrengthContractFor(VARIANT));
+      expect(strength.contract.version).toBe('remaining-variant-strength-contract-v1');
       expect(strength.domain).toBe(PACK.domain);
       expect(strength.shards).toHaveLength(PACK.matrix.requiredShards);
       expect(strength.attempts).toHaveLength(PACK.matrix.requiredShards);
@@ -232,8 +237,8 @@ describe('phase12-strength-assemble', () => {
         variant: VARIANT,
         sourceSha: HEAD,
         packVersion: PACK.candidate.packVersion,
-        contractVersion: C.version,
-        contractDigest: remainingVariantStrengthContractDigest(),
+        contractVersion: 'remaining-variant-strength-contract-v1',
+        contractDigest: remainingVariantStrengthContractDigest(VARIANT),
         domain: PACK.domain,
         policyDigest: horsePhase12PolicyDigest(VARIANT),
         policyDigestDefinition: HORSE_PHASE12_POLICY_DIGEST_DEFINITION,
@@ -251,7 +256,7 @@ describe('phase12-strength-assemble', () => {
       });
       expect(qualification.reasons.some((r: string) => r.startsWith('tournament:'))).toBe(false);
       expect(qualification.admissionAlsoRequires).toEqual([
-        ...C.liveConditions.admissionAlsoRequires,
+        ...remainingVariantStrengthContractFor(VARIANT).liveConditions.admissionAlsoRequires,
       ]);
       expect(qualification.reasons[0]).toBe('development_mode_never_qualifies');
       // The evidence hash binds the strength record the qualification names.
@@ -309,7 +314,7 @@ describe('phase12-strength-assemble', () => {
         withdrawn: null,
         ...overrides,
       });
-      const digest = remainingVariantStrengthContractDigest();
+      const digest = remainingVariantStrengthContractDigest(VARIANT);
       const admitAs = (
         variant: RemainingPolicyVariant,
         selection: HorsePhase12AuthoritySelection
@@ -644,7 +649,7 @@ describe('remainingVariantStrengthEvaluate refusals', () => {
         schema: 'horse-phase12-strength-manifest-v1',
         mode: 'development',
         variant: 'pineapple',
-        contractDigest: remainingVariantStrengthContractDigest(),
+        contractDigest: remainingVariantStrengthContractDigest('pineapple'),
         equityGovernor: 'off',
         activation: 'never',
       });

@@ -68,6 +68,7 @@ import {
 } from '../config/handCompletionSpec.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { nextHandGap } from './nextHandGapRecorder.js';
+import { jitteredBackoffMs } from '../services/horseEntryRefusalBackoff.js';
 import { currentTournamentDataAuthority } from '../services/supabase/dataActorContext.js';
 
 /**
@@ -3805,7 +3806,9 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         );
       }
       if (attempt < 3) {
-        await new Promise((r) => setTimeout(r, 150 * attempt));
+        // Jittered (horseEntryRefusalBackoff.ts): every table of an event is
+        // refused together when its lane is held, and must not return together.
+        await new Promise((r) => setTimeout(r, jitteredBackoffMs(attempt, 200, 800)));
       }
     }
     if (!isCurrent()) return;

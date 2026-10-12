@@ -4183,7 +4183,33 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     proposalId: string | null;
     revision: string | null;
     closingReason?: 'stale' | 'expired' | 'cancelled';
+    /** When this manager opened the review and parked its dealer. */
+    openedAtMs?: number;
   } | null = null;
+
+  /**
+   * An open final-table deal review is a deliberate hold, by its own
+   * authority and inside its own bound (2026-10-12). The review parks the
+   * dealer for at most FINAL_TABLE_DEAL_PAUSE_MS while players read and vote;
+   * past that bound plus the last-hand grace, or once it is closing, it is no
+   * longer a reason to deal nothing. See TournamentManagerBase.
+   */
+  override deliberateDealingHold(nowMs: number): string | null {
+    const inherited = super.deliberateDealingHold(nowMs);
+    if (inherited) return inherited;
+    const review = this.finalTableDealReview;
+    if (
+      review &&
+      !review.closingReason &&
+      review.openedAtMs !== undefined &&
+      nowMs - review.openedAtMs <
+        TournamentManagerEliminations.FINAL_TABLE_DEAL_PAUSE_MS +
+          TournamentManagerBase.LAST_HAND_GRACE_MS
+    ) {
+      return 'final_table_deal_review';
+    }
+    return null;
+  }
 
   protected override async adoptCommittedTerminalOutcome(): Promise<boolean> {
     const lifecycle = this.captureLifecycleToken();
@@ -4571,6 +4597,15 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
   }
 
   /** The frozen full-ticket plan, not cash-remainder depth, owns this finish. */
+  /**
+   * True while a table break that has not been acknowledged names this table
+   * as its source. Only the balance stage finishes such a break. The manager
+   * that owns the durable break state answers; this base knows of none.
+   */
+  protected tableBreakOwnsSource(_tableId: string): boolean {
+    return false;
+  }
+
   private async checkSatelliteQualifierCompletion(): Promise<
     'legacy' | 'continue' | 'pending' | 'complete'
   > {
@@ -4627,10 +4662,37 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           engine: this.tableEngines.get(table.id),
         }));
         for (const { tableId, engine } of owned) {
+          if (!this.isRunning() || isMaintenanceFrozen() || !this.eliminationMutationAllowed())
+            return 'pending';
+          /*
+           * A BREAK SOURCE THE BOUNDARY CANNOT PARK FINISHES ITS BREAK
+           * (2026-10-12).
+           *
+           * A table break stops its source dealer before it closes the source
+           * table, and the table row stays 'running' until that close commits.
+           * If the close does not land (a statement timeout, a lost reply), the
+           * source has no running dealer and can never park here, so this
+           * answered 'pending' on every sweep. 'pending' resets the cursor to
+           * the elimination stage, and the balance stage, the only code that
+           * retries the close, was never reached again: the boundary waited for
+           * the break and the break waited for the boundary.
+           *
+           * Production 2026-10-12: satellite 61961519 (Sunday Funday Six-Card
+           * Closer Satellite), break 444d8b63 moved every player off table
+           * c01b0657 at 23:52:12Z, fn_f06_close_break hit a statement timeout at
+           * 23:52:21Z, and 9 players sat on table 4af8f60c dealt nothing for
+           * over three hours while the sweep re-read the same two tables every
+           * five seconds.
+           *
+           * The boundary stays held, so no hand is dealt; the sweep goes on to
+           * the stage that owns the break (as for F06_SOURCE_EXCLUDED below),
+           * and the next pass parks the tables that are left.
+           */
+          if (!engine?.isRunning() && this.tableBreakOwnsSource(tableId)) {
+            this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+            return 'continue';
+          }
           if (
-            !this.isRunning() ||
-            isMaintenanceFrozen() ||
-            !this.eliminationMutationAllowed() ||
             !engine?.isRunning() ||
             this.gameServer.getTableEngine(tableId) !== engine ||
             !(await engine.parkForTerminalCloseout(0))
@@ -5059,6 +5121,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           engine,
           proposalId: consensus.proposalId,
           revision: consensus.revision,
+          openedAtMs: Date.now(),
         };
         const parked = await engine.parkForTerminalCloseout(
           TournamentManagerEliminations.FINAL_TABLE_DEAL_PAUSE_MS

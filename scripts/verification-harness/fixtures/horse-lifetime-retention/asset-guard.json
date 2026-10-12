@@ -1,0 +1,9 @@
+{
+  "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_hand_player_row_takes_its_hands_asset()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_asset text;\nBEGIN\n  -- The club whose table the hand was dealt at decides, the same test the\n  -- post-commit projection makes for v_diamond; if the table is gone, the\n  -- tournament's club. A hand that cannot be found keeps what the writer\n  -- gave, which is the column default: every writer reads the hand from\n  -- hand_history in the same statement, so that does not arise.\n  SELECT c.asset INTO v_asset\n    FROM public.hand_history h\n    LEFT JOIN public.tables t ON t.id = h.table_id\n    LEFT JOIN public.tournaments tr ON tr.id = h.tournament_id\n    JOIN public.clubs c ON c.id = coalesce(t.club_id, tr.club_id)\n   WHERE h.id = NEW.hand_id;\n  IF FOUND THEN\n    NEW.asset := CASE WHEN v_asset = 'diamonds' THEN 'diamonds' ELSE 'chips' END;\n  END IF;\n  RETURN NEW;\nEND\n$function$\n",
+  "owner": "postgres",
+  "acl": "{postgres=X/postgres,service_role=X/postgres}",
+  "secdef": true,
+  "config": [
+    "search_path=public, pg_temp"
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres,authenticated=r/postgres}",
+  "rls": true,
+  "indexes": [
+    {
+      "name": "ca_hand_player_idx_pkey",
+      "ready": true,
+      "valid": true,
+      "definition": "CREATE UNIQUE INDEX ca_hand_player_idx_pkey ON public.ca_hand_player_idx USING btree (user_id, hand_id)"
+    },
+    {
+      "name": "idx_ca_hand_player_idx_hand_id",
+      "ready": true,
+      "valid": true,
+      "definition": "CREATE INDEX idx_ca_hand_player_idx_hand_id ON public.ca_hand_player_idx USING btree (hand_id)"
+    },
+    {
+      "name": "idx_ca_hand_player_idx_user_time",
+      "ready": true,
+      "valid": true,
+      "definition": "CREATE INDEX idx_ca_hand_player_idx_user_time ON public.ca_hand_player_idx USING btree (user_id, created_at DESC)"
+    }
+  ],
+  "triggers": [
+    {
+      "name": "ca_hand_player_idx_takes_its_hands_asset",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER ca_hand_player_idx_takes_its_hands_asset BEFORE INSERT OR UPDATE OF asset, hand_id ON public.ca_hand_player_idx FOR EACH ROW EXECUTE FUNCTION fn_ca_hand_player_row_takes_its_hands_asset()"
+    }
+  ],
+  "constraints": [
+    {
+      "name": "ca_hand_player_idx_asset_ck",
+      "type": "c",
+      "validated": false,
+      "definition": "CHECK ((asset = ANY (ARRAY['chips'::text, 'diamonds'::text]))) NOT VALID"
+    },
+    {
+      "name": "ca_hand_player_idx_pkey",
+      "type": "p",
+      "validated": true,
+      "definition": "PRIMARY KEY (user_id, hand_id)"
+    }
+  ]
+}

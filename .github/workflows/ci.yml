@@ -2417,6 +2417,26 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Original posthand escrow stays distinct from poker winnings
+        id: posthand_escrow
+        if: matrix.shard == 3
+        env:
+          PGBIN: /usr/lib/postgresql/17/bin
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/posthand-escrow"
+          export POSTHAND_ESCROW_EVIDENCE_DIR="$RUNNER_TEMP/posthand-escrow"
+          bash scripts/dev/probe-posthand-escrow-pg17.sh 2>&1 | tee "$RUNNER_TEMP/posthand-escrow/native.log"
+
+      - name: Retain original posthand escrow qualification
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.posthand_escrow.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: posthand-escrow-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/posthand-escrow/
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Hand index writers retain canonical order and exact coverage
         id: hand_index_writer_order
         if: matrix.shard == 4

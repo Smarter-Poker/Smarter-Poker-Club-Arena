@@ -56,8 +56,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 209558,
-      "sha256": "d37c75bdf8c9f04a356363c8cff9b919f66f0a1640d7748c40f29cc40bd5aea9"
+      "bytes": 210472,
+      "sha256": "2ac563308b4b2a1f2a0bc3a4179d945a96a72d6719160a9c9f66fdb929cf753a"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -2379,6 +2379,15 @@
     "previousWorkflowPin": {
       "bytes": 208650,
       "sha256": "726fc785d4c857df179022236ca835b70891a323ba25f306a1ccd2f6d59b8000"
+    }
+  },
+  "originalPosthandEscrowNative20261012": {
+    "reason": "Add actual original posthand escrow PostgreSQL17 qualification and always artifact in existing Accounting3. Preserve every prior native lane and historical pin. SQL/native and public financial projection qualification distinct from production installation or retention permission.",
+    "previousPins": {
+      ".github/workflows/ci.yml": {
+        "bytes": 209558,
+        "sha256": "d37c75bdf8c9f04a356363c8cff9b919f66f0a1640d7748c40f29cc40bd5aea9"
+      }
     }
   }
 }

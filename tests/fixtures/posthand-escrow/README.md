@@ -1,0 +1,11 @@
+# Original unplayed posthand escrow
+
+Run `bash scripts/dev/probe-posthand-escrow-pg17.sh` with PostgreSQL 17. The probe uses an isolated private Unix-socket cluster and never accepts a remote connection. On macOS every temporary file is on the mounted external SSD. Set `POSTHAND_ESCROW_EVIDENCE_DIR` to retain server/refusal logs.
+
+Captured hand 31008564 has original poker deltas +56.25 and -60, with rake 3.75. A separate original 368.62 wallet debit applied after the signed hand, taking felt 215.53 to 584.15. The historical outcome omitted one earning owner because funding application was still pending at capture. An exact original immutable completion certificate permits an explicit financial projection; the deposit never becomes winnings. Original outcome, manifest, provenance, roster, accepted hashes and monetary records remain unchanged.
+
+The native probe demonstrates fail-before/pass-after using actual captured rows, original predecessor, signed request, wallet funding, transaction frame and seat-event authority. It exercises 28 financial/source counterexamples, forged and NULL/stale projections, NULL/malformed/wrong admission pins, freeze, active reader ownership, rolled-back installation, deterministic concurrent admission, immutable certificate update/delete/truncate refusal, duplicate/refused replay, private access, exact postimages and raw-absence proof with all remaining originals. Raw and shaped hand lines both count original deltas once. The actual report monetary CTE runs an explicit single-hand boundary construction, not a claim that a complete historical weekly boundary is certified.
+
+The retained private owner functions and all ordinary public financial clauses are byte-identical. The actual unchanged pruner refuses this uncertified original and preserves p/m. Eight days does not authorize pruning uncertified originals. Raw-absence qualification is a strict financial durability test, not production disposal permission or global pruner readiness. This change neither rebuilds original payload nor invents pending IDs.
+
+The existing Accounting shard 3 directly executes this probe and always retains its artifact. Source binding pins every native input. Production installation and the one exact certificate admission remain separate, guarded delivery steps.

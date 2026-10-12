@@ -1,0 +1,7 @@
+# Original unplayed escrow keeps its financial identity
+
+Original hand31008564 had a pending368.62 wallet-funded deposit that applied after the signed hand; the original capture therefore left one earning owner uncertified. Poker results were +56.25/-60 and rake3.75. Migration20261012211046 adds a bounded certificate of the original completed obligation and an explicit financial projection binding the complete original roster, predecessor, signed request, original wallet/felt conservation and application transaction/event. It preserves the original stored outcome and accepted hashes and keeps the deposit separate from winnings.
+
+The maintained native PostgreSQL17 probe reproduces blocked original acceptance/hand-line omission before and correct owner/deltas after. It retains financial/projection/hash/NULL/refusal controls, rollback/replay, controlled concurrent admission, immutable private certificate access, raw-absence proof with all remaining originals and actual raw/shaped report arithmetic. Every other public financial clause and all private retention owner functions remain byte-identical. The unchanged actual pruner refuses and preserves historical p/m; no global retention readiness is claimed.
+
+Changed sources were reread. Compiler and normal submission checks are pending until the final candidate; protected merge, exact database installation and finite original-certificate admission remain separate and pending. No production monetary operation occurred in qualification.

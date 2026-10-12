@@ -1,0 +1,10 @@
+{
+  "_owner": "Original posthand escrow PostgreSQL17 qualification. PROMISED declarations; protected merge, exact migration20261012211046 installation and one original certificate admission remain pending, not installed evidence.",
+  "tables": [],
+  "functions": [
+    "fn_union_pnl_prove_posthand_escrow",
+    "fn_union_pnl_certify_posthand_escrow",
+    "fn_union_pnl_posthand_escrow_participants",
+    "fn_union_pnl_posthand_escrow_touch"
+  ]
+}

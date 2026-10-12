@@ -13288,8 +13288,12 @@ function LiveTablePage({
             .select('name, unions:union_id (name)')
             .eq('id', table.club_id)
             .maybeSingle()
-            .then(async ({ data: clubData }) => {
-              if (!clubData?.name) return;
+            .then(async ({ data: clubData, error: clubIdentityError }) => {
+              if (clubIdentityError) {
+                reportError(clubIdentityError, 'TablePage.masthead_club_read_failed');
+                return;
+              }
+              if (!clubData?.name || !isMounted) return;
               const rawUnion = (clubData as { unions?: { name?: string } | { name?: string }[] })
                 .unions;
               const unionName = Array.isArray(rawUnion) ? rawUnion[0]?.name : rawUnion?.name;
@@ -13300,7 +13304,13 @@ function LiveTablePage({
               // union next to it. Fall back to the table's own club, and never
               // print the same name twice.
               let clubName: string | undefined = clubData.name;
-              const viewerClubId = useUserStore.getState().currentClubId;
+              // A direct reload may not have a current-club store value yet.
+              // Use the same account-scoped, union-filtered resolution as the
+              // lobby destination, including the persisted last entered club.
+              const viewerClubId =
+                unionName && clubName === unionName
+                  ? await resolveLobbyClubId(lobbyClubArgs)
+                  : null;
               if (
                 unionName &&
                 clubName === unionName &&
@@ -13323,6 +13333,7 @@ function LiveTablePage({
                 // Still identical (no distinct viewer club) — show it once.
                 clubName = undefined;
               }
+              if (!isMounted) return;
               setTableState((prev) => ({
                 ...prev,
                 clubName,

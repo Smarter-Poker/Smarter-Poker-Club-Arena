@@ -86,7 +86,7 @@ const backedPayoutScan =
 // against its own fixtures, so an edit to a harness or a fixture alone must
 // still run it. Add a later cashier harness by its name to both groups.
 const cashierDbHarnesses =
-  /^(scripts\/ci\/test-(?:chip-request-approval|union-send|cashier-arena-names|finance-gate|cashier-statement)-db-postgres\.py$|tests\/fixtures\/(?:chip-request-approval-db|union-send-db|cashier-arena-names-db|finance-gate-db)\/)/;
+  /^(scripts\/ci\/test-(?:chip-request-approval|union-send|cashier-arena-names|finance-gate|cashier-statement|horse-reads)-db-postgres\.py$|tests\/fixtures\/(?:chip-request-approval-db|union-send-db|cashier-arena-names-db|finance-gate-db|horse-reads-db)\/)/;
 const bbjContributionCover =
   /^(scripts\/ci\/(?:test-bbj-contribution-cover-postgres\.py$|fixtures\/bbj-contribution-cover\/)|scripts\/ops\/build-bbj-contribution-cover-concurrently\.sql$|tests\/bbjContributionCoverRegression\.test\.ts$)/;
 const scopedAuditReads =

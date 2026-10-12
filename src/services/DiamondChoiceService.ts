@@ -1,4 +1,5 @@
 import { choiceLossGuarantee } from '../utils/choiceProgressiveGuarantee';
+import { ROAD_COIN_VERSION, roadCoinEnd, roadCoinPrizes } from '../utils/roadCoin';
 import { supabase } from '../lib/supabase';
 import { earnedReceiptBudget } from '../utils/bonusGameBudget';
 import { validBonusMinimum } from '../utils/diamondBonusPayout';
@@ -38,8 +39,10 @@ export interface ChoiceRound {
   minimum_payout_chips?: number;
   /** 1: no floor (historical). 2: a tenth of the stake. 3: the Super half.
    *  4: half the stake, or for a Super award what the player paid, with the
-   *  first step of the game certain (owner ruling 2026-09-21, R3). */
-  payout_version?: 1 | 2 | 3 | 4 | 5;
+   *  first step of the game certain (owner ruling 2026-09-21, R3).
+   *  5: a loss keeps half the last safe prize (2026-10-10).
+   *  6: Donkey Cross only, a fair coin on every street (2026-10-11). */
+  payout_version?: 1 | 2 | 3 | 4 | 5 | 6;
   server_seed_hash: string;
   client_seed: string;
   nonce: number;
@@ -58,6 +61,9 @@ export interface ChoiceState {
   bets: number[];
   max_steps: number;
   prizes: number[];
+  /** The contract a NEW round of this quote is sealed under, once the server
+   *  names it (6 for Donkey Cross's fair coin; absent before 2026-10-12). */
+  payout_version?: number;
   open_round: ChoiceRound | null;
   history: ChoiceRound[];
   rounds_today: number;
@@ -139,12 +145,30 @@ export function parseChoiceRound(value: unknown): ChoiceRound {
     throw new Error('The Game Response Could Not Be Verified');
   if (v.status === 'open' && v.proof !== null)
     throw new Error('The Game Response Could Not Be Verified');
+  // CONTRACT 6 IS DONKEY CROSS'S ALONE. A Mines receipt claiming it, or a
+  // contract-6 road whose prizes are not its own floor's coin ladder, is not a
+  // receipt this client accepts. The ladder is checked exactly (to the fifth of
+  // a cent) and may be cut short by the round's limit, never altered.
+  if (version === ROAD_COIN_VERSION) {
+    if (v.game !== 'crossing') throw new Error('The Game Response Could Not Be Verified');
+    let ladder: number[];
+    try {
+      ladder = roadCoinPrizes(Number(v.bet_chips), Number(v.minimum_payout_chips));
+    } catch {
+      throw new Error('The Game Response Could Not Be Verified');
+    }
+    if (
+      v.prizes.length > ladder.length ||
+      v.prizes.some((prize, i) => Math.abs(Number(prize) - ladder[i]) > 1e-9)
+    )
+      throw new Error('The Game Response Could Not Be Verified');
+  }
   if (
     !validBonusMinimum(v) ||
     (v.status === 'open' && v.payout_chips !== 0) ||
     (v.status === 'lost' &&
       v.payout_chips !==
-        (version === 5
+        (version === 5 || version === ROAD_COIN_VERSION
           ? choiceLossGuarantee(
               v.prizes as number[],
               v.picked.length - 1,
@@ -175,6 +199,18 @@ export function parseChoiceRound(value: unknown): ChoiceRound {
       // the proof carried a version at all still verifies as what it is.
       (p.payout_version ?? 0) >= CHOICE_PAYOUT_VERSION !== sealedV4 ||
       (version === 5 && p.payout_version !== 5) ||
+      (version === ROAD_COIN_VERSION) !== (p.payout_version === ROAD_COIN_VERSION) ||
+      // CONTRACT 6: one coin per street the round could reach, the road end is
+      // their first smash, the streets played were safe but for a lost last one,
+      // and a booked win did not stop past where the road ran.
+      (version === ROAD_COIN_VERSION &&
+        (!Array.isArray(p.coins) ||
+          p.coins.length !== Number(v.max_steps) ||
+          !p.coins.every((c) => typeof c === 'boolean') ||
+          p.road_end !== roadCoinEnd(p.coins) ||
+          (v.picked as number[]).some(
+            (_, i, all) => p.coins![i] !== !(v.status === 'lost' && i === all.length - 1)
+          ))) ||
       // CONTRACT 4 mines: the board is dealt at the first pick, around it, so
       // it could not have been known before the player touched a tile. The
       // proof names that tile; without it the board is unverifiable in the
@@ -212,7 +248,10 @@ export function parseChoiceState(value: unknown, club: string, game: ChoiceGame)
     !Number.isSafeInteger(v.diamonds_per_chip) ||
     Number(v.diamonds_per_chip) < 1 ||
     !v.prizes.every((p) => typeof p === 'number' && Number.isFinite(p) && p > 0) ||
-    v.prizes.length !== v.max_steps
+    v.prizes.length !== v.max_steps ||
+    (v.payout_version !== undefined &&
+      (!Number.isSafeInteger(v.payout_version) ||
+        (game === 'crossing' && ![5, ROAD_COIN_VERSION].includes(Number(v.payout_version)))))
   ) {
     throw new Error('The Game Response Could Not Be Verified');
   }

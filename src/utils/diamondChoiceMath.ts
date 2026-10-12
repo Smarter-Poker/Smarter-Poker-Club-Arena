@@ -6,6 +6,13 @@ import {
 } from './choiceProgressiveGuarantee';
 /** Internal game mathematics. Presentation never advertises return percentages. */
 import { hmacSha256Hex, sha256Hex } from './wheelFairness';
+import {
+  ROAD_COIN_VERSION,
+  roadCoinEnd,
+  roadCoinLadderCents,
+  roadCoinPrize,
+  roadCoins,
+} from './roadCoin';
 
 export type ChoiceGame = 'crossing' | 'mines';
 /** One road is dealt today (2026-09-19): twelve streets, 1.10x to 20.00x, so
@@ -29,11 +36,29 @@ export const ROAD_LADDERS_V4 = {
 } as const;
 /** The contract every choice round sealed since 2026-09-21 carries. */
 export const CHOICE_PAYOUT_VERSION = 4;
-/** The ladder a round's mode names under its sealed contract. */
+/** The ladder a round's mode names under its sealed contract. A contract-6
+ * road has no fixed table: its ladder is its own prizes (roadRoundLadder). */
 export function roadLadder(mode: string, payoutVersion?: number): readonly number[] | undefined {
   if ((payoutVersion ?? 0) >= CHOICE_PAYOUT_VERSION)
     return ROAD_LADDERS_V4[mode as keyof typeof ROAD_LADDERS_V4];
   return ROAD_LADDERS[mode as RoadRisk];
+}
+/**
+ * The multiplier cents a crossing round paints, under its own contract: the
+ * fixed table for contracts up to 5, and for a contract-6 road the prizes it
+ * was dealt over its stake (its ladder is derived from its own floor).
+ */
+export function roadRoundLadder(round: {
+  mode: string;
+  payout_version?: number;
+  prizes: readonly number[];
+  bet_chips: number;
+}): readonly number[] | undefined {
+  if (round.payout_version === ROAD_COIN_VERSION)
+    return round.prizes.length && round.bet_chips > 0
+      ? roadCoinLadderCents(round.prizes, round.bet_chips)
+      : undefined;
+  return roadLadder(round.mode, round.payout_version);
 }
 /** Six mines are dealt today; five, ten and fifteen remain readable for sealed boards. */
 export const MINE_COUNTS = [5, 6, 10, 15] as const;
@@ -210,6 +235,10 @@ export interface ChoiceProof {
   first_pick?: number | null;
   /** The contract the round was sealed under; absent before 2026-09-21. */
   payout_version?: number;
+  /** Contract 6 roads: every street's sealed coin, street one first (true = safe). */
+  coins?: boolean[];
+  /** Contract 6 roads: how far the donkey would have got (the first smash, or the road's end). */
+  road_end?: number;
 }
 
 /**
@@ -232,6 +261,20 @@ async function sealedDrawMatches(proof: ChoiceProof) {
           : null
         : await mineBoard(proof.server_seed, proof.client_seed, proof.nonce, proof.mines);
     return board !== null && JSON.stringify(board) === JSON.stringify(proof.mine_cells);
+  }
+  // CONTRACT 6: every street's coin is the one this seed flips, and the road
+  // end the receipt states is the first smash among them.
+  if (proof.payout_version === ROAD_COIN_VERSION) {
+    if (!Array.isArray(proof.coins) || !proof.coins.length) return false;
+    const coins = await roadCoins(
+      proof.server_seed,
+      proof.client_seed,
+      proof.nonce,
+      proof.coins.length
+    );
+    return (
+      JSON.stringify(coins) === JSON.stringify(proof.coins) && proof.road_end === roadCoinEnd(coins)
+    );
   }
   const hash = await hmacSha256Hex(proof.server_seed, `${proof.client_seed}:${proof.nonce}:road`);
   return BigInt(`0x${hash.slice(0, 12)}`).toString() === proof.road_roll;
@@ -278,8 +321,11 @@ export async function verifyChoiceRoundDetailed(
   // The contract the round was sealed under decides both ladders and formulas.
   const version = round.payout_version ?? 0;
   const sealedV4 = version >= CHOICE_PAYOUT_VERSION;
+  // A coin road (contract 6) is crossing-only and has no fixed table.
+  const coinRoad = version === ROAD_COIN_VERSION;
+  if (coinRoad && round.game !== 'crossing') return nothing;
   const ladder = roadLadder(round.mode, version) as readonly number[];
-  if (round.game === 'crossing' && !ladder) return nothing;
+  if (round.game === 'crossing' && !coinRoad && !ladder) return nothing;
   const floor = round.minimum_payout_chips ?? 0;
   const stake = () =>
     round.game === 'mines'
@@ -289,30 +335,37 @@ export async function verifyChoiceRoundDetailed(
             : sealedV4
               ? minePrizeV4(round.bet_chips, Number(round.mode), picks, floor)
               : minePrize(round.bet_chips, Number(round.mode), picks, floor)
-      : (picks: number) => ({
-          numerator: BigInt(Math.round(round.bet_chips * 100)) * BigInt(ladder[picks - 1]),
-          denominator: 100n,
-        });
+      : coinRoad
+        ? (picks: number) => roadCoinPrize(round.bet_chips, floor, picks)
+        : (picks: number) => ({
+            numerator: BigInt(Math.round(round.bet_chips * 100)) * BigInt(ladder[picks - 1]),
+            denominator: 100n,
+          });
   return {
     seal: await checked(
       async () =>
         (await sha256Hex(proof.server_seed)) === proof.server_seed_hash &&
         // A receipt is sealed under one contract, and says which one it was.
         sealedV4 === (proof.payout_version ?? 0) >= CHOICE_PAYOUT_VERSION &&
-        (version !== 5 || proof.payout_version === 5)
+        (version !== 5 || proof.payout_version === 5) &&
+        (version === ROAD_COIN_VERSION) === (proof.payout_version === ROAD_COIN_VERSION)
     ),
     draw: await checked(async () => {
       if (!(await sealedDrawMatches(proof))) return false;
       // CONTRACT 4 mines: the board was dealt around the first pick, and names it.
       if (sealedV4 && round.game === 'mines' && proof.first_pick !== round.picked[0]) return false;
+      // CONTRACT 6: one coin per street the round could reach, no more, no fewer.
+      if (coinRoad && proof.coins?.length !== round.max_steps) return false;
       for (let i = 0; i < round.picked.length; i++) {
         const safe =
           round.game === 'mines'
             ? !proof.mine_cells.includes(round.picked[i])
             : round.picked[i] === i &&
-              (version === 5
-                ? roadSurvivesV5(BigInt(proof.road_roll), round.prizes, i + 1, floor)
-                : roadSurvives(BigInt(proof.road_roll), ladder[i], round.bet_chips, floor));
+              (coinRoad
+                ? proof.coins![i] === true
+                : version === 5
+                  ? roadSurvivesV5(BigInt(proof.road_roll), round.prizes, i + 1, floor)
+                  : roadSurvives(BigInt(proof.road_roll), ladder[i], round.bet_chips, floor));
         if (safe === (round.status === 'lost' && i === round.picked.length - 1)) return false;
       }
       return true;
@@ -330,7 +383,7 @@ export async function verifyChoiceRoundDetailed(
       if (round.status === 'lost')
         return (
           round.payout_chips ===
-          (version === 5
+          (version === 5 || coinRoad
             ? choiceLossGuarantee(round.prizes, round.picked.length - 1, floor)
             : floor)
         );

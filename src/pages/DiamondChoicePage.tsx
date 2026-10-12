@@ -44,9 +44,15 @@ import {
 } from '../services/DiamondChoiceService';
 import { supabase } from '../lib/supabase';
 import {
+  ROAD_COIN_REFERENCE_CENTS,
+  ROAD_COIN_VERSION,
+  roadCoinLadderCents,
+} from '../utils/roadCoin';
+import {
   CHOICE_MODE,
   CHOICE_PAYOUT_VERSION,
   roadLadder,
+  roadRoundLadder,
   roadSurvives,
   choiceRoundVerified,
   verifyChoiceRoundDetailed,
@@ -73,9 +79,13 @@ interface Ticket {
 }
 /** "1.10x" and "20.00x": the road's multipliers always read with two decimals. */
 const multiplierCopy = (cents: number) => `${(cents / 100).toFixed(2)}x`;
-/** The road a NEW round is dealt: the ladder of the contract the server seals
- * with today. A round already on the board paints its own, from its receipt. */
+/** The fixed road of contracts 4 and 5, for a quote that does not name the
+ * coin contract. A round already on the board paints its own, from its receipt;
+ * a contract-6 quote paints the ladder its own floor was dealt. */
 const ROAD = roadLadder(CHOICE_MODE.crossing, CHOICE_PAYOUT_VERSION) as readonly number[];
+/** "1 Safe · 2 Safe · 3 Hit": a contract-6 road's sealed coins, in the order flipped. */
+const coinCopy = (coins: readonly boolean[]) =>
+  coins.map((safe, i) => `${i + 1} ${safe ? 'Safe' : 'Hit'}`).join(' · ');
 /** What the page says while it mends something by itself. None of these asks
  * the player to do anything, so none of them reads as an error. */
 const RECONNECTING = 'Reconnecting To Your Game';
@@ -90,7 +100,8 @@ const CALM = new Set([
 ]);
 /** What the rules say about the one setting, from the same constants the server mirrors. */
 const ONE_SETTING = {
-  crossing: `${ROAD.length} Streets Pay ${multiplierCopy(ROAD[0])} Up To ${multiplierCopy(ROAD[ROAD.length - 1])}.`,
+  crossing: (road: readonly number[]) =>
+    `${road.length} Streets Pay ${multiplierCopy(road[0])} Up To ${multiplierCopy(road[road.length - 1])}.`,
   mines: `${CHOICE_MODE.mines} Mines Hide Among 25 Tiles.`,
 } as const;
 export default function DiamondChoicePage({ game }: { game: ChoiceGame }) {
@@ -711,24 +722,50 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
   // contract's: contract 4's road starts at 0.80x, the one before it at 1.10x.
   // This read the pre-contract-4 table for every round, so a live round's first
   // street was drawn and reckoned at a multiplier the server does not pay.
-  const ladder = roadLadder(round?.mode ?? mode, round?.payout_version ?? CHOICE_PAYOUT_VERSION);
+  //
+  // CONTRACT 6 (Dan, 2026-10-11): the road has no fixed table. Its ladder is
+  // derived from the round's own floor, so the page paints the prizes the round
+  // (or, before Start, the quote) was dealt, over its stake.
+  const quoteChips = state && validBonusBudget(budget) ? bet / state.diamonds_per_chip : undefined;
+  const quotedCoinRoad = game === 'crossing' && state?.payout_version === ROAD_COIN_VERSION;
+  // A coin road's first street is 1.6B - L with L from half to just under 0.80
+  // of the stake, so 0.80x to 1.10x. A quote whose first prize is not that is
+  // a quote for another stake, and painting it over this one would print
+  // nonsense multipliers; the reference road stands in until the quote catches up.
+  const quoteFits =
+    quoteChips !== undefined &&
+    state !== null &&
+    state.prizes.length > 0 &&
+    state.prizes[0] / quoteChips >= 0.8 &&
+    state.prizes[0] / quoteChips <= 1.1;
+  const quoteLadder: readonly number[] = quotedCoinRoad
+    ? quoteFits
+      ? roadCoinLadderCents(state.prizes, quoteChips)
+      : ROAD_COIN_REFERENCE_CENTS
+    : ROAD;
+  const coinRoad = round ? round.payout_version === ROAD_COIN_VERSION : quotedCoinRoad;
+  const ladder = game !== 'crossing' ? undefined : round ? roadRoundLadder(round) : quoteLadder;
   const roadEnd =
     game === 'crossing' && round?.proof && ladder
-      ? ladder.filter((target) =>
-          round.payout_version === 5
-            ? roadSurvivesV5(
-                BigInt(round.proof!.road_roll),
-                ladder.map((multiplier) => (round.bet_chips * multiplier) / 100),
-                ladder.indexOf(target) + 1,
-                round.minimum_payout_chips ?? 0
-              )
-            : roadSurvives(
-                BigInt(round.proof!.road_roll),
-                target,
-                round.bet_chips,
-                round.minimum_payout_chips ?? 0
-              )
-        ).length
+      ? // The coin road states where it ended, and this device re-flips every
+        // coin from the revealed seed to check it (verifyChoiceRoundDetailed).
+        round.payout_version === ROAD_COIN_VERSION
+        ? (round.proof.road_end ?? null)
+        : ladder.filter((target) =>
+            round.payout_version === 5
+              ? roadSurvivesV5(
+                  BigInt(round.proof!.road_roll),
+                  ladder.map((multiplier) => (round.bet_chips * multiplier) / 100),
+                  ladder.indexOf(target) + 1,
+                  round.minimum_payout_chips ?? 0
+                )
+              : roadSurvives(
+                  BigInt(round.proof!.road_roll),
+                  target,
+                  round.bet_chips,
+                  round.minimum_payout_chips ?? 0
+                )
+          ).length
       : null;
   const roadMultiplier = ladder && roadEnd !== null && roadEnd > 0 ? ladder[roadEnd - 1] : 0;
   const payableRoadEnd = Math.min(roadEnd ?? 0, round?.max_steps ?? 0);
@@ -744,6 +781,29 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           : `The Donkey Would Have Made It To Street ${roadEnd} At ${multiplierCopy(roadMultiplier)}`;
   const bookedAt =
     picks > 0 && ladder ? multiplierCopy(ladder[Math.min(picks, ladder.length) - 1]) : null;
+  /**
+   * HOW FAR YOU WOULD HAVE GOT (Dan, 2026-10-11: "WHEN A USER 'BOOKS THE WIN'
+   * IT SHOULD SHOW THEM HOW FAR THEY 'WOULD OF GOTTEN'"). One headline for a
+   * booked crossing, said the same way on the readout and on the receipt: the
+   * street the next coins would have carried the donkey to, or that the very
+   * next coin was the smash.
+   */
+  const wouldHaveGot =
+    game !== 'crossing' || round?.status !== 'cashed' || roadEnd === null || !ladder
+      ? null
+      : picks >= ladder.length
+        ? // Booked on the last street: there is nowhere further to go.
+          `You Crossed Every Street`
+        : roadEnd >= ladder.length
+          ? `You Would Have Crossed Every Street, To Street ${ladder.length} At ${multiplierCopy(roadMultiplier)}`
+          : roadEnd <= picks
+            ? `You Got Out Just In Time: Street ${picks + 1} Was A Hit`
+            : `You Would Have Got To Street ${roadEnd} At ${multiplierCopy(roadMultiplier)}, Then Been Hit On Street ${roadEnd + 1}`;
+  /** A finished coin road's sealed coins, in the order they were flipped. */
+  const coinsFlipped =
+    coinRoad && round?.status !== 'open' && Array.isArray(round?.proof?.coins)
+      ? coinCopy(round.proof.coins)
+      : null;
   // WHERE THE PROOF IS SAID. This round's own verdict, the hash it was sealed
   // with, and the fingerprint of the round being sealed for next time: all of
   // it goes into text that already exists.
@@ -770,7 +830,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
         : '';
     if (game !== 'crossing')
       return `${upgrade}${item.status === 'cashed' ? 'Win Booked' : 'Round Over'}`;
-    const rungs = roadLadder(item.mode, item.payout_version);
+    const rungs = roadRoundLadder(item);
     const street = item.picked.length;
     if (item.status !== 'cashed')
       return `${upgrade}Hit At Street ${street}${item.payout_chips > 0 ? ' · Guarantee Paid' : ''}`;
@@ -865,7 +925,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
   // on screen until its receipt has taken the player back to the wheel.
   const boardRound = viewOpen ? view : sceneRound;
   const guaranteedChips = boardRound
-    ? boardRound.payout_version === 5
+    ? boardRound.payout_version === 5 || boardRound.payout_version === ROAD_COIN_VERSION
       ? choiceLossGuarantee(
           boardRound.prizes,
           boardRound.picked.length - (boardRound.status === 'lost' ? 1 : 0),
@@ -887,7 +947,9 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
             earned.quote?.minimumPayoutChips ??
             standardFloor ??
             0,
-          boardRound?.payout_version ?? 5,
+          // The round on the board names its own contract; before Start, the
+          // quote names the one a new round will be sealed under.
+          boardRound?.payout_version ?? state?.payout_version ?? 5,
           Number(boardRound?.mode ?? mode)
         )
       : null;
@@ -1087,10 +1149,9 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           onPick={(cell) => void act('pick', cell)}
           ladder={
             game === 'crossing'
-              ? roadLadder(
-                  sceneRound?.mode ?? mode,
-                  sceneRound?.payout_version ?? CHOICE_PAYOUT_VERSION
-                )
+              ? sceneRound
+                ? roadRoundLadder(sceneRound)
+                : quoteLadder
               : undefined
           }
           prizes={sceneRound ? sceneRound.prizes : prizes}
@@ -1126,11 +1187,17 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           {view?.status === 'cashed' ? (
             <>
               <strong className="sc-ink--gold">{gameChips(view.payout_chips)} Chips Booked</strong>
+              {wouldHaveGot ? (
+                <strong className="sc-ink--gold" data-would-have-got="true">
+                  {wouldHaveGot}
+                </strong>
+              ) : null}
+              {coinsFlipped ? <p className="sc-copy">Sealed Coins: {coinsFlipped}</p> : null}
               <p className="sc-copy">
                 {game === 'mines'
                   ? 'All Remaining Mines Are Revealed. Your Win Is Saved.'
                   : `${bookedAt === null ? 'Your Win Is Booked.' : `Booked At Street ${picks} At ${bookedAt}.`}${roadEnded === null ? '' : ` ${roadEnded}.`}${payableRoadEnd < (roadEnd ?? 0) ? ` Your Round Would Have Booked At Its Street ${payableRoadEnd} Limit First.` : ''}`}{' '}
-                {game === 'crossing' && payableRoadEnd > 0 && view.proof && ladder ? (
+                {game === 'crossing' && !coinRoad && payableRoadEnd > 0 && view.proof && ladder ? (
                   <SealedPrize
                     serverSeed={view.proof.server_seed}
                     clientSeed={view.client_seed}
@@ -1186,12 +1253,13 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
         <p className="sc-copy">
           {game === 'mines'
             ? `${ONE_SETTING.mines} Pick Hidden Gems On The Board; Every Safe Pick Raises Your Prize. Book The Win After Any Safe Pick, And The Remaining Mines Are Then Revealed. A Mine Ends The Round And Pays The Guaranteed Minimum.`
-            : `Guide The Donkey Across The Road. ${ONE_SETTING.crossing} Each Safe Crossing Raises Your Prize. Book The Win After Any Street. A Hit Ends The Round And Pays The Guaranteed Minimum. Traffic Animation Does Not Change The Outcome.`}
+            : `Guide The Donkey Across The Road. ${ONE_SETTING.crossing(ladder ?? quoteLadder)} Each Safe Crossing Raises Your Prize. Book The Win After Any Street. A Hit Ends The Round And Pays The Guaranteed Minimum. Traffic Animation Does Not Change The Outcome.`}
         </p>
         {game === 'crossing' ? (
           <p className="sc-copy">
-            Where The Donkey Would Be Hit Is Sealed Before You Start; Your Only Choice Is When To
-            Book.
+            {coinRoad
+              ? 'Every Street Is A Fair Coin Flip: Exactly A 50% Chance To Cross Safely, Street One Included. Each Coin Is Sealed Before You Start, And When You Book The Win You See How Far You Would Have Got.'
+              : 'Where The Donkey Would Be Hit Is Sealed Before You Start; Your Only Choice Is When To Book.'}
           </p>
         ) : null}
         <p className="sc-copy">
@@ -1299,6 +1367,9 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
                 ? `Hit At Street ${round.picked.length}.`
                 : `${bookedAt === null ? 'Your Win Is Booked.' : `Street ${picks} At ${bookedAt}`}${roadEnded === null ? '' : `; ${roadEnded}`}.`
           }
+          // HOW FAR YOU WOULD HAVE GOT, on a line of its own above the receipt's
+          // sentence (Dan, 2026-10-11), so a booked crossing never hides it.
+          headline={wouldHaveGot ?? undefined}
           // The street the donkey reached (or was hit on), or the gems found:
           // a lost Mines round's last pick was the mine.
           game={game}

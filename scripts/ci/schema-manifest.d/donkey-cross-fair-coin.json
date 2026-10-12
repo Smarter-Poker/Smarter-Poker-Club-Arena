@@ -1,0 +1,10 @@
+{
+  "_owner": "PROMISED, NOT YET INSTALLED (2026-10-12). Declared by supabase/migrations/20261012050006_donkey_cross_flips_a_fair_coin_every_street.sql, which must be installed only AFTER the client in the same PR is published (it seals Donkey Cross contract 6, which older clients refuse). Until it is installed these five functions are absent from production, and schema-manifest-refresh.yml will say so; that is the reminder to install it, not a defect. Verified only on the isolated Postgres 17 fixture (scripts/dev/test-accounting-delivery.sh).",
+  "functions": [
+    "fn_choice_prizes_v6",
+    "fn_choice_road_coin_v6",
+    "fn_choice_road_coins_v6",
+    "fn_choice_road_end_v6",
+    "fn_choice_road_prizes_v6"
+  ]
+}

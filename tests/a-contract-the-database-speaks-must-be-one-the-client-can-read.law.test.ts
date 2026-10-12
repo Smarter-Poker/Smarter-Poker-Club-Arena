@@ -304,6 +304,16 @@ describe('a contract the database speaks must be one the client can read', () =>
     expect(
       sourceVerdict(client, client, [{ file: 'supabase/migrations/x.sql', sql: sibling }])
     ).toEqual([]);
+    // Recreating a LIFECYCLE function in a migration that also names the floor
+    // (a round opener still calls it) is not moving the floor either
+    // (2026-10-12, the Donkey Cross fair-coin migration).
+    const lifecycle =
+      `CREATE OR REPLACE FUNCTION public.fn_diamond_bonus_replay(p uuid) RETURNS jsonb AS $$ SELECT '{}'::jsonb $$ LANGUAGE sql;\n` +
+      `CREATE OR REPLACE FUNCTION public.fn_choice_start() RETURNS void AS $$ SELECT public.${client.bonus_floor_fns[0]}(1,1,1,1) $$ LANGUAGE sql;`;
+    expect(contractFactsInSql(lifecycle).declared_bonus_fns).toEqual([]);
+    expect(
+      sourceVerdict(client, client, [{ file: 'supabase/migrations/y.sql', sql: lifecycle }])
+    ).toEqual([]);
     expect(
       sourceVerdict(client, client, [
         {

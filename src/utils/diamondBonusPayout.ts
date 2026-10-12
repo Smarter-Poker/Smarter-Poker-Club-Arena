@@ -179,9 +179,12 @@ export function validBonusMinimum(value: Record<string, unknown>): boolean {
       return false;
     }
   }
+  // Contract 5 (choice games) and contract 6 (Donkey Cross's fair coin) keep
+  // the contract-4 floor; only how a round reaches it changed.
   if (
     version !== BONUS_PAYOUT_VERSION &&
-    !(version === 5 && ['mines', 'crossing'].includes(String(value.game)))
+    !(version === 5 && ['mines', 'crossing'].includes(String(value.game))) &&
+    !(version === 6 && value.game === 'crossing')
   )
     return false;
   const rate = value.diamonds_per_chip;

@@ -31,6 +31,10 @@ start=time.monotonic();r=call(source);elapsed=time.monotonic()-start
 (socket/'inventory-installer-exact.log').write_text(r.stdout+r.stderr);print(r.stdout+r.stderr)
 call("DO $b$BEGIN IF smarter_private.original_inventory_proof_sources_match() IS DISTINCT FROM true OR (SELECT count(*) FROM smarter_private.original_inventory_restoration_cases)<>245 OR EXISTS(SELECT FROM smarter_private.original_inventory_restoration_certificates) OR EXISTS(SELECT FROM smarter_private.original_erased_cash_base_discharges) OR EXISTS(SELECT FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='smarter_private' AND c.relname IN('original_inventory_restoration_cases','original_inventory_restoration_certificates','original_erased_cash_base_discharges') AND (c.relowner<>'postgres'::regrole OR NOT c.relrowsecurity)) THEN RAISE EXCEPTION 'installer schema/source/noadmission postimage differs';END IF;END$b$;")
 call(source,'original_inventory_source_preimage_changed')
+full=(p/'finite245-corpus-exact-originals.jsonb').read_text()
+call("DO $e$BEGIN IF EXISTS(SELECT FROM jsonb_array_elements($full_original$"+full+"$full_original$::jsonb)x FULL JOIN smarter_private.original_inventory_restoration_cases c ON c.event_id=(x->>'event_id')::bigint WHERE c.event_id IS NULL OR x IS NULL OR c.original_witness IS DISTINCT FROM x->'original_witness' OR c.source_refs IS DISTINCT FROM x->'source_refs' OR c.witness_md5 IS DISTINCT FROM md5((x->'original_witness')::text) OR c.family IS DISTINCT FROM x->>'family' OR c.source_name IS DISTINCT FROM x->>'source_name' OR c.row_id::text IS DISTINCT FROM x->>'row_id') THEN RAISE EXCEPTION 'shared corpus reconstruction differs from full original245';END IF;END$e$;")
+print('PASS shared46 representation reconstructs exact original245 full witnesses/source refs/identity pins; no omitted originals')
+
 checks=json.loads((p.parents[2]/'scripts/ci/schema-manifest.d/original-inventory-restoration.json').read_text())['functions']
 for name in checks:
  name=name if '.' in name else 'public.'+name

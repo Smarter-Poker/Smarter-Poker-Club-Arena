@@ -52,7 +52,7 @@
     "scripts/qualification/original-retirement-boundary/run-certificate-concurrency-native.py": "817ae277617e4498b55703af8e2eda2aaead8977bb987658c3f4bf60a16b9513",
     "scripts/qualification/original-retirement-boundary/run-certificate-native.py": "cd69823e06d6f7c618e0ab113e8d255539ea3668153141bf598b0c932f313e51",
     "scripts/qualification/original-retirement-boundary/run-generation-cache-native.py": "ef5b9bea7169b4bda6782028cbfb1a3934fa7fe956892095134d297036837836",
-    "scripts/qualification/original-retirement-boundary/run-installer-native.py": "7cadcf32538caf8d40297683ac874d5b44277d08ab21c4871c21706dad088920",
+    "scripts/qualification/original-retirement-boundary/run-installer-native.py": "2fb6dd34483b423ab95fc6cac68b52a98594e078ea7369752e0c5bfcf4ae548f",
     "scripts/qualification/original-retirement-boundary/run-native.py": "476ee34404fad32f696431b700290d5f7040444c66d8a6f6324210bc6803e7a6",
     "scripts/qualification/original-retirement-boundary/run-source-ref-native.py": "8d93c7d1613f1e8cda69f2acc74abe04181663985993d1459fa8050ba1dc8e8b",
     "scripts/qualification/original-retirement-boundary/run-wrapper-native.py": "310b404a1b37afaa8b22b9856fdc3be51374385fde665fc577b9b8b4a27e0af7",
@@ -70,7 +70,7 @@
     "scripts/qualification/original-seven-discharge/original-seven.jsonb": "80b91a2a3b69d56e29374050c11dd7c2d8cec1f8b4e8a80566f2bf351054cad9",
     "scripts/qualification/original-seven-discharge/run-native.py": "4b42bf21c16f3d9e40fcff5acb915519ca67e1acd0930f4e5c9a33521b5d6a46",
     "scripts/qualification/original-seven-discharge/test-discharge.py": "0c6f69bfb71fa9eee39d1e9eb1d4b7850271cdc22d316ff2d8e862823fc5950f",
-    "supabase/migrations/20261012224150_original_retirement_evidence_certifies_finite_inventory_boun.sql": "9b432155ce4819117f2f3f4054642d1c95e78eab331b63f90932d22d66c59be8",
+    "supabase/migrations/20261012224150_original_retirement_evidence_certifies_finite_inventory_boun.sql": "d7edee654ddc9b4c28f072cf45473d3c7dbfc5a9408d4fbca92e65e8fdaa20c6",
     "tests/an-original-inventory-gap-needs-its-financial-evidence.law.test.ts": "41d5ea3494ca813cf47c708433afa3aa804b825d643345d997f3029b6507faed"
   }
 }

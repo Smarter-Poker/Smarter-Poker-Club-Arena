@@ -4212,8 +4212,20 @@
    win, this one is a running read the player glances at without being pulled
    away from the action. Same footprint so the seat does not jump when the
    winner label replaces it. */
+/* THE HAND READ HANGS UNDER THE PLATE; IT DOES NOT PUSH IT (Dan 2026-10-12:
+   "YOU CAN NOT SEE YOUR STACK SIZE WHEN YOU HAVE A HAND OR ARE INVOLVED IN A
+   HAND"). This row only exists while the hero holds cards, and it was IN
+   FLOW: the seat block is centred on its ring position (translate -50%), so
+   adding a row underneath grew the block and dropped the name plate and its
+   stack by half the row, past the strip --sp-hero-clear keeps above the
+   action bar. Out of a hand there is no row and the stack showed; in a hand
+   it went under the bar. Taken out of flow, the plate stands in the same place
+   in and out of a hand on every table, and the read hangs just below it. */
 .seat__strength {
-  position: relative;
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
   text-align: center;
   padding: 1px 10px;
   margin-top: 2px;

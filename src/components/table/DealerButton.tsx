@@ -165,6 +165,23 @@ export { overlapsBoard };
  * unchanged, exactly as before: this can still never make a seat worse than
  * the geometry already had it.
  */
+/**
+ * THE RETREAT STAYS BESIDE ITS OWN SEAT (Dan 2026-10-12, with a screenshot of
+ * a 9-max table on a phone: "BUTTON JUST RANDOMLY IN THE MIDDLE OF THE TABLE").
+ *
+ * The retreat used to walk up to 30% of the table's width toward the middle.
+ * On a phone the two middle side seats of a 9-max ring sit level with the
+ * felt printing, so every step of that walk stood on the masthead keep-out
+ * until the puck had climbed past it - and it was accepted at x 44 / x 56,
+ * y 51: the dead centre of the table, belonging to nobody. The upper side
+ * seats on both rings did the same thing more mildly (x 30 / x 70). Capped at
+ * 8, the retreat can only nudge the puck off its own plate; when that is not
+ * enough the bounded swing below moves it along its own rail instead, which is
+ * where it lands beside the player on every ring and width measured
+ * (tests/the-dealer-button-stays-beside-its-seat.law.test.ts).
+ */
+export const RETREAT_MAX_WIDTH_PCT = 8;
+
 export function dealerButtonPositionClearOfSeat(
   seat: Pos,
   size: Size = NOMINAL_SCALER,
@@ -222,7 +239,7 @@ export function dealerButtonPositionClearOfSeat(
     if (Number.isFinite(len) && len > 1e-6) {
       const ux = dx / len;
       const uy = dy / len;
-      for (let step = 2; step <= 30; step += 2) {
+      for (let step = 2; step <= RETREAT_MAX_WIDTH_PCT; step += 2) {
         const walked: Pos = {
           x: pv.x + ux * step,
           y: ((pv.y + uy * step) * size.w) / size.h,

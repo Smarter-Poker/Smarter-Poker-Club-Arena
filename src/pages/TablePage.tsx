@@ -282,7 +282,7 @@ import { sessionStatsService } from '../services/SessionStatsService';
 import { parseTableArenaIdentity, seatCanAddFunds } from '../../server/src/domain/ArenaContext';
 import { arenaAssetUnitCents, arenaAssetUnitCentsIfRead } from '../lib/arenaUnitCents';
 import { topUpCashierPath } from '../utils/topUpCashierPath';
-import { sessionBuyInTotal } from '../utils/sessionBuyInTotal';
+import { mergeSessionFacts, sessionBuyInTotal } from '../utils/sessionBuyInTotal';
 import { bustPromptMustWait } from '../utils/bustPromptGate';
 import { bootExplanation, seatCopy } from '../components/table/seatExitCopy';
 import { readTableFundingBalance } from '../services/TableFundingService';
@@ -2675,6 +2675,38 @@ function LiveTablePage({
         const totalAtAsk = totalBuyInRef.current;
         if (askedFor && userId && sessionBaselineAskedRef.current !== askedFor) {
           sessionBaselineAskedRef.current = askedFor;
+          /* The rest of the Session Complete card from the same open session
+             (Dan 2026-10-12): start time, hands, wins and peak survive a
+             reload too. See utils/sessionBuyInTotal mergeSessionFacts. */
+          const factsAtAsk = {
+            startMs: sessionStartRef.current,
+            handsPlayed: handsPlayedRef.current,
+            handsWon: handsWonRef.current,
+            peakStack: peakStackRef.current,
+          };
+          void Promise.resolve(
+            supabase.rpc('fn_my_table_session_facts', { p_table_id: askedFor })
+          )
+            .then(({ data, error }) => {
+              if (error || sessionBaselineTableRef.current !== askedFor) return;
+              const merged = mergeSessionFacts({
+                serverFacts: data,
+                atAsk: factsAtAsk,
+                now: {
+                  startMs: sessionStartRef.current,
+                  handsPlayed: handsPlayedRef.current,
+                  handsWon: handsWonRef.current,
+                  peakStack: peakStackRef.current,
+                },
+              });
+              sessionStartRef.current = merged.startMs;
+              handsPlayedRef.current = merged.handsPlayed;
+              handsWonRef.current = merged.handsWon;
+              peakStackRef.current = merged.peakStack;
+            })
+            .catch(() => {
+              /* the page's own counts stand */
+            });
           void Promise.resolve(
             supabase.rpc('fn_my_cash_session_baseline', { p_table_id: askedFor })
           )
@@ -4435,6 +4467,9 @@ function LiveTablePage({
    * an effect — and the hero's own half of it is mirrored here.
    */
   const [heroSitsOutPerRow, setHeroSitsOutPerRow] = useState(false);
+  /** The hero's `table_seats.stack`, mirrored by the seat poll for the
+   *  placeholder seat drawn while the hero is not in the hand's player list. */
+  const [heroRowStack, setHeroRowStack] = useState(0);
   /**
    * A 1 Hz clock, and ONLY while a cash sit-out deadline is actually running.
    *
@@ -21575,7 +21610,7 @@ function LiveTablePage({
       try {
         const { data, error } = await supabase
           .from('table_seats')
-          .select('user_id, is_sitting_out, sit_out_at, leave_pending')
+          .select('user_id, is_sitting_out, sit_out_at, leave_pending, stack')
           .eq('table_id', tableId)
           .is('left_at', null);
         if (error || cancelled || !data) return;
@@ -21584,6 +21619,7 @@ function LiveTablePage({
           is_sitting_out: boolean | null;
           sit_out_at: string | null;
           leave_pending: boolean | null;
+          stack: number | string | null;
         }>;
         /* `leave_pending` is read here for the same reason the mount restore
            reads it: between the leave and settlement the row is still live and
@@ -21594,6 +21630,16 @@ function LiveTablePage({
            countdown, on a seat they already left (Dan 2026-09-05). */
         const heroRow = userId ? rows.find((r) => String(r.user_id) === String(userId)) : undefined;
         if (heroRow?.leave_pending) leftSeatPendingRef.current = true;
+        /* THE HERO'S OWN STACK, FROM THE ROW (Dan 2026-10-12). A seated hero
+           who is not in the current hand's player list (sitting out, or
+           waiting to be dealt in) is drawn from a placeholder, and that
+           placeholder printed 0.00 over a seat holding 3,632. The row is the
+           authority for what is in front of them between hands. */
+        {
+          const rowStack = Number(heroRow?.stack ?? 0);
+          const next = Number.isFinite(rowStack) && rowStack > 0 ? rowStack : 0;
+          setHeroRowStack((prev) => (prev === next ? prev : next));
+        }
         const stillSeated = new Set(rows.map((r) => String(r.user_id)).filter(Boolean));
 
         /**
@@ -25862,7 +25908,7 @@ function LiveTablePage({
                 id: userId,
                 name: username || 'You',
                 avatar: heroAvatarUrl || '',
-                stack: pendingSeatStackRef.current || 0,
+                stack: pendingSeatStackRef.current || heroRowStack || 0,
                 status: 'sitting_out',
                 isHero: true,
                 showCards: false,
@@ -26724,7 +26770,16 @@ function LiveTablePage({
              for. If the roster read then failed or was RLS-denied, that state
              lasted the whole session. A held seat-first seat is never a
              spectator; say so here rather than racing a query. */
-          !(seatFirstBuyIn && tableState.heroSeat > 0) ? (
+          !(seatFirstBuyIn && tableState.heroSeat > 0) &&
+          /* I'M BACK IS NEVER SHADOWED (Dan 2026-10-12): "THERE IS NO 'I'M
+             BACK' BUTTON TO CLICK FOR THE DIAMOND ARENA WHEN YOU ARE SITTING
+             OUT." A sat-out hero is not in the hand's player list, so this
+             branch matched first and printed "Seat Reserved, You'll Be Dealt
+             In Next Hand" while the seat itself read SITTING OUT - and the
+             sitting-out bar with its I'm Back button further down the chain
+             was never reached. The seat row says they are sitting out; that
+             bar owns this state. */
+          !heroIsSittingOut ? (
           /* Dan 2026-08-17 (audit): heroSeat is reserved but the server hasn't
              dealt the hero in yet (waiting on next hand / BB post). The old
              branch fell through to "Spectating - tap an open seat" which

@@ -123,7 +123,6 @@
     "src/hooks/useShellUpdateGate.ts",
     "src/lib/analytics.ts",
     "src/lib/appBase.ts",
-    "src/lib/arenaScheme.ts",
     "src/lib/arenaUnitCents.ts",
     "src/lib/audioContexts.ts",
     "src/lib/authToken.ts",

@@ -1712,6 +1712,31 @@
   }
 }
 
+/* THE CLUB LINE AND THE HAND NUMBER READ AT A GLANCE (Dan 2026-10-12,
+   with the Diamond Arena felt: "'DIAMOND ARENA' AND HAND NUMBER SHOULD BE
+   LARGER AS WELL"). Every table prints the same masthead, so both rooms get
+   it. Declared after the 375px ladder above with one more class of
+   specificity, so the phone steps cannot quietly take them back down. The
+   short-viewport identity size further down still wins on a squashed
+   landscape table, where the room genuinely is not there. FELT_TEXT_BAND's
+   lineHeightPx in tableGeometry.ts grew with these rows so the dealer button
+   keeps clear of the taller printing. */
+.table-page .table-brand__line--identity {
+  font-size: 0.66rem;
+}
+.table-page .table-brand__line--hand {
+  font-size: 0.58rem;
+  color: rgba(198, 210, 228, 0.55);
+}
+@media (max-width: 380px) {
+  .table-page .table-brand__line--identity {
+    font-size: 0.6rem;
+  }
+  .table-page .table-brand__line--hand {
+    font-size: 0.54rem;
+  }
+}
+
 /* Fade the brand out while the drama is on the pot, not the felt. */
 .table-page--allin-mode .table-brand {
   opacity: 0.35;

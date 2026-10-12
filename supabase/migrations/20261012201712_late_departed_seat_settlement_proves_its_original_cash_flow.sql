@@ -653,6 +653,9 @@ BEGIN
  END IF;
  RETURN v_report;
 END $function$;
+-- Existing readers retain their guarded postgres-only authority explicitly.
+REVOKE ALL ON FUNCTION public.fn_union_pnl_original_flow_evidence(uuid,timestamptz,timestamptz) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.fn_union_pnl_evidence_report(uuid,timestamptz,timestamptz) FROM PUBLIC,anon,authenticated,service_role;
 DO $postcondition$
 BEGIN
  IF md5(pg_get_functiondef('public.fn_union_pnl_prove_late_settlement(uuid)'::regprocedure)) IS DISTINCT FROM '0ff6de5baff6a5939003718e6f6a5d90'

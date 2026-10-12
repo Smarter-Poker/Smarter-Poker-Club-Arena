@@ -24,7 +24,7 @@
     "tests/fixtures/late-seat-flow/schema-additions.sql": "f545762dfd546ab3936d7bb7e96f859100ebfe3c04b4f08649f6c8ac66b421c0",
     "tests/fixtures/late-seat-flow/unused-original-dependencies.sql": "3e32e2b707377d32f910ee97789fbd223a868acb04b0c7c3a4f05bf1a2096345",
     "scripts/dev/probe-late-seat-flow-pg17.sh": "c3425f94bc8227e9d88fa1c4f58744b862701a48c83144d8939cf23269301d98",
-    "supabase/migrations/20261012201712_late_departed_seat_settlement_proves_its_original_cash_flow.sql": "3ba66b69aac6cf540c97854b23365b3196a3e95c87320726d66c5fd47a35dd30",
+    "supabase/migrations/20261012201712_late_departed_seat_settlement_proves_its_original_cash_flow.sql": "1d4118810368ba4cf8ab2a702148b34189708f435c6b307baba9fae46980e8b2",
     "tests/fixtures/union-pnl-blocked-resolution/schema.sql": "3f5650d78cbb5e171283ce9ddff00afd1f5a697c39be251d6557e93bdda94c91",
     "tests/fixtures/original-unchanged-stack/schema-additions.sql": "e0311274a5580043825a8b53b6eba5bcca8429e394b038522515acaf3a71ef02",
     "tests/fixtures/original-unchanged-stack/cents-preimage.sql": "b1af50bae98d16e1d4a640193b669b7f174cfdf2819b8177638d44d512235c10",

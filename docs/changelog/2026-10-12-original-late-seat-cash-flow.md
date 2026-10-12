@@ -23,3 +23,8 @@ cases, original restoration, ownership/ACL, rollback/replay, freeze/active-owner
 admission, current retained-request/key reader compatibility and independent wallet/felt arithmetic. The maintained Accounting 3
 step retains its transcript on either outcome. Compiler/hooks/hosted/merge and
 production installation are pending; this source is not a whole-week verdict.
+
+The normal submission guard identified missing literal access declarations for
+the two recreated readers. Explicit revocations preserve their guarded
+postgres-only ACLs, matching the existing native authority proof; no role gains
+access and no function body or financial equation changes.

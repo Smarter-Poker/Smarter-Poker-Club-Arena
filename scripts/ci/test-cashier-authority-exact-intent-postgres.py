@@ -593,7 +593,7 @@ try:
     run("conservation-pressure-restore-qualified-preimage", "ALTER FUNCTION public.fn_cashier_conservation_report(uuid) RESET statement_timeout;")
     run("conservation-pressure-installed-once", replacement_sql)
     refused("conservation-pressure-replay-refused", replacement_sql, "55000")
-    run("conservation-pressure-replay-preserves-postimage", "SELECT md5(pg_get_functiondef('public.fn_cashier_conservation_report(uuid)'::regprocedure));", "edea39f6739a3fbc0e5188a2b3bc801e")
+    run("conservation-pressure-replay-preserves-postimage", "SELECT md5(pg_get_functiondef('public.fn_cashier_conservation_report(uuid)'::regprocedure));", "68e55e37885c51afd37d532753cb5ba1")
     report_call = f"public.fn_cashier_conservation_report('{report_club}')"
     def witness(name, expression, expected):
         value=run(name, as_role(OWNER,f"SELECT {expression} FROM (SELECT {report_call} AS r) x;"),expected)
@@ -652,6 +652,10 @@ try:
       CREATE INDEX pressure_cover ON chip_ledger(created_at)
        INCLUDE(club_id,to_type,from_type,to_entity_id,from_entity_id,amount)
        WHERE club_id IS NOT NULL AND (to_type='player_wallet' OR from_type='player_wallet');
+      -- Include production's non-covering entity indexes so a regression may
+      -- not silently choose hundreds of repeated heap probes per position.
+      CREATE INDEX pressure_to_entity ON chip_ledger(club_id,to_entity_id,created_at);
+      CREATE INDEX pressure_from_entity ON chip_ledger(club_id,from_entity_id,created_at);
       ANALYZE chip_ledger; ANALYZE ca_chip_baseline; ANALYZE club_members;
     """,timeout=180)
     run("pressure-cover-visible", "VACUUM ANALYZE chip_ledger;",timeout=180)
@@ -666,6 +670,19 @@ try:
         plan=json.loads(raw)[0]
         pressure[label]={'execution_ms':plan['Execution Time'],'temp_written':plan['Plan'].get('Temp Written Blocks',0),'temp_read':plan['Plan'].get('Temp Read Blocks',0)}
         (out/('pressure-'+label+'.json')).write_text(json.dumps(plan,indent=2))
+    def plan_nodes(node):
+        yield node
+        for child in node.get('Plans', []):
+            yield from plan_nodes(child)
+    moves_node = next(node for node in plan_nodes(plan['Plan']) if node.get('Subplan Name') == 'CTE moves')
+    journal_scans = [node for node in plan_nodes(moves_node) if node.get('Relation Name') == 'chip_ledger']
+    require(len(journal_scans) == 1 and journal_scans[0].get('Node Type') == 'Index Only Scan'
+            and journal_scans[0].get('Index Name') == 'pressure_cover'
+            and journal_scans[0].get('Actual Loops') == 1
+            and journal_scans[0].get('Heap Fetches') == 0,
+            'wallet legs must use one covering pass, not per-position heap probes')
+    results['cases'].append({'name':'pressure-wallet-legs-one-covering-pass','passed':True})
+    (out/'pressure-journal-scan.json').write_text(json.dumps(journal_scans,indent=2))
     run('pressure-current-report-readonly',"BEGIN READ ONLY;"+as_role(OWNER,f"SELECT ({report_call}->'players'->>'absolute_drift')::numeric=0;")+"COMMIT;",'t',timeout=180)
     require(pressure['before']['temp_written']>0,'original materialization did not reproduce spills')
     require(pressure['after']['temp_written']==0,'candidate still spills raw ledger rows')

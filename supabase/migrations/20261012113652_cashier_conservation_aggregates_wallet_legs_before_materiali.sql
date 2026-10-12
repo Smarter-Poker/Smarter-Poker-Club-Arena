@@ -1,9 +1,9 @@
--- Cashier conservation uses covering scans without materializing the journal.
+-- Cashier conservation aggregates both wallet sides before materializing.
 -- Reserved by scripts/new-migration.mjs; original installed migration is immutable.
 -- Production read timeouts coincided with ~116 MiB temporary writes per report.
 -- Preserve all booked legs, both peer sides, each baseline cutoff, authority and
--- incomplete coverage. Inline the journal into its two covering-index branches.
--- @live-proof: EXISTS (SELECT 1 FROM pg_proc WHERE oid=to_regprocedure('public.fn_cashier_conservation_report(uuid)') AND md5(prosrc)='7c6fc7bd9efc982abdcedd0cb62a4ab3' AND prosecdef AND provolatile='s' AND pg_get_userbyid(proowner)='postgres' AND proconfig @> ARRAY['search_path=public, pg_temp'] AND NOT has_function_privilege('anon',oid,'EXECUTE') AND has_function_privilege('authenticated',oid,'EXECUTE'))
+-- incomplete coverage. Materialize per-position sums instead of raw journal rows.
+-- @live-proof: EXISTS (SELECT 1 FROM pg_proc WHERE oid=to_regprocedure('public.fn_cashier_conservation_report(uuid)') AND md5(prosrc)='f74f908237e0dc2f785e1004fe69bfa5' AND prosecdef AND provolatile='s' AND pg_get_userbyid(proowner)='postgres' AND proconfig @> ARRAY['search_path=public, pg_temp'] AND NOT has_function_privilege('anon',oid,'EXECUTE') AND has_function_privilege('authenticated',oid,'EXECUTE'))
 BEGIN;
 SET LOCAL lock_timeout = '2s';
 DO $preimage$
@@ -57,20 +57,21 @@ BEGIN
     WHERE c.id=p_club_id
   ), baselines AS MATERIALIZED (
     SELECT user_id,opening_balance,taken_at FROM public.ca_chip_baseline WHERE club_id=p_club_id
-  ), ledger AS NOT MATERIALIZED (
-    SELECT l.to_type,l.from_type,l.to_entity_id,l.from_entity_id,l.amount,l.created_at
+  ), moves AS MATERIALIZED (
+    -- Read each booked player-wallet leg once, retaining both sides and each
+    -- position's own baseline cutoff. Only per-position sums are materialized.
+    SELECT side.user_id, sum(side.amount) AS net
     FROM public.chip_ledger l
+    CROSS JOIN LATERAL (VALUES
+      (l.to_entity_id, l.amount, l.to_type='player_wallet'),
+      (l.from_entity_id, -l.amount, l.from_type='player_wallet')
+    ) AS side(user_id, amount, is_player)
+    JOIN baselines b ON b.user_id=side.user_id AND l.created_at>=b.taken_at
     WHERE l.club_id=p_club_id
       AND l.created_at>=(SELECT min(taken_at) FROM baselines)
       AND (l.to_type='player_wallet' OR l.from_type='player_wallet')
-  ), sides AS (
-    SELECT b.user_id,l.amount FROM baselines b JOIN ledger l
-      ON l.to_entity_id=b.user_id AND l.to_type='player_wallet' AND l.created_at>=b.taken_at
-    UNION ALL
-    SELECT b.user_id,-l.amount FROM baselines b JOIN ledger l
-      ON l.from_entity_id=b.user_id AND l.from_type='player_wallet' AND l.created_at>=b.taken_at
-  ), moves AS (
-    SELECT user_id,sum(amount) net FROM sides GROUP BY user_id
+      AND side.is_player
+    GROUP BY side.user_id
   ), positions AS MATERIALIZED (
     SELECT coalesce(m.user_id,b.user_id) AS user_id,m.chip_balance AS actual,
       b.opening_balance,b.taken_at,b.opening_balance+coalesce(mv.net,0) AS expected

@@ -6,7 +6,7 @@
   "raw_sources_per_event": 1,
   "recognized_contributors_per_event": 3,
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "1fc422b810641eee2149abbdbbf5ddf50c54e87162fbea82f22456c506bd712d",
+    "scripts/ci/classify-ci-changes.mjs": "6afe9dd3d84c639d8995271514bc1195202f2e930835137edcb7e0d73bf946ec",
     "scripts/ci/schema-manifest.d/union-sep8-spin-custody.json": "b79ed45b40b172ed16f7cd4dd101d541d4ebab29e8defb20be4e531eae7215a8",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/qualify-sep8-spin-custody.py": "28a2b63e4424f15d3b85ad742f7592fd65c2f8a8493eabb06210665e01e9ad67",
@@ -983,6 +983,17 @@
         "path": "scripts/ci/classify-ci-changes.mjs",
         "previous": "89fc5f840a12fe52e11da8990ce81952a41d5fdb97607c9fe18005cf27326e0d",
         "current": "1fc422b810641eee2149abbdbbf5ddf50c54e87162fbea82f22456c506bd712d"
+      }
+    ]
+  },
+  "onlyStaffRemoveMemberDbHarnessRouting20261012": {
+    "reason": "Reviewed additive only-staff-remove-member harness routing: the existing cashierDbHarnesses selector also names scripts/ci/test-only-staff-remove-member-db-postgres.py (the PostgreSQL 17 qualification of migration 20261012132509, only club staff can remove a member) and its fixture directory tests/fixtures/only-staff-remove-member-db/, and one accounting_postgres shard 2 step runs it. No selector is removed or narrowed; financial sources, assertions and historical evidence are unchanged. These byte bindings establish source identity only, not financial or production qualification.",
+    "changes": [
+      {
+        "section": "repository_files",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "1fc422b810641eee2149abbdbbf5ddf50c54e87162fbea82f22456c506bd712d",
+        "current": "6afe9dd3d84c639d8995271514bc1195202f2e930835137edcb7e0d73bf946ec"
       }
     ]
   }

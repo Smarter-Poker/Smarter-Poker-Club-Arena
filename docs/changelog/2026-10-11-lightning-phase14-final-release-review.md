@@ -8,4 +8,6 @@ No game, money, database, engine, access or mode behavior changes. No pilot is e
 
 Real-time law: unchanged existing named event wiring; no polling or snapshot-diff trigger introduced.
 
-Validation on protected base 458bcc24237ac47ad5291401e6d9822ef6570c26: 1,027 client / 251 Lightning engine / 15 RNG / 36 review and retained contracts pass; both compilers pass; real Phase 13 native recovery, 22-section/1,000-round matcher fairness and full 14-scenario/214-invariant load-chaos qualifications pass. Input and result logs are retained on the evidence SSD.
+Validation on protected base 458bcc24237ac47ad5291401e6d9822ef6570c26: 1,027 client / 251 Lightning engine / 15 RNG / 37 review and retained contracts pass; both compilers pass; real Phase 13 native recovery, 22-section/1,000-round matcher fairness and full 14-scenario/214-invariant load-chaos qualifications pass. Input and result logs are retained on the evidence SSD.
+
+The terminology gate now scans actual TypeScript string and template literals in Lightning client, operator and engine sources. Technical comments remain allowed; player/RPC/error strings retain the product naming requirement.

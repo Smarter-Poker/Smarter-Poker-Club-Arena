@@ -426,10 +426,7 @@
     {
       "id": "L53",
       "requirement": "No prohibited competitor terminology is exposed to players",
-      "qualificationFiles": [
-        "tests/lightning-phase-13-rollout-drain.test.ts",
-        "tests/lightning/lightning-phase14-release-review.test.ts"
-      ]
+      "qualificationFiles": ["tests/lightning/lightning-phase14-release-review.test.ts"]
     },
     {
       "id": "L54",

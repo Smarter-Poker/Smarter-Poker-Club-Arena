@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import ts from 'typescript';
 
 const root = resolve(__dirname, '../..');
 const read = (path: string) => readFileSync(resolve(root, path), 'utf8');
@@ -87,4 +88,52 @@ describe('a shadow-only stage cannot manufacture hand evidence', () => {
     expect(rollout).toContain('Separate exact installed-migration proof readback is required');
     expect(rollout).toContain('An unavailable, cancelled, skipped or stale result is not PASS');
   });
+});
+
+// Comments and implementation notes may discuss a competitor. Player-facing
+// string literals, templates and RPC/error text must keep our own terminology.
+it('keeps competitor product names out of Lightning strings that can reach a player', () => {
+  const prohibited =
+    /\b(?:PokerStars|GGPoker|PokerBros|Zoom|Rush(?:\s*&\s*Cash|\s+Poker)?|Snap\s+Poker|FastForward|Blitz\s+Poker)\b/i;
+  const paths: string[] = [];
+  function collect(directory: string): void {
+    for (const item of readdirSync(resolve(root, directory), { withFileTypes: true })) {
+      const path = `${directory}/${item.name}`;
+      if (item.isDirectory() && item.name !== '__tests__') collect(path);
+      else if (item.isFile() && /\.tsx?$/.test(item.name) && !/\.test\.tsx?$/.test(item.name))
+        paths.push(path);
+    }
+  }
+  for (const directory of [
+    'src/lightning',
+    'src/components/lightning',
+    'src/pages/club/lightning',
+    'server/src/lightning',
+  ])
+    collect(directory);
+  paths.push('src/pages/LightningEntryPage.tsx', 'src/pages/club/ClubLightningOperationsPage.tsx');
+  expect(paths.length).toBeGreaterThan(40);
+  for (const path of paths) {
+    const source = ts.createSourceFile(
+      path,
+      read(path),
+      ts.ScriptTarget.Latest,
+      true,
+      path.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS
+    );
+    function visit(node: ts.Node): void {
+      if (
+        ts.isStringLiteral(node) ||
+        ts.isNoSubstitutionTemplateLiteral(node) ||
+        ts.isJsxText(node)
+      )
+        expect(node.text, `${path}: ${node.getStart(source)}`).not.toMatch(prohibited);
+      if (ts.isTemplateExpression(node)) {
+        for (const part of [node.head, ...node.templateSpans.map((span) => span.literal)])
+          expect(part.text, `${path}: ${part.getStart(source)}`).not.toMatch(prohibited);
+      }
+      ts.forEachChild(node, visit);
+    }
+    visit(source);
+  }
 });

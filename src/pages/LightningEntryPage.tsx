@@ -27,7 +27,7 @@
  *     LIGHTNING is not offered and the page says why. Every join still goes
  *     through the table's own buy-in confirmation.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { EmptyState } from '../components/common/EmptyState';
 import { useToast } from '../components/common/Toast';
@@ -85,6 +85,11 @@ export const LIGHTNING_LIMIT_TEXT =
  */
 export const LIGHTNING_JOINS_CLOSED_TEXT = 'Lightning Is Not Taking New Players Right Now.';
 
+/** Mode guidance uses the actual cluster metadata, never inferred population. */
+export const MUST_MOVE_ENTRY_TEXT =
+  'This Game Uses Regular Tables And The Normal Buy-In. Lightning Is Not Active Here. Lightning Hands Require Enough Eligible Players.';
+export const REGULAR_ENTRY_TEXT = 'Join Game Opens The Normal Table Buy-In.';
+
 type Phase =
   | { kind: 'resolving' }
   | { kind: 'entry'; meta: LightningClusterMeta | null; decision: LightningEntryDecision }
@@ -99,6 +104,18 @@ export default function LightningEntryPage() {
   const [joining, setJoining] = useState(false);
   const [slow, setSlow] = useState(false);
   const mounted = useRef(true);
+  const routeGeneration = useRef(0);
+  const activeJoin = useRef<{ generation: number } | null>(null);
+  useLayoutEffect(() => {
+    routeGeneration.current += 1;
+    activeJoin.current = null;
+    setJoining(false);
+    return () => {
+      // A route change does not cancel the backend join, only its obsolete UI result.
+      routeGeneration.current += 1;
+      activeJoin.current = null;
+    };
+  }, [clusterId]);
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -132,6 +149,9 @@ export default function LightningEntryPage() {
         ]);
         if (!live) return;
         const decision = lightningEntryDecision(session, meta);
+        if (decision.kind === 'entry' && meta?.clusterId !== clusterId) {
+          throw new Error('Game Metadata Unavailable');
+        }
         if (decision.kind === 'open') {
           writeLightningPrefs({
             lastClusterId: clusterId,
@@ -172,11 +192,17 @@ export default function LightningEntryPage() {
   );
   const withinLimit = clusterId ? lightningJoinWithinLimit(mine.rows, clusterId, tableLimit) : true;
   const join = useCallback(async () => {
-    if (!clusterId || joining) return;
+    if (!clusterId || joining || activeJoin.current) return;
+    const operation = { generation: routeGeneration.current };
+    activeJoin.current = operation;
+    const ownsPage = () =>
+      mounted.current &&
+      operation.generation === routeGeneration.current &&
+      activeJoin.current === operation;
     setJoining(true);
     try {
       const r = await joinCashGame(clusterId);
-      if (!mounted.current) return;
+      if (!ownsPage()) return;
       if (r.action === 'waitlisted' || !r.table_id) {
         toast.info(waitlistedText(r));
         return;
@@ -202,11 +228,14 @@ export default function LightningEntryPage() {
       warmTable(r.table_id);
       navigate(`/table/${r.table_id}`);
     } catch (err) {
-      if (!mounted.current) return;
+      if (!ownsPage()) return;
       reportError(err, 'LightningEntryPage.join_failed', { clusterId });
       toast.warning(joinGameRefusalText(err));
     } finally {
-      if (mounted.current) setJoining(false);
+      if (ownsPage()) {
+        activeJoin.current = null;
+        setJoining(false);
+      }
     }
   }, [clusterId, joining, joinsLightning, navigate, toast, phase, mine.rows]);
 
@@ -270,6 +299,11 @@ export default function LightningEntryPage() {
   }
   const joinLabel = decision.kind === 'entry' ? decision.joinLabel : 'Join Game';
   const lightning = decision.kind === 'entry' && decision.lightning;
+  const entryGuidance = lightning
+    ? 'Buy In Once And Play One Stream Of Hands.'
+    : meta?.clusterMode === 'must_move'
+      ? MUST_MOVE_ENTRY_TEXT
+      : REGULAR_ENTRY_TEXT;
   const stakes =
     meta && meta.smallBlind > 0 && meta.bigBlind > 0
       ? `Blinds ${Number(meta.smallBlind)}/${Number(meta.bigBlind)}`
@@ -311,7 +345,7 @@ export default function LightningEntryPage() {
               ? 'This Game Is Not Taking Players.'
               : atLimit
                 ? LIGHTNING_LIMIT_TEXT
-                : [stakes, 'Buy In Once And Play One Stream Of Hands.'].filter(Boolean).join('. ')
+                : [stakes, entryGuidance].filter(Boolean).join('. ')
         }
         action={
           joinsClosed || closed || atLimit

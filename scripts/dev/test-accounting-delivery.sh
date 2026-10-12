@@ -348,7 +348,7 @@ run_game_probe diamond-wheel-atomic-batch 'NOTICE:  PASS Atomic paid batches: 5/
 # road left open across the install (hit on street two by its own roll) must
 # settle under contract 5, pay once, and replay contract 5's street.
 "${diamond_psql[@]}" -v survive=false -f "$diamond/crossing-v5-before-v6.sql" \
-  -f "$root/supabase/migrations/20261012050006_donkey_cross_flips_a_fair_coin_every_street.sql" \
+  -f "$root/supabase/migrations/20261012113806_donkey_cross_flips_a_fair_coin_every_street.sql" \
   -f "$diamond/crossing-v5-after-v6.sql"
 "${diamond_psql[@]}" -At -f "$diamond/snapshot.sql" > "$fixture/diamond-before.jsonl"
 run_game_probe diamond-crossing-fair-coin 'NOTICE:  PASS Donkey Cross fair coin: contract6 quote and 400 real rounds, every street its own sealed coin, street one a coin, 50/50 per street and independent over 65536 coins, coins and road end revealed on finish, losses keep half the last prize, every stop worth at most 0.80 on every stake and floor, Mines untouched'

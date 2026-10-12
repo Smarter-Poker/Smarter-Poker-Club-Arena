@@ -5,7 +5,7 @@
  * VIRTUAL COIN' MUST FLIP THAT IS TRULY RANDOM TO BE SAFE OR SMASH FOR EACH
  * STREET EVERY TIME." And, on the money: "Smaller prizes, keep 80%".
  *
- * Mirrors supabase/migrations/20261012050006_donkey_cross_flips_a_fair_coin_every_street.sql
+ * Mirrors supabase/migrations/20261012113806_donkey_cross_flips_a_fair_coin_every_street.sql
  * exactly:
  *
  *   coin(k)   street k is SAFE when the first byte of

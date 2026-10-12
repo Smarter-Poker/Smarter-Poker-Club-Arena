@@ -16,7 +16,7 @@ import {
   plinkoTableForFloor,
   plinkoTableVersion,
 } from '../utils/diamondBonusPayout';
-import { crashCashoutFloorCents } from '../utils/diamondGamesFairness';
+import { crashCashoutFloorCents, crashReturnPpm } from '../utils/diamondGamesFairness';
 import { CHOICE_MODE } from '../utils/diamondChoiceMath';
 
 /** What the server says this award will start with, read before Start. The
@@ -103,7 +103,13 @@ export function parseBonusGuarantee(
     (sealedWithFloor &&
       game === 'crash' &&
       g.cashout_floor_cents !== undefined &&
-      g.cashout_floor_cents !== crashCashoutFloorCents(version))
+      g.cashout_floor_cents !== crashCashoutFloorCents(version)) ||
+    // Contract 5 states the return the start will seal (Dan, 2026-10-12: a 2.9x
+    // average); it is the mirror's, from the same stake and floor, or refused.
+    (game === 'crash' &&
+      version >= 5 &&
+      g.crash_return_ppm !== undefined &&
+      g.crash_return_ppm !== crashReturnPpm(betChips, floor, version))
   )
     throw new Error('The Award Guarantee Could Not Be Quoted');
   return {

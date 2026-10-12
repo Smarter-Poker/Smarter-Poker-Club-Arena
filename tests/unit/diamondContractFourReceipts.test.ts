@@ -24,6 +24,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import receipts from '../fixtures/diamond-spins/first-step-postgres-receipts.json';
 import rollVectors from '../fixtures/diamond-spins/crash-point-postgres-rolls.json';
+import returnVectors from '../fixtures/diamond-spins/crash-return-ppm-postgres.json';
 import {
   parsePlinkoBonus,
   validateBonusReceipt,
@@ -42,7 +43,10 @@ import {
   awardInstantCrashChances,
   crashInstantChance,
   crashMissChance,
+  crashPointCentsForContract,
   crashPointCentsFromRoll,
+  crashReturnPpm,
+  crashReturnPpmV5,
   oneInRangeLabel,
   verifyCrashRound,
 } from '../../src/utils/diamondGamesFairness';
@@ -216,6 +220,85 @@ describe('contract 4: the receipt readers speak the contract production seals', 
     ).not.toThrow();
   });
 
+  it('contract 5: the browser seals the same 4,000 crash points PostgreSQL seals, and still verifies contract 4', () => {
+    // The same thousand production rolls, read through fn_crash_point_cents_v5
+    // as migration 20261012114801 installs it (a 1.25x floor, the round's own
+    // return chosen for a 2.9x average).
+    const pairs = rollVectors.pairs as [number, number][];
+    const rolls = (rollVectors.rolls as string[]).map((r) => BigInt(r));
+    const sealed5 = rollVectors.v5_cents as number[][];
+    expect(rollVectors.v5_source).toContain('fn_crash_point_cents_v5');
+    let floored = 0;
+    for (let p = 0; p < pairs.length; p++) {
+      const [bet, floorChips] = pairs[p];
+      for (let i = 0; i < rolls.length; i++) {
+        expect(crashPointCentsForContract(rolls[i], bet, floorChips, 5)).toBe(sealed5[p][i]);
+        expect(sealed5[p][i]).toBeGreaterThanOrEqual(125);
+        if (sealed5[p][i] === 125) floored++;
+        // The contract-4 receipt of the same roll is untouched by contract 5.
+        expect(crashPointCentsForContract(rolls[i], bet, floorChips, 4)).toBe(
+          (rollVectors.cents[p] as number[])[i]
+        );
+      }
+    }
+    // Fewer rounds sit on the floor than under contract 4, where about half did:
+    // under contract 5 a standard round ends at 1.25x one time in three, and a
+    // Super award with the add-on one time in five.
+    expect(floored / 4000).toBeLessThan(0.35);
+    expect(floored / 4000).toBeGreaterThan(0.25);
+  });
+
+  it('contract 5: the browser chooses the same return PostgreSQL chooses for every stake a round can be played at', () => {
+    // fn_crash_return_ppm_v5 on PostgreSQL for every reduced stake/minimum
+    // fraction an award can seal, and every floor up to the 0.80 edge on small
+    // stakes: the BigInt logarithm agrees with numeric ln to the millionth.
+    const rows = returnVectors.returns as [number, number, number][];
+    expect(returnVectors.source).toContain('fn_crash_return_ppm_v5');
+    expect(rows.length).toBeGreaterThan(3000);
+    for (const [b, m, ppm] of rows) expect(crashReturnPpmV5(b / 100, m / 100)).toBe(ppm);
+    // The two terms nearly every round is played on.
+    expect(crashReturnPpmV5(1, 0.5)).toBe(1006430);
+    expect(crashReturnPpmV5(3, 2)).toBe(1137983);
+  });
+
+  it('contract 5: a receipt states its return, and one that states another is refused', () => {
+    const v5 = {
+      ...crashReceipt,
+      payout_version: 5,
+      cashout_floor_cents: 126,
+      crash_floor_cents: 125,
+    } as Record<string, unknown>;
+    const outcome = v5.outcome as Record<string, unknown> | null;
+    if (outcome) {
+      const crash = Math.max(125, Number(outcome.crash_cents));
+      v5.outcome = {
+        ...outcome,
+        crash_cents: crash,
+        ...(outcome.cashout_cents === null
+          ? {}
+          : { cashout_cents: Math.max(126, Math.min(crash, Number(outcome.cashout_cents))) }),
+      };
+      v5.fairness = { ...(v5.fairness as Record<string, unknown>), crash_cents: crash };
+    }
+    const own = crashReturnPpm(Number(v5.bet_chips), Number(v5.minimum_payout_chips ?? 0), 5);
+    expect(() =>
+      validateCrashSettlement({ ...v5, crash_return_ppm: own }, String(v5.round_id))
+    ).not.toThrow();
+    expect(() =>
+      validateCrashSettlement({ ...v5, crash_return_ppm: own + 1 }, String(v5.round_id))
+    ).toThrow('The Crash Result Could Not Be Verified');
+    expect(() => validateCrashSettlement(v5, String(v5.round_id))).toThrow(
+      'The Crash Result Could Not Be Verified'
+    );
+    // A contract-4 receipt states 0.80, or nothing, as it always did.
+    expect(() =>
+      validateCrashSettlement(
+        { ...crashReceipt, crash_return_ppm: 800000 },
+        String(crashReceipt.round_id)
+      )
+    ).not.toThrow();
+  });
+
   it('prices the instant crash from the contract-4 floor and the 1.11x open', () => {
     // Nothing can crash below 1.10x, so no target at or under it can be missed.
     expect(crashMissChance(110, 1, 0.5, 110)).toBe(0);
@@ -228,8 +311,8 @@ describe('contract 4: the receipt readers speak the contract production seals', 
     expect(crashInstantChance(1, 0.1)).toBeCloseTo(1 - 0.7 / 0.91, 12);
     // The lobby's two figures: an ordinary award keeps half, a Super award with
     // the add-on keeps the two thirds it paid, and both are priced at 1.11x.
-    expect(oneInRangeLabel(awardInstantCrashChances(1, 100))).toBe('1 In 1.9 To 2');
-    expect(oneInRangeLabel(awardInstantCrashChances(2, 100))).toBe('1 In 1.4 To 2');
+    expect(oneInRangeLabel(awardInstantCrashChances(1, 100, 4))).toBe('1 In 1.9 To 2');
+    expect(oneInRangeLabel(awardInstantCrashChances(2, 100, 4))).toBe('1 In 1.4 To 2');
   });
 
   it('reads a contract-4 road and a contract-4 mines board, and refuses a board not dealt around its first pick', () => {

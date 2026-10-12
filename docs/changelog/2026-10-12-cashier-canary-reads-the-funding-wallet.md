@@ -27,3 +27,15 @@ The deterministic proof that a covered batch reads
 `2 Recipients Ready For Server Verification`, and that each action is judged
 against its own wallet, is pinned in `tests/unit/cashier-trade-launch-audit.test.tsx`
 (nothing pinned that string before). No money control is clicked anywhere.
+
+## Follow-up: the cleanup loop could never finish
+
+With the verdict fixed, run 38192380633 (trigger c381370) proved both verdicts
+(`Your Agent Wallet: 0` and `Your Chips: 0`, each `Insufficient Chips In The
+Funding Wallet`) and then timed out at 150s in the cleanup that unchecks the two
+recipients, also added in #6683. It iterated `locator(':checked').all()`: those
+are nth() locators over a live `:checked` filter, so unchecking the first
+shifted the second into position 0 and `nth(1)` never resolved. The spec never
+reached that line before, because the verdict assertion failed first.
+`uncheckEveryRecipient` unchecks the first match until none remain and requires
+each uncheck to land. Reproduced and verified against a local two-checkbox page.

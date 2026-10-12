@@ -10,6 +10,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   VIP_MONTHLY_ALLOWANCES,
   FEATURE_PRICING,
@@ -201,7 +202,7 @@ export function VIPCardsModal({ isOpen, onClose, vipStatus }: VIPInfoModalProps)
      way out, so the foot is the flat cap and CLOSE is a lit word. A
      non-member sees a message and two actions, so the foot carries the two
      painted plates: Close on steel, Join on the blue glass. */
-  return (
+  return createPortal(
     <div className="vip-modal-overlay" onClick={onClose}>
       <div
         ref={dialogRef}
@@ -333,7 +334,8 @@ export function VIPCardsModal({ isOpen, onClose, vipStatus }: VIPInfoModalProps)
           </div>
         </SpadeConsole>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

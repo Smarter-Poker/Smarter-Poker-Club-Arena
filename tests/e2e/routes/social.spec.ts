@@ -17,8 +17,29 @@ test.describe('Social Features', () => {
 
 test.describe('VIP Features', () => {
   test('should show VIP page', async ({ page }) => {
-    await expectRoute(page, 'vip', { expectText: 'VIP Rewards' });
+    await expectRoute(page, 'vip', { expectText: 'VIP Membership' });
+    await expect(page.locator('main')).not.toContainText(
+      /\b(?:VIP Points|Lifetime Points|Reward Points)\b/i
+    );
   });
+
+  for (const width of [375, 1280]) {
+    test(`VIP checkout covers page navigation at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      if (!(await expectRoute(page, 'vip', { expectText: 'VIP Membership' }))) return;
+      await page.getByRole('button', { name: 'Buy Diamonds', exact: true }).click();
+      await expect(page.getByRole('dialog', { name: 'Add Diamonds' })).toBeVisible();
+      const chromeCovered = await page.evaluate(() => {
+        const height = document.documentElement.clientHeight;
+        return [20, height - 20].every((y) =>
+          Boolean(document.elementFromPoint(20, y)?.closest('.diamond-modal-overlay'))
+        );
+      });
+      expect(chromeCovered, 'header and bottom dock must not cover the open checkout').toBe(true);
+      await page.getByRole('button', { name: 'Close Diamond Store' }).click();
+      await expect(page.getByRole('dialog', { name: 'Add Diamonds' })).not.toBeVisible();
+    });
+  }
 
   test('should show rakeback page', async ({ page }) => {
     await expectRoute(page, 'rakeback');

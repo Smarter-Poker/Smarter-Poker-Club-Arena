@@ -127,6 +127,17 @@ describe('DiamondTopUpModal secure checkout contract', () => {
     );
   });
 
+  it('escapes the isolated page so fixed navigation cannot cover checkout', () => {
+    const view = render(
+      <main style={{ isolation: 'isolate', position: 'relative' }}>
+        <DiamondTopUpModal isOpen onClose={mocks.close} />
+      </main>
+    );
+    const dialog = screen.getByRole('dialog', { name: 'Add Diamonds' });
+    expect(view.container.contains(dialog)).toBe(false);
+    expect(dialog.closest('.diamond-modal-overlay')?.parentElement).toBe(document.body);
+  });
+
   it('contains keyboard focus, closes with Escape, and restores the opener and page scroll', async () => {
     const opener = document.createElement('button');
     opener.textContent = 'Open Diamond Store';

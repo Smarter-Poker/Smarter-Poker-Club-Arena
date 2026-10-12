@@ -9,6 +9,11 @@ import type { WheelSegment } from '../../src/services/DiamondWheelService';
 // instant chip wins of equal value instead, so the FACE must read every card
 // from its segment's kind - and, for chips, from the multiplier - never from a
 // fixed ord-to-art table and never from the weights.
+//
+// Owner request 2026-10-12 ("THE VIP WHEEL ... SHOULD BE THE SAME WHEEL THAT
+// NON VIP MEMBERS GET"): that item-free table is now the ONLY table the server
+// deals, to everybody. The item table below is what a receipt sealed before
+// that date can still carry, so the face must still draw it correctly.
 
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 vi.mock('../../src/services/SoundService', () => ({
@@ -52,7 +57,7 @@ const V4: Row[] = [
   [11, '3x Chips', { kind: 'chips', amount: 3, multiplier: 3, weight: 160 }],
   [12, 'Upgrade', { kind: 'upgrade', amount: 400, multiplier: 4, weight: 1000 }],
 ];
-// What a VIP is served instead, same ords, same weights, same value.
+// What every player is served since 2026-10-12, same ords, same weights, same value.
 const VIP_ROWS: Record<number, Row> = {
   3: [3, '0.2x Chips', { kind: 'chips', amount: 0.2, multiplier: 0.2, weight: 6667 }],
   6: [6, '0.25x Chips', { kind: 'chips', amount: 0.25, multiplier: 0.25, weight: 6666 }],
@@ -71,8 +76,10 @@ const table = (rows: Row[]): WheelSegment[] =>
         ...rest,
       }) as WheelSegment
   );
-const STANDARD = table(V4);
-const VIP = table(V4.map((row) => VIP_ROWS[row[0]] ?? row));
+/** The item table a receipt sealed before 2026-10-12 may still carry. */
+const SEALED_ITEM_TABLE = table(V4);
+/** The one table the server deals to every player. */
+const ONE_TABLE = table(V4.map((row) => VIP_ROWS[row[0]] ?? row));
 
 let observe: ((rect: { width: number; height: number }) => void) | null = null;
 beforeEach(() => {
@@ -114,9 +121,9 @@ function face(segments: WheelSegment[]) {
 const card = (container: HTMLElement, ord: number) =>
   container.querySelector(`[data-slot="${ord}"] [data-wheel-card]`)!;
 
-describe('the VIP wheel face reads its cards from the prize, not the position', () => {
+describe('the one wheel face reads its cards from the prize, not the position', () => {
   it('prints chip stacks and chip amounts where a standard table shows the three items', () => {
-    const { container } = face(VIP);
+    const { container } = face(ONE_TABLE);
     for (const [ord, amount] of [
       [3, '0.2'],
       [6, '0.25'],
@@ -135,8 +142,8 @@ describe('the VIP wheel face reads its cards from the prize, not the position', 
     expect(card(container, 11)).toHaveAttribute('data-card-index', '7');
   });
 
-  it('shows no throwable, time bank or rabbit art anywhere on a VIP face', () => {
-    const { container } = face(VIP);
+  it('shows no throwable, time bank or rabbit art anywhere on the one table', () => {
+    const { container } = face(ONE_TABLE);
     for (const kind of ['throwables', 'time_bank', 'rabbit_hunt'])
       expect(container.querySelectorAll(`[data-wheel-card="${kind}"]`)).toHaveLength(0);
     const indexes = [...container.querySelectorAll('[data-card-index]')].map((element) =>
@@ -146,8 +153,8 @@ describe('the VIP wheel face reads its cards from the prize, not the position', 
     expect(indexes).toEqual([0, 5, 5, 1, 11, 5, 2, 6, 5, 3, 7, 4]);
   });
 
-  it('still shows the three items to everybody else', () => {
-    const { container } = face(STANDARD);
+  it('still draws the three items on a receipt sealed before the change', () => {
+    const { container } = face(SEALED_ITEM_TABLE);
     expect(card(container, 3)).toHaveAttribute('data-card-index', '8');
     expect(card(container, 6)).toHaveAttribute('data-card-index', '9');
     expect(card(container, 9)).toHaveAttribute('data-card-index', '10');
@@ -173,12 +180,12 @@ describe('the VIP wheel face reads its cards from the prize, not the position', 
   it('draws the same face whatever the weights say, so a model change cannot move the art', () => {
     // React's generated ids differ per render; the art must not.
     const art = (container: HTMLElement) => container.innerHTML.replace(/_r_[0-9a-z]+_/g, 'id');
-    const { container } = face(VIP);
+    const { container } = face(ONE_TABLE);
     const painted = art(container);
     cleanup();
     // The retired v3 weights, and a table with none at all.
     const v3 = [29600, 5000, 14600, 10000, 5000, 14600, 10000, 2000, 14600, 10000, 2200, 2000];
-    const reweighted = VIP.map((segment, index) => ({
+    const reweighted = ONE_TABLE.map((segment, index) => ({
       ...segment,
       weight: v3[index],
       probability: v3[index] / 100000,
@@ -187,15 +194,15 @@ describe('the VIP wheel face reads its cards from the prize, not the position', 
     expect(art(second)).toBe(painted);
     cleanup();
     const { container: third } = face(
-      VIP.map((segment) => ({ ...segment, weight: 0, probability: 0 })) as WheelSegment[]
+      ONE_TABLE.map((segment) => ({ ...segment, weight: 0, probability: 0 })) as WheelSegment[]
     );
     expect(art(third)).toBe(painted);
   });
 });
 
-describe('the VIP prize gallery matches the VIP face', () => {
+describe('the prize gallery matches the one wheel face', () => {
   it('lists chip art and chip titles for ords 3, 6 and 9 and no item art', () => {
-    render(<WheelPrizeGallery segments={VIP} />);
+    render(<WheelPrizeGallery segments={ONE_TABLE} />);
     const items = screen.getAllByRole('listitem');
     expect(items).toHaveLength(12);
     for (const [index, amount] of [
@@ -211,12 +218,12 @@ describe('the VIP prize gallery matches the VIP face', () => {
     expect(screen.queryByText('Throwables')).toBeNull();
     expect(screen.queryByText('Time Bank')).toBeNull();
     expect(screen.queryByText('Rabbit Hunt')).toBeNull();
-    // The combination throwables art belongs to the standard table only.
+    // The combination throwables art belongs to the sealed item table only.
     expect(document.body.innerHTML).not.toContain('wheel-prize-throwables-v1.webp');
   });
 
-  it('keeps the combination throwables art on a standard table', () => {
-    render(<WheelPrizeGallery segments={STANDARD} />);
+  it('keeps the combination throwables art for a sealed item table', () => {
+    render(<WheelPrizeGallery segments={SEALED_ITEM_TABLE} />);
     expect(screen.getByText('Throwables')).toBeInTheDocument();
     expect(document.body.innerHTML).toContain('wheel-prize-throwables-v1.webp');
   });

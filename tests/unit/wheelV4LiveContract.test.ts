@@ -87,13 +87,11 @@ describe('the wheel v4 law the client holds is the law production runs', () => {
     const rows = values(body('fn_wheel_v4_model(boolean)'));
     expect(rows).toHaveLength(12);
     expect(rows.map((r) => Number(r[0]))).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
-    expect(rows.map((r) => Number(r[10]))).toEqual([...WHEEL_V4_WEIGHTS]);
+    expect(rows.map((r) => Number(r[6]))).toEqual([...WHEEL_V4_WEIGHTS]);
     expect(WHEEL_V4_WEIGHTS.reduce((a, b) => a + b, 0)).toBe(WHEEL_V4_TOTAL);
     // The guard fn_wheel_spin_v2 runs before every draw: 100000 weight and
-    // 480000 value-sixths is a payback of exactly 0.8, on both tables.
-    for (const sixths of [5, 9] as const) {
-      expect(rows.reduce((sum, r) => sum + Number(r[10]) * num(r[sixths]), 0)).toBe(480000);
-    }
+    // 480000 value-sixths is a payback of exactly 0.8.
+    expect(rows.reduce((sum, r) => sum + Number(r[6]) * num(r[5]), 0)).toBe(480000);
     // The four bonus segments, and the game each of them awards.
     const games = rows.filter((r) => text(r[2]) === 'bonus');
     expect(games.map((r) => Number(r[0]))).toEqual([...WHEEL_V4_GAME_ORDS]);
@@ -102,28 +100,25 @@ describe('the wheel v4 law the client holds is the law production runs', () => {
     );
   });
 
-  it('never offers a VIP an item: six chips, one diamonds, one upgrade, four games', () => {
-    const rows = values(body('fn_wheel_v4_model(boolean)'));
-    const vip = rows.map((r) => ({ label: text(r[6]), kind: text(r[7]), multiplier: num(r[8]) }));
-    expect(vip).toHaveLength(12);
-    const count = (kind: string) => vip.filter((s) => s.kind === kind).length;
+  it('deals one table to everyone, with no item: six chips, one diamonds, one upgrade, four games', () => {
+    // Owner request 2026-10-12: the item-free table a VIP was dealt is the only
+    // table. The model ignores p_vip, so there is one column set to read.
+    const source = body('fn_wheel_v4_model(boolean)');
+    expect(source).not.toMatch(/CASE WHEN p_vip/);
+    const rows = values(source);
+    const table = rows.map((r) => ({ label: text(r[1]), kind: text(r[2]), multiplier: num(r[4]) }));
+    expect(table).toHaveLength(12);
+    const count = (kind: string) => table.filter((s) => s.kind === kind).length;
     expect([count('chips'), count('diamonds'), count('upgrade'), count('bonus')]).toEqual([
       6, 1, 1, 4,
     ]);
-    expect(vip.some((s) => ['throwables', 'time_bank', 'rabbit_hunt'].includes(s.kind ?? ''))).toBe(
-      false
-    );
-    // The three item segments of the open table are the three that become chips.
-    const open = rows.map((r) => text(r[2]));
-    expect(rows.filter((r, i) => open[i] !== vip[i].kind).map((r) => text(r[2]))).toEqual([
-      'throwables',
-      'time_bank',
-      'rabbit_hunt',
-    ]);
-    expect(vip.filter((s, i) => open[i] !== s.kind).map((s) => s.label)).toEqual([
-      '0.2x Chips',
-      '0.25x Chips',
-      '0.3x Chips',
+    expect(
+      table.some((s) => ['throwables', 'time_bank', 'rabbit_hunt'].includes(s.kind ?? ''))
+    ).toBe(false);
+    expect([3, 6, 9].map((ord) => table[ord - 1])).toEqual([
+      { label: '0.2x Chips', kind: 'chips', multiplier: 0.2 },
+      { label: '0.25x Chips', kind: 'chips', multiplier: 0.25 },
+      { label: '0.3x Chips', kind: 'chips', multiplier: 0.3 },
     ]);
   });
 

@@ -1,5 +1,5 @@
 # Qualification client only. Never a production database/engine image.
-FROM public.ecr.aws/docker/library/node@sha256:0e5f906573693feaa1e21057ebdcfdb5bd5021f050b2dc7c9deceb629c7da2a8 AS node_runtime
+FROM docker.io/library/node@sha256:0e5f906573693feaa1e21057ebdcfdb5bd5021f050b2dc7c9deceb629c7da2a8 AS node_runtime
 FROM ghcr.io/supabase/postgres@sha256:178f0976b54a39237096bfa310c1a352dbc82fb1b08dda45cdb8acb5d40c1426
 USER root
 RUN apt-get update && apt-get install --no-install-recommends -y build-essential libssl-dev bison flex perl bzip2 pkg-config && rm -rf /var/lib/apt/lists/*

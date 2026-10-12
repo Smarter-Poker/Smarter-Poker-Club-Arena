@@ -134,6 +134,17 @@ describe('the badge outlives the wheel', () => {
     expect(TABLE_CSS).toContain('.table-brand__prize');
   });
 
+  it('resolves the entered club on a cold union-table reload before reading its name', () => {
+    const start = TABLE_PAGE.indexOf('// Dan 2026-08-18: the union name');
+    const end = TABLE_PAGE.indexOf('// ─── Load bounty data', start);
+    expect(start).toBeGreaterThan(0);
+    expect(end).toBeGreaterThan(start);
+    const identity = TABLE_PAGE.slice(start, end);
+    expect(identity).toContain('await resolveLobbyClubId(lobbyClubArgs)');
+    expect(identity).toContain(".eq('id', viewerClubId)");
+    expect(identity).toContain('if (viewerClub?.name) clubName = viewerClub.name');
+  });
+
   it('a rejoin reads the prize off the tournament row', () => {
     expect(TABLE_PAGE).toContain('spinPrizePool: Number(tournData.prize_pool) || undefined');
   });

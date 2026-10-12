@@ -137,6 +137,23 @@ describe('resolveLobbyClubId — the reported bug', () => {
     expect(club).toBe(SHARK_CLUB.id);
   });
 
+  it('recovers the entered club on a direct union-table reload with a cold store and cache', async () => {
+    clearUnionFlagCache();
+    localStorage.setItem(STORAGE_KEYS.LAST_CLUB, SHARK_CLUB.id);
+    maybeSingleMock
+      .mockResolvedValueOnce({ data: { is_union: true, entity_type: 'union' }, error: null })
+      .mockResolvedValueOnce({ data: { is_union: false, entity_type: 'club' }, error: null });
+    await expect(
+      resolveLobbyClubId({
+        userId: VIEWER_ID,
+        viewerClubId: null,
+        tableClubId: MIDWAY_UNION.id,
+      })
+    ).resolves.toBe(SHARK_CLUB.id);
+    expect(eqMock).toHaveBeenNthCalledWith(1, 'id', MIDWAY_UNION.id);
+    expect(eqMock).toHaveBeenNthCalledWith(2, 'id', SHARK_CLUB.id);
+  });
+
   it('falls back to the cached club list, unions filtered out', async () => {
     writeCachedQuickLinkClubs(VIEWER_ID, [MIDWAY_UNION, CLUB_JAQK, SHARK_CLUB]);
     const club = await resolveLobbyClubId({

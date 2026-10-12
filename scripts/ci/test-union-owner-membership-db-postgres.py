@@ -60,6 +60,20 @@ POST_CAP = re.search(r"^-- @live-proof: \(SELECT md5\(pg_get_functiondef\('" + r
 PROOFS = [m.group(1).strip() for m in re.finditer(r"^-- @live-proof: (.+)$", MIGRATION, re.M)]
 FIXTURE_SQL = FIXTURE.read_text()
 
+# Rebuild the actual production DDL guard, not a permissive stand-in.
+registry_source = (MIGS / "20260911160817_a_money_writing_function_is_registered_before_it_exists.sql").read_text()
+def registry_function(name, delimiter):
+    start = registry_source.index(f"CREATE OR REPLACE FUNCTION public.{name}(")
+    end = registry_source.index(delimiter + ";", start) + len(delimiter) + 1
+    return registry_source[start:end]
+REGISTRY_SQL = "\n".join([
+    registry_function("fn_ca_money_rpc_balance_columns", "$$"),
+    registry_function("fn_ca_money_rpc_writes_balances", "$$"),
+    registry_function("fn_ca_money_rpc_registry_guard", "$function$"),
+])
+REGISTRY_TRIGGER = "CREATE EVENT TRIGGER ab_ca_money_rpc_registered ON ddl_command_end WHEN TAG IN ('CREATE FUNCTION') EXECUTE FUNCTION public.fn_ca_money_rpc_registry_guard();"
+
+
 
 def md5(s):
     return hashlib.md5(s.encode()).hexdigest()
@@ -125,6 +139,13 @@ def psql(db, user="postgres"):
 
 
 def run(argv, text=None, expect_fail=None):
+    # Send SQL as a file. An early DDL refusal must not leave a large stdin
+    # pipe waiting on a client that has already stopped consuming its input.
+    if text is not None and Path(argv[0]).name == "psql":
+        sql_file = cluster / "request.sql"
+        sql_file.write_text(text)
+        argv = [*argv, "-f", sql_file]
+        text = None
     p = subprocess.run([str(a) for a in argv], input=text, capture_output=True, text=True, env=ENV, timeout=300)
     if expect_fail is not None:
         if p.returncode == 0 or expect_fail not in p.stderr:
@@ -418,6 +439,7 @@ def catalog(db):
          FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace),
       (SELECT string_agg(tgrelid::regclass::text || '.' || tgname, ',' ORDER BY tgrelid::regclass::text, tgname) FROM pg_trigger WHERE NOT tgisinternal),
       (SELECT string_agg(table_name || '.' || trigger_name, ',' ORDER BY table_name, trigger_name) FROM public.ca_declared_money_triggers),
+      (SELECT string_agg(proname || ':' || status, ',' ORDER BY proname) FROM public.ca_money_rpc_registry),
       (SELECT string_agg(to_jsonb(m)::text, ',' ORDER BY m.club_id, m.user_id) FROM public.club_members m),
       (SELECT string_agg(union_id || club_id::text, ',' ORDER BY union_id, club_id) FROM public.union_clubs),
       (SELECT count(*) FROM public.chip_ledger)))""")
@@ -452,6 +474,8 @@ def install(db, seed=SEED):
     q(db, "BEGIN;\n" + cap.replace(CAP_OLD, CAP_NEW) + ";\nCOMMIT;")
     q(db, GATE_TRIGGERS)
     q(db, seed)
+    q(db, REGISTRY_SQL)
+    q(db, REGISTRY_TRIGGER, user="fixture_bootstrap")
 
 
 try:
@@ -467,6 +491,9 @@ try:
       user="fixture_bootstrap")
 
     install("live")
+    require(q("live", "SELECT md5(pg_get_functiondef('public.fn_ca_money_rpc_registry_guard()'::regprocedure)) || md5(pg_get_functiondef('public.fn_ca_money_rpc_writes_balances(text)'::regprocedure))")
+            == "03928ac3da782be33306c2e07b0b89771b13d12e02c7f7b719fcfae4153dcb1f",
+            "the DDL guard and balance predicate match production's current definitions")
     for sig, d, s in ((SOURCE_SIG, LIVE_SOURCE_DEF, LIVE_SOURCE_SRC), (CAP_SIG, LIVE_CAP_DEF, LIVE_CAP_SRC)):
         require(q("live", f"SELECT md5(pg_get_functiondef('{sig}'::regprocedure)) || md5(prosrc) FROM pg_proc WHERE oid = '{sig}'::regprocedure") == d + s,
                 f"production's {sig} rebuilt from main's migrations byte for byte (definition md5 {d})")
@@ -481,6 +508,18 @@ try:
     before_gates, before_money = gates("live"), money("live")
     require(before_gates == "f|f|f|t|none",
             f"before: the union owner has no finance, staff or bank role in a union club and may create games there through the union ({before_gates})")
+
+    # Reproduce the exact production refusal with the reviewed guard enabled.
+    install("unregistered")
+    unregistered_catalog = catalog("unregistered")
+    without_registration = re.sub(
+        r"INSERT INTO public\.ca_money_rpc_registry \(proname, status, notes\).*?ON CONFLICT \(proname\) DO NOTHING;",
+        "", MIGRATION, flags=re.S)
+    require(without_registration != MIGRATION, "the candidate contains the registration")
+    run(psql("unregistered"), without_registration,
+        expect_fail="fn_union_owner_holds_membership writes balance columns and is not in ca_money_rpc_registry")
+    require(catalog("unregistered") == unregistered_catalog,
+            "production's DDL guard refuses an unregistered helper and rolls back the whole migration")
 
     # A drifted gate refuses the whole file.
     install("drift")
@@ -522,6 +561,9 @@ try:
     after_gates = gates("live")
     require(after_gates == "f|f|f|t|player",
             f"after: the membership is a player's - no finance view, no staff, no admin, games only through the union as before ({after_gates})")
+
+    require(q("live", "SELECT status FROM public.ca_money_rpc_registry WHERE proname = 'fn_union_owner_holds_membership'") == "system",
+            "the zero-chip membership helper is registered before it is created")
 
     after = observe("live")
     require(all(after.values()), f"all {len(after)} union-owner cases pass after the install "

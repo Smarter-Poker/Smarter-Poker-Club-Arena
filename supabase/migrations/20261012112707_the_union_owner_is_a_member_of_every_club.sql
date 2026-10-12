@@ -192,6 +192,13 @@ BEGIN
 END
 $cap$;
 
+-- Register before CREATE FUNCTION: the production DDL guard also classifies
+-- a zero-chip club_members INSERT as a balance writer. No chips move.
+INSERT INTO public.ca_money_rpc_registry (proname, status, notes)
+VALUES ('fn_union_owner_holds_membership', 'system',
+        'Union join and owner-transfer trigger helper. Creates only a zero-chip player membership or reactivates an existing row without changing its balance. Locks the membership lane and row; refuses active bans or suspensions; grants no staff or finance rights.')
+ON CONFLICT (proname) DO NOTHING;
+
 -- 1. The one door that makes the union owner a member of one club.
 CREATE OR REPLACE FUNCTION public.fn_union_owner_holds_membership(p_union_id uuid, p_club_id uuid)
 RETURNS text

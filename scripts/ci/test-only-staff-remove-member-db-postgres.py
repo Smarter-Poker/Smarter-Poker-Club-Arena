@@ -53,6 +53,21 @@ MIGRATION = MIG.read_text()
 POST = re.search(r"^-- @live-proof: \(SELECT md5\(pg_get_functiondef\('" + re.escape(SIG) + r"'::regprocedure\)\) = '([0-9a-f_A-Z]{8,32})'\)$",
                  MIGRATION, re.M).group(1)
 PROOFS = [m.group(1).strip() for m in re.finditer(r"^-- @live-proof: (.+)$", MIGRATION, re.M)]
+
+# Rebuild the actual production DDL guard, not a permissive stand-in.
+registry_source = (MIGS / "20260911160817_a_money_writing_function_is_registered_before_it_exists.sql").read_text()
+def registry_function(name, delimiter):
+    start = registry_source.index(f"CREATE OR REPLACE FUNCTION public.{name}(")
+    end = registry_source.index(delimiter + ";", start) + len(delimiter) + 1
+    return registry_source[start:end]
+REGISTRY_SQL = "\n".join([
+    registry_function("fn_ca_money_rpc_balance_columns", "$$"),
+    registry_function("fn_ca_money_rpc_writes_balances", "$$"),
+    registry_function("fn_ca_money_rpc_registry_guard", "$function$"),
+])
+REGISTRY_TRIGGER = "CREATE EVENT TRIGGER ab_ca_money_rpc_registered ON ddl_command_end WHEN TAG IN ('CREATE FUNCTION') EXECUTE FUNCTION public.fn_ca_money_rpc_registry_guard();"
+
+
 BODY = re.search(r"c_body constant text := \$body\$\n(.*?)\n\$body\$;", MIGRATION, re.S).group(1)
 
 
@@ -117,6 +132,11 @@ def psql(db, user="postgres"):
 
 
 def run(argv, text=None, expect_fail=None):
+    if text is not None and Path(argv[0]).name == "psql":
+        sql_file = cluster / "request.sql"
+        sql_file.write_text(text)
+        argv = [*argv, "-f", sql_file]
+        text = None
     p = subprocess.run([str(a) for a in argv], input=text, capture_output=True, text=True, env=ENV, timeout=300)
     if expect_fail is not None:
         if p.returncode == 0 or expect_fail not in p.stderr:
@@ -371,6 +391,11 @@ def install(db):
     q(db, GATE_TRIGGERS)
     q(db, SEED)
     run(psql(db), UNION_MIG.read_text())   # 20261012112707 lands before this migration
+    # Production already registers this door as approved. Keep that exact
+    # prerequisite and exercise its CREATE under the actual DDL guard.
+    q(db, "INSERT INTO public.ca_money_rpc_registry(proname, status, notes) VALUES ('fn_remove_settled_club_member', 'approved', 'Production registration, read-only verified 2026-10-12')")
+    q(db, REGISTRY_SQL)
+    q(db, REGISTRY_TRIGGER, user="fixture_bootstrap")
 
 
 try:

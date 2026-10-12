@@ -21,10 +21,7 @@ import {
   compareHands,
   compareLowHands,
 } from './PokerEngine.js';
-import {
-  snapshotDiamondCashFees,
-  type DiamondCashFeeSnapshot,
-} from '../domain/diamondCashFeeSnapshot.js';
+import { snapshotDiamondCashFees } from '../domain/diamondCashFeeSnapshot.js';
 import { priceDiamondCashRake } from '../domain/diamondCashRakeSchedule.js';
 import { priceDiamondCashJackpotDrop } from '../domain/diamondCashJackpotSchedule.js';
 import { wholeDiamondsContributed } from './diamondCashRakeFacts.js';

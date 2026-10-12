@@ -10,6 +10,9 @@ import {
   createProductionE2EAccount,
   prepareProductionE2EStaffMembership,
   prepareProductionE2ETemplateMembership,
+  prepareProductionE2ELightningMembership,
+  prepareProductionE2ETemplateFixture,
+  DEFAULT_E2E_LIGHTNING_CLUB_ID,
   DEFAULT_E2E_TEMPLATE_CLUB_ID,
   STALE_ACCOUNT_AGE_MS,
   retireCertificationClubWithRetry,
@@ -479,6 +482,198 @@ describe('post-deploy production account', () => {
     ).resolves.toMatchObject({ club_id: DEFAULT_E2E_TEMPLATE_CLUB_ID, chip_balance: 0 });
     expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'PATCH')).toHaveLength(1);
   });
+
+  it.each(['created', 'unknown', 'probe-refused', 'rollback-refused', 'recovered'])(
+    'owns a standalone template request through %s without touching a player club',
+    async (mode) => {
+      const directory = mkdtempSync(join(tmpdir(), 'production-e2e-owned-template-'));
+      const env = {
+        ...environment(directory),
+        DATABASE_URL: 'postgres://qualified-test',
+        GITHUB_ENV: join(directory, 'github-env'),
+      };
+      const requestId = '00000000-0000-4000-8000-000000000088';
+      const clubId = '00000000-0000-4000-8000-000000000077';
+      const accountPath = join(directory, 'club-arena-production-e2e-account.json');
+      writeFileSync(
+        accountPath,
+        JSON.stringify({
+          id: USER_ID,
+          email: 'ca-customization-cert-postdeploy-template@example.invalid',
+          password: 'unused',
+          templateFixtureRequest: { requestId },
+        })
+      );
+      const club = {
+        id: clubId,
+        owner_id: USER_ID,
+        name: 'Crest Cert Template 00000000',
+        status: 'active',
+        union_id: null,
+        is_public: false,
+        requires_approval: true,
+      };
+      const member = { role: 'owner', status: 'active', chip_balance: 0 };
+      const operations: string[] = [];
+      const claims = { sub: USER_ID, role: 'authenticated' };
+      const token = `header.${Buffer.from(JSON.stringify(claims)).toString('base64url')}.signature`;
+      const client = {
+        connect: vi.fn(),
+        end: vi.fn(),
+        query: vi.fn(async (sql: string) => {
+          operations.push(sql);
+          if (sql === 'ROLLBACK' && mode === 'rollback-refused')
+            throw new Error('rollback refused');
+          if (sql.includes('fn_create_club_atomic')) {
+            if (mode === 'probe-refused') throw new Error('probe refused');
+            return { rows: [{ club }] };
+          }
+          if (sql.includes('FROM public.club_members')) return { rows: [member] };
+          return { rows: [] };
+        }),
+      };
+      const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes('/auth/v1/token')) return Response.json({ access_token: token });
+        if (url.includes('/auth/v1/user')) return Response.json({ id: USER_ID });
+        if (url.includes('/club_creation_requests?'))
+          return Response.json(mode === 'recovered' ? [{ club_id: clubId }] : []);
+        if (url.includes('/rpc/fn_create_club_atomic')) {
+          operations.push('COMMITTED_API');
+          const record = JSON.parse(readFileSync(accountPath, 'utf8'));
+          expect(record.templateFixtureRequest.requestId).toBe(requestId);
+          expect(JSON.parse(String(init?.body))).toMatchObject({
+            p_request_id: requestId,
+            p_is_public: false,
+            p_requires_approval: true,
+          });
+          if (mode === 'unknown') throw new Error('transport acknowledgement unknown');
+          return Response.json(club);
+        }
+        if (url.includes('/clubs?')) return Response.json([club]);
+        if (url.includes('/club_members?')) return Response.json([member]);
+        throw new Error('Unexpected request ' + url);
+      });
+      const operation = prepareProductionE2ETemplateFixture({
+        environment: env,
+        fetchImpl: fetchMock,
+        databaseClientFactory: async () => client,
+      });
+      if (mode === 'unknown' || mode === 'probe-refused' || mode === 'rollback-refused') {
+        await expect(operation).rejects.toThrow(
+          mode === 'unknown'
+            ? 'acknowledgement unknown'
+            : mode === 'rollback-refused'
+              ? 'rollback refused'
+              : 'probe refused'
+        );
+        expect(existsSync(env.GITHUB_ENV)).toBe(false);
+        expect(JSON.parse(readFileSync(accountPath, 'utf8')).templateFixtureRequest.requestId).toBe(
+          requestId
+        );
+      } else {
+        await expect(operation).resolves.toMatchObject(club);
+        expect(readFileSync(env.GITHUB_ENV, 'utf8')).toBe(`E2E_TEMPLATE_CLUB_ID=${clubId}\n`);
+      }
+      if (mode === 'recovered') {
+        expect(operations).toEqual([]);
+        expect(client.connect).not.toHaveBeenCalled();
+      } else {
+        expect(operations[0]).toBe('BEGIN');
+        expect(operations).toContain('SET LOCAL ROLE authenticated');
+        expect(operations).toContain('ROLLBACK');
+        expect(operations).not.toContain('COMMIT');
+        expect(client.end).toHaveBeenCalledTimes(1);
+        if (mode === 'probe-refused' || mode === 'rollback-refused')
+          expect(operations).not.toContain('COMMITTED_API');
+        else
+          expect(operations.indexOf('ROLLBACK')).toBeLessThan(operations.indexOf('COMMITTED_API'));
+      }
+    }
+  );
+
+  it('keeps the owned fixture record and account when template retirement refuses', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'production-e2e-template-cleanup-'));
+    const env = environment(directory);
+    const path = join(directory, 'club-arena-production-e2e-account.json');
+    writeFileSync(
+      path,
+      JSON.stringify({
+        id: USER_ID,
+        email: 'ca-customization-cert-postdeploy-template@example.invalid',
+        templateFixtureRequest: { requestId: '00000000-0000-4000-8000-000000000088' },
+      })
+    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        Response.json([{ id: 'owned-club', owner_id: USER_ID, name: 'Unexpected Real Club' }])
+      );
+    await expect(
+      cleanupProductionE2EAccount({ environment: env, fetchImpl: fetchMock })
+    ).rejects.toThrow('Refusing to retire unrecognized club');
+    expect(existsSync(path)).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/clubs?');
+  });
+
+  it('prepares Lightning independently of an invalid standalone template scope', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'production-e2e-lightning-'));
+    const env = { ...environment(directory), E2E_TEMPLATE_CLUB_ID: 'not-standalone' };
+    writeFileSync(
+      join(directory, 'club-arena-production-e2e-account.json'),
+      JSON.stringify({
+        id: USER_ID,
+        email: 'ca-customization-cert-postdeploy-lightning@example.invalid',
+        password: 'unused',
+      })
+    );
+    const row = {
+      club_id: DEFAULT_E2E_LIGHTNING_CLUB_ID,
+      user_id: USER_ID,
+      role: 'admin',
+      status: 'active',
+      chip_balance: 0,
+    };
+    const fetchMock = vi.fn().mockResolvedValue(Response.json([row]));
+    await expect(
+      prepareProductionE2ELightningMembership({ environment: env, fetchImpl: fetchMock })
+    ).resolves.toEqual(row);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0][0])).toContain(
+      `club_id=eq.${DEFAULT_E2E_LIGHTNING_CLUB_ID}`
+    );
+    expect(String(fetchMock.mock.calls[0][0])).not.toContain('/clubs?');
+  });
+
+  it.each([{ chip_balance: 1 }, { role: 'player' }, { status: 'inactive' }, { user_id: 'other' }])(
+    'never reuses a Lightning membership outside the exact zero-balance reserved admin shape: %j',
+    async (difference) => {
+      const directory = mkdtempSync(join(tmpdir(), 'production-e2e-lightning-refused-'));
+      const env = environment(directory);
+      writeFileSync(
+        join(directory, 'club-arena-production-e2e-account.json'),
+        JSON.stringify({
+          id: USER_ID,
+          email: 'ca-customization-cert-postdeploy-lightning@example.invalid',
+          password: 'unused',
+        })
+      );
+      const row = {
+        club_id: DEFAULT_E2E_LIGHTNING_CLUB_ID,
+        user_id: USER_ID,
+        role: 'admin',
+        status: 'active',
+        chip_balance: 0,
+        ...difference,
+      };
+      const fetchMock = vi.fn().mockResolvedValue(Response.json([row]));
+      await expect(
+        prepareProductionE2ELightningMembership({ environment: env, fetchImpl: fetchMock })
+      ).rejects.toThrow('Refusing to change an existing');
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    }
+  );
 
   it('refuses to overwrite an existing reserved membership', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'production-e2e-account-existing-staff-'));

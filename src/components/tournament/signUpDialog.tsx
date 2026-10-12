@@ -129,6 +129,13 @@ export interface SignUpDialogOptions {
    * wrong wallet for a global-lobby, XMTT or union-games entry.
    */
   clubId?: string | null;
+  /**
+   * The tournament being entered. When set, the balance row reads the wallet
+   * the ENTRY will be charged to (2026-10-12): a union event charges one of
+   * the player's member clubs, never the union's house club that `clubId`
+   * names, so reading by club showed 0 Chips to a player who could pay.
+   */
+  tournamentId?: string | null;
   /** Late registration reads differently from signing up before the off. */
   isLateRegistration?: boolean;
   /** Exact noncash entry instrument selected by the server before this opens. */
@@ -268,6 +275,7 @@ export function SignUpHost() {
   const current = queue[0] || null;
   const userId = current?.opts.userId;
   const clubId = current?.opts.clubId ?? null;
+  const tournamentId = current?.opts.tournamentId ?? null;
   const usesTournamentTicket = Boolean(current?.opts.tournamentTicketId);
   /* A chip wallet belongs on this card only when the entry is priced in chips.
      `undefined` (an options object built without a unit) is treated as the
@@ -307,7 +315,10 @@ export function SignUpHost() {
            arrived here as "you have no chips" and DISABLED Confirm for a
            funded player. `balance: null` means we could not find out, and the
            gate below treats that as unknown rather than as zero. */
-        const r = await WalletService.readPlayerBalance(userId, { clubId });
+        const r = await WalletService.readPlayerBalance(
+          userId,
+          tournamentId ? { clubId, tournamentId } : { clubId }
+        );
         if (alive) setBalance(r.balance);
       } catch (e) {
         // readPlayerBalance already reports its own failures and returns null,
@@ -320,7 +331,7 @@ export function SignUpHost() {
     return () => {
       alive = false;
     };
-  }, [current, userId, clubId, usesTournamentTicket, pricedInChips]);
+  }, [current, userId, clubId, tournamentId, usesTournamentTicket, pricedInChips]);
 
   // Escape cancels, like every other dialog in the app.
   useEffect(() => {

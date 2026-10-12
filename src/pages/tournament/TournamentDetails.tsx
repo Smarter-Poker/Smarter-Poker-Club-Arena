@@ -1842,7 +1842,12 @@ export default function TournamentDetails({
 
   return (
     <PageErrorBoundary pageName="TournamentDetails">
-      <div className="tournament-details" ref={shellRef} data-active-tab={activeTab}>
+      <div
+        className="tournament-details"
+        ref={shellRef}
+        data-active-tab={activeTab}
+        data-embedded={isEmbedded}
+      >
         {recoveryNotice}
         {/* THE HEADER (Dan 2026-10-04: "remove all these large frames, and make
             it like a normal, industry standard tournament lobby"). One band:

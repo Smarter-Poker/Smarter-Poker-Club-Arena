@@ -91,6 +91,13 @@
     sans-serif;
 }
 
+/* The routed page shares the global Poker Arena footer. Its live occupied
+   height is published by ClubBottomNav, including zero while hidden. Keep
+   Register above that bar without subtracting it from an embedded sheet. */
+.tournament-details[data-embedded='false'] {
+  height: calc(var(--details-h, 100dvh) - var(--ca-bottom-chrome-h, 0px));
+}
+
 .tournament-details.loading,
 .tournament-details.error {
   justify-content: center;

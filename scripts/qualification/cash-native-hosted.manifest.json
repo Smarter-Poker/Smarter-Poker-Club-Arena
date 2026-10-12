@@ -56,8 +56,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 203929,
-      "sha256": "77c6cf8ca6bb10527be78116fb9f839912130d9b54bda2982e65e2525c6be97b"
+      "bytes": 204855,
+      "sha256": "95cf03c1d3c625501a600dad225e898e2cf4193b7c541e7ae8fa3c1c1d4693c0"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -2199,6 +2199,35 @@
     "previousMainWorkflowPin": {
       "bytes": 203003,
       "sha256": "1699ddcbdafde77bbb538e632911eb11663486d78a99571e67006ae4f4004995"
+    }
+  },
+  "inventorySealNativeQualification20261012": {
+    "reason": "Add exact bucketed inventory seal PostgreSQL17 equivalence to existing required Accounting3. Preserve every financial source, assertion, historical pin and SOURCE_ONLY_UNRUN status. Workflow fingerprint refresh is source identity only, not cash execution or production certification.",
+    "previousWorkflowPin": {
+      "bytes": 202788,
+      "sha256": "cbecb15da2fd2b57f1c3fcb7a75f9eede415cef9ad40bce2f25257266ca3f732"
+    }
+  },
+  "inventorySealCurrentMainIntegration20261012": {
+    "reason": "Preserve current main member-removal qualification and candidate inventory-seal native qualification together. Source identity only; financial inputs, historical pins and SOURCE_ONLY_UNRUN remain unchanged.",
+    "previousCandidateWorkflowPin": {
+      "bytes": 203714,
+      "sha256": "68ec0a94cbe906ff36162e004227766cdec8daf80023551b6693b46ceec1d559"
+    },
+    "previousCurrentMainWorkflowPin": {
+      "bytes": 203003,
+      "sha256": "1699ddcbdafde77bbb538e632911eb11663486d78a99571e67006ae4f4004995"
+    }
+  },
+  "originalUnchangedStackInventorySealIntegration20261012": {
+    "reason": "Integrate protected inventory-seal qualification and port correction a8f059e341; retain original unchanged-stack, inventory-seal and staff-removal native invocations and all prior source pin history. No financial assertion, fixture, component or qualification status changes. Source identity is not production proof.",
+    "previousBranchWorkflowPin": {
+      "bytes": 203929,
+      "sha256": "77c6cf8ca6bb10527be78116fb9f839912130d9b54bda2982e65e2525c6be97b"
+    },
+    "previousMainWorkflowPin": {
+      "bytes": 203929,
+      "sha256": "4c8baf0332e0a416f9d4c07e8b2c4cfddac492d6c51ec22cfe2c37ff9077d059"
     }
   }
 }

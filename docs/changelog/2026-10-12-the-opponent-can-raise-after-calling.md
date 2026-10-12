@@ -49,3 +49,24 @@ completion records and new protected selection generations. Historical
 opponent counts are not rewritten or backfilled by this source change. The
 existing locked workloads total 753 shards and 9,116,928 paired hands; no
 held-out seed or experimental design changes.
+
+## Completed-hand all-in classification
+
+The controller can record `all_in` for a whole-stack call or a short raise.
+The basic model and range reader already require `isFullRaise === true`
+for aggressive all-in reads, but the completed-hand model treated every
+all-in as aggression. A real accepted raise to six followed by a six-chip
+all-in call invented a three-bet opportunity. The same mismatch could
+replace the preflop aggressor and count a river call as a value bet.
+
+One shared predicate now preserves the existing basic/range semantics in
+the deep reads. Full-raise all-ins still count; calls and short all-ins do
+not fabricate full-raise opportunities. A full aggressive flop shove also
+counts as a c-bet when made by the preflop aggressor. Real-controller
+regressions cover duplicate worker observations, calls, short/full raises,
+preflop aggressor ownership, c-bets and separate river shove/call reads.
+
+The literal FAST case now exceeds the forty-hand scoped-read threshold
+and contrasts its scoped 100% PFR with a pooled prior from another variant.
+It proves the actual range accessor chooses the learned scoped read,
+not merely that the private frame contains scoped counters.

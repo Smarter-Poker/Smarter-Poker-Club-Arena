@@ -145,6 +145,26 @@ it('a 100% preflop raiser and postflop pot bettor reaches the actual FAST range,
     noteDecision: () => {},
   });
   await worker.start();
+  // Establish a contrasting pooled prior from another variant scope.
+  // The actual FAST accessor must choose its >=40-hand Holdem scope.
+  for (let h = 0; h < 160; h++) {
+    HorseMind.setDecisionScope(readScopeOf('plo4', 2));
+    HorseMind.observe(
+      [
+        {
+          seat: 1,
+          userId: opponent,
+          action: 'fold',
+          amount: 0,
+          timestamp: 1700000000000 + h,
+          stage: 'preflop',
+        },
+      ],
+      [],
+      { version: 1, tableId: table, handNumber: 1000500 + h }
+    );
+  }
+  HorseMind.setDecisionScope(null);
   const makeHand = (handNumber: number) => {
     const config: HandConfig = {
       tableId: table,
@@ -173,7 +193,7 @@ it('a 100% preflop raiser and postflop pot bettor reaches the actual FAST range,
     expect(controller.performAction(2, 'call')).toBe(true);
     return { controller, config };
   };
-  for (let h = 0; h < 30; h++) {
+  for (let h = 0; h < 40; h++) {
     const handNumber = 1000100 + h;
     const { controller } = makeHand(handNumber);
     for (const stage of ['flop', 'turn', 'river']) {
@@ -198,7 +218,7 @@ it('a 100% preflop raiser and postflop pot bettor reaches the actual FAST range,
     await worker.drain();
     expect(messages.at(-1)).toMatchObject({ type: 'ACK', operation: 'OBSERVE_COMPLETED_HAND' });
   }
-  const { controller, config } = makeHand(1000130);
+  const { controller, config } = makeHand(1000140);
   expect(controller.performAction(2, 'check')).toBe(true);
   expect(controller.performAction(1, 'bet', controller.getState().pot)).toBe(true);
   // This is the real controller menu/public-state builder already used by
@@ -218,7 +238,7 @@ it('a 100% preflop raiser and postflop pot bettor reaches the actual FAST range,
     type: 'DECIDE_FAST' as const,
     requestId: 100,
     generation: 1,
-    fence: `${table}:1000130:2:9:1`,
+    fence: `${table}:1000140:2:9:1`,
     decisionKey: '',
     decisionTimeMs: 1700000000000,
     player: spot.hero,
@@ -245,10 +265,10 @@ it('a 100% preflop raiser and postflop pot bettor reaches the actual FAST range,
     captured.planContext
   );
   expect(view.scoped.get(`${readScopeOf('nlh', 2)}|${opponent}`)).toMatchObject({
-    hands: 31,
-    vpip: 31,
-    pfr: 31,
-    postAggr: 91,
+    hands: 41,
+    vpip: 41,
+    pfr: 41,
+    postAggr: 121,
     postPassive: 0,
   });
   const ranges = range.mock.calls.flatMap((call, i) =>
@@ -261,10 +281,194 @@ it('a 100% preflop raiser and postflop pot bettor reaches the actual FAST range,
   expect(exploits.length).toBeGreaterThan(0);
   expect(exploits.some((read) => read.callDownMod === 1.2)).toBe(true);
   vi.restoreAllMocks();
+  HorseMind.setDecisionScope(null);
+  for (const { call, value } of ranges) {
+    const pooled = HorseMind.bandFor(...call);
+    expect(value[0]).toBeCloseTo(pooled![0] - 0.1, 10);
+  }
   HorseMind.reset();
   for (const { call, value } of ranges) {
     const prior = HorseMind.bandFor(...call);
     expect(value).not.toBeNull();
     expect(value[0]).toBeCloseTo(prior![0] - 0.1, 10);
   }
+});
+
+it.each([
+  ['call', 6, 0],
+  ['short_raise', 8, 0],
+  ['full_raise', 100, 1],
+] as const)(
+  'completed deep reads classify a controller accepted all-in %s consistently with basic reads',
+  async (_line, stack, opportunities) => {
+    HorseMind.reset();
+    const players = [opponent, hero].map((user_id, i) => ({
+      seat: i + 1,
+      user_id,
+      username: 'Actor',
+      stack: i === 0 ? 100 : stack,
+      bet: 0,
+      totalInvested: 0,
+      cards: [],
+      is_folded: false,
+      is_all_in: false,
+      is_sitting_out: false,
+    })) as SeatPlayer[];
+    const controller = new HandController(
+      {
+        tableId: table,
+        handNumber: 1000300,
+        gameVariant: 'nlh',
+        smallBlind: 1,
+        bigBlind: 2,
+        isTournament: false,
+        rakeConfig: { percent: 0, cap: 0, noFlopNoDrop: true },
+      },
+      players,
+      1
+    );
+    controller.start();
+    expect(controller.performAction(1, 'raise', 6)).toBe(true);
+    expect(controller.performAction(2, 'all_in')).toBe(true);
+    const actions = controller.getState().actionHistory;
+    expect(actions[1]).toMatchObject({ action: 'all_in', amount: stack });
+    expect(actions[1]!.isFullRaise).toBe(opportunities ? true : stack === 8 ? false : undefined);
+    const request = {
+      type: 'OBSERVE_COMPLETED_HAND' as const,
+      requestId: 300,
+      generation: 1000300,
+      handKey: `${table}:1000300`,
+      fence: `${table}:1000300:9:observe`,
+      committedHandId: '30000000-0000-4000-8000-000000000300',
+      actions,
+      bigBlind: 2,
+      showdown: null,
+      scope: readScopeOf('nlh', 2),
+    };
+    const worker = new HorseDecisionWorkerRuntime(() => {}, {
+      ...defaults,
+      startServices: async () => defaults.workerReadiness(),
+      stopServices: async () => {},
+      journalEnabled: () => false,
+      journalAcceptedHand: () => {},
+      journalLifecycle: () => {},
+      noteFeature: () => {},
+      noteDecision: () => {},
+    });
+    await worker.start();
+    worker.receive(request);
+    worker.receive({ ...request, requestId: 301 });
+    await worker.drain();
+    expect(HorseMind.getStats(opponent)?.f3bOpps).toBe(opportunities);
+    expect(HorseMind.getStats(hero)?.pfr).toBe(opportunities);
+  }
+);
+
+it.each(['cbet', 'river'] as const)(
+  'deep %s reads distinguish an aggressive shove from a whole-stack call',
+  (branch) => {
+    const make = (handNumber: number) => {
+      const players = [opponent, hero].map((user_id, i) => ({
+        seat: i + 1,
+        user_id,
+        username: 'Actor',
+        stack: 100,
+        bet: 0,
+        totalInvested: 0,
+        cards: [],
+        is_folded: false,
+        is_all_in: false,
+        is_sitting_out: false,
+      })) as SeatPlayer[];
+      const c = new HandController(
+        {
+          tableId: table,
+          handNumber,
+          gameVariant: 'nlh',
+          smallBlind: 1,
+          bigBlind: 2,
+          isTournament: false,
+          rakeConfig: { percent: 0, cap: 0, noFlopNoDrop: true },
+        },
+        players,
+        1
+      );
+      c.start();
+      expect(c.performAction(1, 'raise', 6)).toBe(true);
+      expect(c.performAction(2, 'call')).toBe(true);
+      return c;
+    };
+    if (branch === 'cbet') {
+      const cbet = make(1000700);
+      expect(cbet.performAction(2, 'check')).toBe(true);
+      expect(cbet.performAction(1, 'all_in')).toBe(true);
+      expect(cbet.performAction(2, 'fold')).toBe(true);
+      expect(cbet.getState().actionHistory[3]).toMatchObject({
+        action: 'all_in',
+        isFullRaise: true,
+      });
+      HorseMind.observeHandComplete('cbet-full-shove', cbet.getState().actionHistory, 2, null);
+      HorseMind.observeHandComplete('cbet-full-shove', cbet.getState().actionHistory, 2, null);
+      expect(HorseMind.getStats(hero)).toMatchObject({ cbetOpps: 1, cbetFolds: 1 });
+      return;
+    }
+    const river = make(1000701);
+    for (const stage of ['flop', 'turn']) {
+      expect(river.getState().stage).toBe(stage);
+      expect(river.performAction(2, 'check')).toBe(true);
+      expect(river.performAction(1, 'check')).toBe(true);
+    }
+    expect(river.performAction(2, 'all_in')).toBe(true);
+    expect(river.performAction(1, 'all_in')).toBe(true);
+    const actions = river.getState().actionHistory;
+    expect(actions.at(-2)).toMatchObject({ action: 'all_in', isFullRaise: true });
+    expect(actions.at(-1)?.isFullRaise).toBeUndefined();
+    HorseMind.observeHandComplete(
+      'river-shove-call',
+      actions,
+      2,
+      [opponent, hero].map((user_id) => ({ user_id, mucked: false, hand_name: 'two pair' }))
+    );
+    expect(HorseMind.getStats(hero)).toMatchObject({ bigBetSD: 1, bigBetSDStrong: 1 });
+    expect(HorseMind.getStats(opponent)?.bigBetSD ?? 0).toBe(0);
+  }
+);
+
+it('a controller all-in call does not steal the preflop aggressor c-bet read', () => {
+  const caller = '20000000-0000-4000-8000-000000000003';
+  const players = [opponent, caller, hero].map((user_id, i) => ({
+    seat: i + 1,
+    user_id,
+    username: 'Actor',
+    stack: i === 1 ? 6 : 100,
+    bet: 0,
+    totalInvested: 0,
+    cards: [],
+    is_folded: false,
+    is_all_in: false,
+    is_sitting_out: false,
+  })) as SeatPlayer[];
+  const c = new HandController(
+    {
+      tableId: table,
+      handNumber: 1000702,
+      gameVariant: 'nlh',
+      smallBlind: 1,
+      bigBlind: 2,
+      isTournament: false,
+      rakeConfig: { percent: 0, cap: 0, noFlopNoDrop: true },
+    },
+    players,
+    1
+  );
+  c.start();
+  expect(c.performAction(1, 'raise', 6)).toBe(true);
+  expect(c.performAction(2, 'all_in')).toBe(true);
+  expect(c.performAction(3, 'call')).toBe(true);
+  expect(c.performAction(3, 'check')).toBe(true);
+  expect(c.performAction(1, 'bet', 10)).toBe(true);
+  expect(c.performAction(3, 'fold')).toBe(true);
+  HorseMind.observeHandComplete('cbet-after-allin-call', c.getState().actionHistory, 2, null);
+  expect(HorseMind.getStats(hero)).toMatchObject({ cbetOpps: 1, cbetFolds: 1 });
+  expect(HorseMind.getStats(opponent)?.f3bOpps ?? 0).toBe(0);
 });

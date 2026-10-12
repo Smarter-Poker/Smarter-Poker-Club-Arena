@@ -39,6 +39,7 @@ CREATE PUBLICATION supabase_realtime;
 DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='postgres') THEN CREATE ROLE postgres SUPERUSER; END IF; END $$;
 ALTER FUNCTION public.fn_lightning_operator_control(uuid,text,text,jsonb) OWNER TO postgres;
 ALTER FUNCTION public.fn_lightning_operator_state(uuid) OWNER TO postgres;
+ALTER FUNCTION public.fn_lightning_operator_cluster_row(uuid,timestamp with time zone) OWNER TO postgres;
 SELECT prosecdef,proconfig,pg_get_userbyid(proowner),proacl::text FROM pg_proc WHERE oid IN ('public.fn_lightning_operator_control(uuid,text,text,jsonb)'::regprocedure,'public.fn_lightning_operator_state(uuid)'::regprocedure);
 SQL
 # The serving checkpointed thaw's exact preimage, from its immutable migration.
@@ -210,5 +211,54 @@ END $$;
 SQL
 "${PSQL[@]}" -f "$shadow_migration"
 echo 'PASS: audited calibration window, outsider/reason/type/bounds/live-worker refusals, real drain, one event under replay, unchanged money/stacks and exact migration reapplication'
+
+# Missing integrity activation is reproduced before installing its forward correction.
+"${PSQL[@]}" <<'SQL'
+BEGIN;
+DO $$ DECLARE g uuid; BEGIN
+ g:=harness.lc('integrity before');
+ PERFORM harness.refused(harness.ctl('admin',g,'set_integrity_telemetry','{"value":true}'),'INVALID_ACTION','missing integrity door');
+ RAISE NOTICE 'REPRODUCED: integrity telemetry has no operator activation door';
+END $$;
+ROLLBACK;
+SQL
+integrity_migration="$root/supabase/migrations/20261012112753_lightning_integrity_telemetry_operator_control.sql"
+"${PSQL[@]}" -f "$integrity_migration"
+"${PSQL[@]}" <<'SQL'
+DO $$
+DECLARE g uuid; req uuid:=gen_random_uuid(); r jsonb; money text; stacks jsonb; players uuid[]; hand uuid; n bigint;
+BEGIN
+ g:=harness.lc('integrity calibration'); players:=harness.idle(g,false,4)||harness.idle(g,true,2); hand:=harness.dealt(g,players);
+ money:=harness.money(g); stacks:=harness.stacks(g);
+ PERFORM harness.refused(harness.ctl('stranger',g,'set_integrity_telemetry','{"value":true}'),'NOT_AUTHORIZED','integrity outsider');
+ PERFORM harness.refused(harness.ctl('admin',g,'set_integrity_telemetry','{"value":true}',''),'REASON_REQUIRED','integrity reason');
+ FOR r IN SELECT value FROM jsonb_array_elements('[{}, {"value":"true"}, {"value":null}, {"value":1}, {"value":{}}, {"value":[]}]') LOOP
+  PERFORM harness.refused(harness.ctl('admin',g,'set_integrity_telemetry',r),'INVALID_ARGS','integrity type');
+ END LOOP;
+ PERFORM harness.refused(harness.ctl('admin',g,'set_integrity_telemetry','{"value":true}'),'CLUSTER_BUSY','integrity live');
+ PERFORM harness.must(harness.ctl('admin',g,'drain'),'integrity drain');
+ PERFORM harness.refused(harness.ctl('admin',g,'set_integrity_telemetry','{"value":true}'),'CLUSTER_BUSY','integrity draining');
+ PERFORM harness.finish(g,hand,players[1]); PERFORM public.fn_cash_cluster_lightning_drive(g);
+ IF harness.mode(g)<>'must_move' OR harness.open_sessions(g)<>0 THEN RAISE EXCEPTION 'FAIL integrity real drain'; END IF;
+ PERFORM harness.must(harness.ctl('admin',g,'set_worker_mode','{"mode":"shadow"}'),'integrity shadow');
+ PERFORM harness.refused(harness.ctl('admin',g,'set_integrity_telemetry','{"value":true}'),'CLUSTER_BUSY','integrity worker');
+ PERFORM harness.must(harness.ctl('admin',g,'set_worker_mode','{"mode":"off"}'),'integrity off');
+ money:=harness.money(g); stacks:=harness.stacks(g);
+ r:=harness.must(harness.ctl('admin',g,'set_integrity_telemetry','{"value":true}','integrity qualification',req),'integrity enable');
+ IF (public.fn_lightning_config(g)->>'integrity_telemetry') IS DISTINCT FROM 'true' OR (r#>>'{before,integrity_telemetry}') IS DISTINCT FROM 'false' OR (r#>>'{after,integrity_telemetry}') IS DISTINCT FROM 'true' OR r#>>'{after,shadow_window_ms}' IS NULL
+ OR (SELECT args->>'value' FROM public.lightning_operator_request WHERE request_id=req) IS DISTINCT FROM 'true'
+ OR (public.fn_lightning_operator_cluster_row(g,now())#>>'{flags,integrity_telemetry}') IS DISTINCT FROM 'true'
+ OR public.fn_lightning_operator_cluster_row(g,now())->>'shadow_window_ms' IS NULL THEN RAISE EXCEPTION 'FAIL integrity persistence/state/readmodel: %',r; END IF;
+ SELECT count(*) INTO n FROM public.cash_cluster_events WHERE game_id=g AND kind='operator_set_integrity_telemetry';
+ IF n<>1 THEN RAISE EXCEPTION 'FAIL integrity event count'; END IF;
+ r:=harness.ctl('admin',g,'set_integrity_telemetry','{"value":true}','integrity qualification',req);
+ IF (r->>'replayed')::boolean IS DISTINCT FROM true OR (SELECT count(*) FROM public.cash_cluster_events WHERE game_id=g AND kind='operator_set_integrity_telemetry')<>n THEN RAISE EXCEPTION 'FAIL integrity duplicate'; END IF;
+ PERFORM harness.already(harness.ctl('admin',g,'set_integrity_telemetry','{"value":true}'),'integrity unchanged');
+ PERFORM harness.must(harness.ctl('admin',g,'set_integrity_telemetry','{"value":false}'),'integrity disable');
+ IF (public.fn_lightning_config(g)->>'integrity_telemetry') IS DISTINCT FROM 'false' OR harness.money(g) IS DISTINCT FROM money OR harness.stacks(g) IS DISTINCT FROM stacks THEN RAISE EXCEPTION 'FAIL integrity disable or money'; END IF;
+END $$;
+SQL
+"${PSQL[@]}" -f "$integrity_migration"
+echo 'PASS: missing integrity door reproduced; authenticated typed dark-cluster activation, real hand drain, running-worker refusal, persisted dashboard/receipt settings, one event under replay, unchanged money/stacks and exact three-function migration reapplication'
 
 node --test "$root/scripts/ops/prepare-lightning-private-pilot.test.mjs"

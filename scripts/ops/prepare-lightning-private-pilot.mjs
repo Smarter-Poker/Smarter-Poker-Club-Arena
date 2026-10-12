@@ -169,6 +169,18 @@ export async function preparePilot(env = process.env) {
       'Pilot Calibration Window'
     );
     if (result?.ok !== true) throw new Error(`Pilot Window Refused: ${result?.code || 'Unknown'}`);
+    const telemetry = must(
+      await player.rpc('fn_lightning_operator_control', {
+        p_cluster_id: game.id,
+        p_action: 'set_integrity_telemetry',
+        p_reason:
+          'Prepare integrity recording for the internal pilot; keep Lightning and worker off',
+        p_args: { request_id: 'b5e5c106-183e-4f9c-a37b-d72189567369', value: true },
+      }),
+      'Pilot Integrity Telemetry'
+    );
+    if (telemetry?.ok !== true)
+      throw new Error(`Pilot Integrity Refused: ${telemetry?.code || 'Unknown'}`);
     const config = must(
       await admin.rpc('fn_lightning_config', { p_cluster_id: game.id }),
       'Pilot Config Readback'
@@ -177,7 +189,8 @@ export async function preparePilot(env = process.env) {
       config.ok !== true ||
       config.worker_mode !== 'off' ||
       config.shadow_window_ms !== 60000 ||
-      config.matcher_version !== 'm1'
+      config.matcher_version !== 'm1' ||
+      config.integrity_telemetry !== true
     ) {
       throw new Error('Pilot Configuration Readback Mismatch');
     }
@@ -189,6 +202,9 @@ export async function preparePilot(env = process.env) {
       windowRequestId: result.request_id,
       windowEventId: result.event_id,
       shadowWindowMs: config.shadow_window_ms,
+      integrityTelemetry: config.integrity_telemetry,
+      integrityRequestId: telemetry.request_id,
+      integrityEventId: telemetry.event_id,
       lightningEnabled: false,
       workerMode: config.worker_mode,
       participants: 'owner_only',

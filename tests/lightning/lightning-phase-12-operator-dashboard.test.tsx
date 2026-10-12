@@ -141,6 +141,13 @@ afterEach(() => {
 });
 
 describe('the operator doors are parsed from the shapes the database produces', () => {
+  it('reads the persisted calibration window and preserves unknown on older contracts', () => {
+    const raw = overviewAnswer();
+    expect(parseOverview(raw)?.clusters[0].shadowWindowMs).toBeNull();
+    raw.clusters[0].shadow_window_ms = 60001;
+    expect(parseOverview(raw)?.clusters[0].shadowWindowMs).toBe(60001);
+  });
+
   it('reads every overview field of every Cluster', () => {
     const parsed = parseOverview(overviewAnswer());
     expect(parsed?.clusters.map((c) => c.clusterId)).toEqual([CLUSTER_A, CLUSTER_B, CLUSTER_C]);

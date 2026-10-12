@@ -92,6 +92,8 @@ import {
   refusalWords,
   specFlags,
   stateChanges,
+  shadowWindowMilliseconds,
+  shadowWindowLabel,
 } from '../../src/lightning/lightningOperatorControls';
 import ClubLightningOperationsPage, {
   clusterNotices,
@@ -784,5 +786,144 @@ describe('laws', () => {
     }
     const app = readFileSync('src/App.tsx', 'utf8');
     expect(app).not.toMatch(/LightningOperatorControls|lightningOperatorControls/);
+  });
+});
+
+describe('calibration and integrity setup controls', () => {
+  const setup = {
+    cluster_mode: 'must_move',
+    worker_mode: 'off',
+    drain: null,
+    shadow_window_ms: 300000,
+    flags: { integrity_telemetry: false },
+  };
+
+  it('accepts integer millisecond boundaries and refuses invalid windows', () => {
+    expect(shadowWindowMilliseconds('60000')).toBe(60000);
+    expect(shadowWindowMilliseconds('3600000')).toBe(3600000);
+    for (const value of ['', '59999', '3600001', '60000.5', '-60000', '1e5', 'Infinity']) {
+      expect(shadowWindowMilliseconds(value)).toBeNull();
+    }
+    expect(shadowWindowLabel(60000)).toBe('1 Minute');
+    expect(shadowWindowLabel(61000)).toBe('61 Seconds');
+    expect(shadowWindowMilliseconds('60001')).toBe(60001);
+    expect(shadowWindowLabel(60001)).toBe('60 Seconds, 1 Millisecond');
+  });
+
+  it('sends the exact millisecond value and reads persisted before/after', async () => {
+    detailDoors(setup, {
+      fn_lightning_operator_control: (args) => ({
+        data: {
+          ...controlAnswer(
+            args.p_action,
+            args.p_args.request_id,
+            controlCluster(),
+            controlCluster()
+          ),
+          before: { shadow_window_ms: 300000 },
+          after: { shadow_window_ms: 60000 },
+        },
+        error: null,
+      }),
+    });
+    renderDetail();
+    await openControl('Set Calibration Window');
+    const input = within(dialog()).getByRole('textbox', { name: /Window In Milliseconds/ });
+    typeReason('Prepare Calibration');
+    fireEvent.change(input, { target: { value: '59999' } });
+    expect(confirmButton()).toBeDisabled();
+    fireEvent.change(input, { target: { value: '60000' } });
+    fireEvent.click(confirmButton());
+    await waitFor(() => expect(controlCalls()).toHaveLength(1));
+    expect(controlCalls()[0][1].p_action).toBe('set_shadow_window');
+    expect(controlCalls()[0][1].p_args.shadow_window_ms).toBe(60000);
+    expect(await within(dialog()).findByText('→ 1 Minute')).toBeInTheDocument();
+  });
+
+  it('sends a boolean integrity decision with the reason and a fresh request', async () => {
+    detailDoors(setup, {
+      fn_lightning_operator_control: (args) => ({
+        data: {
+          ...controlAnswer(
+            args.p_action,
+            args.p_args.request_id,
+            controlCluster(),
+            controlCluster()
+          ),
+          before: { integrity_telemetry: false },
+          after: { integrity_telemetry: true },
+        },
+        error: null,
+      }),
+    });
+    renderDetail();
+    await openControl('Enable Integrity Telemetry');
+    typeReason('Record Integrity Signals');
+    fireEvent.click(confirmButton());
+    await waitFor(() => expect(controlCalls()).toHaveLength(1));
+    expect(controlCalls()[0][1]).toMatchObject({
+      p_action: 'set_integrity_telemetry',
+      p_reason: 'Record Integrity Signals',
+      p_args: { value: true },
+    });
+    expect(controlCalls()[0][1].p_args.request_id).toMatch(UUID_V4);
+    expect(await within(dialog()).findByText('→ On')).toBeInTheDocument();
+  });
+
+  it('keeps unreported setup values unknown and unavailable', async () => {
+    detailDoors({ ...setup, shadow_window_ms: undefined, flags: {} });
+    renderDetail();
+    expect(await screen.findByRole('button', { name: 'Set Calibration Window' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Enable Integrity Telemetry' })).toBeDisabled();
+    expect(controlCalls()).toHaveLength(0);
+    expect(screen.getByText(/An Unreported Setup Value Cannot Be Changed/)).toBeInTheDocument();
+  });
+
+  it('locks and reuses the complete calibration decision after an unknown answer', async () => {
+    let attempt = 0;
+    detailDoors(setup, {
+      fn_lightning_operator_control: (args) => {
+        attempt += 1;
+        return attempt === 1
+          ? { data: null, error: { message: 'Transport Lost' } }
+          : {
+              data: {
+                ...controlAnswer(
+                  args.p_action,
+                  args.p_args.request_id,
+                  controlCluster(),
+                  controlCluster(),
+                  true
+                ),
+                before: { shadow_window_ms: 300000 },
+                after: { shadow_window_ms: 60000 },
+              },
+              error: null,
+            };
+      },
+    });
+    renderDetail();
+    await openControl('Set Calibration Window');
+    fireEvent.change(within(dialog()).getByRole('textbox', { name: /Window In Milliseconds/ }), {
+      target: { value: '60000' },
+    });
+    typeReason('Prepare Calibration');
+    fireEvent.click(confirmButton());
+    await within(dialog()).findByRole('button', { name: 'Send Again' });
+    expect(
+      within(dialog()).getByRole('textbox', { name: /Window In Milliseconds/ })
+    ).toBeDisabled();
+    fireEvent.click(confirmButton());
+    await waitFor(() => expect(controlCalls()).toHaveLength(2));
+    expect(controlCalls()[1][1]).toEqual(controlCalls()[0][1]);
+    expect(await within(dialog()).findByText('→ 1 Minute')).toBeInTheDocument();
+  });
+
+  it('keeps setup unavailable while the worker runs and reports why', async () => {
+    detailDoors({ ...setup, worker_mode: 'shadow' });
+    renderDetail();
+    expect(await screen.findByRole('button', { name: 'Set Calibration Window' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Enable Integrity Telemetry' })).toBeDisabled();
+    expect(screen.getByText(/Setup Changes Require Must Move/)).toBeInTheDocument();
   });
 });

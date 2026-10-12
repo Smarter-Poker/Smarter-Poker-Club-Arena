@@ -61,6 +61,8 @@ export const OPERATOR_ACTIONS = [
   'rollback_matcher_version',
   'set_flag',
   'set_worker_mode',
+  'set_shadow_window',
+  'set_integrity_telemetry',
 ] as const;
 
 export type OperatorAction = (typeof OPERATOR_ACTIONS)[number];
@@ -124,6 +126,8 @@ export const ACTION_LABELS: Record<OperatorAction, string> = {
   rollback_matcher_version: 'Roll Back Matcher',
   set_flag: 'Change Feature Flag',
   set_worker_mode: 'Set Worker Mode',
+  set_shadow_window: 'Set Calibration Window',
+  set_integrity_telemetry: 'Set Integrity Telemetry',
 };
 
 /** What each action does, printed in its confirm dialog. */
@@ -152,7 +156,24 @@ export const ACTION_EXPLAINERS: Record<OperatorAction, string> = {
   set_flag: 'Changes One Feature Flag For This Cluster Only.',
   set_worker_mode:
     'Off Stops The Worker After A Completed Drain. Shadow Compares Without Forming Hands. Form Deals Hands Through The Validated Matcher.',
+  set_shadow_window:
+    'Sets The Duration Of Each Calibration Comparison. Requires Must Move, Worker Off And A Completed Drain. Existing Evidence Is Preserved.',
+  set_integrity_telemetry:
+    'Changes Integrity Signal Recording For This Cluster. Requires Must Move, Worker Off And A Completed Drain. Existing Signals Are Preserved.',
 };
+
+export function shadowWindowMilliseconds(milliseconds: string): number | null {
+  if (!/^\d+$/.test(milliseconds.trim())) return null;
+  const ms = Number(milliseconds.trim());
+  return Number.isSafeInteger(ms) && ms >= 60000 && ms <= 3600000 ? ms : null;
+}
+
+export function shadowWindowLabel(ms: number | null): string {
+  if (ms === null || !Number.isSafeInteger(ms) || ms < 60000 || ms > 3600000) return 'Unknown';
+  return ms % 60000 === 0
+    ? `${ms / 60000} ${ms === 60000 ? 'Minute' : 'Minutes'}`
+    : `${Math.floor(ms / 1000)} Seconds${ms % 1000 ? `, ${ms % 1000} ${ms % 1000 === 1 ? 'Millisecond' : 'Milliseconds'}` : ''}`;
+}
 
 // ─── Feature flags (the Spec's names, mapped onto existing gates) ───────────
 
@@ -242,6 +263,8 @@ export function matcherVersionChoices(matcher: LightningMatcherState | null): st
 
 /** The Cluster's controllable state, as the door answers it before and after. */
 export interface ControlState {
+  shadowWindowMs: number | null;
+  integrityTelemetry: boolean | null;
   mode: string | null;
   lightningEnabled: boolean | null;
   paused: boolean | null;
@@ -255,6 +278,8 @@ export function parseControlState(raw: unknown): ControlState | null {
   const r = objectOf(raw);
   if (!r) return null;
   return {
+    shadowWindowMs: num(r.shadow_window_ms),
+    integrityTelemetry: bool(r.integrity_telemetry),
     mode: text(r.cluster_mode),
     lightningEnabled: bool(r.lightning_enabled),
     paused: bool(r.paused),
@@ -390,6 +415,8 @@ export function stateChanges(
     ['Worker', (s) => (s?.workerMode ? enumLabel(s.workerMode) : 'Unknown')],
     ['Drain', (s) => drainLine(s?.drain ?? null)],
     ['Matcher', (s) => matcherLine(s?.matcher ?? null)],
+    ['Calibration Window', (s) => shadowWindowLabel(s?.shadowWindowMs ?? null)],
+    ['Integrity Telemetry', (s) => yesNo(s?.integrityTelemetry ?? null, 'On', 'Off')],
   ];
   return rows.map(([label, read]) => {
     const b = read(before);

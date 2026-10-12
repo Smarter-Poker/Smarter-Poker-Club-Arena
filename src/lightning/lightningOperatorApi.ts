@@ -277,6 +277,8 @@ export interface LightningOverviewCluster {
   offThreshold: number | null;
   liveEligible: number | null;
   workerMode: string | null;
+  /** Effective calibrated comparison window; absent on older read contracts. */
+  shadowWindowMs?: number | null;
   flags: {
     shadowMatcher: boolean | null;
     integrityTelemetry: boolean | null;
@@ -443,6 +445,7 @@ export function parseOverviewCluster(raw: unknown): LightningOverviewCluster | n
     offThreshold: num(r.off_threshold),
     liveEligible: num(r.live_eligible),
     workerMode: text(r.worker_mode),
+    shadowWindowMs: num(r.shadow_window_ms),
     flags: {
       shadowMatcher: bool(flags.shadow_matcher),
       integrityTelemetry: bool(flags.integrity_telemetry),

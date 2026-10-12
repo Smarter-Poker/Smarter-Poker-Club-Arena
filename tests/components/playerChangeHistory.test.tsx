@@ -382,6 +382,8 @@ it('subscribes to exact authorized union clubs and accepts their changes while r
   });
   await open();
   await screen.findByText('By Union-Record (Admin)');
+  expect(screen.getByText('Includes 2 Authorized Clubs.')).toBeInTheDocument();
+  expect(screen.getByText(/Club Reference: club-a/)).toBeInTheDocument();
   const child = state.channels.get('player-history:club-b');
   expect(child).toMatchObject({
     channelName: 'player-history:club-b',

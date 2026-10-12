@@ -268,6 +268,9 @@ export default function PlayerChangeHistory({
           First. Separate Audit Records May Describe The Same Change. Missing Records Are Not
           Reconstructed.
         </p>
+        {scopeIds.length > 1 && (
+          <p>Includes {scopeIds.length.toLocaleString()} Authorized Clubs.</p>
+        )}
         <div className="player-history__controls">
           <label>
             History Type
@@ -366,6 +369,7 @@ export default function PlayerChangeHistory({
                       <p>Player {entry.targetUserId.slice(0, 8)}</p>
                     )}
                     <small>
+                      {scopeIds.length > 1 && <>Club Reference: {entry.clubId}. </>}
                       Recorded Action: {titleCase(entry.action.replace(/_/g, ' '))}. Reference:{' '}
                       {entry.id}
                     </small>

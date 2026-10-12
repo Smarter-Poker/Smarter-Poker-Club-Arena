@@ -465,6 +465,13 @@ export default function ClubMembersPage() {
         page: pageRequest,
         onSummary: (nextSummary) => {
           if (!isCurrent()) return;
+          // A confirmed denial retires the pending receipt, even when the
+          // account and club have not changed. An unreadable summary does not.
+          if (!nextSummary?.capabilities.can_export) {
+            exportAbortRef.current?.abort();
+            exportAbortRef.current = null;
+            setIsExporting(false);
+          }
           if (!nextSummary) {
             controller.abort();
             requestEpochRef.current += 1;

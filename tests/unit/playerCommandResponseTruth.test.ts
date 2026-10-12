@@ -171,3 +171,52 @@ it('recognizes explicit SQL null member access denial', async () => {
     name: 'MemberAccessDeniedError',
   });
 });
+
+const exportRow = { user_id: 'player', alias: 'Player', role: 'player', total_fees: '0.00' };
+const exportReceipt = { success: true, rows: [exportRow], row_count: 1, audit_id: 'audit-proof' };
+it.each([null, 'player', 12, true, [], {}, { user_id: '' }, { user_id: '   ' }])(
+  'rejects a malformed export row %j through the actual RPC decoder',
+  async (row) => {
+    answer({ ...exportReceipt, rows: [row] });
+    await expect(ClubRosterService.exportRoster('club', {})).rejects.toThrow(/Incomplete/);
+    expect(state.fetch).toHaveBeenCalledTimes(1);
+  }
+);
+it.each([{}, [], true, 12, '', '   ', null])(
+  'rejects malformed export audit identity %j without inventing text',
+  async (auditId) => {
+    answer({ ...exportReceipt, audit_id: auditId });
+    await expect(ClubRosterService.exportRoster('club', {})).rejects.toThrow(/Incomplete/);
+    expect(state.fetch).toHaveBeenCalledTimes(1);
+  }
+);
+it.each([true, false, null, '', ' ', -1, 1.5, 'bad', 2])(
+  'rejects malformed or mismatched export row count %j',
+  async (rowCount) => {
+    answer({ ...exportReceipt, row_count: rowCount });
+    await expect(ClubRosterService.exportRoster('club', {})).rejects.toThrow(/Incomplete/);
+    expect(state.fetch).toHaveBeenCalledTimes(1);
+  }
+);
+it('preserves numeric-string export counts and exact server rows, including nullable fields', async () => {
+  const row = { ...exportRow, player_wallet: null, total_fees: '12.34', remark: null };
+  answer({ ...exportReceipt, rows: [row], row_count: '1' });
+  await expect(ClubRosterService.exportRoster('club', {})).resolves.toEqual({
+    rows: [row],
+    row_count: 1,
+    audit_id: 'audit-proof',
+  });
+  answer({ ...exportReceipt, rows: [], row_count: '0' });
+  await expect(ClubRosterService.exportRoster('club', {})).resolves.toEqual({
+    rows: [],
+    row_count: 0,
+    audit_id: 'audit-proof',
+  });
+});
+it('preserves an explicit export authorization refusal', async () => {
+  answer({ success: false, error: 'Roster Export Requires Club Staff Access' });
+  await expect(ClubRosterService.exportRoster('club', {})).rejects.toThrow(
+    'Roster Export Requires Club Staff Access'
+  );
+  expect(state.fetch).toHaveBeenCalledTimes(1);
+});

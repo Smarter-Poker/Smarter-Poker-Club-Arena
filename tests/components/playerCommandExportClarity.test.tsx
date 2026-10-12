@@ -267,3 +267,64 @@ it('does not expose export controls or export scope to a viewer without export p
   expect(screen.queryByLabelText('Export Scope')).not.toBeInTheDocument();
   expect(f.export).not.toHaveBeenCalled();
 });
+
+it.each(['denied', 'revoked'])(
+  'retires a pending export after a verified %s summary and allows a new authorized request',
+  async (kind) => {
+    const pending = deferred();
+    f.export.mockReturnValueOnce(pending.promise).mockResolvedValue(receipt);
+    render(tree());
+    await ready();
+    const allowed = await f.summary.mock.results[0].value;
+    fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
+    const signal = f.export.mock.calls[0][3] as AbortSignal;
+    f.summary.mockResolvedValue(
+      kind === 'denied'
+        ? null
+        : {
+            ...allowed,
+            capabilities: { ...allowed.capabilities, can_export: false },
+          }
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(screen.queryByRole('button', { name: 'Export CSV' })).not.toBeInTheDocument();
+    expect(signal.aborted).toBe(true);
+    await act(async () => {
+      pending.resolve(receipt);
+    });
+    expect(f.csv).not.toHaveBeenCalled();
+    expect(f.toast.success).not.toHaveBeenCalled();
+    f.summary.mockResolvedValue(allowed);
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await ready();
+    fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(f.export).toHaveBeenCalledTimes(2);
+    expect(f.csv).toHaveBeenCalledTimes(1);
+  }
+);
+
+it('keeps an authorized pending export through an unreadable summary rather than inventing a revocation', async () => {
+  const pending = deferred();
+  f.export.mockReturnValue(pending.promise);
+  render(tree());
+  await ready();
+  fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
+  const signal = f.export.mock.calls[0][3] as AbortSignal;
+  f.summary.mockRejectedValue(new Error('Summary Connection Interrupted'));
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+  });
+  expect(signal.aborted).toBe(false);
+  await act(async () => {
+    pending.resolve(receipt);
+  });
+  expect(f.csv).toHaveBeenCalledTimes(1);
+  expect(f.toast.success).toHaveBeenCalledTimes(1);
+});

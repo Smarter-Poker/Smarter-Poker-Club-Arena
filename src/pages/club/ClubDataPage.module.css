@@ -567,3 +567,134 @@
     padding: 12px 16px 100px;
   }
 }
+
+/* Simple mode keeps the verified ledger, with extended tools in Advanced. */
+.advancedOnly {
+  display: contents;
+}
+.advancedOnly[hidden],
+.tabs[hidden],
+.words[hidden] {
+  display: none;
+}
+.simpleHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.simpleHeader h1 {
+  margin: 0;
+  font-size: 22px;
+  flex: 1;
+}
+.simpleHeader .word,
+.simpleStatus .word {
+  color: #45adff;
+}
+.modeSwitch {
+  display: flex;
+  gap: 4px;
+}
+.modeSwitch button {
+  color: #9aa5b3;
+}
+.modeSwitch button[aria-pressed='true'] {
+  color: #45adff;
+  border-bottom: 2px solid #45adff;
+}
+.simpleStatus {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: #9aa5b3;
+  font-size: 12px;
+}
+.simpleStatus p {
+  flex-basis: 100%;
+  margin: 0;
+}
+.calendarField {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 4px 0;
+  color: #9aa5b3;
+  font-size: 12px;
+}
+.calendarField input {
+  min-height: 44px;
+  max-width: 100%;
+  color: #e4e7ec;
+  color-scheme: dark;
+  background: #000;
+  border: 1px solid #9aa5b3;
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 16px;
+}
+.simple {
+  gap: 8px;
+}
+.simple .console {
+  padding: 0;
+}
+.simple .console > :global(.club-page-heading) {
+  display: none;
+}
+.simple .console > :global(.club-page-body) {
+  padding: 0;
+}
+.simple .blockLabel,
+.simple .figureMeta {
+  display: none;
+}
+.simple .rows[aria-label='Club Performance Summary'] {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.simple .figureRow {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  text-align: center;
+  padding: 8px 4px;
+}
+.simple .figureRow .dataLabel {
+  font-size: 11px;
+  letter-spacing: 0;
+}
+.simple .figure {
+  font-size: 18px;
+}
+.simple .words {
+  column-gap: 2px;
+  justify-content: space-between;
+}
+.simple .word {
+  letter-spacing: 0;
+  font-size: 12px;
+}
+.simple .rangeChip {
+  order: 0;
+  flex: 1 1 auto;
+  font-size: 12px;
+  gap: 4px;
+}
+.simple .rangeBar {
+  flex-wrap: nowrap;
+  gap: 4px;
+}
+.simple .searchInput {
+  font-size: 16px;
+}
+.simple :global(.club-page-section) {
+  border: 0;
+}
+:global(body:has([data-club-data-mode='simple']) nav[aria-label='Club Operations Sections']) {
+  display: none;
+}

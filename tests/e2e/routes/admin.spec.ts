@@ -144,7 +144,8 @@ test.describe('Cashier', () => {
            redirects to clubs/<id>/cashier, the club chip desk (Trade / Record /
            Chip Request), which never shows that string. Assert what the route
            actually lands on instead. */
-    await expectRoute(page, 'cashier', { expectText: /Cashier/i });
+    await expectRoute(page, 'cashier');
+    await expect(page.getByRole('heading', { name: 'Cashier', exact: true })).toBeVisible();
   });
 });
 

@@ -111,6 +111,72 @@ describe('FirstRunPushPrompt', () => {
     expect(screen.getByText('Notifications Are On For This Device.')).toBeInTheDocument();
   });
 
+  it('keeps a pending Enable owned by its prompt even when the backdrop is tapped', async () => {
+    let resolve!: (result: { ok: boolean }) => void;
+    pushMocks.enablePush.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      })
+    );
+    renderPrompt('/clubs/club-1');
+    await settle(20_000);
+    fireEvent.click(screen.getByRole('button', { name: 'Enable' }));
+    fireEvent.click(dialog()!);
+    expect(dialog()).toBeInTheDocument();
+    expect(localStorage.getItem('sp_firstrun_notif_v2_player-1')).toBeNull();
+    await act(async () => resolve({ ok: true }));
+    expect(screen.getByText('Notifications Are On For This Device.')).toBeInTheDocument();
+    expect(pushMocks.enablePush).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores an old account subscription decision after switching accounts', async () => {
+    let resolve!: (subscribed: boolean) => void;
+    pushMocks.notificationPermission.mockReturnValue('granted');
+    pushMocks.hasLocalSubscription.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      })
+    );
+    const view = renderPrompt('/clubs/club-1');
+    await settle(0);
+    auth.id = 'player-2';
+    pushMocks.notificationPermission.mockReturnValue('denied');
+    view.rerender(
+      <MemoryRouter>
+        <FirstRunPushPrompt />
+      </MemoryRouter>
+    );
+    await act(async () => resolve(false));
+    await settle(25_000);
+    expect(dialog()).not.toBeInTheDocument();
+    expect(localStorage.getItem('sp_firstrun_notif_v2_player-1')).toBeNull();
+  });
+
+  it('does not publish an old Enable result into another account prompt', async () => {
+    let resolve!: (result: { ok: boolean }) => void;
+    pushMocks.enablePush.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      })
+    );
+    const view = renderPrompt('/clubs/club-1');
+    await settle(20_000);
+    fireEvent.click(screen.getByRole('button', { name: 'Enable' }));
+    auth.id = 'player-2';
+    view.rerender(
+      <MemoryRouter>
+        <FirstRunPushPrompt />
+      </MemoryRouter>
+    );
+    await settle(20_000);
+    expect(screen.getByRole('button', { name: 'Enable' })).toBeEnabled();
+    await act(async () => resolve({ ok: true }));
+    await settle(3_000);
+    expect(screen.getByRole('button', { name: 'Enable' })).toBeInTheDocument();
+    expect(screen.queryByText('Notifications Are On For This Device.')).not.toBeInTheDocument();
+    expect(localStorage.getItem('sp_firstrun_notif_v2_player-2')).toBeNull();
+  });
+
   it('never nudges the owner to enroll for receipts; another player is asked', async () => {
     const owner = '47965354-0e56-43ef-931c-ddaab82af765';
     auth.id = owner;

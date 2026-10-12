@@ -27,7 +27,7 @@
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/restore-synthetic-terms.sql": "9d14a15482330a285c5346e9607a3beec85b2b21b46dcec3a15372a1524e5596",
     "tests/fixtures/sep8-spin-custody/setup.sql": "eded939b6797c5e561e12071cb08938a25359b791cdb810fc49b5e0424565f29",
-    "tests/unit/fixtureNativeCi.test.ts": "1c15f0cb0c8ccafde67739316baa3be1bf6f822aec54c687138afb1c50f1cc09",
+    "tests/unit/fixtureNativeCi.test.ts": "b7d700836f7d4a4d19df0b2321b9d5fb743d9e5f5645f30ae40e66bda79afb51",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -1147,6 +1147,22 @@
       "tests/unit/fixtureNativeCi.test.ts": {
         "ours": "a551b56b884f8b2b7d1178fcdf3dab45baed2b14e858951e63ef9efb59feaadc",
         "incoming": "f867b62425be1cbfd13c75afc3122eb1dac05b2ac093d63eb27d87ca0846b572"
+      }
+    }
+  },
+  "phase4PrivateJoinSourceAudit": {
+    "reason": "One additive history migration routing case; existing fixture now reproduces actual Realtime default-false join denial before correction and verifies authority afterward. Only current routing-test and nested binding hashes change; historical pins and financial assertions are untouched."
+  },
+  "scopedLaunchSimpleMainIntegration20261012": {
+    "reason": "Retain all protected original-hand and Simple-page qualification, financial inputs, assertions and historical records. Refresh combined source fingerprints only; not runtime evidence.",
+    "previous_pins": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "ours": "2851a30b77a4373a8854b67f80395feb92308b7660de6c74e8abd8e6ff1fefbd",
+        "incoming": "431c3a4c70a1d0e278b5a1e96b113f423d57428f1bf30da672690ce44baa3123"
+      },
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "ours": "1c15f0cb0c8ccafde67739316baa3be1bf6f822aec54c687138afb1c50f1cc09",
+        "incoming": "fb94dda014bd29ec71e87a50affd1049df971691e6d1da7469948e74ad50fc62"
       }
     }
   }

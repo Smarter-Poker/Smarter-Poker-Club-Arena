@@ -160,8 +160,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 110895,
-      "sha256": "1c15f0cb0c8ccafde67739316baa3be1bf6f822aec54c687138afb1c50f1cc09"
+      "bytes": 110992,
+      "sha256": "b7d700836f7d4a4d19df0b2321b9d5fb743d9e5f5645f30ae40e66bda79afb51"
     }
   },
   "nativePgCron": {
@@ -2879,6 +2879,38 @@
       "/files/tests/unit/fixtureNativeCi.test.ts/sha256": {
         "ours": "a551b56b884f8b2b7d1178fcdf3dab45baed2b14e858951e63ef9efb59feaadc",
         "incoming": "f867b62425be1cbfd13c75afc3122eb1dac05b2ac093d63eb27d87ca0846b572"
+      }
+    }
+  },
+  "phase4PrivateJoinSourceAudit": {
+    "reason": "One additive history migration routing case; existing fixture now reproduces actual Realtime default-false join denial before correction and verifies authority afterward. Only current routing-test and nested binding hashes change; historical pins and financial assertions are untouched."
+  },
+  "scopedLaunchSimpleMainIntegration20261012": {
+    "reason": "Retain all protected original-hand and Simple-page qualification, financial inputs, assertions and historical records. Refresh combined source fingerprints only; not runtime evidence.",
+    "previous_pins": {
+      "/files/.github/workflows/ci.yml/bytes": {
+        "ours": 212835,
+        "incoming": 210534
+      },
+      "/files/.github/workflows/ci.yml/sha256": {
+        "ours": "e52d4545ed49c5523ebab46233c4bdb682af89439646cba1a125001cac8100a6",
+        "incoming": "f121396e2a47265ac66b95be65b77b88ed4aa128ec8f4230eb28458628cc8631"
+      },
+      "/files/scripts/ci/classify-ci-changes.mjs/bytes": {
+        "ours": 36407,
+        "incoming": 36221
+      },
+      "/files/scripts/ci/classify-ci-changes.mjs/sha256": {
+        "ours": "2851a30b77a4373a8854b67f80395feb92308b7660de6c74e8abd8e6ff1fefbd",
+        "incoming": "431c3a4c70a1d0e278b5a1e96b113f423d57428f1bf30da672690ce44baa3123"
+      },
+      "/files/tests/unit/fixtureNativeCi.test.ts/bytes": {
+        "ours": 110895,
+        "incoming": 108840
+      },
+      "/files/tests/unit/fixtureNativeCi.test.ts/sha256": {
+        "ours": "1c15f0cb0c8ccafde67739316baa3be1bf6f822aec54c687138afb1c50f1cc09",
+        "incoming": "fb94dda014bd29ec71e87a50affd1049df971691e6d1da7469948e74ad50fc62"
       }
     }
   }

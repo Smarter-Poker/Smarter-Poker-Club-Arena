@@ -443,12 +443,12 @@
     "tests/fixtures/sep8-spin-custody/README.md": "be6f3eb4eb716056e9ecc8863d326c78de3d176662b77e95c2951aa42453ff73",
     "tests/fixtures/sep8-spin-custody/late-fault.sql": "43653b983d870248707525058134de21821aa8f4f1c55df3d42f0a1e02d8b7b7",
     "scripts/dev/qualify-sep8-spin-custody.py": "28a2b63e4424f15d3b85ad742f7592fd65c2f8a8493eabb06210665e01e9ad67",
-    "tests/unit/fixtureNativeCi.test.ts": "1c15f0cb0c8ccafde67739316baa3be1bf6f822aec54c687138afb1c50f1cc09",
+    "tests/unit/fixtureNativeCi.test.ts": "b7d700836f7d4a4d19df0b2321b9d5fb743d9e5f5645f30ae40e66bda79afb51",
     "scripts/ci/schema-manifest.d/union-sep8-spin-custody.json": "b79ed45b40b172ed16f7cd4dd101d541d4ebab29e8defb20be4e531eae7215a8",
     "server/src/tournament/completionSettlementReceipt.ts": "a59a97b5b0f76d5c54d01b1fe47f3284efb2fcbd3e7742bb4e9e1ac6f0207dd4",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "4220ba518cbad5a75ac97ea626670f9a6d533a2cb67b9e3c6776efa9be72ff9d",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "22d23a3f73276b0462ec002efe242486c0aaee970979667df1bb5f0ec4d1980d",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -488,7 +488,7 @@
     "tests/fixtures/earlybird-fee-custody/after.sql": "5c86539a1f6e4904d61c4f3c2ee79b98fbc29b976adbc89fc38f8a4be8c97e0b",
     "scripts/dev/qualify-earlybird-fee-custody.py": "fea2adbadd175341680d1988589be233c2a67a7a400743a2ccfaafdf9e6d0d62",
     "supabase/migrations/20260919025445_early_bird_original_fee_custody_after_player_finality.sql": "3b3fa10d81077d09fc997bb0549ee7dd73b12726406f92da17105d002d021ab8",
-    "tests/fixtures/earlybird-fee-custody/source-binding.json": "08360ce50a0b910ff2b0b68d5d6d5e232e915bf3dd53678da690606fc5e1b7b8",
+    "tests/fixtures/earlybird-fee-custody/source-binding.json": "dfcaa93d0d3f579ac5f8bb3655c2ec6616d7a840f2abf243d1f3d7d867b20b49",
     "tests/fixtures/earlybird-fee-custody/paid-originals.json": "7b0137cce446c509e1b0cbd1e9361547fb700e409fceb373bb6c21909170faf0",
     "tests/fixtures/earlybird-fee-custody/credit-originals.json": "76b7a6152c538bd051754e0a17106a14e86458968132bea26f03c339ad77b439",
     "tests/fixtures/earlybird-fee-custody/README.md": "ae19f37a0179956d0d26c64f626fa401c10b4319f0d7d8453f8993d811e98536",
@@ -4622,6 +4622,34 @@
       "tests/fixtures/earlybird-fee-custody/source-binding.json": {
         "ours": "3d76f0fe275f7eb88fe314d95714189db1ecbc2b0ba262f380b3f9447cda5fda",
         "incoming": "ecb62db6b15afc76f9099371756717e8d56364a050082ca04b61e961724b1e20"
+      }
+    }
+  },
+  "phase4PrivateJoinSourceAudit": {
+    "reason": "One additive history migration routing case; existing fixture now reproduces actual Realtime default-false join denial before correction and verifies authority afterward. Only current routing-test and nested binding hashes change; historical pins and financial assertions are untouched."
+  },
+  "scopedLaunchSimpleMainIntegration20261012": {
+    "reason": "Retain all protected original-hand and Simple-page qualification, financial inputs, assertions and historical records. Refresh combined source fingerprints only; not runtime evidence.",
+    "previous_pins": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "ours": "2851a30b77a4373a8854b67f80395feb92308b7660de6c74e8abd8e6ff1fefbd",
+        "incoming": "431c3a4c70a1d0e278b5a1e96b113f423d57428f1bf30da672690ce44baa3123"
+      },
+      "tests/fixtures/legacy-fee-finality/source-binding.json": {
+        "ours": "25ec29e89d2f62b396da7e3b3cbc69f49570095f09a4b95b6f74ae7747dc94a2",
+        "incoming": "f7c93c31af52d59ac68f0d5deb177f143ed60053a06cef9c503be0ed02cec35b"
+      },
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "ours": "1c15f0cb0c8ccafde67739316baa3be1bf6f822aec54c687138afb1c50f1cc09",
+        "incoming": "fb94dda014bd29ec71e87a50affd1049df971691e6d1da7469948e74ad50fc62"
+      },
+      "tests/fixtures/sep8-spin-custody/source-binding.json": {
+        "ours": "4220ba518cbad5a75ac97ea626670f9a6d533a2cb67b9e3c6776efa9be72ff9d",
+        "incoming": "fb5c39390fda1f36f2676c656fe10f58527351b8c0647321c346769df46c74e9"
+      },
+      "tests/fixtures/earlybird-fee-custody/source-binding.json": {
+        "ours": "08360ce50a0b910ff2b0b68d5d6d5e232e915bf3dd53678da690606fc5e1b7b8",
+        "incoming": "7d45bd037deb836e7825fb97866cd4e588ef3aafd5043f9736a0cb428e9c6c4f"
       }
     }
   }

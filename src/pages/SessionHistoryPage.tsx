@@ -50,7 +50,8 @@ const SH_CACHE_PREFIX = 'sh_cache_';
 function getCachedSH(userId: string, filter: string) {
   try {
     const raw = sessionStorage.getItem(SH_CACHE_PREFIX + userId + '_' + filter);
-    return raw ? JSON.parse(raw) : null;
+    const parsed = raw ? JSON.parse(raw) : null;
+    return Array.isArray(parsed) ? parsed : null;
   } catch {
     return null;
   }
@@ -67,31 +68,55 @@ export default function SessionHistoryPage() {
   const navigate = useNavigate();
   const { user } = useAuthUser();
   const toast = useToast();
-  const [sessions, setSessions] = useState<SessionRecord[]>([]);
+  const [sessionRead, setSessionRead] = useState<{ key: string; data: SessionRecord[] }>({
+    key: '',
+    data: [],
+  });
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [timeFilter, setTimeFilter] = useState<'7d' | '30d' | 'all'>('30d');
   const isMounted = useIsMounted();
   const hasDataRef = useRef(false);
+  const scopeKey = `${user?.id ?? ''}:${timeFilter}`;
+  const scopeRef = useRef(scopeKey);
+  const requestSequence = useRef(0);
+  const loadingRef = useRef<{ key: string; sequence: number } | null>(null);
+  if (scopeRef.current !== scopeKey) {
+    scopeRef.current = scopeKey;
+    requestSequence.current += 1;
+    loadingRef.current = null;
+  }
+  const sessions = sessionRead.key === scopeKey ? sessionRead.data : [];
 
   // SWR: show cached sessions instantly on mount
   useEffect(() => {
-    if (!user?.id) return;
+    setLoadError(null);
+    if (!user?.id) {
+      hasDataRef.current = false;
+      setSessionRead({ key: scopeKey, data: [] });
+      setLoading(false);
+      return;
+    }
     const cached = getCachedSH(user.id, timeFilter);
     if (cached && cached.length > 0) {
-      setSessions(cached);
+      setSessionRead({ key: scopeKey, data: cached });
       hasDataRef.current = true;
       setLoading(false);
     } else {
       hasDataRef.current = false;
+      setSessionRead({ key: scopeKey, data: [] });
+      setLoading(true);
     }
-  }, [user?.id, timeFilter]);
-
-  const loadingRef = useRef(false);
+  }, [user?.id, timeFilter, scopeKey]);
 
   const loadSessions = useCallback(async () => {
     if (!user?.id) return;
-    if (loadingRef.current) return;
-    loadingRef.current = true;
+    if (scopeRef.current !== scopeKey || loadingRef.current?.key === scopeKey) return;
+    const sequence = ++requestSequence.current;
+    loadingRef.current = { key: scopeKey, sequence };
+    const isCurrent = () =>
+      isMounted.current && scopeRef.current === scopeKey && requestSequence.current === sequence;
+    setLoadError(null);
     if (!hasDataRef.current) setLoading(true);
     try {
       let query = supabase
@@ -116,20 +141,21 @@ export default function SessionHistoryPage() {
         isMountedRef: isMounted,
       });
       if (error) throw error;
-      if (!isMounted.current) return;
+      if (!isCurrent()) return;
       const fetched = data || [];
-      setSessions(fetched);
+      setSessionRead({ key: scopeKey, data: fetched });
       hasDataRef.current = fetched.length > 0;
       setCachedSH(user.id, timeFilter, fetched);
     } catch (err) {
-      if (!isMounted.current) return;
+      if (!isCurrent()) return;
+      setLoadError('Could Not Load Session History.');
       reportError(err, 'SessionHistoryPage.Load_failed');
       toast.error('Failed to load session history');
     } finally {
-      loadingRef.current = false;
-      if (isMounted.current) setLoading(false);
+      if (loadingRef.current?.sequence === sequence) loadingRef.current = null;
+      if (isCurrent()) setLoading(false);
     }
-  }, [user?.id, timeFilter]);
+  }, [user?.id, timeFilter, scopeKey]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -344,6 +370,15 @@ export default function SessionHistoryPage() {
         )}
       </div>
 
+      {loadError && (
+        <div className="sh-empty" role="alert">
+          <p>{loadError}</p>
+          <button type="button" onClick={() => void loadSessions()}>
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* Sessions List */}
       <div className="sh-sessions-list">
         {loading ? (
@@ -352,7 +387,7 @@ export default function SessionHistoryPage() {
               <div key={i} className="sh-skeleton-row" />
             ))}
           </div>
-        ) : sessions.length === 0 ? (
+        ) : loadError && sessions.length === 0 ? null : sessions.length === 0 ? (
           <div className="sh-empty">
             <span className="sh-empty-icon">▦</span>
             <p>No Sessions Found. Play Some Hands To See Your History!</p>

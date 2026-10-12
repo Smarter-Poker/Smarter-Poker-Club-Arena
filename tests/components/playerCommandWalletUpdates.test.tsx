@@ -109,6 +109,8 @@ function deferred() {
   return { promise, resolve, reject };
 }
 async function ready() {
+  const advanced = screen.queryByRole('button', { name: 'Advanced' });
+  if (advanced) fireEvent.click(advanced);
   await act(async () => {
     await vi.advanceTimersByTimeAsync(0);
   });

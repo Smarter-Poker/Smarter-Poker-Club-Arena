@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -236,6 +236,35 @@ describe('Find A Player locator', () => {
           'Members Only - Ivory Room Is Gated. Apply To Join And Wait For Approval Before You Can Observe.'
         )
       ).toBeInTheDocument();
+    });
+
+    it('does not reopen a join flow after the locator was dismissed during access verification', async () => {
+      const user = userEvent.setup();
+      let resolve!: (
+        value: Awaited<ReturnType<typeof PlayerSearchService.getTableWatchAccess>>
+      ) => void;
+      vi.spyOn(PlayerSearchService, 'getTableWatchAccess').mockReturnValue(
+        new Promise((done) => {
+          resolve = done;
+        })
+      );
+      const { onClose, onMembershipRequired } = renderLocator();
+      await search(user);
+      await user.click(screen.getByRole('button', { name: /Ivory Nightly/ }));
+      await user.click(screen.getByRole('button', { name: 'Close' }));
+      await act(async () =>
+        resolve({
+          found: true,
+          table_id: 'live-table-2',
+          club_uuid: 'club-uuid-2',
+          club_id: 55110,
+          club_slug: 'ivory-room',
+          can_watch: false,
+          action: 'request_join',
+        })
+      );
+      expect(onClose).toHaveBeenCalledTimes(1);
+      expect(onMembershipRequired).not.toHaveBeenCalled();
     });
 
     it('revalidates access at click time and hands a non-member to the join flow', async () => {

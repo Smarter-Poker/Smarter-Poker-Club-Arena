@@ -26,6 +26,7 @@ import { ClubNotFoundError, resolveClubUUIDStrict } from '../utils/strictClubIdR
 import { reportError } from '../utils/errorReporter';
 import { safeErrorMessage } from '../utils/safeErrorMessage';
 import { type RosterConnectionState } from '../utils/rosterReadReliability';
+import { compactChips } from '../utils/format';
 import { titleCase } from '../utils/titleCase';
 import { AGENT_ROLES, roleLabel } from '../types/clubRoles';
 import ClubRosterService, {
@@ -139,6 +140,7 @@ export default function ClubMembersPage() {
   const [filteredTotal, setFilteredTotal] = useState(0);
   const [filter, setFilter] = useState<RosterFilter>(() => readFilter(searchParams.get('view')));
   const [sortKey, setSortKey] = useState<RosterSort>(() => readSort(searchParams.get('sort')));
+  const [simpleMode, setSimpleMode] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [columns, setColumns] = useState<Set<OptionalColumn>>(
     () => new Set(['downlines', 'wallets', 'fees', 'activity'])
@@ -1103,74 +1105,120 @@ export default function ClubMembersPage() {
           : 'live';
 
   return (
-    <div className="club-members-page" aria-busy={loading}>
-      <section className="members-hero" aria-labelledby="members-page-title">
-        <img
-          className="members-hero__art"
-          src={ROSTER_OPERATIONS_ART}
-          alt=""
-          aria-hidden="true"
-          width="1774"
-          height="887"
-          loading="eager"
-          decoding="async"
-          fetchPriority="high"
-        />
-        <div className="members-hero__content">
-          <div className="members-hero__copy">
-            <span className="members-eyebrow">Club Players</span>
-            <h1 id="members-page-title">Player Command</h1>
-            {summary.capabilities.can_manage_members && (
-              <Link className="members-applicants" to={`/clubs/${routeClubId}/applicants`}>
-                Review Applicants
-              </Link>
-            )}
+    <div
+      className={`club-members-page${simpleMode ? ' members-simple' : ''}`}
+      aria-busy={loading}
+      data-players-mode={simpleMode ? 'simple' : 'advanced'}
+    >
+      <div className="members-mode-heading">
+        {simpleMode ? <h1>Player Management</h1> : <span>Player Management</span>}
+        <div role="group" aria-label="Player Management Mode">
+          <button type="button" aria-pressed={simpleMode} onClick={() => setSimpleMode(true)}>
+            Simple
+          </button>
+          <button type="button" aria-pressed={!simpleMode} onClick={() => setSimpleMode(false)}>
+            Advanced
+          </button>
+        </div>
+      </div>
+      {!simpleMode && (
+        <section className="members-hero" aria-labelledby="members-page-title">
+          <img
+            className="members-hero__art"
+            src={ROSTER_OPERATIONS_ART}
+            alt=""
+            aria-hidden="true"
+            width="1774"
+            height="887"
+            loading="eager"
+            decoding="async"
+            fetchPriority="high"
+          />
+          <div className="members-hero__content">
+            <div className="members-hero__copy">
+              <span className="members-eyebrow">Club Players</span>
+              <h1 id="members-page-title">Player Command</h1>
+              {summary.capabilities.can_manage_members && (
+                <Link className="members-applicants" to={`/clubs/${routeClubId}/applicants`}>
+                  Review Applicants
+                </Link>
+              )}
 
-            <p>
-              Find Any Member, Read Their Live Club Status, And Open The Controls Behind Their Seat.
-            </p>
+              <p>
+                Find Any Member, Read Their Live Club Status, And Open The Controls Behind Their
+                Seat.
+              </p>
+            </div>
+            <div className="members-summary-shell">
+              <dl
+                className="members-summary"
+                aria-label="Roster Summary"
+                aria-busy={summaryFreshness === 'loading'}
+              >
+                <SummaryStat value={stat(summary.counts.total)} label="Total Members" />
+                <SummaryStat
+                  value={stat(summary.counts.online)}
+                  label="Online Now"
+                  modifier="online"
+                />
+                <SummaryStat
+                  value={stat(summary.counts.seated)}
+                  label="At Tables"
+                  modifier="seated"
+                />
+                <SummaryStat value={stat(summary.counts.agents)} label="Agents" modifier="agents" />
+              </dl>
+              {summaryStatusMessage && (
+                <span className="members-summary__status" role="status" aria-live="polite">
+                  {summaryStatusMessage}
+                </span>
+              )}
+            </div>
           </div>
-          <div className="members-summary-shell">
-            <dl
-              className="members-summary"
-              aria-label="Roster Summary"
-              aria-busy={summaryFreshness === 'loading'}
+        </section>
+      )}
+
+      <section
+        className="members-console"
+        aria-label={simpleMode ? 'Player Directory' : undefined}
+        aria-labelledby={simpleMode ? undefined : 'members-directory-title'}
+      >
+        {!simpleMode && (
+          <div className="members-console__heading">
+            <div>
+              <span className="members-eyebrow">Member Directory</span>
+              <h2 id="members-directory-title">Find A Player</h2>
+            </div>
+            <span className="members-result-count" aria-live="polite">
+              {loading && !hasVerifiedDirectory
+                ? 'Loading...'
+                : `${filteredTotal.toLocaleString()} Results`}
+            </span>
+          </div>
+        )}
+
+        {simpleMode && (
+          <div className="members-simple-tabs" role="group" aria-label="Player Views">
+            <button type="button" aria-pressed={filter === 'all'} onClick={() => setFilter('all')}>
+              All
+            </button>
+            <button
+              type="button"
+              aria-pressed={filter === 'agents'}
+              onClick={() => setFilter('agents')}
             >
-              <SummaryStat value={stat(summary.counts.total)} label="Total Members" />
-              <SummaryStat
-                value={stat(summary.counts.online)}
-                label="Online Now"
-                modifier="online"
-              />
-              <SummaryStat
-                value={stat(summary.counts.seated)}
-                label="At Tables"
-                modifier="seated"
-              />
-              <SummaryStat value={stat(summary.counts.agents)} label="Agents" modifier="agents" />
-            </dl>
-            {summaryStatusMessage && (
-              <span className="members-summary__status" role="status" aria-live="polite">
-                {summaryStatusMessage}
-              </span>
+              Agents
+            </button>
+            {summary.capabilities.can_manage_members && (
+              <Link to={`/clubs/${routeClubId}/applicants`}>Applicants</Link>
             )}
           </div>
-        </div>
-      </section>
-
-      <section className="members-console" aria-labelledby="members-directory-title">
-        <div className="members-console__heading">
-          <div>
-            <span className="members-eyebrow">Member Directory</span>
-            <h2 id="members-directory-title">Find A Player</h2>
-          </div>
-          <span className="members-result-count" aria-live="polite">
-            {loading && !hasVerifiedDirectory
-              ? 'Loading...'
-              : `${filteredTotal.toLocaleString()} Results`}
-          </span>
-        </div>
-
+        )}
+        {simpleMode && !['all', 'agents'].includes(filter) && (
+          <button type="button" className="members-active-view" onClick={() => setFilter('all')}>
+            {FILTER_LABEL[filter]}: Clear Filter
+          </button>
+        )}
         <label className="members-search">
           <span>Search The Roster</span>
           <input
@@ -1188,24 +1236,36 @@ export default function ClubMembersPage() {
           />
         </label>
 
-        <div className="members-filter-rail" role="group" aria-label="Saved Roster Views">
-          <label className="members-view-filter">
-            <span>Filter Players</span>
-            <select
-              aria-label="Filter Players"
-              value={filter}
-              onChange={(event) => setFilter(event.target.value as RosterFilter)}
-            >
-              {filters.map((value) => (
-                <option key={value} value={value}>
-                  {FILTER_LABEL[value]}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
+        {!simpleMode && (
+          <div className="members-filter-rail" role="group" aria-label="Saved Roster Views">
+            <label className="members-view-filter">
+              <span>Filter Players</span>
+              <select
+                aria-label="Filter Players"
+                value={filter}
+                onChange={(event) => setFilter(event.target.value as RosterFilter)}
+              >
+                {filters.map((value) => (
+                  <option key={value} value={value}>
+                    {FILTER_LABEL[value]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        )}
 
         <div className="members-toolbar">
+          {simpleMode && (
+            <button
+              type="button"
+              className="members-group-role"
+              aria-pressed={sortKey === 'hierarchy'}
+              onClick={() => setSortKey(sortKey === 'hierarchy' ? 'name' : 'hierarchy')}
+            >
+              Group By Role
+            </button>
+          )}
           <label className="members-sort">
             <span className="members-sort__label">Sort By</span>
             <select
@@ -1221,7 +1281,7 @@ export default function ClubMembersPage() {
             </select>
           </label>
 
-          {canUseFinancialViews && (
+          {!simpleMode && canUseFinancialViews && (
             <details className="members-columns">
               <summary>Columns</summary>
               <div className="members-columns__menu">
@@ -1241,7 +1301,7 @@ export default function ClubMembersPage() {
             </details>
           )}
 
-          {summary.capabilities.can_export && members.length > 0 && (
+          {!simpleMode && summary.capabilities.can_export && members.length > 0 && (
             <button
               type="button"
               className="members-select-loaded"
@@ -1267,7 +1327,7 @@ export default function ClubMembersPage() {
           >
             {isRefreshing ? 'Refreshing...' : 'Refresh'}
           </button>
-          {summary.capabilities.can_export && (
+          {!simpleMode && summary.capabilities.can_export && (
             <button
               type="button"
               className="members-export"
@@ -1283,7 +1343,7 @@ export default function ClubMembersPage() {
           )}
         </div>
 
-        {summary.capabilities.can_export && (
+        {!simpleMode && summary.capabilities.can_export && (
           <p className="members-count" role="note" aria-label="Export Scope">
             <strong>Export Scope: </strong>
             <span>
@@ -1294,36 +1354,38 @@ export default function ClubMembersPage() {
             Includes Authorized Fields Regardless Of Visible Columns.
           </p>
         )}
-        <details className="members-columns">
-          <summary>Metric Definitions</summary>
-          <div className="members-count">
-            <p>Downlines: Players In The Recursive Downline, Excluding This Player.</p>
-            <p>
-              Player Wallet: Current Club Member Chip Balance. Agent Wallet: Current Active Agent
-              Chip Balance.
-            </p>
-            <p>
-              Individual Fees: Fees Generated By This Player. Total Fees: Fees Generated By The
-              Recursive Downline Only, Excluding This Player.
-            </p>
-            <p>
-              Wallets And Fees Are In Club Chips. Fees Cover All Recorded Activity, With No Date
-              Filter On This Roster.
-            </p>
-            <p>
-              Recorded Activity Follows Hand History Retention. Missing History Is Not Included.
-            </p>
-            <p>
-              Recent Activity Uses Login Time When Available, Otherwise Presence Or Club Activity
-              Time. Online Includes Players At A Live Table Or With Fresh Presence.
-            </p>
-            <p>
-              Select Loaded Selects Only Players Already Loaded. Export Without A Selection Reads
-              All Authorized Matches Across Every Page. A Selection Is Further Limited By The
-              Current Filter And Search.
-            </p>
-          </div>
-        </details>
+        {!simpleMode && (
+          <details className="members-columns">
+            <summary>Metric Definitions</summary>
+            <div className="members-count">
+              <p>Downlines: Players In The Recursive Downline, Excluding This Player.</p>
+              <p>
+                Player Wallet: Current Club Member Chip Balance. Agent Wallet: Current Active Agent
+                Chip Balance.
+              </p>
+              <p>
+                Individual Fees: Fees Generated By This Player. Total Fees: Fees Generated By The
+                Recursive Downline Only, Excluding This Player.
+              </p>
+              <p>
+                Wallets And Fees Are In Club Chips. Fees Cover All Recorded Activity, With No Date
+                Filter On This Roster.
+              </p>
+              <p>
+                Recorded Activity Follows Hand History Retention. Missing History Is Not Included.
+              </p>
+              <p>
+                Recent Activity Uses Login Time When Available, Otherwise Presence Or Club Activity
+                Time. Online Includes Players At A Live Table Or With Fresh Presence.
+              </p>
+              <p>
+                Select Loaded Selects Only Players Already Loaded. Export Without A Selection Reads
+                All Authorized Matches Across Every Page. A Selection Is Further Limited By The
+                Current Filter And Search.
+              </p>
+            </div>
+          </details>
+        )}
 
         <RosterConnectionStatus
           state={connectionState}
@@ -1333,7 +1395,7 @@ export default function ClubMembersPage() {
           isSlow={loadSlow}
           onRetry={retryLiveSync}
         />
-        {resolvedClubId && user?.id && (
+        {!simpleMode && resolvedClubId && user?.id && (
           <PlayerChangeHistory
             key={`history:${resolvedClubId}:${user.id}`}
             clubId={resolvedClubId}
@@ -1343,7 +1405,7 @@ export default function ClubMembersPage() {
         )}
       </section>
 
-      {summary.capabilities.can_export && selected.size > 0 && (
+      {!simpleMode && summary.capabilities.can_export && selected.size > 0 && (
         <div className="members-bulk" role="region" aria-label="Selected Players">
           <strong>{selected.size.toLocaleString()} Selected</strong>
           <button
@@ -1411,7 +1473,8 @@ export default function ClubMembersPage() {
                 total={filteredTotal}
                 query={debouncedSearch}
                 onOpen={openMember}
-                selectable={summary.capabilities.can_export}
+                selectable={!simpleMode && summary.capabilities.can_export}
+                simpleMode={simpleMode}
                 selected={selected.has(member.user_id)}
                 onSelect={toggleSelected}
                 columns={columns}
@@ -1484,7 +1547,9 @@ function MemberRow({
   selected,
   onSelect,
   columns,
+  simpleMode = false,
 }: {
+  simpleMode?: boolean;
   member: RosterMember;
   position: number;
   total: number;
@@ -1537,7 +1602,7 @@ function MemberRow({
         </span>
         <span className="member-main">
           <span className="member-identity">
-            <RoleBadge role={member.role} size="sm" />
+            {!simpleMode && <RoleBadge role={member.role} size="sm" />}
             <span className="member-alias">{highlight(member.alias, query)}</span>
             {member.username && member.username.toLowerCase() !== member.alias.toLowerCase() && (
               <span className="member-username">{highlight(member.username, query)}</span>
@@ -1548,7 +1613,10 @@ function MemberRow({
               {roleLabel(member.role)}
             </span>
             {member.player_number && (
-              <span className="member-number">No. {highlight(member.player_number, query)}</span>
+              <span className="member-number">
+                {simpleMode ? 'ID: ' : 'No. '}
+                {highlight(member.player_number, query)}
+              </span>
             )}
             {member.home_club_name && (
               <span className="member-club">{highlight(member.home_club_name, query)}</span>
@@ -1564,7 +1632,15 @@ function MemberRow({
               <span className="member-seen">{dormancy(member.last_login)}</span>
             ) : null}
           </span>
-          {member.can_view_financials && (
+          {simpleMode && member.can_view_financials && (
+            <span className="member-simple-balance">
+              <strong>
+                {member.player_wallet === null ? 'Restricted' : compactChips(member.player_wallet)}
+              </strong>
+              <span>Player Wallet</span>
+            </span>
+          )}
+          {!simpleMode && member.can_view_financials && (
             <span className="member-metrics">
               {columns.has('downlines') && (
                 <Metric label="Downlines" value={chips(member.downline_total)} />

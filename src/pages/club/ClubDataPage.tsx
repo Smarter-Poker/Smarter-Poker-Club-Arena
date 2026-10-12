@@ -874,6 +874,7 @@ export default function ClubDataPage() {
   const [ledgerSource, setLedgerSource] = useState<'cold' | 'cached' | 'live' | 'degraded'>('cold');
   const [manualRefreshing, setManualRefreshing] = useState(false);
   const [refreshNote, setRefreshNote] = useState<string | null>(null);
+  const [advanced, setAdvanced] = useState(false);
   const [tab, setTab] = useState<'games' | 'players'>('games');
   /** Read by the poll/visibility handlers, which must not re-register per tab. */
   const tabRef = useRef<'games' | 'players'>('games');
@@ -2843,7 +2844,63 @@ export default function ClubDataPage() {
         : undefined;
 
   return (
-    <div className={styles.page} data-page="club-data">
+    <div
+      className={`${styles.page} ${advanced ? '' : styles.simple}`}
+      data-page="club-data"
+      data-club-data-mode={advanced ? 'advanced' : 'simple'}
+    >
+      <header className={styles.simpleHeader}>
+        <button
+          type="button"
+          className={styles.word}
+          onClick={() => navigate(-1)}
+          aria-label="Go Back To Club"
+        >
+          Back
+        </button>
+        <h1>Club Data</h1>
+        <div className={styles.modeSwitch} role="group" aria-label="Club Data Mode">
+          <button
+            type="button"
+            className={styles.word}
+            aria-pressed={!advanced}
+            onClick={() => {
+              setAdvanced(false);
+              setTab('games');
+            }}
+          >
+            Simple
+          </button>
+          <button
+            type="button"
+            className={styles.word}
+            aria-pressed={advanced}
+            onClick={() => setAdvanced(true)}
+          >
+            Advanced
+          </button>
+        </div>
+      </header>
+      {!advanced && (
+        <div className={styles.simpleStatus}>
+          <span role="status">{statusLine}</span>
+          <button
+            type="button"
+            className={styles.word}
+            onClick={() => void refreshAll()}
+            disabled={manualRefreshing || !clubUuid || isHydrating}
+            aria-label="Refresh Simple Club Data"
+          >
+            {manualRefreshing ? 'Refreshing' : 'Refresh'}
+          </button>
+          {exporting && (
+            <button type="button" className={styles.word} onClick={cancelExport}>
+              Cancel Export
+            </button>
+          )}
+          {exportNote && <p role="status">{exportNote}</p>}
+        </div>
+      )}
       <div className={styles.srOnly} role="status" aria-live="polite" aria-atomic="true">
         {refreshNote ||
           exportNote ||
@@ -2854,154 +2911,155 @@ export default function ClubDataPage() {
               : '')}
       </div>
 
-      {/* ── The ledger head: status, the two page actions, the export notes ── */}
-      <SpadeConsole
-        eyebrow={clubLabel || 'Club Intelligence'}
-        title="Read The Room"
-        titleId="club-data-title"
-        subtitle="Own The Numbers"
-        pill={statusWord}
-        pillInk={statusInk}
-        crest="spade"
-        family="spade"
-        className={styles.console}
-        aria-labelledby="club-data-title"
-        plates={{
-          secondary: {
-            label: manualRefreshing ? 'Refreshing' : 'Refresh',
-            onClick: () => void refreshAll(),
-            disabled: manualRefreshing || !clubUuid || isHydrating,
-            'aria-label': 'Refresh Club Ledger',
-          },
-          primary: {
-            label: exporting ? 'Cancel Export' : 'Export CSV',
-            ink: exporting ? 'red' : 'white',
-            onClick: () => {
-              if (exporting) cancelExport();
-              else void exportCsv();
+      <div className={styles.advancedOnly} hidden={!advanced}>
+        {/* ── The ledger head: status, the two page actions, the export notes ── */}
+        <SpadeConsole
+          eyebrow={clubLabel || 'Club Intelligence'}
+          title="Read The Room"
+          titleId="club-data-title"
+          subtitle="Own The Numbers"
+          pill={statusWord}
+          pillInk={statusInk}
+          crest="spade"
+          family="spade"
+          className={styles.console}
+          aria-labelledby="club-data-title"
+          plates={{
+            secondary: {
+              label: manualRefreshing ? 'Refreshing' : 'Refresh',
+              onClick: () => void refreshAll(),
+              disabled: manualRefreshing || !clubUuid || isHydrating,
+              'aria-label': 'Refresh Club Ledger',
             },
-            disabled:
-              !exporting && (tab === 'players' ? !sortedPlayers.length : !snapshot?.rows?.length),
-            'aria-label': exporting ? 'Cancel CSV Export' : 'Export As CSV',
-            title: exporting ? 'Cancel CSV Export' : 'Export As CSV',
-          },
-        }}
-      >
-        <div className={styles.headRow}>
-          <button
-            type="button"
-            className={`${styles.word} sc-ink--muted`}
-            onClick={() => navigate(-1)}
-            aria-label="Go Back"
-          >
-            Back
-          </button>
-          <span className={`${styles.statusLine} sc-ink--${statusInk}`} aria-live="polite">
-            <span className={styles.statusLight} aria-hidden="true" />
-            <span>{statusLine}</span>
-          </span>
-        </div>
-        <p className={`sc-copy ${styles.tagline}`}>
-          Track Every Game, Fee, Player Result, And Union Square-Up From One Operator-Grade View.
-        </p>
-        <div className={styles.rows}>
-          <div className={styles.dataRow}>
-            <span className={`sc-label sc-ink--blue ${styles.dataLabel}`}>Cash Updated</span>
-            <span className={`sc-ink--silver ${styles.dataValue}`}>
-              {snapshot?.data_updated_at
-                ? utcTime(snapshot.data_updated_at)
-                : loading
-                  ? 'Loading Live Records'
-                  : 'Live Records Ready'}
+            primary: {
+              label: exporting ? 'Cancel Export' : 'Export CSV',
+              ink: exporting ? 'red' : 'white',
+              onClick: () => {
+                if (exporting) cancelExport();
+                else void exportCsv();
+              },
+              disabled:
+                !exporting && (tab === 'players' ? !sortedPlayers.length : !snapshot?.rows?.length),
+              'aria-label': exporting ? 'Cancel CSV Export' : 'Export As CSV',
+              title: exporting ? 'Cancel CSV Export' : 'Export As CSV',
+            },
+          }}
+        >
+          <div className={styles.headRow}>
+            <button
+              type="button"
+              className={`${styles.word} sc-ink--muted`}
+              onClick={() => navigate(-1)}
+              aria-label="Go Back"
+            >
+              Back
+            </button>
+            <span className={`${styles.statusLine} sc-ink--${statusInk}`} aria-live="polite">
+              <span className={styles.statusLight} aria-hidden="true" />
+              <span>{statusLine}</span>
             </span>
           </div>
-        </div>
-        {(ledgerSource === 'cached' || ledgerSource === 'degraded') && snapshot && (
-          <p className={`sc-copy ${styles.note}`} role="status">
-            {ledgerSource === 'cached'
-              ? 'Showing A Recent Verified Snapshot While Live Numbers Refresh.'
-              : 'Live Refresh Is Delayed. Showing The Last Verified Snapshot And Retrying Automatically.'}
+          <p className={`sc-copy ${styles.tagline}`}>
+            Track Every Game, Fee, Player Result, And Union Square-Up From One Operator-Grade View.
           </p>
+          <div className={styles.rows}>
+            <div className={styles.dataRow}>
+              <span className={`sc-label sc-ink--blue ${styles.dataLabel}`}>Cash Updated</span>
+              <span className={`sc-ink--silver ${styles.dataValue}`}>
+                {snapshot?.data_updated_at
+                  ? utcTime(snapshot.data_updated_at)
+                  : loading
+                    ? 'Loading Live Records'
+                    : 'Live Records Ready'}
+              </span>
+            </div>
+          </div>
+          {(ledgerSource === 'cached' || ledgerSource === 'degraded') && snapshot && (
+            <p className={`sc-copy ${styles.note}`} role="status">
+              {ledgerSource === 'cached'
+                ? 'Showing A Recent Verified Snapshot While Live Numbers Refresh.'
+                : 'Live Refresh Is Delayed. Showing The Last Verified Snapshot And Retrying Automatically.'}
+            </p>
+          )}
+          {exportNote && (
+            <p className={`sc-copy ${styles.note}`} role="status">
+              {exportNote}
+            </p>
+          )}
+          {exportProgress && (
+            <p className={`sc-copy ${styles.note}`} role="status" aria-live="polite">
+              {exportProgress.stage === 'preparing'
+                ? 'Preparing An Exact Snapshot For Export...'
+                : `Downloading ${compactInt(exportProgress.loaded)} Of ${compactInt(exportProgress.total)} Rows...`}
+            </p>
+          )}
+        </SpadeConsole>
+
+        {clubUuid && (
+          <RakeSnapshotPanel
+            unframed
+            clubId={clubUuid}
+            userId={userId}
+            scopes={rakeScopes}
+            refreshToken={lastVerifiedAt ?? 0}
+          />
         )}
-        {exportNote && (
-          <p className={`sc-copy ${styles.note}`} role="status">
-            {exportNote}
+
+        {/* ── Data integrity ─────────────────────────────────────────────── */}
+        <SpadeConsole
+          eyebrow="Operator Trust Layer"
+          title="Data Integrity"
+          titleId="club-data-integrity-title"
+          pill={!snapshot ? 'Checking' : integrityNeedsAttention ? 'Recovery Active' : 'Verified'}
+          pillInk={!snapshot ? 'muted' : integrityNeedsAttention ? 'red' : 'green'}
+          crest="flat"
+          family="spade"
+          foot="foot"
+          className={`${styles.console} ${integrityNeedsAttention ? styles.integrityAttention : ''}`}
+          aria-labelledby="club-data-integrity-title"
+        >
+          <dl className={styles.rows}>
+            <div className={styles.dataRow}>
+              <dt className={`sc-label sc-ink--blue ${styles.dataLabel}`}>Payload Checks</dt>
+              <dd className={`sc-ink--silver ${styles.dataValue}`}>
+                {integrity ? `${integrity.passed} / ${integrity.checks}` : NO_VALUE}
+              </dd>
+            </div>
+            <div className={styles.dataRow}>
+              <dt className={`sc-label sc-ink--blue ${styles.dataLabel}`}>Live Feeds</dt>
+              <dd className={`sc-ink--silver ${styles.dataValue}`}>
+                {realtimeEnabled ? `${liveFeedCount} / 4` : 'Standby'}
+              </dd>
+            </div>
+            <div className={styles.dataRow}>
+              <dt className={`sc-label sc-ink--blue ${styles.dataLabel}`}>Last Verified</dt>
+              <dd className={`sc-ink--silver ${styles.dataValue}`}>
+                {lastVerifiedAt ? formatClubDataAge(telemetryClock - lastVerifiedAt) : 'Checking'}
+              </dd>
+            </div>
+            <div className={styles.dataRow}>
+              <dt className={`sc-label sc-ink--blue ${styles.dataLabel}`}>Ledger Read</dt>
+              <dd className={`sc-ink--silver ${styles.dataValue}`}>
+                {lastRequestMs === null ? 'Checking' : `${lastRequestMs.toLocaleString()}ms`}
+              </dd>
+            </div>
+          </dl>
+          <p className={`sc-copy ${styles.note}`}>
+            {integrity?.issues.length
+              ? `${integrity.issues.length} Integrity Check${integrity.issues.length === 1 ? '' : 's'} Need Review. Verified Rows Stay Visible While Recovery Runs.`
+              : liveFeedCount < 4 && realtimeEnabled
+                ? 'The 60-Second Verified Poll Remains Active While Live Feeds Reconnect.'
+                : 'Internal Totals Reconcile. Live Invalidations And The 60-Second Verified Poll Are Active.'}
           </p>
-        )}
-        {exportProgress && (
-          <p className={`sc-copy ${styles.note}`} role="status" aria-live="polite">
-            {exportProgress.stage === 'preparing'
-              ? 'Preparing An Exact Snapshot For Export...'
-              : `Downloading ${compactInt(exportProgress.loaded)} Of ${compactInt(exportProgress.total)} Rows...`}
-          </p>
-        )}
-      </SpadeConsole>
-
-      {clubUuid && (
-        <RakeSnapshotPanel
-          unframed
-          clubId={clubUuid}
-          userId={userId}
-          scopes={rakeScopes}
-          refreshToken={lastVerifiedAt ?? 0}
-        />
-      )}
-
-      {/* ── Data integrity ─────────────────────────────────────────────── */}
-      <SpadeConsole
-        eyebrow="Operator Trust Layer"
-        title="Data Integrity"
-        titleId="club-data-integrity-title"
-        pill={!snapshot ? 'Checking' : integrityNeedsAttention ? 'Recovery Active' : 'Verified'}
-        pillInk={!snapshot ? 'muted' : integrityNeedsAttention ? 'red' : 'green'}
-        crest="flat"
-        family="spade"
-        foot="foot"
-        className={`${styles.console} ${integrityNeedsAttention ? styles.integrityAttention : ''}`}
-        aria-labelledby="club-data-integrity-title"
-      >
-        <dl className={styles.rows}>
-          <div className={styles.dataRow}>
-            <dt className={`sc-label sc-ink--blue ${styles.dataLabel}`}>Payload Checks</dt>
-            <dd className={`sc-ink--silver ${styles.dataValue}`}>
-              {integrity ? `${integrity.passed} / ${integrity.checks}` : NO_VALUE}
-            </dd>
-          </div>
-          <div className={styles.dataRow}>
-            <dt className={`sc-label sc-ink--blue ${styles.dataLabel}`}>Live Feeds</dt>
-            <dd className={`sc-ink--silver ${styles.dataValue}`}>
-              {realtimeEnabled ? `${liveFeedCount} / 4` : 'Standby'}
-            </dd>
-          </div>
-          <div className={styles.dataRow}>
-            <dt className={`sc-label sc-ink--blue ${styles.dataLabel}`}>Last Verified</dt>
-            <dd className={`sc-ink--silver ${styles.dataValue}`}>
-              {lastVerifiedAt ? formatClubDataAge(telemetryClock - lastVerifiedAt) : 'Checking'}
-            </dd>
-          </div>
-          <div className={styles.dataRow}>
-            <dt className={`sc-label sc-ink--blue ${styles.dataLabel}`}>Ledger Read</dt>
-            <dd className={`sc-ink--silver ${styles.dataValue}`}>
-              {lastRequestMs === null ? 'Checking' : `${lastRequestMs.toLocaleString()}ms`}
-            </dd>
-          </div>
-        </dl>
-        <p className={`sc-copy ${styles.note}`}>
-          {integrity?.issues.length
-            ? `${integrity.issues.length} Integrity Check${integrity.issues.length === 1 ? '' : 's'} Need Review. Verified Rows Stay Visible While Recovery Runs.`
-            : liveFeedCount < 4 && realtimeEnabled
-              ? 'The 60-Second Verified Poll Remains Active While Live Feeds Reconnect.'
-              : 'Internal Totals Reconcile. Live Invalidations And The 60-Second Verified Poll Are Active.'}
-        </p>
-        {integrity?.issues.length ? (
-          <ul className={`sc-copy ${styles.issues}`}>
-            {integrity.issues.map((issue) => (
-              <li key={issue}>{titleCase(issue)}</li>
-            ))}
-          </ul>
-        ) : null}
-      </SpadeConsole>
-
+          {integrity?.issues.length ? (
+            <ul className={`sc-copy ${styles.issues}`}>
+              {integrity.issues.map((issue) => (
+                <li key={issue}>{titleCase(issue)}</li>
+              ))}
+            </ul>
+          ) : null}
+        </SpadeConsole>
+      </div>
       {/* ── Club pulse: the reporting window and the headline figures ──── */}
       <SpadeConsole
         eyebrow="Performance Ledger"
@@ -3063,12 +3121,26 @@ export default function ClubDataPage() {
             </button>
           </div>
 
+          <label className={styles.calendarField}>
+            <span>Period Ending (UTC)</span>
+            <input
+              type="date"
+              aria-label="Period Ending (UTC)"
+              value={endDate}
+              max={toISODate(new Date())}
+              onChange={(event) => {
+                const value = event.target.value;
+                if (/^\d{4}-\d{2}-\d{2}$/.test(value) && value <= toISODate(new Date()))
+                  setEndDate(value);
+              }}
+            />
+          </label>
           {/* role="group" + aria-pressed, not a tablist. These control no tabpanel,
           and the stakes row is a TOGGLE - tapping the active chip clears it,
           which is impossible for a tab and leaves a tablist with nothing
           selected. A screen reader was told "tab 3 of 6" for a filter. */}
           <div className={styles.words} role="group" aria-label="Date Range">
-            {PRESETS.map((p) => (
+            {(advanced ? PRESETS : PRESETS.filter((p) => p <= 14 || p === preset)).map((p) => (
               <button
                 key={p}
                 type="button"
@@ -3148,219 +3220,223 @@ export default function ClubDataPage() {
         )}
       </SpadeConsole>
 
-      {/* ── The union statement ────────────────────────────────────────── */}
-      {(latestInvoice || invoicesError) && (
-        <SpadeConsole
-          eyebrow={unionOwesClub ? 'Union Owes You' : 'Weekly Square-Up'}
-          title="Union Statement"
-          titleId="club-data-statement-title"
-          pill={invoicePill}
-          pillInk={invoicePillInk}
-          crest="flat"
-          family="spade"
-          foot="foot"
-          className={styles.console}
-          aria-labelledby="club-data-statement-title"
-          aria-busy={invoicesLoading}
-        >
-          {invoicesError && (
-            <div className={styles.stateRow} role="alert">
-              <span className={`sc-copy sc-ink--red ${styles.stateCopy}`}>
-                {invoicesError}
-                {latestInvoice ? ' Showing The Last Verified Statement.' : ''}
-              </span>
-              <button
-                type="button"
-                className={`${styles.word} sc-ink--white`}
-                onClick={() => void loadInvoices()}
-                disabled={invoicesLoading}
-              >
-                {invoicesLoading ? 'Refreshing' : 'Try Again'}
-              </button>
-            </div>
-          )}
+      <div className={styles.advancedOnly} hidden={!advanced}>
+        {/* ── The union statement ────────────────────────────────────────── */}
+        {(latestInvoice || invoicesError) && (
+          <SpadeConsole
+            eyebrow={unionOwesClub ? 'Union Owes You' : 'Weekly Square-Up'}
+            title="Union Statement"
+            titleId="club-data-statement-title"
+            pill={invoicePill}
+            pillInk={invoicePillInk}
+            crest="flat"
+            family="spade"
+            foot="foot"
+            className={styles.console}
+            aria-labelledby="club-data-statement-title"
+            aria-busy={invoicesLoading}
+          >
+            {invoicesError && (
+              <div className={styles.stateRow} role="alert">
+                <span className={`sc-copy sc-ink--red ${styles.stateCopy}`}>
+                  {invoicesError}
+                  {latestInvoice ? ' Showing The Last Verified Statement.' : ''}
+                </span>
+                <button
+                  type="button"
+                  className={`${styles.word} sc-ink--white`}
+                  onClick={() => void loadInvoices()}
+                  disabled={invoicesLoading}
+                >
+                  {invoicesLoading ? 'Refreshing' : 'Try Again'}
+                </button>
+              </div>
+            )}
 
-          {latestInvoice && (
-            <>
-              <div className={styles.rows}>
-                {/* `direction` was read for the LABEL and ignored by the styling, so
+            {latestInvoice && (
+              <>
+                <div className={styles.rows}>
+                  {/* `direction` was read for the LABEL and ignored by the styling, so
                    an invoice where the union owes the club rendered in the red that
                    means "you owe", above a bare unsigned figure. Direction decides
                    the colour and the sign; status only decides whether it is settled. */}
-                <div className={`${styles.dataRow} ${styles.figureRow}`}>
-                  <span className={`sc-label sc-ink--blue ${styles.dataLabel}`}>
-                    {unionOwesClub ? 'Owed To You' : 'You Owe'}
-                  </span>
-                  <span
-                    className={`${styles.figure} ${styles.figureBig} ${
-                      latestInvoice.status === 'paid'
-                        ? 'sc-ink--silver'
-                        : unionOwesClub
-                          ? 'sc-ink--green'
-                          : Number(latestInvoice.amount) > 0
-                            ? 'sc-ink--red'
-                            : 'sc-ink--silver'
-                    }`}
-                  >
-                    {unionOwesClub ? '+' : Number(latestInvoice.amount) > 0 ? '-' : ''}
-                    {money(Math.abs(Number(latestInvoice.amount) || 0))}
-                  </span>
-                </div>
-                <div className={styles.dataRow}>
-                  <span className={`sc-label sc-ink--blue ${styles.dataLabel}`}>Period</span>
-                  <span className={`sc-ink--silver ${styles.dataValue}`}>
-                    {String(latestInvoice.period_start || '').slice(0, 10)} To{' '}
-                    {String(latestInvoice.period_end || '').slice(0, 10)}
-                  </span>
-                </div>
-                {latestInvoice.due_at && (
-                  <div className={styles.dataRow}>
-                    <span className={`sc-label sc-ink--blue ${styles.dataLabel}`}>Due</span>
-                    <span className={`sc-ink--silver ${styles.dataValue}`}>
-                      {String(latestInvoice.due_at).slice(0, 10)}
+                  <div className={`${styles.dataRow} ${styles.figureRow}`}>
+                    <span className={`sc-label sc-ink--blue ${styles.dataLabel}`}>
+                      {unionOwesClub ? 'Owed To You' : 'You Owe'}
+                    </span>
+                    <span
+                      className={`${styles.figure} ${styles.figureBig} ${
+                        latestInvoice.status === 'paid'
+                          ? 'sc-ink--silver'
+                          : unionOwesClub
+                            ? 'sc-ink--green'
+                            : Number(latestInvoice.amount) > 0
+                              ? 'sc-ink--red'
+                              : 'sc-ink--silver'
+                      }`}
+                    >
+                      {unionOwesClub ? '+' : Number(latestInvoice.amount) > 0 ? '-' : ''}
+                      {money(Math.abs(Number(latestInvoice.amount) || 0))}
                     </span>
                   </div>
-                )}
-                {latestInvoice.status && (
                   <div className={styles.dataRow}>
-                    <span className={`sc-label sc-ink--blue ${styles.dataLabel}`}>Status</span>
+                    <span className={`sc-label sc-ink--blue ${styles.dataLabel}`}>Period</span>
                     <span className={`sc-ink--silver ${styles.dataValue}`}>
-                      {invoiceStatusLabel(latestInvoice.status)}
+                      {String(latestInvoice.period_start || '').slice(0, 10)} To{' '}
+                      {String(latestInvoice.period_end || '').slice(0, 10)}
                     </span>
                   </div>
-                )}
-                {/* PHASE 6 (2026-09-04): ca_club_union_invoices has computed
+                  {latestInvoice.due_at && (
+                    <div className={styles.dataRow}>
+                      <span className={`sc-label sc-ink--blue ${styles.dataLabel}`}>Due</span>
+                      <span className={`sc-ink--silver ${styles.dataValue}`}>
+                        {String(latestInvoice.due_at).slice(0, 10)}
+                      </span>
+                    </div>
+                  )}
+                  {latestInvoice.status && (
+                    <div className={styles.dataRow}>
+                      <span className={`sc-label sc-ink--blue ${styles.dataLabel}`}>Status</span>
+                      <span className={`sc-ink--silver ${styles.dataValue}`}>
+                        {invoiceStatusLabel(latestInvoice.status)}
+                      </span>
+                    </div>
+                  )}
+                  {/* PHASE 6 (2026-09-04): ca_club_union_invoices has computed
                    `overdue`, `paid_total` and `outstanding` since it was written
                    and this card rendered none of them, so the one question an
                    owner opens a statement to answer - how much of this is still
                    owed, and is it late - was on the wire and not on the screen.
                    Paid is only shown once something has been paid; outstanding is
                    shown whenever the statement is not settled. */}
-                {latestInvoice.overdue && (
-                  <div className={styles.dataRow}>
-                    <span className={`sc-label sc-ink--red ${styles.dataLabel}`}>Overdue</span>
-                    <span className={`sc-ink--red ${styles.dataValue}`}>
-                      {latestInvoice.due_at
-                        ? `Since ${String(latestInvoice.due_at).slice(0, 10)}`
-                        : 'Past Due'}
-                    </span>
-                  </div>
-                )}
-                {Number(latestInvoice.paid_total) > 0 && (
-                  <div className={styles.dataRow}>
-                    <span className={`sc-label sc-ink--blue ${styles.dataLabel}`}>Paid</span>
-                    <span className={`sc-ink--green ${styles.dataValue}`}>
-                      {money(Number(latestInvoice.paid_total))}
-                    </span>
-                  </div>
-                )}
-                {latestInvoice.status !== 'paid' && Number(latestInvoice.outstanding) > 0 && (
-                  <div className={styles.dataRow}>
-                    <span className={`sc-label sc-ink--blue ${styles.dataLabel}`}>Outstanding</span>
-                    <span className={`sc-ink--gold ${styles.dataValue}`}>
-                      {money(Number(latestInvoice.outstanding))}
-                    </span>
-                  </div>
-                )}
-              </div>
+                  {latestInvoice.overdue && (
+                    <div className={styles.dataRow}>
+                      <span className={`sc-label sc-ink--red ${styles.dataLabel}`}>Overdue</span>
+                      <span className={`sc-ink--red ${styles.dataValue}`}>
+                        {latestInvoice.due_at
+                          ? `Since ${String(latestInvoice.due_at).slice(0, 10)}`
+                          : 'Past Due'}
+                      </span>
+                    </div>
+                  )}
+                  {Number(latestInvoice.paid_total) > 0 && (
+                    <div className={styles.dataRow}>
+                      <span className={`sc-label sc-ink--blue ${styles.dataLabel}`}>Paid</span>
+                      <span className={`sc-ink--green ${styles.dataValue}`}>
+                        {money(Number(latestInvoice.paid_total))}
+                      </span>
+                    </div>
+                  )}
+                  {latestInvoice.status !== 'paid' && Number(latestInvoice.outstanding) > 0 && (
+                    <div className={styles.dataRow}>
+                      <span className={`sc-label sc-ink--blue ${styles.dataLabel}`}>
+                        Outstanding
+                      </span>
+                      <span className={`sc-ink--gold ${styles.dataValue}`}>
+                        {money(Number(latestInvoice.outstanding))}
+                      </span>
+                    </div>
+                  )}
+                </div>
 
-              {showInvoiceDetail && latestInvoice.breakdown && (
-                <div className={styles.rows} id="club-data-invoice-detail">
-                  <span className={`sc-label sc-ink--blue ${styles.blockLabel}`}>
-                    Statement Detail
-                  </span>
-                  {[
-                    // The figures come from the invoice; the percentages used to be
-                    // literals, so any club on a non-standard deal got a label that
-                    // contradicted its own numbers. Derive them or omit them.
-                    ['Rake Generated', latestInvoice.breakdown.rake_generated],
-                    [
-                      `Your Rakeback${splitPct(latestInvoice.breakdown.rakeback_due, latestInvoice.breakdown.rake_generated)}`,
-                      latestInvoice.breakdown.rakeback_due,
-                    ],
-                    [
-                      `Union Fee Kept${splitPct(latestInvoice.breakdown.union_fee_kept, latestInvoice.breakdown.rake_generated)}`,
-                      latestInvoice.breakdown.union_fee_kept,
-                    ],
-                    ['Player Win/Loss', latestInvoice.breakdown.players_won],
-                    ['Settled In Chips', latestInvoice.breakdown.settled_in_chips],
-                    ['ECO Adjustment', latestInvoice.breakdown.eco_amount],
-                    ['Payments Received', latestInvoice.breakdown.presettled],
-                  ].map(([label, value]) => (
-                    <div className={styles.dataRow} key={String(label)}>
-                      <span className={`sc-copy ${styles.lineLabel}`}>{String(label)}</span>
-                      {/* money(Number('n/a')) is NaN, and NaN is falsy, so a corrupt
+                {showInvoiceDetail && latestInvoice.breakdown && (
+                  <div className={styles.rows} id="club-data-invoice-detail">
+                    <span className={`sc-label sc-ink--blue ${styles.blockLabel}`}>
+                      Statement Detail
+                    </span>
+                    {[
+                      // The figures come from the invoice; the percentages used to be
+                      // literals, so any club on a non-standard deal got a label that
+                      // contradicted its own numbers. Derive them or omit them.
+                      ['Rake Generated', latestInvoice.breakdown.rake_generated],
+                      [
+                        `Your Rakeback${splitPct(latestInvoice.breakdown.rakeback_due, latestInvoice.breakdown.rake_generated)}`,
+                        latestInvoice.breakdown.rakeback_due,
+                      ],
+                      [
+                        `Union Fee Kept${splitPct(latestInvoice.breakdown.union_fee_kept, latestInvoice.breakdown.rake_generated)}`,
+                        latestInvoice.breakdown.union_fee_kept,
+                      ],
+                      ['Player Win/Loss', latestInvoice.breakdown.players_won],
+                      ['Settled In Chips', latestInvoice.breakdown.settled_in_chips],
+                      ['ECO Adjustment', latestInvoice.breakdown.eco_amount],
+                      ['Payments Received', latestInvoice.breakdown.presettled],
+                    ].map(([label, value]) => (
+                      <div className={styles.dataRow} key={String(label)}>
+                        <span className={`sc-copy ${styles.lineLabel}`}>{String(label)}</span>
+                        {/* money(Number('n/a')) is NaN, and NaN is falsy, so a corrupt
                           line item printed as a real zero. Show that it is missing. */}
-                      <span className={`sc-ink--silver ${styles.dataValue}`}>
-                        {Number.isFinite(Number(value)) ? money(Number(value)) : NO_VALUE}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
+                        <span className={`sc-ink--silver ${styles.dataValue}`}>
+                          {Number.isFinite(Number(value)) ? money(Number(value)) : NO_VALUE}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
-              {showInvoiceHistory && olderInvoices.length > 0 && (
-                <div className={styles.rows} id="club-data-invoice-history">
-                  <span className={`sc-label sc-ink--blue ${styles.blockLabel}`}>
-                    Earlier Statements
-                  </span>
-                  {olderInvoices.map((inv) => (
-                    <div className={styles.dataRow} key={inv.invoice_id}>
-                      <span className={`sc-copy ${styles.lineLabel}`}>
-                        {String(inv.period_start || '').slice(0, 10)} To{' '}
-                        {String(inv.period_end || '').slice(0, 10)}
-                      </span>
-                      <span
-                        className={`${inv.direction === 'union owes club' ? 'sc-ink--green' : 'sc-ink--silver'} ${styles.dataValue}`}
-                      >
-                        {inv.direction === 'union owes club' ? '+' : '-'}
-                        {Number.isFinite(Number(inv.amount))
-                          ? money(Math.abs(Number(inv.amount)))
-                          : NO_VALUE}
-                        {inv.status ? ` - ${invoiceStatusLabel(inv.status)}` : ''}
-                        {inv.overdue ? ' - Overdue' : ''}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
+                {showInvoiceHistory && olderInvoices.length > 0 && (
+                  <div className={styles.rows} id="club-data-invoice-history">
+                    <span className={`sc-label sc-ink--blue ${styles.blockLabel}`}>
+                      Earlier Statements
+                    </span>
+                    {olderInvoices.map((inv) => (
+                      <div className={styles.dataRow} key={inv.invoice_id}>
+                        <span className={`sc-copy ${styles.lineLabel}`}>
+                          {String(inv.period_start || '').slice(0, 10)} To{' '}
+                          {String(inv.period_end || '').slice(0, 10)}
+                        </span>
+                        <span
+                          className={`${inv.direction === 'union owes club' ? 'sc-ink--green' : 'sc-ink--silver'} ${styles.dataValue}`}
+                        >
+                          {inv.direction === 'union owes club' ? '+' : '-'}
+                          {Number.isFinite(Number(inv.amount))
+                            ? money(Math.abs(Number(inv.amount)))
+                            : NO_VALUE}
+                          {inv.status ? ` - ${invoiceStatusLabel(inv.status)}` : ''}
+                          {inv.overdue ? ' - Overdue' : ''}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
-              <div className={styles.words}>
-                <button
-                  type="button"
-                  className={`${styles.word} ${latestInvoice.breakdown ? 'sc-ink--white' : 'sc-ink--muted'}`}
-                  onClick={() => setShowInvoiceDetail((v) => !v)}
-                  disabled={!latestInvoice.breakdown}
-                  title={latestInvoice.breakdown ? undefined : 'No Line Detail On This Statement'}
-                  aria-expanded={latestInvoice.breakdown ? showInvoiceDetail : undefined}
-                  aria-controls={latestInvoice.breakdown ? 'club-data-invoice-detail' : undefined}
-                >
-                  {!latestInvoice.breakdown
-                    ? 'No Statement Detail'
-                    : showInvoiceDetail
-                      ? 'Hide Statement'
-                      : 'View Statement'}
-                </button>
-                {olderInvoices.length > 0 && (
+                <div className={styles.words}>
                   <button
                     type="button"
-                    className={`${styles.word} sc-ink--white`}
-                    onClick={() => setShowInvoiceHistory((v) => !v)}
-                    aria-expanded={showInvoiceHistory}
-                    aria-controls="club-data-invoice-history"
+                    className={`${styles.word} ${latestInvoice.breakdown ? 'sc-ink--white' : 'sc-ink--muted'}`}
+                    onClick={() => setShowInvoiceDetail((v) => !v)}
+                    disabled={!latestInvoice.breakdown}
+                    title={latestInvoice.breakdown ? undefined : 'No Line Detail On This Statement'}
+                    aria-expanded={latestInvoice.breakdown ? showInvoiceDetail : undefined}
+                    aria-controls={latestInvoice.breakdown ? 'club-data-invoice-detail' : undefined}
                   >
-                    {showInvoiceHistory
-                      ? 'Hide Earlier Statements'
-                      : `Earlier Statements (${olderInvoices.length})`}
+                    {!latestInvoice.breakdown
+                      ? 'No Statement Detail'
+                      : showInvoiceDetail
+                        ? 'Hide Statement'
+                        : 'View Statement'}
                   </button>
-                )}
-              </div>
-            </>
-          )}
-        </SpadeConsole>
-      )}
+                  {olderInvoices.length > 0 && (
+                    <button
+                      type="button"
+                      className={`${styles.word} sc-ink--white`}
+                      onClick={() => setShowInvoiceHistory((v) => !v)}
+                      aria-expanded={showInvoiceHistory}
+                      aria-controls="club-data-invoice-history"
+                    >
+                      {showInvoiceHistory
+                        ? 'Hide Earlier Statements'
+                        : `Earlier Statements (${olderInvoices.length})`}
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+          </SpadeConsole>
+        )}
 
-      {/* ── The ledger: games and players ──────────────────────────────── */}
+        {/* ── The ledger: games and players ──────────────────────────────── */}
+      </div>
       <SpadeConsole
         eyebrow="Games And Players"
         title="Ledger"
@@ -3373,7 +3449,12 @@ export default function ClubDataPage() {
         className={styles.console}
         aria-labelledby="club-data-ledger-title"
       >
-        <div className={`${styles.words} ${styles.tabs}`} role="tablist" aria-label="View">
+        <div
+          hidden={!advanced}
+          className={`${styles.words} ${styles.tabs}`}
+          role="tablist"
+          aria-label="View"
+        >
           <button
             ref={gamesTabRef}
             type="button"
@@ -3407,9 +3488,10 @@ export default function ClubDataPage() {
         {tab === 'games' && (
           <div
             className={styles.panel}
-            role="tabpanel"
+            role={advanced ? 'tabpanel' : 'region'}
             id="club-data-panel-games"
-            aria-labelledby="club-data-tab-games"
+            aria-label={advanced ? undefined : 'Games'}
+            aria-labelledby={advanced ? 'club-data-tab-games' : undefined}
             tabIndex={0}
           >
             <label className={styles.searchField}>
@@ -3451,7 +3533,7 @@ export default function ClubDataPage() {
               ))}
             </div>
 
-            <div className={styles.words} role="group" aria-label="Sort Games">
+            <div hidden={!advanced} className={styles.words} role="group" aria-label="Sort Games">
               {GAME_SORTS.map((option) => (
                 <button
                   key={option.id}

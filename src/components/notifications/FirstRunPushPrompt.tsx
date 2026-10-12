@@ -148,7 +148,12 @@ const COPY: Record<NudgeMoment, { title: string; body: string }> = {
 type PromptState = null | 'ask' | 'install' | 'blocked' | 'success';
 
 /** What we have decided to ask, held until the route allows asking it. */
-type PendingAsk = null | { moment: NudgeMoment; variant: 'ask' | 'install' };
+type PendingAsk = null | {
+  userId: string;
+  generation: number;
+  moment: NudgeMoment;
+  variant: 'ask' | 'install';
+};
 
 export default function FirstRunPushPrompt() {
   // Nothing renders until somebody is signed in: the subscribe endpoint is
@@ -167,9 +172,14 @@ export default function FirstRunPushPrompt() {
   const laneClear = turn.clear;
   const mounted = useRef(true);
   const userIdRef = useRef(userId);
-  useEffect(() => {
+  const generation = useRef(0);
+  const busyRef = useRef(false);
+  const successTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  if (userIdRef.current !== userId) {
     userIdRef.current = userId;
-  }, [userId]);
+    generation.current += 1;
+    busyRef.current = false;
+  }
   /** The first-visit check is one-shot per account. */
   const decidedFor = useRef<string | null>(null);
 
@@ -177,6 +187,7 @@ export default function FirstRunPushPrompt() {
     mounted.current = true;
     return () => {
       mounted.current = false;
+      if (successTimer.current) clearTimeout(successTimer.current);
     };
   }, []);
 
@@ -196,6 +207,7 @@ export default function FirstRunPushPrompt() {
   const consider = useCallback(
     async (requested: NudgeMoment) => {
       if (!userId || typeof window === 'undefined' || isAutomatedBrowser()) return;
+      const requestGeneration = generation.current;
       const permission = notificationPermission();
       const device = {
         supported: isWebPushSupported(),
@@ -206,7 +218,12 @@ export default function FirstRunPushPrompt() {
       };
       if (!device.supported) device.iosNeedsInstall = isIos() && !isIosStandalonePwa();
       else if (permission === 'granted') device.subscribed = await hasLocalSubscription();
-      if (!mounted.current) return;
+      if (
+        !mounted.current ||
+        userIdRef.current !== userId ||
+        generation.current !== requestGeneration
+      )
+        return;
 
       const stored = readNudgeState(window.localStorage, userId);
       const decision = decideNudge({
@@ -234,7 +251,7 @@ export default function FirstRunPushPrompt() {
       setPending((current) =>
         current && (current.moment !== 'first_run' || requested === 'first_run')
           ? current
-          : { moment: requested, variant: decision.variant }
+          : { userId, generation: requestGeneration, moment: requested, variant: decision.variant }
       );
     },
     [userId, markDone]
@@ -245,7 +262,10 @@ export default function FirstRunPushPrompt() {
   useEffect(() => {
     setPending(null);
     setState(null);
+    setBusy(false);
     setError(null);
+    if (successTimer.current) clearTimeout(successTimer.current);
+    if (!userId) decidedFor.current = null;
   }, [userId]);
 
   /* ── The first-visit ask. Decided once per account, never on the route. ── */
@@ -280,7 +300,13 @@ export default function FirstRunPushPrompt() {
     const delay = pending.moment === 'first_run' ? SHOW_DELAY_MS : MOMENT_DELAY_MS;
     const t = setTimeout(() => {
       const uid = userIdRef.current;
-      if (!mounted.current || !uid) return;
+      if (
+        !mounted.current ||
+        !uid ||
+        uid !== pending.userId ||
+        generation.current !== pending.generation
+      )
+        return;
       writeLedger(
         window.localStorage,
         uid,
@@ -299,13 +325,21 @@ export default function FirstRunPushPrompt() {
   };
 
   const handleEnable = async () => {
-    if (busy) return;
+    if (busyRef.current || !userId) return;
+    const requestGeneration = generation.current;
+    busyRef.current = true;
     setBusy(true);
     setError(null);
     // DELIBERATE: nothing is awaited before enablePush(). iOS only honours
     // the permission dialog while the originating tap gesture is alive.
     const result = await enablePush();
-    if (!mounted.current) return;
+    if (
+      !mounted.current ||
+      userIdRef.current !== userId ||
+      generation.current !== requestGeneration
+    )
+      return;
+    busyRef.current = false;
     setBusy(false);
 
     /**
@@ -318,8 +352,13 @@ export default function FirstRunPushPrompt() {
     setPending(null);
     if (result.ok) {
       setState('success');
-      setTimeout(() => {
-        if (mounted.current) close();
+      successTimer.current = setTimeout(() => {
+        if (
+          mounted.current &&
+          userIdRef.current === userId &&
+          generation.current === requestGeneration
+        )
+          close();
       }, 2600);
     } else if (notificationPermission() === 'denied') {
       setState('blocked');
@@ -329,6 +368,9 @@ export default function FirstRunPushPrompt() {
   };
 
   const handleDismiss = () => {
+    if (busyRef.current) return;
+    generation.current += 1;
+    if (successTimer.current) clearTimeout(successTimer.current);
     if (userId) {
       const stored = readNudgeState(window.localStorage, userId);
       if (state === 'install') {

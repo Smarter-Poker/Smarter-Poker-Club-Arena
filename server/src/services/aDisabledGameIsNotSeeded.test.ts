@@ -105,7 +105,7 @@ const CLAIM = SRC.slice(
 describe('the seeding path reads the switch once per cycle', () => {
   it('the actual loader skips paused Diamond games while preserving chip and live-game selection', () => {
     const expression = SEED.match(
-      /disabledPage\.rows\.filter\(\(game\)\s*=>\s*([\s\S]*?)\n\s*\)\)/
+      /disabledPage\.rows\.filter\(\s*\(game\)\s*=>\s*([\s\S]*?)\n\s*\)/
     )?.[1];
     expect(expression).toBeTruthy();
     const include = new Function('game', 'diamondArenaId', `return (${expression});`);
@@ -156,7 +156,7 @@ describe('the seeding path reads the switch once per cycle', () => {
   it('fails OPEN and says so: a failed or short read counts, and the set stays empty', () => {
     expect(SEED).toContain('let disabledGameIds = new Set<string>();');
     expect(SEED).toMatch(
-      /if \(disabledPage\.complete\) \{\s*disabledGameIds = buildDisabledGameIds\(disabledPage\.rows\.filter\([\s\S]*?\)\);\s*\} else \{\s*beat\.disabledGamesReadFailed = 1;/
+      /if \(disabledPage\.complete\) \{\s*disabledGameIds = buildDisabledGameIds\(\s*disabledPage\.rows\.filter\([\s\S]*?\)\s*\);\s*\} else \{\s*beat\.disabledGamesReadFailed = 1;/
     );
     expect(SEED).toMatch(
       /catch \(err\) \{\s*beat\.disabledGamesReadFailed = 1;\s*reportError\(err, 'HorseFleet\.disabled_games_load_failed'\);/

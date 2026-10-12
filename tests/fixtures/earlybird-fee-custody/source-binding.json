@@ -15,7 +15,7 @@
     "tests/fixtures/earlybird-fee-custody/credit-originals.json": "76b7a6152c538bd051754e0a17106a14e86458968132bea26f03c339ad77b439",
     "supabase/migrations/20260918122532_five_original_spin_standings_retain_their_recorded_cash_outc.sql": "9f6e0b02abea54394d317c6d20f8e47ae10edefc9ba6c12f6542c23daf4540c4",
     ".prettierignore": "09ce1f38a5e012220b004ee809caf9fdcf0e61d9d72e924fd82341de73d53874",
-    "tests/unit/fixtureNativeCi.test.ts": "1e9a652b80aa851fb95d7780aeb6b62d360a7b61192c27edd9112ecd0b636392",
+    "tests/unit/fixtureNativeCi.test.ts": "14a67e65f162b0c02c406ae9b24726852f5d5678c28f01ba861633b9c6ea9682",
     "tests/fixtures/earlybird-fee-custody/README.md": "ae19f37a0179956d0d26c64f626fa401c10b4319f0d7d8453f8993d811e98536"
   },
   "restamp_audit": [
@@ -233,6 +233,17 @@
         "path": "tests/unit/fixtureNativeCi.test.ts",
         "previous": "de6f003caff7c9b5e4652b8c072fe145591cafc1b02fbc9836ad11f5fe628154",
         "current": "1e9a652b80aa851fb95d7780aeb6b62d360a7b61192c27edd9112ecd0b636392"
+      }
+    ]
+  },
+  "nativeRecoveryExportQualification20261012": {
+    "reason": "Reviewed additive native recovery export qualification on existing shards1/4; preserve current-main staff-removal routing. Only reviewed classifier, native-tool package expectation and nested binding bytes change. Financial functions, qualification assertions and historical evidence remain unchanged; these fingerprints do not certify financial or production recovery.",
+    "changes": [
+      {
+        "section": "repository_files",
+        "path": "tests/unit/fixtureNativeCi.test.ts",
+        "previous": "1e9a652b80aa851fb95d7780aeb6b62d360a7b61192c27edd9112ecd0b636392",
+        "current": "14a67e65f162b0c02c406ae9b24726852f5d5678c28f01ba861633b9c6ea9682"
       }
     ]
   }

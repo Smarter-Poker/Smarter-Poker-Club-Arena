@@ -780,6 +780,19 @@
         "check-definer-authorization: CREATE OR REPLACE preserves existing engine-only ACL, not printed in replacement body"
       ],
       "liveVerdict": "Production read2026-10-12T17:38UTC: fn_prune_ca_hand_facts(integer) md557ee12dc090b78191b9b459913e66b7b, ownerpostgres, SECURITY DEFINER, search_path public/pg_temp, ACLpostgres/service_role only; has_function_privilege anon=false/authenticated=false. Full connected53 native assertions enforce identical owner/ACL and cards-only exact earned summary preservation. This records immutable installed SQL through the existing recording path, does not exempt new SQL or authorize replay."
+    },
+    {
+      "version": "20261012170542",
+      "name": "horse_adaptive_raw_facts_become_exact_sufficient_statistics",
+      "file": "supabase/migrations/20261012170542_horse_adaptive_raw_facts_become_exact_sufficient_statistics.sql",
+      "md5": "e5cf80614aa40006c3cc4a2c0fc04259",
+      "appliedToProductionAt": "2026-10-12T17:05:42Z",
+      "recoveredOn": "2026-10-12",
+      "recoveredFrom": "Applying session immutable SQL bytes; fn_ca_migration_text md5 e5cf80614aa40006c3cc4a2c0fc04259 and36200bytes verified17:39UTC. Exact16 postimages independently read back after native qualification. No SQL edits or replay.",
+      "refusedBy": [
+        "check-definer-authorization: CREATE OR REPLACE preserves existing engine-only prune ACL, absent from replacement body"
+      ],
+      "liveVerdict": "Production read17:39UTC fn_prune_horse_adaptive_journal() md5a18ca77098d2d4f9e8af3334013d3153, ownerpostgres SECURITY DEFINER, search_path pg_catalog/public/smarter_private lock_timeout2s, ACLpostgres/service_role only, anon/authenticated execute bothfalse. Native34 verifies exact16 function owners/ACLs and raw retirement authority; activation remainsfalse pendingversionedconsumerpublication. Recording immutable installedbytes is not replay permission or exemption for new SQL."
     }
   ]
 }

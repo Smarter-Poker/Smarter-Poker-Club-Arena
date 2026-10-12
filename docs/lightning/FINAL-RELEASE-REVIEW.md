@@ -4,7 +4,15 @@ This is programme Phase 14, covering specification Phases 23 (final regression) 
 
 **Current public-launch verdict: NO_GO.** Lightning remains dark. Engineering qualification, database installation, publication, affected live proof and staged rollout evidence are separate states. The closed Phase 13 dark-stage delivery does not certify a production pilot.
 
-## Current Review Boundary
+## Owner Update And Current Remaining Work
+
+On 2026-10-12 the owner removed fixed calendar waits. No minimum elapsed-day or batch-age requirement applies. Launch qualification depends on actual active-play evidence and the 54 gates, not an idle clock. Retain the 5,000-hand sample target, five-club coverage, both table sizes and existing security, financial, calibration, latency and recovery requirements.
+
+The private six-seat pilot is provisioned and its one-minute calibration window installed through the maintained operator door. At `2026-10-12T05:54:39Z`, Lightning and its worker remain off, the club has only its service owner, there are no active pilot seats, and the production Lightning session, comparison and latency tables contain zero rows. This is preparation, not live-play qualification. See [the complete remaining-work register](REMAINING-WORK.md) for activation, coverage, operator and launch tasks, including optional enhancements separately from blockers.
+
+The source fixes and installation are delivered by PRs #6704 and #6713, installer run 38206459428, private setup run 38208291047 and publisher 38208264509. Both public stamps matched protected `cfe565e6b4e9888139d0db556bc24b85cc098a79` at the completion of that delivery. The later broad regression 38198079415 succeeded for its certified unchanged runtime inputs; it did not perform a Lightning pilot. Earlier failure records below remain historical evidence.
+
+## Historical Engineering Review Boundary
 
 - Reviewed base: `458bcc24237ac47ad5291401e6d9822ef6570c26` (protected main). This phase changes documentation and regression coverage only; it introduces no engine replacement, money write or mode transition.
 - Final client regression: 43 files, 1,027 tests passed. Final Lightning engine regression: 16 files, 251 tests passed. Both TypeScript compilers passed.
@@ -82,13 +90,13 @@ The qualification column points to real isolated database behavior, engine/compo
 
 1. **Shadow calibration (L46).** A private, unreachable internal pilot must record m1 against m1-port, at least 30 nonempty comparisons, verdict calibrated, mean quality delta within one point. A passing isolated model/parity test is not this production A/A witness.
 2. **Form-mode latency (L40/L41).** Every configured hand-latency leg needs actual nonzero samples and its required p95 windows. Stage 1 forms no hands and emits no empty latency window; it cannot provide hand latency. Stage 2 collects it. Missing evidence is not a zero or PASS.
-3. **Pilot reliability.** Stage 2 requires seven actual days and at least 5,000 hands, conservation and replay intact, no unexplained freeze/orphan reservation, no unresolved high integrity signal and readiness go. No synthetic hands, backdated timestamps or manufactured ledger rows may supply this evidence.
-4. **Limited clubs.** Stage 3 requires at least fourteen actual days across at least five clubs and both table sizes, with the pilot criteria holding throughout. Public general availability remains blocked until this and the final gate pass.
+3. **Pilot reliability.** Stage 2 requires at least 5,000 actual completed hands, conservation and replay intact, no unexplained freeze/orphan reservation, no unresolved high integrity signal and readiness go. No synthetic hands, backdated timestamps or manufactured ledger rows may supply this evidence.
+4. **Limited clubs.** Stage 3 requires completed active-play qualification across at least five clubs and both table sizes, with the pilot criteria holding throughout. Public general availability remains blocked until this and the final gate pass.
 5. **Final production regression (L54).** Require the applicable final release results on containing protected revisions, with source identity and cleanup. Preserve the unrelated broad-suite failures until their owning corrections produce real passing verdicts. A cancelled queued job and an unexecuted retained-version job supply no pass.
 
 ## Decisions And Recovery
 
-The Phase 14 review repairs an impossible Stage 1 requirement in the rollout instructions: a plan-only shadow worker cannot produce hand-latency samples. `LightningLatencyLedger.closeWindow` intentionally returns without writing when there are no legs, and the installed readiness function keeps `NO_LATENCY_EVIDENCE` as an evidence reason. The [rollout plan](ROLLOUT.md) now assigns measured hand latency to Stage 2 while preserving all existing ceilings, sample requirements, calibration, pilot and limited-club durations. No database or runtime assertion is weakened.
+The Phase 14 review repairs an impossible Stage 1 requirement in the rollout instructions: a plan-only shadow worker cannot produce hand-latency samples. `LightningLatencyLedger.closeWindow` intentionally returns without writing when there are no legs, and the installed readiness function keeps `NO_LATENCY_EVIDENCE` as an evidence reason. The [rollout plan](ROLLOUT.md) now assigns measured hand latency to Stage 2 while preserving all existing ceilings, sample requirements, calibration and workload coverage. The later owner update above removes calendar waits without replacing actual evidence. No database or runtime assertion is weakened.
 
 Before any transition, use the maintained operator door, record readiness/reasons and request/event identities, check private pilot access and keep the rehearsed drain available. A blocking no_go stops progression; only the precise evidence reasons that the current stage exists to produce are accepted as insufficient_evidence. No raw configuration writes or global enablement follow from this document.
 

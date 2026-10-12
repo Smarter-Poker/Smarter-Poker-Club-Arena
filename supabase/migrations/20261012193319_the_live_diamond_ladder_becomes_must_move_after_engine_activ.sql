@@ -1,5 +1,6 @@
 -- ACTIVATE ONLY AFTER the qualified engine accepting Diamond must-move is live.
 -- Adoption does not write any seat, wallet, custody balance or money journal.
+-- @live-proof: EXISTS (SELECT 1 FROM public.tables t JOIN public.ca_arena_settings a ON a.id=1 AND a.club_id=t.club_id WHERE t.tournament_id IS NULL AND t.status IN('waiting','running','playing','active') AND NOT coalesce(t.is_deleted,false) AND t.cluster_id IS NOT NULL) AND NOT EXISTS (SELECT 1 FROM public.tables t JOIN public.ca_arena_settings a ON a.id=1 AND a.club_id=t.club_id WHERE t.tournament_id IS NULL AND t.status IN('waiting','running','playing','active') AND NOT coalesce(t.is_deleted,false) AND (t.cluster_id IS NULL OR public.fn_poker_diamond_plain_cash_table(t) IS DISTINCT FROM true))
 BEGIN;
 SET LOCAL lock_timeout='3s';
 SET LOCAL statement_timeout='30s';

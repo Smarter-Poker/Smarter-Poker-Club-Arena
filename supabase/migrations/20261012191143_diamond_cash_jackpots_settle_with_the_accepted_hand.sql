@@ -1972,6 +1972,9 @@ BEGIN
  IF v_source=pg_get_functiondef('public.sp_prune_hand_history(integer)'::regprocedure) THEN
    RAISE EXCEPTION 'diamond_jackpot_retention_anchor_missing';
  END IF;
+ IF position(E'SELECT greatest(coalesce(horse_retention_days,8),1)\n    INTO v_days FROM public.hand_history_retention_policy LIMIT 1;' IN v_source)=0 THEN
+   RAISE EXCEPTION 'diamond_jackpot_configured_retention_window_changed';
+ END IF;
  EXECUTE v_source;
 END $guard$;
 

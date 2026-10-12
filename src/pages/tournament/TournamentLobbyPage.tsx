@@ -40,7 +40,7 @@ import { reportError } from '../../utils/errorReporter';
 import { totalBuyIn } from '../../utils/buyIn';
 import { useTournamentRegistration } from '../../hooks/useTournamentRegistration';
 import CasinoSurfaceHeader from '../../components/rewards/RewardsSurfaceHeader';
-import { SpadeConsole } from '../../components/console/SpadeConsole';
+import { ClubPageSection as SpadeConsole } from '../../components/club/ClubPageSection';
 import { useTournamentStageViews } from '../../hooks/useTournamentStageView';
 import { dayCompleteLabel, nextDayStartsLabel } from '../../utils/multiDaySchedule';
 import { tournamentLobbyTimeGroup } from '../../utils/tournamentLobbyTimeGroup';
@@ -755,6 +755,7 @@ export default function TournamentLobbyPage() {
   return (
     <div className={styles.page} data-arena-surface="play">
       <CasinoSurfaceHeader
+        unframed
         crest="vip"
         eyebrow="Play & Review / Tournament Lobby"
         title="Tournament Command"
@@ -914,6 +915,7 @@ export default function TournamentLobbyPage() {
               {group.tournaments.map((tournament) => (
                 <div key={tournament.id} className={styles.fadeInUp}>
                   <TournamentLobbyCard
+                    unframed
                     tournament={{
                       id: tournament.id,
                       format_contract: tournament.format_contract,

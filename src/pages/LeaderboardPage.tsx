@@ -36,7 +36,7 @@ import { useToast } from '../components/common/Toast';
 import { PlayerAvatar } from '../components/avatars/PlayerAvatar';
 import { LeaderboardPrizeWizard } from '../components/leaderboard/LeaderboardPrizeWizard';
 import { LeaderboardSettlementCard } from '../components/leaderboard/LeaderboardSettlementCard';
-import { SpadeConsole } from '../components/console/SpadeConsole';
+import { ClubPageSection as SpadeConsole } from '../components/club/ClubPageSection';
 import { compactChips } from '../utils/format';
 import { enumToTitleCase } from '../utils/titleCase';
 import { leaderboardDisplayName } from '../utils/leaderboardDisplayName';
@@ -1272,11 +1272,11 @@ export default function LeaderboardPage() {
 
   return (
     <div className="leaderboard-page" data-arena-surface="leaderboard-console">
-      <h1 className="lb-sr-only">Leaderboards</h1>
       <SpadeConsole
         className="lb-console"
         eyebrow="Club Arena"
         title="Leaderboards"
+        titleAs="h1"
         titleId="leaderboard-title"
         subtitle={
           scope === 'global' ? 'Across Club Arena' : selectedClubDisplayName || 'Your Club Rankings'

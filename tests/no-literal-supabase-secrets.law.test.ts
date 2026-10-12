@@ -14,6 +14,9 @@ describe('a Supabase server credential is never source code', () => {
     expect(SYNTHETIC.test(`sb_secret_${'A'.repeat(40)}`)).toBe(false);
   });
 
+  // Isolated SSD runs on 2026-10-12 took 5.3-7.4 seconds. Keep all assertions
+  // and allow bounded headroom for Git/filesystem work, rather than timing out
+  // after the check already completed its synchronous work.
   it('contains no literal production-shaped sb_secret key in a tracked file', () => {
     const root = resolve(process.cwd());
     // Ask Git to identify the tiny candidate set instead of decoding every
@@ -47,5 +50,5 @@ describe('a Supabase server credential is never source code', () => {
     }
 
     expect([...new Set(violations)]).toEqual([]);
-  });
+  }, 30_000);
 });

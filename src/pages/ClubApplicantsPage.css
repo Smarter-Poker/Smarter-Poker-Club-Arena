@@ -1,0 +1,77 @@
+.club-applicants-page {
+  width: min(100%, 1100px);
+  margin: 0 auto;
+  padding: 24px 20px 112px;
+  color: #e4e7ec;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+}
+.club-applicants-page header,
+.applicants-toolbar,
+.applicants-list li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+.club-applicants-page h1 {
+  margin: 8px 0;
+  font-size: clamp(30px, 5vw, 44px);
+}
+.club-applicants-page p {
+  color: #9aa5b3;
+  margin: 8px 0;
+}
+.club-applicants-page button,
+.club-applicants-page a {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  padding: 10px 14px;
+  border: 0;
+  background: transparent;
+  color: #45adff;
+  font:
+    700 16px/1.3 'Roboto Condensed',
+    sans-serif;
+  text-decoration: none;
+  cursor: pointer;
+}
+.club-applicants-page button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.club-applicants-page button:focus-visible,
+.club-applicants-page a:focus-visible {
+  outline: 2px solid #45adff;
+  outline-offset: 2px;
+}
+.applicants-toolbar {
+  margin-top: 24px;
+}
+.applicants-list {
+  padding: 0;
+  list-style: none;
+}
+.applicants-list li {
+  padding: 20px 0;
+  border-top: 1px solid rgb(154 165 179 / 20%);
+}
+.applicants-list h3 {
+  margin: 0;
+}
+.applicant-actions {
+  display: flex;
+  gap: 12px;
+}
+@media (max-width: 620px) {
+  .club-applicants-page {
+    padding-inline: 16px;
+  }
+  .applicant-actions {
+    width: 100%;
+  }
+  .applicant-actions button {
+    flex: 1;
+  }
+}

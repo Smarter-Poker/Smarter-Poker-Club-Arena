@@ -139,13 +139,16 @@ describe('one op id per target, held across a failure', () => {
     // one. Retained across a failure, cleared on a change: both, or neither
     // protection works.
     const editEffect = PAGE.slice(
-      PAGE.indexOf('if (restoringTransferRecoveryRef.current)'),
-      PAGE.indexOf('}, [amount, recipientAmounts, selected]') + 25
+      PAGE.indexOf('if (restoringTransferRecoveryRef.current === transferIntentSignature)'),
+      PAGE.indexOf('}, [transferIntentSignature, user?.id, clubUuid]') + 55
     );
     expect(editEffect).toContain('submissionIdRef.current = null');
     expect(editEffect).toContain('readCashierTransferRecovery(user.id, clubUuid)');
     expect(editEffect).not.toContain('clearCashierTransferRecovery(');
-    expect(PAGE).toMatch(/\}, \[amount, recipientAmounts, selected\]\);/);
+    expect(PAGE).toMatch(/\}, \[transferIntentSignature, user\?\.id, clubUuid\]\);/);
+    expect(PAGE).toContain('Object.entries(recipientAmounts).sort');
+    expect(PAGE).toContain('[...selected].sort()');
+    expect(PAGE).not.toContain('restoringTransferRecoveryRef.current = false');
   });
 
   it('is retained across a failure, which is what makes a retry safe', () => {

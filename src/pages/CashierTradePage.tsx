@@ -508,7 +508,14 @@ function CashierTradeWorkspace() {
    */
   const opIdsRef = useRef<Map<string, string>>(new Map());
   /** Suppresses the "new intent" reset while a persisted intent is restored. */
-  const restoringTransferRecoveryRef = useRef(false);
+  const restoringTransferRecoveryRef = useRef<string | null>(null);
+  const transferIntentSignature = JSON.stringify([
+    user?.id,
+    clubUuid,
+    amount,
+    Object.entries(recipientAmounts).sort(([left], [right]) => left.localeCompare(right)),
+    [...selected].sort(),
+  ]);
   /** The exact local-storage scope owned by the retained batch nonce. */
   const transferRecoveryScopeRef = useRef<{
     userId: string;
@@ -1722,10 +1729,10 @@ function CashierTradeWorkspace() {
    * survive; touch either input and the next submission mints fresh ones.
    */
   useEffect(() => {
-    if (restoringTransferRecoveryRef.current) {
-      restoringTransferRecoveryRef.current = false;
-      return;
-    }
+    // Equivalent rerenders (including roster refreshes) keep the restored
+    // operation identity. Only an actual change to its inputs starts a new one.
+    if (restoringTransferRecoveryRef.current === transferIntentSignature) return;
+    restoringTransferRecoveryRef.current = null;
     submissionIdRef.current = null;
     opIdsRef.current = new Map();
     transferRecoveryScopeRef.current = null;
@@ -1736,7 +1743,7 @@ function CashierTradeWorkspace() {
     } else {
       setTransferRecovery(null);
     }
-  }, [amount, recipientAmounts, selected]);
+  }, [transferIntentSignature, user?.id, clubUuid]);
 
   useEffect(() => {
     setRecipientAmounts({});
@@ -1747,16 +1754,8 @@ function CashierTradeWorkspace() {
     if (!user?.id || !clubUuid) return;
     const saved = readCashierTransferRecovery(user.id, clubUuid);
     if (!saved) return;
-    // The club reset above replaces the selection Set. Suppress the resulting
-    // intent-change pass so it cannot erase the recovery we just hydrated.
-    restoringTransferRecoveryRef.current = true;
-    submissionIdRef.current = saved.submissionId;
-    opIdsRef.current = new Map(Object.entries(saved.opIds));
-    transferRecoveryScopeRef.current = {
-      userId: user.id,
-      clubId: clubUuid,
-      submissionId: saved.submissionId,
-    };
+    // Hydrate the recovery prompt only. Restore its immutable identifiers
+    // together with the reviewed inputs when Review And Retry is selected.
     setTransferRecovery(saved);
   }, [user?.id, clubUuid]);
 
@@ -2456,7 +2455,15 @@ function CashierTradeWorkspace() {
       toast?.error?.('Recipients Changed. Review The Roster Before Starting A New Transfer');
       return;
     }
-    restoringTransferRecoveryRef.current = true;
+    restoringTransferRecoveryRef.current = JSON.stringify([
+      user.id,
+      clubUuid,
+      String(saved.amount),
+      Object.entries(saved.targetAmounts ?? {})
+        .map(([id, value]) => [id, String(value)] as [string, string])
+        .sort(([left], [right]) => left.localeCompare(right)),
+      [...pendingTargets].sort(),
+    ]);
     submissionIdRef.current = saved.submissionId;
     opIdsRef.current = new Map(Object.entries(saved.opIds));
     transferRecoveryScopeRef.current = {

@@ -192,6 +192,13 @@ BEGIN
 END
 $cap$;
 
+-- Register before CREATE FUNCTION: the production DDL guard also classifies
+-- a zero-chip club_members INSERT as a balance writer. No chips move.
+INSERT INTO public.ca_money_rpc_registry (proname, status, notes)
+VALUES ('fn_union_owner_holds_membership', 'system',
+        'Union join and owner-transfer trigger helper. Creates only a zero-chip player membership or reactivates an existing row without changing its balance. Locks the membership lane and row; refuses active bans or suspensions; grants no staff or finance rights.')
+ON CONFLICT (proname) DO NOTHING;
+
 -- 1. The one door that makes the union owner a member of one club.
 CREATE OR REPLACE FUNCTION public.fn_union_owner_holds_membership(p_union_id uuid, p_club_id uuid)
 RETURNS text
@@ -209,7 +216,10 @@ DECLARE
   v_prev_lifecycle text := COALESCE(current_setting('app.club_membership_lifecycle_write', true), '');
   v_result text;
 BEGIN
-  SELECT u.owner_id INTO v_owner FROM public.unions u WHERE u.id = p_union_id;
+  -- Serialize a join with ownership transfer before choosing the owner.
+  -- Without this row lock, a transfer can miss an uncommitted club link and
+  -- the join can still insert the previous owner's membership afterward.
+  SELECT u.owner_id INTO v_owner FROM public.unions u WHERE u.id = p_union_id FOR SHARE;
   IF v_owner IS NULL THEN
     RETURN 'no_owner';
   END IF;

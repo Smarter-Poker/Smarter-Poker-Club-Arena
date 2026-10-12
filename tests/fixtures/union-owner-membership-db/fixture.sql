@@ -10,6 +10,8 @@
 -- 2026-10-12) where they decide anything, and with a money stand-in that
 -- records any wallet movement so the harness can prove there is none.
 
+CREATE TABLE public.ca_money_rpc_registry (proname text PRIMARY KEY, status text NOT NULL, notes text);
+
 CREATE SCHEMA auth;
 CREATE FUNCTION auth.jwt() RETURNS jsonb LANGUAGE sql STABLE AS $$
   SELECT COALESCE(NULLIF(current_setting('request.jwt.claims', true), ''), '{}')::jsonb $$;

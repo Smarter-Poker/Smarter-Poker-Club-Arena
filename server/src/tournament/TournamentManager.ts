@@ -1,4 +1,3 @@
-import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import {
   custodyJSON,
   immutableCustody,
@@ -784,6 +783,13 @@ export class TournamentManager extends TournamentManagerEliminations {
     } else this.durableTournamentBreaks.set(state.break_id, state);
   }
 
+  /** Every remembered break is unacknowledged; acknowledged ones are forgotten above. */
+  protected override tableBreakOwnsSource(tableId: string): boolean {
+    for (const state of this.durableTournamentBreaks.values())
+      if (state.source_table_id === tableId) return true;
+    return false;
+  }
+
   private readonly tournamentBreakArrivalWakes = new Map<string, Map<string, ServerTableEngine>>();
 
   /** Direct and reconciled receipts name the same committed arrival. */
@@ -1531,12 +1537,11 @@ export class TournamentManager extends TournamentManagerEliminations {
     if (!engine.getF06RecoverablePermit?.()) return Promise.resolve();
     const existing = this.originalAdmissionRecoveries.get(engine);
     if (existing) return existing;
-    const tracked: Promise<void> = this.performStoppedOriginalAdmission(tableId, engine).finally(
-      () => {
-        if (this.originalAdmissionRecoveries.get(engine) === tracked)
-          this.originalAdmissionRecoveries.delete(engine);
-      }
-    );
+    let tracked!: Promise<void>;
+    tracked = this.performStoppedOriginalAdmission(tableId, engine).finally(() => {
+      if (this.originalAdmissionRecoveries.get(engine) === tracked)
+        this.originalAdmissionRecoveries.delete(engine);
+    });
     this.originalAdmissionRecoveries.set(engine, tracked);
     return tracked;
   }
@@ -3652,12 +3657,6 @@ export class TournamentManager extends TournamentManagerEliminations {
     return data.length;
   }
 
-  /** Existing operation discovery owns a stopped source, even behind a qualifier fence. */
-  protected async recoverPendingTournamentBreaks(): Promise<boolean> {
-    if (isMaintenanceFrozen() || !this.eliminationMutationAllowed()) return false;
-    return this.visitTournamentBreakPage((state) => this.recoverTournamentBreak(state));
-  }
-
   protected async checkTableBalance(): Promise<TournamentBalanceProgress | void> {
     if (!this.eliminationMutationAllowed()) return;
     try {
@@ -3688,7 +3687,8 @@ export class TournamentManager extends TournamentManagerEliminations {
       }
       return;
     }
-    if (!(await this.recoverPendingTournamentBreaks())) return;
+    if (!(await this.visitTournamentBreakPage((state) => this.recoverTournamentBreak(state))))
+      return;
     if (!(await this.redrivePendingTournamentSeatMoveOutcomes())) return;
     if (!this.tournamentBreakDiscoveryComplete) {
       this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);

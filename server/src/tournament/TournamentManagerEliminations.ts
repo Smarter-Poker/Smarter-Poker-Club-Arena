@@ -4571,6 +4571,15 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
   }
 
   /** The frozen full-ticket plan, not cash-remainder depth, owns this finish. */
+  /**
+   * True while a table break that has not been acknowledged names this table
+   * as its source. Only the balance stage finishes such a break. The manager
+   * that owns the durable break state answers; this base knows of none.
+   */
+  protected tableBreakOwnsSource(_tableId: string): boolean {
+    return false;
+  }
+
   private async checkSatelliteQualifierCompletion(): Promise<
     'legacy' | 'continue' | 'pending' | 'complete'
   > {
@@ -4629,16 +4638,36 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         for (const { tableId, engine } of owned) {
           if (!this.isRunning() || isMaintenanceFrozen() || !this.eliminationMutationAllowed())
             return 'pending';
-          if (!engine?.isRunning()) {
-            // A break may have stopped its empty source after every move
-            // committed. Returning pending resets the sweep before balance,
-            // so that source can never close and the qualifier fence never
-            // releases. Finish only discovered original break operations;
-            // this grants neither a fresh balance plan nor a qualifier payout.
-            await this.recoverPendingTournamentBreaks();
-            return 'pending';
+          /*
+           * A BREAK SOURCE THE BOUNDARY CANNOT PARK FINISHES ITS BREAK
+           * (2026-10-12).
+           *
+           * A table break stops its source dealer before it closes the source
+           * table, and the table row stays 'running' until that close commits.
+           * If the close does not land (a statement timeout, a lost reply), the
+           * source has no running dealer and can never park here, so this
+           * answered 'pending' on every sweep. 'pending' resets the cursor to
+           * the elimination stage, and the balance stage, the only code that
+           * retries the close, was never reached again: the boundary waited for
+           * the break and the break waited for the boundary.
+           *
+           * Production 2026-10-12: satellite 61961519 (Sunday Funday Six-Card
+           * Closer Satellite), break 444d8b63 moved every player off table
+           * c01b0657 at 23:52:12Z, fn_f06_close_break hit a statement timeout at
+           * 23:52:21Z, and 9 players sat on table 4af8f60c dealt nothing for
+           * over three hours while the sweep re-read the same two tables every
+           * five seconds.
+           *
+           * The boundary stays held, so no hand is dealt; the sweep goes on to
+           * the stage that owns the break (as for F06_SOURCE_EXCLUDED below),
+           * and the next pass parks the tables that are left.
+           */
+          if (!engine?.isRunning() && this.tableBreakOwnsSource(tableId)) {
+            this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+            return 'continue';
           }
           if (
+            !engine?.isRunning() ||
             this.gameServer.getTableEngine(tableId) !== engine ||
             !(await engine.parkForTerminalCloseout(0))
           )
@@ -5791,7 +5820,6 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
   }
 
   // ── Implemented by TournamentManager (layer 3/3) ──
-  protected abstract recoverPendingTournamentBreaks(): Promise<boolean>;
   protected abstract checkTableBalance(): Promise<TournamentBalanceProgress | void>;
   protected abstract processSatelliteAwards(
     tournament: any,

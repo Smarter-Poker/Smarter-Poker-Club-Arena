@@ -311,19 +311,24 @@ describe('a held satellite boundary finishes its already moved table break', () 
         in: async () => ({ data: [...f.global.keys()].map((key) => ({ id: key })), error: null }),
       };
       vi.spyOn(supabase, 'from').mockReturnValue(query);
+      f.manager.rememberTournamentBreak(f.state());
+      f.manager.isFinalTable = true;
+      f.manager.liveTournamentTableIdsWithPlayers = vi.fn(async () => [id(9)]);
       if (outcome === 'lost-close-reply') {
         const close = f.api.close.getMockImplementation()!;
         f.api.close.mockImplementationOnce(async () => {
           await close();
           throw new Error('committed close response lost');
         });
-        expect(await f.manager.checkSatelliteQualifierCompletion()).toBe('pending');
+        expect(await f.manager.checkSatelliteQualifierCompletion()).toBe('continue');
+        await f.manager.checkTableBalance();
         expect(f.api.ackCleanup).not.toHaveBeenCalled();
         expect(f.global.has(source)).toBe(true);
         expect(f.custody.admissionAllowed(source)).toBe(false);
         expect(destination.releaseTerminalCloseoutPause).not.toHaveBeenCalled();
       }
-      expect(await f.manager.checkSatelliteQualifierCompletion()).toBe('pending');
+      expect(await f.manager.checkSatelliteQualifierCompletion()).toBe('continue');
+      await f.manager.checkTableBalance();
       expect(f.api.close).toHaveBeenCalledTimes(1);
       expect(f.api.ackCleanup).toHaveBeenCalledTimes(1);
       expect(f.global.has(source)).toBe(false);

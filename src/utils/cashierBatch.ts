@@ -14,6 +14,15 @@ export interface CashierBatchReceiptRow {
   reference: string;
 }
 
+/** Retain original receipts and replace only recipients from this same batch retry. */
+export function mergeCashierBatchReceiptRows(
+  previous: CashierBatchReceiptRow[],
+  current: CashierBatchReceiptRow[]
+): CashierBatchReceiptRow[] {
+  const replaced = new Set(current.map((row) => row.userId));
+  return [...previous.filter((row) => !replaced.has(row.userId)), ...current];
+}
+
 /** Validate the entire visible intent before any chunk may move money. */
 export function cashierBatchAmounts(
   ids: string[],

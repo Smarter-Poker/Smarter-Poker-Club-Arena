@@ -62,7 +62,10 @@ def qualify(e,template,keep_template=False):
  for name,change in [('mixed',"UPDATE hand_history SET has_human=true;"),('original-human',"ALTER TABLE smarter_private.hand_submissions DISABLE TRIGGER hand_submission_immutable; UPDATE smarter_private.hand_submissions SET request=jsonb_set(request,'{p_hand_row,has_human}','true'); ALTER TABLE smarter_private.hand_submissions ENABLE TRIGGER hand_submission_immutable;"),('unknown',"DELETE FROM profiles;"),('failed',"UPDATE hand_atomic_commits SET post_commit_result='{\"ok\":false}';"),('young',"UPDATE hand_atomic_commits SET post_commit_completed_at=now();")]:
   case=e.database(world);e.sql(case,seed+change,label='review-'+name+'-seed');publish(case)
   e.sql(case,"UPDATE horse_hand_reviews SET created_at=now()-interval '40 days';"+old.AUTHORITY+'SELECT sp_prune_hand_history(10); SELECT sp_prune_horse_hand_reviews();',label='review-'+name+'-owners')
-  yes(case,'SELECT count(*)=1 AND bool_and(hole_cards IS NOT NULL AND board IS NOT NULL AND actions IS NOT NULL) FROM horse_hand_reviews;','review-'+name+'-raw-and-row-preserved');e.discard(case)
+  yes(case,'SELECT count(*)=1 AND bool_and(hole_cards IS NOT NULL AND board IS NOT NULL AND actions IS NOT NULL) FROM horse_hand_reviews;','review-'+name+'-raw-and-row-preserved')
+  for op in ['DELETE FROM horse_hand_reviews','TRUNCATE horse_hand_reviews']:
+   code,_,err=e.sql(case,op,label='review-'+name+'-direct-'+op.split()[0].lower()+'-refused',check=False);assert code!=0 and 'HORSE_REVIEW_PROTECTED_SOURCE' in err;checks.append('review-'+name+'-direct-'+op.split()[0].lower()+'-refused')
+  e.discard(case)
  _,cat,_=e.sql(world,"SELECT jsonb_object_agg(p.oid::regprocedure::text,jsonb_build_object('definition_md5',md5(pg_get_functiondef(p.oid)),'owner',pg_get_userbyid(p.proowner),'security_definer',p.prosecdef,'settings',p.proconfig,'acl',p.proacl::text)) FROM pg_proc p WHERE p.proname IN('horse_review_raw_disposable','horse_review_raw_retention_guard','compact_horse_review_raw','horse_review_raw_on_disposal','sp_prune_horse_hand_reviews');",label='review-qualified-postimages')
  e.report['review_qualified_postimages']=json.loads(cat)
  e.report['review_raw_retention']={'status':'passed','proven':checks,'migration':str(MIGRATION),'sha256':hashlib.sha256((ROOT/MIGRATION).read_bytes()).hexdigest()};

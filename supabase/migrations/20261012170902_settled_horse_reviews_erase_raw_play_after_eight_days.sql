@@ -18,6 +18,12 @@ REVOKE ALL ON FUNCTION smarter_private.horse_review_raw_disposable(uuid,uuid,tim
 CREATE FUNCTION smarter_private.horse_review_raw_retention_guard() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,smarter_private SET lock_timeout='2s' AS $fn$
 BEGIN
+ IF TG_OP='TRUNCATE' THEN RAISE EXCEPTION 'HORSE_REVIEW_PROTECTED_SOURCE'; END IF;
+ IF TG_OP='DELETE' THEN
+  PERFORM pg_advisory_xact_lock(hashtextextended('horse-review-retention:'||OLD.hand_id::text,0));
+  IF OLD.created_at>=statement_timestamp()-interval '30 days' OR NOT smarter_private.horse_review_raw_disposable(OLD.hand_id,OLD.table_id,OLD.played_at) THEN RAISE EXCEPTION 'HORSE_REVIEW_PROTECTED_SOURCE'; END IF;
+  RETURN OLD;
+ END IF;
  PERFORM pg_advisory_xact_lock(hashtextextended('horse-review-retention:'||NEW.hand_id::text,0));
  IF TG_OP='UPDATE' AND (NEW.hand_id IS DISTINCT FROM OLD.hand_id OR NEW.table_id IS DISTINCT FROM OLD.table_id OR NEW.played_at IS DISTINCT FROM OLD.played_at)
  THEN RAISE EXCEPTION 'HORSE_REVIEW_RETENTION_IDENTITY_IMMUTABLE'; END IF;
@@ -27,7 +33,8 @@ BEGIN
  RETURN NEW;
 END $fn$;
 REVOKE ALL ON FUNCTION smarter_private.horse_review_raw_retention_guard() FROM PUBLIC,anon,authenticated,service_role;
-CREATE TRIGGER horse_review_raw_retention_guard BEFORE INSERT OR UPDATE ON public.horse_hand_reviews FOR EACH ROW EXECUTE FUNCTION smarter_private.horse_review_raw_retention_guard();
+CREATE TRIGGER horse_review_raw_retention_guard BEFORE INSERT OR UPDATE OR DELETE ON public.horse_hand_reviews FOR EACH ROW EXECUTE FUNCTION smarter_private.horse_review_raw_retention_guard();
+CREATE TRIGGER horse_review_raw_no_truncate BEFORE TRUNCATE ON public.horse_hand_reviews FOR EACH STATEMENT EXECUTE FUNCTION smarter_private.horse_review_raw_retention_guard();
 CREATE FUNCTION smarter_private.compact_horse_review_raw(p_hands uuid[]) RETURNS integer
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,smarter_private SET lock_timeout='2s' AS $fn$
 DECLARE n integer;

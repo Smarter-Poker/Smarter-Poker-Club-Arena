@@ -172,3 +172,17 @@
   outline: 2px solid #8fd4ff;
   outline-offset: 2px;
 }
+
+/* An account name can be much longer than its amount. Keep every word readable
+   inside the console while preserving the amount's signed financial meaning. */
+.chip-statement__balance-label,
+.chip-statement__club > span:first-child,
+.chip-statement__leg-category,
+.chip-statement__leg-meta > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.chip-statement__club > span:last-child,
+.chip-statement__balance-value {
+  flex-shrink: 0;
+}

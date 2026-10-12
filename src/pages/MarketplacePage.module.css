@@ -3,7 +3,8 @@
  * Mobile-first, one visual language across Store, Membership, Inventory and Admin.
  */
 
-.page {
+.page,
+.modalOverlay {
   --market-black: #05070a;
   --market-ink: #090d12;
   --market-panel: #10171e;
@@ -20,6 +21,11 @@
   --market-red: #d6454f;
   --market-positive: #36b9ff;
   --market-radius: 6px;
+  color: var(--market-copy);
+  font-family: Inter, Arial, sans-serif;
+}
+
+.page {
   position: relative;
   z-index: 1;
   width: min(100%, 1180px);
@@ -45,7 +51,9 @@
 }
 
 .page,
-.page * {
+.page *,
+.modalOverlay,
+.modalOverlay * {
   box-sizing: border-box;
 }
 
@@ -2287,4 +2295,50 @@
 .pkgCard,
 .createForm {
   padding-inline: var(--chassis-inline-padding);
+}
+
+/* The purchase sheet carries its own artwork. Its portal must not inherit the
+   shared popup's second frame, opaque header or generic button backgrounds. */
+.modalOverlay .modal.modal[role='dialog'] {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background-color: #020508 !important;
+  background-image:
+    url('/assets/club-buttons/lobby/shark-panel-v1/top.png'),
+    url('/assets/club-buttons/lobby/shark-panel-v1/bottom.png') !important;
+  background-position:
+    center top,
+    center bottom !important;
+  background-repeat: no-repeat !important;
+  background-size: 100% auto !important;
+  box-shadow: none !important;
+  --purchase-sheet-width: min(520px, 100vw);
+  padding-top: calc(var(--purchase-sheet-width) * 143 / 900 + 12px);
+  padding-bottom: calc(var(--purchase-sheet-width) * 139 / 900 + 12px);
+}
+
+.modalOverlay .modalTitle.modalTitle {
+  background: transparent !important;
+  background-image: none !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  overflow-wrap: anywhere;
+}
+
+.modalOverlay .modalClose.modalClose,
+.modalOverlay .btnGhost.btnGhost,
+.modalOverlay .btnPrimary.btnPrimary {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background-color: transparent !important;
+  background-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png') !important;
+  background-position: center !important;
+  background-repeat: no-repeat !important;
+  background-size: 100% 100% !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+.modalOverlay .btnPrimary.btnPrimary {
+  background-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-primary.png') !important;
 }

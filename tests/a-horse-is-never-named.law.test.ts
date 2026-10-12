@@ -313,7 +313,9 @@ describe('no horse row wears a label of its own (B-5)', () => {
   it('the wallet history prints a club refill exactly as a transfer', () => {
     const source = readFileSync(join(ROOT, 'src/components/wallet/TransactionHistory.tsx'), 'utf8');
     expect(source).toContain("return raw === 'horse_refill' ? 'transfer' : raw;");
-    expect(source).toContain('CATEGORY_ICONS[shownCategory(tx.category)]');
+    // All rows use the same text treatment; no category glyph can identify a player.
+    expect(source).not.toContain('CATEGORY_ICONS');
+    expect(source).toContain('CATEGORY_LABELS[shownCategory(raw)]');
     expect(source).toContain('CATEGORY_COLORS[shownCategory(tx.category)]');
   });
 });

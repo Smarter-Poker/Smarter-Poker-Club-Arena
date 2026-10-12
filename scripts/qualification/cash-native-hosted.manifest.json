@@ -56,16 +56,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 203714,
-      "sha256": "68ec0a94cbe906ff36162e004227766cdec8daf80023551b6693b46ceec1d559"
+      "bytes": 203929,
+      "sha256": "4c8baf0332e0a416f9d4c07e8b2c4cfddac492d6c51ec22cfe2c37ff9077d059"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 35480,
-      "sha256": "1fc422b810641eee2149abbdbbf5ddf50c54e87162fbea82f22456c506bd712d"
+      "bytes": 35533,
+      "sha256": "6afe9dd3d84c639d8995271514bc1195202f2e930835137edcb7e0d73bf946ec"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -2156,11 +2156,49 @@
       }
     ]
   },
+  "onlyStaffRemoveMemberDbHarnessRouting20261012": {
+    "reason": "Reviewed additive only-staff-remove-member harness routing: the existing cashierDbHarnesses selector also names scripts/ci/test-only-staff-remove-member-db-postgres.py (the PostgreSQL 17 qualification of migration 20261012132509, only club staff can remove a member) and its fixture directory tests/fixtures/only-staff-remove-member-db/, and one accounting_postgres shard 2 step runs it. No selector is removed or narrowed; financial sources, assertions and historical evidence are unchanged. These byte bindings establish source identity only, not financial or production qualification.",
+    "changes": [
+      {
+        "path": ".github/workflows/ci.yml",
+        "previous": {
+          "bytes": 202788,
+          "sha256": "cbecb15da2fd2b57f1c3fcb7a75f9eede415cef9ad40bce2f25257266ca3f732"
+        },
+        "current": {
+          "bytes": 203003,
+          "sha256": "1699ddcbdafde77bbb538e632911eb11663486d78a99571e67006ae4f4004995"
+        }
+      },
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": {
+          "bytes": 35480,
+          "sha256": "1fc422b810641eee2149abbdbbf5ddf50c54e87162fbea82f22456c506bd712d"
+        },
+        "current": {
+          "bytes": 35533,
+          "sha256": "6afe9dd3d84c639d8995271514bc1195202f2e930835137edcb7e0d73bf946ec"
+        }
+      }
+    ]
+  },
   "inventorySealNativeQualification20261012": {
     "reason": "Add exact bucketed inventory seal PostgreSQL17 equivalence to existing required Accounting3. Preserve every financial source, assertion, historical pin and SOURCE_ONLY_UNRUN status. Workflow fingerprint refresh is source identity only, not cash execution or production certification.",
     "previousWorkflowPin": {
       "bytes": 202788,
       "sha256": "cbecb15da2fd2b57f1c3fcb7a75f9eede415cef9ad40bce2f25257266ca3f732"
+    }
+  },
+  "inventorySealCurrentMainIntegration20261012": {
+    "reason": "Preserve current main member-removal qualification and candidate inventory-seal native qualification together. Source identity only; financial inputs, historical pins and SOURCE_ONLY_UNRUN remain unchanged.",
+    "previousCandidateWorkflowPin": {
+      "bytes": 203714,
+      "sha256": "68ec0a94cbe906ff36162e004227766cdec8daf80023551b6693b46ceec1d559"
+    },
+    "previousCurrentMainWorkflowPin": {
+      "bytes": 203003,
+      "sha256": "1699ddcbdafde77bbb538e632911eb11663486d78a99571e67006ae4f4004995"
     }
   }
 }

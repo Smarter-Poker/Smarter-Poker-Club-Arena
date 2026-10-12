@@ -10,6 +10,10 @@ import { useIsMounted } from '../../hooks/useIsMounted';
 import { useToast } from '../common/Toast';
 import { reportError } from '../../utils/errorReporter';
 import { DisputeService, type DisputeTarget } from '../../services/DisputeService';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
+import { useDialogEscape } from '../../hooks/useDialogEscape';
+import { SpadeConsole } from '../console/SpadeConsole';
+import styles from './DisputeSubmitModal.module.css';
 
 interface DisputeSubmitModalProps {
   isOpen: boolean;
@@ -65,6 +69,19 @@ export default function DisputeSubmitModal({
     submitLockRef.current = false;
   }, [isOpen, defaultTargetType, defaultTargetId, defaultAmount]);
 
+  const dialogRef = useFocusTrap<HTMLDivElement>(isOpen, '#dispute-type');
+  useDialogEscape(isOpen, () => {
+    if (!submitLockRef.current) onClose();
+  });
+  useEffect(() => {
+    if (!isOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const handleSubmit = async () => {
@@ -113,202 +130,85 @@ export default function DisputeSubmitModal({
   };
 
   return (
-    /**
-     * THE OVERLAY LAYOUT IS PINNED INLINE ON PURPOSE.
-     *
-     * This component imports no stylesheet of its own, so `.modal-overlay`
-     * resolved to whichever definition happened to be in the bundle:
-     * common/Modal.css says `position: absolute` with no centering, because it
-     * is designed to sit inside a `.modal-portal` that this component does not
-     * have; wallet/CashoutRequestModal.css says `position: fixed` with
-     * `align-items: flex-end`, which turns this dialog into a bottom sheet.
-     * Whether a dispute appeared centred, at the bottom, or glued to some
-     * ancestor's box depended on which OTHER component's CSS had been loaded.
-     *
-     * Inline styles beat both, so the layout is now the same every time. The
-     * class name stays for any global z-index or backdrop rule that keys off it.
-     */
     <div
-      className="modal-overlay"
+      className={styles.overlay}
       onClick={closeIfIdle}
       role="dialog"
       aria-modal="true"
       aria-label="Submit A Dispute"
-      style={{
-        position: 'fixed',
-        inset: 0,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '16px',
-        background: 'rgba(0,0,0,0.72)',
-        zIndex: 1000,
-      }}
+      aria-labelledby="dispute-title"
     >
-      <div
-        className="modal-content dispute-modal"
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          background: 'var(--bg-primary, #111)',
-          border: '1px solid rgba(255,255,255,0.08)',
-          borderRadius: '16px',
-          padding: '24px',
-          maxWidth: '420px',
-          width: '92%',
-          margin: '0 auto',
-          // Four fields plus a textarea plus two buttons does not fit a 375px
-          // phone in landscape, and the panel had no scroll of its own: the
-          // Submit button simply sat below the fold with nothing to scroll.
-          maxHeight: '90vh',
-          overflowY: 'auto',
-          boxSizing: 'border-box',
-        }}
-      >
-        <h3 style={{ margin: '0 0 16px', fontSize: '1.1rem', color: 'var(--text-primary, #fff)' }}>
-          ⚠ Submit A Dispute
-        </h3>
-
-        {/* Target Type */}
-        <div style={{ marginBottom: '12px' }}>
-          <label
-            style={{ display: 'block', fontSize: '0.8rem', color: '#888', marginBottom: '4px' }}
-          >
-            Dispute Type
-          </label>
-          <select
-            value={targetType}
-            onChange={(e) => setTargetType(e.target.value as DisputeTarget)}
-            style={{
-              width: '100%',
-              padding: '10px',
-              background: 'rgba(0,0,0,0.3)',
-              border: '1px solid rgba(255,255,255,0.08)',
-              borderRadius: '8px',
-              color: '#fff',
-              fontSize: '0.85rem',
-            }}
-          >
-            <option value="agent_settlement">Settlement Payout</option>
-            <option value="cashout_request">Cashout Request</option>
-            <option value="credit_invoice">Credit Invoice</option>
-            <option value="commission_payout">Commission Payout</option>
-          </select>
-        </div>
-
-        {/* Reference ID (optional) */}
-        <div style={{ marginBottom: '12px' }}>
-          <label
-            style={{ display: 'block', fontSize: '0.8rem', color: '#888', marginBottom: '4px' }}
-          >
-            Reference ID <span style={{ opacity: 0.5 }}>(Optional)</span>
-          </label>
-          <input
-            type="text"
-            placeholder="Transaction Or Settlement ID"
-            value={targetId}
-            onChange={(e) => setTargetId(e.target.value)}
-            style={{
-              width: '100%',
-              padding: '10px',
-              background: 'rgba(0,0,0,0.3)',
-              border: '1px solid rgba(255,255,255,0.08)',
-              borderRadius: '8px',
-              color: '#fff',
-              fontSize: '0.85rem',
-              boxSizing: 'border-box',
-            }}
-          />
-        </div>
-
-        {/* Amount */}
-        <div style={{ marginBottom: '12px' }}>
-          <label
-            style={{ display: 'block', fontSize: '0.8rem', color: '#888', marginBottom: '4px' }}
-          >
-            Disputed Amount (Chips)
-          </label>
-          <input
-            type="number"
-            placeholder="0"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            style={{
-              width: '100%',
-              padding: '10px',
-              background: 'rgba(0,0,0,0.3)',
-              border: '1px solid rgba(255,255,255,0.08)',
-              borderRadius: '8px',
-              color: '#fff',
-              fontSize: '0.85rem',
-              boxSizing: 'border-box',
-            }}
-          />
-        </div>
-
-        {/* Reason */}
-        <div style={{ marginBottom: '16px' }}>
-          <label
-            style={{ display: 'block', fontSize: '0.8rem', color: '#888', marginBottom: '4px' }}
-          >
-            Reason
-          </label>
-          <textarea
-            placeholder="Describe The Issue..."
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            rows={3}
-            style={{
-              width: '100%',
-              padding: '10px',
-              background: 'rgba(0,0,0,0.3)',
-              border: '1px solid rgba(255,255,255,0.08)',
-              borderRadius: '8px',
-              color: '#fff',
-              fontSize: '0.85rem',
-              resize: 'vertical',
-              boxSizing: 'border-box',
-            }}
-          />
-        </div>
-
-        {/* Buttons */}
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button
-            onClick={closeIfIdle}
-            disabled={submitting}
-            style={{
-              flex: 1,
-              padding: '10px',
-              background: 'rgba(255,255,255,0.06)',
-              border: '1px solid rgba(255,255,255,0.08)',
-              borderRadius: '8px',
-              color: '#aaa',
-              fontWeight: 700,
-              fontSize: '0.85rem',
-              cursor: 'pointer',
-            }}
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSubmit}
-            disabled={submitting || !reason.trim() || !amount}
-            style={{
-              flex: 1,
-              padding: '10px',
-              background: submitting ? 'rgba(255,167,38,0.1)' : 'rgba(255,167,38,0.15)',
-              border: '1px solid rgba(255,167,38,0.3)',
-              borderRadius: '8px',
-              color: '#ffa726',
-              fontWeight: 700,
-              fontSize: '0.85rem',
-              cursor: submitting ? 'wait' : 'pointer',
-              opacity: submitting || !reason.trim() || !amount ? 0.5 : 1,
-            }}
-          >
-            {submitting ? 'Submitting...' : 'Submit Dispute'}
-          </button>
-        </div>
+      <div ref={dialogRef} className={styles.modal} onClick={(event) => event.stopPropagation()}>
+        <SpadeConsole
+          title="Submit A Dispute"
+          titleId="dispute-title"
+          eyebrow="Club Support"
+          pill={submitting ? 'Submitting' : 'Draft'}
+          onClose={closeIfIdle}
+          plates={{
+            secondary: { label: 'Cancel', onClick: closeIfIdle, disabled: submitting },
+            primary: {
+              label: submitting ? 'Submitting...' : 'Submit Dispute',
+              onClick: handleSubmit,
+              disabled: submitting || !reason.trim() || !amount,
+            },
+          }}
+        >
+          <div className={styles.fields}>
+            <label className={styles.field} htmlFor="dispute-type">
+              <span className="sc-label">Dispute Type</span>
+              <select
+                id="dispute-type"
+                value={targetType}
+                onChange={(event) => setTargetType(event.target.value as DisputeTarget)}
+                className={styles.input}
+                disabled={submitting}
+              >
+                <option value="agent_settlement">Settlement Payout</option>
+                <option value="cashout_request">Cashout Request</option>
+                <option value="credit_invoice">Credit Invoice</option>
+                <option value="commission_payout">Commission Payout</option>
+              </select>
+            </label>
+            <label className={styles.field} htmlFor="dispute-reference">
+              <span className="sc-label">Reference ID (Optional)</span>
+              <input
+                id="dispute-reference"
+                type="text"
+                placeholder="Transaction Or Settlement ID"
+                value={targetId}
+                onChange={(event) => setTargetId(event.target.value)}
+                className={styles.input}
+                disabled={submitting}
+              />
+            </label>
+            <label className={styles.field} htmlFor="dispute-amount">
+              <span className="sc-label">Disputed Amount (Chips)</span>
+              <input
+                id="dispute-amount"
+                type="number"
+                inputMode="decimal"
+                placeholder="0"
+                value={amount}
+                onChange={(event) => setAmount(event.target.value)}
+                className={styles.input}
+                disabled={submitting}
+              />
+            </label>
+            <label className={styles.field} htmlFor="dispute-reason">
+              <span className="sc-label">Reason</span>
+              <textarea
+                id="dispute-reason"
+                placeholder="Describe The Issue..."
+                value={reason}
+                onChange={(event) => setReason(event.target.value)}
+                rows={3}
+                className={styles.input}
+                disabled={submitting}
+              />
+            </label>
+          </div>
+        </SpadeConsole>
       </div>
     </div>
   );

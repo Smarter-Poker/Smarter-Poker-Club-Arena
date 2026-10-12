@@ -1,0 +1,8 @@
+{
+  "_owner": "Tournament hardening original unchanged-stack qualification: isolated PostgreSQL17 verified declarations only. Protected merge and exact migration20261012161442 production installation/readback PENDING. This fragment is PROMISED, never a live installation claim.",
+  "tables": [],
+  "functions": [
+    "fn_union_pnl_prove_original_unchanged_stack",
+    "fn_union_pnl_resolve_original_unchanged_stack"
+  ]
+}

@@ -429,7 +429,7 @@
     "scripts/ci/classify-ci-changes.mjs": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "73057486ecdb77fb7c5507891670b070ea7f4ba9f563bc71de3c54b24834d807",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "f1f0d1e1f0e821ea8045ace85031c4dcde31960f1ba184a44f1f43f392f17084",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -448,7 +448,7 @@
     "server/src/tournament/completionSettlementReceipt.ts": "a59a97b5b0f76d5c54d01b1fe47f3284efb2fcbd3e7742bb4e9e1ac6f0207dd4",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "0063f961abd4fd3fd7091f3a4a88100b85f05285f0d983a3b1f99c3fd3a5ebc9",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "01d4812b380f726f7900c35689691d42724b838f120b32a607ed8bcb59a73083",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -3063,8 +3063,8 @@
     "reason": "Enforce complete unchanged settlement conservation native query, financial boundaries, authority and finite online/recovery qualification in required accounting shard; bind actual workflow/classifier and updated nested manifests without changing historical entries.",
     "changes": {
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 35763,
-        "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
+        "before": "90cefba25593457b16e1f3a6370441fe8444c566b359e40d2580ab9f94a9885b",
+        "after": "95dabc7e631360eef4e6b8bce3fd047e169738d0ff347fe7e7c0c2f6cb3eb096"
       },
       "tests/fixtures/legacy-fee-finality/source-binding.json": {
         "before": "32993053f035d9388c2e0d98f50a44ece7b290a1219f43d82a43ac79a02e7339",
@@ -3146,8 +3146,8 @@
     "reason": "Add required native qualification for the one-statement BBJ cumulative/recent read split; preserve every existing qualification route and historical assertion. Exact reviewed CI/classifier bytes and nested bindings only.",
     "updates": {
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 35763,
-        "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
+        "before": "90cefba25593457b16e1f3a6370441fe8444c566b359e40d2580ab9f94a9885b",
+        "after": "abaa05478633ba53a270d1055585c003d17e37ff23c92bd4c9001a6d712c97bb"
       },
       "tests/fixtures/legacy-fee-finality/source-binding.json": {
         "before": "32993071b17bc72ae19c6a515feb6b64e4c3061b7805be27eea54dbca872cac5",
@@ -3213,8 +3213,8 @@
     "reason": "Add required native qualification for exact one-pass coverage aggregation. Preserve every existing source/assertion and routing rule; these bindings retain actual reviewed CI/classifier bytes and nested binding history.",
     "updates": {
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 35763,
-        "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
+        "before": "7453fda84e0817b94f4d86ef66cf938e76dcb16c70ade9a41091503d5dfbfc68",
+        "after": "044bbef730fcb4d46a258a4beb37114e1e93932e1f874079aaffef99e5d67665"
       },
       "tests/fixtures/legacy-fee-finality/source-binding.json": {
         "before": "ae57af9f463caea7f871c4ea4c2440651dd0a06d01ba3998c11649b4236e8402",
@@ -3741,8 +3741,8 @@
     "reason": "Add exact split-recompute native qualification to the existing accounting shard and select its fixture-only changes. Default weekly fixture behavior and all financial SQL remain unchanged; current protected-main integration is preserved.",
     "bindings": {
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 35763,
-        "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
+        "before": "732f731aa929df1e7b43aa58a5ef7d06c2e6c24ad3be2dc3d64abe2765e3fe7b",
+        "after": "2fc728ea5555ced40641d89f8c85b8f094a09f9f14d5decaa405ffbc5e11ea2a"
       },
       "scripts/dev/test-union-weekly-basis.py": {
         "before": "0c7c959a54275a9595f8817aac84514415d9bfc829114376bf1f9f9e5da726ad",
@@ -4325,7 +4325,7 @@
     ]
   },
   "playerCommandHistoryMainIntegration20261012": {
-    "reason": "Preserve both independent history and staff removal qualification routes and audit records. Refresh only integrated source fingerprints; financial input sets, assertions, historical receipts and qualification status remain unchanged. Source identity is not runtime certification.",
+    "reason": "Preserve both independent history and staff removal qualification routes and historical audit records. Refresh only integrated current source fingerprints; financial inputs, assertions, historical receipts and qualification status remain unchanged. Source identity is not runtime certification.",
     "changes": [
       {
         "path": "scripts/ci/classify-ci-changes.mjs",
@@ -4335,56 +4335,12 @@
       {
         "path": "tests/fixtures/legacy-fee-finality/source-binding.json",
         "previous": "077e5286c71c428154c9bf8c39ee1df554fefd4a9ae4f5a81b3e985a61e0c3f1",
-        "current": "73057486ecdb77fb7c5507891670b070ea7f4ba9f563bc71de3c54b24834d807"
+        "current": "f1f0d1e1f0e821ea8045ace85031c4dcde31960f1ba184a44f1f43f392f17084"
       },
       {
         "path": "tests/fixtures/sep8-spin-custody/source-binding.json",
         "previous": "59cad7d7d9966f8469860f41f7553e0410f8c7e6d7889cb87373ab7087c48296",
-        "current": "0063f961abd4fd3fd7091f3a4a88100b85f05285f0d983a3b1f99c3fd3a5ebc9"
-      },
-      {
-        "path": "scripts/ci/classify-ci-changes.mjs",
-        "previous": {
-          "before": "90cefba25593457b16e1f3a6370441fe8444c566b359e40d2580ab9f94a9885b",
-          "after": "95dabc7e631360eef4e6b8bce3fd047e169738d0ff347fe7e7c0c2f6cb3eb096"
-        },
-        "current": {
-          "bytes": 35763,
-          "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
-        }
-      },
-      {
-        "path": "scripts/ci/classify-ci-changes.mjs",
-        "previous": {
-          "before": "90cefba25593457b16e1f3a6370441fe8444c566b359e40d2580ab9f94a9885b",
-          "after": "abaa05478633ba53a270d1055585c003d17e37ff23c92bd4c9001a6d712c97bb"
-        },
-        "current": {
-          "bytes": 35763,
-          "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
-        }
-      },
-      {
-        "path": "scripts/ci/classify-ci-changes.mjs",
-        "previous": {
-          "before": "7453fda84e0817b94f4d86ef66cf938e76dcb16c70ade9a41091503d5dfbfc68",
-          "after": "044bbef730fcb4d46a258a4beb37114e1e93932e1f874079aaffef99e5d67665"
-        },
-        "current": {
-          "bytes": 35763,
-          "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
-        }
-      },
-      {
-        "path": "scripts/ci/classify-ci-changes.mjs",
-        "previous": {
-          "before": "732f731aa929df1e7b43aa58a5ef7d06c2e6c24ad3be2dc3d64abe2765e3fe7b",
-          "after": "2fc728ea5555ced40641d89f8c85b8f094a09f9f14d5decaa405ffbc5e11ea2a"
-        },
-        "current": {
-          "bytes": 35763,
-          "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
-        }
+        "current": "01d4812b380f726f7900c35689691d42724b838f120b32a607ed8bcb59a73083"
       }
     ]
   }

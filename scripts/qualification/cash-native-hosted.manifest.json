@@ -180,12 +180,12 @@
     "reason": "Existing Accounting job directly invokes retained-hand native qualification; selector and routing regression expanded. Cash SQL and immutable capture inputs unchanged.",
     "previousPins": {
       ".github/workflows/ci.yml": {
-        "bytes": 203178,
-        "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
+        "bytes": 149836,
+        "sha256": "e3a1de6444d5ad4901c9213b53987c36d2c639e3a919d759fb155c250b35ed63"
       },
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 35763,
-        "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
+        "bytes": 17771,
+        "sha256": "52dd4403b11289790dee758a50ce5e80aa47cc5e52b5d9ce5b34545c924ff4ca"
       },
       "tests/unit/fixtureNativeCi.test.ts": {
         "bytes": 88814,
@@ -196,12 +196,12 @@
       "revision": "59759374f63503f046b00fc54d3e0c161b87a0f4",
       "previousPins": {
         ".github/workflows/ci.yml": {
-          "bytes": 203178,
-          "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
+          "bytes": 149836,
+          "sha256": "e3a1de6444d5ad4901c9213b53987c36d2c639e3a919d759fb155c250b35ed63"
         },
         "scripts/ci/classify-ci-changes.mjs": {
-          "bytes": 35763,
-          "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
+          "bytes": 17771,
+          "sha256": "52dd4403b11289790dee758a50ce5e80aa47cc5e52b5d9ce5b34545c924ff4ca"
         },
         "tests/unit/fixtureNativeCi.test.ts": {
           "bytes": 88814,
@@ -215,12 +215,12 @@
       "revision": "f3e5bae43395980fc49ca02876b3f94818a54672",
       "previousPins": {
         ".github/workflows/ci.yml": {
-          "bytes": 203178,
-          "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
+          "bytes": 149836,
+          "sha256": "e3a1de6444d5ad4901c9213b53987c36d2c639e3a919d759fb155c250b35ed63"
         },
         "scripts/ci/classify-ci-changes.mjs": {
-          "bytes": 35763,
-          "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
+          "bytes": 17771,
+          "sha256": "52dd4403b11289790dee758a50ce5e80aa47cc5e52b5d9ce5b34545c924ff4ca"
         },
         "tests/unit/fixtureNativeCi.test.ts": {
           "bytes": 88814,
@@ -232,12 +232,12 @@
     "stockToolchainBinding": {
       "previousPins": {
         ".github/workflows/ci.yml": {
-          "bytes": 203178,
-          "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
+          "bytes": 149836,
+          "sha256": "e3a1de6444d5ad4901c9213b53987c36d2c639e3a919d759fb155c250b35ed63"
         },
         "scripts/ci/classify-ci-changes.mjs": {
-          "bytes": 35763,
-          "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
+          "bytes": 17771,
+          "sha256": "52dd4403b11289790dee758a50ce5e80aa47cc5e52b5d9ce5b34545c924ff4ca"
         },
         "tests/unit/fixtureNativeCi.test.ts": {
           "bytes": 88814,
@@ -250,12 +250,12 @@
       "revision": "546421d4a8080b6cf8127c538e9043f3219beb6a",
       "movementParentPins": {
         ".github/workflows/ci.yml": {
-          "bytes": 203178,
-          "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
+          "bytes": 149836,
+          "sha256": "e3a1de6444d5ad4901c9213b53987c36d2c639e3a919d759fb155c250b35ed63"
         },
         "scripts/ci/classify-ci-changes.mjs": {
-          "bytes": 35763,
-          "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
+          "bytes": 17771,
+          "sha256": "52dd4403b11289790dee758a50ce5e80aa47cc5e52b5d9ce5b34545c924ff4ca"
         },
         "tests/unit/fixtureNativeCi.test.ts": {
           "bytes": 88814,
@@ -269,8 +269,8 @@
     "reason": "Mixed custody qualification is routed through the existing accounting lane; both existing and retained-MTT selectors are preserved. Cash SQL and immutable fixture inputs are unchanged.",
     "previousPins": {
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 35763,
-        "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
+        "bytes": 17771,
+        "sha256": "52dd4403b11289790dee758a50ce5e80aa47cc5e52b5d9ce5b34545c924ff4ca"
       },
       "tests/unit/fixtureNativeCi.test.ts": {
         "bytes": 88814,
@@ -282,12 +282,12 @@
     "reason": "Phase 5 cashier statements: ci.yml gains the cashier-statements fixture step; classify-ci-changes and fixtureNativeCi register the cashier-statements runner (additive only). Cash SQL and immutable capture inputs unchanged.",
     "previousPins": {
       ".github/workflows/ci.yml": {
-        "bytes": 203178,
-        "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
+        "bytes": 155443,
+        "sha256": "c0d3b2129194aabf06b055fab3303ff927f10c156656dffb9447afd3ab3b498b"
       },
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 35763,
-        "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
+        "bytes": 22361,
+        "sha256": "84457fdc34f379c8bb39601bcc7d1d4ba4612134e524fe1a884acc80eb383fe6"
       },
       "tests/unit/fixtureNativeCi.test.ts": {
         "bytes": 90321,
@@ -299,8 +299,8 @@
     "reason": "Club membership cap: ci.yml gains the 'Club membership cap: one count, one lock, one limit' owned-PostgreSQL step (scripts/ci/test-club-membership-cap.py), additive only. Cash SQL and immutable capture inputs unchanged.",
     "previousPins": {
       ".github/workflows/ci.yml": {
-        "bytes": 203178,
-        "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
+        "bytes": 155650,
+        "sha256": "7fc788bb2b661da0c07dba8689112e98b1975a5a803e4d90f38e7e2d76fb00a3"
       }
     }
   },
@@ -308,8 +308,8 @@
     "reason": "One capability registry: ci.yml gains the Capability registry and accepted-event continuation step (scripts/ci/test-capability-registry.py against PostgreSQL 17), additive only. Cash SQL and immutable capture inputs unchanged.",
     "previousPins": {
       ".github/workflows/ci.yml": {
-        "bytes": 203178,
-        "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
+        "bytes": 155875,
+        "sha256": "97cfbc03b22fc20b6399850fae05815dd6e59b22bdf7a069d6183026b9c6126c"
       }
     }
   },
@@ -317,8 +317,8 @@
     "reason": "Member status is server owned: ci.yml gains the 'A member's club status is changed only by the server' owned-PostgreSQL step (scripts/ci/test-member-status-server-owned.py), additive only. Cash SQL and immutable capture inputs unchanged.",
     "previousPins": {
       ".github/workflows/ci.yml": {
-        "bytes": 203178,
-        "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
+        "bytes": 156118,
+        "sha256": "92289c8ea6117b88bb961debd04dc3eae3496790beb0c6f8e907f29b3b8735f8"
       }
     }
   },
@@ -326,8 +326,8 @@
     "reason": "Kill pot table settings: ci.yml gains the 'Kill pot table settings refuse what the engine cannot honour' owned-PostgreSQL step (scripts/ci/test-kill-pot-table-settings.py), additive only. Cash SQL and immutable capture inputs unchanged.",
     "previousPins": {
       ".github/workflows/ci.yml": {
-        "bytes": 203178,
-        "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
+        "bytes": 156310,
+        "sha256": "ac3db827933582958776cfe2c65f3d1cbe27a212696b4f34477a00b0669974c6"
       }
     }
   },
@@ -335,8 +335,8 @@
     "reason": "Tournament creation rules: ci.yml gains the Tournament creation refuses what the client refuses step (scripts/ci/test-tournament-creation-rules.py against PostgreSQL 17), additive only. Cash SQL and immutable capture inputs unchanged.",
     "previousPins": {
       ".github/workflows/ci.yml": {
-        "bytes": 203178,
-        "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
+        "bytes": 156310,
+        "sha256": "ac3db827933582958776cfe2c65f3d1cbe27a212696b4f34477a00b0669974c6"
       }
     }
   },
@@ -344,8 +344,8 @@
     "reason": "A schedule keeps its time zone: ci.yml gains the 'A schedule keeps its time zone across daylight saving' owned-PostgreSQL step (scripts/ci/test-schedule-time-zone.py), additive only. Cash SQL and immutable capture inputs unchanged.",
     "previousPins": {
       ".github/workflows/ci.yml": {
-        "bytes": 203178,
-        "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
+        "bytes": 155887,
+        "sha256": "8d76575b7aea0d1838a68faceb901b6014544e29b6d5f2c0b3dff9cdf37143f2"
       }
     }
   },
@@ -353,8 +353,8 @@
     "reason": "Multi-day stage foundation: ci.yml gains the 'Multi-day stage foundation keeps every stack through a bag and a resume' owned-PostgreSQL step (scripts/ci/test-multi-day-stage-foundation.py), which states its dependency on the capability registry migration 20260924025555; additive only. Cash SQL and immutable capture inputs unchanged.",
     "previousPins": {
       ".github/workflows/ci.yml": {
-        "bytes": 203178,
-        "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
+        "bytes": 156118,
+        "sha256": "92289c8ea6117b88bb961debd04dc3eae3496790beb0c6f8e907f29b3b8735f8"
       }
     }
   },
@@ -362,8 +362,8 @@
     "reason": "Multi-day stage view and operator doors: ci.yml gains the Multi-day stage view step (scripts/ci/test-multi-day-stage-view.py against PostgreSQL 17) beside the multi-day foundation step, additive only. Cash SQL and immutable capture inputs unchanged.",
     "previousPins": {
       ".github/workflows/ci.yml": {
-        "bytes": 203178,
-        "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
+        "bytes": 156053,
+        "sha256": "259afdcaa30c62f030781d228ff87fc17b74b843b2af1a27380f439f0b43507a"
       }
     }
   },
@@ -371,8 +371,8 @@
     "reason": "Horse prevention regression uses the existing accounting job; adds its module, race, paid-entry fixture and provider directories plus modification/deletion/rename controls. Cash SQL and all historical manifest pins unchanged.",
     "previousPins": {
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 35763,
-        "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
+        "bytes": 23401,
+        "sha256": "e48e0d868cd5f8daa40509dc2a95ea1a62aaf7cb79d8c7798ba3bb7404a9569e"
       },
       "tests/unit/fixtureNativeCi.test.ts": {
         "bytes": 92029,
@@ -400,8 +400,8 @@
     "reason": "Cashier totals online index companion selects the existing native accounting lane and client routing tests; financial SQL and captured accounting inputs remain unchanged. Cascaded pins reflect only this reviewed additive routing and current binding metadata.",
     "previousPins": {
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 35763,
-        "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
+        "bytes": 23401,
+        "sha256": "e48e0d868cd5f8daa40509dc2a95ea1a62aaf7cb79d8c7798ba3bb7404a9569e"
       }
     }
   },
@@ -409,22 +409,22 @@
     "reason": "Add the native scoped achievement and rate-history SELECT policy qualification to accounting shard 4 and classify its isolated inputs. No existing financial fixtures or assertions changed.",
     "previous": {
       ".github/workflows/ci.yml": {
-        "bytes": 203178,
-        "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
+        "bytes": 168945,
+        "sha256": "a4a2eb4a09c00b2b025d12b0689cfb8ef5c7a5330cce1514897adbc276833b02"
       },
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 35763,
-        "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
+        "bytes": 23714,
+        "sha256": "cfad1fc70889bc105f928d541e9469e10f51f4b18b29029fe26a1eb452139284"
       }
     },
     "current": {
       ".github/workflows/ci.yml": {
-        "bytes": 203178,
-        "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
+        "bytes": 169118,
+        "sha256": "ebe2e5f49b298b24325f14f7d35f07fb393eef0759188fb919f1efee76e559c8"
       },
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 35763,
-        "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
+        "bytes": 23938,
+        "sha256": "d07464c57df9e80f79cfafa723baed3d818fada575b3c9da041093c115d78ded"
       }
     }
   },
@@ -432,12 +432,24 @@
     "reason": "Merge protected d49fa1913c; preserve incoming horseAdmissionInputRouting and all existing qualification, add scoped read native enforcement. Historical bindings retained unchanged.",
     "changed_files": {
       ".github/workflows/ci.yml": {
-        "bytes": 203178,
-        "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
+        "from": {
+          "bytes": 168945,
+          "sha256": "a4a2eb4a09c00b2b025d12b0689cfb8ef5c7a5330cce1514897adbc276833b02"
+        },
+        "to": {
+          "bytes": 169118,
+          "sha256": "ebe2e5f49b298b24325f14f7d35f07fb393eef0759188fb919f1efee76e559c8"
+        }
       },
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 35763,
-        "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
+        "from": {
+          "bytes": 23891,
+          "sha256": "c609ed1e49272a651685c5e18a0e06bbf141173b0cb7c0aaabd402ad41b76d94"
+        },
+        "to": {
+          "bytes": 24115,
+          "sha256": "03218c53a825f160862f0767e31cf2c460494886cf64bac2af024492f67fbd25"
+        }
       }
     }
   },
@@ -445,8 +457,14 @@
     "reason": "Integrate protected e62250b702 account sync native fixture beside scoped audit SELECT policy enforcement on accounting shard 4. Both actual native commands and assertions are retained.",
     "changed_files": {
       ".github/workflows/ci.yml": {
-        "bytes": 203178,
-        "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
+        "from": {
+          "bytes": 169118,
+          "sha256": "ebe2e5f49b298b24325f14f7d35f07fb393eef0759188fb919f1efee76e559c8"
+        },
+        "to": {
+          "bytes": 169345,
+          "sha256": "5a4ea09fa91a0946fd0736a766b55c8dbe6ecc9d872260db0c78f2d013ee26cd"
+        }
       }
     }
   },
@@ -463,12 +481,24 @@
     "reason": "Bind the reviewed reserved-identity retirement native-input selector and required shard-4 workflow step. No financial SQL, accounting fixture or existing assertion changes. docs/changelog/2026-09-27-certification-ledger-actors-are-retired.md",
     "files": {
       ".github/workflows/ci.yml": {
-        "bytes": 203178,
-        "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
+        "from": {
+          "bytes": 169172,
+          "sha256": "ff9804b704b4b014db45b062fd08a85346dea3a2fe2752e7b19985effbf00062"
+        },
+        "to": {
+          "bytes": 169356,
+          "sha256": "21371771a38937b5d2d2c88408daed34bb168ed27fd6123e70792c3546faca82"
+        }
       },
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 35763,
-        "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
+        "from": {
+          "bytes": 23891,
+          "sha256": "c609ed1e49272a651685c5e18a0e06bbf141173b0cb7c0aaabd402ad41b76d94"
+        },
+        "to": {
+          "bytes": 24266,
+          "sha256": "b6a54fa59e99537bc429179abff1407143939f3fb15ba65f77c8c2c681a9ad36"
+        }
       }
     }
   },
@@ -476,8 +506,14 @@
     "reason": "Integrate protected main36bb including cashier input routing, while preserving reserved-identity native qualification. Existing financial definitions, assertions and all historical binding records remain unchanged.",
     "files": {
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 35763,
-        "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
+        "from": {
+          "bytes": 24266,
+          "sha256": "b6a54fa59e99537bc429179abff1407143939f3fb15ba65f77c8c2c681a9ad36"
+        },
+        "to": {
+          "bytes": 24407,
+          "sha256": "17e14407ca9a6b65bccdcea734ba717a960f96309a26c184c0dd5a8c990ee5cb"
+        }
       }
     }
   },
@@ -599,22 +635,22 @@
     "reason": "Add BBJ audit-read native runner, immutable input and connected source-test routing to existing required accounting and client jobs; retain all prior routing, financial assertions and historical audit records.",
     "previous": {
       ".github/workflows/ci.yml": {
-        "bytes": 203178,
-        "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
+        "bytes": 169529,
+        "sha256": "41fbedcb119643e56ce9d32d9f56e41efae4a94ee603cb66ee4943e251d3ab3c"
       },
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 35763,
-        "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
+        "bytes": 24631,
+        "sha256": "8b686dc6969e21bfa20a8023a5bb883ddce7338d3fc01cc8cbd32244252a70c0"
       }
     },
     "updated": {
       ".github/workflows/ci.yml": {
-        "bytes": 203178,
-        "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
+        "bytes": 169704,
+        "sha256": "0b775e67c48ce61d46b869f0d23b7802d60a785fbfe8c6ac2d2e83fac373bbba"
       },
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 35763,
-        "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
+        "bytes": 24824,
+        "sha256": "9976370fce1acde9f8c23c106b9c65373556c3ea663b4107a14c9e4016ae0711"
       }
     }
   },
@@ -663,12 +699,24 @@
     "reason": "Enforce complete unchanged settlement conservation native query, financial boundaries, authority and finite online/recovery qualification in required accounting shard; bind actual workflow/classifier and updated nested manifests without changing historical entries.",
     "changes": {
       ".github/workflows/ci.yml": {
-        "bytes": 203178,
-        "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
+        "previous": {
+          "bytes": 169880,
+          "sha256": "10a7d9aa13f5dd6b4b9a822f80f2b717983f6b9a507d212c954c30adcc06eaa5"
+        },
+        "current": {
+          "bytes": 170081,
+          "sha256": "0c6ccc9cfed5b78ab726fcb937a3d6d6a5851ff89fcafd4463323f91828868db"
+        }
       },
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 35763,
-        "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
+        "previous": {
+          "bytes": 25086,
+          "sha256": "90cefba25593457b16e1f3a6370441fe8444c566b359e40d2580ab9f94a9885b"
+        },
+        "current": {
+          "bytes": 25462,
+          "sha256": "95dabc7e631360eef4e6b8bce3fd047e169738d0ff347fe7e7c0c2f6cb3eb096"
+        }
       }
     }
   },
@@ -684,8 +732,14 @@
     "reason": "First archived Spin qualification adds only its own complete source/fixture/control routing and lookalike negative cases; 638 routing tests passed, including modified/deleted/renamed paths. Existing lanes and financial fixtures are unchanged. Nested binding changes carry this reviewed routing metadata only.",
     "files": {
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 35763,
-        "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
+        "before": {
+          "bytes": 24407,
+          "sha256": "17e14407ca9a6b65bccdcea734ba717a960f96309a26c184c0dd5a8c990ee5cb"
+        },
+        "after": {
+          "bytes": 24921,
+          "sha256": "676ed7db9d506469837ad52861e35490df1e84a625ff08fbbb1a822644df91b4"
+        }
       },
       "tests/unit/fixtureNativeCi.test.ts": {
         "before": {
@@ -804,22 +858,22 @@
     "reason": "Add native PG17 qualification of the BBJ contribution covering index and its unchanged installed RPCs to accounting shard 4, including concurrent writes, real interrupted index refusal, source/type drift and role isolation. Existing accounting fixtures and assertions stay unchanged.",
     "previous": {
       ".github/workflows/ci.yml": {
-        "bytes": 203178,
-        "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
+        "bytes": 169529,
+        "sha256": "41fbedcb119643e56ce9d32d9f56e41efae4a94ee603cb66ee4943e251d3ab3c"
       },
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 35763,
-        "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
+        "bytes": 24631,
+        "sha256": "8b686dc6969e21bfa20a8023a5bb883ddce7338d3fc01cc8cbd32244252a70c0"
       }
     },
     "current": {
       ".github/workflows/ci.yml": {
-        "bytes": 203178,
-        "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
+        "bytes": 169779,
+        "sha256": "f9797380e7c19134282f7f60603f0e754c54aa07d2fba31818a1f8d3bdfc617e"
       },
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 35763,
-        "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
+        "bytes": 24951,
+        "sha256": "6d21d76b0ed2941f9b306a7f42da65ef864915b9cf03b1f961a149ed91f911f8"
       }
     }
   },
@@ -860,12 +914,24 @@
     "reason": "Add required native qualification for the one-statement BBJ cumulative/recent read split; preserve every existing qualification route and historical assertion. Exact reviewed CI/classifier bytes and nested bindings only.",
     "updates": {
       ".github/workflows/ci.yml": {
-        "bytes": 203178,
-        "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
+        "before": {
+          "bytes": 169880,
+          "sha256": "10a7d9aa13f5dd6b4b9a822f80f2b717983f6b9a507d212c954c30adcc06eaa5"
+        },
+        "after": {
+          "bytes": 170050,
+          "sha256": "e064736b4171df5b9d0bf25660eac28c1a5602a59eed8d8d3cc80b2b2f9695d6"
+        }
       },
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 35763,
-        "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
+        "before": {
+          "bytes": 25086,
+          "sha256": "90cefba25593457b16e1f3a6370441fe8444c566b359e40d2580ab9f94a9885b"
+        },
+        "after": {
+          "bytes": 25152,
+          "sha256": "abaa05478633ba53a270d1055585c003d17e37ff23c92bd4c9001a6d712c97bb"
+        }
       }
     }
   },
@@ -903,12 +969,24 @@
     "reason": "Register the isolated PostgreSQL 17 player-search privacy and live-table harness in accounting shard 4 and classify every maintained input after integrating protected main's qualified lookup-index routes. Both additions are preserved; cash SQL, captured financial inputs and existing assertions remain byte-identical.",
     "changes": {
       ".github/workflows/ci.yml": {
-        "bytes": 203178,
-        "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
+        "before": {
+          "bytes": 171068,
+          "sha256": "50de8f8bfcadede49e518cb7d1917ad352cc33147af0714b1c1e44beb9c66b6c"
+        },
+        "after": {
+          "bytes": 171764,
+          "sha256": "b08288d4d888e721bdb28214e0d324264a38cc4eea0196c3f39aa81f8b33431d"
+        }
       },
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 35763,
-        "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
+        "before": {
+          "bytes": 27619,
+          "sha256": "7453fda84e0817b94f4d86ef66cf938e76dcb16c70ade9a41091503d5dfbfc68"
+        },
+        "after": {
+          "bytes": 28573,
+          "sha256": "995905d0aa4e739094dc47eed2c5c3e05463e4dfdcea3dbac4e5fecbc222a29f"
+        }
       }
     }
   },
@@ -924,12 +1002,24 @@
     "reason": "Add required native qualification for exact one-pass coverage aggregation. Preserve every existing source/assertion and routing rule; these bindings retain actual reviewed CI/classifier bytes and nested binding history.",
     "updates": {
       ".github/workflows/ci.yml": {
-        "bytes": 203178,
-        "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
+        "before": {
+          "bytes": 171068,
+          "sha256": "50de8f8bfcadede49e518cb7d1917ad352cc33147af0714b1c1e44beb9c66b6c"
+        },
+        "after": {
+          "bytes": 171232,
+          "sha256": "ffd5be66cf573d7de68c455b508156aa32dd9034bcd5e398c2b91fbf3dee6e1d"
+        }
       },
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 35763,
-        "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
+        "before": {
+          "bytes": 27619,
+          "sha256": "7453fda84e0817b94f4d86ef66cf938e76dcb16c70ade9a41091503d5dfbfc68"
+        },
+        "after": {
+          "bytes": 27841,
+          "sha256": "044bbef730fcb4d46a258a4beb37114e1e93932e1f874079aaffef99e5d67665"
+        }
       }
     }
   },
@@ -1218,8 +1308,14 @@
   "cssBeatGateSplit20261001": {
     "why": "Splits the CSS Beat browser gate in two (2026-10-01): the Diamond playfield moves from css-beats-e2e into its own diamond-playfield-e2e job beside it, and the required 'CSS Beat E2E (multi-table + animations)' name moves to css-beats-gate, which passes only when both halves pass. fixtureNativeCi.test.ts reads the playfield command from the new job. No cash route, assertion, probe or accounting source changed.",
     ".github/workflows/ci.yml": {
-      "bytes": 203178,
-      "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
+      "before": {
+        "bytes": 176951,
+        "sha256": "3be684806d6e13b1e033eeca54ab774bc72dd6415a55336aaeaa72df9eb920c6"
+      },
+      "after": {
+        "bytes": 182405,
+        "sha256": "820918e42756f9ca45ea30cf4df9d011e38f73b7018b72f602b99a937b2e6ba4"
+      }
     },
     "tests/unit/fixtureNativeCi.test.ts": {
       "before": {
@@ -1605,12 +1701,24 @@
     "reason": "Add exact split-recompute native qualification to the existing accounting shard and select its fixture-only changes. Default weekly fixture behavior and all financial SQL remain unchanged; current protected-main integration is preserved.",
     "bindings": {
       ".github/workflows/ci.yml": {
-        "bytes": 203178,
-        "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
+        "before": {
+          "bytes": 186350,
+          "sha256": "42749b0a19c2a1526f3572e9a445a33f6b91e5cafe77d26a536cd28e6371c7c1"
+        },
+        "after": {
+          "bytes": 187319,
+          "sha256": "72832049eaebb04b646352004f25412f4390684586d930b12584edc1a18c0f14"
+        }
       },
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 35763,
-        "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
+        "before": {
+          "bytes": 31909,
+          "sha256": "732f731aa929df1e7b43aa58a5ef7d06c2e6c24ad3be2dc3d64abe2765e3fe7b"
+        },
+        "after": {
+          "bytes": 32061,
+          "sha256": "2fc728ea5555ced40641d89f8c85b8f094a09f9f14d5decaa405ffbc5e11ea2a"
+        }
       }
     }
   },
@@ -1683,12 +1791,12 @@
     "reason": "Stable Admin six-capability integration: add two original-owner PG17 qualifiers to the existing required accounting shards, classify their drivers/loaded fixtures/schema fragments, and test that enforcement. Reviewed additive workflow/classifier/test diff; no prior financial authority, assertion, captured fixture or qualification status changes. Source fingerprint refresh does not prove native execution, installation or publication.",
     "previousPins": {
       ".github/workflows/ci.yml": {
-        "bytes": 203178,
-        "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
+        "bytes": 197294,
+        "sha256": "a9422a1122cfd4a39c721d93ba0ff2e9dc3a2615fde2da36aec451be35733914"
       },
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 35763,
-        "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
+        "bytes": 32804,
+        "sha256": "9e32091e5a712856d7593b6650b54e60e9d49f52b44af7d1f87972b27ed79388"
       },
       "tests/unit/fixtureNativeCi.test.ts": {
         "bytes": 102135,
@@ -1734,12 +1842,24 @@
     "reason": "Add the isolated cancellation lane failure-before/after and global-before-row concurrency qualification in existing required Accounting3. Preserve all financial owners/assertions, historical pins and SOURCE_ONLY_UNRUN. These source bindings do not establish production proof.",
     "reviewedPins": {
       ".github/workflows/ci.yml": {
-        "bytes": 203178,
-        "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
+        "previousPin": {
+          "bytes": 198267,
+          "sha256": "6de24feea8c8d3c0994ea7a9d264514373c9b5c22d2b525d308fa7108bd9bbe1"
+        },
+        "currentPin": {
+          "bytes": 198604,
+          "sha256": "c4b0d65e0ef9d442c504dd6c5aafa0522607bff1ffd2953d3a8c5822c7f88950"
+        }
       },
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 35763,
-        "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
+        "previousPin": {
+          "bytes": 33273,
+          "sha256": "9b80166752ba255d91dbdabf11cd7ed02489c28d2ddcef28b5dc9edea78ce76e"
+        },
+        "currentPin": {
+          "bytes": 33302,
+          "sha256": "846747f1e40dcb9c027feb8aadedb1f1d469fcfc91315b4e9ff2e2af77af0f64"
+        }
       },
       "tests/unit/fixtureNativeCi.test.ts": {
         "previousPin": {
@@ -2079,7 +2199,7 @@
     ]
   },
   "playerCommandHistoryMainIntegration20261012": {
-    "reason": "Preserve both independent history and staff removal qualification routes and audit records. Refresh only integrated source fingerprints; financial input sets, assertions, historical receipts and qualification status remain unchanged. Source identity is not runtime certification.",
+    "reason": "Preserve both independent history and staff removal qualification routes and historical audit records. Refresh only integrated current source fingerprints; financial inputs, assertions, historical receipts and qualification status remain unchanged. Source identity is not runtime certification.",
     "changes": [
       {
         "path": ".github/workflows/ci.yml",
@@ -2097,753 +2217,6 @@
         "previous": {
           "bytes": 35710,
           "sha256": "21bad2287248a7b8cd9b12c585b24d3c5949527340c13b95f4e763d2cebf0032"
-        },
-        "current": {
-          "bytes": 35763,
-          "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
-        }
-      },
-      {
-        "path": ".github/workflows/ci.yml",
-        "previous": {
-          "bytes": 149836,
-          "sha256": "e3a1de6444d5ad4901c9213b53987c36d2c639e3a919d759fb155c250b35ed63"
-        },
-        "current": {
-          "bytes": 203178,
-          "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
-        }
-      },
-      {
-        "path": "scripts/ci/classify-ci-changes.mjs",
-        "previous": {
-          "bytes": 17771,
-          "sha256": "52dd4403b11289790dee758a50ce5e80aa47cc5e52b5d9ce5b34545c924ff4ca"
-        },
-        "current": {
-          "bytes": 35763,
-          "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
-        }
-      },
-      {
-        "path": ".github/workflows/ci.yml",
-        "previous": {
-          "bytes": 149836,
-          "sha256": "e3a1de6444d5ad4901c9213b53987c36d2c639e3a919d759fb155c250b35ed63"
-        },
-        "current": {
-          "bytes": 203178,
-          "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
-        }
-      },
-      {
-        "path": "scripts/ci/classify-ci-changes.mjs",
-        "previous": {
-          "bytes": 17771,
-          "sha256": "52dd4403b11289790dee758a50ce5e80aa47cc5e52b5d9ce5b34545c924ff4ca"
-        },
-        "current": {
-          "bytes": 35763,
-          "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
-        }
-      },
-      {
-        "path": ".github/workflows/ci.yml",
-        "previous": {
-          "bytes": 149836,
-          "sha256": "e3a1de6444d5ad4901c9213b53987c36d2c639e3a919d759fb155c250b35ed63"
-        },
-        "current": {
-          "bytes": 203178,
-          "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
-        }
-      },
-      {
-        "path": "scripts/ci/classify-ci-changes.mjs",
-        "previous": {
-          "bytes": 17771,
-          "sha256": "52dd4403b11289790dee758a50ce5e80aa47cc5e52b5d9ce5b34545c924ff4ca"
-        },
-        "current": {
-          "bytes": 35763,
-          "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
-        }
-      },
-      {
-        "path": ".github/workflows/ci.yml",
-        "previous": {
-          "bytes": 149836,
-          "sha256": "e3a1de6444d5ad4901c9213b53987c36d2c639e3a919d759fb155c250b35ed63"
-        },
-        "current": {
-          "bytes": 203178,
-          "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
-        }
-      },
-      {
-        "path": "scripts/ci/classify-ci-changes.mjs",
-        "previous": {
-          "bytes": 17771,
-          "sha256": "52dd4403b11289790dee758a50ce5e80aa47cc5e52b5d9ce5b34545c924ff4ca"
-        },
-        "current": {
-          "bytes": 35763,
-          "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
-        }
-      },
-      {
-        "path": ".github/workflows/ci.yml",
-        "previous": {
-          "bytes": 149836,
-          "sha256": "e3a1de6444d5ad4901c9213b53987c36d2c639e3a919d759fb155c250b35ed63"
-        },
-        "current": {
-          "bytes": 203178,
-          "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
-        }
-      },
-      {
-        "path": "scripts/ci/classify-ci-changes.mjs",
-        "previous": {
-          "bytes": 17771,
-          "sha256": "52dd4403b11289790dee758a50ce5e80aa47cc5e52b5d9ce5b34545c924ff4ca"
-        },
-        "current": {
-          "bytes": 35763,
-          "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
-        }
-      },
-      {
-        "path": "scripts/ci/classify-ci-changes.mjs",
-        "previous": {
-          "bytes": 17771,
-          "sha256": "52dd4403b11289790dee758a50ce5e80aa47cc5e52b5d9ce5b34545c924ff4ca"
-        },
-        "current": {
-          "bytes": 35763,
-          "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
-        }
-      },
-      {
-        "path": ".github/workflows/ci.yml",
-        "previous": {
-          "bytes": 155443,
-          "sha256": "c0d3b2129194aabf06b055fab3303ff927f10c156656dffb9447afd3ab3b498b"
-        },
-        "current": {
-          "bytes": 203178,
-          "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
-        }
-      },
-      {
-        "path": "scripts/ci/classify-ci-changes.mjs",
-        "previous": {
-          "bytes": 22361,
-          "sha256": "84457fdc34f379c8bb39601bcc7d1d4ba4612134e524fe1a884acc80eb383fe6"
-        },
-        "current": {
-          "bytes": 35763,
-          "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
-        }
-      },
-      {
-        "path": ".github/workflows/ci.yml",
-        "previous": {
-          "bytes": 155650,
-          "sha256": "7fc788bb2b661da0c07dba8689112e98b1975a5a803e4d90f38e7e2d76fb00a3"
-        },
-        "current": {
-          "bytes": 203178,
-          "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
-        }
-      },
-      {
-        "path": ".github/workflows/ci.yml",
-        "previous": {
-          "bytes": 155875,
-          "sha256": "97cfbc03b22fc20b6399850fae05815dd6e59b22bdf7a069d6183026b9c6126c"
-        },
-        "current": {
-          "bytes": 203178,
-          "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
-        }
-      },
-      {
-        "path": ".github/workflows/ci.yml",
-        "previous": {
-          "bytes": 156118,
-          "sha256": "92289c8ea6117b88bb961debd04dc3eae3496790beb0c6f8e907f29b3b8735f8"
-        },
-        "current": {
-          "bytes": 203178,
-          "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
-        }
-      },
-      {
-        "path": ".github/workflows/ci.yml",
-        "previous": {
-          "bytes": 156310,
-          "sha256": "ac3db827933582958776cfe2c65f3d1cbe27a212696b4f34477a00b0669974c6"
-        },
-        "current": {
-          "bytes": 203178,
-          "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
-        }
-      },
-      {
-        "path": ".github/workflows/ci.yml",
-        "previous": {
-          "bytes": 156310,
-          "sha256": "ac3db827933582958776cfe2c65f3d1cbe27a212696b4f34477a00b0669974c6"
-        },
-        "current": {
-          "bytes": 203178,
-          "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
-        }
-      },
-      {
-        "path": ".github/workflows/ci.yml",
-        "previous": {
-          "bytes": 155887,
-          "sha256": "8d76575b7aea0d1838a68faceb901b6014544e29b6d5f2c0b3dff9cdf37143f2"
-        },
-        "current": {
-          "bytes": 203178,
-          "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
-        }
-      },
-      {
-        "path": ".github/workflows/ci.yml",
-        "previous": {
-          "bytes": 156118,
-          "sha256": "92289c8ea6117b88bb961debd04dc3eae3496790beb0c6f8e907f29b3b8735f8"
-        },
-        "current": {
-          "bytes": 203178,
-          "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
-        }
-      },
-      {
-        "path": ".github/workflows/ci.yml",
-        "previous": {
-          "bytes": 156053,
-          "sha256": "259afdcaa30c62f030781d228ff87fc17b74b843b2af1a27380f439f0b43507a"
-        },
-        "current": {
-          "bytes": 203178,
-          "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
-        }
-      },
-      {
-        "path": "scripts/ci/classify-ci-changes.mjs",
-        "previous": {
-          "bytes": 23401,
-          "sha256": "e48e0d868cd5f8daa40509dc2a95ea1a62aaf7cb79d8c7798ba3bb7404a9569e"
-        },
-        "current": {
-          "bytes": 35763,
-          "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
-        }
-      },
-      {
-        "path": "scripts/ci/classify-ci-changes.mjs",
-        "previous": {
-          "bytes": 23401,
-          "sha256": "e48e0d868cd5f8daa40509dc2a95ea1a62aaf7cb79d8c7798ba3bb7404a9569e"
-        },
-        "current": {
-          "bytes": 35763,
-          "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
-        }
-      },
-      {
-        "path": ".github/workflows/ci.yml",
-        "previous": {
-          "bytes": 168945,
-          "sha256": "a4a2eb4a09c00b2b025d12b0689cfb8ef5c7a5330cce1514897adbc276833b02"
-        },
-        "current": {
-          "bytes": 203178,
-          "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
-        }
-      },
-      {
-        "path": "scripts/ci/classify-ci-changes.mjs",
-        "previous": {
-          "bytes": 23714,
-          "sha256": "cfad1fc70889bc105f928d541e9469e10f51f4b18b29029fe26a1eb452139284"
-        },
-        "current": {
-          "bytes": 35763,
-          "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
-        }
-      },
-      {
-        "path": ".github/workflows/ci.yml",
-        "previous": {
-          "bytes": 169118,
-          "sha256": "ebe2e5f49b298b24325f14f7d35f07fb393eef0759188fb919f1efee76e559c8"
-        },
-        "current": {
-          "bytes": 203178,
-          "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
-        }
-      },
-      {
-        "path": "scripts/ci/classify-ci-changes.mjs",
-        "previous": {
-          "bytes": 23938,
-          "sha256": "d07464c57df9e80f79cfafa723baed3d818fada575b3c9da041093c115d78ded"
-        },
-        "current": {
-          "bytes": 35763,
-          "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
-        }
-      },
-      {
-        "path": ".github/workflows/ci.yml",
-        "previous": {
-          "from": {
-            "bytes": 168945,
-            "sha256": "a4a2eb4a09c00b2b025d12b0689cfb8ef5c7a5330cce1514897adbc276833b02"
-          },
-          "to": {
-            "bytes": 169118,
-            "sha256": "ebe2e5f49b298b24325f14f7d35f07fb393eef0759188fb919f1efee76e559c8"
-          }
-        },
-        "current": {
-          "bytes": 203178,
-          "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
-        }
-      },
-      {
-        "path": "scripts/ci/classify-ci-changes.mjs",
-        "previous": {
-          "from": {
-            "bytes": 23891,
-            "sha256": "c609ed1e49272a651685c5e18a0e06bbf141173b0cb7c0aaabd402ad41b76d94"
-          },
-          "to": {
-            "bytes": 24115,
-            "sha256": "03218c53a825f160862f0767e31cf2c460494886cf64bac2af024492f67fbd25"
-          }
-        },
-        "current": {
-          "bytes": 35763,
-          "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
-        }
-      },
-      {
-        "path": ".github/workflows/ci.yml",
-        "previous": {
-          "from": {
-            "bytes": 169118,
-            "sha256": "ebe2e5f49b298b24325f14f7d35f07fb393eef0759188fb919f1efee76e559c8"
-          },
-          "to": {
-            "bytes": 169345,
-            "sha256": "5a4ea09fa91a0946fd0736a766b55c8dbe6ecc9d872260db0c78f2d013ee26cd"
-          }
-        },
-        "current": {
-          "bytes": 203178,
-          "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
-        }
-      },
-      {
-        "path": ".github/workflows/ci.yml",
-        "previous": {
-          "from": {
-            "bytes": 169172,
-            "sha256": "ff9804b704b4b014db45b062fd08a85346dea3a2fe2752e7b19985effbf00062"
-          },
-          "to": {
-            "bytes": 169356,
-            "sha256": "21371771a38937b5d2d2c88408daed34bb168ed27fd6123e70792c3546faca82"
-          }
-        },
-        "current": {
-          "bytes": 203178,
-          "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
-        }
-      },
-      {
-        "path": "scripts/ci/classify-ci-changes.mjs",
-        "previous": {
-          "from": {
-            "bytes": 23891,
-            "sha256": "c609ed1e49272a651685c5e18a0e06bbf141173b0cb7c0aaabd402ad41b76d94"
-          },
-          "to": {
-            "bytes": 24266,
-            "sha256": "b6a54fa59e99537bc429179abff1407143939f3fb15ba65f77c8c2c681a9ad36"
-          }
-        },
-        "current": {
-          "bytes": 35763,
-          "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
-        }
-      },
-      {
-        "path": "scripts/ci/classify-ci-changes.mjs",
-        "previous": {
-          "from": {
-            "bytes": 24266,
-            "sha256": "b6a54fa59e99537bc429179abff1407143939f3fb15ba65f77c8c2c681a9ad36"
-          },
-          "to": {
-            "bytes": 24407,
-            "sha256": "17e14407ca9a6b65bccdcea734ba717a960f96309a26c184c0dd5a8c990ee5cb"
-          }
-        },
-        "current": {
-          "bytes": 35763,
-          "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
-        }
-      },
-      {
-        "path": ".github/workflows/ci.yml",
-        "previous": {
-          "bytes": 169529,
-          "sha256": "41fbedcb119643e56ce9d32d9f56e41efae4a94ee603cb66ee4943e251d3ab3c"
-        },
-        "current": {
-          "bytes": 203178,
-          "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
-        }
-      },
-      {
-        "path": "scripts/ci/classify-ci-changes.mjs",
-        "previous": {
-          "bytes": 24631,
-          "sha256": "8b686dc6969e21bfa20a8023a5bb883ddce7338d3fc01cc8cbd32244252a70c0"
-        },
-        "current": {
-          "bytes": 35763,
-          "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
-        }
-      },
-      {
-        "path": ".github/workflows/ci.yml",
-        "previous": {
-          "bytes": 169704,
-          "sha256": "0b775e67c48ce61d46b869f0d23b7802d60a785fbfe8c6ac2d2e83fac373bbba"
-        },
-        "current": {
-          "bytes": 203178,
-          "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
-        }
-      },
-      {
-        "path": "scripts/ci/classify-ci-changes.mjs",
-        "previous": {
-          "bytes": 24824,
-          "sha256": "9976370fce1acde9f8c23c106b9c65373556c3ea663b4107a14c9e4016ae0711"
-        },
-        "current": {
-          "bytes": 35763,
-          "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
-        }
-      },
-      {
-        "path": ".github/workflows/ci.yml",
-        "previous": {
-          "previous": {
-            "bytes": 169880,
-            "sha256": "10a7d9aa13f5dd6b4b9a822f80f2b717983f6b9a507d212c954c30adcc06eaa5"
-          },
-          "current": {
-            "bytes": 170081,
-            "sha256": "0c6ccc9cfed5b78ab726fcb937a3d6d6a5851ff89fcafd4463323f91828868db"
-          }
-        },
-        "current": {
-          "bytes": 203178,
-          "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
-        }
-      },
-      {
-        "path": "scripts/ci/classify-ci-changes.mjs",
-        "previous": {
-          "previous": {
-            "bytes": 25086,
-            "sha256": "90cefba25593457b16e1f3a6370441fe8444c566b359e40d2580ab9f94a9885b"
-          },
-          "current": {
-            "bytes": 25462,
-            "sha256": "95dabc7e631360eef4e6b8bce3fd047e169738d0ff347fe7e7c0c2f6cb3eb096"
-          }
-        },
-        "current": {
-          "bytes": 35763,
-          "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
-        }
-      },
-      {
-        "path": "scripts/ci/classify-ci-changes.mjs",
-        "previous": {
-          "before": {
-            "bytes": 24407,
-            "sha256": "17e14407ca9a6b65bccdcea734ba717a960f96309a26c184c0dd5a8c990ee5cb"
-          },
-          "after": {
-            "bytes": 24921,
-            "sha256": "676ed7db9d506469837ad52861e35490df1e84a625ff08fbbb1a822644df91b4"
-          }
-        },
-        "current": {
-          "bytes": 35763,
-          "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
-        }
-      },
-      {
-        "path": ".github/workflows/ci.yml",
-        "previous": {
-          "bytes": 169529,
-          "sha256": "41fbedcb119643e56ce9d32d9f56e41efae4a94ee603cb66ee4943e251d3ab3c"
-        },
-        "current": {
-          "bytes": 203178,
-          "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
-        }
-      },
-      {
-        "path": "scripts/ci/classify-ci-changes.mjs",
-        "previous": {
-          "bytes": 24631,
-          "sha256": "8b686dc6969e21bfa20a8023a5bb883ddce7338d3fc01cc8cbd32244252a70c0"
-        },
-        "current": {
-          "bytes": 35763,
-          "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
-        }
-      },
-      {
-        "path": ".github/workflows/ci.yml",
-        "previous": {
-          "bytes": 169779,
-          "sha256": "f9797380e7c19134282f7f60603f0e754c54aa07d2fba31818a1f8d3bdfc617e"
-        },
-        "current": {
-          "bytes": 203178,
-          "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
-        }
-      },
-      {
-        "path": "scripts/ci/classify-ci-changes.mjs",
-        "previous": {
-          "bytes": 24951,
-          "sha256": "6d21d76b0ed2941f9b306a7f42da65ef864915b9cf03b1f961a149ed91f911f8"
-        },
-        "current": {
-          "bytes": 35763,
-          "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
-        }
-      },
-      {
-        "path": ".github/workflows/ci.yml",
-        "previous": {
-          "before": {
-            "bytes": 169880,
-            "sha256": "10a7d9aa13f5dd6b4b9a822f80f2b717983f6b9a507d212c954c30adcc06eaa5"
-          },
-          "after": {
-            "bytes": 170050,
-            "sha256": "e064736b4171df5b9d0bf25660eac28c1a5602a59eed8d8d3cc80b2b2f9695d6"
-          }
-        },
-        "current": {
-          "bytes": 203178,
-          "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
-        }
-      },
-      {
-        "path": "scripts/ci/classify-ci-changes.mjs",
-        "previous": {
-          "before": {
-            "bytes": 25086,
-            "sha256": "90cefba25593457b16e1f3a6370441fe8444c566b359e40d2580ab9f94a9885b"
-          },
-          "after": {
-            "bytes": 25152,
-            "sha256": "abaa05478633ba53a270d1055585c003d17e37ff23c92bd4c9001a6d712c97bb"
-          }
-        },
-        "current": {
-          "bytes": 35763,
-          "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
-        }
-      },
-      {
-        "path": ".github/workflows/ci.yml",
-        "previous": {
-          "before": {
-            "bytes": 171068,
-            "sha256": "50de8f8bfcadede49e518cb7d1917ad352cc33147af0714b1c1e44beb9c66b6c"
-          },
-          "after": {
-            "bytes": 171764,
-            "sha256": "b08288d4d888e721bdb28214e0d324264a38cc4eea0196c3f39aa81f8b33431d"
-          }
-        },
-        "current": {
-          "bytes": 203178,
-          "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
-        }
-      },
-      {
-        "path": "scripts/ci/classify-ci-changes.mjs",
-        "previous": {
-          "before": {
-            "bytes": 27619,
-            "sha256": "7453fda84e0817b94f4d86ef66cf938e76dcb16c70ade9a41091503d5dfbfc68"
-          },
-          "after": {
-            "bytes": 28573,
-            "sha256": "995905d0aa4e739094dc47eed2c5c3e05463e4dfdcea3dbac4e5fecbc222a29f"
-          }
-        },
-        "current": {
-          "bytes": 35763,
-          "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
-        }
-      },
-      {
-        "path": ".github/workflows/ci.yml",
-        "previous": {
-          "before": {
-            "bytes": 171068,
-            "sha256": "50de8f8bfcadede49e518cb7d1917ad352cc33147af0714b1c1e44beb9c66b6c"
-          },
-          "after": {
-            "bytes": 171232,
-            "sha256": "ffd5be66cf573d7de68c455b508156aa32dd9034bcd5e398c2b91fbf3dee6e1d"
-          }
-        },
-        "current": {
-          "bytes": 203178,
-          "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
-        }
-      },
-      {
-        "path": "scripts/ci/classify-ci-changes.mjs",
-        "previous": {
-          "before": {
-            "bytes": 27619,
-            "sha256": "7453fda84e0817b94f4d86ef66cf938e76dcb16c70ade9a41091503d5dfbfc68"
-          },
-          "after": {
-            "bytes": 27841,
-            "sha256": "044bbef730fcb4d46a258a4beb37114e1e93932e1f874079aaffef99e5d67665"
-          }
-        },
-        "current": {
-          "bytes": 35763,
-          "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
-        }
-      },
-      {
-        "path": ".github/workflows/ci.yml",
-        "previous": {
-          "before": {
-            "bytes": 176951,
-            "sha256": "3be684806d6e13b1e033eeca54ab774bc72dd6415a55336aaeaa72df9eb920c6"
-          },
-          "after": {
-            "bytes": 182405,
-            "sha256": "820918e42756f9ca45ea30cf4df9d011e38f73b7018b72f602b99a937b2e6ba4"
-          }
-        },
-        "current": {
-          "bytes": 203178,
-          "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
-        }
-      },
-      {
-        "path": ".github/workflows/ci.yml",
-        "previous": {
-          "before": {
-            "bytes": 186350,
-            "sha256": "42749b0a19c2a1526f3572e9a445a33f6b91e5cafe77d26a536cd28e6371c7c1"
-          },
-          "after": {
-            "bytes": 187319,
-            "sha256": "72832049eaebb04b646352004f25412f4390684586d930b12584edc1a18c0f14"
-          }
-        },
-        "current": {
-          "bytes": 203178,
-          "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
-        }
-      },
-      {
-        "path": "scripts/ci/classify-ci-changes.mjs",
-        "previous": {
-          "before": {
-            "bytes": 31909,
-            "sha256": "732f731aa929df1e7b43aa58a5ef7d06c2e6c24ad3be2dc3d64abe2765e3fe7b"
-          },
-          "after": {
-            "bytes": 32061,
-            "sha256": "2fc728ea5555ced40641d89f8c85b8f094a09f9f14d5decaa405ffbc5e11ea2a"
-          }
-        },
-        "current": {
-          "bytes": 35763,
-          "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
-        }
-      },
-      {
-        "path": ".github/workflows/ci.yml",
-        "previous": {
-          "bytes": 197294,
-          "sha256": "a9422a1122cfd4a39c721d93ba0ff2e9dc3a2615fde2da36aec451be35733914"
-        },
-        "current": {
-          "bytes": 203178,
-          "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
-        }
-      },
-      {
-        "path": "scripts/ci/classify-ci-changes.mjs",
-        "previous": {
-          "bytes": 32804,
-          "sha256": "9e32091e5a712856d7593b6650b54e60e9d49f52b44af7d1f87972b27ed79388"
-        },
-        "current": {
-          "bytes": 35763,
-          "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
-        }
-      },
-      {
-        "path": ".github/workflows/ci.yml",
-        "previous": {
-          "previousPin": {
-            "bytes": 198267,
-            "sha256": "6de24feea8c8d3c0994ea7a9d264514373c9b5c22d2b525d308fa7108bd9bbe1"
-          },
-          "currentPin": {
-            "bytes": 198604,
-            "sha256": "c4b0d65e0ef9d442c504dd6c5aafa0522607bff1ffd2953d3a8c5822c7f88950"
-          }
-        },
-        "current": {
-          "bytes": 203178,
-          "sha256": "e84dfc8e1cfebce2159894fc7c536cb6f87a3a5c3e6a961d53d9f54be403e2b2"
-        }
-      },
-      {
-        "path": "scripts/ci/classify-ci-changes.mjs",
-        "previous": {
-          "previousPin": {
-            "bytes": 33273,
-            "sha256": "9b80166752ba255d91dbdabf11cd7ed02489c28d2ddcef28b5dc9edea78ce76e"
-          },
-          "currentPin": {
-            "bytes": 33302,
-            "sha256": "846747f1e40dcb9c027feb8aadedb1f1d469fcfc91315b4e9ff2e2af77af0f64"
-          }
         },
         "current": {
           "bytes": 35763,

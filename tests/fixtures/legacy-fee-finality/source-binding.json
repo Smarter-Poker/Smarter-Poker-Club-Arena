@@ -515,8 +515,8 @@
     "reason": "Enforce complete unchanged settlement conservation native query, financial boundaries, authority and finite online/recovery qualification in required accounting shard; bind actual workflow/classifier and updated nested manifests without changing historical entries.",
     "changes": {
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 35763,
-        "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
+        "previous": "90cefba25593457b16e1f3a6370441fe8444c566b359e40d2580ab9f94a9885b",
+        "current": "95dabc7e631360eef4e6b8bce3fd047e169738d0ff347fe7e7c0c2f6cb3eb096"
       }
     }
   },
@@ -556,8 +556,8 @@
     "reason": "Add required native qualification for the one-statement BBJ cumulative/recent read split; preserve every existing qualification route and historical assertion. Exact reviewed CI/classifier bytes and nested bindings only.",
     "updates": {
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 35763,
-        "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
+        "before": "90cefba25593457b16e1f3a6370441fe8444c566b359e40d2580ab9f94a9885b",
+        "after": "abaa05478633ba53a270d1055585c003d17e37ff23c92bd4c9001a6d712c97bb"
       }
     }
   },
@@ -591,8 +591,8 @@
     "reason": "Add required native qualification for exact one-pass coverage aggregation. Preserve every existing source/assertion and routing rule; these bindings retain actual reviewed CI/classifier bytes and nested binding history.",
     "updates": {
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 35763,
-        "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
+        "before": "7453fda84e0817b94f4d86ef66cf938e76dcb16c70ade9a41091503d5dfbfc68",
+        "after": "044bbef730fcb4d46a258a4beb37114e1e93932e1f874079aaffef99e5d67665"
       }
     }
   },
@@ -719,8 +719,8 @@
     "reason": "Add exact split-recompute native qualification to the existing accounting shard and select its fixture-only changes. Default weekly fixture behavior and all financial SQL remain unchanged; current protected-main integration is preserved.",
     "bindings": {
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 35763,
-        "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
+        "before": "732f731aa929df1e7b43aa58a5ef7d06c2e6c24ad3be2dc3d64abe2765e3fe7b",
+        "after": "2fc728ea5555ced40641d89f8c85b8f094a09f9f14d5decaa405ffbc5e11ea2a"
       }
     }
   },
@@ -865,56 +865,12 @@
     ]
   },
   "playerCommandHistoryMainIntegration20261012": {
-    "reason": "Preserve both independent history and staff removal qualification routes and audit records. Refresh only integrated source fingerprints; financial input sets, assertions, historical receipts and qualification status remain unchanged. Source identity is not runtime certification.",
+    "reason": "Preserve both independent history and staff removal qualification routes and historical audit records. Refresh only integrated current source fingerprints; financial inputs, assertions, historical receipts and qualification status remain unchanged. Source identity is not runtime certification.",
     "changes": [
       {
         "path": "scripts/ci/classify-ci-changes.mjs",
         "previous": "21bad2287248a7b8cd9b12c585b24d3c5949527340c13b95f4e763d2cebf0032",
         "current": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
-      },
-      {
-        "path": "scripts/ci/classify-ci-changes.mjs",
-        "previous": {
-          "previous": "90cefba25593457b16e1f3a6370441fe8444c566b359e40d2580ab9f94a9885b",
-          "current": "95dabc7e631360eef4e6b8bce3fd047e169738d0ff347fe7e7c0c2f6cb3eb096"
-        },
-        "current": {
-          "bytes": 35763,
-          "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
-        }
-      },
-      {
-        "path": "scripts/ci/classify-ci-changes.mjs",
-        "previous": {
-          "before": "90cefba25593457b16e1f3a6370441fe8444c566b359e40d2580ab9f94a9885b",
-          "after": "abaa05478633ba53a270d1055585c003d17e37ff23c92bd4c9001a6d712c97bb"
-        },
-        "current": {
-          "bytes": 35763,
-          "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
-        }
-      },
-      {
-        "path": "scripts/ci/classify-ci-changes.mjs",
-        "previous": {
-          "before": "7453fda84e0817b94f4d86ef66cf938e76dcb16c70ade9a41091503d5dfbfc68",
-          "after": "044bbef730fcb4d46a258a4beb37114e1e93932e1f874079aaffef99e5d67665"
-        },
-        "current": {
-          "bytes": 35763,
-          "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
-        }
-      },
-      {
-        "path": "scripts/ci/classify-ci-changes.mjs",
-        "previous": {
-          "before": "732f731aa929df1e7b43aa58a5ef7d06c2e6c24ad3be2dc3d64abe2765e3fe7b",
-          "after": "2fc728ea5555ced40641d89f8c85b8f094a09f9f14d5decaa405ffbc5e11ea2a"
-        },
-        "current": {
-          "bytes": 35763,
-          "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
-        }
       }
     ]
   }

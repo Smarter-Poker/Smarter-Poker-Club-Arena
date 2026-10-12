@@ -253,6 +253,9 @@ export function classifyChangedPaths(paths) {
   );
   // The Phase 4 PostgreSQL step cannot run when its parent job is skipped.
   const phase4Changed = matches(phase4);
+  const playerHistoryQualification = matches(
+    /^(scripts\/ci\/test-player-command-history\.py|scripts\/qualification\/player-command-history\.sql)$/
+  );
   // Script/fixture-only edits must admit accounting and its routing tests.
   const commitmentAudit = matches(
     /^(scripts\/ci\/test-horse-commitment-audit\.py$|scripts\/ci\/probes\/horse-commitment-audit\/|tests\/unit\/horseCi\.test\.ts$)/
@@ -301,6 +304,7 @@ export function classifyChangedPaths(paths) {
   return {
     src: broad || cashLobbyBrowser || buildProvenance || matches(/^src\//),
     server:
+      playerHistoryQualification ||
       broad ||
       committedEvidence ||
       bbjFixture ||
@@ -352,6 +356,7 @@ export function classifyChangedPaths(paths) {
       matches(satelliteLedgerAuditIndex) ||
       matches(certificationPlayerIndex),
     tests:
+      playerHistoryQualification ||
       bbjFixture ||
       chipStoreCoverage ||
       matches(/^scripts\/ops\/build-cashier-totals-index-concurrently\.sql$/) ||

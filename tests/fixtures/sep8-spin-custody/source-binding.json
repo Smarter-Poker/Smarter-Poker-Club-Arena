@@ -1,4 +1,70 @@
 {
+  "playerCommandGroupedHistoryFormatting20261012": {
+    "reason": "Normal commit formatter wrapped only the reviewed AST wiring assertion. Refresh its active source hash and dependent binding bytes, preserving every historical object, assertion, financial input and status. This is source identity only.",
+    "changes": [
+      {
+        "section": "repository_files",
+        "path": "tests/unit/fixtureNativeCi.test.ts",
+        "previous": "2602f828643e8fd24e26999eaf065198dc41ae3ae841468db11a95d2d9928dfd",
+        "current": "f867b62425be1cbfd13c75afc3122eb1dac05b2ac093d63eb27d87ca0846b572"
+      }
+    ]
+  },
+  "playerCommandGroupedHistoryQualification20261012": {
+    "reason": "Group the unchanged exact history qualifier under the existing Player Command totals owner. Reviewed checked bounded child execution and AST wiring test; shared CI is byte-identical to protected main. Preserve every historical object, financial input and qualification status. Task audit keys reordered without value changes solely to avoid shared append conflicts; active fingerprints are source identity, not production qualification.",
+    "changes": [
+      {
+        "section": "repository_files",
+        "path": "tests/unit/fixtureNativeCi.test.ts",
+        "previous": "630e3537f398803817236eb916d27d256d8a0d89c8dc9aa4ca84e3a25838bddd",
+        "current": "2602f828643e8fd24e26999eaf065198dc41ae3ae841468db11a95d2d9928dfd"
+      }
+    ]
+  },
+  "playerCommandHistoryRebinding20261012": {
+    "reason": "Reviewed only additive exact history qualifier classification and four source-routing assertions. Existing financial inputs, assertions, historical audit entries and qualification status are unchanged. Source identity is not financial runtime certification.",
+    "changes": [
+      {
+        "file": "scripts/ci/classify-ci-changes.mjs",
+        "from": "1fc422b810641eee2149abbdbbf5ddf50c54e87162fbea82f22456c506bd712d",
+        "to": "21bad2287248a7b8cd9b12c585b24d3c5949527340c13b95f4e763d2cebf0032"
+      },
+      {
+        "file": "tests/unit/fixtureNativeCi.test.ts",
+        "from": "1e9a652b80aa851fb95d7780aeb6b62d360a7b61192c27edd9112ecd0b636392",
+        "to": "d87f24e32a12cbf7028887a83b540f36af478c80f30e0c208b7bd274fc849805"
+      }
+    ]
+  },
+  "playerCommandHistoryMainIntegration20261012": {
+    "reason": "Preserve both independent history and staff removal qualification routes and historical audit records. Refresh only integrated current source fingerprints; financial inputs, assertions, historical receipts and qualification status remain unchanged. Source identity is not runtime certification.",
+    "changes": [
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "21bad2287248a7b8cd9b12c585b24d3c5949527340c13b95f4e763d2cebf0032",
+        "current": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
+      }
+    ]
+  },
+  "playerCommandHistoryRecoveryIntegration20261012": {
+    "reason": "Preserve both history and native recovery enforcement, independent historical audit records and qualification status. Refresh only reviewed active workflow/classifier/test and nested source binding hashes; this is source identity, not financial or live qualification.",
+    "changes": [
+      {
+        "section": "repository_files",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previousOwn": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428",
+        "previousMain": "d064527051d9ca3b8687b8414144a81008571552ab3d73f104ee462c0dac2a80",
+        "current": "431c3a4c70a1d0e278b5a1e96b113f423d57428f1bf30da672690ce44baa3123"
+      },
+      {
+        "section": "repository_files",
+        "path": "tests/unit/fixtureNativeCi.test.ts",
+        "previousOwn": "d87f24e32a12cbf7028887a83b540f36af478c80f30e0c208b7bd274fc849805",
+        "previousMain": "14a67e65f162b0c02c406ae9b24726852f5d5678c28f01ba861633b9c6ea9682",
+        "current": "630e3537f398803817236eb916d27d256d8a0d89c8dc9aa4ca84e3a25838bddd"
+      }
+    ]
+  },
   "schema_version": 1,
   "scope": "exact five September8 Spins only",
   "events": 5,
@@ -6,7 +72,7 @@
   "raw_sources_per_event": 1,
   "recognized_contributors_per_event": 3,
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "d064527051d9ca3b8687b8414144a81008571552ab3d73f104ee462c0dac2a80",
+    "scripts/ci/classify-ci-changes.mjs": "431c3a4c70a1d0e278b5a1e96b113f423d57428f1bf30da672690ce44baa3123",
     "scripts/ci/schema-manifest.d/union-sep8-spin-custody.json": "b79ed45b40b172ed16f7cd4dd101d541d4ebab29e8defb20be4e531eae7215a8",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/qualify-sep8-spin-custody.py": "28a2b63e4424f15d3b85ad742f7592fd65c2f8a8493eabb06210665e01e9ad67",
@@ -27,7 +93,7 @@
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/restore-synthetic-terms.sql": "9d14a15482330a285c5346e9607a3beec85b2b21b46dcec3a15372a1524e5596",
     "tests/fixtures/sep8-spin-custody/setup.sql": "eded939b6797c5e561e12071cb08938a25359b791cdb810fc49b5e0424565f29",
-    "tests/unit/fixtureNativeCi.test.ts": "14a67e65f162b0c02c406ae9b24726852f5d5678c28f01ba861633b9c6ea9682",
+    "tests/unit/fixtureNativeCi.test.ts": "f867b62425be1cbfd13c75afc3122eb1dac05b2ac093d63eb27d87ca0846b572",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",

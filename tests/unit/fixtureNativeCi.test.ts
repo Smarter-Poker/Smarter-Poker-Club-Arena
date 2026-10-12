@@ -30,6 +30,61 @@ const native = parse(
   readFileSync(join(root, '.github/workflows/component-fixture-native-smoke.yml'), 'utf8')
 );
 
+describe('Player Command history qualification stays connected', () => {
+  it.each([
+    'scripts/ci/test-player-command-history.py',
+    'scripts/qualification/player-command-history.sql',
+    'supabase/migrations/20261012144105_player_command_history_reads_sanitized_staff_scope.sql',
+  ])('selects accounting and its source checks for %s', (path) => {
+    expect(classifyChangedPaths([path])).toMatchObject({ server: true, tests: true });
+  });
+  it('runs history through the checked totals owner once in required accounting shard four', () => {
+    const steps = ci.jobs.accounting_postgres.steps.filter((step: { run?: string }) =>
+      step.run?.includes('scripts/ci/test-player-command-hand-totals.py')
+    );
+    expect(steps).toHaveLength(1);
+    expect(steps[0].run).toBe('python3 scripts/ci/test-player-command-hand-totals.py');
+    expect(steps[0].if).toBe('matrix.shard == 4');
+    expect(steps[0]['continue-on-error']).toBeUndefined();
+    expect(
+      ci.jobs.accounting_postgres.steps.filter((step: { run?: string }) =>
+        step.run?.includes('scripts/ci/test-player-command-history.py')
+      )
+    ).toHaveLength(0);
+    const contract = execFileSync(
+      'python3',
+      [
+        '-c',
+        `import ast, pathlib
+tree = ast.parse(pathlib.Path('scripts/ci/test-player-command-hand-totals.py').read_text())
+calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)
+         and isinstance(node.func, ast.Attribute) and node.func.attr == 'run'
+         and isinstance(node.func.value, ast.Name) and node.func.value.id == 'subprocess'
+         and any(isinstance(value, ast.Constant) and value.value == 'scripts/ci/test-player-command-history.py'
+                 for value in ast.walk(node))]
+assert len(calls) == 1, 'History must have exactly one checked execution owner'
+call = calls[0]
+assert isinstance(call.args[0], ast.List) and len(call.args[0].elts) == 2
+interpreter = call.args[0].elts[0]
+assert isinstance(interpreter, ast.Attribute) and isinstance(interpreter.value, ast.Name)
+assert interpreter.value.id == 'sys' and interpreter.attr == 'executable'
+options = {item.arg: item.value for item in call.keywords}
+assert isinstance(options.get('check'), ast.Constant) and options['check'].value is True
+assert isinstance(options.get('timeout'), ast.Constant) and 0 < options['timeout'].value <= 300
+owner = next(node for node in tree.body if isinstance(node, ast.Try))
+cleanup = owner.finalbody[-1]
+assert isinstance(cleanup, ast.Expr) and isinstance(cleanup.value, ast.Call)
+assert ast.unparse(cleanup.value.func) == 'shutil.rmtree'
+invocation = next(node for node in tree.body if isinstance(node, ast.Expr) and node.value is call)
+assert invocation.lineno > owner.end_lineno, 'History must execute only after successful totals and cleanup'
+print('checked bounded history execution after totals cleanup')`,
+      ],
+      { cwd: root, encoding: 'utf8' }
+    );
+    expect(contract.trim()).toBe('checked bounded history execution after totals cleanup');
+  });
+});
+
 describe('Daily Bonus accounting qualification follows its actual inputs', () => {
   it.each([
     'src/components/daily-bonus/useDailyBonus.ts',

@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/the-inventory-seal-assembles-bucket-by-bucket (2026-10-12): migration 20261012135622_the_inventory_seal_assembles_bucket_by_bucket creates union_pnl_inventory_seal_buckets. Applied through apply-merged-migration.yml after merge.",
+  "tables": ["union_pnl_inventory_seal_buckets"]
+}

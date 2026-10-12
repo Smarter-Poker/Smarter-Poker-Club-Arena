@@ -77,10 +77,13 @@ describe('a stall is reported once a minute', () => {
   });
 
   it('the refresh failure path goes through the minute window, never straight to reportError', () => {
-    const catchBlock = SRC.slice(
-      SRC.indexOf("const timedOut = error instanceof Error && error.message.includes('timed out');")
+    const start = SRC.indexOf(
+      "const timedOut = error instanceof Error && error.message.includes('timed out');"
     );
-    expect(catchBlock.slice(0, 400)).toContain(
+    const end = SRC.indexOf('publishFailure(', start);
+    expect(start).toBeGreaterThan(0);
+    expect(end).toBeGreaterThan(start);
+    expect(SRC.slice(start, end)).toContain(
       'noteTournamentContextRefreshFailure(error, tournamentId);'
     );
     expect(SRC).not.toMatch(/reportError\(error, 'TournamentBrainContext\.refresh'\);/);

@@ -737,8 +737,18 @@ export const ClubRosterService = {
     if (d.success !== true) throw new Error(d.error || 'Roster export failed');
     if (
       !Array.isArray(d.rows) ||
-      !d.audit_id ||
-      !Number.isFinite(Number(d.row_count)) ||
+      !d.rows.every(
+        (row: unknown) =>
+          row !== null &&
+          typeof row === 'object' &&
+          !Array.isArray(row) &&
+          'user_id' in row &&
+          typeof row.user_id === 'string' &&
+          row.user_id.trim().length > 0
+      ) ||
+      typeof d.audit_id !== 'string' ||
+      d.audit_id.trim().length === 0 ||
+      !isRosterCount(d.row_count) ||
       Number(d.row_count) !== d.rows.length
     )
       throw new Error('The Roster Export Response Was Incomplete');

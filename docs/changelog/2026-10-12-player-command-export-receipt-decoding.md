@@ -1,0 +1,9 @@
+# Player Command Export Receipt Decoding
+
+The successful export decoder checked only that rows was an array, that audit_id was truthy, and that a coerced row_count matched its length. Null, primitive, array and identity-less rows therefore passed. A truthy object audit ID became fabricated text, and boolean true became one exported player.
+
+ClubRosterService.exportRoster now requires each row to be a non-array object with a nonblank string user_id, the audit ID to be a nonblank string, and row_count to be a nonnegative safe integer number or numeric string matching the exact array length. The existing count validator supplies that contract. This follows the actual SQL export: to_jsonb of roster rows, count(\*)::int and the audit row's returned ID. It does not invent new mandatory financial fields, rewrite returned values, alter SQL or change authorization.
+
+The existing actual Supabase client/fetch/deadline test harness in tests/unit/playerCommandResponseTruth.test.ts reproduces the gap: 14 tests failed and 50 passed before the service change on protected a426015d445c64fba1daa9f999cd0b1d54655ecc. The same 64 tests all pass afterward, including null/primitive/array/empty identity, malformed audit/count, numeric-string counts, nullable server fields, true empty exports, explicit authorization refusal and original abandoned-request cancellation. One RPC attempt remains asserted on invalid receipts; no automatic replay was introduced.
+
+Evidence is retained as phase3-deep-export-decoder-before.log and phase3-deep-export-decoder-final.log in the canonical external Player Command archive. Source and tests were formatted and the final diff reviewed. Root owns the separate page revocation correction, compiler/build, required checks, protected delivery and live verification. No production SQL, financial, browser or member mutation was executed by this agent.

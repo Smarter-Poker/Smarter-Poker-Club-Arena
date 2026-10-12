@@ -1,0 +1,7 @@
+# Stable Frames At The Existing Table Studio Visual Gate
+
+The required CSS gate blocked the Player Command export repair at Golden Dusk's tablet/light/standard screenshot. Its single captured buffer differed by 6 percent from the unchanged reviewed baseline: the background layers were absent while the table and controls were painted. The failure trace shows the Golden Dusk background and felt requests succeeded with HTTP 200. The exact Table Studio source, asset catalog, visual spec and baselines were unchanged from successful comparable CI run 38243262265, whose Table Studio gate actually executed and passed.
+
+The old detector waited for image decode, captured one buffer, then compared it immediately. Decode readiness alone does not guarantee stable composited pixels after a mode switch. The existing capture now uses Playwright's maintained page screenshot assertion, which waits for consecutive stable screenshots and compares against the same reviewed image. Clip coordinates, scale, animations, caret handling and the strict 2 percent comparison remain unchanged; no baseline, timeout, retry count, artwork or product runtime was changed. Missing or persistently wrong artwork still fails.
+
+This is a narrow correction to a demonstrated required delivery blocker. The real hosted before failure, trace, actual/diff images and prior successful equivalent are retained in the Player Command evidence archive. Local discovery/compilation and the actual corrected hosted visual gate are recorded separately; test discovery alone is not execution proof.

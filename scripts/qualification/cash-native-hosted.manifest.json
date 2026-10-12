@@ -56,8 +56,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 203942,
-      "sha256": "21f6145b2480a94d6df5e50761f0e09c9eab52af16a09f17a863c94e023847e2"
+      "bytes": 204868,
+      "sha256": "526ce2cb5ae8c17319b7181238858a9d820a4609f4a90f7572c19d316d552ee9"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -2212,6 +2212,31 @@
         "bytes": 105657,
         "sha256": "1e9a652b80aa851fb95d7780aeb6b62d360a7b61192c27edd9112ecd0b636392"
       }
+    }
+  },
+  "inventorySealNativeQualification20261012": {
+    "reason": "Add exact bucketed inventory seal PostgreSQL17 equivalence to existing required Accounting3. Preserve every financial source, assertion, historical pin and SOURCE_ONLY_UNRUN status. Workflow fingerprint refresh is source identity only, not cash execution or production certification.",
+    "previousWorkflowPin": {
+      "bytes": 202788,
+      "sha256": "cbecb15da2fd2b57f1c3fcb7a75f9eede415cef9ad40bce2f25257266ca3f732"
+    }
+  },
+  "inventorySealCurrentMainIntegration20261012": {
+    "reason": "Preserve current main member-removal qualification and candidate inventory-seal native qualification together. Source identity only; financial inputs, historical pins and SOURCE_ONLY_UNRUN remain unchanged.",
+    "previousCandidateWorkflowPin": {
+      "bytes": 203714,
+      "sha256": "68ec0a94cbe906ff36162e004227766cdec8daf80023551b6693b46ceec1d559"
+    },
+    "previousCurrentMainWorkflowPin": {
+      "bytes": 203003,
+      "sha256": "1699ddcbdafde77bbb538e632911eb11663486d78a99571e67006ae4f4004995"
+    }
+  },
+  "nativeRecoveryCurrentMainIntegration20261012": {
+    "reason": "Preserve current main inventory-seal and existing required fixture qualification beside native recovery tooling. Refresh actual combined workflow source identity only; all financial inputs, historical pins and qualification status remain unchanged.",
+    "currentWorkflowPin": {
+      "bytes": 204868,
+      "sha256": "526ce2cb5ae8c17319b7181238858a9d820a4609f4a90f7572c19d316d552ee9"
     }
   }
 }

@@ -14,6 +14,7 @@ const LEGACY_DIRECT_PREFIX = 'club-create-cert-';
 const LEGACY_DIRECT_SUFFIX = '@smarter-poker.invalid';
 const FREE_AVATAR = '/avatars/table/free_samurai@2x.webp';
 const DEFAULT_E2E_CLUB_ID = 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
+export const DEFAULT_E2E_LIGHTNING_CLUB_ID = '2a1132b9-5ba2-42e6-9f01-30a7fcffebe3';
 export const DEFAULT_E2E_TEMPLATE_CLUB_ID = '2a1132b9-5ba2-42e6-9f01-30a7fcffebe3';
 const PROFILE_ATTEMPTS = 24;
 // A live-table certificate owns its account for up to 76 minutes. Recovery
@@ -229,6 +230,9 @@ export async function cleanupProductionE2EAccount({
   }
 
   const configuration = requireEnvironment(environment);
+  if (account.templateFixtureRequest) {
+    await retireProductionCreateClubFixtures({ environment, fetchImpl, wait, record: account });
+  }
   let result;
   for (let freezesWaited = 0; ; ) {
     try {
@@ -328,6 +332,7 @@ export async function prepareProductionE2EStaffMembership({
   environment = process.env,
   fetchImpl = fetch,
   requireStandalone = false,
+  reusePreparedMembership = false,
 } = {}) {
   const path = fixturePath(environment);
   const account = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : null;
@@ -369,6 +374,17 @@ export async function prepareProductionE2EStaffMembership({
   );
   if (!Array.isArray(existing)) {
     throw new Error('Reserved staff membership preflight returned a non-array body.');
+  }
+  if (reusePreparedMembership && existing.length === 1) {
+    const row = existing[0];
+    if (
+      row.club_id === clubId &&
+      row.user_id === account.id &&
+      row.role === 'admin' &&
+      row.status === 'active' &&
+      Number(row.chip_balance) === 0
+    )
+      return row;
   }
   if (existing.length > 0) {
     throw new Error(
@@ -454,6 +470,229 @@ export function prepareProductionE2ETemplateMembership({
     },
     fetchImpl,
     requireStandalone: true,
+  });
+}
+
+/** Qualify the unchanged money-writing creation door before committing the
+ * owned fixture. Claims come from this reserved account's verified login. */
+export async function qualifyTemplateClubCreate({
+  environment,
+  claims,
+  args,
+  databaseClientFactory,
+}) {
+  if (!environment.DATABASE_URL)
+    throw new Error('Template fixture creation requires DATABASE_URL for rollback qualification.');
+  const client = databaseClientFactory
+    ? await databaseClientFactory(environment.DATABASE_URL)
+    : new (await import('pg')).Client({
+        connectionString: environment.DATABASE_URL,
+        application_name: 'postdeploy-template-create-rollback',
+      });
+  await client.connect();
+  try {
+    await client.query('BEGIN');
+    try {
+      await client.query("SET LOCAL statement_timeout = '120s'");
+      await client.query("SET LOCAL lock_timeout = '15s'");
+      await client.query(
+        "SELECT set_config('request.jwt.claims',$1,true),set_config('request.jwt.claim.sub',$2,true)",
+        [JSON.stringify(claims), claims.sub]
+      );
+      await client.query('SET LOCAL ROLE authenticated');
+      const result = await client.query(
+        'SELECT public.fn_create_club_atomic($1::uuid,$2::text,$3::text,$4::text,$5::boolean,$6::boolean,$7::text) AS club',
+        Object.values(args)
+      );
+      const club = result.rows?.[0]?.club;
+      if (
+        !club?.id ||
+        club.owner_id !== claims.sub ||
+        club.name !== args.p_name ||
+        club.union_id !== null ||
+        club.is_public !== false ||
+        club.requires_approval !== true
+      )
+        throw new Error(
+          'Rolled-back template creation did not preserve its owned standalone identity.'
+        );
+      const member = await client.query(
+        'SELECT role,status,chip_balance FROM public.club_members WHERE club_id=$1::uuid AND user_id=$2::uuid',
+        [club.id, claims.sub]
+      );
+      if (
+        member.rows?.length !== 1 ||
+        member.rows[0].role !== 'owner' ||
+        member.rows[0].status !== 'active' ||
+        Number(member.rows[0].chip_balance) !== 0
+      )
+        throw new Error(
+          'Rolled-back template creation changed the reserved owner balance or authority.'
+        );
+    } finally {
+      await client.query('ROLLBACK');
+    }
+  } finally {
+    await client.end();
+  }
+}
+
+/** A template book must stay standalone. Provision one private, task-owned
+ * Crest Cert through normal creation instead of adopting mutable player clubs. */
+export async function prepareProductionE2ETemplateFixture({
+  environment = process.env,
+  fetchImpl = fetch,
+  databaseClientFactory,
+} = {}) {
+  if (environment.E2E_TEMPLATE_CLUB_ID)
+    return prepareProductionE2ETemplateMembership({ environment, fetchImpl });
+  const path = fixturePath(environment);
+  const account = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : null;
+  if (!account?.id || !reserved(account.email || ''))
+    throw new Error(
+      'Refusing to create a template club outside the reserved post-deploy namespace.'
+    );
+  const configuration = requireEnvironment(environment);
+  const anonKey = environment.SUPABASE_ANON_KEY || environment.VITE_SUPABASE_ANON_KEY || '';
+  if (!anonKey) throw new Error('SUPABASE_ANON_KEY or VITE_SUPABASE_ANON_KEY is required.');
+  if (!environment.DATABASE_URL)
+    throw new Error('Template fixture creation requires DATABASE_URL for rollback qualification.');
+  const login = await fetchImpl(`${configuration.supabaseUrl}/auth/v1/token?grant_type=password`, {
+    method: 'POST',
+    headers: { apikey: anonKey, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: account.email, password: account.password }),
+  });
+  const session = await responseBody(login);
+  if (!login.ok || !session?.access_token)
+    throw new Error('Reserved template authentication failed.');
+  const authHeaders = {
+    apikey: anonKey,
+    Authorization: `Bearer ${session.access_token}`,
+    'Content-Type': 'application/json',
+  };
+  const verified = await fetchImpl(`${configuration.supabaseUrl}/auth/v1/user`, {
+    headers: authHeaders,
+  });
+  const user = await responseBody(verified);
+  const claims = JSON.parse(
+    Buffer.from(String(session.access_token).split('.')[1] || '', 'base64url').toString('utf8')
+  );
+  if (
+    !verified.ok ||
+    user?.id !== account.id ||
+    claims?.sub !== account.id ||
+    claims.role !== 'authenticated'
+  )
+    throw new Error('Reserved template login identity was not verified.');
+  account.templateFixtureRequest ||= { requestId: randomUUID() };
+  const request = account.templateFixtureRequest;
+  if (
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(request.requestId || '')
+  )
+    throw new Error('Template fixture request identity is invalid.');
+  const args = {
+    p_request_id: request.requestId,
+    p_name: `Crest Cert Template ${request.requestId.slice(0, 8)}`,
+    p_description: 'Disposable post-deploy standalone template certificate',
+    p_color_theme: 'royal-blue',
+    p_is_public: false,
+    p_requires_approval: true,
+    p_logo_url: null,
+  };
+  // Persist before the possible side effect. An unknown response retains the
+  // same operation; recovery reads its creation receipt instead of duplicating it.
+  writeFileSync(path, JSON.stringify(account), { mode: 0o600 });
+  const receipts = await serviceRequest(
+    configuration,
+    `/rest/v1/club_creation_requests?user_id=eq.${encodeURIComponent(account.id)}&request_id=eq.${encodeURIComponent(request.requestId)}&select=club_id`,
+    {},
+    fetchImpl
+  );
+  if (!Array.isArray(receipts) || receipts.length > 1)
+    throw new Error('Template creation receipt is ambiguous.');
+  let club;
+  if (receipts.length) {
+    const rows = await serviceRequest(
+      configuration,
+      `/rest/v1/clubs?id=eq.${encodeURIComponent(receipts[0].club_id)}&select=id,name,owner_id,union_id,status,is_public,requires_approval`,
+      {},
+      fetchImpl
+    );
+    club = Array.isArray(rows) && rows.length === 1 ? rows[0] : null;
+  } else {
+    await qualifyTemplateClubCreate({ environment, claims, args, databaseClientFactory });
+    const response = await fetchImpl(
+      `${configuration.supabaseUrl}/rest/v1/rpc/fn_create_club_atomic`,
+      {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify(args),
+      }
+    );
+    club = await responseBody(response);
+    if (!response.ok)
+      throw new Error(
+        `Owned template create refused (${response.status}); request retained for readback.`
+      );
+  }
+  if (
+    !/^[0-9a-f-]{36}$/.test(club?.id || '') ||
+    club.owner_id !== account.id ||
+    club.name !== args.p_name ||
+    club.union_id !== null ||
+    club.status !== 'active' ||
+    club.is_public !== false ||
+    club.requires_approval !== true
+  )
+    throw new Error('Owned template club identity or isolation readback failed.');
+  const persisted = await serviceRequest(
+    configuration,
+    `/rest/v1/clubs?id=eq.${club.id}&select=id,name,owner_id,union_id,status,is_public,requires_approval`,
+    {},
+    fetchImpl
+  );
+  const owner = await serviceRequest(
+    configuration,
+    `/rest/v1/club_members?club_id=eq.${club.id}&user_id=eq.${account.id}&select=role,status,chip_balance`,
+    {},
+    fetchImpl
+  );
+  if (
+    !Array.isArray(persisted) ||
+    persisted.length !== 1 ||
+    persisted[0].owner_id !== account.id ||
+    persisted[0].name !== args.p_name ||
+    persisted[0].union_id !== null ||
+    persisted[0].status !== 'active' ||
+    persisted[0].is_public !== false ||
+    persisted[0].requires_approval !== true ||
+    !Array.isArray(owner) ||
+    owner.length !== 1 ||
+    owner[0].role !== 'owner' ||
+    owner[0].status !== 'active' ||
+    Number(owner[0].chip_balance) !== 0
+  )
+    throw new Error('Owned template club or zero-balance owner persistence proof failed.');
+  request.clubId = club.id;
+  writeFileSync(path, JSON.stringify(account), { mode: 0o600 });
+  if (environment.GITHUB_ENV)
+    appendFileSync(environment.GITHUB_ENV, `E2E_TEMPLATE_CLUB_ID=${club.id}\n`);
+  return club;
+}
+
+/** Lightning operator authority belongs to its own club, including a union
+ * member club. A standalone template fixture is a separate requirement. */
+export function prepareProductionE2ELightningMembership({
+  environment = process.env,
+  fetchImpl = fetch,
+} = {}) {
+  return prepareProductionE2EStaffMembership({
+    environment: {
+      ...environment,
+      E2E_CLUB_ID: environment.E2E_LIGHTNING_CLUB_ID || DEFAULT_E2E_LIGHTNING_CLUB_ID,
+    },
+    fetchImpl,
+    reusePreparedMembership: true,
   });
 }
 
@@ -1083,11 +1322,12 @@ async function main() {
   const command = process.argv[2];
   if (command === 'create') return createProductionE2EAccount();
   if (command === 'prepare-staff') return prepareProductionE2EStaffMembership();
-  if (command === 'prepare-template-staff') return prepareProductionE2ETemplateMembership();
+  if (command === 'prepare-lightning-staff') return prepareProductionE2ELightningMembership();
+  if (command === 'prepare-template-staff') return prepareProductionE2ETemplateFixture();
   if (command === 'retire-create-clubs') return retireProductionCreateClubFixtures();
   if (command === 'cleanup') return cleanupProductionE2EAccount();
   throw new Error(
-    'Usage: production-e2e-account.mjs <create|prepare-staff|prepare-template-staff|retire-create-clubs|cleanup>'
+    'Usage: production-e2e-account.mjs <create|prepare-staff|prepare-lightning-staff|prepare-template-staff|retire-create-clubs|cleanup>'
   );
 }
 

@@ -38,6 +38,9 @@ const PAGE = readFileSync(
 const SHARED_CSS = readFileSync(join(process.cwd(), 'src/styles/tournament-lobby-3d.css'), 'utf8');
 
 describe('the tab strip implements the tablist pattern it declares', () => {
+  it('identifies embedded sheets so only the route reserves the global footer', () => {
+    expect(PAGE).toContain('data-embedded={isEmbedded}');
+  });
   it('still declares the roles (if these go, the rest of this file is moot)', () => {
     expect(PAGE).toContain('role="tablist"');
     expect(PAGE).toContain('role="tab"');

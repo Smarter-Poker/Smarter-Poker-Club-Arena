@@ -143,15 +143,12 @@ BEGIN
       -- accidentally copied md5(prosrc) from the native source-binding row;
       -- the post-deploy canary intentionally compares the third field, the
       -- complete callable definition including result shape and posture.
-      -- 20261010005048 (installed) names both sides with fn_arena_name
-      -- instead of the World Hub display name first. 20261012040542 prints a
-      -- treasury-funded seat as the Club Bank send it is and names a send's
-      -- operator only to the operator and the member paid; same rows, same
-      -- posture. Both audited bodies are valid until it is installed; an
-      -- unknown third body still fails closed. Once installed, make the
-      -- replacement the hash.
-      'hash', 'd489a8b997a25320b0b4ec8b14a43587',
-      'replacement_hash', '1b1312459ecc90069375d8bcdb3127ca'
+      -- 20261010005048 names both sides with fn_arena_name instead of the
+      -- World Hub display name first. 20261012040542 (installed and read back
+      -- live 2026-10-12) prints a treasury-funded seat as the Club Bank send
+      -- it is and names a send's operator only to the operator and the member
+      -- paid; same rows, same posture.
+      'hash', '1b1312459ecc90069375d8bcdb3127ca'
     ),
     jsonb_build_object(
       'signature', 'public.fn_club_bank_send(uuid,uuid,numeric,text,text,uuid)',
@@ -181,10 +178,10 @@ BEGIN
     -- (file 20260923131325_cashier_statements_read_every_wallet_in_one_keyset).
     -- The private row query fn_cashier_statement_rows is not listed: this loop
     -- requires browser EXECUTE, which that owner-only helper must never have.
-    -- Its body is pinned by md5 in the migrations that replace it (live:
-    -- 20261011225840, #6688, b1f42803af9196e322159660ff6f9e57; next:
-    -- 20261012030847, the statement counts each move once,
-    -- 8cab96c15ba360fb34c13f0afd3378b8), and the doors below, which call it,
+    -- Its body is pinned by md5 in the migrations that replace it (live since
+    -- 2026-10-12: 20261012030847, the statement counts each move once,
+    -- 8cab96c15ba360fb34c13f0afd3378b8; before it 20261011225840, #6688,
+    -- b1f42803af9196e322159660ff6f9e57), and the doors below, which call it,
     -- are unchanged by both.
     jsonb_build_object(
       'signature', 'public.fn_cashier_statement_scope(uuid)',
@@ -243,12 +240,10 @@ BEGIN
     ),
     jsonb_build_object(
       'signature', 'public.fn_agent_wallet_reversible(uuid)',
-      -- 20261010005048 names the recipient with fn_arena_name, not the World
-      -- Hub display name first; same rows, same posture. Both audited bodies
-      -- are valid until it is installed; an unknown third body still fails
-      -- closed. Once installed, make the replacement the hash.
-      'hash', '61b3478f0332f8ee7945d6eb2810bb71',
-      'replacement_hash', '3cc86bbb6317359a7b43fc34524d5876'
+      -- 20261010005048 (installed and read back live 2026-10-12) names the
+      -- recipient with fn_arena_name, not the World Hub display name first;
+      -- same rows, same posture.
+      'hash', '3cc86bbb6317359a7b43fc34524d5876'
     ),
     jsonb_build_object(
       'signature', 'public.fn_agent_wallet_self_stake(uuid,numeric,text,uuid)',
@@ -258,12 +253,9 @@ BEGIN
       'signature', 'public.fn_respond_chip_request(uuid,text)',
       -- 20261010003544 keys an approval's send by request AND approver, so an
       -- approver who was refused (an agent with no float) no longer leaves the
-      -- request unapprovable by anybody else. Both audited bodies (the live
-      -- 20260905040100 one and that file's) are valid until it is installed;
-      -- an unknown third body still fails closed. Once installed, make the
-      -- replacement the hash.
-      'hash', 'f6b8bf0d7d035d063780b37ff614b068',
-      'replacement_hash', '10fb3a12f5113521a2366a98af90ecbd'
+      -- request unapprovable by anybody else. Installed and read back live
+      -- 2026-10-12.
+      'hash', '10fb3a12f5113521a2366a98af90ecbd'
     ),
     jsonb_build_object(
       'signature', 'public.fn_redeem_tournament_ticket(uuid)',
@@ -277,10 +269,9 @@ BEGIN
       'signature', 'public.fn_club_bank_ledger(uuid,integer,integer,text[])',
       -- Its live body is the 20260903121500 DO-block rewrite pinned by md5 in
       -- 20261006005823, not the last CREATE (20260823170000).
-      -- 20261012040542 lists, filters and counts a treasury-funded seat as a
-      -- Club Bank send; the live body stays valid until it is installed.
-      'hash', '39ff91f5cc60c6300942f51e4ab2c3bb',
-      'replacement_hash', 'f17eb94522c177856683617945d9f371'
+      -- 20261012040542 (installed and read back live 2026-10-12) lists,
+      -- filters and counts a treasury-funded seat as a Club Bank send.
+      'hash', 'f17eb94522c177856683617945d9f371'
     ),
     jsonb_build_object(
       'signature', 'public.fn_promo_wallet_ledger(text,uuid,integer,integer,text)',
@@ -292,10 +283,9 @@ BEGIN
     ),
     jsonb_build_object(
       'signature', 'public.fn_ca_chip_statement_page(text,uuid,jsonb,integer)',
-      -- 20261012040542 prints a funded seat's treasury leg as table funding
-      -- with no description; the live body stays valid until it is installed.
-      'hash', 'c706109ed8dab335912f046aaa6ee215',
-      'replacement_hash', 'd513f6f312b29835cc5e74aa8ff00ce0',
+      -- 20261012040542 (installed and read back live 2026-10-12) prints a
+      -- funded seat's treasury leg as table funding with no description.
+      'hash', 'd513f6f312b29835cc5e74aa8ff00ce0',
       'search_path', 'search_path=public'
     ),
     jsonb_build_object(

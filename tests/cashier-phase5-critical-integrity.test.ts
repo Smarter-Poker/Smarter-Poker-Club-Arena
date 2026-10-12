@@ -102,10 +102,24 @@ describe('cashier Phase 5 production certification contracts', () => {
      */
     expect(databaseContractStep).not.toMatch(/^\s+psql(?:\s|\\)/m);
     expect(canary).toContain('md5(pg_get_functiondef(v_oid))');
-    // fn_club_trade_ledger: the installed 20261010005048 body, and until it
-    // is installed the 20261012040542 body that replaces it.
-    expect(canary).toContain("'hash', 'd489a8b997a25320b0b4ec8b14a43587'");
-    expect(canary).toContain("'replacement_hash', '1b1312459ecc90069375d8bcdb3127ca'");
+    // The bodies installed and read back live on 2026-10-12, and only those:
+    // the bodies they replaced are no longer accepted as an alternative.
+    for (const [installed, superseded] of [
+      // fn_club_trade_ledger (20261012040542; superseded 20261010005048)
+      ['1b1312459ecc90069375d8bcdb3127ca', 'd489a8b997a25320b0b4ec8b14a43587'],
+      // fn_agent_wallet_reversible (20261010005048)
+      ['3cc86bbb6317359a7b43fc34524d5876', '61b3478f0332f8ee7945d6eb2810bb71'],
+      // fn_respond_chip_request (20261010003544)
+      ['10fb3a12f5113521a2366a98af90ecbd', 'f6b8bf0d7d035d063780b37ff614b068'],
+      // fn_club_bank_ledger (20261012040542)
+      ['f17eb94522c177856683617945d9f371', '39ff91f5cc60c6300942f51e4ab2c3bb'],
+      // fn_ca_chip_statement_page (20261012040542)
+      ['d513f6f312b29835cc5e74aa8ff00ce0', 'c706109ed8dab335912f046aaa6ee215'],
+    ] as const) {
+      expect(canary).toContain(`'hash', '${installed}'`);
+      expect(canary).not.toContain(`'replacement_hash', '${installed}'`);
+      expect(canary).not.toContain(superseded);
+    }
     expect(canary).not.toContain("'hash', 'ea5a5a57ec31f396958246def887e5e6'");
     expect(canary).not.toContain("'hash', '49797528c3b5ddfcd2ccbaa01f8a1bd3'");
     expect(canary).toContain("'hash', '3ec6fc367b3dae5c4bf3978d0175ef22'");

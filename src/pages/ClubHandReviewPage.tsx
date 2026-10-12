@@ -347,7 +347,13 @@ export default function ClubHandReviewPage() {
         title="Queue Unavailable"
         message="The Current Club Queue Could Not Be Loaded. No Case Data Was Changed."
         tone="red"
-        action={{ label: 'Retry Queue', onClick: () => void loadQueue(filter) }}
+        action={{
+          label: 'Retry Queue',
+          onClick: () => {
+            if (access.error) access.reload();
+            else void loadQueue(filter);
+          },
+        }}
       />
     );
   }

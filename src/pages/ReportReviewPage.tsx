@@ -17,6 +17,8 @@ import { resolveClubUUIDStrict } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
 import { sanitizeInput } from '../utils/sanitizeInput';
 import { titleCase } from '../utils/titleCase';
+import { useFocusTrap } from '../hooks/useFocusTrap';
+import { masterBus } from '../core/MasterBus';
 import './ReportReviewPage.css';
 
 interface PlayerReport {
@@ -59,7 +61,6 @@ export default function ReportReviewPage() {
   const { clubId } = useParams();
   const { user } = useAuthUser();
   const toast = useToast();
-  const dialogShellRef = useRef<HTMLDivElement>(null);
   const [reports, setReports] = useState<PlayerReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
@@ -77,6 +78,10 @@ export default function ReportReviewPage() {
   const viewKey = `${clubId ?? ''}:${user?.id ?? 'signed-out'}:${filter}`;
   const currentViewKeyRef = useRef(viewKey);
   currentViewKeyRef.current = viewKey;
+  const dialogShellRef = useFocusTrap<HTMLDivElement>(
+    Boolean(selectedReport && selectedReport.viewKey === viewKey),
+    '[aria-label="Close"]'
+  );
 
   useEffect(() => {
     mountedRef.current = true;
@@ -191,7 +196,6 @@ export default function ReportReviewPage() {
 
   useEffect(() => {
     if (!selectedReport) return;
-    dialogShellRef.current?.querySelector<HTMLButtonElement>('[data-testid="sc-close"]')?.focus();
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') closeReport();
     };
@@ -278,7 +282,7 @@ export default function ReportReviewPage() {
       .then(({ data, error }) => {
         if (!isCurrent()) return;
         const result = data as { success?: boolean; error?: string } | null;
-        if (error || result?.success === false) {
+        if (error || result?.success !== true) {
           if (listRevisionRef.current === optimisticRevision) {
             listRevisionRef.current += 1;
             setReports(previousReports);
@@ -288,9 +292,14 @@ export default function ReportReviewPage() {
             setSelectedReport(previousSelected);
             setAdminNotes(previousNotes);
           }
-          toast.error(result?.error || 'Failed to update report');
-          reportError(error || result?.error, 'ReportReviewPage.Failed_to_update_report');
+          toast.error(result?.error || 'Failed To Update Report');
+          reportError(
+            error || result?.error || 'Missing Report Decision Receipt',
+            'ReportReviewPage.Failed_to_update_report'
+          );
         } else {
+          masterBus.emit('CLUB_UPDATED', { clubId: selection.clubUuid });
+          void loadReports();
           toast.success(action === 'actioned' ? 'Player Action Taken' : 'Report Dismissed');
         }
         setProcessing(false);

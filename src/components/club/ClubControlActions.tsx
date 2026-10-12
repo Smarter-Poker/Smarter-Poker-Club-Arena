@@ -18,6 +18,8 @@ export default function ClubControlActions() {
   const scope = `${workspace.clubUUID}:${user?.id}`;
   const active = useRef(scope);
   active.current = scope;
+  const mounted = useRef(true);
+  const readVersion = useRef(0);
   const busyRef = useRef(false);
   const [busy, setBusy] = useState(false);
   const [state, setState] = useState<{
@@ -30,6 +32,9 @@ export default function ClubControlActions() {
   const [draft, setDraft] = useState('');
   const load = useCallback(async () => {
     if (!workspace.clubUUID || !workspace.canControlClub) return;
+    const version = ++readVersion.current;
+    const isCurrent = () =>
+      mounted.current && active.current === scope && readVersion.current === version;
     try {
       const { data, error } = await supabase
         .from('clubs')
@@ -38,7 +43,7 @@ export default function ClubControlActions() {
         .maybeSingle();
       if (error) throw error;
       if (!data) throw new Error('Club Policy Could Not Be Loaded');
-      if (active.current !== scope) return;
+      if (!isCurrent()) return;
       const message = data.lobby_message || '';
       setState({
         scope,
@@ -50,7 +55,7 @@ export default function ClubControlActions() {
       setDraft(message);
     } catch (error) {
       reportError(error, 'ClubControlActions.load');
-      if (active.current === scope)
+      if (isCurrent())
         setState({
           scope,
           message: '',
@@ -63,9 +68,17 @@ export default function ClubControlActions() {
   useEffect(() => {
     void load();
     return () => {
-      if (active.current === scope) active.current = '';
+      readVersion.current += 1;
     };
   }, [load, scope]);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      active.current = '';
+      readVersion.current += 1;
+    };
+  }, []);
   useEffect(() => {
     setBusy(false);
   }, [scope]);

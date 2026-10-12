@@ -199,6 +199,43 @@ describe('isolated journal serial loop', () => {
       ['discovery', 12000],
     ]);
   });
+  it.each([
+    ['retirementPending', true, [0, 5000]],
+    ['budgetReached', true, [0, 5000]],
+    ['retirementPending', false, [0]],
+  ] as const)(
+    'uses v3 %s=%s instead of counting protected attempts as completion',
+    async (field, value, expected) => {
+      const ctl = new AbortController();
+      let now = 0;
+      const prunedAt: number[] = [];
+      await runJournalLoop(ctl.signal, {
+        processWork: async () => ({ status: 'completed', batchKey: 'a'.repeat(64) }),
+        prune: async () => {
+          prunedAt.push(now);
+          return {
+            ...empty(),
+            retiredHands: 0,
+            statisticsExpired: 0,
+            membershipsRegistered: 0,
+            membershipPending: false,
+            handsScanned: 250,
+            retirementPending: false,
+            budgetReached: false,
+            [field]: value,
+          };
+        },
+        now: () => now,
+        started: vi.fn(),
+        completed: vi.fn(),
+        wait: async (ms) => {
+          now += ms;
+          if (now >= 7000) ctl.abort();
+        },
+      });
+      expect(prunedAt).toEqual(expected);
+    }
+  );
   it('keeps thrown work/prune failures bounded and unknown', async () => {
     const ctl = new AbortController();
     const completed = vi.fn();

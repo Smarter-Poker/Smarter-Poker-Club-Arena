@@ -252,7 +252,9 @@ export async function runJournalLoop(signal: AbortSignal, d: Dependencies): Prom
               : r.completedWork === 100 ||
                 r.batches === 100 ||
                 r.observations === 1000 ||
-                ('retiredHands' in r && r.retiredHands === 25) ||
+                ('retirementPending' in r
+                  ? r.retirementPending === true || r.budgetReached === true
+                  : 'retiredHands' in r && r.retiredHands === 25) ||
                 ('statisticsExpired' in r && r.statisticsExpired === 1000) ||
                 ('membershipPending' in r && r.membershipPending === true));
         nextPruneAt[duePrune] = d.now() + (atLimit ? 5000 : 60000);

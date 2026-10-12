@@ -103,6 +103,35 @@
 .choices button[aria-pressed='true'] small {
   color: #062036;
 }
+/* DOCKED: the same selector printed in the console's pinned bar, compact so
+   the choice and Drop Diamonds share the opening screen (Dan 2026-10-12).
+   Eleven values at most, wrapped onto whole rows rather than scrolled, so no
+   plate is ever cut off at the edge. Every plate keeps the 44px thumb floor. */
+.docked legend {
+  padding-bottom: 6px;
+}
+.docked .choices {
+  grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
+  gap: 6px;
+}
+.docked .choices button {
+  min-height: 44px;
+  padding: 4px 2px;
+}
+.docked .choices strong {
+  font-size: 17px;
+}
+.docked .choices small {
+  font-size: 10px;
+}
+.docked :is(button):focus-visible {
+  outline: 3px solid #e4f6ff;
+  outline-offset: -3px;
+}
+.docked :disabled {
+  opacity: 0.45;
+  cursor: default;
+}
 .promise {
   color: #ffd98a;
   font-weight: 700;

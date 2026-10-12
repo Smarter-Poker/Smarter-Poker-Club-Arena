@@ -43,6 +43,55 @@ export function bonusEntryStep(budget: BonusBudget, offerAnswered: boolean): Bon
   return budget.award && !offerAnswered ? 'offer' : 'setup';
 }
 
+/**
+ * THE PLINKO DROP SELECTOR (R6): every drop value that splits the stake, with
+ * the drops it makes. Nothing is pressed until the player presses it, and Drop
+ * Diamonds cannot start until they have, so the page prints this in the
+ * console's pinned bar beside that plate (GameConsole `dock`): the choice and
+ * the press share the opening screen (Dan 2026-10-12). `docked` is the compact
+ * dress the bar wears; the setup panel's own dress is unchanged.
+ */
+export function PlinkoDropSelector({
+  budget,
+  onChange,
+  disabled,
+  docked = false,
+}: {
+  budget: BonusBudget;
+  onChange: (value: BonusBudget) => void;
+  disabled: boolean;
+  docked?: boolean;
+}) {
+  if (!validBonusBudget(budget)) return null;
+  const choices = plinkoAllocations(bonusTotal(budget));
+  return (
+    <fieldset
+      className={docked ? `${styles.drops} ${styles.docked}` : styles.drops}
+      disabled={disabled}
+      data-plinko-selector
+    >
+      <legend>Diamonds Per Drop</legend>
+      <div className={styles.choices}>
+        {choices.map((choice) => (
+          <button
+            type="button"
+            key={choice.diamondsPerDrop}
+            disabled={disabled}
+            aria-pressed={budget.denomination === choice.diamondsPerDrop}
+            onClick={() => onChange({ ...budget, denomination: choice.diamondsPerDrop })}
+            aria-label={`${choice.diamondsPerDrop.toLocaleString()} ${choice.diamondsPerDrop === 1 ? 'Diamond' : 'Diamonds'} Per Drop, ${choice.drops.toLocaleString()} ${choice.drops === 1 ? 'Drop' : 'Drops'}`}
+          >
+            <strong>{choice.diamondsPerDrop.toLocaleString()}</strong>
+            <small>
+              {choice.drops.toLocaleString()} {choice.drops === 1 ? 'Drop' : 'Drops'}
+            </small>
+          </button>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
 /** These controls quote one atomic entry; changing a selection never debits a wallet. */
 export default function BonusSetup({
   budget,
@@ -58,6 +107,7 @@ export default function BonusSetup({
   leave,
   offerAnswered = true,
   onOfferAnswered,
+  dropsDocked = false,
 }: {
   budget: BonusBudget;
   onChange: (value: BonusBudget) => void;
@@ -81,6 +131,9 @@ export default function BonusSetup({
   offerAnswered?: boolean;
   /** Records the answer for `budget.award`, so a refresh does not ask again. */
   onOfferAnswered?: (awardId: string) => void;
+  /** Plinko: the page prints PlinkoDropSelector in the console's pinned bar
+   * instead, so this panel leaves it out rather than print it twice. */
+  dropsDocked?: boolean;
 }) {
   const [revisiting, setRevisiting] = useState<string | null>(null);
   const valid = validBonusBudget(budget),
@@ -98,7 +151,6 @@ export default function BonusSetup({
     valid &&
     !disabled &&
     (step === 'offer' || revisiting === budget.award?.id);
-  const choices = plinko && valid ? plinkoAllocations(total) : [];
   const drops = plinko ? plinkoDrops(budget) : null;
   if (!entryReady)
     return (
@@ -180,27 +232,8 @@ export default function BonusSetup({
           </span>
         </label>
       )}
-      {plinko && valid && step === 'setup' && (
-        <fieldset className={styles.drops} disabled={disabled} data-plinko-selector>
-          <legend>Diamonds Per Drop</legend>
-          <div className={styles.choices}>
-            {choices.map((choice) => (
-              <button
-                type="button"
-                key={choice.diamondsPerDrop}
-                disabled={disabled}
-                aria-pressed={budget.denomination === choice.diamondsPerDrop}
-                onClick={() => change({ ...budget, denomination: choice.diamondsPerDrop })}
-                aria-label={`${choice.diamondsPerDrop.toLocaleString()} ${choice.diamondsPerDrop === 1 ? 'Diamond' : 'Diamonds'} Per Drop, ${choice.drops.toLocaleString()} ${choice.drops === 1 ? 'Drop' : 'Drops'}`}
-              >
-                <strong>{choice.diamondsPerDrop.toLocaleString()}</strong>
-                <small>
-                  {choice.drops.toLocaleString()} {choice.drops === 1 ? 'Drop' : 'Drops'}
-                </small>
-              </button>
-            ))}
-          </div>
-        </fieldset>
+      {plinko && valid && step === 'setup' && !dropsDocked && (
+        <PlinkoDropSelector budget={budget} onChange={change} disabled={disabled} />
       )}
       <p className={styles.total} aria-live="polite">
         {valid

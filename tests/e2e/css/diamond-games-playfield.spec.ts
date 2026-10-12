@@ -1,4 +1,4 @@
-import { test, expect, type Locator } from '@playwright/test';
+import { test, expect, type Locator, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { diamondGamesFixture } from '../helpers/diamond-games-fixture.mjs';
 // Each case switches through the real playfields. The hosted software WebGL
@@ -586,7 +586,12 @@ test('Donkey Cross crosses street after street on the keyboard alone', async ({ 
   // strip beside them scrolls horizontally without a tab stop, which axe calls
   // scrollable-region-focusable; that is the strip's own, older, business and
   // adding a tab stop there would sit between the player and this plate.)
-  const scan = await new AxeBuilder({ page }).include('[data-game-console] aside').analyze();
+  // The plates ride in the pinned action bar beside the aside since
+  // 2026-10-12, so both are scanned.
+  const scan = await new AxeBuilder({ page })
+    .include('[data-game-console] aside')
+    .include('[data-game-console] [data-game-actions]')
+    .analyze();
   expect(scan.violations.map((violation) => violation.id)).toEqual([]);
 });
 
@@ -628,7 +633,8 @@ for (const game of ['crossing', 'mines'] as const)
     // carry an amount and the scene is showing a street or a board.
     const frame = page.locator('[data-game-console]');
     await expect(frame).toBeVisible();
-    const plates = frame.locator('> aside button');
+    // The plates ride in the console's pinned action bar (2026-10-12).
+    const plates = frame.locator('button[data-plate]');
     await expect(plates, 'the console offers exactly the two plates').toHaveCount(2);
     // Donkey Cross paints a road and Diamond Mines a board; both are the thing
     // the player must still be able to see while they decide.
@@ -656,7 +662,7 @@ for (const game of ['crossing', 'mines'] as const)
                 ? '[aria-label="Diamond Mines Board"]'
                 : '[data-phase]'
             );
-            const buttons = [...shell.querySelectorAll(':scope > aside button')];
+            const buttons = [...shell.querySelectorAll('button[data-plate]')];
             const wrong: string[] = [];
             if (scrollY !== 0) wrong.push(`the page is scrolled to ${Math.round(scrollY)}`);
             buttons.forEach((button, index) => {
@@ -964,3 +970,199 @@ test('An iPhone browser gets a tap switch on every live Diamond control, and eve
     await context.close();
   }
 });
+
+/**
+ * START IS ON THE OPENING SCREEN, AND BOOK THE WIN IS WHERE START WAS
+ * (Dan 2026-10-12).
+ *
+ * "THE Start game BUTTON for any of the bonus games INSIDE OF DIAMOND SPINS
+ * needs to be clickable on the opening screen. Not scroll down to just click
+ * start." Measured before the fix on the shipping pages, nothing scrolled:
+ * Start sat at 1,038px of a 667px phone on Crash, 1,455px on Plinko, 810px on
+ * Donkey Cross and 926px on Diamond Mines, and below the fold of a 1280 x 800
+ * desktop on Crash (754px) and Plinko (899px). And for Crash: "THE 'STOP
+ * BUTTON' NEEDS TO BE VISUALLY ON THE SAME PAGE AS THE START BUTTON ... AND
+ * THE STOP BUTTON SHOULD BE FLASHING".
+ *
+ * Every game is mounted as App.tsx routes it, inside AppLayout, in the state a
+ * player arrives in from the wheel: a pending award, the Double Your Diamonds
+ * offer answered, nothing started. scrollY is asserted as well as the box: a
+ * plate that is only on screen because something scrolled the window is not a
+ * plate on the opening screen. Then Crash is mounted on a live, cashable round
+ * and Book The Win must occupy Start's exact box, pulse, and be pressable.
+ */
+const START_VIEWPORTS = [
+  { width: 375, height: 667 },
+  { width: 393, height: 852 },
+  { width: 390, height: 844 },
+  { width: 1280, height: 800 },
+] as const;
+const START_LABEL = {
+  crash: /^Start /,
+  plinko: /^Drop Diamonds$/,
+  crossing: /^Start Round$/,
+  mines: /^Start Round$/,
+} as const;
+const PRIMARY_PLATE = '[data-game-console] button[data-plate="primary"]';
+
+/** The plate's box against the viewport, measured with the window where it started. */
+async function onTheGlass(page: Page, what: string) {
+  await expect
+    .poll(
+      () =>
+        page.evaluate((selector) => {
+          const plate = document.querySelector(selector);
+          if (!plate) return 'there is no primary plate';
+          if (scrollY !== 0) return `the window was scrolled to ${Math.round(scrollY)}`;
+          const box = plate.getBoundingClientRect();
+          if (box.width < 44 || box.height < 44)
+            return `${Math.round(box.width)}x${Math.round(box.height)} is under a thumb`;
+          if (
+            box.top < 0 ||
+            box.left < 0 ||
+            box.bottom > innerHeight + 0.5 ||
+            box.right > innerWidth + 0.5
+          )
+            return `sits ${Math.round(box.top)}..${Math.round(box.bottom)} of a ${innerHeight}px screen`;
+          // Not under anything: the plate itself is what a tap at its centre hits.
+          const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+          if (!hit || !plate.contains(hit)) return 'something covers its centre';
+          return 'on the glass';
+        }, PRIMARY_PLATE),
+      { message: `${what} is whole, uncovered and on the first screen`, timeout: 30_000 }
+    )
+    .toBe('on the glass');
+  return page.evaluate((selector) => {
+    const box = document.querySelector(selector)!.getBoundingClientRect();
+    return { top: box.top, left: box.left, width: box.width, height: box.height };
+  }, PRIMARY_PLATE);
+}
+
+async function openGamePage(page: Page, game: keyof typeof START_LABEL, live = false) {
+  const { diamondGamePagesFixture } = await import('../helpers/diamond-game-pages-fixture.mjs');
+  const bundle = await diamondGamePagesFixture();
+  const network: string[] = [];
+  await page.unrouteAll({ behavior: 'ignoreErrors' });
+  await page.route('**/*', (route) => {
+    const url = new URL(route.request().url());
+    if (url.hostname !== 'diamond-pages.local') network.push(url.href);
+    return route.fulfill({ contentType: 'text/html', body: '<div id="root"></div>' });
+  });
+  await page.goto(`http://diamond-pages.local/game.html?game=${game}${live ? '&live=1' : ''}`);
+  await page.addStyleTag({ content: bundle.css });
+  await page.addScriptTag({ content: bundle.javascript });
+  await expect(page.locator('[data-game-console]')).toBeVisible({ timeout: 30_000 });
+  return network;
+}
+
+/** Screen one of a won game is the Double Your Diamonds decision (R9); the
+ * opening screen of the GAME is the one behind it. */
+async function answerTheOffer(page: Page) {
+  const without = page.getByRole('button', { name: 'Play Without', exact: true });
+  await expect(without).toBeEnabled({ timeout: 30_000 });
+  await without.click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+}
+
+for (const viewport of START_VIEWPORTS)
+  test(`Every bonus game opens with Start on the screen at ${viewport.width} x ${viewport.height}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    for (const game of GAMES) {
+      const network = await openGamePage(page, game);
+      await answerTheOffer(page);
+      const start = page.locator(PRIMARY_PLATE);
+      await expect(start).toHaveText(START_LABEL[game]);
+      if (game === 'plinko') {
+        // Nothing is pre-selected (R6): the drop value is the one choice Drop
+        // Diamonds waits on, so it shares the first screen with the plate.
+        await expect(start).toBeDisabled();
+        const choice = page.getByRole('button', { name: '10 Diamonds Per Drop, 10 Drops' });
+        const box = await choice.boundingBox();
+        expect(box, 'the drop value Drop Diamonds waits on is on the page').not.toBeNull();
+        expect(box!.y).toBeGreaterThanOrEqual(0);
+        expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height);
+        await choice.click();
+      }
+      await expect(start, `${game} Start is pressable on arrival`).toBeEnabled({
+        timeout: 30_000,
+      });
+      await onTheGlass(page, `${TITLES[game]} Start at ${viewport.width}px`);
+      await page.screenshot({
+        path: test.info().outputPath(`${game}-start-${viewport.width}x${viewport.height}.png`),
+      });
+      expect(network).toEqual([]);
+    }
+  });
+
+for (const viewport of START_VIEWPORTS)
+  test(`Crash books the win from Start's own spot, lit, at ${viewport.width} x ${viewport.height}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    await openGamePage(page, 'crash');
+    await answerTheOffer(page);
+    const plate = page.locator(PRIMARY_PLATE);
+    await expect(plate).toHaveText(/^Start /);
+    await expect(plate).toBeEnabled({ timeout: 30_000 });
+    const start = await onTheGlass(page, `Crash Start at ${viewport.width}px`);
+    // The idle plate does not pulse: the light is owed to the cash-out alone.
+    await expect(plate).not.toHaveAttribute('data-flash');
+
+    // The same page with a round four seconds into its climb, past the 1.11x
+    // the cash-out opens at, exactly as a resumed live round arrives.
+    const network = await openGamePage(page, 'crash', true);
+    await expect(plate).toHaveText('Book The Win');
+    await expect(plate, 'Book The Win is pressable through the climb').toBeEnabled({
+      timeout: 30_000,
+    });
+    const book = await onTheGlass(page, `Crash Book The Win at ${viewport.width}px`);
+    for (const side of ['top', 'left', 'width', 'height'] as const)
+      expect(
+        Math.abs(book[side] - start[side]),
+        `Book The Win's ${side} is Start's ${side}`
+      ).toBeLessThanOrEqual(1);
+
+    // FLASHING, as a running animation on the plate itself, scaled by the
+    // player's Animation Speed and kept under reduced motion (CLAUDE.md 10.6).
+    await expect(plate).toHaveAttribute('data-flash', 'live');
+    await expect(plate).toHaveAttribute('data-motion', 'keep');
+    const motion = await plate.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        name: style.animationName,
+        iterations: style.animationIterationCount,
+        running: element.getAnimations().some((a) => a.playState === 'running'),
+      };
+    });
+    expect(motion.name).toMatch(/plate-book-pulse/);
+    expect(motion.iterations).toBe('infinite');
+    expect(motion.running, 'the pulse is actually playing').toBe(true);
+    // It lights the plate, read off the animation itself rather than the wall
+    // clock (a software-WebGL host can starve the frame loop): the glow at
+    // the top of the pulse is not the glow at rest, and one breath lasts the
+    // 1.1s base period at Animation Speed 1.
+    const pulse = await plate.evaluate((element) => {
+      const animation = element
+        .getAnimations()
+        // A CSS module scopes the keyframes name, so it is matched, not equal.
+        .find((a) => (a as CSSAnimation).animationName?.includes('plate-book-pulse'));
+      if (!animation) return null;
+      const period = Number(animation.effect?.getComputedTiming().duration);
+      animation.pause();
+      animation.currentTime = 0;
+      const rest = getComputedStyle(element).boxShadow;
+      animation.currentTime = period / 2;
+      const peak = getComputedStyle(element).boxShadow;
+      animation.play();
+      return { period, rest, peak };
+    });
+    expect(pulse, 'the pulse is an animation on the plate').not.toBeNull();
+    expect(pulse!.period).toBeCloseTo(1100, 0);
+    expect(pulse!.peak, 'the plate visibly pulses').not.toBe(pulse!.rest);
+    await page.screenshot({
+      path: test.info().outputPath(`crash-book-${viewport.width}x${viewport.height}.png`),
+    });
+    expect(network).toEqual([]);
+  });

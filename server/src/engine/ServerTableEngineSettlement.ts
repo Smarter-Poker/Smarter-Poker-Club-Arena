@@ -51,6 +51,7 @@ import type { HandEvent, SeatedPlayer } from '../types.js';
 import * as EngineMetrics from '../observability/engineInstruments.js';
 import { v5 as uuidv5 } from 'uuid';
 import { reportError, describeError } from '../services/errorReporter.js';
+import { shouldReportPostCommitAttempt } from './postCommitRetryReport.js';
 import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { queueUnbankedFee } from '../services/FeeReconciler.js';
 import { selectRevealedShowdownResults } from './revealedShowdown.js';
@@ -2773,7 +2774,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           obligationsApplied = true;
         } catch (err) {
           lastObligationError = err;
-          if (attempt === 1 || attempt % 10 === 0) {
+          if (shouldReportPostCommitAttempt(attempt, err)) {
             reportError(err, 'ServerTableEngine.post_commit_obligations_pending', {
               tableId: this.tableId,
               handNumber: snap.handNumber,

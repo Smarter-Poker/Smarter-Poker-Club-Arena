@@ -2152,8 +2152,17 @@ export class TournamentManager extends TournamentManagerEliminations {
       },
       async () => {
         const claimed = await rpc.claimCustody(binding.breakId, binding.custodyId, fresh.revision);
+        /* A SPENT BUDGET IS A STALE CUSTODY, NOT A MISMATCHED ONE (2026-10-12).
+           This test sat inside the identity check below, so a sweep whose work
+           budget ran out during the claim round trip threw "custody claim
+           identity mismatch" although every identity field matched (07:09:00
+           UTC on 2026-10-12, reported as Tournament.elimination_check_error).
+           It is the same yield every later step of this retirement names with
+           custody.assertCurrent(): retirement_custody_stale, which the sweep
+           treats as a yield only when the budget really has expired
+           (retirementYield.ts). A real mismatch keeps its own message. */
+        if (!this.eliminationMutationAllowed()) throw new Error('retirement_custody_stale');
         if (
-          !this.eliminationMutationAllowed() ||
           !claimed.ok ||
           claimed.state === 'acknowledged' ||
           claimed.custody_id !== binding.custodyId ||

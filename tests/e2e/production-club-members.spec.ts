@@ -320,7 +320,9 @@ test.describe('Production Shark Club Players', () => {
     expect(probe.summaryRpcCalls, 'the summary RPC never ran').toBeGreaterThanOrEqual(1);
 
     const art = page.locator('.members-hero__art');
-    await expect(art).toBeVisible();
+    // The owner's frameless directory hides this illustration in both modes.
+    // Advanced restores the controls and summaries, not the removed artwork.
+    await expect(art).toBeHidden();
     expect(
       await art.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0),
       'the roster hero artwork did not decode'

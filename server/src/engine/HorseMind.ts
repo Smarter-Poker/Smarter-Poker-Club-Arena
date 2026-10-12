@@ -529,7 +529,8 @@ export class HorseMind {
           }
         }
 
-        // Preflop VPIP / PFR / 3-bet (first voluntary action only)
+        // VPIP and PFR are separate once-per-hand observations. A caller
+        // can raise later in the same preflop round (a limp-reraise).
         if (preflop) {
           const voluntary =
             a.action === 'call' ||
@@ -541,10 +542,14 @@ export class HorseMind {
             if (!this.handFlags.has(vKey)) {
               this.handFlags.add(vKey);
               s.vpip++;
-              if (isAggr) {
-                s.pfr++;
-                if (preflopRaises >= 1) s.threeBet++;
-              }
+            }
+          }
+          if (isAggr) {
+            const rKey = `${handKey}|${a.userId}|pfr`;
+            if (!this.handFlags.has(rKey)) {
+              this.handFlags.add(rKey);
+              s.pfr++;
+              if (preflopRaises >= 1) s.threeBet++;
             }
           }
         }

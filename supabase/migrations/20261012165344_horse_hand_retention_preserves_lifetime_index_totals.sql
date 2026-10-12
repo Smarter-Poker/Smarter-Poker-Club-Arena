@@ -31,14 +31,18 @@ CREATE TRIGGER hand_index_coverage_no_truncate BEFORE TRUNCATE ON smarter_privat
 -- archive a physical index row only once. User/asset order preserves lock order.
 CREATE FUNCTION smarter_private.archive_pruned_hand_index(p_hands uuid[])
  RETURNS integer LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $$
-DECLARE n integer;
+DECLARE n integer; v_days integer; v_window interval;
 BEGIN
+ SELECT greatest(coalesce(horse_retention_days,8),1) INTO v_days
+ FROM public.hand_history_retention_policy LIMIT 1;
+ IF v_days IS NULL THEN v_days:=8; END IF;
+ v_window:=make_interval(days=>v_days);
  IF p_hands IS NULL OR cardinality(p_hands)>250 THEN RAISE EXCEPTION 'HAND_INDEX_ARCHIVE_BATCH_INVALID' USING ERRCODE='22023'; END IF;
  -- Same history boundary that the owning prune locks before any side effects.
  PERFORM 1 FROM public.hand_history WHERE id=ANY(p_hands) ORDER BY id FOR UPDATE;
  IF EXISTS(SELECT 1 FROM public.hand_history h WHERE h.id=ANY(p_hands)
   AND (h.has_human IS DISTINCT FROM FALSE OR h.reported IS TRUE OR h.created_at IS NULL
-   OR NOT isfinite(h.created_at) OR h.created_at>=now()-interval '8 days'))
+   OR NOT isfinite(h.created_at) OR h.created_at>=now()-v_window))
  OR EXISTS(SELECT 1 FROM public.ca_hand_player_idx i WHERE i.hand_id=ANY(p_hands)
   AND NOT EXISTS(SELECT 1 FROM public.hand_history h WHERE h.id=i.hand_id)) THEN
   RAISE EXCEPTION 'HAND_INDEX_ARCHIVE_RETENTION_BOUNDARY_REQUIRED' USING ERRCODE='55000'; END IF;

@@ -38,6 +38,10 @@ def qualify(e,template,connected=True):
  _,after,_=e.sql(case,'SELECT '+call+';',label='lifetime-after-response')
  a=json.loads(original);b=json.loads(after);a.pop('generated_at');b.pop('generated_at');assert a==b;passed.append('actual-rpc-all-fields-identical-after-archive')
  check(case,'SELECT smarter_private.archive_pruned_hand_index('+arr+');','duplicate-noop','0')
+ config=e.database(db);e.sql(config,seed+"DELETE FROM public.hand_history_retention_policy;INSERT INTO public.hand_history_retention_policy(horse_retention_days) VALUES(6);UPDATE public.hand_history SET created_at=now()-interval '7 days' WHERE id='"+H+"';",label='lifetime-owner-six-day-policy')
+ check(config,'SELECT smarter_private.archive_pruned_hand_index('+arr+');','owner-config-six-days-archives-seven-day-hand','1')
+ check(config,'SELECT '+call+"#>>'{lifetime,hands}';",'owner-config-count-preserved','2');e.discard(config)
+
  check(case,"SELECT "+call+"#>>'{lifetime,historical_complete}';",'historical-gap-honest','false')
  check(case,"SELECT public.ca_player_stats_full('"+U+"',NULL,'UTC','diamonds')#>>'{lifetime,hands}';",'asset-isolation','1')
  for name,change in [('human','true'),('unknown','NULL')]:

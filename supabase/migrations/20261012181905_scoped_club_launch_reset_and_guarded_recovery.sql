@@ -1497,7 +1497,19 @@ BEGIN
  IF public.fn_caller_is_engine() IS NOT TRUE OR public.fn_platform_frozen() IS NOT TRUE THEN RAISE EXCEPTION 'LAUNCH_INCIDENT_REQUIRES_ENGINE_AND_FREEZE'; END IF;
  SELECT * INTO o FROM public.ca_launch_reset_operations WHERE operation_id=p_operation;
  IF NOT FOUND OR o.state<>'captured' THEN RAISE EXCEPTION 'LAUNCH_INCIDENT_EXACT_BOUNDARY_REQUIRED'; END IF;
- FOR i IN SELECT * FROM public.ca_drift_incidents WHERE id IN('d6180536-0d0c-4024-bd3d-ddeb3d5c7e66','b4d32681-eedf-4125-9c98-103c39976b6f','e5113641-d4f0-46e3-afe7-6a3771fe8843','c17b258e-3b4e-407f-9ab3-f92d2c147920') AND status<>'resolved' ORDER BY id FOR UPDATE LOOP
+ -- Recurring ECO witnesses can be reissued under a new UUID. Only the exact
+ -- original one-offender closed-week basis, detected before this capture in
+ -- the same settlement week, is eligible; current original checks still veto.
+ FOR i IN SELECT * FROM public.ca_drift_incidents
+ WHERE status<>'resolved' AND (
+   id IN('d6180536-0d0c-4024-bd3d-ddeb3d5c7e66','c17b258e-3b4e-407f-9ab3-f92d2c147920')
+   OR (source IN('fn_ca_conservation_sweep:fn_union_governance_check','fn_ca_conservation_sweep:fn_union_credit_risk_check')
+       AND detected_at<o.captured_at
+       AND public.fn_union_week_start(detected_at)=public.fn_union_week_start(o.captured_at)
+       AND metadata=jsonb_build_object('row_count',1,'rows',jsonb_build_array(jsonb_build_object(
+         'invariant','union_eco_not_recorded','offenders',1,'severity','warning',
+         'detail','Unions with ECO enabled and no union_eco_ledger row for the settlement week that has CLOSED: that week''s win tax / loss rebate is not reproducible. The ledger is written at close, so the week in progress is not asked about')))))
+ ORDER BY id FOR UPDATE LOOP
   IF i.detected_at>=o.captured_at OR public.fn_ca_launch_accounting_waived('union','fade0000-0000-0000-0000-000000000001',public.fn_union_week_start(o.captured_at)) IS NOT TRUE THEN RAISE EXCEPTION 'LAUNCH_LATER_INCIDENT_NOT_PRELAUNCH'; END IF;
   IF i.source IN('fn_ca_conservation_sweep:fn_union_governance_check','fn_ca_conservation_sweep:fn_union_credit_risk_check') THEN
    IF jsonb_typeof(i.metadata->'rows') IS DISTINCT FROM 'array' OR jsonb_array_length(i.metadata->'rows')<>1 OR i.metadata#>>'{rows,0,invariant}' IS DISTINCT FROM 'union_eco_not_recorded' OR i.metadata#>>'{rows,0,offenders}' IS DISTINCT FROM '1' THEN RAISE EXCEPTION 'LAUNCH_LATER_INCIDENT_BASIS_CHANGED'; END IF;

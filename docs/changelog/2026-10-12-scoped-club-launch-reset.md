@@ -64,3 +64,7 @@ lockfile dependencies used by the qualified installer.
 The original online-index recovery test now follows the maintained installer through unchanged body selection, atomic history binding, and transaction send. Missing or reordered steps refuse; all ten focused cases pass. This repairs the observed Accounting4 source assertion without changing index recovery or financial installation behavior.
 
 The intentional Mint velocity definition is registered in the installation transaction through the unchanged original guard-declaration authority. Exact baseline and compiled-definition hashes refuse drift; the original watcher still reports subsequent undeclared changes. Other guard baselines are untouched. The native regression enforces declaration behavior and the actual original helper permissions.
+
+A fresh live precheck found the original prelaunch ECO warnings reissued under new UUIDs. The scoped waiver now matches only their exact original source, complete evidence, pre-capture detection, and settlement week. Current failures and different evidence remain open and continue to refuse the original preflight; archived warning testimony and exact undo are retained.
+
+The union calendar fixture reuses only verified bare cluster roles when run after the original journal setup. It checks the original fixture fingerprint first, refuses unexpected role attributes, and never alters an existing role. Actual core setup followed by nine union cases and the two-connection race passed; a contaminated role refuses.

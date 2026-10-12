@@ -28,6 +28,20 @@ def _verify_union_periods(run,database):
  ddl=bootstrap.read_text()
  expected=json.loads(bootstrap.with_name("fixture-hashes.json").read_text())[bootstrap.name]
  if hashlib.sha256(ddl.encode()).hexdigest()!=expected:raise RuntimeError("Original union dependency fixture fingerprint changed")
+ # Roles are cluster-wide: earlier core cases already created the three browser
+ # roles, while this fixture uses a fresh DATABASE in that same isolated cluster.
+ # Keep the qualified bytes checked above; normalize only bare role declarations
+ # for fixture setup, refusing unexpected existing attributes without altering them.
+ for role in ('anon','authenticated','service_role','ca_ledger_refusal_recorder','supabase_admin'):
+  declaration='CREATE ROLE '+role+';'
+  if ddl.count(declaration)!=1:raise RuntimeError('Original fixture role declaration changed: '+role)
+  guard="""DO $fixture_role$ BEGIN
+  IF NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='FIXTURE_ROLE_NAME') THEN CREATE ROLE FIXTURE_ROLE_NAME; END IF;
+  IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname='FIXTURE_ROLE_NAME' AND
+    (rolsuper OR rolbypassrls OR rolcanlogin OR rolcreatedb OR rolcreaterole OR rolreplication OR NOT rolinherit))
+  THEN RAISE EXCEPTION 'Unexpected isolated fixture role attributes: FIXTURE_ROLE_NAME'; END IF;
+ END $fixture_role$;""".replace('FIXTURE_ROLE_NAME',role)
+  ddl=ddl.replace(declaration,guard,1)
  if "fn_ca_launch_accounting_cutoff" in definitions:
   candidate=next(path for path in sorted((here.parents[3]/"supabase/migrations").glob("*.sql"),reverse=True) if "CREATE TABLE public.ca_launch_accounting_boundaries" in path.read_text())
   table=re.search(r"CREATE TABLE public\.ca_launch_accounting_boundaries\s*\(.*?\n\);",candidate.read_text(),re.S)

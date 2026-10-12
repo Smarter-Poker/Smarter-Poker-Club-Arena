@@ -88,9 +88,17 @@ describe('P10.3 the PFR repair requires fresh qualification of the round-3 PLO4 
   });
 
   it('the default is shadow and the retained previous qualification cannot admit the modified policy', () => {
-    expect(admitHorsePhase10ReleaseAuthority()).toEqual({ status: 'refused', reason: 'unselected', transient: false });
+    expect(admitHorsePhase10ReleaseAuthority()).toEqual({
+      status: 'refused',
+      reason: 'unselected',
+      transient: false,
+    });
     const release = admitHorsePhase10ReleaseAuthority(Date.now(), committed);
-    expect(release).toEqual({ status: 'refused', reason: 'policy_digest_mismatch', transient: false });
+    expect(release).toEqual({
+      status: 'refused',
+      reason: 'policy_digest_mismatch',
+      transient: false,
+    });
     expect(selectedHorsePhase10Authority(release)).toBeNull();
     const file = JSON.parse(
       readFileSync(
@@ -104,7 +112,15 @@ describe('P10.3 the PFR repair requires fresh qualification of the round-3 PLO4 
       policyDigestDefinition: HORSE_PHASE10_POLICY_DIGEST_DEFINITION,
     });
     expect(file.policyDigest).not.toBe(horsePhase10PolicyDigest());
-    expect(createHash('sha256').update(readFileSync(fileURLToPath(new URL(`../../../${committed!.qualificationPath}`, import.meta.url)))).digest('hex')).toBe(committed!.qualificationSha256);
+    expect(
+      createHash('sha256')
+        .update(
+          readFileSync(
+            fileURLToPath(new URL(`../../../${committed!.qualificationPath}`, import.meta.url))
+          )
+        )
+        .digest('hex')
+    ).toBe(committed!.qualificationSha256);
   });
 
   it('the running code refuses a well-formed qualified selection made under another contract', () => {

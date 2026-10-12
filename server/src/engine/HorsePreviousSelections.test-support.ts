@@ -1,23 +1,24 @@
-/** Historical generation-one selections used only to prove retained evidence refusal. */
+/** Historical selected generations used only to prove retained evidence refusal. */
 import type { HorsePhase10AuthoritySelection } from './HorsePhase10Authority.js';
 import type { HorsePhase11AuthoritySelection } from './HorsePhase11Authority.js';
+import type { HorsePhase12AuthoritySelection } from './HorsePhase12Authority.js';
+import type { RemainingPolicyVariant } from './remainingVariants/RemainingVariantPolicyPack.js';
 
-export const PREVIOUS_PHASE10_SELECTION: HorsePhase10AuthoritySelection | null =
-  Object.freeze({
-    schema: 'horse-qualified-authority-selection-v1',
-    phase: 'phase10',
-    sourceSha: 'c8bfc6171ddfabdfa8d8ca55f4e13fc7e2466400',
-    packVersion: 'plo4-policy-round3-v2',
-    contractVersion: 'plo4-strength-contract-v1',
-    contractDigest: '83ab185b2a2df72876b73d61ece6ea8c2f03f364ce252deecbfcde392ae5f838',
-    domain: 'plo4-cash-single-board-after-rake-horse-population',
-    qualificationPath: 'docs/evidence/phase10/phase10-qualification-2026-10-09.json',
-    qualificationSha256: '3d88e47fcd8a526295f32bdf7688c72110ebc79b0a495740f2a2b0b6e2f4d3c0',
-    approvalGeneration: 1,
-    issuedAt: '2026-10-09T15:20:00.000Z',
-    expiresAt: null,
-    withdrawn: null,
-  } as const);
+export const PREVIOUS_PHASE10_SELECTION: HorsePhase10AuthoritySelection | null = Object.freeze({
+  schema: 'horse-qualified-authority-selection-v1',
+  phase: 'phase10',
+  sourceSha: 'c8bfc6171ddfabdfa8d8ca55f4e13fc7e2466400',
+  packVersion: 'plo4-policy-round3-v2',
+  contractVersion: 'plo4-strength-contract-v1',
+  contractDigest: '83ab185b2a2df72876b73d61ece6ea8c2f03f364ce252deecbfcde392ae5f838',
+  domain: 'plo4-cash-single-board-after-rake-horse-population',
+  qualificationPath: 'docs/evidence/phase10/phase10-qualification-2026-10-09.json',
+  qualificationSha256: '3d88e47fcd8a526295f32bdf7688c72110ebc79b0a495740f2a2b0b6e2f4d3c0',
+  approvalGeneration: 1,
+  issuedAt: '2026-10-09T15:20:00.000Z',
+  expiresAt: null,
+  withdrawn: null,
+} as const);
 
 export const PREVIOUS_PHASE11_SELECTIONS: Readonly<
   Record<'plo5' | 'plo6' | 'plo8', HorsePhase11AuthoritySelection | null>
@@ -76,4 +77,30 @@ export const PREVIOUS_PHASE11_SELECTIONS: Readonly<
     expiresAt: null,
     withdrawn: null,
   } as const),
+});
+
+export const PREVIOUS_PHASE12_SELECTIONS: Readonly<
+  Record<RemainingPolicyVariant, HorsePhase12AuthoritySelection | null>
+> = Object.freeze({
+  short_deck: null,
+  pineapple: null,
+  flh: Object.freeze({
+    schema: 'horse-qualified-authority-selection-v1',
+    phase: 'phase12',
+    variant: 'flh',
+    sourceSha: '9d5674639f2bd091f2386c75cbd87bec419c5dcd',
+    packVersion: 'fixed-limit-holdem-round3-v1',
+    contractVersion: 'remaining-variant-strength-contract-v1',
+    contractDigest: 'fafbba8dc23ebc59b5aadf78fdcc47cd6f504baf9bcd10b07970ad7fbea501c0',
+    domain: 'flh-cash-single-board-after-rake-horse-population',
+    qualificationPath: 'docs/evidence/phase12/9d567463/phase12-qualification-2026-10-12-flh.json',
+    qualificationSha256: '01e91eb38a73dadc9fa2aff7ee4980f64b8b8d8c07a44ec18f50d6bfbccf3f8f',
+    completionPath: 'docs/evidence/phase12/9d567463/phase12-completion-2026-10-12-flh.json',
+    completionSha256: 'b42fb264780ea75bcc89b6d2f700d875fd68b49bf3600329f85f2a624499fbdf',
+    approvalGeneration: 2,
+    issuedAt: '2026-10-12T11:00:00.000Z',
+    expiresAt: null,
+    withdrawn: null,
+  } as const),
+  flo8: null,
 });

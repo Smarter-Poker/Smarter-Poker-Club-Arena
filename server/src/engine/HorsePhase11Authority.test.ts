@@ -105,9 +105,7 @@ function expectedKey(identity: Record<string, unknown>): string {
 }
 
 describe('P11.3 the PFR repair requires fresh qualification of every previously selected pack', () => {
-  const selected = HORSE_PHASE11_VARIANTS.filter(
-    (v) => PREVIOUS_PHASE11_SELECTIONS[v] !== null
-  );
+  const selected = HORSE_PHASE11_VARIANTS.filter((v) => PREVIOUS_PHASE11_SELECTIONS[v] !== null);
 
   it('keeps current selections null and refuses retained generation-one evidence under the unchanged contract', () => {
     expect(Object.isFrozen(PHASE11_PROTECTED_RELEASE_SELECTIONS)).toBe(true);
@@ -116,7 +114,11 @@ describe('P11.3 the PFR repair requires fresh qualification of every previously 
     expect(PHASE11_RUNNING_CONTRACT_DIGEST).toMatch(/^[0-9a-f]{64}$/);
     for (const variant of HORSE_PHASE11_VARIANTS) {
       expect(PHASE11_PROTECTED_RELEASE_SELECTIONS[variant]).toBeNull();
-      expect(admitHorsePhase11ReleaseAuthority(variant), variant).toEqual({ status: 'refused', reason: 'unselected', transient: false });
+      expect(admitHorsePhase11ReleaseAuthority(variant), variant).toEqual({
+        status: 'refused',
+        reason: 'unselected',
+        transient: false,
+      });
       const selection = PREVIOUS_PHASE11_SELECTIONS[variant]!;
       const release = admitHorsePhase11ReleaseAuthority(variant, Date.now(), selection);
       expect(selection, variant).toMatchObject({
@@ -129,9 +131,16 @@ describe('P11.3 the PFR repair requires fresh qualification of every previously 
         expiresAt: null,
         withdrawn: null,
       });
-      expect(release, variant).toEqual({ status: 'refused', reason: 'policy_digest_mismatch', transient: false });
+      expect(release, variant).toEqual({
+        status: 'refused',
+        reason: 'policy_digest_mismatch',
+        transient: false,
+      });
       expect(selectedHorsePhase11Authority(variant, release)).toBeNull();
-      for (const [path, digest] of [[selection.qualificationPath, selection.qualificationSha256], [selection.completionPath!, selection.completionSha256!]]) {
+      for (const [path, digest] of [
+        [selection.qualificationPath, selection.qualificationSha256],
+        [selection.completionPath!, selection.completionSha256!],
+      ]) {
         const bytes = readFileSync(fileURLToPath(new URL(`../../../${path}`, import.meta.url)));
         expect(createHash('sha256').update(bytes).digest('hex'), path).toBe(digest);
       }

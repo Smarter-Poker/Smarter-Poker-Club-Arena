@@ -20,7 +20,7 @@ aggression. The actual FAST computation invokes the widened opponent range
 and the 1.2 call-down modifier; its returned action remains legal. This does
 not require the horse to call every bet or claim strategy optimality.
 
-Focused checks: 198 tests passed across eight files and the server TypeScript
+Focused checks: 342 tests passed across ten files and the server TypeScript
 check passed. This is a local source repair, not a production release.
 
 ## Qualification boundary
@@ -28,7 +28,13 @@ check passed. This is a local source repair, not a production release.
 HorseMind is hashed by Phase 10, Phase 11 and Phase 12. The current Phase 10
 PLO4 and Phase 11 PLO5/PLO6/PLO8 generation-one selections admit on the
 unchanged source and refuse this modified source as `policy_digest_mismatch`.
-Their evidence is preserved. Those four selections are explicitly null while
+FLH's generation-two selection from #6765 also binds the previous HorseMind
+source and is explicitly null after integration. Its qualification and
+completion hashes remain checked, stale admission refuses the repaired
+digest, and the authority-holder regression permits a fresh qualified
+generation three without resurrecting a withdrawn generation two.
+
+Their evidence is preserved. All five selections are explicitly null while
 the modified source awaits requalification. Tests prove the unselected gates
 remain in shadow and retained evidence still refuses the modified digest.
 No digest file or admission guard is changed. All Phase 12 selections are
@@ -36,8 +42,10 @@ currently null. Phase 13
 explicitly excludes HorseMind from its own digest; its nine digests remain
 unchanged.
 
-Before integrating this repair, account for the four packs returning to
+Before integrating this repair, account for the five packs returning to
 shadow. Their existing protected-main strength workflows and assemblers
-must requalify the exact modified source, with fresh Phase 11 natural
+must requalify the exact modified source, with fresh Phase 11 and FLH natural
 completion records and new protected selection generations. Historical
-opponent counts are not rewritten or backfilled by this source change.
+opponent counts are not rewritten or backfilled by this source change. The
+existing locked workloads total 753 shards and 9,116,928 paired hands; no
+held-out seed or experimental design changes.

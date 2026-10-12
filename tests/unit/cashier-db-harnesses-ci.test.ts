@@ -39,6 +39,11 @@ const HARNESSES = [
     'cashier-statements/db-one-move-once.sql',
     '20261012030847_the_statement_counts_each_move_once_and_names_its_wallet.sql',
   ],
+  [
+    'test-horse-reads-db-postgres.py',
+    'horse-reads-db/scenario.sql',
+    '20261012040542_a_treasury_funded_seat_reads_as_a_club_bank_send.sql',
+  ],
 ] as const;
 
 type Step = { name?: string; if?: string; run?: string; env?: Record<string, string> };

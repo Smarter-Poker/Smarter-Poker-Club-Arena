@@ -102,7 +102,11 @@ describe('cashier Phase 5 production certification contracts', () => {
      */
     expect(databaseContractStep).not.toMatch(/^\s+psql(?:\s|\\)/m);
     expect(canary).toContain('md5(pg_get_functiondef(v_oid))');
-    expect(canary).toContain("'hash', 'ea5a5a57ec31f396958246def887e5e6'");
+    // fn_club_trade_ledger: the installed 20261010005048 body, and until it
+    // is installed the 20261012040542 body that replaces it.
+    expect(canary).toContain("'hash', 'd489a8b997a25320b0b4ec8b14a43587'");
+    expect(canary).toContain("'replacement_hash', '1b1312459ecc90069375d8bcdb3127ca'");
+    expect(canary).not.toContain("'hash', 'ea5a5a57ec31f396958246def887e5e6'");
     expect(canary).not.toContain("'hash', '49797528c3b5ddfcd2ccbaa01f8a1bd3'");
     expect(canary).toContain("'hash', '3ec6fc367b3dae5c4bf3978d0175ef22'");
     expect(canary).not.toContain("'hash', '910f8859d4c683aafd4403c4f386772b'");

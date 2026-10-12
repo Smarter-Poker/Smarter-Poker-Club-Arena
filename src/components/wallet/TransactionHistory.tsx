@@ -170,36 +170,6 @@ const CATEGORY_COLORS: Record<string, string> = {
   prize_reversal: '#ef4444',
 };
 
-const CATEGORY_ICONS: Record<string, string> = {
-  buyin: '▦',
-  cashout: '◉',
-  rake: '%',
-  prize: '★',
-  rebuy: '↺',
-  addon: '⊞',
-  mint: '◆',
-  settlement: '≡',
-  commission: '◈',
-  INSURANCE: '⊕',
-  funding: '→',
-  promotion: '↑',
-  promo: '★',
-  bbj: '♣',
-  transfer: '→',
-  deposit: '+',
-  withdrawal: '-',
-  refund: '↻',
-  bonus: '★',
-  tournament_buyin: '♠',
-  tournament_winnings: '★',
-  tournament_cashout: '◉',
-  rakeback: '↻',
-  bounty: '✦',
-  bounty_own: '✦',
-  addon_refund: '↻',
-  prize_reversal: '↩',
-};
-
 /** Filters offered in the dropdown. `value` is either a type or a category. */
 const FILTERS: Array<{ value: string; label: string; kind: 'all' | 'type' | 'category' }> = [
   { value: 'all', label: 'All', kind: 'all' },
@@ -234,7 +204,6 @@ function TransactionSkeleton() {
           className="transaction-row tx-skeleton-row"
           style={{ animationDelay: `${i * 0.08}s` }}
         >
-          <div className="tx-skeleton-circle" />
           <div className="details">
             {/* Fixed widths. `Math.random()` in a render body is a side effect:
                 every re-render dealt new bar widths, so the skeleton twitched
@@ -296,6 +265,7 @@ function TransactionHistoryInner({ walletId, limit = 20 }: TransactionHistoryPro
   // append=true adds the next page.
   const loadPage = useCallback(
     async (page: number, append: boolean) => {
+      const seq = ++requestSeqRef.current;
       if (!targetUserId) {
         if (isMounted.current) {
           setTransactions([]);
@@ -304,7 +274,6 @@ function TransactionHistoryInner({ walletId, limit = 20 }: TransactionHistoryPro
         }
         return;
       }
-      const seq = ++requestSeqRef.current;
       if (append) setLoadingMore(true);
 
       try {
@@ -366,7 +335,7 @@ function TransactionHistoryInner({ walletId, limit = 20 }: TransactionHistoryPro
           toastRef.current.error('Could Not Load Your Transactions');
         }
       } finally {
-        if (isMounted.current) {
+        if (isMounted.current && seq === requestSeqRef.current) {
           setLoading(false);
           setLoadingMore(false);
         }
@@ -414,9 +383,6 @@ function TransactionHistoryInner({ walletId, limit = 20 }: TransactionHistoryPro
     return (
       <div className="transaction-history">
         <div className="tx-error-state">
-          <span className="tx-error-icon" aria-hidden="true">
-            {'⚠'}
-          </span>
           <p>Failed To Load Transactions</p>
           <button className="tx-retry-btn" onClick={() => refresh()}>
             Retry
@@ -456,12 +422,14 @@ function TransactionHistoryInner({ walletId, limit = 20 }: TransactionHistoryPro
           {filter === 'all' ? 'No Transactions' : 'No Transactions Of This Kind'}
         </div>
       ) : (
-        <div className="transaction-list">
+        <div
+          className="transaction-list"
+          role="region"
+          aria-label="Wallet Transaction Movements"
+          tabIndex={0}
+        >
           {transactions.map((tx, i) => (
             <div key={tx.id} className={`transaction-row ${tx.type}`} style={txStyle(i)}>
-              <span className="icon" aria-hidden="true">
-                {CATEGORY_ICONS[shownCategory(tx.category)] || '●'}
-              </span>
               <div className="details">
                 <span
                   className="type"

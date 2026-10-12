@@ -12,12 +12,13 @@
  * (silver, blue, white, gold - no browns, no pinks, no purples).
  */
 
-import React, { useRef, useCallback, useState } from 'react';
+import React, { useRef, useCallback, useState, useEffect } from 'react';
 import { haptic } from '../../services/HapticService';
 import './AchievementShareCard.css';
 import { reportError } from '../../utils/errorReporter';
 import { IS_NATIVE_BUILD, isNativePlatform } from '../../lib/appBase';
 import { SpadeConsole, type ConsoleInk } from '../console/SpadeConsole';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { titleCase } from '../../utils/titleCase';
 
 /**
@@ -56,6 +57,30 @@ const RARITY_COLORS: Record<
   legendary: { ink: '#ffd700', glow: 'rgba(255, 215, 0, 0.4)', label: 'Legendary', pill: 'gold' },
 };
 
+/** Wrap full copy inside the export's 28px margins, including unbroken names. */
+function canvasTextLines(ctx: CanvasRenderingContext2D, text: string): string[] {
+  const lines: string[] = [];
+  let line = '';
+  for (const word of text.split(/\s+/)) {
+    const candidate = line ? `${line} ${word}` : word;
+    if (ctx.measureText(candidate).width <= 544) {
+      line = candidate;
+      continue;
+    }
+    if (line) lines.push(line);
+    line = '';
+    for (const character of word) {
+      if (line && ctx.measureText(line + character).width > 544) {
+        lines.push(line);
+        line = '';
+      }
+      line += character;
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
 export const AchievementShareCard: React.FC<AchievementShareCardProps> = ({
   icon,
   name,
@@ -64,6 +89,18 @@ export const AchievementShareCard: React.FC<AchievementShareCardProps> = ({
   unlockedAt,
   onClose,
 }) => {
+  const dialogRef = useFocusTrap(true);
+  useEffect(() => {
+    const dismiss = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.stopPropagation();
+        onClose();
+      }
+    };
+    document.addEventListener('keydown', dismiss);
+    return () => document.removeEventListener('keydown', dismiss);
+  }, [onClose]);
+
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [sharing, setSharing] = useState(false);
   const colors = RARITY_COLORS[rarity] || RARITY_COLORS.common;
@@ -75,12 +112,24 @@ export const AchievementShareCard: React.FC<AchievementShareCardProps> = ({
     const ctx = canvas.getContext('2d');
     if (!ctx) return null;
 
+    ctx.font = 'bold 30px system-ui, sans-serif';
+    let nameLines = canvasTextLines(ctx, titleCase(name));
+    const nameSize = nameLines.length > 2 ? 22 : 30;
+    ctx.font = `bold ${nameSize}px system-ui, sans-serif`;
+    nameLines = canvasTextLines(ctx, titleCase(name));
+    ctx.font = '16px system-ui, sans-serif';
+    const descriptionLines = canvasTextLines(ctx, titleCase(description));
+    const nameTop = 220;
+    const descriptionTop = Math.max(260, nameTop + (nameLines.length - 1) * (nameSize + 6) + 34);
+    const dateTop = Math.max(305, descriptionTop + (descriptionLines.length - 1) * 22 + 34);
+    const dividerTop = dateTop + 35;
+    const footerTop = dividerTop + 30;
     canvas.width = 600;
-    canvas.height = 400;
+    canvas.height = Math.max(400, footerTop + 30);
 
     // Black glass, the console's own ground.
     ctx.fillStyle = '#050607';
-    ctx.fillRect(0, 0, 600, 400);
+    ctx.fillRect(0, 0, 600, canvas.height);
 
     // Inner rarity glow circle behind icon
     const glowGrad = ctx.createRadialGradient(300, 130, 20, 300, 130, 120);
@@ -94,7 +143,7 @@ export const AchievementShareCard: React.FC<AchievementShareCardProps> = ({
     ctx.lineWidth = 2;
     ctx.shadowColor = colors.glow;
     ctx.shadowBlur = 20;
-    ctx.strokeRect(12, 12, 576, 376);
+    ctx.strokeRect(12, 12, 576, canvas.height - 24);
     ctx.shadowBlur = 0;
 
     // Top-left branding
@@ -116,13 +165,13 @@ export const AchievementShareCard: React.FC<AchievementShareCardProps> = ({
 
     // Achievement name
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 30px system-ui, sans-serif';
-    ctx.fillText(titleCase(name), 300, 220);
+    ctx.font = `bold ${nameSize}px system-ui, sans-serif`;
+    nameLines.forEach((line, index) => ctx.fillText(line, 300, nameTop + index * (nameSize + 6)));
 
     // Description
     ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
     ctx.font = '16px system-ui, sans-serif';
-    ctx.fillText(titleCase(description), 300, 260);
+    descriptionLines.forEach((line, index) => ctx.fillText(line, 300, descriptionTop + index * 22));
 
     // Unlocked date
     if (unlockedAt) {
@@ -133,21 +182,21 @@ export const AchievementShareCard: React.FC<AchievementShareCardProps> = ({
       });
       ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
       ctx.font = '13px system-ui, sans-serif';
-      ctx.fillText(`Unlocked ${date}`, 300, 305);
+      ctx.fillText(`Unlocked ${date}`, 300, dateTop);
     }
 
     // Bottom divider line
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(60, 340);
-    ctx.lineTo(540, 340);
+    ctx.moveTo(60, dividerTop);
+    ctx.lineTo(540, dividerTop);
     ctx.stroke();
 
     // Bottom branding
     ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
     ctx.font = 'bold 12px system-ui, sans-serif';
-    ctx.fillText('CLUB ARENA - smarter.poker', 300, 370);
+    ctx.fillText('CLUB ARENA - smarter.poker', 300, footerTop);
 
     return canvas;
   }, [icon, name, description, rarity, unlockedAt, colors]);
@@ -206,6 +255,8 @@ export const AchievementShareCard: React.FC<AchievementShareCardProps> = ({
             `achievement-${name.toLowerCase().replace(/\s+/g, '-')}.png`,
             name
           );
+          setSharing(false);
+          onClose();
           return;
         }
       }
@@ -235,6 +286,7 @@ export const AchievementShareCard: React.FC<AchievementShareCardProps> = ({
   return (
     <div className="share-card-overlay" onClick={onClose}>
       <div
+        ref={dialogRef}
         className="share-card-sheet"
         role="dialog"
         aria-modal="true"

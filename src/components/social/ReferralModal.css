@@ -56,6 +56,7 @@
 
 .rfc__row {
   display: flex;
+  flex-wrap: wrap;
   gap: 3cqw;
   align-items: baseline;
   justify-content: space-between;
@@ -65,13 +66,17 @@
 }
 
 .rfc__figure {
-  font-size: 6cqw;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font-size: clamp(16px, 5cqw, 28px);
   font-weight: 800;
   line-height: 1;
   font-variant-numeric: tabular-nums;
 }
 
 .rfc__code {
+  max-width: 100%;
+  overflow-wrap: anywhere;
   font-size: 6cqw;
   font-weight: 800;
   letter-spacing: 0.12em;

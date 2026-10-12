@@ -51,6 +51,7 @@
 
 .promo-views__word,
 .promo-word {
+  min-height: 44px;
   appearance: none;
   margin: 0;
   padding: 1.6cqw 0;
@@ -160,6 +161,8 @@
 
 .promo-row__fact {
   display: inline-flex;
+  flex-wrap: wrap;
+  max-width: 100%;
   align-items: baseline;
   gap: 1.4cqw;
   min-width: 0;
@@ -173,7 +176,8 @@
   font-size: 3.4cqw;
   font-weight: 800;
   letter-spacing: 0.02em;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
   font-variant-numeric: tabular-nums;
 }
 

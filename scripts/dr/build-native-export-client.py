@@ -74,7 +74,9 @@ def build(args):
     run(['./configure', '--prefix=' + str(prefix), '--without-icu', '--without-readline',
          '--with-zstd', '--with-ssl=openssl'], 'configure')
     run(['make', '-C', 'src/backend', 'generated-headers'], 'headers')
-    run(['make', '-C', 'src/bin/pg_dump', '-j4', 'pg_dump'], 'compile')
+    # The targeted upstream recursive make can race its shared libpgport
+    # archives under -j. Build this small client sequentially, not a whole server.
+    run(['make', '-C', 'src/bin/pg_dump', 'pg_dump'], 'compile')
     run(['make', '-C', 'src/interfaces/libpq', 'install'], 'private-libpq')
     client = tree / 'src/bin/pg_dump/pg_dump'
     test_env = dict(environment, PG_BIN=args.pg_bin, TMPDIR=str(work),

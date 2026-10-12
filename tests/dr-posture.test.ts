@@ -9,6 +9,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { classifyChangedPaths } from '../scripts/ci/classify-ci-changes.mjs';
 
 const root = (p: string) => resolve(__dirname, '..', p);
 const RUNBOOK = 'docs/dr/RESTORE-RUNBOOK.md';
@@ -58,6 +59,14 @@ describe('disaster recovery is documented and wired', () => {
   });
 
   it('native recovery qualification runs in the existing required accounting jobs', () => {
+    for (const path of [
+      'scripts/dr/native-supabase-export.py',
+      'scripts/dr/build-native-export-client.py',
+      'scripts/ci/test_native_supabase_export.py',
+      'scripts/verification-harness/leaderboard-native-function-batch.mjs',
+    ]) {
+      expect(classifyChangedPaths([path]).server).toBe(true);
+    }
     const workflow = readFileSync(root('.github/workflows/ci.yml'), 'utf8');
     expect(workflow).toContain(
       'python3 -B -m unittest discover -s scripts/ci -p test_native_supabase_export.py'

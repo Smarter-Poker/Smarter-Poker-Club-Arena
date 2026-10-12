@@ -56,8 +56,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 202788,
-      "sha256": "cbecb15da2fd2b57f1c3fcb7a75f9eede415cef9ad40bce2f25257266ca3f732"
+      "bytes": 203617,
+      "sha256": "2d30f85bad3a22e2c5081fe6e5e0423a9ad219d7753f8f7b7ee4387292d800d7"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -2155,5 +2155,12 @@
         }
       }
     ]
+  },
+  "horseRequestRetentionIntegration20261012": {
+    "reason": "Add the native eight-day settled horse request regression to existing Accounting3 alongside unchanged financial qualifications. Refresh only current workflow source fingerprint; preserve all historical pins and qualification outcomes.",
+    "previousWorkflowPin": {
+      "bytes": 202788,
+      "sha256": "cbecb15da2fd2b57f1c3fcb7a75f9eede415cef9ad40bce2f25257266ca3f732"
+    }
   }
 }

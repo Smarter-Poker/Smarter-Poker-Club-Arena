@@ -1485,6 +1485,12 @@ jobs:
           STABLE_CANCEL_POSTGRES_BIN: /usr/lib/postgresql/17/bin
           TMPDIR: ${{ runner.temp }}
         run: node scripts/qualify-stable-admin-cancel-lane-pg17.mjs
+      - name: Stranded satellite part 2 keeps its exact cohort
+        if: matrix.shard == 4
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: ${{ runner.temp }}
+        run: python3 scripts/ci/test-stranded-satellite-part2-postgres.py
       - name: Build the matching native PostgreSQL isolation test tool
         id: pg17_isolation_tool
         if: (matrix.shard == 3 || matrix.shard == 4)

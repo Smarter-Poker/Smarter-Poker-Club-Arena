@@ -172,4 +172,31 @@ describe('a closed target pays its satellite tickets in cash', () => {
       );
     }
   });
+
+  it('covers each adjacent settlement interval without a gap or overlap', () => {
+    let previousUpper: string | undefined;
+    for (const f of parts) {
+      const sql = readFileSync(`${dir}/${f}`, 'utf8');
+      const intervals = [...sql.matchAll(/created_at>='([^']+)'\s+AND tk\.created_at<'([^']+)'/g)];
+      expect(intervals.length, f).toBeGreaterThan(0);
+      const [, lower, upper] = intervals[0];
+      expect(Date.parse(lower), f).toBeLessThan(Date.parse(upper));
+      if (previousUpper) expect(lower, f).toBe(previousUpper);
+      for (const match of intervals) expect(match.slice(1), f).toEqual([lower, upper]);
+      previousUpper = upper;
+    }
+  });
+
+  it('refuses a changed part-2 cohort before payment and runs native CI qualification', () => {
+    const sql = readFileSync(`${dir}/${parts[1]}`, 'utf8');
+    expect(sql.indexOf('STRANDED_TICKET_CASH_PREIMAGE_CHANGED')).toBeLessThan(
+      sql.indexOf('DO $settle$')
+    );
+    expect(sql).toContain('IF v_count<>190 OR v_amount<>7730.00 THEN');
+    const workflow = readFileSync(root('.github/workflows/ci.yml'), 'utf8');
+    expect(workflow).toMatch(
+      /name: Stranded satellite part 2 keeps its exact cohort\n\s+if: matrix.shard == 4/
+    );
+    expect(workflow).toContain('run: python3 scripts/ci/test-stranded-satellite-part2-postgres.py');
+  });
 });

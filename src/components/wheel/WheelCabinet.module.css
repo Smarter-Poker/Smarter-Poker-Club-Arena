@@ -45,8 +45,9 @@
   box-sizing: border-box;
   min-width: 0;
   padding: 8px 16px max(8px, env(safe-area-inset-bottom));
-  border: 12px solid transparent;
-  border-image: url('/assets/diamond-spins/wheel-matte-controls-v1.png') 160 / 12px / 0 stretch;
+  border: 16px solid transparent;
+  border-image: url('/assets/diamond-spins/controls-clean-v2/frame.png') 250 190 / 20px 15px / 0
+    stretch;
   background: #000;
   font-family: 'Roboto Condensed', sans-serif;
   display: grid;
@@ -100,9 +101,10 @@
   white-space: normal;
   line-height: 1;
   padding: 0 6px;
+  /* The 260px cuts sit beyond the entire chamfer, in straight rails.
+     Corner squares retain equal scales while only the empty face stretches. */
   border: 7px solid transparent;
-  border-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png') 26 fill /
-    7px / 0 stretch;
+  border-image: url('/assets/diamond-spins/controls-clean-v2/silver.png') 260 fill / 7px / 0 stretch;
   background: transparent;
 }
 .entryModes button[aria-pressed='true'] {
@@ -163,21 +165,19 @@
   text-shadow: 0 2px 2px #000;
   background-color: transparent;
   background-position: center;
-  background-size: 100% 100%;
-  /* The approved plates have an opaque rectangular exterior. Clip only
-     that exterior along their measured chrome silhouette. */
-  clip-path: polygon(7% 4%, 93% 4%, 99% 24%, 99% 81%, 93% 100%, 7% 100%, 0% 81%, 0% 25%);
+  /* The complete clean-alpha plate keeps its native ratio and all four corners. */
+  background-size: contain;
   background-repeat: no-repeat;
   cursor: pointer;
 }
 .secondary {
-  background-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png');
+  background-image: url('/assets/diamond-spins/controls-clean-v2/silver.png');
   /* Positioned for TapHaptic's switch (an iPhone browser's only buzz). */
   position: relative;
 }
 .actions .primary {
   flex: 1;
-  background-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-primary.png');
+  background-image: url('/assets/diamond-spins/controls-clean-v2/blue.png');
   position: relative;
   isolation: isolate;
 }
@@ -237,8 +237,7 @@
   padding: 0;
   background: transparent;
   border: 7px solid transparent;
-  border-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png') 26 fill /
-    7px / 0 stretch;
+  border-image: url('/assets/diamond-spins/controls-clean-v2/silver.png') 260 fill / 7px / 0 stretch;
   color: #f4f7fb;
   font:
     800 26px 'Roboto Condensed',
@@ -264,9 +263,10 @@
   min-width: 44px;
   min-height: 44px;
   color: #9aa5b3;
+  /* The 260px cuts sit beyond the entire chamfer, in straight rails.
+     Corner squares retain equal scales while only the empty face stretches. */
   border: 7px solid transparent;
-  border-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png') 26 fill /
-    7px / 0 stretch;
+  border-image: url('/assets/diamond-spins/controls-clean-v2/silver.png') 260 fill / 7px / 0 stretch;
   background: transparent;
   padding: 0;
   font:
@@ -276,7 +276,7 @@
 }
 .presets button[aria-pressed='true'] {
   color: #f4f7fb;
-  border-image-source: url('/assets/club-buttons/lobby/shark-panel-v1/button-primary.png');
+  border-image-source: url('/assets/diamond-spins/controls-clean-v2/blue.png');
   text-shadow: 0 0 10px #1877f2;
 }
 .entry :disabled {

@@ -53,6 +53,22 @@ describe('Diamond Spins data and actions own separate layout space', () => {
       if (size) expect(Number(size[1])).toBeGreaterThanOrEqual(18);
     }
   });
+  it('keeps complete action plates and slices small-control corners beyond their chamfers', () => {
+    const action = rules(css, '.actions button')[0];
+    expect(action).toMatch(/background-size:\s*contain/);
+    expect(action).not.toMatch(/clip-path/);
+    expect(css).not.toContain('wheel-matte-controls-v1');
+    expect(css).not.toContain('shark-panel-v1/button-');
+    for (const selector of ['.entry input', '.presets button']) {
+      expect(rules(css, selector)[0]).toMatch(/260 fill \/ 7px/);
+    }
+    for (const name of ['frame', 'silver', 'blue']) {
+      const png = readFileSync(`public/assets/diamond-spins/controls-clean-v2/${name}.png`);
+      expect(png.readUInt32BE(16)).toBeGreaterThan(2000);
+      expect(png.readUInt32BE(20)).toBeGreaterThan(700);
+      expect(png[25]).toBe(6); // RGBA, preserving the generated exterior transparency.
+    }
+  });
   it('preserves live balances, explicit entry and separate Run/Spin controls', () => {
     let stake = 0;
     render(

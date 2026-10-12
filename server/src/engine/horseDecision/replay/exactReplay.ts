@@ -42,6 +42,7 @@ import {
 import { qualifyHorseDecisionIndependently } from './independentQualification.js';
 import { checkCitedReferences, type ReplaySolverStores } from './references.js';
 import { replayThroughWorkerRuntime } from './runtimeReplay.js';
+import { HorseReplayAuthorityRefusal } from './qualifiedAuthority.js';
 import { stableReceipt } from './HorseDecisionReplay.js';
 import {
   HORSE_OPTIONAL_OWNER_OPTIONS,
@@ -441,11 +442,18 @@ export async function exactReplayHorseDecisionRecord(
 
   // 4. The compiled worker decision path, clock frozen at the decision time,
   // worker-owned state restored from the record.
-  const outcome = await withFrozenHorseReplayClock(input.request.decisionTimeMs, () =>
-    replayThroughWorkerRuntime(input, {
-      phase8SafetyDisabledReason: state.phase8SafetyDisabledReason,
-    })
-  );
+  let outcome: Awaited<ReturnType<typeof replayThroughWorkerRuntime>>;
+  try {
+    outcome = await withFrozenHorseReplayClock(input.request.decisionTimeMs, () =>
+      replayThroughWorkerRuntime(input, {
+        phase8SafetyDisabledReason: state.phase8SafetyDisabledReason,
+      })
+    );
+  } catch (error) {
+    if (error instanceof HorseReplayAuthorityRefusal)
+      return finish(`non_replayable:authority:${error.reason}`);
+    throw error;
+  }
   // An optional owner this process cannot admit the way the worker did is a
   // missing input (its authority state), never a substitution.
   for (const option of HORSE_OPTIONAL_OWNER_OPTIONS)

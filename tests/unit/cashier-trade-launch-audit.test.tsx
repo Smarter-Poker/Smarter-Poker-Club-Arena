@@ -318,6 +318,38 @@ beforeEach(() => {
 });
 
 describe('large cashier roster stays complete and progressively rendered', () => {
+  it('keeps every exact recipient and receipt across the 25-item server boundary', async () => {
+    state.roster = Array.from({ length: 26 }, (_, index) => ({
+      ...player(0, 100 - index, `Batch Player ${index}`),
+      user_id: `44444444-4444-4444-8444-${String(index).padStart(12, '0')}`,
+    }));
+    mountCashier();
+    await synchronized();
+    fireEvent.click(screen.getByRole('button', { name: 'Load More (1 Hidden)' }));
+    for (const checkbox of screen.getAllByRole('checkbox', { name: /^Include / }))
+      fireEvent.click(checkbox);
+    fireEvent.click(screen.getByRole('button', { name: 'Send Out' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Send Out' });
+    fireEvent.change(within(dialog).getByRole('spinbutton', { name: 'Amount Per Player' }), {
+      target: { value: '0.20' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Send Out' })).toBeNull());
+    const calls = state.rpcCalls.filter((call) => call.name === 'fn_cashier_batch_transfer');
+    expect(calls).toHaveLength(2);
+    expect(calls[0].args.p_items as unknown[]).toHaveLength(25);
+    expect(calls[1].args.p_items as unknown[]).toHaveLength(1);
+    expect(calls[1].args.p_batch_id).toBe(calls[0].args.p_batch_id);
+    const items = calls.flatMap(
+      (call) => call.args.p_items as Array<{ user_id: string; amount: number; op_id: string }>
+    );
+    expect(items.map((item) => item.user_id)).toEqual(state.roster.map((row) => row.user_id));
+    expect(items.every((item) => item.amount === 0.2)).toBe(true);
+    expect(new Set(items.map((item) => item.op_id)).size).toBe(26);
+    expect(screen.getByText('Confirmed Total: 5.20 Chips')).toBeInTheDocument();
+    expect(screen.getAllByText('Confirmed', { exact: true })).toHaveLength(26);
+  });
+
   it('finds the last member across four server pages while initially mounting only 25 rows', async () => {
     state.roster = Array.from({ length: 2000 }, (_, index) => ({
       ...player(0, 2000 - index, `Roster Player ${index}`),

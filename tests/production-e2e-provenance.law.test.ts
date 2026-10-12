@@ -671,7 +671,8 @@ describe('a retained runtime superseded before the browsers start', () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
-  }, 30_000);});
+  }, 30_000);
+});
 
 // Runs 38206133852 and 38244592617 (2026-10-12): the Lightning operator spec
 // compared build-info.json with the SHA recorded at the start of the job and

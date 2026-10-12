@@ -50,4 +50,5 @@ describe('a Supabase server credential is never source code', () => {
     }
 
     expect([...new Set(violations)]).toEqual([]);
-  }, 30_000);});
+  }, 30_000);
+});

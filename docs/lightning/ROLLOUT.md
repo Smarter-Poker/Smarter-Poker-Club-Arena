@@ -41,7 +41,7 @@ One internal pilot Cluster (below), Lightning enabled with the worker in shadow 
 
 - Readiness on the pilot Cluster: no blocking reason; `WORKER_SHADOW_ONLY`, `NO_AA_CALIBRATION` and `NO_LATENCY_EVIDENCE` are expected and accepted here.
 - The pilot Cluster is non-public (`club_is_public` false, or the game marked private) and seats only internal accounts and horses.
-- A shadow worker plans and forms nothing, so pool players receive no hands while it runs. The stage is time-boxed: at most 60 minutes. Before starting, verify the effective `shadow_window_ms` can produce at least 30 nonempty comparisons within that budget (the 60000ms default can; 300000ms windows cannot). An unsuitable configuration must be corrected through its maintained qualified path before the stage starts; never extend the time box or fabricate comparisons.
+- A shadow worker plans and forms nothing, so pool players receive no hands while it runs. The stage is time-boxed: at most 60 minutes. Before starting, verify the effective `shadow_window_ms` can produce at least 30 nonempty comparisons within that budget (a 60000ms setting can; 300000ms windows cannot). The installed default is 300000ms. Before starting the pilot, use `set_shadow_window {shadow_window_ms: 60000}` through `fn_lightning_operator_control`, while drained in MUST-MOVE with the worker off. An unsuitable configuration must be corrected through its maintained qualified path before the stage starts; never extend the time box or fabricate comparisons.
 
 **Exit Criteria (Required For Stage 2)**
 

@@ -1982,6 +1982,19 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-push-health-reader.sh
+      - name: Inventory seal commits bounded durable pages and never publishes a partial checkpoint
+        if: matrix.shard == 3
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          INVENTORY_SEAL_SCRATCH: ${{ runner.temp }}/inventory-seal-bounded
+        run: python3 scripts/dev/test-inventory-seal-bounded.py
+      - name: Preserve inventory seal native qualification evidence
+        if: always() && matrix.shard == 3
+        uses: actions/upload-artifact@v4
+        with:
+          name: inventory-seal-native-qualification
+          path: ${{ runner.temp }}/inventory-seal-bounded
+          if-no-files-found: error
       - name: Preserve weekly accounting qualification evidence
         if: always() && matrix.shard == 2
         uses: actions/upload-artifact@v4

@@ -1,20 +1,7 @@
-/**
- * THE INVENTORY SEAL ASSEMBLES ITS WEEK BUCKET BY BUCKET (2026-10-12).
- *
- * Pinned on migration 20261012135622_the_inventory_seal_assembles_bucket_by_bucket.sql.
- *
- * Supabase Realtime shuts replication down when one open writing transaction
- * is more than 1.5 GB of WAL behind. The seal wrote a whole week's checkpoint
- * (3,352,453 rows on 2026-10-12, growing every week) in one statement, which is
- * over that cutoff by itself. The week is now assembled one bucket (one source,
- * the first two hex digits of row_id) at a time, capped per call, and the
- * checkpoint row (which every reader finds a week through) is written last
- * with the same rows hash formula as 20261012113248.
- */
+/** Native commit, WAL, crash and equivalence proof: scripts/dev/test-inventory-seal-bounded.py. */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-
 const sql = readFileSync(
   join(
     process.cwd(),
@@ -22,49 +9,49 @@ const sql = readFileSync(
   ),
   'utf8'
 );
-
-describe('the inventory seal assembles its week bucket by bucket', () => {
-  it('is one transaction with a live proof and pinned pre and post images', () => {
-    expect(sql.match(/^BEGIN;$/gm)?.length).toBe(1);
-    expect(sql.trim().endsWith('COMMIT;')).toBe(true);
-    expect(sql.match(/^-- @live-proof: /gm)?.length).toBe(1);
-    expect(sql).toContain("SET LOCAL lock_timeout = '5s';");
+const workflow = readFileSync(join(process.cwd(), '.github/workflows/ci.yml'), 'utf8');
+describe('the inventory seal commits bounded pages before publishing an immutable checkpoint', () => {
+  it('uses one bounded installation transaction and exact source prerequisites', () => {
+    expect(sql.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(sql.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(sql).toContain("SET LOCAL lock_timeout='5s'");
     expect(sql).toContain("'6deca79658f44ffb149316167441b2bf'");
-    expect(sql).toContain("'47b1a3a80eec9fc6a593e99ebef27c27'");
-    // never installed under a week that is mid-seal
-    expect(sql).toContain("'an inventory seal is in progress; install between seals'");
+    expect(sql).toContain("'01288c36118e1e26e7673fc71f155bf6'");
+    expect(sql).toContain("'929cc88e98cd027e821f871f8adbe935'");
   });
-
-  it('caps the rows one call writes', () => {
-    expect(sql).toContain(
-      "IF did_bucket AND (n_tick>=400000 OR clock_timestamp()>began+interval '75 seconds') THEN"
-    );
-    // ~500 bytes a row in the checkpoint: 400,000 rows is ~200 MB, far under 1.5 GB
-    expect(400000 * 500).toBeLessThan(1.5 * 1024 ** 3 * 0.25);
-    expect(sql).toContain(
-      '-- The checkpoint row gets a call of its own once the last bucket is in.'
-    );
+  it('preserves historical foreign keys and immutability instead of writing partial historical rows', () => {
+    expect(sql).not.toMatch(/ALTER TABLE public\.union_pnl_inventory_checkpoint_(?:rows|issues)/);
+    expect(sql).not.toMatch(/DROP (?:CONSTRAINT|TRIGGER)/);
+    expect(sql).not.toContain('INSERT INTO public.union_pnl_inventory_checkpoint_rows');
+    expect(sql).not.toContain('INSERT INTO public.union_pnl_inventory_checkpoint_issues');
+    expect(sql).toContain('REFERENCES public.union_pnl_inventory_seal_builds(boundary)');
+    expect(sql).toContain('inventory_build_is_immutable');
   });
-
-  it('hashes the assembled week exactly as the whole-week seal does', () => {
+  it('bounds count and encoded volume before writing and advances a durable forward-only cursor', () => {
+    expect(sql).toContain('LIMIT 32768');
+    expect(sql).toContain('WHERE used<=33554432');
     expect(sql).toContain(
-      "md5(COALESCE(string_agg(b.rows_md5,E'\\n' ORDER BY b.source_name,b.bucket) FILTER(WHERE b.row_count>0),''))"
+      '512+4*GREATEST(COALESCE(pg_column_size(s.o_after_row),0),COALESCE(octet_length(s.o_after_row::text),0))'
     );
     expect(sql).toContain(
-      "(SELECT md5(string_agg(concat_ws('|',k.source_name,w.rid,w.eid,w.fop,COALESCE(w.after_row::text,'~')),E'\\n' ORDER BY w.rid)) FROM w)"
+      '(NEW.last_kind,NEW.last_source,NEW.last_row,NEW.last_event)>(OLD.last_kind,OLD.last_source,OLD.last_row,OLD.last_event)'
     );
-    expect(sql).toContain(
-      "SELECT md5(COALESCE(string_agg(concat_ws('|',i.source_name,i.row_id,i.event_id),E'\\n' ORDER BY i.source_name,i.row_id,i.event_id),''))"
-    );
+    expect(sql).toContain('-- Publication always uses a separate tick');
   });
-
-  it('drops a partial assembly when its week restarts, never a sealed week', () => {
+  it('publishes only after independent durable-set and checksum readback', () => {
+    expect(sql).toContain('EXCEPT ALL');
+    expect(sql).toContain('inventory_build_checksum_disagrees_with_original_source');
+    expect(sql).toContain('JOIN public.union_pnl_inventory_checkpoints c ON c.boundary=r.boundary');
     expect(sql).toContain(
-      '  IF NOT p_verify THEN\n   TRUNCATE public.union_pnl_inventory_seal_buckets;'
+      'JOIN public.union_pnl_inventory_seal_builds b ON b.boundary=r.boundary AND b.ready'
     );
-    expect(sql).toContain(
-      'DELETE FROM public.union_pnl_inventory_checkpoint_rows WHERE boundary=p_at;'
-    );
-    expect(sql).toContain('CREATE UNLOGGED TABLE public.union_pnl_inventory_seal_buckets');
+    expect(sql).toContain('complete_inventory_build_required');
+    expect(sql).toContain('FROM PUBLIC,anon,authenticated,service_role');
+  });
+  it('continues through the existing close callers and enforces native regression in required accounting qualification', () => {
+    expect(sql).toContain('-- One bounded seal operation per original close transaction.');
+    expect(sql).toContain('inventory_seal_receipt_invalid');
+    expect(sql).toContain('public.union_pnl_inventory_seal_builds b');
+    expect(workflow).toContain('python3 scripts/dev/test-inventory-seal-bounded.py');
   });
 });

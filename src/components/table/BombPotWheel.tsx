@@ -35,7 +35,7 @@
  * chase is aimed at the segment that is already true, exactly as SpinWheel
  * aims at a multiplier the server picked.
  */
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
 import {
   SW_VIEWBOX,
   chaseCatchUp,
@@ -43,6 +43,8 @@ import {
   segmentPoint,
   wedgePath,
 } from '../tournament/SpinWheel';
+import { getAnimationSpeed, prefersReducedMotion } from '../../utils/animationSpeed';
+import { soundService } from '../../services/SoundService';
 import './BombPotWheel.css';
 
 /**
@@ -73,6 +75,8 @@ export interface BombPotWheelProps {
    * multi-table grid would black out all four felts for one table's bomb.
    */
   contained?: boolean;
+  /** Uses the active table sound gate; hidden or muted tables stay silent. */
+  playSounds?: boolean;
 }
 
 const LABEL_RADIUS = 78;
@@ -82,11 +86,17 @@ export function BombPotWheel({
   handsAway,
   onDone,
   contained = false,
+  playSounds = true,
 }: BombPotWheelProps): React.ReactElement | null {
   const [litIndex, setLitIndex] = useState(-1);
   const [phase, setPhase] = useState<'idle' | 'chasing' | 'result'>('idle');
   const timers = useRef<number[]>([]);
-  const startedForRef = useRef<number | null>(null);
+  const [chaseMs, setChaseMs] = useState(BOMB_WHEEL_CHASE_MS);
+  const artId = useId().replace(/:/g, '');
+  const playSoundsRef = useRef(playSounds);
+  useEffect(() => {
+    playSoundsRef.current = playSounds;
+  }, [playSounds]);
 
   /**
    * ═══ onDone IS READ THROUGH A REF, AND THAT IS LOAD-BEARING ═══════════════
@@ -125,35 +135,46 @@ export function BombPotWheel({
        whose bomb is still on a clock, or has none, simply has nothing to
        reveal. Fail closed to "no wheel". */
     const valid =
-      handsAway != null && handsAway >= BOMB_WHEEL_MIN_HANDS && handsAway <= BOMB_WHEEL_MAX_HANDS;
+      handsAway != null &&
+      Number.isInteger(handsAway) &&
+      handsAway >= BOMB_WHEEL_MIN_HANDS &&
+      handsAway <= BOMB_WHEEL_MAX_HANDS;
     if (!valid) {
       clearTimers();
-      startedForRef.current = null;
       setPhase('idle');
       setLitIndex(-1);
       return;
     }
-    // Re-running for a count already being revealed would restart the chase
-    // mid-spin every time the parent re-renders.
-    if (startedForRef.current === handsAway) return;
-    startedForRef.current = handsAway;
+    // Only the count owns this effect. Parent callbacks and sound-gate changes
+    // do not restart it; cleanup also permits React's strict effect replay.
 
     clearTimers();
     setPhase('chasing');
 
     const targetIndex = handsAway - BOMB_WHEEL_MIN_HANDS;
-    const schedule = chaseSchedule(SEGMENTS, targetIndex, BOMB_WHEEL_CHASE_MS);
+    const speed = getAnimationSpeed();
+    const duration = BOMB_WHEEL_CHASE_MS * speed;
+    setChaseMs(duration);
+    const reduced = prefersReducedMotion();
+    const schedule = reduced ? [] : chaseSchedule(SEGMENTS, targetIndex, duration);
     /* elapsed 0: unlike a Spins draw there is no shared engine clock to join
        late against — this fires off a local hand-boundary. chaseCatchUp is
        still the right call rather than a raw loop, because it is the function
        that owns "which step is lit at time t" and a second implementation of
        that is how the light ends up somewhere other than the answer. */
     const { litNow, remaining } = chaseCatchUp(schedule, 0);
-    if (litNow >= 0) setLitIndex(litNow % SEGMENTS);
+    setLitIndex(reduced ? targetIndex : litNow >= 0 ? litNow % SEGMENTS : -1);
 
-    remaining.forEach(({ stepIdx, at }) => {
+    remaining.forEach(({ stepIdx, at }, i) => {
       timers.current.push(
-        window.setTimeout(() => setLitIndex(stepIdx % SEGMENTS), Math.max(0, at))
+        window.setTimeout(
+          () => {
+            setLitIndex(stepIdx % SEGMENTS);
+            if (playSoundsRef.current)
+              soundService.playSpinPeg(0.5 + 0.5 * (i / Math.max(1, remaining.length - 1)));
+          },
+          Math.max(0, at)
+        )
       );
     });
 
@@ -164,10 +185,10 @@ export function BombPotWheel({
         // must never do is stop on a number that is not the answer.
         setLitIndex(targetIndex);
         setPhase('result');
-      }, BOMB_WHEEL_CHASE_MS)
+      }, duration)
     );
     timers.current.push(
-      window.setTimeout(() => onDoneRef.current(), BOMB_WHEEL_CHASE_MS + BOMB_WHEEL_HOLD_MS)
+      window.setTimeout(() => onDoneRef.current(), duration + BOMB_WHEEL_HOLD_MS * speed)
     );
 
     return clearTimers;
@@ -177,52 +198,126 @@ export function BombPotWheel({
     // timers without rescheduling them.
   }, [handsAway, clearTimers]);
 
-  if (phase === 'idle' || handsAway == null) return null;
+  if (
+    phase === 'idle' ||
+    handsAway == null ||
+    !Number.isInteger(handsAway) ||
+    handsAway < BOMB_WHEEL_MIN_HANDS ||
+    handsAway > BOMB_WHEEL_MAX_HANDS
+  )
+    return null;
 
   const targetIndex = handsAway - BOMB_WHEEL_MIN_HANDS;
+  const landingAngle = 5 * 360 - targetIndex * (360 / SEGMENTS);
 
   return (
     <div
       className={`bpw bpw--${phase}${contained ? ' bpw--contained' : ''}`}
+      style={
+        {
+          '--bpw-speed': chaseMs / BOMB_WHEEL_CHASE_MS,
+          '--bpw-hold-ms': `${(BOMB_WHEEL_HOLD_MS * chaseMs) / BOMB_WHEEL_CHASE_MS}ms`,
+        } as React.CSSProperties
+      }
       role="status"
       aria-live="polite"
       data-testid="bomb-pot-wheel"
     >
+      <link
+        rel="preload"
+        as="image"
+        href={`${import.meta.env.BASE_URL}assets/diamond-spins/wheel-chrome-housing-v1.png`}
+      />
       <div className="bpw__dim" aria-hidden="true" />
       <div className="bpw__stage">
         <div className="bpw__title">Bomb Pot Incoming</div>
-        <svg
-          className="bpw__disc"
-          viewBox={`0 0 ${SW_VIEWBOX} ${SW_VIEWBOX}`}
-          aria-hidden="true"
-          focusable="false"
-        >
-          {Array.from({ length: SEGMENTS }, (_, i) => {
-            const isLit = i === litIndex;
-            const isWinner = phase === 'result' && i === targetIndex;
-            return (
-              <path
-                key={`w${i}`}
-                d={wedgePath(i, SEGMENTS)}
-                className={`bpw__wedge${isLit ? ' is-lit' : ''}${isWinner ? ' is-winner' : ''}${
-                  phase === 'result' && !isWinner ? ' is-dimmed' : ''
-                }`}
-              />
-            );
-          })}
-          {Array.from({ length: SEGMENTS }, (_, i) => {
-            const p = segmentPoint(i, SEGMENTS, LABEL_RADIUS);
-            const peg = segmentPoint(i, SEGMENTS, PEG_RADIUS);
-            return (
-              <g key={`l${i}`}>
-                <circle cx={peg.x} cy={peg.y} r={3.2} className="bpw__peg" />
-                <text x={p.x} y={p.y} className="bpw__label" textAnchor="middle" dy="0.36em">
-                  {i + BOMB_WHEEL_MIN_HANDS}
-                </text>
-              </g>
-            );
-          })}
-        </svg>
+        <div className="bpw__disc-wrap">
+          <svg
+            className="bpw__disc"
+            viewBox={`0 0 ${SW_VIEWBOX} ${SW_VIEWBOX}`}
+            aria-hidden="true"
+            focusable="false"
+            data-motion="keep"
+            style={
+              {
+                '--bpw-turn': `${landingAngle}deg`,
+                '--bpw-spin-ms': `${chaseMs}ms`,
+              } as React.CSSProperties
+            }
+          >
+            <defs>
+              <linearGradient id={`bpwMetal-${artId}`} x1="0" y1="0" x2="1" y2="1">
+                <stop stopColor="#e4e7ec" />
+                <stop offset=".35" stopColor="#9aa5b3" />
+                <stop offset="1" stopColor="#050607" />
+              </linearGradient>
+              <radialGradient id={`bpwGlass-${artId}`} cx=".25" cy=".1" r=".9">
+                <stop stopColor="#9aa5b3" stopOpacity=".5" />
+                <stop offset=".35" stopColor="#050607" />
+                <stop offset="1" stopColor="#000" />
+              </radialGradient>
+            </defs>
+            {Array.from({ length: SEGMENTS }, (_, i) => {
+              const isLit = i === litIndex;
+              const isWinner = phase === 'result' && i === targetIndex;
+              const p = segmentPoint(i, SEGMENTS, LABEL_RADIUS);
+              const peg = segmentPoint(i, SEGMENTS, PEG_RADIUS);
+              return (
+                <g key={`w${i}`}>
+                  <path
+                    d={wedgePath(i, SEGMENTS)}
+                    fill={`url(#bpwMetal-${artId})`}
+                    className="bpw__metal"
+                  />
+                  <path
+                    d={wedgePath(i, SEGMENTS, 112)}
+                    fill={`url(#bpwGlass-${artId})`}
+                    className={`bpw__wedge${isLit ? ' is-lit' : ''}${isWinner ? ' is-winner' : ''}${phase === 'result' && !isWinner ? ' is-dimmed' : ''}`}
+                  />
+                  <circle cx={peg.x} cy={peg.y} r={3.2} className="bpw__peg" />
+                  <g
+                    transform={
+                      phase === 'result' ? `rotate(${-landingAngle}, ${p.x}, ${p.y})` : undefined
+                    }
+                  >
+                    <text x={p.x} y={p.y} className="bpw__label" textAnchor="middle" dy="0.15em">
+                      {i + BOMB_WHEEL_MIN_HANDS}
+                    </text>
+                    <text x={p.x} y={p.y + 13} className="bpw__unit" textAnchor="middle">
+                      {i === 0 ? 'HAND' : 'HANDS'}
+                    </text>
+                  </g>
+                </g>
+              );
+            })}
+          </svg>
+          <img
+            className="bpw__housing"
+            src={`${import.meta.env.BASE_URL}assets/diamond-spins/wheel-chrome-housing-v1.png`}
+            alt=""
+            draggable={false}
+          />
+          <img
+            className="bpw__selector"
+            src={`${import.meta.env.BASE_URL}assets/diamond-spins/wheel-selector-pointer-v2.webp`}
+            alt=""
+            draggable={false}
+          />
+          <div className="bpw__hub" aria-hidden="true">
+            {phase === 'result' ? (
+              <>
+                <strong>{handsAway}</strong>
+                <span>{handsAway === 1 ? 'HAND' : 'HANDS'}</span>
+              </>
+            ) : (
+              <span>
+                HANDS
+                <br />
+                UNTIL BOMB
+              </span>
+            )}
+          </div>
+        </div>
         <div className="bpw__caption">
           {/* Never "double board" — see the prefix note in TablePage's
               bombPotBadge. Singular vs plural because "IN 1 HANDS" on the one

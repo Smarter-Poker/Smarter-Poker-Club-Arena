@@ -21,7 +21,9 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, act, cleanup, screen } from '@testing-library/react';
-import { useState } from 'react';
+import { StrictMode, useState } from 'react';
+import { soundService } from '../../src/services/SoundService';
+vi.mock('../../src/services/SoundService', () => ({ soundService: { playSpinPeg: vi.fn() } }));
 import BombPotWheel, {
   BOMB_WHEEL_CHASE_MS,
   BOMB_WHEEL_HOLD_MS,
@@ -31,8 +33,13 @@ import BombPotWheel, {
 
 const FULL = BOMB_WHEEL_CHASE_MS + BOMB_WHEEL_HOLD_MS + 200;
 
-beforeEach(() => vi.useFakeTimers());
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.clearAllMocks();
+});
 afterEach(() => {
+  document.documentElement.style.removeProperty('--animation-speed');
+  vi.unstubAllGlobals();
   vi.useRealTimers();
   cleanup();
 });
@@ -100,7 +107,7 @@ describe('the reveal completes even though the parent re-renders under it', () =
 });
 
 describe('it draws nothing when there is nothing to reveal', () => {
-  for (const bad of [null, 0, 6, 99, -1]) {
+  for (const bad of [null, 0, 6, 99, -1, 2.5, NaN, Infinity]) {
     it(`handsAway=${bad} renders no overlay`, async () => {
       render(<BombPotWheel handsAway={bad} onDone={() => {}} />);
       await act(async () => {
@@ -145,5 +152,105 @@ describe('it never strands a timer', () => {
     });
     expect(onDone).toHaveBeenCalledTimes(1);
     expect(screen.queryByText('Bomb Pot In 5 Hands')).toBeNull();
+  });
+});
+
+describe('the upgraded wheel preserves its clock and exact hand count', () => {
+  it('finishes once under strict effect replay', async () => {
+    const onDone = vi.fn();
+    render(
+      <StrictMode>
+        <BombPotWheel handsAway={4} onDone={onDone} />
+      </StrictMode>
+    );
+    await act(async () => {
+      vi.advanceTimersByTime(FULL);
+    });
+    expect(onDone).toHaveBeenCalledTimes(1);
+  });
+  it.each([1, 2, 3, 4, 5])('lands count %s beneath the fixed selector', async (hands) => {
+    render(<BombPotWheel handsAway={hands} onDone={() => {}} playSounds={false} />);
+    await act(async () => {
+      vi.advanceTimersByTime(BOMB_WHEEL_CHASE_MS);
+    });
+    const wheel = screen.getByTestId('bomb-pot-wheel');
+    const svg = wheel.querySelector<SVGSVGElement>('.bpw__disc')!;
+    const label = svg.querySelectorAll<SVGTextElement>('.bpw__label')[hands - 1];
+    const angle =
+      Math.atan2(Number(label.getAttribute('y')) - 120, Number(label.getAttribute('x')) - 120) +
+      (parseFloat(svg.style.getPropertyValue('--bpw-turn')) * Math.PI) / 180;
+    expect(Math.cos(angle)).toBeCloseTo(0, 8);
+    expect(Math.sin(angle)).toBeCloseTo(-1, 8);
+    expect(wheel.querySelector('.bpw__hub strong')?.textContent).toBe(String(hands));
+    expect(wheel.querySelectorAll('.is-winner')).toHaveLength(1);
+    expect(wheel.querySelector('.bpw__housing')?.getAttribute('src')).toContain(
+      'wheel-chrome-housing-v1.png'
+    );
+  });
+  it('keeps rotor, reveal and completion on the chosen duration multiplier', async () => {
+    document.documentElement.style.setProperty('--animation-speed', '2');
+    const onDone = vi.fn();
+    render(<BombPotWheel handsAway={3} onDone={onDone} playSounds={false} />);
+    expect(
+      screen
+        .getByTestId('bomb-pot-wheel')
+        .querySelector<SVGSVGElement>('.bpw__disc')!
+        .style.getPropertyValue('--bpw-spin-ms')
+    ).toBe('4800ms');
+    await act(async () => {
+      vi.advanceTimersByTime(BOMB_WHEEL_CHASE_MS * 2 - 1);
+    });
+    expect(screen.queryByText('Bomb Pot In 3 Hands')).toBeNull();
+    await act(async () => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(screen.getByText('Bomb Pot In 3 Hands')).toBeTruthy();
+    expect(onDone).not.toHaveBeenCalled();
+    await act(async () => {
+      vi.advanceTimersByTime(BOMB_WHEEL_HOLD_MS * 2);
+    });
+    expect(onDone).toHaveBeenCalledTimes(1);
+  });
+  it('stops owned peg sounds immediately on unmount or a sound-gate change', async () => {
+    const { rerender, unmount } = render(<BombPotWheel handsAway={5} onDone={() => {}} />);
+    await act(async () => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(soundService.playSpinPeg).toHaveBeenCalled();
+    vi.mocked(soundService.playSpinPeg).mockClear();
+    rerender(<BombPotWheel handsAway={5} onDone={() => {}} playSounds={false} />);
+    await act(async () => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(soundService.playSpinPeg).not.toHaveBeenCalled();
+    unmount();
+    await act(async () => {
+      vi.advanceTimersByTime(FULL);
+    });
+    expect(soundService.playSpinPeg).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it('reduced motion keeps the result without the travelling chase or peg sounds', async () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({ matches: true }))
+    );
+    render(<BombPotWheel handsAway={2} onDone={() => {}} />);
+    await act(async () => {
+      vi.advanceTimersByTime(BOMB_WHEEL_CHASE_MS);
+    });
+    expect(screen.getByText('Bomb Pot In 2 Hands')).toBeTruthy();
+    expect(soundService.playSpinPeg).not.toHaveBeenCalled();
+  });
+  it('gives concurrent wheels independent SVG materials', () => {
+    render(
+      <>
+        <BombPotWheel handsAway={2} onDone={() => {}} contained />
+        <BombPotWheel handsAway={4} onDone={() => {}} contained />
+      </>
+    );
+    const ids = [...document.querySelectorAll('linearGradient, radialGradient')].map((e) => e.id);
+    expect(ids).toHaveLength(4);
+    expect(new Set(ids).size).toBe(4);
   });
 });

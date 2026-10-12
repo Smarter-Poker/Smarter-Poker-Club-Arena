@@ -416,6 +416,16 @@ test.describe('Production Shark Club Players', () => {
     await expect(
       history.getByRole('status').filter({ hasText: 'New Changes Are Available' })
     ).toBeVisible({ timeout: 15_000 });
+    await expect
+      .poll(
+        () =>
+          historySignals.some(
+            (value) =>
+              value.club_id === requestScope.p_club_id && value.action === 'export_club_roster'
+          ),
+        { timeout: 15_000 }
+      )
+      .toBe(true);
     const signal = historySignals.find(
       (value) => value.club_id === requestScope.p_club_id && value.action === 'export_club_roster'
     );

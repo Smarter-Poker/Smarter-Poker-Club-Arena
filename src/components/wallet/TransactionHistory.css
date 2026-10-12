@@ -3,13 +3,11 @@
  */
 
 .transaction-history {
-  background: rgba(0, 0, 0, 0.4);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
   overflow: hidden;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04);
+  box-shadow: none;
 }
 
 /* `.transaction-history.loading` lived here for a long time and was never
@@ -58,15 +56,8 @@
   transition: all var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) 0.15s;
 }
 
-.transaction-row .icon {
-  font-size: 20px;
-}
-
-/* `min-width: 0` is load-bearing. A flex item will not shrink below its content
-   width without it, so at 375px - icon 20 + amounts ~70 + a nowrap timestamp
-   ~110 + three 12px gaps leaves this column about 100px - a description like
-   "Cash game buy-in at table" pushed the row wider than the panel and the whole
-   history scrolled sideways. */
+/* Long descriptions shrink and wrap beside the amount and timestamp rather
+   than forcing the financial row wider than its panel. */
 .transaction-row .details {
   flex: 1;
   min-width: 0;
@@ -84,9 +75,9 @@
 .transaction-row .description {
   font-size: 11px;
   color: var(--text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+  white-space: normal;
 }
 
 .transaction-row .amounts {
@@ -196,21 +187,6 @@
   height: 12px;
 }
 
-.tx-skeleton-circle {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: linear-gradient(
-    90deg,
-    rgba(255, 255, 255, 0.04) 25%,
-    rgba(255, 255, 255, 0.08) 50%,
-    rgba(255, 255, 255, 0.04) 75%
-  );
-  background-size: 200px 100%;
-  animation: tx-shimmer 1.4s ease-in-out infinite;
-  flex-shrink: 0;
-}
-
 .tx-skeleton-row {
   opacity: 0;
   animation:
@@ -235,10 +211,6 @@
   color: var(--text-secondary);
 }
 
-.tx-error-icon {
-  font-size: 28px;
-}
-
 .tx-error-state p {
   margin: 0;
   font-size: 13px;
@@ -260,7 +232,7 @@
 }
 
 /* ── 375px ──
-   Four columns do not fit a phone. The timestamp drops under the description
+   The timestamp belongs under its movement on a phone. It drops under the description
    and the row wraps instead of overflowing. */
 @media (max-width: 420px) {
   .transaction-row {
@@ -270,14 +242,35 @@
   }
 
   .transaction-row .details {
-    /* Icon (20) + its gap (12) = 32px; leave the amounts their column. */
-    flex: 1 1 calc(100% - 32px - 90px);
+    /* The category and amount have separate columns, without a floating glyph. */
+    flex: 1 1 calc(100% - 90px);
   }
 
   .transaction-row .time {
     /* Push onto its own line, aligned under the description. */
     flex: 1 0 100%;
-    padding-left: 32px;
+    padding-left: 0;
     text-align: left;
   }
+}
+
+.transaction-history .transaction-row .type {
+  overflow-wrap: anywhere;
+}
+.transaction-history .transaction-row .amounts {
+  flex-shrink: 0;
+}
+@media (max-width: 420px) {
+  .transaction-history__header {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .transaction-history__header select {
+    max-width: 100%;
+  }
+}
+
+.transaction-history .transaction-list:focus-visible {
+  outline: 2px solid #8fd4ff;
+  outline-offset: -2px;
 }

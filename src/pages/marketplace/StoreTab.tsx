@@ -19,6 +19,7 @@ import {
   readSessionPurchaseRequest,
 } from '../../utils/sessionPurchaseRequest';
 import styles from '../MarketplacePage.module.css';
+import RewardsOverlayPortal from '../../components/rewards/RewardsOverlayPortal';
 import ItemArt, { hasCuratedItemArt } from './ItemArt';
 import {
   CATEGORIES,
@@ -686,124 +687,126 @@ export default function StoreTab({
     <>
       {/* Buy confirm modal */}
       {buyTarget && (
-        <div className={styles.modalOverlay} onClick={() => !processing && closeBuy()}>
-          <div
-            ref={modalRef}
-            className={styles.modal}
-            onClick={(e) => e.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="buy-modal-title"
-            aria-describedby="buy-modal-description"
-          >
-            <div className={styles.modalHandle} aria-hidden="true" />
-            <button
-              type="button"
-              className={styles.modalClose}
-              onClick={closeBuy}
-              disabled={processing}
-              aria-label="Close Purchase"
+        <RewardsOverlayPortal>
+          <div className={styles.modalOverlay} onClick={() => !processing && closeBuy()}>
+            <div
+              ref={modalRef}
+              className={styles.modal}
+              onClick={(e) => e.stopPropagation()}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="buy-modal-title"
+              aria-describedby="buy-modal-description"
             >
-              Close
-            </button>
-            <span className={styles.modalEyebrow}>Instant Account Delivery</span>
-            <h2 className={styles.modalTitle} id="buy-modal-title">
-              Confirm Purchase
-            </h2>
-            <div className={styles.purchasePreview}>
-              <div className={styles.purchaseImage}>
-                <ItemArt
-                  category={buyTarget.category}
-                  name={buyTarget.name}
-                  itemType={buyTarget.item_type}
-                  grantType={buyTarget.grant_spec?.type}
-                  artRef={buyTarget.grant_spec?.avatar_id || buyTarget.grant_spec?.theme_id}
-                  seed={buyTarget.id}
-                />
-                {modalImg && (
-                  <img
-                    src={modalImg}
-                    alt=""
-                    className={styles.itemImg}
-                    referrerPolicy="no-referrer"
-                    loading="lazy"
-                    onError={(event) => {
-                      (event.currentTarget as HTMLImageElement).style.display = 'none';
-                    }}
+              <div className={styles.modalHandle} aria-hidden="true" />
+              <button
+                type="button"
+                className={styles.modalClose}
+                onClick={closeBuy}
+                disabled={processing}
+                aria-label="Close Purchase"
+              >
+                Close
+              </button>
+              <span className={styles.modalEyebrow}>Instant Account Delivery</span>
+              <h2 className={styles.modalTitle} id="buy-modal-title">
+                Confirm Purchase
+              </h2>
+              <div className={styles.purchasePreview}>
+                <div className={styles.purchaseImage}>
+                  <ItemArt
+                    category={buyTarget.category}
+                    name={buyTarget.name}
+                    itemType={buyTarget.item_type}
+                    grantType={buyTarget.grant_spec?.type}
+                    artRef={buyTarget.grant_spec?.avatar_id || buyTarget.grant_spec?.theme_id}
+                    seed={buyTarget.id}
                   />
-                )}
-              </div>
-              <div>
-                <div className={styles.itemName}>{formatPopupText(buyTarget.name)}</div>
-                <div className={styles.itemDesc} id="buy-modal-description">
-                  {formatPopupText(buyTarget.description || 'No Description Available.')}
-                </div>
-                {grantText(buyTarget) && (
-                  <div className={styles.grantLine}>
-                    Delivered Instantly: {grantText(buyTarget)}
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className={styles.priceBox}>
-              <div className={styles.priceItem}>
-                <span className={styles.priceLabel}>
-                  {resumingPurchase ? 'Pending Purchase Price' : 'Item Price'}
-                </span>
-                <span className={styles.priceValueRed}>
-                  {!resumingPurchase && isOnSale(buyTarget) && (
-                    <span className={styles.strikePrice}>{fmt(buyTarget.price)}</span>
+                  {modalImg && (
+                    <img
+                      src={modalImg}
+                      alt=""
+                      className={styles.itemImg}
+                      referrerPolicy="no-referrer"
+                      loading="lazy"
+                      onError={(event) => {
+                        (event.currentTarget as HTMLImageElement).style.display = 'none';
+                      }}
+                    />
                   )}
-                  {fmt(purchasePrice)} Diamonds
-                </span>
+                </div>
+                <div>
+                  <div className={styles.itemName}>{formatPopupText(buyTarget.name)}</div>
+                  <div className={styles.itemDesc} id="buy-modal-description">
+                    {formatPopupText(buyTarget.description || 'No Description Available.')}
+                  </div>
+                  {grantText(buyTarget) && (
+                    <div className={styles.grantLine}>
+                      Delivered Instantly: {grantText(buyTarget)}
+                    </div>
+                  )}
+                </div>
               </div>
-              <div className={styles.priceItem}>
-                <span className={styles.priceLabel}>Your Diamonds</span>
-                <span className={styles.priceValueBalance}>{fmt(balance)}</span>
+              <div className={styles.priceBox}>
+                <div className={styles.priceItem}>
+                  <span className={styles.priceLabel}>
+                    {resumingPurchase ? 'Pending Purchase Price' : 'Item Price'}
+                  </span>
+                  <span className={styles.priceValueRed}>
+                    {!resumingPurchase && isOnSale(buyTarget) && (
+                      <span className={styles.strikePrice}>{fmt(buyTarget.price)}</span>
+                    )}
+                    {fmt(purchasePrice)} Diamonds
+                  </span>
+                </div>
+                <div className={styles.priceItem}>
+                  <span className={styles.priceLabel}>Your Diamonds</span>
+                  <span className={styles.priceValueBalance}>{fmt(balance)}</span>
+                </div>
               </div>
-            </div>
-            {resumingPurchase && (
-              <div className={styles.insufficientFunds} role="status">
-                Purchase Status Is Uncertain. Confirm Again To Verify The Original Purchase With The
-                Same Protected Request Before Buying Again.
-              </div>
-            )}
-            {!resumingPurchase && balance < purchasePrice && (
-              <div className={styles.insufficientFunds}>
-                <span>Insufficient Diamonds. You Need {fmt(purchasePrice - balance)} More.</span>
+              {resumingPurchase && (
+                <div className={styles.insufficientFunds} role="status">
+                  Purchase Status Is Uncertain. Confirm Again To Verify The Original Purchase With
+                  The Same Protected Request Before Buying Again.
+                </div>
+              )}
+              {!resumingPurchase && balance < purchasePrice && (
+                <div className={styles.insufficientFunds}>
+                  <span>Insufficient Diamonds. You Need {fmt(purchasePrice - balance)} More.</span>
+                  <button
+                    className={styles.inlineLink}
+                    onClick={() => {
+                      closeBuy();
+                      onGoDiamonds();
+                    }}
+                  >
+                    Get Diamonds
+                  </button>
+                </div>
+              )}
+              <div className={styles.modalActions}>
+                <button onClick={closeBuy} className={styles.btnGhost} disabled={processing}>
+                  Cancel
+                </button>
                 <button
-                  className={styles.inlineLink}
-                  onClick={() => {
-                    closeBuy();
-                    onGoDiamonds();
-                  }}
+                  ref={confirmBtnRef}
+                  onClick={handlePurchase}
+                  className={styles.btnPrimary}
+                  disabled={
+                    processing || !!modalBlocked || (!resumingPurchase && balance < purchasePrice)
+                  }
+                  aria-label={`${resumingPurchase ? 'Verify' : 'Confirm'} ${formatPopupText(buyTarget.name)} Purchase With Diamonds`}
                 >
-                  Get Diamonds
+                  {processing
+                    ? 'Verifying Purchase'
+                    : resumingPurchase
+                      ? 'Verify Purchase'
+                      : 'Confirm Purchase'}
                 </button>
               </div>
-            )}
-            <div className={styles.modalActions}>
-              <button onClick={closeBuy} className={styles.btnGhost} disabled={processing}>
-                Cancel
-              </button>
-              <button
-                ref={confirmBtnRef}
-                onClick={handlePurchase}
-                className={styles.btnPrimary}
-                disabled={
-                  processing || !!modalBlocked || (!resumingPurchase && balance < purchasePrice)
-                }
-                aria-label={`${resumingPurchase ? 'Verify' : 'Confirm'} ${formatPopupText(buyTarget.name)} Purchase With Diamonds`}
-              >
-                {processing
-                  ? 'Verifying Purchase'
-                  : resumingPurchase
-                    ? 'Verify Purchase'
-                    : 'Confirm Purchase'}
-              </button>
             </div>
           </div>
-        </div>
+        </RewardsOverlayPortal>
       )}
 
       <div className={styles.storeIntro}>

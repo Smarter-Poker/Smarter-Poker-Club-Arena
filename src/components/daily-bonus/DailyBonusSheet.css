@@ -115,7 +115,7 @@
 }
 
 .dbs__readout-note {
-  font-size: 2.2cqw;
+  font-size: clamp(11px, 2.2cqw, 16px);
   white-space: normal;
   line-height: 1.25;
 }
@@ -141,7 +141,7 @@
 }
 
 .dbs__day-label {
-  font-size: 2.2cqw;
+  font-size: clamp(11px, 2.2cqw, 16px);
   letter-spacing: 0.1em;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -230,7 +230,7 @@
 }
 
 .dbs-row__type {
-  font-size: 2.5cqw;
+  font-size: clamp(12px, 2.5cqw, 18px);
 }
 
 /* The figure, and the line that says what it is worth, on one baseline; a
@@ -254,13 +254,14 @@
 
 .dbs-row__sub {
   min-width: 0;
-  font-size: 3.1cqw;
+  overflow-wrap: anywhere;
+  font-size: clamp(12px, 3.1cqw, 20px);
   line-height: 1.35;
 }
 
 .dbs-row__lucky,
 .dbs-row__note {
-  font-size: 2.4cqw;
+  font-size: clamp(12px, 2.4cqw, 18px);
 }
 
 /* The mystery figure breathes until it is revealed; the reveal is the words
@@ -376,7 +377,7 @@
 
 .dbs__note {
   display: grid;
-  grid-template-columns: 17cqw minmax(0, 1fr);
+  grid-template-columns: minmax(64px, 17cqw) minmax(0, 1fr);
   gap: 0 2.4cqw;
   align-items: baseline;
 }
@@ -388,7 +389,7 @@
 }
 
 .dbs__note dd {
-  font-size: 3.1cqw;
+  font-size: clamp(12px, 3.1cqw, 20px);
   line-height: 1.4;
 }
 
@@ -525,4 +526,25 @@
   min-height: 44px;
   padding: 2cqw 4cqw;
   font-size: 4cqw;
+}
+
+/* A phone keeps the wording readable without hiding it behind the action. */
+@media (max-width: 480px) {
+  .dbs-row {
+    grid-template-columns: 15cqw minmax(0, 1fr);
+  }
+  .dbs-row__action {
+    grid-column: 2;
+    justify-self: start;
+    text-align: left;
+    padding-left: 0;
+  }
+  .dbs-word {
+    min-height: 44px;
+    font-size: 12px;
+    white-space: normal;
+  }
+  .dbs-row__action--locked {
+    max-width: 100%;
+  }
 }

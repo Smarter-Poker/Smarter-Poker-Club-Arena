@@ -203,6 +203,17 @@ afterEach(() => {
 });
 
 describe('achievement reads and page-owned notification invalidation', () => {
+  it('shows login milestone status without inventing rewards from the login counter', async () => {
+    h.response = (q) => ({ data: q.table === 'profiles' ? { login_streak: 30 } : [], error: null });
+    render(<AchievementsPage />);
+    await settle();
+    expect(screen.getAllByText('Reached')).toHaveLength(2);
+    expect(screen.getByText('In Progress')).toBeTruthy();
+    expect(screen.queryByText('1K Chips')).toBeNull();
+    expect(screen.queryByText('100 Diamonds')).toBeNull();
+    expect(screen.queryByText('Exclusive Badge')).toBeNull();
+  });
+
   it('observes progress only on an open visible online page without training WAL or writes', async () => {
     const view = render(<AchievementsPage />);
     await settle();

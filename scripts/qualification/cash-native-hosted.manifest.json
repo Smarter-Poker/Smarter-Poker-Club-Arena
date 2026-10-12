@@ -56,16 +56,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 205414,
-      "sha256": "3e8d21bf217ff96930b6c299b842bf845198ec17813209494e50ec5a58c9511c"
+      "bytes": 205629,
+      "sha256": "dcdf7c1def63a98bec6c64cb63b87c0d7d9a3c70d80814dd75d79d667a45f20f"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 35480,
-      "sha256": "1fc422b810641eee2149abbdbbf5ddf50c54e87162fbea82f22456c506bd712d"
+      "bytes": 35533,
+      "sha256": "6afe9dd3d84c639d8995271514bc1195202f2e930835137edcb7e0d73bf946ec"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -2156,6 +2156,33 @@
       }
     ]
   },
+  "onlyStaffRemoveMemberDbHarnessRouting20261012": {
+    "reason": "Reviewed additive only-staff-remove-member harness routing: the existing cashierDbHarnesses selector also names scripts/ci/test-only-staff-remove-member-db-postgres.py (the PostgreSQL 17 qualification of migration 20261012132509, only club staff can remove a member) and its fixture directory tests/fixtures/only-staff-remove-member-db/, and one accounting_postgres shard 2 step runs it. No selector is removed or narrowed; financial sources, assertions and historical evidence are unchanged. These byte bindings establish source identity only, not financial or production qualification.",
+    "changes": [
+      {
+        "path": ".github/workflows/ci.yml",
+        "previous": {
+          "bytes": 202788,
+          "sha256": "cbecb15da2fd2b57f1c3fcb7a75f9eede415cef9ad40bce2f25257266ca3f732"
+        },
+        "current": {
+          "bytes": 203003,
+          "sha256": "1699ddcbdafde77bbb538e632911eb11663486d78a99571e67006ae4f4004995"
+        }
+      },
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": {
+          "bytes": 35480,
+          "sha256": "1fc422b810641eee2149abbdbbf5ddf50c54e87162fbea82f22456c506bd712d"
+        },
+        "current": {
+          "bytes": 35533,
+          "sha256": "6afe9dd3d84c639d8995271514bc1195202f2e930835137edcb7e0d73bf946ec"
+        }
+      }
+    ]
+  },
   "horseRequestRetentionIntegration20261012": {
     "reason": "Add the native eight-day settled horse request regression to existing Accounting3 alongside unchanged financial qualifications. Refresh only current workflow source fingerprint; preserve all historical pins and qualification outcomes.",
     "previousWorkflowPin": {
@@ -2186,6 +2213,17 @@
     "previousAdaptiveWorkflowPin": {
       "bytes": 204540,
       "sha256": "9115c4963648902efcb6ea9cda5cb5e529622a3054107f2c0e1ad51a1d49ccb2"
+    }
+  },
+  "horseRetentionMainIntegration20261012": {
+    "reason": "Preserve current protected-main only-staff-remove-member qualification plus all request/key/adaptive steps; refresh only combined current workflow source fingerprint. Every original financial input, assertion, historical pin and qualification status remains.",
+    "previousCandidateWorkflowPin": {
+      "bytes": 205414,
+      "sha256": "3e8d21bf217ff96930b6c299b842bf845198ec17813209494e50ec5a58c9511c"
+    },
+    "previousProtectedMainWorkflowPin": {
+      "bytes": 203003,
+      "sha256": "1699ddcbdafde77bbb538e632911eb11663486d78a99571e67006ae4f4004995"
     }
   }
 }

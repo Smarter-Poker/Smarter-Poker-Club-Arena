@@ -308,7 +308,11 @@ BEGIN
     ),
     jsonb_build_object(
       'signature', 'public.fn_player_spendable_balance(uuid,uuid,uuid,uuid)',
+      -- Installed buy-in resolver 20261012131301: explicit club-only cashier
+      -- reads and authority are unchanged; table/entry previews follow the debit.
+      -- Exact source body 3dbf828a2c68ac402367aba5417bc45c was read back live.
       'hash', '2eef81f95feb167a6d687dbb538f9bc2',
+      'replacement_hash', '7486d37ebaec9159719da58cdf8993ff',
       'search_path', 'search_path=public'
     ),
     jsonb_build_object(
@@ -658,6 +662,22 @@ BEGIN
   END IF;
 END;
 $cashier_contract$;
+
+-- The report must bound journal I/O by the requested club and its baseline.
+DO $cashier_club_cover$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_index i
+    WHERE i.indexrelid=to_regclass('public.idx_chip_ledger_club_player_legs_cover')
+      AND i.indrelid='public.chip_ledger'::regclass
+      AND i.indisvalid AND i.indisready AND i.indislive
+      AND pg_get_indexdef(i.indexrelid) =
+        'CREATE INDEX idx_chip_ledger_club_player_legs_cover ON public.chip_ledger USING btree (club_id, created_at) INCLUDE (to_type, from_type, to_entity_id, from_entity_id, amount) WHERE ((club_id IS NOT NULL) AND ((to_type = ''player_wallet''::text) OR (from_type = ''player_wallet''::text)))'
+  ) THEN
+    RAISE EXCEPTION 'cashier club journal covering index drift';
+  END IF;
+END;
+$cashier_club_cover$;
 
 SELECT 'cashier release contract: versions, hashes, ACLs, RLS, triggers and indexes verified' AS result;
 ROLLBACK;

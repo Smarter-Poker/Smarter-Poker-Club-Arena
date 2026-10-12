@@ -50,6 +50,9 @@ vi.mock('../../src/lib/handHistoryAdapter', () => ({
   }),
   panelHandToShareable: vi.fn(),
 }));
+vi.mock('../../src/components/handdetail/HandDetailView', () => ({
+  default: () => <div>Hand Details</div>,
+}));
 import HandHistoryPage from '../../src/pages/HandHistoryPage';
 function deferred<T>() {
   let resolve!: (value: T) => void;

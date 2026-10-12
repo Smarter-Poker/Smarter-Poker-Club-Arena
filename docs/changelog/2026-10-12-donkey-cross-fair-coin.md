@@ -80,10 +80,18 @@ add-on). That is what Dan saw.
 
 1. Merge and publish this client (it reads contracts 4, 5 and 6).
 2. Confirm the published bundle at both build-info endpoints.
-3. Only then install `20261012050006_donkey_cross_flips_a_fair_coin_every_street.sql`,
+3. Only then install `20261012113806_donkey_cross_flips_a_fair_coin_every_street.sql`,
    once, outside the :50-:03 break window. Its preimage guards abort if any
    replaced door changed since 2026-10-12 00:20 UTC.
 4. Read back the eleven `@live-proof` postimage hashes.
 
 A client that cannot read contract 6 would refuse every new Donkey Cross
 receipt, so step 3 must never come before step 2. No engine change.
+
+## Installed
+
+Installed once at 11:38 UTC 2026-10-12 via Supabase `apply_migration`, history
+version `20261012113806`; all 11 `@live-proof` checks read back true. The file
+was reserved as `20261012050006` and is restamped here to the provider-assigned
+history version (content byte-identical), as in
+`2026-10-10-daily-bonus-upgrade.md`.

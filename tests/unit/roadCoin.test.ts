@@ -4,7 +4,7 @@
  *
  * The receipts below are real: tests/fixtures/diamond-spins/crossing-coin-postgres-receipts.json
  * was captured from the installed migration
- * (20261012050006_donkey_cross_flips_a_fair_coin_every_street.sql) on the
+ * (20261012113806_donkey_cross_flips_a_fair_coin_every_street.sql) on the
  * isolated Postgres 17 fixture, playing paid rounds through fn_choice_start,
  * fn_choice_act and fn_diamond_bonus_replay, then rolled back. Every coin is
  * re-flipped here from the revealed seed, and one changed byte must fail.

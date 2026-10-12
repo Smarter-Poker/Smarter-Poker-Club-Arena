@@ -1,4 +1,5 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Locator, type TestInfo } from '@playwright/test';
+import { BATCH_VERDICTS, batchVerdictFor, fundingCoverage } from './support/cashierFundingVerdict';
 import {
   attachCashierScreenshot,
   expectCashierAxeClean,
@@ -17,6 +18,42 @@ const EXPECTED_WALLETS = (process.env.E2E_CASHIER_WALLETS || '')
   .split('|')
   .map((name) => name.trim())
   .filter(Boolean);
+
+// The batch preview's status line is owed by the wallet that FUNDS the action:
+// Send Out spends the agent wallet, Send Ticket the caller's own chips. The
+// maintained read-only identity holds neither (it is never funded), so the
+// verdict is read from the figure the dialog prints, never assumed. Both
+// directions still fail: "Ready" over a short wallet, or "Insufficient" over a
+// covering one. See support/cashierFundingVerdict.ts.
+async function expectBatchVerdictFromFunding(
+  dialog: Locator,
+  fundingLabel: 'Your Agent Wallet' | 'Your Chips',
+  total: number,
+  recipients: number,
+  testInfo: TestInfo,
+  name: string
+): Promise<void> {
+  const text = (await dialog.innerText()).replace(/\s+/g, ' ');
+  const figure = new RegExp(`${fundingLabel}: (\\S+)`).exec(text)?.[1] ?? '';
+  const coverage = fundingCoverage(figure, total);
+  const verdict = batchVerdictFor(coverage, recipients);
+  await testInfo.attach(`${name}-funding-verdict.json`, {
+    body: JSON.stringify(
+      { fundingLabel, printedFigure: figure, total, coverage, verdict },
+      null,
+      2
+    ),
+    contentType: 'application/json',
+  });
+  expect(
+    verdict,
+    `${name}: the printed ${fundingLabel} figure "${figure}" cannot decide whether it covers ${total}`
+  ).not.toBeNull();
+  const status = dialog
+    .getByRole('status')
+    .filter({ hasText: new RegExp(BATCH_VERDICTS.join('|')) });
+  await expect(status).toHaveText(verdict as string);
+}
 
 test.describe('Production Cashier Certification', () => {
   test.describe.configure({ timeout: 90_000 });
@@ -206,13 +243,29 @@ test.describe('Production Cashier Certification', () => {
     await expect(individualAmounts).toHaveCount(2);
     await individualAmounts.nth(1).fill('0.20');
     await expect(transferDialog).toContainText('Total: 10.20');
-    await expect(transferDialog).toContainText('2 Recipients Ready For Server Verification');
+    await expect(transferDialog).toContainText('2 Players ·');
+    await expectBatchVerdictFromFunding(
+      transferDialog,
+      'Your Agent Wallet',
+      10.2,
+      2,
+      testInfo,
+      'cashier-batch-send-out'
+    );
     await expectCashierAxeClean(page, testInfo, '[role="dialog"]', 'cashier-batch-preview');
     await attachCashierScreenshot(page, testInfo, 'cashier-batch-individual-preview');
     await transferDialog.getByRole('button', { name: 'Send Ticket', exact: true }).click();
     const ticketDialog = page.getByRole('dialog', { name: 'Send Ticket', exact: true });
     await expect(ticketDialog).toContainText('Total: 10.20');
-    await expect(ticketDialog).toContainText('Your Chips:');
+    await expect(ticketDialog).toContainText('2 Players ·');
+    await expectBatchVerdictFromFunding(
+      ticketDialog,
+      'Your Chips',
+      10.2,
+      2,
+      testInfo,
+      'cashier-batch-send-ticket'
+    );
     await ticketDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
     for (const checkbox of await surface
       .locator('input[type="checkbox"][aria-label^="Include "]:checked')

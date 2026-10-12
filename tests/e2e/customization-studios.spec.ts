@@ -387,13 +387,15 @@ test.describe('real Table Studio browser flows', () => {
           width,
           height,
         };
-        const screenshot = await page.screenshot({
+        // Decode readiness does not prove the compositor painted every layer.
+        // Compare stable rendered frames against the same reviewed baseline.
+        await expect(page).toHaveScreenshot(name, {
           animations: 'disabled',
           caret: 'hide',
           clip,
           scale: 'css',
+          maxDiffPixelRatio: 0.02,
         });
-        expect(screenshot).toMatchSnapshot(name, { maxDiffPixelRatio: 0.02 });
       };
 
       const slug = look.toLowerCase().replace(/[^a-z0-9]+/g, '-');

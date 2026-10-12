@@ -7,7 +7,7 @@ import argparse,datetime,json,re,sys
 sys.dont_write_bytecode=True
 ROOT=Path(__file__).resolve().parents[2];sys.path.insert(0,str(ROOT/'scripts/ci'))
 from satellite_qualifier_fixture import module,sha,lit
-MIGRATION=Path('supabase/migrations/20261012215111_horse_membership_checks_only_original_hand_digests.sql')
+MIGRATION=Path('supabase/migrations/20261012220324_horse_membership_checks_only_original_hand_digests.sql')
 PREDECESSOR=Path('supabase/migrations/20261012192304_horse_adaptive_batch_membership_validates_once_and_records_as_one_set.sql')
 def qualifier_query(source):
  start=source.index('  IF (CASE WHEN') if '  IF (CASE WHEN' in source else source.rindex('  IF EXISTS(');end=source.index(' THEN\n   UPDATE public.horse_adaptive_observation_batches',start)

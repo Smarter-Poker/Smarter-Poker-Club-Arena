@@ -115,6 +115,8 @@ const tree = (entry = '/clubs/club-a/members') => (
   </MemoryRouter>
 );
 async function settle() {
+  const advanced = screen.queryByRole('button', { name: 'Advanced' });
+  if (advanced) fireEvent.click(advanced);
   await act(async () => {
     await vi.advanceTimersByTimeAsync(300);
   });

@@ -3,7 +3,7 @@ from pathlib import Path
 import json,hashlib,time,subprocess
 from satellite_qualifier_fixture import module,sha,lit
 MIGRATION=Path('supabase/migrations/20261012192304_horse_adaptive_batch_membership_validates_once_and_records_as_one_set.sql')
-def qualify(e,template,keep_template=False):
+def qualify(e,template,keep_template=False,successor=None):
  root=Path(__file__).resolve().parents[2];base=e.database(template);passed=[]
  def read(d,q,label):return e.sql(d,q,label=label)[1].strip()
  def yes(d,q,label):
@@ -25,8 +25,12 @@ def qualify(e,template,keep_template=False):
  def snapshot(d,k=key):return read(d,"SELECT jsonb_build_object('batch',(SELECT to_jsonb(b)-'retention_membership_ready' FROM horse_adaptive_observation_batches b WHERE batch_key="+lit(k)+"),'raw',(SELECT jsonb_agg(to_jsonb(j) ORDER BY observation_id) FROM horse_adaptive_observation_journal j),'members',(SELECT jsonb_agg(to_jsonb(m) ORDER BY hand_digest) FROM smarter_private.horse_adaptive_batch_hand_membership m));",'exact-original-membership-snapshot')
  original=e.database(base);legacy(original);before=e.database(original);e.sql(before,observer,label='native-old-statement-observer');start=time.monotonic();e.sql(before,'SELECT smarter_private.register_horse_adaptive_batch_membership('+lit(key)+');',label='original-rowwise-member-owner');oldtime=time.monotonic()-start
  yes(before,'SELECT inserts=4096 AND sanitizes=1 FROM membership_probe.audit;','fail-before4096-insert-statements-and-unneeded-sanitizer');old_snapshot=snapshot(before);e.discard(before)
- e.sql(base,file=root/MIGRATION,label='exact-membership-set-successor');code,_,err=e.sql(base,file=root/MIGRATION,label='membership-migration-replay-refusal',check=False);assert code and 'ADAPTIVE_MEMBERSHIP_SET_PREIMAGE_CHANGED' in err;passed.append('membership-successor-replay-refused')
- after=e.database(original);e.sql(after,file=root/MIGRATION,label='original-fixture-new-set-owner');e.sql(after,observer,label='native-new-statement-observer');start=time.monotonic();e.sql(after,'SELECT smarter_private.register_horse_adaptive_batch_membership('+lit(key)+');',label='actual-setwise-member-owner');newtime=time.monotonic()-start
+ e.sql(base,file=root/MIGRATION,label='exact-membership-set-successor')
+ if successor:e.sql(base,file=root/successor,label='exact-membership-point-lookup-successor')
+ code,_,err=e.sql(base,file=root/MIGRATION,label='membership-migration-replay-refusal',check=False);assert code and 'ADAPTIVE_MEMBERSHIP_SET_PREIMAGE_CHANGED' in err;passed.append('membership-successor-replay-refused')
+ after=e.database(original);e.sql(after,file=root/MIGRATION,label='original-fixture-new-set-owner')
+ if successor:e.sql(after,file=root/successor,label='original-fixture-new-point-lookup-owner')
+ e.sql(after,observer,label='native-new-statement-observer');start=time.monotonic();e.sql(after,'SELECT smarter_private.register_horse_adaptive_batch_membership('+lit(key)+');',label='actual-setwise-member-owner');newtime=time.monotonic()-start
  yes(after,'SELECT inserts=1 AND sanitizes=0 FROM membership_probe.audit;','one-set-insert-and-no-sanitizer-without-retired-members');assert snapshot(after)==old_snapshot;passed.append('all-original-memberships-raw-and-batch-digests-identical')
  yes(after,'SELECT count(*)=64 FROM smarter_private.horse_adaptive_batch_hand_membership;','duplicate-observations-exact64-original-hand-digests')
  e.sql(after,'SELECT smarter_private.register_horse_adaptive_batch_membership('+lit(key)+');',label='ready-member-repeat');yes(after,'SELECT inserts=1 AND sanitizes=0 FROM membership_probe.audit;','ready-repeat-remains-exact-noop')

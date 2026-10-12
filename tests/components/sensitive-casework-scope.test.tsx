@@ -11,6 +11,7 @@ const testState = vi.hoisted(() => ({
     isClubStaff: true,
     canControlClub: true,
   },
+  reloadAccess: vi.fn(),
   resolveClub: vi.fn(),
   rpc: vi.fn(),
   queue: vi.fn(),
@@ -38,7 +39,7 @@ vi.mock('../../src/hooks/useClubNavigationAccess', () => ({
     ...testState.access,
     clubRole: 'owner',
     isPlatformStaff: false,
-    reload: vi.fn(),
+    reload: testState.reloadAccess,
   }),
 }));
 
@@ -193,6 +194,7 @@ beforeEach(() => {
     .mockImplementation(async (slug: string) =>
       slug === 'alpha-club' ? 'club-alpha' : 'club-beta'
     );
+  testState.reloadAccess.mockReset();
   testState.rpc.mockReset();
   testState.queue.mockReset().mockResolvedValue({ ok: true, flags: [] });
   testState.openHand.mockReset();
@@ -351,5 +353,20 @@ describe('Club Hand Review scope identity', () => {
 
     expect(screen.queryByText('Replay Ready')).toBeNull();
     expect(testState.toast.info).not.toHaveBeenCalled();
+  });
+});
+
+describe('Hand Review access recovery', () => {
+  it('retries the failed authorization read before reading the queue again', async () => {
+    testState.access.error = 'Authorization Read Failed';
+    testState.access.isClubStaff = false;
+    const view = render(<ClubHandReviewPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Retry Queue' }));
+    expect(testState.reloadAccess).toHaveBeenCalledTimes(1);
+    expect(testState.queue).not.toHaveBeenCalled();
+    testState.access.error = null;
+    testState.access.isClubStaff = true;
+    view.rerender(<ClubHandReviewPage />);
+    await waitFor(() => expect(testState.queue).toHaveBeenCalledWith('club-alpha', 'open'));
   });
 });

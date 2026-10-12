@@ -288,7 +288,7 @@ describe('the page reads the floor through ca_club_tables', () => {
 
   it('sends the chosen sort to the server and re-reads when it changes', () => {
     expect(load).toContain('p_sort: sortBy');
-    expect(PAGE).toMatch(/\}, \[clubId, dateRange, sortBy\]\);/);
+    expect(PAGE).toMatch(/\}, \[clubId, user\?\.id, dateRange, sortBy\]\);/);
   });
 
   it('sends the time range to the tournaments read and reads the window back', () => {

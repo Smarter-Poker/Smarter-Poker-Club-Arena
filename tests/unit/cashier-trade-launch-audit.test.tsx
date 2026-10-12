@@ -438,6 +438,46 @@ describe('P-10: the figure a user confirms is the figure that moves', () => {
     ).toBe(false);
   });
 
+  it('counts the recipients in the verdict the wallet funding each action owes', async () => {
+    // Send Out spends the agent wallet; Send Ticket spends the caller's own
+    // chips (250 in this fixture). The production canary's identity holds
+    // neither, so the deterministic proof of both verdicts lives here.
+    state.roster = [player(0, 75), player(1, 50)];
+    state.agentWallet = 0;
+    mountCashier();
+    await synchronized();
+    const dialog = await openSendOut('10', 2);
+    fireEvent.change(within(dialog).getByRole('spinbutton', { name: 'Amount For Player 2' }), {
+      target: { value: '0.20' },
+    });
+    expect(within(dialog).getByText(/Total: 10\.20/)).toBeInTheDocument();
+    expect(within(dialog).getByText('Insufficient Chips In The Funding Wallet')).toHaveAttribute(
+      'role',
+      'status'
+    );
+    expect(within(dialog).queryByText(/Recipients Ready For Server Verification/)).toBeNull();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Send Ticket' }));
+    const ticket = await screen.findByRole('dialog', { name: /Send Ticket/ });
+    expect(within(ticket).getByText(/Total: 10\.20/)).toBeInTheDocument();
+    expect(within(ticket).getByText('2 Recipients Ready For Server Verification')).toHaveAttribute(
+      'role',
+      'status'
+    );
+  });
+
+  it('reads a covered Send Out batch as ready for server verification', async () => {
+    state.roster = [player(0, 75), player(1, 50)];
+    state.agentWallet = 20000;
+    mountCashier();
+    await synchronized();
+    const dialog = await openSendOut('10', 2);
+    expect(within(dialog).getByText('2 Recipients Ready For Server Verification')).toHaveAttribute(
+      'role',
+      'status'
+    );
+    expect(within(dialog).queryByText('Insufficient Chips In The Funding Wallet')).toBeNull();
+  });
+
   it('formats exact chip figures with grouped thousands and two places only when cents are held', () => {
     expect(exactChipFigure(9999.95)).toBe('9,999.95');
     expect(exactChipFigure(1234.5)).toBe('1,234.50');

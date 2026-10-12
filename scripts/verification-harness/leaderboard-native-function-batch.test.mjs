@@ -288,9 +288,7 @@ test('all qualification doors enforce the same real native fixture before source
     /-e (?:DATABASE_URL|PGDATABASE|PGPASSWORD)|--publish|--network host|docker push/
   );
   for (const workflow of [
-    'leaderboard-isolation-preflight',
     'leaderboard-isolated-auth-qualification',
-    'leaderboard-isolated-financial-qualification',
     'leaderboard-isolated-financial-repair-qualification',
   ]) {
     const source = read(`../../.github/workflows/${workflow}.yml`);

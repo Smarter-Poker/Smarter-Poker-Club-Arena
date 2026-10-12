@@ -3,7 +3,7 @@ CREATE ROLE authenticated;
 CREATE ROLE service_role;
 CREATE SCHEMA auth;
 CREATE SCHEMA realtime;
-CREATE TABLE realtime.messages(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),payload jsonb,event text,topic text,private boolean,extension text);
+CREATE TABLE realtime.messages(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),payload jsonb,event text,topic text,private boolean DEFAULT false,extension text);
 ALTER TABLE realtime.messages ENABLE ROW LEVEL SECURITY;
 GRANT USAGE ON SCHEMA realtime TO authenticated,anon;
 GRANT SELECT ON realtime.messages TO authenticated,anon;

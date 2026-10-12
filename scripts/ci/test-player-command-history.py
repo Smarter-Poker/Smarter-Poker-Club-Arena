@@ -36,6 +36,13 @@ try:
     print('PASS before: required history read is absent',flush=True)
     migration=ROOT/'supabase/migrations/20261012144105_player_command_history_reads_sanitized_staff_scope.sql'
     q(migration.read_text())
+    join_checks=(ROOT/'scripts/qualification/player-command-history-join.sql').read_text()
+    q(join_checks,'staff join probe denied')
+    print('PASS before: original policy rejects the actual default-false Realtime join probe',flush=True)
+    correction=ROOT/'supabase/migrations/20261012220618_player_history_authorizes_realtime_join_check_rows.sql'
+    q(correction.read_text())
+    print(q(join_checks),flush=True)
+    q(correction.read_text(),'refusing replay')
     print(q(checks),flush=True)
     q(migration.read_text(),'refusing replay')
     assert q("SELECT has_function_privilege('authenticated','ca_club_player_history(uuid,uuid,text,date,date,jsonb,integer)','EXECUTE') AND NOT has_function_privilege('anon','ca_club_player_history(uuid,uuid,text,date,date,jsonb,integer)','EXECUTE') AND NOT has_function_privilege('service_role','ca_club_player_history(uuid,uuid,text,date,date,jsonb,integer)','EXECUTE')")=='t'

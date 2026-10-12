@@ -44,7 +44,11 @@ const fixedRoll = process.env.ROLL ? `&roll=${process.env.ROLL}` : '';
 const crossings = Number(process.env.CROSS ?? 2);
 // Crash: how long the flight climbs before the open shot (OPEN_MS), and
 // CRASHED=1 lets it fly into the sealed crash instead of booking the win.
-const openMs = Number(process.env.OPEN_MS ?? (game === 'crash' ? 2600 : 1200));
+// Contract 5 (2026-10-12) climbs at k = 0.08 and ends a third of its rounds at
+// the 1.25x floor, which the curve reaches at 2.8 s: wait past it (3.6 s is
+// 1.33x) so a floor round has already ended when the shot asks whether Book
+// The Win is open, instead of ending between that question and the tap.
+const openMs = Number(process.env.OPEN_MS ?? (game === 'crash' ? 3600 : 1200));
 const flyToCrash = process.env.CRASHED === '1';
 mkdirSync(outDir, { recursive: true });
 

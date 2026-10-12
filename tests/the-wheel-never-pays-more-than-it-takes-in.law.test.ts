@@ -710,7 +710,7 @@ describe('wheel v4 is still exactly 80 percent, and no prize may repeat', () => 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
  *  CRASH PLAYS FOR A 2.9x AVERAGE, UP TO 1.20 BACK (owner rulings 2026-10-12,
- *  migration 20261012114801)
+ *  migration 20261012140447)
  * ═══════════════════════════════════════════════════════════════════════════
  *
  * Dan: "CRASH CAN BE A 5% HOUSE EDGE GAME. MAKE IT BETTER OVERALL FOR THE

@@ -3,7 +3,7 @@
 Uses existing retained hand world/doors and captured installed prune definition.
 No production connection. All scratch/socket directories are on supplied SSD.
 """
-import argparse, datetime, json, sys
+import argparse, datetime, hashlib, json, sys
 from pathlib import Path
 sys.dont_write_bytecode=True
 ROOT=Path(__file__).resolve().parents[2]
@@ -11,17 +11,18 @@ sys.path.insert(0,str(ROOT/'scripts/ci'))
 from satellite_qualifier_fixture import module,sha
 MIGRATION=Path('supabase/migrations/20261012153428_settled_horse_request_payloads_age_out_with_their_history.sql')
 BOUND=Path('supabase/migrations/20261012154646_horse_history_retention_bounds_each_compaction_batch.sql')
+CLASSIFY=Path('supabase/migrations/20261012155727_horse_retention_requires_original_no_human_evidence.sql')
 PRUNE=Path('scripts/verification-harness/horse-request-retention-prune-preimage.sql')
 def main():
  p=argparse.ArgumentParser();p.add_argument('--evidence',type=Path,required=True);p.add_argument('--pg-bin',type=Path,required=True);a=p.parse_args()
  out=a.evidence.resolve();out.mkdir(parents=True,exist_ok=False)
  # Keep Unix socket pathname below PostgreSQL's 104-byte limit, on SSD.
- sock=out.parent/'sock';sock.mkdir(exist_ok=True)
+ sock=ROOT.parent/('hrr-'+hashlib.sha256(str(ROOT).encode()).hexdigest()[:8]);sock_created=not sock.exists();sock.mkdir(exist_ok=True)
  native=module(ROOT/'scripts/ci/test-mtt-unlimited.py','horse_request_execution')
  old=module(ROOT/'scripts/ci/test-hand-submission-retention-disposal.py','horse_request_old')
  doors=module(ROOT/'scripts/ci/test-hand-submission-disposal.py','horse_request_doors')
  e=native.Execution(ROOT,out,a.pg_bin.resolve(),out,300,socket_parent=str(sock))
- e.report['source_sha256']={str(x):sha(ROOT/x) for x in [MIGRATION,BOUND,PRUNE,Path(__file__).relative_to(ROOT),old.WORLD]}
+ e.report['source_sha256']={str(x):sha(ROOT/x) for x in [MIGRATION,BOUND,CLASSIFY,PRUNE,Path(__file__).relative_to(ROOT),old.WORLD]}
  try:
   e.start();base=e.database();e.sql(base,file=ROOT/old.WORLD,label='existing-original-world')
   e.sql(base,"ALTER TABLE public.tournaments ADD COLUMN bounty_pool numeric, ADD COLUMN bounty_pool_paid numeric; CREATE TABLE public.tournament_escrow(tournament_id uuid,closed_at timestamptz);",label='current-retention-schema-supplement')
@@ -33,7 +34,8 @@ def main():
   e.sql(base,old.prune_before(ROOT),label='prune-original')
   e.sql(base,file=ROOT/old.MIGRATION,label='recorded-retention')
   e.sql(base,file=ROOT/PRUNE,label='installed-prune-preimage')
-  seed=old.SEED.replace("'{\"p_stacks\": []}'::jsonb", "jsonb_build_object('p_stacks','[]'::jsonb,'p_hand_row',jsonb_build_object('players',jsonb_build_array(jsonb_build_object('userId','"+old.HORSE+"'))))")
+  seed=old.SEED.replace("'{\"p_stacks\": []}'::jsonb", "jsonb_build_object('p_stacks','[]'::jsonb,'p_hand_row',jsonb_build_object('has_human',false,'players',jsonb_build_array(jsonb_build_object('userId','"+old.HORSE+"'))))")
+  seed+='\nUPDATE public.hand_history SET has_human=false;\n'
   unfixed=e.database(base);e.sql(unfixed,seed,label='before-seed');e.sql(unfixed,old.AUTHORITY+'SELECT public.sp_prune_hand_history(10);',label='before-prune')
   _,actual,_=e.sql(unfixed,"SELECT request<>'{}'::jsonb FROM smarter_private.hand_submissions;",label='before-retains-payload')
   assert actual.strip()=='t';e.discard(unfixed)
@@ -43,6 +45,20 @@ def main():
   e.sql(base,file=ROOT/BOUND,label='exact-bounded-batch-migration')
   _,definition,_=e.sql(base,"SELECT pg_get_functiondef('public.sp_prune_hand_history(integer)'::regprocedure);",label='bounded-batch-source');assert definition.count('LIMIT LEAST(GREATEST(p_batch,1),250)')==1 and 'LIMIT p_batch' not in definition
   code,_,err=e.sql(base,file=ROOT/BOUND,label='bounded-migration-replay-refused',check=False);assert code!=0 and 'HORSE_RETENTION_BATCH_SOURCE_CHANGED_OR_ALREADY_INSTALLED' in err
+  # Reproduce the original unknown-classification hole with no profile changes:
+  # first two migrations incorrectly erased a request without a dealt-roster flag.
+  unknown_seed=seed.replace("'has_human',false,",'')
+  before_classify=e.database(base);e.sql(before_classify,unknown_seed,label='unknown-original-before-seed');e.sql(before_classify,old.AUTHORITY+'SELECT public.sp_prune_hand_history(5000);',label='unknown-original-before-prune')
+  _,actual,_=e.sql(before_classify,"SELECT request='{}'::jsonb FROM smarter_private.hand_submissions;",label='unknown-original-defect-reproduced');assert actual.strip()=='t';e.discard(before_classify)
+  e.sql(base,file=ROOT/CLASSIFY,label='exact-original-classification-migration')
+  code,_,err=e.sql(base,file=ROOT/CLASSIFY,label='classification-migration-replay-refused',check=False);assert code!=0 and 'HORSE_RETENTION_CLASSIFICATION_SOURCE_CHANGED_OR_ALREADY_INSTALLED' in err
+  for name,protected_seed,history_change in [('unknown-original',unknown_seed,''),('null-original',seed.replace("'has_human',false,","'has_human',NULL,"),''),('string-false-original',seed.replace("'has_human',false,","'has_human','false'::text,"),''),('original-human-profile-now-horse',seed.replace("'has_human',false,","'has_human',true,"),''),('unknown-history',seed,'UPDATE public.hand_history SET has_human=NULL;')]:
+   case=e.database(base);e.sql(case,protected_seed+history_change,label=name+'-seed')
+   _,before_row,_=e.sql(case,"SELECT to_jsonb(s) FROM smarter_private.hand_submissions s;",label=name+'-original-bytes')
+   e.sql(case,old.AUTHORITY+'SELECT public.sp_prune_hand_history(5000);',label=name+'-prune')
+   _,after_row,_=e.sql(case,"SELECT to_jsonb(s) FROM smarter_private.hand_submissions s;",label=name+'-retained-bytes');assert json.loads(before_row)==json.loads(after_row)
+   _,actual,_=e.sql(case,"SELECT EXISTS(SELECT 1 FROM public.hand_history);",label=name+'-history-retained');assert actual.strip()=='t'
+   code,_,err=e.sql(case,"UPDATE smarter_private.hand_submissions SET request='{}'::jsonb;",label=name+'-direct-erasure-refused',check=False);assert code!=0 and 'HAND_SUBMISSION_IMMUTABLE' in err;e.discard(case)
   after=e.database(base);e.sql(after,seed,label='after-seed')
   _,original_identity,_=e.sql(after,"SELECT to_jsonb(s)-'request' FROM smarter_private.hand_submissions s;",label='original-identity')
   e.sql(after,old.AUTHORITY+'SELECT public.sp_prune_hand_history(5000);',label='after-prune')
@@ -79,11 +95,14 @@ def main():
   _,actual,_=e.sql(case,"SELECT smarter_private.f06_movement_boundary_retained('"+old.TABLE+"'::uuid,"+str(old.HAND_NUMBER)+");",label='real-movement-boundary-is-held');assert actual.strip()=='t'
   e.sql(case,old.AUTHORITY+'SELECT public.sp_prune_hand_history(10);',label='movement-boundary-prune')
   _,actual,_=e.sql(case,"SELECT EXISTS(SELECT 1 FROM public.hand_history) AND EXISTS(SELECT 1 FROM smarter_private.hand_submissions WHERE request<>'{}'::jsonb);",label='movement-boundary-retained');assert actual.strip()=='t';e.discard(case)
-  e.discard(base);e.report['proven']=['fail-before-payload-retained','pass-after-payload-erased','identity-and-hash-preserved','resume-remains-closed','compaction-idempotent','installed-migration-replay-refused','forbidden-identity-change','forbidden-payload-restoration','forbidden-delete','forbidden-truncate','human-retained','unknown-player-retained','young-hand-retained','incomplete-postcommit-retained','reported-hand-retained','reserved-permit-retained','recently-settled-old-hand-retained','exact-eight-day-boundary-retained','mixed-human-retained','unpaid-tournament-retained','open-escrow-retained','unqualified-erasure-refused','unauthorized-helper-refused','legacy-completion-unknown-retained','hash-mismatch-retained','malformed-age-retained','real-movement-boundary-retained','bounded-candidate-source','bounded-migration-replay-refused','large-requested-batch-preserves-qualification'];e.report['status']='passed'
+  e.discard(base);e.report['proven']=['fail-before-payload-retained','pass-after-payload-erased','identity-and-hash-preserved','resume-remains-closed','compaction-idempotent','installed-migration-replay-refused','forbidden-identity-change','forbidden-payload-restoration','forbidden-delete','forbidden-truncate','human-retained','unknown-player-retained','young-hand-retained','incomplete-postcommit-retained','reported-hand-retained','reserved-permit-retained','recently-settled-old-hand-retained','exact-eight-day-boundary-retained','mixed-human-retained','unpaid-tournament-retained','open-escrow-retained','unqualified-erasure-refused','unauthorized-helper-refused','legacy-completion-unknown-retained','hash-mismatch-retained','malformed-age-retained','real-movement-boundary-retained','bounded-candidate-source','bounded-migration-replay-refused','large-requested-batch-preserves-qualification','unknown-original-erasure-fails-before','unknown-original-retained-after','null-original-retained','string-false-original-retained','original-human-profile-now-horse-retained','unknown-history-retained','classification-migration-replay-refused'];e.report['status']='passed'
  except BaseException as exc:e.report['failure']=repr(exc)
  finally:
   try:e.close()
   except BaseException as exc:e.report.update(status='failed',cleanup_failure=repr(exc))
+  if sock_created:
+   try:sock.rmdir()
+   except OSError:pass
   e.report['ended_at']=datetime.datetime.now(datetime.timezone.utc).isoformat();(out/'result.json').write_text(json.dumps(e.report,indent=2)+'\n');print(json.dumps({k:e.report.get(k) for k in ['status','failure']}))
  return 0 if e.report['status']=='passed' else 1
 if __name__=='__main__':sys.exit(main())

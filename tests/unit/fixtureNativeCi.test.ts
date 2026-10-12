@@ -1960,7 +1960,8 @@ describe('restored provider accounting qualification', () => {
         if (shard <= 2) expect(output).toBe('');
         else
           expect(output).toBe(
-            'INSTALL:postgresql-server-dev-17 build-essential bison flex perl bzip2 patch'
+            'INSTALL:postgresql-server-dev-17 build-essential bison flex perl bzip2 patch' +
+              (shard === 4 ? ' pkg-config libssl-dev libzstd-dev' : '')
           );
       }
       expect(() =>

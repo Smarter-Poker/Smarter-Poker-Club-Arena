@@ -56,16 +56,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 204104,
-      "sha256": "e5d5d5cf627d9c76645259024280ec94acf8c3b6f62e97ee8418a87f714da3e5"
+      "bytes": 205043,
+      "sha256": "9ff1e635df3746666ac70c01e36032d3105c8bf5998c1d7c3c9e87fb7ab4e9fc"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 35763,
-      "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
+      "bytes": 36221,
+      "sha256": "431c3a4c70a1d0e278b5a1e96b113f423d57428f1bf30da672690ce44baa3123"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -160,8 +160,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 106522,
-      "sha256": "d87f24e32a12cbf7028887a83b540f36af478c80f30e0c208b7bd274fc849805"
+      "bytes": 106596,
+      "sha256": "630e3537f398803817236eb916d27d256d8a0d89c8dc9aa4ca84e3a25838bddd"
     }
   },
   "nativePgCron": {
@@ -2257,5 +2257,96 @@
       "bytes": 204104,
       "sha256": "e5d5d5cf627d9c76645259024280ec94acf8c3b6f62e97ee8418a87f714da3e5"
     }
+  },
+  "nativeRecoveryExport20261012": {
+    "reason": "Add the native read-only export/restore fixture to existing accounting shards1/4 and classify every maintained tool input. Refresh only these reviewed workflow/classifier fingerprints; retained financial source pins, assertions and SOURCE_ONLY_UNRUN status remain unchanged. This is not financial or full production recovery qualification.",
+    "previousPins": {
+      ".github/workflows/ci.yml": {
+        "bytes": 202788,
+        "sha256": "cbecb15da2fd2b57f1c3fcb7a75f9eede415cef9ad40bce2f25257266ca3f732"
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "bytes": 35480,
+        "sha256": "1fc422b810641eee2149abbdbbf5ddf50c54e87162fbea82f22456c506bd712d"
+      },
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "bytes": 105657,
+        "sha256": "1e9a652b80aa851fb95d7780aeb6b62d360a7b61192c27edd9112ecd0b636392"
+      }
+    },
+    "currentMainPreviousPins": {
+      ".github/workflows/ci.yml": {
+        "bytes": 203003,
+        "sha256": "1699ddcbdafde77bbb538e632911eb11663486d78a99571e67006ae4f4004995"
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "bytes": 35533,
+        "sha256": "6afe9dd3d84c639d8995271514bc1195202f2e930835137edcb7e0d73bf946ec"
+      },
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "bytes": 105657,
+        "sha256": "1e9a652b80aa851fb95d7780aeb6b62d360a7b61192c27edd9112ecd0b636392"
+      }
+    }
+  },
+  "nativeRecoveryCurrentMainIntegration20261012": {
+    "reason": "Preserve current main inventory-seal and existing required fixture qualification beside native recovery tooling. Refresh actual combined workflow source identity only; all financial inputs, historical pins and qualification status remain unchanged.",
+    "currentWorkflowPin": {
+      "bytes": 204868,
+      "sha256": "526ce2cb5ae8c17319b7181238858a9d820a4609f4a90f7572c19d316d552ee9"
+    }
+  },
+  "playerCommandHistoryRecoveryIntegration20261012": {
+    "reason": "Preserve both history and native recovery enforcement, independent historical audit records and qualification status. Refresh only reviewed active workflow/classifier/test and nested source binding hashes; this is source identity, not financial or live qualification.",
+    "changes": [
+      {
+        "section": "files",
+        "path": ".github/workflows/ci.yml",
+        "previousOwn": {
+          "bytes": 204104,
+          "sha256": "e5d5d5cf627d9c76645259024280ec94acf8c3b6f62e97ee8418a87f714da3e5"
+        },
+        "previousMain": {
+          "bytes": 204868,
+          "sha256": "526ce2cb5ae8c17319b7181238858a9d820a4609f4a90f7572c19d316d552ee9"
+        },
+        "current": {
+          "bytes": 205043,
+          "sha256": "9ff1e635df3746666ac70c01e36032d3105c8bf5998c1d7c3c9e87fb7ab4e9fc"
+        }
+      },
+      {
+        "section": "files",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previousOwn": {
+          "bytes": 35763,
+          "sha256": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
+        },
+        "previousMain": {
+          "bytes": 35991,
+          "sha256": "d064527051d9ca3b8687b8414144a81008571552ab3d73f104ee462c0dac2a80"
+        },
+        "current": {
+          "bytes": 36221,
+          "sha256": "431c3a4c70a1d0e278b5a1e96b113f423d57428f1bf30da672690ce44baa3123"
+        }
+      },
+      {
+        "section": "files",
+        "path": "tests/unit/fixtureNativeCi.test.ts",
+        "previousOwn": {
+          "bytes": 106522,
+          "sha256": "d87f24e32a12cbf7028887a83b540f36af478c80f30e0c208b7bd274fc849805"
+        },
+        "previousMain": {
+          "bytes": 105731,
+          "sha256": "14a67e65f162b0c02c406ae9b24726852f5d5678c28f01ba861633b9c6ea9682"
+        },
+        "current": {
+          "bytes": 106596,
+          "sha256": "630e3537f398803817236eb916d27d256d8a0d89c8dc9aa4ca84e3a25838bddd"
+        }
+      }
+    ]
   }
 }

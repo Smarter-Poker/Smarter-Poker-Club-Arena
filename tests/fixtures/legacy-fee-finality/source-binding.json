@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428",
+    "scripts/ci/classify-ci-changes.mjs": "431c3a4c70a1d0e278b5a1e96b113f423d57428f1bf30da672690ce44baa3123",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "9b68bb22efbd6ed9d857161bf4292ed9746f4ab13edaea3bf6d26bff36a4872e",
@@ -871,6 +871,29 @@
         "path": "scripts/ci/classify-ci-changes.mjs",
         "previous": "21bad2287248a7b8cd9b12c585b24d3c5949527340c13b95f4e763d2cebf0032",
         "current": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
+      }
+    ]
+  },
+  "nativeRecoveryExportQualification20261012": {
+    "reason": "Reviewed additive native recovery export qualification on existing shards1/4; preserve current-main staff-removal routing. Only reviewed classifier, native-tool package expectation and nested binding bytes change. Financial functions, qualification assertions and historical evidence remain unchanged; these fingerprints do not certify financial or production recovery.",
+    "changes": [
+      {
+        "section": "repository_files",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "6afe9dd3d84c639d8995271514bc1195202f2e930835137edcb7e0d73bf946ec",
+        "current": "d064527051d9ca3b8687b8414144a81008571552ab3d73f104ee462c0dac2a80"
+      }
+    ]
+  },
+  "playerCommandHistoryRecoveryIntegration20261012": {
+    "reason": "Preserve both history and native recovery enforcement, independent historical audit records and qualification status. Refresh only reviewed active workflow/classifier/test and nested source binding hashes; this is source identity, not financial or live qualification.",
+    "changes": [
+      {
+        "section": "repository_files",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previousOwn": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428",
+        "previousMain": "d064527051d9ca3b8687b8414144a81008571552ab3d73f104ee462c0dac2a80",
+        "current": "431c3a4c70a1d0e278b5a1e96b113f423d57428f1bf30da672690ce44baa3123"
       }
     ]
   }

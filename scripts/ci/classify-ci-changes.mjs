@@ -30,6 +30,10 @@ const fixture =
 // PostgreSQL accounting job even when no server application source changes.
 const accounting =
   /^(scripts\/ci\/schema-manifest\.d\/weekly-recompute-split\.json$|tests\/unit\/weeklyRecomputeSplitCi\.test\.ts$|supabase\/accounting\/|scripts\/ops\/build-cashier-totals-index-concurrently\.sql$|scripts\/ci\/build-weekly-accounting-activation\.py$|tests\/fixtures\/(accounting-agreement-history|accounting-alert-38644|accounting-delivery|agent-accounting-statements|browser-period-observer|cash-commission-sources|cash-rake-earning-evidence|cash-source-compatibility|cash-source-refusals|cashier-document-authority|cashier-statements|club-weekly-summary|correction-document-authority|correction-writer-authority|credit-invoice-generation|credit-reduction-authority|credit-request-authority|full-weekly-accounting|earlybird-fee-custody|held-fee-owner-basis|legacy-fee-finality|sep8-spin-custody|messenger-private-accounting|mixed-rake-period|pnl-evidence|push-health-reader|push-subscription-ownership|push-subscription-rotation|rakeback-history-privacy|rakeback-write-authority|routed-accounting|scope-weekly-accounting|tournament-fee-lifecycle|tournament-fee-sources|unified-weekly-accounting|union-earned-close|union-weekly-accounting|union-weekly-basis|weekly-recompute-split|weekly-accounting-coordinator|weekly-scheduler-fairness|weekly-scheduler-timing|weekly-union-continuation)\/)/;
+// A driver, builder or transformation edit must run the actual native restore,
+// even when no application or workflow is changed alongside it.
+const nativeRecovery =
+  /^(scripts\/dr\/(native-supabase-export|build-native-export-client)\.py$|scripts\/ci\/test_native_supabase_export\.py$|scripts\/verification-harness\/leaderboard-native-function-batch\.mjs$|tests\/dr-posture\.test\.ts$)/;
 // Data/Stats console PostgreSQL contracts run inside accounting_postgres. The
 // wrapper, its wiring test, and every fixture are executable inputs; a change
 // to any one of them must select that job even without a migration beside it.
@@ -317,6 +321,7 @@ export function classifyChangedPaths(paths) {
       matches(originalPaidCustody) ||
       commitmentAudit ||
       matches(accounting) ||
+      matches(nativeRecovery) ||
       matches(dataConsolePostgres) ||
       matches(managedGameOneDoor) ||
       matches(stableAdminQualification) ||
@@ -369,6 +374,7 @@ export function classifyChangedPaths(paths) {
       commitmentAudit ||
       matches(dataConsolePostgres) ||
       tournamentAccountingInput ||
+      matches(nativeRecovery) ||
       matches(stableAdminQualification) ||
       matches(mttPreparation) ||
       matches(mttActivation) ||

@@ -42,10 +42,7 @@ import {
   type SessionSummaryPayload,
 } from '../../services/pendingSessionSummary';
 import { supabase } from '../../lib/supabase';
-import {
-  readDiamondCashSessionRecap,
-  type DiamondCashSessionRecap,
-} from '../../services/diamondCashSessionRecap';
+import type { DiamondCashSessionRecap } from '../../services/diamondCashSessionRecap';
 import { formatGameTitle } from '../../utils/formatGameTitle';
 import { titleCase } from '../../utils/titleCase';
 import { formatPrizeAtUnit, moneySuffixAtUnit } from '../../utils/format';
@@ -175,9 +172,13 @@ export function SessionSummaryHost() {
     let active = true;
     const askedKey = recapKey;
     setRecapRead({ key: askedKey, state: 'loading', data: null });
-    void readDiamondCashSessionRecap(target)
+    void import('../../services/diamondCashSessionRecap')
+      .then(({ readDiamondCashSessionRecap }) => {
+        if (!active || recapOwnerRef.current !== askedKey) return null;
+        return readDiamondCashSessionRecap(target);
+      })
       .then((data) => {
-        if (!active || recapOwnerRef.current !== askedKey) return;
+        if (!data || !active || recapOwnerRef.current !== askedKey) return;
         setRecapRead({ key: askedKey, state: 'ready', data });
       })
       .catch(() => {

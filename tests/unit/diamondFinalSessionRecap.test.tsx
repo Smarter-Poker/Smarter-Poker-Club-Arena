@@ -142,6 +142,7 @@ describe('the final Diamond card belongs to its closed custody', () => {
     );
     const rendered = render(view());
     act(() => publishSessionSummary(oldMount()));
+    await waitFor(() => expect(testState.rpc).toHaveBeenCalledTimes(1));
     const next = { ...target, occupancyId: '00000000-0000-4000-8000-000000000007' };
     testState.rpc.mockResolvedValueOnce({
       data: recorded({ occupancy_id: next.occupancyId, profit_loss: -3000, chips_returned: 1000 }),
@@ -177,12 +178,25 @@ describe('the final Diamond card belongs to its closed custody', () => {
     );
     const rendered = render(view());
     act(() => publishSessionSummary(oldMount()));
+    await waitFor(() => expect(testState.rpc).toHaveBeenCalledTimes(1));
     testState.userId = '00000000-0000-4000-8000-000000000099';
     rendered.rerender(view());
     await act(async () => answer({ data: recorded(), error: null }));
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(screen.queryByText('-2,624 Diamonds')).toBeNull();
     expect(testState.rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not start an old account request after its lazy service finishes loading', async () => {
+    const rendered = render(view());
+    act(() => publishSessionSummary(oldMount()));
+    testState.userId = '00000000-0000-4000-8000-000000000099';
+    rendered.rerender(view());
+    await act(async () => {
+      await import('../../src/services/diamondCashSessionRecap');
+    });
+    expect(testState.rpc).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   it('keeps a same-account fresh card isolated from its prior ready data', async () => {

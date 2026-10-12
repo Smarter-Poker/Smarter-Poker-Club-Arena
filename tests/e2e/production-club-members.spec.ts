@@ -343,14 +343,13 @@ test.describe('Production Shark Club Players', () => {
     );
     await completeNextPageRead(probe, () => search.fill(''), 'clearing member search');
 
-    const online = page.getByRole('button', { name: 'Online', exact: true });
-    await completeNextPageRead(probe, () => online.click(), 'Online filter');
-    await expect(online).toHaveAttribute('aria-pressed', 'true');
+    const filter = page.getByRole('combobox', { name: 'Filter Players', exact: true });
+    await completeNextPageRead(probe, () => filter.selectOption('online'), 'Online filter');
+    await expect(filter).toHaveValue('online');
     await expect(page).toHaveURL(/[?&]view=online(?:&|$)/);
 
-    const allPlayers = page.getByRole('button', { name: 'All Players', exact: true });
-    await completeNextPageRead(probe, () => allPlayers.click(), 'All Players filter');
-    await expect(allPlayers).toHaveAttribute('aria-pressed', 'true');
+    await completeNextPageRead(probe, () => filter.selectOption('all'), 'All Players filter');
+    await expect(filter).toHaveValue('all');
     await expect(page).not.toHaveURL(/[?&]view=/);
 
     const sort = page.getByRole('combobox', { name: 'Sort Players' });
@@ -545,6 +544,8 @@ test.describe('Production Shark Club Players', () => {
         '.members-count[role="status"]',
         '.members-search',
         '.members-search input',
+        '.members-view-filter',
+        '.members-view-filter select',
         '.members-sort',
         '.members-refresh',
         '.members-toolbar',
@@ -565,7 +566,7 @@ test.describe('Production Shark Club Players', () => {
       expect(consoleFrame).not.toBeNull();
       for (const control of await page
         .locator(
-          '.members-search input, .members-sort select, .members-refresh, .members-columns, .members-export, .members-select-loaded'
+          '.members-search input, .members-view-filter select, .members-sort select, .members-refresh, .members-columns, .members-export, .members-select-loaded'
         )
         .all()) {
         const box = await control.boundingBox();
@@ -615,8 +616,7 @@ test.describe('Production Shark Club Players', () => {
     ).toBe(16);
 
     for (const control of [
-      page.getByRole('button', { name: 'All Players', exact: true }),
-      page.getByRole('button', { name: 'Online', exact: true }),
+      page.getByRole('combobox', { name: 'Filter Players', exact: true }),
       page.getByRole('button', { name: 'Refresh', exact: true }),
     ]) {
       const box = await control.boundingBox();

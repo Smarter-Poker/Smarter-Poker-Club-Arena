@@ -38,6 +38,7 @@ import React, {
   useState,
   type CSSProperties,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { useToast } from '../common/Toast';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { formatPopupText } from '../../utils/popupStyle';
@@ -425,7 +426,7 @@ export function DiamondTopUpModal({
     }
   };
 
-  return (
+  return createPortal(
     <div className="diamond-modal-overlay" onClick={requestClose}>
       <div
         ref={dialogRef}
@@ -538,7 +539,8 @@ export function DiamondTopUpModal({
           <span>Permanent Balance</span>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

@@ -31,6 +31,17 @@ afterEach(() => {
 });
 
 describe('VIP Cards Modal', () => {
+  it('escapes the isolated page so fixed navigation cannot cover the benefits dialog', () => {
+    const view = render(
+      <main style={{ isolation: 'isolate', position: 'relative' }}>
+        <VIPCardsModal isOpen onClose={vi.fn()} vipStatus="lifetime" />
+      </main>
+    );
+    const dialog = screen.getByRole('dialog', { name: 'Lifetime VIP' });
+    expect(view.container.contains(dialog)).toBe(false);
+    expect(dialog.closest('.vip-modal-overlay')?.parentElement).toBe(document.body);
+  });
+
   it('shows the complete Lifetime digital entitlement without finite monthly meters', () => {
     render(<VIPCardsModal isOpen={true} onClose={vi.fn()} vipStatus="lifetime" />);
 

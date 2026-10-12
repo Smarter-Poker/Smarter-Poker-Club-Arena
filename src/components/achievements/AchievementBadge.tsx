@@ -96,9 +96,18 @@ export default function AchievementBadge({
           <span className={styles.unlockedDate}>Unlocked {formatDate(unlockedAt)}</span>
         )}
         {!unlocked && progress > 0 && (
-          <div className={styles.progressBar}>
-            <div className={styles.progressFillBar} style={{ width: `${progress}%` }} />
-            <span className={styles.progressText}>{Math.round(progress)}%</span>
+          <div className={styles.progressReadout}>
+            <span className={styles.progressText}>{Math.round(progress)}% Complete</span>
+            <div
+              className={styles.progressBar}
+              role="progressbar"
+              aria-label={`${name} Progress`}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(progress)}
+            >
+              <div className={styles.progressFillBar} style={{ width: `${progress}%` }} />
+            </div>
           </div>
         )}
         {!unlocked && progress === 0 && <span className={styles.lockedHint}>Locked</span>}

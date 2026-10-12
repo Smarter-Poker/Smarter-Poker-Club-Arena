@@ -1,0 +1,61 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom));
+  background: rgb(0 0 0 / 90%);
+}
+
+.modal {
+  width: min(100%, 420px);
+  max-height: 100%;
+  overflow: auto;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+.fields {
+  display: grid;
+  gap: 4cqw;
+}
+
+.field {
+  display: grid;
+  gap: 1.5cqw;
+  min-width: 0;
+}
+
+.input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px 0;
+  border: 0 !important;
+  border-bottom: 1px solid #45adff !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  color: #e4e7ec !important;
+  font:
+    400 16px/1.5 Inter,
+    system-ui,
+    sans-serif;
+}
+
+textarea.input {
+  resize: vertical;
+}
+
+.input:focus-visible {
+  outline: 2px solid #8fd4ff;
+  outline-offset: 2px;
+}

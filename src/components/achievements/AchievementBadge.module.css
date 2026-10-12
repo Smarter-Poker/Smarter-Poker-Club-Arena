@@ -168,18 +168,22 @@
 
 .nameRow {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   margin-bottom: 4px;
 }
 
 .name {
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-size: 16px;
   font-weight: 600;
   color: white;
 }
 
 .rarityBadge {
+  flex-shrink: 0;
   font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
@@ -190,6 +194,7 @@
 }
 
 .description {
+  overflow-wrap: anywhere;
   margin: 0;
   font-size: 13px;
   color: rgba(255, 255, 255, 0.6);
@@ -220,10 +225,18 @@
   transition: width 0.5s ease;
 }
 
+.progressReadout {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.progressReadout .progressBar {
+  margin-top: 0;
+}
+
 .progressText {
-  position: absolute;
-  right: 0;
-  top: -18px;
+  text-align: right;
   font-size: 11px;
   color: rgba(255, 255, 255, 0.5);
 }
@@ -240,6 +253,6 @@
 /* Grid */
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
   gap: 12px;
 }

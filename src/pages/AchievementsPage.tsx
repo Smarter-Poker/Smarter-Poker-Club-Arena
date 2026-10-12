@@ -401,6 +401,7 @@ export default function AchievementsPage() {
   const sharingAchievement = loadedScope === userId ? storedSharing : null;
   const [storedSelection, setSelectedAchievement] = useState<Achievement | null>(null);
   const selectedAchievement = loadedScope === userId ? storedSelection : null;
+  const shareTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const unlockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingUnlocks = useRef(new Set<string>());
   const celebratedUnlocks = useRef(new Set<string>());
@@ -500,6 +501,7 @@ export default function AchievementsPage() {
       setNewUnlock(null);
       setSharingAchievement(null);
       setSelectedAchievement(null);
+      if (shareTimerRef.current) clearTimeout(shareTimerRef.current);
       pendingUnlocks.current.clear();
       celebratedUnlocks.current.clear();
       if (unlockTimerRef.current) clearTimeout(unlockTimerRef.current);
@@ -530,6 +532,7 @@ export default function AchievementsPage() {
   useEffect(
     () => () => {
       if (unlockTimerRef.current) clearTimeout(unlockTimerRef.current);
+      if (shareTimerRef.current) clearTimeout(shareTimerRef.current);
     },
     []
   );
@@ -621,9 +624,9 @@ export default function AchievementsPage() {
   }, [filteredAchievements.length]);
 
   const milestones = [
-    { day: 7, reward: '1K Chips', unlocked: dailyStreak !== null && dailyStreak >= 7 },
-    { day: 30, reward: '100 Diamonds', unlocked: dailyStreak !== null && dailyStreak >= 30 },
-    { day: 100, reward: 'Exclusive Badge', unlocked: dailyStreak !== null && dailyStreak >= 100 },
+    { day: 7, unlocked: dailyStreak !== null && dailyStreak >= 7 },
+    { day: 30, unlocked: dailyStreak !== null && dailyStreak >= 30 },
+    { day: 100, unlocked: dailyStreak !== null && dailyStreak >= 100 },
   ];
 
   const hasBadges = !loading && !loadError && filteredAchievements.length > 0;
@@ -656,7 +659,9 @@ export default function AchievementsPage() {
         pillInk={dailyStreak !== null && dailyStreak > 0 ? 'gold' : 'muted'}
         foot="foot"
       >
-        <p className="sc-copy">Log In Every Day To Claim Milestone Rewards!</p>
+        <p className="sc-copy">
+          Track Your Consecutive Login Days And Recorded Achievement Activity.
+        </p>
 
         <div className="ach-streak">
           <StreakFire streakCount={dailyStreak ?? 0} size="lg" showLabel />
@@ -669,7 +674,7 @@ export default function AchievementsPage() {
               <span
                 className={`ach-row__value ${m.unlocked ? 'sc-ink--green' : 'sc-ink--muted'}`.trim()}
               >
-                {m.reward}
+                {dailyStreak === null ? 'Unavailable' : m.unlocked ? 'Reached' : 'In Progress'}
               </span>
             </div>
           ))}
@@ -897,6 +902,7 @@ export default function AchievementsPage() {
                     className="ach-word sc-ink--white"
                     onClick={async () => {
                       const ach = selectedAchievement;
+                      const sharingScope = userId;
                       const shareText = `I just unlocked "${ach.name}" on Club Arena! ${ach.description}`;
                       try {
                         if (navigator.share) {
@@ -910,9 +916,14 @@ export default function AchievementsPage() {
                           toast?.success('Achievement copied to clipboard!');
                         }
                       } catch (_err) {
-                        // User cancelled share or clipboard failed — show share card fallback
+                        // A native cancellation does not open another dialog.
+                        if ((_err as Error)?.name === 'AbortError') return;
+                        if (scopeRef.current !== sharingScope) return;
                         setSelectedAchievement(null);
-                        setTimeout(() => setSharingAchievement(ach), 300);
+                        if (shareTimerRef.current) clearTimeout(shareTimerRef.current);
+                        shareTimerRef.current = setTimeout(() => {
+                          if (scopeRef.current === sharingScope) setSharingAchievement(ach);
+                        }, 300);
                       }
                     }}
                   >

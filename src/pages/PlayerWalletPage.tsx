@@ -1867,7 +1867,7 @@ export default function PlayerWalletPage() {
                 player was performed_by or to_entity_id, so every chip that LEFT
                 the player was invisible. The statement shows both directions and
                 the nightly reading the balance is checked against. */}
-            <section className="vault-panel" aria-labelledby="audit-title">
+            <section className="vault-panel vault-panel--statement" aria-labelledby="audit-title">
               <h3 id="audit-title" className="vault-panel__title">
                 Chip Statement
               </h3>

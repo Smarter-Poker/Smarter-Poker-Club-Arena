@@ -4,7 +4,7 @@ import sys,json,argparse,datetime,re
 sys.dont_write_bytecode=True
 ROOT=Path(__file__).resolve().parents[2];sys.path.insert(0,str(ROOT/'scripts/ci'))
 from satellite_qualifier_fixture import module,sha,lit
-MIGRATION=Path('supabase/migrations/20261012194340_original_cash_reader_accepts_certified_retention.sql')
+MIGRATION=Path('supabase/migrations/20261012194613_original_cash_reader_accepts_certified_retention.sql')
 def extract(path,anchor):
  s=path.read_text();start=s.index(anchor);tag=s.index('AS $function$',start)+len('AS $function$');end=s.index('$function$',tag)+len('$function$');return s[start:end]+';\n'
 def prepare_fixture(e):

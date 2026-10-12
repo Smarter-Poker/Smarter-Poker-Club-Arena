@@ -2379,6 +2379,9 @@ jobs:
           mkdir -p "$RUNNER_TEMP/original-unchanged-stack"
           bash scripts/dev/probe-original-unchanged-stack-pg17.sh \
             2>&1 | tee "$RUNNER_TEMP/original-unchanged-stack/native.log"
+          python3 scripts/verification-harness/horse-cash-signed-reader-retention.py \
+            --evidence "$RUNNER_TEMP/original-unchanged-stack/retained-source-compatibility" \
+            --pg-bin /usr/lib/postgresql/17/bin
       - name: Retain original unchanged-stack native qualification
         if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.original_unchanged_stack.outcome)
         uses: actions/upload-artifact@v4

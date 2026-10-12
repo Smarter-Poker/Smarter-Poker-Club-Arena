@@ -56,8 +56,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 208420,
-      "sha256": "f10cdd968c998575f18c28cf6e44c68ebaddea8d59386fc63d0eb205520170a4"
+      "bytes": 208650,
+      "sha256": "726fc785d4c857df179022236ca835b70891a323ba25f306a1ccd2f6d59b8000"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -2361,6 +2361,17 @@
     "combinedWorkflowPin": {
       "bytes": 208420,
       "sha256": "f10cdd968c998575f18c28cf6e44c68ebaddea8d59386fc63d0eb205520170a4"
+    }
+  },
+  "signedCashRetentionConsumerQualification20261012": {
+    "reason": "Append exact focused signed-reader/retained-certificate qualification to its existing Accounting3 original unchanged-stack step and existing retained artifact. Preserve all original cases, financial assertions, foreign source bindings, historical pins and qualification status. Workflow fingerprint alone is not runtime proof.",
+    "previousCombinedWorkflowPin": {
+      "bytes": 208420,
+      "sha256": "f10cdd968c998575f18c28cf6e44c68ebaddea8d59386fc63d0eb205520170a4"
+    },
+    "combinedWorkflowPin": {
+      "bytes": 208650,
+      "sha256": "726fc785d4c857df179022236ca835b70891a323ba25f306a1ccd2f6d59b8000"
     }
   }
 }

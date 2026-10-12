@@ -55,6 +55,18 @@ async function expectBatchVerdictFromFunding(
   await expect(status).toHaveText(verdict as string);
 }
 
+// `.all()` snapshots nth() locators over a LIVE `:checked` filter: unchecking
+// the first shifts the rest down, so the second snapshot (nth(1)) never
+// resolves and the test burns its whole 150s budget waiting for it. Uncheck the
+// first match until none remain, and require each uncheck to land.
+async function uncheckEveryRecipient(surface: Locator): Promise<void> {
+  const checked = surface.locator('input[type="checkbox"][aria-label^="Include "]:checked');
+  for (let remaining = await checked.count(); remaining > 0; remaining = await checked.count()) {
+    await checked.first().uncheck();
+    await expect(checked).toHaveCount(remaining - 1);
+  }
+}
+
 test.describe('Production Cashier Certification', () => {
   test.describe.configure({ timeout: 90_000 });
 
@@ -230,10 +242,7 @@ test.describe('Production Cashier Certification', () => {
     // Preview only: certify the published individual-amount wiring without
     // spending real chips or issuing tickets against production players.
     const recipients = surface.locator('input[type="checkbox"][aria-label^="Include "]:enabled');
-    for (const checkbox of await surface
-      .locator('input[type="checkbox"][aria-label^="Include "]:checked')
-      .all())
-      await checkbox.uncheck();
+    await uncheckEveryRecipient(surface);
     await expect(recipients.nth(1)).toBeVisible();
     await recipients.nth(0).check();
     await recipients.nth(1).check();
@@ -267,10 +276,7 @@ test.describe('Production Cashier Certification', () => {
       'cashier-batch-send-ticket'
     );
     await ticketDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
-    for (const checkbox of await surface
-      .locator('input[type="checkbox"][aria-label^="Include "]:checked')
-      .all())
-      await checkbox.uncheck();
+    await uncheckEveryRecipient(surface);
     await page.setViewportSize({ width: 1440, height: 1000 });
     const directoryWidth = await surface
       .locator('[data-cashier-layout="directory"]')

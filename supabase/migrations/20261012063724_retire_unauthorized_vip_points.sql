@@ -167,6 +167,11 @@ BEGIN
 END;
 $function$;
 
+-- Explicit source ACLs match the inspected production privileges.
+REVOKE ALL ON FUNCTION public.fn_award_vip_credit(uuid,numeric,text,uuid,text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_award_vip_credit(uuid,numeric,text,uuid,text) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_redeem_vip_points(bigint,text,text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.fn_redeem_vip_points(bigint,text,text) TO authenticated, service_role;
 -- Existing function owners and ACLs remain unchanged by CREATE OR REPLACE.
 COMMIT;
 

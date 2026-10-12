@@ -22,7 +22,7 @@ The Diamond credit helper is a fixture stand-in; selection and invocation of the
 
 This is a qualified candidate, not a production installation receipt. Apply the exact migration once through the configured recorded-migration route after protected integration, outside the database DDL refusal window (:50 through :03 UTC). It asserts all five inspected predecessor definition hashes and owners/ACLs, and uses one transaction with a three-second lock timeout. Read durable history before retrying any uncertain result.
 
-Candidate SHA256: `427b1f7aa2574ad6dec7f24ec5c7c5c9b392ae3cdfc2121da75bcd250e93792c`.
+Candidate SHA256: `44b8cb5c36dafbb5ba0bc2a60cd39b6754436a430c2d7ab0a09e830fb2f4cb69`.
 
 Expected installed `md5(pg_get_functiondef(oid))`:
 

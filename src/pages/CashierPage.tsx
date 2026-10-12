@@ -71,7 +71,12 @@ import AgentPromoPanel from '../components/agent/AgentPromoPanel';
 import CashoutRequestModal from '../components/wallet/CashoutRequestModal';
 import DynamicWallet from '../components/wallet/DynamicWallet';
 import WalletCashierModal from '../components/wallet/WalletCashierModal';
-import { DEFAULT_CASHIER_WALLET } from '../components/wallet/cashierModes';
+import {
+  DEFAULT_CASHIER_WALLET,
+  clubBankDestinationFor,
+  clubBankRecipientWallets,
+  type ClubBankRecipientWallet,
+} from '../components/wallet/cashierModes';
 import { canHoldAgentWallet } from '../components/wallet/walletRows';
 import PlayerWalletModal from '../components/wallet/PlayerWalletModal';
 import StandardContentLayout from '../components/layouts/StandardContentLayout';
@@ -1695,6 +1700,36 @@ function CashierContent() {
     return recipients.find((r) => r.id === selectedRecipient);
   }, [recipients, selectedRecipient]);
 
+  /**
+   * DISTRIBUTE PAYS THE WALLET THE SENDER CHOSE (Dan 2026-10-11: "CLUB OWNERS
+   * CAN PLAY AND HAVE CHIPS SENT TO THEIR PLAYER WALLETS").
+   *
+   * For the four bank roles Distribute spends the Club Bank through
+   * fn_club_bank_send, which credits whichever wallet it is asked to. It used
+   * to be asked by ROLE - `canHoldAgentWallet(role) ? 'agent_wallet' :
+   * 'player_wallet'` - so an owner (including the sender themselves, who is on
+   * this list) could only ever be paid into their float, never into the wallet
+   * they play from. A recipient holding both wallets now offers both.
+   * An agent's Distribute is fn_agent_wallet_send and still follows the role.
+   */
+  const distributeViaClubBank =
+    ['owner', 'co_owner', 'admin', 'super_agent'].includes(userRole) || isUnionOwner;
+  const [distributeWallet, setDistributeWallet] = useState<ClubBankRecipientWallet | null>(null);
+  useEffect(() => {
+    setDistributeWallet(null);
+  }, [selectedRecipient]);
+  const distributeWallets: ClubBankRecipientWallet[] =
+    distributeViaClubBank && selectedRecipientData
+      ? clubBankRecipientWallets(selectedRecipientData.role)
+      : [];
+  const distributeDestination: ClubBankRecipientWallet = !selectedRecipientData
+    ? 'player_wallet'
+    : distributeViaClubBank
+      ? clubBankDestinationFor(selectedRecipientData.role, distributeWallet)
+      : canHoldAgentWallet(selectedRecipientData.role)
+        ? 'agent_wallet'
+        : 'player_wallet';
+
   // ── Keyboard navigation for tabs (Arrow Left/Right, Home/End) ──
   const tabNavRef = useRef<HTMLElement | null>(null);
   const handleTabKeyDown = useCallback(
@@ -2915,14 +2950,34 @@ function CashierContent() {
                       <span>Player Wallet: {chipFigure(selectedRecipientData.balance)}</span>
                       <span>
                         Destination:{' '}
-                        {canHoldAgentWallet(selectedRecipientData.role)
+                        {distributeDestination === 'agent_wallet'
                           ? 'Agent Wallet'
                           : 'Player Wallet'}
                       </span>
-                      {canHoldAgentWallet(selectedRecipientData.role) && (
+                      {distributeDestination === 'agent_wallet' && (
                         <span>The Player Wallet Above Is Separate From Their Agent Wallet.</span>
                       )}
                     </section>
+                  )}
+                  {distributeWallets.length > 1 && (
+                    <div
+                      className={styles.presetGrid}
+                      role="radiogroup"
+                      aria-label="Distribute Into Which Wallet"
+                    >
+                      {distributeWallets.map((wallet) => (
+                        <button
+                          key={wallet}
+                          type="button"
+                          role="radio"
+                          aria-checked={distributeDestination === wallet}
+                          className={`${styles.presetBtn} ${distributeDestination === wallet ? 'sc-ink--blue' : 'sc-ink--muted'}`}
+                          onClick={() => setDistributeWallet(wallet)}
+                        >
+                          {wallet === 'agent_wallet' ? 'Into Agent Wallet' : 'Into Player Wallet'}
+                        </button>
+                      ))}
+                    </div>
                   )}
                   {loadingRecipients ? (
                     <p className={`${styles.loading} sc-copy sc-ink--muted`} aria-busy="true">
@@ -3057,9 +3112,7 @@ function CashierContent() {
                       const resolvedForDistribute =
                         (await resolveClubUUID(clubId || '')) || clubId || '';
                       const recipientRow = recipients.find((r) => r.id === selectedRecipient);
-                      const viaClubBank =
-                        ['owner', 'co_owner', 'admin', 'super_agent'].includes(userRole) ||
-                        isUnionOwner;
+                      const viaClubBank = distributeViaClubBank;
                       const transferAction = viaClubBank
                         ? 'fn_club_bank_send'
                         : 'fn_agent_wallet_send';
@@ -3067,9 +3120,9 @@ function CashierContent() {
                         p_club_id: resolvedForDistribute,
                         p_to_user_id: selectedRecipient,
                         p_amount: value,
-                        p_destination: canHoldAgentWallet(recipientRow?.role)
-                          ? 'agent_wallet'
-                          : 'player_wallet',
+                        // The wallet chosen above, out of the ones this
+                        // recipient holds (distributeDestination).
+                        p_destination: distributeDestination,
                         p_reason: viaClubBank
                           ? 'Distributed From The Club Bank'
                           : 'Distributed From The Agent Wallet',

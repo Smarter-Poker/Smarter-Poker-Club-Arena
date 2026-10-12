@@ -114,7 +114,8 @@
 }
 
 .chip-transfer-modal .agent-balance span:first-child,
-.chip-transfer-modal .form-group label {
+.chip-transfer-modal .form-group label,
+.chip-transfer-modal .form-group .form-label {
   color: var(--cashier-muted);
   font-family: 'Roboto Condensed', 'Arial Narrow', sans-serif;
   font-size: 0.78rem;
@@ -213,6 +214,15 @@
   font-weight: 700;
   cursor: pointer;
   touch-action: manipulation;
+}
+
+.chip-transfer-modal .chip-transfer-wallets {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.chip-transfer-modal .chip-transfer-wallets button.is-on {
+  border-color: var(--cashier-cyan);
+  color: var(--cashier-text);
 }
 
 .chip-transfer-modal .quick-amounts button:disabled,

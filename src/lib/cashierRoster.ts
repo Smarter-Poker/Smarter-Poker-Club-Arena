@@ -108,12 +108,17 @@ export const rosterRowMatches = (row: DownlineRow, query: string): boolean => {
  * and refuses the selection. A removed row is indistinguishable from a member
  * who is not in the club at all, which is the bug this rule exists to stop.
  *
- * The two refusals a cashier can know about before the tap:
+ * The refusals a cashier can know about before the tap:
  *   - the viewer themselves (fn_agent_wallet_send / fn_promo_wallet_send both
  *     refuse `p_to_user_id = auth.uid()`; fn_club_bank_send deliberately does
- *     NOT, because an owner funding their own float is the normal route);
+ *     NOT, because an owner funding their own float - or their own player
+ *     wallet, so they can play (Dan 2026-10-11) - is the normal route);
  *   - a member whose role cannot hold the destination wallet
- *     (fn_agent_wallet_send: "Only Staff Or Agents Hold An Agent Wallet").
+ *     (fn_agent_wallet_send: "Only Staff Or Agents Hold An Agent Wallet";
+ *     fn_club_bank_send: "An Admin Does Not Hold A Player Wallet").
+ *
+ * An OWNER is never refused a player-wallet credit for being the owner. Owners
+ * and co-owners hold a player wallet (Dan 2026-09-02), so they are sendable.
  *
  * Anything else the server refuses is the server's to say on submit; this
  * never guesses.
@@ -133,6 +138,14 @@ export function cashierRecipientBlock(opts: {
   destinationNeedsAgentWallet: boolean;
   /** This member's role can hold that wallet. */
   memberHoldsAgentWallet: boolean;
+  /**
+   * The destination is a PLAYER wallet the server will credit as asked (the
+   * Club Bank and the promo cashiers; an agent wallet send coerces a staff
+   * recipient to their float instead, so it never needs this).
+   */
+  destinationIsPlayerWallet?: boolean;
+  /** This member's role holds a player wallet (everyone but an admin). */
+  memberHoldsPlayerWallet?: boolean;
 }): CashierRecipientBlock | null {
   if (opts.isSelf && opts.refusesSelfSend) {
     return {
@@ -144,6 +157,12 @@ export function cashierRecipientBlock(opts: {
     return {
       label: 'No Wallet',
       reason: 'Only Staff Or Agents Hold This Wallet, So Nothing Can Be Sent Here.',
+    };
+  }
+  if (opts.destinationIsPlayerWallet && opts.memberHoldsPlayerWallet === false) {
+    return {
+      label: 'No Player Wallet',
+      reason: 'An Admin Does Not Hold A Player Wallet. Send To Their Agent Wallet Instead.',
     };
   }
   return null;

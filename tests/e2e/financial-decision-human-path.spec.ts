@@ -1,4 +1,54 @@
 import { expect, test, type BrowserContext, type Route } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+
+for (const width of [375, 393, 1280]) {
+  test(`Tournament Register clears the live footer at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 812 });
+    const sheets = [
+      'src/pages/tournament/TournamentDetails.css',
+      'src/styles/tournament-lobby-3d.css',
+    ]
+      .map((file) => readFileSync(file, 'utf8'))
+      .join('\n');
+    await page.setContent(`<meta name="viewport" content="width=device-width, initial-scale=1">
+      <style>${sheets}
+      body { margin: 0; }
+      #global-footer { position: fixed; bottom: 0; height: 132px; width: 100%; z-index: 1000; }
+      </style>
+      <section class="tournament-details" data-embedded="false" style="--details-h: 100dvh">
+        <header class="details-header"><h1 class="tournament-name">Tournament</h1></header>
+        <div class="details-content">Tournament Details</div>
+        <div class="details-footer"><button class="btn-register" onclick="document.querySelector('output').textContent='Opened'">Register</button></div>
+      </section><nav id="global-footer">Poker Arena</nav><output></output>`);
+    for (const height of [132, 0, 66]) {
+      await page.evaluate((value) => {
+        document.documentElement.style.setProperty('--ca-bottom-chrome-h', `${value}px`);
+        (document.querySelector('#global-footer') as HTMLElement).style.height = `${value}px`;
+      }, height);
+      const hit = await page
+        .getByRole('button', { name: 'Register', exact: true })
+        .evaluate((el) => {
+          const rect = el.getBoundingClientRect();
+          const top = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
+          const footer = document.querySelector('#global-footer')!.getBoundingClientRect();
+          return { reachable: top === el, bottom: rect.bottom, footerTop: footer.top };
+        });
+      expect(hit.reachable, `Register is intercepted with ${height}px of footer`).toBe(true);
+      expect(hit.bottom).toBeLessThanOrEqual(hit.footerTop);
+      await page.getByRole('button', { name: 'Register', exact: true }).click();
+      await expect(page.locator('output')).toHaveText('Opened');
+    }
+    // The same shell inside a table's sheet owns a bounded parent; it must
+    // keep that height even while the outer global footer is visible.
+    await page.locator('.tournament-details').evaluate((el) => {
+      el.setAttribute('data-embedded', 'true');
+      (el as HTMLElement).style.setProperty('--details-h', '500px');
+    });
+    expect(
+      await page.locator('.tournament-details').evaluate((el) => el.getBoundingClientRect().height)
+    ).toBe(500);
+  });
+}
 
 const jsonHeaders = {
   'access-control-allow-origin': '*',

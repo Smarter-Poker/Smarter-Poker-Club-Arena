@@ -344,7 +344,7 @@ BEGIN
    RETURNING chip_balance INTO v_after;
   IF v_after IS DISTINCT FROM round(v_before+v_tk.value,2) THEN
     RAISE EXCEPTION 'ticket % cash credit did not land exactly',v_tk.id
-      USING ERRCODE='40001';
+      USING ERRCODE='55000';
   END IF;
 
   PERFORM set_config('app.ca_closed_target_ticket_cash',v_tk.id::text,true);
@@ -354,7 +354,7 @@ BEGIN
   GET DIAGNOSTICS v_rows=ROW_COUNT;
   IF v_rows<>1 THEN
     RAISE EXCEPTION 'ticket % changed while it was paid in cash',v_tk.id
-      USING ERRCODE='40001';
+      USING ERRCODE='55000';
   END IF;
 
   INSERT INTO public.chip_transactions(

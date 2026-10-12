@@ -161,9 +161,36 @@
   border-bottom: 0;
 }
 
-.ca-notif__row--deleting {
-  max-height: 0;
-  opacity: 0;
+.ca-notif__row--deleting .ca-notif__delete {
+  cursor: progress;
+}
+
+.ca-notif__actionError {
+  max-width: 680px;
+  margin: 1rem auto;
+  color: var(--notif-red);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.ca-notif__actionError p {
+  margin: 0;
+}
+
+.ca-notif__actionError button {
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--notif-blue);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.ca-notif__actionError button:focus-visible {
+  outline: 2px solid var(--notif-blue);
+  outline-offset: 3px;
 }
 
 .ca-notif__tap {

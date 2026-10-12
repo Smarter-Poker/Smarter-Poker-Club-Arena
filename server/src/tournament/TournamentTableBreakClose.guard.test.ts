@@ -91,8 +91,10 @@ describe('a tournament table break closes durably before releasing process owner
   it('retries a response-lost close from the retained empty table without direct writes', () => {
     const balance = sliceMethod(manager, 'protected async checkTableBalance()');
     expect(balance).toContain('if (bt.playerCount > 0 && breakMoves.length !== bt.playerCount)');
-    expect(balance).toContain(
-      'await this.visitTournamentBreakPage((state) => this.recoverTournamentBreak(state))'
+    expect(balance).toContain('await this.recoverPendingTournamentBreaks()');
+    const pending = sliceMethod(manager, 'protected async recoverPendingTournamentBreaks()');
+    expect(pending).toContain(
+      'this.visitTournamentBreakPage((state) => this.recoverTournamentBreak(state))'
     );
     const recover = sliceMethod(manager, 'protected async recoverTournamentBreak(');
     expect(recover).toContain('await this.reconcileTournamentBreak(state)');

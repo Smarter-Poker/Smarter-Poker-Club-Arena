@@ -103,6 +103,19 @@ interface FeedNotification {
   _cache_ts?: number;
 }
 
+/** Only confirmed display data may replace the account's last good feed. */
+function isFeedRow(value: unknown): value is FeedNotification {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const row = value as Record<string, unknown>;
+  if (typeof row.id !== 'string' || !row.id.trim() || typeof row.created_at !== 'string')
+    return false;
+  return (
+    ['type', 'title', 'message', 'actor_name', 'actor_avatar_url', 'link', 'action_url'].every(
+      (key) => row[key] == null || typeof row[key] === 'string'
+    ) && ['read', 'is_read'].every((key) => row[key] == null || typeof row[key] === 'boolean')
+  );
+}
+
 /* ═══════════════════════════════════════════════════════════════════════
    CATEGORY ICONS
    Inline SVG rather than an icon package: Club Arena does not depend on
@@ -207,9 +220,10 @@ function readCache(userId: string | null): FeedNotification[] {
     const raw = localStorage.getItem(CACHE_KEY + userId);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed) || parsed.length === 0) return [];
-    const age = Date.now() - (parsed[0]?._cache_ts || 0);
-    if (age >= CACHE_TTL_MS) return [];
+    if (!Array.isArray(parsed) || parsed.length === 0 || !parsed.every(isFeedRow)) return [];
+    if (typeof parsed[0]._cache_ts !== 'number') return [];
+    const age = Date.now() - parsed[0]._cache_ts;
+    if (!Number.isFinite(age) || age < 0 || age >= CACHE_TTL_MS) return [];
     return parsed as FeedNotification[];
   } catch {
     // A private-mode browser, a cleared store, or a half-written entry. A
@@ -246,8 +260,11 @@ function dayBucket(iso: string, now = new Date()): 'Today' | 'Yesterday' | 'This
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
   const t = d.getTime();
   if (t >= startOfToday) return 'Today';
-  if (t >= startOfToday - 86_400_000) return 'Yesterday';
-  if (t >= startOfToday - 6 * 86_400_000) return 'This Week';
+  // Local calendar days can contain 23 or 25 hours across daylight saving.
+  const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1).getTime();
+  const weekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6).getTime();
+  if (t >= yesterday) return 'Yesterday';
+  if (t >= weekStart) return 'This Week';
   return 'Earlier';
 }
 
@@ -278,6 +295,7 @@ function NotificationFeed({ userId }: { userId: string | null }) {
   const [notifications, setNotifications] = useState<FeedNotification[]>(() => readCache(userId));
   const [loading, setLoading] = useState(() => !!userId && readCache(userId).length === 0);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [connectionStatus, setConnectionStatus] = useState('Connecting');
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
@@ -351,7 +369,13 @@ function NotificationFeed({ userId }: { userId: string | null }) {
             if (!res.ok) throw new Error('Notification Feed Read Refused');
             const json = await res.json();
             if (!isCurrent() || owner.pending || owner.mutations.size > 0) continue;
-            if (!json?.success || !Array.isArray(json.notifications)) {
+            if (
+              !json?.success ||
+              !Array.isArray(json.notifications) ||
+              !json.notifications.every(isFeedRow) ||
+              new Set(json.notifications.map((row: FeedNotification) => row.id)).size !==
+                json.notifications.length
+            ) {
               throw new Error('Notification Feed Response Was Invalid');
             }
             applyRows(
@@ -455,6 +479,7 @@ function NotificationFeed({ userId }: { userId: string | null }) {
       const key = id === null ? 'read-all' : `read:${id}`;
       if (before.size === 0 || owner.mutations.has(key)) return;
       owner.mutations.add(key);
+      setActionError(null);
       owner.pending = true;
       applyRows(
         rowsRef.current.map((n) => (before.has(n.id) ? { ...n, read: true, is_read: true } : n)),
@@ -514,6 +539,7 @@ function NotificationFeed({ userId }: { userId: string | null }) {
             false
           );
           console.warn('[Notifications] mark read failed:', (err as Error)?.message || err);
+          setActionError('Read Status Could Not Be Confirmed. Please Try Again.');
         }
       } finally {
         owner.mutations.delete(key);
@@ -534,6 +560,7 @@ function NotificationFeed({ userId }: { userId: string | null }) {
       const key = `delete:${id}`;
       if (owner.mutations.has(key)) return;
       owner.mutations.add(key);
+      setActionError(null);
       owner.pending = true;
       setDeletingIds((prev) => new Set(prev).add(id));
       const wasUnread = rowsRef.current.some((n) => n.id === id && isUnread(n));
@@ -580,6 +607,7 @@ function NotificationFeed({ userId }: { userId: string | null }) {
       } catch (err) {
         if (owner.active && ownerRef.current === owner) {
           console.warn('[Notifications] delete failed:', (err as Error)?.message || err);
+          setActionError('Dismissal Could Not Be Confirmed. Check The Signal And Try Again.');
         }
       } finally {
         owner.mutations.delete(key);
@@ -704,6 +732,15 @@ function NotificationFeed({ userId }: { userId: string | null }) {
         subscribed or the player has explicitly turned push off. */}
       <PushEnableBanner />
 
+      {actionError && (
+        <div className="ca-notif__actionError" role="alert">
+          <p>{actionError}</p>
+          <button type="button" onClick={() => setActionError(null)}>
+            Close Message
+          </button>
+        </div>
+      )}
+
       {error && (
         <div className="ca-notif__empty" role="alert">
           <p>{error}</p>
@@ -768,7 +805,11 @@ function NotificationFeed({ userId }: { userId: string | null }) {
                     {bucket}
                   </h2>
                 )}
-                <article className={rowClass} data-notif-id={n.id}>
+                <article
+                  className={rowClass}
+                  data-notif-id={n.id}
+                  aria-busy={deletingIds.has(n.id) || undefined}
+                >
                   <button
                     type="button"
                     className={`ca-notif__tap${clickable ? ' ca-notif__tap--clickable' : ''}`}
@@ -829,6 +870,7 @@ function NotificationFeed({ userId }: { userId: string | null }) {
                     className="ca-notif__delete"
                     title="Dismiss"
                     aria-label={`Dismiss ${n.title || n.message || 'Notification'}`}
+                    disabled={deletingIds.has(n.id)}
                     onClick={() => handleDelete(n.id)}
                   >
                     <svg
@@ -862,6 +904,7 @@ function NotificationFeed({ userId }: { userId: string | null }) {
 function timeAgo(date: string | null | undefined): string {
   if (!date) return '';
   const s = Math.floor((Date.now() - new Date(date).getTime()) / 1000);
+  if (!Number.isFinite(s)) return '';
   if (s < 60) return 'Just now';
   if (s < 3600) return `${Math.floor(s / 60)}m`;
   if (s < 86400) return `${Math.floor(s / 3600)}h`;

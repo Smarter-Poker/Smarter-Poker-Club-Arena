@@ -4627,11 +4627,18 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           engine: this.tableEngines.get(table.id),
         }));
         for (const { tableId, engine } of owned) {
+          if (!this.isRunning() || isMaintenanceFrozen() || !this.eliminationMutationAllowed())
+            return 'pending';
+          if (!engine?.isRunning()) {
+            // A break may have stopped its empty source after every move
+            // committed. Returning pending resets the sweep before balance,
+            // so that source can never close and the qualifier fence never
+            // releases. Finish only discovered original break operations;
+            // this grants neither a fresh balance plan nor a qualifier payout.
+            await this.recoverPendingTournamentBreaks();
+            return 'pending';
+          }
           if (
-            !this.isRunning() ||
-            isMaintenanceFrozen() ||
-            !this.eliminationMutationAllowed() ||
-            !engine?.isRunning() ||
             this.gameServer.getTableEngine(tableId) !== engine ||
             !(await engine.parkForTerminalCloseout(0))
           )
@@ -5784,6 +5791,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
   }
 
   // ── Implemented by TournamentManager (layer 3/3) ──
+  protected abstract recoverPendingTournamentBreaks(): Promise<boolean>;
   protected abstract checkTableBalance(): Promise<TournamentBalanceProgress | void>;
   protected abstract processSatelliteAwards(
     tournament: any,

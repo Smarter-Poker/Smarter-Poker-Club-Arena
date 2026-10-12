@@ -833,6 +833,19 @@
         "check-definer-authorization: CREATE OR REPLACE preserves existing engine-only prune ACL, absent from replacement body"
       ],
       "liveVerdict": "Production19:08:03UTC fn_prune_horse_adaptive_journal() md5ae358dd5be5586e0fbdf44f083afe92d ownerpostgres SECURITY DEFINER search_path pg_catalog/public/smarter_private lock_timeout2s ACLpostgres/service_role only anon/authenticated false; original privateactivation ACLpostgres only, pairconstraints and nullable cursors read back. Native27 qualifies exact SQL,250 cap,16MiB,time,originalhelperidentity,protectedprefix/restart/rollback. ActivationFALSE pending exact versioned serving consumer proof; no installed replay."
+    },
+    {
+      "version": "20261012192304",
+      "name": "horse_adaptive_batch_membership_validates_once_and_records_as_one_set",
+      "file": "supabase/migrations/20261012192304_horse_adaptive_batch_membership_validates_once_and_records_as_one_set.sql",
+      "md5": "7b6bf06fb0dac33a49d9592e00c1e73e",
+      "appliedToProductionAt": "2026-10-12T19:23:04Z",
+      "recoveredOn": "2026-10-12",
+      "recoveredFrom": "Exact immutable applying-session source; schema_migrations source/name readback19:23:12 and public.fn_ca_migration_text19:41:44 verify the same full69-character ledger name and md57b6bf06fb0dac33a49d9592e00c1e73e, without truncation or replay.",
+      "refusedBy": [
+        "check-new-migration-version-collisions:69-character new name; this is now an exact already-installed ledger recording whose actual full name is verified"
+      ],
+      "liveVerdict": "Production19:23:12 helper02b1038d96aef58c02af6fd7c41bdf5c ownerpostgres SECURITY DEFINER search_path pg_catalog/public/smarter_private ACLpostgres-only; anon/authenticated/service_roleEXECUTEfalse. Exact finalnative34+24+27 validates original predicates, all-element validation before distinct insertion, byte ceilings, original locks, protected raw/replay and rollback. Name/source verified again19:41:44 through maintained fn_ca_migration_text. This records immutable installed bytes; the naming guard explicitly supports verified recordings and is not weakened."
     }
   ]
 }

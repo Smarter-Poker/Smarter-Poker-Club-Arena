@@ -276,11 +276,10 @@ describe('a rebuy or add-on lands in the seat, or does not happen', () => {
 describe('the settler keeps running every sentinel it is meant to', () => {
   // Defect: runUnionEcoRecord was deleted by a stale-copy rewrite and nobody
   // noticed until the running build was grepped by hand.
-  const sentinels = [
-    'runUnionEcoRecord',
-    'runUnionRakeRollupCatchup',
-    'runTournamentChipConservation',
-  ];
+  // runUnionEcoRecord was retired on purpose on 2026-10-12: the open week has
+  // no closed P&L evidence, so its ECO is written once at close by
+  // fn_union_settlement_cascade (tests/an-open-week-has-no-eco-to-record.law.test.ts).
+  const sentinels = ['runUnionRakeRollupCatchup', 'runTournamentChipConservation'];
   for (const s of sentinels) {
     it(`${s} is defined AND called`, () => {
       expect(code(SETTLER)).toMatch(new RegExp(`private async ${s}\\(`));

@@ -222,7 +222,7 @@ describe('contract 4: the receipt readers speak the contract production seals', 
 
   it('contract 5: the browser seals the same 4,000 crash points PostgreSQL seals, and still verifies contract 4', () => {
     // The same thousand production rolls, read through fn_crash_point_cents_v5
-    // as migration 20261012114801 installs it (a 1.25x floor, the round's own
+    // as migration 20261012140447 installs it (a 1.25x floor, the round's own
     // return chosen for a 2.9x average).
     const pairs = rollVectors.pairs as [number, number][];
     const rolls = (rollVectors.rolls as string[]).map((r) => BigInt(r));

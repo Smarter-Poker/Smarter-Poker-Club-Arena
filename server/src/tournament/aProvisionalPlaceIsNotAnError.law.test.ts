@@ -21,6 +21,13 @@
  *    custody keeps its reservation and the sweep's finally block requeues the
  *    work. It is quiet only when the budget really has expired.
  *
+ * 3. The custody CLAIM step (2026-10-12). Its identity check also asked
+ *    eliminationMutationAllowed(), so a budget spent during the claim round
+ *    trip threw "F06 custody claim identity mismatch before stop" with every
+ *    identity field matching (07:09:00 UTC on 2026-10-12). It now throws the
+ *    same retirement_custody_stale as every later step, so the yield is read
+ *    by the one rule above, and a real mismatch keeps its own message.
+ *
  * Registry: docs/laws.d/server-src-tournament-aProvisionalPlaceIsNotAnError.md
  */
 import { describe, expect, it } from 'vitest';
@@ -29,6 +36,7 @@ import { join } from 'node:path';
 import { isBudgetYieldedRetirement, RETIREMENT_STALENESS_ERRORS } from './retirementYield.js';
 
 const ELIM = readFileSync(join(__dirname, 'TournamentManagerEliminations.ts'), 'utf8');
+const MANAGER = readFileSync(join(__dirname, 'TournamentManager.ts'), 'utf8');
 const code = (src: string): string =>
   src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 const CODE = code(ELIM);
@@ -96,5 +104,31 @@ describe('a budget yield is not a failure', () => {
     expect(CODE).toMatch(
       /\} else \{\s+reportError\(err, 'Tournament\.elimination_check_error'\);\s+\}/
     );
+  });
+});
+
+describe('a spent budget at the custody claim is a stale custody', () => {
+  const claimStep = (): string => {
+    const src = code(MANAGER);
+    const start = src.indexOf('const claimed = await rpc.claimCustody(');
+    const end = src.indexOf(
+      "throw new Error('F06 custody claim identity mismatch before stop')",
+      start
+    );
+    return start >= 0 && end > start ? src.slice(start, end) : '';
+  };
+
+  it('names the budget refusal as the custody staleness the sweep yields on', () => {
+    expect(claimStep()).toMatch(
+      /if \(!this\.eliminationMutationAllowed\(\)\) throw new Error\('retirement_custody_stale'\);/
+    );
+    expect(RETIREMENT_STALENESS_ERRORS.has('retirement_custody_stale')).toBe(true);
+  });
+
+  it('keeps the identity mismatch for identity fields only', () => {
+    const identity = claimStep().slice(claimStep().indexOf('if (\n'));
+    expect(identity).toContain('!claimed.ok');
+    expect(identity).toContain('claimed.custody_id !== binding.custodyId');
+    expect(identity).not.toContain('eliminationMutationAllowed');
   });
 });

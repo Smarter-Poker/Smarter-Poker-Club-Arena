@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { chromium } from '@playwright/test';
 import { portFor } from './e2e-port.mjs';
+import { waitForFirstContentfulPaint } from './paint-readiness.mjs';
 
 const HOST = '127.0.0.1';
 // Per-runner port. A hardcoded 4173 collided as soon as CI moved onto the
@@ -96,6 +97,10 @@ try {
 
       const response = await page.goto(`${ORIGIN}${route}`, { waitUntil: 'load', timeout: 15_000 });
       await page.waitForSelector('#root > *', { timeout: 10_000 });
+      // Root markup can exist before Chromium has painted it. Observe the
+      // actual paint; the measured FCP still must meet the unchanged budget.
+      const paintObserved = await waitForFirstContentfulPaint(page);
+      if (!paintObserved) console.error(`[route-performance] ${viewport.name} ${route}: paint was not observed within 5000ms`);
       await page.waitForTimeout(500);
       const devtoolsMetrics = await devtools.send('Performance.getMetrics');
       const metric = (name) =>

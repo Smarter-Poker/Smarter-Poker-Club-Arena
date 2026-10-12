@@ -276,7 +276,8 @@ export interface ControlState {
 
 export function parseControlState(raw: unknown): ControlState | null {
   const r = objectOf(raw);
-  if (!r) return null;
+  if (!r || Array.isArray(raw) || !text(r.cluster_mode) || bool(r.lightning_enabled) === null)
+    return null;
   return {
     shadowWindowMs: num(r.shadow_window_ms),
     integrityTelemetry: bool(r.integrity_telemetry),
@@ -305,21 +306,53 @@ export interface ControlResult {
 }
 
 export function parseControlResult(row: Record<string, unknown>): ControlResult | null {
-  if (row.ok !== true) return null;
+  if (row.ok !== true || typeof row.idempotent !== 'boolean') return null;
+  if (
+    (row.already !== undefined && typeof row.already !== 'boolean') ||
+    (row.replayed !== undefined && typeof row.replayed !== 'boolean')
+  )
+    return null;
+  if (row.already === true && (row.idempotent !== true || row.event_id !== null)) return null;
+  const action = text(row.action);
+  const clusterId = text(row.cluster_id);
+  const requestId = text(row.request_id);
+  const before = parseControlState(row.before);
+  const after = parseControlState(row.after);
+  if (!action || !isOperatorAction(action) || !clusterId || !requestId || !before || !after)
+    return null;
+  // Both states are normalized by the same parser, independent of JSON key order.
+  if (row.already === true && JSON.stringify(before) !== JSON.stringify(after)) return null;
+  if (
+    action === 'set_shadow_window' &&
+    (typeof objectOf(row.before)?.shadow_window_ms !== 'number' ||
+      typeof objectOf(row.after)?.shadow_window_ms !== 'number' ||
+      shadowWindowLabel(before.shadowWindowMs) === 'Unknown' ||
+      shadowWindowLabel(after.shadowWindowMs) === 'Unknown')
+  )
+    return null;
+  if (
+    action === 'set_integrity_telemetry' &&
+    (before.integrityTelemetry === null || after.integrityTelemetry === null)
+  )
+    return null;
   const event = row.event_id;
+  const eventId =
+    typeof event === 'number' && Number.isSafeInteger(event) && event > 0
+      ? String(event)
+      : typeof event === 'string' && /^[1-9]\d*$/.test(event)
+        ? event
+        : null;
+  if (!eventId && row.already !== true) return null;
   return {
     idempotent: row.idempotent === true,
     already: row.already === true,
     replayed: row.replayed === true,
-    action: text(row.action),
-    clusterId: text(row.cluster_id),
-    requestId: text(row.request_id),
-    before: parseControlState(row.before),
-    after: parseControlState(row.after),
-    eventId:
-      typeof event === 'number' || (typeof event === 'string' && event.trim() !== '')
-        ? String(event)
-        : null,
+    action,
+    clusterId,
+    requestId,
+    before,
+    after,
+    eventId,
   };
 }
 
@@ -353,7 +386,25 @@ export function sendOperatorControl(
         p_reason: reason.trim(),
         p_args: args,
       }),
-    (raw) => interpretAnswer(raw, parseControlResult)
+    (raw) => {
+      const answer = interpretAnswer(raw, parseControlResult);
+      if (answer.status === 'refused' && answer.code === 'REQUEST_IN_PROGRESS') {
+        return { status: 'error', message: 'This Request Is Still In Progress' };
+      }
+      if (
+        answer.status === 'ok' &&
+        (answer.data.action !== action ||
+          answer.data.clusterId !== clusterId ||
+          answer.data.requestId !== args.request_id ||
+          (action === 'set_shadow_window' &&
+            answer.data.after?.shadowWindowMs !== args.shadow_window_ms) ||
+          (action === 'set_integrity_telemetry' &&
+            answer.data.after?.integrityTelemetry !== args.value))
+      ) {
+        return { status: 'error', message: 'The Control Answer Does Not Match This Request' };
+      }
+      return answer;
+    }
   );
 }
 

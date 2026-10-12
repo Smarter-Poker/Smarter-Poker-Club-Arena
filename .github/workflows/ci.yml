@@ -2137,6 +2137,20 @@ jobs:
         env:
           POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-hand-submission-retention-disposal.py --pg-bin "$POKER_AUDIT_PG_BIN" --evidence artifacts/hand-submission-retention-disposal
+      - name: Settled horse request payloads expire without reopening settlement
+        id: horse_request_retention
+        if: matrix.shard == 3
+        env:
+          POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/verification-harness/horse-request-retention.py --pg-bin "$POKER_AUDIT_PG_BIN" --evidence artifacts/horse-request-retention
+      - name: Retain original horse payload expiration proof
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.horse_request_retention.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: horse-request-retention-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/horse-request-retention/
+          if-no-files-found: error
+          retention-days: 7
       - name: Retain retention disposal proof
         if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.hand_submission_retention_disposal.outcome)
         uses: actions/upload-artifact@v4

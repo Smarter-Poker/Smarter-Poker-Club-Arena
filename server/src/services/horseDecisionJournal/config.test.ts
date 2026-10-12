@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { execFileSync } from 'node:child_process';
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>();
+  return { ...actual, statfsSync: vi.fn(actual.statfsSync) };
+});
 vi.mock('node:child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:child_process')>();
   return { ...actual, execFileSync: vi.fn(actual.execFileSync) };
@@ -357,7 +361,10 @@ describe('the journal disk bounds the shards a default may add', () => {
     const dir = directory();
     mkdirSync(join(dir, 'archive'));
     mkdirSync(join(dir, 'archive-shard-1'));
-    const fs = statfsSync(dir);
+    // Fixed 100 GiB: 16 GiB and 11 GiB shard budgets give distinct answers.
+    // A real low-free-space filesystem can round different budget models alike.
+    const fs = { ...statfsSync(dir), bsize: 4096, bavail: (100 * GiB) / 4096 };
+    vi.mocked(statfsSync).mockReturnValueOnce(fs).mockReturnValueOnce(fs).mockReturnValueOnce(fs);
     const allocated = horseJournalArchiveAllocatedBytes([
       join(dir, 'archive'),
       join(dir, 'archive-shard-1'),
@@ -367,6 +374,7 @@ describe('the journal disk bounds the shards a default may add', () => {
         existingShardAllocatedBytes: bytes,
         availableBytes: fs.bavail * fs.bsize,
         shardBytes: horseJournalShardDiskBytes(HORSE_JOURNAL_ARCHIVE_BYTES),
+        additionalShardBytes: horseJournalShardDiskBytes(HORSE_JOURNAL_ADDITIONAL_ARCHIVE_BYTES),
         reserveBytes: HORSE_JOURNAL_SHARD_DISK_RESERVE_BYTES,
       });
     expect(horseJournalShardCapacity({ HORSE_DECISION_JOURNAL_DIR: dir })).toBe(

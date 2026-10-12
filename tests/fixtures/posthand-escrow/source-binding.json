@@ -5,7 +5,7 @@
     "scripts/dev/probe-late-seat-flow-pg17.sh": "c3425f94bc8227e9d88fa1c4f58744b862701a48c83144d8939cf23269301d98",
     "scripts/dev/probe-posthand-escrow-pg17.sh": "d95fc82f252322bda6f2ce91908282f1770348eee5646cf66a07ab842dae4508",
     "supabase/migrations/20261012201712_late_departed_seat_settlement_proves_its_original_cash_flow.sql": "1d4118810368ba4cf8ab2a702148b34189708f435c6b307baba9fae46980e8b2",
-    "supabase/migrations/20261012211046_original_posthand_escrow_retains_its_completed_financial_pro.sql": "00ba453da5243fadd666f127b220abf063599dac1bc02dc5ebf22062f6e19222",
+    "supabase/migrations/20261012211046_original_posthand_escrow_retains_its_completed_financial_pro.sql": "075454d4b730ea7cb7ce0c9afe5f8b1e598fec4f6860b3a6b74fc7d8efb891c1",
     "tests/fixtures/late-seat-flow/README.md": "b0350c74bd53abdb4b5fd0a855a38e890d3d17cdbad678410c57b00f8024f7f0",
     "tests/fixtures/late-seat-flow/access-preimage.sql": "cf76bce74c69f696cf665cca58c4777a6ec80f222386f2deae80fe414174c160",
     "tests/fixtures/late-seat-flow/admission-preimages.sql": "1d52d13b0a0ce886986bae451401057c66d17c627eb009614eb8d1b55b9f033b",

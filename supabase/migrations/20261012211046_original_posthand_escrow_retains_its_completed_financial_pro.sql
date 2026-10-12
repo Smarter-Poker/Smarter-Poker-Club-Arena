@@ -379,7 +379,7 @@ BEGIN
  RETURN projected;
 END $function$;
 REVOKE ALL ON FUNCTION smarter_private.posthand_escrow_certified_evidence(uuid,bigint) FROM PUBLIC,anon,authenticated,service_role;
-CREATE OR REPLACE FUNCTION public.fn_union_pnl_cash_outcome_accepted(o union_pnl_cash_outcomes)
+CREATE OR REPLACE FUNCTION public.fn_union_pnl_cash_outcome_accepted(o public.union_pnl_cash_outcomes)
  RETURNS boolean
  LANGUAGE sql
  STABLE

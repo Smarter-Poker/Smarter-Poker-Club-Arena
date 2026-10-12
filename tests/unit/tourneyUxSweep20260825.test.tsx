@@ -798,8 +798,11 @@ describe('Audit - the dialog cannot confirm a buy-in nobody was shown', () => {
   });
 
   it('reads the balance of the club that actually pays', () => {
-    // R6.
-    expect(src).toMatch(/readPlayerBalance\(userId, \{ clubId \}\)/);
+    // R6: a union event resolves its paying member club by tournament;
+    // callers without an event still retain the club-scoped fallback.
+    expect(src).toMatch(
+      /readPlayerBalance\(\s*userId,\s*tournamentId \? \{ clubId, tournamentId \} : \{ clubId \}/
+    );
   });
 
   it('an unreadable balance never blocks a buy-in', () => {

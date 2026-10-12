@@ -118,6 +118,18 @@ export default function FindPlayerModal({
   const suggestionAbortRef = useRef<AbortController | null>(null);
   const suggestionTimerRef = useRef<number | null>(null);
   const lastCompletedQueryRef = useRef('');
+  const watchScope = useRef({ open: isOpen, generation: 0 });
+  const previousOpen = useRef(isOpen);
+  const watchBusyRef = useRef(false);
+  if (previousOpen.current !== isOpen) {
+    previousOpen.current = isOpen;
+    watchScope.current = { open: isOpen, generation: watchScope.current.generation + 1 };
+    watchBusyRef.current = false;
+  }
+  const retireWatch = () => {
+    watchScope.current = { open: false, generation: watchScope.current.generation + 1 };
+    watchBusyRef.current = false;
+  };
 
   const runSearch = useCallback(
     async (query: string, offset = 0, append = false) => {
@@ -167,8 +179,11 @@ export default function FindPlayerModal({
 
   useEffect(() => {
     if (!isOpen) return;
+    watchScope.current = { open: true, generation: watchScope.current.generation + 1 };
+    setVerifyingTableId(null);
     ClubEntryTrustService.track('find', 'opened', { outcome: 'viewed' });
     return () => {
+      retireWatch();
       searchAbortRef.current?.abort();
       suggestionAbortRef.current?.abort();
       if (suggestionTimerRef.current) window.clearTimeout(suggestionTimerRef.current);
@@ -237,6 +252,7 @@ export default function FindPlayerModal({
       outcome: 'viewed',
       metadata: { club_id: club.club_uuid, action: club.viewer_action, source: 'affiliations' },
     });
+    retireWatch();
     onClose();
     onMembershipRequired({
       code: club.club_slug || String(club.club_id || '') || club.club_uuid,
@@ -253,11 +269,15 @@ export default function FindPlayerModal({
   };
 
   const handleTableClick = async (table: PlayerSearchTable, targetUserId: string) => {
-    if (verifyingTableId) return;
+    if (watchBusyRef.current || !watchScope.current.open) return;
+    watchBusyRef.current = true;
+    const generation = watchScope.current.generation;
+    const isCurrent = () => watchScope.current.open && watchScope.current.generation === generation;
     setVerifyingTableId(table.table_id);
     setError(null);
     try {
       const access = await PlayerSearchService.getTableWatchAccess(table.table_id, targetUserId);
+      if (!isCurrent()) return;
       if (access.can_watch) {
         haptic.success();
         ClubEntryTrustService.track('find', 'watch_opened', {
@@ -288,20 +308,26 @@ export default function FindPlayerModal({
           : 'This game is not available to watch.'
       );
     } catch (accessError) {
+      if (!isCurrent()) return;
       reportError(accessError, 'FindPlayerModal.WatchAccess');
       setError('Could not verify table access. Please try again.');
     } finally {
-      setVerifyingTableId(null);
+      if (isCurrent()) {
+        watchBusyRef.current = false;
+        setVerifyingTableId(null);
+      }
     }
   };
 
   const handleProfileClick = (playerId: string) => {
+    retireWatch();
     haptic.success();
     onClose();
     navigate(`/profile/${playerId}`);
   };
 
   const handleClose = () => {
+    retireWatch();
     haptic.light();
     searchAbortRef.current?.abort();
     suggestionAbortRef.current?.abort();

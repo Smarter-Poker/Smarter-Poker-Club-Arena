@@ -9,7 +9,7 @@ sys.dont_write_bytecode=True
 ROOT=Path(__file__).resolve().parents[2];sys.path.insert(0,str(ROOT/'scripts/ci'))
 from satellite_qualifier_fixture import module,lit,sha
 FIX=ROOT/'scripts/verification-harness/fixtures/horse-settlement-key'
-MIG=ROOT/'supabase/migrations/20261012160114_settled_horse_settlement_keys_retain_compact_replay_certificates.sql'
+MIG=ROOT/'supabase/migrations/20261012161313_settled_horse_settlement_keys_retain_compact_replay_certificates.sql'
 def extract(path,start,end):
  s=(ROOT/path).read_text();return s[s.index(start):s.index(end,s.index(start))]
 def main():

@@ -62,7 +62,7 @@ test('Share owns 44px and collapsed wallet controls are not exposed', async ({ p
             </div>
             <div class="club-identity__footer">
               <span class="club-identity__playing" style="left: 56.1941%; top: 56.5476%; width: 11.6220%; height: 9.2262%"><strong>7</strong></span>
-              <span class="club-identity__level" style="left: 63.2184%; top: 69.3452%; width: 20.7536%; height: 9.8214%"><span>Level 1</span></span>
+              <button class="club-identity__invite" type="button" aria-label="Share And Invite" style="left: 63.2184%; top: 69.3452%; width: 20.7536%; height: 9.8214%"><span class="club-identity__invite-text"><span>Share &amp; Invite</span></span></button>
               <button class="club-identity__share" type="button" aria-label="Copy referral link" style="left: 67.9438%; top: 27.9762%; width: 14.4317%; height: 28.8690%"></button>
             </div>
           </section>

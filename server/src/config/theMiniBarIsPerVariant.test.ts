@@ -1,26 +1,44 @@
 import { describe, it, expect } from 'vitest';
 import { detectMiniBBJHit, BBJ_QUALIFYING_HANDS } from './RakeConfig.js';
 
-const P = (id: string, ranking: number, kickers: number[]) => ({
+const c = (rank: string, suit: string) => ({ rank, suit });
+const P = (
+  id: string,
+  ranking: number,
+  kickers: number[],
+  holeCards: Array<{ rank: string; suit: string }>
+) => ({
   userId: id,
   handRanking: ranking,
   handName: 'x',
   kickers,
-  holeCards: [
-    { rank: 'A', suit: 's' },
-    { rank: 'K', suit: 'h' },
-  ],
+  holeCards,
 });
 const QUADS = 8; // HAND_RANK.FOUR_OF_A_KIND
+/* Board 2 2 A A 9: pocket deuces make quad deuces and pocket aces make quad
+   aces, both players using both hole cards - so a two-card game clears Dan's
+   2026-10-11 both-cards-must-play rule and only the BAR decides. Omaha never
+   checks it (exactly two always play). */
+const BOARD = [
+  c('2', 'clubs'),
+  c('2', 'hearts'),
+  c('A', 'clubs'),
+  c('A', 'hearts'),
+  c('9', 'spades'),
+];
 const hit = (variant: string, loserQuad: number) =>
   detectMiniBBJHit(
-    [P('L', QUADS, [loserQuad, 5]), P('W', QUADS, [14, 5])],
+    [
+      P('L', QUADS, [loserQuad, 5], [c('2', 'spades'), c('2', 'diamonds')]),
+      P('W', QUADS, [14, 5], [c('A', 'spades'), c('A', 'diamonds')]),
+    ],
     'W',
     variant,
     10_000,
     1,
     6,
-    ['L', 'W']
+    ['L', 'W'],
+    { board: BOARD }
   );
 
 describe("Dan's mini bars", () => {

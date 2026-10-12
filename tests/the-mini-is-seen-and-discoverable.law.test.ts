@@ -399,8 +399,10 @@ describe('the popup: three pages, each with a mini of its own', () => {
     expect(qualifying).toMatch(/const blocks = kind === 'mini' \? MINI_BLOCKS : BLOCKS;/);
     expect(qualifying).toMatch(/\{blocks\.map\(\(b\) => \{/);
     expect(modal).toMatch(/<BBJQualifyingHands\s+kind=\{tier\}/);
-    // and it says what the mini drops, which is the whole point of the tier
-    expect(qualifying).toContain('No Ace-In-The-Hole Rule And No Both-Cards-Must-Play Rule');
+    // and it says the rule the mini keeps (Dan 2026-10-11: "BOTH cards must
+    // play for BBJ or Mini BBJ") - the mini no longer drops it.
+    expect(qualifying).toContain('With Both Hole Cards Playing');
+    expect(qualifying).not.toContain('No Both-Cards-Must-Play Rule');
   });
 
   it('the header follows the row rather than showing the main pool under a mini tab', () => {

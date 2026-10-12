@@ -124,7 +124,7 @@ export function detectLightningJackpot(hand: LightningJackpotHand): {
     hand.bigBlind,
     hand.dealtInPlayerIds.length,
     hand.dealtInPlayerIds,
-    { doubleBoard: false }
+    { doubleBoard: false, board }
   );
   return mini.hit ? { verdict: 'mini', mini } : { verdict: 'none' };
 }

@@ -164,7 +164,7 @@
     "tests/fixtures/correction-document-authority/captured-references.json": "60b794f91a5d726c9302856a220b193eae52fbd95dc1e15ad4b95b312b092479",
     "tests/fixtures/correction-document-authority/captured-union-party.json": "9bc97fef36c4e3e3ec2766cb3596764513bb20fd8bce78e5fa1ee87337bb86f7",
     "tests/fixtures/correction-document-authority/regression.sql": "f70b287534ee6024469629a18fd38cb4074f528e906808c5bf6ebdb1464091f1",
-    "tests/cashier-weekly-statements.test.tsx": "5d62394eda8cdf404f63bb37dbdbacb053f24d1f15d15c895706a6b8e27578fd",
+    "tests/cashier-weekly-statements.test.tsx": "fe5d6c2c9af08648abb0b19f17533179a3c62110ca2185eb4e9a3ab2bd7c24d2",
     "tests/helpers/clubWeeklyStatement.ts": "7061277bbc67933e1aba5bcd76ebd3cd4fec241ffe9545c39e0b0f10806b2d21",
     "tests/unit/ClubWeeklyAccountingReader.test.ts": "a014cdab643e4adb2612f49112a4d51947c33de71c23e16757cb432bd09d8c2e",
     "tests/unit/FinancialExportService.test.ts": "a3870a8c151e21c7917687b6953dcd3d51cf82cc03071c655674111ad9556c16",
@@ -2782,6 +2782,17 @@
       "to": "ea75235733c7fd064f4a8150112da64ec4df23c239e508265cdfb911d2a2ace1",
       "on": "2026-10-10",
       "why": "Stable Admin six-capability integration: add two original-owner PG17 qualifiers to the existing required accounting shards, classify their drivers/loaded fixtures/schema fragments, and test that enforcement. Reviewed additive workflow/classifier/test diff; no prior financial authority, assertion, captured fixture or qualification status changes. Source fingerprint refresh does not prove native execution, installation or publication."
+    },
+    {
+      "on": "2026-10-12",
+      "why": "Reviewed the weekly-statement test diff: its two mounted entry points explicitly open Advanced before selecting Settlement Record because the owner now requires Simple as the default cashier. Every accounting assertion, fixture, reader and financial source is unchanged. This binding refresh is not new database or financial qualification.",
+      "changed_bindings": [
+        {
+          "file": "tests/cashier-weekly-statements.test.tsx",
+          "previous_sha256": "5d62394eda8cdf404f63bb37dbdbacb053f24d1f15d15c895706a6b8e27578fd",
+          "sha256": "fe5d6c2c9af08648abb0b19f17533179a3c62110ca2185eb4e9a3ab2bd7c24d2"
+        }
+      ]
     }
   ],
   "tournament_rake_club_successor_20260921": {

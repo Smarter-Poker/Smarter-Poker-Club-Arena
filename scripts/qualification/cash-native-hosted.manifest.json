@@ -56,8 +56,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 207015,
-      "sha256": "6acc5ca2453c69dc27bee4113ddcd83a337afa2cafef8771672e039d8d4183a1"
+      "bytes": 207941,
+      "sha256": "798c1c259ac952b7ce3db09b8d064c415a1d6f077324b1a3f25d770a4d19002c"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -2358,6 +2358,81 @@
         "before": {
           "bytes": 107685,
           "sha256": "090d6a4e6d21962c9b74ee3cdc4f27a3bfba226b36bc67346751a872c4b1e261"
+        },
+        "after": {
+          "bytes": 107824,
+          "sha256": "6f25ef0b33cddfb9b5c0ed46ce689381f2aaedfd7b2ebb2cb8d1c7012463c560"
+        }
+      }
+    }
+  },
+  "originalUnchangedStackQualification20261012": {
+    "reason": "Add directly triggered isolated PG17 original unchanged-stack qualification and always-retained native transcript in accounting shard3. Existing financial qualification components/assertions/captured fixtures/status unchanged. Workflow byte pin refresh alone does not prove native or production behavior.",
+    "previousWorkflowPin": {
+      "bytes": 202788,
+      "sha256": "cbecb15da2fd2b57f1c3fcb7a75f9eede415cef9ad40bce2f25257266ca3f732"
+    }
+  },
+  "originalUnchangedStackIntegration20261012": {
+    "reason": "Integrate protected main42c1242f9a; preserve both original unchanged-stack native CI/artifact step and only-staff-remove-member native routing. Existing component/status/assertions and all historical pin audits preserved. Source fingerprint is not runtime certification.",
+    "previousBranchWorkflowPin": {
+      "bytes": 203714,
+      "sha256": "427e04cfde3bf981af4c0ec25a2b867ca5f4fea330cff5ab44ee315e9f6491c1"
+    },
+    "previousMainWorkflowPin": {
+      "bytes": 203003,
+      "sha256": "1699ddcbdafde77bbb538e632911eb11663486d78a99571e67006ae4f4004995"
+    }
+  },
+  "originalUnchangedStackInventorySealIntegration20261012": {
+    "reason": "Integrate protected inventory-seal qualification and port correction a8f059e341; retain original unchanged-stack, inventory-seal and staff-removal native invocations and all prior source pin history. No financial assertion, fixture, component or qualification status changes. Source identity is not production proof.",
+    "previousBranchWorkflowPin": {
+      "bytes": 203929,
+      "sha256": "77c6cf8ca6bb10527be78116fb9f839912130d9b54bda2982e65e2525c6be97b"
+    },
+    "previousMainWorkflowPin": {
+      "bytes": 203929,
+      "sha256": "4c8baf0332e0a416f9d4c07e8b2c4cfddac492d6c51ec22cfe2c37ff9077d059"
+    }
+  },
+  "originalUnchangedStackRecoveryIntegration20261012": {
+    "reason": "Integrate protected main8f0f61c53f recovery export and completed-subject verification changes. Preserve original unchanged-stack and inventory-seal native invocations and every historical audit pin. No financial qualification or production certification follows from source identity.",
+    "previousBranchWorkflowPin": {
+      "bytes": 204855,
+      "sha256": "95cf03c1d3c625501a600dad225e898e2cf4193b7c541e7ae8fa3c1c1d4693c0"
+    },
+    "previousMainWorkflowPin": {
+      "bytes": 204868,
+      "sha256": "526ce2cb5ae8c17319b7181238858a9d820a4609f4a90f7572c19d316d552ee9"
+    }
+  },
+  "scopedLaunchMainIntegration20261012": {
+    "reason": "Preserve incoming protected unchanged-stack native enforcement and all incoming financial audits while retaining qualified scoped reset enforcement. Refresh only combined reviewed workflow/classifier/wiring and nested seals. No financial originals, statuses or assertions changed.",
+    "pins": {
+      ".github/workflows/ci.yml": {
+        "before": {
+          "bytes": 207015,
+          "sha256": "6acc5ca2453c69dc27bee4113ddcd83a337afa2cafef8771672e039d8d4183a1"
+        },
+        "after": {
+          "bytes": 207941,
+          "sha256": "798c1c259ac952b7ce3db09b8d064c415a1d6f077324b1a3f25d770a4d19002c"
+        }
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "before": {
+          "bytes": 36177,
+          "sha256": "da8c721743b44ef3194da354c587d770f3e1aee171de5c490a6407981f41498d"
+        },
+        "after": {
+          "bytes": 36177,
+          "sha256": "da8c721743b44ef3194da354c587d770f3e1aee171de5c490a6407981f41498d"
+        }
+      },
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "before": {
+          "bytes": 107824,
+          "sha256": "6f25ef0b33cddfb9b5c0ed46ce689381f2aaedfd7b2ebb2cb8d1c7012463c560"
         },
         "after": {
           "bytes": 107824,

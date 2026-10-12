@@ -96,3 +96,20 @@
   --ink-red-glow: none;
   --ink-gold-glow: none;
 }
+
+/* Simple cashier keeps the roster within the first screen. */
+.cashier-workspace--compact .cashier-workspace__header {
+  min-height: 54px;
+  padding: 12px 16px;
+}
+.cashier-workspace--compact .cashier-workspace__eyebrow,
+.cashier-workspace--compact .cashier-workspace__art {
+  display: none;
+}
+.cashier-workspace--compact .cashier-workspace__header h1 {
+  font-size: 28px;
+  margin: 0;
+}
+.cashier-workspace--compact .cashier-workspace__content {
+  padding: 12px;
+}

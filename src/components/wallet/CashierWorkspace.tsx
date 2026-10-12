@@ -3,6 +3,7 @@ import './CashierWorkspace.css';
 
 /** Routed cashier layout. Money dialogs retain their separate painted masters. */
 export function CashierWorkspace({
+  compact = false,
   eyebrow,
   title,
   subtitle,
@@ -11,6 +12,7 @@ export function CashierWorkspace({
   className,
   children,
 }: {
+  compact?: boolean;
   eyebrow: string;
   title: string;
   subtitle?: string;
@@ -21,7 +23,10 @@ export function CashierWorkspace({
   children: ReactNode;
 }) {
   return (
-    <div className={`cashier-workspace ${className || ''}`} data-cashier-layout="directory">
+    <div
+      className={`cashier-workspace ${compact ? 'cashier-workspace--compact' : ''} ${className || ''}`}
+      data-cashier-layout="directory"
+    >
       <header className="cashier-workspace__header">
         <img
           className="cashier-workspace__art"

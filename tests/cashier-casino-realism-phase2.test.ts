@@ -58,9 +58,14 @@ describe('cashier phase 2 completes keyboard and structural semantics', () => {
     expect(PAGE).toContain('aria-controls={`cashier-panel-${key}`}');
     for (const key of ['trade', 'record', 'leaderboard', 'request', 'tickets']) {
       expect(PAGE).toContain(`id="cashier-panel-${key}"`);
-      expect(PAGE).toContain(`aria-labelledby="cashier-tab-${key}"`);
+      if (key === 'trade')
+        expect(PAGE).toContain(
+          "aria-labelledby={advanced ? 'cashier-tab-trade' : 'trade-workspace-title'}"
+        );
+      else expect(PAGE).toContain(`aria-labelledby="cashier-tab-${key}"`);
     }
-    expect(PAGE.match(/role="tabpanel"/g)).toHaveLength(5);
+    expect(PAGE.match(/role="tabpanel"/g)).toHaveLength(4);
+    expect(PAGE).toContain("role={advanced ? 'tabpanel' : 'region'}");
   });
 
   it('traps dialog focus and restores it to the opening control', () => {

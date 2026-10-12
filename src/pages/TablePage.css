@@ -3466,18 +3466,7 @@
     height: 70px;
   }
 
-  /* Compact seat info */
-  .seat__info {
-    padding: 3px 6px;
-  }
-
-  .seat__name {
-    font-size: 0.5625rem;
-  }
-
-  .seat__stack {
-    font-size: 0.5625rem;
-  }
+  /* Player label dimensions and readable type are owned by SeatSlot.css. */
 
   /* Landscape header buttons */
   .header-btn {
@@ -3527,17 +3516,7 @@
      slot, was off. Avatar size is owned by `--seat-avatar-size` alone; never
      size `.seat__avatar-img` here again. */
 
-  .seat__info {
-    padding: 6px 12px;
-  }
-
-  .seat__name {
-    font-size: 0.8125rem;
-  }
-
-  .seat__stack {
-    font-size: 0.8125rem;
-  }
+  /* Player label dimensions and readable type are owned by SeatSlot.css. */
 
   /* DELETED 2026-08-28 — `.action-btn { height: 56px }`. Same specificity trap
      as the landscape copy above, and it is the rule Dan's report was actually
@@ -4594,7 +4573,8 @@ button.post-bb-overlay-button {
        14px in the same commit, so the oval slides 6px down and the top villain
        gets the room. On Dan's phone the reserve frees 11.1px, 6 of it buys the
        slide, and the felt still ends up ~5px longer than it was. */
-    --sp-hero-clear: clamp(50px, 14.6vw, 68px);
+    /* The taller readable player plate needs seven more pixels below the felt. */
+    --sp-hero-clear: clamp(57px, calc(14.6vw + 7px), 75px);
     /* 2026-08-26: gutters removed per Dan — edge-to-edge felt at 375px
        measures 375x619.8 (up from 367x606.6 with 4px gutters). Side-seat
        overhang at narrow viewports is addressed by the max-width: 340px

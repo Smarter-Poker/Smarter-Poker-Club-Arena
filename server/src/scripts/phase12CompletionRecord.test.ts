@@ -25,7 +25,7 @@ import {
   runningPhase12PolicySourceReader,
 } from '../engine/HorsePhase12PolicyDigest.js';
 import {
-  P12_TEST_CONTRACT_DIGEST,
+  p12TestContractDigest,
   P12_TEST_NOW,
   p12CompletionPath,
   p12QualificationBytes,
@@ -113,7 +113,7 @@ describe('P12.3 completion reader, stage 2: the record admission reads', () => {
           p12Selection(variant, q, c),
           p12Reader(variant, q, c),
           P12_TEST_NOW,
-          P12_TEST_CONTRACT_DIGEST
+          p12TestContractDigest(variant)
         );
       };
       expect(admitRecord(out.record)).toMatchObject({ reason: 'completion_below_floor' });

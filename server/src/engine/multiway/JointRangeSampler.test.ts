@@ -8,6 +8,7 @@ import {
   buildJointOpponentRanges,
   sampleJointRanges,
   jointDecisionStrength,
+  lowQualifiesOn,
 } from './JointRangeSampler.js';
 
 import { jointFixture } from './JointRangeFixture.test-support.js';
@@ -226,5 +227,50 @@ describe('physical joint public-range samples', () => {
         { rank: '9', suit: 'diamonds' },
       ])
     );
+  });
+});
+
+describe('the split-low read of the present board', () => {
+  // The set formula the read used before it was computed on bit masks.
+  const bySets = (cards: Card[], board: Card[]) => {
+    const lowRanks = (values: Card[]) => [
+      ...new Set(
+        values
+          .map((c) => (c.rank === 'A' ? 1 : '23456789TJQKA'.indexOf(c.rank) + 2))
+          .filter((v) => v <= 8)
+      ),
+    ];
+    const holeLows = lowRanks(cards);
+    const boardLows = lowRanks(board);
+    return holeLows.some((a, i) =>
+      holeLows.slice(i + 1).some((b) => boardLows.filter((v) => v !== a && v !== b).length >= 3)
+    );
+  };
+  it('agrees with the set formula on every hand size and board length', () => {
+    const deck: Card[] = [];
+    for (const rank of '23456789TJQKA')
+      for (const suit of ['hearts', 'diamonds', 'clubs', 'spades'] as const)
+        deck.push({ rank: rank as Card['rank'], suit });
+    let state = 0x9e3779b9;
+    const next = () => {
+      state ^= state << 13;
+      state ^= state >>> 17;
+      state ^= state << 5;
+      return (state >>> 0) / 0x100000000;
+    };
+    let qualified = 0;
+    for (let n = 0; n < 40_000; n++) {
+      const cards = deck.slice();
+      const take = (k: number) =>
+        Array.from({ length: k }, () => cards.splice(Math.floor(next() * cards.length), 1)[0]);
+      const hole = take([2, 3, 4, 5, 6, 8][n % 6]);
+      const board = take(3 + (n % 3));
+      const expected = bySets(hole, board);
+      expect(lowQualifiesOn(hole, board)).toBe(expected);
+      if (expected) qualified++;
+    }
+    // Both answers occur often enough for the comparison to mean something.
+    expect(qualified).toBeGreaterThan(2_000);
+    expect(qualified).toBeLessThan(38_000);
   });
 });

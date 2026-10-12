@@ -209,6 +209,42 @@ Selection still needs P13.3: a natural completion record on a release with this 
 
 PLO4, PLO5, PLO6, Short Deck, Crazy Pineapple and FLO8 run on `1235b47a` one at a time as runners free. Each is added here when assembled.
 
+### PLO8 Natural Completion On 1235b47a (October 11, 2026)
+
+The predeclared window (`docs/evidence/phase13/declaration-completion-2026-10-11-p13-plo8.txt`): PLO8 cash decisions decided in [2026-10-11T20:02:00.000Z, 20:50:00.000Z) on release `f47ad93c`, which served unchanged through the window and carries the qualified source's Phase 13 policy digest (`e8aca233...2a76`). Read from closed journal segments only (199,485 segments, sha256 names verified, nice 19 / ionice idle), counted by the authority's own `horsePhase13CompletionCounts`. The record is committed byte-identical as `docs/evidence/phase13/f47ad93c/phase13-completion-2026-10-11-plo8.json` (`horse-phase13-completion-v1`, definition v2, sha256 `8724540b4b32e5f0b04f44c99416aedbde0f6714915a15224e8a3110ee1dcada`).
+
+| Cell     | Eligible | Completed | Work budget | Sampler exhausted | Sample unavailable | Governor reduced | Wilson lower bound | Clears 0.95 |
+| -------- | -------- | --------- | ----------- | ----------------- | ------------------ | ---------------- | ------------------ | ----------- |
+| preflop  | 835      | 765       | 2           | 5                 | 2                  | 61               | 0.8881             | no          |
+| flop     | 213      | 106       | 87          | 2                 | 0                  | 18               | 0.4108             | no          |
+| turn     | 151      | 55        | 84          | 1                 | 0                  | 11               | 0.2711             | no          |
+| river    | 96       | 45        | 47          | 0                 | 0                  | 4                | 0.3439             | no          |
+| 1 board  | 1,007    | 841       | 88          | 5                 | 2                  | 71               | 0.8029             | no          |
+| 2 boards | 288      | 130       | 132         | 3                 | 0                  | 23               | 0.3778             | no          |
+| 3 boards | 0        | 0         | 0           | 0                 | 0                  | 0                | 0                  | no          |
+
+No response-branch refusals and no analysis failures. Verdict: **below the floor in every cell**; the PLO8 selection stays `null`. Status: verified now.
+
+Causes, each measured:
+
+1. The 4 ms wall-clock work budget sat at the engine host's median cost of the decisions the policy prices. 220 of 1,295 eligible decisions fell back to the baseline on it, almost all with nothing to call (the only decisions the round 3 rule prices). The decision workers were not waiting for a CPU (scheduler run-queue wait 1% of their run time); the cut decisions were real work, about 4 ms at the median on the host. The 2.5 ms sampler deadline cut 8 more.
+2. Governor-reduced samples: 94 decisions drew 9 of 16 samples because the equity governor was below 1, and a reduced request is not the measured policy.
+3. Three-board hands were never dealt: the three-board cell had no evidence, and production has never dealt a three-board joint decision (`phase13_board_3` absent from `horse_brain_telemetry` since 2026-09-12), so under the all-cells rule no variant could ever be admitted.
+
+What the change on branch `agent/claude-horse-brain/p13-work-budget-20261011` does about each (local, unpushed):
+
+1. The live policy does exactly the matrix's fixed work: no wall-clock fallback and no sampler deadline; the work is bounded by the declared sample count, rejection attempts, candidates and terminal branches (`docs/changelog/2026-10-11-phase13-live-work-is-the-measured-work.md`). Status: implemented but unverified (needs a natural window on a release containing it).
+2. The joint request is always the full count, whatever the governor says (the #6592 rule). Status: implemented but unverified.
+3. Admission requires every street and admits only the board counts whose own cells clear the floor; the candidate acts only on those (`docs/changelog/2026-10-11-phase13-admits-the-board-counts-it-measured.md`). Status: implemented but unverified.
+
+### PLO4 On 1235b47a (October 11, 2026)
+
+Run [38168772842](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/38168772842): 153 of 153 shards, 2,115,072 pairs. Cash after the published rake, horse population: primary (pooled) **+16.06 [+14.47, +17.64]** bb/100, condition (a) **qualified**. The single-board cells are slightly negative (8max -3.63 [-5.50, -1.77], 1 board -1.72 [-2.85, -0.60]); the whole gain is in the bomb pots with 2 and 3 boards (+44.37, +94.44). Status: historical only, because the change above replaces the measured code. The assembled evidence is not committed: it stays in the measured worktree `/Volumes/SmarterWork/agent-work/horse-brain-select-20261009/measured-1235b47a/docs/evidence/phase13/1235b47a/` (`phase13-qualification-2026-10-11-plo4.json`, `strength-2026-10-11-plo4/`), with the run artifacts in `/Volumes/SmarterArchives/agent-evidence/horse-brain-select-20261009/runs-p13-plo4-38168772842/`.
+
+### The 1235b47a Qualifications After This Change
+
+The change above moves every Phase 13 policy digest and the P13.2 contract digest (`1d0dd99b...` to `0cd88d97...`; only the `policy_clock_and_sampling` live description changed). The 1235b47a PLO8 qualification (`qualified: true`) and the PLO4 result therefore no longer bind the running code once it ships; both will be re-measured on the new source under the new contract, and a new natural completion window read on a release that carries it.
+
 ## Gate status
 
 - Round-2 response model: defective (uncalibrated; measured above as the cause of the loss on every variant).

@@ -1635,6 +1635,7 @@ export function evaluateRemainingVariantPolicy(
       return finish('round3_small_blind_steal', wager(0.75));
     if (
       rules.bigBlindDefendBelowCallBar !== null &&
+      (rules.bigBlindDefendMaxDealt === null || seats.length <= rules.bigBlindDefendMaxDealt) &&
       receipt.role === 'defense' &&
       receipt.position === 'big_blind' &&
       baseline.action === 'fold' &&

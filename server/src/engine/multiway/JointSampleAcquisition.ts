@@ -4,7 +4,6 @@ import type { HorseTournamentJointSamplerProvenance } from '../HorseTournamentUt
 import { maxSeatsForVariant } from '../../config/tableSeating.js';
 import { isKnownVariant, maxSeatsFor } from '../VariantRules.js';
 import { bettingStructureFor } from '../BettingStructure.js';
-import { equityGovernor } from '../EquityLoadGovernor.js';
 import { REMAINING_VARIANT_DOMAIN } from '../remainingVariants/RemainingVariantPolicyPack.js';
 import { validateDealtSeatCensus } from './DealtSeatCensus.js';
 import {
@@ -27,42 +26,38 @@ export const JOINT_LIVE_DOMAIN = Object.freeze({
   fullSampleMaxDealtPlayers: 4,
   largeTableSamples: 8,
   minSamples: 8,
-  liveBudgetMs: 4,
-  // Larger Omaha boards spend more of the shared 4 ms budget in scoring;
-  // keep 1.5 ms reserved for candidate pots, responses and final accounting.
-  samplingDeadlineMs: 2.5,
+  // No clock budget (2026-10-11): the Phase 13 policy and the joint
+  // acquisition read no clock to decide their work. A live decision does
+  // exactly the fixed work the matrix priced (see acquireJointSamples and
+  // evaluateJointLivePolicy); the 4 ms and 2.5 ms wall-clock cut-offs that
+  // stood here are gone.
 });
 /**
- * P13.3: the full sample count for a table of `dealtPlayers`, the count the
- * request has with the equity governor off (scale 1). The P13.2 matrix runs
- * with the governor off, so this is what every matrix proposal was priced on,
- * and the P13.3 completion record counts a smaller live request as
- * governor-reduced against it.
+ * P13.3: the full sample count for a table of `dealtPlayers`: 16 through four
+ * dealt players, 8 above. Every P13.2 matrix proposal was priced on it, and
+ * since 2026-10-11 it is the live request too, whatever the equity governor
+ * says (the #6592 rule for the Omaha and remaining-variant samplers). The
+ * P13.3 completion record still counts a smaller request as governor-reduced.
  */
 export function jointFullSamples(dealtPlayers: number): number {
   return dealtPlayers > JOINT_LIVE_DOMAIN.fullSampleMaxDealtPlayers
     ? JOINT_LIVE_DOMAIN.largeTableSamples
     : JOINT_LIVE_DOMAIN.defaultSamples;
 }
-/** The live request at governor `scale`: the full count scaled, never below
- * the domain minimum. `jointRequestedSamples(n, 1) === jointFullSamples(n)`. */
-export function jointRequestedSamples(dealtPlayers: number, scale: number): number {
-  return Math.max(
-    JOINT_LIVE_DOMAIN.minSamples,
-    Math.floor(jointFullSamples(dealtPlayers) * Math.max(0, Math.min(1, scale)))
-  );
-}
-/** Shared limits remain the existing live Phase 13 limits. Phase 7 consumes
- * the same physical samples without enabling the Phase 13 action policy. */
-export const JOINT_SAMPLE_WORK_BUDGET_MS = JOINT_LIVE_DOMAIN.liveBudgetMs;
+/** Phase 7's own tournament allowance for pricing its utility on the joint
+ * samples (HorseLogic's jointWithinBudget), unchanged at 4 ms. Phase 7
+ * consumes the same physical samples without enabling the Phase 13 action
+ * policy; neither the joint acquisition nor the Phase 13 policy reads it. */
+export const JOINT_SAMPLE_WORK_BUDGET_MS = 4;
 
 interface JointAcquisitionFacts {
   readonly eligible: boolean;
   readonly dealtPlayers: number;
   readonly liveOpponents: number;
   readonly requestedSamples: number;
-  /** Entire acquisition cost, including validation and immutable sealing. Each
-   * consumer charges this cost to its own existing 4 ms work allowance. */
+  /** Entire acquisition cost, including validation and immutable sealing: a
+   * measurement only. The work itself is fixed (the full sample count and the
+   * sampler's declared rejection attempts); no clock decides it. */
   readonly samplingMs: number;
 }
 export type JointSampleAcquisition = JointAcquisitionFacts &
@@ -112,7 +107,16 @@ export function jointSampleAcquisitionMatches(
 
 /** Acquire a bounded population, independent of any policy mode. This is an
  * internal decision-local API: no seed, replacement rows, or physical-card tap
- * is accepted from callers. The existing sampler owns shared-deck validity. */
+ * is accepted from callers. The existing sampler owns shared-deck validity.
+ *
+ * THE LIVE WORK IS THE MEASURED WORK (2026-10-11). The request is always the
+ * full count (jointFullSamples), never scaled by the equity governor, and the
+ * sampler is never stopped by a clock: its work is bounded by the declared
+ * sample count, the opponents dealt and JOINT_RANGE_PACK.rejectionAttempts per
+ * opponent, exactly what the P13.2 matrix ran on its fixed clock. On release
+ * f47ad93c (PLO8 cash, 20:02 to 20:50Z) the 2.5 ms deadline cut 8 of 1,295
+ * eligible populations short and the governor reduced 94, each one a decision
+ * that was not the measured policy. `options.now` only measures samplingMs. */
 export function acquireJointSamples(
   hero: SeatPlayer,
   s: HorseGameStateV2,
@@ -142,15 +146,8 @@ export function acquireJointSamples(
         /* named refusal retained */
       }
     }
+    // Measured, never a cut-off: the population is the declared work.
     const samplingMs = now() - start;
-    if (
-      !Number.isFinite(samplingMs) ||
-      samplingMs < 0 ||
-      samplingMs > JOINT_SAMPLE_WORK_BUDGET_MS
-    ) {
-      reason = 'work_budget';
-      provenance = null;
-    }
     const facts = { eligible, dealtPlayers, liveOpponents, requestedSamples, samplingMs };
     const result: JointSampleAcquisition =
       provenance && evidence
@@ -257,13 +254,14 @@ export function acquireJointSamples(
     return finish('history_budget');
   if (s.players.some((p) => !Array.isArray(p.cards) || p.cards.length || p.knownDeadCards?.length))
     return finish('private_state_rejected');
-  const requested = jointRequestedSamples(ids.length, equityGovernor.current());
+  const requested = jointFullSamples(ids.length);
   eligible = true;
   requestedSamples = requested;
   try {
     evidence = sampleJointRanges(hero, s, {
       samples: requested,
-      withinBudget: () => now() - start < JOINT_LIVE_DOMAIN.samplingDeadlineMs,
+      // The declared work, never a clock (see above).
+      withinBudget: () => true,
     });
     if (!evidence) return finish('joint_samples_unavailable');
     if (evidence.samples.length < JOINT_LIVE_DOMAIN.minSamples)

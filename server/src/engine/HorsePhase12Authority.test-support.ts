@@ -11,15 +11,14 @@
  */
 import { createHash } from 'node:crypto';
 import {
-  REMAINING_VARIANT_STRENGTH_CONTRACT,
   remainingVariantStrengthContractDigest,
+  remainingVariantStrengthContractFor,
   remainingVariantStrengthPack,
 } from '../benchmark/RemainingVariantStrengthContract.js';
 import {
   admitHorsePhase12QualifiedAuthority,
   HORSE_PHASE12_COMPLETION_DEFINITION,
   HORSE_PHASE12_COMPLETION_SCHEMA,
-  HORSE_PHASE12_CONTRACT_VERSION,
   HORSE_PHASE12_QUALIFICATION_SCHEMA,
   type HorsePhase12AuthoritySelection,
   type HorsePhase12StreetCompletion,
@@ -35,8 +34,9 @@ import {
   type RemainingPolicyVariant,
 } from './remainingVariants/RemainingVariantPolicyPack.js';
 
-/** The running P12.2 contract digest. */
-export const P12_TEST_CONTRACT_DIGEST = remainingVariantStrengthContractDigest();
+/** The running P12.2 contract digest of a pack (round 4: one contract per pack). */
+export const p12TestContractDigest = (variant: RemainingPolicyVariant) =>
+  remainingVariantStrengthContractDigest(variant);
 export const P12_TEST_SOURCE_SHA = 'b'.repeat(40);
 export const P12_TEST_RELEASE_SHA = 'c'.repeat(40);
 export const P12_TEST_NOW = Date.parse('2026-10-20T01:00:00.000Z');
@@ -69,8 +69,8 @@ export function p12QualificationObject(
     variant,
     sourceSha: P12_TEST_SOURCE_SHA,
     packVersion: REMAINING_VARIANT_PACKS[variant].version,
-    contractVersion: HORSE_PHASE12_CONTRACT_VERSION,
-    contractDigest: P12_TEST_CONTRACT_DIGEST,
+    contractVersion: remainingVariantStrengthContractFor(variant).version,
+    contractDigest: p12TestContractDigest(variant),
     domain: pack.domain,
     policyDigest: horsePhase12PolicyDigest(variant),
     policyDigestDefinition: HORSE_PHASE12_POLICY_DIGEST_DEFINITION,
@@ -87,7 +87,7 @@ export function p12QualificationObject(
       },
     },
     admissionAlsoRequires: [
-      ...REMAINING_VARIANT_STRENGTH_CONTRACT.liveConditions.admissionAlsoRequires,
+      ...remainingVariantStrengthContractFor(variant).liveConditions.admissionAlsoRequires,
     ],
     evidencePath: p12StrengthPath(variant),
     evidenceSha256: sha256(p12TestStrength(variant)),
@@ -164,8 +164,8 @@ export function p12Selection(
     variant,
     sourceSha: P12_TEST_SOURCE_SHA,
     packVersion: REMAINING_VARIANT_PACKS[variant].version,
-    contractVersion: HORSE_PHASE12_CONTRACT_VERSION,
-    contractDigest: P12_TEST_CONTRACT_DIGEST,
+    contractVersion: remainingVariantStrengthContractFor(variant).version,
+    contractDigest: p12TestContractDigest(variant),
     domain: remainingVariantStrengthPack(variant).domain,
     qualificationPath: p12QualificationPath(variant),
     qualificationSha256: sha256(qualification),
@@ -201,6 +201,6 @@ export function qualifiedPhase12TestAdmission(
     p12Selection(variant, undefined, undefined, { approvalGeneration }),
     p12Reader(variant),
     P12_TEST_NOW,
-    P12_TEST_CONTRACT_DIGEST
+    p12TestContractDigest(variant)
   );
 }

@@ -216,7 +216,10 @@ DECLARE
   v_prev_lifecycle text := COALESCE(current_setting('app.club_membership_lifecycle_write', true), '');
   v_result text;
 BEGIN
-  SELECT u.owner_id INTO v_owner FROM public.unions u WHERE u.id = p_union_id;
+  -- Serialize a join with ownership transfer before choosing the owner.
+  -- Without this row lock, a transfer can miss an uncommitted club link and
+  -- the join can still insert the previous owner's membership afterward.
+  SELECT u.owner_id INTO v_owner FROM public.unions u WHERE u.id = p_union_id FOR SHARE;
   IF v_owner IS NULL THEN
     RETURN 'no_owner';
   END IF;

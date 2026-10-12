@@ -21,3 +21,12 @@ signature, survive equivalent rerenders, and clear on an actual edit. Initial
 hydration shows the recovery prompt; only explicit review restores identifiers
 with the form. Existing lost-response/reload, individual-amount, ticket and
 intent-editing tests remain enforced.
+
+A two-session PostgreSQL counterexample also reproduced a concurrent join and
+ownership-transfer gap: the join could read the old owner, the transfer could
+miss the uncommitted club link, and the join could commit with no membership
+for the new owner. The helper now takes a shared lock on the union row before
+choosing its owner, then the existing membership lane and row locks. An
+ownership update either waits for the join or completes before its owner is
+read. The regression coordinates both transactions using an advisory barrier;
+it fails with the owner lock removed and passes with the corrected lock order.

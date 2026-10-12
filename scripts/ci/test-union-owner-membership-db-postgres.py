@@ -32,6 +32,8 @@ install nothing, and a re-run changes nothing.
 import hashlib
 import os
 import re
+import select
+import time
 import shutil
 import socket
 import subprocess
@@ -478,6 +480,64 @@ def install(db, seed=SEED):
     q(db, REGISTRY_TRIGGER, user="fixture_bootstrap")
 
 
+def union_owner_join_race(db, migration):
+    install(db)
+    run(psql(db), migration)
+    barrier_key = 78264193
+    q(db, f"""CREATE FUNCTION public.fn_fixture_hold_union_join() RETURNS trigger LANGUAGE plpgsql AS $f$
+    BEGIN
+      IF NEW.club_id = '{CF}' AND NEW.user_id = '{OWNER}' THEN
+        PERFORM pg_advisory_xact_lock({barrier_key});
+      END IF;
+      RETURN NEW;
+    END $f$;
+    CREATE TRIGGER aaa_fixture_hold_union_join BEFORE INSERT ON public.club_members
+      FOR EACH ROW EXECUTE FUNCTION public.fn_fixture_hold_union_join();""")
+    control = subprocess.Popen(psql(db), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE, text=True, env=ENV)
+    control.stdin.write(f"SELECT 'HELD' || pg_advisory_lock({barrier_key})::text;\n")
+    control.stdin.flush()
+    deadline = time.monotonic() + 15
+    while True:
+        assert time.monotonic() < deadline, "barrier acquisition timed out"
+        assert select.select([control.stdout], [], [], 15)[0], "barrier produced no acknowledgment"
+        if control.stdout.readline().strip() == "HELD":
+            break
+    workers = []
+    try:
+        def worker(label, sql):
+            path = cluster / (label + '.sql')
+            path.write_text(sql)
+            process = subprocess.Popen([*psql(db), '-f', str(path)], stdout=subprocess.PIPE,
+                                       stderr=subprocess.PIPE, text=True,
+                                       env={**ENV, 'PGAPPNAME': label})
+            workers.append(process)
+            return process
+        joining = worker('membership_join_race', f"BEGIN; INSERT INTO public.union_clubs(union_id,club_id) VALUES ('{U1}','{CF}'); COMMIT;")
+        deadline = time.monotonic() + 15
+        while q(db, "SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE application_name='membership_join_race' AND wait_event='advisory')") != 't':
+            assert joining.poll() is None and time.monotonic() < deadline, "join never reached the membership barrier"
+            time.sleep(0.01)
+        transferring = worker('membership_owner_race', f"UPDATE public.unions SET owner_id='{OWNER2}' WHERE id='{U1}';")
+        deadline = time.monotonic() + 15
+        while transferring.poll() is None:
+            if q(db, "SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE application_name='membership_owner_race' AND wait_event_type='Lock')") == 't':
+                break
+            assert time.monotonic() < deadline, "owner transfer neither finished nor waited on the join"
+            time.sleep(0.01)
+        control.communicate(input=f"SELECT pg_advisory_unlock({barrier_key});\n", timeout=15)
+        for process in workers:
+            stdout, stderr = process.communicate(timeout=30)
+            assert process.returncode == 0, stdout + stderr
+        return q(db, member(CF, OWNER2)) == 't'
+    finally:
+        if control.poll() is None:
+            control.communicate(input=f"SELECT pg_advisory_unlock({barrier_key});\n", timeout=15)
+        for process in workers:
+            if process.poll() is None:
+                process.kill()
+                process.communicate()
+
 try:
     run([PG / "initdb", "-D", data, "-U", "fixture_bootstrap", "--auth-local=trust", "--auth-host=trust", "--no-locale", "-E", "UTF8"])
     with (data / "postgresql.conf").open("a") as f:
@@ -577,6 +637,17 @@ try:
     require(all(observe("live").values()), "every case still passes after the re-run")
     print(f"PASS: the union owner is a member of every club ({len(FAIL_BEFORE)} of {len(before)} cases fail before, "
           f"{len(after)} of {len(after)} pass after)", flush=True)
+
+    # The ownership change and club join run in separate real transactions.
+    # A membership-insert barrier proves the join has already read its owner.
+    unlocked = MIGRATION.replace(
+        "WHERE u.id = p_union_id FOR SHARE;", "WHERE u.id = p_union_id;")
+    require(unlocked != MIGRATION, "the join locks the union owner before the membership lane")
+    require(not union_owner_join_race("race_before", unlocked),
+            "before: a concurrent owner transfer misses a club joining under the previous owner")
+    require(union_owner_join_race("race_after", MIGRATION),
+            "after: concurrent ownership transfer and club join keep the current owner a member")
+
 finally:
     if started:
         run([PG / "pg_ctl", "-D", data, "-m", "fast", "-w", "stop"])

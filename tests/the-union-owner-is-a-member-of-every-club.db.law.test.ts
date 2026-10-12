@@ -82,6 +82,18 @@ describe('the union owner is a member of every club in the union', () => {
     );
   });
 
+  it('serializes ownership transfer with the joining club before choosing the owner', () => {
+    expect(MIG).toContain(
+      'SELECT u.owner_id INTO v_owner FROM public.unions u WHERE u.id = p_union_id FOR SHARE;'
+    );
+    expect(MIG.indexOf('WHERE u.id = p_union_id FOR SHARE;')).toBeLessThan(
+      MIG.indexOf('PERFORM public.fn_club_membership_lock(v_owner);')
+    );
+    const harness = read('scripts/ci/test-union-owner-membership-db-postgres.py');
+    expect(harness).toContain('union_owner_join_race("race_before", unlocked)');
+    expect(harness).toContain('union_owner_join_race("race_after", MIGRATION)');
+  });
+
   it('makes an ordinary zero-chip player membership and never lifts club discipline', () => {
     expect(MIG).toContain("VALUES (p_club_id, v_owner, 'player', 'active', true, 0);");
     expect(MIG).toContain('UNION_OWNER_BANNED_IN_CLUB');

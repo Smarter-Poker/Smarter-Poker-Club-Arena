@@ -21,6 +21,11 @@ import {
   collectVisibleCashCandidates,
 } from './support/cashTableCandidates';
 import { createProgressSilenceGuard } from './support/progressSilence';
+import {
+  refreshPreNavigationSelection,
+  nextHandAdvanced,
+  endedBeforeNextHand,
+} from './support/preNavigationBoard';
 import { prepareCashLobbyActions } from './support/cashLobbyOverlays';
 import { remainingObservationMs } from './support/observationDeadline';
 import { assertInitialTableOwnership, classifyUnsubscribes } from './support/initialTableOwnership';
@@ -736,49 +741,82 @@ async function selectProgressingTournamentTable(
   let afterTable: EngineTableLiveness | null = null;
   let acceptedFacts: TournamentBoardFacts | null = null;
   const continuouslyActive = createProgressSilenceGuard(MAX_GAMEPLAY_SILENCE_MS);
-  await expect
-    .poll(
-      async () => {
-        baselines = baselines.filter((table) => !excluded.has(table.tableId));
-        if (baselines.length === 0) return false;
-        after = await readEngineHealth(request, { tableIds: baselines.map((t) => t.tableId) });
-        for (const baseline of baselines) {
-          if (
-            !continuouslyActive(
-              after.tableLiveness.find((table) => table.tableId === baseline.tableId)
-            )
-          )
-            continue;
-          const current = healthyRunningTable(after, baseline.tableId, gameFormat);
-          if (current && current.handCount > baseline.handCount) {
-            // Fresh proof at acceptance: a board whose finishing hand was that
-            // very hand is an ended board, not a running one.
-            if (options.boardReader) {
-              const fresh = (await options.boardReader.boardFacts([baseline.tableId])).get(
-                baseline.tableId
+  // The fixed budget includes every new durable read and any reselection.
+  const progressDeadline = Math.min(options.deadline, Date.now() + pollBudgetMs());
+  const selection = {
+    baselines,
+    facts: options.boardReader
+      ? await options.boardReader.boardFacts(baselines.map((table) => table.tableId))
+      : new Map<string, TournamentBoardFacts>(),
+    excluded,
+    failed: new Set<string>(),
+    deadline: progressDeadline,
+  };
+  try {
+    await expect
+      .poll(
+        () =>
+          operationalPollFailure.attempt(async () => {
+            const readmitted = await refreshPreNavigationSelection(
+              selection,
+              options.boardReader,
+              async (deadline) => {
+                healthRead = await readCandidateHealth(deadline);
+                before = healthRead.candidates;
+                lastScopedHealth = healthRead.scoped;
+                return refineByBoard(readyTables(before));
+              }
+            );
+            baselines = selection.baselines;
+            if (readmitted) return false;
+            after = await readEngineHealth(request, { tableIds: baselines.map((t) => t.tableId) });
+            for (const baseline of baselines) {
+              const sampled = after.tableLiveness.find(
+                (table) => table.tableId === baseline.tableId
               );
-              if (!selectableWhileRunning(fresh)) {
-                excluded.add(baseline.tableId);
+              if (!continuouslyActive(sampled)) {
+                if (sampled) selection.failed.add(baseline.tableId);
                 continue;
               }
-              acceptedFacts = fresh ?? null;
+              const current = healthyRunningTable(after, baseline.tableId, gameFormat);
+              if (nextHandAdvanced(baseline, current)) {
+                // Fresh proof at acceptance: a board whose finishing hand was that
+                // very hand is an ended board, not a running one.
+                if (options.boardReader) {
+                  const fresh = (await options.boardReader.boardFacts([baseline.tableId])).get(
+                    baseline.tableId
+                  );
+                  if (!selectableWhileRunning(fresh)) {
+                    if (
+                      !selection.failed.has(baseline.tableId) &&
+                      endedBeforeNextHand(selection.facts.get(baseline.tableId), fresh)
+                    )
+                      excluded.add(baseline.tableId);
+                    continue;
+                  }
+                  acceptedFacts = fresh ?? null;
+                }
+                beforeTable = baseline;
+                afterTable = current!;
+                return true;
+              }
             }
-            beforeTable = baseline;
-            afterTable = current;
-            return true;
-          }
+            return false;
+          }),
+        {
+          timeout: Math.max(1, progressDeadline - Date.now()),
+          intervals: [2_000, 3_000, 5_000, 5_000],
+          message:
+            `none of ${baselines.length} already-running ${gameFormat.toUpperCase()} tables ` +
+            `started their next hand inside ${CAUSAL_HAND_TIMEOUT_MS}ms`,
         }
-        return false;
-      },
-      {
-        timeout: pollBudgetMs(),
-        intervals: [2_000, 3_000, 5_000, 5_000],
-        message:
-          `none of ${baselines.length} already-running ${gameFormat.toUpperCase()} tables ` +
-          `started their next hand inside ${CAUSAL_HAND_TIMEOUT_MS}ms`,
-      }
-    )
-    .toBe(true);
+      )
+      .toBe(true);
+  } catch (error) {
+    operationalPollFailure.rethrowIfPresent();
+    throw error;
+  }
+  operationalPollFailure.rethrowIfPresent();
 
   if (!beforeTable || !afterTable) {
     throw new Error(`${gameFormat.toUpperCase()} progress poll completed without table evidence`);

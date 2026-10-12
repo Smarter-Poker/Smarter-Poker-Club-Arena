@@ -1,0 +1,9 @@
+# Cashier seven-phase final audit
+
+The final audit traced the seven delivered cashier phases through their consumers, protected merges, installed financial contracts and the current published client. Fresh isolated qualification passed 118 deleted-custody cases, 149 authority/recovery/conservation/batch cases and 139 connected mounted cases. The proposed Advanced account-switch issue was disproved by the account and auth-generation key on the parent component; no speculative change was made.
+
+Current production verification uncovered real read timeouts in the accounting report and statement totals. Database logs identify statement timeout, and the report statistics show substantial temporary writes from materializing the full journal. The correction inlines that journal into its existing two covering-index branches. It retains every booked posted/correction/reversal leg, both peer-transfer sides, individual baseline cutoffs, finance authority, read-only behavior and truthful incomplete coverage. No balances, receipts, schedules or engine behavior change.
+
+The replacement migration requires the exact installed function preimage and refuses both drift and replay. The maintained native qualification compares complete original and replacement reports (excluding the snapshot timestamp), preserves all existing financial cases, and reproduces the original temporary spill on a 400,000-row fixture under 4MB work memory. The replacement must write zero temporary blocks. Timing is evidence, not a test threshold.
+
+The production release contract accepts only the audited original or qualified replacement definition during compatible delivery. Original installed migration bytes remain immutable. Publication and final authenticated production read qualification are recorded in the existing task checkpoint; source or metadata checks alone do not establish completion.

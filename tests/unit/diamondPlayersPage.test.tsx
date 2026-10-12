@@ -9,6 +9,7 @@
  */
 import '@testing-library/jest-dom/vitest';
 import { Suspense } from 'react';
+import { readFileSync } from 'node:fs';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { COUNT_UNKNOWN } from '../../src/lib/countFigure';
@@ -85,6 +86,30 @@ afterEach(() => {
 });
 
 describe('the Diamond Arena Players page', () => {
+  it('keeps the Diamond scene visible when the shared club roster sheet hides its own hero', async () => {
+    state.getCounts.mockResolvedValue({ members: 2, online: 0, seated: 0, tables: 17 });
+    state.getRosterPage.mockResolvedValue({
+      items: PLAYERS,
+      next_cursor: null,
+      has_more: false,
+      filtered_total: 2,
+    });
+    const { container } = render(<DiamondPlayersPage />);
+    await screen.findByText('River Rat');
+    const art = container.querySelector('.members-hero__art');
+    expect(art).not.toBeNull();
+    const css = readFileSync('src/pages/ClubMembersPage.css', 'utf8').replace(
+      /\/\*[\s\S]*?\*\//g,
+      ''
+    );
+    const hidingSelectors = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+      .filter((rule) => /display:\s*none\b/.test(rule[2]))
+      .flatMap((rule) => rule[1].split(','))
+      .map((selector) => selector.trim())
+      .filter((selector) => selector.includes('members-hero'));
+    expect(hidingSelectors.filter((selector) => art!.matches(selector))).toEqual([]);
+  });
+
   it('shows loading, then real figures, a real zero, and Unavailable for what it could not tell', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const counts = deferred<Record<string, unknown>>();

@@ -31,7 +31,26 @@ let workspace: ClubWorkspaceValue;
 let access: ClubNavigationAccess;
 
 vi.mock('../../src/lib/supabase', () => ({
-  supabase: { rpc: (...args: unknown[]) => rpcMock(...args) },
+  supabase: {
+    rpc: (...args: unknown[]) => rpcMock(...args),
+    from: () => {
+      const chain = {
+        select: () => chain,
+        eq: () => chain,
+        maybeSingle: async () => ({
+          data: { lobby_message: '', is_public: true, requires_approval: true },
+          error: null,
+        }),
+      };
+      return chain;
+    },
+  },
+}));
+vi.mock('../../src/hooks/useAuthUser', () => ({
+  useAuthUser: () => ({ user: { id: 'operator' } }),
+}));
+vi.mock('../../src/components/common/Toast', () => ({
+  useToast: () => ({ success: vi.fn(), error: vi.fn() }),
 }));
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 vi.mock('../../src/core/MasterBus', () => ({

@@ -68,6 +68,7 @@ import { spinCeilingMultiplier } from '../lobby/lobbyEntries';
 import type { TournamentArenaEmbed } from './details/types';
 import { spinMultiplierLabel } from '../../utils/spinReveal';
 import { SpadeConsole, type ConsoleInk, type PlateButtonProps } from '../console/SpadeConsole';
+import { ClubPageSection } from '../club/ClubPageSection';
 import { DAY_COMPLETE_LABEL } from '../../utils/multiDaySchedule';
 
 interface Tournament extends TournamentEntryWindowRow {
@@ -126,6 +127,7 @@ interface Tournament extends TournamentEntryWindowRow {
 }
 
 interface TournamentLobbyCardProps {
+  unframed?: boolean;
   tournament: Tournament;
   onRegister?: (tournamentId: string) => void;
   /**
@@ -227,6 +229,7 @@ export function lateRegState(opts: {
 }
 
 function TournamentLobbyCardInner({
+  unframed = false,
   tournament,
   onRegister,
   knownRegistration,
@@ -720,8 +723,10 @@ function TournamentLobbyCardInner({
     };
   }
 
+  const Section = unframed ? ClubPageSection : SpadeConsole;
   return (
-    <SpadeConsole
+    <Section
+      data-unframed={unframed || undefined}
       as="div"
       className={styles.card}
       /* The recorded format names the card; a format nobody has recorded is
@@ -915,7 +920,7 @@ function TournamentLobbyCardInner({
           </span>
         </div>
       </div>
-    </SpadeConsole>
+    </Section>
   );
 }
 export default memo(TournamentLobbyCardInner);

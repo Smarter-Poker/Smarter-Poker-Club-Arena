@@ -39,3 +39,22 @@ describe('Rewards introductions do not add a second decorative console', () => {
     expect(screen.getByRole('button', { name: 'Daily Bonus' })).toBeTruthy();
   });
 });
+
+describe('Play Records without generic page frames', () => {
+  it('renders a normal heading, live metrics and actions when the page opts out', () => {
+    const { container } = render(
+      <RewardsSurfaceHeader
+        unframed
+        eyebrow="Play & Review / Hands"
+        title="Hand Archive"
+        description="Your Recorded Hands"
+        metrics={[{ label: 'Loaded', value: 12 }]}
+        actions={<button>Refresh Hands</button>}
+      />
+    );
+    expect(screen.getByRole('heading', { level: 1, name: 'Hand Archive' })).toBeTruthy();
+    expect(screen.getByText('12')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Refresh Hands' })).toBeTruthy();
+    expect(container.querySelector('.sc')).toBeNull();
+  });
+});

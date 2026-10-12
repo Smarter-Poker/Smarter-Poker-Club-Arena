@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   getClubOperationBadge,
+  getClubOperationQueueTotal,
   getClubOperationGroups,
 } from '../../config/clubOperationsNavigation';
 import { ErrorState, LoadingState, PermissionState } from '../../components/common/EmptyState';
@@ -12,7 +13,7 @@ import { roleLabel } from '../../types/clubRoles';
 import { formatInt } from '../../utils/clubDashboard';
 import { compactChips } from '../../utils/format';
 import { titleCase } from '../../utils/titleCase';
-import { SpadeConsole } from '../../components/console/SpadeConsole';
+import { ClubPageSection as SpadeConsole } from '../../components/club/ClubPageSection';
 import { freshnessLabel } from '../../utils/clubOperationsFreshness';
 import styles from './ClubOperationsPage.module.css';
 
@@ -226,7 +227,10 @@ export default function ClubOperationsPage() {
             <p className={styles.alertsTitle}>Waiting For You</p>
             <ul className={styles.alertList}>
               {alerts.map((alert) => {
-                const destination = toolPath.get(alert.tool);
+                const destination =
+                  alert.tool === 'players' && access.canControlClub
+                    ? toolPath.get('applicants')
+                    : toolPath.get(alert.tool);
                 const body = (
                   <>
                     <span
@@ -263,10 +267,7 @@ export default function ClubOperationsPage() {
 
       <div className={styles.groups}>
         {groups.map((group) => {
-          const groupTotal = group.items.reduce(
-            (total, item) => total + getClubOperationBadge(item, counts),
-            0
-          );
+          const groupTotal = counts ? getClubOperationQueueTotal(group.items, counts) : 0;
           return (
             <SpadeConsole
               className={styles.group}

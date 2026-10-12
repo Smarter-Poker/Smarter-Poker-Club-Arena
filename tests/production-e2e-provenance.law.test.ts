@@ -639,6 +639,9 @@ describe('a retained runtime superseded before the browsers start', () => {
     return { ...r, output: readFileSync(output, 'utf8') };
   };
 
+  // Isolated SSD runs on 2026-10-12 took 5.3-7.4 seconds. Keep all assertions
+  // and allow bounded headroom for Git/filesystem work, rather than timing out
+  // after the check already completed its synchronous work.
   it('aligns with a forward release, keeps the exact retained path, and refuses a rollback', () => {
     const root = mkdtempSync(join(tmpdir(), 'retained-superseded-'));
     const repo = join(root, 'repo');
@@ -668,7 +671,7 @@ describe('a retained runtime superseded before the browsers start', () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 });
 
 // Runs 38206133852 and 38244592617 (2026-10-12): the Lightning operator spec

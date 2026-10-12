@@ -41,6 +41,7 @@ interface ActivityItem {
 }
 
 interface ClubActivityFeedProps {
+  plain?: boolean;
   clubId: string;
   limit?: number;
   showFilter?: boolean;
@@ -49,6 +50,7 @@ interface ClubActivityFeedProps {
 const POLL_INTERVAL_MS = 60_000;
 
 export default function ClubActivityFeed({
+  plain = false,
   clubId,
   limit = 20,
   showFilter = false,
@@ -210,7 +212,7 @@ export default function ClubActivityFeed({
     filter === 'all' ? activities : activities.filter((a) => a.type === filter);
 
   return (
-    <div className={styles.feed}>
+    <div className={styles.feed} data-plain={plain || undefined}>
       <div className={styles.header}>
         <h3>Activity</h3>
         {showFilter && (

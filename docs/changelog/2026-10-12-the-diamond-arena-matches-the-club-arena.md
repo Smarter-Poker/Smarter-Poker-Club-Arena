@@ -61,7 +61,10 @@ phone those seats sit level with the felt printing, so every step stood in the
 masthead keep-out until the puck had climbed past it. The upper side seats on
 both rings did the same thing more mildly (x 30 / x 70). The retreat is now
 capped at 8% (`RETREAT_MAX_WIDTH_PCT`); when that cannot clear the plate the
-existing bounded swing moves the puck along its own rail. Every ring from 2-
+puck takes the nearest clear spot within 24% of its own seat
+(`NEIGHBOURHOOD_WIDTH_PCT`), which is above or below the plate, before the old
+swing is ever tried. Measured against the wider player plates that landed the
+same day (#6729). Every ring from 2-
 to 9-max at 375, 430 and desktop widths now lands within a short nudge of its
 rail position and nearer its own player than any other, pinned by
 `tests/the-dealer-button-stays-beside-its-seat.law.test.ts` (which fails on

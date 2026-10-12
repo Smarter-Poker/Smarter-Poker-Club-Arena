@@ -182,6 +182,10 @@ export { overlapsBoard };
  */
 export const RETREAT_MAX_WIDTH_PCT = 8;
 
+/** How far from its own seat (square space, % of table width) the puck may
+ *  look for a clear spot before the last-resort swing. */
+export const NEIGHBOURHOOD_WIDTH_PCT = 24;
+
 export function dealerButtonPositionClearOfSeat(
   seat: Pos,
   size: Size = NOMINAL_SCALER,
@@ -248,6 +252,37 @@ export function dealerButtonPositionClearOfSeat(
         if (clear(cand)) return cand;
       }
     }
+  }
+
+  /* STEP 1.5 — BESIDE THE PLATE, NOT ACROSS THE FELT (Dan 2026-10-12:
+     "BUTTON JUST RANDOMLY IN THE MIDDLE OF THE TABLE"). When the short
+     retreat cannot clear the seat's own plate - the side seats on a phone,
+     whose plates widened the same day - the old swing pivoted round the
+     middle of the felt and could only clear the masthead by landing a third of
+     the way across the table. Instead, look in the seat's own neighbourhood:
+     every felt point within NEIGHBOURHOOD_WIDTH_PCT of the seat that satisfies
+     everything `clear` asks, nearest to where the rail put it. Above or below
+     the plate, hard by the player, is what it finds. */
+  {
+    let near: Pos | null = null;
+    let nearDist = Infinity;
+    const R = NEIGHBOURHOOD_WIDTH_PCT;
+    for (let gx = -R; gx <= R; gx += 1) {
+      for (let gy = -R; gy <= R; gy += 1) {
+        if (gx * gx + gy * gy > R * R) continue;
+        // Square space around the seat, back to scaler percentages.
+        const raw: Pos = { x: sv.x + gx, y: ((sv.y + gy) * size.w) / size.h };
+        const cand = clampIntoFelt(raw, size, BUTTON_FELT_MARGIN_WIDTH_PCT);
+        const cs = sq(cand, size);
+        if (Math.hypot(cs.x - sv.x, cs.y - sv.y) > R) continue;
+        const d = Math.hypot(cs.x - pv.x, cs.y - pv.y);
+        if (d < nearDist && clear(cand)) {
+          near = cand;
+          nearDist = d;
+        }
+      }
+    }
+    if (near) return near;
   }
 
   /* STEP 2 — and only then, the swing. Capped at 24 degrees (16 steps of

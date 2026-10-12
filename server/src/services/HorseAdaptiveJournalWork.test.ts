@@ -85,6 +85,7 @@ describe('durable adaptive journal work boundary', () => {
     'queue_full',
     'batch_conflict',
     'legacy_batch_payload_unavailable',
+    'retention_compacted',
     'source_expired',
   ])('preserves %s without writing or claiming source completeness', async (reason) => {
     handler = () => ({ version: 1, status: 'unavailable', reason });

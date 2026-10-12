@@ -179,7 +179,7 @@ describe('adaptive journal batch recovery', () => {
     ]);
     expect(mocks.rpc.mock.calls[1][1]).toEqual({ p_batch: batch.payload });
   });
-  it.each(['batch_not_found', 'legacy_batch_payload_unavailable'])(
+  it.each(['batch_not_found', 'legacy_batch_payload_unavailable', 'retention_compacted'])(
     'keeps %s unavailable without inferring rollback or querying another source',
     async (reason) => {
       mocks.abort.mockResolvedValue({

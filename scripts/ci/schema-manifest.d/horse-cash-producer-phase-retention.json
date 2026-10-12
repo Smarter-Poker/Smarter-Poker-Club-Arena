@@ -1,0 +1,10 @@
+{
+  "_owner": "fix/horse-cash-retention-phase-alignment-20261012",
+  "_comment": "Original cash producer phase and accounting custody; declarations are not installation evidence.",
+  "tables": ["smarter_private.horse_cash_postprune_certificates"],
+  "functions": [
+    "smarter_private.horse_cash_retention_accounting_ready",
+    "smarter_private.horse_cash_retained_boundary_digest",
+    "smarter_private.horse_cash_postprune_certificate_immutable"
+  ]
+}

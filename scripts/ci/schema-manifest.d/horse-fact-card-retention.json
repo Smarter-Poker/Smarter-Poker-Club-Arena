@@ -1,0 +1,18 @@
+{
+  "_owner": "fix/horse-fact-card-retention-20261012",
+  "_comment": "Qualified eight-day original horse content transition. Derived statistics and financial totals remain durable. Names are declarations, not production installation evidence.",
+  "tables": [
+    "smarter_private.horse_fact_card_disposals",
+    "smarter_private.horse_retained_stats_basis"
+  ],
+  "functions": [
+    "smarter_private.horse_compact_stats_basis",
+    "smarter_private.horse_stats_basis_immutable",
+    "smarter_private.capture_horse_stats_basis",
+    "smarter_private.horse_stats_basis_matches",
+    "smarter_private.horse_fact_cards_disposable",
+    "smarter_private.horse_fact_card_disposal_immutable",
+    "smarter_private.horse_fact_retired_cards_stay_erased",
+    "smarter_private.compact_horse_fact_cards"
+  ]
+}

@@ -56,8 +56,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 205794,
-      "sha256": "e85cb68743eb7bc58e6b3c089e3f731ba0ae9a96cc9ef3b4b055d7e031fb518d"
+      "bytes": 208650,
+      "sha256": "726fc785d4c857df179022236ca835b70891a323ba25f306a1ccd2f6d59b8000"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -2183,6 +2183,78 @@
       }
     ]
   },
+  "horseRequestRetentionIntegration20261012": {
+    "reason": "Add the native eight-day settled horse request regression to existing Accounting3 alongside unchanged financial qualifications. Refresh only current workflow source fingerprint; preserve all historical pins and qualification outcomes.",
+    "previousWorkflowPin": {
+      "bytes": 202788,
+      "sha256": "cbecb15da2fd2b57f1c3fcb7a75f9eede415cef9ad40bce2f25257266ca3f732"
+    }
+  },
+  "horseSettlementKeyRetentionIntegration20261012": {
+    "reason": "Add native settlement-key retention qualification to existing Accounting3. Preserve every financial source, historical pin, assertion and qualification outcome; refresh only the reviewed current workflow fingerprint.",
+    "previousWorkflowPin": {
+      "bytes": 203617,
+      "sha256": "2d30f85bad3a22e2c5081fe6e5e0423a9ad219d7753f8f7b7ee4387292d800d7"
+    }
+  },
+  "adaptiveStatisticsRetention20261012": {
+    "reason": "Reviewed additive adaptive retirement native qualification in existing required accounting shard three. Preserve all cash inputs, assertions, historical pins and SOURCE_ONLY_UNRUN status. This workflow fingerprint is source binding, not production or financial qualification.",
+    "previousWorkflowPin": {
+      "bytes": 203617,
+      "sha256": "2d30f85bad3a22e2c5081fe6e5e0423a9ad219d7753f8f7b7ee4387292d800d7"
+    }
+  },
+  "combinedHorseRetentionWorkflow20261012": {
+    "reason": "Preserve request, settlement/cash, and adaptive native qualifications together in existing Accounting3. Only the integrated workflow fingerprint changes; retain every financial source, assertion, historical pin and qualification status.",
+    "previousRootWorkflowPin": {
+      "bytes": 204491,
+      "sha256": "1a26c373256db12024f2711c4081c3083314827846f8d9a7c8a6fdea09b2ce53"
+    },
+    "previousAdaptiveWorkflowPin": {
+      "bytes": 204540,
+      "sha256": "9115c4963648902efcb6ea9cda5cb5e529622a3054107f2c0e1ad51a1d49ccb2"
+    }
+  },
+  "horseRetentionMainIntegration20261012": {
+    "reason": "Preserve current protected-main only-staff-remove-member qualification plus all request/key/adaptive steps; refresh only combined current workflow source fingerprint. Every original financial input, assertion, historical pin and qualification status remains.",
+    "previousCandidateWorkflowPin": {
+      "bytes": 205414,
+      "sha256": "3e8d21bf217ff96930b6c299b842bf845198ec17813209494e50ec5a58c9511c"
+    },
+    "previousProtectedMainWorkflowPin": {
+      "bytes": 203003,
+      "sha256": "1699ddcbdafde77bbb538e632911eb11663486d78a99571e67006ae4f4004995"
+    }
+  },
+  "inventorySealNativeQualification20261012": {
+    "reason": "Add exact bucketed inventory seal PostgreSQL17 equivalence to existing required Accounting3. Preserve every financial source, assertion, historical pin and SOURCE_ONLY_UNRUN status. Workflow fingerprint refresh is source identity only, not cash execution or production certification.",
+    "previousWorkflowPin": {
+      "bytes": 202788,
+      "sha256": "cbecb15da2fd2b57f1c3fcb7a75f9eede415cef9ad40bce2f25257266ca3f732"
+    }
+  },
+  "inventorySealCurrentMainIntegration20261012": {
+    "reason": "Preserve current main member-removal qualification and candidate inventory-seal native qualification together. Source identity only; financial inputs, historical pins and SOURCE_ONLY_UNRUN remain unchanged.",
+    "previousCandidateWorkflowPin": {
+      "bytes": 203714,
+      "sha256": "68ec0a94cbe906ff36162e004227766cdec8daf80023551b6693b46ceec1d559"
+    },
+    "previousCurrentMainWorkflowPin": {
+      "bytes": 203003,
+      "sha256": "1699ddcbdafde77bbb538e632911eb11663486d78a99571e67006ae4f4004995"
+    }
+  },
+  "horseRetentionInventoryIntegration20261012": {
+    "reason": "Preserve original request/key/adaptive qualification and protected main inventory seal qualification in existing Accounting3; only combined workflow source fingerprint changes. All financial inputs, historical pins, assertions and SOURCE_ONLY_UNRUN status preserved.",
+    "previousCandidateWorkflowPin": {
+      "bytes": 205629,
+      "sha256": "dcdf7c1def63a98bec6c64cb63b87c0d7d9a3c70d80814dd75d79d667a45f20f"
+    },
+    "previousProtectedMainWorkflowPin": {
+      "bytes": 203929,
+      "sha256": "4c8baf0332e0a416f9d4c07e8b2c4cfddac492d6c51ec22cfe2c37ff9077d059"
+    }
+  },
   "nativeRecoveryExport20261012": {
     "reason": "Add the native read-only export/restore fixture to existing accounting shards1/4 and classify every maintained tool input. Refresh only these reviewed workflow/classifier fingerprints; retained financial source pins, assertions and SOURCE_ONLY_UNRUN status remain unchanged. This is not financial or full production recovery qualification.",
     "previousPins": {
@@ -2214,29 +2286,26 @@
       }
     }
   },
-  "inventorySealNativeQualification20261012": {
-    "reason": "Add exact bucketed inventory seal PostgreSQL17 equivalence to existing required Accounting3. Preserve every financial source, assertion, historical pin and SOURCE_ONLY_UNRUN status. Workflow fingerprint refresh is source identity only, not cash execution or production certification.",
-    "previousWorkflowPin": {
-      "bytes": 202788,
-      "sha256": "cbecb15da2fd2b57f1c3fcb7a75f9eede415cef9ad40bce2f25257266ca3f732"
-    }
-  },
-  "inventorySealCurrentMainIntegration20261012": {
-    "reason": "Preserve current main member-removal qualification and candidate inventory-seal native qualification together. Source identity only; financial inputs, historical pins and SOURCE_ONLY_UNRUN remain unchanged.",
-    "previousCandidateWorkflowPin": {
-      "bytes": 203714,
-      "sha256": "68ec0a94cbe906ff36162e004227766cdec8daf80023551b6693b46ceec1d559"
-    },
-    "previousCurrentMainWorkflowPin": {
-      "bytes": 203003,
-      "sha256": "1699ddcbdafde77bbb538e632911eb11663486d78a99571e67006ae4f4004995"
-    }
-  },
   "nativeRecoveryCurrentMainIntegration20261012": {
     "reason": "Preserve current main inventory-seal and existing required fixture qualification beside native recovery tooling. Refresh actual combined workflow source identity only; all financial inputs, historical pins and qualification status remain unchanged.",
     "currentWorkflowPin": {
       "bytes": 204868,
       "sha256": "526ce2cb5ae8c17319b7181238858a9d820a4609f4a90f7572c19d316d552ee9"
+    }
+  },
+  "retentionCapacityMainIntegration20261012": {
+    "reason": "Preserve current protected native recovery export qualification and earlier inventory seal beside original retention qualification. Only combined workflow identity is refreshed; financial source inputs, historical pins, assertions and qualification status remain unchanged.",
+    "previousRetainedWorkflowPin": {
+      "bytes": 206555,
+      "sha256": "f2504b65e74d074429292523a06f5d40e111f2e43f53e2fccf920f83573fd819"
+    },
+    "protectedMainWorkflowPin": {
+      "bytes": 204868,
+      "sha256": "526ce2cb5ae8c17319b7181238858a9d820a4609f4a90f7572c19d316d552ee9"
+    },
+    "combinedWorkflowPin": {
+      "bytes": 207494,
+      "sha256": "e9a6e5f34b4469db7b3d5d9861760fd00b5619dec08940e674daa9b69fa24bdd"
     }
   },
   "originalUnchangedStackQualification20261012": {
@@ -2277,6 +2346,32 @@
     "previousMainWorkflowPin": {
       "bytes": 204868,
       "sha256": "526ce2cb5ae8c17319b7181238858a9d820a4609f4a90f7572c19d316d552ee9"
+    }
+  },
+  "retentionOriginalCashMainIntegration20261012": {
+    "reason": "Preserve protected original unchanged-stack, native recovery and inventory-seal qualification beside retention qualification. Only combined workflow identity refreshed; financial inputs, assertions, historical pins and qualification status unchanged.",
+    "previousRetainedWorkflowPin": {
+      "bytes": 207494,
+      "sha256": "e9a6e5f34b4469db7b3d5d9861760fd00b5619dec08940e674daa9b69fa24bdd"
+    },
+    "protectedMainWorkflowPin": {
+      "bytes": 205794,
+      "sha256": "e85cb68743eb7bc58e6b3c089e3f731ba0ae9a96cc9ef3b4b055d7e031fb518d"
+    },
+    "combinedWorkflowPin": {
+      "bytes": 208420,
+      "sha256": "f10cdd968c998575f18c28cf6e44c68ebaddea8d59386fc63d0eb205520170a4"
+    }
+  },
+  "signedCashRetentionConsumerQualification20261012": {
+    "reason": "Append exact focused signed-reader/retained-certificate qualification to its existing Accounting3 original unchanged-stack step and existing retained artifact. Preserve all original cases, financial assertions, foreign source bindings, historical pins and qualification status. Workflow fingerprint alone is not runtime proof.",
+    "previousCombinedWorkflowPin": {
+      "bytes": 208420,
+      "sha256": "f10cdd968c998575f18c28cf6e44c68ebaddea8d59386fc63d0eb205520170a4"
+    },
+    "combinedWorkflowPin": {
+      "bytes": 208650,
+      "sha256": "726fc785d4c857df179022236ca835b70891a323ba25f306a1ccd2f6d59b8000"
     }
   }
 }

@@ -1,7 +1,7 @@
 /**
  * LAW: the stats a player reads survive the hand prune.
  *
- * hand_history is pruned after seven days for horse-only hands (Dan's
+ * hand_history is pruned after eight days for horse-only hands (Dan's
  * retention ruling, CLAUDE.md 10.5). The stats page does not read
  * hand_history for its numbers; it reads three DURABLE tables that were built
  * precisely so that day eight does not empty the page:
@@ -33,8 +33,8 @@ import { migrationCorpus } from './helpers/migrationCorpus';
 const DURABLE = ['ca_hand_player_stat', 'ca_hand_facts', 'ca_hand_transfers'] as const;
 
 /** The body of the newest migration that (re)defines `fn`, by version order. */
-function newestDefinition(fn: string): { file: string; body: string } {
-  const re = new RegExp(`create\\s+(or\\s+replace\\s+)?function\\s+public\\.${fn}\\s*\\(`, 'i');
+function newestDefinition(fn: string, schema = 'public'): { file: string; body: string } {
+  const re = new RegExp(`create\\s+(or\\s+replace\\s+)?function\\s+${schema}\\.${fn}\\s*\\(`, 'i');
   /* READ THE DIRECTORY ONCE (2026-09-10): this walked all 2,849 migrations for
      every function it was asked about and crossed vitest's 5s default on a
      busy machine. tests/helpers/migrationCorpus reads it once per file. */
@@ -52,7 +52,7 @@ function newestDefinition(fn: string): { file: string; body: string } {
     if (bodyEnd < 0) continue;
     found = { file, body: text.slice(bodyStart, bodyEnd) };
   }
-  if (!found) throw new Error(`no migration defines public.${fn}`);
+  if (!found) throw new Error(`no migration defines ${schema}.${fn}`);
   return found;
 }
 
@@ -71,10 +71,41 @@ describe('LAW: the stats a player reads survive the hand prune', () => {
     });
   }
 
-  it('sp_prune_hand_history is allowed to prune the player->hand pointer table', () => {
-    // Not a requirement, a statement of where the line is: this is the one
-    // table the pruner touches, and the reason the durable three are named.
-    expect(prune.body).toMatch(/ca_hand_player_idx/);
+  it('the original pointer archive runs before deletion and preserves lifetime counts and times', () => {
+    const call = /PERFORM\s+smarter_private\.archive_pruned_hand_index\s*\(v_doomed\)/i.exec(
+      prune.body
+    );
+    expect(call).not.toBeNull();
+    const deletion = /DELETE\s+FROM\s+(?:public\.)?(?:hand_atomic_commits|hand_history)\b/i.exec(
+      prune.body
+    );
+    expect(deletion).not.toBeNull();
+    expect(call!.index).toBeLessThan(deletion!.index);
+    const archive = newestDefinition('archive_pruned_hand_index', 'smarter_private').body;
+    expect(archive).toMatch(/cardinality\(p_hands\)>250/i);
+    expect(archive).toMatch(
+      /hand_history\s+WHERE\s+id=ANY\(p_hands\)\s+ORDER\s+BY\s+id\s+FOR\s+UPDATE/i
+    );
+    expect(archive).toMatch(/h\.has_human\s+IS\s+DISTINCT\s+FROM\s+FALSE/i);
+    expect(archive).toMatch(
+      /DELETE\s+FROM\s+public\.ca_hand_player_idx\s+WHERE\s+hand_id=ANY\(p_hands\)\s+RETURNING\s+user_id,asset,created_at/i
+    );
+    expect(archive).toMatch(
+      /count\(\*\)::bigint\s+hands,min\(created_at\)\s+first_hand_at,max\(created_at\)\s+last_hand_at/i
+    );
+    expect(archive).toMatch(/FROM\s+removed\s+GROUP\s+BY\s+user_id,asset/i);
+    expect(archive).toMatch(
+      /INSERT\s+INTO\s+smarter_private\.hand_index_retention_totals\(user_id,asset,hands,first_hand_at,last_hand_at\)/i
+    );
+    expect(archive).toMatch(/hands=hand_index_retention_totals\.hands\+EXCLUDED\.hands/i);
+    expect(archive).toMatch(
+      /first_hand_at=LEAST\(hand_index_retention_totals\.first_hand_at,EXCLUDED\.first_hand_at\)/i
+    );
+    expect(archive).toMatch(
+      /last_hand_at=GREATEST\(hand_index_retention_totals\.last_hand_at,EXCLUDED\.last_hand_at\)/i
+    );
+    for (const table of DURABLE)
+      expect(archive.replace(/--[^\n]*/g, '')).not.toMatch(new RegExp(`\\b${table}\\b`, 'i'));
   });
 
   it('ca_prune_hand_player_stat keeps at least the page analysis window per player', () => {

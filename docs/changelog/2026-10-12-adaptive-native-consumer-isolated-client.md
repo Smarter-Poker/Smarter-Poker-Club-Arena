@@ -1,0 +1,7 @@
+# Offline adaptive consumer qualification uses isolated client configuration
+
+CI run38287049255, Accounting transactions shard3 job114939017284, passed the request and full key/cash/derived retention phases, then failed in the adaptive consumer child because `SUPABASE_SERVICE_ROLE_KEY` was absent. The actual report builder lives in a module that also imports the persistence client, so module construction exited before the offline report calculation ran.
+
+The native harness now gives that child an explicit nonsecret loopback client configuration and a small whitelisted environment. It installs a network refusal before dynamically importing the unchanged actual model builder, and refuses success if any network was attempted. No production key is inherited or required. The actual server missing-key guard, model algorithm, native database assertions and fenced finish are unchanged.
+
+The exact failed CI claim and consumer runner were retrieved into owned SSD scratch. In a clean environment the original runner reproduced exit1 with the same missing-key message; the repaired maintained helper prepared the report for the same claim with network access forbidden. The full affected adaptive PostgreSQL qualifier then passed, including native claim, actual consumer and fenced finish. Other passed suites were not rerun for this harness-only repair. Hosted verification of the new protected candidate remains a separate requirement.

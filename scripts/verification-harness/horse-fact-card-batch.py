@@ -4,7 +4,7 @@ Every fixture is inside the existing isolated PostgreSQL owner, never production
 from pathlib import Path
 import json,subprocess,time
 from satellite_qualifier_fixture import module,sha,lit
-MIG=Path('supabase/migrations/20261012173750_horse_fact_cards_retire_in_one_bounded_original_update.sql')
+MIG=Path('supabase/migrations/20261012174400_horse_fact_cards_retire_in_one_bounded_original_update.sql')
 def qualify(e,template):
  root=e.root;base=e.database(template);passed=[]
  e.report['source_sha256'].update({str(MIG):sha(root/MIG),'scripts/verification-harness/horse-fact-card-batch.py':sha(Path(__file__))})

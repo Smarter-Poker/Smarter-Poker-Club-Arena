@@ -1,4 +1,21 @@
 {
+  "playerCommandGroupedHistoryFormatting20261012": {
+    "reason": "Normal commit formatter wrapped only the reviewed AST wiring assertion. Refresh its active source hash and dependent binding bytes, preserving every historical object, assertion, financial input and status. This is source identity only.",
+    "changes": [
+      {
+        "section": "files",
+        "path": "tests/unit/fixtureNativeCi.test.ts",
+        "previous": {
+          "bytes": 108744,
+          "sha256": "2602f828643e8fd24e26999eaf065198dc41ae3ae841468db11a95d2d9928dfd"
+        },
+        "current": {
+          "bytes": 108743,
+          "sha256": "f867b62425be1cbfd13c75afc3122eb1dac05b2ac093d63eb27d87ca0846b572"
+        }
+      }
+    ]
+  },
   "playerCommandGroupedHistoryQualification20261012": {
     "reason": "Group the unchanged exact history qualifier under the existing Player Command totals owner. Reviewed checked bounded child execution and AST wiring test; shared CI is byte-identical to protected main. Preserve every historical object, financial input and qualification status. Task audit keys reordered without value changes solely to avoid shared append conflicts; active fingerprints are source identity, not production qualification.",
     "changes": [
@@ -317,8 +334,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 108744,
-      "sha256": "2602f828643e8fd24e26999eaf065198dc41ae3ae841468db11a95d2d9928dfd"
+      "bytes": 108743,
+      "sha256": "f867b62425be1cbfd13c75afc3122eb1dac05b2ac093d63eb27d87ca0846b572"
     }
   },
   "nativePgCron": {

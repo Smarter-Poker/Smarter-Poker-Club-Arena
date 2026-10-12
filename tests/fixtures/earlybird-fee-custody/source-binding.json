@@ -1,4 +1,15 @@
 {
+  "playerCommandGroupedHistoryFormatting20261012": {
+    "reason": "Normal commit formatter wrapped only the reviewed AST wiring assertion. Refresh its active source hash and dependent binding bytes, preserving every historical object, assertion, financial input and status. This is source identity only.",
+    "changes": [
+      {
+        "section": "repository_files",
+        "path": "tests/unit/fixtureNativeCi.test.ts",
+        "previous": "2602f828643e8fd24e26999eaf065198dc41ae3ae841468db11a95d2d9928dfd",
+        "current": "f867b62425be1cbfd13c75afc3122eb1dac05b2ac093d63eb27d87ca0846b572"
+      }
+    ]
+  },
   "playerCommandGroupedHistoryQualification20261012": {
     "reason": "Group the unchanged exact history qualifier under the existing Player Command totals owner. Reviewed checked bounded child execution and AST wiring test; shared CI is byte-identical to protected main. Preserve every historical object, financial input and qualification status. Task audit keys reordered without value changes solely to avoid shared append conflicts; active fingerprints are source identity, not production qualification.",
     "changes": [
@@ -48,7 +59,7 @@
     "tests/fixtures/earlybird-fee-custody/credit-originals.json": "76b7a6152c538bd051754e0a17106a14e86458968132bea26f03c339ad77b439",
     "supabase/migrations/20260918122532_five_original_spin_standings_retain_their_recorded_cash_outc.sql": "9f6e0b02abea54394d317c6d20f8e47ae10edefc9ba6c12f6542c23daf4540c4",
     ".prettierignore": "09ce1f38a5e012220b004ee809caf9fdcf0e61d9d72e924fd82341de73d53874",
-    "tests/unit/fixtureNativeCi.test.ts": "2602f828643e8fd24e26999eaf065198dc41ae3ae841468db11a95d2d9928dfd",
+    "tests/unit/fixtureNativeCi.test.ts": "f867b62425be1cbfd13c75afc3122eb1dac05b2ac093d63eb27d87ca0846b572",
     "tests/fixtures/earlybird-fee-custody/README.md": "ae19f37a0179956d0d26c64f626fa401c10b4319f0d7d8453f8993d811e98536"
   },
   "restamp_audit": [

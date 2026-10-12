@@ -75,6 +75,9 @@ export interface GameConfigView {
   min_seconds_between_rounds: number;
   spec_rtp: number;
   house_share: number;
+  /** The Crash contract new rounds are dealt under (fn_diamond_game_state, from
+   *  contract 5): what the lobby prices the odds by. Absent before it. */
+  payout_version?: number;
 }
 
 export interface GamePoolView {
@@ -186,13 +189,16 @@ export interface CrashRound {
   };
   minimum_payout_chips?: number;
   /** 1: no floor (historical). 2: a tenth of the stake. 3: the Super half.
-   *  4: half the stake, or for a Super award what the player paid. */
-  payout_version?: 1 | 2 | 3 | 4;
+   *  4: half the stake, or for a Super award what the player paid, at a 0.80
+   *  return. 5: the same floor at a 0.95 return, 1.25x up to 20x (2026-10-12). */
+  payout_version?: 1 | 2 | 3 | 4 | 5;
   /** The first hundredth this round's own contract lets a player book: 1.01x
-   *  before contract 4, 1.11x from it. Mirrors fn_crash_cashout / fn_crash_decide. */
+   *  before contract 4, 1.11x under it, 1.26x from contract 5. Mirrors
+   *  fn_crash_cashout / fn_crash_decide. */
   cashout_floor_cents: number;
   /** The lowest point this round's own contract can crash at: 1.00x before
-   *  contract 4, 1.10x from it. Mirrors fn_crash_point_cents. */
+   *  contract 4, 1.10x under it, 1.25x from contract 5. Mirrors
+   *  fn_crash_point_cents / fn_crash_point_cents_v5. */
   crash_floor_cents: number;
   diamonds_per_chip: number;
   cap_cents: number;
@@ -475,13 +481,13 @@ function normaliseTable(raw: Record<string, unknown>): PlinkoTable {
 
 /** The receipt versions this client knows how to price. Anything else is not a
  *  contract it can read, so it is not one it pretends to. */
-const CRASH_PAYOUT_VERSIONS = [1, 2, 3, 4] as const;
+const CRASH_PAYOUT_VERSIONS = [1, 2, 3, 4, 5] as const;
 
 export function normaliseCrash(raw: Record<string, unknown>): CrashRound {
   const version = (CRASH_PAYOUT_VERSIONS as readonly number[]).includes(
     raw.payout_version as number
   )
-    ? (raw.payout_version as 1 | 2 | 3 | 4)
+    ? (raw.payout_version as 1 | 2 | 3 | 4 | 5)
     : undefined;
   const outcome = raw.outcome ? rec(raw.outcome) : null;
   const fairness = rec(raw.fairness);
@@ -632,6 +638,9 @@ export function normaliseState(raw: Record<string, unknown>): GameState {
           min_seconds_between_rounds: num(config.min_seconds_between_rounds),
           spec_rtp: num(config.spec_rtp),
           house_share: num(config.house_share),
+          ...(Number.isSafeInteger(config.payout_version)
+            ? { payout_version: Number(config.payout_version) }
+            : {}),
         }
       : undefined,
     bets: Array.isArray(raw.bets)
@@ -752,8 +761,8 @@ const DiamondGamesService = {
     displayedCents?: number
   ): Promise<CrashRound> {
     // The floor is the round's own, not a constant: fn_crash_cashout refuses a
-    // contract-4 round under 1.11x, and a request the server will refuse never
-    // leaves this client.
+    // contract-4 round under 1.11x and a contract-5 round under 1.26x, and a
+    // request the server will refuse never leaves this client.
     const floor = crashCashoutFloorCents(expected?.payout_version);
     if (
       cashout &&

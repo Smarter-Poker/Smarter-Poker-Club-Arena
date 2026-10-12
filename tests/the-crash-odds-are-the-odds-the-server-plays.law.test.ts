@@ -90,6 +90,39 @@ describe('the crash odds are the odds the server plays', () => {
     // The odds belong to an award kind, and the page says which.
     expect(src).toMatch(/Ordinary Award/);
     expect(src).toMatch(/Super Award/);
+    // CONTRACT 5 (2026-10-12): priced by the contract the server says it deals,
+    // and contract 4 when it says nothing, so the lobby is right on both sides
+    // of the release. The average crash is computed the same way, never typed.
+    expect(src).toMatch(/crash\?\.config\?\.payout_version \?\? CRASH_FLOORED_VERSION/);
+    expect(src).toMatch(/awardInstantCrashChances\(1, crashRate, crashContract\)/);
+    expect(src).toMatch(/awardAverageCrash\(1, crashRate, crashContract, crashTop\)/);
+    expect(src).not.toMatch(/Average Crash[^']*\d\.\dx/);
+  });
+
+  it('the crash page prints the average crash and where a booked flight would have crashed, from the round', () => {
+    const page = code('src/pages/DiamondCrashPage.tsx');
+    // The average of THAT round's own terms (Dan, 2026-10-12: "MAKE SURE THAT
+    // PLAYERS ARE AWARE THAT THE 'AVERAGE CRASH' IS BETWEEN 2.4 - 3.0X").
+    expect(page).toContain(
+      'crashAverageMultiplier(terms.bet, terms.minimum, terms.version, terms.cap)'
+    );
+    expect(page).not.toMatch(/Average Crash \d/);
+    // "IT SHOULD SHOW HOW FAR 'IT WOULD OF GONE'": from the settled receipt only.
+    expect(page).toContain(
+      'It Would Have Crashed At ${capLabel(settledRound.outcome?.crash_cents ?? 100)}.'
+    );
+    expect(page).toContain(
+      'It Would Have Flown All The Way To The ${capLabel(settledRound.cap_cents)} Max.'
+    );
+    expect(page).toMatch(/settledRound\?\.status === 'cashed' \? \(/);
+    // The server reveals the sealed point only once a round is settled.
+    const receipt = installed('fn_crash_round_result');
+    expect(receipt).toContain(
+      "ELSE jsonb_build_object('server_seed', r.server_seed, 'roll', r.roll, 'crash_cents', r.crash_cents) END"
+    );
+    expect(receipt).toContain(
+      "'outcome', CASE WHEN r.status = 'open' THEN NULL ELSE jsonb_build_object("
+    );
   });
 
   it('the lobby quotes the cap the server quotes, never the configured ceiling', () => {
@@ -131,8 +164,9 @@ describe('the crash odds are the odds the server plays', () => {
         expect(call[1], file).toContain('minimumPayoutChips');
         // CONTRACT 4 (2026-09-23): the crash point is floored at 1.10x, and a
         // verifier that assumes 1.00x disagrees with the sealed point on about
-        // half of all real rolls. The round says which floor it was sealed
-        // under, so every caller hands that over too.
+        // half of all real rolls. CONTRACT 5 (2026-10-12) moves the floor to
+        // 1.25x and the return to 0.95. The round says which contract it was
+        // sealed under, so every caller hands that over too.
         expect(call[1], file).toContain('payoutVersion');
       }
       for (const call of caller.matchAll(/crashPointCentsFromRoll\(((?:[^()]|\([^()]*\))*)\)/g))
@@ -147,6 +181,7 @@ describe('the crash odds are the odds the server plays', () => {
     expect(fairness).toContain('20260919034436');
     expect(fairness).toMatch(/L = minimum_payout_chips \/ bet_chips/);
     expect(fairness).toMatch(/P\(X >= x\) = \(0\.8 - L\) \/ \(x - L\)/);
+    expect(fairness).toMatch(/X = max\(1\.25, L \+ \(0\.95 - L\) \/ u\)/);
     // The no-minimum formulas survive only as the case they are still true for.
     const stale = fairness.slice(0, fairness.indexOf('*/'));
     expect(stale).toMatch(/Only rounds sealed\n \* before that migration have L = 0/);

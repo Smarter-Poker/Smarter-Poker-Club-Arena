@@ -208,11 +208,19 @@ describe('crash odds: the guaranteed minimum is paid for out of them', () => {
   });
 
   it('covers every stake a wheel award can be played at, and refuses an impossible one', () => {
-    // CONTRACT 4 is what a new award is sealed with, so it is what the lobby
-    // prices: the floor is half the stake, or for a Super award what the player
-    // PAID, and the round has to reach 1.11x before a cash-out can bind.
-    const ordinary = awardInstantCrashChances(1, 100);
-    const superAward = awardInstantCrashChances(2, 100);
+    // CONTRACT 5 is what a new award is sealed with from 2026-10-12, so it is
+    // the default: a 0.95 return, the point floored at 1.25x and the cash-out
+    // opening at 1.26x, on the same half (or paid) floor contract 4 keeps.
+    const now = awardInstantCrashChances(1, 100);
+    expect(now).toEqual(awardInstantCrashChances(1, 100, 5));
+    expect(1 / now.least).toBeCloseTo(2.4516, 4);
+    expect(oneInRangeLabel(now)).toBe('1 In 2.4 To 2.5');
+    expect(oneInRangeLabel(awardInstantCrashChances(2, 100))).toBe('1 In 1.9 To 2.5');
+    // CONTRACT 4, which every round sealed from 2026-09-21 to 2026-10-12 carries:
+    // the floor is half the stake, or for a Super award what the player PAID,
+    // and the round has to reach 1.11x before a cash-out can bind.
+    const ordinary = awardInstantCrashChances(1, 100, 4);
+    const superAward = awardInstantCrashChances(2, 100, 4);
     // An ordinary award keeps half its stake, rounded up to the cent, so a small
     // odd entry (25 diamonds keeps 13) dies before 1.11x a shade more often.
     expect(1 / ordinary.least).toBeCloseTo(1.9677, 4);

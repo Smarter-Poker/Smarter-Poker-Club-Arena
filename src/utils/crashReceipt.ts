@@ -1,7 +1,7 @@
 import type { CrashRound } from '../services/DiamondGamesService';
 import { validBonusMinimum } from './diamondBonusPayout';
 import {
-  CRASH_PAYOUT_VERSION,
+  CRASH_FLOORED_VERSION,
   crashCashoutFloorCents,
   crashPointFloorCents,
 } from './diamondGamesFairness';
@@ -25,15 +25,16 @@ export function validateCrashSettlement(
     n >= 0 &&
     Math.abs(n * 100 - Math.round(n * 100)) < 1e-8;
   // The floors a receipt was sealed under: 1.00x/1.01x before contract 4, 1.10x/1.11x
-  // from it (Dan, 2026-09-21: the ship can never explode until after 1.10x). A
-  // contract-4 receipt STATES them, and fn_crash_round_result has stated them on
-  // every round since, so on that contract their absence is itself a refusal:
-  // silence there is what a round priced by the old rule would look like.
+  // under it (Dan, 2026-09-21: the ship can never explode until after 1.10x), and
+  // 1.25x/1.26x from contract 5 (Dan, 2026-10-12: never before 1.25x). A receipt
+  // from contract 4 on STATES them, and fn_crash_round_result has stated them on
+  // every round since, so there their absence is itself a refusal: silence is
+  // what a round priced by the old rule would look like.
   const version = typeof value.payout_version === 'number' ? value.payout_version : undefined;
   const pointFloor = crashPointFloorCents(version);
   const cashoutFloor = crashCashoutFloorCents(version);
   const statesItsFloors =
-    (version ?? 0) >= CRASH_PAYOUT_VERSION
+    (version ?? 0) >= CRASH_FLOORED_VERSION
       ? value.cashout_floor_cents === cashoutFloor && value.crash_floor_cents === pointFloor
       : (value.cashout_floor_cents === undefined || value.cashout_floor_cents === cashoutFloor) &&
         (value.crash_floor_cents === undefined || value.crash_floor_cents === pointFloor);

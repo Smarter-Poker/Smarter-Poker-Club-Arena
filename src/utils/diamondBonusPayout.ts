@@ -179,9 +179,11 @@ export function validBonusMinimum(value: Record<string, unknown>): boolean {
       return false;
     }
   }
+  // Contract 5 keeps contract 4's floor: Mines and Donkey Cross from 2026-10-10,
+  // Crash from 2026-10-12 (a 0.95 return on the same half or paid floor).
   if (
     version !== BONUS_PAYOUT_VERSION &&
-    !(version === 5 && ['mines', 'crossing'].includes(String(value.game)))
+    !(version === 5 && ['mines', 'crossing', 'crash'].includes(String(value.game)))
   )
     return false;
   const rate = value.diamonds_per_chip;

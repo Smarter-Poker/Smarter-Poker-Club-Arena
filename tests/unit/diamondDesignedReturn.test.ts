@@ -1,11 +1,17 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { DESIGNED_RETURN, designedReturn } from '../../src/utils/diamondDesignedReturn';
+import {
+  CRASH_DESIGNED_RETURN,
+  DESIGNED_RETURN,
+  designedReturn,
+} from '../../src/utils/diamondDesignedReturn';
 
 describe('designedReturn', () => {
-  it('is the house 80 percent for the games without their own table', () => {
+  it('is the house 80 percent for the games without their own table, and 95 for Crash', () => {
     expect(DESIGNED_RETURN).toBe(0.8);
-    expect(designedReturn('crash', undefined)).toBe(0.8);
+    // Dan, 2026-10-12: "CRASH CAN BE A 5% HOUSE EDGE GAME" (contract 5).
+    expect(CRASH_DESIGNED_RETURN).toBe(0.95);
+    expect(designedReturn('crash', undefined)).toBe(0.95);
     expect(designedReturn('mines', [{ spec_rtp: 0.5, activated_at: '2026-09-01' }])).toBe(0.8);
   });
 

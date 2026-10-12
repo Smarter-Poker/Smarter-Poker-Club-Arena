@@ -79,8 +79,8 @@ function draftFrom(m: GameMetrics | null, game: DiamondGame = 'plinko'): Draft {
     max_bet_diamonds: String(c?.max_bet_diamonds ?? 5000),
     exposure_allowance_chips: String(c?.exposure_allowance_chips ?? 1250),
     cap_fraction: String(c?.cap_fraction ?? 0.95),
-    max_multiplier: String((c?.max_multiplier_cents ?? (game === 'crash' ? 10000 : 100000)) / 100),
-    growth_k: String(c?.growth_k ?? (game === 'crash' ? 0.04 : 0.12)),
+    max_multiplier: String((c?.max_multiplier_cents ?? (game === 'crash' ? 2000 : 100000)) / 100),
+    growth_k: String(c?.growth_k ?? (game === 'crash' ? 0.08 : 0.12)),
     max_rounds_per_player_per_day: String(c?.max_rounds_per_player_per_day ?? 500),
     min_seconds_between_rounds: String(c?.min_seconds_between_rounds ?? 2),
     purchased_only: false,
@@ -609,7 +609,7 @@ export default function ClubDiamondGamesOperationsPage() {
             onChange={set('max_multiplier')}
             hint={
               game === 'crash'
-                ? 'Auto Cash Out At This Limit, Up To 100x.'
+                ? 'Every Flight Is Capped At 20x. The Server Holds It There Whatever Is Saved.'
                 : 'Never Above The Board Itself.'
             }
           />
@@ -618,7 +618,7 @@ export default function ClubDiamondGamesOperationsPage() {
               label="Curve (K Per Second)"
               value={draft.growth_k}
               onChange={set('growth_k')}
-              hint="0.04 Reaches 2x In 17.3 Seconds And 100x In 115 Seconds. A Smaller Value Is Slower."
+              hint="0.08 Reaches 2x In 8.7 Seconds And 20x In 37 Seconds. 0.08 Is The Fastest Allowed; A Smaller Value Is Slower."
             />
           ) : null}
           <Field

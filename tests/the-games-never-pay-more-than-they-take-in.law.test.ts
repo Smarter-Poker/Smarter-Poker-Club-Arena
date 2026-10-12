@@ -73,9 +73,14 @@ import {
   roadSurvives,
 } from '../src/utils/diamondChoiceMath';
 import {
+  CRASH_CAP_CENTS,
+  CRASH_PAYOUT_VERSION,
+  crashAverageMultiplier,
   crashCashoutFloorCents,
+  crashPointCentsForContract,
   crashPointCentsFromRoll,
   crashPointFloorCents,
+  crashReturnTwentieths,
 } from '../src/utils/diamondGamesFairness';
 
 const DIR = resolve(__dirname, '..', 'supabase/migrations');
@@ -219,6 +224,7 @@ const AUDIT = body(games.sql, 'fn_plinko_table_audit');
  * Every number is still computed from the exported constants, exactly.
  */
 const rules = latest('the_first_step_of_a_bonus_game_never_ruins_it_and_the_floor_');
+const crashFive = latest('crash_never_ends_before_1_25x_flies_to_20x_and_pays_back_95_');
 
 /**
  * THE BOARD, DERIVED. A Plinko board is sixteen rows, so it has seventeen slots
@@ -1448,6 +1454,118 @@ describe('crash under contract 4: the ship flies to 1.10x, and every cash-out ta
         // Nothing below 1.11x is a target: the ship is still flying at 1.10x.
         expect(crashPointCentsFromRoll(RANDOM_SPACE - 1n, chips, floor, 110)).toBe(110);
       }
+    }
+  });
+});
+
+/**
+ * ITEM 8c. CRASH UNDER CONTRACT 5: NEVER BEFORE 1.25x, UP TO 20x, AND EVERY
+ * TARGET IS WORTH 0.95 (Dan, 2026-10-12: "THE GAME SHOULD NEVER CRASH BEFORE
+ * 1.25X", "CRASH CAN BE A 5% HOUSE EDGE GAME", "CRASH NEEDS TO BE ABLE TO GO AS
+ * HIGH AS 20X"). Crash is the one game whose return moves: 19/20 instead of
+ * 4/5. The point is floored at 125 and cash-out opens at 126 (booking the floor
+ * itself would be a certain 1.25B, more than the stake). For every target t from
+ * 1.26x to the 20x cap, max(raw, 125) >= t iff raw >= t, so the survivors of t
+ * are floor((0.95B - L) 2^48 / (tB/100 - L)) and the value of always cashing at
+ * t is at most one roll's grain UNDER 0.95B, never over. Every other game, and
+ * every Crash round sealed under contract 4, keeps 0.80.
+ */
+describe('crash under contract 5: the ship flies to 1.25x, up to 20x, and every target is worth 0.95', () => {
+  const CRASH_RETURN_NUM = 19n;
+  const CRASH_RETURN_DEN = 20n;
+
+  it('the contract: 1.25x point, 1.26x cash-out, 0.95 return, 20x cap, and contract 4 untouched', () => {
+    expect(CRASH_PAYOUT_VERSION).toBe(5);
+    expect(crashPointFloorCents(5)).toBe(125);
+    expect(crashCashoutFloorCents(5)).toBe(126);
+    expect(crashReturnTwentieths(5)).toBe(19);
+    expect(crashReturnTwentieths(4)).toBe(16);
+    expect(crashPointFloorCents(4)).toBe(110);
+    expect(crashCashoutFloorCents(4)).toBe(111);
+    expect(CRASH_CAP_CENTS).toBe(TOP_CENTS);
+    // The migration installs exactly that, in integer division.
+    expect(crashFive.sql).toContain(
+      'SELECT GREATEST(125,div(100*(20*(p_minimum*100)*(p_roll+1)+(19*(p_bet*100)-20*(p_minimum*100))*281474976710656),20*(p_bet*100)*(p_roll+1)))::bigint'
+    );
+    expect(crashFive.sql).toContain('  NEW.max_multiplier_cents:=2000;');
+    expect(crashFive.sql).toContain('  NEW.growth_k:=least(NEW.growth_k,0.08);');
+    expect(crashFive.sql).toContain('  IF v_cap < 126 THEN');
+    expect(crashFive.sql).toContain("''Cash Out Starts At 1.26x''");
+    expect(crashFive.sql).toContain(
+      '(CASE WHEN r.payout_version >= 5 THEN 126 WHEN r.payout_version >= 4 THEN 111 ELSE 101 END)'
+    );
+    expect(crashFive.sql).toContain('adm.o_rate), 5)');
+    // Contract 4's point stays installed and is guarded unchanged, so v4 rounds keep verifying.
+    expect(crashFive.sql).toContain(
+      "('fn_crash_point_cents(numeric,numeric,numeric)','8a093cd8802bf4e2b8790c518b8c2d8e')"
+    );
+    expect(crashFive.sql).not.toMatch(/CREATE OR REPLACE FUNCTION public\.fn_crash_point_cents\(/);
+    // One transaction, guarded on its exact preimages.
+    expect(crashFive.sql.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(crashFive.sql.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(crashFive.sql).toContain('Crash Contract Five Preimage Changed');
+  });
+
+  it('every hundredth from 1.26x to 20x is worth at most 0.95B, within one roll of it, on every stake kind', () => {
+    for (const entry of [MIN_DIAMOND_SPIN, 26, 100, 2489, MAX_DIAMOND_SPIN]) {
+      for (const kind of STAKE_KINDS) {
+        const chips = kind.stakeOf(entry) / DIAMONDS_PER_CHIP;
+        const floor = floorCentsOf(kind, entry) / CHIP_CENTS;
+        const B = BigInt(Math.round(chips * CHIP_CENTS));
+        const L = BigInt(Math.round(floor * CHIP_CENTS));
+        for (let target = 126; target <= TOP_CENTS; target++) {
+          // survivors = floor((0.95B - L) 2^48 / (B t/100 - L)) = floor(5 (19B - 20L) 2^48 / (B t - 100 L))
+          const num = 5n * (CRASH_RETURN_NUM * B - CRASH_RETURN_DEN * L) * RANDOM_SPACE;
+          const den = B * BigInt(target) - 100n * L;
+          const survivors = num / den;
+          const value = survivors * B * BigInt(target) + (RANDOM_SPACE - survivors) * 100n * L;
+          const edge = 95n * B * RANDOM_SPACE;
+          if (value > edge || edge - value >= den)
+            throw new Error(`${kind.label} ${entry} at ${target}: ${value} against ${edge}`);
+        }
+        // The boundary rolls, through the mirror, at a spread of targets.
+        for (const target of [126, 127, 150, 200, 272, 500, 1000, 1999, TOP_CENTS]) {
+          const num = 5n * (CRASH_RETURN_NUM * B - CRASH_RETURN_DEN * L) * RANDOM_SPACE;
+          const survivors = num / (B * BigInt(target) - 100n * L);
+          expect(
+            crashPointCentsForContract(survivors - 1n, chips, floor, 5)
+          ).toBeGreaterThanOrEqual(target);
+          expect(crashPointCentsForContract(survivors, chips, floor, 5)).toBeLessThan(target);
+        }
+        // Nothing below 1.26x is a target: the largest roll seals exactly 1.25x.
+        expect(crashPointCentsForContract(RANDOM_SPACE - 1n, chips, floor, 5)).toBe(125);
+        // And no floor reaches the 0.95 return: the loss minimum is unchanged and under 0.80B.
+        expect(L * 5n).toBeLessThan(B * 4n);
+      }
+    }
+  });
+
+  it('the average crash is honest: 2.72x on a standard award, 2.24x on Super with the add-on', () => {
+    // E[min(X, 20)] = 1.25 + (0.95 - L/B) ln((20 - L/B)/(1.25 - L/B)).
+    const standard = crashAverageMultiplier(1, 0.5, 5, TOP_CENTS);
+    expect(standard).toBeCloseTo(1.25 + 0.45 * Math.log(19.5 / 0.75), 12);
+    expect(standard).toBeGreaterThan(2.4);
+    expect(standard).toBeLessThan(3.0);
+    expect(standard.toFixed(2)).toBe('2.72');
+    const superAddOn = crashAverageMultiplier(75, 50, 5, TOP_CENTS);
+    expect(superAddOn.toFixed(2)).toBe('2.24');
+    // Under contract 4 a standard award averaged 2.14x at the same cap.
+    expect(crashAverageMultiplier(1, 0.5, 4, TOP_CENTS).toFixed(2)).toBe('2.14');
+  });
+
+  it('every flight a wheel award starts can reach 20x, or it is refused rather than shortened', () => {
+    expect(crashFive.sql).toContain(
+      'v_cap := LEAST(public.fn_diamond_game_cap_cents(adm.o_cfg, adm.o_pool, adm.o_bank, adm.o_bet_chips, (adm.o_cfg).max_multiplier_cents), 2000);'
+    );
+    expect(crashFive.sql).toContain(
+      'IF (public.fn_wheel_starting_award()).id IS NOT NULL AND v_cap < 2000 THEN'
+    );
+    // The wheel reserves 40x of an ordinary base and 30x of a Super base, which is
+    // 20x of the largest stake either can be played at (base plus one entry).
+    for (const boost of [1, 2]) {
+      const base = 100 * boost;
+      const reserved = (2000 * (boost + 1)) / boost;
+      expect(Math.floor((reserved * base) / (base + 100))).toBe(TOP_CENTS);
     }
   });
 });

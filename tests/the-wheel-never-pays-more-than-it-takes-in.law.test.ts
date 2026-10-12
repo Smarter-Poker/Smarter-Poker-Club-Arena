@@ -705,3 +705,71 @@ describe('wheel v4 is still exactly 80 percent, and no prize may repeat', () => 
     expect(mirror.WHEEL_V4_TOTAL).toBe(100000);
   });
 });
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  CRASH PAYS 0.95 (owner ruling 2026-10-12, migration 20261012052305)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Dan: "CRASH CAN BE A 5% HOUSE EDGE GAME. MAKE IT BETTER OVERALL FOR THE
+ * PLAYERS." The wheel's own table, weights, matrix and reservations do not
+ * move: its published table still sums to 0.8 (the pins above), because it
+ * prices every bonus game at 0.8 of its stake when it DRAWS it. What changes is
+ * what a Crash award is worth when it is PLAYED: 0.95 of its stake. So the
+ * wheel's true long-run payback, through the very same weights, is
+ *
+ *   0.8 + 0.15 x (11950 + 1000 x 2 x 20000 / 100000) / 100000 = 0.818525
+ *
+ * (Crash is 11,950 of the main wheel's 100,000; the Upgrade is 1,000 of it and
+ * deals Super Crash, a doubled stake, on 20,000 of its own 100,000). It holds
+ * exactly through the no-repeat matrix because the matrix is stationary (its
+ * columns sum to the base law, pinned above). The house still keeps 18.15
+ * percent of every entry on average, and no spin's expectation after any prize
+ * reaches its entry.
+ */
+describe('Crash at 0.95 lifts the wheel to 0.818525 and the house still keeps more than it pays', () => {
+  /** A value in hundredths of a sixth of one entry: 600 is the whole entry. */
+  const HUNDREDTHS_OF_A_SIXTH = 600n;
+  const valueWithCrashAt95 = (r: V4Row) =>
+    r.game === 'crash'
+      ? 570n // 0.95 of the entry
+      : r.kind === 'upgrade'
+        ? // 4 entries, plus Super Crash (2 entries of stake on 20,000 of 100,000) paying 0.15 more:
+          // 4 + 0.2 x 2 x 0.15 = 4.06 entries. An upper bound after an ordinary Crash,
+          // where the cross-tier rule removes Super Crash from the Upgrade wheel.
+          2436n
+        : BigInt(Math.round(Number(r.sixths) * 100));
+
+  it('the wheel is still drawn at 0.8, and its real payback is 0.818525, in integers', () => {
+    const model = v4Model();
+    expect(model.find((r) => r.game === 'crash')!.weight).toBe(11950);
+    expect(model.find((r) => r.kind === 'upgrade')!.weight).toBe(1000);
+    const drawn = model.reduce(
+      (s, r) => s + BigInt(r.weight) * BigInt(Math.round(Number(r.sixths) * 100)),
+      0n
+    );
+    expect(drawn).toBe(80n * 100000n * 6n);
+    const played = model.reduce((s, r) => s + BigInt(r.weight) * valueWithCrashAt95(r), 0n);
+    // played / (100000 x 600) = 0.818525 exactly.
+    expect(played * 1000000n).toBe(818525n * 100000n * HUNDREDTHS_OF_A_SIXTH);
+    expect(played).toBeLessThan(100000n * HUNDREDTHS_OF_A_SIXTH);
+    // The migration states the figure it is held to here, and its SQL touches
+    // nothing the wheel draws or reserves with.
+    const five = latest('crash_never_ends_before_1_25x_flies_to_20x_and_pays_back_95_');
+    expect(five.sql).toContain('0.818525');
+    const code = five.sql.replace(/^--.*$/gm, '');
+    expect(code).not.toMatch(
+      /fn_wheel_spin_v2|fn_wheel_v4_model|fn_wheel_v4_follow_model|fn_wheel_state_v2|fn_diamond_game_cap_cents\(p_cfg/
+    );
+  });
+
+  it('no conditional expectation after any prize reaches the entry with Crash at 0.95', () => {
+    const model = v4Model();
+    const F = v4Follow();
+    for (let i = 0; i < 12; i += 1) {
+      const value = F[i].reduce((sum, w, j) => sum + BigInt(w) * valueWithCrashAt95(model[j]), 0n);
+      // value / (W[i] x 600) is the expectation in entries; it stays below one.
+      expect(value).toBeLessThan(BigInt(model[i].weight) * HUNDREDTHS_OF_A_SIXTH);
+    }
+  });
+});

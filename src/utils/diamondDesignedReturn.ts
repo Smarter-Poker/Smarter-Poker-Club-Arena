@@ -1,7 +1,10 @@
 import type { DiamondGame } from '../services/DiamondGamesService';
 
-/** Every Diamond game is built to pay back 80 percent of what it takes in. */
+/** Every Diamond game is built to pay back 80 percent of what it takes in, except Crash. */
 export const DESIGNED_RETURN = 0.8;
+/** Diamond Crash pays back 95 percent at every cash-out target from contract 5
+ * (Dan, 2026-10-12: "CRASH CAN BE A 5% HOUSE EDGE GAME"; migration 20261012052305). */
+export const CRASH_DESIGNED_RETURN = 0.95;
 
 /**
  * What the game is built to return: the live Plinko table's own figure when
@@ -12,6 +15,7 @@ export function designedReturn(
   game: DiamondGame,
   tables: ReadonlyArray<{ spec_rtp: number | null; activated_at: string | null }> | undefined
 ): number {
+  if (game === 'crash') return CRASH_DESIGNED_RETURN;
   if (game === 'plinko') {
     // The table activated last is the one the board is dropping on now.
     let live: { spec_rtp: number | null; activated_at: string | null } | null = null;

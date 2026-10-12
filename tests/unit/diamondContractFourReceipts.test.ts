@@ -42,6 +42,7 @@ import {
   awardInstantCrashChances,
   crashInstantChance,
   crashMissChance,
+  crashPointCentsForContract,
   crashPointCentsFromRoll,
   oneInRangeLabel,
   verifyCrashRound,
@@ -216,6 +217,32 @@ describe('contract 4: the receipt readers speak the contract production seals', 
     ).not.toThrow();
   });
 
+  it('contract 5: the browser seals the same 4,000 crash points PostgreSQL seals, and still verifies contract 4', () => {
+    // The same thousand production rolls, read through fn_crash_point_cents_v5
+    // as migration 20261012052305 installs it (a 1.25x floor, a 0.95 return).
+    const pairs = rollVectors.pairs as [number, number][];
+    const rolls = (rollVectors.rolls as string[]).map((r) => BigInt(r));
+    const sealed5 = rollVectors.v5_cents as number[][];
+    expect(rollVectors.v5_source).toContain('fn_crash_point_cents_v5');
+    let floored = 0;
+    for (let p = 0; p < pairs.length; p++) {
+      const [bet, floorChips] = pairs[p];
+      for (let i = 0; i < rolls.length; i++) {
+        expect(crashPointCentsForContract(rolls[i], bet, floorChips, 5)).toBe(sealed5[p][i]);
+        expect(sealed5[p][i]).toBeGreaterThanOrEqual(125);
+        if (sealed5[p][i] === 125) floored++;
+        // The contract-4 receipt of the same roll is untouched by contract 5.
+        expect(crashPointCentsForContract(rolls[i], bet, floorChips, 4)).toBe(
+          (rollVectors.cents[p] as number[])[i]
+        );
+      }
+    }
+    // Fewer rounds sit on the floor than under contract 4, where about half did:
+    // under contract 5 a standard round reaches 1.26x three times in five.
+    expect(floored / 4000).toBeLessThan(0.45);
+    expect(floored / 4000).toBeGreaterThan(0.3);
+  });
+
   it('prices the instant crash from the contract-4 floor and the 1.11x open', () => {
     // Nothing can crash below 1.10x, so no target at or under it can be missed.
     expect(crashMissChance(110, 1, 0.5, 110)).toBe(0);
@@ -228,8 +255,8 @@ describe('contract 4: the receipt readers speak the contract production seals', 
     expect(crashInstantChance(1, 0.1)).toBeCloseTo(1 - 0.7 / 0.91, 12);
     // The lobby's two figures: an ordinary award keeps half, a Super award with
     // the add-on keeps the two thirds it paid, and both are priced at 1.11x.
-    expect(oneInRangeLabel(awardInstantCrashChances(1, 100))).toBe('1 In 1.9 To 2');
-    expect(oneInRangeLabel(awardInstantCrashChances(2, 100))).toBe('1 In 1.4 To 2');
+    expect(oneInRangeLabel(awardInstantCrashChances(1, 100, 4))).toBe('1 In 1.9 To 2');
+    expect(oneInRangeLabel(awardInstantCrashChances(2, 100, 4))).toBe('1 In 1.4 To 2');
   });
 
   it('reads a contract-4 road and a contract-4 mines board, and refuses a board not dealt around its first pick', () => {

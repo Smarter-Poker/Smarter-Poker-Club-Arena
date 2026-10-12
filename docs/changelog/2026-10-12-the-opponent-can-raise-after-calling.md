@@ -13,7 +13,14 @@ model. The regression covers ordinary opens and limp-reraises, duplicate
 worker delivery, the pooled/scoped counts and the actual range reader's
 confidence-weighted widening.
 
-Focused checks: 197 tests passed across eight files and the server TypeScript
+The literal always-raise/pot-every-street case also runs through the real
+controller, completed-hand worker observer and a subsequent FAST request.
+Its private read frame carries the learned scoped PFR/VPIP and postflop
+aggression. The actual FAST computation invokes the widened opponent range
+and the 1.2 call-down modifier; its returned action remains legal. This does
+not require the horse to call every bet or claim strategy optimality.
+
+Focused checks: 198 tests passed across eight files and the server TypeScript
 check passed. This is a local source repair, not a production release.
 
 ## Qualification boundary

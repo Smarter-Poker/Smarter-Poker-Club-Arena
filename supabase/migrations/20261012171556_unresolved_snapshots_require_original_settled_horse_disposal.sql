@@ -12,8 +12,7 @@ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path=pg_catalog,public,smart
 DECLARE s public.hand_state_snapshots; c smarter_private.horse_adaptive_disposal_certificates;
 BEGIN
  SELECT * INTO s FROM public.hand_state_snapshots WHERE id=p_snapshot;
- IF NOT FOUND OR s.is_complete IS DISTINCT FROM true
- OR NOT isfinite(s.created_at) OR NOT isfinite(s.updated_at)
+ IF NOT FOUND OR NOT isfinite(s.created_at) OR NOT isfinite(s.updated_at)
  OR s.created_at>=statement_timestamp()-interval '8 days' OR s.updated_at>=statement_timestamp()-interval '8 days'
  OR jsonb_typeof(s.players_json) IS DISTINCT FROM 'array' THEN RETURN false; END IF;
  IF jsonb_array_length(s.players_json)=0 OR EXISTS(SELECT 1 FROM jsonb_array_elements(s.players_json) p
@@ -55,5 +54,5 @@ BEGIN
  SELECT to_jsonb(p)-'prosrc' INTO after_metadata FROM pg_proc p WHERE oid='public.sp_prune_hand_state_snapshots(integer)'::regprocedure;
  IF after_metadata IS DISTINCT FROM before_metadata THEN RAISE EXCEPTION 'HORSE_SNAPSHOT_RETENTION_METADATA_CHANGED'; END IF;
 END $patch$;
-COMMENT ON FUNCTION public.sp_prune_hand_state_snapshots(integer) IS 'Existing two-minute bounded retention. Only completed snapshots with original successful horse-only eight-day disposal, original snapshot horse flags and no current F06/movement/report/BBJ/projection/knockout hold are disposable. Incomplete, human, mixed and unknown snapshots remain original recovery evidence.';
+COMMENT ON FUNCTION public.sp_prune_hand_state_snapshots(integer) IS 'Existing two-minute bounded retention. Only snapshots with original successful horse-only eight-day disposal, original snapshot horse flags and no current F06/movement/report/BBJ/projection/knockout hold are disposable. Uncertified incomplete, human, mixed and unknown snapshots remain original recovery evidence.';
 COMMIT;

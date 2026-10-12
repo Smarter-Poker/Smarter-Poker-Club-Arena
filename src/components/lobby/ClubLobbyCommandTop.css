@@ -2449,3 +2449,33 @@
     height: 44px;
   }
 }
+
+/* FILTERS STEP ASIDE WHILE YOU READ (Dan 2026-10-11): "GAME Filters INSIDE OF
+   THE CLUB need to work like the footer but in reverse. When they hit the top
+   of the page when scrolling down they should 'disappear' but when you scroll
+   back up, they should re appear."
+
+   useHideLobbyFiltersOnScroll decides it, with the footer's own direction rule
+   (useHideFooterOnScroll), and only once the deck is pinned under the header.
+   This is the whole of the motion: the deck rises by exactly its own height and
+   the sort row by its own height plus the deck's, so both park behind the
+   global header (z-index 390, above the deck's 30 and the row's 29). Nothing
+   else changes. A sticky element keeps its slot in the flow whatever its
+   transform does, so no card moves when they go, and `position`, `top` and
+   z-index above are untouched, which is what keeps the sticky pins exact.
+
+   NO TRANSITION, deliberately: the footer's rule is "real time instant change",
+   and it is the twin of that footer. Reduced motion therefore has nothing to
+   collapse. */
+.club-lobby-machine
+  > .club-lobby-command-top[data-filters-hidden='true']
+  > .club-lobby-command-top__controls {
+  transform: translateY(-100%);
+}
+
+.club-lobby-machine
+  > .club-lobby-command-top[data-filters-hidden='true']
+  ~ .club-home__games--v2
+  .lobby-sortbar {
+  transform: translateY(calc(-100% - var(--ca-lobby-controls-h, 0px)));
+}

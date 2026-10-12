@@ -1,10 +1,15 @@
 import { useLayoutEffect, useRef, type ReactNode } from 'react';
 import './ClubLobbyCommandTop.css';
+import { useHideLobbyFiltersOnScroll } from './useHideLobbyFiltersOnScroll';
 
 interface ClubLobbyCommandTopProps {
   welcome: ReactNode;
   controls: ReactNode;
   campaign: ReactNode;
+  /** True while the Filters sheet is open: the deck stays where it is. */
+  holdFilters?: boolean;
+  /** Changes when the reader is handed a fresh lobby (the club), like the footer's pathname. */
+  resetKey?: string;
 }
 
 /**
@@ -33,8 +38,22 @@ interface ClubLobbyCommandTopProps {
  */
 const LOBBY_CONTROLS_HEIGHT_VAR = '--ca-lobby-controls-h';
 
-export function ClubLobbyCommandTop({ welcome, controls, campaign }: ClubLobbyCommandTopProps) {
+export function ClubLobbyCommandTop({
+  welcome,
+  controls,
+  campaign,
+  holdFilters = false,
+  resetKey = '',
+}: ClubLobbyCommandTopProps) {
   const controlsRef = useRef<HTMLDivElement | null>(null);
+  /* The deck and the sort row step out of the way while the reader travels
+     down the games and come back on the way up - the footer's rule, in
+     reverse (Dan 2026-10-11). See useHideLobbyFiltersOnScroll. The transform
+     itself lives in ClubLobbyCommandTop.css (FILTERS STEP ASIDE). */
+  const { hidden: filtersHidden } = useHideLobbyFiltersOnScroll(controlsRef, {
+    resetKey,
+    hold: holdFilters,
+  });
 
   useLayoutEffect(() => {
     const el = controlsRef.current;
@@ -56,7 +75,11 @@ export function ClubLobbyCommandTop({ welcome, controls, campaign }: ClubLobbyCo
   }, []);
 
   return (
-    <section className="club-lobby-command-top" aria-label="Club Lobby Controls And Promotion">
+    <section
+      className="club-lobby-command-top"
+      aria-label="Club Lobby Controls And Promotion"
+      data-filters-hidden={filtersHidden ? 'true' : 'false'}
+    >
       <div className="club-lobby-command-top__welcome club-lobby-command-top__welcome--approved-universal">
         {welcome}
       </div>

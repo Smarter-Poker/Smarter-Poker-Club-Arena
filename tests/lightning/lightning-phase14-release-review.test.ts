@@ -27,11 +27,21 @@ describe('the original Lightning final gate survives the release review', () => 
 
   it('maps every requirement to existing maintained qualification, without file existence claiming a pass', () => {
     expect(catalog.purpose).toContain('File existence is not execution evidence');
+    const documented = new Map(
+      review
+        .split('\n')
+        .filter((line) => /^\|\s*L\d{2}\s*\|/.test(line))
+        .map((line) => {
+          const cells = line.split('|').map((cell) => cell.trim());
+          return [cells[1], cells[2]];
+        })
+    );
+    expect(documented.size).toBe(54);
     for (const gate of catalog.requirements) {
       expect(gate.qualificationFiles.length, gate.id).toBeGreaterThan(0);
       for (const path of gate.qualificationFiles)
         expect(existsSync(resolve(root, path)), path).toBe(true);
-      expect(review).toContain(`| ${gate.id} | ${gate.requirement} |`);
+      expect(documented.get(gate.id), gate.id).toBe(gate.requirement);
     }
     expect(review).toContain('Current public-launch verdict: NO_GO');
     expect(review).toContain('not silently promoted from a source assertion');

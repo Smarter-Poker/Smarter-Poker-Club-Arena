@@ -134,14 +134,14 @@ import type { HorsePlanAcceptance } from '../HorsePlanEffectReceipt.js';
  * journal writers keep), never fewer than the two it has always run: three
  * on this host, still two on a two-core host and on six logical CPUs.
  *
- * Every worker shard owns a full journal archive allocation (see
- * runtimeHorseJournalArchiveOptions): 8 GiB of segments plus a 6 GiB catalog
- * ceiling, about 14 GB on disk per shard on this host. A default that added
+ * Shards 0/1 retain 8 GiB of segments; new shards 2+ default to 4 GiB
+ * (runtimeHorseJournalArchiveOptions), each with a 6 GiB catalog ceiling. A default that added
  * shards the disk cannot hold would fill the host, so the default never
- * exceeds horseJournalShardCapacity: the shards whose archives already exist
- * plus the new ones the journal's filesystem can hold at their worst-case
- * size with a reserve left over. On this host (21.9 GiB free) that admits a
- * third shard; below 20 GiB free it stays at two. An explicit
+ * exceeds horseJournalShardCapacity: existing shards' remaining growth is
+ * charged before new worst-case allocations, with a reserve left over. The
+ * 2026-10-12 host reading (23,377,231,872 bytes free; existing archives
+ * 13,881,448 and 13,479,580 KiB) admits the third 11 GiB shard after
+ * charging 6,342,045,696 bytes of existing growth and a 4 GiB reserve. An explicit
  * HORSE_DECISION_WORKERS is the operator's call and is not bounded by it.
  */
 export const HORSE_DECISION_WORKERS_ENV = 'HORSE_DECISION_WORKERS';
@@ -485,7 +485,7 @@ export async function startLiveHorseDecisionWorker(
         `on ${availableParallelism()} logical CPU(s)` +
         (singleton.journalShardCapacity === undefined
           ? ''
-          : `, journal disk room for ${singleton.journalShardCapacity} shard(s)`) +
+          : `, journal disk ceiling ${singleton.journalShardCapacity} shard(s)`) +
         (process.env[HORSE_DECISION_WORKERS_ENV]
           ? ` (${HORSE_DECISION_WORKERS_ENV}=${process.env[HORSE_DECISION_WORKERS_ENV]})`
           : '')

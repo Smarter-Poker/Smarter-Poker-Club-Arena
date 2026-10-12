@@ -1,13 +1,20 @@
-import { afterEach, describe, expect, it } from 'vitest';
-import { mkdirSync, mkdtempSync, rmSync, statfsSync } from 'node:fs';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { execFileSync } from 'node:child_process';
+vi.mock('node:child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:child_process')>();
+  return { ...actual, execFileSync: vi.fn(actual.execFileSync) };
+});
+import { mkdirSync, mkdtempSync, rmSync, statfsSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   HORSE_JOURNAL_ARCHIVE_BYTES,
+  HORSE_JOURNAL_ADDITIONAL_ARCHIVE_BYTES,
   HORSE_JOURNAL_ARCHIVE_CATALOG_BYTES,
   HORSE_JOURNAL_ARCHIVE_SEGMENTS,
   HORSE_JOURNAL_SHARD_DISK_RESERVE_BYTES,
   horseJournalArchiveDirectoryNames,
+  horseJournalArchiveAllocatedBytes,
   horseJournalShardCapacity,
   horseJournalShardDiskBytes,
   horseJournalShardsAffordable,
@@ -88,7 +95,7 @@ describe('runtimeHorseJournalArchiveOptions shard resolution', () => {
     );
   });
 
-  it('gives every shard the same full byte/segment allocation, never a fraction of it', () => {
+  it('preserves the two historical shards full byte/segment allocations', () => {
     const dir = directory();
     const shard0 = runtimeHorseJournalArchiveOptions(dir, process.env, { index: 0 });
     const shard1 = runtimeHorseJournalArchiveOptions(dir, process.env, { index: 1 });
@@ -96,6 +103,23 @@ describe('runtimeHorseJournalArchiveOptions shard resolution', () => {
     expect(shard1.maxBytes).toBe(HORSE_JOURNAL_ARCHIVE_BYTES);
     expect(shard0.maxSegments).toBe(HORSE_JOURNAL_ARCHIVE_SEGMENTS);
     expect(shard1.maxSegments).toBe(HORSE_JOURNAL_ARCHIVE_SEGMENTS);
+  });
+
+  it('sizes additional shards without lowering historical allocations or overriding configuration', () => {
+    const dir = directory();
+    for (const index of [0, 1])
+      expect(runtimeHorseJournalArchiveOptions(dir, {}, { index }).maxBytes).toBe(8 * 1024 ** 3);
+    for (const index of [2, 3, 7])
+      expect(runtimeHorseJournalArchiveOptions(dir, {}, { index }).maxBytes).toBe(4 * 1024 ** 3);
+    for (const index of [0, 1, 2, 7]) {
+      const options = runtimeHorseJournalArchiveOptions(
+        dir,
+        { HORSE_DECISION_JOURNAL_ARCHIVE_MAX_BYTES: String(7 * 1024 ** 3) },
+        { index }
+      );
+      expect(options.maxBytes).toBe(7 * 1024 ** 3);
+      expect(options.maxSegments).toBe(HORSE_JOURNAL_ARCHIVE_SEGMENTS);
+    }
   });
 
   it.each([-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])(
@@ -158,65 +182,218 @@ describe('the journal disk bounds the shards a default may add', () => {
     expect(horseJournalShardDiskBytes(4 * GiB)).toBe(11 * GiB);
   });
 
-  it('admits the existing shards plus the new ones the free space holds after the reserve', () => {
+  it('charges existing growth before adding shards, including the exact host reading', () => {
     const shard = horseJournalShardDiskBytes(HORSE_JOURNAL_ARCHIVE_BYTES);
     const reserve = HORSE_JOURNAL_SHARD_DISK_RESERVE_BYTES;
-    expect(reserve).toBe(4 * GiB);
-    // The engine host on 2026-10-12: two shards written, 23,526,174,720 bytes free.
-    const host = { existingShards: 2, shardBytes: shard, reserveBytes: reserve };
-    expect(horseJournalShardsAffordable({ ...host, availableBytes: 23_526_174_720 })).toBe(3);
-    expect(horseJournalShardsAffordable({ ...host, availableBytes: 20 * GiB })).toBe(3);
-    expect(horseJournalShardsAffordable({ ...host, availableBytes: 20 * GiB - 1 })).toBe(2);
-    expect(horseJournalShardsAffordable({ ...host, availableBytes: 36 * GiB })).toBe(4);
-    // A full disk never takes away a shard that already exists.
-    expect(horseJournalShardsAffordable({ ...host, availableBytes: 0 })).toBe(2);
-    // A fresh host counts from nothing and never answers zero.
+    const host = {
+      existingShardAllocatedBytes: [13_881_448 * 1024, 13_479_580 * 1024],
+      shardBytes: shard,
+      reserveBytes: reserve,
+    };
+    // 2026-10-12 read-only host observation. The former code answered three.
+    expect(horseJournalShardsAffordable({ ...host, availableBytes: 23_377_231_872 })).toBe(2);
+    const growth = host.existingShardAllocatedBytes.reduce((n, b) => n + shard - b, 0);
+    expect(growth).toBe(6_342_045_696);
     expect(
-      horseJournalShardsAffordable({ ...host, existingShards: 0, availableBytes: 1 * GiB })
+      horseJournalShardsAffordable({ ...host, availableBytes: reserve + growth + shard })
+    ).toBe(3);
+    expect(
+      horseJournalShardsAffordable({ ...host, availableBytes: reserve + growth + shard - 1 })
+    ).toBe(2);
+    // Existing empty directories are not paid-for allocations.
+    expect(
+      horseJournalShardsAffordable({
+        ...host,
+        existingShardAllocatedBytes: [0, 0],
+        availableBytes: 20 * GiB,
+      })
+    ).toBe(2);
+    // Fully allocated existing shards need no more room.
+    expect(
+      horseJournalShardsAffordable({
+        ...host,
+        existingShardAllocatedBytes: [shard, shard],
+        availableBytes: 20 * GiB,
+      })
+    ).toBe(3);
+    // Never credit excess allocation towards another shard.
+    expect(
+      horseJournalShardsAffordable({
+        ...host,
+        existingShardAllocatedBytes: [2 * shard, shard],
+        availableBytes: reserve,
+      })
+    ).toBe(2);
+    expect(horseJournalShardsAffordable({ ...host, availableBytes: 0 })).toBe(2);
+    expect(
+      horseJournalShardsAffordable({
+        ...host,
+        existingShardAllocatedBytes: [],
+        availableBytes: GiB,
+      })
     ).toBe(1);
     expect(
-      horseJournalShardsAffordable({ ...host, existingShards: 0, availableBytes: 40 * GiB })
+      horseJournalShardsAffordable({
+        ...host,
+        existingShardAllocatedBytes: [],
+        availableBytes: 40 * GiB,
+      })
     ).toBe(2);
   });
 
-  it('reads nothing when no journal is configured', () => {
-    expect(horseJournalShardCapacity({})).toBeUndefined();
+  it('the host can afford three configured shards, but not four, with legacy history intact', () => {
+    const legacy = horseJournalShardDiskBytes(HORSE_JOURNAL_ARCHIVE_BYTES);
+    const additional = horseJournalShardDiskBytes(HORSE_JOURNAL_ADDITIONAL_ARCHIVE_BYTES);
+    expect(additional).toBe(11 * GiB);
+    const host = {
+      existingShardAllocatedBytes: [13_881_448 * 1024, 13_479_580 * 1024],
+      shardBytes: legacy,
+      additionalShardBytes: additional,
+      reserveBytes: 4 * GiB,
+    };
+    expect(horseJournalShardsAffordable({ ...host, availableBytes: 23_377_231_872 })).toBe(3);
+    const growth = host.existingShardAllocatedBytes.reduce((n, b) => n + legacy - b, 0);
+    expect(
+      horseJournalShardsAffordable({
+        ...host,
+        availableBytes: host.reserveBytes + growth + additional - 1,
+      })
+    ).toBe(2);
+    expect(
+      horseJournalShardsAffordable({
+        ...host,
+        availableBytes: host.reserveBytes + growth + additional,
+      })
+    ).toBe(3);
+    expect(
+      horseJournalShardsAffordable({
+        ...host,
+        availableBytes: host.reserveBytes + growth + 2 * additional - 1,
+      })
+    ).toBe(3);
+    expect(
+      horseJournalShardsAffordable({
+        ...host,
+        availableBytes: host.reserveBytes + growth + 2 * additional,
+      })
+    ).toBe(4);
+    expect(
+      horseJournalShardsAffordable({
+        ...host,
+        existingShardAllocatedBytes: [],
+        availableBytes: 4 * GiB + 2 * legacy + additional - 1,
+      })
+    ).toBe(2);
+    expect(
+      horseJournalShardsAffordable({
+        ...host,
+        existingShardAllocatedBytes: [],
+        availableBytes: 4 * GiB + 2 * legacy + additional,
+      })
+    ).toBe(3);
+    expect(
+      horseJournalShardsAffordable({
+        ...host,
+        existingShardAllocatedBytes: [...host.existingShardAllocatedBytes, 0],
+        availableBytes: 23_377_231_872,
+      })
+    ).toBe(3);
   });
 
-  it('measures the journal directory, or its nearest existing parent before it exists', () => {
+  it.each([Number.NaN, -1, Number.POSITIVE_INFINITY, 1.5])(
+    'refuses unreadable allocation %s',
+    (bytes) => {
+      expect(() =>
+        horseJournalShardsAffordable({
+          existingShardAllocatedBytes: [bytes],
+          availableBytes: 40 * GiB,
+          shardBytes: 16 * GiB,
+          reserveBytes: 4 * GiB,
+        })
+      ).toThrow('Unreadable');
+    }
+  );
+
+  it('measures allocated blocks and refuses symlinked archive directories', () => {
+    const dir = directory();
+    const archive = join(dir, 'archive');
+    mkdirSync(archive);
+    writeFileSync(join(archive, 'segment'), Buffer.alloc(8192));
+    const [bytes] = horseJournalArchiveAllocatedBytes([archive]);
+    expect(bytes).toBeGreaterThan(0);
+    expect(Number.isSafeInteger(bytes)).toBe(true);
+    expect(horseJournalArchiveAllocatedBytes([])).toEqual([]);
+    const link = join(dir, 'linked');
+    symlinkSync(archive, link);
+    expect(() => horseJournalArchiveAllocatedBytes([link])).toThrow('Invalid Horse journal');
+  });
+
+  it('refuses partial du output when a segment disappears during its scan', () => {
+    const dir = directory();
+    mkdirSync(join(dir, 'archive'));
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.mocked(execFileSync).mockImplementationOnce(() => {
+      throw Object.assign(Error('du: segment retired during scan'), {
+        status: 1,
+        stdout: '13881448\t' + join(dir, 'archive') + '\n',
+      });
+    });
+    expect(horseJournalShardCapacity({ HORSE_DECISION_JOURNAL_DIR: dir })).toBe(2);
+    expect(warning).toHaveBeenCalledWith(
+      '[HorseDecisionLane] journal disk capacity unreadable; retaining legacy two-worker ceiling'
+    );
+    warning.mockRestore();
+  });
+
+  it('reads nothing when no journal is configured', () => {
+    expect(
+      horseJournalShardCapacity({}, () => {
+        throw Error('must not read');
+      })
+    ).toBeUndefined();
+  });
+
+  it('measures existing allocation and nearest parent before a journal exists', () => {
     const dir = directory();
     mkdirSync(join(dir, 'archive'));
     mkdirSync(join(dir, 'archive-shard-1'));
     const fs = statfsSync(dir);
-    const expected = (existingShards: number) =>
+    const allocated = horseJournalArchiveAllocatedBytes([
+      join(dir, 'archive'),
+      join(dir, 'archive-shard-1'),
+    ]);
+    const expected = (bytes: number[]) =>
       horseJournalShardsAffordable({
-        existingShards,
+        existingShardAllocatedBytes: bytes,
         availableBytes: fs.bavail * fs.bsize,
         shardBytes: horseJournalShardDiskBytes(HORSE_JOURNAL_ARCHIVE_BYTES),
         reserveBytes: HORSE_JOURNAL_SHARD_DISK_RESERVE_BYTES,
       });
-    expect(horseJournalShardCapacity({ HORSE_DECISION_JOURNAL_DIR: dir })).toBe(expected(2));
+    expect(horseJournalShardCapacity({ HORSE_DECISION_JOURNAL_DIR: dir })).toBe(
+      expected(allocated)
+    );
     expect(
       horseJournalShardCapacity({ HORSE_DECISION_JOURNAL_DIR: join(dir, 'not-yet', 'journal') })
-    ).toBe(expected(0));
-    // The allocation it prices is the configured one.
+    ).toBe(expected([]));
     expect(
       horseJournalShardCapacity({
         HORSE_DECISION_JOURNAL_DIR: dir,
         HORSE_DECISION_JOURNAL_ARCHIVE_MAX_BYTES: String(1024 ** 2),
       })
-    ).toBeGreaterThanOrEqual(expected(2));
+    ).toBeGreaterThanOrEqual(expected(allocated));
   });
 
-  it('reads nothing from a configuration the journal itself would refuse', () => {
-    expect(horseJournalShardCapacity({ HORSE_DECISION_JOURNAL_DIR: 'relative/journal' })).toBe(
-      undefined
-    );
+  it('never raises the legacy default when configured accounting fails', () => {
+    const configured = { HORSE_DECISION_JOURNAL_DIR: directory() };
     expect(
-      horseJournalShardCapacity({
-        HORSE_DECISION_JOURNAL_DIR: directory(),
-        HORSE_DECISION_JOURNAL_ARCHIVE_MAX_BYTES: 'lots',
+      horseJournalShardCapacity(configured, () => {
+        throw Error('du timeout');
       })
-    ).toBeUndefined();
+    ).toBe(2);
+    expect(horseJournalShardCapacity(configured, () => [0])).toBe(2); // incomplete/unexpected result
+    expect(horseJournalShardCapacity({ HORSE_DECISION_JOURNAL_DIR: 'relative/journal' })).toBe(2);
+    expect(
+      horseJournalShardCapacity({ ...configured, HORSE_DECISION_JOURNAL_ARCHIVE_MAX_BYTES: 'lots' })
+    ).toBe(2);
   });
 });

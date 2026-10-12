@@ -11,7 +11,9 @@
       "recoveredOn": "2026-09-23",
       "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte",
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/5008",
-      "refusedBy": ["check-definer-authorization: anon rule"],
+      "refusedBy": [
+        "check-definer-authorization: anon rule"
+      ],
       "liveVerdict": "fn_notification_has_personal_destination(uuid,uuid) WAS genuinely reachable without an account: this migration wrote GRANT EXECUTE ... TO anon,authenticated,service_role, it is SECURITY DEFINER, and it never calls auth.uid(). Closed in production on 2026-09-19 07:13:57Z by migration 20260919071357 anon_grant_from_public_is_the_one_that_mattered, so the exposure ran 2 days 19 hours 58 minutes. Read live 2026-09-23: proacl is {postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}, has_function_privilege('anon',...) is false. It is STABLE and read-only, takes two uuids the caller must already know, and is the qual of RLS policy personal_notification_destination on public.notifications, so EXECUTE for authenticated must stay: revoking it would deny every SELECT on notifications to every logged-in player."
     },
     {
@@ -290,7 +292,9 @@
       "recoveredOn": "2026-09-30",
       "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte; version is ledger identity, actual applied timestamp unknown. Corrected 2026-09-30: the original recovery appended || chr(10), one byte production never ran, so every one of these nine hashed to something schema_migrations does not hold.",
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/5497",
-      "refusedBy": ["historical source prediction; see liveVerdict"],
+      "refusedBy": [
+        "historical source prediction; see liveVerdict"
+      ],
       "liveVerdict": "Read production 2026-09-30: fn_ca_drain_recorded_bust_backlog ACL is postgres/service_role only; anon and authenticated cannot execute. The historical split REVOKEs include a separate PUBLIC revoke. Definition md5 c1d44baedaa6e41b12cad7ec16ec5111. This records the existing operator drain, adds no recurring caller; current engine bust-stage ordering is separately fixed by #5596."
     },
     {
@@ -301,7 +305,9 @@
       "recoveredOn": "2026-09-30",
       "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte; version is ledger identity, actual applied timestamp unknown. Corrected 2026-09-30: the original recovery appended || chr(10), one byte production never ran, so every one of these nine hashed to something schema_migrations does not hold.",
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/5497",
-      "refusedBy": ["historical source prediction; see liveVerdict"],
+      "refusedBy": [
+        "historical source prediction; see liveVerdict"
+      ],
       "liveVerdict": "Read production 2026-09-30: both fn_ca_knockout_door_stalled and fn_ca_bust_backlog_stalled have postgres/service_role-only ACLs; anon and authenticated cannot execute. The detector split REVOKEs include a separate PUBLIC revoke. No scheduler or new observation loop is introduced."
     },
     {
@@ -312,7 +318,9 @@
       "recoveredOn": "2026-09-30",
       "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte; version is ledger identity, actual applied timestamp unknown. Corrected 2026-09-30: the original recovery appended || chr(10), one byte production never ran, so every one of these nine hashed to something schema_migrations does not hold.",
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/5516",
-      "refusedBy": ["historical source prediction; see liveVerdict"],
+      "refusedBy": [
+        "historical source prediction; see liveVerdict"
+      ],
       "liveVerdict": "Read production 2026-09-30: final fn_ca_dispose_superseded_hand_submissions definition md5 4333dc1291933bf9296956903952ea6b, ACL postgres/service_role only. The historical temporary-table DELETE was superseded by recorded 20260928133817 and 20260928134553; current body has WHERE true. Original receipt/resume and immutable snapshot behavior remains qualified in the native disposal fixture."
     },
     {
@@ -323,7 +331,9 @@
       "recoveredOn": "2026-09-30",
       "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte; version is ledger identity, actual applied timestamp unknown. Corrected 2026-09-30: the original recovery appended || chr(10), one byte production never ran, so every one of these nine hashed to something schema_migrations does not hold.",
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/5516",
-      "refusedBy": ["historical source prediction; see liveVerdict"],
+      "refusedBy": [
+        "historical source prediction; see liveVerdict"
+      ],
       "liveVerdict": "Read production 2026-09-30: sp_prune_hand_history definition md5 ca8dabd9856cf1be6136d7a6f5dd8158 still reads horse_retention_days; retention helper ACL postgres/service_role only, definition md5 b30df5d8cfc7ac1eb9c9dff69d29a0a4. Recorded anchored patch adds only disposal call and leaves the config-driven pruner intact; native retention fixture proves the preserved body/config."
     },
     {
@@ -334,7 +344,9 @@
       "recoveredOn": "2026-09-30",
       "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte; version is ledger identity, actual applied timestamp unknown. Corrected 2026-09-30: the original recovery appended || chr(10), one byte production never ran, so every one of these nine hashed to something schema_migrations does not hold.",
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/5517",
-      "refusedBy": ["historical source prediction; see liveVerdict"],
+      "refusedBy": [
+        "historical source prediction; see liveVerdict"
+      ],
       "liveVerdict": "Read production 2026-09-30: fn_f06_close_abandoned_manager_transfer definition md5 7b24537a5e81e79fe95ba55ef2ec7928, anon cannot execute; authenticated has EXECUTE but first statement rejects every non-service_role or non-service actor before any mutation. Lease FOR SHARE is followed immediately by IF FOUND THEN RAISE: any successful path finds no lease row and retains no lease-row lock. This is historical source recording, not a new holder lock or invocation."
     },
     {
@@ -345,7 +357,9 @@
       "recoveredOn": "2026-09-30",
       "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte; version is ledger identity, actual applied timestamp unknown. Corrected 2026-09-30: the original recovery appended || chr(10), one byte production never ran, so every one of these nine hashed to something schema_migrations does not hold.",
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/5516",
-      "refusedBy": ["historical source prediction; see liveVerdict"],
+      "refusedBy": [
+        "historical source prediction; see liveVerdict"
+      ],
       "liveVerdict": "Read production 2026-09-30: final disposal definition md5 4333dc1291933bf9296956903952ea6b includes DELETE FROM _hand_disposal_batch WHERE true. This records the historical anchored scope correction; final 20260928134553 preserves it. No replay performed."
     },
     {
@@ -356,7 +370,9 @@
       "recoveredOn": "2026-09-30",
       "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte; version is ledger identity, actual applied timestamp unknown. Corrected 2026-09-30: the original recovery appended || chr(10), one byte production never ran, so every one of these nine hashed to something schema_migrations does not hold.",
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/5516",
-      "refusedBy": ["historical source prediction; see liveVerdict"],
+      "refusedBy": [
+        "historical source prediction; see liveVerdict"
+      ],
       "liveVerdict": "Read production 2026-09-30: final disposal definition md5 4333dc1291933bf9296956903952ea6b, ACL postgres/service_role only. Original final door recorded exactly, with qualification extended to accepted-permit evidence and inapplicable requests plus refusal controls. Version timestamp is retained as history identity, not asserted as observed installation time."
     },
     {
@@ -637,7 +653,9 @@
       "recoveredOn": "2026-10-10",
       "recoveredFrom": "The applying session's own text, which is what public.fn_ca_migration_text(version).body returns: octet_length 9790 and md5 compared equal before commit, with no trailing newline appended. Applied through the Supabase MCP on the owner's explicit approval of 2026-10-09 (\"Yes, apply all 3\"), then recorded here in the same session.",
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/5008",
-      "refusedBy": ["check-definer-authorization: anon rule (fn_tournament_metrics)"],
+      "refusedBy": [
+        "check-definer-authorization: anon rule (fn_tournament_metrics)"
+      ],
       "liveVerdict": "Production read 2026-10-10 01:34 UTC. The anon finding is not true of production: the file is CREATE OR REPLACE of an existing function, which keeps its ACL, and fn_tournament_metrics(integer,integer,integer) reads live as {postgres=X/postgres,service_role=X/postgres}; has_function_privilege('anon',...) and ('authenticated',...) are both false, and fn_definer_exposure_audit() does not list it. It is engine telemetry read by the service-role TournamentMetrics collector. Live after apply: unpaid_completed is 0 for 6 hours and for 168 hours, and the 49 TournamentCompletedUnpaid inbox rows read verified_fixed."
     },
     {
@@ -793,6 +811,33 @@
         "check-definer-authorization: CREATE OR REPLACE preserves existing engine-only prune ACL, absent from replacement body"
       ],
       "liveVerdict": "Production read17:39UTC fn_prune_horse_adaptive_journal() md5a18ca77098d2d4f9e8af3334013d3153, ownerpostgres SECURITY DEFINER, search_path pg_catalog/public/smarter_private lock_timeout2s, ACLpostgres/service_role only, anon/authenticated execute bothfalse. Native34 verifies exact16 function owners/ACLs and raw retirement authority; activation remainsfalse pendingversionedconsumerpublication. Recording immutable installedbytes is not replay permission or exemption for new SQL."
+    },
+    {
+      "version": "20261012174400",
+      "name": "horse_fact_cards_retire_in_one_bounded_original_update",
+      "file": "supabase/migrations/20261012174400_horse_fact_cards_retire_in_one_bounded_original_update.sql",
+      "md5": "5c606478d8f3058d86f5f765e5e2ef4b",
+      "appliedToProductionAt": "2026-10-12T17:44:00Z",
+      "recoveredOn": "2026-10-12",
+      "recoveredFrom": "Exact immutable applying-session source bytes independently matched against schema_migrations statement digest and public.fn_ca_migration_text. No installed SQL changed or replayed.",
+      "refusedBy": [
+        "checkable migration source contract: anchored update/cron configuration creates no new object"
+      ],
+      "liveVerdict": "Production read2026-10-12: exact ledger/file md5 5c606478d8f3058d86f5f765e5e2ef4b; actual private compact_horse_fact_cards postimage05dc7e667f5d8353c63212c708103c58 and native18 qualification supplied by applying operation. The batch successor preserves original fact/counter/capsule guards and changes only bounded raw-card update batching; this is immutable installed evidence, not permission to replay or exempt new SQL."
+    },
+    {
+      "version": "20261012181304",
+      "name": "existing_horse_retention_cadence_follows_measured_bounded_wo",
+      "file": "supabase/migrations/20261012181304_existing_horse_retention_cadence_follows_measured_bounded_wo.sql",
+      "md5": "eed8b99890d22ec62e5bb2ac50a95b38",
+      "appliedToProductionAt": "2026-10-12T18:13:04Z",
+      "recoveredOn": "2026-10-12",
+      "recoveredFrom": "Exact immutable applying-session source bytes independently matched against schema_migrations statement digest and public.fn_ca_migration_text. No installed SQL changed or replayed.",
+      "refusedBy": [
+        "checkable migration source contract: anchored update/cron configuration creates no new object",
+        "retention config source contract: observes existing pruner budget without redefining retention policy"
+      ],
+      "liveVerdict": "Production read2026-10-12: exact ledger/file md5 eed8b99890d22ec62e5bb2ac50a95b38; original job117 activeTRUE at every-minute cadence, original command96244362bf46b39e75ef1100b1372203/ownerpostgres/database/node/port preserved according to applying operation readback and native15 least-privilege qualification. Migration observes the existing twenty-second budget and250-row cap and does not redefine the configured eight-day retention policy. The earlier reserved174649 SQL never installed; only actual81304 is recorded here. This records immutable installed SQL and grants no bypass for new SQL."
     }
   ]
 }

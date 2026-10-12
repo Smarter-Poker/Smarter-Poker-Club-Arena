@@ -65,7 +65,7 @@ import {
 import { buildFloorSnapshot } from './StableHandSnapshot.js';
 import { buildBeats, writeBeats, bankVerdict, type BankVerdict } from './StableHandBeats.js';
 import { publishPlan } from './StableHandPlanBus.js';
-import { dailyGuaranteePerHost } from './FreeBuy.js';
+import { dailyGuaranteeForHost } from './FreeBuy.js';
 
 /**
  * The engine surface a stand needs. Matches ServerTableEngine.
@@ -477,10 +477,19 @@ export class StableHandExecutor {
   ): Promise<void> {
     if (nowMs - this.lastBankCheckAt < BANK_CHECK_EVERY_MS) return;
     this.lastBankCheckAt = nowMs;
-    const daily = dailyGuaranteePerHost();
-
     for (const host of snap.hosts) {
       if (!this.lifecycleIsCurrent(generation)) return;
+      /* A HOST THE BOARD DOES NOT PUBLISH FOR IS NOT PAGED FOR RUNWAY
+         (2026-10-12). The board's guarantee is owed only by a host it is
+         published for (dailyGuaranteeForHost). A held host such as Deep Stack
+         Society owes none, so its bank has no runway to run out of: reading
+         it against 1,500 a day raised a critical "refill it" for a bank that
+         funds nothing (alert 9a65d5ae). */
+      const daily = dailyGuaranteeForHost(host.hostId);
+      if (!(daily > 0)) {
+        this.lastBankVerdict.set(host.hostId, 'ok');
+        continue;
+      }
       try {
         let bank: number | null = null;
         let store = '';

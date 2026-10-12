@@ -17,12 +17,15 @@ Reads closed archive segment files only (never the live journal), verifying
 each segment's sha256 name. Run under nice 19 / ionice idle.
 
 argv: <from-iso> <to-iso> <release-sha40> <variant short_deck|pineapple|flh|flo8>
+The window bounds use the exact integer-millisecond parser maintained in P13:
+UTC or explicit ISO offsets; extra fractional digits truncate, never round.
+A bound without an offset or with invalid time fields is refused before output.
 stderr: a JSON summary (segments read, records, excluded by name).
 env (tests only): PHASE12_EXTRACT_SEGMENT_DIRS, colon-separated segment
 directories replacing the host archive directories; PHASE12_EXTRACT_JOURNAL_ROOT,
 a journal directory read in place of the host's.
 """
-import os, sys, gzip, json, hashlib, calendar, time
+import os, re, sys, gzip, json, hashlib, calendar
 from collections import Counter
 
 # Every decision-worker shard's archive, as horseJournalArchiveDirectoryNames
@@ -37,8 +40,25 @@ if os.environ.get('PHASE12_EXTRACT_SEGMENT_DIRS'):
     DIRS = os.environ['PHASE12_EXTRACT_SEGMENT_DIRS'].split(':')
 frm, to, release, variant = sys.argv[1:5]
 assert variant in ('short_deck', 'pineapple', 'flh', 'flo8') and len(release) == 40
+ISO = re.compile(r'^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?(Z|[+-]\d{2}:\d{2})$')
 def ms(iso):
-    return calendar.timegm(time.strptime(iso.replace('Z', '').split('.')[0], '%Y-%m-%dT%H:%M:%S')) * 1000
+    # Date.parse for these forms: UTC epoch milliseconds, the fraction
+    # truncated (never rounded) to milliseconds, the offset applied.
+    m = ISO.match(iso)
+    if not m:
+        sys.exit('window bound is not an ISO-8601 time with an offset: %r' % iso)
+    y, mo, d, h, mi, sec, frac, zone = m.groups()
+    y, mo, d, h, mi, sec = int(y), int(mo), int(d), int(h), int(mi), int(sec or 0)
+    if not (1 <= mo <= 12 and 1 <= d <= calendar.monthrange(y, mo)[1] and h <= 23 and mi <= 59 and sec <= 59):
+        sys.exit('window bound is not a valid time: %r' % iso)
+    offset = 0
+    if zone != 'Z':
+        oh, om = int(zone[1:3]), int(zone[4:6])
+        if oh > 23 or om > 59:
+            sys.exit('window bound offset is not valid: %r' % iso)
+        offset = (oh * 60 + om) * 60000 * (1 if zone[0] == '+' else -1)
+    millis = int(((frac or '') + '000')[:3])
+    return calendar.timegm((y, mo, d, h, mi, sec, 0, 0, 0)) * 1000 + millis - offset
 FROM, TO = ms(frm), ms(to)
 summary = Counter()
 for d in DIRS:

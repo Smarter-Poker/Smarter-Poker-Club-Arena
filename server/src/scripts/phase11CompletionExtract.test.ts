@@ -68,3 +68,60 @@ describe('P11.3 completion reader, stage 1: one natural decision per turn', () =
     });
   });
 });
+
+// P11/P12 stage 2 admits canonical millisecond windows. Their host readers
+// must use those exact bounds, rather than silently dropping the fraction.
+describe.each([
+  ['phase11-completion-extract.py', 'PHASE11_EXTRACT_SEGMENT_DIRS', 'plo5'],
+  ['phase12-completion-extract.py', 'PHASE12_EXTRACT_SEGMENT_DIRS', 'flh'],
+])('%s exact completion window', (script, segmentEnv, variant) => {
+  const dirs: string[] = [];
+  afterAll(() => {
+    for (const dir of dirs) rmSync(dir, { recursive: true, force: true });
+  });
+  it.each([
+    ['2026-10-05T03:10:00.250Z', '2026-10-05T03:10:00.750Z', [250, 749]],
+    ['2026-10-05T03:10:00.000Z', '2026-10-05T03:10:01.000Z', [249, 250, 749, 750, 999]],
+    // The maintained P13 parser truncates extra fractional digits, not rounds.
+    ['2026-10-05T03:10:00.250999Z', '2026-10-05T03:10:00.750999Z', [250, 749]],
+  ])('uses the inclusive start and exclusive end: %s/%s', (from, to, expected) => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'completion-ms-'));
+    dirs.push(dir);
+    const raw = Buffer.from(
+      [249, 250, 749, 750, 999, 1000]
+        .map((millis) =>
+          JSON.stringify({
+            kind: 'decision',
+            eventId: `at-${millis}`,
+            sourceRelease: RELEASE,
+            body: JSON.stringify({
+              snapshot: {
+                type: 'DECIDE_FAST',
+                decisionTimeMs: AT + millis,
+                gameState: { gameVariant: variant, gameMode: 'cash' },
+              },
+              decision: { action: 'check' },
+            }),
+          })
+        )
+        .join('\n') + '\n'
+    );
+    const file = path.join(dir, `${createHash('sha256').update(raw).digest('hex')}.ndjson.gz`);
+    writeFileSync(file, gzipSync(raw));
+    utimesSync(file, AT / 1000, AT / 1000);
+    const run = spawnSync('python3', [`scripts/${script}`, from, to, RELEASE, variant], {
+      cwd: serverRoot,
+      encoding: 'utf8',
+      env: { ...process.env, [segmentEnv]: dir },
+    });
+    expect(run.status, run.stderr).toBe(0);
+    const rows = run.stdout
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as { eventId: string; decisionTimeMs: number });
+    expect(rows.map((row) => row.eventId)).toEqual(expected.map((millis) => `at-${millis}`));
+    expect(rows.map((row) => row.decisionTimeMs)).toEqual(expected.map((millis) => AT + millis));
+    expect(JSON.parse(run.stderr)).toMatchObject({ segments_read: 1, records: expected.length });
+  });
+});

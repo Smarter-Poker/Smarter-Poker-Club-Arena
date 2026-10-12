@@ -23,6 +23,7 @@ import {
   operatorTransitions,
   overviewAnswer13,
   readinessAnswer,
+  stateOf,
   refusal,
 } from './fixtures/lightningOperatorControlDoors';
 
@@ -520,7 +521,11 @@ describe('a control, from the tap to the answer', () => {
       {},
       {
         fn_lightning_operator_control: (args) => ({
-          data: alreadyAnswer('enable_joins', args.p_args.request_id, controlCluster()),
+          data: alreadyAnswer(
+            args.p_action,
+            args.p_args.request_id,
+            controlCluster({ joins_enabled: false })
+          ),
           error: null,
         }),
       }
@@ -820,8 +825,8 @@ describe('calibration and integrity setup controls', () => {
             controlCluster(),
             controlCluster()
           ),
-          before: { shadow_window_ms: 300000 },
-          after: { shadow_window_ms: 60000 },
+          before: { ...stateOf(controlCluster()), shadow_window_ms: 300000 },
+          after: { ...stateOf(controlCluster()), shadow_window_ms: 60000 },
         },
         error: null,
       }),
@@ -850,8 +855,8 @@ describe('calibration and integrity setup controls', () => {
             controlCluster(),
             controlCluster()
           ),
-          before: { integrity_telemetry: false },
-          after: { integrity_telemetry: true },
+          before: { ...stateOf(controlCluster()), integrity_telemetry: false },
+          after: { ...stateOf(controlCluster()), integrity_telemetry: true },
         },
         error: null,
       }),
@@ -895,8 +900,8 @@ describe('calibration and integrity setup controls', () => {
                   controlCluster(),
                   true
                 ),
-                before: { shadow_window_ms: 300000 },
-                after: { shadow_window_ms: 60000 },
+                before: { ...stateOf(controlCluster()), shadow_window_ms: 300000 },
+                after: { ...stateOf(controlCluster()), shadow_window_ms: 60000 },
               },
               error: null,
             };
@@ -925,5 +930,215 @@ describe('calibration and integrity setup controls', () => {
     expect(await screen.findByRole('button', { name: 'Set Calibration Window' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Enable Integrity Telemetry' })).toBeDisabled();
     expect(screen.getByText(/Setup Changes Require Must Move/)).toBeInTheDocument();
+  });
+});
+
+describe('operator receipt ownership', () => {
+  it.each([
+    'missing',
+    'wrong_action',
+    'wrong_cluster',
+    'wrong_request',
+    'missing_state',
+    'missing_event',
+    'in_progress',
+  ])('keeps %s acknowledgment unknown and retries the original decision', async (fault) => {
+    let attempt = 0;
+    detailDoors(
+      {},
+      {
+        fn_lightning_operator_control: (args) => {
+          attempt += 1;
+          const receipt = controlAnswer(
+            args.p_action,
+            args.p_args.request_id,
+            controlCluster(),
+            controlCluster({ paused: true })
+          );
+          if (attempt === 1) {
+            if (fault === 'in_progress')
+              return {
+                data: { ok: false, code: 'REQUEST_IN_PROGRESS', reason: 'retry_same_request_id' },
+                error: null,
+              };
+            if (fault === 'missing') return { data: { ok: true }, error: null };
+            if (fault === 'wrong_action') receipt.action = 'resume';
+            if (fault === 'wrong_cluster')
+              receipt.cluster_id = '99999999-9999-4999-8999-999999999999';
+            if (fault === 'wrong_request')
+              receipt.request_id = '99999999-9999-4999-8999-999999999999';
+            if (fault === 'missing_state') receipt.after = null as any;
+            if (fault === 'missing_event') receipt.event_id = null as any;
+          }
+          return { data: receipt, error: null };
+        },
+      }
+    );
+    renderDetail();
+    await openControl('Pause Cluster');
+    typeReason('Review Receipt');
+    fireEvent.click(confirmButton());
+    await within(dialog()).findByRole('button', { name: 'Send Again' });
+    expect(state.toast.success).not.toHaveBeenCalled();
+    expect(within(dialog()).queryByLabelText('Before And After')).not.toBeInTheDocument();
+    fireEvent.click(confirmButton());
+    await waitFor(() => expect(controlCalls()).toHaveLength(2));
+    expect(controlCalls()[1][1]).toEqual(controlCalls()[0][1]);
+    await within(dialog()).findByLabelText('Before And After');
+    expect(state.toast.success).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('setup receipt values', () => {
+  it('rejects missing or malformed persisted calibration and integrity values', () => {
+    const receipt = controlAnswer(
+      'set_shadow_window',
+      'f1f1f1f1-f1f1-41f1-81f1-f1f1f1f1f1f1',
+      controlCluster(),
+      controlCluster()
+    );
+    const before = { ...receipt.before, shadow_window_ms: 60000 };
+    for (const value of [undefined, null, [], [60000], '60000', 59999, 3600001, 60000.5]) {
+      expect(
+        parseControlResult({
+          ...receipt,
+          before,
+          after: { ...receipt.after, shadow_window_ms: value },
+        })
+      ).toBeNull();
+    }
+    for (const value of [undefined, null, 'true', 1]) {
+      expect(
+        parseControlResult({
+          ...receipt,
+          action: 'set_integrity_telemetry',
+          before: { ...receipt.before, integrity_telemetry: false },
+          after: { ...receipt.after, integrity_telemetry: value },
+        })
+      ).toBeNull();
+    }
+  });
+});
+
+describe('setup acknowledgment matches the desired setting', () => {
+  it.each(['window', 'integrity'])(
+    'keeps a mismatched %s setting unknown and retries once',
+    async (kind) => {
+      let attempt = 0;
+      const isWindow = kind === 'window';
+      detailDoors(
+        {
+          cluster_mode: 'must_move',
+          worker_mode: 'off',
+          drain: null,
+          shadow_window_ms: 300000,
+          flags: { integrity_telemetry: false },
+        },
+        {
+          fn_lightning_operator_control: (args) => {
+            attempt += 1;
+            const receipt = controlAnswer(
+              args.p_action,
+              args.p_args.request_id,
+              controlCluster(),
+              controlCluster()
+            );
+            return {
+              data: {
+                ...receipt,
+                before: { ...receipt.before, shadow_window_ms: 300000, integrity_telemetry: false },
+                after: {
+                  ...receipt.after,
+                  shadow_window_ms: attempt === 1 ? 120000 : 60000,
+                  integrity_telemetry: attempt !== 1,
+                },
+              },
+              error: null,
+            };
+          },
+        }
+      );
+      renderDetail();
+      await openControl(isWindow ? 'Set Calibration Window' : 'Enable Integrity Telemetry');
+      if (isWindow)
+        fireEvent.change(
+          within(dialog()).getByRole('textbox', { name: /Window In Milliseconds/ }),
+          { target: { value: '60000' } }
+        );
+      typeReason('Match The Desired Setting');
+      fireEvent.click(confirmButton());
+      await within(dialog()).findByRole('button', { name: 'Send Again' });
+      expect(state.toast.success).not.toHaveBeenCalled();
+      fireEvent.click(confirmButton());
+      await waitFor(() => expect(controlCalls()).toHaveLength(2));
+      expect(controlCalls()[1][1]).toEqual(controlCalls()[0][1]);
+      await within(dialog()).findByLabelText('Before And After');
+      expect(state.toast.success).toHaveBeenCalledTimes(1);
+    }
+  );
+
+  it('accepts complete setup ALREADY receipts without an audit event', () => {
+    const receipt = alreadyAnswer(
+      'set_shadow_window',
+      'f1f1f1f1-f1f1-41f1-81f1-f1f1f1f1f1f1',
+      controlCluster()
+    );
+    const state = { ...receipt.before, shadow_window_ms: 60000, integrity_telemetry: true };
+    for (const action of ['set_shadow_window', 'set_integrity_telemetry']) {
+      expect(parseControlResult({ ...receipt, action, before: state, after: state })).toMatchObject(
+        { already: true, eventId: null }
+      );
+    }
+  });
+});
+
+describe('receipt outcome consistency', () => {
+  it('rejects contradictory or mistyped ALREADY and replay outcomes', () => {
+    const receipt = alreadyAnswer(
+      'pause',
+      'f1f1f1f1-f1f1-41f1-81f1-f1f1f1f1f1f1',
+      controlCluster()
+    );
+    for (const change of [
+      { idempotent: false },
+      { event_id: 'bad' },
+      { event_id: 90417 },
+      { event_id: undefined },
+      { already: 'true' },
+      { already: 1 },
+      { replayed: 'true' },
+      { replayed: 1 },
+      { replayed: null },
+    ]) {
+      expect(parseControlResult({ ...receipt, ...change })).toBeNull();
+    }
+    expect(parseControlResult(receipt)).toMatchObject({
+      already: true,
+      idempotent: true,
+      eventId: null,
+    });
+    expect(
+      parseControlResult(
+        controlAnswer('pause', receipt.request_id, controlCluster(), controlCluster(), true)
+      )
+    ).toMatchObject({ replayed: true, idempotent: true, eventId: '90417' });
+  });
+});
+
+describe('ALREADY state consistency', () => {
+  it('refuses changed state in an ALREADY receipt but accepts reordered identical state', () => {
+    const receipt = alreadyAnswer(
+      'pause',
+      'f1f1f1f1-f1f1-41f1-81f1-f1f1f1f1f1f1',
+      controlCluster()
+    );
+    expect(
+      parseControlResult({ ...receipt, after: { ...receipt.after, paused: !receipt.after.paused } })
+    ).toBeNull();
+    const reordered = Object.fromEntries(Object.entries(receipt.after).reverse());
+    expect(parseControlResult({ ...receipt, after: reordered })).toMatchObject({
+      already: true,
+      eventId: null,
+    });
   });
 });

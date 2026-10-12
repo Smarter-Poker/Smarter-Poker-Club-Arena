@@ -42,13 +42,12 @@ afterEach(() => {
 
 /** Run the next queued odometer frame at `time` ms after the overlay opened. */
 function tick(time: number) {
-  const first = frames.entries().next().value;
-  expect(first, 'the odometer must still be running').toBeDefined();
-  const [id, callback] = first!;
-  frames.delete(id);
+  const batch = [...frames.entries()];
+  expect(batch.length).toBeGreaterThan(0);
+  for (const [id] of batch) frames.delete(id);
   act(() => {
     vi.setSystemTime(time);
-    callback(time);
+    for (const [, callback] of batch) callback(time);
   });
 }
 

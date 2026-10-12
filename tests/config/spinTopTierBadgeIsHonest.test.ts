@@ -20,7 +20,8 @@
  * label, the badge and this test together.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { act, cleanup, renderHook } from '@testing-library/react';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { SPIN_TIERS } from '../../src/config/spinSpec';
@@ -53,5 +54,50 @@ describe('spin top-tier badge', () => {
   it('gates the top tier on a reserve threshold, so the badge can be false', () => {
     const top = SPIN_TIERS.reduce((a, b) => (b.multiplier > a.multiplier ? b : a));
     expect(top.reserveThresholdX).toBeGreaterThan(0);
+  });
+});
+
+const availabilityRead = vi.hoisted(() => ({ select: vi.fn() }));
+vi.mock('../../src/lib/supabase', () => ({
+  supabase: { from: () => ({ select: availabilityRead.select }) },
+}));
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
+
+describe('spin availability belongs to the requested club', () => {
+  it('withholds the old club badge while a new club read is pending or absent', async () => {
+    vi.resetModules();
+    vi.useFakeTimers();
+    vi.setSystemTime(100_000);
+    availabilityRead.select.mockResolvedValueOnce({
+      data: [{ club_id: 'club-a', can_draw_100x: true }],
+      error: null,
+    });
+    const { useSpinTierAvailability } = await import('../../src/hooks/useSpinTierAvailability');
+    const view = renderHook(({ clubId }) => useSpinTierAvailability(clubId), {
+      initialProps: { clubId: 'club-a' as string | undefined },
+    });
+    await act(async () => {});
+    expect(view.result.current?.can_draw_100x).toBe(true);
+    vi.setSystemTime(200_000);
+    let resolveRead!: (value: unknown) => void;
+    availabilityRead.select.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveRead = resolve;
+      })
+    );
+    view.rerender({ clubId: 'club-b' });
+    expect(view.result.current).toBeNull();
+    view.rerender({ clubId: undefined });
+    expect(view.result.current).toBeNull();
+    await act(async () => {
+      resolveRead({ data: [{ club_id: 'club-b', can_draw_100x: false }], error: null });
+    });
+    expect(view.result.current).toBeNull();
+    view.rerender({ clubId: 'club-b' });
+    await act(async () => {});
+    expect(view.result.current?.can_draw_100x).toBe(false);
   });
 });

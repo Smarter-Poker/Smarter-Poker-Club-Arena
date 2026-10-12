@@ -35,9 +35,13 @@ import { WheelPrizeArt } from '../wheel/WheelPrizeArt';
 import { SpadeConsole } from '../console/SpadeConsole';
 import './TournamentWinnerOverlay.css';
 import { formatPrizeAtUnit, moneySuffixAtUnit } from '../../utils/format';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
+import { useDialogEscape } from '../../hooks/useDialogEscape';
 
 interface TournamentWinnerOverlayProps {
   isWinner: boolean;
+  /** A background table celebrates without taking the active table keyboard. */
+  isActive?: boolean;
   prize: number;
   /**
    * THE UNIT THIS EVENT PAID IN (2026-09-21), from the table's own arena via
@@ -55,6 +59,7 @@ interface TournamentWinnerOverlayProps {
 
 const TournamentWinnerOverlay: React.FC<TournamentWinnerOverlayProps> = ({
   isWinner,
+  isActive = true,
   prize,
   unitCents,
   tournamentName,
@@ -90,6 +95,8 @@ const TournamentWinnerOverlay: React.FC<TournamentWinnerOverlayProps> = ({
       setParticles(newParticles);
     } else {
       setVisible(false);
+      if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
+      dismissTimerRef.current = null;
     }
   }, [isWinner]);
 
@@ -134,6 +141,11 @@ const TournamentWinnerOverlay: React.FC<TournamentWinnerOverlayProps> = ({
     dismissTimerRef.current = setTimeout(onDismiss, 500);
   }, [onDismiss]);
 
+  // The first actionable control is Continue. Let focus scroll it into view
+  // when the painted console is taller than a landscape viewport.
+  const dialogRef = useFocusTrap(isWinner && visible && isActive);
+  useDialogEscape(isWinner && visible && isActive, handleDismiss);
+
   if (!isWinner) return null;
 
   const paidFinish = position > 1;
@@ -142,6 +154,7 @@ const TournamentWinnerOverlay: React.FC<TournamentWinnerOverlayProps> = ({
 
   return (
     <div
+      ref={dialogRef}
       className={`winnerOverlay ${visible ? 'visible' : ''}`}
       role="dialog"
       aria-modal="true"

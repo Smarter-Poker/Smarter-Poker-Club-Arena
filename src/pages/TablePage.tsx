@@ -13285,7 +13285,7 @@ function LiveTablePage({
         if (table.club_id) {
           supabase
             .from('clubs')
-            .select('name, unions:union_id (name)')
+            .select('name, union_id, unions:union_id (name)')
             .eq('id', table.club_id)
             .maybeSingle()
             .then(async ({ data: clubData, error: clubIdentityError }) => {
@@ -13319,7 +13319,7 @@ function LiveTablePage({
               ) {
                 const { data: viewerClub, error: viewerClubErr } = await supabase
                   .from('clubs')
-                  .select('name')
+                  .select('name, union_id, is_union')
                   .eq('id', viewerClubId)
                   .maybeSingle();
                 // ROUND 9 (2026-08-29): cosmetic masthead fallback is fine;
@@ -13327,7 +13327,16 @@ function LiveTablePage({
                 if (viewerClubErr) {
                   reportError(viewerClubErr, 'TablePage.masthead_viewer_club_read_failed');
                 }
-                if (viewerClub?.name) clubName = viewerClub.name;
+                // A persisted/current club may belong to a different table or
+                // to no union at all. Routing metadata alone is not affiliation.
+                if (
+                  viewerClub?.name &&
+                  viewerClub.is_union === false &&
+                  clubData.union_id &&
+                  viewerClub.union_id === clubData.union_id
+                ) {
+                  clubName = viewerClub.name;
+                }
               }
               if (unionName && clubName === unionName) {
                 // Still identical (no distinct viewer club) — show it once.
@@ -23117,6 +23126,7 @@ function LiveTablePage({
     isSizingOpen: raiseIntent.open,
     isSpectator: !tableState.players.some((p) => p?.isHero),
     isModalOpen:
+      !!tournamentWinner ||
       showMustMoveLobby ||
       showSettings ||
       showInsurance ||
@@ -27771,6 +27781,7 @@ function LiveTablePage({
         reason={maintenanceBreak.reason}
       />
       <TableModalsLayer
+        isActive={isActive}
         /* THE DIAMONDS-TO-CHIPS DOOR (Dan 2026-09-10). The club the player
            came in through, never the union that hosts the table: membership,
            and therefore the games' own admission check, is against that one.

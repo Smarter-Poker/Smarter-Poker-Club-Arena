@@ -37,7 +37,17 @@ for (const width of [393, 1440]) {
     expect(body.clusters.length, 'real Lightning-capable cluster required').toBeGreaterThan(0);
     await expect(page.locator('#lightning-operations-title')).toHaveText('Lightning');
     await expect(page.getByText(/Updates On Lightning Events/)).toBeVisible();
-    const record = page.locator('[data-cluster-id]').first();
+    const candidate = body.clusters.find(
+      (row: Record<string, unknown>) =>
+        row.cluster_mode === 'must_move' &&
+        row.worker_mode === 'off' &&
+        row.frozen == null &&
+        row.drain == null &&
+        Number.isInteger(row.shadow_window_ms) &&
+        typeof (row.flags as Record<string, unknown> | undefined)?.integrity_telemetry === 'boolean'
+    );
+    expect(candidate, 'a drained Must Move cluster with worker off is required').toBeTruthy();
+    const record = page.locator(`[data-cluster-id="${candidate.cluster_id}"]`);
     await expect(record).toBeVisible();
     const cluster = await record.getAttribute('data-cluster-id');
     expect(cluster).toMatch(/^[0-9a-f-]{36}$/);
@@ -50,7 +60,18 @@ for (const width of [393, 1440]) {
     const detailResponse = await detail;
     expect(detailResponse.status()).toBe(200);
     expect(detailResponse.request().postDataJSON().p_cluster_id).toBe(cluster);
-    expect((await detailResponse.json()).ok).not.toBe(false);
+    const detailBody = await detailResponse.json();
+    expect(detailBody.ok).not.toBe(false);
+    const settings = detailBody.cluster;
+    expect(settings.cluster_id).toBe(cluster);
+    expect(settings.cluster_mode).toBe('must_move');
+    expect(settings.worker_mode).toBe('off');
+    expect(settings.frozen).toBeNull();
+    expect(settings.drain).toBeNull();
+    expect(Number.isInteger(settings.shadow_window_ms)).toBe(true);
+    expect(settings.shadow_window_ms).toBeGreaterThanOrEqual(60000);
+    expect(settings.shadow_window_ms).toBeLessThanOrEqual(3600000);
+    expect(typeof settings.flags.integrity_telemetry).toBe('boolean');
     const readinessResponse = await readiness;
     expect(readinessResponse.status()).toBe(200);
     const gate = await readinessResponse.json();
@@ -64,6 +85,71 @@ for (const width of [393, 1440]) {
     expect(gate.evidence.invariants.proofs_evaluated_in_sql).toBe(false);
     // OFF and missing pilot evidence are valid NO_GO; never require an enable decision.
     await expect(page.locator('#lightning-controls')).toHaveText('Operator Controls');
+    const setup = page.getByRole('group', {
+      name: 'Calibration And Integrity Controls',
+      exact: true,
+    });
+    await expect(setup).toBeVisible();
+    const windowControl = setup.getByRole('button', {
+      name: 'Set Calibration Window',
+      exact: true,
+    });
+    await expect(windowControl).toBeEnabled();
+    await windowControl.click();
+    const windowDialog = page.locator('[data-control-dialog="set_shadow_window"]');
+    await expect(windowDialog).toBeVisible();
+    const milliseconds = windowDialog.getByRole('textbox', { name: /^Window In Milliseconds/ });
+    await expect(milliseconds).toHaveValue(String(settings.shadow_window_ms));
+    const confirmWindow = windowDialog.getByRole('button', { name: 'Confirm', exact: true });
+    await expect(confirmWindow).toBeDisabled();
+    await windowDialog
+      .getByPlaceholder('Why, For The Audit Trail', { exact: true })
+      .fill('Read Only Browser Validation');
+    for (const invalid of ['59999', '3600001', '60000.5', 'not-a-number']) {
+      await milliseconds.fill(invalid);
+      await expect(confirmWindow).toBeDisabled();
+      await expect(
+        windowDialog.getByText('Whole Milliseconds From 60000 To 3600000', { exact: true })
+      ).toBeVisible();
+    }
+    for (const boundary of ['60000', '60001', '3600000']) {
+      await milliseconds.fill(boundary);
+      await expect(confirmWindow).toBeEnabled();
+    }
+    await info.attach(`lightning-${width}-window-validation.png`, {
+      body: await page.screenshot(),
+      contentType: 'image/png',
+    });
+    await windowDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(windowDialog).toHaveCount(0);
+    const telemetryName = settings.flags.integrity_telemetry
+      ? 'Disable Integrity Telemetry'
+      : 'Enable Integrity Telemetry';
+    const telemetry = setup.getByRole('button', { name: telemetryName, exact: true });
+    await expect(telemetry).toBeEnabled();
+    await telemetry.click();
+    const telemetryDialog = page.locator('[data-control-dialog="set_integrity_telemetry"]');
+    await expect(telemetryDialog).toBeVisible();
+    await expect(
+      telemetryDialog.getByText(settings.flags.integrity_telemetry ? 'Turn Off' : 'Turn On', {
+        exact: true,
+      })
+    ).toBeVisible();
+    await expect(
+      telemetryDialog.getByRole('button', { name: 'Confirm', exact: true })
+    ).toBeDisabled();
+    await telemetryDialog
+      .getByPlaceholder('Why, For The Audit Trail', { exact: true })
+      .fill('Read Only Browser Validation');
+    await expect(
+      telemetryDialog.getByRole('button', { name: 'Confirm', exact: true })
+    ).toBeEnabled();
+    await info.attach(`lightning-${width}-integrity-confirmation.png`, {
+      body: await page.screenshot(),
+      contentType: 'image/png',
+    });
+    await telemetryDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(telemetryDialog).toHaveCount(0);
     const worker = page.getByRole('group', { name: 'Worker Mode', exact: true });
     await expect(worker).toBeVisible();
     await expect(worker.getByRole('button')).toHaveCount(3);

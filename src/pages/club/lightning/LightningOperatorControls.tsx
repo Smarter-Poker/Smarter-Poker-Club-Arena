@@ -63,6 +63,8 @@ import {
   sendOperatorControl,
   specFlags,
   stateChanges,
+  shadowWindowMilliseconds,
+  shadowWindowLabel,
   type ControlResult,
   type LightningReadiness,
   type OperatorAction,
@@ -131,6 +133,8 @@ const SUCCESS_WORDS: Record<OperatorAction, string> = {
   rollback_matcher_version: 'Matcher Rolled Back',
   set_flag: 'Feature Flag Changed',
   set_worker_mode: 'Worker Mode Changed',
+  set_shadow_window: 'Calibration Window Changed',
+  set_integrity_telemetry: 'Integrity Telemetry Changed',
 };
 
 // ─── The confirm dialog ────────────────────────────────────────────────────
@@ -200,6 +204,10 @@ export function ControlDialog({
 
   const [reason, setReason] = useState('');
   const [typed, setTyped] = useState('');
+  const [windowMilliseconds, setWindowMilliseconds] = useState(
+    c.shadowWindowMs == null ? '' : String(c.shadowWindowMs)
+  );
+  const windowMs = shadowWindowMilliseconds(windowMilliseconds);
   const [picked, setVersion] = useState<string | null>(null);
   // A pick the role no longer offers is no pick; a single choice is made for you.
   const version =
@@ -232,7 +240,13 @@ export function ControlDialog({
   const reasonOk = reasonIsValid(reason);
   const typedOk = !destructive || confirmationMatches(typed, phrase);
   const versionOk = !VERSIONED.has(action) || version !== null;
-  const ready = reasonOk && typedOk && versionOk && !sending && !settled;
+  const setupArgsOk =
+    action === 'set_shadow_window'
+      ? windowMs !== null
+      : action === 'set_integrity_telemetry'
+        ? typeof request.value === 'boolean'
+        : true;
+  const ready = reasonOk && typedOk && versionOk && setupArgsOk && !sending && !settled;
 
   const submit = async () => {
     if (!ready || inFlightRef.current) return;
@@ -244,6 +258,8 @@ export function ControlDialog({
     if (VERSIONED.has(action) && version) args.version = version;
     if (action === 'set_matcher_version') args.role = role;
     if (action === 'set_worker_mode') args.mode = request.mode;
+    if (action === 'set_shadow_window') args.shadow_window_ms = windowMs;
+    if (action === 'set_integrity_telemetry') args.value = request.value;
     if (action === 'set_flag') {
       args.flag = request.flag;
       args.value = request.value;
@@ -405,6 +421,28 @@ export function ControlDialog({
                 </div>
               </div>
             )
+          ) : null}
+          {action === 'set_shadow_window' ? (
+            <label className={styles.field}>
+              <span className="sc-label sc-ink--blue">Window In Milliseconds</span>
+              <input
+                className={styles.fieldInput}
+                type="text"
+                inputMode="numeric"
+                value={windowMilliseconds}
+                aria-describedby="lightning-window-rule"
+                disabled={decisionLocked}
+                onChange={(e) => setWindowMilliseconds(e.target.value)}
+              />
+              <span id="lightning-window-rule" className={`${styles.fieldHint} sc-ink--muted`}>
+                {windowMs === null
+                  ? 'Whole Milliseconds From 60000 To 3600000'
+                  : shadowWindowLabel(windowMs)}
+              </span>
+            </label>
+          ) : null}
+          {action === 'set_integrity_telemetry' ? (
+            <Row label="Integrity Telemetry" value={request.value ? 'Turn On' : 'Turn Off'} />
           ) : null}
           <label className={styles.field}>
             <span className="sc-label sc-ink--blue">Reason</span>
@@ -740,6 +778,7 @@ export default function LightningOperatorControls({
   const joinsOpen = c.joinsEnabled !== false;
   const m = c.matcher;
   const flags = specFlags(c.flagValues);
+  const setupAvailable = !frozen && c.mode === 'must_move' && c.workerMode === 'off' && !draining;
 
   return (
     <Section id="lightning-controls" title="Operator Controls">
@@ -804,6 +843,52 @@ export default function LightningOperatorControls({
             {mode === 'off' ? 'Worker Off' : mode === 'shadow' ? 'Shadow Worker' : 'Form Hands'}
           </button>
         ))}
+      </div>
+
+      <span className={`${styles.recordMeta} ${styles.subhead} sc-ink--muted`}>
+        Calibration And Integrity
+      </span>
+      <Row label="Calibration Window" value={shadowWindowLabel(c.shadowWindowMs ?? null)} />
+      <Row
+        label="Integrity Telemetry"
+        value={
+          c.flags.integrityTelemetry === null
+            ? 'Unknown'
+            : c.flags.integrityTelemetry
+              ? 'On'
+              : 'Off'
+        }
+      />
+      {!setupAvailable ? (
+        <p className={`sc-copy ${styles.empty} sc-ink--muted`}>
+          Setup Changes Require Must Move, Worker Off And A Completed Drain. The Database Checks
+          Every Request.
+        </p>
+      ) : null}
+      {c.shadowWindowMs == null || c.flags.integrityTelemetry === null ? (
+        <p className={`sc-copy ${styles.empty} sc-ink--muted`}>
+          An Unreported Setup Value Cannot Be Changed. Refresh The Cluster After Its Database
+          Controls Are Installed.
+        </p>
+      ) : null}
+      <div className={styles.words} role="group" aria-label="Calibration And Integrity Controls">
+        <ControlWord
+          action="set_shadow_window"
+          onPick={pick}
+          disabled={!setupAvailable || c.shadowWindowMs == null}
+        />
+        <button
+          type="button"
+          className={`${styles.word} sc-ink--white`}
+          onClick={() =>
+            setRequest({ action: 'set_integrity_telemetry', value: !c.flags.integrityTelemetry })
+          }
+          disabled={!setupAvailable || c.flags.integrityTelemetry === null}
+        >
+          {c.flags.integrityTelemetry
+            ? 'Disable Integrity Telemetry'
+            : 'Enable Integrity Telemetry'}
+        </button>
       </div>
 
       <span className={`${styles.recordMeta} ${styles.subhead} sc-ink--muted`}>Lightning</span>

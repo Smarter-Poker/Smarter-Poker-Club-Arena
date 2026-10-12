@@ -366,7 +366,6 @@ describe('a rebuilt engine whose row is halted', () => {
       max_players: 6,
       game_variant: 'nlh',
       game_type: 'cash',
-      cluster_id: 'game-1',
       ...halted(H1),
     });
     db.row = halted(H1);

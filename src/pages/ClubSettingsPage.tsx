@@ -1291,8 +1291,8 @@ export default function ClubSettingsPage() {
           <a href="#settings-identity">Identity</a>
           <a href="#settings-privacy">Joining Policy</a>
           <a href="#settings-sharing">Invites</a>
-          <a href="#settings-history">Activity</a>
-          <a href="#settings-ownership">Ownership</a>
+          {canSeeAuditLog && <a href="#settings-history">Activity</a>}
+          {isOwner && <a href="#settings-ownership">Ownership</a>}
         </nav>
       </header>
       <div className="settings-content">

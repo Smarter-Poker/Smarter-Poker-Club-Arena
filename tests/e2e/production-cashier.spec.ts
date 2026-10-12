@@ -583,6 +583,8 @@ test.describe('Production Cashier Certification', () => {
   }, testInfo) => {
     const clubId = process.env.E2E_CLUB_ID || DEFAULT_E2E_CLUB_ID;
     await page.goto(`clubs/${clubId}/cashier`, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+    await expect(page.locator('[data-cashier-mode="simple"]')).toBeVisible({ timeout: 60_000 });
+    await page.getByRole('button', { name: /^Advanced(?: \([\d,]+\))?$/ }).click();
     const access = page.getByLabel('Current Cashier Balances').locator('strong').last();
     await expect(access).toBeVisible({ timeout: 60_000 });
     // The visible metric intentionally reads "Synchronizing" during

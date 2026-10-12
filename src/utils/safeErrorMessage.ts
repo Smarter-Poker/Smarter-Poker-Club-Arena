@@ -266,6 +266,33 @@ export function categorizeError(raw: string): SafeErrorCategory | null {
   return null;
 }
 
+/**
+ * Refusals the database names with a token, worded for the person who caused
+ * them. The token is the server's guarantee; the line is what the toast shows.
+ *
+ * The union owner is a member of every club in the union (Dan, 2026-10-12;
+ * migration 20261012112707): a club cannot remove, ban, suspend or let go of
+ * the union owner while it is in the union, and a club whose union owner is
+ * banned or suspended there cannot join until the club lifts it.
+ */
+export const SERVER_REFUSALS: Readonly<Record<string, string>> = {
+  UNION_OWNER_MEMBERSHIP_REQUIRED: 'The Union Owner Must Stay A Member Of Every Club In The Union.',
+  UNION_OWNER_BANNED_IN_CLUB:
+    'The Union Owner Is Banned In This Club. Unban Them Before The Club Joins The Union.',
+  UNION_OWNER_SUSPENDED_IN_CLUB:
+    'The Union Owner Is Suspended In This Club. Reinstate Them Before The Club Joins The Union.',
+};
+
+/** The worded line for a named server refusal, or null when there is none. */
+export function serverRefusalMessage(err: unknown): string | null {
+  const raw = extractRawErrorText(err);
+  if (!raw) return null;
+  for (const [token, line] of Object.entries(SERVER_REFUSALS)) {
+    if (raw.includes(token)) return line;
+  }
+  return null;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // STEP 3 — THE ALLOWLIST. TEXT MUST PROVE IT IS PLAIN ENGLISH.
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -419,6 +446,10 @@ export function safeErrorMessage(err: unknown, fallback?: string): string {
   if (!raw || raw === '[object Object]' || raw === '{}') {
     return isSafePlainMessage(fallback) ? (fallback as string) : GENERIC_ERROR_MESSAGE;
   }
+
+  // A refusal the server named by token has its own worded line.
+  const refusal = serverRefusalMessage(raw);
+  if (refusal) return refusal;
 
   // A recognised failure shape beats everything: it is safe AND specific.
   const category = categorizeError(raw);

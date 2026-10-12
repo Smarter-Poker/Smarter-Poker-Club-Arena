@@ -30,6 +30,24 @@ const native = parse(
   readFileSync(join(root, '.github/workflows/component-fixture-native-smoke.yml'), 'utf8')
 );
 
+describe('Player Command history qualification stays connected', () => {
+  it.each([
+    'scripts/ci/test-player-command-history.py',
+    'scripts/qualification/player-command-history.sql',
+    'supabase/migrations/20261012144105_player_command_history_reads_sanitized_staff_scope.sql',
+  ])('selects accounting and its source checks for %s', (path) => {
+    expect(classifyChangedPaths([path])).toMatchObject({ server: true, tests: true });
+  });
+  it('runs the exact native history qualifier once in required accounting shard four', () => {
+    const steps = ci.jobs.accounting_postgres.steps.filter(
+      (step: { run?: string }) => step.run === 'python3 scripts/ci/test-player-command-history.py'
+    );
+    expect(steps).toHaveLength(1);
+    expect(steps[0].if).toBe('matrix.shard == 4');
+    expect(steps[0]['continue-on-error']).toBeUndefined();
+  });
+});
+
 describe('Daily Bonus accounting qualification follows its actual inputs', () => {
   it.each([
     'src/components/daily-bonus/useDailyBonus.ts',

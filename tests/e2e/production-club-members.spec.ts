@@ -288,6 +288,25 @@ test.describe('Production Shark Club Players', () => {
   test('loads the real roster once and completes search, filter, sort, and player navigation', async ({
     page,
   }) => {
+    const historyJoins = new Set<string>();
+    const historySignals: Record<string, unknown>[] = [];
+    page.on('websocket', (socket) =>
+      socket.on('framereceived', (frame) => {
+        try {
+          const parsed = JSON.parse(String(frame.payload));
+          const message = Array.isArray(parsed)
+            ? { topic: parsed[2], event: parsed[3], payload: parsed[4] }
+            : parsed;
+          if (!String(message.topic).startsWith('realtime:player-history:')) return;
+          if (message.event === 'phx_reply' && message.payload?.status === 'ok')
+            historyJoins.add(message.topic);
+          if (message.event === 'broadcast' && message.payload?.event === 'history_changed')
+            historySignals.push(message.payload.payload);
+        } catch {
+          /* Non-JSON transport frames carry no history receipt. */
+        }
+      })
+    );
     const probe = observeMembersPath(page);
     const readyMs = await openMembers(page, probe);
 
@@ -342,6 +361,19 @@ test.describe('Production Shark Club Players', () => {
     await expect(page.getByRole('note', { name: 'Export Scope' })).toContainText(
       'All Matching Players Across Every Page'
     );
+    const history = page.locator('.player-history');
+    const initialHistory = page.waitForResponse((response) =>
+      response.url().includes('/rpc/ca_club_player_history')
+    );
+    await history.locator('summary').click();
+    const initialHistoryResponse = await initialHistory;
+    expect(initialHistoryResponse.ok()).toBe(true);
+    const historyScope = await initialHistoryResponse.json();
+    await expect
+      .poll(() => historyJoins.has(`realtime:player-history:${historyScope.club_id}`), {
+        timeout: 15_000,
+      })
+      .toBe(true);
     const exportResponse = page.waitForResponse((response) =>
       response.url().includes('/rpc/ca_club_members_export')
     );
@@ -381,6 +413,21 @@ test.describe('Production Shark Club Players', () => {
     expect(csv).toContain('all_matching');
     expect(csv).toContain('All Recorded Activity');
     expect(csv).toContain('Club Chips');
+    await expect(
+      history.getByRole('status').filter({ hasText: 'New Changes Are Available' })
+    ).toBeVisible({ timeout: 15_000 });
+    const signal = historySignals.find(
+      (value) => value.club_id === requestScope.p_club_id && value.action === 'export_club_roster'
+    );
+    expect(signal).toBeTruthy();
+    expect(Object.keys(signal!).sort()).toEqual(['action', 'club_id', 'id', 'target_id']);
+    await history.getByRole('combobox', { name: 'History Type' }).selectOption('exports');
+    await expect(history.getByRole('list', { name: 'Recorded Changes' })).toContainText(
+      receipt.audit_id,
+      { timeout: 15_000 }
+    );
+    await expect(history.getByRole('alert')).toHaveCount(0);
+    await history.locator('summary').click();
 
     await directory.getByRole('listitem').first().getByRole('button').click();
     await expect(page).toHaveURL(/\/clubs\/shark-club\/members\/[0-9a-f-]{36}(?:[/?#]|$)/i);
@@ -599,6 +646,23 @@ test.describe('Production Shark Club Players', () => {
     const probe = observeMembersPath(page);
     await openMembers(page, probe);
 
+    const clubHistory = page.locator('.player-history');
+    await clubHistory.locator('summary').click();
+    await expect(
+      clubHistory
+        .getByRole('status')
+        .filter({ hasText: /Recorded Changes Loaded|No Recorded Changes Match/ })
+    ).toBeVisible({ timeout: 15_000 });
+    await expect(clubHistory.getByRole('alert')).toHaveCount(0);
+    await clubHistory.getByRole('combobox', { name: 'History Type' }).selectOption('exports');
+    await expect(
+      clubHistory
+        .getByRole('status')
+        .filter({ hasText: /Recorded Changes Loaded|No Recorded Changes Match/ })
+    ).toBeVisible({ timeout: 15_000 });
+    await expect(clubHistory.getByRole('alert')).toHaveCount(0);
+    await clubHistory.locator('summary').click();
+
     const directory = page.getByRole('list', { name: 'Club Member Directory' });
     await directory.getByRole('listitem').first().getByRole('button').click();
     await expect(page).toHaveURL(/\/clubs\/shark-club\/members\/[0-9a-f-]{36}(?:[/?#]|$)/i);
@@ -609,6 +673,22 @@ test.describe('Production Shark Club Players', () => {
     await expect(page.getByRole('status', { name: 'Displayed Activity Scope' })).toContainText(
       'Recorded Activity'
     );
+    const playerHistory = page.locator('.player-history');
+    await playerHistory.locator('summary').focus();
+    await page.keyboard.press('Enter');
+    await expect(
+      playerHistory
+        .getByRole('status')
+        .filter({ hasText: /Recorded Changes Loaded|No Recorded Changes Match/ })
+    ).toBeVisible({ timeout: 15_000 });
+    await expect(playerHistory.getByRole('alert')).toHaveCount(0);
+    await expect(playerHistory).toContainText('Missing Records Are Not Reconstructed');
+    await expect(playerHistory.getByRole('option', { name: 'Exports', exact: true })).toHaveCount(
+      0
+    );
+    await playerHistory.getByLabel('History From', { exact: true }).fill('2026-01-01');
+    await expect(playerHistory).toContainText('Draft Dates Are Not Applied');
+
     const activityGuide = page.locator('[aria-label="Activity Metric Definitions"]');
     await activityGuide.locator('summary').click();
     await expect(activityGuide).toContainText('Signed Hand Results, Not Gross Prizes');
@@ -663,6 +743,11 @@ test.describe('Production Shark Club Players', () => {
         '.mm-range__tabs button, .mm-range__custom input, .mm-range__confirm'
       );
       await expectContainedControls(page, '.member-mgmt-page', '.mm-nav__row');
+      await expectContainedControls(
+        page,
+        '.player-history',
+        '.player-history summary, .player-history input, .player-history select, .player-history button'
+      );
       await expectContainedControls(page, '.member-mgmt-page', '.member-mgmt-page > *');
       await expectContainedControls(
         page,

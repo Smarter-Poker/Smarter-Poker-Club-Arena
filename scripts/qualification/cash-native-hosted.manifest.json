@@ -56,16 +56,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 202788,
-      "sha256": "cbecb15da2fd2b57f1c3fcb7a75f9eede415cef9ad40bce2f25257266ca3f732"
+      "bytes": 202963,
+      "sha256": "9fe368e242f2784d9d9f03b43499e58c4854c0e5758550358489079f657e1529"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 35480,
-      "sha256": "1fc422b810641eee2149abbdbbf5ddf50c54e87162fbea82f22456c506bd712d"
+      "bytes": 35710,
+      "sha256": "21bad2287248a7b8cd9b12c585b24d3c5949527340c13b95f4e763d2cebf0032"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -2155,5 +2155,16 @@
         }
       }
     ]
+  },
+  "playerCommandHistoryQualification20261012": {
+    "reason": "Add exact isolated staff history qualification to existing Accounting4. Only workflow fingerprint changes; financial inputs, assertions, status and historical receipts remain unchanged.",
+    "previousWorkflowPin": {
+      "bytes": 202788,
+      "sha256": "cbecb15da2fd2b57f1c3fcb7a75f9eede415cef9ad40bce2f25257266ca3f732"
+    },
+    "previousClassifierPin": {
+      "bytes": 35480,
+      "sha256": "1fc422b810641eee2149abbdbbf5ddf50c54e87162fbea82f22456c506bd712d"
+    }
   }
 }

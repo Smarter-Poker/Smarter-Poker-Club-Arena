@@ -50,6 +50,7 @@ import { useOnlineNow } from '../hooks/useProfilePresence';
 import { useToast } from '../components/common/Toast';
 import PageSkeleton from '../components/common/PageSkeleton';
 import RoleBadge, { roleColor } from '../components/club/RoleBadge';
+import PlayerChangeHistory from '../components/club/PlayerChangeHistory';
 import ChipTransferModal from '../components/agent/ChipTransferModal';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
@@ -862,6 +863,18 @@ export default function MemberManagementPage() {
             myRole={myRole}
             onRoleChanged={reload}
           />
+        )}
+
+        {resolvedClubId && user?.id && detail!.capabilities.access === 'staff' && (
+          <section className="mm-card">
+            <PlayerChangeHistory
+              key={`history:${resolvedClubId}:${identity!.user_id}:${user.id}`}
+              clubId={resolvedClubId}
+              playerId={identity!.user_id!}
+              viewerId={user.id}
+              enabled={true}
+            />
+          </section>
         )}
 
         {/* ── Navigation rows ──────────────────────────────────────────────── */}

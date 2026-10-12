@@ -19,6 +19,7 @@ import { useVirtualScroll } from '../hooks/useVirtualScroll';
 import PageSkeleton from '../components/common/PageSkeleton';
 import RoleBadge, { roleColor } from '../components/club/RoleBadge';
 import RosterConnectionStatus from '../components/club/RosterConnectionStatus';
+import PlayerChangeHistory from '../components/club/PlayerChangeHistory';
 import { exportToCSV } from '../lib/export';
 import { ClubNotFoundError, resolveClubUUIDStrict } from '../utils/strictClubIdResolver';
 import { reportError } from '../utils/errorReporter';
@@ -1324,6 +1325,14 @@ export default function ClubMembersPage() {
           isSlow={loadSlow}
           onRetry={retryLiveSync}
         />
+        {resolvedClubId && user?.id && (
+          <PlayerChangeHistory
+            key={`history:${resolvedClubId}:${user.id}`}
+            clubId={resolvedClubId}
+            viewerId={user.id}
+            enabled={!accessDenied && ['owner', 'co_owner', 'admin'].includes(summary.viewer_role)}
+          />
+        )}
       </section>
 
       {summary.capabilities.can_export && selected.size > 0 && (

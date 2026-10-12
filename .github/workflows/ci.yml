@@ -2285,6 +2285,25 @@ jobs:
           POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/dev/probe-played-mtt-launch-pg17.py
 
+      - name: Original unchanged cash stacks retain signed predecessor evidence
+        id: original_unchanged_stack
+        if: matrix.shard == 3
+        env:
+          PGBIN: /usr/lib/postgresql/17/bin
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/original-unchanged-stack"
+          bash scripts/dev/probe-original-unchanged-stack-pg17.sh \
+            2>&1 | tee "$RUNNER_TEMP/original-unchanged-stack/native.log"
+      - name: Retain original unchanged-stack native qualification
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.original_unchanged_stack.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: original-unchanged-stack-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/original-unchanged-stack/
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Agent downline rake stays in overseer clubs
         if: matrix.shard == 3
         env:

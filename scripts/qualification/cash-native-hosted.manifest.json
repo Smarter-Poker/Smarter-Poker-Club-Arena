@@ -56,8 +56,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 202788,
-      "sha256": "cbecb15da2fd2b57f1c3fcb7a75f9eede415cef9ad40bce2f25257266ca3f732"
+      "bytes": 203714,
+      "sha256": "427e04cfde3bf981af4c0ec25a2b867ca5f4fea330cff5ab44ee315e9f6491c1"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -2155,5 +2155,12 @@
         }
       }
     ]
+  },
+  "originalUnchangedStackQualification20261012": {
+    "reason": "Add directly triggered isolated PG17 original unchanged-stack qualification and always-retained native transcript in accounting shard3. Existing financial qualification components/assertions/captured fixtures/status unchanged. Workflow byte pin refresh alone does not prove native or production behavior.",
+    "previousWorkflowPin": {
+      "bytes": 202788,
+      "sha256": "cbecb15da2fd2b57f1c3fcb7a75f9eede415cef9ad40bce2f25257266ca3f732"
+    }
   }
 }

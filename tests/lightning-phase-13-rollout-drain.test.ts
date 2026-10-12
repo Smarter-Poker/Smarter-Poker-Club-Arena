@@ -363,7 +363,7 @@ describe('the proof harness, CI and the documents', () => {
     expect(HARNESS).toContain('PASS: Lightning Phase 13');
     expect(HARNESS).toContain('if [ "$oks" != 20 ]; then');
   });
-  it('CI runs the harness on shard 1 after the Phase 11 remediation, and the load rig over the Phase 13 chain', () => {
+  it('CI runs the harness on shard 3 after the Phase 11 remediation, and the load rig over the Phase 13 chain', () => {
     const p11r = CI.indexOf('test-lightning-phase11-remediation.sh');
     const p13 = CI.indexOf('test-lightning-phase13-operator-recovery.sh');
     expect(RECOVERY).toContain(
@@ -374,7 +374,7 @@ describe('the proof harness, CI and the documents', () => {
     expect(p11r).toBeGreaterThan(0);
     expect(p13).toBeGreaterThan(p11r);
     const step = CI.slice(CI.lastIndexOf('- name:', p13), p13);
-    expect(step).toContain('if: matrix.shard == 1');
+    expect(step).toContain('if: matrix.shard == 3');
     expect(step).toContain('PG_BIN: /usr/lib/postgresql/17/bin');
     const lc = CI.indexOf('scripts/dev/fixtures/lightning-phase13-operator-ground.sql');
     expect(lc).toBeGreaterThan(p13);

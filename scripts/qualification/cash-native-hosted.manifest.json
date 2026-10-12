@@ -56,8 +56,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 212835,
-      "sha256": "e52d4545ed49c5523ebab46233c4bdb682af89439646cba1a125001cac8100a6"
+      "bytes": 213137,
+      "sha256": "082ed78d4eeb84e5eea8a463ebab39d6cddcedaa1831da8d13393810e351cccb"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -2912,6 +2912,17 @@
         "ours": "1c15f0cb0c8ccafde67739316baa3be1bf6f822aec54c687138afb1c50f1cc09",
         "incoming": "fb94dda014bd29ec71e87a50affd1049df971691e6d1da7469948e74ad50fc62"
       }
+    }
+  },
+  "accountingShardBalance20261012": {
+    "reason": "Only the existing 25-step Lightning family moves to shard3 after measured shard1 job-cap exhaustion. All commands, cases, individual deadlines, artifacts, matrix, aggregate and 40-minute cap remain unchanged. Source fingerprint is not execution evidence.",
+    "previousWorkflowPin": {
+      "bytes": 212835,
+      "sha256": "e52d4545ed49c5523ebab46233c4bdb682af89439646cba1a125001cac8100a6"
+    },
+    "combinedWorkflowPin": {
+      "bytes": 213137,
+      "sha256": "082ed78d4eeb84e5eea8a463ebab39d6cddcedaa1831da8d13393810e351cccb"
     }
   }
 }

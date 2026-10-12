@@ -279,7 +279,7 @@ describe('the proof around it', () => {
     expect(mine).toBeGreaterThan(matcher);
     const step = CI.slice(matcher, mine);
     expect(step.match(/- name:/g)?.length).toBe(1);
-    expect(step).toContain('if: matrix.shard == 1');
+    expect(step).toContain('if: matrix.shard == 3');
   });
   it('the schema fragment names every function, the table and the columns this file adds', () => {
     for (const f of [

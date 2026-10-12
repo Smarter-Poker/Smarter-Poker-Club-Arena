@@ -300,13 +300,13 @@ describe('the harness, CI, fragment and changelog', () => {
     expect(HARNESS).toContain('( "${PSQL[@]}" -f "$fixture/conc0.sql"');
     expect(HARNESS).toContain('( "${PSQL[@]}" -f "$fixture/conc1.sql"');
   });
-  it('CI runs the harness on shard 1 after the Phase 12 load and chaos step', () => {
+  it('CI runs the harness on shard 3 after the Phase 12 load and chaos step', () => {
     const lc = CI.indexOf('test-lightning-phase12-load-chaos.sh');
     const me = CI.indexOf('test-lightning-phase11-remediation.sh');
     expect(lc).toBeGreaterThan(0);
     expect(me).toBeGreaterThan(lc);
     const step = CI.slice(CI.lastIndexOf('- name:', me), me);
-    expect(step).toContain('if: matrix.shard == 1');
+    expect(step).toContain('if: matrix.shard == 3');
     expect(step).toContain('PG_BIN: /usr/lib/postgresql/17/bin');
   });
   it('the schema manifest fragment promises the one new table and no new function', () => {

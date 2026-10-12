@@ -117,7 +117,7 @@ async function runPilotWithReceipt(replaceReceipt, finalGame = game, finalMember
         SP_EMAIL: PILOT.ownerEmail,
         SP_PASS: 'isolated_fixture',
         SUPABASE_URL: 'https://isolated.invalid',
-        SUPABASE_SERVICE_ROLE_KEY: 'sb_secret_fixture',
+        SUPABASE_SERVICE_ROLE_KEY: 'sb_secret_test_fixture',
       },
       factory
     );

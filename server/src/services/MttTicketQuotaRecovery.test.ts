@@ -29,6 +29,12 @@ function harness(ids = ['ticket']) {
   };
   const load = new Map<string, number>();
   vi.spyOn(svc, 'horseLoadMap').mockResolvedValue(load);
+  // The MTT overlap cap's read (MttOverlapCap.test.ts): no other game held, so
+  // the ticket rules under test are decided exactly as before.
+  vi.spyOn(svc, 'horseTournamentCommitments').mockResolvedValue({
+    tournamentSeats: [],
+    pendingBookings: [],
+  });
   vi.spyOn(svc, 'clubMemberIdsForTournament').mockResolvedValue(new Set(ids));
   const rpc = vi.fn(
     async (name: string, _args?: unknown): Promise<any> =>

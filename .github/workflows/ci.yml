@@ -1413,6 +1413,12 @@ jobs:
           scripts/verification-harness/leaderboard-isolation-acl-bootstrap.test.mjs
           scripts/verification-harness/leaderboard-isolation-definition-bootstrap.test.mjs
           scripts/verification-harness/leaderboard-plain-schema-partition.test.mjs
+      - name: Retired VIP points cannot earn, spend, or mutate historical balances
+        if: matrix.shard == 2
+        env:
+          PG17_BINDIR: /usr/lib/postgresql/17/bin
+          VIP_POINTS_PG_SCRATCH_PARENT: ${{ runner.temp }}
+        run: bash scripts/dev/test-retired-vip-points-postgres.sh
       - name: Data console native PostgreSQL contracts
         if: matrix.shard == 2
         env:

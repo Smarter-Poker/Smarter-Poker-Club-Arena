@@ -1943,10 +1943,11 @@
 .walletPill,
 .walletPillDiamond,
 .vipPill {
-  width: min(100%, 300px);
+  --wallet-plate-width: min(100%, 300px);
+  width: var(--wallet-plate-width);
   aspect-ratio: 1800 / 386;
   justify-content: center;
-  padding: 3% 12%;
+  padding: calc(var(--wallet-plate-width) * 0.03) calc(var(--wallet-plate-width) * 0.12);
   border: 0;
   border-radius: 0;
   color: #dceaf1;
@@ -2025,18 +2026,50 @@
 .dataTable tr {
   border: 0;
   border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* Only the actual product and purchase surfaces carry a chassis. Notices,
+   summaries and table rows print on the page, without nested empty frames. */
+.itemCard,
+.modal,
+.planCard,
+.pkgCard,
+.createForm {
+  position: relative;
+  isolation: isolate;
+  container-type: inline-size;
+  --chassis-inline-padding: clamp(14px, 3vw, 42px);
+  padding-inline: var(--chassis-inline-padding);
   background-color: #020508;
   background-image:
     url('/assets/club-buttons/lobby/shark-panel-v1/top.png'),
-    url('/assets/club-buttons/lobby/shark-panel-v1/bottom.png'),
-    url('/assets/club-buttons/lobby/shark-panel-v1/mid.png');
+    url('/assets/club-buttons/lobby/shark-panel-v1/bottom.png');
   background-position:
     center top,
-    center bottom,
-    center;
-  background-repeat: no-repeat, no-repeat, repeat-y;
+    center bottom;
+  background-repeat: no-repeat;
   background-size: 100% auto;
-  box-shadow: none;
+}
+
+/* The pseudo-element's ancestor is the chassis, so cqw measures that actual
+   card content box, not the store column. Add its declared inline padding
+   to recover the painted width. Native caps are 143/900 and 139/900 of that width;
+   repeating rails paint only BETWEEN them, never behind their alpha margins. */
+.itemCard::before,
+.modal::before,
+.planCard::before,
+.pkgCard::before,
+.createForm::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: calc((100cqw + 2 * var(--chassis-inline-padding)) * 143 / 900) 0
+    calc((100cqw + 2 * var(--chassis-inline-padding)) * 139 / 900);
+  background: url('/assets/club-buttons/lobby/shark-panel-v1/mid.png') top center / 100% auto
+    repeat-y;
+  pointer-events: none;
 }
 
 .storeIntro,
@@ -2056,7 +2089,7 @@
 }
 
 .itemCard {
-  padding: clamp(8px, 2.5%, 14px) clamp(8px, 2.5%, 14px) clamp(22px, 7%, 40px);
+  padding-block: clamp(8px, 2.5%, 14px) clamp(22px, 7%, 40px);
   transition: none;
 }
 
@@ -2130,7 +2163,7 @@
 }
 
 .modal {
-  padding: clamp(42px, 9%, 72px) clamp(34px, 8%, 64px);
+  padding-block: clamp(42px, 9%, 72px);
   border: 0;
   border-radius: 0;
 }
@@ -2157,7 +2190,7 @@
 
 .planCard,
 .pkgCard {
-  padding: clamp(28px, 8%, 48px) clamp(22px, 7%, 42px) clamp(36px, 10%, 58px);
+  padding-block: clamp(28px, 8%, 48px) clamp(36px, 10%, 58px);
 }
 
 .planCardFeatured,
@@ -2246,4 +2279,12 @@
     border: 0;
     background-color: #020508;
   }
+}
+
+.itemCard,
+.modal,
+.planCard,
+.pkgCard,
+.createForm {
+  padding-inline: var(--chassis-inline-padding);
 }

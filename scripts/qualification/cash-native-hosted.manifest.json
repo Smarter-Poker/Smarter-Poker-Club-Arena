@@ -56,8 +56,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 202255,
-      "sha256": "411591715d2f8c87f06b43cf17980ecc4a5d3b968db1178d4510394c456761e5"
+      "bytes": 202556,
+      "sha256": "8ce62601e2ee3ac77b851127982a32895e9ceb5892b4ef5d1a43017f1243b139"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -2121,5 +2121,12 @@
         }
       }
     ]
+  },
+  "vipPointsRetirementRegression20261012": {
+    "reason": "Add the isolated native PostgreSQL 17 VIP reward-points retirement qualification to existing required Accounting2. Only the reviewed additive workflow source fingerprint changes; every existing financial source, assertion, historical pin and SOURCE_ONLY_UNRUN qualification status remains unchanged. This source identity refresh is not cash financial execution, installation or publication proof.",
+    "previousWorkflowPin": {
+      "bytes": 202255,
+      "sha256": "411591715d2f8c87f06b43cf17980ecc4a5d3b968db1178d4510394c456761e5"
+    }
   }
 }

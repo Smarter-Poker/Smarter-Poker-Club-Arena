@@ -19,10 +19,9 @@
  * server-enforced is none of them: every allowance below is metered by a
  * function named in the comment beside it.
  *
- * VIP points are real - 1,005 players hold them and vip_points_ledger has 5.1
- * million rows - so they stay. What they are NOT is a ladder: they buy things
- * in the rewards marketplace, and they do not confer a tier. Exact Lifetime
- * entitlements are rendered separately from ordinary VIP monthly meters.
+ * Membership is purchased with Diamonds. It never earns or spends points.
+ * The page shows benefits once beside the membership card; this summary owns
+ * membership status and the ordinary VIP monthly allowances only.
  */
 import React from 'react';
 import { VIP_MONTHLY_ALLOWANCES } from '../../services/VIPService';
@@ -34,23 +33,6 @@ interface VIPMembershipPlateProps {
   status: VipStatus;
   expiresAt: Date | null;
   limits: VIPMonthlyLimits;
-  /**
-   * The only two VIP point figures the platform computes, both read from
-   * `vip_points`. A `monthly` and an `activeStreak` member used to be
-   * required here and printed as "This Month" and "Active Streak" below;
-   * `vip_points` has no such column and nothing on the client ever set
-   * them, so both always printed a fabricated zero. Removed 2026-09-30 -
-   * see the VIPPage comment on `vipPoints` for the full reasoning.
-   */
-  points: { current: number; lifetime: number };
-  /**
-   * Whether the `vip_points` read behind `points.current` and `points.lifetime`
-   * actually answered. 'error' means it did not, and those two figures print
-   * "Unavailable" rather than a zero the player would read as a settled
-   * balance (CLAUDE.md 10.86 rule 1). Optional, and absent behaves as 'ready',
-   * so a caller holding points from somewhere else is unaffected.
-   */
-  pointsState?: 'loading' | 'ready' | 'error';
 }
 
 const MEMBERSHIP_LABEL: Record<VipStatus, string> = {
@@ -69,16 +51,9 @@ export const VIPMembershipPlate: React.FC<VIPMembershipPlateProps> = ({
   status,
   expiresAt,
   limits,
-  points,
-  pointsState = 'ready',
 }) => {
   const isMember = status !== 'none';
   const isLifetime = status === 'lifetime';
-  /* The two figures the vip_points read owns. When that read could not answer,
-     they say so: a zero here is a player who has spent everything they earned,
-     which is a different and much more discouraging statement. */
-  const pointsUnknown = pointsState === 'error';
-
   const allowances = [
     {
       id: 'rabbit',
@@ -130,64 +105,8 @@ export const VIPMembershipPlate: React.FC<VIPMembershipPlateProps> = ({
       !isLifetime || !['rabbit', 'timebank', 'emojis', 'tags', 'throwables'].includes(allowance.id)
   );
 
-  /* Ordinary VIP keeps every existing cap. The exact Lifetime membership adds
-     the newer unmetered gameplay and cataloged digital-cosmetic contract. */
-  const included = [
-    ...(isLifetime
-      ? [
-          {
-            id: 'lifetime-rabbit',
-            label: 'Rabbit Hunts',
-            detail: 'Unlimited With Lifetime VIP',
-          },
-          {
-            id: 'lifetime-throwables',
-            label: 'Throwables',
-            detail: 'Unlimited With Lifetime VIP',
-          },
-          {
-            id: 'lifetime-timebank',
-            label: 'Standard 20-Second Time Bank Activations',
-            detail: 'Unlimited With Lifetime VIP',
-          },
-          {
-            id: 'lifetime-emojis',
-            label: 'Digital Emoji Packs',
-            detail: 'All Digital Options Included',
-          },
-          {
-            id: 'lifetime-tags',
-            label: 'Player Tags',
-            detail: 'All Digital Options Included',
-          },
-          {
-            id: 'lifetime-table-art',
-            label: 'Cataloged Table Skins And Backgrounds',
-            detail: 'All Digital Options Included',
-          },
-          {
-            id: 'lifetime-card-art',
-            label: 'Cataloged Card Backs And Dealer Buttons',
-            detail: 'All Digital Options Included',
-          },
-          {
-            id: 'lifetime-avatar-art',
-            label: 'VIP Avatars, Frames, And Auras',
-            detail: 'All VIP-Only Digital Options Included',
-          },
-        ]
-      : []),
-    { id: 'stack', label: 'Show Stack In Big Blinds', otherwise: '5 Diamonds Per Session' },
-    { id: 'offline', label: 'Offline Protection', otherwise: '10 Diamonds Per Session' },
-    { id: 'autobank', label: 'Auto Time Bank', otherwise: '5 Diamonds Per Activation' },
-  ].map((item) => ({
-    ...item,
-    detail: 'detail' in item ? item.detail : `Otherwise ${item.otherwise}`,
-  }));
-
   return (
     <section className="vmp" aria-label="VIP Membership">
-      <div className="vmp__cap" aria-hidden="true" />
       <div className="vmp__body">
         <header className="vmp__head">
           <div className="vmp__identity">
@@ -209,21 +128,6 @@ export const VIPMembershipPlate: React.FC<VIPMembershipPlateProps> = ({
                   : 'Features Are Purchased Individually With Diamonds'}
             </span>
           </div>
-
-          <dl className="vmp__points" aria-label="VIP Points">
-            <div>
-              <dt>Points</dt>
-              <dd>{pointsUnknown ? 'Unavailable' : fmt(points.current)}</dd>
-            </div>
-            <div>
-              <dt>Lifetime</dt>
-              <dd>{pointsUnknown ? 'Unavailable' : fmt(points.lifetime)}</dd>
-            </div>
-            {/* "This Month" and "Active Streak" stood here and always read
-                zero. Neither had any writer, on the client or in the
-                database. Removed 2026-09-30 with the state fields behind
-                them, so the plate now prints only what vip_points answers. */}
-          </dl>
         </header>
 
         {isMember && (
@@ -265,22 +169,9 @@ export const VIPMembershipPlate: React.FC<VIPMembershipPlateProps> = ({
                 </ul>
               </div>
             )}
-
-            <div className="vmp__section">
-              <h3 className="vmp__title">Included, Not Metered</h3>
-              <ul className="vmp__included">
-                {included.map((i) => (
-                  <li key={i.id}>
-                    <span className="vmp__includedLabel">{i.label}</span>
-                    <span className="vmp__includedOtherwise">{i.detail}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
           </>
         )}
       </div>
-      <div className="vmp__foot" aria-hidden="true" />
     </section>
   );
 };

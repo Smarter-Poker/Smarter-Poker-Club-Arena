@@ -204,6 +204,47 @@ test.describe('Club Arena Responsive Fit At Mobile, Tablet, And Desktop', () => 
           destinationUrl
         );
 
+        if (
+          [
+            'rewards',
+            'wallet',
+            'transactions',
+            'vip',
+            'rakeback',
+            'promotions',
+            'bonuses',
+            'achievements',
+            'challenges',
+          ].includes(route)
+        ) {
+          const rewardLinks = page.locator('[data-arena-section="rewards"] a');
+          await expect(rewardLinks).toHaveCount(10);
+          const railClipping = await rewardLinks.evaluateAll((links) =>
+            links
+              .filter((link) => {
+                const rect = link.getBoundingClientRect();
+                const viewportWidth = document.documentElement.clientWidth;
+                return (
+                  rect.width === 0 ||
+                  rect.left < -1 ||
+                  rect.right > viewportWidth + 1 ||
+                  link.scrollWidth > link.clientWidth + 1
+                );
+              })
+              .map((link) => link.textContent)
+          );
+          expect(
+            railClipping,
+            `${route} hides or clips a Rewards destination at ${viewport.label}`
+          ).toEqual([]);
+          if (route === 'vip') {
+            await expect(page.locator('.vip-page')).not.toContainText(/\bpoints\b/i);
+            await expect(
+              page.getByRole('heading', { name: 'VIP Membership', exact: true })
+            ).toBeVisible();
+          }
+        }
+
         const result = await evaluateAcrossDocumentReplacement(page, () => {
           const vw = window.innerWidth;
           const doc = document.documentElement;

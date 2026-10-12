@@ -363,3 +363,38 @@
   outline: 2px solid #45adff;
   outline-offset: 3px;
 }
+
+/* The Rewards overview is a directory, with no second decorative showcase. */
+.page[data-workspace='rewards'] {
+  background: #000;
+}
+.page[data-workspace='rewards'] .hero {
+  display: block;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
+}
+.page[data-workspace='rewards'] .hero::after {
+  display: none;
+}
+.page[data-workspace='rewards'] .heroCopy {
+  min-width: 0;
+  padding: 8px 0 20px;
+}
+.page[data-workspace='rewards'] .hero h1 {
+  font:
+    800 clamp(28px, 5vw, 40px)/1.2 'Roboto Condensed',
+    sans-serif;
+  text-transform: none;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+.page[data-workspace='rewards'] .artFrame {
+  display: none;
+}
+.page[data-workspace='rewards'] .liveLine {
+  display: none;
+}

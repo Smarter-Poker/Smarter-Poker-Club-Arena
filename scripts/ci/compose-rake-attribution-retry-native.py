@@ -155,9 +155,9 @@ BEGIN
     +(SELECT chip_treasury FROM public.clubs WHERE id='94020000-0000-0000-0000-000000000001')=prior_custody
     AND (SELECT fee_out=1 AND fee_balance=0 AND prize_balance=9 AND bounty_balance=0 AND enforced FROM public.tournament_escrow WHERE tournament_id=tid),
     'case '||p_case||' opening custody conserved through one fee outflow');
-  PERFORM pg_temp.rake_assert((SELECT count(*) FROM public.vip_points_ledger WHERE user_id='94010000-0000-0000-0000-000000000002')=prior_vip+CASE WHEN p_attributed THEN 1 ELSE 0 END
+  PERFORM pg_temp.rake_assert((SELECT count(*) FROM public.vip_points_ledger WHERE user_id='94010000-0000-0000-0000-000000000002')=prior_vip+CASE WHEN p_attributed AND (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_award_vip_credit(uuid,numeric,text,uuid,text)'::regprocedure) <> '097f3325ba87d80c52a184a819591c32' THEN 1 ELSE 0 END
     AND (SELECT COALESCE(sum(total_rake),0) FROM public.player_stats WHERE user_id='94010000-0000-0000-0000-000000000002')=prior_stats+CASE WHEN p_attributed THEN 1 ELSE 0 END,
-    'case '||p_case||' failed attempts leave no VIP or stats writes');
+    'case '||p_case||' VIP points follow the exact earning/retired contract; stats reflect only successful attribution');
   PERFORM pg_temp.rake_assert((SELECT attributed_at IS NOT NULL FROM public.tournament_rake_settlements WHERE tournament_id=tid)=p_attributed
     AND (SELECT count(*) FROM public.financial_alerts WHERE source='fn_settle_tournament_rake' AND context->>'tournament_id'=tid::text)=CASE WHEN p_attributed THEN 0 ELSE 1 END,
     'case '||p_case||' completion marker and one failure alert');

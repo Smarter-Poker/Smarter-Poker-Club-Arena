@@ -118,6 +118,36 @@ export default function RewardsSurfaceHeader({
   const pillText = pill ? formatPopupText(pill) : fromStatus.text;
   const ink = pillInk ?? (pill ? 'blue' : fromStatus.ink);
 
+  // A summary introduces a page; it does not need a second decorative console.
+  // Content-bearing consoles retain their native painted chassis below.
+  if (eyebrowFamily === 'Rewards Circuit' && !children && !plates) {
+    return (
+      <section className={styles.summary} aria-labelledby={titleId}>
+        <div className={styles.summaryHeading}>
+          <div>
+            <p className={styles.summaryEyebrow}>{formatPopupText(eyebrowFamily)}</p>
+            <h2 id={titleId}>{formatPopupText(title)}</h2>
+          </div>
+          <span className={styles.summaryStatus} data-ink={ink}>
+            {pillText}
+          </span>
+        </div>
+        <p className={styles.summaryDescription}>{formatPopupText(description)}</p>
+        {metrics.length > 0 && (
+          <dl className={styles.summaryMetrics} aria-label={`${title} Live Summary`}>
+            {metrics.map((metric) => (
+              <div key={metric.label}>
+                <dt>{formatPopupText(metric.label)}</dt>
+                <dd>{metric.value}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
+        {actions && <div className={styles.summaryActions}>{actions}</div>}
+      </section>
+    );
+  }
+
   return (
     <div className={styles.header}>
       <SpadeConsole

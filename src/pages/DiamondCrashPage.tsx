@@ -1339,6 +1339,10 @@ function DiamondCrashGame() {
                   ink: 'gold',
                   onClick: handleCashOut,
                   disabled: cashing || !cashoutOpen,
+                  // Pulses while the climb is live and cashable: the plate
+                  // that stops the round and books the win (Dan 2026-10-12).
+                  // GameConsole lights it only while it is pressable.
+                  flash: true,
                 }
               : shortOfDiamonds
                 ? { label: 'Get Diamonds', ink: 'gold', onClick: () => navigate(BUY_DIAMONDS) }

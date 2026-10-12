@@ -11,7 +11,11 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { GameConsole, GamePanel } from '../components/games/GameConsole';
-import BonusSetup, { bonusEntryStep, guaranteeCopy } from '../components/games/BonusSetup';
+import BonusSetup, {
+  PlinkoDropSelector,
+  bonusEntryStep,
+  guaranteeCopy,
+} from '../components/games/BonusSetup';
 import TodayLine from '../components/games/TodayLine';
 import { useGameCooldown } from '../hooks/useGameCooldown';
 import PlinkoBoard from '../components/plinko/PlinkoBoard';
@@ -630,6 +634,22 @@ function DiamondPlinkoGame() {
               }}
               offerAnswered={offerAnswered}
               onOfferAnswered={offer.answer}
+              dropsDocked
+            />
+          )
+        }
+        // The drop value is the one choice Drop Diamonds cannot be pressed
+        // without (R6), so it rides in the pinned bar beside that plate: the
+        // choice and the press are both on the opening screen (2026-10-12).
+        dock={
+          !animating &&
+          earned.ready &&
+          step === 'setup' && (
+            <PlinkoDropSelector
+              budget={budget}
+              onChange={setBudget}
+              disabled={busy || uncertain || restartOwed}
+              docked
             />
           )
         }

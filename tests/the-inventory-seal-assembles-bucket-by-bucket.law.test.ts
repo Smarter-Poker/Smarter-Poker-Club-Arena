@@ -53,5 +53,13 @@ describe('the inventory seal commits bounded pages before publishing an immutabl
     expect(sql).toContain('inventory_seal_receipt_invalid');
     expect(sql).toContain('public.union_pnl_inventory_seal_builds b');
     expect(workflow).toContain('python3 scripts/dev/test-inventory-seal-bounded.py');
+    const native = readFileSync(
+      join(process.cwd(), 'scripts/dev/test-inventory-seal-bounded.py'),
+      'utf8'
+    );
+    expect(native).toContain("fx/'population.sql'");
+    expect(native).toContain("private_receipt['private']==original_population");
+    expect(native).toContain('published_population==original_population');
+    expect(native).toContain('population_active_counts=expected_population_counts');
   });
 });

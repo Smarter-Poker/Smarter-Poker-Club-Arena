@@ -155,6 +155,34 @@ try:
   assert due['status']=='sealing',due
  else:raise AssertionError('Backlog never reached truthful readiness')
  assert sql("SELECT count(*) FROM public.union_pnl_inventory_published_rows WHERE boundary='2026-10-12 07:00Z';").stdout.strip()=='35000'
+ # Actual population source names must prove nonempty consumer equivalence.
+ sql('CREATE DATABASE population;');database='population'
+ sql(files=[fx/'bootstrap.sql',*sorted((fx/'preimage').glob('*.sql')),root/'supabase/migrations/20261012134146_the_weekly_close_never_holds_replication.sql'])
+ seed(1);sql(files=[fx/'population.sql'])
+ original_population=json.loads(sql("SELECT public.fn_union_pnl_inventory_population('2026-10-05 07:00Z','2026-10-12 07:00Z');").stdout)
+ expected_population_counts={name:1 for name in ('union_clubs','tables','table_seats','tournaments','tournament_players')}
+ assert {k:len(v) for k,v in original_population['population'].items()}==expected_population_counts,original_population
+ for name,eid in {'union_clubs':1,'tables':3,'table_seats':6,'tournaments':9,'tournament_players':13}.items():
+  row=original_population['population'][name][0]
+  assert row['source_event_id']==eid and row['row']['id']==f'00000000-0000-0000-0000-{eid:012x}',row
+ assert len(original_population['issues'])==2,original_population
+ assert {i['reason'] for i in original_population['issues']}=={'active_row_original_population_missing','original_inventory_chain_disagrees'}
+ assert advance()['status']=='sealed'
+ original_population_header=sql("SELECT row_count,issue_count,rows_md5,issues_md5,result_md5 FROM public.union_pnl_inventory_checkpoints WHERE boundary='2026-10-12 07:00Z';").stdout
+ assert json.loads(sql("SELECT public.fn_union_pnl_inventory_population('2026-10-12 07:00Z','2026-10-12 07:00Z');").stdout)==original_population
+ sql("DELETE FROM public.union_pnl_inventory_checkpoint_rows WHERE boundary='2026-10-12 07:00Z';DELETE FROM public.union_pnl_inventory_checkpoint_issues WHERE boundary='2026-10-12 07:00Z';DELETE FROM public.union_pnl_inventory_checkpoints WHERE boundary='2026-10-12 07:00Z';")
+ sql(files=[candidate]);assert advance()['status']=='sealing'
+ # Complete only the private marker in a rolled-back transaction: private readback
+ # must equal the original while ordinary consumers still see no unpublished rows.
+ private_receipt=json.loads(sql("BEGIN;SELECT public.fn_union_pnl_inventory_snapshot_restore('2026-10-12 07:00Z','2026-10-05 07:00Z');SELECT public.fn_union_pnl_inventory_seal_write_page('2026-10-12 07:00Z','2026-10-05 07:00Z');SELECT jsonb_build_object('private',public.fn_union_pnl_inventory_build_population('2026-10-12 07:00Z','2026-10-12 07:00Z'),'public',public.fn_union_pnl_inventory_population('2026-10-12 07:00Z','2026-10-12 07:00Z'));ROLLBACK;").stdout.splitlines()[-1])
+ assert private_receipt['private']==original_population,private_receipt
+ assert private_receipt['public']=={'population':{},'issues':[]},private_receipt
+ assert advance()['status']=='sealed'
+ published_population=json.loads(sql("SELECT public.fn_union_pnl_inventory_population('2026-10-12 07:00Z','2026-10-12 07:00Z');").stdout)
+ assert published_population==original_population
+ assert sql("SELECT row_count,issue_count,rows_md5,issues_md5,result_md5 FROM public.union_pnl_inventory_checkpoints WHERE boundary='2026-10-12 07:00Z';").stdout==original_population_header
+ assert sql("SELECT md5(public.fn_union_pnl_inventory_build_population('2026-10-12 07:00Z','2026-10-12 07:00Z')::text)=result_md5 FROM public.union_pnl_inventory_checkpoints WHERE boundary='2026-10-12 07:00Z';").stdout.strip()=='t'
+ print('Nonempty original/private/published population parity: five source keys, five active rows, two original issues',flush=True)
  # Highly compressible TOAST values must still consume their full encoded budget.
  for name,size,oversized in (('compressed',5*1024*1024,False),('oversized',9*1024*1024,True)):
   sql(f'CREATE DATABASE {name};');database=name
@@ -178,7 +206,7 @@ try:
    else:raise AssertionError('Compressible rows did not complete')
    assert sql("SELECT count(*) FROM public.union_pnl_inventory_published_rows WHERE boundary='2026-10-12 07:00Z';").stdout.strip()=='2'
  database='postgres'
- result=dict(status='passed' ,rows=rows,old_one_transaction_wal=old_wal,bounded_transactions_wal=wals,compressed_budget_verified=True,oversized_refused=True,backlog_truthful=True,concurrency_verified=True,checksum_refused=True,header_equivalent=True,crash_resumed=True,partial_hidden=True,replay_refused=True,definitions=definitions,storage=str(work))
+ result=dict(status='passed',rows=rows,nonempty_population_parity=True,population_active_counts=expected_population_counts,population_issue_count=2,old_one_transaction_wal=old_wal,bounded_transactions_wal=wals,compressed_budget_verified=True,oversized_refused=True,backlog_truthful=True,concurrency_verified=True,checksum_refused=True,header_equivalent=True,crash_resumed=True,partial_hidden=True,replay_refused=True,definitions=definitions,storage=str(work))
  (work/'result.json').write_text(json.dumps(result,indent=2)+'\n')
  print(json.dumps(result,indent=2))
 finally:

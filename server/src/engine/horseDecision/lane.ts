@@ -18,6 +18,7 @@ import type {
 } from './protocol.js';
 import type { HorseDiscardExecutionObservation } from '../../services/horseDecisionJournal/discard.js';
 import { decisionWorkersCanYield } from './workerPriority.js';
+import { horseJournalShardCapacity } from '../../services/horseDecisionJournal/config.js';
 import type { HorsePlanAcceptance } from '../HorsePlanEffectReceipt.js';
 
 /**
@@ -95,7 +96,8 @@ import type { HorsePlanAcceptance } from '../HorsePlanEffectReceipt.js';
  * So the default counts PHYSICAL cores, which Node cannot see, by the only
  * safe assumption for a cloud host: two threads per core. One worker until
  * the host has three physical cores (six logical), two from there, never
- * more than two by default. HORSE_DECISION_WORKERS raises it explicitly for
+ * more than two by default where a worker cannot yield (where it can, see
+ * 2026-10-12 below). HORSE_DECISION_WORKERS raises it explicitly for
  * an operator who knows the host, still capped by availableParallelism() - 2
  * (one context for the main loop, one for an equity worker).
  *
@@ -108,6 +110,39 @@ import type { HorsePlanAcceptance } from '../HorsePlanEffectReceipt.js';
  * both want it. On such a platform a two-core host runs two workers again:
  * the horses think, and the lease renewal pass is never the thread that
  * waits. Anywhere the worker cannot yield, the physical-core rule stands.
+ *
+ * WHERE THE WORKERS YIELD, THE DEFAULT FOLLOWS THE PHYSICAL CORES, BOUNDED BY
+ * THE JOURNAL'S DISK (2026-10-12). The engine host is now a KVM guest with
+ * eight logical CPUs on four EPYC Milan cores. Measured read-only
+ * there (Prometheus 15-minute means, /health, top -H, the private journal):
+ *
+ *     both decision workers (nice 10)          99% CPU each at every peak
+ *     host                                     4.5 of 8 logical CPUs idle
+ *     lane oldest queued job, 1,500-1,700      2-4 s (Oct 11 21:00Z to
+ *       horses seated                            Oct 12 04:00Z, before #6700)
+ *     the same at 2,070 horses (Oct 12 05:22Z) 5.8-7.4 s, 450-510 queued
+ *     at 600-950 horses (07:00-11:00Z)         under 0.2 s, 1-3 queued
+ *
+ * The queue followed the floor, not a release: it was 140-257 deep with the
+ * oldest job 2-4 s before release 9d567463 at the same load, and per-decision
+ * worker CPU did not rise with it (journal sample of 16,267 decisions,
+ * 09:25-11:25Z: 18.7 ms a decision, of which the Phase 7 tournament utility
+ * 60%, the reference brain 27%, the joint owner 8.6%; the October 11 daily
+ * means were 20.4 ms, 63%, 26% and 9%). Two threads were the ceiling while
+ * half the host idled. So where the workers yield, the default is one worker
+ * per physical core but one (which the main loop, the equity pool and the
+ * journal writers keep), never fewer than the two it has always run: three
+ * on this host, still two on a two-core host and on six logical CPUs.
+ *
+ * Every worker shard owns a full journal archive allocation (see
+ * runtimeHorseJournalArchiveOptions): 8 GiB of segments plus a 6 GiB catalog
+ * ceiling, about 14 GB on disk per shard on this host. A default that added
+ * shards the disk cannot hold would fill the host, so the default never
+ * exceeds horseJournalShardCapacity: the shards whose archives already exist
+ * plus the new ones the journal's filesystem can hold at their worst-case
+ * size with a reserve left over. On this host (21.9 GiB free) that admits a
+ * third shard; below 20 GiB free it stays at two. An explicit
+ * HORSE_DECISION_WORKERS is the operator's call and is not bounded by it.
  */
 export const HORSE_DECISION_WORKERS_ENV = 'HORSE_DECISION_WORKERS';
 export const DEFAULT_HORSE_DECISION_WORKERS = 2;
@@ -121,16 +156,28 @@ export function horseDecisionWorkerCount(input: {
   cores: number;
   /** Whether a worker can lower its own thread priority (workerPriority.ts). */
   canYield?: boolean;
+  /** The most worker shards whose journal archives the journal's filesystem
+   * can hold (horseJournalShardCapacity); absent when nothing is journaled.
+   * Bounds the default only. */
+  journalShards?: number;
 }): number {
   const logical = Number.isSafeInteger(input.cores) && input.cores > 0 ? input.cores : 1;
   // An explicit request may use every logical CPU but the main loop's and one
-  // equity worker's; the default leaves a whole physical core for them unless
-  // the workers yield, in which case two share what the main loop leaves.
+  // equity worker's. Where the workers yield, the default is one per physical
+  // core but one, never fewer than two; where they cannot, it leaves a whole
+  // physical core for the main loop and stays at two at most.
   const explicitCapacity = Math.max(1, logical - 2);
   const physical = Math.max(1, Math.floor(logical / ASSUMED_THREADS_PER_CORE));
-  const defaultCount = input.canYield
-    ? Math.max(1, Math.min(DEFAULT_HORSE_DECISION_WORKERS, explicitCapacity))
-    : Math.max(1, Math.min(DEFAULT_HORSE_DECISION_WORKERS, physical - 1));
+  const cpuDefault = input.canYield
+    ? Math.min(Math.max(DEFAULT_HORSE_DECISION_WORKERS, physical - 1), explicitCapacity)
+    : Math.min(DEFAULT_HORSE_DECISION_WORKERS, physical - 1);
+  const journalShards =
+    typeof input.journalShards === 'number' &&
+    Number.isSafeInteger(input.journalShards) &&
+    input.journalShards >= 1
+      ? input.journalShards
+      : MAX_HORSE_DECISION_WORKERS;
+  const defaultCount = Math.max(1, Math.min(cpuDefault, journalShards, MAX_HORSE_DECISION_WORKERS));
   const raw =
     typeof input.requested === 'number'
       ? input.requested
@@ -232,12 +279,16 @@ const sumOf = (values: number[]): number => values.reduce((a, b) => a + b, 0);
 export class LiveHorseDecisionWorkerPool implements LiveHorseDecisionLane {
   private readonly clients: readonly LiveHorseDecisionWorkerClient[];
   private readonly readyPromise: Promise<HorseDecisionWorkerReadiness>;
+  /** The journal shards the disk can hold, read once at construction. */
+  readonly journalShardCapacity: number | undefined;
 
   constructor(options: LiveHorseDecisionLaneOptions = {}) {
+    this.journalShardCapacity = horseJournalShardCapacity();
     const count = horseDecisionWorkerCount({
       requested: options.workers ?? process.env[HORSE_DECISION_WORKERS_ENV],
       cores: availableParallelism(),
       canYield: decisionWorkersCanYield(),
+      journalShards: this.journalShardCapacity,
     });
     const clientOptions: LiveHorseDecisionWorkerClientOptions = { ...options };
     delete (clientOptions as LiveHorseDecisionLaneOptions).workers;
@@ -432,6 +483,9 @@ export async function startLiveHorseDecisionWorker(
     console.log(
       `[LiveHorseDecisionWorker] ${singleton.workerCount} decision worker(s) sharded by table ` +
         `on ${availableParallelism()} logical CPU(s)` +
+        (singleton.journalShardCapacity === undefined
+          ? ''
+          : `, journal disk room for ${singleton.journalShardCapacity} shard(s)`) +
         (process.env[HORSE_DECISION_WORKERS_ENV]
           ? ` (${HORSE_DECISION_WORKERS_ENV}=${process.env[HORSE_DECISION_WORKERS_ENV]})`
           : '')

@@ -13,13 +13,22 @@ each segment's sha256 name. Run under nice 19 / ionice idle.
 
 argv: <from-iso> <to-iso> <release-sha40> <variant plo5|plo6|plo8>
 stderr: a JSON summary (segments read, records, excluded by name).
+env (tests only): PHASE11_EXTRACT_SEGMENT_DIRS, colon-separated segment
+directories replacing the host archive directories; PHASE11_EXTRACT_JOURNAL_ROOT,
+a journal directory read in place of the host's.
 """
 import os, sys, gzip, json, hashlib, calendar, time
 from collections import Counter
 
-DIRS = ['/var/lib/club-arena/horse-decisions/archive/segments',
-        '/var/lib/club-arena/horse-decisions/archive-shard-1/segments']
-if os.environ.get('PHASE11_EXTRACT_SEGMENT_DIRS'):  # tests only
+# Every decision-worker shard's archive, as horseJournalArchiveDirectoryNames
+# reads them: shard 0 is 'archive', later shards 'archive-shard-1', '-2', ...
+# up to the first missing one. The worker count follows the host since
+# 2026-10-12 (lane.ts), so it is not fixed at two.
+ROOT = os.environ.get('PHASE11_EXTRACT_JOURNAL_ROOT', '/var/lib/club-arena/horse-decisions')
+DIRS = [ROOT + '/archive/segments']
+while os.path.isdir('%s/archive-shard-%d' % (ROOT, len(DIRS))):
+    DIRS.append('%s/archive-shard-%d/segments' % (ROOT, len(DIRS)))
+if os.environ.get('PHASE11_EXTRACT_SEGMENT_DIRS'):
     DIRS = os.environ['PHASE11_EXTRACT_SEGMENT_DIRS'].split(':')
 frm, to, release, variant = sys.argv[1:5]
 assert variant in ('plo5', 'plo6', 'plo8') and len(release) == 40

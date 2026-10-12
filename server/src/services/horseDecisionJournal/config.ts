@@ -1,5 +1,5 @@
-import { existsSync, lstatSync } from 'node:fs';
-import { isAbsolute, join } from 'node:path';
+import { existsSync, lstatSync, statfsSync } from 'node:fs';
+import { dirname, isAbsolute, join } from 'node:path';
 
 /** A closed window of capture time whose published segments the ring never
  * retires. Resolved once, when a writer opens with it, to the published
@@ -234,8 +234,10 @@ export function readonlyHorseJournalStoreOptions(
   readOnly: true;
   archive?: HorseJournalArchiveOptions;
 } {
-  const index = archiveDirectory === 'archive' ? 0 : Number(archiveDirectory.slice('archive-shard-'.length));
-  if (archiveDirectory !== archiveDirectoryName(index)) throw Error('Invalid Horse journal shard directory');
+  const index =
+    archiveDirectory === 'archive' ? 0 : Number(archiveDirectory.slice('archive-shard-'.length));
+  if (archiveDirectory !== archiveDirectoryName(index))
+    throw Error('Invalid Horse journal shard directory');
   const archive = runtimeHorseJournalArchiveOptions(directory, {}, { index });
   try {
     lstatSync(archive.directory);
@@ -244,4 +246,65 @@ export function readonlyHorseJournalStoreOptions(
     throw error;
   }
   return { readOnly: true, archive };
+}
+
+/* A SHARD THE DISK CANNOT HOLD IS NEVER ADDED BY DEFAULT (2026-10-12). Each
+   decision-worker shard owns a full allocation (above), so the default worker
+   count (horseDecisionWorkerCount in engine/horseDecision/lane.ts) is bounded
+   by how many shards the journal's filesystem can hold. A shard's worst case
+   on disk is its compressed segment bytes at the small-file block overhead
+   plus the catalog ceiling: measured on the engine host on 2026-10-12, 8.6 GB
+   of compressed segments took 10.4 GB of blocks (1.21x) beside a 3.3 GB
+   catalog, 14 GB a shard. The reserve is what every shard at its worst case
+   still leaves to the rest of the host (the engine image build, logs). */
+export const HORSE_JOURNAL_SEGMENT_BLOCK_OVERHEAD = 1.25;
+export const HORSE_JOURNAL_SHARD_DISK_RESERVE_BYTES = 4 * 1024 * 1024 * 1024;
+
+/** One shard's worst-case footprint on disk at the given segment allocation. */
+export function horseJournalShardDiskBytes(maxBytes: number): number {
+  return (
+    Math.ceil(maxBytes * HORSE_JOURNAL_SEGMENT_BLOCK_OVERHEAD) + HORSE_JOURNAL_ARCHIVE_CATALOG_BYTES
+  );
+}
+
+/** The shards a journal can run: those whose archives already exist (their
+ * room is already spoken for) plus the new ones the free space holds at their
+ * worst case with the reserve left over. Never below one. */
+export function horseJournalShardsAffordable(input: {
+  existingShards: number;
+  availableBytes: number;
+  shardBytes: number;
+  reserveBytes: number;
+}): number {
+  const fresh =
+    input.shardBytes > 0
+      ? Math.floor((input.availableBytes - input.reserveBytes) / input.shardBytes)
+      : 0;
+  return Math.max(1, Math.max(0, input.existingShards) + Math.max(0, fresh));
+}
+
+/** The decision-worker shards this engine's journal can hold, measured once
+ * from the journal directory (or its nearest existing parent before the
+ * journal has created it). Undefined when nothing is journaled
+ * (HORSE_DECISION_JOURNAL_DIR unset) or the allocation cannot be read; the
+ * journal itself refuses such a configuration when it starts. */
+export function horseJournalShardCapacity(
+  environment: Readonly<Record<string, string | undefined>> = process.env
+): number | undefined {
+  const directory = environment.HORSE_DECISION_JOURNAL_DIR;
+  if (!directory) return undefined;
+  try {
+    const { maxBytes } = runtimeHorseJournalArchiveOptions(directory, environment);
+    let probe = directory;
+    while (!existsSync(probe) && dirname(probe) !== probe) probe = dirname(probe);
+    const fs = statfsSync(probe);
+    return horseJournalShardsAffordable({
+      existingShards: horseJournalArchiveDirectoryNames(directory).length,
+      availableBytes: fs.bavail * fs.bsize,
+      shardBytes: horseJournalShardDiskBytes(maxBytes),
+      reserveBytes: HORSE_JOURNAL_SHARD_DISK_RESERVE_BYTES,
+    });
+  } catch {
+    return undefined;
+  }
 }

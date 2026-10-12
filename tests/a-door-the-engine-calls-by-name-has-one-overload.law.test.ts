@@ -156,6 +156,10 @@ const sig = (types: string[]) => types.join(',');
  * their browser execution.
  */
 const DELIBERATE_OVERLOADS: Record<string, string[]> = {
+  // Existing SQL compatibility door delegates to the service-only two-argument
+  // door. The latter requires p_seat_first_internal, with no default: neither
+  // named-argument set can match both. Do not drop the compatibility caller.
+  fn_register_for_tournament: ['uuid', 'uuid,boolean'],
   fn_thaw_platform: [
     'timestamp with time zone,numeric,text',
     'timestamp with time zone,timestamp with time zone,numeric,uuid,text',
@@ -251,6 +255,21 @@ describe('a door the engine calls by name has one overload', () => {
   });
 
   it('a deliberate overload pair really is disjoint by required named arguments', () => {
+    const registration = parsed
+      .flatMap(({ sql }) => [...sql.matchAll(CREATE_RE)])
+      .filter((match) => match[1].toLowerCase() === 'fn_register_for_tournament')
+      .filter((match) => /p_seat_first_internal/i.test(match[2]))
+      .at(-1);
+    expect(registration, 'registration has no two-argument definition').toBeDefined();
+    expect(registration![2]).toMatch(/p_seat_first_internal boolean\s*$/i);
+    expect(registration![2]).not.toMatch(/default|=/i);
+    const compatibility = parsed
+      .flatMap(({ sql }) => [...sql.matchAll(CREATE_RE)])
+      .filter((match) => match[1].toLowerCase() === 'fn_register_for_tournament')
+      .filter((match) => sig(inputTypes(match[2])) === 'uuid')
+      .at(-1);
+    expect(compatibility, 'registration has no compatibility definition').toBeDefined();
+    expect(compatibility![2]).not.toMatch(/p_seat_first_internal/i);
     // The v3 thaw door keeps p_announced_at and p_ownership_token with no
     // default, and the legacy door declares neither, so no call can match both.
     const v3 = parsed

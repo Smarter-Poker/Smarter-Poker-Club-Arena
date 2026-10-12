@@ -146,43 +146,33 @@ test('Escape uses the final decline path once, then Rabbit Hunt announces price 
   await expect(rabbitButton).toHaveCount(0);
 });
 
-test('A 60-second waitlist offer counts down, fits a phone, and hands off to the held seat', async ({
+test('A queued place fits a phone and a seat offer removes it without a hold popup', async ({
   page,
 }) => {
   await page.getByRole('dialog', { name: 'All-In Insurance' }).press('Escape');
   await expect(page.getByRole('dialog', { name: 'All-In Insurance' })).toHaveCount(0);
-  await page.getByTestId('waitlist-seat-offer').click();
+  await page.getByTestId('waitlist-join').click();
 
   const card = page.getByTestId('waitlist-banner-card');
   await expect(card).toBeVisible();
-  await expect(card).toHaveAttribute('aria-label', 'Your Seat Is Held. Tap To Take It.');
+  await expect(card).toContainText('#1');
   await expect(card.getByText('Phase Five Hold Table')).toBeVisible();
-
-  // Measure the settled card, not the intentional overshoot in its 400ms
-  // entrance animation. The animation briefly travels below its final fixed
-  // position and made an otherwise-correct clearance check timing-dependent.
   await card.evaluate(async (element) => {
     await Promise.all(element.getAnimations().map((animation) => animation.finished));
   });
 
   const box = await card.boundingBox();
   const viewport = await page.evaluate(() => ({
-    width: window.innerWidth,
+    width: document.documentElement.clientWidth,
+    scrollWidth: document.documentElement.scrollWidth,
     height: window.innerHeight,
   }));
   expect(box).not.toBeNull();
   expect(box!.x).toBeGreaterThanOrEqual(0);
   expect(viewport.width).toBe(375);
+  expect(viewport.scrollWidth).toBe(viewport.width);
   expect(box!.x + box!.width).toBeLessThanOrEqual(viewport.width);
   expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height - 52 - 12);
-
-  /* Dan 2026-09-23: the hold's clock is internal. The card says the seat is
-     held and what to do; it prints no countdown, at any moment of the hold. */
-  await expect(card).toContainText('Seat Held');
-  await expect(card).toContainText('Tap To Take It');
-  expect(await card.innerText()).not.toMatch(/\d:\d{2}/);
-  await page.waitForTimeout(2_100);
-  expect(await card.innerText()).not.toMatch(/\d:\d{2}/);
 
   const dismiss = card.getByRole('button', {
     name: 'Dismiss The Waitlist Notice For Phase Five Hold Table',
@@ -193,6 +183,17 @@ test('A 60-second waitlist offer counts down, fits a phone, and hands off to the
   });
   expect(dismissHitArea).toEqual({ width: '44px', height: '44px' });
 
-  await card.press('Enter');
-  await expect(page).toHaveURL(/\/table\/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee\?buyin=1$/);
+  // Dan 2026-10-12: a held seat needs no second card or take-seat prompt.
+  // Verify the real mounted consumer handles the event and clears its queue.
+  await page.getByTestId('waitlist-seat-offer').click();
+  await expect(card).toHaveCount(0);
+  await expect(page.getByText('Seat Held', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Tap To Take It', { exact: true })).toHaveCount(0);
+  await expect(page).toHaveURL(/\/dev\/financial-decisions$/);
+
+  // A later genuine queue event must still work; dismiss is local UI only.
+  await page.getByTestId('waitlist-join').click();
+  await expect(card).toBeVisible();
+  await dismiss.click();
+  await expect(card).toHaveCount(0);
 });

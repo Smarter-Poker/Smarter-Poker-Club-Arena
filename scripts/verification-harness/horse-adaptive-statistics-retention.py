@@ -6,6 +6,15 @@ sys.dont_write_bytecode=True
 ROOT=Path(__file__).resolve().parents[2];sys.path.insert(0,str(ROOT/'scripts/ci'))
 from satellite_qualifier_fixture import module,sha,lit
 MIGRATION=Path('supabase/migrations/20261012170542_horse_adaptive_raw_facts_become_exact_sufficient_statistics.sql')
+def consume_report(root,out):
+ # The report builder is an actual engine consumer but its owning module also
+ # imports the server persistence client. This isolated math proof supplies
+ # explicit nonsecret loopback configuration; never inherit production keys.
+ runner=out/'consume.mjs'
+ runner.write_text("import {readFileSync,writeFileSync} from 'node:fs'; let attemptedNetwork=false; globalThis.fetch=()=>{attemptedNetwork=true;throw Error('NATIVE_RETENTION_NETWORK_FORBIDDEN');}; const {buildJournaledOpponentReport}=await import("+json.dumps((root/'server/src/services/HorseJournaledOpponentModels.ts').as_uri())+"); const c=JSON.parse(readFileSync("+json.dumps(str(out/'claim.json'))+",'utf8')); const r=buildJournaledOpponentReport(c,c.leaseToken,'"+'a'*40+"'); if(r.status!=='prepared') throw Error(JSON.stringify(r)); if(attemptedNetwork) throw Error('NATIVE_RETENTION_NETWORK_ATTEMPTED'); writeFileSync("+json.dumps(str(out/'report.json'))+",JSON.stringify(r.report)); process.exit(0);")
+ child_env={'PATH':__import__('os').environ.get('PATH','/usr/bin:/bin'),'LANG':'C','LC_ALL':'C','TZ':'UTC','NODE_ENV':'test','SUPABASE_URL':'http://127.0.0.1:1','SUPABASE_SERVICE_ROLE_KEY':'native-retention-no-network-placeholder'}
+ subprocess.run(['node','--import',str(root/'server/node_modules/tsx/dist/loader.mjs'),str(runner)],check=True,cwd=root,env=child_env,timeout=30)
+ return (out/'report.json').read_text()
 def main():
  p=argparse.ArgumentParser();p.add_argument('--evidence',type=Path,required=True);p.add_argument('--pg-bin',type=Path,required=True);a=p.parse_args()
  out=a.evidence.resolve();out.mkdir(parents=True,exist_ok=False);sock=Path('/Volumes/SmarterWork/agent-work/ahr-20261012-socket') if sys.platform=='darwin' else Path('/tmp');sock.mkdir(exist_ok=True)
@@ -63,8 +72,7 @@ def main():
   changed[7][0]=changed[7][0].replace('"call"','"raise"');changed[5]=h('conflict-source');changed[1]=h('|'.join(['adaptive-journal-v1',actor,changed[5],str(fromms),str(toms)]));code,_,err=e.sql(after,'SELECT fn_append_horse_adaptive_observations('+lit(json.dumps(changed,separators=(',',':')))+');',label='different-payload-refused',check=False);assert code!=0 and 'ADAPTIVE_JOURNAL_OBSERVATION_CONFLICT' in err;checks.append('retired-observation-different-payload-refused')
   e.sql(after,'SELECT fn_prune_horse_adaptive_journal();',label='repeat-prune');yes(after,"SELECT sum(observations)=4 FROM smarter_private.horse_adaptive_statistics;",'compaction-idempotent')
   _,claim,_=e.sql(after,"SELECT fn_claim_horse_journaled_model_statistics('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');",label='versioned-claim');c=json.loads(claim);assert c['version']==2 and c['observations']==5 and len(c['rows'])==1 and sum(json.loads(x)[9] for x in c['statistics'])==4;checks.append('versioned-snapshot-counts-represented-facts')
-  (out/'claim.json').write_text(json.dumps(c));runner=out/'consume.mjs';runner.write_text("import {readFileSync,writeFileSync} from 'node:fs'; import {buildJournaledOpponentReport} from "+json.dumps((ROOT/'server/src/services/HorseJournaledOpponentModels.ts').as_uri())+"; const c=JSON.parse(readFileSync("+json.dumps(str(out/'claim.json'))+",'utf8')); const r=buildJournaledOpponentReport(c,c.leaseToken,'"+'a'*40+"'); if(r.status!=='prepared') throw Error(JSON.stringify(r)); writeFileSync("+json.dumps(str(out/'report.json'))+",JSON.stringify(r.report)); process.exit(0);")
-  subprocess.run(['node','--import',str(ROOT/'server/node_modules/tsx/dist/loader.mjs'),str(runner)],check=True,cwd=ROOT,timeout=30);report=(out/'report.json').read_text();yes(after,"SELECT fn_finish_horse_journaled_model_statistics('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',"+lit(report)+")->>'status'='recorded';",'native-claim-real-consumer-fenced-finish')
+  (out/'claim.json').write_text(json.dumps(c));report=consume_report(ROOT,out);yes(after,"SELECT fn_finish_horse_journaled_model_statistics('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',"+lit(report)+")->>'status'='recorded';",'native-claim-real-consumer-fenced-finish')
   yes(after,"SELECT NOT has_function_privilege('service_role','smarter_private.retire_horse_adaptive_hand(uuid)','EXECUTE') AND NOT has_table_privilege('service_role','smarter_private.horse_adaptive_statistics','SELECT');",'service-cannot-mutate-stats-or-retirement')
   e.discard(after)
   # Durable uncompleted work is a real dependency, not erased by an age-only

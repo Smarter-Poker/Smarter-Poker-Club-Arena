@@ -54,6 +54,11 @@ const HARNESSES = [
     'union-owner-membership-db/fixture.sql',
     '20261012112707_the_union_owner_is_a_member_of_every_club.sql',
   ],
+  [
+    'test-only-staff-remove-member-db-postgres.py',
+    'only-staff-remove-member-db/fixture.sql',
+    '20261012132509_only_staff_can_remove_a_member.sql',
+  ],
 ] as const;
 
 type Step = { name?: string; if?: string; run?: string; env?: Record<string, string> };

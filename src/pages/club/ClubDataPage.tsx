@@ -63,7 +63,8 @@ import type { BusEventType } from '../../core/MasterBus';
 import { useVirtualScroll } from '../../hooks/useVirtualScroll';
 import RakeSnapshotPanel from '../../components/club/RakeSnapshotPanel';
 import type { RakeScope } from '../../services/ClubRakeSnapshotService';
-import { SpadeConsole, type ConsoleInk } from '../../components/console/SpadeConsole';
+import type { ConsoleInk } from '../../components/console/SpadeConsole';
+import { ClubPageSection as SpadeConsole } from '../../components/club/ClubPageSection';
 import { titleCase } from '../../utils/titleCase';
 import { compactChips } from '../../utils/format';
 import styles from './ClubDataPage.module.css';
@@ -2938,6 +2939,7 @@ export default function ClubDataPage() {
 
       {clubUuid && (
         <RakeSnapshotPanel
+          unframed
           clubId={clubUuid}
           userId={userId}
           scopes={rakeScopes}

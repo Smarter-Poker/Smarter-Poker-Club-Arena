@@ -957,7 +957,7 @@ export default function ClubDashboard() {
 
   if (loadError && !loading && !club) {
     return (
-      <div className={styles.dashboard}>
+      <div className={styles.dashboard} data-arena-surface="club-dashboard">
         <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text-secondary)' }}>
           <p style={{ fontSize: '1.1rem', marginBottom: '16px' }}>Failed To Load Dashboard</p>
           <button
@@ -993,9 +993,15 @@ export default function ClubDashboard() {
   const hasInsurance = !!revenue?.insurance && revenue.insurance.contracts > 0;
 
   return (
-    <div className={styles.dashboard}>
+    <div className={styles.dashboard} data-arena-surface="club-dashboard">
       {/* Dashboard Header */}
       <header className={styles.header}>
+        <img
+          className={styles.heroArt}
+          src={`${import.meta.env.BASE_URL}images/club-management/table-command-hero-v1.webp`}
+          alt=""
+          aria-hidden="true"
+        />
         <div className={styles.clubInfo}>
           <div className={styles.clubAvatar}>
             {club.avatarUrl ? (
@@ -1005,6 +1011,7 @@ export default function ClubDashboard() {
             )}
           </div>
           <div className={styles.clubMeta}>
+            <p className={styles.eyebrow}>Club Dashboard</p>
             <h1 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               {club.name}
               {club.levelInfo && (
@@ -1047,9 +1054,6 @@ export default function ClubDashboard() {
           </Link>
           <Link to={`/clubs/${clubId}/announcements`} className={styles.actionBtn}>
             Announce
-          </Link>
-          <Link to={`/financial-admin`} className={styles.actionBtn}>
-            Admin Hub
           </Link>
           <Link to={`/clubs/${clubId}/settings`} className={styles.actionBtn}>
             Settings
@@ -1366,7 +1370,7 @@ export default function ClubDashboard() {
 
             <section className={styles.activityPreview}>
               <h2>Recent Activity</h2>
-              {clubId && <ClubActivityFeed clubId={clubId} limit={5} />}
+              {clubId && <ClubActivityFeed plain clubId={clubId} limit={5} />}
               <button
                 onClick={() => switchTab('activity')}
                 className={styles.viewAllLink}
@@ -1381,7 +1385,7 @@ export default function ClubDashboard() {
         {activeTab === 'activity' && (
           <div className={styles.activityFull}>
             <h2>Club Activity Feed</h2>
-            {clubId && <ClubActivityFeed clubId={clubId} limit={50} showFilter />}
+            {clubId && <ClubActivityFeed plain clubId={clubId} limit={50} showFilter />}
           </div>
         )}
 

@@ -704,6 +704,7 @@ export default function HandHistoryPage() {
   return (
     <div className="hand-history-page" data-arena-surface="play">
       <CasinoSurfaceHeader
+        unframed
         eyebrow="Play & Review / Hands"
         title="Hand Archive"
         description="Every Hand You Played, Across Every Table, Newest First. Expand A Hand For The Full Rundown, Replay It, Share It, Or Send It To Jarvis."

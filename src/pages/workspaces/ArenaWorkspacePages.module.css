@@ -398,3 +398,38 @@
 .page[data-workspace='rewards'] .liveLine {
   display: none;
 }
+
+.page:is([data-workspace='club-control'], [data-workspace='play-records']) {
+  max-width: 1200px;
+  margin-inline: auto;
+  background: #000;
+}
+.page:is([data-workspace='club-control'], [data-workspace='play-records']) .hero {
+  display: block;
+  min-height: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+.page:is([data-workspace='club-control'], [data-workspace='play-records']) .heroCopy {
+  padding: 16px 0;
+}
+.page:is([data-workspace='club-control'], [data-workspace='play-records']) .hero h1 {
+  font-size: clamp(30px, 4vw, 44px);
+}
+.page:is([data-workspace='club-control'], [data-workspace='play-records']) .artFrame {
+  display: none;
+}
+.page:is([data-workspace='club-control'], [data-workspace='play-records']) .card {
+  background: transparent;
+  border: 0;
+  border-top: 1px solid rgb(154 165 179 / 20%);
+  box-shadow: none;
+  padding-inline: 0;
+}
+.page:is([data-workspace='club-control'], [data-workspace='play-records']) .index {
+  display: none;
+}
+.page:is([data-workspace='club-control'], [data-workspace='play-records']) .card {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}

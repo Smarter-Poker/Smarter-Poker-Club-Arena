@@ -56,8 +56,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 210951,
-      "sha256": "1d0cb7601012ef3f223b286b00fa4afae3309a8159c27a6aa304681a68a5ed25"
+      "bytes": 211927,
+      "sha256": "a5192148d536fa822a7e359ef8ecb2c7e55d1f745ed599379aece5115f323cfa"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -2590,6 +2590,71 @@
           "sha256": "a551b56b884f8b2b7d1178fcdf3dab45baed2b14e858951e63ef9efb59feaadc"
         },
         "after": {
+          "bytes": 107883,
+          "sha256": "a551b56b884f8b2b7d1178fcdf3dab45baed2b14e858951e63ef9efb59feaadc"
+        }
+      }
+    }
+  },
+  "inventoryCommittedPages20261012": {
+    "reason": "Add required Accounting3 native actual-deferred-FK fail-before/pass-after proof. Preserve all existing financial inputs, assertions and qualification status. Source fingerprint is not production proof.",
+    "previousWorkflowPin": {
+      "bytes": 205794,
+      "sha256": "e85cb68743eb7bc58e6b3c089e3f731ba0ae9a96cc9ef3b4b055d7e031fb518d"
+    }
+  },
+  "inventoryRetentionMainIntegration20261012": {
+    "reason": "Preserve all protected retention, original-stack, inventory-seal and new committed-page native qualification. Refresh only exact combined workflow source identity; preserve historical pins, financial inputs/assertions and qualification status.",
+    "previousCommittedPageWorkflowPin": {
+      "bytes": 206770,
+      "sha256": "92db31450a1ff6b93168e418e38eee09b4ecc79ca693d48a969a1e4da18b59fa"
+    },
+    "protectedMainRetentionWorkflowPin": {
+      "bytes": 208650,
+      "sha256": "726fc785d4c857df179022236ca835b70891a323ba25f306a1ccd2f6d59b8000"
+    }
+  },
+  "scopedLaunchInventoryMainIntegration20261012": {
+    "reason": "Preserve both scoped launch and protected inventory qualification and historical evidence. Only combined source identities change; financial inputs, assertions and qualification status are retained. Source binding is not production proof.",
+    "pins": {
+      ".github/workflows/ci.yml": {
+        "launch": {
+          "bytes": 210951,
+          "sha256": "1d0cb7601012ef3f223b286b00fa4afae3309a8159c27a6aa304681a68a5ed25"
+        },
+        "incoming": {
+          "bytes": 209626,
+          "sha256": "193e61fdf98e93dcef7ae20fbc5fe447d4048a1e8605a452aa239f4a75e0f7dc"
+        },
+        "combined": {
+          "bytes": 211927,
+          "sha256": "a5192148d536fa822a7e359ef8ecb2c7e55d1f745ed599379aece5115f323cfa"
+        }
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "launch": {
+          "bytes": 36177,
+          "sha256": "da8c721743b44ef3194da354c587d770f3e1aee171de5c490a6407981f41498d"
+        },
+        "incoming": {
+          "bytes": 35991,
+          "sha256": "d064527051d9ca3b8687b8414144a81008571552ab3d73f104ee462c0dac2a80"
+        },
+        "combined": {
+          "bytes": 36177,
+          "sha256": "da8c721743b44ef3194da354c587d770f3e1aee171de5c490a6407981f41498d"
+        }
+      },
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "launch": {
+          "bytes": 107883,
+          "sha256": "a551b56b884f8b2b7d1178fcdf3dab45baed2b14e858951e63ef9efb59feaadc"
+        },
+        "incoming": {
+          "bytes": 105731,
+          "sha256": "14a67e65f162b0c02c406ae9b24726852f5d5678c28f01ba861633b9c6ea9682"
+        },
+        "combined": {
           "bytes": 107883,
           "sha256": "a551b56b884f8b2b7d1178fcdf3dab45baed2b14e858951e63ef9efb59feaadc"
         }

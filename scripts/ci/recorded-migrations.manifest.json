@@ -715,6 +715,58 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/5008",
       "refusedBy": [],
       "liveVerdict": "Read live 2026-10-11T14:35:10Z: tournament_players.zz_restriction_tourney_paid_guard is declared; fn_undeclared_money_triggers() returns no rows. Existing data-only declaration, no money moved and no trigger created. Production body MD5 f7e1dfbfdbe3037d015a73255f58228d, 1882 bytes. Recording only; do not replay."
+    },
+    {
+      "version": "20261012154646",
+      "name": "horse_history_retention_bounds_each_compaction_batch",
+      "file": "supabase/migrations/20261012154646_horse_history_retention_bounds_each_compaction_batch.sql",
+      "md5": "0934a1f2be4347b19a0de3845550936b",
+      "appliedToProductionAt": "2026-10-12T15:46:46Z",
+      "recoveredOn": "2026-10-12",
+      "recoveredFrom": "Exact source bytes verified against installed schema_migrations statements and fn_ca_migration_text",
+      "refusedBy": [
+        "retention config source contract: anchored patch preserves existing config read"
+      ],
+      "liveVerdict": "Production readback2026-10-12: exact ledger hash as recorded; current prune278219bbf58cb30cfad6aa63017a407c retains horse_retention_days config, bounded250-row iteration and earning sources. Native37 original-classification,44 F06 safety,35 replay-certificate and34 cash qualification pass. Ownerpostgres, invokerprune ACLpostgres; financial consumer ACLpreserved. Records immutable installed SQL; does not authorize replay or exempt new SQL."
+    },
+    {
+      "version": "20261012161152",
+      "name": "horse_retention_requires_original_no_human_evidence",
+      "file": "supabase/migrations/20261012161152_horse_retention_requires_original_no_human_evidence.sql",
+      "md5": "fac686ddecd7741307ae9d14cea68918",
+      "appliedToProductionAt": "2026-10-12T16:11:52Z",
+      "recoveredOn": "2026-10-12",
+      "recoveredFrom": "Exact source bytes verified against installed schema_migrations statements and fn_ca_migration_text",
+      "refusedBy": [
+        "retention config source contract: anchored patch preserves existing config read"
+      ],
+      "liveVerdict": "Production readback2026-10-12: exact ledger hash as recorded; current prune278219bbf58cb30cfad6aa63017a407c retains horse_retention_days config, bounded250-row iteration and earning sources. Native37 original-classification,44 F06 safety,35 replay-certificate and34 cash qualification pass. Ownerpostgres, invokerprune ACLpostgres; financial consumer ACLpreserved. Records immutable installed SQL; does not authorize replay or exempt new SQL."
+    },
+    {
+      "version": "20261012161313",
+      "name": "settled_horse_settlement_keys_retain_compact_replay_certificates",
+      "file": "supabase/migrations/20261012161313_settled_horse_settlement_keys_retain_compact_replay_certificates.sql",
+      "md5": "f10ccb49a5533a3762dbe364c89f00f4",
+      "appliedToProductionAt": "2026-10-12T16:13:13Z",
+      "recoveredOn": "2026-10-12",
+      "recoveredFrom": "Exact source bytes verified against installed schema_migrations statements and fn_ca_migration_text",
+      "refusedBy": [
+        "retention config source contract: anchored patch preserves existing config read"
+      ],
+      "liveVerdict": "Production readback2026-10-12: exact ledger hash as recorded; current prune278219bbf58cb30cfad6aa63017a407c retains horse_retention_days config, bounded250-row iteration and earning sources. Native37 original-classification,44 F06 safety,35 replay-certificate and34 cash qualification pass. Ownerpostgres, invokerprune ACLpostgres; financial consumer ACLpreserved. Records immutable installed SQL; does not authorize replay or exempt new SQL."
+    },
+    {
+      "version": "20261012162707",
+      "name": "settled_horse_cash_provenance_erases_original_play_contents",
+      "file": "supabase/migrations/20261012162707_settled_horse_cash_provenance_erases_original_play_contents.sql",
+      "md5": "8f4012e8626eb81b19e825d06d8d8b1d",
+      "appliedToProductionAt": "2026-10-12T16:27:07Z",
+      "recoveredOn": "2026-10-12",
+      "recoveredFrom": "Exact source bytes verified against installed schema_migrations statements and fn_ca_migration_text",
+      "refusedBy": [
+        "retention config source contract: anchored patch preserves existing config read"
+      ],
+      "liveVerdict": "Production readback2026-10-12: exact ledger hash as recorded; current prune278219bbf58cb30cfad6aa63017a407c retains horse_retention_days config, bounded250-row iteration and earning sources. Native37 original-classification,44 F06 safety,35 replay-certificate and34 cash qualification pass. Ownerpostgres, invokerprune ACLpostgres; financial consumer ACLpreserved. Records immutable installed SQL; does not authorize replay or exempt new SQL."
     }
   ]
 }

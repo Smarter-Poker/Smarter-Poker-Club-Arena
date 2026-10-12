@@ -4,11 +4,13 @@ Owner direction 2026-10-12: delete settled horse-only hand contents after eight 
 
 ## Current verified state
 
-Production policy is eight days. sp_prune_hand_history runs every ten minutes and has successful executions. It deletes eligible hand_history, hand_atomic_commits and ca_hand_player_idx rows. It records disposal of the original settlement request, but retains the full immutable request. About118GB of requests therefore accumulate beyond history retention. A sample found42% already disposed. Other per-hand copies and accounting journals have separate lifetimes. The complete rule is not currently enforced across all stored hand payloads.
+The original production policy was eight days, but cleanup retained full submission requests and other duplicate hand contents. About118GB of requests accumulated; a bounded sample found42% already disposed, which does not establish safe reclaimable bytes. Five qualified corrections are now installed: original request compaction, bounded batches, original human classification, compact settlement replay certificates, and cash hand-content compaction. Exact installed versions and live evidence are in the owning checkpoint.
+
+The two affected existing cleanup jobs are temporarily paused while connected safeguards preserve accepted derived statistics and lifetime hand counts. Old fact deletion demonstrably subtracted earned summaries and could delete facts from mixed human hands. Replacement removes only qualified horse hole cards, retains every derived fact and summary, and captures compact original accepted statistics before deleting their raw copies. Adaptive raw data becomes exact sufficient statistics only after its versioned engine consumer is deployed and verified. Historical completion gaps remain protected; the entire rule and physical reclamation are not yet complete.
 
 ## Acceptance contract
 
-- Age is measured from the original hand, with eight full days elapsed, never from a screenshot or current table state.
+- Eight full days must have elapsed from both the original hand and successful completion of settlement obligations. A hand settled yesterday remains protected even if dealt earlier.
 - A mixed human/horse hand is human history and stays forever. Missing profiles, invalid player IDs, uncertain classification and inconsistent receipts stay protected.
 - A hand is not eligible merely because it is old: native settlement/postcommit, accounting/rakeback, bounty/escrow, disputes/reports, F06 permits and movement boundaries must be resolved.
 - No balances, earning source totals, settlement identities or replay fences are deleted or rewritten. Compact hashes/identities may outlive erased hand contents to prove disposal and prevent reapplication.
@@ -23,7 +25,7 @@ Production policy is eight days. sp_prune_hand_history runs every ten minutes an
 3. **Related copies:** inspect accepted rosters, cash participant manifests, cash provenance accepted_request/atomic_receipt, snapshots, adaptive journals and settlement results. Erase only payload fields whose consumers have completed; preserve accounting provenance needed to reconstruct unsettled obligations. Integrate qualified per-hand erasure into the same retention transaction. No blanket age DELETE on monetary tables.
 4. **Accounting inventory:** establish sealed checkpoint coverage and all as-of consumers before compacting historical before/after payload. Preserve boundary truth, reconciliation and human-hand evidence. This is distinct from deletion of poker-hand contents.
 5. **Daily Challenge dedupe:** retain the current delayed-event rejection horizon until a compact tombstone retains identical reward replay safety. Horse-only hand content may expire at eight days; never make old events payable again by deleting receipt keys.
-6. **Existing backlog:** run finite owned bounded batches through the same qualified transition, preserving durable cursor and interrupted outcome. Record examined/erased/protected counts and payload bytes. A source merge alone is not backlog removal.
+6. **Existing backlog:** run finite owned bounded batches through the same qualified transition and retain operation outcomes. Do not create a new recurring repair loop or cursor service. Historical disposal settled=true and F06 accepted status are insufficient proof: a real native counterexample accepts a failed postcommit. Only independent immutable successful completion, exact original identity/hash and horse classification qualify old records. Unknown records remain protected, and their size must be reported separately. A source merge alone is not backlog removal.
 7. **Physical reclamation:** determine free pages/index bloat after compaction. Ordinary vacuum makes space reusable; physical shrinking may need supported online rebuild or planned maintenance with measured headroom/lock budgets. Never VACUUM FULL a hot production table without qualification. Supabase provisioned disk resizing is separate from reusable/reclaimed database bytes.
 8. **Closure:** required local/hosted checks and protected merge, migration installation once outside :50–:03UTC, readback of function hashes/ACLs/triggers, eight-day cleanup behavior plus fresh human/unresolved/replay tests. Record every completed and outstanding phase in the existing checkpoint. No claim that all disk growth is eliminated; genuine financial records continue to grow.
 
@@ -33,4 +35,4 @@ Settled old horse; seven-day horse; exact eight-day boundary; mixed human; missi
 
 ## Explicit exclusions
 
-No deletion of the solved-spots warehouse, human hand history, financial ledger totals or another agent's source/evidence. No new recurring repair job, engine restart dependency, disk expansion or schema-probe DDL on production.
+No deletion of the solved-spots warehouse, human hand history, financial ledger totals or another agent's source/evidence. No new recurring repair job, disk expansion or schema-probe DDL on production. Database changes compatible with the serving engine deliver independently. Only adaptive raw retirement depends on deploying the specific new versioned consumer through the existing engine route.

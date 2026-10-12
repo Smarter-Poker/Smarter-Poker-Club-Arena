@@ -18,7 +18,7 @@ def main():
  p=argparse.ArgumentParser();p.add_argument('--evidence',type=Path,required=True);p.add_argument('--pg-bin',type=Path,required=True);a=p.parse_args()
  out=a.evidence.resolve();out.mkdir(parents=True,exist_ok=False)
  # Keep Unix socket pathname below PostgreSQL's 104-byte limit, on SSD.
- sock=ROOT.parent/('hrr-'+hashlib.sha256(str(ROOT).encode()).hexdigest()[:8]);sock_created=not sock.exists();sock.mkdir(exist_ok=True)
+ sock=(ROOT.parent if sys.platform=='darwin' else Path('/tmp'))/('hrr-'+hashlib.sha256(str(ROOT).encode()).hexdigest()[:8]);sock_created=not sock.exists();sock.mkdir(exist_ok=True)
  native=module(ROOT/'scripts/ci/test-mtt-unlimited.py','horse_request_execution')
  old=module(ROOT/'scripts/ci/test-hand-submission-retention-disposal.py','horse_request_old')
  doors=module(ROOT/'scripts/ci/test-hand-submission-disposal.py','horse_request_doors')

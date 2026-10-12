@@ -56,13 +56,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-<<<<<<< HEAD
-      "bytes": 205043,
-      "sha256": "9ff1e635df3746666ac70c01e36032d3105c8bf5998c1d7c3c9e87fb7ab4e9fc"
-=======
-      "bytes": 205794,
-      "sha256": "e85cb68743eb7bc58e6b3c089e3f731ba0ae9a96cc9ef3b4b055d7e031fb518d"
->>>>>>> origin/main
+      "bytes": 205969,
+      "sha256": "899f55091ecb3f66148bda7528acfd202601f4db2ac26439f28bbbc889769e6b"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -2301,7 +2296,6 @@
       "sha256": "526ce2cb5ae8c17319b7181238858a9d820a4609f4a90f7572c19d316d552ee9"
     }
   },
-<<<<<<< HEAD
   "playerCommandHistoryRecoveryIntegration20261012": {
     "reason": "Preserve both history and native recovery enforcement, independent historical audit records and qualification status. Refresh only reviewed active workflow/classifier/test and nested source binding hashes; this is source identity, not financial or live qualification.",
     "changes": [
@@ -2354,7 +2348,7 @@
         }
       }
     ]
-=======
+  },
   "originalUnchangedStackQualification20261012": {
     "reason": "Add directly triggered isolated PG17 original unchanged-stack qualification and always-retained native transcript in accounting shard3. Existing financial qualification components/assertions/captured fixtures/status unchanged. Workflow byte pin refresh alone does not prove native or production behavior.",
     "previousWorkflowPin": {
@@ -2394,6 +2388,20 @@
       "bytes": 204868,
       "sha256": "526ce2cb5ae8c17319b7181238858a9d820a4609f4a90f7572c19d316d552ee9"
     }
->>>>>>> origin/main
+  },
+  "playerCommandHistoryUnchangedStackIntegration20261012": {
+    "reason": "Preserve original unchanged-stack native enforcement and history qualification, all historical metadata and financial assertions. Refresh current combined workflow and retain classifier/test fingerprints of reviewed combined source only; source identity is not runtime or release proof.",
+    "previousOwn": {
+      "bytes": 205043,
+      "sha256": "9ff1e635df3746666ac70c01e36032d3105c8bf5998c1d7c3c9e87fb7ab4e9fc"
+    },
+    "previousMain": {
+      "bytes": 205794,
+      "sha256": "e85cb68743eb7bc58e6b3c089e3f731ba0ae9a96cc9ef3b4b055d7e031fb518d"
+    },
+    "current": {
+      "bytes": 205969,
+      "sha256": "899f55091ecb3f66148bda7528acfd202601f4db2ac26439f28bbbc889769e6b"
+    }
   }
 }

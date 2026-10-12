@@ -758,6 +758,13 @@ export default function SpinWheel({
       role="region"
       aria-label="Spin Multiplier Draw"
     >
+      {/* Request the rendered housing during the countdown, before the disc enters. */}
+      <link
+        rel="preload"
+        as="image"
+        href={`${import.meta.env.BASE_URL}assets/diamond-spins/wheel-chrome-housing-v1.png`}
+      />
+
       {/* Rendered from the first frame and never removed: a live region that
           appears at the same moment as its text is missed by several screen
           readers. See "WHAT A PLAYER WHO CANNOT SEE THE DISC IS TOLD". */}
@@ -808,7 +815,7 @@ export default function SpinWheel({
                 data-motion="keep"
                 style={
                   {
-                    '--sw-turn': `${CHASE_LOOPS * 360 - (targetIndex * 360) / order.length}deg`,
+                    '--sw-turn': `${CHASE_LOOPS * 360 - (targetIndex * 360) / Math.max(1, order.length)}deg`,
                     '--sw-spin-ms': `${rotorTiming.duration}ms`,
                     '--sw-elapsed': `${-rotorTiming.elapsed}ms`,
                   } as React.CSSProperties

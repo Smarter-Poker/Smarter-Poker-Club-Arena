@@ -264,6 +264,9 @@ describe('sequence', () => {
     expect(container.querySelector('.sw--countdown')).toBeTruthy();
     expect(container.querySelector('.sw__count')?.textContent).toBe('3');
     expect(container.querySelector('.sw__disc')).toBeNull();
+    expect(
+      document.querySelector('link[rel="preload"][as="image"]')?.getAttribute('href')
+    ).toContain('wheel-chrome-housing-v1.png');
 
     // One light per second, derived — not the old hand-copied 750ms step.
     act(() => {

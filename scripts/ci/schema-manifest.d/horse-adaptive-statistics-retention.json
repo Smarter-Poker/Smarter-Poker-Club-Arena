@@ -1,0 +1,27 @@
+{
+  "_owner": "fix/adaptive-horse-statistics-retention-20261012",
+  "_comment": "Candidate declarations; enablement and live engine adoption are separately verified by the operation owner.",
+  "functions": [
+    "fn_claim_horse_journaled_model_statistics",
+    "fn_finish_horse_journaled_model_statistics",
+    "smarter_private.enable_horse_adaptive_retention",
+    "smarter_private.retire_horse_adaptive_hand",
+    "smarter_private.capture_horse_adaptive_disposals",
+    "smarter_private.adaptive_retained_batch",
+    "smarter_private.horse_adaptive_disposal_certificate_matches",
+    "smarter_private.horse_adaptive_disposal_certificate_immutable",
+    "smarter_private.register_horse_adaptive_batch_membership",
+    "smarter_private.horse_adaptive_batch_membership_on_append",
+    "smarter_private.horse_adaptive_raw_retirement_fence"
+  ],
+  "tables": [
+    "smarter_private.horse_adaptive_disposal_certificates",
+    "smarter_private.horse_adaptive_statistics",
+    "smarter_private.horse_adaptive_observation_fences",
+    "smarter_private.horse_adaptive_retention_activation",
+    "smarter_private.horse_adaptive_batch_hand_membership"
+  ],
+  "columns": {
+    "horse_adaptive_observation_batches": ["retention_compacted", "retention_membership_ready"]
+  }
+}

@@ -280,7 +280,7 @@ export default function PlayerStatisticsPage() {
           </h1>
           <p>Read Playing Style, Volume, And Club Results Across Any Recorded Game Window.</p>
           {stats?.authorized && stats.hands > 0 && (
-            <dl className="ps-hero__readouts" aria-label="Selected Range Summary">
+            <dl className="ps-hero__readouts" aria-label="Displayed Range Summary">
               <HeroReadout label="Hands" value={count(stats.hands)} />
               <HeroReadout label="Win Rate" value={pct(stats.win_rate)} />
               <HeroReadout
@@ -355,13 +355,52 @@ export default function PlayerStatisticsPage() {
 
         {/* The caption names the range the figures on screen BELONG to. While
             a new range or variant loads the figures below are dimmed. */}
-        <p className="ps-range__caption" aria-live="polite">
+        <p
+          className="ps-range__caption"
+          aria-label="Displayed Performance Scope"
+          aria-live="polite"
+        >
           {loading && stats
             ? 'Loading The Selected Range...'
             : stats?.is_overall
               ? 'Showing All Recorded Activity'
-              : `Showing ${stats?.from ?? range.from ?? '?'} To ${stats?.to ?? range.to ?? '?'}`}
+              : `Showing ${stats?.from ?? range.from ?? '?'} To ${stats?.to ?? range.to ?? '?'} UTC · ${variantLabel(stats ? stats.variant : variant)}`}
         </p>
+        <p className="ps-range__caption">
+          UTC Dates Include Both From And To. Custom Dates Need Confirm.
+        </p>
+        {rangeMode === 'custom' && (customFrom !== range.from || customTo !== range.to) && (
+          <p className="ps-range__draft" role="status">
+            Draft Dates Not Applied. Confirm To Update The Displayed Range.
+          </p>
+        )}
+        {stats?.authorized && (
+          <details className="ps-metric-guide" aria-label="Performance Metric Definitions">
+            <summary>Metric Definitions</summary>
+            <p>
+              All Figures Use Recorded Hands For This Club, The Displayed UTC Dates And Game. Older
+              Activity May No Longer Be Retained.
+            </p>
+            <p>
+              VPIP Counts Hands With Voluntary Preflop Investment; PFR Counts Hands With A Preflop
+              Raise. Both Rates Divide By Hands Dealt.
+            </p>
+            <p>
+              3-Bet Per Hand Divides Three-Bet Hands By Hands Dealt, Not Three-Bet Opportunities.
+              Fold To 3-Bet Divides Folds By Opens That Faced A Three-Bet. C-Bet Divides Flop
+              Continuation Bets By Recorded Flop Continuation-Bet Opportunities.
+            </p>
+            <p>
+              Hands Won Counts Hands With A Positive Net Result. Win Rate Divides Those Hands By
+              Hands Dealt.
+            </p>
+            <p>
+              Net Sums Signed Hand Results; Fees Sum Rake Paid. Both Use Chip Units And Include Cash
+              And Tournament Hands For The Selected Game. These Are Not Wallet Balances Or
+              Tournament Prize Totals.
+            </p>
+          </details>
+        )}
       </section>
 
       {loadFailed && stats && (
@@ -409,7 +448,7 @@ export default function PlayerStatisticsPage() {
       ) : !hasHands ? (
         <EmptyStats
           heading="No Hands In This Range"
-          body={`${variantLabel(variant)} Has No Recorded Hands For The Dates You Chose. Widen The Range Or Choose Another Game.`}
+          body={`${variantLabel(stats.variant)} Has No Recorded Hands For The Dates You Chose. Widen The Range Or Choose Another Game.`}
         />
       ) : (
         <div className={loading ? 'ps-cards ps-cards--busy' : 'ps-cards'} aria-busy={loading}>

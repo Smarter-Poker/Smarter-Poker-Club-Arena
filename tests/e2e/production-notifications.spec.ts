@@ -34,6 +34,7 @@ test('published notifications retain pending signals and confirm durable actions
   expect(selected).toMatch(/^[a-f0-9]{40}$/);
   let releaseDelete: (() => void) | undefined;
   try {
+    console.log('[notification-proof] Create The Reserved Inbox Signal');
     await insertServiceRows(environment, 'notifications', {
       id,
       user_id: account.id,
@@ -44,9 +45,11 @@ test('published notifications retain pending signals and confirm durable actions
       read: false,
       is_read: false,
     });
+    console.log('[notification-proof] Read The Published Inbox');
     await page.goto('notifications', { waitUntil: 'domcontentloaded' });
     const row = page.locator(`[data-notif-id="${id}"]`);
     await expect(row).toBeVisible({ timeout: 30_000 });
+    console.log('[notification-proof] Check Mobile And Desktop Fit');
     for (const width of [375, 393, 1440]) {
       await page.setViewportSize({ width, height: 900 });
       expect(
@@ -67,16 +70,19 @@ test('published notifications retain pending signals and confirm durable actions
       await pending;
       await route.fulfill({ status: 503, json: { success: false } });
     });
+    console.log('[notification-proof] Begin The Delayed Dismissal');
     await row.getByRole('button', { name: `Dismiss ${title}`, exact: true }).click();
     await expect(row).toHaveAttribute('aria-busy', 'true');
     await expect(row.getByRole('button', { name: `Dismiss ${title}`, exact: true })).toBeDisabled();
     await expect(row).toHaveCSS('opacity', '1');
     await expect(row).toBeVisible();
     expect(deleteCalls).toBe(1);
+    console.log('[notification-proof] Capture The Pending Signal');
     await page.screenshot({
       path: testInfo.outputPath('notification-pending-mobile.png'),
       fullPage: true,
     });
+    console.log('[notification-proof] Refuse The Delayed Dismissal');
     releaseDelete();
     await expect(
       page.getByRole('alert').filter({ hasText: 'Dismissal Could Not Be Confirmed' })
@@ -84,6 +90,7 @@ test('published notifications retain pending signals and confirm durable actions
     await expect(row).toBeVisible();
     await page.unroute('**/api/notifications/delete');
 
+    console.log('[notification-proof] Refuse The Read Action');
     await page.route('**/api/notifications/mark-read', (route) =>
       route.fulfill({ status: 503, json: { success: false } })
     );
@@ -95,6 +102,7 @@ test('published notifications retain pending signals and confirm durable actions
     const unchanged = await readServiceRows<{ read: boolean }>(environment, 'notifications', query);
     expect(unchanged).toHaveLength(1);
     expect(unchanged[0].read).toBe(false);
+    console.log('[notification-proof] Confirm The Durable Read');
     await page.unroute('**/api/notifications/mark-read');
     await page.getByRole('button', { name: 'Mark All Read', exact: true }).click();
     await expect(row).not.toHaveClass(/ca-notif__row--unread/);
@@ -104,12 +112,15 @@ test('published notifications retain pending signals and confirm durable actions
         return rows[0]?.read;
       })
       .toBe(true);
+    console.log('[notification-proof] Confirm The Read After Reload');
     await page.reload({ waitUntil: 'domcontentloaded' });
     await expect(row).toBeVisible();
     await expect(row).not.toHaveClass(/ca-notif__row--unread/);
     await row.getByRole('button', { name: `Dismiss ${title}`, exact: true }).click();
+    console.log('[notification-proof] Confirm The Durable Dismissal');
     await expect(row).toHaveCount(0);
     expect(await readServiceRows(environment, 'notifications', query)).toHaveLength(0);
+    console.log('[notification-proof] Confirm Alert Controls And Release Identity');
     await page.getByRole('button', { name: 'Alert Controls', exact: true }).click();
     await expect(page).toHaveURL(/\/settings\?tab=notifications$/);
     const after = await page.request.get('build-info.json');
@@ -127,6 +138,7 @@ test('published notifications retain pending signals and confirm durable actions
       contentType: 'application/json',
     });
   } finally {
+    console.log('[notification-proof] Remove The Reserved Signal');
     releaseDelete?.();
     await deleteServiceRows(environment, 'notifications', query);
     expect(await readServiceRows(environment, 'notifications', query)).toHaveLength(0);

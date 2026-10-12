@@ -47,6 +47,28 @@ const admission = engineSteps.find(
 );
 
 describe('post-publication verification belongs to its delivered component', () => {
+  it('retains the inbox verdict before unrelated suites and refuses missing execution', () => {
+    const steps = client.steps;
+    const inboxAt = steps.findIndex((entry: any) => entry.id === 'notification_inbox');
+    const retainedAt = steps.findIndex(
+      (entry: any) => entry.with?.name === 'post-deploy-notification-report'
+    );
+    const broadAt = steps.findIndex(
+      (entry: any) => entry.name === 'Run the specs that need a deployed page'
+    );
+    expect(inboxAt).toBeGreaterThan(-1);
+    expect(retainedAt).toBeGreaterThan(inboxAt);
+    expect(retainedAt).toBeLessThan(broadAt);
+    expect(steps[retainedAt].if).toContain('always()');
+    expect(steps[retainedAt].with['if-no-files-found']).toBe('error');
+    expect(steps[retainedAt].with.path).toContain('e2e-report/notifications.json');
+    for (const reader of ['annotate-e2e-failures.mjs', 'assert-e2e-actually-ran.mjs']) {
+      const entry = steps.find((entry: any) => entry.run?.includes(reader));
+      expect(entry.run).toContain('e2e-report/notifications.json');
+      expect(entry.if).toContain('always()');
+    }
+  });
+
   it('gives the client its own result without an engine or live-table prerequisite', () => {
     expect(client.needs).toBe('publication-gate');
     expect(client.if).toBe("needs.publication-gate.outputs.should_run == 'true'");

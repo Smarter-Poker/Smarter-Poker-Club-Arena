@@ -278,9 +278,8 @@ export default function CarouselSection({
           <div className={styles.carouselFeaturedPedestal}></div>
           <PageErrorBoundary pageName={club.name || 'Club Card'}>
             {club.automatic_entry ? (
-              /* Dan 2026-09-09: the Diamond Arena rides the same card chassis
-                 as every club, not a poster - active players and the next
-                 freeroll countdown on the bottom rail. */
+              /* Diamond Arena owns its diamond frame (2026-10-12), preserving
+                 the active count and next freeroll clock. */
               <DiamondArenaCard activePlayers={stats?.activePlayers ?? null} />
             ) : (
               <ClubCardPanel

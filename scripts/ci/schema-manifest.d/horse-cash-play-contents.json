@@ -1,0 +1,9 @@
+{
+  "_owner": "fix/horse-cash-provenance-retention-20261012",
+  "_comment": "Qualified cash play-copy compaction declarations; installation and physical reclamation recorded separately.",
+  "functions": [
+    "smarter_private.compact_horse_cash_play_contents",
+    "smarter_private.horse_cash_retained_request_matches",
+    "smarter_private.horse_cash_retained_atomic_matches"
+  ]
+}

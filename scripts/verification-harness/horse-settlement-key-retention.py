@@ -52,6 +52,7 @@ def main():
   integrated=e.database(empty);e.sql(integrated,file=FIX/'seed.sql',label='integrated-prune-seed');check(integrated,"SELECT public.sp_prune_hand_history(250);",'existing-prune-compacts-before-delete','1');check(integrated,"SELECT NOT result ? 'request' AND NOT EXISTS(SELECT 1 FROM public.hand_history) AND NOT EXISTS(SELECT 1 FROM public.hand_atomic_commits) FROM public.settlement_idempotency_keys;",'prune-key-compact-history-erased');check(integrated,"SELECT public.fn_pnl_cash_hand_evidence('c1000000-0000-4000-8000-000000000001',1000001)->>'status';",'financial-evidence-ready-after-history-erasure','ready');e.discard(integrated)
   for name,seedchange in [('original-mixed',lambda x:x.replace('"is_horse":true','"is_horse":false',1)),('original-unknown',lambda x:x.replace('"is_horse":true','"is_horse":null',1))]:
    case=e.database(empty);e.sql(case,seedchange((FIX/'seed.sql').read_text()),label=name+'-seed');check(case,"SELECT smarter_private.compact_horse_settlement_keys(ARRAY['c2000000-0000-4000-8000-000000000001'::uuid]);",name+'-retained','0');e.discard(case)
+  cash_native=module(ROOT/'scripts/verification-harness/horse-cash-play-contents.py','horse_cash_play_native');cash_native.qualify(e,empty)
   e.discard(empty)
   e.sql(db,file=FIX/'seed.sql',label='original-cash-proof-seed')
   check(db,"SELECT public.fn_pnl_cash_hand_evidence('c1000000-0000-4000-8000-000000000001',1000001)->>'status';",'original-financial-evidence-ready','ready')

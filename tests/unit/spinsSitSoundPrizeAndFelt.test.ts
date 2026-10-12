@@ -141,7 +141,9 @@ describe('the badge outlives the wheel', () => {
     expect(start).toBeGreaterThan(0);
     expect(end).toBeGreaterThan(start);
     const identity = TABLE_PAGE.slice(start, end);
-    expect(identity).toContain('await resolveLobbyClubId(lobbyClubArgs)');
+    expect(identity).toContain(
+      'await resolveLobbyClubId({ ...lobbyClubArgs, unionId: clubData.union_id })'
+    );
     expect(identity).toContain(".eq('id', viewerClubId)");
     expect(identity).toContain('viewerClub.union_id === clubData.union_id');
     expect(identity).toContain('viewerClub.is_union === false');
@@ -532,6 +534,7 @@ describe('a table masthead prints only a verified club affiliation', () => {
       maybeSingle: async () => ({ data: { name, union_id, is_union: false }, error: null }),
     };
     let state: any = {};
+    const resolveClub = vi.fn(async () => 'viewer-club');
     const script = ts.transpile(`const readIdentity = ${identityCallback};`, {
       target: ts.ScriptTarget.ES2020,
     });
@@ -549,7 +552,7 @@ describe('a table masthead prints only a verified club affiliation', () => {
       { club_id: 'midway-hub' },
       true,
       vi.fn(),
-      async () => 'viewer-club',
+      resolveClub,
       {},
       (update: (previous: any) => any) => {
         state = update(state);
@@ -564,6 +567,7 @@ describe('a table masthead prints only a verified club affiliation', () => {
       },
       error: null,
     });
+    expect(resolveClub).toHaveBeenCalledWith({ unionId: 'midway' });
     expect(state.clubName).toBe(expected);
     expect(state.unionName).toBe('Midway Union');
     if (expected) expect(selected.some((columns) => columns.includes('union_id'))).toBe(true);

@@ -13309,7 +13309,7 @@ function LiveTablePage({
               // lobby destination, including the persisted last entered club.
               const viewerClubId =
                 unionName && clubName === unionName
-                  ? await resolveLobbyClubId(lobbyClubArgs)
+                  ? await resolveLobbyClubId({ ...lobbyClubArgs, unionId: clubData.union_id })
                   : null;
               if (
                 unionName &&

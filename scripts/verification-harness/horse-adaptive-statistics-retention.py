@@ -5,7 +5,7 @@ from pathlib import Path
 sys.dont_write_bytecode=True
 ROOT=Path(__file__).resolve().parents[2];sys.path.insert(0,str(ROOT/'scripts/ci'))
 from satellite_qualifier_fixture import module,sha,lit
-MIGRATION=Path('supabase/migrations/20261012161830_horse_adaptive_raw_facts_become_exact_sufficient_statistics.sql')
+MIGRATION=Path('supabase/migrations/20261012170542_horse_adaptive_raw_facts_become_exact_sufficient_statistics.sql')
 def main():
  p=argparse.ArgumentParser();p.add_argument('--evidence',type=Path,required=True);p.add_argument('--pg-bin',type=Path,required=True);a=p.parse_args()
  out=a.evidence.resolve();out.mkdir(parents=True,exist_ok=False);sock=Path('/Volumes/SmarterWork/agent-work/ahr-20261012-socket') if sys.platform=='darwin' else Path('/tmp');sock.mkdir(exist_ok=True)

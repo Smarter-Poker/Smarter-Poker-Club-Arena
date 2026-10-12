@@ -20,6 +20,52 @@ RUN = re.compile(r'^[1-9][0-9]{0,19}-[1-9][0-9]{0,3}$')
 SHA = re.compile(r'^[0-9a-f]{40}$')
 CAUSES = {'urgent', 'engine-degraded', 'deadline'}
 MAX_BYTES = 65536
+FAILURE_SCHEMA = 'existing-release-recovery-refusal/v1'
+# Literal, reviewed codes only. Exception text and transport output never cross
+# this protocol, including unknown errors from the selected native reader.
+REFUSALS = {
+    'Recovery journal fields refused': ('journal', 'fields_refused'),
+    'Recovery journal metadata refused': ('journal', 'metadata_refused'),
+    'Recovery journal sequence metadata refused': ('journal', 'sequence_refused'),
+    'Recovery journal ownership differs': ('journal', 'ownership_refused'),
+    'Recovery journal timestamp refused': ('journal', 'timestamp_refused'),
+    'Recovery journal literal differs': ('journal', 'literal_refused'),
+    'Recovery journal sign refused': ('journal', 'sign_refused'),
+    'Ambiguous recovery witness': ('journal', 'ambiguous_witness'),
+    'Recovery witness output refused': ('journal', 'output_refused'),
+    'Recovery witness invocation differs': ('journal', 'invocation_refused'),
+    'Original recovery invocation refused': ('journal', 'invocation_refused'),
+    'Recovery witness time differs': ('journal', 'time_refused'),
+    'Recovery witness cause differs': ('journal', 'cause_refused'),
+    'Recovery witness sign refused': ('journal', 'sign_refused'),
+    'Duplicate recovery witness sign': ('journal', 'sign_refused'),
+}
+REFUSAL_CODES = set(REFUSALS.values()) | {('remote', 'evidence_refused')}
+
+
+class ScopedRefusal(ValueError):
+    def __init__(self, phase, code):
+        if (phase, code) not in REFUSAL_CODES:
+            raise ValueError('Unqualified refusal code')
+        self.phase, self.code = phase, code
+        super().__init__('Scoped evidence refused')
+
+
+def refusal(request, error):
+    phase, code = REFUSALS.get(str(error), ('remote', 'evidence_refused'))
+    return {'schema': FAILURE_SCHEMA, 'readOnly': True, **selection(request),
+            'phase': phase, 'code': code}
+
+
+def validate_refusal(value, request):
+    fields = {'schema', 'readOnly', 'runKey', 'releaseSha', 'phase', 'code'}
+    if (not isinstance(value, dict) or set(value) != fields
+            or value['schema'] != FAILURE_SCHEMA or value['readOnly'] is not True
+            or value['runKey'] != request['runKey'] or value['releaseSha'] != request['releaseSha']
+            or not isinstance(value['phase'], str) or not isinstance(value['code'], str)
+            or (value['phase'], value['code']) not in REFUSAL_CODES):
+        raise ValueError('Scoped evidence transport unavailable')
+    return ScopedRefusal(value['phase'], value['code'])
 
 
 def selection(value):
@@ -163,10 +209,19 @@ def reason_from_rows(raw, request, window, result):
     row = json.loads(lines[0], object_pairs_hook=unique_object)
     fields = {'MESSAGE', '_SYSTEMD_INVOCATION_ID', '_SYSTEMD_UNIT', '__REALTIME_TIMESTAMP',
               '__CURSOR', '__MONOTONIC_TIMESTAMP', '_BOOT_ID'}
-    if not isinstance(row, dict) or set(row) != fields:
+    sequence_fields = {'__SEQNUM', '__SEQNUM_ID'}
+    if not isinstance(row, dict) or set(row) not in (fields, fields | sequence_fields):
         raise ValueError('Recovery journal fields refused')
-    # systemd always adds these three metadata fields in JSON mode even with
-    # --output-fields. Validate bounded native metadata; never export it.
+    # systemd v254+ adds this PAIR even with --output-fields. Admit only its
+    # exact native profile, validate uint64/ID, then discard it with metadata.
+    if sequence_fields <= set(row):
+        if (not isinstance(row['__SEQNUM'], str)
+                or not re.fullmatch(r'[1-9][0-9]{0,19}', row['__SEQNUM'])
+                or int(row['__SEQNUM']) > 18446744073709551615
+                or not isinstance(row['__SEQNUM_ID'], str)
+                or not INVOCATION.fullmatch(row['__SEQNUM_ID'])):
+            raise ValueError('Recovery journal sequence metadata refused')
+    # Both native profiles add these fields; never export native metadata.
     if (not isinstance(row['_BOOT_ID'], str) or not INVOCATION.fullmatch(row['_BOOT_ID'])
             or not isinstance(row['__MONOTONIC_TIMESTAMP'], str)
             or not re.fullmatch(r'[0-9]{1,20}', row['__MONOTONIC_TIMESTAMP'])
@@ -311,7 +366,11 @@ def validate_reply(value, request):
 def main():
     if len(sys.argv) == 3 and sys.argv[1] == '--remote':
         request = selection(json.loads(base64.b64decode(sys.argv[2], validate=True)))
-        print(json.dumps(remote(request)))
+        try:
+            print(json.dumps(remote(request)))
+        except Exception as error:
+            print(json.dumps(refusal(request, error)))
+            raise SystemExit(1)
         return
     if len(sys.argv) != 1 or os.environ.get('GITHUB_EVENT_NAME') != 'repository_dispatch':
         raise ValueError('Explicit observation dispatch required')
@@ -339,8 +398,14 @@ def main():
                 '-o', 'UserKnownHostsFile=' + str(directory / 'known_hosts'), '-o', 'ConnectTimeout=10',
                 'root@' + host, "python3 - --remote '" + encoded + "'"]
         reply = subprocess.run(args, input=Path(__file__).read_bytes(), capture_output=True, timeout=30)
-        if reply.returncode or len(reply.stdout) > 4096:
+        if len(reply.stdout) > 4096:
             raise ValueError('Scoped evidence transport unavailable')
+        if reply.returncode:
+            try:
+                failure = json.loads(reply.stdout, object_pairs_hook=unique_object)
+            except (ValueError, UnicodeError):
+                raise ValueError('Scoped evidence transport unavailable') from None
+            raise validate_refusal(failure, request)
         answer = validate_reply(json.loads(reply.stdout, object_pairs_hook=unique_object), request)
         answer['observedAt'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
         serialized = json.dumps(answer, indent=2) + '\n'
@@ -359,7 +424,9 @@ def main():
 if __name__ == '__main__':
     try:
         main()
-    except Exception:
+    except Exception as error:
         # Never expose raw state, transport stderr, paths or credential values.
         print('Existing release recovery evidence unavailable. No production action performed.', file=sys.stderr)
+        if isinstance(error, ScopedRefusal):
+            print('Scoped refusal phase=' + error.phase + ' code=' + error.code, file=sys.stderr)
         sys.exit(1)

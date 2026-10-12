@@ -9,19 +9,16 @@
  *   1. The TABLE STAYS VISIBLE. No full-screen takeover: the felt dims and a
  *      spotlight beam falls from the top of the screen onto the table.
  *   2. A big gold COUNTDOWN (3·2·1) pops centre-felt.
- *   3. A gold-rimmed DISC sits on the felt — a pie of coloured segments with
- *      the format wordmark in the hub. It does NOT rotate: the segments
- *      LIGHT UP one at a time, a chase that runs fast and decelerates, each
- *      lit segment fading behind the runner.
+ *   3. A rendered chrome DISC rotates on the felt, displaying actual prizes
+ *      for this buy-in and the table currency in its hub. The shared chase
+ *      lights each segment, running fast before decelerating to the result.
  *   4. The chase settles on the winner. That segment stays lit and flashes;
  *      every other segment desaturates to grey.
  *   5. The disc fades away, the table brightens, and the masthead now carries
  *      the prize pool.
  *
- * The chase reads better than a rotating wheel at table scale — nothing
- * spins under a pointer, so there is no moment where the eye loses the
- * geometry — and the decelerating runner gives the same genuine near-miss:
- * it walks THROUGH the big tiers on its way to the result.
+ * The rotor and chase share the existing reveal clock and settle the
+ * server-selected prize beneath the fixed selector.
  *
  * ─── Honesty (unchanged from v1) ────────────────────────────────────────────
  * The result is decided by the SERVER (reserve-gated draw at game start) and

@@ -2623,6 +2623,8 @@ function LiveTablePage({
     };
   }, [tableId, userId]);
 
+  // A roster arriving during restoration supplies a placeholder, not a top-up.
+  const sessionBuyInSeedRef = useRef(0);
   // Phase 1.1 PR-3: apply authoritative engine snapshot to tableState when
   // the feature flag is on. This one effect replaces the entire Supabase-
   // Realtime-as-game-state path (which PR-5 deletes). The mapping is pure
@@ -2661,6 +2663,7 @@ function LiveTablePage({
     if (mappedHero && mappedHero.stack > 0) {
       if (totalBuyInRef.current === 0) {
         totalBuyInRef.current = mappedHero.stack;
+        sessionBuyInSeedRef.current = mappedHero.stack;
       }
       if (peakStackRef.current === 0) peakStackRef.current = mappedHero.stack;
     }
@@ -4542,6 +4545,9 @@ function LiveTablePage({
     const askedKey = sessionRestoreKey;
     const heroStack = tableState.players[tableState.heroSeat - 1]?.stack ?? heroRowStack;
     if (totalBuyInRef.current === 0 && heroStack > 0) totalBuyInRef.current = heroStack;
+    // Existing placeholders are covered by totalAtAsk. Track only a seed
+    // that arrives after this ask, so it cannot masquerade as a new buy-in.
+    sessionBuyInSeedRef.current = 0;
     const totalAtAsk = totalBuyInRef.current;
     const factsAtAsk = {
       startMs: sessionStartRef.current,
@@ -4575,7 +4581,7 @@ function LiveTablePage({
         if (error || !active || sessionBaselineTableRef.current !== askedKey) return;
         totalBuyInRef.current = sessionBuyInTotal({
           serverBaseline: data,
-          totalAtAsk,
+          totalAtAsk: totalAtAsk + sessionBuyInSeedRef.current,
           totalNow: totalBuyInRef.current,
         });
       })

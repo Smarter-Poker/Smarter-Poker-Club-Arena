@@ -52,6 +52,7 @@ function restoreOccupiedSeat(stack: number, delayed = false) {
     handsPlayedRef: ref(0),
     handsWonRef: ref(0),
     peakStackRef: ref(stack),
+    sessionBuyInSeedRef: ref(0),
   };
   let deliver!: () => void;
   const ready = delayed
@@ -115,6 +116,17 @@ describe('the Session Complete card reads the whole session', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(refs.totalBuyInRef.current).toBe(1376);
     expect(refs.handsPlayedRef.current).toBe(0);
+  });
+
+  it('does not count a late snapshot placeholder as another buy-in', async () => {
+    const { refs, deliver } = restoreOccupiedSeat(0, true);
+    // The roster arrives after seat ownership. Its 976 is a placeholder;
+    // only the real 100 top-up that follows belongs on top of the read.
+    refs.totalBuyInRef.current = 1076;
+    refs.sessionBuyInSeedRef.current = 976;
+    deliver();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(refs.totalBuyInRef.current).toBe(4100);
   });
   it('restores an occupied seat even when the hero is absent from the hand or has zero stack', () => {
     const src = readFileSync(join(ROOT, 'src/pages/TablePage.tsx'), 'utf8');

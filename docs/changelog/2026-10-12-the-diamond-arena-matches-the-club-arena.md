@@ -120,8 +120,10 @@ counter merge rules and financial transactions are preserved.
 Regression: the new occupied-seat gate check failed on the prior source;
 after the repair the exact effect callback restores 4,000/20 hands/the original
 start for absent-hand seats at stacks 1,376 and 0, and ignores a delayed answer
-after cleanup. Focused table laws and recap tests pass (43 tests before adding
-the three effect behavior cases; final recap file 8 tests). App TypeScript
+after cleanup. A delayed-roster regression also failed before the correction
+(5,076 instead of 4,100); the snapshot placeholder is now excluded while an
+actual 100 top-up is retained. Focused table laws and recap tests pass (43 tests before adding
+the three effect behavior cases; final recap file 9 tests). App TypeScript
 compilation passes. Required exact-candidate hook/CI, protected merge,
 publication and final affected live proof remain pending for this follow-up.
 

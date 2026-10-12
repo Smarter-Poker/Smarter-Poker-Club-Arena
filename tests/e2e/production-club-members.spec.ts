@@ -218,6 +218,8 @@ async function openMembers(page: Page, probe: MembersProbe): Promise<number> {
   const startedAt = Date.now();
   await page.goto(MEMBERS_PATH, { waitUntil: 'domcontentloaded', timeout: 60_000 });
   await expect(page).not.toHaveURL(/\/auth(?:\/|\?|$)/, { timeout: 30_000 });
+  await expect(page.locator('[data-players-mode="simple"]')).toBeVisible({ timeout: 45_000 });
+  await page.getByRole('button', { name: 'Advanced', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Player Command', exact: true })).toBeVisible({
     timeout: 45_000,
   });
@@ -492,6 +494,7 @@ test.describe('Production Shark Club Players', () => {
     );
     expect(savedPositions).toEqual([448]);
     await page.locator('.mm-back').click();
+    await page.getByRole('button', { name: 'Advanced', exact: true }).click();
     await expect(sort).toHaveValue('name');
     await expect
       .poll(() => viewport.evaluate((node) => node.scrollTop), { timeout: 30_000 })
@@ -516,6 +519,7 @@ test.describe('Production Shark Club Players', () => {
     await expect(page.getByRole('heading', { name: 'Player Record', exact: true })).toBeVisible();
     await expect(page.locator('#mm-player-name')).toContainText(alias);
     await page.locator('.mm-back').click();
+    await page.getByRole('button', { name: 'Advanced', exact: true }).click();
     await expect(search).toHaveValue(alias);
     await expect(sort).toHaveValue('name');
     await expect(directory.getByRole('listitem').first().locator('.member-alias')).toContainText(

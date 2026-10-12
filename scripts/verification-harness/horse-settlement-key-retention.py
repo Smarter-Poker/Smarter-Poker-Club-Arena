@@ -14,7 +14,7 @@ def extract(path,start,end):
  s=(ROOT/path).read_text();return s[s.index(start):s.index(end,s.index(start))]
 def main():
  parser=argparse.ArgumentParser();parser.add_argument('--pg-bin',type=Path,required=True);parser.add_argument('--evidence',type=Path,required=True);args=parser.parse_args()
- out=args.evidence.resolve();out.mkdir(parents=True,exist_ok=False);sock=(ROOT.parent if sys.platform=='darwin' else Path('/tmp'))/('hkr-'+__import__('hashlib').sha256(str(ROOT).encode()).hexdigest()[:8]);sock.mkdir(exist_ok=True)
+ out=args.evidence.resolve();out.mkdir(parents=True,exist_ok=False);sock=(Path('/Volumes/SmarterWork/agent-work') if sys.platform=='darwin' else Path('/tmp'))/('hkr-'+__import__('hashlib').sha256(str(ROOT).encode()).hexdigest()[:8]);sock.mkdir(exist_ok=True)
  native=module(ROOT/'scripts/ci/test-mtt-unlimited.py','horse_key_native');e=native.Execution(ROOT,out,args.pg_bin.resolve(),out,300,socket_parent=str(sock));e.report['source_sha256']={str(p.relative_to(ROOT)):sha(p) for p in [MIG,Path(__file__),*FIX.iterdir()]};passed=[]
  def check(db,sql,label,want='t'):
   _,val,_=e.sql(db,sql,label=label);assert val.strip()==want,(label,val);passed.append(label)

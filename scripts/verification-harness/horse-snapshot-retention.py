@@ -5,7 +5,7 @@ from pathlib import Path
 sys.dont_write_bytecode=True
 ROOT=Path(__file__).resolve().parents[2];sys.path.insert(0,str(ROOT/'scripts/ci'))
 from satellite_qualifier_fixture import module,lit
-MIGRATION=Path('supabase/migrations/20261012171556_unresolved_snapshots_require_original_settled_horse_disposal.sql')
+MIGRATION=Path('supabase/migrations/20261012173151_unresolved_snapshots_require_original_settled_horse_disposal.sql')
 def qualify(e,template,keep_template=False):
  old=module(ROOT/'scripts/ci/test-hand-submission-retention-disposal.py','snapshot_original')
  checks=[]

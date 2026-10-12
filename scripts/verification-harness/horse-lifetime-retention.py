@@ -4,7 +4,7 @@ No production access. Called by the existing connected retention harness.
 import json,subprocess,time
 from pathlib import Path
 from satellite_qualifier_fixture import sha,lit
-MIG='supabase/migrations/20261012165344_horse_hand_retention_preserves_lifetime_index_totals.sql'
+MIG='supabase/migrations/20261012171722_horse_hand_retention_preserves_lifetime_index_totals.sql'
 FIX='scripts/verification-harness/fixtures/horse-lifetime-retention'
 U="d1000000-0000-4000-8000-000000000001"
 H="d2000000-0000-4000-8000-000000000001"
@@ -25,7 +25,7 @@ def qualify(e,template,connected=True):
  schema+="INSERT INTO public.ca_hand_player_idx_state(id,backfill_complete) VALUES(true,true);ALTER TABLE public.ca_hand_player_idx ADD COLUMN IF NOT EXISTS user_id uuid NOT NULL,ADD COLUMN IF NOT EXISTS asset text NOT NULL DEFAULT 'chips',ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now();ALTER TABLE public.ca_hand_player_idx ADD CONSTRAINT lifetime_idx_pk PRIMARY KEY(user_id,hand_id);"
  e.sql(db,schema,label='lifetime-captured-dependencies')
  asset=json.loads((root/FIX/'asset-guard.json').read_text())
- e.sql(db,asset['definition']+";REVOKE ALL ON FUNCTION public.fn_ca_hand_player_row_takes_its_hands_asset() FROM PUBLIC;GRANT EXECUTE ON FUNCTION public.fn_ca_hand_player_row_takes_its_hands_asset() TO service_role;CREATE TRIGGER ca_hand_player_idx_takes_its_hands_asset BEFORE INSERT OR UPDATE OF asset,hand_id ON public.ca_hand_player_idx FOR EACH ROW EXECUTE FUNCTION public.fn_ca_hand_player_row_takes_its_hands_asset();"+(root/FIX/'rpc-preimage.sql').read_text()+";REVOKE ALL ON FUNCTION public.ca_player_stats_full(uuid,integer,text,text) FROM PUBLIC;GRANT EXECUTE ON FUNCTION public.ca_player_stats_full(uuid,integer,text,text) TO service_role;",label='lifetime-real-published-rpc-and-trigger')
+ e.sql(db,asset['definition']+";REVOKE ALL ON FUNCTION public.fn_ca_hand_player_row_takes_its_hands_asset() FROM PUBLIC,anon,authenticated,service_role;GRANT EXECUTE ON FUNCTION public.fn_ca_hand_player_row_takes_its_hands_asset() TO service_role;CREATE TRIGGER ca_hand_player_idx_takes_its_hands_asset BEFORE INSERT OR UPDATE OF asset,hand_id ON public.ca_hand_player_idx FOR EACH ROW EXECUTE FUNCTION public.fn_ca_hand_player_row_takes_its_hands_asset();"+(root/FIX/'rpc-preimage.sql').read_text()+";REVOKE ALL ON FUNCTION public.ca_player_stats_full(uuid,integer,text,text) FROM PUBLIC,anon,authenticated,service_role;GRANT EXECUTE ON FUNCTION public.ca_player_stats_full(uuid,integer,text,text) TO service_role;",label='lifetime-real-published-rpc-and-trigger')
  seed="INSERT INTO public.hand_history(id,has_human,created_at) VALUES('"+H+"',false,'2026-01-01'),('d2000000-0000-4000-8000-000000000002',true,'2026-01-02'),('d2000000-0000-4000-8000-000000000003',false,'2026-01-03');INSERT INTO public.ca_hand_player_idx(user_id,hand_id,asset,created_at) VALUES('"+U+"','"+H+"','chips','2026-01-01'),('"+U+"','d2000000-0000-4000-8000-000000000002','chips','2026-01-02'),('"+U+"','d2000000-0000-4000-8000-000000000003','diamonds','2026-01-03');"
  call="public.ca_player_stats_full('"+U+"',NULL,'UTC','chips')"
  arr="ARRAY['"+H+"'::uuid]"

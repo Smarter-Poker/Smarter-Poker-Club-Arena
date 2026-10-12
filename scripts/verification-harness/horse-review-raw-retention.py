@@ -6,7 +6,7 @@ sys.dont_write_bytecode=True
 ROOT=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT/'scripts/ci'))
 from satellite_qualifier_fixture import module,lit
-MIGRATION=Path('supabase/migrations/20261012170902_settled_horse_reviews_erase_raw_play_after_eight_days.sql')
+MIGRATION=Path('supabase/migrations/20261012173138_settled_horse_reviews_erase_raw_play_after_eight_days.sql')
 def qualify(e,template,keep_template=False):
  old=module(ROOT/'scripts/ci/test-hand-submission-retention-disposal.py','review_raw_old')
  hhr=module(ROOT/'scripts/ci/test-horse-hand-review-atomic.py','review_raw_atomic')
@@ -20,7 +20,8 @@ def qualify(e,template,keep_template=False):
  e.sql(world,schema,label='review-real-schema')
  for name in ['20261007020953_horse_hand_review_atomic_publication.sql','20261008041150_horse_hand_review_receipts_retention.sql']:
   e.sql(world,file=ROOT/'supabase/migrations'/name,label='review-original-'+name[:14])
- seed=old.SEED.replace("'{\"p_stacks\": []}'::jsonb", "jsonb_build_object('p_stacks','[]'::jsonb,'p_hand_row',jsonb_build_object('has_human',false,'players',jsonb_build_array(jsonb_build_object('userId','"+old.HORSE+"'))))").replace("interval '30 days'","interval '20 days'")+"\nUPDATE public.hand_history SET has_human=false;\n"
+ request={'p_stacks':[],'p_hand_row':{'has_human':False,'players':[{'userId':old.HORSE}],'_accepted_post_commit_facts':{'stats_facts':{'version':2,'facts':[{'hand_id':old.HAND_ID,'table_id':old.TABLE,'user_id':old.HORSE,'net':0,'rake_paid':0,'vpip':True,'hole_cards':['As','Kd']}],'transfers':[]}}}}
+ seed=old.SEED.replace(lit(json.dumps({'p_stacks':[]}))+'::jsonb',lit(json.dumps(request,separators=(',',':')))+'::jsonb').replace("interval '30 days'","interval '20 days'")+"\nUPDATE public.hand_history SET has_human=false;UPDATE public.hand_atomic_commits SET post_commit_payload=jsonb_build_object('accepted_hand_facts',jsonb_build_object('stats_facts',(SELECT request#>'{p_hand_row,_accepted_post_commit_facts,stats_facts}' FROM smarter_private.hand_submissions)));\n"
  def publish(db,hand=old.HAND_ID,horse=old.HORSE,over=None):
   _,date,_=e.sql(db,"SELECT to_char(now()-interval '20 days','YYYY-MM-DD\"T\"HH24:MI:SS.USOF');",label='review-clock')
   row=hhr.row(hand,horse,table_id=old.TABLE,played_at=date.strip(),**(over or {}))

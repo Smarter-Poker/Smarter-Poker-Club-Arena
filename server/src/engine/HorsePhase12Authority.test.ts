@@ -123,13 +123,19 @@ describe('P12.3 committed selections: every pack qualified on condition (a) whos
     (v) => PHASE12_PROTECTED_RELEASE_SELECTIONS[v] === null
   );
 
-  it('round 4: every pack is null until it is measured on the running policy; each pack runs its own contract digest, FLH the frozen v1', () => {
+  it('FLH is selected again at generation 2 on its 9d567463 matrix; Short Deck, Pineapple and FLO8 stay null; each pack runs its own contract digest, FLH the frozen v1', () => {
     expect(Object.isFrozen(PHASE12_PROTECTED_RELEASE_SELECTIONS)).toBe(true);
     expect([...HORSE_PHASE12_VARIANTS]).toEqual(['short_deck', 'pineapple', 'flh', 'flo8']);
     // FLH's generation-1 selection measured policy digest a55db7fe..., which
-    // the round-4 sampler kernels and scoped packs moved: it is re-measured
-    // under contract v1 and selected again at generation 2.
-    expect(selected).toEqual([]);
+    // the round-4 sampler kernels and scoped packs moved: it was re-measured
+    // under contract v1 on 9d567463 and is selected again at generation 2.
+    expect(selected).toEqual(['flh']);
+    expect(PHASE12_PROTECTED_RELEASE_SELECTIONS.flh).toMatchObject({
+      sourceSha: '9d5674639f2bd091f2386c75cbd87bec419c5dcd',
+      qualificationPath: 'docs/evidence/phase12/9d567463/phase12-qualification-2026-10-12-flh.json',
+      completionPath: 'docs/evidence/phase12/9d567463/phase12-completion-2026-10-12-flh.json',
+      approvalGeneration: 2,
+    });
     expect(Object.isFrozen(PHASE12_RUNNING_CONTRACT_DIGESTS)).toBe(true);
     for (const variant of HORSE_PHASE12_VARIANTS) {
       expect(PHASE12_RUNNING_CONTRACT_DIGESTS[variant], variant).toBe(
@@ -165,7 +171,7 @@ describe('P12.3 committed selections: every pack qualified on condition (a) whos
         variant,
         packVersion: REMAINING_VARIANT_PACKS[variant].version,
         contractDigest: PHASE12_RUNNING_CONTRACT_DIGESTS[variant],
-        approvalGeneration: 1,
+        approvalGeneration: 2,
         expiresAt: null,
         withdrawn: null,
       });
@@ -175,8 +181,23 @@ describe('P12.3 committed selections: every pack qualified on condition (a) whos
         sourceSha: selection.sourceSha,
         continuationVersion: REMAINING_VARIANT_PACKS[variant].version,
         evidenceSha256: selection.qualificationSha256,
-        approvalGeneration: 1,
+        approvalGeneration: 2,
       });
+      // The admitted pack is the candidate at cash tables and shadow in tournaments.
+      for (const [gameMode, expected] of [
+        ['cash', 'candidate'],
+        ['tournament', 'shadow'],
+      ] as const)
+        expect(
+          horsePhase12AdmittedMode({
+            gameMode,
+            variant,
+            packVariant: variant,
+            verdict: 'usable',
+            callerMode: undefined,
+          }),
+          `${variant} ${gameMode}`
+        ).toBe(expected);
     }
   });
 
@@ -241,14 +262,15 @@ describe('P12.3 committed selections: every pack qualified on condition (a) whos
   it('withdrawal is a committed record: a selection with withdrawn set is a withdrawal, never a selection', () => {
     // Every pack: its committed selection, or (none committed) the test one.
     for (const variant of HORSE_PHASE12_VARIANTS) {
+      const base = PHASE12_PROTECTED_RELEASE_SELECTIONS[variant] ?? p12Selection(variant);
       const withdrawn = {
-        ...(PHASE12_PROTECTED_RELEASE_SELECTIONS[variant] ?? p12Selection(variant)),
-        withdrawn: { at: '2026-10-10T00:00:00.000Z', reason: 'condition_b_lost_after_rake' },
+        ...base,
+        withdrawn: { at: '2026-10-12T12:00:00.000Z', reason: 'condition_b_lost_after_rake' },
       };
       const release = admitHorsePhase12ReleaseAuthority(variant, Date.now(), withdrawn);
       expect(release, variant).toEqual({
         status: 'withdrawn',
-        approvalGeneration: 1,
+        approvalGeneration: base.approvalGeneration,
         reason: 'release_condition_b_lost_after_rake',
       });
       expect(selectedHorsePhase12Authority(variant, release)).toBeNull();
@@ -281,11 +303,14 @@ describe('P12.3 committed selections: every pack qualified on condition (a) whos
   // selection (2026-10-10): a qualification that says qualified:true is
   // exactly the one its pack's selection names, or (round 4) one whose
   // measured policy digest no longer runs, which no admission can accept.
+  // Since the generation-2 FLH selection (2026-10-12) the only qualified:true
+  // FLH qualification on the running FLH policy digest is the selected one.
   it('the only qualified:true qualification of each pack is the one its selection names, or one measured on a policy that no longer runs', () => {
     const dir = fileURLToPath(new URL('../../../docs/evidence/phase12/', import.meta.url));
     const files = existsSync(dir)
       ? readdirSync(dir, { recursive: true, encoding: 'utf8' }).filter((f) => f.endsWith('.json'))
       : [];
+    const qualifiedSelected: string[] = [];
     for (const file of files) {
       const parsed = JSON.parse(readFileSync(`${dir}${file}`, 'utf8')) as Record<string, unknown>;
       if (parsed.schema === HORSE_PHASE12_QUALIFICATION_SCHEMA && parsed.qualified === true) {
@@ -294,10 +319,16 @@ describe('P12.3 committed selections: every pack qualified on condition (a) whos
           PHASE12_PROTECTED_RELEASE_SELECTIONS[variant]?.qualificationPath ===
           `docs/evidence/phase12/${file}`;
         if (!named) expect(parsed.policyDigest, file).not.toBe(horsePhase12PolicyDigest(variant));
+        else {
+          expect(parsed.policyDigest, file).toBe(horsePhase12PolicyDigest(variant));
+          qualifiedSelected.push(`${variant}:${file}`);
+        }
       }
       if (parsed.schema === HORSE_PHASE12_COMPLETION_SCHEMA)
         expect(HORSE_PHASE12_VARIANTS as readonly string[], file).toContain(parsed.variant);
     }
+    // Every selected pack names a qualified:true file on its running policy.
+    expect(qualifiedSelected).toEqual(['flh:9d567463/phase12-qualification-2026-10-12-flh.json']);
   });
 });
 

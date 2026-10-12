@@ -164,3 +164,89 @@ policy digests equal the round 4 values above.
 
 - FLH natural accepted use after its generation-2 selection ships (it is shadow until then).
 - The completion window above, on the first release that contains this change.
+
+## 8. FLH Re-Selection On 9d567463 (October 12, 2026)
+
+Status: implemented but unverified. FLH is selected again in the committed selection at approval
+generation 2; it stays unverified until its natural accepted use is read, in a predeclared window,
+on the first serving release that contains this selection.
+
+### 8.1 Held-Out Matrix
+
+- Run 38206776185 on 9d5674639f2bd091f2386c75cbd87bec419c5dcd under contract v1
+  (`remaining-variant-strength-contract-v1`, digest
+  fafbba8dc23ebc59b5aadf78fdcc47cd6f504baf9bcd10b07970ad7fbea501c0): 42 of 42 shards, 544,320
+  pairs, cash after rake against the horse population +1.11 [+0.70, +1.52] bb/100, every cell
+  trusted, qualified on condition (a) with no reasons.
+- It reproduced run 37969578926 (1235b47a) bit for bit: all 42 shards (pairs, changed pairs,
+  eligible, decisions and pair digest) and all 21 cells (mean, standard error, 99% interval,
+  skewness, coverage, trust) are identical, as section 6 required of the exact sampler kernels.
+- The qualification's policyDigest d1c536a9f1b6889478da2ad4c5d5d985a130a47fb794169ddf6f420a6ccde8fb
+  and contractDigest fafbba8d... equal what origin/main computes for FLH (recomputed on
+  a426015d445c64fba1daa9f999cd0b1d54655ecc, the base of this change). Its evidenceSha256
+  3fee1237faead2ce95cd296ad7aae17e6673a1e7d3a2eac9f1b938f932c80482 is the sha256 of the strength
+  record it names.
+- Files: `docs/evidence/phase12/9d567463/strength-2026-10-12-flh/` (strength record and runs) and
+  `docs/evidence/phase12/9d567463/phase12-qualification-2026-10-12-flh.json`.
+
+### 8.2 Natural Completion Window
+
+Predeclared in `docs/evidence/phase12/declaration-completion-round4-2026-10-12.txt` (written
+2026-10-12T04:21:54Z, sha256 536f9663f9ef1b4da035ee09cec57fc98e2436d923a06ccbaf271336552c939a)
+before any window opened. Release 9d5674639f2bd091f2386c75cbd87bec419c5dcd (StartedAt
+2026-10-12T04:55:45Z) served unchanged through the window 2026-10-12T05:02:00.000Z to
+2026-10-12T05:50:00.000Z, read before and after. Record:
+`docs/evidence/phase12/9d567463/phase12-completion-2026-10-12-flh.json` (policyDigest d1c536a9...).
+Floor: Wilson lower bound at z = 2.5758293035489 of at least 0.95 with at least 127 eligible per
+street.
+
+| Street  | Completed / Eligible | Not Completed | Wilson Lower Bound | Floor |
+| ------- | -------------------- | ------------- | ------------------ | ----- |
+| Preflop | 504 / 505            | 1 work budget | 0.9834             | met   |
+| Flop    | 238 / 239            | 1 work budget | 0.9653             | met   |
+| Turn    | 178 / 178            | none          | 0.9641             | met   |
+| River   | 130 / 130            | none          | 0.9514             | met   |
+
+No decision was governor-reduced, sampler budget exhausted or sample unavailable.
+
+### 8.3 Selection
+
+`PHASE12_PROTECTED_RELEASE_SELECTIONS.flh` in `server/src/engine/HorsePhase12Authority.ts`:
+
+| Field               | Value                                                                    |
+| ------------------- | ------------------------------------------------------------------------ |
+| schema              | horse-qualified-authority-selection-v1                                   |
+| sourceSha           | 9d5674639f2bd091f2386c75cbd87bec419c5dcd                                 |
+| packVersion         | fixed-limit-holdem-round3-v1                                             |
+| contractVersion     | remaining-variant-strength-contract-v1                                   |
+| contractDigest      | fafbba8dc23ebc59b5aadf78fdcc47cd6f504baf9bcd10b07970ad7fbea501c0         |
+| domain              | flh-cash-single-board-after-rake-horse-population                        |
+| qualificationPath   | docs/evidence/phase12/9d567463/phase12-qualification-2026-10-12-flh.json |
+| qualificationSha256 | 01e91eb38a73dadc9fa2aff7ee4980f64b8b8d8c07a44ec18f50d6bfbccf3f8f         |
+| completionPath      | docs/evidence/phase12/9d567463/phase12-completion-2026-10-12-flh.json    |
+| completionSha256    | b42fb264780ea75bcc89b6d2f700d875fd68b49bf3600329f85f2a624499fbdf         |
+| approvalGeneration  | 2                                                                        |
+| issuedAt            | 2026-10-12T11:00:00.000Z                                                 |
+| expiresAt           | null                                                                     |
+| withdrawn           | null                                                                     |
+
+- Approval generation 2, not 1: an approval generation is strictly increasing across renewals,
+  and a holder that has withdrawn a generation admits nothing at or below it
+  (`HorseQualifiedAuthorityHolder.apply`). Generation 1 (#6611, sourceSha 1235b47a) was set to
+  null by #6700, never withdrawn; generation 2 is a distinct approval on different evidence, so a
+  withdrawal of generation 1 can never block it or be confused with it.
+- issuedAt is after the completion window end (05:50Z) and after every evidence file was written
+  (matrix assembled 05:35Z, completion record written 06:06Z); the authority refuses a completion
+  window that ends after issuedAt.
+- The qualification, the strength record it names and the completion record are committed
+  byte-identical under `server/release-evidence/` (law aSelectedPackShipsItsEvidence); the
+  strength runs stay under docs/ only, as in #6611.
+- Short Deck, Crazy Pineapple and FLO8 stay null. The generation-1 FLH evidence files stay
+  committed; their policy digest (a55db7fe...) no longer runs, so no admission accepts them.
+
+### 8.4 Time-Gated Check
+
+- FLH natural accepted use on the first serving release that contains this selection: a
+  predeclared journal window plus horse_brain_telemetry (phase12_selection_selected,
+  phase12_applied, phase12_selection_controller_accepted), cash FLH candidate with usable
+  authority, tournament FLH shadow.

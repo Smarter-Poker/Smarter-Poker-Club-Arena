@@ -342,6 +342,8 @@ jobs:
       - name: Preserve original retained runtime verdict evidence
         env:
           RECEIPT_SELECTED_SHA: ${{ needs.publish-needed.outputs.target_sha }}
+          RECEIPT_VERIFIED_SHA: ''
+          RECEIPT_OUTCOMES: ${{ format('["{0}","{1}"]', steps.retained_verified.outcome, steps.retained_recorded.outcome) }}
           RECEIPT_VERDICT: retained
           RECEIPT_CONCLUSIONS: ${{ format('["{0}","{1}"]', steps.retained_verified.conclusion, steps.retained_recorded.conclusion) }}
         run: |
@@ -1241,6 +1243,8 @@ jobs:
         env:
           RECEIPT_SELECTED_SHA: ${{ needs.publish-needed.outputs.target_sha }}
           RECEIPT_RUNTIME_SHA: ${{ steps.verdict.outputs.verdict == 'publish' && steps.verified.outputs.sha || steps.verdict.outputs.theirs }}
+          RECEIPT_VERIFIED_SHA: ${{ steps.verified.outputs.sha }}
+          RECEIPT_OUTCOMES: ${{ format('["{0}","{1}","{2}"]', steps.verdict.outcome, steps.immutable_publish.outcome, steps.verified.outcome) }}
           RECEIPT_VERDICT: ${{ steps.verdict.outputs.verdict }}
           RECEIPT_CONCLUSIONS: ${{ format('["{0}","{1}","{2}"]', steps.verdict.conclusion, steps.immutable_publish.conclusion, steps.verified.conclusion) }}
         run: node scripts/ci/publisher-verdict-receipt.mjs write publisher-verdict.json

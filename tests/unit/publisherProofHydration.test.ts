@@ -55,6 +55,8 @@ function fixture() {
     RECEIPT_SELECTED_SHA: sha,
     RECEIPT_RUNTIME_SHA: sha,
     RECEIPT_VERDICT: 'publish',
+    RECEIPT_VERIFIED_SHA: sha,
+    RECEIPT_OUTCOMES: '["success","success","success"]',
     RECEIPT_CONCLUSIONS: '["success","success","success"]',
   });
   const request = vi.fn(async (path: string) =>

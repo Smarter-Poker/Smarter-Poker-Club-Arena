@@ -36,13 +36,14 @@ export function validateReceipt(receipt) {
     'selectedSha',
     'runtimeSha',
     'verdict',
+    'verifiedSha',
     'steps',
   ];
   if (
     !receipt ||
     typeof receipt !== 'object' ||
     Object.keys(receipt).sort().join() !== keys.sort().join() ||
-    receipt.schema !== 1
+    receipt.schema !== 2
   )
     fail('invalid schema');
   if (
@@ -63,37 +64,53 @@ export function validateReceipt(receipt) {
   receipt.steps.forEach((step, index) => {
     if (
       !step ||
-      Object.keys(step).sort().join() !== 'conclusion,name,status' ||
+      Object.keys(step).sort().join() !== 'conclusion,name,outcome,status' ||
       step.name !== names[index] ||
       step.status !== 'completed' ||
-      !['success', 'skipped'].includes(step.conclusion)
+      !['success', 'skipped'].includes(step.conclusion) ||
+      step.outcome !== step.conclusion
     )
       fail('invalid original step');
   });
+  if (typeof receipt.verifiedSha !== 'string') fail('missing actual verification output');
   const conclusions = receipt.steps.map((s) => s.conclusion).join();
   if (receipt.jobKey === 'retain-runtime') {
-    if (receipt.verdict !== 'retained' || conclusions !== 'success,success')
+    if (
+      receipt.verdict !== 'retained' ||
+      conclusions !== 'success,success' ||
+      receipt.verifiedSha !== ''
+    )
       fail('retention proof failed');
   } else if (receipt.verdict === 'publish') {
-    if (conclusions !== 'success,success,success' || receipt.runtimeSha !== receipt.selectedSha)
+    if (
+      conclusions !== 'success,success,success' ||
+      receipt.runtimeSha !== receipt.selectedSha ||
+      receipt.verifiedSha !== receipt.selectedSha
+    )
       fail('publication proof failed');
   } else if (receipt.verdict === 'standdown') {
-    if (conclusions !== 'success,skipped,skipped' || receipt.runtimeSha === receipt.selectedSha)
+    if (
+      conclusions !== 'success,skipped,skipped' ||
+      receipt.runtimeSha === receipt.selectedSha ||
+      receipt.verifiedSha !== ''
+    )
       fail('standdown proof failed');
   } else fail('invalid verdict');
   return receipt;
 }
 
-/** Producer consumes GitHub's original step conclusions, never logs or a job badge. */
+/** Original outcomes and conclusions must agree; actual verification supplies the published SHA. */
 export function createReceipt(env) {
   const jobKey = env.GITHUB_JOB;
   const names = PROOFS[jobKey];
   if (!names) fail('unsupported producer job');
   const conclusions = JSON.parse(env.RECEIPT_CONCLUSIONS);
+  const outcomes = JSON.parse(env.RECEIPT_OUTCOMES);
   if (!Array.isArray(conclusions) || conclusions.length !== names.length)
     fail('missing conclusions');
+  if (!Array.isArray(outcomes) || outcomes.length !== names.length) fail('missing outcomes');
   return validateReceipt({
-    schema: 1,
+    schema: 2,
     repository: env.GITHUB_REPOSITORY,
     repositoryId: env.GITHUB_REPOSITORY_ID,
     workflowRef: env.GITHUB_WORKFLOW_REF,
@@ -105,7 +122,13 @@ export function createReceipt(env) {
     selectedSha: env.RECEIPT_SELECTED_SHA,
     runtimeSha: env.RECEIPT_RUNTIME_SHA,
     verdict: env.RECEIPT_VERDICT,
-    steps: names.map((name, i) => ({ name, status: 'completed', conclusion: conclusions[i] })),
+    verifiedSha: env.RECEIPT_VERIFIED_SHA,
+    steps: names.map((name, i) => ({
+      name,
+      status: 'completed',
+      outcome: outcomes[i],
+      conclusion: conclusions[i],
+    })),
   });
 }
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { parse } from 'yaml';
+import { readFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -26,6 +27,14 @@ function env(job = 'publish-to-origin', verdict = 'publish') {
     RECEIPT_SELECTED_SHA: selected,
     RECEIPT_RUNTIME_SHA: verdict === 'publish' ? selected : sha,
     RECEIPT_VERDICT: verdict,
+    RECEIPT_VERIFIED_SHA: verdict === 'publish' ? selected : '',
+    RECEIPT_OUTCOMES: JSON.stringify(
+      job === 'retain-runtime'
+        ? ['success', 'success']
+        : verdict === 'publish'
+          ? ['success', 'success', 'success']
+          : ['success', 'skipped', 'skipped']
+    ),
     RECEIPT_CONCLUSIONS: JSON.stringify(
       job === 'retain-runtime'
         ? ['success', 'success']
@@ -85,6 +94,97 @@ describe('original publisher verdict receipt', () => {
     expect(merged.steps).toEqual(receipt.steps);
     expect(merged.steps.map((s: any) => s.name)).toEqual(PROOFS[job]);
     expect(trusted(job).job.steps).toEqual([]);
+  });
+  it.each([
+    ['publish-to-origin', 'publish'],
+    ['publish-to-origin', 'standdown'],
+    ['retain-runtime', 'retained'],
+  ])('executes the maintained %s %s producer shell with actual bound outputs', (job, verdict) => {
+    const dir = mkdtempSync(join(tmpdir(), 'publisher-verdict-wiring-'));
+    try {
+      const workflow = parse(readFileSync('.github/workflows/publish-club-arena.yml', 'utf8'));
+      const writer = workflow.jobs[job].steps.find(
+        (s: any) =>
+          s.name ===
+          (job === 'retain-runtime'
+            ? 'Preserve original retained runtime verdict evidence'
+            : 'Preserve original publisher verdict evidence')
+      );
+      const e: any = env(job, verdict);
+      const results = JSON.parse(e.RECEIPT_OUTCOMES);
+      const ids =
+        job === 'retain-runtime'
+          ? ['retained_verified', 'retained_recorded']
+          : ['verdict', 'immutable_publish', 'verified'];
+      const bindings: Record<string, string> = {
+        'needs.publish-needed.outputs.target_sha': selected,
+        'steps.verdict.outputs.verdict': verdict,
+        'steps.verified.outputs.sha': e.RECEIPT_VERIFIED_SHA,
+        'steps.verdict.outputs.theirs': sha,
+      };
+      ids.forEach((id, i) => {
+        bindings['steps.' + id + '.outcome'] = results[i];
+        bindings['steps.' + id + '.conclusion'] = results[i];
+      });
+      for (const [key, expression] of Object.entries(writer.env)) {
+        let text = String(expression);
+        if (text.includes(" == 'publish'")) text = e.RECEIPT_RUNTIME_SHA;
+        else if (text.includes('format(')) {
+          const tokens = text.match(/steps\.[a-z_]+\.(?:outcome|conclusion)/g)!;
+          text = JSON.stringify(tokens.map((token) => bindings[token]));
+        } else
+          text = text.replace(/\$\{\{ ([^}]+) \}\}/g, (_: string, token: string) => {
+            if (!(token in bindings)) throw new Error('Unqualified producer binding: ' + token);
+            return bindings[token];
+          });
+        e[key] = text;
+      }
+      writeFileSync(join(dir, 'retained-runtime.json'), JSON.stringify({ runtimeSha: sha }));
+      const isolated = Object.fromEntries(
+        Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_'))
+      );
+      const command = writer.run.replaceAll(
+        'scripts/ci/publisher-verdict-receipt.mjs',
+        join(process.cwd(), 'scripts/ci/publisher-verdict-receipt.mjs')
+      );
+      const result = spawnSync('bash', ['--noprofile', '--norc', '-c', command], {
+        cwd: dir,
+        env: { ...isolated, ...e },
+        encoding: 'utf8',
+        timeout: 5000,
+      });
+      expect(result.status, result.stderr).toBe(0);
+      const receipt = JSON.parse(readFileSync(join(dir, 'publisher-verdict.json'), 'utf8'));
+      expect(receipt).toEqual(createReceipt(e));
+      expect(mergePublisherReceipt(receipt, trusted(job)).steps).toEqual(receipt.steps);
+      const consumer = parse(readFileSync('.github/workflows/post-deploy-e2e.yml', 'utf8'));
+      const gate = consumer.jobs['publication-gate'].steps.find(
+        (s: any) => s.name === 'Read The Origin Job Verdict'
+      ).run;
+      const program = /<<'NODE'\n([\s\S]*?)\nNODE/.exec(gate)?.[1];
+      expect(program).toBeDefined();
+      const proof = mergePublisherReceipt(receipt, trusted(job));
+      const jobs =
+        job === 'retain-runtime'
+          ? [
+              proof,
+              { name: 'publish-to-origin', status: 'completed', conclusion: 'skipped', steps: [] },
+            ]
+          : [proof];
+      const payloadPath = join(dir, 'jobs.json'),
+        outputPath = join(dir, 'output');
+      writeFileSync(payloadPath, JSON.stringify({ total_count: jobs.length, jobs }));
+      writeFileSync(outputPath, '');
+      execFileSync(process.execPath, ['-', payloadPath, outputPath], {
+        input: program,
+        env: isolated,
+      });
+      expect(readFileSync(outputPath, 'utf8')).toBe(
+        job === 'retain-runtime' ? 'should_run=true\nretained=true\n' : 'should_run=true\n'
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
   it('writes actual validated JSON once and refuses overwriting the same attempt', () => {
     const dir = mkdtempSync(join(tmpdir(), 'publisher-verdict-test-'));
@@ -202,14 +302,40 @@ describe('original publisher verdict receipt', () => {
       })
     ).toThrow();
   });
-  it('captures original GitHub conclusions without changing original transaction conditions', () => {
+  it.each(['failure', 'cancelled', 'skipped', '', 'unknown'])(
+    'refuses masked original outcome %s despite successful conclusion',
+    (outcome) => {
+      const e = env();
+      e.RECEIPT_OUTCOMES = JSON.stringify(['success', outcome, 'success']);
+      expect(() => createReceipt(e)).toThrow();
+    }
+  );
+  it.each(['', sha, undefined])(
+    'refuses missing or divergent actual verified SHA %s',
+    (verified) => {
+      expect(() => createReceipt({ ...env(), RECEIPT_VERIFIED_SHA: verified })).toThrow();
+    }
+  );
+  it('refuses old receipts without outcomes or actual verification output', () => {
+    const r: any = createReceipt(env());
+    r.schema = 1;
+    delete r.verifiedSha;
+    for (const step of r.steps) delete step.outcome;
+    expect(() => validateReceipt(r)).toThrow();
+  });
+  it('captures original outcomes and genuine verification output in the existing producer', () => {
     const source = readFileSync('.github/workflows/publish-club-arena.yml', 'utf8');
     expect(source).toContain(
       'steps.verdict.conclusion, steps.immutable_publish.conclusion, steps.verified.conclusion'
     );
     expect(source).toContain(
+      'steps.verdict.outcome, steps.immutable_publish.outcome, steps.verified.outcome'
+    );
+    expect(source).toContain(
       'steps.retained_verified.conclusion, steps.retained_recorded.conclusion'
     );
+    expect(source).toContain('steps.retained_verified.outcome, steps.retained_recorded.outcome');
+    expect(source).toContain('RECEIPT_VERIFIED_SHA: ${{ steps.verified.outputs.sha }}');
     expect(source).toContain("if: steps.verdict.outputs.verdict == 'publish'");
     expect(source.indexOf('Preserve original publisher verdict evidence')).toBeGreaterThan(
       source.indexOf('Remove origin credentials and control sockets')

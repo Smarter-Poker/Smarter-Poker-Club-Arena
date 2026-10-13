@@ -14,6 +14,7 @@ import { createClient } from '@supabase/supabase-js';
 import { readLocalSession as readLocalSessionShared, AUTH_STORAGE_KEY } from './authUtils';
 import { reportError } from '../utils/errorReporter';
 import { IS_NATIVE_BUILD } from './appBase';
+import { realtimeAdmission } from './realtimeAdmission';
 
 // Environment validation - follows VITE_ prefix law
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
@@ -136,6 +137,7 @@ export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '', {
     },
   },
   realtime: {
+    transport: realtimeAdmission.transport,
     params: {
       // 2026-08-22: was 0 ("Realtime is no longer used") — but that was never
       // true: TablePage still mounts a Supabase channel per table for

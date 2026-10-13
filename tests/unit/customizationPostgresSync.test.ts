@@ -26,6 +26,10 @@ vi.mock('../../src/lib/supabase', () => ({
   },
 }));
 
+vi.mock('../../src/lib/subscribeRealtime', () => ({
+  subscribeRealtime: (channel: any, callback: any) => channel.subscribe(callback),
+}));
+
 vi.mock('../../src/core/MasterBus', () => ({
   masterBus: { emit: (...args: unknown[]) => emit(...args) },
 }));

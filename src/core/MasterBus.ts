@@ -1862,7 +1862,10 @@ class MasterBusCore {
    * Release one reference to a registered channel. The channel is torn down
    * only when the LAST consumer lets go — see the channelRefs note above.
    */
-  removeRegisteredChannel(key: string): void {
+  removeRegisteredChannel(key: string, expected?: RealtimeChannel): void {
+    // A delayed admission can outlive registry recovery. Release only its own
+    // channel, never a replacement acquired by the current owner.
+    if (expected && this.channelRegistry.get(key) !== expected) return;
     const remaining = (this.channelRefs.get(key) ?? 0) - 1;
     if (remaining > 0) {
       this.channelRefs.set(key, remaining);

@@ -20,8 +20,10 @@
  *   callback so the consumer can trigger a recovery fetch.
  */
 
+import type { RealtimeChannel } from '@supabase/supabase-js';
 import { useEffect, useRef } from 'react';
 import { masterBus } from '../core/MasterBus';
+import { subscribeRealtime } from '../lib/subscribeRealtime';
 import { reportError } from '../utils/errorReporter';
 
 export type PostgresChangeEvent = 'INSERT' | 'UPDATE' | 'DELETE' | '*';
@@ -147,8 +149,17 @@ export function useMasterBusChannel({
        guards this; this one did not. */
     let alive = true;
     let subscriptionGeneration = 0;
+    let admission: AbortController | null = null;
+    let acquiredChannel: RealtimeChannel | null = null;
 
     const subscribeChannel = () => {
+      if (!alive) return;
+      const generation = ++subscriptionGeneration;
+      admission?.abort();
+      if (acquiredChannel) masterBus.removeRegisteredChannel(channelName, acquiredChannel);
+      acquiredChannel = null;
+      admission = new AbortController();
+      const signal = admission.signal;
       // getOrCreateChannel returns a fresh channel after the monitor removed
       // the dead one, or the existing one on the initial call.
       const channel = masterBus.getOrCreateChannel(channelName);
@@ -158,8 +169,11 @@ export function useMasterBusChannel({
          channel is 'closed'. Adding a second listener to a live shared channel
          therefore produces a subscription that receives nothing, silently,
          with no status callback to report it. Say so rather than pretend. */
+      acquiredChannel = channel;
       const state = (channel as any)?.state;
       if (state && state !== 'closed' && state !== 'errored') {
+        masterBus.removeRegisteredChannel(channelName, channel);
+        acquiredChannel = null;
         reportError(
           new Error(`Realtime channel ${channelName} was already ${state}; binding skipped`),
           'useMasterBusChannel.channel_already_joined'
@@ -168,23 +182,23 @@ export function useMasterBusChannel({
       }
       // Recovery can replace a channel within this same mounted effect. Its
       // asynchronous removal may still deliver frames and CLOSED afterwards.
-      const generation = ++subscriptionGeneration;
 
-      (channel as any)
-        .on(
-          'postgres_changes',
-          {
-            event,
-            schema: 'public',
-            table,
-            filter,
-          },
-          (payload: any) => {
-            // Call the stable callback ref
-            if (alive && generation === subscriptionGeneration) callbackRef.current(payload);
-          }
-        )
-        .subscribe((status: string, err?: Error) => {
+      (channel as any).on(
+        'postgres_changes',
+        {
+          event,
+          schema: 'public',
+          table,
+          filter,
+        },
+        (payload: any) => {
+          // Call the stable callback ref
+          if (alive && generation === subscriptionGeneration) callbackRef.current(payload);
+        }
+      );
+      void subscribeRealtime(
+        channel,
+        (status: string, err?: Error) => {
           if (!alive || generation !== subscriptionGeneration) return;
           try {
             statusCallbackRef.current?.(status);
@@ -209,7 +223,9 @@ export function useMasterBusChannel({
               reportError(cbErr, 'useMasterBusChannel.onSubscriptionError_threw');
             }
           }
-        });
+        },
+        signal
+      );
     };
 
     // Register the factory FIRST so that if the very first subscribe attempt
@@ -223,8 +239,9 @@ export function useMasterBusChannel({
     // this component intentionally tore down) and remove the channel.
     return () => {
       alive = false;
+      admission?.abort();
       masterBus.removeChannelFactory(channelName);
-      masterBus.removeRegisteredChannel(channelName);
+      if (acquiredChannel) masterBus.removeRegisteredChannel(channelName, acquiredChannel);
     };
   }, [channelName, table, filter, event, enabled, restartKey]);
 }

@@ -921,3 +921,60 @@ describe('the Must Move dialog owns keyboard focus', () => {
     }
   );
 });
+
+describe('Must Move lobby asset units', () => {
+  it.each([
+    {
+      asset: 'diamonds' as const,
+      sb: 10,
+      bb: 20,
+      stack: 1376,
+      stakes: '10/20',
+      own: '1,376',
+      large: '123,456,789',
+      zero: '0',
+    },
+    {
+      asset: undefined,
+      sb: 0.1,
+      bb: 0.2,
+      stack: 12.5,
+      stakes: '0.10/0.20',
+      own: '12.50',
+      large: '123,456,789.00',
+      zero: '0.00',
+    },
+  ])(
+    'renders stakes and all occupied stacks in $asset units',
+    async ({ asset, sb, bb, stack, stakes, own, large, zero }) => {
+      const data = lobby({ stack });
+      data.game.sb = sb;
+      data.game.bb = bb;
+      data.tables[2].seats = [
+        seat(2, HERO, 'Hero', stack),
+        seat(3, 'zero', 'Zero', 0),
+        seat(5, 'large', 'Large', 123456789),
+      ];
+      mocks.rpc.mockResolvedValue({ data, error: null });
+      const { container } = render(
+        <MustMoveLobbyModal
+          {...{ asset }}
+          isOpen
+          gameId={GAME}
+          currentTableId={FEEDER}
+          onClose={vi.fn()}
+        />
+      );
+      await screen.findByText(data.game.name);
+      expect(container.querySelector('.mml-stakes')?.textContent).toBe(stakes);
+      expect(container.querySelector('.mml-me-line')?.textContent).toContain(`(${own})`);
+      const chairs = [...container.querySelectorAll('.mml-seat-stack')].map(
+        (node) => node.textContent
+      );
+      expect(chairs).toContain(own);
+      expect(chairs).toContain(zero);
+      expect(chairs).toContain(large);
+      if (asset === 'diamonds') expect(chairs.every((value) => !value?.includes('.'))).toBe(true);
+    }
+  );
+});

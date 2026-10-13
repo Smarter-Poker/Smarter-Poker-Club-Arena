@@ -1,0 +1,341 @@
+{
+  "schemaVersion": 1,
+  "files": {
+    "scripts/dev/probe-weekly-shaped-primary-pg17.sh": {
+      "bytes": 6044,
+      "sha256": "643a6d3ded540d910c01fd3313c8858dfee0deb81ee13343272db86f5cfeaca4"
+    },
+    "scripts/qualification/original-retirement-boundary/qualified-proof-source-pins.jsonb": {
+      "bytes": 5187,
+      "sha256": "38d5731ffcf1254802bdbb0302496e9891589d2157ad1fedf4835b5a9e45ab6f"
+    },
+    "supabase/migrations/20261012161442_an_original_unchanged_stack_is_proved_from_its_accepted_pred.sql": {
+      "bytes": 26116,
+      "sha256": "6e3583f8860f3edeaee16b84c04f2cd15c72d0295b99e10265cf90eee12c09f1"
+    },
+    "supabase/migrations/20261012201712_late_departed_seat_settlement_proves_its_original_cash_flow.sql": {
+      "bytes": 59262,
+      "sha256": "1d4118810368ba4cf8ab2a702148b34189708f435c6b307baba9fae46980e8b2"
+    },
+    "supabase/migrations/20261012211046_original_posthand_escrow_retains_its_completed_financial_pro.sql": {
+      "bytes": 74540,
+      "sha256": "075454d4b730ea7cb7ce0c9afe5f8b1e598fec4f6860b3a6b74fc7d8efb891c1"
+    },
+    "supabase/migrations/20261012224150_original_retirement_evidence_certifies_finite_inventory_boun.sql": {
+      "bytes": 3419672,
+      "sha256": "c5f513be7637247fc709bd1ee2eab0fcf70f1da672676c987d6a9d0390191f39"
+    },
+    "supabase/migrations/20261013024122_weekly_shaped_hands_start_from_original_unaccepted.sql": {
+      "bytes": 6321,
+      "sha256": "0ae4232c813321a1b13b88bed73127f7b6142aeb636cae54424516eb974f1214"
+    },
+    "tests/fixtures/late-seat-flow/README.md": {
+      "bytes": 3565,
+      "sha256": "b0350c74bd53abdb4b5fd0a855a38e890d3d17cdbad678410c57b00f8024f7f0"
+    },
+    "tests/fixtures/late-seat-flow/access-preimage.sql": {
+      "bytes": 575,
+      "sha256": "cf76bce74c69f696cf665cca58c4777a6ec80f222386f2deae80fe414174c160"
+    },
+    "tests/fixtures/late-seat-flow/admission-preimages.sql": {
+      "bytes": 5033,
+      "sha256": "1d52d13b0a0ce886986bae451401057c66d17c627eb009614eb8d1b55b9f033b"
+    },
+    "tests/fixtures/late-seat-flow/admission-refusals.py": {
+      "bytes": 2519,
+      "sha256": "72b90110925e3384b2fed487abe1a883a5be494d33dd576b80b296092a78aeec"
+    },
+    "tests/fixtures/late-seat-flow/after.sql": {
+      "bytes": 1175,
+      "sha256": "2168ad3378acd304652a226d36afd0767a3ca2f5b5b84173910ee4a42e71100d"
+    },
+    "tests/fixtures/late-seat-flow/arithmetic-prefix.sql": {
+      "bytes": 1531,
+      "sha256": "9ecbf6cb60fe5dd4eb836a7ff6189d163e2acbe5d731af55724169bf4392c0ed"
+    },
+    "tests/fixtures/late-seat-flow/arithmetic.py": {
+      "bytes": 1595,
+      "sha256": "6a7fb98d909f56346507c6690f26038f540fbcd8e5609326c9bbfb475b6d7720"
+    },
+    "tests/fixtures/late-seat-flow/before.sql": {
+      "bytes": 441,
+      "sha256": "d7184ec21b96892cdac5feb49f82bb21ff22a9497398bf502d48f4f190833729"
+    },
+    "tests/fixtures/late-seat-flow/boundaries.sql": {
+      "bytes": 11686,
+      "sha256": "4d6c9f1afd7156627cb3c9bf58931013921b5b045f7911ae8b96b00ca095c217"
+    },
+    "tests/fixtures/late-seat-flow/captured-moves.jsonb": {
+      "bytes": 58237,
+      "sha256": "188b1433daf396af7be62e74faa776523759c112ca93b84b0d45c59b779cb502"
+    },
+    "tests/fixtures/late-seat-flow/captured.jsonb": {
+      "bytes": 3200611,
+      "sha256": "c21e1f776edd99a7429e72c919c7a1e2e8f80496b880f821a8f15b718ab2d84f"
+    },
+    "tests/fixtures/late-seat-flow/compact-preimages.sql": {
+      "bytes": 776,
+      "sha256": "41fd661a669365ab09beb67d25fcc216949ba35df93724477cd97a939ca3ccf1"
+    },
+    "tests/fixtures/late-seat-flow/consumer-preimage.sql": {
+      "bytes": 725,
+      "sha256": "48135612968146700d90bf61fad0364aee79262af5ebcdefcb67b2e7745a2625"
+    },
+    "tests/fixtures/late-seat-flow/flow-preimage.sql": {
+      "bytes": 12034,
+      "sha256": "cdb83cb3a34be7e2f9b03d0b16792edd57dafb6ab2de76f0ef76e80ed76fb355"
+    },
+    "tests/fixtures/late-seat-flow/load-captured.py": {
+      "bytes": 865,
+      "sha256": "178b17a0ca1c685a029d5ee39b3632df5744f00a1217dc2647e1bd5db327ffe2"
+    },
+    "tests/fixtures/late-seat-flow/report-preimage.sql": {
+      "bytes": 27658,
+      "sha256": "2c78575eb5f58d8057ec9932ee0e569242329631f1d117b4bbb16943f7627831"
+    },
+    "tests/fixtures/late-seat-flow/retained-cases.sql": {
+      "bytes": 7975,
+      "sha256": "359a233bc9807beb4154b366a8018b199e4fd4146ed6e2f9aaab8580be54c0fe"
+    },
+    "tests/fixtures/late-seat-flow/retained-key-preimage.sql": {
+      "bytes": 1900,
+      "sha256": "703d29579b2081d4e68876256bcb2c4ba7fc880fa849a1c3e5469ef614c18653"
+    },
+    "tests/fixtures/late-seat-flow/retained-preimages.sql": {
+      "bytes": 4645,
+      "sha256": "0e41b2d97e11a42f32fd838b9251995afc9e527a23ebc69868cd593607017622"
+    },
+    "tests/fixtures/late-seat-flow/schema-additions.sql": {
+      "bytes": 2745,
+      "sha256": "f545762dfd546ab3936d7bb7e96f859100ebfe3c04b4f08649f6c8ac66b421c0"
+    },
+    "tests/fixtures/late-seat-flow/source-binding.json": {
+      "bytes": 3638,
+      "sha256": "7edaaa068ace5047c7b994f9a94e56605f0c7ef5f06f6b470c552cdfb9efb16f"
+    },
+    "tests/fixtures/late-seat-flow/unused-original-dependencies.sql": {
+      "bytes": 7368,
+      "sha256": "3e32e2b707377d32f910ee97789fbd223a868acb04b0c7c3a4f05bf1a2096345"
+    },
+    "tests/fixtures/original-unchanged-stack/README.md": {
+      "bytes": 3861,
+      "sha256": "574459c81f8ec8de58853d5cc35419a6320561f6ff6e336004ed2bdc1f518198"
+    },
+    "tests/fixtures/original-unchanged-stack/after.sql": {
+      "bytes": 815,
+      "sha256": "37285208549f1ff03ca8524640e75968e0b1a8b52bed797ecc3fce02cea9f447"
+    },
+    "tests/fixtures/original-unchanged-stack/before.sql": {
+      "bytes": 585,
+      "sha256": "f326943d4b1f7754d8743ac2f0568bce61a711f0aefe4fed4cac6fd04bdc3649"
+    },
+    "tests/fixtures/original-unchanged-stack/boundaries.sql": {
+      "bytes": 7530,
+      "sha256": "6636f547bffe2acb9dc38d720f2cd3ce239584f216ace6f505f986722e7d0fe5"
+    },
+    "tests/fixtures/original-unchanged-stack/captured-original-3.jsonb": {
+      "bytes": 377401,
+      "sha256": "479e847bb3f4f798e948c94290574d35b98dd34f0617694a0026ee0d67601595"
+    },
+    "tests/fixtures/original-unchanged-stack/captured-original-frames.jsonb": {
+      "bytes": 147,
+      "sha256": "dc465da35074186c82544305dfc5f9c3994240a5339eeab7f7f61bebd2649615"
+    },
+    "tests/fixtures/original-unchanged-stack/cents-preimage.sql": {
+      "bytes": 513,
+      "sha256": "b1af50bae98d16e1d4a640193b669b7f174cfdf2819b8177638d44d512235c10"
+    },
+    "tests/fixtures/original-unchanged-stack/concurrency.py": {
+      "bytes": 3139,
+      "sha256": "4ce6c5a8d1c0c8ca9da5147dd34eccd07eb7943d2492e26070010b0329147439"
+    },
+    "tests/fixtures/original-unchanged-stack/lineage-preimage.sql": {
+      "bytes": 7804,
+      "sha256": "c49581ca3d55ecfab6499d5d82beb4dab098cb87d35e19d546403323d6003c69"
+    },
+    "tests/fixtures/original-unchanged-stack/load-captured.py": {
+      "bytes": 1010,
+      "sha256": "0d3cfcad9b0225fb8ae158adada867d8dc852505489b4c508aad07c31dbe8d21"
+    },
+    "tests/fixtures/original-unchanged-stack/real-cases.sql": {
+      "bytes": 3829,
+      "sha256": "ced2a885ffeb21e8491f833e6b5db87cca441e442a4d70560b607ca0f29b8e3d"
+    },
+    "tests/fixtures/original-unchanged-stack/schema-additions.sql": {
+      "bytes": 219,
+      "sha256": "e0311274a5580043825a8b53b6eba5bcca8429e394b038522515acaf3a71ef02"
+    },
+    "tests/fixtures/original-unchanged-stack/seed-original.sql": {
+      "bytes": 2866,
+      "sha256": "37863f09a6e4316b444f153711117b2dc9a112c56a528a09badf8b883126ba9f"
+    },
+    "tests/fixtures/original-unchanged-stack/source-binding.json": {
+      "bytes": 2217,
+      "sha256": "8b037b9f60bbb9219d0d47163ea4d2ed74d3b695431e950d4e06c2c2feec9966"
+    },
+    "tests/fixtures/posthand-escrow/README.md": {
+      "bytes": 2701,
+      "sha256": "dc289e37613f807b78a92b0da4da2b61b167b3cb82a3e9213c8c1fb156466b68"
+    },
+    "tests/fixtures/posthand-escrow/access-preimage.sql": {
+      "bytes": 417,
+      "sha256": "51b18ce10dbaeefeb957a1f403aa6a6cc6bea1a6fa232a23f6c61a0dd8b57bb0"
+    },
+    "tests/fixtures/posthand-escrow/admission.py": {
+      "bytes": 2498,
+      "sha256": "c72f1b1cf0a1e5e3cd2da68dbb7d33121b56efb29c8174a7b1584b0299811a86"
+    },
+    "tests/fixtures/posthand-escrow/arithmetic.py": {
+      "bytes": 3938,
+      "sha256": "05f6ce5d45ffebbce8f7ec0d7d740f151c79e8d2f56634cea2b1412da24fbaa1"
+    },
+    "tests/fixtures/posthand-escrow/atomic-original-preimage.sql": {
+      "bytes": 3094,
+      "sha256": "473e2f031198177f99e5cb807776d44fcaf4da3f9ac7f6d8d1c21c04b53729b9"
+    },
+    "tests/fixtures/posthand-escrow/before.sql": {
+      "bytes": 469,
+      "sha256": "6c3eb82575cce4d4e511caad7025061c6d12021f1dd52ffbf9a5a393ee4a2c14"
+    },
+    "tests/fixtures/posthand-escrow/boundaries.sql": {
+      "bytes": 22215,
+      "sha256": "4d045f361641bb7e519357fb56cafd73715b1846e6691046c131533af9e42ebc"
+    },
+    "tests/fixtures/posthand-escrow/captured.jsonb": {
+      "bytes": 93200,
+      "sha256": "93a682e369aa2b3de7a2f0de8a2ed37c63f5bdf65091fedb389290d60c386b32"
+    },
+    "tests/fixtures/posthand-escrow/cash-evidence-preimage.sql": {
+      "bytes": 15313,
+      "sha256": "28f64c92946b4f4722d58ebac311b15e08a12debaf055ef112e9fc2c0881f875"
+    },
+    "tests/fixtures/posthand-escrow/certificate-boundaries.sql": {
+      "bytes": 3013,
+      "sha256": "9bb88bd6db0392c564dd6c5d2f3c5720f1abb8ae4db6efcc553c297c640fc8f5"
+    },
+    "tests/fixtures/posthand-escrow/certificate-corruption.sql": {
+      "bytes": 1784,
+      "sha256": "2e60854e8a711b48694ebd27521c5a8ec767fef199ef5510df8177515c3db5ba"
+    },
+    "tests/fixtures/posthand-escrow/concurrency.py": {
+      "bytes": 2812,
+      "sha256": "17c55e5116a9033650a607578f618e965aff94d205e539d0f1d08e1c99fd96e7"
+    },
+    "tests/fixtures/posthand-escrow/consumer-preimage.sql": {
+      "bytes": 726,
+      "sha256": "6a331654988c28e383735d5af962b5ac326bf749cb4ec0b9ef676d378f33ed33"
+    },
+    "tests/fixtures/posthand-escrow/f06-preimages.sql": {
+      "bytes": 1726,
+      "sha256": "90095746f2077e17b74fa734dd8a65cd24b0f19c26fd2bbc4fb9fda3106f6e37"
+    },
+    "tests/fixtures/posthand-escrow/hand-lines-after.sql": {
+      "bytes": 1507,
+      "sha256": "fa77c72f98a6238b95c9e0bcb88720059357d3a2c8651a6fb4b0bcbb5d5f1ada"
+    },
+    "tests/fixtures/posthand-escrow/hand-lines-before.sql": {
+      "bytes": 925,
+      "sha256": "c8630d41d872c9b969ae3aba56b317ea8c3c5cbfe96edb5de53214183dd5740d"
+    },
+    "tests/fixtures/posthand-escrow/hand-lines-preimage.sql": {
+      "bytes": 813,
+      "sha256": "e23549d444ddd315c5f703b9c553c96eccfda5fd0c76ada0e1cc784b375d8dc5"
+    },
+    "tests/fixtures/posthand-escrow/hand-lines-unbounded-candidate.sql": {
+      "bytes": 1260,
+      "sha256": "13d1dc404b3a151205a65d75014c4f04fbb7643b204eb0e27fa3fbb479d88ec4"
+    },
+    "tests/fixtures/posthand-escrow/ordinary-touch-boundary.sql": {
+      "bytes": 1742,
+      "sha256": "034885f88ce2aaf3e9c47f0e18d980180f0fffa9df2655d66d13cf802de32b2d"
+    },
+    "tests/fixtures/posthand-escrow/projection-boundaries.sql": {
+      "bytes": 2046,
+      "sha256": "153c537cd53cf0cd41f97f379f7014ccfc24c35d3dea8d367d67aeda3b59ae1c"
+    },
+    "tests/fixtures/posthand-escrow/pruner-schema.sql": {
+      "bytes": 67475,
+      "sha256": "a726092f49ce36ce253fb3ec726dd07b4f4a3c925c6e6a89bcca695024f0bf82"
+    },
+    "tests/fixtures/posthand-escrow/pruner-source-columns.json": {
+      "bytes": 46594,
+      "sha256": "dfe0f03c8718578d6f539339e7fc10320676fe34cfde22d890b56a13882f544b"
+    },
+    "tests/fixtures/posthand-escrow/retained-atomic-preimage.sql": {
+      "bytes": 1063,
+      "sha256": "01714f2084712ff63b0020fe1e1e4fd17485242a8df6b61dedbd69d38db50db2"
+    },
+    "tests/fixtures/posthand-escrow/rollback-readback.sql": {
+      "bytes": 782,
+      "sha256": "c0a317f294f6e2d08f731ec43efc135fc04e049dc5fd86b56b59d05832df810f"
+    },
+    "tests/fixtures/posthand-escrow/source-binding.json": {
+      "bytes": 7611,
+      "sha256": "f23d21f18d1d8b02d6d88bfa8a51c977c242a1f33ca81dc446e496ab225281a9"
+    },
+    "tests/fixtures/posthand-escrow/source-preservation.sql": {
+      "bytes": 2047,
+      "sha256": "68244954c931468cf1151ace829250f877d698f96e2cc08a2f4b4bf37b0a5e9b"
+    },
+    "tests/fixtures/posthand-escrow/touch-seed.sql": {
+      "bytes": 487,
+      "sha256": "b92b254d1470ce4ff9a1e61c6fa77bdeb87d9ad5f2ed38f2e801f115f87f833a"
+    },
+    "tests/fixtures/posthand-escrow/unchanged-pruner-boundary.sql": {
+      "bytes": 2375,
+      "sha256": "1b9a2521816e3f97cd3838b07778ea5fea5d7bc3c78baa9a46c2585bf8905355"
+    },
+    "tests/fixtures/posthand-escrow/unchanged-pruner-preimages.sql": {
+      "bytes": 15697,
+      "sha256": "8b78c1f15c5e148bc39baf9c9f1cad3ec0186c7f0a7c870a11148fc7d68e85bb"
+    },
+    "tests/fixtures/posthand-escrow/writer-boundaries.sql": {
+      "bytes": 2029,
+      "sha256": "316172af754e106c5d9a9922a216c216e246116fff27ff5a0b8955f0b488126f"
+    },
+    "tests/fixtures/union-pnl-blocked-resolution/captured-preimages.sql": {
+      "bytes": 16188,
+      "sha256": "cbae5af1b9e3e093f8dee9113b306a3e1c2e06906f9edef4e83e3910ce450389"
+    },
+    "tests/fixtures/union-pnl-blocked-resolution/production-dryrun.sql": {
+      "bytes": 14137,
+      "sha256": "77bff626d2681f1b32d45873e7b31e6f3cb1372f018fcc26875a163616f08a41"
+    },
+    "tests/fixtures/union-pnl-blocked-resolution/schema.sql": {
+      "bytes": 6057,
+      "sha256": "3f5650d78cbb5e171283ce9ddff00afd1f5a697c39be251d6557e93bdda94c91"
+    },
+    "tests/fixtures/union-pnl-blocked-resolution/seed.sql": {
+      "bytes": 6560,
+      "sha256": "0ed16bc27a93efcf7d9641ba17c2fbc2184ad65a50f19618e370732f89832a40"
+    },
+    "tests/fixtures/union-pnl-blocked-resolution/stage1.sql": {
+      "bytes": 2960,
+      "sha256": "4b786e0f6fc0cf1d4302b17b61de22b02ed254272511be00ade25e065cee912a"
+    },
+    "tests/fixtures/union-pnl-blocked-resolution/stage2.sql": {
+      "bytes": 5320,
+      "sha256": "30cce25de4119ca45131899529508bf2005319aa7ce5421ed3214b97a51b66d6"
+    },
+    "tests/fixtures/weekly-shaped-primary/README.md": {
+      "bytes": 2430,
+      "sha256": "ca3f833ec661c7ccec3651149a84bc54eb5a18ebe7de56110a606f1b22f0fa7e"
+    },
+    "tests/fixtures/weekly-shaped-primary/admission.py": {
+      "bytes": 1601,
+      "sha256": "b1632c67bc943b2e1ebfd96c6cd3c40094e6d0de2e45893cfbdca368970f568d"
+    },
+    "tests/fixtures/weekly-shaped-primary/native.sql": {
+      "bytes": 8103,
+      "sha256": "7c845451d64e768e714c731d1aeb5981ef759933adba574d02a50c7494f701f7"
+    },
+    "tests/fixtures/weekly-shaped-primary/performance.py": {
+      "bytes": 2817,
+      "sha256": "9e0e99e77ef5810f9608a01a08356b98c4c1d6cfda63489f8042c7af70ba8428"
+    },
+    "tests/fixtures/weekly-shaped-primary/preimage.sql": {
+      "bytes": 1468,
+      "sha256": "31328df99941b70a16e8e4e1fe063fdcdca312624cf344d72c2690d7a3d7e327"
+    }
+  }
+}

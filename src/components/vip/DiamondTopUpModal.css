@@ -146,7 +146,7 @@
   flex-direction: column;
   padding-inline: 4.6cqw;
   overflow: hidden;
-  background-color: #030507;
+  background-color: transparent;
   background-image: url('/assets/club-buttons/lobby/shark-panel-v1/mid.png');
   background-position: center top;
   background-repeat: repeat-y;
@@ -193,6 +193,9 @@
   min-height: 0;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  /* Scroll the native-height rows instead of shrinking tracks beneath their art. */
+  grid-auto-rows: max-content;
+  align-items: start;
   gap: 8px;
   flex: 1 1 auto;
   align-content: start;
@@ -475,4 +478,22 @@
 /* Retain the established anchored placement; only the paint clips. */
 .diamond-package__badge {
   position: absolute;
+}
+
+/* Short landscape screens scroll the complete native chassis rather than
+   trapping the catalog in a viewport shorter than one purchase control. */
+@media (max-height: 500px) {
+  .diamond-modal-overlay .diamond-modal {
+    overflow-y: auto;
+  }
+
+  .diamond-modal__body {
+    flex: 0 0 auto;
+    overflow: visible;
+  }
+
+  .diamond-modal__grid {
+    flex: 0 0 auto;
+    overflow-y: visible;
+  }
 }

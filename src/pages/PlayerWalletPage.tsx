@@ -1883,13 +1883,11 @@ function PlayerWalletAccount({
                   onClick={() => navigate('/achievements')}
                 >
                   <span className="earn-door__title">Achievements</span>
-                  <span className="earn-door__sub">Milestones That Pay Out When You Hit Them.</span>
+                  <span className="earn-door__sub">Milestones, Badges, And Unlock Progress.</span>
                 </button>
                 <button type="button" className="earn-door" onClick={() => navigate('/vip')}>
-                  <span className="earn-door__title">VIP Bonuses</span>
-                  <span className="earn-door__sub">
-                    Daily And Monthly Diamond Bonuses For Members.
-                  </span>
+                  <span className="earn-door__title">VIP Status</span>
+                  <span className="earn-door__sub">Membership And Included Benefits.</span>
                 </button>
               </div>
             </section>

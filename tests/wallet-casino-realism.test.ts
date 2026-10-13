@@ -107,6 +107,14 @@ describe('wallets can send, receive and earn - wired to the real doors', () => {
     expect(PAGE).toContain("'/api/rewards/daily-login'");
     expect(PAGE).toContain("'/api/rewards/progress'");
     expect(PAGE).toContain('DiamondService.getLifetimeStats(user.id)');
+    // Discovery links describe the destination, not an unbacked universal payout.
+    expect(PAGE).toContain('Milestones, Badges, And Unlock Progress');
+    expect(PAGE).toContain('Membership And Included Benefits');
+    expect(PAGE).not.toContain('Milestones That Pay Out When You Hit Them');
+    expect(PAGE).not.toContain('Daily And Monthly Diamond Bonuses For Members');
+    expect(PAGE).not.toContain('VIP Bonuses');
+    expect(PAGE).toContain("navigate('/achievements')");
+    expect(PAGE).toContain("navigate('/vip')");
   });
 
   it('Add Chips and Cash Out go to the club cashier when a club is in context', () => {

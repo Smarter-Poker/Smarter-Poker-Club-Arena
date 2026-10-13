@@ -7,11 +7,13 @@ describe('visible heatmap certification prerequisites', () => {
     const front = source.indexOf('await page.bringToFront()');
     const ready = source.indexOf('visibility: document.visibilityState, online: navigator.onLine');
     const verdict = source.indexOf(".toEqual({ visibility: 'visible', online: true })");
+    const analytics = source.indexOf("name: 'Analytics', exact: true");
     const repeated = source.indexOf('toBeGreaterThanOrEqual(2)');
     expect(front).toBeGreaterThan(-1);
     expect(ready).toBeGreaterThan(front);
     expect(verdict).toBeGreaterThan(ready);
-    expect(repeated).toBeGreaterThan(verdict);
+    expect(analytics).toBeGreaterThan(verdict);
+    expect(repeated).toBeGreaterThan(analytics);
   });
   it('preserves authoritative scoped reads and refuses missing refreshes', () => {
     expect(source).toContain('timeout: 45_000');

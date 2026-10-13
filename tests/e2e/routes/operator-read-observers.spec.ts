@@ -21,6 +21,7 @@ test('the visible operator heatmap refreshes through its scoped narrow read', as
       reads.push(response);
   });
   await page.goto(`admin?club=${clubId}`, { waitUntil: 'domcontentloaded' });
+  await expect(page).not.toHaveURL(/\/auth(?:\/|\?|$)/, { timeout: 30_000 });
   // This observer deliberately suspends hidden/offline reads. DOM visibility
   // of its heading alone does not establish the document's read prerequisite.
   await page.bringToFront();
@@ -31,7 +32,6 @@ test('the visible operator heatmap refreshes through its scoped narrow read', as
       { timeout: 15_000, message: 'The heatmap observer requires a visible online document' }
     )
     .toEqual({ visibility: 'visible', online: true });
-  await expect(page).not.toHaveURL(/\/auth(?:\/|\?|$)/, { timeout: 30_000 });
   await page
     .getByRole('tablist', { name: 'Operations Views' })
     .getByRole('tab', { name: 'Analytics', exact: true })

@@ -82,6 +82,7 @@ describe('reserved protected ledger actors reach supported Auth retirement', () 
     [id, `${email}\n`],
   ])('refuses invalid exact identity without any cleanup call', async (accountId, accountEmail) => {
     const cleanup = vi.fn();
+    const retireFixtures = vi.fn();
     await expect(
       retireReservedCertificationAccount({
         environment: {
@@ -89,9 +90,11 @@ describe('reserved protected ledger actors reach supported Auth retirement', () 
           RESERVED_CERTIFICATION_ACCOUNT_EMAIL: accountEmail,
         },
         cleanup,
+        retireFixtures,
       })
     ).rejects.toThrow('Exactly One Reserved');
     expect(cleanup).not.toHaveBeenCalled();
+    expect(retireFixtures).not.toHaveBeenCalled();
   });
   it('delegates the exact account and requires verified completion', async () => {
     const environment = {

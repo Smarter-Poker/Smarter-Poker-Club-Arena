@@ -1,0 +1,7 @@
+[
+  {
+    "signature": "fn_ca_current_epoch()",
+    "body_md5": "c6b581c540b0ed1a362c1ffea221dc4d",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_current_epoch()\n RETURNS integer\n LANGUAGE sql\n STABLE\n SET search_path TO 'public', 'pg_temp'\nAS $function$ SELECT id FROM public.ca_financial_epochs WHERE is_current LIMIT 1 $function$\n"
+  }
+]

@@ -45,6 +45,7 @@ import { soundService } from '../../services/SoundService';
 import BBJHitNotification from './BBJHitNotification';
 
 interface Notice {
+  asset?: 'chips' | 'diamonds';
   /** Remounts the card if a second jackpot lands while the first is still up. */
   key: string;
   winnerName: string;
@@ -83,6 +84,7 @@ export function BBJHitAnnouncer() {
 
     setNotice({
       key: `${payload.tableId}:${payload.handNumber ?? 0}:${Date.now()}`,
+      asset: payload.asset,
       winnerName: payload.winnerName || 'A player',
       amount: Number(payload.amount) || 0,
       tableName: payload.tableName || 'a table',
@@ -99,6 +101,7 @@ export function BBJHitAnnouncer() {
       key={notice.key}
       winnerName={notice.winnerName}
       amount={notice.amount}
+      asset={notice.asset}
       tableName={notice.tableName}
       onObserve={() => {
         masterBus.emit('OPEN_OBSERVE_TABLE', {

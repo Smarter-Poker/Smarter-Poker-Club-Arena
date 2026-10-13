@@ -243,6 +243,11 @@ import { gameCode } from '../utils/gameCode';
 import { masterBus } from '../core/MasterBus';
 import { watchBbjPool } from '../lib/bbjPoolFeed';
 import { watchBbjMini, miniPlateAmount, type BbjMiniSnapshot } from '../lib/bbjMiniFeed';
+import {
+  subscribeDiamondJackpot,
+  diamondMiniPlateAmount,
+  type DiamondJackpotSnapshot,
+} from '../lib/diamondJackpotFeed';
 import { isBbjPlateShown } from '../components/table/bbjPlateVisibility';
 import { watchBbjHits } from '../lib/bbjHitFeed';
 import {
@@ -4533,7 +4538,10 @@ function LiveTablePage({
   } = useTableSession(tableId);
   /* A sitting-out or busted cash seat still owns a session. Restore from
      seat ownership, not from the current hand's funded-player list. */
-  const hasCashSessionSeat = tableState.heroSeat > 0 && !tableState.isTournament;
+  // Diamond's finished card reads the exact custody after leave. Restoring
+  // mount counters there only introduced an ask/snapshot overlap race.
+  const hasCashSessionSeat =
+    tableState.heroSeat > 0 && !tableState.isTournament && tableState.arenaAsset !== 'diamonds';
   const sessionRestoreKey =
     tableId && userId && userId !== 'guest' && hasCashSessionSeat ? `${tableId}:${userId}` : null;
   const sessionBaselineTableRef = useRef<string | null>(sessionRestoreKey);
@@ -6923,6 +6931,18 @@ function LiveTablePage({
   /* THE MINI (Dan 2026-09-11). One feed per club (lib/bbjMiniFeed), the flat
      amount per stakes tier and whether each can pay right now. */
   const [bbjMini, setBbjMini] = useState<BbjMiniSnapshot | null>(null);
+  const diamondJackpotKey = `${userId}:${tableId}:${lightningClubId || ''}:${tableState.arenaAsset}:${tableState.arenaId || ''}`;
+  const diamondJackpotOwner = useRef(diamondJackpotKey);
+  diamondJackpotOwner.current = diamondJackpotKey;
+  const [recordedDiamondJackpot, setRecordedDiamondJackpot] = useState<{
+    key: string;
+    snapshot: DiamondJackpotSnapshot;
+  } | null>(null);
+  const diamondJackpot =
+    recordedDiamondJackpot?.key === diamondJackpotKey ? recordedDiamondJackpot.snapshot : null;
+  const [diamondJackpotFailureKey, setDiamondJackpotFailureKey] = useState<string | null>(null);
+  const diamondJackpotUnavailable = diamondJackpotFailureKey === diamondJackpotKey;
+  const diamondMiniAmount = diamondMiniPlateAmount(diamondJackpot, safeBB(tableState.blinds));
   // (tableSessionDate removed 2026-08-26 — item 5 dropped the date from the
   // felt masthead, and nothing else read it.)
 
@@ -8367,6 +8387,10 @@ function LiveTablePage({
      a table this process hosts; this is the fallback for everyone else, and
      the two de-duplicate on the hit's own identity. */
   useEffect(() => {
+    setBbjAmount(0);
+    setBbjPoolId(null);
+    setRecordedDiamondJackpot(null);
+    setDiamondJackpotFailureKey(null);
     if (!tableId) return;
     /* A different club's mini must never render under this one's heading.
        `watchBbjMini` replays immediately only for a club it has already
@@ -8389,10 +8413,50 @@ function LiveTablePage({
           .select('club_id')
           .eq('id', tableId)
           .maybeSingle();
-        if (bbjTableErr) reportError(bbjTableErr, 'TablePage.bbj_table_read_failed', { tableId });
+        if (bbjTableErr) {
+          reportError(bbjTableErr, 'TablePage.bbj_table_read_failed', { tableId });
+          if (
+            tableState.arenaAsset === 'diamonds' &&
+            !cancelled &&
+            isMounted.current &&
+            diamondJackpotOwner.current === diamondJackpotKey
+          )
+            setDiamondJackpotFailureKey(diamondJackpotKey);
+        }
         actualClubId = tableData?.club_id;
       }
-      if (!actualClubId || cancelled) return;
+      if (!actualClubId || cancelled || diamondJackpotOwner.current !== diamondJackpotKey) return;
+      if (tableState.arenaAsset === 'diamonds') {
+        if (!userId || userId === 'guest') return;
+        stopPool = subscribeDiamondJackpot(
+          actualClubId,
+          (snapshot) => {
+            if (
+              cancelled ||
+              !isMounted.current ||
+              diamondJackpotOwner.current !== diamondJackpotKey
+            )
+              return;
+            setRecordedDiamondJackpot({ key: diamondJackpotKey, snapshot });
+            setDiamondJackpotFailureKey(null);
+            setBbjAmount(snapshot.main_balance);
+            setBbjPoolId(snapshot.pool_id);
+          },
+          () => {
+            if (
+              cancelled ||
+              !isMounted.current ||
+              diamondJackpotOwner.current !== diamondJackpotKey
+            )
+              return;
+            setRecordedDiamondJackpot(null);
+            setDiamondJackpotFailureKey(diamondJackpotKey);
+            setBbjAmount(0);
+            setBbjPoolId(null);
+          }
+        );
+        return;
+      }
 
       stopPool = watchBbjPool(actualClubId, (snap) => {
         if (cancelled || !isMounted.current) return;
@@ -8410,14 +8474,23 @@ function LiveTablePage({
       });
     };
 
-    start().catch((e) => reportError(e, 'TablePage.bbj_feed_start_failed', { tableId }));
+    start().catch((e) => {
+      if (
+        tableState.arenaAsset === 'diamonds' &&
+        !cancelled &&
+        isMounted.current &&
+        diamondJackpotOwner.current === diamondJackpotKey
+      )
+        setDiamondJackpotFailureKey(diamondJackpotKey);
+      reportError(e, 'TablePage.bbj_feed_start_failed', { tableId });
+    });
     return () => {
       cancelled = true;
       if (stopPool) stopPool();
       if (stopMini) stopMini();
       if (stopHits) stopHits();
     };
-  }, [tableId, lightningClubId]);
+  }, [tableId, lightningClubId, userId, tableState.arenaAsset, diamondJackpotKey]);
 
   // ── RABBIT HUNT (Dan 2026-08-25) ────────────────────────────────────────
   // The client no longer holds the cards, because it never should have. The
@@ -10495,6 +10568,17 @@ function LiveTablePage({
         } else
           publishSessionSummary({
             arenaAsset: tableState.arenaAsset,
+            diamondRecap:
+              tableState.arenaAsset === 'diamonds' &&
+              !tableState.isTournament &&
+              !tableState.tournamentId
+                ? {
+                    tableId: leaveTableId!,
+                    occupancyId: result.occupancyId || '',
+                    userId,
+                    notify: true,
+                  }
+                : undefined,
             duration: Math.floor((Date.now() - sessionStartRef.current) / 1000),
             handsPlayed: handsPlayedRef.current,
             handsWon: handsWonRef.current,
@@ -10545,7 +10629,7 @@ function LiveTablePage({
         showLobbyNow();
 
         // Phase E: Route session end to Notifications tab for async review
-        if (userId && userId !== 'guest') {
+        if (userId && userId !== 'guest' && tableState.arenaAsset !== 'diamonds') {
           const pl = sessionPLRef.current;
           const plText = pl >= 0 ? `+${pl.toLocaleString()}` : pl.toLocaleString();
           notificationService
@@ -10553,12 +10637,10 @@ function LiveTablePage({
               userId,
               type: 'system',
               title: 'Session Complete',
-              message: `Session ended at ${tableState.tableName}. P/L: ${plText} ${tableState.arenaAsset === 'diamonds' ? 'Diamonds' : 'chips'} over ${handsPlayedRef.current} hands.`,
+              message: `Session ended at ${tableState.tableName}. P/L: ${plText} chips over ${handsPlayedRef.current} hands.`,
               metadata: {
                 tableId: tableId || '',
-                ...(tableState.arenaAsset === 'diamonds'
-                  ? { asset: 'diamonds', plDiamonds: pl }
-                  : { plChips: pl }),
+                plChips: pl,
                 hands: handsPlayedRef.current,
               },
             })
@@ -10765,6 +10847,17 @@ function LiveTablePage({
         } else
           publishSessionSummary({
             arenaAsset: tableState.arenaAsset,
+            diamondRecap:
+              tableState.arenaAsset === 'diamonds' &&
+              !tableState.isTournament &&
+              !tableState.tournamentId
+                ? {
+                    tableId: forceTableId,
+                    occupancyId: forced.occupancyId || '',
+                    userId,
+                    notify: false,
+                  }
+                : undefined,
             duration: Math.floor((Date.now() - sessionStartRef.current) / 1000),
             handsPlayed: handsPlayedRef.current,
             handsWon: handsWonRef.current,
@@ -12258,6 +12351,7 @@ function LiveTablePage({
         if (!hitTableId || hitTableId === tableId) return;
         masterBus.emit('BBJ_HIT_GLOBAL', {
           tableId: hitTableId,
+          asset: handState.asset === 'diamonds' ? 'diamonds' : 'chips',
           tableName: (handState.table_name as string) || 'a table',
           gameVariant: (handState.game_variant as string) || 'Poker',
           bigBlind: Number(handState.big_blind) || 0,
@@ -12329,6 +12423,7 @@ function LiveTablePage({
       }
 
       if (eventType === 'bbj_payout_complete') {
+        if (handState.asset === 'diamonds') retryAccountBalance();
         /* Dan 2026-08-26 — THE REPLAY GATE, and this is the path the bug was
            actually reported on: refresh the table and the jackpot celebrated
            again. The hub retains transient events and re-delivers them to
@@ -24072,7 +24167,10 @@ function LiveTablePage({
           isTournament: tableState.isTournament,
           tournamentId: tableState.tournamentId,
           maxPlayers: Number(tableState.maxPlayers) || 0,
-        }) && miniPlateAmount(bbjMini, safeBB(tableState.blinds)) !== null
+        }) &&
+        (tableState.arenaAsset === 'diamonds'
+          ? diamondMiniAmount
+          : miniPlateAmount(bbjMini, safeBB(tableState.blinds))) !== null
           ? '1'
           : '0'
       }
@@ -28003,8 +28101,15 @@ function LiveTablePage({
         ritResolveName={(uid) => tableState.players.find((p) => p?.id === uid)?.name || 'Player'}
         // BBJ
         showBBJ={showBBJ}
-        bbjAmount={bbjAmount}
-        bbjPoolId={bbjPoolId}
+        jackpotAsset={tableState.arenaAsset === 'diamonds' ? 'diamonds' : 'chips'}
+        diamondJackpot={diamondJackpot}
+        diamondJackpotUnavailable={diamondJackpotUnavailable}
+        bbjAmount={
+          tableState.arenaAsset === 'diamonds' ? (diamondJackpot?.main_balance ?? 0) : bbjAmount
+        }
+        bbjPoolId={
+          tableState.arenaAsset === 'diamonds' ? (diamondJackpot?.pool_id ?? null) : bbjPoolId
+        }
         bbjMini={bbjMini}
         bbjHeroName={tableState.players.find((p) => p && p.id === userId)?.name || null}
         showBBJCelebration={showBBJCelebration}

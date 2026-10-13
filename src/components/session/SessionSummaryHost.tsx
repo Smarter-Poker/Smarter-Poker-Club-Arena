@@ -42,6 +42,7 @@ import {
   type SessionSummaryPayload,
 } from '../../services/pendingSessionSummary';
 import { supabase } from '../../lib/supabase';
+import type { DiamondCashSessionRecap } from '../../services/diamondCashSessionRecap';
 import { formatGameTitle } from '../../utils/formatGameTitle';
 import { titleCase } from '../../utils/titleCase';
 import { formatPrizeAtUnit, moneySuffixAtUnit } from '../../utils/format';
@@ -147,11 +148,77 @@ function ordinal(n: number): string {
 }
 
 export function SessionSummaryHost() {
-  const [payload, setPayload] = useState<SessionSummaryPayload | null>(() => peekSessionSummary());
+  const [publishedPayload, setPayload] = useState<SessionSummaryPayload | null>(() =>
+    peekSessionSummary()
+  );
   /* This host is mounted outside <Routes> but inside <BrowserRouter>, so it can
      route. It needs to: a house ad in this card carries its own destination. */
   const navigate = useNavigate();
   const currentClubId = useUserStore((s) => s.currentClubId);
+  const currentUserId = useUserStore((s) => s.user?.id ?? null);
+  const target = publishedPayload?.diamondRecap;
+  const recapKey = target ? `${target.userId}:${target.tableId}:${target.occupancyId}` : null;
+  const [retryRecap, setRetryRecap] = useState(0);
+  const [recapRead, setRecapRead] = useState<{
+    key: string | null;
+    state: 'loading' | 'error' | 'ready';
+    data: DiamondCashSessionRecap | null;
+  }>({ key: null, state: 'loading', data: null });
+  const recapOwnerRef = useRef<string | null>(null);
+  recapOwnerRef.current = recapKey && currentUserId === target?.userId ? recapKey : null;
+
+  useEffect(() => {
+    if (!target || !recapKey || currentUserId !== target.userId) return;
+    let active = true;
+    const askedKey = recapKey;
+    setRecapRead({ key: askedKey, state: 'loading', data: null });
+    void import('../../services/diamondCashSessionRecap')
+      .then(({ readDiamondCashSessionRecap }) => {
+        if (!active || recapOwnerRef.current !== askedKey) return null;
+        return readDiamondCashSessionRecap(target);
+      })
+      .then((data) => {
+        if (!data || !active || recapOwnerRef.current !== askedKey) return;
+        setRecapRead({ key: askedKey, state: 'ready', data });
+      })
+      .catch(() => {
+        if (!active || recapOwnerRef.current !== askedKey) return;
+        setRecapRead({ key: askedKey, state: 'error', data: null });
+      });
+    return () => {
+      active = false;
+    };
+    // A recorded pending cashout becoming settled is the existing observer's
+    // explicit transition. Stack renders never restart this request.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recapKey, currentUserId, publishedPayload?.plPending, retryRecap]);
+
+  const ownsRecap = !target || currentUserId === target.userId;
+  const recordedRecap = ownsRecap && recapRead.key === recapKey ? recapRead.data : null;
+  const recordedReady = ownsRecap && (!target || recordedRecap?.status === 'settled');
+  const recapFailed = !!target && recapRead.key === recapKey && recapRead.state === 'error';
+  const payload = useMemo<SessionSummaryPayload | null>(
+    () =>
+      !ownsRecap
+        ? null
+        : publishedPayload && recordedRecap?.status === 'settled'
+          ? {
+              ...publishedPayload,
+              sessionStart: recordedRecap.startedAt,
+              sessionEnd: recordedRecap.endedAt!,
+              duration: Math.floor((recordedRecap.endedAt! - recordedRecap.startedAt) / 1000),
+              totalBuyIn: recordedRecap.totalBuyIn,
+              profitLoss: recordedRecap.profitLoss!,
+              handsPlayed: recordedRecap.handsPlayed ?? 0,
+              handsWon: recordedRecap.handsWon ?? 0,
+              vpipPercent: recordedRecap.vpipPercent ?? undefined,
+              peakStack: recordedRecap.peakStack ?? 0,
+              totalRebuys: recordedRecap.totalRebuys,
+              plPending: false,
+            }
+          : publishedPayload,
+    [publishedPayload, recordedRecap, ownsRecap]
+  );
 
   useEffect(() => subscribeSessionSummary(setPayload), []);
 
@@ -185,6 +252,7 @@ export function SessionSummaryHost() {
     let stopped = false;
 
     const check = async () => {
+      if (target && recapOwnerRef.current !== recapKey) return;
       try {
         if (payload?.arenaAsset === 'diamonds') {
           if (!pc.occupancyId) return;
@@ -194,6 +262,7 @@ export function SessionSummaryHost() {
           });
           if (
             stopped ||
+            (target && recapOwnerRef.current !== recapKey) ||
             error ||
             !data ||
             data.asset !== 'diamonds' ||
@@ -203,7 +272,7 @@ export function SessionSummaryHost() {
             data.amount < 0
           )
             return;
-          settlePendingSummary(data.amount - totalBuyIn);
+          settlePendingSummary(data.amount - totalBuyIn, pc);
           return;
         }
         const { data } = await supabase
@@ -216,9 +285,9 @@ export function SessionSummaryHost() {
           .order('created_at', { ascending: false })
           .limit(1)
           .maybeSingle();
-        if (stopped) return;
+        if (stopped || (target && recapOwnerRef.current !== recapKey)) return;
         if (data && data.amount != null) {
-          settlePendingSummary(Number(data.amount) - totalBuyIn);
+          settlePendingSummary(Number(data.amount) - totalBuyIn, pc);
         }
       } catch {
         /* transient read failure — the next tick retries */
@@ -268,11 +337,11 @@ export function SessionSummaryHost() {
   const totalWon = (tourney?.prize ?? 0) + (tourney?.bountyWinnings ?? 0);
   const isProfit = isTournament ? totalWon > 0 : (payload?.profitLoss ?? 0) >= 0;
 
-  const heroTarget = isTournament ? totalWon : (payload?.profitLoss ?? 0);
-  const displayPL = useCountUp(heroTarget, 900, !!payload);
+  const heroTarget = !recordedReady ? 0 : isTournament ? totalWon : (payload?.profitLoss ?? 0);
+  const displayPL = useCountUp(heroTarget, 900, !!payload && recordedReady);
 
   const stats = useMemo(() => {
-    if (!payload) return [];
+    if (!payload || !recordedReady) return [];
     const handsPerHour =
       payload.duration > 60 ? Math.round((payload.handsPlayed / payload.duration) * 3600) : 0;
 
@@ -343,13 +412,28 @@ export function SessionSummaryHost() {
        cash card — VPIP takes its slot — and the total buy-in gets a tile. */
     const out = [
       { label: 'Duration', value: formatDuration(payload.duration) },
-      { label: 'Hands Played', value: String(payload.handsPlayed) },
-      { label: 'VPIP', value: `${payload.vpipPercent ?? 0}%` },
+      {
+        label: 'Hands Played',
+        value: target && recordedRecap?.handsPlayed === null ? '-' : String(payload.handsPlayed),
+      },
+      {
+        label: 'VPIP',
+        value: target && recordedRecap?.vpipPercent === null ? '-' : `${payload.vpipPercent ?? 0}%`,
+      },
       /* Dan 2026-08-23: "remove biggest pot as a field". It was the one tile
          that measured the TABLE rather than the session — the biggest pot you
          saw, win or lose, which says nothing about how you did. */
-      { label: 'Peak Stack', value: formatChips(payload.peakStack) },
-      { label: 'Win Rate', value: `${winRate}%` },
+      {
+        label: 'Peak Stack',
+        value: target && recordedRecap?.peakStack === null ? '-' : formatChips(payload.peakStack),
+      },
+      {
+        label: 'Win Rate',
+        value:
+          target && (recordedRecap?.handsWon === null || recordedRecap?.handsPlayed === null)
+            ? '-'
+            : `${winRate}%`,
+      },
     ];
     if (payload.totalBuyIn != null && payload.totalBuyIn > 0) {
       /* Dan 2026-08-26 mobile pass, item 12: "Buy In", not "Buy In's". */
@@ -359,7 +443,7 @@ export function SessionSummaryHost() {
       out.push({ label: 'Rebuys', value: String(payload.totalRebuys) });
     }
     return out;
-  }, [payload, unitCents, unitSuffix]);
+  }, [payload, unitCents, unitSuffix, recordedReady, recordedRecap, target]);
 
   /* Dan 2026-08-20 gave a reference for the tournament card, and it is a
      different card entirely — RANKING, a medal, a place band, Stay Observing /
@@ -371,7 +455,7 @@ export function SessionSummaryHost() {
   const [shareLabel, setShareLabel] = useState('Share');
 
   const share = useCallback(async () => {
-    if (!payload) return;
+    if (!payload || !recordedReady || (target && recordedRecap?.handsPlayed === null)) return;
     const money = `${payload.profitLoss >= 0 ? '+' : '-'}${formatChips(Math.abs(payload.profitLoss))}`;
     const text =
       `${payload.tableName || 'Table Session'} - ${money}${payload.arenaAsset === 'diamonds' ? ' Diamonds' : ''} over ` +
@@ -389,9 +473,10 @@ export function SessionSummaryHost() {
       /* A cancelled share sheet rejects. That is the player changing their
          mind, not a failure, and it must not raise anything at them. */
     }
-  }, [payload]);
+  }, [payload, recordedReady, target, recordedRecap]);
 
   if (!payload || payload.tournament) return null;
+  if (target && currentUserId !== target.userId) return null;
   if (typeof document === 'undefined') return null;
 
   return createPortal(
@@ -402,7 +487,7 @@ export function SessionSummaryHost() {
            player knows which kind of result they are reading before they read
            a word of it; --win/--loss still tints the money line. */
         className={`ssh-card ${isTournament ? 'ssh-card--tourney ' : ''}${
-          isProfit ? 'ssh-card--win' : 'ssh-card--loss'
+          !recordedReady ? '' : isProfit ? 'ssh-card--win' : 'ssh-card--loss'
         }`}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
@@ -434,7 +519,7 @@ export function SessionSummaryHost() {
               )
             )}
           </h2>
-          {payload.sessionEnd && (
+          {recordedReady && payload.sessionEnd && (
             <div className="ssh-date">
               {new Date(payload.sessionEnd).toLocaleDateString()} At{' '}
               {new Date(payload.sessionEnd).toLocaleTimeString([], {
@@ -462,6 +547,21 @@ export function SessionSummaryHost() {
               {totalWon > 0 ? `Won ${chipsAtUnit(displayPL, unitCents)}${unitSuffix}` : 'No Prize'}
             </span>
             <span className="ssh-hero__sweep" aria-hidden="true" />
+          </div>
+        ) : !recordedReady ? (
+          <div className="ssh-hero" role="status" aria-live="polite">
+            <span className="ssh-hero__label">
+              {recapFailed
+                ? 'Recorded Session Unavailable'
+                : recordedRecap?.status === 'pending'
+                  ? 'Pending Settlement'
+                  : 'Reading Recorded Session'}
+            </span>
+            {recapFailed && (
+              <span className="ssh-hero__sub">
+                Your Cashout Is Unchanged. Retry To Read The Result.
+              </span>
+            )}
           </div>
         ) : (
           <div className="ssh-hero">
@@ -529,9 +629,23 @@ export function SessionSummaryHost() {
             and falls back to the clipboard everywhere else — a share control
             that silently does nothing on desktop is worse than none. */}
         <div className="ssh-actions">
-          <button className="ssh-share" onClick={share} aria-label="Share This Session">
-            {shareLabel}
-          </button>
+          {recapFailed ||
+          (recordedReady &&
+            !!target &&
+            (recordedRecap?.handsWon === null || recordedRecap?.vpipPercent === null)) ? (
+            <button className="ssh-share" onClick={() => setRetryRecap((n) => n + 1)}>
+              Retry Recorded Session
+            </button>
+          ) : (
+            <button
+              className="ssh-share"
+              onClick={share}
+              aria-label="Share This Session"
+              disabled={!recordedReady || (!!target && recordedRecap?.handsPlayed === null)}
+            >
+              {shareLabel}
+            </button>
+          )}
           <button className="ssh-done" onClick={close}>
             Done
           </button>

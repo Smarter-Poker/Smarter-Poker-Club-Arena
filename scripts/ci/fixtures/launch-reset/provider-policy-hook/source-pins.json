@@ -1,0 +1,11 @@
+{
+  "commit": "acdb8513f0fd1b96d0f17c686efb6bdfc53cea81",
+  "archive": "supautils-acdb8513f0fd1b96d0f17c686efb6bdfc53cea81.tar.gz",
+  "makefile_sha256": "65440e905869aec5ee36b6b31e123191d689a91dfd2cb4e17ce2847cc546b08e",
+  "files": {
+    "supautils-acdb8513f0fd1b96d0f17c686efb6bdfc53cea81.tar.gz": "33f3f3afbd9d34dfe003f7a28325c8809680daad643f5109a25c9c657d84bff3",
+    "witness.mjs": "a8c561c5bae283ae5ed09704bf655f2cd5714924c53218835a0ebd8af3f6c352"
+  },
+  "upstream": "https://github.com/supabase/supautils",
+  "provider_fix": "https://github.com/supabase/supautils/commit/42cc7f0c4b2655ee3f70a834e253e6a79c66f1d6"
+}

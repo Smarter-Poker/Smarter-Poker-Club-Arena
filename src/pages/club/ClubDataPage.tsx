@@ -976,12 +976,15 @@ export default function ClubDataPage() {
   const pendingEventRefreshRef = useRef({ ledger: false, invoices: false });
   const cancelledRef = useRef(false);
   const manualRefreshingRef = useRef(false);
+  const manualRefreshVersion = useRef(0);
+  const observedUtcDayRef = useRef(toISODate(new Date()));
   const gamesTabRef = useRef<HTMLButtonElement>(null);
   const playersTabRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     cancelledRef.current = false;
     return () => {
       cancelledRef.current = true;
+      manualRefreshVersion.current += 1;
       exportGenerationRef.current += 1;
       exportControllerRef.current?.abort();
       exportControllerRef.current = null;
@@ -1115,6 +1118,7 @@ export default function ClubDataPage() {
     setPlayersError(null);
     setExportNote(null);
     setRefreshNote(null);
+    manualRefreshVersion.current += 1;
     manualRefreshingRef.current = false;
     setManualRefreshing(false);
     setLedgerSource('cold');
@@ -1538,6 +1542,15 @@ export default function ClubDataPage() {
     const cached = readClubDataCache<CachedGameLedger>(userId, clubUuid, gameCacheKey);
     if (!isVerifiedCachedGameLedger(cached, expectedGameSnapshot)) {
       if (cached) removeClubDataCaches(userId, clubUuid);
+      // Outgoing rows and money answer a different question. Only a verified
+      // cache for this exact query may remain painted while it revalidates.
+      setSnapshot(null);
+      snapshotRef.current = null;
+      setGamesHasMore(false);
+      setError(null);
+      setLedgerSource('cold');
+      setLastVerifiedAt(null);
+      setLastRequestMs(null);
       setLoading(true);
       return;
     }
@@ -2130,7 +2143,9 @@ export default function ClubDataPage() {
     // Only for someone still pinned to today - a deliberate step back stays.
     const pinToToday = () => {
       const today = toISODate(new Date());
-      setEndDate((cur) => (cur >= today ? today : cur));
+      const previousToday = observedUtcDayRef.current;
+      observedUtcDayRef.current = today;
+      setEndDate((cur) => (cur === previousToday || cur > today ? today : cur));
     };
     const id = setInterval(() => {
       if (manualRefreshingRef.current) return;
@@ -2447,6 +2462,7 @@ export default function ClubDataPage() {
       d.setUTCDate(d.getUTCDate() + direction * preset);
       const next = toISODate(d);
       const today = toISODate(new Date());
+      observedUtcDayRef.current = today;
       setEndDate(next > today ? today : next);
     },
     [endDate, preset]
@@ -2454,6 +2470,8 @@ export default function ClubDataPage() {
 
   const refreshAll = useCallback(async () => {
     if (manualRefreshingRef.current || !clubUuid || isHydrating || !userId) return;
+    const myRefresh = ++manualRefreshVersion.current;
+    const ownsRefresh = () => !cancelledRef.current && manualRefreshVersion.current === myRefresh;
     manualRefreshingRef.current = true;
     setManualRefreshing(true);
     setRefreshNote('Refreshing Club Ledger.');
@@ -2461,7 +2479,7 @@ export default function ClubDataPage() {
       const requests: Array<Promise<boolean>> = [load(true, true), loadInvoices()];
       if (tab === 'players') requests.push(loadPlayers(true));
       const outcomes = await Promise.all(requests);
-      if (!cancelledRef.current) {
+      if (ownsRefresh()) {
         setRefreshNote(
           outcomes.every(Boolean)
             ? 'Club Ledger Refreshed.'
@@ -2469,8 +2487,8 @@ export default function ClubDataPage() {
         );
       }
     } finally {
-      manualRefreshingRef.current = false;
-      if (!cancelledRef.current) {
+      if (ownsRefresh()) {
+        manualRefreshingRef.current = false;
         setManualRefreshing(false);
         const pending = pendingEventRefreshRef.current;
         pendingEventRefreshRef.current = { ledger: false, invoices: false };
@@ -3130,8 +3148,11 @@ export default function ClubDataPage() {
               max={toISODate(new Date())}
               onChange={(event) => {
                 const value = event.target.value;
-                if (/^\d{4}-\d{2}-\d{2}$/.test(value) && value <= toISODate(new Date()))
+                const today = toISODate(new Date());
+                if (/^\d{4}-\d{2}-\d{2}$/.test(value) && value <= today) {
+                  observedUtcDayRef.current = today;
                   setEndDate(value);
+                }
               }}
             />
           </label>
@@ -3550,7 +3571,11 @@ export default function ClubDataPage() {
             {filtersActive && (
               <div className={styles.stateRow}>
                 <span className={`sc-copy ${styles.stateCopy}`}>
-                  {`${compactInt(snapshot?.row_count || 0)} Matching Game${Number(snapshot?.row_count || 0) === 1 ? '' : 's'}`}
+                  {snapshot
+                    ? `${compactInt(snapshot.row_count)} Matching Game${Number(snapshot.row_count) === 1 ? '' : 's'}`
+                    : loading
+                      ? 'Finding Matching Games'
+                      : 'Matching Games Unavailable'}
                 </span>
                 <button
                   type="button"

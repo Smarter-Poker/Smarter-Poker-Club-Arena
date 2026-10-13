@@ -33,7 +33,7 @@ const accounting =
 // A driver, builder or transformation edit must run the actual native restore,
 // even when no application or workflow is changed alongside it.
 const nativeRecovery =
-  /^(scripts\/dr\/(native-supabase-export|build-native-export-client)\.py$|scripts\/ci\/(?:test_native_supabase_export\.py$|(?:test_launch_reset_balance|run_launch_reset_accounting_fixture|test_launch_reset_floor|test_launch_reset_installer|test_launch_reset_floor_admission)\.py$|fixtures\/launch-reset\/)|scripts\/verification-harness\/leaderboard-native-function-batch\.mjs$|tests\/dr-posture\.test\.ts$)/;
+  /^(scripts\/dr\/(native-supabase-export|build-native-export-client)\.py$|scripts\/ci\/(?:test_native_supabase_export\.py$|(?:test_launch_reset_balance|run_launch_reset_accounting_fixture|test_launch_reset_floor|test_launch_reset_installer|test_launch_reset_floor_admission|test_launch_reset_policy_lock_order)\.py$|fixtures\/launch-reset\/)|scripts\/verification-harness\/leaderboard-native-function-batch\.mjs$|tests\/dr-posture\.test\.ts$)/;
 // Data/Stats console PostgreSQL contracts run inside accounting_postgres. The
 // wrapper, its wiring test, and every fixture are executable inputs; a change
 // to any one of them must select that job even without a migration beside it.
@@ -249,7 +249,7 @@ export function classifyChangedPaths(paths) {
   // by that prefix, deliberately, so they do not also select the eleven
   // tests/sql/diamond-*.sql game probes.
   const diamondSqlAcceptance = matches(
-    /^(tests\/sql\/(?:run-[a-z0-9-]*diamond[a-z0-9-]*\.py|poker-diamond-[a-z0-9-]+\.sql|poker-arena-access\.sql|diamond-controlled-play-driver\.ts|diamond-session-fixture\.sql|diamond-transfer-cap-fixture\.sql|diamond-tournament-[a-z0-9-]+\.sql|diamond-tournament-[a-z0-9-]+\.manifest\.json|diamond-concurrency-[a-z0-9-]+\.sql|diamond-concurrency-[a-z0-9-]+\.manifest\.json|diamond-cross-format-[a-z0-9-]+\.manifest\.json)|scripts\/ci\/(?:run-diamond-sql-acceptance\.py|check-diamond-runners-listed\.mjs))$/
+    /^(tests\/sql\/(?:run-[a-z0-9-]*diamond[a-z0-9-]*\.py|poker-diamond-[a-z0-9-]+\.sql|poker-arena-access\.sql|diamond-controlled-play-driver\.ts|diamond-session-fixture\.sql|diamond-transfer-cap-fixture\.sql|diamond-tournament-[a-z0-9-]+\.sql|diamond-tournament-[a-z0-9-]+\.manifest\.json|diamond-concurrency-[a-z0-9-]+\.sql|diamond-concurrency-[a-z0-9-]+\.manifest\.json|diamond-cross-format-[a-z0-9-]+\.manifest\.json|diamond-jackpot-integration-[a-z0-9-]+\.json|diamond-session-recap\.fixture\.sql)|tests\/fixtures\/diamond-must-move\/[a-z0-9-]+\.(?:json|sql)|scripts\/ci\/(?:run-diamond-sql-acceptance\.py|check-diamond-runners-listed\.mjs))$/
   );
   // The Phase 4 PostgreSQL step cannot run when its parent job is skipped.
   const phase4Changed = matches(phase4);

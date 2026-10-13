@@ -1,0 +1,68 @@
+[
+  {
+    "name": "id",
+    "type": "uuid",
+    "default": "gen_random_uuid()",
+    "notnull": true
+  },
+  {
+    "name": "player_id",
+    "type": "uuid",
+    "default": null,
+    "notnull": true
+  },
+  {
+    "name": "club_id",
+    "type": "uuid",
+    "default": null,
+    "notnull": true
+  },
+  {
+    "name": "variant",
+    "type": "text",
+    "default": null,
+    "notnull": true
+  },
+  {
+    "name": "sb",
+    "type": "numeric(14,2)",
+    "default": null,
+    "notnull": true
+  },
+  {
+    "name": "bb",
+    "type": "numeric(14,2)",
+    "default": null,
+    "notnull": true
+  },
+  {
+    "name": "required_stack",
+    "type": "numeric(14,2)",
+    "default": null,
+    "notnull": true
+  },
+  {
+    "name": "left_at",
+    "type": "timestamp with time zone",
+    "default": "now()",
+    "notnull": true
+  },
+  {
+    "name": "expires_at",
+    "type": "timestamp with time zone",
+    "default": null,
+    "notnull": true
+  },
+  {
+    "name": "source_table_id",
+    "type": "uuid",
+    "default": null,
+    "notnull": false
+  },
+  {
+    "name": "barred_until",
+    "type": "timestamp with time zone",
+    "default": null,
+    "notnull": false
+  }
+]

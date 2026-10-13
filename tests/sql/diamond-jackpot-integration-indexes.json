@@ -1,0 +1,87 @@
+[
+  {
+    "tablename": "bomb_pot_award_units",
+    "indexname": "bomb_pot_award_units_idem",
+    "indexdef": "CREATE UNIQUE INDEX bomb_pot_award_units_idem ON public.bomb_pot_award_units USING btree (hand_history_id, pot_index, board, side, user_id)"
+  },
+  {
+    "tablename": "bomb_pot_award_units",
+    "indexname": "bomb_pot_award_units_pkey",
+    "indexdef": "CREATE UNIQUE INDEX bomb_pot_award_units_pkey ON public.bomb_pot_award_units USING btree (id)"
+  },
+  {
+    "tablename": "ca_seat_stack_rebases",
+    "indexname": "ca_seat_stack_rebases_pkey",
+    "indexdef": "CREATE UNIQUE INDEX ca_seat_stack_rebases_pkey ON public.ca_seat_stack_rebases USING btree (id)"
+  },
+  {
+    "tablename": "ca_settlements",
+    "indexname": "ca_settlements_pkey",
+    "indexdef": "CREATE UNIQUE INDEX ca_settlements_pkey ON public.ca_settlements USING btree (id)"
+  },
+  {
+    "tablename": "ca_settlements",
+    "indexname": "ca_settlements_settlement_type_external_ref_key",
+    "indexdef": "CREATE UNIQUE INDEX ca_settlements_settlement_type_external_ref_key ON public.ca_settlements USING btree (settlement_type, external_ref)"
+  },
+  {
+    "tablename": "cash_hand_participant_manifests",
+    "indexname": "cash_hand_participant_manifests_pkey",
+    "indexdef": "CREATE UNIQUE INDEX cash_hand_participant_manifests_pkey ON public.cash_hand_participant_manifests USING btree (id)"
+  },
+  {
+    "tablename": "cash_hand_participant_manifests",
+    "indexname": "cash_hand_participant_manifests_table_id_hand_number_key",
+    "indexdef": "CREATE UNIQUE INDEX cash_hand_participant_manifests_table_id_hand_number_key ON public.cash_hand_participant_manifests USING btree (table_id, hand_number)"
+  },
+  {
+    "tablename": "cash_hand_provenance_receipts",
+    "indexname": "cash_hand_provenance_receipts_hand_id_key",
+    "indexdef": "CREATE UNIQUE INDEX cash_hand_provenance_receipts_hand_id_key ON public.cash_hand_provenance_receipts USING btree (hand_id)"
+  },
+  {
+    "tablename": "cash_hand_provenance_receipts",
+    "indexname": "cash_hand_provenance_receipts_pkey",
+    "indexdef": "CREATE UNIQUE INDEX cash_hand_provenance_receipts_pkey ON public.cash_hand_provenance_receipts USING btree (table_id, hand_number)"
+  },
+  {
+    "tablename": "hand_atomic_commits",
+    "indexname": "hand_atomic_commits_hand_id_key",
+    "indexdef": "CREATE UNIQUE INDEX hand_atomic_commits_hand_id_key ON public.hand_atomic_commits USING btree (hand_id)"
+  },
+  {
+    "tablename": "hand_atomic_commits",
+    "indexname": "hand_atomic_commits_hand_number_key",
+    "indexdef": "CREATE UNIQUE INDEX hand_atomic_commits_hand_number_key ON public.hand_atomic_commits USING btree (hand_number)"
+  },
+  {
+    "tablename": "hand_atomic_commits",
+    "indexname": "hand_atomic_commits_pkey",
+    "indexdef": "CREATE UNIQUE INDEX hand_atomic_commits_pkey ON public.hand_atomic_commits USING btree (table_id, hand_number)"
+  },
+  {
+    "tablename": "hand_history",
+    "indexname": "hand_history_pkey",
+    "indexdef": "CREATE UNIQUE INDEX hand_history_pkey ON public.hand_history USING btree (id)"
+  },
+  {
+    "tablename": "hand_history",
+    "indexname": "uq_hand_history_global_hand_number",
+    "indexdef": "CREATE UNIQUE INDEX uq_hand_history_global_hand_number ON public.hand_history USING btree (hand_number) WHERE (hand_number >= 1000000)"
+  },
+  {
+    "tablename": "hand_projection_outbox",
+    "indexname": "hand_projection_outbox_hand_number_key",
+    "indexdef": "CREATE UNIQUE INDEX hand_projection_outbox_hand_number_key ON public.hand_projection_outbox USING btree (hand_number)"
+  },
+  {
+    "tablename": "hand_projection_outbox",
+    "indexname": "hand_projection_outbox_pkey",
+    "indexdef": "CREATE UNIQUE INDEX hand_projection_outbox_pkey ON public.hand_projection_outbox USING btree (hand_id)"
+  },
+  {
+    "tablename": "settlement_idempotency_keys",
+    "indexname": "settlement_idempotency_keys_pkey",
+    "indexdef": "CREATE UNIQUE INDEX settlement_idempotency_keys_pkey ON public.settlement_idempotency_keys USING btree (table_id, hand_id)"
+  }
+]

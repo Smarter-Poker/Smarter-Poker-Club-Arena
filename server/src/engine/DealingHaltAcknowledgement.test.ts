@@ -71,13 +71,19 @@ const { ServerTableEngine } = await import('./ServerTableEngine.js');
 const TABLE = 'dddddddd-1111-4222-8333-444444444444';
 const H1 = '2026-09-25T20:00:00.000Z';
 const H2 = '2026-09-25T20:07:00.000Z';
+// The real rule read selects cluster identity. Omitted columns falsely said
+// this table had left its cluster when the adoption refresh began applying it.
+const clusterIdentity = { cluster_id: 'game-1', role: 'main', main_index: 1, lifecycle: 'live' };
+
 const halted = (at: string) => ({
+  ...clusterIdentity,
   rake_percent: 5,
   rake_cap_bb: 3,
   dealing_halted_at: at,
   dealing_halted_reason: 'lightning_pending_on',
 });
 const live = {
+  ...clusterIdentity,
   rake_percent: 5,
   rake_cap_bb: 3,
   dealing_halted_at: null,
@@ -360,7 +366,6 @@ describe('a rebuilt engine whose row is halted', () => {
       max_players: 6,
       game_variant: 'nlh',
       game_type: 'cash',
-      cluster_id: 'game-1',
       ...halted(H1),
     });
     db.row = halted(H1);

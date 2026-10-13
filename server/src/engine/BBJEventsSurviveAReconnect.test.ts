@@ -15,7 +15,8 @@
  * These pins read the settlement source: all three jackpot events carry a
  * replay_until inside the hub's 60-second ceiling, and the hub honours it.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import ts from 'typescript';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
@@ -23,6 +24,34 @@ import { TableStateHub } from '../transport/TableStateHub.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const settlement = readFileSync(resolve(here, 'ServerTableEngineSettlement.ts'), 'utf8');
+const settlementAst = ts.createSourceFile(
+  'settlement.ts',
+  settlement,
+  ts.ScriptTarget.Latest,
+  true
+);
+
+/** Read each actual event object, including announcements emitted through a variable. */
+function eventBlocks(type: string): string[] {
+  const blocks: string[] = [];
+  function visit(node: ts.Node) {
+    if (
+      ts.isObjectLiteralExpression(node) &&
+      node.properties.some(
+        (property) =>
+          ts.isPropertyAssignment(property) &&
+          property.name.getText(settlementAst) === 'type' &&
+          ts.isStringLiteral(property.initializer) &&
+          property.initializer.text === type
+      )
+    )
+      blocks.push(node.getText(settlementAst));
+    ts.forEachChild(node, visit);
+  }
+  visit(settlementAst);
+  expect(blocks.length, `${type} is emitted`).toBeGreaterThan(0);
+  return blocks;
+}
 
 /** The emit block for one event type, from `type: '<name>'` to its closing `});`. */
 function emitBlock(type: string): string {
@@ -36,7 +65,15 @@ describe('every jackpot event asks the hub to keep it', () => {
   it.each(['bbj_hit', 'bbj_payout_complete', 'bbj_hit_global'])(
     '%s carries replay_until',
     (type) => {
-      expect(emitBlock(type)).toMatch(/replay_until:\s*Date\.now\(\)\s*\+\s*60_000/);
+      for (const block of eventBlocks(type)) {
+        if (/asset:\s*'diamonds'/.test(block)) {
+          expect(settlement).toMatch(/const emittedAt = Date\.now\(\);/);
+          expect(block).toMatch(/emitted_at:\s*emittedAt/);
+          expect(block).toMatch(/replay_until:\s*emittedAt\s*\+\s*60_000/);
+        } else {
+          expect(block).toMatch(/replay_until:\s*Date\.now\(\)\s*\+\s*60_000/);
+        }
+      }
     }
   );
 
@@ -106,4 +143,42 @@ describe('the hub replays a retained jackpot event to a socket that connects aft
     hub.subscribe(tableId, late);
     expect(late.sent.filter((m) => JSON.parse(m).type === 'EVENT')).toHaveLength(0);
   });
+
+  it.each(['bbj_hit', 'bbj_payout_complete', 'bbj_hit_global'])(
+    'retains Diamond %s until its captured-clock deadline',
+    (type) => {
+      vi.useFakeTimers();
+      try {
+        vi.setSystemTime(1_000_000);
+        const emittedAt = Date.now();
+        const hub = new TableStateHub();
+        hub.emitEvent('diamond-table', {
+          type,
+          asset: 'diamonds',
+          emitted_at: emittedAt,
+          replay_until: emittedAt + 60_000,
+        });
+        vi.setSystemTime(emittedAt + 59_000);
+        const late = socket();
+        hub.subscribe('diamond-table', late);
+        const events = late.sent
+          .map((message) => JSON.parse(message))
+          .filter((message) => message.type === 'EVENT' && message.payload?.type === type);
+        expect(events).toHaveLength(1);
+        expect(events[0].payload.emitted_at).toBe(emittedAt);
+        expect(events[0].payload.replay_until).toBe(emittedAt + 60_000);
+        expect(events[0].payload.replayed).toBe(true);
+        vi.setSystemTime(emittedAt + 60_001);
+        const expired = socket();
+        hub.subscribe('diamond-table', expired);
+        expect(
+          expired.sent
+            .map((message) => JSON.parse(message))
+            .filter((message) => message.type === 'EVENT')
+        ).toHaveLength(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    }
+  );
 });

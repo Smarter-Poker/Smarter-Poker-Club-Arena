@@ -385,3 +385,142 @@ describe('Simple Club Data', () => {
     );
   });
 });
+
+for (const advanced of [false, true]) {
+  for (const scope of ['account', 'club']) {
+    it(`keeps refresh ownership across ${scope} changes in ${advanced ? 'Advanced' : 'Simple'}`, async () => {
+      const view = render(<ClubDataPage />);
+      await screen.findByText('Shark Table One');
+      if (advanced) fireEvent.click(screen.getByRole('button', { name: 'Advanced', exact: true }));
+      const refresh = () =>
+        screen.getByRole('button', {
+          name: advanced ? 'Refresh Club Ledger' : 'Refresh Simple Club Data',
+        });
+      let resolveOld!: (result: any) => void;
+      let resolveNew!: (result: any) => void;
+      let incomingCalls = 0;
+      rpcMock.mockImplementation(async (fn: string, args?: Record<string, unknown>) => {
+        if (fn === 'ca_club_data_snapshot') {
+          if (authState.current.user?.id === 'owner-1' && routeState.clubId === CLUB_ID)
+            return await new Promise((resolve) => {
+              resolveOld = resolve;
+            });
+          incomingCalls++;
+          if (incomingCalls === 2)
+            return await new Promise((resolve) => {
+              resolveNew = resolve;
+            });
+          return { data: snapshot, error: null };
+        }
+        if (fn === 'ca_club_game_page') return { data: gamePageFor(args), error: null };
+        if (fn === 'ca_club_union_invoices') return { data: [], error: null };
+        return { data: null, error: null };
+      });
+      fireEvent.click(refresh());
+      await waitFor(() => expect(resolveOld).toBeTypeOf('function'));
+      if (scope === 'account') authState.current = { user: { id: 'owner-2' }, isHydrating: false };
+      else routeState.clubId = 'b52545cc-9e1d-411b-9f1e-f9c4e76bf0e5';
+      view.rerender(<ClubDataPage />);
+      await screen.findByText('Shark Table One');
+      fireEvent.click(refresh());
+      await waitFor(() => expect(resolveNew).toBeTypeOf('function'));
+      await act(async () => {
+        resolveOld({ data: snapshot, error: null });
+      });
+      expect(refresh()).toBeDisabled();
+      expect(refresh()).toHaveTextContent('Refreshing');
+      expect(screen.queryByText('Club Ledger Refreshed.')).not.toBeInTheDocument();
+      await act(async () => {
+        resolveNew({ data: snapshot, error: null });
+      });
+      await waitFor(() => expect(refresh()).toBeEnabled());
+      expect(screen.getAllByText('Club Ledger Refreshed.').length).toBeGreaterThan(0);
+    });
+  }
+}
+
+for (const historical of [false, true]) {
+  it(`rolls the current UTC day at midnight while preserving ${historical ? 'historical' : 'current'} intent`, async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date(`${TEST_END_DATE}T23:59:50Z`));
+    try {
+      render(<ClubDataPage />);
+      await screen.findByText('Shark Table One');
+      const calendar = screen.getByLabelText('Period Ending (UTC)');
+      const chosen = historical ? TEST_START_DATE : TEST_END_DATE;
+      if (historical) fireEvent.change(calendar, { target: { value: chosen } });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000);
+      });
+      const tomorrow = new Date(`${TEST_END_DATE}T00:00:00Z`);
+      tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+      const expected = historical ? chosen : tomorrow.toISOString().slice(0, 10);
+      expect(calendar).toHaveValue(expected);
+      expect(rpcMock).toHaveBeenCalledWith(
+        'ca_club_data_snapshot',
+        expect.objectContaining({ p_end: expected })
+      );
+    } finally {
+      cleanup();
+      vi.useRealTimers();
+    }
+  });
+}
+
+for (const advanced of [false, true]) {
+  it(`never relabels the outgoing game's money during an uncached query in ${advanced ? 'Advanced' : 'Simple'}`, async () => {
+    render(<ClubDataPage />);
+    await screen.findByText('Shark Table One');
+    if (advanced) fireEvent.click(screen.getByRole('button', { name: 'Advanced', exact: true }));
+    let resolveQuery!: (result: any) => void;
+    rpcMock.mockImplementation(async (fn: string) => {
+      if (fn === 'ca_club_data_snapshot')
+        return await new Promise((resolve) => {
+          resolveQuery = resolve;
+        });
+      return { data: null, error: null };
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Omaha', exact: true }));
+    await waitFor(() => expect(resolveQuery).toBeTypeOf('function'));
+    expect(screen.queryByText('Shark Table One')).not.toBeInTheDocument();
+    expect(screen.getByText('Finding Matching Games')).toBeInTheDocument();
+    expect(screen.queryByText('0 Matching Games')).not.toBeInTheDocument();
+    expect(
+      within(screen.getByLabelText('Club Performance Summary')).queryByText('2.4K')
+    ).not.toBeInTheDocument();
+    await act(async () => {
+      resolveQuery({ data: null, error: null });
+    });
+    expect(screen.queryByText('Shark Table One')).not.toBeInTheDocument();
+    expect(screen.getByText('Matching Games Unavailable')).toBeInTheDocument();
+  });
+}
+
+for (const intent of ['calendar', 'previous period']) {
+  it(`preserves an explicit ${intent} choice made after midnight before the next poll`, async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date(`${TEST_END_DATE}T23:59:50Z`));
+    try {
+      render(<ClubDataPage />);
+      await screen.findByText('Shark Table One');
+      const tomorrow = new Date(`${TEST_END_DATE}T00:00:10Z`);
+      tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+      vi.setSystemTime(tomorrow);
+      const calendar = screen.getByLabelText('Period Ending (UTC)');
+      fireEvent.change(calendar, { target: { value: tomorrow.toISOString().slice(0, 10) } });
+      if (intent === 'calendar') fireEvent.change(calendar, { target: { value: TEST_END_DATE } });
+      else {
+        fireEvent.click(screen.getByRole('button', { name: '1 Day', exact: true }));
+        fireEvent.click(screen.getByRole('button', { name: 'Previous Period' }));
+      }
+      expect(calendar).toHaveValue(TEST_END_DATE);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000);
+      });
+      expect(calendar).toHaveValue(TEST_END_DATE);
+    } finally {
+      cleanup();
+      vi.useRealTimers();
+    }
+  });
+}

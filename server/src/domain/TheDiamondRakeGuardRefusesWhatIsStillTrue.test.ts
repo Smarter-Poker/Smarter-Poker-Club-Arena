@@ -169,7 +169,10 @@ describe('the Diamond accepted-hand guard admits the settings number and nothing
       expect(() => assertDiamondAcceptedHand({ ...hand(), variant })).toThrow(
         'diamond_plain_cash_required'
       );
-    for (const change of [{ bbj: 1 }, { inflow: 1 }, { insuranceCount: 1 }])
+    expect(() => assertDiamondAcceptedHand({ ...hand(), bbj: 1 })).toThrow(
+      'diamond_jackpot_disagrees'
+    );
+    for (const change of [{ inflow: 1 }, { insuranceCount: 1 }])
       expect(() => assertDiamondAcceptedHand({ ...hand(), ...change })).toThrow(
         'diamond_plain_cash_required'
       );

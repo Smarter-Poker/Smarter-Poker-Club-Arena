@@ -1,3 +1,4 @@
+import { diamondMiniPlateAmount, type DiamondJackpotSnapshot } from '../../lib/diamondJackpotFeed';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  TableModalsLayer — All overlay/modal JSX for the poker table
@@ -268,6 +269,9 @@ export interface TableModalsLayerProps {
   // Bad Beat Jackpot
   showBBJ: boolean;
   bbjAmount: number;
+  jackpotAsset?: 'chips' | 'diamonds';
+  diamondJackpot?: DiamondJackpotSnapshot | null;
+  diamondJackpotUnavailable?: boolean;
   /** Resolved BBJ pool id (union pool for union clubs) — for the details modal. */
   bbjPoolId?: string | null;
   /** Hero's display name, so their own payout row is highlighted. */
@@ -614,6 +618,9 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     // BBJ
     showBBJ,
     bbjAmount,
+    jackpotAsset = 'chips',
+    diamondJackpot = null,
+    diamondJackpotUnavailable = false,
     bbjPoolId,
     bbjHeroName,
     bbjMini = null,
@@ -773,7 +780,11 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
   const bbjMiniTier = bbjMini && bbjMini.enabled ? miniTierForBB(bbjMini, safeBB(blinds)) : null;
   /* The SAME decision TablePage stamps `data-bbj-mini` from, so the felt's
      reserved height and the row that fills it can never disagree. */
-  const bbjMiniAmount = miniPlateAmount(bbjMini, safeBB(blinds));
+  const diamondJackpotStake = diamondJackpot?.stakes.find((s) => s.big_blind === safeBB(blinds));
+  const bbjMiniAmount =
+    jackpotAsset === 'diamonds'
+      ? diamondMiniPlateAmount(diamondJackpot, safeBB(blinds))
+      : miniPlateAmount(bbjMini, safeBB(blinds));
   const bbjMiniInfo = getBBJMiniQualifyingInfo(gameType);
   // Tapping the jackpot banner opens the last-5-jackpots view (Dan, 2026-08-18).
   const [showBBJDetails, setShowBBJDetails] = React.useState(false);
@@ -1001,24 +1012,35 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
       {/* Bad Beat Jackpot Display — per-variant qualifying rule (2026-08-18).
           Hidden entirely for variants the server never pays (PLO6, Short Deck),
           and never displayed during MTT, Spins, or Heads-Up games. */}
-      {isBbjPlateShown({ gameType, isTournament, tournamentId, maxPlayers }) && (
-        <BadBeatJackpot
-          amount={bbjAmount}
-          qualifyingHand={bbjInfo.shortLabel}
-          subText={bbjInfo.subLabel}
-          payoutPercent={getBBJPayoutPercentForBB(safeBB(blinds))}
-          isHit={showBBJ}
-          onOpenDetails={() => setShowBBJDetails(true)}
-          miniAmount={bbjMiniAmount}
-          miniQualifyingHand={bbjMiniInfo.eligible ? bbjMiniInfo.shortLabel : null}
-        />
-      )}
+      {isBbjPlateShown({ gameType, isTournament, tournamentId, maxPlayers }) &&
+        (jackpotAsset !== 'diamonds' ||
+          (diamondJackpot?.enabled && (diamondJackpotStake?.drop ?? 0) > 0)) && (
+          <BadBeatJackpot
+            amount={bbjAmount}
+            asset={jackpotAsset}
+            currency={jackpotAsset === 'diamonds' ? 'D ' : ''}
+            qualifyingHand={bbjInfo.shortLabel}
+            subText={bbjInfo.subLabel}
+            payoutPercent={
+              jackpotAsset === 'diamonds'
+                ? diamondJackpotStake?.payout_percent
+                : getBBJPayoutPercentForBB(safeBB(blinds))
+            }
+            isHit={showBBJ}
+            onOpenDetails={() => setShowBBJDetails(true)}
+            miniAmount={bbjMiniAmount}
+            miniQualifyingHand={bbjMiniInfo.eligible ? bbjMiniInfo.shortLabel : null}
+          />
+        )}
 
       {/* Last 5 jackpots + what this table pays */}
       <BBJInfoModal
         isOpen={showBBJDetails}
         onClose={() => setShowBBJDetails(false)}
         poolId={bbjPoolId ?? null}
+        asset={jackpotAsset}
+        diamond={diamondJackpot}
+        diamondUnavailable={diamondJackpotUnavailable}
         poolAmount={bbjAmount}
         gameType={gameType}
         bigBlind={safeBB(blinds)}
@@ -1031,6 +1053,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
       {bbjCelebrationData && (
         <BBJCelebration
           visible={showBBJCelebration}
+          asset={jackpotAsset}
           totalPayout={bbjCelebrationData.totalPayout}
           loser={bbjCelebrationData.loser}
           winner={bbjCelebrationData.winner}

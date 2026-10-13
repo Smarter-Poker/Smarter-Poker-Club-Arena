@@ -1,3 +1,5 @@
+import type { DiamondJackpotSnapshot } from '../../lib/diamondJackpotFeed';
+import { DiamondJackpotWinners, DiamondJackpotBasic } from './DiamondJackpotPanel';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  BBJ INFO MODAL — opened by tapping the jackpot, in the lobby or at the table
@@ -53,6 +55,9 @@ import './BBJInfoModal.css';
 
 export interface BBJInfoModalProps {
   isOpen: boolean;
+  asset?: 'chips' | 'diamonds';
+  diamond?: DiamondJackpotSnapshot | null;
+  diamondUnavailable?: boolean;
   onClose: () => void;
   poolId: string | null;
   poolAmount: number;
@@ -87,6 +92,9 @@ const TABS: Array<{ key: Tab; label: string }> = [
 
 export function BBJInfoModal({
   isOpen,
+  asset = 'chips',
+  diamond = null,
+  diamondUnavailable = false,
   onClose,
   poolId,
   poolAmount,
@@ -280,26 +288,51 @@ export function BBJInfoModal({
   /* THE HEADER FOLLOWS THE ROW: the main pool, or the flat mini for this
      table's stakes. Printed as the console's title, whole chips, never
      overstated (Math.trunc) and never a decimal on a forward-facing page. */
-  const headline = isMini
-    ? !mini
-      ? 'Reading'
-      : !mini.enabled
-        ? 'Off'
-        : miniTier
-          ? miniTier.payable
-            ? Math.trunc(miniTier.amount).toLocaleString('en-US')
-            : 'Paused'
-          : miniRange
-            ? miniRange.lo === miniRange.hi
-              ? Math.trunc(miniRange.lo).toLocaleString('en-US')
-              : `${Math.trunc(miniRange.lo).toLocaleString('en-US')} - ${Math.trunc(miniRange.hi).toLocaleString('en-US')}`
-            : /* "Off" is only true when the switch is off. A club whose
+  const diamondStake = diamond?.stakes.find((s) => s.big_blind === bigBlind);
+  const diamondMiniAmounts =
+    diamond?.stakes.filter((s) => s.mini_payable).map((s) => s.mini_amount) ?? [];
+  const diamondHeadline = !diamond
+    ? diamondUnavailable
+      ? 'Unavailable'
+      : 'Reading'
+    : !diamond.enabled
+      ? 'Off'
+      : !isMini
+        ? diamond.main_balance.toLocaleString('en-US')
+        : !diamond.mini_enabled
+          ? 'Off'
+          : diamondStake
+            ? diamondStake.mini_payable
+              ? diamondStake.mini_amount.toLocaleString('en-US')
+              : 'Paused'
+            : diamondMiniAmounts.length
+              ? Math.min(...diamondMiniAmounts).toLocaleString('en-US') +
+                ' - ' +
+                Math.max(...diamondMiniAmounts).toLocaleString('en-US')
+              : 'Paused';
+  const headline =
+    asset === 'diamonds'
+      ? diamondHeadline
+      : isMini
+        ? !mini
+          ? 'Reading'
+          : !mini.enabled
+            ? 'Off'
+            : miniTier
+              ? miniTier.payable
+                ? Math.trunc(miniTier.amount).toLocaleString('en-US')
+                : 'Paused'
+              : miniRange
+                ? miniRange.lo === miniRange.hi
+                  ? Math.trunc(miniRange.lo).toLocaleString('en-US')
+                  : `${Math.trunc(miniRange.lo).toLocaleString('en-US')} - ${Math.trunc(miniRange.hi).toLocaleString('en-US')}`
+                : /* "Off" is only true when the switch is off. A club whose
                  reserve is at its floor is PAUSED, and the subtitle says so -
                  the same words the jackpot page uses. */
-              miniPause === 'reserve_at_floor'
-              ? 'Paused'
-              : 'Off'
-    : Math.trunc(Number(poolAmount || 0)).toLocaleString('en-US');
+                  miniPause === 'reserve_at_floor'
+                  ? 'Paused'
+                  : 'Off'
+        : Math.trunc(Number(poolAmount || 0)).toLocaleString('en-US');
   const sublabel =
     isMini && (miniTier || miniPause)
       ? miniPause
@@ -336,7 +369,7 @@ export function BBJInfoModal({
           onClose={onClose}
           eyebrow={isMini ? 'MINI BAD BEAT JACKPOT' : 'BAD BEAT JACKPOT'}
           title={headline}
-          subtitle={sublabel}
+          subtitle={asset === 'diamonds' ? 'Whole Diamonds' : sublabel}
           pill={isMini ? 'Mini' : 'Main'}
           pillInk={isMini ? 'gold' : 'blue'}
           foot="foot"
@@ -398,9 +431,17 @@ export function BBJInfoModal({
               (openHandPayoutId ? (
                 <BBJHandDetail
                   payoutId={openHandPayoutId}
+                  asset={asset}
                   onBack={() => setOpenHandPayoutId(null)}
                   currentUserName={currentUserName}
                   currentUserId={currentUserId}
+                />
+              ) : asset === 'diamonds' ? (
+                <DiamondJackpotWinners
+                  snapshot={diamond}
+                  unavailable={diamondUnavailable}
+                  kind={tier}
+                  onOpenHand={setOpenHandPayoutId}
                 />
               ) : (
                 <BBJRecentHits
@@ -415,7 +456,15 @@ export function BBJInfoModal({
                 />
               ))}
 
-            {tab === 'basic' && isMini && (
+            {tab === 'basic' && asset === 'diamonds' && (
+              <DiamondJackpotBasic
+                snapshot={diamond}
+                unavailable={diamondUnavailable}
+                kind={tier}
+                bigBlind={bigBlind}
+              />
+            )}
+            {tab === 'basic' && asset !== 'diamonds' && isMini && (
               <div className="bbj-modal__rules">
                 {hasTableContext && miniInfo.eligible && miniTier && (
                   <div className="bbj-modal__here">
@@ -480,7 +529,7 @@ export function BBJInfoModal({
               </div>
             )}
 
-            {tab === 'basic' && !isMini && (
+            {tab === 'basic' && asset !== 'diamonds' && !isMini && (
               <div className="bbj-modal__rules">
                 {hasTableContext && info.eligible && (
                   <div className="bbj-modal__here">

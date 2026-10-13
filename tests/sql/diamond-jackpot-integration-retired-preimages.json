@@ -1,0 +1,7 @@
+[
+  {
+    "signature": "smarter_private.retired_cash_original_time_bank(uuid,bigint,jsonb)",
+    "body_md5": "c20856306cb4061702d63f4273aab865",
+    "definition": "CREATE OR REPLACE FUNCTION smarter_private.retired_cash_original_time_bank(p_table uuid, p_hand bigint, p_item jsonb)\n RETURNS boolean\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\nDECLARE n integer;\nBEGIN\n UPDATE smarter_private.retired_cash_hand_custody r SET accepted_time_bank=p_item\n WHERE r.table_id=p_table AND r.hand_number=p_hand AND r.state='consumed' AND r.transaction_id=txid_current()\n AND r.original_time_bank=p_item AND r.settlement_id IS NOT NULL;\n GET DIAGNOSTICS n=ROW_COUNT; RETURN n=1;\nEND $function$\n"
+  }
+]

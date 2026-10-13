@@ -45,6 +45,7 @@ export interface BBJHitNotificationProps {
   winnerName: string;
   /** Jackpot amount in dollars. */
   amount: number;
+  asset?: 'chips' | 'diamonds';
   /** Where it happened, for the sub-line. */
   tableName: string;
   /** Optional: clicking the card observes that table. */
@@ -78,6 +79,7 @@ const SHARDS = Array.from({ length: 20 }, (_, i) => {
 export function BBJHitNotification({
   winnerName,
   amount,
+  asset = 'chips',
   tableName,
   onObserve,
   onDone,
@@ -109,7 +111,10 @@ export function BBJHitNotification({
      inside render and took the whole table page down - at the single moment a
      crash is least acceptable, the one where a player has just been paid.
      `money` is the NaN-safe formatter every other BBJ surface already uses. */
-  const amountText = money(amount);
+  const amountText =
+    asset === 'diamonds'
+      ? Math.trunc(Number.isFinite(amount) ? amount : 0).toLocaleString('en-US') + ' Diamonds'
+      : money(amount);
 
   return (
     <div
@@ -118,7 +123,7 @@ export function BBJHitNotification({
       aria-live="polite"
       /* BBJ audit 2026-09-05: this interpolated `money` - the FORMATTER - so a
          screen reader heard the function's source instead of the amount. */
-      aria-label={`Bad Beat Jackpot Hit. ${winnerName} Won ${amountText} Chips On ${tableName}.`}
+      aria-label={`Bad Beat Jackpot Hit. ${winnerName} Won ${amountText}${asset === 'diamonds' ? '' : ' Chips'} On ${tableName}.`}
     >
       {!reduced && (
         <div className="bbj-hit__burst" aria-hidden="true">

@@ -1,3 +1,5 @@
+import { HandController } from '../HandController.js';
+import { priceDiamondCashFees } from '../../domain/diamondCashFeeSnapshot.js';
 import { withPhase6Provenance } from '../../testing/horseRegression/merged/fixture.js';
 import { horsePlanBatchBindingFromRequest } from '../HorsePlanHandIdentity.js';
 import { HorseLogic } from '../HorseLogic.js';
@@ -5216,4 +5218,93 @@ describe('worker authority admission counters (audit of October 7, 2026)', () =>
       expected.length
     );
   });
+});
+
+// Real controller -> structured transport -> worker envelope, without changing
+// any qualified strategy source or promoting a different authority receipt.
+describe('Diamond cash fee envelope transport', () => {
+  const amount = (n: number) => ({ units: BigInt(n), scale: 0 });
+  const rakeSchedule = {
+    enabled: true as const,
+    bigBlind: 2,
+    noFlopNoDrop: true,
+    rounding: 'down',
+    minPot: amount(0),
+    percent: { '': amount(5), _heads_up: amount(5), _three_handed: amount(5) },
+    cap: { '': amount(100), _heads_up: amount(100), _three_handed: amount(100) },
+    jackpot: {
+      enabled: true,
+      drop: 1,
+      minDealtIn: 3,
+      minPot: 20,
+      excludedVariants: [],
+      qualifyingHands: { plo4: 'KKKK2' },
+      miniEnabled: true,
+      miniAmount: 1500,
+      miniReserveFloor: 5000,
+    },
+  };
+  const request = () => {
+    const controller = new HandController(
+      {
+        tableId: 'fee-transport',
+        handNumber: 1,
+        gameVariant: 'plo4',
+        smallBlind: 1,
+        bigBlind: 2,
+        asset: 'diamonds',
+        rakeConfig: { percent: 0, cap: 0, noFlopNoDrop: true },
+        diamondRakeSchedule: rakeSchedule,
+      },
+      [],
+      0
+    );
+    const r = structuredClone(fastRequest(987));
+    r.gameState.asset = 'diamonds';
+    r.gameState.chipUnit = 1;
+    r.gameState.bbjConfig = null;
+    r.gameState.rakeConfig = JSON.parse(JSON.stringify(controller.getRakeConfigSnapshot()));
+    return rekey(r);
+  };
+  it('retains the exact dedicated schedule through the existing rake envelope into the worker', async () => {
+    const h = harness(),
+      r = request();
+    let received: unknown;
+    h.deps.decide = (_player, state) => {
+      received = state.rakeConfig?.diamondCashFees;
+      return { action: 'call', amount: 4, thinkTime: 2500 };
+    };
+    h.runtime.receive(r);
+    await h.runtime.drain();
+    expect(h.messages.at(-1)?.type).toBe('FAST_RESULT');
+    expect(received).toEqual(r.gameState.rakeConfig!.diamondCashFees);
+    const fees = r.gameState.rakeConfig!.diamondCashFees!;
+    expect(
+      priceDiamondCashFees(fees.schedule, {
+        pot: 100,
+        dealtIn: 4,
+        sawFlop: true,
+        variant: fees.variant,
+        doubleBoard: fees.doubleBoard,
+      })
+    ).toEqual({ rake: 5, bbjFee: 1 });
+  });
+  it.each(['chip', 'variant', 'stake', 'board', 'malformed'])(
+    'refuses an inconsistent envelope: %s',
+    async (fault) => {
+      const h = harness(),
+        r = request();
+      if (fault === 'chip') r.gameState.asset = 'chips';
+      if (fault === 'variant') r.gameState.rakeConfig!.diamondCashFees!.variant = 'nlh';
+      if (fault === 'stake')
+        r.gameState.rakeConfig!.diamondCashFees!.schedule =
+          r.gameState.rakeConfig!.diamondCashFees!.schedule.replace('"bigBlind":2', '"bigBlind":5');
+      if (fault === 'board') r.gameState.rakeConfig!.diamondCashFees!.doubleBoard = true;
+      if (fault === 'malformed') r.gameState.rakeConfig!.diamondCashFees!.schedule = '{}';
+      h.runtime.receive(rekey(r));
+      await h.runtime.drain();
+      expect(h.messages.at(-1)?.type).toBe('ERROR');
+      expect(h.decisionsAtRng).toEqual([]);
+    }
+  );
 });

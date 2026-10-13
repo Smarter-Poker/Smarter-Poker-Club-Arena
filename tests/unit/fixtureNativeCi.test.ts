@@ -1957,7 +1957,7 @@ describe('restored provider accounting qualification', () => {
     expect(full.env?.ACCOUNTING_FIXTURE_PARENT).toBe('${{ runner.temp }}/union-accounting-scratch');
   });
 
-  it('uses runtime readiness on shards 1/2 and requires native tooling only on 3/4', () => {
+  it('keeps shard two runtime-only and requires the actual provider, Lightning and export build tools', () => {
     const install = ci.jobs.accounting_postgres.steps.find(
       (step: { name?: string }) =>
         step.name === 'Install PostgreSQL 17 tools without a default database service'
@@ -1995,7 +1995,9 @@ describe('restored provider accounting qualification', () => {
             env: { ...process.env, PATH: '', PG_CI_SHARD: String(shard) },
           }
         );
-        if (shard <= 2) expect(output).toBe('');
+        if (shard === 2) expect(output).toBe('');
+        else if (shard === 1)
+          expect(output).toBe('INSTALL:postgresql-server-dev-17 build-essential');
         else
           expect(output).toBe(
             'INSTALL:postgresql-server-dev-17 build-essential bison flex perl bzip2 patch' +
@@ -2015,7 +2017,7 @@ describe('restored provider accounting qualification', () => {
           execFileSync(
             '/bin/bash',
             ['-c', prefix + '\nprintf "INSTALL:%s" "${pg_ci_build_packages[*]-}"'],
-            { encoding: 'utf8', env: { ...process.env, PATH: '', PG_CI_SHARD: '1' } }
+            { encoding: 'utf8', env: { ...process.env, PATH: '', PG_CI_SHARD: '2' } }
           )
         ).toBe('INSTALL:');
         writeFileSync(path, '', { mode: 0o755 });
@@ -2027,7 +2029,7 @@ describe('restored provider accounting qualification', () => {
           ['-c', prefix + '\nprintf "INSTALL:%s" "${pg_ci_build_packages[*]-}"'],
           {
             encoding: 'utf8',
-            env: { ...process.env, PATH: '', PG_CI_SHARD: '1' },
+            env: { ...process.env, PATH: '', PG_CI_SHARD: '2' },
           }
         )
       ).toBe('INSTALL:');

@@ -156,7 +156,9 @@ function castToWhole(value: ExactDecimal): bigint {
  * switched off may deal would refuse hands over numbers nothing was going to
  * read.
  */
-export type DiamondCashRakeSchedule =
+export type DiamondCashRakeSchedule = {
+  readonly jackpot?: import('./diamondCashJackpotSchedule.js').DiamondCashJackpotSchedule;
+} & (
   | {
       readonly enabled: false;
       readonly bigBlind: number;
@@ -170,7 +172,8 @@ export type DiamondCashRakeSchedule =
       /** Indexed by the settler's own bracket suffix. */
       readonly percent: Readonly<Record<DiamondRakeBracket, ExactDecimal>>;
       readonly cap: Readonly<Record<DiamondRakeBracket, ExactDecimal>>;
-    };
+    }
+);
 
 /**
  * The settler's dealt-in bracket, named by the SUFFIX it appends to the

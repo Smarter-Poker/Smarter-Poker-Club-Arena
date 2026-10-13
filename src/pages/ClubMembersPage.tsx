@@ -643,7 +643,9 @@ export default function ClubMembersPage() {
   }, [loading, members.length]);
 
   const refresh = useCallback(async () => {
-    if (!resolvedClubId) return;
+    // No request is admitted while the search debounce is unsettled. Do not
+    // claim a refresh started when its loader must return without one.
+    if (!resolvedClubId || searchSettlingRef.current) return;
     setIsRefreshing(true);
     await latestLoadRef.current({ forceSummary: true });
   }, [resolvedClubId]);
@@ -1322,7 +1324,7 @@ export default function ClubMembersPage() {
             type="button"
             className="members-refresh"
             onClick={() => void refresh()}
-            disabled={loading || isRefreshing}
+            disabled={loading || isRefreshing || searchQuery !== debouncedSearch}
             aria-busy={isRefreshing}
           >
             {isRefreshing ? 'Refreshing...' : 'Refresh'}

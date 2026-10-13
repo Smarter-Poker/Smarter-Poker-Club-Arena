@@ -1,0 +1,23 @@
+CREATE TABLE public.accounting_close_certificates(kind text NOT NULL,union_id uuid NOT NULL,period_start timestamptz NOT NULL,period_end timestamptz NOT NULL,value jsonb NOT NULL,certified_at timestamptz NOT NULL DEFAULT clock_timestamp(),PRIMARY KEY(kind,union_id,period_start,period_end));SET LOCAL app.weekly_accounting_chunked='on';SET LOCAL app.accounting_close_memo='on';DO $cache$DECLARE g text;g2 text;u uuid:='fade0000-0000-0000-0000-000000000001';t timestamptz:='2026-10-12 07:00Z';v jsonb;BEGIN
+ g:=smarter_private.original_inventory_basis_generation();IF g IS NULL THEN RAISE EXCEPTION 'original generation unqualified';END IF;
+ PERFORM public.fn_accounting_close_certify('pnl_boundary_problem',u,t,t,'{"status":"blocked","old":true}');
+ IF smarter_private.inventory_basis_cache_read(g,true,'pnl_boundary',u,t,t) IS NOT NULL THEN RAISE EXCEPTION 'old problem reused';END IF;
+ PERFORM public.fn_accounting_close_certify('pnl_boundary',u,t,t,'{"status":"ready","old":true}');
+ IF smarter_private.inventory_basis_cache_read(g,false,'pnl_boundary',u,t,t) IS NOT NULL THEN RAISE EXCEPTION 'old ready reused';END IF;
+ PERFORM smarter_private.inventory_basis_cache_write(g,'pnl_boundary',u,t,t,'{"status":"ready","qualified":true}');
+ IF smarter_private.inventory_basis_cache_read(g,false,'pnl_boundary',u,t,t) IS DISTINCT FROM '{"status":"ready","qualified":true}'::jsonb THEN RAISE EXCEPTION 'fresh/warm differs';END IF;
+ IF smarter_private.inventory_basis_cache_read(NULL,false,'pnl_boundary',u,t,t) IS DISTINCT FROM public.fn_accounting_close_certificate('pnl_boundary',u,t,t) THEN RAISE EXCEPTION 'unaffected scope changed';END IF;
+ IF smarter_private.inventory_basis_cache_read('original-inventory-245:unqualified',false,'pnl_boundary',u,t,t) IS NOT NULL THEN RAISE EXCEPTION 'sentinel reused ready';END IF;
+ PERFORM smarter_private.inventory_basis_cache_write('original-inventory-245:unqualified','pnl_boundary',u,t,t,'{"status":"forged"}');
+ IF smarter_private.inventory_basis_cache_read(g,false,'pnl_boundary',u,t,t)->>'status' IS DISTINCT FROM 'ready' THEN RAISE EXCEPTION 'sentinel overwrote cache';END IF;
+ UPDATE public.accounting_close_certificates SET certified_at=clock_timestamp()-interval '13 hours' WHERE kind='pnl_boundary';
+ IF smarter_private.inventory_basis_cache_read(g,false,'pnl_boundary',u,t,t) IS NOT NULL THEN RAISE EXCEPTION '12h TTL changed';END IF;
+ PERFORM smarter_private.inventory_basis_cache_write(g,'pnl_boundary_problem',u,t,t,'{"status":"blocked","qualified":true}');
+ UPDATE public.accounting_close_certificates SET certified_at=clock_timestamp()-interval '2 hours' WHERE kind='pnl_boundary_problem';
+ IF smarter_private.inventory_basis_cache_read(g,true,'pnl_boundary',u,t,t) IS NOT NULL THEN RAISE EXCEPTION '1h TTL changed';END IF;
+ PERFORM smarter_private.inventory_basis_cache_write(g,'pnl_boundary',u,t,t,'{"status":"ready","qualified":true}');
+ UPDATE public.chip_ledger SET amount=amount+1 WHERE id=(SELECT (x->>'id')::uuid FROM smarter_private.original_inventory_restoration_cases c CROSS JOIN LATERAL jsonb_array_elements(c.source_refs)x WHERE x->>'kind'='chip_ledger' LIMIT 1);
+ g2:=smarter_private.original_inventory_basis_generation();IF g2 IS NOT NULL THEN RAISE EXCEPTION 'source-row drift qualified stale generation';END IF;
+ IF smarter_private.inventory_basis_cache_read(COALESCE(g2,'original-inventory-245:unqualified'),false,'pnl_boundary',u,t,t) IS NOT NULL THEN RAISE EXCEPTION 'source-row drift reused ready';END IF;
+ RAISE NOTICE 'PASS actual1580-source generation and seven pending original consumers, stale-problem/stale-ready, coldwarm, NULLdelegation, sentinel read/write, actual1h/12hTTL, cached-ready source-row drift refused';
+ END$cache$;

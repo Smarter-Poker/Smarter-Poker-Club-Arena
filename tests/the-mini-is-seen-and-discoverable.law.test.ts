@@ -249,7 +249,7 @@ describe('the feed refuses to guess, and never promises a refused mini', () => {
        required a positive amount, so the two could disagree. Both now ask
        `miniPlateAmount`, and the pin follows the mechanism. */
     expect(modalsLayer).toMatch(
-      /const bbjMiniAmount = miniPlateAmount\(bbjMini, safeBB\(blinds\)\);/
+      /const bbjMiniAmount =\s*jackpotAsset === 'diamonds'\s*\? diamondMiniPlateAmount\(diamondJackpot, safeBB\(blinds\)\)\s*:\s*miniPlateAmount\(bbjMini, safeBB\(blinds\)\);/
     );
     expect(read('src/lib/bbjMiniFeed.ts')).toMatch(
       /if \(!tier \|\| !tier\.payable\) return null;\s*return tier\.amount > 0 \? tier\.amount : null;/
@@ -336,7 +336,7 @@ describe('the felt: a thinner frame, and the mini under it', () => {
     );
     expect(tablePage).toContain('data-bbj-mini=');
     expect(tablePage).toMatch(
-      /isBbjPlateShown\(\{[\s\S]{0,240}?\}\) &&\s*miniPlateAmount\(bbjMini, safeBB\(tableState\.blinds\)\) !== null/
+      /isBbjPlateShown\(\{[\s\S]{0,240}?\}\) &&\s*\(tableState\.arenaAsset === 'diamonds'\s*\? diamondMiniAmount\s*:\s*miniPlateAmount\(bbjMini, safeBB\(tableState\.blinds\)\)\) !== null/
     );
     // the old inline condition must not survive beside the helper
     expect(modalsLayer).not.toMatch(
@@ -659,11 +659,25 @@ describe('a shown mini is a payable mini - on every surface, without exception',
     const feed = read('src/lib/bbjMiniFeed.ts');
     expect(feed).toMatch(/export function miniPlateAmount\(/);
     expect(feed).toMatch(/return tier\.amount > 0 \? tier\.amount : null;/);
+    const diamondFeed = read('src/lib/diamondJackpotFeed.ts');
+    expect(diamondFeed).toContain('export function diamondMiniPlateAmount(');
+    expect(diamondFeed).toMatch(/!snapshot\?\.enabled\s*\|\|\s*!snapshot\.mini_enabled/);
+    expect(diamondFeed).toContain('!stake.mini_payable');
+    expect(diamondFeed).toContain('stake.drop <= 0');
+    expect(diamondFeed).toContain('stake.mini_amount <= 0');
+    expect(diamondFeed).toContain(
+      'snapshot.backup_balance - stake.mini_amount < snapshot.reserve_floor'
+    );
+    expect(tablePage).toMatch(
+      /const diamondMiniAmount = diamondMiniPlateAmount\(diamondJackpot, safeBB\(tableState\.blinds\)\);/
+    );
+    expect(tablePage).not.toMatch(/diamondJackpotStake\?\.mini_payable/);
+    expect(modalsLayer).not.toMatch(/diamondJackpotStake\?\.mini_payable/);
     expect(read('src/pages/TablePage.tsx')).toMatch(
-      /miniPlateAmount\(bbjMini, safeBB\(tableState\.blinds\)\) !== null/
+      /miniPlateAmount\(bbjMini, safeBB\(tableState\.blinds\)\)\) !== null/
     );
     expect(read('src/components/table/TableModalsLayer.tsx')).toMatch(
-      /const bbjMiniAmount = miniPlateAmount\(bbjMini, safeBB\(blinds\)\);/
+      /const bbjMiniAmount =\s*jackpotAsset === 'diamonds'\s*\? diamondMiniPlateAmount\(diamondJackpot, safeBB\(blinds\)\)\s*:\s*miniPlateAmount\(bbjMini, safeBB\(blinds\)\);/
     );
   });
 

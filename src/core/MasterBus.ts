@@ -529,6 +529,7 @@ export interface BusPayloadMap {
     timestamp: string;
   };
   BBJ_HIT_GLOBAL: {
+    asset?: 'chips' | 'diamonds';
     tableId: string;
     tableName: string;
     gameVariant: string;

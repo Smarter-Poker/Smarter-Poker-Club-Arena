@@ -192,43 +192,46 @@ describe('reserved protected ledger actors reach supported Auth retirement', () 
       expect(cleanup).not.toHaveBeenCalled();
     }
   );
-  it('replays retired template identity through actual guarded terminal readback without obsolete receipt or mutation', async () => {
-    const environment = {
-      RESERVED_CERTIFICATION_ACCOUNT_ID: id,
-      RESERVED_CERTIFICATION_ACCOUNT_EMAIL: email,
-      RESERVED_CERTIFICATION_TEMPLATE_REQUEST_ID: '11111111-1111-4111-8111-111111111111',
-      RESERVED_CERTIFICATION_TEMPLATE_CLUB_ID: '22222222-2222-4222-8222-222222222222',
-      SUPABASE_URL: 'https://isolated.invalid',
-      SUPABASE_SERVICE_ROLE_KEY: 'sb_secret_test',
-      DATABASE_URL: 'configured-runtime-only',
-    };
-    const calls: Array<{ url: string; method: string }> = [];
-    const fetchImpl = vi.fn(async (url: string, options: any = {}) => {
-      calls.push({ url, method: options.method || 'GET' });
-      if (url.includes('/auth/v1/admin/users/'))
-        return new Response(JSON.stringify({ id, deleted_at: '2026-10-13T21:02:06Z' }), {
-          status: 200,
-        });
-      if (url.endsWith('/rpc/cleanup_reserved_certification_account'))
-        return new Response(
-          JSON.stringify({ success: true, disposition: 'retained_ledger_actor', user_id: id }),
-          { status: 200 }
-        );
-      if (url.includes('club_creation_requests')) return new Response('[]', { status: 200 });
-      throw new Error('Obsolete receipt or fixture request attempted');
-    });
-    await expect(retireReservedCertificationAccount({ environment, fetchImpl })).resolves.toBe(
-      true
-    );
-    expect(calls).toHaveLength(3);
-    expect(calls.map((call) => call.method)).toEqual(['GET', 'POST', 'GET']);
-    expect(calls[1].url).toContain('cleanup_reserved_certification_account');
-    expect(
-      calls.some((call) =>
-        /club_creation_requests|rest\/v1\/clubs|DELETE/.test(call.url + call.method)
-      )
-    ).toBe(false);
-  });
+  it.each(['', 'configured-runtime-only'])(
+    'replays retired template identity through actual guarded terminal readback with DB %s',
+    async (databaseUrl) => {
+      const environment = {
+        RESERVED_CERTIFICATION_ACCOUNT_ID: id,
+        RESERVED_CERTIFICATION_ACCOUNT_EMAIL: email,
+        RESERVED_CERTIFICATION_TEMPLATE_REQUEST_ID: '11111111-1111-4111-8111-111111111111',
+        RESERVED_CERTIFICATION_TEMPLATE_CLUB_ID: '22222222-2222-4222-8222-222222222222',
+        SUPABASE_URL: 'https://isolated.invalid',
+        SUPABASE_SERVICE_ROLE_KEY: 'sb_secret_test',
+        DATABASE_URL: databaseUrl,
+      };
+      const calls: Array<{ url: string; method: string }> = [];
+      const fetchImpl = vi.fn(async (url: string, options: any = {}) => {
+        calls.push({ url, method: options.method || 'GET' });
+        if (url.includes('/auth/v1/admin/users/'))
+          return new Response(JSON.stringify({ id, deleted_at: '2026-10-13T21:02:06Z' }), {
+            status: 200,
+          });
+        if (url.endsWith('/rpc/cleanup_reserved_certification_account'))
+          return new Response(
+            JSON.stringify({ success: true, disposition: 'retained_ledger_actor', user_id: id }),
+            { status: 200 }
+          );
+        if (url.includes('club_creation_requests')) return new Response('[]', { status: 200 });
+        throw new Error('Obsolete receipt or fixture request attempted');
+      });
+      await expect(retireReservedCertificationAccount({ environment, fetchImpl })).resolves.toBe(
+        true
+      );
+      expect(calls).toHaveLength(3);
+      expect(calls.map((call) => call.method)).toEqual(['GET', 'POST', 'GET']);
+      expect(calls[1].url).toContain('cleanup_reserved_certification_account');
+      expect(
+        calls.some((call) =>
+          /club_creation_requests|rest\/v1\/clubs|DELETE/.test(call.url + call.method)
+        )
+      ).toBe(false);
+    }
+  );
   it('still refuses malformed optional template IDs for an already retired identity', async () => {
     const cleanup = vi.fn();
     await expect(
@@ -248,6 +251,26 @@ describe('reserved protected ledger actors reach supported Auth retirement', () 
         cleanup,
       })
     ).rejects.toThrow('Exact Template Creation Receipt IDs');
+    expect(cleanup).not.toHaveBeenCalled();
+  });
+  it('refuses a live template actor without database access before receipt lookup or cleanup', async () => {
+    const cleanup = vi.fn();
+    const fetchImpl = vi.fn().mockResolvedValue({ status: 200, json: async () => ({ id, email }) });
+    await expect(
+      retireReservedCertificationAccount({
+        environment: {
+          RESERVED_CERTIFICATION_ACCOUNT_ID: id,
+          RESERVED_CERTIFICATION_ACCOUNT_EMAIL: email,
+          RESERVED_CERTIFICATION_TEMPLATE_REQUEST_ID: '11111111-1111-4111-8111-111111111111',
+          RESERVED_CERTIFICATION_TEMPLATE_CLUB_ID: '22222222-2222-4222-8222-222222222222',
+          SUPABASE_URL: 'https://isolated.invalid',
+          SUPABASE_SERVICE_ROLE_KEY: 'sb_secret_test',
+        },
+        fetchImpl,
+        cleanup,
+      })
+    ).rejects.toThrow('Configured Database Access');
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(cleanup).not.toHaveBeenCalled();
   });
 });

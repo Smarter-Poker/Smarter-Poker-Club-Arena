@@ -14,7 +14,7 @@
     "tests/fixtures/earlybird-fee-custody/paid-originals.json": "7b0137cce446c509e1b0cbd1e9361547fb700e409fceb373bb6c21909170faf0",
     "tests/fixtures/earlybird-fee-custody/credit-originals.json": "76b7a6152c538bd051754e0a17106a14e86458968132bea26f03c339ad77b439",
     "supabase/migrations/20260918122532_five_original_spin_standings_retain_their_recorded_cash_outc.sql": "9f6e0b02abea54394d317c6d20f8e47ae10edefc9ba6c12f6542c23daf4540c4",
-    ".prettierignore": "4b3e2f36fddf7498665cf2a3bada347614dd73cfde793f9ab27aad1f38d88c08",
+    ".prettierignore": "6391e4bfb9fd0a13a580ef17378bfb4bb0d604806a3f4ffdc8d778e1680c3346",
     "tests/unit/fixtureNativeCi.test.ts": "821a94ed8fcbf822dc831479e81b20a724039d85c1311f352d216fd6d1264f76",
     "tests/fixtures/earlybird-fee-custody/README.md": "ae19f37a0179956d0d26c64f626fa401c10b4319f0d7d8453f8993d811e98536"
   },
@@ -123,6 +123,13 @@
       "to": "a708facf9f8769820d54df76d06b4ae0eb90a80d76bd403a8ae0dc7028fac7ae",
       "on": "2026-10-10",
       "why": "Stable Admin six-capability integration: add two original-owner PG17 qualifiers to the existing required accounting shards, classify their drivers/loaded fixtures/schema fragments, and test that enforcement. Reviewed additive workflow/classifier/test diff; no prior financial authority, assertion, captured fixture or qualification status changes. Source fingerprint refresh does not prove native execution, installation or publication."
+    },
+    {
+      "file": ".prettierignore",
+      "from": "4b3e2f36fddf7498665cf2a3bada347614dd73cfde793f9ab27aad1f38d88c08",
+      "to": "6391e4bfb9fd0a13a580ef17378bfb4bb0d604806a3f4ffdc8d778e1680c3346",
+      "on": "2026-10-13",
+      "why": "Preserve only the three exact native pruner original, expected and dependency SQL definition fixtures added for the launch installation blocker. Their hashes enforce lossless provider function bytes. No existing exclusion, financial source, fixture rule or assertion changed."
     }
   ],
   "union_doors_candidate_20260925": "Restamped for 20260925145748. scripts/dev/test-full-weekly-accounting-activation.sh now applies that migration in the existing pnl-evidence hooks chain, immediately after 20260921023420 and before hooks-regression.sql, and hooks-regression.sql gains assertions for what it changes: the square-up refuses a recorded ECO that does not equal round(-eco_rate*eco_base,2) (the old comparison had become the record against itself and could never fire), keeping both existing refusals; and the closed union send door credits the one owner it resolves from clubs.owner_id instead of every role=owner row, carries the house authorization check, an idempotency key and one club-declaring chip_ledger leg, and records its audit row against wallet='chip_balance' rather than the 'main' that union_wallet_transactions_wallet_check has never permitted. No fixture body owned by these bindings changed and no role gains a key. Diff read before restamping.",

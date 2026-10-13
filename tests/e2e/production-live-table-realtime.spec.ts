@@ -28,7 +28,7 @@ import {
 } from './support/preNavigationBoard';
 import { prepareCashLobbyActions } from './support/cashLobbyOverlays';
 import {
-  observeBeforeSelectionDeadline,
+  createSelectionObservation,
   SelectionObservationDeadline,
 } from './support/selectionDeadline';
 import { remainingObservationMs } from './support/observationDeadline';
@@ -571,7 +571,8 @@ async function selectProgressingTournamentTable(
     missingTableIds: string[];
     rejectionCategories: { engine_health_absent?: number };
   } | null = null;
-  let precedingHealthReadFailure: unknown = null;
+  const observeSelection = createSelectionObservation();
+  let lastScopedHealth: EngineHealth | null = null;
   const readCandidateHealth = async (
     deadline = Math.min(options.deadline, Date.now() + pollBudgetMs())
   ): Promise<{
@@ -581,18 +582,8 @@ async function selectProgressingTournamentTable(
     const readDeadline = Math.min(options.deadline, deadline);
     const requestTimeoutMs = () =>
       Math.max(1, Math.min(15_000, Math.floor(remainingObservationMs(readDeadline))));
-    let scoped: EngineHealth;
-    try {
-      scoped = await observeBeforeSelectionDeadline(readDeadline, () =>
-        readEngineHealth(request, { gameFormat }, requestTimeoutMs())
-      );
-      precedingHealthReadFailure = null;
-    } catch (error) {
-      if (error instanceof SelectionObservationDeadline && precedingHealthReadFailure !== null)
-        throw precedingHealthReadFailure;
-      if (!(error instanceof SelectionObservationDeadline)) precedingHealthReadFailure = error;
-      throw error;
-    }
+    const scoped = await readEngineHealth(request, { gameFormat }, requestTimeoutMs());
+    lastScopedHealth = scoped;
     if (!options.hudReader) return { scoped, candidates: scoped };
     const discovered = await options.hudReader.discoverSelectableTableIds(
       [CLUB_ID, UNION_ID],
@@ -652,10 +643,52 @@ async function selectProgressingTournamentTable(
       candidates,
     };
   };
-  let healthRead = await readCandidateHealth();
+  const readinessObservation = async (deadline: number) =>
+    observeSelection(deadline, async () => {
+      const healthRead = await readCandidateHealth(deadline);
+      return {
+        healthRead,
+        baselines: await refineByBoard(readyTables(healthRead.candidates)),
+      };
+    });
+  let initial: Awaited<ReturnType<typeof readinessObservation>>;
+  try {
+    initial = await readinessObservation(Math.min(options.deadline, Date.now() + pollBudgetMs()));
+  } catch (error) {
+    if (!(error instanceof SelectionObservationDeadline)) throw error;
+    const classification = lastScopedHealth
+      ? classifyMissingTournamentSubject({
+          rows: (lastScopedHealth as EngineHealth).tableLiveness,
+          gameFormat,
+          clubIds: [CLUB_ID, UNION_ID],
+          minimumStableSeats,
+          maxGameplaySilenceMs: MAX_GAMEPLAY_SILENCE_MS,
+        })
+      : null;
+    const evidence = {
+      gameFormat,
+      expectedVersion: EXPECTED_ENGINE_SHA,
+      fixtureClubIds: [CLUB_ID, UNION_ID],
+      observationDeadline: error.message,
+      lastScopedHealth,
+      classification,
+    };
+    await testInfo.attach(`${gameFormat}-initial-observation-deadline`, {
+      body: Buffer.from(JSON.stringify(evidence, null, 2)),
+      contentType: 'application/json',
+    });
+    if (classification?.verdict === 'stalled')
+      throw new Error(
+        `production has ${classification.stalled.length} ${gameFormat.toUpperCase()} table(s) in ` +
+          `fixture scope ${CLUB_ID}/${UNION_ID} that have stopped dealing: ` +
+          classification.stalled.map((table: StalledSubject) => table.tableId).join('; ')
+      );
+    throw new AbsentCertifiableSubject(error.message, evidence);
+  }
+  let healthRead = initial.healthRead;
   let before = healthRead.candidates;
-  let lastScopedHealth = healthRead.scoped;
-  let baselines = await refineByBoard(readyTables(before));
+  lastScopedHealth = healthRead.scoped;
+  let baselines = initial.baselines;
   const operationalPollFailure = new OperationalPollFailure();
 
   // A publisher can finish while natural tournament tables are still resuming.
@@ -671,10 +704,11 @@ async function selectProgressingTournamentTable(
         .poll(
           () =>
             operationalPollFailure.attempt(async () => {
-              healthRead = await readCandidateHealth(readinessReadDeadline);
+              const observation = await readinessObservation(readinessReadDeadline);
+              healthRead = observation.healthRead;
               before = healthRead.candidates;
               lastScopedHealth = healthRead.scoped;
-              baselines = await refineByBoard(readyTables(before));
+              baselines = observation.baselines;
               return baselines.length;
             }),
           {
@@ -786,10 +820,11 @@ async function selectProgressingTournamentTable(
               selection,
               options.boardReader,
               async (deadline) => {
-                healthRead = await readCandidateHealth(deadline);
+                const observation = await readinessObservation(deadline);
+                healthRead = observation.healthRead;
                 before = healthRead.candidates;
                 lastScopedHealth = healthRead.scoped;
-                return refineByBoard(readyTables(before));
+                return observation.baselines;
               }
             );
             baselines = selection.baselines;

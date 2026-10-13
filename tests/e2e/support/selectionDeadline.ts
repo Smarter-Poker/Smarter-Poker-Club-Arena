@@ -22,3 +22,20 @@ export async function observeBeforeSelectionDeadline<T>(
     throw error;
   }
 }
+
+/** Only a fully successful observation clears its preceding operational failure. */
+export function createSelectionObservation() {
+  let precedingFailure: unknown = null;
+  return async function observe<T>(deadline: number, operation: () => Promise<T>): Promise<T> {
+    try {
+      const result = await observeBeforeSelectionDeadline(deadline, operation);
+      precedingFailure = null;
+      return result;
+    } catch (error) {
+      if (error instanceof SelectionObservationDeadline && precedingFailure !== null)
+        throw precedingFailure;
+      if (!(error instanceof SelectionObservationDeadline)) precedingFailure = error;
+      throw error;
+    }
+  };
+}

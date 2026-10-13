@@ -107,7 +107,55 @@ describe('private history join qualification', () => {
       joinMs: 4000,
     });
   });
-  it('bounds disclosure and authoritative scope read to 35s and cleans its timer', async () => {
+  it('does not spend admission on a 10s RPC before an 18s admission and 10s ACK', async () => {
+    vi.useFakeTimers();
+    const o = new HistoryJoinObservation();
+    let now = 0;
+    let read!: (topic: string) => void;
+    const pending = o.qualify(
+      () =>
+        new Promise<string>((resolve) => {
+          read = resolve;
+        }),
+      () => now
+    );
+    // Keep the expected before-fix rejection observed while the fake clock advances.
+    void pending.catch(() => undefined);
+    now = 10000;
+    await vi.advanceTimersByTimeAsync(10000);
+    read(topic);
+    await Promise.resolve();
+    await Promise.resolve();
+    now = 28000;
+    await vi.advanceTimersByTimeAsync(18000);
+    o.record('sent', frame('phx_join'), now);
+    now = 38000;
+    await vi.advanceTimersByTimeAsync(10000);
+    o.record('received', frame('phx_reply'), now);
+    await expect(pending).resolves.toBeUndefined();
+    expect(o.result(topic, now)).toMatchObject({
+      phase: 'joined',
+      admissionMs: 18000,
+      joinMs: 10000,
+      elapsedMs: 28000,
+    });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it('preserves an early real join and ACK during scope-body decoding', async () => {
+    const o = new HistoryJoinObservation();
+    let now = 0;
+    await o.qualify(
+      async () => {
+        o.record('sent', frame('phx_join'), 10);
+        o.record('received', frame('phx_reply'), 20);
+        now = 30;
+        return topic;
+      },
+      () => now
+    );
+    expect(o.result(topic, now)).toMatchObject({ phase: 'joined', admissionMs: 0, joinMs: 10 });
+  });
+  it('leaves a never-resolving HTTP read to the existing caller budget and permits cancellation', async () => {
     vi.useFakeTimers();
     const o = new HistoryJoinObservation();
     let now = 0;
@@ -115,12 +163,22 @@ describe('private history join qualification', () => {
       () => new Promise<string>(() => undefined),
       () => now
     );
-    const refusal = expect(pending).rejects.toThrow('total_timeout');
+    let settled = false;
+    void pending.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      }
+    );
     now = 35000;
     await vi.advanceTimersByTimeAsync(35000);
-    await refusal;
+    expect(settled).toBe(false);
     expect(vi.getTimerCount()).toBe(0);
+    const refusal = expect(pending).rejects.toThrow('disposed');
     o.dispose();
+    await refusal;
   });
   it('refuses late admission and late acknowledgment, even if read afterward', () => {
     const a = new HistoryJoinObservation();

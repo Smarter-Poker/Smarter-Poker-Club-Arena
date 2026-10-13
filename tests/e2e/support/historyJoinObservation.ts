@@ -3,6 +3,7 @@ import type { Page, WebSocket as PlaywrightSocket } from '@playwright/test';
 export const HISTORY_ADMISSION_MS = 20_000;
 export const HISTORY_JOIN_ACK_MS = 15_000;
 type Phase =
+  | 'waiting_scope'
   | 'waiting_admission'
   | 'waiting_join_ack'
   | 'joined'
@@ -14,6 +15,8 @@ type Join = { sentAt: number; ref: string; socket: unknown; requestCount: number
 /** Retains only correlation metadata. Tokens and raw frames never leave this call. */
 export class HistoryJoinObservation {
   private startedAt: number | null = null;
+  private capturing = false;
+  private scopeCancellations = new Set<() => void>();
   private joins = new Map<string, Join>();
   private disposed = false;
   private listeners = new Set<() => void>();
@@ -21,6 +24,7 @@ export class HistoryJoinObservation {
     if (this.startedAt !== null || this.disposed)
       throw new Error('History join observation already started or disposed.');
     this.startedAt = now;
+    this.capturing = true;
   }
   record(
     direction: 'sent' | 'received',
@@ -28,7 +32,7 @@ export class HistoryJoinObservation {
     now: number,
     socket: unknown = undefined
   ): void {
-    if (this.disposed || this.startedAt === null) return;
+    if (this.disposed || !this.capturing) return;
     try {
       const frame = JSON.parse(String(raw));
       const topic = Array.isArray(frame) ? frame[2] : frame.topic;
@@ -77,11 +81,11 @@ export class HistoryJoinObservation {
   } {
     const start = this.startedAt;
     const join = this.joins.get(topic);
-    const admissionMs = start !== null && join ? join.sentAt - start : null;
+    const admissionMs = start !== null && join ? Math.max(0, join.sentAt - start) : null;
     const joinMs = join?.ackAt !== undefined ? join.ackAt - join.sentAt : null;
     let phase: Phase = 'waiting_admission';
     if (this.disposed) phase = 'disposed';
-    else if (start === null) throw new Error('History join observation was not started.');
+    else if (start === null) phase = 'waiting_scope';
     else if (admissionMs !== null && admissionMs > HISTORY_ADMISSION_MS)
       phase = 'admission_timeout';
     else if (joinMs !== null) phase = joinMs <= HISTORY_JOIN_ACK_MS ? 'joined' : 'join_timeout';
@@ -125,22 +129,32 @@ export class HistoryJoinObservation {
     readAuthorizedTopic: () => Promise<string>,
     now: () => number = () => performance.now()
   ): Promise<void> {
-    this.begin(now());
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const deadline = new Promise<never>((_resolve, reject) => {
-      timer = setTimeout(
-        () => reject(new Error('Private history join failed: total_timeout.')),
-        HISTORY_ADMISSION_MS + HISTORY_JOIN_ACK_MS
-      );
+    if (this.capturing || this.disposed)
+      throw new Error('History join observation already started or disposed.');
+    // Observe before the click, but do not spend socket admission on the
+    // authoritative HTTP read. Its existing caller/test timeout still applies.
+    this.capturing = true;
+    let cancel = () => {};
+    const cancelled = new Promise<never>((_resolve, reject) => {
+      cancel = () => reject(new Error('Private history join failed: disposed.'));
+      this.scopeCancellations.add(cancel);
     });
     try {
-      await Promise.race([readAuthorizedTopic().then((topic) => this.wait(topic, now)), deadline]);
+      const topic = await Promise.race([readAuthorizedTopic(), cancelled]);
+      if (this.disposed) throw new Error('Private history join failed: disposed.');
+      this.startedAt = now();
+      // A real join/ACK can arrive while Playwright decodes the RPC response.
+      // Keep it, clamp pre-clock admission to zero, and retain actual ACK time.
+      // wait() allows at most 20s admission + 15s ACK after this scope read.
+      await this.wait(topic, now);
     } finally {
-      clearTimeout(timer);
+      this.scopeCancellations.delete(cancel);
     }
   }
   dispose(): void {
     this.disposed = true;
+    for (const cancel of this.scopeCancellations) cancel();
+    this.scopeCancellations.clear();
     for (const listener of this.listeners) listener();
     this.listeners.clear();
     this.joins.clear();

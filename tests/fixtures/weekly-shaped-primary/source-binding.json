@@ -26,8 +26,8 @@
       "sha256": "c5f513be7637247fc709bd1ee2eab0fcf70f1da672676c987d6a9d0390191f39"
     },
     "supabase/migrations/20261013024122_weekly_shaped_hands_start_from_original_unaccepted.sql": {
-      "bytes": 6177,
-      "sha256": "0ca6db7c725468d2c20774955558dce034ff6a76ceb148c4c3c60037e28249fe"
+      "bytes": 6321,
+      "sha256": "0ae4232c813321a1b13b88bed73127f7b6142aeb636cae54424516eb974f1214"
     },
     "tests/fixtures/late-seat-flow/README.md": {
       "bytes": 3565,

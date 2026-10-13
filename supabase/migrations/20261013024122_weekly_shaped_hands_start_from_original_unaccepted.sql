@@ -43,6 +43,7 @@ BEGIN
  END IF;
 END $function$;
 
+REVOKE ALL ON FUNCTION public.fn_union_pnl_week_shaped_hands(uuid,timestamptz,timestamptz,boolean) FROM PUBLIC,anon,authenticated,service_role;
 DO $postimages$ BEGIN
  IF md5(pg_get_functiondef('public.fn_union_pnl_week_shaped_hands(uuid,timestamptz,timestamptz,boolean)'::regprocedure)) IS DISTINCT FROM '78b5d525a31a79ff1b13a5cfe0ddf739' THEN RAISE EXCEPTION 'SHAPED_PRIMARY_POSTIMAGE_CHANGED' USING ERRCODE='55000';END IF;
  IF NOT EXISTS(SELECT 1 FROM pg_proc WHERE oid='public.fn_union_pnl_week_shaped_hands(uuid,timestamptz,timestamptz,boolean)'::regprocedure

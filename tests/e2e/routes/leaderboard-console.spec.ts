@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
+import { waitForLeaderboardEntryMotion } from '../support/leaderboardMotion';
 import { HeldRouteLifecycle } from '../support/heldRouteLifecycle';
 
 // Read-only production coverage. The post-deploy workflow already runs routes/.
@@ -62,6 +63,7 @@ function observe(page: Page): Observed {
 }
 
 async function expectNoSeriousAxeFindings(page: Page, state: string): Promise<void> {
+  await waitForLeaderboardEntryMotion(page, BOARD, state);
   const results = await new AxeBuilder({ page }).include(BOARD).analyze();
   expect(
     results.violations

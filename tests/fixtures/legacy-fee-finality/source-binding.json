@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "f69cf7c2955f8a2f792d0936b0478598e88438677c12088513ca4393a50754b2",
+    "scripts/ci/classify-ci-changes.mjs": "fec5ce206a6cdf0c63b3e9d397eee71930aa0e424e25189bec0dc436e56ea295",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "9b68bb22efbd6ed9d857161bf4292ed9746f4ab13edaea3bf6d26bff36a4872e",
@@ -495,6 +495,17 @@
       "before": "d064527051d9ca3b8687b8414144a81008571552ab3d73f104ee462c0dac2a80",
       "after": "5c5de06d630dce62812f574dcbbb11f622f73c167c25d8847a320da5735d107a",
       "why": "Reviewed additive Diamond jackpot JSON, exact session-recap SQL and must-move fixture routing into the existing required Diamond SQL acceptance lane. Refresh only current input fingerprints; financial SQL, assertions, fixed input inventories, historical pins and qualification statuses remain unchanged. This input declaration is not native execution, financial certification, installation or publication."
+    },
+    {
+      "file": "scripts/ci/classify-ci-changes.mjs",
+      "from": "1fc422b810641eee2149abbdbbf5ddf50c54e87162fbea82f22456c506bd712d",
+      "to": "192ab33e7da85d929b59be391fde51e29e346fc8c041b88f47efd92a103e2b1c",
+      "on": "2026-10-12",
+      "why": "Diamond Wallet pending-migration qualification: reviewed additive CI routing for test-stranded-satellite-part2-postgres.py and its exact captured money-registry fixture. Existing CI routes, financial SQL, assertions, captured authorities and qualification status are unchanged. Pin refresh is source binding, not native execution or production financial proof."
+    },
+    {
+      "on": "2026-10-13",
+      "why": "Reviewed additive satellite-only CI routing integrated with current main, preserving deployed union membership source, all financial assertions and historical pins. Refresh current source identity only; not production execution proof."
     }
   ],
   "union_doors_candidate_20260925": "Restamped for 20260925145748. scripts/dev/test-full-weekly-accounting-activation.sh now applies that migration in the existing pnl-evidence hooks chain, immediately after 20260921023420 and before hooks-regression.sql, and hooks-regression.sql gains assertions for what it changes: the square-up refuses a recorded ECO that does not equal round(-eco_rate*eco_base,2) (the old comparison had become the record against itself and could never fire), keeping both existing refusals; and the closed union send door credits the one owner it resolves from clubs.owner_id instead of every role=owner row, carries the house authorization check, an idempotency key and one club-declaring chip_ledger leg, and records its audit row against wallet='chip_balance' rather than the 'main' that union_wallet_transactions_wallet_check has never permitted. No fixture body owned by these bindings changed and no role gains a key. Diff read before restamping.",

@@ -371,6 +371,7 @@ test.describe('Production Shark Club Players', () => {
     await expect(page.getByRole('note', { name: 'Export Scope' })).toContainText(
       'All Matching Players Across Every Page'
     );
+    await expect(page.getByRole('status', { name: 'Roster Operations' })).toBeVisible();
     const history = page.locator('.player-history');
     const initialHistory = page.waitForResponse((response) =>
       response.url().includes('/rpc/ca_club_player_history')
@@ -394,6 +395,10 @@ test.describe('Production Shark Club Players', () => {
     const receipt = await response.json();
     expect(receipt.success).toBe(true);
     expect(receipt.row_count).toBeGreaterThan(0);
+    const operation = page.getByRole('status', { name: 'Export Operation' });
+    await expect(operation).toHaveAttribute('data-operation-state', 'success');
+    await expect(operation).toContainText(receipt.audit_id);
+    await expect(operation).toContainText(receipt.row_count.toLocaleString());
     const requestScope = response.request().postDataJSON();
     expect(requestScope).toMatchObject({ p_filter: 'all', p_sort: 'name', p_user_ids: null });
     const download = await exportDownload;

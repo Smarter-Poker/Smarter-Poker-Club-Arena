@@ -117,7 +117,7 @@ describe('Player Command connection truth', () => {
     const retryButton = screen.getByRole('button', { name: /Retry Live Sync/i });
     expect(status).toHaveAttribute('data-connection-state', 'stale');
     expect(status).toHaveTextContent(/Showing The Last Verified Roster/i);
-    expect(status).toHaveTextContent(/Last Live Sync/i);
+    expect(status).toHaveTextContent('Last Verified Read 2026-08-30 20:15:00 UTC.');
     expect(status).not.toContainElement(retryButton);
     fireEvent.click(retryButton);
     expect(retry).toHaveBeenCalledTimes(1);
@@ -140,11 +140,39 @@ describe('Player Command connection truth', () => {
     expect(screen.getByRole('status')).toHaveTextContent(/Live Updates Interrupted/i);
   });
 
-  it('renders nothing once both the roster read and realtime channel are healthy', () => {
-    const { container } = render(
+  it('does not crash or invent a timestamp for a cached read outside the Date range', () => {
+    render(
+      <RosterConnectionStatus
+        state="stale"
+        hasData
+        lastSuccessfulSyncAt={8_640_000_000_000_001}
+        onRetry={() => undefined}
+      />
+    );
+    expect(screen.getByRole('status')).toHaveTextContent('No Verified Read Yet.');
+    expect(screen.getByRole('button', { name: /Retry Live Sync/i })).toBeEnabled();
+  });
+
+  it('keeps healthy connection truth visible without inventing a verified-read timestamp', () => {
+    const { rerender } = render(
       <RosterConnectionStatus state="live" hasData onRetry={() => undefined} />
     );
-    expect(container).toBeEmptyDOMElement();
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Live Updates Connected. No Verified Read Yet.'
+    );
+    expect(screen.queryByRole('button', { name: /Retry Live Sync/i })).not.toBeInTheDocument();
+    rerender(
+      <RosterConnectionStatus
+        state="live"
+        hasData
+        lastSuccessfulSyncAt={syncedAt}
+        onRetry={() => undefined}
+      />
+    );
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Live Updates Connected. Last Verified Read 2026-08-30 20:15:00 UTC.'
+    );
+    expect(screen.getByRole('status')).not.toHaveTextContent('No Verified Read Yet.');
   });
 });
 

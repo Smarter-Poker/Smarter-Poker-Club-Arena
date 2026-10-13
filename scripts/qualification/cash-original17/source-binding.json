@@ -2,8 +2,8 @@
   "scope": "Exact cash17 source/installer public-safe enforcement; private actual17 connected financial evidence external only, no production installation or ownership inferred.",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 220644,
-      "sha256": "f10e4911a8c6211b32f683d607805fe3fef618847dee55917db2fe691f52cef6"
+      "bytes": 221256,
+      "sha256": "78545cc8462142bcafa0387bdc3429278a7e6fb2ae823217fe6cfaeac2f7adc8"
     },
     "scripts/ci/satellite_qualifier_fixture.py": {
       "bytes": 18466,
@@ -288,6 +288,62 @@
     "supabase/migrations/20261013035113_a_cash_original_hand_corrects_its_rolled_back_allocator.sql": {
       "bytes": 45098,
       "sha256": "0c3c357e106b6daf5461587e707e63d47260837870a7fb423d2f4fdd00b339bd"
+    }
+  },
+  "spentDssRetirementEnforcement20261013": {
+    "reason": "Add finite native spent DSS retirement step in existing Accounting3; original cash17 source, oracles, assertions and enforcement step unchanged. Current workflow metadata only; no financial certificate restamp.",
+    "previous": {
+      "bytes": 219700,
+      "sha256": "8716d2d184b824c542069f47d4f542bbbdb71f3246ed2b4b3f9ba07885b62002"
+    },
+    "current": {
+      "bytes": 220050,
+      "sha256": "d03a3e0c5ceb4f16a1ae4f9de85b44a90a50e9666a9ab306af539ccd8c7a7a9d"
+    }
+  },
+  "satelliteCiIntegration20261013": {
+    "previousWorkflowPin": {
+      "bytes": 219700,
+      "sha256": "8716d2d184b824c542069f47d4f542bbbdb71f3246ed2b4b3f9ba07885b62002"
+    },
+    "reason": "Reviewed additive six-line Accounting4 satellite cohort qualification. Existing cash17 enforcement, artifacts, financial assertions, SQL and qualification scope remain unchanged. Current workflow fingerprint only, not cash17 native or production proof."
+  },
+  "spentDssSatelliteIntegration20261013": {
+    "reason": "Normal integration of reviewed satellite c94ba03d95b1e053ab41a056ce1a25c5eab28d69 preserves both native Accounting4 satellite and Accounting3 DSS retirement steps plus all prior audit records. Only current workflow/classifier selection fingerprints change; financial source assertions and qualification statuses unchanged.",
+    "reviewed_conflicts": [
+      {
+        "path": "/files/.github/workflows/ci.yml/bytes",
+        "previous_own": 220050,
+        "previous_satellite": 219962
+      },
+      {
+        "path": "/files/.github/workflows/ci.yml/sha256",
+        "previous_own": "d03a3e0c5ceb4f16a1ae4f9de85b44a90a50e9666a9ab306af539ccd8c7a7a9d",
+        "previous_satellite": "39d2b0e21fa5a453c0e3aa226b3eeabba7a2eff2ac15e11b531162ca3a413469"
+      }
+    ],
+    "current_workflow": {
+      "bytes": 220312,
+      "sha256": "fd98cd6ec4a6b94e2fc59a16519c0562d773160ac2d96d17292d81488120a797"
+    }
+  },
+  "spentDssProtectedMainIntegration20261013": {
+    "reason": "Normal merge of protected a65aecace39c4ee6215c8a1fdc382f61ebaf9ae4 preserves original flow eligibility, client rake ownership and certificate observation plus both satellite/DSS native steps. Current selection fingerprints only; financial inputs/assertions and historical audits unchanged.",
+    "reviewed_conflicts": [
+      {
+        "path": "/files/.github/workflows/ci.yml/bytes",
+        "previous_own": 220312,
+        "previous_main": 220644
+      },
+      {
+        "path": "/files/.github/workflows/ci.yml/sha256",
+        "previous_own": "fd98cd6ec4a6b94e2fc59a16519c0562d773160ac2d96d17292d81488120a797",
+        "previous_main": "f10e4911a8c6211b32f683d607805fe3fef618847dee55917db2fe691f52cef6"
+      }
+    ],
+    "current_workflow": {
+      "bytes": 221256,
+      "sha256": "78545cc8462142bcafa0387bdc3429278a7e6fb2ae823217fe6cfaeac2f7adc8"
     }
   }
 }

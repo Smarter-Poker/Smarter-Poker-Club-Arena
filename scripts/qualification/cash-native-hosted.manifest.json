@@ -166,16 +166,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 220644,
-      "sha256": "f10e4911a8c6211b32f683d607805fe3fef618847dee55917db2fe691f52cef6"
+      "bytes": 221256,
+      "sha256": "78545cc8462142bcafa0387bdc3429278a7e6fb2ae823217fe6cfaeac2f7adc8"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 36641,
-      "sha256": "1efea12fa21d047ecaf19cbd56e23d65f47897f2af5e66ca89c7466552e4571d"
+      "bytes": 36734,
+      "sha256": "c4a9e6535e8f0160dfbbf834dd82a4b5fb9b867d28e75bfa9ad900276895ce42"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -3211,6 +3211,73 @@
       }
     }
   },
+  "spentDssRetirementNative20261013": {
+    "reason": "Add finite exact-preimage spent DSS retirement native qualification to existing Accounting3; no historical recording or financial body execution. Existing financial source pins, assertions, acceptance state and audit history unchanged.",
+    "previous": {
+      "bytes": 219700,
+      "sha256": "8716d2d184b824c542069f47d4f542bbbdb71f3246ed2b4b3f9ba07885b62002"
+    },
+    "current": {
+      "bytes": 220050,
+      "sha256": "d03a3e0c5ceb4f16a1ae4f9de85b44a90a50e9666a9ab306af539ccd8c7a7a9d"
+    }
+  },
+  "strandedSatellitePartTwoInterval20261012": {
+    "reason": "Run the native part-two cohort and preimage-refusal regression in existing Accounting4. Financial inputs, assertions, historical pins and qualification status remain unchanged; workflow fingerprint refresh is not production financial qualification.",
+    "previousWorkflowPin": {
+      "bytes": 202788,
+      "sha256": "cbecb15da2fd2b57f1c3fcb7a75f9eede415cef9ad40bce2f25257266ca3f732"
+    }
+  },
+  "satelliteAndUnionMoneyRegistryRegression20261012": {
+    "reason": "Enforce real catalog money-registry CREATE refusal/pass regression and cohort qualification for standalone runner or captured guard fixture edits. Only current classifier source fingerprint changes; financial inputs, historical pins and qualification status remain unchanged.",
+    "previousClassifierPin": {
+      "bytes": 35480,
+      "sha256": "1fc422b810641eee2149abbdbbf5ddf50c54e87162fbea82f22456c506bd712d"
+    }
+  },
+  "satelliteCurrentMainIntegration20261013": {
+    "reason": "Preserve all current main CI routing and exact installed union source, add satellite-only native cohort and registry qualification. Source identity only, no financial authority or qualification status changed.",
+    "previousPins": {
+      ".github/workflows/ci.yml": {
+        "bytes": 219700,
+        "sha256": "8716d2d184b824c542069f47d4f542bbbdb71f3246ed2b4b3f9ba07885b62002"
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "bytes": 36585,
+        "sha256": "f69cf7c2955f8a2f792d0936b0478598e88438677c12088513ca4393a50754b2"
+      }
+    }
+  },
+  "spentDssSatelliteIntegration20261013": {
+    "reason": "Normal integration of reviewed satellite c94ba03d95b1e053ab41a056ce1a25c5eab28d69 preserves both native Accounting4 satellite and Accounting3 DSS retirement steps plus all prior audit records. Only current workflow/classifier selection fingerprints change; financial source assertions and qualification statuses unchanged.",
+    "reviewed_conflicts": [
+      {
+        "path": "/files/.github/workflows/ci.yml/bytes",
+        "previous_own": 220050,
+        "previous_satellite": 219962
+      },
+      {
+        "path": "/files/.github/workflows/ci.yml/sha256",
+        "previous_own": "d03a3e0c5ceb4f16a1ae4f9de85b44a90a50e9666a9ab306af539ccd8c7a7a9d",
+        "previous_satellite": "39d2b0e21fa5a453c0e3aa226b3eeabba7a2eff2ac15e11b531162ca3a413469"
+      },
+      {
+        "path": "/files/scripts/ci/classify-ci-changes.mjs/bytes",
+        "previous_own": 36585,
+        "previous_satellite": 36678
+      },
+      {
+        "path": "/files/scripts/ci/classify-ci-changes.mjs/sha256",
+        "previous_own": "f69cf7c2955f8a2f792d0936b0478598e88438677c12088513ca4393a50754b2",
+        "previous_satellite": "fec5ce206a6cdf0c63b3e9d397eee71930aa0e424e25189bec0dc436e56ea295"
+      }
+    ],
+    "current_workflow": {
+      "bytes": 220312,
+      "sha256": "fd98cd6ec4a6b94e2fc59a16519c0562d773160ac2d96d17292d81488120a797"
+    }
+  },
   "originalFlowEligibilityQualification20261013": {
     "reason": "Add directly triggered authentic original late-proof eligibility/31economic/callwork/source40 successor native qualification; preserve every existing CI lane and historical input pin.",
     "changes": {
@@ -3226,8 +3293,37 @@
       }
     }
   },
+  "spentDssProtectedMainIntegration20261013": {
+    "reason": "Normal merge of protected a65aecace39c4ee6215c8a1fdc382f61ebaf9ae4 preserves original flow eligibility, client rake ownership and certificate observation plus both satellite/DSS native steps. Current selection fingerprints only; financial inputs/assertions and historical audits unchanged.",
+    "reviewed_conflicts": [
+      {
+        "path": "/files/.github/workflows/ci.yml/bytes",
+        "previous_own": 220312,
+        "previous_main": 220644
+      },
+      {
+        "path": "/files/.github/workflows/ci.yml/sha256",
+        "previous_own": "fd98cd6ec4a6b94e2fc59a16519c0562d773160ac2d96d17292d81488120a797",
+        "previous_main": "f10e4911a8c6211b32f683d607805fe3fef618847dee55917db2fe691f52cef6"
+      },
+      {
+        "path": "/files/scripts/ci/classify-ci-changes.mjs/bytes",
+        "previous_own": 36678,
+        "previous_main": 36585
+      },
+      {
+        "path": "/files/scripts/ci/classify-ci-changes.mjs/sha256",
+        "previous_own": "fec5ce206a6cdf0c63b3e9d397eee71930aa0e424e25189bec0dc436e56ea295",
+        "previous_main": "f69cf7c2955f8a2f792d0936b0478598e88438677c12088513ca4393a50754b2"
+      }
+    ],
+    "current_workflow": {
+      "bytes": 221256,
+      "sha256": "78545cc8462142bcafa0387bdc3429278a7e6fb2ae823217fe6cfaeac2f7adc8"
+    }
+  },
   "rakeReportNativeRouting20261013": {
-    "scope": "Add rake report fixtures and their native installer regression to the existing Data Console classification; original cash qualification predicates and financial sources are unchanged.",
+    "scope": "Add rake report fixtures and their native installer regression to the existing Data Console classification; original cash qualification predicates and financial sources are unchanged. Preserves concurrent protected satellite classification when integrating main.",
     "inputs": {
       "scripts/ci/classify-ci-changes.mjs": {
         "before": {
@@ -3235,8 +3331,8 @@
           "sha256": "f69cf7c2955f8a2f792d0936b0478598e88438677c12088513ca4393a50754b2"
         },
         "after": {
-          "bytes": 36641,
-          "sha256": "1efea12fa21d047ecaf19cbd56e23d65f47897f2af5e66ca89c7466552e4571d"
+          "bytes": 36734,
+          "sha256": "c4a9e6535e8f0160dfbbf834dd82a4b5fb9b867d28e75bfa9ad900276895ce42"
         }
       }
     },

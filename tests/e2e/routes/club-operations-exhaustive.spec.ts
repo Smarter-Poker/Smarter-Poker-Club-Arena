@@ -88,6 +88,19 @@ test.describe('Reserved Admin - every Club Operations registry route', () => {
         await expect(page.locator('[data-players-mode="advanced"]')).toBeVisible();
       }
 
+      // Simple is the approved default; the registry certifies the Advanced tool.
+      const modeAttribute =
+        operation.id === 'data'
+          ? 'data-club-data-mode'
+          : operation.id === 'cashier'
+            ? 'data-cashier-mode'
+            : null;
+      if (modeAttribute) {
+        await expect(page.locator(`[${modeAttribute}="simple"]`)).toBeVisible();
+        await page.getByRole('button', { name: 'Advanced', exact: true }).click();
+        await expect(page.locator(`[${modeAttribute}="advanced"]`)).toBeVisible();
+      }
+
       await expect(page.getByRole('navigation', { name: 'Club Operations Sections' })).toBeVisible({
         timeout: 20_000,
       });

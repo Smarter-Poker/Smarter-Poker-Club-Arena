@@ -32,6 +32,7 @@ import {
   SelectionObservationDeadline,
 } from './support/selectionDeadline';
 import { remainingObservationMs } from './support/observationDeadline';
+import { readinessReadCanStart } from './support/readinessReadAdmission';
 import { assertInitialTableOwnership, classifyUnsubscribes } from './support/initialTableOwnership';
 import {
   classifyCaseFailure,
@@ -548,6 +549,7 @@ async function selectProgressingTournamentTable(
   /* A board that already finished, or is one hand from finishing, is not a
      running board, and the deepest boards are the least likely to finish
      while the browser is watching. Read the rows; never guess. */
+  let lastBoardQualification: Array<Record<string, unknown>> = [];
   const refineByBoard = async (tables: EngineTableLiveness[]): Promise<EngineTableLiveness[]> => {
     const fresh = tables.filter((table) => !excluded.has(table.tableId));
     if (options.hudReader && fresh.length > 0) {
@@ -560,6 +562,18 @@ async function selectProgressingTournamentTable(
     }
     if (!options.boardReader || fresh.length === 0) return fresh;
     const facts = await options.boardReader.boardFacts(fresh.map((table) => table.tableId));
+    lastBoardQualification = fresh.map((table) => {
+      const board = facts.get(table.tableId);
+      return {
+        tableId: table.tableId,
+        tournamentId: board?.tournamentId ?? null,
+        tournamentStatus: board?.tournamentStatus ?? null,
+        currentPlayers: board?.currentPlayers ?? null,
+        tableStatus: board?.tableStatus ?? null,
+        endedAt: board?.endedAt ?? null,
+        classification: classifyBoardEnding(board),
+      };
+    });
     return orderByEndurance(
       fresh.filter((table) => selectableWhileRunning(facts.get(table.tableId))),
       facts
@@ -702,15 +716,19 @@ async function selectProgressingTournamentTable(
     if (baselines.length === 0) {
       await expect
         .poll(
-          () =>
-            operationalPollFailure.attempt(async () => {
+          () => {
+            // Late poll callbacks cannot fit the existing health-read budget.
+            // Do not overwrite the last complete sample or clear real failures.
+            if (!readinessReadCanStart(readinessReadDeadline)) return 0;
+            return operationalPollFailure.attempt(async () => {
               const observation = await readinessObservation(readinessReadDeadline);
               healthRead = observation.healthRead;
               before = healthRead.candidates;
               lastScopedHealth = healthRead.scoped;
               baselines = observation.baselines;
               return baselines.length;
-            }),
+            });
+          },
           {
             timeout: readinessPollBudgetMs,
             intervals: [2_000, 3_000, 5_000, 5_000],
@@ -759,6 +777,7 @@ async function selectProgressingTournamentTable(
       classification,
       lastScopedHealth,
       lastCandidateHealth: before,
+      lastBoardQualification,
       hudCandidateHealth: lastHudCandidateHealth,
       hudQualification: options.hudReader?.refusalEvidence() ?? null,
       observationDeadline: observationDeadline?.message ?? null,

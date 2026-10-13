@@ -20,6 +20,8 @@ export async function createReservedPresenceTransport(
     throw new Error('Presence certification requires a reserved topic.');
   const state = {
     tracks: 0,
+    subscriptions: [] as string[],
+    trackResults: [] as string[],
     joins: 0,
     leaves: 0,
     heartbeatReplies: 0,
@@ -52,33 +54,46 @@ export async function createReservedPresenceTransport(
     },
   });
   let channel: RealtimeChannel | undefined;
-  const join = () => {
-    const current = client.channel(topic, { config: { presence: { key: account.id } } });
-    channel = current;
-    current
-      .on('presence', { event: 'sync' }, () => {
-        state.peers = Object.keys(current.presenceState()).sort();
-      })
-      .on('presence', { event: 'join' }, () => {
-        state.joins++;
-      })
-      .on('presence', { event: 'leave' }, () => {
-        state.leaves++;
-      })
-      .subscribe((status) => {
-        if (channel !== current) return;
-        if (status === 'SUBSCRIBED') {
-          void current
-            .track({ userId: account.id, status: 'online' })
-            .then((result) => {
-              if (result !== 'ok') state.errors.push(`track:${result}`);
-            })
-            .catch(() => {
-              state.errors.push('track:rejected');
-            });
-        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') state.errors.push(status);
-      });
-  };
+  const join = () =>
+    new Promise<void>((resolve, reject) => {
+      const current = client.channel(topic, { config: { presence: { key: account.id } } });
+      channel = current;
+      current
+        .on('presence', { event: 'sync' }, () => {
+          state.peers = Object.keys(current.presenceState()).sort();
+        })
+        .on('presence', { event: 'join' }, () => {
+          state.joins++;
+        })
+        .on('presence', { event: 'leave' }, () => {
+          state.leaves++;
+        })
+        .subscribe((status) => {
+          state.subscriptions.push(status);
+          if (channel !== current) return;
+          if (status === 'SUBSCRIBED') {
+            void current
+              .track({ userId: account.id, status: 'online' })
+              .then((result) => {
+                if (channel !== current) return;
+                state.trackResults.push(result);
+                if (result !== 'ok') {
+                  const failure = `track:${result}`;
+                  state.errors.push(failure);
+                  reject(new Error(`Reserved Presence admission failed: ${failure}`));
+                } else resolve();
+              })
+              .catch(() => {
+                if (channel !== current) return;
+                state.errors.push('track:rejected');
+                reject(new Error('Reserved Presence admission failed: track:rejected'));
+              });
+          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+            state.errors.push(status);
+            reject(new Error(`Reserved Presence admission failed: ${status}`));
+          }
+        });
+    });
   const leave = async () => {
     const current = channel;
     channel = undefined;
@@ -94,9 +109,15 @@ export async function createReservedPresenceTransport(
     });
     if (result.error || result.data.user?.id !== account.id)
       throw new Error('Reserved Presence transport authenticated as the wrong identity.');
-    join();
+    if (!result.data.session?.access_token)
+      throw new Error('Reserved Presence transport did not receive an authenticated session.');
+    // The Auth callback starts asynchronous token propagation. Admission must
+    // wait for the exact reserved session before joining, then for track's ack.
+    await client.realtime.setAuth(result.data.session.access_token);
+    await join();
   } catch (error) {
     await client.removeAllChannels();
+    client.realtime.disconnect();
     await client.auth.signOut({ scope: 'local' });
     throw error;
   }
@@ -113,7 +134,7 @@ export async function createReservedPresenceTransport(
         if (Date.now() >= deadline) throw new Error('Reserved Presence disconnect did not finish.');
         await new Promise((resolve) => setTimeout(resolve, 20));
       }
-      join();
+      await join();
     },
     close: async () => {
       const failures: unknown[] = [];

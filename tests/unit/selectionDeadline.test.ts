@@ -4,6 +4,7 @@ import {
   createSelectionObservation,
   SelectionObservationDeadline,
 } from '../e2e/support/selectionDeadline';
+import { readinessReadCanStart } from '../e2e/support/readinessReadAdmission';
 import { OperationalPollFailure } from '../e2e/support/tournamentHudWitness';
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
@@ -33,6 +34,7 @@ function actualSelector(
     UNION_ID: 'union',
     createSelectionObservation,
     observeBeforeSelectionDeadline,
+    readinessReadCanStart,
     readEngineHealth: read,
     OperationalPollFailure,
     SelectionObservationDeadline,
@@ -53,7 +55,7 @@ function actualSelector(
     orderByEndurance: (tables: unknown) => tables,
   };
   const selector = new Function(...Object.keys(globals), js)(...Object.values(globals));
-  return () => selector({}, 'sng', { attach: vi.fn() }, { deadline: 1000, ...options });
+  return () => selector({}, 'sng', { attach: vi.fn() }, { deadline: 90000, ...options });
 }
 const emptyHealth = { tableLiveness: [] };
 const occupiedHealth = {
@@ -63,7 +65,7 @@ const occupiedHealth = {
 it('actual initial selection deadline is UNKNOWN without fabricated empty health', async () => {
   vi.spyOn(Date, 'now').mockReturnValue(948);
   const select = actualSelector(
-    {},
+    { deadline: 1000 },
     async () => {
       vi.mocked(Date.now).mockReturnValue(1001);
       throw Object.assign(new Error('apiRequestContext.get: Timeout 52ms exceeded.'), {
@@ -85,7 +87,7 @@ it.each(['AuthorizationError', 'IdentityMismatch'])(
     vi.spyOn(Date, 'now').mockReturnValue(948);
     const error = Object.assign(new Error('refusal'), { name });
     const select = actualSelector(
-      {},
+      { deadline: 1000 },
       async () => {
         vi.mocked(Date.now).mockReturnValue(1001);
         throw error;
@@ -125,12 +127,19 @@ it.each(['HUD discovery', 'board refinement'])(
       options,
       async () => {
         ++reads;
+        if (reads === 3) {
+          vi.mocked(Date.now).mockReturnValue(89001);
+          throw Object.assign(new Error('admitted final health timeout'), { name: 'TimeoutError' });
+        }
         return path === 'board refinement' && reads === 2 ? occupiedHealth : emptyHealth;
       },
       async (operation) => {
         await expect(operation()).rejects.toBe(refusal);
-        vi.mocked(Date.now).mockReturnValue(1001);
+        // A second admitted observation reaches its deadline; a scoped read
+        // must not erase the earlier failure in a different part of the poll.
         await expect(operation()).rejects.toBe(refusal);
+        vi.mocked(Date.now).mockReturnValue(90001);
+        await expect(operation()).resolves.toBe(0);
         throw new Error('poll deadline');
       }
     );
@@ -144,8 +153,8 @@ it('actual known stalled subject stays failure when the final observation expire
     {},
     async () => emptyHealth,
     async (operation) => {
-      vi.mocked(Date.now).mockReturnValue(1001);
-      await expect(operation()).rejects.toBeInstanceOf(SelectionObservationDeadline);
+      vi.mocked(Date.now).mockReturnValue(90001);
+      await expect(operation()).resolves.toBe(0);
       throw new Error('poll deadline');
     },
     {
@@ -162,6 +171,7 @@ it('actual initial HUD deadline retains a genuine scoped stalled witness', async
   vi.spyOn(Date, 'now').mockReturnValue(100);
   const select = actualSelector(
     {
+      deadline: 1000,
       hudReader: {
         discoverSelectableTableIds: async () => {
           vi.mocked(Date.now).mockReturnValue(1001);
@@ -195,12 +205,37 @@ it('actual earlier health timeout remains a failure at deadline', async () => {
     },
     async (operation) => {
       await expect(operation()).rejects.toBe(refusal);
-      vi.mocked(Date.now).mockReturnValue(1001);
-      await expect(operation()).rejects.toBe(refusal);
+      vi.mocked(Date.now).mockReturnValue(90001);
+      await expect(operation()).resolves.toBe(0);
       throw new Error('poll deadline');
     }
   );
   await expect(select()).rejects.toBe(refusal);
+  vi.restoreAllMocks();
+});
+
+it('actual admitted complete observation timing out at its deadline remains UNKNOWN', async () => {
+  vi.spyOn(Date, 'now').mockReturnValue(100);
+  let reads = 0;
+  const select = actualSelector(
+    {},
+    async () => {
+      if (++reads === 1) return emptyHealth;
+      vi.mocked(Date.now).mockReturnValue(90001);
+      throw Object.assign(new Error('apiRequestContext.get: Timeout 15000ms exceeded.'), {
+        name: 'TimeoutError',
+      });
+    },
+    async (operation) => {
+      await expect(operation()).rejects.toBeInstanceOf(SelectionObservationDeadline);
+      throw new Error('poll deadline');
+    }
+  );
+  await expect(select()).rejects.toMatchObject({
+    name: 'AbsentCertifiableSubject',
+    message: expect.stringContaining('unknown'),
+  });
+  expect(reads).toBe(2);
   vi.restoreAllMocks();
 });
 

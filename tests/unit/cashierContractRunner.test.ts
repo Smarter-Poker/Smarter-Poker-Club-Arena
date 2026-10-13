@@ -71,6 +71,88 @@ describe('cashier database contract runner', () => {
     expect(pin).toBe(hash);
   });
 
+  it('pins only the approved launch boundary addition to the Club Bank read', () => {
+    const launch = readFileSync(
+      resolve(
+        __dirname,
+        '../../supabase/migrations/20261012181905_scoped_club_launch_reset_and_guarded_recovery.sql'
+      ),
+      'utf8'
+    );
+    const body = launch.match(
+      /CREATE OR REPLACE FUNCTION public\.fn_club_money_panel\(p_club_id uuid\)[\s\S]*?AS \$\$([\s\S]*?)\$\$/
+    )?.[1];
+    expect(body).toBeDefined();
+    const boundary =
+      "  v_week_start:=public.fn_ca_launch_accounting_start('club',p_club_id,public.fn_ca_launch_accounting_start('union',v_union_id,v_week_start));\n";
+    expect(body!.split(boundary)).toHaveLength(2);
+    const hash = (value: string) => createHash('md5').update(value).digest('hex');
+    const definition = (value: string) =>
+      "CREATE OR REPLACE FUNCTION public.fn_club_money_panel(p_club_id uuid)\n RETURNS jsonb\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'extensions'\nAS $function$" +
+      value +
+      '$function$\n';
+    const prior = body!.replace(boundary, '');
+    expect(hash(prior)).toBe('ae32bb8e315f339b1ba954325e8cc524');
+    expect(hash(definition(prior))).toBe('169793b84386ae10fd03246a96c7d95c');
+    const sql = readPsqlFreeContract();
+    const entry = sql.match(
+      /'signature', 'public\.fn_club_money_panel\(uuid\)',([\s\S]*?)\n {4}\)/
+    )?.[1];
+    expect(entry).toBeDefined();
+    const pin = entry!.match(/'hash', '([a-f0-9]{32})'/)?.[1];
+    expect(pin).toBe(hash(definition(body!)));
+    expect(entry).not.toContain('replacement_hash');
+    expect(entry).toContain("'search_path', 'search_path=public, extensions'");
+    // A changed actor gate or missing boundary must not satisfy the exact pin.
+    expect(hash(definition(body!.replace('IF v_uid IS NULL', 'IF FALSE')))).not.toBe(pin);
+    expect(hash(definition(prior))).not.toBe(pin);
+    expect(sql).toContain("IF v_actual_hash <> v_item ->> 'hash'");
+    expect(sql).toContain("RAISE EXCEPTION 'cashier function drift:");
+    expect(sql).toContain("RAISE EXCEPTION 'cashier function ACL drift:");
+    expect(sql).toContain("RAISE EXCEPTION 'cashier function is not SECURITY DEFINER:");
+  });
+
+  it('pins the exact launch refusal for unfinished prior cashier intents', () => {
+    const read = (file: string) =>
+      readFileSync(resolve(__dirname, '../../supabase/migrations', file), 'utf8');
+    const authority = read('20261004124327_cashier_authority_and_retry_keys_are_exact.sql');
+    const body = authority.match(
+      /CREATE FUNCTION public\.fn_cashier_exact_intent_begin\([\s\S]*?AS \$function\$([\s\S]*?)\$function\$/
+    )?.[1];
+    expect(body).toBeDefined();
+    const hash = (value: string) => createHash('md5').update(value).digest('hex');
+    expect(hash(body!)).toBe('3ec6fc367b3dae5c4bf3978d0175ef22');
+    const launch = read('20261012181905_scoped_club_launch_reset_and_guarded_recovery.sql');
+    const intent = launch.slice(launch.indexOf('DO $intent$'), launch.indexOf('END $intent$;'));
+    const decode = (literal: string) => literal.replaceAll("''", "'").replaceAll('\\n', '\n');
+    const needle = decode(intent.match(/needle text:=E'((?:''|[^'])*)'/)![1]);
+    const addition = decode(
+      intent.match(/EXECUTE replace\(original,needle,E'((?:''|[^'])*)'\|\|needle\)/)![1]
+    );
+    expect(body!.split(needle)).toHaveLength(2);
+    const updated = body!.replace(needle, addition + needle);
+    expect(updated.replace(addition, '')).toBe(body);
+    expect(addition).toContain(
+      'fn_ca_launch_accounting_accepts(v_existing.club_id,v_existing.created_at)'
+    );
+    // Completed receipts still replay before the new unfinished-request refusal.
+    expect(updated.indexOf('v_existing.receipt IS NOT NULL')).toBeLessThan(
+      updated.indexOf(addition)
+    );
+    const sql = readPsqlFreeContract();
+    const entry = sql.match(
+      /'public\.fn_cashier_exact_intent_begin\(text,uuid,uuid,jsonb\)',([\s\S]*?)\)/
+    )![1];
+    const pin = entry.match(/'hash', '([a-f0-9]{32})'/)![1];
+    expect(pin).toBe(hash(updated));
+    expect(entry).toContain("'service_execute', false");
+    expect(hash(body!)).not.toBe(pin);
+    expect(
+      hash(updated.replace('actor_user_id IS DISTINCT FROM v_actor', 'actor_user_id IS NOT NULL'))
+    ).not.toBe(pin);
+    expect(sql).toContain("RAISE EXCEPTION 'private cashier function ACL drift:");
+  });
+
   it('requires a database credential without printing it', () => {
     expect(() => databaseConfig({})).toThrow('SUPABASE_DB_PASSWORD or SUPABASE_DB_URL');
     const config = databaseConfig({ SUPABASE_DB_PASSWORD: 'not-logged' });

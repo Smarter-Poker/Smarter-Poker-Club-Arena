@@ -35,6 +35,9 @@ BEGIN
       AND proacl::text='{postgres=X/postgres}' AND proconfig=ARRAY['search_path=public, pg_temp']) THEN
     RAISE EXCEPTION 'PRUNER_FROZEN_ENTRY_AUTHORITY_CHANGED';
   END IF;
+  IF strpos(source,'horse_retention_days')=0 THEN
+    RAISE EXCEPTION 'PRUNER_FROZEN_ENTRY_RETENTION_CONFIG_CHANGED';
+  END IF;
   IF (length(source)-length(replace(source,original_entry,'')))/length(original_entry)<>1 THEN
     RAISE EXCEPTION 'PRUNER_FROZEN_ENTRY_ANCHOR_CHANGED';
   END IF;

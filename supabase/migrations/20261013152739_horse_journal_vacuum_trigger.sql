@@ -1,3 +1,4 @@
+-- @live-proof: EXISTS (SELECT 1 FROM pg_catalog.pg_class c WHERE c.oid=to_regclass('public.horse_adaptive_observation_journal') AND c.relkind='r' AND c.relowner='postgres'::regrole AND c.relrowsecurity AND NOT c.relforcerowsecurity AND NOT EXISTS (SELECT 1 FROM aclexplode(c.relacl) a WHERE a.grantee<>c.relowner) AND EXISTS (SELECT 1 FROM pg_options_to_table(c.reloptions) WHERE option_name='autovacuum_vacuum_threshold' AND option_value='20000') AND EXISTS (SELECT 1 FROM pg_options_to_table(c.reloptions) WHERE option_name='autovacuum_vacuum_scale_factor' AND option_value::numeric=0.02))
 -- Table-only vacuum admission correction, measured on PostgreSQL 17.6.
 -- 2026-10-13 15:24 UTC: 20,031,400 estimated rows, 472,600 dead tuples;
 -- inherited 50 + 20% required 4,006,330 dead tuples before reclamation.

@@ -13,10 +13,10 @@ def qualify(e):
   assert e.sql(db,q,label=label)[1].strip()=='t',label
   checks.append(label)
  original=(ROOT/ORIGINAL).read_text();start=original.index('CREATE TABLE public.horse_adaptive_observation_journal (');end=original.index(');',start)+2
- e.sql(db,original[start:end]+"ALTER TABLE horse_adaptive_observation_journal SET(fillfactor=80,autovacuum_vacuum_cost_delay=3); INSERT INTO horse_adaptive_observation_journal VALUES('fixture:0','11111111-1111-4111-8111-111111111111','actor','session',1,'training','scope','player','immutable native fixture',now());",label='actual-original-table-with-unrelated-options')
+ e.sql(db,original[start:end]+"ALTER TABLE horse_adaptive_observation_journal ENABLE ROW LEVEL SECURITY; ALTER TABLE horse_adaptive_observation_journal SET(fillfactor=80,autovacuum_vacuum_cost_delay=3); INSERT INTO horse_adaptive_observation_journal VALUES('fixture:0','11111111-1111-4111-8111-111111111111','actor','session',1,'training','scope','player','immutable native fixture',now());",label='actual-original-table-with-unrelated-options')
  before=e.sql(db,"SELECT jsonb_build_object('data',(SELECT jsonb_agg(to_jsonb(j)) FROM horse_adaptive_observation_journal j),'owner',relowner,'acl',relacl,'rls',relrowsecurity,'force_rls',relforcerowsecurity)::text FROM pg_class WHERE oid='horse_adaptive_observation_journal'::regclass;",label='retained-before')[1].strip()
  yes("SELECT 50+0.2*20031400>472600;",'fail-before-measured-dead-count-below-default-trigger')
- sql=(ROOT/MIGRATION).read_text();body=sql.replace('BEGIN;','',1).rsplit('COMMIT;',1)[0]
+ sql=(ROOT/MIGRATION).read_text();proof=next(line[len('-- @live-proof: '):] for line in sql.splitlines() if line.startswith('-- @live-proof: '));yes('SELECT NOT ('+proof+');','declared-live-proof-fails-before-correction');body=sql.replace('BEGIN;','',1).rsplit('COMMIT;',1)[0]
  e.sql(db,'BEGIN;'+body+'ROLLBACK;',label='native-change-rollback')
  yes("SELECT reloptions @> ARRAY['fillfactor=80','autovacuum_vacuum_cost_delay=3'] AND cardinality(reloptions)=2 FROM pg_class WHERE oid='horse_adaptive_observation_journal'::regclass;",'rollback-restores-exact-prior-options')
  e.report['journal_owner_is_superuser']=e.sql(db,"SELECT rolsuper FROM pg_roles WHERE rolname=current_user;",label='native-owner-capability')[1].strip()=='t'
@@ -31,6 +31,7 @@ def qualify(e):
  lock.wait(timeout=10);assert lock.returncode==0
  yes("SELECT cardinality(reloptions)=2 FROM pg_class WHERE oid='horse_adaptive_observation_journal'::regclass;",'lock-refusal-retains-prior-options')
  e.sql(db,file=ROOT/MIGRATION,label='qualified-setting-only-forward')
+ yes('SELECT ('+proof+');','declared-live-proof-passes-after-exact-correction')
  yes("SELECT reloptions @> ARRAY['fillfactor=80','autovacuum_vacuum_cost_delay=3','autovacuum_vacuum_threshold=20000','autovacuum_vacuum_scale_factor=0.02'] AND cardinality(reloptions)=4 FROM pg_class WHERE oid='horse_adaptive_observation_journal'::regclass;",'only-two-target-settings-changed')
  yes("SELECT 20000+0.02*20031400=420628 AND 20000+0.02*20031400<472600;",'pass-after-measured-dead-count-exceeds-new-trigger')
  after=e.sql(db,"SELECT jsonb_build_object('data',(SELECT jsonb_agg(to_jsonb(j)) FROM horse_adaptive_observation_journal j),'owner',relowner,'acl',relacl,'rls',relrowsecurity,'force_rls',relforcerowsecurity)::text FROM pg_class WHERE oid='horse_adaptive_observation_journal'::regclass;",label='retained-after')[1].strip()

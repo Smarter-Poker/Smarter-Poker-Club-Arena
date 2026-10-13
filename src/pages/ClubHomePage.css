@@ -3166,3 +3166,17 @@
   }
 }
 
+/* Diamond readout uses two fitted lines in the same approved blank bay. */
+.lobby-bbj__amount--diamonds {
+  flex-direction: column;
+  gap: 0.15em;
+}
+.lobby-bbj__number {
+  display: block;
+  width: max-content;
+  font-size: calc(clamp(0.72rem, 8cqw, 1.55rem) * var(--fit, 1));
+}
+.lobby-bbj__unit {
+  display: block;
+  font-size: 0.65em;
+}

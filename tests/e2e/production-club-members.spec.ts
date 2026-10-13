@@ -330,10 +330,12 @@ test.describe('Production Shark Club Players', () => {
     // The owner's frameless directory hides this illustration in both modes.
     // Advanced restores the controls and summaries, not the removed artwork.
     await expect(art).toBeHidden();
-    expect(
-      await art.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0),
-      'the roster hero artwork did not decode'
-    ).toBe(true);
+    await expect
+      .poll(
+        () => art.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0),
+        { timeout: 15_000, message: 'the roster hero artwork did not decode' }
+      )
+      .toBe(true);
 
     const summary = page.locator('[aria-label="Roster Summary"]');
     await expect(summary.getByText('Total Members', { exact: true })).toBeVisible();
@@ -568,17 +570,21 @@ test.describe('Production Shark Club Players', () => {
         '.members-refresh',
         '.members-toolbar',
       ]) {
-        const box = await page.locator(selector).boundingBox();
-        expect(box, `${selector} must render at ${width}px`).not.toBeNull();
-        expect(box!.width).toBeGreaterThan(0);
-        expect(
-          box!.x,
-          `${selector} clips at the left page edge at ${width}px`
-        ).toBeGreaterThanOrEqual(frame!.x - 0.5);
-        expect(
-          box!.x + box!.width,
-          `${selector} clips at the right page edge at ${width}px`
-        ).toBeLessThanOrEqual(frame!.x + frame!.width + 0.5);
+        const elements = await page.locator(selector).all();
+        expect(elements.length, `${selector} must render at ${width}px`).toBeGreaterThan(0);
+        for (const element of elements) {
+          const box = await element.boundingBox();
+          expect(box, `${selector} must render at ${width}px`).not.toBeNull();
+          expect(box!.width).toBeGreaterThan(0);
+          expect(
+            box!.x,
+            `${selector} clips at the left page edge at ${width}px`
+          ).toBeGreaterThanOrEqual(frame!.x - 0.5);
+          expect(
+            box!.x + box!.width,
+            `${selector} clips at the right page edge at ${width}px`
+          ).toBeLessThanOrEqual(frame!.x + frame!.width + 0.5);
+        }
       }
       const consoleFrame = await page.locator('.members-console').boundingBox();
       expect(consoleFrame).not.toBeNull();

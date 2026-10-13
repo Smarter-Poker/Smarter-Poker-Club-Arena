@@ -2,7 +2,7 @@
 export class SelectionObservationDeadline extends Error {
   constructor(readonly cause: unknown) {
     super(
-      'The selection observation deadline expired before the final health read completed. Current subject availability and stall state are unknown.'
+      'The selection observation deadline expired before the final observation completed. Current subject availability and stall state are unknown.'
     );
     this.name = 'SelectionObservationDeadline';
   }

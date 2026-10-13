@@ -57,6 +57,32 @@ function step(workflow: string, name: string): string {
   return next < 0 ? workflow.slice(at) : workflow.slice(at, next);
 }
 
+describe('live-table certification observes the assigned live Diamond club', () => {
+  it('binds public membership setup, spectator discovery and engine scope to one target', () => {
+    const continuity = step(
+      TABLE_WORKFLOW,
+      'Certify live-table continuity against the exact serving engine'
+    );
+    expect(continuity).toContain('E2E_CLUB_ID: 002c2d27-9584-4e52-835a-bb2be148fc81');
+    expect(GLOBAL_SETUP).toContain(
+      'ensureClubMembership(page, baseURL, process.env.E2E_CLUB_ID || DEFAULT_E2E_CLUB_ID)'
+    );
+    expect(LIVE_TABLE).toContain('const CLUB_ID = process.env.E2E_CLUB_ID ||');
+    expect(LIVE_TABLE).toContain('const CLUB_LOBBY = `clubs/${CLUB_ID}`');
+    expect(LIVE_TABLE).toContain(
+      "url.searchParams.set('liveness_club_ids', [CLUB_ID, UNION_ID].join(','))"
+    );
+    expect(continuity).toContain("E2E_REQUIRE_AUTH: '1'");
+    expect(continuity).toContain('--workers=1 --retries=0');
+    // The broader operator lane keeps its existing independently prepared club.
+    const client = WORKFLOW.slice(
+      WORKFLOW.indexOf('  production-e2e:'),
+      WORKFLOW.indexOf('  live-table-e2e:')
+    );
+    expect(client).not.toContain('E2E_CLUB_ID: 002c2d27-9584-4e52-835a-bb2be148fc81');
+  });
+});
+
 /** Run the checker over throwaway reports and return its exit code. */
 function check(reports: unknown[]): number {
   const dir = mkdtempSync(join(tmpdir(), 'e2e-honesty-'));

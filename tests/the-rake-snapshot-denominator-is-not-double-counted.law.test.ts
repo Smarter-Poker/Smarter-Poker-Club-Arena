@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { functionBody } from './helpers/migrations';
 
 /**
  * THE RAKE SNAPSHOT DENOMINATOR IS NOT DOUBLE-COUNTED (binding)
@@ -48,7 +49,12 @@ function latestDefining(fnName: string): string {
   let found = '';
   for (const f of files) {
     const sql = readFileSync(resolve(MIGRATIONS, f), 'utf8');
-    if (sql.includes(`FUNCTION public.${fnName}(`)) found = sql;
+    if (
+      new RegExp(`CREATE\\s+(?:OR\\s+REPLACE\\s+)?FUNCTION\\s+public\\.${fnName}\\s*\\(`, 'i').test(
+        sql
+      )
+    )
+      found = sql;
   }
   return found;
 }
@@ -60,14 +66,27 @@ function latestDefining(fnName: string): string {
  */
 function body(fnName: string): string {
   const sql = latestDefining(fnName);
-  const start = sql.indexOf(`FUNCTION public.${fnName}(`);
-  if (start < 0) return '';
-  const end = sql.indexOf('$function$;', start);
-  return sql
-    .slice(start, end < 0 ? undefined : end)
+  return functionBody(sql, fnName)
     .split('\n')
     .filter((l) => !l.trimStart().startsWith('--'))
     .join('\n');
+}
+
+/** Literal statements can list several signatures; argument commas are not separators. */
+function accessStatements(sql: string, verb: 'GRANT' | 'REVOKE', fn: string | RegExp): string[] {
+  return [
+    ...sql.matchAll(
+      /\b(GRANT|REVOKE)\s+(?:ALL(?:\s+PRIVILEGES)?|EXECUTE)\s+ON\s+FUNCTION\s+([^;]*?)\s+(?:TO|FROM)\s+([^;]+);/gi
+    ),
+  ]
+    .filter(
+      (m) =>
+        m[1].toUpperCase() === verb &&
+        [...m[2].matchAll(/(?:^|,)\s*(?:public\.)?(\w+)\s*\([^)]*\)/gi)].some((sig) =>
+          typeof fn === 'string' ? sig[1] === fn : fn.test(sig[1])
+        )
+    )
+    .map((m) => m[0]);
 }
 
 describe('the rake snapshot denominator', () => {
@@ -109,20 +128,30 @@ describe('the rake snapshot denominator', () => {
   it('keeps a depth cap on the agent tree recursion', () => {
     // parent_agent_id is a plain uuid column with no cycle constraint. One bad
     // edge without this cap spins until the statement timeout kills the page.
-    const sql = latestDefining('fn_ca_rake_by_agent');
+    const sql = body('fn_ca_rake_by_agent');
     expect(sql).toMatch(/WHERE\s+t\.depth\s*<\s*\d+/);
   });
 
   it('still reports players who have no agent', () => {
     // Dropping them makes the column sum to less than the club total with
     // nothing on screen saying why.
-    const sql = latestDefining('fn_ca_rake_by_agent');
+    const sql = body('fn_ca_rake_by_agent');
     expect(sql).toContain('is_unassigned');
     expect(sql).toMatch(/agent_id IS NULL/);
   });
 });
 
 describe('the rake snapshot grants', () => {
+  it('recognizes each named multi-signature revoke without accepting another helper closure', () => {
+    const sql =
+      'REVOKE EXECUTE ON FUNCTION public.other(uuid),public.target(uuid,text) FROM PUBLIC,anon,authenticated;';
+    expect(accessStatements(sql, 'REVOKE', 'target')).toHaveLength(1);
+    expect(accessStatements(sql, 'REVOKE', 'missing')).toHaveLength(0);
+    expect(accessStatements(sql.replace('EXECUTE', 'ALL'), 'REVOKE', 'target')).toHaveLength(1);
+    expect(
+      accessStatements(sql.replace('REVOKE', 'GRANT').replace('FROM', 'TO'), 'REVOKE', 'target')
+    ).toHaveLength(0);
+  });
   const UNGATED_HELPERS = [
     'fn_ca_rake_window',
     'fn_ca_rake_series',
@@ -134,11 +163,8 @@ describe('the rake snapshot grants', () => {
   it.each(UNGATED_HELPERS)('%s is revoked from authenticated', (fn) => {
     const sql = latestDefining(fn);
     expect(sql, `${fn} has no migration defining it`).not.toBe('');
-    const revokes = sql
-      .split('\n')
-      .join(' ')
-      .match(new RegExp(`REVOKE ALL ON FUNCTION public\\.${fn}\\([^)]*\\)\\s*FROM[^;]*;`, 'g'));
-    expect(revokes, `${fn} is never revoked`).toBeTruthy();
+    const revokes = accessStatements(sql, 'REVOKE', fn);
+    expect(revokes.length, `${fn} is never revoked`).toBeGreaterThan(0);
     expect(revokes!.join(' ')).toContain('authenticated');
   });
 
@@ -150,8 +176,10 @@ describe('the rake snapshot grants', () => {
   });
 
   it('every scope in the entry point checks something before it reads', () => {
-    const sql = latestDefining('ca_rake_snapshot');
-    expect(sql).toContain('ca_can_view_club_finances');
+    const sql = body('ca_rake_snapshot');
+    expect(sql).toContain('ca_can_read_club_production(p_club_id)');
+    // The production-scope gate delegates the original financial permission.
+    expect(body('ca_can_read_club_production')).toContain('ca_can_view_club_finances(p_club_id)');
     expect(sql).toContain('ca_can_oversee_union');
     // The agent scope delegates its gate rather than duplicating it.
     expect(sql).toContain('fn_agent_downline_rake');
@@ -159,7 +187,7 @@ describe('the rake snapshot grants', () => {
 
   it('no migration ever grants a rake helper to anon', () => {
     for (const sql of migrationsMentioning('fn_ca_rake_')) {
-      const grants = sql.match(/GRANT EXECUTE ON FUNCTION public\.fn_ca_rake_[^;]*;/g) ?? [];
+      const grants = accessStatements(sql, 'GRANT', /^fn_ca_rake_/);
       for (const g of grants) expect(g).not.toContain('anon');
     }
   });
@@ -188,16 +216,14 @@ describe('the rake snapshot grants', () => {
     const closedAfter = new Map<string, string[]>();
     for (const f of files) {
       const sql = readFileSync(resolve(MIGRATIONS, f), 'utf8');
-      for (const g of sql.match(/GRANT EXECUTE ON FUNCTION public\.(fn_ca_rake_\w+)[^;]*;/g) ??
-        []) {
-        if (!/\bauthenticated\b/.test(g)) continue;
-        const fn = /public\.(fn_ca_rake_\w+)/.exec(g)![1];
-        if (!opened.has(fn)) opened.set(fn, f);
-      }
-      for (const r of sql.match(/REVOKE ALL ON FUNCTION public\.(fn_ca_rake_\w+)[^;]*;/g) ?? []) {
-        if (!/\bauthenticated\b/.test(r)) continue;
-        const fn = /public\.(fn_ca_rake_\w+)/.exec(r)![1];
-        closedAfter.set(fn, [...(closedAfter.get(fn) ?? []), f]);
+      const helperNames = [...sql.matchAll(/public\.(fn_ca_rake_\w+)\s*\(/g)].map((m) => m[1]);
+      for (const fn of new Set(helperNames)) {
+        for (const g of accessStatements(sql, 'GRANT', fn)) {
+          if (/\bauthenticated\b/.test(g) && !opened.has(fn)) opened.set(fn, f);
+        }
+        for (const r of accessStatements(sql, 'REVOKE', fn)) {
+          if (/\bauthenticated\b/.test(r)) closedAfter.set(fn, [...(closedAfter.get(fn) ?? []), f]);
+        }
       }
     }
     for (const [fn, openedIn] of opened) {

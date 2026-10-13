@@ -189,11 +189,43 @@ if (minute >= 50 || minute <= 3) {
 const CONN = process.env.DATABASE_URL;
 if (!CONN) unknown('DATABASE_URL is not set');
 
+// TLS verification is explicit and cannot be disabled by URL parameters.
+// CA material is public provider trust, never a copied password or token.
+let connectionURL;
+try {
+  connectionURL = new URL(CONN);
+} catch {
+  unknown('configured database connection syntax is invalid');
+}
+if (!['postgres:', 'postgresql:'].includes(connectionURL.protocol))
+  refused('database connection protocol is invalid');
+if (connectionURL.searchParams.has('sslcert') || connectionURL.searchParams.has('sslkey'))
+  refused('client-certificate transport requires its maintained qualified route');
+const sslRoot =
+  argValue('--ssl-root-cert') ||
+  process.env.PGSSLROOTCERT ||
+  connectionURL.searchParams.get('sslrootcert') ||
+  'system';
+let ssl = { rejectUnauthorized: true };
+if (sslRoot !== 'system') {
+  try {
+    ssl.ca = readFileSync(sslRoot, 'utf8');
+  } catch {
+    unknown('configured provider CA certificate is unavailable');
+  }
+}
+for (const key of ['sslmode', 'ssl', 'sslrootcert']) connectionURL.searchParams.delete(key);
 const { default: pg } = await import('pg');
 const client = new pg.Client({
-  connectionString: CONN,
+  connectionString: connectionURL.toString(),
+  ssl,
   application_name: 'apply-recorded-migration',
 });
+client.on('error', () =>
+  unknown(
+    'database transport disconnected; inspect exact durable migration history and postimages before another attempt'
+  )
+);
 
 try {
   await client.connect();
@@ -419,51 +451,72 @@ for (const ix of preamble) {
   console.log(`[apply]   ${ix.name} valid (${Date.now() - t0}ms)`);
 }
 
+// Keep exact file bytes in history inside the SAME owning transaction as
+// schema installation. A transport failure can then only have an all-or-none
+// durable outcome, resolved by readback rather than migration replay.
+const historyTag = '$ca_file_history_' + version + '$';
+if (sql.includes(historyTag) || sql.includes('$ca_atomic_history_guard$'))
+  refused('migration conflicts with the reserved history literal delimiter');
+const exactSQLLiteral = historyTag + sql + historyTag;
+const historyStatement = `
+INSERT INTO supabase_migrations.schema_migrations(version,name,statements)
+VALUES ('${version}','${slug}',ARRAY[${exactSQLLiteral}::text]);
+DO $ca_atomic_history_guard$ BEGIN
+ IF NOT EXISTS(SELECT 1 FROM supabase_migrations.schema_migrations WHERE version='${version}' AND name='${slug}' AND statements=ARRAY[${exactSQLLiteral}::text]) THEN
+  RAISE EXCEPTION 'atomic migration history does not match the exact source file';
+ END IF;
+END $ca_atomic_history_guard$;
+`;
+const transactionBody = preamble.length > 0 ? shape.body : sql;
+const atomicSQL = transactionBody.replace(/COMMIT\s*;\s*$/i, () => historyStatement + '\nCOMMIT;');
+if (atomicSQL === transactionBody)
+  refused('atomic migration history could not bind the final COMMIT');
 const started = Date.now();
 try {
   // With no preamble this is the whole file, exactly as before.
-  await client.query(preamble.length > 0 ? shape.body : sql);
+  await client.query(atomicSQL);
 } catch (e) {
   await client.end().catch(() => {});
-  console.error(`[apply] the migration did not commit after ${Date.now() - started}ms`);
+  const definiteRefusal =
+    e.code &&
+    /^[0-9A-Z]{5}$/.test(e.code) &&
+    !e.code.startsWith('08') &&
+    !['57P01', '57P02', '57P03'].includes(e.code);
+  console.error(
+    `[apply] ${definiteRefusal ? 'REFUSED' : 'UNKNOWN'} after ${Date.now() - started}ms`
+  );
   console.error(`[apply] ${e.severity || 'ERROR'} ${e.code || ''}: ${e.message}`);
   if (e.detail) console.error(`[apply] DETAIL: ${e.detail}`);
   if (e.hint) console.error(`[apply] HINT: ${e.hint}`);
   if (e.where) console.error(`[apply] WHERE: ${e.where}`);
   console.error(
-    '[apply] The transaction rolled back. Read the error; do not re-dispatch in a loop.'
+    definiteRefusal
+      ? '[apply] Database refused the transaction; inspect before another explicit attempt.'
+      : '[apply] Durable outcome UNKNOWN; read exact atomic history and postimages before any possible retry.'
   );
-  process.exit(EXIT_REFUSED);
+  process.exit(definiteRefusal ? EXIT_REFUSED : EXIT_UNKNOWN);
 }
 console.log(`[apply] committed in ${Date.now() - started}ms`);
 
-// Record it under the FILE's version, not the apply time. Supabase's own
-// transport stamps history rows with the moment of application, which is why
-// check-migrations-are-live.mjs has to match on name rather than version (see
-// its header). Recording the true version keeps the repo and the history
-// answering the same question.
+// History was committed atomically. This step is read-only; never insert or
+// re-apply after an unknown transport outcome.
 try {
-  await client.query(
-    `INSERT INTO supabase_migrations.schema_migrations (version, name, statements)
-     VALUES ($1, $2, ARRAY[$3::text])
-     ON CONFLICT (version) DO NOTHING`,
-    [version, slug, sql]
-  );
   const { rows } = await client.query(
-    'SELECT version, name FROM supabase_migrations.schema_migrations WHERE version = $1',
+    'SELECT version,name,statements FROM supabase_migrations.schema_migrations WHERE version=$1',
     [version]
   );
-  if (rows.length !== 1) {
-    console.error('[apply] APPLIED, but the history row is not readable back.');
-    await client.end().catch(() => {});
-    process.exit(EXIT_REFUSED);
-  }
+  if (
+    rows.length !== 1 ||
+    rows[0].name !== slug ||
+    !Array.isArray(rows[0].statements) ||
+    rows[0].statements.length !== 1 ||
+    rows[0].statements[0] !== sql
+  )
+    unknown('migration sent; exact atomic history readback is unavailable or mismatched');
   console.log(`[apply] recorded version=${rows[0].version} name=${rows[0].name}`);
-} catch (e) {
-  console.error(`[apply] APPLIED, but recording the history row failed: ${e.message}`);
-  console.error('[apply] The schema change is committed and must NOT be applied again.');
+} catch {
   await client.end().catch(() => {});
-  process.exit(EXIT_REFUSED);
+  unknown('migration sent; read durable atomic history before another attempt');
 }
 
 console.log('[apply] APPLIED');

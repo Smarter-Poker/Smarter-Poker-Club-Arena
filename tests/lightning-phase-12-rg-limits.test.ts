@@ -191,13 +191,13 @@ describe('the proof harness and CI', () => {
     expect(HARNESS).toContain('20261008161509_lightning_phase_11_integrity_telemetry');
     expect(HARNESS).toContain('PASS: Lightning Phase 12 RG limits');
   });
-  it('CI runs the harness on shard 1 after the Phase 11 step', () => {
+  it('CI runs the harness on shard 3 after the Phase 11 step', () => {
     const p11 = CI.indexOf('test-lightning-phase11-integrity-shadow.sh');
     const p12 = CI.indexOf('test-lightning-phase12-rg-limits.sh');
     expect(p11).toBeGreaterThan(0);
     expect(p12).toBeGreaterThan(p11);
     const step = CI.slice(CI.lastIndexOf('- name:', p12), p12);
-    expect(step).toContain('if: matrix.shard == 1');
+    expect(step).toContain('if: matrix.shard == 3');
     expect(step).toContain('PG_BIN: /usr/lib/postgresql/17/bin');
   });
   it('the schema manifest fragment promises the two rewritten doors and no table or column', () => {

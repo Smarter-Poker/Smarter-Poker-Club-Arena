@@ -1,3 +1,4 @@
+import { functionBody } from './helpers/migrations';
 import { describe, expect, it } from 'vitest';
 import { migrationCorpus, migrationsMentioning } from './helpers/migrationCorpus';
 
@@ -59,9 +60,10 @@ function body(fnName: string): string {
   const sql = latestDefining(fnName);
   const start = sql.indexOf(`FUNCTION public.${fnName}(`);
   if (start < 0) return '';
-  const end = sql.indexOf('$function$;', start);
-  return sql
-    .slice(start, end < 0 ? undefined : end)
+  const namedBody = functionBody(sql, fnName);
+  const bodyStart = sql.indexOf(namedBody, start);
+  if (bodyStart < 0) throw new Error(`${fnName} body does not match its declaration`);
+  return (sql.slice(start, bodyStart) + namedBody)
     .split('\n')
     .filter((l) => !l.trimStart().startsWith('--'))
     .join('\n');

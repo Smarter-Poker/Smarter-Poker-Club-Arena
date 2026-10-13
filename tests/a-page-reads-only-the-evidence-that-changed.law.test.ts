@@ -24,7 +24,13 @@
  * Native proof: tests/fixtures/union-weekly-basis/page-evidence-regression.sql.
  */
 import { describe, it, expect } from 'vitest';
-import { latestDeclaring, functionBody, migrationFiles, readMigration } from './helpers/migrations';
+import {
+  latestDeclaring,
+  latestNamed,
+  functionBody,
+  migrationFiles,
+  readMigration,
+} from './helpers/migrations';
 
 const CALC = 'fn_calculate_cash_rakeback_periods';
 const HELPER = 'fn_cash_period_evidence_since';
@@ -83,6 +89,20 @@ function pageSegment(body: string): string {
 
 export function wholePeriodViolations(body: string, before: string): string[] {
   const out: string[] = [];
+  // Delimiters are SQL syntax, not calculator bytes. The only later admitted
+  // change is the exact launch window floor already independently qualified.
+  body = body.replace(/^\$\w*\$/, '');
+  before = before.replace(/^\$\w*\$/, '');
+  const launch = " v_from:=public.fn_ca_launch_accounting_start('club',p_club_id,v_from);\n";
+  if (body.includes(launch)) {
+    const placement =
+      " v_to:=(p_period_end+1)::timestamp AT TIME ZONE 'America/Los_Angeles';\n" +
+      launch +
+      ' SELECT starts_at INTO cutover';
+    if (body.split(launch).length !== 2 || !body.includes(placement))
+      out.push('the launch floor is not the exact single window-boundary assignment');
+    body = body.replace(launch, '');
+  }
   const segment = wholePeriodSegment(before);
   if (!segment) return ['the predecessor has no whole-period segment to compare'];
   if (!body.includes(' IF p_user_ids IS NULL THEN\n' + segment + ' ELSE\n'))
@@ -240,10 +260,12 @@ describe('a page recompute reads only the evidence that changed', () => {
   const { name, sql } = latestDeclaring(CALC);
   const body = functionBody(sql, CALC);
   const before = predecessorBody();
+  const origin = latestNamed('_a_page_recompute_reads_only_changed_evidence_rederived');
 
   it('the live definition is the one that carries the checkpoint', () => {
     expect(name >= '20260927160709', `${CALC} is declared last by ${name}`).toBe(true);
-    expect(latestDeclaring(HELPER).name).toBe(name);
+    expect(latestDeclaring(HELPER).name <= name).toBe(true);
+    expect(latestDeclaring(HELPER).name >= '20260927160709').toBe(true);
   });
   it('keeps the whole-period verification and the certificate loop byte for byte', () => {
     expect(wholePeriodViolations(body, before)).toEqual([]);
@@ -258,21 +280,36 @@ describe('a page recompute reads only the evidence that changed', () => {
     expect(horizonViolations(functionBody(latestDeclaring(HORIZON).sql, HORIZON))).toEqual([]);
   });
   it('enforces the two facts it rests on where they are written', () => {
-    expect(sql).toMatch(
+    expect(origin.sql).toMatch(
       /CREATE TRIGGER accounting_cash_batch_is_placed_in_time BEFORE INSERT ON public\.accounting_cash_accrual_batches/
     );
-    expect(sql).toMatch(
+    expect(origin.sql).toMatch(
       /CREATE TRIGGER accounting_cash_source_matches_its_batch BEFORE INSERT ON public\.accounting_cash_rake_sources/
     );
-    expect(sql).toMatch(/NEW\.recorded_at<now\(\)/);
-    expect(sql).toMatch(/r\.created_at=NEW\.earned_at/);
-    expect(sql).toMatch(/b\.earned_at=NEW\.earned_at/);
+    expect(
+      functionBody(
+        latestDeclaring('fn_accounting_cash_batch_is_placed_in_time').sql,
+        'fn_accounting_cash_batch_is_placed_in_time'
+      )
+    ).toMatch(/NEW\.recorded_at<now\(\)/);
+    expect(
+      functionBody(
+        latestDeclaring('fn_accounting_cash_batch_is_placed_in_time').sql,
+        'fn_accounting_cash_batch_is_placed_in_time'
+      )
+    ).toMatch(/r\.created_at=NEW\.earned_at/);
+    expect(
+      functionBody(
+        latestDeclaring('fn_accounting_cash_source_matches_its_batch').sql,
+        'fn_accounting_cash_source_matches_its_batch'
+      )
+    ).toMatch(/b\.earned_at=NEW\.earned_at/);
   });
   it('carries its measurements, preimage and postimage', () => {
     // The preimage is the live body (20260926042810 + 20260927155651 step 3c).
-    expect(sql).toMatch(/md5\(p\.prosrc\)='adea66332439cb1c0071f37ce12165b9'/);
-    expect(sql).toMatch(/md5\(prosrc\)='[0-9a-f]{32}'/);
-    expect(sql).toMatch(/60,276 ms/);
+    expect(origin.sql).toMatch(/md5\(p\.prosrc\)='adea66332439cb1c0071f37ce12165b9'/);
+    expect(origin.sql).toMatch(/md5\(prosrc\)='[0-9a-f]{32}'/);
+    expect(origin.sql).toMatch(/60,276 ms/);
   });
 
   // Planted regressions: each is a way the page could stop being exact, and
@@ -317,6 +354,21 @@ describe('a page recompute reads only the evidence that changed', () => {
     const moved = body.replace(page, gateLine + page.slice(0, page.length - gateLine.length));
     expect(pagePathViolations(moved)).toContain(
       'cash_earning_evidence_incomplete is decided after the gate'
+    );
+  });
+  it('does not excuse any launch-window expression besides the qualified single assignment', () => {
+    const floor = " v_from:=public.fn_ca_launch_accounting_start('club',p_club_id,v_from);\n";
+    expect(body).toContain(floor);
+    expect(wholePeriodViolations(plant(body, floor, floor + floor), before)).toContain(
+      'the launch floor is not the exact single window-boundary assignment'
+    );
+    expect(
+      wholePeriodViolations(
+        plant(body, floor, floor.replace('p_club_id,v_from', 'p_club_id,v_to')),
+        before
+      )
+    ).toContain(
+      'something outside the page branch changed (the certificate loop must be untouched)'
     );
   });
   it('refuses a changed whole-period path', () => {

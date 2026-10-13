@@ -2,8 +2,8 @@
   "scope": "Exact cash17 source/installer public-safe enforcement; private actual17 connected financial evidence external only, no production installation or ownership inferred.",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 219700,
-      "sha256": "8716d2d184b824c542069f47d4f542bbbdb71f3246ed2b4b3f9ba07885b62002"
+      "bytes": 219962,
+      "sha256": "39d2b0e21fa5a453c0e3aa226b3eeabba7a2eff2ac15e11b531162ca3a413469"
     },
     "scripts/ci/satellite_qualifier_fixture.py": {
       "bytes": 18466,
@@ -289,5 +289,12 @@
       "bytes": 45098,
       "sha256": "0c3c357e106b6daf5461587e707e63d47260837870a7fb423d2f4fdd00b339bd"
     }
+  },
+  "satelliteCiIntegration20261013": {
+    "previousWorkflowPin": {
+      "bytes": 219700,
+      "sha256": "8716d2d184b824c542069f47d4f542bbbdb71f3246ed2b4b3f9ba07885b62002"
+    },
+    "reason": "Reviewed additive six-line Accounting4 satellite cohort qualification. Existing cash17 enforcement, artifacts, financial assertions, SQL and qualification scope remain unchanged. Current workflow fingerprint only, not cash17 native or production proof."
   }
 }

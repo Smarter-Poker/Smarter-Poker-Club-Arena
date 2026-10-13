@@ -3279,6 +3279,8 @@ function LiveTablePage({
 
   // Deal Animation State — triggers card dealing visual at start of new hand
   const [dealAnimationKey, setDealAnimationKey] = useState(0);
+  // Diagnostic identity follows the timer that produced this deal key, not a later store hand.
+  const dealPresentationHandRef = useRef(0);
   /**
    * THE BUTTON BEAT (Dan 2026-08-27): "...PAUSE 1 SECOND, MOVE THE BUTTON
    * ANIMATION... START DEALING NEXT HAND." The dealer puck's new seat arrives
@@ -7405,6 +7407,7 @@ function LiveTablePage({
       dealStartTimerRef.current = setTimeout(
         () => {
           dealStartTimerRef.current = null;
+          dealPresentationHandRef.current = handNumber;
           observeDealPresentationTiming({ handNumber, phase: 'timer-fired' });
           setDealAnimationKey((k) => k + 1);
           setIsSeatDealing(true);
@@ -25722,7 +25725,7 @@ function LiveTablePage({
           {dealAnimationKey > 0 && (
             <DealAnimation
               key={dealAnimationKey}
-              handNumber={tableState.handNumber}
+              handNumber={dealPresentationHandRef.current}
               active={true}
               /* Dan 2026-08-21 (item 14): "cards actually dealt to ALL the
                  players to start a new hand." The `status !== 'folded'` test

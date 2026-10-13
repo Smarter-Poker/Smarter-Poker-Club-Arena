@@ -1,3 +1,4 @@
+import { installLiveTablePresentationJournal } from '../e2e/support/liveTableRealtime';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -5,6 +6,9 @@ import {
   observeDealPresentationTiming,
   DEAL_PRESENTATION_TIMING_EVENT,
 } from '../../src/utils/dealPresentationTiming';
+
+// The serialized journal callback needs DOM APIs, not a Playwright runner/browser.
+vi.mock('@playwright/test', () => ({ expect: {} }));
 
 afterEach(() => {
   delete (window as any).__spObserveDealPresentationTiming;
@@ -50,10 +54,56 @@ describe('the diagnostic cannot certify a late animation as on time', () => {
     const journal = read('tests/e2e/support/liveTableRealtime.ts');
     expect(journal).toContain('if (count >= 8) return');
     expect(journal).toContain('handCounts.size >= 8');
-    expect(journal).toContain('stopTiming()');
+    expect(journal).toContain('stopTiming?.()');
     const page = read('src/pages/TablePage.tsx');
     expect(page).toContain("phase: 'scheduled'");
     expect(page).toContain("phase: 'timer-fired'");
-    expect(page).toContain('handNumber={tableState.handNumber}');
+    expect(page).toContain('handNumber={dealPresentationHandRef.current}');
+    expect(page).toContain('dealPresentationHandRef.current = handNumber;');
+  });
+});
+
+describe('the actual certificate journal has one transient timing listener', () => {
+  const target = window as any;
+  const page = { evaluate: async (callback: () => unknown) => callback() } as any;
+  afterEach(() => {
+    target.__spLiveTablePresentation?.stopTiming?.();
+    target.__spLiveTablePresentation?.observer.disconnect();
+    delete target.__spLiveTablePresentation;
+  });
+  it('replaces its listener, tolerates an older observer and clears opt-in on stop', async () => {
+    const oldObserver = { disconnect: vi.fn() };
+    target.__spLiveTablePresentation = { observer: oldObserver };
+    await installLiveTablePresentationJournal(page);
+    expect(oldObserver.disconnect).toHaveBeenCalledOnce();
+    const prior = target.__spLiveTablePresentation;
+    observeDealPresentationTiming({ handNumber: 100, phase: 'scheduled' });
+    expect(prior.records.filter((r: any) => r.kind === 'presentation-timing')).toHaveLength(1);
+    await installLiveTablePresentationJournal(page);
+    observeDealPresentationTiming({ handNumber: 101, phase: 'scheduled' });
+    expect(prior.records.filter((r: any) => r.kind === 'presentation-timing')).toHaveLength(1);
+    expect(
+      target.__spLiveTablePresentation.records.filter((r: any) => r.kind === 'presentation-timing')
+    ).toHaveLength(1);
+    target.__spLiveTablePresentation.stopTiming();
+    observeDealPresentationTiming({ handNumber: 102, phase: 'scheduled' });
+    expect(target.__spObserveDealPresentationTiming).toBeUndefined();
+    expect(
+      target.__spLiveTablePresentation.records.filter((r: any) => r.kind === 'presentation-timing')
+    ).toHaveLength(1);
+  });
+  it('bounds diagnostic records while retaining the original DOM witness', async () => {
+    document.body.innerHTML =
+      '<div class="deal-animation"><i class="deal-animation__card"></i></div>';
+    await installLiveTablePresentationJournal(page);
+    for (let handNumber = 1; handNumber <= 10; handNumber++) {
+      for (let i = 0; i < 12; i++)
+        observeDealPresentationTiming({ handNumber, phase: 'geometry-wait' });
+    }
+    const records = target.__spLiveTablePresentation.records;
+    expect(records.filter((r: any) => r.kind === 'presentation-timing')).toHaveLength(64);
+    expect(records.some((r: any) => r.kind === 'deal-animation')).toBe(true);
+    expect(records.filter((r: any) => r.timing?.handNumber === 1)).toHaveLength(0);
+    document.body.innerHTML = '';
   });
 });

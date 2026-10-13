@@ -474,7 +474,7 @@ export async function installLiveTablePresentationJournal(page: Page): Promise<v
       __spObserveDealPresentationTiming?: boolean;
     };
     browserWindow.__spLiveTablePresentation?.observer.disconnect();
-    browserWindow.__spLiveTablePresentation?.stopTiming();
+    browserWindow.__spLiveTablePresentation?.stopTiming?.();
 
     const handText = () =>
       document.querySelector('.header-hand-number, .table-brand__hand')?.textContent?.trim() || '';

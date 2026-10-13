@@ -327,10 +327,11 @@ describe('opt-in deal timing observes the original geometry transition', () => {
     );
     expect(dealCards(view.container)).toHaveLength(0);
     expect(observed.map((x) => x.phase)).toEqual(['run-effect', 'geometry-wait']);
+    // A later store hand cannot relabel the pending run's captured source hand.
     view.rerender(
       <DealAnimation
         active
-        handNumber={88}
+        handNumber={99}
         dealKey={88}
         activeSeats={SIX}
         dealerSeatIndex={0}

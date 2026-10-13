@@ -47,7 +47,7 @@ export async function readPublisherJobs(
       try {
         payload = await request(
           `repos/${repository}/actions/runs/${runId}/jobs?filter=latest&per_page=30&page=${page}`,
-          Math.min(8_000, remaining)
+          remaining
         );
         break;
       } catch (error) {

@@ -23,7 +23,13 @@ const USER_ID = '2b1b6a4e-3a5c-4f9f-9c07-9d1f2a7c5e11';
 const { rpcMock } = vi.hoisted(() => ({ rpcMock: vi.fn() }));
 
 vi.mock('../../src/lib/supabase', () => ({
-  supabase: { rpc: rpcMock, from: vi.fn() },
+  supabase: {
+    rpc: (...args: unknown[]) => {
+      const response = rpcMock(...args);
+      return Object.assign(response, { abortSignal: (_signal: AbortSignal) => response });
+    },
+    from: vi.fn(),
+  },
 }));
 vi.mock('../../src/hooks/useMasterBusSubscription', () => ({
   useMasterBusSubscriptions: () => {},

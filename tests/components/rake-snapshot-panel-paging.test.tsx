@@ -27,7 +27,13 @@ const { rpcMock, bus } = vi.hoisted(() => ({
 }));
 
 vi.mock('../../src/lib/supabase', () => ({
-  supabase: { rpc: rpcMock, from: vi.fn() },
+  supabase: {
+    rpc: (...args: unknown[]) => {
+      const response = rpcMock(...args);
+      return Object.assign(response, { abortSignal: (_signal: AbortSignal) => response });
+    },
+    from: vi.fn(),
+  },
 }));
 
 vi.mock('../../src/hooks/useMasterBusSubscription', () => ({

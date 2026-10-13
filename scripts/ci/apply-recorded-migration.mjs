@@ -70,7 +70,6 @@ import {
 
 import { batchRequest, applyFinalTablePages } from './final-table-cleanup-batches.mjs';
 import { withSettlementLane } from './settlement-lane.mjs';
-import { rakeReportRequest, qualifyRakeReportHistory } from './rake-report-history-baseline.mjs';
 
 const DIR = 'supabase/migrations';
 const args = process.argv.slice(2);
@@ -155,9 +154,14 @@ try {
   refused(e.message);
 }
 
-let rakeHistory;
+let rakeHistory = false;
+let qualifyRakeReportHistory;
 try {
-  rakeHistory = rakeReportRequest(file, args.includes('--qualify-rake-report-history'), recovery, batches);
+  if (args.includes('--qualify-rake-report-history')) {
+    const report = await import('./rake-report-history-baseline.mjs');
+    rakeHistory = report.rakeReportRequest(file, true, recovery, batches);
+    qualifyRakeReportHistory = report.qualifyRakeReportHistory;
+  }
 } catch (e) {
   refused(e.message);
 }

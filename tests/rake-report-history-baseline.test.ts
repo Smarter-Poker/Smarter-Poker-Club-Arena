@@ -115,5 +115,14 @@ describe('explicit rake report history qualification', () => {
     expect(workflow).toContain('recovery_args+=(--qualify-rake-report-history)');
     expect(workflow).toContain('qualify_rake_report_history:');
     expect(workflow).not.toContain('schedule:');
+    expect(script).not.toContain('import { rakeReportRequest, qualifyRakeReportHistory }');
+    expect(script).toContain("if (args.includes('--qualify-rake-report-history'))");
+    expect(script).toContain("await import('./rake-report-history-baseline.mjs')");
+    const ci = readFileSync('.github/workflows/ci.yml', 'utf8');
+    const nativeStep = ci
+      .split('- name: Data console native PostgreSQL contracts')[1]
+      .split('- name:')[0];
+    expect(nativeStep).toContain('npm ci --ignore-scripts --no-audit --no-fund');
+    expect(nativeStep).toContain('npm run test:data:postgres');
   });
 });

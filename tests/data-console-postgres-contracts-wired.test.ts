@@ -40,8 +40,11 @@ describe('Data console PostgreSQL contracts stay in the required CI verdict', ()
       'bash scripts/ci/test-data-console-postgres-contracts.sh'
     );
     expect(workflow.split('name: Data console native PostgreSQL contracts')).toHaveLength(2);
-    expect(workflow).toMatch(
-      /name: Data console native PostgreSQL contracts[\s\S]*?if: matrix\.shard == 2[\s\S]*?PG17_BINDIR: \/usr\/lib\/postgresql\/17\/bin[\s\S]*?STATS_PG_SCRATCH_PARENT: \$\{\{ runner\.temp \}\}[\s\S]*?run: npm run test:data:postgres/
+    const step = workflow
+      .split('name: Data console native PostgreSQL contracts')[1]
+      .split(/^\s*- name:/m)[0];
+    expect(step).toMatch(
+      /if: matrix\.shard == 2[\s\S]*?PG17_BINDIR: \/usr\/lib\/postgresql\/17\/bin[\s\S]*?STATS_PG_SCRATCH_PARENT: \$\{\{ runner\.temp \}\}[\s\S]*?run: \|[\s\S]*?set -euo pipefail[\s\S]*?npm ci --ignore-scripts --no-audit --no-fund[\s\S]*?npm run test:data:postgres/
     );
   });
 

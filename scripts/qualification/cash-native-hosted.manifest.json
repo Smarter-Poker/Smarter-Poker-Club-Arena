@@ -166,8 +166,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 220644,
-      "sha256": "f10e4911a8c6211b32f683d607805fe3fef618847dee55917db2fe691f52cef6"
+      "bytes": 220818,
+      "sha256": "7ffedd3a97ab6fc00bffaa345ade644d27f725d7aab39d25bdd8ded207c99d25"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -3227,7 +3227,7 @@
     }
   },
   "rakeReportNativeRouting20261013": {
-    "scope": "Add rake report fixtures and their native installer regression to the existing Data Console classification; original cash qualification predicates and financial sources are unchanged.",
+    "scope": "Add rake report fixtures and their native installer regression to the existing Data Console classification; original cash qualification predicates and financial sources are unchanged. The existing Data Console native job installs the root locked pg closure required by its real installer fixture.",
     "inputs": {
       "scripts/ci/classify-ci-changes.mjs": {
         "before": {
@@ -3237,6 +3237,16 @@
         "after": {
           "bytes": 36641,
           "sha256": "1efea12fa21d047ecaf19cbd56e23d65f47897f2af5e66ca89c7466552e4571d"
+        }
+      },
+      ".github/workflows/ci.yml": {
+        "before": {
+          "bytes": 220644,
+          "sha256": "f10e4911a8c6211b32f683d607805fe3fef618847dee55917db2fe691f52cef6"
+        },
+        "after": {
+          "bytes": 220818,
+          "sha256": "7ffedd3a97ab6fc00bffaa345ade644d27f725d7aab39d25bdd8ded207c99d25"
         }
       }
     },

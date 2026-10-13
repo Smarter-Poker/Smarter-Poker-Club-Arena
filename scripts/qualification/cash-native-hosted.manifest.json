@@ -166,16 +166,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 215085,
-      "sha256": "1e0061091e2adfc86cc624fb1bb823cb4c6f621ccdadee1d6be90ae7ee12f780"
+      "bytes": 215778,
+      "sha256": "cc4106f702797576c38252c123f4ea3243750cc7960359756e498985777ca3e4"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 36549,
-      "sha256": "0a3d601b0ad79dbd6340f207ce3b0bdbe234a9c282e7e49e024b0bb89abbadd5"
+      "bytes": 36585,
+      "sha256": "f69cf7c2955f8a2f792d0936b0478598e88438677c12088513ca4393a50754b2"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -270,8 +270,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 110992,
-      "sha256": "b7d700836f7d4a4d19df0b2321b9d5fb743d9e5f5645f30ae40e66bda79afb51"
+      "bytes": 111125,
+      "sha256": "821a94ed8fcbf822dc831479e81b20a724039d85c1311f352d216fd6d1264f76"
     }
   },
   "nativePgCron": {
@@ -3129,6 +3129,41 @@
     "currentWorkflowPin": {
       "bytes": 215085,
       "sha256": "1e0061091e2adfc86cc624fb1bb823cb4c6f621ccdadee1d6be90ae7ee12f780"
+    }
+  },
+  "scopedLaunchPolicyLockOrder20261013": {
+    "reason": "Add required actual old-provider policy-lock regression to existing scoped reset accounting1; minimal PG17 compiler/header readiness and explicit classifier path. Preserve all peer inventory/Diamond routing, financial SQL/assertions, historical audit records and qualification states. Current input identity only; not financial certification or installation.",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 215085,
+          "sha256": "1e0061091e2adfc86cc624fb1bb823cb4c6f621ccdadee1d6be90ae7ee12f780"
+        },
+        "current": {
+          "bytes": 215778,
+          "sha256": "cc4106f702797576c38252c123f4ea3243750cc7960359756e498985777ca3e4"
+        }
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "previous": {
+          "bytes": 36549,
+          "sha256": "0a3d601b0ad79dbd6340f207ce3b0bdbe234a9c282e7e49e024b0bb89abbadd5"
+        },
+        "current": {
+          "bytes": 36585,
+          "sha256": "f69cf7c2955f8a2f792d0936b0478598e88438677c12088513ca4393a50754b2"
+        }
+      },
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "previous": {
+          "bytes": 110992,
+          "sha256": "b7d700836f7d4a4d19df0b2321b9d5fb743d9e5f5645f30ae40e66bda79afb51"
+        },
+        "current": {
+          "bytes": 111125,
+          "sha256": "821a94ed8fcbf822dc831479e81b20a724039d85c1311f352d216fd6d1264f76"
+        }
+      }
     }
   }
 }

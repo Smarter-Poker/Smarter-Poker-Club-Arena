@@ -15,7 +15,7 @@
     "tests/fixtures/earlybird-fee-custody/credit-originals.json": "76b7a6152c538bd051754e0a17106a14e86458968132bea26f03c339ad77b439",
     "supabase/migrations/20260918122532_five_original_spin_standings_retain_their_recorded_cash_outc.sql": "9f6e0b02abea54394d317c6d20f8e47ae10edefc9ba6c12f6542c23daf4540c4",
     ".prettierignore": "4b3e2f36fddf7498665cf2a3bada347614dd73cfde793f9ab27aad1f38d88c08",
-    "tests/unit/fixtureNativeCi.test.ts": "b7d700836f7d4a4d19df0b2321b9d5fb743d9e5f5645f30ae40e66bda79afb51",
+    "tests/unit/fixtureNativeCi.test.ts": "821a94ed8fcbf822dc831479e81b20a724039d85c1311f352d216fd6d1264f76",
     "tests/fixtures/earlybird-fee-custody/README.md": "ae19f37a0179956d0d26c64f626fa401c10b4319f0d7d8453f8993d811e98536"
   },
   "restamp_audit": [
@@ -373,5 +373,11 @@
         "incoming": "fb94dda014bd29ec71e87a50affd1049df971691e6d1da7469948e74ad50fc62"
       }
     }
+  },
+  "scopedLaunchPolicyLockOrder20261013": {
+    "reason": "Required scoped provider-hook fixture builds only on accounting1; keep accounting2 runtime-only and all existing runtime-missing/refusal assertions. Reviewed readiness contract matches minimal actual PG17 headers/compiler dependency. Historical pins and financial SQL/qualification states remain unchanged.",
+    "path": "tests/unit/fixtureNativeCi.test.ts",
+    "previous_sha256": "b7d700836f7d4a4d19df0b2321b9d5fb743d9e5f5645f30ae40e66bda79afb51",
+    "current_sha256": "821a94ed8fcbf822dc831479e81b20a724039d85c1311f352d216fd6d1264f76"
   }
 }

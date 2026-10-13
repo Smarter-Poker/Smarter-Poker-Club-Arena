@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "0a3d601b0ad79dbd6340f207ce3b0bdbe234a9c282e7e49e024b0bb89abbadd5",
+    "scripts/ci/classify-ci-changes.mjs": "f69cf7c2955f8a2f792d0936b0478598e88438677c12088513ca4393a50754b2",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "9b68bb22efbd6ed9d857161bf4292ed9746f4ab13edaea3bf6d26bff36a4872e",
@@ -960,5 +960,11 @@
         "incoming": "431c3a4c70a1d0e278b5a1e96b113f423d57428f1bf30da672690ce44baa3123"
       }
     }
+  },
+  "scopedLaunchPolicyHookClassifier20261013": {
+    "reason": "Add only the actual provider-policy lock regression path to existing required scoped financial qualification routing. No financial terms, historical test inventories or qualification claims changed.",
+    "path": "scripts/ci/classify-ci-changes.mjs",
+    "previous_sha256": "0a3d601b0ad79dbd6340f207ce3b0bdbe234a9c282e7e49e024b0bb89abbadd5",
+    "current_sha256": "f69cf7c2955f8a2f792d0936b0478598e88438677c12088513ca4393a50754b2"
   }
 }

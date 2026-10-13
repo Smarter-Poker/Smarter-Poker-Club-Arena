@@ -59,18 +59,6 @@ LANGUAGE plpgsql SET search_path=public,pg_temp AS $$
 BEGIN RAISE EXCEPTION 'LAUNCH_CLOSING_TESTIMONY_IS_IMMUTABLE' USING ERRCODE='55000'; END $$;
 CREATE TRIGGER immutable_launch_rows BEFORE UPDATE OR DELETE ON public.ca_launch_reset_rows FOR EACH ROW EXECUTE FUNCTION public.fn_ca_launch_reset_testimony_immutable();
 CREATE TRIGGER immutable_launch_positions BEFORE UPDATE OR DELETE ON public.ca_launch_reset_positions FOR EACH ROW EXECUTE FUNCTION public.fn_ca_launch_reset_testimony_immutable();
--- Zero is legal only for an observational self-leg carrying a closing position.
--- Every monetary move retains its strictly positive amount requirement.
-ALTER TABLE public.chip_ledger DROP CONSTRAINT chip_ledger_amount_check;
-ALTER TABLE public.chip_ledger DROP CONSTRAINT chip_ledger_positive_amount;
-ALTER TABLE public.chip_ledger ADD CONSTRAINT chip_ledger_positive_amount CHECK(
- amount>0 OR (amount=0 AND category='adjustment'
- AND metadata->>'entry_kind' IS NOT DISTINCT FROM 'launch_closing_position'
- AND from_type=to_type AND from_entity_id IS NOT DISTINCT FROM to_entity_id
- AND from_label IS NOT DISTINCT FROM to_label
- AND pre_from_balance IS NOT DISTINCT FROM post_from_balance
- AND pre_to_balance IS NOT DISTINCT FROM post_to_balance
- AND pre_from_balance IS NOT DISTINCT FROM pre_to_balance)) NOT VALID;
 CREATE FUNCTION public.fn_ca_launch_closing_leg_guard() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp AS $$
 DECLARE p public.ca_launch_reset_positions%ROWTYPE;
@@ -95,8 +83,6 @@ BEGIN
  THEN RAISE EXCEPTION 'LAUNCH_CLOSING_LEG_HAS_NO_EXACT_POSITION' USING ERRCODE='23514'; END IF;
  RETURN NEW;
 END $$;
-INSERT INTO public.ca_declared_money_triggers(table_name,trigger_name,note) VALUES('chip_ledger','aaa_launch_closing_leg','Scoped immutable launch closing-position proof; zero observational self-leg only, ordinary positive money guard retained');
-CREATE TRIGGER aaa_launch_closing_leg BEFORE INSERT ON public.chip_ledger FOR EACH ROW EXECUTE FUNCTION public.fn_ca_launch_closing_leg_guard();
 CREATE FUNCTION public.fn_ca_launch_reset_assert_drained() RETURNS void
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp AS $$
 DECLARE scope constant uuid[]:=ARRAY['a0000000-0000-0000-0000-000000000001','2a1132b9-5ba2-42e6-9f01-30a7fcffebe3','a41434bb-8d0c-400a-8f0d-e8b3d65afed4','fade0000-0000-0000-0000-000000000001']::uuid[];
@@ -1470,6 +1456,22 @@ CREATE POLICY launch_current_settlement_invoices ON public.settlement_invoices A
 CREATE POLICY launch_current_credit_invoices ON public.credit_invoices AS RESTRICTIVE FOR SELECT TO authenticated
  USING(EXISTS(SELECT 1 FROM public.agents a WHERE a.id=credit_invoices.agent_id AND public.fn_ca_launch_accounting_accepts(a.club_id,credit_invoices.created_at)));
 
+-- Required invoice policies take the provider policy-hook locks first.
+-- Taking the ledger lock before those policies deadlocked live accepted-hand commits.
+-- Zero is legal only for an observational self-leg carrying a closing position.
+-- Every monetary move retains its strictly positive amount requirement.
+ALTER TABLE public.chip_ledger DROP CONSTRAINT chip_ledger_amount_check;
+ALTER TABLE public.chip_ledger DROP CONSTRAINT chip_ledger_positive_amount;
+ALTER TABLE public.chip_ledger ADD CONSTRAINT chip_ledger_positive_amount CHECK(
+ amount>0 OR (amount=0 AND category='adjustment'
+ AND metadata->>'entry_kind' IS NOT DISTINCT FROM 'launch_closing_position'
+ AND from_type=to_type AND from_entity_id IS NOT DISTINCT FROM to_entity_id
+ AND from_label IS NOT DISTINCT FROM to_label
+ AND pre_from_balance IS NOT DISTINCT FROM post_from_balance
+ AND pre_to_balance IS NOT DISTINCT FROM post_to_balance
+ AND pre_from_balance IS NOT DISTINCT FROM pre_to_balance)) NOT VALID;
+INSERT INTO public.ca_declared_money_triggers(table_name,trigger_name,note) VALUES('chip_ledger','aaa_launch_closing_leg','Scoped immutable launch closing-position proof; zero observational self-leg only, ordinary positive money guard retained');
+CREATE TRIGGER aaa_launch_closing_leg BEFORE INSERT ON public.chip_ledger FOR EACH ROW EXECUTE FUNCTION public.fn_ca_launch_closing_leg_guard();
 -- Component: incident-component.sql
 DO $original_guards$ BEGIN
  IF md5(pg_get_functiondef('public.fn_ca_alert_resolution_reaches_the_incident()'::regprocedure)) IS DISTINCT FROM 'e4a7c3e2099706adf19c4bd3885c6dbb' THEN RAISE EXCEPTION 'LAUNCH_INCIDENT_ORIGINAL_CHANGED: fn_ca_alert_resolution_reaches_the_incident()'; END IF;

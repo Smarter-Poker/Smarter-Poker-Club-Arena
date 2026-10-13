@@ -33,7 +33,7 @@ const accounting =
 // A driver, builder or transformation edit must run the actual native restore,
 // even when no application or workflow is changed alongside it.
 const nativeRecovery =
-  /^(scripts\/dr\/(native-supabase-export|build-native-export-client)\.py$|scripts\/ci\/(?:test_native_supabase_export\.py$|(?:test_launch_reset_balance|run_launch_reset_accounting_fixture|test_launch_reset_floor|test_launch_reset_installer|test_launch_reset_floor_admission)\.py$|fixtures\/launch-reset\/)|scripts\/verification-harness\/leaderboard-native-function-batch\.mjs$|tests\/dr-posture\.test\.ts$)/;
+  /^(scripts\/dr\/(native-supabase-export|build-native-export-client)\.py$|scripts\/ci\/(?:test_native_supabase_export\.py$|(?:test_launch_reset_balance|run_launch_reset_accounting_fixture|test_launch_reset_floor|test_launch_reset_installer|test_launch_reset_floor_admission|test_launch_reset_policy_lock_order)\.py$|fixtures\/launch-reset\/)|scripts\/verification-harness\/leaderboard-native-function-batch\.mjs$|tests\/dr-posture\.test\.ts$)/;
 // Data/Stats console PostgreSQL contracts run inside accounting_postgres. The
 // wrapper, its wiring test, and every fixture are executable inputs; a change
 // to any one of them must select that job even without a migration beside it.

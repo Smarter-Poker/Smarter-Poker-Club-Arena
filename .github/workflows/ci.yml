@@ -1354,7 +1354,15 @@ jobs:
           pg_ci_build_packages=()
           pg_ci_build_tools_ready=true
           case "$PG_CI_SHARD" in
-            1|2) ;;
+            1)
+              pg_ci_build_packages=(postgresql-server-dev-17 build-essential)
+              for pg_ci_tool in cc make; do
+                if ! command -v "$pg_ci_tool" >/dev/null; then pg_ci_build_tools_ready=false; fi
+              done
+              if [[ ! -x /usr/lib/postgresql/17/bin/pg_config ||
+                    ! -f /usr/include/postgresql/17/server/postgres.h ]]; then pg_ci_build_tools_ready=false; fi
+              ;;
+            2) ;;
             3|4)
               pg_ci_build_packages=(postgresql-server-dev-17 build-essential bison flex perl bzip2 patch)
               for pg_ci_tool in cc make bison flex perl tar bzip2 patch; do
@@ -1421,6 +1429,7 @@ jobs:
           # The installer imports the root lockfile pg closure; this job previously installed only server dependencies.
           npm ci --ignore-scripts
           python3 -B scripts/ci/test_launch_reset_installer.py --installer scripts/ci/apply-recorded-migration.mjs --repository . --pgbin "$PG_BIN" --scratch "$RUNNER_TEMP" --output "$PROBE_EVIDENCE/installer.json"
+          python3 -B scripts/ci/test_launch_reset_policy_lock_order.py --candidate "$launch_candidate" --scratch "$RUNNER_TEMP" --pg-bin "$PG_BIN" --pg-module node_modules/pg/lib/index.js --output "$PROBE_EVIDENCE/provider-policy-lock-order.json"
           python3 -B scripts/ci/test_launch_reset_balance.py --candidate-migration "$launch_candidate" --scratch-root "$RUNNER_TEMP" --output-dir "$PROBE_EVIDENCE/balance" --pg-bin "$PG_BIN" --production-roster
           for launch_fixture in commission-assertion reporting invoice-visibility treasury-selftest; do
             python3 -B scripts/ci/run_launch_reset_accounting_fixture.py --fixture "scripts/ci/fixtures/launch-reset/accounting/$launch_fixture-qualification.sql" --candidate "$launch_candidate" --work-root "$RUNNER_TEMP" --pg-bin "$PG_BIN"

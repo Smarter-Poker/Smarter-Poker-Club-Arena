@@ -1,11 +1,13 @@
--- Forward-only. ICU en-US orders the punctuation sentinel before numbered
--- observations, causing false retirement with raw still present. Original
--- admission permits exactly canonical UUID:0..4095. Inclusive :0..:9999
--- bounds use the existing default-collated primary key and exact hand filter.
--- The original owner also completes falsely retired hands without rewriting
--- their immutable certificate/time. No new index, cursor table, worker or job.
+-- Forward-only. Production ICU en-US orders the punctuation sentinel before
+-- admitted UUID:number observations. Every original valid suffix is 0..4095;
+-- inclusive :0..:9999 bounds retain the existing default-collated primary key.
+-- Version2 records completed original raw/statistics/fence transition, separate
+-- from the immutable already-recorded retired time. Legacy0 is never completion.
+-- The same chronological pending index/cursor retires genuinely eligible old
+-- false retirements exactly once; protected originals stay pending. No new job.
 BEGIN;
 SET LOCAL lock_timeout='2s';
+SET LOCAL statement_timeout='60s';
 DO $guard$
 DECLARE p pg_proc;
 BEGIN
@@ -13,6 +15,7 @@ BEGIN
  OR md5(pg_get_functiondef('smarter_private.horse_adaptive_disposal_certificate_immutable()'::regprocedure)) IS DISTINCT FROM '1e47b89d6b6aa88c249fbb7c864ea472'
  OR md5(pg_get_functiondef('public.fn_prune_horse_adaptive_journal()'::regprocedure)) IS DISTINCT FROM 'ae358dd5be5586e0fbdf44f083afe92d'
  OR (SELECT enabled FROM smarter_private.horse_adaptive_retention_activation WHERE singleton) IS DISTINCT FROM false
+ OR pg_get_indexdef('smarter_private.horse_adaptive_disposal_pending'::regclass) IS DISTINCT FROM 'CREATE INDEX horse_adaptive_disposal_pending ON smarter_private.horse_adaptive_disposal_certificates USING btree (qualified_at, hand_id) WHERE (retired_at IS NULL)'
  THEN RAISE EXCEPTION 'ADAPTIVE_NUMBERED_RETIREMENT_PREIMAGE_CHANGED_OR_ENABLED'; END IF;
  FOR p IN SELECT * FROM pg_proc WHERE oid IN (
   'smarter_private.retire_horse_adaptive_hand(uuid)'::regprocedure,
@@ -27,6 +30,12 @@ BEGIN
   THEN RAISE EXCEPTION 'ADAPTIVE_NUMBERED_RETIREMENT_AUTHORITY_CHANGED'; END IF;
  END LOOP;
 END $guard$;
+ALTER TABLE smarter_private.horse_adaptive_disposal_certificates
+ ADD COLUMN raw_format_version smallint NOT NULL DEFAULT 0
+ CHECK(raw_format_version IN(0,2));
+DROP INDEX smarter_private.horse_adaptive_disposal_pending;
+CREATE INDEX horse_adaptive_disposal_pending ON smarter_private.horse_adaptive_disposal_certificates(qualified_at,hand_id)
+ WHERE retired_at IS NULL OR raw_format_version<2;
 CREATE OR REPLACE FUNCTION smarter_private.horse_adaptive_disposal_certificate_immutable()
  RETURNS trigger
  LANGUAGE plpgsql
@@ -42,7 +51,7 @@ BEGIN
   OR s.request#>'{p_hand_row,has_human}' IS DISTINCT FROM 'false'::jsonb
   OR NEW.table_id IS DISTINCT FROM s.table_id OR NEW.hand_number IS DISTINCT FROM s.hand_number
   OR NEW.request_hash IS DISTINCT FROM s.request_hash OR NEW.hand_digest IS DISTINCT FROM encode(sha256(convert_to(NEW.hand_id::text,'UTF8')),'hex')
-  OR NEW.retired_at IS NOT NULL OR NOT isfinite(NEW.qualified_at)
+  OR NEW.retired_at IS NOT NULL OR NEW.raw_format_version IS DISTINCT FROM 0 OR NOT isfinite(NEW.qualified_at)
   OR NEW.qualified_at>clock_timestamp() OR NEW.qualified_at<transaction_timestamp()
   OR NEW.certificate->>'version' IS DISTINCT FROM 'settled-horse-adaptive-disposal-v1'
   OR NEW.certificate->'original_horse_only' IS DISTINCT FROM 'true'::jsonb
@@ -52,9 +61,11 @@ BEGIN
   OR NEW.certificate->>'classifier_definition_md5' IS DISTINCT FROM md5(pg_get_functiondef('smarter_private.horse_request_payload_disposable(uuid)'::regprocedure))
   OR NEW.certificate->'disposal' IS DISTINCT FROM d.expected THEN RAISE EXCEPTION 'ADAPTIVE_DISPOSAL_CERTIFICATE_UNQUALIFIED'; END IF;
   RETURN NEW;
- ELSIF TG_OP='UPDATE' AND OLD.retired_at IS NULL AND NEW.retired_at IS NOT NULL
- AND (to_jsonb(NEW)-'retired_at') IS NOT DISTINCT FROM (to_jsonb(OLD)-'retired_at')
- AND isfinite(NEW.retired_at) AND NEW.retired_at>=OLD.qualified_at AND NEW.retired_at<=clock_timestamp()
+ ELSIF TG_OP='UPDATE' AND OLD.raw_format_version=0 AND NEW.raw_format_version=2
+ AND (to_jsonb(NEW)-'retired_at'-'raw_format_version') IS NOT DISTINCT FROM (to_jsonb(OLD)-'retired_at'-'raw_format_version')
+ AND NEW.retired_at IS NOT NULL AND isfinite(NEW.retired_at)
+ AND NEW.retired_at>=OLD.qualified_at AND NEW.retired_at<=clock_timestamp()
+ AND (OLD.retired_at IS NULL OR NEW.retired_at IS NOT DISTINCT FROM OLD.retired_at)
  AND EXISTS(SELECT 1 FROM smarter_private.horse_adaptive_retention_activation WHERE singleton AND enabled)
  AND NOT EXISTS(SELECT 1 FROM public.horse_adaptive_observation_journal j WHERE j.observation_id>=OLD.hand_id::text||':0' AND j.observation_id<=OLD.hand_id::text||':9999' AND j.hand_id=OLD.hand_id)
  THEN RETURN NEW;
@@ -74,8 +85,12 @@ BEGIN
  SELECT * INTO c FROM smarter_private.horse_adaptive_disposal_certificates WHERE hand_id=p_hand FOR UPDATE;
  IF NOT FOUND THEN RETURN 0; END IF;
  IF NOT smarter_private.horse_adaptive_disposal_certificate_matches(c.hand_id,c.table_id,c.hand_number,c.request_hash) THEN RETURN 0; END IF;
- IF c.retired_at IS NOT NULL AND NOT EXISTS(SELECT 1 FROM public.horse_adaptive_observation_journal j
- WHERE j.observation_id>=p_hand::text||':0' AND j.observation_id<=p_hand::text||':9999' AND j.hand_id=p_hand) THEN RETURN 0; END IF;
+ IF c.raw_format_version=2 THEN
+  IF EXISTS(SELECT 1 FROM public.horse_adaptive_observation_journal j
+   WHERE j.observation_id>=p_hand::text||':0' AND j.observation_id<=p_hand::text||':9999' AND j.hand_id=p_hand)
+  THEN RAISE EXCEPTION 'ADAPTIVE_COMPLETED_FORMAT_HAS_RAW'; END IF;
+  RETURN 0;
+ END IF;
  IF NOT EXISTS(SELECT 1 FROM smarter_private.horse_adaptive_retention_activation WHERE singleton AND enabled)
  OR NOT pg_try_advisory_xact_lock(hashtextextended('horse-adaptive-work-capacity-v1',0)) THEN RETURN 0; END IF;
  -- Qualification was made at the original disposal boundary. Never acquire a
@@ -136,9 +151,8 @@ BEGIN
  DELETE FROM public.horse_adaptive_observation_journal j
  WHERE j.observation_id>=p_hand::text||':0' AND j.observation_id<=p_hand::text||':9999' AND j.hand_id=p_hand;
  GET DIAGNOSTICS n=ROW_COUNT;
- IF c.retired_at IS NULL THEN
-  UPDATE smarter_private.horse_adaptive_disposal_certificates SET retired_at=clock_timestamp() WHERE hand_id=p_hand;
- END IF;
+ UPDATE smarter_private.horse_adaptive_disposal_certificates
+ SET retired_at=COALESCE(c.retired_at,clock_timestamp()),raw_format_version=2 WHERE hand_id=p_hand;
  RETURN n;
 END $function$;
 
@@ -177,28 +191,33 @@ BEGIN
  IF NOT membership_pending AND scan.enabled THEN
   IF scan.scan_through_qualified_at IS NULL THEN
    SELECT qualified_at,hand_id INTO scan.scan_through_qualified_at,scan.scan_through_hand_id
-   FROM smarter_private.horse_adaptive_disposal_certificates ORDER BY hand_id DESC LIMIT 1;
+   FROM smarter_private.horse_adaptive_disposal_certificates WHERE (retired_at IS NULL OR raw_format_version<2)
+   ORDER BY qualified_at DESC,hand_id DESC LIMIT 1;
   END IF;
   -- Fixed high-water bounds one pass despite continuing incoming certificates.
   -- Advancing means attempted, never settled: the original helper remains the
   -- only authority and protected hands are revisited after the pass wraps.
   IF scan.scan_through_qualified_at IS NOT NULL THEN
-   FOR candidate IN SELECT hand_id,qualified_at,retired_at FROM smarter_private.horse_adaptive_disposal_certificates
-    WHERE hand_id<=scan.scan_through_hand_id
-    AND (scan.scan_after_hand_id IS NULL OR hand_id>scan.scan_after_hand_id)
-    ORDER BY hand_id LIMIT 250 FOR UPDATE SKIP LOCKED LOOP
+   FOR candidate IN SELECT hand_id,qualified_at FROM smarter_private.horse_adaptive_disposal_certificates
+    WHERE (retired_at IS NULL OR raw_format_version<2)
+    AND (qualified_at,hand_id)<=(scan.scan_through_qualified_at,scan.scan_through_hand_id)
+    AND (scan.scan_after_qualified_at IS NULL OR
+     (qualified_at,hand_id)>(scan.scan_after_qualified_at,scan.scan_after_hand_id))
+    ORDER BY qualified_at,hand_id LIMIT 250 FOR UPDATE SKIP LOCKED LOOP
     IF clock_timestamp()>=deadline THEN budget_reached:=true; EXIT; END IF;
     n:=smarter_private.retire_horse_adaptive_hand(candidate.hand_id); raw_count:=raw_count+n;
     hands_scanned:=hands_scanned+1;
-    IF (n>0 OR candidate.retired_at IS NULL) AND EXISTS(SELECT 1 FROM smarter_private.horse_adaptive_disposal_certificates
+    IF EXISTS(SELECT 1 FROM smarter_private.horse_adaptive_disposal_certificates
      WHERE hand_id=candidate.hand_id AND retired_at IS NOT NULL) THEN retired_count:=retired_count+1; END IF;
     scan.scan_after_qualified_at:=candidate.qualified_at;scan.scan_after_hand_id:=candidate.hand_id;
    END LOOP;
    remaining_window:=EXISTS(SELECT 1 FROM smarter_private.horse_adaptive_disposal_certificates
-    WHERE hand_id<=scan.scan_through_hand_id
-    AND (scan.scan_after_hand_id IS NULL OR hand_id>scan.scan_after_hand_id) LIMIT 1);
+    WHERE (retired_at IS NULL OR raw_format_version<2)
+    AND (qualified_at,hand_id)<=(scan.scan_through_qualified_at,scan.scan_through_hand_id)
+    AND (scan.scan_after_qualified_at IS NULL OR
+     (qualified_at,hand_id)>(scan.scan_after_qualified_at,scan.scan_after_hand_id)) LIMIT 1);
    retirement_pending:=remaining_window OR EXISTS(SELECT 1 FROM smarter_private.horse_adaptive_disposal_certificates
-    WHERE hand_id>scan.scan_through_hand_id LIMIT 1);
+    WHERE (retired_at IS NULL OR raw_format_version<2) AND (qualified_at,hand_id)>(scan.scan_through_qualified_at,scan.scan_through_hand_id) LIMIT 1);
    IF NOT remaining_window THEN
     scan.scan_after_qualified_at:=NULL;scan.scan_after_hand_id:=NULL;
     scan.scan_through_qualified_at:=NULL;scan.scan_through_hand_id:=NULL;
@@ -225,9 +244,8 @@ BEGIN
   'membershipsRegistered',membership_count,'membershipPending',membership_pending,
   'handsScanned',hands_scanned,'retirementPending',retirement_pending,'budgetReached',budget_reached);
 END $function$;
-
--- Old pairs belonged to qualified-time ordering. Reset only inside this guarded
--- inactive transaction; the original owner starts a fresh hand-key high water.
+-- Old high-water excludes already-marked legacy certificates. Reset pairs only
+-- in this guarded inactive transaction; original chronology/caps remain exact.
 UPDATE smarter_private.horse_adaptive_retention_activation SET
  scan_after_qualified_at=NULL,scan_after_hand_id=NULL,
  scan_through_qualified_at=NULL,scan_through_hand_id=NULL WHERE singleton;
@@ -236,3 +254,4 @@ REVOKE ALL ON FUNCTION smarter_private.retire_horse_adaptive_hand(uuid),
 REVOKE ALL ON FUNCTION public.fn_prune_horse_adaptive_journal() FROM PUBLIC,anon,authenticated,service_role;
 GRANT EXECUTE ON FUNCTION public.fn_prune_horse_adaptive_journal() TO service_role;
 COMMIT;
+

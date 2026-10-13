@@ -32,9 +32,12 @@ def qualify(e,template):
  e.sql(d,"SELECT smarter_private.enable_horse_adaptive_retention('"+'a'*40+"'); SELECT smarter_private.retire_horse_adaptive_hand('"+old.HAND_ID+"');",label='actual-old-owner-false-retirement')
  yes(d,"SELECT (SELECT count(*) FROM horse_adaptive_observation_journal WHERE hand_id='"+old.HAND_ID+"')=3 AND (SELECT count(*) FROM smarter_private.horse_adaptive_statistics)=0 AND (SELECT count(*) FROM smarter_private.horse_adaptive_observation_fences)=0 AND (SELECT retired_at IS NOT NULL FROM smarter_private.horse_adaptive_disposal_certificates);",'fail-before-actual-raw-survives-false-retirement')
  original_cert=read(d,'SELECT to_jsonb(c)::text FROM smarter_private.horse_adaptive_disposal_certificates c;','immutable-before-recovery')
+ original_prune=read(d,"SELECT pg_get_functiondef('fn_prune_horse_adaptive_journal()'::regprocedure);",'original-chronological-owner-preimage')
  falseworld=e.database(d)
  e.sql(d,"UPDATE smarter_private.horse_adaptive_retention_activation SET enabled=false;",label='original-activation-native-hold')
  e.sql(d,file=ROOT/MIGRATION,label='qualified-forward-correction')
+ corrected_prune=read(d,"SELECT pg_get_functiondef('fn_prune_horse_adaptive_journal()'::regprocedure);",'corrected-chronological-owner-postimage')
+ assert corrected_prune.replace('WHERE (retired_at IS NULL OR raw_format_version<2)','WHERE retired_at IS NULL')==original_prune;checks.append('chronology-high-water250-two-second-and-all-other-owner-bytes-exact')
  yes(d,"SELECT NOT enabled AND scan_after_hand_id IS NULL AND scan_through_hand_id IS NULL AND consumer_release='"+'a'*40+"' FROM smarter_private.horse_adaptive_retention_activation;",'inactive-original-cursor-reset-consumer-retained')
  status,_,err=e.sql(d,file=ROOT/MIGRATION,label='forward-replay-refused',check=False);assert status and 'ADAPTIVE_NUMBERED_RETIREMENT_PREIMAGE_CHANGED_OR_ENABLED' in err;checks.append('forward-replay-refused')
  yes(d,"SELECT smarter_private.retire_horse_adaptive_hand('"+old.HAND_ID+"')=0 AND (SELECT count(*) FROM horse_adaptive_observation_journal WHERE hand_id='"+old.HAND_ID+"')=3;",'disabled-original-owner-preserves-falsely-retired-raw')
@@ -43,7 +46,8 @@ def qualify(e,template):
  e.sql(d,"BEGIN;SELECT smarter_private.retire_horse_adaptive_hand('"+old.HAND_ID+"');ROLLBACK;",label='native-original-owner-rollback')
  yes(d,"SELECT count(*)=3 AND NOT EXISTS(SELECT 1 FROM smarter_private.horse_adaptive_statistics) FROM horse_adaptive_observation_journal WHERE hand_id='"+old.HAND_ID+"';",'rollback-restores-raw-and-statistics')
  yes(d,"SELECT smarter_private.retire_horse_adaptive_hand('"+old.HAND_ID+"')=3;",'same-original-owner-completes-falsely-retired-raw')
- assert read(d,'SELECT to_jsonb(c)::text FROM smarter_private.horse_adaptive_disposal_certificates c;','immutable-after-recovery')==original_cert;checks.append('original-certificate-and-retired-time-byte-exact')
+ assert read(d,"SELECT (to_jsonb(c)-'raw_format_version')::text FROM smarter_private.horse_adaptive_disposal_certificates c;",'immutable-after-recovery')==original_cert;checks.append('original-certificate-and-retired-time-byte-exact')
+ yes(d,'SELECT raw_format_version=2 FROM smarter_private.horse_adaptive_disposal_certificates;','correct-original-format-completion-recorded')
  yes(d,"SELECT NOT EXISTS(SELECT 1 FROM horse_adaptive_observation_journal WHERE hand_id='"+old.HAND_ID+"') AND (SELECT sum(observations) FROM smarter_private.horse_adaptive_statistics)=3 AND (SELECT count(*) FROM smarter_private.horse_adaptive_observation_fences)=3;",'nonempty-original-raw-becomes-exact-statistics-and-fences')
  yes(d,"SELECT payload="+lit(hf)+" FROM horse_adaptive_observation_journal WHERE hand_id='"+human+"';",'adjacent-human-original-byte-identical')
  yes(d,"SELECT canonical_payload::jsonb->7=jsonb_build_array("+lit(hf)+") AND batch_digest="+lit(h(payload))+" AND retention_compacted AND retention_membership_ready FROM horse_adaptive_observation_batches WHERE batch_key="+lit(key)+";",'original-human-batch-and-replay-digest-preserved')
@@ -63,7 +67,7 @@ def qualify(e,template):
  fresh=e.database(template);e.sql(fresh,seed+'SELECT fn_append_horse_adaptive_observations('+lit(payload)+');'+old.AUTHORITY+"SELECT smarter_private.hand_submission_retention_disposal(ARRAY['"+old.HAND_ID+"']::uuid[],'Native fresh original qualified numbered observation retirement');",label='fresh-genuine-original-certificate')
  e.sql(fresh,file=ROOT/MIGRATION,label='fresh-forward-correction')
  e.sql(fresh,"SELECT smarter_private.enable_horse_adaptive_retention('"+'a'*40+"');",label='fresh-consumer-enable')
- status,_,err=e.sql(fresh,"UPDATE smarter_private.horse_adaptive_disposal_certificates SET retired_at=clock_timestamp();",label='guard-refuses-false-zero-raw',check=False);assert status and 'ADAPTIVE_DISPOSAL_CERTIFICATE_IMMUTABLE' in err;checks.append('correct-immutable-row-owner-refuses-false-raw-absence')
+ status,_,err=e.sql(fresh,"UPDATE smarter_private.horse_adaptive_disposal_certificates SET retired_at=clock_timestamp(),raw_format_version=2;",label='guard-refuses-false-zero-raw',check=False);assert status and 'ADAPTIVE_DISPOSAL_CERTIFICATE_IMMUTABLE' in err;checks.append('correct-immutable-row-owner-refuses-false-raw-absence')
  # Original two-session capacity reservation refuses overlap, preserving raw.
  lock=subprocess.Popen([str(e.pg/'psql'),'-X','-qAt','-h',str(e.socket),'-p',e.port,'-U','postgres','-d',fresh,'-v','ON_ERROR_STOP=1'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
  lock.stdin.write("BEGIN;SELECT pg_advisory_xact_lock(hashtextextended('horse-adaptive-work-capacity-v1',0));SELECT 'locked';SELECT pg_sleep(2);ROLLBACK;\n");lock.stdin.close()
@@ -78,13 +82,13 @@ def qualify(e,template):
   yield p
   for c in p.get('Plans',[]):yield from nodes(c)
  plans={}
- for name,q in [('raw',"SELECT * FROM horse_adaptive_observation_journal WHERE observation_id>='"+old.HAND_ID+":0' AND observation_id<='"+old.HAND_ID+":9999' AND hand_id='"+old.HAND_ID+"'"),('cursor',"SELECT hand_id,qualified_at,retired_at FROM smarter_private.horse_adaptive_disposal_certificates WHERE hand_id>'00000000-0000-0000-0000-000000000000' AND hand_id<='ffffffff-ffff-ffff-ffff-ffffffffffff' ORDER BY hand_id LIMIT 250")]:
+ for name,q in [('raw',"SELECT * FROM horse_adaptive_observation_journal WHERE observation_id>='"+old.HAND_ID+":0' AND observation_id<='"+old.HAND_ID+":9999' AND hand_id='"+old.HAND_ID+"'"),('cursor',"SELECT hand_id,qualified_at FROM smarter_private.horse_adaptive_disposal_certificates WHERE (retired_at IS NULL OR raw_format_version<2) ORDER BY qualified_at,hand_id LIMIT 250")]:
   plan=json.loads(read(fresh,'SET enable_seqscan=off;EXPLAIN(FORMAT JSON) '+q+';',name+'-existing-index-plan'))[0];plans[name]=plan
-  assert any('Index' in n['Node Type'] and 'Index Cond' in n for n in nodes(plan['Plan'])),name
+  assert any('Index' in n['Node Type'] and n.get('Index Name')==('horse_adaptive_observation_journal_pkey' if name=='raw' else 'horse_adaptive_disposal_pending') for n in nodes(plan['Plan'])),name
   checks.append(name+'-uses-existing-index-matching-collation')
  e.report['numbered_plans']=plans
- # Genuine certificates are admitted in reverse UUID order so their actual
- # qualification times disagree with the new existing-key scan ordering.
+ # Genuine certificates are admitted in reverse UUID order. The original
+ # chronological index and high-water must follow qualification, not UUID.
  cursor=e.database(template);e.sql(cursor,file=ROOT/MIGRATION,label='cursor-original-owner-correction')
  def numbered_seed(i):
   s=seed.replace(str(old.HAND_NUMBER),str(old.HAND_NUMBER+i))
@@ -99,12 +103,15 @@ def qualify(e,template):
  e.sql(cursor,"SELECT smarter_private.enable_horse_adaptive_retention('"+'a'*40+"');",label='cursor-original-consumer-enable')
  result=json.loads(read(cursor,'SELECT fn_prune_horse_adaptive_journal();','first-bounded-hand-key-pass'))
  assert result['handsScanned']==250 and result['retirementPending'] and result['observations']==0;checks.append('existing-public-owner-scans-at-most250-under-original-budget')
- yes(cursor,"SELECT scan_after_hand_id='000000fa-0001-4000-8000-000000000001' AND scan_through_hand_id='00000104-0001-4000-8000-000000000001' FROM smarter_private.horse_adaptive_retention_activation;",'hand-key-cursor-retains-fixed-high-water-despite-time-order')
+ yes(cursor,"SELECT scan_after_hand_id='0000000b-0001-4000-8000-000000000001' AND scan_through_hand_id='00000001-0001-4000-8000-000000000001' FROM smarter_private.horse_adaptive_retention_activation;",'original-chronological-cursor-retains-fixed-high-water')
  hand,s=numbered_seed(261);e.sql(cursor,s,label='original-new-certificate-during-frozen-pass')
  result=json.loads(read(cursor,'SELECT fn_prune_horse_adaptive_journal();','restart-original-cursor-from-durable-pair'))
  assert result['handsScanned']==10 and result['retirementPending'];checks.append('resumed-fixed-high-water-excludes-newer-certificate')
  yes(cursor,"SELECT scan_after_hand_id IS NULL AND scan_through_hand_id IS NULL FROM smarter_private.horse_adaptive_retention_activation;",'completed-original-pass-wraps-existing-cursor')
- for i in range(2):read(cursor,'SELECT fn_prune_horse_adaptive_journal();','wrapped-original-pass-new-admission-'+str(i))
+ wrapped=json.loads(read(cursor,'SELECT fn_prune_horse_adaptive_journal();','wrapped-original-pass-new-admission'))
+ assert wrapped['handsScanned']==1 and wrapped['retiredHands']==1 and not wrapped['retirementPending'];checks.append('completed-original-format-leaves-pending-index-permanently')
+ idle=json.loads(read(cursor,'SELECT fn_prune_horse_adaptive_journal();','no-historical-complete-rescan'))
+ assert idle['handsScanned']==0 and not idle['retirementPending'] and not idle['budgetReached'];checks.append('complete-historical-certificates-do-not-request-fast-rescan')
  yes(cursor,"SELECT retired_at IS NOT NULL FROM smarter_private.horse_adaptive_disposal_certificates WHERE hand_id='"+hand+"';",'wrap-sees-genuine-new-original-certificate')
  # Recovery of a previously false retirement remains gated by original human,
  # reported and unresolved witnesses; certificate status is never a bypass.
@@ -112,6 +119,10 @@ def qualify(e,template):
  yes(blocked,"SELECT smarter_private.retire_horse_adaptive_hand('"+old.HAND_ID+"')=0 AND (SELECT count(*) FROM horse_adaptive_observation_journal WHERE hand_id='"+old.HAND_ID+"')=3 AND NOT EXISTS(SELECT 1 FROM smarter_private.horse_adaptive_statistics);",'human-witness-protects-falsely-retired-raw')
  e.sql(blocked,'UPDATE hand_history SET has_human=false,reported=true;',label='original-reported-protection')
  yes(blocked,"SELECT smarter_private.retire_horse_adaptive_hand('"+old.HAND_ID+"')=0 AND (SELECT count(*) FROM horse_adaptive_observation_journal WHERE hand_id='"+old.HAND_ID+"')=3;",'reported-witness-protects-falsely-retired-raw')
+ yes(blocked,'SELECT raw_format_version=0 FROM smarter_private.horse_adaptive_disposal_certificates;','blocked-false-retirement-remains-original-pending-format')
+ e.sql(blocked,'UPDATE hand_history SET reported=false;',label='original-report-hold-released')
+ yes(blocked,"SELECT fn_prune_horse_adaptive_journal()->>'observations'='3';",'same-original-pending-owner-revisits-released-false-retirement')
+ yes(blocked,'SELECT raw_format_version=2 FROM smarter_private.horse_adaptive_disposal_certificates;','released-original-false-retirement-completes-format')
  e.report['numbered_postimages']=json.loads(read(d,"SELECT jsonb_object_agg(oid::regprocedure::text,jsonb_build_object('md5',md5(pg_get_functiondef(oid)),'owner',proowner::regrole::text,'acl',proacl::text,'security_definer',prosecdef,'config',proconfig)) FROM pg_proc WHERE oid IN ('smarter_private.retire_horse_adaptive_hand(uuid)'::regprocedure,'smarter_private.horse_adaptive_disposal_certificate_immutable()'::regprocedure,'public.fn_prune_horse_adaptive_journal()'::regprocedure);",'exact-candidate-postimages'))
  for n,meta in e.report['numbered_postimages'].items():
   assert meta['owner']=='postgres' and meta['security_definer'] and meta['acl']==('{postgres=X/postgres,service_role=X/postgres}' if n=='fn_prune_horse_adaptive_journal()' else '{postgres=X/postgres}')

@@ -124,10 +124,9 @@ describe('Marketplace Console Visual Contract', () => {
     // throwable artwork retain their full native bounds.
     const clippedRules = [...gridCss.matchAll(/([^{}]+)\{([^{}]*clip-path:[^{}]*)\}/g)];
     expect(clippedRules).toHaveLength(1);
-    expect(clippedRules[0][1].trim()).toBe(
-      '.vip-perks-grid .perk-value::before,\n.vip-perks-grid .lock-overlay::before'
-    );
+    expect(clippedRules[0][1].trim()).toBe('.vip-perks-grid .lock-overlay::before');
     expect(clippedRules[0][2]).toContain('pointer-events: none');
+    expect(gridCss).not.toContain('.perk-value::before');
     expect(clippedRules[0][2]).toContain('background: var(--rewards-control-image)');
     expect(gridCss).not.toContain(':hover');
     expect(gridCss).not.toMatch(/font-family:[^;]*(?:monospace|courier)/i);
@@ -296,6 +295,12 @@ describe('Marketplace Console Visual Contract', () => {
     expect(diamondsCss).not.toContain('border-left:');
     expect(marketplaceCss).toContain('shark-panel-v1/button-primary.png');
     expect(marketplaceCss).toContain('shark-panel-v1/button-secondary.png');
+    const purchaseShell = marketplaceCss.match(
+      /\.modalOverlay \.modal\.modal\[role='dialog'\]\s*\{([^}]+)\}/
+    )?.[1];
+    expect(purchaseShell).toContain('background-color: transparent !important');
+    expect(diamondsCss).not.toContain('background-color: #020508');
+    expect(diamondsCss).not.toContain('background: #03070b url(');
     expect(diamondsCss).toContain('action-primary-shell.webp');
     expect(diamondsCss).not.toContain("content: '♦'");
     expect(marketplaceCss).not.toContain('text-transform: uppercase');

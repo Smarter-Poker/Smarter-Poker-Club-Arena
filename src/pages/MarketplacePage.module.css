@@ -2044,7 +2044,7 @@
   container-type: inline-size;
   --chassis-inline-padding: clamp(14px, 3vw, 42px);
   padding-inline: var(--chassis-inline-padding);
-  background-color: #020508;
+  background-color: transparent;
   background-image:
     url('/assets/club-buttons/lobby/shark-panel-v1/top.png'),
     url('/assets/club-buttons/lobby/shark-panel-v1/bottom.png');
@@ -2097,7 +2097,7 @@
 
 .itemImageArea {
   border: 0;
-  background: #05080b;
+  background: transparent;
 }
 
 .itemImageArea::after {
@@ -2185,7 +2185,7 @@
   padding: 10%;
   border: 0;
   border-radius: 0;
-  background: #03070b url('/assets/club-buttons/club-utility-shell.webp') center / 100% 100%
+  background: transparent url('/assets/club-buttons/club-utility-shell.webp') center / 100% 100%
     no-repeat;
 }
 
@@ -2295,7 +2295,7 @@
 .modalOverlay .modal.modal[role='dialog'] {
   border: 0 !important;
   border-radius: 0 !important;
-  background-color: #020508 !important;
+  background-color: transparent !important;
   background-image:
     url('/assets/club-buttons/lobby/shark-panel-v1/top.png'),
     url('/assets/club-buttons/lobby/shark-panel-v1/bottom.png') !important;

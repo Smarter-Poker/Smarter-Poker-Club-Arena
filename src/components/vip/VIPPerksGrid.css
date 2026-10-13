@@ -128,7 +128,8 @@
   padding: 0 14px;
   border: 0;
   border-radius: 0;
-  --rewards-control-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-primary.png');
+  background: url('/assets/club-buttons/lobby/shark-panel-v1/button-primary.png') center / 100% 100%
+    no-repeat;
   color: #f4f7fb;
   font-family: var(--club-font-number, 'Roboto Condensed', 'Arial Narrow', sans-serif);
   font-size: 0.78rem;
@@ -243,7 +244,6 @@
 /* The approved plate remains unchanged. Its opaque exterior is clipped on
    a paint-only layer; labels, focus outlines and native hit areas stay whole.
    Coordinates follow the outer chrome of the 348 x 114 source raster. */
-.vip-perks-grid .perk-value,
 .vip-perks-grid .lock-overlay {
   position: relative;
   isolation: isolate;
@@ -251,7 +251,6 @@
   background-image: none !important;
   box-shadow: none !important;
 }
-.vip-perks-grid .perk-value::before,
 .vip-perks-grid .lock-overlay::before {
   content: '';
   position: absolute;

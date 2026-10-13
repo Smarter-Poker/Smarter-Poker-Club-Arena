@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "c4a9e6535e8f0160dfbbf834dd82a4b5fb9b867d28e75bfa9ad900276895ce42",
+    "scripts/ci/classify-ci-changes.mjs": "3ef4c6362dd8d88361a1040da0af18de85383aa6edda65ff4ad2cca51b1769a9",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "9b68bb22efbd6ed9d857161bf4292ed9746f4ab13edaea3bf6d26bff36a4872e",
@@ -983,5 +983,14 @@
     "path": "scripts/ci/classify-ci-changes.mjs",
     "before": "fec5ce206a6cdf0c63b3e9d397eee71930aa0e424e25189bec0dc436e56ea295",
     "after": "c4a9e6535e8f0160dfbbf834dd82a4b5fb9b867d28e75bfa9ad900276895ce42"
+  },
+  "scopedLaunchRetainedInputRouting20261013": {
+    "why": "Retained source native inputs previously selected neither server nor tests. Add only their directory to the existing required Accounting3 admission; preserve all financial fixture sources, assertions and historical evidence.",
+    "changes": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "previous": "c4a9e6535e8f0160dfbbf834dd82a4b5fb9b867d28e75bfa9ad900276895ce42",
+        "current": "3ef4c6362dd8d88361a1040da0af18de85383aa6edda65ff4ad2cca51b1769a9"
+      }
+    }
   }
 }

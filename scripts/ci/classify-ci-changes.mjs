@@ -21,6 +21,9 @@ const mttActivation =
   /^(scripts\/ci\/(mtt_activation_native\.py$|mtt_activation_funding\.py$|mtt_activation_satellite\.py$|satellite_qualifier_fixture\.py$|mtt_break_authoring_native\.py$|fixtures\/(mtt-format-activation|satellite-qualifiers|mtt-break-authoring)\/|probes\/mtt-activation\/)|tests\/operations\/mtt-activation-results\.test\.py$)/;
 const originalPaidCustody =
   /^(?:scripts\/ci\/(?:(?:test|build)-original-paid-custody\.py$|original_paid_custody_native\.py$|fixtures\/original-paid-custody\/|probes\/original-paid-custody-authority\.sql$))/;
+// Accounting 3 loads these retained original sources and their native driver.
+// Input-only changes must execute that existing qualification too.
+const retainedOriginalCorrection = /^scripts\/qualification\/retained18-correction\//;
 const f06HandAuthority =
   /^(?:scripts\/ci\/(?:(?:test-f06-shared-hand-lane|build-f06-retired-origin|build-f06-stopped-bank-custody)\.py$|(?:test|build)-f06-(?:accepted-elimination|elimination-migration|movement-admission|drained-custody|mixed-custody)\.py$|fixtures\/f06-(?:accepted-elimination|movement-admission|drained-custody|mixed-custody)\/|probes\/f06-(?:retired-origin-cohorts\.json$|shared-hand-lane\/|mixed-restart-qualification\.py$|(?:accepted-elimination|movement-admission|drained-custody|mixed-custody)\.(?:sql|spec)$|(?:retired-origin-authority|movement-opening|drained-custody-authority|mixed-custody-authority|mixed-movement-authority)\.sql$)|schema-manifest\.d\/f06-(?:movement-admission|drained-custody|mixed-custody|retained-mtt-disposition|retired-origin|stopped-bank-custody|lease-retention)\.json$|(?:test-hand-submission|build-hand-submission-migration)\.py$|probes\/hand-submission-[a-z-]+\.(?:sql|spec)$|fixtures\/hand-submission\/)|tests\/operations\/f06-(?:elimination|movement)-results\.test\.py$)/;
 const fixture =
@@ -319,6 +322,7 @@ export function classifyChangedPaths(paths) {
       matches(mttActivation) ||
       matches(f06HandAuthority) ||
       matches(originalPaidCustody) ||
+      matches(retainedOriginalCorrection) ||
       commitmentAudit ||
       matches(accounting) ||
       matches(nativeRecovery) ||
@@ -380,6 +384,7 @@ export function classifyChangedPaths(paths) {
       matches(mttActivation) ||
       matches(f06HandAuthority) ||
       matches(originalPaidCustody) ||
+      matches(retainedOriginalCorrection) ||
       matches(/^scripts\/ci\/detect-silent-revert\.mjs$/) ||
       nativeIsolationTool ||
       spinRules ||

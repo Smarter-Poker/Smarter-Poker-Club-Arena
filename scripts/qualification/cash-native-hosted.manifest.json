@@ -174,8 +174,8 @@
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 36734,
-      "sha256": "c4a9e6535e8f0160dfbbf834dd82a4b5fb9b867d28e75bfa9ad900276895ce42"
+      "bytes": 37058,
+      "sha256": "3ef4c6362dd8d88361a1040da0af18de85383aa6edda65ff4ad2cca51b1769a9"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -3337,5 +3337,20 @@
       }
     },
     "verification": "Native rake report and actual report installation module passed. Cash source pin validation and protected provider qualification remain required; this pin update is not a new cash runtime certification."
+  },
+  "scopedLaunchRetainedInputRouting20261013": {
+    "why": "Retained source native inputs previously selected neither server nor tests. Add only their directory to the existing required Accounting3 admission; preserve all financial fixture sources, assertions and historical evidence.",
+    "changes": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "previous": {
+          "bytes": 36734,
+          "sha256": "c4a9e6535e8f0160dfbbf834dd82a4b5fb9b867d28e75bfa9ad900276895ce42"
+        },
+        "current": {
+          "bytes": 37058,
+          "sha256": "3ef4c6362dd8d88361a1040da0af18de85383aa6edda65ff4ad2cca51b1769a9"
+        }
+      }
+    }
   }
 }

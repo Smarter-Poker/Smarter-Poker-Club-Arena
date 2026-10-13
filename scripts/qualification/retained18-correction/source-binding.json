@@ -182,8 +182,8 @@
       "sha256": "6ada39a842fa0eb59a0fa382adab3e6d1a8d15865cef45e93d7a218fa410c423"
     },
     "scripts/qualification/retained18-correction/probe-native-bootstrap.py": {
-      "bytes": 18289,
-      "sha256": "c6fe3922f78b31e330888946c4f858c3ab68af129c4725ca893fdac0c7f77aa0"
+      "bytes": 18405,
+      "sha256": "f5523f48c52388c4a33b2c68023b8ee10857e6d25b808aed5f78ac6dc89c604a"
     },
     "scripts/qualification/retained18-correction/qualified-none-parent.sql": {
       "bytes": 10477,
@@ -208,6 +208,30 @@
     "supabase/migrations/20260918092329_retained_hand_submission_atomic_acknowledgement.sql": {
       "bytes": 84444,
       "sha256": "4bdbcf3fb80e7111c5b951bee5d83c31695a3cf19916c72c041ca99ba9dfc268"
+    },
+    "scripts/qualification/retained18-correction/native-typed209.py": {
+      "bytes": 5100,
+      "sha256": "a97898cbee91fa7e9f20c89d25efd46a9819292e98ff3f1b88310fdf48742b41"
+    },
+    "scripts/qualification/retained18-correction/typed209-source-binding.json": {
+      "bytes": 466,
+      "sha256": "2566c61b6d6ac723b9bfba486c438e7d88c4d9212537a853299678402ad7e4a4"
+    },
+    "scripts/qualification/retained18-correction/original_tournament30_source_correction_proof.sql": {
+      "bytes": 16742,
+      "sha256": "e3779af1d4fa47af9852d4c7c225b811a4cba8f96676e3f9754cc70d9b365b15"
+    },
+    "scripts/qualification/retained18-correction/cash_original17_source_correction_proof.sql": {
+      "bytes": 12370,
+      "sha256": "0ca0ab59f92523e66b8579a984a578a7750b96da841edee0f87ebf8c1d73c792"
+    },
+    "scripts/qualification/retained18-correction/original_hand_source_correction_proof.sql": {
+      "bytes": 439,
+      "sha256": "881bef612e99a6cfd966831264a007a1684bdbdf1f57bf35d4e9002656f477e3"
+    },
+    "supabase/migrations/20261013163547_scoped_launch_retained_originals_use_the_installed_typed_row.sql": {
+      "bytes": 116882,
+      "sha256": "caf700a4ad677baf44ab4b9a932887eadd92082411853a72971b7a8599f5c46a"
     }
   }
 }

@@ -1,0 +1,20 @@
+{
+  "query": "BEGIN READ ONLY;SET LOCAL statement_timeout='5s';SELECT p.oid::regprocedure::text signature,pg_get_functiondef(p.oid) body,md5(pg_get_functiondef(p.oid)) body_md5 FROM pg_proc p WHERE p.oid IN('public.fn_accounting_close_certificate(text,uuid,timestamptz,timestamptz)'::regprocedure,'public.fn_accounting_close_problem(text,uuid,timestamptz,timestamptz)'::regprocedure,'public.fn_accounting_close_certify(text,uuid,timestamptz,timestamptz,jsonb)'::regprocedure);COMMIT;",
+  "rows": [
+    {
+      "signature": "fn_accounting_close_certificate(text,uuid,timestamp with time zone,timestamp with time zone)",
+      "body": "CREATE OR REPLACE FUNCTION public.fn_accounting_close_certificate(p_kind text, p_union_id uuid, p_start timestamp with time zone, p_end timestamp with time zone)\n RETURNS jsonb\n LANGUAGE sql\n STABLE\n SET search_path TO 'public'\nAS $function$\n SELECT c.value FROM public.accounting_close_certificates c\n  WHERE COALESCE(current_setting('app.weekly_accounting_chunked',true),'')='on'\n    AND current_setting('app.accounting_close_memo',true)='on'\n    AND c.kind=p_kind AND c.union_id=p_union_id AND c.period_start=p_start AND c.period_end=p_end\n    AND c.certified_at>=p_end AND c.certified_at>clock_timestamp()-interval '12 hours'\n$function$\n",
+      "body_md5": "7b4a5f4572a45db069b6058899614021"
+    },
+    {
+      "signature": "fn_accounting_close_certify(text,uuid,timestamp with time zone,timestamp with time zone,jsonb)",
+      "body": "CREATE OR REPLACE FUNCTION public.fn_accounting_close_certify(p_kind text, p_union_id uuid, p_start timestamp with time zone, p_end timestamp with time zone, p_value jsonb)\n RETURNS void\n LANGUAGE plpgsql\n SET search_path TO 'public'\nAS $function$\nBEGIN\n IF COALESCE(current_setting('app.weekly_accounting_chunked',true),'')<>'on'\n  OR current_setting('app.accounting_close_memo',true) IS DISTINCT FROM 'on'\n  OR p_value IS NULL OR p_end>clock_timestamp() THEN RETURN; END IF;\n DELETE FROM public.accounting_close_certificates WHERE certified_at<clock_timestamp()-interval '8 days';\n INSERT INTO public.accounting_close_certificates(kind,union_id,period_start,period_end,value,certified_at)\n VALUES(p_kind,p_union_id,p_start,p_end,p_value,clock_timestamp())\n ON CONFLICT(kind,union_id,period_start,period_end) DO UPDATE SET value=EXCLUDED.value,certified_at=EXCLUDED.certified_at;\n PERFORM set_config('app.accounting_close_certified','on',true);\nEND $function$\n",
+      "body_md5": "58501728a93f9f4534dbf26d26aba63f"
+    },
+    {
+      "signature": "fn_accounting_close_problem(text,uuid,timestamp with time zone,timestamp with time zone)",
+      "body": "CREATE OR REPLACE FUNCTION public.fn_accounting_close_problem(p_kind text, p_union_id uuid, p_start timestamp with time zone, p_end timestamp with time zone)\n RETURNS jsonb\n LANGUAGE sql\n STABLE\n SET search_path TO 'public'\nAS $function$\n SELECT c.value FROM public.accounting_close_certificates c\n  WHERE COALESCE(current_setting('app.weekly_accounting_chunked',true),'')='on'\n    AND current_setting('app.accounting_close_memo',true)='on'\n    AND c.kind=p_kind||'_problem' AND c.union_id=p_union_id AND c.period_start=p_start AND c.period_end=p_end\n    AND c.certified_at>=p_end AND c.certified_at>clock_timestamp()-interval '1 hour'\n$function$\n",
+      "body_md5": "9667c8b8c5aa74bf2ad2c57fbfa3991d"
+    }
+  ]
+}

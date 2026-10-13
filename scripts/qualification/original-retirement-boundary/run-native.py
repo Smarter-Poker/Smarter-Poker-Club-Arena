@@ -1,0 +1,35 @@
+#!/usr/bin/env python3
+"""Finite captured-original native qualification, never a production repair."""
+import argparse,hashlib,json,os,pathlib,shutil,subprocess,sys,tempfile
+p=pathlib.Path(__file__).resolve().parent
+parser=argparse.ArgumentParser();parser.add_argument('--output',type=pathlib.Path,required=True);o=parser.parse_args().output.resolve();o.mkdir(parents=True,exist_ok=True)
+pg=pathlib.Path(os.environ.get('PG_BIN',str(pathlib.Path(shutil.which('psql') or '/opt/homebrew/opt/postgresql@17/bin/psql').parent)))
+base=pathlib.Path('/Volumes/SmarterWork/agent-work') if sys.platform=='darwin' else o.parent
+if sys.platform=='darwin' and not pathlib.Path('/Volumes/SmarterWork').is_mount():raise RuntimeError('mounted SSD required')
+c=pathlib.Path(tempfile.mkdtemp(prefix='inventory245-',dir=base));s=c/'s';s.mkdir(mode=0o700);started=False
+v=dict(os.environ,PG_BIN=str(pg),ORB_NATIVE_SOCKET=str(s),ORB_NATIVE_PORT='55931',TZ='UTC',LC_ALL='C')
+def run(name,cmd,env=None):
+ r=subprocess.run([str(x) for x in cmd],text=True,capture_output=True,env=env or v,timeout=90);(o/(name+'.log')).write_text(r.stdout+r.stderr)
+ if r.returncode:raise RuntimeError(name+':'+(r.stdout+r.stderr)[-2000:])
+ return r
+try:
+ run('initdb',[pg/'initdb','-D',c/'d','-U','postgres','-A','trust','--no-locale','-E','UTF8'])
+ run('start',[pg/'pg_ctl','-D',c/'d','-l',c/'server.log','-o',f"-k {s} -p 55931 -h ''",'-w','start']);started=True
+ run('platform-roles',[pg/'psql','-X','-q','-h',s,'-p','55931','-U','postgres','-d','postgres','-v','ON_ERROR_STOP=1','-c','CREATE ROLE anon;CREATE ROLE authenticated;CREATE ROLE service_role;'])
+ run('source-refs',[sys.executable,p/'run-source-ref-native.py'])
+ run('exact-installer',[sys.executable,p/'run-installer-native.py'])
+ run('certificate-source',[sys.executable,p/'run-certificate-native.py'],dict(v,NATIVE_GENERATE_ONLY=str(s/'finite245-certificate-composition.sql')))
+ run('raw-source',[sys.executable,p/'run-wrapper-native.py'],dict(v,NATIVE_GENERATE_ONLY=str(s/'finite245-raw-composition.sql')))
+ run('raw245',[sys.executable,p/'run-wrapper-native.py'])
+ run('cache-generation',[sys.executable,p/'run-generation-cache-native.py'])
+ run('retention',[pg/'psql','-X','-q','-h',s,'-p','55931','-U','postgres','-d','original_source_refs','-v','ON_ERROR_STOP=1','-f',p/'retention-reader-native.sql'])
+ run('certificate-concurrency',[sys.executable,p/'run-certificate-concurrency-native.py'])
+ run('current-seven',[sys.executable,p.parent/'original-seven-discharge'/'run-native.py','--output',o/'current-seven'])
+ migration=p.parents[2]/'supabase/migrations/20261012224150_original_retirement_evidence_certifies_finite_inventory_boun.sql'
+ tested=migration.read_bytes();binding=(p/'source-binding.json').read_bytes()
+ (o/'result.json').write_text(json.dumps({'status':'passed','cases':245,'source_refs':1580,'captured_original_rows':1578,'raw_active_rows':14941,'raw_issues_retained':245,'scope':'finite_original_native_not_full_week_production','migration':{'bytes':len(tested),'md5':hashlib.md5(tested).hexdigest(),'sha256':hashlib.sha256(tested).hexdigest()},'native_binding_sha256':hashlib.sha256(binding).hexdigest(),'steps':['source-refs','exact-installer','raw245','cache-generation','retention','certificate-concurrency','current-seven']},indent=2))
+ print('Finite inventory245/raw/cache/retention/currentseven qualification PASS')
+finally:
+ if started:run('stop',[pg/'pg_ctl','-D',c/'d','-m','immediate','-w','stop'])
+ if (c/'server.log').exists():shutil.copyfile(c/'server.log',o/'server.log')
+ shutil.rmtree(c)

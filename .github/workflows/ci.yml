@@ -2489,6 +2489,25 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Original inventory restoration admits only qualified finite financial evidence
+        id: original_inventory_restoration
+        if: matrix.shard == 3
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/original-inventory-restoration"
+          python3 scripts/qualification/original-retirement-boundary/run-native.py --output "$RUNNER_TEMP/original-inventory-restoration" 2>&1 | tee "$RUNNER_TEMP/original-inventory-restoration/native.log"
+
+      - name: Retain original inventory restoration qualification
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.original_inventory_restoration.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: original-inventory-restoration-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/original-inventory-restoration/
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Hand index writers retain canonical order and exact coverage
         id: hand_index_writer_order
         if: matrix.shard == 4

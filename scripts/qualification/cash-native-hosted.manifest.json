@@ -56,8 +56,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 214051,
-      "sha256": "160ed76613500d82d0fe1637fa7b9c3687d1629888065c29f153f48dfb6a55ee"
+      "bytes": 215085,
+      "sha256": "1e0061091e2adfc86cc624fb1bb823cb4c6f621ccdadee1d6be90ae7ee12f780"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -2972,6 +2972,53 @@
         "ours": "b7d700836f7d4a4d19df0b2321b9d5fb743d9e5f5645f30ae40e66bda79afb51",
         "incoming": "fb94dda014bd29ec71e87a50affd1049df971691e6d1da7469948e74ad50fc62"
       }
+    }
+  },
+  "originalInventoryFiniteNative20261012": {
+    "reason": "Add the finite original245 raw/cache/retention/currentseven native qualification in Accounting3, preserving every existing lane, financial assertion and historical fingerprint. Source identity only, not installation or financial admission.",
+    "changes": [
+      {
+        "section": "files",
+        "path": ".github/workflows/ci.yml",
+        "previous": {
+          "bytes": 210534,
+          "sha256": "f121396e2a47265ac66b95be65b77b88ed4aa128ec8f4230eb28458628cc8631"
+        },
+        "current": {
+          "bytes": 211568,
+          "sha256": "64db57c5ff1d88eb1d481826b622a602e7418d4288458ba7d61cdcf47e76d13f"
+        }
+      }
+    ]
+  },
+  "originalInventoryPosthandProtectedIntegration20261012": {
+    "reason": "Preserve both protected original posthand and finite inventory native Accounting3 lanes plus all historical source receipts. Only active workflow fingerprint changes; financial inputs/status unchanged. Not installation or admission.",
+    "previousBranchWorkflowPin": {
+      "bytes": 211568,
+      "sha256": "64db57c5ff1d88eb1d481826b622a602e7418d4288458ba7d61cdcf47e76d13f"
+    },
+    "protectedMainWorkflowPin": {
+      "bytes": 211448,
+      "sha256": "65ab5c875b5514f798b5ff5cc2e9764a89babf5ea27d1c00c704b59a175755a9"
+    },
+    "currentWorkflowPin": {
+      "bytes": 212482,
+      "sha256": "4018545ae22f5ac8a6f20e2f7a8e241e463e6124f75ba30a59e43349042b2f1d"
+    }
+  },
+  "originalInventoryFinalProtectedMainIntegration20261013": {
+    "reason": "Resolve actual protectedmain015259 sharedmanifest conflict. Preserve every native lane and all historical receipts; original finite70 input bytes and financial functions/migration unchanged. Workflow fingerprint is source identity only, not installation or admission.",
+    "previousBranchWorkflowPin": {
+      "bytes": 212482,
+      "sha256": "4018545ae22f5ac8a6f20e2f7a8e241e463e6124f75ba30a59e43349042b2f1d"
+    },
+    "protectedMainWorkflowPin": {
+      "bytes": 214051,
+      "sha256": "160ed76613500d82d0fe1637fa7b9c3687d1629888065c29f153f48dfb6a55ee"
+    },
+    "currentWorkflowPin": {
+      "bytes": 215085,
+      "sha256": "1e0061091e2adfc86cc624fb1bb823cb4c6f621ccdadee1d6be90ae7ee12f780"
     }
   }
 }

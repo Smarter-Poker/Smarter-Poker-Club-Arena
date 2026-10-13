@@ -2,8 +2,8 @@
   "scope": "Exact cash17 source/installer public-safe enforcement; private actual17 connected financial evidence external only, no production installation or ownership inferred.",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 220312,
-      "sha256": "fd98cd6ec4a6b94e2fc59a16519c0562d773160ac2d96d17292d81488120a797"
+      "bytes": 221256,
+      "sha256": "78545cc8462142bcafa0387bdc3429278a7e6fb2ae823217fe6cfaeac2f7adc8"
     },
     "scripts/ci/satellite_qualifier_fixture.py": {
       "bytes": 18466,
@@ -325,6 +325,25 @@
     "current_workflow": {
       "bytes": 220312,
       "sha256": "fd98cd6ec4a6b94e2fc59a16519c0562d773160ac2d96d17292d81488120a797"
+    }
+  },
+  "spentDssProtectedMainIntegration20261013": {
+    "reason": "Normal merge of protected a65aecace39c4ee6215c8a1fdc382f61ebaf9ae4 preserves original flow eligibility, client rake ownership and certificate observation plus both satellite/DSS native steps. Current selection fingerprints only; financial inputs/assertions and historical audits unchanged.",
+    "reviewed_conflicts": [
+      {
+        "path": "/files/.github/workflows/ci.yml/bytes",
+        "previous_own": 220312,
+        "previous_main": 220644
+      },
+      {
+        "path": "/files/.github/workflows/ci.yml/sha256",
+        "previous_own": "fd98cd6ec4a6b94e2fc59a16519c0562d773160ac2d96d17292d81488120a797",
+        "previous_main": "f10e4911a8c6211b32f683d607805fe3fef618847dee55917db2fe691f52cef6"
+      }
+    ],
+    "current_workflow": {
+      "bytes": 221256,
+      "sha256": "78545cc8462142bcafa0387bdc3429278a7e6fb2ae823217fe6cfaeac2f7adc8"
     }
   }
 }

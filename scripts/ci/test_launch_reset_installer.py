@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Bounded native TLS checks of the actual maintained migration installer."""
 from pathlib import Path
-import argparse,hashlib,json,os,re,shutil,socket,subprocess,tempfile,time
+import argparse,hashlib,json,os,re,shutil,socket,subprocess,tempfile,time,sys
 p=argparse.ArgumentParser(description=__doc__)
 p.add_argument('--installer',type=Path,required=True);p.add_argument('--repository',type=Path,required=True)
 p.add_argument('--pgbin',default=os.environ.get('PGBIN','/opt/homebrew/bin'))
@@ -109,3 +109,12 @@ with tempfile.TemporaryDirectory(prefix='installer-native-',dir=a.scratch) as tm
   result={'qualified':True,'settlement_lane_actual_installer_qualified':True,'installer_sha256':source_sha,'native_tls_verified':True,'invalid_ca_refused_before_ddl':True,'atomic_schema_exact_history_commit':True,'history_failure_rolls_back_schema':True,'original_window_refusal_sends_nothing':True,'original_readiness_refusal_sends_nothing':True,'original_break_guard_body_fixture_time_only':True,'already_applied_no_replay':True,'postcommit_socket_loss_returns_unknown':True,'precommit_backend_termination_returns_unknown_without_partial_schema_or_history':True,'unknown_durable_state_inspected_without_retry':True,'production_actions':False,'fixture_clock_only_stubbed_for_utc_window':True}
   a.output.parent.mkdir(parents=True,exist_ok=True);a.output.write_text(json.dumps(result,indent=2)+'\n');print(json.dumps(result))
  finally:cmd([pg/'pg_ctl','-D',data,'-m','immediate','-w','stop'],expect=None)
+
+# The original retention reader must honor the same installation lane.
+subprocess.run([
+ sys.executable, str(a.repository/'scripts/ci/fixtures/launch-reset/pruner-lane/qualify.py'),
+ '--repository',str(a.repository), '--scratch',str(a.scratch), '--pg-bin',str(pg),
+ '--node',str(a.node), '--pg-module',str(a.repository/'node_modules/pg/lib/index.js'),
+ '--migration',str(a.repository/'supabase/migrations/20261013115251_hand_history_pruner_respects_the_existing_settlement_install.sql'),
+ '--output',str(a.output.with_name('pruner-lane.json'))
+],check=True,timeout=120)

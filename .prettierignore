@@ -256,3 +256,8 @@ scripts/qualification/fixtures/archived-spin/first-fee-owner-operation-absence.j
 # Exact production authority catalogs for scoped launch recovery; fixture hashes own bytes.
 scripts/ci/fixtures/launch-reset/*.json
 scripts/ci/fixtures/launch-reset/floor/*.json
+
+# Native pruner definitions preserve exact provider function bytes.
+scripts/ci/fixtures/launch-reset/pruner-lane/original.sql
+scripts/ci/fixtures/launch-reset/pruner-lane/expected.sql
+scripts/ci/fixtures/launch-reset/pruner-lane/ordinary-dependencies.sql

@@ -1,0 +1,5 @@
+# Original financial flow proof eligibility
+
+The original weekly flow reader passed NULL to its non-strict late-settlement proof for unrelated rows. Actual native plans invoked the authentic proof20039times, though only32inputs were eligible. An eligibility input relation now guards the same existing proof; the count0/minNULL aggregate and all eligible original financial predicates remain unchanged. RF lineage/move/tournament/private33+7 tails byte unchanged. Exactly one source40 flow fingerprint changes; no cache/policy/ledger rewrite.
+
+Native current0ff6 helper/captured31 rows and equations unchanged125.70debits/339.89credits/net214.19, original financial+retained negative controls, 39category/NULL/type/orphan equality and actual20039→32 FunctionScan calls. Exact guarded successor validates protected21799RFhistory, current40/fullmetadata/privateACL/late service grant, postgres/noJWT/thaw/ownedreader, rollback/postmetadata/replay. Native result is component proof, not production timing or whole weekly completion. Exploratory move gate withdrawn after native1→1counterevidence; no move change shipped. Source/review/CI/install/live states are separate.

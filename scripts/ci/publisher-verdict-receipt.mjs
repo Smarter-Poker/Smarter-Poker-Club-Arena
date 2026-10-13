@@ -118,7 +118,6 @@ export function mergePublisherReceipt(
   if (
     !run ||
     run.status !== 'completed' ||
-    !['success', 'failure', 'cancelled'].includes(run.conclusion) ||
     String(run.id) !== receipt.runId ||
     !ID.test(String(run.run_attempt)) ||
     Number(receipt.runAttempt) > Number(run.run_attempt) ||

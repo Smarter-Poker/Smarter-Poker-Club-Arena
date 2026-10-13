@@ -109,6 +109,18 @@ describe('original publisher verdict receipt', () => {
     t.run.conclusion = 'failure';
     expect(mergePublisherReceipt(createReceipt(env()), t).steps).toHaveLength(3);
   });
+  it.each(['failure', 'cancelled', 'timed_out', 'action_required', undefined])(
+    'never substitutes optional whole-run conclusion %s for the verified origin job',
+    (conclusion) => {
+      const t = trusted();
+      expect(
+        mergePublisherReceipt(createReceipt(env()), {
+          ...t,
+          run: { ...t.run, conclusion },
+        }).steps
+      ).toHaveLength(3);
+    }
+  );
   it('preserves completed origin proof after later optional cancellation', () => {
     const t = trusted();
     t.run.conclusion = 'cancelled';

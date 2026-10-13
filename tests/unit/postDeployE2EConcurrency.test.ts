@@ -109,12 +109,17 @@ describe('post-deploy E2E concurrency', () => {
   // Hosted client shards deliberately have shallow history. Qualify real Git
   // ancestry in a disposable two-commit repository, never in checkout history.
   const ancestryRoot = mkdtempSync(join(tmpdir(), 'publication-verdict-ancestry-'));
+  // Git hooks export repository-local variables; never let a fixture command
+  // inherit the owning checkout's Git directory/index/worktree.
+  const fixtureEnvironment = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_'))
+  );
   const fixtureGit = (...args: string[]) =>
     execFileSync('git', args, {
       cwd: ancestryRoot,
       encoding: 'utf8',
       env: {
-        ...process.env,
+        ...fixtureEnvironment,
         GIT_AUTHOR_NAME: 'Publication qualification',
         GIT_AUTHOR_EMAIL: 'publication-qualification@example.invalid',
         GIT_COMMITTER_NAME: 'Publication qualification',
@@ -300,7 +305,7 @@ gh() {
           encoding: 'utf8',
           timeout: 10000,
           env: {
-            ...process.env,
+            ...fixtureEnvironment,
             EVENT_NAME: 'workflow_run',
             SOURCE_RUN_ID: source.runId,
             SOURCE_RUN_ATTEMPT: source.attempt,

@@ -497,27 +497,30 @@ export default function ClubDashboard() {
       if (timer) clearTimeout(timer);
       unsubs.forEach((unsub) => unsub());
     };
-     
   }, [clubId, resolvedClubId]);
 
   const handleRecalculateLevel = async () => {
     if (!resolvedClubId || isRecalculating) return;
+    const actionScope = scopeRef.current;
+    const isCurrent = () => mountedRef.current && actionScope === scopeRef.current;
     setIsRecalculating(true);
     try {
       const { data: resData, error } = await supabase.rpc('recompute_club_levels', {
         p_club_id: resolvedClubId,
       });
+      if (!isCurrent()) return;
       if (error) throw error;
       if (resData && resData.success === false) {
         throw new Error(resData.error || 'Failed to recalculate level.');
       }
       toast.success('Club Level Recalculated Successfully!');
-      loadDashboardData(true);
+      void latestDashboardLoadRef.current(true);
     } catch (err: any) {
+      if (!isCurrent()) return;
       reportError(err, 'ClubDashboard.Recalculate_error');
       toast.error(err.message || 'Failed to recalculate level.');
     } finally {
-      setIsRecalculating(false);
+      if (isCurrent()) setIsRecalculating(false);
     }
   };
 
@@ -527,7 +530,7 @@ export default function ClubDashboard() {
    *   into a skeleton mid-session.
    */
   const loadDashboardData = async (silent = false) => {
-    if (!clubId) return;
+    if (!clubId || !mountedRef.current || scopeKey !== scopeRef.current.key) return;
     if (loadingRef.current) {
       // Do NOT drop this request. A Time Range change while a load is in
       // flight used to be swallowed here, leaving the filter highlighted but
@@ -927,6 +930,7 @@ export default function ClubDashboard() {
     setRecentTables([]);
     setTablesMeta(null);
     setUserRole(null);
+    setIsRecalculating(false);
     setLastUpdated(null);
     setNotAMember(false);
     setLoadError(false);

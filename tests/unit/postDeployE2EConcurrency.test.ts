@@ -1,8 +1,16 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+  rmSync,
+  cpSync,
+} from 'node:fs';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 
 import { parse } from 'yaml';
 import {
@@ -98,21 +106,38 @@ describe('post-deploy E2E concurrency', () => {
     );
   });
 
+  // Hosted client shards deliberately have shallow history. Qualify real Git
+  // ancestry in a disposable two-commit repository, never in checkout history.
+  const ancestryRoot = mkdtempSync(join(tmpdir(), 'publication-verdict-ancestry-'));
+  const fixtureGit = (...args: string[]) =>
+    execFileSync('git', args, {
+      cwd: ancestryRoot,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: 'Publication qualification',
+        GIT_AUTHOR_EMAIL: 'publication-qualification@example.invalid',
+        GIT_COMMITTER_NAME: 'Publication qualification',
+        GIT_COMMITTER_EMAIL: 'publication-qualification@example.invalid',
+      },
+    }).trim();
+  fixtureGit('init', '--quiet', '--initial-branch=main');
+  fixtureGit('commit', '--quiet', '--allow-empty', '-m', 'Protected trigger fixture');
+  const triggerSha = fixtureGit('rev-parse', 'HEAD');
+  fixtureGit('commit', '--quiet', '--allow-empty', '-m', 'Protected selected fixture');
+  const selectedSha = fixtureGit('rev-parse', 'HEAD');
+  fixtureGit('update-ref', 'refs/remotes/origin/main', selectedSha);
+  cpSync(join(root, 'scripts/ci'), join(ancestryRoot, 'scripts/ci'), { recursive: true });
+  afterAll(() => rmSync(ancestryRoot, { recursive: true, force: true }));
+
   const source = {
     runId: '34567',
     attempt: '2',
     repositoryId: '1132369872',
-    triggerSha: execFileSync('git', ['rev-parse', 'origin/main^'], {
-      cwd: root,
-      encoding: 'utf8',
-    }).trim(),
+    triggerSha,
     branch: 'main',
     workflow: '.github/workflows/publish-club-arena.yml',
   };
-  const selectedSha = execFileSync('git', ['rev-parse', 'origin/main'], {
-    cwd: root,
-    encoding: 'utf8',
-  }).trim();
   const resultStep = (status: string) => ({ outcome: status, conclusion: status });
   const sourceRun = () => ({
     id: Number(source.runId),
@@ -271,7 +296,7 @@ gh() {
             body.replaceAll('${{ github.repository }}', 'Smarter-Poker/Smarter-Poker-Club-Arena'),
         ],
         {
-          cwd: root,
+          cwd: ancestryRoot,
           encoding: 'utf8',
           timeout: 10000,
           env: {

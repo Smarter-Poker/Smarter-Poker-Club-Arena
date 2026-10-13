@@ -118,11 +118,14 @@ describe('explicit rake report history qualification', () => {
     expect(script).not.toContain('import { rakeReportRequest, qualifyRakeReportHistory }');
     expect(script).toContain("if (args.includes('--qualify-rake-report-history'))");
     expect(script).toContain("await import('./rake-report-history-baseline.mjs')");
-    const ci = readFileSync('.github/workflows/ci.yml', 'utf8');
-    const nativeStep = ci
-      .split('- name: Data console native PostgreSQL contracts')[1]
-      .split('- name:')[0];
-    expect(nativeStep).toContain('npm ci --ignore-scripts --no-audit --no-fund');
-    expect(nativeStep).toContain('npm run test:data:postgres');
+    const fixture = readFileSync(
+      'scripts/dev/qualify-rake-report-installation-fixture.mjs',
+      'utf8'
+    );
+    expect(fixture).toContain("['../../', '../../server/']");
+    expect(fixture).toContain("installed.version !== locked.packages['node_modules/pg']?.version");
+    expect(fixture).toContain(
+      "realpathSync(packagePath).startsWith(resolve(ownerRoot, 'node_modules') + '/')"
+    );
   });
 });

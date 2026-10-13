@@ -14,7 +14,10 @@ mkdir -p "$socket"
 cleanup(){ "$pgbin/pg_ctl" -D "$data" -m immediate stop >/dev/null 2>&1 || true; [[ "$work" == "$scratch_parent"/rake-agent-report.* ]] && find "$work" -depth -delete; }
 trap cleanup EXIT
 "$pgbin/initdb" -D "$data" -U postgres --auth-local=trust --auth-host=reject --no-locale -E UTF8 -c shared_memory_type=mmap >/dev/null
-"$pgbin/pg_ctl" -D "$data" -o "-h '' -k '$socket' -p $port" -w start >/dev/null
+if ! "$pgbin/pg_ctl" -D "$data" -l "$work/postgres.log" -o "-h '' -k '$socket' -p $port" -w start >/dev/null; then
+  cat "$work/postgres.log" >&2
+  exit 1
+fi
 psql=("$pgbin/psql" -X -q -v ON_ERROR_STOP=1 -h "$socket" -p "$port" -U postgres -d postgres)
 "${psql[@]}" -f "$fixture/bootstrap.sql" -f "$fixture/original-function.sql"
 "${psql[@]}" -c 'ALTER FUNCTION public.fn_ca_rake_by_agent(uuid,date,date,integer,integer,text,text) RENAME TO fixture_original_rake_by_agent' -f "$fixture/original-function.sql"

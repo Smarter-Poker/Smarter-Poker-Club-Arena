@@ -1483,11 +1483,7 @@ jobs:
           PG17_BINDIR: /usr/lib/postgresql/17/bin
           STATS_PG_SCRATCH_PARENT: ${{ runner.temp }}
           DATA_CONSOLE_PG_SCRATCH_PARENT: ${{ runner.temp }}
-        run: |
-          # The report installation fixture uses the root lockfile pg closure.
-          set -euo pipefail
-          npm ci --ignore-scripts --no-audit --no-fund
-          npm run test:data:postgres
+        run: npm run test:data:postgres
       - name: Managed games keep one receipted browser command door
         if: matrix.shard == 2
         env:

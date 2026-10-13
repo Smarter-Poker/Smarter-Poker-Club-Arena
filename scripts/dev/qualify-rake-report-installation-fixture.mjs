@@ -1,7 +1,8 @@
 // Native fixture only: never connects to a network/database credential store.
-import { readFileSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
 import { dirname, basename, resolve } from 'node:path';
-import pg from 'pg';
+import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 import {
   qualifyRakeReportHistory,
   RAKE_REPORT_MIGRATION,
@@ -13,6 +14,26 @@ if (!socket || resolve(socket) !== socket || !basename(dirname(socket)).startsWi
     !/^[0-9]{4,5}$/.test(port ?? '')) {
   throw new Error('Only the owned native rake fixture socket is allowed');
 }
+// The accounting job already installs the server lockfile closure. Local
+// client checks install the root closure. Require the selected owner's exact
+// locked driver, never an ambient module or another checkout's dependencies.
+let pg;
+for (const owner of ['../../', '../../server/']) {
+  const ownerRoot = fileURLToPath(new URL(owner, import.meta.url));
+  const require = createRequire(new URL(owner + 'package.json', import.meta.url));
+  let packagePath;
+  try { packagePath = require.resolve('pg/package.json'); }
+  catch (error) { if (error.code === 'MODULE_NOT_FOUND') continue; throw error; }
+  const installed = JSON.parse(readFileSync(packagePath, 'utf8'));
+  const locked = JSON.parse(readFileSync(new URL(owner + 'package-lock.json', import.meta.url), 'utf8'));
+  if (!realpathSync(packagePath).startsWith(resolve(ownerRoot, 'node_modules') + '/') ||
+      installed.version !== locked.packages['node_modules/pg']?.version)
+    throw new Error('Native report fixture PostgreSQL driver is not owned and locked');
+  pg = require('pg');
+  console.log(`Native report fixture locked PostgreSQL driver ${installed.version}`);
+  break;
+}
+if (!pg) throw new Error('Native report fixture requires the existing locked PostgreSQL driver');
 const client = new pg.Client({ host: socket, port: Number(port), user: 'postgres', database: 'postgres' });
 const sql = readFileSync(`supabase/migrations/${RAKE_REPORT_MIGRATION}`, 'utf8');
 await client.connect();

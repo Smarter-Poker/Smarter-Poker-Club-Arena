@@ -325,3 +325,43 @@ it.each(['search', 'filter', 'sort'])(
     expect(operation()).not.toHaveTextContent('Private Search Text');
   }
 );
+
+it.each(['search', 'filter', 'sort'])(
+  'does not label retained rows as the current query while a changed %s is pending or failed',
+  async (kind) => {
+    let rejectRead!: (error: Error) => void;
+    const pendingRead = new Promise((_, reject) => {
+      rejectRead = reject;
+    });
+    render(tree());
+    await ready();
+    expect(rosterOperations()).toHaveTextContent('1 Loaded Of 100 Matching Players.');
+    f.page.mockReturnValue(pendingRead);
+    if (kind === 'search') {
+      fireEvent.change(screen.getByRole('searchbox', { name: 'Search Club Members' }), {
+        target: { value: 'New Query' },
+      });
+    } else {
+      fireEvent.change(
+        screen.getByRole('combobox', {
+          name: kind === 'filter' ? 'Filter Players' : 'Sort Players',
+        }),
+        {
+          target: { value: kind === 'filter' ? 'online' : 'name' },
+        }
+      );
+    }
+    expect(rosterOperations()).not.toHaveTextContent('1 Loaded Of 100 Matching Players.');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+    expect(rosterOperations()).not.toHaveTextContent('1 Loaded Of 100 Matching Players.');
+    expect(rosterOperations()).toHaveTextContent(/Previously Verified|Not Yet Verified/);
+    await act(async () => {
+      rejectRead(new Error('Current Filter Read Failed'));
+    });
+    expect(rosterOperations()).not.toHaveTextContent('1 Loaded Of 100 Matching Players.');
+    expect(rosterOperations()).toHaveTextContent(/Previously Verified|Not Yet Verified/);
+    expect(f.export).not.toHaveBeenCalled();
+  }
+);

@@ -1538,7 +1538,9 @@ export default function ClubMembersPage() {
           aria-live="polite"
         >
           {hasVerifiedDirectory && workspaceScope === exportScopeKey
-            ? `${members.length.toLocaleString()} Loaded Of ${filteredTotal.toLocaleString()} Matching Players.`
+            ? loadedQuery && sameRosterQuery(loadedQuery, currentWorkspace) && !searchIsSettling
+              ? `${members.length.toLocaleString()} Loaded Of ${filteredTotal.toLocaleString()} Matching Players.`
+              : `Showing ${members.length.toLocaleString()} Previously Verified Players. Current Filter And Search Not Yet Verified.`
             : 'Directory Not Yet Verified.'}{' '}
           {!simpleMode && summary.capabilities.can_export
             ? `${selected.size.toLocaleString()} Loaded Players Selected. Selection Limit ${MAX_ROSTER_SELECTION.toLocaleString()}.`

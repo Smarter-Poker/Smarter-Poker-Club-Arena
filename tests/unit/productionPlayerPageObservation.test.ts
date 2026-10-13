@@ -3,7 +3,9 @@ import { playerPageUnion } from '../e2e/club-data-deep.spec';
 
 // Import the actual production oracle without registering browser cases in
 // Vitest. The browser workflow still executes the original production spec.
-vi.mock('@playwright/test', () => ({ test: { describe: () => undefined } }));
+vi.mock('@playwright/test', () => ({
+  test: Object.assign(() => undefined, { describe: () => undefined }),
+}));
 
 const page = (ids: string[]) => ({ rows: ids.map((user_id) => ({ user_id })), next_cursor: null });
 

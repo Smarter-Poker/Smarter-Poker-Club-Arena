@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Qualify the real part-2 migration in a private PostgreSQL 17 cluster.
+"""Qualify the five original-witness migrations in a private PostgreSQL 17 cluster.
 
 The real closed-target predicate and full settlement migration run unchanged.
 The payment door is a fixture writing receipt tables: this qualifies cohort
@@ -44,6 +44,7 @@ def check(condition, label):
     print('PASS: ' + label, flush=True)
 
 
+witness = json.loads((ROOT / 'tests/fixtures/stranded-satellite-original-witness.json').read_text())
 sql = MIG.read_text()
 rule = RULE.read_text()
 start = rule.index('CREATE OR REPLACE FUNCTION public.fn_ca_satellite_ticket_target_is_closed(')
@@ -70,13 +71,14 @@ BEGIN
  RETURN jsonb_build_object('ok',true,'replayed',false,'amount',amount);
 END $$;
 """
-seed = """
-TRUNCATE public.tournament_tickets,public.chip_ledger,public.chip_ledger_idem,public.payment_calls;
--- Independently chosen amounts sum to the witnessed 190 tickets / 7730.00.
-INSERT INTO public.tournament_tickets
-SELECT md5('cohort-'||i)::uuid,CASE WHEN i=190 THEN 170 ELSE 40 END,'issued',
- 'tournament_entry_only',1,NULL,'2026-09-12 19:00:00+00'::timestamptz+(i-1)*interval '1 minute',
- '00000000-0000-0000-0000-000000000001',NULL FROM generate_series(1,190) i;
+def cohort_seed(part):
+    migration = next((ROOT / 'supabase/migrations').glob(f'*_the_stranded_satellite_tickets_are_paid_part_{part}.sql')).read_text()
+    lower = re.search(r"created_at>='([^']+)'", migration).group(1)
+    rows = [r for r in witness['tickets'] if r['part'] == part]
+    values = ','.join("('"+r['id']+"',"+r['value']+",'issued','tournament_entry_only',1,NULL,'"+lower+"'::timestamptz+interval '1 second','00000000-0000-0000-0000-000000000001',NULL)" for r in rows)
+    return 'TRUNCATE public.tournament_tickets,public.chip_ledger,public.chip_ledger_idem,public.payment_calls; INSERT INTO public.tournament_tickets VALUES ' + values + ';'
+
+seed = cohort_seed(2) + """
 -- Adjacent boundaries, open target, non-direct and used tickets stay out.
 INSERT INTO public.tournament_tickets VALUES
  (md5('before')::uuid,99,'issued','tournament_entry_only',1,NULL,'2026-09-12 18:59:59+00','00000000-0000-0000-0000-000000000001',NULL),
@@ -115,24 +117,56 @@ try:
     fixture_door = fixture[fixture.index('CREATE FUNCTION public.fn_ca_pay_closed_target_ticket_in_cash('):]
     q(fixture_door.replace('CREATE FUNCTION', 'CREATE OR REPLACE FUNCTION', 1))
     # Reconstruct only the actual old defect: identical lower and upper bounds.
-    before = re.sub(r'DO \$preimage\$.*?\$preimage\$;\n', '', sql, flags=re.S)
+    before = sql
     before = before.replace("created_at>='2026-09-12 19:00:00+00'", "created_at>='2026-09-17 21:45:00+00'")
-    q(before, 'STRANDED_TICKET_CASH_RESULT_CHANGED: paid 0 tickets worth 0')
+    q(before, 'STRANDED_TICKET_CASH_PREIMAGE_CHANGED: part 2 has 0 tickets worth 0')
     check(q('SELECT count(*) FROM public.payment_calls;') == '0', 'old empty range fails and rolls back')
     q(sql)
-    check(q('SELECT count(*)||\'|\'||sum(amount) FROM public.chip_ledger;') == '190|7730', 'full corrected migration pays exactly the witnessed cohort')
+    check(q('SELECT count(*)||\'|\'||sum(amount) FROM public.chip_ledger;') == '190|7730.00', 'full corrected migration pays exactly the witnessed cohort')
     check(q("SELECT count(*) FROM public.tournament_tickets WHERE status='issued';") == '4', 'adjacent boundaries and ineligible tickets remain untouched')
     proof = next(line.split('-- @live-proof: ', 1)[1] for line in sql.splitlines() if line.startswith('-- @live-proof: '))
     check(q('SELECT (' + proof + ');') == 't', 'live proof covers the corrected interval')
     q(sql, 'STRANDED_TICKET_CASH_PREIMAGE_CHANGED')
     check(q('SELECT count(*) FROM public.payment_calls;') == '190', 'replay refused before any payment call')
     for change, label in [
-        ("DELETE FROM public.tournament_tickets WHERE id=md5('cohort-1')::uuid;", 'missing ticket'),
-        ("UPDATE public.tournament_tickets SET value=value+0.01 WHERE id=md5('cohort-1')::uuid;", 'changed amount'),
+        ("DELETE FROM public.tournament_tickets WHERE id='043786e4-95b8-4b5f-8af9-f0bd9bd683a8'::uuid;", 'missing ticket'),
+        ("UPDATE public.tournament_tickets SET value=value+0.01 WHERE id='043786e4-95b8-4b5f-8af9-f0bd9bd683a8'::uuid;", 'changed amount'),
     ]:
         q(seed + change)
         q(sql, 'STRANDED_TICKET_CASH_PREIMAGE_CHANGED')
         check(q('SELECT count(*) FROM public.payment_calls;') == '0', label + ' refuses before payment')
+    # Each actual migration must ignore later closures in its same interval.
+    for part in range(1, 6):
+        path = next((ROOT / 'supabase/migrations').glob(f'*_the_stranded_satellite_tickets_are_paid_part_{part}.sql'))
+        candidate = path.read_text()
+        lower = re.search(r"created_at>='([^']+)'", candidate).group(1)
+        added = "INSERT INTO public.tournament_tickets SELECT md5('later-'||i)::uuid,200,'issued','tournament_entry_only',1,NULL,'"+lower+"'::timestamptz+interval '2 seconds','00000000-0000-0000-0000-000000000001',NULL FROM generate_series(1,11) i;"
+        q(cohort_seed(part) + added)
+        if part == 5:
+            old = (ROOT / 'tests/fixtures/stranded-satellite-part5-before-witness.sql').read_text()
+            q(old)
+            check(q("SELECT count(*)||'|'||sum(amount) FROM public.chip_ledger;") == '179|13360.00', 'before: original dynamic part 5 pays 179 / 13360, violating the 168 / 11160 witness')
+            q(cohort_seed(part) + added)
+        q(candidate)
+        ids = ','.join("'"+r['id']+"'" for r in witness['tickets'] if r['part']==part)
+        check(q('SELECT array_agg(ticket_id ORDER BY ticket_id)=ARRAY['+ids+']::uuid[] FROM public.payment_calls;') == 't', f'part {part}: exact original ticket identities, no substitutions')
+        expected = str(witness['counts'][part-1])+'|'+witness['amounts'][part-1]
+        check(q("SELECT count(*)||'|'||sum(amount) FROM public.chip_ledger;") == expected, f'part {part}: exact original IDs and value paid')
+        check(q("SELECT count(*)||'|'||sum(value) FROM public.tournament_tickets WHERE status='issued';") == '11|2200', f'part {part}: 11 later obligations remain issued and untouched')
+        proof = next(line.split('-- @live-proof: ',1)[1] for line in candidate.splitlines() if line.startswith('-- @live-proof: '))
+        check(q('SELECT ('+proof+');') == 't', f'part {part}: witness live proof passes with later obligations visible')
+        q(candidate, 'STRANDED_TICKET_CASH_PREIMAGE_CHANGED')
+        check(q('SELECT count(*) FROM public.payment_calls;') == str(witness['counts'][part-1]), f'part {part}: replay refused before payment')
+        for change in ["DELETE FROM public.tournament_tickets WHERE id='"+[r for r in witness['tickets'] if r['part']==part][0]['id']+"';", "UPDATE public.tournament_tickets SET value=value+0.01 WHERE id='"+[r for r in witness['tickets'] if r['part']==part][0]['id']+"';"]:
+            q(cohort_seed(part) + added + change)
+            q(candidate, 'STRANDED_TICKET_CASH_PREIMAGE_CHANGED')
+            check(q('SELECT count(*) FROM public.payment_calls;') == '0', f'part {part}: changed original witness refuses before payment')
+    # A door refusal after fixture writes must roll the entire batch back.
+    q(cohort_seed(5) + added)
+    q(fixture_door.replace('CREATE FUNCTION', 'CREATE OR REPLACE FUNCTION', 1).replace("'ok',true", "'ok',false"))
+    q(candidate, 'STRANDED_TICKET_CASH_REFUSED')
+    check(q('SELECT count(*) FROM public.payment_calls;') == '0', 'payment refusal rolls back all attempted calls and receipts')
+    check(q("SELECT count(*) FROM public.tournament_tickets WHERE status='issued';") == '179', 'payment refusal preserves original and later ticket statuses')
 finally:
     if started:
         run([str(PG / 'pg_ctl'), '-D', str(cluster / 'data'), '-m', 'immediate', '-w', 'stop'])

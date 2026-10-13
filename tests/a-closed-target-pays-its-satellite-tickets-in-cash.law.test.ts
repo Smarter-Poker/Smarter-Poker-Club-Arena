@@ -222,10 +222,34 @@ describe('a closed target pays its satellite tickets in cash', () => {
     }
   });
 
+  it('binds every payment and live proof to the exact original ticket witness', () => {
+    const witness = JSON.parse(
+      readFileSync(root('tests/fixtures/stranded-satellite-original-witness.json'), 'utf8')
+    );
+    expect(new Set(witness.tickets.map((r: { id: string }) => r.id)).size).toBe(928);
+    for (const [index, file] of parts.entries()) {
+      const sql = readFileSync(`${dir}/${file}`, 'utf8');
+      const ids = witness.tickets
+        .filter((r: { part: number }) => r.part === index + 1)
+        .map((r: { id: string }) => r.id);
+      const arrays = [...sql.matchAll(/ARRAY\[([^\]]+)\]::uuid\[\]/g)].map((m) =>
+        [...m[1].matchAll(/'([0-9a-f-]{36})'/g)].map((r) => r[1])
+      );
+      expect(arrays).toEqual([ids, ids]);
+      expect(sql.match(/tk.id=ANY\(v_witness\)/g)).toHaveLength(3);
+      expect(sql).toContain(
+        `IF v_count<>${witness.counts[index]} OR v_amount<>${witness.amounts[index]} THEN`
+      );
+      expect(sql).toContain(
+        `IF v_n<>${witness.counts[index]} OR v_sum<>${witness.amounts[index]} THEN`
+      );
+    }
+  });
+
   it('refuses a changed part-2 cohort before payment and runs native CI qualification', () => {
     const sql = readFileSync(`${dir}/${parts[1]}`, 'utf8');
     expect(sql.indexOf('STRANDED_TICKET_CASH_PREIMAGE_CHANGED')).toBeLessThan(
-      sql.indexOf('DO $settle$')
+      sql.indexOf('FOR v_id,v_value IN')
     );
     expect(sql).toContain('IF v_count<>190 OR v_amount<>7730.00 THEN');
     const workflow = readFileSync(root('.github/workflows/ci.yml'), 'utf8');

@@ -1,0 +1,6 @@
+{
+  "scripts/ci/fixtures/launch-reset/pruner-frozen-entry/witness.mjs": "43bf677b96c98b18c16b4e998c2e724d858f1c5438d7e044511f0d19e10e92f8",
+  "scripts/ci/fixtures/launch-reset/pruner-frozen-entry/qualify.py": "cae87301d8ae71ebeae28cccd262ce99f3914457675de295480589c94e36b871",
+  "scripts/ci/fixtures/launch-reset/pruner-lane/expected.sql": "259a887fdbf012983c3cbeac99e28e5fe059eeefc5b805c30789cf8a0f7768d3",
+  "scripts/ci/fixtures/launch-reset/pruner-lane/ordinary-dependencies.sql": "7655a2309ecd8f7b1e56306878ee072423b934367982ad0a75bc3a27fdac6590"
+}

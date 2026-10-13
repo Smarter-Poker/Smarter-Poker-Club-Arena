@@ -118,3 +118,12 @@ subprocess.run([
  '--migration',str(a.repository/'supabase/migrations/20261013115251_hand_history_pruner_respects_the_existing_settlement_install.sql'),
  '--output',str(a.output.with_name('pruner-lane.json'))
 ],check=True,timeout=120)
+
+# The same original pruner must yield before holding the maintenance thaw lane.
+subprocess.run([
+ sys.executable, str(a.repository/'scripts/ci/fixtures/launch-reset/pruner-frozen-entry/qualify.py'),
+ '--repository',str(a.repository), '--scratch',str(a.scratch), '--pg-bin',str(pg),
+ '--node',str(a.node), '--pg-module',str(a.repository/'node_modules/pg/lib/index.js'),
+ '--migration',str(a.repository/'supabase/migrations/20261013151435_hand_history_pruning_yields_before_maintenance_thaw.sql'),
+ '--output',str(a.output.with_name('pruner-frozen-entry.json'))
+],check=True,timeout=120)

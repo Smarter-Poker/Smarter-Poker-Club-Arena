@@ -1,0 +1,5 @@
+{
+  "_owner": "fix/club-data-rake-queries-20261013",
+  "_comment": "Pending production installation of native-qualified migration 20261013121004. This declares the private one-day report metadata qualification helper; it is a promise, not observed production schema. Exact installation, historical day markers and live report performance must be verified separately before completion.",
+  "functions": ["smarter_private.qualify_rake_agent_report_day"]
+}

@@ -1,0 +1,9 @@
+# Horse hand retention preserves recorded lifetime statistics
+
+The published `ca_player_stats_full` lifetime block counted the index rows that the original horse history retention deletes. Removing old horse hand contents therefore reduced recorded lifetime hands and changed first/last hand dates.
+
+The original retention transaction now archives exactly the deleted index count and first/last timestamps by user and asset, then combines those compact totals with the remaining live index in the same RPC query. No cards, actions, full hand indexes, balances, earnings or financial identities are added to this archive. Human, mixed, reported and unknown-classification index rows cannot enter the helper. The index’s existing asset trigger locks the original history row before accepting a writer, so a delayed index replay cannot resurrect an already archived hand. The original RPC permissions, all other response calculations and asset treatment remain intact; its lifetime count uses bigint.
+
+The archive starts empty. `historical_complete=false` and the capture start date are returned explicitly because index rows removed before this fix cannot be invented. Existing `indexed_complete` remains the original forward-roll indicator and is not relabeled as historical coverage.
+
+Native PostgreSQL 17 proof exercises the real captured published RPC, fail-before count loss, exact full response after archival, per-asset count/time, duplicate no-op, rollback, protected human/unknown rows, preserved RPC authority and denied private access. A real concurrent late writer must wait for the original history lock and is skipped after deletion. The connected phase uses the original prune, accepted v2 stats basis and cash provenance to prove raw erasure and lifetime/capsule preservation together. Installation and live readback belong to the parent delivery; they are separate from source qualification.

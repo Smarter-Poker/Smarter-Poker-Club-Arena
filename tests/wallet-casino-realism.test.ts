@@ -68,8 +68,11 @@ describe('wallets can send, receive and earn - wired to the real doors', () => {
     expect(PAGE).not.toContain('MIN_DIAMOND_SEND = 10');
     /* And the route REFUSES a request with no X-Idempotency-Key, so the send
        carries one, minted per intent and kept across a retry. */
-    expect(PAGE).toContain('idempotencyKey: sendKeyRef.current');
-    expect(PAGE).toContain('if (e?.definitive) sendKeyRef.current = null;');
+    expect(PAGE).toContain('idempotencyKey: requestId');
+    expect(PAGE).toContain('expectedUserId: user.id');
+    expect(PAGE).toContain('const intentScope = `${user.id}:${recipientId}:${amount}`;');
+    expect(PAGE).toContain('sendRequests.current.get(intentScope) ?? uuid()');
+    expect(PAGE).toContain('if (e?.definitive) sendRequests.current.delete(intentScope);');
   });
 
   it('routes chip operations to the club cashier without a global-pool transfer', () => {
@@ -104,6 +107,14 @@ describe('wallets can send, receive and earn - wired to the real doors', () => {
     expect(PAGE).toContain("'/api/rewards/daily-login'");
     expect(PAGE).toContain("'/api/rewards/progress'");
     expect(PAGE).toContain('DiamondService.getLifetimeStats(user.id)');
+    // Discovery links describe the destination, not an unbacked universal payout.
+    expect(PAGE).toContain('Milestones, Badges, And Unlock Progress');
+    expect(PAGE).toContain('Membership And Included Benefits');
+    expect(PAGE).not.toContain('Milestones That Pay Out When You Hit Them');
+    expect(PAGE).not.toContain('Daily And Monthly Diamond Bonuses For Members');
+    expect(PAGE).not.toContain('VIP Bonuses');
+    expect(PAGE).toContain("navigate('/achievements')");
+    expect(PAGE).toContain("navigate('/vip')");
   });
 
   it('Add Chips and Cash Out go to the club cashier when a club is in context', () => {

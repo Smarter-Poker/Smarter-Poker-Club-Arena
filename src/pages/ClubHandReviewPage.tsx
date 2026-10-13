@@ -10,7 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import ClubIntegrityHeader from '../components/club/ClubIntegrityHeader';
 import { useToast } from '../components/common/Toast';
-import { SpadeConsole } from '../components/console/SpadeConsole';
+import { ClubPageSection as SpadeConsole } from '../components/club/ClubPageSection';
 import HandDetailView from '../components/handdetail/HandDetailView';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useClubNavigationAccess } from '../hooks/useClubNavigationAccess';
@@ -69,7 +69,7 @@ function HandReviewState({
 }) {
   return (
     <div className="chr-page" data-arena-surface="club">
-      <main className="chr-state-wrap">
+      <section className="chr-state-wrap">
         <SpadeConsole
           family={action ? 'shark' : 'spade'}
           crest={action ? 'spade' : 'flat'}
@@ -84,7 +84,7 @@ function HandReviewState({
         >
           <p className="chr-state sc-copy sc-copy--center">{message}</p>
         </SpadeConsole>
-      </main>
+      </section>
     </div>
   );
 }
@@ -347,7 +347,13 @@ export default function ClubHandReviewPage() {
         title="Queue Unavailable"
         message="The Current Club Queue Could Not Be Loaded. No Case Data Was Changed."
         tone="red"
-        action={{ label: 'Retry Queue', onClick: () => void loadQueue(filter) }}
+        action={{
+          label: 'Retry Queue',
+          onClick: () => {
+            if (access.error) access.reload();
+            else void loadQueue(filter);
+          },
+        }}
       />
     );
   }
@@ -365,6 +371,7 @@ export default function ClubHandReviewPage() {
   return (
     <div className="chr-page" data-arena-surface="club">
       <ClubIntegrityHeader
+        compact
         clubId={clubParam}
         active="hand-review"
         eyebrow="Integrity / Hands"
@@ -376,7 +383,7 @@ export default function ClubHandReviewPage() {
         ]}
       />
 
-      <main className="chr-workspace">
+      <section className="chr-workspace">
         {access.canControlClub ? (
           <SpadeConsole
             className="chr-lookup"
@@ -626,7 +633,7 @@ export default function ClubHandReviewPage() {
             </ul>
           )}
         </SpadeConsole>
-      </main>
+      </section>
     </div>
   );
 }

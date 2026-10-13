@@ -9,7 +9,7 @@
  * and horses, every fixture the review named, the real plan captured in one
  * statement with its snapshot, the TypeScript check run on it and required
  * to cover every fixture and group, the pre-remediation port shown to
- * differ, the CI step on shard 1 after the Phase 12 load step, and the
+ * differ, the CI step on shard 3 after the Phase 12 load step, and the
  * changelog.
  */
 import { describe, it, expect } from 'vitest';
@@ -115,13 +115,13 @@ describe('the parity harness', () => {
 });
 
 describe('CI and the changelog', () => {
-  it('CI runs the harness on shard 1, after the Phase 12 load step', () => {
+  it('CI runs the harness on shard 3, after the Phase 12 load step', () => {
     const lc = CI.indexOf('test-lightning-phase12-load-chaos.sh');
     const at = CI.indexOf('test-lightning-matcher-parity.sh');
     expect(lc).toBeGreaterThan(0);
     expect(at).toBeGreaterThan(lc);
     const step = CI.slice(CI.lastIndexOf('- name:', at), at);
-    expect(step).toContain('if: matrix.shard == 1');
+    expect(step).toContain('if: matrix.shard == 3');
     expect(step).toContain('PG_BIN: /usr/lib/postgresql/17/bin');
   });
 

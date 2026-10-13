@@ -203,6 +203,8 @@ export interface AtomicHandCommitInput {
      * never in participant-readable hand_history.
      */
     stats_facts?: DurableStatsFactPayload;
+    /** Paid inside this same acceptance, never by the asynchronous chip leg. */
+    diamond_jackpot?: import('../../engine/diamondCashJackpot.js').DiamondJackpotVerdict;
   };
   /**
    * Local distributed-lease fence, invoked immediately before every retry of

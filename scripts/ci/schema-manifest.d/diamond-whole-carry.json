@@ -1,0 +1,6 @@
+{
+  "_owner": "fix/diamond-jackpot-residue-01a13099: PROMISED columns for qualified migration 20261013034406; isolated PostgreSQL 17 source/financial qualification passed. Not observed in production, not installed; protected merge and exact recorded installation/readback remain required.",
+  "columns": {
+    "poker_diamond_jackpot_pools": ["main_whole_carry", "backup_whole_carry"]
+  }
+}

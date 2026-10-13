@@ -2,9 +2,9 @@
  *  PROMOTIONS PAGE — Club Promotions & Bonuses with Live Updates
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, type RefObject } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import { readClubContextParam } from '../utils/clubScopedPath';
+import { readClubContextParam, withClubContext } from '../utils/clubScopedPath';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { useMasterBusSubscriptions } from '../hooks/useMasterBusSubscription';
@@ -26,6 +26,7 @@ import { reportError } from '../utils/errorReporter';
 import RewardsOverlayPortal from '../components/rewards/RewardsOverlayPortal';
 import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 import { publicOrigin } from '../lib/appBase';
+import { useReferralCount } from '../hooks/useReferralCount';
 
 interface Promotion {
   id: string;
@@ -41,6 +42,20 @@ interface Promotion {
 }
 
 export default function PromotionsPage() {
+  const { user } = useAuthUser();
+  const accountScope = useRef({ userId: user?.id, epoch: 0 });
+  if (accountScope.current.userId !== user?.id) {
+    accountScope.current = { userId: user?.id, epoch: accountScope.current.epoch + 1 };
+  }
+  // Claims, referral dialogs and pending reads belong to this player only.
+  return <PromotionsAccount key={user?.id ?? 'signed-out'} accountScope={accountScope} />;
+}
+
+function PromotionsAccount({
+  accountScope,
+}: {
+  accountScope: RefObject<{ userId: string | undefined; epoch: number }>;
+}) {
   useVisibilityRefresh(() => loadPromotions());
   const { clubId: routeClubId } = useParams();
   const location = useLocation();
@@ -62,6 +77,11 @@ export default function PromotionsPage() {
   const [claimingId, setClaimingId] = useState<string | null>(null);
   const loadPromotionsRef = useRef(async () => {});
   const isMounted = useIsMounted();
+  const accountEpoch = accountScope.current.epoch;
+  const ownsAccount = () =>
+    isMounted.current &&
+    accountScope.current.epoch === accountEpoch &&
+    accountScope.current.userId === user?.id;
 
   // The player's own referral code. This modal used to invent one
   // (`user.id.slice(0, 8).toUpperCase()`) and hand it out beside a link to
@@ -71,7 +91,12 @@ export default function PromotionsPage() {
   // inviter. Both halves now come from the same place the rest of the app
   // shares from: the real player_number, on the real invite route.
   const [playerNumber, setPlayerNumber] = useState<string | null>(null);
+  const [profileOwner, setProfileOwner] = useState<string | null>(null);
+  const totalReferrals = useReferralCount(user?.id ?? null);
   useEffect(() => {
+    let cancelled = false;
+    setPlayerNumber(null);
+    setProfileOwner(user?.id ?? null);
     if (!user?.id) return;
     (async () => {
       try {
@@ -80,7 +105,7 @@ export default function PromotionsPage() {
           .select('player_number')
           .eq('id', user.id)
           .maybeSingle();
-        if (!isMounted.current) return;
+        if (!ownsAccount() || cancelled) return;
         /* THE ERROR IS READ, because the fallback below is the exact bug the
            comment on this block describes. `error` was never destructured, so
            a failed read left `playerNumber` null and `referralCode` fell back
@@ -96,12 +121,15 @@ export default function PromotionsPage() {
         reportError(e, 'PromotionsPage.referral_code_lookup');
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [user?.id, isMounted]);
 
   /* NO user.id FALLBACK. A player number is the only thing redemption
      recognises; sharing an account id produced a link that always refused. If
      the number is not known the link is simply not offered. */
-  const referralCode = playerNumber || '';
+  const referralCode = profileOwner === user?.id ? playerNumber || '' : '';
   const referralLink =
     clubId && referralCode
       ? `${publicOrigin()}/hub/club-arena/invite/${clubId}?ref=${referralCode}`
@@ -113,7 +141,7 @@ export default function PromotionsPage() {
     (async () => {
       try {
         const claims = await promotionService.getUserClaims(user.id);
-        if (!isMounted.current) return;
+        if (!ownsAccount()) return;
         setClaimedIds(new Set(claims.map((c: any) => c.promotionId).filter(Boolean)));
       } catch (e) {
         reportError(e, 'PromotionsPage.loadClaims');
@@ -126,7 +154,7 @@ export default function PromotionsPage() {
     setClaimingId(promoId);
     try {
       await promotionService.claimPromotion(promoId, user.id);
-      if (!isMounted.current) return;
+      if (!ownsAccount()) return;
       setClaimedIds((prev) => new Set(prev).add(promoId));
       /* NO BALANCE_UPDATED HERE, AND THE MESSAGE SAYS WHAT HAPPENED.
          Claiming records a `promotion_claims` row; it credits no wallet. Only
@@ -138,10 +166,10 @@ export default function PromotionsPage() {
          "Promotion claimed!" beside it read as "you have been paid". */
       toast.success('Promotion Claimed. Your Reward Is Recorded Against This Offer.');
     } catch (err: any) {
-      if (isMounted.current) toast.error(err?.message || 'Failed to claim promotion');
+      if (ownsAccount()) toast.error(err?.message || 'Failed to claim promotion');
       reportError(err, 'PromotionsPage.claim');
     } finally {
-      if (isMounted.current) setClaimingId(null);
+      if (ownsAccount()) setClaimingId(null);
     }
   };
 
@@ -255,16 +283,17 @@ export default function PromotionsPage() {
         isMountedRef: isMounted,
       });
 
-      if (getIsMounted && !getIsMounted()) return;
+      if (!ownsAccount() || (getIsMounted && !getIsMounted())) return;
 
       if (error) throw error;
       setPromotions(data || []);
     } catch (error) {
+      if (!ownsAccount() || (getIsMounted && !getIsMounted())) return;
       reportError(error, 'PromotionsPage.Failed_to_load_promotions');
       setLoadError('Promotions could not be loaded. Existing offers have not been changed.');
       toast.error('Failed to load promotions');
     }
-    if (getIsMounted && !getIsMounted()) return;
+    if (!ownsAccount() || (getIsMounted && !getIsMounted())) return;
     setLoading(false);
   };
 
@@ -364,7 +393,7 @@ export default function PromotionsPage() {
           primary: {
             label: 'Daily Bonus',
             ink: 'white',
-            onClick: () => navigate('/bonuses'),
+            onClick: () => navigate(withClubContext('/bonuses', clubId)),
           },
         }}
       >
@@ -538,7 +567,7 @@ export default function PromotionsPage() {
           onClose={() => setShowReferral(false)}
           referralCode={referralCode}
           referralLink={referralLink}
-          totalReferrals={0}
+          totalReferrals={totalReferrals}
         />
       </RewardsOverlayPortal>
     </StandardContentLayout>

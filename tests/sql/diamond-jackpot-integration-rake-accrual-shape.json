@@ -1,0 +1,75 @@
+{
+  "columns": [
+    {
+      "not_null": true,
+      "sql_type": "bigint",
+      "column_name": "id",
+      "default_sql": "nextval('ca_diamond_rake_accrual_id_seq'::regclass)"
+    },
+    {
+      "not_null": true,
+      "sql_type": "uuid",
+      "column_name": "table_id",
+      "default_sql": null
+    },
+    {
+      "not_null": true,
+      "sql_type": "bigint",
+      "column_name": "hand_number",
+      "default_sql": null
+    },
+    {
+      "not_null": true,
+      "sql_type": "uuid",
+      "column_name": "arena_id",
+      "default_sql": null
+    },
+    {
+      "not_null": true,
+      "sql_type": "uuid",
+      "column_name": "user_id",
+      "default_sql": null
+    },
+    {
+      "not_null": true,
+      "sql_type": "text",
+      "column_name": "kind",
+      "default_sql": null
+    },
+    {
+      "not_null": true,
+      "sql_type": "bigint",
+      "column_name": "amount",
+      "default_sql": null
+    },
+    {
+      "not_null": false,
+      "sql_type": "timestamp with time zone",
+      "column_name": "swept_at",
+      "default_sql": null
+    },
+    {
+      "not_null": false,
+      "sql_type": "uuid",
+      "column_name": "sweep_id",
+      "default_sql": null
+    },
+    {
+      "not_null": true,
+      "sql_type": "timestamp with time zone",
+      "column_name": "created_at",
+      "default_sql": "now()"
+    }
+  ],
+  "indexes": [
+    "CREATE UNIQUE INDEX ca_diamond_rake_accrual_one_per_payer_per_hand ON public.ca_diamond_rake_accrual USING btree (table_id, hand_number, user_id, kind)",
+    "CREATE UNIQUE INDEX ca_diamond_rake_accrual_pkey ON public.ca_diamond_rake_accrual USING btree (id)",
+    "CREATE INDEX ca_diamond_rake_accrual_unswept_idx ON public.ca_diamond_rake_accrual USING btree (id) WHERE (swept_at IS NULL)"
+  ],
+  "constraints": [
+    "CHECK ((amount > 0))",
+    "CHECK ((kind = 'rake'::text))",
+    "PRIMARY KEY (id)",
+    "CHECK (((swept_at IS NULL) = (sweep_id IS NULL)))"
+  ]
+}

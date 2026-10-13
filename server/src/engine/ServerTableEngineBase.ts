@@ -9476,7 +9476,7 @@ export abstract class ServerTableEngineBase {
           // cash table was refused as 'Diamond Plain Cash Table Required'
           // (about 800 times in six hours) and a permitted straddle or run it
           // twice change never landed without a restart.
-          'rake_percent, rake_cap_bb, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_min_players, bomb_pot_ante_fixed, bomb_pot_variant, bomb_pot_button_policy, bomb_pot_announce_seconds, bomb_pot_manual_pending, dealing_halted_at, dealing_halted_reason, ante_enabled, ante, big_blind_ante_enabled, nit_game, maintain_percent_min, maintain_hands, career_percent_min, run_it_mode, run_it_twice, allow_run_it_twice, run_it_twice_enabled, insurance_enabled, seven_deuce_enabled, seven_deuce_amount, straddle_enabled, auto_utg_straddle, voluntary_straddle, min_buy_in, max_buy_in, action_time_seconds, game_variant, game_type, tournament_id, cluster_id, status, is_template, all_in_or_fold, pineapple_holdem, cap_enabled, bbj_percent, small_blind, big_blind'
+          'rake_percent, rake_cap_bb, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_min_players, bomb_pot_ante_fixed, bomb_pot_variant, bomb_pot_button_policy, bomb_pot_announce_seconds, bomb_pot_manual_pending, dealing_halted_at, dealing_halted_reason, ante_enabled, ante, big_blind_ante_enabled, nit_game, maintain_percent_min, maintain_hands, career_percent_min, run_it_mode, run_it_twice, allow_run_it_twice, run_it_twice_enabled, insurance_enabled, seven_deuce_enabled, seven_deuce_amount, straddle_enabled, auto_utg_straddle, voluntary_straddle, min_buy_in, max_buy_in, action_time_seconds, game_variant, game_type, tournament_id, cluster_id, role, main_index, lifecycle, status, is_template, all_in_or_fold, pineapple_holdem, cap_enabled, bbj_percent, small_blind, big_blind'
         )
         .eq('id', this.tableId)
         .maybeSingle();
@@ -9527,6 +9527,11 @@ export abstract class ServerTableEngineBase {
         }
       }
       if (tableRow && this.tableInfo) {
+        // Adoption keeps live chairs; cached cluster identity must follow it.
+        this.tableInfo.cluster_id = tableRow.cluster_id ?? undefined;
+        this.tableInfo.role = tableRow.role ?? undefined;
+        this.tableInfo.main_index = tableRow.main_index ?? undefined;
+        this.tableInfo.lifecycle = tableRow.lifecycle ?? undefined;
         this.tableInfo.rake_percent = tableRow.rake_percent ?? undefined;
         this.tableInfo.rake_cap_bb = tableRow.rake_cap_bb ?? undefined;
         this.tableInfo.bomb_pot_enabled = (tableRow as any).bomb_pot_enabled ?? false;

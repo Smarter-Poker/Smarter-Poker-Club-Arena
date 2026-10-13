@@ -185,21 +185,25 @@ describe('One open club: the arena asks no chip-only feed a question it cannot a
     expect(read).toBeGreaterThan(guard);
   });
 
-  it('does not start the jackpot feeds in the arena', () => {
-    const guard = page.indexOf('if (!automaticMembershipRef.current) {\n        stopBbjPool');
+  it('keeps chip jackpot feeds outside the Diamond branch', () => {
+    const guard = page.indexOf(
+      'if (automaticMembershipRef.current) {\n        stopBbjPool = subscribeDiamondJackpot'
+    );
+    const chipBranch = page.indexOf('} else {', guard);
     const pool = page.indexOf('watchBbjPool(resolvedId');
     const mini = page.indexOf('watchBbjMini(resolvedId');
     expect(guard, 'the jackpot feeds are no longer behind the arena guard').toBeGreaterThan(-1);
-    expect(pool).toBeGreaterThan(guard);
-    expect(mini).toBeGreaterThan(guard);
+    expect(chipBranch).toBeGreaterThan(guard);
+    expect(pool).toBeGreaterThan(chipBranch);
+    expect(mini).toBeGreaterThan(chipBranch);
   });
 });
 
 describe('Played with diamonds: the chip jackpot strip stays off the arena lobby', () => {
   const page = readFileSync(join(__dirname, '..', '..', 'src/pages/ClubHomePage.tsx'), 'utf8');
 
-  it('wraps the Bad Beat Jackpot strip in the arena check', () => {
-    const wrapper = page.indexOf('{!isAutomaticArena && (');
+  it('shows only the dedicated enabled Diamond pool in the arena strip', () => {
+    const wrapper = page.indexOf('{(!isAutomaticArena || diamondJackpot?.enabled) && (');
     const strip = page.indexOf('className="lobby-bbj"');
     expect(wrapper, 'the arena check is gone from the lobby').toBeGreaterThan(-1);
     expect(strip).toBeGreaterThan(wrapper);
@@ -211,10 +215,10 @@ describe('Played with diamonds: the chip jackpot strip stays off the arena lobby
      painted its own explanation across every chip club lobby. Caught in review
      on 2026-09-11, pinned here because nothing else would notice. */
   it('comments the strip in JSX form so the note never paints itself', () => {
-    const note = page.indexOf('The Bad Beat Jackpot is a chip pool');
+    const note = page.indexOf('The Bad Beat Jackpot reads its own asset');
     expect(note).toBeGreaterThan(-1);
     expect(page.slice(note - 120, note)).toContain('{/*');
-    expect(page).not.toMatch(/\n\s+\/\* The Bad Beat Jackpot is a chip pool/);
+    expect(page).not.toMatch(/\n\s+\/\* The Bad Beat Jackpot reads its own asset/);
   });
 });
 

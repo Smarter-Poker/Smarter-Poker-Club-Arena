@@ -96,6 +96,36 @@ test.describe('Production Cashier Certification', () => {
     });
     await expect(page).not.toHaveURL(/\/auth(?:\/|\?|$)/, { timeout: 30_000 });
     await expect(page.locator('[data-cashier-surface="trade"]')).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator('[data-cashier-mode="simple"]')).toBeVisible();
+    await expect(page.getByRole('tablist', { name: 'Cashier Actions' })).not.toBeVisible();
+    await expect(page.getByRole('button', { name: 'Claim Back', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Send Ticket', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Send Out', exact: true })).toBeVisible();
+    await expect(page.locator('a[aria-label^="Manage "]').first()).toBeVisible({ timeout: 30_000 });
+    for (const width of [375, 393]) {
+      await page.setViewportSize({ width, height: 852 });
+      const geometry = await page.evaluate(() => ({
+        width: document.documentElement.clientWidth,
+        scroll: document.documentElement.scrollWidth,
+        actions: Array.from(document.querySelectorAll('[data-cashier-mode="simple"] button'))
+          .filter((button) =>
+            ['Claim Back', 'Send Ticket', 'Send Out'].includes(button.textContent?.trim() || '')
+          )
+          .map((button) => {
+            const rect = button.getBoundingClientRect();
+            return { height: rect.height, top: rect.top, bottom: rect.bottom };
+          }),
+      }));
+      expect(geometry.scroll).toBe(geometry.width);
+      expect(geometry.actions).toHaveLength(3);
+      for (const action of geometry.actions) {
+        expect(action.height).toBeGreaterThanOrEqual(44);
+        expect(action.top).toBeGreaterThanOrEqual(0);
+        expect(action.bottom).toBeLessThanOrEqual(852);
+      }
+      await attachCashierScreenshot(page, testInfo, `simple-cashier-${width}`);
+    }
+    await page.getByRole('button', { name: /^Advanced(?: \([\d,]+\))?$/ }).click();
     await expect(page.getByRole('heading', { name: 'Wallet Command', exact: true })).toBeVisible();
 
     const tablist = page.getByRole('tablist', { name: 'Cashier Actions' });
@@ -553,6 +583,8 @@ test.describe('Production Cashier Certification', () => {
   }, testInfo) => {
     const clubId = process.env.E2E_CLUB_ID || DEFAULT_E2E_CLUB_ID;
     await page.goto(`clubs/${clubId}/cashier`, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+    await expect(page.locator('[data-cashier-mode="simple"]')).toBeVisible({ timeout: 60_000 });
+    await page.getByRole('button', { name: /^Advanced(?: \([\d,]+\))?$/ }).click();
     const access = page.getByLabel('Current Cashier Balances').locator('strong').last();
     await expect(access).toBeVisible({ timeout: 60_000 });
     // The visible metric intentionally reads "Synchronizing" during

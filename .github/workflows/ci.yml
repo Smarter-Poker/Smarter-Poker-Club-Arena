@@ -1307,9 +1307,9 @@ jobs:
     # Every suite builds its own disposable PostgreSQL 17 cluster, so none
     # depends on another's state. They are split across four runners by
     # measured weight, each step keeping its own `if:` and evidence upload:
-    #   1  BBJ replay, accounting/Lightning/credit/cash-source suites, Spin expiry
+    #   1  BBJ replay, accounting/credit/cash-source suites, Spin expiry
     #   2  Full weekly accounting activation and its retained evidence
-    #   3  F06 custody lanes, tournament probes, Diamond SQL acceptance
+    #   3  F06 custody lanes, tournament probes, Diamond SQL acceptance, Lightning
     #   4  Production alert SQL, cash pg_cron, PKO, MTT, satellite, Breakfast, V31
     # Shards 3 and 4 build the native isolation tester because their suites
     # need it (PG_ISOLATION_TESTER); 1 and 2 do not use it.
@@ -1320,6 +1320,10 @@ jobs:
     # which is `success` only when all four shards succeeded. Measured 29.5m
     # before; expected ~9m after (the heaviest shard, 1, is ~8m of suites plus
     # ~1m of checkout and PostgreSQL install).
+    # October 12 run 38319524263: shard 1 exhausted its 40m cap; its 25
+    # Lightning steps took 692s while shard 3 finished in 878s. Moving only
+    # that unchanged family to shard 3 balances observed work (~1570s on 3),
+    # preserving the 40m cap, every suite, financial deadline and artifact.
     # tests/ci-tells-the-truth-faster.law.test.ts pins the split:
     # every suite step belongs to exactly one shard.
     strategy:
@@ -1350,7 +1354,15 @@ jobs:
           pg_ci_build_packages=()
           pg_ci_build_tools_ready=true
           case "$PG_CI_SHARD" in
-            1|2) ;;
+            1)
+              pg_ci_build_packages=(postgresql-server-dev-17 build-essential)
+              for pg_ci_tool in cc make; do
+                if ! command -v "$pg_ci_tool" >/dev/null; then pg_ci_build_tools_ready=false; fi
+              done
+              if [[ ! -x /usr/lib/postgresql/17/bin/pg_config ||
+                    ! -f /usr/include/postgresql/17/server/postgres.h ]]; then pg_ci_build_tools_ready=false; fi
+              ;;
+            2) ;;
             3|4)
               pg_ci_build_packages=(postgresql-server-dev-17 build-essential bison flex perl bzip2 patch)
               for pg_ci_tool in cc make bison flex perl tar bzip2 patch; do
@@ -1358,6 +1370,12 @@ jobs:
               done
               if [[ ! -x /usr/lib/postgresql/17/bin/pg_config ||
                     ! -f /usr/include/postgresql/17/server/postgres.h ]]; then pg_ci_build_tools_ready=false; fi
+              if [[ "$PG_CI_SHARD" == 4 ]]; then
+                pg_ci_build_packages+=(pkg-config libssl-dev libzstd-dev)
+                if ! command -v pkg-config >/dev/null || ! pkg-config --exists libzstd openssl; then
+                  pg_ci_build_tools_ready=false
+                fi
+              fi
               ;;
             *) echo 'Unknown accounting shard' >&2; exit 1 ;;
           esac
@@ -1390,6 +1408,46 @@ jobs:
           sudo apt-get "${pg_ci_apt[@]}" update
           printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
           sudo apt-get "${pg_ci_apt[@]}" install -y --no-install-recommends postgresql-17 postgresql-17-cron ${pg_ci_build_packages[@]+"${pg_ci_build_packages[@]}"}
+      - name: Native recovery export preserves credentials and refuses incomplete artifacts
+        if: matrix.shard == 1
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: ${{ runner.temp }}
+          NATIVE_PG_SOCKET_ROOT: ${{ runner.temp }}
+        run: python3 -B -m unittest discover -s scripts/ci -p test_native_supabase_export.py
+      - name: Scoped launch reset preserves original money and reporting owners
+        id: scoped_launch_reset
+        if: matrix.shard == 1
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: ${{ runner.temp }}
+          PROBE_EVIDENCE: ${{ runner.temp }}/scoped-launch-reset
+        run: |
+          set -euo pipefail
+          mkdir -p "$PROBE_EVIDENCE"
+          launch_candidate=supabase/migrations/20261012181905_scoped_club_launch_reset_and_guarded_recovery.sql
+          # The installer imports the root lockfile pg closure; this job previously installed only server dependencies.
+          npm ci --ignore-scripts
+          python3 -B scripts/ci/test_launch_reset_installer.py --installer scripts/ci/apply-recorded-migration.mjs --repository . --pgbin "$PG_BIN" --scratch "$RUNNER_TEMP" --output "$PROBE_EVIDENCE/installer.json"
+          python3 -B scripts/ci/test_launch_reset_policy_lock_order.py --candidate "$launch_candidate" --scratch "$RUNNER_TEMP" --pg-bin "$PG_BIN" --pg-module node_modules/pg/lib/index.js --output "$PROBE_EVIDENCE/provider-policy-lock-order.json"
+          python3 -B scripts/ci/test_launch_reset_balance.py --candidate-migration "$launch_candidate" --scratch-root "$RUNNER_TEMP" --output-dir "$PROBE_EVIDENCE/balance" --pg-bin "$PG_BIN" --production-roster
+          for launch_fixture in commission-assertion reporting invoice-visibility treasury-selftest; do
+            python3 -B scripts/ci/run_launch_reset_accounting_fixture.py --fixture "scripts/ci/fixtures/launch-reset/accounting/$launch_fixture-qualification.sql" --candidate "$launch_candidate" --work-root "$RUNNER_TEMP" --pg-bin "$PG_BIN"
+          done
+          python3 -B scripts/ci/test_launch_reset_floor_admission.py --candidate "$launch_candidate" --fixture scripts/ci/fixtures/launch-reset/accounting/floor-admission-qualification.sql --work-root "$RUNNER_TEMP" --pg-bin "$PG_BIN"
+          python3 -B scripts/ci/test_launch_reset_floor.py --candidate-migration "$launch_candidate" --pgbin "$PG_BIN" --scratch "$RUNNER_TEMP" --output "$PROBE_EVIDENCE/floor.json"
+      - name: Retain scoped launch reset qualification
+        if: always() && matrix.shard == 1 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.scoped_launch_reset.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: scoped-launch-reset-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/scoped-launch-reset/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Native recovery metadata client preserves the actual full archive
+        if: matrix.shard == 4
+        timeout-minutes: 8
+        run: python3 -B scripts/dr/build-native-export-client.py --scratch "${{ runner.temp }}" --pg-bin /usr/lib/postgresql/17/bin
       - name: Owner alerts preserve the actual finding through the real PostgreSQL trigger
         if: matrix.shard == 1
         env:
@@ -1711,118 +1769,118 @@ jobs:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 -B scripts/ci/test-late-registration-clock.py
       - name: Lightning Phase 2 domain schema carries its invariants as constraints
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase2-domain.sh
       - name: Lightning Phase 1 binds a cash session to its cluster without moving it
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase1-cluster-session.sh
       - name: Lightning Phase 2 remediation joins the hand to its cluster, its instance and its epoch
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase2-remediation.sh
       - name: Lightning Phase 3 opens a Lightning-capable game as a feeder and keeps it one
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase3-feeder-first.sh
       - name: Lightning Phase 3 remediation makes the front table the main game everywhere
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase3-remediation.sh
       - name: Lightning Phase 4 counts one live eligible population and the thresholds it is judged by
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase4-population.sh
       - name: Lightning Phase 4 remediation repairs the threshold reader, the verdict and the plan
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase4-remediation.sh
       - name: Lightning Phase 5 converts a must-move cluster in one transaction and stands the tick down
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase5-conversion.sh
       - name: Lightning Phase 9 forms a hand atomically and locks its participant set the moment it is complete
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase9-formation.sh
       - name: Lightning remediation two anchors the pool to the seat, guards it in hand and waits for the engine to see the halt
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-remediation-two.sh
       - name: Lightning Phases 6 and 7 match every legal hand, explain every idle player and rotate the blinds fairly
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase6-matcher.sh
       - name: Lightning Phase 6 settles a hand onto its anchors through the physical path, frees a fast folder at once and refuses a forged settlement
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase6-settlement.sh
       - name: Lightning Phase 7 reverts a drained pool to must move without moving a chip, and the tick drives both conversions
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase7-reversion.sh
       - name: Lightning Phase 8 limits multi-tabling per platform and reads session statistics, pool status and recent hands from settled hands
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase8-session.sh
       - name: Lightning Phase 9 makes disconnects durable, reconnects rebuildable and the event ledger and hand replay auditable
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase9-reconnect.sh
       - name: Lightning Phase 10 honors responsible gaming at every door, stops playing cleanly and auto-rebuys only through the reload door
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase10-rg-rebuy.sh
       - name: Lightning Phase 9 remediation answers the ended session, clamps the reaper, skips the frozen cluster and self-heals presence at the action doors
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase9r-remediation.sh
       - name: Lightning Phase 11 records integrity telemetry the matcher never reads and the shadow matcher ledger that scores matcher versions
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase11-integrity-shadow.sh
       - name: Lightning Phase 12 ends a responsible-gaming refusal like Stop Playing and answers the caller's own auto-rebuy status at the pool door
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase12-rg-limits.sh
       - name: Lightning Phase 12 operator doors, alerts and latency ledger
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase12-operator-alerts.sh
       - name: Lightning Phase 12 keeps money and identity exact under load, stress and chaos (real concurrent backends, cancels, terminations and timeouts) and forms under surge
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
           LIGHTNING_CHAOS_PROFILE: ci
         run: bash scripts/dev/test-lightning-phase12-load-chaos.sh
       - name: Lightning Phase 11 remediation proves the TypeScript matcher port decides exactly what fn_lightning_match_plan decides on the same snapshot
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-matcher-parity.sh
       - name: Lightning Phase 11 remediation keeps integrity signals fair, one finding per subject that extends, and the shadow like for like (every finding reproduced on the production bodies first)
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase11-remediation.sh
@@ -1832,12 +1890,12 @@ jobs:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/dev/test-tournament-lane-contention.py --output "$RUNNER_TEMP/tournament-lane-contention"
       - name: Lightning Phase 13 rollout controls pause, close joins, drain to MUST-MOVE with every hand settled, freeze, roll back the matcher and answer a readiness verdict (production bodies, real chain)
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase13-operator-recovery.sh
       - name: Lightning Phase 12 load, stress and chaos rig over the chain through Phase 13 (operator doors, remediation and the rollout drain applied twice)
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
           LIGHTNING_CHAOS_PROFILE: ci
@@ -1918,6 +1976,11 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-union-owner-membership-db-postgres.py
+      - name: Only club staff can remove a member
+        if: matrix.shard == 2
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-only-staff-remove-member-db-postgres.py
       - name: Accounting agreement changes preserve immutable observed history
         if: matrix.shard == 1
         env:
@@ -2143,6 +2206,48 @@ jobs:
         env:
           POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-hand-submission-retention-disposal.py --pg-bin "$POKER_AUDIT_PG_BIN" --evidence artifacts/hand-submission-retention-disposal
+      - name: Settled horse request payloads expire without reopening settlement
+        id: horse_request_retention
+        if: matrix.shard == 3
+        env:
+          POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/verification-harness/horse-request-retention.py --pg-bin "$POKER_AUDIT_PG_BIN" --evidence artifacts/horse-request-retention
+      - name: Horse settlement keys compact without losing replay or accounting proof
+        id: horse_settlement_key_retention
+        if: matrix.shard == 3
+        env:
+          POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/verification-harness/horse-settlement-key-retention.py --pg-bin "$POKER_AUDIT_PG_BIN" --evidence artifacts/horse-settlement-key-retention
+      - name: Retain horse settlement key compaction proof
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.horse_settlement_key_retention.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: horse-settlement-key-retention-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/horse-settlement-key-retention/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Adaptive raw horse facts become exact sufficient statistics after qualified retention
+        id: horse_adaptive_statistics_retention
+        if: matrix.shard == 3
+        env:
+          POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/verification-harness/horse-adaptive-statistics-retention.py --pg-bin "$POKER_AUDIT_PG_BIN" --evidence artifacts/horse-adaptive-statistics-retention
+      - name: Retain adaptive raw retirement and consumer proof
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.horse_adaptive_statistics_retention.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: horse-adaptive-statistics-retention-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/horse-adaptive-statistics-retention/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Retain original horse payload expiration proof
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.horse_request_retention.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: horse-request-retention-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/horse-request-retention/
+          if-no-files-found: error
+          retention-days: 7
       - name: Retain retention disposal proof
         if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.hand_submission_retention_disposal.outcome)
         uses: actions/upload-artifact@v4
@@ -2279,6 +2384,46 @@ jobs:
           PGBIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/probe-satellite-same-hand-bust-order-pg17.sh
 
+      - name: Inventory seal preserves exact rows through bucket continuation
+        id: inventory_seal_buckets
+        if: matrix.shard == 3
+        env:
+          PGBIN: /usr/lib/postgresql/17/bin
+          PROBE_EVIDENCE: ${{ runner.temp }}/inventory-seal-buckets
+        run: |
+          set -euo pipefail
+          mkdir -p "$PROBE_EVIDENCE"
+          bash scripts/dev/probe-inventory-seal-buckets-pg17.sh 2>&1 | tee "$PROBE_EVIDENCE/qualification.log"
+
+      - name: Retain inventory seal PostgreSQL qualification
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.inventory_seal_buckets.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: inventory-seal-buckets-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/inventory-seal-buckets/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Inventory pages commit before their immutable checkpoint header
+        id: inventory_committed_pages
+        if: matrix.shard == 3
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          INVENTORY_SEAL_SCRATCH: ${{ runner.temp }}/inventory-committed-pages
+        run: |
+          set -euo pipefail
+          mkdir -p "$INVENTORY_SEAL_SCRATCH"
+          python3 scripts/dev/test-inventory-seal-committed-pages.py \
+            2>&1 | tee "$INVENTORY_SEAL_SCRATCH/native.log"
+      - name: Retain committed-page inventory qualification
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.inventory_committed_pages.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: inventory-committed-pages-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/inventory-committed-pages/
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Tournament blinds publish atomically across the field
         if: matrix.shard == 3
         env:
@@ -2291,11 +2436,171 @@ jobs:
           POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/dev/probe-played-mtt-launch-pg17.py
 
+      - name: Original unchanged cash stacks retain signed predecessor evidence
+        id: original_unchanged_stack
+        if: matrix.shard == 3
+        env:
+          PGBIN: /usr/lib/postgresql/17/bin
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/original-unchanged-stack"
+          bash scripts/dev/probe-original-unchanged-stack-pg17.sh \
+            2>&1 | tee "$RUNNER_TEMP/original-unchanged-stack/native.log"
+          python3 scripts/verification-harness/horse-cash-signed-reader-retention.py \
+            --evidence "$RUNNER_TEMP/original-unchanged-stack/retained-source-compatibility" \
+            --pg-bin /usr/lib/postgresql/17/bin
+      - name: Retain original unchanged-stack native qualification
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.original_unchanged_stack.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: original-unchanged-stack-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/original-unchanged-stack/
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Agent downline rake stays in overseer clubs
         if: matrix.shard == 3
         env:
           PGBIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/dev/probe-agent-downline-rake-scope-pg17.py
+
+      - name: Departed cash settlement retains original wallet and felt basis
+        id: late_seat_flow
+        if: matrix.shard == 3
+        env:
+          PGBIN: /usr/lib/postgresql/17/bin
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/late-seat-flow"
+          export LATE_FLOW_EVIDENCE_DIR="$RUNNER_TEMP/late-seat-flow"
+          bash scripts/dev/probe-late-seat-flow-pg17.sh 2>&1 | tee "$RUNNER_TEMP/late-seat-flow/native.log"
+
+      - name: Retain original late-seat cash-flow qualification
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.late_seat_flow.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: late-seat-flow-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/late-seat-flow/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Original posthand escrow stays distinct from poker winnings
+        id: posthand_escrow
+        if: matrix.shard == 3
+        env:
+          PGBIN: /usr/lib/postgresql/17/bin
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/posthand-escrow"
+          export POSTHAND_ESCROW_EVIDENCE_DIR="$RUNNER_TEMP/posthand-escrow"
+          bash scripts/dev/probe-posthand-escrow-pg17.sh 2>&1 | tee "$RUNNER_TEMP/posthand-escrow/native.log"
+
+      - name: Retain original posthand escrow qualification
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.posthand_escrow.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: posthand-escrow-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/posthand-escrow/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Weekly cash acceptance starts from its exact original unaccepted hands
+        id: weekly_shaped_primary
+        if: matrix.shard == 3
+        env:
+          PGBIN: /usr/lib/postgresql/17/bin
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/weekly-shaped-primary"
+          export SHAPED_PRIMARY_EVIDENCE_DIR="$RUNNER_TEMP/weekly-shaped-primary"
+          bash scripts/dev/probe-weekly-shaped-primary-pg17.sh 2>&1 | tee "$RUNNER_TEMP/weekly-shaped-primary/native.log"
+
+      - name: Retain original weekly shaped primary qualification
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.weekly_shaped_primary.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-shaped-primary-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/weekly-shaped-primary/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Original refund evidence proves identical lineage with one application scan
+        id: original_refund_evidence
+        if: matrix.shard == 3
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/original-refund-evidence"
+          python3 scripts/qualification/original-refund-evidence/run-native.py --output "$RUNNER_TEMP/original-refund-evidence" 2>&1 | tee "$RUNNER_TEMP/original-refund-evidence/native.log"
+
+      - name: Retain original refund evidence qualification
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.original_refund_evidence.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: original-refund-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/original-refund-evidence/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Original inventory restoration admits only qualified finite financial evidence
+        id: original_inventory_restoration
+        if: matrix.shard == 3
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/original-inventory-restoration"
+          python3 scripts/qualification/original-retirement-boundary/run-native.py --output "$RUNNER_TEMP/original-inventory-restoration" 2>&1 | tee "$RUNNER_TEMP/original-inventory-restoration/native.log"
+
+      - name: Retain original inventory restoration qualification
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.original_inventory_restoration.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: original-inventory-restoration-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/original-inventory-restoration/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Original retained source corrections qualify through their existing owner
+        id: retained_source_correction
+        if: matrix.shard == 3
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          RETAINED_SOURCE_CORRECTION_EVIDENCE_DIR: ${{ runner.temp }}/retained-source-correction
+        run: |
+          set -euo pipefail
+          mkdir -p "$RETAINED_SOURCE_CORRECTION_EVIDENCE_DIR"
+          bash scripts/dev/probe-retained-source-correction-pg17.sh --public-safe 2>&1 | tee "$RETAINED_SOURCE_CORRECTION_EVIDENCE_DIR/native.log"
+
+      - name: Retain original retained source correction qualification
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.retained_source_correction.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: retained-source-correction-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/retained-source-correction/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Original cash hands correct their exact rolled-back allocator
+        id: cash_original17
+        if: matrix.shard == 3
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          CASH_ORIGINAL17_EVIDENCE_DIR: ${{ runner.temp }}/cash-original17
+        run: |
+          set -euo pipefail
+          mkdir -p "$CASH_ORIGINAL17_EVIDENCE_DIR"
+          bash scripts/dev/probe-cash-original17-pg17.sh 2>&1 | tee "$CASH_ORIGINAL17_EVIDENCE_DIR/native.log"
+
+      - name: Retain exact cash original qualification
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.cash_original17.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: cash-original17-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/cash-original17/
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Hand index writers retain canonical order and exact coverage
         id: hand_index_writer_order

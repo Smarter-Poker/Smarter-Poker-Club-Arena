@@ -1,4 +1,5 @@
 import { parseTableArenaIdentity } from '../domain/ArenaContext.js';
+import { hasDiamondCashClusterShape } from '../domain/DiamondCashBoundary.js';
 import { DSS_CLUB_ID } from './StableHand.js';
 
 /** Treasury-funded fleet seats belong only to authoritative chip arenas. */
@@ -60,9 +61,8 @@ export function diamondArenaIdFrom(
   return typeof row.club_id === 'string' && row.club_id ? row.club_id : null;
 }
 
-/** A plain Diamond Arena cash table of THIS arena: the arena identity parses
- *  as `diamond_arena`, it is the open arena's own club, and it is not a
- *  cluster table (the arena's admission door refuses clustered tables). */
+/** A compatible plain table or a declared cluster table of the open arena.
+ * The same cycle and personal Diamond funding door seat both kinds. */
 export function isDiamondArenaCashTable(
   table: {
     club_id?: unknown;
@@ -70,11 +70,13 @@ export function isDiamondArenaCashTable(
     arena?: unknown;
     cluster_id?: unknown;
     lifecycle?: unknown;
+    role?: unknown;
+    main_index?: unknown;
   },
   arenaId: string | null
 ): boolean {
   if (!arenaId) return false;
-  if (table.cluster_id != null || table.lifecycle != null) return false;
+  if (!hasDiamondCashClusterShape(table)) return false;
   try {
     const identity = parseTableArenaIdentity(table);
     return identity.kind === 'diamond_arena' && identity.id === arenaId;

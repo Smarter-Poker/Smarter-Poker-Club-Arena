@@ -30,6 +30,62 @@ const native = parse(
   readFileSync(join(root, '.github/workflows/component-fixture-native-smoke.yml'), 'utf8')
 );
 
+describe('Player Command history qualification stays connected', () => {
+  it.each([
+    'scripts/ci/test-player-command-history.py',
+    'scripts/qualification/player-command-history.sql',
+    'supabase/migrations/20261012220618_player_history_authorizes_realtime_join_check_rows.sql',
+    'supabase/migrations/20261012144105_player_command_history_reads_sanitized_staff_scope.sql',
+  ])('selects accounting and its source checks for %s', (path) => {
+    expect(classifyChangedPaths([path])).toMatchObject({ server: true, tests: true });
+  });
+  it('runs history through the checked totals owner once in required accounting shard four', () => {
+    const steps = ci.jobs.accounting_postgres.steps.filter((step: { run?: string }) =>
+      step.run?.includes('scripts/ci/test-player-command-hand-totals.py')
+    );
+    expect(steps).toHaveLength(1);
+    expect(steps[0].run).toBe('python3 scripts/ci/test-player-command-hand-totals.py');
+    expect(steps[0].if).toBe('matrix.shard == 4');
+    expect(steps[0]['continue-on-error']).toBeUndefined();
+    expect(
+      ci.jobs.accounting_postgres.steps.filter((step: { run?: string }) =>
+        step.run?.includes('scripts/ci/test-player-command-history.py')
+      )
+    ).toHaveLength(0);
+    const contract = execFileSync(
+      'python3',
+      [
+        '-c',
+        `import ast, pathlib
+tree = ast.parse(pathlib.Path('scripts/ci/test-player-command-hand-totals.py').read_text())
+calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)
+         and isinstance(node.func, ast.Attribute) and node.func.attr == 'run'
+         and isinstance(node.func.value, ast.Name) and node.func.value.id == 'subprocess'
+         and any(isinstance(value, ast.Constant) and value.value == 'scripts/ci/test-player-command-history.py'
+                 for value in ast.walk(node))]
+assert len(calls) == 1, 'History must have exactly one checked execution owner'
+call = calls[0]
+assert isinstance(call.args[0], ast.List) and len(call.args[0].elts) == 2
+interpreter = call.args[0].elts[0]
+assert isinstance(interpreter, ast.Attribute) and isinstance(interpreter.value, ast.Name)
+assert interpreter.value.id == 'sys' and interpreter.attr == 'executable'
+options = {item.arg: item.value for item in call.keywords}
+assert isinstance(options.get('check'), ast.Constant) and options['check'].value is True
+assert isinstance(options.get('timeout'), ast.Constant) and 0 < options['timeout'].value <= 300
+owner = next(node for node in tree.body if isinstance(node, ast.Try))
+cleanup = owner.finalbody[-1]
+assert isinstance(cleanup, ast.Expr) and isinstance(cleanup.value, ast.Call)
+assert ast.unparse(cleanup.value.func) == 'shutil.rmtree'
+invocation = next(node for node in tree.body if isinstance(node, ast.Expr) and node.value is call)
+assert invocation.lineno > owner.end_lineno, 'History must execute only after successful totals and cleanup'
+print('checked bounded history execution after totals cleanup')`,
+      ],
+      { cwd: root, encoding: 'utf8' }
+    );
+    expect(contract.trim()).toBe('checked bounded history execution after totals cleanup');
+  });
+});
+
 describe('Daily Bonus accounting qualification follows its actual inputs', () => {
   it.each([
     'src/components/daily-bonus/useDailyBonus.ts',
@@ -1901,7 +1957,7 @@ describe('restored provider accounting qualification', () => {
     expect(full.env?.ACCOUNTING_FIXTURE_PARENT).toBe('${{ runner.temp }}/union-accounting-scratch');
   });
 
-  it('uses runtime readiness on shards 1/2 and requires native tooling only on 3/4', () => {
+  it('keeps shard two runtime-only and requires the actual provider, Lightning and export build tools', () => {
     const install = ci.jobs.accounting_postgres.steps.find(
       (step: { name?: string }) =>
         step.name === 'Install PostgreSQL 17 tools without a default database service'
@@ -1939,10 +1995,13 @@ describe('restored provider accounting qualification', () => {
             env: { ...process.env, PATH: '', PG_CI_SHARD: String(shard) },
           }
         );
-        if (shard <= 2) expect(output).toBe('');
+        if (shard === 2) expect(output).toBe('');
+        else if (shard === 1)
+          expect(output).toBe('INSTALL:postgresql-server-dev-17 build-essential');
         else
           expect(output).toBe(
-            'INSTALL:postgresql-server-dev-17 build-essential bison flex perl bzip2 patch'
+            'INSTALL:postgresql-server-dev-17 build-essential bison flex perl bzip2 patch' +
+              (shard === 4 ? ' pkg-config libssl-dev libzstd-dev' : '')
           );
       }
       expect(() =>
@@ -1958,7 +2017,7 @@ describe('restored provider accounting qualification', () => {
           execFileSync(
             '/bin/bash',
             ['-c', prefix + '\nprintf "INSTALL:%s" "${pg_ci_build_packages[*]-}"'],
-            { encoding: 'utf8', env: { ...process.env, PATH: '', PG_CI_SHARD: '1' } }
+            { encoding: 'utf8', env: { ...process.env, PATH: '', PG_CI_SHARD: '2' } }
           )
         ).toBe('INSTALL:');
         writeFileSync(path, '', { mode: 0o755 });
@@ -1970,7 +2029,7 @@ describe('restored provider accounting qualification', () => {
           ['-c', prefix + '\nprintf "INSTALL:%s" "${pg_ci_build_packages[*]-}"'],
           {
             encoding: 'utf8',
-            env: { ...process.env, PATH: '', PG_CI_SHARD: '1' },
+            env: { ...process.env, PATH: '', PG_CI_SHARD: '2' },
           }
         )
       ).toBe('INSTALL:');
@@ -2157,5 +2216,47 @@ describe('authenticated EV lifecycle remains in the maintained native gate', () 
         step.run?.includes('npm run build --prefix server')
       )
     ).toBe(true);
+  });
+});
+
+describe('scoped launch reset keeps its real recovery regression enforced', () => {
+  it.each([
+    'scripts/ci/test_launch_reset_balance.py',
+    'scripts/ci/run_launch_reset_accounting_fixture.py',
+    'scripts/ci/test_launch_reset_floor.py',
+    'scripts/ci/test_launch_reset_installer.py',
+    'scripts/ci/test_launch_reset_floor_admission.py',
+    'scripts/ci/fixtures/launch-reset/original-bootstrap.sql',
+    'scripts/ci/fixtures/launch-reset/fixture-hashes.json',
+    'scripts/ci/fixtures/launch-reset/accounting/invoice-visibility-qualification.sql',
+  ])('requires accounting and source checks for %s', (path) => {
+    const flags = classifyChangedPaths([path]);
+    expect(flags.server).toBe(true);
+    expect(flags.tests).toBe(true);
+    expect(flags.src).toBe(false);
+  });
+  it('runs the complete installed candidate and connected owners in the existing job', () => {
+    const steps = ci.jobs.accounting_postgres.steps;
+    const step = steps.find((value: { id?: string }) => value.id === 'scoped_launch_reset');
+    expect(step.if).toBe('matrix.shard == 1');
+    expect(step['continue-on-error']).toBeUndefined();
+    expect(step.run).toContain('20261012181905_scoped_club_launch_reset_and_guarded_recovery.sql');
+    expect(step.run).toContain('test_launch_reset_balance.py --candidate-migration');
+    expect(step.run).toContain(
+      'commission-assertion reporting invoice-visibility treasury-selftest'
+    );
+    expect(step.run).toContain('test_launch_reset_floor.py --candidate-migration');
+    expect(step.run).toContain('test_launch_reset_floor_admission.py --candidate');
+    expect(step.run).toContain('--production-roster');
+    expect(step.run).toContain('npm ci --ignore-scripts');
+    expect(step.run).toContain(
+      'test_launch_reset_installer.py --installer scripts/ci/apply-recorded-migration.mjs'
+    );
+    expect(step.run).not.toContain('--prefix-roster');
+    const evidence = steps.find(
+      (value: { name?: string }) => value.name === 'Retain scoped launch reset qualification'
+    );
+    expect(evidence.with['if-no-files-found']).toBe('error');
+    expect(evidence.if).toContain('always()');
   });
 });

@@ -203,7 +203,12 @@ describe('the mini has its own near misses and its own players floor', () => {
 
   it('the mini reads ITS OWN players-dealt floor, not the main’s', () => {
     expect(rake).toMatch(/miniMinPlayersDealt: RAKE_SPEC\.rules\.bbjMinPlayersDealt/);
-    expect(rake).toMatch(/if \(numPlayersDealt < BBJ_RULES\.miniMinPlayersDealt\) return noHit;/);
+    expect(rake).toMatch(
+      /if \(numPlayersDealt < \(context\?\.minimumDealtIn \?\? BBJ_RULES\.miniMinPlayersDealt\)\) return noHit;/
+    );
+    const diamond = read('server/src/engine/diamondCashJackpot.ts');
+    expect(diamond).toMatch(/minimumDealtIn: schedule\.minDealtIn/);
+    expect(diamond).toMatch(/minimumPot: schedule\.minPot/);
   });
 
   it('the knob is NOT in the rake spec, because that spec is a contract with SQL', () => {

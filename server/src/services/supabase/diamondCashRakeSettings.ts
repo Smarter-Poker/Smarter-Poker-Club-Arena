@@ -1,5 +1,10 @@
 import { supabase } from './client.js';
 import {
+  diamondJackpotSettingNames,
+  resolveDiamondCashJackpotSchedule,
+} from '../../domain/diamondCashJackpotSchedule.js';
+import { BBJ_QUALIFYING_HANDS } from '../../config/RakeConfig.js';
+import {
   DiamondCashRakeSettingRefusal,
   diamondCashRakeSettingNames,
   diamondCashRakeStakeScope,
@@ -55,17 +60,31 @@ import {
  * is pure and can be driven by rows alone.
  */
 export async function readDiamondCashRakeSchedule(
-  bigBlind: number
+  bigBlind: number,
+  includeJackpot = false
 ): Promise<DiamondCashRakeSchedule> {
   const { data, error } = await supabase
     .from('ca_diamond_economics')
     .select('name, scope, value, value_text, recorded_at, id')
-    .in('name', diamondCashRakeSettingNames())
+    .in('name', [
+      ...diamondCashRakeSettingNames(),
+      ...(includeJackpot ? diamondJackpotSettingNames : []),
+    ])
     .in('scope', ['all', diamondCashRakeStakeScope(bigBlind)]);
   if (error) {
     throw new DiamondCashRakeSettingRefusal(
       `diamond_economics_unreadable:ca_diamond_economics (${error.message})`
     );
   }
-  return resolveDiamondCashRakeSchedule((data ?? []) as EconomicsRow[], bigBlind);
+  const rows = (data ?? []) as EconomicsRow[];
+  const rake = resolveDiamondCashRakeSchedule(rows, bigBlind);
+  if (!includeJackpot) return rake;
+  // One database read owns both prices at the deal. Separate requests could
+  // straddle an economics change and describe a schedule that never existed.
+  const jackpot = resolveDiamondCashJackpotSchedule(rows, bigBlind);
+  for (const [variant, hand] of Object.entries(jackpot.qualifyingHands)) {
+    if (BBJ_QUALIFYING_HANDS[variant]?.minLosingHand !== hand)
+      throw new Error('diamond_jackpot_qualifying_rule_unsupported:' + variant);
+  }
+  return { ...rake, jackpot };
 }

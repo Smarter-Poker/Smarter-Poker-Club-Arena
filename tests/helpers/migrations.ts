@@ -83,13 +83,28 @@ export function latestNamed(fragment: string): { name: string; sql: string } {
 
 /** The body of `fn` as declared in `sql`, between its dollar quotes. */
 export function functionBody(sql: string, fn: string): string {
-  const open = Math.max(
-    sql.lastIndexOf(`CREATE OR REPLACE FUNCTION public.${fn}(`),
-    sql.lastIndexOf(`CREATE FUNCTION public.${fn}(`)
+  const escaped = fn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const declarations = [
+    ...sql.matchAll(
+      new RegExp(`CREATE\\s+(?:OR\\s+REPLACE\\s+)?FUNCTION\\s+public\\.${escaped}\\s*\\(`, 'gi')
+    ),
+  ];
+  const declaration = declarations.at(-1);
+  if (!declaration || declaration.index === undefined)
+    throw new Error(`${fn} is not declared in this migration`);
+  const rest = sql.slice(declaration.index);
+  const delimiter = /\bAS\s+(\$\w*\$)/i.exec(rest);
+  const nextDeclaration = /\bCREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\b/i.exec(
+    rest.slice(declaration[0].length)
   );
-  if (open < 0) throw new Error(`${fn} is not declared in this migration`);
-  const start = sql.indexOf('$function$', open);
-  const end = sql.indexOf('$function$', start + 10);
-  if (end <= start) throw new Error(`${fn} has no closing dollar quote`);
-  return sql.slice(start, end);
+  if (
+    !delimiter ||
+    (nextDeclaration && delimiter.index >= declaration[0].length + nextDeclaration.index)
+  ) {
+    throw new Error(`${fn} has no dollar-quoted body`);
+  }
+  const bodyStart = delimiter.index + delimiter[0].length;
+  const bodyEnd = rest.indexOf(delimiter[1], bodyStart);
+  if (bodyEnd < 0) throw new Error(`${fn} has no closing dollar quote`);
+  return rest.slice(bodyStart - delimiter[1].length, bodyEnd);
 }

@@ -1,0 +1,30 @@
+{
+  "_owner": "Codex 01a13096 Diamond Arena completion. These are qualification and installation promises until the archived checkpoint records exact production readback; this fragment does not certify installation.",
+  "tables": ["poker_diamond_jackpot_hits"],
+  "functions": [
+    "fn_poker_diamond_wallet_covers",
+    "fn_poker_diamond_project_cluster",
+    "fn_poker_diamond_attach_cash_game",
+    "fn_poker_diamond_move_custody",
+    "fn_poker_diamond_jackpot_pay_mini",
+    "fn_poker_diamond_jackpot_accept_hand",
+    "fn_poker_diamond_jackpot_for_club",
+    "fn_poker_diamond_jackpot_hand_detail",
+    "fn_my_diamond_cash_session_recap",
+    "fn_notify_my_diamond_cash_session_recap"
+  ],
+  "columns": {
+    "poker_diamond_jackpot_hits": [
+      "id",
+      "arena_id",
+      "table_id",
+      "hand_number",
+      "hand_id",
+      "kind",
+      "paid",
+      "verdict",
+      "receipt",
+      "created_at"
+    ]
+  }
+}

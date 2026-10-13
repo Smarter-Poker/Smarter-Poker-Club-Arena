@@ -33,6 +33,35 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  scoped_release_recovery:
+    name: Explicit existing release recovery evidence
+    # One fixed read of an exact completed release; never selected by schedule.
+    if: github.event_name == 'repository_dispatch' && github.event.action == 'audit-production-integrity' && github.event.client_payload.release_recovery_observation != null
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Qualify native exact-run admission and refusal boundaries
+        run: python3 -B tests/operations/release-recovery-read.test.py
+      - name: Read only the matching reservation, sealed result and original bounded witness
+        env:
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          HETZNER_SSH_PRIVATE_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          HETZNER_HOST_KEY: ${{ secrets.HETZNER_HOST_KEY }}
+        run: python3 -B scripts/ci/read-scoped-release-recovery.py
+      - name: Retain only sanitized recovery cause, timestamps and original producer signs
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-recovery-observation-${{ github.run_id }}
+          path: artifacts/release-recovery-observation/observation.json
+          retention-days: 3
+          if-no-files-found: error
+
   scoped_operator_hold_image:
     name: Explicit private immutable engine image read
     # Never selected by the existing scheduled read-only audit.

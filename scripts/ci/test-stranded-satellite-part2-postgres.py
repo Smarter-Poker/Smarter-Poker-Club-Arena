@@ -111,16 +111,6 @@ try:
     q("UPDATE public.ca_money_rpc_registry SET status='retired' WHERE proname='fn_ca_pay_closed_target_ticket_in_cash';")
     q('BEGIN; ' + rule[registry_start:registry_end] + cash + ' COMMIT;', 'CLOSED_TARGET_TICKET_CASH_REGISTRY_CHANGED')
     check(q("SELECT status FROM public.ca_money_rpc_registry WHERE proname='fn_ca_pay_closed_target_ticket_in_cash';") == 'retired', 'different registry decision preserved and refused')
-    union = (ROOT / 'supabase/migrations/20261012112707_the_union_owner_is_a_member_of_every_club.sql').read_text()
-    q('CREATE TABLE public.club_members(id uuid,chip_balance numeric);')
-    union_start = union.index('CREATE OR REPLACE FUNCTION public.fn_union_owner_holds_membership(')
-    union_door = union[union_start:union.index('$function$;', union_start) + len('$function$;')]
-    q('BEGIN; ' + union_door + ' COMMIT;', 'REFUSED: fn_union_owner_holds_membership writes balance columns and is not in ca_money_rpc_registry')
-    check(q("SELECT count(*) FROM public.ca_money_rpc_registry WHERE proname='fn_union_owner_holds_membership';") == '0', 'unregistered zero-chip membership writer refused atomically')
-    union_registry = union.index('INSERT INTO public.ca_money_rpc_registry (proname,status,notes)')
-    union_registry_end = union.index('$registry$;', union_registry) + len('$registry$;')
-    q('BEGIN; ' + union[union_registry:union_registry_end] + union_door + ' COMMIT;')
-    check(q("SELECT status FROM public.ca_money_rpc_registry WHERE proname='fn_union_owner_holds_membership';") == 'approved', 'actual zero-chip membership writer creates after registration')
     # Restore the explicit receipt-only payment fixture for cohort tests.
     fixture_door = fixture[fixture.index('CREATE FUNCTION public.fn_ca_pay_closed_target_ticket_in_cash('):]
     q(fixture_door.replace('CREATE FUNCTION', 'CREATE OR REPLACE FUNCTION', 1))

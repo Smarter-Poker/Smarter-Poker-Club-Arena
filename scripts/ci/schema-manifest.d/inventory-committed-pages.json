@@ -1,0 +1,20 @@
+{
+  "_owner": "Tournament hardening committed inventory pages: isolated PG17 declarations PROMISED. Protected integration, production installation and exact readback pending; this is not an observed production certificate.",
+  "tables": [
+    "union_pnl_inventory_seal_builds",
+    "union_pnl_inventory_seal_build_rows",
+    "union_pnl_inventory_seal_build_issues",
+    "union_pnl_inventory_seal_snapshot",
+    "union_pnl_inventory_seal_snapshot_head",
+    "union_pnl_inventory_published_rows",
+    "union_pnl_inventory_published_issues"
+  ],
+  "functions": [
+    "fn_union_pnl_inventory_build_transition",
+    "fn_union_pnl_inventory_seal_write_page",
+    "fn_union_pnl_inventory_build_state",
+    "fn_union_pnl_inventory_snapshot_restore",
+    "fn_union_pnl_inventory_snapshot_save",
+    "fn_union_pnl_inventory_build_population"
+  ]
+}

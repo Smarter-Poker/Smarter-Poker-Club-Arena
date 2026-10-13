@@ -31,12 +31,16 @@ delivery owner. This correction performs no production writes.
 
 The base satellite installation then failed in the live CREATE FUNCTION money
 registry guard: the new cash door was not registered before its definition.
-The same live classifier also identifies the new union-owner zero-chip member
-INSERT as a balance writer. Both migrations remain uninstalled. Each now
-declares only its exact new writer as approved before CREATE, with the gates
-and journal or zero-chip semantics recorded. A conflicting registry decision
-is preserved and refused. The native qualification recreates production's
-exact registry guard and two classifier helpers, reproduces both unregistered
-CREATE refusals and proves the declarations permit both actual function
-definitions. The union's existing native behavioral qualification remains
-required. No payment body, member role, disciplinary rule or amount changes.
+The cash migration remains uninstalled and now declares only its exact new
+writer as approved before CREATE, with its gates and journal semantics recorded.
+A conflicting registry decision is preserved and refused. Native qualification
+recreates production's exact registry guard and two classifier helpers,
+reproduces the unregistered CREATE refusal and proves the scoped declaration
+permits the actual cash function definition. No payment body or amount changes.
+
+On October 13, current protected main contains the separately qualified and
+installed union-owner membership fix from PR #6760. Integration preserves that
+migration and its native tests byte for byte; the superseded union candidate and
+its duplicate satellite-runner coverage are removed from this PR. Current CI
+routing and historical qualification notes are retained together. Current-input
+fingerprints are refreshed without changing financial authority or claims.

@@ -149,7 +149,10 @@ describe('human tournament registration with entry-only tickets', () => {
 
     expect(await screen.findByText('Entry Fee')).toBeInTheDocument();
     await waitFor(() =>
-      expect(mocks.readBalance).toHaveBeenCalledWith('user-1', { clubId: 'club-1' })
+      expect(mocks.readBalance).toHaveBeenCalledWith('user-1', {
+        clubId: 'club-1',
+        tournamentId: 'tournament-1',
+      })
     );
     fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
     await act(async () => registration);

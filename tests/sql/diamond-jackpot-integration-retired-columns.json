@@ -1,0 +1,149 @@
+[
+  {
+    "schema_name": "smarter_private",
+    "table_name": "retired_cash_hand_custody",
+    "column_name": "submission_id",
+    "sql_type": "uuid",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "retired_cash_hand_custody",
+    "column_name": "user_id",
+    "sql_type": "uuid",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "retired_cash_hand_custody",
+    "column_name": "table_id",
+    "sql_type": "uuid",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "retired_cash_hand_custody",
+    "column_name": "hand_number",
+    "sql_type": "bigint",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "retired_cash_hand_custody",
+    "column_name": "seat_id",
+    "sql_type": "uuid",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "retired_cash_hand_custody",
+    "column_name": "occupancy_id",
+    "sql_type": "uuid",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "retired_cash_hand_custody",
+    "column_name": "seat_joined_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "retired_cash_hand_custody",
+    "column_name": "stack_before",
+    "sql_type": "numeric",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "retired_cash_hand_custody",
+    "column_name": "stack_after",
+    "sql_type": "numeric",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "retired_cash_hand_custody",
+    "column_name": "funding_club_id",
+    "sql_type": "uuid",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "retired_cash_hand_custody",
+    "column_name": "original_left_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "retired_cash_hand_custody",
+    "column_name": "original_inventory_event",
+    "sql_type": "bigint",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "retired_cash_hand_custody",
+    "column_name": "request_hash",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "retired_cash_hand_custody",
+    "column_name": "transaction_id",
+    "sql_type": "bigint",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "retired_cash_hand_custody",
+    "column_name": "restore_key",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "retired_cash_hand_custody",
+    "column_name": "issuance_ledger",
+    "sql_type": "uuid",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "retired_cash_hand_custody",
+    "column_name": "original_time_bank",
+    "sql_type": "jsonb",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "retired_cash_hand_custody",
+    "column_name": "state",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "retired_cash_hand_custody",
+    "column_name": "settlement_id",
+    "sql_type": "uuid",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "retired_cash_hand_custody",
+    "column_name": "accepted_time_bank",
+    "sql_type": "jsonb",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "retired_cash_hand_custody",
+    "column_name": "created_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": "clock_timestamp()"
+  }
+]

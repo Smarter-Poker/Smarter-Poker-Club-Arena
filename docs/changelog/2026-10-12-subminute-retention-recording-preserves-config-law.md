@@ -1,0 +1,3 @@
+# Installed subminute retention records preserve the config law
+
+The retention-config source law treated budget references to the existing prune function as a redefinition. Hosted and local checks reproduced one failure; four neighboring cases passed. The existing recording mechanism now carries the exact installed source MD5, supported migration-text readback and unchanged live prune definition. Only the original job interval changed. The eight-day config read, earning-source protection, budgets and installed SQL remain unchanged. Changed source bytes rearm the same guard; no assertion or database code is weakened.

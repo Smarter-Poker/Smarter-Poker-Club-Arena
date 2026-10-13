@@ -1,0 +1,7 @@
+# Original cash receipts keep their accounting custody
+
+The cash receipt captures its atomic snapshot before the outer accepted statistics complete. Horse retention previously required these two producer phases to have identical statistics, and later deletion of the original history/atomic rows prevented retry. The successor permits absent earlier snapshot statistics while refusing any present mismatch. Already-pruned hands require independent immutable original adaptive, accepted-statistics and settlement-key certificates plus exact original receipt hashes and fresh accounting readiness; a separate certificate records that boundary without inventing a missing live atomic hash.
+
+History pruning, snapshot eligibility and the raw request owner now preserve the original repair boundary whenever cash accounting is blocked, its receipt is missing, or its authority cannot be established. Verified tournament owners remain eligible. Human/mixed hands and financial amounts retain their existing protection.
+
+Native PostgreSQL 17 qualified 41 focused cases against the actual installed batch parent, including fail-before/pass-after, replay refusal, independent-certificate negatives, original producer phases, two-session visibility, exact financial evidence, blocked funding and missing receipt custody. Source qualification is separate from production installation, live readback and protected merge; those remain with the delivery owner.

@@ -1,0 +1,7 @@
+# Retention laws follow the stronger original owners
+
+Hosted final-candidate job114953435028 found three stale source assertions. The null-table law expected an OR arm without the now-required empty original roster, and expected `IS DISTINCT FROM true`, which admits unknowns, instead of the installed stricter `IS FALSE`. The statistics law expected the pruner to name the pointer table directly, although its qualified original archive helper now preserves lifetime count/min/max before deleting that index.
+
+The null-table law now requires the empty original roster, retains the original table/tournament join and F06/config guards, and requires explicit original horse-only classification. The existing statistics law follows the exact archive call before atomic/history deletion, then checks its current private helper:250bound, history lock/human guard, batch-specific DELETE RETURNING user/asset/time, exact count/min/max asset grouping, additive totals and earliest/latest times. All three durable statistics tables remain excluded. No installed SQL, human protection, financial assertion or native qualification was changed or bypassed.
+
+Verified: existing two laws reproduce all three failures against the previous assertions, then pass14/14 after correction. Source inspected before/after. The connected PostgreSQL17 original lifetime24 proof and financial/facts qualification are unchanged and already passed; hosted Accounting3 also passed on candidate3c19. Final normal pre-push and required exact-head hosted checks remain mandatory.

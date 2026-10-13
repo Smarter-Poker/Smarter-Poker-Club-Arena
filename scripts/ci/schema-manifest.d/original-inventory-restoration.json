@@ -1,0 +1,40 @@
+{
+  "_owner": "Finite original inventory qualification. New objects are PROMISED source declarations, not installation, financial admission or production verification. Exact migration20261012224150 requires protected integration and demonstrated installation.",
+  "tables": [
+    "smarter_private.original_inventory_restoration_cases",
+    "smarter_private.original_inventory_restoration_certificates",
+    "smarter_private.original_erased_cash_base_discharges"
+  ],
+  "functions": [
+    "smarter_private.original_retirement_boundary_proof",
+    "smarter_private.original_paired_seat_restoration_proof",
+    "smarter_private.original_closed_tournament_rails_proof",
+    "smarter_private.original_closed_player_proof",
+    "smarter_private.original_continued_chair_proof",
+    "smarter_private.original_returned_cash_base_proof",
+    "smarter_private.original_erased_cash_base_proof",
+    "smarter_private.original_inventory_source_ref_md5",
+    "smarter_private.original_inventory_restoration_immutable",
+    "smarter_private.certify_original_inventory_restoration",
+    "smarter_private.inventory_restoration_issue_accepted",
+    "smarter_private.original_inventory_certificate_insert_guard",
+    "smarter_private.original_inventory_case_insert_guard",
+    "smarter_private.original_inventory_finite_family_proof",
+    "smarter_private.original_inventory_finite_witness",
+    "smarter_private.original_erased_cash_base_request",
+    "smarter_private.original_erased_cash_base_discharge_immutable",
+    "smarter_private.original_erased_cash_base_expected_hash",
+    "smarter_private.original_erased_cash_base_discharge_receipt",
+    "smarter_private.original_erased_cash_base_discharge_evidence_valid",
+    "smarter_private.original_erased_cash_base_discharge_insert_guard",
+    "smarter_private.original_erased_cash_base_discharge",
+    "smarter_private.original_restoration_cash_returns",
+    "smarter_private.original_erased_cash_receivables",
+    "smarter_private.original_erased_cash_discharge_returns",
+    "fn_union_pnl_inventory_as_of_admitted",
+    "smarter_private.original_inventory_basis_generation",
+    "smarter_private.inventory_basis_cache_read",
+    "smarter_private.inventory_basis_cache_write",
+    "smarter_private.original_inventory_proof_sources_match"
+  ]
+}

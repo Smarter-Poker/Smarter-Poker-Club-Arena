@@ -405,6 +405,11 @@ describe('the certificate spec wires these classifiers without a retry-to-green'
   it('never re-selects a board it already watched, and never spends past the deadline', () => {
     expect(tournament).toContain('excludeTableIds: watched');
     expect(tournament).toContain('watched.push(candidate.id)');
-    expect(spec).toContain('timeout: pollBudgetMs()');
+    expect(spec).toContain(
+      'const progressDeadline = Math.min(options.deadline, Date.now() + pollBudgetMs())'
+    );
+    expect(spec).toContain('timeout: Math.max(1, progressDeadline - Date.now())');
+    expect(spec.indexOf('const progressDeadline')).toBeLessThan(spec.indexOf('const selection ='));
+    expect(spec).toContain('readCandidateHealth(deadline)');
   });
 });

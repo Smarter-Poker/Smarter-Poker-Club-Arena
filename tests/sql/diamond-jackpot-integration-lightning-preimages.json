@@ -1,0 +1,7 @@
+[
+  {
+    "signature": "fn_lightning_settlement_seats(uuid,bigint)",
+    "body_md5": "1ad046af8700640b77ddbc893bbc3d93",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_lightning_settlement_seats(p_table_id uuid, p_hand_number bigint)\n RETURNS jsonb\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n  SELECT coalesce(jsonb_object_agg(m.player_id::text, m.anchor_table_id), '{}'::jsonb)\n    FROM public.lightning_settlement_marker m\n   WHERE m.txid = pg_current_xact_id_if_assigned()\n     AND m.host_table_id = p_table_id\n     AND m.hand_number = p_hand_number;\n$function$\n"
+  }
+]

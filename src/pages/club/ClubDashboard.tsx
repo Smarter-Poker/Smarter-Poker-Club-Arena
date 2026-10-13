@@ -16,7 +16,15 @@ import { getTournamentEntryCapacity } from '../../utils/tournamentPresentation';
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useRef, useCallback, useMemo, Suspense } from 'react';
+import {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+  useLayoutEffect,
+  Suspense,
+} from 'react';
 import { isClubStaff, type ClubRole } from '../../types/clubRoles';
 import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
@@ -26,6 +34,7 @@ import { useMasterBusChannel } from '../../hooks/useMasterBusChannel';
 import { getLocalStorage, setLocalStorage } from '../../lib/storage';
 import ClubStatsCards, { DashboardStats } from '../../components/club/ClubStatsCards';
 import ClubActivityFeed from '../../components/club/ClubActivityFeed';
+import ClubDashboardAvatar from '../../components/club/ClubDashboardAvatar';
 import PageSkeleton from '../../components/common/PageSkeleton';
 import { useToast } from '../../components/common/Toast';
 import ClubMemberManagement from '../../components/admin/ClubMemberManagement';
@@ -319,6 +328,11 @@ export default function ClubDashboard() {
     return () => clearInterval(id);
   }, []);
 
+  const scopeKey = `${clubId ?? ''}:${user?.id ?? ''}`;
+  const scopeRef = useRef({ key: scopeKey });
+  if (scopeRef.current.key !== scopeKey) scopeRef.current = { key: scopeKey };
+  const mountedRef = useRef(false);
+  const latestDashboardLoadRef = useRef<(silent?: boolean) => Promise<void>>(async () => {});
   const loadingRef = useRef(false);
   // Monotonic request id: a slower earlier response must never overwrite the
   // state produced by a newer one (e.g. rapid Time Range switching).
@@ -369,7 +383,7 @@ export default function ClubDashboard() {
       loadDashboardData();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clubId, dateRange, sortBy]);
+  }, [clubId, user?.id, dateRange, sortBy]);
 
   // Leaderboard stagger animation.
   //
@@ -422,7 +436,7 @@ export default function ClubDashboard() {
     return () => {
       cancelled = true;
     };
-  }, [clubId]);
+  }, [clubId, user?.id]);
 
   useMasterBusChannel({
     channelName: `club-dashboard-tables-${clubId}`,
@@ -452,11 +466,11 @@ export default function ClubDashboard() {
     let disposed = false;
 
     const reload = (payload?: any) => {
-      if (payload?.clubId && payload.clubId !== clubId) return;
+      if (payload?.clubId && payload.clubId !== clubId && payload.clubId !== resolvedClubId) return;
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
         timer = null;
-        if (!disposed) loadDashboardData(true);
+        if (!disposed) void latestDashboardLoadRef.current(true);
       }, COALESCE_MS);
     };
 
@@ -483,27 +497,30 @@ export default function ClubDashboard() {
       if (timer) clearTimeout(timer);
       unsubs.forEach((unsub) => unsub());
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clubId]);
+  }, [clubId, resolvedClubId]);
 
   const handleRecalculateLevel = async () => {
     if (!resolvedClubId || isRecalculating) return;
+    const actionScope = scopeRef.current;
+    const isCurrent = () => mountedRef.current && actionScope === scopeRef.current;
     setIsRecalculating(true);
     try {
       const { data: resData, error } = await supabase.rpc('recompute_club_levels', {
         p_club_id: resolvedClubId,
       });
+      if (!isCurrent()) return;
       if (error) throw error;
       if (resData && resData.success === false) {
         throw new Error(resData.error || 'Failed to recalculate level.');
       }
       toast.success('Club Level Recalculated Successfully!');
-      loadDashboardData(true);
+      void latestDashboardLoadRef.current(true);
     } catch (err: any) {
+      if (!isCurrent()) return;
       reportError(err, 'ClubDashboard.Recalculate_error');
       toast.error(err.message || 'Failed to recalculate level.');
     } finally {
-      setIsRecalculating(false);
+      if (isCurrent()) setIsRecalculating(false);
     }
   };
 
@@ -513,7 +530,7 @@ export default function ClubDashboard() {
    *   into a skeleton mid-session.
    */
   const loadDashboardData = async (silent = false) => {
-    if (!clubId) return;
+    if (!clubId || !mountedRef.current || scopeKey !== scopeRef.current.key) return;
     if (loadingRef.current) {
       // Do NOT drop this request. A Time Range change while a load is in
       // flight used to be swallowed here, leaving the filter highlighted but
@@ -523,6 +540,9 @@ export default function ClubDashboard() {
     }
     loadingRef.current = true;
     const reqId = ++requestIdRef.current;
+    const scope = scopeRef.current;
+    const isCurrent = () =>
+      mountedRef.current && scope === scopeRef.current && reqId === requestIdRef.current;
     setLoadError(false);
     if (!silent) setLoading(true);
     try {
@@ -530,13 +550,14 @@ export default function ClubDashboard() {
       if (!isUUID(uuid)) {
         // Unknown club code — render the not-found state rather than throwing
         // an opaque 22P02 from the uuid-typed RPCs.
-        if (reqId === requestIdRef.current) {
+        if (isCurrent()) {
           setClub(null);
           setLoading(false);
         }
         return;
       }
 
+      if (!isCurrent()) return;
       const since = sinceForRange(dateRange);
       // Clear a stale "Members Only" verdict carried over from a previously
       // viewed club before this club's own authorization result comes back.
@@ -575,7 +596,7 @@ export default function ClubDashboard() {
       ]);
 
       // A stale response must never clobber newer state.
-      if (reqId !== requestIdRef.current) return;
+      if (!isCurrent()) return;
 
       // Membership is enforced server-side; surface it as its own state.
       const authzErr = [statsResult.error, playersResult.error].find(isAuthzError);
@@ -707,6 +728,7 @@ export default function ClubDashboard() {
       setTopPlayers(players);
       setLastUpdated(Date.now());
     } catch (error: any) {
+      if (!isCurrent()) return;
       if (isAuthzError(error)) {
         setNotAMember(true);
       } else {
@@ -715,15 +737,19 @@ export default function ClubDashboard() {
         toast.error('Failed to load dashboard data');
       }
     } finally {
-      loadingRef.current = false;
-      setLoading(false);
-      if (rerunRef.current) {
-        rerunRef.current = false;
-        // Pick up the newest filter selection that arrived mid-flight.
-        setTimeout(() => loadDashboardData(true), 0);
+      if (isCurrent()) {
+        loadingRef.current = false;
+        setLoading(false);
+        if (rerunRef.current) {
+          rerunRef.current = false;
+          // Pick up the newest filter selection that arrived mid-flight.
+          void latestDashboardLoadRef.current(true);
+        }
       }
     }
   };
+
+  latestDashboardLoadRef.current = loadDashboardData;
 
   // ── Members tab data ───────────────────────────────────────────────────────
   const loadMembers = useCallback(
@@ -733,6 +759,9 @@ export default function ClubDashboard() {
       // requests, and without this a slower earlier response could land last
       // and show results for a query the user has already moved past.
       const reqId = ++memberRequestIdRef.current;
+      const scope = scopeRef.current;
+      const isCurrent = () =>
+        mountedRef.current && scope === scopeRef.current && reqId === memberRequestIdRef.current;
       setMembersLoading(true);
       try {
         const { data, error } = await supabase.rpc('ca_club_members', {
@@ -745,7 +774,7 @@ export default function ClubDashboard() {
           p_role: role || null,
         });
         if (error) throw error;
-        if (reqId !== memberRequestIdRef.current) return;
+        if (!isCurrent()) return;
         const rows: ClubMemberRow[] = (data || []).map((m: any) => ({
           userId: m.user_id,
           displayName: m.display_name || 'Player',
@@ -764,12 +793,12 @@ export default function ClubDashboard() {
         setMemberTotal(Number((data || [])[0]?.total_count) || 0);
         setMembersReady(true);
       } catch (err: any) {
-        if (reqId !== memberRequestIdRef.current) return;
+        if (!isCurrent()) return;
         if (!isAuthzError(err)) reportError(err, 'ClubDashboard.members_rpc_error');
         setMembers([]);
         setMemberTotal(0);
       } finally {
-        if (reqId === memberRequestIdRef.current) setMembersLoading(false);
+        if (isCurrent()) setMembersLoading(false);
       }
     },
     [resolvedClubId, dateRange]
@@ -887,6 +916,43 @@ export default function ClubDashboard() {
   const [membersReady, setMembersReady] = useState(false);
   const memberFiltered = memberSearch.trim().length > 0 || memberRole !== '';
 
+  useLayoutEffect(() => {
+    mountedRef.current = true;
+    requestIdRef.current += 1;
+    memberRequestIdRef.current += 1;
+    loadingRef.current = false;
+    rerunRef.current = false;
+    setClub(null);
+    setResolvedClubId(null);
+    setDashStats(null);
+    setTopPlayers([]);
+    setLiveTables([]);
+    setRecentTables([]);
+    setTablesMeta(null);
+    setUserRole(null);
+    setIsRecalculating(false);
+    setLastUpdated(null);
+    setNotAMember(false);
+    setLoadError(false);
+    setLoading(Boolean(clubId));
+    setMembers([]);
+    setMemberTotal(0);
+    setMembersReady(false);
+    setMembersLoading(false);
+    setMemberPage(0);
+    setRevenue(null);
+    setRevenueError(null);
+    setRevenueLoading(false);
+    setTournaments(null);
+    setTournamentsError(null);
+    setTournamentsLoading(false);
+    return () => {
+      mountedRef.current = false;
+      requestIdRef.current += 1;
+      memberRequestIdRef.current += 1;
+    };
+  }, [scopeKey]);
+
   useEffect(() => {
     const played = rankedPlayers.reduce((s, p) => s + p.handsPlayed, 0);
     const attributed = rankedPlayers.reduce((s, p) => s + p.handsAttributed, 0);
@@ -957,7 +1023,7 @@ export default function ClubDashboard() {
 
   if (loadError && !loading && !club) {
     return (
-      <div className={styles.dashboard}>
+      <div className={styles.dashboard} data-arena-surface="club-dashboard">
         <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text-secondary)' }}>
           <p style={{ fontSize: '1.1rem', marginBottom: '16px' }}>Failed To Load Dashboard</p>
           <button
@@ -993,18 +1059,21 @@ export default function ClubDashboard() {
   const hasInsurance = !!revenue?.insurance && revenue.insurance.contracts > 0;
 
   return (
-    <div className={styles.dashboard}>
+    <div className={styles.dashboard} data-arena-surface="club-dashboard">
       {/* Dashboard Header */}
       <header className={styles.header}>
+        <img
+          className={styles.heroArt}
+          src={`${import.meta.env.BASE_URL}images/club-management/table-command-hero-v1.webp`}
+          alt=""
+          aria-hidden="true"
+        />
         <div className={styles.clubInfo}>
           <div className={styles.clubAvatar}>
-            {club.avatarUrl ? (
-              <img src={club.avatarUrl} alt={club.name} loading="lazy" />
-            ) : (
-              <span>{club.name.charAt(0)}</span>
-            )}
+            <ClubDashboardAvatar src={club.avatarUrl} name={club.name} />
           </div>
           <div className={styles.clubMeta}>
+            <p className={styles.eyebrow}>Club Dashboard</p>
             <h1 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               {club.name}
               {club.levelInfo && (
@@ -1047,9 +1116,6 @@ export default function ClubDashboard() {
           </Link>
           <Link to={`/clubs/${clubId}/announcements`} className={styles.actionBtn}>
             Announce
-          </Link>
-          <Link to={`/financial-admin`} className={styles.actionBtn}>
-            Admin Hub
           </Link>
           <Link to={`/clubs/${clubId}/settings`} className={styles.actionBtn}>
             Settings
@@ -1366,7 +1432,7 @@ export default function ClubDashboard() {
 
             <section className={styles.activityPreview}>
               <h2>Recent Activity</h2>
-              {clubId && <ClubActivityFeed clubId={clubId} limit={5} />}
+              {clubId && <ClubActivityFeed plain clubId={clubId} limit={5} />}
               <button
                 onClick={() => switchTab('activity')}
                 className={styles.viewAllLink}
@@ -1381,7 +1447,7 @@ export default function ClubDashboard() {
         {activeTab === 'activity' && (
           <div className={styles.activityFull}>
             <h2>Club Activity Feed</h2>
-            {clubId && <ClubActivityFeed clubId={clubId} limit={50} showFilter />}
+            {clubId && <ClubActivityFeed plain clubId={clubId} limit={50} showFilter />}
           </div>
         )}
 

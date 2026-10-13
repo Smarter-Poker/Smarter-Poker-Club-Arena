@@ -1,0 +1,282 @@
+[
+  {
+    "schema_name": "smarter_private",
+    "table_name": "f06_hand_dispatch",
+    "column_name": "permit_id",
+    "sql_type": "uuid",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "f06_hand_dispatch",
+    "column_name": "xid",
+    "sql_type": "bigint",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "f06_hand_permits",
+    "column_name": "permit_id",
+    "sql_type": "uuid",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "f06_hand_permits",
+    "column_name": "tournament_id",
+    "sql_type": "uuid",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "f06_hand_permits",
+    "column_name": "table_id",
+    "sql_type": "uuid",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "f06_hand_permits",
+    "column_name": "lifecycle",
+    "sql_type": "bigint",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "f06_hand_permits",
+    "column_name": "hand_number",
+    "sql_type": "bigint",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "f06_hand_permits",
+    "column_name": "custody_id",
+    "sql_type": "uuid",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "f06_hand_permits",
+    "column_name": "generation",
+    "sql_type": "uuid",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "f06_hand_permits",
+    "column_name": "state",
+    "sql_type": "text",
+    "default_sql": "'reserved'::text"
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "f06_hand_permits",
+    "column_name": "evidence_id",
+    "sql_type": "uuid",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "f06_operations",
+    "column_name": "break_id",
+    "sql_type": "uuid",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "f06_operations",
+    "column_name": "ordinal",
+    "sql_type": "bigint",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "f06_operations",
+    "column_name": "tournament_id",
+    "sql_type": "uuid",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "f06_operations",
+    "column_name": "source_table_id",
+    "sql_type": "uuid",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "f06_operations",
+    "column_name": "lifecycle",
+    "sql_type": "bigint",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "f06_operations",
+    "column_name": "boundary_id",
+    "sql_type": "uuid",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "f06_operations",
+    "column_name": "origin_generation",
+    "sql_type": "uuid",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "f06_operations",
+    "column_name": "state",
+    "sql_type": "text",
+    "default_sql": "'park_requested'::text"
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "f06_operations",
+    "column_name": "manifest",
+    "sql_type": "jsonb",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "f06_operations",
+    "column_name": "revision",
+    "sql_type": "bigint",
+    "default_sql": "0"
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "f06_operations",
+    "column_name": "custody_id",
+    "sql_type": "uuid",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "f06_operations",
+    "column_name": "custody_generation",
+    "sql_type": "uuid",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "f06_operations",
+    "column_name": "cleanup_kind",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "f06_operations",
+    "column_name": "close_receipt",
+    "sql_type": "jsonb",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "f06_operations",
+    "column_name": "created_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": "clock_timestamp()"
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "f06_operations",
+    "column_name": "abort_receipt_id",
+    "sql_type": "uuid",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "hand_submission_dispatch",
+    "column_name": "transaction_id",
+    "sql_type": "bigint",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "hand_submission_dispatch",
+    "column_name": "submission_id",
+    "sql_type": "uuid",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "hand_submission_dispatch",
+    "column_name": "request_hash",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "hand_submission_dispatch",
+    "column_name": "instance_id",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "hand_submission_dispatch",
+    "column_name": "lease_generation",
+    "sql_type": "uuid",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "hand_submissions",
+    "column_name": "submission_id",
+    "sql_type": "uuid",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "hand_submissions",
+    "column_name": "table_id",
+    "sql_type": "uuid",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "hand_submissions",
+    "column_name": "hand_number",
+    "sql_type": "bigint",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "hand_submissions",
+    "column_name": "instance_id",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "hand_submissions",
+    "column_name": "lease_generation",
+    "sql_type": "uuid",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "hand_submissions",
+    "column_name": "request",
+    "sql_type": "jsonb",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "hand_submissions",
+    "column_name": "request_hash",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "smarter_private",
+    "table_name": "hand_submissions",
+    "column_name": "retained_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": "clock_timestamp()"
+  }
+]

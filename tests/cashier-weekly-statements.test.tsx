@@ -92,6 +92,8 @@ function mountCashier() {
 }
 async function openWeeklyStatements() {
   await screen.findByText('Balances Synchronized');
+  if (screen.queryByRole('button', { name: /^Advanced/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^Advanced/ }));
   fireEvent.click(screen.getByRole('tab', { name: 'Settlement Record' }));
   return screen.getByRole('tabpanel', { name: 'Settlement Record' });
 }
@@ -275,6 +277,8 @@ describe('cashier club weekly statement boundary', () => {
       )
     );
     await screen.findByText('Balances Synchronized');
+    if (screen.queryByRole('button', { name: /^Advanced/ }))
+      fireEvent.click(screen.getByRole('button', { name: /^Advanced/ }));
     fireEvent.click(screen.getByRole('tab', { name: 'Settlement Record' }));
     const next = screen.getByRole('tabpanel', { name: 'Settlement Record' });
     expect(next).not.toHaveTextContent('Retained 40 Chips');

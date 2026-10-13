@@ -113,6 +113,15 @@ const DEFINITIONS: OperationDefinition[] = [
     signals: ['members_pending'],
   },
   {
+    id: 'applicants',
+    label: 'Applicants',
+    description: 'Review And Approve Requests To Join This Club',
+    suffix: 'applicants',
+    group: 'people',
+    access: 'control',
+    signals: ['members_pending'],
+  },
+  {
     id: 'agents',
     label: 'Agent Team',
     description: 'Hierarchy, Downlines, And Agent Management',
@@ -408,11 +417,21 @@ export function getClubOperationBadge(
       return total + (typeof value === 'number' && value > 0 ? value : 0);
     }, 0);
   if (item.signals?.length) return own(item);
-  const sum = (scope: readonly ClubOperationItem[]) =>
-    scope.reduce((total, entry) => total + own(entry), 0);
+  const sum = (scope: readonly ClubOperationItem[]) => getClubOperationQueueTotal(scope, counts);
   if (item.id === 'overview') return sum(items);
   if (item.id.endsWith('-overview')) return sum(items.filter((e) => e.group === item.group));
   return 0;
+}
+
+/** A queue can have a roster shortcut and a dedicated review page. Count it once. */
+export function getClubOperationQueueTotal(
+  items: readonly ClubOperationItem[],
+  counts: ClubOperationSignalCounts
+): number {
+  return [...new Set(items.flatMap((item) => item.signals || []))].reduce((total, key) => {
+    const value = counts[key];
+    return total + (typeof value === 'number' && value > 0 ? value : 0);
+  }, 0);
 }
 
 function canAccess(access: ClubOperationAccess, capabilities: ClubNavigationCapabilities): boolean {
@@ -466,6 +485,7 @@ const OPERATION_SUFFIXES = new Set([
   'finance',
   'control',
   'members',
+  'applicants',
   'agents',
   'agent-dashboard',
   'anti-cheat',
@@ -503,6 +523,7 @@ const FINANCE_SUFFIXES = new Set([
 ]);
 
 const CONTROL_SUFFIXES = new Set([
+  'applicants',
   'control',
   'agents',
   'blacklist',

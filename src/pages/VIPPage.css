@@ -116,7 +116,7 @@
   border-radius: 0;
   color: #f3e6bd;
   background-color: #0c1014;
-  background-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png');
+  --rewards-control-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png');
   background-position: center;
   background-repeat: no-repeat;
   background-size: 100% 100%;
@@ -177,12 +177,12 @@
 }
 
 .diamond-buy-btn--primary {
-  background-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-primary.png');
+  --rewards-control-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-primary.png');
 }
 
 .diamond-buy-btn--secondary {
   color: #dce9f3;
-  background-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png');
+  --rewards-control-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png');
 }
 
 .diamond-buy-btn:focus-visible {
@@ -353,7 +353,7 @@
   border-radius: 0;
   color: #f6fbff;
   background-color: #07121a;
-  background-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-primary.png');
+  --rewards-control-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-primary.png');
   background-position: center;
   background-repeat: no-repeat;
   background-size: 100% 100%;
@@ -495,4 +495,37 @@
     font-size: 12px;
     padding-inline: 20px;
   }
+}
+
+/* The approved plate remains unchanged. Its opaque exterior is clipped on
+   a paint-only layer; labels, focus outlines and native hit areas stay whole.
+   Coordinates follow the outer chrome of the 348 x 114 source raster. */
+.vip-extend-btn,
+.diamond-buy-btn,
+.purchase-btn {
+  position: relative;
+  isolation: isolate;
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+.vip-extend-btn::before,
+.diamond-buy-btn::before,
+.purchase-btn::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  pointer-events: none;
+  background: var(--rewards-control-image) center / 100% 100% no-repeat;
+  clip-path: polygon(
+    7.2% 4.4%,
+    92.8% 4.4%,
+    99.5% 23.7%,
+    99.5% 83.3%,
+    93.1% 99.1%,
+    6.9% 99.1%,
+    0.5% 83.3%,
+    0.5% 24.6%
+  );
 }

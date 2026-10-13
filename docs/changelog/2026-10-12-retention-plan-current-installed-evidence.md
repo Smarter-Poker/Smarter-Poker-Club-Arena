@@ -1,0 +1,7 @@
+# Retention plan records the current thirteen installed corrections
+
+The plan now records all thirteen actual installed versions, including fact batching `20261012174400`, cash producer-boundary correction `20261012180419` and existing-job cadence `20261012181304`. Jobs 117, 119 and 279 are active; job 117 runs every minute with its original command and work bounds. The former cash hold and immediate-repair instructions are removed from remaining work.
+
+The final connected native chain ended successfully at 18:16:33.220390 UTC after one unchanged retry following filesystem EINTR. The component case counts and the fixed 12-hand cash sample are recorded without treating them as universal coverage: nine certified raw copies were erased with identical financial/P&L hashes, while three unproven funding cases stayed protected. A paired narrow interval observed 7,500 cleanup updates and 6,585 incoming requests over 498.94 seconds; sustained capacity, backlog eligibility and physical reclamation remain unknown.
+
+Adaptive raw retirement remains disabled pending protected source/engine adoption proof. The historical 99-hand/315-missing-fact audit has no supported safe recovery path yet; no historical count, original fact or recovery outcome is invented. This is a documentation-only reconciliation with the owning checkpoint, not a new installation record, cleanup action or certification. No production write or unchanged-code test was performed.

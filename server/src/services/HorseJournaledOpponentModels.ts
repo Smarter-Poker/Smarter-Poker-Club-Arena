@@ -1,3 +1,4 @@
+import { decodeAdaptiveStatistic } from '../engine/HorseAdaptiveStatistics.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { supabase } from './supabase.js';
 import {
@@ -38,7 +39,7 @@ export function buildJournaledOpponentReport(
   releaseSha: string
 ) {
   if (
-    claim.version !== 1 ||
+    (claim.version !== 1 && claim.version !== 2) ||
     claim.status !== 'claimed' ||
     claim.leaseToken !== token ||
     !sha(claim.actorKey) ||
@@ -64,10 +65,21 @@ export function buildJournaledOpponentReport(
     )
   )
     return refusal('invalid_claim');
+  if (
+    claim.version === 2 &&
+    (!Array.isArray(claim.statistics) ||
+      claim.statistics.length > ADAPTIVE_JOURNAL_LIMITS.observations ||
+      claim.statistics.some((r: unknown) => typeof r !== 'string'))
+  )
+    return refusal('invalid_claim');
   const base = {
-    version: 'horse-journaled-model-report-v1',
+    version:
+      claim.version === 2 ? 'horse-journaled-model-report-v2' : 'horse-journaled-model-report-v1',
     sourceRelease: releaseSha,
-    population: 'journaled_qualified_observations',
+    population:
+      claim.version === 2
+        ? 'journaled_qualified_observations_and_disposed_statistics'
+        : 'journaled_qualified_observations',
     sourceCoverage: 'not_established',
     activationAuthorized: false,
     causalEvEstablished: false,
@@ -86,6 +98,7 @@ export function buildJournaledOpponentReport(
   if (claim.populationStatus !== 'snapshot') {
     if (
       claim.rows.length !== 0 ||
+      (claim.version === 2 && (claim.statistics as string[]).length !== 0) ||
       (claim.populationStatus === 'observation_budget_exceeded'
         ? claim.observations <= ADAPTIVE_JOURNAL_LIMITS.observations
         : claim.bytes <= ADAPTIVE_JOURNAL_LIMITS.batchBytes)
@@ -96,18 +109,41 @@ export function buildJournaledOpponentReport(
       report: { ...base, status: 'refused', reason: claim.populationStatus },
     };
   }
-  if (claim.observations !== claim.rows.length) return refusal('invalid_claim');
+  const statisticsRows = claim.version === 2 ? (claim.statistics as string[]) : [];
+  if (claim.version === 1 && claim.observations !== claim.rows.length)
+    return refusal('invalid_claim');
   const raw = claim.rows as unknown[];
   if (raw.some((r) => typeof r !== 'string')) return refusal('invalid_claim');
   const rows = raw as string[];
   if (
-    rows.reduce((sum, r) => sum + Buffer.byteLength(r), 0) !== claim.bytes ||
+    [...rows, ...statisticsRows].reduce((sum, r) => sum + Buffer.byteLength(r), 0) !==
+      claim.bytes ||
     claim.bytes > ADAPTIVE_JOURNAL_LIMITS.batchBytes ||
-    hash(rows.join('\n')) !== claim.evidenceDigest
+    hash(
+      claim.version === 2
+        ? rows.join('\n') + '\n--statistics-v1--\n' + statisticsRows.join('\n')
+        : rows.join('\n')
+    ) !== claim.evidenceDigest
   )
     return refusal('invalid_claim');
   try {
     const observations = decodeScopedAdaptiveJournalObservations(rows, claim.scopeKey);
+    const statistics =
+      claim.version === 2 ? statisticsRows.map(decodeAdaptiveStatistic) : undefined;
+    if (
+      statistics &&
+      (statistics.some(
+        (s, i) =>
+          s.actorKey !== claim.actorKey ||
+          s.scopeKey !== claim.scopeKey ||
+          s.observedAtMs < (claim.fromMs as number) ||
+          s.observedAtMs >= (claim.toMs as number) ||
+          (i > 0 && statisticsRows[i] <= statisticsRows[i - 1])
+      ) ||
+        observations.length + statistics.reduce((n, s) => n + s.observations, 0) !==
+          claim.observations)
+    )
+      return refusal('invalid_claim');
     let previous = '';
     for (const o of observations) {
       if (
@@ -123,6 +159,7 @@ export function buildJournaledOpponentReport(
     const cohorts = (['human', 'horse_policy'] as const).map((cohort) => {
       const input = {
         observations,
+        statistics,
         opponentKey: claim.actorKey as string,
         scopeKey: claim.scopeKey as string,
         cohort,
@@ -140,7 +177,7 @@ export function buildJournaledOpponentReport(
     });
     return {
       status: 'prepared' as const,
-      report: { ...base, status: 'computed', observations: observations.length, cohorts },
+      report: { ...base, status: 'computed', observations: claim.observations, cohorts },
     };
   } catch {
     return refusal('invalid_claim');
@@ -158,14 +195,17 @@ export async function processJournaledOpponentModels(): Promise<JournaledModelCy
   if (!release) return 'unknown';
   const token = randomUUID();
   try {
-    const { data, error } = await call('fn_claim_horse_journaled_model', { p_lease_token: token });
+    const { data, error } = await call('fn_claim_horse_journaled_model_statistics', {
+      p_lease_token: token,
+    });
     if (error || !data || typeof data !== 'object' || Array.isArray(data)) return 'unknown';
-    if (data.version === 1 && data.status === 'idle') return 'idle';
+    if (data.version === 2 && data.status === 'idle') return 'idle';
+    if (data.version !== 2) return 'unknown';
     const built = buildJournaledOpponentReport(data, token, release);
     if (built.status !== 'prepared') return 'unknown';
     const payload = JSON.stringify(built.report);
     if (Buffer.byteLength(payload) > 65536) return 'unknown';
-    const result = await call('fn_finish_horse_journaled_model', {
+    const result = await call('fn_finish_horse_journaled_model_statistics', {
       p_lease_token: token,
       p_report: payload,
     });

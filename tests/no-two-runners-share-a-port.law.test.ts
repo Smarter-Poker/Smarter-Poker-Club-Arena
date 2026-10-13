@@ -33,6 +33,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { portFor } from '../scripts/ci/e2e-port.mjs';
+import { spawnSync } from 'node:child_process';
 
 const ROOT = join(__dirname, '..');
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
@@ -62,6 +63,69 @@ function startsAServerInCI(code: string): boolean {
 }
 
 describe('no two runners share a port', () => {
+  it('the failed hosted accessibility runner can fetch its own bound preview', () => {
+    // A native child uses the real readiness transport, never happy-dom fetch.
+    const result = spawnSync(
+      process.execPath,
+      [
+        '--input-type=module',
+        '-e',
+        `
+      import { createServer } from 'node:http';
+      import { portFor } from './scripts/ci/e2e-port.mjs';
+      const port = portFor(4177);
+      const preview = createServer((_request, response) => response.end('owned preview'));
+      try {
+        await new Promise((resolve, reject) => {
+          preview.once('error', reject);
+          preview.listen(port, '127.0.0.1', resolve);
+        });
+        const response = await fetch('http://127.0.0.1:' + port + '/hub/club-arena/');
+        if (await response.text() !== 'owned preview') throw new Error('Wrong preview response');
+      } finally {
+        if (preview.listening) await new Promise((resolve) => preview.close(resolve));
+      }
+    `,
+      ],
+      {
+        cwd: ROOT,
+        env: { ...process.env, RUNNER_NAME: 'GitHub Actions 1000289766', CA_E2E_PORT_OFFSET: '' },
+        encoding: 'utf8',
+        timeout: 10000,
+      }
+    );
+    expect(result.status, result.stderr).toBe(0);
+  });
+
+  it('every preview surface avoids Fetch-restricted ports across all runner slots', () => {
+    // Independent Fetch standard values in the actual preview-port windows.
+    const restricted = [4190, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668, 6669, 6679, 6697];
+    const sources = [
+      ...PLAYWRIGHT_CONFIGS,
+      'scripts/ci/public-a11y.mjs',
+      'scripts/ci/route-performance.mjs',
+    ];
+    const bases = [
+      ...new Set(
+        sources.flatMap((file) =>
+          [...read(file).matchAll(/portFor\((\d+)\)/g)].map((match) => Number(match[1]))
+        )
+      ),
+    ];
+    expect(bases.length).toBeGreaterThan(5);
+    const saved = process.env;
+    try {
+      for (let offset = 0; offset < 300; offset++) {
+        process.env = { ...saved, CA_E2E_PORT_OFFSET: String(offset) };
+        const selected = bases.map((base) => portFor(base));
+        for (const port of selected) expect(restricted).not.toContain(port);
+        expect(new Set(selected).size).toBe(bases.length);
+        expect(portFor(5189) - portFor(5188)).toBe(1);
+      }
+    } finally {
+      process.env = saved;
+    }
+  });
   it('the push harness never selects a browser-restricted port in any runner slot', () => {
     const base = Number(
       read('playwright.push-enrollment.config.ts').match(/portFor\((\d+)\)/)?.[1]

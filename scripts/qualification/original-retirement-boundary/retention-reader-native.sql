@@ -1,0 +1,27 @@
+BEGIN;
+SET timezone='UTC';
+INSERT INTO public.hand_history_retention_policy VALUES(true,8,clock_timestamp(),'native qualified retention contract');
+INSERT INTO smarter_private.hand_submissions(submission_id,request_hash,table_id,hand_number,lease_generation,request,retained_at)
+VALUES('ffffffff-0000-0000-0000-000000000001','native-original-signed-hash','ffffffff-0000-0000-0000-000000000002',1,'ffffffff-0000-0000-0000-000000000003','{"p_stacks":[{"stack":10.00}],"p_hand_row":{"started_at":"2026-09-01T00:00:00Z"}}','2026-09-01 00:00:00Z');
+INSERT INTO public.hand_atomic_commits(hand_id,table_id,hand_number,payload_hash,stack_result,committed_at,post_commit_completed_at,post_commit_result)
+VALUES('ffffffff-0000-0000-0000-000000000001','ffffffff-0000-0000-0000-000000000002',1,'native-original-signed-hash','{"success":true,"conservation_checked":true,"request":{"stacks":[{"stack":10.00}]}}','2026-09-02 00:00:00Z','2026-09-03 00:00:00Z','{"ok":true}');
+CREATE TEMP TABLE native_retention_ref AS SELECT jsonb_build_object('kind','signed_economics','id',s.submission_id,'economic',jsonb_build_object('submission_id',s.submission_id,'request_hash',s.request_hash,'table_id',s.table_id,'hand_number',s.hand_number,'lease_generation',s.lease_generation,'stacks',s.request->'p_stacks','started_at',s.request#>>'{p_hand_row,started_at}')) ref FROM smarter_private.hand_submissions s WHERE submission_id='ffffffff-0000-0000-0000-000000000001';
+CREATE TEMP TABLE native_retention_expected AS SELECT smarter_private.original_inventory_source_ref_md5(ref) digest FROM native_retention_ref;
+UPDATE smarter_private.hand_submissions SET request='{}' WHERE submission_id='ffffffff-0000-0000-0000-000000000001';
+DO $test$BEGIN IF smarter_private.original_inventory_source_ref_md5((SELECT ref FROM native_retention_ref)) IS NOT NULL THEN RAISE EXCEPTION 'emptyraw without disposal accepted';END IF;END$test$;
+INSERT INTO smarter_private.hand_submission_disposals(table_id,hand_number,submission_id,expected)
+VALUES('ffffffff-0000-0000-0000-000000000002',1,'ffffffff-0000-0000-0000-000000000001','{"kind":"retention_pruned_settled_hand","settled":true,"settlement_completed":true,"submission_id":"ffffffff-0000-0000-0000-000000000001","pruned_hand_id":"ffffffff-0000-0000-0000-000000000001","table_id":"ffffffff-0000-0000-0000-000000000002","hand_number":1,"request_hash":"native-original-signed-hash","settlement_completed_at":"2026-09-03T00:00:00Z","hand_created_at":"2026-09-01T00:00:00Z","disposed_at":"2026-09-14T00:00:00Z"}');
+DO $test$DECLARE ref jsonb;expected text;old jsonb;actual text;BEGIN SELECT r.ref INTO ref FROM native_retention_ref r;SELECT digest INTO expected FROM native_retention_expected;
+actual:=smarter_private.original_inventory_source_ref_md5(ref);IF actual IS DISTINCT FROM expected THEN RAISE EXCEPTION 'qualified immutable disposal economic mismatch %',actual;END IF;
+BEGIN UPDATE smarter_private.hand_submissions SET retained_at=NULL WHERE submission_id='ffffffff-0000-0000-0000-000000000001';IF smarter_private.original_inventory_source_ref_md5(ref) IS NOT NULL THEN RAISE EXCEPTION 'NULLretained accepted';END IF;RAISE EXCEPTION 'NATIVE_ROLLBACK' USING ERRCODE='P0002';EXCEPTION WHEN SQLSTATE 'P0002' THEN NULL;END;
+BEGIN UPDATE smarter_private.hand_submission_disposals SET expected=jsonb_set(smarter_private.hand_submission_disposals.expected,'{disposed_at}','"infinity"');IF smarter_private.original_inventory_source_ref_md5(ref) IS NOT NULL THEN RAISE EXCEPTION 'nonfinite accepted';END IF;RAISE EXCEPTION 'NATIVE_ROLLBACK' USING ERRCODE='P0002';EXCEPTION WHEN SQLSTATE 'P0002' THEN NULL;END;
+BEGIN UPDATE smarter_private.hand_submission_disposals SET expected=jsonb_set(smarter_private.hand_submission_disposals.expected,'{disposed_at}','"2099-01-01T00:00:00Z"');IF smarter_private.original_inventory_source_ref_md5(ref) IS NOT NULL THEN RAISE EXCEPTION 'futuredisposal accepted';END IF;RAISE EXCEPTION 'NATIVE_ROLLBACK' USING ERRCODE='P0002';EXCEPTION WHEN SQLSTATE 'P0002' THEN NULL;END;
+IF smarter_private.original_inventory_source_ref_md5(jsonb_set(ref,'{economic,stacks}','[{"stack":11.00}]'))=expected THEN RAISE EXCEPTION 'changed captured stacks accepted';END IF;
+RAISE NOTICE 'PASS qualified signed economic disposal samehash; missing/NULL/unknownfuture/nonfinite/changedeconomic refused';END$test$;
+DO $atomic$DECLARE ref jsonb;expected text;id uuid;BEGIN SELECT hand_id INTO id FROM public.hand_atomic_commits WHERE hand_id<>'ffffffff-0000-0000-0000-000000000001' LIMIT 1;ref:=jsonb_build_object('kind','atomic_economics','id',id);expected:=smarter_private.original_inventory_source_ref_md5(ref);
+ UPDATE public.hand_atomic_commits SET post_commit_payload='{"native_opaque_retention_payload":true}' WHERE hand_id=id;
+ UPDATE public.hand_atomic_commits SET post_commit_payload=NULL WHERE hand_id=id;
+ IF smarter_private.original_inventory_source_ref_md5(ref) IS DISTINCT FROM expected THEN RAISE EXCEPTION 'atomicnon-economic pruning changed proof';END IF;
+ BEGIN UPDATE public.hand_atomic_commits SET stack_result='{}' WHERE hand_id=id;IF smarter_private.original_inventory_source_ref_md5(ref) IS NOT DISTINCT FROM expected THEN RAISE EXCEPTION 'unknownatomiccompactshape silently accepted';END IF;RAISE EXCEPTION 'NATIVE_ROLLBACK' USING ERRCODE='P0002';EXCEPTION WHEN SQLSTATE 'P0002' THEN NULL;END;
+ RAISE NOTICE 'PASS atomic stableeconomic source preserved across payload pruning; changedstack_result strictdigest refusal';END$atomic$;
+ROLLBACK;

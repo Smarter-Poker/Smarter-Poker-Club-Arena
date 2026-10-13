@@ -43,11 +43,12 @@ describe('cinematic retained route families', () => {
     expect(source).toContain('data-arena-surface="play"');
   });
 
-  it('uses the user-approved painted console for championship leaderboards', () => {
-    // Dan explicitly approved replacing the protected Championship Deck design.
+  it('uses a normal leaderboard page after the owner removed its generic frame', () => {
+    // Owner direction October 12: remove the generic outer frame.
     const source = readFileSync('src/pages/LeaderboardPage.tsx', 'utf8');
     expect(source).toContain('data-arena-surface="leaderboard-console"');
-    expect(source).toContain('<SpadeConsole');
+    expect(source).toContain('ClubPageSection as SpadeConsole');
+    expect(source).toContain('titleAs="h1"');
     expect(source).toContain('eyebrow="Club Arena"');
     expect(source).not.toContain('className="lb-hero"');
     expect(existsSync('public/assets/club-buttons/console/spade-console-v1/top.png')).toBe(true);

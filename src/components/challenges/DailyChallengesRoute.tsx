@@ -1,4 +1,5 @@
 import { Suspense } from 'react';
+import { useUserStore } from '../../stores/useUserStore';
 import { AuthGuard } from '../auth/AuthGuard';
 import { PageErrorBoundary } from '../common/PageErrorBoundary';
 import { lazyWithRetry } from '../../utils/lazyWithRetry';
@@ -18,6 +19,7 @@ const DailyChallengesPage = lazyWithRetry(() => import('../../pages/DailyChallen
  * challenge ledger chunk is fetched for an already-authenticated player.
  */
 export default function DailyChallengesRoute() {
+  const accountId = useUserStore((state) => state.user?.id ?? null);
   return (
     <AuthGuard loadingFallback={<DailyChallengesAuthLoading />}>
       <PageErrorBoundary
@@ -27,7 +29,7 @@ export default function DailyChallengesRoute() {
         )}
       >
         <Suspense fallback={<DailyChallengesAuthLoading />}>
-          <DailyChallengesPage />
+          <DailyChallengesPage key={accountId ?? 'signed-out'} />
         </Suspense>
       </PageErrorBoundary>
     </AuthGuard>

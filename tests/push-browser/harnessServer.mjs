@@ -36,6 +36,11 @@ const bundle = await build({
     {
       name: 'harness-auth',
       setup(b) {
+        // Match Vite's public-asset resolution for the real painted prompt.
+        // Keep the actual artwork in the harness instead of stubbing its console.
+        b.onResolve({ filter: /^\/assets\// }, ({ path }) => ({
+          path: join(ROOT, 'public', path.slice(1)),
+        }));
         b.onResolve({ filter: /hooks\/useAuthUser$/ }, () => ({ path: join(HERE, 'harnessAuth.ts') }));
       },
     },

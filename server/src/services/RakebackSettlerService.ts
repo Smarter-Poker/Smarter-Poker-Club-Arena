@@ -1203,14 +1203,20 @@ export class RakebackSettlerService {
         // migration keeps setting tables.union_id on existing tables, which
         // pulls historical rake_records into scope after a day was finalized).
         await this.runUnionRakeRollupCatchup();
-        // 2026-08-20: persist this week's ECO (union win tax / loss rebate) so an
-        // invoice issued today can be reproduced tomorrow after live data moves
-        // on. Idempotent per (union, club, week) and a complete no-op while ECO
-        // is disabled, which it is by default. Deliberately NOT inside the
-        // settlement transaction: it reads the reconciliation report (~7s over a
-        // week) and that must never run while FOR UPDATE locks are held on
-        // union_wallets and clubs.chip_treasury.
-        await this.runUnionEcoRecord();
+        /* THE OPEN WEEK HAS NO ECO TO PERSIST (2026-10-12). This cycle used to
+           record the week in progress through fn_union_eco_record_current_week
+           so an invoice could be reproduced later. Since 2026-09-17
+           fn_union_eco_record first proves the union's P&L evidence with
+           fn_require_union_pnl_evidence, which admits only a CLOSED week
+           (start and end on week boundaries, end in the past), so every call
+           here was refused with invalid_closed_pnl_evidence_period: three
+           times an hour for twenty-five days, one
+           RakebackSettler.eco_record_failed each, with nothing written. The
+           closed week's ECO is written once, at close, by
+           fn_union_settlement_cascade, which is also what the governance
+           sentinel above checks (union_eco_not_recorded asks only about
+           closed weeks). There is no open-week row left for this cycle to
+           write, so it no longer asks. */
         // PAYOUT-INTEGRITY 2026-08-20: a live tournament must hold exactly the
         // chips it issued. Nothing verified this before.
         await this.runTournamentChipConservation();
@@ -1596,40 +1602,6 @@ export class RakebackSettlerService {
       }
     } catch (err) {
       reportError(err, 'RakebackSettler.tournament_chip_conservation_threw');
-    }
-  }
-
-  private async runUnionEcoRecord(): Promise<void> {
-    try {
-      const { data, error } = await supabase.rpc('fn_union_eco_record_current_week', {});
-      if (error) {
-        reportError(
-          new Error(`fn_union_eco_record_current_week failed: ${error.message}`),
-          'RakebackSettler.eco_record_rpc'
-        );
-        return;
-      }
-      const unions = ((data as { unions?: unknown[] } | null)?.unions ?? []) as Array<{
-        success?: boolean;
-        clubs?: number;
-        error?: string;
-        union_id?: string;
-      }>;
-      for (const u of unions) {
-        if (u?.success === false) {
-          reportError(
-            new Error(`ECO record failed for ${u.union_id}: ${u.error}`),
-            'RakebackSettler.eco_record_failed'
-          );
-        } else if ((u?.clubs ?? 0) > 0) {
-          console.log(`[RakebackSettler] ECO recorded for ${u.clubs} club(s)`);
-        }
-      }
-    } catch (e) {
-      reportError(
-        new Error((e as { message?: string })?.message || String(e)),
-        'RakebackSettler.eco_record_threw'
-      );
     }
   }
 

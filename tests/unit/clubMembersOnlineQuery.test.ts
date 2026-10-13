@@ -190,7 +190,7 @@ describe('Players tab #smarterCasinoRealism presentation', () => {
 
   it('keeps the artwork decorative and the live roster data in HTML', () => {
     expect(PAGE).toContain('alt=""');
-    expect(PAGE).toContain('Club Personnel Vault');
+    expect(PAGE).toContain('Club Players');
     expect(PAGE).toContain('members-summary');
   });
 

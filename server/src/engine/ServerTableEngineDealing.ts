@@ -2133,7 +2133,10 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       let diamondRakeSchedule: DiamondCashRakeSchedule | null = null;
       if (this.tableInfo.arena?.asset === 'diamonds' && !this.isTournamentTable()) {
         try {
-          diamondRakeSchedule = await readDiamondCashRakeSchedule(Number(this.tableInfo.big_blind));
+          diamondRakeSchedule = await readDiamondCashRakeSchedule(
+            Number(this.tableInfo.big_blind),
+            true
+          );
         } catch (scheduleError) {
           reportError(
             scheduleError instanceof Error ? scheduleError : new Error(String(scheduleError)),

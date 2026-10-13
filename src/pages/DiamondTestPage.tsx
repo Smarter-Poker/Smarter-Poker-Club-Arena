@@ -46,7 +46,7 @@ const MINES = Number(CHOICE_MODE.mines);
 const MINE_PICKS = 25 - MINES;
 /** Every crash round is capped at 20.00x, as the server seals it (contract 5). */
 const CRASH_CAP = CRASH_CAP_CENTS;
-/** The live curve: e^(0.08 t), the 20x cap in about 37 seconds (migration 20261012114801). */
+/** The live curve: e^(0.08 t), the 20x cap in about 37 seconds (migration 20261012140447). */
 const CRASH_K = 0.08;
 function roll48() {
   const a = crypto.getRandomValues(new Uint32Array(2));

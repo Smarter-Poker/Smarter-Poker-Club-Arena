@@ -393,39 +393,63 @@ export interface HorsePhase12AuthoritySelection {
 }
 
 /**
- * THE PROTECTED RELEASE SELECTIONS, one per pack. All four are null.
+ * THE PROTECTED RELEASE SELECTIONS, one per pack.
  *
- * FLH (`fixed-limit-holdem-round3-v1`) was selected at approval generation 1
- * (#6611, sourceSha 1235b47a63c439da9bdf8427148bc0818499378c, qualification
- * docs/evidence/phase12/1235b47a/phase12-qualification-2026-10-09-flh.json,
+ * FLH (`fixed-limit-holdem-round3-v1`), approval generation 2: qualified on
+ * condition (a) of the winning contract as amended by the owner on October 9,
+ * 2026 (docs/horse-brain-winning-contract-2026-10-08.md), under its unchanged
+ * contract v1 (fafbba8d...) on the round-4 source `9d567463` (#6700): the locked
+ * P12.2 matrix (run 38206776185, 42 of 42 shards) reproduced run 37969578926 bit
+ * for bit in all 21 cells, cash after rake against the horse population, +1.11
+ * [+0.70, +1.52] bb/100, measured at the running FLH policy digest d1c536a9....
+ * Its predeclared natural completion window on release `9d567463`
+ * (2026-10-12 05:02 to 05:50Z) meets the 0.95 floor on every street (lowest
+ * Wilson bound 0.9514, river 130 of 130).
+ *
+ * Generation 1 (#6611, sourceSha 1235b47a63c439da9bdf8427148bc0818499378c,
+ * qualification docs/evidence/phase12/1235b47a/phase12-qualification-2026-10-09-flh.json,
  * completion docs/evidence/phase12/15d25de1/phase12-completion-2026-10-09-flh.json,
- * contract v1 fafbba8d..., issued 2026-10-10T00:00:00.000Z) on the locked
- * P12.2 matrix re-run on 1235b47a (42 of 42 shards, 544,320 pairs, +1.11
- * [+0.70, +1.52] bb/100) and its natural completion window on release 15d25de1.
- * Round 4 (docs/horse-brain-phase12-round4-2026-10-11.md) changes the bytes of
- * the Phase 12 policy digest's files: the sampler's exact kernels (which leave
- * every decision bit-identical) and the scoped no-limit packs. The FLH policy
- * digest that evidence measured (a55db7fe...) is therefore not the running one,
- * and the selection would be refused policy_digest_mismatch, so it is removed
- * here rather than left committed and refused: FLH plays shadow until it is
- * re-measured under its unchanged contract v1 on the merged source (expected
- * pair-identical to run 37969578926), its natural completion is read again in a
- * predeclared window, and it is selected at approval generation 2. Its
- * committed evidence files stay in place, in docs/ and server/release-evidence/.
+ * issued 2026-10-10T00:00:00.000Z) measured policy digest a55db7fe..., which
+ * round 4 (docs/horse-brain-phase12-round4-2026-10-11.md: the sampler's exact
+ * kernels and the scoped no-limit packs) moved; #6700 set it to null rather
+ * than leave it committed and refused policy_digest_mismatch. It was never
+ * withdrawn. This renewal is generation 2 because an approval generation is
+ * strictly increasing across renewals and a holder admits nothing at or below
+ * a generation it has withdrawn: generation 2 is a distinct approval that a
+ * withdrawal of generation 1 can never block or be confused with. The
+ * generation-1 evidence files stay committed, in docs/ and
+ * server/release-evidence/.
  *
  * Short Deck, Crazy Pineapple and FLO8 have no qualification under contract v2
- * yet. Every file a future selection names, and the strength record its
- * qualification names, must be committed under docs/evidence/phase12/ and
- * shipped in the engine image under server/release-evidence/. Withdrawal is a
- * reviewed change of `withdrawn` to `{ at, reason }`; a withdrawn generation
- * never returns.
+ * yet and stay null. Every file a selection names, and the strength record its
+ * qualification names, is committed under docs/evidence/phase12/ and shipped in
+ * the engine image under server/release-evidence/. Withdrawal is a reviewed
+ * change of `withdrawn` to `{ at, reason }`; a withdrawn generation never
+ * returns.
  */
 export const PHASE12_PROTECTED_RELEASE_SELECTIONS: Readonly<
   Record<RemainingPolicyVariant, HorsePhase12AuthoritySelection | null>
 > = Object.freeze({
   short_deck: null,
   pineapple: null,
-  flh: null,
+  flh: Object.freeze({
+    schema: 'horse-qualified-authority-selection-v1',
+    phase: 'phase12',
+    variant: 'flh',
+    sourceSha: '9d5674639f2bd091f2386c75cbd87bec419c5dcd',
+    packVersion: 'fixed-limit-holdem-round3-v1',
+    contractVersion: 'remaining-variant-strength-contract-v1',
+    contractDigest: 'fafbba8dc23ebc59b5aadf78fdcc47cd6f504baf9bcd10b07970ad7fbea501c0',
+    domain: 'flh-cash-single-board-after-rake-horse-population',
+    qualificationPath: 'docs/evidence/phase12/9d567463/phase12-qualification-2026-10-12-flh.json',
+    qualificationSha256: '01e91eb38a73dadc9fa2aff7ee4980f64b8b8d8c07a44ec18f50d6bfbccf3f8f',
+    completionPath: 'docs/evidence/phase12/9d567463/phase12-completion-2026-10-12-flh.json',
+    completionSha256: 'b42fb264780ea75bcc89b6d2f700d875fd68b49bf3600329f85f2a624499fbdf',
+    approvalGeneration: 2,
+    issuedAt: '2026-10-12T11:00:00.000Z',
+    expiresAt: null,
+    withdrawn: null,
+  } as const),
   flo8: null,
 });
 

@@ -37,12 +37,14 @@ const tableState = vi.hoisted(() => ({
   club_members: { role: 'owner' } as { role: string } | null,
 }));
 const searchState = vi.hoisted(() => ({ params: new URLSearchParams() }));
+const routeState = vi.hoisted(() => ({ clubId: 'deep-stack-society-11192' }));
+const busState = vi.hoisted(() => ({ listeners: new Map<string, (payload?: unknown) => void>() }));
 
 vi.mock('react-router-dom', () => ({
   Link: ({ children, to }: { children: React.ReactNode; to: string }) => (
     <a href={to}>{children}</a>
   ),
-  useParams: () => ({ clubId: CLUB_SLUG }),
+  useParams: () => ({ clubId: routeState.clubId }),
   useSearchParams: () => [searchState.params, vi.fn()],
 }));
 vi.mock('../../src/hooks/useAuthUser', () => ({
@@ -62,7 +64,10 @@ vi.mock('../../src/components/common/Toast', () => ({ useToast: () => toastState
 vi.mock('../../src/core/MasterBus', () => ({
   masterBus: {
     emit: vi.fn(),
-    subscribe: () => () => undefined,
+    subscribe: (event: string, listener: (payload?: unknown) => void) => {
+      busState.listeners.set(event, listener);
+      return () => busState.listeners.delete(event);
+    },
     subscribeDebounced: () => () => undefined,
   },
 }));
@@ -189,6 +194,8 @@ function stubRpc(overrides: Record<string, unknown> = {}) {
 }
 
 beforeEach(() => {
+  routeState.clubId = CLUB_SLUG;
+  busState.listeners.clear();
   rpcMock.mockReset();
   fromMock.mockReset();
   resolveMock.mockReset();
@@ -407,5 +414,193 @@ describe('a failed tables read', () => {
       expect(screen.getByText('The Table List Could Not Be Loaded')).toBeTruthy()
     );
     expect(screen.queryByText('Loading Tables...')).toBeNull();
+  });
+});
+
+function deferredDashboard<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+describe('Dashboard refresh ownership', () => {
+  it('uses the latest range and sort when a read was already in flight', async () => {
+    const delayed = deferredDashboard<{ data: typeof STATS; error: null }>();
+    const standardRpc = rpcMock.getMockImplementation()!;
+    let delayNext = false;
+    rpcMock.mockImplementation((name: string, ...args: unknown[]) =>
+      name === 'ca_club_dashboard_stats' && delayNext
+        ? ((delayNext = false), delayed.promise)
+        : standardRpc(name, ...args)
+    );
+    await mountAndOpen();
+    delayNext = true;
+    fireEvent.click(screen.getByRole('button', { name: 'Month' }));
+    await waitFor(() =>
+      expect(rpcArgs('ca_club_top_players').at(-1)).toMatchObject({ p_sort: 'profit' })
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+    fireEvent.change(screen.getByLabelText('Sort Leaderboard'), { target: { value: 'hands' } });
+    await act(async () => delayed.resolve({ data: STATS, error: null }));
+    await waitFor(() =>
+      expect(rpcArgs('ca_club_top_players').at(-1)).toMatchObject({ p_sort: 'hands' })
+    );
+    const since = new Date(rpcArgs('ca_club_top_players').at(-1)!.p_since as string);
+    expect(since.toISOString().slice(0, 10)).toBe(new Date().toISOString().slice(0, 10));
+  });
+
+  it('retires an old-club response while the new club is still loading', async () => {
+    const old = deferredDashboard<{ data: typeof STATS; error: null }>();
+    const next = deferredDashboard<{ data: typeof STATS; error: null }>();
+    const nextClub = 'bbaabbaa-1111-4222-8333-aabbccddeeff';
+    const standardRpc = rpcMock.getMockImplementation()!;
+    rpcMock.mockImplementation((name: string, args: { p_club_id?: string }) =>
+      name === 'ca_club_dashboard_stats'
+        ? args.p_club_id === CLUB_UUID
+          ? old.promise
+          : next.promise
+        : standardRpc(name, args)
+    );
+    const view = render(<ClubDashboard />);
+    await waitFor(() => expect(rpcArgs('ca_club_dashboard_stats')).toHaveLength(1));
+    routeState.clubId = nextClub;
+    view.rerender(<ClubDashboard />);
+    await waitFor(() =>
+      expect(rpcArgs('ca_club_dashboard_stats').at(-1)).toEqual({ p_club_id: nextClub })
+    );
+    await act(async () => old.resolve({ data: STATS, error: null }));
+    expect(screen.queryByText('Deep Stack Society')).toBeNull();
+    await act(async () => next.resolve({ data: STATS, error: null }));
+    expect(await screen.findByText('Deep Stack Society')).toBeTruthy();
+    expect(rpcArgs('ca_club_dashboard_stats').at(-1)).toEqual({ p_club_id: nextClub });
+  });
+
+  it('rechecks the viewer role and resolves chat scope after the signed-in player changes', async () => {
+    const view = render(<ClubDashboard />);
+    await screen.findByText('Deep Stack Society');
+    expect(screen.getByRole('tab', { name: 'Revenue' })).toBeTruthy();
+    authState.user = { id: 'different-viewer' };
+    tableState.club_members = { role: 'player' };
+    view.rerender(<ClubDashboard />);
+    await waitFor(() => expect(rpcArgs('ca_club_dashboard_stats')).toHaveLength(2));
+    await waitFor(() => expect(screen.queryByRole('tab', { name: 'Revenue' })).toBeNull());
+    expect(chatProps.last!.clubId).toBe(CLUB_UUID);
+  });
+
+  it('refreshes a slug route for the matching UUID event and ignores another club', async () => {
+    await mountAndOpen();
+    vi.useFakeTimers();
+    try {
+      await act(async () => {
+        busState.listeners.get('CLUB_UPDATED')!({ clubId: 'different-club' });
+        await vi.advanceTimersByTimeAsync(2100);
+      });
+      expect(rpcArgs('ca_club_dashboard_stats')).toHaveLength(1);
+      await act(async () => {
+        busState.listeners.get('CLUB_UPDATED')!({ clubId: CLUB_UUID });
+        await vi.advanceTimersByTimeAsync(2100);
+      });
+      expect(rpcArgs('ca_club_dashboard_stats')).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('Dashboard level recalculation scope', () => {
+  const OTHER_CLUB = 'bbaabbaa-1111-4222-8333-aabbccddeeff';
+
+  function clubNameReads() {
+    resolveMock.mockImplementation(async (input: string) =>
+      input === OTHER_CLUB ? OTHER_CLUB : CLUB_UUID
+    );
+    fromMock.mockImplementation((tableName: string) => {
+      let selectedClub = CLUB_UUID;
+      const chain: Record<string, unknown> = {};
+      chain.select = () => chain;
+      chain.eq = (column: string, value: string) => {
+        if (column === 'id') selectedClub = value;
+        return chain;
+      };
+      chain.maybeSingle = () =>
+        Promise.resolve({
+          data:
+            tableName === 'clubs'
+              ? {
+                  id: selectedClub,
+                  name: selectedClub === CLUB_UUID ? 'Deep Stack Society' : 'Other Club',
+                  owner_id: OWNER_ID,
+                }
+              : { role: 'owner' },
+          error: null,
+        });
+      return chain;
+    });
+  }
+
+  it.each(['success', 'failure'] as const)(
+    'retires an old-club %s completion without refreshing or notifying the new club',
+    async (outcome) => {
+      clubNameReads();
+      const mutation = deferredDashboard<{
+        data: { success: boolean } | null;
+        error: { message: string } | null;
+      }>();
+      const standardRpc = rpcMock.getMockImplementation()!;
+      rpcMock.mockImplementation((name: string, ...args: unknown[]) =>
+        name === 'recompute_club_levels' ? mutation.promise : standardRpc(name, ...args)
+      );
+      const view = render(<ClubDashboard />);
+      fireEvent.click(await screen.findByRole('button', { name: 'Recalculate Level' }));
+      await waitFor(() =>
+        expect(rpcArgs('recompute_club_levels')).toEqual([{ p_club_id: CLUB_UUID }])
+      );
+      routeState.clubId = OTHER_CLUB;
+      view.rerender(<ClubDashboard />);
+      await screen.findByText('Other Club');
+      const readsBeforeCompletion = rpcArgs('ca_club_dashboard_stats');
+      await act(async () =>
+        mutation.resolve(
+          outcome === 'success'
+            ? { data: { success: true }, error: null }
+            : { data: null, error: { message: 'Old Club Refused' } }
+        )
+      );
+      expect(rpcArgs('ca_club_dashboard_stats')).toEqual(readsBeforeCompletion);
+      expect(screen.getByText('Other Club')).toBeTruthy();
+      expect(screen.queryByText('Deep Stack Society')).toBeNull();
+      expect(toastState.success).not.toHaveBeenCalled();
+      expect(toastState.error).not.toHaveBeenCalled();
+    }
+  );
+
+  it('clears old busy state and an old completion cannot unlock a new-club recalculation', async () => {
+    clubNameReads();
+    const old = deferredDashboard<{ data: { success: true }; error: null }>();
+    const next = deferredDashboard<{ data: { success: true }; error: null }>();
+    const standardRpc = rpcMock.getMockImplementation()!;
+    rpcMock.mockImplementation((name: string, args: { p_club_id?: string }) =>
+      name === 'recompute_club_levels'
+        ? args.p_club_id === CLUB_UUID
+          ? old.promise
+          : next.promise
+        : standardRpc(name, args)
+    );
+    const view = render(<ClubDashboard />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Recalculate Level' }));
+    routeState.clubId = OTHER_CLUB;
+    view.rerender(<ClubDashboard />);
+    await screen.findByText('Other Club');
+    expect(screen.getByRole('button', { name: 'Recalculate Level' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Recalculate Level' }));
+    await waitFor(() => expect(rpcArgs('recompute_club_levels')).toHaveLength(2));
+    await act(async () => old.resolve({ data: { success: true }, error: null }));
+    expect(screen.getByRole('button', { name: 'Processing...' })).toBeDisabled();
+    await act(async () => next.resolve({ data: { success: true }, error: null }));
+    expect(screen.getByRole('button', { name: 'Recalculate Level' })).toBeEnabled();
+    expect(toastState.success).toHaveBeenCalledTimes(1);
+    expect(rpcArgs('ca_club_dashboard_stats').at(-1)).toEqual({ p_club_id: OTHER_CLUB });
   });
 });

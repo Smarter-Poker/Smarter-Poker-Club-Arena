@@ -1,0 +1,4137 @@
+{
+  "observedAt": "2026-10-12T19:05:05Z",
+  "source": "read-only PostgreSQL catalog, kuklfnapbkmacvwxktbh",
+  "columns": [
+    {
+      "name": "id",
+      "type": "smallint",
+      "table": "ca_arena_settings",
+      "default": "1",
+      "notnull": true
+    },
+    {
+      "name": "club_id",
+      "type": "uuid",
+      "table": "ca_arena_settings",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "settlement_window_days",
+      "type": "integer",
+      "table": "ca_arena_settings",
+      "default": "14",
+      "notnull": true
+    },
+    {
+      "name": "note",
+      "type": "text",
+      "table": "ca_arena_settings",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "updated_at",
+      "type": "timestamp with time zone",
+      "table": "ca_arena_settings",
+      "default": "now()",
+      "notnull": true
+    },
+    {
+      "name": "cash_games_enabled",
+      "type": "boolean",
+      "table": "ca_arena_settings",
+      "default": "false",
+      "notnull": true
+    },
+    {
+      "name": "tournaments_enabled",
+      "type": "boolean",
+      "table": "ca_arena_settings",
+      "default": "false",
+      "notnull": true
+    },
+    {
+      "name": "id",
+      "type": "bigint",
+      "table": "cash_cluster_events",
+      "default": "nextval('cash_cluster_events_id_seq'::regclass)",
+      "notnull": true
+    },
+    {
+      "name": "game_id",
+      "type": "uuid",
+      "table": "cash_cluster_events",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "table_id",
+      "type": "uuid",
+      "table": "cash_cluster_events",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "kind",
+      "type": "text",
+      "table": "cash_cluster_events",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "payload",
+      "type": "jsonb",
+      "table": "cash_cluster_events",
+      "default": "'{}'::jsonb",
+      "notnull": true
+    },
+    {
+      "name": "at",
+      "type": "timestamp with time zone",
+      "table": "cash_cluster_events",
+      "default": "clock_timestamp()",
+      "notnull": true
+    },
+    {
+      "name": "cluster_epoch",
+      "type": "integer",
+      "table": "cash_cluster_events",
+      "default": "0",
+      "notnull": true
+    },
+    {
+      "name": "event_version",
+      "type": "smallint",
+      "table": "cash_cluster_events",
+      "default": "1",
+      "notnull": true
+    },
+    {
+      "name": "request_id",
+      "type": "uuid",
+      "table": "cash_cluster_events",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "cash_game_roster",
+      "default": "gen_random_uuid()",
+      "notnull": true
+    },
+    {
+      "name": "game_id",
+      "type": "uuid",
+      "table": "cash_game_roster",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "user_id",
+      "type": "uuid",
+      "table": "cash_game_roster",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "joined_at",
+      "type": "timestamp with time zone",
+      "table": "cash_game_roster",
+      "default": "now()",
+      "notnull": true
+    },
+    {
+      "name": "left_at",
+      "type": "timestamp with time zone",
+      "table": "cash_game_roster",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "seat_change_used_at",
+      "type": "timestamp with time zone",
+      "table": "cash_game_roster",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "cash_game_waitlist",
+      "default": "gen_random_uuid()",
+      "notnull": true
+    },
+    {
+      "name": "game_id",
+      "type": "uuid",
+      "table": "cash_game_waitlist",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "user_id",
+      "type": "uuid",
+      "table": "cash_game_waitlist",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "status",
+      "type": "text",
+      "table": "cash_game_waitlist",
+      "default": "'waiting'::text",
+      "notnull": true
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "cash_game_waitlist",
+      "default": "now()",
+      "notnull": true
+    },
+    {
+      "name": "updated_at",
+      "type": "timestamp with time zone",
+      "table": "cash_game_waitlist",
+      "default": "now()",
+      "notnull": true
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "cash_games",
+      "default": "gen_random_uuid()",
+      "notnull": true
+    },
+    {
+      "name": "club_id",
+      "type": "uuid",
+      "table": "cash_games",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "union_id",
+      "type": "uuid",
+      "table": "cash_games",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "name",
+      "type": "text",
+      "table": "cash_games",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "template_name",
+      "type": "text",
+      "table": "cash_games",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "variant",
+      "type": "text",
+      "table": "cash_games",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "sb",
+      "type": "numeric(14,2)",
+      "table": "cash_games",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "bb",
+      "type": "numeric(14,2)",
+      "table": "cash_games",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "handedness",
+      "type": "integer",
+      "table": "cash_games",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "ruleset_snapshot",
+      "type": "jsonb",
+      "table": "cash_games",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "enabled",
+      "type": "boolean",
+      "table": "cash_games",
+      "default": "true",
+      "notnull": true
+    },
+    {
+      "name": "state",
+      "type": "text",
+      "table": "cash_games",
+      "default": "'live'::text",
+      "notnull": true
+    },
+    {
+      "name": "cap_mains",
+      "type": "integer",
+      "table": "cash_games",
+      "default": "8",
+      "notnull": true
+    },
+    {
+      "name": "allow_second_feeder",
+      "type": "boolean",
+      "table": "cash_games",
+      "default": "false",
+      "notnull": true
+    },
+    {
+      "name": "created_by",
+      "type": "uuid",
+      "table": "cash_games",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "cash_games",
+      "default": "now()",
+      "notnull": true
+    },
+    {
+      "name": "updated_at",
+      "type": "timestamp with time zone",
+      "table": "cash_games",
+      "default": "now()",
+      "notnull": true
+    },
+    {
+      "name": "must_move",
+      "type": "boolean",
+      "table": "cash_games",
+      "default": "true",
+      "notnull": true
+    },
+    {
+      "name": "closed_at",
+      "type": "timestamp with time zone",
+      "table": "cash_games",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "closed_by",
+      "type": "uuid",
+      "table": "cash_games",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "opening_hold_since",
+      "type": "timestamp with time zone",
+      "table": "cash_games",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "last_tick_at",
+      "type": "timestamp with time zone",
+      "table": "cash_games",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "last_tick_actions",
+      "type": "jsonb",
+      "table": "cash_games",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "opening_hold_rested_until",
+      "type": "timestamp with time zone",
+      "table": "cash_games",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "cluster_mode",
+      "type": "text",
+      "table": "cash_games",
+      "default": "'must_move'::text",
+      "notnull": true
+    },
+    {
+      "name": "lightning_enabled",
+      "type": "boolean",
+      "table": "cash_games",
+      "default": "false",
+      "notnull": true
+    },
+    {
+      "name": "cluster_epoch",
+      "type": "integer",
+      "table": "cash_games",
+      "default": "0",
+      "notnull": true
+    },
+    {
+      "name": "lightning_off_condition_since",
+      "type": "timestamp with time zone",
+      "table": "cash_games",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "cash_player_session",
+      "default": "gen_random_uuid()",
+      "notnull": true
+    },
+    {
+      "name": "player_id",
+      "type": "uuid",
+      "table": "cash_player_session",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "club_id",
+      "type": "uuid",
+      "table": "cash_player_session",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "scope_type",
+      "type": "text",
+      "table": "cash_player_session",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "scope_id",
+      "type": "uuid",
+      "table": "cash_player_session",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "table_id",
+      "type": "uuid",
+      "table": "cash_player_session",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "variant",
+      "type": "text",
+      "table": "cash_player_session",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "sb",
+      "type": "numeric(14,2)",
+      "table": "cash_player_session",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "bb",
+      "type": "numeric(14,2)",
+      "table": "cash_player_session",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "baseline",
+      "type": "numeric(14,2)",
+      "table": "cash_player_session",
+      "default": "0",
+      "notnull": true
+    },
+    {
+      "name": "stay_clock_ms",
+      "type": "integer",
+      "table": "cash_player_session",
+      "default": "600000",
+      "notnull": true
+    },
+    {
+      "name": "rejoin_window_ms",
+      "type": "integer",
+      "table": "cash_player_session",
+      "default": "7200000",
+      "notnull": true
+    },
+    {
+      "name": "stay_remaining_ms",
+      "type": "integer",
+      "table": "cash_player_session",
+      "default": "600000",
+      "notnull": true
+    },
+    {
+      "name": "stay_running",
+      "type": "boolean",
+      "table": "cash_player_session",
+      "default": "false",
+      "notnull": true
+    },
+    {
+      "name": "stay_last_tick_at",
+      "type": "timestamp with time zone",
+      "table": "cash_player_session",
+      "default": "now()",
+      "notnull": true
+    },
+    {
+      "name": "opened_at",
+      "type": "timestamp with time zone",
+      "table": "cash_player_session",
+      "default": "now()",
+      "notnull": true
+    },
+    {
+      "name": "closed_at",
+      "type": "timestamp with time zone",
+      "table": "cash_player_session",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "closed_reason",
+      "type": "text",
+      "table": "cash_player_session",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "cluster_id",
+      "type": "uuid",
+      "table": "cash_player_session",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "final_stack",
+      "type": "numeric(14,2)",
+      "table": "cash_player_session",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "final_stack_captured_at",
+      "type": "timestamp with time zone",
+      "table": "cash_player_session",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "financial_capture_status",
+      "type": "text",
+      "table": "cash_player_session",
+      "default": "'legacy_unavailable'::text",
+      "notnull": true
+    },
+    {
+      "name": "close_table_id",
+      "type": "uuid",
+      "table": "cash_player_session",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "move_id",
+      "type": "uuid",
+      "table": "cash_seat_move_receipts",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "player_id",
+      "type": "uuid",
+      "table": "cash_seat_move_receipts",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "game_id",
+      "type": "uuid",
+      "table": "cash_seat_move_receipts",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "club_id",
+      "type": "uuid",
+      "table": "cash_seat_move_receipts",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "from_table_id",
+      "type": "uuid",
+      "table": "cash_seat_move_receipts",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "from_seat_number",
+      "type": "integer",
+      "table": "cash_seat_move_receipts",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "source_occupancy_id",
+      "type": "uuid",
+      "table": "cash_seat_move_receipts",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "to_table_id",
+      "type": "uuid",
+      "table": "cash_seat_move_receipts",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "to_seat_number",
+      "type": "integer",
+      "table": "cash_seat_move_receipts",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "destination_occupancy_id",
+      "type": "uuid",
+      "table": "cash_seat_move_receipts",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "amount",
+      "type": "numeric",
+      "table": "cash_seat_move_receipts",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "receipt",
+      "type": "jsonb",
+      "table": "cash_seat_move_receipts",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "cash_seat_move_receipts",
+      "default": "now()",
+      "notnull": true
+    },
+    {
+      "name": "transaction_id",
+      "type": "xid8",
+      "table": "cash_seat_move_receipts",
+      "default": "pg_current_xact_id()",
+      "notnull": false
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "cash_seat_moves",
+      "default": "gen_random_uuid()",
+      "notnull": true
+    },
+    {
+      "name": "game_id",
+      "type": "uuid",
+      "table": "cash_seat_moves",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "player_id",
+      "type": "uuid",
+      "table": "cash_seat_moves",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "from_table_id",
+      "type": "uuid",
+      "table": "cash_seat_moves",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "to_table_id",
+      "type": "uuid",
+      "table": "cash_seat_moves",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "reason",
+      "type": "text",
+      "table": "cash_seat_moves",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "state",
+      "type": "text",
+      "table": "cash_seat_moves",
+      "default": "'pending'::text",
+      "notnull": true
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "cash_seat_moves",
+      "default": "now()",
+      "notnull": true
+    },
+    {
+      "name": "expires_at",
+      "type": "timestamp with time zone",
+      "table": "cash_seat_moves",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "executed_at",
+      "type": "timestamp with time zone",
+      "table": "cash_seat_moves",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "to_seat_number",
+      "type": "integer",
+      "table": "cash_seat_moves",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "note",
+      "type": "text",
+      "table": "cash_seat_moves",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "announced_at",
+      "type": "timestamp with time zone",
+      "table": "cash_seat_moves",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "swap_move_id",
+      "type": "uuid",
+      "table": "cash_seat_moves",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "ready_at",
+      "type": "timestamp with time zone",
+      "table": "cash_seat_moves",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "source_occupancy_id",
+      "type": "uuid",
+      "table": "cash_seat_moves",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "source_seat_number",
+      "type": "integer",
+      "table": "cash_seat_moves",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "resolved_at",
+      "type": "timestamp with time zone",
+      "table": "cash_seat_moves",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "clubs",
+      "default": "uuid_generate_v4()",
+      "notnull": true
+    },
+    {
+      "name": "name",
+      "type": "text",
+      "table": "clubs",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "description",
+      "type": "text",
+      "table": "clubs",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "owner_id",
+      "type": "uuid",
+      "table": "clubs",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "clubs",
+      "default": "now()",
+      "notnull": false
+    },
+    {
+      "name": "is_union",
+      "type": "boolean",
+      "table": "clubs",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "club_id",
+      "type": "integer",
+      "table": "clubs",
+      "default": "(((10000)::double precision + floor((random() * (90000)::double precision))))::integer",
+      "notnull": false
+    },
+    {
+      "name": "avatar_url",
+      "type": "text",
+      "table": "clubs",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "is_public",
+      "type": "boolean",
+      "table": "clubs",
+      "default": "true",
+      "notnull": false
+    },
+    {
+      "name": "requires_approval",
+      "type": "boolean",
+      "table": "clubs",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "gps_restricted",
+      "type": "boolean",
+      "table": "clubs",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "settings",
+      "type": "jsonb",
+      "table": "clubs",
+      "default": "'{\"rake_cap\": 15, \"max_buy_in_bb\": 200, \"min_buy_in_bb\": 40, \"allow_straddle\": true, \"time_bank_seconds\": 30, \"allow_run_it_twice\": true, \"default_rake_percent\": 5}'::jsonb",
+      "notnull": false
+    },
+    {
+      "name": "updated_at",
+      "type": "timestamp with time zone",
+      "table": "clubs",
+      "default": "now()",
+      "notnull": false
+    },
+    {
+      "name": "union_id",
+      "type": "uuid",
+      "table": "clubs",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "color_theme",
+      "type": "text",
+      "table": "clubs",
+      "default": "'royal-blue'::text",
+      "notnull": false
+    },
+    {
+      "name": "slug",
+      "type": "text",
+      "table": "clubs",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "chip_treasury",
+      "type": "numeric(18,2)",
+      "table": "clubs",
+      "default": "100000",
+      "notnull": false
+    },
+    {
+      "name": "total_rake",
+      "type": "numeric(18,2)",
+      "table": "clubs",
+      "default": "0",
+      "notnull": true
+    },
+    {
+      "name": "online_count",
+      "type": "integer",
+      "table": "clubs",
+      "default": "0",
+      "notnull": false
+    },
+    {
+      "name": "game_types",
+      "type": "text[]",
+      "table": "clubs",
+      "default": "ARRAY['NLH'::text]",
+      "notnull": false
+    },
+    {
+      "name": "member_count",
+      "type": "integer",
+      "table": "clubs",
+      "default": "0",
+      "notnull": false
+    },
+    {
+      "name": "table_count",
+      "type": "integer",
+      "table": "clubs",
+      "default": "0",
+      "notnull": false
+    },
+    {
+      "name": "promo_balance",
+      "type": "numeric(14,2)",
+      "table": "clubs",
+      "default": "0",
+      "notnull": false
+    },
+    {
+      "name": "code",
+      "type": "text",
+      "table": "clubs",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "rake_percent",
+      "type": "numeric(5,2)",
+      "table": "clubs",
+      "default": "5.0",
+      "notnull": false
+    },
+    {
+      "name": "rake_cap_bb",
+      "type": "numeric(8,2)",
+      "table": "clubs",
+      "default": "3.0",
+      "notnull": false
+    },
+    {
+      "name": "max_tables",
+      "type": "integer",
+      "table": "clubs",
+      "default": "20",
+      "notnull": false
+    },
+    {
+      "name": "max_members",
+      "type": "integer",
+      "table": "clubs",
+      "default": "500",
+      "notnull": false
+    },
+    {
+      "name": "status",
+      "type": "text",
+      "table": "clubs",
+      "default": "'active'::text",
+      "notnull": false
+    },
+    {
+      "name": "hands_played",
+      "type": "bigint",
+      "table": "clubs",
+      "default": "0",
+      "notnull": false
+    },
+    {
+      "name": "logo_url",
+      "type": "text",
+      "table": "clubs",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "banner_url",
+      "type": "text",
+      "table": "clubs",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "game_variants",
+      "type": "text[]",
+      "table": "clubs",
+      "default": "ARRAY['nlh'::text]",
+      "notnull": false
+    },
+    {
+      "name": "settlement_locked",
+      "type": "boolean",
+      "table": "clubs",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "settlement_locked_until",
+      "type": "timestamp with time zone",
+      "table": "clubs",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "auto_settlement_enabled",
+      "type": "boolean",
+      "table": "clubs",
+      "default": "true",
+      "notnull": false
+    },
+    {
+      "name": "auto_settlement_day",
+      "type": "text",
+      "table": "clubs",
+      "default": "'monday'::text",
+      "notnull": false
+    },
+    {
+      "name": "auto_settlement_hour",
+      "type": "integer",
+      "table": "clubs",
+      "default": "10",
+      "notnull": false
+    },
+    {
+      "name": "club_commission_rate",
+      "type": "numeric(5,4)",
+      "table": "clubs",
+      "default": "0.9000",
+      "notnull": false
+    },
+    {
+      "name": "insurance_balance",
+      "type": "numeric(14,2)",
+      "table": "clubs",
+      "default": "0",
+      "notnull": false
+    },
+    {
+      "name": "bbj_enabled",
+      "type": "boolean",
+      "table": "clubs",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "player_level",
+      "type": "integer",
+      "table": "clubs",
+      "default": "1",
+      "notnull": false
+    },
+    {
+      "name": "hierarchy_level",
+      "type": "integer",
+      "table": "clubs",
+      "default": "1",
+      "notnull": false
+    },
+    {
+      "name": "level",
+      "type": "integer",
+      "table": "clubs",
+      "default": "1",
+      "notnull": false
+    },
+    {
+      "name": "player_threshold_current",
+      "type": "integer",
+      "table": "clubs",
+      "default": "0",
+      "notnull": false
+    },
+    {
+      "name": "player_threshold_next",
+      "type": "integer",
+      "table": "clubs",
+      "default": "30",
+      "notnull": false
+    },
+    {
+      "name": "hierarchy_units",
+      "type": "numeric(10,2)",
+      "table": "clubs",
+      "default": "0",
+      "notnull": false
+    },
+    {
+      "name": "hierarchy_units_rounded_up",
+      "type": "integer",
+      "table": "clubs",
+      "default": "0",
+      "notnull": false
+    },
+    {
+      "name": "hierarchy_threshold_current",
+      "type": "integer",
+      "table": "clubs",
+      "default": "0",
+      "notnull": false
+    },
+    {
+      "name": "hierarchy_threshold_next",
+      "type": "integer",
+      "table": "clubs",
+      "default": "2",
+      "notnull": false
+    },
+    {
+      "name": "tags",
+      "type": "text[]",
+      "table": "clubs",
+      "default": "'{}'::text[]",
+      "notnull": false
+    },
+    {
+      "name": "average_rating",
+      "type": "numeric(3,2)",
+      "table": "clubs",
+      "default": "0",
+      "notnull": false
+    },
+    {
+      "name": "game_type",
+      "type": "text",
+      "table": "clubs",
+      "default": "'Texas Holdem'::text",
+      "notnull": false
+    },
+    {
+      "name": "settlement_lock_until",
+      "type": "timestamp with time zone",
+      "table": "clubs",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "card_image_url",
+      "type": "text",
+      "table": "clubs",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "active_players",
+      "type": "integer",
+      "table": "clubs",
+      "default": "0",
+      "notnull": false
+    },
+    {
+      "name": "default_rake_percent",
+      "type": "numeric(5,2)",
+      "table": "clubs",
+      "default": "'-1'::integer",
+      "notnull": false
+    },
+    {
+      "name": "rake_cap",
+      "type": "numeric(18,4)",
+      "table": "clubs",
+      "default": "'-1'::integer",
+      "notnull": false
+    },
+    {
+      "name": "min_buyin_bb",
+      "type": "integer",
+      "table": "clubs",
+      "default": "20",
+      "notnull": false
+    },
+    {
+      "name": "max_buyin_bb",
+      "type": "integer",
+      "table": "clubs",
+      "default": "200",
+      "notnull": false
+    },
+    {
+      "name": "allow_straddle",
+      "type": "boolean",
+      "table": "clubs",
+      "default": "true",
+      "notnull": false
+    },
+    {
+      "name": "allow_run_it_twice",
+      "type": "boolean",
+      "table": "clubs",
+      "default": "true",
+      "notnull": false
+    },
+    {
+      "name": "allow_rabbit_hunt",
+      "type": "boolean",
+      "table": "clubs",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "logo",
+      "type": "text",
+      "table": "clubs",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "is_private",
+      "type": "boolean",
+      "table": "clubs",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "min_buy_in",
+      "type": "numeric(18,4)",
+      "table": "clubs",
+      "default": "0",
+      "notnull": false
+    },
+    {
+      "name": "max_buy_in",
+      "type": "numeric(18,4)",
+      "table": "clubs",
+      "default": "0",
+      "notnull": false
+    },
+    {
+      "name": "default_game_type",
+      "type": "text",
+      "table": "clubs",
+      "default": "'NLHE'::text",
+      "notnull": false
+    },
+    {
+      "name": "allow_insurance",
+      "type": "boolean",
+      "table": "clubs",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "auto_approve_agents",
+      "type": "boolean",
+      "table": "clubs",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "auto_settlement",
+      "type": "boolean",
+      "table": "clubs",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "active_tables",
+      "type": "integer",
+      "table": "clubs",
+      "default": "0",
+      "notnull": false
+    },
+    {
+      "name": "admin_count",
+      "type": "integer",
+      "table": "clubs",
+      "default": "0",
+      "notnull": false
+    },
+    {
+      "name": "super_agent_count",
+      "type": "integer",
+      "table": "clubs",
+      "default": "0",
+      "notnull": false
+    },
+    {
+      "name": "agent_count",
+      "type": "integer",
+      "table": "clubs",
+      "default": "0",
+      "notnull": false
+    },
+    {
+      "name": "chip_pool",
+      "type": "numeric(18,2)",
+      "table": "clubs",
+      "default": "0",
+      "notnull": true
+    },
+    {
+      "name": "bbj_rake_enabled",
+      "type": "boolean",
+      "table": "clubs",
+      "default": "true",
+      "notnull": false
+    },
+    {
+      "name": "spins_enabled",
+      "type": "boolean",
+      "table": "clubs",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "spins_preseed_amount",
+      "type": "integer",
+      "table": "clubs",
+      "default": "0",
+      "notnull": false
+    },
+    {
+      "name": "spins_wallet_funding",
+      "type": "text",
+      "table": "clubs",
+      "default": "'PROMO'::text",
+      "notnull": false
+    },
+    {
+      "name": "ticker_enabled",
+      "type": "boolean",
+      "table": "clubs",
+      "default": "true",
+      "notnull": true
+    },
+    {
+      "name": "guarantee_treasury_floor",
+      "type": "numeric",
+      "table": "clubs",
+      "default": "0",
+      "notnull": true
+    },
+    {
+      "name": "guarantee_enforcement_enabled",
+      "type": "boolean",
+      "table": "clubs",
+      "default": "true",
+      "notnull": true
+    },
+    {
+      "name": "tagline",
+      "type": "text",
+      "table": "clubs",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "opening_checklist_started_at",
+      "type": "timestamp with time zone",
+      "table": "clubs",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "lobby_message",
+      "type": "text",
+      "table": "clubs",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "lobby_message_updated_at",
+      "type": "timestamp with time zone",
+      "table": "clubs",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "message_revision",
+      "type": "bigint",
+      "table": "clubs",
+      "default": "1",
+      "notnull": true
+    },
+    {
+      "name": "lifecycle_status",
+      "type": "text",
+      "table": "clubs",
+      "default": "'active'::text",
+      "notnull": true
+    },
+    {
+      "name": "retired_at",
+      "type": "timestamp with time zone",
+      "table": "clubs",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "retired_by",
+      "type": "uuid",
+      "table": "clubs",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "retirement_reason",
+      "type": "text",
+      "table": "clubs",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "asset",
+      "type": "text",
+      "table": "clubs",
+      "default": "'chips'::text",
+      "notnull": true
+    },
+    {
+      "name": "is_platform",
+      "type": "boolean",
+      "table": "clubs",
+      "default": "false",
+      "notnull": true
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "diamond_debts",
+      "default": "gen_random_uuid()",
+      "notnull": true
+    },
+    {
+      "name": "user_id",
+      "type": "uuid",
+      "table": "diamond_debts",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "purchase_id",
+      "type": "uuid",
+      "table": "diamond_debts",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "amount",
+      "type": "integer",
+      "table": "diamond_debts",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "reason",
+      "type": "text",
+      "table": "diamond_debts",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "diamond_debts",
+      "default": "now()",
+      "notnull": true
+    },
+    {
+      "name": "settled_at",
+      "type": "timestamp with time zone",
+      "table": "diamond_debts",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "settled_by",
+      "type": "text",
+      "table": "diamond_debts",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "diamond_purchase_lots",
+      "default": "gen_random_uuid()",
+      "notnull": true
+    },
+    {
+      "name": "user_id",
+      "type": "uuid",
+      "table": "diamond_purchase_lots",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "purchase_id",
+      "type": "uuid",
+      "table": "diamond_purchase_lots",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "issued",
+      "type": "integer",
+      "table": "diamond_purchase_lots",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "consumed",
+      "type": "integer",
+      "table": "diamond_purchase_lots",
+      "default": "0",
+      "notnull": true
+    },
+    {
+      "name": "refunded",
+      "type": "integer",
+      "table": "diamond_purchase_lots",
+      "default": "0",
+      "notnull": true
+    },
+    {
+      "name": "frozen_at",
+      "type": "timestamp with time zone",
+      "table": "diamond_purchase_lots",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "settled_at",
+      "type": "timestamp with time zone",
+      "table": "diamond_purchase_lots",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "diamond_purchase_lots",
+      "default": "now()",
+      "notnull": true
+    },
+    {
+      "name": "arena_reserved",
+      "type": "bigint",
+      "table": "diamond_purchase_lots",
+      "default": "0",
+      "notnull": true
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "poker_diamond_custody",
+      "default": "gen_random_uuid()",
+      "notnull": true
+    },
+    {
+      "name": "user_id",
+      "type": "uuid",
+      "table": "poker_diamond_custody",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "arena_id",
+      "type": "uuid",
+      "table": "poker_diamond_custody",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "purpose",
+      "type": "text",
+      "table": "poker_diamond_custody",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "target_id",
+      "type": "uuid",
+      "table": "poker_diamond_custody",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "entry_key",
+      "type": "text",
+      "table": "poker_diamond_custody",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "balance",
+      "type": "bigint",
+      "table": "poker_diamond_custody",
+      "default": "0",
+      "notnull": true
+    },
+    {
+      "name": "state",
+      "type": "text",
+      "table": "poker_diamond_custody",
+      "default": "'reserved'::text",
+      "notnull": true
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "poker_diamond_custody",
+      "default": "now()",
+      "notnull": true
+    },
+    {
+      "name": "released_at",
+      "type": "timestamp with time zone",
+      "table": "poker_diamond_custody",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "seat_id",
+      "type": "uuid",
+      "table": "poker_diamond_custody",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "seat_joined_at",
+      "type": "timestamp with time zone",
+      "table": "poker_diamond_custody",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "occupancy_id",
+      "type": "uuid",
+      "table": "poker_diamond_custody",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "profiles",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "full_name",
+      "type": "text",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "display_name",
+      "type": "text",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "first_name",
+      "type": "text",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "last_name",
+      "type": "text",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "username",
+      "type": "text",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "email",
+      "type": "text",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "phone",
+      "type": "text",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "bio",
+      "type": "text",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "city",
+      "type": "text",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "state",
+      "type": "text",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "alias",
+      "type": "text",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "avatar_url",
+      "type": "text",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "role",
+      "type": "text",
+      "table": "profiles",
+      "default": "'user'::text",
+      "notnull": false
+    },
+    {
+      "name": "status",
+      "type": "text",
+      "table": "profiles",
+      "default": "'active'::text",
+      "notnull": false
+    },
+    {
+      "name": "is_vip",
+      "type": "boolean",
+      "table": "profiles",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "is_horse",
+      "type": "boolean",
+      "table": "profiles",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "is_admin",
+      "type": "boolean",
+      "table": "profiles",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "is_online",
+      "type": "boolean",
+      "table": "profiles",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "player_number",
+      "type": "text",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "diamonds",
+      "type": "integer",
+      "table": "profiles",
+      "default": "0",
+      "notnull": true
+    },
+    {
+      "name": "diamond_balance",
+      "type": "integer",
+      "table": "profiles",
+      "default": "0",
+      "notnull": false
+    },
+    {
+      "name": "diamond_multiplier",
+      "type": "numeric(3,2)",
+      "table": "profiles",
+      "default": "1.00",
+      "notnull": false
+    },
+    {
+      "name": "level",
+      "type": "integer",
+      "table": "profiles",
+      "default": "1",
+      "notnull": false
+    },
+    {
+      "name": "tier",
+      "type": "text",
+      "table": "profiles",
+      "default": "'Newcomer'::text",
+      "notnull": false
+    },
+    {
+      "name": "skill_tier",
+      "type": "text",
+      "table": "profiles",
+      "default": "'Newcomer'::text",
+      "notnull": false
+    },
+    {
+      "name": "login_streak",
+      "type": "integer",
+      "table": "profiles",
+      "default": "0",
+      "notnull": false
+    },
+    {
+      "name": "streak_days",
+      "type": "integer",
+      "table": "profiles",
+      "default": "0",
+      "notnull": false
+    },
+    {
+      "name": "settings",
+      "type": "jsonb",
+      "table": "profiles",
+      "default": "'{}'::jsonb",
+      "notnull": false
+    },
+    {
+      "name": "preferences",
+      "type": "jsonb",
+      "table": "profiles",
+      "default": "'{}'::jsonb",
+      "notnull": false
+    },
+    {
+      "name": "social_page_id",
+      "type": "uuid",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "favorite_venue",
+      "type": "uuid",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "home_poker_club",
+      "type": "uuid",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "referred_by",
+      "type": "uuid",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "friends_count",
+      "type": "integer",
+      "table": "profiles",
+      "default": "0",
+      "notnull": false
+    },
+    {
+      "name": "hendon_total_cashes",
+      "type": "integer",
+      "table": "profiles",
+      "default": "0",
+      "notnull": false
+    },
+    {
+      "name": "hendon_total_earnings",
+      "type": "numeric",
+      "table": "profiles",
+      "default": "0",
+      "notnull": false
+    },
+    {
+      "name": "email_verified",
+      "type": "boolean",
+      "table": "profiles",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "phone_verified",
+      "type": "boolean",
+      "table": "profiles",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "onboarding_complete",
+      "type": "boolean",
+      "table": "profiles",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "last_login",
+      "type": "timestamp with time zone",
+      "table": "profiles",
+      "default": "now()",
+      "notnull": false
+    },
+    {
+      "name": "last_login_date",
+      "type": "date",
+      "table": "profiles",
+      "default": "CURRENT_DATE",
+      "notnull": false
+    },
+    {
+      "name": "last_seen",
+      "type": "timestamp with time zone",
+      "table": "profiles",
+      "default": "now()",
+      "notnull": false
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "profiles",
+      "default": "now()",
+      "notnull": false
+    },
+    {
+      "name": "updated_at",
+      "type": "timestamp with time zone",
+      "table": "profiles",
+      "default": "now()",
+      "notnull": false
+    },
+    {
+      "name": "training_view_mode",
+      "type": "text",
+      "table": "profiles",
+      "default": "'grid'::text",
+      "notnull": false
+    },
+    {
+      "name": "last_trivia_date",
+      "type": "date",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "trivia_streak",
+      "type": "integer",
+      "table": "profiles",
+      "default": "0",
+      "notnull": false
+    },
+    {
+      "name": "trivia_high_score",
+      "type": "integer",
+      "table": "profiles",
+      "default": "0",
+      "notnull": false
+    },
+    {
+      "name": "total_hands_played",
+      "type": "integer",
+      "table": "profiles",
+      "default": "0",
+      "notnull": false
+    },
+    {
+      "name": "notification_token",
+      "type": "text",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "referral_code",
+      "type": "text",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "horse_status",
+      "type": "character varying",
+      "table": "profiles",
+      "default": "'available'::character varying",
+      "notnull": false
+    },
+    {
+      "name": "horse_profile",
+      "type": "jsonb",
+      "table": "profiles",
+      "default": "'{}'::jsonb",
+      "notnull": false
+    },
+    {
+      "name": "sounds_enabled",
+      "type": "boolean",
+      "table": "profiles",
+      "default": "true",
+      "notnull": false
+    },
+    {
+      "name": "vibrations_enabled",
+      "type": "boolean",
+      "table": "profiles",
+      "default": "true",
+      "notnull": false
+    },
+    {
+      "name": "show_stack_bb",
+      "type": "boolean",
+      "table": "profiles",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "birth_year",
+      "type": "integer",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "favorite_hand_type",
+      "type": "text",
+      "table": "profiles",
+      "default": "'holdem'::text",
+      "notnull": false
+    },
+    {
+      "name": "card_back_preference",
+      "type": "text",
+      "table": "profiles",
+      "default": "'white'::text",
+      "notnull": false
+    },
+    {
+      "name": "country",
+      "type": "text",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "website",
+      "type": "text",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "twitter",
+      "type": "text",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "instagram",
+      "type": "text",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "hendon_url",
+      "type": "text",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "favorite_game",
+      "type": "text",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "favorite_hand",
+      "type": "text",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "home_casino",
+      "type": "text",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "cover_photo_url",
+      "type": "text",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "favorite_hand_plo",
+      "type": "text",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "app_settings",
+      "type": "jsonb",
+      "table": "profiles",
+      "default": "'{}'::jsonb",
+      "notnull": false
+    },
+    {
+      "name": "display_name_preference",
+      "type": "text",
+      "table": "profiles",
+      "default": "'full_name'::text",
+      "notnull": false
+    },
+    {
+      "name": "cover_photo_position",
+      "type": "text",
+      "table": "profiles",
+      "default": "'50% 50%'::text",
+      "notnull": false
+    },
+    {
+      "name": "tiktok",
+      "type": "text",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "telegram",
+      "type": "text",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "birthday",
+      "type": "date",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "hendon_biggest_cash",
+      "type": "numeric",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "use_real_name",
+      "type": "boolean",
+      "table": "profiles",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "streak_count",
+      "type": "integer",
+      "table": "profiles",
+      "default": "0",
+      "notnull": false
+    },
+    {
+      "name": "access_tier",
+      "type": "text",
+      "table": "profiles",
+      "default": "'Full_Access'::text",
+      "notnull": false
+    },
+    {
+      "name": "vip_tier",
+      "type": "text",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "vip_expires_at",
+      "type": "timestamp with time zone",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "last_active",
+      "type": "timestamp with time zone",
+      "table": "profiles",
+      "default": "now()",
+      "notnull": false
+    },
+    {
+      "name": "poker_near_me_preferences",
+      "type": "jsonb",
+      "table": "profiles",
+      "default": "'{\"geofenceAlerts\": true, \"locationEnabled\": true, \"showNewcomerFriendly\": true}'::jsonb",
+      "notnull": false
+    },
+    {
+      "name": "can_review",
+      "type": "boolean",
+      "table": "profiles",
+      "default": "true",
+      "notnull": false
+    },
+    {
+      "name": "deleted_reviews_count",
+      "type": "integer",
+      "table": "profiles",
+      "default": "0",
+      "notnull": false
+    },
+    {
+      "name": "kyc_status",
+      "type": "text",
+      "table": "profiles",
+      "default": "'NONE'::text",
+      "notnull": true
+    },
+    {
+      "name": "kyc_provider",
+      "type": "text",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "kyc_inquiry_id",
+      "type": "text",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "kyc_completed_at",
+      "type": "timestamp with time zone",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "kyc_rejection_reason",
+      "type": "text",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "age_verified",
+      "type": "boolean",
+      "table": "profiles",
+      "default": "false",
+      "notnull": true
+    },
+    {
+      "name": "age_verified_at",
+      "type": "timestamp with time zone",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "jurisdiction_country",
+      "type": "text",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "mfa_required",
+      "type": "boolean",
+      "table": "profiles",
+      "default": "false",
+      "notnull": true
+    },
+    {
+      "name": "hub_preferences",
+      "type": "jsonb",
+      "table": "profiles",
+      "default": "'{}'::jsonb",
+      "notnull": true
+    },
+    {
+      "name": "friend_preferences",
+      "type": "jsonb",
+      "table": "profiles",
+      "default": "'{}'::jsonb",
+      "notnull": true
+    },
+    {
+      "name": "store_preferences",
+      "type": "jsonb",
+      "table": "profiles",
+      "default": "'{}'::jsonb",
+      "notnull": true
+    },
+    {
+      "name": "messenger_preferences",
+      "type": "jsonb",
+      "table": "profiles",
+      "default": "'{}'::jsonb",
+      "notnull": true
+    },
+    {
+      "name": "reels_preferences",
+      "type": "jsonb",
+      "table": "profiles",
+      "default": "'{}'::jsonb",
+      "notnull": true
+    },
+    {
+      "name": "over_18_attested_at",
+      "type": "timestamp with time zone",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "jurisdiction_region",
+      "type": "text",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "jurisdiction_acknowledged_at",
+      "type": "timestamp with time zone",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "home_games_onboarded_at",
+      "type": "timestamp with time zone",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "social_profile_completed",
+      "type": "boolean",
+      "table": "profiles",
+      "default": "false",
+      "notnull": true
+    },
+    {
+      "name": "is_farming_flagged",
+      "type": "boolean",
+      "table": "profiles",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "stripe_customer_id",
+      "type": "text",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "club_arena_tos_accepted_at",
+      "type": "timestamp with time zone",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "bankroll_preferences",
+      "type": "jsonb",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "memory_games_preferences",
+      "type": "jsonb",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "news_preferences",
+      "type": "jsonb",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "video_library_preferences",
+      "type": "jsonb",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "memory_elo",
+      "type": "integer",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "arena_avatar_url",
+      "type": "text",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "equipped_frame",
+      "type": "text",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "equipped_aura",
+      "type": "text",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "use_avatar_as_profile_pic",
+      "type": "boolean",
+      "table": "profiles",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "status_text",
+      "type": "text",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "player_tags",
+      "type": "text[]",
+      "table": "profiles",
+      "default": "'{}'::text[]",
+      "notnull": false
+    },
+    {
+      "name": "vip_lifetime_card_purchase_id",
+      "type": "uuid",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "lifetime_vip_since",
+      "type": "timestamp with time zone",
+      "table": "profiles",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "trivia_preferences",
+      "type": "jsonb",
+      "table": "profiles",
+      "default": "'{}'::jsonb",
+      "notnull": true
+    },
+    {
+      "name": "trivia_preferences_revision",
+      "type": "bigint",
+      "table": "profiles",
+      "default": "0",
+      "notnull": true
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "table_seats",
+      "default": "uuid_generate_v4()",
+      "notnull": true
+    },
+    {
+      "name": "table_id",
+      "type": "uuid",
+      "table": "table_seats",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "seat_number",
+      "type": "integer",
+      "table": "table_seats",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "user_id",
+      "type": "uuid",
+      "table": "table_seats",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "player_id",
+      "type": "integer",
+      "table": "table_seats",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "member_id",
+      "type": "uuid",
+      "table": "table_seats",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "stack",
+      "type": "numeric(15,2)",
+      "table": "table_seats",
+      "default": "0",
+      "notnull": false
+    },
+    {
+      "name": "is_sitting_out",
+      "type": "boolean",
+      "table": "table_seats",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "is_away",
+      "type": "boolean",
+      "table": "table_seats",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "joined_at",
+      "type": "timestamp with time zone",
+      "table": "table_seats",
+      "default": "now()",
+      "notnull": false
+    },
+    {
+      "name": "horse_id",
+      "type": "uuid",
+      "table": "table_seats",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "scheduled_leave_hands",
+      "type": "integer",
+      "table": "table_seats",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "left_at",
+      "type": "timestamp with time zone",
+      "table": "table_seats",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "status",
+      "type": "text",
+      "table": "table_seats",
+      "default": "'active'::text",
+      "notnull": false
+    },
+    {
+      "name": "leave_pending",
+      "type": "boolean",
+      "table": "table_seats",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "auto_rebuy",
+      "type": "boolean",
+      "table": "table_seats",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "time_bank_remaining",
+      "type": "integer",
+      "table": "table_seats",
+      "default": "30",
+      "notnull": false
+    },
+    {
+      "name": "time_bank_uses_remaining",
+      "type": "integer",
+      "table": "table_seats",
+      "default": "4",
+      "notnull": false
+    },
+    {
+      "name": "club_id",
+      "type": "uuid",
+      "table": "table_seats",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "sit_out_at",
+      "type": "timestamp with time zone",
+      "table": "table_seats",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "entry_hold",
+      "type": "text",
+      "table": "table_seats",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "entry_post_agreed",
+      "type": "boolean",
+      "table": "table_seats",
+      "default": "false",
+      "notnull": true
+    },
+    {
+      "name": "occupancy_id",
+      "type": "uuid",
+      "table": "table_seats",
+      "default": "gen_random_uuid()",
+      "notnull": true
+    },
+    {
+      "name": "active_game_scope",
+      "type": "text",
+      "table": "table_seats",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "active_parent_key",
+      "type": "text",
+      "table": "table_seats",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "terminal_closed_at",
+      "type": "timestamp with time zone",
+      "table": "table_seats",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "table_waitlist",
+      "default": "gen_random_uuid()",
+      "notnull": true
+    },
+    {
+      "name": "table_id",
+      "type": "uuid",
+      "table": "table_waitlist",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "user_id",
+      "type": "uuid",
+      "table": "table_waitlist",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "position",
+      "type": "integer",
+      "table": "table_waitlist",
+      "default": "1",
+      "notnull": true
+    },
+    {
+      "name": "status",
+      "type": "text",
+      "table": "table_waitlist",
+      "default": "'waiting'::text",
+      "notnull": true
+    },
+    {
+      "name": "notified_at",
+      "type": "timestamp with time zone",
+      "table": "table_waitlist",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "table_waitlist",
+      "default": "now()",
+      "notnull": false
+    },
+    {
+      "name": "hold_expires_at",
+      "type": "timestamp with time zone",
+      "table": "table_waitlist",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "tables",
+      "default": "gen_random_uuid()",
+      "notnull": true
+    },
+    {
+      "name": "club_id",
+      "type": "uuid",
+      "table": "tables",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "name",
+      "type": "text",
+      "table": "tables",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "game_type",
+      "type": "text",
+      "table": "tables",
+      "default": "'nlhe'::text",
+      "notnull": false
+    },
+    {
+      "name": "stakes",
+      "type": "text",
+      "table": "tables",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "small_blind",
+      "type": "numeric(15,2)",
+      "table": "tables",
+      "default": "1",
+      "notnull": false
+    },
+    {
+      "name": "big_blind",
+      "type": "numeric(15,2)",
+      "table": "tables",
+      "default": "2",
+      "notnull": false
+    },
+    {
+      "name": "min_buy_in",
+      "type": "numeric(15,2)",
+      "table": "tables",
+      "default": "40",
+      "notnull": false
+    },
+    {
+      "name": "max_buy_in",
+      "type": "numeric(15,2)",
+      "table": "tables",
+      "default": "200",
+      "notnull": false
+    },
+    {
+      "name": "max_players",
+      "type": "integer",
+      "table": "tables",
+      "default": "9",
+      "notnull": false
+    },
+    {
+      "name": "current_players",
+      "type": "integer",
+      "table": "tables",
+      "default": "0",
+      "notnull": false
+    },
+    {
+      "name": "status",
+      "type": "text",
+      "table": "tables",
+      "default": "'waiting'::text",
+      "notnull": false
+    },
+    {
+      "name": "is_private",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "settings",
+      "type": "jsonb",
+      "table": "tables",
+      "default": "'{}'::jsonb",
+      "notnull": false
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "tables",
+      "default": "now()",
+      "notnull": false
+    },
+    {
+      "name": "updated_at",
+      "type": "timestamp with time zone",
+      "table": "tables",
+      "default": "now()",
+      "notnull": false
+    },
+    {
+      "name": "game_variant",
+      "type": "text",
+      "table": "tables",
+      "default": "'nlh'::text",
+      "notnull": false
+    },
+    {
+      "name": "enable_straddle",
+      "type": "boolean",
+      "table": "tables",
+      "default": "true",
+      "notnull": false
+    },
+    {
+      "name": "run_it_twice",
+      "type": "boolean",
+      "table": "tables",
+      "default": "true",
+      "notnull": false
+    },
+    {
+      "name": "auto_muck",
+      "type": "boolean",
+      "table": "tables",
+      "default": "true",
+      "notnull": false
+    },
+    {
+      "name": "ante",
+      "type": "numeric(15,2)",
+      "table": "tables",
+      "default": "0",
+      "notnull": false
+    },
+    {
+      "name": "allow_rabbit_hunt",
+      "type": "boolean",
+      "table": "tables",
+      "default": "true",
+      "notnull": false
+    },
+    {
+      "name": "allow_run_it_twice",
+      "type": "boolean",
+      "table": "tables",
+      "default": "true",
+      "notnull": false
+    },
+    {
+      "name": "allow_straddle",
+      "type": "boolean",
+      "table": "tables",
+      "default": "true",
+      "notnull": false
+    },
+    {
+      "name": "game_mode",
+      "type": "character varying(10)",
+      "table": "tables",
+      "default": "'regular'::character varying",
+      "notnull": false
+    },
+    {
+      "name": "is_vip_only",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "is_anonymous",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "ban_chat",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "label_as_new",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "is_featured",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "hide_club_name",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "is_template",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "bomb_pot_enabled",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "double_board",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "triple_board",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "pineapple_holdem",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "seven_deuce_enabled",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "nit_game",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "cap_enabled",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "no_rathole",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "action_time_seconds",
+      "type": "integer",
+      "table": "tables",
+      "default": "15",
+      "notnull": false
+    },
+    {
+      "name": "ante_bb",
+      "type": "numeric(10,2)",
+      "table": "tables",
+      "default": "0",
+      "notnull": false
+    },
+    {
+      "name": "career_percent_min",
+      "type": "integer",
+      "table": "tables",
+      "default": "0",
+      "notnull": false
+    },
+    {
+      "name": "maintain_percent_min",
+      "type": "integer",
+      "table": "tables",
+      "default": "0",
+      "notnull": false
+    },
+    {
+      "name": "maintain_hands",
+      "type": "integer",
+      "table": "tables",
+      "default": "10",
+      "notnull": false
+    },
+    {
+      "name": "auto_start_players",
+      "type": "integer",
+      "table": "tables",
+      "default": "2",
+      "notnull": false
+    },
+    {
+      "name": "game_length_hours",
+      "type": "integer",
+      "table": "tables",
+      "default": "12",
+      "notnull": false
+    },
+    {
+      "name": "created_by",
+      "type": "uuid",
+      "table": "tables",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "calltime_enabled",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "auto_extension",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "auto_restart",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "auto_create_table",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "auto_utg_straddle",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "voluntary_straddle",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "insurance_enabled",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "run_it_mode",
+      "type": "character varying(20)",
+      "table": "tables",
+      "default": "'none'::character varying",
+      "notnull": false
+    },
+    {
+      "name": "rake_percent",
+      "type": "numeric(5,2)",
+      "table": "tables",
+      "default": "'-1'::integer",
+      "notnull": false
+    },
+    {
+      "name": "rake_cap_bb",
+      "type": "numeric(5,2)",
+      "table": "tables",
+      "default": "'-1'::integer",
+      "notnull": false
+    },
+    {
+      "name": "agent_downline_limit",
+      "type": "integer",
+      "table": "tables",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "buy_in_authorization",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "restrict_device",
+      "type": "boolean",
+      "table": "tables",
+      "default": "true",
+      "notnull": false
+    },
+    {
+      "name": "restrict_observers",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "gps_restriction",
+      "type": "boolean",
+      "table": "tables",
+      "default": "true",
+      "notnull": false
+    },
+    {
+      "name": "ip_restriction",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "pc_emulator_restriction",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "photo_rotation_verification",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "short_description",
+      "type": "text",
+      "table": "tables",
+      "default": "''::text",
+      "notnull": false
+    },
+    {
+      "name": "accelerated_mtt",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "all_in_or_fold",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "custom_rebuy_reentry_cost",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "number_of_rebuys_reentries",
+      "type": "integer",
+      "table": "tables",
+      "default": "3",
+      "notnull": false
+    },
+    {
+      "name": "add_on_multiplier",
+      "type": "numeric(3,1)",
+      "table": "tables",
+      "default": "1.0",
+      "notnull": false
+    },
+    {
+      "name": "custom_add_on",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "add_on_break_length_minutes",
+      "type": "integer",
+      "table": "tables",
+      "default": "1",
+      "notnull": false
+    },
+    {
+      "name": "ko_bounty",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "gtd_prize_pool",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "final_table_deal",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "big_blind_ante",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "authorized_to_register",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "late_registration_level",
+      "type": "integer",
+      "table": "tables",
+      "default": "6",
+      "notnull": false
+    },
+    {
+      "name": "early_bird_registration",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "bubble_protection",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "featured_tournament",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "min_players_mtt",
+      "type": "integer",
+      "table": "tables",
+      "default": "30",
+      "notnull": false
+    },
+    {
+      "name": "max_players_mtt",
+      "type": "integer",
+      "table": "tables",
+      "default": "300",
+      "notnull": false
+    },
+    {
+      "name": "multi_day_mtt",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "save_start_time",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "start_time",
+      "type": "timestamp with time zone",
+      "table": "tables",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "restart_tournament_every",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "tournament_schedule",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "synchronized_breaks",
+      "type": "boolean",
+      "table": "tables",
+      "default": "true",
+      "notnull": false
+    },
+    {
+      "name": "sng_buy_in",
+      "type": "numeric(10,2)",
+      "table": "tables",
+      "default": "0",
+      "notnull": false
+    },
+    {
+      "name": "blind_structure",
+      "type": "character varying(20)",
+      "table": "tables",
+      "default": "'standard'::character varying",
+      "notnull": false
+    },
+    {
+      "name": "payout_structure",
+      "type": "character varying(50)",
+      "table": "tables",
+      "default": "'winner_takes_all'::character varying",
+      "notnull": false
+    },
+    {
+      "name": "starting_chips",
+      "type": "integer",
+      "table": "tables",
+      "default": "1500",
+      "notnull": false
+    },
+    {
+      "name": "blinds_up_minutes",
+      "type": "integer",
+      "table": "tables",
+      "default": "10",
+      "notnull": false
+    },
+    {
+      "name": "next_step_satellite",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "sng_custom_buy_in",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "sng_player_count",
+      "type": "integer",
+      "table": "tables",
+      "default": "9",
+      "notnull": false
+    },
+    {
+      "name": "is_spins",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "spins_multiplier",
+      "type": "integer",
+      "table": "tables",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "is_deleted",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "deleted_at",
+      "type": "timestamp with time zone",
+      "table": "tables",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "deleted_by",
+      "type": "uuid",
+      "table": "tables",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "bbj_percent",
+      "type": "numeric(5,2)",
+      "table": "tables",
+      "default": "100",
+      "notnull": false
+    },
+    {
+      "name": "tournament_id",
+      "type": "uuid",
+      "table": "tables",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "live_state",
+      "type": "jsonb",
+      "table": "tables",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "union_id",
+      "type": "uuid",
+      "table": "tables",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "big_blind_ante_enabled",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "straddle_enabled",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "straddle_type",
+      "type": "text",
+      "table": "tables",
+      "default": "'utg'::text",
+      "notnull": false
+    },
+    {
+      "name": "max_straddles",
+      "type": "integer",
+      "table": "tables",
+      "default": "1",
+      "notnull": false
+    },
+    {
+      "name": "run_it_twice_enabled",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "auto_muck_enabled",
+      "type": "boolean",
+      "table": "tables",
+      "default": "true",
+      "notnull": false
+    },
+    {
+      "name": "show_hand_enabled",
+      "type": "boolean",
+      "table": "tables",
+      "default": "true",
+      "notnull": false
+    },
+    {
+      "name": "disconnect_timeout_seconds",
+      "type": "integer",
+      "table": "tables",
+      "default": "30",
+      "notnull": false
+    },
+    {
+      "name": "max_consecutive_timeouts",
+      "type": "integer",
+      "table": "tables",
+      "default": "3",
+      "notnull": false
+    },
+    {
+      "name": "prefer_check_over_fold",
+      "type": "boolean",
+      "table": "tables",
+      "default": "true",
+      "notnull": false
+    },
+    {
+      "name": "time_bank_max_uses",
+      "type": "integer",
+      "table": "tables",
+      "default": "4",
+      "notnull": false
+    },
+    {
+      "name": "time_bank_enabled",
+      "type": "boolean",
+      "table": "tables",
+      "default": "true",
+      "notnull": false
+    },
+    {
+      "name": "ante_enabled",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": false
+    },
+    {
+      "name": "bomb_pot_frequency",
+      "type": "integer",
+      "table": "tables",
+      "default": "0",
+      "notnull": false
+    },
+    {
+      "name": "bomb_pot_ante_multiplier",
+      "type": "integer",
+      "table": "tables",
+      "default": "2",
+      "notnull": false
+    },
+    {
+      "name": "wait_for_big_blind",
+      "type": "boolean",
+      "table": "tables",
+      "default": "true",
+      "notnull": true
+    },
+    {
+      "name": "seven_deuce_amount",
+      "type": "numeric",
+      "table": "tables",
+      "default": "2",
+      "notnull": true
+    },
+    {
+      "name": "hands_dealt",
+      "type": "bigint",
+      "table": "tables",
+      "default": "0",
+      "notnull": true
+    },
+    {
+      "name": "avg_pot",
+      "type": "numeric(14,2)",
+      "table": "tables",
+      "default": "0",
+      "notnull": true
+    },
+    {
+      "name": "bomb_pot_double_board",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": true
+    },
+    {
+      "name": "cap_bb",
+      "type": "numeric(10,2)",
+      "table": "tables",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "bomb_pot_board_count",
+      "type": "smallint",
+      "table": "tables",
+      "default": "1",
+      "notnull": true
+    },
+    {
+      "name": "bomb_pot_trigger_mode",
+      "type": "text",
+      "table": "tables",
+      "default": "'every_n_hands'::text",
+      "notnull": true
+    },
+    {
+      "name": "bomb_pot_interval_seconds",
+      "type": "integer",
+      "table": "tables",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "bomb_pot_min_players",
+      "type": "smallint",
+      "table": "tables",
+      "default": "3",
+      "notnull": true
+    },
+    {
+      "name": "bomb_pot_ante_fixed",
+      "type": "numeric",
+      "table": "tables",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "first_button_seat",
+      "type": "integer",
+      "table": "tables",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "bomb_pot_variant",
+      "type": "text",
+      "table": "tables",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "bomb_pot_next_due_at",
+      "type": "timestamp with time zone",
+      "table": "tables",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "bomb_pot_sched_state",
+      "type": "jsonb",
+      "table": "tables",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "bomb_pot_manual_pending",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": true
+    },
+    {
+      "name": "bomb_pot_button_policy",
+      "type": "text",
+      "table": "tables",
+      "default": "'regular'::text",
+      "notnull": true
+    },
+    {
+      "name": "bomb_pot_announce_seconds",
+      "type": "integer",
+      "table": "tables",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "min_buy_in_bb",
+      "type": "integer",
+      "table": "tables",
+      "default": "\nCASE\n    WHEN ((tournament_id IS NULL) AND (COALESCE(big_blind, (0)::numeric) > (0)::numeric) AND (min_buy_in IS NOT NULL)) THEN (ceil((min_buy_in / big_blind)))::integer\n    ELSE NULL::integer\nEND",
+      "notnull": false
+    },
+    {
+      "name": "max_buy_in_bb",
+      "type": "integer",
+      "table": "tables",
+      "default": "\nCASE\n    WHEN ((tournament_id IS NULL) AND (COALESCE(big_blind, (0)::numeric) > (0)::numeric) AND (max_buy_in IS NOT NULL)) THEN (floor((max_buy_in / big_blind)))::integer\n    ELSE NULL::integer\nEND",
+      "notnull": false
+    },
+    {
+      "name": "min_buyin",
+      "type": "integer",
+      "table": "tables",
+      "default": "\nCASE\n    WHEN ((tournament_id IS NULL) AND (COALESCE(big_blind, (0)::numeric) > (0)::numeric) AND (min_buy_in IS NOT NULL)) THEN (ceil((min_buy_in / big_blind)))::integer\n    ELSE NULL::integer\nEND",
+      "notnull": false
+    },
+    {
+      "name": "max_buyin",
+      "type": "integer",
+      "table": "tables",
+      "default": "\nCASE\n    WHEN ((tournament_id IS NULL) AND (COALESCE(big_blind, (0)::numeric) > (0)::numeric) AND (max_buy_in IS NOT NULL)) THEN (floor((max_buy_in / big_blind)))::integer\n    ELSE NULL::integer\nEND",
+      "notnull": false
+    },
+    {
+      "name": "cluster_id",
+      "type": "uuid",
+      "table": "tables",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "role",
+      "type": "text",
+      "table": "tables",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "main_index",
+      "type": "integer",
+      "table": "tables",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "lifecycle",
+      "type": "text",
+      "table": "tables",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "opened_at",
+      "type": "timestamp with time zone",
+      "table": "tables",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "live_at",
+      "type": "timestamp with time zone",
+      "table": "tables",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "break_started_at",
+      "type": "timestamp with time zone",
+      "table": "tables",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "break_eligible_since",
+      "type": "timestamp with time zone",
+      "table": "tables",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "promote_pending",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": true
+    },
+    {
+      "name": "observer_show_cards",
+      "type": "boolean",
+      "table": "tables",
+      "default": "false",
+      "notnull": true
+    },
+    {
+      "name": "terminal_closed_at",
+      "type": "timestamp with time zone",
+      "table": "tables",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "seat_game_scope",
+      "type": "text",
+      "table": "tables",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "seat_admission_key",
+      "type": "text",
+      "table": "tables",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "f06_lifecycle",
+      "type": "bigint",
+      "table": "tables",
+      "default": "smarter_private.f06_new_lifecycle()",
+      "notnull": true
+    },
+    {
+      "name": "dealing_halted_at",
+      "type": "timestamp with time zone",
+      "table": "tables",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "dealing_halted_reason",
+      "type": "text",
+      "table": "tables",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "kill_mode",
+      "type": "text",
+      "table": "tables",
+      "default": "'off'::text",
+      "notnull": true
+    },
+    {
+      "name": "kill_threshold_bb",
+      "type": "smallint",
+      "table": "tables",
+      "default": "10",
+      "notnull": true
+    },
+    {
+      "name": "dealing_halt_observed_at",
+      "type": "timestamp with time zone",
+      "table": "tables",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "admin_audit_log",
+      "default": "gen_random_uuid()",
+      "notnull": true
+    },
+    {
+      "name": "admin_user_id",
+      "type": "uuid",
+      "table": "admin_audit_log",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "action",
+      "type": "text",
+      "table": "admin_audit_log",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "target_type",
+      "type": "text",
+      "table": "admin_audit_log",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "target_id",
+      "type": "text",
+      "table": "admin_audit_log",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "details",
+      "type": "jsonb",
+      "table": "admin_audit_log",
+      "default": "'{}'::jsonb",
+      "notnull": false
+    },
+    {
+      "name": "ip_address",
+      "type": "text",
+      "table": "admin_audit_log",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "admin_audit_log",
+      "default": "now()",
+      "notnull": false
+    },
+    {
+      "name": "before_state",
+      "type": "jsonb",
+      "table": "admin_audit_log",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "after_state",
+      "type": "jsonb",
+      "table": "admin_audit_log",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "user_agent",
+      "type": "text",
+      "table": "admin_audit_log",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "actor_role",
+      "type": "text",
+      "table": "admin_audit_log",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "request_id",
+      "type": "text",
+      "table": "admin_audit_log",
+      "default": null,
+      "notnull": false
+    }
+  ],
+  "functions": [
+    {
+      "name": "fn_ca_cash_wallet_covers",
+      "body_md5": "9197d9629d2555c201fbb60701b90901",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_cash_wallet_covers(p_user_id uuid, p_table_id uuid, p_preferred_club uuid, p_amount numeric)\n RETURNS boolean\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_club uuid;\n  v_balance numeric;\nBEGIN\n  IF p_user_id IS NULL OR p_table_id IS NULL OR p_amount IS NULL OR p_amount <= 0 THEN\n    RETURN true;\n  END IF;\n  IF EXISTS (SELECT 1 FROM public.tables t JOIN public.clubs c ON c.id = t.club_id\n              WHERE t.id = p_table_id AND c.asset = 'diamonds') THEN\n    RETURN true;\n  END IF;\n\n  v_club := public.fn_seat_club_for_user(p_user_id, p_table_id, p_preferred_club);\n  IF v_club IS NOT NULL THEN\n    SELECT m.chip_balance INTO v_balance\n      FROM public.club_members m\n     WHERE m.user_id = p_user_id AND m.club_id = v_club\n       AND m.status IN ('active', 'approved');\n    IF COALESCE(v_balance, 0) >= p_amount THEN\n      RETURN true;\n    END IF;\n  END IF;\n\n  RETURN public.fn_ca_cash_paying_club(p_user_id, p_table_id, p_preferred_club, p_amount) IS NOT NULL;\nEND\n$function$\n"
+    },
+    {
+      "name": "fn_cash_apply_ruleset",
+      "body_md5": "d568ed6e11fa887b0bcadebb5a8cb2c7",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_cash_apply_ruleset(p_game_id uuid)\n RETURNS integer\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  g record; s jsonb; v_opts jsonb;\n  v_ante text; v_ante_chips numeric; v_vpip integer; v_vpip_window integer;\n  v_bomb_on boolean; v_bomb_trigger text; v_bomb_ante integer; v_bomb_boards integer;\n  v_min_bb integer; v_max_bb integer;\n  v_trigger_mode text; v_interval integer; v_action_secs integer;\n  v_rit text; v_rit_mode text; v_rit_on boolean; v_sd boolean;\n  v_n integer := 0;\n  v_kill_mode text; v_kill_bb smallint;\nBEGIN\n  SELECT * INTO g FROM public.cash_games WHERE id = p_game_id;\n  IF NOT FOUND THEN RETURN 0; END IF;\n  s := g.ruleset_snapshot;\n  IF s IS NULL THEN RETURN 0; END IF;\n\n  -- The same mapping fn_cash_cluster_open_table applies at open. Kept in\n  -- one place by construction: the opener's INSERT and this UPDATE must read\n  -- the snapshot identically or a fresh table and a reconciled one disagree.\n  v_opts := coalesce(s->'options', '{}'::jsonb);\n  v_ante := coalesce(s->>'regular_ante', 'none');\n  v_ante_chips := CASE v_ante WHEN 'sb' THEN g.sb WHEN 'bb' THEN g.bb ELSE 0 END;\n  v_vpip := coalesce((s->>'vpip_floor')::integer, 0);\n  v_vpip_window := coalesce((s->>'vpip_window')::integer, 10);\n  v_bomb_on := coalesce((s->'bombs'->>'enabled')::boolean, false);\n  v_bomb_trigger := s->'bombs'->>'trigger';\n  v_bomb_ante := (s->'bombs'->>'ante_bb')::integer;\n  v_bomb_boards := (s->'bombs'->>'boards')::integer;\n  v_min_bb := coalesce((s->>'min_buyin_bb')::integer, 40);\n  v_max_bb := coalesce((s->>'max_buyin_bb')::integer, 200);\n  v_trigger_mode := CASE WHEN v_bomb_on AND v_bomb_trigger = 'timed_15m' THEN 'timed'\n                         WHEN v_bomb_on AND v_bomb_trigger = 'every_orbit' THEN 'once_per_orbit'\n                         ELSE 'every_n_hands' END;\n  v_interval := CASE WHEN v_bomb_on AND v_bomb_trigger = 'timed_15m' THEN 900 ELSE NULL END;\n  v_action_secs := LEAST(120, GREATEST(10, coalesce((v_opts->>'action_time_seconds')::integer, 15)));\n  -- RUN IT N TIMES (2026-09-09, lane E audit): the opener projects the\n  -- snapshot's run_it_n_times as run_it_mode + the three RIT booleans and\n  -- this function never did, so the 42 tables adopted at the Gate 7 cutover\n  -- kept the old form's answer - four tables of one game offering\n  -- run-it-twice and the fifth not. The snapshot only ever says 'opt_in'\n  -- today; the other spellings are mapped rather than defaulted so a future\n  -- writer cannot land 'none' by accident.\n  v_rit := lower(coalesce(s->>'run_it_n_times', 'opt_in'));\n  v_rit_mode := CASE v_rit\n                  WHEN 'opt_in' THEN 'player_choice'\n                  WHEN 'player_choice' THEN 'player_choice'\n                  WHEN 'mandatory_twice' THEN 'mandatory_twice'\n                  WHEN 'mandatory_three' THEN 'mandatory_three'\n                  ELSE 'none' END;\n  v_rit_on := v_rit_mode <> 'none';\n  -- 7-2 IS A HOLD'EM BOUNTY. The create path guards it (\"AND v_v = 'nlh'\");\n  -- the projection guards it too so no other snapshot writer can put a\n  -- seven-deuce bounty on an Omaha table.\n  v_sd := coalesce((v_opts->>'seven_deuce_enabled')::boolean, false) AND g.variant = 'nlh';\n  -- KILL POTS (kill-v1, 20260924034010). Exactly the opener's projection:\n  -- 'off' whenever the kill would be refused at this game's tables, so a\n  -- tick never fails on a kill setting and a demoted capability turns the\n  -- whole game off together rather than one table at a time.\n  v_kill_bb := CASE WHEN (s->'kill'->>'threshold_bb') IN ('8','10','12','15')\n                    THEN (s->'kill'->>'threshold_bb')::smallint ELSE 10 END;\n  v_kill_mode := lower(coalesce(s->'kill'->>'mode', 'off'));\n  IF v_kill_mode NOT IN ('half', 'full') THEN\n    v_kill_mode := 'off';\n  ELSIF public.fn_kill_pot_configuration_refusal(v_kill_mode, g.variant, 'cash', NULL, v_bomb_on, g.bb, g.club_id) IS NOT NULL THEN\n    v_kill_mode := 'off';\n  ELSIF NOT public.fn_capability_available('cash.fixed_limit.kill_pots') THEN\n    v_kill_mode := 'off';\n  END IF;\n\n  UPDATE public.tables t\n     SET ante_enabled = v_ante_chips > 0,\n         ante = v_ante_chips,\n         ante_bb = CASE WHEN v_ante_chips > 0 THEN round(v_ante_chips / g.bb, 4) ELSE 0 END,\n         big_blind_ante_enabled = (v_ante = 'bb'),\n         nit_game = v_vpip > 0,\n         career_percent_min = 0,\n         maintain_percent_min = v_vpip,\n         maintain_hands = v_vpip_window,\n         bomb_pot_enabled = v_bomb_on,\n         bomb_pot_trigger_mode = v_trigger_mode,\n         bomb_pot_interval_seconds = v_interval,\n         bomb_pot_frequency = 0,\n         bomb_pot_ante_multiplier = coalesce(v_bomb_ante, 2),\n         bomb_pot_board_count = coalesce(v_bomb_boards, 1),\n         bomb_pot_double_board = coalesce(v_bomb_boards, 1) >= 2,\n         bomb_pot_min_players = 2,\n         min_buy_in = round(g.bb * v_min_bb, 2),\n         max_buy_in = round(g.bb * v_max_bb, 2),\n         -- THE CEILING IS THE GAME'S HANDEDNESS, BUT NEVER BELOW AN\n         -- OCCUPIED CHAIR (2026-09-09). Two PLO5 Classic tables carried\n         -- max_players 7 on a 6-handed game and one had a player in seat\n         -- 7; the ceiling follows the seats down at the first tick AFTER\n         -- that chair empties, so nobody is closed out of a seat.\n         max_players = GREATEST(g.handedness,\n                                coalesce((SELECT max(ts.seat_number) FROM public.table_seats ts\n                                           WHERE ts.table_id = t.id AND ts.left_at IS NULL), 0)),\n         stakes = public.fn_cash_stakes_label(g.sb, g.bb, g.variant),\n         small_blind = g.sb, big_blind = g.bb, game_variant = g.variant,\n         straddle_enabled = false, auto_utg_straddle = false, voluntary_straddle = false,\n         run_it_mode = v_rit_mode,\n         run_it_twice = v_rit_on,\n         allow_run_it_twice = v_rit_on,\n         run_it_twice_enabled = v_rit_on,\n         is_private = coalesce((v_opts->>'is_private')::boolean, false),\n         is_vip_only = coalesce((v_opts->>'is_vip_only')::boolean, false),\n         is_anonymous = coalesce((v_opts->>'is_anonymous')::boolean, false),\n         ban_chat = coalesce((v_opts->>'ban_chat')::boolean, false),\n         insurance_enabled = coalesce((v_opts->>'insurance_enabled')::boolean, false),\n         seven_deuce_enabled = v_sd,\n         seven_deuce_amount = CASE WHEN v_sd THEN 2 ELSE 0 END,\n         action_time_seconds = v_action_secs,\n         kill_mode = v_kill_mode,\n         kill_threshold_bb = v_kill_bb,\n         updated_at = now()\n   WHERE t.cluster_id = g.id\n     AND t.lifecycle <> 'closed'\n     AND coalesce(t.is_deleted, false) = false\n     AND (\n          t.ante_enabled IS DISTINCT FROM (v_ante_chips > 0)\n       OR t.ante IS DISTINCT FROM v_ante_chips\n       OR t.ante_bb IS DISTINCT FROM (CASE WHEN v_ante_chips > 0 THEN round(v_ante_chips / g.bb, 4) ELSE 0 END)\n       OR t.big_blind_ante_enabled IS DISTINCT FROM (v_ante = 'bb')\n       OR t.nit_game IS DISTINCT FROM (v_vpip > 0)\n       OR t.maintain_percent_min IS DISTINCT FROM v_vpip\n       OR t.maintain_hands IS DISTINCT FROM v_vpip_window\n       OR t.bomb_pot_enabled IS DISTINCT FROM v_bomb_on\n       OR t.bomb_pot_trigger_mode IS DISTINCT FROM v_trigger_mode\n       OR t.bomb_pot_interval_seconds IS DISTINCT FROM v_interval\n       OR t.bomb_pot_ante_multiplier IS DISTINCT FROM coalesce(v_bomb_ante, 2)\n       OR t.bomb_pot_board_count IS DISTINCT FROM coalesce(v_bomb_boards, 1)\n       OR t.bomb_pot_double_board IS DISTINCT FROM (coalesce(v_bomb_boards, 1) >= 2)\n       OR t.bomb_pot_min_players IS DISTINCT FROM 2\n       OR t.min_buy_in IS DISTINCT FROM round(g.bb * v_min_bb, 2)\n       OR t.max_buy_in IS DISTINCT FROM round(g.bb * v_max_bb, 2)\n       OR t.max_players IS DISTINCT FROM GREATEST(g.handedness,\n                                coalesce((SELECT max(ts.seat_number) FROM public.table_seats ts\n                                           WHERE ts.table_id = t.id AND ts.left_at IS NULL), 0))\n       OR t.stakes IS DISTINCT FROM public.fn_cash_stakes_label(g.sb, g.bb, g.variant)\n       OR t.small_blind IS DISTINCT FROM g.sb\n       OR t.big_blind IS DISTINCT FROM g.bb\n       OR t.game_variant IS DISTINCT FROM g.variant\n       OR t.career_percent_min IS DISTINCT FROM 0\n       OR coalesce(t.straddle_enabled, false) OR coalesce(t.auto_utg_straddle, false) OR coalesce(t.voluntary_straddle, false)\n       OR t.run_it_mode IS DISTINCT FROM v_rit_mode\n       OR t.run_it_twice IS DISTINCT FROM v_rit_on\n       OR t.allow_run_it_twice IS DISTINCT FROM v_rit_on\n       OR t.run_it_twice_enabled IS DISTINCT FROM v_rit_on\n       OR t.is_private IS DISTINCT FROM coalesce((v_opts->>'is_private')::boolean, false)\n       OR t.is_vip_only IS DISTINCT FROM coalesce((v_opts->>'is_vip_only')::boolean, false)\n       OR t.is_anonymous IS DISTINCT FROM coalesce((v_opts->>'is_anonymous')::boolean, false)\n       OR t.ban_chat IS DISTINCT FROM coalesce((v_opts->>'ban_chat')::boolean, false)\n       OR t.insurance_enabled IS DISTINCT FROM coalesce((v_opts->>'insurance_enabled')::boolean, false)\n       OR t.seven_deuce_enabled IS DISTINCT FROM v_sd\n       OR t.seven_deuce_amount IS DISTINCT FROM (CASE WHEN v_sd THEN 2 ELSE 0 END)\n       OR t.action_time_seconds IS DISTINCT FROM v_action_secs\n       OR t.kill_mode IS DISTINCT FROM v_kill_mode\n       OR t.kill_threshold_bb IS DISTINCT FROM v_kill_bb\n     );\n  GET DIAGNOSTICS v_n = ROW_COUNT;\n  IF v_n > 0 THEN\n    INSERT INTO public.cash_cluster_events (game_id, kind, payload)\n    VALUES (g.id, 'ruleset_applied',\n            jsonb_build_object('tables', v_n, 'vpip_floor', v_vpip, 'vpip_window', v_vpip_window,\n                               'ante', v_ante, 'bombs', v_bomb_on, 'bomb_trigger', v_trigger_mode,\n                               'rit', v_rit_mode, 'kill', v_kill_mode));\n  END IF;\n  RETURN v_n;\nEND;\n$function$\n"
+    },
+    {
+      "name": "fn_cash_cluster_open_table",
+      "body_md5": "f71492fd3764503b0ccf1dc1deab96be",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_cash_cluster_open_table(p_game_id uuid, p_role text, p_main_index integer, p_lifecycle text DEFAULT 'opening'::text, p_created_by uuid DEFAULT NULL::uuid)\n RETURNS uuid\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  g record; s jsonb; v_opts jsonb;\n  v_ante text; v_ante_chips numeric; v_vpip integer; v_vpip_window integer;\n  v_bomb_on boolean; v_bomb_trigger text; v_bomb_ante integer; v_bomb_boards integer;\n  v_min_bb integer; v_max_bb integer; v_name text; v_table_id uuid; v_n integer;\n  v_kill_mode text; v_kill_bb smallint;\nBEGIN\n  SELECT * INTO g FROM public.cash_games WHERE id = p_game_id FOR SHARE;\n  IF NOT FOUND THEN RAISE EXCEPTION 'GAME_NOT_FOUND: %', p_game_id; END IF;\n  IF p_role NOT IN ('main', 'feeder') THEN RAISE EXCEPTION 'ROLE_INVALID: %', p_role; END IF;\n  IF p_role = 'main' AND (p_main_index IS NULL OR p_main_index < 1) THEN\n    RAISE EXCEPTION 'MAIN_INDEX_INVALID: %', p_main_index;\n  END IF;\n  IF p_lifecycle NOT IN ('opening', 'live') THEN RAISE EXCEPTION 'LIFECYCLE_INVALID: %', p_lifecycle; END IF;\n\n  s := g.ruleset_snapshot;\n  v_opts := coalesce(s->'options', '{}'::jsonb);\n  v_ante := coalesce(s->>'regular_ante', 'none');\n  v_ante_chips := CASE v_ante WHEN 'sb' THEN g.sb WHEN 'bb' THEN g.bb ELSE 0 END;\n  v_vpip := coalesce((s->>'vpip_floor')::integer, 0);\n  v_vpip_window := coalesce((s->>'vpip_window')::integer, 10);\n  v_bomb_on := coalesce((s->'bombs'->>'enabled')::boolean, false);\n  v_bomb_trigger := s->'bombs'->>'trigger';\n  v_bomb_ante := (s->'bombs'->>'ante_bb')::integer;\n  v_bomb_boards := (s->'bombs'->>'boards')::integer;\n  v_min_bb := coalesce((s->>'min_buyin_bb')::integer, 40);\n  v_max_bb := coalesce((s->>'max_buyin_bb')::integer, 200);\n  -- KILL POTS (kill-v1, 20260924034010). The game's snapshot carries\n  -- {\"kill\":{\"mode\",\"threshold_bb\"}}; fn_cash_apply_ruleset projects the\n  -- same two values identically. 'off' whenever the kill would be refused\n  -- at this table, so opening a table never fails on a kill setting.\n  v_kill_bb := CASE WHEN (s->'kill'->>'threshold_bb') IN ('8','10','12','15')\n                    THEN (s->'kill'->>'threshold_bb')::smallint ELSE 10 END;\n  v_kill_mode := lower(coalesce(s->'kill'->>'mode', 'off'));\n  IF v_kill_mode NOT IN ('half', 'full') THEN\n    v_kill_mode := 'off';\n  ELSIF public.fn_kill_pot_configuration_refusal(v_kill_mode, g.variant, 'cash', NULL, v_bomb_on, g.bb, g.club_id) IS NOT NULL THEN\n    v_kill_mode := 'off';\n  ELSIF NOT public.fn_capability_available('cash.fixed_limit.kill_pots') THEN\n    v_kill_mode := 'off';\n  END IF;\n\n  -- \"NLH 1/2 Classic\" for Main 1, \"NLH 1/2 Classic Main 2\", \"... Feeder\".\n  -- LIVE tables only. R3 reopens a closed cluster's one table with the\n  -- closed row still present, so an all-time count made a reopened lone\n  -- feeder \"<game> Feeder\" and the lone-feeder guard then stopped the ROLES\n  -- step ever renaming it (2026-09-21 remediation).\n  SELECT count(*) INTO v_n FROM public.tables WHERE cluster_id = p_game_id\n     AND lifecycle <> 'closed' AND coalesce(is_deleted, false) = false;\n  v_name := CASE\n    WHEN p_role = 'main' AND p_main_index = 1 THEN g.name\n    WHEN p_role = 'main' THEN left(g.name, 50) || ' Main ' || p_main_index\n    -- the cluster's first table stands for the game, whatever its role\n    WHEN v_n = 0 THEN g.name\n    ELSE left(g.name, 50) || ' Feeder' END;\n\n  INSERT INTO public.tables (\n    club_id, union_id, name, game_type, game_variant, game_mode,\n    small_blind, big_blind, stakes,\n    max_players, min_buy_in, max_buy_in,\n    ante_enabled, ante, ante_bb, big_blind_ante_enabled,\n    nit_game, career_percent_min, maintain_percent_min, maintain_hands,\n    bomb_pot_enabled, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_frequency,\n    bomb_pot_ante_multiplier, bomb_pot_board_count, bomb_pot_double_board, bomb_pot_min_players,\n    straddle_enabled, auto_utg_straddle, voluntary_straddle,\n    run_it_mode, run_it_twice, allow_run_it_twice, run_it_twice_enabled,\n    rake_percent, rake_cap_bb,\n    is_private, is_vip_only, is_anonymous, ban_chat, insurance_enabled,\n    seven_deuce_enabled, seven_deuce_amount,\n    action_time_seconds, auto_start_players,\n    auto_extension, auto_restart, auto_create_table,\n    status, current_players, created_by,\n    cluster_id, role, main_index, lifecycle, opened_at, live_at,\n    kill_mode, kill_threshold_bb\n  ) VALUES (\n    g.club_id, g.union_id, v_name, 'cash', g.variant, 'regular',\n    g.sb, g.bb, public.fn_cash_stakes_label(g.sb, g.bb, g.variant),\n    g.handedness, round(g.bb * v_min_bb, 2), round(g.bb * v_max_bb, 2),\n    -- BIG BLIND ANTE (2026-09-05): 'bb' is the format, not just the size -\n    -- the big blind posts one ante for the table. 'sb' is the classic ante,\n    -- a small blind from every seat.\n    v_ante_chips > 0, v_ante_chips, CASE WHEN v_ante_chips > 0 THEN round(v_ante_chips / g.bb, 4) ELSE 0 END,\n    (v_ante = 'bb'),\n    v_vpip > 0, 0, v_vpip, v_vpip_window,\n    v_bomb_on,\n    CASE WHEN v_bomb_on AND v_bomb_trigger = 'timed_15m' THEN 'timed'\n         WHEN v_bomb_on AND v_bomb_trigger = 'every_orbit' THEN 'once_per_orbit'\n         ELSE 'every_n_hands' END,\n    CASE WHEN v_bomb_on AND v_bomb_trigger = 'timed_15m' THEN 900 ELSE NULL END,\n    0,\n    coalesce(v_bomb_ante, 2), coalesce(v_bomb_boards, 1), coalesce(v_bomb_boards, 1) >= 2, 2,\n    false, false, false,\n    'player_choice', true, true, true,\n    -1, -1,\n    coalesce((v_opts->>'is_private')::boolean, false), coalesce((v_opts->>'is_vip_only')::boolean, false),\n    coalesce((v_opts->>'is_anonymous')::boolean, false), coalesce((v_opts->>'ban_chat')::boolean, false),\n    coalesce((v_opts->>'insurance_enabled')::boolean, false),\n    coalesce((v_opts->>'seven_deuce_enabled')::boolean, false),\n    CASE WHEN coalesce((v_opts->>'seven_deuce_enabled')::boolean, false) THEN 2 ELSE 0 END,\n    LEAST(120, GREATEST(10, coalesce((v_opts->>'action_time_seconds')::integer, 15))), 2,\n    -- A cluster table's life is the controller's (Slice 6). A manual (R9)\n    -- table's life is the host's. Neither uses the lifecycle-pass flags.\n    false, false, false,\n    'waiting', 0, coalesce(p_created_by, g.created_by),\n    p_game_id, p_role, CASE WHEN p_role = 'main' THEN p_main_index END, p_lifecycle,\n    clock_timestamp(), CASE WHEN p_lifecycle = 'live' THEN clock_timestamp() END,\n    v_kill_mode, v_kill_bb\n  ) RETURNING id INTO v_table_id;\n\n  -- BORN HALTED IN A CLUSTER THAT IS NOT DEALING CASH (2026-09-26).\n  IF g.cluster_mode IS DISTINCT FROM 'must_move' THEN\n    UPDATE public.tables t\n       SET dealing_halted_at = clock_timestamp(),\n           dealing_halted_reason = CASE WHEN g.cluster_mode = 'pending_on'\n                                        THEN 'lightning_pending_on' ELSE 'lightning' END\n     WHERE t.id = v_table_id;\n  END IF;\n\n  INSERT INTO public.cash_cluster_events (game_id, table_id, kind, payload)\n  VALUES (p_game_id, v_table_id, CASE WHEN p_role = 'feeder' THEN 'feeder_opened' ELSE 'main_opened' END,\n          jsonb_build_object('role', p_role, 'main_index', p_main_index, 'lifecycle', p_lifecycle, 'name', v_name));\n  RETURN v_table_id;\nEND;\n$function$\n"
+    },
+    {
+      "name": "fn_cash_seat_move_execute",
+      "body_md5": "63336c79a1784259f84d43646d9b6808",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_cash_seat_move_execute(p_move_id uuid)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\n SET statement_timeout TO '30s'\nAS $function$\nDECLARE\n initial public.cash_seat_moves%ROWTYPE; partner_initial public.cash_seat_moves%ROWTYPE;\n m public.cash_seat_moves%ROWTYPE; pm public.cash_seat_moves%ROWTYPE;\n source_row public.table_seats%ROWTYPE; partner_source public.table_seats%ROWTYPE;\n destination public.table_seats%ROWTYPE; partner_destination public.table_seats%ROWTYPE;\n outcome jsonb; partner_outcome jsonb; previous jsonb; actor uuid;\nBEGIN\n IF NOT coalesce(public.fn_caller_is_engine(),false) THEN\n  RAISE EXCEPTION 'Engine authority required' USING ERRCODE='42501';\n END IF;\n SELECT receipt INTO previous FROM public.cash_seat_move_receipts WHERE move_id=p_move_id;\n IF FOUND THEN RETURN previous; END IF;\n PERFORM pg_advisory_xact_lock_shared(530090,1);\n IF public.fn_entry_purchases_frozen() OR public.fn_platform_frozen() THEN\n  RETURN jsonb_build_object('ok',false,'reason','platform_frozen');\n END IF;\n SELECT * INTO initial FROM public.cash_seat_moves WHERE id=p_move_id;\n IF NOT FOUND THEN RETURN jsonb_build_object('ok',false,'reason','not_found'); END IF;\n IF initial.swap_move_id IS NOT NULL THEN\n  SELECT * INTO partner_initial FROM public.cash_seat_moves WHERE id=initial.swap_move_id;\n END IF;\n -- Same user lock as cashout/buy-in; both swap users are ordered before\n -- game, table, move and seat locks. The planner never acquires user locks.\n FOR actor IN SELECT id FROM (VALUES(initial.player_id),(partner_initial.player_id)) v(id)\n   WHERE id IS NOT NULL GROUP BY id ORDER BY id LOOP\n  PERFORM pg_advisory_xact_lock(hashtextextended('table_cap:'||actor::text,0));\n END LOOP;\n PERFORM 1 FROM public.cash_games\n  WHERE id IN(initial.game_id,partner_initial.game_id) ORDER BY id FOR UPDATE;\n PERFORM 1 FROM public.tables\n  WHERE id IN(initial.from_table_id,initial.to_table_id,partner_initial.from_table_id,partner_initial.to_table_id)\n  ORDER BY id FOR UPDATE;\n PERFORM 1 FROM public.cash_seat_moves\n  WHERE id IN(initial.id,partner_initial.id) ORDER BY id FOR UPDATE;\n SELECT receipt INTO previous FROM public.cash_seat_move_receipts WHERE move_id=p_move_id;\n IF FOUND THEN RETURN previous; END IF;\n SELECT * INTO m FROM public.cash_seat_moves WHERE id=p_move_id;\n IF NOT FOUND THEN RETURN jsonb_build_object('ok',false,'reason','not_found'); END IF;\n IF m.swap_move_id IS DISTINCT FROM initial.swap_move_id THEN\n  RAISE EXCEPTION 'SEAT_MOVE_PARTNER_CHANGED' USING ERRCODE='55000';\n END IF;\n IF m.state<>'pending' THEN RETURN jsonb_build_object('ok',false,'reason',m.state); END IF;\n IF m.swap_move_id IS NOT NULL THEN\n  SELECT * INTO pm FROM public.cash_seat_moves WHERE id=m.swap_move_id;\n  IF NOT FOUND OR pm.swap_move_id IS DISTINCT FROM m.id OR pm.game_id<>m.game_id\n    OR pm.from_table_id<>m.to_table_id OR pm.to_table_id<>m.from_table_id\n    OR pm.player_id=m.player_id THEN\n   RAISE EXCEPTION 'SEAT_SWAP_SCOPE_MISMATCH' USING ERRCODE='23514';\n  END IF;\n END IF;\n SELECT * INTO source_row FROM public.table_seats\n  WHERE occupancy_id=m.source_occupancy_id AND table_id=m.from_table_id AND user_id=m.player_id\n    AND seat_number=m.source_seat_number AND left_at IS NULL FOR UPDATE;\n IF NOT FOUND THEN\n  UPDATE public.cash_seat_moves SET state='cancelled',note='original_occupancy_gone'\n   WHERE id IN(m.id,pm.id) AND state='pending';\n  RETURN jsonb_build_object('ok',false,'reason','original_occupancy_gone');\n END IF;\n IF pm.id IS NOT NULL THEN\n  SELECT * INTO partner_source FROM public.table_seats\n   WHERE occupancy_id=pm.source_occupancy_id AND table_id=pm.from_table_id AND user_id=pm.player_id\n    AND seat_number=pm.source_seat_number AND left_at IS NULL FOR UPDATE;\n  IF NOT FOUND THEN\n   UPDATE public.cash_seat_moves SET state='cancelled',note='original_occupancy_gone'\n    WHERE id IN(m.id,pm.id) AND state='pending';\n   RETURN jsonb_build_object('ok',false,'reason','original_occupancy_gone');\n  END IF;\n END IF;\n  -- 2026-09-09: a table that closed after the move was planned is not a\n -- scope error, it is a move that can no longer happen. Cancel it like a\n -- source occupancy that has gone, and tell the engine why.\n IF EXISTS(SELECT 1 FROM public.tables\n    WHERE id IN(m.from_table_id,m.to_table_id,pm.from_table_id,pm.to_table_id)\n      AND (status='closed' OR seat_admission_key='closed')) THEN\n  UPDATE public.cash_seat_moves SET state='cancelled',note='table_closed'\n   WHERE id IN(m.id,pm.id) AND state='pending';\n  RETURN jsonb_build_object('ok',false,'reason','table_closed','move_id',m.id,\n    'player_id',m.player_id,'from_table_id',m.from_table_id,'to_table_id',m.to_table_id,\n    'source_occupancy_id',m.source_occupancy_id,'source_seat_number',m.source_seat_number);\n END IF;\n\n-- A legacy empty cash destination initializes its derived key inside the\n -- native admission trigger. That trigger still rejects every terminal parent.\n IF NOT EXISTS(SELECT 1 FROM public.tables WHERE id=m.from_table_id AND cluster_id=m.game_id AND tournament_id IS NULL\n    AND coalesce(seat_admission_key,'cash')='cash')\n  OR NOT EXISTS(SELECT 1 FROM public.tables WHERE id=m.to_table_id AND cluster_id=m.game_id AND tournament_id IS NULL\n    AND coalesce(seat_admission_key,'cash')='cash') THEN\n  RAISE EXCEPTION 'SEAT_MOVE_GAME_SCOPE_MISMATCH' USING ERRCODE='23514';\n END IF;\n IF pm.id IS NULL THEN\n  outcome:=public.fn_cash_seat_move_execute_before_maintenance_gate(m.id);\n ELSE\n  outcome:=public.fn_cash_seat_swap_execute_before_maintenance_gate(m.id);\n END IF;\n IF outcome->>'ok' IS DISTINCT FROM 'true' THEN\n  RETURN outcome||jsonb_build_object('move_id',m.id,'player_id',m.player_id,\n    'from_table_id',m.from_table_id,'source_occupancy_id',m.source_occupancy_id,\n    'source_seat_number',m.source_seat_number);\n END IF;\n SELECT * INTO destination FROM public.table_seats\n  WHERE user_id=m.player_id AND table_id=m.to_table_id\n    AND seat_number=(outcome->>'to_seat_number')::integer AND left_at IS NULL;\n IF NOT FOUND OR destination.stack IS DISTINCT FROM source_row.stack\n   OR destination.occupancy_id=source_row.occupancy_id\n   OR (outcome->>'stack')::numeric IS DISTINCT FROM source_row.stack\n   OR EXISTS(SELECT 1 FROM public.table_seats WHERE occupancy_id=source_row.occupancy_id AND left_at IS NULL) THEN\n  RAISE EXCEPTION 'SEAT_MOVE_CONSERVATION_FAILED' USING ERRCODE='23514';\n END IF;\n outcome:=outcome||jsonb_build_object('move_id',m.id,'player_id',m.player_id,\n  'from_table_id',m.from_table_id,'source_seat_number',m.source_seat_number,\n  'source_occupancy_id',m.source_occupancy_id,'destination_occupancy_id',destination.occupancy_id,\n  'idempotency_key','seatmove:'||m.id::text,'reason',m.reason);\n IF pm.id IS NOT NULL THEN\n  SELECT * INTO partner_destination FROM public.table_seats\n   WHERE user_id=pm.player_id AND table_id=pm.to_table_id AND left_at IS NULL;\n  IF NOT FOUND OR partner_destination.stack IS DISTINCT FROM partner_source.stack\n    OR partner_destination.occupancy_id=partner_source.occupancy_id\n    OR EXISTS(SELECT 1 FROM public.table_seats WHERE occupancy_id=partner_source.occupancy_id AND left_at IS NULL) THEN\n   RAISE EXCEPTION 'SEAT_SWAP_CONSERVATION_FAILED' USING ERRCODE='23514';\n  END IF;\n  outcome:=jsonb_set(outcome,'{partner}',coalesce(outcome->'partner','{}'::jsonb)||\n    jsonb_build_object('move_id',pm.id,'source_occupancy_id',pm.source_occupancy_id,\n      'source_seat_number',pm.source_seat_number,'destination_occupancy_id',partner_destination.occupancy_id));\n  partner_outcome:=jsonb_build_object('ok',true,'swap',true,'move_id',pm.id,'player_id',pm.player_id,\n    'from_table_id',pm.from_table_id,'source_seat_number',pm.source_seat_number,\n    'source_occupancy_id',pm.source_occupancy_id,'destination_occupancy_id',partner_destination.occupancy_id,\n    'to_table_id',pm.to_table_id,'to_seat_number',partner_destination.seat_number,\n    'stack',partner_source.stack,'reason',pm.reason,'idempotency_key','seatmove:'||pm.id::text,\n    'partner',jsonb_build_object('move_id',m.id,'player_id',m.player_id,\n      'from_table_id',m.from_table_id,'to_table_id',m.to_table_id,'to_seat_number',destination.seat_number,\n      'stack',source_row.stack,'source_occupancy_id',m.source_occupancy_id,\n      'source_seat_number',m.source_seat_number,'destination_occupancy_id',destination.occupancy_id));\n  INSERT INTO public.cash_seat_move_receipts(move_id,player_id,game_id,club_id,from_table_id,\n    from_seat_number,source_occupancy_id,to_table_id,to_seat_number,destination_occupancy_id,amount,receipt)\n   VALUES(pm.id,pm.player_id,pm.game_id,partner_source.club_id,pm.from_table_id,\n    pm.source_seat_number,pm.source_occupancy_id,pm.to_table_id,partner_destination.seat_number,\n    partner_destination.occupancy_id,partner_source.stack,partner_outcome);\n END IF;\n INSERT INTO public.cash_seat_move_receipts(move_id,player_id,game_id,club_id,from_table_id,\n    from_seat_number,source_occupancy_id,to_table_id,to_seat_number,destination_occupancy_id,amount,receipt)\n  VALUES(m.id,m.player_id,m.game_id,source_row.club_id,m.from_table_id,\n    m.source_seat_number,m.source_occupancy_id,m.to_table_id,destination.seat_number,\n    destination.occupancy_id,source_row.stack,outcome);\n RETURN outcome;\nEND;\n$function$\n"
+    },
+    {
+      "name": "fn_cash_seat_move_execute_before_maintenance_gate",
+      "body_md5": "9c87bb74b8589bf47f6ecb32d573fa4e",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_cash_seat_move_execute_before_maintenance_gate(p_move_id uuid)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  m record; src record; dst record; v_seat integer; v_new_id uuid; v_stack numeric;\n  v_hold text; v_agreed boolean;\nBEGIN\n  IF public.fn_platform_frozen() THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'frozen');\n  END IF;\n  SELECT * INTO m FROM public.cash_seat_moves WHERE id = p_move_id FOR UPDATE;\n  IF NOT FOUND THEN RETURN jsonb_build_object('ok', false, 'reason', 'not_found'); END IF;\n  IF m.state <> 'pending' THEN RETURN jsonb_build_object('ok', false, 'reason', m.state); END IF;\n  IF m.expires_at <= clock_timestamp() THEN\n    -- EVERY EXPIRY SAYS WHY (2026-09-09). This one is not \"the engine never\n    -- came\" - it came, and the deadline passed between the decision and this\n    -- row. Left unnamed it was indistinguishable from every other expiry.\n    UPDATE public.cash_seat_moves\n       SET state = 'expired', note = 'expired_before_the_executor_reached_it'\n     WHERE id = m.id;\n    RETURN jsonb_build_object('ok', false, 'reason', 'expired');\n  END IF;\n  IF m.swap_move_id IS NOT NULL THEN\n    RETURN public.fn_cash_seat_swap_execute(m.id);\n  END IF;\n\n  SELECT * INTO src FROM public.table_seats\n   WHERE table_id = m.from_table_id AND user_id = m.player_id AND left_at IS NULL\n   FOR UPDATE;\n  IF NOT FOUND THEN\n    UPDATE public.cash_seat_moves SET state = 'cancelled', note = 'player_not_seated' WHERE id = m.id;\n    RETURN jsonb_build_object('ok', false, 'reason', 'player_not_seated');\n  END IF;\n\n  IF coalesce(src.stack, 0) <= 0 THEN\n    UPDATE public.cash_seat_moves SET state = 'cancelled', note = 'busted' WHERE id = m.id;\n    RETURN jsonb_build_object('ok', false, 'reason', 'busted');\n  END IF;\n\n  SELECT * INTO dst FROM public.tables WHERE id = m.to_table_id FOR UPDATE;\n  IF NOT FOUND OR dst.status NOT IN ('waiting', 'running', 'active') OR dst.lifecycle IN ('breaking', 'closed') THEN\n    UPDATE public.cash_seat_moves SET state = 'cancelled', note = 'destination_unavailable' WHERE id = m.id;\n    RETURN jsonb_build_object('ok', false, 'reason', 'destination_unavailable');\n  END IF;\n\n  SELECT gs INTO v_seat FROM generate_series(1, coalesce(dst.max_players, 9)) gs\n   WHERE NOT EXISTS (SELECT 1 FROM public.table_seats ts\n                      WHERE ts.table_id = dst.id AND ts.seat_number = gs AND ts.left_at IS NULL)\n   ORDER BY gs LIMIT 1;\n  IF v_seat IS NULL THEN\n    UPDATE public.cash_seat_moves SET state = 'cancelled', note = 'destination_full' WHERE id = m.id;\n    RETURN jsonb_build_object('ok', false, 'reason', 'destination_full');\n  END IF;\n\n  v_stack := src.stack;\n\n  v_hold := CASE WHEN m.reason = 'seat_change' THEN 'waiting' ELSE 'moved' END;\n  v_agreed := (m.reason = 'seat_change');\n\n  PERFORM set_config('app.cash_seat_move', 'on', true);\n\n  -- PRESENCE FOLLOWS THE PLAYER (2026-09-05). is_sitting_out / sit_out_at used\n  -- to be written false/NULL here, so a player sitting out at the feeder was\n  -- dealt into the first hand at the new table. Carried now, with the ORIGINAL\n  -- sit_out_at, so the 5-minute eviction clock is the same clock.\n  BEGIN\n    UPDATE public.table_seats\n       SET user_id = src.user_id, member_id = src.member_id, stack = v_stack,\n           is_sitting_out = coalesce(src.is_sitting_out, false), sit_out_at = src.sit_out_at,\n           is_away = coalesce(src.is_away, false),\n           joined_at = src.joined_at,\n           horse_id = src.horse_id, status = 'active', leave_pending = false,\n           auto_rebuy = src.auto_rebuy, time_bank_remaining = src.time_bank_remaining,\n           time_bank_uses_remaining = src.time_bank_uses_remaining, club_id = src.club_id,\n           entry_hold = v_hold, entry_post_agreed = v_agreed, left_at = NULL\n     WHERE table_id = dst.id AND seat_number = v_seat AND left_at IS NOT NULL\n     RETURNING id INTO v_new_id;\n    IF v_new_id IS NULL THEN\n      INSERT INTO public.table_seats\n        (table_id, seat_number, user_id, member_id, stack, is_sitting_out, is_away, sit_out_at, joined_at,\n         horse_id, status, leave_pending, auto_rebuy, time_bank_remaining, time_bank_uses_remaining,\n         club_id, entry_hold, entry_post_agreed)\n      VALUES\n        (dst.id, v_seat, src.user_id, src.member_id, v_stack,\n         coalesce(src.is_sitting_out, false), coalesce(src.is_away, false), src.sit_out_at, src.joined_at,\n         src.horse_id, 'active', false, src.auto_rebuy, src.time_bank_remaining, src.time_bank_uses_remaining,\n         src.club_id, v_hold, v_agreed)\n      RETURNING id INTO v_new_id;\n    END IF;\n    UPDATE public.table_seats SET stack = 0 WHERE id = src.id;\n    UPDATE public.table_seats SET left_at = clock_timestamp(), leave_pending = false, status = 'left'\n     WHERE id = src.id;\n  EXCEPTION WHEN OTHERS THEN\n    PERFORM set_config('app.cash_seat_move', '', true);\n    -- A TRANSIENT FAILURE IS NOT A REFUSAL (2026-09-07). 40P01 deadlock,\n    -- 55P03 lock timeout and 40001 serialization all mean \"try again\", and\n    -- cancelling for them also puts the player under the planner's 60 second\n    -- back-off. The move stays pending; the next hand boundary retries it,\n    -- bounded by its own expires_at.\n    IF SQLSTATE IN ('40P01', '55P03', '40001') THEN\n      UPDATE public.cash_seat_moves\n         SET note = left('retry after ' || SQLSTATE || ': ' || SQLERRM, 200)\n       WHERE id = m.id;\n      RETURN jsonb_build_object('ok', false, 'reason', 'transient',\n                                'retry', true, 'detail', left(SQLERRM, 200));\n    END IF;\n    UPDATE public.cash_seat_moves SET state = 'cancelled', note = left(SQLERRM, 200) WHERE id = m.id;\n    RETURN jsonb_build_object('ok', false, 'reason', 'destination_refused', 'detail', left(SQLERRM, 200));\n  END;\n  PERFORM set_config('app.cash_seat_move', '', true);\n\n  /* A RE-POINT IS NOT ALLOWED TO COLLIDE (2026-09-10). This UPDATE moves\n     the open session from the source table to the destination. If the\n     player already holds an OPEN session on the destination - a leftover\n     from an earlier stay there that was never closed - the re-point makes\n     two rows with (player_id, 'table', dst) both closed_at IS NULL and\n     violates cash_player_session_one_open. The whole post-hand leave_pending\n     step then throws and the player does not leave. Measured 2026-09-10:\n     1,091 of 4,751 seat moves in six hours had the destination already\n     carrying an open session, and 34 hands in 83 minutes failed this way.\n     The SOURCE session is the live one - it carries the stay clock for the\n     seat being moved - so the leftover is closed and the live one re-points. */\n  UPDATE public.cash_player_session\n     SET closed_at = clock_timestamp(), closed_reason = 'superseded_by_move'\n   WHERE player_id = m.player_id AND scope_type = 'table' AND scope_id = dst.id AND closed_at IS NULL;\n\n  UPDATE public.cash_player_session\n     SET scope_id = dst.id, table_id = dst.id\n   WHERE player_id = m.player_id AND scope_type = 'table' AND scope_id = m.from_table_id AND closed_at IS NULL;\n\n  UPDATE public.tables t SET current_players =\n    (SELECT count(*) FROM public.table_seats ts WHERE ts.table_id = t.id AND ts.left_at IS NULL)\n   WHERE t.id IN (m.from_table_id, m.to_table_id);\n  UPDATE public.cash_seat_moves\n     SET state = 'done', executed_at = clock_timestamp(), to_seat_number = v_seat\n   WHERE id = m.id;\n  INSERT INTO public.cash_cluster_events (game_id, table_id, kind, payload)\n  VALUES (m.game_id, m.to_table_id, 'seat_moved',\n          jsonb_build_object('player_id', m.player_id, 'from_table_id', m.from_table_id,\n                             'to_seat', v_seat, 'stack', v_stack, 'reason', m.reason));\n\n  RETURN jsonb_build_object('ok', true, 'to_table_id', m.to_table_id, 'to_seat_number', v_seat, 'stack', v_stack,\n                            'reason', m.reason);\nEND;\n$function$\n"
+    },
+    {
+      "name": "fn_cash_seat_swap_execute",
+      "body_md5": "09991eef2a1baa4597a211e035b1f8e9",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_cash_seat_swap_execute(p_move_id uuid)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\n SET statement_timeout TO '30s'\nAS $function$\nBEGIN\n RETURN public.fn_cash_seat_move_execute(p_move_id);\nEND;\n$function$\n"
+    },
+    {
+      "name": "fn_cash_seat_swap_execute_before_maintenance_gate",
+      "body_md5": "85caa2ab67fd4ad8631b3f16c4fb6310",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_cash_seat_swap_execute_before_maintenance_gate(p_move_id uuid)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  m record; pm record; a record; b record; ta record; tb record;\n  v_stack_a numeric; v_stack_b numeric; v_now timestamptz := clock_timestamp();\nBEGIN\n  IF public.fn_platform_frozen() THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'frozen');\n  END IF;\n  PERFORM 1 FROM public.cash_seat_moves\n   WHERE id IN (p_move_id, (SELECT swap_move_id FROM public.cash_seat_moves WHERE id = p_move_id))\n   ORDER BY id FOR UPDATE;\n  SELECT * INTO m FROM public.cash_seat_moves WHERE id = p_move_id;\n  IF NOT FOUND THEN RETURN jsonb_build_object('ok', false, 'reason', 'not_found'); END IF;\n  IF m.state <> 'pending' THEN RETURN jsonb_build_object('ok', false, 'reason', m.state); END IF;\n  SELECT * INTO pm FROM public.cash_seat_moves WHERE id = m.swap_move_id;\n  IF NOT FOUND OR pm.state <> 'pending' OR pm.expires_at <= v_now OR m.expires_at <= v_now THEN\n    -- EACH SIDE NAMES ITS OWN CAUSE (2026-09-09). This used to write\n    -- 'swap_partner_gone' on both rows whatever had actually happened, so a\n    -- move that timed out on its own deadline blamed the other player, and a\n    -- partner that was still pending and still inside its deadline was\n    -- recorded as `expired`. A count of expiries was not a count of expiries.\n    UPDATE public.cash_seat_moves SET state = CASE WHEN m.expires_at <= v_now THEN 'expired' ELSE 'cancelled' END,\n           note = CASE WHEN m.expires_at <= v_now THEN 'own_ttl_expired'\n                       WHEN pm.id IS NULL THEN 'swap_partner_gone'\n                       WHEN pm.expires_at <= v_now THEN 'swap_partner_expired'\n                       ELSE 'swap_partner_gone' END\n     WHERE id = m.id;\n    IF pm.id IS NOT NULL AND pm.state = 'pending' THEN\n      -- The partner is alive: it did not expire, this side did. It is\n      -- CANCELLED, and the note says which.\n      UPDATE public.cash_seat_moves\n         SET state = CASE WHEN pm.expires_at <= v_now THEN 'expired' ELSE 'cancelled' END,\n             note = CASE WHEN pm.expires_at <= v_now THEN 'own_ttl_expired' ELSE 'swap_partner_expired' END\n       WHERE id = pm.id;\n    END IF;\n    RETURN jsonb_build_object('ok', false, 'reason', 'swap_partner_gone');\n  END IF;\n\n  SELECT * INTO a FROM public.table_seats\n   WHERE table_id = m.from_table_id AND user_id = m.player_id AND left_at IS NULL FOR UPDATE;\n  SELECT * INTO b FROM public.table_seats\n   WHERE table_id = pm.from_table_id AND user_id = pm.player_id AND left_at IS NULL FOR UPDATE;\n  IF a.id IS NULL OR b.id IS NULL OR coalesce(a.stack, 0) <= 0 OR coalesce(b.stack, 0) <= 0 THEN\n    UPDATE public.cash_seat_moves SET state = 'cancelled',\n           note = CASE WHEN a.id IS NULL THEN 'player_not_seated' WHEN coalesce(a.stack, 0) <= 0 THEN 'busted' ELSE 'swap_partner_gone' END\n     WHERE id = m.id;\n    UPDATE public.cash_seat_moves SET state = 'cancelled',\n           note = CASE WHEN b.id IS NULL THEN 'player_not_seated' WHEN coalesce(b.stack, 0) <= 0 THEN 'busted' ELSE 'swap_partner_gone' END\n     WHERE id = pm.id;\n    RETURN jsonb_build_object('ok', false, 'reason', 'swap_cancelled');\n  END IF;\n  SELECT * INTO ta FROM public.tables WHERE id = m.to_table_id;\n  SELECT * INTO tb FROM public.tables WHERE id = pm.to_table_id;\n  -- BOTH DESTINATIONS MUST EXIST AND BE OPEN BY STATUS AS WELL (F4, 2026-09-10).\n  -- On a record that was never found `ta.lifecycle IN (...)` is NULL, so a\n  -- destination that vanished used to pass this test. The single-move gate\n  -- has always read status too; this is the same predicate.\n  IF ta.id IS NULL OR tb.id IS NULL\n     OR ta.lifecycle IN ('breaking', 'closed') OR tb.lifecycle IN ('breaking', 'closed')\n     OR ta.status NOT IN ('waiting', 'running', 'active')\n     OR tb.status NOT IN ('waiting', 'running', 'active') THEN\n    UPDATE public.cash_seat_moves SET state = 'cancelled', note = 'destination_unavailable' WHERE id IN (m.id, pm.id);\n    RETURN jsonb_build_object('ok', false, 'reason', 'destination_unavailable');\n  END IF;\n\n  IF m.ready_at IS NULL THEN\n    UPDATE public.cash_seat_moves SET ready_at = v_now WHERE id = m.id;\n  END IF;\n  IF pm.ready_at IS NULL THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'waiting_partner', 'held', true,\n                              'to_table_id', m.to_table_id, 'partner_id', pm.player_id);\n  END IF;\n\n  -- Each side carries its OWN sit-out across, for the reason written on\n  -- fn_cash_seat_move_execute: neither player asked to be dealt into a hand\n  -- they had sat out of.\n  v_stack_a := a.stack; v_stack_b := b.stack;\n  PERFORM set_config('app.cash_seat_move', 'on', true);\n  BEGIN\n    UPDATE public.table_seats SET stack = 0 WHERE id IN (a.id, b.id);\n    UPDATE public.table_seats SET left_at = v_now, leave_pending = false, status = 'left' WHERE id IN (a.id, b.id);\n    UPDATE public.table_seats\n       SET user_id = a.user_id, member_id = a.member_id, stack = v_stack_a,\n           is_sitting_out = coalesce(a.is_sitting_out, false), sit_out_at = a.sit_out_at,\n           is_away = coalesce(a.is_away, false),\n           joined_at = a.joined_at, horse_id = a.horse_id, status = 'active', leave_pending = false,\n           auto_rebuy = a.auto_rebuy, time_bank_remaining = a.time_bank_remaining,\n           time_bank_uses_remaining = a.time_bank_uses_remaining, club_id = a.club_id,\n           entry_hold = 'waiting', entry_post_agreed = true, left_at = NULL\n     WHERE id = b.id;\n    UPDATE public.table_seats\n       SET user_id = b.user_id, member_id = b.member_id, stack = v_stack_b,\n           is_sitting_out = coalesce(b.is_sitting_out, false), sit_out_at = b.sit_out_at,\n           is_away = coalesce(b.is_away, false),\n           joined_at = b.joined_at, horse_id = b.horse_id, status = 'active', leave_pending = false,\n           auto_rebuy = b.auto_rebuy, time_bank_remaining = b.time_bank_remaining,\n           time_bank_uses_remaining = b.time_bank_uses_remaining, club_id = b.club_id,\n           entry_hold = 'waiting', entry_post_agreed = true, left_at = NULL\n     WHERE id = a.id;\n  EXCEPTION WHEN OTHERS THEN\n    PERFORM set_config('app.cash_seat_move', '', true);\n    UPDATE public.cash_seat_moves SET state = 'cancelled', note = left(SQLERRM, 200) WHERE id IN (m.id, pm.id);\n    RETURN jsonb_build_object('ok', false, 'reason', 'destination_refused', 'detail', left(SQLERRM, 200));\n  END;\n  PERFORM set_config('app.cash_seat_move', '', true);\n\n  /* A RE-POINT IS NOT ALLOWED TO COLLIDE (2026-09-10) - see the move path\n     for the measurement. A swap re-points BOTH players, so both need it. */\n  UPDATE public.cash_player_session\n     SET closed_at = clock_timestamp(), closed_reason = 'superseded_by_swap'\n   WHERE player_id = m.player_id AND scope_type = 'table' AND scope_id = m.to_table_id AND closed_at IS NULL;\n  UPDATE public.cash_player_session SET scope_id = m.to_table_id, table_id = m.to_table_id\n   WHERE player_id = m.player_id AND scope_type = 'table' AND scope_id = m.from_table_id AND closed_at IS NULL;\n  UPDATE public.cash_player_session\n     SET closed_at = clock_timestamp(), closed_reason = 'superseded_by_swap'\n   WHERE player_id = pm.player_id AND scope_type = 'table' AND scope_id = pm.to_table_id AND closed_at IS NULL;\n  UPDATE public.cash_player_session SET scope_id = pm.to_table_id, table_id = pm.to_table_id\n   WHERE player_id = pm.player_id AND scope_type = 'table' AND scope_id = pm.from_table_id AND closed_at IS NULL;\n\n  UPDATE public.cash_seat_moves SET state = 'done', executed_at = v_now, to_seat_number = b.seat_number WHERE id = m.id;\n  UPDATE public.cash_seat_moves SET state = 'done', executed_at = v_now, to_seat_number = a.seat_number WHERE id = pm.id;\n  INSERT INTO public.cash_cluster_events (game_id, table_id, kind, payload)\n  VALUES (m.game_id, m.to_table_id, 'seat_moved',\n          jsonb_build_object('player_id', m.player_id, 'from_table_id', m.from_table_id, 'to_seat', b.seat_number,\n                             'stack', v_stack_a, 'reason', 'seat_change', 'swap', true)),\n         (pm.game_id, pm.to_table_id, 'seat_moved',\n          jsonb_build_object('player_id', pm.player_id, 'from_table_id', pm.from_table_id, 'to_seat', a.seat_number,\n                             'stack', v_stack_b, 'reason', 'seat_change', 'swap', true));\n  RETURN jsonb_build_object('ok', true, 'swap', true, 'to_table_id', m.to_table_id, 'to_seat_number', b.seat_number,\n                            'stack', v_stack_a,\n                            'partner', jsonb_build_object('player_id', pm.player_id, 'from_table_id', pm.from_table_id,\n                                                          'to_table_id', pm.to_table_id, 'to_seat_number', a.seat_number,\n                                                          'stack', v_stack_b));\nEND;\n$function$\n"
+    },
+    {
+      "name": "fn_cash_stakes_label",
+      "body_md5": "66809bdaa52030e53e9962b7d2febbb4",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_cash_stakes_label(p_sb numeric, p_bb numeric, p_variant text DEFAULT 'nlh'::text)\n RETURNS text\n LANGUAGE sql\n IMMUTABLE\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n  SELECT CASE WHEN lower(coalesce(p_variant, 'nlh')) IN ('flh', 'flo8')\n              THEN public.fn_cash_money_text(p_bb) || '/' || public.fn_cash_money_text(p_bb * 2)\n              ELSE public.fn_cash_money_text(p_sb) || '/' || public.fn_cash_money_text(p_bb) END;\n$function$\n"
+    },
+    {
+      "name": "fn_cash_template_defaults",
+      "body_md5": "a8f4dbdccc7cd50a0b9c465d3ca649df",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_cash_template_defaults(p_template text, p_variant text)\n RETURNS jsonb\n LANGUAGE plpgsql\n IMMUTABLE\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_t text := lower(coalesce(p_template, 'classic'));\n  v_v text := lower(coalesce(p_variant, 'nlh'));\n  v_family text;\n  v_seats integer; v_seats_locked boolean; v_seat_choices integer[];\n  v_vpip integer; v_vpip_window integer;\nBEGIN\n  IF v_t NOT IN ('classic', 'action', 'madness') THEN\n    RAISE EXCEPTION 'TEMPLATE_UNKNOWN: %', p_template;\n  END IF;\n\n  v_family := CASE\n    WHEN v_v IN ('plo4','plo5','plo6','plo8','flo8') THEN 'plo'\n    WHEN v_v = 'short_deck' THEN 'shortdeck'\n    WHEN v_v = 'pineapple' THEN 'pineapple'\n    ELSE 'holdem' END;\n\n  IF v_family = 'plo' THEN\n    v_seats := 6; v_seats_locked := true; v_seat_choices := ARRAY[6];\n  ELSIF v_family = 'holdem' THEN\n    IF v_t = 'classic' THEN v_seats := 9; v_seat_choices := ARRAY[9, 6];\n    ELSE v_seats := 6; v_seat_choices := ARRAY[2,3,4,5,6,7,8,9]; END IF;\n    v_seats_locked := false;\n  ELSE\n    v_seats := 6; v_seats_locked := false; v_seat_choices := ARRAY[2,3,4,5,6,7,8];\n  END IF;\n\n  -- VPIP floor per template (percent), FLAT ACROSS FAMILIES (Dan 2026-09-05).\n  v_vpip := CASE v_t\n    WHEN 'classic' THEN 0\n    WHEN 'action'  THEN 30\n    ELSE                50 END;\n  v_vpip_window := 10;\n\n  RETURN jsonb_build_object(\n    'template', v_t,\n    'variant', v_v,\n    'family', v_family,\n    'seats', v_seats,\n    'seats_locked', v_seats_locked,\n    'seat_choices', to_jsonb(v_seat_choices),\n    'min_buyin_bb', CASE v_t WHEN 'classic' THEN 40 WHEN 'action' THEN 50 ELSE 100 END,\n    'max_buyin_bb', 200,\n    'regular_ante', CASE v_t WHEN 'classic' THEN 'none' WHEN 'action' THEN 'sb' ELSE 'bb' END,\n    'vpip_floor', v_vpip,\n    'vpip_window', v_vpip_window,\n    'bombs', jsonb_build_object(\n      'enabled', v_t <> 'classic',\n      'trigger', CASE v_t WHEN 'action' THEN 'timed_15m' WHEN 'madness' THEN 'every_orbit' ELSE NULL END,\n      'ante_bb', CASE v_t WHEN 'action' THEN 2 WHEN 'madness' THEN 3 ELSE NULL END,\n      'boards', CASE WHEN v_t = 'classic' THEN NULL ELSE 2 END),\n    'straddle', false,\n    'stay_clock_min', 10,\n    'rejoin_window_min', 120,\n    'run_it_n_times', 'opt_in',\n    'rake', 'existing'\n  );\nEND;\n$function$\n"
+    },
+    {
+      "name": "fn_poker_diamond_buyin",
+      "body_md5": "b0dc2674f5c453d5749b21953ed746ac",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_poker_diamond_buyin(p_user_id uuid, p_table_id uuid, p_seat_number integer, p_amount numeric, p_auto_rebuy boolean, p_club_id uuid, p_idempotency_key uuid)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n v_t public.tables%ROWTYPE;\n v_seat_id uuid:=gen_random_uuid();\n v_custody jsonb;\n v_taken integer;\n v_holds integer;\nBEGIN\n IF p_idempotency_key IS NULL OR p_user_id IS NULL OR p_table_id IS NULL\n    OR p_seat_number IS NULL OR p_seat_number<1 OR p_auto_rebuy IS DISTINCT FROM false\n    OR p_amount IS NULL OR p_amount NOT BETWEEN 1 AND 2147483647\n    OR p_amount<>trunc(p_amount) THEN\n   RAISE EXCEPTION 'invalid_diamond_cash_purchase' USING ERRCODE='22023';\n END IF;\n PERFORM pg_advisory_xact_lock(hashtextextended('table_cap:'||p_user_id,0));\n PERFORM pg_advisory_xact_lock(hashtextextended('table_seat:'||p_table_id,0));\n SELECT t.* INTO v_t FROM public.tables t\n   JOIN public.clubs c ON c.id=t.club_id\n   JOIN public.ca_arena_settings a ON a.id=1 AND a.club_id=c.id\n WHERE t.id=p_table_id AND c.asset='diamonds' AND c.is_platform IS TRUE\n   AND c.union_id IS NULL AND t.union_id IS NULL AND a.cash_games_enabled\n FOR UPDATE OF t;\n IF NOT FOUND THEN\n   RAISE EXCEPTION 'diamond_cash_not_open' USING ERRCODE='55000';\n END IF;\n IF NOT public.fn_poker_diamond_plain_cash_table(v_t) THEN\n   RAISE EXCEPTION 'diamond_plain_cash_table_required' USING ERRCODE='23514';\n END IF;\n -- Match the shared engine load boundary before reserving any Diamonds.\n IF EXISTS(SELECT 1 FROM (VALUES(v_t.small_blind),(v_t.big_blind),\n      (v_t.min_buy_in),(v_t.max_buy_in)) AS amount(value)\n      WHERE value IS NULL OR value NOT BETWEEN 1 AND 2147483647\n        OR value<>trunc(value))\n    OR COALESCE(v_t.ante,0) NOT BETWEEN 0 AND 9007199254740991\n    OR COALESCE(v_t.ante,0)<>trunc(COALESCE(v_t.ante,0)) THEN\n   RAISE EXCEPTION 'diamond_cash_requires_whole_amounts' USING ERRCODE='23514';\n END IF;\n IF coalesce(v_t.bomb_pot_enabled,false) THEN\n   IF coalesce(lower(v_t.bomb_pot_variant),'') NOT IN ('','nlh') THEN\n     RAISE EXCEPTION 'diamond_bomb_pot_requires_the_table_game' USING ERRCODE='23514';\n   END IF;\n   IF NOT EXISTS(SELECT 1 FROM (SELECT CASE\n          WHEN coalesce(v_t.bomb_pot_ante_fixed,0)>0 THEN v_t.bomb_pot_ante_fixed\n          ELSE v_t.big_blind*coalesce(v_t.bomb_pot_ante_multiplier,2) END AS a) x\n        WHERE x.a IS NOT NULL AND x.a BETWEEN 1 AND 2147483647 AND x.a=trunc(x.a)) THEN\n     RAISE EXCEPTION 'diamond_bomb_pot_requires_a_whole_ante' USING ERRCODE='23514';\n   END IF;\n END IF;\n IF p_club_id IS NOT NULL AND p_club_id<>v_t.club_id THEN\n   RAISE EXCEPTION 'diamond_purchase_arena_mismatch' USING ERRCODE='22023';\n END IF;\n IF v_t.max_players IS NULL OR p_seat_number>v_t.max_players THEN\n   RAISE EXCEPTION 'TABLE_SIZE: invalid Diamond seat' USING ERRCODE='22023';\n END IF;\n IF EXISTS(SELECT 1 FROM public.blacklists WHERE user_id=p_user_id\n     AND club_id=v_t.club_id AND (expires_at IS NULL OR expires_at>now())) THEN\n   RAISE EXCEPTION 'Banned from this club' USING ERRCODE='42501';\n END IF;\n IF coalesce(v_t.is_vip_only,false) AND NOT EXISTS(\n    SELECT 1 FROM public.profiles p WHERE p.id=p_user_id AND p.is_vip IS TRUE\n      AND (p.vip_expires_at IS NULL OR p.vip_expires_at>now())) THEN\n   RAISE EXCEPTION 'VIP_ONLY: this table requires VIP membership' USING ERRCODE='42501';\n END IF;\n IF EXISTS(SELECT 1 FROM public.table_seats WHERE table_id=p_table_id AND left_at IS NULL\n           AND (user_id=p_user_id OR seat_number=p_seat_number)) THEN\n   RAISE EXCEPTION 'Diamond seat or player is already seated' USING ERRCODE='23505';\n END IF;\n SELECT count(*) INTO v_taken FROM public.table_seats\n   WHERE table_id=p_table_id AND left_at IS NULL;\n SELECT count(*) INTO v_holds FROM public.table_waitlist\n   WHERE table_id=p_table_id AND status='notified' AND user_id<>p_user_id\n     AND coalesce(hold_expires_at,notified_at+interval '60 seconds')>now();\n IF v_taken>=v_t.max_players OR v_taken+v_holds>=v_t.max_players THEN\n   RAISE EXCEPTION 'SEAT_RESERVED: table capacity is taken or held' USING ERRCODE='55000';\n END IF;\n IF (SELECT count(*) FROM public.table_seats s JOIN public.tables t ON t.id=s.table_id\n     WHERE s.user_id=p_user_id AND s.left_at IS NULL AND t.tournament_id IS NULL\n       AND t.status NOT IN ('closed','deleted'))>=4 THEN\n   RAISE EXCEPTION 'TABLE_CAP_REACHED: already seated at four cash tables' USING ERRCODE='55000';\n END IF;\n\n v_custody:=public.fn_poker_diamond_reserve(p_user_id,'cash_seat',p_table_id,\n   'seat:'||v_seat_id,p_amount,p_idempotency_key);\n PERFORM set_config('app.money_path','atomic_table_buyin',true);\n DELETE FROM public.table_seats WHERE table_id=p_table_id\n   AND seat_number=p_seat_number AND left_at IS NOT NULL;\n INSERT INTO public.table_seats(id,table_id,seat_number,user_id,stack,status,auto_rebuy,club_id)\n   VALUES(v_seat_id,p_table_id,p_seat_number,p_user_id,p_amount,'active',false,v_t.club_id);\n -- The after-insert binder sees the final occupancy stamped by the shared trigger.\n IF NOT EXISTS(SELECT 1 FROM public.poker_diamond_custody c\n     JOIN public.table_seats s ON s.id=c.seat_id AND s.joined_at=c.seat_joined_at\n       AND s.occupancy_id=c.occupancy_id\n     WHERE c.id=(v_custody->>'custody_id')::uuid AND c.state='active'\n       AND s.id=v_seat_id AND s.left_at IS NULL AND s.stack=c.balance) THEN\n   RAISE EXCEPTION 'diamond_seat_custody_binding_failed' USING ERRCODE='23514';\n END IF;\n UPDATE public.table_waitlist SET status='seated'\n   WHERE table_id=p_table_id AND user_id=p_user_id AND status IN ('waiting','notified');\n UPDATE public.tables SET current_players=(\n   SELECT count(*) FROM public.table_seats WHERE table_id=p_table_id AND left_at IS NULL)\n   WHERE id=p_table_id;\nEND $function$\n"
+    },
+    {
+      "name": "fn_poker_diamond_cash_variant",
+      "body_md5": "3637c85b7a70aee1f1029e6918a50ebc",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_poker_diamond_cash_variant(p_variant text)\n RETURNS boolean\n LANGUAGE sql\n IMMUTABLE\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n  /* NULL-SAFE ON PURPOSE. `NULL IN (...)` is NULL, not false, so without the\n     first clause an unset `game_variant` made the whole plain-cash rule return\n     NULL rather than false: a row that is neither admitted nor refused. Every\n     caller today happens to treat unknown as refusal, which is exactly the\n     kind of accident that holds until one of them writes `IF fn(...) = false`.\n     An unset game is not a game. */\n  SELECT p_variant IS NOT NULL\n     AND p_variant IN ('nlh','plo4','plo5','plo6','plo8','pineapple','short_deck','flh','flo8');\n$function$\n"
+    },
+    {
+      "name": "fn_poker_diamond_open_cash_table",
+      "body_md5": "149823bcc98447338bc9a58016266503",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_poker_diamond_open_cash_table(p_name text, p_small_blind integer, p_big_blind integer, p_min_buy_in integer, p_max_buy_in integer, p_max_players integer DEFAULT 6, p_game_variant text DEFAULT 'nlh'::text)\n RETURNS uuid\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_actor uuid := auth.uid();\n  v_arena uuid;\n  v_table uuid;\nBEGIN\n  IF v_actor IS NULL THEN\n    RAISE EXCEPTION 'authentication required' USING ERRCODE = '28000';\n  END IF;\n\n  -- Platform staff only. The estate already has one answer to this question and\n  -- it is fn_is_platform_admin(); never re-derive a role list.\n  IF NOT public.fn_is_platform_admin() THEN\n    RAISE EXCEPTION 'diamond_table_staff_only' USING ERRCODE = '42501';\n  END IF;\n  IF NOT public.fn_caller_session_is_live() THEN\n    RAISE EXCEPTION 'diamond_staff_session_required' USING ERRCODE = '28000';\n  END IF;\n\n  SELECT c.id INTO v_arena\n  FROM public.clubs c\n  WHERE c.asset = 'diamonds' AND c.is_platform = true AND c.union_id IS NULL\n  LIMIT 1;\n\n  IF v_arena IS NULL THEN\n    RAISE EXCEPTION 'diamond_arena_not_found' USING ERRCODE = 'P0002';\n  END IF;\n\n  IF p_small_blind IS NULL OR p_big_blind IS NULL\n     OR p_min_buy_in IS NULL OR p_max_buy_in IS NULL\n     OR p_small_blind <= 0 OR p_big_blind <= 0\n     OR p_min_buy_in <= 0 OR p_max_buy_in <= 0\n     OR p_small_blind > p_big_blind\n     OR p_min_buy_in > p_max_buy_in\n     OR p_big_blind > p_min_buy_in\n     OR p_max_buy_in > 2147483647\n  THEN\n    RAISE EXCEPTION 'diamond_table_requires_whole_positive_stakes' USING ERRCODE = '22023';\n  END IF;\n\n  IF p_max_players IS NULL OR p_max_players < 2 OR p_max_players > 10 THEN\n    RAISE EXCEPTION 'diamond_table_requires_a_real_seat_count' USING ERRCODE = '22023';\n  END IF;\n\n  -- The door names the game, and refuses one this arena does not deal rather\n  -- than opening a table the engine would then refuse to load.\n  IF p_game_variant IS NULL OR NOT public.fn_poker_diamond_cash_variant(p_game_variant) THEN\n    RAISE EXCEPTION 'diamond_table_requires_a_supported_game' USING ERRCODE = '22023';\n  END IF;\n\n  INSERT INTO public.tables (\n    club_id, union_id, tournament_id, cluster_id,\n    name, game_type, game_variant, status, max_players,\n    small_blind, big_blind, ante,\n    min_buy_in, max_buy_in,\n    rake_percent, rake_cap_bb, bbj_percent,\n    is_template, insurance_enabled, bomb_pot_enabled,\n    run_it_twice, allow_run_it_twice, run_it_twice_enabled,\n    straddle_enabled, auto_utg_straddle, voluntary_straddle,\n    seven_deuce_enabled, nit_game, all_in_or_fold, pineapple_holdem, cap_enabled,\n    created_by\n  ) VALUES (\n    v_arena, NULL, NULL, NULL,\n    coalesce(nullif(btrim(p_name), ''), 'Diamond Cash'), 'cash', p_game_variant,\n    'waiting', p_max_players,\n    p_small_blind, p_big_blind, 0,\n    p_min_buy_in, p_max_buy_in,\n    0, 0, 0,\n    false, false, false,\n    false, false, false,\n    false, false, false,\n    false, false, false, false, false,\n    v_actor\n  )\n  RETURNING id INTO v_table;\n\n  -- The row this door just wrote must be one the engine will admit. A door\n  -- that can open a table nobody can sit at is worse than no door.\n  IF NOT EXISTS (\n    SELECT 1 FROM public.tables t\n     WHERE t.id = v_table AND public.fn_poker_diamond_plain_cash_table(t)\n  ) THEN\n    RAISE EXCEPTION 'diamond_table_would_not_be_admitted' USING ERRCODE = '23514';\n  END IF;\n\n  -- DIAMOND PHASE 10: on the record - the operator on the row (created_by,\n  -- above) and one audit row holding the table as it was opened.\n  PERFORM public.fn_poker_diamond_staff_audit('diamond.table_open', 'diamond_table', v_table, NULL,\n    (SELECT to_jsonb(t) FROM public.tables t WHERE t.id = v_table),\n    jsonb_build_object('door', 'fn_poker_diamond_open_cash_table'));\n\n  RETURN v_table;\nEND;\n$function$\n"
+    },
+    {
+      "name": "fn_poker_diamond_plain_cash_table",
+      "body_md5": "e1b9257e55c792c4a21da4b433d70840",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_poker_diamond_plain_cash_table(p_t tables)\n RETURNS boolean\n LANGUAGE sql\n IMMUTABLE\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n  SELECT NOT (\n    NOT public.fn_poker_diamond_cash_variant(p_t.game_variant)\n    OR p_t.tournament_id IS NOT NULL\n    OR p_t.cluster_id IS NOT NULL\n    OR coalesce(p_t.is_template,false)\n    OR p_t.status NOT IN ('waiting','running','playing','active')\n    OR p_t.rake_percent IS DISTINCT FROM 0 OR p_t.rake_cap_bb IS DISTINCT FROM 0\n    OR p_t.bbj_percent IS DISTINCT FROM 0\n    OR coalesce(p_t.insurance_enabled,false)\n    OR p_t.run_it_twice IS NULL OR p_t.allow_run_it_twice IS NULL\n    OR coalesce(p_t.seven_deuce_enabled,false) OR coalesce(p_t.nit_game,false)\n    OR coalesce(p_t.all_in_or_fold,false) OR coalesce(p_t.pineapple_holdem,false)\n    OR coalesce(p_t.cap_enabled,false)\n  );\n$function$\n"
+    },
+    {
+      "name": "fn_poker_diamond_seat_keeps_custody",
+      "body_md5": "19670c0a28ab630eef381da973fdf45b",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_poker_diamond_seat_keeps_custody()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE v_ids uuid[];\nBEGIN\n IF TG_OP='INSERT' THEN v_ids:=ARRAY[NEW.id];\n ELSIF TG_OP='DELETE' THEN v_ids:=ARRAY[OLD.id];\n ELSE v_ids:=ARRAY[OLD.id,NEW.id]; END IF;\n IF EXISTS (\n   SELECT 1 FROM public.poker_diamond_custody c\n   WHERE c.seat_id=ANY(v_ids) AND c.state='active' AND c.purpose='cash_seat'\n     AND NOT EXISTS(SELECT 1 FROM public.table_seats s\n       WHERE s.id=c.seat_id AND s.joined_at=c.seat_joined_at\n         AND s.occupancy_id=c.occupancy_id AND s.user_id=c.user_id\n         AND s.table_id=c.target_id AND s.club_id=c.arena_id\n         AND s.left_at IS NULL AND s.stack=c.balance)\n ) OR EXISTS(\n   SELECT 1 FROM public.table_seats s JOIN public.tables t ON t.id=s.table_id\n     JOIN public.clubs a ON a.id=t.club_id\n   WHERE s.id=ANY(v_ids) AND a.asset='diamonds' AND s.left_at IS NULL\n     AND t.tournament_id IS NULL\n     AND NOT EXISTS(SELECT 1 FROM public.poker_diamond_custody c\n       WHERE c.seat_id=s.id AND c.seat_joined_at=s.joined_at AND c.occupancy_id=s.occupancy_id\n         AND c.user_id=s.user_id AND c.target_id=s.table_id AND c.arena_id=s.club_id\n         AND c.purpose='cash_seat' AND c.state='active' AND c.balance=s.stack)\n ) THEN\n   RAISE EXCEPTION 'diamond_seat_and_custody_must_commit_together' USING ERRCODE='23514';\n END IF;\n /* A DIAMOND TOURNAMENT SEAT HOLDS AN ENTRY, NOT A BALANCE. The stack is a\n    nonredeemable play unit and bears no relation to custody, so nothing in\n    this arm compares it to anything. What must be true at every commit is that\n    the seat is covered by a live funded entry for THIS event, held against the\n    tournament and not against the seat. */\n IF EXISTS(\n   SELECT 1 FROM public.table_seats s JOIN public.tables t ON t.id=s.table_id\n     JOIN public.clubs a ON a.id=t.club_id\n   WHERE s.id=ANY(v_ids) AND a.asset='diamonds' AND s.left_at IS NULL\n     AND t.tournament_id IS NOT NULL\n     AND NOT EXISTS(SELECT 1 FROM public.poker_diamond_custody c\n       WHERE c.user_id=s.user_id AND c.target_id=t.tournament_id AND c.arena_id=s.club_id\n         AND c.purpose='tournament_entry' AND c.state='active' AND c.seat_id IS NULL)\n ) THEN\n   RAISE EXCEPTION 'A Diamond Tournament Seat Must Hold Its Funded Entry' USING ERRCODE='P0812';\n END IF;\n RETURN NULL;\nEND $function$\n"
+    },
+    {
+      "name": "fn_log_admin_action",
+      "body_md5": "9c4a0ac3378e43bcd6b7bef803be2873",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_log_admin_action(p_admin_user_id uuid, p_action text, p_target_type text DEFAULT NULL::text, p_target_id text DEFAULT NULL::text, p_details jsonb DEFAULT '{}'::jsonb, p_before_state jsonb DEFAULT NULL::jsonb, p_after_state jsonb DEFAULT NULL::jsonb, p_ip_address text DEFAULT NULL::text, p_user_agent text DEFAULT NULL::text, p_request_id text DEFAULT NULL::text)\n RETURNS uuid\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_id uuid;\n  v_role text;\nBEGIN\n  IF p_admin_user_id IS NULL THEN\n    RAISE EXCEPTION 'admin_user_id required' USING ERRCODE = 'invalid_parameter_value';\n  END IF;\n  IF p_action IS NULL OR length(trim(p_action)) = 0 THEN\n    RAISE EXCEPTION 'action required' USING ERRCODE = 'invalid_parameter_value';\n  END IF;\n\n  SELECT role INTO v_role FROM public.profiles WHERE id = p_admin_user_id;\n\n  INSERT INTO public.admin_audit_log (\n    admin_user_id, action, target_type, target_id,\n    details, before_state, after_state,\n    ip_address, user_agent, actor_role, request_id\n  ) VALUES (\n    p_admin_user_id, p_action, p_target_type, p_target_id,\n    COALESCE(p_details, '{}'::jsonb), p_before_state, p_after_state,\n    p_ip_address, p_user_agent, v_role, p_request_id\n  )\n  RETURNING id INTO v_id;\n\n  RETURN v_id;\nEND;\n$function$\n"
+    },
+    {
+      "name": "fn_poker_diamond_close_cash_table",
+      "body_md5": "a171eb372bd1dab7631126f456f657f8",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_poker_diamond_close_cash_table(p_table_id uuid)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_actor uuid := auth.uid();\n  v_t public.tables%ROWTYPE; v_row public.tables%ROWTYPE; v_audit uuid;\nBEGIN\n  IF v_actor IS NULL THEN\n    RAISE EXCEPTION 'authentication required' USING ERRCODE='28000';\n  END IF;\n  IF NOT public.fn_is_platform_admin() THEN\n    RAISE EXCEPTION 'diamond_table_staff_only' USING ERRCODE='42501';\n  END IF;\n  IF NOT public.fn_caller_session_is_live() THEN\n    RAISE EXCEPTION 'diamond_staff_session_required' USING ERRCODE='28000';\n  END IF;\n  SELECT t.* INTO v_t FROM public.tables t\n    JOIN public.clubs c ON c.id=t.club_id\n   WHERE t.id=p_table_id AND c.asset='diamonds' AND c.is_platform IS TRUE\n     AND c.union_id IS NULL AND t.union_id IS NULL AND t.tournament_id IS NULL\n   FOR UPDATE OF t;\n  IF NOT FOUND THEN\n    RAISE EXCEPTION 'diamond_table_not_found' USING ERRCODE='P0002';\n  END IF;\n  IF lower(COALESCE(v_t.status,'')) IN ('closed','completed','cancelled','finished','deleted')\n     OR COALESCE(v_t.is_deleted,false) THEN\n    RAISE EXCEPTION 'diamond_table_is_closed' USING ERRCODE='55000';\n  END IF;\n  IF EXISTS (SELECT 1 FROM public.poker_diamond_custody c\n              WHERE c.purpose='cash_seat' AND c.target_id=p_table_id AND c.state<>'released') THEN\n    RAISE EXCEPTION 'diamond_table_seat_holds_custody' USING ERRCODE='55000';\n  END IF;\n  IF EXISTS (SELECT 1 FROM public.table_seats s WHERE s.table_id=p_table_id AND s.left_at IS NULL) THEN\n    RAISE EXCEPTION 'diamond_table_has_a_seated_player' USING ERRCODE='55000';\n  END IF;\n  UPDATE public.tables SET status='closed', current_players=0\n   WHERE id=p_table_id\n  RETURNING * INTO v_row;\n  v_audit := public.fn_poker_diamond_staff_audit('diamond.table_close', 'diamond_table', p_table_id,\n    to_jsonb(v_t), to_jsonb(v_row), jsonb_build_object('door', 'fn_poker_diamond_close_cash_table'));\n  RETURN jsonb_build_object('ok', true, 'table_id', p_table_id, 'status', v_row.status, 'audit_id', v_audit);\nEND $function$\n"
+    },
+    {
+      "name": "fn_poker_diamond_edit_cash_table",
+      "body_md5": "fcfedfeef6e6d788adb3d07679f561c4",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_poker_diamond_edit_cash_table(p_table_id uuid, p_name text DEFAULT NULL::text, p_small_blind integer DEFAULT NULL::integer, p_big_blind integer DEFAULT NULL::integer, p_min_buy_in integer DEFAULT NULL::integer, p_max_buy_in integer DEFAULT NULL::integer, p_max_players integer DEFAULT NULL::integer)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_actor uuid := auth.uid();\n  v_t public.tables%ROWTYPE; v_after public.tables%ROWTYPE; v_row public.tables%ROWTYPE;\n  v_name text; v_cap integer; v_audit uuid;\nBEGIN\n  IF v_actor IS NULL THEN\n    RAISE EXCEPTION 'authentication required' USING ERRCODE='28000';\n  END IF;\n  IF NOT public.fn_is_platform_admin() THEN\n    RAISE EXCEPTION 'diamond_table_staff_only' USING ERRCODE='42501';\n  END IF;\n  IF NOT public.fn_caller_session_is_live() THEN\n    RAISE EXCEPTION 'diamond_staff_session_required' USING ERRCODE='28000';\n  END IF;\n  SELECT t.* INTO v_t FROM public.tables t\n    JOIN public.clubs c ON c.id=t.club_id\n   WHERE t.id=p_table_id AND c.asset='diamonds' AND c.is_platform IS TRUE\n     AND c.union_id IS NULL AND t.union_id IS NULL AND t.tournament_id IS NULL\n   FOR UPDATE OF t;\n  IF NOT FOUND THEN\n    RAISE EXCEPTION 'diamond_table_not_found' USING ERRCODE='P0002';\n  END IF;\n  IF lower(COALESCE(v_t.status,'')) IN ('closed','completed','cancelled','finished','deleted')\n     OR COALESCE(v_t.is_deleted,false) THEN\n    RAISE EXCEPTION 'diamond_table_is_closed' USING ERRCODE='55000';\n  END IF;\n  IF lower(COALESCE(v_t.status,'')) <> 'waiting' OR COALESCE(v_t.current_players,0) <> 0\n     OR EXISTS (SELECT 1 FROM public.table_seats s WHERE s.table_id=p_table_id AND s.left_at IS NULL)\n     OR EXISTS (SELECT 1 FROM public.poker_diamond_custody c\n                 WHERE c.purpose='cash_seat' AND c.target_id=p_table_id AND c.state<>'released') THEN\n    RAISE EXCEPTION 'diamond_table_must_be_empty_to_edit' USING ERRCODE='55000';\n  END IF;\n\n  v_after := v_t;\n  IF p_name IS NOT NULL THEN\n    v_name := replace(replace(btrim(p_name), '<', ''), '>', '');\n    IF length(v_name) = 0 THEN\n      RAISE EXCEPTION 'diamond_table_requires_a_name' USING ERRCODE='22023';\n    END IF;\n    v_after.name := left(v_name, 60);\n  END IF;\n  v_after.small_blind := COALESCE(p_small_blind, v_t.small_blind);\n  v_after.big_blind := COALESCE(p_big_blind, v_t.big_blind);\n  v_after.min_buy_in := COALESCE(p_min_buy_in, v_t.min_buy_in);\n  v_after.max_buy_in := COALESCE(p_max_buy_in, v_t.max_buy_in);\n  v_after.max_players := COALESCE(p_max_players, v_t.max_players);\n\n  -- Whole positive Diamonds, the open door's order (small <= big <= min <= max)\n  -- and the creation guard's strict blinds.\n  IF v_after.small_blind IS NULL OR v_after.big_blind IS NULL\n     OR v_after.min_buy_in IS NULL OR v_after.max_buy_in IS NULL\n     OR v_after.small_blind <= 0 OR v_after.big_blind <= 0\n     OR v_after.min_buy_in <= 0 OR v_after.max_buy_in <= 0\n     OR v_after.small_blind <> trunc(v_after.small_blind) OR v_after.big_blind <> trunc(v_after.big_blind)\n     OR v_after.min_buy_in <> trunc(v_after.min_buy_in) OR v_after.max_buy_in <> trunc(v_after.max_buy_in)\n     OR v_after.small_blind >= v_after.big_blind\n     OR v_after.min_buy_in > v_after.max_buy_in\n     OR v_after.big_blind > v_after.min_buy_in\n     OR v_after.max_buy_in > 2147483647\n  THEN\n    RAISE EXCEPTION 'diamond_table_requires_whole_positive_stakes' USING ERRCODE='22023';\n  END IF;\n  -- The open door's seat count inside the creation guard's seat law for the\n  -- table's game, and never fewer seats than the table waits for to deal.\n  v_cap := CASE lower(COALESCE(v_t.game_variant,'nlh'))\n             WHEN 'plo6' THEN 6 WHEN 'plo5' THEN 7 WHEN 'plo4' THEN 8\n             WHEN 'plo8' THEN 8 WHEN 'flo8' THEN 8 ELSE 9 END;\n  IF v_after.max_players IS NULL OR v_after.max_players < 2 OR v_after.max_players > v_cap\n     OR v_after.max_players < COALESCE(v_t.auto_start_players, 2) THEN\n    RAISE EXCEPTION 'diamond_table_requires_a_real_seat_count' USING ERRCODE='22023';\n  END IF;\n  IF NOT public.fn_poker_diamond_plain_cash_table(v_after) THEN\n    RAISE EXCEPTION 'diamond_plain_cash_table_required' USING ERRCODE='23514';\n  END IF;\n\n  UPDATE public.tables\n     SET name=v_after.name, small_blind=v_after.small_blind, big_blind=v_after.big_blind,\n         min_buy_in=v_after.min_buy_in, max_buy_in=v_after.max_buy_in, max_players=v_after.max_players\n   WHERE id=p_table_id\n  RETURNING * INTO v_row;\n  -- The row as written must still be one the engine will admit.\n  IF NOT public.fn_poker_diamond_plain_cash_table(v_row) THEN\n    RAISE EXCEPTION 'diamond_table_would_not_be_admitted' USING ERRCODE='23514';\n  END IF;\n  v_audit := public.fn_poker_diamond_staff_audit('diamond.table_edit', 'diamond_table', p_table_id,\n    to_jsonb(v_t), to_jsonb(v_row), jsonb_build_object('door', 'fn_poker_diamond_edit_cash_table'));\n  RETURN jsonb_build_object('ok', true, 'table_id', p_table_id, 'audit_id', v_audit,\n    'name', v_row.name, 'small_blind', v_row.small_blind, 'big_blind', v_row.big_blind,\n    'min_buy_in', v_row.min_buy_in, 'max_buy_in', v_row.max_buy_in, 'max_players', v_row.max_players);\nEND $function$\n"
+    },
+    {
+      "name": "fn_poker_diamond_staff_audit",
+      "body_md5": "441d6cb7eb26881ea66395a9b5181518",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_poker_diamond_staff_audit(p_action text, p_target_type text, p_target_id uuid, p_before jsonb, p_after jsonb, p_details jsonb DEFAULT '{}'::jsonb)\n RETURNS uuid\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_actor uuid := auth.uid();\n  v_changed jsonb;\nBEGIN\n  -- Only a signed-in platform operator acts through a Diamond configuration\n  -- door, so the row can only ever name one.\n  IF v_actor IS NULL OR NOT public.fn_is_platform_admin() THEN\n    RAISE EXCEPTION 'diamond_staff_audit_requires_platform_staff' USING ERRCODE='42501';\n  END IF;\n  IF p_action IS NULL OR p_action !~ '^diamond\\.[a-z_]+$'\n     OR p_target_type IS NULL OR p_target_type NOT IN ('diamond_table','diamond_tournament')\n     OR p_target_id IS NULL OR p_after IS NULL THEN\n    RAISE EXCEPTION 'diamond_staff_audit_requires_an_action_a_target_and_a_state' USING ERRCODE='22023';\n  END IF;\n  -- Which columns moved, when there was a row before: every key whose value\n  -- differs, the row's own clock aside.\n  IF p_before IS NOT NULL THEN\n    SELECT COALESCE(jsonb_agg(a.key ORDER BY a.key), '[]'::jsonb) INTO v_changed\n      FROM jsonb_each(p_after) a\n     WHERE a.key <> 'updated_at' AND a.value IS DISTINCT FROM p_before -> a.key;\n  END IF;\n  RETURN public.fn_log_admin_action(\n    v_actor, p_action, p_target_type, p_target_id::text,\n    COALESCE(p_details, '{}'::jsonb) || jsonb_build_object('asset', 'diamonds')\n      || CASE WHEN v_changed IS NULL THEN '{}'::jsonb ELSE jsonb_build_object('changed', v_changed) END,\n    p_before, p_after);\nEND $function$\n"
+    },
+    {
+      "name": "fn_stamp_active_seat_game_scope",
+      "body_md5": "43179b85d6717e3b512dc34cfad9d89c",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_stamp_active_seat_game_scope()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nBEGIN\n  IF NEW.left_at IS NOT NULL THEN\n    NEW.active_game_scope := NULL;\n  ELSE\n    SELECT t.seat_game_scope INTO NEW.active_game_scope FROM public.tables t WHERE t.id=NEW.table_id;\n    IF NOT FOUND OR NEW.user_id IS NULL THEN\n      RAISE EXCEPTION 'Active seat requires an existing table and player' USING ERRCODE='23514';\n    END IF;\n    IF NEW.active_game_scope IS NULL THEN\n      -- A pre-migration empty table has no cached scope. Initialize only that\n      -- parent, inside this admission transaction. Existing occupied tables\n      -- never take this UPDATE path. Concurrent initialization is idempotent.\n      UPDATE public.tables t SET seat_game_scope = CASE WHEN t.cluster_id IS NULL\n        THEN 'table:'||t.id::text ELSE 'cluster:'||t.cluster_id::text END\n      WHERE t.id=NEW.table_id AND t.seat_game_scope IS NULL;\n      SELECT t.seat_game_scope INTO NEW.active_game_scope FROM public.tables t WHERE t.id=NEW.table_id;\n      IF NEW.active_game_scope IS NULL THEN\n        RAISE EXCEPTION 'Active seat parent scope initialization failed' USING ERRCODE='23514';\n      END IF;\n    END IF;\n  END IF;\n  RETURN NEW;\nEND\n$function$\n",
+      "trigger_definition": "CREATE TRIGGER zzzz_stamp_active_seat_game_scope BEFORE INSERT OR UPDATE ON public.table_seats FOR EACH ROW EXECUTE FUNCTION fn_stamp_active_seat_game_scope()"
+    },
+    {
+      "name": "trg_seat_parent_keys_match",
+      "body_md5": "10bd21d1a3e607818ea0a4ad7c0723fd",
+      "definition": "CREATE OR REPLACE FUNCTION public.trg_seat_parent_keys_match()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE v_scope text; v_key text; v_found boolean;\nBEGIN\n  IF TG_OP = 'UPDATE'\n     AND OLD.table_id IS NOT DISTINCT FROM NEW.table_id\n     AND OLD.active_game_scope IS NOT DISTINCT FROM NEW.active_game_scope\n     AND OLD.active_parent_key IS NOT DISTINCT FROM NEW.active_parent_key THEN\n    RETURN NEW; -- an FK re-checks only when a referencing column changes\n  END IF;\n  IF NEW.table_id IS NULL OR (NEW.active_game_scope IS NULL AND NEW.active_parent_key IS NULL) THEN\n    RETURN NEW; -- MATCH SIMPLE\n  END IF;\n  SELECT t.seat_game_scope, t.seat_admission_key, true INTO v_scope, v_key, v_found\n    FROM public.tables t WHERE t.id = NEW.table_id FOR KEY SHARE;\n  IF NEW.active_game_scope IS NOT NULL AND (v_found IS DISTINCT FROM true OR v_scope IS DISTINCT FROM NEW.active_game_scope) THEN\n    RAISE EXCEPTION 'insert or update on table \"table_seats\" violates foreign key constraint \"active_seat_game_scope_parent\"'\n      USING ERRCODE = 'foreign_key_violation', CONSTRAINT = 'active_seat_game_scope_parent',\n            DETAIL = format('Key (table_id, active_game_scope)=(%s, %s) is not present in table \"tables\".', NEW.table_id, NEW.active_game_scope);\n  END IF;\n  IF NEW.active_parent_key IS NOT NULL AND (v_found IS DISTINCT FROM true OR v_key IS DISTINCT FROM NEW.active_parent_key) THEN\n    RAISE EXCEPTION 'insert or update on table \"table_seats\" violates foreign key constraint \"live_seat_parent_cannot_close\"'\n      USING ERRCODE = 'foreign_key_violation', CONSTRAINT = 'live_seat_parent_cannot_close',\n            DETAIL = format('Key (table_id, active_parent_key)=(%s, %s) is not present in table \"tables\".', NEW.table_id, NEW.active_parent_key);\n  END IF;\n  RETURN NEW;\nEND $function$\n",
+      "trigger_definition": "CREATE TRIGGER zzzzz_seat_parent_keys_match BEFORE INSERT OR UPDATE ON public.table_seats FOR EACH ROW EXECUTE FUNCTION trg_seat_parent_keys_match()"
+    },
+    {
+      "name": "fn_stamp_table_game_scope",
+      "body_md5": "bb828ee15e0f4f853aac042a6d8cfa9a",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_stamp_table_game_scope()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nBEGIN\n  NEW.seat_game_scope := CASE WHEN NEW.cluster_id IS NULL\n    THEN 'table:'||NEW.id::text ELSE 'cluster:'||NEW.cluster_id::text END;\n  RETURN NEW;\nEND\n$function$\n",
+      "trigger_definition": "CREATE TRIGGER zzzz_stamp_table_game_scope BEFORE INSERT OR UPDATE ON public.tables FOR EACH ROW EXECUTE FUNCTION fn_stamp_table_game_scope()"
+    },
+    {
+      "name": "trg_table_scope_cascade",
+      "body_md5": "7ee7bf5f706b29ae531daec7a45a968c",
+      "definition": "CREATE OR REPLACE FUNCTION public.trg_table_scope_cascade()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nBEGIN\n  IF OLD.seat_game_scope IS NOT NULL AND NEW.seat_game_scope IS DISTINCT FROM OLD.seat_game_scope THEN\n    UPDATE public.table_seats s SET active_game_scope = NEW.seat_game_scope\n     WHERE s.table_id = NEW.id AND s.active_game_scope = OLD.seat_game_scope;\n  END IF;\n  RETURN NULL;\nEND $function$\n",
+      "trigger_definition": "CREATE TRIGGER zzzzz_table_scope_cascade AFTER UPDATE ON public.tables FOR EACH ROW WHEN ((old.seat_game_scope IS DISTINCT FROM new.seat_game_scope)) EXECUTE FUNCTION trg_table_scope_cascade()"
+    },
+    {
+      "name": "fn_ca_cash_entry_need",
+      "body_md5": "401f04362c91969f8f64261b32323dc2",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_cash_entry_need(p_user_id uuid, p_table_id uuid)\n RETURNS numeric\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_min numeric;\n  v_max numeric;\n  v_tournament uuid;\n  v_need numeric;\nBEGIN\n  SELECT t.min_buy_in, t.max_buy_in, t.tournament_id\n    INTO v_min, v_max, v_tournament\n    FROM public.tables t WHERE t.id = p_table_id;\n  IF NOT FOUND THEN\n    RETURN 0;\n  END IF;\n  v_need := COALESCE(v_min, 0);\n  IF v_tournament IS NULL AND p_user_id IS NOT NULL THEN\n    v_need := GREATEST(v_need, COALESCE(public.fn_cash_rejoin_floor(p_user_id, p_table_id), 0));\n  END IF;\n  IF v_max IS NOT NULL AND v_max > 0 THEN\n    v_need := LEAST(v_need, v_max);\n  END IF;\n  RETURN GREATEST(v_need, 0);\nEND\n$function$\n"
+    },
+    {
+      "name": "fn_cash_game_barred_seconds",
+      "body_md5": "4b3839fbb37aea2d9b4d93f217d5af5c",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_cash_game_barred_seconds(p_game_id uuid, p_user_id uuid)\n RETURNS integer\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n  SELECT ceil(extract(epoch FROM (max(c.barred_until) - now())))::integer\n    FROM public.cash_games g\n    JOIN public.cash_rejoin_constraints c\n      ON c.player_id = p_user_id AND c.club_id = g.club_id AND c.variant = g.variant\n     AND c.sb = g.sb AND c.bb = g.bb AND c.barred_until > now()\n   WHERE g.id = p_game_id\n  HAVING max(c.barred_until) IS NOT NULL;\n$function$\n"
+    },
+    {
+      "name": "fn_cash_game_join",
+      "body_md5": "5d93995718e5b53058b7a1686dc15584",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_cash_game_join(p_game_id uuid)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_uid uuid := auth.uid();\n  g record; s record; t record; h record;\n  v_position integer; v_count integer;\n  v_hold_ttl CONSTANT interval := interval '60 seconds';\n  v_hold_until timestamptz;\n  v_probe_table uuid;\n  v_need numeric;\nBEGIN\n  IF v_uid IS NULL THEN\n    RAISE EXCEPTION 'NOT_AUTHENTICATED: sign in to join a game' USING ERRCODE = '28000';\n  END IF;\n  SELECT * INTO g FROM public.cash_games WHERE id = p_game_id FOR NO KEY UPDATE;\n  IF NOT FOUND THEN RAISE EXCEPTION 'GAME_NOT_FOUND: %', p_game_id; END IF;\n  IF NOT g.enabled THEN\n    RAISE EXCEPTION 'GAME_CLOSED: this game is not taking players' USING ERRCODE = 'check_violation';\n  END IF;\n  -- Booted for low VPIP: no seat in this game until the bar lifts (Dan 2026-09-05).\n  IF public.fn_cash_game_barred_seconds(g.id, v_uid) IS NOT NULL THEN\n    RAISE EXCEPTION 'GAME_BARRED:%', public.fn_cash_game_barred_seconds(g.id, v_uid) USING ERRCODE = 'check_violation';\n  END IF;\n\n  -- Already in the game: say where.\n  SELECT ts.table_id, ts.seat_number, tb.name, tb.role, tb.main_index\n    INTO s\n    FROM public.table_seats ts JOIN public.tables tb ON tb.id = ts.table_id\n   WHERE ts.user_id = v_uid AND ts.left_at IS NULL AND tb.cluster_id = g.id AND tb.lifecycle <> 'closed'\n   LIMIT 1;\n  IF FOUND THEN\n    UPDATE public.cash_game_waitlist SET status = 'seated', updated_at = now()\n     WHERE game_id = g.id AND user_id = v_uid AND status IN ('waiting', 'notified');\n    RETURN jsonb_build_object('ok', true, 'action', 'seated', 'table_id', s.table_id,\n                              'seat_number', s.seat_number, 'table_name', s.name,\n                              'role', s.role, 'main_index', s.main_index);\n  END IF;\n\n  -- NO CHAIR IS HELD FOR A PLAYER WHO CANNOT PAY FOR IT (Dan 2026-10-12: \"A\n  -- player should not be able to hold a seat if they don't have sufficient\n  -- chips. That should be checked before the seat is reserved.\"). The door\n  -- used to hold a chair for sixty seconds first and let the buy-in refuse\n  -- afterwards, which kept the chair from everyone behind them for nothing.\n  -- Any wallet the buy-in could spend counts (fn_ca_cash_wallet_covers), and\n  -- the figure is the game's own minimum for this player, rejoin floor\n  -- included. Nothing has been written yet, so the refusal leaves no hold and\n  -- no place in line.\n  SELECT tb.id INTO v_probe_table\n    FROM public.tables tb\n   WHERE tb.cluster_id = g.id AND coalesce(tb.is_deleted, false) = false\n     AND tb.lifecycle <> 'closed'\n   ORDER BY (tb.lifecycle IN ('live', 'opening')) DESC, tb.created_at ASC\n   LIMIT 1;\n  IF v_probe_table IS NOT NULL THEN\n    v_need := public.fn_ca_cash_entry_need(v_uid, v_probe_table);\n    IF NOT public.fn_ca_cash_wallet_covers(v_uid, v_probe_table, NULL, v_need) THEN\n      RAISE EXCEPTION 'INSUFFICIENT_CHIPS:%', v_need\n        USING ERRCODE = 'check_violation',\n              HINT = 'Add chips through the cashier, then join the game.';\n    END IF;\n  END IF;\n\n  -- THE DOOR HOLDS THE CHAIR IT HANDS OUT (2026-09-10). A 'seat' answer used\n  -- to hold nothing, so two players told about the same last chair both got\n  -- it and the second was refused at the buy-in door. The chair is held now\n  -- with the same row the open-seat offer writes (notified, 60 s), which the\n  -- buy-in gate, the open-seat count and the census already honour.\n  --\n  -- ASKING TWICE IS ONE HOLD. A caller already holding a live chair in this\n  -- game is told the same table again and the hold is refreshed. (Their own\n  -- hold is subtracted by fn_cash_game_open_seats, so without this a second\n  -- click would move them to another table while the first hold stood.)\n  SELECT w.id, w.table_id, tb.name, tb.role, tb.main_index\n    INTO h\n    FROM public.table_waitlist w JOIN public.tables tb ON tb.id = w.table_id\n   WHERE w.user_id = v_uid AND w.status = 'notified' AND w.hold_expires_at > now()\n     AND tb.cluster_id = g.id AND coalesce(tb.is_deleted, false) = false\n     AND tb.status IN ('waiting', 'running', 'active') AND tb.lifecycle IN ('live', 'opening')\n   ORDER BY w.hold_expires_at DESC LIMIT 1;\n  IF FOUND THEN\n    v_hold_until := now() + v_hold_ttl;\n    UPDATE public.table_waitlist SET hold_expires_at = v_hold_until WHERE id = h.id;\n    -- ONE LIVE HOLD PER PLAYER PER GAME, on this branch too: any other hold\n    -- of theirs in this game lapses now.\n    UPDATE public.table_waitlist w SET status = 'expired'\n      FROM public.tables tb\n     WHERE tb.id = w.table_id AND tb.cluster_id = g.id AND w.id <> h.id\n       AND w.user_id = v_uid AND w.status = 'notified';\n    UPDATE public.cash_game_waitlist SET status = 'notified', updated_at = now()\n     WHERE game_id = g.id AND user_id = v_uid AND status IN ('waiting', 'notified');\n    RETURN jsonb_build_object('ok', true, 'action', 'seat', 'table_id', h.table_id, 'table_name', h.name,\n                              'role', h.role, 'main_index', h.main_index,\n                              -- the chairs open TO THIS CALLER: the one they hold counts\n                              'open_seats', public.fn_cash_game_open_seats(h.table_id) + 1,\n                              'hold_expires_at', v_hold_until);\n  END IF;\n\n  -- The shortest live Main with an unreserved open chair, then the feeder\n  -- (opening or live). Never a breaking or closed table. Each candidate is\n  -- LOCKED on the key the buy-in gate takes for that table and re-read under\n  -- the lock, so two callers in the same instant cannot both be handed the\n  -- last chair: the second sees the first's hold and moves to the next\n  -- candidate, or to the waitlist.\n  FOR t IN\n    SELECT tb.id, tb.name, tb.role, tb.main_index,\n           (SELECT count(*) FROM public.table_seats ts WHERE ts.table_id = tb.id AND ts.left_at IS NULL) AS seated\n      FROM public.tables tb\n     WHERE tb.cluster_id = g.id AND coalesce(tb.is_deleted, false) = false\n       AND tb.status IN ('waiting', 'running', 'active') AND tb.lifecycle IN ('live', 'opening')\n       AND public.fn_cash_game_open_seats(tb.id) > 0\n     ORDER BY (tb.role = 'feeder') ASC, seated ASC, tb.main_index ASC NULLS LAST, tb.created_at ASC\n  LOOP\n    PERFORM pg_advisory_xact_lock(hashtextextended('table_seat:' || t.id::text, 0));\n    CONTINUE WHEN public.fn_cash_game_open_seats(t.id) <= 0;\n    CONTINUE WHEN NOT EXISTS (SELECT 1 FROM public.tables tb WHERE tb.id = t.id\n                                 AND tb.status IN ('waiting', 'running', 'active')\n                                 AND tb.lifecycle IN ('live', 'opening'));\n    v_hold_until := now() + v_hold_ttl;\n    -- ONE LIVE HOLD PER PLAYER PER GAME: a hold of theirs on any other table\n    -- of this game lapses now.\n    UPDATE public.table_waitlist w SET status = 'expired'\n      FROM public.tables tb\n     WHERE tb.id = w.table_id AND tb.cluster_id = g.id AND w.table_id <> t.id\n       AND w.user_id = v_uid AND w.status = 'notified';\n    -- The hold: a live row of theirs at this table becomes it (keeping the\n    -- place in line it already had), else one is written with position 0 -\n    -- a line is 1-based, so 0 says \"the join door's hold\" without a schema change.\n    UPDATE public.table_waitlist\n       SET status = 'notified', notified_at = now(), hold_expires_at = v_hold_until\n     WHERE table_id = t.id AND user_id = v_uid AND status IN ('waiting', 'notified');\n    IF NOT FOUND THEN\n      INSERT INTO public.table_waitlist (table_id, user_id, position, status, notified_at, hold_expires_at)\n      VALUES (t.id, v_uid, 0, 'notified', now(), v_hold_until);\n    END IF;\n    UPDATE public.cash_game_waitlist SET status = 'notified', updated_at = now()\n     WHERE game_id = g.id AND user_id = v_uid AND status IN ('waiting', 'notified');\n    RETURN jsonb_build_object('ok', true, 'action', 'seat', 'table_id', t.id, 'table_name', t.name,\n                              'role', t.role, 'main_index', t.main_index,\n                              'open_seats', public.fn_cash_game_open_seats(t.id) + 1,\n                              'hold_expires_at', v_hold_until);\n  END LOOP;\n\n  -- Nothing open anywhere: hold the place. One live row per game per player.\n  INSERT INTO public.cash_game_waitlist (game_id, user_id, status)\n  VALUES (g.id, v_uid, 'waiting')\n  ON CONFLICT DO NOTHING;\n  SELECT count(*) + 1 INTO v_position FROM public.cash_game_waitlist w\n   WHERE w.game_id = g.id AND w.status IN ('waiting', 'notified')\n     AND w.created_at < (SELECT created_at FROM public.cash_game_waitlist x\n                          WHERE x.game_id = g.id AND x.user_id = v_uid AND x.status IN ('waiting', 'notified') LIMIT 1);\n  SELECT count(*) INTO v_count FROM public.cash_game_waitlist w\n   WHERE w.game_id = g.id AND w.status IN ('waiting', 'notified');\n  RETURN jsonb_build_object('ok', true, 'action', 'waitlisted', 'position', v_position, 'waiting', v_count,\n                            'opening_hold_since', g.opening_hold_since,\n                            'tables', (SELECT count(*) FROM public.tables tb WHERE tb.cluster_id = g.id AND tb.lifecycle <> 'closed'\n                                          AND coalesce(tb.is_deleted, false) = false));\nEND;\n$function$\n"
+    },
+    {
+      "name": "fn_cash_game_open_seats",
+      "body_md5": "43cfb7bb50cc8031bd165c57f37c9c7b",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_cash_game_open_seats(p_table_id uuid)\n RETURNS integer\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n  SELECT GREATEST(0,\n           coalesce(t.max_players, 9)\n           - (SELECT count(*) FROM public.table_seats ts WHERE ts.table_id = t.id AND ts.left_at IS NULL)\n           - (SELECT count(*) FROM public.table_waitlist w\n               WHERE w.table_id = t.id AND w.status = 'notified' AND w.hold_expires_at > clock_timestamp())\n           - (SELECT count(*) FROM public.cash_seat_moves m\n               WHERE m.to_table_id = t.id AND m.state = 'pending' AND m.swap_move_id IS NULL))::integer\n    FROM public.tables t WHERE t.id = p_table_id;\n$function$\n"
+    },
+    {
+      "name": "fn_cash_rejoin_floor",
+      "body_md5": "827a9eebc28dd9dd6ac4d32a0ad31a6b",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_cash_rejoin_floor(p_user_id uuid, p_table_id uuid)\n RETURNS numeric\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_barred timestamptz;\n  v_floor numeric;\nBEGIN\n  SELECT max(c.barred_until), max(c.required_stack)\n    INTO v_barred, v_floor\n    FROM public.tables t\n    JOIN public.cash_rejoin_constraints c\n      ON c.player_id = p_user_id\n     AND c.club_id  = t.club_id\n     AND c.variant  = t.game_variant\n     AND c.sb       = t.small_blind\n     AND c.bb       = t.big_blind\n     AND c.expires_at > now()\n   WHERE t.id = p_table_id\n     AND t.tournament_id IS NULL;\n  IF v_barred IS NOT NULL AND v_barred > now() THEN\n    RAISE EXCEPTION 'VPIP_BARRED:%', ceil(extract(epoch FROM (v_barred - now())))::integer\n      USING ERRCODE = 'check_violation',\n            HINT = 'Removed for low VPIP: no seat in this game until the bar lifts.';\n  END IF;\n  RETURN v_floor;\nEND;\n$function$\n"
+    }
+  ]
+}

@@ -1,5 +1,5 @@
 {
-  "source": "public.fn_crash_return_ppm_v5(b/100, m/100) on local PostgreSQL 17.11, the installed body of migration 20261012114801. Every reduced stake/minimum fraction an award can seal (entries 25 to 2,500, ordinary and Super, with and without the add-on) plus every floor up to the 0.80 edge on stakes to one chip. [b, m, ppm]: stake and minimum as a reduced fraction, the return in millionths.",
+  "source": "public.fn_crash_return_ppm_v5(b/100, m/100) on local PostgreSQL 17.11, the installed body of migration 20261012140447. Every reduced stake/minimum fraction an award can seal (entries 25 to 2,500, ordinary and Super, with and without the add-on) plus every floor up to the 0.80 edge on stakes to one chip. [b, m, ppm]: stake and minimum as a reduced fraction, the return in millionths.",
   "captured_at": "2026-10-12",
   "returns": [
     [1, 0, 950000],

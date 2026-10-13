@@ -256,14 +256,14 @@ test('native stock and batched builds serialize overlapping recursive libraries'
   );
 });
 
-test('native qualification pulls identical pinned inputs through official public mirrors', () => {
+test('native qualification pulls identical pinned inputs through official registries', () => {
   const dockerfile = readFileSync(
     new URL('./leaderboard-native-function-batch.Dockerfile', import.meta.url),
     'utf8'
   );
   assert.match(
     dockerfile,
-    /^FROM public\.ecr\.aws\/docker\/library\/node@sha256:0e5f906573693feaa1e21057ebdcfdb5bd5021f050b2dc7c9deceb629c7da2a8 AS node_runtime$/m
+    /^FROM docker\.io\/library\/node@sha256:0e5f906573693feaa1e21057ebdcfdb5bd5021f050b2dc7c9deceb629c7da2a8 AS node_runtime$/m
   );
   assert.match(
     dockerfile,

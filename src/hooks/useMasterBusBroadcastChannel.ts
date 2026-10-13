@@ -17,6 +17,8 @@ interface UseMasterBusBroadcastChannelOptions {
   event: string;
   onPayload: (payload: unknown) => void;
   enabled?: boolean;
+  /** Explicit recovery re-authenticates and replaces only this subscription. */
+  restartKey?: number;
   private?: boolean;
   onSubscriptionError?: (status: string, err?: Error) => void;
   onSubscriptionStatus?: (status: string) => void;
@@ -27,6 +29,7 @@ export function useMasterBusBroadcastChannel({
   event,
   onPayload,
   enabled = true,
+  restartKey = 0,
   private: privateChannel = true,
   onSubscriptionError,
   onSubscriptionStatus,
@@ -160,7 +163,7 @@ export function useMasterBusBroadcastChannel({
       masterBus.removeChannelFactory(channelName);
       masterBus.removeRegisteredChannel(channelName);
     };
-  }, [channelName, enabled, event, privateChannel]);
+  }, [channelName, enabled, event, privateChannel, restartKey]);
 }
 
 export default useMasterBusBroadcastChannel;

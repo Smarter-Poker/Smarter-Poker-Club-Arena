@@ -151,8 +151,7 @@
   aspect-ratio: 348 / 114;
   padding: 0 13px;
   border: 0;
-  background: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png') center / 100%
-    100% no-repeat;
+  --rewards-control-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png');
   color: #c6cdd3;
   font-family: var(--club-font-number, 'Roboto Condensed', 'Arial Narrow', sans-serif);
   font-size: 0.68rem;
@@ -240,4 +239,38 @@
 }
 .vip-perks-grid .perk-artwork {
   max-height: 72px;
+}
+
+/* The approved plate remains unchanged. Its opaque exterior is clipped on
+   a paint-only layer; labels, focus outlines and native hit areas stay whole.
+   Coordinates follow the outer chrome of the 348 x 114 source raster. */
+.vip-perks-grid .lock-overlay {
+  position: relative;
+  isolation: isolate;
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+.vip-perks-grid .lock-overlay::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  pointer-events: none;
+  background: var(--rewards-control-image) center / 100% 100% no-repeat;
+  clip-path: polygon(
+    7.2% 4.4%,
+    92.8% 4.4%,
+    99.5% 23.7%,
+    99.5% 83.3%,
+    93.1% 99.1%,
+    6.9% 99.1%,
+    0.5% 83.3%,
+    0.5% 24.6%
+  );
+}
+
+/* Retain the established anchored placement; only the paint clips. */
+.vip-perks-grid .lock-overlay {
+  position: absolute;
 }

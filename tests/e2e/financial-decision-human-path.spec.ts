@@ -1,4 +1,69 @@
 import { expect, test, type BrowserContext, type Route } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+
+for (const width of [375, 393, 1280]) {
+  test.describe(`Tournament footer viewport ${width}px`, () => {
+    // A desktop width must use a desktop context; changing only the viewport
+    // leaves mobile visual-viewport scrolling and touch emulation enabled.
+    if (width === 1280) test.use({ isMobile: false, hasTouch: false, deviceScaleFactor: 1 });
+    test(`Tournament Register clears the live footer at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 812 });
+      const sheets = [
+        'src/pages/tournament/TournamentDetails.css',
+        'src/styles/tournament-lobby-3d.css',
+      ]
+        .map((file) => readFileSync(file, 'utf8'))
+        .join('\n');
+      await page.setContent(`<meta name="viewport" content="width=device-width, initial-scale=1">
+      <style>${sheets}
+      body { margin: 0; }
+      #global-footer { position: fixed; bottom: 0; height: 132px; width: 100%; z-index: 1000; }
+      </style>
+      <section class="tournament-details" data-embedded="false" style="--details-h: 100dvh">
+        <header class="details-header"><h1 class="tournament-name">Tournament</h1></header>
+        <div class="details-content">Tournament Details</div>
+        <div class="details-footer"><button class="btn-register" onclick="document.querySelector('output').textContent='Opened'">Register</button></div>
+      </section><nav id="global-footer">Poker Arena</nav><output></output>`);
+      for (const height of [132, 0, 66]) {
+        await page.evaluate((value) => {
+          document.documentElement.style.setProperty('--ca-bottom-chrome-h', `${value}px`);
+          (document.querySelector('#global-footer') as HTMLElement).style.height = `${value}px`;
+        }, height);
+        // Mobile viewport and live footer changes can finish layout after setContent.
+        // Require the rendered hit target and clearance together, retaining both
+        // guards and a five-second budget inside the sixty-second case deadline.
+        await expect(async () => {
+          const hit = await page
+            .getByRole('button', { name: 'Register', exact: true })
+            .evaluate((el) => {
+              const rect = el.getBoundingClientRect();
+              const top = document.elementFromPoint(
+                rect.x + rect.width / 2,
+                rect.y + rect.height / 2
+              );
+              const footer = document.querySelector('#global-footer')!.getBoundingClientRect();
+              return { reachable: top === el, bottom: rect.bottom, footerTop: footer.top };
+            });
+          expect(hit.reachable, `Register is intercepted with ${height}px of footer`).toBe(true);
+          expect(hit.bottom).toBeLessThanOrEqual(hit.footerTop);
+        }).toPass({ timeout: 5_000 });
+        await page.getByRole('button', { name: 'Register', exact: true }).click();
+        await expect(page.locator('output')).toHaveText('Opened');
+      }
+      // The same shell inside a table's sheet owns a bounded parent; it must
+      // keep that height even while the outer global footer is visible.
+      await page.locator('.tournament-details').evaluate((el) => {
+        el.setAttribute('data-embedded', 'true');
+        (el as HTMLElement).style.setProperty('--details-h', '500px');
+      });
+      expect(
+        await page
+          .locator('.tournament-details')
+          .evaluate((el) => el.getBoundingClientRect().height)
+      ).toBe(500);
+    });
+  });
+}
 
 const jsonHeaders = {
   'access-control-allow-origin': '*',
@@ -103,12 +168,16 @@ test('Insurance remains recoverable after rejection and is single-flight at 375p
   await expect(decline).toBeVisible();
 
   // Same-frame double activation reproduces the gap React state alone leaves.
-  await insure.evaluate((button) => {
+  const disabledWhilePending = await insure.evaluate(async (button) => {
     (button as HTMLButtonElement).click();
     (button as HTMLButtonElement).click();
+    // React flushes the discrete activation before the fixture's rejection timer.
+    // Capture this pending state before another browser round trip can outlast it.
+    await Promise.resolve();
+    return (button as HTMLButtonElement).disabled;
   });
+  expect(disabledWhilePending).toBe(true);
   await expect(page.getByTestId('insurance-request-count')).toHaveText('1');
-  await expect(insure).toBeDisabled();
 
   await expect(page.getByTestId('insurance-status')).toHaveText(
     'Insurance Request Rejected. Please Try Again.'
@@ -146,43 +215,33 @@ test('Escape uses the final decline path once, then Rabbit Hunt announces price 
   await expect(rabbitButton).toHaveCount(0);
 });
 
-test('A 60-second waitlist offer counts down, fits a phone, and hands off to the held seat', async ({
+test('A queued place fits a phone and a seat offer removes it without a hold popup', async ({
   page,
 }) => {
   await page.getByRole('dialog', { name: 'All-In Insurance' }).press('Escape');
   await expect(page.getByRole('dialog', { name: 'All-In Insurance' })).toHaveCount(0);
-  await page.getByTestId('waitlist-seat-offer').click();
+  await page.getByTestId('waitlist-join').click();
 
   const card = page.getByTestId('waitlist-banner-card');
   await expect(card).toBeVisible();
-  await expect(card).toHaveAttribute('aria-label', 'Your Seat Is Held. Tap To Take It.');
+  await expect(card).toContainText('#1');
   await expect(card.getByText('Phase Five Hold Table')).toBeVisible();
-
-  // Measure the settled card, not the intentional overshoot in its 400ms
-  // entrance animation. The animation briefly travels below its final fixed
-  // position and made an otherwise-correct clearance check timing-dependent.
   await card.evaluate(async (element) => {
     await Promise.all(element.getAnimations().map((animation) => animation.finished));
   });
 
   const box = await card.boundingBox();
   const viewport = await page.evaluate(() => ({
-    width: window.innerWidth,
+    width: document.documentElement.clientWidth,
+    scrollWidth: document.documentElement.scrollWidth,
     height: window.innerHeight,
   }));
   expect(box).not.toBeNull();
   expect(box!.x).toBeGreaterThanOrEqual(0);
   expect(viewport.width).toBe(375);
+  expect(viewport.scrollWidth).toBe(viewport.width);
   expect(box!.x + box!.width).toBeLessThanOrEqual(viewport.width);
   expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height - 52 - 12);
-
-  /* Dan 2026-09-23: the hold's clock is internal. The card says the seat is
-     held and what to do; it prints no countdown, at any moment of the hold. */
-  await expect(card).toContainText('Seat Held');
-  await expect(card).toContainText('Tap To Take It');
-  expect(await card.innerText()).not.toMatch(/\d:\d{2}/);
-  await page.waitForTimeout(2_100);
-  expect(await card.innerText()).not.toMatch(/\d:\d{2}/);
 
   const dismiss = card.getByRole('button', {
     name: 'Dismiss The Waitlist Notice For Phase Five Hold Table',
@@ -193,6 +252,17 @@ test('A 60-second waitlist offer counts down, fits a phone, and hands off to the
   });
   expect(dismissHitArea).toEqual({ width: '44px', height: '44px' });
 
-  await card.press('Enter');
-  await expect(page).toHaveURL(/\/table\/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee\?buyin=1$/);
+  // Dan 2026-10-12: a held seat needs no second card or take-seat prompt.
+  // Verify the real mounted consumer handles the event and clears its queue.
+  await page.getByTestId('waitlist-seat-offer').click();
+  await expect(card).toHaveCount(0);
+  await expect(page.getByText('Seat Held', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Tap To Take It', { exact: true })).toHaveCount(0);
+  await expect(page).toHaveURL(/\/dev\/financial-decisions$/);
+
+  // A later genuine queue event must still work; dismiss is local UI only.
+  await page.getByTestId('waitlist-join').click();
+  await expect(card).toBeVisible();
+  await dismiss.click();
+  await expect(card).toHaveCount(0);
 });

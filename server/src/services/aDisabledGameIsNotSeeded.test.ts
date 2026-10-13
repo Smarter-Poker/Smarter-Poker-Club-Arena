@@ -103,13 +103,43 @@ const CLAIM = SRC.slice(
 );
 
 describe('the seeding path reads the switch once per cycle', () => {
+  it('the actual loader skips paused Diamond games while preserving chip and live-game selection', () => {
+    const expression = SEED.match(
+      /disabledPage\.rows\.filter\(\s*\(game\)\s*=>\s*([\s\S]*?)\n\s*\)/
+    )?.[1];
+    expect(expression).toBeTruthy();
+    const include = new Function('game', 'diamondArenaId', `return (${expression});`);
+    const rows = [
+      { id: 'paused-diamond', club_id: 'diamond-arena', enabled: true, cluster_mode: 'paused' },
+      { id: 'live-diamond', club_id: 'diamond-arena', enabled: true, cluster_mode: 'must_move' },
+      {
+        id: 'disabled-diamond',
+        club_id: 'diamond-arena',
+        enabled: false,
+        cluster_mode: 'must_move',
+      },
+      { id: 'paused-chip', club_id: 'chip-club', enabled: true, cluster_mode: 'paused' },
+      { id: 'disabled-chip', club_id: 'chip-club', enabled: false, cluster_mode: 'must_move' },
+    ];
+    expect([...buildDisabledGameIds(rows.filter((row) => include(row, 'diamond-arena')))]).toEqual([
+      'paused-diamond',
+      'disabled-diamond',
+      'disabled-chip',
+    ]);
+    expect([...buildDisabledGameIds(rows.filter((row) => include(row, null)))]).toEqual([
+      'disabled-diamond',
+      'disabled-chip',
+    ]);
+  });
+
   it('loads cash_games where enabled = false through fetchAllRows, keyset on id', () => {
     expect(SEED).toContain("from('cash_games')");
     const from = SEED.indexOf("from('cash_games')");
     const to = SEED.indexOf("label: 'HorseFleet.disabledGames'");
     expect(to).toBeGreaterThan(from);
     const read = SEED.slice(from, to);
-    expect(read).toMatch(/\.eq\('enabled',\s*false\)/);
+    expect(read).toContain(".or('enabled.eq.false,cluster_mode.eq.paused')");
+    expect(read).toContain(".select('id,club_id,enabled,cluster_mode')");
     expect(read).toMatch(/\.order\('id',\s*\{\s*ascending:\s*true\s*\}\)/);
     expect(read).toContain('.limit(want)');
     expect(read).toMatch(/q\.gt\('id',\s*cursor\)/);
@@ -126,7 +156,7 @@ describe('the seeding path reads the switch once per cycle', () => {
   it('fails OPEN and says so: a failed or short read counts, and the set stays empty', () => {
     expect(SEED).toContain('let disabledGameIds = new Set<string>();');
     expect(SEED).toMatch(
-      /if \(disabledPage\.complete\) \{\s*disabledGameIds = buildDisabledGameIds\(disabledPage\.rows\);\s*\} else \{\s*beat\.disabledGamesReadFailed = 1;/
+      /if \(disabledPage\.complete\) \{\s*disabledGameIds = buildDisabledGameIds\(\s*disabledPage\.rows\.filter\([\s\S]*?\)\s*\);\s*\} else \{\s*beat\.disabledGamesReadFailed = 1;/
     );
     expect(SEED).toMatch(
       /catch \(err\) \{\s*beat\.disabledGamesReadFailed = 1;\s*reportError\(err, 'HorseFleet\.disabled_games_load_failed'\);/

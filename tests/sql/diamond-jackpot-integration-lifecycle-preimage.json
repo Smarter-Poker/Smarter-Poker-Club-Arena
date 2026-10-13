@@ -1,0 +1,7 @@
+[
+  {
+    "signature": "smarter_private.f06_new_lifecycle()",
+    "body_md5": "2c98313934736cad3df90e9348ea0714",
+    "definition": "CREATE OR REPLACE FUNCTION smarter_private.f06_new_lifecycle()\n RETURNS bigint\n LANGUAGE sql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog'\nAS $function$ SELECT nextval('smarter_private.f06_lifecycle_seq') $function$\n"
+  }
+]

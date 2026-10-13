@@ -53,7 +53,8 @@ export function classifyBuyInRefusal(message: string | null | undefined): BuyInR
      same three ordinary things in its own words: the arena's cash games are
      closed, the horse's settled Diamonds no longer cover the buy-in, or the
      chair (or the horse) is already seated. */
-  if (m.includes('diamond_cash_not_open')) return 'diamond_closed';
+  if (m.includes('diamond_cash_not_open') || m.includes('GAME_CLOSED: this Diamond game'))
+    return 'diamond_closed';
   if (m.includes('insufficient_settled_diamonds')) return 'no_diamonds';
   if (m.includes('Diamond seat or player is already seated')) return 'already_seated';
   if (m.includes('duplicate key')) return 'seat_taken';

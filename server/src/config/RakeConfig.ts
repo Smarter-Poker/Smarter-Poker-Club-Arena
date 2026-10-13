@@ -748,13 +748,13 @@ export function detectBBJHit(
    * asserted by construction rather than by a condition. Saying so here is the
    * point: the next person to read the rule should not have to re-derive that.
    */
-  context?: { doubleBoard?: boolean }
+  context?: { doubleBoard?: boolean; minimumPot?: number; minimumDealtIn?: number }
 ): BBJDetectionResult {
   const noHit: BBJDetectionResult = { hit: false };
 
   // 1. Check basic BBJ eligibility
-  if (numPlayersDealt < BBJ_RULES.minPlayersDealt) return noHit;
-  if (potSize < bigBlind * BBJ_RULES.minPotBB) return noHit;
+  if (numPlayersDealt < (context?.minimumDealtIn ?? BBJ_RULES.minPlayersDealt)) return noHit;
+  if (potSize < (context?.minimumPot ?? bigBlind * BBJ_RULES.minPotBB)) return noHit;
   // A double-board bomb pot deals two boards for one pot, so a "bad beat" on
   // one of them is not the hand the jackpot is for.
   if (BBJ_RULES.excludeDoubleBoard && context?.doubleBoard === true) return noHit;
@@ -1458,7 +1458,12 @@ export function detectMiniBBJHit(
   /** `board` is the final community cards (board one on a run-it-twice hand),
    *  needed for the both-cards-must-play rule. Without it a hold'em-family
    *  mini fails closed, exactly as the main does. */
-  context?: { doubleBoard?: boolean; board?: Array<{ rank: string; suit: string }> }
+  context?: {
+    doubleBoard?: boolean;
+    board?: Array<{ rank: string; suit: string }>;
+    minimumPot?: number;
+    minimumDealtIn?: number;
+  }
 ): BBJMiniDetectionResult {
   const noHit: BBJMiniDetectionResult = { hit: false };
 
@@ -1466,8 +1471,8 @@ export function detectMiniBBJHit(
   // since phase 3: players-dealt is its own knob (BBJ_RULES.miniMinPlayersDealt,
   // shipped equal to the main's), because the mini is a different product and
   // has to be tunable without moving the main jackpot's bar.
-  if (numPlayersDealt < BBJ_RULES.miniMinPlayersDealt) return noHit;
-  if (potSize < bigBlind * BBJ_RULES.minPotBB) return noHit;
+  if (numPlayersDealt < (context?.minimumDealtIn ?? BBJ_RULES.miniMinPlayersDealt)) return noHit;
+  if (potSize < (context?.minimumPot ?? bigBlind * BBJ_RULES.minPotBB)) return noHit;
   if (BBJ_RULES.excludeDoubleBoard && context?.doubleBoard === true) return noHit;
 
   const normalizedVariant = variant.toLowerCase();

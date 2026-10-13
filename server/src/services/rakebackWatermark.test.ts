@@ -812,7 +812,6 @@ describe('cash source receipts protect the durable cursor', () => {
       'runUnionTreasurySentinel',
       'runUnionGovernanceSentinel',
       'runUnionRakeRollupCatchup',
-      'runUnionEcoRecord',
       'runTournamentChipConservation',
     ] as const)
       vi.spyOn(settler as any, method).mockResolvedValue(undefined);
@@ -1398,7 +1397,6 @@ describe('the catch-up re-arms while backlog remains', () => {
       'runUnionTreasurySentinel',
       'runUnionGovernanceSentinel',
       'runUnionRakeRollupCatchup',
-      'runUnionEcoRecord',
       'runTournamentChipConservation',
     ] as const)
       vi.spyOn(settler as any, method).mockResolvedValue(undefined);
@@ -1437,7 +1435,6 @@ describe('the catch-up re-arms while backlog remains', () => {
       'runUnionTreasurySentinel',
       'runUnionGovernanceSentinel',
       'runUnionRakeRollupCatchup',
-      'runUnionEcoRecord',
       'runTournamentChipConservation',
     ] as const)
       vi.spyOn(settler as any, method).mockResolvedValue(undefined);

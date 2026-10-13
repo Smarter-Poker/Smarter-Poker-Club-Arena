@@ -128,6 +128,7 @@ export default function ClubSettingsPage() {
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   /**
    * The two rake fields are held as RAW TEXT while the owner types and only
    * parsed/clamped on blur. See the onBlur handlers for why: clamping a
@@ -317,6 +318,8 @@ export default function ClubSettingsPage() {
     });
     loadingRef.current = false;
     originalSettings.current = null;
+    hasUnsavedChangesRef.current = false;
+    setBaselineVersion((value) => value + 1);
     // Was not reset: navigating from a club whose role read failed to a club
     // you OWN skips the lookup entirely (ownerMatch short-circuits it), so the
     // "We Could Not Confirm Your Role" notice stayed on screen for a club where
@@ -331,9 +334,6 @@ export default function ClubSettingsPage() {
   // Release the pending-logo blob URL when the page goes away. The per-club
   // reset and the save/discard paths revoke it, but plain unmount did not.
   const pendingLogoRef = useRef<{ file: File; preview: string } | null>(null);
-  // Path of the object uploaded during the in-flight save, so the catch block
-  // can clean it up if the row update fails.
-  const uploadedPathRef = useRef<string | null>(null);
   const currentLogoUrlRef = useRef<string | null>(null);
   const isMountedRef = useIsMounted();
   const logoInputRef = useRef<HTMLInputElement | null>(null);
@@ -660,7 +660,7 @@ export default function ClubSettingsPage() {
       // the bare payload — reading .clubId off the envelope made this filter
       // a no-op and the page refetched on every club's events.
       const evtClubId = evt?.payload?.clubId ?? evt?.clubId;
-      if (evtClubId && evtClubId !== clubId) return;
+      if (evtClubId && evtClubId !== clubId && evtClubId !== clubUUID) return;
       if (isMounted) loadClubSettings(() => isMounted, { silent: true });
     };
     const unsubs = [
@@ -673,7 +673,7 @@ export default function ClubSettingsPage() {
       isMounted = false;
       unsubs.forEach((u) => u());
     };
-  }, [clubId]);
+  }, [clubId, clubUUID]);
 
   const loadClubSettings = async (
     getIsMounted?: () => boolean,
@@ -830,7 +830,15 @@ export default function ClubSettingsPage() {
   };
 
   const saveSettings = async () => {
-    if (!isOwner) return;
+    if (!isOwner || !clubUUID || savingRef.current) return;
+    const ownerScope = settingsScope;
+    const ownerClubUUID = clubUUID;
+    const isCurrent = () => isMountedRef.current && activeSettingsScopeRef.current === ownerScope;
+    const logoToUpload = pendingLogo;
+    const replacedLogoUrl = currentLogoUrl;
+    const rollbackSettings = { ...(originalSettings.current ?? settings) };
+    let uploadedPath: string | null = null;
+    let persisted = false;
     if (formError) {
       toast.error(formError);
       return;
@@ -849,29 +857,31 @@ export default function ClubSettingsPage() {
         .trim()
         .slice(0, LOBBY_MESSAGE_MAX),
     };
+    savingRef.current = true;
     setSaving(true);
     try {
       // Upload the pending logo first so the row update carries its URL.
       // The club-assets bucket caps files at 2 MB / images only server-side.
       let newLogoUrl: string | null = null;
-      if (pendingLogo) {
-        const resolvedId = await resolveClubUUID(clubId!);
-        const ext = pendingLogo.file.type.includes('png')
+      if (logoToUpload) {
+        const resolvedId = ownerClubUUID;
+        const ext = logoToUpload.file.type.includes('png')
           ? 'png'
-          : pendingLogo.file.type.includes('webp')
+          : logoToUpload.file.type.includes('webp')
             ? 'webp'
-            : pendingLogo.file.type.includes('gif')
+            : logoToUpload.file.type.includes('gif')
               ? 'gif'
               : 'jpg';
         const path = `club-logos/${resolvedId}-${Date.now()}.${ext}`;
         const { error: uploadErr } = await supabase.storage
           .from('club-assets')
-          .upload(path, pendingLogo.file, { contentType: pendingLogo.file.type });
+          .upload(path, logoToUpload.file, { contentType: logoToUpload.file.type });
         if (uploadErr) throw uploadErr;
-        uploadedPathRef.current = path;
+        uploadedPath = path;
         newLogoUrl =
           supabase.storage.from('club-assets').getPublicUrl(path).data?.publicUrl || null;
       }
+      if (!isCurrent()) return;
       // Phase 13: Optimistic save — emit events instantly, then confirm with server
       /**
        * ROLLBACK, AND EMIT AFTER THE WRITE (Dan 2026-08-25).
@@ -929,7 +939,7 @@ export default function ClubSettingsPage() {
                    nothing is worse than no switch: it tells an operator they
                    have turned something off. */
             })
-            .eq(resolveClubIdFilter(clubId!).column, resolveClubIdFilter(clubId!).value)
+            .eq('id', ownerClubUUID)
             // .select() is what makes a rejected write observable. Without it
             // an UPDATE matching zero rows — RLS denied it, ownership moved,
             // the club was deleted — returns no error at all, and the page
@@ -943,14 +953,33 @@ export default function ClubSettingsPage() {
               'Settings were not saved - you may no longer own this club, or it no longer exists.'
             );
           }
+          persisted = true;
           // Only now is it true.
           if (clubId) {
-            masterBus.emit('CLUB_UPDATED', { clubId });
-            masterBus.emit('CLUB_SETTINGS_UPDATED', { clubId });
+            masterBus.emit('CLUB_UPDATED', { clubId: ownerClubUUID });
+            masterBus.emit('CLUB_SETTINGS_UPDATED', { clubId: ownerClubUUID });
           }
         },
-        { settings: { clubId, ...(originalSettings.current ?? settings) } }
+        { settings: { clubId, ...rollbackSettings } }
       );
+      masterBus.emit('ADMIN_ACTION', {
+        action: 'settings_updated',
+        target: ownerClubUUID,
+        details: { changedFields: changedFieldsDisplay },
+        userId: user?.id,
+      });
+      if (newLogoUrl) {
+        // Cleanup belongs to the operation's captured predecessor, never the
+        // currently displayed club after navigation.
+        const stale = clubAssetPathFromPublicUrl(replacedLogoUrl);
+        if (stale) {
+          await supabase.storage
+            .from('club-assets')
+            .remove([stale])
+            .catch(() => undefined);
+        }
+      }
+      if (!isCurrent()) return;
       // Saving strips HTML. Silently changing what the owner typed and
       // showing a plain success toast made the edit look corrupted.
       if (
@@ -961,26 +990,7 @@ export default function ClubSettingsPage() {
       } else {
         toast.success('Settings saved!');
       }
-      masterBus.emit('ADMIN_ACTION', {
-        action: 'settings_updated',
-        target: clubId || '',
-        details: { changedFields: changedFieldsDisplay },
-        userId: user?.id,
-      });
       if (newLogoUrl) {
-        // The logo it replaced would otherwise sit in the bucket forever.
-        // Best-effort: a failed cleanup must never fail a successful save.
-        // The REF, not the closure. currentLogoUrlRef is maintained for exactly
-        // this: if another admin replaces the logo during the save, the closed-
-        // over value is stale and the wrong object gets deleted (or the real
-        // predecessor leaks in the bucket).
-        const stale = clubAssetPathFromPublicUrl(currentLogoUrlRef.current);
-        if (stale) {
-          await supabase.storage
-            .from('club-assets')
-            .remove([stale])
-            .catch(() => undefined);
-        }
         setCurrentLogoUrl(newLogoUrl);
       }
       setPendingLogo((prev) => {
@@ -997,22 +1007,21 @@ export default function ClubSettingsPage() {
     } catch (error) {
       // The logo lands in storage before the row update. If the update then
       // fails, drop the object rather than leaving it orphaned in the bucket.
-      if (uploadedPathRef.current) {
-        await supabase.storage
-          .from('club-assets')
-          .remove([uploadedPathRef.current])
-          .catch(() => undefined);
-      }
       reportError(error, 'ClubSettingsPage.Failed_to_save_settings');
-      toast.error(error instanceof Error ? error.message : 'Failed to save settings');
+      if (isCurrent())
+        toast.error(error instanceof Error ? error.message : 'Failed to save settings');
     } finally {
-      uploadedPathRef.current = null;
-      // INSIDE the finally. Anything that threw within the catch above - the
-      // storage remove() rejecting before .catch attached, reportError, the
-      // toast - skipped this line and left `saving` stuck true: Save
-      // permanently disabled with a spinner, Remove Logo disabled with it, and
-      // no way out but a reload.
-      setSaving(false);
+      try {
+        if (uploadedPath && !persisted) {
+          await supabase.storage
+            .from('club-assets')
+            .remove([uploadedPath])
+            .catch(() => undefined);
+        }
+      } finally {
+        savingRef.current = false;
+        if (isCurrent()) setSaving(false);
+      }
     }
   };
 
@@ -1047,33 +1056,40 @@ export default function ClubSettingsPage() {
 
   /** Clearing the logo was impossible: it could be replaced but never removed. */
   const removeLogo = async () => {
-    if (!isOwner || !clubId || !currentLogoUrl) return;
+    if (!isOwner || !clubId || !clubUUID || !currentLogoUrl || savingRef.current) return;
+    const ownerScope = settingsScope;
+    const ownerClubUUID = clubUUID;
+    const replacedLogoUrl = currentLogoUrl;
+    const isCurrent = () => isMountedRef.current && activeSettingsScopeRef.current === ownerScope;
+    savingRef.current = true;
     setSaving(true);
     try {
       const { data: updated, error } = await supabase
         .from('clubs')
         .update({ logo_url: null })
-        .eq(resolveClubIdFilter(clubId).column, resolveClubIdFilter(clubId).value)
+        .eq('id', ownerClubUUID)
         .select('id');
       if (error) throw error;
       if (!updated || updated.length === 0) {
         throw new Error('Logo was not removed - you may no longer own this club.');
       }
-      const stale = clubAssetPathFromPublicUrl(currentLogoUrl);
+      const stale = clubAssetPathFromPublicUrl(replacedLogoUrl);
       if (stale) {
         await supabase.storage
           .from('club-assets')
           .remove([stale])
           .catch(() => undefined);
       }
+      masterBus.emit('CLUB_UPDATED', { clubId: ownerClubUUID });
+      if (!isCurrent()) return;
       setCurrentLogoUrl(null);
       toast.success('Logo removed');
-      masterBus.emit('CLUB_UPDATED', { clubId });
     } catch (e) {
       reportError(e, 'ClubSettingsPage.Failed_to_remove_logo');
-      toast.error(e instanceof Error ? e.message : 'Failed to remove logo');
+      if (isCurrent()) toast.error(e instanceof Error ? e.message : 'Failed to remove logo');
     } finally {
-      setSaving(false);
+      savingRef.current = false;
+      if (isCurrent()) setSaving(false);
     }
   };
 
@@ -1280,6 +1296,18 @@ export default function ClubSettingsPage() {
 
   return (
     <div className="club-settings-page">
+      <header className="club-settings-heading">
+        <p>{savedClubName}</p>
+        <h1>Club Settings</h1>
+        <p>Manage Your Club Identity, Joining Policy And Operating Settings.</p>
+        <nav aria-label="Settings Sections">
+          <a href="#settings-identity">Identity</a>
+          <a href="#settings-privacy">Joining Policy</a>
+          <a href="#settings-sharing">Invites</a>
+          {canSeeAuditLog && <a href="#settings-history">Activity</a>}
+          {isOwner && <a href="#settings-ownership">Ownership</a>}
+        </nav>
+      </header>
       <div className="settings-content">
         {/* Non-owners used to get a page of silently disabled inputs with no
             explanation — every control looked broken. Say why, once. */}
@@ -1307,7 +1335,7 @@ export default function ClubSettingsPage() {
             border: '1px solid #333',
           }}
         >
-          <h3>Share Club</h3>
+          <h3 id="settings-sharing">Share Club</h3>
           <p className="setting-description" style={{ marginBottom: 16 }}>
             Invite Players To Join Your Club By Sharing Your Unique Referral Link.
           </p>
@@ -1367,7 +1395,7 @@ export default function ClubSettingsPage() {
             <button
               type="button"
               className="btn btn--primary"
-              onClick={() => {
+              onClick={async () => {
                 // The canonical invite link, the same one InvitePage and the
                 // agent modal hand out. What was here before was dead three
                 // separate ways and had never carried a single person into a
@@ -1382,8 +1410,16 @@ export default function ClubSettingsPage() {
                 // Corroboration: club_members has 1502 rows and exactly ONE
                 // non-null invited_by.
                 const url = `${publicOrigin()}/hub/club-arena/invite/${clubId}?ref=${playerNumber}`;
-                navigator.clipboard.writeText(url);
-                toast.success('Invite Link Copied To Clipboard!');
+                const ownerScope = settingsScope;
+                try {
+                  await navigator.clipboard.writeText(url);
+                  if (activeSettingsScopeRef.current === ownerScope && isMountedRef.current)
+                    toast.success('Invite Link Copied To Clipboard!');
+                } catch (error) {
+                  reportError(error, 'ClubSettingsPage.copyInviteLink');
+                  if (activeSettingsScopeRef.current === ownerScope && isMountedRef.current)
+                    toast.error('Invite Link Could Not Be Copied. Please Try Again.');
+                }
               }}
               style={{
                 width: '100%',
@@ -1440,7 +1476,7 @@ export default function ClubSettingsPage() {
         )}
 
         <section className="settings-section">
-          <h3>Basic Information</h3>
+          <h3 id="settings-identity">Basic Information</h3>
           <div className="form-group">
             <label htmlFor="club-name">Club Name</label>
             <input
@@ -1634,7 +1670,7 @@ export default function ClubSettingsPage() {
 
         {/* Privacy */}
         <section className="settings-section">
-          <h3>Privacy</h3>
+          <h3 id="settings-privacy">Privacy</h3>
           <div className="toggle-row">
             <div className="toggle-info">
               <span className="toggle-label">Public Club</span>
@@ -1820,7 +1856,7 @@ export default function ClubSettingsPage() {
             owner-only, so a staff member who could read the log never saw it. */}
         {canSeeAuditLog && clubId && (
           <section className="settings-section audit-section">
-            <h3>Admin Activity Log</h3>
+            <h3 id="settings-history">Admin Activity Log</h3>
             <AuditLog clubId={clubId} />
           </section>
         )}
@@ -1847,7 +1883,7 @@ export default function ClubSettingsPage() {
         {/* Ownership - Owner Only */}
         {isOwner && (
           <section className="settings-section handover-section">
-            <h3>Ownership</h3>
+            <h3 id="settings-ownership">Ownership</h3>
             <div className="danger-item">
               <div className="danger-info">
                 <span className="danger-label">Hand Over This Club</span>

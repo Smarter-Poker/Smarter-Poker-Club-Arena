@@ -1,0 +1,786 @@
+[
+  {
+    "relname": "ca_settlements",
+    "attname": "id",
+    "type": "uuid",
+    "attnotnull": true,
+    "default_expr": "gen_random_uuid()"
+  },
+  {
+    "relname": "ca_settlements",
+    "attname": "settlement_type",
+    "type": "text",
+    "attnotnull": true,
+    "default_expr": null
+  },
+  {
+    "relname": "ca_settlements",
+    "attname": "external_ref",
+    "type": "text",
+    "attnotnull": true,
+    "default_expr": null
+  },
+  {
+    "relname": "ca_settlements",
+    "attname": "state",
+    "type": "text",
+    "attnotnull": true,
+    "default_expr": "'open'::text"
+  },
+  {
+    "relname": "ca_settlements",
+    "attname": "club_id",
+    "type": "uuid",
+    "attnotnull": false,
+    "default_expr": null
+  },
+  {
+    "relname": "ca_settlements",
+    "attname": "union_id",
+    "type": "uuid",
+    "attnotnull": false,
+    "default_expr": null
+  },
+  {
+    "relname": "ca_settlements",
+    "attname": "table_id",
+    "type": "uuid",
+    "attnotnull": false,
+    "default_expr": null
+  },
+  {
+    "relname": "ca_settlements",
+    "attname": "tournament_id",
+    "type": "uuid",
+    "attnotnull": false,
+    "default_expr": null
+  },
+  {
+    "relname": "ca_settlements",
+    "attname": "hand_id",
+    "type": "uuid",
+    "attnotnull": false,
+    "default_expr": null
+  },
+  {
+    "relname": "ca_settlements",
+    "attname": "idempotency_key",
+    "type": "text",
+    "attnotnull": false,
+    "default_expr": null
+  },
+  {
+    "relname": "ca_settlements",
+    "attname": "correlation_id",
+    "type": "uuid",
+    "attnotnull": false,
+    "default_expr": null
+  },
+  {
+    "relname": "ca_settlements",
+    "attname": "epoch_id",
+    "type": "integer",
+    "attnotnull": false,
+    "default_expr": "fn_ca_current_epoch()"
+  },
+  {
+    "relname": "ca_settlements",
+    "attname": "totals",
+    "type": "jsonb",
+    "attnotnull": true,
+    "default_expr": "'{}'::jsonb"
+  },
+  {
+    "relname": "ca_settlements",
+    "attname": "error_detail",
+    "type": "text",
+    "attnotnull": false,
+    "default_expr": null
+  },
+  {
+    "relname": "ca_settlements",
+    "attname": "created_at",
+    "type": "timestamp with time zone",
+    "attnotnull": true,
+    "default_expr": "now()"
+  },
+  {
+    "relname": "ca_settlements",
+    "attname": "updated_at",
+    "type": "timestamp with time zone",
+    "attnotnull": true,
+    "default_expr": "now()"
+  },
+  {
+    "relname": "cash_funding_application_receipts",
+    "attname": "pending_addon_id",
+    "type": "uuid",
+    "attnotnull": true,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_funding_application_receipts",
+    "attname": "funding_receipt_id",
+    "type": "uuid",
+    "attnotnull": true,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_funding_application_receipts",
+    "attname": "applied_at",
+    "type": "timestamp with time zone",
+    "attnotnull": true,
+    "default_expr": "clock_timestamp()"
+  },
+  {
+    "relname": "cash_funding_application_receipts",
+    "attname": "original_occupancy_id",
+    "type": "uuid",
+    "attnotnull": true,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_funding_application_receipts",
+    "attname": "applied_occupancy_id",
+    "type": "uuid",
+    "attnotnull": false,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_funding_application_receipts",
+    "attname": "applied",
+    "type": "numeric",
+    "attnotnull": true,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_funding_application_receipts",
+    "attname": "refunded",
+    "type": "numeric",
+    "attnotnull": true,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_funding_application_receipts",
+    "attname": "transaction_id",
+    "type": "xid8",
+    "attnotnull": false,
+    "default_expr": "pg_current_xact_id()"
+  },
+  {
+    "relname": "cash_hand_participant_manifests",
+    "attname": "id",
+    "type": "uuid",
+    "attnotnull": true,
+    "default_expr": "gen_random_uuid()"
+  },
+  {
+    "relname": "cash_hand_participant_manifests",
+    "attname": "table_id",
+    "type": "uuid",
+    "attnotnull": true,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_hand_participant_manifests",
+    "attname": "hand_number",
+    "type": "bigint",
+    "attnotnull": true,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_hand_participant_manifests",
+    "attname": "captured_at",
+    "type": "timestamp with time zone",
+    "attnotnull": true,
+    "default_expr": "clock_timestamp()"
+  },
+  {
+    "relname": "cash_hand_participant_manifests",
+    "attname": "lease_instance_id",
+    "type": "text",
+    "attnotnull": true,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_hand_participant_manifests",
+    "attname": "lease_generation",
+    "type": "uuid",
+    "attnotnull": true,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_hand_participant_manifests",
+    "attname": "request",
+    "type": "jsonb",
+    "attnotnull": true,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_hand_participant_manifests",
+    "attname": "game_scope",
+    "type": "jsonb",
+    "attnotnull": true,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_hand_participant_manifests",
+    "attname": "participants",
+    "type": "jsonb",
+    "attnotnull": true,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_hand_participant_manifests",
+    "attname": "issues",
+    "type": "jsonb",
+    "attnotnull": true,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_hand_participant_manifests",
+    "attname": "funding_provenance_complete",
+    "type": "boolean",
+    "attnotnull": true,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_hand_provenance_receipts",
+    "attname": "table_id",
+    "type": "uuid",
+    "attnotnull": true,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_hand_provenance_receipts",
+    "attname": "hand_number",
+    "type": "bigint",
+    "attnotnull": true,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_hand_provenance_receipts",
+    "attname": "hand_id",
+    "type": "uuid",
+    "attnotnull": true,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_hand_provenance_receipts",
+    "attname": "accepted_at",
+    "type": "timestamp with time zone",
+    "attnotnull": true,
+    "default_expr": "clock_timestamp()"
+  },
+  {
+    "relname": "cash_hand_provenance_receipts",
+    "attname": "payload_hash",
+    "type": "text",
+    "attnotnull": true,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_hand_provenance_receipts",
+    "attname": "accepted_request",
+    "type": "jsonb",
+    "attnotnull": true,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_hand_provenance_receipts",
+    "attname": "manifest_id",
+    "type": "uuid",
+    "attnotnull": false,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_hand_provenance_receipts",
+    "attname": "atomic_receipt",
+    "type": "jsonb",
+    "attnotnull": true,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_hand_provenance_receipts",
+    "attname": "stack_claim",
+    "type": "jsonb",
+    "attnotnull": true,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_hand_provenance_receipts",
+    "attname": "stack_settlement",
+    "type": "jsonb",
+    "attnotnull": true,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_hand_provenance_receipts",
+    "attname": "version",
+    "type": "integer",
+    "attnotnull": true,
+    "default_expr": "1"
+  },
+  {
+    "relname": "cash_hand_provenance_receipts",
+    "attname": "status",
+    "type": "text",
+    "attnotnull": true,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_hand_provenance_receipts",
+    "attname": "game_scope",
+    "type": "jsonb",
+    "attnotnull": false,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_hand_provenance_receipts",
+    "attname": "participants",
+    "type": "jsonb",
+    "attnotnull": true,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_hand_provenance_receipts",
+    "attname": "signed_external_net",
+    "type": "numeric",
+    "attnotnull": false,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_hand_provenance_receipts",
+    "attname": "rake",
+    "type": "numeric",
+    "attnotnull": false,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_hand_provenance_receipts",
+    "attname": "bbj",
+    "type": "numeric",
+    "attnotnull": false,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_hand_provenance_receipts",
+    "attname": "all_players_included",
+    "type": "boolean",
+    "attnotnull": true,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_hand_provenance_receipts",
+    "attname": "funding_provenance_complete",
+    "type": "boolean",
+    "attnotnull": true,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_hand_provenance_receipts",
+    "attname": "issues",
+    "type": "jsonb",
+    "attnotnull": true,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_hand_provenance_receipts",
+    "attname": "transaction_id",
+    "type": "xid8",
+    "attnotnull": false,
+    "default_expr": "pg_current_xact_id()"
+  },
+  {
+    "relname": "cash_participant_funding_receipts",
+    "attname": "id",
+    "type": "uuid",
+    "attnotnull": true,
+    "default_expr": "gen_random_uuid()"
+  },
+  {
+    "relname": "cash_participant_funding_receipts",
+    "attname": "recorded_at",
+    "type": "timestamp with time zone",
+    "attnotnull": true,
+    "default_expr": "clock_timestamp()"
+  },
+  {
+    "relname": "cash_participant_funding_receipts",
+    "attname": "operation_kind",
+    "type": "text",
+    "attnotnull": true,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_participant_funding_receipts",
+    "attname": "operation_key",
+    "type": "text",
+    "attnotnull": false,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_participant_funding_receipts",
+    "attname": "user_id",
+    "type": "uuid",
+    "attnotnull": true,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_participant_funding_receipts",
+    "attname": "table_id",
+    "type": "uuid",
+    "attnotnull": true,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_participant_funding_receipts",
+    "attname": "seat_id",
+    "type": "uuid",
+    "attnotnull": true,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_participant_funding_receipts",
+    "attname": "occupancy_id",
+    "type": "uuid",
+    "attnotnull": true,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_participant_funding_receipts",
+    "attname": "seat_joined_at",
+    "type": "timestamp with time zone",
+    "attnotnull": true,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_participant_funding_receipts",
+    "attname": "source_ledger_id",
+    "type": "uuid",
+    "attnotnull": true,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_participant_funding_receipts",
+    "attname": "wallet_transaction_id",
+    "type": "uuid",
+    "attnotnull": false,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_participant_funding_receipts",
+    "attname": "account_type",
+    "type": "text",
+    "attnotnull": true,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_participant_funding_receipts",
+    "attname": "account_entity_id",
+    "type": "uuid",
+    "attnotnull": true,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_participant_funding_receipts",
+    "attname": "funding_club_id",
+    "type": "uuid",
+    "attnotnull": true,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_participant_funding_receipts",
+    "attname": "funding_union_id",
+    "type": "uuid",
+    "attnotnull": false,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_participant_funding_receipts",
+    "attname": "asset",
+    "type": "text",
+    "attnotnull": true,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_participant_funding_receipts",
+    "attname": "unit_scale",
+    "type": "integer",
+    "attnotnull": true,
+    "default_expr": "2"
+  },
+  {
+    "relname": "cash_participant_funding_receipts",
+    "attname": "amount",
+    "type": "numeric",
+    "attnotnull": true,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_participant_funding_receipts",
+    "attname": "balance_before",
+    "type": "numeric",
+    "attnotnull": true,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_participant_funding_receipts",
+    "attname": "balance_after",
+    "type": "numeric",
+    "attnotnull": true,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_participant_funding_receipts",
+    "attname": "pending_addon_id",
+    "type": "uuid",
+    "attnotnull": false,
+    "default_expr": null
+  },
+  {
+    "relname": "cash_participant_funding_receipts",
+    "attname": "transaction_id",
+    "type": "xid8",
+    "attnotnull": false,
+    "default_expr": "pg_current_xact_id()"
+  },
+  {
+    "relname": "chip_ledger",
+    "attname": "id",
+    "type": "uuid",
+    "attnotnull": true,
+    "default_expr": "gen_random_uuid()"
+  },
+  {
+    "relname": "chip_ledger",
+    "attname": "performed_by",
+    "type": "uuid",
+    "attnotnull": false,
+    "default_expr": null
+  },
+  {
+    "relname": "chip_ledger",
+    "attname": "from_type",
+    "type": "text",
+    "attnotnull": true,
+    "default_expr": null
+  },
+  {
+    "relname": "chip_ledger",
+    "attname": "from_entity_id",
+    "type": "uuid",
+    "attnotnull": false,
+    "default_expr": null
+  },
+  {
+    "relname": "chip_ledger",
+    "attname": "from_label",
+    "type": "text",
+    "attnotnull": false,
+    "default_expr": null
+  },
+  {
+    "relname": "chip_ledger",
+    "attname": "to_type",
+    "type": "text",
+    "attnotnull": true,
+    "default_expr": null
+  },
+  {
+    "relname": "chip_ledger",
+    "attname": "to_entity_id",
+    "type": "uuid",
+    "attnotnull": false,
+    "default_expr": null
+  },
+  {
+    "relname": "chip_ledger",
+    "attname": "to_label",
+    "type": "text",
+    "attnotnull": false,
+    "default_expr": null
+  },
+  {
+    "relname": "chip_ledger",
+    "attname": "amount",
+    "type": "numeric(15,2)",
+    "attnotnull": true,
+    "default_expr": null
+  },
+  {
+    "relname": "chip_ledger",
+    "attname": "category",
+    "type": "text",
+    "attnotnull": true,
+    "default_expr": "'transfer'::text"
+  },
+  {
+    "relname": "chip_ledger",
+    "attname": "description",
+    "type": "text",
+    "attnotnull": false,
+    "default_expr": null
+  },
+  {
+    "relname": "chip_ledger",
+    "attname": "notes",
+    "type": "text",
+    "attnotnull": false,
+    "default_expr": null
+  },
+  {
+    "relname": "chip_ledger",
+    "attname": "club_id",
+    "type": "uuid",
+    "attnotnull": false,
+    "default_expr": null
+  },
+  {
+    "relname": "chip_ledger",
+    "attname": "union_id",
+    "type": "uuid",
+    "attnotnull": false,
+    "default_expr": null
+  },
+  {
+    "relname": "chip_ledger",
+    "attname": "table_id",
+    "type": "uuid",
+    "attnotnull": false,
+    "default_expr": null
+  },
+  {
+    "relname": "chip_ledger",
+    "attname": "hand_id",
+    "type": "uuid",
+    "attnotnull": false,
+    "default_expr": null
+  },
+  {
+    "relname": "chip_ledger",
+    "attname": "tournament_id",
+    "type": "uuid",
+    "attnotnull": false,
+    "default_expr": null
+  },
+  {
+    "relname": "chip_ledger",
+    "attname": "created_at",
+    "type": "timestamp with time zone",
+    "attnotnull": true,
+    "default_expr": "now()"
+  },
+  {
+    "relname": "chip_ledger",
+    "attname": "idempotency_key",
+    "type": "text",
+    "attnotnull": false,
+    "default_expr": null
+  },
+  {
+    "relname": "chip_ledger",
+    "attname": "correlation_id",
+    "type": "uuid",
+    "attnotnull": false,
+    "default_expr": null
+  },
+  {
+    "relname": "chip_ledger",
+    "attname": "causation_id",
+    "type": "uuid",
+    "attnotnull": false,
+    "default_expr": null
+  },
+  {
+    "relname": "chip_ledger",
+    "attname": "settlement_id",
+    "type": "text",
+    "attnotnull": false,
+    "default_expr": null
+  },
+  {
+    "relname": "chip_ledger",
+    "attname": "epoch_id",
+    "type": "integer",
+    "attnotnull": false,
+    "default_expr": null
+  },
+  {
+    "relname": "chip_ledger",
+    "attname": "actor_service",
+    "type": "text",
+    "attnotnull": false,
+    "default_expr": null
+  },
+  {
+    "relname": "chip_ledger",
+    "attname": "db_role",
+    "type": "text",
+    "attnotnull": false,
+    "default_expr": null
+  },
+  {
+    "relname": "chip_ledger",
+    "attname": "pre_from_balance",
+    "type": "numeric",
+    "attnotnull": false,
+    "default_expr": null
+  },
+  {
+    "relname": "chip_ledger",
+    "attname": "post_from_balance",
+    "type": "numeric",
+    "attnotnull": false,
+    "default_expr": null
+  },
+  {
+    "relname": "chip_ledger",
+    "attname": "pre_to_balance",
+    "type": "numeric",
+    "attnotnull": false,
+    "default_expr": null
+  },
+  {
+    "relname": "chip_ledger",
+    "attname": "post_to_balance",
+    "type": "numeric",
+    "attnotnull": false,
+    "default_expr": null
+  },
+  {
+    "relname": "chip_ledger",
+    "attname": "status",
+    "type": "text",
+    "attnotnull": true,
+    "default_expr": "'posted'::text"
+  },
+  {
+    "relname": "chip_ledger",
+    "attname": "metadata",
+    "type": "jsonb",
+    "attnotnull": false,
+    "default_expr": null
+  },
+  {
+    "relname": "chip_ledger",
+    "attname": "chain_seq",
+    "type": "bigint",
+    "attnotnull": false,
+    "default_expr": null
+  },
+  {
+    "relname": "chip_ledger",
+    "attname": "prev_hash",
+    "type": "text",
+    "attnotnull": false,
+    "default_expr": null
+  },
+  {
+    "relname": "chip_ledger",
+    "attname": "row_hash",
+    "type": "text",
+    "attnotnull": false,
+    "default_expr": null
+  }
+]

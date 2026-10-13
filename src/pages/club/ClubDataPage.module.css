@@ -49,7 +49,7 @@
 .word {
   appearance: none;
   margin: 0;
-  padding: 1.6cqw 1.2cqw;
+  padding: 6.4px 4.8px;
   /* The touch floor applies to each axis, not just the tall one (2026-09-22).
      min-height alone left every short label under the 44px floor at 390px:
      DAY 32.7, ALL 31.7, MID 31.7, and the two period arrows 33.5, because the
@@ -63,7 +63,7 @@
   border: 0;
   background: transparent;
   font:
-    800 3.4cqw/1 'Roboto Condensed',
+    800 13.6px/1 'Roboto Condensed',
     Inter,
     system-ui,
     sans-serif;
@@ -78,8 +78,8 @@
 }
 
 .word:focus-visible {
-  outline: 0.6cqw solid #8fd4ff;
-  outline-offset: 0.2cqw;
+  outline: 2.4px solid #8fd4ff;
+  outline-offset: 0.8px;
 }
 
 .word:disabled {
@@ -92,17 +92,17 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  column-gap: 2.4cqw;
+  column-gap: 9.6px;
   row-gap: 0;
-  padding: 0.4cqw 0;
+  padding: 1.6px 0;
   border-top: 1px solid #000;
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
 
 .arrow {
   flex: 0 0 auto;
-  font-size: 5cqw;
-  padding-inline: 2.4cqw;
+  font-size: 20px;
+  padding-inline: 9.6px;
 }
 
 /* ── The ledger head ──────────────────────────────────────────────────── */
@@ -111,14 +111,14 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 3cqw;
+  gap: 12px;
 }
 
 .statusLine {
   display: inline-flex;
   align-items: center;
-  gap: 1.6cqw;
-  font-size: 2.9cqw;
+  gap: 6.4px;
+  font-size: 11.6px;
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -126,10 +126,10 @@
 }
 
 .statusLight {
-  width: 1.8cqw;
-  height: 1.8cqw;
+  width: 7.2px;
+  height: 7.2px;
   background: currentcolor;
-  box-shadow: 0 0 1.6cqw currentcolor;
+  box-shadow: 0 0 6.4px currentcolor;
 }
 
 .tagline {
@@ -150,9 +150,9 @@
   flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
-  gap: 0.6cqw 3cqw;
+  gap: 2.4px 12px;
   margin: 0;
-  padding: 2.2cqw 0;
+  padding: 8.8px 0;
   border-top: 1px solid #000;
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
@@ -169,7 +169,7 @@
 
 .dataValue {
   margin: 0;
-  font-size: 4cqw;
+  font-size: 16px;
   font-weight: 700;
   text-align: right;
   white-space: nowrap;
@@ -177,7 +177,7 @@
 
 .lineLabel {
   flex: 1 1 auto;
-  font-size: 3.3cqw;
+  font-size: 13.2px;
 }
 
 .figureRow {
@@ -186,7 +186,7 @@
 
 .figure {
   margin: 0;
-  font-size: 6cqw;
+  font-size: 24px;
   font-weight: 800;
   letter-spacing: 0.02em;
   text-align: right;
@@ -194,20 +194,20 @@
 }
 
 .figureBig {
-  font-size: 8cqw;
+  font-size: 32px;
 }
 
 .figureMeta {
   flex-basis: 100%;
   margin: 0;
-  font-size: 2.9cqw;
+  font-size: 11.6px;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-align: right;
 }
 
 .delta {
-  font-size: 2.9cqw;
+  font-size: 11.6px;
   font-weight: 700;
   letter-spacing: 0.06em;
   white-space: nowrap;
@@ -215,12 +215,12 @@
 
 .note {
   color: #9aa5b3;
-  font-size: 3.2cqw;
+  font-size: 12.8px;
 }
 
 .issues {
   margin: 0;
-  padding-left: 4cqw;
+  padding-left: 16px;
 }
 
 .integrityAttention .statusLight {
@@ -232,12 +232,12 @@
 .block {
   display: flex;
   flex-direction: column;
-  gap: 1.6cqw;
+  gap: 6.4px;
 }
 
 .blockLabel {
   display: block;
-  padding-top: 1cqw;
+  padding-top: 4px;
 }
 
 .rangeBar {
@@ -245,7 +245,7 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  gap: 2cqw;
+  gap: 8px;
 }
 
 .rangeChip {
@@ -254,8 +254,8 @@
   flex: 1 0 100%;
   align-items: baseline;
   justify-content: center;
-  gap: 1.6cqw;
-  font-size: 4cqw;
+  gap: 6.4px;
+  font-size: 16px;
   font-weight: 700;
   white-space: nowrap;
 }
@@ -265,7 +265,7 @@
 }
 
 .rangeTz {
-  font-size: 2.4cqw;
+  font-size: 9.6px;
 }
 
 /* ── Inline states: a message and its one action ──────────────────────── */
@@ -275,17 +275,17 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 1cqw 3cqw;
-  padding: 1cqw 0;
+  gap: 4px 12px;
+  padding: 4px 0;
 }
 
 .stateCopy {
   flex: 1 1 60%;
-  font-size: 3.3cqw;
+  font-size: 13.2px;
 }
 
 .empty {
-  padding: 6cqw 0;
+  padding: 24px 0;
   color: #9aa5b3;
 }
 
@@ -298,19 +298,19 @@
 }
 
 .tab {
-  font-size: 4.2cqw;
-  padding-inline: 4cqw;
+  font-size: 16.8px;
+  padding-inline: 16px;
 }
 
 .panel {
   display: flex;
   flex-direction: column;
-  gap: 2cqw;
+  gap: 8px;
 }
 
 .panel:focus-visible {
-  outline: 0.6cqw solid #8fd4ff;
-  outline-offset: 0.2cqw;
+  outline: 2.4px solid #8fd4ff;
+  outline-offset: 0.8px;
 }
 
 /* The one drawn control: a search field, engraved into the glass. */
@@ -324,7 +324,7 @@
   width: 100%;
   min-height: 44px;
   margin: 0;
-  padding: 1.6cqw 0;
+  padding: 6.4px 0;
   border: 0;
   background: transparent;
   font:
@@ -339,7 +339,7 @@
 
 .searchInput:focus-visible {
   outline: none;
-  box-shadow: 0 0.4cqw 0 #45adff;
+  box-shadow: 0 1.6px 0 #45adff;
 }
 
 /* ── The ledger lists ─────────────────────────────────────────────────── */
@@ -365,16 +365,16 @@
 }
 
 .virtualList:focus-visible {
-  outline: 0.6cqw solid #8fd4ff;
-  outline-offset: 0.2cqw;
+  outline: 2.4px solid #8fd4ff;
+  outline-offset: 0.8px;
 }
 
 .row,
 .playerRow {
   display: grid;
   align-items: center;
-  gap: 2.4cqw;
-  padding: 2cqw 0;
+  gap: 9.6px;
+  padding: 8px 0;
   border-top: 1px solid #000;
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
@@ -384,7 +384,7 @@
 }
 
 .playerRow {
-  grid-template-columns: 6cqw auto minmax(0, 1fr) auto;
+  grid-template-columns: 24px auto minmax(0, 1fr) auto;
 }
 
 .virtualList > .row,
@@ -398,17 +398,17 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 0.4cqw;
-  min-width: 10cqw;
+  gap: 1.6px;
+  min-width: 40px;
 }
 
 .rowTimeMain {
-  font-size: 3.8cqw;
+  font-size: 15.2px;
   font-weight: 800;
 }
 
 .rowTimeSub {
-  font-size: 2.7cqw;
+  font-size: 10.8px;
   font-weight: 600;
   letter-spacing: 0.06em;
 }
@@ -417,29 +417,29 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.6cqw;
-  width: 12cqw;
+  gap: 2.4px;
+  width: 48px;
 }
 
 .avatar,
 .avatarFallback {
   display: block;
-  width: 9cqw;
-  height: 9cqw;
+  width: 36px;
+  height: 36px;
   object-fit: cover;
 }
 
 .avatarFallback {
   display: grid;
   place-items: center;
-  font-size: 4.2cqw;
+  font-size: 16.8px;
   font-weight: 800;
 }
 
 .rowId {
   max-width: 100%;
   overflow: hidden;
-  font-size: 2.4cqw;
+  font-size: 9.6px;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-overflow: ellipsis;
@@ -449,16 +449,16 @@
 .rowMain {
   display: flex;
   flex-direction: column;
-  gap: 0.6cqw;
+  gap: 2.4px;
   min-width: 0;
 }
 
 .rowName {
   display: flex;
   align-items: baseline;
-  gap: 1.6cqw;
+  gap: 6.4px;
   overflow: hidden;
-  font-size: 3.9cqw;
+  font-size: 15.6px;
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -467,15 +467,15 @@
 .rowTags {
   display: flex;
   flex-wrap: wrap;
-  gap: 2cqw;
+  gap: 8px;
 }
 
 .tag {
-  font-size: 2.5cqw;
+  font-size: 10px;
 }
 
 .rowSub {
-  font-size: 2.9cqw;
+  font-size: 11.6px;
   font-weight: 600;
   letter-spacing: 0.04em;
   white-space: nowrap;
@@ -485,28 +485,28 @@
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 0.3cqw;
+  gap: 1.2px;
   text-align: right;
 }
 
 .rowFeeValue {
-  font-size: 4cqw;
+  font-size: 16px;
   font-weight: 800;
   white-space: nowrap;
 }
 
 .rowFeeLabel {
-  font-size: 2.3cqw;
+  font-size: 9.2px;
 }
 
 .rowWin {
-  font-size: 3.4cqw;
+  font-size: 13.6px;
   font-weight: 700;
   white-space: nowrap;
 }
 
 .playerRank {
-  font-size: 3.6cqw;
+  font-size: 14.4px;
   font-weight: 800;
   text-align: center;
 }
@@ -516,12 +516,12 @@
   flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
-  gap: 1cqw 3cqw;
-  padding: 1.6cqw 0;
+  gap: 4px 12px;
+  padding: 6.4px 0;
 }
 
 .totalsItem {
-  font-size: 3.6cqw;
+  font-size: 14.4px;
   font-weight: 700;
   white-space: nowrap;
 }
@@ -552,4 +552,149 @@
   .integrityAttention .statusLight {
     animation: none;
   }
+}
+
+.page {
+  width: min(100%, 1200px);
+  margin-inline: auto;
+  padding: 20px 20px 112px;
+}
+.console {
+  max-width: none;
+}
+@media (max-width: 620px) {
+  .page {
+    padding: 12px 16px 100px;
+  }
+}
+
+/* Simple mode keeps the verified ledger, with extended tools in Advanced. */
+.advancedOnly {
+  display: contents;
+}
+.advancedOnly[hidden],
+.tabs[hidden],
+.words[hidden] {
+  display: none;
+}
+.simpleHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.simpleHeader h1 {
+  margin: 0;
+  font-size: 22px;
+  flex: 1;
+}
+.simpleHeader .word,
+.simpleStatus .word {
+  color: #45adff;
+}
+.modeSwitch {
+  display: flex;
+  gap: 4px;
+}
+.modeSwitch button {
+  color: #9aa5b3;
+}
+.modeSwitch button[aria-pressed='true'] {
+  color: #45adff;
+  border-bottom: 2px solid #45adff;
+}
+.simpleStatus {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: #9aa5b3;
+  font-size: 12px;
+}
+.simpleStatus p {
+  flex-basis: 100%;
+  margin: 0;
+}
+.calendarField {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 4px 0;
+  color: #9aa5b3;
+  font-size: 12px;
+}
+.calendarField input {
+  min-height: 44px;
+  max-width: 100%;
+  color: #e4e7ec;
+  color-scheme: dark;
+  background: #000;
+  border: 1px solid #9aa5b3;
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 16px;
+}
+.simple {
+  gap: 8px;
+}
+.simple .console {
+  padding: 0;
+}
+.simple .console > :global(.club-page-heading) {
+  display: none;
+}
+.simple .console > :global(.club-page-body) {
+  padding: 0;
+}
+.simple .blockLabel,
+.simple .figureMeta {
+  display: none;
+}
+.simple .rows[aria-label='Club Performance Summary'] {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.simple .figureRow {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  text-align: center;
+  padding: 8px 4px;
+}
+.simple .figureRow .dataLabel {
+  font-size: 11px;
+  letter-spacing: 0;
+}
+.simple .figure {
+  font-size: 18px;
+}
+.simple .words {
+  column-gap: 2px;
+  justify-content: space-between;
+}
+.simple .word {
+  letter-spacing: 0;
+  font-size: 12px;
+}
+.simple .rangeChip {
+  order: 0;
+  flex: 1 1 auto;
+  font-size: 12px;
+  gap: 4px;
+}
+.simple .rangeBar {
+  flex-wrap: nowrap;
+  gap: 4px;
+}
+.simple .searchInput {
+  font-size: 16px;
+}
+.simple :global(.club-page-section) {
+  border: 0;
+}
+:global(body:has([data-club-data-mode='simple']) nav[aria-label='Club Operations Sections']) {
+  display: none;
 }

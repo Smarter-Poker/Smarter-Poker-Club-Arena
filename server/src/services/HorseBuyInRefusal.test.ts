@@ -7,6 +7,12 @@ import { describe, it, expect } from 'vitest';
 import { classifyBuyInRefusal, formatRefusals } from './HorseBuyInRefusal.js';
 
 describe('classifyBuyInRefusal', () => {
+  it('counts a paused Diamond entry as an ordinary closed arena door', () => {
+    expect(classifyBuyInRefusal('GAME_CLOSED: this Diamond game is not taking new players')).toBe(
+      'diamond_closed'
+    );
+  });
+
   it('names the refusal that hid the feeder loop for two days', () => {
     expect(
       classifyBuyInRefusal(

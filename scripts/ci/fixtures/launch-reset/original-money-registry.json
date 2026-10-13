@@ -1,0 +1,177 @@
+[
+  {
+    "proname": "fn_accrue_cash_hand_commissions",
+    "status": "approved",
+    "notes": "Private whole-hand cash liability writer. Every contributor has a real immutable source receipt; all tiers share the transaction and existing commission journal. Historical unverified sources do not pay or certify."
+  },
+  {
+    "proname": "fn_bbj_reconcile",
+    "status": "approved",
+    "notes": "chip standard Phase 4.2 (2026-09-04): the BBJ meter, one snapshot per pool per run; reads, writes no balance"
+  },
+  {
+    "proname": "fn_ca_burn",
+    "status": "approved",
+    "notes": "Retirement, the mirror of fn_ca_mint. Refuses below zero on every account. service_role or admin/god only."
+  },
+  {
+    "proname": "fn_ca_declare_ledger",
+    "status": "approved",
+    "notes": "Hardening round 2 phase 5 (2026-09-01): THE audited ledger declaration primitive - validates category/counterparty against the live CHECK vocabulary at the call site and raises on unknown words instead of letting flows fall to suspense later. Adoption plan: all movers migrate post-reopen."
+  },
+  {
+    "proname": "fn_ca_deleted_wallet_bank_return",
+    "status": "system",
+    "notes": "Deleted-account lifecycle custody: locks only the credited source; full explicit return locks agent first. Conserves bank, journals sources, private service authority."
+  },
+  {
+    "proname": "fn_ca_deleted_wallet_credit",
+    "status": "system",
+    "notes": "Same-transaction deleted-account cash credit lifecycle hook. No scheduled repair."
+  },
+  {
+    "proname": "fn_ca_epoch3_preflight",
+    "status": "approved",
+    "notes": "phase 5: read-only"
+  },
+  {
+    "proname": "fn_ca_kill_switch_trip",
+    "status": "approved",
+    "notes": "chip standard Phase 6.2 (2026-09-05): opens the payout freezes when a meter crosses its threshold; moves nothing"
+  },
+  {
+    "proname": "fn_ca_leg_accounts",
+    "status": "approved",
+    "notes": "chip standard Phase 7.1: reads the journal per account for a window; moves nothing"
+  },
+  {
+    "proname": "fn_ca_mint",
+    "status": "approved",
+    "notes": "THE MINT. Creates chips (player, club, agent or union wallet) and diamonds (player), always from issuance_reserve with the counterparty declared before the write, so supply reconciles in the interval it happens. Admin/god or service_role only; reason of at least ten characters required; idempotent on p_op_id via ca_op_claims; capped at 1e9 chips / 1e7 diamonds per call; refuses to mint into a wallet that does not already exist. Added 2026-09-01 at Dan's request so chip creation has a front door and stops arriving as drift."
+  },
+  {
+    "proname": "fn_calculate_cash_rakeback_periods",
+    "status": "approved",
+    "notes": "Private period calculation called only through the durable request wrapper; source receipts and observed history produce append-only period certificates. No wallet movement and no direct role execution grant."
+  },
+  {
+    "proname": "fn_club_weekly_accounting_summary",
+    "status": "approved",
+    "notes": "Read-only exact club/period summary of the recorded union close and posted ledger. Club accounting administrators and the owning union only. Separates direct club payments from downstream redistribution; missing period or historical role remains explicit."
+  },
+  {
+    "proname": "fn_credit_treasury",
+    "status": "approved",
+    "notes": "grandfathered at phase-1 baseline (2026-08-31 audit)"
+  },
+  {
+    "proname": "fn_credit_treasury_zd4core",
+    "status": "approved",
+    "notes": "Hardening round 2 phase 4 (2026-09-01): exact pre-phase-4 body of fn_credit_treasury, callable only by its op-id wrapper and service_role."
+  },
+  {
+    "proname": "fn_generate_scope_credit_invoices",
+    "status": "approved",
+    "notes": "Private exact-club drawn-credit invoicing, called inside the same weekly transaction. Delegates to the existing debt-locked invoice writer and delivery triggers. No direct wallet writes."
+  },
+  {
+    "proname": "fn_issue_club_weekly_accounting",
+    "status": "approved",
+    "notes": "One immutable weekly club document per existing settlement period. Only the validated union cascade publishes it. No wallet writes. Delivery uses the existing accounting invoice/message/notification transaction and aborts the whole cascade on failure."
+  },
+  {
+    "proname": "fn_issue_scope_weekly_accounting",
+    "status": "approved",
+    "notes": "One private generic statement issuer for recorded union and standalone periods. Exact validated scope required. Uses existing immutable settlement invoice and its synchronous Messenger/notification delivery. No balance writes."
+  },
+  {
+    "proname": "fn_mark_scope_accounting_settled",
+    "status": "approved",
+    "notes": "Private period object writer shared by union and standalone books; exact scope/week, serialized, unique periods, no wallet changes. The single coordinator issues documents before commit."
+  },
+  {
+    "proname": "fn_poker_diamond_tournament",
+    "status": "system",
+    "notes": "Diamond Phase 8. Answers whether a tournament belongs to the Diamond arena. Moves no money."
+  },
+  {
+    "proname": "fn_post_accounting_commission_source",
+    "status": "approved",
+    "notes": "Private shared source commission writer for cash and recognized tournament fees; immutable source receipt validates the exact club, payee, rate and amount. No balance writes. The source owner controls replay."
+  },
+  {
+    "proname": "fn_prepare_accounting_week",
+    "status": "approved",
+    "notes": "Union books require certified P&L source/ownership/boundary evidence under the week lock before any discovery or payer work. Standalone preparation is unchanged. Uncertified capture remains an explicit blocker."
+  },
+  {
+    "proname": "fn_process_cash_accounting_source",
+    "status": "approved",
+    "notes": "Calls existing whole-hand liability and idempotent stats writers, queues existing full-week calculation, then records one durable source outcome. Financial subtransaction rolls back on refusal; no payout or rate calculation."
+  },
+  {
+    "proname": "fn_settle_accounting_commission_stage",
+    "status": "approved",
+    "notes": "One private commission payment implementation for explicit union or standalone club scope. Recorded earning contracts, full account locks and funds, immutable own-entitlement receipt, synchronous source invoice. No rates or history changed."
+  },
+  {
+    "proname": "fn_settle_accounting_commission_stage_v3",
+    "status": "approved",
+    "notes": "The original round 2 commission payment body, byte-for-byte under a new name, called only by fn_settle_accounting_commission_stage when its set path refuses or cannot read a book. Same earning contracts, account locks, funding, receipts and source invoices; no rates or history changed."
+  },
+  {
+    "proname": "fn_settle_accounting_rakeback_stage",
+    "status": "approved",
+    "notes": "One private player payment implementation for explicit union or standalone club scope. Requires exact immutable week certificate and earning-time payer, full funding, one ledger/invoice/delivery, atomic rollback. No rates or history changed."
+  },
+  {
+    "proname": "fn_settle_round2_club_to_agents",
+    "status": "approved",
+    "notes": "grandfathered at phase-1 baseline (2026-08-31 audit)"
+  },
+  {
+    "proname": "fn_settle_round3_agents_to_players",
+    "status": "approved",
+    "notes": "grandfathered at phase-1 baseline (2026-08-31 audit)"
+  },
+  {
+    "proname": "fn_spin_settle_game",
+    "status": "approved",
+    "notes": "Stage-1 compatibility plus raw primitive beneath fn_spin_draw_and_settle; stage 2 makes it owner-only."
+  },
+  {
+    "proname": "fn_union_close_post_rake_debit",
+    "status": "approved",
+    "notes": "The union rake wallet debit of an existing weekly union close (round 1), moved unchanged out of fn_union_weekly_rakeback_close so the cascade posts it as its last write: one guarded UPDATE of union_wallets, the same journal rows, the same retained-share ledger leg and receipt. No amounts, rates or recipients change."
+  },
+  {
+    "proname": "fn_union_eco_adjustment",
+    "status": "approved",
+    "notes": "Preserve inherited reconciliation-reader authorization before requiring certified P&L. Missing baseline cannot be promoted to exact ECO evidence."
+  },
+  {
+    "proname": "fn_union_eco_record",
+    "status": "approved",
+    "notes": "After original owner/admin authorization, require certified P&L before any ECO ledger insert/upsert. No historical ECO row or rate is changed."
+  },
+  {
+    "proname": "fn_union_issue_weekly_invoices",
+    "status": "approved",
+    "notes": "After original owner/admin authorization, require certified union P&L before the legacy square-up issuer can compute or write any invoice. Existing issued history is not changed."
+  },
+  {
+    "proname": "fn_union_settle_player_pnl",
+    "status": "approved",
+    "notes": "Same P&L writer; original authorization/window/floor checks and scope locks precede mandatory quality. Both preview and payment, including manual wrappers, refuse uncertified source evidence before claims, temporary calculation or money writes."
+  },
+  {
+    "proname": "fn_union_settlement_cascade",
+    "status": "approved",
+    "notes": "Existing union waterfall; downstream refusal rolls back the entire attempt"
+  },
+  {
+    "proname": "fn_union_weekly_rakeback_close",
+    "status": "approved",
+    "notes": "grandfathered at phase-1 baseline (2026-08-31 audit)"
+  }
+]

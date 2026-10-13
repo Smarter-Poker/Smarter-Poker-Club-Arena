@@ -19,6 +19,13 @@ import { fileURLToPath } from 'node:url';
 
 const maybeSingle = vi.fn();
 const selectSpy = vi.fn();
+const moveRead = vi.fn();
+const moveExecute = vi.fn();
+vi.mock('../services/supabase/seatMoves.js', async (original) => ({
+  ...(await original()),
+  pendingSeatMoves: (...args: unknown[]) => moveRead(...args),
+  executePendingSeatMoves: (...args: unknown[]) => moveExecute(...args),
+}));
 
 vi.mock('../services/supabase/client.js', () => {
   const from = (table: string) => ({
@@ -54,6 +61,7 @@ function cashBoundaryColumns(): string[] {
   // assertDiamondTable chooses the boundary from these two.
   cols.add('tournament_id');
   cols.add('game_type');
+  for (const c of ['cluster_id', 'role', 'main_index', 'lifecycle']) cols.add(c);
   // Status values, not columns.
   for (const v of ['waiting', 'running', 'playing', 'active']) cols.delete(v);
   return [...cols].sort();
@@ -101,5 +109,62 @@ describe('a Diamond refresh reads what its boundary checks', () => {
       .map((s) => s.trim());
     const missing = cashBoundaryColumns().filter((c) => !read.includes(c));
     expect(missing, 'columns the Diamond boundary checks that the refresh never reads').toEqual([]);
+  });
+  it('adopts the declared cluster while running and executes its pending moves', async () => {
+    const e = new ServerTableEngine('dddddddd-3333-4444-8888-dddddddddddd') as any;
+    const cluster = '33333333-3333-4333-8333-333333333333';
+    const row = {
+      game_type: 'cash',
+      tournament_id: null,
+      cluster_id: cluster,
+      role: 'feeder',
+      main_index: null,
+      lifecycle: 'live',
+      status: 'running',
+      game_variant: 'nlh',
+      small_blind: 1,
+      big_blind: 2,
+      min_buy_in: 20,
+      max_buy_in: 200,
+      ante: 0,
+      rake_percent: 0,
+      rake_cap_bb: 0,
+      bbj_percent: 0,
+      run_it_twice: false,
+      allow_run_it_twice: false,
+    };
+    e.tableInfo = {
+      id: e.tableId,
+      game_type: 'cash',
+      cluster_id: null,
+      arena: { id: 'arena', asset: 'diamonds', is_platform: true, union_id: null },
+    };
+    maybeSingle.mockImplementation(async () => {
+      const cols = selectSpy.mock.calls.find((c) => String(c[1]).includes('rake_percent'))?.[1];
+      return {
+        data: Object.fromEntries(
+          String(cols)
+            .split(/,\s*/)
+            .map((c) => [c, (row as any)[c]])
+        ),
+      };
+    });
+    moveRead.mockResolvedValue([]);
+    moveExecute.mockResolvedValue({ done: [], held: [], refused: [] });
+    vi.spyOn(e, 'lifecycleCanMutate').mockReturnValue(true);
+    try {
+      await e.refreshRakeConfig(true);
+      expect(e.tableInfo).toMatchObject({ cluster_id: cluster, role: 'feeder', lifecycle: 'live' });
+      await e.executePendingSeatMoves();
+      expect(moveRead).toHaveBeenCalledWith(e.tableId);
+      expect(moveExecute).toHaveBeenCalledWith(
+        e.tableId,
+        expect.objectContaining({ announcedOnly: false }),
+        [],
+        undefined
+      );
+    } finally {
+      e.preciseTimer?.dispose?.();
+    }
   });
 });

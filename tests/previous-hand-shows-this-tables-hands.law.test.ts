@@ -154,9 +154,21 @@ describe('the correct data', () => {
        the arena server-side - and the columns are still the shared list. The
        drift this pin was written about is a second column list, and a read
        that spelled one would name no constant and fail here. */
-    const handReads = [...svc.matchAll(/from\('hand_history'\)\s*\.select\(([^)]*)\)/g)].map((m) =>
-      m[1].trim()
-    );
+    // The Archive seed qualifier reads metadata only, never a rendered hand.
+    const seedStart = svc.indexOf('private async archiveHandNumberFloor(');
+    const seedEnd = svc.indexOf('private async mapPlayerHandRows(');
+    expect(seedStart).toBeGreaterThan(-1);
+    expect(seedEnd).toBeGreaterThan(seedStart);
+    const seedSource = svc.slice(seedStart, seedEnd);
+    expect(
+      [...seedSource.matchAll(/from\('hand_history'\)\s*\.select\(([^)]*)\)/g)].map((m) =>
+        m[1].trim()
+      )
+    ).toEqual(["'id, hand_number'"]);
+    const payloadSource = svc.slice(0, seedStart) + svc.slice(seedEnd);
+    const handReads = [
+      ...payloadSource.matchAll(/from\('hand_history'\)\s*\.select\(([^)]*)\)/g),
+    ].map((m) => m[1].trim());
     // getHand, the bounded Stats evidence resolver, and the table-history list
     // all share the same canonical projection.
     expect(handReads.length).toBe(3);

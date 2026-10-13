@@ -1,0 +1,2 @@
+CREATE TABLE public.union_pnl_cash_outcome_touches(table_id uuid NOT NULL,hand_number bigint NOT NULL,recognized_at timestamptz,game_union_id text,shaped boolean NOT NULL,accepted_rake text,participants jsonb,PRIMARY KEY(table_id,hand_number));
+INSERT INTO public.union_pnl_cash_outcome_touches SELECT table_id,hand_number,recognized_at,game_scope->>'game_union_id',true,evidence->>'accepted_rake',evidence->'participants' FROM public.union_pnl_cash_outcomes WHERE hand_number=31008564;

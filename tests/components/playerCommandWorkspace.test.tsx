@@ -115,6 +115,8 @@ const tree = (entry = '/clubs/club-a/members') => (
   </MemoryRouter>
 );
 async function settle() {
+  const advanced = screen.queryByRole('button', { name: 'Advanced' });
+  if (advanced) fireEvent.click(advanced);
   await act(async () => {
     await vi.advanceTimersByTimeAsync(300);
   });
@@ -126,17 +128,16 @@ const search = () => screen.getByRole('searchbox', { name: 'Search Club Members'
 const sort = () => screen.getByRole('combobox', { name: 'Sort Players' });
 async function preferences() {
   fireEvent.change(search(), { target: { value: 'Player' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Agents', exact: true }));
+  fireEvent.change(screen.getByRole('combobox', { name: 'Filter Players' }), {
+    target: { value: 'agents' },
+  });
   fireEvent.change(sort(), { target: { value: 'name' } });
   fireEvent.click(screen.getByRole('checkbox', { name: 'Wallets', exact: true }));
   await settle();
 }
 function expectPreferences() {
   expect(search()).toHaveValue('Player');
-  expect(screen.getByRole('button', { name: 'Agents', exact: true })).toHaveAttribute(
-    'aria-pressed',
-    'true'
-  );
+  expect(screen.getByRole('combobox', { name: 'Filter Players' })).toHaveValue('agents');
   expect(sort()).toHaveValue('name');
   expect(screen.getByRole('checkbox', { name: 'Wallets', exact: true })).not.toBeChecked();
 }
@@ -214,10 +215,7 @@ it('gives an explicit deep-linked view and sort precedence over saved preference
   render(tree('/clubs/club-a/members?view=online&sort=hierarchy'));
   await settle();
   expect(search()).toHaveValue('Player');
-  expect(screen.getByRole('button', { name: 'Online', exact: true })).toHaveAttribute(
-    'aria-pressed',
-    'true'
-  );
+  expect(screen.getByRole('combobox', { name: 'Filter Players' })).toHaveValue('online');
   expect(sort()).toHaveValue('hierarchy');
 });
 it('restores the virtual roster position after opening a real roster row and returning', async () => {
@@ -257,10 +255,10 @@ it('keeps its filter and sort read owned while its own URL replacement is awaiti
   render(tree());
   await settle();
   f.holdOwnReplace = true;
-  const agents = screen.getByRole('button', { name: 'Agents', exact: true });
-  fireEvent.click(agents);
+  const agents = screen.getByRole('combobox', { name: 'Filter Players' });
+  fireEvent.change(agents, { target: { value: 'agents' } });
   await act(async () => {});
-  expect(agents).toHaveAttribute('aria-pressed', 'true');
+  expect(agents).toHaveValue('agents');
   expect(aborts).toBe(0);
   expect(f.page.mock.calls.map(([, query]) => query.filter)).toEqual(['all', 'agents']);
   await act(async () => {
@@ -271,7 +269,7 @@ it('keeps its filter and sort read owned while its own URL replacement is awaiti
     finish[0]();
   });
   await settle();
-  expect(agents).toHaveAttribute('aria-pressed', 'true');
+  expect(agents).toHaveValue('agents');
   expect(f.page.mock.calls.map(([, query]) => query.filter)).toEqual(['all', 'agents']);
   f.holdOwnReplace = true;
   fireEvent.change(sort(), { target: { value: 'name' } });
@@ -299,26 +297,24 @@ it('serializes pending URL replacements and writes the latest rapidly changed co
   render(tree());
   await settle();
   f.holdOwnReplace = true;
-  fireEvent.click(screen.getByRole('button', { name: 'Agents', exact: true }));
+  fireEvent.change(screen.getByRole('combobox', { name: 'Filter Players' }), {
+    target: { value: 'agents' },
+  });
   fireEvent.change(sort(), { target: { value: 'name' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Online', exact: true }));
+  fireEvent.change(screen.getByRole('combobox', { name: 'Filter Players' }), {
+    target: { value: 'online' },
+  });
   await act(async () => {});
   expect(f.releaseReplaces).toHaveLength(1);
   expect(sort()).toHaveValue('name');
-  expect(screen.getByRole('button', { name: 'Online', exact: true })).toHaveAttribute(
-    'aria-pressed',
-    'true'
-  );
+  expect(screen.getByRole('combobox', { name: 'Filter Players' })).toHaveValue('online');
   const calls = f.page.mock.calls.length;
   await act(async () => {
     f.releaseReplaces.shift()!();
   });
   expect(f.releaseReplaces).toHaveLength(1);
   expect(sort()).toHaveValue('name');
-  expect(screen.getByRole('button', { name: 'Online', exact: true })).toHaveAttribute(
-    'aria-pressed',
-    'true'
-  );
+  expect(screen.getByRole('combobox', { name: 'Filter Players' })).toHaveValue('online');
   await act(async () => {
     f.holdOwnReplace = false;
     f.releaseReplaces.shift()!();
@@ -331,23 +327,19 @@ it('does not revive an old URL receipt when the account returns on the same hist
   const view = render(tree());
   await settle();
   f.holdOwnReplace = true;
-  fireEvent.click(screen.getByRole('button', { name: 'Agents', exact: true }));
+  fireEvent.change(screen.getByRole('combobox', { name: 'Filter Players' }), {
+    target: { value: 'agents' },
+  });
   await act(async () => {});
   expect(f.releaseReplaces).toHaveLength(1);
   f.actor.user = { id: 'viewer-b' };
   view.rerender(tree());
   await settle();
-  expect(screen.getByRole('button', { name: 'All Players', exact: true })).toHaveAttribute(
-    'aria-pressed',
-    'true'
-  );
+  expect(screen.getByRole('combobox', { name: 'Filter Players' })).toHaveValue('all');
   f.actor.user = { id: 'viewer-a' };
   view.rerender(tree());
   await settle();
-  expect(screen.getByRole('button', { name: 'Agents', exact: true })).toHaveAttribute(
-    'aria-pressed',
-    'true'
-  );
+  expect(screen.getByRole('combobox', { name: 'Filter Players' })).toHaveValue('agents');
   expect(f.releaseReplaces).toHaveLength(2);
   await act(async () => {
     f.holdOwnReplace = false;
@@ -360,7 +352,9 @@ it('honors external PUSH and POP while an own URL replacement is pending', async
   render(tree());
   await settle();
   f.holdOwnReplace = true;
-  fireEvent.click(screen.getByRole('button', { name: 'Agents', exact: true }));
+  fireEvent.change(screen.getByRole('combobox', { name: 'Filter Players' }), {
+    target: { value: 'agents' },
+  });
   fireEvent.change(sort(), { target: { value: 'name' } });
   await act(async () => {});
   expect(f.releaseReplaces).toHaveLength(1);
@@ -369,17 +363,11 @@ it('honors external PUSH and POP while an own URL replacement is pending', async
   fireEvent.click(screen.getByRole('button', { name: 'Linked Agents Hierarchy' }));
   await settle();
   expect(sort()).toHaveValue('hierarchy');
-  expect(screen.getByRole('button', { name: 'Agents', exact: true })).toHaveAttribute(
-    'aria-pressed',
-    'true'
-  );
+  expect(screen.getByRole('combobox', { name: 'Filter Players' })).toHaveValue('agents');
   fireEvent.click(screen.getByRole('button', { name: 'History Back' }));
   await settle();
   expect(sort()).toHaveValue('hierarchy');
-  expect(screen.getByRole('button', { name: 'All Players', exact: true })).toHaveAttribute(
-    'aria-pressed',
-    'true'
-  );
+  expect(screen.getByRole('combobox', { name: 'Filter Players' })).toHaveValue('all');
 });
 it('honors explicit same-club navigation and restores the prior URL on history Back', async () => {
   render(tree());
@@ -387,18 +375,12 @@ it('honors explicit same-club navigation and restores the prior URL on history B
   fireEvent.click(screen.getByRole('button', { name: 'Linked Agents' }));
   await settle();
   expect(sort()).toHaveValue('name');
-  expect(screen.getByRole('button', { name: 'Agents', exact: true })).toHaveAttribute(
-    'aria-pressed',
-    'true'
-  );
+  expect(screen.getByRole('combobox', { name: 'Filter Players' })).toHaveValue('agents');
   expect(screen.getByTestId('location').textContent).toContain('?view=agents&sort=name');
   fireEvent.click(screen.getByRole('button', { name: 'History Back' }));
   await settle();
   expect(sort()).toHaveValue('hierarchy');
-  expect(screen.getByRole('button', { name: 'All Players', exact: true })).toHaveAttribute(
-    'aria-pressed',
-    'true'
-  );
+  expect(screen.getByRole('combobox', { name: 'Filter Players' })).toHaveValue('all');
   expect(screen.getByTestId('location').textContent).toBe('/clubs/club-a/members');
 });
 it('restores a legal near-end position in a shorter roster viewport', async () => {
@@ -468,10 +450,7 @@ it.each([
   await settle();
   expect(search()).toHaveValue('');
   expect(sort()).toHaveValue('hierarchy');
-  expect(screen.getByRole('button', { name: 'All Players', exact: true })).toHaveAttribute(
-    'aria-pressed',
-    'true'
-  );
+  expect(screen.getByRole('combobox', { name: 'Filter Players' })).toHaveValue('all');
   expect(screen.getByRole('checkbox', { name: 'Wallets', exact: true })).toBeChecked();
   expect(screen.getByRole('button', { name: /^Open Player 0,/ })).toBeInTheDocument();
 });
@@ -592,10 +571,7 @@ it('adopts the existing tab-only search on upgrade without an obsolete blank rea
 it('normalizes inherited object-property names in deep-linked view and sort to safe defaults', async () => {
   render(tree('/clubs/club-a/members?view=toString&sort=constructor'));
   await settle();
-  expect(screen.getByRole('button', { name: 'All Players', exact: true })).toHaveAttribute(
-    'aria-pressed',
-    'true'
-  );
+  expect(screen.getByRole('combobox', { name: 'Filter Players' })).toHaveValue('all');
   expect(sort()).toHaveValue('hierarchy');
   expect(f.page).toHaveBeenCalledTimes(1);
   expect(f.page).toHaveBeenCalledWith(

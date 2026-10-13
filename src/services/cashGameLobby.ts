@@ -411,6 +411,24 @@ export function joinGameRefusalText(err: unknown): string {
   if (code === 'GAME_BARRED') {
     return cashBuyInRefusalText(msg) || 'You Cannot Rejoin This Game Yet.';
   }
+  /* NO CHAIR IS HELD FOR A PLAYER WHO CANNOT PAY FOR IT (Dan 2026-10-12). The
+     door raises `INSUFFICIENT_CHIPS:<least buy-in>` before it holds anything,
+     and the figure is the answer, so it is said. */
+  if (code === 'INSUFFICIENT_CHIPS') {
+    const need = Number(msg.split(':')[1]);
+    return Number.isFinite(need) && need > 0
+      ? `Not Enough Chips. You Need At Least ${need.toLocaleString('en-US', { maximumFractionDigits: 2 })} Chips To Join This Game.`
+      : 'Not Enough Chips To Join This Game.';
+  }
+  if (code === 'INSUFFICIENT_SETTLED_DIAMONDS') {
+    const need = Number(msg.split(':')[1]);
+    return Number.isSafeInteger(need) && need > 0
+      ? `Not Enough Settled Diamonds. You Need At Least ${need.toLocaleString('en-US')} Diamonds To Join This Game.`
+      : 'Not Enough Settled Diamonds To Join This Game.';
+  }
+  if (code === 'diamond_debt_requires_settlement')
+    return 'Settle Your Outstanding Diamonds Before Joining This Game.';
+  if (code === 'SESSION_REVOKED') return 'Your Session Has Ended. Sign In Again To Join This Game.';
   return 'The Game Could Not Seat You Right Now.';
 }
 

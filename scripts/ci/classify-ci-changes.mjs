@@ -30,6 +30,10 @@ const fixture =
 // PostgreSQL accounting job even when no server application source changes.
 const accounting =
   /^(scripts\/ci\/schema-manifest\.d\/weekly-recompute-split\.json$|tests\/unit\/weeklyRecomputeSplitCi\.test\.ts$|supabase\/accounting\/|scripts\/ops\/build-cashier-totals-index-concurrently\.sql$|scripts\/ci\/build-weekly-accounting-activation\.py$|tests\/fixtures\/(accounting-agreement-history|accounting-alert-38644|accounting-delivery|agent-accounting-statements|browser-period-observer|cash-commission-sources|cash-rake-earning-evidence|cash-source-compatibility|cash-source-refusals|cashier-document-authority|cashier-statements|club-weekly-summary|correction-document-authority|correction-writer-authority|credit-invoice-generation|credit-reduction-authority|credit-request-authority|full-weekly-accounting|earlybird-fee-custody|held-fee-owner-basis|legacy-fee-finality|sep8-spin-custody|messenger-private-accounting|mixed-rake-period|pnl-evidence|push-health-reader|push-subscription-ownership|push-subscription-rotation|rakeback-history-privacy|rakeback-write-authority|routed-accounting|scope-weekly-accounting|tournament-fee-lifecycle|tournament-fee-sources|unified-weekly-accounting|union-earned-close|union-weekly-accounting|union-weekly-basis|weekly-recompute-split|weekly-accounting-coordinator|weekly-scheduler-fairness|weekly-scheduler-timing|weekly-union-continuation)\/)/;
+// A driver, builder or transformation edit must run the actual native restore,
+// even when no application or workflow is changed alongside it.
+const nativeRecovery =
+  /^(scripts\/dr\/(native-supabase-export|build-native-export-client)\.py$|scripts\/ci\/(?:test_native_supabase_export\.py$|(?:test_launch_reset_balance|run_launch_reset_accounting_fixture|test_launch_reset_floor|test_launch_reset_installer|test_launch_reset_floor_admission|test_launch_reset_policy_lock_order)\.py$|fixtures\/launch-reset\/)|scripts\/verification-harness\/leaderboard-native-function-batch\.mjs$|tests\/dr-posture\.test\.ts$)/;
 // Data/Stats console PostgreSQL contracts run inside accounting_postgres. The
 // wrapper, its wiring test, and every fixture are executable inputs; a change
 // to any one of them must select that job even without a migration beside it.
@@ -86,7 +90,7 @@ const backedPayoutScan =
 // against its own fixtures, so an edit to a harness or a fixture alone must
 // still run it. Add a later cashier harness by its name to both groups.
 const cashierDbHarnesses =
-  /^(scripts\/ci\/(?:test-(?:chip-request-approval|union-send|cashier-arena-names|finance-gate|cashier-statement|horse-reads|tournament-chat-default|union-owner-membership)-db-postgres\.py$|test-stranded-satellite-part2-postgres\.py$)|tests\/fixtures\/(?:(?:chip-request-approval-db|union-send-db|cashier-arena-names-db|finance-gate-db|horse-reads-db|tournament-chat-default-db|union-owner-membership-db)\/|stranded-satellite-money-registry\.json$))/;
+  /^(scripts\/ci\/(?:test-(?:chip-request-approval|union-send|cashier-arena-names|finance-gate|cashier-statement|horse-reads|tournament-chat-default|union-owner-membership|only-staff-remove-member)-db-postgres\.py$|test-stranded-satellite-part2-postgres\.py$)|tests\/fixtures\/(?:(?:chip-request-approval-db|union-send-db|cashier-arena-names-db|finance-gate-db|horse-reads-db|tournament-chat-default-db|union-owner-membership-db|only-staff-remove-member-db)\/|stranded-satellite-money-registry\.json$))/;
 const bbjContributionCover =
   /^(scripts\/ci\/(?:test-bbj-contribution-cover-postgres\.py$|fixtures\/bbj-contribution-cover\/)|scripts\/ops\/build-bbj-contribution-cover-concurrently\.sql$|tests\/bbjContributionCoverRegression\.test\.ts$)/;
 const scopedAuditReads =
@@ -245,10 +249,13 @@ export function classifyChangedPaths(paths) {
   // by that prefix, deliberately, so they do not also select the eleven
   // tests/sql/diamond-*.sql game probes.
   const diamondSqlAcceptance = matches(
-    /^(tests\/sql\/(?:run-[a-z0-9-]*diamond[a-z0-9-]*\.py|poker-diamond-[a-z0-9-]+\.sql|poker-arena-access\.sql|diamond-controlled-play-driver\.ts|diamond-session-fixture\.sql|diamond-transfer-cap-fixture\.sql|diamond-tournament-[a-z0-9-]+\.sql|diamond-tournament-[a-z0-9-]+\.manifest\.json|diamond-concurrency-[a-z0-9-]+\.sql|diamond-concurrency-[a-z0-9-]+\.manifest\.json|diamond-cross-format-[a-z0-9-]+\.manifest\.json)|scripts\/ci\/(?:run-diamond-sql-acceptance\.py|check-diamond-runners-listed\.mjs))$/
+    /^(tests\/sql\/(?:run-[a-z0-9-]*diamond[a-z0-9-]*\.py|poker-diamond-[a-z0-9-]+\.sql|poker-arena-access\.sql|diamond-controlled-play-driver\.ts|diamond-session-fixture\.sql|diamond-transfer-cap-fixture\.sql|diamond-tournament-[a-z0-9-]+\.sql|diamond-tournament-[a-z0-9-]+\.manifest\.json|diamond-concurrency-[a-z0-9-]+\.sql|diamond-concurrency-[a-z0-9-]+\.manifest\.json|diamond-cross-format-[a-z0-9-]+\.manifest\.json|diamond-jackpot-integration-[a-z0-9-]+\.json|diamond-session-recap\.fixture\.sql)|tests\/fixtures\/diamond-must-move\/[a-z0-9-]+\.(?:json|sql)|scripts\/ci\/(?:run-diamond-sql-acceptance\.py|check-diamond-runners-listed\.mjs))$/
   );
   // The Phase 4 PostgreSQL step cannot run when its parent job is skipped.
   const phase4Changed = matches(phase4);
+  const playerHistoryQualification = matches(
+    /^(scripts\/ci\/test-player-command-history\.py|scripts\/qualification\/player-command-history\.sql)$/
+  );
   // Script/fixture-only edits must admit accounting and its routing tests.
   const commitmentAudit = matches(
     /^(scripts\/ci\/test-horse-commitment-audit\.py$|scripts\/ci\/probes\/horse-commitment-audit\/|tests\/unit\/horseCi\.test\.ts$)/
@@ -297,6 +304,7 @@ export function classifyChangedPaths(paths) {
   return {
     src: broad || cashLobbyBrowser || buildProvenance || matches(/^src\//),
     server:
+      playerHistoryQualification ||
       broad ||
       committedEvidence ||
       bbjFixture ||
@@ -313,6 +321,7 @@ export function classifyChangedPaths(paths) {
       matches(originalPaidCustody) ||
       commitmentAudit ||
       matches(accounting) ||
+      matches(nativeRecovery) ||
       matches(dataConsolePostgres) ||
       matches(managedGameOneDoor) ||
       matches(stableAdminQualification) ||
@@ -347,6 +356,7 @@ export function classifyChangedPaths(paths) {
       matches(satelliteLedgerAuditIndex) ||
       matches(certificationPlayerIndex),
     tests:
+      playerHistoryQualification ||
       bbjFixture ||
       chipStoreCoverage ||
       matches(/^scripts\/ops\/build-cashier-totals-index-concurrently\.sql$/) ||
@@ -364,6 +374,7 @@ export function classifyChangedPaths(paths) {
       commitmentAudit ||
       matches(dataConsolePostgres) ||
       tournamentAccountingInput ||
+      matches(nativeRecovery) ||
       matches(stableAdminQualification) ||
       matches(mttPreparation) ||
       matches(mttActivation) ||

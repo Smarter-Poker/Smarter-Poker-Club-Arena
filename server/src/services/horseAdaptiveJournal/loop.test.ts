@@ -102,6 +102,140 @@ describe('isolated journal serial loop', () => {
     expect(completed).toHaveBeenCalledTimes(7);
     expect(completed.mock.calls[1][0]).toEqual({ work: 'completed', retention: 'skipped' });
   });
+  it('revisits the capped versioned hand pass using the existing retention deadline', async () => {
+    const ctl = new AbortController();
+    let now = 0,
+      cycles = 0;
+    const prunedAt: number[] = [];
+    await runJournalLoop(ctl.signal, {
+      processWork: async () => ({ status: 'completed', batchKey: 'a'.repeat(64) }),
+      prune: async () => {
+        prunedAt.push(now);
+        return { ...empty(), observations: 400, retiredHands: 25, statisticsExpired: 0 };
+      },
+      now: () => now,
+      started: vi.fn(),
+      completed: vi.fn(),
+      wait: async (ms) => {
+        now += ms;
+        if (++cycles === 7) ctl.abort();
+      },
+    });
+    expect(prunedAt).toEqual([0, 5000]);
+  });
+  it.each(['empty', 'error'] as const)(
+    'preserves a pending adaptive deadline beside %s owners',
+    async (other) => {
+      const ctl = new AbortController();
+      let now = 0;
+      const adaptive: number[] = [],
+        capture: number[] = [],
+        discovery: number[] = [];
+      await runJournalLoop(ctl.signal, {
+        processWork: async () => ({ status: 'completed', batchKey: 'a'.repeat(64) }),
+        prune: async () => {
+          adaptive.push(now);
+          return { ...empty(), membershipPending: true };
+        },
+        pruneCaptures: async () => {
+          capture.push(now);
+          if (other === 'error') throw Error('capture lost');
+          return { status: 'pruned', requests: 0 };
+        },
+        pruneDiscovery: async () => {
+          discovery.push(now);
+          return { status: 'pruned', epochs: 0, members: 0, segments: 0 };
+        },
+        now: () => now,
+        started: vi.fn(),
+        completed: vi.fn(),
+        wait: async (ms) => {
+          now += ms;
+          if (now >= 67000) ctl.abort();
+        },
+      });
+      expect(adaptive).toEqual(Array.from({ length: 14 }, (_, i) => i * 5000));
+      expect(capture).toEqual([1000, 61000]);
+      expect(discovery).toEqual([2000, 62000]);
+      const all = [...adaptive, ...capture, ...discovery];
+      expect(new Set(all).size).toBe(all.length);
+    }
+  );
+  it('keeps all three capped owners fair and serial', async () => {
+    const ctl = new AbortController();
+    let now = 0;
+    const turns: [string, number][] = [];
+    await runJournalLoop(ctl.signal, {
+      processWork: async () => ({ status: 'completed', batchKey: 'a'.repeat(64) }),
+      prune: async () => {
+        turns.push(['adaptive', now]);
+        return { ...empty(), membershipPending: true };
+      },
+      pruneCaptures: async () => {
+        turns.push(['capture', now]);
+        return { status: 'pruned', requests: 100 };
+      },
+      pruneDiscovery: async () => {
+        turns.push(['discovery', now]);
+        return { status: 'pruned', epochs: 1, members: 0, segments: 0 };
+      },
+      now: () => now,
+      started: vi.fn(),
+      completed: vi.fn(),
+      wait: async (ms) => {
+        now += ms;
+        if (now >= 13000) ctl.abort();
+      },
+    });
+    expect(turns).toEqual([
+      ['adaptive', 0],
+      ['capture', 1000],
+      ['discovery', 2000],
+      ['adaptive', 5000],
+      ['capture', 6000],
+      ['discovery', 7000],
+      ['adaptive', 10000],
+      ['capture', 11000],
+      ['discovery', 12000],
+    ]);
+  });
+  it.each([
+    ['retirementPending', true, [0, 5000]],
+    ['budgetReached', true, [0, 5000]],
+    ['retirementPending', false, [0]],
+  ] as const)(
+    'uses v3 %s=%s instead of counting protected attempts as completion',
+    async (field, value, expected) => {
+      const ctl = new AbortController();
+      let now = 0;
+      const prunedAt: number[] = [];
+      await runJournalLoop(ctl.signal, {
+        processWork: async () => ({ status: 'completed', batchKey: 'a'.repeat(64) }),
+        prune: async () => {
+          prunedAt.push(now);
+          return {
+            ...empty(),
+            retiredHands: 0,
+            statisticsExpired: 0,
+            membershipsRegistered: 0,
+            membershipPending: false,
+            handsScanned: 250,
+            retirementPending: false,
+            budgetReached: false,
+            [field]: value,
+          };
+        },
+        now: () => now,
+        started: vi.fn(),
+        completed: vi.fn(),
+        wait: async (ms) => {
+          now += ms;
+          if (now >= 7000) ctl.abort();
+        },
+      });
+      expect(prunedAt).toEqual(expected);
+    }
+  );
   it('keeps thrown work/prune failures bounded and unknown', async () => {
     const ctl = new AbortController();
     const completed = vi.fn();

@@ -28,6 +28,7 @@ import { formatTableChips } from '../../utils/format';
 
 export interface BBJCelebrationProps {
   visible: boolean;
+  asset?: 'chips' | 'diamonds';
   totalPayout: number;
   loser: { userId: string; username: string; share: number; handName: string };
   winner: { userId: string; username: string; share: number; handName: string };
@@ -137,6 +138,7 @@ function chips(n: number | null | undefined): string {
 
 export function BBJCelebration({
   visible,
+  asset = 'chips',
   totalPayout,
   loser,
   winner,
@@ -149,6 +151,10 @@ export function BBJCelebration({
   soundsAllowed = true,
   onComplete,
 }: BBJCelebrationProps) {
+  const amount = (n: number | null | undefined) =>
+    asset === 'diamonds'
+      ? Math.trunc(Number.isFinite(Number(n)) ? Number(n) : 0).toLocaleString('en-US')
+      : chips(n);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const particlesRef = useRef<Particle[]>([]);
   const animFrameRef = useRef<number>(0);
@@ -370,7 +376,7 @@ export function BBJCelebration({
           ctx.font = `bold ${p.size}px sans-serif`;
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.fillText('C', 0, 0);
+          ctx.fillText(asset === 'diamonds' ? 'D' : 'C', 0, 0);
         } else if (p.type === 'spark') {
           // Glowing spark
           ctx.shadowColor = p.color;
@@ -426,7 +432,7 @@ export function BBJCelebration({
       style={{ opacity, transition: 'opacity 0.5s ease' }}
       role="dialog"
       aria-live="assertive"
-      aria-label={`${kind === 'mini' ? 'Mini Bad Beat Jackpot' : 'Bad Beat Jackpot'} Hit. Total Payout ${formatTableChips(totalPayout)}.`}
+      aria-label={`${kind === 'mini' ? 'Mini Bad Beat Jackpot' : 'Bad Beat Jackpot'} Hit. Total Payout ${asset === 'diamonds' ? amount(totalPayout) + ' Diamonds' : formatTableChips(totalPayout)}.`}
     >
       {/* Canvas layer for particles */}
       <canvas ref={canvasRef} className="bbj-canvas" />
@@ -468,8 +474,8 @@ export function BBJCelebration({
           <span className="bbj-amount-label">TOTAL PAYOUT</span>
           <span className="bbj-amount-value">
             {displayAmount.toLocaleString('en-US', {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
+              minimumFractionDigits: asset === 'diamonds' ? 0 : 2,
+              maximumFractionDigits: asset === 'diamonds' ? 0 : 2,
             })}
           </span>
         </div>
@@ -481,8 +487,10 @@ export function BBJCelebration({
             <div className="bbj-breakdown-label">BAD BEAT HOLDER</div>
             <div className="bbj-breakdown-name">{loser?.username || 'Player'}</div>
             <div className="bbj-breakdown-hand">{loser?.handName || ''}</div>
-            <div className="bbj-breakdown-amount">+{chips(loser?.share)}</div>
-            <div className="bbj-breakdown-percent">50%</div>
+            <div className="bbj-breakdown-amount">+{amount(loser?.share)}</div>
+            <div className="bbj-breakdown-percent">
+              {asset === 'diamonds' ? 'Actual Share' : '50%'}
+            </div>
           </div>
 
           <div className="bbj-breakdown-card bbj-breakdown-winner">
@@ -490,19 +498,21 @@ export function BBJCelebration({
             <div className="bbj-breakdown-label">HAND WINNER</div>
             <div className="bbj-breakdown-name">{winner?.username || 'Player'}</div>
             <div className="bbj-breakdown-hand">{winner?.handName || ''}</div>
-            <div className="bbj-breakdown-amount">+{chips(winner?.share)}</div>
-            <div className="bbj-breakdown-percent">25%</div>
+            <div className="bbj-breakdown-amount">+{amount(winner?.share)}</div>
+            <div className="bbj-breakdown-percent">
+              {asset === 'diamonds' ? 'Actual Share' : '25%'}
+            </div>
           </div>
 
           <div className="bbj-breakdown-card bbj-breakdown-table">
             <div className="bbj-breakdown-emoji" aria-hidden="true" />
             <div className="bbj-breakdown-label">TABLE SHARE</div>
             <div className="bbj-breakdown-name">{tablePlayerCount} Players</div>
-            <div className="bbj-breakdown-hand">{chips(perPlayerShare)} Each</div>
-            <div className="bbj-breakdown-amount">
-              +{tableShare.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+            <div className="bbj-breakdown-hand">{amount(perPlayerShare)} Each</div>
+            <div className="bbj-breakdown-amount">+{amount(tableShare)}</div>
+            <div className="bbj-breakdown-percent">
+              {asset === 'diamonds' ? 'Actual Share' : '25%'}
             </div>
-            <div className="bbj-breakdown-percent">25%</div>
           </div>
         </div>
 
@@ -513,13 +523,17 @@ export function BBJCelebration({
               <span className="bbj-hero-share">
                 YOU WON +
                 {heroShare.toLocaleString('en-US', {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
+                  minimumFractionDigits: asset === 'diamonds' ? 0 : 2,
+                  maximumFractionDigits: asset === 'diamonds' ? 0 : 2,
                 })}
               </span>
               <br />
-              Chips Added Directly To Your Table Balance!
+              {asset === 'diamonds'
+                ? 'Diamonds Added Directly To Your Diamond Wallet!'
+                : 'Chips Added Directly To Your Table Balance!'}
             </>
+          ) : asset === 'diamonds' ? (
+            'Diamonds Added Directly To The Players’ Diamond Wallets!'
           ) : (
             'Chips Added Directly To The Players\u2019 Table Balances!'
           )}

@@ -13,7 +13,7 @@
   overflow: hidden;
   border: 0;
   border-radius: 0;
-  background-color: #020508;
+  background-color: transparent;
   background-image:
     url('/assets/club-buttons/lobby/shark-panel-v1/top.png'),
     url('/assets/club-buttons/lobby/shark-panel-v1/bottom.png'),
@@ -88,8 +88,7 @@
   border: 0;
   border-radius: 0;
   color: #dceaf1;
-  background: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png') center / 100%
-    100% no-repeat;
+  --rewards-control-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png');
   box-shadow: none;
   font:
     700 11px/1 'Roboto Condensed',
@@ -112,7 +111,7 @@
   padding: clamp(24px, 6%, 46px) clamp(32px, 9%, 76px);
   border: 0;
   border-radius: 0;
-  background-color: #020508;
+  background-color: transparent;
   background-image:
     url('/assets/club-buttons/lobby/shark-panel-v1/top.png'),
     url('/assets/club-buttons/lobby/shark-panel-v1/bottom.png'),
@@ -130,7 +129,7 @@
   padding: clamp(22px, 5%, 40px) clamp(30px, 8%, 68px);
   border: 0;
   color: #bfe8fb;
-  background-color: #020508;
+  background-color: transparent;
   background-image:
     url('/assets/club-buttons/lobby/shark-panel-v1/top.png'),
     url('/assets/club-buttons/lobby/shark-panel-v1/bottom.png'),
@@ -198,7 +197,7 @@
   border: 0;
   border-radius: 0;
   color: inherit;
-  background-color: #020508;
+  background-color: transparent;
   background-image:
     url('/assets/club-buttons/lobby/shark-panel-v1/top.png'),
     url('/assets/club-buttons/lobby/shark-panel-v1/bottom.png'),
@@ -241,8 +240,7 @@
   padding: 5px 12px;
   border: 0;
   border-radius: 0;
-  background: transparent url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png')
-    center / 100% 100% no-repeat;
+  --rewards-control-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png');
   font:
     800 8px/1.2 'Roboto Condensed',
     Inter,
@@ -278,7 +276,7 @@
   overflow: hidden;
   padding: 8%;
   border: 0;
-  background: #03070b url('/assets/club-buttons/club-utility-shell.webp') center / 100% 100%
+  background: transparent url('/assets/club-buttons/club-utility-shell.webp') center / 100% 100%
     no-repeat;
   box-shadow: none;
 }
@@ -403,7 +401,7 @@
 :global([data-theme='light']) .titleRow,
 :global([data-theme='light']) .card {
   color: #eaf3f8;
-  background-color: #020508;
+  background-color: transparent;
 }
 
 :global([data-theme='light']) .title,
@@ -420,7 +418,7 @@
 }
 
 :global([data-theme='light']) .promoBanner {
-  background-color: #020508;
+  background-color: transparent;
 }
 
 :global([data-theme='light']) .promoBonus {
@@ -433,7 +431,7 @@
 }
 
 :global([data-theme='light']) .catalogNotice {
-  background-color: #020508;
+  background-color: transparent;
 }
 
 :global([data-theme='light']) .navTab {
@@ -468,4 +466,43 @@
   .card {
     transition: none;
   }
+}
+
+/* The approved plate remains unchanged. Its opaque exterior is clipped on
+   a paint-only layer; labels, focus outlines and native hit areas stay whole.
+   Coordinates follow the outer chrome of the 348 x 114 source raster. */
+.navTab,
+.popularBadge,
+.bonusBadge {
+  position: relative;
+  isolation: isolate;
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+.navTab::before,
+.popularBadge::before,
+.bonusBadge::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  pointer-events: none;
+  background: var(--rewards-control-image) center / 100% 100% no-repeat;
+  clip-path: polygon(
+    7.2% 4.4%,
+    92.8% 4.4%,
+    99.5% 23.7%,
+    99.5% 83.3%,
+    93.1% 99.1%,
+    6.9% 99.1%,
+    0.5% 83.3%,
+    0.5% 24.6%
+  );
+}
+
+/* Retain the established anchored placement; only the paint clips. */
+.popularBadge,
+.bonusBadge {
+  position: absolute;
 }

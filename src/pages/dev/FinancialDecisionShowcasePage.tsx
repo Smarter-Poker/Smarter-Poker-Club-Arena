@@ -85,6 +85,14 @@ export default function FinancialDecisionShowcasePage() {
     });
   }, []);
 
+  const joinWaitlist = useCallback(() => {
+    masterBus.emit('WAITLIST_POSITION_CHANGED', {
+      tableId: TEST_TABLE_ID,
+      tableName: 'Phase Five Hold Table',
+      position: 1,
+    });
+  }, []);
+
   return (
     <main
       data-testid="financial-decision-showcase"
@@ -95,6 +103,9 @@ export default function FinancialDecisionShowcasePage() {
       <output data-testid="insurance-status">{insuranceStatus}</output>
       <output data-testid="decline-count">{declines}</output>
       <output data-testid="rabbit-request-count">{rabbitRequests}</output>
+      <button type="button" data-testid="waitlist-join" onClick={joinWaitlist}>
+        Join Test Waitlist
+      </button>
       <button type="button" data-testid="waitlist-seat-offer" onClick={offerWaitlistSeat}>
         Offer Test Seat
       </button>

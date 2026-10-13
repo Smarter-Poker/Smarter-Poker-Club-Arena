@@ -156,6 +156,8 @@ function mountCashier() {
 }
 
 async function synchronized() {
+  const advanced = screen.queryByRole('button', { name: /^Advanced(?: \([\d,]+\))?$/ });
+  if (advanced) fireEvent.click(advanced);
   await waitFor(() => expect(screen.getByText('Balances Synchronized')).toBeInTheDocument());
 }
 
@@ -1463,4 +1465,198 @@ it('Phase 7: the native player composer traps both Tab directions and returns fo
   await waitFor(() => expect(document.activeElement).toBe(trigger));
   expect(document.body.style.overflow).not.toBe('hidden');
   expect(state.rpcCalls.some((call) => call.name === 'fn_cashier_batch_transfer')).toBe(false);
+});
+
+describe('Simple Cashier Default', () => {
+  it('defaults to the compact roster, keeps all three actions, and restores Advanced tools', async () => {
+    const { container } = mountCashier();
+    await waitFor(() => expect(screen.getByText('Balances Synchronized')).toBeInTheDocument());
+    expect(container.querySelector('[data-cashier-mode="simple"]')).not.toBeNull();
+    expect(screen.queryByRole('tablist', { name: 'Cashier Actions' })).toBeNull();
+    for (const name of ['Claim Back', 'Send Ticket', 'Send Out']) {
+      expect(screen.getByRole('button', { name, exact: true })).toBeInTheDocument();
+    }
+    expect(screen.getByPlaceholderText('Search Name Or ID')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Manage Player 1' })).toHaveTextContent('ID: P-1');
+    expect(
+      within(screen.getByRole('link', { name: 'Manage Player 1' }).parentElement!).getByText('75', {
+        exact: true,
+      })
+    ).toBeInTheDocument();
+    const css = readFileSync('src/pages/CashierTradePage.module.css', 'utf8');
+    expect(css).toContain('.page.simple .glass .rowSub:not(.simpleId)');
+    expect(css).not.toContain('.page.simple .rowSub:not(.simpleId)');
+    fireEvent.click(screen.getByRole('button', { name: /^Advanced/ }));
+    expect(screen.getByRole('tablist', { name: 'Cashier Actions' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reconcile Now' })).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('combobox', { name: /Role/ }), {
+      target: { value: 'agent' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Simple', exact: true }));
+    expect(container.querySelector('[data-cashier-mode="simple"]')).not.toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /^Advanced/ }));
+    expect(screen.getByRole('combobox', { name: /Role/ })).toHaveValue('all');
+  });
+});
+
+describe('Simple And Advanced Action Recovery Audit', () => {
+  const recentSend = {
+    transaction_id: '77777777-7777-4777-8777-777777777777',
+    to_user_id: PLAYER_IDS[0],
+    to_name: 'Recent Recipient',
+    amount: 40,
+    claimed_back: 0,
+    remaining: 40,
+    destination: 'player_wallet',
+    seconds_left: 500,
+  };
+
+  it('reports a rejected Claim Back read and allows a successful Retry', async () => {
+    state.reversible = async () => {
+      throw new Error('Transport Rejected');
+    };
+    mountCashier();
+    await synchronized();
+    fireEvent.click(screen.getByRole('button', { name: 'Claim Back', exact: true }));
+    const dialog = await screen.findByRole('dialog', { name: 'Claim Back', exact: true });
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'Could Not Read Your Recent Sends.'
+    );
+    expect(within(dialog).queryByText('Reading Your Recent Sends...')).toBeNull();
+    state.reversible = async () => ({ data: [recentSend], error: null });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Retry' }));
+    expect(await within(dialog).findByText('Recent Recipient')).toBeInTheDocument();
+    expect(within(dialog).queryByRole('alert')).toBeNull();
+  });
+
+  it('hides the previous Claim Back rows until a same-club reread completes', async () => {
+    state.reversible = async () => ({ data: [recentSend], error: null });
+    mountCashier();
+    await synchronized();
+    fireEvent.click(screen.getByRole('button', { name: 'Claim Back', exact: true }));
+    let dialog = await screen.findByRole('dialog', { name: 'Claim Back', exact: true });
+    await within(dialog).findByText('Recent Recipient');
+    fireEvent.keyDown(document, { key: 'Escape' });
+    const reread = deferred<unknown>();
+    state.reversible = () => reread.promise;
+    fireEvent.click(screen.getByRole('button', { name: 'Claim Back', exact: true }));
+    dialog = await screen.findByRole('dialog', { name: 'Claim Back', exact: true });
+    expect(within(dialog).getByText('Reading Your Recent Sends...')).toBeInTheDocument();
+    expect(within(dialog).queryByText('Recent Recipient')).toBeNull();
+    expect(within(dialog).queryByRole('button', { name: 'Claim Back', exact: true })).toBeNull();
+    await act(async () => reread.resolve({ data: [], error: null }));
+    expect(
+      await within(dialog).findByText(/Nothing Is Still Inside Its Ten Minute Window/)
+    ).toBeInTheDocument();
+  });
+
+  it.each([
+    ['send', false],
+    ['send', true],
+    ['ticket', false],
+    ['ticket', true],
+  ] as const)(
+    'keeps an unresolved %s journal when the other action is submitted in Advanced=%s',
+    async (firstKind, advanced) => {
+      state.batch = async () => ({ data: null, error: { message: 'Connection Lost' } });
+      mountCashier();
+      await waitFor(() => expect(screen.getByText('Balances Synchronized')).toBeInTheDocument());
+      if (advanced) fireEvent.click(screen.getByRole('button', { name: /^Advanced/ }));
+      let dialog = await openSendOut('10', 1);
+      if (firstKind === 'ticket')
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Send Ticket', exact: true }));
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm', exact: true }));
+      await screen.findByRole('region', { name: 'Batch Transfer Receipt' });
+      const original = readCashierTransferRecoveries(USER_ID, CLUB_A)[0];
+      expect(original.kind).toBe(firstKind);
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel', exact: true }));
+      const nextKind = firstKind === 'send' ? 'ticket' : 'send';
+      fireEvent.click(
+        screen.getByRole('button', {
+          name: nextKind === 'send' ? 'Send Out' : 'Send Ticket',
+          exact: true,
+        })
+      );
+      dialog = await screen.findByRole('dialog', {
+        name: nextKind === 'send' ? 'Send Out' : 'Send Ticket',
+        exact: true,
+      });
+      state.batch = async (params) => ({
+        data: {
+          success: true,
+          results: (params.p_items as Array<{ user_id: string }>).map((item) => ({
+            user_id: item.user_id,
+            success: true,
+          })),
+        },
+        error: null,
+      });
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm', exact: true }));
+      await waitFor(() =>
+        expect(
+          state.rpcCalls.filter((call) => call.name === 'fn_cashier_batch_transfer')
+        ).toHaveLength(2)
+      );
+      const calls = state.rpcCalls.filter((call) => call.name === 'fn_cashier_batch_transfer');
+      expect(calls[1].args.p_kind).toBe(nextKind);
+      expect(calls[1].args.p_batch_id).not.toBe(calls[0].args.p_batch_id);
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      expect(readCashierTransferRecoveries(USER_ID, CLUB_A)).toEqual([original]);
+      expect(screen.getByRole('button', { name: 'Review And Retry' })).toBeInTheDocument();
+      expect(toastMocks.error).not.toHaveBeenCalledWith(
+        'Cashier Safety Storage Is Unavailable. Free Browser Storage And Try Again'
+      );
+    }
+  );
+
+  it.each([false, true])(
+    'claims the original send once in Advanced=%s and retains its key on an uncertain retry',
+    async (advanced) => {
+      state.reversible = async () => ({ data: [recentSend], error: null });
+      mountCashier();
+      await waitFor(() => expect(screen.getByText('Balances Synchronized')).toBeInTheDocument());
+      if (advanced) fireEvent.click(screen.getByRole('button', { name: /^Advanced/ }));
+      const originalRpc = vi.mocked(supabase.rpc).getMockImplementation()!;
+      const firstReply = deferred<unknown>();
+      const claimCalls: Array<Record<string, unknown>> = [];
+      vi.mocked(supabase.rpc).mockImplementation((name, args) => {
+        if (name !== 'fn_agent_wallet_claim_back') return originalRpc(name, args);
+        claimCalls.push(args as Record<string, unknown>);
+        return (
+          claimCalls.length === 1
+            ? firstReply.promise
+            : Promise.resolve({ data: { success: true, amount: 40, replayed: true }, error: null })
+        ) as never;
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Claim Back', exact: true }));
+      const dialog = await screen.findByRole('dialog', { name: 'Claim Back', exact: true });
+      const claim = await within(dialog).findByRole('button', { name: 'Claim Back', exact: true });
+      fireEvent.click(claim);
+      fireEvent.click(claim);
+      await waitFor(() => expect(claimCalls).toHaveLength(1));
+      expect(claimCalls[0]).toEqual(
+        expect.objectContaining({
+          p_club_id: CLUB_A,
+          p_transaction_id: recentSend.transaction_id,
+          p_amount: null,
+        })
+      );
+      await act(async () =>
+        firstReply.resolve({ data: null, error: { message: 'Connection Lost' } })
+      );
+      await waitFor(() =>
+        expect(
+          within(dialog).getByRole('button', { name: 'Claim Back', exact: true })
+        ).toBeEnabled()
+      );
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Claim Back', exact: true }));
+      await waitFor(() => expect(claimCalls).toHaveLength(2));
+      expect(claimCalls[1]).toEqual(claimCalls[0]);
+      await waitFor(() =>
+        expect(toastMocks.success).toHaveBeenCalledWith(
+          expect.stringContaining('That Claim Had Already Gone Through')
+        )
+      );
+    }
+  );
 });

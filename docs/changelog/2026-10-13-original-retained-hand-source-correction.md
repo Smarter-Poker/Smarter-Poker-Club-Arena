@@ -1,0 +1,9 @@
+# Original retained hands correct an exact refused source once
+
+Valid tournament NONE jackpot decisions were rejected by the cash-only guard. The qualified NONE source correction is installed, but thirty original retained requests already spent their successor claim while that source refused. This change gives only those exact immutable originals a separately recorded, one-time source correction inside the existing resume transaction. Installation does not admit certificates or move money.
+
+The original request, failed handoff and result remain immutable. The original lease, lifecycle, hand locks, seat ownership, dispatch, atomic settlement, postcommit and F06 completion continue to own execution. Arbitrary, uncertified, changed or already consumed requests retain their refusal. Transient admission failures roll back the new claim; an actual semantic refusal consumes it once. Accepted response loss resumes the original durable receipt without another financial attempt.
+
+Private original fixture qualification binds the actual thirty requests and their financial state. Public hosted qualification uses safe component and refusal fixtures; it does not claim execution of private production originals. Both bind the exact maintained source. Native evidence includes pre-fix refusal, original economics and history, duplicates, concurrent calls, rollback, interrupted postcommit, malformed inputs, freeze, installed source/security drift and private immutable authority. Final source receipts, protected installation, actual certificate admission and the existing production consumer readback remain separate evidence.
+
+No engine replacement, new financial endpoint, scheduled repair, balance rewrite or replay of the original failed claim is introduced. The seventeen cash allocator failures are a distinct source class and are excluded from this closed tournament cohort.

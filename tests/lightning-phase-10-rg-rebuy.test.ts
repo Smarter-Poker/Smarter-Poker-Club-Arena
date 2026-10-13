@@ -206,19 +206,21 @@ describe('every substitution is asserted', () => {
     expect(r).toContain("'auto_rebuy_session_cap', 0, 0, 1000000, false");
     expect(r).toContain("IN ('zero', 'below_bb', 'below_pct')");
     expect(r).toContain("IN ('initial', 'max')");
-    expect(r).toContain("v_ar_on := false;");
+    expect(r).toContain('v_ar_on := false;');
     expect(r).toContain("'auto_rebuy_enabled', v_ar_on,");
   });
   it('the legality gains STOP_REQUESTED after the hand arms, so a stopper still playing reads IN_HAND', () => {
     const r = rewrite(
       'public.fn_lightning_player_legality(uuid,timestamp with time zone,uuid[],jsonb)'
     );
-    expect(r).toMatch(/THEN 'IN_HAND'[\s\S]+WHEN f\.stop_requested_at IS NOT NULL THEN 'STOP_REQUESTED'/);
+    expect(r).toMatch(
+      /THEN 'IN_HAND'[\s\S]+WHEN f\.stop_requested_at IS NOT NULL THEN 'STOP_REQUESTED'/
+    );
     expect(r).toContain("'stop_requested_at', c.stop_requested_at");
   });
   it('the pool door gains the responsible-gaming gate behind the anchor check', () => {
     const r = rewrite('public.fn_lightning_pool_enter(uuid,timestamp with time zone)');
-    expect(r).toContain("fn_rg_require_not_excluded(s.user_id)");
+    expect(r).toContain('fn_rg_require_not_excluded(s.user_id)');
     expect(r).toMatch(/IS DISTINCT FROM true THEN\s+RETURN NULL;/);
   });
   it('the reaper widens to stop requests, names the right reason, and never counts a stop as an expired disconnect', () => {
@@ -248,7 +250,9 @@ describe('law 10.5 and the live proofs', () => {
     for (const p of proofs) expect(p).not.toContain('\n');
   });
   it('the RNG review pins hidden information: the service-only windows, the card-free Lightning tables and the owner-scoped stores', () => {
-    expect(SQL).toMatch(/fn_lightning_cluster_forensics[\s\S]+fn_lightning_hand_replay_check[\s\S]+fn_lightning_settlement_seats/);
+    expect(SQL).toMatch(
+      /fn_lightning_cluster_forensics[\s\S]+fn_lightning_hand_replay_check[\s\S]+fn_lightning_settlement_seats/
+    );
     expect(SQL).toContain("column_name ~* 'card|deck|seed|hole'");
     expect(SQL).toContain("'hole_cards|hand_private_state|table_hole_cards'");
     expect(SQL).toContain("'table_hole_cards', 'hand_private_state'");
@@ -262,13 +266,13 @@ describe('the proof harness and CI', () => {
     expect(HARNESS).toContain('20261008050805_lightning_phase_9_disconnect_reconnect');
     expect(HARNESS).toContain('PASS: Lightning Phase 10');
   });
-  it('CI runs the harness on shard 1 after the Phase 9 reconnect step', () => {
+  it('CI runs the harness on shard 3 after the Phase 9 reconnect step', () => {
     const p9 = CI.indexOf('test-lightning-phase9-reconnect.sh');
     const p10 = CI.indexOf('test-lightning-phase10-rg-rebuy.sh');
     expect(p9).toBeGreaterThan(0);
     expect(p10).toBeGreaterThan(p9);
     const step = CI.slice(CI.lastIndexOf('- name:', p10), p10);
-    expect(step).toContain('if: matrix.shard == 1');
+    expect(step).toContain('if: matrix.shard == 3');
     expect(step).toContain('PG_BIN: /usr/lib/postgresql/17/bin');
   });
   it('the schema manifest fragment promises exactly the two new doors and the three columns', () => {

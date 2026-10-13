@@ -161,11 +161,18 @@ export default function HandHistoryPage() {
 
   /* The record as loaded, in play order. Filters apply to this list on screen
      and never refetch; the scope line says how many hands they cover. */
-  const [rows, setRows] = useState<ServiceHandRecord[]>([]);
+  const archiveScope = `${userId ?? 'signed-out'}:${drilldownKey}`;
+  const [storedRows, setRows] = useState<ServiceHandRecord[]>([]);
+  const [loadedScope, setLoadedScope] = useState<string | null>(null);
+  const rows = useMemo(
+    () => (loadedScope === archiveScope ? storedRows : []),
+    [loadedScope, archiveScope, storedRows]
+  );
   const [loading, setLoading] = useState(true);
   /* A failed fetch is not an empty history. */
   const [loadFailed, setLoadFailed] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [firstReading, setFirstReading] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [filter, setFilter] = useState<HistoryFilter>('all');
   /* Phase 5: the free-text term, and the caller's own notes keyed by hand id. */
@@ -188,20 +195,63 @@ export default function HandHistoryPage() {
   const [shareHand, setShareHand] = useState<ShareableHand | null>(null);
   const [visible, setVisible] = useState<Record<string, boolean>>({});
   const firstPageSequenceRef = useRef(0);
+  const firstReadPendingRef = useRef<{ scope: string; sequence: number } | null>(null);
+  const firstLoadedScopeRef = useRef<string | null>(null);
   const evidenceCursorRef = useRef<StatsEvidenceCursor | null>(null);
-  const requestKeyRef = useRef(drilldownKey);
-  requestKeyRef.current = drilldownKey;
+  const requestKeyRef = useRef(archiveScope);
+  requestKeyRef.current = archiveScope;
+  const moreSequenceRef = useRef(0);
+  const morePendingRef = useRef(false);
   /* A linked hand not on the loaded page, fetched by id and shown first. */
-  const [linkedRow, setLinkedRow] = useState<ServiceHandRecord | null>(null);
+  const [linkedRead, setLinkedRead] = useState<{
+    scope: string;
+    row: ServiceHandRecord | null;
+  } | null>(null);
+  const linkedRow = linkedRead?.scope === archiveScope ? linkedRead.row : null;
   const [linkedState, setLinkedState] = useState<'idle' | 'loading' | 'missing'>('idle');
   const linkedScrolledRef = useRef<string | null>(null);
 
-  const loadFirstPage = useCallback(async () => {
-    if (!userId) return;
-    const requestSequence = ++firstPageSequenceRef.current;
-    setLoading(true);
+  useEffect(() => {
+    firstPageSequenceRef.current += 1;
+    firstReadPendingRef.current = null;
+    firstLoadedScopeRef.current = null;
+    moreSequenceRef.current += 1;
+    morePendingRef.current = false;
+    evidenceCursorRef.current = null;
+    setRows([]);
+    setLoadedScope(null);
+    setLoading(Boolean(userId));
+    setLoadingMore(false);
+    setFirstReading(false);
     setLoadFailed(false);
-    const requestKey = drilldownKey;
+    setLinkedRead(null);
+    setLinkedState('idle');
+    linkedScrolledRef.current = null;
+    setExpandedId(null);
+    setReplayId(null);
+    setShareHand(null);
+    setNotes(new Map());
+    setFlags(new Map());
+    setNotesKnown(false);
+    setFlagsKnown(false);
+  }, [archiveScope, userId]);
+
+  const loadFirstPage = useCallback(async () => {
+    if (
+      !userId ||
+      requestKeyRef.current !== archiveScope ||
+      firstReadPendingRef.current?.scope === archiveScope
+    )
+      return;
+    const requestSequence = ++firstPageSequenceRef.current;
+    firstReadPendingRef.current = { scope: archiveScope, sequence: requestSequence };
+    setFirstReading(true);
+    moreSequenceRef.current += 1;
+    morePendingRef.current = false;
+    setLoadingMore(false);
+    setLoading(firstLoadedScopeRef.current !== archiveScope);
+    setLoadFailed(false);
+    const requestKey = archiveScope;
     try {
       const page = useStatsEvidence
         ? await retryFetch(
@@ -238,6 +288,8 @@ export default function HandHistoryPage() {
               handHistoryService.getPlayerHands(userId, PAGE_SIZE, {
                 asset: arenaAssetScope,
                 clubId: statsDrilldown.clubId,
+                throwOnError: true,
+                indexedArchive: true,
               }),
             { maxRetries: 2, isMountedRef: isMounted }
           );
@@ -248,16 +300,31 @@ export default function HandHistoryPage() {
       )
         return;
       setRows(data);
+      setLoadedScope(requestKey);
+      firstLoadedScopeRef.current = requestKey;
       evidenceCursorRef.current = page?.next_cursor ?? null;
       setHasMore(page ? page.has_more : data.length === PAGE_SIZE);
     } catch (error) {
       reportError(error, 'HandHistoryPage.Failed_to_load_hands');
-      if (!isMounted.current) return;
+      if (
+        !isMounted.current ||
+        requestKeyRef.current !== requestKey ||
+        firstPageSequenceRef.current !== requestSequence
+      )
+        return;
       toast.error('Could Not Load Hand History');
       setLoadFailed(true);
     } finally {
-      if (firstPageSequenceRef.current === requestSequence) {
-        if (isMounted.current) setLoading(false);
+      if (firstReadPendingRef.current?.sequence === requestSequence)
+        firstReadPendingRef.current = null;
+      if (
+        requestKeyRef.current === requestKey &&
+        firstPageSequenceRef.current === requestSequence
+      ) {
+        if (isMounted.current) {
+          setLoading(false);
+          setFirstReading(false);
+        }
       }
     }
   }, [
@@ -267,14 +334,29 @@ export default function HandHistoryPage() {
     statsDrilldown,
     useStatsEvidence,
     drilldownKey,
+    archiveScope,
     isMounted,
     toast,
   ]);
 
   const loadMore = useCallback(async () => {
-    if (!userId || loadingMore) return;
+    if (
+      !userId ||
+      loading ||
+      morePendingRef.current ||
+      firstReadPendingRef.current?.scope === archiveScope
+    )
+      return;
+    morePendingRef.current = true;
+    const moreSequence = ++moreSequenceRef.current;
+    const firstSequence = firstPageSequenceRef.current;
     setLoadingMore(true);
-    const requestKey = drilldownKey;
+    const requestKey = archiveScope;
+    const isCurrent = () =>
+      isMounted.current &&
+      requestKeyRef.current === requestKey &&
+      moreSequenceRef.current === moreSequence &&
+      firstPageSequenceRef.current === firstSequence;
     try {
       const page = useStatsEvidence
         ? await retryFetch(
@@ -312,10 +394,12 @@ export default function HandHistoryPage() {
                 offset: rows.length,
                 asset: arenaAssetScope,
                 clubId: statsDrilldown.clubId,
+                throwOnError: true,
+                indexedArchive: true,
               }),
             { maxRetries: 2, isMountedRef: isMounted }
           );
-      if (!isMounted.current || requestKeyRef.current !== requestKey) return;
+      if (!isCurrent()) return;
       setRows((prev) => {
         const seen = new Set(prev.map((h) => h.id));
         return [...prev, ...data.filter((h) => !seen.has(h.id))];
@@ -324,9 +408,12 @@ export default function HandHistoryPage() {
       setHasMore(page ? page.has_more : data.length === PAGE_SIZE);
     } catch (error) {
       reportError(error, 'HandHistoryPage.Failed_to_load_more');
-      if (isMounted.current) toast.error('Could Not Load More Hands');
+      if (isCurrent()) toast.error('Could Not Load More Hands');
     } finally {
-      if (isMounted.current) setLoadingMore(false);
+      if (isCurrent()) {
+        morePendingRef.current = false;
+        setLoadingMore(false);
+      }
     }
   }, [
     userId,
@@ -335,8 +422,9 @@ export default function HandHistoryPage() {
     statsDrilldown,
     useStatsEvidence,
     drilldownKey,
+    archiveScope,
     rows.length,
-    loadingMore,
+    loading,
     isMounted,
     toast,
   ]);
@@ -371,12 +459,12 @@ export default function HandHistoryPage() {
   // The linked hand: on the page already, or fetched by id.
   useEffect(() => {
     if (!linkedHandId || !userId) {
-      setLinkedRow(null);
+      setLinkedRead(null);
       setLinkedState('idle');
       return;
     }
     if (rows.some((r) => r.id === linkedHandId)) {
-      setLinkedRow(null);
+      setLinkedRead(null);
       setLinkedState('idle');
       return;
     }
@@ -388,8 +476,8 @@ export default function HandHistoryPage() {
     (async () => {
       try {
         const row = await handHistoryService.getHand(linkedHandId);
-        if (!alive) return;
-        setLinkedRow(row);
+        if (!alive || requestKeyRef.current !== archiveScope) return;
+        setLinkedRead({ scope: archiveScope, row });
         setLinkedState(row ? 'idle' : 'missing');
       } catch (e) {
         if (!alive) return;
@@ -400,7 +488,7 @@ export default function HandHistoryPage() {
     return () => {
       alive = false;
     };
-  }, [linkedHandId, userId, rows, loading, linkedRow]);
+  }, [linkedHandId, userId, rows, loading, linkedRow, archiveScope]);
 
   /* The view model: the same record the table's panel renders, through the
      same adapter. Filters and the stats drill-down apply on top. A linked hand
@@ -451,6 +539,8 @@ export default function HandHistoryPage() {
     linkedHandId,
     linkedRow,
     useStatsEvidence,
+    loadedScope,
+    archiveScope,
   ]);
 
   /* Only the variants the loaded hands actually contain: a menu that offers a
@@ -704,6 +794,7 @@ export default function HandHistoryPage() {
   return (
     <div className="hand-history-page" data-arena-surface="play">
       <CasinoSurfaceHeader
+        unframed
         eyebrow="Play & Review / Hands"
         title="Hand Archive"
         description="Every Hand You Played, Across Every Table, Newest First. Expand A Hand For The Full Rundown, Replay It, Share It, Or Send It To Jarvis."
@@ -909,18 +1000,20 @@ export default function HandHistoryPage() {
         </>
       )}
 
+      {!loading && loadFailed && (
+        <div className="hh-empty">
+          <p className="hh-empty__title">Could Not Load Your Hand History</p>
+          <p className="hh-empty__body">This Is A Loading Problem, Not An Empty History.</p>
+          <button type="button" className="load-more-btn" onClick={() => void loadFirstPage()}>
+            Retry
+          </button>
+        </div>
+      )}
+
       <div className="hands-list" aria-busy={loading}>
         {loading ? (
           <PageSkeleton variant="list" />
-        ) : loadFailed && hands.length === 0 ? (
-          <div className="hh-empty">
-            <p className="hh-empty__title">Could Not Load Your Hand History</p>
-            <p className="hh-empty__body">This Is A Loading Problem, Not An Empty History.</p>
-            <button type="button" className="load-more-btn" onClick={() => void loadFirstPage()}>
-              Retry
-            </button>
-          </div>
-        ) : hands.length === 0 ? (
+        ) : loadFailed && hands.length === 0 ? null : hands.length === 0 ? (
           <div className="hh-empty">
             <span className="hh-empty__suits" aria-hidden="true">
               ♠♥♦♣
@@ -1082,7 +1175,7 @@ export default function HandHistoryPage() {
           type="button"
           className="load-more-btn"
           onClick={() => void loadMore()}
-          disabled={loadingMore}
+          disabled={loadingMore || firstReading}
         >
           {loadingMore ? 'Loading' : 'Load More Hands'}
         </button>

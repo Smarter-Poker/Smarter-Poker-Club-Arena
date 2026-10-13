@@ -1,6 +1,16 @@
 name: Club Create Certification
 
 on:
+  workflow_dispatch:
+    inputs:
+      reserved_account_id:
+        description: Exact UUID of the finished reserved post-deploy fixture
+        required: true
+        type: string
+      reserved_account_email:
+        description: Exact reserved post-deploy email of that same fixture
+        required: true
+        type: string
   repository_dispatch:
     types: [certify-club-create]
   workflow_run:
@@ -18,6 +28,25 @@ permissions:
   contents: read
 
 jobs:
+  retire-reserved-account:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout Trusted Default Branch Cleanup
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Retire And Verify Exactly The Selected Reserved Identity
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          RESERVED_CERTIFICATION_ACCOUNT_ID: ${{ inputs.reserved_account_id }}
+          RESERVED_CERTIFICATION_ACCOUNT_EMAIL: ${{ inputs.reserved_account_email }}
+        run: node scripts/ci/retire-reserved-certification-account.mjs
   certify:
     if: >-
       github.event_name == 'repository_dispatch' ||

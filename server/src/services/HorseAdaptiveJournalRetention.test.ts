@@ -57,6 +57,80 @@ describe('bounded journal retention receipt', () => {
     });
     expect(mocks.rpc).toHaveBeenCalledTimes(1);
   });
+  it('keeps versioned raw-row counts exact and reports the bounded hand/statistic limits', async () => {
+    mocks.reply.mockResolvedValue({
+      data: {
+        version: 2,
+        status: 'pruned',
+        completedWork: 0,
+        batches: 0,
+        observations: 4096,
+        retiredHands: 1,
+        statisticsExpired: 1000,
+        membershipsRegistered: 25,
+        membershipPending: true,
+      },
+      error: null,
+    });
+    expect(await pruneAdaptiveJournal()).toEqual({
+      status: 'pruned',
+      completedWork: 0,
+      batches: 0,
+      observations: 4096,
+      retiredHands: 1,
+      statisticsExpired: 1000,
+      membershipsRegistered: 25,
+      membershipPending: true,
+    });
+    mocks.reply.mockResolvedValue({
+      data: {
+        version: 2,
+        status: 'pruned',
+        completedWork: 0,
+        batches: 0,
+        observations: 4096,
+        retiredHands: 26,
+        statisticsExpired: 0,
+        membershipsRegistered: 0,
+        membershipPending: false,
+      },
+      error: null,
+    });
+    expect(await pruneAdaptiveJournal()).toEqual({ status: 'unknown' });
+  });
+  const v3 = () => ({
+    version: 3,
+    status: 'pruned',
+    completedWork: 0,
+    batches: 0,
+    observations: 250 * 4096,
+    retiredHands: 250,
+    statisticsExpired: 1000,
+    membershipsRegistered: 250,
+    membershipPending: true,
+    handsScanned: 250,
+    retirementPending: true,
+    budgetReached: true,
+  });
+  it('accepts the larger bounded original pass and explicit continuation flags', async () => {
+    mocks.reply.mockResolvedValue({ data: v3(), error: null });
+    const { version, ...expected } = v3();
+    expect(await pruneAdaptiveJournal()).toEqual(expected);
+  });
+  it.each([
+    { retiredHands: 251 },
+    { handsScanned: 251 },
+    { handsScanned: 0 },
+    { membershipsRegistered: 251 },
+    { observations: 250 * 4096 + 1 },
+    { retirementPending: undefined },
+    { budgetReached: 'true' },
+    { membershipPending: undefined },
+    { statisticsExpired: 1001 },
+  ])('refuses an invalid v3 bound or missing continuation witness: %j', async (change) => {
+    mocks.reply.mockResolvedValue({ data: { ...v3(), ...change }, error: null });
+    expect(await pruneAdaptiveJournal()).toEqual({ status: 'unknown' });
+  });
   it.each(['error', 'throw'])('keeps a lost committed reply unknown: %s', async (mode) => {
     if (mode === 'error')
       mocks.reply.mockResolvedValue({ data: null, error: new Error('lost reply') });

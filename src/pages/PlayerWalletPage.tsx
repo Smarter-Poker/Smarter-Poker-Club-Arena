@@ -28,7 +28,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, type RefObject } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { readClubContextParam, withClubContext } from '../utils/clubScopedPath';
 import { resolvePageClubId } from '../utils/resolvePageClubId';
@@ -535,7 +535,36 @@ interface DailyClaimResponse {
 // MAIN PAGE COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
 
+interface WalletAccountScope {
+  userId: string | undefined;
+  epoch: number;
+}
+
 export default function PlayerWalletPage() {
+  const { user } = useAuthUser();
+  const accountScope = useRef<WalletAccountScope>({ userId: user?.id, epoch: 0 });
+  if (accountScope.current.userId !== user?.id) {
+    accountScope.current = { userId: user?.id, epoch: accountScope.current.epoch + 1 };
+  }
+  // Unknown transfers retain their original request per account and exact intent.
+  // Switching players resets the UI, never a possibly committed request.
+  const sendRequests = useRef(new Map<string, string>());
+  return (
+    <PlayerWalletAccount
+      key={user?.id ?? 'signed-out'}
+      accountScope={accountScope}
+      sendRequests={sendRequests}
+    />
+  );
+}
+
+function PlayerWalletAccount({
+  accountScope,
+  sendRequests,
+}: {
+  accountScope: RefObject<WalletAccountScope>;
+  sendRequests: RefObject<Map<string, string>>;
+}) {
   useRealtimeFinancials();
   useEffect(() => {
     document.title = 'Wallet | Smarter Poker';
@@ -568,6 +597,7 @@ export default function PlayerWalletPage() {
     async (userId: string, opts?: { force?: boolean }) => {
       const before = useWalletStore.getState()._balancesAt;
       await storeLoadBalances(userId, opts);
+      if (!ownsAccount()) return;
       const after = useWalletStore.getState();
       const held = after._balancesUserId === userId && after._balancesAt > 0;
       const advanced = after._balancesAt > before;
@@ -637,6 +667,11 @@ export default function PlayerWalletPage() {
      diamonds in Diamond Arena custody, the arena's open flags. `undefined`
      while reading, `null` when the read failed, never a fabricated zero. */
   const isMounted = useIsMounted();
+  const accountEpoch = accountScope.current.epoch;
+  const ownsAccount = () =>
+    isMounted.current &&
+    accountScope.current.epoch === accountEpoch &&
+    accountScope.current.userId === user?.id;
   const { summary: walletSummary, load: loadWalletSummary } = useDiamondWalletSummary(
     user?.id,
     isMounted
@@ -668,7 +703,6 @@ export default function PlayerWalletPage() {
    * Request ID" when a receipt is unconfirmed), cleared on success, and
    * rotated only after a `definitive` refusal - the StoreTab pattern.
    */
-  const sendKeyRef = useRef<string | null>(null);
 
   // ── Receive ──
   const {
@@ -832,7 +866,7 @@ export default function PlayerWalletPage() {
         ])
       ).filter((id) => id && id !== user.id);
       if (ids.length === 0) {
-        if (isMounted.current) {
+        if (ownsAccount()) {
           setFriends([]);
           setFriendsError(false);
         }
@@ -856,13 +890,13 @@ export default function PlayerWalletPage() {
           };
         })
         .sort((a, b) => a.name.localeCompare(b.name));
-      if (isMounted.current) {
+      if (ownsAccount()) {
         setFriends(options);
         setFriendsError(false);
       }
     } catch (err) {
       reportError(err, 'PlayerWalletPage.loadFriends');
-      if (isMounted.current) {
+      if (ownsAccount()) {
         setFriends([]);
         setFriendsError(true);
       }
@@ -920,10 +954,12 @@ export default function PlayerWalletPage() {
       confirmText: 'Send',
       variant: 'default',
     });
-    if (!ok) return;
+    if (!ok || !ownsAccount() || sendInFlightRef.current) return;
     sendInFlightRef.current = true;
     setIsSending(true);
-    if (!sendKeyRef.current) sendKeyRef.current = uuid();
+    const intentScope = `${user.id}:${recipientId}:${amount}`;
+    const requestId = sendRequests.current.get(intentScope) ?? uuid();
+    sendRequests.current.set(intentScope, requestId);
     try {
       /* The route returns the transfer row itself (`send_wallet_diamond_transfer`):
          { success, amount, recipient_id, request_id, ... }. */
@@ -933,13 +969,15 @@ export default function PlayerWalletPage() {
         recipient_id?: string;
       }>('/api/store/diamond-transfer', {
         body: { recipientId, amount },
-        idempotencyKey: sendKeyRef.current,
+        idempotencyKey: requestId,
+        expectedUserId: user.id,
       });
-      sendKeyRef.current = null;
+      sendRequests.current.delete(intentScope);
+      if (!ownsAccount()) return;
       toast.success(
         `Sent ${fmtNum(Number(data.amount) || amount)} Diamonds To ${friend?.name || 'Your Friend'}`
       );
-      if (isMounted.current) setSendAmount('');
+      if (ownsAccount()) setSendAmount('');
       /* THE SEND CONFIRMS ITSELF. The toast is gone in seconds and the credit
          landed in someone else's ledger, so without this the player has no
          standing evidence the transfer happened. `refresh` merges the new row
@@ -957,12 +995,13 @@ export default function PlayerWalletPage() {
          dropped connection - may be a transfer that COMMITTED and lost its
          receipt, so the key is kept and the same press replays it. */
       const e = err as Error & { definitive?: boolean };
-      if (e?.definitive) sendKeyRef.current = null;
+      if (e?.definitive) sendRequests.current.delete(intentScope);
+      if (!ownsAccount()) return;
       const text = e instanceof Error && e.message ? e.message : 'Send Failed. Please Try Again';
       toast.error(formatPopupText(text));
     } finally {
       sendInFlightRef.current = false;
-      if (isMounted.current) setIsSending(false);
+      if (ownsAccount()) setIsSending(false);
     }
   };
 
@@ -998,15 +1037,16 @@ export default function PlayerWalletPage() {
     try {
       if (typeof navigator === 'undefined' || !navigator.clipboard) throw new Error('no clipboard');
       await navigator.clipboard.writeText(text);
+      if (!ownsAccount()) return;
       setCopied(which);
       toast.success(which === 'id' ? 'Player ID Copied' : 'Profile Link Copied');
       setTimeout(() => {
-        if (isMounted.current) setCopied(null);
+        if (ownsAccount()) setCopied(null);
       }, 2000);
     } catch {
       // No clipboard permission (older WebViews, some in-app browsers). The
       // text is on screen and selectable; say so instead of failing silently.
-      toast.info('Select The Text To Copy It');
+      if (ownsAccount()) toast.info('Select The Text To Copy It');
     }
   };
 
@@ -1015,9 +1055,10 @@ export default function PlayerWalletPage() {
     if (!user?.id) return;
     try {
       const data = await storeFetch<RewardsProgress & { success: boolean }>(
-        '/api/rewards/progress'
+        '/api/rewards/progress',
+        { expectedUserId: user.id }
       );
-      if (isMounted.current) {
+      if (ownsAccount()) {
         setProgress({
           earnedToday: Number(data.earnedToday) || 0,
           dailyCap: Number(data.dailyCap) || 0,
@@ -1039,7 +1080,7 @@ export default function PlayerWalletPage() {
       }
     } catch (err) {
       reportError(err, 'PlayerWalletPage.loadProgress');
-      if (isMounted.current) setProgressError(true);
+      if (ownsAccount()) setProgressError(true);
     }
   }, [user?.id, isMounted]);
 
@@ -1047,7 +1088,7 @@ export default function PlayerWalletPage() {
     if (!user?.id) return;
     setLifetime(undefined);
     const stats = await DiamondService.getLifetimeStats(user.id);
-    if (isMounted.current) setLifetime(stats);
+    if (ownsAccount()) setLifetime(stats);
   }, [user?.id, isMounted]);
 
   useEffect(() => {
@@ -1078,7 +1119,9 @@ export default function PlayerWalletPage() {
          soft outcomes arrive here and the hard ones arrive in the catch. */
       const data = await storeFetch<DailyClaimResponse>('/api/rewards/daily-login', {
         body: {},
+        expectedUserId: user.id,
       });
+      if (!ownsAccount()) return;
       if (data.claimed) {
         toast.success(
           `+${fmtNum(data.awarded ?? data.diamondsAwarded ?? 0)} Diamonds Claimed${data.streak && data.streak > 1 ? ` (${data.streak}-Day Streak)` : ''}`
@@ -1096,9 +1139,9 @@ export default function PlayerWalletPage() {
     } catch (err) {
       const text =
         err instanceof Error && err.message ? err.message : 'Claim Failed. Please Try Again';
-      toast.error(formatPopupText(text));
+      if (ownsAccount()) toast.error(formatPopupText(text));
     } finally {
-      if (isMounted.current) setClaiming(false);
+      if (ownsAccount()) setClaiming(false);
     }
   };
 
@@ -1840,13 +1883,11 @@ export default function PlayerWalletPage() {
                   onClick={() => navigate('/achievements')}
                 >
                   <span className="earn-door__title">Achievements</span>
-                  <span className="earn-door__sub">Milestones That Pay Out When You Hit Them.</span>
+                  <span className="earn-door__sub">Milestones, Badges, And Unlock Progress.</span>
                 </button>
                 <button type="button" className="earn-door" onClick={() => navigate('/vip')}>
-                  <span className="earn-door__title">VIP Bonuses</span>
-                  <span className="earn-door__sub">
-                    Daily And Monthly Diamond Bonuses For Members.
-                  </span>
+                  <span className="earn-door__title">VIP Status</span>
+                  <span className="earn-door__sub">Membership And Included Benefits.</span>
                 </button>
               </div>
             </section>
@@ -1867,7 +1908,7 @@ export default function PlayerWalletPage() {
                 player was performed_by or to_entity_id, so every chip that LEFT
                 the player was invisible. The statement shows both directions and
                 the nightly reading the balance is checked against. */}
-            <section className="vault-panel" aria-labelledby="audit-title">
+            <section className="vault-panel vault-panel--statement" aria-labelledby="audit-title">
               <h3 id="audit-title" className="vault-panel__title">
                 Chip Statement
               </h3>

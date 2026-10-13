@@ -67,6 +67,8 @@ function deferred() {
   return { promise, resolve, reject };
 }
 async function ready() {
+  const advanced = screen.queryByRole('button', { name: 'Advanced' });
+  if (advanced) fireEvent.click(advanced);
   await act(async () => {
     await vi.advanceTimersByTimeAsync(0);
   });
@@ -178,13 +180,19 @@ it('captures filter/search/sort when requested even if controls change before th
   render(tree());
   await ready();
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: '  Player  ' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Agents', exact: true }));
-  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'name' } });
+  fireEvent.change(screen.getByRole('combobox', { name: 'Filter Players' }), {
+    target: { value: 'agents' },
+  });
+  fireEvent.change(screen.getByRole('combobox', { name: 'Sort Players' }), {
+    target: { value: 'name' },
+  });
   await act(async () => {
     await vi.advanceTimersByTimeAsync(300);
   });
   fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
-  fireEvent.click(screen.getByRole('button', { name: 'All Players', exact: true }));
+  fireEvent.change(screen.getByRole('combobox', { name: 'Filter Players' }), {
+    target: { value: 'all' },
+  });
   await act(async () => {
     pending.resolve(receipt);
   });

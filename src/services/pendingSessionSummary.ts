@@ -49,6 +49,7 @@
  * different modal entirely rather than filling chip tiles with zeroes.
  */
 import type { Card } from '../components/table/CardImage';
+import type { DiamondRecapTarget } from './diamondCashSessionRecap';
 
 export interface TournamentResult {
   /** Tournament name for the header, e.g. "Early Bird Freeroll". */
@@ -121,6 +122,8 @@ export interface TournamentResult {
 
 export interface SessionSummaryPayload {
   arenaAsset?: 'chips' | 'diamonds';
+  /** Read the finished custody, never the counters from this page's mount. */
+  diamondRecap?: DiamondRecapTarget;
   /** Elapsed session time in SECONDS (not a timestamp). */
   duration: number;
   handsPlayed: number;
@@ -235,8 +238,22 @@ export function peekSessionSummary(): SessionSummaryPayload | null {
  * already dismissed (the one-shot value is gone — there is nothing to
  * correct) or if the payload is not the pending one it was found for.
  */
-export function settlePendingSummary(settledProfitLoss: number): void {
+export function settlePendingSummary(
+  settledProfitLoss: number,
+  expectedCashout?: SessionSummaryPayload['pendingCashout']
+): void {
   if (pending === null || !pending.plPending) return;
+  if (expectedCashout) {
+    const current = pending.pendingCashout;
+    if (
+      !current ||
+      current.tableId !== expectedCashout.tableId ||
+      current.userId !== expectedCashout.userId ||
+      current.sinceMs !== expectedCashout.sinceMs ||
+      current.occupancyId !== expectedCashout.occupancyId
+    )
+      return;
+  }
   pending = {
     ...pending,
     profitLoss: settledProfitLoss,

@@ -1,0 +1,7 @@
+# Original unchanged stacks retain their accepted predecessor
+
+Three Oct6 accepted cash hands have blocked starting-stack evidence after a chair's departure: the signed dealt stack equals that occupancy's immediately previous accepted original stack, with zero intervening original funding/application/move inputs. The existing late-credit reader correctly refuses this class because it requires a nonempty direct add-on suffix.
+
+Add a distinct original unchanged-stack proof and a service-role per-hand immutable certificate writer. Preserve the original late-credit reader/consumer. Re-prove the complete signed current population, atomic claim/settlement, original funding ownership/earning clubs/scope/conservation and the exact signed accepted predecessor; refuse every other defect. No original outcome, wallet, ledger, current seat or membership changes and no sweeping writer are added.
+
+Native PostgreSQL17 demonstrates all three retained actual primary cases, controlled refusal before/new proof after,20 negative boundaries, unchanged old contract, exact postimages, rollback/replay refusal, one-certificate duplicate/concurrency and existing consumer acceptance. The existing accounting shard3 executes and archives that probe. These local results do not establish protected merge, hosted checks, installed migration or production certificates, nor resolve the fourth case/31 flows/245 inventory issues.

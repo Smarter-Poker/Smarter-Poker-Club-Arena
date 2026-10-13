@@ -1,0 +1,71 @@
+{
+  "observed_at": "2026-10-12T19:42:15.603Z",
+  "rows": [
+    {
+      "name": "cash_rake_cap",
+      "scope": "bb:10000",
+      "value": "2000",
+      "value_text": null,
+      "units": "diamonds_per_hand",
+      "approved_quote": "NOTHING IS MINE, EVER.... THEY ARE ALWAYS YOURS TO DO.",
+      "approved_on": "2026-10-05",
+      "basis": "B6. DERIVED EXACTLY. The Diamond 5000/10000 table IS chip schedule row 50/100 read in the indivisible unit (chip $50.0000000000000000/$100.0000000000000000 is 5000/10000 cents). That row's rakeCap is $20.00, which is 2000 cents, and 2000 cents read in Diamonds is 2000 Diamonds - a whole number, so nothing is rounded and nothing is invented.",
+      "recorded_by": "claude-code:diamond-cash-rake-lane"
+    },
+    {
+      "name": "cash_rake_enabled",
+      "scope": "all",
+      "value": null,
+      "value_text": "yes",
+      "units": "boolean",
+      "approved_quote": "NOTHING IS MINE, EVER.... THEY ARE ALWAYS YOURS TO DO.",
+      "approved_on": "2026-10-05",
+      "basis": "B4. DERIVED FROM THE CLONE. The Diamond Arena is a diamonds-only 1:1 clone of a chip club; every chip cash pot is raked by the schedule in server/src/config/rakeSpec.ts, and cash play is the arena's only cash revenue. Turning it on moves nothing while cash_games_enabled is closed, which is where this migration leaves it.",
+      "recorded_by": "claude-code:diamond-cash-rake-lane"
+    },
+    {
+      "name": "cash_rake_min_pot",
+      "scope": "all",
+      "value": "0",
+      "value_text": null,
+      "units": "diamonds",
+      "approved_quote": "NOTHING IS MINE, EVER.... THEY ARE ALWAYS YOURS TO DO.",
+      "approved_on": "2026-10-05",
+      "basis": "B9. NO SEPARATE MINIMUM, which is the chip answer: effectiveRake applies no pot floor at all, and RAKE_SPEC.rules.bbjMinPotBB is commented \"PAYOUT floor only (Dan 2026-08-29); never a fee gate\". Reasoning from the indivisible unit, the floor in B10 already makes a pot under 10 Diamonds pay nothing at 10 percent, so the smallest raked pot is 10 Diamonds as an arithmetic consequence rather than as a gate anyone has to maintain.",
+      "recorded_by": "claude-code:diamond-cash-rake-lane"
+    },
+    {
+      "name": "cash_rake_no_flop_no_drop",
+      "scope": "all",
+      "value": null,
+      "value_text": "yes",
+      "units": "boolean",
+      "approved_quote": "NOTHING IS MINE, EVER.... THEY ARE ALWAYS YOURS TO DO.",
+      "approved_on": "2026-10-05",
+      "basis": "B8. YES, the rule applies, so a hand that ends before the flop is raked nothing. RAKE_SPEC.rules.noFlopNoDrop is true, cited to Bible V8 section 2.9 / Appendix A and to Dan 2026-08-29 (\"no flop, no drop\"). It is a rule of the game rather than an amount, so it carries.",
+      "recorded_by": "claude-code:diamond-cash-rake-lane"
+    },
+    {
+      "name": "cash_rake_percent",
+      "scope": "all",
+      "value": "10",
+      "value_text": null,
+      "units": "percent",
+      "approved_quote": "NOTHING IS MINE, EVER.... THEY ARE ALWAYS YOURS TO DO.",
+      "approved_on": "2026-10-05",
+      "basis": "B5. DERIVED FROM THE CHIP SCHEDULE, which has exactly one rake percentage: all nineteen rows of RAKE_SPEC.schedule and all six ca_rake_tier rows read rake_percent = 10. Dan set it in those words on 2026-08-27, quoted in rakeSpec.ts: \"Rake is 10% with a max cap.\" A percentage has no unit, so it carries from chips to Diamonds unchanged.",
+      "recorded_by": "claude-code:diamond-cash-rake-lane"
+    },
+    {
+      "name": "cash_rake_rounding",
+      "scope": "all",
+      "value": null,
+      "value_text": "down",
+      "units": "choice",
+      "approved_quote": "NOTHING IS MINE, EVER.... THEY ARE ALWAYS YOURS TO DO.",
+      "approved_on": "2026-10-05",
+      "basis": "B10. DOWN, and not a free choice: the estate already has a whole-unit convention and it floors. fn_ca_unit_floor_cents truncates, the Diamond tournament entry fee floors to a whole Diamond, and the Diamond rebuy fee floors. The chip engine rounds to the nearest CENT, which is a different indivisible unit; diverging from the estate's own Diamond convention would need a reason and there is none.",
+      "recorded_by": "claude-code:diamond-cash-rake-lane"
+    }
+  ]
+}

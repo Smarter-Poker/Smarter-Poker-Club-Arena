@@ -75,6 +75,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           EVENT_NAME: ${{ github.event_name }}
           SOURCE_RUN_ID: ${{ github.event.workflow_run.id || '' }}
+          SOURCE_TRIGGER_SHA: ${{ github.event.workflow_run.head_sha || '' }}
+          REPOSITORY_ID: ${{ github.repository_id }}
           ENGINE_TRIGGER_SHA: ${{ github.event.client_payload.engine_sha || '' }}
         run: |
           set -euo pipefail

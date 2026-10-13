@@ -109,7 +109,18 @@ describe('what an agent costs', () => {
     // upper bound here would double-count the boundary row and the two totals
     // would differ by exactly one instant's commission.
     const sql = body('fn_ca_rake_by_agent');
-    expect(sql).toMatch(/ac\.created_at >= v_from AND ac\.created_at < v_to/);
+    // Qualified full days and uncovered raw edges partition that same window.
+    // Assert their actual boundaries rather than the retired single raw scan.
+    expect(sql).toMatch(
+      /qualified_commission_days AS MATERIALIZED \([\s\S]*?\(day::timestamp AT TIME ZONE 'UTC'\) >= v_from[\s\S]*?\(\(day\+1\)::timestamp AT TIME ZONE 'UTC'\) <= v_to/
+    );
+    expect(sql).toContain("ac.created_at>=GREATEST(v_from,d.day::timestamp AT TIME ZONE 'UTC')");
+    expect(sql).toContain("ac.created_at<LEAST(v_to,(d.day+1)::timestamp AT TIME ZONE 'UTC')");
+    expect(sql).toContain('ac.created_at>=v_from AND ac.created_at<v_to');
+    expect(sql).toContain(
+      'GREATEST(COALESCE(c.reach,v_from),v_from) lo,LEAST(c.period_start,v_to) hi'
+    );
+    expect(sql).toContain('a.created_at>=g.lo AND a.created_at<g.hi');
   });
 
   it('sums the commission column, because one row has one recipient', () => {

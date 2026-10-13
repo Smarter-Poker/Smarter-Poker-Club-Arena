@@ -208,7 +208,7 @@ BEGIN
     n:=smarter_private.retire_horse_adaptive_hand(candidate.hand_id); raw_count:=raw_count+n;
     hands_scanned:=hands_scanned+1;
     IF EXISTS(SELECT 1 FROM smarter_private.horse_adaptive_disposal_certificates
-     WHERE hand_id=candidate.hand_id AND retired_at IS NOT NULL) THEN retired_count:=retired_count+1; END IF;
+     WHERE hand_id=candidate.hand_id AND retired_at IS NOT NULL AND raw_format_version=2) THEN retired_count:=retired_count+1; END IF;
     scan.scan_after_qualified_at:=candidate.qualified_at;scan.scan_after_hand_id:=candidate.hand_id;
    END LOOP;
    remaining_window:=EXISTS(SELECT 1 FROM smarter_private.horse_adaptive_disposal_certificates

@@ -37,7 +37,8 @@ def qualify(e,template):
  e.sql(d,"UPDATE smarter_private.horse_adaptive_retention_activation SET enabled=false;",label='original-activation-native-hold')
  e.sql(d,file=ROOT/MIGRATION,label='qualified-forward-correction')
  corrected_prune=read(d,"SELECT pg_get_functiondef('fn_prune_horse_adaptive_journal()'::regprocedure);",'corrected-chronological-owner-postimage')
- assert corrected_prune.replace('WHERE (retired_at IS NULL OR raw_format_version<2)','WHERE retired_at IS NULL')==original_prune;checks.append('chronology-high-water250-two-second-and-all-other-owner-bytes-exact')
+ reversed_prune=corrected_prune.replace('WHERE (retired_at IS NULL OR raw_format_version<2)','WHERE retired_at IS NULL').replace('WHERE hand_id=candidate.hand_id AND retired_at IS NOT NULL AND raw_format_version=2','WHERE hand_id=candidate.hand_id AND retired_at IS NOT NULL')
+ assert reversed_prune==original_prune;checks.append('only-pending-predicates-and-authoritative-format-report-condition-changed')
  yes(d,"SELECT NOT enabled AND scan_after_hand_id IS NULL AND scan_through_hand_id IS NULL AND consumer_release='"+'a'*40+"' FROM smarter_private.horse_adaptive_retention_activation;",'inactive-original-cursor-reset-consumer-retained')
  status,_,err=e.sql(d,file=ROOT/MIGRATION,label='forward-replay-refused',check=False);assert status and 'ADAPTIVE_NUMBERED_RETIREMENT_PREIMAGE_CHANGED_OR_ENABLED' in err;checks.append('forward-replay-refused')
  yes(d,"SELECT smarter_private.retire_horse_adaptive_hand('"+old.HAND_ID+"')=0 AND (SELECT count(*) FROM horse_adaptive_observation_journal WHERE hand_id='"+old.HAND_ID+"')=3;",'disabled-original-owner-preserves-falsely-retired-raw')
@@ -120,8 +121,13 @@ def qualify(e,template):
  e.sql(blocked,'UPDATE hand_history SET has_human=false,reported=true;',label='original-reported-protection')
  yes(blocked,"SELECT smarter_private.retire_horse_adaptive_hand('"+old.HAND_ID+"')=0 AND (SELECT count(*) FROM horse_adaptive_observation_journal WHERE hand_id='"+old.HAND_ID+"')=3;",'reported-witness-protects-falsely-retired-raw')
  yes(blocked,'SELECT raw_format_version=0 FROM smarter_private.horse_adaptive_disposal_certificates;','blocked-false-retirement-remains-original-pending-format')
+ blocked_receipt=json.loads(read(blocked,'SELECT fn_prune_horse_adaptive_journal();','protected-false-retirement-authoritative-count'))
+ assert blocked_receipt['retiredHands']==0 and blocked_receipt['observations']==0,blocked_receipt
+ checks.append('protected-false-retirement-never-reported-complete')
  e.sql(blocked,'UPDATE hand_history SET reported=false;',label='original-report-hold-released')
- yes(blocked,"SELECT fn_prune_horse_adaptive_journal()->>'observations'='3';",'same-original-pending-owner-revisits-released-false-retirement')
+ released_receipt=json.loads(read(blocked,'SELECT fn_prune_horse_adaptive_journal();','same-original-pending-owner-revisits-released-false-retirement'))
+ assert released_receipt['observations']==3 and released_receipt['retiredHands']==1,released_receipt
+ checks.append('released-false-retirement-reported-only-after-actual-completion')
  yes(blocked,'SELECT raw_format_version=2 FROM smarter_private.horse_adaptive_disposal_certificates;','released-original-false-retirement-completes-format')
  e.report['numbered_postimages']=json.loads(read(d,"SELECT jsonb_object_agg(oid::regprocedure::text,jsonb_build_object('md5',md5(pg_get_functiondef(oid)),'owner',proowner::regrole::text,'acl',proacl::text,'security_definer',prosecdef,'config',proconfig)) FROM pg_proc WHERE oid IN ('smarter_private.retire_horse_adaptive_hand(uuid)'::regprocedure,'smarter_private.horse_adaptive_disposal_certificate_immutable()'::regprocedure,'public.fn_prune_horse_adaptive_journal()'::regprocedure);",'exact-candidate-postimages'))
  for n,meta in e.report['numbered_postimages'].items():

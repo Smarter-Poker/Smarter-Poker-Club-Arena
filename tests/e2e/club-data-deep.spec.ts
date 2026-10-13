@@ -89,7 +89,7 @@ async function openClubData(page: Page, testInfo: TestInfo): Promise<ClubDataAcc
   await expect(workspace).toBeVisible({ timeout: 60_000 });
   await expect(page.locator('[data-page="club-data"]')).toBeVisible();
   await expect(page.locator('[data-club-data-mode="simple"]')).toBeVisible();
-  await page.getByRole('button', { name: 'Advanced', exact: true }).click();
+  await page.getByRole('button', { name: /^Advanced(?: \([\d,]+\))?$/ }).click();
   await expect(page.getByRole('heading', { name: 'Read The Room', exact: true })).toBeVisible();
   await expect(page.getByRole('list', { name: 'Games' }).getByRole('listitem').first()).toBeVisible(
     {
@@ -511,6 +511,7 @@ test('keeps Cashier, Players and Club Data realtime connected in both modes and 
           try {
             const message = decode(frame.payload);
             if (!matches(String(message.topic)) || message.event !== 'phx_join') return;
+            if (observing) interruptions.push(message.topic + ': join restarted');
             topics.add(message.topic);
             joins.set(message.topic, String(message.ref));
             acknowledged.delete(message.topic);
@@ -585,7 +586,7 @@ test('keeps Cashier, Players and Club Data realtime connected in both modes and 
         };
         await observeMode('simple');
         await page
-          .getByRole(surface.button ? 'button' : 'radio', { name: 'Advanced', exact: true })
+          .getByRole(surface.button ? 'button' : 'radio', { name: /^Advanced(?: \([\d,]+\))?$/ })
           .click();
         await observeMode('advanced');
       } finally {

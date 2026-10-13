@@ -166,8 +166,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 218788,
-      "sha256": "b3e6bdd648a04d45ac28da7153e25c1649028cdd872a66a7aff507cc5b0e737e"
+      "bytes": 219700,
+      "sha256": "8716d2d184b824c542069f47d4f542bbbdb71f3246ed2b4b3f9ba07885b62002"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -3177,6 +3177,36 @@
         "current": {
           "bytes": 216756,
           "sha256": "4b6385d39a00e968f065aa6c3424debcf47f88faecae34c9f9ce56a87eaca062"
+        }
+      }
+    }
+  },
+  "cashOriginal17Qualification20261013": {
+    "reason": "Add directly-triggered exact cash17 public-safe installer/source qualification and always artifact; preserve every existing native lane, financial input and historical pin. Original17 private financial evidence is separately retained, not hosted card data.",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 217809,
+          "sha256": "6d5fd18c7754cac26f8118bc4af6a9b56439326826688a08d0972b8ace80aa9f"
+        },
+        "current": {
+          "bytes": 218721,
+          "sha256": "597cd1f05895e271e0b3e9b986068b199c267e56e42b43e2ed80d990422fb7db"
+        }
+      }
+    }
+  },
+  "originalRefundEvidenceQualification20261013": {
+    "reason": "Preserve protected cash17 and every financial input; bind the combined CI file containing the directly triggered original refund classification and source40 installation qualification.",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 218721,
+          "sha256": "597cd1f05895e271e0b3e9b986068b199c267e56e42b43e2ed80d990422fb7db"
+        },
+        "current": {
+          "bytes": 219700,
+          "sha256": "8716d2d184b824c542069f47d4f542bbbdb71f3246ed2b4b3f9ba07885b62002"
         }
       }
     }

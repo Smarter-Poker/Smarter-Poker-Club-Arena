@@ -1,0 +1,82 @@
+[
+  {
+    "acl": "{postgres=X/postgres,service_role=X/postgres}",
+    "owner": "postgres",
+    "config": ["search_path=pg_catalog, public"],
+    "secdef": true,
+    "body_md5": "48040fd6774684226422466861eb1439",
+    "full_md5": "951110d34bda83ed99b49256e42f05e3",
+    "signature": "public.fn_ca_resume_hand_submission(uuid,text,uuid)",
+    "volatility": "v"
+  },
+  {
+    "acl": "{postgres=X/postgres}",
+    "owner": "postgres",
+    "config": ["search_path=pg_catalog, public, smarter_private"],
+    "secdef": false,
+    "body_md5": "662e18269d2375cd43edf14880afc661",
+    "full_md5": "061d30fdcaa9c03af7d579c05850e6bf",
+    "signature": "smarter_private.certify_original_hand_source_correction(uuid)",
+    "volatility": "v"
+  },
+  {
+    "acl": "{postgres=X/postgres}",
+    "owner": "postgres",
+    "config": ["search_path=pg_catalog, public, smarter_private"],
+    "secdef": false,
+    "body_md5": "c729452e457fc5da2442ae42b3262fb1",
+    "full_md5": "bd98d16d2e7687b1b6b9ce52ed8756f2",
+    "signature": "smarter_private.hand_source_correction_certificate_guard()",
+    "volatility": "v"
+  },
+  {
+    "acl": "{postgres=X/postgres}",
+    "owner": "postgres",
+    "config": ["search_path=pg_catalog, public, smarter_private"],
+    "secdef": false,
+    "body_md5": "ef21544eff700fb3d8e21ba9694c4d9b",
+    "full_md5": "eb5923f87ddfe38d54a11196246ae24b",
+    "signature": "smarter_private.hand_source_correction_claim_guard()",
+    "volatility": "v"
+  },
+  {
+    "acl": "{postgres=X/postgres}",
+    "owner": "postgres",
+    "config": ["search_path=pg_catalog"],
+    "secdef": false,
+    "body_md5": "d0e33f97eba0467bb7076b491262fdcb",
+    "full_md5": "edf3a55e5b804e3a44ff0f3bf028138b",
+    "signature": "smarter_private.hand_source_correction_immutable()",
+    "volatility": "v"
+  },
+  {
+    "acl": "{postgres=X/postgres}",
+    "owner": "postgres",
+    "config": ["search_path=pg_catalog, public, smarter_private"],
+    "secdef": false,
+    "body_md5": "43cef74476145b289e98153678b0e073",
+    "full_md5": "a4904045495bb8448f3e5668edd92213",
+    "signature": "smarter_private.hand_source_correction_result_guard()",
+    "volatility": "v"
+  },
+  {
+    "acl": "{postgres=X/postgres}",
+    "owner": "postgres",
+    "config": ["search_path=pg_catalog, public, smarter_private"],
+    "secdef": false,
+    "body_md5": "00b1b2915e62b6c972ab8a7ef9e7f72a",
+    "full_md5": "52a667146a924fe2c924aae5e70cb2eb",
+    "signature": "smarter_private.original_hand_correction_sources_match()",
+    "volatility": "s"
+  },
+  {
+    "acl": "{postgres=X/postgres}",
+    "owner": "postgres",
+    "config": ["search_path=pg_catalog, public, smarter_private"],
+    "secdef": false,
+    "body_md5": "54d4af30285d053b43ce23118a7e2d94",
+    "full_md5": "9bf44c67db2cbcc0a86d9ccf26e8f8d8",
+    "signature": "smarter_private.original_hand_source_correction_proof(uuid)",
+    "volatility": "s"
+  }
+]

@@ -9,7 +9,7 @@ test('the visible operator heatmap refreshes through its scoped narrow read', as
     !process.env.SP_EMAIL || !process.env.SP_PASS,
     'The existing reserved production staff fixture is required.'
   );
-  test.setTimeout(120_000);
+  test.setTimeout(180_000);
   const reads: Response[] = [];
   page.on('response', (response) => {
     const url = new URL(response.url());
@@ -20,8 +20,18 @@ test('the visible operator heatmap refreshes through its scoped narrow read', as
     )
       reads.push(response);
   });
-  await page.goto(`admin?club=${clubId}`, { waitUntil: 'domcontentloaded' });
+  await page.goto(`admin?club=${clubId}`, { waitUntil: 'domcontentloaded', timeout: 30_000 });
   await expect(page).not.toHaveURL(/\/auth(?:\/|\?|$)/, { timeout: 30_000 });
+  // This observer deliberately suspends hidden/offline reads. DOM visibility
+  // of its heading alone does not establish the document's read prerequisite.
+  await page.bringToFront();
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => ({ visibility: document.visibilityState, online: navigator.onLine })),
+      { timeout: 15_000, message: 'The heatmap observer requires a visible online document' }
+    )
+    .toEqual({ visibility: 'visible', online: true });
   await page
     .getByRole('tablist', { name: 'Operations Views' })
     .getByRole('tab', { name: 'Analytics', exact: true })

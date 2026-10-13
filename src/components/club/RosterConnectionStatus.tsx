@@ -12,10 +12,9 @@ interface RosterConnectionStatusProps {
 
 function syncTime(value: number | null | undefined): string | null {
   if (!value || !Number.isFinite(value)) return null;
-  return new Date(value).toLocaleTimeString(undefined, {
-    hour: 'numeric',
-    minute: '2-digit',
-  });
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return null;
+  return date.toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
 }
 
 export default function RosterConnectionStatus({
@@ -26,13 +25,13 @@ export default function RosterConnectionStatus({
   isSlow = false,
   onRetry,
 }: RosterConnectionStatusProps) {
-  if (state === 'live' && !isRefreshing && !isSlow) return null;
-
   const lastSync = syncTime(lastSuccessfulSyncAt);
   let message = 'Connecting To The Live Roster...';
   let retryable = false;
 
-  if (isRefreshing) {
+  if (state === 'live' && !isRefreshing && !isSlow) {
+    message = 'Live Updates Connected.';
+  } else if (isRefreshing) {
     message = hasData
       ? 'Refreshing The Live Roster. The Last Verified Results Remain Available.'
       : 'Connecting To The Live Roster...';
@@ -61,7 +60,7 @@ export default function RosterConnectionStatus({
     <div className="members-refreshing members-connection-status" data-connection-state={state}>
       <span role="status" aria-live="polite" aria-atomic="true" data-connection-state={state}>
         {message}
-        {lastSync ? ` Last Live Sync ${lastSync}.` : ''}
+        {lastSync ? ` Last Verified Read ${lastSync}.` : ' No Verified Read Yet.'}
       </span>
       {retryable && (
         <button

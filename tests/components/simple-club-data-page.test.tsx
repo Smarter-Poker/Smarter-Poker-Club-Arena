@@ -319,6 +319,53 @@ beforeEach(() => {
 });
 
 describe('Simple Club Data', () => {
+  it.each([false, true])(
+    'refresh reconnects only failed live feeds (Advanced=%s)',
+    async (advanced) => {
+      render(<ClubDataPage />);
+      await screen.findByText('Shark Table One');
+      if (advanced) fireEvent.click(screen.getByRole('button', { name: 'Advanced', exact: true }));
+      const latest = () => realtimeState.channels.slice(-4);
+      act(() => latest().forEach((config) => config.onSubscriptionStatus('SUBSCRIBED')));
+      act(() =>
+        latest()
+          .find((config) => config.table === 'tables')
+          ?.onSubscriptionStatus('TIMED_OUT')
+      );
+      fireEvent.click(
+        screen.getByRole('button', {
+          name: advanced ? 'Refresh Club Ledger' : 'Refresh Simple Club Data',
+          exact: true,
+        })
+      );
+      expect(latest().find((config) => config.table === 'tables')?.restartKey).toBe(1);
+      expect(
+        latest()
+          .filter((config) => config.table !== 'tables')
+          .map((config) => config.restartKey ?? 0)
+      ).toEqual([0, 0, 0]);
+      await waitFor(() =>
+        expect(
+          screen.getByRole('button', {
+            name: advanced ? 'Refresh Club Ledger' : 'Refresh Simple Club Data',
+            exact: true,
+          })
+        ).toBeEnabled()
+      );
+      act(() =>
+        latest()
+          .find((config) => config.table === 'tables')
+          ?.onSubscriptionStatus('SUBSCRIBED')
+      );
+      fireEvent.click(
+        screen.getByRole('button', {
+          name: advanced ? 'Refresh Club Ledger' : 'Refresh Simple Club Data',
+          exact: true,
+        })
+      );
+      expect(latest().find((config) => config.table === 'tables')?.restartKey).toBe(1);
+    }
+  );
   it('defaults to Simple and restores all Advanced tools without resetting verified rows', async () => {
     render(<ClubDataPage />);
     await screen.findByText('Shark Table One');

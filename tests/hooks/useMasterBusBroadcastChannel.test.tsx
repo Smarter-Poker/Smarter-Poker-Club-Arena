@@ -103,6 +103,43 @@ describe('useMasterBusBroadcastChannel', () => {
     expect(mocks.setAuth).not.toHaveBeenCalled();
   });
 
+  it('explicit retry rejoins with fresh auth and ignores the retired callbacks', async () => {
+    const onPayload = vi.fn();
+    const onSubscriptionStatus = vi.fn();
+    const onSubscriptionError = vi.fn();
+    const { rerender } = renderHook(
+      ({ restartKey }) =>
+        useMasterBusBroadcastChannel({
+          channelName: 'private:user-1',
+          event: 'changed',
+          onPayload,
+          onSubscriptionStatus,
+          onSubscriptionError,
+          ...{ restartKey },
+        }),
+      { initialProps: { restartKey: 0 } }
+    );
+    await waitFor(() => expect(mocks.subscriptionCallbacks).toHaveLength(1));
+    act(() => mocks.subscriptionCallbacks[0]('TIMED_OUT'));
+    rerender({ restartKey: 1 });
+    await waitFor(() => expect(mocks.subscriptionCallbacks).toHaveLength(2));
+    expect(mocks.removeRegisteredChannel).toHaveBeenCalledWith('private:user-1');
+    expect(mocks.setAuth).toHaveBeenCalledTimes(2);
+    onSubscriptionStatus.mockClear();
+    onSubscriptionError.mockClear();
+    act(() => {
+      mocks.subscriptionCallbacks[1]('SUBSCRIBED');
+      mocks.subscriptionCallbacks[0]('CLOSED');
+      mocks.payloadCallbacks[0]({ revision: 'old' });
+      mocks.payloadCallbacks[1]({ revision: 'new' });
+    });
+    expect(onSubscriptionStatus.mock.calls).toEqual([['SUBSCRIBED']]);
+    expect(onSubscriptionError).not.toHaveBeenCalled();
+    expect(onPayload.mock.calls).toEqual([[{ revision: 'new' }]]);
+    rerender({ restartKey: 1 });
+    expect(mocks.subscriptionCallbacks).toHaveLength(2);
+  });
+
   it('reports authentication failure without attempting an unauthorized join', async () => {
     const authError = new Error('No active Realtime session');
     const onSubscriptionError = vi.fn();

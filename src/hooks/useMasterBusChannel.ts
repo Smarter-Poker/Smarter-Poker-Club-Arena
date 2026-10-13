@@ -39,6 +39,8 @@ export interface UseMasterBusChannelOptions {
   onPayload: (payload: any) => void;
   /** Enable/disable the hook (default: true) */
   enabled?: boolean;
+  /** A deliberate recovery action retires this binding and starts a fresh join. */
+  restartKey?: number;
   /**
    * Optional callback invoked when the realtime subscription fails
    * (CHANNEL_ERROR / TIMED_OUT). Lets the consumer surface a degraded-connection
@@ -92,6 +94,7 @@ export function useMasterBusChannel({
   event,
   onPayload,
   enabled = true,
+  restartKey = 0,
   onSubscriptionError,
   onSubscriptionStatus,
 }: UseMasterBusChannelOptions) {
@@ -143,6 +146,7 @@ export function useMasterBusChannel({
        torn-down tree. The sibling hook (useMasterBusSubscription) already
        guards this; this one did not. */
     let alive = true;
+    let subscriptionGeneration = 0;
 
     const subscribeChannel = () => {
       // getOrCreateChannel returns a fresh channel after the monitor removed
@@ -162,6 +166,9 @@ export function useMasterBusChannel({
         );
         return;
       }
+      // Recovery can replace a channel within this same mounted effect. Its
+      // asynchronous removal may still deliver frames and CLOSED afterwards.
+      const generation = ++subscriptionGeneration;
 
       (channel as any)
         .on(
@@ -174,11 +181,11 @@ export function useMasterBusChannel({
           },
           (payload: any) => {
             // Call the stable callback ref
-            if (alive) callbackRef.current(payload);
+            if (alive && generation === subscriptionGeneration) callbackRef.current(payload);
           }
         )
         .subscribe((status: string, err?: Error) => {
-          if (!alive) return;
+          if (!alive || generation !== subscriptionGeneration) return;
           try {
             statusCallbackRef.current?.(status);
           } catch (cbErr) {
@@ -219,7 +226,7 @@ export function useMasterBusChannel({
       masterBus.removeChannelFactory(channelName);
       masterBus.removeRegisteredChannel(channelName);
     };
-  }, [channelName, table, filter, event, enabled]);
+  }, [channelName, table, filter, event, enabled, restartKey]);
 }
 
 export default useMasterBusChannel;

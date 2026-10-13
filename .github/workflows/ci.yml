@@ -2498,6 +2498,26 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Weekly cash acceptance starts from its exact original unaccepted hands
+        id: weekly_shaped_primary
+        if: matrix.shard == 3
+        env:
+          PGBIN: /usr/lib/postgresql/17/bin
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/weekly-shaped-primary"
+          export SHAPED_PRIMARY_EVIDENCE_DIR="$RUNNER_TEMP/weekly-shaped-primary"
+          bash scripts/dev/probe-weekly-shaped-primary-pg17.sh 2>&1 | tee "$RUNNER_TEMP/weekly-shaped-primary/native.log"
+
+      - name: Retain original weekly shaped primary qualification
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.weekly_shaped_primary.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-shaped-primary-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/weekly-shaped-primary/
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Original inventory restoration admits only qualified finite financial evidence
         id: original_inventory_restoration
         if: matrix.shard == 3

@@ -1,0 +1,7 @@
+# Weekly cash gate starts from original unaccepted hands
+
+The projected weekly gate scanned the entire touch week before identifying four original unaccepted outcomes. The existing240s accounting visit timed out; an exact partial-predicate primary count returned four. The reader now starts from that same predicate and checks each exact projection row by its unique primary key, preserving union, both recognized times, shape and absence semantics.
+
+Changed: `fn_union_pnl_week_shaped_hands` projected branch only, full preimage393e98309bb57d2cb914d581e5da201a to postimage78b5d525a31a79ff1b13a5cfe0ddf739. Raw branch, acceptance rules, report/economic equations, source40 pins, deadlines, indexes and permissions remain unchanged. Single-transaction migration guards thaw, original scheduler ownership, exact source/private ACL and unique touch identity; native rollback and replay refusal are retained.
+
+NativePG17 qualifies actual four original consumer receipts, eighteen adversarial shape cases, full rowset equality, bad0/resolved4, private ACL, controlled original-owner admission and wide ready TOAST rowwork before20,004 versus after4. Maintained law/source binding and directly triggered Accounting3 native artifact protect the fix. This is native source qualification; hosted checks, protected merge, database installation, next original book visit and final financial completion remain pending. No financial payment or administrative closure occurred in this change.

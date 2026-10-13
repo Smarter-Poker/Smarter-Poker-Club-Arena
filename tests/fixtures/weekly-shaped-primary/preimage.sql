@@ -1,0 +1,20 @@
+CREATE OR REPLACE FUNCTION public.fn_union_pnl_week_shaped_hands(p_union_id uuid, p_start timestamp with time zone, p_end timestamp with time zone, p_projected boolean)
+ RETURNS SETOF union_pnl_cash_outcomes
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+BEGIN
+ IF p_projected THEN
+  RETURN QUERY SELECT o.* FROM public.union_pnl_cash_outcome_touches h
+   CROSS JOIN LATERAL (SELECT q.* FROM public.union_pnl_cash_outcomes q WHERE q.table_id=h.table_id AND q.hand_number=h.hand_number) o
+   WHERE h.game_union_id=p_union_id::text AND h.recognized_at>=p_start AND h.recognized_at<p_end AND h.shaped
+    AND o.game_scope->>'game_union_id'=p_union_id::text AND o.recognized_at>=p_start AND o.recognized_at<p_end
+    AND (o.evidence->>'status' IS DISTINCT FROM 'ready' OR o.evidence->'basis_certified' IS DISTINCT FROM 'true'::jsonb
+     OR o.evidence->'all_players_included' IS DISTINCT FROM 'true'::jsonb OR o.evidence->'game_scope' IS DISTINCT FROM o.game_scope);
+ ELSE
+  RETURN QUERY SELECT o.* FROM public.union_pnl_cash_outcomes o WHERE o.game_scope->>'game_union_id'=p_union_id::text AND o.recognized_at>=p_start AND o.recognized_at<p_end
+   AND (o.evidence->>'status' IS DISTINCT FROM 'ready' OR o.evidence->'basis_certified' IS DISTINCT FROM 'true'::jsonb
+    OR o.evidence->'all_players_included' IS DISTINCT FROM 'true'::jsonb OR o.evidence->'game_scope' IS DISTINCT FROM o.game_scope);
+ END IF;
+END $function$

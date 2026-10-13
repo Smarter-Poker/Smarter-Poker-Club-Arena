@@ -8,10 +8,17 @@ preserve their private authorization and discard late callbacks before a fresh
 join can report success. An intentionally disabled audit feed does not retain
 an obsolete failure state.
 
+Row-channel recovery also lacked attempt ownership inside a mounted hook. A
+late CLOSED or payload from the channel removed by the existing recovery
+factory could overwrite its already subscribed replacement. A generation guard
+now rejects that retired attempt, matching the private broadcast lifecycle.
+
 Six mounted regressions failed against the original recovery wiring and passed
 after correction: both page modes, the row hook and the private broadcast hook.
 They verify failed-feed selection, no healthy-refresh churn, new subscription
 success and rejection of retired status/payload callbacks.
+An additional factory-recovery case failed before the generation guard and
+passed after it; an audit-access regression covers intentional feed removal.
 
 The earlier live timeouts also coincided with Supabase's published realtime
 latency incident. The provider reports remediation, and the unchanged serving

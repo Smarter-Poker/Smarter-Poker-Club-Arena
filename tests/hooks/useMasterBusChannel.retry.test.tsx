@@ -65,3 +65,34 @@ it('explicit retry replaces a failed row subscription and rejects late old callb
   unmount();
   expect(f.removeRegisteredChannel).toHaveBeenCalledTimes(2);
 });
+
+it('a registered recovery factory cannot let a retired channel overwrite its replacement', () => {
+  const onPayload = vi.fn(),
+    onSubscriptionStatus = vi.fn(),
+    onSubscriptionError = vi.fn();
+  renderHook(() =>
+    useMasterBusChannel({
+      channelName: 'club-data-tables:test',
+      table: 'tables',
+      filter: 'club_id=eq.test',
+      event: '*',
+      onPayload,
+      onSubscriptionStatus,
+      onSubscriptionError,
+    })
+  );
+  act(() => f.statuses[0]('TIMED_OUT'));
+  act(() => f.registerChannelFactory.mock.calls[0][1]());
+  expect(f.statuses).toHaveLength(2);
+  onSubscriptionStatus.mockClear();
+  onSubscriptionError.mockClear();
+  act(() => {
+    f.statuses[1]('SUBSCRIBED');
+    f.statuses[0]('CLOSED');
+    f.payloads[0]({ revision: 'old' });
+    f.payloads[1]({ revision: 'new' });
+  });
+  expect(onSubscriptionStatus.mock.calls).toEqual([['SUBSCRIBED']]);
+  expect(onSubscriptionError).not.toHaveBeenCalled();
+  expect(onPayload.mock.calls).toEqual([[{ revision: 'new' }]]);
+});

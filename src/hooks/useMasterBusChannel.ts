@@ -146,6 +146,7 @@ export function useMasterBusChannel({
        torn-down tree. The sibling hook (useMasterBusSubscription) already
        guards this; this one did not. */
     let alive = true;
+    let subscriptionGeneration = 0;
 
     const subscribeChannel = () => {
       // getOrCreateChannel returns a fresh channel after the monitor removed
@@ -165,6 +166,9 @@ export function useMasterBusChannel({
         );
         return;
       }
+      // Recovery can replace a channel within this same mounted effect. Its
+      // asynchronous removal may still deliver frames and CLOSED afterwards.
+      const generation = ++subscriptionGeneration;
 
       (channel as any)
         .on(
@@ -177,11 +181,11 @@ export function useMasterBusChannel({
           },
           (payload: any) => {
             // Call the stable callback ref
-            if (alive) callbackRef.current(payload);
+            if (alive && generation === subscriptionGeneration) callbackRef.current(payload);
           }
         )
         .subscribe((status: string, err?: Error) => {
-          if (!alive) return;
+          if (!alive || generation !== subscriptionGeneration) return;
           try {
             statusCallbackRef.current?.(status);
           } catch (cbErr) {

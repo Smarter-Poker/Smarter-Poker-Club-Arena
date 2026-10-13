@@ -1,4 +1,5 @@
 import { subscribeDiamondJackpot, type DiamondJackpotSnapshot } from '../lib/diamondJackpotFeed';
+import { isDiamondJackpotAdvertTarget } from '../components/bbj/diamondJackpotAdvertDoor';
 import { tournamentEntryWindowOpen } from '../utils/tournamentEntryWindow';
 import {
   getTournamentEntryCapacity,
@@ -5777,6 +5778,16 @@ function ClubHomePageContent({
           clubId={resolvedClubId || club.id}
           onNavigate={(path) => {
             haptic.selection();
+            if (
+              isDiamondJackpotAdvertTarget(path, isAutomaticArena, [
+                clubId,
+                resolvedClubId,
+                club.id,
+              ])
+            ) {
+              setShowBBJInfo(true);
+              return;
+            }
             navigate(path);
           }}
         />
@@ -5960,6 +5971,16 @@ function ClubHomePageContent({
                         className="ad-rotator--poster"
                         onNavigate={(path) => {
                           haptic.selection();
+                          if (
+                            isDiamondJackpotAdvertTarget(path, isAutomaticArena, [
+                              clubId,
+                              resolvedClubId,
+                              club.id,
+                            ])
+                          ) {
+                            setShowBBJInfo(true);
+                            return;
+                          }
                           navigate(path);
                         }}
                       />

@@ -129,9 +129,16 @@ const ROSTER = join(ROOT, 'docs', 'attestation', 'cron-roster.tsv');
  * rescheduled by applied migration 20261007102247. Once the one-shots have run
  * the count is expected back at 132, which is a second reviewed move.
  */
-const ACTIVE_JOBS = 135;
+// 2026-10-13: the three dated DSS one-shots are absent after their lifecycle.
+// Original retention job 117 uses the installed, qualified 30-second cadence
+// from 20261012200422; no recurring job was retired by this roster update.
+const ACTIVE_JOBS = 132;
 const RETAINED_INACTIVE = 2;
 const TOTAL_JOBS = ACTIVE_JOBS + RETAINED_INACTIVE;
+
+const validSchedule = (schedule: string): boolean =>
+  schedule.trim().split(/\s+/).length >= 5 ||
+  /^(?:[1-9]|[1-5][0-9]) seconds$/.test(schedule.trim());
 
 const raw = readFileSync(ROSTER, 'utf8');
 const lines = raw.split('\n').filter((l) => l.trim() !== '');
@@ -140,6 +147,20 @@ const headerValue = (k: string): string =>
   (new RegExp(`^#\\s*${k}:\\s*([^\\t\\n]+)`, 'm').exec(raw)?.[1] ?? '').trim();
 
 describe('the scheduled-work roster is pinned', () => {
+  it('accepts pg_cron second intervals only within its supported 1 through 59 range', () => {
+    for (const schedule of ['1 seconds', '30 seconds', '59 seconds', '17 * * * *'])
+      expect(validSchedule(schedule)).toBe(true);
+    for (const schedule of [
+      '0 seconds',
+      '60 seconds',
+      '99 seconds',
+      '-1 seconds',
+      '30 minutes',
+      'seconds',
+      '30seconds',
+    ])
+      expect(validSchedule(schedule)).toBe(false);
+  });
   it('holds exactly the number of active jobs this law was measured against', () => {
     expect(
       body.length,
@@ -155,8 +176,8 @@ describe('the scheduled-work roster is pinned', () => {
     expect(Number(headerValue('retained-inactive'))).toBe(RETAINED_INACTIVE);
   });
 
-  it('137 total is 135 active plus the two rows cron.job keeps inactive', () => {
-    expect(TOTAL_JOBS).toBe(137);
+  it('134 total is 132 active plus the two rows cron.job keeps inactive', () => {
+    expect(TOTAL_JOBS).toBe(134);
     // The two bust sweeps 20260910073355 restored disabled are both of them
     // again: union-weekly-rakeback-close was the third until 20261003101805
     // re-armed jobid 272, and it is now an ACTIVE row of the body instead.
@@ -170,10 +191,7 @@ describe('the scheduled-work roster is pinned', () => {
       const [name, schedule, ...rest] = line.split('\t');
       expect(rest, `extra columns: ${line}`).toHaveLength(0);
       expect(name, `a roster row has no job name: ${line}`).toMatch(/\S/);
-      expect(
-        schedule.trim().split(/\s+/).length,
-        `${name} has a malformed schedule "${schedule}"`
-      ).toBeGreaterThanOrEqual(5);
+      expect(validSchedule(schedule), `${name} has a malformed schedule "${schedule}"`).toBe(true);
       expect(seen.has(name), `${name} appears twice`).toBe(false);
       seen.add(name);
     }

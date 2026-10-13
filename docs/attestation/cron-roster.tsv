@@ -3,8 +3,8 @@
 # A change here is a change to what this platform runs on a timer. Never edit a
 # line to make a check pass: tests/the-scheduled-work-roster-is-pinned.law.test.ts
 # pins the count, and the count is supposed to be argued about.
-# observed_at: 2026-10-12T11:16:28Z
-# active: 135
+# observed_at: 2026-10-13T11:50:45Z
+# active: 132
 # retained-inactive: 2	the two bust sweeps restored disabled by 20260910073355
 # 2026-09-20: 135 -> 132. union-seat-provenance-heal, ca-bbj-repair-unbanked-15m
 # and reconcile-club-table-counts-nightly were retired by migration
@@ -130,6 +130,15 @@
 #     the_game_management_health_counts_what_it_can_read_in_time with
 #     cron.alter_job: the daily 5,000-row prune could not keep up with
 #     200,000-600,000 rows a day. Retention pruning; it repairs nothing.
+# 2026-10-13: 135 -> 132. All three dated DSS one-shots are absent from
+# cron.job after their October 12 lifecycle. Retry 2 succeeded at 17:20 UTC;
+# retry 1 reports job canceled at 17:05, so absence is not a claim all ran
+# successfully. No recurring job was retired. Temporary retention safety
+# holds were restored by their owner after qualified safeguards. Job 117
+# now runs every 30 seconds through installed migration 20261012200422
+# existing_horse_retention_runs_each_thirty_seconds (protected retention
+# delivery); command, work bounds and all other fields remain unchanged.
+# The other 131 active schedules match the previous pinned roster.
 # jobname	schedule
 # 2026-10-04: 125 -> 126. postgrest-pool-renew-10m was scheduled by migration
 # the_api_pool_is_renewed_before_it_outgrows_the_host: PostgREST's pool
@@ -229,9 +238,6 @@ daily-missions-retention-daily	23 5 * * *
 daily-missions-reward-expiry	7 0 * * *
 db-saturation-selftest	7,37 * * * *
 diamond-spin-daily-settlement	5 5,6 * * *
-dss-midway-go-live	0 17 12 10 *
-dss-midway-go-live-retry-1	5 17 12 10 *
-dss-midway-go-live-retry-2	20 17 12 10 *
 flag-garbage-tournaments	15 3 * * *
 game-management-events-retention	7,17,27,37,47 * * * *
 hand-history-compact	0,5,10,15,20,25,30,35,40,45,50,55 * * * *
@@ -276,7 +282,7 @@ snapshot-player-stats	5 0 * * *
 sp-prune-hand-discards	7,37 * * * *
 sp-prune-rabbit-hunt-offers	9,39 * * * *
 sp_prune_ca_settlements_10m	7,17,27,37,47 * * * *
-sp_prune_hand_history_10m	3,13,23,33,43,53 * * * *
+sp_prune_hand_history_10m	30 seconds
 sp_prune_hand_state_snapshots_2m	1-59/2 * * * *
 sp_refresh_pending_families	17 9 * * *
 sp_resolve_settled_prize_alerts_15m	9,24,39 * * * *

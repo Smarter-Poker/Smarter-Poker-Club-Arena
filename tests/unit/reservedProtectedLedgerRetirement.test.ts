@@ -67,7 +67,11 @@ describe('reserved protected ledger actors reach supported Auth retirement', () 
       'RESERVED_CERTIFICATION_ACCOUNT_EMAIL: ${{ inputs.reserved_account_email }}'
     );
     expect(job).toContain('node scripts/ci/retire-reserved-certification-account.mjs');
-    expect(job).not.toMatch(/npm ci|playwright|production-e2e-account\.mjs create|stale/);
+    expect(job).not.toMatch(/playwright|production-e2e-account\.mjs create|stale/);
+    expect(job).toContain(
+      "if: inputs.reserved_template_request_id != '' || inputs.reserved_template_club_id != ''"
+    );
+    expect(job).toContain('DATABASE_URL: ${{ secrets.DATABASE_URL }}');
     expect(workflow).toContain('cancel-in-progress: false');
   });
   it.each([
@@ -122,4 +126,70 @@ describe('reserved protected ledger actors reach supported Auth retirement', () 
     ).rejects.toThrow('Do Not Match Auth');
     expect(cleanup).not.toHaveBeenCalled();
   });
+  it('verifies a selected template receipt before passing its durable record to cleanup', async () => {
+    const requestId = '11111111-1111-4111-8111-111111111111';
+    const clubId = '22222222-2222-4222-8222-222222222222';
+    const environment = {
+      RESERVED_CERTIFICATION_ACCOUNT_ID: id,
+      RESERVED_CERTIFICATION_ACCOUNT_EMAIL: email,
+      RESERVED_CERTIFICATION_TEMPLATE_REQUEST_ID: requestId,
+      RESERVED_CERTIFICATION_TEMPLATE_CLUB_ID: clubId,
+      SUPABASE_URL: 'https://isolated.invalid',
+      SUPABASE_SERVICE_ROLE_KEY: 'sb_secret_test',
+      DATABASE_URL: 'configured-runtime-only',
+    };
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce({ status: 200, json: async () => ({ id, email }) })
+      .mockResolvedValueOnce({
+        status: 200,
+        json: async () => [{ user_id: id, request_id: requestId, club_id: clubId }],
+      });
+    const cleanup = vi.fn().mockResolvedValue(true);
+    await expect(
+      retireReservedCertificationAccount({ environment, fetchImpl, cleanup })
+    ).resolves.toBe(true);
+    expect(cleanup).toHaveBeenCalledWith({
+      environment,
+      fetchImpl,
+      record: { id, email, templateFixtureRequest: { requestId, clubId } },
+    });
+    expect(String(fetchImpl.mock.calls[1][0])).toContain('club_creation_requests?');
+  });
+
+  it.each(['missing', 'wrong', 'unreadable'])(
+    'refuses a %s template receipt before any retirement',
+    async (kind) => {
+      const environment = {
+        RESERVED_CERTIFICATION_ACCOUNT_ID: id,
+        RESERVED_CERTIFICATION_ACCOUNT_EMAIL: email,
+        RESERVED_CERTIFICATION_TEMPLATE_REQUEST_ID: '11111111-1111-4111-8111-111111111111',
+        RESERVED_CERTIFICATION_TEMPLATE_CLUB_ID: '22222222-2222-4222-8222-222222222222',
+        SUPABASE_URL: 'https://isolated.invalid',
+        SUPABASE_SERVICE_ROLE_KEY: 'sb_secret_test',
+        DATABASE_URL: 'configured-runtime-only',
+      };
+      const fetchImpl = vi
+        .fn()
+        .mockResolvedValueOnce({ status: 200, json: async () => ({ id, email }) })
+        .mockResolvedValueOnce({
+          status: kind === 'unreadable' ? 503 : 200,
+          json: async () =>
+            kind === 'missing'
+              ? []
+              : [
+                  {
+                    user_id: id,
+                    request_id: environment.RESERVED_CERTIFICATION_TEMPLATE_REQUEST_ID,
+                    club_id: 'wrong',
+                  },
+                ],
+        });
+      const cleanup = vi.fn();
+      await expect(
+        retireReservedCertificationAccount({ environment, fetchImpl, cleanup })
+      ).rejects.toThrow('Template Creation Receipt');
+      expect(cleanup).not.toHaveBeenCalled();
+    }
+  );
 });

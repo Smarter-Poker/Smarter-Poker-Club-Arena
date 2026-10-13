@@ -30,7 +30,32 @@ export async function retireReservedCertificationAccount({
   if (response.status !== 200 || user?.id !== id || (!user.deleted_at && user.email !== email)) {
     throw new Error('The Selected Reserved UUID And Email Do Not Match Auth.');
   }
-  const retired = await cleanup({ environment, fetchImpl, record: { id, email } });
+  const record = { id, email };
+  const requestId = environment.RESERVED_CERTIFICATION_TEMPLATE_REQUEST_ID || '';
+  const clubId = environment.RESERVED_CERTIFICATION_TEMPLATE_CLUB_ID || '';
+  if (requestId || clubId) {
+    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+    if (!uuid.test(requestId) || !uuid.test(clubId) || !environment.DATABASE_URL) {
+      throw new Error('Exact Template Creation Receipt IDs And Configured Database Access Are Required.');
+    }
+    const query = new URLSearchParams({
+      select: 'user_id,request_id,club_id', user_id: `eq.${id}`,
+      request_id: `eq.${requestId}`, club_id: `eq.${clubId}`,
+    });
+    const receiptResponse = await fetchImpl(`${url.replace(/\/$/, '')}/rest/v1/club_creation_requests?${query}`, {
+      headers: supabaseServerHeaders(key), signal: AbortSignal.timeout(30_000),
+    });
+    const receipts = receiptResponse.status === 200 ? await receiptResponse.json() : null;
+    if (!Array.isArray(receipts) || receipts.length !== 1 || receipts[0].user_id !== id ||
+        receipts[0].request_id !== requestId || receipts[0].club_id !== clubId) {
+      throw new Error('The Selected Template Creation Receipt Does Not Match.');
+    }
+    // Recover the same durable record the creator persisted before creation.
+    // The existing cleanup retires only recognized reserved owned clubs before
+    // applying its unchanged authority/custody and supported Auth guards.
+    record.templateFixtureRequest = { requestId, clubId };
+  }
+  const retired = await cleanup({ environment, fetchImpl, record });
   if (retired !== true) throw new Error('The Selected Reserved Identity Was Not Retired.');
   return retired;
 }

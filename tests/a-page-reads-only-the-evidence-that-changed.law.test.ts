@@ -103,6 +103,15 @@ export function wholePeriodViolations(body: string, before: string): string[] {
       out.push('the launch floor is not the exact single window-boundary assignment');
     body = body.replace(launch, '');
   }
+  // Admit only the exact qualified launch waiver; all other predecessor bytes remain checked.
+  const waiver = ' AND public.fn_ca_launch_rakeback_period_waived(rp.id) IS NOT TRUE';
+  const waivedReuse =
+    "  IF FOUND AND public.fn_ca_launch_rakeback_period_waived(existing.id) THEN\n   period_id:=existing.id;\n   UPDATE public.rakeback_periods SET status='pending',paid_at=NULL,deferred_reason=NULL,deferred_at=NULL,\n    rake_generated=(plan->>'rake_generated')::numeric,total_rake_paid=(plan->>'rake_generated')::numeric,\n    rakeback_rate=(plan->>'display_rate')::numeric,rakeback_earned=(plan->>'rakeback_amount')::numeric,rakeback_amount=(plan->>'rakeback_amount')::numeric\n    WHERE id=period_id;\n  ELSIF FOUND THEN";
+  if (body.includes(waiver) || body.includes('fn_ca_launch_rakeback_period_waived(existing.id)')) {
+    if (body.split(waiver).length !== 3 || body.split(waivedReuse).length !== 2)
+      out.push('the launch waiver is not the exact two exclusions and unpaid-period reuse');
+    body = body.replaceAll(waiver, '').replace(waivedReuse, '  IF FOUND THEN');
+  }
   const segment = wholePeriodSegment(before);
   if (!segment) return ['the predecessor has no whole-period segment to compare'];
   if (!body.includes(' IF p_user_ids IS NULL THEN\n' + segment + ' ELSE\n'))
@@ -370,6 +379,16 @@ describe('a page recompute reads only the evidence that changed', () => {
     ).toContain(
       'something outside the page branch changed (the certificate loop must be untouched)'
     );
+  });
+  it('refuses altered waiver and paid-period reuse', () => {
+    for (const [from, to] of [
+      [
+        'fn_ca_launch_rakeback_period_waived(rp.id) IS NOT TRUE',
+        'fn_ca_launch_rakeback_period_waived(rp.id) IS TRUE',
+      ],
+      ["SET status='pending',paid_at=NULL", "SET status='paid',paid_at=NULL"],
+    ])
+      expect(wholePeriodViolations(plant(body, from, to), before).length).toBeGreaterThan(0);
   });
   it('refuses a changed whole-period path', () => {
     expect(

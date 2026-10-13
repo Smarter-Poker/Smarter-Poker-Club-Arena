@@ -206,13 +206,13 @@ describe('the proof harness and CI', () => {
     expect(HARNESS).toContain('20261008111425_lightning_phase_10_responsible_gaming');
     expect(HARNESS).toContain('PASS: Lightning Phase 9 remediation (DB)');
   });
-  it('CI runs the harness on shard 1 after the Phase 10 step', () => {
+  it('CI runs the harness on shard 3 after the Phase 10 step', () => {
     const p10 = CI.indexOf('test-lightning-phase10-rg-rebuy.sh');
     const p9r = CI.indexOf('test-lightning-phase9r-remediation.sh');
     expect(p10).toBeGreaterThan(0);
     expect(p9r).toBeGreaterThan(p10);
     const step = CI.slice(CI.lastIndexOf('- name:', p9r), p9r);
-    expect(step).toContain('if: matrix.shard == 1');
+    expect(step).toContain('if: matrix.shard == 3');
     expect(step).toContain('PG_BIN: /usr/lib/postgresql/17/bin');
   });
   it('the schema manifest fragment promises no new table, function or column (every change is a body substitution)', () => {

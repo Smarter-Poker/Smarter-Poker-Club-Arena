@@ -1816,7 +1816,7 @@ describe('Phase 5: it proves what it says, declares what it created, and is wire
     expect(ACCOUNTING).toContain(
       '      - name: Lightning Phase 5 converts a must-move cluster in one transaction and stands the tick down\n' +
         // Its accounting shard (four since 2026-09-26) is its only condition.
-        '        if: matrix.shard == 1\n' +
+        '        if: matrix.shard == 3\n' +
         '        env:\n' +
         '          PG_BIN: /usr/lib/postgresql/17/bin\n' +
         '        run: bash scripts/dev/test-lightning-phase5-conversion.sh'

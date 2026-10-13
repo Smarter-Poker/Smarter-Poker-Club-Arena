@@ -508,3 +508,99 @@ describe('Dashboard refresh ownership', () => {
     }
   });
 });
+
+describe('Dashboard level recalculation scope', () => {
+  const OTHER_CLUB = 'bbaabbaa-1111-4222-8333-aabbccddeeff';
+
+  function clubNameReads() {
+    resolveMock.mockImplementation(async (input: string) =>
+      input === OTHER_CLUB ? OTHER_CLUB : CLUB_UUID
+    );
+    fromMock.mockImplementation((tableName: string) => {
+      let selectedClub = CLUB_UUID;
+      const chain: Record<string, unknown> = {};
+      chain.select = () => chain;
+      chain.eq = (column: string, value: string) => {
+        if (column === 'id') selectedClub = value;
+        return chain;
+      };
+      chain.maybeSingle = () =>
+        Promise.resolve({
+          data:
+            tableName === 'clubs'
+              ? {
+                  id: selectedClub,
+                  name: selectedClub === CLUB_UUID ? 'Deep Stack Society' : 'Other Club',
+                  owner_id: OWNER_ID,
+                }
+              : { role: 'owner' },
+          error: null,
+        });
+      return chain;
+    });
+  }
+
+  it.each(['success', 'failure'] as const)(
+    'retires an old-club %s completion without refreshing or notifying the new club',
+    async (outcome) => {
+      clubNameReads();
+      const mutation = deferredDashboard<{
+        data: { success: boolean } | null;
+        error: { message: string } | null;
+      }>();
+      const standardRpc = rpcMock.getMockImplementation()!;
+      rpcMock.mockImplementation((name: string, ...args: unknown[]) =>
+        name === 'recompute_club_levels' ? mutation.promise : standardRpc(name, ...args)
+      );
+      const view = render(<ClubDashboard />);
+      fireEvent.click(await screen.findByRole('button', { name: 'Recalculate Level' }));
+      await waitFor(() =>
+        expect(rpcArgs('recompute_club_levels')).toEqual([{ p_club_id: CLUB_UUID }])
+      );
+      routeState.clubId = OTHER_CLUB;
+      view.rerender(<ClubDashboard />);
+      await screen.findByText('Other Club');
+      const readsBeforeCompletion = rpcArgs('ca_club_dashboard_stats');
+      await act(async () =>
+        mutation.resolve(
+          outcome === 'success'
+            ? { data: { success: true }, error: null }
+            : { data: null, error: { message: 'Old Club Refused' } }
+        )
+      );
+      expect(rpcArgs('ca_club_dashboard_stats')).toEqual(readsBeforeCompletion);
+      expect(screen.getByText('Other Club')).toBeTruthy();
+      expect(screen.queryByText('Deep Stack Society')).toBeNull();
+      expect(toastState.success).not.toHaveBeenCalled();
+      expect(toastState.error).not.toHaveBeenCalled();
+    }
+  );
+
+  it('clears old busy state and an old completion cannot unlock a new-club recalculation', async () => {
+    clubNameReads();
+    const old = deferredDashboard<{ data: { success: true }; error: null }>();
+    const next = deferredDashboard<{ data: { success: true }; error: null }>();
+    const standardRpc = rpcMock.getMockImplementation()!;
+    rpcMock.mockImplementation((name: string, args: { p_club_id?: string }) =>
+      name === 'recompute_club_levels'
+        ? args.p_club_id === CLUB_UUID
+          ? old.promise
+          : next.promise
+        : standardRpc(name, args)
+    );
+    const view = render(<ClubDashboard />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Recalculate Level' }));
+    routeState.clubId = OTHER_CLUB;
+    view.rerender(<ClubDashboard />);
+    await screen.findByText('Other Club');
+    expect(screen.getByRole('button', { name: 'Recalculate Level' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Recalculate Level' }));
+    await waitFor(() => expect(rpcArgs('recompute_club_levels')).toHaveLength(2));
+    await act(async () => old.resolve({ data: { success: true }, error: null }));
+    expect(screen.getByRole('button', { name: 'Processing...' })).toBeDisabled();
+    await act(async () => next.resolve({ data: { success: true }, error: null }));
+    expect(screen.getByRole('button', { name: 'Recalculate Level' })).toBeEnabled();
+    expect(toastState.success).toHaveBeenCalledTimes(1);
+    expect(rpcArgs('ca_club_dashboard_stats').at(-1)).toEqual({ p_club_id: OTHER_CLUB });
+  });
+});

@@ -1,0 +1,1335 @@
+{
+  "functions": {
+    "fn_ca_mint_velocity_watch": [
+      "CREATE FUNCTION public.fn_ca_mint_velocity_watch() RETURNS numeric\n    LANGUAGE plpgsql SECURITY DEFINER\n    SET search_path TO 'public'\n    AS $$\nDECLARE v_mint numeric; v_burn numeric; v_grants bigint; v_grant_chips numeric;\n        v_ops bigint; v_op_chips numeric;\nBEGIN\n  /* THE NEW-CLUB OPENING GRANT IS NEVER DRIFT (2026-09-23). Creating a\n     standalone chip club mints its declared 100,000-chip opening bank\n     (fn_seed_new_club_opening_bank declares it, fn_record_new_club_opening_bank\n     registers it). This sum had no entity dimension, so three new clubs\n     inside ten minutes filed a warning and eleven a critical, and\n     fn_ca_is_midway_scope files a raise with no dimension into Midway's own\n     incident flow. A grant is left out ONLY in its exact declared shape:\n     the journal leg issuance_reserve (system_mint before 2026-09-03) ->\n     club_treasury, category mint, posted, exactly 100,000, landing in the\n     club it names, keyed 'club-opening-grant:<that club>', AND linked from\n     the mint register row the grant's own trigger wrote for that club and\n     that amount. Short of all of it, the leg is still counted. What is\n     left out rides along as metadata on any raise this watch still makes;\n     it never makes one.\n\n     AN OPERATOR'S DECLARED FUNDING IS NOT A LOOP EITHER (2026-10-03). Both\n     mint warnings of 2026-10-03 were deliberate, reviewed settlements: the\n     standalone rake bank of Deep Stack Society (607,265.09, two closed weeks\n     of rake retired at the hand and banked at the close) and the owner's\n     funding of its overdue agent commission (560,017.06). Each was minted\n     through fn_ca_fund_club under its own operation key, and the mint\n     register row fn_ca_fund_club wrote for it - origin 'operator', op_id\n     equal to the leg's idempotency_key, linked to that leg, the same amount,\n     with a reason - is the declaration a person has to read anyway. Such a\n     mint is left out and rides along as metadata, but only while there are\n     at most three of them in the window: a loop through the declaring door\n     is still a loop. An auto-registered row (origin 'journal', op_id\n     'ledger:<leg>') declares nothing and is still counted. */\n  SELECT COALESCE(sum(l.amount) FILTER (WHERE l.from_type IN ('system_mint','issuance_reserve')\n                                          AND NOT g.declared_opening_grant\n                                          AND NOT o.declared_operator_mint), 0),\n         COALESCE(sum(l.amount) FILTER (WHERE l.to_type   IN ('system_burn','chip_retirement')), 0),\n         count(*) FILTER (WHERE g.declared_opening_grant),\n         COALESCE(sum(l.amount) FILTER (WHERE g.declared_opening_grant), 0),\n         count(*) FILTER (WHERE o.declared_operator_mint),\n         COALESCE(sum(l.amount) FILTER (WHERE o.declared_operator_mint), 0)\n    INTO v_mint, v_burn, v_grants, v_grant_chips, v_ops, v_op_chips\n    FROM public.chip_ledger l\n    CROSS JOIN LATERAL (\n      SELECT (l.category = 'mint'\n          AND l.from_type IN ('issuance_reserve', 'system_mint')\n          AND l.to_type = 'club_treasury'\n          AND l.status = 'posted'\n          AND l.amount = 100000\n          AND l.to_entity_id = l.club_id\n          AND l.idempotency_key = 'club-opening-grant:' || l.to_entity_id::text\n          AND EXISTS (\n            SELECT 1 FROM public.ca_mint_ledger m\n             WHERE m.op_id = l.idempotency_key\n               AND m.chip_ledger_id = l.id\n               AND m.action = 'mint' AND m.asset = 'chips'\n               AND m.holder_type = 'club' AND m.holder_id = l.to_entity_id\n               AND m.amount = 100000)) IS TRUE AS declared_opening_grant\n    ) g\n    CROSS JOIN LATERAL (\n      SELECT (l.category = 'mint'\n          AND l.from_type IN ('issuance_reserve', 'system_mint')\n          AND l.status = 'posted'\n          AND l.idempotency_key IS NOT NULL\n          AND EXISTS (\n            SELECT 1 FROM public.ca_mint_ledger m\n             WHERE m.op_id = l.idempotency_key\n               AND m.chip_ledger_id = l.id\n               AND m.origin = 'operator'\n               AND m.performed_by_label = 'fn_ca_fund_club'\n               AND m.action = 'mint' AND m.asset = 'chips'\n               AND m.amount = l.amount\n               AND COALESCE(btrim(m.reason), '') <> '')) IS TRUE AS declared_operator_mint\n    ) o\n   WHERE l.created_at > now() - interval '10 minutes';\n\n  IF v_ops > 3 THEN\n    v_mint := v_mint + v_op_chips;\n  END IF;\n\n  IF v_mint > 250000 THEN\n    PERFORM public.fn_ca_raise_drift_incident(\n      'fn_ca_mint_velocity_watch', 'ledger_imbalance',\n      CASE WHEN v_mint > 1000000 THEN 'critical' ELSE 'warning' END,\n      'mint-velocity:' || to_char(now(), 'YYYY-MM-DD-HH24'),\n      v_mint, 250000, v_mint, 'ledger', 'chip_ledger',\n      NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,\n      round(v_mint, 2) || ' chips minted in 10 minutes, declared new-club opening grants and up to three declared operator mints not counted - far above the expected trickle; if this is not a deliberate batch (an epoch reset), a mint loop is running',\n      true, jsonb_build_object('mint_10m', round(v_mint,2), 'burn_10m', round(v_burn,2),\n                               'opening_grants_10m', v_grants,\n                               'opening_grant_chips_10m', round(v_grant_chips,2),\n                               'operator_mints_10m', v_ops,\n                               'operator_mint_chips_10m', round(v_op_chips,2),\n                               'operator_mints_counted', v_ops > 3));\n  END IF;\n\n  IF v_burn > 1000000 THEN\n    PERFORM public.fn_ca_raise_drift_incident(\n      'fn_ca_mint_velocity_watch', 'ledger_imbalance', 'warning',\n      'burn-velocity:' || to_char(now(), 'YYYY-MM-DD-HH24'),\n      v_burn, 1000000, v_burn, 'ledger', 'chip_ledger',\n      NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,\n      round(v_burn, 2) || ' chips burned in 10 minutes - expected only during an epoch reset or a mass cleanup; verify the operation is deliberate',\n      true, jsonb_build_object('mint_10m', round(v_mint,2), 'burn_10m', round(v_burn,2)));\n  END IF;\n\n  RETURN v_mint;\nEND $$;\n\n"
+    ],
+    "fn_begin_tournament_launch_before_lease_generation": [
+      "CREATE FUNCTION public.fn_begin_tournament_launch_before_lease_generation(p_tournament_id uuid, p_launch_id uuid, p_started_at timestamp with time zone) RETURNS jsonb\n    LANGUAGE plpgsql SECURITY DEFINER\n    SET search_path TO 'public', 'pg_temp'\n    SET statement_timeout TO '30s'\n    AS $$\nDECLARE\n  v_existing public.tournament_launch_receipts%ROWTYPE;\n  v_status text;\n  v_tournament_started_at timestamptz;\n  v_requested_started_at timestamptz := COALESCE(p_started_at, transaction_timestamp());\nBEGIN\n  PERFORM pg_advisory_xact_lock_shared(530090, 1);\n\n  IF p_tournament_id IS NULL OR p_launch_id IS NULL THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'invalid_launch_request');\n  END IF;\n\n  SELECT * INTO v_existing\n    FROM public.tournament_launch_receipts r\n   WHERE r.tournament_id = p_tournament_id\n   FOR UPDATE;\n  IF FOUND THEN\n    IF p_started_at IS NOT NULL\n       AND v_existing.launch_id = p_launch_id\n       AND v_existing.started_at IS DISTINCT FROM p_started_at THEN\n      RETURN jsonb_build_object('ok', false, 'reason', 'launch_request_mismatch');\n    END IF;\n    SELECT t.status, t.started_at INTO v_status, v_tournament_started_at\n      FROM public.tournaments t\n     WHERE t.id = p_tournament_id\n     FOR UPDATE;\n    IF NOT FOUND\n       OR (v_existing.completed_at IS NULL AND v_status <> 'REGISTERING')\n       OR (v_existing.completed_at IS NOT NULL\n           AND (v_status <> 'RUNNING'\n                OR v_tournament_started_at IS DISTINCT FROM v_existing.started_at)) THEN\n      RETURN jsonb_build_object('ok', false, 'reason', 'launch_receipt_state_mismatch');\n    END IF;\n    RETURN jsonb_build_object(\n      'ok', true,\n      'claimed', true,\n      'launch_id', v_existing.launch_id,\n      'replay', true,\n      'started_at', v_existing.started_at,\n      'completed', v_existing.completed_at IS NOT NULL,\n      'status', v_status\n    );\n  END IF;\n\n  IF public.fn_entry_purchases_frozen() THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'platform_frozen');\n  END IF;\n\n  SELECT t.status, t.started_at INTO v_status, v_tournament_started_at\n    FROM public.tournaments t\n   WHERE t.id = p_tournament_id\n   FOR UPDATE;\n  IF NOT FOUND THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'tournament_not_found');\n  END IF;\n  IF v_status <> 'REGISTERING' THEN\n    RETURN jsonb_build_object(\n      'ok', false,\n      'reason', 'launch_status_changed',\n      'status', v_status\n    );\n  END IF;\n  IF v_tournament_started_at IS NOT NULL\n     AND v_tournament_started_at IS DISTINCT FROM v_requested_started_at THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'launch_started_at_mismatch');\n  END IF;\n\n  INSERT INTO public.tournament_launch_receipts (\n    tournament_id, launch_id, started_at\n  ) VALUES (\n    p_tournament_id, p_launch_id, v_requested_started_at\n  );\n\n  RETURN jsonb_build_object(\n    'ok', true,\n    'claimed', true,\n    'launch_id', p_launch_id,\n    'replay', false,\n    'started_at', v_requested_started_at,\n    'completed', false\n  );\nEND;\n$$;\n"
+    ],
+    "fn_spin_draw_and_settle_atomic": [
+      "CREATE FUNCTION public.fn_spin_draw_and_settle_atomic(p_tournament_id uuid, p_launch_id uuid, p_lease_generation uuid, p_rule_manifest jsonb) RETURNS jsonb\n    LANGUAGE plpgsql SECURITY DEFINER\n    SET search_path TO 'public', 'extensions', 'pg_temp'\n    SET statement_timeout TO '30s'\n    AS $$\nDECLARE\n  v_lease public.engine_tournament_leases%ROWTYPE;\n  v_launch public.tournament_launch_receipts%ROWTYPE;\n  v_t public.tournaments%ROWTYPE;\n  v_saved public.spin_draw_receipts%ROWTYPE;\n  v_player record;\n  v_entrants jsonb;\n  v_paid numeric;\n  v_entitled numeric;\n  v_escrow public.tournament_escrow%ROWTYPE;\n  v_wallet_gross numeric;\n  v_manifest jsonb;\n  v_hash text;\n  v_tier jsonb;\n  v_draw jsonb;\n  v_settle jsonb;\n  v_entry jsonb;\n  v_receipt jsonb;\n  v_multiplier numeric;\n  v_prize numeric;\n  v_count bigint;\n  v_covered numeric;\n  v_provenance text := 'at_draw';\n  v_blinds jsonb;\n  v_payouts jsonb;\n  v_locked jsonb;\n  v_freq numeric;\n  v_weight numeric;\n  v_played_recovery boolean := false;\n  v_recovery jsonb;\n  v_stamped integer;                                                  -- D2\nBEGIN\n  PERFORM pg_advisory_xact_lock_shared(530090, 1);\n  IF p_tournament_id IS NULL OR p_launch_id IS NULL OR p_lease_generation IS NULL THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'invalid_launch_request');\n  END IF;\n  SELECT * INTO v_lease FROM public.engine_tournament_leases\n   WHERE tournament_id = p_tournament_id FOR UPDATE;\n  IF NOT FOUND OR v_lease.protocol_version IS DISTINCT FROM 2\n     OR v_lease.lease_generation IS DISTINCT FROM p_lease_generation\n     OR v_lease.heartbeat_at IS NULL\n     OR v_lease.heartbeat_at < clock_timestamp() - interval '30 seconds' THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'launch_lease_lost');\n  END IF;\n\n  -- Same receipt -> parent order as registration, launch and cancellation.\n  PERFORM * FROM public.fn_lock_tournament_launch_proof_parents(ARRAY[p_tournament_id]);\n  SELECT * INTO v_launch FROM public.tournament_launch_receipts\n   WHERE tournament_id = p_tournament_id;\n  SELECT * INTO v_t FROM public.tournaments WHERE id = p_tournament_id;\n  IF v_launch.launch_id IS DISTINCT FROM p_launch_id\n     OR v_launch.lease_generation IS DISTINCT FROM p_lease_generation\n     OR v_launch.completed_at IS NOT NULL\n     OR v_t.status IS DISTINCT FROM 'REGISTERING' THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'launch_receipt_state_mismatch');\n  END IF;\n  IF public.fn_entry_purchases_frozen() THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'entry_purchases_frozen');\n  END IF;\n  -- DIAMOND PHASE 9: A DIAMOND SPIN IS DRAWN BY ITS OWN ARM OF THIS ONE\n  -- AUTHORITY. The lease, the launch receipt and the freeze above are this\n  -- authority's and are proved for both assets. Past this line the chip\n  -- proofs read wallet rows, an owner's reserve pool and the engine's\n  -- manifest, none of which a Diamond Spin has: its arm proves three whole\n  -- entries in custody, draws from the table its creation pinned, moves the\n  -- reserve legs against the authorized source in whole Diamonds and writes\n  -- the same immutable receipt and stamp, in this transaction.\n  IF public.fn_poker_diamond_tournament(p_tournament_id) THEN\n    RETURN public.fn_poker_diamond_spin_draw(p_tournament_id, p_launch_id, p_lease_generation);\n  END IF;\n  IF v_t.variant IS DISTINCT FROM 'spin' OR v_t.max_players IS DISTINCT FROM 3\n     OR COALESCE(v_t.buy_in_amount, 0) <= 0\n     OR COALESCE(v_t.buy_in_fee, 0) <> 0 THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'invalid_spin_contract');\n  END IF;\n\n  SELECT count(*), jsonb_agg(jsonb_build_object('registration_id', p.id,\n           'user_id', p.user_id) ORDER BY p.user_id, p.id)\n    INTO v_count, v_entrants\n    FROM public.tournament_players p WHERE p.tournament_id = p_tournament_id\n     AND p.status IN ('registered', 'playing');\n\n  -- A dealt Spin may have one proven busted/vacated original seat. This does\n  -- not lower the fresh-launch field: the proof requires the original three\n  -- paid identities, immutable money journals, a persisted hand, two exact\n  -- live seats and conservation of all three bought starting stacks.\n  IF v_count = 2 THEN\n    v_recovery := public.fn_prove_played_spin_launch_recovery(p_tournament_id);\n    IF COALESCE((v_recovery->>'ok')::boolean, false) THEN\n      v_played_recovery := true;\n      SELECT count(*), jsonb_agg(jsonb_build_object('registration_id', p.id,\n               'user_id', p.user_id) ORDER BY p.user_id, p.id)\n        INTO v_count, v_entrants\n        FROM public.tournament_players p\n       WHERE p.tournament_id = p_tournament_id\n         AND p.status IN ('playing', 'eliminated');\n    END IF;\n  END IF;\n\n  IF v_count <> 3 OR (SELECT count(DISTINCT p.user_id)\n      FROM public.tournament_players p WHERE p.tournament_id = p_tournament_id\n       AND (p.status IN ('registered', 'playing')\n            OR (v_played_recovery AND p.status = 'eliminated'))) <> 3 THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'spin_field_unproven');\n  END IF;\n\n  -- Spin admission proves net paid entries directly. The generic refund\n  -- planner compares advertised entry fees with escrow.fee_entries_in, but\n  -- Spin escrow records its embedded 8% rake there despite buy_in_fee=0.\n  -- A payout/refund policy comparison cannot stand in for this payment proof.\n  SELECT * INTO v_escrow FROM public.tournament_escrow\n   WHERE tournament_id = p_tournament_id FOR UPDATE;\n  SELECT COALESCE(sum(w.amount), 0) INTO v_wallet_gross\n    FROM public.wallet_transactions w WHERE w.related_entity_id = p_tournament_id\n     AND w.type = 'debit' AND lower(w.category) = 'tournament_buyin';\n  IF v_escrow.tournament_id IS NULL OR v_escrow.enforced IS DISTINCT FROM true\n     OR v_escrow.gross_in IS DISTINCT FROM v_wallet_gross THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'spin_entry_escrow_unproven');\n  END IF;\n  FOR v_player IN SELECT p.user_id FROM public.tournament_players p\n    WHERE p.tournament_id = p_tournament_id\n      AND (p.status IN ('registered', 'playing')\n           OR (v_played_recovery AND p.status = 'eliminated'))\n    ORDER BY p.user_id LOOP\n    -- The wallet receipt proves what this player still paid, including any\n    -- prior refund. Immutable entitlements independently prove the original\n    -- debit's exact wallet -> tournament double-entry leg and its consumption.\n    SELECT COALESCE(sum(CASE\n      WHEN w.type='debit' AND lower(w.category)='tournament_buyin' THEN w.amount\n      WHEN w.type='credit' AND lower(w.category) IN ('refund','tournament_refund') THEN -w.amount\n      ELSE 0 END), 0) INTO v_paid\n      FROM public.wallet_transactions w\n     WHERE w.related_entity_id=p_tournament_id AND w.user_id=v_player.user_id;\n    SELECT COALESCE(sum(e.gross), 0) INTO v_entitled\n      FROM public.tournament_refund_entitlements e\n      JOIN public.chip_ledger l ON l.id=e.source_ledger_id\n       AND l.club_id=e.refund_wallet_club_id AND l.amount=e.gross\n       AND l.tournament_id=e.tournament_id AND l.from_type='player_wallet'\n       AND l.from_entity_id=e.user_id AND l.to_type='prize_liability'\n       AND l.to_entity_id=e.tournament_id AND lower(l.category)=e.charge_category\n     WHERE e.tournament_id=p_tournament_id AND e.user_id=v_player.user_id\n       AND e.entitlement_kind='wallet_charge' AND e.charge_category='tournament_buyin'\n       AND e.refund_fee=0 AND e.refund_bounty=0\n       AND NOT EXISTS (SELECT 1 FROM public.tournament_refund_tranches tr WHERE tr.entitlement_id=e.id)\n       AND NOT EXISTS (SELECT 1 FROM public.tournament_tickets tk WHERE tk.source_refund_entitlement_id=e.id);\n    IF v_paid IS DISTINCT FROM v_t.buy_in_amount OR v_entitled IS DISTINCT FROM v_paid THEN\n      RETURN jsonb_build_object('ok', false, 'reason', 'spin_paid_entry_unproven');\n    END IF;\n  END LOOP;\n\n  SELECT * INTO v_saved FROM public.spin_draw_receipts WHERE tournament_id = p_tournament_id;\n  IF FOUND THEN\n    IF v_saved.launch_id IS DISTINCT FROM p_launch_id\n       OR v_saved.entrants IS DISTINCT FROM v_entrants THEN\n      RETURN jsonb_build_object('ok', false, 'reason', 'spin_receipt_roster_mismatch');\n    END IF;\n    -- A new owner or newer rules cannot reroll or rewrite a committed result.\n    RETURN v_saved.receipt || jsonb_build_object('replay', true);\n  END IF;\n\n  SELECT count(*), min(l.multiplier), min(-l.amount)\n    INTO v_count, v_multiplier, v_covered FROM public.spin_reserve_ledger l\n   WHERE l.tournament_id = p_tournament_id AND l.kind = 'jackpot_draw';\n  IF v_count > 0 THEN\n    -- Cutover recovery uses the already projected rules. It does not pretend\n    -- that a historical probability snapshot exists or replace it with today's.\n    v_prize := round(v_t.buy_in_amount * v_multiplier, 2);\n    IF v_count <> 1 OR v_multiplier IS DISTINCT FROM v_t.spin_multiplier\n       OR v_covered IS DISTINCT FROM v_prize OR COALESCE(v_multiplier, 0) <= 0\n       OR jsonb_typeof(v_t.blind_structure::jsonb) IS DISTINCT FROM 'array'\n       OR jsonb_array_length(v_t.blind_structure::jsonb) = 0\n       OR jsonb_typeof(v_t.payout_structure::jsonb) IS DISTINCT FROM 'array'\n       OR jsonb_array_length(v_t.payout_structure::jsonb) = 0 THEN\n      RETURN jsonb_build_object('ok', false, 'reason', 'legacy_spin_rules_unproven');\n    END IF;\n    v_provenance := 'legacy_projection';\n    v_blinds := v_t.blind_structure::jsonb;\n    v_payouts := v_t.payout_structure::jsonb;\n    v_locked := COALESCE(v_t.spin_locked_tiers::jsonb, '[]'::jsonb);\n    v_manifest := jsonb_build_object('version', 1, 'probability_snapshot', NULL,\n      'buy_in', v_t.buy_in_amount, 'seats', 3, 'starting_chips', v_t.starting_chips,\n      'multiplier', v_multiplier, 'blind_structure', v_blinds, 'payout_structure', v_payouts);\n    v_settle := jsonb_build_object('pool_covered', v_covered, 'operator_shortfall', 0);\n  ELSE\n    -- D1 (C-stuck-spins): tournaments.spin_multiplier has DEFAULT 0 and the\n    -- seat-first creator omits the column, so 0 is \"undrawn\" exactly as NULL\n    -- is. Every other reader on the platform already uses COALESCE(...,0).\n    -- A drawn multiplier is never 0 (all tiers >= 2; fn_spin_settle_game\n    -- rejects <= 0). Only a POSITIVE projection without a funded draw is the\n    -- case this refusal exists for.\n    IF COALESCE(v_t.spin_multiplier, 0) > 0 THEN\n      RETURN jsonb_build_object('ok', false, 'reason', 'projected_spin_draw_has_no_funding_proof');\n    END IF;\n    v_manifest := p_rule_manifest;\n    IF v_manifest IS NULL OR (v_manifest->>'version')::int IS DISTINCT FROM 1\n       OR (v_manifest->>'buy_in')::numeric IS DISTINCT FROM v_t.buy_in_amount\n       OR (v_manifest->>'seats')::int IS DISTINCT FROM 3\n       OR (v_manifest->>'starting_chips')::int IS DISTINCT FROM v_t.starting_chips\n       OR (v_manifest->>'rake_rate')::numeric IS DISTINCT FROM public.fn_spin_rake_rate(v_t.buy_in_amount)\n       OR jsonb_typeof(v_manifest->'tiers') IS DISTINCT FROM 'array'\n       OR jsonb_array_length(v_manifest->'tiers') = 0 THEN\n      RETURN jsonb_build_object('ok', false, 'reason', 'spin_rule_manifest_invalid');\n    END IF;\n    v_manifest := v_manifest || jsonb_build_object('draw_function_md5',\n      md5(pg_get_functiondef('public.fn_spin_draw_multiplier(uuid,numeric,jsonb,numeric,integer)'::regprocedure)));\n    v_freq := 0; v_weight := 0;\n    FOR v_tier IN SELECT value FROM jsonb_array_elements(v_manifest->'tiers') LOOP\n      IF jsonb_typeof(v_tier->'freq') IS DISTINCT FROM 'number'\n         OR jsonb_typeof(v_tier->'multiplier') IS DISTINCT FROM 'number'\n         OR COALESCE((v_tier->>'freq')::numeric, 0) <= 0\n         OR COALESCE((v_tier->>'multiplier')::numeric, 0) <= 0\n         OR COALESCE((v_tier->>'reserveThresholdX')::numeric, -1) < 0\n         OR jsonb_typeof(v_tier->'blind_structure') IS DISTINCT FROM 'array'\n         OR jsonb_array_length(v_tier->'blind_structure') <> 12\n         OR (v_tier#>>'{blind_structure,11,spinContinuation,version}')::int IS DISTINCT FROM 1\n         OR COALESCE((v_tier#>>'{blind_structure,11,spinContinuation,anchorLevel}')::numeric, 0) <= 0\n         OR COALESCE((v_tier#>>'{blind_structure,11,spinContinuation,anchorBigBlind}')::numeric, 0) <= 0\n         OR COALESCE((v_tier#>>'{blind_structure,11,spinContinuation,growth}')::numeric, 0) <= 1\n         OR COALESCE((v_tier#>>'{blind_structure,11,spinContinuation,roundBigTo}')::numeric, 0) <= 0\n         OR jsonb_typeof(v_tier->'payout_structure') IS DISTINCT FROM 'array'\n         OR jsonb_array_length(v_tier->'payout_structure') NOT BETWEEN 1 AND 3\n         OR EXISTS (\n           SELECT 1 FROM jsonb_array_elements(v_tier->'blind_structure') WITH ORDINALITY b(value, ordinal)\n            WHERE (b.value->>'level')::numeric IS DISTINCT FROM b.ordinal::numeric\n               OR COALESCE((b.value->>'smallBlind')::numeric, 0) <= 0\n               OR COALESCE((b.value->>'bigBlind')::numeric, 0) < (b.value->>'smallBlind')::numeric\n               OR COALESCE((b.value->>'duration')::numeric, 0) <= 0\n               OR (b.value->>'ante')::numeric IS DISTINCT FROM 0::numeric)\n         OR EXISTS (\n           SELECT 1 FROM jsonb_array_elements(v_tier->'payout_structure') WITH ORDINALITY p(value, ordinal)\n            WHERE (p.value->>'place')::numeric IS DISTINCT FROM p.ordinal::numeric\n               OR COALESCE((p.value->>'percentage')::numeric, 0) <= 0)\n         OR (SELECT sum((x->>'percentage')::numeric)\n               FROM jsonb_array_elements(v_tier->'payout_structure') x) IS DISTINCT FROM 100::numeric THEN\n        RETURN jsonb_build_object('ok', false, 'reason', 'spin_rule_manifest_invalid');\n      END IF;\n      v_freq := v_freq + (v_tier->>'freq')::numeric;\n      v_weight := v_weight + (v_tier->>'freq')::numeric * (v_tier->>'multiplier')::numeric;\n    END LOOP;\n    IF v_weight <> v_freq * 3 * (1 - (v_manifest->>'rake_rate')::numeric)\n       OR (SELECT count(DISTINCT x->>'multiplier') FROM jsonb_array_elements(v_manifest->'tiers') x)\n           <> jsonb_array_length(v_manifest->'tiers') THEN\n      RETURN jsonb_build_object('ok', false, 'reason', 'spin_rule_manifest_invalid');\n    END IF;\n\n    -- Entry owns escrow -> entry advisory -> reserve locks. Its committed net\n    -- contribution must be present before the affordability gate is evaluated.\n    v_entry := public.fn_spin_book_entry(p_tournament_id);\n    IF NOT COALESCE((v_entry->>'ok')::boolean, false) THEN\n      RAISE EXCEPTION 'Spin entry booking failed: %', v_entry USING ERRCODE = 'P0404';\n    END IF;\n    IF (SELECT count(*) FROM public.spin_reserve_ledger l\n         WHERE l.tournament_id=p_tournament_id AND l.kind='contribution') <> 1\n       OR NOT EXISTS (SELECT 1 FROM public.spin_reserve_ledger l\n         WHERE l.tournament_id=p_tournament_id AND l.kind='contribution'\n           AND l.club_id=public.fn_spin_reserve_pool(v_t.club_id)\n           AND l.seats=3 AND l.buy_in=v_t.buy_in_amount\n           AND l.house_rake=round(3*v_t.buy_in_amount*(v_manifest->>'rake_rate')::numeric, 2)\n           AND l.amount=round(3*v_t.buy_in_amount, 2)-l.house_rake) THEN\n      RAISE EXCEPTION 'Spin contribution does not prove the three funded entries' USING ERRCODE = 'P0404';\n    END IF;\n    -- Zero hypothetical seats: all three paid entries are already in balance.\n    -- The draw's pool row lock remains held through settlement and the receipt.\n    v_draw := public.fn_spin_draw_multiplier(v_t.club_id, v_t.buy_in_amount,\n      v_manifest->'tiers', (v_manifest->>'rake_rate')::numeric, 0);\n    IF NOT COALESCE((v_draw->>'ok')::boolean, false) THEN\n      RAISE EXCEPTION 'Spin funded draw unavailable: %', v_draw USING ERRCODE = 'P0404';\n    END IF;\n    v_multiplier := (v_draw->>'multiplier')::numeric;\n    v_prize := round(v_t.buy_in_amount * v_multiplier, 2);\n    SELECT value INTO STRICT v_tier FROM jsonb_array_elements(v_manifest->'tiers')\n     WHERE (value->>'multiplier')::numeric = v_multiplier;\n    v_blinds := v_tier->'blind_structure';\n    v_payouts := v_tier->'payout_structure';\n    v_locked := COALESCE(v_draw->'locked', '[]'::jsonb);\n    v_settle := public.fn_spin_settle_game(p_tournament_id, v_t.club_id,\n      v_t.buy_in_amount, 3, v_multiplier, (v_manifest->>'rake_rate')::numeric);\n    IF NOT COALESCE((v_settle->>'ok')::boolean, false)\n       OR (v_settle->>'pool_covered')::numeric IS DISTINCT FROM v_prize\n       OR COALESCE((v_settle->>'operator_shortfall')::numeric, 0) <> 0\n       OR v_settle->>'reason' = 'already_settled' THEN\n      -- Raising rolls back entry, draw and any transitive escrow write too.\n      RAISE EXCEPTION 'Spin settlement does not prove the selected funded prize: %', v_settle\n        USING ERRCODE = 'P0404';\n    END IF;\n  END IF;\n\n  v_hash := encode(extensions.digest(v_manifest::text, 'sha256'), 'hex');\n  v_receipt := v_settle || jsonb_build_object('ok', true, 'replay', false,\n    'tournament_id', p_tournament_id, 'launch_id', p_launch_id,\n    'multiplier', v_multiplier, 'prize_pool', v_prize, 'buy_in', v_t.buy_in_amount,\n    'starting_chips', v_t.starting_chips, 'blind_structure', v_blinds,\n    'payout_structure', v_payouts, 'locked', v_locked, 'entrants', v_entrants,\n    'rule_manifest', v_manifest, 'rule_sha256', v_hash, 'rule_provenance', v_provenance,\n    'draw_inputs', v_draw);\n  INSERT INTO public.spin_draw_receipts(tournament_id, launch_id, lease_generation,\n    rule_manifest, rule_sha256, entrants, receipt)\n  VALUES (p_tournament_id, p_launch_id, p_lease_generation, v_manifest, v_hash, v_entrants, v_receipt);\n\n  -- D2 (C-stuck-spins): the tournament row is the contract the engine, the\n  -- ladder trigger and proveTournamentLaunchSetup read back. The retired\n  -- fn_spin_draw_and_settle stamped it; the atomic authority must too, in the\n  -- same transaction as the draw. spin_tournament_contract_is_draw proves the\n  -- stamp equals the one jackpot_draw; zzz_spin_ladder_is_the_drawn_one proves\n  -- it equals the receipt just written. A legacy_projection row is already\n  -- stamped (the branch required equality), so this is a no-op there.\n  IF v_provenance = 'at_draw' THEN\n    UPDATE public.tournaments\n       SET spin_multiplier   = v_multiplier,\n           prize_pool        = v_prize,\n           total_rake        = round((v_settle->>'house_rake')::numeric, 2),\n           spin_locked_tiers = v_locked,\n           blind_structure   = v_blinds::text,\n           payout_structure  = v_payouts::text\n     WHERE id = p_tournament_id;\n    -- NOT is_premium_spin: fn_satellite_target_contract_is_immutable freezes it\n    -- once entry_contract_locked (true on every funded Spin). The engine's own\n    -- presentation patch sets it for a 100x draw (TournamentManagerBase.ts:3445)\n    -- and would be refused there - a separate, rare (0.01%) defect, out of scope.\n    GET DIAGNOSTICS v_stamped = ROW_COUNT;\n    IF v_stamped <> 1 OR NOT EXISTS (\n         SELECT 1 FROM public.tournaments t\n          WHERE t.id = p_tournament_id\n            AND t.spin_multiplier IS NOT DISTINCT FROM v_multiplier\n            AND t.prize_pool IS NOT DISTINCT FROM v_prize\n            AND t.spin_locked_tiers IS NOT DISTINCT FROM v_locked\n            AND t.total_rake IS NOT DISTINCT FROM round((v_settle->>'house_rake')::numeric, 2)) THEN\n      RAISE EXCEPTION 'Spin % tournament contract did not read back exactly', p_tournament_id\n        USING ERRCODE = 'P0404';\n    END IF;\n  END IF;\n  RETURN v_receipt;\nEND;\n$$;\n"
+    ],
+    "fn_spin_settle_game": [
+      "CREATE FUNCTION public.fn_spin_settle_game(p_tournament_id uuid, p_club_id uuid, p_buy_in numeric, p_seats integer, p_multiplier numeric, p_rake_rate numeric) RETURNS jsonb\n    LANGUAGE plpgsql SECURITY DEFINER\n    SET search_path TO 'public', 'pg_temp'\n    SET statement_timeout TO '30s'\n    AS $$\nDECLARE\n  v_collected numeric; v_rake numeric; v_reserve_in numeric;\n  v_prize numeric; v_bal numeric; v_available numeric;\n  v_shortfall numeric := 0; v_drawn numeric;\n  v_owner uuid; v_kind text; v_seed numeric; v_wallet text;\n  v_floor numeric; v_instalment numeric := 0;\n  v_seed_returned numeric := 0; v_wallet_after numeric := NULL;\n  v_booked_mult numeric; v_booked_drawn numeric;\n  v_entry_booked boolean;\n  v_rake_booked boolean;\nBEGIN\n  -- DIAMOND PHASE 9: a Diamond Spin is settled by its own arm of\n  -- fn_spin_draw_and_settle_atomic against its authorized source; never\n  -- through a chip reserve pool.\n  IF public.fn_poker_diamond_tournament(p_tournament_id) THEN\n    RAISE EXCEPTION 'diamond_spin_is_drawn_by_its_own_authority' USING ERRCODE = '55000';\n  END IF;\n  IF COALESCE(p_buy_in,0) <= 0 OR COALESCE(p_seats,0) <= 0 OR COALESCE(p_multiplier,0) <= 0 THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'invalid_inputs');\n  END IF;\n\n  v_owner := public.fn_spin_reserve_pool(p_club_id);\n\n  SELECT balance INTO v_bal\n    FROM public.spin_bonus_pools WHERE club_id = v_owner FOR UPDATE;\n\n  -- THE PRIZE IS WHAT THIS FUNCTION OWNS. A contribution row on its own means\n  -- the entry was booked when the last seat was paid and the prize still is\n  -- not; only a jackpot_draw row means settled.\n  IF EXISTS (SELECT 1 FROM public.spin_reserve_ledger\n             WHERE tournament_id = p_tournament_id AND kind = 'jackpot_draw') THEN\n    SELECT l.multiplier, -l.amount INTO v_booked_mult, v_booked_drawn\n      FROM public.spin_reserve_ledger l\n     WHERE l.tournament_id = p_tournament_id AND l.kind = 'jackpot_draw'\n     ORDER BY l.created_at ASC LIMIT 1;\n    RETURN jsonb_build_object('ok', true, 'reason', 'already_settled',\n      'multiplier', v_booked_mult, 'pool_covered', v_booked_drawn);\n  END IF;\n\n  v_collected  := round(p_buy_in * p_seats, 2);\n  v_rake       := round(v_collected * COALESCE(p_rake_rate, 0.08), 2);\n  v_reserve_in := round(v_collected - v_rake, 2);\n  v_prize      := round(p_buy_in * p_multiplier, 2);\n\n  v_entry_booked := EXISTS (SELECT 1 FROM public.spin_reserve_ledger\n                             WHERE tournament_id = p_tournament_id AND kind = 'contribution');\n  v_rake_booked  := EXISTS (SELECT 1 FROM public.rake_records\n                             WHERE tournament_id = p_tournament_id\n                               AND source IN ('fn_spin_book_entry','fn_spin_settle_game'));\n\n  IF NOT v_entry_booked THEN\n    -- ZERO-DRIFT phase 2: reserve intake = spin_entry vs the tournament.\n    PERFORM set_config('app.ledger_category', 'spin_entry', true);\n    PERFORM set_config('app.ledger_counterparty', 'prize_liability', true);\n    PERFORM set_config('app.ledger_counterparty_entity', p_tournament_id::text, true);\n\n    UPDATE public.spin_bonus_pools\n       SET balance = balance + v_reserve_in,\n           total_deposited = total_deposited + v_reserve_in,\n           spin_count = spin_count + 1,\n           highest_stake = GREATEST(highest_stake, p_buy_in),\n           updated_at = now()\n     WHERE club_id = v_owner RETURNING balance INTO v_available;\n\n    IF NOT FOUND THEN\n      RAISE EXCEPTION 'spin pool row missing for owner % settling tournament %',\n        v_owner, p_tournament_id;\n    END IF;\n\n    INSERT INTO public.spin_reserve_ledger\n      (club_id, tournament_id, kind, amount, balance_after, multiplier, buy_in, seats, house_rake, note)\n    VALUES (v_owner, p_tournament_id, 'contribution', v_reserve_in, v_available,\n            p_multiplier, p_buy_in, p_seats, v_rake,\n            CASE WHEN v_owner = p_club_id THEN 'buy-ins less fixed rake'\n                 ELSE format('buy-ins less fixed rake (club %s)', p_club_id) END);\n  ELSE\n    -- Already funded at entry. Read where the pool actually stands.\n    SELECT balance INTO v_available\n      FROM public.spin_bonus_pools WHERE club_id = v_owner;\n    IF v_available IS NULL THEN\n      RAISE EXCEPTION 'spin pool row missing for owner % settling tournament %',\n        v_owner, p_tournament_id;\n    END IF;\n  END IF;\n\n  -- A claimed operator shortfall has no funding debit. Reject it before\n  -- writing a draw or escrow credit. The atomic launch caller excludes such\n  -- tiers while holding this same pool lock; this also fences older callers.\n  IF v_prize > v_available THEN\n    RAISE EXCEPTION 'Spin prize % exceeds funded reserve % for tournament %',\n      v_prize, v_available, p_tournament_id USING ERRCODE = 'P0404';\n  END IF;\n  v_drawn := v_prize;\n\n  -- ZERO-DRIFT phase 2: the draw funds the tournament's prize pool.\n  -- CHIP STANDARD 1.3 (2026-09-02): ... and names the tournament it funds. With only\n  -- the category set, this leg landed spin_reserve -> settlement_suspense (3,303 rows\n  -- / 185,189.00 a day, R9). service_role-only, so the primitive is used.\n  PERFORM public.fn_ca_declare_ledger('spin_prize', 'prize_liability', p_tournament_id);\n\n  UPDATE public.spin_bonus_pools\n     SET balance = balance - v_drawn,\n         total_drawn = total_drawn + v_drawn,\n         bonus_count = bonus_count + CASE WHEN p_multiplier >= 10 THEN 1 ELSE 0 END,\n         updated_at = now()\n   WHERE club_id = v_owner RETURNING balance INTO v_bal;\n\n  INSERT INTO public.spin_reserve_ledger\n    (club_id, tournament_id, kind, amount, balance_after, multiplier, buy_in, seats, house_rake, note)\n  VALUES (v_owner, p_tournament_id, 'jackpot_draw', -v_drawn, v_bal,\n          p_multiplier, p_buy_in, p_seats, v_rake,\n          CASE WHEN v_shortfall > 0\n               THEN format('prize pool (pool covered %s of %s)', v_drawn, v_prize)\n               ELSE 'prize pool' END);\n\n  IF v_shortfall > 0 THEN\n    INSERT INTO public.spin_reserve_ledger\n      (club_id, tournament_id, kind, amount, balance_after, multiplier, buy_in, seats, note)\n    VALUES (v_owner, p_tournament_id, 'adjustment', 0, v_bal,\n            p_multiplier, p_buy_in, p_seats,\n            format('SHORTFALL %s covered by operator - pool was too thin for a %sx. Seed it.',\n                   v_shortfall, p_multiplier));\n  END IF;\n\n  IF v_rake > 0 AND p_club_id IS NOT NULL AND NOT v_rake_booked THEN\n    INSERT INTO public.rake_records\n      (hand_id, table_id, club_id, rake_amount, pot_size, num_players,\n       bbj_contribution, is_tournament, tournament_id, source, metadata)\n    VALUES (NULL, NULL, p_club_id, v_rake, v_collected, p_seats, 0, true,\n            p_tournament_id, 'fn_spin_settle_game',\n            jsonb_build_object('kind','spin_rake','multiplier',p_multiplier,\n                               'buy_in',p_buy_in,'rake_rate',p_rake_rate,\n                               'shortfall',v_shortfall,'reserve_owner',v_owner));\n  END IF;\n\n  -- THE REPAYMENT PLAN - one instalment per settle, at most.\n  SELECT seeded_amount, seed_source_wallet, owner_kind, required_seed_at_activation\n    INTO v_seed, v_wallet, v_kind, v_floor\n    FROM public.spin_bonus_pools WHERE club_id = v_owner;\n\n  v_instalment := public.fn_spin_seed_instalment(v_bal, COALESCE(v_seed,0), COALESCE(v_floor,0));\n\n  IF v_instalment > 0 AND v_wallet IS NOT NULL THEN\n    PERFORM set_config('app.ledger_category', 'treasury_transfer', true);\n    PERFORM set_config('app.ledger_counterparty',\n      CASE WHEN v_kind = 'union' THEN 'union_wallet' ELSE 'club_treasury' END, true);\n    PERFORM set_config('app.ledger_counterparty_label',\n      CASE WHEN v_kind = 'union' THEN 'union_wallets.' || v_wallet ELSE '' END, true);\n    PERFORM set_config('app.ledger_counterparty_entity', v_owner::text, true);\n    PERFORM set_config('app.ledger_autoskip_union_wallets', '1', true);\n    PERFORM set_config('app.ledger_autoskip_clubs', '1', true);\n\n    v_wallet_after := public.fn_spin_move_owner_wallet(v_owner, v_kind, v_wallet, v_instalment);\n\n    IF v_wallet_after IS NOT NULL THEN\n      UPDATE public.spin_bonus_pools\n         SET balance              = balance - v_instalment,\n             seeded_amount        = seeded_amount - v_instalment,\n             seed_returned_amount = seed_returned_amount + v_instalment,\n             seed_returned_at     = now(),\n             required_seed_at_activation =\n               CASE WHEN seeded_amount - v_instalment <= 0 THEN 0\n                    ELSE required_seed_at_activation END,\n             updated_at           = now()\n       WHERE club_id = v_owner RETURNING balance INTO v_bal;\n\n      IF NOT FOUND THEN\n        RAISE EXCEPTION 'spin pool row vanished for owner % after repaying % to %',\n          v_owner, v_instalment, v_wallet;\n      END IF;\n\n      v_seed_returned := v_instalment;\n\n      INSERT INTO public.spin_reserve_ledger\n        (club_id, tournament_id, kind, amount, balance_after, note)\n      VALUES (v_owner, p_tournament_id, 'seed_return', -v_instalment, v_bal,\n              format('seed instalment to %s %s - 50%% of %s above a floor of %s; %s still owed',\n                     v_kind, v_wallet, round(v_bal + v_instalment - v_floor, 2), v_floor,\n                     GREATEST(COALESCE(v_seed,0) - v_instalment, 0)));\n    END IF;\n\n    PERFORM set_config('app.ledger_autoskip_union_wallets', '', true);\n    PERFORM set_config('app.ledger_autoskip_clubs', '', true);\n  END IF;\n\n  RETURN jsonb_build_object('ok', true, 'collected', v_collected,\n    'house_rake', v_rake, 'reserve_in', v_reserve_in, 'prize_pool', v_prize,\n    'pool_covered', v_drawn, 'operator_shortfall', v_shortfall,\n    'balance', v_bal, 'seed_returned', v_seed_returned,\n    'entry_booked_at_seat', v_entry_booked,\n    'seed_outstanding', GREATEST(COALESCE(v_seed,0) - v_seed_returned, 0),\n    'owner_id', v_owner, 'source_wallet_after', v_wallet_after);\nEND;\n$$;\n"
+    ],
+    "fn_ca_declare_guard_redefinition": [
+      "CREATE FUNCTION public.fn_ca_declare_guard_redefinition(p_proname text, p_ref text) RETURNS text\n    LANGUAGE plpgsql SECURITY DEFINER\n    SET search_path TO 'public'\n    AS $$\nDECLARE\n  v_hash text;\n  v_def text;\nBEGIN\n  /* A DECLARED GUARD CHANGE IS RECORDED, NOT RAISED (2026-09-10).\n     Call this from a migration that deliberately redefines a watched guard,\n     in the SAME transaction as the redefinition, passing the migration name.\n     It moves the baseline to the definition this transaction just produced,\n     so fn_ca_guard_defs_watch has nothing to report. A change nobody declares\n     still moves the hash away from the baseline and still raises. */\n  IF COALESCE(btrim(p_ref), '') = '' THEN\n    RAISE EXCEPTION 'a guard redefinition must name the migration that made it';\n  END IF;\n  IF NOT (p_proname = ANY (public.fn_ca_guard_watchlist())) THEN\n    RAISE EXCEPTION 'fn_ca_declare_guard_redefinition called for %, which is not on the guard watchlist', p_proname;\n  END IF;\n\n  SELECT md5(string_agg(pg_get_functiondef(p.oid), '|' ORDER BY p.oid)),\n         string_agg(pg_get_functiondef(p.oid), '|' ORDER BY p.oid)\n    INTO v_hash, v_def\n    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace\n   WHERE n.nspname = 'public' AND p.proname = p_proname;\n\n  IF v_hash IS NULL THEN\n    RAISE EXCEPTION 'guard function % does not exist; a declaration cannot baseline an absent guard', p_proname;\n  END IF;\n\n  -- keep the text so any later notice still has something to diff against\n  INSERT INTO public.ca_guard_def_history (proname, def_hash, def_text)\n  VALUES (p_proname, v_hash, v_def)\n  ON CONFLICT (proname, def_hash) DO NOTHING;\n\n  INSERT INTO public.ca_guard_defs (proname, def_hash, declared_ref, declared_at)\n  VALUES (p_proname, v_hash, p_ref, now())\n  ON CONFLICT (proname) DO UPDATE\n    SET def_hash = EXCLUDED.def_hash,\n        declared_ref = EXCLUDED.declared_ref,\n        declared_at = EXCLUDED.declared_at,\n        updated_at = now();\n\n  RETURN v_hash;\nEND;\n$$;"
+    ],
+    "fn_ca_guard_watchlist": [
+      "CREATE FUNCTION public.fn_ca_guard_watchlist() RETURNS text[]\n    LANGUAGE sql STABLE\n    AS $$\n  SELECT ARRAY(\n    SELECT DISTINCT x FROM unnest(ARRAY[\n      'fn_ca_raise_drift_incident','fn_ca_incident_notify','fn_ca_incident_action',\n      'fn_ca_incident_escalation_tick','fn_ca_incident_recipient_ids',\n      'fn_ca_quick_reconcile','fn_ca_supply_snapshot','fn_ca_diamond_snapshot',\n      'fn_ca_suspense_regression_check','fn_ca_settlement_correctness_check',\n      'fn_ca_autoledger','fn_ca_autoledger_delete','fn_ca_chip_ledger_enrich',\n      'fn_ca_journal_append_only','fn_ca_is_midway_scope',\n      'fn_ca_negative_balance_watch','fn_ca_mint_velocity_watch',\n      'fn_ca_cron_failure_watch','fn_ca_burnin_gate_tick','fn_ca_midway_burnin_gate',\n      'fn_ca_epoch3_preflight','fn_ca_execute_epoch3_reset',\n      'fn_club_members_ledger_writer','fn_ca_financial_alert_to_incident',\n      'fn_ca_settlement_transition_guard','fn_ca_guard_defs_watch',\n      'fn_ca_post_correction','fn_ca_repair_write_failure',\n      -- The Diamond money doors (2026-09-12).\n      'fn_poker_diamond_reserve','fn_poker_diamond_release',\n      'fn_poker_diamond_cashout','fn_poker_diamond_settle_cash_hand',\n      'fn_poker_diamond_buyin','fn_poker_diamond_top_up',\n      'fn_poker_diamond_seat_keeps_custody','fn_poker_diamond_plain_cash_table',\n      -- The unit rules (2026-09-12).\n      'fn_ca_unit_floor_cents','fn_ca_tournament_unit_cents',\n      'fn_ca_prize_ladder','fn_ca_recovery_fee_cents',\n      -- The seat guards that know a tournament seat (2026-09-13).\n      'fn_poker_guard_chip_seat','fn_poker_bind_diamond_seat',\n      'fn_poker_diamond_entry_custody_is_the_entry',\n      -- The Diamond tournament money doors (Phase 8, 2026-09-14): an entry\n      -- into custody, an add to it, its refund, its unregistration and\n      -- cancellation, the drain, the prize, the fee, the close, the shadow.\n      'fn_poker_diamond_tournament_charge','fn_poker_diamond_tournament_custody_add',\n      'fn_poker_diamond_tournament_refund','fn_poker_diamond_tournament_unregister',\n      'fn_poker_diamond_tournament_cancel','fn_poker_diamond_tournament_drain',\n      'fn_poker_diamond_tournament_pay','fn_poker_diamond_tournament_settle_fee',\n      'fn_poker_diamond_tournament_close_custody','fn_poker_diamond_tournament_open_shadow',\n      -- The two guards Phase 8 taught new names, and the two chip readers it\n      -- routes by asset. The wallet guard is the one thing between a browser\n      -- and profiles.diamonds.\n      'fn_guard_profile_privileged_columns','fn_poker_guard_arena_structure',\n      'fn_ca_escrow_can_pay','fn_ca_tournament_escrow',\n      -- The Diamond satellite seat door (Phase 9, 2026-09-21): a satellite\n      -- seat moved custody to custody, out of one prize bank into an entry.\n      'fn_poker_diamond_tournament_seat_transfer',\n      -- A balance never moves without its ledger row (2026-10-01): the tally,\n      -- its two sides, the account key and the commit-time check.\n      'fn_ca_ledger_tally_add','fn_ca_ledger_tally_key','fn_ca_felt_counts_table',\n      'fn_ca_tally_balance_move','fn_ca_tally_ledger_leg','fn_ca_balance_has_its_ledger_row',\n      -- Every chip store balances with its ledger row (2026-10-02): the store\n      -- side of the tally, its pair helper and the Diamond-event scope.\n      'fn_ca_tally_store_move','fn_ca_tally_pair','fn_ca_tournament_counts',\n      -- And the list itself.\n      'fn_ca_guard_watchlist'\n    ]) x)\n$$;"
+    ],
+    "fn_ca_guard_defs_watch": [
+      "CREATE FUNCTION public.fn_ca_guard_defs_watch() RETURNS integer\n    LANGUAGE plpgsql SECURITY DEFINER\n    SET search_path TO 'public'\n    AS $$\nDECLARE\n  v_name text; v_hash text; v_stored text; v_changes int := 0;\n  v_def text; v_old_id bigint; v_new_id bigint;\nBEGIN\n  FOREACH v_name IN ARRAY public.fn_ca_guard_watchlist()\n  LOOP\n    SELECT md5(string_agg(pg_get_functiondef(p.oid), '|' ORDER BY p.oid)),\n           string_agg(pg_get_functiondef(p.oid), '|' ORDER BY p.oid)\n      INTO v_hash, v_def\n      FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace\n     WHERE n.nspname = 'public' AND p.proname = v_name;\n\n    IF v_hash IS NULL THEN\n      PERFORM public.fn_ca_raise_drift_incident(\n        'fn_ca_guard_defs_watch', 'unknown', 'warning',\n        'guard-def-missing:' || v_name,\n        0, NULL, NULL, 'reporting', 'pg_proc',\n        NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,\n        'guard function ' || v_name || ' no longer exists - an alarm was deleted',\n        true, jsonb_build_object('guard', v_name));\n      v_changes := v_changes + 1;\n      CONTINUE;\n    END IF;\n\n    -- Keep the text, always, so a later notice has something to diff against.\n    INSERT INTO public.ca_guard_def_history (proname, def_hash, def_text)\n    VALUES (v_name, v_hash, v_def)\n    ON CONFLICT (proname, def_hash) DO NOTHING;\n\n    SELECT def_hash INTO v_stored FROM public.ca_guard_defs WHERE proname = v_name;\n    IF v_stored IS NULL THEN\n      INSERT INTO public.ca_guard_defs (proname, def_hash) VALUES (v_name, v_hash)\n      ON CONFLICT (proname) DO NOTHING;\n    ELSIF v_stored <> v_hash THEN\n      v_changes := v_changes + 1;\n\n      SELECT id INTO v_old_id FROM public.ca_guard_def_history\n       WHERE proname = v_name AND def_hash = v_stored;\n      SELECT id INTO v_new_id FROM public.ca_guard_def_history\n       WHERE proname = v_name AND def_hash = v_hash;\n\n      /* A newer notice for the same guard supersedes the older one: the\n         key carries the new hash, so an old notice can never be matched\n         again and would sit open forever. */\n      UPDATE public.ca_drift_incidents\n         SET status = 'resolved', resolved_at = now(),\n             resolution = 'superseded: ' || v_name || ' was redefined again, and the newer notice carries the current definition'\n       WHERE source = 'fn_ca_guard_defs_watch'\n         AND status <> 'resolved'\n         AND dedupe_key LIKE 'guard-def-drift:' || v_name || ':%';\n\n      PERFORM public.fn_ca_raise_drift_incident(\n        'fn_ca_guard_defs_watch', 'unknown', 'info',\n        'guard-def-drift:' || v_name || ':' || left(v_hash, 12),\n        0, NULL, NULL, 'reporting', 'pg_proc',\n        NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,\n        'guard function ' || v_name || ' was redefined since its last baseline. '\n          || CASE WHEN v_old_id IS NULL\n                  THEN 'The previous text was never captured (it changed before this watcher kept history), so review the current definition on its own.'\n                  ELSE 'Diff it: select def_text from ca_guard_def_history where id in ('\n                       || v_old_id || ',' || v_new_id || ')'\n             END\n          || ' Then resolve this notice - it does not close itself.',\n        true, jsonb_build_object('guard', v_name, 'old_hash', v_stored, 'new_hash', v_hash,\n                                 'old_history_id', v_old_id, 'new_history_id', v_new_id));\n      UPDATE public.ca_guard_defs\n         SET def_hash = v_hash, updated_at = now() WHERE proname = v_name;\n    END IF;\n  END LOOP;\n  RETURN v_changes;\nEND $$;"
+    ]
+  },
+  "seen": [
+    "apply_rakeback_player_stats",
+    "ca_hand_player_facts_one",
+    "ca_project_hand_stats_facts",
+    "ca_rebuild_club_member_stats_table",
+    "ca_refresh_reporting_rollups_base",
+    "ca_reporting_tournament_clubs_for_user",
+    "enforce_chip_ledger_performed_by",
+    "fn_accounting_agent_terms_at",
+    "fn_accounting_cash_commission_plan",
+    "fn_accounting_close_certificate",
+    "fn_accounting_close_certify",
+    "fn_accounting_close_problem",
+    "fn_accounting_close_warm_stop",
+    "fn_accounting_close_windows",
+    "fn_accounting_clubs_scope_digest",
+    "fn_accounting_commit_horizon",
+    "fn_accounting_correction_assert_delivery",
+    "fn_accounting_correction_contract",
+    "fn_accounting_correction_document_body",
+    "fn_accounting_correction_is_unverified",
+    "fn_accounting_correction_payload",
+    "fn_accounting_correction_prepare",
+    "fn_accounting_credit_change_body_v1",
+    "fn_accounting_credit_change_contract_v1",
+    "fn_accounting_credit_change_payload_v1",
+    "fn_accounting_document_immutable",
+    "fn_accounting_earning_contract",
+    "fn_accounting_invoice_party_users",
+    "fn_accounting_mixed_cutover_spin_proof_valid",
+    "fn_accounting_next_invoice_number",
+    "fn_accounting_party_users",
+    "fn_accounting_terms_at",
+    "fn_accounting_tournament_fee_fingerprint",
+    "fn_accounting_tournament_fee_net_plan",
+    "fn_accounting_tournament_owner_basis_terms_at",
+    "fn_accounting_tournament_source_terms_at",
+    "fn_accounting_tournament_week_quality",
+    "fn_accounting_transfer_document_on_insert",
+    "fn_accounting_union_earned_plan",
+    "fn_accounting_union_earned_plan_advance",
+    "fn_accounting_union_earned_plan_combine",
+    "fn_accounting_union_earned_plan_sets",
+    "fn_accounting_union_earned_plan_v3",
+    "fn_accounting_union_earned_plan_window",
+    "fn_accounting_week_clubs",
+    "fn_accrue_cash_hand_commissions",
+    "fn_active_maintenance_release_boundary",
+    "fn_admin_holds_no_player_wallet",
+    "fn_agent_commission_paid_by_period",
+    "fn_agent_commission_rollup_recompute",
+    "fn_agent_credit_control_revision_v1",
+    "fn_agent_downline_rake",
+    "fn_agent_may_read_commission",
+    "fn_agent_unsettled_commission",
+    "fn_allocate_rake_credits",
+    "fn_anon_exposure_check",
+    "fn_arena_name",
+    "fn_assert_cash_commission_period",
+    "fn_bbj_analytics",
+    "fn_bbj_conservation_check",
+    "fn_bbj_contributions_total",
+    "fn_bbj_contributions_total_advance",
+    "fn_bbj_contributions_total_verify",
+    "fn_bbj_mini_for_club",
+    "fn_bbj_parked_reserve",
+    "fn_bbj_pool_for_club",
+    "fn_bbj_reconcile",
+    "fn_begin_tournament_launch_before_lease_generation",
+    "fn_block_browser_balance_writes",
+    "fn_ca_alert_resolution_reaches_the_incident",
+    "fn_ca_assert_emergency_path",
+    "fn_ca_autoledger",
+    "fn_ca_balance_has_its_ledger_row",
+    "fn_ca_burn",
+    "fn_ca_chip_ledger_enrich",
+    "fn_ca_chip_store_declared",
+    "fn_ca_club_rake_daily_compute",
+    "fn_ca_club_rake_daily_user_apply",
+    "fn_ca_club_rake_daily_user_rebuild_day",
+    "fn_ca_current_epoch",
+    "fn_ca_declare_guard_redefinition",
+    "fn_ca_declare_ledger",
+    "fn_ca_deleted_wallet_bank_return",
+    "fn_ca_deleted_wallet_credit",
+    "fn_ca_drift_incident_timeline_guard",
+    "fn_ca_emergency_issuance_guard",
+    "fn_ca_engine_operator_command",
+    "fn_ca_epoch3_preflight",
+    "fn_ca_felt_counts_table",
+    "fn_ca_finding_key",
+    "fn_ca_guard_defs_watch",
+    "fn_ca_guard_watchlist",
+    "fn_ca_has_committed_tournament_receipt",
+    "fn_ca_incident_notify",
+    "fn_ca_incident_recipient_ids",
+    "fn_ca_incident_resolution_reaches_the_alerts",
+    "fn_ca_is_cert_account",
+    "fn_ca_is_midway_scope",
+    "fn_ca_issuance_leg_is_registered",
+    "fn_ca_kill_switch_trip",
+    "fn_ca_ledger_invariant_refusal_census",
+    "fn_ca_ledger_refusal_file",
+    "fn_ca_ledger_refusal_raise",
+    "fn_ca_ledger_refusal_record",
+    "fn_ca_ledger_tally_add",
+    "fn_ca_ledger_tally_key",
+    "fn_ca_leg_accounts",
+    "fn_ca_leg_accounts_since_snapshot",
+    "fn_ca_leg_accounts_since_snapshot_for",
+    "fn_ca_legacy_fee_custody_cohort",
+    "fn_ca_legacy_fee_resolution_write_is_exact",
+    "fn_ca_legacy_period_maturity",
+    "fn_ca_lock_mtt_admission_contract",
+    "fn_ca_lock_settlement_lane_for_tournament",
+    "fn_ca_lock_tournament_seat_acquisition",
+    "fn_ca_mint",
+    "fn_ca_mint_issued_24h",
+    "fn_ca_mint_register_vs_supply",
+    "fn_ca_mint_velocity_watch",
+    "fn_ca_money_rpc_balance_columns",
+    "fn_ca_money_rpc_drift",
+    "fn_ca_money_rpc_writes_balances",
+    "fn_ca_noncirculating_chip_stores",
+    "fn_ca_operator_floor_entry_guard",
+    "fn_ca_operator_floor_state",
+    "fn_ca_operator_permissions",
+    "fn_ca_raise_drift_incident",
+    "fn_ca_rake_by_agent",
+    "fn_ca_register_issuance_leg",
+    "fn_ca_release_claim",
+    "fn_ca_resolution_needs_a_cause",
+    "fn_ca_sep8_spin_original_fee_proof",
+    "fn_ca_stable_dedupe_key",
+    "fn_ca_supply_snapshot",
+    "fn_ca_tally_balance_move",
+    "fn_ca_tally_ledger_leg",
+    "fn_ca_tally_pair",
+    "fn_ca_tally_store_move",
+    "fn_ca_terminal_marker_transition_is_exact",
+    "fn_ca_ticket_escrow_float",
+    "fn_ca_tournament_counts",
+    "fn_ca_trial_balance",
+    "fn_ca_verify_ledger_chain",
+    "fn_ca_xid8",
+    "fn_calculate_cash_rakeback_periods",
+    "fn_caller_is_engine",
+    "fn_cancelled_tournament_evidence_is_immutable",
+    "fn_capture_operational_source_event",
+    "fn_cash_original_funding_lineage",
+    "fn_cash_period_evidence_since",
+    "fn_cash_rakeback_period_basis",
+    "fn_cash_source_refusal_scope",
+    "fn_cash_source_refusals_for_period",
+    "fn_cashier_assert_active_actor",
+    "fn_cashier_balance_actor_guard",
+    "fn_cashier_document_body",
+    "fn_cashier_event_payload",
+    "fn_cashier_exact_intent_begin",
+    "fn_cashier_operation_mutex_guard",
+    "fn_club_commission_accrued",
+    "fn_club_member_play_totals_delete",
+    "fn_club_member_play_totals_insert",
+    "fn_club_member_play_totals_update",
+    "fn_club_members_ledger_writer",
+    "fn_club_money_panel",
+    "fn_club_rake_rollup_day",
+    "fn_club_role",
+    "fn_club_table_daily_refresh_day",
+    "fn_club_weekly_accounting_summary",
+    "fn_credit_treasury",
+    "fn_credit_treasury_zd4core",
+    "fn_deliver_accounting_invoice",
+    "fn_diamond_game_reserved_cover_guard",
+    "fn_diamond_spin_ledger_category",
+    "fn_entry_purchases_frozen",
+    "fn_fold_hand_winnings",
+    "fn_freeze_bypass_active",
+    "fn_generate_credit_invoice",
+    "fn_generate_scope_credit_invoices",
+    "fn_guard_credit_request_decision",
+    "fn_has_club_role",
+    "fn_invoice_accounting_ledger_transfer",
+    "fn_is_agent_ancestor",
+    "fn_is_club_admin_uid",
+    "fn_is_platform_admin",
+    "fn_is_service_context",
+    "fn_is_union_overseer",
+    "fn_issue_club_weekly_accounting",
+    "fn_issue_scope_weekly_accounting",
+    "fn_like_escape",
+    "fn_lock_daily_mission_user",
+    "fn_lock_rakeback_payer_clubs",
+    "fn_log_admin_action",
+    "fn_managed_game_contract_hash",
+    "fn_mark_scope_accounting_settled",
+    "fn_next_invoice_number",
+    "fn_platform_frozen",
+    "fn_pnl_evidence_cents",
+    "fn_poker_diamond_tournament",
+    "fn_post_accounting_commission_source",
+    "fn_prepare_accounting_week",
+    "fn_process_cash_accounting_source",
+    "fn_process_hand_position_stats",
+    "fn_project_hand_side_effects_after_post_commit_20260908",
+    "fn_raise_notification",
+    "fn_raise_server_financial_alert",
+    "fn_rake_record_is_ghost_twin",
+    "fn_rake_shares_for_record",
+    "fn_rakeback_recompute_periods",
+    "fn_rakeback_recompute_split",
+    "fn_rakeback_split_check",
+    "fn_rakeback_split_counts",
+    "fn_rakeback_split_write",
+    "fn_refresh_player_stats",
+    "fn_refuse_while_frozen",
+    "fn_require_union_pnl_evidence",
+    "fn_resolve_accounting_routing_scope",
+    "fn_role_rank",
+    "fn_satellite_transfer_ledger_is_immutable",
+    "fn_settle_accounting_commission_combine",
+    "fn_settle_accounting_commission_stage",
+    "fn_settle_accounting_commission_stage_v3",
+    "fn_settle_accounting_rakeback_pairs",
+    "fn_settle_accounting_rakeback_plan_get",
+    "fn_settle_accounting_rakeback_stage",
+    "fn_settle_round2_club_to_agents",
+    "fn_settle_round3_agents_to_players",
+    "fn_settlement_floor_refuses_owed_agent_commission",
+    "fn_settler_lag_check",
+    "fn_spin_draw_and_settle_atomic",
+    "fn_spin_settle_game",
+    "fn_sync_profile_total_hands",
+    "fn_terminal_tournament_evidence_is_immutable",
+    "fn_union_accounting_run_at",
+    "fn_union_close_post_rake_debit",
+    "fn_union_club_exposure",
+    "fn_union_club_invoice",
+    "fn_union_club_rake_basis",
+    "fn_union_credit_risk_check",
+    "fn_union_eco_adjustment",
+    "fn_union_eco_record",
+    "fn_union_eco_terms_evidence",
+    "fn_union_governance_check",
+    "fn_union_issue_weekly_invoices",
+    "fn_union_overseer_of_record",
+    "fn_union_pnl_award_owner_resolved",
+    "fn_union_pnl_award_satellite_owner",
+    "fn_union_pnl_boundary",
+    "fn_union_pnl_cash_outcome_accepted",
+    "fn_union_pnl_cash_outcome_link",
+    "fn_union_pnl_close_quality",
+    "fn_union_pnl_closed_book_barrier",
+    "fn_union_pnl_evidence_report",
+    "fn_union_pnl_first_inventory_operation",
+    "fn_union_pnl_inventory_as_of",
+    "fn_union_pnl_inventory_population",
+    "fn_union_pnl_inventory_state",
+    "fn_union_pnl_linked_cash_outcomes",
+    "fn_union_pnl_opening_registration_resolution",
+    "fn_union_pnl_original_flow_evidence",
+    "fn_union_pnl_projection_ready",
+    "fn_union_pnl_qualified_clubs",
+    "fn_union_pnl_satellite_seat_owner",
+    "fn_union_pnl_touched_registrations",
+    "fn_union_pnl_tournament_entry_club_of",
+    "fn_union_pnl_tournament_in_union",
+    "fn_union_pnl_week_bbj_stack_awards",
+    "fn_union_pnl_week_hand_lines",
+    "fn_union_pnl_week_shaped_hands",
+    "fn_union_pnl_week_union_credits",
+    "fn_union_prev_week_start",
+    "fn_union_rake_ledger_checkpoint_verify",
+    "fn_union_rake_ledger_totals",
+    "fn_union_rake_rollup_refresh_day",
+    "fn_union_reconciliation_report",
+    "fn_union_setting",
+    "fn_union_settle_player_pnl",
+    "fn_union_settlement_cascade",
+    "fn_union_settlement_conservation_assert",
+    "fn_union_treasury_selftest",
+    "fn_union_week_start",
+    "fn_union_weekly_rakeback_close",
+    "fn_weekly_accounting_deadline_check",
+    "guard_agent_wallet_direct_update",
+    "refresh_player_stats",
+    "sync_agent_wallet_columns",
+    "trg_ca_reporting_rake_insert",
+    "trg_ca_reporting_wallet_insert",
+    "trg_hand_history_club_member_stats",
+    "trg_tournament_completed_stats",
+    "trg_union_rake_weekly",
+    "update_updated_at_column"
+  ],
+  "selected": [
+    "agents",
+    "bbj_pools",
+    "ca_drift_incidents",
+    "ca_mint_ledger",
+    "chip_ledger",
+    "club_members",
+    "clubs",
+    "credit_invoices",
+    "credit_requests",
+    "financial_alerts",
+    "player_stats",
+    "rakeback_periods",
+    "settlement_invoices",
+    "union_wallets"
+  ],
+  "triggered": [
+    "enforce_chip_ledger_performed_by",
+    "fn_accounting_document_immutable",
+    "fn_accounting_transfer_document_on_insert",
+    "fn_admin_holds_no_player_wallet",
+    "fn_agent_credit_control_revision_v1",
+    "fn_block_browser_balance_writes",
+    "fn_ca_alert_resolution_reaches_the_incident",
+    "fn_ca_autoledger",
+    "fn_ca_balance_has_its_ledger_row",
+    "fn_ca_chip_ledger_enrich",
+    "fn_ca_chip_store_declared",
+    "fn_ca_deleted_wallet_credit",
+    "fn_ca_drift_incident_timeline_guard",
+    "fn_ca_emergency_issuance_guard",
+    "fn_ca_incident_resolution_reaches_the_alerts",
+    "fn_ca_issuance_leg_is_registered",
+    "fn_ca_legacy_period_maturity",
+    "fn_ca_resolution_needs_a_cause",
+    "fn_ca_tally_balance_move",
+    "fn_ca_tally_ledger_leg",
+    "fn_ca_tally_store_move",
+    "fn_capture_operational_source_event",
+    "fn_cashier_balance_actor_guard",
+    "fn_cashier_operation_mutex_guard",
+    "fn_club_members_ledger_writer",
+    "fn_diamond_game_reserved_cover_guard",
+    "fn_guard_credit_request_decision",
+    "fn_refuse_while_frozen",
+    "fn_sync_profile_total_hands",
+    "guard_agent_wallet_direct_update",
+    "sync_agent_wallet_columns",
+    "update_updated_at_column"
+  ],
+  "triggers": [
+    "CREATE TRIGGER a00_operational_source_intake AFTER INSERT OR UPDATE ON public.ca_drift_incidents FOR EACH ROW EXECUTE FUNCTION public.fn_capture_operational_source_event();",
+    "CREATE TRIGGER a00_operational_source_intake AFTER INSERT OR UPDATE ON public.financial_alerts FOR EACH ROW EXECUTE FUNCTION public.fn_capture_operational_source_event();",
+    "CREATE TRIGGER ab_ca_chip_store_declared BEFORE INSERT ON public.chip_ledger FOR EACH ROW EXECUTE FUNCTION public.fn_ca_chip_store_declared();",
+    "CREATE TRIGGER accounting_invoice_immutable BEFORE DELETE OR UPDATE ON public.settlement_invoices FOR EACH ROW EXECUTE FUNCTION public.fn_accounting_document_immutable();",
+    "CREATE TRIGGER accounting_transfer_document AFTER INSERT ON public.chip_ledger FOR EACH ROW WHEN (((new.status = 'posted'::text) AND (NOT public.fn_diamond_spin_ledger_category(new.category)) AND ((new.from_type = ANY (ARRAY['union_wallet'::text, 'union_bank'::text, 'club_treasury'::text, 'player_wallet'::text, 'agent_wallet'::text])) OR ((new.from_type = 'settlement_suspense'::text) AND (new.category = 'rakeback'::text))) AND (new.to_type = ANY (ARRAY['union_wallet'::text, 'union_bank'::text, 'club_treasury'::text, 'player_wallet'::text, 'agent_wallet'::text])))) EXECUTE FUNCTION public.fn_accounting_transfer_document_on_insert();",
+    "CREATE TRIGGER ca_emergency_positive_issuance BEFORE INSERT ON public.ca_mint_ledger FOR EACH ROW EXECUTE FUNCTION public.fn_ca_emergency_issuance_guard();",
+    "CREATE TRIGGER ca_legacy_period_maturity BEFORE UPDATE OF status ON public.rakeback_periods FOR EACH ROW EXECUTE FUNCTION public.fn_ca_legacy_period_maturity();",
+    "CREATE TRIGGER cashier_agent_balance_actor_guard BEFORE UPDATE OF agent_wallet_balance, promo_wallet_balance, credit_used ON public.agents FOR EACH ROW EXECUTE FUNCTION public.fn_cashier_balance_actor_guard();",
+    "CREATE TRIGGER cashier_agent_operation_mutex BEFORE UPDATE ON public.agents FOR EACH STATEMENT EXECUTE FUNCTION public.fn_cashier_operation_mutex_guard();",
+    "CREATE TRIGGER cashier_club_balance_actor_guard BEFORE UPDATE OF chip_treasury, promo_balance ON public.clubs FOR EACH ROW EXECUTE FUNCTION public.fn_cashier_balance_actor_guard();",
+    "CREATE TRIGGER cashier_club_operation_mutex BEFORE UPDATE ON public.clubs FOR EACH STATEMENT EXECUTE FUNCTION public.fn_cashier_operation_mutex_guard();",
+    "CREATE TRIGGER cashier_member_balance_actor_guard BEFORE UPDATE OF chip_balance ON public.club_members FOR EACH ROW EXECUTE FUNCTION public.fn_cashier_balance_actor_guard();",
+    "CREATE TRIGGER cashier_member_operation_mutex BEFORE UPDATE ON public.club_members FOR EACH STATEMENT EXECUTE FUNCTION public.fn_cashier_operation_mutex_guard();",
+    "CREATE TRIGGER club_members_updated_at BEFORE UPDATE ON public.club_members FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();",
+    "CREATE TRIGGER clubs_updated_at BEFORE UPDATE ON public.clubs FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();",
+    "CREATE TRIGGER credit_request_decision_guard BEFORE INSERT OR UPDATE ON public.credit_requests FOR EACH ROW EXECUTE FUNCTION public.fn_guard_credit_request_decision();",
+    "CREATE TRIGGER diamond_game_club_reserves BEFORE UPDATE OF promo_balance, chip_treasury ON public.clubs FOR EACH ROW EXECUTE FUNCTION public.fn_diamond_game_reserved_cover_guard();",
+    "CREATE TRIGGER diamond_game_union_reserves BEFORE UPDATE OF promo_wallet, chip_balance ON public.union_wallets FOR EACH ROW EXECUTE FUNCTION public.fn_diamond_game_reserved_cover_guard();",
+    "CREATE TRIGGER guard_agent_wallet_direct_update BEFORE INSERT OR UPDATE ON public.agents FOR EACH ROW EXECUTE FUNCTION public.guard_agent_wallet_direct_update();",
+    "CREATE TRIGGER trg_admin_holds_no_player_wallet BEFORE INSERT OR UPDATE OF role, chip_balance ON public.club_members FOR EACH ROW EXECUTE FUNCTION public.fn_admin_holds_no_player_wallet();",
+    "CREATE TRIGGER trg_block_browser_balance_writes BEFORE UPDATE ON public.club_members FOR EACH ROW EXECUTE FUNCTION public.fn_block_browser_balance_writes();",
+    "CREATE TRIGGER trg_block_browser_treasury_writes BEFORE UPDATE ON public.clubs FOR EACH ROW EXECUTE FUNCTION public.fn_block_browser_balance_writes();",
+    "CREATE TRIGGER trg_ca_autoledger AFTER UPDATE OF agent_wallet_balance, promo_wallet_balance ON public.agents FOR EACH ROW EXECUTE FUNCTION public.fn_ca_autoledger('agent_wallet_balance=agent_wallet', 'promo_wallet_balance=promo_wallet');",
+    "CREATE TRIGGER trg_ca_autoledger AFTER INSERT OR UPDATE OF main_balance, backup_balance, promo_balance ON public.bbj_pools FOR EACH ROW EXECUTE FUNCTION public.fn_ca_autoledger('main_balance=bbj_pool', 'backup_balance=bbj_pool', 'promo_balance=bbj_pool');",
+    "CREATE TRIGGER trg_ca_autoledger AFTER UPDATE OF promo_balance ON public.club_members FOR EACH ROW EXECUTE FUNCTION public.fn_ca_autoledger('promo_balance=promo_wallet');",
+    "CREATE TRIGGER trg_ca_autoledger AFTER INSERT OR UPDATE OF chip_treasury, chip_pool, promo_balance, insurance_balance ON public.clubs FOR EACH ROW EXECUTE FUNCTION public.fn_ca_autoledger('chip_treasury=club_treasury', 'chip_pool=club_treasury', 'promo_balance=promo_wallet', 'insurance_balance=insurance_bank');",
+    "CREATE TRIGGER trg_ca_autoledger AFTER INSERT OR UPDATE OF chip_balance, rake_wallet, bbj_wallet, promo_wallet, insurance_wallet, spin_reserve_wallet ON public.union_wallets FOR EACH ROW EXECUTE FUNCTION public.fn_ca_autoledger('chip_balance=union_bank', 'rake_wallet=union_wallet', 'bbj_wallet=union_wallet', 'promo_wallet=union_wallet', 'insurance_wallet=union_wallet', 'spin_reserve_wallet=union_wallet');",
+    "CREATE TRIGGER trg_ca_autoledger_insert AFTER INSERT ON public.agents FOR EACH ROW WHEN (((COALESCE(new.agent_wallet_balance, (0)::numeric) <> (0)::numeric) OR (COALESCE(new.promo_wallet_balance, (0)::numeric) <> (0)::numeric))) EXECUTE FUNCTION public.fn_ca_autoledger('agent_wallet_balance=agent_wallet', 'promo_wallet_balance=promo_wallet');",
+    "CREATE TRIGGER trg_ca_autoledger_insert AFTER INSERT ON public.club_members FOR EACH ROW WHEN (((COALESCE(new.chip_balance, (0)::numeric) <> (0)::numeric) OR (COALESCE(new.promo_balance, (0)::numeric) <> (0)::numeric))) EXECUTE FUNCTION public.fn_ca_autoledger('chip_balance=player_wallet', 'promo_balance=promo_wallet');",
+    "CREATE TRIGGER trg_ca_chip_ledger_enrich BEFORE INSERT ON public.chip_ledger FOR EACH ROW EXECUTE FUNCTION public.fn_ca_chip_ledger_enrich();",
+    "CREATE TRIGGER trg_ca_drift_incident_timeline BEFORE INSERT OR UPDATE OF status, detected_at, deadline_at, resolved_at ON public.ca_drift_incidents FOR EACH ROW EXECUTE FUNCTION public.fn_ca_drift_incident_timeline_guard();",
+    "CREATE TRIGGER trg_ca_resolution_needs_a_cause BEFORE UPDATE ON public.ca_drift_incidents FOR EACH ROW EXECUTE FUNCTION public.fn_ca_resolution_needs_a_cause();",
+    "CREATE TRIGGER trg_chip_ledger_performed_by BEFORE INSERT ON public.chip_ledger FOR EACH ROW EXECUTE FUNCTION public.enforce_chip_ledger_performed_by();",
+    "CREATE TRIGGER trg_chip_ledger_performed_by_update BEFORE UPDATE OF performed_by ON public.chip_ledger FOR EACH ROW EXECUTE FUNCTION public.enforce_chip_ledger_performed_by();",
+    "CREATE TRIGGER trg_club_members_audit_chip_movement AFTER UPDATE OF chip_balance ON public.club_members FOR EACH ROW WHEN ((old.chip_balance IS DISTINCT FROM new.chip_balance)) EXECUTE FUNCTION public.fn_club_members_ledger_writer();",
+    "CREATE TRIGGER trg_sync_agent_wallets BEFORE UPDATE ON public.agents FOR EACH ROW EXECUTE FUNCTION public.sync_agent_wallet_columns();",
+    "CREATE TRIGGER trg_sync_profile_total_hands AFTER INSERT OR DELETE OR UPDATE OF hands_played ON public.player_stats FOR EACH ROW EXECUTE FUNCTION public.fn_sync_profile_total_hands();",
+    "CREATE TRIGGER zy_ca_tally_balance_move AFTER INSERT OR DELETE OR UPDATE OF main_balance, backup_balance, promo_balance ON public.bbj_pools FOR EACH ROW EXECUTE FUNCTION public.fn_ca_tally_balance_move();",
+    "CREATE TRIGGER zy_ca_tally_balance_move AFTER INSERT OR DELETE OR UPDATE OF chip_balance, user_id, club_id ON public.club_members FOR EACH ROW EXECUTE FUNCTION public.fn_ca_tally_balance_move();",
+    "CREATE TRIGGER zy_ca_tally_balance_move AFTER INSERT OR DELETE OR UPDATE OF chip_treasury, chip_pool ON public.clubs FOR EACH ROW EXECUTE FUNCTION public.fn_ca_tally_balance_move();",
+    "CREATE TRIGGER zy_ca_tally_balance_move AFTER INSERT OR DELETE OR UPDATE OF chip_balance, rake_wallet, bbj_wallet, promo_wallet, insurance_wallet, spin_reserve_wallet, union_id ON public.union_wallets FOR EACH ROW EXECUTE FUNCTION public.fn_ca_tally_balance_move();",
+    "CREATE TRIGGER zy_ca_tally_ledger_leg AFTER INSERT ON public.chip_ledger FOR EACH ROW EXECUTE FUNCTION public.fn_ca_tally_ledger_leg();",
+    "CREATE TRIGGER zy_ca_tally_store_move AFTER INSERT OR DELETE OR UPDATE ON public.agents FOR EACH ROW EXECUTE FUNCTION public.fn_ca_tally_store_move();",
+    "CREATE TRIGGER zy_ca_tally_store_move AFTER INSERT OR DELETE OR UPDATE OF promo_balance, user_id, club_id ON public.club_members FOR EACH ROW EXECUTE FUNCTION public.fn_ca_tally_store_move();",
+    "CREATE TRIGGER zy_ca_tally_store_move AFTER INSERT OR DELETE OR UPDATE OF promo_balance, insurance_balance ON public.clubs FOR EACH ROW EXECUTE FUNCTION public.fn_ca_tally_store_move();",
+    "CREATE TRIGGER zz_ca_alert_resolution_reaches_the_incident AFTER UPDATE OF resolved ON public.financial_alerts FOR EACH ROW EXECUTE FUNCTION public.fn_ca_alert_resolution_reaches_the_incident();",
+    "CREATE CONSTRAINT TRIGGER zz_ca_balance_has_its_ledger_row AFTER INSERT OR DELETE OR UPDATE OF main_balance, backup_balance, promo_balance ON public.bbj_pools DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.fn_ca_balance_has_its_ledger_row();",
+    "CREATE CONSTRAINT TRIGGER zz_ca_balance_has_its_ledger_row AFTER INSERT OR DELETE OR UPDATE OF chip_balance, user_id, club_id ON public.club_members DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.fn_ca_balance_has_its_ledger_row();",
+    "CREATE CONSTRAINT TRIGGER zz_ca_balance_has_its_ledger_row AFTER INSERT OR DELETE OR UPDATE OF chip_treasury, chip_pool ON public.clubs DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.fn_ca_balance_has_its_ledger_row();",
+    "CREATE CONSTRAINT TRIGGER zz_ca_balance_has_its_ledger_row AFTER INSERT OR DELETE OR UPDATE OF chip_balance, rake_wallet, bbj_wallet, promo_wallet, insurance_wallet, spin_reserve_wallet, union_id ON public.union_wallets DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.fn_ca_balance_has_its_ledger_row();",
+    "CREATE TRIGGER zz_ca_incident_resolution_reaches_the_alerts AFTER UPDATE OF status ON public.ca_drift_incidents FOR EACH ROW EXECUTE FUNCTION public.fn_ca_incident_resolution_reaches_the_alerts();",
+    "CREATE CONSTRAINT TRIGGER zz_ca_issuance_leg_is_registered AFTER INSERT ON public.chip_ledger DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN (((new.from_type = ANY (ARRAY['system_mint'::text, 'system_burn'::text, 'issuance_reserve'::text, 'chip_retirement'::text])) OR (new.to_type = ANY (ARRAY['system_mint'::text, 'system_burn'::text, 'issuance_reserve'::text, 'chip_retirement'::text])))) EXECUTE FUNCTION public.fn_ca_issuance_leg_is_registered();",
+    "CREATE CONSTRAINT TRIGGER zz_ca_ledger_row_has_its_balance AFTER INSERT ON public.chip_ledger DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.fn_ca_balance_has_its_ledger_row();",
+    "CREATE CONSTRAINT TRIGGER zz_ca_store_has_its_ledger_row AFTER INSERT OR DELETE OR UPDATE ON public.agents DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.fn_ca_balance_has_its_ledger_row();",
+    "CREATE CONSTRAINT TRIGGER zz_ca_store_has_its_ledger_row AFTER INSERT OR DELETE OR UPDATE OF promo_balance, user_id, club_id ON public.club_members DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.fn_ca_balance_has_its_ledger_row();",
+    "CREATE CONSTRAINT TRIGGER zz_ca_store_has_its_ledger_row AFTER INSERT OR DELETE OR UPDATE OF promo_balance, insurance_balance ON public.clubs DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.fn_ca_balance_has_its_ledger_row();",
+    "CREATE TRIGGER zz_freeze_guard BEFORE INSERT OR DELETE OR UPDATE ON public.chip_ledger FOR EACH ROW EXECUTE FUNCTION public.fn_refuse_while_frozen();",
+    "CREATE TRIGGER zz_freeze_guard BEFORE INSERT OR DELETE OR UPDATE ON public.club_members FOR EACH ROW EXECUTE FUNCTION public.fn_refuse_while_frozen('chip_balance');",
+    "CREATE TRIGGER zz_freeze_guard BEFORE UPDATE ON public.clubs FOR EACH ROW EXECUTE FUNCTION public.fn_refuse_while_frozen('chip_pool', 'total_rake');",
+    "CREATE TRIGGER zzzz_credit_control_revision_v1 BEFORE INSERT OR UPDATE ON public.agents FOR EACH ROW EXECUTE FUNCTION public.fn_agent_credit_control_revision_v1();",
+    "CREATE TRIGGER zzzz_deleted_agent_credit AFTER UPDATE OF agent_wallet_balance ON public.agents FOR EACH ROW WHEN ((new.agent_wallet_balance > old.agent_wallet_balance)) EXECUTE FUNCTION public.fn_ca_deleted_wallet_credit();",
+    "CREATE TRIGGER zzzz_deleted_member_credit AFTER UPDATE OF chip_balance, held_chips, locked_chips ON public.club_members FOR EACH ROW WHEN (((new.chip_balance > old.chip_balance) OR (new.held_chips < old.held_chips) OR (new.locked_chips < old.locked_chips))) EXECUTE FUNCTION public.fn_ca_deleted_wallet_credit();"
+  ],
+  "archive_sha256": "0656260785dc1c83a5e5b5dd553bebf1b9532bcc63bfb6ac5268622703a22773",
+  "original_function_sha256": {
+    "apply_rakeback_player_stats": [
+      "e6b9003d5facf9a5258d9a03432888bf22dca1f66db49265849e9cbc2e784e8a"
+    ],
+    "ca_hand_player_facts_one": [
+      "d88da58e9fb4f6b5466a5842b5f0a3f78b75884cdec4ebd21ca5db7b69390c77"
+    ],
+    "ca_project_hand_stats_facts": [
+      "7f49b2aed92230522d3aced2750d89af0a8daba3e41931dcbfae456683257fd0"
+    ],
+    "ca_rebuild_club_member_stats_table": [
+      "2c474dfc18c4ba8adf8d9bb0a278162bbcce8cee718175db0ce7581512c96927"
+    ],
+    "ca_refresh_reporting_rollups_base": [
+      "1c647cd5aab9d24c28faf15470c2592277d6df284732c90386027ee90ff227e4"
+    ],
+    "ca_reporting_tournament_clubs_for_user": [
+      "b12bb108e9d5240cca512d1f257f08336365a2a20ef0537ef1e61ac3d9a76a4e"
+    ],
+    "enforce_chip_ledger_performed_by": [
+      "c887c3d29b803ce569ef8f7893c9eea14e368bc6609ccd5d41a29785e1451757"
+    ],
+    "fn_accounting_agent_terms_at": [
+      "cebbc3e9f10748bed6db3bcc120e7e8d16255e8c26e4dbb4cf8f9e50f2ad2fae"
+    ],
+    "fn_accounting_cash_commission_plan": [
+      "7c06c1abbae96dc7ea0e2634713bd1c29522b3190940504a91da924310809e1e"
+    ],
+    "fn_accounting_close_certificate": [
+      "5f5be2cc3924fa64c0dacd85f9ebef5139809e4052268495b64f18374fe725a6"
+    ],
+    "fn_accounting_close_certify": [
+      "caa167ccd73cffd502934be4dfcda1c34c6c6a06eed107380e5bec701853b494"
+    ],
+    "fn_accounting_close_problem": [
+      "8aa7ce1db50572db87509e879928a332121a9ed2cc2d593a4b194308f1021785"
+    ],
+    "fn_accounting_close_warm_stop": [
+      "8e730e8ae074594f9e0eb15183b37d07d271d1a5ae64e26929e8e9cbd533cfc0"
+    ],
+    "fn_accounting_close_windows": [
+      "5a913872a1989c075bf5677d17a6a988b0e003e6f7df652490c6dfef47bc2547"
+    ],
+    "fn_accounting_clubs_scope_digest": [
+      "52dbb9ac42e55e688fa23e6e537dd02fbb5721459c6ad16a49a8960d9b69728c"
+    ],
+    "fn_accounting_commit_horizon": [
+      "50c68d4d1e48a3747c62d1e06e13d7a8e26f27ad5cfc13d85ccf8ab0ce5b50e3"
+    ],
+    "fn_accounting_correction_assert_delivery": [
+      "c491e49939d7c75dd55addcf8e407de284c013a7543d39359a009823f1336a35"
+    ],
+    "fn_accounting_correction_contract": [
+      "05ac49d7d841db7fe09675b8a5288a1b423cd1e6f6ff9892fae624beee25f17a"
+    ],
+    "fn_accounting_correction_document_body": [
+      "40226cbb2a6a3c74a494b885437c0728151cb8860f28a0c94faa58f645bfef96"
+    ],
+    "fn_accounting_correction_is_unverified": [
+      "c8b2e165ec2300189b5956cc69889537b516a3daa67f6f6b76646d3bb5653b1e"
+    ],
+    "fn_accounting_correction_payload": [
+      "1b13b7c3b32c6ac2cc47d066883b21cfefbd128eb6b5d01e6c5eee6823b57b22"
+    ],
+    "fn_accounting_correction_prepare": [
+      "1652acbab235d60bdae28a08f579e467fab02541c61b0af0e740e321ec8f39e0"
+    ],
+    "fn_accounting_credit_change_body_v1": [
+      "f065b6a01ef5de754306cb6f2ae533b1c72c3cde5febb741ff2cd0faa9613235"
+    ],
+    "fn_accounting_credit_change_contract_v1": [
+      "ae2a5b8c087a46d804fb2afebfcac63a72edb58f5af339e50bd4d654993f2454"
+    ],
+    "fn_accounting_credit_change_payload_v1": [
+      "8eebd3b2a93b806d03d7ace162f494890bf8fa1e0750a0e574246de05d527909"
+    ],
+    "fn_accounting_document_immutable": [
+      "c1b3f1e1f58df47d0c2339d92e7c26422a8567e0b893beb57a856d768fcf832e"
+    ],
+    "fn_accounting_earning_contract": [
+      "9266d3e7fad580f55e3e2d7da833afd14a8b8628b3058034d2110ef1f783634b"
+    ],
+    "fn_accounting_invoice_party_users": [
+      "7b6cb74bce54a4f842855911529526ec0011f14a45e98f0a5329b036234f2ff3"
+    ],
+    "fn_accounting_mixed_cutover_spin_proof_valid": [
+      "78c96b1883d9b1eae7ff8e9c7e92cc3a6cb3a3622f6774ee3ec550f32c8bb679"
+    ],
+    "fn_accounting_next_invoice_number": [
+      "823b8b0e6859f42440ebd3df64595f75ad3ab7df54f5b56b05fc2428172074e4"
+    ],
+    "fn_accounting_party_users": [
+      "ee702ecdf20cf541e5821d7e15b3bbd2b766f5588e4730ca4989aa6a434c5341"
+    ],
+    "fn_accounting_terms_at": [
+      "6dd8a6cf86a3649c49bff59bf77b2fd390af0134c1002b839a63636d29c3dcae"
+    ],
+    "fn_accounting_tournament_fee_fingerprint": [
+      "f18e38d99175a20ac9c9c16983bba2dd8fe125ba1497bf92369f65a4f76f5e76"
+    ],
+    "fn_accounting_tournament_fee_net_plan": [
+      "db98906d1b2617a0140636686a7863cdeb6e8f85754e8107853532eb2edc65b4"
+    ],
+    "fn_accounting_tournament_owner_basis_terms_at": [
+      "33028c9785471a1c6e72dda3841e104830d4b608328e3eda3ca7ae94a95c6a34"
+    ],
+    "fn_accounting_tournament_source_terms_at": [
+      "df2e1a9d5d8b65b4ed2861fe05a3a703b3c7fbcbce0e6fd2a3fd8e9234e666a7"
+    ],
+    "fn_accounting_tournament_week_quality": [
+      "5fd363eb177fb0e96f867d212e79415156b0db0d0b3cbe8e4f0a3372b24997de"
+    ],
+    "fn_accounting_transfer_document_on_insert": [
+      "d535e8ce7980240585b83938700c1e6bc55bb54eaa5fbc7e341decdeb67e89db"
+    ],
+    "fn_accounting_union_earned_plan": [
+      "c6d4a2061da5d5dd99cd129793cf4cf7f60bf3c09ecb22c76c4c7f647459e11e"
+    ],
+    "fn_accounting_union_earned_plan_advance": [
+      "290d6a916a1847bf6339354bb214eccf808f1bc65614fee21dfce5e0de228ad3"
+    ],
+    "fn_accounting_union_earned_plan_combine": [
+      "5c63bfec99e5995596aa53c5b3e2b4a859cc091af1c54ba32dcca0fc000c288e"
+    ],
+    "fn_accounting_union_earned_plan_sets": [
+      "9ee62fb2ffd91f38d39241158b0470f28f592180ba26f3ba847638a713c4f28c"
+    ],
+    "fn_accounting_union_earned_plan_v3": [
+      "54393c22be8ff06de6c2e0224552157146b623fa9bd09c31baca5515fe15761d"
+    ],
+    "fn_accounting_union_earned_plan_window": [
+      "b2c2514997bd0589c51bb54966ffc2036ca65dc0da8856744f88de6e9126a383"
+    ],
+    "fn_accounting_week_clubs": [
+      "a53958d5278434924d42881306bb61d232c2113aabff4fe9aedad7f2fbc897df"
+    ],
+    "fn_accrue_cash_hand_commissions": [
+      "7361180596f06bd89e381a154904478d986185393037cbd053ffff874b7251da"
+    ],
+    "fn_active_maintenance_release_boundary": [
+      "6dc9e6b407e16b6c5b7728bf05783c8da3c22a20075a031cf72e031a067b4440"
+    ],
+    "fn_admin_holds_no_player_wallet": [
+      "83092aa7ba6280b85b048da3e46ddc7a80be86f1ea7a8e1258281f840c2bbaf7"
+    ],
+    "fn_agent_commission_paid_by_period": [
+      "1bfab0cc893f613c25dcc6aa04a5383f219cfc96ff108399f8867a1a9d3c5fab"
+    ],
+    "fn_agent_commission_rollup_recompute": [
+      "f0ad7d95c9a2c3787b63642d37b5fb58c2c3caf12af9709138ed01477afcfa62"
+    ],
+    "fn_agent_credit_control_revision_v1": [
+      "8464005b62a70dc961262a8972a5bc0fd73dc6cbe790f3a92cf87f23f00ec29a"
+    ],
+    "fn_agent_downline_rake": [
+      "442035fd32ba59717d57f2a76aa5cfc1bdfb1a412c55c07fcbdb9e2096dc3abe"
+    ],
+    "fn_agent_may_read_commission": [
+      "d60c2d687d95acb0ec220765b3d9db0d894143bece46e73181c93e07bae330db"
+    ],
+    "fn_agent_unsettled_commission": [
+      "204cc7dd2373a82a2fe17fadfdf67af7d990bc52a9d81cb61e6d64168ecb028f"
+    ],
+    "fn_allocate_rake_credits": [
+      "2f9b7de02329705eef532850661e91a0ceb2807207a2535afb23730619171656"
+    ],
+    "fn_arena_name": [
+      "d366f2087c7d814fa7489a3334a7710a8ef31e2e74ae2f49055ce8bcb63329e7"
+    ],
+    "fn_assert_cash_commission_period": [
+      "dd371b993d059ed2d99659b56049eda70f7c04558f5e75f6e8e485303db8ec3a"
+    ],
+    "fn_bbj_reconcile": [
+      "24c6e2e4771f5101b025e04c4bb1774c2f0802bd531621bd49d60b9f1cc35232"
+    ],
+    "fn_block_browser_balance_writes": [
+      "c1065dceffe374ef0379b7d49513cf85ba13435274ffa1f24eef313a48c5fdc3"
+    ],
+    "fn_ca_alert_resolution_reaches_the_incident": [
+      "1ea490c1535e2c1ba8d29f60f8ddd1a9c7c51c9ba9e671e929b1367c1afcc2cb"
+    ],
+    "fn_ca_assert_emergency_path": [
+      "9a6e65d17f85274fa1482c06144ee30afb65317576f0806a579b8847c0a25fad"
+    ],
+    "fn_ca_autoledger": [
+      "07f75ae331de14cd255e77e14652c8afc4fe7e00e950ac3a5a08b208bb0924f7"
+    ],
+    "fn_ca_balance_has_its_ledger_row": [
+      "04b222deea224e6957e8e02c3960838469df3655ba21801924a4b6858d14f968"
+    ],
+    "fn_ca_burn": [
+      "5e17bcd7ca351df0a22d7a4337ff5d6c0b0a83b39f9b760de4f232fc560541cc"
+    ],
+    "fn_ca_chip_ledger_enrich": [
+      "6e08f3d7eac15544ac051b067bc83969e7598f78d1910bf2dd58a1e14e4fdf24"
+    ],
+    "fn_ca_chip_store_declared": [
+      "9713c3408e1c5d03ce69b7ca1590db46e6d761fd6d54aaf40f3a3c4d5d9eaac4"
+    ],
+    "fn_ca_club_rake_daily_compute": [
+      "aea8651f68ef59f6d9a764a35c40846eb0132826a56fb52f28c1d60a335c1fea"
+    ],
+    "fn_ca_club_rake_daily_user_apply": [
+      "c4a39c901de6972d9d7315f8d1f4656a77dcedea4f769e6c44e55a03460da457"
+    ],
+    "fn_ca_club_rake_daily_user_rebuild_day": [
+      "a77e8616798543ac9868d3aaab799219a15ec3ae56ba4cb859076632095d0724"
+    ],
+    "fn_ca_current_epoch": [
+      "45d29d33a7cea64fd7da99513abcda74479f2dc83764522ac556594ae0815484"
+    ],
+    "fn_ca_declare_ledger": [
+      "1d3bb0ef4d5c6ca81c8e8cf95cf46854af2edd423cd6aae3551b0424d6970527"
+    ],
+    "fn_ca_deleted_wallet_bank_return": [
+      "e18dceef000c9d95137087698fba3e7540debbc8af0224dd53a3344dfacb79e1"
+    ],
+    "fn_ca_deleted_wallet_credit": [
+      "2e181e239152b9b2173d520abc7b8656281bfb5d9a438287d88bcba0cd976e5b"
+    ],
+    "fn_ca_drift_incident_timeline_guard": [
+      "e081addc9e6670251806672df3c888e0a0c9b2d66d3d4f6b5280bc21d4b6abb5"
+    ],
+    "fn_ca_emergency_issuance_guard": [
+      "83842cb4168d54079185bce512bb1b19c709e4abc52be88aa013926e459f53e9"
+    ],
+    "fn_ca_engine_operator_command": [
+      "53b2f36ef332454f4bdc77b1d30bebb14f8bad87bb9bb79304347f3a91fc0921"
+    ],
+    "fn_ca_epoch3_preflight": [
+      "ee6a5f7ab57f49a8b6d8e930c1777bd869bbea7acf6819f79dd5472f7a421ef6"
+    ],
+    "fn_ca_felt_counts_table": [
+      "3d8aa63ed9e35d7a284ec7d03f1ae24bbc76f9c42a752a95eaa2c957d4645cb5"
+    ],
+    "fn_ca_finding_key": [
+      "91cdef792b4eb436e2c342f693f1f4ccfd3ce97a77e049b40a10532741b1b217"
+    ],
+    "fn_ca_has_committed_tournament_receipt": [
+      "320b975360d4eb101e5a3af60e2c301bd78806e8cea1bf3f8b0e6fad190dcbc0"
+    ],
+    "fn_ca_incident_notify": [
+      "f263531cc68e1646c0387ad60c894ff3dbb4bb5b3df1375e3a247f0366347311"
+    ],
+    "fn_ca_incident_recipient_ids": [
+      "1ec7e6f6cf2a9f6742cfcaf22138b6e746fa83f387132b9238173c0dfadc3ff4"
+    ],
+    "fn_ca_incident_resolution_reaches_the_alerts": [
+      "3ce6eec7cbf525c5cc7a28b6a7b899dceb7a53a491ea702069a0e496ae648d31"
+    ],
+    "fn_ca_is_cert_account": [
+      "889318a453c2d0fe7c5818700e851aecdbc8b2fd056b1b5ebe75115e9ff4c748"
+    ],
+    "fn_ca_is_midway_scope": [
+      "815c74ad016439c74d095122048c62077c17c16acf2feb66532ae99603f7425f"
+    ],
+    "fn_ca_issuance_leg_is_registered": [
+      "6a8637b8af3d5430d24dec91db2da9ce1f6edd7e26b0f51c2cf869fd47843e6f"
+    ],
+    "fn_ca_kill_switch_trip": [
+      "7799ec2f729312c77afb206c52d131409d114cf384702c19c7dbf839a26bd242"
+    ],
+    "fn_ca_ledger_invariant_refusal_census": [
+      "65210c283eba552f18272fe6ef51ba4fe811db7b7ffa28169dfe15a6e9ad6856"
+    ],
+    "fn_ca_ledger_refusal_file": [
+      "5b5039ff6ec2b4ed6abf62687791a0bb4548fe669d9b3181593624922ad045ad"
+    ],
+    "fn_ca_ledger_refusal_raise": [
+      "12e375b71088557334a28b5f558f20855d843c64232ecca6e44b91ba05328992"
+    ],
+    "fn_ca_ledger_refusal_record": [
+      "24e90290162c61773bc1a49170b8352b274354c70b76adc678572a6078987ad1"
+    ],
+    "fn_ca_ledger_tally_add": [
+      "fe248cf703e188cc5ef497a20ba311033b7b40e0de572c66bd86a43ae1fd7f93"
+    ],
+    "fn_ca_ledger_tally_key": [
+      "58b1debc445c719f532292c4d65d0c7fd9520c5037188b69434eb9ffdf32b146"
+    ],
+    "fn_ca_leg_accounts": [
+      "55ed16aa68f424b701ca9136b377d37b4b0ec9723bdb30d25ab4c693fdc3568b"
+    ],
+    "fn_ca_leg_accounts_since_snapshot": [
+      "0b3fce2b2978b7a30e18862a21f760f78049a3acdde5cc91ec1c41248868254e"
+    ],
+    "fn_ca_leg_accounts_since_snapshot_for": [
+      "4a0656dfe8ea16ebaf66ab1f9a50d609f5e4e2fc138414ee3dd94e6efbbb340d"
+    ],
+    "fn_ca_legacy_fee_custody_cohort": [
+      "53a02bbb78364d4b037bbabaa4e9fdfbc419c7eeee56d4af05113bf029e3c439"
+    ],
+    "fn_ca_legacy_fee_resolution_write_is_exact": [
+      "5821fabe05cc1987117674cd7dca9129b4d1625b70ebbeee2ba224a8b605899e"
+    ],
+    "fn_ca_legacy_period_maturity": [
+      "fa8d093fc95e965930398a3673454e410a85b5e520e24c40d6f2aa61b6e0b117"
+    ],
+    "fn_ca_lock_mtt_admission_contract": [
+      "e94d6a1ce868c379050982bf1cdc962b5c6ac7074da222af8ea84d64d68a207d"
+    ],
+    "fn_ca_lock_settlement_lane_for_tournament": [
+      "18429c01ec6314f83e8a17084d83ee21723232565f76d18629c4207b988b1622"
+    ],
+    "fn_ca_lock_tournament_seat_acquisition": [
+      "6f96b4cb69a1b4faa1d6f4f74a5fa61d03ef8c066b511d1db9a5687669194fd0"
+    ],
+    "fn_ca_mint": [
+      "8e3909f13af730bc5612e982c0925d2ce03439920355e23ee92ae429ef3e58e9"
+    ],
+    "fn_ca_mint_issued_24h": [
+      "e5b90c9e52cf71c41879fab4bd5d9ce6f1375dd4ceebf67b5b4d4820cdb7bab7"
+    ],
+    "fn_ca_mint_register_vs_supply": [
+      "1b126c328e289e78fb55ab184a717f9da6d6bab9045afd8582b3dcf3d2dedda5"
+    ],
+    "fn_ca_mint_velocity_watch": [
+      "cceb6738faef106ef017b43d6a3875edea51ee88ab645e0b7122a28b75404038"
+    ],
+    "fn_ca_money_rpc_balance_columns": [
+      "746f4759d793a4d9d2b40558015f3c8ddcd608588677e9f1b253494fba31c8c1"
+    ],
+    "fn_ca_money_rpc_drift": [
+      "bdbc4498791ecd26d3f0844b58f6c0df612a4a1ad6bafbb3135d5f93eb27f964"
+    ],
+    "fn_ca_money_rpc_writes_balances": [
+      "d4b5a25eadd4d504f151616fd0d515ac9c3aa4717251c775b99e1b67ff60ada1"
+    ],
+    "fn_ca_noncirculating_chip_stores": [
+      "6090d59cfadf7674ae5cb61d502356feee37c531266d8b67432f60af19682d05"
+    ],
+    "fn_ca_operator_floor_entry_guard": [
+      "67df1aa5561731b2270879c1afb7df6b49c8a3b29473513bad02febad4273aee"
+    ],
+    "fn_ca_operator_floor_state": [
+      "29349efbe3307d597bbe089d3f15618ad8a1a764e86d92e55cf6ed6d12d7b2be"
+    ],
+    "fn_ca_operator_permissions": [
+      "970970b1b7e614b4e2409ca676661adbe0d1268bcbc6578675c169e2c17b6ef6"
+    ],
+    "fn_ca_raise_drift_incident": [
+      "2077d72dd70d50c98eddb9930980c8fcd55c9fc6cede28e8fdc2aa55c332a57c"
+    ],
+    "fn_ca_rake_by_agent": [
+      "48ae2553bbf507f3116ed4904aeed591f8b8842c1b3c62aa18d248bd41ad4bf4"
+    ],
+    "fn_ca_register_issuance_leg": [
+      "0293be2f5d423466e31c1724d9ed6b8291e38c3ca311c7758a9e56ec0a75a225"
+    ],
+    "fn_ca_release_claim": [
+      "2588f49d21990c676cd010e43797fd1d13d72c784dfd334c6476332d64664523"
+    ],
+    "fn_ca_resolution_needs_a_cause": [
+      "dce796c3e840cd73b954b2309c554b4e1b46cb14651ea21fa66f39f97cbf51cd"
+    ],
+    "fn_ca_sep8_spin_original_fee_proof": [
+      "22e136a7b6591a1782988546b89565b83a73ec23bef3b148b561f1bc90c71961"
+    ],
+    "fn_ca_stable_dedupe_key": [
+      "1f7ab8bed7cba48f7a03255ddea3d6de5d5ead00c59ea4721bb60bba8775ba05"
+    ],
+    "fn_ca_supply_snapshot": [
+      "01456056e61add4c1ce707219a58fe03577da703928a584a41c3d18d2a010c98"
+    ],
+    "fn_ca_tally_balance_move": [
+      "59fd39c18b25c655ca57c87c0371f6190b5cdd004010280ea7bd58ef8c1bb5ff"
+    ],
+    "fn_ca_tally_ledger_leg": [
+      "ce0b6158365844a23981500eb2ed5ddbddd3a21a5eacc991372dcd15308557fc"
+    ],
+    "fn_ca_tally_pair": [
+      "67cfb9f4fe1c038dadc524457346cafee717a272f3ac4d373d1fc3f73cd09b7c"
+    ],
+    "fn_ca_tally_store_move": [
+      "dd265415e63e5e61b3c8a69e8ce4a81ec10b80e0231ec04196256c276fdc9bdb"
+    ],
+    "fn_ca_terminal_marker_transition_is_exact": [
+      "b8d91cebd444756719bde6ee45a2495109dabd6399af6eeec5396233ae0b121b"
+    ],
+    "fn_ca_ticket_escrow_float": [
+      "8d867be160784e159928871d8fd19ccbccee26291d59ca965d507b513416ebaf"
+    ],
+    "fn_ca_tournament_counts": [
+      "897e69413b338177e8ea61cfde20126589da68ce24e91b93a0f976b39d28898f"
+    ],
+    "fn_ca_trial_balance": [
+      "550821343aac2192a0d4fc3d65d43700e270e56650c3cfdf9ca6abc9baf544ce"
+    ],
+    "fn_ca_verify_ledger_chain": [
+      "05696575d8a8e41eb4ba39c524fc4c9a347cfc205d8b11cb5f164e8b429dcfe4"
+    ],
+    "fn_ca_xid8": [
+      "0aaf62de4726295a143e169a6cd5a0ba59ec0ecc7aa9d181e65106542f8ec548"
+    ],
+    "fn_calculate_cash_rakeback_periods": [
+      "f3509c206ad1016a2b1672cb9555a7dbc0dca2efc61569d22841030df95dad29"
+    ],
+    "fn_caller_is_engine": [
+      "711e6fdb109c3615dd22e7d7322228251d755f243c77ca15eb060f4c087feb23"
+    ],
+    "fn_cancelled_tournament_evidence_is_immutable": [
+      "315415c9c18c71017dcfad7d1214ce241276068bba57263f5bf0a9a291d2e2ef"
+    ],
+    "fn_capture_operational_source_event": [
+      "562bf90fe8fb678afee6125018cbec00674e2285a1a0b72847d6c3df47850b27"
+    ],
+    "fn_cash_original_funding_lineage": [
+      "8a273f30d7616be2b2e68f7fafbc0c11675d83748dc8786bbb8f32c5ac86d634"
+    ],
+    "fn_cash_period_evidence_since": [
+      "94ba40b991c41fa58597407fa0679fb521e796f1eb8eec9f7e30657278c2a312"
+    ],
+    "fn_cash_rakeback_period_basis": [
+      "91d98acb02b4d60a4bf391fcefa44d54a3c84237136e4cd202d19b67dd02cbe0"
+    ],
+    "fn_cash_source_refusal_scope": [
+      "c99735a4e2fdab1051bd5d748b849118b1da7e52ee34b5a8e9f80bfb7b514018"
+    ],
+    "fn_cash_source_refusals_for_period": [
+      "1db0fe97d7ef495db3b794445a63c4d7b3c9521fe65b52285db0bdd2fea1dc97"
+    ],
+    "fn_cashier_assert_active_actor": [
+      "443e77e1c0eb5c1be3b8737a6c0e780d131f4804872fc76f92cdbd5d8c3d8aee"
+    ],
+    "fn_cashier_balance_actor_guard": [
+      "560f5ca2e602f3a087bb9b0a662b404a21aa3d9576c7fe18f7eae8d09328751a"
+    ],
+    "fn_cashier_document_body": [
+      "8ad53d1630dd1900b29566102ece6491bdf44880c2e15628711f221a957921a1"
+    ],
+    "fn_cashier_event_payload": [
+      "77fa56553501d7885f4690c372651cb1fbd2c7af3267b83947ca0e37713f62fd"
+    ],
+    "fn_cashier_exact_intent_begin": [
+      "1801145c1dd13ea04f45ab8c03120ecfc996d9eb99de2b1f2dfc7e2095f3d1a4"
+    ],
+    "fn_cashier_operation_mutex_guard": [
+      "1bf71b80110661b0b196a890c9a06e7e9427be86bd134107eff2c7026282b384"
+    ],
+    "fn_club_member_play_totals_delete": [
+      "5ce8f31608285a55809435aca64936dfab8ddefebb67d6b222a35960e6403a29"
+    ],
+    "fn_club_member_play_totals_insert": [
+      "a1d367828383b1b9240a9b23091fddad7b338f8a2a2aba232271393f70e19975"
+    ],
+    "fn_club_member_play_totals_update": [
+      "3579c0fbc58753bb5a5fbe655f635dcc210cf8c7ce0a216a37e059e8645d6ba6"
+    ],
+    "fn_club_members_ledger_writer": [
+      "2eade2036de5d5ac001aa4172e0d88fe348f9b5e35829ddc7a44a363b1a7d130"
+    ],
+    "fn_club_money_panel": [
+      "de3f0e15a45cb69380e157028823f0a1cb0beba1e52c0e1cd0ff027b830a1099"
+    ],
+    "fn_club_rake_rollup_day": [
+      "56667890b3cd8e8edf3ecc724f65aac5699e153a39d7e9606206cd9ab413c331"
+    ],
+    "fn_club_role": [
+      "a7eec912ab91003d99f998ae075827c08d593295c8655d483464ce8797098e2e"
+    ],
+    "fn_club_table_daily_refresh_day": [
+      "e225ed831bcf7753a0c3c3c54b6c11093e5b2650f04889be311e5eac8b4a053e"
+    ],
+    "fn_club_weekly_accounting_summary": [
+      "fbabc84390807a87a515302f5407cb267bf56be922e01ad791bc1a0e80d125ad"
+    ],
+    "fn_deliver_accounting_invoice": [
+      "a78bf0c8fe34eae98d40b84f5522461ad4de978b390c0162b7cc62aeda6c677e"
+    ],
+    "fn_diamond_game_reserved_cover_guard": [
+      "d3e4aaf159c5871bee43ea7530b204245e44f2765bdf101687777943a39137a6"
+    ],
+    "fn_diamond_spin_ledger_category": [
+      "4a85b030dc258a4f52c6124bfcfff71a871b68f136715121537109f509598046"
+    ],
+    "fn_entry_purchases_frozen": [
+      "c50b2afc8eece877e30c97a1abc54637386d4750c5f9868d2480cfa307944a51"
+    ],
+    "fn_fold_hand_winnings": [
+      "2e40dfeea19ac7f9f0d0a092bc136154e801191aeb4e6446799402867f9260d3"
+    ],
+    "fn_freeze_bypass_active": [
+      "3dff75483f6358b233f6aeeb09240a607debfbd4810a82877192f892dc31c0a0"
+    ],
+    "fn_generate_credit_invoice": [
+      "8fab193771ecccbb97f3110d9d389449bef82b84e7339df0046108b5c3af4d86"
+    ],
+    "fn_generate_scope_credit_invoices": [
+      "76072de1e6580482e71a7555f9c68e31770bc5844dd5c0d3c5db1d9b6cf8c5ae"
+    ],
+    "fn_guard_credit_request_decision": [
+      "f31869e232736d4d776351b5cb54fcae3bb9be233b0908003272b4ba44fbd482"
+    ],
+    "fn_has_club_role": [
+      "295d7621110d4d54fa9d17d96f4672e4bdb66d381469a96d697b6657bb1b1ec1"
+    ],
+    "fn_invoice_accounting_ledger_transfer": [
+      "c3e84482659ed54c4adbd3c9a8e8923e46abbef0530a067b9a78a10169763b09"
+    ],
+    "fn_is_agent_ancestor": [
+      "dfe7cafa7d0f5866595f096701b5055c8b6fc26100ee25aa4ce706112ca8ef9a"
+    ],
+    "fn_is_club_admin_uid": [
+      "b1b38154b9c64dff4d1cfea725fcb3c2f53d346c09e2555d079af5cdeaa13e36"
+    ],
+    "fn_is_platform_admin": [
+      "e0ca6f11fd474b71d09252a94fc851b9629be726ee0af48042296f4995afa4a0"
+    ],
+    "fn_is_service_context": [
+      "766ea27bc24de224f9d6fffdf746accd75d800e04bd0be75afd6de0a7932d549"
+    ],
+    "fn_is_union_overseer": [
+      "a55e7244ea8da09181a21cae222b15e21ffbe8b735a902fdf6e5ecdcb58cc77f"
+    ],
+    "fn_issue_club_weekly_accounting": [
+      "4afbabb8fe227ec237702eaa836a62a1496faf06062f9c4ffa4daf2cc34d6c9e"
+    ],
+    "fn_issue_scope_weekly_accounting": [
+      "e0a175d4f9d4d812256e8206a3f7418287a72cb6d106f8ca0f9abfe99c2f6fcc"
+    ],
+    "fn_like_escape": [
+      "bcddfca252ecfa063c80fa9f8be25b4f3e4a41976bd45f3234522c4ea18ae68d"
+    ],
+    "fn_lock_daily_mission_user": [
+      "4b8dd5b9a4346f6d3c317cae0a79df99cf5b101ed3f5eb9d0228dc38f4cfc427"
+    ],
+    "fn_lock_rakeback_payer_clubs": [
+      "3c474b00e450a9fd0996e185d65fc875b52f9347dba8b6f7dc1470be10917614"
+    ],
+    "fn_log_admin_action": [
+      "a10de10396748d831296190772031ca2a6bea0513d1e5d844e1db657fdf35a30"
+    ],
+    "fn_managed_game_contract_hash": [
+      "ecd1c8c97c765bd3f13c3213ff7bb83271273607a5a2ff0bbd8b81853e0ac788"
+    ],
+    "fn_mark_scope_accounting_settled": [
+      "22d06184eba1ee3827daee93df862c10a56ab0f258af86c706ece1d81e54a8a5"
+    ],
+    "fn_next_invoice_number": [
+      "79dca8cc39ecb5ff25967ec42b4bfcab8a60b3f0d431e27c71e2607ab456a89e"
+    ],
+    "fn_platform_frozen": [
+      "5e711bb6f4b28588390e007089f9dc72a1076e053f3c662fd210cc26d05e6597"
+    ],
+    "fn_pnl_evidence_cents": [
+      "c1c1b7a11439c04a3e37e525ce222c775a1d587c605265b74024c7dd0efeabb7"
+    ],
+    "fn_poker_diamond_tournament": [
+      "1fbbec9d95f9ac8ecc93663adcf58a8d40bda3bb366ab62b21ef84e19ed634e9"
+    ],
+    "fn_post_accounting_commission_source": [
+      "f181bc93f53128d43dcf51d71abc8fe40fc718e56d2edbe101a319eaf3cee97c"
+    ],
+    "fn_prepare_accounting_week": [
+      "91b8f1d0054f96d520b26c4a6e57937ec5820c2c5eea3b604ffb23fb0e8358c7"
+    ],
+    "fn_process_cash_accounting_source": [
+      "b32704ec3fc12afb45d6fded194f92dc3de2cf6c15cbe2baa30bf4820d625f28"
+    ],
+    "fn_process_hand_position_stats": [
+      "626bc8553e85796194f26c0b9d926d2345a5ee6743af845ae8cbb24da1cd60e9",
+      "73c85a5827a563f739586a9b795a441d3387ec07d23b6e687357ea35dff2c0c4"
+    ],
+    "fn_project_hand_side_effects_after_post_commit_20260908": [
+      "187f0b6f56aa90a851f826efb1352490771a3693663af50d670d5194af40a2ab"
+    ],
+    "fn_raise_notification": [
+      "d270867db891d95fa7c0b37fed26ad65173aec6d560bc974a38cfcc574c9e227"
+    ],
+    "fn_raise_server_financial_alert": [
+      "bd3059b2baf4198b0c34501a7ec20ef0a9319c86dd83eeefaadc643a99a9d429"
+    ],
+    "fn_rake_record_is_ghost_twin": [
+      "35067050c4ff6477903d11cc6b48b40ffb3d08838af0bcf145716d6684f12e7c"
+    ],
+    "fn_rake_shares_for_record": [
+      "c96b18c47e45b0fc97b1b2490ee7f92f114543e424884d08a255a5e93c7529ae"
+    ],
+    "fn_rakeback_recompute_periods": [
+      "9b310adfa5911adf216147e4a1d5cdebcec4e750e1693ebae428dc9d01614973"
+    ],
+    "fn_rakeback_recompute_split": [
+      "a065bee9f71af70469c42a8eae16e15932c71c099452eed26b8e5a95603e580c"
+    ],
+    "fn_rakeback_split_check": [
+      "b23f98ac9be10aef345eae5221d16b405f71d72a53327e683b9438db481a6fde"
+    ],
+    "fn_rakeback_split_counts": [
+      "99029f9163fe691d7fef4a5c6d7bdda67f591bcf2ea073ac4298066b2046737f"
+    ],
+    "fn_rakeback_split_write": [
+      "0848ca7921e6b8c098e4facd408798cdc7e8f06a9e2994930767855a6f75ca69"
+    ],
+    "fn_refresh_player_stats": [
+      "55693dcdb7d3f2a8ca767f3bb26923b88a4f23858ec561b1fc7447703aa436fc"
+    ],
+    "fn_refuse_while_frozen": [
+      "1c618a0e5f62216c0410ad60d206055f886c6ff49a52a646d43197f74d5828c3"
+    ],
+    "fn_require_union_pnl_evidence": [
+      "6973abc3b8ce66198488a33295e7ba9709fffe936631e8835c614c0673811fd2"
+    ],
+    "fn_resolve_accounting_routing_scope": [
+      "958d7a3a66c6fa251c12d9daac773baeecb55b0b81a5b37202dcd5c2c7406770"
+    ],
+    "fn_role_rank": [
+      "8cfa35d9a080a52b952107638ec511be128b36cbc1adb852b92143487b32daac"
+    ],
+    "fn_satellite_transfer_ledger_is_immutable": [
+      "df6028fc65ae6cbfb5a5f70d33c3df131e9bef93a0f3064c681b8dd514096ad6"
+    ],
+    "fn_settle_accounting_commission_combine": [
+      "1f284daeebdcbeb2f63b97fcbdb4cbdc2d034332950baa7b3f89355cdd4b03ca"
+    ],
+    "fn_settle_accounting_commission_stage": [
+      "2b272c51adbf76b83507d8275a647d2f137f88f4d392ad7931152aa5f6eefa0b"
+    ],
+    "fn_settle_accounting_commission_stage_v3": [
+      "3fa5c0d75086758aeeae0766a3d0c5cbb7c21117fd7869c37e669cd2815affcf"
+    ],
+    "fn_settle_accounting_rakeback_pairs": [
+      "41c34f42bad3ff331f282608d69a2c7fc20a2dc8f24fcf58a92e913fc961298b"
+    ],
+    "fn_settle_accounting_rakeback_plan_get": [
+      "ee9464f15ecac09ac1c6ae47795f523bd08544d1374c7e054b800eabf30d99f3"
+    ],
+    "fn_settle_accounting_rakeback_stage": [
+      "bcb074dbfd8504ab1271ff7990e1f0a80ebeeddd22314ffa6bc2c69e6e3f7479"
+    ],
+    "fn_settle_round2_club_to_agents": [
+      "6e0f92c949494910c11521484ba7522464b284b7a0105851d6a6e8963c16efc2"
+    ],
+    "fn_settle_round3_agents_to_players": [
+      "db4760b2090ed681563771eec055de4303d050bdc6d09bd7f41acddcc8cfa1ff"
+    ],
+    "fn_settlement_floor_refuses_owed_agent_commission": [
+      "8bcd685ee50b33890d1a5147bff73581f94b82676ff6bb4f99665a81c569a916"
+    ],
+    "fn_sync_profile_total_hands": [
+      "be315c2d48d56d5e577ab39eb250e30524c891f8a7db86ba24b8a8ced0186e19"
+    ],
+    "fn_terminal_tournament_evidence_is_immutable": [
+      "5f477a3a6b95bd5c71d2c24a5fe21dbc03f51480d4b88230167afbd2e8358dff"
+    ],
+    "fn_union_close_post_rake_debit": [
+      "112ec8c9ec37740094b2ec5ffeff98722f2194e10455a4c2c32ec121de07adf7"
+    ],
+    "fn_union_club_invoice": [
+      "0bb0a74e6fe19c2e20f038f9b9fbd946499550a1704cefa90cd0446c0d32da13"
+    ],
+    "fn_union_club_rake_basis": [
+      "bc00d7a6b312ceb062ac050bf85955e5d746f96aeedffcff3a4288a0bd5d948c"
+    ],
+    "fn_union_credit_risk_check": [
+      "2059ee01e3e75e8b10cefb42fbf13cde3439d3163349cc6b6a519d0690fdb235"
+    ],
+    "fn_union_eco_adjustment": [
+      "789def4e5016d49c7feb61d2caac0e7dadade57bdb67effa1e88b6c6c5d96ab2"
+    ],
+    "fn_union_eco_record": [
+      "fca205a7dc6b9d09a5b87c54e2681f0f350b4210de8cf77f0a6de982d80a910c"
+    ],
+    "fn_union_eco_terms_evidence": [
+      "3618349a1415b7a0594c1db7f07acef8ea03813f471b097281c92578fe09233c"
+    ],
+    "fn_union_governance_check": [
+      "dbd0cb86f809dd640556a8e246e1c78e0c78c6ab003d89be19a294ebbcdc1fdd"
+    ],
+    "fn_union_issue_weekly_invoices": [
+      "e12eba7423aca2e1d4135fdb4c2835b6d65b2f20af172bbeccc68517dfaf9213"
+    ],
+    "fn_union_overseer_of_record": [
+      "df3ac25650cc04f9d97a48f00fce26d6e98a9e528802a37487beff2f13c997ac"
+    ],
+    "fn_union_pnl_award_owner_resolved": [
+      "321e50abb03924152500ca51b6917446f7e5db8870eb1159ef46656d33db2c2a"
+    ],
+    "fn_union_pnl_award_satellite_owner": [
+      "1bdbb777b41e0a979a958a3162105123890d39a06d3373f7b004ec4e7bb9900b"
+    ],
+    "fn_union_pnl_boundary": [
+      "d8affd6eba4e235d151d019777d920b3289e12e56754334d60b6fa7bc37b6428"
+    ],
+    "fn_union_pnl_cash_outcome_accepted": [
+      "963dc9f83662d86715b39117aeb38ecc5bfd0b4a6b4384e98fc918e7aedaf376"
+    ],
+    "fn_union_pnl_cash_outcome_link": [
+      "ab1dfe370bdfde26fe3614d48e894a1eb6fc1a4b473f580a615cce7da98fb806"
+    ],
+    "fn_union_pnl_close_quality": [
+      "447eb840975402c38f20fb53b68f4a0617dd6007b5e24172357c7456130f01b4"
+    ],
+    "fn_union_pnl_closed_book_barrier": [
+      "a626e0c885846a5bc3e31358bab7114bd7b68b37ce599b1c83da8d8d6d8a7d8c"
+    ],
+    "fn_union_pnl_evidence_report": [
+      "b4ea22e4afcf9558271279fbe41e3c286d6033621fd9306c97c0c9e4e9e74b7e"
+    ],
+    "fn_union_pnl_first_inventory_operation": [
+      "0bfab454fa448163160d316c7a4b511762022250226c16828cfc1db45759cb06"
+    ],
+    "fn_union_pnl_inventory_as_of": [
+      "6e1bc1b4dd1fcdadecf6ef8e304fcdf98d9ba9fe3994f3082cb838416391d2e8"
+    ],
+    "fn_union_pnl_inventory_population": [
+      "0092180dea81bd4cad89c26e0e85922a10f8f3d750dcf7559d75c84311d34a32"
+    ],
+    "fn_union_pnl_inventory_state": [
+      "1e3e41a412e2b2226a324a42092aeda9029678189594fe230be72924abaaa376"
+    ],
+    "fn_union_pnl_linked_cash_outcomes": [
+      "45639f89bb79d79d2dc237def9c3281dcf08896e836b2a6e4a80b3d7c052aa39"
+    ],
+    "fn_union_pnl_opening_registration_resolution": [
+      "2249b80e02055d3893de57d9d43d1dfa7ad7f0489f461b9232edb5fe4ebee96e"
+    ],
+    "fn_union_pnl_original_flow_evidence": [
+      "28e2d435acdbed8e3f824ad42bf4fba9bb25b73e04327eace45c768d1bd237fd"
+    ],
+    "fn_union_pnl_projection_ready": [
+      "85b9dc37822f872ea753eb30ac58261e91b0bec61e3b39c7f2eded7fb884373e"
+    ],
+    "fn_union_pnl_qualified_clubs": [
+      "eec4c6fe965a593c02a8f569cc8e50b11c80c5ac1acf2ebb694d611677bb9adf"
+    ],
+    "fn_union_pnl_satellite_seat_owner": [
+      "70a0efa6c656d317e1f1f87488eee13b1ea2f29100befd7f889d8480e605b847"
+    ],
+    "fn_union_pnl_touched_registrations": [
+      "596802a2b46362a9e1564beca6000d26007936d0c2df74585898e40d972b1035"
+    ],
+    "fn_union_pnl_tournament_entry_club_of": [
+      "56c50000fde01681a6c61449b8bd1e1c49c91bbbd5abeb5d4b9d305dd788ce41"
+    ],
+    "fn_union_pnl_tournament_in_union": [
+      "6731c8efba632c8f28781621ce023844930a130858f93b861034354d4bb68612"
+    ],
+    "fn_union_pnl_week_bbj_stack_awards": [
+      "f9615110679f58951c6c65b6a80810e583cf6996008d0c8997e0437d887236d4"
+    ],
+    "fn_union_pnl_week_hand_lines": [
+      "bec6b7f72203a7129cefc27cf532752e88ac95a794ce4f6e77f945e1a1fa1b09"
+    ],
+    "fn_union_pnl_week_shaped_hands": [
+      "6414f5aaed2629ce42d09ea9a659ac82b48c484103053ec95d466b84d8317b5b"
+    ],
+    "fn_union_pnl_week_union_credits": [
+      "1029a61a6028617585a9266e9b0139c6fcbaee0e34c0b0c4965bd552f7545a0e"
+    ],
+    "fn_union_prev_week_start": [
+      "2a96c1f067014230336ba75f6076ec4f6882e2c909c91fc554d5c3ef57e617b0"
+    ],
+    "fn_union_rake_rollup_refresh_day": [
+      "e719f1dd290ff8b5b727847a839fff7dd6eb7a8295c79fb04f2bb3db8975605c"
+    ],
+    "fn_union_setting": [
+      "f41062760804d945d2fc02581659767a2fbc3fc23a4b969a67f4a1b117193e51"
+    ],
+    "fn_union_settle_player_pnl": [
+      "1bc58f1bfe33493e446133febd15b2b6bc70a66c10c458259180ab92d568fd6d"
+    ],
+    "fn_union_settlement_cascade": [
+      "138883666cc79b4f3a89abb86764d1ad637494ded308d7a87bacd9e44d48b55b"
+    ],
+    "fn_union_settlement_conservation_assert": [
+      "46aee4298b58a2abe9e50d116b555a9f464e6c71c0aa06d9fa26b5d6965b604c"
+    ],
+    "fn_union_week_start": [
+      "42663f0570249a0b3df325353523ff2767c703ebdbf683f1ff05c7b26bb44d3c"
+    ],
+    "fn_union_weekly_rakeback_close": [
+      "11ffe154cbdd3c9afc5d535647ad5c49f0a44302ce922b5fa5c1b3174d038181"
+    ],
+    "fn_weekly_accounting_deadline_check": [
+      "2556f8db55606c09604ea4ca92a318c98ac47c844a8679dc06a9253370de336e"
+    ],
+    "guard_agent_wallet_direct_update": [
+      "9a521c0d96d982c6ca4fc597ed8e8f22b7427a8c87baf712d30f2fd0984aafc9"
+    ],
+    "refresh_player_stats": [
+      "faaa4648078a02ed5f5971115035064adfa8e1a830e935501e7f117e9113f8c3"
+    ],
+    "sync_agent_wallet_columns": [
+      "1df6bae6b9f846630d28b1cc076b160a1fd2b6d0a6b4ea787f825aa3e3f89986"
+    ],
+    "trg_ca_reporting_rake_insert": [
+      "107452221c977532900f75063f4b5245beb412588ce99aa6e66e45f95a604637"
+    ],
+    "trg_ca_reporting_wallet_insert": [
+      "0df472a76f978ece96fe7769739286db6a1a377e0735f8e54002b6f2bcae5cd6"
+    ],
+    "trg_hand_history_club_member_stats": [
+      "d523d17b13b26044cf1dbc584f0c7c3c6a397b6489a333c963a658cb2e3a3894"
+    ],
+    "trg_tournament_completed_stats": [
+      "03234b69abb4e63485cf6f106ff5114235372f7997cd457a3b1567a2b6bf9c19"
+    ],
+    "trg_union_rake_weekly": [
+      "2c5a1353561de26bb41c60414223c5d341adbf8286290a7f481af386ad732c2f"
+    ],
+    "update_updated_at_column": [
+      "edc2475ce78c5d6db044e96c518d01e75e669c06684880195602bb6c1437d49b"
+    ],
+    "fn_bbj_analytics": [
+      "88fbd32fdc2162c052f13c35b15850803086de074f08226db9b4f5c270ef460f"
+    ],
+    "fn_union_accounting_run_at": [
+      "b7a28354ed48f48edb1c2711281acccad80d5eee1219805674f0cf0c42925651"
+    ],
+    "fn_union_club_exposure": [
+      "d8518d82ac8aefa9262678c28dd509fa3ea400facd38b8e651210ce19528f786"
+    ],
+    "fn_bbj_mini_for_club": [
+      "dec4da6a5bd06cd4bae075c7db56ea64416bf4420e707e8d5344f5a787d50d6e"
+    ],
+    "fn_union_reconciliation_report": [
+      "4a0652fc2af6b9554b58770639103a62db8afb7d15ebc86c955822c7993a64a5"
+    ],
+    "fn_credit_treasury_zd4core": [
+      "7007976b374b4f77b6f8c719167ad972fe28028c616ba9a7343b56872a503dfe"
+    ],
+    "fn_credit_treasury": [
+      "b97611fea1eddee10ba95c47f9caf2ecd8af2376bcbac3bc2ef6834ba9787ad3"
+    ],
+    "fn_bbj_parked_reserve": [
+      "aee0a0a5e9ece4541f1e0691b07feb0d3b1a70d024d9fe9e4dd68f85dba6617d"
+    ],
+    "fn_bbj_pool_for_club": [
+      "b7cfdf73800c28b9038a1d90425690364ae97477bc671b34d624185397993ced"
+    ],
+    "fn_club_commission_accrued": [
+      "395a5bcf0863dd778c809dd6d25b1bc9c448501953bb816dc9d4664bc83c6e75"
+    ],
+    "fn_anon_exposure_check": [
+      "debf252ca21fa4bfeeca63ffac3e8f4f15a73dfc05b0752a90ad0f4df235536d"
+    ],
+    "fn_bbj_conservation_check": [
+      "d6826bedf7521aeab48b48ff2cce50dd097ed98dee2600461b328d78534dc802"
+    ],
+    "fn_bbj_contributions_total_advance": [
+      "20ea2670ffb4a591003a34cb05a96327b158ced85567ded66fe2e98054b5f567"
+    ],
+    "fn_bbj_contributions_total_verify": [
+      "77f204762e8bb687eaad194a39574a217a0aa74adaa4cb29c86f63b664a040fe"
+    ],
+    "fn_union_rake_ledger_checkpoint_verify": [
+      "ccbe8c2dd578f7b52897a1f005ebf7c6f23ffb3f4bac698287bd9b29555d1f07"
+    ],
+    "fn_union_rake_ledger_totals": [
+      "97c8d3765e6d11406007dd37eea9e804a7bbd451f7c4d6bf8b7c77d181374b2b"
+    ],
+    "fn_union_treasury_selftest": [
+      "d0e4bd80eaf5ca67cb17af3fe415ad54e383633d3a53adb41ff4b71b34122c15"
+    ],
+    "fn_bbj_contributions_total": [
+      "062c1177a404575222e156ac4922645dab9416497fbce771d230cb4509840fdb"
+    ],
+    "fn_settler_lag_check": [
+      "31a2bfa77b91d3c87d792a047d5cf24d67adcec2a4b7d9aa5361a9e27ee3c4ea"
+    ],
+    "fn_begin_tournament_launch_before_lease_generation": [
+      "3e4cdcfb08c984aed891a02f124674dd95601c85e750d9d54d2de7387b3cd0f9"
+    ],
+    "fn_spin_draw_and_settle_atomic": [
+      "022b37fc062c957ff7ea6823107412f958e51c7304b292d91fb16d4750a1d608"
+    ],
+    "fn_spin_settle_game": [
+      "04f8b7b5c166fc2a393d08d8bbb9be8413c2bea995f17f47534867a4701123ee"
+    ],
+    "fn_ca_declare_guard_redefinition": [
+      "71e969d9382b5c9400724e0e0d0731a3ca2f6c8a0af01212a772187ff78fd117"
+    ],
+    "fn_ca_guard_watchlist": [
+      "2cccab64ac42d1d00c6e27ee38ba11f7ae085d7120308fce952e227cd40b285f"
+    ],
+    "fn_ca_guard_defs_watch": [
+      "a6751c154875a6d6ebdb37b4e4ebed8a17507f77cc0538de776ff69c128edb95"
+    ]
+  },
+  "current_function_default_privileges": {
+    "owner": "postgres",
+    "schema": "public",
+    "object_type": "f",
+    "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+    "observation": "Configured read-only production pg_default_acl on 2026-10-12",
+    "apply_after_original_objects": true
+  },
+  "current_public_default_privileges": [
+    {
+      "object_type": "f",
+      "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "object_type": "S",
+      "acl": "{postgres=rwU/postgres,anon=rwU/postgres,authenticated=rwU/postgres,service_role=rwU/postgres}"
+    },
+    {
+      "object_type": "r",
+      "acl": "{postgres=arwdDxtm/postgres,anon=arwdxtm/postgres,authenticated=arwdxtm/postgres,service_role=arwdDxtm/postgres}"
+    }
+  ]
+}

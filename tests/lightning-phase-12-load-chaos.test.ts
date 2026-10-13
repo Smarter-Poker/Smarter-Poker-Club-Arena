@@ -277,13 +277,13 @@ describe('the migration', () => {
 });
 
 describe('CI, the manifest fragment and the changelog', () => {
-  it('CI runs the harness on shard 1, after the Phase 11 step, in the CI profile', () => {
+  it('CI runs the harness on shard 3, after the Phase 11 step, in the CI profile', () => {
     const p11 = CI.indexOf('test-lightning-phase11-integrity-shadow.sh');
     const p12 = CI.indexOf('test-lightning-phase12-load-chaos.sh');
     expect(p11).toBeGreaterThan(0);
     expect(p12).toBeGreaterThan(p11);
     const step = CI.slice(CI.lastIndexOf('- name:', p12), p12);
-    expect(step).toContain('if: matrix.shard == 1');
+    expect(step).toContain('if: matrix.shard == 3');
     expect(step).toContain('PG_BIN: /usr/lib/postgresql/17/bin');
     expect(step).toContain('LIGHTNING_CHAOS_PROFILE: ci');
   });

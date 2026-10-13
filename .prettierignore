@@ -252,3 +252,7 @@ scripts/qualification/spin-first-archived.manifest.json
 # Preserve original current-owner catalog response bytes.
 scripts/qualification/fixtures/archived-spin/first-fee-owner-current-capture.json
 scripts/qualification/fixtures/archived-spin/first-fee-owner-operation-absence.json
+
+# Exact production authority catalogs for scoped launch recovery; fixture hashes own bytes.
+scripts/ci/fixtures/launch-reset/*.json
+scripts/ci/fixtures/launch-reset/floor/*.json

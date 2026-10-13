@@ -1,0 +1,152 @@
+{
+  "relations": 14,
+  "differences": [],
+  "live": {
+    "relations": {
+      "clubs": {
+        "columns": "7f329a15d94e911dc90ef3fa80b00e40",
+        "triggers": "c13ac5e9ace1c0488feb7db0de0abae0",
+        "constraints": "50de6680d0cf8a75aebf54596f906556"
+      },
+      "agents": {
+        "columns": "1bf9a5b9cd6ac129c73d29da4e5d7a4e",
+        "triggers": "2b96ed6d4680dddad4d4fb36f2bed6cf",
+        "constraints": "2bf02e2548875fc430f2657fb8522533"
+      },
+      "bbj_pools": {
+        "columns": "55c681418315f6d39ddf03e1aa951228",
+        "triggers": "656bc3eac85b72ee2caade24df4377a9",
+        "constraints": "0be3cbf211d1237cccc03c4bba0033ae"
+      },
+      "chip_ledger": {
+        "columns": "2bfeb6c764eff8ac9fd7f17472baab8c",
+        "triggers": "96b88a41883deea4b66a854761d9d4ab",
+        "constraints": "c734d386cede9029993f2b2267907470"
+      },
+      "club_members": {
+        "columns": "520af104460b189f9c6cd2e3f081e445",
+        "triggers": "1e795358aaeb90107a138502d3695d57",
+        "constraints": "6cd087c9a444dbf6742fab028d73ad6d"
+      },
+      "player_stats": {
+        "columns": "8d6b0a6293e76e48145b9cb5fad099b7",
+        "triggers": "987fdc31123744ceb36df2207b4ce22f",
+        "constraints": "cccad8333530d390b611352708054325"
+      },
+      "union_wallets": {
+        "columns": "864f42036eff76f303588cafc9d1e902",
+        "triggers": "6f4ab74aae1636b08f2568d47966686c",
+        "constraints": "c46ba41d3390a351bba9e4c3fb50ee1c"
+      },
+      "ca_mint_ledger": {
+        "columns": "d73a3bfe4fc96b8db31de21f0aa31538",
+        "triggers": "b2345a364ac8fb3c493c68036e8e5222",
+        "constraints": "0b54ead4149df75f198f31eee553489f"
+      },
+      "credit_invoices": {
+        "columns": "56d0ed46fc71b6375ec3758ae4a90363",
+        "triggers": null,
+        "constraints": "2ab7260279f72a7c1fb3d01796a87e23"
+      },
+      "credit_requests": {
+        "columns": "ac572d3da9f29776fe33a16088559de8",
+        "triggers": "8d3d2cb1b4db928438c972670038ddff",
+        "constraints": "7d138d5cdf625fabf676f660c0f56f22"
+      },
+      "financial_alerts": {
+        "columns": "c4991851f53f280977aeaaacd60c93ea",
+        "triggers": "d1e7669e369b8bc7f19b2ff645dfa057",
+        "constraints": "54ddf5b08b394f3cc73cdb907f316f96"
+      },
+      "rakeback_periods": {
+        "columns": "40e1373a30e9d1688606644044333a9d",
+        "triggers": "b5653cc4f29fa30f5a38fa4899b6b391",
+        "constraints": "32a56209ca116f4938fd266768092436"
+      },
+      "ca_drift_incidents": {
+        "columns": "72e970191b76b70b4220a9eb1c7320c9",
+        "triggers": "e1c5795050da65e7a1d66b831a6767e8",
+        "constraints": "46aa175be1f8a19962c72bf5a14de59f"
+      },
+      "settlement_invoices": {
+        "columns": "f5305899264a327c62b7dbc3722df173",
+        "triggers": "bbdc4174759ec122189c4962af5f022b",
+        "constraints": "41cdb6694c744e4f759acc33b5166344"
+      }
+    }
+  },
+  "native": {
+    "relations": {
+      "clubs": {
+        "columns": "7f329a15d94e911dc90ef3fa80b00e40",
+        "triggers": "c13ac5e9ace1c0488feb7db0de0abae0",
+        "constraints": "50de6680d0cf8a75aebf54596f906556"
+      },
+      "agents": {
+        "columns": "1bf9a5b9cd6ac129c73d29da4e5d7a4e",
+        "triggers": "2b96ed6d4680dddad4d4fb36f2bed6cf",
+        "constraints": "2bf02e2548875fc430f2657fb8522533"
+      },
+      "bbj_pools": {
+        "columns": "55c681418315f6d39ddf03e1aa951228",
+        "triggers": "656bc3eac85b72ee2caade24df4377a9",
+        "constraints": "0be3cbf211d1237cccc03c4bba0033ae"
+      },
+      "chip_ledger": {
+        "columns": "2bfeb6c764eff8ac9fd7f17472baab8c",
+        "triggers": "96b88a41883deea4b66a854761d9d4ab",
+        "constraints": "c734d386cede9029993f2b2267907470"
+      },
+      "club_members": {
+        "columns": "520af104460b189f9c6cd2e3f081e445",
+        "triggers": "1e795358aaeb90107a138502d3695d57",
+        "constraints": "6cd087c9a444dbf6742fab028d73ad6d"
+      },
+      "player_stats": {
+        "columns": "8d6b0a6293e76e48145b9cb5fad099b7",
+        "triggers": "987fdc31123744ceb36df2207b4ce22f",
+        "constraints": "cccad8333530d390b611352708054325"
+      },
+      "union_wallets": {
+        "columns": "864f42036eff76f303588cafc9d1e902",
+        "triggers": "6f4ab74aae1636b08f2568d47966686c",
+        "constraints": "c46ba41d3390a351bba9e4c3fb50ee1c"
+      },
+      "ca_mint_ledger": {
+        "columns": "d73a3bfe4fc96b8db31de21f0aa31538",
+        "triggers": "b2345a364ac8fb3c493c68036e8e5222",
+        "constraints": "0b54ead4149df75f198f31eee553489f"
+      },
+      "credit_invoices": {
+        "columns": "56d0ed46fc71b6375ec3758ae4a90363",
+        "triggers": null,
+        "constraints": "2ab7260279f72a7c1fb3d01796a87e23"
+      },
+      "credit_requests": {
+        "columns": "ac572d3da9f29776fe33a16088559de8",
+        "triggers": "8d3d2cb1b4db928438c972670038ddff",
+        "constraints": "7d138d5cdf625fabf676f660c0f56f22"
+      },
+      "financial_alerts": {
+        "columns": "c4991851f53f280977aeaaacd60c93ea",
+        "triggers": "d1e7669e369b8bc7f19b2ff645dfa057",
+        "constraints": "54ddf5b08b394f3cc73cdb907f316f96"
+      },
+      "rakeback_periods": {
+        "columns": "40e1373a30e9d1688606644044333a9d",
+        "triggers": "b5653cc4f29fa30f5a38fa4899b6b391",
+        "constraints": "32a56209ca116f4938fd266768092436"
+      },
+      "ca_drift_incidents": {
+        "columns": "72e970191b76b70b4220a9eb1c7320c9",
+        "triggers": "e1c5795050da65e7a1d66b831a6767e8",
+        "constraints": "46aa175be1f8a19962c72bf5a14de59f"
+      },
+      "settlement_invoices": {
+        "columns": "f5305899264a327c62b7dbc3722df173",
+        "triggers": "bbdc4174759ec122189c4962af5f022b",
+        "constraints": "41cdb6694c744e4f759acc33b5166344"
+      }
+    }
+  }
+}

@@ -5,7 +5,7 @@ import argparse,datetime,json,hashlib,sys,subprocess,uuid
 sys.dont_write_bytecode=True
 ROOT=Path(__file__).resolve().parents[2];sys.path.insert(0,str(ROOT/'scripts/ci'))
 from satellite_qualifier_fixture import module,sha,lit
-MIGRATION=Path('supabase/migrations/20261013115714_horse_journal_retirement_follows_original_numbered_observati.sql')
+MIGRATION=Path('supabase/migrations/20261013130413_horse_journal_retirement_follows_original_numbered_observati.sql')
 def qualify(e,template):
  checks=[];d=e.database(template)
  def read(db,q,label):return e.sql(db,q,label=label)[1].strip()

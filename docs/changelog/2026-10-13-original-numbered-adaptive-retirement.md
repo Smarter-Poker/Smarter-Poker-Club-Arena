@@ -1,4 +1,5 @@
 # Original numbered adaptive retirement
+
 Scope: the concrete ICU collation defect in the existing eight-day settled horse-only raw journal owner. Human/mixed/unknown/unsettled retention and accounting/lifetime data stay protected.
 
 Production on October13: exact primary-key probes found surviving canonical journal tuples in ten of twelve retired certificate samples, with zero statistics/fence inserts and zero journal deletes. Production en-US ICU orders the punctuation sentinel before numbered suffixes: hand:30 is not less than hand;. The original zero-row check was false completion.
@@ -17,3 +18,4 @@ Connected native2 passed the original34/membership24/lookup19/capacity27 plus th
 
 This does not establish production cleanup capacity, zero eligible backlog, or physical disk reclamation. Old tuples without original qualifying evidence remain protected. Sufficient statistics retain the existing30-day model window; lifetime/earned/accounting records are separate. Root owns installation, activation, protected source delivery and actual disk proof.
 
+Installed once as20261013130413 at13:04UTC; exact SQL MD5 874b0b60fb496d553a1f12fdf126b199/18854bytes/SHA25663a36bb3681cbdcc565a041cb449ee79ed4f4bb8d207965415f74f0d6e177d4e matched recorded history. All three definitions/owners/ACL/settings match native postimages. Original117 restored13:04:54; activation restored13:05:26 after actual serving0f73 and fresh fenced v2 report. Actual previously false-retired hand07f46838-9dfc-4e93-a7b0-6c78f094a3ed now raw1→0/statistics0→1/fence0→1/format0→2, with original certificate digest and retired time unchanged. Source filename and native binding restamped only; SQL bytes immutable, no replay or duplicate native test. Protected integration, full eligible backlog and physical disk recovery remain pending.

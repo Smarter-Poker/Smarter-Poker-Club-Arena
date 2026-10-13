@@ -7,9 +7,9 @@ ROOT = Path(__file__).resolve().parents[2]
 MIGRATION = ROOT / 'supabase/migrations/20261013161705_horse_retention_exact_space_diagnostics.sql'
 
 def main():
-    p=argparse.ArgumentParser(); p.add_argument('--evidence',type=Path,required=True); p.add_argument('--pg-bin',type=Path,required=True); a=p.parse_args()
+    p=argparse.ArgumentParser(); p.add_argument('--evidence',type=Path,required=True); p.add_argument('--pg-bin',type=Path,required=True); p.add_argument('--scratch-root',type=Path); a=p.parse_args()
     a.evidence.mkdir(parents=True,exist_ok=False)
-    scratch=Path(tempfile.mkdtemp(prefix='pg-',dir=a.evidence)); socket=scratch/'s'; socket.mkdir()
+    scratch=Path(tempfile.mkdtemp(prefix='horse-space-',dir=a.scratch_root or a.evidence)); socket=scratch/'s'; socket.mkdir()
     data=scratch/'d'; pg=a.pg_bin; checks=[]; started=False
     env={k:os.environ[k] for k in ['PATH','LANG','LC_ALL','TZ'] if k in os.environ}
     def run(args,**kw): return subprocess.run([str(x) for x in args],env=env,text=True,capture_output=True,timeout=45,**kw)

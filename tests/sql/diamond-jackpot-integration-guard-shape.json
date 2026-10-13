@@ -1,0 +1,84 @@
+{
+  "columns": [
+    {
+      "not_null": true,
+      "sql_type": "bigint",
+      "table_name": "ca_guard_def_history",
+      "column_name": "id",
+      "default_sql": "nextval('ca_guard_def_history_id_seq'::regclass)"
+    },
+    {
+      "not_null": true,
+      "sql_type": "text",
+      "table_name": "ca_guard_def_history",
+      "column_name": "proname",
+      "default_sql": null
+    },
+    {
+      "not_null": true,
+      "sql_type": "text",
+      "table_name": "ca_guard_def_history",
+      "column_name": "def_hash",
+      "default_sql": null
+    },
+    {
+      "not_null": true,
+      "sql_type": "text",
+      "table_name": "ca_guard_def_history",
+      "column_name": "def_text",
+      "default_sql": null
+    },
+    {
+      "not_null": true,
+      "sql_type": "timestamp with time zone",
+      "table_name": "ca_guard_def_history",
+      "column_name": "captured_at",
+      "default_sql": "now()"
+    },
+    {
+      "not_null": true,
+      "sql_type": "text",
+      "table_name": "ca_guard_defs",
+      "column_name": "proname",
+      "default_sql": null
+    },
+    {
+      "not_null": true,
+      "sql_type": "text",
+      "table_name": "ca_guard_defs",
+      "column_name": "def_hash",
+      "default_sql": null
+    },
+    {
+      "not_null": true,
+      "sql_type": "timestamp with time zone",
+      "table_name": "ca_guard_defs",
+      "column_name": "updated_at",
+      "default_sql": "now()"
+    },
+    {
+      "not_null": false,
+      "sql_type": "text",
+      "table_name": "ca_guard_defs",
+      "column_name": "declared_ref",
+      "default_sql": null
+    },
+    {
+      "not_null": false,
+      "sql_type": "timestamp with time zone",
+      "table_name": "ca_guard_defs",
+      "column_name": "declared_at",
+      "default_sql": null
+    }
+  ],
+  "constraints": [
+    {
+      "definition": "PRIMARY KEY (id)",
+      "table_name": "ca_guard_def_history"
+    },
+    {
+      "definition": "PRIMARY KEY (proname)",
+      "table_name": "ca_guard_defs"
+    }
+  ]
+}

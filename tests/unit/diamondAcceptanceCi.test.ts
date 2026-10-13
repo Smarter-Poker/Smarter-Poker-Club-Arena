@@ -39,7 +39,7 @@ const read = (p: string) => readFileSync(join(root, p), 'utf8');
 const ci = parse(read('.github/workflows/ci.yml'));
 const wrapper = read(WRAPPER);
 
-/* THE THIRTY RUNNERS, NAMED, AND COUNTED IN WORDS.
+/* THE THIRTY-THREE RUNNERS, NAMED, AND COUNTED IN WORDS.
 
    Every other assertion here derives the population from the directory, which
    is right and is not enough on its own: a directory read agrees with itself
@@ -66,9 +66,12 @@ const EVERY_DIAMOND_RUNNER = [
   'run-diamond-cross-format-conservation.py',
   'run-diamond-engine-hand-proof.py',
   'run-diamond-incident-resolution.py',
+  'run-diamond-jackpot-integration.py',
+  'run-diamond-must-move.py',
   'run-diamond-plain-cash-rule.py',
   'run-diamond-run-it-twice.py',
   'run-diamond-scheduled-tournaments.py',
+  'run-diamond-session-recap.py',
   'run-diamond-stats-asset-dimension.py',
   'run-diamond-straddle.py',
   'run-diamond-top-up.py',
@@ -79,7 +82,7 @@ const EVERY_DIAMOND_RUNNER = [
   'run-diamond-wallet-transfer.py',
   'run-poker-diamond-custody.py',
 ];
-/* The seventeen that stand up a cluster of their own. Declared in the wrapper
+/* The twenty that stand up a cluster of their own. Declared in the wrapper
    and repeated here, so the split cannot move in one file alone. */
 const A_PRIVATE_CLUSTER = [
   'run-diamond-bad-beat-jackpot.py',
@@ -94,14 +97,17 @@ const A_PRIVATE_CLUSTER = [
   'run-diamond-concurrency.py',
   'run-diamond-cross-format-conservation.py',
   'run-diamond-engine-hand-proof.py',
+  'run-diamond-jackpot-integration.py',
+  'run-diamond-must-move.py',
   'run-diamond-scheduled-tournaments.py',
+  'run-diamond-session-recap.py',
   'run-diamond-stats-asset-dimension.py',
   'run-diamond-tournament-doors.py',
   'run-diamond-tournament-lane-journal.py',
   'run-diamond-tournament-lifecycle.py',
 ];
-const HOW_MANY_RUNNERS = 30;
-const HOW_MANY_ON_A_PRIVATE_CLUSTER = 17;
+const HOW_MANY_RUNNERS = 33;
+const HOW_MANY_ON_A_PRIVATE_CLUSTER = 20;
 const HOW_MANY_ON_THE_WRAPPER_CLUSTER = 13;
 /* No environment variable but PG_BIN may choose a runner's server. PG17_BINDIR
    is the estate's other name for a bin directory, and two variables naming one
@@ -369,8 +375,8 @@ describe('the runners stay on their fixed local socket', () => {
          a runner slipped from this contract into the other one. */
       expect(source, `${name} must not name the wrapper's socket`).not.toContain(socketDir!);
       expect(source, `${name} must not name the wrapper's port`).not.toContain(socketPort!);
-      expect(source, `${name} does not create its own socket directory`).toContain(
-        'tempfile.mkdtemp'
+      expect(source, `${name} does not create its own private directory`).toMatch(
+        /tempfile\.(?:mkdtemp|TemporaryDirectory)\(/
       );
       /* Socket only. Nothing may reach this cluster over the network either. */
       expect(source).toContain('listen_addresses=');

@@ -57,6 +57,8 @@ const code = (p: string) =>
 
 const MIGRATION =
   'supabase/migrations/20260912061500_one_rule_says_what_a_plain_diamond_cash_table_is.sql';
+const CURRENT_SHAPE_MIGRATION =
+  'supabase/migrations/20261012191248_diamond_must_move_keeps_its_custody_and_its_table_rules.sql';
 const BOUNDARY = 'server/src/domain/DiamondCashBoundary.ts';
 const VARIANT_MIGRATION =
   'supabase/migrations/20260912070000_the_diamond_arena_deals_the_games_the_estate_deals.sql';
@@ -68,6 +70,9 @@ const SHAPE_COLUMNS = [
   'bbj_percent',
   'cap_enabled',
   'cluster_id',
+  'role',
+  'lifecycle',
+  'main_index',
   'game_variant',
   'insurance_enabled',
   'is_template',
@@ -91,7 +96,7 @@ const namesIn = (src: string): string[] =>
     .sort();
 
 describe('LAW - the SQL rule and the engine boundary decide with the same columns', () => {
-  const sqlRule = sliceBetween(at(MIGRATION), 'SELECT NOT (', '$fn$;');
+  const sqlRule = sliceBetween(at(CURRENT_SHAPE_MIGRATION), 'SELECT NOT (', '$fn$;');
   const boundary = sliceMethod(
     at(BOUNDARY),
     'export function assertDiamondCashTable(table: Record<string, unknown>): void {'
@@ -104,6 +109,10 @@ describe('LAW - the SQL rule and the engine boundary decide with the same column
     'const disabled = [',
     'Diamond Plain Cash Table Required'
   );
+  // Cluster shape lives in the actual helper invoked by the table boundary.
+  // Include its body so delegation cannot silently remove column parity.
+  const clusterShape = sliceMethod(at(BOUNDARY), 'export function hasDiamondCashClusterShape(');
+  const completeBoundaryShape = boundaryShape + clusterShape;
 
   it('the SQL rule exists and is the one every door reads', () => {
     const migration = at(MIGRATION);
@@ -128,11 +137,12 @@ describe('LAW - the SQL rule and the engine boundary decide with the same column
   });
 
   it('the engine boundary names every column of the shape and no other', () => {
-    expect(namesIn(boundaryShape)).toEqual([...SHAPE_COLUMNS].sort());
+    expect(boundaryShape).toContain('!hasDiamondCashClusterShape(table)');
+    expect(namesIn(completeBoundaryShape)).toEqual([...SHAPE_COLUMNS].sort());
   });
 
   it('so neither side can learn about a column the other has not', () => {
-    expect(namesIn(sqlRule)).toEqual(namesIn(boundaryShape));
+    expect(namesIn(sqlRule)).toEqual(namesIn(completeBoundaryShape));
   });
 
   /* ─── AND THE SAME FOR THE GAMES (2026-09-12) ──────────────────────────

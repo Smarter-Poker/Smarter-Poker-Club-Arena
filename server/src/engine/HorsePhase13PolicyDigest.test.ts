@@ -85,7 +85,7 @@ describe('P13.3 Phase 13 policy digest', () => {
     const hashed = new Set(HORSE_PHASE13_POLICY_SOURCE_FILES);
     for (const owner of MULTIWAY_OWNERS) expect(hashed.has(owner), owner).toBe(true);
     const closure = runtimeClosure(MULTIWAY_OWNERS);
-    expect(closure).toHaveLength(43);
+    expect(closure).toHaveLength(46);
     const excluded = new Set(Object.keys(HORSE_PHASE13_POLICY_EXCLUDED_CLOSURE_FILES));
     for (const file of closure)
       expect(hashed.has(file) !== excluded.has(file), `${file} hashed xor excluded`).toBe(true);
@@ -98,7 +98,7 @@ describe('P13.3 Phase 13 policy digest', () => {
       'src/engine/HorseLogic.ts',
       'src/engine/HorsePolicyRegistry.ts',
     ]);
-    expect(hashed.size).toBe(33);
+    expect(hashed.size).toBe(36);
   });
 
   it('never reaches the table controller or the database client', () => {

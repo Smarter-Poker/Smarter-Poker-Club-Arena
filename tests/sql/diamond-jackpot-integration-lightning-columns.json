@@ -1,0 +1,58 @@
+[
+  {
+    "schema_name": "public",
+    "table_name": "lightning_settlement_marker",
+    "column_name": "txid",
+    "sql_type": "xid8",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "lightning_settlement_marker",
+    "column_name": "seat_id",
+    "sql_type": "uuid",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "lightning_settlement_marker",
+    "column_name": "anchor_table_id",
+    "sql_type": "uuid",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "lightning_settlement_marker",
+    "column_name": "player_id",
+    "sql_type": "uuid",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "lightning_settlement_marker",
+    "column_name": "hand_id",
+    "sql_type": "uuid",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "lightning_settlement_marker",
+    "column_name": "host_table_id",
+    "sql_type": "uuid",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "lightning_settlement_marker",
+    "column_name": "hand_number",
+    "sql_type": "bigint",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "lightning_settlement_marker",
+    "column_name": "created_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": "clock_timestamp()"
+  }
+]

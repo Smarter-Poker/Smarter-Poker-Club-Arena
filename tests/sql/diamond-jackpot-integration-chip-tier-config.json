@@ -1,0 +1,133 @@
+{
+  "observed_at": "2026-10-12T19:33:44.136Z",
+  "stakes": [
+    {
+      "id": "high",
+      "label": "High",
+      "max_bb": 40,
+      "min_bb": 8.01,
+      "bbj_fee_bb": 0.06,
+      "blind_range": "5/10 - 20/40",
+      "rake_cap_bb": 15,
+      "rake_percent": 10,
+      "payout_loser_pct": 35,
+      "payout_table_pct": 17.5,
+      "payout_total_pct": 70,
+      "payout_winner_pct": 17.5
+    },
+    {
+      "id": "micro",
+      "label": "Micro",
+      "max_bb": 0.8,
+      "min_bb": 0.21,
+      "bbj_fee_bb": 0.6,
+      "blind_range": "0.2/0.4 - 0.4/0.8",
+      "rake_cap_bb": 3,
+      "rake_percent": 10,
+      "payout_loser_pct": 12.5,
+      "payout_table_pct": 6.25,
+      "payout_total_pct": 25,
+      "payout_winner_pct": 6.25
+    },
+    {
+      "id": "mid",
+      "label": "Mid",
+      "max_bb": 8,
+      "min_bb": 3.01,
+      "bbj_fee_bb": 0.12,
+      "blind_range": "2/4 - 4/8",
+      "rake_cap_bb": 8,
+      "rake_percent": 10,
+      "payout_loser_pct": 27.5,
+      "payout_table_pct": 13.75,
+      "payout_total_pct": 55,
+      "payout_winner_pct": 13.75
+    },
+    {
+      "id": "nano",
+      "label": "Nano",
+      "max_bb": 0.2,
+      "min_bb": 0.01,
+      "bbj_fee_bb": 0.6,
+      "blind_range": "0.05/0.10 - 0.1/0.2",
+      "rake_cap_bb": 3,
+      "rake_percent": 10,
+      "payout_loser_pct": 7.5,
+      "payout_table_pct": 3.75,
+      "payout_total_pct": 15,
+      "payout_winner_pct": 3.75
+    },
+    {
+      "id": "nosebleeds",
+      "label": "Nosebleeds",
+      "max_bb": 99999,
+      "min_bb": 40.01,
+      "bbj_fee_bb": 0.03,
+      "blind_range": "25/50+",
+      "rake_cap_bb": 20,
+      "rake_percent": 10,
+      "payout_loser_pct": 42.5,
+      "payout_table_pct": 21.25,
+      "payout_total_pct": 85,
+      "payout_winner_pct": 21.25
+    },
+    {
+      "id": "small",
+      "label": "Small",
+      "max_bb": 3,
+      "min_bb": 0.81,
+      "bbj_fee_bb": 0.25,
+      "blind_range": "0.5/1 - 1.5/3",
+      "rake_cap_bb": 5,
+      "rake_percent": 10,
+      "payout_loser_pct": 20,
+      "payout_table_pct": 10,
+      "payout_total_pct": 40,
+      "payout_winner_pct": 10
+    }
+  ],
+  "mini": [
+    {
+      "note": "no hit observed in 7 days; 70% shape",
+      "amount": 1200,
+      "enabled": true,
+      "tier_id": "high",
+      "updated_at": "2026-09-07T18:12:02.36115+00:00"
+    },
+    {
+      "note": "measured 1.29 hits/day; 25% shape",
+      "amount": 425,
+      "enabled": true,
+      "tier_id": "micro",
+      "updated_at": "2026-09-07T18:12:02.36115+00:00"
+    },
+    {
+      "note": "measured 0.43 hits/day; 55% shape",
+      "amount": 950,
+      "enabled": true,
+      "tier_id": "mid",
+      "updated_at": "2026-09-07T18:12:02.36115+00:00"
+    },
+    {
+      "note": "measured 1.14 hits/day; 15% shape",
+      "amount": 250,
+      "enabled": true,
+      "tier_id": "nano",
+      "updated_at": "2026-09-07T18:12:02.36115+00:00"
+    },
+    {
+      "note": "no hit observed in 7 days; 85% shape",
+      "amount": 1500,
+      "enabled": true,
+      "tier_id": "nosebleeds",
+      "updated_at": "2026-09-07T18:12:02.36115+00:00"
+    },
+    {
+      "note": "measured 1.43 hits/day; 40% shape",
+      "amount": 700,
+      "enabled": true,
+      "tier_id": "small",
+      "updated_at": "2026-09-07T18:12:02.36115+00:00"
+    }
+  ]
+}

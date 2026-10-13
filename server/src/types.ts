@@ -849,6 +849,8 @@ export interface HorseVariantRules {
 }
 
 export interface RakeConfig {
+  /** Dedicated, JSON-safe whole-Diamond hand fees; never a chip rate override. */
+  diamondCashFees?: { schedule: string; variant: string; doubleBoard: boolean };
   percent: number;
   cap: number;
   /** Bible V8 §2.9 / Appendix A: No rake if hand doesn't reach flop */

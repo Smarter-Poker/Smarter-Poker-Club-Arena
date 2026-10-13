@@ -1,0 +1,1129 @@
+[
+  {
+    "schema_name": "public",
+    "table_name": "notifications",
+    "column_name": "id",
+    "sql_type": "uuid",
+    "default_sql": "gen_random_uuid()"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "notifications",
+    "column_name": "user_id",
+    "sql_type": "uuid",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "notifications",
+    "column_name": "type",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "notifications",
+    "column_name": "title",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "notifications",
+    "column_name": "message",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "notifications",
+    "column_name": "data",
+    "sql_type": "jsonb",
+    "default_sql": "'{}'::jsonb"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "notifications",
+    "column_name": "read",
+    "sql_type": "boolean",
+    "default_sql": "false"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "notifications",
+    "column_name": "created_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": "now()"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "notifications",
+    "column_name": "updated_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": "now()"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "notifications",
+    "column_name": "is_read",
+    "sql_type": "boolean",
+    "default_sql": "false"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "notifications",
+    "column_name": "action_url",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "notifications",
+    "column_name": "metadata",
+    "sql_type": "jsonb",
+    "default_sql": "'{}'::jsonb"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "notifications",
+    "column_name": "actor_id",
+    "sql_type": "uuid",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "notifications",
+    "column_name": "link",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "notifications",
+    "column_name": "read_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "id",
+    "sql_type": "uuid",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "full_name",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "display_name",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "first_name",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "last_name",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "username",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "email",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "phone",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "bio",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "city",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "state",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "alias",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "avatar_url",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "role",
+    "sql_type": "text",
+    "default_sql": "'user'::text"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "status",
+    "sql_type": "text",
+    "default_sql": "'active'::text"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "is_vip",
+    "sql_type": "boolean",
+    "default_sql": "false"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "is_horse",
+    "sql_type": "boolean",
+    "default_sql": "false"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "is_admin",
+    "sql_type": "boolean",
+    "default_sql": "false"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "is_online",
+    "sql_type": "boolean",
+    "default_sql": "false"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "player_number",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "diamonds",
+    "sql_type": "integer",
+    "default_sql": "0"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "diamond_balance",
+    "sql_type": "integer",
+    "default_sql": "0"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "diamond_multiplier",
+    "sql_type": "numeric(3,2)",
+    "default_sql": "1.00"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "level",
+    "sql_type": "integer",
+    "default_sql": "1"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "tier",
+    "sql_type": "text",
+    "default_sql": "'Newcomer'::text"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "skill_tier",
+    "sql_type": "text",
+    "default_sql": "'Newcomer'::text"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "login_streak",
+    "sql_type": "integer",
+    "default_sql": "0"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "streak_days",
+    "sql_type": "integer",
+    "default_sql": "0"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "settings",
+    "sql_type": "jsonb",
+    "default_sql": "'{}'::jsonb"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "preferences",
+    "sql_type": "jsonb",
+    "default_sql": "'{}'::jsonb"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "social_page_id",
+    "sql_type": "uuid",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "favorite_venue",
+    "sql_type": "uuid",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "home_poker_club",
+    "sql_type": "uuid",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "referred_by",
+    "sql_type": "uuid",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "friends_count",
+    "sql_type": "integer",
+    "default_sql": "0"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "hendon_total_cashes",
+    "sql_type": "integer",
+    "default_sql": "0"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "hendon_total_earnings",
+    "sql_type": "numeric",
+    "default_sql": "0"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "email_verified",
+    "sql_type": "boolean",
+    "default_sql": "false"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "phone_verified",
+    "sql_type": "boolean",
+    "default_sql": "false"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "onboarding_complete",
+    "sql_type": "boolean",
+    "default_sql": "false"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "last_login",
+    "sql_type": "timestamp with time zone",
+    "default_sql": "now()"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "last_login_date",
+    "sql_type": "date",
+    "default_sql": "CURRENT_DATE"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "last_seen",
+    "sql_type": "timestamp with time zone",
+    "default_sql": "now()"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "created_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": "now()"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "updated_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": "now()"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "training_view_mode",
+    "sql_type": "text",
+    "default_sql": "'grid'::text"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "last_trivia_date",
+    "sql_type": "date",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "trivia_streak",
+    "sql_type": "integer",
+    "default_sql": "0"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "trivia_high_score",
+    "sql_type": "integer",
+    "default_sql": "0"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "total_hands_played",
+    "sql_type": "integer",
+    "default_sql": "0"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "notification_token",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "referral_code",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "horse_status",
+    "sql_type": "character varying",
+    "default_sql": "'available'::character varying"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "horse_profile",
+    "sql_type": "jsonb",
+    "default_sql": "'{}'::jsonb"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "sounds_enabled",
+    "sql_type": "boolean",
+    "default_sql": "true"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "vibrations_enabled",
+    "sql_type": "boolean",
+    "default_sql": "true"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "show_stack_bb",
+    "sql_type": "boolean",
+    "default_sql": "false"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "birth_year",
+    "sql_type": "integer",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "favorite_hand_type",
+    "sql_type": "text",
+    "default_sql": "'holdem'::text"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "card_back_preference",
+    "sql_type": "text",
+    "default_sql": "'white'::text"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "country",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "website",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "twitter",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "instagram",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "hendon_url",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "favorite_game",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "favorite_hand",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "home_casino",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "cover_photo_url",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "favorite_hand_plo",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "app_settings",
+    "sql_type": "jsonb",
+    "default_sql": "'{}'::jsonb"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "display_name_preference",
+    "sql_type": "text",
+    "default_sql": "'full_name'::text"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "cover_photo_position",
+    "sql_type": "text",
+    "default_sql": "'50% 50%'::text"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "tiktok",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "telegram",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "birthday",
+    "sql_type": "date",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "hendon_biggest_cash",
+    "sql_type": "numeric",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "use_real_name",
+    "sql_type": "boolean",
+    "default_sql": "false"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "streak_count",
+    "sql_type": "integer",
+    "default_sql": "0"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "access_tier",
+    "sql_type": "text",
+    "default_sql": "'Full_Access'::text"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "vip_tier",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "vip_expires_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "last_active",
+    "sql_type": "timestamp with time zone",
+    "default_sql": "now()"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "poker_near_me_preferences",
+    "sql_type": "jsonb",
+    "default_sql": "'{\"geofenceAlerts\": true, \"locationEnabled\": true, \"showNewcomerFriendly\": true}'::jsonb"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "can_review",
+    "sql_type": "boolean",
+    "default_sql": "true"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "deleted_reviews_count",
+    "sql_type": "integer",
+    "default_sql": "0"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "kyc_status",
+    "sql_type": "text",
+    "default_sql": "'NONE'::text"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "kyc_provider",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "kyc_inquiry_id",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "kyc_completed_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "kyc_rejection_reason",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "age_verified",
+    "sql_type": "boolean",
+    "default_sql": "false"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "age_verified_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "jurisdiction_country",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "mfa_required",
+    "sql_type": "boolean",
+    "default_sql": "false"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "hub_preferences",
+    "sql_type": "jsonb",
+    "default_sql": "'{}'::jsonb"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "friend_preferences",
+    "sql_type": "jsonb",
+    "default_sql": "'{}'::jsonb"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "store_preferences",
+    "sql_type": "jsonb",
+    "default_sql": "'{}'::jsonb"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "messenger_preferences",
+    "sql_type": "jsonb",
+    "default_sql": "'{}'::jsonb"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "reels_preferences",
+    "sql_type": "jsonb",
+    "default_sql": "'{}'::jsonb"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "over_18_attested_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "jurisdiction_region",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "jurisdiction_acknowledged_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "home_games_onboarded_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "social_profile_completed",
+    "sql_type": "boolean",
+    "default_sql": "false"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "is_farming_flagged",
+    "sql_type": "boolean",
+    "default_sql": "false"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "stripe_customer_id",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "club_arena_tos_accepted_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "bankroll_preferences",
+    "sql_type": "jsonb",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "memory_games_preferences",
+    "sql_type": "jsonb",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "news_preferences",
+    "sql_type": "jsonb",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "video_library_preferences",
+    "sql_type": "jsonb",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "memory_elo",
+    "sql_type": "integer",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "arena_avatar_url",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "equipped_frame",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "equipped_aura",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "use_avatar_as_profile_pic",
+    "sql_type": "boolean",
+    "default_sql": "false"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "status_text",
+    "sql_type": "text",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "player_tags",
+    "sql_type": "text[]",
+    "default_sql": "'{}'::text[]"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "vip_lifetime_card_purchase_id",
+    "sql_type": "uuid",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "lifetime_vip_since",
+    "sql_type": "timestamp with time zone",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "trivia_preferences",
+    "sql_type": "jsonb",
+    "default_sql": "'{}'::jsonb"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "profiles",
+    "column_name": "trivia_preferences_revision",
+    "sql_type": "bigint",
+    "default_sql": "0"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "user_notification_preferences",
+    "column_name": "user_id",
+    "sql_type": "uuid",
+    "default_sql": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "user_notification_preferences",
+    "column_name": "tournament_reminders",
+    "sql_type": "boolean",
+    "default_sql": "true"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "user_notification_preferences",
+    "column_name": "social_mentions",
+    "sql_type": "boolean",
+    "default_sql": "true"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "user_notification_preferences",
+    "column_name": "friend_activity",
+    "sql_type": "boolean",
+    "default_sql": "false"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "user_notification_preferences",
+    "column_name": "venue_alerts",
+    "sql_type": "boolean",
+    "default_sql": "true"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "user_notification_preferences",
+    "column_name": "created_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": "timezone('utc'::text, now())"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "user_notification_preferences",
+    "column_name": "updated_at",
+    "sql_type": "timestamp with time zone",
+    "default_sql": "timezone('utc'::text, now())"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "user_notification_preferences",
+    "column_name": "tracked_tours",
+    "sql_type": "text[]",
+    "default_sql": "'{}'::text[]"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "user_notification_preferences",
+    "column_name": "home_game_rsvp_confirmations",
+    "sql_type": "boolean",
+    "default_sql": "true"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "user_notification_preferences",
+    "column_name": "home_game_reminders",
+    "sql_type": "boolean",
+    "default_sql": "true"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "user_notification_preferences",
+    "column_name": "home_game_announcements",
+    "sql_type": "boolean",
+    "default_sql": "true"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "user_notification_preferences",
+    "column_name": "home_game_host_requests",
+    "sql_type": "boolean",
+    "default_sql": "true"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "user_notification_preferences",
+    "column_name": "home_game_new_game_posted",
+    "sql_type": "boolean",
+    "default_sql": "true"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "user_notification_preferences",
+    "column_name": "home_game_cancellations",
+    "sql_type": "boolean",
+    "default_sql": "true"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "user_notification_preferences",
+    "column_name": "home_game_review_prompts",
+    "sql_type": "boolean",
+    "default_sql": "false"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "user_notification_preferences",
+    "column_name": "home_game_post_likes",
+    "sql_type": "boolean",
+    "default_sql": "true"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "user_notification_preferences",
+    "column_name": "home_game_post_comments",
+    "sql_type": "boolean",
+    "default_sql": "true"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "user_notification_preferences",
+    "column_name": "live_notifications",
+    "sql_type": "boolean",
+    "default_sql": "true"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "user_notification_preferences",
+    "column_name": "messenger_alerts",
+    "sql_type": "boolean",
+    "default_sql": "true"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "user_notification_preferences",
+    "column_name": "daily_challenges",
+    "sql_type": "boolean",
+    "default_sql": "true"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "user_notification_preferences",
+    "column_name": "diamond_rewards",
+    "sql_type": "boolean",
+    "default_sql": "true"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "user_notification_preferences",
+    "column_name": "club_updates",
+    "sql_type": "boolean",
+    "default_sql": "true"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "user_notification_preferences",
+    "column_name": "daily_mission_reminders",
+    "sql_type": "boolean",
+    "default_sql": "false"
+  }
+]

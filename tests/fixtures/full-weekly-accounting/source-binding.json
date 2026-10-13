@@ -1,5 +1,44 @@
 {
   "status": "source_changed_unrun_pending_qualification",
+  "diamondLaunchMainInputMerge20261013": {
+    "reason": "Preserve latest protected-main0152591fbeb scoped reset/recovery qualification and unchanged Lightning reallocation with Diamond bounded budget. Current source identity only; historical audits/financial pins/assertions and qualification states unchanged.",
+    "changes": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "previous": "1388970807efb122b5ceea2bad565a4694167b851eee5083d45807514542c6e5",
+        "current": "0a3d601b0ad79dbd6340f207ce3b0bdbe234a9c282e7e49e024b0bb89abbadd5"
+      },
+      "tests/fixtures/legacy-fee-finality/source-binding.json": {
+        "previous": "3ede0e0d87dc9eec51b1ce8be99998c4dff1aaee5b6e34df5b7523c2603cec95",
+        "current": "a4e5da3d5559ab31342f9bc673f5954c50e96f6fd91b83d98bb77ed11f7a31df"
+      },
+      "tests/fixtures/sep8-spin-custody/source-binding.json": {
+        "previous": "51d7694b10763a4f695a8c41d12fb2be70eb42339ad35f9dd044c7f0b8c8582d",
+        "current": "64ced8dd0a61d64dafc89cb17632131f0bef7e4d929800ce5c14e30edb248f05"
+      }
+    }
+  },
+  "diamondBudgetMainInputMerge20261012": {
+    "reason": "Preserve current protected-main078c2e21ab history metadata inputs and reviewed Diamond shard1 job budget together. Only current input identity changes; all historical audit records, financial source pins/assertions and qualification states unchanged. No financial certification restamp.",
+    "previousChildPin": "6b2df577fd01a34bde0a4ac624c1838497d4a0af208ce22646f7da55e4a5f27c",
+    "currentChildPin": "51d7694b10763a4f695a8c41d12fb2be70eb42339ad35f9dd044c7f0b8c8582d"
+  },
+  "diamondCurrentMainInputMerge20261012": {
+    "reason": "Preserve both Diamond completion and protected-main f209c11306 input routing, workflow and all audit records. Refresh active source identity only; historical pins, financial sources/assertions and qualification states unchanged. No financial certificate restamp.",
+    "changes": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "previous": "5c5de06d630dce62812f574dcbbb11f622f73c167c25d8847a320da5735d107a",
+        "current": "1388970807efb122b5ceea2bad565a4694167b851eee5083d45807514542c6e5"
+      },
+      "tests/fixtures/legacy-fee-finality/source-binding.json": {
+        "previous": "30e5e1945435c4a4e17f72b104ae8f22b347e98382d462062cb87f13cfa0420f",
+        "current": "3ede0e0d87dc9eec51b1ce8be99998c4dff1aaee5b6e34df5b7523c2603cec95"
+      },
+      "tests/fixtures/sep8-spin-custody/source-binding.json": {
+        "previous": "5e956d0240696f3d0e8fd5e3b426ea0762e65f68e5bc28f5eaf778e99d46a7f5",
+        "current": "6b2df577fd01a34bde0a4ac624c1838497d4a0af208ce22646f7da55e4a5f27c"
+      }
+    }
+  },
   "captured_on": "2026-09-14",
   "leaderboard_launch_reader_population_rebinding_20261007": {
     "file": "tests/fixtures/sep8-spin-custody/source-binding.json",
@@ -426,10 +465,10 @@
     "tests/fixtures/legacy-fee-finality/custody-core.sql": "288e953c3b4c75c8eea9e0608a0f2d4b953c4437c9cfe6d50a450a801053d0eb",
     "tests/fixtures/legacy-fee-finality/fn_satellite_transfer_ledger_is_immutable.sql": "51af53e6eb44440aa9901452b42adb4bf3c7ab31ea21cdc1e4e9404c44bea407",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/ci/classify-ci-changes.mjs": "2851a30b77a4373a8854b67f80395feb92308b7660de6c74e8abd8e6ff1fefbd",
+    "scripts/ci/classify-ci-changes.mjs": "0a3d601b0ad79dbd6340f207ce3b0bdbe234a9c282e7e49e024b0bb89abbadd5",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "25ec29e89d2f62b396da7e3b3cbc69f49570095f09a4b95b6f74ae7747dc94a2",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "a4e5da3d5559ab31342f9bc673f5954c50e96f6fd91b83d98bb77ed11f7a31df",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -448,7 +487,7 @@
     "server/src/tournament/completionSettlementReceipt.ts": "a59a97b5b0f76d5c54d01b1fe47f3284efb2fcbd3e7742bb4e9e1ac6f0207dd4",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "22d23a3f73276b0462ec002efe242486c0aaee970979667df1bb5f0ec4d1980d",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "64ced8dd0a61d64dafc89cb17632131f0bef7e4d929800ce5c14e30edb248f05",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -4340,121 +4379,20 @@
       }
     ]
   },
-  "scopedLaunchResetWiring20261012": {
-    "reason": "Reviewed additive scoped launch reset CI/classifier/wiring checks and nested source identity only. Financial originals, assertions, historical pins and qualification status remain unchanged. This is not production reset certification.",
-    "pins": {
+  "diamondCompletionInputRouting20261012": {
+    "reason": "Reviewed additive Diamond jackpot JSON, exact session-recap SQL and must-move fixture routing into the existing required Diamond SQL acceptance lane. Refresh only current input fingerprints; financial SQL, assertions, fixed input inventories, historical pins and qualification statuses remain unchanged. This input declaration is not native execution, financial certification, installation or publication.",
+    "updatedCurrentPins": {
       "scripts/ci/classify-ci-changes.mjs": {
         "before": "d064527051d9ca3b8687b8414144a81008571552ab3d73f104ee462c0dac2a80",
-        "after": "d85d7f49f9d23d1cf59ad43a3bb29b02e1ed5d10e246adea026212f97bbbc48d"
+        "after": "5c5de06d630dce62812f574dcbbb11f622f73c167c25d8847a320da5735d107a"
       },
       "tests/fixtures/legacy-fee-finality/source-binding.json": {
         "before": "25e656197944a58d8880abb93251eeb2f7165800221107ceaf3761b9553e37f8",
-        "after": "9ac9c4c99afc9ee798a6cb4116b6679dda1aa03c6b8736ae48ab86632293e5ec"
-      },
-      "tests/unit/fixtureNativeCi.test.ts": {
-        "before": "14a67e65f162b0c02c406ae9b24726852f5d5678c28f01ba861633b9c6ea9682",
-        "after": "474a93ffd29b77b252b85e4ed44391802f6076d421213f3fd10498642537bb0d"
+        "after": "30e5e1945435c4a4e17f72b104ae8f22b347e98382d462062cb87f13cfa0420f"
       },
       "tests/fixtures/sep8-spin-custody/source-binding.json": {
         "before": "a9cab2c56f4684984aa41d3092bb45ba0e2da92f8767ae7daa07a2433ca4814b",
-        "after": "e5754c7284212a61e4d56277c47bdfa3823683b52b1bcfe4a21e20df60981c53"
-      },
-      "tests/fixtures/earlybird-fee-custody/source-binding.json": {
-        "before": "f258fc681a73cd8d6aadbef3d737190e9dfdb53939c0615702f04910c7995337",
-        "after": "5e8871dcb48c898e4a5bac671e13e378071785ff770b74304af8c6329f441eff"
-      }
-    }
-  },
-  "scopedLaunchResetPrefixEnforcement20261012": {
-    "reason": "Reviewed additive scoped64 prefix, source-bound treasury regression and existing Accounting1 enforcement; preserve all prior assertions, financial inputs, history and qualification statuses. Only reviewed routing/test/workflow and nested byte fingerprints change. Not a production certificate.",
-    "pins": {
-      "tests/unit/fixtureNativeCi.test.ts": {
-        "before": "474a93ffd29b77b252b85e4ed44391802f6076d421213f3fd10498642537bb0d",
-        "after": "d6cf10b20516b4204473d31eaf215066b42a8b3ab69c56cd6fdb6099e1578a59"
-      },
-      "tests/fixtures/sep8-spin-custody/source-binding.json": {
-        "before": "e5754c7284212a61e4d56277c47bdfa3823683b52b1bcfe4a21e20df60981c53",
-        "after": "d31a352ca52a3df010ae69f31e3058902360c636bb4a65658d8ccecc985b3f38"
-      },
-      "tests/fixtures/earlybird-fee-custody/source-binding.json": {
-        "before": "5e8871dcb48c898e4a5bac671e13e378071785ff770b74304af8c6329f441eff",
-        "after": "dd0a250c43b17ddbfa24bad6f62989d10a1a70aac5b496117f3d4b942d9520d1"
-      }
-    }
-  },
-  "scopedLaunchExactCatalogPreservation20261012": {
-    "reason": "Add exact launch-reset original catalog JSON formatter exclusions only, preserving numeric scale and candidate fixture fingerprints. Prior exclusions and all financial assertions retained; nested fingerprint reflects this reviewed metadata only.",
-    "pins": {
-      "tests/fixtures/earlybird-fee-custody/source-binding.json": {
-        "before": "dd0a250c43b17ddbfa24bad6f62989d10a1a70aac5b496117f3d4b942d9520d1",
-        "after": "01348c4d26d527949d2fd42f67521df284046cc49b1094ea554dd13926237686"
-      }
-    }
-  },
-  "scopedLaunchAtomicInstallerEnforcement20261012": {
-    "reason": "Preserve approved installer route while committing schema and exact source history atomically, verify TLS, distinguish transport uncertainty, and enforce real native failure/commit recovery cases in existing Accounting1. Reviewed only these source/workflow/classifier/test bytes and resulting nested seals; historical financial input/assertions/status preserved. No production completion implied.",
-    "pins": {
-      "scripts/ci/classify-ci-changes.mjs": {
-        "before": "d85d7f49f9d23d1cf59ad43a3bb29b02e1ed5d10e246adea026212f97bbbc48d",
-        "after": "79c71f63942c733de548230644dc9202a371b3e4919a06cd9bf2c979c1375a76"
-      },
-      "tests/fixtures/legacy-fee-finality/source-binding.json": {
-        "before": "9ac9c4c99afc9ee798a6cb4116b6679dda1aa03c6b8736ae48ab86632293e5ec",
-        "after": "32d070ab0ce00a31e764a7c750fa4f15cca0d4356d23502b155bf1505986a749"
-      },
-      "tests/unit/fixtureNativeCi.test.ts": {
-        "before": "d6cf10b20516b4204473d31eaf215066b42a8b3ab69c56cd6fdb6099e1578a59",
-        "after": "090d6a4e6d21962c9b74ee3cdc4f27a3bfba226b36bc67346751a872c4b1e261"
-      },
-      "tests/fixtures/sep8-spin-custody/source-binding.json": {
-        "before": "d31a352ca52a3df010ae69f31e3058902360c636bb4a65658d8ccecc985b3f38",
-        "after": "96e20cee5803077f0081638320208837ae666d2ef7661719908f47291028dafd"
-      },
-      "tests/fixtures/earlybird-fee-custody/source-binding.json": {
-        "before": "01348c4d26d527949d2fd42f67521df284046cc49b1094ea554dd13926237686",
-        "after": "b7196b13dfe829a59c7acbe9e9de7b0e31fb6df48a6610cc067d46e6f3390a4d"
-      }
-    }
-  },
-  "scopedLaunchFinalAdmissionRegression20261012": {
-    "reason": "Enforce the final integrated1903 financial regression, because bounded64 passed the observed cached-join regression, plus real source-bound creation/start and concurrent park fencing. Review preserves all existing assertions, original financial inputs, history and qualification statuses; nested pins track only these exact reviewed routing bytes.",
-    "pins": {
-      "scripts/ci/classify-ci-changes.mjs": {
-        "before": "79c71f63942c733de548230644dc9202a371b3e4919a06cd9bf2c979c1375a76",
-        "after": "da8c721743b44ef3194da354c587d770f3e1aee171de5c490a6407981f41498d"
-      },
-      "tests/fixtures/legacy-fee-finality/source-binding.json": {
-        "before": "32d070ab0ce00a31e764a7c750fa4f15cca0d4356d23502b155bf1505986a749",
-        "after": "239f683dd832e09cacbb67d4b079e7a80ef04f633359071748c5bcbaee8df041"
-      },
-      "tests/unit/fixtureNativeCi.test.ts": {
-        "before": "090d6a4e6d21962c9b74ee3cdc4f27a3bfba226b36bc67346751a872c4b1e261",
-        "after": "6f25ef0b33cddfb9b5c0ed46ce689381f2aaedfd7b2ebb2cb8d1c7012463c560"
-      },
-      "tests/fixtures/sep8-spin-custody/source-binding.json": {
-        "before": "96e20cee5803077f0081638320208837ae666d2ef7661719908f47291028dafd",
-        "after": "48a0ac4059f60e827064245896184d82f6bbd46c432f5e5170ccf6f3a4e8ba44"
-      },
-      "tests/fixtures/earlybird-fee-custody/source-binding.json": {
-        "before": "b7196b13dfe829a59c7acbe9e9de7b0e31fb6df48a6610cc067d46e6f3390a4d",
-        "after": "7da98dd5f8db34841813b06423d846d73ef28d0cd31c3ef0335ac43f5e1f2809"
-      }
-    }
-  },
-  "scopedLaunchRootInstallerDependencies20261012": {
-    "reason": "Bind only corrected actual installer dependency routing, unchanged assertions, and reviewed nested source seals. All finance originals/statuses/evidence preserved. Not production installation or reset certification.",
-    "pins": {
-      "tests/unit/fixtureNativeCi.test.ts": {
-        "before": "6f25ef0b33cddfb9b5c0ed46ce689381f2aaedfd7b2ebb2cb8d1c7012463c560",
-        "after": "a551b56b884f8b2b7d1178fcdf3dab45baed2b14e858951e63ef9efb59feaadc"
-      },
-      "tests/fixtures/sep8-spin-custody/source-binding.json": {
-        "before": "48a0ac4059f60e827064245896184d82f6bbd46c432f5e5170ccf6f3a4e8ba44",
-        "after": "aebdc374e280e2eaef6f5644201614e996bd52559039c8ae6d4b27334c8d6de6"
-      },
-      "tests/fixtures/earlybird-fee-custody/source-binding.json": {
-        "before": "7da98dd5f8db34841813b06423d846d73ef28d0cd31c3ef0335ac43f5e1f2809",
-        "after": "3d76f0fe275f7eb88fe314d95714189db1ecbc2b0ba262f380b3f9447cda5fda"
+        "after": "5e956d0240696f3d0e8fd5e3b426ea0762e65f68e5bc28f5eaf778e99d46a7f5"
       }
     }
   },
@@ -4600,6 +4538,127 @@
       }
     ]
   },
+  "phase4PrivateJoinSourceAudit": {
+    "reason": "One additive history migration routing case; existing fixture now reproduces actual Realtime default-false join denial before correction and verifies authority afterward. Only current routing-test and nested binding hashes change; historical pins and financial assertions are untouched."
+  },
+  "scopedLaunchResetWiring20261012": {
+    "reason": "Reviewed additive scoped launch reset CI/classifier/wiring checks and nested source identity only. Financial originals, assertions, historical pins and qualification status remain unchanged. This is not production reset certification.",
+    "pins": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "before": "d064527051d9ca3b8687b8414144a81008571552ab3d73f104ee462c0dac2a80",
+        "after": "d85d7f49f9d23d1cf59ad43a3bb29b02e1ed5d10e246adea026212f97bbbc48d"
+      },
+      "tests/fixtures/legacy-fee-finality/source-binding.json": {
+        "before": "25e656197944a58d8880abb93251eeb2f7165800221107ceaf3761b9553e37f8",
+        "after": "9ac9c4c99afc9ee798a6cb4116b6679dda1aa03c6b8736ae48ab86632293e5ec"
+      },
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "before": "14a67e65f162b0c02c406ae9b24726852f5d5678c28f01ba861633b9c6ea9682",
+        "after": "474a93ffd29b77b252b85e4ed44391802f6076d421213f3fd10498642537bb0d"
+      },
+      "tests/fixtures/sep8-spin-custody/source-binding.json": {
+        "before": "a9cab2c56f4684984aa41d3092bb45ba0e2da92f8767ae7daa07a2433ca4814b",
+        "after": "e5754c7284212a61e4d56277c47bdfa3823683b52b1bcfe4a21e20df60981c53"
+      },
+      "tests/fixtures/earlybird-fee-custody/source-binding.json": {
+        "before": "f258fc681a73cd8d6aadbef3d737190e9dfdb53939c0615702f04910c7995337",
+        "after": "5e8871dcb48c898e4a5bac671e13e378071785ff770b74304af8c6329f441eff"
+      }
+    }
+  },
+  "scopedLaunchResetPrefixEnforcement20261012": {
+    "reason": "Reviewed additive scoped64 prefix, source-bound treasury regression and existing Accounting1 enforcement; preserve all prior assertions, financial inputs, history and qualification statuses. Only reviewed routing/test/workflow and nested byte fingerprints change. Not a production certificate.",
+    "pins": {
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "before": "474a93ffd29b77b252b85e4ed44391802f6076d421213f3fd10498642537bb0d",
+        "after": "d6cf10b20516b4204473d31eaf215066b42a8b3ab69c56cd6fdb6099e1578a59"
+      },
+      "tests/fixtures/sep8-spin-custody/source-binding.json": {
+        "before": "e5754c7284212a61e4d56277c47bdfa3823683b52b1bcfe4a21e20df60981c53",
+        "after": "d31a352ca52a3df010ae69f31e3058902360c636bb4a65658d8ccecc985b3f38"
+      },
+      "tests/fixtures/earlybird-fee-custody/source-binding.json": {
+        "before": "5e8871dcb48c898e4a5bac671e13e378071785ff770b74304af8c6329f441eff",
+        "after": "dd0a250c43b17ddbfa24bad6f62989d10a1a70aac5b496117f3d4b942d9520d1"
+      }
+    }
+  },
+  "scopedLaunchExactCatalogPreservation20261012": {
+    "reason": "Add exact launch-reset original catalog JSON formatter exclusions only, preserving numeric scale and candidate fixture fingerprints. Prior exclusions and all financial assertions retained; nested fingerprint reflects this reviewed metadata only.",
+    "pins": {
+      "tests/fixtures/earlybird-fee-custody/source-binding.json": {
+        "before": "dd0a250c43b17ddbfa24bad6f62989d10a1a70aac5b496117f3d4b942d9520d1",
+        "after": "01348c4d26d527949d2fd42f67521df284046cc49b1094ea554dd13926237686"
+      }
+    }
+  },
+  "scopedLaunchAtomicInstallerEnforcement20261012": {
+    "reason": "Preserve approved installer route while committing schema and exact source history atomically, verify TLS, distinguish transport uncertainty, and enforce real native failure/commit recovery cases in existing Accounting1. Reviewed only these source/workflow/classifier/test bytes and resulting nested seals; historical financial input/assertions/status preserved. No production completion implied.",
+    "pins": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "before": "d85d7f49f9d23d1cf59ad43a3bb29b02e1ed5d10e246adea026212f97bbbc48d",
+        "after": "79c71f63942c733de548230644dc9202a371b3e4919a06cd9bf2c979c1375a76"
+      },
+      "tests/fixtures/legacy-fee-finality/source-binding.json": {
+        "before": "9ac9c4c99afc9ee798a6cb4116b6679dda1aa03c6b8736ae48ab86632293e5ec",
+        "after": "32d070ab0ce00a31e764a7c750fa4f15cca0d4356d23502b155bf1505986a749"
+      },
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "before": "d6cf10b20516b4204473d31eaf215066b42a8b3ab69c56cd6fdb6099e1578a59",
+        "after": "090d6a4e6d21962c9b74ee3cdc4f27a3bfba226b36bc67346751a872c4b1e261"
+      },
+      "tests/fixtures/sep8-spin-custody/source-binding.json": {
+        "before": "d31a352ca52a3df010ae69f31e3058902360c636bb4a65658d8ccecc985b3f38",
+        "after": "96e20cee5803077f0081638320208837ae666d2ef7661719908f47291028dafd"
+      },
+      "tests/fixtures/earlybird-fee-custody/source-binding.json": {
+        "before": "01348c4d26d527949d2fd42f67521df284046cc49b1094ea554dd13926237686",
+        "after": "b7196b13dfe829a59c7acbe9e9de7b0e31fb6df48a6610cc067d46e6f3390a4d"
+      }
+    }
+  },
+  "scopedLaunchFinalAdmissionRegression20261012": {
+    "reason": "Enforce the final integrated1903 financial regression, because bounded64 passed the observed cached-join regression, plus real source-bound creation/start and concurrent park fencing. Review preserves all existing assertions, original financial inputs, history and qualification statuses; nested pins track only these exact reviewed routing bytes.",
+    "pins": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "before": "79c71f63942c733de548230644dc9202a371b3e4919a06cd9bf2c979c1375a76",
+        "after": "da8c721743b44ef3194da354c587d770f3e1aee171de5c490a6407981f41498d"
+      },
+      "tests/fixtures/legacy-fee-finality/source-binding.json": {
+        "before": "32d070ab0ce00a31e764a7c750fa4f15cca0d4356d23502b155bf1505986a749",
+        "after": "239f683dd832e09cacbb67d4b079e7a80ef04f633359071748c5bcbaee8df041"
+      },
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "before": "090d6a4e6d21962c9b74ee3cdc4f27a3bfba226b36bc67346751a872c4b1e261",
+        "after": "6f25ef0b33cddfb9b5c0ed46ce689381f2aaedfd7b2ebb2cb8d1c7012463c560"
+      },
+      "tests/fixtures/sep8-spin-custody/source-binding.json": {
+        "before": "96e20cee5803077f0081638320208837ae666d2ef7661719908f47291028dafd",
+        "after": "48a0ac4059f60e827064245896184d82f6bbd46c432f5e5170ccf6f3a4e8ba44"
+      },
+      "tests/fixtures/earlybird-fee-custody/source-binding.json": {
+        "before": "b7196b13dfe829a59c7acbe9e9de7b0e31fb6df48a6610cc067d46e6f3390a4d",
+        "after": "7da98dd5f8db34841813b06423d846d73ef28d0cd31c3ef0335ac43f5e1f2809"
+      }
+    }
+  },
+  "scopedLaunchRootInstallerDependencies20261012": {
+    "reason": "Bind only corrected actual installer dependency routing, unchanged assertions, and reviewed nested source seals. All finance originals/statuses/evidence preserved. Not production installation or reset certification.",
+    "pins": {
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "before": "6f25ef0b33cddfb9b5c0ed46ce689381f2aaedfd7b2ebb2cb8d1c7012463c560",
+        "after": "a551b56b884f8b2b7d1178fcdf3dab45baed2b14e858951e63ef9efb59feaadc"
+      },
+      "tests/fixtures/sep8-spin-custody/source-binding.json": {
+        "before": "48a0ac4059f60e827064245896184d82f6bbd46c432f5e5170ccf6f3a4e8ba44",
+        "after": "aebdc374e280e2eaef6f5644201614e996bd52559039c8ae6d4b27334c8d6de6"
+      },
+      "tests/fixtures/earlybird-fee-custody/source-binding.json": {
+        "before": "7da98dd5f8db34841813b06423d846d73ef28d0cd31c3ef0335ac43f5e1f2809",
+        "after": "3d76f0fe275f7eb88fe314d95714189db1ecbc2b0ba262f380b3f9447cda5fda"
+      }
+    }
+  },
   "scopedLaunchMainIntegration20261012Final": {
     "reason": "Preserve protected concurrent qualification and scoped reset source with combined source fingerprints only. All financial inputs, assertions and historical qualification statuses remain intact. Source identity is not runtime proof.",
     "previous_pins": {
@@ -4624,9 +4683,6 @@
         "incoming": "ecb62db6b15afc76f9099371756717e8d56364a050082ca04b61e961724b1e20"
       }
     }
-  },
-  "phase4PrivateJoinSourceAudit": {
-    "reason": "One additive history migration routing case; existing fixture now reproduces actual Realtime default-false join denial before correction and verifies authority afterward. Only current routing-test and nested binding hashes change; historical pins and financial assertions are untouched."
   },
   "scopedLaunchSimpleMainIntegration20261012": {
     "reason": "Retain all protected original-hand and Simple-page qualification, financial inputs, assertions and historical records. Refresh combined source fingerprints only; not runtime evidence.",

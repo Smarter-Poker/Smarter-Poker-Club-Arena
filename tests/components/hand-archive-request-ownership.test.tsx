@@ -33,14 +33,24 @@ vi.mock('../../src/services/HandHistoryService', () => ({
     getHand: (...args: unknown[]) => state.getHand(...args),
   },
 }));
-vi.mock('../../src/services/HandNotesService', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../src/services/HandNotesService')>()),
-  handNotesService: { listFor: async () => new Map() },
-}));
-vi.mock('../../src/services/HandFlagService', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../src/services/HandFlagService')>()),
-  handFlagService: { mineFor: async () => new Map() },
-}));
+vi.mock('../../src/services/HandNotesService', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/services/HandNotesService')>();
+  return {
+    ...actual,
+    handNotesService: {
+      ...actual.handNotesService,
+      listFor: async () => new Map(),
+      getOne: async () => ({ ok: true, note: null }),
+    },
+  };
+});
+vi.mock('../../src/services/HandFlagService', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/services/HandFlagService')>();
+  return {
+    ...actual,
+    handFlagService: { ...actual.handFlagService, mineFor: async () => new Map() },
+  };
+});
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 vi.mock('../../src/components/rewards/RewardsSurfaceHeader', () => ({
   default: () => <h1>Hand Archive</h1>,
@@ -138,6 +148,11 @@ describe('Hand archive request ownership', () => {
     state.getHand.mockResolvedValue(rows('linked', 1)[0]);
     render(<HandHistoryPage />);
     await waitFor(() => expect(document.getElementById('hand-linked-0')).toBeTruthy());
+    // This request-ownership fixture isolates the detail controls above.
+    // Wait for the expanded card's actual children, not their mocked-away UI.
+    await screen.findByText('Hand Details');
+    await screen.findByText('Hand Flag');
+    await screen.findByText('Hand Note');
     expect(state.getHand).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('button', { name: /Retry/ })).toBeTruthy();
   });

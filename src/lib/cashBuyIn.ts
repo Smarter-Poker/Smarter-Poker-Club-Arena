@@ -129,6 +129,8 @@ export function cashBuyInRefusalText(raw: unknown): string | null {
   if (seatConflict) return seatConflict;
   const m = String((raw as { message?: string })?.message ?? raw ?? '');
   if (!m) return null;
+  if (/GAME_CLOSED/.test(m)) return 'This Game Is Not Taking New Players';
+  if (/TABLE_CLOSING/.test(m)) return 'This Table Is Closing And Is Not Taking New Players';
 
   /* The four-table cap, raised by fn_enforce_four_table_limit /
      fn_enforce_booking_game_cap as a 23514 that used to escape untranslated. */

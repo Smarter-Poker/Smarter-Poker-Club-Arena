@@ -33,6 +33,7 @@ import { gameTypeLabel, money, stamp } from '../../utils/handFormat';
 export interface BBJHandDetailProps {
   /** bbj_payouts id — the jackpot hit whose hand this is. */
   payoutId: string;
+  asset?: 'chips' | 'diamonds';
   /** Returns to the winners list. */
   onBack: () => void;
   /** Highlights the viewer's own rows. Name is the fallback when no id is known. */
@@ -126,6 +127,7 @@ function Header({ onBack }: { onBack: () => void }) {
 
 export function BBJHandDetail({
   payoutId,
+  asset = 'chips',
   onBack,
   currentUserName,
   currentUserId,
@@ -139,9 +141,12 @@ export function BBJHandDetail({
     setDetail(null);
     (async () => {
       try {
-        const { data, error } = await supabase.rpc('fn_bbj_hand_detail', {
-          p_payout_id: payoutId,
-        });
+        const { data, error } = await supabase.rpc(
+          asset === 'diamonds' ? 'fn_poker_diamond_jackpot_hand_detail' : 'fn_bbj_hand_detail',
+          {
+            p_payout_id: payoutId,
+          }
+        );
         if (!alive) return;
         if (error) {
           setState('failed');
@@ -165,7 +170,7 @@ export function BBJHandDetail({
     return () => {
       alive = false;
     };
-  }, [payoutId]);
+  }, [payoutId, asset, currentUserId]);
 
   const model = useMemo(() => {
     if (!detail || detail.handAvailable === false) return null;

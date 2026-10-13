@@ -106,6 +106,12 @@ RUNNERS = [
      'cross-format conservation checks passed on isolated PostgreSQL 17; this is a fixture proof, not a production installation.'),
     ('run-diamond-bad-beat-jackpot.py',
      'Diamond bad beat jackpot certified on isolated PostgreSQL 17; the jackpot ships shut and public gameplay remains gated.'),
+    ('run-diamond-jackpot-integration.py',
+     'Diamond cash jackpots and atomic accepted receipts certified on isolated PostgreSQL 17.'),
+    ('run-diamond-must-move.py',
+     'Diamond must-move custody, spawning, affordability and replay checks passed on isolated PostgreSQL 17; not a production certification.'),
+    ('run-diamond-session-recap.py',
+     'Diamond final session recap passed isolated PostgreSQL 17: source failure, exact custody, moves, awards, permissions, duplicates and replay refusal.'),
     ('run-diamond-scheduled-tournaments.py',
      'Diamond scheduled tournaments certified on isolated PostgreSQL 17; the migration is applied by the lead, never by this runner.'),
     ('run-diamond-engine-hand-proof.py', 'ENGINE HAND PROOF PASSED:'),
@@ -126,6 +132,9 @@ SQL_SCRIPTS = [
 # into a weaker check - the two contracts exclude each other by assertion.
 PRIVATE_CLUSTER_RUNNERS = [
     'run-diamond-bad-beat-jackpot.py',
+    'run-diamond-jackpot-integration.py',
+    'run-diamond-must-move.py',
+    'run-diamond-session-recap.py',
     'run-diamond-cash-rake.py',
     'run-diamond-club-commerce-admission.py',
     'run-diamond-club-commerce-completion.py',

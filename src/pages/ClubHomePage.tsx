@@ -1,3 +1,4 @@
+import { subscribeDiamondJackpot, type DiamondJackpotSnapshot } from '../lib/diamondJackpotFeed';
 import { tournamentEntryWindowOpen } from '../utils/tournamentEntryWindow';
 import {
   getTournamentEntryCapacity,
@@ -925,18 +926,38 @@ function ClubHomePageContent({
   /* THE MINI ON THE LOBBY TILE (Dan 2026-09-09: "seen and discoverable like
      the BBJ currently is"). The range the mini pays across this club's
      stakes, from the one feed per club (lib/bbjMiniFeed). */
+  const currentUser = useUserStore((state) => state.user);
+  const diamondJackpotOwner = `${clubId}:${currentUser?.id ?? ''}:${isAutomaticArena}`;
+  const [diamondJackpotRead, setDiamondJackpotRead] = useState<{
+    owner: string;
+    snapshot: DiamondJackpotSnapshot;
+  } | null>(null);
+  const diamondJackpot =
+    diamondJackpotRead?.owner === diamondJackpotOwner ? diamondJackpotRead.snapshot : null;
+  const [diamondJackpotFailureOwner, setDiamondJackpotFailureOwner] = useState<string | null>(null);
+  const diamondJackpotUnavailable = diamondJackpotFailureOwner === diamondJackpotOwner;
+  const setDiamondJackpot = (snapshot: DiamondJackpotSnapshot | null) =>
+    setDiamondJackpotRead(snapshot ? { owner: diamondJackpotOwner, snapshot } : null);
   const [lobbyMini, setLobbyMini] = useState<BbjMiniSnapshot | null>(null);
   /* "Mini 250 - 1,500": the range across the tiers that can pay right now.
      Nothing when the mini is off or every tier is paused at the reserve floor
      - a line that promised a paused mini would be a lie about money. */
   const lobbyMiniLine = useMemo(() => {
+    if (isAutomaticArena) {
+      const payable =
+        diamondJackpot?.stakes.filter((s) => s.mini_payable).map((s) => s.mini_amount) ?? [];
+      if (!payable.length) return null;
+      const lo = Math.min(...payable).toLocaleString('en-US'),
+        hi = Math.max(...payable).toLocaleString('en-US');
+      return lo === hi ? `Mini ${lo} Diamonds` : `Mini ${lo} - ${hi} Diamonds`;
+    }
     if (!lobbyMini || !lobbyMini.enabled) return null;
     const payable = lobbyMini.tiers.filter((t) => t.enabled && t.payable).map((t) => t.amount);
     if (payable.length === 0) return null;
     const lo = Math.trunc(Math.min(...payable)).toLocaleString('en-US');
     const hi = Math.trunc(Math.max(...payable)).toLocaleString('en-US');
     return lo === hi ? `Mini ${lo}` : `Mini ${lo} - ${hi}`;
-  }, [lobbyMini]);
+  }, [lobbyMini, diamondJackpot, isAutomaticArena]);
   const [showBBJInfo, setShowBBJInfo] = useState(false);
   // Dan 2026-08-23: the Club Bank row opens the Club Bank Cashier - send outs
   // to agent wallets, the full chip ledger, and (standalone clubs only) the
@@ -1060,7 +1081,6 @@ function ClubHomePageContent({
   // cache was unreachable (keys embed the user id), and the panel sat on a
   // skeleton for a full roundtrip it did not need. The store survives route
   // changes; the async path below still confirms it.
-  const currentUser = useUserStore((state) => state.user);
   const [currentUserId, setCurrentUserId] = useState<string | null>(
     () => useUserStore.getState().user?.id ?? null
   );
@@ -1367,6 +1387,8 @@ function ClubHomePageContent({
     /* Same rule as every other mini subscriber: never carry the previous
        club's payable range onto this club's tile. */
     setLobbyMini(null);
+    setDiamondJackpot(null);
+    setDiamondJackpotFailureOwner(null);
     let stopBbjHits: (() => void) | null = null;
     let watchedBbjPoolId: string | null = null;
 
@@ -1642,12 +1664,27 @@ function ClubHomePageContent({
          about a jackpot by watching a counter, or not at all. One
          `bbj_winners` INSERT per hit, straight to BBJ_HIT_GLOBAL, which
          BBJHitAnnouncer already owns (lib/bbjHitFeed). */
-      /* The jackpot is a chip pool banked by chip rake, and a Diamond hand
-         pays neither: the arena has no pool to watch, its strip does not
-         render, and these two feeds were only asking the database a question
-         with no answer. One of them came back as a statement timeout and a
-         500 on the live arena lobby. Both are chip club feeds now. */
-      if (!automaticMembershipRef.current) {
+      /* Chip clubs keep their existing pool feeds. The Diamond arena reads
+         only its independent whole-Diamond pool and accepted payout receipts. */
+      if (automaticMembershipRef.current) {
+        stopBbjPool = subscribeDiamondJackpot(
+          resolvedId,
+          (snapshot) => {
+            if (!isCurrent()) return;
+            setDiamondJackpot(snapshot);
+            setDiamondJackpotFailureOwner(null);
+            setJackpotAmount(snapshot.main_balance);
+            setBbjPoolId(snapshot.pool_id);
+          },
+          () => {
+            if (!isCurrent()) return;
+            setDiamondJackpot(null);
+            setDiamondJackpotFailureOwner(diamondJackpotOwner);
+            setJackpotAmount(0);
+            setBbjPoolId(null);
+          }
+        );
+      } else {
         stopBbjPool = watchBbjPool(resolvedId, (snap) => {
           if (!isCurrent()) return;
           setJackpotAmount(snap.mainBalance);
@@ -1805,7 +1842,7 @@ function ClubHomePageContent({
       masterBus.removeRegisteredChannel(`club-tables-${clubId}`);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clubId]);
+  }, [clubId, currentUser?.id, isAutomaticArena]);
 
   // ── Realtime subscription: club member count updates ──
   // Synchronous when the club-code -> UUID mapping is already persisted on
@@ -5171,12 +5208,9 @@ function ClubHomePageContent({
               }
             }}
           />
-          {/* The Bad Beat Jackpot is a chip pool banked by chip rake. Diamond
-              hands carry neither, both being refused at admission and at
-              settlement, so this strip has nothing to read in the arena and
-              painted a bare dash there. Phase 9 decides Diamond fee
-              destinations; until it does, the honest surface is no strip. */}
-          {!isAutomaticArena && (
+          {/* The Bad Beat Jackpot reads its own asset's pool. An arena strip
+              appears only when its dedicated Diamond switch is explicitly on. */}
+          {(!isAutomaticArena || diamondJackpot?.enabled) && (
             <button
               type="button"
               className="lobby-bbj"
@@ -5185,23 +5219,27 @@ function ClubHomePageContent({
                 setShowBBJInfo(true);
               }}
               aria-label={`Bad Beat Jackpot: ${
-                jackpotAmount > 0
-                  ? jackpotAmount.toLocaleString('en-US', {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })
-                  : 'No Pool'
+                isAutomaticArena && diamondJackpot
+                  ? diamondJackpot.main_balance.toLocaleString('en-US') + ' Diamonds'
+                  : jackpotAmount > 0
+                    ? jackpotAmount.toLocaleString('en-US', {
+                        minimumFractionDigits: isAutomaticArena ? 0 : 2,
+                        maximumFractionDigits: isAutomaticArena ? 0 : 2,
+                      })
+                    : 'No Pool'
               }`}
             >
               <ClubBBJShell className="lobby-bbj__shell" />
               <span className="lobby-bbj__label">Bad Beat Jackpot</span>
               <strong className="lobby-bbj__amount">
-                {jackpotAmount > 0
-                  ? jackpotAmount.toLocaleString('en-US', {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })
-                  : '-'}
+                {isAutomaticArena && diamondJackpot
+                  ? diamondJackpot.main_balance.toLocaleString('en-US') + ' Diamonds'
+                  : jackpotAmount > 0
+                    ? jackpotAmount.toLocaleString('en-US', {
+                        minimumFractionDigits: isAutomaticArena ? 0 : 2,
+                        maximumFractionDigits: isAutomaticArena ? 0 : 2,
+                      })
+                    : '-'}
               </strong>
               {lobbyMiniLine && <span className="lobby-bbj__mini">{lobbyMiniLine}</span>}
             </button>
@@ -5419,6 +5457,10 @@ function ClubHomePageContent({
         isOpen={showBBJInfo}
         onClose={() => setShowBBJInfo(false)}
         poolId={bbjPoolId}
+        asset={isAutomaticArena ? 'diamonds' : 'chips'}
+        diamond={diamondJackpot}
+        diamondUnavailable={diamondJackpotUnavailable}
+        mini={lobbyMini}
         poolAmount={jackpotAmount}
         currentUserId={currentUserId}
       />

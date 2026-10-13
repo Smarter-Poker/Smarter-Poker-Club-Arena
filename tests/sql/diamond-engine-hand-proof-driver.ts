@@ -163,6 +163,7 @@ it('plays real Diamond cash hands and records the payload the engine would send'
         dealtStacks,
         handSawFlop: sawFlopForMoney,
       }),
+      hand_double_board: false,
     }));
 
     // The engine's own invariants, before the database is asked anything.

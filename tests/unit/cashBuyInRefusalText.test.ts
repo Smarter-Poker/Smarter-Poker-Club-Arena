@@ -12,6 +12,15 @@ import { cashBuyInRefusalText } from '../../src/lib/cashBuyIn';
  * what these pins catch.
  */
 describe('cashBuyInRefusalText', () => {
+  it('names paused or closing entry rather than sending the player to their balance', () => {
+    expect(cashBuyInRefusalText('GAME_CLOSED: this Diamond game is not taking new players')).toBe(
+      'This Game Is Not Taking New Players'
+    );
+    expect(
+      cashBuyInRefusalText('TABLE_CLOSING: this Diamond table is not taking new players')
+    ).toBe('This Table Is Closing And Is Not Taking New Players');
+  });
+
   it('names the four-table cap rather than the balance', () => {
     const raw =
       'FOUR TABLE LIMIT: user 6443a6ce-03b6-4baa-99ce-381352d2f277 is already committed to 4 games and may not enter another';

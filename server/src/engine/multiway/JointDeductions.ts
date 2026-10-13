@@ -1,6 +1,7 @@
+import { priceDiamondCashFees } from '../../domain/diamondCashFeeSnapshot.js';
 import type { HandConfig, RakeConfig } from '../../types.js';
 import { calculateRake } from '../PokerEngine.js';
-import { scaleMultiBoardWinnerUnits, scaleWinnerCentsForRake } from '../WinnerUnitScaling.js';
+import { scaleMultiBoardWinnerUnits, scaleWinnerUnitsForRake } from '../WinnerUnitScaling.js';
 import type { settleJointScores } from './JointPotDistribution.js';
 
 /** Exact final payout scaling uses the controller's existing cent allocator.
@@ -56,13 +57,26 @@ export function applyJointDeductions(input: {
   )
     throw new Error('joint_deductions_nonzero_whole_unit_fees');
   const gross = Object.values(input.settlement.totals).reduce((a, v) => a + v, 0);
-  const rake = Math.min(gross, calculateRake(gross, input.sawFlop, r, input.dealtPlayers));
+  const diamondFees = r.diamondCashFees;
+  const diamond =
+    input.asset === 'diamonds' && input.gameMode === 'cash' && diamondFees
+      ? priceDiamondCashFees(diamondFees.schedule, {
+          pot: gross,
+          dealtIn: input.dealtPlayers,
+          sawFlop: input.sawFlop,
+          variant: diamondFees.variant,
+          doubleBoard: diamondFees.doubleBoard,
+        })
+      : null;
+  const rake =
+    diamond?.rake ?? Math.min(gross, calculateRake(gross, input.sawFlop, r, input.dealtPlayers));
   // minPotBB describes jackpot payout eligibility, not collection. The
   // authoritative controller collects the configured per-flop fee here.
   const bbjFee =
-    b?.enabled && input.sawFlop && input.dealtPlayers >= b.minPlayersDealt
+    diamond?.bbjFee ??
+    (b?.enabled && input.sawFlop && input.dealtPlayers >= b.minPlayersDealt
       ? Math.min(Math.max(0, gross - rake), Math.round(input.bigBlind * b.feeBB * 100) / 100)
-      : 0;
+      : 0);
   // Preserve board-major then pot-major first-winning appearance. That is
   // the controller's merged-winner order for residual cent allocation.
   const ids = [
@@ -74,7 +88,8 @@ export function applyJointDeductions(input: {
     ),
   ];
   const net = { ...input.settlement.totals };
-  const target = Math.max(0, Math.round((gross - rake - bbjFee) * 100) / 100);
+  const factor = input.asset === 'diamonds' || input.gameMode === 'tournament' ? 1 : 100;
+  const target = Math.max(0, Math.round((gross - rake - bbjFee) * factor) / factor);
   if (rake + bbjFee > 0) {
     // Multi-board hands scale by largest remainder with the odd-chip seat
     // order breaking ties, exactly as the controller does (F2, 2026-10-03).
@@ -83,15 +98,16 @@ export function applyJointDeductions(input: {
         ? scaleMultiBoardWinnerUnits(
             ids.map((id) => net[id]),
             target,
-            100,
+            factor,
             ids.map((id) => input.settlement.oddChipRank[id] ?? Number.MAX_SAFE_INTEGER)
           )
-        : scaleWinnerCentsForRake(
+        : scaleWinnerUnitsForRake(
             ids.map((id) => net[id]),
-            target
+            target,
+            factor
           );
     ids.forEach((id, i) => {
-      net[id] = cents[i] / 100;
+      net[id] = cents[i] / factor;
     });
   }
   if (Math.abs(Object.values(net).reduce((a, v) => a + v, 0) + rake + bbjFee - gross) > 1e-6)

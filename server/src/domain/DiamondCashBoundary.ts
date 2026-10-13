@@ -4,6 +4,32 @@ import {
   type DiamondCashRakeFactsForPricing,
   type DiamondCashRakeSchedule,
 } from './diamondCashRakeSchedule.js';
+import {
+  priceDiamondCashJackpotDrop,
+  type DiamondCashJackpotSchedule,
+  type DiamondJackpotHandFacts,
+} from './diamondCashJackpotSchedule.js';
+
+/** Cluster ownership is verified by SQL; the engine also refuses an incomplete
+ * table projection before it can acquire a seat or deal. Legacy plain tables
+ * remain compatible while the qualified ladder adoption is pending. */
+export function hasDiamondCashClusterShape(table: {
+  cluster_id?: unknown;
+  role?: unknown;
+  main_index?: unknown;
+  lifecycle?: unknown;
+}): boolean {
+  if (table.cluster_id == null) return table.lifecycle == null;
+  return (
+    typeof table.cluster_id === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(table.cluster_id) &&
+    ['opening', 'live', 'breaking'].includes(String(table.lifecycle)) &&
+    (table.role === 'feeder' ||
+      (table.role === 'main' &&
+        Number.isSafeInteger(table.main_index) &&
+        Number(table.main_index) > 0))
+  );
+}
 
 /**
  * The first custody-backed game is plain NLH; optional financial paths are not
@@ -171,7 +197,7 @@ export function assertDiamondCashTable(table: Record<string, unknown>): void {
   if (
     !isDiamondCashVariant(table.game_variant) ||
     table.tournament_id != null ||
-    table.cluster_id != null ||
+    !hasDiamondCashClusterShape(table) ||
     !['waiting', 'running', 'playing', 'active'].includes(String(table.status)) ||
     disabled.some((key) => table[key] === true) ||
     explicitlyStated.some((key) => typeof table[key] !== 'boolean') ||
@@ -342,15 +368,13 @@ export function assertDiamondAcceptedHand(input: {
   rakeSchedule?: DiamondCashRakeSchedule | null;
   /** The three facts the settler recomputes from, as this hand will send them. */
   rakeFacts?: DiamondCashRakeFactsForPricing | null;
+  /** Independent Diamond drop policy; chip table fee columns remain zero. */
+  jackpotSchedule?: DiamondCashJackpotSchedule | null;
+  jackpotFacts?: DiamondJackpotHandFacts | null;
 }): void {
   if (input.arena?.asset !== 'diamonds') return;
   if (!input.verifiedLease) throw new Error('atomic hand commit refused (diamond_lease_required)');
-  if (
-    !isDiamondCashVariant(input.variant) ||
-    input.bbj !== 0 ||
-    input.inflow !== 0 ||
-    input.insuranceCount !== 0
-  )
+  if (!isDiamondCashVariant(input.variant) || input.inflow !== 0 || input.insuranceCount !== 0)
     throw new Error('atomic hand commit refused (diamond_plain_cash_required)');
   /* EVERY AMOUNT WHOLE, FIRST. This ran last until the re-price arrived, and
      it has to run before it: the pot the re-price is handed is the sum of
@@ -362,6 +386,14 @@ export function assertDiamondAcceptedHand(input: {
     )
   )
     throw new Error('atomic hand commit refused (diamond_whole_amount_required)');
+  if (!Number.isSafeInteger(input.bbj) || input.bbj < 0 || input.bbj > 2147483647)
+    throw new Error('atomic hand commit refused (diamond_whole_jackpot_required)');
+  const expectedJackpot =
+    input.jackpotSchedule && input.jackpotFacts
+      ? priceDiamondCashJackpotDrop(input.jackpotSchedule, input.jackpotFacts)
+      : 0;
+  if (input.bbj !== expectedJackpot)
+    throw new Error('atomic hand commit refused (diamond_jackpot_disagrees)');
   /* A Diamond does not divide, and a rake is never owed back to the house. */
   if (!Number.isSafeInteger(input.rake) || input.rake < 0 || input.rake > 2147483647)
     throw new Error('atomic hand commit refused (diamond_whole_rake_required)');

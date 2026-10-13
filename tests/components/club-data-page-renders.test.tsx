@@ -2324,7 +2324,11 @@ describe('ClubDataPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Highest Fee' }));
     await waitFor(() => expect(resolveRanked).toBeTypeOf('function'));
-    expect(screen.getByRole('button', { name: 'Load More Games - 100 Of 250' })).toBeDisabled();
+    // A new uncached sort retires the old rows and their cursor entirely.
+    expect(
+      screen.queryByRole('button', { name: /Load More Games|Loading More Games/ })
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText('Recent Race 1')).not.toBeInTheDocument();
 
     act(() => {
       resolveRanked({

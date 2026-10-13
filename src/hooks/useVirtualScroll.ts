@@ -33,7 +33,8 @@ export function useVirtualScroll<T>(
   const { itemHeight = 112, viewportHeight = 640, buffer = 6 } = options;
   const containerRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
-  const [scrollTop, setScrollTop] = useState(0);
+  const [windowStart, setWindowStart] = useState(0);
+  const windowStartRef = useRef(0);
 
   // The viewport is conditionally mounted after the first page arrives. On a
   // true cold load the ref is null during the hook's first effect; an empty
@@ -44,14 +45,24 @@ export function useVirtualScroll<T>(
   useEffect(() => {
     const node = containerRef.current;
     if (!node) return;
-    const update = () => setScrollTop(node.scrollTop);
+    // Pixel movement within the same window owes no new row tree. Keep the
+    // actual scroll position on the DOM node for exact return restoration.
+    const update = () => {
+      const next = Math.max(0, Math.floor(node.scrollTop / itemHeight) - buffer);
+      if (next === windowStartRef.current) return;
+      windowStartRef.current = next;
+      setWindowStart(next);
+    };
     update();
     node.addEventListener('scroll', update, { passive: true });
     return () => node.removeEventListener('scroll', update);
-  }, [hasItems]);
+  }, [hasItems, itemHeight, buffer]);
 
   const visibleCapacity = Math.max(1, Math.ceil(viewportHeight / itemHeight));
-  const startIndex = Math.max(0, Math.floor(scrollTop / itemHeight) - buffer);
+  const windowSize = visibleCapacity + buffer * 2;
+  // A smaller result set must paint rows immediately, even before the browser
+  // clamps its old scroll position and emits the next scroll event.
+  const startIndex = Math.min(windowStart, Math.max(0, items.length - windowSize));
   const endIndex = Math.min(items.length, startIndex + visibleCapacity + buffer * 2);
   const visibleItems = useMemo(
     () => items.slice(startIndex, endIndex),
@@ -60,7 +71,8 @@ export function useVirtualScroll<T>(
 
   const reset = useCallback(() => {
     if (containerRef.current) containerRef.current.scrollTop = 0;
-    setScrollTop(0);
+    windowStartRef.current = 0;
+    setWindowStart(0);
   }, []);
 
   return {

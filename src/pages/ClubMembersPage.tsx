@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Link,
   useLocation,
@@ -165,16 +165,18 @@ export default function ClubMembersPage() {
   const [selectedIds, setSelected] = useState<Set<string>>(new Set());
   const selectionQuery = JSON.stringify([routeClub, user?.id, searchQuery, filter, sortKey]);
   const selectionQueryRef = useRef(selectionQuery);
-  const selected =
-    selectionQueryRef.current === selectionQuery
-      ? loadedRosterSelection(
-          selectedIds,
-          members.map((row) => row.user_id)
-        )
-      : new Set<string>();
-  const loadedSelected = allLoadedSelected(
-    selected,
-    members.map((row) => row.user_id)
+  const loadedMemberIds = useMemo(() => members.map((row) => row.user_id), [members]);
+  const selectionQueryCurrent = selectionQueryRef.current === selectionQuery;
+  const selected = useMemo(
+    () =>
+      selectionQueryCurrent
+        ? loadedRosterSelection(selectedIds, loadedMemberIds)
+        : new Set<string>(),
+    [selectionQueryCurrent, selectedIds, loadedMemberIds]
+  );
+  const loadedSelected = useMemo(
+    () => allLoadedSelected(selected, loadedMemberIds),
+    [selected, loadedMemberIds]
   );
   const [exportOperation, setExportOperation] = useState<ExportOperation | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1015,13 +1017,22 @@ export default function ClubMembersPage() {
 
   const canUseFinancialViews = summary.capabilities.can_view_financials;
   const isAgent = AGENT_ROLES.includes(summary.viewer_role);
-  const filters = (Object.keys(FILTER_LABEL) as RosterFilter[]).filter((value) => {
-    if (value === 'mine') return isAgent;
-    if (value.startsWith('inactive_') || value === 'high_fees') return canUseFinancialViews;
-    return true;
-  });
-  const sorts = (Object.keys(SORT_LABEL) as RosterSort[]).filter(
-    (value) => canUseFinancialViews || !['activity', 'downlines', 'wallet', 'fees'].includes(value)
+  const filters = useMemo(
+    () =>
+      (Object.keys(FILTER_LABEL) as RosterFilter[]).filter((value) => {
+        if (value === 'mine') return isAgent;
+        if (value.startsWith('inactive_') || value === 'high_fees') return canUseFinancialViews;
+        return true;
+      }),
+    [isAgent, canUseFinancialViews]
+  );
+  const sorts = useMemo(
+    () =>
+      (Object.keys(SORT_LABEL) as RosterSort[]).filter(
+        (value) =>
+          canUseFinancialViews || !['activity', 'downlines', 'wallet', 'fees'].includes(value)
+      ),
+    [canUseFinancialViews]
   );
 
   // Reconcile a deep-linked filter or sort against the viewer's capabilities
@@ -1042,15 +1053,12 @@ export default function ClubMembersPage() {
   }, [selectionQuery]);
   useEffect(() => {
     setSelected((current) => {
-      const next = loadedRosterSelection(
-        current,
-        members.map((row) => row.user_id)
-      );
+      const next = loadedRosterSelection(current, loadedMemberIds);
       return next.size === current.size && [...next].every((id) => current.has(id))
         ? current
         : next;
     });
-  }, [members]);
+  }, [loadedMemberIds]);
 
   const toggleSelected = useCallback((id: string) => {
     if (!membersRef.current.some((row) => row.user_id === id)) return;
@@ -1445,9 +1453,7 @@ export default function ClubMembersPage() {
               className="members-select-loaded"
               aria-pressed={loadedSelected}
               onClick={() =>
-                setSelected(
-                  loadedSelected ? new Set() : selectLoadedRoster(members.map((row) => row.user_id))
-                )
+                setSelected(loadedSelected ? new Set() : selectLoadedRoster(loadedMemberIds))
               }
             >
               {loadedSelected ? 'Clear Selection' : 'Select Loaded'}
@@ -1585,10 +1591,7 @@ export default function ClubMembersPage() {
       {!simpleMode && summary.capabilities.can_export && selected.size > 0 && (
         <div className="members-bulk" role="region" aria-label="Selected Players">
           <strong>{selected.size.toLocaleString()} Selected</strong>
-          <button
-            type="button"
-            onClick={() => setSelected(selectLoadedRoster(members.map((row) => row.user_id)))}
-          >
+          <button type="button" onClick={() => setSelected(selectLoadedRoster(loadedMemberIds))}>
             Select Loaded
           </button>
           <button type="button" onClick={() => setSelected(new Set())}>
@@ -1714,7 +1717,7 @@ function dormancy(iso: string): string {
   return `${Math.floor(days / 365)}y`;
 }
 
-function MemberRow({
+export const MemberRow = memo(function MemberRow({
   member,
   position,
   total,
@@ -1843,7 +1846,7 @@ function MemberRow({
       </button>
     </div>
   );
-}
+});
 
 function Metric({
   label,

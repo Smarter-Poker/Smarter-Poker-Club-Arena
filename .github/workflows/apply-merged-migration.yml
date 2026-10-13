@@ -60,16 +60,11 @@ on:
         required: false
         default: false
         type: boolean
-      stuck_thaw_reason:
-        description: 'Emergency audited reason: exact October 13 stuck thaw trigger repair only'
+      maintenance_thaw_repair:
+        description: 'Explicit audited installation of the exact merged trigger repair for an expired maintenance thaw'
         required: false
-        default: ''
-        type: string
-      stuck_thaw_owner:
-        description: 'Inspected durable ownership UUID for that exact stuck break'
-        required: false
-        default: ''
-        type: string
+        default: false
+        type: boolean
       qualify_rake_report_history:
         description: 'Explicit finite closed-day report qualification for the exact rake agent report migration only'
         required: false
@@ -113,8 +108,7 @@ jobs:
           RECOVER_OID: ${{ inputs.recover_oid }}
           RECOVER_BEFORE: ${{ inputs.recover_before }}
           RECOVER_TRANSIENT_OID: ${{ inputs.recover_transient_oid }}
-          STUCK_THAW_REASON: ${{ inputs.stuck_thaw_reason }}
-          STUCK_THAW_OWNER: ${{ inputs.stuck_thaw_owner }}
+          MAINTENANCE_THAW_REPAIR: ${{ inputs.maintenance_thaw_repair }}
           QUALIFY_RAKE_REPORT_HISTORY: ${{ inputs.qualify_rake_report_history }}
         run: |
           set -uo pipefail
@@ -140,8 +134,8 @@ jobs:
           if [[ "$QUALIFY_RAKE_REPORT_HISTORY" == "true" ]]; then
             recovery_args+=(--qualify-rake-report-history)
           fi
-          if [[ -n "$STUCK_THAW_REASON" || -n "$STUCK_THAW_OWNER" ]]; then
-            recovery_args+=(--stuck-thaw-reason "$STUCK_THAW_REASON" --stuck-thaw-owner "$STUCK_THAW_OWNER")
+          if [[ "$MAINTENANCE_THAW_REPAIR" == "true" ]]; then
+            recovery_args+=(--maintenance-thaw-repair)
           fi
           node scripts/ci/apply-recorded-migration.mjs \
             --ssl-root-cert scripts/ci/certificates/supabase-prod-ca-2021.crt \

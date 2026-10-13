@@ -70,11 +70,17 @@ import {
 
 import { batchRequest, applyFinalTablePages } from './final-table-cleanup-batches.mjs';
 import { withSettlementLane } from './settlement-lane.mjs';
+import {
+  validateThawRepair,
+  THAW_REPAIR_ADMISSION,
+  thawRepairSQL,
+} from './maintenance-thaw-repair.mjs';
 
 const DIR = 'supabase/migrations';
 const args = process.argv.slice(2);
 const DRY_RUN = args.includes('--dry-run');
 const SETTLEMENT_LANE = args.includes('--settlement-lane');
+const MAINTENANCE_THAW_REPAIR = args.includes('--maintenance-thaw-repair');
 const argValue = (n) => {
   const i = args.indexOf(n);
   return i === -1 ? null : args[i + 1] || null;
@@ -183,6 +189,19 @@ if (!/^\s*BEGIN\s*;/im.test(sql) || !/COMMIT\s*;\s*$/i.test(sql.trim())) {
 const shape = splitConcurrentPreamble(sql);
 if (!shape.ok) refused(`${file}: ${shape.reason}`);
 const preamble = shape.indexes;
+if (MAINTENANCE_THAW_REPAIR) {
+  try {
+    validateThawRepair(file, sql, {
+      dryRun: DRY_RUN,
+      settlementLane: SETTLEMENT_LANE,
+      recovery,
+      batches,
+      preamble,
+    });
+  } catch (e) {
+    refused(e.message);
+  }
+}
 if (
   SETTLEMENT_LANE &&
   (file !== '20261012181905_scoped_club_launch_reset_and_guarded_recovery.sql' ||
@@ -196,22 +215,6 @@ if (
 // Leave room for the slowest ledger build to finish before :50: a concurrent
 // build still running when the break window opens is refused at its end and
 // leaves an INVALID index behind.
-let stuckThaw = null;
-let stuckThawModule;
-try {
-  if (argValue('--stuck-thaw-reason') || argValue('--stuck-thaw-owner')) {
-    stuckThawModule = await import('./stuck-thaw-migration-admission.mjs');
-    stuckThaw = stuckThawModule.stuckThawRequest(
-      file,
-      sql,
-      argValue('--stuck-thaw-reason'),
-      argValue('--stuck-thaw-owner'),
-      Boolean(recovery || batches || rakeHistory || SETTLEMENT_LANE || preamble.length)
-    );
-  }
-} catch (e) {
-  refused(e.message);
-}
 const PREAMBLE_MINUTES_NEEDED = 12;
 
 // CLAUDE.md section 2 rule 8: the database refuses non-temporary DDL from a
@@ -355,26 +358,13 @@ async function refusalNow() {
 }
 {
   const refusal = await refusalNow();
-  if (stuckThaw) {
-    try {
-      if (
-        refusal !==
-        'an announced engine maintenance window or its thaw is active; apply after its durable release'
-      )
-        throw new Error('stuck thaw admission requires the actual durable maintenance refusal');
-      stuckThawModule.validateStuckThaw(
-        (await client.query(stuckThawModule.STUCK_THAW_STATE)).rows,
-        stuckThaw
-      );
-      console.log(
-        '[apply] Exact stuck thaw emergency identity qualified; transaction will recheck under the maintenance lock.'
-      );
-    } catch (e) {
+  if (MAINTENANCE_THAW_REPAIR) {
+    const { rows } = await client.query(THAW_REPAIR_ADMISSION);
+    if (rows.length !== 1 || rows[0].admitted !== true) {
       await client.end().catch(() => {});
-      refused(e.message);
+      refused('maintenance thaw repair requires an expired coherent owned freeze');
     }
-  }
-  if (refusal && !stuckThaw) {
+  } else if (refusal) {
     await client.end().catch(() => {});
     refused(`the database would refuse DDL now: ${refusal}. Nothing was sent. Do not loop.`);
   }
@@ -539,17 +529,15 @@ DO $ca_atomic_history_guard$ BEGIN
 END $ca_atomic_history_guard$;
 `;
 const transactionBody = preamble.length > 0 ? shape.body : sql;
-const admittedBody = stuckThaw
-  ? stuckThawModule.bindStuckThawTransaction(transactionBody, stuckThaw)
-  : transactionBody;
-const atomicSQL = admittedBody.replace(/COMMIT\s*;\s*$/i, () => historyStatement + '\nCOMMIT;');
+const atomicSQL = transactionBody.replace(/COMMIT\s*;\s*$/i, () => historyStatement + '\nCOMMIT;');
 if (atomicSQL === transactionBody)
   refused('atomic migration history could not bind the final COMMIT');
+const admittedSQL = MAINTENANCE_THAW_REPAIR ? thawRepairSQL(atomicSQL) : atomicSQL;
 const started = Date.now();
 try {
   // With no preamble this is the whole file, exactly as before.
   if (SETTLEMENT_LANE) await withSettlementLane(client, () => client.query(atomicSQL));
-  else await client.query(atomicSQL);
+  else await client.query(admittedSQL);
 } catch (e) {
   await client.end().catch(() => {});
   const definiteRefusal =

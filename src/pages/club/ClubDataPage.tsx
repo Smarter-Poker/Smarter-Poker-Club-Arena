@@ -890,6 +890,7 @@ export default function ClubDataPage() {
   const [playersLoadingMore, setPlayersLoadingMore] = useState(false);
   const [playersPageError, setPlayersPageError] = useState<string | null>(null);
   const [lastVerifiedAt, setLastVerifiedAt] = useState<number | null>(null);
+  const [rakeRefreshKey, setRakeRefreshKey] = useState(0);
   const [lastRequestMs, setLastRequestMs] = useState<number | null>(null);
   const [telemetryClock, setTelemetryClock] = useState(() => Date.now());
   const [realtimeFeeds, setRealtimeFeeds] =
@@ -2483,6 +2484,7 @@ export default function ClubDataPage() {
     const myRefresh = ++manualRefreshVersion.current;
     const ownsRefresh = () => !cancelledRef.current && manualRefreshVersion.current === myRefresh;
     manualRefreshingRef.current = true;
+    setRakeRefreshKey((current) => current + 1);
     // Verified RPC reads and live joins are independent. The same deliberate
     // recovery action must restart failed feeds, without disturbing live ones.
     const failed = (Object.keys(realtimeFeeds) as RealtimeFeed[]).filter(
@@ -3046,7 +3048,8 @@ export default function ClubDataPage() {
             clubId={clubUuid}
             userId={userId}
             scopes={rakeScopes}
-            refreshToken={lastVerifiedAt ?? 0}
+            active={advanced}
+            refreshToken={rakeRefreshKey}
           />
         )}
 

@@ -2534,6 +2534,23 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Original flow invokes only its eligible authentic proof
+        id: original_flow_eligibility
+        if: matrix.shard == 3
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/original-flow-eligibility"
+          python3 scripts/qualification/original-flow-eligibility/run-native.py --output "$RUNNER_TEMP/original-flow-eligibility" 2>&1 | tee "$RUNNER_TEMP/original-flow-eligibility/native.log"
+      - name: Retain original flow eligibility native transcripts
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.original_flow_eligibility.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: original-flow-eligibility-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/original-flow-eligibility/
+          if-no-files-found: error
+
       - name: Original refund evidence proves identical lineage with one application scan
         id: original_refund_evidence
         if: matrix.shard == 3

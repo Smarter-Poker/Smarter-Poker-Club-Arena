@@ -166,8 +166,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 220312,
-      "sha256": "fd98cd6ec4a6b94e2fc59a16519c0562d773160ac2d96d17292d81488120a797"
+      "bytes": 221256,
+      "sha256": "78545cc8462142bcafa0387bdc3429278a7e6fb2ae823217fe6cfaeac2f7adc8"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -3276,6 +3276,50 @@
     "current_workflow": {
       "bytes": 220312,
       "sha256": "fd98cd6ec4a6b94e2fc59a16519c0562d773160ac2d96d17292d81488120a797"
+    }
+  },
+  "originalFlowEligibilityQualification20261013": {
+    "reason": "Add directly triggered authentic original late-proof eligibility/31economic/callwork/source40 successor native qualification; preserve every existing CI lane and historical input pin.",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 219700,
+          "sha256": "8716d2d184b824c542069f47d4f542bbbdb71f3246ed2b4b3f9ba07885b62002"
+        },
+        "current": {
+          "bytes": 220644,
+          "sha256": "f10e4911a8c6211b32f683d607805fe3fef618847dee55917db2fe691f52cef6"
+        }
+      }
+    }
+  },
+  "spentDssProtectedMainIntegration20261013": {
+    "reason": "Normal merge of protected a65aecace39c4ee6215c8a1fdc382f61ebaf9ae4 preserves original flow eligibility, client rake ownership and certificate observation plus both satellite/DSS native steps. Current selection fingerprints only; financial inputs/assertions and historical audits unchanged.",
+    "reviewed_conflicts": [
+      {
+        "path": "/files/.github/workflows/ci.yml/bytes",
+        "previous_own": 220312,
+        "previous_main": 220644
+      },
+      {
+        "path": "/files/.github/workflows/ci.yml/sha256",
+        "previous_own": "fd98cd6ec4a6b94e2fc59a16519c0562d773160ac2d96d17292d81488120a797",
+        "previous_main": "f10e4911a8c6211b32f683d607805fe3fef618847dee55917db2fe691f52cef6"
+      },
+      {
+        "path": "/files/scripts/ci/classify-ci-changes.mjs/bytes",
+        "previous_own": 36678,
+        "previous_main": 36585
+      },
+      {
+        "path": "/files/scripts/ci/classify-ci-changes.mjs/sha256",
+        "previous_own": "fec5ce206a6cdf0c63b3e9d397eee71930aa0e424e25189bec0dc436e56ea295",
+        "previous_main": "f69cf7c2955f8a2f792d0936b0478598e88438677c12088513ca4393a50754b2"
+      }
+    ],
+    "current_workflow": {
+      "bytes": 221256,
+      "sha256": "78545cc8462142bcafa0387bdc3429278a7e6fb2ae823217fe6cfaeac2f7adc8"
     }
   }
 }

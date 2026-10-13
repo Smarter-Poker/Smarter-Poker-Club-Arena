@@ -169,6 +169,8 @@ interface Crumb {
 
 export interface RakeSnapshotPanelProps {
   unframed?: boolean;
+  /** Hidden Simple mode preserves the question without issuing financial reads. */
+  active?: boolean;
   /**
    * The club this panel reports on, or null on the union page - a union owner
    * has a union and need not have a club at all.
@@ -192,6 +194,7 @@ export interface RakeSnapshotPanelProps {
 
 export default function RakeSnapshotPanel({
   unframed = false,
+  active = true,
   clubId,
   unionId = null,
   userId = null,
@@ -241,6 +244,7 @@ export default function RakeSnapshotPanel({
   const [exportAnnouncement, setExportAnnouncement] = useState('');
 
   const version = useRef(0);
+  const readControllers = useRef(new Set<AbortController>());
   const activeHeadRead = useRef<{ question: string; generation: number } | null>(null);
   const cancelled = useRef(false);
   const exportAbortControllerRef = useRef<AbortController | null>(null);
@@ -265,12 +269,29 @@ export default function RakeSnapshotPanel({
     return () => {
       cancelled.current = true;
       version.current += 1;
+      for (const controller of readControllers.current) controller.abort();
+      readControllers.current.clear();
       activeHeadRead.current = null;
       exportGenerationRef.current += 1;
       exportAbortControllerRef.current?.abort();
       exportAbortControllerRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    if (active) return;
+    version.current += 1;
+    activeHeadRead.current = null;
+    for (const controller of readControllers.current) controller.abort();
+    readControllers.current.clear();
+    exportGenerationRef.current += 1;
+    exportAbortControllerRef.current?.abort();
+    exportAbortControllerRef.current = null;
+    setLoading(false);
+    setLoadingMore(false);
+    setExporting(false);
+    setExportProgress(null);
+  }, [active]);
 
   useEffect(() => {
     const t = setTimeout(() => setQuery(search.trim()), SEARCH_DEBOUNCE_MS);
@@ -422,6 +443,7 @@ export default function RakeSnapshotPanel({
   const load = useCallback(
     async (quiet = false) => {
       // A union page has no club, and that is not a reason not to read.
+      if (!active) return;
       if (!clubId && !unionId) return;
       // Ledger events can arrive faster than this read completes. The same
       // question must finish before a refresh can replace it; otherwise every
@@ -433,6 +455,8 @@ export default function RakeSnapshotPanel({
       if (!quiet) setLoading(true);
       setError(null);
       setPageError(null);
+      const controller = new AbortController();
+      readControllers.current.add(controller);
       try {
         const next = await ClubRakeSnapshotService.get({
           scope,
@@ -443,6 +467,7 @@ export default function RakeSnapshotPanel({
           agentUserId: scope === 'agent' ? focusUserId : null,
           limit: PAGE_SIZE,
           offset: 0,
+          signal: controller.signal,
           search: query || null,
           sort,
         });
@@ -474,11 +499,13 @@ export default function RakeSnapshotPanel({
         setError(describeRakeSnapshotError(e));
         reportError(e, 'RakeSnapshotPanel.load');
       } finally {
+        readControllers.current.delete(controller);
         if (activeHeadRead.current?.generation === mine) activeHeadRead.current = null;
         if (!cancelled.current && mine === version.current) setLoading(false);
       }
     },
     [
+      active,
       clubId,
       unionId,
       focusClubId,
@@ -500,10 +527,12 @@ export default function RakeSnapshotPanel({
    * would do.
    */
   const loadMore = useCallback(async () => {
-    if ((!clubId && !unionId) || loadingMore) return;
+    if (!active || (!clubId && !unionId) || loadingMore) return;
     const mine = version.current;
     setLoadingMore(true);
     setPageError(null);
+    const controller = new AbortController();
+    readControllers.current.add(controller);
     try {
       const next = await ClubRakeSnapshotService.get({
         scope,
@@ -514,6 +543,7 @@ export default function RakeSnapshotPanel({
         agentUserId: scope === 'agent' ? focusUserId : null,
         limit: PAGE_SIZE,
         offset: cursor.current,
+        signal: controller.signal,
         search: query || null,
         sort,
       });
@@ -540,9 +570,11 @@ export default function RakeSnapshotPanel({
       setPageError(describeRakeSnapshotError(e));
       reportError(e, 'RakeSnapshotPanel.loadMore');
     } finally {
-      if (!cancelled.current) setLoadingMore(false);
+      const ownsRead = readControllers.current.delete(controller);
+      if (!cancelled.current && ownsRead) setLoadingMore(false);
     }
   }, [
+    active,
     clubId,
     unionId,
     focusClubId,
@@ -561,11 +593,12 @@ export default function RakeSnapshotPanel({
 
   // Same 60s cadence as the ledger, and only while the tab is visible.
   useEffect(() => {
+    if (!active) return;
     const t = setInterval(() => {
       if (document.visibilityState === 'visible') void load(true);
     }, REFRESH_MS);
     return () => clearInterval(t);
-  }, [load]);
+  }, [active, load]);
 
   /**
    * Live invalidation, same events and same debounce as the ledger below.
@@ -575,6 +608,7 @@ export default function RakeSnapshotPanel({
   useMasterBusSubscriptions(
     RAKE_BUS_EVENTS,
     (payload) => {
+      if (!active) return;
       const eventClubId =
         payload && typeof payload === 'object' && 'clubId' in payload
           ? String((payload as { clubId?: unknown }).clubId || '')
@@ -749,6 +783,7 @@ export default function RakeSnapshotPanel({
   };
 
   const exportSnapshot = useCallback(async () => {
+    if (!active) return;
     if (exporting) {
       const active = exportAbortControllerRef.current;
       if (!active) return;
@@ -874,6 +909,7 @@ export default function RakeSnapshotPanel({
       }
     }
   }, [
+    active,
     exporting,
     scope,
     unionId,
@@ -900,6 +936,7 @@ export default function RakeSnapshotPanel({
       }`
     : SCOPE_COPY[scope].note;
   const exportReady = Boolean(
+    active &&
     snapshot &&
     userId &&
     !loading &&

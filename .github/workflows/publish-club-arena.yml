@@ -328,10 +328,10 @@ jobs:
           name: club-arena-runtime-admission
           path: .
       - name: Verify both origins still serve the qualified immutable runtime
-        id: finalized
+        id: retained_verified
         run: node scripts/ci/client-runtime-retention.mjs finalize retained-runtime.json
       - name: Record qualified retained runtime
-        id: recorded
+        id: retained_recorded
         uses: actions/upload-artifact@v4
         with:
           name: club-arena-retained-runtime
@@ -339,15 +339,22 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      - name: Write the exact retained release verdict
+      - name: Preserve original retained runtime verdict evidence
         env:
-          RELEASE_STEP_RESULTS: '{"finalized":{"outcome":"${{ steps.finalized.outcome }}","conclusion":"${{ steps.finalized.conclusion }}"},"recorded":{"outcome":"${{ steps.recorded.outcome }}","conclusion":"${{ steps.recorded.conclusion }}"}}'
-        run: node scripts/ci/client-publication-verdict.mjs produce-retained release-verdict.json retained-runtime.json
-      - name: Upload the immutable release verdict
+          RECEIPT_SELECTED_SHA: ${{ needs.publish-needed.outputs.target_sha }}
+          RECEIPT_VERIFIED_SHA: ''
+          RECEIPT_OUTCOMES: ${{ format('["{0}","{1}"]', steps.retained_verified.outcome, steps.retained_recorded.outcome) }}
+          RECEIPT_VERDICT: retained
+          RECEIPT_CONCLUSIONS: ${{ format('["{0}","{1}"]', steps.retained_verified.conclusion, steps.retained_recorded.conclusion) }}
+        run: |
+          RECEIPT_RUNTIME_SHA=$(node -e "console.log(JSON.parse(require('fs').readFileSync('retained-runtime.json','utf8')).runtimeSha)")
+          export RECEIPT_RUNTIME_SHA
+          node scripts/ci/publisher-verdict-receipt.mjs write publisher-verdict.json
+      - name: Upload immutable original retained verdict
         uses: actions/upload-artifact@v4
         with:
-          name: club-arena-release-verdict-${{ github.run_attempt }}
-          path: release-verdict.json
+          name: club-arena-publisher-verdict-retain-runtime-attempt-${{ github.run_attempt }}
+          path: publisher-verdict.json
           if-no-files-found: error
           retention-days: 7
 
@@ -921,7 +928,7 @@ jobs:
           [ "$VERDICT" = "standdown" ] && echo "::notice::origin already serves a newer bundle (${THEIRS_SHA:0:7}); standing down." || true
 
       - name: Publish through the host-owned immutable transaction
-        id: published
+        id: immutable_publish
         if: steps.verdict.outputs.verdict == 'publish'
         run: |
           set -euo pipefail
@@ -1225,25 +1232,26 @@ jobs:
           echo "::error::Rollback pointer changed, but origin serves '$LIVE_ORIGIN' and player route serves '$LIVE_PUBLIC'; wanted $EXPECTED_SHA"
           exit 1
 
-      - name: Write the exact origin release verdict
-        env:
-          RELEASE_VERDICT: ${{ steps.verdict.outputs.verdict }}
-          SELECTED_SHA: ${{ steps.verdict.outputs.ours }}
-          RUNTIME_SHA: ${{ steps.verdict.outputs.verdict == 'publish' && steps.verdict.outputs.ours || steps.verdict.outputs.theirs }}
-          VERIFIED_SHA: ${{ steps.verified.outputs.sha }}
-          RELEASE_STEP_RESULTS: '{"verdict":{"outcome":"${{ steps.verdict.outcome }}","conclusion":"${{ steps.verdict.conclusion }}"},"published":{"outcome":"${{ steps.published.outcome }}","conclusion":"${{ steps.published.conclusion }}"},"verified":{"outcome":"${{ steps.verified.outcome }}","conclusion":"${{ steps.verified.conclusion }}"}}'
-        run: node scripts/ci/client-publication-verdict.mjs produce-origin release-verdict.json
-      - name: Upload the immutable release verdict
-        uses: actions/upload-artifact@v4
-        with:
-          name: club-arena-release-verdict-${{ github.run_attempt }}
-          path: release-verdict.json
-          if-no-files-found: error
-          retention-days: 7
-
       - name: Remove origin credentials and control sockets
         if: always()
         run: |
           set -euo pipefail
           rm -f -- "$HOME/.ssh/ca_origin" "$HOME/.ssh/ca_origin_known_hosts"
           rm -rf -- /tmp/cacm
+
+      - name: Preserve original publisher verdict evidence
+        env:
+          RECEIPT_SELECTED_SHA: ${{ needs.publish-needed.outputs.target_sha }}
+          RECEIPT_RUNTIME_SHA: ${{ steps.verdict.outputs.verdict == 'publish' && steps.verified.outputs.sha || steps.verdict.outputs.theirs }}
+          RECEIPT_VERIFIED_SHA: ${{ steps.verified.outputs.sha }}
+          RECEIPT_OUTCOMES: ${{ format('["{0}","{1}","{2}"]', steps.verdict.outcome, steps.immutable_publish.outcome, steps.verified.outcome) }}
+          RECEIPT_VERDICT: ${{ steps.verdict.outputs.verdict }}
+          RECEIPT_CONCLUSIONS: ${{ format('["{0}","{1}","{2}"]', steps.verdict.conclusion, steps.immutable_publish.conclusion, steps.verified.conclusion) }}
+        run: node scripts/ci/publisher-verdict-receipt.mjs write publisher-verdict.json
+      - name: Upload immutable original publisher verdict
+        uses: actions/upload-artifact@v4
+        with:
+          name: club-arena-publisher-verdict-publish-to-origin-attempt-${{ github.run_attempt }}
+          path: publisher-verdict.json
+          if-no-files-found: error
+          retention-days: 7

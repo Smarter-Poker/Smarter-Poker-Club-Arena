@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
   deferRead: false,
   rows: [] as Array<Record<string, unknown>>,
   realtime: undefined as undefined | ((payload: Record<string, unknown>) => void),
-  realtimeStatus: undefined as undefined | ((status: string) => void),
+  realtimeStatus: undefined as undefined | ((status: string, error?: Error) => void),
 }));
 
 vi.mock('../../src/core/MasterBus', async () => await vi.importActual('../../src/core/MasterBus'));
@@ -23,7 +23,7 @@ vi.mock('../../src/lib/supabase', () => {
         return channel;
       }
     ),
-    subscribe: vi.fn((callback?: (status: string) => void) => {
+    subscribe: vi.fn((callback?: (status: string, error?: Error) => void) => {
       mocks.realtimeStatus = callback;
       callback?.('SUBSCRIBED');
       return channel;
@@ -575,4 +575,24 @@ describe('useUserThemeSettings database realtime', () => {
     second.unmount();
     first.unmount();
   });
+});
+
+it('emits only safe current appearance callback diagnostics and ignores disposed generations', async () => {
+  const events: unknown[] = [];
+  const listener = (event: Event) => events.push((event as CustomEvent).detail);
+  window.addEventListener('table-art-realtime-diagnostic', listener);
+  const mounted = renderHook(() => useUserThemeSettings('diagnostic-user', 'nlh'));
+  await waitFor(() => expect(mounted.result.current.realtimeState).toBe('live'));
+  const retired = mocks.realtimeStatus!;
+  act(() => retired('CHANNEL_ERROR', new Error('JwtSignerError SECRET RAW BODY user-token')));
+  expect(events[events.length - 1]).toEqual({ status: 'CHANNEL_ERROR', reason: 'signer' });
+  expect(JSON.stringify(events)).not.toContain('SECRET');
+  act(() => mounted.result.current.retryRealtime());
+  const count = events.length;
+  act(() => retired('CHANNEL_ERROR', new Error('Unauthorized')));
+  expect(events).toHaveLength(count);
+  mounted.unmount();
+  act(() => mocks.realtimeStatus?.('TIMED_OUT'));
+  expect(events).toHaveLength(count);
+  window.removeEventListener('table-art-realtime-diagnostic', listener);
 });

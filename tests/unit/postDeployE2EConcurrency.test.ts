@@ -1,32 +1,13 @@
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  writeFileSync,
-  rmSync,
-  cpSync,
-} from 'node:fs';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { afterAll, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
-import { parse } from 'yaml';
-import {
-  admitReleaseVerdict,
-  makeReleaseVerdict,
-  inspectPublisherJobs,
-} from '../../scripts/ci/client-publication-verdict.mjs';
-
-const root = resolve(__dirname, '../..');
-const publisherText = readFileSync(join(root, '.github/workflows/publish-club-arena.yml'), 'utf8');
-const publisher = parse(publisherText);
 const workflow = readFileSync(
   resolve(__dirname, '../../.github/workflows/post-deploy-e2e.yml'),
   'utf8'
 );
-const certification = parse(workflow);
 const realtimeCertification = readFileSync(
   resolve(__dirname, '../e2e/production-customization-realtime.spec.ts'),
   'utf8'
@@ -45,12 +26,30 @@ const oneShotRequestGate = readFileSync(
 );
 
 describe('post-deploy E2E concurrency', () => {
-  it('requires the source-bound verdict receipt without using aggregate source success', () => {
-    expect(workflow).toContain('client-publication-verdict.mjs select');
-    expect(workflow).toContain('client-publication-verdict.mjs admit');
-    expect(workflow).toContain('/attempts/$SOURCE_RUN_ATTEMPT/jobs?per_page=100');
+  it('runs only after exact publish proof or a successful safe stand-down', () => {
+    expect(workflow).toContain('publication-gate:');
+    expect(workflow).toContain('timeout 30s node scripts/ci/read-publisher-jobs.mjs');
+    expect(
+      readFileSync(resolve(__dirname, '../../scripts/ci/read-publisher-jobs.mjs'), 'utf8')
+    ).toContain('jobs?filter=latest&per_page=30&page=${page}');
+    expect(workflow).toContain("entry?.name === 'publish-to-origin'");
+    expect(workflow).toContain(
+      "entry?.name === 'Stand down if the origin already serves a newer bundle'"
+    );
+    expect(workflow).toContain(
+      "entry?.name === 'Publish through the host-owned immutable transaction'"
+    );
+    expect(workflow).toContain("entry?.name === 'Verify the origin serves this bundle'");
+    expect(workflow).toContain("origin.conclusion === 'success'");
+    expect(workflow).toContain("proofs[0].conclusion === 'success'");
+    expect(workflow).toContain("publishes[0].conclusion === 'skipped'");
+    expect(workflow).toContain("proofs[0].conclusion === 'skipped'");
     expect(workflow).not.toContain('SOURCE_CONCLUSION:');
     expect(workflow).not.toContain('should_run=false');
+    expect(workflow).toContain(
+      'The source run neither proved a Hetzner web publish nor completed a safe forward stand-down.'
+    );
+    expect(workflow).toContain("fs.appendFileSync(output, 'should_run=true\\n')");
     expect(workflow).toContain('needs: publication-gate');
     expect(workflow).toContain("if: needs.publication-gate.outputs.should_run == 'true'");
   });
@@ -106,511 +105,140 @@ describe('post-deploy E2E concurrency', () => {
     );
   });
 
-  // Hosted client shards deliberately have shallow history. Qualify real Git
-  // ancestry in a disposable two-commit repository, never in checkout history.
-  const ancestryRoot = mkdtempSync(join(tmpdir(), 'publication-verdict-ancestry-'));
-  // Git hooks export repository-local variables; never let a fixture command
-  // inherit the owning checkout's Git directory/index/worktree.
-  const fixtureEnvironment = Object.fromEntries(
-    Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_'))
-  );
-  const fixtureGit = (...args: string[]) =>
-    execFileSync('git', args, {
-      cwd: ancestryRoot,
-      encoding: 'utf8',
-      env: {
-        ...fixtureEnvironment,
-        GIT_AUTHOR_NAME: 'Publication qualification',
-        GIT_AUTHOR_EMAIL: 'publication-qualification@example.invalid',
-        GIT_COMMITTER_NAME: 'Publication qualification',
-        GIT_COMMITTER_EMAIL: 'publication-qualification@example.invalid',
-      },
-    }).trim();
-  fixtureGit('init', '--quiet', '--initial-branch=main');
-  fixtureGit('commit', '--quiet', '--allow-empty', '-m', 'Protected trigger fixture');
-  const triggerSha = fixtureGit('rev-parse', 'HEAD');
-  fixtureGit('commit', '--quiet', '--allow-empty', '-m', 'Protected selected fixture');
-  const selectedSha = fixtureGit('rev-parse', 'HEAD');
-  fixtureGit('update-ref', 'refs/remotes/origin/main', selectedSha);
-  cpSync(join(root, 'scripts/ci'), join(ancestryRoot, 'scripts/ci'), { recursive: true });
-  afterAll(() => rmSync(ancestryRoot, { recursive: true, force: true }));
+  // A PUBLISHER THAT NEVER PUBLISHED IS NOT A DEFECT ON PRODUCTION.
+  //
+  // publish-club-arena cancels in progress when a newer merge arrives. Run
+  // 36749429418 was cancelled while still queued and produced ZERO jobs, so
+  // this gate read `Expected one latest publish-to-origin job, received 0`
+  // and the certificate went red twice in thirty seconds (36749436277,
+  // 36749498583) before a single browser started. These execute the gate's
+  // ACTUAL node block against the payload shapes that produce each verdict.
+  describe('the gate block itself, executed', () => {
+    const script = (() => {
+      const start = workflow.indexOf('node - "$JOBS_JSON"');
+      const body = workflow.slice(
+        workflow.indexOf('\n', start) + 1,
+        workflow.indexOf('\n          NODE', start)
+      );
+      return body.replace(/^ {10}/gm, '');
+    })();
 
-  const source = {
-    runId: '34567',
-    attempt: '2',
-    repositoryId: '1132369872',
-    triggerSha,
-    branch: 'main',
-    workflow: '.github/workflows/publish-club-arena.yml',
-  };
-  const resultStep = (status: string) => ({ outcome: status, conclusion: status });
-  const sourceRun = () => ({
-    id: Number(source.runId),
-    run_attempt: 2,
-    head_sha: source.triggerSha,
-    head_branch: 'main',
-    path: source.workflow,
-    repository: { id: Number(source.repositoryId) },
-    head_repository: { id: Number(source.repositoryId) },
-  });
-  const artifact = (name: string) => ({
-    id: 76543,
-    name,
-    expired: false,
-    workflow_run: {
-      id: Number(source.runId),
-      head_sha: source.triggerSha,
-      head_branch: 'main',
-      repository_id: Number(source.repositoryId),
-      head_repository_id: Number(source.repositoryId),
-    },
-  });
-  function input(mode = 'publish') {
-    const retained = mode === 'retained';
-    const runtimeSha = retained ? source.triggerSha : selectedSha;
-    const selected = mode === 'standdown' ? source.triggerSha : selectedSha;
-    const retention = JSON.stringify({
-      schema: 1,
-      kind: 'retained-client-runtime',
-      sourceRunId: source.runId,
-      sourceTriggerSha: source.triggerSha,
-      repositoryId: source.repositoryId,
-      runtimeSha,
-      verificationSha: selectedSha,
-      originalPublisherRunId: '12345',
-      originalArtifactId: 54321,
-      inputs: { complete: true, sourceSha: runtimeSha },
-      buildInfoSHA256: 'a'.repeat(64),
-      manifestSHA256: 'b'.repeat(64),
-      paths: ['scripts/ci/example.mjs'],
-    });
-    const steps = retained
-      ? { finalized: resultStep('success'), recorded: resultStep('success') }
-      : {
-          verdict: resultStep('success'),
-          published: resultStep(mode === 'publish' ? 'success' : 'skipped'),
-          verified: resultStep(mode === 'publish' ? 'success' : 'skipped'),
-        };
-    const receipt = makeReleaseVerdict({
-      source,
-      producerJob: retained ? 'retain-runtime' : 'publish-to-origin',
-      mode,
-      selectedSha: selected,
-      runtimeSha,
-      steps,
-      verifiedSha: mode === 'publish' ? selected : undefined,
-      buildInfo: JSON.stringify({ ca_sha: selected }),
-      manifest: 'immutable bytes',
-      retention,
-    });
-    const jobs = {
-      total_count: 2,
-      jobs: [
-        {
-          id: 123,
-          run_id: Number(source.runId),
-          run_attempt: 2,
-          head_sha: source.triggerSha,
-          name: 'publish-to-origin',
-          status: 'completed',
-          conclusion: retained ? 'skipped' : 'success',
-          steps: [],
-        },
-        {
-          id: 124,
-          run_id: Number(source.runId),
-          run_attempt: 2,
-          head_sha: source.triggerSha,
-          name: 'retain-runtime',
-          status: 'completed',
-          conclusion: retained ? 'success' : 'skipped',
-          steps: [],
-        },
-      ],
-    };
-    const artifacts = {
-      total_count: 2,
-      artifacts: [
-        artifact('club-arena-release-verdict-2'),
-        artifact(retained ? 'club-arena-retained-runtime' : 'club-arena-dist-' + selected),
-      ],
-    };
-    return {
-      source,
-      run: sourceRun(),
-      jobs,
-      artifacts,
-      receipt,
-      retention,
-      isProtected: () => true,
-      isAncestor: () => true,
-    };
-  }
-
-  function nativeGate(value: ReturnType<typeof input>, command?: string) {
-    const directory = mkdtempSync(join(tmpdir(), 'publication-verdict-native-'));
-    try {
-      for (const [name, body] of Object.entries({
-        run: value.run,
-        jobs: value.jobs,
-        artifacts: value.artifacts,
-        receipt: value.receipt,
-      })) {
-        writeFileSync(join(directory, name + '.json'), JSON.stringify(body));
-      }
-      writeFileSync(join(directory, 'retained-runtime.json'), value.retention);
+    const verdict = (payload: unknown) => {
+      const directory = mkdtempSync(join(tmpdir(), 'post-deploy-gate-'));
+      const jobsFile = join(directory, 'jobs.json');
       const output = join(directory, 'output');
+      writeFileSync(jobsFile, JSON.stringify(payload));
       writeFileSync(output, '');
-      const body =
-        command ??
-        certification.jobs['publication-gate'].steps.find(
-          (entry: { name: string }) => entry.name === 'Read The Origin Job Verdict'
-        ).run;
-      // Only the authenticated transport is substituted. The maintained shell,
-      // artifact/run validators, receipt reader and real Git ancestry all execute.
-      const transport = `
-timeout() { shift; "$@"; }
-gh() {
-  if [ "$1" = api ]; then
-    case "$2" in
-      */jobs*) cat "$FIXTURE_DIR/jobs.json" ;;
-      */artifacts*) cat "$FIXTURE_DIR/artifacts.json" ;;
-      *) cat "$FIXTURE_DIR/run.json" ;;
-    esac
-  elif [ "$1" = run ] && [ "$2" = download ]; then
-    shift 3
-    while [ "$#" -gt 0 ]; do
-      case "$1" in --dir) DIR="$2";shift 2;; --name) NAME="$2";shift 2;; *) shift;; esac
-    done
-    mkdir -p "$DIR"
-    if [ "$NAME" = club-arena-retained-runtime ]; then
-      cp "$FIXTURE_DIR/retained-runtime.json" "$DIR/retained-runtime.json"
-    else
-      cp "$FIXTURE_DIR/receipt.json" "$DIR/release-verdict.json"
-    fi
-  else return 99; fi
-}
-`;
-      const result = spawnSync(
-        'bash',
-        [
-          '--noprofile',
-          '--norc',
-          '-c',
-          transport +
-            body.replaceAll('${{ github.repository }}', 'Smarter-Poker/Smarter-Poker-Club-Arena'),
-        ],
-        {
-          cwd: ancestryRoot,
-          encoding: 'utf8',
-          timeout: 10000,
-          env: {
-            ...fixtureEnvironment,
-            EVENT_NAME: 'workflow_run',
-            SOURCE_RUN_ID: source.runId,
-            SOURCE_RUN_ATTEMPT: source.attempt,
-            SOURCE_TRIGGER_SHA: source.triggerSha,
-            REPOSITORY_ID: source.repositoryId,
-            GITHUB_OUTPUT: output,
-            FIXTURE_DIR: directory,
-          },
-        }
-      );
-      return { status: result.status, stderr: result.stderr, output: readFileSync(output, 'utf8') };
-    } finally {
-      rmSync(directory, { recursive: true, force: true });
-    }
-  }
-
-  function assertVerdictWiring(publisherSource: string, consumerSource: string) {
-    const publisher = parse(publisherSource),
-      consumer = parse(consumerSource);
-    const origin = publisher.jobs['publish-to-origin'].steps;
-    const retained = publisher.jobs['retain-runtime'].steps;
-    for (const [steps, writerName, command, ids] of [
-      [
-        origin,
-        'Write the exact origin release verdict',
-        'produce-origin',
-        ['verdict', 'published', 'verified'],
-      ],
-      [
-        retained,
-        'Write the exact retained release verdict',
-        'produce-retained',
-        ['finalized', 'recorded'],
-      ],
-    ] as const) {
-      const writer = steps.find((step: { name: string }) => step.name === writerName);
-      expect(writer).toBeDefined();
-      expect(writer.run).toContain('node scripts/ci/client-publication-verdict.mjs ' + command);
-      expect(writer.if).toBeUndefined(); // Ordinary success(), never always()/continue-on-error.
-      expect(writer['continue-on-error']).toBeUndefined();
-      if (command === 'produce-origin') {
-        expect(writer.env.VERIFIED_SHA).toBe('${{ steps.verified.outputs.sha }}');
-        expect(writer.env.SELECTED_SHA).toBe('${{ steps.verdict.outputs.ours }}');
-        expect(writer.env.RELEASE_VERDICT).toBe('${{ steps.verdict.outputs.verdict }}');
-      }
-      for (const id of ids) {
-        expect(steps.filter((step: { id?: string }) => step.id === id)).toHaveLength(1);
-        expect(writer.env.RELEASE_STEP_RESULTS).toContain('${{ steps.' + id + '.outcome }}');
-        expect(writer.env.RELEASE_STEP_RESULTS).toContain('${{ steps.' + id + '.conclusion }}');
-      }
-      const upload = steps.find(
-        (step: { name: string }) => step.name === 'Upload the immutable release verdict'
-      );
-      expect(upload?.uses).toBe('actions/upload-artifact@v4');
-      expect(upload?.with).toEqual({
-        name: 'club-arena-release-verdict-${{ github.run_attempt }}',
-        path: 'release-verdict.json',
-        'if-no-files-found': 'error',
-        'retention-days': 7,
+      const run = spawnSync(process.execPath, ['-', jobsFile, output], {
+        input: script,
+        encoding: 'utf8',
       });
-      expect(steps.indexOf(upload)).toBeGreaterThan(steps.indexOf(writer));
-      for (const id of ids)
-        expect(steps.indexOf(writer)).toBeGreaterThan(
-          steps.findIndex((step: { id?: string }) => step.id === id)
-        );
-    }
-    const gate = consumer.jobs['publication-gate'].steps.find(
-      (step: { name: string }) => step.name === 'Read The Origin Job Verdict'
-    );
-    expect(gate.env.SOURCE_RUN_ATTEMPT).toBe("${{ github.event.workflow_run.run_attempt || '' }}");
-    expect(gate.run).toContain('client-publication-verdict.mjs select');
-    expect(gate.run.match(/client-publication-verdict\.mjs admit/g)).toHaveLength(2);
-    expect(gate.run).toContain('--name "$ARTIFACT_NAME"');
-    expect(gate.run).toContain('client-runtime-retention.mjs receipt-artifact');
-    expect(gate.run).not.toContain('origin.conclusion');
-    expect(gate.run).not.toContain('|| true');
-  }
+      const result = {
+        status: run.status,
+        output: readFileSync(output, 'utf8'),
+        stderr: run.stderr,
+      };
+      rmSync(directory, { recursive: true, force: true });
+      return result;
+    };
 
-  describe('actual source-bound release verdicts', () => {
-    it.each(['publish', 'standdown', 'retained'])(
-      'admits exact %s evidence despite empty provider steps',
-      (mode) => {
-        const value = input(mode);
-        expect(admitReleaseVerdict(value)).toEqual({
-          shouldRun: true,
-          retained: mode === 'retained',
-        });
-        const result = nativeGate(value);
-        expect(result.status, result.stderr).toBe(0);
-        expect(result.output).toBe(
-          'engine_trigger_sha=\nshould_run=true\n' + (mode === 'retained' ? 'retained=true\n' : '')
-        );
-      }
-    );
-
-    it.each(['failure', 'cancelled', 'skipped', ''])(
-      'refuses actual publish outcome %s under successful conclusion',
-      (state) => {
-        const value = input();
-        value.receipt.steps.published.outcome = state;
-        expect(() => admitReleaseVerdict(value)).toThrow();
-        const result = nativeGate(value);
-        expect(result.status).not.toBe(0);
-        expect(result.output).not.toContain('should_run=true');
-      }
-    );
+    const originJob = (publish: string, proof: string, standDown = 'success') => ({
+      name: 'publish-to-origin',
+      status: 'completed',
+      conclusion: 'success',
+      steps: [
+        {
+          name: 'Stand down if the origin already serves a newer bundle',
+          status: 'completed',
+          conclusion: standDown,
+        },
+        {
+          name: 'Publish through the host-owned immutable transaction',
+          status: 'completed',
+          conclusion: publish,
+        },
+        { name: 'Verify the origin serves this bundle', status: 'completed', conclusion: proof },
+      ],
+    });
 
     it.each([
-      'missing receipt',
-      'wrong run',
-      'wrong attempt',
-      'wrong repository',
-      'wrong trigger',
-      'wrong selected SHA',
-      'missing verify output',
-      'expired artifact',
-      'duplicate receipt',
-      'partial pagination',
-      'wrong artifact run',
-      'wrong producer',
-      'failed job',
-      'cancelled job',
-      'unprotected revision',
-      'wrong lineage',
-      'masked verify failure',
-      'wrong job run',
-      'wrong job attempt',
-    ])('refuses %s', (kind) => {
-      const value = input();
-      if (kind === 'missing receipt') value.receipt = null as never;
-      if (kind === 'wrong run') value.receipt.source = { ...source, runId: '99999' };
-      if (kind === 'wrong attempt') value.receipt.source = { ...source, attempt: '1' };
-      if (kind === 'wrong repository') value.receipt.source = { ...source, repositoryId: '99999' };
-      if (kind === 'wrong trigger')
-        value.receipt.source = { ...source, triggerSha: 'f'.repeat(40) };
-      if (kind === 'wrong selected SHA') value.receipt.selectedSha = source.triggerSha;
-      if (kind === 'missing verify output') value.receipt.verifiedSha = null;
-      if (kind === 'expired artifact') value.artifacts.artifacts[0].expired = true;
-      if (kind === 'duplicate receipt') {
-        value.artifacts.artifacts.push(value.artifacts.artifacts[0]);
-        value.artifacts.total_count++;
-      }
-      if (kind === 'partial pagination') value.artifacts.total_count++;
-      if (kind === 'wrong artifact run') value.artifacts.artifacts[0].workflow_run.id++;
-      if (kind === 'wrong producer') value.receipt.producerJob = 'build-and-store';
-      if (kind === 'failed job') value.jobs.jobs[0].conclusion = 'failure';
-      if (kind === 'cancelled job') value.jobs.jobs[0].conclusion = 'cancelled';
-      if (kind === 'unprotected revision') value.isProtected = () => false;
-      if (kind === 'wrong lineage') value.isAncestor = () => false;
-      if (kind === 'masked verify failure') value.receipt.steps.verified.outcome = 'failure';
-      if (kind === 'wrong job run') value.jobs.jobs[0].run_id++;
-      if (kind === 'wrong job attempt') value.jobs.jobs[0].run_attempt++;
-      expect(() => admitReleaseVerdict(value)).toThrow();
-    });
-
-    it.each(['missing proof', 'wrong digest', 'origin also ran', 'masked finalize failure'])(
-      'refuses retained %s',
-      (kind) => {
-        const value = input('retained');
-        if (kind === 'missing proof') value.retention = '';
-        if (kind === 'wrong digest') value.receipt.retentionSHA256 = '0'.repeat(64);
-        if (kind === 'origin also ran') value.jobs.jobs[0].conclusion = 'success';
-        if (kind === 'masked finalize failure') value.receipt.steps.finalized.outcome = 'failure';
-        expect(() => admitReleaseVerdict(value)).toThrow();
-      }
-    );
-
-    it('keeps superseded-before-origin runs as non-verdicts and refuses unknown jobs', () => {
-      expect(inspectPublisherJobs({ total_count: 0, jobs: [] })).toBeNull();
-      expect(
-        inspectPublisherJobs({
+      ['a publisher cancelled before any job started', { total_count: 0, jobs: [] }],
+      [
+        'a publisher whose every job was cancelled or skipped',
+        {
           total_count: 2,
-          jobs: [{ conclusion: 'cancelled' }, { conclusion: 'skipped' }],
-        })
-      ).toBeNull();
-      expect(() =>
-        inspectPublisherJobs({
-          total_count: 1,
-          jobs: [{ name: 'renamed-origin', conclusion: 'success' }],
-        })
-      ).toThrow();
-      expect(() => inspectPublisherJobs({ total_count: 2, jobs: [] })).toThrow();
-      expect(() => inspectPublisherJobs({ message: 'unreadable' })).toThrow();
+          jobs: [
+            { name: 'tests', conclusion: 'cancelled' },
+            { name: 'x', conclusion: 'skipped' },
+          ],
+        },
+      ],
+    ])('stands down without a verdict for %s', (_label, payload) => {
+      const result = verdict(payload);
+      expect(result.status, result.stderr).toBe(0);
+      // No should_run at all, so every downstream job skips and this run takes
+      // no production lock. It is a non-event, not a pass and not a failure.
+      expect(result.output).toBe('');
     });
 
-    it.each(['publish', 'standdown', 'retained'])(
-      'executes the real %s producer and refuses masked failure before writing',
-      (mode) => {
-        const desired = input(mode);
-        const retained = mode === 'retained';
-        const steps = publisher.jobs[retained ? 'retain-runtime' : 'publish-to-origin'].steps;
-        const writer = steps.find(
-          (entry: { name: string }) =>
-            entry.name ===
-            (retained
-              ? 'Write the exact retained release verdict'
-              : 'Write the exact origin release verdict')
-        );
-        const directory = mkdtempSync(join(tmpdir(), 'publication-verdict-producer-'));
-        try {
-          mkdirSync(join(directory, 'dist'));
-          writeFileSync(
-            join(directory, 'dist/build-info.json'),
-            JSON.stringify({ ca_sha: desired.receipt.selectedSha })
-          );
-          writeFileSync(join(directory, 'dist/.release-manifest.sha256'), 'immutable bytes');
-          writeFileSync(join(directory, 'retained-runtime.json'), desired.retention);
-          const values: Record<string, string> = {
-            'steps.verdict.outputs.verdict': mode,
-            'steps.verdict.outputs.ours': desired.receipt.selectedSha,
-            'steps.verdict.outputs.theirs': desired.receipt.runtimeSha,
-            'steps.verified.outputs.sha': mode === 'publish' ? desired.receipt.selectedSha : '',
-            'steps.verdict.outcome': 'success',
-            'steps.verdict.conclusion': 'success',
-            'steps.published.outcome': mode === 'publish' ? 'success' : 'skipped',
-            'steps.published.conclusion': mode === 'publish' ? 'success' : 'skipped',
-            'steps.verified.outcome': mode === 'publish' ? 'success' : 'skipped',
-            'steps.verified.conclusion': mode === 'publish' ? 'success' : 'skipped',
-            'steps.finalized.outcome': 'success',
-            'steps.finalized.conclusion': 'success',
-            'steps.recorded.outcome': 'success',
-            'steps.recorded.conclusion': 'success',
-            "steps.verdict.outputs.verdict == 'publish' && steps.verdict.outputs.ours || steps.verdict.outputs.theirs":
-              desired.receipt.runtimeSha,
-          };
-          const run = (filename: string) => {
-            const env = Object.fromEntries(
-              Object.entries(writer.env).map(([key, value]) => [
-                key,
-                String(value).replace(/\$\{\{\s*(.*?)\s*\}\}/g, (_all, expression: string) => {
-                  if (!(expression in values))
-                    throw new Error('Unreviewed producer context: ' + expression);
-                  return values[expression];
-                }),
-              ])
-            );
-            const command = writer.run
-              .replace(
-                'scripts/ci/client-publication-verdict.mjs',
-                join(root, 'scripts/ci/client-publication-verdict.mjs')
-              )
-              .replace('release-verdict.json', filename);
-            return spawnSync('bash', ['-c', command], {
-              cwd: directory,
-              encoding: 'utf8',
-              env: {
-                ...process.env,
-                ...env,
-                GITHUB_REF: 'refs/heads/main',
-                GITHUB_JOB: retained ? 'retain-runtime' : 'publish-to-origin',
-                GITHUB_RUN_ID: source.runId,
-                GITHUB_RUN_ATTEMPT: source.attempt,
-                GITHUB_SHA: source.triggerSha,
-                GITHUB_REPOSITORY_ID: source.repositoryId,
-              },
-            });
-          };
-          const passed = run('good.json');
-          expect(passed.status, passed.stderr).toBe(0);
-          expect(JSON.parse(readFileSync(join(directory, 'good.json'), 'utf8')).mode).toBe(mode);
-          values[retained ? 'steps.finalized.outcome' : 'steps.published.outcome'] = 'failure';
-          const refused = run('masked.json');
-          expect(refused.status).not.toBe(0);
-          expect(existsSync(join(directory, 'masked.json'))).toBe(false);
-        } finally {
-          rmSync(directory, { recursive: true, force: true });
-        }
+    it('still certifies a real publish and a safe forward stand-down', () => {
+      for (const payload of [
+        { total_count: 1, jobs: [originJob('success', 'success')] },
+        { total_count: 1, jobs: [originJob('skipped', 'skipped')] },
+      ]) {
+        const result = verdict(payload);
+        expect(result.status, result.stderr).toBe(0);
+        expect(result.output).toBe('should_run=true\n');
       }
-    );
+    });
 
-    it('enforces the actual producer and consumer calls, including removal mutations', () => {
-      assertVerdictWiring(publisherText, workflow);
-      expect(() =>
-        assertVerdictWiring(
-          publisherText.replace(
-            'produce-origin release-verdict.json',
-            'removed release-verdict.json'
-          ),
-          workflow
-        )
-      ).toThrow();
-      expect(() =>
-        assertVerdictWiring(
-          publisherText.replace(
-            'produce-retained release-verdict.json',
-            'removed release-verdict.json'
-          ),
-          workflow
-        )
-      ).toThrow();
-      expect(() =>
-        assertVerdictWiring(
-          publisherText,
-          workflow.replaceAll(
-            'client-publication-verdict.mjs admit',
-            'client-publication-verdict.mjs omitted'
-          )
-        )
-      ).toThrow();
-      expect(() =>
-        assertVerdictWiring(
-          publisherText.replace('steps.published.outcome', 'steps.published.conclusion'),
-          workflow
-        )
-      ).toThrow();
+    it('admits only complete successful runtime qualification with no origin transaction', () => {
+      const retention = {
+        name: 'retain-runtime',
+        status: 'completed',
+        conclusion: 'success',
+        steps: [
+          {
+            name: 'Verify both origins still serve the qualified immutable runtime',
+            status: 'completed',
+            conclusion: 'success',
+          },
+          { name: 'Record qualified retained runtime', status: 'completed', conclusion: 'success' },
+        ],
+      };
+      const skipped = {
+        name: 'publish-to-origin',
+        status: 'completed',
+        conclusion: 'skipped',
+        steps: [],
+      };
+      const valid = verdict({ total_count: 2, jobs: [retention, skipped] });
+      expect(valid.status, valid.stderr).toBe(0);
+      expect(valid.output).toBe('should_run=true\nretained=true\n');
+      for (const payload of [
+        { total_count: 3, jobs: [retention, skipped] },
+        { jobs: [retention, skipped] },
+        { total_count: 2, jobs: [retention, originJob('success', 'success')] },
+        { total_count: 2, jobs: [{ ...retention, steps: retention.steps.slice(0, 1) }, skipped] },
+      ])
+        expect(verdict(payload).status).toBe(1);
+    });
+
+    // The stand-down must never become a way to skip certification when a
+    // publish really happened. A source run holding jobs that actually ran,
+    // with no publish-to-origin among them, is the renamed-job hole.
+    it.each([
+      [
+        'jobs ran but none is publish-to-origin',
+        {
+          total_count: 1,
+          jobs: [{ name: 'publish-to-hetzner', status: 'completed', conclusion: 'success' }],
+        },
+      ],
+      ['the origin job failed', { total_count: 1, jobs: [originJob('failure', 'failure')] }],
+      ['the jobs response is malformed', { total_count: 1 }],
+    ])('still refuses %s', (_label, payload) => {
+      expect(verdict(payload).status).toBe(1);
     });
   });
 

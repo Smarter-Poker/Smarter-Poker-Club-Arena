@@ -75,7 +75,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           EVENT_NAME: ${{ github.event_name }}
           SOURCE_RUN_ID: ${{ github.event.workflow_run.id || '' }}
-          SOURCE_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt || '' }}
           SOURCE_TRIGGER_SHA: ${{ github.event.workflow_run.head_sha || '' }}
           REPOSITORY_ID: ${{ github.repository_id }}
           ENGINE_TRIGGER_SHA: ${{ github.event.client_payload.engine_sha || '' }}
@@ -93,29 +92,94 @@ jobs:
             || { echo "::error::Unsupported production certification event: $EVENT_NAME"; exit 1; }
           [[ "$SOURCE_RUN_ID" =~ ^[0-9]+$ ]] \
             || { echo '::error::The source workflow run id is malformed.'; exit 1; }
-          EVIDENCE_DIR="$(mktemp -d)"
-          trap 'rm -rf -- "$EVIDENCE_DIR"' EXIT
-          RUN_JSON="$EVIDENCE_DIR/run.json"
-          JOBS_JSON="$EVIDENCE_DIR/jobs.json"
-          ARTIFACTS_JSON="$EVIDENCE_DIR/artifacts.json"
-          timeout 30s gh api "repos/${{ github.repository }}/actions/runs/$SOURCE_RUN_ID" > "$RUN_JSON"
-          timeout 30s gh api "repos/${{ github.repository }}/actions/runs/$SOURCE_RUN_ID/attempts/$SOURCE_RUN_ATTEMPT/jobs?per_page=100" > "$JOBS_JSON"
-          timeout 30s gh api "repos/${{ github.repository }}/actions/runs/$SOURCE_RUN_ID/artifacts?per_page=100" > "$ARTIFACTS_JSON"
-          ARTIFACT_NAME=$(node scripts/ci/client-publication-verdict.mjs select "$RUN_JSON" "$JOBS_JSON" "$ARTIFACTS_JSON")
-          if [ "$ARTIFACT_NAME" = none ]; then
-            echo 'The publisher was superseded before reaching the origin; no release verdict is admitted.'
-            exit 0
-          fi
-          timeout 60s gh run download "$SOURCE_RUN_ID" --repo "${{ github.repository }}" --name "$ARTIFACT_NAME" --dir "$EVIDENCE_DIR/verdict"
-          RECEIPT="$EVIDENCE_DIR/verdict/release-verdict.json"
-          MODE=$(node -e 'const fs=require("node:fs");console.log(JSON.parse(fs.readFileSync(process.argv[1],"utf8")).mode)' "$RECEIPT")
-          if [ "$MODE" = retained ]; then
-            node scripts/ci/client-runtime-retention.mjs receipt-artifact "$SOURCE_RUN_ID" "$SOURCE_TRIGGER_SHA" "$REPOSITORY_ID" < "$ARTIFACTS_JSON" > "$EVIDENCE_DIR/retained-artifact-id"
-            timeout 60s gh run download "$SOURCE_RUN_ID" --repo "${{ github.repository }}" --name club-arena-retained-runtime --dir "$EVIDENCE_DIR/retained"
-            node scripts/ci/client-publication-verdict.mjs admit "$RUN_JSON" "$JOBS_JSON" "$ARTIFACTS_JSON" "$RECEIPT" "$EVIDENCE_DIR/retained/retained-runtime.json"
-          else
-            node scripts/ci/client-publication-verdict.mjs admit "$RUN_JSON" "$JOBS_JSON" "$ARTIFACTS_JSON" "$RECEIPT"
-          fi
+          JOBS_JSON="$(mktemp)"
+          trap 'rm -f -- "$JOBS_JSON"' EXIT
+          timeout 30s node scripts/ci/read-publisher-jobs.mjs \
+            "${{ github.repository }}" "$SOURCE_RUN_ID" > "$JOBS_JSON"
+          node - "$JOBS_JSON" "$GITHUB_OUTPUT" <<'NODE'
+          const fs = require('node:fs');
+          const [file, output] = process.argv.slice(2);
+          const payload = JSON.parse(fs.readFileSync(file, 'utf8'));
+          if (!Array.isArray(payload.jobs)) throw new Error('The source jobs response is malformed.');
+          const jobs = payload.jobs.filter((entry) => entry?.name === 'publish-to-origin');
+          // A PUBLISHER THAT NEVER PUBLISHED IS NOT A DEFECT ON PRODUCTION.
+          //
+          // publish-club-arena cancels in progress when a newer merge arrives,
+          // and on 2026-09-30 merges were landing every few minutes. Run
+          // 36749429418 was cancelled while still queued and produced ZERO
+          // jobs, so this read said `Expected one latest publish-to-origin
+          // job, received 0` and the certificate went red - twice in thirty
+          // seconds (36749436277, 36749498583), both before a single browser
+          // started. Nothing had gone wrong: a newer publisher had taken over,
+          // and its own certificate is the one that means anything.
+          //
+          // So when no publish-to-origin job exists AND every job the source
+          // run did produce ended cancelled or skipped, nothing reached the
+          // origin and there is nothing to certify. Stand down without a
+          // verdict: should_run is never written, so every downstream job
+          // skips and this run occupies no production lock.
+          //
+          // This deliberately cannot hide a real publish. A source run holding
+          // any job that actually ran, with no publish-to-origin among them,
+          // is the renamed-or-missing-job hole and still throws below. The
+          // source run's own top-level conclusion is still never consulted -
+          // an optional Capgo failure must not suppress web E2E.
+          if (payload.total_count !== payload.jobs.length) throw new Error('Source job metadata is incomplete.');
+          const retained = payload.jobs.filter((entry) => entry?.name === 'retain-runtime');
+          const retentionSucceeded = retained.length === 1 && retained[0].status === 'completed' && retained[0].conclusion === 'success' &&
+            ['Verify both origins still serve the qualified immutable runtime', 'Record qualified retained runtime'].every((name) =>
+              (retained[0].steps ?? []).filter((entry) => entry.name === name && entry.status === 'completed' && entry.conclusion === 'success').length === 1);
+          if (retentionSucceeded) {
+            if (jobs.length !== 1 || jobs[0].conclusion !== 'skipped') throw new Error('Retention cannot coexist with an origin transaction.');
+            fs.appendFileSync(output, 'should_run=true\nretained=true\n');
+          } else {
+          const inconclusive = (entry) =>
+            entry?.conclusion === 'cancelled' || entry?.conclusion === 'skipped';
+          const superseded = jobs.length === 0 && payload.jobs.every(inconclusive);
+          if (superseded) {
+            console.log(
+              'The source publisher was superseded before it reached the origin; ' +
+                'nothing was published, so this run has nothing to certify.'
+            );
+          } else {
+          if (jobs.length !== 1) {
+            throw new Error(`Expected one latest publish-to-origin job, received ${jobs.length}.`);
+          }
+          const origin = jobs[0];
+          const verdicts = (origin.steps ?? []).filter(
+            (entry) => entry?.name === 'Stand down if the origin already serves a newer bundle'
+          );
+          const publishes = (origin.steps ?? []).filter(
+            (entry) => entry?.name === 'Publish through the host-owned immutable transaction'
+          );
+          const proofs = (origin.steps ?? []).filter(
+            (entry) => entry?.name === 'Verify the origin serves this bundle'
+          );
+          if (verdicts.length !== 1 || publishes.length !== 1 || proofs.length !== 1) {
+            throw new Error('The origin job is missing one of its release-verdict steps.');
+          }
+          const originSucceeded =
+            origin.status === 'completed' &&
+            origin.conclusion === 'success';
+          const publishProved =
+            proofs[0].status === 'completed' &&
+            proofs[0].conclusion === 'success';
+          const safeStanddown =
+            verdicts[0].status === 'completed' &&
+            verdicts[0].conclusion === 'success' &&
+            publishes[0].status === 'completed' &&
+            publishes[0].conclusion === 'skipped' &&
+            proofs[0].status === 'completed' &&
+            proofs[0].conclusion === 'skipped';
+          if (!originSucceeded || (!publishProved && !safeStanddown)) {
+            throw new Error(
+              'The source run neither proved a Hetzner web publish nor completed a safe forward stand-down.'
+            );
+          }
+          fs.appendFileSync(output, 'should_run=true\n');
+          }
+          }
+          NODE
 
       # The publisher selects current main, which can be newer than its trigger.
       # Its unique same-run dist artifact binds that selection. Never substitute

@@ -1,0 +1,9 @@
+{
+  "full_calendar_md5": "103f192a228084dad0e4268c36c82c4b",
+  "expression": "LEAST(fn_union_week_start(min(earned_at) FILTER (WHERE isfinite(earned_at))),min(earned_at))",
+  "unchanged_identity_evidence": "weekly-first-week-aggregate-native-corrected-prefix, task evidence archive",
+  "qualified_pairs": 458329,
+  "matching_errors": 1353,
+  "scope_domain": "accepted earned_at < current finite v_to; positive high-overflow timestamps excluded; negative infinity plus admitted invalid finite preserves error",
+  "no_unchanged_exhaustive_rerun": true
+}

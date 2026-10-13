@@ -191,6 +191,25 @@ async function signInTemporaryAccount(
   account: TemporaryCustomizationAccount
 ): Promise<Page> {
   const page = await context.newPage();
+  await page.addInitScript(() => {
+    const diagnostics: Array<{ status: string; reason: string }> = [];
+    Object.defineProperty(window, '__tableArtRealtimeDiagnostics', { value: diagnostics });
+    window.addEventListener('table-art-realtime-diagnostic', (event) => {
+      const detail = (event as CustomEvent).detail;
+      if (
+        !detail ||
+        !['SUBSCRIBED', 'CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED', 'UNKNOWN'].includes(
+          detail.status
+        ) ||
+        !['none', 'timeout', 'jwt', 'signer', 'rls', 'rate', 'config', 'unknown'].includes(
+          detail.reason
+        )
+      )
+        return;
+      diagnostics.push({ status: detail.status, reason: detail.reason });
+      if (diagnostics.length > 8) diagnostics.shift();
+    });
+  });
   // The public landing page deliberately does not redirect signed-out visitors.
   // These contexts are empty: enter a protected route and require real sign-in.
   const protectedURL = new URL('notifications', baseURL).toString();
@@ -368,7 +387,7 @@ test.describe('production Table Studio commerce certification', () => {
   test('every sellable design charges once, unlocks live, persists, and remains account-scoped', async ({
     browser,
     baseURL,
-  }) => {
+  }, testInfo) => {
     test.setTimeout(CASE_TIMEOUT_MS);
     if (!baseURL) throw new Error('A deployed BASE_URL is required.');
 
@@ -656,6 +675,27 @@ test.describe('production Table Studio commerce certification', () => {
       expect(leakedUnlockError).toBeNull();
       expect(leakedUnlocks).toEqual([]);
     } catch (error) {
+      const diagnostics = await Promise.all(
+        contexts
+          .flatMap((context) => context.pages())
+          .map(async (page, index) => ({
+            device: index,
+            events: await page
+              .evaluate(
+                () =>
+                  (
+                    window as Window & {
+                      __tableArtRealtimeDiagnostics?: Array<{ status: string; reason: string }>;
+                    }
+                  ).__tableArtRealtimeDiagnostics ?? []
+              )
+              .catch(() => []),
+          }))
+      );
+      await testInfo.attach('table-art-realtime-diagnostics', {
+        body: JSON.stringify(diagnostics),
+        contentType: 'application/json',
+      });
       journeyFailure = error;
     } finally {
       await Promise.all(contexts.map((context) => context.close().catch(() => undefined)));

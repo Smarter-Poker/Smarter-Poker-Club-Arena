@@ -1,0 +1,9 @@
+{
+  "signature": "fn_claim_rakeback(uuid)",
+  "full_md5": "48b85b9b4f380ee2735a1de82eb44adb",
+  "body_md5": "81c3879398ec02bb7241fb272e605052",
+  "owner": "postgres",
+  "secdef": true,
+  "config": ["search_path=public, extensions"],
+  "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}"
+}

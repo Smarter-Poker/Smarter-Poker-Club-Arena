@@ -1,0 +1,6 @@
+{
+  "fn_claim_rakeback.original.sql": "bd499d647d9e6569fc90f177400b83044a6b64d56de25ded1ab38c7f87f7e4f8",
+  "fn_calculate_cash_rakeback_periods.original.sql": "8c29dbad036cd4221ec0297b14d1dfee56cc72a52c1cc535a7f0f7bb79871e85",
+  "consumer.sql": "bb2890b0ab0b5a580fc391d4ec025ed1b6995b7a8027a37279317bb27f5c6d0e",
+  "claim-authority.json": "ab3745a5bd953f48e350b7a3939b2d76be5a08e71b24f7a6f8ce26efeb2c8845"
+}

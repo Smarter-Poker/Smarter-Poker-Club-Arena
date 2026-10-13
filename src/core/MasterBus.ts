@@ -1997,7 +1997,8 @@ class MasterBusCore {
           }
         } else if (this.isCriticalChannelKey(key)) {
           // P2-4: A critical channel (e.g. per-user hole cards
-          // `table-cards-secure-*`) with no re-subscribe factory must NOT be
+          // `table-cards-secure-*` or a tournament's `t-break-<UUID>`) with no
+          // re-subscribe factory must NOT be
           // silently removed — removeChannel would destroy the underlying
           // Supabase channel and abort its own auto-rejoin, leaving the hero
           // permanently blind for the session. Leave it in place so Supabase's
@@ -2090,13 +2091,16 @@ class MasterBusCore {
 
   /**
    * Whether a channel key carries data that must never be silently reaped by
-   * the health monitor without a recovery path. Currently the per-user secure
-   * hole-card channel (`table-cards-secure-*`) — losing it blinds the hero for
-   * the rest of the session (see P2-4). Kept as a method so the set of critical
-   * prefixes can grow in one place.
+   * the health monitor without a recovery path: per-user secure hole cards
+   * (`table-cards-secure-*`) and exact tournament keys (`t-break-<UUID>`).
+   * Preserve the SDK's existing rejoin timer and bound events for these keys;
+   * reaping a shared tournament channel aborts recovery for every consumer.
    */
   private isCriticalChannelKey(key: string): boolean {
-    return key.startsWith('table-cards-secure-');
+    return (
+      key.startsWith('table-cards-secure-') ||
+      /^t-break-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(key)
+    );
   }
 }
 

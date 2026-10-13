@@ -1,0 +1,30 @@
+{
+  "observed_at": "2026-10-13T01:06:34.211893+00:00",
+  "official_repo_commit": "cb4307f15b99e02a8a56e103086d1eab72eb9e9a",
+  "source_chain": [
+    {
+      "upstream_path": "apps/studio/components/interfaces/Settings/Database/SSLConfiguration.tsx",
+      "immutable_url": "https://raw.githubusercontent.com/supabase/supabase/cb4307f15b99e02a8a56e103086d1eab72eb9e9a/apps/studio/components/interfaces/Settings/Database/SSLConfiguration.tsx",
+      "bytes": 10395,
+      "sha256": "15cf9723c891a04c4a6578748078a21b2c5f5732d2879bff07c1d5c42c919d14"
+    },
+    {
+      "upstream_path": "apps/studio/hooks/custom-content/useCustomContent.ts",
+      "immutable_url": "https://raw.githubusercontent.com/supabase/supabase/cb4307f15b99e02a8a56e103086d1eab72eb9e9a/apps/studio/hooks/custom-content/useCustomContent.ts",
+      "bytes": 1570,
+      "sha256": "ec94aaf3cb2b8f75f6bb0acc8fd5e780d1cc3b40bc1bca3ebc0263e56a7d27b8"
+    },
+    {
+      "upstream_path": "apps/studio/hooks/custom-content/custom-content.json",
+      "immutable_url": "https://raw.githubusercontent.com/supabase/supabase/cb4307f15b99e02a8a56e103086d1eab72eb9e9a/apps/studio/hooks/custom-content/custom-content.json",
+      "bytes": 2043,
+      "sha256": "28269e08393dbed773846600e7493f0fdf57f9af9112671522653c9b510943e6"
+    }
+  ],
+  "official_certificate_url": "https://supabase-downloads.s3-ap-southeast-1.amazonaws.com/prod/ssl/prod-ca-2021.crt",
+  "certificate_pem_sha256": "700723581420dd1ac98fd7e9ac529f0ef210eadcaf87fc868a3ad7d114c2f3b7",
+  "certificate_der_sha256": "807025ad50d4ed219d2c9c7d299c004f824eb00cf7f65afef607d07b72e6cafa",
+  "valid_from": "2021-04-28T10:56:53Z",
+  "valid_until": "2031-04-26T10:56:53Z",
+  "limitations": "Public official trust material only. Public TLS chain and hostname verification succeeded against the metadata-derived direct database host without database login or SQL. Acceptance against the configured private provider endpoint remains pending the owning workflow."
+}

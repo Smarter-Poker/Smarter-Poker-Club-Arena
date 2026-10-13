@@ -122,7 +122,9 @@ describe('cashier Phase 5 production certification contracts', () => {
     }
     expect(canary).not.toContain("'hash', 'ea5a5a57ec31f396958246def887e5e6'");
     expect(canary).not.toContain("'hash', '49797528c3b5ddfcd2ccbaa01f8a1bd3'");
-    expect(canary).toContain("'hash', '3ec6fc367b3dae5c4bf3978d0175ef22'");
+    // The approved launch boundary refuses only unfinished prior intents.
+    expect(canary).toContain("'hash', '424fc2b2ee2ec319ecbbb7f267515f27'");
+    expect(canary).not.toContain("'hash', '3ec6fc367b3dae5c4bf3978d0175ef22'");
     expect(canary).not.toContain("'hash', '910f8859d4c683aafd4403c4f386772b'");
     expect(canary).toContain("'hash', 'fe490fcc75f305338160eca2a7a88b25'");
     expect(canary).toContain("'hash', '7a357ba95a8ca4eb13f00f798233d8d4'");

@@ -293,8 +293,9 @@ BEGIN
     ),
     jsonb_build_object(
       'signature', 'public.fn_club_money_panel(uuid)',
-      -- The cashier's Club Bank and promo pot read (S-07) and DynamicWallet's.
-      'hash', '169793b84386ae10fd03246a96c7d95c',
+      -- The installed 20261012181905 launch boundary adds only the scoped
+      -- accounting-start read; the retained Club Bank/member/union gates are exact.
+      'hash', 'f6b49d2e875e162c086f2186bfc60407',
       'search_path', 'search_path=public, extensions'
     ),
     jsonb_build_object(
@@ -416,7 +417,9 @@ BEGIN
     jsonb_build_object('signature', 'public.fn_cashier_operation_intent_guard()',
       'hash', '40132499b244772fe6820efb3217fccd', 'service_execute', false),
     jsonb_build_object('signature', 'public.fn_cashier_exact_intent_begin(text,uuid,uuid,jsonb)',
-      'hash', '3ec6fc367b3dae5c4bf3978d0175ef22', 'service_execute', false),
+      -- 20261012181905 preserves completed receipts and refuses unfinished
+      -- requests outside their original launch accounting boundary.
+      'hash', '424fc2b2ee2ec319ecbbb7f267515f27', 'service_execute', false),
     jsonb_build_object('signature', 'public.fn_cashier_exact_intent_finish(uuid,jsonb)',
       'hash', 'cc05789c598b9b889a04f726b9b1e2ea', 'service_execute', false),
     jsonb_build_object('signature', 'public.fn_cashier_statement_downline(uuid,uuid)',

@@ -59,6 +59,12 @@ import { offenders as moneyTriggerOffenders } from './check-money-trigger-declar
 import { declaredFunctions as bandAidNames, isBandAidName } from './check-no-new-band-aids.mjs';
 import { supabaseServerHeaders } from './supabase-auth-headers.mjs';
 import { loadAliases } from './migration-aliases.mjs';
+import { execFileSync } from 'node:child_process';
+import {
+  DSS_HISTORY_VERSION,
+  retiredDssRecordingIsBound,
+  verifySpentDssRetirement,
+} from './spent-dss-recording.mjs';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const OFFLINE = process.argv.includes('--offline');
@@ -84,7 +90,8 @@ async function rpc(name, body) {
     body: JSON.stringify(body ?? {}),
   });
   // 10.86 rule 2: never coerce an unreadable answer into an empty one.
-  if (!res.ok) throw new Error(`${name} answered HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  if (!res.ok)
+    throw new Error(`${name} answered HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
   return res.json();
 }
 
@@ -153,7 +160,13 @@ async function main() {
     }
   }
 
+  if (rows.has(DSS_HISTORY_VERSION) && !retiredDssRecordingIsBound(REPO))
+    findings.push('spent DSS recording/retirement identity is not bound');
   if (OFFLINE) {
+    if (rows.has(DSS_HISTORY_VERSION))
+      console.log(
+        '[recorded-evidence] spent DSS offline identity only; live retirement NOT checked.'
+      );
     return report(true);
   }
 
@@ -179,6 +192,40 @@ async function main() {
         `${version}: production's statements hash to ${record.md5}; the manifest and the file ` +
           `say ${row.md5}. These are not the same SQL.`
       );
+    }
+  }
+
+  // Exact spent DSS history is publishable only when its operations are absent.
+  if (rows.has(DSS_HISTORY_VERSION)) {
+    try {
+      const retired = await verifySpentDssRetirement((proof) => {
+        const url = process.env.SUPABASE_DB_URL || '';
+        if (!url) throw new Error('spent DSS retirement requires configured SUPABASE_DB_URL');
+        try {
+          return execFileSync(
+            process.env.PSQL_BIN || 'psql',
+            [
+              url,
+              '-XqAt',
+              '-v',
+              'ON_ERROR_STOP=1',
+              '-c',
+              "BEGIN; SET TRANSACTION READ ONLY; SET LOCAL statement_timeout='15s'; " +
+                proof +
+                ' ROLLBACK;',
+            ],
+            { encoding: 'utf8', timeout: 20000, stdio: ['ignore', 'pipe', 'pipe'] }
+          );
+        } catch {
+          throw new Error('spent DSS read-only retirement query could not be completed');
+        }
+      });
+      if (!retired)
+        findings.push(
+          'spent DSS historical recording has active operations or missing/changed retirement proof'
+        );
+    } catch (err) {
+      unknowns.push(err.message);
     }
   }
 
@@ -215,7 +262,10 @@ async function main() {
   try {
     const audit = await rpc('fn_definer_exposure_audit');
     const buckets = [
-      ['unauthenticated_writers', 'SECURITY DEFINER, it writes, a browser role can reach it, and it never consults auth'],
+      [
+        'unauthenticated_writers',
+        'SECURITY DEFINER, it writes, a browser role can reach it, and it never consults auth',
+      ],
       ['anon_writers', 'SECURITY DEFINER, it writes, and a caller with no account can reach it'],
       ['anon_readers', 'SECURITY DEFINER and a caller with no account can reach it'],
     ];
@@ -270,11 +320,16 @@ function report(offline) {
     return 1;
   }
   if (unknowns.length > 0) return 3;
-  console.log(
-    `[recorded-evidence] OK - every recording in the manifest is byte-identical to what ` +
-      `production applied${offline ? ' (offline: the live half was not asked)' : ''}, and every ` +
-      'finding the file-text guards raised about them is closed in the live schema.'
-  );
+  if (offline) {
+    console.log(
+      '[recorded-evidence] OK - offline recording byte identities are bound. Production bytes, live findings and retirement were NOT checked.'
+    );
+  } else {
+    console.log(
+      '[recorded-evidence] OK - every recording is byte-identical to production, and every live finding and required retirement proof is closed.'
+    );
+  }
+
   return 0;
 }
 

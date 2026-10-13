@@ -859,6 +859,25 @@
         "retention config source contract: existing budget references mistaken for pruner redefinition"
       ],
       "liveVerdict": "Production20:44:47 original sp_prune_hand_history definition remains379f83a598ff822ce30f25647bcf9bd1 and therefore its native-qualified config read, twenty-second budget and250-hand rounds remain unchanged. Job117 ACTIVE30seconds with original96244362bf46b39e75ef1100b1372203 command/postgres/database/node/port;119/279 ACTIVE unchanged. Exact original15+successor15 native cases passed and12 live new-interval runs succeeded. Only cron.alter_job schedule is changed; pg_get_functiondef references inspect the original budget rather than redefine it. This is byte-exact installed evidence; new/changed SQL rearms all guards."
+    },
+    {
+      "version": "20261012040553",
+      "name": "ops_dss_joins_midway_union_at_noon_20261012",
+      "file": "supabase/migrations/20261012040553_ops_dss_joins_midway_union_at_noon_20261012.sql",
+      "md5": "1e37a105a1c11d7a6d7aa313c8c5053e",
+      "appliedToProductionAt": null,
+      "recoveredOn": "2026-10-13",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte;10577 bytes without extra newline",
+      "refusedBy": [
+        "installed migration is absent from repository history",
+        "spent service-callable operations require retirement"
+      ],
+      "retiredBy": {
+        "file": "supabase/migrations/20261013120756_spent_dss_one_off_wallet_operations_are_retired.sql",
+        "sha256": "17ea8934302b09312d3b96805a888a045f663dac497114ed8a82ab3bd9e3b462",
+        "liveReader": "scripts/ci/check-recorded-migrations-evidence.mjs"
+      },
+      "liveVerdict": "Retirement owning run38406713940 on protected88c8aa9d97ce6f88529a696b800142ce30335e4b committed2026-10-13T13:39:56Z. Independent2026-10-13T13:40:39.853168Z readback found exact retirement version20261013120756/MD51a8a6470554d08dc02ddafcf3ed7aa48, all three operations NULL, exactly two registry rows retired and zero DSS jobs. Independent2026-10-13T13:41:36.043676Z exact machine predicate returned true and historical MD51e37a105a1c11d7a6d7aa313c8c5053e still matched. Original historical installation time remains unknown. Historical horse exclusion and fixed-owner impersonation are preserved as history, never approved by this recording. Existing horse financial law is unchanged; its scanner returns zero findings for these bytes. Mandatory reader refuses missing/changed retirement history or any surviving operation/schedule. No replay, payment or generic waiver."
     }
   ]
 }

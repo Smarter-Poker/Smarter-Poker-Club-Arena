@@ -103,6 +103,7 @@ jobs:
       - name: Verify every recorded migration against production
         id: recordings
         env:
+          SUPABASE_DB_URL: ${{ secrets.DATABASE_URL }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |

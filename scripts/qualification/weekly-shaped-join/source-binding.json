@@ -1,0 +1,128 @@
+{
+  "files": {
+    ".github/workflows/ci.yml": {
+      "bytes": 224929,
+      "sha256": "80e0ba6db62a1609695bb5ebbb1c3a75ea274f1234a5607e852ef8368c9b7a11"
+    },
+    "docs/changelog/2026-10-13-weekly-shaped-join.md": {
+      "bytes": 1422,
+      "sha256": "92f14b367d180c8e9b5211e95a1b58d2a3a94ca50757dbc794747e2761604c50"
+    },
+    "docs/laws.d/weekly-shaped-join.md": {
+      "bytes": 215,
+      "sha256": "4571c3e73a47f2d581bba6269a218d36d009bfb48ecce6606abb7738216293a4"
+    },
+    "scripts/qualification/original-flow-eligibility/after-flow.sql": {
+      "bytes": 13791,
+      "sha256": "828e1139c4b54abe5df31e7858884279c7e240cb842544730612e2e5a3925873"
+    },
+    "scripts/qualification/original-flow-eligibility/after-matcher.sql": {
+      "bytes": 4695,
+      "sha256": "23500f930abec49800679c72d52e7895f58f7e23ad30e7af1b1bc6652d6b9244"
+    },
+    "scripts/qualification/original-flow-eligibility/current-source40.json": {
+      "bytes": 238578,
+      "sha256": "b380a519e6c17e5b4c1793974c56213c1a7932c6a0dfda2db7528dd43d6c4ea3"
+    },
+    "scripts/qualification/original-flow-eligibility/maintenance-type-source.sql": {
+      "bytes": 5127,
+      "sha256": "23e1d645751cb09547654de876744af46fda802051033063fca59375ee759311"
+    },
+    "scripts/qualification/weekly-cohort-cutoff/authorities.json": {
+      "bytes": 4621,
+      "sha256": "30fd68f61b145e0a636df8c4574042e8f320bc05b1559b6e45fe9a6340aa8c7c"
+    },
+    "scripts/qualification/weekly-cohort-cutoff/before-helper.sql": {
+      "bytes": 2123,
+      "sha256": "1b8799744b55fd3588f561edb4ff8b7370ae786276ee5f36c0a44b50945e1e3a"
+    },
+    "scripts/qualification/weekly-cohort-cutoff/caller-source.sql": {
+      "bytes": 790,
+      "sha256": "bc6a0c4ed758f74803f6863612b5c758e9447cfefeb4344c7e21ac61b529102a"
+    },
+    "scripts/qualification/weekly-first-week-aggregate/after-scope.sql": {
+      "bytes": 49985,
+      "sha256": "678d9411a37cc602e1eb1243e20b91c8047f0c866260bd6d1019bf3bf0093c8c"
+    },
+    "scripts/qualification/weekly-first-week-aggregate/calendar-support.sql": {
+      "bytes": 676,
+      "sha256": "fc9969ebe36e81abb70e8e744076e45fe6ef5552deeee03f76dccf1ad696686e"
+    },
+    "scripts/qualification/weekly-first-week-aggregate/selector-fixture.sql": {
+      "bytes": 5040,
+      "sha256": "86db879763fe7c0b67548a94366c7954590fbb0921a7f2c5df80110c60f65b6b"
+    },
+    "scripts/qualification/weekly-shaped-join/README.md": {
+      "bytes": 1541,
+      "sha256": "6261ff1e3188659e9efe6e5edb9eb3cad264f5415a7af1950c8f030589dca552"
+    },
+    "scripts/qualification/weekly-shaped-join/after-shaped.sql": {
+      "bytes": 1510,
+      "sha256": "1a68c38c67c6442f51531b9e5e4857016db37753b59c6e0dd93ab5dd7bca6f19"
+    },
+    "scripts/qualification/weekly-shaped-join/authorities.json": {
+      "bytes": 11987,
+      "sha256": "3ac6dba21a8703d535779d475a728a93e2ee2de0a255a219ef89ce91538275b8"
+    },
+    "scripts/qualification/weekly-shaped-join/before-shaped.sql": {
+      "bytes": 1553,
+      "sha256": "38b827948955b4d46ab780a5c7bfa8e6ac016e9f22892a3eadc38a189f5e8d29"
+    },
+    "scripts/qualification/weekly-shaped-join/generation-source.sql": {
+      "bytes": 2525,
+      "sha256": "1feee036ac0edb200b13ae56531d3fb6941ebb01e1d1cc87edfd2666fd40693f"
+    },
+    "scripts/qualification/weekly-shaped-join/installer-driver.py": {
+      "bytes": 13291,
+      "sha256": "77f97f6335d9d0891bdf288272994d46d060735f1325c6bca90a487b92afdb07"
+    },
+    "scripts/qualification/weekly-shaped-join/run-native.py": {
+      "bytes": 1234,
+      "sha256": "1049f1d53ca89f4225db18156d648aa4990e070a899bfac89fe8e499460c21eb"
+    },
+    "scripts/qualification/weekly-shaped-join/semantic-driver.py": {
+      "bytes": 9012,
+      "sha256": "5089a397cbde01ea64c56a4c576bcd05d5380cf784f0643b74784d86319d8bff"
+    },
+    "scripts/qualification/weekly-shaped-join/shaped-schema.sql": {
+      "bytes": 39288,
+      "sha256": "e4ab712795c77fae7c6ca906a4c153b277ac80d95896f745dd03b7b9ccd47f2b"
+    },
+    "supabase/migrations/20261012181905_scoped_club_launch_reset_and_guarded_recovery.sql": {
+      "bytes": 523621,
+      "sha256": "900ab93898c39d4adc77b1377be5a0d5d7394190776c4c6d37b241c8c59fbf9d"
+    },
+    "supabase/migrations/20261013024122_weekly_shaped_hands_start_from_original_unaccepted.sql": {
+      "bytes": 6321,
+      "sha256": "0ae4232c813321a1b13b88bed73127f7b6142aeb636cae54424516eb974f1214"
+    },
+    "supabase/migrations/20261013084856_original_flow_proofs_run_only_for_their_eligible_receipts.sql": {
+      "bytes": 23314,
+      "sha256": "2885aef92f485c3aafe1732d66f5134a927562c84d97e7a651b95102ce26065f"
+    },
+    "supabase/migrations/20261013133012_scoped_launch_operator_accepts_authoritative_json_claims.sql": {
+      "bytes": 6255,
+      "sha256": "89b1671cf9aa507248b7620f734855fa03cdf586d133a1caa9890530fbd04df3"
+    },
+    "supabase/migrations/20261013163310_weekly_initial_cash_selection_reads_cutoff_once_per_club.sql": {
+      "bytes": 56447,
+      "sha256": "0e9661dc97f699f25859a37e182744ae980e0949b0fa6194f82180d9e5b3b7ff"
+    },
+    "supabase/migrations/20261013182759_weekly_first_week_calendar_runs_once_per_club.sql": {
+      "bytes": 56531,
+      "sha256": "58881c033678200f7aea5b156c6da855ef3db9372344c47a21e1a060cb829ad8"
+    },
+    "supabase/migrations/20261013195428_weekly_cohort_cutoff_runs_once_per_earning_club.sql": {
+      "bytes": 11065,
+      "sha256": "0d963d68abc79558029bd3a44069f851c03ccfa882b041dc785e280261027b54"
+    },
+    "supabase/migrations/20261013215115_weekly_shaped_hands_join_their_unique_touch_once.sql": {
+      "bytes": 9206,
+      "sha256": "0c36a164c381705634a6474600ff2aba5c9373aafdea8353652f934b5f3b2229"
+    },
+    "tests/weekly-shaped-join.law.test.ts": {
+      "bytes": 2493,
+      "sha256": "6cd2ced549c59e9a38a58d67e4fafa550a5c755e9c593889689072641b9ec9d2"
+    }
+  }
+}

@@ -1,0 +1,254 @@
+{
+  "metadata": [
+    {
+      "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=public, pg_temp"],
+      "secdef": false,
+      "body_md5": "112b1265824ee082b8adc67ea367d826",
+      "full_md5": "ec683805e052fceeae74789e82dce4cc",
+      "signature": "fn_platform_frozen()",
+      "volatility": "v"
+    },
+    {
+      "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=public, auth, pg_temp"],
+      "secdef": true,
+      "body_md5": "3d9e02539fdcc6aca9a8a3769ed32521",
+      "full_md5": "05b537b57c9f51a5164e20a1cd0e67e0",
+      "signature": "fn_active_maintenance_release_boundary()",
+      "volatility": "v"
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=public, pg_temp"],
+      "secdef": true,
+      "body_md5": "4e7c5597b6c5630ca1d8fd9e021a1f5f",
+      "full_md5": "edecfc5273ee4c96b608baa0ea863578",
+      "signature": "fn_union_pnl_evidence_report(uuid,timestamp with time zone,timestamp with time zone)",
+      "volatility": "v"
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=public, pg_temp"],
+      "secdef": false,
+      "body_md5": "277b2cb1041a06aa5eee2a422158e9c1",
+      "full_md5": "f1d7fbfbe0bcebb63579b19bc3143a95",
+      "signature": "fn_union_pnl_cash_outcome_accepted(union_pnl_cash_outcomes)",
+      "volatility": "s"
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=public, pg_temp"],
+      "secdef": false,
+      "body_md5": "9bb53e297f9fb60287db764e34605b02",
+      "full_md5": "627c6a7dd232bb8030d5400adf8346f2",
+      "signature": "fn_union_pnl_cash_outcome_link(union_pnl_cash_outcomes)",
+      "volatility": "s"
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=public, pg_temp"],
+      "secdef": true,
+      "body_md5": "b0b63ad4b631f0935333cb50131ad953",
+      "full_md5": "5f643c03d3595c20354d753087988476",
+      "signature": "fn_union_pnl_projection_ready(text)",
+      "volatility": "s"
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=public, pg_temp"],
+      "secdef": true,
+      "body_md5": "5c50a3473c5e1c7326137d4bc0c1425a",
+      "full_md5": "78b5d525a31a79ff1b13a5cfe0ddf739",
+      "signature": "fn_union_pnl_week_shaped_hands(uuid,timestamp with time zone,timestamp with time zone,boolean)",
+      "volatility": "s"
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=pg_catalog, public, smarter_private", "TimeZone=UTC"],
+      "secdef": false,
+      "body_md5": "71bb5ac3b30855a9ace27dc4342468e2",
+      "full_md5": "dbf5a3a18da9339ba60083cb2d3aea4c",
+      "signature": "smarter_private.original_inventory_basis_generation()",
+      "volatility": "s"
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=pg_catalog"],
+      "secdef": false,
+      "body_md5": "03d7fc9f2e3ab455e61a1d7133f01de0",
+      "full_md5": "2f0091a1c85eb9f4ffadce1142ba31a4",
+      "signature": "smarter_private.original_inventory_proof_sources_match()",
+      "volatility": "s"
+    }
+  ],
+  "history": [
+    {
+      "md5": "8befef51b627728757b0cd164b89e084",
+      "name": "weekly_shaped_hands_start_from_original_unaccepted",
+      "bytes": 6321,
+      "version": "20261013024122",
+      "cardinality": 1
+    },
+    {
+      "md5": "7be7f54080357418424eaecfa552500d",
+      "name": "weekly_cohort_cutoff_runs_once_per_earning_club",
+      "bytes": 11065,
+      "version": "20261013195428",
+      "cardinality": 1
+    }
+  ],
+  "columns": [
+    {
+      "name": "table_id",
+      "type": "uuid",
+      "notnull": true,
+      "relation": "union_pnl_cash_outcomes"
+    },
+    {
+      "name": "hand_number",
+      "type": "bigint",
+      "notnull": true,
+      "relation": "union_pnl_cash_outcomes"
+    },
+    {
+      "name": "hand_id",
+      "type": "uuid",
+      "notnull": true,
+      "relation": "union_pnl_cash_outcomes"
+    },
+    {
+      "name": "transaction_id",
+      "type": "xid8",
+      "notnull": true,
+      "relation": "union_pnl_cash_outcomes"
+    },
+    {
+      "name": "recognized_at",
+      "type": "timestamp with time zone",
+      "notnull": true,
+      "relation": "union_pnl_cash_outcomes"
+    },
+    {
+      "name": "payload_hash",
+      "type": "text",
+      "notnull": true,
+      "relation": "union_pnl_cash_outcomes"
+    },
+    {
+      "name": "game_scope",
+      "type": "jsonb",
+      "notnull": true,
+      "relation": "union_pnl_cash_outcomes"
+    },
+    {
+      "name": "evidence",
+      "type": "jsonb",
+      "notnull": true,
+      "relation": "union_pnl_cash_outcomes"
+    },
+    {
+      "name": "table_id",
+      "type": "uuid",
+      "notnull": true,
+      "relation": "union_pnl_cash_outcome_touches"
+    },
+    {
+      "name": "hand_number",
+      "type": "bigint",
+      "notnull": true,
+      "relation": "union_pnl_cash_outcome_touches"
+    },
+    {
+      "name": "recognized_at",
+      "type": "timestamp with time zone",
+      "notnull": false,
+      "relation": "union_pnl_cash_outcome_touches"
+    },
+    {
+      "name": "game_union_id",
+      "type": "text",
+      "notnull": false,
+      "relation": "union_pnl_cash_outcome_touches"
+    },
+    {
+      "name": "shaped",
+      "type": "boolean",
+      "notnull": true,
+      "relation": "union_pnl_cash_outcome_touches"
+    },
+    {
+      "name": "accepted_rake",
+      "type": "text",
+      "notnull": false,
+      "relation": "union_pnl_cash_outcome_touches"
+    },
+    {
+      "name": "participants",
+      "type": "jsonb",
+      "notnull": false,
+      "relation": "union_pnl_cash_outcome_touches"
+    }
+  ],
+  "definitions": [
+    {
+      "acl": ["postgres=X/postgres"],
+      "owner": "postgres",
+      "config": ["search_path=public, pg_temp"],
+      "secdef": false,
+      "full_md5": "f1d7fbfbe0bcebb63579b19bc3143a95",
+      "signature": "fn_union_pnl_cash_outcome_accepted(union_pnl_cash_outcomes)",
+      "volatility": "s",
+      "full_definition": "CREATE OR REPLACE FUNCTION public.fn_union_pnl_cash_outcome_accepted(o union_pnl_cash_outcomes)\n RETURNS boolean\n LANGUAGE sql\n STABLE\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n SELECT o.evidence->'all_players_included' IS NOT DISTINCT FROM 'true'::jsonb\n  AND o.evidence->'game_scope' IS NOT DISTINCT FROM o.game_scope\n  AND ((o.evidence->>'status' IS NOT DISTINCT FROM 'ready' AND o.evidence->'basis_certified' IS NOT DISTINCT FROM 'true'::jsonb)\n   OR EXISTS(SELECT 1 FROM public.union_pnl_cash_outcome_resolutions r WHERE r.table_id=o.table_id AND r.hand_number=o.hand_number\n    AND r.hand_id=o.hand_id AND r.outcome_payload_hash=o.payload_hash AND r.outcome_evidence_md5=md5(o.evidence::text))\n   OR EXISTS(SELECT 1 FROM public.union_pnl_cash_outcomes actual\n     WHERE actual.table_id=o.table_id AND actual.hand_number=o.hand_number\n      AND to_jsonb(actual) IS NOT DISTINCT FROM to_jsonb(o)\n      AND smarter_private.posthand_escrow_certified_evidence(o.table_id,o.hand_number) IS NOT NULL))\n$function$\n"
+    },
+    {
+      "acl": ["postgres=X/postgres"],
+      "owner": "postgres",
+      "config": ["search_path=public, pg_temp"],
+      "secdef": false,
+      "full_md5": "627c6a7dd232bb8030d5400adf8346f2",
+      "signature": "fn_union_pnl_cash_outcome_link(union_pnl_cash_outcomes)",
+      "volatility": "s",
+      "full_definition": "CREATE OR REPLACE FUNCTION public.fn_union_pnl_cash_outcome_link(o union_pnl_cash_outcomes)\n RETURNS SETOF union_pnl_cash_outcome_link_resolutions\n LANGUAGE sql\n STABLE\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n SELECT r.* FROM public.union_pnl_cash_outcome_link_resolutions r\n WHERE r.table_id=o.table_id AND r.hand_number=o.hand_number AND r.hand_id=o.hand_id\n  AND r.outcome_payload_hash=o.payload_hash AND r.outcome_evidence_md5=md5(o.evidence::text) AND r.proof_md5=md5(r.proof::text)\n$function$\n"
+    },
+    {
+      "acl": ["postgres=X/postgres"],
+      "owner": "postgres",
+      "config": ["search_path=public, pg_temp"],
+      "secdef": false,
+      "full_md5": "0c3a826553e9ef65a03030c3ef78eaaf",
+      "signature": "fn_union_pnl_linked_cash_outcomes(uuid,timestamp with time zone,timestamp with time zone)",
+      "volatility": "s",
+      "full_definition": "CREATE OR REPLACE FUNCTION public.fn_union_pnl_linked_cash_outcomes(p_union_id uuid, p_start timestamp with time zone, p_end timestamp with time zone)\n RETURNS TABLE(table_id uuid, hand_number bigint, game_scope jsonb, evidence jsonb)\n LANGUAGE sql\n STABLE\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n SELECT r.table_id,r.hand_number,r.game_scope,r.evidence\n FROM public.union_pnl_cash_outcome_link_resolutions r\n JOIN public.union_pnl_cash_outcomes o ON o.table_id=r.table_id AND o.hand_number=r.hand_number\n WHERE r.game_scope->>'game_union_id'=p_union_id::text AND o.recognized_at>=p_start AND o.recognized_at<p_end\n  AND r.hand_id=o.hand_id AND r.outcome_payload_hash=o.payload_hash AND r.outcome_evidence_md5=md5(o.evidence::text)\n  AND r.proof_md5=md5(r.proof::text)\n$function$\n"
+    },
+    {
+      "acl": ["postgres=X/postgres"],
+      "owner": "postgres",
+      "config": ["search_path=public, pg_temp"],
+      "secdef": true,
+      "full_md5": "5f643c03d3595c20354d753087988476",
+      "signature": "fn_union_pnl_projection_ready(text)",
+      "volatility": "s",
+      "full_definition": "CREATE OR REPLACE FUNCTION public.fn_union_pnl_projection_ready(p_projection text)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n SELECT COALESCE((SELECT b.completed_at IS NOT NULL FROM public.union_pnl_projection_build b WHERE b.projection=p_projection),false)\n$function$\n"
+    },
+    {
+      "acl": ["postgres=X/postgres"],
+      "owner": "postgres",
+      "config": ["search_path=public, pg_temp"],
+      "secdef": true,
+      "full_md5": "78b5d525a31a79ff1b13a5cfe0ddf739",
+      "signature": "fn_union_pnl_week_shaped_hands(uuid,timestamp with time zone,timestamp with time zone,boolean)",
+      "volatility": "s",
+      "full_definition": "CREATE OR REPLACE FUNCTION public.fn_union_pnl_week_shaped_hands(p_union_id uuid, p_start timestamp with time zone, p_end timestamp with time zone, p_projected boolean)\n RETURNS SETOF union_pnl_cash_outcomes\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nBEGIN\n IF p_projected THEN\n  RETURN QUERY WITH candidates AS MATERIALIZED (\n   SELECT q.* FROM public.union_pnl_cash_outcomes q\n   WHERE q.game_scope->>'game_union_id'=p_union_id::text AND q.recognized_at>=p_start AND q.recognized_at<p_end\n    AND (q.evidence->>'status' IS DISTINCT FROM 'ready' OR q.evidence->'basis_certified' IS DISTINCT FROM 'true'::jsonb\n     OR q.evidence->'all_players_included' IS DISTINCT FROM 'true'::jsonb OR q.evidence->'game_scope' IS DISTINCT FROM q.game_scope)\n  ) SELECT o.* FROM candidates o\n   WHERE (SELECT CASE WHEN h.game_union_id=p_union_id::text AND h.recognized_at>=p_start AND h.recognized_at<p_end\n    THEN h.shaped ELSE false END FROM public.union_pnl_cash_outcome_touches h\n    WHERE h.table_id=o.table_id AND h.hand_number=o.hand_number) IS TRUE;\n ELSE\n  RETURN QUERY SELECT o.* FROM public.union_pnl_cash_outcomes o WHERE o.game_scope->>'game_union_id'=p_union_id::text AND o.recognized_at>=p_start AND o.recognized_at<p_end\n   AND (o.evidence->>'status' IS DISTINCT FROM 'ready' OR o.evidence->'basis_certified' IS DISTINCT FROM 'true'::jsonb\n    OR o.evidence->'all_players_included' IS DISTINCT FROM 'true'::jsonb OR o.evidence->'game_scope' IS DISTINCT FROM o.game_scope);\n END IF;\nEND $function$\n"
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+# Weekly shaped hands preserve exact admission through a unique touch join
+
+The projected reader in `fn_union_pnl_week_shaped_hands` forced a scalar touch lookup for every materialized unaccepted outcome. The production no-ANALYZE plan estimated cost 2254164.78. The same exact candidate set with an ordinary PK-proven join planned as a hash join at 570797.11; this identifies a repeated lookup mechanism without proving the precise timeout cause or runtime duration.
+
+Only the scalar WHERE lookup changes. The materialized original outcome predicates, union/week bounds, full output rows, raw branch, report/acceptance/link sources and financial rules remain unchanged. A guarded single transaction pins authentic columns and validated nondeferrable primary keys before replacement; exact current dependencies, owner/private ACL, freeze, operator, scheduler and shared settlement controls remain mandatory.
+
+Pure PostgreSQL 17 matrices pass independently derived full-row equality across all four JSON refusal predicates, NULL/missing/string booleans, missing/mismatched touches, inclusive start/exclusive end, raw/NULL-projected branches, empty periods and NULL parameters. Economic helpers are neither called nor stubbed. Installer and local required checks are recorded separately before submission. Production installation/natural progress/full-book completion remain open until demonstrated by the owning operation.

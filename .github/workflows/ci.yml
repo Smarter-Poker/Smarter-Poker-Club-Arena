@@ -2585,6 +2585,23 @@ jobs:
           path: ${{ runner.temp }}/weekly-cohort-cutoff/
           if-no-files-found: error
 
+      - name: Weekly shaped outcomes preserve their unique touch join
+        id: weekly_shaped_join
+        if: matrix.shard == 3
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/weekly-shaped-join"
+          python3 scripts/qualification/weekly-shaped-join/run-native.py --output "$RUNNER_TEMP/weekly-shaped-join" 2>&1 | tee "$RUNNER_TEMP/weekly-shaped-join/native.log"
+      - name: Retain weekly shaped join native transcripts
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.weekly_shaped_join.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-shaped-join-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/weekly-shaped-join/
+          if-no-files-found: error
+
       - name: Original flow invokes only its eligible authentic proof
         id: original_flow_eligibility
         if: matrix.shard == 3

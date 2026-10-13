@@ -495,3 +495,32 @@ for (const advanced of [false, true]) {
     expect(screen.getByText('Matching Games Unavailable')).toBeInTheDocument();
   });
 }
+
+for (const intent of ['calendar', 'previous period']) {
+  it(`preserves an explicit ${intent} choice made after midnight before the next poll`, async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date(`${TEST_END_DATE}T23:59:50Z`));
+    try {
+      render(<ClubDataPage />);
+      await screen.findByText('Shark Table One');
+      const tomorrow = new Date(`${TEST_END_DATE}T00:00:10Z`);
+      tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+      vi.setSystemTime(tomorrow);
+      const calendar = screen.getByLabelText('Period Ending (UTC)');
+      fireEvent.change(calendar, { target: { value: tomorrow.toISOString().slice(0, 10) } });
+      if (intent === 'calendar') fireEvent.change(calendar, { target: { value: TEST_END_DATE } });
+      else {
+        fireEvent.click(screen.getByRole('button', { name: '1 Day', exact: true }));
+        fireEvent.click(screen.getByRole('button', { name: 'Previous Period' }));
+      }
+      expect(calendar).toHaveValue(TEST_END_DATE);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000);
+      });
+      expect(calendar).toHaveValue(TEST_END_DATE);
+    } finally {
+      cleanup();
+      vi.useRealTimers();
+    }
+  });
+}

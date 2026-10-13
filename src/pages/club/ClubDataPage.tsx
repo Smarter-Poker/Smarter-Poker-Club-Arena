@@ -2462,6 +2462,7 @@ export default function ClubDataPage() {
       d.setUTCDate(d.getUTCDate() + direction * preset);
       const next = toISODate(d);
       const today = toISODate(new Date());
+      observedUtcDayRef.current = today;
       setEndDate(next > today ? today : next);
     },
     [endDate, preset]
@@ -3147,8 +3148,11 @@ export default function ClubDataPage() {
               max={toISODate(new Date())}
               onChange={(event) => {
                 const value = event.target.value;
-                if (/^\d{4}-\d{2}-\d{2}$/.test(value) && value <= toISODate(new Date()))
+                const today = toISODate(new Date());
+                if (/^\d{4}-\d{2}-\d{2}$/.test(value) && value <= today) {
+                  observedUtcDayRef.current = today;
                   setEndDate(value);
+                }
               }}
             />
           </label>

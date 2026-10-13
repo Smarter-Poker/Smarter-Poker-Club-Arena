@@ -92,9 +92,8 @@ jobs:
             || { echo '::error::The source workflow run id is malformed.'; exit 1; }
           JOBS_JSON="$(mktemp)"
           trap 'rm -f -- "$JOBS_JSON"' EXIT
-          timeout 30s gh api \
-            "repos/${{ github.repository }}/actions/runs/$SOURCE_RUN_ID/jobs?filter=latest&per_page=100" \
-            > "$JOBS_JSON"
+          timeout 30s node scripts/ci/read-publisher-jobs.mjs \
+            "${{ github.repository }}" "$SOURCE_RUN_ID" > "$JOBS_JSON"
           node - "$JOBS_JSON" "$GITHUB_OUTPUT" <<'NODE'
           const fs = require('node:fs');
           const [file, output] = process.argv.slice(2);

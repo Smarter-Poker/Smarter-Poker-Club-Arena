@@ -28,7 +28,10 @@ const oneShotRequestGate = readFileSync(
 describe('post-deploy E2E concurrency', () => {
   it('runs only after exact publish proof or a successful safe stand-down', () => {
     expect(workflow).toContain('publication-gate:');
-    expect(workflow).toContain('/actions/runs/$SOURCE_RUN_ID/jobs?filter=latest&per_page=100');
+    expect(workflow).toContain('timeout 30s node scripts/ci/read-publisher-jobs.mjs');
+    expect(
+      readFileSync(resolve(__dirname, '../../scripts/ci/read-publisher-jobs.mjs'), 'utf8')
+    ).toContain('jobs?filter=latest&per_page=30&page=${page}');
     expect(workflow).toContain("entry?.name === 'publish-to-origin'");
     expect(workflow).toContain(
       "entry?.name === 'Stand down if the origin already serves a newer bundle'"

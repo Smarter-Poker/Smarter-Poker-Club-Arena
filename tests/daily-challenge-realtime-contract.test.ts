@@ -111,10 +111,18 @@ describe('Daily Missions realtime and render-isolation contract', () => {
     expect(surface).not.toContain("table: 'user_daily_challenges'");
 
     expect(broadcastHook).toContain(".on('broadcast', { event }");
-    expect(broadcastHook).toContain('await supabase.realtime.setAuth()');
-    expect(broadcastHook.indexOf('await supabase.realtime.setAuth()')).toBeLessThan(
-      broadcastHook.indexOf('masterBus.getOrCreateChannel')
+    expect(broadcastHook).toContain("import { subscribeRealtime } from '../lib/subscribeRealtime'");
+    expect(broadcastHook).toContain('private: privateChannel = true');
+    expect(broadcastHook).toContain('void subscribeRealtime(');
+    const joinOwner = readFileSync(resolve(__dirname, '../src/lib/subscribeRealtime.ts'), 'utf8');
+    const admission = readFileSync(resolve(__dirname, '../src/lib/realtimeAdmission.ts'), 'utf8');
+    expect(joinOwner).toContain('await realtimeAdmission.ready(supabase.realtime, signal)');
+    expect(joinOwner.indexOf('await realtimeAdmission.ready')).toBeLessThan(
+      joinOwner.indexOf('channel.subscribe(callback)')
     );
+    expect(joinOwner).toContain('if (!signal.aborted) channel.subscribe(callback)');
+    expect(admission).toContain('client.setAuth().then(');
+    expect(admission).toContain('authenticated && client.isConnected()');
     expect(broadcastHook).toContain('masterBus.registerChannelFactory');
     expect(broadcastHook).toContain('masterBus.removeRegisteredChannel');
   });

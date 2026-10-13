@@ -15,6 +15,14 @@ const h = vi.hoisted(() => ({
   removedFactory: vi.fn(),
   factories: new Map<string, () => void>(),
 }));
+// This suite supplies a settled synthetic transport; admission itself is
+// exercised with the actual SDK in realtimeAdmission/subscribeRealtime tests.
+vi.mock('../../src/lib/subscribeRealtime', () => ({
+  subscribeRealtime: (channel: any, callback: any, signal: AbortSignal) => {
+    if (!signal.aborted) channel.subscribe(callback);
+  },
+}));
+
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
     from: (table: string) => {
@@ -246,7 +254,7 @@ describe('achievement reads and page-owned notification invalidation', () => {
     view.unmount();
     await act(() => vi.advanceTimersByTimeAsync(120_000));
     expect(count('training_user_achievements')).toBe(3);
-    expect(h.removed).toHaveBeenCalledWith('achievement-notifications-owner-a');
+    expect(h.removed).toHaveBeenCalledWith('achievement-notifications-owner-a', expect.anything());
     expect(h.removedFactory).toHaveBeenCalledWith('achievement-notifications-owner-a');
   });
 

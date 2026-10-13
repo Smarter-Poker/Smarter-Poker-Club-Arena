@@ -2518,6 +2518,25 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Original refund evidence proves identical lineage with one application scan
+        id: original_refund_evidence
+        if: matrix.shard == 3
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/original-refund-evidence"
+          python3 scripts/qualification/original-refund-evidence/run-native.py --output "$RUNNER_TEMP/original-refund-evidence" 2>&1 | tee "$RUNNER_TEMP/original-refund-evidence/native.log"
+
+      - name: Retain original refund evidence qualification
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.original_refund_evidence.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: original-refund-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/original-refund-evidence/
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Original inventory restoration admits only qualified finite financial evidence
         id: original_inventory_restoration
         if: matrix.shard == 3

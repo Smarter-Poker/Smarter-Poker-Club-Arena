@@ -1,0 +1,5 @@
+# Tournament Channels Keep Their Existing SDK Rejoin
+
+The live MTT certificate observed advancing database blind levels while both spectators received no level event. Its trace showed MasterBus reaping the errored tournament channel because it had no factory, aborting the existing Supabase rejoin timer. Exact tournament channel keys now use the existing critical-channel preservation branch. The same authenticated channel, configuration, listeners and shared references survive a transient error; the last consumer still removes it normally.
+
+The connected regression uses actual MasterBus and the locked Realtime SDK over an isolated local wire. It fails before the correction, then verifies the SDK timer survives the health check, rejoins with unchanged auth/config, delivers the natural level payload and cleans up the final reference. Existing hole-card protection and unrelated dead-channel cleanup remain covered. Initial admission failures and production live certification remain separate; no certificate assertion, gameplay, financial rule, observer or retry loop is added.

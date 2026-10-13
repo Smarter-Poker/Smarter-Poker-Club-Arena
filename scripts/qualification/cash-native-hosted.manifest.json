@@ -166,8 +166,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 218721,
-      "sha256": "597cd1f05895e271e0b3e9b986068b199c267e56e42b43e2ed80d990422fb7db"
+      "bytes": 219700,
+      "sha256": "8716d2d184b824c542069f47d4f542bbbdb71f3246ed2b4b3f9ba07885b62002"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -3192,6 +3192,21 @@
         "current": {
           "bytes": 218721,
           "sha256": "597cd1f05895e271e0b3e9b986068b199c267e56e42b43e2ed80d990422fb7db"
+        }
+      }
+    }
+  },
+  "originalRefundEvidenceQualification20261013": {
+    "reason": "Preserve protected cash17 and every financial input; bind the combined CI file containing the directly triggered original refund classification and source40 installation qualification.",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 218721,
+          "sha256": "597cd1f05895e271e0b3e9b986068b199c267e56e42b43e2ed80d990422fb7db"
+        },
+        "current": {
+          "bytes": 219700,
+          "sha256": "8716d2d184b824c542069f47d4f542bbbdb71f3246ed2b4b3f9ba07885b62002"
         }
       }
     }

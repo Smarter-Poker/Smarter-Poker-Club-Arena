@@ -3,6 +3,7 @@ from pathlib import Path
 import os,re,subprocess,tempfile,json,hashlib,argparse,shutil,time
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--component-root',type=Path)
+parser.add_argument('--launch-followup',type=Path,help='Required retired-cohort/current-week guarded followup after the installed base chain')
 parser.add_argument('--followup-migration',type=Path,help='One exact guarded installed-source followup after the base migration')
 parser.add_argument('--candidate-migration',type=Path,help='Single complete assembled candidate migration; loaded exactly once')
 parser.add_argument('--component-map',type=Path,help='JSON object mapping relative component names to actual candidate SQL paths')
@@ -16,6 +17,8 @@ args=parser.parse_args()
 # A missing followup fails normally; this is never a conditional test skip.
 if args.candidate_migration and args.candidate_migration.name=='20261012181905_scoped_club_launch_reset_and_guarded_recovery.sql' and args.followup_migration is None:
  args.followup_migration=Path(__file__).resolve().parents[2]/'supabase'/'migrations'/'20261013133012_scoped_launch_operator_accepts_authoritative_json_claims.sql'
+if args.candidate_migration and args.candidate_migration.name=='20261012181905_scoped_club_launch_reset_and_guarded_recovery.sql' and args.launch_followup is None:
+ args.launch_followup=Path(__file__).resolve().parents[2]/'supabase'/'migrations'/'20261013202353_scoped_launch_preserves_retired_wallets_and_starts_current_w.sql'
 BASE=args.scratch_root.resolve();OUT=args.output_dir.resolve()
 if not BASE.is_dir():parser.error('scratch root must already exist')
 OUT.mkdir(parents=True,exist_ok=True)
@@ -25,7 +28,11 @@ version=subprocess.check_output([str(PG/'initdb'),'--version'],text=True)
 if not re.search(r'PostgreSQL\) 17\.',version):parser.error('PostgreSQL 17 required')
 FIX=Path(__file__).resolve().parent/'fixtures'/'launch-reset'
 FOLLOW_FIX=FIX/'transport-boundary'
+COHORT_FIX=FIX/'retired-current-week'
 fixture_hashes=json.loads((FIX/'fixture-hashes.json').read_text())
+if args.launch_followup:
+ for name,digest in json.loads((COHORT_FIX/'fixture-pins.json').read_text()).items():
+  fixture_hashes['retired-current-week/'+name]=digest
 for name,digest in fixture_hashes.items():
  if hashlib.sha256((FIX/name).read_bytes()).hexdigest()!=digest:raise AssertionError('Original fixture fingerprint changed: '+name)
 if args.followup_migration:
@@ -41,6 +48,7 @@ if args.candidate_migration and (args.component_root or mapping):parser.error('C
 components=[args.candidate_migration.resolve()] if args.candidate_migration else [Path(mapping[n]).resolve() if n in mapping else (args.component_root/n).resolve() for n in names]
 if args.followup_migration and not args.candidate_migration:parser.error('Followup requires one assembled base candidate')
 if args.followup_migration:components.append(args.followup_migration.resolve())
+if args.launch_followup:components.append(args.launch_followup.resolve())
 component_sources={p:p.read_text() for p in components}
 with tempfile.TemporaryDirectory(prefix='fb-',dir=BASE) as folder:
  root=Path(folder);socket=root/'s';socket.mkdir();data=root/'d'
@@ -58,19 +66,37 @@ with tempfile.TemporaryDirectory(prefix='fb-',dir=BASE) as folder:
   run(q,(FIX/'original-bootstrap.sql').read_text())
   # First seed fixture identities/state, then install triggers before action.
   actor='20000000-0000-0000-0000-000000000001';horse='10000000-0000-0000-0000-000000000001';human='10000000-0000-0000-0000-000000000002'
-  horses=[horse]+[str(__import__('uuid').UUID(hashlib.md5(('horse-fixture:'+str(i)).encode()).hexdigest())) for i in range(583 if args.production_roster else 15 if args.prefix_roster else 7)]
+  horses=[horse]+[str(__import__('uuid').UUID(hashlib.md5(('horse-fixture:'+str(i)).encode()).hexdigest())) for i in range(583 if args.production_roster else 16 if args.prefix_roster else 8)]
   wallet_counts=[580,416,584,323] if args.production_roster else [16,16,16,16] if args.prefix_roster else [8,8,8,8]
-  horse_wallets=sum(wallet_counts)
+  raw_wallet_counts=wallet_counts.copy()
+  retired_horses=horses[416:478] if args.production_roster else horses[-2:-1]
+  eligible_wallet_counts=[518,416,522,261] if args.production_roster else [n if i==1 else n-1 for i,n in enumerate(wallet_counts)]
+  horse_wallets=sum(eligible_wallet_counts)
   scope=['a0000000-0000-0000-0000-000000000001','2a1132b9-5ba2-42e6-9f01-30a7fcffebe3','a41434bb-8d0c-400a-8f0d-e8b3d65afed4','fade0000-0000-0000-0000-000000000001']
   seed=f"INSERT INTO profiles(id,role,status,is_horse) VALUES('{actor}','god','active',false),('{horse}','user','active',true),('{human}','user','active',false);"
   seed+=''.join(f"INSERT INTO profiles(id,role,status,is_horse) VALUES('{h}','user','active',true);" for h in horses[1:])
   seed+="INSERT INTO ca_financial_epochs(id,name,description,is_current) OVERRIDING SYSTEM VALUE VALUES(2,'fixture','Isolated scoped qualification',true); INSERT INTO ca_mint_policy(id,per_operation_cap_chips,rolling_24h_cap_chips,per_operation_cap_diamonds,rolling_24h_cap_diamonds) VALUES(1,10000000,25000000,10000000,25000000); INSERT INTO ca_ledger_invariant_mode(mode,reason) VALUES('refuse','Actual native qualification'); INSERT INTO ca_emergency_stops(path,stopped) VALUES('positive_issuance',false),('cashout',false),('tournament_registration',false);"
   for club_index,c in enumerate(scope):
    seed+=f"INSERT INTO clubs(id,name,slug,owner_id,asset,chip_treasury,chip_pool,promo_balance,insurance_balance) VALUES('{c}','Fixture {c}','fixture-{c}','{actor}','chips',100000,0,200,100); INSERT INTO club_members(club_id,user_id,role,status,chip_balance,promo_balance) VALUES('{c}','{horse}','player','active',50000,20),('{c}','{human}','player','active',50,10);"
-   seed+=''.join(f"INSERT INTO club_members(club_id,user_id,role,status,chip_balance,promo_balance) VALUES('{c}','{h}','player','active',50000,20);" for h in horses[1:wallet_counts[club_index]])
+   members=([*horses[:261],*retired_horses] if args.production_roster and club_index==3 else [*horses[:wallet_counts[club_index]-1],horses[-1]] if not args.production_roster and club_index==1 else horses[:wallet_counts[club_index]])
+   seed+=''.join(f"INSERT INTO club_members(club_id,user_id,role,status,chip_balance,promo_balance) VALUES('{c}','{h}','player','active',50000,20);" for h in members[1:])
    seed+=f"INSERT INTO agents(club_id,user_id,role,commission_rate,player_rakeback_rate,agent_wallet_balance,business_balance,promo_wallet_balance,promo_balance,player_wallet_balance,player_balance,credit_limit,credit_used,lifetime_earnings,weekly_rake_generated) VALUES('{c}','{human}','agent',0,0,70,70,10,10,0,0,100,25,50,12); UPDATE club_members SET credit_used=15,hands_played=42,total_rake_paid=3.14 WHERE club_id='{c}';"
   seed+=f"INSERT INTO unions(id,name,slug,owner_id) VALUES('{scope[3]}','Fixture Midway','fixture-midway','{actor}'); INSERT INTO union_wallets(union_id,chip_balance) VALUES('{scope[3]}',100000); INSERT INTO bbj_pools(id,union_id,main_balance,backup_balance,promo_balance) VALUES('f9806a7f-e7a2-47d2-a676-36336e3a5337','{scope[3]}',20000,5000,500);"
+  current_week="(public.fn_union_week_start(now()) AT TIME ZONE 'America/Los_Angeles')::date"
+  period_counts=[111,0,34,0] if args.production_roster else [2,0,2,0]
+  period_seed=[];period_ids=[]
+  for ci,count in enumerate(period_counts):
+   for i in range(count):
+    pid=str(__import__('uuid').UUID(hashlib.md5(('current-week-fixture:'+str(ci)+':'+str(i)).encode()).hexdigest()))
+    user=horses[i];period_ids.append((pid,scope[ci],user))
+    period_seed.append(f"INSERT INTO rakeback_periods(id,user_id,club_id,period_start,period_end,rake_generated,rakeback_rate,rakeback_amount,status,created_at) VALUES('{pid}','{user}','{scope[ci]}',{current_week},{current_week}+6,10,0.2,2,'pending',now()-interval '1 hour');")
+  for i,(pid,club,user) in enumerate(period_ids+period_ids[:10 if args.production_roster else 1]):
+   period_seed.append(f"INSERT INTO accounting_rakeback_period_calculations(id,period_id,source_fingerprint,club_id,player_id,period_start,period_end,rake_generated,rakeback_amount,display_rate,payer_kind,source_allocations,recorded_at) OVERRIDING SYSTEM VALUE VALUES({i+1},'{pid}','historical-fixture-{i}','{club}','{user}',{current_week},{current_week}+6,10,2,0.2,'club','[]',now()-interval '1 hour');")
+  seed+=''.join(period_seed)
   run(q,seed)
+  run(q,"SELECT setval(pg_get_serial_sequence('accounting_rakeback_period_calculations','id'),(SELECT max(id) FROM accounting_rakeback_period_calculations));")
+  retired_array="'{"+','.join(retired_horses)+"}'::uuid[]"
+  run(q,"UPDATE profiles SET status='deleted' WHERE id=ANY("+retired_array+"); UPDATE club_members SET chip_balance=0,promo_balance=0 WHERE user_id=ANY("+retired_array+");")
   iid='ee31e7ff-fc2a-4c94-b9df-50cb0624285c';aid='1df63d8e-7d33-4b55-8be3-02f2f41f9387';echo='7eadc5d1-cc92-4871-b850-a02c642baa1d'
   metadata={'union_id':scope[3],'period_start':'2026-10-05T07:00:00+00:00','period_end':'2026-10-12T07:00:00+00:00','alert_id':aid,'result':{'error':'weekly_accounting_calculation_incomplete','uncertified_old_evidence':['keep']}}
   context={k:v for k,v in metadata.items() if k in ['union_id','period_start','period_end']}
@@ -166,6 +192,7 @@ with tempfile.TemporaryDirectory(prefix='fb-',dir=BASE) as folder:
    assert 'LAUNCH_TRANSPORT_PREIMAGE_CHANGED' in run(q,component_sources[components[1]],False)
   else:
    for p in components[1:]:run(q,component_sources[p])
+  if args.launch_followup:run(q,component_sources[components[-1]])
   role_helper_names=['fn_ca_launch_accounting_cutoff','fn_ca_launch_accounting_start','fn_ca_launch_accounting_accepts','fn_ca_launch_accounting_waived']
   service_entry_names=['fn_ca_launch_reset_assert_drained','fn_ca_launch_reset_capture','fn_ca_launch_reset_execute','fn_ca_launch_reset_undo','fn_ca_launch_operator_command']
   new_acl=json.loads(run(q,"SELECT jsonb_agg(jsonb_build_object('name',p.proname,'role',r,'execute',has_function_privilege(r,p.oid,'EXECUTE'))) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace CROSS JOIN unnest(ARRAY['anon','authenticated','service_role'])r WHERE n.nspname IN('public','smarter_private') AND p.oid NOT IN("+original_function_oids+");"))
@@ -173,6 +200,19 @@ with tempfile.TemporaryDirectory(prefix='fb-',dir=BASE) as folder:
    expected=grant['role']!='anon' if grant['name'] in role_helper_names else grant['role']=='service_role' if grant['name'] in service_entry_names else False
    assert grant['execute']==expected,'New function privilege differs from scoped authority: '+str(grant)
   assert run(q,"SELECT bool_and(NOT has_table_privilege(r,c.oid,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN')) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace CROSS JOIN unnest(ARRAY['anon','authenticated','service_role'])r WHERE n.nspname='public' AND c.relname LIKE 'ca_launch_%' AND c.relkind IN('r','v');")=='t','Private launch store inherited production client-role privilege'
+
+  if args.launch_followup:
+   assert 'DELETED_COHORT_ORIGINAL_SOURCE_OR_AUTHORITY_CHANGED' in run(q,component_sources[components[-1]],False)
+   assert run(q,"SELECT to_regprocedure('public.fn_claim_rakeback(uuid)') IS NULL;")=='t'
+   run(q,(COHORT_FIX/'fn_claim_rakeback.original.sql').read_text()+"; REVOKE ALL ON FUNCTION fn_claim_rakeback(uuid) FROM PUBLIC,anon,authenticated,service_role; GRANT EXECUTE ON FUNCTION fn_claim_rakeback(uuid) TO authenticated,service_role;")
+   claim_meta=json.loads((COHORT_FIX/'claim-authority.json').read_text())
+   actual_claim=json.loads(run(q,"SELECT jsonb_build_object('signature','fn_claim_rakeback(uuid)','full_md5',md5(pg_get_functiondef(oid)),'body_md5',md5(prosrc),'owner',pg_get_userbyid(proowner),'secdef',prosecdef,'config',proconfig,'acl',proacl::text) FROM pg_proc WHERE oid='public.fn_claim_rakeback(uuid)'::regprocedure;"))
+   assert actual_claim==claim_meta,'Original claim source/authority changed'
+   original_calculator=(COHORT_FIX/'fn_calculate_cash_rakeback_periods.original.sql').read_text()
+   before="SAVEPOINT original_calculator_before;"+original_calculator+";DO $before$ DECLARE r jsonb;BEGIN r:=fn_calculate_cash_rakeback_periods('a0000000-0000-0000-0000-000000000001','2026-10-05','2026-10-11',ARRAY['10000000-0000-0000-0000-000000000002']::uuid[]);IF r->>'reason' IS DISTINCT FROM 'legacy_or_paid_period_requires_reconciliation' THEN RAISE EXCEPTION 'originalbefore didnotrefusewaivedperiod';END IF;END $before$;ROLLBACK TO original_calculator_before;"
+   consumer=(COHORT_FIX/'consumer.sql').read_text().replace('-- BEFORE_WITNESS',before)
+   claims=f"SET request.jwt.claims='{{\"role\":\"service_role\",\"sub\":\"{actor}\"}}';"
+   (OUT/'current-week-consumer-result.txt').write_text(run(q,claims+'BEGIN;'+consumer+'SET CONSTRAINTS ALL IMMEDIATE;ROLLBACK;')+'\n')
 
   # The original watcher remains loud for an undeclared target change. Guards
   # outside this finite fixture keep truthful missing reports; compare target
@@ -205,6 +245,7 @@ with tempfile.TemporaryDirectory(prefix='fb-',dir=BASE) as folder:
   run(q,"INSERT INTO engine_maintenance_break(phase,announced_at,break_started_at,break_ends_at,enforce_freeze,ownership_token) VALUES('counting_down',now()-interval '2 minutes',now()-interval '1 minute',now()+interval '3 minutes',true,gen_random_uuid());")
   original_bbj=json.loads(run(q,"SELECT to_jsonb(fn_bbj_reconcile('f9806a7f-e7a2-47d2-a676-36336e3a5337'));").splitlines()[-1])
   mutable=['club_members','agents','clubs','union_wallets','bbj_pools','profiles','unions','settlement_invoices','credit_invoices','player_stats','player_stats_snapshots','club_member_daily_stats','club_member_play_totals','ca_club_commission_daily','ca_club_rake_daily','ca_club_rake_daily_user','club_rake_daily_user','club_rake_rollup_complete','club_table_rake_totals','club_hand_daily_shard','club_member_table_state','accounting_rakeback_period_evidence_checkpoints','accounting_recompute_split_parts','accounting_period_recompute_requests','rakeback_periods','club_settlement_floor','union_settlement_floor','ca_club_player_daily','ca_club_tournament_daily','ca_club_tournament_player_daily','club_table_daily','union_rake_weekly','ca_drift_incidents','financial_alerts']
+  calculation_before=run(q,"SELECT encode(sha256(convert_to(COALESCE(jsonb_agg(to_jsonb(t) ORDER BY id),'[]')::text,'UTF8')),'hex') FROM accounting_rakeback_period_calculations t;")
   before={n:json.loads(run(q,f"SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY to_jsonb(t)::text),'[]') FROM {n} t;")) for n in mutable}
   def visible_invoices():
    return json.loads(run(q,prefix+"SET ROLE authenticated; SELECT jsonb_build_array((SELECT count(*) FROM settlement_invoices),(SELECT count(*) FROM credit_invoices)); RESET ROLE;").splitlines()[-2])
@@ -215,12 +256,27 @@ with tempfile.TemporaryDirectory(prefix='fb-',dir=BASE) as folder:
   same=prefix+f"BEGIN; SELECT fn_ca_launch_reset_capture('{again}','"+'b'*64+f"','{actor}'); SELECT fn_ca_launch_reset_execute('{again}',(SELECT closing_sha256 FROM ca_launch_reset_operations WHERE operation_id='{again}'),{horse_wallets}); SELECT fn_ca_launch_reset_undo('{again}',(SELECT closing_sha256 FROM ca_launch_reset_operations WHERE operation_id='{again}')); SET CONSTRAINTS ALL IMMEDIATE; ROLLBACK;"
   phase_timings={}
   def save_phases():
-   (OUT/'phase-timings.json').write_text(json.dumps(dict(complete=False,source_hashes={str(p):hashlib.sha256(component_sources[p].encode()).hexdigest() for p in components},horse_wallet_counts=wallet_counts,phase_timings=phase_timings),indent=2)+'\n')
+   (OUT/'phase-timings.json').write_text(json.dumps(dict(complete=False,source_hashes={str(p):hashlib.sha256(component_sources[p].encode()).hexdigest() for p in components},horse_wallet_counts=eligible_wallet_counts,raw_horse_wallet_counts=raw_wallet_counts,phase_timings=phase_timings),indent=2)+'\n')
   phase_start=time.monotonic();run(q,same);phase_timings['self_aborting_capture_execute_undo_seconds']=time.monotonic()-phase_start;save_phases()
   phase_start=time.monotonic()
   result=json.loads(run(q,prefix+f"SELECT fn_ca_launch_reset_capture('{op}','"+'a'*64+f"','{actor}');").splitlines()[-1])
   phase_timings['capture_seconds']=time.monotonic()-phase_start;save_phases()
   digest=result['closing_sha256']
+  if args.launch_followup:
+   assert int(run(q,f"SELECT count(*) FROM ca_launch_reset_rows WHERE operation_id='{op}' AND relation_name='club_members' AND raw_row->>'launch_is_horse'='true';"))==sum(raw_wallet_counts)
+   retired_key=f"jsonb_build_object('club_id','{scope[0]}','user_id','{retired_horses[0]}')"
+   assert 'LAUNCH_WALLET_TARGET_IS_NOT_AUTHORIZED' in run(q,prefix+f"BEGIN; SELECT fn_ca_launch_reset_wallet_move('{op}','club_members',{retired_key},'chip_balance',10000,'opening'); ROLLBACK;",False)
+   drift=prefix+f"BEGIN; UPDATE profiles SET status='active' WHERE id='{retired_horses[0]}'; SELECT fn_ca_launch_reset_execute('{op}','{digest}',{horse_wallets}); ROLLBACK;"
+   assert 'LAUNCH_RESET_ROSTER_IDENTITY_CHANGED' in run(q,drift,False)
+   period_id=period_ids[0][0]
+   for mutation in ["status='paid'", "status='claiming'", "paid_at=clock_timestamp()", "created_at=(SELECT captured_at+interval '1 second' FROM ca_launch_reset_operations WHERE operation_id='"+op+"')"]:
+    unsafe=prefix+f"BEGIN; UPDATE rakeback_periods SET {mutation} WHERE id='{period_id}'; SELECT fn_ca_launch_accounting_activate('{op}'); ROLLBACK;"
+    refusal=run(q,unsafe,False)
+    (OUT/('period-negative-'+str(["status='paid'","status='claiming'","paid_at=clock_timestamp()"].index(mutation) if mutation in ["status='paid'","status='claiming'","paid_at=clock_timestamp()"] else 3)+'.txt')).write_text(refusal)
+    expected='Legacy period payment requires a closed earning period' if mutation=="status='paid'" else 'launch_accounting_current_week_period_requires_qualification'
+    assert expected in refusal,refusal
+
+
   # Old operator waivers cannot absorb a new detection, a different scope,
   # or a genuine still-current original ECO failure.
   future=prefix+f"BEGIN; SELECT fn_ca_launch_accounting_activate('{op}'); UPDATE ca_drift_incidents SET detected_at=(SELECT captured_at+interval '1 minute' FROM ca_launch_reset_operations WHERE operation_id='{op}') WHERE id='c17b258e-3b4e-407f-9ab3-f92d2c147920'; SELECT fn_ca_launch_incident_waive_remaining('{op}'); ROLLBACK;"
@@ -257,10 +313,14 @@ with tempfile.TemporaryDirectory(prefix='fb-',dir=BASE) as folder:
   executed=run(q,prefix+f"SELECT fn_ca_launch_reset_execute('{op}','{digest}',{horse_wallets});")
   phase_timings['execute_seconds']=time.monotonic()-phase_start;save_phases()
   assert 'horse_opening' in executed
+  assert run(q,"SELECT bool_and(status='expired' AND paid_at IS NULL) FROM rakeback_periods WHERE period_start=(public.fn_union_week_start(now()) AT TIME ZONE 'America/Los_Angeles')::date;")=='t'
+  assert run(q,"SELECT encode(sha256(convert_to(COALESCE(jsonb_agg(to_jsonb(t) ORDER BY id),'[]')::text,'UTF8')),'hex') FROM accounting_rakeback_period_calculations t;")==calculation_before,'Historical calculation certificates were changed by owner waiver'
+
   assert run(q,"SELECT count(*)=5 AND bool_and(status='resolved') FROM ca_drift_incidents WHERE id IN('ee31e7ff-fc2a-4c94-b9df-50cb0624285c','1f146817-bd56-469e-a42c-601aa348d081','52704570-bdc7-4745-9cfb-f829ea132963','c17b258e-3b4e-407f-9ab3-f92d2c147920','d6180536-0d0c-4024-bd3d-ddeb3d5c7e66');")=='t'
   assert run(q,"SELECT count(*)=8 AND bool_and(resolved) FROM financial_alerts;")=='t'
   if args.production_roster or args.prefix_roster:assert int(run(q,f"SELECT count(*) FROM ca_launch_reset_tally_prefixes WHERE operation_id='{op}';"))>0,'Complete financial operation never exercised real prefix validation'
-  assert run(q,"SELECT bool_and(chip_balance=10000) FROM club_members m JOIN profiles p ON p.id=m.user_id WHERE p.is_horse;")=='t'
+  assert run(q,"SELECT bool_and(chip_balance=10000) FROM club_members m JOIN profiles p ON p.id=m.user_id WHERE p.is_horse AND p.status IS DISTINCT FROM 'deleted';")=='t'
+  assert run(q,"SELECT bool_and(chip_balance=0 AND promo_balance=0) FROM club_members m JOIN profiles p ON p.id=m.user_id WHERE p.status='deleted';")=='t'
   assert visible_invoices()==[0,0]
   assert run(q,"SELECT fn_ca_launch_is_internal_transfer(gen_random_uuid());")=='f'
   # The proof's independent fields cannot be forged by changing one genuine
@@ -321,9 +381,9 @@ with tempfile.TemporaryDirectory(prefix='fb-',dir=BASE) as folder:
   runtime=json.loads(run(q,"SELECT jsonb_agg(jsonb_build_object('signature',p.proname||'('||pg_get_function_identity_arguments(p.oid)||')','definition_sha256',encode(extensions.digest(convert_to(pg_get_functiondef(p.oid),'UTF8'),'sha256'),'hex'),'prosrc_md5',md5(p.prosrc),'owner',pg_get_userbyid(p.proowner),'security_definer',p.prosecdef,'config',p.proconfig,'acl',p.proacl::text) ORDER BY p.proname,pg_get_function_identity_arguments(p.oid)) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname IN('public','smarter_private') AND p.prokind='f';"))
   (OUT/'runtime-postimages.json').write_text(json.dumps(runtime,indent=2)+'\n')
   if any(p.read_text()!=component_sources[p] for p in components):raise AssertionError('Source changed during qualification; retain passing old execution but requalify final candidate')
-  receipt=dict(qualified=True,scope='Isolated actual-source scoped balance execute and undo',full_database_restore_qualified=False,horse_wallet_counts=wallet_counts,horse_opening_chips=horse_wallets*10000,phase_timings=phase_timings,production_volume_timing_qualified=False,fixture_hashes=fixture_hashes,source_hashes={str(p):hashlib.sha256(component_sources[p].encode()).hexdigest() for p in components},recovered_stores=list(before),operational_exceptions=sorted(exceptions),append_only_retained=['chip_ledger','ca_mint_ledger','chip_transactions','ca_op_claims','closing/archive testimony','verified tally-prefix testimony'])
+  receipt=dict(qualified=True,scope='Isolated actual-source scoped balance execute and undo',full_database_restore_qualified=False,horse_wallet_counts=eligible_wallet_counts,raw_horse_wallet_counts=raw_wallet_counts,horse_opening_chips=horse_wallets*10000,phase_timings=phase_timings,production_volume_timing_qualified=False,fixture_hashes=fixture_hashes,source_hashes={str(p):hashlib.sha256(component_sources[p].encode()).hexdigest() for p in components},recovered_stores=list(before),operational_exceptions=sorted(exceptions),append_only_retained=['chip_ledger','ca_mint_ledger','chip_transactions','ca_op_claims','closing/archive testimony','verified tally-prefix testimony'])
   (OUT/'full-balance-result.json').write_text(json.dumps(receipt,indent=2)+'\n')
-  (OUT/'phase-timings.json').write_text(json.dumps(dict(complete=True,source_hashes=receipt['source_hashes'],horse_wallet_counts=wallet_counts,phase_timings=phase_timings),indent=2)+'\n')
+  (OUT/'phase-timings.json').write_text(json.dumps(dict(complete=True,source_hashes=receipt['source_hashes'],horse_wallet_counts=eligible_wallet_counts,raw_horse_wallet_counts=raw_wallet_counts,phase_timings=phase_timings),indent=2)+'\n')
   print(json.dumps(receipt))
  finally:
   run([PG/'pg_ctl','-D',data,'-m','immediate','-w','stop'])

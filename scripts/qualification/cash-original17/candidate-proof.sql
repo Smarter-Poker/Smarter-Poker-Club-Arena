@@ -1,0 +1,68 @@
+CREATE FUNCTION smarter_private.cash_original17_source_correction_proof(e uuid) RETURNS jsonb
+LANGUAGE plpgsql STABLE SET search_path=pg_catalog,public,smarter_private AS $body$
+DECLARE x record;s smarter_private.hand_submissions;h smarter_private.hand_submission_handoffs;z smarter_private.hand_submission_handoff_results;stack_hand uuid;
+BEGIN
+ SELECT * INTO x FROM(VALUES
+('b11e8f0b-b606-4ff2-adc9-ddd911630938'::uuid,'53cbf1fc-2ad2-4f1d-ab19-f2168daea22d'::uuid,33776194,'318b6fd95da2844adfb5e0ddfa5c6e8daff450bad401a80f21cc6fc272273f21','86016f5e5a814b6effd029a1fe4898e8','e1619e73a257876868481776efa193aa','41fdceb9c477429f914ff0f3a3ffa46e','f7d5dd2c407bfce1c1debdf21d733b19','002c2d27-9584-4e52-835a-bb2be148fc81'::uuid),
+('9e494cda-b171-4103-89bb-8f382dc8e372'::uuid,'3455dcd3-b7e0-4106-bd3e-3abe1c88cd58'::uuid,33776027,'bdbb9ce4db46534c7ef1885d464761c495b636484ac8e21e71ab80230f62480c','6dab803e676d0f909aaec504e0d90b08','c8cabd59704e9cdb61a05439c66b6245','e114ae9bf98d8064686a22515ead8f54','84be7d9efba51a3d5b5166cefd1ccde9','002c2d27-9584-4e52-835a-bb2be148fc81'::uuid),
+('fd74e035-61f8-4b43-8dc3-18906b9eb831'::uuid,'7a68dc18-96e6-4b5c-904b-32de853a9c8f'::uuid,33777050,'c6b598d61045d86f7d90b41f7f80ca36405b76a5202528dbc4ed277c3b3c02b7','31cb904ce2dad2216d6569e8bdd3ad75','a50a440088d0e11635d339cfdf0aeb0a','a132881c0af05cae6a565e88a4968696','aed8ffee129463010b98d92cbf72c9d5','002c2d27-9584-4e52-835a-bb2be148fc81'::uuid),
+('ad5663c3-6411-482c-86e2-6e2fce0dc672'::uuid,'0a462846-ae76-4671-bdfc-6a7729762b15'::uuid,33776219,'e5a1d4844a976a1697f3bc89634b4509b7220c1cd5293cc65dd343e31cb65b03','09fa4f15930c59cdc5abae70bf6fecdc','38291da235cb37966dee676c563f682a','dd26c16ca1dd430dc59b0b75b1f30c21','fa9fa8f936c4b050e20f52d1bae15b87','002c2d27-9584-4e52-835a-bb2be148fc81'::uuid),
+('4147a2c6-130a-489b-9387-3ed82e01f189'::uuid,'b6f9bf9b-509d-4f8c-a2e5-02af9a51f23c'::uuid,33776857,'00c2e8a1ac75f5af50eb405228674d462ba66b8116bb2bc16e3f23fba87a2054','8326528c209d51366146be34c714b6c0','24ddb1993913c4eea6404a964488187a','de833e8773a589077d2b541878bf4c46','bf1fc1813f503885f898d0dba5bf3a5a','002c2d27-9584-4e52-835a-bb2be148fc81'::uuid),
+('5a9f1834-76d8-4707-8a00-d21bbba8ac9c'::uuid,'a2efbe61-9a11-4045-9f6c-6513cefa3fbd'::uuid,33777014,'316be246b3ad213cce1a3028febc8b9992ab7186405642d8d11c755a9886f3d9','fe124f9e6fa592f5ab6241ec33dc126d','97b820b330ce5a83ad8d58e63bf630f7','138dea7c01c218860d189f2c4dd2cf15','09fb438db65c3b6fb579cc53f470c672','002c2d27-9584-4e52-835a-bb2be148fc81'::uuid),
+('4c22c86c-e1d9-49ba-a17d-e0f64db6eef6'::uuid,'e33649da-165f-4605-a82d-aeb58d0516db'::uuid,33776923,'3a3ce442434c441e6ce737b6c820b4331d8738aac221268cfa5d505daa205bc0','da717e72ccf9ae2088fb183e3f39c533','c2cd85c2a63cb4cefd6159d6667f9567','5daba0bac31806743ac1940ad01ebdae','ea88d2f08ee47fab96bdb72a56198f3c','002c2d27-9584-4e52-835a-bb2be148fc81'::uuid),
+('12eaef4b-69b3-40df-bc1a-2ddf4b4a67e6'::uuid,'ed68c9f6-7f71-451b-be3b-db0ed3be49ec'::uuid,33777549,'6ace3fe4b2d23b9995b822a50a0044da5a55ff7cae8745424869413dd05077cc','883fd03330d34ae447a10dc984e27e82','8ad608e729f37d08c242ff0b646fe2c8','9d2006009227be2d1b9f337205cbacc3','8a45f9ee478e61e6dfb0849454ec3ee0','002c2d27-9584-4e52-835a-bb2be148fc81'::uuid),
+('aa13ae98-c982-472b-bb00-cf00dec3635b'::uuid,'e2c6a6b1-0d55-49b0-9277-b24d56b94b91'::uuid,33777650,'125e5a13bee312cd7077d3f271d42d8dde3ea228a7ba261e335d21f22f34f4da','4ec32ebc3fa41d8985e188b44669748a','5539164c93dd1336cbbe99331b87f3c1','fd5c8a9e455b204cfa14c20a38e527b4','710e4746f9ca472688cc309e8c6e1f32','002c2d27-9584-4e52-835a-bb2be148fc81'::uuid),
+('e7c0ef54-df3e-4458-ab81-64e1e760ebad'::uuid,'12cd6ae2-290c-447c-85da-bfc3110b66b8'::uuid,33777418,'4011395d549ca16fd7affdc09dffb9c42f99beeaea582147a272ad30cf79d76b','aa18f20e5bd012dcb0491f4f0b932293','f540d729f4e4ed2971a9e61d31282383','42d4dee4bff9be2e66ec28eea3034848','61e10fb91531eb8c6455dd9d39df51f5','002c2d27-9584-4e52-835a-bb2be148fc81'::uuid),
+('e796c474-114b-461e-abf5-99967fca1ee7'::uuid,'a89b6ae8-3430-493f-847a-2e30e81d8908'::uuid,33778211,'63d1cbbc7727891752f8b8b59de5cb8f28df6e69dfeb648d372c41825e1665e0','42810ee71d98f7ef9a2bbb39b6dee5a1','828ca1a28ba06204a18ad273f59e1f68','902663d91bf108747cceffb57bd334b2','b0784ed14190c5e46f4c81e89c9888ec','002c2d27-9584-4e52-835a-bb2be148fc81'::uuid),
+('dfac5d87-f5c5-4fff-8d94-699173438afc'::uuid,'96bc1438-4b6c-4d6a-9e1d-16059752412e'::uuid,33778461,'bf42dec26abdea46a9cc628711ff9096d97e3c69fb1607fcf1e18c7944ba2e9a','8f9b1e15da3da3caf179961003d074a2','d099fad4687258cb0d3fd56367e35305','d01afbad328b9e8dd98f21ea15b47eaa','79fa0e5895c4c32baa03e9b18dd9906a','002c2d27-9584-4e52-835a-bb2be148fc81'::uuid),
+('ccb60eeb-2c14-4453-a43c-315f29ad1f3d'::uuid,'0b50ea4e-441f-43c1-bbc4-977100a72130'::uuid,33778585,'71277ed2519a0f115057a6c7c9d34446bd6e652c004a4bc4d85ee066c32c7f5a','b20333e7551b051486c89af9372e8bc6','a0e70aa38a2e3f70cf0e4317b20d7356','9385cc07eeb5af1f94f22422bda63183','fd6dd0d9750cfc1943ae800626b7a4d6','002c2d27-9584-4e52-835a-bb2be148fc81'::uuid),
+('4892e24c-448d-499e-a87d-ea2e4e5607bc'::uuid,'980bb855-cc5f-4ffb-a2d2-89e5ee80d443'::uuid,33778428,'d9db1d1fec5b04999e63ba7f6d081e20116b94c01ae2975f26f1f6744f94a355','4b1d50a6fb49783443db2b0b76f71fa8','a64b614e7d55b83c4750569af5b017a7','f32709886db8123cad87ed7838b4310a','6fb9a871a5d73f7aeb6e9a2a64fb4fc6','002c2d27-9584-4e52-835a-bb2be148fc81'::uuid),
+('d0ba409d-53b0-483f-a9a9-a77de59ab811'::uuid,'a3d925c9-5021-4b65-93f8-0d711fda944b'::uuid,33779912,'31e392470e233681519357e6feff2e90a030ee49664ec1269e9c4dffdb7197c5','3e9df5cc52bdf98c82704f14bbda70d7','e0573be11b4698189be1448dda3adad2','4dab50d405a1b4d90e965c75b9c6fb0a','cff76800af5b0b8776e4b36a1e7f99d4','002c2d27-9584-4e52-835a-bb2be148fc81'::uuid),
+('a0c51a66-02ec-4beb-9264-128d7b15470e'::uuid,'6e1b1d4e-3672-4ec2-ba3a-8c83465bd3ff'::uuid,33778876,'e6e3f3b7471a5f56cf0ba08b1630bf774bc99140a745b47deef8eef4ab3e33b4','1e73038e0ff5d1eb67781ad80d2e81b2','433fc726734acff671164406f20fb17c','a6f8817b69ee930edb43063f72014a91','8db181c81a2e28adb9aa75ab8386f1af','002c2d27-9584-4e52-835a-bb2be148fc81'::uuid),
+('de2e2b78-062a-4a85-805a-e1efb6dcf05a'::uuid,'979f84b0-6e1d-48e8-8f43-c27b0143f4d9'::uuid,33779645,'440f2ea39d38ad1f4f79d9cdf14981d95712eb901bf659dd60f1f2be3e4a3b5a','f246a51abf42f88b93313b2002944193','eb186a71293ded0ccbf7557ed8a468c1','eacbfbaffb1afec9f44f04be0dee8d90','3e47973495cc95481df694b27c71abf1','002c2d27-9584-4e52-835a-bb2be148fc81'::uuid)
+ )v(submission_id,table_id,hand_number,request_sha,request_md5,handoff_md5,result_md5,snapshot_md5,original_arena_id) WHERE submission_id=e;
+ IF NOT FOUND THEN RETURN NULL;END IF;
+ SELECT * INTO s FROM smarter_private.hand_submissions WHERE submission_id=e;
+ SELECT * INTO h FROM smarter_private.hand_submission_handoffs WHERE submission_id=e;
+ SELECT * INTO z FROM smarter_private.hand_submission_handoff_results WHERE submission_id=e;
+ stack_hand:=md5('ca-hand:'||s.table_id::text||':'||s.hand_number::text||CASE WHEN coalesce(s.request->>'p_ref','')='' THEN '' ELSE ':'||(s.request->>'p_ref') END)::uuid;
+ IF smarter_private.cash_original17_fixed_sources_match() IS DISTINCT FROM true
+ OR s.submission_id IS NULL OR h.submission_id IS NULL OR z.submission_id IS NULL
+ OR s.table_id IS DISTINCT FROM x.table_id OR s.hand_number IS DISTINCT FROM x.hand_number
+ OR s.request_hash IS DISTINCT FROM x.request_sha OR md5(s.request::text) IS DISTINCT FROM x.request_md5
+ OR md5(to_jsonb(h)::text) IS DISTINCT FROM x.handoff_md5 OR md5(to_jsonb(z)::text) IS DISTINCT FROM x.result_md5
+ OR z.result->>'reason' IS DISTINCT FROM 'atomic_hand_rolled_back' OR z.result->>'sqlstate' IS DISTINCT FROM '23514'
+ OR z.result->>'error' IS DISTINCT FROM 'new row for relation "poker_diamond_jackpot_pools" violates check constraint "poker_diamond_jackpot_pools_backup_residue_check"'
+ OR z.result->'success' IS DISTINCT FROM 'false'::jsonb OR z.result->'atomic_hand_commit' IS DISTINCT FROM 'false'::jsonb
+ OR s.request#>>'{p_hand_row,_accepted_post_commit_facts,diamond_jackpot,kind}' IS DISTINCT FROM 'none'
+ OR s.request#>>'{p_hand_row,_accepted_post_commit_facts,diamond_jackpot,version}' IS DISTINCT FROM '1'
+ OR s.request#>>'{p_hand_row,tournament_id}' IS NOT NULL
+ OR jsonb_typeof(s.request->'p_rake') IS DISTINCT FROM 'number' OR (s.request->>'p_rake')::numeric<0 OR (s.request->>'p_rake')::numeric<>trunc((s.request->>'p_rake')::numeric)
+ OR s.request->'p_bbj' IS DISTINCT FROM '1'::jsonb OR s.request->'p_inflow' IS DISTINCT FROM '0'::jsonb OR s.request->'p_units' IS DISTINCT FROM '[]'::jsonb
+ OR NOT EXISTS(SELECT FROM public.tables t JOIN public.clubs c ON c.id=t.club_id WHERE t.id=s.table_id AND t.tournament_id IS NULL AND t.club_id=x.original_arena_id AND c.asset='diamonds' AND c.is_platform IS TRUE AND c.union_id IS NULL AND t.union_id IS NULL)
+ OR (SELECT count(*) FROM public.hand_state_snapshots a WHERE a.table_id=s.table_id AND a.hand_number=s.hand_number AND NOT a.is_complete) IS DISTINCT FROM 1::bigint
+ OR NOT EXISTS(SELECT FROM public.hand_state_snapshots a WHERE a.table_id=s.table_id AND a.hand_number=s.hand_number AND NOT a.is_complete AND md5(to_jsonb(a)::text)=x.snapshot_md5)
+ OR jsonb_typeof(s.request->'p_stacks') IS DISTINCT FROM 'array' OR jsonb_array_length(s.request->'p_stacks')=0
+ OR (SELECT count(DISTINCT v->>'seat_id') FROM jsonb_array_elements(s.request->'p_stacks')v) IS DISTINCT FROM jsonb_array_length(s.request->'p_stacks')::bigint
+ OR EXISTS(SELECT FROM jsonb_array_elements(s.request->'p_stacks')v WHERE jsonb_typeof(v->'stack') IS DISTINCT FROM 'number' OR jsonb_typeof(v->'stack_before') IS DISTINCT FROM 'number' OR (v->>'stack')::numeric<0 OR (v->>'stack_before')::numeric<0 OR (v->>'stack')::numeric<>trunc((v->>'stack')::numeric) OR (v->>'stack_before')::numeric<>trunc((v->>'stack_before')::numeric))
+ OR (SELECT sum((v->>'stack')::numeric-(v->>'stack_before')::numeric) FROM jsonb_array_elements(s.request->'p_stacks')v) IS DISTINCT FROM -((s.request->>'p_rake')::numeric+(s.request->>'p_bbj')::numeric)
+ OR EXISTS(SELECT FROM jsonb_array_elements(s.request->'p_stacks')v WHERE (
+  SELECT count(*) FROM public.table_seats seat JOIN public.poker_diamond_custody c ON c.seat_id=seat.id AND c.user_id=seat.user_id AND c.seat_joined_at=seat.joined_at AND c.occupancy_id=seat.occupancy_id
+  JOIN public.tables t ON t.id=seat.table_id
+  WHERE seat.table_id=s.table_id AND seat.id=(v->>'seat_id')::uuid AND seat.user_id=(v->>'user_id')::uuid
+   AND seat.joined_at=(v->>'seat_joined_at')::timestamptz AND seat.occupancy_id=(v->>'occupancy_id')::uuid
+   AND seat.left_at IS NULL AND seat.stack=(v->>'stack_before')::numeric
+   AND c.target_id=s.table_id AND c.arena_id=t.club_id AND c.purpose='cash_seat' AND c.state='active' AND c.balance=(v->>'stack_before')::numeric) IS DISTINCT FROM 1::bigint)
+ OR EXISTS(SELECT FROM public.settlement_idempotency_keys c WHERE c.table_id=s.table_id AND c.hand_id=stack_hand)
+ OR EXISTS(SELECT FROM public.ca_settlements c WHERE c.settlement_type='hand_stacks' AND c.external_ref=s.table_id::text||':'||stack_hand::text)
+ OR EXISTS(SELECT FROM public.hand_atomic_commits c WHERE c.table_id=s.table_id AND c.hand_number>=s.hand_number)
+ OR EXISTS(SELECT FROM public.hand_history c WHERE c.table_id=s.table_id AND c.hand_number>=s.hand_number)
+ OR EXISTS(SELECT FROM smarter_private.f06_hand_permits c WHERE c.table_id=s.table_id AND c.hand_number>=s.hand_number)
+ OR EXISTS(SELECT FROM public.poker_diamond_hand_receipts c WHERE c.table_id=s.table_id AND c.hand_number=s.hand_number)
+ OR EXISTS(SELECT FROM public.ca_diamond_rake_accrual c WHERE c.table_id=s.table_id AND c.hand_number=s.hand_number)
+ OR EXISTS(SELECT FROM public.poker_diamond_jackpot_ledger c WHERE c.table_id=s.table_id AND c.hand_number=s.hand_number)
+ OR EXISTS(SELECT FROM public.hand_projection_outbox c WHERE c.hand_id=s.submission_id)
+ OR EXISTS(SELECT FROM public.poker_diamond_jackpot_hits c WHERE c.table_id=s.table_id AND c.hand_number=s.hand_number)
+ THEN RETURN NULL;END IF;
+ RETURN jsonb_build_object('submission_id',e,'table_id',s.table_id,'hand_number',s.hand_number,'request_hash',s.request_hash,'request_md5',x.request_md5,'handoff_md5',x.handoff_md5,'result_md5',x.result_md5,'original_generation',s.lease_generation,'scope','cash','original_arena_id',x.original_arena_id,'source_cause','backup_residue_constraint','fixed_source_md5','f6e42d6de56f5074f47403621fd46110');
+END $body$;

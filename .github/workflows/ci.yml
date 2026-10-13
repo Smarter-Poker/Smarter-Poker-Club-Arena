@@ -2557,6 +2557,26 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Original cash hands correct their exact rolled-back allocator
+        id: cash_original17
+        if: matrix.shard == 3
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          CASH_ORIGINAL17_EVIDENCE_DIR: ${{ runner.temp }}/cash-original17
+        run: |
+          set -euo pipefail
+          mkdir -p "$CASH_ORIGINAL17_EVIDENCE_DIR"
+          bash scripts/dev/probe-cash-original17-pg17.sh 2>&1 | tee "$CASH_ORIGINAL17_EVIDENCE_DIR/native.log"
+
+      - name: Retain exact cash original qualification
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.cash_original17.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: cash-original17-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/cash-original17/
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Hand index writers retain canonical order and exact coverage
         id: hand_index_writer_order
         if: matrix.shard == 4

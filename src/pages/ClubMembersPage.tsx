@@ -28,6 +28,12 @@ import { safeErrorMessage } from '../utils/safeErrorMessage';
 import { type RosterConnectionState } from '../utils/rosterReadReliability';
 import { compactChips } from '../utils/format';
 import { titleCase } from '../utils/titleCase';
+import {
+  MAX_ROSTER_SELECTION,
+  loadedRosterSelection,
+  selectLoadedRoster,
+  allLoadedSelected,
+} from '../utils/rosterSelection';
 import { AGENT_ROLES, roleLabel } from '../types/clubRoles';
 import ClubRosterService, {
   type RosterCursor,
@@ -81,6 +87,17 @@ const SORT_LABEL: Record<RosterSort, string> = {
 type OptionalColumn = RosterColumn;
 type SummaryFreshness = 'loading' | 'fresh' | 'stale' | 'failed';
 type RosterLoadOptions = { forceSummary?: boolean };
+type ExportOperation = {
+  owner: object;
+  state: 'preparing' | 'success' | 'empty' | 'error';
+  filter: RosterFilter;
+  sort: RosterSort;
+  selectedCount: number;
+  searchApplied: boolean;
+  auditId?: string;
+  rowCount?: number;
+  message?: string;
+};
 
 const DEFAULT_SUMMARY: RosterSummary = {
   viewer_role: 'player',
@@ -145,7 +162,21 @@ export default function ClubMembersPage() {
   const [columns, setColumns] = useState<Set<OptionalColumn>>(
     () => new Set(['downlines', 'wallets', 'fees', 'activity'])
   );
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [selectedIds, setSelected] = useState<Set<string>>(new Set());
+  const selectionQuery = JSON.stringify([routeClub, user?.id, searchQuery, filter, sortKey]);
+  const selectionQueryRef = useRef(selectionQuery);
+  const selected =
+    selectionQueryRef.current === selectionQuery
+      ? loadedRosterSelection(
+          selectedIds,
+          members.map((row) => row.user_id)
+        )
+      : new Set<string>();
+  const loadedSelected = allLoadedSelected(
+    selected,
+    members.map((row) => row.user_id)
+  );
+  const [exportOperation, setExportOperation] = useState<ExportOperation | null>(null);
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -300,6 +331,7 @@ export default function ClubMembersPage() {
     exportAbortRef.current?.abort();
     exportAbortRef.current = null;
     setIsExporting(false);
+    setExportOperation(null);
     abortRef.current?.abort();
     moreAbortRef.current?.abort();
     summaryAbortRef.current?.abort();
@@ -478,6 +510,8 @@ export default function ClubMembersPage() {
             exportAbortRef.current?.abort();
             exportAbortRef.current = null;
             setIsExporting(false);
+            setExportOperation(null);
+            setSelected(new Set());
           }
           if (!nextSummary) {
             controller.abort();
@@ -1002,11 +1036,31 @@ export default function ClubMembersPage() {
     if (!sorts.includes(sortKey)) setSortKey('hierarchy');
   }, [filter, filters, summaryFreshness, sortKey, sorts]);
 
-  const toggleSelected = useCallback((id: string) => {
+  useEffect(() => {
+    selectionQueryRef.current = selectionQuery;
+    setSelected(new Set());
+  }, [selectionQuery]);
+  useEffect(() => {
     setSelected((current) => {
-      const next = new Set(current);
+      const next = loadedRosterSelection(
+        current,
+        members.map((row) => row.user_id)
+      );
+      return next.size === current.size && [...next].every((id) => current.has(id))
+        ? current
+        : next;
+    });
+  }, [members]);
+
+  const toggleSelected = useCallback((id: string) => {
+    if (!membersRef.current.some((row) => row.user_id === id)) return;
+    setSelected((current) => {
+      const next = loadedRosterSelection(
+        current,
+        membersRef.current.map((row) => row.user_id)
+      );
       if (next.has(id)) next.delete(id);
-      else next.add(id);
+      else if (next.size < MAX_ROSTER_SELECTION) next.add(id);
       return next;
     });
   }, []);
@@ -1056,6 +1110,7 @@ export default function ClubMembersPage() {
       !summary.capabilities.can_export ||
       isExporting ||
       exportAbortRef.current !== null ||
+      (selectedIds.size > 0 && selected.size === 0) ||
       searchQuery.trim() !== debouncedSearch.trim()
     )
       return;
@@ -1071,6 +1126,15 @@ export default function ClubMembersPage() {
     const exportQuery = { search: debouncedSearch.trim().slice(0, 120), filter, sort: sortKey };
     const exportSelection = selected.size ? [...selected] : null;
     const requestedAt = new Date().toISOString();
+    const operation = {
+      owner: scope,
+      state: 'preparing' as const,
+      filter: exportQuery.filter,
+      sort: exportQuery.sort,
+      selectedCount: exportSelection?.length ?? 0,
+      searchApplied: exportQuery.search.length > 0,
+    };
+    setExportOperation(operation);
     setIsExporting(true);
     try {
       const result = await ClubRosterService.exportRoster(
@@ -1086,6 +1150,12 @@ export default function ClubMembersPage() {
          already checks its export's return value; this one now says which of
          the two happened. */
       if (result.rows.length === 0) {
+        setExportOperation({
+          ...operation,
+          state: 'empty',
+          auditId: result.audit_id,
+          rowCount: result.row_count,
+        });
         toast.error('There Are No Players To Export For That Filter.');
         return;
       }
@@ -1110,12 +1180,23 @@ export default function ClubMembersPage() {
         `club-roster-${new Date().toISOString().slice(0, 10)}.csv`
       );
       toast.success(`${result.row_count.toLocaleString()} Players Exported`);
+      setExportOperation({
+        ...operation,
+        state: 'success',
+        auditId: result.audit_id,
+        rowCount: result.row_count,
+      });
     } catch (error) {
       if (!ownsExport()) return;
       reportError(error, 'ClubMembersPage.export');
       // The RPC's own refusal (the 5,000-selection cap, for one) is the
       // useful part of the message.
       toast.error(safeErrorMessage(error, 'Could Not Export The Roster'));
+      setExportOperation({
+        ...operation,
+        state: 'error',
+        message: safeErrorMessage(error, 'Could Not Export The Roster'),
+      });
     } finally {
       if (ownsExport()) {
         exportAbortRef.current = null;
@@ -1129,6 +1210,7 @@ export default function ClubMembersPage() {
     resolvedClubId,
     searchQuery,
     selected,
+    selectedIds,
     sortKey,
     summary.capabilities.can_export,
     toast,
@@ -1156,7 +1238,9 @@ export default function ClubMembersPage() {
         ? 'reconnecting'
         : dataFreshness === 'loading'
           ? 'connecting'
-          : 'live';
+          : realtimeConnection === 'connecting'
+            ? 'connecting'
+            : 'live';
 
   return (
     <div
@@ -1359,16 +1443,14 @@ export default function ClubMembersPage() {
             <button
               type="button"
               className="members-select-loaded"
-              aria-pressed={selected.size === members.length}
+              aria-pressed={loadedSelected}
               onClick={() =>
                 setSelected(
-                  selected.size === members.length
-                    ? new Set()
-                    : new Set(members.map((row) => row.user_id))
+                  loadedSelected ? new Set() : selectLoadedRoster(members.map((row) => row.user_id))
                 )
               }
             >
-              {selected.size === members.length ? 'Clear Selection' : 'Select Loaded'}
+              {loadedSelected ? 'Clear Selection' : 'Select Loaded'}
             </button>
           )}
 
@@ -1449,6 +1531,45 @@ export default function ClubMembersPage() {
           isSlow={loadSlow}
           onRetry={retryLiveSync}
         />
+        <p
+          className="members-count"
+          role="status"
+          aria-label="Roster Operations"
+          aria-live="polite"
+        >
+          {hasVerifiedDirectory && workspaceScope === exportScopeKey
+            ? `${members.length.toLocaleString()} Loaded Of ${filteredTotal.toLocaleString()} Matching Players.`
+            : 'Directory Not Yet Verified.'}{' '}
+          {!simpleMode && summary.capabilities.can_export
+            ? `${selected.size.toLocaleString()} Loaded Players Selected. Selection Limit ${MAX_ROSTER_SELECTION.toLocaleString()}.`
+            : ''}
+        </p>
+        {exportOperation &&
+          exportOperation.owner === exportScopeRef.current &&
+          summary.capabilities.can_export && (
+            <p
+              className="members-count"
+              role="status"
+              aria-label="Export Operation"
+              aria-live="polite"
+              data-operation-state={exportOperation.state}
+            >
+              {exportOperation.state === 'preparing'
+                ? 'Preparing Export.'
+                : exportOperation.state === 'success'
+                  ? `${exportOperation.rowCount?.toLocaleString()} Players Exported. CSV Prepared. Download Requested.`
+                  : exportOperation.state === 'empty'
+                    ? 'No Matching Players. No CSV Download Started.'
+                    : `Export Failed. ${titleCase(exportOperation.message ?? 'Could Not Export The Roster')}`}{' '}
+              {exportOperation.selectedCount
+                ? `${exportOperation.selectedCount.toLocaleString()} Selected Loaded Players.`
+                : 'All Matching Players Across Every Page.'}{' '}
+              Filter: {FILTER_LABEL[exportOperation.filter]}. Sort:{' '}
+              {SORT_LABEL[exportOperation.sort]}. Search:{' '}
+              {exportOperation.searchApplied ? 'Applied' : 'None'}.
+              {exportOperation.auditId ? ` Audit Reference: ${exportOperation.auditId}.` : ''}
+            </p>
+          )}
         {!simpleMode && resolvedClubId && user?.id && (
           <PlayerChangeHistory
             key={`history:${resolvedClubId}:${user.id}`}
@@ -1464,7 +1585,7 @@ export default function ClubMembersPage() {
           <strong>{selected.size.toLocaleString()} Selected</strong>
           <button
             type="button"
-            onClick={() => setSelected(new Set(members.map((row) => row.user_id)))}
+            onClick={() => setSelected(selectLoadedRoster(members.map((row) => row.user_id)))}
           >
             Select Loaded
           </button>

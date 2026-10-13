@@ -1,3 +1,4 @@
+import { DiamondJackpotReadout } from '../components/bbj/DiamondJackpotReadout';
 import { subscribeDiamondJackpot, type DiamondJackpotSnapshot } from '../lib/diamondJackpotFeed';
 import { isDiamondJackpotAdvertTarget } from '../components/bbj/diamondJackpotAdvertDoor';
 import { tournamentEntryWindowOpen } from '../utils/tournamentEntryWindow';
@@ -5232,16 +5233,18 @@ function ClubHomePageContent({
             >
               <ClubBBJShell className="lobby-bbj__shell" />
               <span className="lobby-bbj__label">Bad Beat Jackpot</span>
-              <strong className="lobby-bbj__amount">
-                {isAutomaticArena && diamondJackpot
-                  ? diamondJackpot.main_balance.toLocaleString('en-US') + ' Diamonds'
-                  : jackpotAmount > 0
+              {isAutomaticArena && diamondJackpot ? (
+                <DiamondJackpotReadout amount={diamondJackpot.main_balance} />
+              ) : (
+                <strong className="lobby-bbj__amount">
+                  {jackpotAmount > 0
                     ? jackpotAmount.toLocaleString('en-US', {
                         minimumFractionDigits: isAutomaticArena ? 0 : 2,
                         maximumFractionDigits: isAutomaticArena ? 0 : 2,
                       })
                     : '-'}
-              </strong>
+                </strong>
+              )}
               {lobbyMiniLine && <span className="lobby-bbj__mini">{lobbyMiniLine}</span>}
             </button>
           )}

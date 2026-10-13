@@ -1,0 +1,9 @@
+# The cron roster follows spent DSS jobs
+
+Finite Diamond Wallet cron closeout, source-only. Owned branch fix/diamond-wallet-cron-roster-20261013 at base82f869eafdc28da5e9fa7fc34888960379f2d3b5. Parent owns production verification. No cron changes, migration, restoration or retirement performed here.
+
+Read-only production observation2026-10-13T11:50:45.572269Z found132 active jobs and the two original inactive bust sweeps. The only names missing from the135-row protected roster are the three dated DSS one-shots; all three rows are absent. Retry2 succeeded2026-10-12T17:20:00Z; retry1 reports job canceled17:05, so disappearance does not certify all three executions. The existing self-unscheduling lifecycle is recorded in the prior roster header and migration20261012040553.
+
+The retention owner restored temporary safety holds after qualified safeguards. Original job117 is active at30 seconds through installed migration20261012200422 and its protected retention source; job279 is active with unchanged hourly schedule. Only job117's schedule differs from the previous roster; other131 schedules match. The maintained law now accepts pg_cron's supported1–59 second interval syntax with boundary refusal checks, while preserving the existing five-field cron check, count, duplicate, unreadable-answer and no-new-schedule safeguards.
+
+Fresh canonical reader2026-10-13T11:50:35.388Z policy2.9 manifest a659f31c5c1c2b0864889508079a635dd5fe2fc98decfbfc9d3f9c80dd45ec3b; full repository AGENTS/PLAYBOOK/CLAUDE/PUBLISHING and storage guide read. Focused roster law and991 source-binding pins passed; normal exact-candidate hooks and hosted checks remain required. Latest CronHealth38369096670 failed only135→132 count drift, with129ok/2warn/0critical/1idle. Broader audit and satellite installation are separately owned.

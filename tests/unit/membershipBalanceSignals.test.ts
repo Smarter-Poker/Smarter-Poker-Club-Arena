@@ -1,6 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fixture = vi.hoisted(() => ({ channels: [] as any[], emit: vi.fn() }));
+// This suite supplies a settled synthetic transport; admission itself is
+// exercised with the actual SDK in realtimeAdmission/subscribeRealtime tests.
+vi.mock('../../src/lib/subscribeRealtime', () => ({
+  subscribeRealtime: (channel: any, callback: any, signal: AbortSignal) => {
+    if (!signal.aborted) channel.subscribe(callback);
+  },
+}));
+
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
     channel: vi.fn(() => {

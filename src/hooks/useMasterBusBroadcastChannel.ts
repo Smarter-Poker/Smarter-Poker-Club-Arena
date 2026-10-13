@@ -7,9 +7,11 @@
  * cannot leave a mounted surface permanently stale.
  */
 
+import type { RealtimeChannel } from '@supabase/supabase-js';
 import { useEffect, useRef } from 'react';
 import { masterBus } from '../core/MasterBus';
 import { supabase } from '../lib/supabase';
+import { subscribeRealtime } from '../lib/subscribeRealtime';
 import { reportError } from '../utils/errorReporter';
 
 interface UseMasterBusBroadcastChannelOptions {
@@ -57,47 +59,28 @@ export function useMasterBusBroadcastChannel({
     // that finishes auth last cannot supersede a newer channel or repaint stale
     // data after recovery.
     let subscriptionGeneration = 0;
-    /* A private join first proves the session to Realtime. When that proof
-       fails (no session yet, a refresh in flight, the network gone) there is
-       no channel at all, so the registry's health monitor - which recovers
-       closed or errored channels - has nothing to recover, and the surface
-       would never hear from its channel again. The retry is owned by events,
-       not a timer: the next token refresh, sign in, or the browser coming back
-       online starts the subscription once more, and any attempt that gets past
-       authentication disarms it. */
+    let admission: AbortController | null = null;
+    let acquiredChannel: RealtimeChannel | null = null;
+    /* Admission reserves a closed registered channel so the existing health
+       owner can recover it. Auth/online events also retain the private join's
+       event-driven retry, disarmed by SUBSCRIBED. No new timer is involved. */
     let disarmAuthRetry: (() => void) | null = null;
 
-    const subscribeChannel = async () => {
+    const subscribeChannel = () => {
+      if (!alive) return;
       const generation = ++subscriptionGeneration;
-      if (privateChannel) {
-        try {
-          // Realtime Authorization is separate from PostgREST authentication.
-          // Prime it from the Supabase client's current session before a private
-          // channel asks realtime.messages RLS for permission to join.
-          await supabase.realtime.setAuth();
-          if (!alive || generation !== subscriptionGeneration) return;
-          disarmAuthRetry?.();
-        } catch (authError) {
-          if (!alive || generation !== subscriptionGeneration) return;
-          armAuthRetry();
-          const error =
-            authError instanceof Error
-              ? authError
-              : new Error('Realtime authentication could not be initialized');
-          reportError(error, `useMasterBusBroadcastChannel.AUTH_ERROR.${event}`);
-          try {
-            errorCallbackRef.current?.('AUTH_ERROR', error);
-          } catch (callbackError) {
-            reportError(callbackError, 'useMasterBusBroadcastChannel.onSubscriptionError_threw');
-          }
-          return;
-        }
-      }
-
+      admission?.abort();
+      if (acquiredChannel) masterBus.removeRegisteredChannel(channelName, acquiredChannel);
+      acquiredChannel = null;
+      admission = new AbortController();
+      const signal = admission.signal;
       if (!alive || generation !== subscriptionGeneration) return;
       const channel = masterBus.getOrCreateChannel(channelName, { private: privateChannel });
+      acquiredChannel = channel;
       const state = (channel as any)?.state;
       if (state && state !== 'closed' && state !== 'errored') {
+        masterBus.removeRegisteredChannel(channelName, channel);
+        acquiredChannel = null;
         reportError(
           new Error(`Realtime channel ${channelName} was already ${state}; binding skipped`),
           'useMasterBusBroadcastChannel.channel_already_joined'
@@ -105,12 +88,15 @@ export function useMasterBusBroadcastChannel({
         return;
       }
 
-      channel
-        .on('broadcast', { event }, (payload: unknown) => {
-          if (alive && generation === subscriptionGeneration) callbackRef.current(payload);
-        })
-        .subscribe((status: string, err?: Error) => {
+      channel.on('broadcast', { event }, (payload: unknown) => {
+        if (alive && generation === subscriptionGeneration) callbackRef.current(payload);
+      });
+      void subscribeRealtime(
+        channel,
+        (status: string, err?: Error) => {
           if (!alive || generation !== subscriptionGeneration) return;
+          if (status === 'SUBSCRIBED') disarmAuthRetry?.();
+          if (status === 'CHANNEL_ERROR') armAuthRetry();
           try {
             statusCallbackRef.current?.(status);
           } catch (callbackError) {
@@ -128,7 +114,9 @@ export function useMasterBusBroadcastChannel({
           } catch (callbackError) {
             reportError(callbackError, 'useMasterBusBroadcastChannel.onSubscriptionError_threw');
           }
-        });
+        },
+        signal
+      );
     };
 
     const startSubscription = () => {
@@ -159,9 +147,10 @@ export function useMasterBusBroadcastChannel({
 
     return () => {
       alive = false;
+      admission?.abort();
       disarmAuthRetry?.();
       masterBus.removeChannelFactory(channelName);
-      masterBus.removeRegisteredChannel(channelName);
+      if (acquiredChannel) masterBus.removeRegisteredChannel(channelName, acquiredChannel);
     };
   }, [channelName, enabled, event, privateChannel, restartKey]);
 }

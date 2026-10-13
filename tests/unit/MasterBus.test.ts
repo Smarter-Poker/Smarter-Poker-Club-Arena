@@ -9,6 +9,8 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 
+vi.unmock('../../src/core/MasterBus');
+
 // Must mock ALL transitive dependencies
 vi.mock('../../src/stores/useArenaStore', () => ({
   useArenaStore: {
@@ -62,9 +64,27 @@ vi.mock('../../src/lib/supabase', () => ({
 }));
 
 import { masterBus } from '../../src/core/MasterBus';
+import { supabase } from '../../src/lib/supabase';
 import type { MasterBusStatus, BusEvent } from '../../src/core/MasterBus';
 
 describe('MasterBus', () => {
+  it('a retired admission cannot release the replacement registered channel', () => {
+    const oldChannel = { on: vi.fn(), subscribe: vi.fn() };
+    const replacement = { on: vi.fn(), subscribe: vi.fn() };
+    vi.mocked(supabase.channel)
+      .mockReturnValueOnce(oldChannel as any)
+      .mockReturnValueOnce(replacement as any);
+    masterBus.getOrCreateChannel('admission-owner-fixture');
+    masterBus.forceRemoveRegisteredChannel('admission-owner-fixture');
+    masterBus.getOrCreateChannel('admission-owner-fixture');
+    vi.mocked(supabase.removeChannel).mockClear();
+    masterBus.removeRegisteredChannel('admission-owner-fixture', oldChannel as any);
+    expect(masterBus.hasChannel('admission-owner-fixture')).toBe(true);
+    expect(supabase.removeChannel).not.toHaveBeenCalled();
+    masterBus.removeRegisteredChannel('admission-owner-fixture', replacement as any);
+    expect(masterBus.hasChannel('admission-owner-fixture')).toBe(false);
+    expect(supabase.removeChannel).toHaveBeenCalledExactlyOnceWith(replacement);
+  });
   it('should export masterBus singleton', () => {
     expect(masterBus).toBeDefined();
     expect(typeof masterBus).toBe('object');

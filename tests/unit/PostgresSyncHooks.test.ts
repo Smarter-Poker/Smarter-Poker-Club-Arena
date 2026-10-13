@@ -8,6 +8,12 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+const admission = vi.hoisted(() => ({
+  subscribe: vi.fn(),
+  attempts: [] as Array<{ signal: AbortSignal; status: (value: string) => void }>,
+}));
+vi.mock('../../src/lib/subscribeRealtime', () => ({ subscribeRealtime: admission.subscribe }));
+
 // ─── Mock dependencies ────────────────────────────────────────────────────
 
 vi.mock('../../src/lib/supabase', () => ({
@@ -27,10 +33,21 @@ vi.mock('../../src/core/MasterBus', () => ({
 
 // ─── Import AFTER mocks ──────────────────────────────────────────────────
 
+import { masterBus } from '../../src/core/MasterBus';
+import { supabase } from '../../src/lib/supabase';
 import { postgresSyncHooks } from '../../src/services/PostgresSyncHooks';
 
 describe('PostgresSyncHooks', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    postgresSyncHooks.destroy();
+    vi.clearAllMocks();
+    admission.attempts = [];
+    admission.subscribe.mockImplementation((channel, status, signal) => {
+      admission.attempts.push({ signal, status });
+      channel.subscribe(status);
+      return Promise.resolve();
+    });
+  });
 
   afterEach(() => {
     postgresSyncHooks.destroy();
@@ -69,5 +86,49 @@ describe('PostgresSyncHooks', () => {
       expect(typeof postgresSyncHooks.init).toBe('function');
       expect(typeof postgresSyncHooks.destroy).toBe('function');
     });
+  });
+});
+
+describe('pending global subscription admission', () => {
+  beforeEach(() => {
+    postgresSyncHooks.destroy();
+    vi.clearAllMocks();
+    admission.attempts = [];
+    admission.subscribe.mockImplementation((_channel, status, signal) => {
+      admission.attempts.push({ signal, status });
+      return Promise.resolve();
+    });
+  });
+  afterEach(() => postgresSyncHooks.destroy());
+
+  it('destroy aborts pending admission and rejects a late subscribed status', () => {
+    postgresSyncHooks.init('old-user');
+    expect(admission.attempts).toHaveLength(1);
+    expect(admission.attempts[0].signal.aborted).toBe(false);
+    postgresSyncHooks.destroy();
+    expect(admission.attempts[0].signal.aborted).toBe(true);
+    vi.mocked(masterBus.emit).mockClear();
+    admission.attempts[0].status('SUBSCRIBED');
+    admission.attempts[0].status('TIMED_OUT');
+    expect(masterBus.emit).not.toHaveBeenCalled();
+    expect(supabase.channel).toHaveBeenCalledTimes(1);
+  });
+
+  it('an identity switch retires only the old admission and ignores its late errors', () => {
+    postgresSyncHooks.init('old-user');
+    postgresSyncHooks.init('new-user');
+    expect(admission.attempts).toHaveLength(2);
+    expect(admission.attempts[0].signal.aborted).toBe(true);
+    expect(admission.attempts[1].signal.aborted).toBe(false);
+    vi.mocked(masterBus.emit).mockClear();
+    admission.attempts[0].status('CHANNEL_ERROR');
+    admission.attempts[1].status('SUBSCRIBED');
+    expect(masterBus.emit).toHaveBeenCalledWith('REALTIME_CONNECTED', {
+      channelName: 'global_db_sync:new-user',
+    });
+    expect(
+      vi.mocked(masterBus.emit).mock.calls.some(([kind]) => kind === 'REALTIME_DISCONNECTED')
+    ).toBe(false);
+    expect(supabase.channel).toHaveBeenCalledTimes(2);
   });
 });

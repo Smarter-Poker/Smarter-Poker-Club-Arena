@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/realtime-cold-join-20261013 - realtimeAdmission configures the native transport observer synchronously in the original shared Supabase owner, before any channel connects. subscribeRealtime is the small common admission path for the eagerly initialized global PostgresSync owner and row/private channel hooks; first joins must use the same readiness and cancellation semantics. These two infrastructure modules belong to client boot, not an optional operator surface. Actual entry remains within the existing size budgets.",
+  "modules": ["src/lib/realtimeAdmission.ts", "src/lib/subscribeRealtime.ts"]
+}

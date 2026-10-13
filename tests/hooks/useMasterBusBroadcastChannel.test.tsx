@@ -24,6 +24,17 @@ vi.mock('../../src/lib/supabase', () => ({
   },
 }));
 
+vi.mock('../../src/lib/subscribeRealtime', () => ({
+  subscribeRealtime: async (channel: any, callback: any, signal: AbortSignal) => {
+    try {
+      await mocks.setAuth();
+      if (!signal.aborted) channel.subscribe(callback);
+    } catch (error) {
+      if (!signal.aborted) callback('CHANNEL_ERROR', error);
+    }
+  },
+}));
+
 vi.mock('../../src/core/MasterBus', () => ({
   masterBus: {
     getOrCreateChannel: mocks.getOrCreateChannel,
@@ -51,7 +62,11 @@ describe('useMasterBusBroadcastChannel', () => {
       mocks.payloadCallbacks.push(callback);
       return { subscribe: mocks.subscribe };
     });
-    mocks.getOrCreateChannel.mockReturnValue({ state: 'closed', on: mocks.on });
+    mocks.getOrCreateChannel.mockReturnValue({
+      state: 'closed',
+      on: mocks.on,
+      subscribe: mocks.subscribe,
+    });
     mocks.authListeners = [];
     mocks.onAuthStateChange.mockImplementation((listener: (event: string) => void) => {
       mocks.authListeners.push(listener);
@@ -80,7 +95,7 @@ describe('useMasterBusBroadcastChannel', () => {
     );
 
     expect(mocks.setAuth).toHaveBeenCalledOnce();
-    expect(mocks.getOrCreateChannel).not.toHaveBeenCalled();
+    expect(mocks.subscribe).not.toHaveBeenCalled();
 
     await act(async () => releaseAuth?.());
 
@@ -89,7 +104,7 @@ describe('useMasterBusBroadcastChannel', () => {
     expect(mocks.on).toHaveBeenCalledWith('broadcast', { event: 'changed' }, expect.any(Function));
   });
 
-  it('does not authenticate a public channel', async () => {
+  it('authenticates before a public channel joins under row authorization', async () => {
     renderHook(() =>
       useMasterBusBroadcastChannel({
         channelName: 'public-room',
@@ -100,7 +115,7 @@ describe('useMasterBusBroadcastChannel', () => {
     );
 
     await waitFor(() => expect(mocks.getOrCreateChannel).toHaveBeenCalledOnce());
-    expect(mocks.setAuth).not.toHaveBeenCalled();
+    expect(mocks.setAuth).toHaveBeenCalledOnce();
   });
 
   it('explicit retry rejoins with fresh auth and ignores the retired callbacks', async () => {
@@ -123,7 +138,7 @@ describe('useMasterBusBroadcastChannel', () => {
     act(() => mocks.subscriptionCallbacks[0]('TIMED_OUT'));
     rerender({ restartKey: 1 });
     await waitFor(() => expect(mocks.subscriptionCallbacks).toHaveLength(2));
-    expect(mocks.removeRegisteredChannel).toHaveBeenCalledWith('private:user-1');
+    expect(mocks.removeRegisteredChannel).toHaveBeenCalledWith('private:user-1', expect.anything());
     expect(mocks.setAuth).toHaveBeenCalledTimes(2);
     onSubscriptionStatus.mockClear();
     onSubscriptionError.mockClear();
@@ -155,17 +170,17 @@ describe('useMasterBusBroadcastChannel', () => {
     );
 
     await waitFor(() => expect(onSubscriptionError).toHaveBeenCalledOnce());
-    expect(onSubscriptionError).toHaveBeenCalledWith('AUTH_ERROR', authError);
+    expect(onSubscriptionError).toHaveBeenCalledWith('CHANNEL_ERROR', authError);
     expect(mocks.reportError).toHaveBeenCalledWith(
       authError,
-      'useMasterBusBroadcastChannel.AUTH_ERROR.changed'
+      'useMasterBusBroadcastChannel.CHANNEL_ERROR.changed'
     );
-    expect(mocks.getOrCreateChannel).not.toHaveBeenCalled();
+    expect(mocks.subscribe).not.toHaveBeenCalled();
   });
 
   it('ignores stale status and payload callbacks after a channel replacement', async () => {
-    const firstChannel = { state: 'closed', on: mocks.on };
-    const replacementChannel = { state: 'closed', on: mocks.on };
+    const firstChannel = { state: 'closed', on: mocks.on, subscribe: mocks.subscribe };
+    const replacementChannel = { state: 'closed', on: mocks.on, subscribe: mocks.subscribe };
     mocks.getOrCreateChannel
       .mockReturnValueOnce(firstChannel)
       .mockReturnValueOnce(replacementChannel);
@@ -225,8 +240,8 @@ describe('useMasterBusBroadcastChannel', () => {
     mocks.setAuth.mockImplementation(
       () => new Promise<void>((resolve) => resolveAuth.push(resolve))
     );
-    const firstChannel = { state: 'closed', on: mocks.on };
-    const replacementChannel = { state: 'closed', on: mocks.on };
+    const firstChannel = { state: 'closed', on: mocks.on, subscribe: mocks.subscribe };
+    const replacementChannel = { state: 'closed', on: mocks.on, subscribe: mocks.subscribe };
     mocks.getOrCreateChannel
       .mockReturnValueOnce(firstChannel)
       .mockReturnValueOnce(replacementChannel);
@@ -250,7 +265,7 @@ describe('useMasterBusBroadcastChannel', () => {
     await waitFor(() => expect(mocks.subscriptionCallbacks).toHaveLength(1));
     await act(async () => resolveAuth[0]?.());
 
-    expect(mocks.getOrCreateChannel).toHaveBeenCalledOnce();
+    expect(mocks.getOrCreateChannel).toHaveBeenCalledTimes(2);
     expect(mocks.getOrCreateChannel).toHaveBeenCalledWith('private:user-1', { private: true });
     expect(mocks.subscriptionCallbacks).toHaveLength(1);
   });
@@ -274,9 +289,9 @@ describe('useMasterBusBroadcastChannel', () => {
 
     await act(async () => releaseAuth?.());
 
-    expect(mocks.getOrCreateChannel).not.toHaveBeenCalled();
+    expect(mocks.subscribe).not.toHaveBeenCalled();
     expect(mocks.removeChannelFactory).toHaveBeenCalledWith('private:user-1');
-    expect(mocks.removeRegisteredChannel).toHaveBeenCalledWith('private:user-1');
+    expect(mocks.removeRegisteredChannel).toHaveBeenCalledWith('private:user-1', expect.anything());
   });
 
   /* A failed Realtime sign-in leaves no channel for the registry's health
@@ -297,15 +312,16 @@ describe('useMasterBusBroadcastChannel', () => {
     );
 
     await waitFor(() =>
-      expect(onSubscriptionError).toHaveBeenCalledWith('AUTH_ERROR', expect.any(Error))
+      expect(onSubscriptionError).toHaveBeenCalledWith('CHANNEL_ERROR', expect.any(Error))
     );
-    expect(mocks.getOrCreateChannel).not.toHaveBeenCalled();
+    expect(mocks.subscribe).not.toHaveBeenCalled();
 
     await act(async () => {
       window.dispatchEvent(new Event('online'));
     });
 
-    await waitFor(() => expect(mocks.getOrCreateChannel).toHaveBeenCalledOnce());
+    await waitFor(() => expect(mocks.subscribe).toHaveBeenCalledOnce());
+    expect(mocks.getOrCreateChannel).toHaveBeenCalledTimes(2);
     expect(mocks.setAuth).toHaveBeenCalledTimes(2);
     expect(mocks.unsubscribeAuth).toHaveBeenCalledOnce();
 
@@ -336,7 +352,8 @@ describe('useMasterBusBroadcastChannel', () => {
 
     await act(async () => authEvent('TOKEN_REFRESHED'));
 
-    await waitFor(() => expect(mocks.getOrCreateChannel).toHaveBeenCalledOnce());
+    await waitFor(() => expect(mocks.subscribe).toHaveBeenCalledOnce());
+    expect(mocks.getOrCreateChannel).toHaveBeenCalledTimes(2);
     expect(mocks.setAuth).toHaveBeenCalledTimes(2);
     expect(mocks.unsubscribeAuth).toHaveBeenCalledOnce();
   });
@@ -364,7 +381,7 @@ describe('useMasterBusBroadcastChannel', () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(mocks.setAuth).toHaveBeenCalledTimes(2);
     expect(mocks.onAuthStateChange).toHaveBeenCalledTimes(2);
-    expect(mocks.getOrCreateChannel).not.toHaveBeenCalled();
+    expect(mocks.subscribe).not.toHaveBeenCalled();
   });
 
   it('unmounting removes a pending sign-in retry', async () => {

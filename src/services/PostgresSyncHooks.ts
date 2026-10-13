@@ -1,3 +1,4 @@
+import { subscribeRealtime } from '../lib/subscribeRealtime';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import type { RealtimeChannel } from '@supabase/supabase-js';
@@ -81,6 +82,7 @@ class PostgresSyncHooksService {
   private initialized: boolean = false;
   private _userId: string | null = null; // FIX: Track current user for re-init detection
   private generation = 0;
+  private admission: AbortController | null = null;
   private lastSeenMemberships = new Map<string, { balances: string; membership: string }>();
 
   // Phase 11: Internal debounce timers to batch rapid-fire events
@@ -142,6 +144,8 @@ class PostgresSyncHooksService {
       this.initialized && this.generation === generation && this._userId === userId;
 
     // Use a deterministic global channel name scoped to the user to avoid leaks/re-subs
+    this.admission = new AbortController();
+    const signal = this.admission.signal;
     this.channel = supabase.channel(`global_db_sync:${userId}`);
 
     this.channel
@@ -377,14 +381,16 @@ class PostgresSyncHooksService {
             userId,
           });
         }
-      )
-      // 9. Chip Ledger — REALTIME transaction notifications
-      // NOTE: chip_ledger listeners REMOVED to scoped hook useRealtimeFinancials (2026-04-19)
+      );
+    // 9. Chip Ledger — REALTIME transaction notifications
+    // NOTE: chip_ledger listeners REMOVED to scoped hook useRealtimeFinancials (2026-04-19)
 
-      // Phase 11: Health monitoring with reconnect logging
-      // Phase 15: Emit bus events so ConnectionHUD and other UI elements can react
-      // Phase 16: Auto-reconnect on CHANNEL_ERROR / TIMED_OUT
-      .subscribe((status, err) => {
+    // Phase 11: Health monitoring with reconnect logging
+    // Phase 15: Emit bus events so ConnectionHUD and other UI elements can react
+    // Phase 16: Auto-reconnect on CHANNEL_ERROR / TIMED_OUT
+    void subscribeRealtime(
+      this.channel,
+      (status, err) => {
         if (!ownsSubscription()) return;
         const channelName = `global_db_sync:${userId}`;
         switch (status) {
@@ -423,7 +429,9 @@ class PostgresSyncHooksService {
             masterBus.emit('REALTIME_DISCONNECTED', { channelName, reason: 'Channel closed' });
             break;
         }
-      });
+      },
+      signal
+    );
   }
 
   /**
@@ -469,6 +477,8 @@ class PostgresSyncHooksService {
 
   destroy() {
     this.generation++;
+    this.admission?.abort();
+    this.admission = null;
     this.lastSeenMemberships.clear();
     // Clear any pending reconnect timer
     if (this.reconnectTimer) {

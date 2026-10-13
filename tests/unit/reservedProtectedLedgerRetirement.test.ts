@@ -67,7 +67,9 @@ describe('reserved protected ledger actors reach supported Auth retirement', () 
       'RESERVED_CERTIFICATION_ACCOUNT_EMAIL: ${{ inputs.reserved_account_email }}'
     );
     expect(job).toContain('node scripts/ci/retire-reserved-certification-account.mjs');
-    expect(job).not.toMatch(/npm ci|playwright|production-e2e-account\.mjs create|stale/);
+    expect(job).toContain('npm ci --ignore-scripts');
+    expect(job).toContain('DATABASE_URL: ${{ secrets.DATABASE_URL }}');
+    expect(job).not.toMatch(/playwright|production-e2e-account\.mjs create|stale/);
     expect(workflow).toContain('cancel-in-progress: false');
   });
   it.each([
@@ -99,27 +101,57 @@ describe('reserved protected ledger actors reach supported Auth retirement', () 
       SUPABASE_SERVICE_ROLE_KEY: 'sb_secret_test',
     };
     const fetchImpl = vi.fn().mockResolvedValue({ status: 200, json: async () => ({ id, email }) });
-    const cleanup = vi.fn().mockResolvedValue(true);
+    const order: string[] = [];
+    const retireFixtures = vi.fn().mockImplementation(async () => {
+      order.push('fixtures');
+    });
+    const cleanup = vi.fn().mockImplementation(async () => {
+      order.push('account');
+      return true;
+    });
     await expect(
-      retireReservedCertificationAccount({ environment, fetchImpl, cleanup })
+      retireReservedCertificationAccount({ environment, fetchImpl, cleanup, retireFixtures })
     ).resolves.toBe(true);
+    expect(order).toEqual(['fixtures', 'account']);
+    expect(retireFixtures).toHaveBeenCalledExactlyOnceWith({
+      environment,
+      fetchImpl,
+      record: { id, email },
+    });
     expect(cleanup).toHaveBeenCalledExactlyOnceWith({
       environment,
       fetchImpl,
       record: { id, email },
     });
+    retireFixtures.mockRejectedValueOnce(new Error('Fixture Has Custody'));
+    cleanup.mockClear();
+    await expect(
+      retireReservedCertificationAccount({ environment, fetchImpl, cleanup, retireFixtures })
+    ).rejects.toThrow('Fixture Has Custody');
+    expect(cleanup).not.toHaveBeenCalled();
     cleanup.mockResolvedValue(false);
     await expect(
-      retireReservedCertificationAccount({ environment, fetchImpl, cleanup })
+      retireReservedCertificationAccount({ environment, fetchImpl, cleanup, retireFixtures })
     ).rejects.toThrow('Was Not Retired');
     cleanup.mockClear();
+    retireFixtures.mockClear();
     fetchImpl.mockResolvedValue({
       status: 200,
       json: async () => ({ id, email: 'different@example.invalid' }),
     });
     await expect(
-      retireReservedCertificationAccount({ environment, fetchImpl, cleanup })
+      retireReservedCertificationAccount({ environment, fetchImpl, cleanup, retireFixtures })
     ).rejects.toThrow('Do Not Match Auth');
     expect(cleanup).not.toHaveBeenCalled();
+    expect(retireFixtures).not.toHaveBeenCalled();
+    cleanup.mockResolvedValue(true);
+    fetchImpl.mockResolvedValue({
+      status: 200,
+      json: async () => ({ id, deleted_at: '2026-10-13T00:00:00Z' }),
+    });
+    await expect(
+      retireReservedCertificationAccount({ environment, fetchImpl, cleanup, retireFixtures })
+    ).resolves.toBe(true);
+    expect(retireFixtures).not.toHaveBeenCalled();
   });
 });

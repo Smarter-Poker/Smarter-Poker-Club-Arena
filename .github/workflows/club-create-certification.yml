@@ -40,10 +40,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Install The Locked Cleanup Dependencies
+        run: npm ci --ignore-scripts
       - name: Retire And Verify Exactly The Selected Reserved Identity
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
           RESERVED_CERTIFICATION_ACCOUNT_ID: ${{ inputs.reserved_account_id }}
           RESERVED_CERTIFICATION_ACCOUNT_EMAIL: ${{ inputs.reserved_account_email }}
         run: node scripts/ci/retire-reserved-certification-account.mjs

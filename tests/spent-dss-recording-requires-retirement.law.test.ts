@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
+import { tmpdir } from 'node:os';
 import {
   retiredDssRecordingIsBound,
   verifySpentDssRetirement,
@@ -13,7 +14,14 @@ const root = join(__dirname, '..');
 describe('spent DSS recording requires retirement', () => {
   it('binds only exact historical bytes, manifest identity and mandatory retirement reader', () => {
     expect(retiredDssRecordingIsBound(root)).toBe(true);
-    const scratch = mkdtempSync(join(process.env.TMPDIR!, 'dss-recording-'));
+    const scratch = mkdtempSync(
+      join(
+        process.env.RUNNER_TEMP ||
+          process.env.TMPDIR ||
+          (process.platform === 'darwin' ? '/Volumes/SmarterWork/agent-work' : tmpdir()),
+        'dss-recording-'
+      )
+    );
     const files = [
       DSS_HISTORY_FILE,
       DSS_RETIREMENT_FILE,

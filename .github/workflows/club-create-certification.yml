@@ -11,6 +11,14 @@ on:
         description: Exact reserved post-deploy email of that same fixture
         required: true
         type: string
+      reserved_template_request_id:
+        description: Exact durable creation request of an owned template club, when present
+        required: false
+        type: string
+      reserved_template_club_id:
+        description: Exact template club from that creation receipt, when present
+        required: false
+        type: string
   repository_dispatch:
     types: [certify-club-create]
   workflow_run:
@@ -40,10 +48,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Install Maintained Cleanup Dependencies
+        if: inputs.reserved_template_request_id != '' || inputs.reserved_template_club_id != ''
+        run: npm ci --no-audit --no-fund
       - name: Retire And Verify Exactly The Selected Reserved Identity
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          RESERVED_CERTIFICATION_TEMPLATE_REQUEST_ID: ${{ inputs.reserved_template_request_id }}
+          RESERVED_CERTIFICATION_TEMPLATE_CLUB_ID: ${{ inputs.reserved_template_club_id }}
           RESERVED_CERTIFICATION_ACCOUNT_ID: ${{ inputs.reserved_account_id }}
           RESERVED_CERTIFICATION_ACCOUNT_EMAIL: ${{ inputs.reserved_account_email }}
         run: node scripts/ci/retire-reserved-certification-account.mjs

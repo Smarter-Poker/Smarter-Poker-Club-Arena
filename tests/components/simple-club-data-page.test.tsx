@@ -483,12 +483,15 @@ for (const advanced of [false, true]) {
     fireEvent.click(screen.getByRole('button', { name: 'Omaha', exact: true }));
     await waitFor(() => expect(resolveQuery).toBeTypeOf('function'));
     expect(screen.queryByText('Shark Table One')).not.toBeInTheDocument();
+    expect(screen.getByText('Finding Matching Games')).toBeInTheDocument();
+    expect(screen.queryByText('0 Matching Games')).not.toBeInTheDocument();
     expect(
       within(screen.getByLabelText('Club Performance Summary')).queryByText('2.4K')
     ).not.toBeInTheDocument();
     await act(async () => {
-      resolveQuery({ data: null, error: { message: 'Unavailable', code: 'XX000' } });
+      resolveQuery({ data: null, error: null });
     });
     expect(screen.queryByText('Shark Table One')).not.toBeInTheDocument();
+    expect(screen.getByText('Matching Games Unavailable')).toBeInTheDocument();
   });
 }

@@ -3567,7 +3567,11 @@ export default function ClubDataPage() {
             {filtersActive && (
               <div className={styles.stateRow}>
                 <span className={`sc-copy ${styles.stateCopy}`}>
-                  {`${compactInt(snapshot?.row_count || 0)} Matching Game${Number(snapshot?.row_count || 0) === 1 ? '' : 's'}`}
+                  {snapshot
+                    ? `${compactInt(snapshot.row_count)} Matching Game${Number(snapshot.row_count) === 1 ? '' : 's'}`
+                    : loading
+                      ? 'Finding Matching Games'
+                      : 'Matching Games Unavailable'}
                 </span>
                 <button
                   type="button"

@@ -78,6 +78,9 @@ test.describe('Reserved Admin - every Club Operations registry route', () => {
 
   for (const operation of ADMIN_CLUB_OPERATION_ROUTES) {
     test(`${operation.id} renders its live club-scoped destination`, async ({ page }) => {
+      // Keep the bounded readiness assertion below the case deadline, leaving
+      // room for destination, Advanced navigation and positive-content checks.
+      if (operation.id === 'cashier') test.setTimeout(120_000);
       const path = `clubs/${CLUB_ID}/${operation.suffix}`;
       await expectRoute(page, path);
       await expectDestination(page, `/${path}`);
@@ -96,7 +99,10 @@ test.describe('Reserved Admin - every Club Operations registry route', () => {
             ? 'data-cashier-mode'
             : null;
       if (modeAttribute) {
-        await expect(page.locator(`[${modeAttribute}="simple"]`)).toBeVisible();
+        // A mounted shell can still be loading the lazy Cashier route.
+        // Wait for its actual Simple surface within the existing route budget.
+        const simpleReadyOptions = operation.id === 'cashier' ? { timeout: 30_000 } : {};
+        await expect(page.locator(`[${modeAttribute}="simple"]`)).toBeVisible(simpleReadyOptions);
         await page.getByRole('button', { name: 'Advanced', exact: true }).click();
         await expect(page.locator(`[${modeAttribute}="advanced"]`)).toBeVisible();
       }

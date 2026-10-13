@@ -1473,6 +1473,9 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
           E2E_REQUIRE_AUTH: '1'
+          # Observe the assigned live Diamond club; setup joins this same target
+          # through the public player door before the spectator cases run.
+          E2E_CLUB_ID: 002c2d27-9584-4e52-835a-bb2be148fc81
           LIVE_TABLE_REALTIME_CERTIFICATION: '1'
           ENGINE_HEALTH_URL: https://engine.smarter.poker/health
           EXPECTED_ENGINE_SHA: ${{ steps.engine.outputs.sha }}

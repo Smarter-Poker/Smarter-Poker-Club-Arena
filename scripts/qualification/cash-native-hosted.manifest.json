@@ -166,8 +166,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 217809,
-      "sha256": "6d5fd18c7754cac26f8118bc4af6a9b56439326826688a08d0972b8ace80aa9f"
+      "bytes": 218721,
+      "sha256": "597cd1f05895e271e0b3e9b986068b199c267e56e42b43e2ed80d990422fb7db"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -3177,6 +3177,21 @@
         "current": {
           "bytes": 216756,
           "sha256": "4b6385d39a00e968f065aa6c3424debcf47f88faecae34c9f9ce56a87eaca062"
+        }
+      }
+    }
+  },
+  "cashOriginal17Qualification20261013": {
+    "reason": "Add directly-triggered exact cash17 public-safe installer/source qualification and always artifact; preserve every existing native lane, financial input and historical pin. Original17 private financial evidence is separately retained, not hosted card data.",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 217809,
+          "sha256": "6d5fd18c7754cac26f8118bc4af6a9b56439326826688a08d0972b8ace80aa9f"
+        },
+        "current": {
+          "bytes": 218721,
+          "sha256": "597cd1f05895e271e0b3e9b986068b199c267e56e42b43e2ed80d990422fb7db"
         }
       }
     }

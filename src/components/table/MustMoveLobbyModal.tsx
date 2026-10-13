@@ -53,6 +53,7 @@ import {
   type LobbyTable,
 } from '../../services/cashGameLobby';
 import { formatChips } from '../../lib/utils';
+import { formatPrizeAtUnit } from '../../utils/format';
 import { CASH_TEMPLATES } from '../../config/cashGames';
 import { useToast } from '../common/Toast';
 import { lobbyReadErrorText } from './mustMoveLobbyCopy';
@@ -64,6 +65,7 @@ export const MUST_MOVE_LOBBY_POLL_MS = 5000;
 
 export interface MustMoveLobbyModalProps {
   isOpen: boolean;
+  asset?: 'chips' | 'diamonds';
   gameId: string | null | undefined;
   /** The table the viewer is looking at (highlighted in the list). */
   currentTableId: string | null | undefined;
@@ -87,11 +89,14 @@ function lifecycleLabel(t: LobbyTable): string {
 
 export function MustMoveLobbyModal({
   isOpen,
+  asset = 'chips',
   gameId,
   currentTableId,
   onClose,
   onGoToTable,
 }: MustMoveLobbyModalProps) {
+  const formatAmount = (amount: number) =>
+    asset === 'diamonds' ? formatPrizeAtUnit(amount, 100) : formatChips(amount);
   const dialogRef = useFocusTrap<HTMLDivElement>(isOpen, '.tlm-close');
   const toast = useToast();
   const {
@@ -293,7 +298,7 @@ export function MustMoveLobbyModal({
                 <div className="mml-game-line">
                   {styleLabel && <span className="mml-style">{styleLabel.toUpperCase()}</span>}
                   <span className="mml-stakes">
-                    {formatChips(Number(game.sb))}/{formatChips(Number(game.bb))}
+                    {formatAmount(Number(game.sb))}/{formatAmount(Number(game.bb))}
                   </span>
                   <span className="mml-hand">{game.handedness} Max</span>
                 </div>
@@ -324,7 +329,7 @@ export function MustMoveLobbyModal({
                   <div className="mml-me-line">
                     {labelFor(me.table_id) ?? 'This Table'}
                     {me.seat_number ? `, Seat ${me.seat_number}` : ''}
-                    {me.stack != null ? ` (${formatChips(Number(me.stack))})` : ''}
+                    {me.stack != null ? ` (${formatAmount(Number(me.stack))})` : ''}
                   </div>
                   {me.on_main_one ? (
                     <div className="mml-me-note">You Are In The Main Game.</div>
@@ -455,7 +460,7 @@ export function MustMoveLobbyModal({
                               {s?.user_id ? (s.alias ?? 'Player') : 'Open'}
                             </span>
                             <span className="mml-seat-stack">
-                              {s?.user_id ? formatChips(Number(s.stack ?? 0)) : ''}
+                              {s?.user_id ? formatAmount(Number(s.stack ?? 0)) : ''}
                             </span>
                           </li>
                         );

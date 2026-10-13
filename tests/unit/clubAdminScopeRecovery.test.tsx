@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   success: vi.fn(),
   error: vi.fn(),
   emit: vi.fn(),
+  subscriptions: vi.fn(),
   listeners: new Map<string, (event: unknown) => void>(),
   workspace: {
     clubUUID: 'club-a',
@@ -53,6 +54,7 @@ vi.mock('../../src/core/MasterBus', () => ({
   masterBus: {
     emit: mocks.emit,
     subscribeDebounced: (type: string, handler: (event: unknown) => void) => {
+      mocks.subscriptions(type, handler);
       mocks.listeners.set(type, handler);
       return () => {
         if (mocks.listeners.get(type) === handler) mocks.listeners.delete(type);
@@ -225,6 +227,14 @@ describe('Club administration rejects stale operation completion', () => {
     await waitFor(() =>
       expect((screen.getByLabelText('Club Name') as HTMLInputElement).value).toBe('Club Alpha')
     );
+    // The form can paint before the resolved-UUID effect replaces the initial
+    // route-only listener. Dispatch only after that actual subscription is ready.
+    await waitFor(() =>
+      expect(
+        mocks.subscriptions.mock.calls.filter(([type]) => type === 'CLUB_SETTINGS_UPDATED')
+      ).toHaveLength(2)
+    );
+    const readsBeforeEvent = mocks.read.mock.calls.length;
     mocks.read.mockResolvedValue({
       ...club('club-a'),
       data: { ...club('club-a').data, id: 'canonical-a', name: 'Alpha From Control' },
@@ -237,5 +247,6 @@ describe('Club administration rejects stale operation completion', () => {
         'Alpha From Control'
       )
     );
+    expect(mocks.read).toHaveBeenCalledTimes(readsBeforeEvent + 1);
   });
 });

@@ -592,6 +592,9 @@ describe('the tab follows the chair', () => {
     expect(TABLE_PAGE).toMatch(
       /<MustMoveLobbyModal\s+isOpen=\{showMustMoveLobby\}\s+gameId=\{tableState\.clusterId\}/
     );
+    expect(TABLE_PAGE).toMatch(
+      /<MustMoveLobbyModal[\s\S]*?asset=\{tableState\.arenaAsset === 'diamonds' \? 'diamonds' : 'chips'\}/
+    );
     expect(TABLE_PAGE).toMatch(/case 'SEAT_MOVE_HELD': \{/);
   });
 });

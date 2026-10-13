@@ -28694,6 +28694,7 @@ function LiveTablePage({
       <MustMoveLobbyModal
         isOpen={showMustMoveLobby}
         gameId={tableState.clusterId}
+        asset={tableState.arenaAsset === 'diamonds' ? 'diamonds' : 'chips'}
         currentTableId={tableId}
         onClose={() => setShowMustMoveLobby(false)}
         onGoToTable={(dest) => {

@@ -2568,6 +2568,23 @@ jobs:
           path: ${{ runner.temp }}/weekly-first-week-aggregate/
           if-no-files-found: error
 
+      - name: Weekly cohort launch cutoff once per earning club
+        id: weekly_cohort_cutoff
+        if: matrix.shard == 3
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/weekly-cohort-cutoff"
+          python3 scripts/qualification/weekly-cohort-cutoff/run-native.py --output "$RUNNER_TEMP/weekly-cohort-cutoff" 2>&1 | tee "$RUNNER_TEMP/weekly-cohort-cutoff/native.log"
+      - name: Retain weekly cohort cutoff native transcripts
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.weekly_cohort_cutoff.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-cohort-cutoff-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/weekly-cohort-cutoff/
+          if-no-files-found: error
+
       - name: Original flow invokes only its eligible authentic proof
         id: original_flow_eligibility
         if: matrix.shard == 3

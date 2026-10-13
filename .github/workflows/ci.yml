@@ -2534,6 +2534,23 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Initial weekly selector reads the launch cutoff once per cash club
+        id: weekly_initial_selector
+        if: matrix.shard == 3
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/weekly-initial-selector"
+          python3 scripts/qualification/weekly-initial-selector/run-native.py --output "$RUNNER_TEMP/weekly-initial-selector" 2>&1 | tee "$RUNNER_TEMP/weekly-initial-selector/native.log"
+      - name: Retain initial weekly selector native transcripts
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.weekly_initial_selector.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-initial-selector-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/weekly-initial-selector/
+          if-no-files-found: error
+
       - name: Original flow invokes only its eligible authentic proof
         id: original_flow_eligibility
         if: matrix.shard == 3

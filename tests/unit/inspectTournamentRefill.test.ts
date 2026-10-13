@@ -235,3 +235,91 @@ print(json.dumps({'coverage':m['read_metadata']('\\n'.join(lines)), 'events':m['
     healthyRefillProven: false,
   });
 });
+
+it('classifies actual Node Error output and source-owned atomic refusal literals without private text', () => {
+  const reporter = readFileSync(
+    resolve(__dirname, '../../server/src/services/errorReporter.ts'),
+    'utf8'
+  );
+  expect(reporter).toContain('console.error(`[${context}]`, error)');
+  const node = spawnSync(
+    process.execPath,
+    [
+      '-e',
+      `
+const error = new Error('[TournamentRecurring] spin atomic creation failed:\\n  SEAT_FIRST_CREATE_INVALID_CONFIG private-player-id private-token');
+error.code = '22023';
+console.error('[TournamentRecurring.spin_atomic_creation_failed]', error);
+`,
+    ],
+    { encoding: 'utf8', timeout: 5000 }
+  );
+  expect(node.status).toBe(0);
+  const data = sanitize(
+    node.stderr
+      .trimEnd()
+      .split('\n')
+      .map((line) => `2026-10-13T21:02:03.123Z ${line}`)
+  );
+  expect(data.spin_atomic_creation_failed).toMatchObject({
+    count: 1,
+    unclassifiedCount: 0,
+    categories: { SEAT_FIRST_CREATE_INVALID_CONFIG: 1 },
+    sqlstates: { '22023': 1 },
+  });
+  expect(JSON.stringify(data)).not.toMatch(/private|token|Error:|at /);
+  const rpc = readFileSync(
+    resolve(
+      __dirname,
+      '../../supabase/migrations/20260908043250_seat_first_board_creation_is_one_transaction.sql'
+    ),
+    'utf8'
+  );
+  for (const reason of [
+    'SEAT_FIRST_CREATE_INVALID_REQUEST',
+    'SEAT_FIRST_CREATE_UNKNOWN_CONFIG_KEY',
+    'SEAT_FIRST_CREATE_INVALID_CONFIG',
+    'SEAT_FIRST_CREATE_INVALID_BLINDS',
+    'SEAT_FIRST_CREATE_IDEMPOTENCY_MISMATCH',
+    'SEAT_FIRST_ATOMIC_PARTIAL_STATE',
+  ]) {
+    expect(rpc).toContain(`'${reason}`);
+    expect(
+      sanitize([
+        `2026-10-13T21:02:03Z [TournamentRecurring.sng_atomic_creation_failed] Error: ${reason}: private-id`,
+      ]).sng_atomic_creation_failed.categories
+    ).toEqual({ [reason]: 1 });
+  }
+});
+it('does not borrow unrelated, unknown, stale or excessive continuation classifications', () => {
+  const data = sanitize([
+    '2026-10-13T21:02:03Z [TournamentRecurring.spin_atomic_creation_failed] Error: private-unknown',
+    '2026-10-13T21:02:03Z [Unrelated] other error',
+    "2026-10-13T21:02:03Z   code: '22023'",
+    '2026-10-13T21:02:03Z [TournamentRecurring.sng_atomic_creation_failed] Error: private-unknown',
+    '2026-10-13T21:02:06Z   SEAT_FIRST_CREATE_INVALID_CONFIG',
+  ]);
+  expect(data.spin_atomic_creation_failed).toMatchObject({
+    count: 1,
+    unclassifiedCount: 1,
+    categories: {},
+    sqlstates: {},
+  });
+  expect(data.sng_atomic_creation_failed).toMatchObject({
+    count: 1,
+    unclassifiedCount: 1,
+    categories: {},
+    sqlstates: {},
+  });
+  const capped = sanitize([
+    '2026-10-13T21:02:03Z [TournamentRecurring.spin_atomic_creation_failed] Error: private',
+    ...Array(12).fill('2026-10-13T21:02:03Z     at private-stack'),
+    "2026-10-13T21:02:03Z   code: '22023'",
+  ]);
+  expect(capped.spin_atomic_creation_failed.sqlstates).toEqual({});
+  const missing = sanitize([
+    '2026-10-13T21:02:03Z [TournamentRecurring.spin_atomic_creation_failed] Error: private',
+    "  code: '22023'",
+  ]);
+  expect(missing.spin_atomic_creation_failed.sqlstates).toEqual({});
+});

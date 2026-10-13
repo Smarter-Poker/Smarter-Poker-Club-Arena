@@ -2,8 +2,8 @@
   "scope": "Exact original late-proof eligibility component/actual31 and source40 installation qualification inputs; no production timing or financial writer.",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 220761,
-      "sha256": "b0bf8d1b2cc7ef4c92a56dea2073c121740b92b85bac3be31064569b5426b249"
+      "bytes": 221373,
+      "sha256": "b4566e1fd5a61925a1b9f1d30f0a274dbe7bd362b25cb3dd483b2ad6ac90c971"
     },
     "scripts/qualification/original-flow-eligibility/README.md": {
       "bytes": 2608,
@@ -54,12 +54,12 @@
       "sha256": "280f360c96e586332354d3816efe1bdf2754b51cf7a83133bfdccd379bd03322"
     },
     "supabase/migrations/20261013084856_original_flow_proofs_run_only_for_their_eligible_receipts.sql": {
-      "bytes": 23313,
-      "sha256": "579a594ae483e7bf25b282e860f4a91e9c219d364bb2c5f4a4ed84edbfb32811"
+      "bytes": 23314,
+      "sha256": "2885aef92f485c3aafe1732d66f5134a927562c84d97e7a651b95102ce26065f"
     },
     "tests/an-original-flow-enters-only-its-eligible-proof.law.test.ts": {
-      "bytes": 2305,
-      "sha256": "e6949188b513e76143e8b413d92aa2ba59b1900b91ae137983ac63d75b327d8e"
+      "bytes": 3140,
+      "sha256": "69c1c570d80141ac9f029a597de04acbbd1e3bb36b8f27ab347e7566cae97106"
     },
     "tests/fixtures/late-seat-flow/admission-preimages.sql": {
       "bytes": 5033,
@@ -125,5 +125,22 @@
       "bytes": 6057,
       "sha256": "3f5650d78cbb5e171283ce9ddff00afd1f5a697c39be251d6557e93bdda94c91"
     }
+  },
+  "spentDssSatelliteNativeIntegration20261013": {
+    "reason": "Add reviewed native satellite Accounting4 and spent DSS Accounting3 alongside protected original-flow eligibility step, with exact financial sources/oracles unchanged. Current workflow metadata only.",
+    "previous": {
+      "bytes": 220644,
+      "sha256": "f10e4911a8c6211b32f683d607805fe3fef618847dee55917db2fe691f52cef6"
+    },
+    "current": {
+      "bytes": 221256,
+      "sha256": "78545cc8462142bcafa0387bdc3429278a7e6fb2ae823217fe6cfaeac2f7adc8"
+    }
+  },
+  "scopedLaunchTransportNativeQualification20261013": {
+    "scope": "Existing required accounting job additionally qualifies the exact JSON-claim and typed-evidence followup with the unchanged installed reset source. Incoming satellite and spent-operation changes are preserved.",
+    "source_pin_update_only": true,
+    "financial_state_unchanged": true,
+    "workflow_sha256": "b4566e1fd5a61925a1b9f1d30f0a274dbe7bd362b25cb3dd483b2ad6ac90c971"
   }
 }

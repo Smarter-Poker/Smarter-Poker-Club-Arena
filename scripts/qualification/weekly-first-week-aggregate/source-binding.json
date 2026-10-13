@@ -1,0 +1,89 @@
+{
+  "scope": "Exact firstweek aggregate nativecomponent inputs; no moneyRPC",
+  "files": {
+    "scripts/qualification/original-flow-eligibility/after-flow.sql": {
+      "bytes": 13791,
+      "sha256": "828e1139c4b54abe5df31e7858884279c7e240cb842544730612e2e5a3925873"
+    },
+    "scripts/qualification/original-flow-eligibility/after-matcher.sql": {
+      "bytes": 4695,
+      "sha256": "23500f930abec49800679c72d52e7895f58f7e23ad30e7af1b1bc6652d6b9244"
+    },
+    "scripts/qualification/original-flow-eligibility/current-source40.json": {
+      "bytes": 238578,
+      "sha256": "b380a519e6c17e5b4c1793974c56213c1a7932c6a0dfda2db7528dd43d6c4ea3"
+    },
+    "scripts/qualification/original-flow-eligibility/maintenance-type-source.sql": {
+      "bytes": 5127,
+      "sha256": "23e1d645751cb09547654de876744af46fda802051033063fca59375ee759311"
+    },
+    "scripts/qualification/weekly-first-week-aggregate/README.md": {
+      "bytes": 234,
+      "sha256": "b297c865cd76fd7430a3712cea1218de74f77290e1c165bc3b41f15caded0b5e"
+    },
+    "scripts/qualification/weekly-first-week-aggregate/after-global-selector.sql": {
+      "bytes": 5253,
+      "sha256": "8570e49acd143e76805c7e03c953304f685443bda60e9123e2f387add13fa74a"
+    },
+    "scripts/qualification/weekly-first-week-aggregate/after-primitive.sql": {
+      "bytes": 1278,
+      "sha256": "061c05ea45498ccc75b8dd7bac3717c1926ad732cfdbe7d5b87d9f387090438b"
+    },
+    "scripts/qualification/weekly-first-week-aggregate/after-scope.sql": {
+      "bytes": 49985,
+      "sha256": "678d9411a37cc602e1eb1243e20b91c8047f0c866260bd6d1019bf3bf0093c8c"
+    },
+    "scripts/qualification/weekly-first-week-aggregate/authorities.json": {
+      "bytes": 4621,
+      "sha256": "30fd68f61b145e0a636df8c4574042e8f320bc05b1559b6e45fe9a6340aa8c7c"
+    },
+    "scripts/qualification/weekly-first-week-aggregate/before-global-selector.sql": {
+      "bytes": 5193,
+      "sha256": "fd7a16962fae6f19c94ba6e202996afd33246dd03948dc3aa989c8dffb867ae2"
+    },
+    "scripts/qualification/weekly-first-week-aggregate/before-primitive.sql": {
+      "bytes": 1218,
+      "sha256": "e84fe661eb13bea961d383a0bfab42429961d02ba1ade987a3975f7f3aac95e6"
+    },
+    "scripts/qualification/weekly-first-week-aggregate/before-scope.sql": {
+      "bytes": 49925,
+      "sha256": "121aa0fe56ccc45d69ea1849d67726c437921cdab582146c112c7e434eaf4848"
+    },
+    "scripts/qualification/weekly-first-week-aggregate/calendar-grid.sql": {
+      "bytes": 2518,
+      "sha256": "e700398de40c0fd7b085559cfbccdaae3dcc43036c936380430cf8d05654adc3"
+    },
+    "scripts/qualification/weekly-first-week-aggregate/calendar-support.sql": {
+      "bytes": 676,
+      "sha256": "fc9969ebe36e81abb70e8e744076e45fe6ef5552deeee03f76dccf1ad696686e"
+    },
+    "scripts/qualification/weekly-first-week-aggregate/run-native.py": {
+      "bytes": 17849,
+      "sha256": "19c2529e43f1a21c3a131ff09b8de0e2c761eba2519a46e5a0a5cd2ecca81923"
+    },
+    "scripts/qualification/weekly-first-week-aggregate/selector-fixture.sql": {
+      "bytes": 5040,
+      "sha256": "86db879763fe7c0b67548a94366c7954590fbb0921a7f2c5df80110c60f65b6b"
+    },
+    "supabase/migrations/20261012181905_scoped_club_launch_reset_and_guarded_recovery.sql": {
+      "bytes": 523621,
+      "sha256": "900ab93898c39d4adc77b1377be5a0d5d7394190776c4c6d37b241c8c59fbf9d"
+    },
+    "supabase/migrations/20261013084856_original_flow_proofs_run_only_for_their_eligible_receipts.sql": {
+      "bytes": 23314,
+      "sha256": "2885aef92f485c3aafe1732d66f5134a927562c84d97e7a651b95102ce26065f"
+    },
+    "supabase/migrations/20261013133012_scoped_launch_operator_accepts_authoritative_json_claims.sql": {
+      "bytes": 6255,
+      "sha256": "89b1671cf9aa507248b7620f734855fa03cdf586d133a1caa9890530fbd04df3"
+    },
+    "supabase/migrations/20261013163310_weekly_initial_cash_selection_reads_cutoff_once_per_club.sql": {
+      "bytes": 56447,
+      "sha256": "0e9661dc97f699f25859a37e182744ae980e0949b0fa6194f82180d9e5b3b7ff"
+    },
+    "supabase/migrations/20261013182759_weekly_first_week_calendar_runs_once_per_club.sql": {
+      "bytes": 56531,
+      "sha256": "58881c033678200f7aea5b156c6da855ef3db9372344c47a21e1a060cb829ad8"
+    }
+  }
+}

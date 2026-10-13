@@ -894,6 +894,12 @@ export default function ClubDataPage() {
   const [telemetryClock, setTelemetryClock] = useState(() => Date.now());
   const [realtimeFeeds, setRealtimeFeeds] =
     useState<Record<RealtimeFeed, RealtimeFeedState>>(INITIAL_REALTIME_FEEDS);
+  const [realtimeRetries, setRealtimeRetries] = useState({
+    tables: 0,
+    tournaments: 0,
+    invoices: 0,
+    members: 0,
+  });
   /**
    * Which snapshot scopes this viewer actually holds. Club is a given - the
    * page itself is gated on ca_can_view_club_finances. Union and Downline are
@@ -2380,6 +2386,7 @@ export default function ClubDataPage() {
 
   useMasterBusChannel({
     channelName: clubUuid ? `club-data-tables-${clubUuid}` : null,
+    restartKey: realtimeRetries.tables,
     table: 'tables',
     filter: realtimeFilter,
     event: '*',
@@ -2393,6 +2400,7 @@ export default function ClubDataPage() {
   });
   useMasterBusChannel({
     channelName: clubUuid ? `club-data-tournaments-${clubUuid}` : null,
+    restartKey: realtimeRetries.tournaments,
     table: 'tournaments',
     filter: realtimeFilter,
     event: '*',
@@ -2406,6 +2414,7 @@ export default function ClubDataPage() {
   });
   useMasterBusChannel({
     channelName: clubUuid ? `club-data-invoices-${clubUuid}` : null,
+    restartKey: realtimeRetries.invoices,
     table: 'settlement_invoices',
     filter: realtimeFilter,
     event: '*',
@@ -2419,6 +2428,7 @@ export default function ClubDataPage() {
   });
   useMasterBusChannel({
     channelName: clubUuid ? `club-data-members-${clubUuid}` : null,
+    restartKey: realtimeRetries.members,
     table: 'club_members',
     filter: realtimeFilter,
     event: '*',
@@ -2473,6 +2483,23 @@ export default function ClubDataPage() {
     const myRefresh = ++manualRefreshVersion.current;
     const ownsRefresh = () => !cancelledRef.current && manualRefreshVersion.current === myRefresh;
     manualRefreshingRef.current = true;
+    // Verified RPC reads and live joins are independent. The same deliberate
+    // recovery action must restart failed feeds, without disturbing live ones.
+    const failed = (Object.keys(realtimeFeeds) as RealtimeFeed[]).filter(
+      (feed) => realtimeFeeds[feed] === 'degraded'
+    );
+    if (failed.length) {
+      setRealtimeRetries((current) => {
+        const next = { ...current };
+        for (const feed of failed) next[feed]++;
+        return next;
+      });
+      setRealtimeFeeds((current) => {
+        const next = { ...current };
+        for (const feed of failed) next[feed] = 'connecting';
+        return next;
+      });
+    }
     setManualRefreshing(true);
     setRefreshNote('Refreshing Club Ledger.');
     try {
@@ -2499,7 +2526,7 @@ export default function ClubDataPage() {
         if (pending.invoices) void loadInvoices();
       }
     }
-  }, [clubUuid, isHydrating, userId, load, loadInvoices, loadPlayers, tab]);
+  }, [clubUuid, isHydrating, userId, load, loadInvoices, loadPlayers, tab, realtimeFeeds]);
 
   const exportCsv = useCallback(async () => {
     if (!clubUuid || exporting) return;

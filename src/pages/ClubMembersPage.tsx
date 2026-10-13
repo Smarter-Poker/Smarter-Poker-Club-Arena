@@ -160,6 +160,8 @@ export default function ClubMembersPage() {
   const [realtimeConnection, setRealtimeConnection] = useState<'connecting' | 'live' | 'degraded'>(
     'connecting'
   );
+  const [realtimeRetries, setRealtimeRetries] = useState({ members: 0, wallet: 0, audit: 0 });
+  const failedRealtimeFeedsRef = useRef(new Set<'members' | 'wallet' | 'audit'>());
   const [browserOnline, setBrowserOnline] = useState(
     () => typeof navigator === 'undefined' || navigator.onLine !== false
   );
@@ -328,6 +330,7 @@ export default function ClubMembersPage() {
     setLastSuccessfulSyncAt(null);
     realtimeConnectionRef.current = 'connecting';
     setRealtimeConnection('connecting');
+    failedRealtimeFeedsRef.current.clear();
 
     if (!routeClub) {
       setLoading(false);
@@ -652,6 +655,16 @@ export default function ClubMembersPage() {
 
   const retryLiveSync = useCallback(() => {
     if (resolvedClubId) {
+      // A roster read cannot repair a failed WebSocket join. Retry only the
+      // bindings that reported failure; healthy channels retain their owner.
+      const failed = [...failedRealtimeFeedsRef.current];
+      if (failed.length) {
+        setRealtimeRetries((current) => {
+          const next = { ...current };
+          for (const feed of failed) next[feed]++;
+          return next;
+        });
+      }
       void refresh();
       return;
     }
@@ -698,6 +711,7 @@ export default function ClubMembersPage() {
 
   useMasterBusChannel({
     channelName: resolvedClubId ? `club-members-sync-${resolvedClubId}` : null,
+    restartKey: realtimeRetries.members,
     table: 'club_members',
     filter: resolvedClubId ? `club_id=eq.${resolvedClubId}` : null,
     event: '*',
@@ -739,12 +753,14 @@ export default function ClubMembersPage() {
     },
     onSubscriptionStatus: (status) => {
       if (status !== 'SUBSCRIBED') return;
+      failedRealtimeFeedsRef.current.delete('members');
       const recovered = realtimeConnectionRef.current === 'degraded';
-      realtimeConnectionRef.current = 'live';
-      setRealtimeConnection('live');
+      realtimeConnectionRef.current = failedRealtimeFeedsRef.current.size ? 'degraded' : 'live';
+      setRealtimeConnection(realtimeConnectionRef.current);
       if (recovered) scheduleStructuralRefresh();
     },
     onSubscriptionError: () => {
+      failedRealtimeFeedsRef.current.add('members');
       realtimeConnectionRef.current = 'degraded';
       setRealtimeConnection('degraded');
       // A channel error is not evidence that the roster snapshot is stale.
@@ -757,6 +773,7 @@ export default function ClubMembersPage() {
   const walletChannelDegradedRef = useRef(false);
   useMasterBusBroadcastChannel({
     channelName: resolvedClubId ? `club-roster-wallet:${resolvedClubId}` : null,
+    restartKey: realtimeRetries.wallet,
     event: 'wallet_changed',
     enabled: !!resolvedClubId && !!user?.id,
     onPayload: (value) => {
@@ -767,11 +784,19 @@ export default function ClubMembersPage() {
       }
     },
     onSubscriptionError: () => {
+      failedRealtimeFeedsRef.current.add('wallet');
+      realtimeConnectionRef.current = 'degraded';
+      setRealtimeConnection('degraded');
       walletChannelDegradedRef.current = true;
       setDataFreshness('stale');
     },
     onSubscriptionStatus: (status) => {
       if (status !== 'SUBSCRIBED') return;
+      failedRealtimeFeedsRef.current.delete('wallet');
+      if (!failedRealtimeFeedsRef.current.size && realtimeConnectionRef.current === 'degraded') {
+        realtimeConnectionRef.current = 'live';
+        setRealtimeConnection('live');
+      }
       const recovered = walletChannelDegradedRef.current;
       walletChannelDegradedRef.current = false;
       if (recovered) wallets.refresh();
@@ -910,8 +935,11 @@ export default function ClubMembersPage() {
   // Default WAL old images cannot identify an off-page promotion. The
   // already-authorized, persisted audit event carries its structural cause;
   // wallet traffic never enters this lane. Existing RLS remains authoritative.
+  const auditEnabled =
+    !!resolvedClubId && ['owner', 'co_owner', 'admin'].includes(summary.viewer_role);
   useMasterBusChannel({
     channelName: resolvedClubId ? `club-members-audit-${resolvedClubId}` : null,
+    restartKey: realtimeRetries.audit,
     table: 'audit_trail',
     filter: resolvedClubId ? `club_id=eq.${resolvedClubId}` : null,
     event: 'INSERT',
@@ -924,8 +952,32 @@ export default function ClubMembersPage() {
       )
         scheduleStructuralRefresh();
     },
-    enabled: !!resolvedClubId && ['owner', 'co_owner', 'admin'].includes(summary.viewer_role),
+    enabled: auditEnabled,
+    onSubscriptionError: () => {
+      failedRealtimeFeedsRef.current.add('audit');
+      realtimeConnectionRef.current = 'degraded';
+      setRealtimeConnection('degraded');
+    },
+    onSubscriptionStatus: (status) => {
+      if (status !== 'SUBSCRIBED') return;
+      const recovered = failedRealtimeFeedsRef.current.delete('audit');
+      if (!failedRealtimeFeedsRef.current.size && realtimeConnectionRef.current === 'degraded') {
+        realtimeConnectionRef.current = 'live';
+        setRealtimeConnection('live');
+      }
+      if (recovered) scheduleStructuralRefresh();
+    },
   });
+
+  useEffect(() => {
+    // Losing audit access intentionally removes that feed. Its earlier failure
+    // cannot keep a permitted member roster in recovery forever.
+    if (auditEnabled || !failedRealtimeFeedsRef.current.delete('audit')) return;
+    if (!failedRealtimeFeedsRef.current.size && realtimeConnectionRef.current === 'degraded') {
+      realtimeConnectionRef.current = 'live';
+      setRealtimeConnection('live');
+    }
+  }, [auditEnabled]);
 
   const canUseFinancialViews = summary.capabilities.can_view_financials;
   const isAgent = AGENT_ROLES.includes(summary.viewer_role);

@@ -39,6 +39,8 @@ export interface UseMasterBusChannelOptions {
   onPayload: (payload: any) => void;
   /** Enable/disable the hook (default: true) */
   enabled?: boolean;
+  /** A deliberate recovery action retires this binding and starts a fresh join. */
+  restartKey?: number;
   /**
    * Optional callback invoked when the realtime subscription fails
    * (CHANNEL_ERROR / TIMED_OUT). Lets the consumer surface a degraded-connection
@@ -92,6 +94,7 @@ export function useMasterBusChannel({
   event,
   onPayload,
   enabled = true,
+  restartKey = 0,
   onSubscriptionError,
   onSubscriptionStatus,
 }: UseMasterBusChannelOptions) {
@@ -219,7 +222,7 @@ export function useMasterBusChannel({
       masterBus.removeChannelFactory(channelName);
       masterBus.removeRegisteredChannel(channelName);
     };
-  }, [channelName, table, filter, event, enabled]);
+  }, [channelName, table, filter, event, enabled, restartKey]);
 }
 
 export default useMasterBusChannel;

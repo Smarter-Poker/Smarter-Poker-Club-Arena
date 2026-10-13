@@ -8,8 +8,23 @@ const f = vi.hoisted(() => ({
   toast: vi.fn(),
   page: vi.fn(),
   summary: vi.fn(),
-  channel: null as null | { onPayload: (payload: unknown) => void },
-  audit: null as null | { onPayload: (payload: unknown) => void },
+  channel: null as null | {
+    onPayload: (payload: unknown) => void;
+    restartKey?: number;
+    onSubscriptionError?: (status: string) => void;
+    onSubscriptionStatus?: (status: string) => void;
+  },
+  audit: null as null | {
+    onPayload: (payload: unknown) => void;
+    restartKey?: number;
+    enabled?: boolean;
+    onSubscriptionError?: (status: string) => void;
+  },
+  wallet: null as null | {
+    restartKey?: number;
+    onSubscriptionError?: (status: string) => void;
+    onSubscriptionStatus?: (status: string) => void;
+  },
   bus: null as null | ((payload: { clubId: string }) => void),
   aborts: 0,
   searches: [] as string[],
@@ -29,7 +44,9 @@ vi.mock('../../src/hooks/useMasterBusChannel', () => ({
 }));
 // Private wallet delivery is covered by the dedicated wallet-update cases.
 vi.mock('../../src/hooks/useMasterBusBroadcastChannel', () => ({
-  useMasterBusBroadcastChannel: vi.fn(),
+  useMasterBusBroadcastChannel: (config: NonNullable<typeof f.wallet>) => {
+    f.wallet = config;
+  },
 }));
 vi.mock('../../src/components/common/Toast', () => ({ useToast: () => f.toast }));
 vi.mock('../../src/utils/strictClubIdResolver', () => ({
@@ -79,6 +96,81 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+});
+
+it.each([false, true])(
+  'retries failed subscriptions without restarting healthy feeds (Advanced=%s)',
+  async (advanced) => {
+    render(
+      <MemoryRouter initialEntries={['/clubs/shark-club/members']}>
+        <Routes>
+          <Route path="/clubs/:clubId/members" element={<ClubMembersPage />} />
+        </Routes>
+      </MemoryRouter>
+    );
+    await act(async () => {});
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400);
+    });
+    if (advanced) fireEvent.click(screen.getByRole('button', { name: 'Advanced', exact: true }));
+    act(() => {
+      f.channel?.onSubscriptionStatus?.('SUBSCRIBED');
+      f.wallet?.onSubscriptionStatus?.('SUBSCRIBED');
+      f.channel?.onSubscriptionError?.('TIMED_OUT');
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Retry Live Sync' }));
+    expect(f.channel?.restartKey).toBe(1);
+    expect(f.wallet?.restartKey ?? 0).toBe(0);
+    expect(f.audit?.restartKey ?? 0).toBe(0);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400);
+    });
+    act(() => f.channel?.onSubscriptionStatus?.('SUBSCRIBED'));
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh', exact: true }));
+    expect(f.channel?.restartKey).toBe(1);
+    expect(f.wallet?.restartKey ?? 0).toBe(0);
+  }
+);
+
+it('retires an audit failure when the viewer no longer has audit access', async () => {
+  const summary = (role: string) => ({
+    viewer_role: role,
+    capabilities: {
+      can_view_financials: false,
+      can_export: false,
+      can_manage_members: false,
+      can_view_notes: false,
+    },
+    counts: { total: 0, online: 0, seated: 0, agents: 0, admins: 0 },
+    data_version: null,
+    page_size: 80,
+  });
+  f.summary.mockResolvedValue(summary('owner'));
+  render(
+    <MemoryRouter initialEntries={['/clubs/shark-club/members']}>
+      <Routes>
+        <Route path="/clubs/:clubId/members" element={<ClubMembersPage />} />
+      </Routes>
+    </MemoryRouter>
+  );
+  await act(async () => {});
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(400);
+  });
+  expect(f.audit?.enabled).toBe(true);
+  act(() => {
+    f.channel?.onSubscriptionStatus?.('SUBSCRIBED');
+    f.wallet?.onSubscriptionStatus?.('SUBSCRIBED');
+    f.audit?.onSubscriptionError?.('TIMED_OUT');
+  });
+  expect(screen.getByRole('button', { name: 'Retry Live Sync' })).toBeInTheDocument();
+  f.summary.mockResolvedValue(summary('player'));
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh', exact: true }));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(400);
+  });
+  expect(f.audit?.enabled).toBe(false);
+  expect(screen.queryByRole('button', { name: 'Retry Live Sync' })).not.toBeInTheDocument();
 });
 
 it('defaults to a compact directory and restores the full workspace in Advanced', async () => {

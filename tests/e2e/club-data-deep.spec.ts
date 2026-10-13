@@ -494,6 +494,7 @@ test('keeps Cashier, Players and Club Data realtime connected in both modes and 
     await page.setViewportSize({ width, height: 900 });
     for (const surface of surfaces) {
       const joins = new Map<string, string>();
+      const filters = new Map<string, Array<Record<string, unknown>>>();
       const acknowledged = new Set<string>();
       const interruptions: string[] = [];
       let observing = false;
@@ -510,10 +511,17 @@ test('keeps Cashier, Players and Club Data realtime connected in both modes and 
         socket.on('framesent', (frame) => {
           try {
             const message = decode(frame.payload);
-            if (!matches(String(message.topic)) || message.event !== 'phx_join') return;
+            if (!matches(String(message.topic))) return;
+            if (message.event === 'phx_leave') {
+              acknowledged.delete(message.topic);
+              if (observing) interruptions.push(message.topic + ': binding retired');
+              return;
+            }
+            if (message.event !== 'phx_join') return;
             if (observing) interruptions.push(message.topic + ': join restarted');
             topics.add(message.topic);
             joins.set(message.topic, String(message.ref));
+            filters.set(message.topic, message.payload?.config?.postgres_changes ?? []);
             acknowledged.delete(message.topic);
           } catch {
             /* Non-JSON frames cannot acknowledge a join. */
@@ -524,8 +532,19 @@ test('keeps Cashier, Players and Club Data realtime connected in both modes and 
             const message = decode(frame.payload);
             if (!matches(String(message.topic))) return;
             if (message.event === 'phx_reply' && joins.get(message.topic) === String(message.ref)) {
-              if (message.payload?.status === 'ok') acknowledged.add(message.topic);
-              else if (observing) interruptions.push(message.topic + ': join refused');
+              const expected = filters.get(message.topic) ?? [];
+              const received = message.payload?.response?.postgres_changes;
+              const bindingsMatch = expected.every(
+                (filter) =>
+                  Array.isArray(received) &&
+                  received.some((binding) =>
+                    Object.entries(filter).every(([key, value]) => binding[key] === value)
+                  )
+              );
+              if (message.payload?.status === 'ok' && bindingsMatch)
+                acknowledged.add(message.topic);
+              else if (observing)
+                interruptions.push(message.topic + ': join refused or bindings mismatched');
             }
             if (message.event === 'phx_error' || message.event === 'phx_close') {
               acknowledged.delete(message.topic);

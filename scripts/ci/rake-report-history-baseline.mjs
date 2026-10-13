@@ -16,8 +16,11 @@ export function rakeReportRequest(file, requested, recovery, batches) {
 }
 
 export async function qualifyRakeReportHistory(client, sql, dryRun, log = console.log) {
+  // A fresh native fixture estimates millions of generated rows although the
+  // bounded plan has fewer than 1025 days. LLVM compile overhead can consume
+  // the whole five-second budget; this finite installation needs no JIT.
   await client.query(
-    "SET statement_timeout='5s'; SET transaction_timeout='6s'; SET lock_timeout='500ms'; SET idle_in_transaction_session_timeout='5s'"
+    "SET jit=off; SET statement_timeout='5s'; SET transaction_timeout='6s'; SET lock_timeout='500ms'; SET idle_in_transaction_session_timeout='5s'"
   );
   const installed = await client.query(
     `SELECT h.statements = ARRAY[$2::text] AS exact,

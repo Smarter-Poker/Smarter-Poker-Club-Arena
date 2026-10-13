@@ -51,8 +51,11 @@ try {
     "SELECT md5(jsonb_agg(to_jsonb(a) ORDER BY a.id)::text) AS hash FROM public.agent_commissions a"
   )).rows[0].hash;
   const before = await journalHash();
+  await client.query('SET jit=on');
   const dryLogs = [];
   await qualifyRakeReportHistory(client, sql, true, (line) => dryLogs.push(line));
+  if ((await client.query('SHOW jit')).rows[0].jit !== 'off')
+    throw new Error('finite report plan kept unnecessary JIT enabled');
   if (!dryLogs.some((line) => /[1-9][0-9]* unqualified closed club-days/.test(line)))
     throw new Error('native qualification fixture did not exercise a real unqualified day');
   const logs = [];

@@ -63,6 +63,8 @@ describe('explicit rake report history qualification', () => {
     const c = client();
     await qualifyRakeReportHistory(c, 'source', true, vi.fn());
     expect(c.query).toHaveBeenCalledTimes(3);
+    expect(c.query.mock.calls[0][0]).toContain('SET jit=off');
+    expect(c.query.mock.calls[0][0]).toContain("statement_timeout='5s'");
   });
   it('stops on an unknown write acknowledgment without retrying or advancing', async () => {
     const c = client();

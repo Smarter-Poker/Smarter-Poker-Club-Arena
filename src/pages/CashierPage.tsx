@@ -2576,7 +2576,9 @@ function CashierContent() {
                   role="tab"
                   tabIndex={action === act ? 0 : -1}
                   aria-selected={action === act}
-                  aria-controls={`cashier-panel-${act}`}
+                  aria-controls={
+                    action === act && !roleUnknown ? `cashier-panel-${act}` : undefined
+                  }
                   className={`${styles.tab} ${action === act ? 'sc-ink--blue' : 'sc-ink--muted'}`}
                   onClick={() => {
                     setAction(act);

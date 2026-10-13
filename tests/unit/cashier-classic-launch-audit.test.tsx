@@ -546,6 +546,38 @@ describe('Cashier Classic launch audit', () => {
     expect(mint).toHaveAttribute('step', '1');
   });
 
+  it('tab references resolve only to the mounted panel after every action change', async () => {
+    start(`/cashier?club=${CLUB}&table=55555555-5555-4555-8555-555555555555`);
+    await screen.findByRole('tab', { name: 'Send', selected: true });
+    await screen.findByRole('tabpanel', { name: 'Send' });
+    const tabs = screen.getAllByRole('tab');
+    for (const tab of tabs) {
+      fireEvent.click(tab);
+      const panel = await screen.findByRole('tabpanel');
+      expect(tab).toHaveAttribute('aria-selected', 'true');
+      expect(tab).toHaveAttribute('aria-controls', panel.id);
+      expect(panel).toHaveAttribute('aria-labelledby', tab.id);
+      for (const inactive of screen.getAllByRole('tab').filter((item) => item !== tab)) {
+        expect(inactive).not.toHaveAttribute('aria-controls');
+      }
+      expect(rpcCalls.some(([name]) => /send|distribute|cashout|mint_chips/.test(name))).toBe(
+        false
+      );
+    }
+  });
+
+  it('loading role tabs never reference an unmounted money panel', async () => {
+    const pending = deferred();
+    roleReads[CLUB] = () => pending.promise;
+    start();
+    await waitFor(() => expect(screen.getByRole('tablist')).toHaveAttribute('aria-busy', 'true'));
+    expect(screen.queryAllByRole('tabpanel')).toHaveLength(0);
+    for (const tab of screen.getAllByRole('tab')) expect(tab).not.toHaveAttribute('aria-controls');
+    await act(async () => pending.resolve({ data: { role: 'owner' }, error: null }));
+    const panel = await screen.findByRole('tabpanel');
+    expect(screen.getByRole('tab', { selected: true })).toHaveAttribute('aria-controls', panel.id);
+  });
+
   it('P-15 / P-19: Title Case word controls, labelled panels, Home/End and pressed filters', async () => {
     start();
     const sendTab = await screen.findByRole('tab', { name: 'Send', selected: true });

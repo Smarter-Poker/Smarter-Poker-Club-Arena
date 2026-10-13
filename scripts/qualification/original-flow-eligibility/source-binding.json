@@ -54,12 +54,12 @@
       "sha256": "280f360c96e586332354d3816efe1bdf2754b51cf7a83133bfdccd379bd03322"
     },
     "supabase/migrations/20261013084856_original_flow_proofs_run_only_for_their_eligible_receipts.sql": {
-      "bytes": 23313,
-      "sha256": "579a594ae483e7bf25b282e860f4a91e9c219d364bb2c5f4a4ed84edbfb32811"
+      "bytes": 23314,
+      "sha256": "2885aef92f485c3aafe1732d66f5134a927562c84d97e7a651b95102ce26065f"
     },
     "tests/an-original-flow-enters-only-its-eligible-proof.law.test.ts": {
-      "bytes": 2305,
-      "sha256": "e6949188b513e76143e8b413d92aa2ba59b1900b91ae137983ac63d75b327d8e"
+      "bytes": 3140,
+      "sha256": "69c1c570d80141ac9f029a597de04acbbd1e3bb36b8f27ab347e7566cae97106"
     },
     "tests/fixtures/late-seat-flow/admission-preimages.sql": {
       "bytes": 5033,

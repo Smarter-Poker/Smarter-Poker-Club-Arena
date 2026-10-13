@@ -23,7 +23,11 @@ psql=("$pgbin/psql" -X -q -v ON_ERROR_STOP=1 -h "$socket" -p "$port" -U postgres
 "${psql[@]}" -c 'ALTER FUNCTION public.fn_ca_rake_by_agent(uuid,date,date,integer,integer,text,text) RENAME TO fixture_original_rake_by_agent' -f "$fixture/original-function.sql"
 "${psql[@]}" -f "$migration"
 paid_migration="$repo/supabase/migrations/20261013171233_rake_agent_report_subtracts_indexed_paid_commission.sql"
-"${psql[@]}" -f "$paid_migration" -f "$fixture/assertions.sql"
+"${psql[@]}" -f "$paid_migration"
+covered_migration="$repo/supabase/migrations/20261013181205_rake_report_bounds_paid_query_plan.sql"
+"${psql[@]}" -f "$covered_migration" -f "$fixture/assertions.sql"
+if "${psql[@]}" -f "$covered_migration" >"$work/covered-replay.log" 2>&1;then echo 'Covered reader replay incorrectly accepted' >&2;exit 1;fi
+grep -q RAKE_COVERED_REPORT_PREIMAGE_CHANGED "$work/covered-replay.log"
 if "${psql[@]}" -f "$paid_migration" >"$work/paid-replay.log" 2>&1;then echo 'Paid reader replay incorrectly accepted' >&2;exit 1;fi
 grep -q RAKE_PAID_REPORT_PREIMAGE_CHANGED "$work/paid-replay.log"
 # A competing original writer key must refuse qualification without a marker.

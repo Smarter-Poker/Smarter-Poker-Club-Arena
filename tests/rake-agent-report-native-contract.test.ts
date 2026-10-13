@@ -49,4 +49,25 @@ describe('Rake agent native reporting qualification', () => {
   ])('routes changed input %s to financial native checks', (path) => {
     expect(classifyChangedPaths([path])).toMatchObject({ server: true, tests: true });
   });
+  it('enforces the sparse paid reader through the actual native migration and refuses replay', () => {
+    const file =
+      'supabase/migrations/20261013171233_rake_agent_report_subtracts_indexed_paid_commission.sql';
+    const sql = read(file);
+    const runner = read('scripts/dev/test-rake-agent-report-postgres.sh');
+    expect(runner).toContain(file);
+    expect(runner).toContain('RAKE_PAID_REPORT_PREIMAGE_CHANGED');
+    expect(sql).toContain(
+      'CREATE INDEX CONCURRENTLY IF NOT EXISTS agent_commissions_paid_report_idx'
+    );
+    expect(sql).toContain('WHERE settled_at IS NOT NULL');
+    expect(sql).toContain('covered_islands AS MATERIALIZED');
+    expect(sql).toContain('commission_fallback AS MATERIALIZED');
+    // A NULL/nonfinite recipient must not force every normal recipient back
+    // through the million-row outstanding scan.
+    expect(sql).toContain('EXISTS(SELECT 1 FROM commission_fallback z WHERE z.user_id=g.user_id)');
+    expect(sql).toContain('EXISTS(SELECT 1 FROM commission_fallback z WHERE z.user_id IS NULL)');
+    expect(sql).toContain('a.amount IS NOT NULL LIMIT 1');
+    expect(sql).not.toMatch(/(?:INSERT INTO|UPDATE|DELETE FROM) public\.agent_commissions/i);
+    expect(classifyChangedPaths([file])).toMatchObject({ server: true, tests: true });
+  });
 });

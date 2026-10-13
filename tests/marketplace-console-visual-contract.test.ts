@@ -120,7 +120,15 @@ describe('Marketplace Console Visual Contract', () => {
     expect(gridCss).toContain('shark-panel-v1/button-secondary.png');
     expect(gridCss).toContain("[data-theme='light'] .vip-perks-grid");
     expect(gridCss).not.toMatch(/(?:linear|radial)-gradient/i);
-    expect(gridCss).not.toContain('clip-path:');
+    // Only the plate's paint may clip its opaque exterior. Premium icons and
+    // throwable artwork retain their full native bounds.
+    const clippedRules = [...gridCss.matchAll(/([^{}]+)\{([^{}]*clip-path:[^{}]*)\}/g)];
+    expect(clippedRules).toHaveLength(1);
+    expect(clippedRules[0][1].trim()).toBe(
+      '.vip-perks-grid .perk-value::before,\n.vip-perks-grid .lock-overlay::before'
+    );
+    expect(clippedRules[0][2]).toContain('pointer-events: none');
+    expect(clippedRules[0][2]).toContain('background: var(--rewards-control-image)');
     expect(gridCss).not.toContain(':hover');
     expect(gridCss).not.toMatch(/font-family:[^;]*(?:monospace|courier)/i);
     expect(gridCss).not.toMatch(/#4ade80|#22c55e|#8b5cf6|#a855f7/i);

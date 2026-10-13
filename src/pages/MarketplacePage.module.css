@@ -326,8 +326,7 @@
   border: 0;
   border-radius: 0;
   color: #d9e4ea;
-  background: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png') center / 100%
-    100% no-repeat;
+  --rewards-control-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png');
   text-shadow: 0 2px 3px #000;
   font:
     700 11px/1 'Roboto Condensed',
@@ -341,7 +340,7 @@
 
 .categoryBtnActive {
   color: #f4fbff;
-  background-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-primary.png');
+  --rewards-control-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-primary.png');
   box-shadow: none;
 }
 
@@ -819,8 +818,7 @@
   border: 0;
   border-radius: 0;
   color: #f4fbff;
-  background: url('/assets/club-buttons/lobby/shark-panel-v1/button-primary.png') center / 100% 100%
-    no-repeat;
+  --rewards-control-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-primary.png');
   box-shadow: none;
   text-shadow: 0 2px 3px #000;
 }
@@ -839,8 +837,7 @@
   border: 0;
   border-radius: 0;
   color: #d9e4ea;
-  background: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png') center / 100%
-    100% no-repeat;
+  --rewards-control-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png');
   text-shadow: 0 2px 3px #000;
 }
 
@@ -848,8 +845,7 @@
   border: 0;
   border-radius: 0;
   color: #d9e4ea;
-  background: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png') center / 100%
-    100% no-repeat;
+  --rewards-control-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png');
   cursor: default;
   text-shadow: 0 2px 3px #000;
 }
@@ -920,8 +916,7 @@
   border: 0;
   border-radius: 0;
   color: #dce5ea;
-  background: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png') center / 104px
-    34px no-repeat;
+  --rewards-control-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png');
   font:
     800 11px/1 'Roboto Condensed',
     Inter,
@@ -1416,20 +1411,20 @@
 }
 .btnActiveToggle {
   color: #f4fbff;
-  background-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-primary.png');
+  --rewards-control-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-primary.png');
 }
 .btnInactiveToggle {
   color: #d9e4ea;
-  background-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png');
+  --rewards-control-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png');
 }
 .btnDeleteSmall {
   color: #ffc9cd;
-  background-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png');
+  --rewards-control-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png');
   box-shadow: inset 0 0 0 1px rgba(214, 69, 79, 0.24);
 }
 .btnEditSmall {
   color: #f4fbff;
-  background-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-primary.png');
+  --rewards-control-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-primary.png');
 }
 .editForm {
   display: flex;
@@ -1484,7 +1479,7 @@
 }
 .rangeBtnActive {
   color: #f4fbff;
-  background-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-primary.png');
+  --rewards-control-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-primary.png');
 }
 .chart {
   height: 130px;
@@ -1988,8 +1983,7 @@
   padding: 5px 12px;
   border: 0;
   color: #b9c9d2;
-  background: transparent url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png')
-    center / 100% 100% no-repeat;
+  --rewards-control-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png');
   text-shadow: 0 2px 3px #000;
 }
 
@@ -1999,7 +1993,7 @@
 
 .tabActive {
   color: #f5fbff;
-  background-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-primary.png');
+  --rewards-control-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-primary.png');
 }
 
 .tabBadge {
@@ -2145,8 +2139,7 @@
   border: 0;
   border-radius: 0;
   color: #d9e8ef;
-  background: transparent url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png')
-    center / 100% 100% no-repeat;
+  --rewards-control-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png');
   box-shadow: none;
   text-shadow: 0 2px 3px #000;
 }
@@ -2331,7 +2324,7 @@
   border: 0 !important;
   border-radius: 0 !important;
   background-color: transparent !important;
-  background-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png') !important;
+  --rewards-control-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png');
   background-position: center !important;
   background-repeat: no-repeat !important;
   background-size: 100% 100% !important;
@@ -2340,5 +2333,91 @@
 }
 
 .modalOverlay .btnPrimary.btnPrimary {
-  background-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-primary.png') !important;
+  --rewards-control-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-primary.png');
+}
+
+/* The approved plate remains unchanged. Its opaque exterior is clipped on
+   a paint-only layer; labels, focus outlines and native hit areas stay whole.
+   Coordinates follow the outer chrome of the 348 x 114 source raster. */
+.categoryBtn,
+.categoryBtnActive,
+.btnPrimary,
+.pkgBuy,
+.btnGhost,
+.btnGhostWide,
+.emptyButton,
+.historyToggle,
+.rangeBtn,
+.btnOwned,
+.modalClose,
+.btnActiveToggle,
+.btnInactiveToggle,
+.btnDeleteSmall,
+.btnEditSmall,
+.rangeBtnActive,
+.tab,
+.tabActive,
+.categoryTag,
+.categorySmall,
+.saleTag,
+.soldOutTag,
+.stockTag,
+.grantBadge,
+.grantLine,
+.vipStatusBadge,
+.entitlementChip {
+  position: relative;
+  isolation: isolate;
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+.categoryBtn::before,
+.categoryBtnActive::before,
+.btnPrimary::before,
+.pkgBuy::before,
+.btnGhost::before,
+.btnGhostWide::before,
+.emptyButton::before,
+.historyToggle::before,
+.rangeBtn::before,
+.btnOwned::before,
+.modalClose::before,
+.btnActiveToggle::before,
+.btnInactiveToggle::before,
+.btnDeleteSmall::before,
+.btnEditSmall::before,
+.rangeBtnActive::before,
+.tab::before,
+.tabActive::before,
+.categoryTag::before,
+.categorySmall::before,
+.saleTag::before,
+.soldOutTag::before,
+.stockTag::before,
+.grantBadge::before,
+.grantLine::before,
+.vipStatusBadge::before,
+.entitlementChip::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  pointer-events: none;
+  background: var(--rewards-control-image) center / 100% 100% no-repeat;
+  clip-path: polygon(
+    7.2% 4.4%,
+    92.8% 4.4%,
+    99.5% 23.7%,
+    99.5% 83.3%,
+    93.1% 99.1%,
+    6.9% 99.1%,
+    0.5% 83.3%,
+    0.5% 24.6%
+  );
+}
+
+/* Retain the established anchored placement; only the paint clips. */
+.modalClose {
+  position: absolute;
 }

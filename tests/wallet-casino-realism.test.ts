@@ -68,8 +68,11 @@ describe('wallets can send, receive and earn - wired to the real doors', () => {
     expect(PAGE).not.toContain('MIN_DIAMOND_SEND = 10');
     /* And the route REFUSES a request with no X-Idempotency-Key, so the send
        carries one, minted per intent and kept across a retry. */
-    expect(PAGE).toContain('idempotencyKey: sendKeyRef.current');
-    expect(PAGE).toContain('if (e?.definitive) sendKeyRef.current = null;');
+    expect(PAGE).toContain('idempotencyKey: requestId');
+    expect(PAGE).toContain('expectedUserId: user.id');
+    expect(PAGE).toContain('const intentScope = `${user.id}:${recipientId}:${amount}`;');
+    expect(PAGE).toContain('sendRequests.current.get(intentScope) ?? uuid()');
+    expect(PAGE).toContain('if (e?.definitive) sendRequests.current.delete(intentScope);');
   });
 
   it('routes chip operations to the club cashier without a global-pool transfer', () => {

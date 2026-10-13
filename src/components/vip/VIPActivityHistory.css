@@ -47,7 +47,7 @@
   border: 12px solid transparent;
   border-image: url('/assets/club-buttons/club-nav-shell.webp') 88 150 fill / 12px stretch;
   color: #bed5df;
-  background: #03070a;
+  background: transparent;
   text-align: center;
 }
 
@@ -65,8 +65,7 @@
   padding: 0 19px;
   border: 0;
   border-radius: 0;
-  background: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png') center / 100%
-    100% no-repeat;
+  --rewards-control-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png');
   color: #dcecf3;
   cursor: pointer;
   font-family: var(--club-font-number, 'Roboto Condensed', 'Arial Narrow', sans-serif);
@@ -103,7 +102,7 @@
 .vip-activity-history .month-card {
   border: 12px solid transparent;
   border-image: url('/assets/club-buttons/club-utility-shell.webp') 130 fill / 12px stretch;
-  background: #030507;
+  background: transparent;
 }
 
 .vip-activity-history .summary-card {
@@ -157,7 +156,7 @@
 
 .vip-activity-history .filter-tab.active {
   color: #f4f7fb;
-  background-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-primary.png');
+  --rewards-control-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-primary.png');
 }
 
 .vip-activity-history .filter-count {
@@ -191,7 +190,7 @@
   border-width: 10px 48px 10px 58px;
   border-image: url('/assets/club-buttons/wallet-row-shell.png') 48 260 48 255 fill / 10px 48px 10px
     58px stretch;
-  background: #030507;
+  background: transparent;
   animation: vipActivityReveal 0.3s ease-out both;
   animation-delay: var(--reveal-delay, 0s);
 }
@@ -377,4 +376,35 @@
     border-top: 1px solid rgba(115, 188, 218, 0.2);
     border-left: 0;
   }
+}
+
+/* The approved plate remains unchanged. Its opaque exterior is clipped on
+   a paint-only layer; labels, focus outlines and native hit areas stay whole.
+   Coordinates follow the outer chrome of the 348 x 114 source raster. */
+.vip-activity-history .activity-retry,
+.vip-activity-history .filter-tab {
+  position: relative;
+  isolation: isolate;
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+.vip-activity-history .activity-retry::before,
+.vip-activity-history .filter-tab::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  pointer-events: none;
+  background: var(--rewards-control-image) center / 100% 100% no-repeat;
+  clip-path: polygon(
+    7.2% 4.4%,
+    92.8% 4.4%,
+    99.5% 23.7%,
+    99.5% 83.3%,
+    93.1% 99.1%,
+    6.9% 99.1%,
+    0.5% 83.3%,
+    0.5% 24.6%
+  );
 }

@@ -166,8 +166,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 215778,
-      "sha256": "cc4106f702797576c38252c123f4ea3243750cc7960359756e498985777ca3e4"
+      "bytes": 216756,
+      "sha256": "4b6385d39a00e968f065aa6c3424debcf47f88faecae34c9f9ce56a87eaca062"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -3162,6 +3162,21 @@
         "current": {
           "bytes": 111125,
           "sha256": "821a94ed8fcbf822dc831479e81b20a724039d85c1311f352d216fd6d1264f76"
+        }
+      }
+    }
+  },
+  "weeklyShapedPrimaryQualification20261013": {
+    "reason": "Add directly-triggered actual four-primary reader qualification; preserve all prior native lanes, financial pins, deadlines and dated history. Current workflow input identity only, not production qualification.",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 215778,
+          "sha256": "cc4106f702797576c38252c123f4ea3243750cc7960359756e498985777ca3e4"
+        },
+        "current": {
+          "bytes": 216756,
+          "sha256": "4b6385d39a00e968f065aa6c3424debcf47f88faecae34c9f9ce56a87eaca062"
         }
       }
     }

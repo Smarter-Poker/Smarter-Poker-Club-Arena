@@ -96,7 +96,10 @@ test.describe('Reserved Admin - every Club Operations registry route', () => {
             ? 'data-cashier-mode'
             : null;
       if (modeAttribute) {
-        await expect(page.locator(`[${modeAttribute}="simple"]`)).toBeVisible();
+        // A mounted shell can still be loading the lazy Cashier route.
+        // Wait for its actual Simple surface within the existing route budget.
+        const simpleReadyOptions = operation.id === 'cashier' ? { timeout: 30_000 } : {};
+        await expect(page.locator(`[${modeAttribute}="simple"]`)).toBeVisible(simpleReadyOptions);
         await page.getByRole('button', { name: 'Advanced', exact: true }).click();
         await expect(page.locator(`[${modeAttribute}="advanced"]`)).toBeVisible();
       }

@@ -1,0 +1,129 @@
+{
+  "scope": "Exact original late-proof eligibility component/actual31 and source40 installation qualification inputs; no production timing or financial writer.",
+  "files": {
+    ".github/workflows/ci.yml": {
+      "bytes": 220644,
+      "sha256": "f10e4911a8c6211b32f683d607805fe3fef618847dee55917db2fe691f52cef6"
+    },
+    "scripts/qualification/original-flow-eligibility/README.md": {
+      "bytes": 2608,
+      "sha256": "210942d1044141362fc2222648f3d16d7af9e25ec87ec85ea350d1aa942376f0"
+    },
+    "scripts/qualification/original-flow-eligibility/actual-helpers.json": {
+      "bytes": 21417,
+      "sha256": "be8948bbaa08e9377f8b4ea50ac58e0e927aadfc39e66f8d9376c47ab96de80f"
+    },
+    "scripts/qualification/original-flow-eligibility/after-flow.sql": {
+      "bytes": 13791,
+      "sha256": "828e1139c4b54abe5df31e7858884279c7e240cb842544730612e2e5a3925873"
+    },
+    "scripts/qualification/original-flow-eligibility/after-matcher.sql": {
+      "bytes": 4695,
+      "sha256": "23500f930abec49800679c72d52e7895f58f7e23ad30e7af1b1bc6652d6b9244"
+    },
+    "scripts/qualification/original-flow-eligibility/before-flow.sql": {
+      "bytes": 13736,
+      "sha256": "292a5949f453b1753a1b2d0da945b21e8c7757a739356ea52638c372117a8f30"
+    },
+    "scripts/qualification/original-flow-eligibility/before-matcher.sql": {
+      "bytes": 4695,
+      "sha256": "412124351b128fe145e7780151c331441dcd413fcba8307cf975fd4d4d69bff5"
+    },
+    "scripts/qualification/original-flow-eligibility/component-native.py": {
+      "bytes": 6764,
+      "sha256": "4c716554d5a4bb86fcb0aa4680ea62d8df44d310aeb66db1c3139cc6d070c773"
+    },
+    "scripts/qualification/original-flow-eligibility/current-source40.json": {
+      "bytes": 239166,
+      "sha256": "c4b8eaa1984e7161c0105d1f259753e2190458f280c2d7394b8e30764fcf1a55"
+    },
+    "scripts/qualification/original-flow-eligibility/installer-native.py": {
+      "bytes": 8091,
+      "sha256": "a9dc19150f22ba236b83c86663e06f3dd0bae67959b90e0cb54e6e61816c60df"
+    },
+    "scripts/qualification/original-flow-eligibility/maintenance-type-source.sql": {
+      "bytes": 5127,
+      "sha256": "23e1d645751cb09547654de876744af46fda802051033063fca59375ee759311"
+    },
+    "scripts/qualification/original-flow-eligibility/run-native.py": {
+      "bytes": 2878,
+      "sha256": "cde763f07803f0ae4d971bdd6c526e53ff3e5e2a9469a0a898b8484ae741fe04"
+    },
+    "supabase/migrations/20261013063142_original_refund_evidence_scans_its_application_lineage_once.sql": {
+      "bytes": 21799,
+      "sha256": "280f360c96e586332354d3816efe1bdf2754b51cf7a83133bfdccd379bd03322"
+    },
+    "supabase/migrations/20261013084856_original_flow_proofs_run_only_for_their_eligible_receipts.sql": {
+      "bytes": 23313,
+      "sha256": "579a594ae483e7bf25b282e860f4a91e9c219d364bb2c5f4a4ed84edbfb32811"
+    },
+    "tests/an-original-flow-enters-only-its-eligible-proof.law.test.ts": {
+      "bytes": 2151,
+      "sha256": "979ea16a0d24213d12ed5146938a5893e63ecba58148d5edf1083a338542858c"
+    },
+    "tests/fixtures/late-seat-flow/admission-preimages.sql": {
+      "bytes": 5033,
+      "sha256": "1d52d13b0a0ce886986bae451401057c66d17c627eb009614eb8d1b55b9f033b"
+    },
+    "tests/fixtures/late-seat-flow/boundaries.sql": {
+      "bytes": 11686,
+      "sha256": "4d6c9f1afd7156627cb3c9bf58931013921b5b045f7911ae8b96b00ca095c217"
+    },
+    "tests/fixtures/late-seat-flow/captured-moves.jsonb": {
+      "bytes": 58237,
+      "sha256": "188b1433daf396af7be62e74faa776523759c112ca93b84b0d45c59b779cb502"
+    },
+    "tests/fixtures/late-seat-flow/captured.jsonb": {
+      "bytes": 3200611,
+      "sha256": "c21e1f776edd99a7429e72c919c7a1e2e8f80496b880f821a8f15b718ab2d84f"
+    },
+    "tests/fixtures/late-seat-flow/compact-preimages.sql": {
+      "bytes": 776,
+      "sha256": "41fd661a669365ab09beb67d25fcc216949ba35df93724477cd97a939ca3ccf1"
+    },
+    "tests/fixtures/late-seat-flow/consumer-preimage.sql": {
+      "bytes": 725,
+      "sha256": "48135612968146700d90bf61fad0364aee79262af5ebcdefcb67b2e7745a2625"
+    },
+    "tests/fixtures/late-seat-flow/load-captured.py": {
+      "bytes": 865,
+      "sha256": "178b17a0ca1c685a029d5ee39b3632df5744f00a1217dc2647e1bd5db327ffe2"
+    },
+    "tests/fixtures/late-seat-flow/retained-cases.sql": {
+      "bytes": 7975,
+      "sha256": "359a233bc9807beb4154b366a8018b199e4fd4146ed6e2f9aaab8580be54c0fe"
+    },
+    "tests/fixtures/late-seat-flow/retained-key-preimage.sql": {
+      "bytes": 1900,
+      "sha256": "703d29579b2081d4e68876256bcb2c4ba7fc880fa849a1c3e5469ef614c18653"
+    },
+    "tests/fixtures/late-seat-flow/retained-preimages.sql": {
+      "bytes": 4645,
+      "sha256": "0e41b2d97e11a42f32fd838b9251995afc9e527a23ebc69868cd593607017622"
+    },
+    "tests/fixtures/late-seat-flow/schema-additions.sql": {
+      "bytes": 2745,
+      "sha256": "f545762dfd546ab3936d7bb7e96f859100ebfe3c04b4f08649f6c8ac66b421c0"
+    },
+    "tests/fixtures/late-seat-flow/unused-original-dependencies.sql": {
+      "bytes": 7368,
+      "sha256": "3e32e2b707377d32f910ee97789fbd223a868acb04b0c7c3a4f05bf1a2096345"
+    },
+    "tests/fixtures/original-unchanged-stack/cents-preimage.sql": {
+      "bytes": 513,
+      "sha256": "b1af50bae98d16e1d4a640193b669b7f174cfdf2819b8177638d44d512235c10"
+    },
+    "tests/fixtures/original-unchanged-stack/lineage-preimage.sql": {
+      "bytes": 7804,
+      "sha256": "c49581ca3d55ecfab6499d5d82beb4dab098cb87d35e19d546403323d6003c69"
+    },
+    "tests/fixtures/original-unchanged-stack/schema-additions.sql": {
+      "bytes": 219,
+      "sha256": "e0311274a5580043825a8b53b6eba5bcca8429e394b038522515acaf3a71ef02"
+    },
+    "tests/fixtures/union-pnl-blocked-resolution/schema.sql": {
+      "bytes": 6057,
+      "sha256": "3f5650d78cbb5e171283ce9ddff00afd1f5a697c39be251d6557e93bdda94c91"
+    }
+  }
+}

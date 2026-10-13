@@ -892,6 +892,10 @@ test.describe('production Table Studio realtime contract', () => {
         presenceTopic
       );
       presenceTransports.push(otherPresence);
+      console.log('[presence-transport] both authenticated track admissions acknowledged', {
+        primary: primaryPresence.state,
+        other: otherPresence.state,
+      });
       await expect
         .poll(() => primaryPresence.state.peers, {
           timeout: PRODUCTION_RESPONSE_TIMEOUT,
@@ -1031,6 +1035,10 @@ test.describe('production Table Studio realtime contract', () => {
         '[member-balance] authenticated own-row subscription and initial/reconnect reads reached the persistent wallet and rendered amount; no financial mutation induced'
       );
     } catch (error) {
+      console.log(
+        '[presence-transport] reserved transport outcomes at journey failure',
+        presenceTransports.map((transport) => transport.state)
+      );
       journeyFailure = error;
     } finally {
       // Close all realtime sockets before hard-deleting the reserved Auth and

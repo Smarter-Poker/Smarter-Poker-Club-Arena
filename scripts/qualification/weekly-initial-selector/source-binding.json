@@ -77,13 +77,13 @@
       "bytes": 6255,
       "sha256": "89b1671cf9aa507248b7620f734855fa03cdf586d133a1caa9890530fbd04df3"
     },
-    "supabase/migrations/20261013163310_weekly_initial_selector_reads_launch_cutoff_once_per_cash_club.sql": {
+    "tests/weekly-initial-selector-reads-cutoff-once.law.test.ts": {
+      "bytes": 4804,
+      "sha256": "f158c7b50b606c78fa2af31db7fce2c8272e5b8cd40bcab2380d2488b5efe222"
+    },
+    "supabase/migrations/20261013163310_weekly_initial_cash_selection_reads_cutoff_once_per_club.sql": {
       "bytes": 56447,
       "sha256": "0e9661dc97f699f25859a37e182744ae980e0949b0fa6194f82180d9e5b3b7ff"
-    },
-    "tests/weekly-initial-selector-reads-cutoff-once.law.test.ts": {
-      "bytes": 4455,
-      "sha256": "da755036a52f1336f67d9cb6af42bcb9d16aba6ada737eb00e4b487e411bc133"
     }
   }
 }

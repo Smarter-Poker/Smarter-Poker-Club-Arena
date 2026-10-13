@@ -1,15 +1,24 @@
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { describe, expect, it } from 'vitest';
+import { namingProblems } from '../scripts/ci/check-new-migration-version-collisions.mjs';
 import { splitConcurrentPreamble } from '../scripts/ci/migration-concurrent-preamble.mjs';
 const p = 'scripts/qualification/weekly-initial-selector/';
 const read = (s: string) => fs.readFileSync(s, 'utf8');
 const before = read(p + 'before-scope.sql');
 const after = read(p + 'after-scope.sql');
 const migration = read(
-  'supabase/migrations/20261013163310_weekly_initial_selector_reads_launch_cutoff_once_per_cash_club.sql'
+  'supabase/migrations/20261013163310_weekly_initial_cash_selection_reads_cutoff_once_per_club.sql'
 );
 describe('Initial weekly cash selection preserves original work with one cutoff per club', () => {
+  it('keeps its genuinely reserved version and a ledger-safe migration filename', () => {
+    expect(
+      namingProblems(
+        'supabase/migrations/20261013163310_weekly_initial_cash_selection_reads_cutoff_once_per_club.sql'
+      )
+    ).toEqual([]);
+  });
+
   it('changes only the first cash selector; financial tail, second selector and fairness stay exact', () => {
     const oldStart = before.indexOf('        WITH standalone_work AS (');
     const oldEnd = before.indexOf('           UNION ALL SELECT q.standalone_club_id', oldStart);

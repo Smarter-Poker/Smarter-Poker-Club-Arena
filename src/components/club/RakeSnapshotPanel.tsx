@@ -443,7 +443,8 @@ export default function RakeSnapshotPanel({
   const load = useCallback(
     async (quiet = false) => {
       // A union page has no club, and that is not a reason not to read.
-      if (!active || (!clubId && !unionId)) return;
+      if (!active) return;
+      if (!clubId && !unionId) return;
       // Ledger events can arrive faster than this read completes. The same
       // question must finish before a refresh can replace it; otherwise every
       // response becomes obsolete and the initial totals never leave loading.

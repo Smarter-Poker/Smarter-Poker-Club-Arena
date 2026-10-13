@@ -30,6 +30,14 @@ try:
     for entry in catalog['definitions']:
         assert sql("SELECT md5(pg_get_functiondef(oid)) FROM pg_proc WHERE proname='"+entry['name']+"';").stdout.strip() == entry['md5']
     assert present()
+    sql('CREATE SCHEMA supabase_migrations; CREATE TABLE supabase_migrations.schema_migrations(version text PRIMARY KEY,statements text[]);')
+    proof = subprocess.check_output(['node', '--input-type=module', '-e', "import { SPENT_DSS_RETIREMENT_PROOF } from './scripts/ci/spent-dss-recording.mjs';process.stdout.write(SPENT_DSS_RETIREMENT_PROOF);"], cwd=ROOT, text=True)
+    assert sql(proof).stdout.strip() == 'f'
+    sql("INSERT INTO supabase_migrations.schema_migrations VALUES('20261013120756',ARRAY[" + "'" + migration.replace("'","''") + "']);")
+    sql("UPDATE public.ca_money_rpc_registry SET status='retired';")
+    assert sql(proof).stdout.strip() == 'f'  # Live functions refuse even beside exact ledger bytes and retired registry.
+    sql("UPDATE public.ca_money_rpc_registry SET status='approved';")
+    sql('DELETE FROM supabase_migrations.schema_migrations;')
     # Exact body restores after deliberately aborted successful retirement.
     sql(migration.replace('COMMIT;', "DO $$ BEGIN RAISE EXCEPTION 'qualification_abort'; END $$;"), False)
     assert present()
@@ -60,6 +68,14 @@ try:
     assert present(); sql('DROP VIEW public.dss_test_dependency;')
     sql(migration)
     assert not present()
+    assert sql(proof).stdout.strip() == 'f'  # Missing retirement ledger is not proof.
+    sql("INSERT INTO supabase_migrations.schema_migrations VALUES('20261013120756',ARRAY['wrong']);")
+    assert sql(proof).stdout.strip() == 'f'
+    sql("UPDATE supabase_migrations.schema_migrations SET statements=ARRAY[" + "'" + migration.replace("'","''") + "'];")
+    assert sql(proof).stdout.strip() == 't'
+    sql("UPDATE public.ca_money_rpc_registry SET status='approved' WHERE proname='ops_dss_midway_sweep';")
+    assert sql(proof).stdout.strip() == 'f'
+    sql("UPDATE public.ca_money_rpc_registry SET status='retired' WHERE proname='ops_dss_midway_sweep';")
     assert sql("SELECT count(*) FROM pg_proc WHERE proname IN ('ops_dss_midway_sweep','ops_dss_midway_go_live','ops_ledger_reset_declarations');").stdout.strip() == '0'
     assert sql("SELECT count(*) FROM public.ca_money_rpc_registry WHERE status='retired';").stdout.strip() == '2'
     assert 'spent_dss_operation_preimage_changed' in sql(migration, False).stderr

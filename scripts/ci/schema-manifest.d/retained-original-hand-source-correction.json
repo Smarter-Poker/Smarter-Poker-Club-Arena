@@ -1,0 +1,17 @@
+{
+  "_owner": "Tournament hardening closed original source correction. Qualified declarations only; protected integration and exact production installation/readback PENDING. PROMISED is not an observed installation.",
+  "tables": [
+    "smarter_private.hand_submission_source_corrections",
+    "smarter_private.hand_submission_correction_claims",
+    "smarter_private.hand_submission_correction_results"
+  ],
+  "functions": [
+    "smarter_private.original_hand_correction_sources_match",
+    "smarter_private.original_hand_source_correction_proof",
+    "smarter_private.hand_source_correction_certificate_guard",
+    "smarter_private.certify_original_hand_source_correction",
+    "smarter_private.hand_source_correction_claim_guard",
+    "smarter_private.hand_source_correction_result_guard",
+    "smarter_private.hand_source_correction_immutable"
+  ]
+}

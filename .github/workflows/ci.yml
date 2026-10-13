@@ -2517,6 +2517,26 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Original retained source corrections qualify through their existing owner
+        id: retained_source_correction
+        if: matrix.shard == 3
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          RETAINED_SOURCE_CORRECTION_EVIDENCE_DIR: ${{ runner.temp }}/retained-source-correction
+        run: |
+          set -euo pipefail
+          mkdir -p "$RETAINED_SOURCE_CORRECTION_EVIDENCE_DIR"
+          bash scripts/dev/probe-retained-source-correction-pg17.sh --public-safe 2>&1 | tee "$RETAINED_SOURCE_CORRECTION_EVIDENCE_DIR/native.log"
+
+      - name: Retain original retained source correction qualification
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.retained_source_correction.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: retained-source-correction-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/retained-source-correction/
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Hand index writers retain canonical order and exact coverage
         id: hand_index_writer_order
         if: matrix.shard == 4

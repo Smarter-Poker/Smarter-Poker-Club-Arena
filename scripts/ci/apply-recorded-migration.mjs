@@ -196,6 +196,22 @@ if (
 // Leave room for the slowest ledger build to finish before :50: a concurrent
 // build still running when the break window opens is refused at its end and
 // leaves an INVALID index behind.
+let stuckThaw = null;
+let stuckThawModule;
+try {
+  if (argValue('--stuck-thaw-reason') || argValue('--stuck-thaw-owner')) {
+    stuckThawModule = await import('./stuck-thaw-migration-admission.mjs');
+    stuckThaw = stuckThawModule.stuckThawRequest(
+      file,
+      sql,
+      argValue('--stuck-thaw-reason'),
+      argValue('--stuck-thaw-owner'),
+      Boolean(recovery || batches || rakeHistory || SETTLEMENT_LANE || preamble.length)
+    );
+  }
+} catch (e) {
+  refused(e.message);
+}
 const PREAMBLE_MINUTES_NEEDED = 12;
 
 // CLAUDE.md section 2 rule 8: the database refuses non-temporary DDL from a
@@ -293,9 +309,11 @@ if (already.length > 0) {
   }
   console.log(`[apply] ALREADY-APPLIED: ${file}`);
   for (const r of already) console.log(`[apply]   recorded as version=${r.version} name=${r.name}`);
-  console.log(rakeHistory
-    ? '[apply] Migration not sent. Explicit report history qualification follows.'
-    : '[apply] Nothing sent. This run changed nothing.');
+  console.log(
+    rakeHistory
+      ? '[apply] Migration not sent. Explicit report history qualification follows.'
+      : '[apply] Nothing sent. This run changed nothing.'
+  );
   if (rakeHistory) {
     try {
       await qualifyRakeReportHistory(client, sql, DRY_RUN);
@@ -337,7 +355,26 @@ async function refusalNow() {
 }
 {
   const refusal = await refusalNow();
-  if (refusal) {
+  if (stuckThaw) {
+    try {
+      if (
+        refusal !==
+        'an announced engine maintenance window or its thaw is active; apply after its durable release'
+      )
+        throw new Error('stuck thaw admission requires the actual durable maintenance refusal');
+      stuckThawModule.validateStuckThaw(
+        (await client.query(stuckThawModule.STUCK_THAW_STATE)).rows,
+        stuckThaw
+      );
+      console.log(
+        '[apply] Exact stuck thaw emergency identity qualified; transaction will recheck under the maintenance lock.'
+      );
+    } catch (e) {
+      await client.end().catch(() => {});
+      refused(e.message);
+    }
+  }
+  if (refusal && !stuckThaw) {
     await client.end().catch(() => {});
     refused(`the database would refuse DDL now: ${refusal}. Nothing was sent. Do not loop.`);
   }
@@ -502,7 +539,10 @@ DO $ca_atomic_history_guard$ BEGIN
 END $ca_atomic_history_guard$;
 `;
 const transactionBody = preamble.length > 0 ? shape.body : sql;
-const atomicSQL = transactionBody.replace(/COMMIT\s*;\s*$/i, () => historyStatement + '\nCOMMIT;');
+const admittedBody = stuckThaw
+  ? stuckThawModule.bindStuckThawTransaction(transactionBody, stuckThaw)
+  : transactionBody;
+const atomicSQL = admittedBody.replace(/COMMIT\s*;\s*$/i, () => historyStatement + '\nCOMMIT;');
 if (atomicSQL === transactionBody)
   refused('atomic migration history could not bind the final COMMIT');
 const started = Date.now();

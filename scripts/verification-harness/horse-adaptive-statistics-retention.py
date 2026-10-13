@@ -112,6 +112,7 @@ def main():
   capacity=module(ROOT/'scripts/verification-harness/horse-adaptive-capacity.py','adaptive_capacity_qualified');capacity.qualify(e,qualified_membership)
   e.discard(qualified_membership)
   numbered=module(ROOT/'scripts/verification-harness/horse-adaptive-numbered-retirement.py','adaptive_numbered_retirement_qualified');numbered.run_icu(e)
+  vacuum=module(ROOT/'scripts/verification-harness/horse-journal-vacuum-trigger.py','journal_vacuum_trigger_qualified');vacuum.qualify(e)
   e.discard(base);e.report.update(status='passed',proven=checks)
  except BaseException as exc:e.report['failure']=repr(exc)
  finally:

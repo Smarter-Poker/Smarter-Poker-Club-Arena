@@ -1,3 +1,4 @@
+import { observeDealPresentationTiming } from '../utils/dealPresentationTiming';
 import { formatPrizeAtUnit } from '../utils/format';
 import {
   getTournamentFormatKind,
@@ -7395,9 +7396,16 @@ function LiveTablePage({
       beginDealHold();
       if (dealStartTimerRef.current) clearTimeout(dealStartTimerRef.current);
       const heardHere = dealSoundsAllowedRef.current;
+      observeDealPresentationTiming({
+        handNumber,
+        phase: 'scheduled',
+        speed: getAnimationSpeed(),
+        buttonDelayMs: Math.round(HAND_COMPLETION.BUTTON_MOVE_MS * getAnimationSpeed()),
+      });
       dealStartTimerRef.current = setTimeout(
         () => {
           dealStartTimerRef.current = null;
+          observeDealPresentationTiming({ handNumber, phase: 'timer-fired' });
           setDealAnimationKey((k) => k + 1);
           setIsSeatDealing(true);
           if (seatDealTimerRef.current) clearTimeout(seatDealTimerRef.current);
@@ -25714,6 +25722,7 @@ function LiveTablePage({
           {dealAnimationKey > 0 && (
             <DealAnimation
               key={dealAnimationKey}
+              handNumber={tableState.handNumber}
               active={true}
               /* Dan 2026-08-21 (item 14): "cards actually dealt to ALL the
                  players to start a new hand." The `status !== 'folded'` test

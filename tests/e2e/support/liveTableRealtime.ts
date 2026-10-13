@@ -29,7 +29,17 @@ export interface CausalHandCycle {
 
 export interface LiveTablePresentationEvidence {
   at: number;
-  kind: 'deal-animation' | 'dealer-button-baseline' | 'dealer-button-moved';
+  kind: 'deal-animation' | 'dealer-button-baseline' | 'dealer-button-moved' | 'presentation-timing';
+  timing?: {
+    handNumber: number;
+    phase: string;
+    at: number;
+    speed?: number;
+    buttonDelayMs?: number;
+    activeSeatCount?: number;
+    geometryCount?: number;
+    cardCount?: number;
+  };
   handText: string;
   cardCount?: number;
   position?: string;
@@ -433,7 +443,21 @@ export async function installLiveTablePresentationJournal(page: Page): Promise<v
   await page.evaluate(() => {
     type Evidence = {
       at: number;
-      kind: 'deal-animation' | 'dealer-button-baseline' | 'dealer-button-moved';
+      kind:
+        | 'deal-animation'
+        | 'dealer-button-baseline'
+        | 'dealer-button-moved'
+        | 'presentation-timing';
+      timing?: {
+        handNumber: number;
+        phase: string;
+        at: number;
+        speed?: number;
+        buttonDelayMs?: number;
+        activeSeatCount?: number;
+        geometryCount?: number;
+        cardCount?: number;
+      };
       handText: string;
       cardCount?: number;
       position?: string;
@@ -443,11 +467,14 @@ export async function installLiveTablePresentationJournal(page: Page): Promise<v
       lastDealerPosition: string | null;
       seenDeals: WeakSet<Element>;
       observer: MutationObserver;
+      stopTiming: () => void;
     };
     const browserWindow = window as typeof window & {
       __spLiveTablePresentation?: EvidenceState;
+      __spObserveDealPresentationTiming?: boolean;
     };
     browserWindow.__spLiveTablePresentation?.observer.disconnect();
+    browserWindow.__spLiveTablePresentation?.stopTiming();
 
     const handText = () =>
       document.querySelector('.header-hand-number, .table-brand__hand')?.textContent?.trim() || '';
@@ -456,6 +483,7 @@ export async function installLiveTablePresentationJournal(page: Page): Promise<v
       lastDealerPosition: null as string | null,
       seenDeals: new WeakSet<Element>(),
       observer: null as unknown as MutationObserver,
+      stopTiming: () => undefined as void,
     };
 
     const sample = () => {
@@ -493,6 +521,37 @@ export async function installLiveTablePresentationJournal(page: Page): Promise<v
       }
     };
 
+    const handCounts = new Map<number, number>();
+    const timingListener = (event: Event) => {
+      const timing = (event as CustomEvent<Evidence['timing']>).detail;
+      if (
+        !timing ||
+        !Number.isSafeInteger(timing.handNumber) ||
+        timing.handNumber <= 0 ||
+        !Number.isFinite(timing.at)
+      )
+        return;
+      const count = handCounts.get(timing.handNumber) ?? 0;
+      if (count >= 8) return;
+      if (!handCounts.has(timing.handNumber) && handCounts.size >= 8) {
+        const oldest = handCounts.keys().next().value!;
+        handCounts.delete(oldest);
+        state.records = state.records.filter((record) => record.timing?.handNumber !== oldest);
+      }
+      handCounts.set(timing.handNumber, count + 1);
+      state.records.push({
+        at: timing.at,
+        kind: 'presentation-timing',
+        handText: `#${timing.handNumber}`,
+        timing,
+      });
+    };
+    browserWindow.__spObserveDealPresentationTiming = true;
+    window.addEventListener('sp-deal-presentation-timing', timingListener);
+    state.stopTiming = () => {
+      window.removeEventListener('sp-deal-presentation-timing', timingListener);
+      delete browserWindow.__spObserveDealPresentationTiming;
+    };
     state.observer = new MutationObserver(sample);
     state.observer.observe(document.documentElement, {
       childList: true,

@@ -306,3 +306,51 @@ describe('onComplete is fired once and only once', () => {
     expect(onComplete).not.toHaveBeenCalled();
   });
 });
+
+describe('opt-in deal timing observes the original geometry transition', () => {
+  it('records one wait, readiness and committed cards for the same hand without rescheduling', () => {
+    const observed: { handNumber: number; phase: string; cardCount?: number }[] = [];
+    const listener = (event: Event) => observed.push((event as CustomEvent).detail);
+    (window as any).__spObserveDealPresentationTiming = true;
+    window.addEventListener('sp-deal-presentation-timing', listener);
+    const onComplete = vi.fn();
+    const view = render(
+      <DealAnimation
+        active
+        handNumber={88}
+        dealKey={88}
+        activeSeats={SIX}
+        dealerSeatIndex={0}
+        seatPositions={[]}
+        onComplete={onComplete}
+      />
+    );
+    expect(dealCards(view.container)).toHaveLength(0);
+    expect(observed.map((x) => x.phase)).toEqual(['run-effect', 'geometry-wait']);
+    view.rerender(
+      <DealAnimation
+        active
+        handNumber={88}
+        dealKey={88}
+        activeSeats={SIX}
+        dealerSeatIndex={0}
+        seatPositions={POS}
+        onComplete={onComplete}
+      />
+    );
+    expect(dealCards(view.container)).toHaveLength(12);
+    expect(observed.map((x) => x.phase)).toEqual([
+      'run-effect',
+      'geometry-wait',
+      'cards-ready',
+      'frame-committed',
+    ]);
+    expect(observed.every((x) => x.handNumber === 88)).toBe(true);
+    expect(observed.at(-1)?.cardCount).toBe(12);
+    act(() => vi.advanceTimersByTime(5000));
+    expect(onComplete).toHaveBeenCalledOnce();
+    view.unmount();
+    window.removeEventListener('sp-deal-presentation-timing', listener);
+    delete (window as any).__spObserveDealPresentationTiming;
+  });
+});

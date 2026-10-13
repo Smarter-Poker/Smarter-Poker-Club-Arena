@@ -1,3 +1,4 @@
+import { observeDealPresentationTiming } from '../../utils/dealPresentationTiming';
 /**
  * =================================================================================
  *  DEAL ANIMATION -- Card dealing visual + sound when a new hand starts
@@ -59,7 +60,7 @@
  * without a fresh element -- that is the "cards just appear" symptom.
  */
 
-import React, { useCallback, useEffect, useRef, useState, memo } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, memo } from 'react';
 import { soundService } from '../../services/SoundService';
 import { reportError } from '../../utils/errorReporter';
 import { getAnimationSpeed } from '../../utils/animationSpeed';
@@ -72,6 +73,8 @@ import './DealAnimation.css';
 export interface DealAnimationProps {
   /** Active when a new hand just started */
   active: boolean;
+  /** Observation identity only; never a deal trigger. */
+  handNumber?: number;
   /** Seat indices (0-based) of players being dealt to */
   activeSeats: number[];
   /**
@@ -121,6 +124,7 @@ interface FlyingCard {
 /** Bookkeeping for one deal. Lives in a ref so no re-render can disturb it. */
 interface DealRun {
   id: number;
+  handNumber: number;
   launched: boolean;
   completed: boolean;
   cancelled: boolean;
@@ -131,6 +135,7 @@ interface DealRun {
 /** What is actually on screen for the current run. */
 interface DealFrame {
   id: number;
+  handNumber: number;
   cards: FlyingCard[];
   flightMs: number;
 }
@@ -271,6 +276,7 @@ function buildDealCards(
 
 function DealAnimationComponent({
   active,
+  handNumber = 0,
   activeSeats,
   dealerSeatIndex,
   dealKey,
@@ -279,6 +285,9 @@ function DealAnimationComponent({
   onComplete,
   playSounds = true,
 }: DealAnimationProps) {
+  const handNumberRef = useRef(handNumber);
+  handNumberRef.current = handNumber;
+  const geometryWaitObservedRef = useRef(false);
   const [frame, setFrame] = useState<DealFrame | null>(null);
 
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -353,6 +362,15 @@ function DealAnimationComponent({
     );
 
     if (cards.length === 0) {
+      if (!geometryWaitObservedRef.current) {
+        geometryWaitObservedRef.current = true;
+        observeDealPresentationTiming({
+          handNumber: run.handNumber,
+          phase: 'geometry-wait',
+          activeSeatCount: p.activeSeats.length,
+          geometryCount: p.seatPositions.length,
+        });
+      }
       // Not ready. Do NOT latch -- retry until the roster and geometry land.
       if (Date.now() >= run.waitUntil) {
         // ANIMATION LAW TELEMETRY 2026-08-28: this is the ONE path where a
@@ -381,9 +399,16 @@ function DealAnimationComponent({
       return;
     }
 
+    observeDealPresentationTiming({
+      handNumber: run.handNumber,
+      phase: 'cards-ready',
+      activeSeatCount: p.activeSeats.length,
+      geometryCount: p.seatPositions.length,
+      cardCount: cards.length,
+    });
     run.launched = true;
     clearTimers(); // drop the wait-poll timers; the deal owns the queue now
-    setFrame({ id: run.id, cards, flightMs: flight });
+    setFrame({ id: run.id, handNumber: run.handNumber, cards, flightMs: flight });
 
     if (p.playSounds) {
       // SOUND AUDIT 2026-08-27: was one setTimeout per card calling
@@ -412,8 +437,15 @@ function DealAnimationComponent({
     if (runRef.current) runRef.current.cancelled = true;
     clearTimers();
     if (!active) return;
+    geometryWaitObservedRef.current = false;
+    observeDealPresentationTiming({
+      handNumber: handNumberRef.current,
+      phase: 'run-effect',
+      speed: getAnimationSpeed(),
+    });
     runRef.current = {
       id: ++runSeqRef.current,
+      handNumber: handNumberRef.current,
       launched: false,
       completed: false,
       cancelled: false,
@@ -444,6 +476,15 @@ function DealAnimationComponent({
     },
     []
   );
+
+  useLayoutEffect(() => {
+    if (frame)
+      observeDealPresentationTiming({
+        handNumber: frame.handNumber,
+        phase: 'frame-committed',
+        cardCount: frame.cards.length,
+      });
+  }, [frame]);
 
   if (!frame || frame.cards.length === 0) return null;
 

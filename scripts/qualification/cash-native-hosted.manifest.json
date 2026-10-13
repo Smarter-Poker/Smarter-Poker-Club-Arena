@@ -174,8 +174,8 @@
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 36585,
-      "sha256": "f69cf7c2955f8a2f792d0936b0478598e88438677c12088513ca4393a50754b2"
+      "bytes": 36641,
+      "sha256": "1efea12fa21d047ecaf19cbd56e23d65f47897f2af5e66ca89c7466552e4571d"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -3225,5 +3225,21 @@
         }
       }
     }
+  },
+  "rakeReportNativeRouting20261013": {
+    "scope": "Add rake report fixtures and their native installer regression to the existing Data Console classification; original cash qualification predicates and financial sources are unchanged.",
+    "inputs": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "before": {
+          "bytes": 36585,
+          "sha256": "f69cf7c2955f8a2f792d0936b0478598e88438677c12088513ca4393a50754b2"
+        },
+        "after": {
+          "bytes": 36641,
+          "sha256": "1efea12fa21d047ecaf19cbd56e23d65f47897f2af5e66ca89c7466552e4571d"
+        }
+      }
+    },
+    "verification": "Native rake report and actual report installation module passed. Cash source pin validation and protected provider qualification remain required; this pin update is not a new cash runtime certification."
   }
 }

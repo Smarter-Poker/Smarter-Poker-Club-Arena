@@ -119,7 +119,7 @@
   border-radius: 0 !important;
   color: #edf5fa !important;
   background-color: transparent !important;
-  background-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png') !important;
+  --rewards-control-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png');
   background-position: center !important;
   background-repeat: no-repeat !important;
   background-size: 100% 100% !important;
@@ -236,8 +236,7 @@
   border: 0;
   border-radius: 0;
   color: #cceeff;
-  background: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png') center / 100%
-    100% no-repeat;
+  --rewards-control-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png');
   font-family: var(--club-font-number, 'Roboto Condensed', 'Arial Narrow', sans-serif);
   font-size: 9px;
   font-weight: 800;
@@ -342,7 +341,7 @@
   border-radius: 0 !important;
   color: #f4f7fb !important;
   background-color: transparent !important;
-  background-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-primary.png') !important;
+  --rewards-control-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-primary.png');
   background-position: center !important;
   background-repeat: no-repeat !important;
   background-size: 100% 100% !important;
@@ -438,4 +437,42 @@
     width: 78px;
     font-size: 8px;
   }
+}
+
+/* The approved plate remains unchanged. Its opaque exterior is clipped on
+   a paint-only layer; labels, focus outlines and native hit areas stay whole.
+   Coordinates follow the outer chrome of the 348 x 114 source raster. */
+.diamond-modal .diamond-modal__close,
+.diamond-modal .diamond-package__btn,
+.diamond-package__badge {
+  position: relative;
+  isolation: isolate;
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+.diamond-modal .diamond-modal__close::before,
+.diamond-modal .diamond-package__btn::before,
+.diamond-package__badge::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  pointer-events: none;
+  background: var(--rewards-control-image) center / 100% 100% no-repeat;
+  clip-path: polygon(
+    7.2% 4.4%,
+    92.8% 4.4%,
+    99.5% 23.7%,
+    99.5% 83.3%,
+    93.1% 99.1%,
+    6.9% 99.1%,
+    0.5% 83.3%,
+    0.5% 24.6%
+  );
+}
+
+/* Retain the established anchored placement; only the paint clips. */
+.diamond-package__badge {
+  position: absolute;
 }

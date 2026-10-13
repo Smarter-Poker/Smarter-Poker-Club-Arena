@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getAuthUser } from '../../../lib/supabase';
+import { useUserStore } from '../../../stores/useUserStore';
 import {
   dailyChallengeService,
   type Tier,
@@ -242,6 +243,10 @@ export function useDailyMissionDashboard({
         if (!authUser) {
           setIsLoading(false);
           return;
+        }
+        const currentAccountId = useUserStore.getState().user?.id;
+        if (currentAccountId && currentAccountId !== authUser.id) {
+          throw new Error('The Player Account Changed During The Secure Session Check');
         }
         if (userIdRef.current !== authUser.id) {
           // A different account has nothing rendered yet. Retire every cursor

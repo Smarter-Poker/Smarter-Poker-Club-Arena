@@ -210,12 +210,12 @@
       "sha256": "4bdbcf3fb80e7111c5b951bee5d83c31695a3cf19916c72c041ca99ba9dfc268"
     },
     "scripts/qualification/retained18-correction/native-typed209.py": {
-      "bytes": 5100,
-      "sha256": "a97898cbee91fa7e9f20c89d25efd46a9819292e98ff3f1b88310fdf48742b41"
+      "bytes": 7975,
+      "sha256": "a3f619bde8a6b61248a5c8d7827b35256f5ca985e52845bb33dddc807f5f9ea9"
     },
     "scripts/qualification/retained18-correction/typed209-source-binding.json": {
-      "bytes": 466,
-      "sha256": "2566c61b6d6ac723b9bfba486c438e7d88c4d9212537a853299678402ad7e4a4"
+      "bytes": 683,
+      "sha256": "cf98b42845118632a62b926a98bd696b8a8c98564da5d5b62ff4aace24f6cc8b"
     },
     "scripts/qualification/retained18-correction/original_tournament30_source_correction_proof.sql": {
       "bytes": 16742,
@@ -232,6 +232,10 @@
     "supabase/migrations/20261013163547_scoped_launch_retained_originals_use_the_installed_typed_row.sql": {
       "bytes": 116882,
       "sha256": "caf700a4ad677baf44ab4b9a932887eadd92082411853a72971b7a8599f5c46a"
+    },
+    "supabase/migrations/20261013180855_retained_launch_originals_preserve_their_exact_failed_stack_.sql": {
+      "bytes": 142081,
+      "sha256": "2d96ace37e810bd058943b01b4b57d1376d5335c8382181d75506c786b878e33"
     }
   }
 }

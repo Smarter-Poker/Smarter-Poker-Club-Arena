@@ -27,6 +27,10 @@ import {
   endedBeforeNextHand,
 } from './support/preNavigationBoard';
 import { prepareCashLobbyActions } from './support/cashLobbyOverlays';
+import {
+  observeBeforeSelectionDeadline,
+  SelectionObservationDeadline,
+} from './support/selectionDeadline';
 import { remainingObservationMs } from './support/observationDeadline';
 import { assertInitialTableOwnership, classifyUnsubscribes } from './support/initialTableOwnership';
 import {
@@ -567,6 +571,7 @@ async function selectProgressingTournamentTable(
     missingTableIds: string[];
     rejectionCategories: { engine_health_absent?: number };
   } | null = null;
+  let precedingHealthReadFailure: unknown = null;
   const readCandidateHealth = async (
     deadline = Math.min(options.deadline, Date.now() + pollBudgetMs())
   ): Promise<{
@@ -576,7 +581,18 @@ async function selectProgressingTournamentTable(
     const readDeadline = Math.min(options.deadline, deadline);
     const requestTimeoutMs = () =>
       Math.max(1, Math.min(15_000, Math.floor(remainingObservationMs(readDeadline))));
-    const scoped = await readEngineHealth(request, { gameFormat }, requestTimeoutMs());
+    let scoped: EngineHealth;
+    try {
+      scoped = await observeBeforeSelectionDeadline(readDeadline, () =>
+        readEngineHealth(request, { gameFormat }, requestTimeoutMs())
+      );
+      precedingHealthReadFailure = null;
+    } catch (error) {
+      if (error instanceof SelectionObservationDeadline && precedingHealthReadFailure !== null)
+        throw precedingHealthReadFailure;
+      if (!(error instanceof SelectionObservationDeadline)) precedingHealthReadFailure = error;
+      throw error;
+    }
     if (!options.hudReader) return { scoped, candidates: scoped };
     const discovered = await options.hudReader.discoverSelectableTableIds(
       [CLUB_ID, UNION_ID],
@@ -682,7 +698,13 @@ async function selectProgressingTournamentTable(
   } catch {
     // An RLS/PostgREST, exact-health, or clock-read failure is a production
     // error, not evidence that no certifiable subject exists.
-    operationalPollFailure.rethrowIfPresent();
+    let observationDeadline: SelectionObservationDeadline | null = null;
+    try {
+      operationalPollFailure.rethrowIfPresent();
+    } catch (error) {
+      if (!(error instanceof SelectionObservationDeadline)) throw error;
+      observationDeadline = error;
+    }
     /* WAS PRODUCTION BROKEN, OR WAS THERE NOTHING TO WATCH? (2026-09-30)
        Both used to arrive here as the same red. They are not the same thing,
        and the scoped health that was just read says which one it is. */
@@ -705,6 +727,7 @@ async function selectProgressingTournamentTable(
       lastCandidateHealth: before,
       hudCandidateHealth: lastHudCandidateHealth,
       hudQualification: options.hudReader?.refusalEvidence() ?? null,
+      observationDeadline: observationDeadline?.message ?? null,
     };
     await testInfo.attach(`${gameFormat}-baseline-readiness-refusal`, {
       body: Buffer.from(JSON.stringify(evidence, null, 2)),
@@ -723,6 +746,8 @@ async function selectProgressingTournamentTable(
           `dealing: ${named}`
       );
     }
+    if (observationDeadline)
+      throw new AbsentCertifiableSubject(observationDeadline.message, evidence);
     throw new AbsentCertifiableSubject(
       `production was running no ${gameFormat.toUpperCase()} table this case could observe: ` +
         `${classification.inScope} in fixture scope, ${classification.runningShape} with ` +

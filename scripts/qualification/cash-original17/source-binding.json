@@ -2,8 +2,8 @@
   "scope": "Exact cash17 source/installer public-safe enforcement; private actual17 connected financial evidence external only, no production installation or ownership inferred.",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 219700,
-      "sha256": "8716d2d184b824c542069f47d4f542bbbdb71f3246ed2b4b3f9ba07885b62002"
+      "bytes": 220050,
+      "sha256": "d03a3e0c5ceb4f16a1ae4f9de85b44a90a50e9666a9ab306af539ccd8c7a7a9d"
     },
     "scripts/ci/satellite_qualifier_fixture.py": {
       "bytes": 18466,
@@ -288,6 +288,17 @@
     "supabase/migrations/20261013035113_a_cash_original_hand_corrects_its_rolled_back_allocator.sql": {
       "bytes": 45098,
       "sha256": "0c3c357e106b6daf5461587e707e63d47260837870a7fb423d2f4fdd00b339bd"
+    }
+  },
+  "spentDssRetirementEnforcement20261013": {
+    "reason": "Add finite native spent DSS retirement step in existing Accounting3; original cash17 source, oracles, assertions and enforcement step unchanged. Current workflow metadata only; no financial certificate restamp.",
+    "previous": {
+      "bytes": 219700,
+      "sha256": "8716d2d184b824c542069f47d4f542bbbdb71f3246ed2b4b3f9ba07885b62002"
+    },
+    "current": {
+      "bytes": 220050,
+      "sha256": "d03a3e0c5ceb4f16a1ae4f9de85b44a90a50e9666a9ab306af539ccd8c7a7a9d"
     }
   }
 }

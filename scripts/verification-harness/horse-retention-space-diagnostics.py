@@ -4,7 +4,7 @@ import argparse, hashlib, json, os, shutil, subprocess, tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-MIGRATION = ROOT / 'supabase/migrations/20261013161705_horse_retention_exact_space_diagnostics.sql'
+MIGRATION = ROOT / 'supabase/migrations/20261013163549_horse_retention_exact_space_diagnostics.sql'
 
 def main():
     p=argparse.ArgumentParser(); p.add_argument('--evidence',type=Path,required=True); p.add_argument('--pg-bin',type=Path,required=True); p.add_argument('--scratch-root',type=Path); a=p.parse_args()

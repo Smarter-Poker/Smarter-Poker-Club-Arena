@@ -69,10 +69,12 @@ import {
 } from './contract-index-recovery.mjs';
 
 import { batchRequest, applyFinalTablePages } from './final-table-cleanup-batches.mjs';
+import { withSettlementLane } from './settlement-lane.mjs';
 
 const DIR = 'supabase/migrations';
 const args = process.argv.slice(2);
 const DRY_RUN = args.includes('--dry-run');
+const SETTLEMENT_LANE = args.includes('--settlement-lane');
 const argValue = (n) => {
   const i = args.indexOf(n);
   return i === -1 ? null : args[i + 1] || null;
@@ -169,6 +171,16 @@ if (!/^\s*BEGIN\s*;/im.test(sql) || !/COMMIT\s*;\s*$/i.test(sql.trim())) {
 const shape = splitConcurrentPreamble(sql);
 if (!shape.ok) refused(`${file}: ${shape.reason}`);
 const preamble = shape.indexes;
+if (
+  SETTLEMENT_LANE &&
+  (file !== '20261012181905_scoped_club_launch_reset_and_guarded_recovery.sql' ||
+    recovery ||
+    batches ||
+    preamble.length)
+)
+  refused(
+    'settlement lane admission is limited to the exact scoped reset without other operations'
+  );
 // Leave room for the slowest ledger build to finish before :50: a concurrent
 // build still running when the break window opens is refused at its end and
 // leaves an INVALID index behind.
@@ -474,7 +486,8 @@ if (atomicSQL === transactionBody)
 const started = Date.now();
 try {
   // With no preamble this is the whole file, exactly as before.
-  await client.query(atomicSQL);
+  if (SETTLEMENT_LANE) await withSettlementLane(client, () => client.query(atomicSQL));
+  else await client.query(atomicSQL);
 } catch (e) {
   await client.end().catch(() => {});
   const definiteRefusal =

@@ -1,0 +1,5 @@
+# Diamond jackpot retains an allocation's unpaid whole share
+
+Seventeen newly retained cash hands failed because a one-Diamond drop reached main residue 0.5 and backup residue 0.75. Both banks then floored to one, while the original main-first clamp left zero budget for backup. Storing the unallocated whole share in the fractional field violated its existing `[0,1)` constraint and rolled back the hand.
+
+Keep the original budget, ledger and fractional checks, and store a clamped whole share separately for the next original allocation. Preserve cumulative entitlement rather than discarding it. Refuse pool retirement while whole carry remains; preserve normal payouts/reseeding and the original zero-owed withdrawal. The change neither rewrites prior money nor consumes retained submissions. Native PostgreSQL qualification includes actual accepted-hand failure before repair and conserved sequences afterward; isolated fixtures and source checks are distinct from installation, original-hand recovery and live verification.

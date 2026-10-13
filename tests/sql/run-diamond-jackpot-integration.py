@@ -233,6 +233,45 @@ def main():
         load((SQL / 'diamond-none-tournament-after.sql').read_text(), 'tournament no-hit scope controls')
 
         load("DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM public.ca_guard_defs d WHERE d.proname='fn_poker_diamond_settle_cash_hand' AND d.declared_ref='migration 20261012191143_diamond_cash_jackpots_settle_with_the_accepted_hand' AND d.def_hash=(SELECT md5(string_agg(pg_get_functiondef(p.oid),'|' ORDER BY p.oid)) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname=d.proname)) THEN RAISE EXCEPTION 'settlement guard declaration disagrees'; END IF; RAISE NOTICE 'PASS: settlement guard declaration records the exact new authority'; END $$;", 'same-transaction guard baseline')
+        load((SQL / 'diamond-whole-carry-before.sql').read_text(), 'real one-unit carry fail-before')
+        carry_fix = ROOT / 'supabase/migrations/20261013034406_a_diamond_jackpot_carries_its_whole_unpaid_allocation.sql'
+        # Real predecessor bytes are recorded as native fixture metadata, not a production installation.
+        predecessor_rows = []
+        for version, path in (('20261012191143', MIGRATION), ('20261013021756', scope_fix)):
+            predecessor_rows.append("INSERT INTO supabase_migrations.schema_migrations VALUES('%s',ARRAY['%s']);" % (version, path.read_text().replace("'", "''")))
+        load("CREATE SCHEMA supabase_migrations; CREATE TABLE supabase_migrations.schema_migrations(version text PRIMARY KEY,statements text[]);\n"+'\n'.join(predecessor_rows), 'exact original predecessor fixture history')
+        for mutation, expected in (
+            ("UPDATE supabase_migrations.schema_migrations SET statements=ARRAY['wrong original source'] WHERE version='20261013021756';", 'diamond_whole_carry_predecessor_history_changed'),
+            ("ALTER TABLE public.poker_diamond_jackpot_pools DISABLE ROW LEVEL SECURITY;", 'diamond_whole_carry_table_authority_changed'),
+            ("GRANT EXECUTE ON FUNCTION public.fn_poker_diamond_jackpot_allocate(uuid,bigint) TO authenticated;", 'diamond_whole_carry_preimage_changed'),
+            ("ALTER FUNCTION public.fn_poker_diamond_jackpot_allocate(uuid,bigint) SECURITY INVOKER;", 'diamond_whole_carry_preimage_changed'),
+        ):
+            bad_input = temp / 'carry-refusal.sql'
+            bad_input.write_text('BEGIN;\n'+mutation+'\n'+carry_fix.read_text())
+            refused = subprocess.run(psql + ['-d', DB, '-f', bad_input], env=env, text=True, capture_output=True, timeout=180)
+            if refused.returncode == 0 or expected not in refused.stdout+refused.stderr:
+                raise RuntimeError('carry installation did not refuse ' + expected)
+            print('PASS: native installation rejects '+expected+' and rolls back setup', flush=True)
+        load("INSERT INTO public.engine_maintenance_break(id,phase,announced_at,break_started_at,break_ends_at,enforce_freeze,ownership_token) VALUES(true,'counting_down',now()-interval '2 minutes',now()-interval '1 minute',now()+interval '3 minutes',true,gen_random_uuid());", 'carry freeze refusal input')
+        frozen = subprocess.run(psql + ['-d', DB, '-f', carry_fix], env=env, text=True, capture_output=True, timeout=180)
+        if frozen.returncode == 0 or 'diamond_whole_carry_platform_frozen' not in frozen.stdout+frozen.stderr:
+            raise RuntimeError('carry migration did not refuse real freeze')
+        load("DELETE FROM public.engine_maintenance_break;", 'remove owned carry freeze input')
+        print('PASS: whole carry installation refuses actual freeze', flush=True)
+        load(carry_fix.read_text(), 'whole owed carry correction verbatim')
+        print('carry exact postimages '+run(psql + ['-d', DB, '-At', '-c', "SELECT jsonb_agg(jsonb_build_object('signature',oid::regprocedure::text,'full_md5',md5(pg_get_functiondef(oid)),'body_md5',md5(prosrc),'acl',proacl::text,'owner',pg_get_userbyid(proowner),'config',proconfig,'security_definer',prosecdef)) FROM pg_proc WHERE oid IN ('public.fn_poker_diamond_jackpot_allocate(uuid,bigint)'::regprocedure,'public.fn_poker_diamond_jackpot_withdraw(uuid,uuid)'::regprocedure)"]).strip(), flush=True)
+        load((SQL / 'diamond-whole-carry-after.sql').read_text(), 'real one-unit accepted-hand carry controls')
+        replay_carry = subprocess.run(psql + ['-d', DB, '-f', carry_fix], env=env, text=True, capture_output=True, timeout=180)
+        if replay_carry.returncode == 0 or 'diamond_whole_carry_preimage_changed' not in replay_carry.stdout+replay_carry.stderr:
+            raise RuntimeError('carry installation replay did not refuse')
+        print('PASS: exact whole carry installation replay refuses before mutation', flush=True)
+        load((SQL / 'diamond-whole-carry-kernel.sql').read_text(), 'real pivot and unit allocator kernel controls')
+        load("UPDATE tables SET big_blind=20,small_blind=10 WHERE id='30000000-0000-0000-0000-000000000002'; INSERT INTO ca_diamond_economics(name,scope,value_text,units,approved_quote,approved_on,basis,recorded_by) VALUES('bbj_enabled','all','yes','boolean','private concurrent qualification',CURRENT_DATE,'private fixture','fixture'); CREATE TABLE fixture_concurrent_carry_request AS SELECT fixture_carry_request(1250001) q;", 'one exact original concurrent hand request')
+        race_spec = importlib.util.spec_from_file_location('diamond_carry_concurrency', SQL / 'diamond-whole-carry-concurrency.py')
+        race = importlib.util.module_from_spec(race_spec)
+        race_spec.loader.exec_module(race)
+        race.run(psql, DB, env, temp, lambda query: run(psql + ['-At', '-d', DB, '-c', "SET statement_timeout='3s'; " + query]))
+        load("SELECT fixture_assert((SELECT count(*)=1 FROM hand_atomic_commits WHERE hand_number=1250001) AND (SELECT sum(amount)=1 FROM poker_diamond_jackpot_ledger WHERE hand_number=1250001 AND kind='drop') AND (SELECT main_residue=0.5 AND backup_residue=0.25 AND main_whole_carry=0 AND backup_whole_carry=0 FROM poker_diamond_jackpot_pools WHERE status='active') AND (SELECT difference=0 FROM fn_ca_diamond_register_vs_supply()),'two concurrent identical accepted requests retain one drop and one carry transition'); UPDATE tables SET big_blind=10000,small_blind=5000 WHERE id='30000000-0000-0000-0000-000000000002'; INSERT INTO ca_diamond_economics(name,scope,value_text,units,approved_quote,approved_on,basis,recorded_by) VALUES('bbj_enabled','all','no','boolean','restore native baseline',CURRENT_DATE,'private fixture','fixture');", 'concurrent durable receipt and original baseline restoration')
         load(acceptance.read_text(), 'connected accepted-hand regression cases')
         rake_config = json.loads((SQL / 'diamond-jackpot-integration-cash-rake-config.json').read_text())
         config_json = json.dumps(rake_config['rows']).replace("'", "''")

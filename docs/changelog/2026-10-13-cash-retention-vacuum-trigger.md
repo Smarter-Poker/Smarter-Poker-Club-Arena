@@ -8,4 +8,4 @@ The single transaction uses PostgreSQL17's storage-option SHARE UPDATE EXCLUSIVE
 
 Focused native PostgreSQL17 qualification uses the actual original cash table schema and real out-of-line TOAST payload under a non-superuser postgres owner. It verifies the actual live-proof expression before/after, preservation, rollback, role denial, real competing maintenance lock refusal, ordinary writer compatibility, replay, both settings' drift and target shape refusal. The existing mandatory retention native CLI invokes this qualifier; no new workflow or relaxed source pin is introduced. Unchanged financial chains are not rerun locally.
 
-Installation, protected delivery, actual vacuum completion and meaningful recovered-byte evidence remain root-owned pending separately observed results.
+Installed once as `20261013170504_cash_retention_vacuum_trigger.sql` at 2026-10-13 17:05:04 UTC. Root readback verified the exact parent/TOAST settings and original owner/ACL/RLS; existing autovacuum started scanning the parent. Protected delivery, actual vacuum completion and meaningful recovered-byte evidence remain pending separately observed results.

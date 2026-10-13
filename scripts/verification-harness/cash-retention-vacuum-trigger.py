@@ -5,7 +5,7 @@ from pathlib import Path
 sys.dont_write_bytecode=True
 ROOT=Path(__file__).resolve().parents[2];sys.path.insert(0,str(ROOT/'scripts/ci'))
 from satellite_qualifier_fixture import module,sha
-MIGRATION=Path('supabase/migrations/20261013165007_cash_retention_vacuum_trigger.sql')
+MIGRATION=Path('supabase/migrations/20261013170504_cash_retention_vacuum_trigger.sql')
 ORIGINAL=Path('supabase/migrations/20260917230925_cash_funding_retains_original_participant_custody.sql')
 def qualify(e):
  checks=[];db=e.database()

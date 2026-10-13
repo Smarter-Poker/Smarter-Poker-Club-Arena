@@ -70,4 +70,17 @@ describe('Rake agent native reporting qualification', () => {
     expect(sql).not.toMatch(/(?:INSERT INTO|UPDATE|DELETE FROM) public\.agent_commissions/i);
     expect(classifyChangedPaths([file])).toMatchObject({ server: true, tests: true });
   });
+  it('reads qualified covered days and opens raw index scans only for their partial edges', () => {
+    const file = 'supabase/migrations/20261013181205_rake_report_bounds_paid_query_plan.sql';
+    const sql = read(file);
+    expect(read('scripts/dev/test-rake-agent-report-postgres.sh')).toContain(file);
+    expect(sql).toContain('covered_days AS MATERIALIZED');
+    expect(sql).toContain('qualified_commission_days q');
+    expect(sql).toContain('WHERE g.full');
+    expect(sql).toContain('AND NOT g.full OFFSET 0');
+    expect(sql).toContain('NOT EXISTS(SELECT 1 FROM covered_unions g WHERE g.user_id=a.user_id');
+    expect(sql).toContain('6487c0fa7553a063f7b20fa759950c35');
+    expect(sql).toContain('RAKE_COVERED_REPORT_PREIMAGE_CHANGED');
+    expect(classifyChangedPaths([file])).toMatchObject({ server: true, tests: true });
+  });
 });

@@ -1,3 +1,8 @@
+import { registerDiamondJackpotReadoutCases } from './helpers/diamond-jackpot-readout-cases';
+
+// The live Diamond plaque is part of this existing, required lobby chrome suite.
+registerDiamondJackpotReadoutCases();
+
 /**
  * THE THREE MOBILE LOBBY DEFECTS DAN PHOTOGRAPHED ON 2026-09-09, MEASURED.
  *

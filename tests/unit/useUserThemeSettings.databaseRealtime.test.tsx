@@ -14,6 +14,12 @@ const mocks = vi.hoisted(() => ({
   realtimeStatus: undefined as undefined | ((status: string, error?: Error) => void),
 }));
 
+// This PostgREST fixture starts already admitted; the real SDK cold transport is
+// exercised by useUserThemeSettings.admission.test.tsx.
+vi.mock('../../src/lib/realtimeAdmission', () => ({
+  realtimeAdmission: { ready: async () => {} },
+}));
+
 vi.mock('../../src/core/MasterBus', async () => await vi.importActual('../../src/core/MasterBus'));
 vi.mock('../../src/lib/supabase', () => {
   const channel = {

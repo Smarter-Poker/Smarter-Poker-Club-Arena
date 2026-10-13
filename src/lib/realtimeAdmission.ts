@@ -13,6 +13,7 @@ export class RealtimeAdmission {
   readonly transport: typeof WebSocket;
   private socket: WebSocket | null = null;
   private observers = new Set<(error?: Error) => void>();
+  private readinessObservers = new Set<() => void>();
 
   constructor(NativeSocket?: typeof WebSocket) {
     // The supported custom transport returns the native socket. Event listeners
@@ -22,7 +23,11 @@ export class RealtimeAdmission {
       const socket = new Socket(url, protocols);
       this.socket = socket;
       socket.addEventListener('open', () => {
-        if (this.socket === socket) this.notify();
+        if (this.socket !== socket) return;
+        this.notify();
+        // Native open listeners run before the SDK's onopen property. Resume
+        // owners after that dispatch, without replacing SDK lifecycle handlers.
+        this.notifyReadinessChange();
       });
       const failed = () => {
         if (this.socket === socket)
@@ -35,6 +40,30 @@ export class RealtimeAdmission {
     this.transport = function (url: string | URL, protocols?: string | string[]) {
       return createSocket(url, protocols);
     } as unknown as typeof WebSocket;
+  }
+
+  /** Observe actual transport open or a late existing authentication result.
+   * This does not reconnect, authenticate, join, or change any deadline.
+   */
+  onReadinessChange(listener: () => void, signal: AbortSignal): () => void {
+    let active = true;
+    const observe = () => {
+      if (active && !signal.aborted) listener();
+    };
+    const remove = () => {
+      active = false;
+      this.readinessObservers.delete(observe);
+      signal.removeEventListener('abort', remove);
+    };
+    if (!signal.aborted) {
+      this.readinessObservers.add(observe);
+      signal.addEventListener('abort', remove, { once: true });
+    }
+    return remove;
+  }
+
+  private notifyReadinessChange(): void {
+    for (const observer of [...this.readinessObservers]) queueMicrotask(observer);
   }
 
   private notify(error?: Error): void {
@@ -75,6 +104,10 @@ export class RealtimeAdmission {
         void client.setAuth().then(
           () => {
             authenticated = true;
+            // The finite waiter may have already reported a timeout, while its
+            // original auth operation still legitimately completes later.
+            // Preserve that event for active owners without starting a refresh.
+            if (finished && !signal.aborted && client.isConnected()) this.notifyReadinessChange();
             observe();
           },
           (error: unknown) =>

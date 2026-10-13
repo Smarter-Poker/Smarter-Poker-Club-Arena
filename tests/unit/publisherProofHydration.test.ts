@@ -175,3 +175,52 @@ it('reads one physical receipt ZIP without extracting archive paths and refuses 
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+it('fills only missing exact proofs in partial metadata and preserves unrelated original steps', async () => {
+  const f = fixture();
+  const setup = { name: 'Set up job', status: 'completed', conclusion: 'success' };
+  f.job.steps = [setup, f.receipt.steps[0]] as never[];
+  const result = await f.invoke();
+  expect(f.download).toHaveBeenCalledTimes(1);
+  expect(result.jobs[0].steps).toEqual([setup, f.receipt.steps[0], ...f.receipt.steps.slice(1)]);
+  expect(f.job.steps).toHaveLength(2);
+});
+it.each(['duplicate', 'conflict', 'malformed'])(
+  'refuses %s partial proof metadata rather than concealing it',
+  async (kind) => {
+    const f = fixture();
+    f.job.steps = (
+      kind === 'duplicate'
+        ? [f.receipt.steps[0], f.receipt.steps[0]]
+        : kind === 'conflict'
+          ? [{ ...f.receipt.steps[0], conclusion: 'failure' }]
+          : [null]
+    ) as never[];
+    await expect(f.invoke()).rejects.toThrow();
+  }
+);
+it('uses reordered complete original metadata without a receipt download', async () => {
+  const f = fixture();
+  f.job.steps = [...f.receipt.steps].reverse() as never[];
+  const result = await f.invoke();
+  expect(result.jobs[0]).toBe(f.job);
+  expect(f.request).not.toHaveBeenCalled();
+  expect(f.download).not.toHaveBeenCalled();
+});
+it.each(['complete-duplicate', 'status', 'nonarray', 'receipt-contradiction'])(
+  'refuses %s original metadata without replacing present evidence',
+  async (kind) => {
+    const f = fixture();
+    f.job.steps = (
+      kind === 'complete-duplicate'
+        ? [...f.receipt.steps, f.receipt.steps[0]]
+        : kind === 'status'
+          ? [{ ...f.receipt.steps[0], status: 'in_progress' }]
+          : kind === 'nonarray'
+            ? null
+            : [{ ...f.receipt.steps[0], conclusion: 'skipped' }]
+    ) as never[];
+    await expect(f.invoke()).rejects.toThrow();
+    if (kind !== 'receipt-contradiction') expect(f.download).not.toHaveBeenCalled();
+  }
+);

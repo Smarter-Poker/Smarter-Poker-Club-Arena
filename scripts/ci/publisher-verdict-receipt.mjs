@@ -99,6 +99,34 @@ export function validateReceipt(receipt) {
   return receipt;
 }
 
+/** Inspect original metadata without replacing any present proof or accepting corruption. */
+export function missingPublisherProofs(jobKey, steps) {
+  const names = PROOFS[jobKey];
+  if (!names || !Array.isArray(steps)) fail('invalid present step metadata');
+  const seen = new Set();
+  for (const step of steps) {
+    if (
+      !step ||
+      typeof step !== 'object' ||
+      Array.isArray(step) ||
+      typeof step.name !== 'string' ||
+      !step.name ||
+      typeof step.status !== 'string' ||
+      !(step.conclusion === null || typeof step.conclusion === 'string')
+    )
+      fail('invalid present step metadata');
+    if (!names.includes(step.name)) continue;
+    if (
+      seen.has(step.name) ||
+      step.status !== 'completed' ||
+      !['success', 'skipped'].includes(step.conclusion)
+    )
+      fail('conflicting present step metadata');
+    seen.add(step.name);
+  }
+  return names.filter((name) => !seen.has(name));
+}
+
 /** Original outcomes and conclusions must agree; actual verification supplies the published SHA. */
 export function createReceipt(env) {
   const jobKey = env.GITHUB_JOB;
@@ -179,21 +207,21 @@ export function mergePublisherReceipt(
     artifact.workflow_run?.head_branch !== 'main'
   )
     fail('foreign or expired artifact');
-  // Present metadata is authoritative. Any missing, duplicate or conflicting named
-  // proof in a nonempty response refuses fallback rather than hiding corruption.
-  if (job.steps.length) {
-    for (const proof of receipt.steps) {
-      const matches = job.steps.filter((s) => s.name === proof.name);
-      if (
-        matches.length !== 1 ||
-        matches[0].status !== proof.status ||
-        matches[0].conclusion !== proof.conclusion
-      )
-        fail('conflicting present step metadata');
-    }
-    return job;
+  // Present original proofs remain authoritative; only absent names may be filled.
+  const missing = missingPublisherProofs(job.name, job.steps);
+  for (const proof of receipt.steps) {
+    const present = job.steps.find((step) => step.name === proof.name);
+    if (present && (present.status !== proof.status || present.conclusion !== proof.conclusion))
+      fail('conflicting present step metadata');
   }
-  return { ...job, steps: receipt.steps.map((step) => ({ ...step })) };
+  if (!missing.length) return job;
+  return {
+    ...job,
+    steps: [
+      ...job.steps,
+      ...receipt.steps.filter((step) => missing.includes(step.name)).map((step) => ({ ...step })),
+    ],
+  };
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   if (process.argv[2] !== 'write' || !process.argv[3]) fail('unsupported command');

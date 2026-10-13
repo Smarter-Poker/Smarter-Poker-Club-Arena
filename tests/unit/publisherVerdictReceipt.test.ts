@@ -277,17 +277,15 @@ describe('original publisher verdict receipt', () => {
       expect(() => mergePublisherReceipt(createReceipt(env()), t)).toThrow();
     }
   );
-  it.each(['partial', 'duplicate', 'conflicting'])(
+  it.each(['duplicate', 'conflicting'])(
     'refuses %s nonempty proof instead of filling it',
     (kind) => {
       const r = createReceipt(env());
       const t = trusted();
       t.job.steps =
-        kind === 'partial'
-          ? [r.steps[0]]
-          : kind === 'duplicate'
-            ? [...r.steps, r.steps[0]]
-            : r.steps.map((s: any, i: number) => (i ? s : { ...s, conclusion: 'failure' }));
+        kind === 'duplicate'
+          ? [...r.steps, r.steps[0]]
+          : r.steps.map((s: any, i: number) => (i ? s : { ...s, conclusion: 'failure' }));
       expect(() => mergePublisherReceipt(r, t)).toThrow();
     }
   );

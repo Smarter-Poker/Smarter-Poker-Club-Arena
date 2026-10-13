@@ -1,0 +1,7 @@
+# Install the exact repair when its trigger blocks the original thaw
+
+The launch reset installation exposed a typed trigger reading `NEW.metadata` from table rows that have no such column. The normal v3 maintenance thaw then refused those updates, leaving its expired freeze active. The protected 33012 correction fixes that predicate, but the original installer also refuses every active maintenance window, so the correction could not reach that same database.
+
+The existing installer now accepts an explicit `--maintenance-thaw-repair` for that exact filename and SHA only. It requires the original expired, coherent, ownership-bound freeze and PostgreSQL authority, retains the fixed UTC window refusal, and rechecks admission under the existing shared settlement lane inside its original atomic transaction. The original DDL trigger records its reason; absent auditing aborts both schema and history. The freeze, deadlines and original thaw authority are untouched. Normal installation, other operations and source bytes retain their existing checks.
+
+The existing required native installer qualification executes the actual original guard and typed authorities, proving before-send refusal, exact-source installation, recorded auditing, unchanged freeze, exact history, replay safety and invalid source, authority, clock, operation and audit refusals. No balance reset or production recovery is claimed by those isolated results.

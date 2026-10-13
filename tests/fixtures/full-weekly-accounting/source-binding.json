@@ -527,7 +527,7 @@
     "tests/fixtures/earlybird-fee-custody/after.sql": "5c86539a1f6e4904d61c4f3c2ee79b98fbc29b976adbc89fc38f8a4be8c97e0b",
     "scripts/dev/qualify-earlybird-fee-custody.py": "fea2adbadd175341680d1988589be233c2a67a7a400743a2ccfaafdf9e6d0d62",
     "supabase/migrations/20260919025445_early_bird_original_fee_custody_after_player_finality.sql": "3b3fa10d81077d09fc997bb0549ee7dd73b12726406f92da17105d002d021ab8",
-    "tests/fixtures/earlybird-fee-custody/source-binding.json": "8290bdf87d7d808d0fc8fd0a629d63bd63d77765e358fb4246bb9a73579f70d4",
+    "tests/fixtures/earlybird-fee-custody/source-binding.json": "e934e7177890d915154e97b692b2d681ee5d35d7c98c7526f42e969bb35ab780",
     "tests/fixtures/earlybird-fee-custody/paid-originals.json": "7b0137cce446c509e1b0cbd1e9361547fb700e409fceb373bb6c21909170faf0",
     "tests/fixtures/earlybird-fee-custody/credit-originals.json": "76b7a6152c538bd051754e0a17106a14e86458968132bea26f03c339ad77b439",
     "tests/fixtures/earlybird-fee-custody/README.md": "ae19f37a0179956d0d26c64f626fa401c10b4319f0d7d8453f8993d811e98536",
@@ -4811,6 +4811,15 @@
       "tests/fixtures/sep8-spin-custody/source-binding.json": {
         "before": "4f5d00debbf5ecc4d48edfcd81e286b09a08d5ba2c2b33a0d347df2e3f0730ec",
         "after": "4b46500e830e6f3724b6845b2d874ee2b314be04b8b2e3d988b556f75a61a506"
+      }
+    }
+  },
+  "scopedLaunchThawInstallerFixture20261013": {
+    "reason": "Only the exact original maintenance fixture formatting exclusions and their dependent active catalog seal changed; preserve every historical audit and financial qualification state.",
+    "changes": {
+      "tests/fixtures/earlybird-fee-custody/source-binding.json": {
+        "previous_sha256": "8290bdf87d7d808d0fc8fd0a629d63bd63d77765e358fb4246bb9a73579f70d4",
+        "current_sha256": "e934e7177890d915154e97b692b2d681ee5d35d7c98c7526f42e969bb35ab780"
       }
     }
   }

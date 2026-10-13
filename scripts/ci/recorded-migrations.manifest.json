@@ -877,7 +877,7 @@
         "sha256": "17ea8934302b09312d3b96805a888a045f663dac497114ed8a82ab3bd9e3b462",
         "liveReader": "scripts/ci/check-recorded-migrations-evidence.mjs"
       },
-      "liveVerdict": "PREPARED ONLY: publication held until exact retirement installed/read back. Historical sweep excludes horses and impersonates fixed owner; those observed properties are preserved as history, never approved by this recording. Existing horse financial law is unchanged and its original scanner returns zero findings for these bytes. Before retirement postgres/service_role EXECUTE remains; anon/authenticated false; exact approved registry rows. Mandatory reader refuses missing/changed retirement history or any surviving operation/schedule. No replay, payment or generic waiver."
+      "liveVerdict": "Retirement owning run38406713940 on protected88c8aa9d97ce6f88529a696b800142ce30335e4b committed2026-10-13T13:39:56Z. Independent2026-10-13T13:40:39.853168Z readback found exact retirement version20261013120756/MD51a8a6470554d08dc02ddafcf3ed7aa48, all three operations NULL, exactly two registry rows retired and zero DSS jobs. Independent2026-10-13T13:41:36.043676Z exact machine predicate returned true and historical MD51e37a105a1c11d7a6d7aa313c8c5053e still matched. Original historical installation time remains unknown. Historical horse exclusion and fixed-owner impersonation are preserved as history, never approved by this recording. Existing horse financial law is unchanged; its scanner returns zero findings for these bytes. Mandatory reader refuses missing/changed retirement history or any surviving operation/schedule. No replay, payment or generic waiver."
     }
   ]
 }

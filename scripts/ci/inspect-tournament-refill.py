@@ -37,7 +37,11 @@ LITERALS = {
 CATEGORIES = ('insufficient_chips', 'insufficient_balance', 'fleet_held',
               'table_full', 'maintenance_frozen', 'permission denied',
               'statement timeout', 'deadlock detected', 'null value in column',
-              'does not exist', 'no candidates', 'fleet read incomplete')
+              'does not exist', 'no candidates', 'fleet read incomplete',
+              'SEAT_FIRST_CREATE_INVALID_REQUEST', 'SEAT_FIRST_CREATE_UNKNOWN_CONFIG_KEY',
+              'SEAT_FIRST_CREATE_INVALID_CONFIG', 'SEAT_FIRST_CREATE_INVALID_BLINDS',
+              'SEAT_FIRST_CREATE_IDEMPOTENCY_MISMATCH', 'SEAT_FIRST_ATOMIC_PARTIAL_STATE',
+              'platform_frozen', 'invalid response')
 COUNT_LABELS = ('fleet', 'at-capacity/entered', 'not-a-club-member',
                 'lane/window-excluded', 'shortfall', 'rpc_called', 'skipped_already_seated',
                 'skipped_table_full', 'verify_reads', 'seated', 'rpc_already_seated',
@@ -46,27 +50,63 @@ COUNT_LABELS = ('fleet', 'at-capacity/entered', 'not-a-club-member',
 
 def summarize(raw):
     result = {}
+    active = []
+    origin = None
+    continuation_budget = 0
+    seen_categories = {}
+    seen_codes = {}
+    classified = set()
     for line in raw.splitlines():
-        if len(line) > 4096 or not re.search(r'\[TournamentRecurring(?:\]|\.)', line):
-            continue
-        keys = [key for key, text in LITERALS.items() if text in line]
-        keys += [key for key in EVENTS if re.search(r'TournamentRecurring\.' + re.escape(key) + r'(?![A-Za-z0-9_])', line)]
-        if not keys:
+        if len(line) > 4096:
+            active = []
             continue
         stamp = re.match(r'^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.\d{1,9})?Z\s', line)
-        for key in set(keys):
-            entry = result.setdefault(key, {'count': 0, 'lastTimestamp': None, 'sqlstates': {}, 'categories': {}, 'counts': {}})
-            entry['count'] += 1
-            if stamp:
-                entry['lastTimestamp'] = stamp.group(1) + 'Z'
-            for code in re.findall(r'(?:SQLSTATE[=: ]+|code[=: ]+[\"\x27]?)([0-9A-Z]{5})(?![0-9A-Z])', line):
-                if code in ('23502', '23503', '23505', '42501', '42703', '42883', '40P01', '57014', '55000'):
-                    entry['sqlstates'][code] = entry['sqlstates'].get(code, 0) + 1
-            for category in CATEGORIES:
-                if category in line:
-                    entry['categories'][category] = entry['categories'].get(category, 0) + 1
+        event_time = None
+        if stamp:
+            try:
+                event_time = datetime.datetime.fromisoformat(stamp.group(1) + '+00:00')
+            except ValueError:
+                pass
+        payload = line[stamp.end():] if stamp else line
+        if re.search(r'\[TournamentRecurring(?:\]|\.)', payload):
+            keys = [key for key, text in LITERALS.items() if text in payload]
+            keys += [key for key in EVENTS if re.search(r'TournamentRecurring\.' + re.escape(key) + r'(?![A-Za-z0-9_])', payload)]
+            active = list(set(keys))
+            origin = event_time
+            continuation_budget = 12
+            seen_categories = {key: set() for key in active}
+            seen_codes = {key: set() for key in active}
+            classified = set()
+            for key in active:
+                entry = result.setdefault(key, {'count': 0, 'unclassifiedCount': 0, 'lastTimestamp': None, 'sqlstates': {}, 'categories': {}, 'counts': {}})
+                entry['count'] += 1
+                entry['unclassifiedCount'] += 1
+                if event_time:
+                    entry['lastTimestamp'] = stamp.group(1) + 'Z'
+        else:
+            # Node console.error(context, Error) prints indented stack/property
+            # continuations. Only immediate timestamped lines within two seconds
+            # and twelve records can classify the original event. Never print them.
+            if not active or not origin or not event_time or continuation_budget <= 0 or not 0 <= (event_time - origin).total_seconds() <= 2 or not payload.startswith((' ', '\t')) or payload.lstrip().startswith('['):
+                active = []
+                continue
+            continuation_budget -= 1
+        for key in active:
+            entry = result[key]
+            codes = set(re.findall(r'(?:SQLSTATE[=: ]+|code[=: ]+[\"\x27]?)([0-9A-Z]{5})(?![0-9A-Z])', payload))
+            codes &= {'22023', '22P02', '23502', '23503', '23505', '23514', '42501', '42703', '42883', '40P01', '57014', '55000'}
+            categories = {category for category in CATEGORIES if re.search(r'(?<![A-Za-z0-9_])' + re.escape(category) + r'(?![A-Za-z0-9_])', payload)}
+            if (codes or categories) and key not in classified:
+                entry['unclassifiedCount'] -= 1
+                classified.add(key)
+            for code in codes - seen_codes[key]:
+                entry['sqlstates'][code] = entry['sqlstates'].get(code, 0) + 1
+            seen_codes[key].update(codes)
+            for category in categories - seen_categories[key]:
+                entry['categories'][category] = entry['categories'].get(category, 0) + 1
+            seen_categories[key].update(categories)
             for label in COUNT_LABELS:
-                match = re.search(r'(?<![A-Za-z0-9_/-])' + re.escape(label) + r'[ =](\d{1,7})(?!\d)', line)
+                match = re.search(r'(?<![A-Za-z0-9_/-])' + re.escape(label) + r'[ =](\d{1,7})(?!\d)', payload)
                 if match:
                     entry['counts'][label] = int(match.group(1))
     return result

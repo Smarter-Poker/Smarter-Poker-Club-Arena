@@ -1,0 +1,7 @@
+# Qualify The Natural Level On Its Serving Wire
+
+Corrected production run 38457847478 recorded an actual named `level_up` table WebSocket event at 20:06:13.675 UTC while its legacy Supabase HUD journals were empty. Engine 0f73f0fe publishes that event after committing the tournament and table level (TournamentManagerBase), and TournamentHUD consumes `TOURNAMENT_LEVEL_UP`. The old certificate journal observed only `t-break-*` Supabase broadcasts, so it missed the authoritative event its consumer already uses.
+
+The MTT certificate now requires the exact physical engine WebSocket event in both isolated spectators, with matching table/tournament identity, a valid zero-based `new_level`, producer timestamp after admission, and no replay flag. Existing natural-clock bounds, fixed deadlines, ownership guards, real rendered level badges, all four format coverage and cleanup stay enforced. Legacy Supabase level facts remain separately attached and cannot substitute for the engine proof. No product, engine, database, financial or provider configuration changes are included.
+
+Regression uses concrete producer-shaped wire frames, including a bounded local WebSocket round trip through the observer, and refuses wrong origins, paths, identities, snapshots, replay and invalid level/timestamp values. Provider-wide broadcast recovery and SPIN/SNG availability remain separate unresolved evidence.

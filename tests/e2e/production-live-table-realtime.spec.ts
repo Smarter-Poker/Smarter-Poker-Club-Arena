@@ -62,11 +62,16 @@ import {
   OperationalPollFailure,
   scanHudCandidateBatches,
   selectableHudClock,
-  sharedNaturalLevel,
   waitForSharedNaturalLevel,
   type HudClock,
   type HudLevel,
 } from './support/tournamentHudWitness';
+
+import {
+  observeEngineHudLevels,
+  sharedNaturalEngineLevel,
+  type EngineHudLevel,
+} from './support/engineHudLevelWitness';
 
 const CERTIFICATION_ENABLED = process.env.LIVE_TABLE_REALTIME_CERTIFICATION === '1';
 const CLUB_ID = process.env.E2E_CLUB_ID || 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
@@ -1121,10 +1126,16 @@ async function observeTournamentBoard(
 
   const journal = new EngineSocketJournal(page);
   const context = page.context();
-  const hudLevels = gameFormat === 'mtt' ? observeHudLevels(page) : [];
+  const hudScope = { tableId: candidate.id, tournamentId: selected.boardFacts?.tournamentId ?? '' };
+  if (gameFormat === 'mtt' && !hudScope.tournamentId)
+    throw new Error('MTT wire witness requires the qualified tournament identity');
+  const hudLevels =
+    gameFormat === 'mtt' ? observeEngineHudLevels(page, hudScope, ENGINE_HEALTH_URL) : [];
+  const legacyHudLevels = gameFormat === 'mtt' ? observeHudLevels(page) : [];
   let peerContext: BrowserContext | undefined;
   let peerPage: Page | undefined;
-  let peerLevels: HudLevel[] = [];
+  let peerLevels: EngineHudLevel[] = [];
+  let legacyPeerLevels: HudLevel[] = [];
   let hudBaseline = 0;
   let hudSince = 0;
   const hudObservation = new AbortController();
@@ -1221,7 +1232,8 @@ async function observeTournamentBoard(
         storageState: await context.storageState(),
       });
       peerPage = await peerContext.newPage();
-      peerLevels = observeHudLevels(peerPage);
+      peerLevels = observeEngineHudLevels(peerPage, hudScope, ENGINE_HEALTH_URL);
+      legacyPeerLevels = observeHudLevels(peerPage);
       peerPage.on('request', (outgoing) => {
         if (isSpectatorParticipationMutation(outgoing.method(), outgoing.url()))
           participationMutations.push({
@@ -1512,18 +1524,12 @@ async function observeTournamentBoard(
             }),
             `${candidate.name} received an engine refusal`
           ).toHaveLength(0);
-          return sharedNaturalLevel(
-            hudLevels,
-            peerLevels,
-            hudClock!.tournamentId,
-            hudBaseline,
-            hudSince
-          );
+          return sharedNaturalEngineLevel(hudLevels, peerLevels, hudScope, hudBaseline, hudSince);
         },
         hudEventObservationMs(hudClock, mttDeadline),
         hudObservation.signal
       );
-      // Actual source contract: payload.level is the zero-based engine index;
+      // Actual source contract: payload.new_level is the zero-based engine index;
       // TournamentHUD renders levelState.levelIndex + 1.
       await Promise.all(
         [page, peerPage].map((target) =>
@@ -1692,8 +1698,10 @@ async function observeTournamentBoard(
               clock: hudClock,
               baselineIndex: hudBaseline,
               since: hudSince,
+              source: 'engine-table-websocket',
               primary: hudLevels,
               peer: peerLevels,
+              legacySupabase: { primary: legacyHudLevels, peer: legacyPeerLevels },
               completedAt: Date.now(),
             },
             null,

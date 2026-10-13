@@ -88,13 +88,13 @@ describe('closed MTT board retires its HUD witness before reselection loses its 
     );
     const section = source.slice(
       source.indexOf('const transition = await waitForSharedNaturalLevel('),
-      source.indexOf('// Actual source contract: payload.level')
+      source.indexOf('// Actual source contract: payload.new_level')
     );
     expect(section).toContain('classifyUnsubscribes(');
     expect(section).toContain('ownership.violations');
     expect(section).toContain("type: 'ERROR'");
     expect(section.indexOf('ownership.violations')).toBeLessThan(
-      section.indexOf('return sharedNaturalLevel(')
+      section.indexOf('return sharedNaturalEngineLevel(')
     );
     expect(source).toContain('observationDeadline: caseStartedAt + testInfo.timeout');
     expect(source).toContain('remainingMs: caseStartedAt + testInfo.timeout - Date.now()');

@@ -2551,6 +2551,23 @@ jobs:
           path: ${{ runner.temp }}/weekly-initial-selector/
           if-no-files-found: error
 
+      - name: Initial weekly first week evaluates the calendar once per club
+        id: weekly_first_week_aggregate
+        if: matrix.shard == 3
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/weekly-first-week-aggregate"
+          python3 scripts/qualification/weekly-first-week-aggregate/run-native.py --output "$RUNNER_TEMP/weekly-first-week-aggregate" 2>&1 | tee "$RUNNER_TEMP/weekly-first-week-aggregate/native.log"
+      - name: Retain first week aggregate native transcripts
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.weekly_first_week_aggregate.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-first-week-aggregate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/weekly-first-week-aggregate/
+          if-no-files-found: error
+
       - name: Original flow invokes only its eligible authentic proof
         id: original_flow_eligibility
         if: matrix.shard == 3

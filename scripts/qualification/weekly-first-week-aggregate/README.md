@@ -1,0 +1,1 @@
+Global first_week immutable calendar aggregate qualification. Preserve accepted earning rows and original monetary tail. Authentic lower-bound errors remain errors even with negative infinity. No production money RPC or timing claim.

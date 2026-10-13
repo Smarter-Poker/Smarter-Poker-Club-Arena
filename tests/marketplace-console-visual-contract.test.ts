@@ -372,6 +372,10 @@ describe('Marketplace Console Visual Contract', () => {
     expect(topUpCss).toContain('shark-panel-v1/mid.png');
     expect(topUpCss).toContain('shark-panel-v1/bottom.png');
     expect(topUpCss).toContain('club-utility-shell.webp');
+    // Native-ratio packages must own their full row, even in a short scrollport.
+    expect(topUpCss).toMatch(/\.diamond-modal__grid \{[^}]*grid-auto-rows: max-content/s);
+    expect(topUpCss).toMatch(/@media \(max-height: 500px\)[\s\S]*overflow-y: auto/);
+    expect(topUpCss).not.toContain('background-color: #030507;');
     expect(topUpCss).toContain('background-size: 300% 200%');
     for (const tier of ['0', '1', '2', '3', '4', '5']) {
       expect(topUpCss).toContain(`.diamond-package__art[data-tier='${tier}']`);

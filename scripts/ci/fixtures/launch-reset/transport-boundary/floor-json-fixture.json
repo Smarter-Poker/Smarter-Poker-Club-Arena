@@ -1,0 +1,154 @@
+{
+  "observe": {
+    "proname": "fn_ca_engine_operator_observe",
+    "signature": "fn_ca_engine_operator_observe(uuid,text,jsonb)",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_engine_operator_observe(p_operation_id uuid, p_status text, p_result jsonb)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nBEGIN\n IF current_setting('request.jwt.claim.role',true) IS DISTINCT FROM 'service_role' THEN RAISE EXCEPTION 'engine_operator_forbidden' USING ERRCODE='42501'; END IF;\n IF p_status NOT IN ('active','completed','accepted') THEN RAISE EXCEPTION 'invalid_operator_status'; END IF;\n UPDATE public.ca_engine_operator_commands SET status=p_status,result=p_result,updated_at=clock_timestamp()\n WHERE id=p_operation_id AND status<>'cancelled';\nEND $function$\n",
+    "definition_md5": "65a2ba203f3783e0b72658ab759f5511",
+    "acl": "{postgres=X/postgres,service_role=X/postgres}",
+    "prosecdef": true,
+    "proconfig": [
+      "search_path=public, pg_temp"
+    ]
+  },
+  "permission_fixture": {
+    "roles": [
+      {
+        "key": "god",
+        "rank": 100,
+        "label": "God",
+        "is_legacy": true,
+        "created_at": "2026-09-03T10:56:09.252499+00:00",
+        "description": "Legacy Platform Owner. Every Permission."
+      }
+    ],
+    "permissions": [
+      {
+        "role_key": "god",
+        "permission": "console.read"
+      },
+      {
+        "role_key": "god",
+        "permission": "audit.read"
+      },
+      {
+        "role_key": "god",
+        "permission": "fleet.read"
+      },
+      {
+        "role_key": "god",
+        "permission": "fleet.write"
+      },
+      {
+        "role_key": "god",
+        "permission": "players.read"
+      },
+      {
+        "role_key": "god",
+        "permission": "players.write"
+      },
+      {
+        "role_key": "god",
+        "permission": "support.write"
+      },
+      {
+        "role_key": "god",
+        "permission": "moderation.write"
+      },
+      {
+        "role_key": "god",
+        "permission": "clubs.read"
+      },
+      {
+        "role_key": "god",
+        "permission": "clubs.write"
+      },
+      {
+        "role_key": "god",
+        "permission": "money.read"
+      },
+      {
+        "role_key": "god",
+        "permission": "money.write"
+      },
+      {
+        "role_key": "god",
+        "permission": "cashier.write"
+      },
+      {
+        "role_key": "god",
+        "permission": "promo.write"
+      },
+      {
+        "role_key": "god",
+        "permission": "catalog.write"
+      },
+      {
+        "role_key": "god",
+        "permission": "content.write"
+      },
+      {
+        "role_key": "god",
+        "permission": "settings.write"
+      },
+      {
+        "role_key": "god",
+        "permission": "avatars.generate"
+      },
+      {
+        "role_key": "god",
+        "permission": "gdpr.erase"
+      },
+      {
+        "role_key": "god",
+        "permission": "sql.execute"
+      },
+      {
+        "role_key": "god",
+        "permission": "admin.manage"
+      },
+      {
+        "role_key": "god",
+        "permission": "incidents.ack"
+      }
+    ],
+    "policy": [
+      {
+        "id": true,
+        "updated_at": "2026-09-03T10:56:09.252499+00:00",
+        "updated_by": null,
+        "fund_threshold": 0,
+        "mint_threshold": 0,
+        "approvals_enabled": false,
+        "cashout_threshold": 0,
+        "enforce_named_roles": false,
+        "approval_ttl_minutes": 1440,
+        "restrictions_enforced": false,
+        "allow_self_approve_when_alone": true
+      }
+    ]
+  },
+  "missing_originals": [
+    {
+      "proname": "fn_ca_engine_operator_observe",
+      "signature": "fn_ca_engine_operator_observe(uuid,text,jsonb)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_engine_operator_observe(p_operation_id uuid, p_status text, p_result jsonb)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nBEGIN\n IF current_setting('request.jwt.claim.role',true) IS DISTINCT FROM 'service_role' THEN RAISE EXCEPTION 'engine_operator_forbidden' USING ERRCODE='42501'; END IF;\n IF p_status NOT IN ('active','completed','accepted') THEN RAISE EXCEPTION 'invalid_operator_status'; END IF;\n UPDATE public.ca_engine_operator_commands SET status=p_status,result=p_result,updated_at=clock_timestamp()\n WHERE id=p_operation_id AND status<>'cancelled';\nEND $function$\n",
+      "definition_md5": "65a2ba203f3783e0b72658ab759f5511",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "prosecdef": true,
+      "proconfig": [
+        "search_path=public, pg_temp"
+      ]
+    },
+    {
+      "proname": "fn_ca_operator_finish_cash_close",
+      "signature": "fn_ca_operator_finish_cash_close(uuid,uuid)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_operator_finish_cash_close(p_table_id uuid, p_operation_id uuid)\n RETURNS boolean\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nBEGIN\n IF current_setting('request.jwt.claim.role',true) IS DISTINCT FROM 'service_role' THEN RAISE EXCEPTION 'engine_operator_forbidden' USING ERRCODE='42501'; END IF;\n PERFORM 1 FROM public.tables WHERE id=p_table_id AND tournament_id IS NULL FOR UPDATE;\n IF NOT FOUND OR NOT EXISTS(SELECT 1 FROM public.ca_operator_table_closes WHERE table_id=p_table_id AND operation_id=p_operation_id AND status='pending') THEN RETURN false; END IF;\n IF EXISTS(SELECT 1 FROM public.table_seats WHERE table_id=p_table_id AND left_at IS NULL)\n OR EXISTS(SELECT 1 FROM public.hand_state_snapshots WHERE table_id=p_table_id AND is_complete=false) THEN RETURN false; END IF;\n UPDATE public.tables SET status='closed' WHERE id=p_table_id;\n UPDATE public.ca_operator_table_closes SET status='closed' WHERE table_id=p_table_id AND operation_id=p_operation_id;\n IF NOT EXISTS(SELECT 1 FROM public.ca_operator_table_closes WHERE operation_id=p_operation_id AND status='pending') THEN\n  UPDATE public.ca_engine_operator_commands SET status='completed',updated_at=clock_timestamp() WHERE id=p_operation_id;\n END IF;\n RETURN true;\nEND $function$\n",
+      "definition_md5": "ce561f39be083a7576846e3b891668e0",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "prosecdef": true,
+      "proconfig": [
+        "search_path=public, pg_temp"
+      ]
+    }
+  ]
+}

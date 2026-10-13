@@ -3,6 +3,7 @@ from pathlib import Path
 import os,re,subprocess,tempfile,json,hashlib,argparse,shutil,time
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--component-root',type=Path)
+parser.add_argument('--followup-migration',type=Path,help='One exact guarded installed-source followup after the base migration')
 parser.add_argument('--candidate-migration',type=Path,help='Single complete assembled candidate migration; loaded exactly once')
 parser.add_argument('--component-map',type=Path,help='JSON object mapping relative component names to actual candidate SQL paths')
 parser.add_argument('--scratch-root',type=Path,required=True)
@@ -11,6 +12,10 @@ parser.add_argument('--pg-bin',type=Path)
 parser.add_argument('--production-roster',action='store_true',help='Use exact observed 1903-wallet split')
 parser.add_argument('--prefix-roster',action='store_true',help='Bounded 64-wallet roster exercises actual validated tally prefixes')
 args=parser.parse_args()
+# The existing required job owns this installed base and its exact followup.
+# A missing followup fails normally; this is never a conditional test skip.
+if args.candidate_migration and args.candidate_migration.name=='20261012181905_scoped_club_launch_reset_and_guarded_recovery.sql' and args.followup_migration is None:
+ args.followup_migration=Path(__file__).resolve().parents[2]/'supabase'/'migrations'/'20261013133012_scoped_launch_operator_accepts_authoritative_json_claims.sql'
 BASE=args.scratch_root.resolve();OUT=args.output_dir.resolve()
 if not BASE.is_dir():parser.error('scratch root must already exist')
 OUT.mkdir(parents=True,exist_ok=True)
@@ -19,9 +24,14 @@ if not all((PG/n).is_file() for n in ['initdb','pg_ctl','psql']):parser.error('P
 version=subprocess.check_output([str(PG/'initdb'),'--version'],text=True)
 if not re.search(r'PostgreSQL\) 17\.',version):parser.error('PostgreSQL 17 required')
 FIX=Path(__file__).resolve().parent/'fixtures'/'launch-reset'
+FOLLOW_FIX=FIX/'transport-boundary'
 fixture_hashes=json.loads((FIX/'fixture-hashes.json').read_text())
 for name,digest in fixture_hashes.items():
  if hashlib.sha256((FIX/name).read_bytes()).hexdigest()!=digest:raise AssertionError('Original fixture fingerprint changed: '+name)
+if args.followup_migration:
+ for name,digest in json.loads((FOLLOW_FIX/'fixture-pins.json').read_text()).items():
+  if hashlib.sha256((FOLLOW_FIX/name).read_bytes()).hexdigest()!=digest:raise AssertionError('Followup fixture changed: '+name)
+  fixture_hashes['followup/'+name]=digest
 meta=json.loads((FIX/'original-authorities.json').read_text())
 functions=meta['functions'];seen=set(meta['seen']);selected=set(meta['selected']);triggered=set(meta['triggered']);triggers=meta['triggers']
 names=['reset-undo-component/closing-contract.sql', 'accounting-component/boundary.sql', 'accounting-component/treasury-selftest-wiring.sql', 'accounting-component/reporting-boundary.sql', 'accounting-component/source-wiring.sql', 'accounting-component/consumer-wiring.sql', 'accounting-component/hand-stats-wiring.sql', 'accounting-component/accounting-owner-wiring.sql', 'accounting-component/reporting-wiring.sql', 'accounting-component/fact-projection-wiring.sql', 'accounting-component/reporting-extra-wiring.sql', 'accounting-component/union-reporting-wiring.sql', 'accounting-component/commission-assertion-wiring.sql', 'cashier-cutoff-component/cashier-cutoff.sql', 'accounting-component/activation.sql', 'accounting-component/invoice-visibility.sql', 'incident-component.sql', 'reset-undo-component/balance-contract.sql', 'reset-undo-component/velocity-wiring.sql', 'reset-undo-component/bbj-reporting.sql', 'floor-component/scoped-floor.sql', 'accounting-component/floor-original-acl.sql', 'accounting-component/floor-admission-component.sql', 'accounting-component/original-reader-acl.sql', 'guard-definition-component/guard-declaration.sql']
@@ -29,6 +39,8 @@ mapping=json.loads(args.component_map.read_text()) if args.component_map else {}
 if not args.candidate_migration and not args.component_root and not mapping:parser.error('component root or explicit component map required')
 if args.candidate_migration and (args.component_root or mapping):parser.error('Choose assembled candidate or component paths, not both')
 components=[args.candidate_migration.resolve()] if args.candidate_migration else [Path(mapping[n]).resolve() if n in mapping else (args.component_root/n).resolve() for n in names]
+if args.followup_migration and not args.candidate_migration:parser.error('Followup requires one assembled base candidate')
+if args.followup_migration:components.append(args.followup_migration.resolve())
 component_sources={p:p.read_text() for p in components}
 with tempfile.TemporaryDirectory(prefix='fb-',dir=BASE) as folder:
  root=Path(folder);socket=root/'s';socket.mkdir();data=root/'d'
@@ -122,8 +134,38 @@ with tempfile.TemporaryDirectory(prefix='fb-',dir=BASE) as folder:
   defaults=meta['current_function_default_privileges']
   assert defaults['owner']=='postgres' and defaults['schema']=='public'
   run(q,"ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO anon,authenticated,service_role; ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON SEQUENCES TO anon,authenticated,service_role; ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT SELECT,INSERT,UPDATE,DELETE,REFERENCES,TRIGGER,MAINTAIN ON TABLES TO anon,authenticated; ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON TABLES TO service_role;")
+  if args.followup_migration:
+   floor_fixture=json.loads((FOLLOW_FIX/'floor-json-fixture.json').read_text())
+   for original in floor_fixture['missing_originals']:
+    assert run(q,"SELECT to_regprocedure('public."+original['signature']+"') IS NULL;")=='t','Original fixture unexpected overlap'
+    run(q,original['definition']+'; REVOKE ALL ON FUNCTION public.'+original['signature']+' FROM PUBLIC,anon,authenticated; GRANT EXECUTE ON FUNCTION public.'+original['signature']+' TO service_role;')
+   escrow_definition=(FOLLOW_FIX/'escrow-table.sql').read_text().replace('CREATE TABLE public.tournament_escrow','CREATE TEMP TABLE expected_escrow')
+   column_check="SELECT (SELECT jsonb_agg(jsonb_build_array(attname,format_type(atttypid,atttypmod),attnotnull) ORDER BY attnum) FROM pg_attribute WHERE attrelid='public.tournament_escrow'::regclass AND attnum>0 AND NOT attisdropped)=(SELECT jsonb_agg(jsonb_build_array(attname,format_type(atttypid,atttypmod),attnotnull) ORDER BY attnum) FROM pg_attribute WHERE attrelid='expected_escrow'::regclass AND attnum>0 AND NOT attisdropped);"
+   assert 't' in run(q,'BEGIN;'+escrow_definition+column_check+'ROLLBACK;').splitlines(),'Actual escrow rowtype differs from current source'
   original_function_oids=run(q,"SELECT string_agg(p.oid::text,',') FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname IN('public','smarter_private');")
-  for p in components:run(q,component_sources[p])
+  run(q,component_sources[components[0]])
+  if args.followup_migration:
+   for table_name,key in [('ca_operator_roles','roles'),('ca_operator_role_permissions','permissions'),('ca_operator_policy','policy')]:
+    body=json.dumps(floor_fixture['permission_fixture'][key]).replace("'","''");run(q,'INSERT INTO '+table_name+' SELECT * FROM jsonb_populate_recordset(NULL::'+table_name+",'"+body+"'::jsonb) ON CONFLICT DO NOTHING;")
+   command_op='30000000-0000-0000-0000-000000000012';command_reason='Native Scoped Existing Command Delivery'
+   run(q,f"INSERT INTO ca_engine_operator_commands(id,actor_id,domain,action,reason,status) VALUES('{command_op}','{actor}','floor','park','{command_reason}','accepted'); INSERT INTO ca_launch_operator_scopes(operation_id,actor_id,club_ids) VALUES('{command_op}','{actor}',ARRAY['{scope[0]}']::uuid[]); INSERT INTO ca_operator_floor_hold(id,operation_id,mode,reason) VALUES(true,'{command_op}','park','{command_reason}');")
+   claims_prefix=f"SET request.jwt.claim.role=''; SET request.jwt.claims='{{\"role\":\"service_role\",\"sub\":\"{actor}\"}}';"
+   calls=[f"SELECT fn_ca_engine_operator_command('{actor}','{command_op}','floor','park','{command_reason}');",f"SELECT fn_ca_launch_operator_command('{actor}','{command_op}','park','{command_reason}');",f"SELECT fn_ca_engine_operator_observe('{command_op}','accepted','{{}}');",f"SELECT fn_ca_operator_finish_cash_close('30000000-0000-0000-0000-000000000013','{command_op}');"]
+   for call in calls:assert 'forbidden' in run(q,claims_prefix+call,False)
+   run(q,"SET typed_witness.before='on';"+(FOLLOW_FIX/'typed-escrow-witness.sql').read_text())
+   run(q,component_sources[components[1]])
+   run(q,"SET typed_witness.before='off';"+(FOLLOW_FIX/'typed-escrow-witness.sql').read_text())
+   for call in calls:run(q,claims_prefix+call)
+   for role in ['anon','authenticated']:
+    for call in calls:assert 'forbidden' in run(q,"SET request.jwt.claim.role=''; SET request.jwt.claims='{\"role\":\""+role+"\"}';"+call,False)
+   for call in calls:run(q,"SET request.jwt.claim.role='service_role'; SET request.jwt.claims='{}';"+call)
+   assert 'engine_operator_forbidden' in run(q,claims_prefix+f"SELECT fn_ca_engine_operator_command('{human}','{command_op}','floor','park','{command_reason}');",False)
+   assert 'operation_identity_conflict' in run(q,claims_prefix+f"SELECT fn_ca_engine_operator_command('{actor}','{command_op}','floor','park','Different Native Reason');",False)
+   assert run(q,f"SELECT count(*) FROM ca_launch_operator_scopes WHERE operation_id='{command_op}';")=='1'
+   run(q,'DELETE FROM ca_operator_floor_hold;')
+   assert 'LAUNCH_TRANSPORT_PREIMAGE_CHANGED' in run(q,component_sources[components[1]],False)
+  else:
+   for p in components[1:]:run(q,component_sources[p])
   role_helper_names=['fn_ca_launch_accounting_cutoff','fn_ca_launch_accounting_start','fn_ca_launch_accounting_accepts','fn_ca_launch_accounting_waived']
   service_entry_names=['fn_ca_launch_reset_assert_drained','fn_ca_launch_reset_capture','fn_ca_launch_reset_execute','fn_ca_launch_reset_undo','fn_ca_launch_operator_command']
   new_acl=json.loads(run(q,"SELECT jsonb_agg(jsonb_build_object('name',p.proname,'role',r,'execute',has_function_privilege(r,p.oid,'EXECUTE'))) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace CROSS JOIN unnest(ARRAY['anon','authenticated','service_role'])r WHERE n.nspname IN('public','smarter_private') AND p.oid NOT IN("+original_function_oids+");"))

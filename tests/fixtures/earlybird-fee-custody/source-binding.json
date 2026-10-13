@@ -14,7 +14,7 @@
     "tests/fixtures/earlybird-fee-custody/paid-originals.json": "7b0137cce446c509e1b0cbd1e9361547fb700e409fceb373bb6c21909170faf0",
     "tests/fixtures/earlybird-fee-custody/credit-originals.json": "76b7a6152c538bd051754e0a17106a14e86458968132bea26f03c339ad77b439",
     "supabase/migrations/20260918122532_five_original_spin_standings_retain_their_recorded_cash_outc.sql": "9f6e0b02abea54394d317c6d20f8e47ae10edefc9ba6c12f6542c23daf4540c4",
-    ".prettierignore": "6391e4bfb9fd0a13a580ef17378bfb4bb0d604806a3f4ffdc8d778e1680c3346",
+    ".prettierignore": "ebb1d54f3991583895b4f4823a5b3f79e4aa6dd11c5101a39cc9d0bbb9dd3415",
     "tests/unit/fixtureNativeCi.test.ts": "821a94ed8fcbf822dc831479e81b20a724039d85c1311f352d216fd6d1264f76",
     "tests/fixtures/earlybird-fee-custody/README.md": "ae19f37a0179956d0d26c64f626fa401c10b4319f0d7d8453f8993d811e98536"
   },
@@ -386,5 +386,10 @@
     "path": "tests/unit/fixtureNativeCi.test.ts",
     "previous_sha256": "b7d700836f7d4a4d19df0b2321b9d5fb743d9e5f5645f30ae40e66bda79afb51",
     "current_sha256": "821a94ed8fcbf822dc831479e81b20a724039d85c1311f352d216fd6d1264f76"
+  },
+  "scopedLaunchTransportFixtureExclusions20261013": {
+    "scope": "Three exact native fixture exclusions and the required dual-migration qualification command; historical financial assertions remain unchanged.",
+    "validation": "Native JSON-only claims and typed escrow fail-before/pass-after; final base plus followup 1903 recovery qualified separately.",
+    "prettier_ignore_sha256": "ebb1d54f3991583895b4f4823a5b3f79e4aa6dd11c5101a39cc9d0bbb9dd3415"
   }
 }

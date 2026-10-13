@@ -261,3 +261,8 @@ scripts/ci/fixtures/launch-reset/floor/*.json
 scripts/ci/fixtures/launch-reset/pruner-lane/original.sql
 scripts/ci/fixtures/launch-reset/pruner-lane/expected.sql
 scripts/ci/fixtures/launch-reset/pruner-lane/ordinary-dependencies.sql
+
+# Exact typed-row and operator-authority captures; native fixture pins own bytes.
+scripts/ci/fixtures/launch-reset/transport-boundary/floor-json-fixture.json
+scripts/ci/fixtures/launch-reset/transport-boundary/escrow-table.sql
+scripts/ci/fixtures/launch-reset/transport-boundary/typed-escrow-witness.sql

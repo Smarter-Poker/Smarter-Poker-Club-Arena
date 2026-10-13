@@ -120,6 +120,7 @@ jobs:
             recovery_args+=(--final-table-pages "$FINAL_TABLE_PAGES" --final-table-operation "$FINAL_TABLE_OPERATION")
           fi
           node scripts/ci/apply-recorded-migration.mjs \
+            --ssl-root-cert scripts/ci/certificates/supabase-prod-ca-2021.crt \
             --migration "$MIGRATION_FILE" \
             "${recovery_args[@]}" \
             ${{ inputs.dry_run && '--dry-run' || '' }} 2>&1 | tee /tmp/apply.log

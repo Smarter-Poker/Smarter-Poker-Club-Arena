@@ -62,6 +62,7 @@
  * the defaults exactly once, then never again.
  */
 
+import { emitThemeRealtimeDiagnostic } from '../utils/themeRealtimeDiagnostic';
 import { useState, useEffect, useMemo, useRef, useCallback, useLayoutEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -382,8 +383,9 @@ function startThemeRealtime(userId: string, entry: ThemeRealtimeEntry): void {
         });
       }
     )
-    .subscribe((status) => {
+    .subscribe((status, error) => {
       if (entry.generation !== generation || themeRealtimeByUser.get(userId) !== entry) return;
+      emitThemeRealtimeDiagnostic(status, error);
       if (status === 'SUBSCRIBED') {
         const recovered = entry.everLive && entry.state !== 'live';
         const firstAuthoritativeHandoff = !entry.everLive;

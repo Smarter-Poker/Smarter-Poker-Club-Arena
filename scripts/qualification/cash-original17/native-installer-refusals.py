@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Exact installer refusals against one already-qualified private PG17 opening."""
 import argparse,json,pathlib,os,subprocess,hashlib
-p=argparse.ArgumentParser();p.add_argument('--state',type=pathlib.Path,required=True);p.add_argument('--parent-restore',type=pathlib.Path,required=True);a=p.parse_args();state=json.loads(a.state.read_text());root=pathlib.Path(__file__).resolve().parents[3];migration=root/'supabase/migrations/20261013035113_a_cash_original_hand_corrects_its_exact_rolled_back_allocator.sql';sql=migration.read_text();assert sql.endswith('COMMIT;\n');assert str(a.state.resolve()).startswith('/Volumes/SmarterWork/agent-work/');assert str(pathlib.Path(state['socket']).resolve()).startswith('/Volumes/SmarterWork/agent-work/')
+p=argparse.ArgumentParser();p.add_argument('--state',type=pathlib.Path,required=True);p.add_argument('--parent-restore',type=pathlib.Path,required=True);a=p.parse_args();state=json.loads(a.state.read_text());root=pathlib.Path(__file__).resolve().parents[3];migration=root/'supabase/migrations/20261013035113_a_cash_original_hand_corrects_its_rolled_back_allocator.sql';sql=migration.read_text();assert sql.endswith('COMMIT;\n');assert str(a.state.resolve()).startswith('/Volumes/SmarterWork/agent-work/');assert str(pathlib.Path(state['socket']).resolve()).startswith('/Volumes/SmarterWork/agent-work/')
 env={k:v for k,v in os.environ.items() if not k.startswith('PG') and k not in ('DATABASE_URL','SUPABASE_DB_URL')};cmd=[state['pg_bin']+'/psql','-X','-qAt','-h',state['socket'],'-p','55496','-U','postgres','-d',state['database'],'-v','ON_ERROR_STOP=1'];out=a.state.parent
 
 def run(text,label,expected=None):

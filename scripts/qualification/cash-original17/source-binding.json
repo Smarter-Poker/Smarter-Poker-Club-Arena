@@ -70,8 +70,8 @@
       "sha256": "1c0dff2252193378993c676e5888beb3a909d9e2e11db38997b8c940758b0c94"
     },
     "scripts/qualification/cash-original17/native-installer-refusals.py": {
-      "bytes": 4592,
-      "sha256": "f12010658a1f998f1f1467ee607d3db835f6825ad3dbe3c7c140a2d2ec7237c6"
+      "bytes": 4586,
+      "sha256": "5889193f6febb2b3fcb6e38347fe97887b8470a8a4b22494c6abdaba899258a1"
     },
     "scripts/qualification/cash-original17/parent-qualified-function-metadata.json": {
       "bytes": 2864,
@@ -86,8 +86,8 @@
       "sha256": "8ee3feb07a91356068d85a46553c47aac58833a1bb55dc121b1e61cea12ce06c"
     },
     "scripts/qualification/cash-original17/probe-public-safe.py": {
-      "bytes": 22931,
-      "sha256": "bb4194176c7f01e9ffc9b364a3fcfe23a7b2effc5df57fb5fd7a0a991e4c6e35"
+      "bytes": 22925,
+      "sha256": "ff7eda8dc73551b2a0d8eb29a9ca95117a8d69752e06c01259d7cc20a70a18f1"
     },
     "scripts/qualification/cash-original17/run-private-step.py": {
       "bytes": 1934,
@@ -285,7 +285,7 @@
       "bytes": 12030,
       "sha256": "66c439f816ec578b62baf4d091c51cb486e84a317e269efc0d2f37c7b406ac3a"
     },
-    "supabase/migrations/20261013035113_a_cash_original_hand_corrects_its_exact_rolled_back_allocator.sql": {
+    "supabase/migrations/20261013035113_a_cash_original_hand_corrects_its_rolled_back_allocator.sql": {
       "bytes": 45098,
       "sha256": "0c3c357e106b6daf5461587e707e63d47260837870a7fb423d2f4fdd00b339bd"
     }

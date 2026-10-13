@@ -125,7 +125,7 @@ try:
   if len(paths)!=1:raise RuntimeError('Exact qualified parent source missing')
   parent=paths[0].read_text()
   e.sql(db,"INSERT INTO supabase_migrations.schema_migrations(version,name,statements) VALUES('"+version+"','isolated exact source fixture',ARRAY['"+parent.replace("'","''")+"']);",label='cash17-parent-source-'+version)
- cash=ROOT/'supabase/migrations/20261013035113_a_cash_original_hand_corrects_its_exact_rolled_back_allocator.sql'
+ cash=ROOT/'supabase/migrations/20261013035113_a_cash_original_hand_corrects_its_rolled_back_allocator.sql'
  raw=cash.read_text()
  e.report['cash17_tested_migration']={'path':str(cash.relative_to(ROOT)),'bytes':len(cash.read_bytes()),'md5':hashlib.md5(cash.read_bytes()).hexdigest(),'sha256':hashlib.sha256(cash.read_bytes()).hexdigest()}
  for label,mutation,expected in [('operator',"SET LOCAL ROLE service_role;",'CASH17_INSTALLER_OPERATOR_ONLY'),('parent',"DELETE FROM supabase_migrations.schema_migrations WHERE version='20261013022132';",'CASH17_PARENT22132_REQUIRED_OR_CHANGED'),('carry',"DELETE FROM supabase_migrations.schema_migrations WHERE version='20261013034406';",'CASH17_FIXED_ALLOCATOR_HISTORY_CHANGED'),('source',"ALTER FUNCTION smarter_private.original_hand_source_correction_proof(uuid) SECURITY DEFINER;",'CASH17_PARENT30_FULL_AUTHORITY_CHANGED')]:

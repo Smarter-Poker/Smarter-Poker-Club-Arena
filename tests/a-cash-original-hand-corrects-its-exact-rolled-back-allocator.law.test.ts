@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 const dir = 'scripts/qualification/cash-original17/';
 const path =
-  'supabase/migrations/20261013035113_a_cash_original_hand_corrects_its_exact_rolled_back_allocator.sql';
+  'supabase/migrations/20261013035113_a_cash_original_hand_corrects_its_rolled_back_allocator.sql';
 describe('A cash original corrects its exact rolled-back allocator', () => {
   it('binds maintained source, native fixtures and current enforcement', () => {
     const binding = JSON.parse(readFileSync(dir + 'source-binding.json', 'utf8'));

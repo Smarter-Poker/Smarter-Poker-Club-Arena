@@ -179,3 +179,38 @@ it('shows the authorized balance and opens the existing management route', async
   fireEvent.click(screen.getByRole('button', { name: /Open KingFish45/ }));
   expect(screen.getByText('Player Management Record')).toBeInTheDocument();
 });
+
+for (const mode of ['Simple', 'Advanced']) {
+  it(`keeps ${mode} refresh usable after an unsettled search is reverted`, async () => {
+    render(
+      <MemoryRouter initialEntries={['/clubs/shark-club/members']}>
+        <Routes>
+          <Route path="/clubs/:clubId/members" element={<ClubMembersPage />} />
+        </Routes>
+      </MemoryRouter>
+    );
+    await act(async () => {});
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400);
+    });
+    if (mode === 'Advanced') fireEvent.click(screen.getByRole('button', { name: 'Advanced' }));
+    expect(screen.getByRole('button', { name: 'Refresh', exact: true })).toBeEnabled();
+    const search = screen.getByRole('searchbox');
+    fireEvent.change(search, { target: { value: 'pending' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh', exact: true }));
+    fireEvent.change(search, { target: { value: '' } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400);
+    });
+    const refresh = screen.getByRole('button', { name: /^Refresh/ });
+    expect(refresh).toBeEnabled();
+    expect(refresh).toHaveAttribute('aria-busy', 'false');
+    const calls = f.page.mock.calls.length;
+    fireEvent.click(refresh);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(110);
+    });
+    expect(f.page.mock.calls.length).toBe(calls + 1);
+    expect(refresh).toBeEnabled();
+  });
+}

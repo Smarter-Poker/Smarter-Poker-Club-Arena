@@ -25,6 +25,11 @@ describe('Rake agent native reporting qualification', () => {
     const sql = read(migration);
     expect(sql).toContain('m.complete IS TRUE OR (m.club_id IS NULL');
     expect(sql).toContain('commission_unpaid_ranges');
+    expect(sql).toContain("v_from:=public.fn_ca_launch_accounting_start('club',p_club_id,v_from);");
+    expect(sql).toContain('46b4b46eec72365f5cbf5161e0b2ceef');
+    expect(read('tests/fixtures/rake-agent-report/assertions.sql')).toContain(
+      'RAKE_LAUNCH_CLAMP_EQUIVALENCE_FAILURE'
+    );
     expect(sql).toContain('a.settled_at IS NULL');
     expect(sql).toContain('a.user_id IS NULL');
     expect(sql).toContain('e.amount=COALESCE(o.amount,0)');

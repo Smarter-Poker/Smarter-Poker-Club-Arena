@@ -1,3 +1,22 @@
+-- Compare authentic launch-clamped source and optimized reader at no boundary,
+-- midnight boundary, partial-day boundary, after-range boundary, and undone boundary.
+DO $$DECLARE cutoff timestamptz;undone boolean;a jsonb;b jsonb;r record;cost text;BEGIN
+ FOR cutoff IN SELECT unnest(ARRAY[NULL::timestamptz,(current_date-2)::timestamptz,(current_date-2)::timestamptz+interval '12 hours',now()+interval '1 day']) LOOP
+ FOR undone IN SELECT unnest(ARRAY[false,true]) LOOP
+ DELETE FROM public.ca_launch_accounting_boundaries;
+ INSERT INTO public.ca_launch_accounting_boundaries VALUES('club','a41434bb-8d0c-400a-8f0d-e8b3d65afed4',cutoff,CASE WHEN undone THEN now() END);
+ FOR cost IN SELECT unnest(ARRAY['true','false']) LOOP
+ PERFORM set_config('fixture.cost',cost,false);
+ FOR r IN SELECT s,d FROM (VALUES(current_date-30,current_date),(current_date-3,current_date-3),(current_date-2,current_date-2),(current_date-1,current_date),(current_date,current_date))x(s,d) LOOP
+ a:=public.fixture_original_rake_by_agent('a41434bb-8d0c-400a-8f0d-e8b3d65afed4',r.s,r.d,200,0,NULL,'cost');
+ b:=public.fn_ca_rake_by_agent('a41434bb-8d0c-400a-8f0d-e8b3d65afed4',r.s,r.d,200,0,NULL,'cost');
+ IF a IS DISTINCT FROM b THEN RAISE EXCEPTION 'RAKE_LAUNCH_CLAMP_EQUIVALENCE_FAILURE cutoff %, undone %, range %, expected %, got %',cutoff,undone,row_to_json(r),a,b;END IF;
+ IF NOT undone AND cutoff IS NOT NULL AND LEAST((r.d+1)::timestamptz,now())<=cutoff AND b<>jsonb_build_object('rows','[]'::jsonb,'total',0,'total_direct',0,'total_commission',NULL) THEN RAISE EXCEPTION 'RAKE_LAUNCH_CLAMP_EMPTY_FAILURE';END IF;
+ END LOOP;END LOOP;END LOOP;END LOOP;
+ DELETE FROM public.ca_launch_accounting_boundaries;
+END$$;
+SELECT 'RAKE_LAUNCH_CLAMP_EQUIVALENCE_PASS';
+
 DO $$ DECLARE a jsonb;b jsonb; r record;cost text; BEGIN
 FOR cost IN SELECT unnest(ARRAY['true','false']) LOOP
 PERFORM set_config('fixture.cost',cost,false);

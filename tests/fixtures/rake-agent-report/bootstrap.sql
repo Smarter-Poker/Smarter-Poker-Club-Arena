@@ -1,3 +1,13 @@
+-- Authentic launch boundary readers; synthetic boundary rows stay local.
+CREATE TABLE public.ca_launch_accounting_boundaries(scope_kind text,scope_id uuid,cutoff_at timestamptz,undone_at timestamptz);
+CREATE FUNCTION public.fn_ca_launch_accounting_cutoff(p_kind text,p_id uuid) RETURNS timestamptz
+ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,public AS $$
+ SELECT cutoff_at FROM public.ca_launch_accounting_boundaries WHERE scope_kind=p_kind AND scope_id=p_id AND undone_at IS NULL
+$$;
+CREATE FUNCTION public.fn_ca_launch_accounting_start(p_kind text,p_id uuid,p_start timestamptz) RETURNS timestamptz
+ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,public AS $$
+ SELECT CASE WHEN p_start IS NULL OR NOT isfinite(p_start) THEN p_start ELSE GREATEST(p_start,public.fn_ca_launch_accounting_cutoff(p_kind,p_id)) END
+$$;
 CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role;
 CREATE SCHEMA auth; CREATE SCHEMA smarter_private;
 CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$SELECT NULL::uuid$$;

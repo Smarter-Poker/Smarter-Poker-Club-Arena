@@ -4,14 +4,14 @@
 -- remain on the immutable journal. Settlement rules, amounts and grants remain.
 -- Historical metadata qualification is separate: one closed day per transaction,
 -- through an operator-only helper using the original commission writer key.
--- @live-proof: md5(pg_get_functiondef('public.fn_ca_rake_by_agent(uuid,date,date,integer,integer,text,text)'::regprocedure)) = 'eb8d6471414174b176bd9d4fabb8368a'
+-- @live-proof: md5(pg_get_functiondef('public.fn_ca_rake_by_agent(uuid,date,date,integer,integer,text,text)'::regprocedure)) = '5871bca746d3170b09fb3a4274676985'
 -- @live-proof: md5(pg_get_functiondef('smarter_private.qualify_rake_agent_report_day(uuid,date)'::regprocedure)) = '0b733de335781420b914576889e3294b'
 BEGIN;
 SET LOCAL lock_timeout='2s';
 SET LOCAL statement_timeout='15s';
 DO $preimage$ BEGIN
  IF NOT EXISTS(SELECT 1 FROM pg_proc WHERE oid='public.fn_ca_rake_by_agent(uuid,date,date,integer,integer,text,text)'::regprocedure
-   AND md5(prosrc)='ac26cdcf55b0876d0966b159695fc4a0' AND proowner='postgres'::regrole AND prosecdef
+   AND md5(prosrc)='46b4b46eec72365f5cbf5161e0b2ceef' AND proowner='postgres'::regrole AND prosecdef
    AND provolatile='s' AND proconfig=ARRAY['search_path=public, pg_temp'])
  OR to_regprocedure('smarter_private.qualify_rake_agent_report_day(uuid,date)') IS NOT NULL
  OR md5(pg_get_functiondef('public.trg_agent_commission_rollup_insert()'::regprocedure)) IS DISTINCT FROM '1a07fad61faa37c4f9c1c78835fb7843'
@@ -42,6 +42,7 @@ DECLARE
   v_sort text := lower(COALESCE(NULLIF(btrim(p_sort),''),'rake'));
   v_out  jsonb;
 BEGIN
+  v_from:=public.fn_ca_launch_accounting_start('club',p_club_id,v_from);
   IF v_to <= v_from THEN
     RETURN jsonb_build_object('rows','[]'::jsonb,'total',0,'total_direct',0,'total_commission',NULL);
   END IF;
@@ -319,7 +320,7 @@ ALTER FUNCTION public.fn_ca_rake_by_agent(uuid,date,date,integer,integer,text,te
 REVOKE ALL ON FUNCTION public.fn_ca_rake_by_agent(uuid,date,date,integer,integer,text,text) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_ca_rake_by_agent(uuid,date,date,integer,integer,text,text) TO service_role;
 DO $postimage$ BEGIN
- IF md5(pg_get_functiondef('public.fn_ca_rake_by_agent(uuid,date,date,integer,integer,text,text)'::regprocedure)) IS DISTINCT FROM 'eb8d6471414174b176bd9d4fabb8368a'
+ IF md5(pg_get_functiondef('public.fn_ca_rake_by_agent(uuid,date,date,integer,integer,text,text)'::regprocedure)) IS DISTINCT FROM '5871bca746d3170b09fb3a4274676985'
  OR md5(pg_get_functiondef('smarter_private.qualify_rake_agent_report_day(uuid,date)'::regprocedure)) IS DISTINCT FROM '0b733de335781420b914576889e3294b'
  OR NOT EXISTS(SELECT 1 FROM pg_proc WHERE oid='public.fn_ca_rake_by_agent(uuid,date,date,integer,integer,text,text)'::regprocedure AND proowner='postgres'::regrole AND prosecdef AND provolatile='s' AND proconfig=ARRAY['search_path=public, pg_temp'])
  OR NOT EXISTS(SELECT 1 FROM pg_proc WHERE oid='smarter_private.qualify_rake_agent_report_day(uuid,date)'::regprocedure AND proowner='postgres'::regrole AND prosecdef AND provolatile='v' AND proconfig=ARRAY['search_path=pg_catalog, public, smarter_private'])

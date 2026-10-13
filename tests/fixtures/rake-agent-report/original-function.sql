@@ -17,6 +17,7 @@ DECLARE
   v_sort text := lower(COALESCE(NULLIF(btrim(p_sort),''),'rake'));
   v_out  jsonb;
 BEGIN
+  v_from:=public.fn_ca_launch_accounting_start('club',p_club_id,v_from);
   IF v_to <= v_from THEN
     RETURN jsonb_build_object('rows','[]'::jsonb,'total',0,'total_direct',0,'total_commission',NULL);
   END IF;

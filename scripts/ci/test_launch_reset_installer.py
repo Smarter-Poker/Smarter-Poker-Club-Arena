@@ -19,6 +19,9 @@ with tempfile.TemporaryDirectory(prefix='installer-native-',dir=a.scratch) as tm
  for dep in ['check-migrations-are-live.mjs','migration-concurrent-preamble.mjs','contract-index-recovery.mjs','final-table-cleanup-batches.mjs']:copy_module(dep)
  installer=ci/'apply-recorded-migration.mjs';installer.write_bytes(original)
  copy_module('settlement-lane.mjs')
+ copy_module('migration-database-tls.mjs')
+ (ci/'certificates').mkdir()
+ shutil.copyfile(a.repository/'scripts/ci/certificates/supabase-prod-ca-2021.crt',ci/'certificates/supabase-prod-ca-2021.crt')
  copy_module('test_settlement_lane.mjs')
  # A private copy of only the existing locked pg dependency closure. No shared
  # node_modules mutation, package installation, credential access or symlinks.

@@ -70,6 +70,7 @@ import {
 
 import { batchRequest, applyFinalTablePages } from './final-table-cleanup-batches.mjs';
 import { withSettlementLane } from './settlement-lane.mjs';
+import { migrationDatabaseTLS } from './migration-database-tls.mjs';
 
 const DIR = 'supabase/migrations';
 const args = process.argv.slice(2);
@@ -213,18 +214,11 @@ if (!['postgres:', 'postgresql:'].includes(connectionURL.protocol))
   refused('database connection protocol is invalid');
 if (connectionURL.searchParams.has('sslcert') || connectionURL.searchParams.has('sslkey'))
   refused('client-certificate transport requires its maintained qualified route');
-const sslRoot =
-  argValue('--ssl-root-cert') ||
-  process.env.PGSSLROOTCERT ||
-  connectionURL.searchParams.get('sslrootcert') ||
-  'system';
-let ssl = { rejectUnauthorized: true };
-if (sslRoot !== 'system') {
-  try {
-    ssl.ca = readFileSync(sslRoot, 'utf8');
-  } catch {
-    unknown('configured provider CA certificate is unavailable');
-  }
+let ssl;
+try {
+  ssl = migrationDatabaseTLS(connectionURL, argValue('--ssl-root-cert'), process.env.PGSSLROOTCERT);
+} catch {
+  unknown('configured provider CA certificate is unavailable or invalid');
 }
 for (const key of ['sslmode', 'ssl', 'sslrootcert']) connectionURL.searchParams.delete(key);
 const { default: pg } = await import('pg');

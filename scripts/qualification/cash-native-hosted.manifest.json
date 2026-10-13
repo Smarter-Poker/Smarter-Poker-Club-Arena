@@ -174,8 +174,8 @@
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 36678,
-      "sha256": "fec5ce206a6cdf0c63b3e9d397eee71930aa0e424e25189bec0dc436e56ea295"
+      "bytes": 36734,
+      "sha256": "c4a9e6535e8f0160dfbbf834dd82a4b5fb9b867d28e75bfa9ad900276895ce42"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -3321,5 +3321,21 @@
       "bytes": 221256,
       "sha256": "78545cc8462142bcafa0387bdc3429278a7e6fb2ae823217fe6cfaeac2f7adc8"
     }
+  },
+  "rakeReportNativeRouting20261013": {
+    "scope": "Add rake report fixtures and their native installer regression to the existing Data Console classification; original cash qualification predicates and financial sources are unchanged. Preserves concurrent protected satellite classification when integrating main.",
+    "inputs": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "before": {
+          "bytes": 36585,
+          "sha256": "f69cf7c2955f8a2f792d0936b0478598e88438677c12088513ca4393a50754b2"
+        },
+        "after": {
+          "bytes": 36734,
+          "sha256": "c4a9e6535e8f0160dfbbf834dd82a4b5fb9b867d28e75bfa9ad900276895ce42"
+        }
+      }
+    },
+    "verification": "Native rake report and actual report installation module passed. Cash source pin validation and protected provider qualification remain required; this pin update is not a new cash runtime certification."
   }
 }

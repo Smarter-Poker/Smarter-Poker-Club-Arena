@@ -154,6 +154,18 @@ try {
   refused(e.message);
 }
 
+let rakeHistory = false;
+let qualifyRakeReportHistory;
+try {
+  if (args.includes('--qualify-rake-report-history')) {
+    const report = await import('./rake-report-history-baseline.mjs');
+    rakeHistory = report.rakeReportRequest(file, true, recovery, batches);
+    qualifyRakeReportHistory = report.qualifyRakeReportHistory;
+  }
+} catch (e) {
+  refused(e.message);
+}
+
 // The production DDL policy (CLAUDE.md section 2 rule 1) requires one
 // migration to be one transaction. Refuse a file that does not carry its own,
 // because this sends the whole file as a single simple query and an unwrapped
@@ -281,7 +293,17 @@ if (already.length > 0) {
   }
   console.log(`[apply] ALREADY-APPLIED: ${file}`);
   for (const r of already) console.log(`[apply]   recorded as version=${r.version} name=${r.name}`);
-  console.log('[apply] Nothing sent. This run changed nothing.');
+  console.log(rakeHistory
+    ? '[apply] Migration not sent. Explicit report history qualification follows.'
+    : '[apply] Nothing sent. This run changed nothing.');
+  if (rakeHistory) {
+    try {
+      await qualifyRakeReportHistory(client, sql, DRY_RUN);
+    } catch (e) {
+      await client.end().catch(() => {});
+      unknown(`rake report qualification stopped: ${e.message}`);
+    }
+  }
   await client.end().catch(() => {});
   process.exit(EXIT_OK);
 }
@@ -533,5 +555,13 @@ try {
 }
 
 console.log('[apply] APPLIED');
+if (rakeHistory) {
+  try {
+    await qualifyRakeReportHistory(client, sql, DRY_RUN);
+  } catch (e) {
+    await client.end().catch(() => {});
+    unknown(`migration installed; rake report qualification stopped: ${e.message}`);
+  }
+}
 await client.end().catch(() => {});
 process.exit(EXIT_OK);

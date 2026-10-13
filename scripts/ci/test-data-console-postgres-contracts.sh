@@ -16,6 +16,7 @@ scripts=(
   scripts/dev/test-stats-operational-quality-postgres.sh
   scripts/dev/test-stats-owner-workspace-postgres.sh
   scripts/dev/test-financial-admin-revenue-postgres.sh
+  scripts/dev/test-rake-agent-report-postgres.sh
   scripts/dev/test-union-ops-financial-admin-postgres.sh
 )
 

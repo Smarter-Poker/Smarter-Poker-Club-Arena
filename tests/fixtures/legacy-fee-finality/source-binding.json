@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "fec5ce206a6cdf0c63b3e9d397eee71930aa0e424e25189bec0dc436e56ea295",
+    "scripts/ci/classify-ci-changes.mjs": "c4a9e6535e8f0160dfbbf834dd82a4b5fb9b867d28e75bfa9ad900276895ce42",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "9b68bb22efbd6ed9d857161bf4292ed9746f4ab13edaea3bf6d26bff36a4872e",
@@ -977,5 +977,11 @@
     "path": "scripts/ci/classify-ci-changes.mjs",
     "previous_sha256": "0a3d601b0ad79dbd6340f207ce3b0bdbe234a9c282e7e49e024b0bb89abbadd5",
     "current_sha256": "f69cf7c2955f8a2f792d0936b0478598e88438677c12088513ca4393a50754b2"
+  },
+  "rakeReportNativeRoutingIntegration20261013": {
+    "reason": "Preserves protected satellite routing and adds rake report native classification only. No financial source or assertion changed. Source fingerprint only, not renewed financial certification.",
+    "path": "scripts/ci/classify-ci-changes.mjs",
+    "before": "fec5ce206a6cdf0c63b3e9d397eee71930aa0e424e25189bec0dc436e56ea295",
+    "after": "c4a9e6535e8f0160dfbbf834dd82a4b5fb9b867d28e75bfa9ad900276895ce42"
   }
 }

@@ -1,0 +1,6 @@
+{
+  "original.sql": "aa2281f55537be339b3aa37a9933c348f5caa26a8679ab7babba44eb4fe472c4",
+  "expected.sql": "259a887fdbf012983c3cbeac99e28e5fe059eeefc5b805c30789cf8a0f7768d3",
+  "ordinary-dependencies.sql": "7655a2309ecd8f7b1e56306878ee072423b934367982ad0a75bc3a27fdac6590",
+  "witness.mjs": "459f718343040d85e7ab9f6c7be79b2d25efe8fb79b51949e090f0b14c4df127"
+}

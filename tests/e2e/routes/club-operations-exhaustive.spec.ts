@@ -78,6 +78,9 @@ test.describe('Reserved Admin - every Club Operations registry route', () => {
 
   for (const operation of ADMIN_CLUB_OPERATION_ROUTES) {
     test(`${operation.id} renders its live club-scoped destination`, async ({ page }) => {
+      // Keep the bounded readiness assertion below the case deadline, leaving
+      // room for destination, Advanced navigation and positive-content checks.
+      if (operation.id === 'cashier') test.setTimeout(120_000);
       const path = `clubs/${CLUB_ID}/${operation.suffix}`;
       await expectRoute(page, path);
       await expectDestination(page, `/${path}`);

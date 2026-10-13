@@ -6,7 +6,10 @@ const source = readFileSync('tests/e2e/routes/club-operations-exhaustive.spec.ts
 describe('Cashier route readiness before Advanced navigation certification', () => {
   it('uses the existing route budget for the positive Cashier Simple marker only', () => {
     expect(source).toContain("operation.id === 'cashier' ? { timeout: 30_000 } : {}");
+    expect(source).toContain("if (operation.id === 'cashier') test.setTimeout(120_000)");
+    const caseBudget = source.indexOf("if (operation.id === 'cashier') test.setTimeout(120_000)");
     const ready = source.indexOf('const simpleReadyOptions');
+    expect(caseBudget).toBeLessThan(ready);
     const simple = source.indexOf('toBeVisible(simpleReadyOptions)', ready);
     const advancedClick = source.indexOf("name: 'Advanced', exact: true", simple);
     const advancedMarker = source.indexOf('modeAttribute}="advanced"', advancedClick);

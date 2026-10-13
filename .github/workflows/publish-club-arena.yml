@@ -328,12 +328,26 @@ jobs:
           name: club-arena-runtime-admission
           path: .
       - name: Verify both origins still serve the qualified immutable runtime
+        id: finalized
         run: node scripts/ci/client-runtime-retention.mjs finalize retained-runtime.json
       - name: Record qualified retained runtime
+        id: recorded
         uses: actions/upload-artifact@v4
         with:
           name: club-arena-retained-runtime
           path: retained-runtime.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Write the exact retained release verdict
+        env:
+          RELEASE_STEP_RESULTS: '{"finalized":{"outcome":"${{ steps.finalized.outcome }}","conclusion":"${{ steps.finalized.conclusion }}"},"recorded":{"outcome":"${{ steps.recorded.outcome }}","conclusion":"${{ steps.recorded.conclusion }}"}}'
+        run: node scripts/ci/client-publication-verdict.mjs produce-retained release-verdict.json retained-runtime.json
+      - name: Upload the immutable release verdict
+        uses: actions/upload-artifact@v4
+        with:
+          name: club-arena-release-verdict-${{ github.run_attempt }}
+          path: release-verdict.json
           if-no-files-found: error
           retention-days: 7
 
@@ -907,6 +921,7 @@ jobs:
           [ "$VERDICT" = "standdown" ] && echo "::notice::origin already serves a newer bundle (${THEIRS_SHA:0:7}); standing down." || true
 
       - name: Publish through the host-owned immutable transaction
+        id: published
         if: steps.verdict.outputs.verdict == 'publish'
         run: |
           set -euo pipefail
@@ -1209,6 +1224,22 @@ jobs:
           done
           echo "::error::Rollback pointer changed, but origin serves '$LIVE_ORIGIN' and player route serves '$LIVE_PUBLIC'; wanted $EXPECTED_SHA"
           exit 1
+
+      - name: Write the exact origin release verdict
+        env:
+          RELEASE_VERDICT: ${{ steps.verdict.outputs.verdict }}
+          SELECTED_SHA: ${{ steps.verdict.outputs.ours }}
+          RUNTIME_SHA: ${{ steps.verdict.outputs.verdict == 'publish' && steps.verdict.outputs.ours || steps.verdict.outputs.theirs }}
+          VERIFIED_SHA: ${{ steps.verified.outputs.sha }}
+          RELEASE_STEP_RESULTS: '{"verdict":{"outcome":"${{ steps.verdict.outcome }}","conclusion":"${{ steps.verdict.conclusion }}"},"published":{"outcome":"${{ steps.published.outcome }}","conclusion":"${{ steps.published.conclusion }}"},"verified":{"outcome":"${{ steps.verified.outcome }}","conclusion":"${{ steps.verified.conclusion }}"}}'
+        run: node scripts/ci/client-publication-verdict.mjs produce-origin release-verdict.json
+      - name: Upload the immutable release verdict
+        uses: actions/upload-artifact@v4
+        with:
+          name: club-arena-release-verdict-${{ github.run_attempt }}
+          path: release-verdict.json
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Remove origin credentials and control sockets
         if: always()

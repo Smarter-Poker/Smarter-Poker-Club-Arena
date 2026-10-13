@@ -205,17 +205,21 @@ function assertAtomicBodyAfterRecovery(source) {
   const recovery = source.indexOf('recovered exact index OID');
   const body = source.indexOf('const transactionBody = preamble.length > 0 ? shape.body : sql');
   const binding = source.indexOf('const atomicSQL = transactionBody.replace(');
-  const send = source.indexOf('await client.query(atomicSQL)');
+  const admission = source.indexOf(
+    'const admittedSQL = MAINTENANCE_THAW_REPAIR ? thawRepairSQL(atomicSQL) : atomicSQL;'
+  );
+  const send = source.indexOf('await client.query(admittedSQL)');
   for (const [label, position] of [
     ['recovery', recovery],
     ['body selection', body],
     ['atomic binding', binding],
+    ['explicit repair selection', admission],
     ['transaction send', send],
   ]) {
     assert.ok(position >= 0, `${label} is missing`);
   }
   assert.ok(
-    recovery < body && body < binding && binding < send,
+    recovery < body && body < binding && binding < admission && admission < send,
     'recovery precedes unchanged body selection, atomic history binding, and send'
   );
 }
@@ -238,11 +242,12 @@ test('body-order assertion refuses missing or reordered owning steps', () => {
     'recovered exact index OID',
     'const transactionBody = preamble.length > 0 ? shape.body : sql',
     'const atomicSQL = transactionBody.replace(',
-    'await client.query(atomicSQL)',
+    'const admittedSQL = MAINTENANCE_THAW_REPAIR ? thawRepairSQL(atomicSQL) : atomicSQL;',
+    'await client.query(admittedSQL)',
   ]) {
     assert.throws(() => assertAtomicBodyAfterRecovery(source.replace(part, 'removed step')), part);
   }
-  const send = 'await client.query(atomicSQL)';
+  const send = 'await client.query(admittedSQL)';
   assert.throws(
     () => assertAtomicBodyAfterRecovery(send + '\n' + source.replace(send, 'removed send')),
     /recovery precedes/

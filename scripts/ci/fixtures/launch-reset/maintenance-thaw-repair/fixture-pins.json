@@ -1,0 +1,11 @@
+{
+  "fn_active_maintenance_release_boundary.sql": "1353ee1228ae6acc13210954443e3e2e2e9b506c6f30c171848685da17c0095f",
+  "seven-originals.sql": "1d9544c864fcb571d4bc7deb468ceb798dd6f3686e42eac8671cdcba939fb105",
+  "fn_ca_break_window_refuses_migrations.sql": "e6b221bc4ade7a3d2b85fd30b6f2018fa1dc121b358b70602e4a5192169f7e98",
+  "operator-tables.sql": "19515ae9708da84c1dc5ccec192e51c105b1fcf4f055fe21aa0dacaba0331c3f",
+  "fn_ca_break_window_ddl_guard.sql": "18c5c3a5ca2a9a941c371353be8cfac6bab199449a0a053bee0c5e43dbd98295",
+  "fn_ca_break_window_governs.sql": "d0f7f255905051226030ad0104dacbc817de5f25e8beeeb6c48a70c88104c8c6",
+  "fn_ca_stage_b_ledger_bootstrap_allowed.sql": "6e82ed8c158a5c85feabab5e1083192ac67f195b509456b60e322b01b242b912",
+  "role.sql": "be715c471c2fc446ed48d17311be57f86aa16b1cc2d98216f05d3c2ec9581866",
+  "fn_entry_purchases_frozen.sql": "2d5511bbcbc6fa40d372b9a3ea059d074eebacabe13214f1657c64c5b065a8bf"
+}

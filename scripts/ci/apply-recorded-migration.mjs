@@ -70,11 +70,17 @@ import {
 
 import { batchRequest, applyFinalTablePages } from './final-table-cleanup-batches.mjs';
 import { withSettlementLane } from './settlement-lane.mjs';
+import {
+  validateThawRepair,
+  THAW_REPAIR_ADMISSION,
+  thawRepairSQL,
+} from './maintenance-thaw-repair.mjs';
 
 const DIR = 'supabase/migrations';
 const args = process.argv.slice(2);
 const DRY_RUN = args.includes('--dry-run');
 const SETTLEMENT_LANE = args.includes('--settlement-lane');
+const MAINTENANCE_THAW_REPAIR = args.includes('--maintenance-thaw-repair');
 const argValue = (n) => {
   const i = args.indexOf(n);
   return i === -1 ? null : args[i + 1] || null;
@@ -183,6 +189,19 @@ if (!/^\s*BEGIN\s*;/im.test(sql) || !/COMMIT\s*;\s*$/i.test(sql.trim())) {
 const shape = splitConcurrentPreamble(sql);
 if (!shape.ok) refused(`${file}: ${shape.reason}`);
 const preamble = shape.indexes;
+if (MAINTENANCE_THAW_REPAIR) {
+  try {
+    validateThawRepair(file, sql, {
+      dryRun: DRY_RUN,
+      settlementLane: SETTLEMENT_LANE,
+      recovery,
+      batches,
+      preamble,
+    });
+  } catch (e) {
+    refused(e.message);
+  }
+}
 if (
   SETTLEMENT_LANE &&
   (file !== '20261012181905_scoped_club_launch_reset_and_guarded_recovery.sql' ||
@@ -293,9 +312,11 @@ if (already.length > 0) {
   }
   console.log(`[apply] ALREADY-APPLIED: ${file}`);
   for (const r of already) console.log(`[apply]   recorded as version=${r.version} name=${r.name}`);
-  console.log(rakeHistory
-    ? '[apply] Migration not sent. Explicit report history qualification follows.'
-    : '[apply] Nothing sent. This run changed nothing.');
+  console.log(
+    rakeHistory
+      ? '[apply] Migration not sent. Explicit report history qualification follows.'
+      : '[apply] Nothing sent. This run changed nothing.'
+  );
   if (rakeHistory) {
     try {
       await qualifyRakeReportHistory(client, sql, DRY_RUN);
@@ -337,7 +358,13 @@ async function refusalNow() {
 }
 {
   const refusal = await refusalNow();
-  if (refusal) {
+  if (MAINTENANCE_THAW_REPAIR) {
+    const { rows } = await client.query(THAW_REPAIR_ADMISSION);
+    if (rows.length !== 1 || rows[0].admitted !== true) {
+      await client.end().catch(() => {});
+      refused('maintenance thaw repair requires an expired coherent owned freeze');
+    }
+  } else if (refusal) {
     await client.end().catch(() => {});
     refused(`the database would refuse DDL now: ${refusal}. Nothing was sent. Do not loop.`);
   }
@@ -505,11 +532,12 @@ const transactionBody = preamble.length > 0 ? shape.body : sql;
 const atomicSQL = transactionBody.replace(/COMMIT\s*;\s*$/i, () => historyStatement + '\nCOMMIT;');
 if (atomicSQL === transactionBody)
   refused('atomic migration history could not bind the final COMMIT');
+const admittedSQL = MAINTENANCE_THAW_REPAIR ? thawRepairSQL(atomicSQL) : atomicSQL;
 const started = Date.now();
 try {
   // With no preamble this is the whole file, exactly as before.
   if (SETTLEMENT_LANE) await withSettlementLane(client, () => client.query(atomicSQL));
-  else await client.query(atomicSQL);
+  else await client.query(admittedSQL);
 } catch (e) {
   await client.end().catch(() => {});
   const definiteRefusal =

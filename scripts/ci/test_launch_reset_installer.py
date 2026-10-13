@@ -19,6 +19,7 @@ with tempfile.TemporaryDirectory(prefix='installer-native-',dir=a.scratch) as tm
  for dep in ['check-migrations-are-live.mjs','migration-concurrent-preamble.mjs','contract-index-recovery.mjs','final-table-cleanup-batches.mjs']:copy_module(dep)
  installer=ci/'apply-recorded-migration.mjs';installer.write_bytes(original)
  copy_module('settlement-lane.mjs')
+ copy_module('maintenance-thaw-repair.mjs')
  copy_module('test_settlement_lane.mjs')
  # A private copy of only the existing locked pg dependency closure. No shared
  # node_modules mutation, package installation, credential access or symlinks.
@@ -126,4 +127,12 @@ subprocess.run([
  '--node',str(a.node), '--pg-module',str(a.repository/'node_modules/pg/lib/index.js'),
  '--migration',str(a.repository/'supabase/migrations/20261013151435_hand_history_pruning_yields_before_maintenance_thaw.sql'),
  '--output',str(a.output.with_name('pruner-frozen-entry.json'))
+],check=True,timeout=120)
+
+# The same installer owns the source-bound expired-thaw exception.
+subprocess.run([
+ sys.executable, str(a.repository/'scripts/ci/fixtures/launch-reset/maintenance-thaw-repair/qualify.py'),
+ '--repository',str(a.repository),'--installer',str(a.installer),'--scratch',str(a.scratch),
+ '--pgbin',str(pg),'--node',str(a.node),'--openssl',str(a.openssl),
+ '--output',str(a.output.with_name('maintenance-thaw-repair.json'))
 ],check=True,timeout=120)

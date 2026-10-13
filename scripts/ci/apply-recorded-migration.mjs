@@ -70,6 +70,7 @@ import {
 
 import { batchRequest, applyFinalTablePages } from './final-table-cleanup-batches.mjs';
 import { withSettlementLane } from './settlement-lane.mjs';
+import { rakeReportRequest, qualifyRakeReportHistory } from './rake-report-history-baseline.mjs';
 
 const DIR = 'supabase/migrations';
 const args = process.argv.slice(2);
@@ -150,6 +151,13 @@ try {
     argValue('--final-table-operation'),
     recovery
   );
+} catch (e) {
+  refused(e.message);
+}
+
+let rakeHistory;
+try {
+  rakeHistory = rakeReportRequest(file, args.includes('--qualify-rake-report-history'), recovery, batches);
 } catch (e) {
   refused(e.message);
 }
@@ -281,7 +289,17 @@ if (already.length > 0) {
   }
   console.log(`[apply] ALREADY-APPLIED: ${file}`);
   for (const r of already) console.log(`[apply]   recorded as version=${r.version} name=${r.name}`);
-  console.log('[apply] Nothing sent. This run changed nothing.');
+  console.log(rakeHistory
+    ? '[apply] Migration not sent. Explicit report history qualification follows.'
+    : '[apply] Nothing sent. This run changed nothing.');
+  if (rakeHistory) {
+    try {
+      await qualifyRakeReportHistory(client, sql, DRY_RUN);
+    } catch (e) {
+      await client.end().catch(() => {});
+      unknown(`rake report qualification stopped: ${e.message}`);
+    }
+  }
   await client.end().catch(() => {});
   process.exit(EXIT_OK);
 }
@@ -533,5 +551,13 @@ try {
 }
 
 console.log('[apply] APPLIED');
+if (rakeHistory) {
+  try {
+    await qualifyRakeReportHistory(client, sql, DRY_RUN);
+  } catch (e) {
+    await client.end().catch(() => {});
+    unknown(`migration installed; rake report qualification stopped: ${e.message}`);
+  }
+}
 await client.end().catch(() => {});
 process.exit(EXIT_OK);

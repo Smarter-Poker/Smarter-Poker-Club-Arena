@@ -60,6 +60,11 @@ on:
         required: false
         default: false
         type: boolean
+      qualify_rake_report_history:
+        description: 'Explicit finite closed-day report qualification for the exact rake agent report migration only'
+        required: false
+        default: false
+        type: boolean
 
 # One applier at a time. Two concurrent DDL transactions would each take their
 # own PostgREST schema reload (~28s on this database).
@@ -98,6 +103,7 @@ jobs:
           RECOVER_OID: ${{ inputs.recover_oid }}
           RECOVER_BEFORE: ${{ inputs.recover_before }}
           RECOVER_TRANSIENT_OID: ${{ inputs.recover_transient_oid }}
+          QUALIFY_RAKE_REPORT_HISTORY: ${{ inputs.qualify_rake_report_history }}
         run: |
           set -uo pipefail
           # The pipeline below is allowed to fail WITHOUT aborting this step.
@@ -118,6 +124,9 @@ jobs:
           fi
           if [[ -n "$FINAL_TABLE_PAGES" || -n "$FINAL_TABLE_OPERATION" ]]; then
             recovery_args+=(--final-table-pages "$FINAL_TABLE_PAGES" --final-table-operation "$FINAL_TABLE_OPERATION")
+          fi
+          if [[ "$QUALIFY_RAKE_REPORT_HISTORY" == "true" ]]; then
+            recovery_args+=(--qualify-rake-report-history)
           fi
           node scripts/ci/apply-recorded-migration.mjs \
             --ssl-root-cert scripts/ci/certificates/supabase-prod-ca-2021.crt \

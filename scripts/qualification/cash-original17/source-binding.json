@@ -2,8 +2,8 @@
   "scope": "Exact cash17 source/installer public-safe enforcement; private actual17 connected financial evidence external only, no production installation or ownership inferred.",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 221373,
-      "sha256": "b4566e1fd5a61925a1b9f1d30f0a274dbe7bd362b25cb3dd483b2ad6ac90c971"
+      "bytes": 221256,
+      "sha256": "78545cc8462142bcafa0387bdc3429278a7e6fb2ae823217fe6cfaeac2f7adc8"
     },
     "scripts/ci/satellite_qualifier_fixture.py": {
       "bytes": 18466,
@@ -345,11 +345,5 @@
       "bytes": 221256,
       "sha256": "78545cc8462142bcafa0387bdc3429278a7e6fb2ae823217fe6cfaeac2f7adc8"
     }
-  },
-  "scopedLaunchTransportNativeQualification20261013": {
-    "scope": "Existing required accounting job additionally qualifies the exact JSON-claim and typed-evidence followup with the unchanged installed reset source. Incoming satellite and spent-operation changes are preserved.",
-    "source_pin_update_only": true,
-    "financial_state_unchanged": true,
-    "workflow_sha256": "b4566e1fd5a61925a1b9f1d30f0a274dbe7bd362b25cb3dd483b2ad6ac90c971"
   }
 }

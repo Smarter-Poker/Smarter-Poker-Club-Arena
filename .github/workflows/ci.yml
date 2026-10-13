@@ -1430,7 +1430,7 @@ jobs:
           npm ci --ignore-scripts
           python3 -B scripts/ci/test_launch_reset_installer.py --installer scripts/ci/apply-recorded-migration.mjs --repository . --pgbin "$PG_BIN" --scratch "$RUNNER_TEMP" --output "$PROBE_EVIDENCE/installer.json"
           python3 -B scripts/ci/test_launch_reset_policy_lock_order.py --candidate "$launch_candidate" --scratch "$RUNNER_TEMP" --pg-bin "$PG_BIN" --pg-module node_modules/pg/lib/index.js --output "$PROBE_EVIDENCE/provider-policy-lock-order.json"
-          python3 -B scripts/ci/test_launch_reset_balance.py --candidate-migration "$launch_candidate" --followup-migration supabase/migrations/20261013133012_scoped_launch_operator_accepts_authoritative_json_claims.sql --scratch-root "$RUNNER_TEMP" --output-dir "$PROBE_EVIDENCE/balance" --pg-bin "$PG_BIN" --production-roster
+          python3 -B scripts/ci/test_launch_reset_balance.py --candidate-migration "$launch_candidate" --scratch-root "$RUNNER_TEMP" --output-dir "$PROBE_EVIDENCE/balance" --pg-bin "$PG_BIN" --production-roster
           for launch_fixture in commission-assertion reporting invoice-visibility treasury-selftest; do
             python3 -B scripts/ci/run_launch_reset_accounting_fixture.py --fixture "scripts/ci/fixtures/launch-reset/accounting/$launch_fixture-qualification.sql" --candidate "$launch_candidate" --work-root "$RUNNER_TEMP" --pg-bin "$PG_BIN"
           done

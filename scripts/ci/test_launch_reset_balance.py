@@ -12,6 +12,10 @@ parser.add_argument('--pg-bin',type=Path)
 parser.add_argument('--production-roster',action='store_true',help='Use exact observed 1903-wallet split')
 parser.add_argument('--prefix-roster',action='store_true',help='Bounded 64-wallet roster exercises actual validated tally prefixes')
 args=parser.parse_args()
+# The existing required job owns this installed base and its exact followup.
+# A missing followup fails normally; this is never a conditional test skip.
+if args.candidate_migration and args.candidate_migration.name=='20261012181905_scoped_club_launch_reset_and_guarded_recovery.sql' and args.followup_migration is None:
+ args.followup_migration=Path(__file__).resolve().parents[2]/'supabase'/'migrations'/'20261013133012_scoped_launch_operator_accepts_authoritative_json_claims.sql'
 BASE=args.scratch_root.resolve();OUT=args.output_dir.resolve()
 if not BASE.is_dir():parser.error('scratch root must already exist')
 OUT.mkdir(parents=True,exist_ok=True)

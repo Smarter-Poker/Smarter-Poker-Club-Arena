@@ -492,6 +492,24 @@ test.describe('Production Shark Club Players', () => {
     });
     await expect.poll(() => viewport.evaluate((node) => node.scrollTop)).toBe(448);
     const directory = page.getByRole('list', { name: 'Club Member Directory' });
+    // Production must keep the roster window bounded and update its slice
+    // after a real scroll, without replacing the exact DOM return position.
+    await expect.poll(() => directory.getByRole('listitem').count()).toBeLessThanOrEqual(16);
+    await viewport.evaluate((node) => {
+      node.scrollTop = 1230;
+      node.dispatchEvent(new Event('scroll'));
+    });
+    await expect
+      .poll(() => directory.getByRole('listitem').first().getAttribute('aria-posinset'))
+      .toBe('6');
+    await expect.poll(() => directory.getByRole('listitem').count()).toBeLessThanOrEqual(16);
+    await viewport.evaluate((node) => {
+      node.scrollTop = 448;
+      node.dispatchEvent(new Event('scroll'));
+    });
+    await expect
+      .poll(() => directory.getByRole('listitem').first().getAttribute('aria-posinset'))
+      .toBe('1');
     const row = directory.getByRole('listitem').nth(5);
     const alias = ((await row.locator('.member-alias').textContent()) || '').trim();
     expect(alias).not.toBe('');

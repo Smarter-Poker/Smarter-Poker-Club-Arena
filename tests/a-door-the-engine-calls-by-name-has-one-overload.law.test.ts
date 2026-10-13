@@ -114,7 +114,7 @@ interface Created {
 }
 
 const CREATE_RE =
-  /create\s+(?:or\s+replace\s+)?function\s+(?:public\.)?"?([a-z0-9_]+)"?\s*\(([\s\S]*?)\)\s*returns/gi;
+  /create\s+(?:or\s+replace\s+)?function\s+(?:public\.)?"?([a-z0-9_]+)"?\s*\(([\s\S]*?)\)\s*(?:returns|language)\b/gi;
 const DROP_RE =
   /drop\s+function\s+(?:if\s+exists\s+)?(?:public\.)?"?([a-z0-9_]+)"?\s*\(([^)]*)\)/gi;
 
@@ -176,6 +176,34 @@ const deliberatePair = (name: string, a: string, b: string): boolean =>
   (DELIBERATE_OVERLOADS[name] ?? []).includes(a) && (DELIBERATE_OVERLOADS[name] ?? []).includes(b);
 
 describe('a door the engine calls by name has one overload', () => {
+  it('reads implicit and explicit OUT records without consuming the body or following function', () => {
+    for (const [file, nextName] of [
+      [
+        '20261005152000_the_diamond_jackpot_is_decided_and_its_pool_is_player_side.sql',
+        'fn_poker_diamond_jackpot_stake_scope',
+      ],
+      [
+        '20261013034406_a_diamond_jackpot_carries_its_whole_unpaid_allocation.sql',
+        'fn_poker_diamond_jackpot_withdraw',
+      ],
+    ]) {
+      const declarations = [
+        ...stripComments(readFileSync(join(DIR, file), 'utf8')).matchAll(CREATE_RE),
+      ];
+      const allocator = declarations.filter(
+        (match) => match[1] === 'fn_poker_diamond_jackpot_allocate'
+      );
+      expect(allocator).toHaveLength(1);
+      expect(inputTypes(allocator[0][2])).toEqual(['uuid', 'bigint']);
+      expect(allocator[0][2]).not.toContain('v_split');
+      expect(allocator[0][2]).not.toContain('CREATE OR REPLACE');
+      expect(declarations.some((match) => match[1] === nextName)).toBe(true);
+      expect(inputTypes(declarations.find((match) => match[1] === nextName)![2])).toEqual(
+        nextName.endsWith('withdraw') ? ['uuid', 'uuid'] : ['numeric']
+      );
+    }
+  });
+
   it('the engine calls fn_consume_time_bank by name with named arguments', () => {
     const engine = readFileSync(
       join(__dirname, '..', 'server', 'src', 'engine', 'ServerTableEngineBase.ts'),

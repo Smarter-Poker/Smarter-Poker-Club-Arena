@@ -56,6 +56,7 @@ ALTER TABLE public.poker_diamond_jackpot_pools
 CREATE OR REPLACE FUNCTION public.fn_poker_diamond_jackpot_allocate(
   p_pool_id uuid, p_amount bigint,
   OUT o_main bigint, OUT o_backup bigint, OUT o_promotional bigint)
+RETURNS record
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $fn$
 DECLARE
   v_pool public.poker_diamond_jackpot_pools%ROWTYPE;

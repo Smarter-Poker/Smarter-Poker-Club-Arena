@@ -195,6 +195,12 @@ export default function ClubMembersPage() {
   );
   const [realtimeRetries, setRealtimeRetries] = useState({ members: 0, wallet: 0, audit: 0 });
   const failedRealtimeFeedsRef = useRef(new Set<'members' | 'wallet' | 'audit'>());
+  const liveRealtimeFeedsRef = useRef(
+    new Map<
+      'members' | 'wallet' | 'audit',
+      { key: string; state: 'connecting' | 'live' | 'degraded' }
+    >()
+  );
   const [browserOnline, setBrowserOnline] = useState(
     () => typeof navigator === 'undefined' || navigator.onLine !== false
   );
@@ -365,6 +371,7 @@ export default function ClubMembersPage() {
     realtimeConnectionRef.current = 'connecting';
     setRealtimeConnection('connecting');
     failedRealtimeFeedsRef.current.clear();
+    liveRealtimeFeedsRef.current.clear();
 
     if (!routeClub) {
       setLoading(false);
@@ -736,6 +743,58 @@ export default function ClubMembersPage() {
     []
   );
 
+  const auditEnabled =
+    !!resolvedClubId && ['owner', 'co_owner', 'admin'].includes(summary.viewer_role);
+  const publishRealtimeAggregate = useCallback(() => {
+    const states = [...liveRealtimeFeedsRef.current.values()].map((feed) => feed.state);
+    const next = states.includes('degraded')
+      ? 'degraded'
+      : states.length > 0 && states.every((state) => state === 'live')
+        ? 'live'
+        : 'connecting';
+    realtimeConnectionRef.current = next;
+    setRealtimeConnection(next);
+  }, []);
+  const markRealtimeFeed = useCallback(
+    (feed: 'members' | 'wallet' | 'audit', status: string) => {
+      const current = liveRealtimeFeedsRef.current.get(feed);
+      if (!current) return false;
+      const recovered = current.state === 'degraded';
+      if (status === 'SUBSCRIBED') {
+        current.state = 'live';
+        failedRealtimeFeedsRef.current.delete(feed);
+      } else if (['CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED'].includes(status)) {
+        current.state = 'degraded';
+        failedRealtimeFeedsRef.current.add(feed);
+      }
+      publishRealtimeAggregate();
+      return recovered;
+    },
+    [publishRealtimeAggregate]
+  );
+  // Register pending feeds before the subscription effects run. A role change
+  // can add audit coverage after the other feeds have already acknowledged.
+  useEffect(() => {
+    const enabled = {
+      members: !!resolvedClubId,
+      wallet: !!resolvedClubId && !!user?.id,
+      audit: auditEnabled,
+    };
+    for (const feed of ['members', 'wallet', 'audit'] as const) {
+      if (!enabled[feed]) {
+        liveRealtimeFeedsRef.current.delete(feed);
+        failedRealtimeFeedsRef.current.delete(feed);
+        continue;
+      }
+      const key = `${user?.id}:${resolvedClubId}:${realtimeRetries[feed]}`;
+      if (liveRealtimeFeedsRef.current.get(feed)?.key !== key) {
+        liveRealtimeFeedsRef.current.set(feed, { key, state: 'connecting' });
+        failedRealtimeFeedsRef.current.delete(feed);
+      }
+    }
+    publishRealtimeAggregate();
+  }, [resolvedClubId, user?.id, auditEnabled, realtimeRetries, publishRealtimeAggregate]);
+
   useMasterBusSubscriptions(
     ['CLUB_JOINED', 'CLUB_LEFT', 'MEMBER_ROLE_CHANGED'],
     (payload) => {
@@ -789,16 +848,11 @@ export default function ClubMembersPage() {
     },
     onSubscriptionStatus: (status) => {
       if (status !== 'SUBSCRIBED') return;
-      failedRealtimeFeedsRef.current.delete('members');
-      const recovered = realtimeConnectionRef.current === 'degraded';
-      realtimeConnectionRef.current = failedRealtimeFeedsRef.current.size ? 'degraded' : 'live';
-      setRealtimeConnection(realtimeConnectionRef.current);
+      const recovered = markRealtimeFeed('members', status);
       if (recovered) scheduleStructuralRefresh();
     },
     onSubscriptionError: () => {
-      failedRealtimeFeedsRef.current.add('members');
-      realtimeConnectionRef.current = 'degraded';
-      setRealtimeConnection('degraded');
+      markRealtimeFeed('members', 'CHANNEL_ERROR');
       // A channel error is not evidence that the roster snapshot is stale.
       // Reload once SUBSCRIBED confirms recovery; scheduling work here let a
       // flapping socket abort healthy directory reads and reset its own bound.
@@ -820,19 +874,13 @@ export default function ClubMembersPage() {
       }
     },
     onSubscriptionError: () => {
-      failedRealtimeFeedsRef.current.add('wallet');
-      realtimeConnectionRef.current = 'degraded';
-      setRealtimeConnection('degraded');
+      markRealtimeFeed('wallet', 'CHANNEL_ERROR');
       walletChannelDegradedRef.current = true;
       setDataFreshness('stale');
     },
     onSubscriptionStatus: (status) => {
       if (status !== 'SUBSCRIBED') return;
-      failedRealtimeFeedsRef.current.delete('wallet');
-      if (!failedRealtimeFeedsRef.current.size && realtimeConnectionRef.current === 'degraded') {
-        realtimeConnectionRef.current = 'live';
-        setRealtimeConnection('live');
-      }
+      markRealtimeFeed('wallet', status);
       const recovered = walletChannelDegradedRef.current;
       walletChannelDegradedRef.current = false;
       if (recovered) wallets.refresh();
@@ -971,8 +1019,6 @@ export default function ClubMembersPage() {
   // Default WAL old images cannot identify an off-page promotion. The
   // already-authorized, persisted audit event carries its structural cause;
   // wallet traffic never enters this lane. Existing RLS remains authoritative.
-  const auditEnabled =
-    !!resolvedClubId && ['owner', 'co_owner', 'admin'].includes(summary.viewer_role);
   useMasterBusChannel({
     channelName: resolvedClubId ? `club-members-audit-${resolvedClubId}` : null,
     restartKey: realtimeRetries.audit,
@@ -990,30 +1036,14 @@ export default function ClubMembersPage() {
     },
     enabled: auditEnabled,
     onSubscriptionError: () => {
-      failedRealtimeFeedsRef.current.add('audit');
-      realtimeConnectionRef.current = 'degraded';
-      setRealtimeConnection('degraded');
+      markRealtimeFeed('audit', 'CHANNEL_ERROR');
     },
     onSubscriptionStatus: (status) => {
       if (status !== 'SUBSCRIBED') return;
-      const recovered = failedRealtimeFeedsRef.current.delete('audit');
-      if (!failedRealtimeFeedsRef.current.size && realtimeConnectionRef.current === 'degraded') {
-        realtimeConnectionRef.current = 'live';
-        setRealtimeConnection('live');
-      }
+      const recovered = markRealtimeFeed('audit', status);
       if (recovered) scheduleStructuralRefresh();
     },
   });
-
-  useEffect(() => {
-    // Losing audit access intentionally removes that feed. Its earlier failure
-    // cannot keep a permitted member roster in recovery forever.
-    if (auditEnabled || !failedRealtimeFeedsRef.current.delete('audit')) return;
-    if (!failedRealtimeFeedsRef.current.size && realtimeConnectionRef.current === 'degraded') {
-      realtimeConnectionRef.current = 'live';
-      setRealtimeConnection('live');
-    }
-  }, [auditEnabled]);
 
   const canUseFinancialViews = summary.capabilities.can_view_financials;
   const isAgent = AGENT_ROLES.includes(summary.viewer_role);

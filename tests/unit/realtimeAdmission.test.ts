@@ -1,6 +1,52 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RealtimeClient } from '@supabase/realtime-js';
 import { RealtimeAdmission } from '../../src/lib/realtimeAdmission';
+import { subscribeRealtime } from '../../src/lib/subscribeRealtime';
+import { act, cleanup, renderHook } from '@testing-library/react';
+import { useMasterBusChannel } from '../../src/hooks/useMasterBusChannel';
+
+const runtime = vi.hoisted(() => ({
+  client: null as any,
+  admission: null as any,
+  factory: null as null | (() => void),
+  channels: new Map<string, any>(),
+}));
+vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
+vi.mock('../../src/core/MasterBus', () => ({
+  masterBus: {
+    getOrCreateChannel: (key: string) => {
+      const channel = runtime.channels.get(key) ?? runtime.client.channel(key);
+      runtime.channels.set(key, channel);
+      return channel;
+    },
+    registerChannelFactory: (_key: string, factory: () => void) => {
+      runtime.factory = factory;
+    },
+    removeChannelFactory: () => {
+      runtime.factory = null;
+    },
+    removeRegisteredChannel: (key: string, expected?: unknown) => {
+      const channel = runtime.channels.get(key);
+      if (channel && (!expected || expected === channel)) {
+        runtime.channels.delete(key);
+        void runtime.client.removeChannel(channel);
+      }
+    },
+  },
+}));
+vi.mock('../../src/lib/supabase', () => ({
+  supabase: {
+    get realtime() {
+      return runtime.client;
+    },
+  },
+}));
+vi.mock('../../src/lib/realtimeAdmission', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/lib/realtimeAdmission')>()),
+  realtimeAdmission: {
+    ready: (client: any, signal: AbortSignal) => runtime.admission.ready(client, signal),
+  },
+}));
 
 /** Actual locked SDK; the only replacement is the native network transport. */
 class NativeSocketFixture extends EventTarget {
@@ -11,6 +57,7 @@ class NativeSocketFixture extends EventTarget {
   static CLOSED = 3;
   readyState = NativeSocketFixture.CONNECTING;
   sent: Array<Record<string, any>> = [];
+  replyHeartbeats = false;
   onopen: ((event: Event) => void) | null = null;
   onclose: ((event: Event) => void) | null = null;
   onerror: ((event: Event) => void) | null = null;
@@ -29,7 +76,44 @@ class NativeSocketFixture extends EventTarget {
   }
 
   send(encoded: string) {
-    this.sent.push(JSON.parse(encoded));
+    const message = JSON.parse(encoded);
+    this.sent.push(message);
+    if (this.replyHeartbeats && message.event === 'heartbeat') this.reply(message);
+  }
+
+  reply(message: Record<string, any>) {
+    const filters = message.payload?.config?.postgres_changes;
+    this.onmessage?.({
+      data: JSON.stringify({
+        join_ref: message.join_ref,
+        ref: message.ref,
+        topic: message.topic,
+        event: 'phx_reply',
+        payload: {
+          status: 'ok',
+          response: filters?.length
+            ? {
+                postgres_changes: filters.map((filter: unknown, id: number) => ({
+                  ...(filter as object),
+                  id,
+                })),
+              }
+            : {},
+        },
+      }),
+    });
+  }
+
+  serverError(message: Record<string, any>) {
+    this.onmessage?.({
+      data: JSON.stringify({
+        join_ref: message.join_ref,
+        ref: null,
+        topic: message.topic,
+        event: 'phx_error',
+        payload: {},
+      }),
+    });
   }
 
   close() {
@@ -56,20 +140,139 @@ function setup(accessToken = async () => syntheticToken) {
     accessToken,
   });
   clients.push(client);
+  runtime.client = client;
+  runtime.admission = admission;
   return { admission, client, controller: new AbortController() };
 }
 
 beforeEach(() => {
   vi.useFakeTimers();
   NativeSocketFixture.instances = [];
+  runtime.channels.clear();
+  runtime.factory = null;
 });
 afterEach(() => {
+  cleanup();
   for (const client of clients.splice(0)) client.disconnect();
   vi.clearAllTimers();
   vi.useRealTimers();
 });
 
 describe('Realtime transport admission before the SDK join budget', () => {
+  it('keeps the actual hook recovery factory wired to a fresh delayed-acknowledgment owner', async () => {
+    const { client } = setup();
+    const statuses = vi.fn();
+    const errors = vi.fn();
+    const hook = renderHook(() =>
+      useMasterBusChannel({
+        channelName: 'club-data-delayed-owner',
+        table: 'tables',
+        filter: 'club_id=eq.fixture',
+        event: '*',
+        onPayload: vi.fn(),
+        onSubscriptionStatus: statuses,
+        onSubscriptionError: errors,
+      })
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    const socket = NativeSocketFixture.instances[0];
+    socket.replyHeartbeats = true;
+    await act(async () => {
+      socket.open();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    const first = socket.sent.find((message) => message.event === 'phx_join')!;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(20_430);
+      socket.reply(first);
+    });
+    expect(statuses).toHaveBeenLastCalledWith('SUBSCRIBED');
+    act(() => socket.serverError(first));
+    expect(errors).toHaveBeenCalledOnce();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+    expect(socket.sent.filter((message) => message.event === 'phx_join')).toHaveLength(1);
+    expect(runtime.factory).toBeTypeOf('function');
+    // Invoke the factory registered by the real hook, as its existing registry owner does.
+    await act(async () => {
+      runtime.factory!();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    const second = socket.sent.filter((message) => message.event === 'phx_join')[1];
+    expect(second.ref).not.toBe(first.ref);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(20_430);
+      socket.reply(second);
+    });
+    expect(statuses.mock.calls.filter(([status]) => status === 'SUBSCRIBED')).toHaveLength(2);
+    expect(errors).toHaveBeenCalledOnce();
+    expect(client.timeout).toBe(10_000);
+    hook.unmount();
+    expect(runtime.factory).toBeNull();
+  });
+
+  it('accepts delayed acknowledgments before and after the existing owner replaces a failed binding', async () => {
+    const { client, controller } = setup();
+    const channel = client.channel('delayed-acknowledgment');
+    const statuses: string[] = [];
+    const pending = subscribeRealtime(
+      channel,
+      (status) => statuses.push(status),
+      controller.signal
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    const socket = NativeSocketFixture.instances[0];
+    socket.replyHeartbeats = true;
+    socket.open();
+    await pending;
+    expect(client.timeout).toBe(10_000);
+    expect(channel.timeout).toBe(60_000);
+    const first = socket.sent.find((message) => message.event === 'phx_join')!;
+    await vi.advanceTimersByTimeAsync(20_430);
+    expect(statuses).toEqual([]);
+    socket.reply(first);
+    expect(statuses).toEqual(['SUBSCRIBED']);
+    socket.serverError(first);
+    expect(statuses).toEqual(['SUBSCRIBED', 'CHANNEL_ERROR']);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(socket.sent.filter((message) => message.event === 'phx_join')).toHaveLength(1);
+    const replacement = client.channel('delayed-acknowledgment');
+    expect(replacement).not.toBe(channel);
+    await subscribeRealtime(replacement, (status) => statuses.push(status), controller.signal);
+    const second = socket.sent.filter((message) => message.event === 'phx_join')[1];
+    expect(second.ref).not.toBe(first.ref);
+    await vi.advanceTimersByTimeAsync(20_430);
+    expect(statuses).not.toContain('TIMED_OUT');
+    socket.reply(second);
+    expect(statuses.filter((status) => status === 'SUBSCRIBED')).toHaveLength(2);
+    expect(client.timeout).toBe(10_000);
+    expect(replacement.timeout).toBe(60_000);
+  });
+
+  it('still reports a missing channel acknowledgment at its finite calibrated deadline', async () => {
+    const { client, controller } = setup();
+    const statuses: string[] = [];
+    const pending = subscribeRealtime(
+      client.channel('missing-acknowledgment'),
+      (status) => statuses.push(status),
+      controller.signal
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    const socket = NativeSocketFixture.instances[0];
+    socket.replyHeartbeats = true;
+    socket.open();
+    await pending;
+    await vi.advanceTimersByTimeAsync(59_999);
+    expect(statuses).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(statuses).toContain('TIMED_OUT');
+    expect(statuses).not.toContain('SUBSCRIBED');
+    expect(client.timeout).toBe(10_000);
+  });
+
   it('reproduces the old immediate-subscribe timeout before a 15.164-second socket opens', async () => {
     const { client } = setup();
     const statuses: string[] = [];

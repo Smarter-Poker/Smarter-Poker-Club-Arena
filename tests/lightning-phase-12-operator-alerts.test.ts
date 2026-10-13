@@ -415,13 +415,13 @@ describe('the proof harness and CI', () => {
     expect(HARNESS).toContain('PASS: Lightning Phase 12');
     expect(HARNESS).toContain('if [ "$oks" != 18 ]; then');
   });
-  it('CI runs the harness on shard 1 after the Phase 11 step', () => {
+  it('CI runs the harness on shard 3 after the Phase 11 step', () => {
     const p11 = CI.indexOf('test-lightning-phase11-integrity-shadow.sh');
     const p12 = CI.indexOf('test-lightning-phase12-operator-alerts.sh');
     expect(p11).toBeGreaterThan(0);
     expect(p12).toBeGreaterThan(p11);
     const step = CI.slice(CI.lastIndexOf('- name:', p12), p12);
-    expect(step).toContain('if: matrix.shard == 1');
+    expect(step).toContain('if: matrix.shard == 3');
     expect(step).toContain('PG_BIN: /usr/lib/postgresql/17/bin');
   });
   it('the schema manifest fragment promises exactly the two tables and the thirteen functions', () => {

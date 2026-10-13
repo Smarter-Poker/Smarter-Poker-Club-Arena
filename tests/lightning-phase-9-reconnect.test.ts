@@ -323,13 +323,13 @@ describe('the proof harness and CI', () => {
     expect(HARNESS).toContain('20261008043021_lightning_phase_7_and_8_review_fixes');
     expect(HARNESS).toContain('PASS: Lightning Phase 9');
   });
-  it('CI runs the harness on shard 1 after the Phase 8 step', () => {
+  it('CI runs the harness on shard 3 after the Phase 8 step', () => {
     const p8 = CI.indexOf('test-lightning-phase8-session.sh');
     const p9 = CI.indexOf('test-lightning-phase9-reconnect.sh');
     expect(p8).toBeGreaterThan(0);
     expect(p9).toBeGreaterThan(p8);
     const step = CI.slice(CI.lastIndexOf('- name:', p9), p9);
-    expect(step).toContain('if: matrix.shard == 1');
+    expect(step).toContain('if: matrix.shard == 3');
     expect(step).toContain('PG_BIN: /usr/lib/postgresql/17/bin');
   });
   it('the schema manifest fragment promises exactly the five new functions and the one column', () => {

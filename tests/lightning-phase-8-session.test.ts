@@ -419,13 +419,13 @@ describe('the proof around it', () => {
     expect(HARNESS).toContain('privileged_function_lock');
     expect(HARNESS).toContain('fx8_born_open');
   });
-  it('CI runs it on shard 1 right after the Phase 7 harness', () => {
+  it('CI runs it on shard 3 right after the Phase 7 harness', () => {
     const p7 = CI.indexOf('run: bash scripts/dev/test-lightning-phase7-reversion.sh');
     const p8 = CI.indexOf('run: bash scripts/dev/test-lightning-phase8-session.sh');
     expect(p7).toBeGreaterThan(0);
     expect(p8).toBeGreaterThan(p7);
     expect(CI.slice(p7, p8)).toMatch(
-      /if: matrix\.shard == 1\n\s+env:\n\s+PG_BIN: \/usr\/lib\/postgresql\/17\/bin\n\s+$/
+      /if: matrix\.shard == 3\n\s+env:\n\s+PG_BIN: \/usr\/lib\/postgresql\/17\/bin\n\s+$/
     );
   });
   it('the schema manifest fragment promises exactly the new functions and the two columns', () => {

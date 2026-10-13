@@ -1,42 +1,6 @@
 {
-  "playerCommandGroupedHistoryQualification20261012": {
-    "reason": "Group the unchanged exact history qualifier under the existing Player Command totals owner. Reviewed checked bounded child execution and AST wiring test; shared CI is byte-identical to protected main. Preserve every historical object, financial input and qualification status. Task audit keys reordered without value changes solely to avoid shared append conflicts; active fingerprints are source identity, not production qualification.",
-    "changes": []
-  },
-  "playerCommandHistoryRebinding20261012": {
-    "reason": "Reviewed only additive exact history qualifier classification and four source-routing assertions. Existing financial inputs, assertions, historical audit entries and qualification status are unchanged. Source identity is not financial runtime certification.",
-    "changes": [
-      {
-        "file": "scripts/ci/classify-ci-changes.mjs",
-        "from": "1fc422b810641eee2149abbdbbf5ddf50c54e87162fbea82f22456c506bd712d",
-        "to": "21bad2287248a7b8cd9b12c585b24d3c5949527340c13b95f4e763d2cebf0032"
-      }
-    ]
-  },
-  "playerCommandHistoryMainIntegration20261012": {
-    "reason": "Preserve both independent history and staff removal qualification routes and historical audit records. Refresh only integrated current source fingerprints; financial inputs, assertions, historical receipts and qualification status remain unchanged. Source identity is not runtime certification.",
-    "changes": [
-      {
-        "path": "scripts/ci/classify-ci-changes.mjs",
-        "previous": "21bad2287248a7b8cd9b12c585b24d3c5949527340c13b95f4e763d2cebf0032",
-        "current": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
-      }
-    ]
-  },
-  "playerCommandHistoryRecoveryIntegration20261012": {
-    "reason": "Preserve both history and native recovery enforcement, independent historical audit records and qualification status. Refresh only reviewed active workflow/classifier/test and nested source binding hashes; this is source identity, not financial or live qualification.",
-    "changes": [
-      {
-        "section": "repository_files",
-        "path": "scripts/ci/classify-ci-changes.mjs",
-        "previousOwn": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428",
-        "previousMain": "d064527051d9ca3b8687b8414144a81008571552ab3d73f104ee462c0dac2a80",
-        "current": "431c3a4c70a1d0e278b5a1e96b113f423d57428f1bf30da672690ce44baa3123"
-      }
-    ]
-  },
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "431c3a4c70a1d0e278b5a1e96b113f423d57428f1bf30da672690ce44baa3123",
+    "scripts/ci/classify-ci-changes.mjs": "2851a30b77a4373a8854b67f80395feb92308b7660de6c74e8abd8e6ff1fefbd",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "9b68bb22efbd6ed9d857161bf4292ed9746f4ab13edaea3bf6d26bff36a4872e",
@@ -900,5 +864,77 @@
         "current": "d064527051d9ca3b8687b8414144a81008571552ab3d73f104ee462c0dac2a80"
       }
     ]
+  },
+  "scopedLaunchResetWiring20261012": {
+    "reason": "Reviewed additive scoped launch reset CI/classifier/wiring checks and nested source identity only. Financial originals, assertions, historical pins and qualification status remain unchanged. This is not production reset certification.",
+    "pins": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "before": "d064527051d9ca3b8687b8414144a81008571552ab3d73f104ee462c0dac2a80",
+        "after": "d85d7f49f9d23d1cf59ad43a3bb29b02e1ed5d10e246adea026212f97bbbc48d"
+      }
+    }
+  },
+  "scopedLaunchAtomicInstallerEnforcement20261012": {
+    "reason": "Preserve approved installer route while committing schema and exact source history atomically, verify TLS, distinguish transport uncertainty, and enforce real native failure/commit recovery cases in existing Accounting1. Reviewed only these source/workflow/classifier/test bytes and resulting nested seals; historical financial input/assertions/status preserved. No production completion implied.",
+    "pins": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "before": "d85d7f49f9d23d1cf59ad43a3bb29b02e1ed5d10e246adea026212f97bbbc48d",
+        "after": "79c71f63942c733de548230644dc9202a371b3e4919a06cd9bf2c979c1375a76"
+      }
+    }
+  },
+  "scopedLaunchFinalAdmissionRegression20261012": {
+    "reason": "Enforce the final integrated1903 financial regression, because bounded64 passed the observed cached-join regression, plus real source-bound creation/start and concurrent park fencing. Review preserves all existing assertions, original financial inputs, history and qualification statuses; nested pins track only these exact reviewed routing bytes.",
+    "pins": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "before": "79c71f63942c733de548230644dc9202a371b3e4919a06cd9bf2c979c1375a76",
+        "after": "da8c721743b44ef3194da354c587d770f3e1aee171de5c490a6407981f41498d"
+      }
+    }
+  },
+  "playerCommandGroupedHistoryQualification20261012": {
+    "reason": "Group the unchanged exact history qualifier under the existing Player Command totals owner. Reviewed checked bounded child execution and AST wiring test; shared CI is byte-identical to protected main. Preserve every historical object, financial input and qualification status. Task audit keys reordered without value changes solely to avoid shared append conflicts; active fingerprints are source identity, not production qualification.",
+    "changes": []
+  },
+  "playerCommandHistoryRebinding20261012": {
+    "reason": "Reviewed only additive exact history qualifier classification and four source-routing assertions. Existing financial inputs, assertions, historical audit entries and qualification status are unchanged. Source identity is not financial runtime certification.",
+    "changes": [
+      {
+        "file": "scripts/ci/classify-ci-changes.mjs",
+        "from": "1fc422b810641eee2149abbdbbf5ddf50c54e87162fbea82f22456c506bd712d",
+        "to": "21bad2287248a7b8cd9b12c585b24d3c5949527340c13b95f4e763d2cebf0032"
+      }
+    ]
+  },
+  "playerCommandHistoryMainIntegration20261012": {
+    "reason": "Preserve both independent history and staff removal qualification routes and historical audit records. Refresh only integrated current source fingerprints; financial inputs, assertions, historical receipts and qualification status remain unchanged. Source identity is not runtime certification.",
+    "changes": [
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "21bad2287248a7b8cd9b12c585b24d3c5949527340c13b95f4e763d2cebf0032",
+        "current": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428"
+      }
+    ]
+  },
+  "playerCommandHistoryRecoveryIntegration20261012": {
+    "reason": "Preserve both history and native recovery enforcement, independent historical audit records and qualification status. Refresh only reviewed active workflow/classifier/test and nested source binding hashes; this is source identity, not financial or live qualification.",
+    "changes": [
+      {
+        "section": "repository_files",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previousOwn": "817ac6672f4bd92056354ad51ba0f6dce3652fc1ec61211dae6c916913f43428",
+        "previousMain": "d064527051d9ca3b8687b8414144a81008571552ab3d73f104ee462c0dac2a80",
+        "current": "431c3a4c70a1d0e278b5a1e96b113f423d57428f1bf30da672690ce44baa3123"
+      }
+    ]
+  },
+  "scopedLaunchMainIntegration20261012Final": {
+    "reason": "Preserve protected concurrent qualification and scoped reset source with combined source fingerprints only. All financial inputs, assertions and historical qualification statuses remain intact. Source identity is not runtime proof.",
+    "previous_pins": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "ours": "da8c721743b44ef3194da354c587d770f3e1aee171de5c490a6407981f41498d",
+        "incoming": "431c3a4c70a1d0e278b5a1e96b113f423d57428f1bf30da672690ce44baa3123"
+      }
+    }
   }
 }

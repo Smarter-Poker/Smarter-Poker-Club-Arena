@@ -123,9 +123,18 @@ test('short live snapshots are admitted; old, unknown-age or prepared work refus
     assert.equal(validateRecoverySnapshots(rows), rows[0]);
   const refusals = {
     'old snapshot': { ...postgrest, oldest_age_seconds: 60.001 },
-    'weekly-close reader': { ...postgrest, holders: 2, oldest_age_seconds: 1800 },
+    'weekly-close reader': {
+      ...postgrest,
+      holders: 2,
+      oldest_age_seconds: 1800,
+    },
     'unknown age beside short holders': { ...postgrest, unknown_age: 1 },
-    'unknown age alone': { ...idle, holders: 1, unknown_age: 1, oldest_age_seconds: null },
+    'unknown age alone': {
+      ...idle,
+      holders: 1,
+      unknown_age: 1,
+      oldest_age_seconds: null,
+    },
     'holder without an age': { ...postgrest, oldest_age_seconds: null },
     'age not a number': { ...postgrest, oldest_age_seconds: '12.5' },
     'negative age': { ...postgrest, oldest_age_seconds: -1 },
@@ -137,7 +146,10 @@ test('short live snapshots are admitted; old, unknown-age or prepared work refus
     'negative holder count': { ...postgrest, holders: -1 },
     'missing unknown count': { ...postgrest, unknown_age: undefined },
     'prepared transaction': { ...idle, no_prepared: false },
-    'prepared transaction beside short holders': { ...postgrest, no_prepared: false },
+    'prepared transaction beside short holders': {
+      ...postgrest,
+      no_prepared: false,
+    },
     'unknown prepared state': { ...postgrest, no_prepared: null },
     'unauthorized observer': { ...postgrest, observer_authorized: false },
     'unknown observer': { ...postgrest, observer_authorized: undefined },
@@ -189,6 +201,25 @@ test('refused admission diagnostic is categorical, aggregate-only and logged bef
       source.indexOf('validateRecoverySnapshots(snapshots)')
   );
 });
+function assertAtomicBodyAfterRecovery(source) {
+  const recovery = source.indexOf('recovered exact index OID');
+  const body = source.indexOf('const transactionBody = preamble.length > 0 ? shape.body : sql');
+  const binding = source.indexOf('const atomicSQL = transactionBody.replace(');
+  const send = source.indexOf('await client.query(atomicSQL)');
+  for (const [label, position] of [
+    ['recovery', recovery],
+    ['body selection', body],
+    ['atomic binding', binding],
+    ['transaction send', send],
+  ]) {
+    assert.ok(position >= 0, `${label} is missing`);
+  }
+  assert.ok(
+    recovery < body && body < binding && binding < send,
+    'recovery precedes unchanged body selection, atomic history binding, and send'
+  );
+}
+
 test('owning applier keeps bounded single recovery before unchanged migration body', () => {
   const source = readFileSync(new URL('./apply-recorded-migration.mjs', import.meta.url), 'utf8');
   assert.equal(source.split('sendOnce(recoveryStatement(recovery))').length - 1, 1);
@@ -198,9 +229,23 @@ test('owning applier keeps bounded single recovery before unchanged migration bo
   );
   assert.ok(source.includes("SET statement_timeout = '600s'"));
   assert.ok(source.includes('PREAMBLE_MINUTES_NEEDED = 12'));
-  assert.ok(
-    source.indexOf('recovered exact index OID') <
-      source.indexOf('client.query(preamble.length > 0 ? shape.body : sql)')
+  assertAtomicBodyAfterRecovery(source);
+});
+
+test('body-order assertion refuses missing or reordered owning steps', () => {
+  const source = readFileSync(new URL('./apply-recorded-migration.mjs', import.meta.url), 'utf8');
+  for (const part of [
+    'recovered exact index OID',
+    'const transactionBody = preamble.length > 0 ? shape.body : sql',
+    'const atomicSQL = transactionBody.replace(',
+    'await client.query(atomicSQL)',
+  ]) {
+    assert.throws(() => assertAtomicBodyAfterRecovery(source.replace(part, 'removed step')), part);
+  }
+  const send = 'await client.query(atomicSQL)';
+  assert.throws(
+    () => assertAtomicBodyAfterRecovery(send + '\n' + source.replace(send, 'removed send')),
+    /recovery precedes/
   );
 });
 

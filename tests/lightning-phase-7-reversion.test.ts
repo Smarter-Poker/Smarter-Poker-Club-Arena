@@ -339,13 +339,13 @@ describe('the proof around it', () => {
     expect(HARNESS).toMatch(/fn_lightning_hand_view_access/);
     expect(HARNESS).toMatch(/horse/);
   });
-  it('CI runs it on shard 1 right after the Phase 6 settlement harness', () => {
+  it('CI runs it on shard 3 right after the Phase 6 settlement harness', () => {
     const p6 = CI.indexOf('run: bash scripts/dev/test-lightning-phase6-settlement.sh');
     const p7 = CI.indexOf('run: bash scripts/dev/test-lightning-phase7-reversion.sh');
     expect(p6).toBeGreaterThan(0);
     expect(p7).toBeGreaterThan(p6);
     expect(CI.slice(p6, p7)).toMatch(
-      /if: matrix\.shard == 1\n\s+env:\n\s+PG_BIN: \/usr\/lib\/postgresql\/17\/bin\n\s+$/
+      /if: matrix\.shard == 3\n\s+env:\n\s+PG_BIN: \/usr\/lib\/postgresql\/17\/bin\n\s+$/
     );
   });
   it('the schema manifest fragment promises exactly the four new functions', () => {

@@ -2216,3 +2216,45 @@ describe('authenticated EV lifecycle remains in the maintained native gate', () 
     ).toBe(true);
   });
 });
+
+describe('scoped launch reset keeps its real recovery regression enforced', () => {
+  it.each([
+    'scripts/ci/test_launch_reset_balance.py',
+    'scripts/ci/run_launch_reset_accounting_fixture.py',
+    'scripts/ci/test_launch_reset_floor.py',
+    'scripts/ci/test_launch_reset_installer.py',
+    'scripts/ci/test_launch_reset_floor_admission.py',
+    'scripts/ci/fixtures/launch-reset/original-bootstrap.sql',
+    'scripts/ci/fixtures/launch-reset/fixture-hashes.json',
+    'scripts/ci/fixtures/launch-reset/accounting/invoice-visibility-qualification.sql',
+  ])('requires accounting and source checks for %s', (path) => {
+    const flags = classifyChangedPaths([path]);
+    expect(flags.server).toBe(true);
+    expect(flags.tests).toBe(true);
+    expect(flags.src).toBe(false);
+  });
+  it('runs the complete installed candidate and connected owners in the existing job', () => {
+    const steps = ci.jobs.accounting_postgres.steps;
+    const step = steps.find((value: { id?: string }) => value.id === 'scoped_launch_reset');
+    expect(step.if).toBe('matrix.shard == 1');
+    expect(step['continue-on-error']).toBeUndefined();
+    expect(step.run).toContain('20261012181905_scoped_club_launch_reset_and_guarded_recovery.sql');
+    expect(step.run).toContain('test_launch_reset_balance.py --candidate-migration');
+    expect(step.run).toContain(
+      'commission-assertion reporting invoice-visibility treasury-selftest'
+    );
+    expect(step.run).toContain('test_launch_reset_floor.py --candidate-migration');
+    expect(step.run).toContain('test_launch_reset_floor_admission.py --candidate');
+    expect(step.run).toContain('--production-roster');
+    expect(step.run).toContain('npm ci --ignore-scripts');
+    expect(step.run).toContain(
+      'test_launch_reset_installer.py --installer scripts/ci/apply-recorded-migration.mjs'
+    );
+    expect(step.run).not.toContain('--prefix-roster');
+    const evidence = steps.find(
+      (value: { name?: string }) => value.name === 'Retain scoped launch reset qualification'
+    );
+    expect(evidence.with['if-no-files-found']).toBe('error');
+    expect(evidence.if).toContain('always()');
+  });
+});

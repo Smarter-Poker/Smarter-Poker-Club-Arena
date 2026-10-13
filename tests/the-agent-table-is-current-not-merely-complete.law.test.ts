@@ -1,3 +1,4 @@
+import { functionBody } from './helpers/migrations';
 import { migrationsMentioning as corpusMentioning } from './helpers/migrationCorpus';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -81,7 +82,7 @@ function latestDefining(fnName: string): string {
 
 /** The body of the newest definition, comments stripped. */
 function body(fnName: string): string {
-  return latestDefining(fnName)
+  return functionBody(latestDefining(fnName), fnName)
     .split('\n')
     .filter((l) => !l.trimStart().startsWith('--'))
     .join('\n');

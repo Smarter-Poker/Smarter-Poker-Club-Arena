@@ -160,6 +160,17 @@ describe('the PostgreSQL accounting qualification runs as four shards of one job
     expect([...perShard.keys()].sort()).toEqual([1, 2, 3, 4]);
   });
 
+  it('balances the complete unchanged Lightning family onto shard 3', () => {
+    const lightning = steps.filter((step) => step.name?.startsWith('Lightning'));
+    expect(lightning).toHaveLength(25);
+    for (const step of lightning) {
+      expect(shardsOf(step), step.name).toEqual([3]);
+      expect(step.env?.PG_BIN, step.name).toBe('/usr/lib/postgresql/17/bin');
+      expect(step.run, step.name).toMatch(/^bash scripts\/dev\/test-lightning-/);
+    }
+    expect(job['timeout-minutes']).toBe(40);
+  });
+
   it('builds the isolation tester in every shard whose suites use it', () => {
     const build = steps.find(
       (s) => s.name === 'Build the matching native PostgreSQL isolation test tool'

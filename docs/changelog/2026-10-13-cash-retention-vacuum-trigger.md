@@ -1,0 +1,11 @@
+# Original cash receipt compaction admits timely vacuum
+
+Production PostgreSQL17.6 readback at 2026-10-13 16:46 UTC showed the original cash receipt parent and TOAST still inheriting a 20% dead-tuple trigger. Parent estimate4,070,100/dead146,942 required814,070; TOAST estimate25,818,300/dead538,658 required5,163,710. Neither relation was vacuuming. These counters establish delayed vacuum admission, not recovered bytes.
+
+The forward migration changes only four original storage parameters through `ALTER TABLE public.cash_hand_provenance_receipts`: parent vacuum threshold20,000/scale0.02, TOAST threshold20,000/scale0.01. At those measured estimates admission becomes101,402 parent and278,183 TOAST. The 1% TOAST scale leaves a measured margin; copying the journal's 2% would admit at536,366, only2,292 below the current dead count. These are initial measured thresholds, not a promise of optimal I/O cost or filesystem shrink.
+
+The single transaction uses PostgreSQL17's storage-option SHARE UPDATE EXCLUSIVE lock and a two-second timeout, preserving compatible ordinary readers/writers. Target shape, original TOAST linkage and absent target settings are guarded; replay and changed parent/TOAST settings refuse. Every other parent/TOAST catalog field and storage option is asserted unchanged. Data, original indices, ACL/RLS, triggers, accounting/replay protections, global settings and original retention jobs are untouched.
+
+Focused native PostgreSQL17 qualification uses the actual original cash table schema and real out-of-line TOAST payload under a non-superuser postgres owner. It verifies the actual live-proof expression before/after, preservation, rollback, role denial, real competing maintenance lock refusal, ordinary writer compatibility, replay, both settings' drift and target shape refusal. The existing mandatory retention native CLI invokes this qualifier; no new workflow or relaxed source pin is introduced. Unchanged financial chains are not rerun locally.
+
+Installed once as `20261013170504_cash_retention_vacuum_trigger.sql` at 2026-10-13 17:05:04 UTC. Root readback verified the exact parent/TOAST settings and original owner/ACL/RLS; existing autovacuum started scanning the parent. Protected delivery, actual vacuum completion and meaningful recovered-byte evidence remain pending separately observed results.

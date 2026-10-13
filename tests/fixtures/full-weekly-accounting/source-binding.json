@@ -465,10 +465,10 @@
     "tests/fixtures/legacy-fee-finality/custody-core.sql": "288e953c3b4c75c8eea9e0608a0f2d4b953c4437c9cfe6d50a450a801053d0eb",
     "tests/fixtures/legacy-fee-finality/fn_satellite_transfer_ledger_is_immutable.sql": "51af53e6eb44440aa9901452b42adb4bf3c7ab31ea21cdc1e4e9404c44bea407",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/ci/classify-ci-changes.mjs": "f69cf7c2955f8a2f792d0936b0478598e88438677c12088513ca4393a50754b2",
+    "scripts/ci/classify-ci-changes.mjs": "fec5ce206a6cdf0c63b3e9d397eee71930aa0e424e25189bec0dc436e56ea295",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "3b4ec77a1cb663fac237283613725bdeb0d84006d6d95d5a6247b8e7af63cce6",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "acad7d7f77c8b21d4753b81febf1751dcc88c46fece1e60a503408d52d386a3d",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -487,7 +487,7 @@
     "server/src/tournament/completionSettlementReceipt.ts": "a59a97b5b0f76d5c54d01b1fe47f3284efb2fcbd3e7742bb4e9e1ac6f0207dd4",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "d74c40351b55fcfc1da01d0deb43779e1b8873d7dac826579987bfd9d1d3ac1e",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "4f5d00debbf5ecc4d48edfcd81e286b09a08d5ba2c2b33a0d347df2e3f0730ec",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -2832,6 +2832,31 @@
           "sha256": "fe5d6c2c9af08648abb0b19f17533179a3c62110ca2185eb4e9a3ab2bd7c24d2"
         }
       ]
+    },
+    {
+      "file": "scripts/ci/classify-ci-changes.mjs",
+      "from": "1fc422b810641eee2149abbdbbf5ddf50c54e87162fbea82f22456c506bd712d",
+      "to": "192ab33e7da85d929b59be391fde51e29e346fc8c041b88f47efd92a103e2b1c",
+      "on": "2026-10-12",
+      "why": "Diamond Wallet pending-migration qualification: reviewed additive CI routing for the satellite cohort runner and exact money-registry capture, with corresponding child-binding audit entries. No financial SQL, authority, assertions or qualification status changed. Nested hash cascade preserves source identity and is not runtime or production proof."
+    },
+    {
+      "file": "tests/fixtures/legacy-fee-finality/source-binding.json",
+      "from": "89ffc9c077381302144e070eeb60c98117cecbf2029959ea0f6b877219f09b7e",
+      "to": "aa5abbbeb210e6f43dbf2462d60844c25d2d22d4fb5bc3f6b79bc0e23e2ca510",
+      "on": "2026-10-12",
+      "why": "Diamond Wallet pending-migration qualification: reviewed additive CI routing for the satellite cohort runner and exact money-registry capture, with corresponding child-binding audit entries. No financial SQL, authority, assertions or qualification status changed. Nested hash cascade preserves source identity and is not runtime or production proof."
+    },
+    {
+      "file": "tests/fixtures/sep8-spin-custody/source-binding.json",
+      "from": "d14cc23d9a2bbe9a9132ffbedd19f24b552e25ad1c41fbf9113e04bebc879ac6",
+      "to": "653a30e910d106c50734f157265e4f0ee574a37e81c34bec697001ede8df312a",
+      "on": "2026-10-12",
+      "why": "Diamond Wallet pending-migration qualification: reviewed additive CI routing for the satellite cohort runner and exact money-registry capture, with corresponding child-binding audit entries. No financial SQL, authority, assertions or qualification status changed. Nested hash cascade preserves source identity and is not runtime or production proof."
+    },
+    {
+      "on": "2026-10-13",
+      "why": "Reviewed additive satellite-only CI routing integrated with current main, preserving deployed union membership source, all financial assertions and historical pins. Refresh current source identity only; not production execution proof."
     }
   ],
   "tournament_rake_club_successor_20260921": {

@@ -1,6 +1,7 @@
 -- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_union_pnl_original_flow_evidence(uuid,timestamptz,timestamptz)'::regprocedure))='09745f78c6cc2ae57f403419020fd1ab')
 -- Only eligible original inputs enter the existing financial evidence proofs.
-BEGIN;SET LOCAL lock_timeout='2s';SET LOCAL statement_timeout='20s';
+BEGIN;
+SET LOCAL lock_timeout='2s';SET LOCAL statement_timeout='20s';
 DO $guard$BEGIN
  IF current_user<>'postgres' OR session_user<>'postgres' OR NULLIF(current_setting('request.jwt.claims',true),'') IS NOT NULL OR NULLIF(current_setting('request.jwt.claim.role',true),'') IS NOT NULL OR NULLIF(current_setting('request.jwt.claim.sub',true),'') IS NOT NULL THEN RAISE EXCEPTION 'flow_eligibility_operator_refused' USING ERRCODE='42501';END IF;
  IF public.fn_platform_frozen() IS DISTINCT FROM false OR public.fn_active_maintenance_release_boundary() IS NOT NULL THEN RAISE EXCEPTION 'flow_eligibility_freeze_refused' USING ERRCODE='55000';END IF;

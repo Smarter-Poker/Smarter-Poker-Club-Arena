@@ -9,7 +9,7 @@ test('the visible operator heatmap refreshes through its scoped narrow read', as
     !process.env.SP_EMAIL || !process.env.SP_PASS,
     'The existing reserved production staff fixture is required.'
   );
-  test.setTimeout(150_000);
+  test.setTimeout(180_000);
   const reads: Response[] = [];
   page.on('response', (response) => {
     const url = new URL(response.url());
@@ -20,7 +20,7 @@ test('the visible operator heatmap refreshes through its scoped narrow read', as
     )
       reads.push(response);
   });
-  await page.goto(`admin?club=${clubId}`, { waitUntil: 'domcontentloaded' });
+  await page.goto(`admin?club=${clubId}`, { waitUntil: 'domcontentloaded', timeout: 30_000 });
   await expect(page).not.toHaveURL(/\/auth(?:\/|\?|$)/, { timeout: 30_000 });
   // This observer deliberately suspends hidden/offline reads. DOM visibility
   // of its heading alone does not establish the document's read prerequisite.

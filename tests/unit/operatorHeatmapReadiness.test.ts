@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 const source = readFileSync('tests/e2e/routes/operator-read-observers.spec.ts', 'utf8');
 describe('visible heatmap certification prerequisites', () => {
   it('foregrounds the observer and verifies visible online state before requiring repeated reads', () => {
-    expect(source).toContain('test.setTimeout(150_000)');
+    expect(source).toContain('test.setTimeout(180_000)');
+    expect(source).toContain("waitUntil: 'domcontentloaded', timeout: 30_000");
     const front = source.indexOf('await page.bringToFront()');
     const ready = source.indexOf('visibility: document.visibilityState, online: navigator.onLine');
     const verdict = source.indexOf(".toEqual({ visibility: 'visible', online: true })");

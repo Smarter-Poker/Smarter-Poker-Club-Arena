@@ -262,8 +262,8 @@
       "sha256": "6ada39a842fa0eb59a0fa382adab3e6d1a8d15865cef45e93d7a218fa410c423"
     },
     "scripts/qualification/retained18-correction/probe-native-bootstrap.py": {
-      "bytes": 18289,
-      "sha256": "c6fe3922f78b31e330888946c4f858c3ab68af129c4725ca893fdac0c7f77aa0"
+      "bytes": 18405,
+      "sha256": "f5523f48c52388c4a33b2c68023b8ee10857e6d25b808aed5f78ac6dc89c604a"
     },
     "scripts/qualification/retained18-correction/qualified-none-parent.sql": {
       "bytes": 10477,
@@ -344,6 +344,18 @@
     "current_workflow": {
       "bytes": 221256,
       "sha256": "78545cc8462142bcafa0387bdc3429278a7e6fb2ae823217fe6cfaeac2f7adc8"
+    }
+  },
+  "scopedLaunchTyped209PublicEnforcement20261013": {
+    "why": "Retained parent driver adds the exact typed209 public-safe qualification only; its private original30 branch and separate cash17 driver remain unchanged. Preserve all previous native evidence and financial source pins.",
+    "file": "scripts/qualification/retained18-correction/probe-native-bootstrap.py",
+    "previous": {
+      "bytes": 18289,
+      "sha256": "c6fe3922f78b31e330888946c4f858c3ab68af129c4725ca893fdac0c7f77aa0"
+    },
+    "current": {
+      "bytes": 18405,
+      "sha256": "f5523f48c52388c4a33b2c68023b8ee10857e6d25b808aed5f78ac6dc89c604a"
     }
   }
 }

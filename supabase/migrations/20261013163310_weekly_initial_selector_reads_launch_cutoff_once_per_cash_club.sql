@@ -694,6 +694,7 @@ BEGIN
   RETURN jsonb_build_object('success',v_failed=0,'checked',v_checked,'failed',v_failed,
     'observed_at',clock_timestamp(),'detail',v_results);
 END $function$;
+REVOKE ALL ON FUNCTION public.fn_process_weekly_accounting_scope(uuid,uuid) FROM PUBLIC,anon,authenticated,service_role;
 DO $post$BEGIN
  IF NOT EXISTS(SELECT FROM pg_proc p WHERE p.oid=to_regprocedure('public.fn_process_weekly_accounting_scope(uuid,uuid)') AND md5(pg_get_functiondef(p.oid))='f176429b58caf30468e0d1b681f8291f' AND md5(p.prosrc)='50f6b6bed26df9cea0834286cef631aa' AND p.proowner='postgres'::regrole AND p.prosecdef AND p.provolatile='v' AND p.proacl::text='{postgres=X/postgres}' AND p.proconfig=ARRAY['search_path=public']) THEN RAISE EXCEPTION 'weekly_selector_postimage_refused';END IF;
  IF smarter_private.original_inventory_proof_sources_match() IS DISTINCT FROM true THEN RAISE EXCEPTION 'weekly_selector_post_source40_refused';END IF;

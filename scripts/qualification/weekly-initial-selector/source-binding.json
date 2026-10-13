@@ -58,8 +58,8 @@
       "sha256": "fc9969ebe36e81abb70e8e744076e45fe6ef5552deeee03f76dccf1ad696686e"
     },
     "scripts/qualification/weekly-initial-selector/run-native.py": {
-      "bytes": 15118,
-      "sha256": "72410a958707ea6c05404d2a2dcd1ccae7a80b72a19e7187dcbb45b16893a82f"
+      "bytes": 15351,
+      "sha256": "ca86ae1fb80800934809d7726ff29124129facb7f82b40ba13c2f9a859e281b9"
     },
     "scripts/qualification/weekly-initial-selector/selector-fixture.sql": {
       "bytes": 5040,
@@ -78,8 +78,8 @@
       "sha256": "89b1671cf9aa507248b7620f734855fa03cdf586d133a1caa9890530fbd04df3"
     },
     "supabase/migrations/20261013163310_weekly_initial_selector_reads_launch_cutoff_once_per_cash_club.sql": {
-      "bytes": 56326,
-      "sha256": "7258f19326c0a5feea57960abe1aee8965df278b71d4d72bda8c8e8e2bcf1e80"
+      "bytes": 56447,
+      "sha256": "0e9661dc97f699f25859a37e182744ae980e0949b0fa6194f82180d9e5b3b7ff"
     },
     "tests/weekly-initial-selector-reads-cutoff-once.law.test.ts": {
       "bytes": 4455,

@@ -1415,6 +1415,19 @@ jobs:
           TMPDIR: ${{ runner.temp }}
           NATIVE_PG_SOCKET_ROOT: ${{ runner.temp }}
         run: python3 -B -m unittest discover -s scripts/ci -p test_native_supabase_export.py
+      - name: Retention exact free-byte reader preserves its native authority
+        if: matrix.shard == 2
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/verification-harness/horse-retention-space-diagnostics.py --evidence "${{ runner.temp }}/horse-retention-space" --pg-bin "$PG_BIN"
+      - name: Retain exact retention space qualification
+        if: always() && matrix.shard == 2
+        uses: actions/upload-artifact@v4
+        with:
+          name: horse-retention-space-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/horse-retention-space/result.json
+          if-no-files-found: error
+          retention-days: 7
       - name: Scoped launch reset preserves original money and reporting owners
         id: scoped_launch_reset
         if: matrix.shard == 1

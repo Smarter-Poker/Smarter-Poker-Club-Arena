@@ -2398,6 +2398,16 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Spent DSS operations retire without invoking money bodies
+        if: matrix.shard == 3
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: ${{ runner.temp }}/spent-dss-retirement
+        run: |
+          set -euo pipefail
+          mkdir -p "$TMPDIR"
+          python3 scripts/dev/test-spent-dss-retirement.py
+
       - name: Inventory pages commit before their immutable checkpoint header
         id: inventory_committed_pages
         if: matrix.shard == 3

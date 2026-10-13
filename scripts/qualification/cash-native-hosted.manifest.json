@@ -166,8 +166,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 219700,
-      "sha256": "8716d2d184b824c542069f47d4f542bbbdb71f3246ed2b4b3f9ba07885b62002"
+      "bytes": 220050,
+      "sha256": "d03a3e0c5ceb4f16a1ae4f9de85b44a90a50e9666a9ab306af539ccd8c7a7a9d"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -3209,6 +3209,17 @@
           "sha256": "8716d2d184b824c542069f47d4f542bbbdb71f3246ed2b4b3f9ba07885b62002"
         }
       }
+    }
+  },
+  "spentDssRetirementNative20261013": {
+    "reason": "Add finite exact-preimage spent DSS retirement native qualification to existing Accounting3; no historical recording or financial body execution. Existing financial source pins, assertions, acceptance state and audit history unchanged.",
+    "previous": {
+      "bytes": 219700,
+      "sha256": "8716d2d184b824c542069f47d4f542bbbdb71f3246ed2b4b3f9ba07885b62002"
+    },
+    "current": {
+      "bytes": 220050,
+      "sha256": "d03a3e0c5ceb4f16a1ae4f9de85b44a90a50e9666a9ab306af539ccd8c7a7a9d"
     }
   }
 }

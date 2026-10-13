@@ -4,5 +4,9 @@
     "cash_original17_source_correction_proof.sql": "0ca0ab59f92523e66b8579a984a578a7750b96da841edee0f87ebf8c1d73c792",
     "original_hand_source_correction_proof.sql": "881bef612e99a6cfd966831264a007a1684bdbdf1f57bf35d4e9002656f477e3",
     "migration": "caf700a4ad677baf44ab4b9a932887eadd92082411853a72971b7a8599f5c46a"
+  },
+  "followup": {
+    "path": "supabase/migrations/20261013180855_retained_launch_originals_preserve_their_exact_failed_stack_.sql",
+    "sha256": "2d96ace37e810bd058943b01b4b57d1376d5335c8382181d75506c786b878e33"
   }
 }

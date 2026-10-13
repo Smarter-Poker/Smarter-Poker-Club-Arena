@@ -45,3 +45,19 @@ def run(e,db,root):
         if full not in component or row['signature'] not in component:raise RuntimeError('Typed209 live-proof declaration missing')
     if expected:raise RuntimeError('Typed209 runtime postimage missing')
     if hashlib.sha256(migration.read_bytes()).hexdigest()!=binding['files']['migration']:raise RuntimeError('Typed209 source changed during native qualification')
+    followup=root/'supabase/migrations/20261013180855_retained_launch_originals_preserve_their_exact_failed_stack_.sql'
+    expected_followup='2d96ace37e810bd058943b01b4b57d1376d5335c8382181d75506c786b878e33'
+    if hashlib.sha256(followup.read_bytes()).hexdigest()!=expected_followup:raise RuntimeError('80855 source identity changed')
+    original_source=migration.read_text()
+    e.sql(db,"INSERT INTO supabase_migrations.schema_migrations(version,name,statements) VALUES('20261013163547','scoped_launch_retained_originals_use_the_installed_typed_row',ARRAY['"+original_source.replace("'","''")+"']);",label='typed209-exact63547-parent-history')
+    new=followup.read_text()
+    bad=new.replace('BEGIN;',"BEGIN;DELETE FROM supabase_migrations.schema_migrations WHERE version='20261013163547';",1)
+    code,_,err=e.sql(db,bad,label='typed209-80855-wrong-parent-refusal',check=False)
+    if code==0 or 'LAUNCH_INSTALLED_TYPED_PROOF_HISTORY_REQUIRED' not in err:raise RuntimeError('80855 missing parent not refused by its exact guard')
+    e.sql(db,file=followup,label='typed209-exact80855-compile')
+    code,_,err=e.sql(db,file=followup,label='typed209-80855-replay-refusal',check=False)
+    if code==0 or 'LAUNCH_FAILED_MARKER_PROOF_CHANGED' not in err:raise RuntimeError('80855 replay not refused by its exact guard')
+    e.sql(db,"DO $q$ BEGIN IF smarter_private.launch_typed209_source_correction_proof('00272a67-8849-4176-8180-1bc5bc68ad6d') IS NOT NULL OR smarter_private.launch_typed209_source_correction_proof('00000000-0000-0000-0000-000000000031') IS NOT NULL THEN RAISE EXCEPTION '80855 absent/unlisted admitted';END IF;IF has_function_privilege('anon','smarter_private.launch_typed209_source_correction_proof(uuid)','EXECUTE') OR has_function_privilege('authenticated','smarter_private.launch_typed209_source_correction_proof(uuid)','EXECUTE') OR has_function_privilege('service_role','smarter_private.launch_typed209_source_correction_proof(uuid)','EXECUTE') THEN RAISE EXCEPTION '80855 private helper exposed';END IF;IF (SELECT md5(pg_get_functiondef(oid)) FROM pg_proc WHERE oid='smarter_private.launch_typed209_source_correction_proof(uuid)'::regprocedure) IS DISTINCT FROM '1e84786172400901cd0b3382a50afb67' OR (SELECT md5(pg_get_functiondef(oid)) FROM pg_proc WHERE oid='smarter_private.original_hand_source_correction_proof(uuid)'::regprocedure) IS DISTINCT FROM 'f604ff7504222829d1b5b85d299af242' THEN RAISE EXCEPTION '80855 runtime changed';END IF;END $q$;",label='typed209-80855-private-unlisted-runtime')
+    _,end,_=e.sql(db,baseline,label='typed209-80855-original30-17-preserved')
+    if end!=before:raise RuntimeError('80855 original30/17 changed')
+    e.report['typed209_failed_marker_public_safe']={'status':'passed','sha256':expected_followup,'private_actual_failed_positive':'separately qualified by recovery; no private requests/cards loaded'}

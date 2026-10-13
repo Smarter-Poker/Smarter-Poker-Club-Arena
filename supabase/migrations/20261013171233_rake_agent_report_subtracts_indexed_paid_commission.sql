@@ -291,6 +291,9 @@ $function$;
 
 
 
+ALTER FUNCTION public.fn_ca_rake_by_agent(uuid,date,date,integer,integer,text,text) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.fn_ca_rake_by_agent(uuid,date,date,integer,integer,text,text) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_ca_rake_by_agent(uuid,date,date,integer,integer,text,text) TO service_role;
 DO $postimage$ BEGIN
  IF md5(pg_get_functiondef('public.fn_ca_rake_by_agent(uuid,date,date,integer,integer,text,text)'::regprocedure)) IS DISTINCT FROM '6487c0fa7553a063f7b20fa759950c35'
  OR NOT EXISTS(SELECT 1 FROM pg_proc WHERE oid='public.fn_ca_rake_by_agent(uuid,date,date,integer,integer,text,text)'::regprocedure AND proowner='postgres'::regrole AND prosecdef AND provolatile='s' AND proconfig=ARRAY['search_path=public, pg_temp'])

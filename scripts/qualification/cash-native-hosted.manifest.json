@@ -1,5 +1,30 @@
 {
   "schemaVersion": 1,
+  "diamondLaunchMainInputMerge20261013": {
+    "reason": "Preserve protected-main0152591fbeb scoped reset/recovery and measured unchanged25-step Lightning reallocation1\u21923. Peer run38319524263 measured692s family, shard3previous878s; balanced40min cap supersedes dated unbalanced50min allowance. Historical50audit is retained as dated evidence. Current source identity only; financial pins/assertions and qualification states unchanged.",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 211793,
+          "sha256": "34279424b88ba53aaa89d870a0b1bba1c0621bc27bb8287b9046775d66dfa236"
+        },
+        "current": {
+          "bytes": 214051,
+          "sha256": "160ed76613500d82d0fe1637fa7b9c3687d1629888065c29f153f48dfb6a55ee"
+        }
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "previous": {
+          "bytes": 36363,
+          "sha256": "1388970807efb122b5ceea2bad565a4694167b851eee5083d45807514542c6e5"
+        },
+        "current": {
+          "bytes": 36549,
+          "sha256": "0a3d601b0ad79dbd6340f207ce3b0bdbe234a9c282e7e49e024b0bb89abbadd5"
+        }
+      }
+    }
+  },
   "diamondEscrowMainInputMerge20261012": {
     "reason": "Preserve peer original escrow qualification and Diamond bounded shard1 execution budget together. Current workflow identity only; historical financial inputs/assertions, audit records and SOURCE_ONLY_UNRUN preserved. No financial certificate restamp.",
     "ownWorkflowPin": {
@@ -141,16 +166,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 211793,
-      "sha256": "34279424b88ba53aaa89d870a0b1bba1c0621bc27bb8287b9046775d66dfa236"
+      "bytes": 214051,
+      "sha256": "160ed76613500d82d0fe1637fa7b9c3687d1629888065c29f153f48dfb6a55ee"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 36363,
-      "sha256": "1388970807efb122b5ceea2bad565a4694167b851eee5083d45807514542c6e5"
+      "bytes": 36549,
+      "sha256": "0a3d601b0ad79dbd6340f207ce3b0bdbe234a9c282e7e49e024b0bb89abbadd5"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -245,8 +270,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 108840,
-      "sha256": "fb94dda014bd29ec71e87a50affd1049df971691e6d1da7469948e74ad50fc62"
+      "bytes": 110992,
+      "sha256": "b7d700836f7d4a4d19df0b2321b9d5fb743d9e5f5645f30ae40e66bda79afb51"
     }
   },
   "nativePgCron": {
@@ -2690,6 +2715,373 @@
     "protectedMainWorkflowPin": {
       "bytes": 210534,
       "sha256": "f121396e2a47265ac66b95be65b77b88ed4aa128ec8f4230eb28458628cc8631"
+    }
+  },
+  "scopedLaunchResetQualification20261012": {
+    "reason": "Enforce the real scoped reset/undo and candidate-bound reporting, invoice permissions and floor regression in existing Accounting1. Refresh only these reviewed workflow/classifier/fixture wiring source fingerprints; all financial originals, assertions, historical pins and SOURCE_ONLY_UNRUN status remain unchanged. This is not production reset certification.",
+    "previousPins": {
+      ".github/workflows/ci.yml": {
+        "bytes": 204868,
+        "sha256": "526ce2cb5ae8c17319b7181238858a9d820a4609f4a90f7572c19d316d552ee9"
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "bytes": 35991,
+        "sha256": "d064527051d9ca3b8687b8414144a81008571552ab3d73f104ee462c0dac2a80"
+      },
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "bytes": 105731,
+        "sha256": "14a67e65f162b0c02c406ae9b24726852f5d5678c28f01ba861633b9c6ea9682"
+      }
+    }
+  },
+  "scopedLaunchResetWiring20261012": {
+    "reason": "Reviewed additive scoped launch reset CI/classifier/wiring checks and nested source identity only. Financial originals, assertions, historical pins and qualification status remain unchanged. This is not production reset certification.",
+    "pins": {
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "before": {
+          "bytes": 107413,
+          "sha256": "2ec61fa68c4945234626f2b3db15fdeb009e11d341b2db6c1b76b4909497fd18"
+        },
+        "after": {
+          "bytes": 107425,
+          "sha256": "474a93ffd29b77b252b85e4ed44391802f6076d421213f3fd10498642537bb0d"
+        }
+      }
+    }
+  },
+  "scopedLaunchResetPrefixEnforcement20261012": {
+    "reason": "Reviewed additive scoped64 prefix, source-bound treasury regression and existing Accounting1 enforcement; preserve all prior assertions, financial inputs, history and qualification statuses. Only reviewed routing/test/workflow and nested byte fingerprints change. Not a production certificate.",
+    "pins": {
+      ".github/workflows/ci.yml": {
+        "before": {
+          "bytes": 206527,
+          "sha256": "a06ae2e4a23cf71a2356e342bc5221b99f5bf7478c525933fed564a4e6105d0f"
+        },
+        "after": {
+          "bytes": 206561,
+          "sha256": "c85bae629eea3780f45fe336bd19e89866d687884af20912f7d3895d16b36309"
+        }
+      },
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "before": {
+          "bytes": 107425,
+          "sha256": "474a93ffd29b77b252b85e4ed44391802f6076d421213f3fd10498642537bb0d"
+        },
+        "after": {
+          "bytes": 107506,
+          "sha256": "d6cf10b20516b4204473d31eaf215066b42a8b3ab69c56cd6fdb6099e1578a59"
+        }
+      }
+    }
+  },
+  "scopedLaunchAtomicInstallerEnforcement20261012": {
+    "reason": "Preserve approved installer route while committing schema and exact source history atomically, verify TLS, distinguish transport uncertainty, and enforce real native failure/commit recovery cases in existing Accounting1. Reviewed only these source/workflow/classifier/test bytes and resulting nested seals; historical financial input/assertions/status preserved. No production completion implied.",
+    "pins": {
+      ".github/workflows/ci.yml": {
+        "before": {
+          "bytes": 206561,
+          "sha256": "c85bae629eea3780f45fe336bd19e89866d687884af20912f7d3895d16b36309"
+        },
+        "after": {
+          "bytes": 206776,
+          "sha256": "e841e92741f1a580200235c141ff58b0365dfbd3087eaceea015566e99eea0f6"
+        }
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "before": {
+          "bytes": 36115,
+          "sha256": "d85d7f49f9d23d1cf59ad43a3bb29b02e1ed5d10e246adea026212f97bbbc48d"
+        },
+        "after": {
+          "bytes": 36143,
+          "sha256": "79c71f63942c733de548230644dc9202a371b3e4919a06cd9bf2c979c1375a76"
+        }
+      },
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "before": {
+          "bytes": 107506,
+          "sha256": "d6cf10b20516b4204473d31eaf215066b42a8b3ab69c56cd6fdb6099e1578a59"
+        },
+        "after": {
+          "bytes": 107685,
+          "sha256": "090d6a4e6d21962c9b74ee3cdc4f27a3bfba226b36bc67346751a872c4b1e261"
+        }
+      }
+    }
+  },
+  "scopedLaunchFinalAdmissionRegression20261012": {
+    "reason": "Enforce the final integrated1903 financial regression, because bounded64 passed the observed cached-join regression, plus real source-bound creation/start and concurrent park fencing. Review preserves all existing assertions, original financial inputs, history and qualification statuses; nested pins track only these exact reviewed routing bytes.",
+    "pins": {
+      ".github/workflows/ci.yml": {
+        "before": {
+          "bytes": 206776,
+          "sha256": "e841e92741f1a580200235c141ff58b0365dfbd3087eaceea015566e99eea0f6"
+        },
+        "after": {
+          "bytes": 207015,
+          "sha256": "6acc5ca2453c69dc27bee4113ddcd83a337afa2cafef8771672e039d8d4183a1"
+        }
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "before": {
+          "bytes": 36143,
+          "sha256": "79c71f63942c733de548230644dc9202a371b3e4919a06cd9bf2c979c1375a76"
+        },
+        "after": {
+          "bytes": 36177,
+          "sha256": "da8c721743b44ef3194da354c587d770f3e1aee171de5c490a6407981f41498d"
+        }
+      },
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "before": {
+          "bytes": 107685,
+          "sha256": "090d6a4e6d21962c9b74ee3cdc4f27a3bfba226b36bc67346751a872c4b1e261"
+        },
+        "after": {
+          "bytes": 107824,
+          "sha256": "6f25ef0b33cddfb9b5c0ed46ce689381f2aaedfd7b2ebb2cb8d1c7012463c560"
+        }
+      }
+    }
+  },
+  "scopedLaunchMainIntegration20261012": {
+    "reason": "Preserve incoming protected unchanged-stack native enforcement and all incoming financial audits while retaining qualified scoped reset enforcement. Refresh only combined reviewed workflow/classifier/wiring and nested seals. No financial originals, statuses or assertions changed.",
+    "pins": {
+      ".github/workflows/ci.yml": {
+        "before": {
+          "bytes": 207015,
+          "sha256": "6acc5ca2453c69dc27bee4113ddcd83a337afa2cafef8771672e039d8d4183a1"
+        },
+        "after": {
+          "bytes": 207941,
+          "sha256": "798c1c259ac952b7ce3db09b8d064c415a1d6f077324b1a3f25d770a4d19002c"
+        }
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "before": {
+          "bytes": 36177,
+          "sha256": "da8c721743b44ef3194da354c587d770f3e1aee171de5c490a6407981f41498d"
+        },
+        "after": {
+          "bytes": 36177,
+          "sha256": "da8c721743b44ef3194da354c587d770f3e1aee171de5c490a6407981f41498d"
+        }
+      },
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "before": {
+          "bytes": 107824,
+          "sha256": "6f25ef0b33cddfb9b5c0ed46ce689381f2aaedfd7b2ebb2cb8d1c7012463c560"
+        },
+        "after": {
+          "bytes": 107824,
+          "sha256": "6f25ef0b33cddfb9b5c0ed46ce689381f2aaedfd7b2ebb2cb8d1c7012463c560"
+        }
+      }
+    }
+  },
+  "scopedLaunchRootInstallerDependencies20261012": {
+    "reason": "Actual Accounting1 failure installed only server dependencies while the qualified maintained installer imports root-lockfile pg. Add root npm ci without lifecycle scripts before the actual native installer check; preserve financial originals, assertions, historical evidence and statuses.",
+    "pins": {
+      ".github/workflows/ci.yml": {
+        "before": {
+          "bytes": 207941,
+          "sha256": "798c1c259ac952b7ce3db09b8d064c415a1d6f077324b1a3f25d770a4d19002c"
+        },
+        "after": {
+          "bytes": 208095,
+          "sha256": "8fc17f8571b0ceaafbd425a50e83e169e9fc54d930f7b0f359926ca9a740f38f"
+        }
+      },
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "before": {
+          "bytes": 107824,
+          "sha256": "6f25ef0b33cddfb9b5c0ed46ce689381f2aaedfd7b2ebb2cb8d1c7012463c560"
+        },
+        "after": {
+          "bytes": 107883,
+          "sha256": "a551b56b884f8b2b7d1178fcdf3dab45baed2b14e858951e63ef9efb59feaadc"
+        }
+      }
+    }
+  },
+  "scopedLaunchRetentionMainIntegration20261012": {
+    "reason": "Preserve incoming protected retention source and all its native qualification alongside scoped launch recovery. Refresh only combined workflow/source-wiring pins and nested seals. Financial originals, assertions, historical audits and qualification status remain unchanged; source identity is not production certification.",
+    "pins": {
+      ".github/workflows/ci.yml": {
+        "before": {
+          "bytes": 208095,
+          "sha256": "8fc17f8571b0ceaafbd425a50e83e169e9fc54d930f7b0f359926ca9a740f38f"
+        },
+        "after": {
+          "bytes": 210951,
+          "sha256": "1d0cb7601012ef3f223b286b00fa4afae3309a8159c27a6aa304681a68a5ed25"
+        }
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "before": {
+          "bytes": 36177,
+          "sha256": "da8c721743b44ef3194da354c587d770f3e1aee171de5c490a6407981f41498d"
+        },
+        "after": {
+          "bytes": 36177,
+          "sha256": "da8c721743b44ef3194da354c587d770f3e1aee171de5c490a6407981f41498d"
+        }
+      },
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "before": {
+          "bytes": 107883,
+          "sha256": "a551b56b884f8b2b7d1178fcdf3dab45baed2b14e858951e63ef9efb59feaadc"
+        },
+        "after": {
+          "bytes": 107883,
+          "sha256": "a551b56b884f8b2b7d1178fcdf3dab45baed2b14e858951e63ef9efb59feaadc"
+        }
+      }
+    }
+  },
+  "scopedLaunchInventoryMainIntegration20261012": {
+    "reason": "Preserve both scoped launch and protected inventory qualification and historical evidence. Only combined source identities change; financial inputs, assertions and qualification status are retained. Source binding is not production proof.",
+    "pins": {
+      ".github/workflows/ci.yml": {
+        "launch": {
+          "bytes": 210951,
+          "sha256": "1d0cb7601012ef3f223b286b00fa4afae3309a8159c27a6aa304681a68a5ed25"
+        },
+        "incoming": {
+          "bytes": 209626,
+          "sha256": "193e61fdf98e93dcef7ae20fbc5fe447d4048a1e8605a452aa239f4a75e0f7dc"
+        },
+        "combined": {
+          "bytes": 211927,
+          "sha256": "a5192148d536fa822a7e359ef8ecb2c7e55d1f745ed599379aece5115f323cfa"
+        }
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "launch": {
+          "bytes": 36177,
+          "sha256": "da8c721743b44ef3194da354c587d770f3e1aee171de5c490a6407981f41498d"
+        },
+        "incoming": {
+          "bytes": 35991,
+          "sha256": "d064527051d9ca3b8687b8414144a81008571552ab3d73f104ee462c0dac2a80"
+        },
+        "combined": {
+          "bytes": 36177,
+          "sha256": "da8c721743b44ef3194da354c587d770f3e1aee171de5c490a6407981f41498d"
+        }
+      },
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "launch": {
+          "bytes": 107883,
+          "sha256": "a551b56b884f8b2b7d1178fcdf3dab45baed2b14e858951e63ef9efb59feaadc"
+        },
+        "incoming": {
+          "bytes": 105731,
+          "sha256": "14a67e65f162b0c02c406ae9b24726852f5d5678c28f01ba861633b9c6ea9682"
+        },
+        "combined": {
+          "bytes": 107883,
+          "sha256": "a551b56b884f8b2b7d1178fcdf3dab45baed2b14e858951e63ef9efb59feaadc"
+        }
+      }
+    }
+  },
+  "scopedLaunchMainIntegration20261012Final": {
+    "reason": "Preserve protected concurrent qualification and scoped reset source with combined source fingerprints only. All financial inputs, assertions and historical qualification statuses remain intact. Source identity is not runtime proof.",
+    "previous_pins": {
+      "/files/.github/workflows/ci.yml/bytes": {
+        "ours": 211927,
+        "incoming": 210534
+      },
+      "/files/.github/workflows/ci.yml/sha256": {
+        "ours": "a5192148d536fa822a7e359ef8ecb2c7e55d1f745ed599379aece5115f323cfa",
+        "incoming": "f121396e2a47265ac66b95be65b77b88ed4aa128ec8f4230eb28458628cc8631"
+      },
+      "/files/scripts/ci/classify-ci-changes.mjs/bytes": {
+        "ours": 36177,
+        "incoming": 36221
+      },
+      "/files/scripts/ci/classify-ci-changes.mjs/sha256": {
+        "ours": "da8c721743b44ef3194da354c587d770f3e1aee171de5c490a6407981f41498d",
+        "incoming": "431c3a4c70a1d0e278b5a1e96b113f423d57428f1bf30da672690ce44baa3123"
+      },
+      "/files/tests/unit/fixtureNativeCi.test.ts/bytes": {
+        "ours": 107883,
+        "incoming": 108743
+      },
+      "/files/tests/unit/fixtureNativeCi.test.ts/sha256": {
+        "ours": "a551b56b884f8b2b7d1178fcdf3dab45baed2b14e858951e63ef9efb59feaadc",
+        "incoming": "f867b62425be1cbfd13c75afc3122eb1dac05b2ac093d63eb27d87ca0846b572"
+      }
+    }
+  },
+  "scopedLaunchSimpleMainIntegration20261012": {
+    "reason": "Retain all protected original-hand and Simple-page qualification, financial inputs, assertions and historical records. Refresh combined source fingerprints only; not runtime evidence.",
+    "previous_pins": {
+      "/files/.github/workflows/ci.yml/bytes": {
+        "ours": 212835,
+        "incoming": 210534
+      },
+      "/files/.github/workflows/ci.yml/sha256": {
+        "ours": "e52d4545ed49c5523ebab46233c4bdb682af89439646cba1a125001cac8100a6",
+        "incoming": "f121396e2a47265ac66b95be65b77b88ed4aa128ec8f4230eb28458628cc8631"
+      },
+      "/files/scripts/ci/classify-ci-changes.mjs/bytes": {
+        "ours": 36407,
+        "incoming": 36221
+      },
+      "/files/scripts/ci/classify-ci-changes.mjs/sha256": {
+        "ours": "2851a30b77a4373a8854b67f80395feb92308b7660de6c74e8abd8e6ff1fefbd",
+        "incoming": "431c3a4c70a1d0e278b5a1e96b113f423d57428f1bf30da672690ce44baa3123"
+      },
+      "/files/tests/unit/fixtureNativeCi.test.ts/bytes": {
+        "ours": 110895,
+        "incoming": 108840
+      },
+      "/files/tests/unit/fixtureNativeCi.test.ts/sha256": {
+        "ours": "1c15f0cb0c8ccafde67739316baa3be1bf6f822aec54c687138afb1c50f1cc09",
+        "incoming": "fb94dda014bd29ec71e87a50affd1049df971691e6d1da7469948e74ad50fc62"
+      }
+    }
+  },
+  "accountingShardBalance20261012": {
+    "reason": "Only the existing 25-step Lightning family moves to shard3 after measured shard1 job-cap exhaustion. All commands, cases, individual deadlines, artifacts, matrix, aggregate and 40-minute cap remain unchanged. Source fingerprint is not execution evidence.",
+    "previousWorkflowPin": {
+      "bytes": 212835,
+      "sha256": "e52d4545ed49c5523ebab46233c4bdb682af89439646cba1a125001cac8100a6"
+    },
+    "combinedWorkflowPin": {
+      "bytes": 213137,
+      "sha256": "082ed78d4eeb84e5eea8a463ebab39d6cddcedaa1831da8d13393810e351cccb"
+    }
+  },
+  "scopedLaunchUnplayedMainIntegration20261012": {
+    "reason": "Preserve protected original unplayed escrow qualification and balanced existing Lightning suites. Refresh combined fingerprints only; retain financial inputs, assertions and historical evidence. Not runtime certification.",
+    "previous_pins": {
+      "/files/.github/workflows/ci.yml/bytes": {
+        "ours": 213137,
+        "incoming": 211448
+      },
+      "/files/.github/workflows/ci.yml/sha256": {
+        "ours": "082ed78d4eeb84e5eea8a463ebab39d6cddcedaa1831da8d13393810e351cccb",
+        "incoming": "65ab5c875b5514f798b5ff5cc2e9764a89babf5ea27d1c00c704b59a175755a9"
+      },
+      "/files/scripts/ci/classify-ci-changes.mjs/bytes": {
+        "ours": 36407,
+        "incoming": 36221
+      },
+      "/files/scripts/ci/classify-ci-changes.mjs/sha256": {
+        "ours": "2851a30b77a4373a8854b67f80395feb92308b7660de6c74e8abd8e6ff1fefbd",
+        "incoming": "431c3a4c70a1d0e278b5a1e96b113f423d57428f1bf30da672690ce44baa3123"
+      },
+      "/files/tests/unit/fixtureNativeCi.test.ts/bytes": {
+        "ours": 110992,
+        "incoming": 108840
+      },
+      "/files/tests/unit/fixtureNativeCi.test.ts/sha256": {
+        "ours": "b7d700836f7d4a4d19df0b2321b9d5fb743d9e5f5645f30ae40e66bda79afb51",
+        "incoming": "fb94dda014bd29ec71e87a50affd1049df971691e6d1da7469948e74ad50fc62"
+      }
     }
   }
 }

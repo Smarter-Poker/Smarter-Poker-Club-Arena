@@ -44,8 +44,20 @@ describe('hand history reads the real button', () => {
       SRC.indexOf('].join(')
     );
     expect(list).toContain("'button_seat'");
-    const reads = [...SRC.matchAll(/from\('hand_history'\)\s*\.select\(([^)]*)\)/g)].map((m) =>
-      m[1].trim()
+    // The Archive seed qualifier reads metadata only, never a rendered hand.
+    const seedStart = SRC.indexOf('private async archiveHandNumberFloor(');
+    const seedEnd = SRC.indexOf('private async mapPlayerHandRows(');
+    expect(seedStart).toBeGreaterThan(-1);
+    expect(seedEnd).toBeGreaterThan(seedStart);
+    const seedSource = SRC.slice(seedStart, seedEnd);
+    expect(
+      [...seedSource.matchAll(/from\('hand_history'\)\s*\.select\(([^)]*)\)/g)].map((m) =>
+        m[1].trim()
+      )
+    ).toEqual(["'id, hand_number'"]);
+    const payloadSource = SRC.slice(0, seedStart) + SRC.slice(seedEnd);
+    const reads = [...payloadSource.matchAll(/from\('hand_history'\)\s*\.select\(([^)]*)\)/g)].map(
+      (m) => m[1].trim()
     );
     expect(reads.length).toBeGreaterThan(0);
     /**

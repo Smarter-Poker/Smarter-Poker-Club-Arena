@@ -82,6 +82,12 @@ test.describe('Reserved Admin - every Club Operations registry route', () => {
       await expectRoute(page, path);
       await expectDestination(page, `/${path}`);
 
+      if (operation.id === 'players') {
+        await expect(page.locator('[data-players-mode="simple"]')).toBeVisible();
+        await page.getByRole('button', { name: 'Advanced', exact: true }).click();
+        await expect(page.locator('[data-players-mode="advanced"]')).toBeVisible();
+      }
+
       await expect(page.getByRole('navigation', { name: 'Club Operations Sections' })).toBeVisible({
         timeout: 20_000,
       });

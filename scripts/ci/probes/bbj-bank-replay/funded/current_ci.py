@@ -26,8 +26,7 @@ PROVIDER_BINARIES = ('postgres', 'initdb', 'pg_ctl', 'psql')
 ACCOUNTING_JOB_NAME = 'Accounting transactions (PostgreSQL 17) shard 1/4'
 # Shard 1/4 of accounting_postgres in ci.yml runs BBJ, so its job name is the one
 # to read; tests/ci-tells-the-truth-faster.law.test.ts pins the match.
-# Current shard1 outer cap; case and cleanup ceilings below remain unchanged.
-JOB_SECONDS = 3000
+JOB_SECONDS = 2400
 # Finite first qualification ceilings, not observed funded runtimes. Setup's
 # original 300-second cap and three original 30-second physical cleanup caps.
 CASE_SECONDS = 300

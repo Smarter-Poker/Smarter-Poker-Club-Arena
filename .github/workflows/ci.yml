@@ -1294,11 +1294,7 @@ jobs:
     # Run 35276340849 reached V31 after 26m13s and exhausted the 30m job cap.
     # V31 passed in 4m31s in 35276304884. Keep room for hosted runtime variance;
     # every case, statement, cleanup deadline and required gate stays unchanged.
-    # Run 38315293246 shard 1 passed its last suite and uploaded its receipt
-    # at 40m04s but was cancelled during cleanup at 40m07s; comparable
-    # 38307542756 shard 1 passed in 37m12s. Give only this shard 10m headroom.
-    # Financial assertions, per-step deadlines and the required join are unchanged.
-    timeout-minutes: ${{ matrix.shard == 1 && 50 || 40 }}
+    timeout-minutes: 40
     # ── FOUR SHARDS, EVERY CASE (2026-09-26) ─────────────────────────────────
     #
     # This job was the critical path of every server-touching pull request:
@@ -1311,9 +1307,9 @@ jobs:
     # Every suite builds its own disposable PostgreSQL 17 cluster, so none
     # depends on another's state. They are split across four runners by
     # measured weight, each step keeping its own `if:` and evidence upload:
-    #   1  BBJ replay, accounting/Lightning/credit/cash-source suites, Spin expiry
+    #   1  BBJ replay, accounting/credit/cash-source suites, Spin expiry
     #   2  Full weekly accounting activation and its retained evidence
-    #   3  F06 custody lanes, tournament probes, Diamond SQL acceptance
+    #   3  F06 custody lanes, tournament probes, Diamond SQL acceptance, Lightning
     #   4  Production alert SQL, cash pg_cron, PKO, MTT, satellite, Breakfast, V31
     # Shards 3 and 4 build the native isolation tester because their suites
     # need it (PG_ISOLATION_TESTER); 1 and 2 do not use it.
@@ -1324,6 +1320,10 @@ jobs:
     # which is `success` only when all four shards succeeded. Measured 29.5m
     # before; expected ~9m after (the heaviest shard, 1, is ~8m of suites plus
     # ~1m of checkout and PostgreSQL install).
+    # October 12 run 38319524263: shard 1 exhausted its 40m cap; its 25
+    # Lightning steps took 692s while shard 3 finished in 878s. Moving only
+    # that unchanged family to shard 3 balances observed work (~1570s on 3),
+    # preserving the 40m cap, every suite, financial deadline and artifact.
     # tests/ci-tells-the-truth-faster.law.test.ts pins the split:
     # every suite step belongs to exactly one shard.
     strategy:
@@ -1407,6 +1407,34 @@ jobs:
           TMPDIR: ${{ runner.temp }}
           NATIVE_PG_SOCKET_ROOT: ${{ runner.temp }}
         run: python3 -B -m unittest discover -s scripts/ci -p test_native_supabase_export.py
+      - name: Scoped launch reset preserves original money and reporting owners
+        id: scoped_launch_reset
+        if: matrix.shard == 1
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: ${{ runner.temp }}
+          PROBE_EVIDENCE: ${{ runner.temp }}/scoped-launch-reset
+        run: |
+          set -euo pipefail
+          mkdir -p "$PROBE_EVIDENCE"
+          launch_candidate=supabase/migrations/20261012181905_scoped_club_launch_reset_and_guarded_recovery.sql
+          # The installer imports the root lockfile pg closure; this job previously installed only server dependencies.
+          npm ci --ignore-scripts
+          python3 -B scripts/ci/test_launch_reset_installer.py --installer scripts/ci/apply-recorded-migration.mjs --repository . --pgbin "$PG_BIN" --scratch "$RUNNER_TEMP" --output "$PROBE_EVIDENCE/installer.json"
+          python3 -B scripts/ci/test_launch_reset_balance.py --candidate-migration "$launch_candidate" --scratch-root "$RUNNER_TEMP" --output-dir "$PROBE_EVIDENCE/balance" --pg-bin "$PG_BIN" --production-roster
+          for launch_fixture in commission-assertion reporting invoice-visibility treasury-selftest; do
+            python3 -B scripts/ci/run_launch_reset_accounting_fixture.py --fixture "scripts/ci/fixtures/launch-reset/accounting/$launch_fixture-qualification.sql" --candidate "$launch_candidate" --work-root "$RUNNER_TEMP" --pg-bin "$PG_BIN"
+          done
+          python3 -B scripts/ci/test_launch_reset_floor_admission.py --candidate "$launch_candidate" --fixture scripts/ci/fixtures/launch-reset/accounting/floor-admission-qualification.sql --work-root "$RUNNER_TEMP" --pg-bin "$PG_BIN"
+          python3 -B scripts/ci/test_launch_reset_floor.py --candidate-migration "$launch_candidate" --pgbin "$PG_BIN" --scratch "$RUNNER_TEMP" --output "$PROBE_EVIDENCE/floor.json"
+      - name: Retain scoped launch reset qualification
+        if: always() && matrix.shard == 1 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.scoped_launch_reset.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: scoped-launch-reset-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/scoped-launch-reset/
+          if-no-files-found: error
+          retention-days: 7
       - name: Native recovery metadata client preserves the actual full archive
         if: matrix.shard == 4
         timeout-minutes: 8
@@ -1726,118 +1754,118 @@ jobs:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 -B scripts/ci/test-late-registration-clock.py
       - name: Lightning Phase 2 domain schema carries its invariants as constraints
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase2-domain.sh
       - name: Lightning Phase 1 binds a cash session to its cluster without moving it
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase1-cluster-session.sh
       - name: Lightning Phase 2 remediation joins the hand to its cluster, its instance and its epoch
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase2-remediation.sh
       - name: Lightning Phase 3 opens a Lightning-capable game as a feeder and keeps it one
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase3-feeder-first.sh
       - name: Lightning Phase 3 remediation makes the front table the main game everywhere
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase3-remediation.sh
       - name: Lightning Phase 4 counts one live eligible population and the thresholds it is judged by
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase4-population.sh
       - name: Lightning Phase 4 remediation repairs the threshold reader, the verdict and the plan
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase4-remediation.sh
       - name: Lightning Phase 5 converts a must-move cluster in one transaction and stands the tick down
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase5-conversion.sh
       - name: Lightning Phase 9 forms a hand atomically and locks its participant set the moment it is complete
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase9-formation.sh
       - name: Lightning remediation two anchors the pool to the seat, guards it in hand and waits for the engine to see the halt
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-remediation-two.sh
       - name: Lightning Phases 6 and 7 match every legal hand, explain every idle player and rotate the blinds fairly
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase6-matcher.sh
       - name: Lightning Phase 6 settles a hand onto its anchors through the physical path, frees a fast folder at once and refuses a forged settlement
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase6-settlement.sh
       - name: Lightning Phase 7 reverts a drained pool to must move without moving a chip, and the tick drives both conversions
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase7-reversion.sh
       - name: Lightning Phase 8 limits multi-tabling per platform and reads session statistics, pool status and recent hands from settled hands
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase8-session.sh
       - name: Lightning Phase 9 makes disconnects durable, reconnects rebuildable and the event ledger and hand replay auditable
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase9-reconnect.sh
       - name: Lightning Phase 10 honors responsible gaming at every door, stops playing cleanly and auto-rebuys only through the reload door
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase10-rg-rebuy.sh
       - name: Lightning Phase 9 remediation answers the ended session, clamps the reaper, skips the frozen cluster and self-heals presence at the action doors
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase9r-remediation.sh
       - name: Lightning Phase 11 records integrity telemetry the matcher never reads and the shadow matcher ledger that scores matcher versions
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase11-integrity-shadow.sh
       - name: Lightning Phase 12 ends a responsible-gaming refusal like Stop Playing and answers the caller's own auto-rebuy status at the pool door
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase12-rg-limits.sh
       - name: Lightning Phase 12 operator doors, alerts and latency ledger
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase12-operator-alerts.sh
       - name: Lightning Phase 12 keeps money and identity exact under load, stress and chaos (real concurrent backends, cancels, terminations and timeouts) and forms under surge
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
           LIGHTNING_CHAOS_PROFILE: ci
         run: bash scripts/dev/test-lightning-phase12-load-chaos.sh
       - name: Lightning Phase 11 remediation proves the TypeScript matcher port decides exactly what fn_lightning_match_plan decides on the same snapshot
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-matcher-parity.sh
       - name: Lightning Phase 11 remediation keeps integrity signals fair, one finding per subject that extends, and the shadow like for like (every finding reproduced on the production bodies first)
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase11-remediation.sh
@@ -1847,12 +1875,12 @@ jobs:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/dev/test-tournament-lane-contention.py --output "$RUNNER_TEMP/tournament-lane-contention"
       - name: Lightning Phase 13 rollout controls pause, close joins, drain to MUST-MOVE with every hand settled, freeze, roll back the matcher and answer a readiness verdict (production bodies, real chain)
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase13-operator-recovery.sh
       - name: Lightning Phase 12 load, stress and chaos rig over the chain through Phase 13 (operator doors, remediation and the rollout drain applied twice)
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
           LIGHTNING_CHAOS_PROFILE: ci

@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "1388970807efb122b5ceea2bad565a4694167b851eee5083d45807514542c6e5",
+    "scripts/ci/classify-ci-changes.mjs": "0a3d601b0ad79dbd6340f207ce3b0bdbe234a9c282e7e49e024b0bb89abbadd5",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "9b68bb22efbd6ed9d857161bf4292ed9746f4ab13edaea3bf6d26bff36a4872e",
@@ -41,6 +41,15 @@
     "tests/fixtures/legacy-fee-finality/resolution.sql": "50a6897d52a060b2aa87b7f6493c7fb8e8c33a3fcee354d1d1a70dd2954a3695",
     "tests/fixtures/legacy-fee-finality/setup.sql": "ee83d419415ded41cecb3f6877ebc4fe9b12cb7a3e1e63b5d5d98c28c4c60599",
     "tests/fixtures/legacy-fee-finality/verify-native-receipts.mjs": "9556746822f0045ecadc35704929f53810676fe0ab07e49146b14495667870c8"
+  },
+  "diamondLaunchMainInputMerge20261013": {
+    "reason": "Preserve latest protected-main0152591fbeb scoped reset/recovery qualification and unchanged Lightning reallocation with Diamond bounded budget. Current source identity only; historical audits/financial pins/assertions and qualification states unchanged.",
+    "changes": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "previous": "1388970807efb122b5ceea2bad565a4694167b851eee5083d45807514542c6e5",
+        "current": "0a3d601b0ad79dbd6340f207ce3b0bdbe234a9c282e7e49e024b0bb89abbadd5"
+      }
+    }
   },
   "diamondCurrentMainInputMerge20261012": {
     "reason": "Preserve both Diamond completion and protected-main f209c11306 input routing, workflow and all audit records. Refresh active source identity only; historical pins, financial sources/assertions and qualification states unchanged. No financial certificate restamp.",
@@ -915,5 +924,41 @@
         "current": "431c3a4c70a1d0e278b5a1e96b113f423d57428f1bf30da672690ce44baa3123"
       }
     ]
+  },
+  "scopedLaunchResetWiring20261012": {
+    "reason": "Reviewed additive scoped launch reset CI/classifier/wiring checks and nested source identity only. Financial originals, assertions, historical pins and qualification status remain unchanged. This is not production reset certification.",
+    "pins": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "before": "d064527051d9ca3b8687b8414144a81008571552ab3d73f104ee462c0dac2a80",
+        "after": "d85d7f49f9d23d1cf59ad43a3bb29b02e1ed5d10e246adea026212f97bbbc48d"
+      }
+    }
+  },
+  "scopedLaunchAtomicInstallerEnforcement20261012": {
+    "reason": "Preserve approved installer route while committing schema and exact source history atomically, verify TLS, distinguish transport uncertainty, and enforce real native failure/commit recovery cases in existing Accounting1. Reviewed only these source/workflow/classifier/test bytes and resulting nested seals; historical financial input/assertions/status preserved. No production completion implied.",
+    "pins": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "before": "d85d7f49f9d23d1cf59ad43a3bb29b02e1ed5d10e246adea026212f97bbbc48d",
+        "after": "79c71f63942c733de548230644dc9202a371b3e4919a06cd9bf2c979c1375a76"
+      }
+    }
+  },
+  "scopedLaunchFinalAdmissionRegression20261012": {
+    "reason": "Enforce the final integrated1903 financial regression, because bounded64 passed the observed cached-join regression, plus real source-bound creation/start and concurrent park fencing. Review preserves all existing assertions, original financial inputs, history and qualification statuses; nested pins track only these exact reviewed routing bytes.",
+    "pins": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "before": "79c71f63942c733de548230644dc9202a371b3e4919a06cd9bf2c979c1375a76",
+        "after": "da8c721743b44ef3194da354c587d770f3e1aee171de5c490a6407981f41498d"
+      }
+    }
+  },
+  "scopedLaunchMainIntegration20261012Final": {
+    "reason": "Preserve protected concurrent qualification and scoped reset source with combined source fingerprints only. All financial inputs, assertions and historical qualification statuses remain intact. Source identity is not runtime proof.",
+    "previous_pins": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "ours": "da8c721743b44ef3194da354c587d770f3e1aee171de5c490a6407981f41498d",
+        "incoming": "431c3a4c70a1d0e278b5a1e96b113f423d57428f1bf30da672690ce44baa3123"
+      }
+    }
   }
 }

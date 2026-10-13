@@ -181,22 +181,94 @@ function codeOnly(code: string): string {
 
 export type Finding = { rule: 'code' | 'text'; detail: string };
 
+/** A flag read by one routine is not a predicate in another routine's debit. */
+function executableUnits(code: string): string[] {
+  const units: string[] = [];
+  let outside = code;
+  for (let at = 0; at < code.length; ) {
+    if (code.startsWith('--', at)) {
+      const end = code.indexOf('\n', at);
+      at = end < 0 ? code.length : end;
+      continue;
+    }
+    if (code.startsWith('/*', at)) {
+      let depth = 1;
+      at += 2;
+      while (at < code.length && depth) {
+        if (code.startsWith('/*', at)) {
+          depth++;
+          at += 2;
+        } else if (code.startsWith('*/', at)) {
+          depth--;
+          at += 2;
+        } else at++;
+      }
+      continue;
+    }
+    if (code[at] === "'") {
+      at++;
+      while (at < code.length) {
+        if (code[at++] === "'") {
+          if (code[at] !== "'") break;
+          at++;
+        }
+      }
+      continue;
+    }
+    const declaration = /^(?:CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\b|DO\s+(?=\$))/i.exec(
+      code.slice(at)
+    );
+    if (declaration) {
+      const tail = code.slice(at);
+      const delimiter =
+        declaration[0].trim().toUpperCase() === 'DO'
+          ? /\$\w*\$/.exec(tail)
+          : /\bAS\s+(\$\w*\$)/i.exec(tail);
+      if (!delimiter) throw new Error('Executable SQL block has no body delimiter');
+      const tag = delimiter[1] ?? delimiter[0];
+      const begin = at + delimiter.index + delimiter[0].length;
+      const close = code.indexOf(tag, begin);
+      if (close < 0) throw new Error('Executable SQL block has no closing delimiter');
+      const end = close + tag.length;
+      units.push(code.slice(at, end));
+      outside = outside.slice(0, at) + ' '.repeat(end - at) + outside.slice(end);
+      at = end;
+      continue;
+    }
+    // A quoted SQL/data fragment outside a declaration is not another routine.
+    const dollar = /^\$\w*\$/.exec(code.slice(at));
+    if (dollar) {
+      const end = code.indexOf(dollar[0], at + dollar[0].length);
+      if (end >= 0) {
+        at = end + dollar[0].length;
+        continue;
+      }
+    }
+    at++;
+  }
+  units.push(outside);
+  return units;
+}
+
 export function horseDenials(sql: string): Finding[] {
   const code = stripSqlComments(sql);
-  const bare = codeOnly(code);
   const findings: Finding[] = [];
-  if (HORSE_PREDICATE.test(bare)) {
-    const takes = TAKE_BACK.filter(
-      (re) => re.test(code) && (re.source.includes("'") || re.test(bare))
-    );
-    const pays = PAYS.some((re) => re.test(code));
-    const closes = pays ? [] : CLOSE_OWED.filter((re) => re.test(bare));
-    const hits = [...takes, ...closes];
-    if (hits.length > 0) {
-      findings.push({
-        rule: 'code',
-        detail: `reads is_horse and ${hits.map((r) => r.source).join(' + ')}`,
-      });
+  for (const rawUnit of executableUnits(sql)) {
+    const unit = stripSqlComments(rawUnit);
+    const bare = codeOnly(unit);
+    if (HORSE_PREDICATE.test(bare)) {
+      const takes = TAKE_BACK.filter(
+        (re) => re.test(unit) && (re.source.includes("'") || re.test(bare))
+      );
+      const pays = PAYS.some((re) => re.test(unit));
+      const closes = pays ? [] : CLOSE_OWED.filter((re) => re.test(bare));
+      const hits = [...takes, ...closes];
+      if (hits.length > 0) {
+        findings.push({
+          rule: 'code',
+          detail: `reads is_horse and ${hits.map((r) => r.source).join(' + ')}`,
+        });
+      }
     }
   }
   for (const lit of stringLiterals(code)) {
@@ -252,6 +324,18 @@ describe('a horse is never the reason a player is not paid', () => {
 });
 
 describe('the scanner itself', () => {
+  it('keeps independent roster identification separate from another routine wallet debit', () => {
+    const roster =
+      'CREATE FUNCTION public.roster() RETURNS boolean LANGUAGE sql AS $$ SELECT is_horse FROM profiles $$;';
+    const debit =
+      'CREATE FUNCTION public.debit() RETURNS void LANGUAGE plpgsql AS $body$ BEGIN UPDATE club_members SET chip_balance=chip_balance-amount; END $body$;';
+    expect(horseDenials(roster + debit)).toEqual([]);
+    expect(
+      horseDenials(
+        debit.replace('BEGIN', 'BEGIN IF is_horse THEN').replace('END $body$', 'END IF; END $body$')
+      ).map((f) => f.rule)
+    ).toContain('code');
+  });
   it('flags the clawback rule of 20260926092115 re-planted in a new file', () => {
     const planted = `
       BEGIN;

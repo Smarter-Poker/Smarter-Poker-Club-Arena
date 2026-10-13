@@ -44,7 +44,7 @@ test('both required accounting native chains execute the final owner and counter
       '- name: Lightning Phase 12 load, stress and chaos rig over the chain through Phase 13'
     )[1]
     .split('- name:')[0];
-  expect(p13).toContain('if: matrix.shard == 1');
+  expect(p13).toContain('if: matrix.shard == 3');
   expect(p13).toContain(name);
   expect(p13).toContain('LIGHTNING_CHAOS_PROFILE: ci');
   expect(harness).toContain('verify-lightning-stale-progress-owner.mjs');

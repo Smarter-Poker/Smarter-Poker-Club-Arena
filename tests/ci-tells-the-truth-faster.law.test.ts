@@ -139,14 +139,7 @@ describe('the PostgreSQL accounting qualification runs as four shards of one job
   it('is a four-way matrix that lets every shard finish', () => {
     expect(job.strategy).toEqual({ 'fail-fast': false, matrix: { shard: [1, 2, 3, 4] } });
     expect(job.name).toBe('Accounting transactions (PostgreSQL 17) shard ${{ matrix.shard }}/4');
-    expect(job['timeout-minutes']).toBe('${{ matrix.shard == 1 && 50 || 40 }}');
-    const expression = job['timeout-minutes'].slice(3, -2).trim();
-    const evaluate = new Function('matrix', `return (${expression});`) as (matrix: {
-      shard: number;
-    }) => number;
-    expect(job.strategy.matrix.shard.map((shard: number) => evaluate({ shard }))).toEqual([
-      50, 40, 40, 40,
-    ]);
+    expect(job['timeout-minutes']).toBe(40);
   });
 
   it('gives every suite step exactly one shard, and every shard some suites', () => {
@@ -165,6 +158,17 @@ describe('the PostgreSQL accounting qualification runs as four shards of one job
       perShard.set(shards[0], (perShard.get(shards[0]) ?? 0) + 1);
     }
     expect([...perShard.keys()].sort()).toEqual([1, 2, 3, 4]);
+  });
+
+  it('balances the complete unchanged Lightning family onto shard 3', () => {
+    const lightning = steps.filter((step) => step.name?.startsWith('Lightning'));
+    expect(lightning).toHaveLength(25);
+    for (const step of lightning) {
+      expect(shardsOf(step), step.name).toEqual([3]);
+      expect(step.env?.PG_BIN, step.name).toBe('/usr/lib/postgresql/17/bin');
+      expect(step.run, step.name).toMatch(/^bash scripts\/dev\/test-lightning-/);
+    }
+    expect(job['timeout-minutes']).toBe(40);
   });
 
   it('builds the isolation tester in every shard whose suites use it', () => {

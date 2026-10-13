@@ -120,6 +120,15 @@ subprocess.run([
  '--output',str(a.output.with_name('pruner-lane.json'))
 ],check=True,timeout=120)
 
+# The same original pruner must yield before holding the maintenance thaw lane.
+subprocess.run([
+ sys.executable, str(a.repository/'scripts/ci/fixtures/launch-reset/pruner-frozen-entry/qualify.py'),
+ '--repository',str(a.repository), '--scratch',str(a.scratch), '--pg-bin',str(pg),
+ '--node',str(a.node), '--pg-module',str(a.repository/'node_modules/pg/lib/index.js'),
+ '--migration',str(a.repository/'supabase/migrations/20261013151435_hand_history_pruning_yields_before_maintenance_thaw.sql'),
+ '--output',str(a.output.with_name('pruner-frozen-entry.json'))
+],check=True,timeout=120)
+
 # The same installer owns the source-bound expired-thaw exception.
 subprocess.run([
  sys.executable, str(a.repository/'scripts/ci/fixtures/launch-reset/maintenance-thaw-repair/qualify.py'),

@@ -60,6 +60,11 @@ on:
         required: false
         default: false
         type: boolean
+      maintenance_thaw_repair:
+        description: 'Explicit audited installation of the exact merged trigger repair for an expired maintenance thaw'
+        required: false
+        default: false
+        type: boolean
       qualify_rake_report_history:
         description: 'Explicit finite closed-day report qualification for the exact rake agent report migration only'
         required: false
@@ -103,6 +108,7 @@ jobs:
           RECOVER_OID: ${{ inputs.recover_oid }}
           RECOVER_BEFORE: ${{ inputs.recover_before }}
           RECOVER_TRANSIENT_OID: ${{ inputs.recover_transient_oid }}
+          MAINTENANCE_THAW_REPAIR: ${{ inputs.maintenance_thaw_repair }}
           QUALIFY_RAKE_REPORT_HISTORY: ${{ inputs.qualify_rake_report_history }}
         run: |
           set -uo pipefail
@@ -127,6 +133,9 @@ jobs:
           fi
           if [[ "$QUALIFY_RAKE_REPORT_HISTORY" == "true" ]]; then
             recovery_args+=(--qualify-rake-report-history)
+          fi
+          if [[ "$MAINTENANCE_THAW_REPAIR" == "true" ]]; then
+            recovery_args+=(--maintenance-thaw-repair)
           fi
           node scripts/ci/apply-recorded-migration.mjs \
             --ssl-root-cert scripts/ci/certificates/supabase-prod-ca-2021.crt \

@@ -1,4 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
+import { observeHistoryJoin } from './support/historyJoinObservation';
 import { readFile } from 'node:fs/promises';
 import { expect, test, type Page, type Request, type TestInfo } from '@playwright/test';
 
@@ -296,8 +297,8 @@ test.describe('Production Shark Club Players', () => {
 
   test('loads the real roster once and completes search, filter, sort, and player navigation', async ({
     page,
-  }) => {
-    const historyJoins = new Set<string>();
+  }, testInfo) => {
+    const historyJoin = observeHistoryJoin(page);
     const historySignals: Record<string, unknown>[] = [];
     page.on('websocket', (socket) =>
       socket.on('framereceived', (frame) => {
@@ -307,8 +308,6 @@ test.describe('Production Shark Club Players', () => {
             ? { topic: parsed[2], event: parsed[3], payload: parsed[4] }
             : parsed;
           if (!String(message.topic).startsWith('realtime:player-history:')) return;
-          if (message.event === 'phx_reply' && message.payload?.status === 'ok')
-            historyJoins.add(message.topic);
           if (message.event === 'broadcast' && message.payload?.event === 'history_changed')
             historySignals.push(message.payload.payload);
         } catch {
@@ -378,15 +377,25 @@ test.describe('Production Shark Club Players', () => {
     const initialHistory = page.waitForResponse((response) =>
       response.url().includes('/rpc/ca_club_player_history')
     );
-    await history.locator('summary').click();
-    const initialHistoryResponse = await initialHistory;
-    expect(initialHistoryResponse.ok()).toBe(true);
-    const historyScope = await initialHistoryResponse.json();
-    await expect
-      .poll(() => historyJoins.has(`realtime:player-history:${historyScope.club_id}`), {
-        timeout: 15_000,
-      })
-      .toBe(true);
+    let historyTopic = '';
+    try {
+      await historyJoin.observation.qualify(async () => {
+        await history.locator('summary').click();
+        const initialHistoryResponse = await initialHistory;
+        expect(initialHistoryResponse.ok()).toBe(true);
+        const historyScope = await initialHistoryResponse.json();
+        historyTopic = `realtime:player-history:${historyScope.club_id}`;
+        return historyTopic;
+      });
+    } catch (error) {
+      await testInfo.attach('player-history-join-phase', {
+        body: JSON.stringify(historyJoin.observation.result(historyTopic, performance.now())),
+        contentType: 'application/json',
+      });
+      throw error;
+    } finally {
+      historyJoin.dispose();
+    }
     const exportResponse = page.waitForResponse((response) =>
       response.url().includes('/rpc/ca_club_members_export')
     );

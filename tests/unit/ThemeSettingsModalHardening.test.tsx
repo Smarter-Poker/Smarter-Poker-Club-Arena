@@ -53,6 +53,13 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 
+// This UI/PostgREST fixture owns an already-open authenticated transport.
+// Keep the real subscription helper; native socket/admission deadlines are
+// covered by useUserThemeSettings.admission.test.tsx with the locked SDK.
+vi.mock('../../src/lib/realtimeAdmission', () => ({
+  realtimeAdmission: { ready: async () => {} },
+}));
+
 vi.mock('../../src/core/MasterBus', () => ({
   masterBus: {
     subscribe: vi.fn((type: string, listener: (event: { payload: unknown }) => void) => {

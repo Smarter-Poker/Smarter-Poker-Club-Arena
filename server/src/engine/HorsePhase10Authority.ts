@@ -167,7 +167,7 @@ export interface HorsePhase10AuthoritySelection {
 }
 
 /**
- * THE PROTECTED RELEASE SELECTION: the round-3 PLO4 pack
+ * Historical generation-one selection: the round-3 PLO4 pack
  * (`plo4-policy-round3-v2`), approval generation 1.
  *
  * Qualified on condition (a) of the winning contract as amended by the owner
@@ -180,23 +180,13 @@ export interface HorsePhase10AuthoritySelection {
  * committed under docs/evidence/phase10/ and shipped in the engine image under
  * server/release-evidence/. Withdrawal is a reviewed change of `withdrawn`
  * here to `{ at, reason }`; a withdrawn generation never returns.
+ *
+ * October 12: the opponent PFR source repair changes the qualified policy
+ * digest. Selection is explicitly null until the existing locked matrix
+ * requalifies the exact protected source and a new generation is selected.
+ * Retain all prior evidence; it cannot qualify this modified policy.
  */
-export const PHASE10_PROTECTED_RELEASE_SELECTION: HorsePhase10AuthoritySelection | null =
-  Object.freeze({
-    schema: 'horse-qualified-authority-selection-v1',
-    phase: 'phase10',
-    sourceSha: 'c8bfc6171ddfabdfa8d8ca55f4e13fc7e2466400',
-    packVersion: 'plo4-policy-round3-v2',
-    contractVersion: 'plo4-strength-contract-v1',
-    contractDigest: '83ab185b2a2df72876b73d61ece6ea8c2f03f364ce252deecbfcde392ae5f838',
-    domain: 'plo4-cash-single-board-after-rake-horse-population',
-    qualificationPath: 'docs/evidence/phase10/phase10-qualification-2026-10-09.json',
-    qualificationSha256: '3d88e47fcd8a526295f32bdf7688c72110ebc79b0a495740f2a2b0b6e2f4d3c0',
-    approvalGeneration: 1,
-    issuedAt: '2026-10-09T15:20:00.000Z',
-    expiresAt: null,
-    withdrawn: null,
-  } as const);
+export const PHASE10_PROTECTED_RELEASE_SELECTION: HorsePhase10AuthoritySelection | null = null;
 
 const HEX40 = /^[0-9a-f]{40}$/;
 const HEX64 = /^[0-9a-f]{64}$/;

@@ -72,10 +72,11 @@ BEGIN
   v_contract := jsonb_build_array(
     jsonb_build_object(
       'signature', 'public.fn_cashier_conservation_report(uuid)',
-      -- Same report contract; the qualified replacement aggregates both sides
-      -- before materializing, preventing a full-journal temporary spill.
-      'hash', '070c95f0e89b41685aaf584068e76fce',
-      'replacement_hash', '68e55e37885c51afd37d532753cb5ba1'
+      -- Same report contract; 20261014210416 groups both wallet sides from one
+      -- covering scan per baseline cutoff (the prior body expanded every journal
+      -- row through a per-row VALUES pair and hit the read timeout).
+      'hash', '68e55e37885c51afd37d532753cb5ba1',
+      'replacement_hash', '7e64f42dd89bd5b50d4e92c8971ca5e5'
     ),
     jsonb_build_object(
       'signature', 'public.fn_cashier_recovery_receipts(uuid,uuid[],text[])',

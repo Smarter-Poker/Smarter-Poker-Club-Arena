@@ -18,6 +18,7 @@ const f = vi.hoisted(() => ({
     onPayload: (payload: unknown) => void;
     restartKey?: number;
     enabled?: boolean;
+    onSubscriptionStatus?: (status: string) => void;
     onSubscriptionError?: (status: string) => void;
   },
   wallet: null as null | {
@@ -306,3 +307,140 @@ for (const mode of ['Simple', 'Advanced']) {
     expect(refresh).toBeEnabled();
   });
 }
+
+it('requires every enabled roster feed to acknowledge before reporting connected', async () => {
+  f.summary.mockResolvedValue({
+    viewer_role: 'owner',
+    capabilities: {},
+    counts: { total: 0, online: 0, seated: 0, agents: 0, admins: 0 },
+    page_size: 80,
+  });
+  render(
+    <MemoryRouter initialEntries={['/clubs/shark-club/members']}>
+      <Routes>
+        <Route path="/clubs/:clubId/members" element={<ClubMembersPage />} />
+      </Routes>
+    </MemoryRouter>
+  );
+  await act(async () => {});
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(400);
+  });
+  const status = () => document.querySelector('.members-connection-status');
+  expect(f.audit?.enabled).toBe(true);
+  act(() => f.channel?.onSubscriptionStatus?.('SUBSCRIBED'));
+  expect(status()).toHaveAttribute('data-connection-state', 'connecting');
+  act(() => f.wallet?.onSubscriptionStatus?.('SUBSCRIBED'));
+  expect(status()).toHaveAttribute('data-connection-state', 'connecting');
+  act(() => f.audit?.onSubscriptionStatus?.('SUBSCRIBED'));
+  expect(status()).toHaveAttribute('data-connection-state', 'live');
+  act(() => f.audit?.onSubscriptionError?.('TIMED_OUT'));
+  expect(status()).toHaveAttribute('data-connection-state', 'reconnecting');
+  fireEvent.click(screen.getByRole('button', { name: 'Retry Live Sync' }));
+  await act(async () => {});
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(400);
+  });
+  expect(f.audit?.restartKey).toBe(1);
+  expect(f.channel?.restartKey ?? 0).toBe(0);
+  expect(status()).toHaveAttribute('data-connection-state', 'connecting');
+  act(() => f.audit?.onSubscriptionStatus?.('SUBSCRIBED'));
+  expect(status()).toHaveAttribute('data-connection-state', 'live');
+});
+
+it('requires a newly enabled audit feed even when existing member and wallet feeds are live', async () => {
+  render(
+    <MemoryRouter initialEntries={['/clubs/shark-club/members']}>
+      <Routes>
+        <Route path="/clubs/:clubId/members" element={<ClubMembersPage />} />
+      </Routes>
+    </MemoryRouter>
+  );
+  await act(async () => {});
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(400);
+  });
+  act(() => {
+    f.channel?.onSubscriptionStatus?.('SUBSCRIBED');
+    f.wallet?.onSubscriptionStatus?.('SUBSCRIBED');
+  });
+  expect(document.querySelector('.members-connection-status')).toHaveAttribute(
+    'data-connection-state',
+    'live'
+  );
+  f.summary.mockResolvedValue({
+    viewer_role: 'owner',
+    capabilities: {},
+    counts: { total: 0, online: 0, seated: 0, agents: 0, admins: 0 },
+    page_size: 80,
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh', exact: true }));
+  await act(async () => {});
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(400);
+  });
+  expect(f.audit?.enabled).toBe(true);
+  expect(document.querySelector('.members-connection-status')).toHaveAttribute(
+    'data-connection-state',
+    'connecting'
+  );
+  act(() => f.audit?.onSubscriptionStatus?.('SUBSCRIBED'));
+  expect(document.querySelector('.members-connection-status')).toHaveAttribute(
+    'data-connection-state',
+    'live'
+  );
+});
+
+it('requires fresh acknowledgments after the roster account changes', async () => {
+  const original = f.actor.user.id;
+  const element = (
+    <MemoryRouter initialEntries={['/clubs/shark-club/members']}>
+      <Routes>
+        <Route path="/clubs/:clubId/members" element={<ClubMembersPage />} />
+      </Routes>
+    </MemoryRouter>
+  );
+  const view = render(element);
+  await act(async () => {});
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(400);
+  });
+  act(() => {
+    f.channel?.onSubscriptionStatus?.('SUBSCRIBED');
+    f.wallet?.onSubscriptionStatus?.('SUBSCRIBED');
+  });
+  expect(document.querySelector('.members-connection-status')).toHaveAttribute(
+    'data-connection-state',
+    'live'
+  );
+  try {
+    f.actor.user.id = '00000000-0000-0000-0000-000000000099';
+    view.rerender(
+      <MemoryRouter initialEntries={['/clubs/shark-club/members']}>
+        <Routes>
+          <Route path="/clubs/:clubId/members" element={<ClubMembersPage />} />
+        </Routes>
+      </MemoryRouter>
+    );
+    await act(async () => {});
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400);
+    });
+    expect(document.querySelector('.members-connection-status')).toHaveAttribute(
+      'data-connection-state',
+      'connecting'
+    );
+    act(() => f.channel?.onSubscriptionStatus?.('SUBSCRIBED'));
+    expect(document.querySelector('.members-connection-status')).toHaveAttribute(
+      'data-connection-state',
+      'connecting'
+    );
+    act(() => f.wallet?.onSubscriptionStatus?.('SUBSCRIBED'));
+    expect(document.querySelector('.members-connection-status')).toHaveAttribute(
+      'data-connection-state',
+      'live'
+    );
+  } finally {
+    f.actor.user.id = original;
+  }
+});

@@ -89,7 +89,7 @@ async function openClubData(page: Page, testInfo: TestInfo): Promise<ClubDataAcc
   await expect(workspace).toBeVisible({ timeout: 60_000 });
   await expect(page.locator('[data-page="club-data"]')).toBeVisible();
   await expect(page.locator('[data-club-data-mode="simple"]')).toBeVisible();
-  await page.getByRole('button', { name: 'Advanced', exact: true }).click();
+  await page.getByRole('button', { name: /^Advanced(?: \([\d,]+\))?$/ }).click();
   await expect(page.getByRole('heading', { name: 'Read The Room', exact: true })).toBeVisible();
   await expect(page.getByRole('list', { name: 'Games' }).getByRole('listitem').first()).toBeVisible(
     {
@@ -452,4 +452,166 @@ test.describe('Club Data production experience', () => {
     await expect(page.getByRole('button', { name: /Refresh Club Ledger/i })).toBeVisible();
     await expect(page.getByRole('tab', { name: 'Games' })).toBeVisible();
   });
+});
+
+// Read-only acceptance for the repaired page-channel admission/recovery owner.
+// Financial action and report contracts already have their own certificates.
+test('keeps Cashier, Players and Club Data realtime connected in both modes and viewport sizes', async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(6 * (60_000 + 80_000 + 70_000) + 60_000);
+  const base = String(testInfo.project.use.baseURL);
+  const surfaces = [
+    {
+      path: 'cashier',
+      root: '[data-cashier-mode]',
+      prefixes: ['realtime:cashier-member-authority:'],
+      button: true,
+    },
+    {
+      path: 'members',
+      root: '[data-players-mode]',
+      prefixes: [
+        'realtime:club-members-sync-',
+        'realtime:club-roster-wallet:',
+        'realtime:club-members-audit-',
+      ],
+      button: true,
+    },
+    {
+      path: 'data',
+      root: '[data-club-data-mode]',
+      prefixes: [
+        'realtime:club-data-tables-',
+        'realtime:club-data-tournaments-',
+        'realtime:club-data-invoices-',
+        'realtime:club-data-members-',
+      ],
+      button: true,
+    },
+  ];
+  for (const width of [375, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const surface of surfaces) {
+      const joins = new Map<string, string>();
+      const filters = new Map<string, Array<Record<string, unknown>>>();
+      const acknowledged = new Set<string>();
+      const interruptions: string[] = [];
+      let observing = false;
+      const matches = (topic: string) =>
+        surface.prefixes.some((prefix) => topic.startsWith(prefix));
+      const onSocket = (socket: import('@playwright/test').WebSocket) => {
+        const decode = (payload: string | Buffer) => {
+          const value = JSON.parse(String(payload));
+          return Array.isArray(value)
+            ? { ref: value[1], topic: value[2], event: value[3], payload: value[4] }
+            : value;
+        };
+        const topics = new Set<string>();
+        socket.on('framesent', (frame) => {
+          try {
+            const message = decode(frame.payload);
+            if (!matches(String(message.topic))) return;
+            if (message.event === 'phx_leave') {
+              acknowledged.delete(message.topic);
+              if (observing) interruptions.push(message.topic + ': binding retired');
+              return;
+            }
+            if (message.event !== 'phx_join') return;
+            if (observing) interruptions.push(message.topic + ': join restarted');
+            topics.add(message.topic);
+            joins.set(message.topic, String(message.ref));
+            filters.set(message.topic, message.payload?.config?.postgres_changes ?? []);
+            acknowledged.delete(message.topic);
+          } catch {
+            /* Non-JSON frames cannot acknowledge a join. */
+          }
+        });
+        socket.on('framereceived', (frame) => {
+          try {
+            const message = decode(frame.payload);
+            if (!matches(String(message.topic))) return;
+            if (message.event === 'phx_reply' && joins.get(message.topic) === String(message.ref)) {
+              const expected = filters.get(message.topic) ?? [];
+              const received = message.payload?.response?.postgres_changes;
+              const bindingsMatch = expected.every(
+                (filter) =>
+                  Array.isArray(received) &&
+                  received.some((binding) =>
+                    Object.entries(filter).every(([key, value]) => binding[key] === value)
+                  )
+              );
+              if (message.payload?.status === 'ok' && bindingsMatch)
+                acknowledged.add(message.topic);
+              else if (observing)
+                interruptions.push(message.topic + ': join refused or bindings mismatched');
+            }
+            if (message.event === 'phx_error' || message.event === 'phx_close') {
+              acknowledged.delete(message.topic);
+              if (observing) interruptions.push(message.topic + ': ' + message.event);
+            }
+          } catch {
+            /* Non-JSON frames cannot acknowledge a join. */
+          }
+        });
+        socket.on('close', () => {
+          for (const topic of topics) acknowledged.delete(topic);
+          if (observing && topics.size) interruptions.push('socket closed');
+        });
+      };
+      page.on('websocket', onSocket);
+      try {
+        await page.goto(new URL('clubs/shark-club/' + surface.path, base).toString());
+        await expect(page.locator(surface.root)).toHaveAttribute(
+          surface.root.slice(1, -1),
+          'simple',
+          { timeout: 60_000 }
+        );
+        const allJoined = () =>
+          surface.prefixes.every((prefix) =>
+            [...acknowledged].some((topic) => topic.startsWith(prefix))
+          );
+        await expect
+          .poll(allJoined, {
+            timeout: 80_000,
+            message: surface.path + ' requires actual join acknowledgments',
+          })
+          .toBe(true);
+        observing = true;
+        const observeMode = async (mode: string) => {
+          await expect(page.locator(surface.root)).toHaveAttribute(surface.root.slice(1, -1), mode);
+          const start = Date.now();
+          // 35 seconds in each mode spans multiple native SDK heartbeats and
+          // the existing 60-second report refresh across the two-mode window.
+          await page.waitForTimeout(35_000);
+          expect(allJoined(), surface.path + ' lost an acknowledged feed').toBe(true);
+          expect(interruptions, surface.path + ' interrupted during observation').toEqual([]);
+          const geometry = await page.evaluate(() => ({
+            width: document.documentElement.clientWidth,
+            scroll: document.documentElement.scrollWidth,
+          }));
+          expect(geometry.scroll).toBe(geometry.width);
+          await testInfo.attach(surface.path + '-' + width + '-' + mode + '-realtime', {
+            body: JSON.stringify({
+              width,
+              mode,
+              observedMs: Date.now() - start,
+              acknowledgedTopics: [...acknowledged],
+              interruptions,
+              geometry,
+            }),
+            contentType: 'application/json',
+          });
+        };
+        await observeMode('simple');
+        await page
+          .getByRole(surface.button ? 'button' : 'radio', { name: /^Advanced(?: \([\d,]+\))?$/ })
+          .click();
+        await observeMode('advanced');
+      } finally {
+        observing = false;
+        page.off('websocket', onSocket);
+      }
+    }
+  }
 });

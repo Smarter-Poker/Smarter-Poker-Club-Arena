@@ -1,7 +1,7 @@
 /** Separate socket/auth readiness from the SDK's channel join deadline.
  * A live cold socket took 15.164s to open while subscribe() spent its 10s
  * join budget in the send buffer. Admission has its own finite 20s budget;
- * channel joins retain the SDK's original timeout. No retry or refresher here.
+ * callers own their channel join budget. No retry or refresher here.
  */
 interface RealtimeOwner {
   setAuth(): Promise<void>;

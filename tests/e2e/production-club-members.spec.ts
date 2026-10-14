@@ -297,25 +297,49 @@ test.describe('Production Shark Club Players', () => {
   test('loads the real roster once and completes search, filter, sort, and player navigation', async ({
     page,
   }) => {
+    // Socket/auth admission (20s) plus the page channel join budget (60s).
+    // This retains actual server acknowledgment and subsequent event proof.
+    const historyJoinBudgetMs = 80_000;
+    test.setTimeout(120_000 + historyJoinBudgetMs);
     const historyJoins = new Set<string>();
+    const historyJoinRefs = new Map<string, string>();
     const historySignals: Record<string, unknown>[] = [];
-    page.on('websocket', (socket) =>
+    page.on('websocket', (socket) => {
+      socket.on('framesent', (frame) => {
+        try {
+          const parsed = JSON.parse(String(frame.payload));
+          const message = Array.isArray(parsed)
+            ? { ref: parsed[1], topic: parsed[2], event: parsed[3] }
+            : parsed;
+          if (
+            String(message.topic).startsWith('realtime:player-history:') &&
+            message.event === 'phx_join'
+          )
+            historyJoinRefs.set(message.topic, String(message.ref));
+        } catch {
+          /* Non-JSON transport frames carry no history join. */
+        }
+      });
       socket.on('framereceived', (frame) => {
         try {
           const parsed = JSON.parse(String(frame.payload));
           const message = Array.isArray(parsed)
-            ? { topic: parsed[2], event: parsed[3], payload: parsed[4] }
+            ? { ref: parsed[1], topic: parsed[2], event: parsed[3], payload: parsed[4] }
             : parsed;
           if (!String(message.topic).startsWith('realtime:player-history:')) return;
-          if (message.event === 'phx_reply' && message.payload?.status === 'ok')
+          if (
+            message.event === 'phx_reply' &&
+            message.payload?.status === 'ok' &&
+            historyJoinRefs.get(message.topic) === String(message.ref)
+          )
             historyJoins.add(message.topic);
           if (message.event === 'broadcast' && message.payload?.event === 'history_changed')
             historySignals.push(message.payload.payload);
         } catch {
           /* Non-JSON transport frames carry no history receipt. */
         }
-      })
-    );
+      });
+    });
     const probe = observeMembersPath(page);
     const readyMs = await openMembers(page, probe);
 
@@ -384,7 +408,7 @@ test.describe('Production Shark Club Players', () => {
     const historyScope = await initialHistoryResponse.json();
     await expect
       .poll(() => historyJoins.has(`realtime:player-history:${historyScope.club_id}`), {
-        timeout: 15_000,
+        timeout: historyJoinBudgetMs,
       })
       .toBe(true);
     const exportResponse = page.waitForResponse((response) =>

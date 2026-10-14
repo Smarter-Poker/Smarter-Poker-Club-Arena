@@ -1,4 +1,5 @@
 -- 20261014231901_the_hand_pruner_keeps_hands_that_a_sealed_restoration_case_c.sql
+-- @live-proof: (SELECT position('original_inventory_restoration_cases' IN pg_get_functiondef('public.sp_prune_hand_history(integer)'::regprocedure)) > 0)
 --
 -- ROOT CAUSE (read from production rows 2026-10-14):
 -- The Midway Union weekly accounting scope fails every visit with

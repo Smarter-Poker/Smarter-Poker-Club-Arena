@@ -1,0 +1,6 @@
+{
+  "20261012181905_scoped_club_launch_reset_and_guarded_recovery.sql": "900ab93898c39d4adc77b1377be5a0d5d7394190776c4c6d37b241c8c59fbf9d",
+  "20261013133012_scoped_launch_operator_accepts_authoritative_json_claims.sql": "89b1671cf9aa507248b7620f734855fa03cdf586d133a1caa9890530fbd04df3",
+  "20261013202353_scoped_launch_preserves_retired_wallets_and_starts_current_w.sql": "9852a9174d6231d0c9dce79b413cdd50eb41970d59bb0cd7f5f491c34cbb7e20",
+  "20261014000346_scoped_launch_stages_complete_reporting_archive.sql": "e35da644d33e027e7ac02b61fc8e65aa768eec9d497248be0e3b3577f22281f0"
+}

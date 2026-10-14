@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "3ef4c6362dd8d88361a1040da0af18de85383aa6edda65ff4ad2cca51b1769a9",
+    "scripts/ci/classify-ci-changes.mjs": "2a40f38369ca31102aff8322a1944ba41dc6cc134456ef8b91dd5468ceb154ab",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "9b68bb22efbd6ed9d857161bf4292ed9746f4ab13edaea3bf6d26bff36a4872e",
@@ -990,6 +990,15 @@
       "scripts/ci/classify-ci-changes.mjs": {
         "previous": "c4a9e6535e8f0160dfbbf834dd82a4b5fb9b867d28e75bfa9ad900276895ce42",
         "current": "3ef4c6362dd8d88361a1040da0af18de85383aa6edda65ff4ad2cca51b1769a9"
+      }
+    }
+  },
+  "scopedReportingPrearchiveRouting20261014": {
+    "reason": "Include the exact reporting-prearchive executable in the existing required accounting selection. Only reviewed current routing/source identities change; historical audits, financial source inputs and qualification states remain unchanged. Source identity is not runtime certification.",
+    "changes": {
+      "repository_files/scripts/ci/classify-ci-changes.mjs": {
+        "previous": "3ef4c6362dd8d88361a1040da0af18de85383aa6edda65ff4ad2cca51b1769a9",
+        "current": "2a40f38369ca31102aff8322a1944ba41dc6cc134456ef8b91dd5468ceb154ab"
       }
     }
   }

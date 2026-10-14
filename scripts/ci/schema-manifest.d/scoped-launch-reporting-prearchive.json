@@ -1,0 +1,6 @@
+{
+  "_owner": "Scoped reporting prearchive: qualification and exact production installation pending; PROMISED only. Installation moves no balances and performs no archive stage.",
+  "functions": ["fn_ca_launch_cache_stage", "fn_ca_launch_cache_validate"],
+  "tables": ["smarter_private.ca_launch_cache_stages"],
+  "columns": {}
+}

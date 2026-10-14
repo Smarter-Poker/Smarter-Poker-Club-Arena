@@ -212,12 +212,136 @@ function safeConfig(raw) {
         : null,
   };
 }
+/** Populated Must-Move Clusters whose existing members already play there.
+ * The private pilot club cannot hold horses (the house-board membership law),
+ * so populated house-board Clusters are the only legitimate place where both
+ * activation thresholds can be crossed without inventing identities. This
+ * section only observes them; it never enables, seats or funds anything. */
+export const MAX_POPULATED_TARGETS = 4;
+export function parsePopulatedClusterIds(raw) {
+  if (raw === null || raw === undefined || String(raw).trim() === '') return [];
+  const ids = [
+    ...new Set(
+      String(raw)
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+    ),
+  ];
+  if (ids.length > MAX_POPULATED_TARGETS || ids.some((id) => !UUID.test(id)))
+    throw Object.assign(new Error(), { code: 'INVALID_POPULATED_CLUSTER_IDS' });
+  return ids;
+}
+export async function collectPopulatedTargets({ admin, player, clusterIds }) {
+  const results = [];
+  for (const clusterId of clusterIds) {
+    const target = { clusterId, scope: 'populated_cluster_observation_only' };
+    target.game = await observe(
+      'cash_games:populated_cluster',
+      () =>
+        admin
+          .from('cash_games')
+          .select(
+            'id,club_id,name,variant,handedness,must_move,enabled,closed_at,lightning_enabled,cluster_mode'
+          )
+          .eq('id', clusterId)
+          .maybeSingle(),
+      (v) =>
+        object(v) &&
+        v.id === clusterId &&
+        UUID.test(v.club_id ?? '') &&
+        v.must_move === true &&
+        v.enabled === true &&
+        !v.closed_at &&
+        (v.handedness === 6 || v.handedness === 9)
+    );
+    if (target.game.status !== 'known') {
+      results.push(target);
+      continue;
+    }
+    const g = target.game.data;
+    target.game = known(target.game.source, {
+      id: g.id,
+      clubId: g.club_id,
+      name: typeof g.name === 'string' ? g.name.slice(0, 80) : null,
+      variant:
+        typeof g.variant === 'string' && /^[a-z0-9_]{1,20}$/.test(g.variant) ? g.variant : null,
+      handedness: g.handedness,
+      lightningEnabled: typeof g.lightning_enabled === 'boolean' ? g.lightning_enabled : null,
+      mode:
+        typeof g.cluster_mode === 'string' && /^[a-z_]{1,30}$/.test(g.cluster_mode)
+          ? g.cluster_mode
+          : null,
+    });
+    const tables = await observe(
+      'tables:populated_cluster_scope',
+      () =>
+        admin
+          .from('tables')
+          .select('id', { count: 'exact' })
+          .eq('cluster_id', clusterId)
+          .eq('is_deleted', false)
+          .then((r) => ({
+            error: r.error,
+            data: Array.isArray(r.data) && r.count === r.data.length ? r.data : null,
+          })),
+      (v) => Array.isArray(v) && v.every((t) => UUID.test(t?.id ?? ''))
+    );
+    target.tables = tables.status === 'known' ? known(tables.source, tables.data.length) : tables;
+    target.seatedParticipants =
+      tables.status !== 'known'
+        ? unknown('table_seats:active_in_cluster', 'TABLE_SCOPE_UNKNOWN')
+        : tables.data.length === 0
+          ? known('table_seats:active_in_cluster', 0)
+          : await observeCount('table_seats:active_in_cluster', () =>
+              admin
+                .from('table_seats')
+                .select('id', { count: 'exact', head: true })
+                .in(
+                  'table_id',
+                  tables.data.map((t) => t.id)
+                )
+                .is('left_at', null)
+            );
+    target.config = await observe(
+      'fn_lightning_config',
+      async () => {
+        const r = await admin.rpc('fn_lightning_config', { p_cluster_id: clusterId });
+        return { error: r.error, data: safeConfig(r.data) };
+      },
+      object
+    );
+    target.readiness = await observe(
+      'fn_lightning_rollout_readiness:authenticated_service',
+      async () => {
+        const r = await player.rpc('fn_lightning_rollout_readiness', { p_cluster_id: clusterId });
+        const data = safeReadiness(r.data);
+        return { error: r.error, data: data?.clusterId === clusterId ? data : null };
+      },
+      object
+    );
+    const seated =
+      target.seatedParticipants.status === 'known' ? target.seatedParticipants.data : null;
+    const onThreshold =
+      target.readiness.status === 'known' ? target.readiness.data.onThreshold : null;
+    target.activationPopulation =
+      seated === null || onThreshold === null
+        ? 'unknown'
+        : seated >= onThreshold
+          ? 'at_or_above_on_threshold'
+          : 'below_on_threshold';
+    results.push(target);
+  }
+  return results;
+}
+
 export async function collectQualification({
   admin,
   player,
   fetchImpl = fetch,
   outsiderId = null,
   from = null,
+  populatedClusterIds = [],
   now = () => new Date(),
 }) {
   if (outsiderId !== null && !UUID.test(outsiderId))
@@ -257,6 +381,7 @@ export async function collectQualification({
       'Recorded hand counts are scoped database observations, not proof of every gameplay or financial gate.',
       'Readiness go is a per-cluster configuration verdict, not a public launch certificate.',
       'Calendar waiting is not a requirement.',
+      'Populated Cluster observations describe existing play only; they never enable, seat or fund anyone.',
     ],
   };
   if (creation.status === 'known') {
@@ -554,6 +679,11 @@ export async function collectQualification({
       });
     }
   }
+  report.populatedTargets = await collectPopulatedTargets({
+    admin,
+    player,
+    clusterIds: populatedClusterIds,
+  });
   report.servingAfter = await servingIdentities(fetchImpl);
   report.servingIdentityStable = servingStable(report.servingBefore, report.servingAfter);
   report.completedAt = now().toISOString();
@@ -634,6 +764,7 @@ export async function runQualification(env = process.env) {
     !env.SUPABASE_SERVICE_ROLE_KEY
   )
     throw Object.assign(new Error(), { code: 'VERIFIED_SERVICE_CONFIGURATION_REQUIRED' });
+  const populatedClusterIds = parsePopulatedClusterIds(env.PILOT_POPULATED_CLUSTER_IDS);
   const { createClient } = await import('@supabase/supabase-js');
   const options = { auth: { persistSession: false, autoRefreshToken: false } };
   const admin = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
@@ -672,6 +803,7 @@ export async function runQualification(env = process.env) {
       player,
       outsiderId: env.PILOT_DESIGNATED_OUTSIDER_ID || null,
       from: env.PILOT_REPORT_FROM || null,
+      populatedClusterIds,
     });
     if (env.PILOT_REPORT_PATH)
       writeFileSync(env.PILOT_REPORT_PATH, JSON.stringify(report, null, 2));

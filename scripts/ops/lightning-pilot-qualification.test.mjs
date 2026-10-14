@@ -8,6 +8,8 @@ import {
   servingIdentities,
   servingStable,
   runQualification,
+  collectPopulatedTargets,
+  parsePopulatedClusterIds,
 } from './lightning-pilot-qualification.mjs';
 import { PILOT } from './prepare-lightning-private-pilot.mjs';
 const clubId = 'e14bc9f7-736d-425f-8f2c-e78305ebac1d';
@@ -115,6 +117,10 @@ function fixture({
     }
     not(...a) {
       this.filters.push(['not', ...a]);
+      return this;
+    }
+    is(...a) {
+      this.filters.push(['is', ...a]);
       return this;
     }
     result() {
@@ -440,4 +446,128 @@ test('pilot identity includes authoritative stakes, classic template and exact t
     const selected = selectTargets([bad], clubId);
     assert.equal(selected.find((t) => t.name === bad.name).observation.status, 'unknown');
   }
+});
+
+const populatedId = '5e000000-0000-4000-8000-000000000006';
+const populatedTable = '5e000000-0000-4000-8000-0000000000a1';
+function populatedFixture({
+  seated = 32,
+  onThreshold = 18,
+  gameOverride = {},
+  seatError = null,
+} = {}) {
+  const calls = [];
+  const gameRow = {
+    id: populatedId,
+    club_id: 'fade0000-0000-0000-0000-000000000001',
+    name: 'NLH 1/2 Action',
+    variant: 'nlh',
+    handedness: 6,
+    must_move: true,
+    enabled: true,
+    closed_at: null,
+    lightning_enabled: false,
+    cluster_mode: 'must_move',
+    ...gameOverride,
+  };
+  const query = (table) => {
+    const q = {
+      filters: [],
+      opts: {},
+      select(_f, o = {}) {
+        q.opts = o;
+        return q;
+      },
+      eq(...a) {
+        q.filters.push(['eq', ...a]);
+        return q;
+      },
+      in(...a) {
+        q.filters.push(['in', ...a]);
+        return q;
+      },
+      is(...a) {
+        q.filters.push(['is', ...a]);
+        return q;
+      },
+      result() {
+        calls.push({ table, filters: q.filters, opts: q.opts });
+        if (table === 'cash_games') return { data: gameRow, error: null };
+        if (table === 'tables') return { data: [{ id: populatedTable }], error: null, count: 1 };
+        if (table === 'table_seats')
+          return seatError
+            ? { data: null, error: seatError, count: null }
+            : { data: null, error: null, count: seated };
+        throw new Error(`Unexpected table ${table}`);
+      },
+      maybeSingle: () => Promise.resolve(q.result()),
+      then: (res, rej) => Promise.resolve(q.result()).then(res, rej),
+    };
+    return q;
+  };
+  const rpc = async (name, args) => {
+    calls.push({ rpc: name, args });
+    if (name === 'fn_lightning_config') return { data: config, error: null };
+    if (name === 'fn_lightning_rollout_readiness') {
+      const r = readiness(args.p_cluster_id);
+      r.evidence.cluster.on_threshold = onThreshold;
+      return { data: r, error: null };
+    }
+    throw new Error(`Unexpected RPC: ${name}`);
+  };
+  return { admin: { from: query, rpc }, player: { rpc }, calls };
+}
+test('populated Cluster ids are bounded, deduplicated UUIDs and default to none', () => {
+  assert.deepEqual(parsePopulatedClusterIds(undefined), []);
+  assert.deepEqual(parsePopulatedClusterIds(' '), []);
+  assert.deepEqual(parsePopulatedClusterIds(`${populatedId}, ${populatedId}`), [populatedId]);
+  assert.throws(() => parsePopulatedClusterIds('guessed'), {
+    code: 'INVALID_POPULATED_CLUSTER_IDS',
+  });
+  const five = Array.from({ length: 5 }, (_, i) => `5e000000-0000-4000-8000-00000000000${i}`);
+  assert.throws(() => parsePopulatedClusterIds(five.join(',')), {
+    code: 'INVALID_POPULATED_CLUSTER_IDS',
+  });
+});
+test('a populated Cluster reports its actual seated population against the readiness threshold', async () => {
+  const f = populatedFixture();
+  const [t] = await collectPopulatedTargets({ ...f, clusterIds: [populatedId] });
+  assert.equal(t.game.status, 'known');
+  assert.equal(t.game.data.handedness, 6);
+  assert.equal(t.seatedParticipants.data, 32);
+  assert.equal(t.activationPopulation, 'at_or_above_on_threshold');
+  const seatRead = f.calls.find((c) => c.table === 'table_seats');
+  assert.ok(seatRead.filters.some((x) => x[0] === 'is' && x[1] === 'left_at' && x[2] === null));
+  assert.ok(seatRead.filters.some((x) => x[0] === 'in' && x[2].includes(populatedTable)));
+  const low = populatedFixture({ seated: 11 });
+  const [b] = await collectPopulatedTargets({ ...low, clusterIds: [populatedId] });
+  assert.equal(b.activationPopulation, 'below_on_threshold');
+});
+test('an unreadable seat count or a non Must-Move game stays UNKNOWN, never zero or adopted', async () => {
+  const f = populatedFixture({ seatError: { code: '42501' } });
+  const [t] = await collectPopulatedTargets({ ...f, clusterIds: [populatedId] });
+  assert.equal(t.seatedParticipants.status, 'unknown');
+  assert.equal(t.activationPopulation, 'unknown');
+  const g = populatedFixture({ gameOverride: { must_move: false } });
+  const [u] = await collectPopulatedTargets({ ...g, clusterIds: [populatedId] });
+  assert.equal(u.game.status, 'unknown');
+  assert.equal(u.readiness, undefined);
+  assert.ok(g.calls.filter((c) => c.rpc).length === 0);
+});
+test('the populated observation is part of the report and adds no write or control call', async () => {
+  const f = fixture();
+  const p = populatedFixture();
+  const admin = {
+    from: (t) => (t === 'cash_games' || t === 'table_seats' ? p.admin.from(t) : f.admin.from(t)),
+    rpc: f.admin.rpc,
+  };
+  const r = await collectQualification({ ...f, admin, populatedClusterIds: [] });
+  assert.deepEqual(r.populatedTargets, []);
+  const only = await collectPopulatedTargets({ ...p, clusterIds: [populatedId] });
+  assert.ok(
+    p.calls
+      .filter((c) => c.rpc)
+      .every((c) => ['fn_lightning_config', 'fn_lightning_rollout_readiness'].includes(c.rpc))
+  );
+  assert.equal(only.length, 1);
 });

@@ -6,6 +6,10 @@ on:
         description: Optional designated existing nonmember UUID for read-only database access decisions
         required: false
         type: string
+      populated_cluster_ids:
+        description: Optional comma-separated populated Must-Move Cluster UUIDs (at most 4) to observe read-only
+        required: false
+        type: string
       report_from:
         description: Optional ISO start time within the supported 90-day evidence window; defaults to pilot creation
         required: false
@@ -36,6 +40,7 @@ jobs:
           SP_PASS: ${{ secrets.SP_PASS }}
           PILOT_DESIGNATED_OUTSIDER_ID: ${{ inputs.designated_outsider_id }}
           PILOT_REPORT_FROM: ${{ inputs.report_from }}
+          PILOT_POPULATED_CLUSTER_IDS: ${{ inputs.populated_cluster_ids }}
           PILOT_REPORT_PATH: lightning-pilot-qualification.json
         run: node scripts/ops/lightning-pilot-qualification.mjs
       - uses: actions/upload-artifact@v4

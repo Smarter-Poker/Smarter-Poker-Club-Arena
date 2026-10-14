@@ -14,6 +14,10 @@ for (const width of [375, 393, 1280]) {
       ]
         .map((file) => readFileSync(file, 'utf8'))
         .join('\n');
+      // setContent retains the existing window and its app ResizeObservers.
+      // A real navigation disposes the previous footer publisher before this
+      // isolated CSS fixture takes ownership of the measured chrome variable.
+      await page.goto('about:blank');
       await page.setContent(`<meta name="viewport" content="width=device-width, initial-scale=1">
       <style>${sheets}
       body { margin: 0; }

@@ -1,0 +1,5 @@
+{
+  "_owner": "fix/owner-decisions-launch. Migration 20261007014946_five_launch_owner_decisions: the tournament result notice written by each MTT/satellite payout, and the owner test for club card storage writes. docs/changelog/2026-10-07-five-launch-owner-decisions.md.",
+  "tables": [],
+  "functions": ["fn_tournament_payout_tells_the_player", "fn_club_card_object_is_callers"]
+}

@@ -24,6 +24,8 @@ import type { HandHistoryRow } from '../integrity/HandEventAdapter.js';
 import { computeSevenDeuceBounties } from './SevenDeuceBounty.js';
 import {
   getFullRakeConfig,
+  bbjFirstRunoutWinnerIds,
+  bbjJudgedVariant,
   detectBBJHit,
   detectBBJNearMiss,
   detectMiniBBJHit,
@@ -319,6 +321,28 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
    * so the worst case is a stale label on a long-running table, never a
    * mischarge.
    */
+  /**
+   * The game the jackpot judges this hand by: the variant it was DEALT as
+   * (bomb-pot override and the Pineapple switch included), never merely the
+   * table's game. See bbjJudgedVariant.
+   */
+  protected bbjVariantForThisHand(): string {
+    return bbjJudgedVariant(this.currentHandVariant, this.dealtGameVariant());
+  }
+
+  /**
+   * The winners the jackpot judges this hand against: board one's only on a
+   * run-it-multiple-times hand (BBJ_RULES.onlyFirstRunout), the hand's winner
+   * list otherwise. See bbjFirstRunoutWinnerIds.
+   */
+  protected bbjEligibleWinnerIds(): string[] {
+    return bbjFirstRunoutWinnerIds(
+      this.handCount,
+      this.currentHandBoardOneWinners,
+      this.currentHandWinnerIds
+    );
+  }
+
   /**
    * Claim a single armed Bad Beat Jackpot drill for this hand, and turn it
    * into a detection result built from the REAL showdown (BBJ phase 4.1).
@@ -1046,7 +1070,19 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       this.currentHandWinnerIds.length > 0 &&
       this.tableInfo
     ) {
-      const variant = this.tableInfo.game_variant || 'nlh';
+      /* THE JACKPOT JUDGES THE GAME THAT WAS DEALT (2026-10-12). This read
+         `this.tableInfo.game_variant`, the TABLE's game. A bomb pot can deal a
+         different one (BombPotScheduler's variant override), and the
+         Pineapple switch deals an NLH table as pineapple - so a PLO table
+         running an NLH bomb pot was judged as plo4, and a board-quads hand
+         where neither player's cards played paid the main jackpot under the
+         Omaha rule. The dealt variant is captured at deal time and held until
+         the next hand starts; the table's own dealt game is the fallback
+         only when it is somehow missing. Every BBJ use below - detection, the
+         near misses, the drill, the payout config and the events - reads
+         this one value. */
+      const variant = this.bbjVariantForThisHand();
+      const bbjWinnerIds = this.bbjEligibleWinnerIds();
       const dealtInPlayerIds = players.map((p) => p.user_id);
       // BBJ AUDIT FIX 2026-08-18: pass the final board (board 0 on RIT
       // hands) so the detector can enforce "both cards from hand must play".
@@ -1081,8 +1117,9 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         // pot that examined one winner and ignored the other, so if the second
         // held the quads the "winner must have quads or better" gate refused a
         // real bad beat and nothing recorded that it had. All of them now; the
-        // detector applies the rule to the strongest.
-        this.currentHandWinnerIds,
+        // detector applies the rule to the strongest. Board one's only on a
+        // run-it-multiple-times hand (BBJ_RULES.onlyFirstRunout).
+        bbjWinnerIds,
         variant,
         this.currentHandPotSize,
         this.tableInfo.big_blind,
@@ -1245,7 +1282,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             ? { ...drillResult, miniRule: 'drill' as const }
             : detectMiniBBJHit(
                 this.currentHandShowdownResults,
-                this.currentHandWinnerIds,
+                bbjWinnerIds,
                 variant,
                 this.currentHandPotSize,
                 this.tableInfo.big_blind,
@@ -1307,14 +1344,20 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
            not_enough_players, pot_too_small and winner_not_quads. */
         let mainNearMissReported = false;
         try {
+          /* Every (board-one) winner, not `[0]` (2026-10-12): on a chop the
+             co-winner was filed as a loser, and a bogus main near miss for a
+             player who did not lose then suppressed the mini's. And the
+             double-board gate, as the hit has it, so a double-board hand that
+             cleared the MAIN bar is not recorded as a Mini near miss. */
           const nearMiss = detectBBJNearMiss(
             this.currentHandShowdownResults,
-            this.currentHandWinnerIds[0],
+            bbjWinnerIds,
             variant,
             this.currentHandPotSize,
             this.tableInfo.big_blind,
             dealtInPlayerIds.length,
-            bbjBoard
+            bbjBoard,
+            { doubleBoard: this.currentHandCommunityCards2.length > 0 }
           );
           if (nearMiss.nearMiss) {
             mainNearMissReported = true;
@@ -1363,7 +1406,8 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
            cleared the MAIN hand bar - so the mini, which exists to catch the
            beats the main turns away, had no near-miss record at all. Measured
            that day: 50 near misses in seven days, ZERO about the mini, and 13
-           of them `both_cards_must_play`, a rule the mini DROPS. Its rate was
+           of them `both_cards_must_play`, a rule the mini dropped until Dan's
+           2026-10-11 ruling and now applies as the main does. Its rate was
            unmeasurable and its tuning guesswork.
 
            Reasons are prefixed `mini_`, the same shape settlement already uses
@@ -1382,7 +1426,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             ? { nearMiss: false as const }
             : detectMiniBBJNearMiss(
                 this.currentHandShowdownResults,
-                this.currentHandWinnerIds,
+                bbjWinnerIds,
                 variant,
                 this.currentHandPotSize,
                 this.tableInfo.big_blind,

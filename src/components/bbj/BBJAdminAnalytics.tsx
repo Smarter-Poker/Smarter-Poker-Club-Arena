@@ -51,6 +51,7 @@ const NEAR_MISS_LABELS: Record<string, string> = {
   pot_too_small: 'Pot Did Not Reach The Minimum',
   winner_not_quads: 'Winning Hand Was Not Quads Or Better',
   both_cards_must_play: 'Both Hole Cards Did Not Play',
+  double_board: 'Double Board Hand',
   mini_not_enough_players: 'Mini: Not Enough Players Dealt In',
   mini_pot_too_small: 'Mini: Pot Did Not Reach The Minimum',
   mini_winner_not_quads: 'Mini: Winning Hand Was Not Quads Or Better',

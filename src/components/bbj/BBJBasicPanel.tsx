@@ -247,9 +247,10 @@ export function BBJMiniBasicPanel({
         The Mini Jackpot Pays A Flat Amount, Set By The Stakes You Were Playing, For A Bad Beat That
         Meets The Mini Bar But Not The Main One. The Losing Hand Bar Depends On The Game: Aces Full
         Or Better In Hold’em, Quad Tens Or Better In PLO5 And FLO5, Quad Deuces In Pineapple, And
-        Any Quads In The Other Omaha Games. The Same Pot, Player Count And Board Conditions Apply As
-        For The Main Jackpot. No Extra Fee Is Taken For The Mini: It Is Paid From The Jackpot’s
-        Backup Reserve, And It Pauses While The Reserve Is At Its Floor.
+        Any Quads In The Other Omaha Games. In Hold’em And Pineapple, Both Hole Cards Must Play. The
+        Same Pot, Player Count And Board Conditions Apply As For The Main Jackpot. No Extra Fee Is
+        Taken For The Mini: It Is Paid From The Jackpot’s Backup Reserve, And It Pauses While The
+        Reserve Is At Its Floor.
       </p>
 
       {!mini && <p className="bbj-basic__stale">Reading The Mini Jackpot Schedule.</p>}

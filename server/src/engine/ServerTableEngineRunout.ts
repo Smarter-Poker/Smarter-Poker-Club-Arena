@@ -184,6 +184,25 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
   protected allInPreShowdownPauseMs = 1200;
 
   /**
+   * BOARD ONE'S WINNERS, FOR THE JACKPOT ONLY (2026-10-12).
+   *
+   * The published rule is that only the first runout counts for the Bad Beat
+   * Jackpot (BBJ_RULES.onlyFirstRunout). `currentHandWinnerIds` is the whole
+   * hand's winner list - everyone paid on ANY run - and the rest of settlement
+   * needs it to be exactly that. The jackpot judged losers as "everyone not in
+   * that list", so a player who lost board one with a qualifying hand and won
+   * run two was counted as a winner and never judged at all.
+   *
+   * So the run-it-multiple-times path records board one's own winner set here
+   * - its best hand first, then everyone else paid on board one (a chop, a
+   * side pot, a low half: exactly what a single-run hand's winner list holds)
+   * - and settlement's jackpot step reads it through `bbjEligibleWinnerIds()`.
+   * Tagged with the hand number so a value can never outlive its hand: a later
+   * single-run hand finds a stale tag and falls back to the ordinary list.
+   */
+  protected currentHandBoardOneWinners: { handNumber: number; ids: string[] } | null = null;
+
+  /**
    * The reveal gate: how long a run-out street is given to actually appear
    * before its new equity is allowed to change. See
    * HAND_COMPLETION.ALL_IN_STREET_REVEAL_MS for the full reasoning and where
@@ -2718,15 +2737,26 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // left it [] - hand_history recorded no winners, and pot_win /
     // pot_distributed carried empty per-winner data for EVERY run-it-twice
     // hand (stacks were correct; the record and animations were blank).
-    // Populate both from the actual net distribution. Order matters on the
-    // ids: index 0 must stay the board-0 winner because detectBBJHit reads
-    // currentHandWinnerIds[0] (board 0 is the only BBJ-eligible board per
-    // Dan's 2026-07-21 rule); other paid players are appended after it.
+    // Populate both from the actual net distribution. Order is kept with the
+    // board-0 winner first; other paid players (on any run) are appended.
     for (const [playerId, amount] of totalDistribution) {
       if (amount > 0 && !this.currentHandWinnerIds.includes(playerId)) {
         this.currentHandWinnerIds.push(playerId);
       }
     }
+    /* ONLY THE FIRST RUNOUT COUNTS FOR THE JACKPOT (2026-10-12). The list
+       above is every player paid on ANY run, which is right for the hand
+       record and the pot ship and wrong for the jackpot: a player who lost
+       board one with a qualifying hand and won run two sat in it as a
+       "winner", so the bad beat on board one was never judged. The jackpot
+       gets board one's own winner set instead - its best hand first, then
+       everyone else board one paid (a chop, a side pot, a low half), which is
+       exactly the shape a single-run hand's winner list has. */
+    const boardOneIds = boardWinners[0] ? [boardWinners[0]] : [];
+    for (const id of perBoardWinners[0] ?? []) {
+      if (id && !boardOneIds.includes(id)) boardOneIds.push(id);
+    }
+    this.currentHandBoardOneWinners = { handNumber: this.handCount, ids: boardOneIds };
     this.currentHandWinners = [...totalDistribution.entries()]
       .filter(([, amount]) => amount > 0)
       .map(([playerId, amount]) => {

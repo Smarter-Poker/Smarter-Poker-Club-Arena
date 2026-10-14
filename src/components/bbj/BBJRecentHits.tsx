@@ -45,6 +45,7 @@ import { titleCase } from '../../utils/handReplay';
 import { reportError } from '../../utils/errorReporter';
 import './BBJRecentHits.css';
 import { gameTypeLabel, money, stamp } from '../../utils/handFormat';
+import { miniBarsPhrase, miniBothCardsGamesPhrase } from '../../config/bbjMini';
 
 export interface BBJRecentHitsProps {
   poolId: string | null;
@@ -456,9 +457,13 @@ export function BBJRecentHits({
     return (
       <div className="bbj-hits" data-initial-layout="settled">
         <div className="bbj-hits__caption">Mini Bad Beat Jackpot Winners</div>
+        {/* The bars are READ from the config (miniBarsPhrase), not typed here:
+            this line said "Any Quads (Omaha)" after PLO5/FLO5 moved to Quad
+            Tens, and never said that both hole cards must play. */}
         <p className="bbj-hits__examplenote">
-          No Mini Jackpot Has Been Paid On This Pool Yet. Aces Full Or Better (Hold’em) Or Any Quads
-          (Omaha) Losing To Quads Or Better Pays The Mini.
+          No Mini Jackpot Has Been Paid On This Pool Yet. The Mini Pays When A Losing Hand Of{' '}
+          {miniBarsPhrase()} Loses To Quads Or Better. In {miniBothCardsGamesPhrase()}, Both Hole
+          Cards Must Play.
         </p>
       </div>
     );

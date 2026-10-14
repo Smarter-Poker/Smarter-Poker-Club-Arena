@@ -36,7 +36,7 @@ export const DEFAULT_FAQS: FAQItem[] = [
     category: 'Game',
     question: 'How Does Bad Beat Jackpot Work?',
     answer:
-      'Lose A Monster Hand And Win Big! In Hold\u2019em, Aces Full Of Jacks Or Better Must Lose To Quads Or Better (Both Hole Cards Play). In Omaha Games, Quad Kings Or Better Must Lose. When It Hits, The Loser Gets 50% Of The Payout, The Winner 25%, And Everyone Else Dealt In Splits The Rest - Credited Straight To Your Table Stack.',
+      'Lose A Monster Hand And Win Big! In Hold\u2019em, Aces Full Of Jacks Or Better Must Lose To Quads Or Better, With An Ace In Your Hand And Both Hole Cards Playing. In Pineapple, PLO4, FLO4, PLO8 And FLO8, Quad Kings Or Better Must Lose; In PLO5 And FLO5, An 8-High Straight Flush Or Better Must Lose. PLO6 And Short Deck Have No Jackpot. When It Hits, The Loser Gets 50% Of The Payout, The Winner 25%, And Everyone Else Dealt In Splits The Rest, Credited Straight To Your Table Stack. The Mini Jackpot Pays A Smaller Flat Amount When Aces Full Or Better In Hold\u2019em, Quad Deuces Or Better In Pineapple, Any Quads In PLO4, FLO4, PLO8 And FLO8, Or Quad Tens Or Better In PLO5 And FLO5 Loses To Quads Or Better. In Hold\u2019em And Pineapple, Both Hole Cards Must Play For Either Jackpot.',
   },
   {
     id: '4',

@@ -5159,33 +5159,46 @@ function ClubHomePageContent({
               haptic.medium();
               let refQuery = '';
               let profRefNum: number | null = null;
-              try {
-                // readLocalSession, not the auth SDK's remote user lookup: the
-                // session is already local and the referral action must open
-                // instantly when the player taps it.
-                const session = readLocalSession();
-                if (session?.userId) {
-                  const { data: prof, error: profErr } = await supabase
-                    .from('profiles')
-                    .select('player_number')
-                    .eq('id', session.userId)
-                    .maybeSingle();
-                  // ROUND 9 (2026-08-29): the uuid fallback below still
-                  // credits the referral, so behaviour is unchanged - but a
-                  // failed read was silently downgrading share links from the
-                  // friendly player number to a raw uuid.
-                  if (profErr) {
-                    reportError(profErr, 'ClubHomePage.share_ref_profile_read_failed');
+              /* THE SHARE SHEET MUST OPEN INSIDE THE TAP (2026-10-12). Safari
+                 only lets navigator.share run while the tap's user activation
+                 is still live, and waiting on a network read before calling it
+                 can outlast that window: the sheet is refused with
+                 NotAllowedError and the button looks dead. The player's number
+                 is already in hand on `currentUser`, so the profile read below
+                 only runs when it is genuinely missing. */
+              const knownRefNum = currentUser?.player_number ?? null;
+              if (knownRefNum) {
+                profRefNum = knownRefNum;
+                refQuery = `?ref=${knownRefNum}`;
+              } else {
+                try {
+                  // readLocalSession, not the auth SDK's remote user lookup: the
+                  // session is already local and the referral action must open
+                  // instantly when the player taps it.
+                  const session = readLocalSession();
+                  if (session?.userId) {
+                    const { data: prof, error: profErr } = await supabase
+                      .from('profiles')
+                      .select('player_number')
+                      .eq('id', session.userId)
+                      .maybeSingle();
+                    // ROUND 9 (2026-08-29): the uuid fallback below still
+                    // credits the referral, so behaviour is unchanged - but a
+                    // failed read was silently downgrading share links from the
+                    // friendly player number to a raw uuid.
+                    if (profErr) {
+                      reportError(profErr, 'ClubHomePage.share_ref_profile_read_failed');
+                    }
+                    if (prof?.player_number) {
+                      profRefNum = prof.player_number;
+                      refQuery = `?ref=${prof.player_number}`;
+                    } else {
+                      refQuery = `?ref=${session.userId}`;
+                    }
                   }
-                  if (prof?.player_number) {
-                    profRefNum = prof.player_number;
-                    refQuery = `?ref=${prof.player_number}`;
-                  } else {
-                    refQuery = `?ref=${session.userId}`;
-                  }
+                } catch (err) {
+                  reportError(err, 'ClubHomePage.share_ref_lookup_failed');
                 }
-              } catch (err) {
-                reportError(err, 'ClubHomePage.share_ref_lookup_failed');
               }
               const shareUrl = `${publicOrigin()}/hub/club-arena/invite/${club.id}${refQuery}`;
               /* The same leak as the card, and further out: this string is
@@ -5197,16 +5210,31 @@ function ClubHomePageContent({
               const playerNumText = profRefNum ? `\nYour Referral Number: ${profRefNum}` : '';
               const shareText = `${inviterName} invited you to join ${club.name}!\n\nClub ID: ${club.club_id}${playerNumText}`;
 
+              const copyInvite = async () => {
+                await navigator.clipboard.writeText(`${shareText}\n\n${shareUrl}`);
+                toast.success('Club link copied!');
+              };
               try {
                 if (navigator.share) {
                   await navigator.share({ title: club.name, text: shareText, url: shareUrl });
                 } else {
-                  await navigator.clipboard.writeText(`${shareText}\n\n${shareUrl}`);
-                  toast.success('Club link copied!');
+                  await copyInvite();
                 }
               } catch (e) {
-                reportError(e, 'ClubHomePage.async');
-                /* user cancelled share */
+                /* Closing the share sheet is the player's choice, not a fault:
+                   it rejects with AbortError and is never reported (the same
+                   rule as StatsShareCard and AchievementShareCard). Any other
+                   refusal - NotAllowedError when the browser will not open the
+                   sheet - falls back to copying the invite, so the button is
+                   never dead. */
+                if ((e as { name?: string } | null)?.name === 'AbortError') return;
+                reportError(e, 'ClubHomePage.share_failed');
+                try {
+                  await copyInvite();
+                } catch (copyErr) {
+                  reportError(copyErr, 'ClubHomePage.share_copy_failed');
+                  toast.error('Could Not Share The Invite');
+                }
               }
             }}
           />

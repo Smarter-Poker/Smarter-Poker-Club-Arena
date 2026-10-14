@@ -167,6 +167,86 @@ function quadStripFor(rank: number): DeckCard[] {
   ];
 }
 
+/**
+ * THE VARIANTS WHERE BOTH HOLE CARDS MUST PLAY FOR THE MINI (Dan 2026-10-11).
+ * Mirrors `bothCardsRuleApplies` in server/src/config/RakeConfig.ts: the
+ * hold'em family. Omaha needs no clause, because its own rules make exactly
+ * two hole cards play in every hand.
+ */
+export const BBJ_MINI_BOTH_CARDS_VARIANTS: ReadonlySet<string> = new Set([
+  'nlh',
+  'flh',
+  'pineapple',
+]);
+
+export function miniRequiresBothHoleCards(gameType: string | null | undefined): boolean {
+  return BBJ_MINI_BOTH_CARDS_VARIANTS.has(normalizeVariantKey(gameType));
+}
+
+/**
+ * The games a mini bar is stated for, in the order a sentence reads them. Every
+ * live mini-eligible variant is here once; PLO6 and Short Deck are not eligible
+ * and `miniBarLabelFor` drops them on its own if they ever appear.
+ */
+const MINI_BAR_GAMES: ReadonlyArray<{ key: string; games: string }> = [
+  { key: 'nlh', games: 'Hold’em' },
+  { key: 'flh', games: 'Hold’em' },
+  { key: 'pineapple', games: 'Pineapple' },
+  { key: 'plo4', games: 'PLO4' },
+  { key: 'flo4', games: 'FLO4' },
+  { key: 'plo8', games: 'PLO8' },
+  { key: 'flo8', games: 'FLO8' },
+  { key: 'plo5', games: 'PLO5' },
+  { key: 'flo5', games: 'FLO5' },
+];
+
+/** The losing-hand bar for one variant, in display words, or null when it has no mini. */
+export function miniBarLabelFor(gameType: string | null | undefined): string | null {
+  const key = normalizeVariantKey(gameType);
+  const rule = miniRuleForVariantKey(key);
+  if (!rule) return null;
+  if (rule === 'ranked_quads') {
+    const q = BBJ_QUALIFYING_HANDS[key];
+    return q?.miniBarLabel ?? BBJ_MINI_QUALIFYING_LABELS.ranked_quads;
+  }
+  return rule === 'holdem_aces_full' ? BBJ_MINI_QUALIFYING_LABELS.holdem_aces_full : 'Any Quads';
+}
+
+function joinAnd(items: string[]): string {
+  if (items.length <= 1) return items.join('');
+  return `${items.slice(0, -1).join(', ')} And ${items[items.length - 1]}`;
+}
+
+/**
+ * Every mini bar in one Title Case phrase, READ FROM THE BARS rather than typed
+ * beside them: "Aces Full Or Better In Hold’em, Quad Deuces Or Better In
+ * Pineapple, Any Quads In PLO4, FLO4, PLO8 And FLO8, And Quad Tens Or Better In
+ * PLO5 And FLO5". A surface that prints this cannot fall behind a retuned bar,
+ * which is how "Any Quads (Omaha)" outlived the PLO5/FLO5 Quad Tens rule.
+ */
+export function miniBarsPhrase(): string {
+  const groups: Array<{ bar: string; games: string[] }> = [];
+  for (const { key, games } of MINI_BAR_GAMES) {
+    const bar = miniBarLabelFor(key);
+    if (!bar) continue;
+    let g = groups.find((x) => x.bar === bar);
+    if (!g) groups.push((g = { bar, games: [] }));
+    if (!g.games.includes(games)) g.games.push(games);
+  }
+  const parts = groups.map((g) => `${g.bar} In ${joinAnd(g.games)}`);
+  if (parts.length <= 1) return parts.join('');
+  return `${parts.slice(0, -1).join(', ')}, And ${parts[parts.length - 1]}`;
+}
+
+/** "Hold’em And Pineapple": the games where both hole cards must play, read from the set above. */
+export function miniBothCardsGamesPhrase(): string {
+  const games: string[] = [];
+  for (const { key, games: name } of MINI_BAR_GAMES) {
+    if (miniRequiresBothHoleCards(key) && !games.includes(name)) games.push(name);
+  }
+  return joinAnd(games);
+}
+
 export function miniRuleForVariantKey(key: string): BBJMiniRule | null {
   const q = BBJ_QUALIFYING_HANDS[key] || BBJ_QUALIFYING_HANDS.nlh;
   if (q.eligible === false || !q.handRank) return null;
@@ -212,14 +292,20 @@ export function getBBJMiniQualifyingInfo(
        which is the failure the `mainBar` note below was written about. */
     const minRank = q.miniMinQuadRank as number;
     const label = q.miniBarLabel ?? BBJ_MINI_QUALIFYING_LABELS.ranked_quads;
+    /* Pineapple carries this rule and the engine makes both of its hole cards
+       play (Dan 2026-10-11); PLO5/FLO5 carry it too, and Omaha already plays
+       exactly two by the rules of the game, so the clause is for the hold'em
+       family only - the same set `bothCardsRuleApplies` uses on the server. */
+    const bothCards = miniRequiresBothHoleCards(key) ? ' Both hole cards must play.' : '';
     return {
       eligible: true,
       rule,
       shortLabel: `${label} must lose to bigger Quads or better`,
       subLabel:
-        minRank <= 2
+        (minRank <= 2
           ? 'Any four of a kind counts for the mini.'
-          : `Quads below ${label.replace(/ Or Better$/, '')} do not count for the mini.`,
+          : `Quads below ${label.replace(/ Or Better$/, '')} do not count for the mini.`) +
+        bothCards,
       variantLabel: q.label,
       minLosingHandCards: quadStripFor(minRank),
       qualifyingHandLabel: label,

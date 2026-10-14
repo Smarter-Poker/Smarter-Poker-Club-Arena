@@ -15,7 +15,7 @@ import { HorseLogic } from '../../HorseLogic.js';
 import { HorseMind } from '../../HorseMind.js';
 import { equityGovernor } from '../../EquityLoadGovernor.js';
 import { restoreFastRandom, saveFastRandom } from '../../HorseEval.js';
-import { enableBrainTelemetry } from '../../BrainTelemetry.js';
+import { enableBrainTelemetry, noteFire, drainFires, restoreFires } from '../../BrainTelemetry.js';
 import { liveHorsePhase8Safety } from '../../HorsePhase8Safety.js';
 import { prepareTournamentFutureHandFacts } from '../../HorseTournamentFutureHand.js';
 import { solverPolicyArtifactStatus } from '../../../gto/SolverPolicyArtifactLoader.js';
@@ -43,6 +43,9 @@ import {
 } from '../../HorsePlanEffectReceipt.js';
 import { horsePlanContextKey, type HorsePlanBatchBinding } from '../../HorsePlanHandIdentity.js';
 import { currentReplaySolverStores } from './references.js';
+import { qualifiedReplayAdmissions } from './qualifiedAuthority.js';
+import { plo4Cards, plo4ReferenceSpot } from '../../../benchmark/Plo4PolicyEvidence.js';
+import { buildHorseDecisionKey } from '../protocol.js';
 import {
   exactReplayHorseDecisionRecord,
   firstHorseReplayDifference,
@@ -77,14 +80,20 @@ const turnKey = (r: FastHorseDecisionRequest) =>
   );
 
 /** One live FAST decision through the production runtime, journaled as the worker journals it. */
-async function liveOriginal(fixtureId: string, source = SOURCE) {
-  const request = phase6cFixtureBody<{ snapshot: FastHorseDecisionRequest }>(
+async function liveOriginal(
+  fixtureId: string,
+  source = SOURCE,
+  transform?: (request: FastHorseDecisionRequest) => FastHorseDecisionRequest
+) {
+  const base = phase6cFixtureBody<{ snapshot: FastHorseDecisionRequest }>(
     phase6cFixtureRecord(fixtureId)
   ).snapshot;
+  const request = transform ? transform(base) : base;
   const payloads: unknown[] = [];
   const decideOpts: Record<string, unknown>[] = [];
   const messages: HorseDecisionWorkerResponse[] = [];
   const deps: HorseDecisionWorkerDependencies = {
+    ...qualifiedReplayAdmissions,
     journalEnabled: () => true,
     journalDecision: (_snapshot, payload) => {
       payloads.push(payload);
@@ -184,6 +193,78 @@ afterEach(() => {
 });
 
 describe('P15-A exact historical replay', () => {
+  it('replays an actually qualified candidate admission through the real worker', async () => {
+    const { record, result } = await liveOriginal(IDS.cashPlo4Preflop);
+    expect(result.phase10Authority?.state).toBe('usable');
+    expect(JSON.parse(record.body).replayState.admission.phase10Plo4).toBe('candidate');
+    const verdict = await exactReplayHorseDecisionRecord(record, { runningSource: SOURCE });
+    expect(verdict.outcome, verdict.firstDifference ?? '').toBe('replayed_exact');
+  });
+
+  it('restores the applied qualified owner epoch and generation in a fresh process', async () => {
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
+    let original: Awaited<ReturnType<typeof liveOriginal>>;
+    try {
+      original = await liveOriginal(IDS.cashPlo4Preflop, SOURCE, (base) => {
+        const spot = plo4ReferenceSpot('premium_open');
+        const heroId = base.player.user_id;
+        const villainId = base.gameState.players.find((p) => p.user_id !== heroId)!.user_id;
+        const players = spot.state.players.map((p, i) => ({
+          ...p,
+          user_id: i === 0 ? heroId : villainId,
+        }));
+        const player = { ...spot.hero, user_id: heroId, cards: plo4Cards('2c 7d 9h Ks') };
+        const gameState = {
+          ...base.gameState,
+          ...spot.state,
+          players,
+          dealtSeatIds: [1, 2],
+          contestablePot: 3,
+          pots: [{ amount: 3, eligiblePlayers: [heroId, villainId] }],
+        };
+        const request: FastHorseDecisionRequest = {
+          ...base,
+          player,
+          gameState,
+          style: 'balanced',
+          mods: {},
+          opts: { mind: false },
+        };
+        return { ...request, decisionKey: buildHorseDecisionKey(request) };
+      });
+    } finally {
+      clock.mockRestore();
+    }
+    expect(original.result.decision.plo4Policy).toMatchObject({
+      mode: 'candidate',
+      applied: true,
+      authority: { state: 'usable', generation: 1 },
+    });
+    const verdict = freshProcess(
+      { record: original.record, execution: original.execution },
+      SOURCE
+    );
+    expect(verdict.outcome, verdict.firstDifference ?? '').toBe('replayed_exact');
+    expect(verdict.isolation.networkAttempts).toEqual({ fetch: 0, socket: 0 });
+    for (const fault of ['missing_receipt', 'identity_authorityKey', 'withdrawn']) {
+      const invalid = resignHorseJournalRecord(original.record, (body) => {
+        const policy = (body.decision as Record<string, any>).plo4Policy;
+        if (fault === 'missing_receipt') delete policy.authority;
+        else if (fault === 'withdrawn') policy.authority.state = 'withdrawn';
+        else policy.authority.authorityKey = '0'.repeat(64);
+      });
+      noteFire('replay_refusal_preserves_prior_telemetry');
+      const before = drainFires();
+      restoreFires(before);
+      const refused = await exactReplayHorseDecisionRecord(invalid, { runningSource: SOURCE });
+      expect(refused.outcome).toBe(`non_replayable:authority:phase10:${fault}`);
+      expect(refused.replayVerified).toBe(false);
+      const after = drainFires();
+      expect(after).toEqual(before);
+      restoreFires(after);
+    }
+  }, 180_000);
+
   it('journals the worker-owned state the decision read: admitted owners and the Phase 8 sentinel', async () => {
     const parked = liveHorsePhase8Safety.disabledReason;
     liveHorsePhase8Safety.disabledReason = 'eligible_but_silent';
@@ -311,10 +392,10 @@ describe('P15-A exact historical replay', () => {
     expect(await outcome(without('planBinding'))).toBe('non_replayable:plan_binding');
     // Authority this process cannot hold is a missing input, not a default.
     const candidate = resignHorseJournalRecord(record, (body) => {
-      (body.replayState as { admission: Record<string, string> }).admission.phase10Plo4 =
+      (body.replayState as { admission: Record<string, string> }).admission.phase8Postflop =
         'candidate';
     });
-    expect(await outcome(candidate)).toBe('non_replayable:admission:phase10Plo4');
+    expect(await outcome(candidate)).toBe('non_replayable:admission:phase8Postflop');
     // Another JavaScript runtime is not the original artifact: refused by name.
     for (const runtime of [
       { node: 'v22.23.2', v8: '12.4.254.21-node.56', arch: process.arch },

@@ -1096,6 +1096,9 @@ export class LiveHorseDecisionWorkerClient {
       this.governor = { ...message.governor };
       this.statusSampledAt = Date.now();
       this.resolveReady({
+        ...(message.solverStoreIdentity === undefined
+          ? {}
+          : { solverStoreIdentity: structuredClone(message.solverStoreIdentity) }),
         solverStores: this.solverStores,
         solverPolicyArtifact: this.solverPolicyArtifact,
         governor: this.governor,

@@ -63,6 +63,8 @@ describe('disaster recovery is documented and wired', () => {
       'scripts/dr/native-supabase-export.py',
       'scripts/dr/build-native-export-client.py',
       'scripts/ci/test_native_supabase_export.py',
+      'scripts/ci/test_launch_reporting_prearchive.py',
+      'scripts/ci/fixtures/launch-reset/derived-prearchive/source-pins.json',
       'scripts/verification-harness/leaderboard-native-function-batch.mjs',
     ]) {
       expect(classifyChangedPaths([path]).server).toBe(true);

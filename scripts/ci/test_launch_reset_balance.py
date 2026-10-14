@@ -387,3 +387,10 @@ with tempfile.TemporaryDirectory(prefix='fb-',dir=BASE) as folder:
   print(json.dumps(receipt))
  finally:
   run([PG/'pg_ctl','-D',data,'-m','immediate','-w','stop'])
+
+# The same required native job owns the reporting-prearchive regression.
+# The exact installed base chain requires this path; missing inputs fail normally.
+if args.candidate_migration and args.candidate_migration.name == '20261012181905_scoped_club_launch_reset_and_guarded_recovery.sql':
+ work = Path(__file__).resolve().parents[2]
+ command = [os.sys.executable, '-B', str(work/'scripts/ci/test_launch_reporting_prearchive.py'), '--workdir', str(work), '--scratch-root', str(BASE), '--output-dir', str(OUT/'reporting-prearchive'), '--pg-bin', str(PG)]
+ subprocess.run(command, check=True, timeout=300)

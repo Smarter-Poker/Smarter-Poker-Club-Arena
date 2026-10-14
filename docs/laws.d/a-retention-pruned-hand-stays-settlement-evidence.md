@@ -1,0 +1,3 @@
+# tests/a-retention-pruned-hand-stays-settlement-evidence.law.test.ts
+
+Horse hand retention (eight days, CLAUDE.md 10.5 ruling 1) deletes a settled hand's atomic commit while a weekly original inventory can still pin it as settlement evidence. The law pins that `original_inventory_source_ref_md5` verifies a pruned commit only through exactly one retention disposal for the same submission, with its kind, settled and completed flags, identity, request hash, finite completion and eight-day boundary checked, never while the commit row still exists, and that the discharge getter pin and the finite-40 source authority move with it in one transaction with exact pre and post images and no money, certificate, cache, schedule or retention write.

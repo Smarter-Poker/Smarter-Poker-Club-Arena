@@ -118,9 +118,13 @@ describe('Daily Missions realtime and render-isolation contract', () => {
     const admission = readFileSync(resolve(__dirname, '../src/lib/realtimeAdmission.ts'), 'utf8');
     expect(joinOwner).toContain('await realtimeAdmission.ready(supabase.realtime, signal)');
     expect(joinOwner.indexOf('await realtimeAdmission.ready')).toBeLessThan(
-      joinOwner.indexOf('channel.subscribe(callback)')
+      joinOwner.indexOf('channel.subscribe(')
     );
-    expect(joinOwner).toContain('if (!signal.aborted) channel.subscribe(callback)');
+    expect(joinOwner).toContain('if (!signal.aborted) {');
+    expect(joinOwner.indexOf('if (!signal.aborted)')).toBeLessThan(
+      joinOwner.indexOf('channel.subscribe(')
+    );
+    expect(joinOwner).toContain('callback(status, error)');
     expect(admission).toContain('client.setAuth().then(');
     expect(admission).toContain('authenticated && client.isConnected()');
     expect(broadcastHook).toContain('masterBus.registerChannelFactory');

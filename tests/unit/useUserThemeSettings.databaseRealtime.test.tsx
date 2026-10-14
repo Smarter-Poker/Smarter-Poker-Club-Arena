@@ -17,26 +17,43 @@ const mocks = vi.hoisted(() => ({
 // This PostgREST fixture starts already admitted; the real SDK cold transport is
 // exercised by useUserThemeSettings.admission.test.tsx.
 vi.mock('../../src/lib/realtimeAdmission', () => ({
-  realtimeAdmission: { ready: async () => {} },
+  realtimeAdmission: { ready: async () => {}, onReadinessChange: () => () => {} },
 }));
 
 vi.mock('../../src/core/MasterBus', async () => await vi.importActual('../../src/core/MasterBus'));
 vi.mock('../../src/lib/supabase', () => {
-  const channel = {
-    on: vi.fn(
-      (_event: string, _filter: unknown, callback: (payload: Record<string, unknown>) => void) => {
-        mocks.realtime = callback;
+  const createChannel = () => {
+    const channel = {
+      joinedOnce: false,
+      state: 'closed',
+      unsubscribe: vi.fn(async () => {
+        channel.state = 'closed';
+        return 'ok';
+      }),
+      on: vi.fn(
+        (
+          _event: string,
+          _filter: unknown,
+          callback: (payload: Record<string, unknown>) => void
+        ) => {
+          mocks.realtime = callback;
+          return channel;
+        }
+      ),
+      subscribe: vi.fn((callback?: (status: string, error?: Error) => void) => {
+        channel.joinedOnce = true;
+        channel.state = 'joined';
+        mocks.realtimeStatus = callback;
+        callback?.('SUBSCRIBED');
         return channel;
-      }
-    ),
-    subscribe: vi.fn((callback?: (status: string, error?: Error) => void) => {
-      mocks.realtimeStatus = callback;
-      callback?.('SUBSCRIBED');
-      return channel;
-    }),
+      }),
+    };
+    return channel;
   };
   return {
     supabase: {
+      realtime: { timeout: 10_000 },
+      auth: { onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }) },
       from: vi.fn(() => {
         const builder = {
           select: vi.fn(() => builder),
@@ -55,7 +72,7 @@ vi.mock('../../src/lib/supabase', () => {
       }),
       channel: vi.fn(() => {
         mocks.channelCalls += 1;
-        return channel;
+        return createChannel();
       }),
       removeChannel: vi.fn(async () => {
         mocks.removeCalls += 1;
@@ -184,7 +201,7 @@ describe('useUserThemeSettings database realtime', () => {
     mocks.deferRead = true;
     act(() => {
       mocks.realtimeStatus?.('CHANNEL_ERROR');
-      mocks.realtimeStatus?.('SUBSCRIBED');
+      window.dispatchEvent(new Event('online'));
     });
     await waitFor(() => expect(mocks.deferredRead).toBeTypeOf('function'));
     act(() => {
@@ -564,7 +581,7 @@ describe('useUserThemeSettings database realtime', () => {
     await waitFor(() => expect(first.result.current.loading).toBe(false));
     mocks.deferRead = true;
     act(() => mocks.realtimeStatus?.('CHANNEL_ERROR'));
-    act(() => mocks.realtimeStatus?.('SUBSCRIBED'));
+    act(() => window.dispatchEvent(new Event('online')));
     await waitFor(() => expect(mocks.deferredRead).toBeDefined());
     act(() => row('ALL', 'carbon_red', '2026-10-10T03:08:27.964379+00:00'));
     expect(first.result.current.theme.table_id).toBe('carbon_red');

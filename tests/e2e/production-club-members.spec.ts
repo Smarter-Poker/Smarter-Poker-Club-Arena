@@ -1,5 +1,9 @@
 import AxeBuilder from '@axe-core/playwright';
-import { observeHistoryJoin } from './support/historyJoinObservation';
+import {
+  HISTORY_ADMISSION_MS,
+  HISTORY_JOIN_ACK_MS,
+  observeHistoryJoin,
+} from './support/historyJoinObservation';
 import { readFile } from 'node:fs/promises';
 import { expect, test, type Page, type Request, type TestInfo } from '@playwright/test';
 
@@ -298,6 +302,8 @@ test.describe('Production Shark Club Players', () => {
   test('loads the real roster once and completes search, filter, sort, and player navigation', async ({
     page,
   }, testInfo) => {
+    // Preserve the current page channel budget while qualifying admission separately.
+    test.setTimeout(120_000 + HISTORY_ADMISSION_MS + HISTORY_JOIN_ACK_MS);
     const historyJoin = observeHistoryJoin(page);
     const historySignals: Record<string, unknown>[] = [];
     page.on('websocket', (socket) =>

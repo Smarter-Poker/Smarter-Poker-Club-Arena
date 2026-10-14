@@ -437,11 +437,21 @@ function startThemeRealtime(userId: string, entry: ThemeRealtimeEntry): void {
           }
           entry.state = 'error';
           notifyThemeRealtime(entry);
-          // A channel that never joined has no SDK rejoin owner yet. Recover on
-          // real transport/auth/online events, reusing its exact bound channel.
-          if (channel.joinedOnce === false && !disarmRecovery) {
+          // Unjoined admission failures reuse their bound channel. The page
+          // join helper retires a failed join through unsubscribe; that closed
+          // channel needs a fresh binding on a real readiness/auth/online event.
+          if (typeof channel.joinedOnce === 'boolean' && !disarmRecovery) {
             const retry = () => {
-              if (!ownsChannel() || channel.joinedOnce || admission.signal.aborted) return;
+              if (!ownsChannel() || admission.signal.aborted) return;
+              if (channel.joinedOnce) {
+                if (channel.state !== 'closed') return;
+                disarmRecovery?.();
+                // The helper already removed the retired channel. Do not call
+                // removeChannel here: its last-channel cleanup closes the
+                // healthy shared socket before the replacement can join.
+                startThemeRealtime(userId, entry);
+                return;
+              }
               disarmRecovery?.();
               entry.state = 'connecting';
               notifyThemeRealtime(entry);

@@ -29,7 +29,7 @@ describe('private history join qualification', () => {
     });
     expect(vi.getTimerCount()).toBe(0);
   });
-  it('fails no-join at the admission deadline instead of granting all 35s', async () => {
+  it('fails no-join at the admission deadline instead of granting all 80s', async () => {
     vi.useFakeTimers();
     let now = 0;
     const observation = new HistoryJoinObservation();
@@ -41,7 +41,7 @@ describe('private history join qualification', () => {
     await refusal;
     expect(vi.getTimerCount()).toBe(0);
   });
-  it('keeps the original 15s join bound and never resets it for retries', async () => {
+  it('keeps the current 60s page join bound and never resets it for retries', async () => {
     vi.useFakeTimers();
     let now = 0;
     const observation = new HistoryJoinObservation();
@@ -52,8 +52,8 @@ describe('private history join qualification', () => {
     const refusal = expect(pending).rejects.toThrow('join_timeout');
     now = 30000;
     observation.record('sent', frame('phx_join', '2'), now);
-    now = 35000;
-    await vi.advanceTimersByTimeAsync(15000);
+    now = 80000;
+    await vi.advanceTimersByTimeAsync(60000);
     await refusal;
     expect(vi.getTimerCount()).toBe(0);
   });
@@ -88,6 +88,17 @@ describe('private history join qualification', () => {
       15000
     );
     expect(o.result(topic, 15000).phase).toBe('joined');
+  });
+  it('accepts a delayed 33.6s acknowledgment inside the current page contract', () => {
+    const o = new HistoryJoinObservation();
+    o.begin(0);
+    o.record('sent', frame('phx_join'), 18000);
+    o.record('received', frame('phx_reply'), 51600);
+    expect(o.result(topic, 51600)).toMatchObject({
+      phase: 'joined',
+      admissionMs: 18000,
+      joinMs: 33600,
+    });
   });
   it('rejects stale earlier generation and other physical socket replies', () => {
     const o = new HistoryJoinObservation();
@@ -189,8 +200,8 @@ describe('private history join qualification', () => {
     const b = new HistoryJoinObservation();
     b.begin(0);
     b.record('sent', frame('phx_join'), 1000);
-    b.record('received', frame('phx_reply'), 16001);
-    expect(b.result(topic, 16001).phase).toBe('join_timeout');
+    b.record('received', frame('phx_reply'), 61001);
+    expect(b.result(topic, 61001).phase).toBe('join_timeout');
   });
   it('ignores stale pre-disclosure frames and keeps diagnostics free of topics, refs and payloads', () => {
     const o = new HistoryJoinObservation();

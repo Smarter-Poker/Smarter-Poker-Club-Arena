@@ -65,7 +65,22 @@ class NativeSocketFixture extends EventTarget {
   }
 
   send(encoded: string) {
-    this.sent.push(JSON.parse(encoded));
+    const message = JSON.parse(encoded);
+    this.sent.push(message);
+    // Keep the provider transport healthy while deliberately withholding only
+    // the channel join ACK; heartbeat failure has its own unchanged deadline.
+    if (message.topic === 'phoenix' && message.event === 'heartbeat') {
+      queueMicrotask(() =>
+        this.onmessage?.({
+          data: JSON.stringify({
+            topic: 'phoenix',
+            event: 'phx_reply',
+            ref: message.ref,
+            payload: { status: 'ok', response: {} },
+          }),
+        })
+      );
+    }
   }
 
   close() {
@@ -152,12 +167,14 @@ it('the real hook does not spend its join deadline while a measured15.164s cold 
   expect(__themeRealtimeChannelCount()).toBe(0);
 });
 
-it('retains the unchanged SDK10s join refusal after transport admission', async () => {
+it('retains the integrated60s page join budget without changing the SDK client default', async () => {
   const mounted = renderHook(() => useUserThemeRealtime('fixture-user'));
   await advance();
   act(() => NativeSocketFixture.instances[0].open());
   await advance();
-  await advance(9_999);
+  expect(state.client!.timeout).toBe(10_000);
+  expect(state.client!.getChannels()[0].timeout).toBe(60_000);
+  await advance(59_999);
   expect(mounted.result.current.state).toBe('connecting');
   await advance(1);
   expect(mounted.result.current.state).toBe('error');
@@ -353,4 +370,92 @@ it('recovers the same channel when the existing stored-session auth promise fulf
   await advance();
   expect(mounted.result.current.state).toBe('live');
   expect(mounted.result.current.reconciliationRevision).toBe(1);
+});
+
+it('recovers a retired page join on a real online event with a fresh binding and no shared socket bounce', async () => {
+  const mounted = renderHook(() => useUserThemeRealtime('fixture-user'));
+  await advance();
+  const socket = NativeSocketFixture.instances[0];
+  act(() => socket.open());
+  await advance();
+  const retired = state.client!.getChannels()[0];
+  await advance(60_000);
+  expect(mounted.result.current.state).toBe('error');
+  expect(retired.state).toBe('closed');
+  expect(state.client!.getChannels()).toEqual([]);
+  act(() => window.dispatchEvent(new Event('online')));
+  await advance();
+  expect(state.client!.getChannels()).toHaveLength(1);
+  expect(state.client!.getChannels()[0]).not.toBe(retired);
+  expect(NativeSocketFixture.instances).toHaveLength(1);
+  const joins = socket.sent.filter((message) => message.event === 'phx_join');
+  expect(joins).toHaveLength(2);
+  expect(joins[1].ref).not.toBe(joins[0].ref);
+  const current = joins[1];
+  act(() =>
+    socket.onmessage?.({
+      data: JSON.stringify({
+        topic: current.topic,
+        event: 'phx_reply',
+        ref: current.ref,
+        payload: {
+          status: 'ok',
+          response: {
+            postgres_changes: current.payload.config.postgres_changes.map((filter: unknown) => ({
+              ...(filter as object),
+              id: 1,
+            })),
+          },
+        },
+      }),
+    })
+  );
+  await advance();
+  expect(mounted.result.current.state).toBe('live');
+  expect(mounted.result.current.reconciliationRevision).toBe(1);
+});
+
+it('reconciles again after a real channel error retires a previously live binding', async () => {
+  const mounted = renderHook(() => useUserThemeRealtime('fixture-user'));
+  await advance();
+  const socket = NativeSocketFixture.instances[0];
+  act(() => socket.open());
+  await advance();
+  act(() => acknowledge(socket));
+  await advance();
+  expect(mounted.result.current.reconciliationRevision).toBe(1);
+  const retired = state.client!.getChannels()[0];
+  act(() =>
+    socket.onmessage?.({
+      data: JSON.stringify({ topic: retired.topic, event: 'phx_error', payload: {} }),
+    })
+  );
+  await advance();
+  expect(mounted.result.current.state).toBe('error');
+  expect(retired.state).toBe('closed');
+  act(() => window.dispatchEvent(new Event('online')));
+  await advance();
+  const join = socket.sent.filter((message) => message.event === 'phx_join').at(-1)!;
+  act(() =>
+    socket.onmessage?.({
+      data: JSON.stringify({
+        topic: join.topic,
+        event: 'phx_reply',
+        ref: join.ref,
+        payload: {
+          status: 'ok',
+          response: {
+            postgres_changes: join.payload.config.postgres_changes.map((filter: unknown) => ({
+              ...(filter as object),
+              id: 1,
+            })),
+          },
+        },
+      }),
+    })
+  );
+  await advance();
+  expect(mounted.result.current.state).toBe('live');
+  expect(mounted.result.current.reconciliationRevision).toBe(2);
+  expect(NativeSocketFixture.instances).toHaveLength(1);
 });

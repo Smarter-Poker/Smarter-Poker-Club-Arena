@@ -1,7 +1,7 @@
 import type { Page, WebSocket as PlaywrightSocket } from '@playwright/test';
 
 export const HISTORY_ADMISSION_MS = 20_000;
-export const HISTORY_JOIN_ACK_MS = 15_000;
+export const HISTORY_JOIN_ACK_MS = 60_000;
 type Phase =
   | 'waiting_scope'
   | 'waiting_admission'
@@ -145,7 +145,7 @@ export class HistoryJoinObservation {
       this.startedAt = now();
       // A real join/ACK can arrive while Playwright decodes the RPC response.
       // Keep it, clamp pre-clock admission to zero, and retain actual ACK time.
-      // wait() allows at most 20s admission + 15s ACK after this scope read.
+      // wait() allows at most 20s admission + 60s ACK after this scope read.
       await this.wait(topic, now);
     } finally {
       this.scopeCancellations.delete(cancel);

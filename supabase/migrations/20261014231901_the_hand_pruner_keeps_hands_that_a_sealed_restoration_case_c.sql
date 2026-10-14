@@ -18,6 +18,14 @@
 -- WHAT THIS CHANGES: one added candidate exclusion in sp_prune_hand_history.
 -- Excluding at the candidate set keeps the hand's history, commit, disposal and
 -- index rows together. No money table is written; no job is added.
+--
+-- RECORD NOTE: production ran this migration at 2026-10-14 23:21 UTC without the
+-- retention-days precondition below. The retention window is read from
+-- public.hand_history_retention_policy (a config row, CLAUDE.md 10.5), and the
+-- law test a-retention-pass-never-deletes-a-recorded-earning-source requires every
+-- pruner redefinition to say so in code, so the precondition was added to this
+-- file afterwards. It cannot change the result: the pruner body being patched
+-- already reads horse_retention_days itself.
 BEGIN;
 SET LOCAL lock_timeout='3s';
 SET LOCAL statement_timeout='60s';
@@ -27,6 +35,9 @@ BEGIN
  IF md5(pg_get_functiondef('public.sp_prune_hand_history(integer)'::regprocedure))
     IS DISTINCT FROM 'd899ca6bd7ded6ca33850c6d6e59ffed' THEN
   RAISE EXCEPTION 'PRUNER_PREIMAGE_CHANGED' USING ERRCODE='55000';
+ END IF;
+ IF (SELECT horse_retention_days FROM public.hand_history_retention_policy LIMIT 1) IS DISTINCT FROM 8 THEN
+  RAISE EXCEPTION 'PRUNER_RETENTION_POLICY_CHANGED' USING ERRCODE='55000';
  END IF;
  src:=pg_get_functiondef('public.sp_prune_hand_history(integer)'::regprocedure);
  IF (length(src)-length(replace(src,anchor,'')))/length(anchor) IS DISTINCT FROM 1 THEN

@@ -1,0 +1,135 @@
+name: Engine break recovery follows its fault
+
+# supabase/migrations/20260928155739_engine_break_recoveries_follow_their_fault.sql
+# makes the hourly break scorecard follow every engine_break_failed notice sent
+# since 2026-09-28 with one engine_break_recovered per route at its next pass
+# (for the owner account a resolved receipt for the Production Alerts task),
+# never at the cost of that pass, and records what the task cannot see as
+# NotifiedFaultWithoutRecovery with payload.target_task_id (Production Alerts,
+# lane PRIMARY-CHAT).
+#
+# It adds no timer (CLAUDE.md 10.85). Two readers:
+#
+#   live-recoveries rides the existing hourly Production Integrity Audit
+#   through workflow_run: scripts/ci/check-engine-break-recoveries.mjs reads
+#   production for a notified fault the task still sees open after a later
+#   pass of the hourly job (known from pg_cron's own run log), records ONE
+#   fleet-addressed incident (and later its recovery on the same key) through
+#   fn_record_operational_alert, never touches the rows it reports, and exits
+#   3 COULD NOT TELL when it cannot get an answer. It sees what the code it
+#   checks cannot: a recorder replaced without the recovery, a job that passes
+#   the recorder an hour or scores an earlier one, a store that refused the
+#   record, a receipt left pending, a recovery that reached the owner
+#   account's personal inbox instead of the task.
+#
+#   live-proof runs the executable red-before/green-after proof against a
+#   throwaway PostgreSQL cluster built from production as it stands before the
+#   change - never production - on every pull request that changes its inputs
+#   or adds or edits a migration naming the recorder, the push or the recovery
+#   outside a comment, in any case (the proof applies those on top and proves
+#   the recovery still follows). The newest definition of each is also held by
+#   tests/a-break-recovery-follows-its-fault.law.test.ts on every pull request.
+#   What no reader of the text can see - a migration that builds one of those
+#   names at run time - live-recoveries sees in production at the next pass.
+on:
+  workflow_run:
+    workflows: ['Production Integrity Audit']
+    types: [completed]
+  pull_request:
+    paths:
+      - supabase/migrations/**
+      - scripts/dev/probe-engine-break-recovery.sh
+      - scripts/dev/fixtures/engine-break-recovery/**
+      - scripts/dev/fixtures/owner-inbox-store-only/**
+      - scripts/ci/schema-manifest.d/engine-break-recovery.json
+      - scripts/ci/check-engine-break-recoveries.mjs
+      - scripts/ci/check-engine-break-recoveries.test.mjs
+      - tests/a-break-recovery-follows-its-fault.law.test.ts
+      - .github/workflows/engine-break-recovery.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: engine-break-recovery-${{ github.event_name == 'workflow_run' && 'live' || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  scope:
+    name: Does this change reach the recovery?
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      run: ${{ steps.scope.outputs.run }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - id: scope
+        name: Its own inputs, or a migration naming the recorder, the push or the recovery
+        run: |
+          set -euo pipefail
+          changed="$(git diff --name-only HEAD^1 HEAD)"
+          own='^(scripts/dev/probe-engine-break-recovery\.sh|scripts/dev/fixtures/(engine-break-recovery|owner-inbox-store-only)/|scripts/ci/check-engine-break-recoveries(\.test)?\.mjs|scripts/ci/schema-manifest\.d/engine-break-recovery\.json|tests/a-break-recovery-follows-its-fault\.law\.test\.ts|\.github/workflows/engine-break-recovery\.yml|supabase/migrations/(20260928155739|20260927235053|20260910132747)_)'
+          migrations="$(printf '%s\n' "$changed" | grep -E '^supabase/migrations/.*\.sql$' || true)"
+          named="$(bash scripts/dev/probe-engine-break-recovery.sh --touches $migrations)"
+          if printf '%s\n' "$changed" | grep -Eq "$own" || [ -n "$named" ]; then
+            printf 'the proof runs for:\n%s\n' "$(printf '%s\n' "$changed" | grep -E "$own" || true; printf '%s\n' "$named")"
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "no migration here names the recorder, the push or the recovery, and no input of the proof changed"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  live-proof:
+    name: Red before, green after (throwaway PostgreSQL, never production)
+    needs: scope
+    if: needs.scope.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    # The proof lays each case out in the hours before the current one, so it
+    # may wait up to four minutes for a fresh hour before it starts.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install a PostgreSQL server if the runner has none
+        run: |
+          if ! ls /usr/lib/postgresql/*/bin/initdb >/dev/null 2>&1; then
+            sudo apt-get update -y
+            sudo apt-get install -y postgresql-16
+          fi
+      - name: Run the executable red/green proof
+        run: bash scripts/dev/probe-engine-break-recovery.sh
+
+  decision-rules:
+    name: An overdue recovery fires one fleet incident and recovers on the same key
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node --test scripts/ci/check-engine-break-recoveries.test.mjs
+
+  live-recoveries:
+    name: Every notified engine break fault followed by a pass has its recovery
+    if: github.event_name == 'workflow_run'
+    needs: decision-rules
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install the pinned database client
+        run: npm ci --ignore-scripts --prefer-offline --no-audit --no-fund
+      - name: Record or recover the missing-recovery incident
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: node scripts/ci/check-engine-break-recoveries.mjs

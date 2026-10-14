@@ -1,0 +1,9 @@
+{
+  "_owner": "claude/alerts-owner-inbox-operational-rows-store-only",
+  "_comment": "20260927235053 is HELD: these two trigger functions are PROMISED until it is installed (outside :50-:03 UTC, after the World Hub gateway PR is live). The nightly refresh goes red if it is merged and never installed, which is the right alarm.",
+  "tables": [],
+  "functions": [
+    "fn_authorize_owner_operational_original",
+    "fn_owner_operational_original_reached_personal_inbox"
+  ]
+}

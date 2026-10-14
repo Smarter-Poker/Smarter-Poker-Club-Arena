@@ -397,3 +397,27 @@ describe('Realtime transport admission before the SDK join budget', () => {
     expect(client.getChannels()).toEqual([]);
   });
 });
+
+it('transport-open observation resumes after the SDK handler and cancels queued or future opens', async () => {
+  const { admission, client, controller } = setup();
+  const states: boolean[] = [];
+  const remove = admission.onReadinessChange(
+    () => states.push(client.isConnected()),
+    controller.signal
+  );
+  const pending = admission.ready(client, controller.signal);
+  await vi.advanceTimersByTimeAsync(0);
+  NativeSocketFixture.instances[0].open();
+  await pending;
+  expect(states).toEqual([true]);
+  NativeSocketFixture.instances[0].open();
+  remove();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(states).toEqual([true]);
+  const observer = vi.fn();
+  admission.onReadinessChange(observer, controller.signal);
+  controller.abort();
+  NativeSocketFixture.instances[0].open();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(observer).not.toHaveBeenCalled();
+});

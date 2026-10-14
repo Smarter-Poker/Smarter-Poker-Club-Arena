@@ -65,6 +65,8 @@
 import { emitThemeRealtimeDiagnostic } from '../utils/themeRealtimeDiagnostic';
 import { useState, useEffect, useMemo, useRef, useCallback, useLayoutEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { subscribeRealtime } from '../lib/subscribeRealtime';
+import { realtimeAdmission } from '../lib/realtimeAdmission';
 import { masterBus } from '../core/MasterBus';
 import { getLocalStorage, setLocalStorage } from '../lib/storage';
 import { recordCustomizationOperation } from '../services/CustomizationOperationsTelemetry';
@@ -331,6 +333,7 @@ type ThemeRealtimeEntry = {
   everLive: boolean;
   generation: number;
   errorStartedAt: number | null;
+  admission: AbortController | null;
 };
 
 const themeRealtimeByUser = new Map<string, ThemeRealtimeEntry>();
@@ -345,84 +348,138 @@ function startThemeRealtime(userId: string, entry: ThemeRealtimeEntry): void {
   entry.state = 'connecting';
   notifyThemeRealtime(entry);
 
-  const channel = supabase
-    .channel(`user-theme-settings:${userId}`)
-    .on(
-      'postgres_changes',
-      {
-        event: '*',
-        schema: 'public',
-        table: 'user_theme_settings',
-        filter: `user_id=eq.${userId}`,
-      },
-      (payload) => {
-        if (entry.generation !== generation || themeRealtimeByUser.get(userId) !== entry) return;
-        if (payload.eventType === 'DELETE') {
-          // Deleting a per-game row does not mean "paint defaults"; it means
-          // resolve the remaining rows again (usually falling back to ALL).
-          // Realtime carries no replacement row, so use the same authoritative
-          // reconciliation path as a recovered connection.
-          notifyThemeRealtime(entry, true);
-          return;
-        }
-        const raw = payload.new as ThemeRow;
-        if (!raw || typeof raw !== 'object') return;
-        const value = Object.fromEntries(
-          THEME_FIELDS.flatMap((field) =>
-            typeof raw[field] === 'string' && raw[field] ? [[field, raw[field]]] : []
-          )
-        ) as Partial<UserThemeSelection>;
-        if (typeof raw.face_deck_id === 'string' && raw.face_deck_id) {
-          value.faceDeckId = normalizeFaceDeckId(raw.face_deck_id);
-        }
-        masterBus.emit('UI_THEME_CHANGED', {
-          key: canonicalGameType(raw.game_type),
-          value,
-          userId,
-          updatedAt: typeof raw.updated_at === 'string' ? raw.updated_at : undefined,
-        });
-      }
-    )
-    .subscribe((status, error) => {
+  const channel = supabase.channel(`user-theme-settings:${userId}`).on(
+    'postgres_changes',
+    {
+      event: '*',
+      schema: 'public',
+      table: 'user_theme_settings',
+      filter: `user_id=eq.${userId}`,
+    },
+    (payload) => {
       if (entry.generation !== generation || themeRealtimeByUser.get(userId) !== entry) return;
-      emitThemeRealtimeDiagnostic(status, error);
-      if (status === 'SUBSCRIBED') {
-        const recovered = entry.everLive && entry.state !== 'live';
-        const firstAuthoritativeHandoff = !entry.everLive;
-        if (recovered) {
-          recordCustomizationOperation({
-            userId,
-            event: 'realtime_recovered',
-            surface: 'table-runtime',
-            category: 'appearance',
-            durationMs: entry.errorStartedAt ? Date.now() - entry.errorStartedAt : undefined,
-            reasonCode: 'channel_resubscribed',
-          });
-        }
-        entry.state = 'live';
-        entry.everLive = true;
-        entry.errorStartedAt = null;
-        // Close the initial SELECT -> SUBSCRIBE gap as well as an actual
-        // reconnect gap. Realtime does not replay a row committed between the
-        // first read and its acknowledgement, so every successful handoff gets
-        // one authoritative reconciliation before relying on events.
-        notifyThemeRealtime(entry, recovered || firstAuthoritativeHandoff);
-      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-        if (entry.state !== 'error') {
-          entry.errorStartedAt = Date.now();
-          recordCustomizationOperation({
-            userId,
-            event: 'realtime_failed',
-            surface: 'table-runtime',
-            category: 'appearance',
-            reasonCode: status.toLowerCase(),
-          });
-        }
-        entry.state = 'error';
-        notifyThemeRealtime(entry);
+      if (payload.eventType === 'DELETE') {
+        // Deleting a per-game row does not mean "paint defaults"; it means
+        // resolve the remaining rows again (usually falling back to ALL).
+        // Realtime carries no replacement row, so use the same authoritative
+        // reconciliation path as a recovered connection.
+        notifyThemeRealtime(entry, true);
+        return;
       }
-    });
+      const raw = payload.new as ThemeRow;
+      if (!raw || typeof raw !== 'object') return;
+      const value = Object.fromEntries(
+        THEME_FIELDS.flatMap((field) =>
+          typeof raw[field] === 'string' && raw[field] ? [[field, raw[field]]] : []
+        )
+      ) as Partial<UserThemeSelection>;
+      if (typeof raw.face_deck_id === 'string' && raw.face_deck_id) {
+        value.faceDeckId = normalizeFaceDeckId(raw.face_deck_id);
+      }
+      masterBus.emit('UI_THEME_CHANGED', {
+        key: canonicalGameType(raw.game_type),
+        value,
+        userId,
+        updatedAt: typeof raw.updated_at === 'string' ? raw.updated_at : undefined,
+      });
+    }
+  );
   entry.channel = channel;
+  let attempt = 0;
+  let disarmRecovery: (() => void) | null = null;
+  const ownsChannel = () =>
+    entry.generation === generation &&
+    themeRealtimeByUser.get(userId) === entry &&
+    entry.channel === channel;
+  const subscribe = () => {
+    const currentAttempt = ++attempt;
+    entry.admission?.abort();
+    const admission = new AbortController();
+    entry.admission = admission;
+    void subscribeRealtime(
+      channel,
+      (status, error) => {
+        if (currentAttempt !== attempt) return;
+        if (entry.generation !== generation || themeRealtimeByUser.get(userId) !== entry) return;
+        emitThemeRealtimeDiagnostic(status, error);
+        if (status === 'SUBSCRIBED') {
+          disarmRecovery?.();
+          const recovered = entry.everLive && entry.state !== 'live';
+          const firstAuthoritativeHandoff = !entry.everLive;
+          if (recovered) {
+            recordCustomizationOperation({
+              userId,
+              event: 'realtime_recovered',
+              surface: 'table-runtime',
+              category: 'appearance',
+              durationMs: entry.errorStartedAt ? Date.now() - entry.errorStartedAt : undefined,
+              reasonCode: 'channel_resubscribed',
+            });
+          }
+          entry.state = 'live';
+          entry.everLive = true;
+          entry.errorStartedAt = null;
+          // Close the initial SELECT -> SUBSCRIBE gap as well as an actual
+          // reconnect gap. Realtime does not replay a row committed between the
+          // first read and its acknowledgement, so every successful handoff gets
+          // one authoritative reconciliation before relying on events.
+          notifyThemeRealtime(entry, recovered || firstAuthoritativeHandoff);
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          if (entry.state !== 'error') {
+            entry.errorStartedAt = Date.now();
+            recordCustomizationOperation({
+              userId,
+              event: 'realtime_failed',
+              surface: 'table-runtime',
+              category: 'appearance',
+              reasonCode: status.toLowerCase(),
+            });
+          }
+          entry.state = 'error';
+          notifyThemeRealtime(entry);
+          // Unjoined admission failures reuse their bound channel. The page
+          // join helper retires a failed join through unsubscribe; that closed
+          // channel needs a fresh binding on a real readiness/auth/online event.
+          if (typeof channel.joinedOnce === 'boolean' && !disarmRecovery) {
+            const retry = () => {
+              if (!ownsChannel() || admission.signal.aborted) return;
+              if (channel.joinedOnce) {
+                if (channel.state !== 'closed') return;
+                disarmRecovery?.();
+                // The helper already removed the retired channel. Do not call
+                // removeChannel here: its last-channel cleanup closes the
+                // healthy shared socket before the replacement can join.
+                startThemeRealtime(userId, entry);
+                return;
+              }
+              disarmRecovery?.();
+              entry.state = 'connecting';
+              notifyThemeRealtime(entry);
+              subscribe();
+            };
+            const offOpen = realtimeAdmission.onReadinessChange(retry, admission.signal);
+            const {
+              data: { subscription },
+            } = supabase.auth.onAuthStateChange((authEvent) => {
+              if (authEvent === 'TOKEN_REFRESHED' || authEvent === 'SIGNED_IN') retry();
+            });
+            window.addEventListener('online', retry);
+            const disarm = () => {
+              offOpen();
+              subscription.unsubscribe();
+              window.removeEventListener('online', retry);
+              admission.signal.removeEventListener('abort', disarm);
+              disarmRecovery = null;
+            };
+            disarmRecovery = disarm;
+            admission.signal.addEventListener('abort', disarm, { once: true });
+          }
+        }
+      },
+      admission.signal
+    );
+  };
+  subscribe();
 }
 
 /** One database channel per account, even when four persistent tables mount. */
@@ -449,6 +506,7 @@ function acquireThemeRealtime(userId: string, listener: ThemeRealtimeListener): 
     everLive: false,
     generation: 0,
     errorStartedAt: null,
+    admission: null,
   };
   themeRealtimeByUser.set(userId, entry);
   startThemeRealtime(userId, entry);
@@ -463,6 +521,7 @@ function releaseThemeRealtime(userId: string, listener: ThemeRealtimeListener): 
   if (entry.refs > 0) return;
   themeRealtimeByUser.delete(userId);
   entry.generation += 1;
+  entry.admission?.abort();
   if (entry.channel) void supabase.removeChannel(entry.channel);
 }
 
@@ -507,6 +566,7 @@ export function useUserThemeRealtime(
     if (!entry) return;
     const oldChannel = entry.channel;
     entry.generation += 1;
+    entry.admission?.abort();
     entry.channel = null;
     if (oldChannel) void supabase.removeChannel(oldChannel);
     startThemeRealtime(userId, entry);

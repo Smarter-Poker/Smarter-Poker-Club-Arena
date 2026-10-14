@@ -1,4 +1,9 @@
 import AxeBuilder from '@axe-core/playwright';
+import {
+  HISTORY_ADMISSION_MS,
+  HISTORY_JOIN_ACK_MS,
+  observeHistoryJoin,
+} from './support/historyJoinObservation';
 import { readFile } from 'node:fs/promises';
 import { expect, test, type Page, type Request, type TestInfo } from '@playwright/test';
 
@@ -296,50 +301,26 @@ test.describe('Production Shark Club Players', () => {
 
   test('loads the real roster once and completes search, filter, sort, and player navigation', async ({
     page,
-  }) => {
-    // Socket/auth admission (20s) plus the page channel join budget (60s).
-    // This retains actual server acknowledgment and subsequent event proof.
-    const historyJoinBudgetMs = 80_000;
-    test.setTimeout(120_000 + historyJoinBudgetMs);
-    const historyJoins = new Set<string>();
-    const historyJoinRefs = new Map<string, string>();
+  }, testInfo) => {
+    // Preserve the current page channel budget while qualifying admission separately.
+    test.setTimeout(120_000 + HISTORY_ADMISSION_MS + HISTORY_JOIN_ACK_MS);
+    const historyJoin = observeHistoryJoin(page);
     const historySignals: Record<string, unknown>[] = [];
-    page.on('websocket', (socket) => {
-      socket.on('framesent', (frame) => {
-        try {
-          const parsed = JSON.parse(String(frame.payload));
-          const message = Array.isArray(parsed)
-            ? { ref: parsed[1], topic: parsed[2], event: parsed[3] }
-            : parsed;
-          if (
-            String(message.topic).startsWith('realtime:player-history:') &&
-            message.event === 'phx_join'
-          )
-            historyJoinRefs.set(message.topic, String(message.ref));
-        } catch {
-          /* Non-JSON transport frames carry no history join. */
-        }
-      });
+    page.on('websocket', (socket) =>
       socket.on('framereceived', (frame) => {
         try {
           const parsed = JSON.parse(String(frame.payload));
           const message = Array.isArray(parsed)
-            ? { ref: parsed[1], topic: parsed[2], event: parsed[3], payload: parsed[4] }
+            ? { topic: parsed[2], event: parsed[3], payload: parsed[4] }
             : parsed;
           if (!String(message.topic).startsWith('realtime:player-history:')) return;
-          if (
-            message.event === 'phx_reply' &&
-            message.payload?.status === 'ok' &&
-            historyJoinRefs.get(message.topic) === String(message.ref)
-          )
-            historyJoins.add(message.topic);
           if (message.event === 'broadcast' && message.payload?.event === 'history_changed')
             historySignals.push(message.payload.payload);
         } catch {
           /* Non-JSON transport frames carry no history receipt. */
         }
-      });
-    });
+      })
+    );
     const probe = observeMembersPath(page);
     const readyMs = await openMembers(page, probe);
 
@@ -402,15 +383,25 @@ test.describe('Production Shark Club Players', () => {
     const initialHistory = page.waitForResponse((response) =>
       response.url().includes('/rpc/ca_club_player_history')
     );
-    await history.locator('summary').click();
-    const initialHistoryResponse = await initialHistory;
-    expect(initialHistoryResponse.ok()).toBe(true);
-    const historyScope = await initialHistoryResponse.json();
-    await expect
-      .poll(() => historyJoins.has(`realtime:player-history:${historyScope.club_id}`), {
-        timeout: historyJoinBudgetMs,
-      })
-      .toBe(true);
+    let historyTopic = '';
+    try {
+      await historyJoin.observation.qualify(async () => {
+        await history.locator('summary').click();
+        const initialHistoryResponse = await initialHistory;
+        expect(initialHistoryResponse.ok()).toBe(true);
+        const historyScope = await initialHistoryResponse.json();
+        historyTopic = `realtime:player-history:${historyScope.club_id}`;
+        return historyTopic;
+      });
+    } catch (error) {
+      await testInfo.attach('player-history-join-phase', {
+        body: JSON.stringify(historyJoin.observation.result(historyTopic, performance.now())),
+        contentType: 'application/json',
+      });
+      throw error;
+    } finally {
+      historyJoin.dispose();
+    }
     const exportResponse = page.waitForResponse((response) =>
       response.url().includes('/rpc/ca_club_members_export')
     );

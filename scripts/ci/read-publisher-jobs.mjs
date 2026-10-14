@@ -6,7 +6,11 @@ import { pathToFileURL } from 'node:url';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { mergePublisherReceipt, receiptName } from './publisher-verdict-receipt.mjs';
+import {
+  mergePublisherReceipt,
+  missingPublisherProofs,
+  receiptName,
+} from './publisher-verdict-receipt.mjs';
 const execute = promisify(execFile);
 
 /** Configured gh authentication stays inside gh; stdout contains metadata only. */
@@ -165,8 +169,7 @@ export async function hydratePublisherProofs(
       ['publish-to-origin', 'retain-runtime'].includes(job.name) &&
       job.status === 'completed' &&
       job.conclusion === 'success' &&
-      Array.isArray(job.steps) &&
-      job.steps.length === 0
+      missingPublisherProofs(job.name, job.steps).length > 0
   );
   if (!missing.length) return payload;
   const remaining = () => {

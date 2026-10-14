@@ -1,0 +1,14 @@
+{
+  "_owner": "floor-park-lease-watchdog. Migration 20261014231111_a_floor_park_is_a_lease_that_expires_and_pages_never_a_switc qualified locally (scripts/ci/test_operator_floor_hold_watchdog.py) and installed through the Apply Merged Migration workflow after protected merge; the credentialed check-migrations-applied run reports these names PROMISED until that install is read back.",
+  "tables": [
+    "ca_operator_floor_hold_releases"
+  ],
+  "functions": [
+    "fn_ca_operator_floor_hold_ttl",
+    "fn_ca_operator_floor_hold_page_after",
+    "fn_ca_operator_floor_hold_lease",
+    "fn_ca_operator_floor_hold_renew",
+    "fn_ca_operator_floor_hold_open_alert",
+    "fn_ca_operator_floor_hold_watchdog"
+  ]
+}

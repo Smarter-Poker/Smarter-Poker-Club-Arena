@@ -111,7 +111,16 @@ describe('the register is a supply ledger', () => {
     const offenders = migrations()
       .filter((f) => f > MIGRATION)
       .filter((f) => {
-        const s = code(readFileSync(join(MIG, f), 'utf8'));
+        // The register itself (fn_ca_register_issuance_leg) writes a
+        // `circulation` row for every unattributed issuance leg: that is the
+        // supply ledger working, not a baseline being attributed. A later
+        // migration that re-declares the register (20261003220304 reads its
+        // supply from shards) carries that text; its body is set aside here,
+        // and anything else in the same file is still checked.
+        const s = code(readFileSync(join(MIG, f), 'utf8')).replace(
+          /CREATE OR REPLACE FUNCTION public\.fn_ca_register_issuance_leg\([\s\S]*?\$function\$;/g,
+          ''
+        );
         return (
           s.includes('register-opening-stock') ||
           (s.includes("holder_type = 'circulation'") &&

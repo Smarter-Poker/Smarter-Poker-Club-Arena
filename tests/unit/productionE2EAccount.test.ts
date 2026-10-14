@@ -592,6 +592,81 @@ describe('post-deploy production account', () => {
     }
   );
 
+  it('waits out the hourly platform freeze instead of failing template creation', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'production-e2e-template-freeze-'));
+    const env = {
+      ...environment(directory),
+      DATABASE_URL: 'postgres://qualified-test',
+      GITHUB_ENV: join(directory, 'github-env'),
+    };
+    const requestId = '00000000-0000-4000-8000-000000000066';
+    const clubId = '00000000-0000-4000-8000-000000000055';
+    writeFileSync(
+      join(directory, 'club-arena-production-e2e-account.json'),
+      JSON.stringify({
+        id: USER_ID,
+        email: 'ca-customization-cert-postdeploy-template@example.invalid',
+        password: 'unused',
+        templateFixtureRequest: { requestId },
+      })
+    );
+    const club = {
+      id: clubId,
+      owner_id: USER_ID,
+      name: 'Crest Cert Template 00000000',
+      status: 'active',
+      union_id: null,
+      is_public: false,
+      requires_approval: true,
+    };
+    const claims = { sub: USER_ID, role: 'authenticated' };
+    const token = `header.${Buffer.from(JSON.stringify(claims)).toString('base64url')}.signature`;
+    let qualifications = 0;
+    const client = {
+      connect: vi.fn(),
+      end: vi.fn(),
+      query: vi.fn(async (sql: string) => {
+        if (sql.includes('fn_create_club_atomic')) {
+          if (++qualifications === 1)
+            throw new Error(
+              'PLATFORM_FROZEN: the platform is on a scheduled maintenance break. ' +
+                'INSERT on chip_transactions was refused; it will succeed when play resumes.'
+            );
+          return { rows: [{ club }] };
+        }
+        if (sql.includes('FROM public.club_members'))
+          return { rows: [{ role: 'owner', status: 'active', chip_balance: 0 }] };
+        return { rows: [] };
+      }),
+    };
+    let frozenReads = 0;
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes('/auth/v1/token')) return Response.json({ access_token: token });
+      if (url.includes('/auth/v1/user')) return Response.json({ id: USER_ID });
+      if (url.includes('/club_creation_requests?')) return Response.json([]);
+      if (url.includes('/engine_maintenance_break')) return Response.json([]);
+      if (url.includes('/rpc/fn_platform_frozen')) return Response.json(++frozenReads < 2);
+      if (url.includes('/rpc/fn_create_club_atomic')) return Response.json(club);
+      if (url.includes('/clubs?')) return Response.json([club]);
+      if (url.includes('/club_members?'))
+        return Response.json([{ role: 'owner', status: 'active', chip_balance: 0 }]);
+      throw new Error('Unexpected request ' + url);
+    });
+    const wait = vi.fn(async () => undefined);
+    await expect(
+      prepareProductionE2ETemplateFixture({
+        environment: env,
+        fetchImpl: fetchMock,
+        databaseClientFactory: async () => client,
+        wait,
+      })
+    ).resolves.toMatchObject({ id: clubId });
+    expect(qualifications).toBe(2);
+    expect(wait).toHaveBeenCalled();
+    expect(readFileSync(env.GITHUB_ENV, 'utf8')).toBe(`E2E_TEMPLATE_CLUB_ID=${clubId}\n`);
+  });
+
   it('keeps the owned fixture record and account when template retirement refuses', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'production-e2e-template-cleanup-'));
     const env = environment(directory);

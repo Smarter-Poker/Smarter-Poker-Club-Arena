@@ -543,6 +543,7 @@ export async function prepareProductionE2ETemplateFixture({
   environment = process.env,
   fetchImpl = fetch,
   databaseClientFactory,
+  wait = (milliseconds) => new Promise((done) => setTimeout(done, milliseconds)),
 } = {}) {
   if (environment.E2E_TEMPLATE_CLUB_ID)
     return prepareProductionE2ETemplateMembership({ environment, fetchImpl });
@@ -620,20 +621,47 @@ export async function prepareProductionE2ETemplateFixture({
     );
     club = Array.isArray(rows) && rows.length === 1 ? rows[0] : null;
   } else {
-    await qualifyTemplateClubCreate({ environment, claims, args, databaseClientFactory });
-    const response = await fetchImpl(
-      `${configuration.supabaseUrl}/rest/v1/rpc/fn_create_club_atomic`,
-      {
-        method: 'POST',
-        headers: authHeaders,
-        body: JSON.stringify(args),
+    // Club creation writes chip_transactions, which the hourly break refuses
+    // (CLAUDE.md section 13). Both the rolled-back qualification and the
+    // creation are single transactions, so a freeze refusal committed nothing
+    // and the same request id is safe to send again once the break ends.
+    // 2026-10-14 run 38641820985 opened inside the :55 break and failed here.
+    for (let freezesWaited = 0; ; ) {
+      try {
+        await qualifyTemplateClubCreate({ environment, claims, args, databaseClientFactory });
+        const response = await fetchImpl(
+          `${configuration.supabaseUrl}/rest/v1/rpc/fn_create_club_atomic`,
+          { method: 'POST', headers: authHeaders, body: JSON.stringify(args) }
+        );
+        club = await responseBody(response);
+        if (!response.ok) {
+          const refusal = new Error(
+            `Owned template create refused (${response.status}); request retained for readback.`
+          );
+          refusal.body = club;
+          throw refusal;
+        }
+        break;
+      } catch (error) {
+        if (!isPlatformFreezeRefusal(error)) throw error;
+        if (freezesWaited >= PLATFORM_FREEZE_MAX_WAITS) {
+          throw new Error(
+            `Template club creation was refused for the platform freeze across ` +
+              `${freezesWaited} complete freezes, which is more than section 13 schedules.`
+          );
+        }
+        freezesWaited += 1;
+        console.log(
+          '[production-e2e-account] the platform freeze refused template creation; ' +
+            'waiting for the thaw.'
+        );
+        const thaw = await waitOutPlatformFreeze(configuration, fetchImpl, wait);
+        if (thaw.outcome !== 'thawed')
+          throw new Error(
+            `Template club creation was refused for the freeze; ${describeThaw(thaw)}`
+          );
       }
-    );
-    club = await responseBody(response);
-    if (!response.ok)
-      throw new Error(
-        `Owned template create refused (${response.status}); request retained for readback.`
-      );
+    }
   }
   if (
     !/^[0-9a-f-]{36}$/.test(club?.id || '') ||

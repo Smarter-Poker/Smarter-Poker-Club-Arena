@@ -125,6 +125,8 @@ export async function fetchMyLightningSession(clusterId: string): Promise<Lightn
     p_cluster_id: clusterId,
   });
   if (error) throw error;
+  const receipt = Array.isArray(data) ? data[0] : data;
+  if (receipt && typeof receipt === 'object' && receipt.ok === false) throw receipt;
   return parseLightningMySession(data);
 }
 

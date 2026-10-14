@@ -7,7 +7,7 @@
  */
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -494,6 +494,43 @@ describe('P13.3 completion reader, stage 1: the host extractor', () => {
     expect(out.record.streets.river).toMatchObject({ eligible: 1, completed: 1 });
     expect(out.record.streets.flop).toMatchObject({ eligible: 1, completed: 1 });
     expect(out.record.streets.preflop.eligible).toBe(0);
+  });
+
+  // 2026-10-12: the decision lane's default worker count follows the host, so
+  // a journal may hold any number of shards. Every extractor reads every
+  // shard's archive up to the first missing index, as the engine's own
+  // readers do (horseJournalArchiveDirectoryNames), and nothing past a gap.
+  it.each([
+    ['phase11-completion-extract.py', 'PHASE11_EXTRACT_JOURNAL_ROOT', 'plo5'],
+    ['phase12-completion-extract.py', 'PHASE12_EXTRACT_JOURNAL_ROOT', 'flh'],
+    ['phase13-completion-extract.py', 'PHASE13_EXTRACT_JOURNAL_ROOT', 'nlh'],
+  ])('%s reads every decision-worker shard of the journal', (script, rootEnv, variant) => {
+    const root = mkdtempSync(path.join(tmpdir(), 'p13-shards-'));
+    dirs.push(root);
+    const shards = ['archive', 'archive-shard-1', 'archive-shard-2', 'archive-shard-4'];
+    shards.forEach((name, i) => {
+      const dir = path.join(root, name, 'segments');
+      mkdirSync(dir, { recursive: true });
+      segment(dir, [record('decision', variant, AT + i, { action: 'check' })]);
+    });
+    const env: NodeJS.ProcessEnv = { ...process.env, [rootEnv]: root };
+    for (const key of Object.keys(env)) if (key.endsWith('_EXTRACT_SEGMENT_DIRS')) delete env[key];
+    const run = spawnSync('python3', [`scripts/${script}`, FROM, TO, RELEASE, variant], {
+      cwd: serverRoot,
+      encoding: 'utf8',
+      env,
+    });
+    expect(run.status, run.stderr).toBe(0);
+    const rows = run.stdout
+      .trim()
+      .split('\n')
+      .map((l) => JSON.parse(l) as { eventId: string });
+    expect(rows.map((r) => r.eventId).sort()).toEqual([
+      `decision-${variant}-${AT}`,
+      `decision-${variant}-${AT + 1}`,
+      `decision-${variant}-${AT + 2}`,
+    ]);
+    expect(JSON.parse(run.stderr)).toMatchObject({ segments_read: 3, records: 3 });
   });
 
   // Audit 2026-10-06: the window bounds were parsed by dropping the fraction

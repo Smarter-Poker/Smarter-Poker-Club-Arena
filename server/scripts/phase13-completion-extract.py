@@ -32,14 +32,21 @@ truncated to milliseconds. A bound without an offset (local time to
 Date.parse) or in any other form is refused (exit 1, nothing printed).
 stderr: a JSON summary (segments read, records, excluded by name).
 env (tests only): PHASE13_EXTRACT_SEGMENT_DIRS, colon-separated segment
-directories replacing the two host archive directories.
+directories replacing the host archive directories; PHASE13_EXTRACT_JOURNAL_ROOT,
+a journal directory read in place of the host's.
 """
 import os, re, sys, gzip, json, hashlib, calendar
 from collections import Counter
 
 VARIANTS = ('nlh', 'plo4', 'plo5', 'plo6', 'plo8', 'flo8', 'flh', 'pineapple', 'short_deck')
-DIRS = ['/var/lib/club-arena/horse-decisions/archive/segments',
-        '/var/lib/club-arena/horse-decisions/archive-shard-1/segments']
+# Every decision-worker shard's archive, as horseJournalArchiveDirectoryNames
+# reads them: shard 0 is 'archive', later shards 'archive-shard-1', '-2', ...
+# up to the first missing one. The worker count follows the host since
+# 2026-10-12 (lane.ts), so it is not fixed at two.
+ROOT = os.environ.get('PHASE13_EXTRACT_JOURNAL_ROOT', '/var/lib/club-arena/horse-decisions')
+DIRS = [ROOT + '/archive/segments']
+while os.path.isdir('%s/archive-shard-%d' % (ROOT, len(DIRS))):
+    DIRS.append('%s/archive-shard-%d/segments' % (ROOT, len(DIRS)))
 if os.environ.get('PHASE13_EXTRACT_SEGMENT_DIRS'):
     DIRS = os.environ['PHASE13_EXTRACT_SEGMENT_DIRS'].split(':')
 frm, to, release, variant = sys.argv[1:5]

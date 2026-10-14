@@ -120,10 +120,35 @@ describe('horseDecisionWorkerCount', () => {
     expect(horseDecisionWorkerCount({ cores: 4, canYield: true })).toBe(2);
     expect(horseDecisionWorkerCount({ cores: 3, canYield: true })).toBe(1);
     expect(horseDecisionWorkerCount({ cores: 2, canYield: true })).toBe(1);
-    expect(horseDecisionWorkerCount({ cores: 16, canYield: true })).toBe(2);
     expect(horseDecisionWorkerCount({ cores: 4, canYield: false })).toBe(1);
     expect(horseDecisionWorkerCount({ requested: '3', cores: 4, canYield: true })).toBe(2);
     expect(horseDecisionWorkerCount({ requested: '1', cores: 4, canYield: true })).toBe(1);
+  });
+
+  it('runs one yielding worker per physical core but one, never fewer than two (2026-10-12)', () => {
+    // The engine host: eight logical CPUs on four EPYC Milan cores. Three.
+    expect(horseDecisionWorkerCount({ cores: 8, canYield: true })).toBe(3);
+    expect(horseDecisionWorkerCount({ cores: 6, canYield: true })).toBe(2);
+    expect(horseDecisionWorkerCount({ cores: 10, canYield: true })).toBe(4);
+    expect(horseDecisionWorkerCount({ cores: 16, canYield: true })).toBe(7);
+    expect(horseDecisionWorkerCount({ cores: 32, canYield: true })).toBe(
+      MAX_HORSE_DECISION_WORKERS
+    );
+  });
+
+  it('never defaults to more shards than the journal disk can hold, nor bounds an explicit request', () => {
+    expect(horseDecisionWorkerCount({ cores: 8, canYield: true, journalShards: 3 })).toBe(3);
+    expect(horseDecisionWorkerCount({ cores: 8, canYield: true, journalShards: 5 })).toBe(3);
+    expect(horseDecisionWorkerCount({ cores: 8, canYield: true, journalShards: 2 })).toBe(2);
+    expect(horseDecisionWorkerCount({ cores: 8, canYield: true, journalShards: 1 })).toBe(1);
+    expect(horseDecisionWorkerCount({ cores: 8, journalShards: 1 })).toBe(1);
+    // No journal, or no reading of it: the CPU rule alone.
+    for (const journalShards of [undefined, 0, -1, 1.5, Number.NaN])
+      expect(horseDecisionWorkerCount({ cores: 8, canYield: true, journalShards })).toBe(3);
+    // The operator who sets HORSE_DECISION_WORKERS sizes the journal too.
+    expect(
+      horseDecisionWorkerCount({ requested: '4', cores: 8, canYield: true, journalShards: 2 })
+    ).toBe(4);
   });
 
   it('defaults by physical cores at two threads each where a worker cannot yield', () => {

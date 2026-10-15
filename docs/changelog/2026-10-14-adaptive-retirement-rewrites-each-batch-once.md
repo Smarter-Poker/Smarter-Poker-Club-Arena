@@ -67,3 +67,25 @@ template. Proven:
   completes that hand through the same owner;
 - a rolled-back owner call leaves everything untouched;
 - forward replay of the migration is refused; ownership and ACLs are preserved.
+
+## Correction: Batch Selection Through The Membership Key (2026-10-15)
+
+Installed at 00:07 UTC, the once-per-call batch selection joined certificates
+on `c.hand_id::text = ANY(text[])`. The cast prevents the certificates primary
+key from being used, so on production every owner call scanned the
+certificates and the 15.1M-row membership table and was cancelled by its
+statement timeout (each call rolled back whole; nothing partial was written,
+but retirement stalled). The 40-hand fixture was too small to show it.
+
+Migration `20261015001134_horse_adaptive_batch_once_selects_batches_through_the_member.sql`
+records each completed hand's `hand_digest` from its certificate (a primary-key
+read replacing the identical EXISTS) and selects batches by
+`m.hand_digest = ANY(digests)`, the leading column of the membership primary
+key. Measured on production read-only before install: selecting the batches of
+250 real pending hands takes 5.7 ms (index-only scan); those hands touch 277
+distinct batches, whose rebuild costs about 1.75 s, so a full call is roughly
+4 s for 250 hands (about 60 hands/s, against 20 before).
+
+The harness now applies both migrations, refuses replay of the correction,
+asserts the selection is digest-keyed, and asserts its plan uses
+`horse_adaptive_batch_hand_membership_pkey` with no sequential scan.

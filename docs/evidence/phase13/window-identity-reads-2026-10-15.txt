@@ -6,3 +6,5 @@ read1 (declared, H:00-H:02) at 2026-10-15T12:00:16Z
 health 2dbf2a490274de55f6a78dc5e574ab57b03dafcf
 observation at 2026-10-15T13:05:59Z (window 12:02-14:50 void if changed)
 2026-10-15T12:55:56.989014006Z 928b6875706194f5864c11bd1fa5e28d375b788c
+
+superseded at 2026-10-15T16:40:27Z: #6973 (818b10c1) changed every Phase 13 policy digest, so no hour can match section 4 of declaration-completion-p13-2026-10-15.txt; H=16 and later were not observed. The successor is declaration-completion-p13-single-board-2026-10-15.txt.

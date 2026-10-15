@@ -17,9 +17,9 @@
 --    the first 25 minutes of every UTC day. Root fix: the same two insert
 --    triggers that feed the tournament rollup now feed club_table_daily too,
 --    in the transaction that writes the rake or the wallet row, with the exact
---    attribution the rebuild uses. A live day is the triggers' to keep; the
---    hourly job no longer rewrites today, and only recounts a COMPLETE day
---    whose source count disagrees (plus yesterday once, as before).
+--    attribution the rebuild uses. A live day is the triggers' to keep: the
+--    rebuild declines today (the hourly job still recounts yesterday and any
+--    complete day whose source count disagrees, as before).
 --
 -- 2. CASH WINNINGS LEFT THE FELT OUT. club_table_daily.net is cash-outs minus
 --    buy-ins. A player still seated has bought in and not cashed out, so every
@@ -309,6 +309,14 @@ BEGIN
   IF p_day IS NULL OR p_day > (now() AT TIME ZONE 'UTC')::date THEN
     RETURN jsonb_build_object('success', false, 'error', 'day_out_of_range');
   END IF;
+  /* 2026-10-15: the live day belongs to the insert triggers. The hourly
+     catch-up still asks for it; rebuilding it would hold every row of the
+     day while the triggers wait on them, so it is declined. Only this
+     migration's one-off seed opts in. */
+  IF p_day = (now() AT TIME ZONE 'UTC')::date
+     AND COALESCE(current_setting('ca.club_data_seed_live_day', true), '') <> 'on' THEN
+    RETURN jsonb_build_object('success', true, 'day', p_day, 'skipped', 'live_day_is_kept_by_triggers');
+  END IF;
 
   DELETE FROM club_table_daily WHERE stat_date = p_day;
   DELETE FROM ca_club_table_player_daily WHERE stat_date = p_day;
@@ -436,85 +444,6 @@ BEGIN
 END;
 $$;
 
--- The hourly job no longer rewrites the live day: the triggers keep it.
-CREATE OR REPLACE FUNCTION public.fn_club_table_daily_catchup(p_days integer DEFAULT 3)
-RETURNS jsonb
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
-DECLARE
-  v_today date := (now() AT TIME ZONE 'UTC')::date;
-  v_n int := GREATEST(LEAST(COALESCE(p_days, 3), 30), 1);
-  d date;
-  v_done jsonb := '[]'::jsonb;
-  v_stored bigint;
-  v_actual bigint;
-  v_ledger numeric;
-  v_rollup numeric;
-  v_reconciled jsonb := '[]'::jsonb;
-  v_today_drift numeric;
-BEGIN
-  FOR d IN SELECT gs::date FROM generate_series(v_today - v_n, v_today - 1, interval '1 day') gs LOOP
-    SELECT COALESCE(SUM(c.source_rows), 0) INTO v_stored
-      FROM club_table_daily c WHERE c.stat_date = d;
-
-    SELECT (
-      SELECT COUNT(*)
-        FROM rake_records r
-        JOIN tables t ON t.id = r.table_id AND t.tournament_id IS NULL
-        CROSS JOIN LATERAL jsonb_each_text(r.player_contributions) e(key, value)
-       WHERE r.created_at >= (d::timestamp AT TIME ZONE 'UTC')
-         AND r.created_at <  ((d + 1)::timestamp AT TIME ZONE 'UTC')
-         AND r.player_contributions IS NOT NULL
-         AND jsonb_typeof(r.player_contributions) = 'object'
-         AND r.rake_amount > 0
-         AND e.key ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
-         AND EXISTS (
-           SELECT 1 FROM jsonb_each_text(r.player_contributions) x
-            WHERE x.key ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
-              AND (CASE WHEN x.value ~ '^-?[0-9]+(\.[0-9]+)?$' THEN x.value::numeric ELSE 0 END) > 0)
-    ) + (
-      SELECT COUNT(*)
-        FROM rake_records r
-        JOIN tables t ON t.id = r.table_id AND t.tournament_id IS NULL
-       WHERE r.created_at >= (d::timestamp AT TIME ZONE 'UTC')
-         AND r.created_at <  ((d + 1)::timestamp AT TIME ZONE 'UTC')
-         AND r.rake_amount > 0
-         AND NOT EXISTS (
-           SELECT 1
-             FROM jsonb_each_text(CASE WHEN jsonb_typeof(r.player_contributions) = 'object'
-                                       THEN r.player_contributions ELSE '{}'::jsonb END) e
-            WHERE e.key ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
-              AND (CASE WHEN e.value ~ '^-?[0-9]+(\.[0-9]+)?$' THEN e.value::numeric ELSE 0 END) > 0)
-    ) INTO v_actual;
-
-    -- Yesterday is recounted once its last writer has committed; an older
-    -- complete day only when its stored count disagrees with the ledger.
-    IF d = v_today - 1 OR v_stored IS DISTINCT FROM v_actual THEN
-      PERFORM fn_club_table_daily_refresh_day(d);
-      v_done := v_done || jsonb_build_array(jsonb_build_object('day', d, 'refreshed', true));
-    END IF;
-
-    v_ledger := public.fn_ca_club_rake_daily_ledger_total(d);
-    SELECT COALESCE(SUM(x.rake), 0) INTO v_rollup
-      FROM ca_club_rake_daily x WHERE x.stat_date = d;
-    IF abs(v_ledger - v_rollup) > 0.005 THEN
-      PERFORM fn_ca_club_rake_daily_rebuild_range(d, d, false);
-      v_reconciled := v_reconciled || jsonb_build_array(jsonb_build_object(
-        'day', d, 'ledger', v_ledger, 'rollup_was', v_rollup));
-    END IF;
-  END LOOP;
-
-  -- Today is reported, never rewritten. A drift that survives the day is a
-  -- trigger that stopped landing, and it will be recounted at midnight.
-  v_today_drift := round(public.fn_ca_club_rake_daily_ledger_total(v_today)
-                         - COALESCE((SELECT SUM(x.rake) FROM ca_club_rake_daily x
-                                      WHERE x.stat_date = v_today), 0), 4);
-
-  RETURN jsonb_build_object('success', true, 'days', v_done,
-                            'rake_daily_rebuilt', v_reconciled,
-                            'today_drift', v_today_drift);
-END;
-$$;
-
 -- Chips still in front of a club's seated players, per cash table, for seats
 -- taken inside the window, under the same filters the Club Data list uses.
 CREATE OR REPLACE FUNCTION public.fn_ca_club_cash_felt(
@@ -625,10 +554,20 @@ BEGIN
 END;
 $function$;
 
+-- Grants restated exactly as production holds them (CREATE OR REPLACE keeps
+-- them; stating them keeps the definer-authorization gate honest).
+REVOKE ALL ON FUNCTION public.ca_club_data_snapshot(uuid, date, date, text, text, text, integer) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.ca_club_data_snapshot(uuid, date, date, text, text, text, integer) TO authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_club_table_daily_refresh_day(date) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_club_table_daily_refresh_day(date) TO service_role;
+REVOKE ALL ON FUNCTION public.trg_ca_reporting_rake_insert() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.trg_ca_reporting_wallet_insert() FROM PUBLIC, anon, authenticated;
+
 -- Start the live day from the ledger. Inside this transaction nothing else
 -- writes club_table_daily (the old trigger bodies never did, and the hourly
 -- job runs at :25), so the rebuild is uncontended; from COMMIT on, the new
 -- trigger bodies keep it.
+SET LOCAL ca.club_data_seed_live_day = 'on';
 SELECT public.fn_club_table_daily_refresh_day((now() AT TIME ZONE 'UTC')::date);
 
 COMMIT;

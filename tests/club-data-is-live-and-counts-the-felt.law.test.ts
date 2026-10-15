@@ -71,10 +71,13 @@ describe('cash buy-ins and cash-outs reach Club Data live', () => {
 });
 
 describe('the hourly job never rewrites the live day', () => {
-  it('walks complete days only', () => {
-    const b = latest('fn_club_table_daily_catchup');
-    expect(b).toContain('generate_series(v_today - v_n, v_today - 1');
-    expect(b).not.toMatch(/d >= v_today - 1/);
+  it('the rebuild declines today unless the one-off seed opts in', () => {
+    const b = latest('fn_club_table_daily_refresh_day');
+    expect(b).toContain("current_setting('ca.club_data_seed_live_day', true)");
+    expect(b).toContain("'skipped', 'live_day_is_kept_by_triggers'");
+    expect(b.indexOf('live_day_is_kept_by_triggers')).toBeLessThan(
+      b.indexOf('DELETE FROM club_table_daily')
+    );
   });
 
   it('a rebuild merges with a trigger that lands while it runs', () => {

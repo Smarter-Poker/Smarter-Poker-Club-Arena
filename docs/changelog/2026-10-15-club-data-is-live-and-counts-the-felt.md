@@ -14,7 +14,7 @@ Migration `20261015010318_club_data_is_live_and_counts_the_felt.sql`:
 
 - `trg_ca_reporting_rake_insert` now writes each raked cash hand into `club_table_daily` through `fn_ca_club_table_daily_add_rake`, with the rebuild's exact attribution (first union club, else the table's club; a hand with no usable contribution goes to the table's club whole). Contributors are kept in `ca_club_table_player_daily` so the player count matches the rebuild.
 - `trg_ca_reporting_wallet_insert` now writes cash buy-ins, add-ons, rebuys, refunds and cash-outs into `club_table_daily`, in its own block so a failure never costs the player rollup.
-- `fn_club_table_daily_catchup` walks complete days only; the live day is the triggers'. `fn_club_table_daily_refresh_day` also rebuilds the contributor set and merges additively, so a trigger that commits while it runs is kept.
+- `fn_club_table_daily_refresh_day` declines the live UTC day (it is the triggers'), so the hourly catch-up keeps recounting yesterday and any drifted complete day but never rewrites today. It also rebuilds the contributor set and merges additively, so a trigger that commits while it runs is kept. The catch-up function itself is unchanged.
 - `ca_club_data_snapshot` adds every seated club player's live stack (`fn_ca_club_cash_felt`, seats taken inside the window, same filters as the list) to cash and total winnings, to the previous window, and to each cash row, which is marked `live` with its seated count.
 
 No trigger was created or dropped and no hot table was altered: only function bodies changed, so `rake_records` and `wallet_transactions` take no lock from it.

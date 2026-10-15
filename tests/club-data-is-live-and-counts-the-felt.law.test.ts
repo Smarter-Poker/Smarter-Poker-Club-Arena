@@ -123,6 +123,8 @@ describe('the everyday screen reads live and stays simple', () => {
     expect(PAGE).toContain("supabase.rpc('ca_club_data_screen'");
     expect(PAGE).toContain('preset === 1 ? 15_000 : 60_000');
     expect(PAGE).toContain('Showing The Last Good Figures.');
-    expect(PAGE).toContain("summary ? formatMoney(summary.total_winnings) : '-'");
+    expect(PAGE).toContain("summary ? formatTotal(summary.total_winnings) : '-'");
+    // the exact figure is never lost: it is the tile's title and accessible name
+    expect(PAGE).toContain('aria-label={summary ? formatMoney(summary.total_winnings) : undefined}');
   });
 });

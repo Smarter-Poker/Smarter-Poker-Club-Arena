@@ -114,6 +114,23 @@ export function formatMoney(n: number | null | undefined): string {
   return v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+/**
+ * A total in a quarter of a 375px strip. Seen on a phone on 2026-10-15:
+ * SHARK CLUB's day read "-55,66..." and "149,60..." because six digits and two
+ * decimals do not fit. Below 10,000 the figure is exact to the cent; above it
+ * the tile shows 149.6K / 3.54M and the exact amount stays in the title and
+ * the accessible name, and in every game row below.
+ */
+export function formatTotal(n: number | null | undefined): string {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return '-';
+  const a = Math.abs(v);
+  if (a < 10_000) return formatMoney(v);
+  const sign = v < 0 ? '-' : '';
+  if (a < 1_000_000) return `${sign}${(Math.floor(a / 100) / 10).toLocaleString('en-US', { maximumFractionDigits: 1 })}K`;
+  return `${sign}${(Math.floor(a / 10_000) / 100).toLocaleString('en-US', { maximumFractionDigits: 2 })}M`;
+}
+
 function inkFor(n: number | null | undefined): string {
   const v = Number(n);
   if (!Number.isFinite(v) || v === 0) return styles.inkNeutral;
@@ -381,19 +398,33 @@ export default function ClubDataSimplePage() {
         </div>
         <div className={styles.stat}>
           <dt className={styles.statLabel}>Total Winnings</dt>
-          <dd className={`${styles.statValue} ${summary ? inkFor(summary.total_winnings) : ''}`}>
-            {summary ? formatMoney(summary.total_winnings) : '-'}
+          <dd
+            className={`${styles.statValue} ${summary ? inkFor(summary.total_winnings) : ''}`}
+            title={summary ? formatMoney(summary.total_winnings) : undefined}
+            aria-label={summary ? formatMoney(summary.total_winnings) : undefined}
+          >
+            {summary ? formatTotal(summary.total_winnings) : '-'}
           </dd>
         </div>
         <div className={styles.stat}>
           <dt className={styles.statLabel}>MTT Winnings</dt>
-          <dd className={`${styles.statValue} ${summary ? inkFor(summary.mtt_winnings) : ''}`}>
-            {summary ? formatMoney(summary.mtt_winnings) : '-'}
+          <dd
+            className={`${styles.statValue} ${summary ? inkFor(summary.mtt_winnings) : ''}`}
+            title={summary ? formatMoney(summary.mtt_winnings) : undefined}
+            aria-label={summary ? formatMoney(summary.mtt_winnings) : undefined}
+          >
+            {summary ? formatTotal(summary.mtt_winnings) : '-'}
           </dd>
         </div>
         <div className={styles.stat}>
           <dt className={styles.statLabel}>Fee</dt>
-          <dd className={styles.statValue}>{summary ? formatMoney(summary.fee) : '-'}</dd>
+          <dd
+            className={styles.statValue}
+            title={summary ? formatMoney(summary.fee) : undefined}
+            aria-label={summary ? formatMoney(summary.fee) : undefined}
+          >
+            {summary ? formatTotal(summary.fee) : '-'}
+          </dd>
         </div>
       </dl>
 

@@ -20,6 +20,7 @@ vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 import ClubDataSimplePage, {
   addDays,
   formatMoney,
+  formatTotal,
   isSnapshot,
   refreshIntervalMs,
 } from '../../src/pages/club/ClubDataSimplePage';
@@ -75,6 +76,14 @@ describe('helpers', () => {
   it('steps UTC days without drifting across a month', () => {
     expect(addDays('2026-10-01', -1)).toBe('2026-09-30');
     expect(addDays('2026-10-14', 0)).toBe('2026-10-14');
+  });
+
+  it('fits a large total in its tile without losing the exact figure', () => {
+    expect(formatTotal(9_999.5)).toBe('9,999.50');
+    expect(formatTotal(149_602.37)).toBe('149.6K');
+    expect(formatTotal(-55_668.2)).toBe('-55.6K');
+    expect(formatTotal(3_544_599.22)).toBe('3.54M');
+    expect(formatTotal(undefined)).toBe('-');
   });
 
   it('refreshes faster on the live day', () => {

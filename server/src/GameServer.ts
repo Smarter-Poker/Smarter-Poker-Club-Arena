@@ -15,6 +15,10 @@ import {
   type RetirementBinding,
   type RetirementCustody,
 } from './services/TournamentRetirementCustody.js';
+import {
+  EMPTY_PAST_START_CANCEL_RETRY_MS,
+  shouldCancelEmptyPastStartEvent,
+} from './tournament/emptyPastStartEvent.js';
 import { projectTournamentAdmission } from './tournament/tournamentAdmission.js';
 import {
   isPersistedUnlimitedMtt,
@@ -336,6 +340,17 @@ const PAST_START_TOP_UP_CONCURRENCY = 4;
  * branch of discoverTournaments for the backoff that reaches it.
  */
 const PAST_START_TOP_UP_MAX_INTERVAL_MS = 10 * 60 * 1000;
+/**
+ * One past-start event's top-up clock. cancelAskedAt is when an event nobody
+ * entered was last offered to atomic_cancel_tournament (2026-10-15, see
+ * tournament/emptyPastStartEvent.ts); it rides this entry so it is pruned with
+ * the event and the walk carries no state of its own for it.
+ */
+interface PastStartTopUpClock {
+  at: number;
+  misses: number;
+  cancelAskedAt?: number;
+}
 /** C19's 40ms start stagger, applied to RUNNING re-adoption as well. */
 const TOURNAMENT_RESUME_STAGGER_MS = 40;
 /**
@@ -3347,7 +3362,7 @@ export class GameServer {
    * throttle of its own - the pass was the throttle - and the pass is now
    * seconds long. Pruned with lastMttRampAt.
    */
-  private pastStartTopUpClock: Map<string, { at: number; misses: number }> = new Map();
+  private pastStartTopUpClock: Map<string, PastStartTopUpClock> = new Map();
   /**
    * REGISTERING rows whose prize pool is already finalized, reported once each
    * (2026-09-11). Such a row has left registration whatever its status says;
@@ -8059,6 +8074,67 @@ export class GameServer {
              * event as far as the pool allows and never starves cash games.
              */
             const target = tournament.effective_max_players ?? minPlayers;
+
+            /* AN EVENT NOBODY ENTERED IS CANCELLED (2026-10-15). See
+               tournament/emptyPastStartEvent.ts: no entrant on a complete
+               roster read, thirty minutes past start, and a top-up that has
+               already come back empty. Nothing is refunded because nothing was
+               paid; atomic_cancel_tournament writes the receipt. A club whose
+               horses can fill the event is filled by the top-up below first. */
+            const emptyClock = this.pastStartTopUpClock.get(tournament.id);
+            if (
+              shouldCancelEmptyPastStartEvent({
+                seatFirst: isSngOrSpin,
+                poolFinalized,
+                rosterCount: rosterByTournament.get(tournament.id),
+                currentPlayers: tournament.current_players,
+                startTimeMs: startTime,
+                nowMs: now,
+                emptyTopUps: emptyClock?.misses ?? 0,
+              })
+            ) {
+              const askedAt = emptyClock?.cancelAskedAt ?? 0;
+              if (now - askedAt >= EMPTY_PAST_START_CANCEL_RETRY_MS) {
+                this.launchDiscoveryTopUp(
+                  tournament.id,
+                  generation,
+                  async () => {
+                    const settled = this.pastStartTopUpClock.get(tournament.id);
+                    this.pastStartTopUpClock.set(tournament.id, {
+                      at: settled?.at ?? now,
+                      misses: settled?.misses ?? 0,
+                      cancelAskedAt: now,
+                    });
+                    const { error: cancelError } = await supabase.rpc('atomic_cancel_tournament', {
+                      p_tournament_id: tournament.id,
+                      p_admin_id: null,
+                    });
+                    if (cancelError) {
+                      reportError(
+                        new Error(
+                          `[GameServer] empty past-start event ${tournament.name} (${String(
+                            tournament.id
+                          ).slice(0, 8)}) was not cancelled: ${cancelError.message}`
+                        ),
+                        'GameServer.empty_past_start_event_cancel_refused',
+                        { tournamentId: tournament.id }
+                      );
+                      return;
+                    }
+                    console.log(
+                      `[GameServer] Cancelled "${tournament.name}" (${String(tournament.id).slice(
+                        0,
+                        8
+                      )}): nobody entered it, it is ${Math.round(
+                        (now - startTime) / 60_000
+                      )} minute(s) past its start and no horse could fill it; nothing to refund`
+                    );
+                  },
+                  'GameServer.empty_past_start_event_cancel_failed'
+                );
+              }
+              continue;
+            }
 
             /* At most every 45 s (the ramp's MTT_PRESTART_TICK_MS), and an event
                that keeps coming back empty is asked half as often each time, up

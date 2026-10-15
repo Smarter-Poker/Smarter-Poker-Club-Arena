@@ -1,0 +1,70 @@
+name: A ticket paid in cash never arrived at its target
+
+# fn_tournament_conservation_delta and fn_tournament_conservation_deltas
+# (migration 20261015072547). Runs scripts/ci/test-ticket-cash-conservation.py
+# against a throwaway PostgreSQL 17 cluster, never production: the exact
+# production definitions captured 2026-10-15 (pg_get_functiondef md5 equal to
+# the live functions) must read a direct satellite ticket paid in cash on its
+# target's close as retained money, and the migration must read it as nothing
+# arriving while an admitted ticket still arrives, a real retention still
+# flags, the satellite is untouched and production's derived postimage md5s
+# are reproduced. No timer (CLAUDE.md 10.85): pull_request only, scoped to
+# the paths it proves. ci.yml has no push trigger, so neither does this.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - supabase/migrations/20261015072547_a_ticket_paid_in_cash_never_arrived_at_its_target.sql
+      - scripts/ci/fixtures/ticket-cash-conservation/**
+      - scripts/ci/fixtures/backed-payout-scan/conservation-scan-before.sql
+      - scripts/ci/fixtures/backed-payout-scan/conservation-set-expectations.json
+      - scripts/ci/test-ticket-cash-conservation.py
+      - .github/workflows/ticket-cash-conservation.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ticket-cash-conservation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ticket-cash-conservation:
+    name: A ticket paid in cash is not income at its target
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL 17 from the signed PGDG source only
+        run: |
+          set -euo pipefail
+          pg_sources="$(mktemp -d "$RUNNER_TEMP/ca-postgres-apt.XXXXXX")"
+          chmod 755 "$pg_sources"
+          test -f /etc/apt/sources.list.d/ubuntu.sources
+          cp /etc/apt/sources.list.d/ubuntu.sources "$pg_sources/ubuntu.sources"
+          pg_apt=(-o "Dir::Etc::sourcelist=/dev/null" -o "Dir::Etc::sourceparts=$pg_sources")
+          sudo apt-get "${pg_apt[@]}" update
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-common curl ca-certificates
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail --silent --show-error --location \
+            --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          codename="$(. /etc/os-release && printf '%s' "$VERSION_CODENAME")"
+          printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' \
+            "$codename" > "$pg_sources/pgdg.sources"
+          sudo apt-get "${pg_apt[@]}" update
+          printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-17
+      # Runs as the runner user (non-root), exactly as the ci.yml step would.
+      - name: A ticket paid in cash is not income at its target
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-ticket-cash-conservation.py --output artifacts/ticket-cash-conservation
+      - name: Retain the regression evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ticket-cash-conservation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/ticket-cash-conservation/RESULTS.json
+          retention-days: 7
+          if-no-files-found: warn

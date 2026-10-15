@@ -1,48 +1,76 @@
-/* Club Data - the owner's everyday screen. Flat, dense and readable at 375px:
-   one date bar, one range switch, four totals, a search, two filter rows and
-   the games. Dan 2026-10-14: "more 'Poker Bros' style and simplicity". */
+/* Club Data - the owner's everyday screen, in the Smarter.Poker house look.
+ *
+ * Dan 2026-10-15: "change it to smarter.poker schema, make the frames dynamic
+ * with depth and 3d look and feel. keep all the data and layout the same."
+ * The layout is the PokerBros one he asked for on 2026-10-14; the paint is now
+ * the strict Smarter.Poker palette the tournament lobby already uses
+ * (styles/tournament-lobby-3d.css): navy glass surfaces, electric-cyan accent,
+ * club-blue action, no gold. Depth is the house three-layer recipe, always in
+ * this order: a lit-top gradient, an inset bevel (highlight above, shade
+ * below), and a cast shadow so every frame sits above the page.
+ */
 
 .page {
-  --cd-bg: #1d2236;
-  --cd-panel: #262c45;
-  --cd-panel-2: #2d3452;
-  --cd-line: #3a4266;
-  --cd-ink: #e9ecf5;
-  --cd-muted: #9aa2bf;
-  --cd-gold: #f4b52a;
-  --cd-gold-deep: #d9901a;
-  --cd-win: #4fd27b;
-  --cd-loss: #ff5a5a;
+  --cd-deep: #070b14;
+  --cd-surface-raised: #223046;
+  --cd-surface: #1a2436;
+  --cd-surface-sunk: #131b28;
+  --cd-surface-deep: #0d1120;
+  --cd-accent: #6fdcff;
+  --cd-accent-strong: #00b4e6;
+  --cd-action: #1877f2;
+  --cd-action-deep: #0a5dc2;
+  --cd-ink: #e8eaf0;
+  --cd-muted: #8892a4;
+  --cd-hint: #6b7686;
+  --cd-win: #22c55e;
+  --cd-loss: #ef4444;
+  --cd-hairline: rgba(111, 220, 255, 0.16);
+  --cd-hairline-soft: rgba(255, 255, 255, 0.06);
+  --cd-bevel: inset 0 1px 0 rgba(255, 255, 255, 0.09), inset 0 -1px 0 rgba(0, 0, 0, 0.55);
+  --cd-bevel-strong: inset 0 1px 0 rgba(255, 255, 255, 0.16), inset 0 -2px 0 rgba(0, 0, 0, 0.6);
+  --cd-cast: 0 6px 18px rgba(0, 0, 0, 0.45);
+  --cd-cast-high: 0 12px 30px rgba(0, 0, 0, 0.55);
+  --cd-glow: 0 0 18px rgba(111, 220, 255, 0.3);
+  --cd-ease: cubic-bezier(0.175, 0.885, 0.32, 1.275);
   min-height: 100dvh;
-  background: var(--cd-bg);
+  background:
+    radial-gradient(ellipse 120% 60% at 50% -10%, rgba(24, 119, 242, 0.22) 0%, transparent 60%),
+    radial-gradient(ellipse 90% 50% at 50% 110%, rgba(0, 180, 230, 0.1) 0%, transparent 65%),
+    linear-gradient(180deg, #0d1424 0%, #0a101c 45%, var(--cd-deep) 100%);
   color: var(--cd-ink);
-  font-family: inherit;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
   padding: 0 0 calc(24px + env(safe-area-inset-bottom));
   box-sizing: border-box;
   max-width: 640px;
   margin: 0 auto;
 }
 
+/* ── Header: a chrome bar with a lit cyan rim along its foot ─────────────── */
 .header {
   display: grid;
   grid-template-columns: 56px 1fr 56px;
   align-items: center;
   height: 52px;
   padding: env(safe-area-inset-top) 4px 0;
-  border-bottom: 1px solid #12162a;
-  background: #191d2f;
   position: sticky;
   top: 0;
   z-index: 2;
+  background: linear-gradient(180deg, #1c2840 0%, #121a2b 55%, #0c1220 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -1px 0 rgba(111, 220, 255, 0.35),
+    0 6px 16px rgba(0, 0, 0, 0.55);
 }
 
 .back,
 .headerAction {
   background: none;
   border: 0;
-  color: var(--cd-gold);
+  color: var(--cd-accent);
   min-height: 44px;
   cursor: pointer;
+  filter: drop-shadow(0 0 6px rgba(111, 220, 255, 0.45));
 }
 
 .back svg {
@@ -56,8 +84,9 @@
 }
 
 .headerAction {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 700;
+  letter-spacing: 0.04em;
 }
 
 .headerSpacer {
@@ -67,73 +96,98 @@
 .title {
   margin: 0;
   text-align: center;
-  font-size: 17px;
+  font-size: 18px;
   font-weight: 800;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
+  background: linear-gradient(180deg, #ffffff 0%, #dfe7f3 45%, #9aa9be 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.9)) drop-shadow(0 0 8px rgba(111, 220, 255, 0.25));
 }
 
+/* ── Period bar ─────────────────────────────────────────────────────────── */
 .rangeBar {
   display: grid;
   grid-template-columns: 44px 1fr 44px;
   align-items: center;
   gap: 8px;
-  padding: 12px 16px 8px;
+  padding: 14px 16px 10px;
 }
 
 .arrow {
   background: none;
   border: 0;
   min-height: 44px;
-  color: var(--cd-gold);
+  color: var(--cd-accent);
   cursor: pointer;
   padding: 0;
+  filter: drop-shadow(0 0 6px rgba(111, 220, 255, 0.55)) drop-shadow(0 2px 2px rgba(0, 0, 0, 0.8));
+  transition: transform 0.18s var(--cd-ease);
+}
+
+.arrow:active:not(:disabled) {
+  transform: scale(0.9);
 }
 
 .arrow svg {
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   fill: currentColor;
 }
 
 .arrow:disabled {
-  color: #5a607a;
+  color: #3a4660;
+  filter: none;
   cursor: default;
 }
 
+/* A recessed well: shaded from above, lit along its lower lip. */
 .rangeChip {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-height: 36px;
-  background: #151a2b;
-  border: 1px solid var(--cd-line);
-  border-radius: 6px;
+  min-height: 38px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #0a0f1a 0%, var(--cd-surface-sunk) 100%);
+  border: 1px solid var(--cd-hairline);
+  box-shadow:
+    inset 0 2px 6px rgba(0, 0, 0, 0.7),
+    inset 0 -1px 0 rgba(111, 220, 255, 0.12),
+    0 1px 0 rgba(255, 255, 255, 0.05);
   font-size: clamp(13px, 3.8vw, 15px);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
 .rangeDash {
-  color: var(--cd-muted);
+  color: var(--cd-hint);
 }
 
 .rangeTz {
   font-size: 10px;
-  font-weight: 700;
-  color: var(--cd-gold);
-  letter-spacing: 0.06em;
+  font-weight: 800;
+  color: var(--cd-accent);
+  letter-spacing: 0.08em;
+  text-shadow: 0 0 6px rgba(111, 220, 255, 0.6);
 }
 
+/* ── 1 / 7 / 14 Days: a sunk track with a raised, lit thumb ─────────────── */
 .segment {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  margin: 4px 16px 10px;
-  padding: 3px;
-  background: #3b3f86;
-  border: 1px solid #5a5fb5;
+  gap: 4px;
+  margin: 4px 16px 12px;
+  padding: 4px;
   border-radius: 999px;
+  background: linear-gradient(180deg, #0a0f1a 0%, var(--cd-surface-sunk) 100%);
+  border: 1px solid var(--cd-hairline);
+  box-shadow:
+    inset 0 2px 6px rgba(0, 0, 0, 0.75),
+    inset 0 -1px 0 rgba(111, 220, 255, 0.1),
+    0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 .segmentButton {
@@ -141,23 +195,54 @@
   border: 0;
   border-radius: 999px;
   background: transparent;
-  color: var(--cd-ink);
+  color: var(--cd-muted);
   font-size: 15px;
+  font-weight: 600;
   cursor: pointer;
+  transition:
+    color 0.2s ease,
+    transform 0.18s var(--cd-ease);
+}
+
+.segmentButton:active {
+  transform: scale(0.96);
 }
 
 .segmentActive {
-  background: linear-gradient(180deg, #ffd24d 0%, var(--cd-gold) 55%, var(--cd-gold-deep) 100%);
-  color: #fff;
-  font-weight: 700;
+  color: #ffffff;
+  font-weight: 800;
+  background: linear-gradient(180deg, #3d9bff 0%, var(--cd-action) 48%, var(--cd-action-deep) 100%);
+  box-shadow:
+    var(--cd-bevel-strong),
+    0 0 0 1px rgba(111, 220, 255, 0.35),
+    0 4px 12px rgba(24, 119, 242, 0.45),
+    var(--cd-glow);
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.55);
 }
 
+/* ── The four totals: one raised glass slab, four bays ──────────────────── */
 .stats {
+  position: relative;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   margin: 0 16px;
-  background: var(--cd-panel);
-  border: 1px solid var(--cd-line);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(34, 48, 70, 0.95) 0%, rgba(19, 27, 40, 0.98) 100%);
+  border: 1px solid var(--cd-hairline);
+  box-shadow: var(--cd-bevel), var(--cd-cast-high);
+  overflow: hidden;
+}
+
+/* The lit rim along the slab's top edge. */
+.stats::before {
+  content: '';
+  position: absolute;
+  left: 12%;
+  right: 12%;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(111, 220, 255, 0.75), transparent);
+  pointer-events: none;
 }
 
 .stat {
@@ -166,27 +251,34 @@
   align-items: center;
   justify-content: center;
   gap: 4px;
-  padding: 10px 2px;
+  padding: 12px 2px 11px;
   min-width: 0;
 }
 
+/* Bay dividers are grooves: a dark cut with a light lip beside it. */
 .stat + .stat {
-  border-left: 1px solid var(--cd-line);
+  box-shadow:
+    inset 1px 0 0 rgba(0, 0, 0, 0.55),
+    inset 2px 0 0 rgba(255, 255, 255, 0.05);
 }
 
 .statValue {
   margin: 0;
-  font-size: clamp(12px, 4.2vw, 18px);
-  font-weight: 600;
+  font-size: clamp(12px, 3.9vw, 18px);
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
+  color: var(--cd-ink);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.9), 0 0 10px rgba(111, 220, 255, 0.18);
 }
 
 .statLabel {
   font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
   color: var(--cd-muted);
   text-align: center;
   line-height: 1.15;
@@ -197,7 +289,7 @@
   align-items: center;
   gap: 6px;
   min-height: 24px;
-  margin: 6px 16px 0;
+  margin: 8px 16px 0;
   font-size: 11px;
   color: var(--cd-muted);
 }
@@ -207,29 +299,47 @@
   height: 7px;
   border-radius: 50%;
   background: var(--cd-win);
-  box-shadow: 0 0 6px var(--cd-win);
+  box-shadow:
+    0 0 6px var(--cd-win),
+    0 0 12px rgba(34, 197, 94, 0.5);
 }
 
+/* ── Search: a recessed well ────────────────────────────────────────────── */
 .search {
   position: relative;
   display: block;
-  margin: 6px 16px 10px;
+  margin: 6px 16px 12px;
 }
 
 .search input {
   width: 100%;
   box-sizing: border-box;
   min-height: 44px;
-  padding: 0 44px 0 12px;
-  background: #151a2b;
-  border: 1px solid var(--cd-line);
-  border-radius: 4px;
+  padding: 0 44px 0 14px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #0a0f1a 0%, var(--cd-surface-sunk) 100%);
+  border: 1px solid var(--cd-hairline);
+  box-shadow:
+    inset 0 2px 6px rgba(0, 0, 0, 0.7),
+    0 1px 0 rgba(255, 255, 255, 0.05);
   color: var(--cd-ink);
   font-size: 15px;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .search input::placeholder {
-  color: #6f7694;
+  color: var(--cd-hint);
+}
+
+.search input:focus {
+  outline: none;
+  border-color: rgba(111, 220, 255, 0.55);
+  box-shadow:
+    inset 0 2px 6px rgba(0, 0, 0, 0.7),
+    0 0 0 3px rgba(111, 220, 255, 0.14),
+    var(--cd-glow);
 }
 
 .searchIcon {
@@ -240,77 +350,130 @@
   height: 22px;
   transform: translateY(-50%);
   fill: none;
-  stroke: var(--cd-gold);
+  stroke: var(--cd-accent);
   stroke-width: 2.6;
   stroke-linecap: round;
   pointer-events: none;
+  filter: drop-shadow(0 0 5px rgba(111, 220, 255, 0.55));
 }
 
+/* ── Game type: a rail of keys, the selected one lit and raised ─────────── */
 .tabs {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 2px;
-  padding: 6px 8px;
-  background: #20253b;
-  border-top: 1px solid #2f3655;
-  border-bottom: 1px solid #12162a;
+  gap: 3px;
+  margin: 0 8px;
+  padding: 5px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, var(--cd-surface) 0%, var(--cd-surface-deep) 100%);
+  border: 1px solid var(--cd-hairline-soft);
+  box-shadow: var(--cd-bevel), var(--cd-cast);
 }
 
 .tab {
   min-height: 40px;
   border: 0;
-  border-radius: 3px;
+  border-radius: 8px;
   background: transparent;
-  color: var(--cd-ink);
+  color: var(--cd-muted);
   font-size: 14px;
+  font-weight: 600;
   padding: 0 2px;
   cursor: pointer;
   white-space: nowrap;
+  transition:
+    color 0.2s ease,
+    transform 0.18s var(--cd-ease);
+}
+
+.tab:active {
+  transform: scale(0.95);
 }
 
 .tabActive {
-  background: linear-gradient(180deg, #ffd24d 0%, var(--cd-gold) 60%, var(--cd-gold-deep) 100%);
-  color: #fff;
-  font-weight: 700;
+  color: #ffffff;
+  font-weight: 800;
+  background: linear-gradient(180deg, #3d9bff 0%, var(--cd-action) 50%, var(--cd-action-deep) 100%);
+  box-shadow:
+    var(--cd-bevel-strong),
+    0 0 0 1px rgba(111, 220, 255, 0.3),
+    0 3px 10px rgba(24, 119, 242, 0.45);
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.55);
 }
 
+/* ── Stakes: four raised keys; the selected one glows cyan ──────────────── */
 .stakes {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 2px;
-  margin: 8px 8px 0;
-  padding: 2px;
-  background: #151a2b;
+  gap: 6px;
+  margin: 10px 8px 0;
 }
 
 .stake {
   min-height: 40px;
-  border: 0;
-  background: #232842;
+  border-radius: 10px;
+  border: 1px solid var(--cd-hairline-soft);
+  background: linear-gradient(180deg, var(--cd-surface-raised) 0%, var(--cd-surface-sunk) 100%);
+  box-shadow: var(--cd-bevel), 0 3px 8px rgba(0, 0, 0, 0.45);
   color: var(--cd-ink);
   font-size: 14px;
+  font-weight: 600;
   cursor: pointer;
+  transition:
+    transform 0.18s var(--cd-ease),
+    box-shadow 0.2s ease;
+}
+
+.stake:active {
+  transform: translateY(1px) scale(0.98);
+  box-shadow: var(--cd-bevel), 0 1px 3px rgba(0, 0, 0, 0.5);
 }
 
 .stakeActive {
-  background: #3a4170;
-  color: var(--cd-gold);
-  font-weight: 700;
+  color: var(--cd-accent);
+  font-weight: 800;
+  border-color: rgba(111, 220, 255, 0.55);
+  background: linear-gradient(180deg, #24405f 0%, #142235 100%);
+  box-shadow:
+    var(--cd-bevel-strong),
+    0 0 0 1px rgba(111, 220, 255, 0.25),
+    var(--cd-glow);
+  text-shadow: 0 0 8px rgba(111, 220, 255, 0.6);
 }
 
+/* ── Games: each one its own raised card ────────────────────────────────── */
 .list {
   list-style: none;
-  margin: 10px 0 0;
-  padding: 0;
+  margin: 14px 0 0;
+  padding: 0 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .row {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px 16px;
-  border-bottom: 1px solid #2b3150;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(34, 48, 70, 0.92) 0%, rgba(19, 27, 40, 0.96) 100%);
+  border: 1px solid var(--cd-hairline-soft);
+  box-shadow: var(--cd-bevel), var(--cd-cast);
+  overflow: hidden;
+}
+
+.row::before {
+  content: '';
+  position: absolute;
+  left: 10%;
+  right: 10%;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(111, 220, 255, 0.4), transparent);
+  pointer-events: none;
 }
 
 .rowMain {
@@ -326,35 +489,40 @@
 
 .rowName {
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 700;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.8);
 }
 
 .badgeLive {
   flex: none;
   font-size: 10px;
   font-weight: 800;
-  letter-spacing: 0.06em;
-  color: #0f1a12;
-  background: var(--cd-win);
-  border-radius: 3px;
-  padding: 1px 5px;
+  letter-spacing: 0.08em;
+  color: #04210f;
+  background: linear-gradient(180deg, #4ade80 0%, var(--cd-win) 100%);
+  border-radius: 999px;
+  padding: 2px 7px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    0 0 10px rgba(34, 197, 94, 0.55);
 }
 
 .rowMeta {
   display: flex;
   flex-wrap: wrap;
   gap: 4px 10px;
-  margin-top: 4px;
+  margin-top: 5px;
   font-size: 12px;
   color: var(--cd-muted);
 }
 
 .kind {
-  color: var(--cd-gold);
-  font-weight: 600;
+  color: var(--cd-accent);
+  font-weight: 700;
+  text-shadow: 0 0 6px rgba(111, 220, 255, 0.35);
 }
 
 .rowFigures {
@@ -367,8 +535,9 @@
 }
 
 .rowWin {
-  font-size: 15px;
-  font-weight: 700;
+  font-size: 16px;
+  font-weight: 800;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.85);
 }
 
 .rowFee {
@@ -385,10 +554,12 @@
 
 .inkWin {
   color: var(--cd-win);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.85), 0 0 10px rgba(34, 197, 94, 0.35);
 }
 
 .inkLoss {
   color: var(--cd-loss);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.85), 0 0 10px rgba(239, 68, 68, 0.35);
 }
 
 .inkNeutral {
@@ -406,24 +577,26 @@
 .spade {
   width: 120px;
   height: 120px;
-  fill: #3a4062;
+  fill: #1c2a42;
+  filter: drop-shadow(0 0 18px rgba(111, 220, 255, 0.18)) drop-shadow(0 4px 6px rgba(0, 0, 0, 0.7));
 }
 
 .emptyText {
   margin: 0;
-  color: #6f7694;
+  color: var(--cd-hint);
   font-size: 16px;
   text-align: center;
 }
 
 .retry {
   min-height: 44px;
-  padding: 0 20px;
-  border: 1px solid var(--cd-gold);
-  border-radius: 4px;
-  background: transparent;
-  color: var(--cd-gold);
-  font-weight: 700;
+  padding: 0 22px;
+  border-radius: 999px;
+  border: 0;
+  background: linear-gradient(180deg, #3d9bff 0%, var(--cd-action) 50%, var(--cd-action-deep) 100%);
+  box-shadow: var(--cd-bevel-strong), 0 4px 12px rgba(24, 119, 242, 0.45);
+  color: #ffffff;
+  font-weight: 800;
   cursor: pointer;
 }
 

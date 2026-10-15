@@ -1,3 +1,4 @@
+-- SUPERSEDED BY 20261015100003: that file patches both conservation readings this one declared (a satellite ticket paid in cash no longer counts as arriving at its target); the Diamond book this file added is unchanged.
 -- 20261009134421_a_diamond_tournament_is_conserved_by_its_own_diamond_book.sql
 --
 -- Version reserved by scripts/new-migration.mjs against origin/main and every

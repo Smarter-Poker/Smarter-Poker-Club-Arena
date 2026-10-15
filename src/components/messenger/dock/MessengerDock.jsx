@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { MessageCircle, X, ExternalLink, Settings, Check } from './DockIcons';
-import { DOCK_STORAGE_PREFIX, dockId, dockName, dockLayout, dockCapacity, restoreDock, updateDock } from './messengerDock.mjs';
+import { DOCK_STORAGE_PREFIX, dockId, dockName, dockLayout, dockCapacity, dockNotificationLayout, restoreDock, updateDock } from './messengerDock.mjs';
 import MessengerChat from './MessengerChat';
 
 function Portrait({ conversation }) {
@@ -190,9 +190,15 @@ export default function MessengerDock({ services }) {
     useEffect(() => {
         const style = document.documentElement.style;
         const before = style.getPropertyValue('--sp-messenger-toast-clearance');
-        style.setProperty('--sp-messenger-toast-clearance', `${actorId ? layout.height + bottom + 12 : 0}px`);
-        return () => { if (before) style.setProperty('--sp-messenger-toast-clearance', before); else style.removeProperty('--sp-messenger-toast-clearance'); };
-    }, [actorId, layout.height, bottom]);
+        const beforeRoom = style.getPropertyValue('--sp-messenger-toast-room');
+        const notifications = dockNotificationLayout(window.innerHeight, bottom, layout.height);
+        style.setProperty('--sp-messenger-toast-clearance', `${actorId ? notifications.bottom : 0}px`);
+        style.setProperty('--sp-messenger-toast-room', `${actorId ? notifications.maxHeight : window.innerHeight - 12}px`);
+        return () => {
+            if (before) style.setProperty('--sp-messenger-toast-clearance', before); else style.removeProperty('--sp-messenger-toast-clearance');
+            if (beforeRoom) style.setProperty('--sp-messenger-toast-room', beforeRoom); else style.removeProperty('--sp-messenger-toast-room');
+        };
+    }, [actorId, layout.height, bottom, viewport.height]);
     const windowAction = (type, id) => {
         interactions.current.set(id, (interactions.current.get(id) || 0) + 1);
         if (layout.mobile) for (const chat of chatsRef.current) dispatch({ type: 'minimize', id: chat.id });

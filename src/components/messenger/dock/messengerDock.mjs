@@ -41,3 +41,11 @@ export function dockLayout(chats, viewport, inbox = false) {
         height: expanded.length || inbox ? panelHeight : Math.min(400, 64 + bubbles.length * 54),
     };
 }
+
+// Arena allows five transient notifications. Reserve a bounded stack above the
+// composer (100px textarea + 16px padding + 12px clearance); a nearly
+// full-height mobile chat cannot push the notification stack offscreen.
+export function dockNotificationLayout(viewHeight, bottom, dockHeight) {
+    const clearance = Math.min(bottom + dockHeight + 12, Math.max(bottom + 128, viewHeight - 400));
+    return { bottom: clearance, maxHeight: Math.max(60, viewHeight - clearance - 12) };
+}

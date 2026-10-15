@@ -1726,9 +1726,14 @@ describe('Simple And Advanced Action Recovery Audit', () => {
   );
 });
 
-it('preloads the most recent own send and claim counterparties before high balances', async () => {
+it('preloads the most recent own ticket, send and claim counterparties before high balances', async () => {
   state.roster = [player(0, 9000), player(1, 5), player(2, 10)];
   state.recentMoves = [
+    {
+      from_user_id: USER_ID,
+      to_user_id: PLAYER_IDS[2],
+      transaction_type: 'tournament_ticket_issue',
+    },
     { from_user_id: USER_ID, to_user_id: PLAYER_IDS[1], transaction_type: 'agent_wallet_send' },
     { from_user_id: PLAYER_IDS[0], to_user_id: USER_ID, transaction_type: 'agent_wallet_send' },
     { from_user_id: PLAYER_IDS[2], to_user_id: USER_ID, transaction_type: 'club_bank_claim_back' },
@@ -1740,7 +1745,7 @@ it('preloads the most recent own send and claim counterparties before high balan
       screen
         .getAllByRole('button', { name: /^Select Player/ })
         .map((button) => button.getAttribute('aria-label'))
-    ).toEqual(['Select Player 2', 'Select Player 3', 'Select Player 1'])
+    ).toEqual(['Select Player 3', 'Select Player 2', 'Select Player 1'])
   );
 });
 

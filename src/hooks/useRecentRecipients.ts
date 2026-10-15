@@ -12,6 +12,7 @@ const MOVES = [
   'club_bank_reverse',
   'promo_wallet_send',
   'club_promo_wallet_send',
+  'tournament_ticket_issue',
 ];
 
 export function useRecentRecipients(
@@ -40,7 +41,7 @@ export function useRecentRecipients(
           .eq('club_id', resolvedClub)
           .in('transaction_type', MOVES)
           .or(
-            `and(from_user_id.eq.${userId},transaction_type.in.(agent_wallet_send,club_bank_send,promo_wallet_send,club_promo_wallet_send)),and(to_user_id.eq.${userId},transaction_type.in.(agent_wallet_claim_back,club_bank_claim_back,club_bank_reverse))`
+            `and(from_user_id.eq.${userId},transaction_type.in.(agent_wallet_send,club_bank_send,promo_wallet_send,club_promo_wallet_send,tournament_ticket_issue)),and(to_user_id.eq.${userId},transaction_type.in.(agent_wallet_claim_back,club_bank_claim_back,club_bank_reverse))`
           )
           .order('created_at', { ascending: false })
           .order('id', { ascending: false })

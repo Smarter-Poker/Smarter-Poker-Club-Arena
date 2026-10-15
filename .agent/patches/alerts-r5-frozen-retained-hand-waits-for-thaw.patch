@@ -1,0 +1,566 @@
+diff --git a/docs/changelog/2026-10-15-a-frozen-retained-hand-waits-for-the-thaw.md b/docs/changelog/2026-10-15-a-frozen-retained-hand-waits-for-the-thaw.md
+new file mode 100644
+index 000000000..6b5962c59
+--- /dev/null
++++ b/docs/changelog/2026-10-15-a-frozen-retained-hand-waits-for-the-thaw.md
+@@ -0,0 +1,28 @@
++# A Frozen Retained Hand Waits For The Thaw
++
++## What Production Showed
++
++`engine_recovery_events`, 2026-10-07 to 2026-10-09: on every engine-replacing break the same three cash tables were killed with `start_failed:start_load_table` and rebuilt between 130 and 480 times between :55 and :00 (for example 2026-10-08 13:00 to 13:59: 174 kills on 3 tables inside the break minutes). Each table held a retained hand. That loop is what `ClubArenaEngineKillStorm` paged (631 open rows).
++
++## Root Cause
++
++`ServerTableEngineBase.checkCrashRecovery()` asks `fn_ca_resume_hand_submission` for a cash table's retained hand on every start. The door keeps that hand behind the platform freeze before it touches any lease or claim:
++
++- `HAND_SUBMISSION_MAINTENANCE_BUSY` when `pg_try_advisory_xact_lock_shared(530090,1)` fails (the cutover holds it);
++- `HAND_SUBMISSION_PLATFORM_FROZEN` while `fn_platform_frozen()` is true.
++
++`resumeRetainedHandSubmission` turned both into a plain `Error`, `start()` caught it as a crash and called `killForRestart('start_failed:start_load_table')`, which wrote a recovery row and let discovery rebuild the table into the same answer every few seconds until the thaw. Nothing about the hand was wrong, and no rebuild could change the answer.
++
++## Fix
++
++- `handHistory.ts`: the two freeze answers are a named `RetainedHandSubmissionFrozenError` (`RETAINED_HAND_FREEZE_REFUSALS`) with the unchanged log text. Every other caller still sees an ordinary `Error` with the message it always had.
++- `ServerTableEngineBase.resumeRetainedHandAcrossTheFreeze()`: a cash start that meets the freeze keeps its generation and lease, stamps progress on each answer (the door was read; the reaper must not condemn a table waiting on the break), and asks the same door again at the engine's thaw edge (`onMaintenanceThaw`) or after a pause of at most five seconds, whichever is first. The wait ends the moment the generation is no longer current, and the existing fence in `checkCrashRecovery` then returns without dealing. Every other refusal is still a `start_failed` kill.
++
++## Pinned
++
++- `server/src/engine/aFrozenRetainedHandWaitsForTheThaw.law.test.ts` (new law, `docs/laws.d/a-frozen-retained-hand-waits-for-the-thaw.md`).
++- `server/src/engine/aStandingRetainedHandRefusalHoldsTheTable.law.test.ts` now states that the two freeze answers are the freeze, not a standing refusal and not an ordinary retried failure.
++
++## The Net
++
++`ClubArenaEngineKillStorm` stays. It is now expected to stay silent through every engine-replacing break.
+diff --git a/docs/laws.d/a-frozen-retained-hand-waits-for-the-thaw.md b/docs/laws.d/a-frozen-retained-hand-waits-for-the-thaw.md
+new file mode 100644
+index 000000000..ffabd532f
+--- /dev/null
++++ b/docs/laws.d/a-frozen-retained-hand-waits-for-the-thaw.md
+@@ -0,0 +1,3 @@
++# server/src/engine/aFrozenRetainedHandWaitsForTheThaw.law.test.ts
++
++A cash start whose retained hand meets the platform freeze (HAND_SUBMISSION_PLATFORM_FROZEN or HAND_SUBMISSION_MAINTENANCE_BUSY from fn_ca_resume_hand_submission) keeps its generation and lease, stamps progress and asks the same door again at the thaw edge or after a pause of at most five seconds: no watchdog kill, no recovery row and no rebuild; it stops asking the moment the generation is no longer current, and every other refusal is still a start_failed kill.
+diff --git a/docs/laws.d/a-standing-retained-hand-refusal-holds-the-table.md b/docs/laws.d/a-standing-retained-hand-refusal-holds-the-table.md
+index ccad67c78..530cbfa70 100644
+--- a/docs/laws.d/a-standing-retained-hand-refusal-holds-the-table.md
++++ b/docs/laws.d/a-standing-retained-hand-refusal-holds-the-table.md
+@@ -1,3 +1,3 @@
+ # server/src/engine/aStandingRetainedHandRefusalHoldsTheTable.law.test.ts
+ 
+-A retained-hand refusal the door answers from durable rows (RETAINED_HAND_STANDING_REFUSALS) fences the cash engine without a watchdog kill or recovery row, and GameServer holds the table: exact lease release, no retry timer, one report per new code, no read, lease, engine or discovery budget until the ten-minute recheck, and a successful start releases the hold; transient refusals keep the ordinary retry.
++A retained-hand refusal the door answers from durable rows (RETAINED_HAND_STANDING_REFUSALS) fences the cash engine without a watchdog kill or recovery row, and GameServer holds the table: exact lease release, no retry timer, one report per new code, no read, lease, engine or discovery budget until the ten-minute recheck, and a successful start releases the hold; the two freeze answers wait for the thaw (a-frozen-retained-hand-waits-for-the-thaw) and every other transient refusal keeps the ordinary retry.
+diff --git a/server/src/engine/ServerTableEngineBase.ts b/server/src/engine/ServerTableEngineBase.ts
+index def9d8f64..39f708894 100644
+--- a/server/src/engine/ServerTableEngineBase.ts
++++ b/server/src/engine/ServerTableEngineBase.ts
+@@ -124,6 +124,7 @@ import {
+   getActiveHandSnapshotFull,
+   resumeRetainedHandSubmission,
+   RetainedHandSubmissionRefusedError,
++  RetainedHandSubmissionFrozenError,
+   savePresenceAtPark,
+   parkStoppedTimeBankCustody,
+   reaskTimeBankDebit,
+@@ -153,7 +154,7 @@ import {
+   type PendingSeatMove,
+   type SeatMoveOutcome,
+ } from '../services/supabase/seatMoves.js';
+-import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
++import { isMaintenanceFrozen, onMaintenanceThaw } from '../maintenance/freezeState.js';
+ import { wakeCluster } from '../cluster/ClusterController.js';
+ import { ChipContinuityTracker } from './ChipContinuity.js';
+ import {
+@@ -10708,6 +10709,90 @@ export abstract class ServerTableEngineBase {
+     }
+   }
+ 
++  /** Longest pause between two asks of a frozen retained-hand door. */
++  static readonly RETAINED_HAND_THAW_POLL_MAX_MS = 5_000;
++
++  /**
++   * THE FREEZE IS A WAIT, NOT A CRASH (2026-10-15).
++   *
++   * fn_ca_resume_hand_submission keeps a retained hand behind the platform
++   * freeze: HAND_SUBMISSION_PLATFORM_FROZEN while fn_platform_frozen() holds,
++   * HAND_SUBMISSION_MAINTENANCE_BUSY while the cutover holds its lock. This
++   * used to throw out of start() as `start_failed:start_load_table`, so on
++   * every engine-replacing break each cash table with a retained hand was
++   * killed, written to engine_recovery_events and rebuilt into the same
++   * answer every few seconds until the thaw (2026-10-07 to 2026-10-09: three
++   * tables, 130 to 480 kills per break; ClubArenaEngineKillStorm).
++   *
++   * Nothing about the hand is wrong and nothing a rebuild does can change the
++   * answer, so this generation keeps its lease and asks the same door again
++   * when the freeze lifts: at the engine's own thaw edge or after a short
++   * pause, whichever comes first. Each answer is a fresh read from the
++   * database, so it stamps progress; the reaper is not asked to condemn a
++   * table that is waiting on the break exactly as a parked table does. The
++   * wait ends the moment this generation stops being the current owner, and
++   * the caller's existing fence then returns without dealing.
++   */
++  private async resumeRetainedHandAcrossTheFreeze(
++    leaseGeneration: string
++  ): Promise<{ handNumber: number; submissionId: string } | null> {
++    let waitingOn: string | null = null;
++    let waitingSinceMs = 0;
++    for (let attempt = 1; ; attempt++) {
++      try {
++        const retained = await resumeRetainedHandSubmission(
++          this.tableId,
++          INSTANCE_ID,
++          leaseGeneration
++        );
++        if (waitingOn) {
++          console.log(
++            `[ServerTableEngine:${this.tableId}] Retained hand door reopened after ` +
++              `${Math.round((Date.now() - waitingSinceMs) / 1000)}s (${waitingOn})`
++          );
++        }
++        return retained;
++      } catch (err) {
++        if (!(err instanceof RetainedHandSubmissionFrozenError) || err.tableId !== this.tableId) {
++          throw err;
++        }
++        if (!this.lifecycleCanMutate() || !this.hasCurrentEngineLeaseAuthority()) return null;
++        if (waitingOn !== err.code) {
++          if (!waitingOn) waitingSinceMs = Date.now();
++          waitingOn = err.code;
++          this.setLoopPhase('start_retained_hand_awaiting_thaw');
++          console.log(
++            `[ServerTableEngine:${this.tableId}] Retained hand waits for the thaw (${err.code}); ` +
++              `holding this generation instead of rebuilding it`
++          );
++        }
++        this.markProgress();
++        await this.waitForRetainedHandThaw(
++          Math.min(
++            500 * 2 ** Math.min(attempt - 1, 4),
++            ServerTableEngineBase.RETAINED_HAND_THAW_POLL_MAX_MS
++          )
++        );
++        if (!this.lifecycleCanMutate() || !this.hasCurrentEngineLeaseAuthority()) return null;
++      }
++    }
++  }
++
++  /** Resolves at the engine's thaw edge or after `ms`, whichever is first. */
++  private waitForRetainedHandThaw(ms: number): Promise<void> {
++    return new Promise<void>((resolve) => {
++      let done = false;
++      const finish = () => {
++        if (done) return;
++        done = true;
++        unsubscribe();
++        resolve();
++      };
++      const unsubscribe = onMaintenanceThaw(finish);
++      void this.sleep(ms).then(finish, finish);
++    });
++  }
++
+   /**
+    * Check for an incomplete hand snapshot on server startup.
+    * If found, log it for now — full resume requires reconstructing HandController
+@@ -10720,11 +10805,7 @@ export abstract class ServerTableEngineBase {
+     // before legacy snapshot cleanup, under the current table generation.
+     if (authority?.scope === 'cash' && authority.verified && authority.generation) {
+       if (!this.hasCurrentEngineLeaseAuthority()) return false;
+-      const retained = await resumeRetainedHandSubmission(
+-        this.tableId,
+-        INSTANCE_ID,
+-        authority.generation
+-      );
++      const retained = await this.resumeRetainedHandAcrossTheFreeze(authority.generation);
+       if (!this.lifecycleCanMutate() || !this.hasCurrentEngineLeaseAuthority()) return false;
+       if (retained) {
+         this.handCount = Math.max(this.handCount, retained.handNumber);
+diff --git a/server/src/engine/aFrozenRetainedHandWaitsForTheThaw.law.test.ts b/server/src/engine/aFrozenRetainedHandWaitsForTheThaw.law.test.ts
+new file mode 100644
+index 000000000..85c5c80d1
+--- /dev/null
++++ b/server/src/engine/aFrozenRetainedHandWaitsForTheThaw.law.test.ts
+@@ -0,0 +1,289 @@
++/**
++ * A FROZEN RETAINED-HAND DOOR IS A WAIT, NOT A CRASH (2026-10-15)
++ *
++ * Production, engine_recovery_events 2026-10-07 to 2026-10-09: on every
++ * engine-replacing break the same three cash tables, each holding a retained
++ * hand, were killed with `start_failed:start_load_table` and rebuilt 130 to
++ * 480 times between :55 and :00. Each start asked fn_ca_resume_hand_submission
++ * for the retained hand, the door answered HAND_SUBMISSION_PLATFORM_FROZEN
++ * (fn_platform_frozen) or HAND_SUBMISSION_MAINTENANCE_BUSY (the cutover lock),
++ * start() turned that into a watchdog kill and a recovery row, and discovery
++ * rebuilt the table into the same answer until the thaw. That is the
++ * ClubArenaEngineKillStorm page.
++ *
++ * Pinned here, against the real modules:
++ *   1. The door's two freeze answers are a named RetainedHandSubmissionFrozenError
++ *      with the unchanged log text, and nothing else is.
++ *   2. checkCrashRecovery waits for the thaw and asks again: no throw, progress
++ *      stamped on every answer, and the resumed hand is restored when it comes.
++ *   3. The engine's own thaw edge wakes the wait without the poll elapsing.
++ *   4. start() through the real checkCrashRecovery: a freeze that lifts reaches
++ *      ready=true with no watchdog kill and no recovery row; a generation that
++ *      stops while frozen returns quietly; any other refusal is still a
++ *      start_failed kill.
++ */
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
++
++const loadTable = vi.fn();
++const loadSeatedPlayers = vi.fn();
++const getActiveHandSnapshotFull = vi.fn();
++const loadPresenceFromPark = vi.fn();
++
++vi.mock('../services/supabase.js', async () => {
++  const actual = await vi.importActual<Record<string, unknown>>('../services/supabase.js');
++  return {
++    ...actual,
++    loadSeatedPlayers: (...a: unknown[]) => loadSeatedPlayers(...a),
++    loadTable: (...a: unknown[]) => loadTable(...a),
++    getActiveHandSnapshotFull: (...a: unknown[]) => getActiveHandSnapshotFull(...a),
++    loadPresenceFromPark: (...a: unknown[]) => loadPresenceFromPark(...a),
++  };
++});
++
++const { ServerTableEngine } = await import('./ServerTableEngine.js');
++const { supabase } = await import('../services/supabase/client.js');
++const errors = await import('../services/errorReporter.js');
++const freeze = await import('../maintenance/freezeState.js');
++const {
++  RETAINED_HAND_FREEZE_REFUSALS,
++  RETAINED_HAND_STANDING_REFUSALS,
++  RetainedHandSubmissionFrozenError,
++  RetainedHandSubmissionRefusedError,
++  resumeRetainedHandSubmission,
++} = await import('../services/supabase/handHistory.js');
++
++const TABLE = '7c1d3a52-5b0e-4f7e-9d3c-2a61f0b4e8a1';
++const GENERATION = '0b6f2e1c-8a4d-4c35-9e7f-5d2a1b3c4e6f';
++const SUBMISSION = '3e9a7c5b-1d2f-4a6e-8b0c-9f1e2d3c4b5a';
++const cashAuthority = () => ({
++  scope: 'cash' as const,
++  verified: true,
++  generation: GENERATION,
++  proofDeadlineMonotonicMs: performance.now() + 600_000,
++});
++
++const frozen = { data: null, error: { message: 'HAND_SUBMISSION_PLATFORM_FROZEN' } };
++const busy = { data: null, error: { message: 'HAND_SUBMISSION_MAINTENANCE_BUSY' } };
++const notFound = { data: { found: false }, error: null };
++const resumed = {
++  data: {
++    found: true,
++    completed: true,
++    success: true,
++    atomic_hand_commit: true,
++    snapshot_completed: true,
++    post_commit_completed: true,
++    table_id: TABLE,
++    history_id: SUBMISSION,
++    submission_id: SUBMISSION,
++    submission_hash: 'a'.repeat(64),
++    hand_number: '4211',
++  },
++  error: null,
++};
++
++/** Script fn_ca_resume_hand_submission's answers; every other RPC is unexpected. */
++function scriptDoor(...answers: unknown[]) {
++  const calls: string[] = [];
++  vi.spyOn(supabase, 'rpc').mockImplementation((async (name: string) => {
++    calls.push(name);
++    if (name === 'fn_ca_resume_hand_submission') {
++      const next = answers.shift();
++      if (!next) throw new Error('door asked more often than scripted');
++      return next;
++    }
++    // The projection wake after a resumed hand: harmless, answered empty.
++    return { data: null, error: null };
++  }) as any);
++  return () => calls.filter((n) => n === 'fn_ca_resume_hand_submission').length;
++}
++
++function startable(authority: any) {
++  const engine = new ServerTableEngine(TABLE, authority) as any;
++  const killed: string[] = [];
++  const phases: string[] = [];
++  const realKill = engine.killForRestart.bind(engine);
++  engine.killForRestart = (reason: string, notify?: boolean) => {
++    killed.push(reason);
++    realKill(reason, notify);
++  };
++  const realPhase = engine.setLoopPhase.bind(engine);
++  engine.setLoopPhase = (phase: string) => {
++    phases.push(phase);
++    realPhase(phase);
++    // The test ends at the wait for players: the start itself is what is pinned.
++    if (phase === 'start_wait_for_players') engine.running = false;
++  };
++  engine.sleep = vi.fn(async () => {});
++  engine.seedHandCountFromHistory = async () => {};
++  engine.restoreButtonFromHistory = vi.fn(async () => {});
++  engine.restoreKillFromHistory = vi.fn(async () => {});
++  engine.restoreSitOutsFromSeats = () => {};
++  engine.evictExpiredSitOuts = async () => {};
++  engine.readParkedTimeBanks = async () => {};
++  engine.resolveOrphanedAddOns = async () => {};
++  engine.broadcastCurrentState = async () => {};
++  engine.scheduleHeartbeatCheck = () => {};
++  engine.dealingLoop = async () => {};
++  engine.recordRecoveryEvent = vi.fn();
++  return { engine, killed, phases };
++}
++
++beforeEach(() => {
++  vi.spyOn(errors, 'reportError').mockImplementation(() => {});
++  vi.spyOn(console, 'log').mockImplementation(() => {});
++  loadTable.mockResolvedValue({ id: TABLE, small_blind: 1, big_blind: 2, ante: 0 });
++  loadSeatedPlayers.mockResolvedValue([]);
++  getActiveHandSnapshotFull.mockResolvedValue(null);
++  loadPresenceFromPark.mockResolvedValue(null);
++});
++
++afterEach(() => {
++  freeze.setMaintenanceFrozen(false);
++  vi.restoreAllMocks();
++  loadTable.mockReset();
++  loadSeatedPlayers.mockReset();
++  getActiveHandSnapshotFull.mockReset();
++  loadPresenceFromPark.mockReset();
++});
++
++describe('the door names the freeze and nothing else', () => {
++  it('the freeze set is exactly the two answers that lift at the thaw', () => {
++    expect([...RETAINED_HAND_FREEZE_REFUSALS].sort()).toEqual([
++      'HAND_SUBMISSION_MAINTENANCE_BUSY',
++      'HAND_SUBMISSION_PLATFORM_FROZEN',
++    ]);
++    for (const code of RETAINED_HAND_FREEZE_REFUSALS)
++      expect(RETAINED_HAND_STANDING_REFUSALS.has(code)).toBe(false);
++  });
++
++  it.each([...RETAINED_HAND_FREEZE_REFUSALS])(
++    '%s is a RetainedHandSubmissionFrozenError',
++    async (code) => {
++      vi.spyOn(supabase, 'rpc').mockResolvedValue({ data: null, error: { message: code } } as any);
++      const error = await resumeRetainedHandSubmission(TABLE, 'i', GENERATION).catch((e) => e);
++      expect(error).toBeInstanceOf(RetainedHandSubmissionFrozenError);
++      expect(error).not.toBeInstanceOf(RetainedHandSubmissionRefusedError);
++      expect(error).toMatchObject({ tableId: TABLE, code });
++      expect(error.message).toBe(`retained_hand_submission_readback_failed: ${code}`);
++    }
++  );
++
++  it.each([
++    'HAND_SUBMISSION_LEASE_UNPROVEN',
++    'F06_HAND_DISPATCH_BUSY',
++    'HAND_SUBMISSION_TABLE_NOT_ADMITTED',
++  ])(
++    '%s is not the freeze',
++    async (code) => {
++      vi.spyOn(supabase, 'rpc').mockResolvedValue({ data: null, error: { message: code } } as any);
++      const error = await resumeRetainedHandSubmission(TABLE, 'i', GENERATION).catch((e) => e);
++      expect(error).not.toBeInstanceOf(RetainedHandSubmissionFrozenError);
++    }
++  );
++});
++
++/** The recovery step alone, as the current owner of a live cash lease. */
++function recovering() {
++  const harness = startable(cashAuthority());
++  harness.engine.lifecycleCanMutate = () => true;
++  return harness;
++}
++
++const settle = async () => {
++  for (let n = 0; n < 5; n++) await new Promise((resolve) => setTimeout(resolve, 0));
++};
++
++describe('checkCrashRecovery waits for the thaw and asks again', () => {
++  it('frozen, then busy, then nothing retained: no throw, progress on every answer', async () => {
++    const asked = scriptDoor(frozen, frozen, busy, notFound);
++    const { engine, killed } = recovering();
++    const progress = vi.spyOn(engine, 'markProgress');
++    await expect(engine.checkCrashRecovery()).resolves.toBe(false);
++    expect(asked()).toBe(4);
++    expect(progress).toHaveBeenCalledTimes(3);
++    expect(engine.sleep).toHaveBeenCalledTimes(3);
++    for (const [ms] of engine.sleep.mock.calls)
++      expect(ms).toBeLessThanOrEqual(ServerTableEngine.RETAINED_HAND_THAW_POLL_MAX_MS);
++    expect(killed).toEqual([]);
++    expect(engine.recordRecoveryEvent).not.toHaveBeenCalled();
++  });
++
++  it('the retained hand that the thaw admits is restored as the last settled one', async () => {
++    const asked = scriptDoor(frozen, resumed);
++    const { engine } = recovering();
++    await engine.checkCrashRecovery();
++    expect(asked()).toBe(2);
++    expect(engine.handCount).toBe(4211);
++    expect(engine.restoreButtonFromHistory).toHaveBeenCalledTimes(1);
++    expect(engine.restoreKillFromHistory).toHaveBeenCalledTimes(1);
++  });
++
++  it("the engine's thaw edge wakes the wait before the poll elapses", async () => {
++    const asked = scriptDoor(frozen, notFound);
++    const { engine } = recovering();
++    // A poll that never elapses on its own: only the thaw can end this wait.
++    engine.sleep = vi.fn(() => new Promise<void>(() => {}));
++    freeze.setMaintenanceFrozen(true);
++    const done = engine.checkCrashRecovery();
++    await settle();
++    expect(asked()).toBe(1);
++    expect(engine.sleep).toHaveBeenCalledTimes(1);
++    freeze.setMaintenanceFrozen(false);
++    await expect(done).resolves.toBe(false);
++    expect(asked()).toBe(2);
++  });
++
++  it('a generation that is no longer current stops asking', async () => {
++    const asked = scriptDoor(frozen, frozen, frozen);
++    const { engine } = recovering();
++    let current = true;
++    engine.lifecycleCanMutate = () => current;
++    engine.sleep = vi.fn(async () => {
++      current = false;
++    });
++    await expect(engine.checkCrashRecovery()).resolves.toBe(false);
++    expect(asked()).toBe(1);
++  });
++});
++
++describe('start() through the real checkCrashRecovery', () => {
++  it('a freeze that lifts reaches ready=true with no kill and no recovery row', async () => {
++    const asked = scriptDoor(frozen, frozen, notFound);
++    const { engine, killed, phases } = startable(cashAuthority());
++    await expect(engine.start()).resolves.toBeUndefined();
++    await expect(engine.ready).resolves.toBe(true);
++    expect(asked()).toBe(3);
++    expect(phases).toContain('start_retained_hand_awaiting_thaw');
++    expect(killed).toEqual([]);
++    expect(engine.recordRecoveryEvent).not.toHaveBeenCalled();
++    expect(errors.reportError).not.toHaveBeenCalledWith(
++      expect.anything(),
++      `ServerTableEngine.${TABLE}.failed_to_start`
++    );
++    await engine.stop();
++  });
++
++  it('a generation that stops while frozen returns quietly: no kill, no recovery row', async () => {
++    scriptDoor(frozen, frozen, frozen, frozen);
++    const { engine, killed } = startable(cashAuthority());
++    let polls = 0;
++    engine.sleep = vi.fn(async () => {
++      if (++polls === 2) engine.running = false;
++    });
++    await expect(engine.start()).resolves.toBeUndefined();
++    expect(killed).toEqual([]);
++    expect(engine.recordRecoveryEvent).not.toHaveBeenCalled();
++    await engine.stop();
++  });
++
++  it('any other refusal is still a start_failed kill', async () => {
++    scriptDoor({ data: null, error: { message: 'HAND_SUBMISSION_LEASE_UNPROVEN' } });
++    const { engine, killed } = startable(cashAuthority());
++    await expect(engine.start()).rejects.toThrow(
++      'retained_hand_submission_readback_failed: HAND_SUBMISSION_LEASE_UNPROVEN'
++    );
++    expect(killed).toEqual(['start_failed:start_load_table']);
++    await engine.stop();
++  });
++});
+diff --git a/server/src/engine/aStandingRetainedHandRefusalHoldsTheTable.law.test.ts b/server/src/engine/aStandingRetainedHandRefusalHoldsTheTable.law.test.ts
+index c4c59ea75..60037f20e 100644
+--- a/server/src/engine/aStandingRetainedHandRefusalHoldsTheTable.law.test.ts
++++ b/server/src/engine/aStandingRetainedHandRefusalHoldsTheTable.law.test.ts
+@@ -43,6 +43,7 @@ const leases = await import('../services/tableLease.js');
+ const errors = await import('../services/errorReporter.js');
+ const {
+   RETAINED_HAND_STANDING_REFUSALS,
++  RetainedHandSubmissionFrozenError,
+   RetainedHandSubmissionRefusedError,
+   resumeRetainedHandSubmission,
+ } = await import('../services/supabase/handHistory.js');
+@@ -72,9 +73,18 @@ describe('the door names a standing refusal and nothing else', () => {
+     expect(error.message).toBe(`retained_hand_submission_readback_failed: ${code}`);
+   });
+ 
++  it.each(['HAND_SUBMISSION_PLATFORM_FROZEN', 'HAND_SUBMISSION_MAINTENANCE_BUSY'])(
++    '%s is the freeze, never a standing refusal (aFrozenRetainedHandWaitsForTheThaw)',
++    async (code) => {
++      vi.spyOn(supabase, 'rpc').mockResolvedValue({ data: null, error: { message: code } } as any);
++      const error = await resumeRetainedHandSubmission(TABLE, 'i', GENERATION).catch((e) => e);
++      expect(error).not.toBeInstanceOf(RetainedHandSubmissionRefusedError);
++      expect(error).toBeInstanceOf(RetainedHandSubmissionFrozenError);
++      expect(error.message).toBe(`retained_hand_submission_readback_failed: ${code}`);
++    }
++  );
++
+   it.each([
+-    'HAND_SUBMISSION_PLATFORM_FROZEN',
+-    'HAND_SUBMISSION_MAINTENANCE_BUSY',
+     'HAND_SUBMISSION_LEASE_UNPROVEN',
+     'HAND_SUBMISSION_SCOPE_CHANGED',
+     'F06_HAND_DISPATCH_BUSY',
+@@ -84,6 +94,7 @@ describe('the door names a standing refusal and nothing else', () => {
+     vi.spyOn(supabase, 'rpc').mockResolvedValue({ data: null, error: { message } } as any);
+     const error = await resumeRetainedHandSubmission(TABLE, 'i', GENERATION).catch((e) => e);
+     expect(error).not.toBeInstanceOf(RetainedHandSubmissionRefusedError);
++    expect(error).not.toBeInstanceOf(RetainedHandSubmissionFrozenError);
+     expect(error.message).toBe(`retained_hand_submission_readback_failed: ${message}`);
+   });
+ 
+diff --git a/server/src/services/supabase/handHistory.ts b/server/src/services/supabase/handHistory.ts
+index 330958030..87bdcbddd 100644
+--- a/server/src/services/supabase/handHistory.ts
++++ b/server/src/services/supabase/handHistory.ts
+@@ -49,6 +49,39 @@ export const RETAINED_HAND_STANDING_REFUSALS: ReadonlySet<string> = new Set([
+   'HAND_SUBMISSION_TABLE_MISSING',
+ ]);
+ 
++/**
++ * THE FREEZE IS A WAIT, NOT A CRASH (2026-10-15).
++ *
++ * fn_ca_resume_hand_submission refuses a retained hand with
++ * HAND_SUBMISSION_PLATFORM_FROZEN while fn_platform_frozen() holds and with
++ * HAND_SUBMISSION_MAINTENANCE_BUSY while the cutover holds advisory lock
++ * 530090. Neither says anything about the hand: both lift at the thaw, and
++ * the same request is admitted then. Read from engine_recovery_events
++ * 2026-10-07 to 2026-10-09: on every engine-replacing break the same three
++ * cash tables with a retained hand were killed with
++ * `start_failed:start_load_table` and rebuilt into the same answer 130 to 480
++ * times between :55 and :00, which is what ClubArenaEngineKillStorm paged.
++ * A cash start that meets one of these waits for the thaw and asks again
++ * (ServerTableEngineBase.resumeRetainedHandAcrossTheFreeze). Every other
++ * caller still sees an ordinary Error with the message it always had.
++ */
++export const RETAINED_HAND_FREEZE_REFUSALS: ReadonlySet<string> = new Set([
++  'HAND_SUBMISSION_PLATFORM_FROZEN',
++  'HAND_SUBMISSION_MAINTENANCE_BUSY',
++]);
++
++/** The door is closed for the break, for the one table it was asked about. */
++export class RetainedHandSubmissionFrozenError extends Error {
++  constructor(
++    readonly tableId: string,
++    readonly code: string
++  ) {
++    // Unchanged text: every log line and dashboard still matches it.
++    super(`retained_hand_submission_readback_failed: ${code}`);
++    this.name = 'RetainedHandSubmissionFrozenError';
++  }
++}
++
+ /**
+  * THE LEDGER INVARIANT REFUSED THE HAND (2026-10-02).
+  *
+@@ -110,6 +143,8 @@ export async function resumeRetainedHandSubmission(
+       throw new RetainedHandSubmissionRefusedError(tableId, LEDGER_INVARIANT_REFUSED);
+     if (RETAINED_HAND_STANDING_REFUSALS.has(code))
+       throw new RetainedHandSubmissionRefusedError(tableId, code);
++    if (RETAINED_HAND_FREEZE_REFUSALS.has(code))
++      throw new RetainedHandSubmissionFrozenError(tableId, code);
+     throw new Error(`retained_hand_submission_readback_failed: ${error.message}`);
+   }
+   if (!data || typeof data !== 'object' || typeof data.found !== 'boolean')

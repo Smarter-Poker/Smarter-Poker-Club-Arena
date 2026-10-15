@@ -371,24 +371,24 @@ export default function ClubDataSimplePage() {
 
       <dl className={styles.stats} aria-busy={loading} aria-label="Club Totals">
         <div className={styles.stat}>
-          <dd className={styles.statValue}>{summary ? Number(summary.games).toLocaleString('en-US') : '-'}</dd>
           <dt className={styles.statLabel}>Games</dt>
+          <dd className={styles.statValue}>{summary ? Number(summary.games).toLocaleString('en-US') : '-'}</dd>
         </div>
         <div className={styles.stat}>
+          <dt className={styles.statLabel}>Total Winnings</dt>
           <dd className={`${styles.statValue} ${summary ? inkFor(summary.total_winnings) : ''}`}>
             {summary ? formatMoney(summary.total_winnings) : '-'}
           </dd>
-          <dt className={styles.statLabel}>Total Winnings</dt>
         </div>
         <div className={styles.stat}>
+          <dt className={styles.statLabel}>MTT Winnings</dt>
           <dd className={`${styles.statValue} ${summary ? inkFor(summary.mtt_winnings) : ''}`}>
             {summary ? formatMoney(summary.mtt_winnings) : '-'}
           </dd>
-          <dt className={styles.statLabel}>MTT Winnings</dt>
         </div>
         <div className={styles.stat}>
-          <dd className={styles.statValue}>{summary ? formatMoney(summary.fee) : '-'}</dd>
           <dt className={styles.statLabel}>Fee</dt>
+          <dd className={styles.statValue}>{summary ? formatMoney(summary.fee) : '-'}</dd>
         </div>
       </dl>
 
@@ -413,7 +413,7 @@ export default function ClubDataSimplePage() {
           type="search"
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
-          placeholder="Search Game Name, Creator Or Game ID"
+          placeholder="Search Game, Creator Or ID"
           aria-label="Search Games"
         />
         <svg viewBox="0 0 24 24" aria-hidden="true" className={styles.searchIcon}>

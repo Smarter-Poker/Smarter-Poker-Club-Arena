@@ -465,10 +465,10 @@
     "tests/fixtures/legacy-fee-finality/custody-core.sql": "288e953c3b4c75c8eea9e0608a0f2d4b953c4437c9cfe6d50a450a801053d0eb",
     "tests/fixtures/legacy-fee-finality/fn_satellite_transfer_ledger_is_immutable.sql": "51af53e6eb44440aa9901452b42adb4bf3c7ab31ea21cdc1e4e9404c44bea407",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/ci/classify-ci-changes.mjs": "2a40f38369ca31102aff8322a1944ba41dc6cc134456ef8b91dd5468ceb154ab",
+    "scripts/ci/classify-ci-changes.mjs": "a1dafcc2ddd7bbdf2387fb20ca293f8d51e26014d1bddd5cbb3d4679d86b5417",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "a8c38812594142d700a0d506487d355c702240592e9c81dccf0a0c54a942095c",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "820a553a07ac809c6927e73cc39e5cbd80c9060c238a9dc9a74b1a5f2aa68cf2",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -487,7 +487,7 @@
     "server/src/tournament/completionSettlementReceipt.ts": "a59a97b5b0f76d5c54d01b1fe47f3284efb2fcbd3e7742bb4e9e1ac6f0207dd4",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "d15ff04edffea0be07e232f40ed39dab13eeae5766d12271e77d43c984366890",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "b7f75ba00b61d2418db86c10bbd53acfa40c19e529862572ad89c5692007ac77",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -4854,6 +4854,22 @@
       "repository_fixtures/tests/fixtures/sep8-spin-custody/source-binding.json": {
         "previous": "14cf05be10cd98eba98d282749d106dc6abe52b81cf86deb032249e145ee3163",
         "current": "d15ff04edffea0be07e232f40ed39dab13eeae5766d12271e77d43c984366890"
+      }
+    }
+  },
+  "diamondOwnHistoryClassifierInput20261015": {
+    "reason": "Reviewed additive classifier recognition of the native Diamond own-history regression; financial fixture inputs, assertions and historical qualification evidence are unchanged.",
+    "path": "scripts/ci/classify-ci-changes.mjs",
+    "previousSha256": "2a40f38369ca31102aff8322a1944ba41dc6cc134456ef8b91dd5468ceb154ab",
+    "currentSha256": "a1dafcc2ddd7bbdf2387fb20ca293f8d51e26014d1bddd5cbb3d4679d86b5417",
+    "reviewedDependentBindings": {
+      "tests/fixtures/legacy-fee-finality/source-binding.json": {
+        "previousSha256": "a8c38812594142d700a0d506487d355c702240592e9c81dccf0a0c54a942095c",
+        "currentSha256": "820a553a07ac809c6927e73cc39e5cbd80c9060c238a9dc9a74b1a5f2aa68cf2"
+      },
+      "tests/fixtures/sep8-spin-custody/source-binding.json": {
+        "previousSha256": "d15ff04edffea0be07e232f40ed39dab13eeae5766d12271e77d43c984366890",
+        "currentSha256": "b7f75ba00b61d2418db86c10bbd53acfa40c19e529862572ad89c5692007ac77"
       }
     }
   }

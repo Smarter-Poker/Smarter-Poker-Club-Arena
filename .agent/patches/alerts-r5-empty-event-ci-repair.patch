@@ -1,0 +1,168 @@
+diff --git a/docs/changelog/2026-10-15-an-event-nobody-entered-is-cancelled.md b/docs/changelog/2026-10-15-an-event-nobody-entered-is-cancelled.md
+index bccbafa04..c2eecfecf 100644
+--- a/docs/changelog/2026-10-15-an-event-nobody-entered-is-cancelled.md
++++ b/docs/changelog/2026-10-15-an-event-nobody-entered-is-cancelled.md
+@@ -14,6 +14,14 @@ The discovery loop's past-start branch had no end for an event nobody entered an
+ 
+ `server/src/tournament/emptyPastStartEvent.ts` decides it: a registration-first event (never a seat-first Spin/SNG), pool not finalized, a complete roster read with no registered or playing entrant and a counter that agrees, at least 30 minutes past start, and a past-start top-up that has already come back empty. Such an event is cancelled through `atomic_cancel_tournament` (the database cancellation authority, which writes the immutable receipt and closes every bank at exact zero), asked at most every 30 minutes, refused loudly (`GameServer.empty_past_start_event_cancel_refused`). A club whose horses can fill the event is filled and played first.
+ 
++## After #6910 (Re-Read Live 2026-10-15 06:40 UTC)
++
++#6910 admitted and funded 72 horses into the pilot club at 05:31 UTC. An hour later the three events were still REGISTERING at zero entrants (59.6, 35.6 and 11.6 hours past start) and `poker_tournaments_overdue_start` still read 3: the club's events-lane horses were all seated in its own Spins and Heads-Up games, and the free ones are cash-lane horses the MTT fill does not take. Horses in the club do not give such an event an end; this rule does, and it still lets the top-up fill and play any event the club's horses can fill.
++
++## CI Repair
++
++The first cut kept the cancel retry clock in a new class field. The discovery-walk harnesses build a `GameServer` without its constructor and list its maps by hand, so the walk's prune step threw on the missing map and twelve walk tests in `theWalkReadsTheFleetOnce.test.ts` failed. The retry time now rides the existing `pastStartTopUpClock` entry (`cancelAskedAt`), pruned with the event, and the walk test counts the cancellation as the third owned launch beside the two funding callbacks. A walk-level test drives the real discovery pass on the production shape and pins one `atomic_cancel_tournament` call, no top-up and no second ask inside the retry window.
++
+ ## Tests
+ 
+ `server/src/tournament/anEmptyPastStartEventIsCancelled.test.ts` pins every condition of the predicate and the wiring (complete roster read, top-up backoff, cancellation only through `atomic_cancel_tournament`, ahead of the top-up).
+diff --git a/server/src/GameServer.ts b/server/src/GameServer.ts
+index fb0c48f69..51f89d6f6 100644
+--- a/server/src/GameServer.ts
++++ b/server/src/GameServer.ts
+@@ -340,6 +340,17 @@ const PAST_START_TOP_UP_CONCURRENCY = 4;
+  * branch of discoverTournaments for the backoff that reaches it.
+  */
+ const PAST_START_TOP_UP_MAX_INTERVAL_MS = 10 * 60 * 1000;
++/**
++ * One past-start event's top-up clock. cancelAskedAt is when an event nobody
++ * entered was last offered to atomic_cancel_tournament (2026-10-15, see
++ * tournament/emptyPastStartEvent.ts); it rides this entry so it is pruned with
++ * the event and the walk carries no state of its own for it.
++ */
++interface PastStartTopUpClock {
++  at: number;
++  misses: number;
++  cancelAskedAt?: number;
++}
+ /** C19's 40ms start stagger, applied to RUNNING re-adoption as well. */
+ const TOURNAMENT_RESUME_STAGGER_MS = 40;
+ /**
+@@ -3341,9 +3352,7 @@ export class GameServer {
+    * throttle of its own - the pass was the throttle - and the pass is now
+    * seconds long. Pruned with lastMttRampAt.
+    */
+-  private pastStartTopUpClock: Map<string, { at: number; misses: number }> = new Map();
+-  /** When an empty past-start event was last offered to atomic_cancel_tournament. */
+-  private emptyEventCancelAskedAt: Map<string, number> = new Map();
++  private pastStartTopUpClock: Map<string, PastStartTopUpClock> = new Map();
+   /**
+    * REGISTERING rows whose prize pool is already finalized, reported once each
+    * (2026-09-11). Such a row has left registration whatever its status says;
+@@ -8059,13 +8068,18 @@ export class GameServer {
+                 emptyTopUps: emptyClock?.misses ?? 0,
+               })
+             ) {
+-              const askedAt = this.emptyEventCancelAskedAt.get(tournament.id) ?? 0;
++              const askedAt = emptyClock?.cancelAskedAt ?? 0;
+               if (now - askedAt >= EMPTY_PAST_START_CANCEL_RETRY_MS) {
+                 this.launchDiscoveryTopUp(
+                   tournament.id,
+                   generation,
+                   async () => {
+-                    this.emptyEventCancelAskedAt.set(tournament.id, now);
++                    const settled = this.pastStartTopUpClock.get(tournament.id);
++                    this.pastStartTopUpClock.set(tournament.id, {
++                      at: settled?.at ?? now,
++                      misses: settled?.misses ?? 0,
++                      cancelAskedAt: now,
++                    });
+                     const { error: cancelError } = await supabase.rpc('atomic_cancel_tournament', {
+                       p_tournament_id: tournament.id,
+                       p_admin_id: null,
+@@ -8275,7 +8289,6 @@ export class GameServer {
+         if (
+           this.lastMttRampAt.size > 0 ||
+           this.pastStartTopUpClock.size > 0 ||
+-          this.emptyEventCancelAskedAt.size > 0 ||
+           this.registeringButFinalizedReported.size > 0 ||
+           spinLaunchParks.size > 0
+         ) {
+@@ -8291,9 +8304,6 @@ export class GameServer {
+           for (const id of this.pastStartTopUpClock.keys()) {
+             if (!stillRegistering.has(id)) this.pastStartTopUpClock.delete(id);
+           }
+-          for (const id of this.emptyEventCancelAskedAt.keys()) {
+-            if (!stillRegistering.has(id)) this.emptyEventCancelAskedAt.delete(id);
+-          }
+           for (const id of this.registeringButFinalizedReported) {
+             if (!stillRegistering.has(id)) this.registeringButFinalizedReported.delete(id);
+           }
+diff --git a/server/src/services/theWalkReadsTheFleetOnce.test.ts b/server/src/services/theWalkReadsTheFleetOnce.test.ts
+index 7c5126bd3..b14b5ee10 100644
+--- a/server/src/services/theWalkReadsTheFleetOnce.test.ts
++++ b/server/src/services/theWalkReadsTheFleetOnce.test.ts
+@@ -388,7 +388,14 @@ describe('the REGISTERING walk', () => {
+   });
+ 
+   it('launches both funding callbacks under ownership without awaiting them in the walk', () => {
+-    expect((walk.match(/this\.launchDiscoveryTopUp\(/g) || []).length).toBe(2);
++    /* Two funding callbacks (the ramp and the past-start top-up) and, since
++       2026-10-15, the cancellation of an event nobody entered
++       (tournament/emptyPastStartEvent.ts). That one funds nothing; it is
++       launched through the same owner so it never races a top-up or an
++       admission of the same event and is drained with them on stop. */
++    expect((walk.match(/this\.launchDiscoveryTopUp\(/g) || []).length).toBe(3);
++    expect((walk.match(/\{ pass: topUpPass(?:, redeemTickets)? \}/g) || []).length).toBe(2);
++    expect(walk).toContain("'GameServer.empty_past_start_event_cancel_failed'");
+     expect(blankNonCode(walk)).not.toContain('await this.launchDiscoveryTopUp(');
+   });
+ 
+@@ -742,4 +749,38 @@ describe('the top-ups beside the walk are bounded', () => {
+       await h.close();
+     }
+   });
++  /* AN EVENT NOBODY ENTERED IS CANCELLED (2026-10-15). The real walk, with
++     the shape TournamentNeverStarted paged on: zero entrants, hours past
++     start, a past-start top-up that already came back empty. It is offered to
++     atomic_cancel_tournament once, through the same owner as a top-up, never
++     topped up again, and not re-asked inside the retry window. */
++  it('cancels an empty past-start event once, through the database authority', async () => {
++    const row = boardRow('empty', {
++      current_players: 0,
++      start_time: new Date(DISCOVERY_NOW - 2 * 60 * 60 * 1000).toISOString(),
++    });
++    const h = discoveryHarness([[row], [row]]);
++    h.server.pastStartTopUpClock.set('empty', { at: DISCOVERY_NOW - 11 * 60_000, misses: 1 });
++    const cancels = () =>
++      h.eligibilityRead.mock.calls.filter((c: unknown[]) => c[0] === 'atomic_cancel_tournament');
++    try {
++      h.start();
++      await flushDiscovery();
++      expect(cancels()).toEqual([
++        ['atomic_cancel_tournament', { p_tournament_id: 'empty', p_admin_id: null }],
++      ]);
++      expect(h.server.tournamentRecurring.topUpWithHorses).not.toHaveBeenCalled();
++      expect(h.server.pastStartTopUpClock.get('empty')).toEqual({
++        at: DISCOVERY_NOW - 11 * 60_000,
++        misses: 1,
++        cancelAskedAt: DISCOVERY_NOW,
++      });
++      await h.advance(1);
++      expect(cancels()).toHaveLength(1);
++      expect(h.server.tournamentRecurring.topUpWithHorses).not.toHaveBeenCalled();
++      expect(reportError).not.toHaveBeenCalled();
++    } finally {
++      await h.close();
++    }
++  });
+ });
+diff --git a/server/src/tournament/anEmptyPastStartEventIsCancelled.test.ts b/server/src/tournament/anEmptyPastStartEventIsCancelled.test.ts
+index 49e8e08fd..1a54bc3b8 100644
+--- a/server/src/tournament/anEmptyPastStartEventIsCancelled.test.ts
++++ b/server/src/tournament/anEmptyPastStartEventIsCancelled.test.ts
+@@ -94,6 +94,13 @@ describe('the discovery loop wiring', () => {
+     expect(branch).toContain("'GameServer.empty_past_start_event_cancel_refused'");
+   });
+ 
++  it('keeps its retry clock on the past-start clock entry, pruned with the event', () => {
++    expect(branch).toContain('const askedAt = emptyClock?.cancelAskedAt ?? 0;');
++    expect(branch).toContain('cancelAskedAt: now,');
++    expect(source).toContain('private pastStartTopUpClock: Map<string, PastStartTopUpClock>');
++    expect(source).toContain('  cancelAskedAt?: number;');
++  });
++
+   it('sits inside the past-start top-up branch, ahead of the top-up', () => {
+     const topUp = source.indexOf('if (needsPastStartTopUp) {');
+     expect(topUp).toBeGreaterThan(-1);

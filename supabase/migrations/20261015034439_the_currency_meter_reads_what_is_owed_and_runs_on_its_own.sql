@@ -57,6 +57,11 @@
 -- own run history in cron.job_run_details. The roster
 -- (docs/attestation/cron-roster.tsv) moves 133 -> 134 with this file.
 --
+-- periodic-work: the nightly currency meter is the product, not compensation.
+-- It already runs every night inside job 286; this file only moves it to its
+-- own job so a slow meter cannot roll back the ledger replay. It repairs
+-- nothing: it reads the books and records one meter verdict per night.
+--
 -- HOW: the pinned-preimage substitution of 20261007212545. The live meter
 -- must hash to its measured md5, the anchor must occur exactly once, and the
 -- result must hash to the postimage derived read-only on production with

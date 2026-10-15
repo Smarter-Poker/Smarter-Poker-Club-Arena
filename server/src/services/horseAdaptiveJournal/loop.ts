@@ -63,6 +63,16 @@ export const COMMITMENT_AUDIT_SETTLED_DELAY_MS = 60000;
  * can still run past the pause, exactly as it could under the old cadence. */
 export const COMMITMENT_AUDIT_STEP_ALLOWANCE_MS = 1000;
 
+/** A v3 adaptive retention pass that reports retirement still pending (or its
+ * budget reached) is revisited after this delay instead of the generic 5 s.
+ * Measured on production 2026-10-15: about 14 hands a second qualify, and a
+ * full pass retires about 240 in about 4.9 s. At a 5 s revisit the lane
+ * peaks near 24 a second with no headroom for a slow pass; at 1 s it peaks
+ * near 40. Appends share the capacity lock and retry through journal work:
+ * a six-hour continuous drain holding the lane left no journal work
+ * unfinished. Every other owner and receipt keeps its existing deadline. */
+export const ADAPTIVE_RETIREMENT_BACKLOG_DELAY_MS = 1000;
+
 /** A single serial consumer. One claim and at most one bounded prune per
  * cycle; never imports this loop into the table's action or decision worker. */
 export async function runJournalLoop(signal: AbortSignal, d: Dependencies): Promise<void> {
@@ -257,7 +267,13 @@ export async function runJournalLoop(signal: AbortSignal, d: Dependencies): Prom
                   : 'retiredHands' in r && r.retiredHands === 25) ||
                 ('statisticsExpired' in r && r.statisticsExpired === 1000) ||
                 ('membershipPending' in r && r.membershipPending === true));
-        nextPruneAt[duePrune] = d.now() + (atLimit ? 5000 : 60000);
+        const retirementBacklog =
+          r.status === 'pruned' &&
+          'retirementPending' in r &&
+          (r.retirementPending === true || r.budgetReached === true);
+        nextPruneAt[duePrune] =
+          d.now() +
+          (retirementBacklog ? ADAPTIVE_RETIREMENT_BACKLOG_DELAY_MS : atLimit ? 5000 : 60000);
       } catch {
         retention = 'unknown';
         nextPruneAt[duePrune] = d.now() + 60000;

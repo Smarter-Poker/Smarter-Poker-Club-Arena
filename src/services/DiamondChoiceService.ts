@@ -1,5 +1,9 @@
 import { choiceLossGuarantee } from '../utils/choiceProgressiveGuarantee';
-import { ROAD_COIN_VERSION, roadCoinEnd, roadCoinPrizes } from '../utils/roadCoin';
+import {
+  isRoadCoinVersion,
+  roadCoinEnd,
+  roadCoinPrizes,
+} from '../utils/roadCoin';
 import { supabase } from '../lib/supabase';
 import { earnedReceiptBudget } from '../utils/bonusGameBudget';
 import { validBonusMinimum } from '../utils/diamondBonusPayout';
@@ -41,8 +45,9 @@ export interface ChoiceRound {
    *  4: half the stake, or for a Super award what the player paid, with the
    *  first step of the game certain (owner ruling 2026-09-21, R3).
    *  5: a loss keeps half the last safe prize (2026-10-10).
-   *  6: Donkey Cross only, a fair coin on every street (2026-10-11). */
-  payout_version?: 1 | 2 | 3 | 4 | 5 | 6;
+   *  6: Donkey Cross only, a fair coin on every street (2026-10-11).
+   *  7: Donkey Cross only, street one always safe, a fair coin after (2026-10-15). */
+  payout_version?: 1 | 2 | 3 | 4 | 5 | 6 | 7;
   server_seed_hash: string;
   client_seed: string;
   nonce: number;
@@ -149,11 +154,11 @@ export function parseChoiceRound(value: unknown): ChoiceRound {
   // contract-6 road whose prizes are not its own floor's coin ladder, is not a
   // receipt this client accepts. The ladder is checked exactly (to the fifth of
   // a cent) and may be cut short by the round's limit, never altered.
-  if (version === ROAD_COIN_VERSION) {
+  if (isRoadCoinVersion(version)) {
     if (v.game !== 'crossing') throw new Error('The Game Response Could Not Be Verified');
     let ladder: number[];
     try {
-      ladder = roadCoinPrizes(Number(v.bet_chips), Number(v.minimum_payout_chips));
+      ladder = roadCoinPrizes(Number(v.bet_chips), Number(v.minimum_payout_chips), version);
     } catch {
       throw new Error('The Game Response Could Not Be Verified');
     }
@@ -168,7 +173,7 @@ export function parseChoiceRound(value: unknown): ChoiceRound {
     (v.status === 'open' && v.payout_chips !== 0) ||
     (v.status === 'lost' &&
       v.payout_chips !==
-        (version === 5 || version === ROAD_COIN_VERSION
+        (version === 5 || isRoadCoinVersion(version)
           ? choiceLossGuarantee(
               v.prizes as number[],
               v.picked.length - 1,
@@ -199,11 +204,12 @@ export function parseChoiceRound(value: unknown): ChoiceRound {
       // the proof carried a version at all still verifies as what it is.
       (p.payout_version ?? 0) >= CHOICE_PAYOUT_VERSION !== sealedV4 ||
       (version === 5 && p.payout_version !== 5) ||
-      (version === ROAD_COIN_VERSION) !== (p.payout_version === ROAD_COIN_VERSION) ||
+      isRoadCoinVersion(version) !== isRoadCoinVersion(p.payout_version) ||
+      (isRoadCoinVersion(version) && p.payout_version !== version) ||
       // CONTRACT 6: one coin per street the round could reach, the road end is
       // their first smash, the streets played were safe but for a lost last one,
       // and a booked win did not stop past where the road ran.
-      (version === ROAD_COIN_VERSION &&
+      (isRoadCoinVersion(version) &&
         (!Array.isArray(p.coins) ||
           p.coins.length !== Number(v.max_steps) ||
           !p.coins.every((c) => typeof c === 'boolean') ||
@@ -251,7 +257,9 @@ export function parseChoiceState(value: unknown, club: string, game: ChoiceGame)
     v.prizes.length !== v.max_steps ||
     (v.payout_version !== undefined &&
       (!Number.isSafeInteger(v.payout_version) ||
-        (game === 'crossing' && ![5, ROAD_COIN_VERSION].includes(Number(v.payout_version)))))
+        (game === 'crossing' &&
+          Number(v.payout_version) !== 5 &&
+          !isRoadCoinVersion(Number(v.payout_version)))))
   ) {
     throw new Error('The Game Response Could Not Be Verified');
   }

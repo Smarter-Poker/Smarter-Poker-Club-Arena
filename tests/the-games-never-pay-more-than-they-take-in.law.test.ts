@@ -89,7 +89,8 @@ import {
 import {
   ROAD_COIN_MAX_STREETS,
   ROAD_COIN_TOP_MULTIPLE,
-  ROAD_COIN_VERSION,
+  ROAD_COIN_V6 as ROAD_COIN_VERSION,
+  ROAD_COIN_VERSION as ROAD_COIN_V7,
   roadCoin,
   roadCoinEnd,
   roadCoinPrizeFifths,
@@ -1797,7 +1798,7 @@ describe('Donkey Cross flips a fair coin on every street and keeps 0.80 wherever
     let checked = 0;
     for (let bet = MIN_DIAMOND_SPIN; bet <= MAX_DIAMOND_SPIN * 3; bet++) {
       for (const floor of floorsOf(bet)) {
-        const ladder = roadCoinPrizeFifths(bet / CHIP_CENTS, floor / CHIP_CENTS);
+        const ladder = roadCoinPrizeFifths(bet / CHIP_CENTS, floor / CHIP_CENTS, ROAD_COIN_VERSION);
         const top = ROAD_COIN_TOP_MULTIPLE * bet * 5;
         expect(ladder.length, `${bet}/${floor}`).toBeLessThanOrEqual(ROAD_COIN_MAX_STREETS);
         expect(ladder[ladder.length - 1], `${bet}/${floor} above 20x`).toBeLessThanOrEqual(top);
@@ -1805,7 +1806,7 @@ describe('Donkey Cross flips a fair coin on every street and keeps 0.80 wherever
           if (k > 1) expect(ladder[k - 1]).toBeGreaterThan(ladder[k - 2]);
           // The prize beats what a smash on the next street keeps.
           expect(ladder[k - 1]).toBeGreaterThan(5 * floor);
-          const v = roadCoinStopValue(bet / CHIP_CENTS, floor / CHIP_CENTS, k);
+          const v = roadCoinStopValue(bet / CHIP_CENTS, floor / CHIP_CENTS, k, ROAD_COIN_VERSION);
           // value <= 4/5, and == 4/5 at every rung below the capped top.
           expect(
             v.numerator * RETURN_DEN,
@@ -1825,7 +1826,7 @@ describe('Donkey Cross flips a fair coin on every street and keeps 0.80 wherever
   it('the standard and Super ladders are the ones the owner was shown', () => {
     // Exact chips per street (fifths of a cent / 500), no float rounding.
     const chips = (bet: number, floor: number) =>
-      roadCoinPrizeFifths(bet, floor).map((p) => p / 500);
+      roadCoinPrizeFifths(bet, floor, ROAD_COIN_VERSION).map((p) => p / 500);
     // Standard, one chip (floor half): 1.10x 1.65x 2.47x 3.70x 5.55x 8.32x 12.48x 18.72x 20x.
     expect(chips(1, 0.5)).toEqual([1.1, 1.65, 2.47, 3.7, 5.55, 8.32, 12.48, 18.72, 20]);
     // Standard 2,500-diamond award (25 chips, floor 12.50).
@@ -1864,7 +1865,7 @@ describe('Donkey Cross flips a fair coin on every street and keeps 0.80 wherever
     for (let s = 0; s < SEEDS; s++) {
       let previous: boolean | null = null;
       for (let k = 1; k <= STREETS; k++) {
-        const c = await roadCoin(`law-seed-${s}`, 'law-client', s + 1, k);
+        const c = await roadCoin(`law-seed-${s}`, 'law-client', s + 1, k, ROAD_COIN_VERSION);
         if (c) safe[k - 1]++;
         if (k === 1 && !c) firstSmash++;
         if (previous === true) {
@@ -1927,5 +1928,55 @@ describe('Donkey Cross flips a fair coin on every street and keeps 0.80 wherever
     // One transaction.
     expect(coin.sql.match(/^BEGIN;$/gm)?.length).toBe(1);
     expect(coin.sql.match(/^COMMIT;$/gm)?.length).toBe(1);
+  });
+});
+
+/*
+ * CONTRACT 7 (Dan, 2026-10-15): "STREET 1 IS ALWAYS SUPPOSED TO BE 100% SAFE,
+ * NEVER DIE ON STREET 1 EVER." Street one is certain at 0.80B; every later
+ * street is contract 6's coin and contract 6's prize one street earlier, so
+ * every stop is still worth at most 0.80, exactly 0.80 below the 20x top.
+ */
+describe('Donkey Cross contract 7: street one never smashes, and every stop still keeps 0.80', () => {
+  it('street one is safe on every seed, and every later street is the contract-6 coin', async () => {
+    for (let s = 0; s < 512; s++) {
+      expect(await roadCoin(`seven-${s}`, 'law-client', s + 1, 1, ROAD_COIN_V7)).toBe(true);
+      for (let k = 2; k <= 6; k++)
+        expect(await roadCoin(`seven-${s}`, 'law-client', s + 1, k, ROAD_COIN_V7)).toBe(
+          await roadCoin(`seven-${s}`, 'law-client', s + 1, k, ROAD_COIN_VERSION)
+        );
+    }
+    expect(choiceNextOdds('crossing', 0, Array(10).fill(1), 0.5, ROAD_COIN_V7)).toEqual({
+      safe: 100,
+      loss: 0,
+    });
+    expect(choiceNextOdds('crossing', 1, Array(10).fill(1), 0.5, ROAD_COIN_V7)).toEqual({
+      safe: 50,
+      loss: 50,
+    });
+  });
+
+  it('every stop on every stake and floor is worth at most 0.80, exactly 0.80 below the top', () => {
+    for (let bet = MIN_DIAMOND_SPIN; bet <= MAX_DIAMOND_SPIN * 3; bet += 7) {
+      for (const floor of [Math.ceil(bet / 2), Math.ceil((2 * bet) / 3)]) {
+        if (floor * 5 >= 4 * bet) continue;
+        const ladder = roadCoinPrizeFifths(bet / CHIP_CENTS, floor / CHIP_CENTS, ROAD_COIN_V7);
+        const top = ROAD_COIN_TOP_MULTIPLE * bet * 5;
+        expect(ladder[0]).toBe(4 * bet);
+        expect(ladder.length).toBeLessThanOrEqual(ROAD_COIN_MAX_STREETS);
+        for (let k = 1; k <= ladder.length; k++) {
+          if (k > 1) expect(ladder[k - 1]).toBeGreaterThan(ladder[k - 2]);
+          const v = roadCoinStopValue(bet / CHIP_CENTS, floor / CHIP_CENTS, k, ROAD_COIN_V7);
+          expect(v.numerator * RETURN_DEN).toBeLessThanOrEqual(v.denominator * RETURN_NUM);
+          if (ladder[k - 1] < top)
+            expect(v.numerator * RETURN_DEN).toBe(v.denominator * RETURN_NUM);
+        }
+      }
+    }
+  });
+
+  it('the standard ladder starts at the sure 0.80x and then runs contract 6', () => {
+    const chips = roadCoinPrizeFifths(1, 0.5, ROAD_COIN_V7).map((p) => p / 500);
+    expect(chips).toEqual([0.8, 1.1, 1.65, 2.47, 3.7, 5.55, 8.32, 12.48, 18.72, 20]);
   });
 });

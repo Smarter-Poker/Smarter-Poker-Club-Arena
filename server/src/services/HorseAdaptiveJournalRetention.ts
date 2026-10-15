@@ -1,5 +1,14 @@
 import { supabase } from './supabase.js';
-import { ADAPTIVE_JOURNAL_LIMITS } from './HorseAdaptiveObservationJournal.js';
+
+/** Transport ceiling for one adaptive retention pass. The owner retires up to
+ * 250 grouped hands and then compacts each touched batch once; measured on
+ * production 2026-10-15 a full pass takes about 4.9 s (20261015022307). The
+ * shared 5 s journal ceiling aborted those passes, which the loop then read
+ * as unknown and deferred for 60 s, so the engine lane retired about 3 hands
+ * a second against about 14 arriving. 7.5 s stays below the 8 s statement
+ * timeout pinned on service_role, so the database still ends a runaway pass
+ * before the client gives up on it. */
+export const ADAPTIVE_RETENTION_TIMEOUT_MS = 7500;
 
 /** One bounded background pass. Counts describe this transaction only; they
  * are never a completeness watermark or proof that every expired row is gone. */
@@ -8,7 +17,7 @@ export async function pruneAdaptiveJournal() {
   try {
     const { data, error } = await supabase
       .rpc('fn_prune_horse_adaptive_journal')
-      .abortSignal(AbortSignal.timeout(ADAPTIVE_JOURNAL_LIMITS.timeoutMs));
+      .abortSignal(AbortSignal.timeout(ADAPTIVE_RETENTION_TIMEOUT_MS));
     if (error || ![1, 2, 3].includes(data?.version)) return unknown();
     const versioned = data.version >= 2;
     const handLimit = data.version === 3 ? 250 : 25;

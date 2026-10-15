@@ -124,13 +124,14 @@ describe('P12.3 the PFR repair requires fresh qualification of previously select
     (v) => PHASE12_PROTECTED_RELEASE_SELECTIONS[v] === null
   );
 
-  it('FLH generation 2 evidence is retained and selection is null; each pack keeps its own contract digest, FLH the frozen v1', () => {
+  it('FLH generation 2 evidence is retained and FLH alone is selected again at generation 3; each pack keeps its own contract digest, FLH the frozen v1', () => {
     expect(Object.isFrozen(PHASE12_PROTECTED_RELEASE_SELECTIONS)).toBe(true);
     expect([...HORSE_PHASE12_VARIANTS]).toEqual(['short_deck', 'pineapple', 'flh', 'flo8']);
     // FLH's generation-1 selection measured policy digest a55db7fe..., which
     // the round-4 sampler kernels and scoped packs moved: it was re-measured
-    // under contract v1 on 9d567463 and is selected again at generation 2.
-    expect(selected).toEqual([]);
+    // under contract v1 on 9d567463 and selected at generation 2. The PFR
+    // repair moved it again; generation 3 requalified the repaired source.
+    expect(selected).toEqual(['flh']);
     expect(PREVIOUS_PHASE12_SELECTIONS.flh).toMatchObject({
       sourceSha: '9d5674639f2bd091f2386c75cbd87bec419c5dcd',
       qualificationPath: 'docs/evidence/phase12/9d567463/phase12-qualification-2026-10-12-flh.json',
@@ -172,7 +173,7 @@ describe('P12.3 the PFR repair requires fresh qualification of previously select
         variant,
         packVersion: REMAINING_VARIANT_PACKS[variant].version,
         contractDigest: PHASE12_RUNNING_CONTRACT_DIGESTS[variant],
-        approvalGeneration: 2,
+        approvalGeneration: 3,
         expiresAt: null,
         withdrawn: null,
       });
@@ -182,7 +183,7 @@ describe('P12.3 the PFR repair requires fresh qualification of previously select
         sourceSha: selection.sourceSha,
         continuationVersion: REMAINING_VARIANT_PACKS[variant].version,
         evidenceSha256: selection.qualificationSha256,
-        approvalGeneration: 2,
+        approvalGeneration: 3,
       });
       // The admitted pack is the candidate at cash tables and shadow in tournaments.
       for (const [gameMode, expected] of [
@@ -233,7 +234,31 @@ describe('P12.3 the PFR repair requires fresh qualification of previously select
     holder.apply(qualifiedPhase12TestAdmission('flh', 3));
     expect(holder.currentState()).toBe('usable');
     expect(holder.receipt().approvalGeneration).toBe(3);
-    expect(PHASE12_PROTECTED_RELEASE_SELECTIONS.flh).toBeNull();
+  });
+
+  it('FLH generation 3 is selected on the repaired source and admits with its committed evidence', () => {
+    const selected = PHASE12_PROTECTED_RELEASE_SELECTIONS.flh!;
+    expect(selected).toMatchObject({
+      sourceSha: 'c92768c85bc53a4a5a5972d09c6ee58561010035',
+      approvalGeneration: 3,
+      withdrawn: null,
+    });
+    expect(selected.approvalGeneration).toBeGreaterThan(
+      PREVIOUS_PHASE12_SELECTIONS.flh!.approvalGeneration
+    );
+    for (const [path, digest] of [
+      [selected.qualificationPath, selected.qualificationSha256],
+      [selected.completionPath!, selected.completionSha256!],
+    ]) {
+      for (const root of ['../../../', '../../release-evidence/']) {
+        const bytes = readFileSync(fileURLToPath(new URL(`${root}${path}`, import.meta.url)));
+        expect(createHash('sha256').update(bytes).digest('hex'), `${root}${path}`).toBe(digest);
+      }
+    }
+    const admission = admitHorsePhase12ReleaseAuthority('flh');
+    expect(admission.status).toBe('admitted');
+    for (const other of ['short_deck', 'pineapple', 'flo8'] as const)
+      expect(PHASE12_PROTECTED_RELEASE_SELECTIONS[other]).toBeNull();
   });
 
   it('an unselected pack returns unselected before any evidence file is read', () => {
@@ -363,7 +388,7 @@ describe('P12.3 the PFR repair requires fresh qualification of previously select
         expect(HORSE_PHASE12_VARIANTS as readonly string[], file).toContain(parsed.variant);
     }
     // Every selected pack names a qualified:true file on its running policy.
-    expect(qualifiedSelected).toEqual([]);
+    expect(qualifiedSelected).toEqual(['flh:c92768c8/phase12-qualification-2026-10-15-flh.json']);
   });
 });
 

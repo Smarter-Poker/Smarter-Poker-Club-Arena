@@ -1,0 +1,50 @@
+{
+  "schema": "horse-phase12-completion-v1",
+  "definition": "horse-phase12-completion-definition-v1",
+  "variant": "flh",
+  "packVersion": "fixed-limit-holdem-round3-v1",
+  "releaseSha": "c92768c85bc53a4a5a5972d09c6ee58561010035",
+  "policyDigestDefinition": "horse-phase12-policy-digest-v1",
+  "policyDigest": "67f964ba00fba3a96a81fba27552b5824b930483c9d7e8e1effbd32386ffe898",
+  "gameMode": "cash",
+  "window": {
+    "from": "2026-10-15T00:02:00.000Z",
+    "to": "2026-10-15T00:50:00.000Z",
+    "releaseUnchanged": true,
+    "source": "declaration-completion-pfr-repair-2026-10-14.txt (sha256 194532d86525cd935e5aad829f679de3804c29210f6f539494ce30f1d76079c7), window 2026-10-15T00:02:00.000Z to 2026-10-15T00:50:00.000Z on release c92768c85bc53a4a5a5972d09c6ee58561010035"
+  },
+  "streets": {
+    "preflop": {
+      "eligible": 972,
+      "completed": 972,
+      "workBudget": 0,
+      "samplerBudgetExhausted": 0,
+      "sampleUnavailable": 0,
+      "governorReduced": 0
+    },
+    "flop": {
+      "eligible": 485,
+      "completed": 485,
+      "workBudget": 0,
+      "samplerBudgetExhausted": 0,
+      "sampleUnavailable": 0,
+      "governorReduced": 0
+    },
+    "turn": {
+      "eligible": 427,
+      "completed": 427,
+      "workBudget": 0,
+      "samplerBudgetExhausted": 0,
+      "sampleUnavailable": 0,
+      "governorReduced": 0
+    },
+    "river": {
+      "eligible": 337,
+      "completed": 337,
+      "workBudget": 0,
+      "samplerBudgetExhausted": 0,
+      "sampleUnavailable": 0,
+      "governorReduced": 0
+    }
+  }
+}

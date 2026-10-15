@@ -29,7 +29,8 @@
 --   club_invite_attributions  first-wins record of who brought whom, per club,
 --                             with its funnel: signed_up -> verified -> joined
 --   fn_club_invite_link       get-or-create the caller's code for a club
---   fn_club_invite_resolve    public read for the landing page and link preview
+--   fn_club_invite_resolve    landing page / link preview read (server-side
+--                             service role, or a signed-in player in the app)
 --   fn_club_invite_claim      attach the signed-in account to the link it came from
 --   fn_club_invite_pending    the club a new player still has to join
 --   fn_club_invite_my_stats / fn_club_invite_club_stats
@@ -226,7 +227,10 @@ BEGIN
 END $$;
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- fn_club_invite_resolve: public, for the landing page and the link preview
+-- fn_club_invite_resolve: the landing page and the link preview read it through
+-- the World Hub SERVER (service role), never anon from a browser; a signed-in
+-- player may resolve a code in the app. The inviter opening their own link is
+-- not counted as an open.
 -- ─────────────────────────────────────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION public.fn_club_invite_resolve(p_code text, p_count_click boolean DEFAULT true)
 RETURNS jsonb
@@ -234,6 +238,7 @@ LANGUAGE plpgsql SECURITY DEFINER
 SET search_path TO 'public', 'extensions'
 AS $$
 DECLARE
+  v_uid      uuid := auth.uid();
   v_code     text := upper(btrim(COALESCE(p_code, '')));
   v_link     record;
   v_club     record;
@@ -268,7 +273,7 @@ BEGIN
     v_playing := NULL;
   END;
 
-  IF p_count_click THEN
+  IF p_count_click AND v_uid IS DISTINCT FROM v_link.inviter_id THEN
     UPDATE public.club_invite_links
        SET click_count = click_count + 1, last_clicked_at = now()
      WHERE code = v_code;
@@ -838,8 +843,8 @@ REVOKE ALL ON FUNCTION public.trg_club_invite_phone_verified() FROM PUBLIC, anon
 REVOKE ALL ON FUNCTION public.fn_club_invite_link(uuid, text) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.fn_club_invite_link(uuid, text) TO authenticated;
 
-REVOKE ALL ON FUNCTION public.fn_club_invite_resolve(text, boolean) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.fn_club_invite_resolve(text, boolean) TO anon, authenticated;
+REVOKE ALL ON FUNCTION public.fn_club_invite_resolve(text, boolean) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.fn_club_invite_resolve(text, boolean) TO authenticated, service_role;
 
 REVOKE ALL ON FUNCTION public.fn_club_invite_claim(text, text, timestamptz) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.fn_club_invite_claim(text, text, timestamptz) TO authenticated;

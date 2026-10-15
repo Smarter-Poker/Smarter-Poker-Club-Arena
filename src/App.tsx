@@ -746,9 +746,17 @@ function FullApp() {
 
               {/* Share & Invite short link opened in the app (2026-10-15). On the
                   web the World Hub serves smarter.poker/i/<CODE>; this is the
-                  native deep-link landing. Public: the join page it forwards to
-                  decides signup versus join. */}
-              <Route path="/i/:code" element={<InviteCodePage />} />
+                  native deep-link landing. Resolving a code needs a session
+                  (no anonymous browser may call fn_club_invite_resolve), so a
+                  signed-out player signs in first and comes back here. */}
+              <Route
+                path="/i/:code"
+                element={
+                  <AuthGuard>
+                    <InviteCodePage />
+                  </AuthGuard>
+                }
+              />
 
               {/* Public Hand Replay — shareable link, no auth required */}
               <Route path="/share/hand/:handId" element={<HandReplayerPage />} />

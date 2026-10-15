@@ -4,7 +4,7 @@
 #   PGURL=postgres://postgres@localhost:5432/postgres bash scripts/ci/club-invite-attribution/run.sh
 # Creates a scratch database, loads a minimal stand-in for the production
 # objects the migration touches, applies the migration, runs the scenarios,
-# and fails on the first FAIL. 41 scenarios at the time of writing.
+# and fails on the first FAIL. 43 scenarios at the time of writing.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/../../.." && pwd)"

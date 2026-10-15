@@ -250,7 +250,7 @@ export async function getPendingClubInvite(): Promise<PendingClubInvite | null> 
   };
 }
 
-/** Public lookup used by the in-app /i/:code route (deep links). */
+/** Signed-in lookup used by the in-app /i/:code route (deep links). */
 export async function resolveInviteCode(code: string): Promise<{ inAppPath: string } | null> {
   const normalized = normalizeInviteCode(code);
   if (!normalized) return null;

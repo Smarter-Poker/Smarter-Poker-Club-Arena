@@ -50,9 +50,10 @@ describe('the stored invite: first link wins for 30 days', () => {
   beforeEach(() => window.localStorage.clear());
 
   it('keeps the first code and ignores a second', () => {
-    rememberInviteCode('ABC2345', 1000);
-    rememberInviteCode('XYZ6789', 2000);
-    expect(readPendingInviteCode(5000)).toEqual({ code: 'ABC2345', firstSeen: 1000 });
+    const t = Date.now();
+    rememberInviteCode('ABC2345', t - 2000);
+    rememberInviteCode('XYZ6789', t - 1000);
+    expect(readPendingInviteCode()).toEqual({ code: 'ABC2345', firstSeen: t - 2000 });
   });
 
   it('expires after 30 days, and then a new link may replace it', () => {
@@ -99,7 +100,10 @@ describe('the short link opens in the app', () => {
   });
 
   it('the route is registered', () => {
-    expect(src('src/App.tsx')).toContain('<Route path="/i/:code" element={<InviteCodePage />} />');
+    const app = src('src/App.tsx');
+    const route = app.slice(app.indexOf('path="/i/:code"'), app.indexOf('path="/i/:code"') + 160);
+    expect(route).toContain('<AuthGuard>');
+    expect(route).toContain('<InviteCodePage />');
   });
 });
 

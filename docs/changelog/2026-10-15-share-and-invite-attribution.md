@@ -26,7 +26,9 @@ GETS CREDITED ... AND THEY ARE ADDED UNDER THEM IN THEIR DOWNLINES."
   stats; agents see their own downline's.
 - **The World Hub `/i/[code]` page** is server-rendered with an Open Graph card
   (`/api/og/club-invite`), so messaging apps show "KingFish Invited You To Club
-  JAQK" with the logo and live counts. It sets the first-party attribution
+  JAQK" with the logo and live counts. It reads the invite server-side with the
+  service role (no anonymous browser can call `fn_club_invite_resolve`; the
+  inviter opening their own link is not counted). It sets the first-party attribution
   cookie (30 days, first link wins), shows Create Account first, and sends a
   signed-in player straight to the join page. Preview crawlers are not counted
   as opens.
@@ -59,7 +61,7 @@ GETS CREDITED ... AND THEY ARE ADDED UNDER THEM IN THEIR DOWNLINES."
 
 ## Proof
 
-- `scripts/ci/club-invite-attribution/run.sh`: 41 scenarios against a
+- `scripts/ci/club-invite-attribution/run.sh`: 43 scenarios against a
   disposable Postgres (fresh signup credited, first link wins, verification
   credit, downline placement under the inviter's agent, same-device and
   same-phone blocks, beta-account exemption, departed inviter routed to the

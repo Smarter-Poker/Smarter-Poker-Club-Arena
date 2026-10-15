@@ -5711,32 +5711,37 @@ function ClubHomePageContent({
               )}
             </section>
           }
+          /* The chip-club campaign opens announcements, an operator surface
+             the Diamond boundary deliberately does not admit. Do not advertise
+             another club's event or send an Arena player to the safe shell. */
           campaign={
-            <button
-              type="button"
-              className="club-lobby-command-top__campaign-button"
-              aria-label={`Open ${club.name} Promotions`}
-              onClick={() => {
-                haptic.selection();
-                navigate(`/clubs/${clubId}/announcements`);
-              }}
-            >
-              {/* The <picture> wrapper stays although both regimes now resolve
+            !isAutomaticArena && (
+              <button
+                type="button"
+                className="club-lobby-command-top__campaign-button"
+                aria-label={`Open ${club.name} Promotions`}
+                onClick={() => {
+                  haptic.selection();
+                  navigate(`/clubs/${clubId}/announcements`);
+                }}
+              >
+                {/* The <picture> wrapper stays although both regimes now resolve
                   to the same file: it is the box the campaign bay's CSS sizes
                   (`.club-lobby-command-top__campaign-picture`), and it is where
                   a per-breakpoint <source> goes if a club ever ships two crops
                   of its own banner. */}
-              <picture className="club-lobby-command-top__campaign-picture">
-                <img
-                  src={club.banner_url || CLUB_LOBBY_CAMPAIGN}
-                  alt={
-                    club.banner_url
-                      ? `${club.name} Promotion`
-                      : 'Shark Club Championship Series, 250,000 Guaranteed Main Event'
-                  }
-                />
-              </picture>
-            </button>
+                <picture className="club-lobby-command-top__campaign-picture">
+                  <img
+                    src={club.banner_url || CLUB_LOBBY_CAMPAIGN}
+                    alt={
+                      club.banner_url
+                        ? `${club.name} Promotion`
+                        : 'Shark Club Championship Series, 250,000 Guaranteed Main Event'
+                    }
+                  />
+                </picture>
+              </button>
+            )
           }
         />
 

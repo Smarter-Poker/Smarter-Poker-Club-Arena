@@ -86,7 +86,7 @@ export function ClubLobbyCommandTop({
       <div className="club-lobby-command-top__controls" ref={controlsRef}>
         {controls}
       </div>
-      <div className="club-lobby-command-top__campaign">{campaign}</div>
+      {campaign && <div className="club-lobby-command-top__campaign">{campaign}</div>}
     </section>
   );
 }

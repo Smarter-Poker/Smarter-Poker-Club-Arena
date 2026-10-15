@@ -6,6 +6,10 @@ Date: September 8, 2026. Phase count: 12.
 
 Dan explicitly authorized starting Phase 3 while Phase 2 push/publication is monitored and repaired in the background. This supersedes the earlier instruction to block Phase 3 solely on Phase 2 deployment. Phase 2 must still be verified and any regression corrected; queued publication does not count as completed publication. Public funded Diamond games remain subject to the later gameplay and accounting release gates.
 
+## Launch-readiness recheck, October 15, 2026
+
+The current evidence and prioritized remaining work are in [the October 15 audit](changelog/2026-10-15-diamond-arena-launch-audit.md). Both production game switches are open, cash hands and completed tournaments exist, and the standalone repository is archived. Earlier dated entries and the old tail summary below remain historical; they do not reinstate closed switches, missing owner decisions or an archive task. The final published lifecycle, rollback compatibility and remaining audit evidence are still open. Do not declare launch readiness from the checked phase boxes alone.
+
 ## Execution Update, September 9, 2026
 
 Dan authorized Phase 4 development while Phase 3 publication is verified in the background. Phase 3 runtime adoption and its recorded repair/regression checks are verified as of September 9 at 21:05 UTC. Pending publication is not a passed gate. This continuation preserves the prior-phase audit and does not authorize public funded Diamond games ahead of their gameplay and accounting gates.

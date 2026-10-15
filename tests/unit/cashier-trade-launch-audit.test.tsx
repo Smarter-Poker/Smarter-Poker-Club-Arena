@@ -1306,7 +1306,10 @@ it('Phase 5: reports partial refusals separately from duplicate or missing ackno
   expect(receipt).toHaveTextContent('Confirmed Total: 10 Chips');
   expect(receipt).toHaveTextContent('Refused');
   expect(receipt).toHaveTextContent('Outcome Needs Verification');
-  expect(readCashierTransferRecovery(USER_ID, CLUB_A)?.failures).toHaveLength(2);
+  // The refusal is definitive and is not journaled; only the unknown outcome is.
+  expect(readCashierTransferRecovery(USER_ID, CLUB_A)?.failures).toEqual([
+    expect.objectContaining({ userId: PLAYER_IDS[2] }),
+  ]);
 });
 
 it('Phase 5: amounts cannot change while a batch acknowledgement is pending', async () => {

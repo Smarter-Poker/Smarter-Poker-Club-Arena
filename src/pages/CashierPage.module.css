@@ -672,3 +672,10 @@
 .recipientContext span {
   color: #9aa5b3;
 }
+
+/* At a table, Buy-In and Cash-Out take no amount here (both happen at the
+   table), so the field and its presets are hidden rather than left inert. */
+.formGroup[hidden],
+.presetGrid[hidden] {
+  display: none;
+}

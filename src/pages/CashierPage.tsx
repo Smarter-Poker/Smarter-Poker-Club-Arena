@@ -53,6 +53,7 @@ import {
   isCashoutStartCurrent,
 } from '../hooks/usePreparedCashoutOperations';
 import { supabase } from '../lib/supabase';
+import { creditHeadroomOf } from '../services/cashierBalanceRead';
 import CashierClubSwitcher from '../components/club/CashierClubSwitcher';
 
 import { useToast } from '../components/common/Toast';
@@ -294,6 +295,7 @@ function CashierContent() {
   const toast = useToast();
 
   const [action, setActionState] = useState<CashierAction>('send');
+  const tableRouteOnly = !!tableId && (action === 'buyin' || action === 'cashout');
   const [amount, setAmountState] = useState('');
   const preparationAmount = validateCashoutAmount(amount);
   const cashoutPreparations = usePreparedCashoutOperations(
@@ -484,6 +486,7 @@ function CashierContent() {
    * the chips this action moves.
    */
   const [myAgentWallet, setMyAgentWallet] = useState<number | null>(null);
+  const [myAgentCredit, setMyAgentCredit] = useState(0);
 
   // Send chips state
   const [recipients, setRecipients] = useState<Recipient[]>([]);
@@ -495,6 +498,7 @@ function CashierContent() {
     mintOpIdRef.current = null;
   }, [amount, selectedRecipient]);
   const [loadingRecipients, setLoadingRecipients] = useState(false);
+  const recipientsRequestRef = useRef(0);
   const [recipientSearch, setRecipientSearch] = useState('');
   const recipientSearchRef = useRef<HTMLInputElement>(null);
 
@@ -612,6 +616,7 @@ function CashierContent() {
     // Chips are per club, and so is the float. Carrying the previous club's
     // agent wallet across a switch would quote a balance this club cannot spend.
     setMyAgentWallet(null);
+    setMyAgentCredit(0);
   }, [clubId]);
 
   // Guards every async loader below against a club switch landing mid-flight.
@@ -746,7 +751,7 @@ function CashierContent() {
           () =>
             supabase
               .from('agents')
-              .select('agent_wallet_balance, status')
+              .select('agent_wallet_balance, status, is_prepaid, credit_limit, credit_used')
               .eq('club_id', resolvedId)
               .eq('user_id', user.id)
               .maybeSingle()
@@ -792,6 +797,9 @@ function CashierContent() {
             ? Number(floatResult.data.agent_wallet_balance) || 0
             : 0
       );
+      // A credit agent may send past the float, against the line the server
+      // allows (credit_limit - credit_used). Prepaid agents have none.
+      setMyAgentCredit(floatResult?.error ? 0 : creditHeadroomOf(floatResult?.data));
 
       // Union check — derived from combined query above
       const detectedUnionId = clubResult?.data?.union_id;
@@ -965,6 +973,9 @@ function CashierContent() {
       setRecipients(recipientsCacheRef.current.data);
       return;
     }
+    // The latest request owns the spinner. A superseded (stale) request
+    // returns early, and before this the spinner it raised was never lowered.
+    const recipientsSeq = ++recipientsRequestRef.current;
     setLoadingRecipients(true);
     try {
       const resolvedId = await resolveClubUUID(clubId);
@@ -1235,8 +1246,10 @@ function CashierContent() {
       setSelectedRecipient('');
       reportError(err, 'CashierPage.Failed_to_load_recipients');
       toast.error(err instanceof Error ? err.message : 'Failed to load eligible recipients');
+    } finally {
+      if (isMounted.current && recipientsRequestRef.current === recipientsSeq)
+        setLoadingRecipients(false);
     }
-    if (isMounted.current && !stale()) setLoadingRecipients(false);
   };
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -1397,13 +1410,43 @@ function CashierContent() {
         (change.new.status || 'active') === prior.status
       )
         return;
-      authorityEpoch.current += 1;
-      contextVersionRef.current += 1;
-      setLoadingContext(true);
-      setSendConfirm({ show: false, value: 0, recipientId: '', recipientName: '' });
-      void loadUserContext();
+      const invalidate = () => {
+        authorityEpoch.current += 1;
+        contextVersionRef.current += 1;
+        setLoadingContext(true);
+        setSendConfirm({ show: false, value: 0, recipientId: '', recipientName: '' });
+        void loadUserContext();
+      };
+      // A bare signal (a channel (re)subscribing, the tab coming back, a bus
+      // event with no row) says nothing about the role. Read it, and retire the
+      // view only if it actually changed: bumping the epoch on every resubscribe
+      // hid a committed send's confirmation and left the form filled, inviting a
+      // second real send, and stranded the recipient list on "Loading".
+      if (!change?.new && prior && user?.id) {
+        void Promise.resolve(
+          supabase
+            .from('club_members')
+            .select('role,status')
+            .eq('club_id', prior.clubId)
+            .eq('user_id', user.id)
+            .maybeSingle()
+        ).then(({ data, error }) => {
+          if (error) return;
+          const now = memberAuthoritySnapshot.current;
+          if (!now || now.clubId !== prior.clubId) return;
+          if (
+            data &&
+            (data.role || 'player') === now.role &&
+            (data.status || 'active') === now.status
+          )
+            return;
+          invalidate();
+        });
+        return;
+      }
+      invalidate();
     },
-    [loadUserContext]
+    [loadUserContext, user?.id]
   );
   useMasterBusChannel({
     channelName: user?.id && clubId ? `advanced-cashier-authority-${user.id}-${clubId}` : null,
@@ -1791,6 +1834,15 @@ function CashierContent() {
 
   const handleAction = async (override?: { value?: number; recipientId?: string }) => {
     if (cashoutActionInFlight.current || cashoutBusy.current || transferBusy.current) return;
+    // At a table, Buy-In and Cash-Out move no money here: both are done at the
+    // table itself (atomic_table_buyin, and leaving the seat). There is no
+    // amount to type, so go straight there.
+    if (tableRouteOnly) {
+      if (action === 'cashout')
+        setMessage({ type: 'info', text: 'Leave The Table To Cash Out - Taking You There Now.' });
+      navigate(`/table/${tableId}`);
+      return;
+    }
     const isTransfer = action === 'send';
     if (isTransfer && (!canSend || roleUnknown)) return;
     if (isTransfer) transferBusy.current = true;
@@ -1960,11 +2012,11 @@ function CashierContent() {
            * balance they buy in with - and the database derives it again from the
            * recipient regardless of what is sent here.
            */
-          if (myAgentWallet !== null && myAgentWallet < value) {
+          if (myAgentWallet !== null && myAgentWallet + myAgentCredit < value) {
             if (isMounted.current)
               setMessage({
                 type: 'error',
-                text: `Insufficient chips in your agent wallet. Available: ${chipFigure(myAgentWallet)}`,
+                text: `Insufficient chips in your agent wallet. Available: ${chipFigure(myAgentWallet + myAgentCredit)}`,
               });
             if (isMounted.current) setIsProcessing(false);
             return;
@@ -2001,11 +2053,16 @@ function CashierContent() {
           // The RPC reports a refusal as { success: false, error }. The old path
           // had no result check at all, so a refusal printed "Sent 500 chips".
           if (!sendRes?.success) {
+            // A definitive refusal moved nothing, so its journal entry closes.
+            if (sendRes && sendRes.success === false) clearCashierWalletOperation(operation);
             throw new Error(sendRes?.error || 'The Cashier Refused That Send');
           }
 
           clearCashierWalletOperation(operation);
-          if (!transferCurrent()) return;
+          // The money moved: always report it in the view that asked. Only a
+          // changed club or page retires the message, never an authority
+          // refresh, or the user sees nothing and sends a second time.
+          if (!isMounted.current || transferView.current !== owningView) return;
           if (isMounted.current)
             setMessage({
               type: 'success',
@@ -2818,7 +2875,9 @@ function CashierContent() {
                   <button
                     className={styles.presetBtn}
                     disabled={myAgentWallet === null}
-                    onClick={() => setAmount(String(Math.floor(myAgentWallet ?? 0)))}
+                    onClick={() =>
+                      setAmount(String(Math.floor((myAgentWallet ?? 0) + myAgentCredit)))
+                    }
                   >
                     Max
                   </button>
@@ -3154,10 +3213,14 @@ function CashierContent() {
                         error?: string;
                       } | null;
                       if (!distRes?.success) {
+                        // A definitive refusal moved nothing; its journal entry closes.
+                        if (distRes && distRes.success === false)
+                          clearCashierWalletOperation(operation);
                         throw new Error(distRes?.error || 'The Cashier Refused That Distribution');
                       }
                       clearCashierWalletOperation(operation);
-                      if (!transferCurrent()) return;
+                      // The money moved: report it unless the view itself changed.
+                      if (!isMounted.current || transferView.current !== owningView) return;
                       const recipient = recipientRow;
                       if (isMounted.current)
                         setMessage({
@@ -3349,7 +3412,7 @@ function CashierContent() {
                     </div>
                   )}
 
-                  <div className={styles.formGroup}>
+                  <div className={styles.formGroup} hidden={tableRouteOnly}>
                     <label className="sc-label sc-ink--blue" htmlFor="cashier-amount">
                       {action === 'mint' ? 'Chips To Mint' : 'Amount'}
                     </label>
@@ -3387,7 +3450,7 @@ function CashierContent() {
                   )}
 
                   {/* Presets */}
-                  <div className={styles.presetGrid}>
+                  <div className={styles.presetGrid} hidden={tableRouteOnly}>
                     {preset.map((val) => (
                       <button
                         key={val}
@@ -3431,7 +3494,7 @@ function CashierContent() {
                     disabled={
                       isProcessing ||
                       cooldown > 0 ||
-                      !amount ||
+                      (!amount && !tableRouteOnly) ||
                       (action === 'cashout' &&
                         !tableId &&
                         !cashoutPreparations.get('request', 'cashout_request'))
@@ -3440,10 +3503,10 @@ function CashierContent() {
                     {isProcessing
                       ? 'Processing...'
                       : action === 'buyin'
-                        ? 'Confirm Buy-In'
+                        ? 'Go To Table To Buy In'
                         : action === 'cashout'
                           ? tableId
-                            ? 'Confirm Cash-Out'
+                            ? 'Go To Table To Cash Out'
                             : 'Check Or Request Cashout'
                           : 'Confirm Mint'}
                   </button>

@@ -4,6 +4,11 @@ You are picking up the Lightning programme for Club Arena (Smarter Poker). Light
 
 **The dated delivery checkpoints above section U supersede the historical state in section U and sections 3 to 5.** Sections 3 to 5 were written at 17:30 UTC and are kept for their ids and history.
 
+## Corrected Outsider Designation (2026-10-15)
+
+- Dan explicitly answered “Select an existing nonmember (recommended)” after the original outsider proved to be a funded pilot member. The replacement is `23040e91-e0d0-430d-b18e-f9f67c385d90`: production read verifies active internal horse, existing internal Auth identity not banned, zero club memberships and zero active cash seats at selection. No new identity, approval, funding or table action was made. This supersedes every historical outsider designation below.
+- The maintained access script now pins that verified replacement and still rechecks authenticated identity and absent membership before its refusal tests. Fresh report dispatches must pass this replacement as `designated_outsider_id`. Actual browser/socket proof remains pending protected delivery and explicit invocation.
+
 ## Fresh Report And Identity Correction (2026-10-15 22:32 UTC)
 
 - Read-only qualification run `38813383364` completed successfully; authenticated report still returns NO_GO on both games: open high integrity signals, plus 9-max A/A bias. Eligible counts remain 54/39; prior recorded hands remain 1,070/1,762. No repair deployment or new activation has occurred.

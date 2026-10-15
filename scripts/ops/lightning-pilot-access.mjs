@@ -1,7 +1,10 @@
 /** Explicit private-pilot access witness. Existing designated identities only.
  * No password changes, approval, funding, buy-in, table action or token artifact. */
 import { PILOT } from './prepare-lightning-private-pilot.mjs';
-export const PILOT_OUTSIDER = '00bc0957-1913-4beb-a4d1-acab94950690';
+// Owner authorized selecting a replacement on 2026-10-15 after the original
+// designation proved to be a funded member. Verified active internal horse,
+// no pilot membership, no active cash seat and no club memberships at selection.
+export const PILOT_OUTSIDER = '23040e91-e0d0-430d-b18e-f9f67c385d90';
 const PUBLIC_KEY = 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx';
 const fail = (message) => {
   throw new Error(message);

@@ -35,25 +35,36 @@
 --     leaving the satellite, and the cash credit is category 'transfer', not
 --     a 'prize' the satellite could double count.
 --
--- THE FIX, at the line that misreads: in both reads a redeemed ticket counts
--- as seat income only when it has no closed-target-cash leg (one primary-key
--- probe of chip_ledger_idem per ticket row). After install the hourly pass 1
--- re-reads every open alert through the corrected scalar and closes the 56
--- itself; no alert row, wallet or ledger row is written by this migration.
--- Not a settlement: no money moved wrongly, so 10.9 has nothing to pay.
+--   * fn_pay_backed_payout_shortfalls carries the same seat_income term
+--     inline and selects events with delta > 0.01 as holding money it may pay
+--     a reconciler top-up from. Through this misread, every one of the 57
+--     targets looks like it holds its cash-paid tickets' value; if the
+--     reconciler ever reported a top-up on one, the sweep would pay it from
+--     money the event never held. Its hourly job runs dry (p_apply default
+--     false) and has raised nothing, so nothing has been paid; the term is
+--     corrected here so it never can be.
+--
+-- THE FIX, at the line that misreads: in all three reads a redeemed ticket
+-- counts as seat income only when it has no closed-target-cash leg (one
+-- primary-key probe of chip_ledger_idem per ticket row). After install the
+-- hourly pass 1 re-reads every open alert through the corrected scalar and
+-- closes the 56 itself; no alert row, wallet or ledger row is written by this
+-- migration. Not a settlement: no money moved wrongly, so 10.9 has nothing to
+-- pay.
 --
 -- HOW: the pinned-preimage exact-substitution helper of 20261007212545. The
 -- live text must hash to today's measured md5 (scalar 17ae3dfd..., set
--- 118b1c0b...), the one anchor must occur exactly once in each (measured
--- read-only on production 2026-10-15: 1 and 1), and each result must hash to
--- the postimage derived read-only on production with replace() (scalar
--- 34e1f8a4..., set 4bc2c77d...); owner, SECURITY DEFINER, proconfig and
+-- 118b1c0b..., batch c9e67c9c..., the postimages of 20261009151510), the one
+-- anchor must occur exactly once in each (measured read-only on production
+-- 2026-10-15: 1, 1 and 1), and each result must hash to the postimage derived
+-- read-only on production with replace() (scalar 34e1f8a4..., set
+-- 4bc2c77d..., batch 8d21d2f9...); owner, SECURITY DEFINER, proconfig and
 -- grants must not move.
 --
 -- Regression: scripts/ci/test-ticket-cash-conservation.py (native
 -- PostgreSQL), run by .github/workflows/ticket-cash-conservation.yml.
 --
--- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_tournament_conservation_delta(uuid)'::regprocedure)) = '34e1f8a48e1ba37b8009e3d64c5ed626' AND md5(pg_get_functiondef('public.fn_tournament_conservation_deltas(timestamp with time zone,timestamp with time zone)'::regprocedure)) = '4bc2c77d5e02abe38a535367bade00e8')
+-- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_tournament_conservation_delta(uuid)'::regprocedure)) = '34e1f8a48e1ba37b8009e3d64c5ed626' AND md5(pg_get_functiondef('public.fn_tournament_conservation_deltas(timestamp with time zone,timestamp with time zone)'::regprocedure)) = '4bc2c77d5e02abe38a535367bade00e8' AND md5(pg_get_functiondef('public.fn_pay_backed_payout_shortfalls(boolean,integer)'::regprocedure)) = '8d21d2f9e49672bb9bcc3cf5c51c5c58')
 
 BEGIN;
 
@@ -119,6 +130,23 @@ SELECT pg_temp.ca_conservation_subst(
 SELECT pg_temp.ca_conservation_subst(
   'public.fn_tournament_conservation_deltas(timestamp with time zone,timestamp with time zone)',
   '118b1c0bbf6f959809efe6b385d92bf9', '4bc2c77d5e02abe38a535367bade00e8',
+  $old$AND (k.id IS NULL OR k.status = 'redeemed')$old$,
+  $new$AND (k.id IS NULL OR (k.status = 'redeemed'
+          -- A TICKET PAID IN CASH NEVER ARRIVED HERE (2026-10-15). A direct
+          -- ticket whose target closed before it was used is paid to its
+          -- holder from ticket escrow by fn_ca_pay_closed_target_ticket_in_cash,
+          -- and the ticket guard records that as issued -> redeemed too. That
+          -- redemption is an escrow -> wallet leg keyed
+          -- ticket:<id>:closed-target-cash, not an entry into this event (an
+          -- admitted ticket's leg is escrow -> prize_liability instead), so it
+          -- is income the target never received.
+          AND NOT EXISTS (SELECT 1 FROM public.chip_ledger_idem ci
+                           WHERE ci.idempotency_key = 'ticket:' || k.id::text || ':closed-target-cash')))$new$
+);
+
+SELECT pg_temp.ca_conservation_subst(
+  'public.fn_pay_backed_payout_shortfalls(boolean,integer)',
+  'c9e67c9c7e42028543e39b18d29f02d3', '8d21d2f9e49672bb9bcc3cf5c51c5c58',
   $old$AND (k.id IS NULL OR k.status = 'redeemed')$old$,
   $new$AND (k.id IS NULL OR (k.status = 'redeemed'
           -- A TICKET PAID IN CASH NEVER ARRIVED HERE (2026-10-15). A direct

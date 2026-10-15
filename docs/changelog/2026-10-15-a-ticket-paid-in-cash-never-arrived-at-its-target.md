@@ -28,10 +28,17 @@ Measured read-only on production: 57 targets carry cash-paid tickets (940
 tickets, 57,520.00), and for all 57 the live delta equals the cash-paid value
 to the penny. No other event moves. The satellites stay balanced.
 
+`fn_pay_backed_payout_shortfalls` carries the same term inline and treats an
+event with a positive delta as holding money it may pay a reconciler top-up
+from. Through the misread every one of those 57 targets looked like it held its
+cash-paid tickets' value. Its hourly job runs dry and raised nothing, so
+nothing was paid from it; the term is corrected there too so it never can be.
+
 ## The Fix
 
 Migration `20261015072547_a_ticket_paid_in_cash_never_arrived_at_its_target`
-changes the one predicate in both reads: a redeemed ticket is seat income
+changes the one predicate in all three reads (scalar, one-pass set and the
+backed-payout batch): a redeemed ticket is seat income
 only when it has no `closed-target-cash` leg. It edits the live text in place
 with the pinned-preimage substitution (live md5 in, derived postimage md5
 out, owner, grants, SECURITY DEFINER and config unchanged). It writes no
@@ -46,4 +53,7 @@ definitions read a cash-paid ticket as retained money; after the migration
 it reads as nothing arriving, an admitted ticket still arrives, an issued
 ticket still does not, a real retention still flags, the satellite is
 unchanged, set and scalar agree, the live scan closes only the false alert,
-and a second run refuses.
+the batch dry run no longer counts the cash target as payable, and a second
+run refuses. `tests/backedPayoutScanRegression.test.ts` lists the migration
+as a reviewed dynamic patch and pins that all three calls swap the same
+anchor from the Diamond postimages.

@@ -22,6 +22,10 @@ paid in cash, applies the candidate migration, and proves:
   * the satellite that issued the tickets is unchanged;
   * set and scalar agree on every event; the postimage md5s are production's
     derived ones; grants, owner, SECURITY DEFINER and config did not move;
+  * fn_pay_backed_payout_shortfalls, which carries the same term inline and
+    pays a reconciler top-up out of what an event appears to hold, no longer
+    counts the cash-paid target as holding its ticket's value (dry run), while
+    the real retention is still eligible;
   * a second run refuses.
 An empty throwaway cluster on a Unix socket; no network, no production connection.
 """
@@ -60,6 +64,7 @@ results = {'checks': [], 'production_mutations': False}
 SCALAR = 'public.fn_tournament_conservation_delta(uuid)'
 SET = 'public.fn_tournament_conservation_deltas(timestamp with time zone,timestamp with time zone)'
 SCAN = 'public.fn_tournament_money_conservation(integer,numeric,integer)'
+BATCH = 'public.fn_pay_backed_payout_shortfalls(boolean,integer)'
 # pg_get_functiondef md5, read on production 2026-10-15, and the postimages
 # derived read-only there with replace().
 LIVE_SCALAR_MD5 = '17ae3dfd32d3cb1d2673a86c0d8d9426'
@@ -67,6 +72,8 @@ LIVE_SET_MD5 = '118b1c0bbf6f959809efe6b385d92bf9'
 LIVE_SCAN_MD5 = '1a0bc1bd70d39192e13fa7fb946a7103'
 POST_SCALAR_MD5 = '34e1f8a48e1ba37b8009e3d64c5ed626'
 POST_SET_MD5 = '4bc2c77d5e02abe38a535367bade00e8'
+LIVE_BATCH_MD5 = 'c9e67c9c7e42028543e39b18d29f02d3'
+POST_BATCH_MD5 = '8d21d2f9e49672bb9bcc3cf5c51c5c58'
 GRANTS = f'''
 REVOKE ALL ON FUNCTION {SCALAR} FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION {SCALAR} TO service_role;
@@ -74,13 +81,28 @@ REVOKE ALL ON FUNCTION {SET} FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION {SET} TO service_role;
 REVOKE ALL ON FUNCTION {SCAN} FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION {SCAN} TO service_role;
+REVOKE ALL ON FUNCTION {BATCH} FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION {BATCH} TO service_role;
 '''
 
 SCHEMA = """
 CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role;
 CREATE TABLE clubs(id uuid PRIMARY KEY, asset text, is_platform boolean, union_id uuid);
 CREATE TABLE tournaments(id uuid PRIMARY KEY, name text, variant text, status text, ended_at timestamptz,
-  club_id uuid, union_id uuid, buy_in_amount numeric, buy_in_fee numeric);
+  club_id uuid, union_id uuid, buy_in_amount numeric, buy_in_fee numeric,
+  prize_pool numeric DEFAULT 100, tournament_type text, satellite_target_id uuid);
+CREATE TABLE tournament_payout_backfill_log(tournament_id uuid PRIMARY KEY, top_up numeric,
+  delta_before numeric, delta_after numeric);
+-- The reconciler reports 10.00 owed on the cash target and on the real
+-- retention, nothing elsewhere. A dry run never calls it with p_apply = true.
+CREATE FUNCTION fn_tournament_payout_reconcile(p_tournament_id uuid, p_apply boolean)
+  RETURNS jsonb LANGUAGE plpgsql AS $$
+BEGIN
+  IF p_apply THEN RAISE EXCEPTION 'the regression only dry-runs the batch'; END IF;
+  RETURN jsonb_build_object('total_top_up',
+    CASE WHEN p_tournament_id IN ('00000000-0000-0000-0000-0000000000c1',
+                                  '00000000-0000-0000-0000-0000000000d1') THEN 10 ELSE 0 END);
+END $$;
 CREATE TABLE wallet_transactions(id bigserial, related_entity_id uuid, user_id uuid, type text, category text, amount numeric);
 CREATE TABLE rake_records(id bigserial, tournament_id uuid, rake_amount numeric, is_tournament boolean);
 CREATE TABLE chip_ledger(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), tournament_id uuid, category text,
@@ -205,7 +227,11 @@ def live_scan_text():
 
 CATALOG = f"""SELECT jsonb_agg(jsonb_build_object('acl',proacl::text,'owner',proowner,'definer',prosecdef,
   'config',proconfig,'volatility',provolatile) ORDER BY oid) FROM pg_proc
-  WHERE oid IN ('{SCALAR}'::regprocedure,'{SET}'::regprocedure)"""
+  WHERE oid IN ('{SCALAR}'::regprocedure,'{SET}'::regprocedure,'{BATCH}'::regprocedure)"""
+
+
+def batch_dry_run():
+    return json.loads(run("BEGIN; SELECT fn_pay_backed_payout_shortfalls(false, 500); ROLLBACK;"))
 
 try:
     if shutil.disk_usage(tempfile.gettempdir()).free < 256 * 1024 ** 2:
@@ -220,10 +246,12 @@ try:
     # Baseline: the exact production definitions before this change.
     run((FIXTURES / 'fn_tournament_conservation_delta.live-20261015.sql').read_text() + ';\n'
         + (FIXTURES / 'fn_tournament_conservation_deltas.live-20261015.sql').read_text() + ';\n'
+        + (FIXTURES / 'fn_pay_backed_payout_shortfalls.live-20261015.sql').read_text() + ';\n'
         + live_scan_text() + ';\n' + GRANTS)
     check('baseline-scalar-is-production-preimage', md5(SCALAR) == LIVE_SCALAR_MD5)
     check('baseline-set-is-production-preimage', md5(SET) == LIVE_SET_MD5)
     check('baseline-scan-is-production-live-text', md5(SCAN) == LIVE_SCAN_MD5)
+    check('baseline-batch-is-production-preimage', md5(BATCH) == LIVE_BATCH_MD5)
     run(SEED)
     d = deltas()
     results['baseline'] = d
@@ -235,6 +263,11 @@ try:
     check('baseline-set-equals-scalar', scalar_parity() == '0')
     scan = json.loads(run("BEGIN; SELECT fn_tournament_money_conservation(45, 1.0, 500); ROLLBACK;"))
     check('baseline-scan-flags-cash-and-retained', scan['flagged'] == 2 and scan['auto_resolved'] == 0, scan)
+    batch = batch_dry_run()
+    results['baseline_batch'] = batch
+    # The predecessor would pay 10.00 on the cash target out of the 20.00 it
+    # never held, beside the real retention's 10.00.
+    check('baseline-batch-would-pay-from-phantom-money', batch['events_paid'] == 2 and batch['chips_paid'] == 20, batch)
 
     # Candidate: the migration under test, applied as production would.
     migration = sorted(MIGRATIONS.glob('*_a_ticket_paid_in_cash_never_arrived_at_its_target.sql'))
@@ -250,6 +283,10 @@ try:
     check('candidate-reproduces-production-derived-set-postimage', md5(SET) == POST_SET_MD5, md5(SET))
     check('candidate-keeps-grants-owner-security-config', run(CATALOG) == before_catalog)
     check('candidate-leaves-the-scan-alone', md5(SCAN) == LIVE_SCAN_MD5)
+    check('candidate-reproduces-production-derived-batch-postimage', md5(BATCH) == POST_BATCH_MD5, md5(BATCH))
+    batch = batch_dry_run()
+    results['candidate_batch'] = batch
+    check('batch-no-longer-pays-from-a-cash-paid-ticket', batch['events_paid'] == 1 and batch['chips_paid'] == 10, batch)
     d = deltas()
     results['candidate'] = d
     check('cash-paid-ticket-is-not-target-income', d['t-cash'] == '0.00', d)
@@ -271,7 +308,8 @@ try:
     replay = subprocess.run(list(map(str, psql)), input=text, text=True, capture_output=True, env=env, timeout=60)
     check('migration-refuses-a-second-run', replay.returncode != 0 and 'is not the pinned text' in replay.stderr,
           replay.stderr[-300:])
-    check('second-run-left-the-postimage', md5(SCALAR) == POST_SCALAR_MD5 and md5(SET) == POST_SET_MD5)
+    check('second-run-left-the-postimage',
+          md5(SCALAR) == POST_SCALAR_MD5 and md5(SET) == POST_SET_MD5 and md5(BATCH) == POST_BATCH_MD5)
 finally:
     if (cluster / 'data' / 'postmaster.pid').exists():
         command(as_owner + [pg / 'pg_ctl', '-D', cluster / 'data', '-m', 'fast', '-w', 'stop'])

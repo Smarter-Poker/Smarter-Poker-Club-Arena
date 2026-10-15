@@ -56,6 +56,12 @@ const diamondPins = JSON.parse(
 const diamondPath = diamondPins.migration;
 const diamondMigration = read(diamondPath);
 const diamondScalar = read('scripts/ci/fixtures/backed-payout-scan/diamond-book-scalar.sql');
+// A ticket paid in cash never arrived at its target (2026-10-15): one more
+// anchored dynamic patch of the same three functions, from the Diamond
+// postimages; scripts/ci/test-ticket-cash-conservation.py qualifies it natively.
+const ticketCashPath =
+  'supabase/migrations/20261015072547_a_ticket_paid_in_cash_never_arrived_at_its_target.sql';
+const ticketCashMigration = read(ticketCashPath);
 // The migration's own anchored swaps, in order: [target, anchor, replacement, what].
 const diamondSwaps = [
   ...diamondMigration.matchAll(
@@ -384,6 +390,7 @@ describe('backed payout discovery is the same accounting question in a batch', (
           ticketPath,
           conservationPath,
           diamondPath,
+          ticketCashPath,
         ].some((path) => file === path.split('/').at(-1)) &&
         /pg_get_functiondef[\s\S]{0,180}fn_tournament_conservation_delta/.test(sql) &&
         /\bEXECUTE\b/i.test(stripComments(sql))
@@ -398,6 +405,34 @@ describe('backed payout discovery is the same accounting question in a batch', (
       maintained = maintained.replace(anchor, () => replacement);
     }
     expect(maintained).toBe(diamondScalar);
+  });
+
+  it('a ticket paid in cash is not seat income, in the scalar, the set and the batch alike', () => {
+    // Its preimages are exactly the qualified Diamond postimages.
+    for (const md5 of [
+      diamondPins.scalarDefinitionMD5,
+      diamondPins.setAfterMD5,
+      diamondPins.batchAfterMD5,
+    ])
+      expect(ticketCashMigration).toContain(`'${md5}'`);
+    const calls = [
+      ...ticketCashMigration.matchAll(
+        /pg_temp\.ca_conservation_subst\(\n  '([^']+)',\n  '[0-9a-f]{32}', '[0-9a-f]{32}',\n  \$old\$([\s\S]*?)\$old\$,\n  \$new\$([\s\S]*?)\$new\$\n\);/g
+      ),
+    ];
+    expect(calls.map((m) => m[1])).toEqual([
+      'public.fn_tournament_conservation_delta(uuid)',
+      'public.fn_tournament_conservation_deltas(timestamp with time zone,timestamp with time zone)',
+      'public.fn_pay_backed_payout_shortfalls(boolean,integer)',
+    ]);
+    // One anchor and one replacement, the same for all three reads.
+    expect(new Set(calls.map((m) => m[2])).size).toBe(1);
+    expect(new Set(calls.map((m) => m[3])).size).toBe(1);
+    expect(calls[0][2]).toBe("AND (k.id IS NULL OR k.status = 'redeemed')");
+    expect(calls[0][3]).toContain(":closed-target-cash'");
+    expect(read('scripts/ci/test-ticket-cash-conservation.py')).toContain(
+      'batch-no-longer-pays-from-a-cash-paid-ticket'
+    );
   });
 
   it('reads a platform Diamond event from its own escrow and keeps it out of the chip sweep', () => {

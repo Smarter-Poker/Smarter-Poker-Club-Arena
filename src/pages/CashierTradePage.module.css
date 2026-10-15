@@ -1607,7 +1607,7 @@
   top: calc(75 / 315 * 100%);
   width: calc(147 / 1280 * 100%);
   height: calc(150 / 315 * 100%);
-  border-radius: 50%;
+  clip-path: circle(50%);
   object-fit: cover;
 }
 
@@ -1800,7 +1800,7 @@
   flex: 0 0 auto;
   width: min(9cqw, 44px);
   height: min(9cqw, 44px);
-  border-radius: 50%;
+  clip-path: circle(50%);
   object-fit: cover;
 }
 

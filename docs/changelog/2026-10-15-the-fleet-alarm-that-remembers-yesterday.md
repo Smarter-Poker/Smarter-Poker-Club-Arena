@@ -1,4 +1,4 @@
-# 2026-10-15 - the fleet alarm that remembers yesterday, and the solver host that finished
+# 2026-10-15 - the fleet alarm that remembers yesterday
 
 Two alarms that told the wrong story, or none, for a day or more.
 
@@ -42,15 +42,3 @@ Before 2026-10-08 the platform dealt tens to a few thousand hands an hour and th
 only the heartbeat table, so `HorseSeatRefusalsByReason` cannot be written yet; it is listed with
 the other rules waiting on a producer at the head of the `horse-fleet` group. `page: sms` reaches a
 phone only once the name is on the World Hub pager allowlist; until then it is emailed.
-
-## 2. fn_audit_solver_pipeline_liveness: a finished host is not a stale one
-
-Migration `20261015134134_a_finished_solver_host_is_not_a_stale_one.sql`. Since 2026-10-07 the
-daily audit raised critical `solver_worker_stale` for M1 and M2, which had both exited 0
-(`worker_state = 'completed'`, all rows done). `solver_worker_stale` now needs a non-terminal state
-as well as a heartbeat over 15 minutes old. The real fault gets its own critical,
-`solver_dataset_abandoned`: a dataset in `building` for over 24 hours whose host runs all completed
-and whose compactor last reported `failed`, with the compactor's error in the title. In production
-that names `horse-v31-authored-study-20261006-r2` ("cell has no live training combinations") and
-`horse-v31-relative-v2-pilot-20261007-r1` ("required Phase 4 ... coverage is incomplete").
-Pinned by `server/src/engine/aFinishedSolverHostIsNotAStaleOne.law.test.ts`.

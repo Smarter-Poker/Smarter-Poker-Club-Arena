@@ -19,6 +19,7 @@ import { test, expect } from '@playwright/test';
 import { ADMIN_CLUB_OPERATION_ROUTES } from './support/clubOperationRoutes';
 import { evaluateAcrossDocumentReplacement } from './support/evaluateAcrossDocumentReplacement';
 import { assertRendered } from './routes/utils';
+import { awaitAccessDecision } from './support/settledRoute';
 
 const ROUTES = [
   '',
@@ -167,6 +168,11 @@ test.describe('Club Arena Responsive Fit At Mobile, Tablet, And Desktop', () => 
         /* Redirected. Give the replacement route the same settle below. */
       }
       await page.waitForTimeout(2200);
+      /* The destination is where an access guard DECIDED the route lands, not
+         where it stood while asking (2026-10-15, run 38675266338:
+         "unions/create navigated while resizing to tablet" was the allowlist
+         guard's /community redirect arriving after the fixed settle). */
+      await awaitAccessDecision(page, route);
 
       if (page.url().includes('/auth')) {
         console.log('MOBILE_FIT_AUDIT ' + JSON.stringify({ route, skipped: 'auth' }));

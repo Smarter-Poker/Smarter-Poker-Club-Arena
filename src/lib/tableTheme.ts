@@ -468,7 +468,11 @@ export const DEFAULT_TABLE_BACKDROP_COLOR = '#0a1020';
  * @param bid stored background_id (unknown/empty ids fall back to midnight)
  */
 export function resolveBackgroundLayers(bid?: string | null): string {
-  const asset = resolveBackground(bid || 'midnight');
+  return resolveBackgroundLayersForUrl(resolveBackground(bid || 'midnight'));
+}
+
+/** The same layer stack for an already-resolved (and preloaded) artwork URL. */
+export function resolveBackgroundLayersForUrl(asset?: string | null): string {
   // Paint order, top to bottom: ambience over artwork over the always-paints
   // CSS floor. Layers fail independently, so the floor survives any asset
   // problem and the ambience survives even that.

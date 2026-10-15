@@ -746,8 +746,10 @@ export default function MemberManagementPage() {
             <details className="mm-metric-guide" aria-label="Activity Metric Definitions">
               <summary>Metric Definitions</summary>
               <p>
-                Hand Counts And Fees Come From Recorded Hands In This Club. Total Fee Is Cash Rake
-                Paid; MTT Fee Is Tournament-Hand Rake Paid.
+                Hand Counts Come From Recorded Hands In This Club. Cash Fees Are Cash Game Rake
+                Attributed To This Player; MTT Fees Are Their Tournament Entry Fees. Fees Come From
+                The Club Fee Ledgers And Count This Week Only, From The Monday Reset At Midnight
+                Pacific, Within The Displayed Range.
               </p>
               <p>
                 Total Winnings Is The Cash Net Result; MTT Winnings Is The Tournament-Hand Net
@@ -768,8 +770,8 @@ export default function MemberManagementPage() {
               labelled as the whole; mtt_hands was fetched and never drawn. */}
             <StatRow label="Cash Hands" value={count(stats.hands)} />
             <StatRow label="MTT Hands" value={count(stats.mtt_hands)} />
-            <StatRow label="Total Fee" value={money(stats.total_fee)} />
-            <StatRow label="MTT Fee" value={money(stats.mtt_fee)} />
+            <StatRow label="Cash Fees This Week" value={money(stats.total_fee)} />
+            <StatRow label="MTT Fees This Week" value={money(stats.mtt_fee)} />
             <StatRow label="Claimed Back" value={money(stats.claimed_back)} />
             <StatRow label="Sent Out" value={money(stats.sent_out)} />
             <StatRow
@@ -826,7 +828,9 @@ export default function MemberManagementPage() {
                     {d.player_number && (
                       <span className="mm-downline__number">No. {d.player_number}</span>
                     )}
-                    <span className="mm-downline__fees">{money(d.total_fees)}</span>
+                    <span className="mm-downline__fees" title="Fees This Week">
+                      {money(d.total_fees)}
+                    </span>
                     <span className="mm-downline__open" aria-hidden="true">
                       ›
                     </span>

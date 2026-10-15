@@ -421,7 +421,7 @@ it('same-viewer wallet denial clears activity and downline while preserving dirt
       capabilities: { ...memberDetail.capabilities, can_view_financials: false },
     })
   );
-  expect(screen.queryByText('Total Fee')).not.toBeInTheDocument();
+  expect(screen.queryByText('Cash Fees This Week')).not.toBeInTheDocument();
   expect(screen.queryByText('Downlines Total')).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /Open Cyan Rail/ })).not.toBeInTheDocument();
   expect(name).toHaveValue('Private Local Draft');
@@ -436,7 +436,7 @@ it('same-viewer wallet denial clears activity and downline while preserving dirt
       },
     ]);
   });
-  expect(screen.queryByText('Total Fee')).not.toBeInTheDocument();
+  expect(screen.queryByText('Cash Fees This Week')).not.toBeInTheDocument();
   expect(screen.queryByText('Downlines Total')).not.toBeInTheDocument();
   expect(screen.queryByText('Late Financial Downline')).not.toBeInTheDocument();
   expect(screen.queryByText('Player Wallet')).not.toBeInTheDocument();
@@ -476,7 +476,7 @@ it('structured access withdrawal removes private notes and role controls immedia
   expect(screen.queryByRole('textbox', { name: 'Nickname' })).not.toBeInTheDocument();
   expect(screen.queryByText('Strong Late Position Pressure')).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /Admin/ })).not.toBeInTheDocument();
-  expect(screen.queryByText('Total Fee')).not.toBeInTheDocument();
+  expect(screen.queryByText('Cash Fees This Week')).not.toBeInTheDocument();
   expect(screen.getByText('River Shark')).toBeInTheDocument();
 });
 

@@ -72,7 +72,7 @@ const FILTER_LABEL: Record<RosterFilter, string> = {
   inactive_30: 'Inactive 30d',
   inactive_60: 'Inactive 60d',
   inactive_90: 'Inactive 90d',
-  high_fees: 'Fees 100+',
+  high_fees: 'Fees 100+ This Week',
 };
 
 const SORT_LABEL: Record<RosterSort, string> = {
@@ -81,7 +81,7 @@ const SORT_LABEL: Record<RosterSort, string> = {
   name: 'Name (A To Z)',
   downlines: 'Downlines',
   wallet: 'Wallet Balance',
-  fees: 'Fees',
+  fees: 'Fees This Week',
 };
 
 type OptionalColumn = RosterColumn;
@@ -1924,7 +1924,7 @@ function EmptyRoster({ filter, searchQuery }: { filter: RosterFilter; searchQuer
     inactive_30: ['No Inactive Players', 'No Visible Players Have Been Inactive For 30 Days.'],
     inactive_60: ['No Inactive Players', 'No Visible Players Have Been Inactive For 60 Days.'],
     inactive_90: ['No Inactive Players', 'No Visible Players Have Been Inactive For 90 Days.'],
-    high_fees: ['No High-Fee Players', 'No Visible Players Have Recorded At Least 100 In Fees.'],
+    high_fees: ['No High-Fee Players', 'No Visible Players Have Recorded At Least 100 In Fees This Week.'],
   };
   const [heading, body] = searching
     ? ['No Results Found', `No Results For "${searchQuery}".`]

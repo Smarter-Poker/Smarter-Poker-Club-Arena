@@ -14,6 +14,7 @@ sys.dont_write_bytecode=True
 ROOT=Path(__file__).resolve().parents[2];sys.path.insert(0,str(ROOT/'scripts/ci'))
 from satellite_qualifier_fixture import module,sha,lit
 MIGRATION=Path('supabase/migrations/20261014231333_horse_adaptive_retirement_rewrites_each_batch_once_per_call.sql')
+INDEX_FIX=Path('supabase/migrations/20261015001508_adaptive_batch_once_compaction_uses_the_hand_id_index.sql')
 NUMBERED=Path('supabase/migrations/20261013130413_horse_journal_retirement_follows_original_numbered_observati.sql')
 HANDS=40
 def function_body(path,name):
@@ -88,6 +89,14 @@ def qualify(e,base):
  corrected=e.database(d)
  e.sql(corrected,file=ROOT/MIGRATION,label='batch-once-forward-correction')
  status,_,err=e.sql(corrected,file=ROOT/MIGRATION,label='batch-once-replay-refused',check=False);assert status and 'ADAPTIVE_BATCH_ONCE_PREIMAGE_CHANGED' in err;checks.append('batch-once-forward-replay-refused')
+ e.sql(corrected,file=ROOT/INDEX_FIX,label='batch-once-index-forward-correction')
+ status,_,err=e.sql(corrected,file=ROOT/INDEX_FIX,label='batch-once-index-replay-refused',check=False);assert status and 'ADAPTIVE_BATCH_ONCE_INDEX_PREIMAGE_CHANGED' in err;checks.append('batch-once-index-forward-replay-refused')
+ # 2026-10-15 production: hand_id::text=ANY(text[]) defeated the certificates pkey and
+ # every call seq-scanned ~3.9M certificates past the statement timeout. Pin the uuid
+ # comparison textually and prove the planner can serve it from the primary key.
+ yes(corrected,"SELECT position('c.hand_id=ANY(retired_hands::uuid[])' in pg_get_functiondef('public.fn_prune_horse_adaptive_journal()'::regprocedure))>0 AND position('hand_id::text=ANY' in pg_get_functiondef('public.fn_prune_horse_adaptive_journal()'::regprocedure))=0;",'batch-once-lookup-compares-uuid-not-text')
+ plan=read(corrected,"SET enable_seqscan=off;EXPLAIN (FORMAT JSON) SELECT DISTINCT m.batch_key FROM smarter_private.horse_adaptive_batch_hand_membership m JOIN smarter_private.horse_adaptive_disposal_certificates c ON c.hand_digest=m.hand_digest WHERE c.hand_id=ANY(ARRAY['"+protected+"']::text[]::uuid[]);",'batch-once-lookup-plan')
+ assert 'horse_adaptive_disposal_certificates_pkey' in plan and 'Seq Scan' not in plan,plan;checks.append('batch-once-lookup-uses-certificate-primary-key')
  e.sql(corrected,"SELECT smarter_private.enable_horse_adaptive_retention('"+'a'*40+"');",label='corrected-enable')
  t0=time.monotonic()
  receipt=json.loads(read(corrected,'SELECT fn_prune_horse_adaptive_journal();','corrected-owner-one-call'))
@@ -113,6 +122,7 @@ def qualify(e,base):
  yes(corrected,"SELECT jsonb_array_length(canonical_payload::jsonb->7)=1 FROM horse_adaptive_observation_batches WHERE batch_key="+lit(key_a)+";",'released-hand-removed-only-human-remains')
  # Atomicity: a rolled-back owner call leaves raw, statistics and batches untouched.
  rollback=e.database(d);e.sql(rollback,file=ROOT/MIGRATION,label='rollback-forward-correction')
+ e.sql(rollback,file=ROOT/INDEX_FIX,label='rollback-index-forward-correction')
  e.sql(rollback,"SELECT smarter_private.enable_horse_adaptive_retention('"+'a'*40+"');",label='rollback-enable')
  before=read(rollback,SNAPSHOT,'rollback-preimage')
  e.sql(rollback,'BEGIN;SELECT fn_prune_horse_adaptive_journal();ROLLBACK;',label='rollback-owner-call')

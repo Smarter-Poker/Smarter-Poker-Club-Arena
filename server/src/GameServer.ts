@@ -4207,13 +4207,12 @@ export class GameServer {
       // reported disconnected and their open pool session would sit until
       // the anchor-seat backstop. One pass, shortly after boot (returning
       // sockets land first), reports every open session whose player holds
-      // no socket here through the ordinary reporter path. The presence door
+      // no connected anchor or room presence through the ordinary reporter path. The presence door
       // is idempotent, so over-reporting an already-stamped player is free.
       this.lightningPresenceReconcileTimer = setTimeout(() => {
         this.lightningPresenceReconcileTimer = null;
         void reconcileLightningPresence({
-          isConnected: (clusterId, playerId) =>
-            this.lightningRooms.hasClusterSocket(clusterId, playerId),
+          presenceSource: () => this.lightningPresenceReports(),
           report: this.lightningPresenceReporter,
         });
       }, LIGHTNING_PRESENCE_RECONCILE_DELAY_MS);

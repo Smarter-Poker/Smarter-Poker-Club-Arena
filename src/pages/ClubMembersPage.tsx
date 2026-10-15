@@ -72,7 +72,7 @@ const FILTER_LABEL: Record<RosterFilter, string> = {
   inactive_30: 'Inactive 30d',
   inactive_60: 'Inactive 60d',
   inactive_90: 'Inactive 90d',
-  high_fees: 'Fees 100+ This Week',
+  high_fees: 'Fees 100+',
 };
 
 const SORT_LABEL: Record<RosterSort, string> = {
@@ -81,7 +81,7 @@ const SORT_LABEL: Record<RosterSort, string> = {
   name: 'Name (A To Z)',
   downlines: 'Downlines',
   wallet: 'Wallet Balance',
-  fees: 'Fees This Week',
+  fees: 'Fees',
 };
 
 type OptionalColumn = RosterColumn;
@@ -134,8 +134,8 @@ function feeTitle(member: RosterMember): string | undefined {
   if (member.total_fees == null) return undefined;
   const exact = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 2 });
   return member.downline_fees != null && (member.downline_total ?? 0) > 0
-    ? `Fees This Week ${exact(member.total_fees)}. Downline Fees ${exact(member.downline_fees)}.`
-    : `Fees This Week ${exact(member.total_fees)}.`;
+    ? `Fees Generated ${exact(member.total_fees)}. Downline Fees ${exact(member.downline_fees)}.`
+    : `Fees Generated ${exact(member.total_fees)}.`;
 }
 
 function abortLike(error: unknown): boolean {
@@ -1549,9 +1549,9 @@ export default function ClubMembersPage() {
                 Excluding This Player.
               </p>
               <p>
-                Fees Are Read From The Club Fee Ledgers That Pay Agents And Rakeback And Count This
-                Week Only, From The Monday Reset At Midnight Pacific. Every Player And Horse Starts
-                At Zero Each Monday. Wallets And Fees Are In Club Chips.
+                Fees Are Read From The Club Fee Ledgers That Pay Agents And Rakeback. They Count From
+                The Week Of October 12, 2026 (Monday Midnight Pacific) And Keep Accumulating From
+                Then On, With No Weekly Reset. Wallets And Fees Are In Club Chips.
               </p>
               <p>
                 Recent Activity Uses Login Time When Available, Otherwise Presence Or Club Activity
@@ -1858,7 +1858,7 @@ export const MemberRow = memo(function MemberRow({
           {simpleMode && member.can_view_financials && (
             <span className="member-simple-balance" title={feeTitle(member)}>
               <strong>{feeFigure(member.total_fees)}</strong>
-              <span>Fees This Week</span>
+              <span>Fees Generated</span>
               {(member.downline_total ?? 0) > 0 && member.downline_fees != null && (
                 <span className="member-simple-balance__downline">
                   Downline {feeFigure(member.downline_fees)}
@@ -1924,7 +1924,7 @@ function EmptyRoster({ filter, searchQuery }: { filter: RosterFilter; searchQuer
     inactive_30: ['No Inactive Players', 'No Visible Players Have Been Inactive For 30 Days.'],
     inactive_60: ['No Inactive Players', 'No Visible Players Have Been Inactive For 60 Days.'],
     inactive_90: ['No Inactive Players', 'No Visible Players Have Been Inactive For 90 Days.'],
-    high_fees: ['No High-Fee Players', 'No Visible Players Have Recorded At Least 100 In Fees This Week.'],
+    high_fees: ['No High-Fee Players', 'No Visible Players Have Recorded At Least 100 In Fees.'],
   };
   const [heading, body] = searching
     ? ['No Results Found', `No Results For "${searchQuery}".`]

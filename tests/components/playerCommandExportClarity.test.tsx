@@ -213,7 +213,7 @@ it('defines recursive downline fees separately from individual fees and names th
     screen.getByText(/Fees Generated \(Indiv\. Fees\): Cash Game Rake Attributed To This Player/)
   ).toBeInTheDocument();
   expect(screen.getByText(/Fees Are Read From The Club Fee Ledgers/)).toBeInTheDocument();
-  expect(screen.getByText(/Count This\s+Week Only, From The Monday Reset/)).toBeInTheDocument();
+  expect(screen.getByText(/Count From\s+The Week Of October 12, 2026/)).toBeInTheDocument();
 });
 
 it('exports CSV context as data through the existing formula-safe CSV serializer', async () => {

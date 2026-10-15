@@ -53,7 +53,7 @@ function simpleRow(overrides: Record<string, unknown>) {
 describe('Player Management shows fees generated', () => {
   it('prints the fee figure and never the wallet in Simple mode', () => {
     render(simpleRow({}));
-    expect(screen.getByText('Fees This Week')).toBeVisible();
+    expect(screen.getByText('Fees Generated')).toBeVisible();
     expect(screen.getByText('12.3K')).toBeVisible();
     expect(screen.queryByText('Player Wallet')).not.toBeInTheDocument();
     expect(screen.queryByText('274.6K')).not.toBeInTheDocument();
@@ -87,6 +87,23 @@ describe('Player Management shows fees generated', () => {
     expect(sql).toContain('public.ca_club_member_fee_totals(p_club_id) lf');
     expect(sql).toContain('public.ca_club_rake_daily_user');
     expect(sql).toContain('AFTER INSERT ON public.accounting_tournament_fee_sources');
+  });
+
+  it('counts fees from the fixed week of 2026-10-12 onward, with no weekly reset', () => {
+    const sql = readFileSync(
+      resolve(
+        process.cwd(),
+        'supabase/migrations/20261015130331_player_management_fees_accumulate_from_the_week_of_october_t.sql'
+      ),
+      'utf8'
+    );
+    expect(sql).toContain("SELECT DATE '2026-10-12';");
+    expect(sql).toContain('greatest(coalesce(p_from, public.fn_ca_fee_counting_start()),');
+    expect(sql).toContain('d.day >= b.from_day');
+    expect(sql).toContain('t.day >= b.from_day');
+    const body = sql.slice(sql.indexOf('CREATE OR REPLACE FUNCTION public.ca_club_member_fee_totals'));
+    expect(body.slice(0, body.indexOf('$function$;'))).not.toContain('fn_ca_fee_week_start');
+    expect(sql).not.toMatch(/\b(DELETE|TRUNCATE|UPDATE)\b/);
   });
 
   it('counts fees from this week\'s Monday reset only, without touching the ledgers', () => {

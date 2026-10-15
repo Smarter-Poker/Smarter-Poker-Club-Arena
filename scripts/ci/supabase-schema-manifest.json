@@ -2626,6 +2626,7 @@
     "fn_ca_execute_epoch3_reset",
     "fn_ca_f06_share_table_lane",
     "fn_ca_fee_cutover_stranded_by",
+    "fn_ca_fee_counting_start",
     "fn_ca_fee_week_start",
     "fn_ca_felt_counts_table",
     "fn_ca_finance_records_are_append_only",

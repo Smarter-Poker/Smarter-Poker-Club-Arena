@@ -67,18 +67,48 @@ export function assertPilotGame(game, clubId, target = null) {
   }
 }
 
-function assertPilotRoster(members) {
+/** The pilot roster is the service owner plus, by Dan's 2026-10-14 ruling, only
+ * existing horses admitted as ordinary players. Any other member (a human, a
+ * non-player role, an unreadable profile) stops preparation before a receipt. */
+export function assertPilotRoster(members, horseIds = new Set()) {
+  const owners = Array.isArray(members) ? members.filter((m) => m?.user_id === PILOT.ownerId) : [];
   if (
     !Array.isArray(members) ||
-    members.length !== 1 ||
-    members[0].user_id !== PILOT.ownerId ||
-    members[0].status !== 'active' ||
-    members[0].role !== 'owner'
+    owners.length !== 1 ||
+    owners[0].status !== 'active' ||
+    owners[0].role !== 'owner' ||
+    members.some(
+      (m) =>
+        m?.user_id !== PILOT.ownerId &&
+        (m?.role !== 'player' || m?.status !== 'active' || !horseIds.has(m?.user_id))
+    )
   ) {
     throw new Error(
       'Existing Pilot Participants Require Explicit Recovery; No Qualification Receipt Issued'
     );
   }
+  return members.length - 1;
+}
+
+async function readPilotRoster(admin, clubId, label, must) {
+  const members = must(
+    await admin.from('club_members').select('user_id,status,role').eq('club_id', clubId),
+    label
+  );
+  const others = Array.isArray(members)
+    ? members.map((m) => m?.user_id).filter((id) => id && id !== PILOT.ownerId)
+    : [];
+  let horseIds = new Set();
+  if (others.length > 0) {
+    const profiles = must(
+      await admin.from('profiles').select('id,is_horse').in('id', others),
+      label + ' Profiles'
+    );
+    horseIds = new Set(
+      (Array.isArray(profiles) ? profiles : []).filter((p) => p?.is_horse === true).map((p) => p.id)
+    );
+  }
+  return { members, horses: assertPilotRoster(members, horseIds) };
 }
 
 export function selectPilotGame(games, clubId, target = null) {
@@ -203,11 +233,7 @@ export async function preparePilot(env = process.env, clientFactory) {
       'Pilot Club Creation'
     );
     assertPilotClub(club);
-    const members = must(
-      await admin.from('club_members').select('user_id,status,role').eq('club_id', club.id),
-      'Pilot Roster'
-    );
-    assertPilotRoster(members);
+    await readPilotRoster(admin, club.id, 'Pilot Roster', must);
     let games = must(
       await admin.from('cash_games').select('*').eq('club_id', club.id),
       'Pilot Games'
@@ -341,19 +367,15 @@ export async function preparePilot(env = process.env, clientFactory) {
     );
     assertPilotClub(currentClub);
     if (currentClub.id !== club.id) throw new Error('Pilot Final Club Identity Mismatch');
-    assertPilotRoster(
-      must(
-        await admin.from('club_members').select('user_id,status,role').eq('club_id', club.id),
-        'Pilot Final Roster Readback'
-      )
-    );
+    const finalRoster = await readPilotRoster(admin, club.id, 'Pilot Final Roster Readback', must);
     receipt = {
       clubId: club.id,
       ...targets[0],
       targets,
       ownerId: PILOT.ownerId,
       creationRequestId: PILOT.requestId,
-      participants: 'owner_only',
+      participants: finalRoster.horses === 0 ? 'owner_only' : 'owner_and_admitted_horses',
+      admittedHorses: finalRoster.horses,
       outsiderAccessProof: 'pending',
       functionalHandProof: 'pending',
       publicLaunch: 'NO_GO',

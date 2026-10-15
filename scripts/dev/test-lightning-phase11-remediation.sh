@@ -1043,4 +1043,13 @@ Q "SELECT 'reproduced on the production bodies: COORDINATED_JOIN_LEAVE ' || (SEL
           || '; CHIP_FLOW ' || (SELECT j ->> 'chip_flow' FROM harness.r_before WHERE k = 'R5') || ' (' || (SELECT j ->> 'mirrors' FROM harness.r_before WHERE k = 'R5')
           || ' mirrored) of 300 no-edge pairs plus the dumper; six rescans wrote ' || (SELECT j ->> 'pairing' FROM harness.r_before WHERE k = 'R6') || ' + '
           || (SELECT j ->> 'chip_flow' FROM harness.r_before WHERE k = 'R6') || ' rows and ' || (SELECT j ->> 'mirrors' FROM harness.r_before WHERE k = 'R6') || ' mirrors'"
+# The 2026-10-15 pilot exposed a distinct evidence-counting defect. Preserve
+# all twenty historical witnesses above, then reproduce and repair this one on
+# those actual installed bodies. The same CI job executes both boundaries.
+run moments-before "$F/lightning-integrity-moments.sql"
+run moments-apply "$M/20261015213334_lightning_correlation_counts_only_measured_paired_hands.sql"
+run moments-after "$F/lightning-integrity-moments.sql"
+moments_proof=$(sed -n 's/^-- @live-proof: //p' "$M/20261015213334_lightning_correlation_counts_only_measured_paired_hands.sql")
+[ "$(Q "SELECT ($moments_proof)")" = t ] || { echo 'FAIL: pooled-moments live proof'; exit 1; }
+echo 'PASS: pooled paired-hand moments and function authority in isolated PostgreSQL 17'
 echo "PASS: Lightning Phase 11 remediation (DB), 20 sections, over the real chain through 20261009151825 under production's default ACLs and live autorevoke trigger, humans and horses in every pool: every finding reproduced on the production bodies first (a Cluster flipping ON and OFF three times, random-seating pools of 18, 25 and 50, no-edge pairs at 10 → 15 opposed hands, six hourly rolling rescans, the sweep's rolling window, twelve five-minute engine windows, unscored shadow windows and a one-sided component, a 90-high marathon) and gone after the file, while the planted colluders, the dumping pair, the coordinated pair and the engine-timed pair and players are still found; one finding per subject that extends with the operator's review carried, one mirror per finding under overlapping runs; no predecessor proof falsified; every own proof true; re-appliable"

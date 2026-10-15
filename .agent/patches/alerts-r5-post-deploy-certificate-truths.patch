@@ -1,0 +1,224 @@
+diff --git a/scripts/ci/production-e2e-account.mjs b/scripts/ci/production-e2e-account.mjs
+index e1103ef9c..0583fadcb 100644
+--- a/scripts/ci/production-e2e-account.mjs
++++ b/scripts/ci/production-e2e-account.mjs
+@@ -233,15 +233,28 @@ export async function cleanupProductionE2EAccount({
+   if (account.templateFixtureRequest) {
+     await retireProductionCreateClubFixtures({ environment, fetchImpl, wait, record: account });
+   }
++  // The cleanup door is ONE PostgREST transaction: a lock or statement timeout
++  // rolls all of it back, and a replay of a door that already removed the
++  // identity answers `already_removed`. So a database that was only busy is
++  // asked again, bounded, instead of leaking the identity and failing the
++  // certificate (run 38770284952, 2026-10-15 17:38 UTC: "canceling statement
++  // due to lock timeout").
++  // A refusal (`success: false`, an application SQLSTATE) is never retried.
++  const askCleanupDoor = () =>
++    retryTransient(
++      () =>
++        serviceRequest(
++          configuration,
++          '/rest/v1/rpc/cleanup_reserved_certification_account',
++          { method: 'POST', body: JSON.stringify({ p_user_id: account.id }) },
++          fetchImpl
++        ),
++      { wait, label: `cleanup of reserved certification account ${account.id}` }
++    );
+   let result;
+   for (let freezesWaited = 0; ; ) {
+     try {
+-      result = await serviceRequest(
+-        configuration,
+-        '/rest/v1/rpc/cleanup_reserved_certification_account',
+-        { method: 'POST', body: JSON.stringify({ p_user_id: account.id }) },
+-        fetchImpl
+-      );
++      result = await askCleanupDoor();
+     } catch (error) {
+       if (!isPlatformFreezeRefusal(error)) throw error;
+       // The raised form of the same refusal: one transaction, rolled back.
+@@ -283,12 +296,7 @@ export async function cleanupProductionE2EAccount({
+       { method: 'DELETE', body: JSON.stringify({ should_soft_delete: true }) },
+       fetchImpl
+     );
+-    result = await serviceRequest(
+-      configuration,
+-      '/rest/v1/rpc/cleanup_reserved_certification_account',
+-      { method: 'POST', body: JSON.stringify({ p_user_id: account.id }) },
+-      fetchImpl
+-    );
++    result = await askCleanupDoor();
+     if (result?.success !== true || result?.disposition !== 'retained_ledger_actor') {
+       throw new Error(`Reserved ledger actor ${account.id} retirement is not verified.`);
+     }
+diff --git a/tests/e2e/diamond-arena-route.spec.ts b/tests/e2e/diamond-arena-route.spec.ts
+index 2d7adff0f..57edf9c09 100644
+--- a/tests/e2e/diamond-arena-route.spec.ts
++++ b/tests/e2e/diamond-arena-route.spec.ts
+@@ -185,12 +185,43 @@ for (const [orientation, viewport] of ORIENTATIONS) {
+           .catch((error: unknown) => ({ ids: new Set<string>(), error: String(error) }));
+       const seatsRead = holdingRead('table_seats', 'table_id');
+       const registrationsRead = holdingRead('tournament_players', 'tournament_id');
++      // The lobby's own cash-table read (ClubHomePage: open, non-tournament
++      // tables in scope). An owner may close the whole cash floor (a floor
++      // park, or "close cash above 1/2"), and then the arena honestly has no
++      // stake ladder to paint. Run 38770284952 failed "the arena stake ladder
++      // did not render" at 17:18 UTC on 2026-10-15 while the owner's one-hour
++      // cash floor park had every Diamond Arena cash table closed: the spec,
++      // not the page, was wrong. The ladder is owed exactly when this read
++      // returned an open cash table; an unobserved read keeps the strict
++      // expectation, so a missing ladder can never pass by losing the read.
++      const cashTablesRead = page
++        .waitForResponse(
++          (response) => {
++            const url = new URL(response.url());
++            const select = (url.searchParams.get('select') || '').replace(/\s+/g, '');
++            return (
++              url.pathname.endsWith('/rest/v1/tables') &&
++              select.startsWith('id,name,game_variant,') &&
++              url.searchParams.get('tournament_id') === 'is.null'
++            );
++          },
++          { timeout: 10_000 }
++        )
++        .then(async (response) => {
++          if (!response.ok())
++            throw new Error(`Lobby cash tables returned HTTP ${response.status()}`);
++          const rows = await response.json();
++          if (!Array.isArray(rows)) throw new Error('Lobby cash tables returned a non-array body');
++          return { open: rows.length, error: null };
++        })
++        .catch((error: unknown) => ({ open: null as number | null, error: String(error) }));
+       const { onArena, why } = await openArena(page);
+       test.skip(!onArena, why);
+-      const [authority, seats, registrations] = await Promise.all([
++      const [authority, seats, registrations, cashTables] = await Promise.all([
+         contextRead,
+         seatsRead,
+         registrationsRead,
++        cashTablesRead,
+       ]);
+       expect(authority.error, 'the actual arena switch read could not be verified').toBeNull();
+       expect(seats.error, 'own seat state could not be verified').toBeNull();
+@@ -199,7 +230,19 @@ for (const [orientation, viewport] of ORIENTATIONS) {
+       const cards = page.getByTestId('arena-lobby-game-card');
+       await cards.first().waitFor({ state: 'visible', timeout: 20_000 });
+       const cashCards = page.locator('[data-testid="arena-lobby-game-card"][data-kind="cash"]');
+-      expect(await cashCards.count(), 'the arena stake ladder did not render').toBeGreaterThan(0);
++      if (cashTables.open === 0) {
++        // The server says the cash floor is closed: no phantom ladder either.
++        expect(
++          await cashCards.count(),
++          'the arena painted cash games the lobby read did not return'
++        ).toBe(0);
++        test.info().annotations.push({
++          type: 'arena-cash-floor',
++          description: 'the lobby read returned no open cash table; no stake ladder is owed',
++        });
++      } else {
++        expect(await cashCards.count(), 'the arena stake ladder did not render').toBeGreaterThan(0);
++      }
+       for (const card of await cashCards.all()) {
+         const id = await card.getAttribute('data-id');
+         const status = await card.getAttribute('data-status');
+diff --git a/tests/e2e/routes/hamburger-menu.spec.ts b/tests/e2e/routes/hamburger-menu.spec.ts
+index a5a103fa5..f67406c9e 100644
+--- a/tests/e2e/routes/hamburger-menu.spec.ts
++++ b/tests/e2e/routes/hamburger-menu.spec.ts
+@@ -205,9 +205,16 @@ test.describe('Hamburger Menu — Navigation Links', () => {
+       // flaky once the suite went to 4 workers. toHaveURL already polls —
+       // give it a real budget and let it do that.
+       const destination = 'destination' in link ? link.destination : link.path;
++      // A destination owned by the World Hub (Marketplace opens
++      // /hub/diamond-store) is a full document load of another application,
++      // not a client-side route change. Run 38741150929 (2026-10-15) printed
++      // "Received: https://smarter.poker/hub/diamond-store", the right page,
++      // one poll after the 10 s client-route budget ran out. Same assertion,
++      // a cross-application budget.
++      const crossApplication = 'destination' in link;
+       await expect(page, `navigation did not reach ${destination}`).toHaveURL(
+         (url) => matchesDestination(url, destination),
+-        { timeout: 10_000 }
++        { timeout: crossApplication ? 30_000 : 10_000 }
+       );
+     });
+   }
+diff --git a/tests/unit/productionE2EAccount.test.ts b/tests/unit/productionE2EAccount.test.ts
+index 555e6253b..0193a5d9a 100644
+--- a/tests/unit/productionE2EAccount.test.ts
++++ b/tests/unit/productionE2EAccount.test.ts
+@@ -1000,6 +1000,74 @@ describe('post-deploy production account', () => {
+     expect(wait).not.toHaveBeenCalledWith(10_000);
+   });
+ 
++  it('asks the cleanup door again after a lock timeout instead of leaking the identity (run 38770284952)', async () => {
++    const directory = mkdtempSync(join(tmpdir(), 'production-e2e-account-lock-timeout-'));
++    const env = environment(directory);
++    const record = {
++      id: USER_ID,
++      email: 'ca-customization-cert-postdeploy-lock-timeout@example.invalid',
++    };
++    let sweepAttempts = 0;
++    const fetchMock = vi.fn(async (input: string | URL | Request) => {
++      const url = String(input);
++      if (url.includes('/rest/v1/rpc/cleanup_reserved_certification_account')) {
++        sweepAttempts += 1;
++        return sweepAttempts === 1
++          ? Response.json(
++              {
++                code: '55P03',
++                details: null,
++                hint: null,
++                message: 'canceling statement due to lock timeout',
++              },
++              { status: 500 }
++            )
++          : Response.json({ success: true, already_removed: false, user_id: USER_ID });
++      }
++      if (url.includes(`/auth/v1/admin/users/${USER_ID}`)) {
++        return new Response(null, { status: 404 });
++      }
++      return new Response('unexpected request', { status: 500 });
++    });
++    const wait = vi.fn().mockResolvedValue(undefined);
++    vi.spyOn(console, 'log').mockImplementation(() => undefined);
++    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
++
++    await expect(
++      cleanupProductionE2EAccount({ environment: env, fetchImpl: fetchMock, wait, record })
++    ).resolves.toBe(true);
++    expect(sweepAttempts).toBe(2);
++    expect(wait).toHaveBeenCalledTimes(1);
++  });
++
++  it('never asks the cleanup door again after a guard refusal', async () => {
++    const directory = mkdtempSync(join(tmpdir(), 'production-e2e-account-guard-refusal-'));
++    const env = environment(directory);
++    const record = {
++      id: USER_ID,
++      email: 'ca-customization-cert-postdeploy-guard@example.invalid',
++    };
++    let sweepAttempts = 0;
++    const fetchMock = vi.fn(async (input: string | URL | Request) => {
++      const url = String(input);
++      if (url.includes('/rest/v1/rpc/cleanup_reserved_certification_account')) {
++        sweepAttempts += 1;
++        return Response.json(
++          { code: '55000', message: 'CERTIFICATION_RETIREMENT_HAS_AUTHORITY_OR_CUSTODY' },
++          { status: 500 }
++        );
++      }
++      return new Response('unexpected request', { status: 500 });
++    });
++    const wait = vi.fn().mockResolvedValue(undefined);
++
++    await expect(
++      cleanupProductionE2EAccount({ environment: env, fetchImpl: fetchMock, wait, record })
++    ).rejects.toThrow(/CERTIFICATION_RETIREMENT_HAS_AUTHORITY_OR_CUSTODY/);
++    expect(sweepAttempts).toBe(1);
++    expect(wait).not.toHaveBeenCalled();
++  });
++
+   it('waits out the raised form of the freeze refusal too (run 38148991448)', async () => {
+     const directory = mkdtempSync(join(tmpdir(), 'production-e2e-account-raised-freeze-'));
+     const env = environment(directory);

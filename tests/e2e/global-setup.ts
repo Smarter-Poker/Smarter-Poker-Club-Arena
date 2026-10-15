@@ -398,6 +398,35 @@ export default async function globalSetup(config: FullConfig) {
       observation.stage('membership');
       await ensureClubMembership(page, baseURL, process.env.E2E_CLUB_ID || DEFAULT_E2E_CLUB_ID);
       await dismissClubEntryMessage(page);
+
+      /* THE ENGINE OFFERED 30 SPIN AND 32 SNG BOARDS AND THE DATABASE SHOWED
+         NONE OF THEM (run 38656420977, 2026-10-15 00:14-00:16 UTC).
+
+         production-live-table-realtime.spec.ts counts candidates with the
+         engine (`liveness_club_ids` = [CLUB_ID, UNION_ID], and a table from
+         either scope is accepted) and then qualifies each one with a durable
+         read of public.tables in boardFacts. public.tables carries a
+         RESTRICTIVE policy, poker_arena_table_access, which hides a union
+         table unless fn_poker_can_read_games passes for some club in that
+         union's scope - so for an account whose only membership is the
+         assigned Diamond club, every union candidate came back as zero rows,
+         classified `unknown`, and was dropped by selectableWhileRunning. Both
+         certificates then reported "no subject" while production was dealing
+         thousands of SPIN and SNG hands. SPIN and SNG are hosted only by the
+         union, so under one membership they could never have a subject.
+
+         One active membership in a chips club inside the fixture union closes
+         that gap on the read-scope side, where it belongs, instead of relaxing
+         the qualification: a board still has to prove it is running before the
+         case will watch it. Same public Join Club door as above, no
+         service-role shortcut, read-only spectator membership. Only the lane
+         that sets E2E_UNION_CLUB_ID takes it, so no other suite's account
+         shape changes. */
+      if (process.env.E2E_UNION_CLUB_ID) {
+        observation.stage('union-membership');
+        await ensureClubMembership(page, baseURL, process.env.E2E_UNION_CLUB_ID);
+        await dismissClubEntryMessage(page);
+      }
     }
 
     await ctx.storageState({ path: STORAGE_STATE });

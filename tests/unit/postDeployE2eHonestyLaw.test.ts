@@ -72,6 +72,13 @@ describe('live-table certification observes the assigned live Diamond club', () 
     expect(LIVE_TABLE).toContain(
       "url.searchParams.set('liveness_club_ids', [CLUB_ID, UNION_ID].join(','))"
     );
+    // The engine scope above is two clubs, so the durable read scope has to be
+    // two clubs as well, or every union SPIN and SNG board is counted and then
+    // silently dropped as unreadable (run 38656420977).
+    expect(continuity).toContain('E2E_UNION_CLUB_ID: a41434bb-8d0c-400a-8f0d-e8b3d65afed4');
+    expect(GLOBAL_SETUP).toContain(
+      'ensureClubMembership(page, baseURL, process.env.E2E_UNION_CLUB_ID)'
+    );
     expect(continuity).toContain("E2E_REQUIRE_AUTH: '1'");
     expect(continuity).toContain('--workers=1 --retries=0');
     // The broader operator lane keeps its existing independently prepared club.

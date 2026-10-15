@@ -1477,6 +1477,14 @@ jobs:
           # Observe the assigned live Diamond club; setup joins this same target
           # through the public player door before the spectator cases run.
           E2E_CLUB_ID: 002c2d27-9584-4e52-835a-bb2be148fc81
+          # The SPIN and SNG subjects are hosted only by the fixture union, and
+          # public.tables carries a RESTRICTIVE policy (poker_arena_table_access)
+          # that hides a union table from an account with no membership inside
+          # that union's scope. The cases already ask the engine for both scopes
+          # (liveness_club_ids = [CLUB_ID, UNION_ID]); this gives the same
+          # account the durable read scope to qualify what the engine offers.
+          # Setup joins this chips club through the same public player door.
+          E2E_UNION_CLUB_ID: a41434bb-8d0c-400a-8f0d-e8b3d65afed4
           LIVE_TABLE_REALTIME_CERTIFICATION: '1'
           ENGINE_HEALTH_URL: https://engine.smarter.poker/health
           EXPECTED_ENGINE_SHA: ${{ steps.engine.outputs.sha }}

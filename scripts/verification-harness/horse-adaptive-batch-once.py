@@ -15,6 +15,7 @@ ROOT=Path(__file__).resolve().parents[2];sys.path.insert(0,str(ROOT/'scripts/ci'
 from satellite_qualifier_fixture import module,sha,lit
 MIGRATION=Path('supabase/migrations/20261014231333_horse_adaptive_retirement_rewrites_each_batch_once_per_call.sql')
 INDEX_FIX=Path('supabase/migrations/20261015001555_horse_adaptive_compaction_finds_batches_through_the_hand_id_.sql')
+GROUPED=Path('supabase/migrations/20261015022307_horse_adaptive_retirement_groups_hands_by_shared_batch.sql')
 NUMBERED=Path('supabase/migrations/20261013130413_horse_journal_retirement_follows_original_numbered_observati.sql')
 HANDS=40
 def function_body(path,name):
@@ -92,6 +93,10 @@ def qualify(e,base):
  status,_,err=e.sql(corrected,file=ROOT/INDEX_FIX,label='batch-once-index-replay-refused',check=False);assert status and 'ADAPTIVE_COMPACTION_INDEX_PREIMAGE_CHANGED' in err;checks.append('index-correction-replay-refused')
  owner_text=read(corrected,"SELECT pg_get_functiondef('public.fn_prune_horse_adaptive_journal()'::regprocedure);",'index-correction-owner-text')
  assert 'c.hand_id=ANY(retired_hands::uuid[])' in owner_text and 'hand_id::text=ANY' not in owner_text;checks.append('compaction-finds-batches-through-uuid-primary-key')
+ e.sql(corrected,file=ROOT/GROUPED,label='batch-once-grouped-retirement')
+ status,_,err=e.sql(corrected,file=ROOT/GROUPED,label='batch-once-grouped-replay-refused',check=False);assert status and 'ADAPTIVE_GROUPED_RETIREMENT_PREIMAGE_CHANGED' in err;checks.append('grouped-retirement-replay-refused')
+ grouped_text=read(corrected,"SELECT pg_get_functiondef('public.fn_prune_horse_adaptive_journal()'::regprocedure);",'grouped-owner-text')
+ assert 'FOR member IN SELECT c.hand_id' in grouped_text and 'scan.scan_after_qualified_at:=candidate.qualified_at' in grouped_text and 'c.hand_id=ANY(retired_hands::uuid[])' in grouped_text;checks.append('grouped-owner-walks-seeds-and-retires-batch-mates')
  status,_,err=e.sql(corrected,file=ROOT/MIGRATION,label='batch-once-replay-refused',check=False);assert status and 'ADAPTIVE_BATCH_ONCE_PREIMAGE_CHANGED' in err;checks.append('batch-once-forward-replay-refused')
  e.sql(corrected,"SELECT smarter_private.enable_horse_adaptive_retention('"+'a'*40+"');",label='corrected-enable')
  t0=time.monotonic()
@@ -119,6 +124,7 @@ def qualify(e,base):
  # Atomicity: a rolled-back owner call leaves raw, statistics and batches untouched.
  rollback=e.database(d);e.sql(rollback,file=ROOT/MIGRATION,label='rollback-forward-correction')
  e.sql(rollback,file=ROOT/INDEX_FIX,label='rollback-index-correction')
+ e.sql(rollback,file=ROOT/GROUPED,label='rollback-grouped-retirement')
  e.sql(rollback,"SELECT smarter_private.enable_horse_adaptive_retention('"+'a'*40+"');",label='rollback-enable')
  before=read(rollback,SNAPSHOT,'rollback-preimage')
  e.sql(rollback,'BEGIN;SELECT fn_prune_horse_adaptive_journal();ROLLBACK;',label='rollback-owner-call')
@@ -147,7 +153,7 @@ def run_icu(e):
   installed=json.loads(e.sql(base,"SELECT jsonb_build_object('prune',md5(pg_get_functiondef('public.fn_prune_horse_adaptive_journal()'::regprocedure)),'retire',md5(pg_get_functiondef('smarter_private.retire_horse_adaptive_hand(uuid)'::regprocedure)),'certificate',md5(pg_get_functiondef('smarter_private.horse_adaptive_disposal_certificate_immutable()'::regprocedure)))::text;",label='batch-once-production-preimage')[1].strip())
   assert installed=={'prune':'d287d2dc4fd96d9aa2a2e179ff156ff3','retire':'f1147867f410f36e244e8849df4ac6d7','certificate':'2497e31c1f8c6c955e2b082fdc0a3df0'},installed
   checks=qualify(e,base);checks.insert(0,'fixture-preimage-equals-production-installed-md5s');e.report['batch_once']['proven']=checks;e.discard(base)
-  for path in [MIGRATION,INDEX_FIX,Path(__file__).relative_to(ROOT)]:e.report['source_sha256'][str(path)]=sha(ROOT/path)
+  for path in [MIGRATION,INDEX_FIX,GROUPED,Path(__file__).relative_to(ROOT)]:e.report['source_sha256'][str(path)]=sha(ROOT/path)
  finally:e.database=original_database
 def main():
  p=argparse.ArgumentParser();p.add_argument('--evidence',type=Path,required=True);p.add_argument('--pg-bin',type=Path,required=True);args=p.parse_args()

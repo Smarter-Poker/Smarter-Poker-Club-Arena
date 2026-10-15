@@ -4,7 +4,7 @@
 # line to make a check pass: tests/the-scheduled-work-roster-is-pinned.law.test.ts
 # pins the count, and the count is supposed to be argued about.
 # observed_at: 2026-10-13T11:50:45Z
-# active: 133
+# active: 134
 # retained-inactive: 2	the two bust sweeps restored disabled by 20260910073355
 # 2026-09-20: 135 -> 132. union-seat-provenance-heal, ca-bbj-repair-unbanked-15m
 # and reconcile-club-table-counts-nightly were retired by migration
@@ -176,6 +176,14 @@
 #     paged nobody. The watch pages a hold older than 10 minutes and releases
 #     one past its lease exactly as its owner's resume would. The argument is
 #     in that header.
+# 2026-10-15: 133 -> 134 active, retained-inactive unchanged at 2. ONE IS ADDED:
+#   ca-currency-meter-nightly  20 7 * * *  scheduled by migration
+#     20261015034439 the_currency_meter_reads_what_is_owed_and_runs_on_its_own:
+#     fn_ca_currency_meter() moves out of ca-ledger-replay-nightly's command
+#     into its own job, because the two shared one transaction and the
+#     meter's 600 s timeout on 2026-10-14 rolled that night's ledger replay
+#     back with it. Nothing new runs: the meter ran nightly inside job 286
+#     before and runs nightly on its own now. The argument is in that header.
 bbj-rollup-catchup	45 * * * *
 ca-alarm-drill-weekly	7 11 * * 1
 ca-bbj-threshold-notify-5m	*/5 * * * *
@@ -186,6 +194,7 @@ ca-cash-pot-conservation-hourly	34 */6 * * *
 ca-collusion-daily	20 4 * * *
 ca-conservation-sweep-hourly	52 * * * *
 ca-crash-settle-abandoned-minute	* * * * *
+ca-currency-meter-nightly	20 7 * * *
 ca-cron-health-30m	7,37 * * * *
 ca-daily-attestation	10 6 * * *
 ca-diamond-cash-rake-sweep-hourly	14 * * * *

@@ -1,0 +1,535 @@
+/**
+ * CLUB DATA (the owner's everyday screen)
+ * ============================================================================
+ * Dan 2026-10-14: "THE DATA PAGE IS NOT ACCURATE, AND THE UI NEEDS TO BE
+ * IMPROVED TO BE MORE 'POKER BROS' STYLE AND SIMPLICITY. MAKE SURE THAT ALL
+ * THE DATA IS REAL TIME ACCURATE DATA."
+ *
+ * One screen, one read: ca_club_data_snapshot. It answers what the club has
+ * generated in the window - games, total winnings, MTT winnings, fee - and
+ * one row per game, all under the same filters.
+ *
+ * Why the numbers are live (migration 20261015010318): cash rake and cash
+ * buy-ins / cash-outs are now written to club_table_daily by the same insert
+ * triggers that already fed tournaments, in the transaction that moves the
+ * money. Nothing waits for an hourly rebuild. A seated player's stack counts
+ * toward winnings, so chips on the felt no longer read as a loss.
+ *
+ * The page re-reads every 15 seconds on the 1 Day view (60 seconds on the
+ * longer windows, which cost the database more), and immediately when the
+ * tab comes back into view. A read that fails keeps the last good figures on
+ * screen and says so; it never paints zeros.
+ *
+ * Days are UTC, like every ledger and union statement on the platform.
+ * The full operator report (union statement, per-player breakdown, export)
+ * lives one tap away at ./advanced.
+ */
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { supabase } from '../../lib/supabase';
+import { useAuthUser } from '../../hooks/useAuthUser';
+import { resolveClubUUID, isUUID } from '../../utils/clubIdResolver';
+import { isAuthzError } from '../../utils/clubDashboard';
+import { reportError } from '../../utils/errorReporter';
+import styles from './ClubDataSimplePage.module.css';
+
+type Preset = 1 | 7 | 14;
+type GameFilter = 'ALL' | 'HOLDEM' | 'OMAHA' | 'MIXED' | 'MTT' | 'SNG';
+type StakesFilter = 'ALL' | 'MICRO' | 'SMALL' | 'MID' | 'HIGH';
+
+export interface ClubDataSummary {
+  games: number;
+  total_winnings: number;
+  mtt_winnings: number;
+  cash_winnings?: number;
+  fee: number;
+  cash_fee?: number;
+  mtt_fee?: number;
+  on_felt?: number;
+}
+
+export interface ClubDataRow {
+  kind: 'CASH' | 'MTT' | 'SNG' | 'SPIN' | string;
+  id: string;
+  name: string;
+  variant?: string | null;
+  game_class?: string | null;
+  blinds?: string | null;
+  started_at?: string | null;
+  status?: string | null;
+  creator_name?: string | null;
+  fee?: number | null;
+  winnings?: number | null;
+  players?: number | null;
+  live?: boolean;
+  seated?: number | null;
+  on_felt?: number | null;
+}
+
+interface Snapshot {
+  range: { start: string; end: string; days: number };
+  summary: ClubDataSummary;
+  rows: ClubDataRow[];
+  generated_at?: string;
+}
+
+const PRESETS: Preset[] = [1, 7, 14];
+const GAME_FILTERS: Array<{ id: GameFilter; label: string }> = [
+  { id: 'ALL', label: 'All' },
+  { id: 'HOLDEM', label: "Hold'em" },
+  { id: 'OMAHA', label: 'Omaha' },
+  { id: 'MIXED', label: 'Mixed' },
+  { id: 'MTT', label: 'MTT' },
+  { id: 'SNG', label: 'SNG' },
+];
+const STAKES_FILTERS: Array<{ id: Exclude<StakesFilter, 'ALL'>; label: string }> = [
+  { id: 'MICRO', label: 'Micro' },
+  { id: 'SMALL', label: 'Small' },
+  { id: 'MID', label: 'Mid' },
+  { id: 'HIGH', label: 'High' },
+];
+const ROW_LIMIT = 200;
+const REQUEST_TIMEOUT_MS = 20_000;
+
+export function refreshIntervalMs(preset: Preset): number {
+  return preset === 1 ? 15_000 : 60_000;
+}
+
+export function utcToday(now: Date = new Date()): string {
+  return now.toISOString().slice(0, 10);
+}
+
+export function addDays(iso: string, days: number): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+export function formatMoney(n: number | null | undefined): string {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return '-';
+  return v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function inkFor(n: number | null | undefined): string {
+  const v = Number(n);
+  if (!Number.isFinite(v) || v === 0) return styles.inkNeutral;
+  return v > 0 ? styles.inkWin : styles.inkLoss;
+}
+
+function kindLabel(row: ClubDataRow): string {
+  if (row.kind === 'CASH') {
+    const v = String(row.variant || 'NLH').toUpperCase();
+    const name = v.includes('PLO') ? v : v === 'NLH' || v === 'HOLDEM' ? 'NLH' : v;
+    return row.blinds ? `${name} ${row.blinds}` : name;
+  }
+  if (row.kind === 'SPIN') return 'Spin';
+  return row.kind;
+}
+
+function startedLabel(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(d.getUTCDate()).padStart(2, '0');
+  const hh = String(d.getUTCHours()).padStart(2, '0');
+  const mi = String(d.getUTCMinutes()).padStart(2, '0');
+  return `${mm}/${dd} ${hh}:${mi}`;
+}
+
+export function isSnapshot(value: unknown): value is Snapshot {
+  if (!value || typeof value !== 'object') return false;
+  const v = value as Record<string, unknown>;
+  const s = v.summary as Record<string, unknown> | undefined;
+  return (
+    !!v.range &&
+    !!s &&
+    typeof s === 'object' &&
+    ['games', 'total_winnings', 'mtt_winnings', 'fee'].every((k) =>
+      Number.isFinite(Number(s[k]))
+    ) &&
+    Array.isArray(v.rows)
+  );
+}
+
+export default function ClubDataSimplePage() {
+  const navigate = useNavigate();
+  const params = useParams<{ clubId?: string }>();
+  const [searchParams] = useSearchParams();
+  const { user, isHydrating } = useAuthUser();
+  const userId = user?.id ?? null;
+  const clubParam = params.clubId || searchParams.get('club') || '';
+
+  const [clubUuid, setClubUuid] = useState<string | null>(isUUID(clubParam) ? clubParam : null);
+  const [preset, setPreset] = useState<Preset>(1);
+  const [endDate, setEndDate] = useState<string>(() => utcToday());
+  const [game, setGame] = useState<GameFilter>('ALL');
+  const [stakes, setStakes] = useState<StakesFilter>('ALL');
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
+  const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [denied, setDenied] = useState(false);
+  const [updatedAt, setUpdatedAt] = useState<number | null>(null);
+  const requestRef = useRef(0);
+
+  const today = utcToday();
+  const isToday = endDate >= today;
+  const startDate = addDays(endDate, -(preset - 1));
+  const stakesApply = game === 'ALL' || game === 'HOLDEM' || game === 'OMAHA' || game === 'MIXED';
+
+  useEffect(() => {
+    if (isUUID(clubParam)) {
+      setClubUuid(clubParam);
+      return;
+    }
+    if (!clubParam) return;
+    let dead = false;
+    // A resolver is not a guard: an unknown slug comes back as itself.
+    void resolveClubUUID(clubParam)
+      .then((id) => {
+        if (dead) return;
+        if (id && isUUID(id)) {
+          setClubUuid(id);
+        } else {
+          setLoading(false);
+          setError('This Club Could Not Be Found.');
+        }
+      })
+      .catch((err) => {
+        if (dead) return;
+        reportError(err, 'ClubDataSimplePage.resolve_club');
+        setLoading(false);
+        setError('This Club Could Not Be Found.');
+      });
+    return () => {
+      dead = true;
+    };
+  }, [clubParam]);
+
+  // A new filter or window starts a fresh picture: the old one described
+  // something else and must not sit under the new heading.
+  useEffect(() => {
+    setSnapshot(null);
+    setLoading(true);
+  }, [clubUuid, preset, endDate, game, stakes, search]);
+
+  const load = useCallback(async () => {
+    if (!clubUuid || isHydrating || !userId) return;
+    const mine = ++requestRef.current;
+    let timer = 0;
+    try {
+      const read = supabase.rpc('ca_club_data_snapshot', {
+        p_club_id: clubUuid,
+        p_start: startDate,
+        p_end: endDate,
+        p_game: game,
+        p_stakes: stakesApply ? stakes : 'ALL',
+        p_search: search || null,
+        p_limit: ROW_LIMIT,
+      });
+      const timeout = new Promise<never>((_, reject) => {
+        timer = window.setTimeout(() => reject(new Error('club_data_timeout')), REQUEST_TIMEOUT_MS);
+      });
+      const { data, error: rpcError } = await Promise.race([Promise.resolve(read), timeout]);
+      if (mine !== requestRef.current) return;
+      if (rpcError) {
+        if (isAuthzError(rpcError)) {
+          setDenied(true);
+          setError(null);
+        } else {
+          reportError(rpcError, 'ClubDataSimplePage.snapshot');
+          setError('Club Data Could Not Be Read. Showing The Last Good Figures.');
+        }
+        return;
+      }
+      if (!isSnapshot(data)) {
+        setError('Club Data Came Back Incomplete. Showing The Last Good Figures.');
+        return;
+      }
+      setSnapshot(data);
+      setDenied(false);
+      setError(null);
+      setUpdatedAt(Date.now());
+    } catch (err) {
+      if (mine !== requestRef.current) return;
+      reportError(err, 'ClubDataSimplePage.snapshot');
+      setError('Club Data Could Not Be Read. Showing The Last Good Figures.');
+    } finally {
+      window.clearTimeout(timer);
+      if (mine === requestRef.current) setLoading(false);
+    }
+  }, [clubUuid, isHydrating, userId, startDate, endDate, game, stakes, stakesApply, search]);
+
+  // Read now, then keep reading while the screen is in view.
+  useEffect(() => {
+    void load();
+    const every = refreshIntervalMs(isToday ? preset : 14);
+    const id = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void load();
+    }, every);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void load();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [load, preset, isToday]);
+
+  // When the UTC day turns over on an open "today" view, follow it.
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      const now = utcToday();
+      setEndDate((prev) => (prev === addDays(now, -1) && isToday ? now : prev));
+    }, 30_000);
+    return () => window.clearInterval(id);
+  }, [isToday]);
+
+  // Search waits for the typing to stop.
+  useEffect(() => {
+    const id = window.setTimeout(() => setSearch(searchInput.trim()), 400);
+    return () => window.clearTimeout(id);
+  }, [searchInput]);
+
+  const shift = (dir: -1 | 1) => {
+    const next = addDays(endDate, dir * preset);
+    setEndDate(next > today ? today : next);
+  };
+
+  const summary = snapshot?.summary ?? null;
+  const rows = useMemo(() => snapshot?.rows ?? [], [snapshot]);
+  const liveCount = rows.filter((r) => r.live).length;
+  // A route segment, never a `??` inside the template: the reachability law
+  // reads everything after a `?` as a query string.
+  const clubKey = clubUuid || clubParam;
+  const updatedLabel = updatedAt ? new Date(updatedAt).toISOString().slice(11, 19) : null;
+
+  if (denied) {
+    return (
+      <div className={styles.page}>
+        <Header onBack={() => navigate(-1)} />
+        <div className={styles.empty}>
+          <SpadeMark />
+          <p className={styles.emptyText}>Only The Club Owner, Admins And Super Agents Can View Club Data.</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={styles.page}>
+      <Header
+        onBack={() => navigate(-1)}
+        onAdvanced={() => navigate(`/clubs/${clubKey}/data/advanced`)}
+      />
+
+      <div className={styles.rangeBar}>
+        <button
+          type="button"
+          className={styles.arrow}
+          onClick={() => shift(-1)}
+          aria-label="Previous Period"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M16 3 L5 12 L16 21 Z" />
+          </svg>
+        </button>
+        <div className={styles.rangeChip} aria-live="polite">
+          <span>{startDate}</span>
+          <span className={styles.rangeDash}>-</span>
+          <span>{endDate}</span>
+          <span className={styles.rangeTz}>UTC</span>
+        </div>
+        <button
+          type="button"
+          className={styles.arrow}
+          onClick={() => shift(1)}
+          disabled={isToday}
+          aria-label="Next Period"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M8 3 L19 12 L8 21 Z" />
+          </svg>
+        </button>
+      </div>
+
+      <div className={styles.segment} role="group" aria-label="Date Range">
+        {PRESETS.map((p) => (
+          <button
+            key={p}
+            type="button"
+            aria-pressed={preset === p}
+            className={`${styles.segmentButton} ${preset === p ? styles.segmentActive : ''}`}
+            onClick={() => setPreset(p)}
+          >
+            {p === 1 ? '1 Day' : `${p} Days`}
+          </button>
+        ))}
+      </div>
+
+      <dl className={styles.stats} aria-busy={loading} aria-label="Club Totals">
+        <div className={styles.stat}>
+          <dt className={styles.statLabel}>Games</dt>
+          <dd className={styles.statValue}>{summary ? Number(summary.games).toLocaleString('en-US') : '-'}</dd>
+        </div>
+        <div className={styles.stat}>
+          <dt className={styles.statLabel}>Total Winnings</dt>
+          <dd className={`${styles.statValue} ${summary ? inkFor(summary.total_winnings) : ''}`}>
+            {summary ? formatMoney(summary.total_winnings) : '-'}
+          </dd>
+        </div>
+        <div className={styles.stat}>
+          <dt className={styles.statLabel}>MTT Winnings</dt>
+          <dd className={`${styles.statValue} ${summary ? inkFor(summary.mtt_winnings) : ''}`}>
+            {summary ? formatMoney(summary.mtt_winnings) : '-'}
+          </dd>
+        </div>
+        <div className={styles.stat}>
+          <dt className={styles.statLabel}>Fee</dt>
+          <dd className={styles.statValue}>{summary ? formatMoney(summary.fee) : '-'}</dd>
+        </div>
+      </dl>
+
+      <div className={styles.liveLine} role="status">
+        {error ? (
+          <span className={styles.inkLoss}>{error}</span>
+        ) : loading && !snapshot ? (
+          <span>Reading Live Data</span>
+        ) : (
+          <>
+            <span className={styles.liveDot} aria-hidden="true" />
+            <span>
+              Live{updatedLabel ? ` - Updated ${updatedLabel} UTC` : ''}
+              {liveCount > 0 ? ` - ${liveCount} Game${liveCount === 1 ? '' : 's'} In Play` : ''}
+            </span>
+          </>
+        )}
+      </div>
+
+      <label className={styles.search}>
+        <input
+          type="search"
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          placeholder="Search Game, Creator Or ID"
+          aria-label="Search Games"
+        />
+        <svg viewBox="0 0 24 24" aria-hidden="true" className={styles.searchIcon}>
+          <circle cx="10.5" cy="10.5" r="6.5" />
+          <path d="M15.5 15.5 L21 21" />
+        </svg>
+      </label>
+
+      <div className={styles.tabs} role="group" aria-label="Game Type">
+        {GAME_FILTERS.map((f) => (
+          <button
+            key={f.id}
+            type="button"
+            aria-pressed={game === f.id}
+            className={`${styles.tab} ${game === f.id ? styles.tabActive : ''}`}
+            onClick={() => setGame(f.id)}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+
+      {stakesApply && (
+        <div className={styles.stakes} role="group" aria-label="Stakes">
+          {STAKES_FILTERS.map((f) => (
+            <button
+              key={f.id}
+              type="button"
+              aria-pressed={stakes === f.id}
+              className={`${styles.stake} ${stakes === f.id ? styles.stakeActive : ''}`}
+              onClick={() => setStakes((prev) => (prev === f.id ? 'ALL' : f.id))}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {snapshot && rows.length === 0 ? (
+        <div className={styles.empty}>
+          <SpadeMark />
+          <p className={styles.emptyText}>No Data In This Period.</p>
+        </div>
+      ) : !snapshot && !loading ? (
+        <div className={styles.empty}>
+          <SpadeMark />
+          <p className={styles.emptyText}>{error ?? 'No Data In This Period.'}</p>
+          <button type="button" className={styles.retry} onClick={() => void load()}>
+            Try Again
+          </button>
+        </div>
+      ) : (
+        <ul className={styles.list} aria-label="Games">
+          {rows.map((row) => (
+            <li key={`${row.kind}-${row.id}`} className={styles.row}>
+              <div className={styles.rowMain}>
+                <div className={styles.rowTitle}>
+                  <span className={styles.rowName}>{row.name}</span>
+                  {row.live && <span className={styles.badgeLive}>Live</span>}
+                </div>
+                <div className={styles.rowMeta}>
+                  <span className={styles.kind}>{kindLabel(row)}</span>
+                  {row.started_at && <span>{startedLabel(row.started_at)}</span>}
+                  {Number(row.players) > 0 && (
+                    <span>
+                      {Number(row.players).toLocaleString('en-US')} Player{Number(row.players) === 1 ? '' : 's'}
+                    </span>
+                  )}
+                  {row.creator_name && <span>By {row.creator_name}</span>}
+                </div>
+              </div>
+              <div className={styles.rowFigures}>
+                <span className={`${styles.rowWin} ${inkFor(row.winnings)}`}>{formatMoney(row.winnings)}</span>
+                <span className={styles.rowFee}>Fee {formatMoney(row.fee)}</span>
+              </div>
+            </li>
+          ))}
+          {rows.length >= ROW_LIMIT && summary && Number(summary.games) > rows.length && (
+            <li className={styles.more}>
+              Showing The {rows.length.toLocaleString('en-US')} Most Recent Of{' '}
+              {Number(summary.games).toLocaleString('en-US')} Games. Totals Above Cover Them All.
+            </li>
+          )}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function Header({ onBack, onAdvanced }: { onBack: () => void; onAdvanced?: () => void }) {
+  return (
+    <header className={styles.header}>
+      <button type="button" className={styles.back} onClick={onBack} aria-label="Back">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 5 L5 12 L12 19 M19 5 L12 12 L19 19" />
+        </svg>
+      </button>
+      <h1 className={styles.title}>Club Data</h1>
+      {onAdvanced ? (
+        <button type="button" className={styles.headerAction} onClick={onAdvanced}>
+          Report
+        </button>
+      ) : (
+        <span className={styles.headerSpacer} />
+      )}
+    </header>
+  );
+}
+
+function SpadeMark() {
+  return (
+    <svg viewBox="0 0 64 64" className={styles.spade} aria-hidden="true">
+      <path d="M32 6 C24 18 10 26 10 38 C10 46 16 51 23 51 C27 51 30 49 31 47 C30 52 28 55 24 58 L40 58 C36 55 34 52 33 47 C34 49 37 51 41 51 C48 51 54 46 54 38 C54 26 40 18 32 6 Z" />
+    </svg>
+  );
+}

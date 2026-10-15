@@ -216,12 +216,13 @@ export default function MessengerChat({ actorId, identity, conversation, service
         } catch (failure) { if (current()) setError(failure.message); }
         finally { if (current()) setUploading(false); }
     };
+    const openFull = () => { onMinimize(); services.openMessenger(id); };
     const name = dockName(conversation);
     return <div className="dock-chat" data-dock-conversation={id} onFocusCapture={() => setEngaged(true)} onPointerDown={() => setEngaged(true)} onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); onMinimize(); } }}>
         <header className="dock-chat-header">
             {conversation.otherUser?.avatar_url ? <img className="dock-chat-avatar" src={conversation.otherUser.avatar_url} alt="" /> : <span className="dock-chat-avatar dock-initial">{name.slice(0, 1)}</span>}
-            <button type="button" className="dock-chat-person" onClick={() => services.openMessenger(id)}><strong>{name}</strong><small>{typing ? 'Typing...' : 'Messenger'}</small></button>
-            <button type="button" aria-label="Expand Conversation" title="Open In Messenger" onClick={() => services.openMessenger(id)}><Maximize2 size={17} /></button>
+            <button type="button" className="dock-chat-person" onClick={openFull}><strong>{name}</strong><small>{typing ? 'Typing...' : 'Messenger'}</small></button>
+            <button type="button" aria-label="Expand Conversation" title="Open In Messenger" onClick={openFull}><Maximize2 size={17} /></button>
             <button type="button" aria-label="Minimize Conversation" onClick={onMinimize}><Minus size={20} /></button>
             <button type="button" aria-label="Close Conversation" onClick={onClose}><X size={20} /></button>
         </header>
@@ -244,7 +245,7 @@ export default function MessengerChat({ actorId, identity, conversation, service
                 const media = !message.is_deleted && safeMedia(message.content);
                 return <div key={message.id} data-message-id={message.id} className={`dock-message ${own ? 'dock-own' : ''}`}>
                     <div className="dock-message-bubble" title={new Date(message.created_at).toLocaleString()}>
-                        {message.is_deleted ? <em>Message Removed</em> : message.message_type === 'invoice' ? <button type="button" onClick={() => services.openMessenger(id)}>Open Invoice In Messenger</button>
+                        {message.is_deleted ? <em>Message Removed</em> : message.message_type === 'invoice' ? <button type="button" onClick={openFull}>Open Invoice In Messenger</button>
                             : media?.kind === 'image' || media?.kind === 'gif' ? <a href={media.url} target="_blank" rel="noreferrer"><img src={media.url} alt="Message Attachment" loading="lazy" /></a>
                             : media?.kind === 'video' ? <video src={media.url} controls playsInline /> : media?.kind === 'audio' ? <audio src={media.url} controls /> : message.content}
                     </div>

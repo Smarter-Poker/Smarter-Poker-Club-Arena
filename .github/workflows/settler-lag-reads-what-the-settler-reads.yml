@@ -1,0 +1,80 @@
+name: Settler lag reads what the settler reads
+
+# fn_settler_lag_check() (migration 20261015024150). Runs
+# scripts/ci/test-settler-lag-reads-what-the-settler-reads.py against a
+# throwaway PostgreSQL 17 cluster, never production: the exact production
+# definition captured 2026-10-15 (pg_get_functiondef md5 equal to the live
+# function) must page an idle settler, a fresh backlog and a run of rake
+# reversals, and the migration must judge only the rows the settler reads by
+# the age of the oldest one, keep a skipped cycle and a blocked week loud, and
+# reproduce production's derived postimage md5. No timer (CLAUDE.md 10.85):
+# pull_request only, scoped to the paths it proves.
+# The same job runs scripts/ci/test-a-finding-with-no-amount-is-not-a-chip-drift.py
+# for fn_ca_raise_drift_incident() (migration 20261015024752): a liveness
+# finding at 0.00 is headlined by its check, not as a 0.00 chip drift.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - supabase/migrations/20261015024150_the_settler_lag_reads_what_the_settler_reads.sql
+      - scripts/ci/fixtures/settler-lag-reads-what-the-settler-reads/**
+      - scripts/ci/test-settler-lag-reads-what-the-settler-reads.py
+      - .github/workflows/settler-lag-reads-what-the-settler-reads.yml
+      - supabase/migrations/20261015024752_a_finding_with_no_amount_is_not_a_chip_drift.sql
+      - scripts/ci/fixtures/a-finding-with-no-amount-is-not-a-chip-drift/**
+      - scripts/ci/test-a-finding-with-no-amount-is-not-a-chip-drift.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: settler-lag-reads-what-the-settler-reads-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  settler-lag-reads-what-the-settler-reads:
+    name: Settler lag judges the rows the settler reads
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL 17 from the signed PGDG source only
+        run: |
+          set -euo pipefail
+          pg_sources="$(mktemp -d "$RUNNER_TEMP/ca-postgres-apt.XXXXXX")"
+          chmod 755 "$pg_sources"
+          test -f /etc/apt/sources.list.d/ubuntu.sources
+          cp /etc/apt/sources.list.d/ubuntu.sources "$pg_sources/ubuntu.sources"
+          pg_apt=(-o "Dir::Etc::sourcelist=/dev/null" -o "Dir::Etc::sourceparts=$pg_sources")
+          sudo apt-get "${pg_apt[@]}" update
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-common curl ca-certificates
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail --silent --show-error --location \
+            --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          codename="$(. /etc/os-release && printf '%s' "$VERSION_CODENAME")"
+          printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' \
+            "$codename" > "$pg_sources/pgdg.sources"
+          sudo apt-get "${pg_apt[@]}" update
+          printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-17
+      # Runs as the runner user (non-root), exactly as the ci.yml step would.
+      - name: Settler lag judges the rows the settler reads
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-settler-lag-reads-what-the-settler-reads.py --output artifacts/settler-lag-reads-what-the-settler-reads
+      - name: A finding with no amount is headlined by its check
+        if: always()
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-a-finding-with-no-amount-is-not-a-chip-drift.py --output artifacts/a-finding-with-no-amount-is-not-a-chip-drift
+      - name: Retain the regression evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: settler-lag-reads-what-the-settler-reads-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            artifacts/settler-lag-reads-what-the-settler-reads/RESULTS.json
+            artifacts/a-finding-with-no-amount-is-not-a-chip-drift/RESULTS.json
+          retention-days: 7
+          if-no-files-found: warn

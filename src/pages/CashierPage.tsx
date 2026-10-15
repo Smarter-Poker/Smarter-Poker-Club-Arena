@@ -295,6 +295,7 @@ function CashierContent() {
   const toast = useToast();
 
   const [action, setActionState] = useState<CashierAction>('send');
+  const tableRouteOnly = !!tableId && (action === 'buyin' || action === 'cashout');
   const [amount, setAmountState] = useState('');
   const preparationAmount = validateCashoutAmount(amount);
   const cashoutPreparations = usePreparedCashoutOperations(
@@ -1833,6 +1834,15 @@ function CashierContent() {
 
   const handleAction = async (override?: { value?: number; recipientId?: string }) => {
     if (cashoutActionInFlight.current || cashoutBusy.current || transferBusy.current) return;
+    // At a table, Buy-In and Cash-Out move no money here: both are done at the
+    // table itself (atomic_table_buyin, and leaving the seat). There is no
+    // amount to type, so go straight there.
+    if (tableRouteOnly) {
+      if (action === 'cashout')
+        setMessage({ type: 'info', text: 'Leave The Table To Cash Out - Taking You There Now.' });
+      navigate(`/table/${tableId}`);
+      return;
+    }
     const isTransfer = action === 'send';
     if (isTransfer && (!canSend || roleUnknown)) return;
     if (isTransfer) transferBusy.current = true;
@@ -3402,7 +3412,7 @@ function CashierContent() {
                     </div>
                   )}
 
-                  <div className={styles.formGroup}>
+                  <div className={styles.formGroup} hidden={tableRouteOnly}>
                     <label className="sc-label sc-ink--blue" htmlFor="cashier-amount">
                       {action === 'mint' ? 'Chips To Mint' : 'Amount'}
                     </label>
@@ -3440,7 +3450,7 @@ function CashierContent() {
                   )}
 
                   {/* Presets */}
-                  <div className={styles.presetGrid}>
+                  <div className={styles.presetGrid} hidden={tableRouteOnly}>
                     {preset.map((val) => (
                       <button
                         key={val}
@@ -3484,7 +3494,7 @@ function CashierContent() {
                     disabled={
                       isProcessing ||
                       cooldown > 0 ||
-                      !amount ||
+                      (!amount && !tableRouteOnly) ||
                       (action === 'cashout' &&
                         !tableId &&
                         !cashoutPreparations.get('request', 'cashout_request'))
@@ -3493,10 +3503,10 @@ function CashierContent() {
                     {isProcessing
                       ? 'Processing...'
                       : action === 'buyin'
-                        ? 'Confirm Buy-In'
+                        ? 'Go To Table To Buy In'
                         : action === 'cashout'
                           ? tableId
-                            ? 'Confirm Cash-Out'
+                            ? 'Go To Table To Cash Out'
                             : 'Check Or Request Cashout'
                           : 'Confirm Mint'}
                   </button>

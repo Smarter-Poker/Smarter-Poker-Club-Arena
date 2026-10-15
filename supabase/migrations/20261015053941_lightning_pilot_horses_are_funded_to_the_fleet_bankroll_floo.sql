@@ -1,3 +1,4 @@
+-- SUPERSEDED BY 20261015093554 (the ledger guard refused this apply; the root fix and the top-up run there).
 -- 20261015053941_lightning_pilot_horses_are_funded_to_the_fleet_bankroll_floor.sql
 --
 -- Within Dan's 2026-10-14 ruling ("admit 72 horses, and fund them from its

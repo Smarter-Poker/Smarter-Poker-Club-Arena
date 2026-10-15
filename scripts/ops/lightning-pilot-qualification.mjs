@@ -82,14 +82,18 @@ export async function servingIdentities(fetchImpl = fetch) {
       typeof r.built_at === 'string' && Number.isFinite(Date.parse(r.built_at)) ? r.built_at : null,
   });
   const health = (r) =>
-    object(r) && typeof r.version === 'string' && /^[0-9a-f]{7,40}$/i.test(r.version);
+    object(r) &&
+    typeof r.version === 'string' &&
+    /^[0-9a-f]{7,40}$/i.test(r.version) &&
+    (!Object.hasOwn(r, 'releaseSha') ||
+      (typeof r.releaseSha === 'string' && SHA.test(r.releaseSha) && r.releaseSha.startsWith(r.version)));
   const [origin, publicClient, engine] = await Promise.all([
     publicJson('https://ca-static.smarter.poker/build-info.json', fetchImpl, stamp, client),
     publicJson('https://smarter.poker/hub/club-arena/build-info.json', fetchImpl, stamp, client),
     publicJson('https://engine.smarter.poker/health', fetchImpl, health, (r) => ({
-      reportedVersion: r.version,
+      reportedVersion: r.releaseSha ?? r.version,
       status: r.status === 'ok' ? 'ok' : 'not_ok',
-      fullRevisionEstablished: SHA.test(r.version),
+      fullRevisionEstablished: SHA.test(r.releaseSha ?? r.version),
     })),
   ]);
   return { origin, publicClient, engine };

@@ -4,6 +4,18 @@ You are picking up the Lightning programme for Club Arena (Smarter Poker). Light
 
 **The dated delivery checkpoints above section U supersede the historical state in section U and sections 3 to 5.** Sections 3 to 5 were written at 17:30 UTC and are kept for their ids and history.
 
+## Fresh Report And Identity Correction (2026-10-15 22:32 UTC)
+
+- Read-only qualification run `38813383364` completed successfully; authenticated report still returns NO_GO on both games: open high integrity signals, plus 9-max A/A bias. Eligible counts remain 54/39; prior recorded hands remain 1,070/1,762. No repair deployment or new activation has occurred.
+- The designated outsider `00bc0957-1913-4beb-a4d1-acab94950690` is actually an ACTIVE pilot member, joined at `2026-10-15T05:31:53.447403Z`, current balance 193.31. This supersedes the historical nonmember description and any earlier assumed absence. Do not remove/fund/change that membership to manufacture a refusal test. The explicit access preflight correctly refuses it. A different verified existing nonmember designation remains pending clarification; no outsider proof has passed.
+- The report incorrectly missed the full engine identity by reading only `version`. Live health provides `releaseSha=a2ccc04d39bc15852d0047a32893371f3a0a6836`; the repair reads that full field, requires consistency with the short version, refuses malformed/conflicting identities and detects changes sharing the same prefix. Regression fails before and passes after; 106 operator/access/report/setup checks pass. Actual repair inclusion still requires protected delivery.
+- One existing populated-cluster seat-count observation remains UNKNOWN; it does not invalidate the independently read 54/39 pilot eligibility. Do not silently count unknown as zero. Artifact retained at `qualification-38813383364/lightning-pilot-qualification.json` in the existing evidence root.
+
+## Resumption Receipt (2026-10-15 22:23 UTC)
+
+- Canonical four-policy reader emitted `2026-10-15T22:23:40.232Z`, policy 2.9; manifest and all four hashes match the previous receipt. Full canonical policies, actual repository entrypoints/CLAUDE/publishing/deploy paths, storage guide and Lightning checkpoint/phase/register/rollout/review/catalog freshly read. Canonical comparison passed. Owned checkout head `737ac5a13fafeea3de030e1759e2b74601868170`; SSD remains separately mounted.
+- #7014 CI `38810741223` has no failed job; remaining required client/accounting/engine/typecheck jobs are running or queued. #7025 CI `38816082067` and read-only qualification `38813383364` queued. No merge/install/deploy/activation claimed. Preserve current candidates while provider qualification runs. All nine superseded owned attempts recorded earlier are terminal cancelled, including their always jobs.
+
 ## Private Access Witness Preparation (2026-10-15)
 
 - The current #7025 candidate adds explicit `stage=access` to the existing pilot workflow. It uses only the designated outsider and verified service owner, tests nonmember and unapproved zero-balance pending states through actual browser/HTTP/WebSocket paths, and withdraws only its own pending request through the maintained cancellation door. Credentials remain in memory, synthetic sessions sign out locally, and no identity, approval, funding, buy-in or table action is created.

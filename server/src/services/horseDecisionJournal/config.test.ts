@@ -332,14 +332,44 @@ describe('the journal disk bounds the shards a default may add', () => {
     expect(() => horseJournalArchiveAllocatedBytes([link])).toThrow('Invalid Horse journal');
   });
 
-  it('refuses partial du output when a segment disappears during its scan', () => {
+  it('accepts du totals when retention retires a segment during the scan (2026-10-15)', () => {
     const dir = directory();
-    mkdirSync(join(dir, 'archive'));
+    const archive = join(dir, 'archive');
+    mkdirSync(archive);
+    vi.mocked(execFileSync).mockImplementationOnce(() => {
+      throw Object.assign(Error('Command failed: du'), {
+        status: 1,
+        signal: null,
+        stdout: '13881448\t' + archive + '\n',
+        stderr:
+          `du: cannot access '${archive}/segments/a.ndjson.gz': No such file or directory\n` +
+          `du: cannot access '${archive}/segments/b.ndjson.gz': No such file or directory\n`,
+      });
+    });
+    expect(horseJournalArchiveAllocatedBytes([archive])).toEqual([13881448 * 1024 - 1024]);
+  });
+
+  it.each([
+    ['another error', 1, null, "du: cannot read directory 'X/segments': Permission denied\n"],
+    [
+      'a retired path outside the archives',
+      1,
+      null,
+      "du: cannot access '/elsewhere/a': No such file or directory\n",
+    ],
+    ['a timeout', null, 'SIGTERM', ''],
+    ['a different exit', 2, null, "du: cannot access 'X/segments/a': No such file or directory\n"],
+  ])('still refuses du output after %s', (_label, status, signal, stderr) => {
+    const dir = directory();
+    const archive = join(dir, 'archive');
+    mkdirSync(archive);
     const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
     vi.mocked(execFileSync).mockImplementationOnce(() => {
-      throw Object.assign(Error('du: segment retired during scan'), {
-        status: 1,
-        stdout: '13881448\t' + join(dir, 'archive') + '\n',
+      throw Object.assign(Error('du failed'), {
+        status,
+        signal,
+        stdout: '13881448\t' + archive + '\n',
+        stderr: String(stderr).replaceAll('X', archive),
       });
     });
     expect(horseJournalShardCapacity({ HORSE_DECISION_JOURNAL_DIR: dir })).toBe(2);

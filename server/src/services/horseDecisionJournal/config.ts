@@ -269,6 +269,51 @@ export function horseJournalShardDiskBytes(maxBytes: number): number {
   );
 }
 
+/** du exits 1 when retention retires a segment between listing a directory
+ * and stat-ing the file ("cannot access ...: No such file or directory").
+ * A journal at its byte cap retires segments continuously. On the engine
+ * host (2026-10-15, release 3002fe25, archives at their caps) the startup
+ * walk met eleven, the reading was refused, and the lane fell back to the
+ * legacy two-worker ceiling on a host whose disk budget admits three.
+ *
+ * Such a reading is still exact for the budget: a retired segment is unlinked
+ * before statfs is read, so its blocks are counted as free, and leaving them
+ * out of the allocation charges the same bytes again as remaining growth.
+ * Allocated plus free is unchanged, so the result never authorizes a worker
+ * the disk cannot hold. Only that one failure is accepted: any other stderr,
+ * a timeout, a signal, an exit other than 1, a path outside the scanned
+ * archives, or missing totals is still refused. */
+function horseJournalAllocationDespiteRetiredSegments(
+  error: unknown,
+  directories: readonly string[]
+): string {
+  const failure = error as {
+    status?: unknown;
+    signal?: unknown;
+    stdout?: unknown;
+    stderr?: unknown;
+  } | null;
+  if (
+    !failure ||
+    failure.status !== 1 ||
+    failure.signal ||
+    typeof failure.stdout !== 'string' ||
+    typeof failure.stderr !== 'string'
+  )
+    throw error;
+  const complaints = failure.stderr.trimEnd().split('\n');
+  const retired = complaints.every((line) => {
+    const match = /^du: cannot access '(.+)': No such file or directory$/.exec(line);
+    return (
+      !!match &&
+      !match[1]!.includes('\n') &&
+      directories.some((directory) => match[1]!.startsWith(directory + '/'))
+    );
+  });
+  if (!complaints.length || !retired) throw error;
+  return failure.stdout;
+}
+
 /** Read actual allocated blocks once, without following symlinks. du walks the
  * potentially large archive, so cap its execution; a failed/incomplete reading
  * must never authorize an additional worker. Round down one KiB per result,
@@ -280,12 +325,18 @@ export function horseJournalArchiveAllocatedBytes(directories: readonly string[]
     if (!stat.isDirectory() || stat.isSymbolicLink())
       throw Error('Invalid Horse journal archive directory');
   }
-  const output = execFileSync('/usr/bin/du', ['-sk', ...directories], {
-    encoding: 'utf8',
-    timeout: 15_000,
-    maxBuffer: 64 * 1024,
-    env: { ...process.env, LC_ALL: 'C' },
-  });
+  let output: string;
+  try {
+    output = execFileSync('/usr/bin/du', ['-sk', ...directories], {
+      encoding: 'utf8',
+      timeout: 15_000,
+      maxBuffer: 1024 * 1024,
+      env: { ...process.env, LC_ALL: 'C' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+  } catch (error) {
+    output = horseJournalAllocationDespiteRetiredSegments(error, directories);
+  }
   const lines = output.trimEnd().split('\n');
   if (lines.length !== directories.length) throw Error('Unreadable Horse archive allocation');
   return lines.map((line, index) => {

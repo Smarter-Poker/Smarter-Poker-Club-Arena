@@ -2166,37 +2166,42 @@ function CashierTradeWorkspace() {
         try {
           for (const target of chunk)
             receiptById.get(target.userId)!.outcome = 'Outcome Needs Verification';
-          const items = chunk.map((target) => ({
-            user_id: target.userId,
-            amount: parsedAmount.amounts[target.userId],
-            ...(kind === 'send'
-              ? {
-                  destination:
-                    uncertainRecovery.destinations?.[target.userId] ||
-                    (canHoldAgentWallet(target.role) ? 'agent_wallet' : 'player_wallet'),
-                  // The server's replay fingerprint includes the reason, so it
-                  // cannot change between an uncertain send and its retry -
-                  // never a display name (S-06). A constant is stable; op_id
-                  // is the identity (regression review G-07).
-                  reason: CASHIER_SEND_OUT_REASON,
-                  op_id: opIdFor(target.userId),
+          const items = chunk.map((target) =>
+            kind === 'ticket' && boundTournamentId
+              ? // The tournament item carries its own user_id and amount (the
+                // price the cashier saw); spreading it under them would name
+                // both twice.
+                buildTournamentTicketItem({
+                  clubId: clubUuid,
+                  submissionId,
+                  userId: target.userId,
+                  tournament: {
+                    tournamentId: boundTournamentId,
+                    price: parsedAmount.amounts[target.userId],
+                  },
+                  note: uncertainRecovery.ticketNote,
+                })
+              : {
+                  user_id: target.userId,
+                  amount: parsedAmount.amounts[target.userId],
+                  ...(kind === 'send'
+                    ? {
+                        destination:
+                          uncertainRecovery.destinations?.[target.userId] ||
+                          (canHoldAgentWallet(target.role) ? 'agent_wallet' : 'player_wallet'),
+                        // The server's replay fingerprint includes the reason, so it
+                        // cannot change between an uncertain send and its retry -
+                        // never a display name (S-06). A constant is stable; op_id
+                        // is the identity (regression review G-07).
+                        reason: CASHIER_SEND_OUT_REASON,
+                        op_id: opIdFor(target.userId),
+                      }
+                    : {
+                        note: uncertainRecovery.ticketNote || `Cashier ticket for ${target.name}`,
+                        idempotency_key: `ticket:${clubUuid}:${submissionId}:${target.userId}:${parsedAmount.amounts[target.userId]}`,
+                      }),
                 }
-              : boundTournamentId
-                ? buildTournamentTicketItem({
-                    clubId: clubUuid,
-                    submissionId,
-                    userId: target.userId,
-                    tournament: {
-                      tournamentId: boundTournamentId,
-                      price: parsedAmount.amounts[target.userId],
-                    },
-                    note: uncertainRecovery.ticketNote,
-                  })
-                : {
-                    note: uncertainRecovery.ticketNote || `Cashier ticket for ${target.name}`,
-                    idempotency_key: `ticket:${clubUuid}:${submissionId}:${target.userId}:${parsedAmount.amounts[target.userId]}`,
-                  }),
-          }));
+          );
           const { data, error } = await supabase.rpc('fn_cashier_batch_transfer', {
             p_club_id: clubUuid,
             p_kind: kind,

@@ -1,0 +1,40 @@
+Horse Brain Phase 13 PLO8 And PLO4 Natural Completion Window: Declaration
+Written (date -u on Dan's Mac, before any window opened and before any journal of the window was read): 2026-10-15T09:10:07Z
+Writer: Horse Brain takeover agent, session https://claude.ai/code/session_01WM1mgwwZpVw6CFUNDKL4LL
+Strength source under test: c84a2bcff23bb36354e421a38433baf6a3c4881a (P13.2 runs 38698857809 plo8, 38698861116 plo4).
+
+Why a longer window: a single :02 to :50 hour on 2026-10-11 held only 96 eligible PLO8 river decisions,
+below the 127 minimum, so the window is declared at two hours forty-eight minutes before it opens.
+
+1. Release
+The release is the club-arena-engine release serving at the first identity read, taken between H:00:00Z and H:02:00Z,
+where H is the first whole UTC hour at or after 10:00Z on 2026-10-15 at which no Engine Release or auto-deploy-hetzner run
+is queued or in progress. Its Phase 13 policy digests for plo8 and plo4 must equal section 4, recomputed from that
+release's own sources before any journal is read; otherwise H moves to the next eligible hour.
+
+2. Window
+[H:02:00.000Z, (H+2):50:00.000Z). The release is unchanged when the container StartedAt, the sp.release.sha label and
+/health releaseSha read before H:02:00Z equal the reads after (H+2):50:00Z and no auto-deploy-hetzner run completed
+successfully in between. If it is replaced, this window is void and the declaration applies to the next eligible H.
+Bounds are exactly the canonical toISOString forms.
+
+3. Commands
+Stage 1 server/scripts/phase13-completion-extract.py on the engine host (read-only, nice 19 / ionice idle, closed archive
+segments of every decision-worker shard, sha256-name verified), argv <from> <to> <releaseSha40> <variant>, for plo8 and
+plo4. Stage 2 server/src/scripts/phase13CompletionRecord.ts --variant=<v> --release=<sha> --from --to
+--release-unchanged=true --source=<this declaration and the window>, in a clean detached worktree of the release,
+formatted with prettier 3.8.1. Scripts are taken from the release.
+
+4. Expected Digests (computed at c84a2bcff23bb36354e421a38433baf6a3c4881a)
+| 13 | PLO8 | policy   | 9b271791e6f2b66a35ae91b4db519123bca02a93ba8b37f7b0cb025d3e88202c |
+| 13 | PLO4 | policy   | 784c0d150803c7b65eae09ccbadc6bb917e4ccf477f3cbfb38c9dbc75d7ef625 |
+| 13 | all  | contract | 0cd88d970c600fb64933337672af349e9d106402d4edfcc3510e1f26374741f8 |
+
+5. Verdict
+Counting is the authority's own (horsePhase13CompletionCounts and board counts) in stage 2 only. Floor: Wilson lower bound
+at z = 2.5758293035489 of at least 0.95 with at least 127 eligible; every street must clear; admitted board counts are
+horsePhase13CompletionAdmittedBoardCounts(record). Recorded whatever it shows; not re-measured on another window of the
+same release.
+
+6. Production Rules
+Read-only observation only: no synthetic hands, tables or bomb pots, nothing activated to manufacture evidence, no scheduler.

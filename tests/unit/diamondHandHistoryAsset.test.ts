@@ -80,6 +80,7 @@ describe('canonical hand history denomination', () => {
     const hand = await handHistoryService.getHand('hand-1');
     expect(fixture.tableSelect).toContain('arena:clubs!fk_tables_club_id(asset)');
     expect(hand?.arenaAsset).toBe('diamonds');
+    expect(hand?.replay.arenaAsset).toBe('diamonds');
     expect(adaptServiceHandToPanel(hand!, 'hero').arenaAsset).toBe('diamonds');
   });
   it('does not infer an asset from a Diamond-looking table name', async () => {
@@ -87,6 +88,7 @@ describe('canonical hand history denomination', () => {
     const hand = await handHistoryService.getHand('hand-1');
     expect(hand?.table_name).toBe('Diamond NLH');
     expect(hand?.arenaAsset).toBeUndefined();
+    expect(hand?.replay.arenaAsset).toBeUndefined();
   });
 });
 

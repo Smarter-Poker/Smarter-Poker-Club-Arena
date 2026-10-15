@@ -566,8 +566,8 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
       needsAuth: true,
     };
   }, [
-    clubId,
     seatsClosedLabel,
+    clubId,
     registrationClosedLabel,
     entry,
     isCash,

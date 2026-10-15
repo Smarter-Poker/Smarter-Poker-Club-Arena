@@ -19,6 +19,8 @@ import {
   HORSE_JOURNAL_SHARD_DISK_RESERVE_BYTES,
   horseJournalArchiveDirectoryNames,
   horseJournalArchiveAllocatedBytes,
+  horseJournalArchiveAllocatedBytesAsync,
+  horseJournalShardCapacityMeasured,
   horseJournalCapacityUnreadableReason,
   horseJournalShardCapacity,
   horseJournalShardDiskBytes,
@@ -380,6 +382,28 @@ describe('the journal disk bounds the shards a default may add', () => {
     );
     expect(horseJournalCapacityUnreadableReason()).toContain('du failed');
     warning.mockRestore();
+  });
+
+  it('measures the same allocation and capacity off the event loop (2026-10-15)', async () => {
+    const dir = directory();
+    const archive = join(dir, 'archive');
+    mkdirSync(archive);
+    writeFileSync(join(archive, 'segment'), Buffer.alloc(8192));
+    expect(await horseJournalArchiveAllocatedBytesAsync([archive])).toEqual(
+      horseJournalArchiveAllocatedBytes([archive])
+    );
+    expect(await horseJournalArchiveAllocatedBytesAsync([])).toEqual([]);
+    const link = join(dir, 'linked');
+    symlinkSync(archive, link);
+    await expect(horseJournalArchiveAllocatedBytesAsync([link])).rejects.toThrow(
+      'Invalid Horse journal'
+    );
+    const fs = { ...statfsSync(dir), bsize: 4096, bavail: (100 * GiB) / 4096 };
+    vi.mocked(statfsSync).mockReturnValueOnce(fs).mockReturnValueOnce(fs);
+    const env = { HORSE_DECISION_JOURNAL_DIR: dir };
+    const measured = await horseJournalShardCapacityMeasured(env);
+    expect(measured).toBe(horseJournalShardCapacity(env));
+    expect(await horseJournalShardCapacityMeasured({})).toBeUndefined();
   });
 
   it('reads nothing when no journal is configured', () => {

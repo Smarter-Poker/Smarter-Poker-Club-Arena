@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { existsSync, lstatSync, statfsSync } from 'node:fs';
 import { dirname, isAbsolute, join } from 'node:path';
 
@@ -318,18 +318,17 @@ function horseJournalAllocationDespiteRetiredSegments(
  * potentially large archive, so cap its execution; a failed/incomplete reading
  * must never authorize an additional worker. Round down one KiB per result,
  * because du -k rounds each allocation up to a KiB. */
+export const HORSE_JOURNAL_DU_TIMEOUT_MS = 15_000;
+export const HORSE_JOURNAL_DU_ASYNC_TIMEOUT_MS = 90_000;
+
 export function horseJournalArchiveAllocatedBytes(directories: readonly string[]): number[] {
   if (!directories.length) return [];
-  for (const directory of directories) {
-    const stat = lstatSync(directory);
-    if (!stat.isDirectory() || stat.isSymbolicLink())
-      throw Error('Invalid Horse journal archive directory');
-  }
+  checkArchiveDirectories(directories);
   let output: string;
   try {
     output = execFileSync('/usr/bin/du', ['-sk', ...directories], {
       encoding: 'utf8',
-      timeout: 15_000,
+      timeout: HORSE_JOURNAL_DU_TIMEOUT_MS,
       maxBuffer: 1024 * 1024,
       env: { ...process.env, LC_ALL: 'C' },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -337,6 +336,18 @@ export function horseJournalArchiveAllocatedBytes(directories: readonly string[]
   } catch (error) {
     output = horseJournalAllocationDespiteRetiredSegments(error, directories);
   }
+  return parseHorseJournalDu(output, directories);
+}
+
+function checkArchiveDirectories(directories: readonly string[]): void {
+  for (const directory of directories) {
+    const stat = lstatSync(directory);
+    if (!stat.isDirectory() || stat.isSymbolicLink())
+      throw Error('Invalid Horse journal archive directory');
+  }
+}
+
+function parseHorseJournalDu(output: string, directories: readonly string[]): number[] {
   const lines = output.trimEnd().split('\n');
   if (lines.length !== directories.length) throw Error('Unreadable Horse archive allocation');
   return lines.map((line, index) => {
@@ -347,6 +358,74 @@ export function horseJournalArchiveAllocatedBytes(directories: readonly string[]
     if (!Number.isSafeInteger(bytes) || bytes < 0)
       throw Error('Unreadable Horse archive allocation');
     return Math.max(0, bytes - 1024);
+  });
+}
+
+/**
+ * THE WALK RUNS OFF THE EVENT LOOP, WITH TIME FOR A FULL ARCHIVE (2026-10-15).
+ * The synchronous walk had 15 s. Three archives at their caps (13.9, 13.7 and
+ * 5.7 GB of segments) took 9.9 s warm on the engine host read-only, two thirds
+ * of that limit, and the boot walk on releases e848247e, 3002fe25 and 9970aa0c
+ * (the last with the retired-segment rule) was refused each time, keeping the
+ * two-worker ceiling on a host whose disk admits three. Lane start is
+ * already asynchronous, so the walk now runs as a child process the event loop
+ * does not wait on, with HORSE_JOURNAL_DU_ASYNC_TIMEOUT_MS. Every refusal rule
+ * of the synchronous walk is unchanged.
+ */
+export async function horseJournalArchiveAllocatedBytesAsync(
+  directories: readonly string[]
+): Promise<number[]> {
+  if (!directories.length) return [];
+  checkArchiveDirectories(directories);
+  const output = await new Promise<string>((resolve, reject) => {
+    execFile(
+      '/usr/bin/du',
+      ['-sk', ...directories],
+      {
+        encoding: 'utf8',
+        timeout: HORSE_JOURNAL_DU_ASYNC_TIMEOUT_MS,
+        maxBuffer: 1024 * 1024,
+        env: { ...process.env, LC_ALL: 'C' },
+      },
+      (error, stdout, stderr) => {
+        if (!error) return resolve(stdout);
+        try {
+          resolve(
+            horseJournalAllocationDespiteRetiredSegments(
+              Object.assign(error, {
+                status: typeof error.code === 'number' ? error.code : null,
+                stdout,
+                stderr,
+              }),
+              directories
+            )
+          );
+        } catch (refused) {
+          reject(refused);
+        }
+      }
+    );
+  });
+  return parseHorseJournalDu(output, directories);
+}
+
+/** The capacity, with the archive walk measured asynchronously first. The
+ * same reading and the same refusals as horseJournalShardCapacity. */
+export async function horseJournalShardCapacityMeasured(
+  environment: Readonly<Record<string, string | undefined>> = process.env
+): Promise<number | undefined> {
+  const directory = environment.HORSE_DECISION_JOURNAL_DIR;
+  if (!directory) return horseJournalShardCapacity(environment);
+  let measured: number[] | { error: unknown };
+  try {
+    const names = horseJournalArchiveDirectoryNames(directory);
+    measured = await horseJournalArchiveAllocatedBytesAsync(names.map((n) => join(directory, n)));
+  } catch (error) {
+    measured = { error };
+  }
+  return horseJournalShardCapacity(environment, () => {
+    if (!Array.isArray(measured)) throw measured.error;
+    return measured;
   });
 }
 

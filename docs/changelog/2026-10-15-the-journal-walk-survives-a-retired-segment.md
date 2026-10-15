@@ -35,3 +35,11 @@ workers, so the retired-segment race was not the only refusal. The catch swallow
 read from the host. `/health.liveHorseDecision` now carries `journalShardCapacity` and `journalCapacityUnreadable` (the
 error's first line with its exit status, signal and first stderr line), and the engine log line carries the same text,
 so the next release names the cause publicly.
+
+## Follow-Up: The Walk Runs Off The Event Loop (Same Day)
+
+A read-only rerun on the engine host timed the walk over the three capped archives (13.9, 13.7 and 5.7 GB of segments)
+at 9.9 seconds warm, against a 15 second synchronous limit, at a boot that shares the host with the new image's start.
+Lane start is already asynchronous, so `startLiveHorseDecisionWorker` now measures the archives with
+`horseJournalShardCapacityMeasured`: the same `du` as a child process the event loop does not wait on, with 90 seconds,
+and every refusal rule unchanged. The synchronous path keeps 15 seconds for any other caller.

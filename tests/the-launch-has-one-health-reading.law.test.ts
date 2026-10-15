@@ -26,9 +26,8 @@ describe('the launch has one health reading', () => {
     expect(SQL.match(/^BEGIN;$/gm)).toHaveLength(1);
     expect(SQL.match(/^COMMIT;$/gm)).toHaveLength(1);
     expect(SQL).toMatch(/^-- @live-proof: to_regprocedure\('public\.fn_ca_launch_health\(\)'\)/m);
-    expect(CODE).toContain('REVOKE ALL ON FUNCTION public.fn_ca_launch_health() FROM PUBLIC;');
     expect(CODE).toContain(
-      'REVOKE ALL ON FUNCTION public.fn_ca_launch_health() FROM anon, authenticated;'
+      'REVOKE ALL ON FUNCTION public.fn_ca_launch_health() FROM PUBLIC, anon, authenticated;'
     );
     expect(CODE).toContain(
       'GRANT EXECUTE ON FUNCTION public.fn_ca_launch_health() TO service_role;'

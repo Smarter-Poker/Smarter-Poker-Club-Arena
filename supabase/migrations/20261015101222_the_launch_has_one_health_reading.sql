@@ -177,8 +177,7 @@ BEGIN
 END
 $fn$;
 
-REVOKE ALL ON FUNCTION public.fn_ca_launch_health() FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.fn_ca_launch_health() FROM anon, authenticated;
+REVOKE ALL ON FUNCTION public.fn_ca_launch_health() FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_ca_launch_health() TO service_role;
 COMMENT ON FUNCTION public.fn_ca_launch_health() IS
  'One launch readiness reading: one row per area (green, amber, red) and a final launch row that is the worst of them. Pure read (20261015101222).';

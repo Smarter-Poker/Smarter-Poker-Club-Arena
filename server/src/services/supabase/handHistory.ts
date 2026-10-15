@@ -50,6 +50,39 @@ export const RETAINED_HAND_STANDING_REFUSALS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * THE FREEZE IS A WAIT, NOT A CRASH (2026-10-15).
+ *
+ * fn_ca_resume_hand_submission refuses a retained hand with
+ * HAND_SUBMISSION_PLATFORM_FROZEN while fn_platform_frozen() holds and with
+ * HAND_SUBMISSION_MAINTENANCE_BUSY while the cutover holds advisory lock
+ * 530090. Neither says anything about the hand: both lift at the thaw, and
+ * the same request is admitted then. Read from engine_recovery_events
+ * 2026-10-07 to 2026-10-09: on every engine-replacing break the same three
+ * cash tables with a retained hand were killed with
+ * `start_failed:start_load_table` and rebuilt into the same answer 130 to 480
+ * times between :55 and :00, which is what ClubArenaEngineKillStorm paged.
+ * A cash start that meets one of these waits for the thaw and asks again
+ * (ServerTableEngineBase.resumeRetainedHandAcrossTheFreeze). Every other
+ * caller still sees an ordinary Error with the message it always had.
+ */
+export const RETAINED_HAND_FREEZE_REFUSALS: ReadonlySet<string> = new Set([
+  'HAND_SUBMISSION_PLATFORM_FROZEN',
+  'HAND_SUBMISSION_MAINTENANCE_BUSY',
+]);
+
+/** The door is closed for the break, for the one table it was asked about. */
+export class RetainedHandSubmissionFrozenError extends Error {
+  constructor(
+    readonly tableId: string,
+    readonly code: string
+  ) {
+    // Unchanged text: every log line and dashboard still matches it.
+    super(`retained_hand_submission_readback_failed: ${code}`);
+    this.name = 'RetainedHandSubmissionFrozenError';
+  }
+}
+
+/**
  * THE LEDGER INVARIANT REFUSED THE HAND (2026-10-02).
  *
  * fn_ca_balance_has_its_ledger_row judges every chip movement at COMMIT and,
@@ -110,6 +143,8 @@ export async function resumeRetainedHandSubmission(
       throw new RetainedHandSubmissionRefusedError(tableId, LEDGER_INVARIANT_REFUSED);
     if (RETAINED_HAND_STANDING_REFUSALS.has(code))
       throw new RetainedHandSubmissionRefusedError(tableId, code);
+    if (RETAINED_HAND_FREEZE_REFUSALS.has(code))
+      throw new RetainedHandSubmissionFrozenError(tableId, code);
     throw new Error(`retained_hand_submission_readback_failed: ${error.message}`);
   }
   if (!data || typeof data !== 'object' || typeof data.found !== 'boolean')

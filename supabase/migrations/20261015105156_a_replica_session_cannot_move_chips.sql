@@ -73,6 +73,18 @@
 -- by ca_ddl_watchdog_log, not a setting flipped in passing.
 --
 -- One short transaction (CLAUDE.md production DDL policy): one schema reload.
+--
+-- LIVE INSTALLATION (2026-10-15 13:05-13:14 UTC, Dan: "APPLY THE MIGRATION").
+-- Production installed this in pieces, not as the single transaction below:
+-- one transaction taking all 18 table locks timed out on hand_atomic_commits
+-- and then deadlocked against live hand settlement on tournaments (40P01).
+-- So the functions, the acknowledgement and the declarations went in first,
+-- then each table's two guards in its own short transaction (lock_timeout
+-- 2-3s). Read back: 36 of 36 guards tgenabled = 'A'; fn_audit_supply_breaches
+-- returns []. The Management API role may not set session_replication_role at
+-- all (42501), so the replica-mode write proof below runs only for a role that
+-- can reach the bypass; the catalogue proof runs always. A fresh CI cluster
+-- has no traffic, so this file stays one transaction.
 BEGIN;
 SET LOCAL lock_timeout = '3s';
 SET LOCAL statement_timeout = '60s';
@@ -165,18 +177,34 @@ BEGIN
 END
 $guard$;
 
--- THE PROOF, IN THIS TRANSACTION. Switch to replica mode and attempt a write
--- that matches no row: a statement-level trigger fires for it anyway, so on
--- a protected cluster it must be refused. Then return to origin. No row is
--- touched either way.
+-- THE PROOF, IN THIS TRANSACTION. Every guard must read back as ALWAYS. Then,
+-- if this role is allowed to enter replica mode at all, enter it and attempt a
+-- write that matches no row: a statement-level trigger fires anyway, so on a
+-- protected cluster it must be refused. A role that may not set
+-- session_replication_role (the Management API's, measured 2026-10-15) cannot
+-- reach the bypass in the first place, so that branch proves the catalogue
+-- only. No row is touched either way.
 DO $proof$
 DECLARE
   v_refused boolean := false;
+  v_can_replica boolean := true;
 BEGIN
+  IF (SELECT count(*) FROM pg_trigger t
+       WHERE t.tgname IN ('aaa_ca_refuse_replica_money_write', 'aaa_ca_refuse_replica_money_truncate')
+         AND t.tgenabled = 'A') <> 36 THEN
+    RAISE EXCEPTION 'REPLICA_MONEY_GUARD_NOT_ALWAYS' USING ERRCODE = '55000';
+  END IF;
   IF NOT public.fn_ca_is_protected_cluster() THEN
     RETURN;  -- a CI cluster: the guard is deliberately inert there.
   END IF;
-  PERFORM set_config('session_replication_role', 'replica', true);
+  BEGIN
+    PERFORM set_config('session_replication_role', 'replica', true);
+  EXCEPTION WHEN insufficient_privilege THEN
+    v_can_replica := false;
+  END;
+  IF NOT v_can_replica THEN
+    RETURN;
+  END IF;
   BEGIN
     UPDATE public.table_seats SET stack = stack WHERE false;
   EXCEPTION WHEN insufficient_privilege THEN

@@ -19,6 +19,7 @@ import { test, expect } from '@playwright/test';
 import { ADMIN_CLUB_OPERATION_ROUTES } from './support/clubOperationRoutes';
 import { evaluateAcrossDocumentReplacement } from './support/evaluateAcrossDocumentReplacement';
 import { assertRendered } from './routes/utils';
+import { awaitAccessDecision } from './support/settledRoute';
 
 const ROUTES = [
   '',
@@ -167,6 +168,11 @@ test.describe('Club Arena Responsive Fit At Mobile, Tablet, And Desktop', () => 
         /* Redirected. Give the replacement route the same settle below. */
       }
       await page.waitForTimeout(2200);
+      /* The destination is where an access guard DECIDED the route lands, not
+         where it stood while asking (2026-10-15, run 38675266338:
+         "unions/create navigated while resizing to tablet" was the allowlist
+         guard's /community redirect arriving after the fixed settle). */
+      await awaitAccessDecision(page, route);
 
       if (page.url().includes('/auth')) {
         console.log('MOBILE_FIT_AUDIT ' + JSON.stringify({ route, skipped: 'auth' }));
@@ -189,6 +195,18 @@ test.describe('Club Arena Responsive Fit At Mobile, Tablet, And Desktop', () => 
         await assertRendered(page, route || 'home');
       }
 
+      /* Access guards (UnionNetworkGuard, UnionCreationGuard, FinancialAdminGate, ...)
+         render "Checking Your Access" until their allowlist read returns, then
+         intentionally redirect a refused account to /community. When that read
+         outlasts the fixed settle above, the redirect used to land mid-sweep and
+         surface as "navigated while resizing" (runs 38659110654, 38675266338).
+         Measure the page the guard actually settles on. */
+      await expect(
+        page.getByRole('status').filter({ hasText: /Checking Your Access/i }),
+        `${route || 'home'} access check never resolved`
+      ).toHaveCount(0, { timeout: 15_000 });
+      await page.waitForLoadState('domcontentloaded');
+
       const destinationUrl = page.url();
       const violations: Array<{
         route: string;
@@ -200,6 +218,12 @@ test.describe('Club Arena Responsive Fit At Mobile, Tablet, And Desktop', () => 
 
       for (const viewport of VIEWPORTS) {
         await page.setViewportSize(viewport);
+        /* setViewportSize can return before the renderer reports the new width;
+           run 38672391424 measured "tablet" with innerWidth 375 against an
+           834px layout. Wait until the page itself sees this viewport. */
+        await page.waitForFunction((w) => window.innerWidth === w, viewport.width, {
+          timeout: 10_000,
+        });
         expect(page.url(), `${route || 'home'} navigated while resizing to ${viewport.label}`).toBe(
           destinationUrl
         );

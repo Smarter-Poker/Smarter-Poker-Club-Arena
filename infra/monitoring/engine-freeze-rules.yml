@@ -28,9 +28,25 @@ groups:
       # hand start) for 2 minutes. A healthy table under a 15s shot clock
       # cannot reach 2 minutes. This is the alert that would have fired on
       # 2026-08-15 at minute two instead of never.
+      #
+      # IT FIRES AFTER THE REAPER, NOT WITH IT (2026-10-15). A table enters
+      # poker_stalled_tables at 120s without progress, and the zombie reaper
+      # (GameServer, `msSinceProgress() > 180_000`) condemns and rebuilds it
+      # at 180s. `for: 1m` therefore fired at 120s + 60s = 180s, the same
+      # second the reaper acts, so the page announced recoveries rather than
+      # failures. Measured on production 2026-10-15 04:29 to 06:38 UTC: six
+      # episodes (12 alert rows), each one table, each firing 10 to 24s AFTER
+      # its own tournament_table_zombie rebuild in engine_recovery_events and
+      # resolving within 30s of firing; rebuild to first dealt hand took 26
+      # to 36s (hand_state_snapshots). `for: 3m` fires at 300s: the reaper's
+      # 180s, the measured worst rebuild of 36s, and more than a minute of
+      # scrape and evaluation margin. A table the chain did NOT recover stays
+      # in the gauge and still pages, five minutes in. Each reaper rebuild
+      # stays recorded in engine_recovery_events. Pinned by
+      # tests/the-frozen-table-page-waits-for-the-reaper.law.test.ts.
       - alert: PokerTablesFrozen
         expr: poker_stalled_tables > 0
-        for: 1m
+        for: 3m
         labels:
           severity: critical
           component: engine

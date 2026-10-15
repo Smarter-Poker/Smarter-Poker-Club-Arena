@@ -29,7 +29,7 @@ print("unparkedReasons", m["unparkedReasons"], "f06StuckTables", m["f06StuckTabl
 
 | Rule                                | Expression                                                                     | Question                                                         |
 | ----------------------------------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------- |
-| `PokerTablesFrozen`                 | `poker_stalled_tables > 0` for 1m                                              | Is a table with players seated making no progress?               |
+| `PokerTablesFrozen`                 | `poker_stalled_tables > 0` for 3m                                              | Is a table with players seated making no progress?               |
 | `PokerTournamentTableNeverStarted`  | `poker_tournament_table_never_started_oldest_seconds > 600` for 5m             | Is a tournament table's engine registered but never started?     |
 | `PokerEngineCannotBeReplaced`       | `poker_maintenance_breaks_since_restart_certified >= 2`                        | Has the restart gate stayed shut for two breaks in a row?        |
 | `PokerRestartGateHeldByStuckPermit` | `poker_maintenance_unparked_tables{reason="f06_preparation_stuck"} > 0` for 5m | Is a table holding an F06 preparation past its ten-minute bound? |
@@ -44,10 +44,13 @@ with `tableId`, `dealable` and `secsIdle`.
 
 The per-table recovery chain is: the table's own watchdog (tiers 1-3), then
 `killForRestart`, then the 180-second zombie reaper, then a rebuild from the
-discovery loop. That takes up to about three minutes end to end, so a single
-table briefly in the list is the chain working. The alert fires after a further
-minute, so a table that stays in the list past roughly four minutes is one the
-chain did not recover.
+discovery loop. That takes up to about three and a half minutes end to end
+(the reaper acts at 180 seconds; the measured rebuild to first dealt hand is
+26 to 36 seconds), so a single table briefly in the list is the chain working.
+The table enters the list at 120 seconds and the alert waits three more
+minutes, so it fires at 300 seconds: a table still in the list then is one the
+chain did not recover. Until 2026-10-15 it waited one minute, which is 180
+seconds, the reaper's own moment, and it paged for recoveries.
 
 First checks:
 

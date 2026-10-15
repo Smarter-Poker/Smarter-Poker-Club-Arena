@@ -73,7 +73,9 @@ describe('bounded Phase13 shadow policy', () => {
     }
   );
   it('proposes a legal value action and preserves the live baseline in shadow', () => {
-    const { hero, state, baseline } = fixture('nlh', 1);
+    // A tournament decision: single-board NLH cash keeps the variant brain
+    // (JOINT_SELECTION_RULE.singleBoardCashKeepsVariantBrain).
+    const { hero, state, baseline } = fixture('nlh', 1, 'tournament');
     hero.cards = [
       { rank: 'A', suit: 'spades' },
       { rank: 'K', suit: 'spades' },

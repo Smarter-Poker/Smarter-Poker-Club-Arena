@@ -86,7 +86,33 @@ export const JOINT_SELECTION_RULE = Object.freeze({
   z: 2,
   minEdgeBigBlinds: 0.1,
   actsWhen: 'nothing_to_call',
+  singleBoardCashKeepsVariantBrain: Object.freeze(['nlh', 'plo4'] as const),
 });
+
+/**
+ * SINGLE-BOARD CASH HANDS STAY WITH THE VARIANT BRAIN WHERE IT BEATS THE JOINT
+ * OWNER (2026-10-15). Dan's rule is that a strategy is switched on only where
+ * it beats the current brain. The locked P13.2 matrices measured the joint
+ * owner against the current brain by board count (bb/100 after rake, 99%):
+ *
+ *     PLO8  c84a2bcf  boards 1  +12.35 [+10.51, +14.19]   2  +154.1   3  +217.5
+ *     PLO4  c84a2bcf  boards 1   -1.72 [-2.85, -0.60]     2   +44.4   3   +94.4
+ *     NLH   1235b47a  boards 1   -9.19 [-9.84, -8.54]     2   +13.7   3   +82.8
+ *
+ * Every measured variant wins on two and three boards, where the variant brain
+ * plays a multi-board hand as if it were one board. On one board the PLO4
+ * brain is the qualified Phase 10 pack and the NLH brain the reference
+ * strategy, and both beat the joint owner. So for a variant listed here a
+ * single-board cash decision keeps the variant brain's decision
+ * (jointSelectedRow selects the baseline row; the candidates are still priced
+ * and recorded). A variant is listed when its own matrix shows a single-board
+ * cash loss, and stays listed until a later matrix shows it winning there.
+ * Tournament decisions are unchanged: Phase 7 prices the joint candidates. */
+export function jointSingleBoardCashActs(variant: string): boolean {
+  return !(JOINT_SELECTION_RULE.singleBoardCashKeepsVariantBrain as readonly string[]).includes(
+    variant
+  );
+}
 
 /** Phase 13 round 3: responses measured on the horse population
  * (JointResponseCalibration.ts), one bounded legal raise and hero's answer on

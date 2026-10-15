@@ -15,6 +15,7 @@ import {
   evaluateJointActions,
   jointPlayersBehind,
   JOINT_ACTION_PACK,
+  jointSingleBoardCashActs,
   type JointActionCandidate,
 } from './JointActionModel.js';
 import { prepareJointPots, jointPotDistribution } from './JointPotDistribution.js';
@@ -244,7 +245,14 @@ export function jointSelectedRow(
   if (!selected) return null;
   let best = rule.minEdgeBigBlinds * s.bigBlind;
   const owes = Math.min(hero.stack, Math.max(0, s.currentBet - hero.bet)) > 1e-9;
-  for (const row of owes ? [] : rows) {
+  // A single-board cash hand of a variant whose own matrix showed the variant
+  // brain winning there keeps its decision (jointSingleBoardCashActs). The
+  // rows are still priced and recorded.
+  const keepsVariantBrain =
+    s.gameMode !== 'tournament' &&
+    (s.boardCount ?? 1) === 1 &&
+    !jointSingleBoardCashActs(s.gameVariant);
+  for (const row of owes || keepsVariantBrain ? [] : rows) {
     if (row === selected || row.pairedEdge === null || row.pairedStandardError === null) continue;
     const lower = row.pairedEdge - rule.z * row.pairedStandardError;
     if (lower > best) {

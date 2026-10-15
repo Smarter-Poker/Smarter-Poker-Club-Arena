@@ -62,7 +62,7 @@ const SELECTED_SPOT: Record<
   (typeof HORSE_PHASE13_VARIANTS)[number],
   { street: 'flop' | 'turn' | 'river'; boards: number; k: number }
 > = {
-  nlh: { street: 'turn', boards: 1, k: 2 },
+  nlh: { street: 'flop', boards: 2, k: 12 },
   plo4: { street: 'river', boards: 2, k: 0 },
   plo5: { street: 'turn', boards: 2, k: 1 },
   plo6: { street: 'turn', boards: 2, k: 6 },

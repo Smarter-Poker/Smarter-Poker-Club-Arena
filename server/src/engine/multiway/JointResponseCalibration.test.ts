@@ -201,6 +201,7 @@ describe('Phase 13 round 3: the response pack measured on the horse population',
       z: 2,
       minEdgeBigBlinds: 0.1,
       actsWhen: 'nothing_to_call',
+      singleBoardCashKeepsVariantBrain: ['nlh', 'plo4'],
     });
     let changed = 0;
     for (const variant of VARIANTS)

@@ -12,12 +12,12 @@ only try that lock and give up at once when it is held.
 
 Measured on production on 2026-10-15:
 
-| Window (UTC) | Drain running | Observation batches recorded |
-| --- | --- | --- |
-| 05:00 to 05:40 | no | 140 |
-| 05:40 to 11:20 | yes (run 38688005802, from 05:40) | 9 |
-| 11:20 to 11:50 | no | 119 |
-| 11:50 to 14:35 | yes (run 38717431723) | 2 |
+| Window (UTC)   | Drain running                     | Observation batches recorded |
+| -------------- | --------------------------------- | ---------------------------- |
+| 05:00 to 05:40 | no                                | 140                          |
+| 05:40 to 11:20 | yes (run 38688005802, from 05:40) | 9                            |
+| 11:20 to 11:50 | no                                | 119                          |
+| 11:50 to 14:35 | yes (run 38717431723)             | 2                            |
 
 One queued journal batch was deferred 91 times between 12:56 and 14:34, and
 the engine reported the capture lane as `deferred`. While ingestion was

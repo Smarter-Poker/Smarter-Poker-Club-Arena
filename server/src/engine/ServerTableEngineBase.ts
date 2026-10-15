@@ -124,6 +124,7 @@ import {
   getActiveHandSnapshotFull,
   resumeRetainedHandSubmission,
   RetainedHandSubmissionRefusedError,
+  RetainedHandSubmissionFrozenError,
   savePresenceAtPark,
   parkStoppedTimeBankCustody,
   reaskTimeBankDebit,
@@ -153,7 +154,7 @@ import {
   type PendingSeatMove,
   type SeatMoveOutcome,
 } from '../services/supabase/seatMoves.js';
-import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
+import { isMaintenanceFrozen, onMaintenanceThaw } from '../maintenance/freezeState.js';
 import { wakeCluster } from '../cluster/ClusterController.js';
 import { ChipContinuityTracker } from './ChipContinuity.js';
 import {
@@ -10708,6 +10709,90 @@ export abstract class ServerTableEngineBase {
     }
   }
 
+  /** Longest pause between two asks of a frozen retained-hand door. */
+  static readonly RETAINED_HAND_THAW_POLL_MAX_MS = 5_000;
+
+  /**
+   * THE FREEZE IS A WAIT, NOT A CRASH (2026-10-15).
+   *
+   * fn_ca_resume_hand_submission keeps a retained hand behind the platform
+   * freeze: HAND_SUBMISSION_PLATFORM_FROZEN while fn_platform_frozen() holds,
+   * HAND_SUBMISSION_MAINTENANCE_BUSY while the cutover holds its lock. This
+   * used to throw out of start() as `start_failed:start_load_table`, so on
+   * every engine-replacing break each cash table with a retained hand was
+   * killed, written to engine_recovery_events and rebuilt into the same
+   * answer every few seconds until the thaw (2026-10-07 to 2026-10-09: three
+   * tables, 130 to 480 kills per break; ClubArenaEngineKillStorm).
+   *
+   * Nothing about the hand is wrong and nothing a rebuild does can change the
+   * answer, so this generation keeps its lease and asks the same door again
+   * when the freeze lifts: at the engine's own thaw edge or after a short
+   * pause, whichever comes first. Each answer is a fresh read from the
+   * database, so it stamps progress; the reaper is not asked to condemn a
+   * table that is waiting on the break exactly as a parked table does. The
+   * wait ends the moment this generation stops being the current owner, and
+   * the caller's existing fence then returns without dealing.
+   */
+  private async resumeRetainedHandAcrossTheFreeze(
+    leaseGeneration: string
+  ): Promise<{ handNumber: number; submissionId: string } | null> {
+    let waitingOn: string | null = null;
+    let waitingSinceMs = 0;
+    for (let attempt = 1; ; attempt++) {
+      try {
+        const retained = await resumeRetainedHandSubmission(
+          this.tableId,
+          INSTANCE_ID,
+          leaseGeneration
+        );
+        if (waitingOn) {
+          console.log(
+            `[ServerTableEngine:${this.tableId}] Retained hand door reopened after ` +
+              `${Math.round((Date.now() - waitingSinceMs) / 1000)}s (${waitingOn})`
+          );
+        }
+        return retained;
+      } catch (err) {
+        if (!(err instanceof RetainedHandSubmissionFrozenError) || err.tableId !== this.tableId) {
+          throw err;
+        }
+        if (!this.lifecycleCanMutate() || !this.hasCurrentEngineLeaseAuthority()) return null;
+        if (waitingOn !== err.code) {
+          if (!waitingOn) waitingSinceMs = Date.now();
+          waitingOn = err.code;
+          this.setLoopPhase('start_retained_hand_awaiting_thaw');
+          console.log(
+            `[ServerTableEngine:${this.tableId}] Retained hand waits for the thaw (${err.code}); ` +
+              `holding this generation instead of rebuilding it`
+          );
+        }
+        this.markProgress();
+        await this.waitForRetainedHandThaw(
+          Math.min(
+            500 * 2 ** Math.min(attempt - 1, 4),
+            ServerTableEngineBase.RETAINED_HAND_THAW_POLL_MAX_MS
+          )
+        );
+        if (!this.lifecycleCanMutate() || !this.hasCurrentEngineLeaseAuthority()) return null;
+      }
+    }
+  }
+
+  /** Resolves at the engine's thaw edge or after `ms`, whichever is first. */
+  private waitForRetainedHandThaw(ms: number): Promise<void> {
+    return new Promise<void>((resolve) => {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        unsubscribe();
+        resolve();
+      };
+      const unsubscribe = onMaintenanceThaw(finish);
+      void this.sleep(ms).then(finish).catch(finish);
+    });
+  }
+
   /**
    * Check for an incomplete hand snapshot on server startup.
    * If found, log it for now — full resume requires reconstructing HandController
@@ -10720,11 +10805,7 @@ export abstract class ServerTableEngineBase {
     // before legacy snapshot cleanup, under the current table generation.
     if (authority?.scope === 'cash' && authority.verified && authority.generation) {
       if (!this.hasCurrentEngineLeaseAuthority()) return false;
-      const retained = await resumeRetainedHandSubmission(
-        this.tableId,
-        INSTANCE_ID,
-        authority.generation
-      );
+      const retained = await this.resumeRetainedHandAcrossTheFreeze(authority.generation);
       if (!this.lifecycleCanMutate() || !this.hasCurrentEngineLeaseAuthority()) return false;
       if (retained) {
         this.handCount = Math.max(this.handCount, retained.handNumber);

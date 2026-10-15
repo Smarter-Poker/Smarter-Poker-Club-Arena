@@ -67,7 +67,7 @@ describe('a replica session cannot move chips', () => {
 
   it('refuses only replica mode, only on a protected cluster, and never moves a row', () => {
     expect(sql).toMatch(
-      /current_setting\('session_replication_role'\) = 'replica'\s+AND public\.fn_ca_is_protected_cluster\(\)/
+      /current_setting\('session_replication_role'\) <> 'replica' THEN\s+RETURN NULL;\s+END IF;\s+IF public\.fn_ca_is_protected_cluster\(\) THEN\s+RAISE EXCEPTION/
     );
     expect(sql).toMatch(/cluster_name', true\) = 'main'/);
     expect(sql).toContain("'7581440907192989109'");

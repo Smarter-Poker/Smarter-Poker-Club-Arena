@@ -119,8 +119,12 @@ SECURITY DEFINER
 SET search_path TO 'pg_catalog', 'public'
 AS $function$
 BEGIN
-  IF current_setting('session_replication_role') = 'replica'
-     AND public.fn_ca_is_protected_cluster() THEN
+  -- Nested, not AND: an origin session (every real write) reads one setting
+  -- and leaves; the cluster identity is read only in replica mode.
+  IF current_setting('session_replication_role') <> 'replica' THEN
+    RETURN NULL;
+  END IF;
+  IF public.fn_ca_is_protected_cluster() THEN
     RAISE EXCEPTION 'REFUSED: % on public.% under session_replication_role = replica',
       TG_OP, TG_TABLE_NAME
       USING ERRCODE = '42501',
@@ -189,8 +193,49 @@ INSERT INTO public.ca_supply_breach_ack (snapshot_id, acknowledged_by, reason)
 VALUES (
   942,
   'Claude for Dan (instruction 2026-10-15: fix the 14,081 chips at the root), migration 20261015105156',
-  'Cause proven to the cent: at 2026-10-06 15:33:04-15:33:09 UTC a psql session in session_replication_role = replica ran the patterned-identity force drain and vacated 43 cash chip seats holding 14,081.45 (42 owned by retired cohort-horse identities; the 43rd seat's owner is not in the retirement cohort and is named for Dan's restitution decision). Replica mode switched off the ledger tally, ledger invariant, seat exit log and inventory observer, so no cashout or burn leg was written. Every other store matched its ledger in that window. 12 seats (2,830.85) were later restored by labelled issuance (retired_cash_hand_custody); 11,250.60 were never re-issued. Root fix: 20261015105156 refuses chip-store writes in replica mode (ENABLE ALWAYS guard). No wallet balance moved; the chips left the felt.'
+  'Cause proven to the cent: at 2026-10-06 15:33:04-15:33:09 UTC a psql session in session_replication_role = replica ran the patterned-identity force drain and vacated 43 cash chip seats holding 14,081.45 (42 owned by retired cohort-horse identities; the 43rd seat''s owner is not in the retirement cohort and is named for Dan''s restitution decision). Replica mode switched off the ledger tally, ledger invariant, seat exit log and inventory observer, so no cashout or burn leg was written. Every other store matched its ledger in that window. 12 seats (2,830.85) were later restored by labelled issuance (retired_cash_hand_custody); 11,250.60 were never re-issued. Root fix: 20261015105156 refuses chip-store writes in replica mode (ENABLE ALWAYS guard). No wallet balance moved; the chips left the felt.'
 );
+
+-- Every guard trigger is declared on the money-trigger register in this same
+-- migration (check-money-trigger-declared).
+INSERT INTO public.ca_declared_money_triggers (table_name, trigger_name, note)
+VALUES
+  ('agents', 'aaa_ca_refuse_replica_money_write', 'Statement-level ENABLE ALWAYS guard: refuses writes under session_replication_role = replica on a protected cluster. Moves nothing; origin sessions pass (20261015105156).'),
+  ('agents', 'aaa_ca_refuse_replica_money_truncate', 'Statement-level ENABLE ALWAYS guard: refuses TRUNCATE under session_replication_role = replica on a protected cluster. Moves nothing (20261015105156).'),
+  ('bbj_pools', 'aaa_ca_refuse_replica_money_write', 'Statement-level ENABLE ALWAYS guard: refuses writes under session_replication_role = replica on a protected cluster. Moves nothing; origin sessions pass (20261015105156).'),
+  ('bbj_pools', 'aaa_ca_refuse_replica_money_truncate', 'Statement-level ENABLE ALWAYS guard: refuses TRUNCATE under session_replication_role = replica on a protected cluster. Moves nothing (20261015105156).'),
+  ('chip_escrow', 'aaa_ca_refuse_replica_money_write', 'Statement-level ENABLE ALWAYS guard: refuses writes under session_replication_role = replica on a protected cluster. Moves nothing; origin sessions pass (20261015105156).'),
+  ('chip_escrow', 'aaa_ca_refuse_replica_money_truncate', 'Statement-level ENABLE ALWAYS guard: refuses TRUNCATE under session_replication_role = replica on a protected cluster. Moves nothing (20261015105156).'),
+  ('chip_ledger', 'aaa_ca_refuse_replica_money_write', 'Statement-level ENABLE ALWAYS guard: refuses writes under session_replication_role = replica on a protected cluster. Moves nothing; origin sessions pass (20261015105156).'),
+  ('chip_ledger', 'aaa_ca_refuse_replica_money_truncate', 'Statement-level ENABLE ALWAYS guard: refuses TRUNCATE under session_replication_role = replica on a protected cluster. Moves nothing (20261015105156).'),
+  ('club_members', 'aaa_ca_refuse_replica_money_write', 'Statement-level ENABLE ALWAYS guard: refuses writes under session_replication_role = replica on a protected cluster. Moves nothing; origin sessions pass (20261015105156).'),
+  ('club_members', 'aaa_ca_refuse_replica_money_truncate', 'Statement-level ENABLE ALWAYS guard: refuses TRUNCATE under session_replication_role = replica on a protected cluster. Moves nothing (20261015105156).'),
+  ('club_opening_setups', 'aaa_ca_refuse_replica_money_write', 'Statement-level ENABLE ALWAYS guard: refuses writes under session_replication_role = replica on a protected cluster. Moves nothing; origin sessions pass (20261015105156).'),
+  ('club_opening_setups', 'aaa_ca_refuse_replica_money_truncate', 'Statement-level ENABLE ALWAYS guard: refuses TRUNCATE under session_replication_role = replica on a protected cluster. Moves nothing (20261015105156).'),
+  ('club_wallets', 'aaa_ca_refuse_replica_money_write', 'Statement-level ENABLE ALWAYS guard: refuses writes under session_replication_role = replica on a protected cluster. Moves nothing; origin sessions pass (20261015105156).'),
+  ('club_wallets', 'aaa_ca_refuse_replica_money_truncate', 'Statement-level ENABLE ALWAYS guard: refuses TRUNCATE under session_replication_role = replica on a protected cluster. Moves nothing (20261015105156).'),
+  ('clubs', 'aaa_ca_refuse_replica_money_write', 'Statement-level ENABLE ALWAYS guard: refuses writes under session_replication_role = replica on a protected cluster. Moves nothing; origin sessions pass (20261015105156).'),
+  ('clubs', 'aaa_ca_refuse_replica_money_truncate', 'Statement-level ENABLE ALWAYS guard: refuses TRUNCATE under session_replication_role = replica on a protected cluster. Moves nothing (20261015105156).'),
+  ('hand_atomic_commits', 'aaa_ca_refuse_replica_money_write', 'Statement-level ENABLE ALWAYS guard: refuses writes under session_replication_role = replica on a protected cluster. Moves nothing; origin sessions pass (20261015105156).'),
+  ('hand_atomic_commits', 'aaa_ca_refuse_replica_money_truncate', 'Statement-level ENABLE ALWAYS guard: refuses TRUNCATE under session_replication_role = replica on a protected cluster. Moves nothing (20261015105156).'),
+  ('spin_bonus_pools', 'aaa_ca_refuse_replica_money_write', 'Statement-level ENABLE ALWAYS guard: refuses writes under session_replication_role = replica on a protected cluster. Moves nothing; origin sessions pass (20261015105156).'),
+  ('spin_bonus_pools', 'aaa_ca_refuse_replica_money_truncate', 'Statement-level ENABLE ALWAYS guard: refuses TRUNCATE under session_replication_role = replica on a protected cluster. Moves nothing (20261015105156).'),
+  ('table_pending_addons', 'aaa_ca_refuse_replica_money_write', 'Statement-level ENABLE ALWAYS guard: refuses writes under session_replication_role = replica on a protected cluster. Moves nothing; origin sessions pass (20261015105156).'),
+  ('table_pending_addons', 'aaa_ca_refuse_replica_money_truncate', 'Statement-level ENABLE ALWAYS guard: refuses TRUNCATE under session_replication_role = replica on a protected cluster. Moves nothing (20261015105156).'),
+  ('table_seats', 'aaa_ca_refuse_replica_money_write', 'Statement-level ENABLE ALWAYS guard: refuses writes under session_replication_role = replica on a protected cluster. Moves nothing; origin sessions pass (20261015105156).'),
+  ('table_seats', 'aaa_ca_refuse_replica_money_truncate', 'Statement-level ENABLE ALWAYS guard: refuses TRUNCATE under session_replication_role = replica on a protected cluster. Moves nothing (20261015105156).'),
+  ('tournament_escrow', 'aaa_ca_refuse_replica_money_write', 'Statement-level ENABLE ALWAYS guard: refuses writes under session_replication_role = replica on a protected cluster. Moves nothing; origin sessions pass (20261015105156).'),
+  ('tournament_escrow', 'aaa_ca_refuse_replica_money_truncate', 'Statement-level ENABLE ALWAYS guard: refuses TRUNCATE under session_replication_role = replica on a protected cluster. Moves nothing (20261015105156).'),
+  ('tournament_players', 'aaa_ca_refuse_replica_money_write', 'Statement-level ENABLE ALWAYS guard: refuses writes under session_replication_role = replica on a protected cluster. Moves nothing; origin sessions pass (20261015105156).'),
+  ('tournament_players', 'aaa_ca_refuse_replica_money_truncate', 'Statement-level ENABLE ALWAYS guard: refuses TRUNCATE under session_replication_role = replica on a protected cluster. Moves nothing (20261015105156).'),
+  ('tournament_tickets', 'aaa_ca_refuse_replica_money_write', 'Statement-level ENABLE ALWAYS guard: refuses writes under session_replication_role = replica on a protected cluster. Moves nothing; origin sessions pass (20261015105156).'),
+  ('tournament_tickets', 'aaa_ca_refuse_replica_money_truncate', 'Statement-level ENABLE ALWAYS guard: refuses TRUNCATE under session_replication_role = replica on a protected cluster. Moves nothing (20261015105156).'),
+  ('tournaments', 'aaa_ca_refuse_replica_money_write', 'Statement-level ENABLE ALWAYS guard: refuses writes under session_replication_role = replica on a protected cluster. Moves nothing; origin sessions pass (20261015105156).'),
+  ('tournaments', 'aaa_ca_refuse_replica_money_truncate', 'Statement-level ENABLE ALWAYS guard: refuses TRUNCATE under session_replication_role = replica on a protected cluster. Moves nothing (20261015105156).'),
+  ('union_wallets', 'aaa_ca_refuse_replica_money_write', 'Statement-level ENABLE ALWAYS guard: refuses writes under session_replication_role = replica on a protected cluster. Moves nothing; origin sessions pass (20261015105156).'),
+  ('union_wallets', 'aaa_ca_refuse_replica_money_truncate', 'Statement-level ENABLE ALWAYS guard: refuses TRUNCATE under session_replication_role = replica on a protected cluster. Moves nothing (20261015105156).'),
+  ('unions', 'aaa_ca_refuse_replica_money_write', 'Statement-level ENABLE ALWAYS guard: refuses writes under session_replication_role = replica on a protected cluster. Moves nothing; origin sessions pass (20261015105156).'),
+  ('unions', 'aaa_ca_refuse_replica_money_truncate', 'Statement-level ENABLE ALWAYS guard: refuses TRUNCATE under session_replication_role = replica on a protected cluster. Moves nothing (20261015105156).');
 
 -- @live-proof: (SELECT count(*) FROM pg_trigger t WHERE t.tgname IN ('aaa_ca_refuse_replica_money_write','aaa_ca_refuse_replica_money_truncate') AND t.tgenabled = 'A') = 36
 -- @live-proof: EXISTS (SELECT 1 FROM public.ca_supply_breach_ack WHERE snapshot_id = 942)

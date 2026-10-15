@@ -34,6 +34,32 @@ export interface LobbyTable {
   seats: LobbySeat[];
 }
 
+/**
+ * The chips on one table, for the lobby's table header (Dan 2026-10-15):
+ * the TOTAL of every occupied chair's stack and the AVERAGE over those chairs.
+ * Every seated player counts, horses included (CLAUDE.md 10.5). Summed in
+ * cents so 0.1 + 0.2 never reads 0.30000000000000004; an empty table is 0/0.
+ */
+export function lobbyTableChips(table: Pick<LobbyTable, 'seats'>): {
+  total: number;
+  average: number;
+  players: number;
+} {
+  let cents = 0;
+  let players = 0;
+  for (const s of table.seats ?? []) {
+    if (!s?.user_id) continue;
+    const n = Number(s.stack ?? 0);
+    cents += Number.isFinite(n) ? Math.round(n * 100) : 0;
+    players += 1;
+  }
+  return {
+    total: cents / 100,
+    average: players > 0 ? Math.round(cents / players) / 100 : 0,
+    players,
+  };
+}
+
 export interface LobbyListEntry {
   position: number;
   user_id: string;

@@ -481,7 +481,9 @@ test('keeps Cashier, Players and Club Data realtime connected in both modes and 
       button: true,
     },
     {
-      path: 'data',
+      // #6895: these realtime channels belong to the full report at data/advanced;
+      // the everyday screen at data re-reads on a timer and opens none of them.
+      path: 'data/advanced',
       root: '[data-club-data-mode]',
       prefixes: [
         'realtime:club-data-tables-',

@@ -12,7 +12,16 @@
 // Exit 0: cleared, or the time cap was reached (dispatch again to continue).
 // Exit 1: refused before any call (configuration). Exit 3: a call failed in a
 // way this script cannot classify; inspect before dispatching again.
+//
+// It shares the owner's capacity lock with the engine's journal writes and
+// yields it (see horse-adaptive-drain-yield.mjs): no call while journal work
+// is ready, and after each call a pause at least as long as the call.
 import { readFileSync, appendFileSync } from 'node:fs';
+import {
+  DRAIN_READY_WORK_WAIT_MS,
+  READY_WORK_SQL,
+  pauseAfterCallMs,
+} from './horse-adaptive-drain-yield.mjs';
 
 const CONN = process.env.DATABASE_URL;
 const MAX_MINUTES = Number(process.env.MAX_MINUTES || 340);
@@ -56,15 +65,30 @@ const pendingBelowStop = async () => {
 
 const started = Date.now();
 const deadline = started + MAX_MINUTES * 60_000;
-const totals = { calls: 0, busy: 0, retiredHands: 0, observations: 0, statisticsExpired: 0, lockTimeouts: 0 };
+const totals = {
+  calls: 0, busy: 0, retiredHands: 0, observations: 0, statisticsExpired: 0, lockTimeouts: 0,
+  yieldedToWork: 0,
+};
 let outcome = 'time cap reached; dispatch again to continue';
 let consecutiveLockTimeouts = 0;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 while (Date.now() < deadline) {
+  // The engine's journal writes only try the capacity lock. Never take it
+  // while one of them is due.
+  const { rows: ready } = await client.query(READY_WORK_SQL);
+  if (ready[0].ready) {
+    totals.yieldedToWork++;
+    await sleep(DRAIN_READY_WORK_WAIT_MS);
+    continue;
+  }
   let receipt;
+  const callStarted = Date.now();
   try {
     const { rows } = await client.query('SELECT public.fn_prune_horse_adaptive_journal() AS r');
     receipt = rows[0].r;
     consecutiveLockTimeouts = 0;
+    // Stay off the lock at least as long as the call held it.
+    await sleep(pauseAfterCallMs(Date.now() - callStarted));
   } catch (e) {
     // The owner's own lock_timeout (2 s) refuses and rolls back the call; that
     // is a known, harmless outcome. Anything else is unclassified: stop.

@@ -27,6 +27,7 @@ import { fetchAllRows } from './supabase/pagination.js';
 import { IN_LIST_CHUNK, selectInChunks } from './supabase/chunkedIn.js';
 import { diamondArenaEntrantClubIds, isDiamondArenaClubRow } from './diamondScheduledSpawn.js';
 import { reportError } from './errorReporter.js';
+import { closeFreeBuyBoardAlert } from './freeBuyAuditAlert.js';
 import {
   emptySeatFirstPrecheckTally,
   recordSeatFirstPrecheck,
@@ -3435,6 +3436,13 @@ export class TournamentRecurringService {
 
       const { problems, checked } = auditFreeBuyBoard((data ?? []) as any[], now);
       if (problems.length === 0) {
+        // The watch closes its own alert. Read from the database, not from
+        // this process's memory, so a restart between the raise and the clean
+        // read cannot strand the row (f2c43ab2, 2026-10-13).
+        const closed = await closeFreeBuyBoardAlert(supabase, checked, now);
+        if (closed > 0) {
+          console.log(`[TournamentRecurring] Free Buy audit: closed ${closed} open alert(s)`);
+        }
         if (this.lastFreeBuyAuditProblems > 0) {
           console.log(`[TournamentRecurring] Free Buy audit: ${checked} event(s), all correct now`);
         }

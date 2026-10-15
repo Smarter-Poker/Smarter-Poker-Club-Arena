@@ -1,0 +1,72 @@
+name: Deadlock lock orders (round 5)
+
+# fn_sweep_bbj_promo_all, fn_project_hand_side_effects and
+# fn_ensure_scheduled_mtt_satellite (migrations 20261015094402,
+# 20261015094418, 20261015094435). Runs
+# scripts/ci/test-deadlock-lock-orders-r5.py against a throwaway PostgreSQL 17
+# cluster, never production: each production definition, rebuilt from the
+# migrations that wrote it (pg_get_functiondef md5 equal to the live function
+# on 2026-10-15), must deadlock in the two-session interleaving the
+# postgres_logs show, and after its migration the same interleaving must
+# complete with nothing credited differently. No timer (CLAUDE.md 10.85):
+# pull_request only, scoped to the paths it proves.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - supabase/migrations/20261015094402_bbj_promo_sweep_never_waits_while_holding_a_pool.sql
+      - supabase/migrations/20261015094418_every_hand_projection_takes_its_players_in_one_order.sql
+      - supabase/migrations/20261015094435_the_satellite_board_never_blocks_a_feeder_s_foreign_key_chec.sql
+      - supabase/migrations/20260902220500_the_undeclared_legs_name_their_counterparty.sql
+      - supabase/migrations/20260908155252_hand_projection_takes_post_commit_lock_first.sql
+      - supabase/migrations/20261002082303_satellite_board_stands_down_for_a_scheduled_series_and_orpha.sql
+      - scripts/ci/test-deadlock-lock-orders-r5.py
+      - .github/workflows/deadlock-lock-orders-r5.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deadlock-lock-orders-r5-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deadlock-lock-orders-r5:
+    name: Three deadlocks take one lock order or do not wait
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL 17 from the signed PGDG source only
+        run: |
+          set -euo pipefail
+          pg_sources="$(mktemp -d "$RUNNER_TEMP/ca-postgres-apt.XXXXXX")"
+          chmod 755 "$pg_sources"
+          test -f /etc/apt/sources.list.d/ubuntu.sources
+          cp /etc/apt/sources.list.d/ubuntu.sources "$pg_sources/ubuntu.sources"
+          pg_apt=(-o "Dir::Etc::sourcelist=/dev/null" -o "Dir::Etc::sourceparts=$pg_sources")
+          sudo apt-get "${pg_apt[@]}" update
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-common curl ca-certificates
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail --silent --show-error --location \
+            --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          codename="$(. /etc/os-release && printf '%s' "$VERSION_CODENAME")"
+          printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' \
+            "$codename" > "$pg_sources/pgdg.sources"
+          sudo apt-get "${pg_apt[@]}" update
+          printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-17
+      # Runs as the runner user (non-root), exactly as the ci.yml step would.
+      - name: Three deadlocks take one lock order or do not wait
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-deadlock-lock-orders-r5.py --output artifacts/deadlock-lock-orders-r5
+      - name: Retain the regression evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deadlock-lock-orders-r5-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/deadlock-lock-orders-r5/RESULTS.json
+          retention-days: 7
+          if-no-files-found: warn

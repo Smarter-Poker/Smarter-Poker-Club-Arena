@@ -113,6 +113,21 @@ describe('the everyday screen lists what was played, live first', () => {
   });
 });
 
+describe('the everyday screen wears the Smarter.Poker look (Dan 2026-10-15)', () => {
+  const css = readFileSync(resolve(__dirname, '../src/pages/club/ClubDataSimplePage.module.css'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, ' ');
+  it('uses the strict house palette, never the PokerBros gold', () => {
+    expect(css).not.toMatch(/#f4b52a|#ffd24d|#d9901a|#3b3f86/i);
+    expect(css).toContain('--cd-accent: #6fdcff;');
+    expect(css).toContain('--cd-action: #1877f2;');
+  });
+  it('builds every frame from the three-layer depth recipe', () => {
+    expect(css).toMatch(/--cd-bevel:\s*inset 0 1px 0/);
+    expect(css).toMatch(/\.stats\s*\{[^}]*box-shadow:\s*var\(--cd-bevel\), var\(--cd-cast-high\)/);
+    expect(css).toMatch(/\.row\s*\{[^}]*box-shadow:\s*var\(--cd-bevel\), var\(--cd-cast\)/);
+  });
+});
+
 describe('the everyday screen reads live and stays simple', () => {
   it('is the screen at clubs/:clubId/data, with the full report one tap away', () => {
     expect(APP).toMatch(/path="clubs\/:clubId\/data"[\s\S]{0,300}<ClubDataSimplePage \/>/);

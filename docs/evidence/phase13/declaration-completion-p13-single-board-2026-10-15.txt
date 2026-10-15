@@ -1,0 +1,49 @@
+Horse Brain Phase 13 Natural Completion Window (All Nine Variants, Source 818b10c1): Declaration
+Written (date -u, before any window below opened and before any journal of it was read): 2026-10-15T16:40:27Z
+Writer: Horse Brain takeover agent, session https://claude.ai/code/session_01THJQ8mhLsuDwLCpJq2QFfr
+Policy source under test: 818b10c16e962616008cc225a28a1cddba8cf6a0 (#6973, single-board NLH and PLO4 cash keep the
+variant brain). P13.2 strength runs dispatched at that source: 38770647103 nlh, 38770650487 plo4, 38770654073 plo8;
+the other six variants are dispatched at the same source as capacity allows.
+Supersedes for every future window: declaration-completion-p13-2026-10-15.txt (its expected digests can no longer occur).
+
+1. Release
+The release is the club-arena-engine release serving at the first identity read, taken between H:00:00Z and H:02:00Z,
+where H is the first whole UTC hour at or after 18:00Z on 2026-10-15 whose serving release has the Phase 13 policy
+digests of section 4, recomputed from that release's own sources before any journal of the window is read. If they
+differ, H moves to the next whole hour.
+
+2. Window
+[H:02:00.000Z, (H+1):50:00.000Z). The release is unchanged when the container StartedAt, the sp.release.sha label and
+/health releaseSha read before H:02:00Z equal the reads after (H+1):50:00Z and no auto-deploy-hetzner run completed
+successfully in between. If it is replaced, the window is void, nothing measured in it is used, and this declaration
+applies to the next H after the void window. Bounds are exactly the canonical toISOString forms.
+
+3. Commands
+Stage 1 server/scripts/phase13-completion-extract.py on the engine host (read-only, nice 19 / ionice idle, closed archive
+segments of every decision-worker shard, sha256-name verified), argv <from> <to> <releaseSha40> <variant>, for every
+variant in section 4. Stage 2 server/src/scripts/phase13CompletionRecord.ts --variant=<v> --release=<sha> --from --to
+--release-unchanged=true --source=<this declaration and the window>, in a clean detached worktree of the release,
+formatted with prettier 3.8.1. Scripts are taken from the release.
+
+4. Expected Digests (computed at 818b10c16e962616008cc225a28a1cddba8cf6a0)
+| 13 | nlh        | policy   | abcfa99773326632f6f366f02cea1020a43b84103562af6664dcc6acf75812f4 |
+| 13 | short_deck | policy   | e0236592c9823c58c42b6baf8d91f92fc262c3b9c27b24fa593417c4a7e305ef |
+| 13 | flh        | policy   | 69458e2366cebc41f693715f6d75ec0c5b9fd7dba5570eb793a38b5ff7b7baea |
+| 13 | pineapple  | policy   | 0bb928074a5666320465428005fad8204bc521e4f31d3c23ad70a0f962c03ab1 |
+| 13 | plo4       | policy   | 3e821046225a0ecd99d62ca4cae1cd9225307447ea46e826d08f2e535c11fcc3 |
+| 13 | plo5       | policy   | 7f51d3ff4357893801f0dbc0ab6fdcb74b50a0665992cc9fd730d3e233a330cf |
+| 13 | plo6       | policy   | 4186e73000372cddb3a77fc7366b2aad77f95275c6581ff857909fc615419b52 |
+| 13 | plo8       | policy   | 490031ed869bd065d3b14b63459f32c9cda0d3f9d738867ea96305f64f7195ec |
+| 13 | flo8       | policy   | 6d73ac63c300b07e151dff3e5a80823b4e1d9c80207e0bc30a2cb37af9ae5c33 |
+| 13 | all        | contract | 0cd88d970c600fb64933337672af349e9d106402d4edfcc3510e1f26374741f8 |
+
+5. Verdict
+Counting is the authority's own (horsePhase13CompletionCounts and board counts) in stage 2 only. Floor: Wilson lower bound
+at z = 2.5758293035489 of at least 0.95 with at least 127 eligible; every street must clear; admitted board counts are
+horsePhase13CompletionAdmittedBoardCounts(record). A variant with at least 127 eligible decisions on every street is
+judged by the window and recorded whatever it shows, never re-measured on another window of the same release. A variant
+with fewer than 127 eligible on any street is not judged by the window and is measured in the next valid window under
+this declaration (a different hour), counted in full there.
+
+6. Production Rules
+Read-only observation only: no synthetic hands, tables or bomb pots, nothing activated to manufacture evidence, no scheduler.

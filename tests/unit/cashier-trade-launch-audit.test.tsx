@@ -1095,9 +1095,11 @@ it('Phase 2: a partial recovery skips an already committed removed recipient and
   fireEvent.click(screen.getByRole('button', { name: 'Review And Retry' }));
   const dialog = await screen.findByRole('dialog', { name: /Send Out/ });
   expect(readCashierTransferRecovery(USER_ID, CLUB_A)?.targetIds).toEqual(PLAYER_IDS.slice(0, 2));
-  expect(screen.getByRole('region', { name: 'Selected Player Wallet Context' })).toHaveTextContent(
-    'Send From Your Agent Wallet To Their Agent Wallet'
-  );
+  // The simplified dialog names only where the chips come from; the original
+  // destination is proved below on the replayed item itself.
+  expect(
+    within(dialog).getByRole('region', { name: 'From Your Agent Wallet' })
+  ).toBeInTheDocument();
   fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm' }));
   await waitFor(() =>
     expect(state.rpcCalls.filter((call) => call.name === 'fn_cashier_batch_transfer')).toHaveLength(

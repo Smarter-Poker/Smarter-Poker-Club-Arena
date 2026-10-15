@@ -274,6 +274,67 @@ async function expectMobileConsoleQuality(
   }
 }
 
+/**
+ * AN ARENA CHECK THAT DID NOT ANSWER IS NOT A BROKEN CONSOLE (2026-10-15).
+ *
+ * ArenaAccessBoundary renders its own recovery surface when the access read
+ * does not come back: a `section.club-home.error[role="alert"]` titled "Could
+ * Not Verify Arena Access", whose own copy says nothing is wrong with the
+ * account and the check simply did not return, with a Retry plate that re-runs
+ * it. Run 38707543879 met exactly that on `clubs/<club>/financials` and
+ * reported it as a missing Financials heading, which reads as "the CSV Exports
+ * console is broken". It was not: 458 of 458 sweep cases passed in the same
+ * job, the recorded page snapshot is the boundary's alert, and the console
+ * itself was never reached.
+ *
+ * So take the recovery the page already offers, bounded, and then assert the
+ * console exactly as before. Three endings, none of them silent: answered,
+ * then certified; answered, then still wrong (a real defect, named as one);
+ * never answered across both retries (named as the arena check, never as the
+ * console). This is the same correction the hub case already carries in
+ * "renders a bounded hub error and recovers through the read-only retry", and
+ * it relaxes nothing: the heading, the terminal surface and every linked
+ * console outcome are unchanged.
+ */
+const ARENA_ACCESS_RETRIES = 2;
+
+async function settleArenaAccess(page: Page): Promise<void> {
+  const boundary = page.locator('section.club-home.error[role="alert"]').filter({
+    has: page.getByRole('heading', { name: 'Could Not Verify Arena Access', exact: true }),
+  });
+  for (let attempt = 0; attempt < ARENA_ACCESS_RETRIES; attempt++) {
+    if (
+      !(await boundary
+        .first()
+        .isVisible()
+        .catch(() => false))
+    )
+      return;
+    console.log(
+      `[financial-admin] the arena access check did not answer at ${page.url()}; taking the page's own Retry (${attempt + 1}/${ARENA_ACCESS_RETRIES}).`
+    );
+    await boundary
+      .first()
+      .getByRole('button', { name: 'Retry', exact: true })
+      .click({ timeout: 10_000 });
+    await boundary
+      .first()
+      .waitFor({ state: 'hidden', timeout: 30_000 })
+      .catch(() => undefined);
+  }
+  if (
+    await boundary
+      .first()
+      .isVisible()
+      .catch(() => false)
+  ) {
+    throw new Error(
+      `The arena access check did not answer across ${ARENA_ACCESS_RETRIES} retries at ${page.url()}. ` +
+        'The console behind it was never reached, so this run certifies nothing about it.'
+    );
+  }
+}
+
 async function openConsole(
   page: Page,
   relativeUrl: string,
@@ -283,6 +344,7 @@ async function openConsole(
 ): Promise<void> {
   await page.goto(relativeUrl, { waitUntil: 'domcontentloaded' });
   await expectExactRoute(page, relativeUrl, testInfo);
+  await settleArenaAccess(page);
   await expect(page.getByRole('heading', { name: heading, exact: true }).first()).toBeVisible({
     timeout: 60_000,
   });

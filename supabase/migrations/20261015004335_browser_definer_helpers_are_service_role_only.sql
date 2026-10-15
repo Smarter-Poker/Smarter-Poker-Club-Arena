@@ -30,6 +30,8 @@
 -- Bodies, owners, SECURITY DEFINER, search_path and the service_role grant
 -- are unchanged. Only the PUBLIC/anon/authenticated EXECUTE grant is removed.
 
+-- @live-proof: (SELECT count(*)=4 AND count(*) FILTER (WHERE has_function_privilege('authenticated',p.oid,'EXECUTE') OR has_function_privilege('anon',p.oid,'EXECUTE'))=0 AND count(*) FILTER (WHERE NOT has_function_privilege('service_role',p.oid,'EXECUTE'))=0 FROM pg_proc p WHERE p.oid IN ('public.fn_ca_launch_accounting_cutoff(text,uuid)'::regprocedure,'public.fn_ca_launch_accounting_start(text,uuid,timestamptz)'::regprocedure,'public.fn_ca_launch_accounting_waived(text,uuid,timestamptz)'::regprocedure,'public.fn_redeem_vip_points(bigint,text,text)'::regprocedure))
+
 BEGIN;
 
 REVOKE ALL ON FUNCTION public.fn_ca_launch_accounting_cutoff(text, uuid) FROM PUBLIC, anon, authenticated;

@@ -1,0 +1,287 @@
+diff --git a/docs/changelog/2026-10-15-a-ticket-paid-in-cash-never-arrived-at-its-target.md b/docs/changelog/2026-10-15-a-ticket-paid-in-cash-never-arrived-at-its-target.md
+index af70a1bd7..ef00c7901 100644
+--- a/docs/changelog/2026-10-15-a-ticket-paid-in-cash-never-arrived-at-its-target.md
++++ b/docs/changelog/2026-10-15-a-ticket-paid-in-cash-never-arrived-at-its-target.md
+@@ -28,10 +28,17 @@ Measured read-only on production: 57 targets carry cash-paid tickets (940
+ tickets, 57,520.00), and for all 57 the live delta equals the cash-paid value
+ to the penny. No other event moves. The satellites stay balanced.
+ 
++`fn_pay_backed_payout_shortfalls` carries the same term inline and treats an
++event with a positive delta as holding money it may pay a reconciler top-up
++from. Through the misread every one of those 57 targets looked like it held its
++cash-paid tickets' value. Its hourly job runs dry and raised nothing, so
++nothing was paid from it; the term is corrected there too so it never can be.
++
+ ## The Fix
+ 
+ Migration `20261015072547_a_ticket_paid_in_cash_never_arrived_at_its_target`
+-changes the one predicate in both reads: a redeemed ticket is seat income
++changes the one predicate in all three reads (scalar, one-pass set and the
++backed-payout batch): a redeemed ticket is seat income
+ only when it has no `closed-target-cash` leg. It edits the live text in place
+ with the pinned-preimage substitution (live md5 in, derived postimage md5
+ out, owner, grants, SECURITY DEFINER and config unchanged). It writes no
+@@ -46,4 +53,7 @@ definitions read a cash-paid ticket as retained money; after the migration
+ it reads as nothing arriving, an admitted ticket still arrives, an issued
+ ticket still does not, a real retention still flags, the satellite is
+ unchanged, set and scalar agree, the live scan closes only the false alert,
+-and a second run refuses.
++the batch dry run no longer counts the cash target as payable, and a second
++run refuses. `tests/backedPayoutScanRegression.test.ts` lists the migration
++as a reviewed dynamic patch and pins that all three calls swap the same
++anchor from the Diamond postimages.
+diff --git a/scripts/ci/test-ticket-cash-conservation.py b/scripts/ci/test-ticket-cash-conservation.py
+index aa99a991f..dbd9bd42c 100644
+--- a/scripts/ci/test-ticket-cash-conservation.py
++++ b/scripts/ci/test-ticket-cash-conservation.py
+@@ -22,6 +22,10 @@ paid in cash, applies the candidate migration, and proves:
+   * the satellite that issued the tickets is unchanged;
+   * set and scalar agree on every event; the postimage md5s are production's
+     derived ones; grants, owner, SECURITY DEFINER and config did not move;
++  * fn_pay_backed_payout_shortfalls, which carries the same term inline and
++    pays a reconciler top-up out of what an event appears to hold, no longer
++    counts the cash-paid target as holding its ticket's value (dry run), while
++    the real retention is still eligible;
+   * a second run refuses.
+ An empty throwaway cluster on a Unix socket; no network, no production connection.
+ """
+@@ -60,6 +64,7 @@ results = {'checks': [], 'production_mutations': False}
+ SCALAR = 'public.fn_tournament_conservation_delta(uuid)'
+ SET = 'public.fn_tournament_conservation_deltas(timestamp with time zone,timestamp with time zone)'
+ SCAN = 'public.fn_tournament_money_conservation(integer,numeric,integer)'
++BATCH = 'public.fn_pay_backed_payout_shortfalls(boolean,integer)'
+ # pg_get_functiondef md5, read on production 2026-10-15, and the postimages
+ # derived read-only there with replace().
+ LIVE_SCALAR_MD5 = '17ae3dfd32d3cb1d2673a86c0d8d9426'
+@@ -67,6 +72,8 @@ LIVE_SET_MD5 = '118b1c0bbf6f959809efe6b385d92bf9'
+ LIVE_SCAN_MD5 = '1a0bc1bd70d39192e13fa7fb946a7103'
+ POST_SCALAR_MD5 = '34e1f8a48e1ba37b8009e3d64c5ed626'
+ POST_SET_MD5 = '4bc2c77d5e02abe38a535367bade00e8'
++LIVE_BATCH_MD5 = 'c9e67c9c7e42028543e39b18d29f02d3'
++POST_BATCH_MD5 = '8d21d2f9e49672bb9bcc3cf5c51c5c58'
+ GRANTS = f'''
+ REVOKE ALL ON FUNCTION {SCALAR} FROM PUBLIC, anon, authenticated;
+ GRANT EXECUTE ON FUNCTION {SCALAR} TO service_role;
+@@ -74,13 +81,28 @@ REVOKE ALL ON FUNCTION {SET} FROM PUBLIC, anon, authenticated;
+ GRANT EXECUTE ON FUNCTION {SET} TO service_role;
+ REVOKE ALL ON FUNCTION {SCAN} FROM PUBLIC, anon, authenticated;
+ GRANT EXECUTE ON FUNCTION {SCAN} TO service_role;
++REVOKE ALL ON FUNCTION {BATCH} FROM PUBLIC, anon, authenticated;
++GRANT EXECUTE ON FUNCTION {BATCH} TO service_role;
+ '''
+ 
+ SCHEMA = """
+ CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role;
+ CREATE TABLE clubs(id uuid PRIMARY KEY, asset text, is_platform boolean, union_id uuid);
+ CREATE TABLE tournaments(id uuid PRIMARY KEY, name text, variant text, status text, ended_at timestamptz,
+-  club_id uuid, union_id uuid, buy_in_amount numeric, buy_in_fee numeric);
++  club_id uuid, union_id uuid, buy_in_amount numeric, buy_in_fee numeric,
++  prize_pool numeric DEFAULT 100, tournament_type text, satellite_target_id uuid);
++CREATE TABLE tournament_payout_backfill_log(tournament_id uuid PRIMARY KEY, top_up numeric,
++  delta_before numeric, delta_after numeric);
++-- The reconciler reports 10.00 owed on the cash target and on the real
++-- retention, nothing elsewhere. A dry run never calls it with p_apply = true.
++CREATE FUNCTION fn_tournament_payout_reconcile(p_tournament_id uuid, p_apply boolean)
++  RETURNS jsonb LANGUAGE plpgsql AS $$
++BEGIN
++  IF p_apply THEN RAISE EXCEPTION 'the regression only dry-runs the batch'; END IF;
++  RETURN jsonb_build_object('total_top_up',
++    CASE WHEN p_tournament_id IN ('00000000-0000-0000-0000-0000000000c1',
++                                  '00000000-0000-0000-0000-0000000000d1') THEN 10 ELSE 0 END);
++END $$;
+ CREATE TABLE wallet_transactions(id bigserial, related_entity_id uuid, user_id uuid, type text, category text, amount numeric);
+ CREATE TABLE rake_records(id bigserial, tournament_id uuid, rake_amount numeric, is_tournament boolean);
+ CREATE TABLE chip_ledger(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), tournament_id uuid, category text,
+@@ -205,7 +227,11 @@ def live_scan_text():
+ 
+ CATALOG = f"""SELECT jsonb_agg(jsonb_build_object('acl',proacl::text,'owner',proowner,'definer',prosecdef,
+   'config',proconfig,'volatility',provolatile) ORDER BY oid) FROM pg_proc
+-  WHERE oid IN ('{SCALAR}'::regprocedure,'{SET}'::regprocedure)"""
++  WHERE oid IN ('{SCALAR}'::regprocedure,'{SET}'::regprocedure,'{BATCH}'::regprocedure)"""
++
++
++def batch_dry_run():
++    return json.loads(run("BEGIN; SELECT fn_pay_backed_payout_shortfalls(false, 500); ROLLBACK;"))
+ 
+ try:
+     if shutil.disk_usage(tempfile.gettempdir()).free < 256 * 1024 ** 2:
+@@ -220,10 +246,12 @@ try:
+     # Baseline: the exact production definitions before this change.
+     run((FIXTURES / 'fn_tournament_conservation_delta.live-20261015.sql').read_text() + ';\n'
+         + (FIXTURES / 'fn_tournament_conservation_deltas.live-20261015.sql').read_text() + ';\n'
++        + (FIXTURES / 'fn_pay_backed_payout_shortfalls.live-20261015.sql').read_text() + ';\n'
+         + live_scan_text() + ';\n' + GRANTS)
+     check('baseline-scalar-is-production-preimage', md5(SCALAR) == LIVE_SCALAR_MD5)
+     check('baseline-set-is-production-preimage', md5(SET) == LIVE_SET_MD5)
+     check('baseline-scan-is-production-live-text', md5(SCAN) == LIVE_SCAN_MD5)
++    check('baseline-batch-is-production-preimage', md5(BATCH) == LIVE_BATCH_MD5)
+     run(SEED)
+     d = deltas()
+     results['baseline'] = d
+@@ -235,6 +263,11 @@ try:
+     check('baseline-set-equals-scalar', scalar_parity() == '0')
+     scan = json.loads(run("BEGIN; SELECT fn_tournament_money_conservation(45, 1.0, 500); ROLLBACK;"))
+     check('baseline-scan-flags-cash-and-retained', scan['flagged'] == 2 and scan['auto_resolved'] == 0, scan)
++    batch = batch_dry_run()
++    results['baseline_batch'] = batch
++    # The predecessor would pay 10.00 on the cash target out of the 20.00 it
++    # never held, beside the real retention's 10.00.
++    check('baseline-batch-would-pay-from-phantom-money', batch['events_paid'] == 2 and batch['chips_paid'] == 20, batch)
+ 
+     # Candidate: the migration under test, applied as production would.
+     migration = sorted(MIGRATIONS.glob('*_a_ticket_paid_in_cash_never_arrived_at_its_target.sql'))
+@@ -250,6 +283,10 @@ try:
+     check('candidate-reproduces-production-derived-set-postimage', md5(SET) == POST_SET_MD5, md5(SET))
+     check('candidate-keeps-grants-owner-security-config', run(CATALOG) == before_catalog)
+     check('candidate-leaves-the-scan-alone', md5(SCAN) == LIVE_SCAN_MD5)
++    check('candidate-reproduces-production-derived-batch-postimage', md5(BATCH) == POST_BATCH_MD5, md5(BATCH))
++    batch = batch_dry_run()
++    results['candidate_batch'] = batch
++    check('batch-no-longer-pays-from-a-cash-paid-ticket', batch['events_paid'] == 1 and batch['chips_paid'] == 10, batch)
+     d = deltas()
+     results['candidate'] = d
+     check('cash-paid-ticket-is-not-target-income', d['t-cash'] == '0.00', d)
+@@ -271,7 +308,8 @@ try:
+     replay = subprocess.run(list(map(str, psql)), input=text, text=True, capture_output=True, env=env, timeout=60)
+     check('migration-refuses-a-second-run', replay.returncode != 0 and 'is not the pinned text' in replay.stderr,
+           replay.stderr[-300:])
+-    check('second-run-left-the-postimage', md5(SCALAR) == POST_SCALAR_MD5 and md5(SET) == POST_SET_MD5)
++    check('second-run-left-the-postimage',
++          md5(SCALAR) == POST_SCALAR_MD5 and md5(SET) == POST_SET_MD5 and md5(BATCH) == POST_BATCH_MD5)
+ finally:
+     if (cluster / 'data' / 'postmaster.pid').exists():
+         command(as_owner + [pg / 'pg_ctl', '-D', cluster / 'data', '-m', 'fast', '-w', 'stop'])
+diff --git a/supabase/migrations/20261015072547_a_ticket_paid_in_cash_never_arrived_at_its_target.sql b/supabase/migrations/20261015072547_a_ticket_paid_in_cash_never_arrived_at_its_target.sql
+index 1a983abbd..23091bd61 100644
+--- a/supabase/migrations/20261015072547_a_ticket_paid_in_cash_never_arrived_at_its_target.sql
++++ b/supabase/migrations/20261015072547_a_ticket_paid_in_cash_never_arrived_at_its_target.sql
+@@ -35,25 +35,36 @@
+ --     leaving the satellite, and the cash credit is category 'transfer', not
+ --     a 'prize' the satellite could double count.
+ --
+--- THE FIX, at the line that misreads: in both reads a redeemed ticket counts
+--- as seat income only when it has no closed-target-cash leg (one primary-key
+--- probe of chip_ledger_idem per ticket row). After install the hourly pass 1
+--- re-reads every open alert through the corrected scalar and closes the 56
+--- itself; no alert row, wallet or ledger row is written by this migration.
+--- Not a settlement: no money moved wrongly, so 10.9 has nothing to pay.
++--   * fn_pay_backed_payout_shortfalls carries the same seat_income term
++--     inline and selects events with delta > 0.01 as holding money it may pay
++--     a reconciler top-up from. Through this misread, every one of the 57
++--     targets looks like it holds its cash-paid tickets' value; if the
++--     reconciler ever reported a top-up on one, the sweep would pay it from
++--     money the event never held. Its hourly job runs dry (p_apply default
++--     false) and has raised nothing, so nothing has been paid; the term is
++--     corrected here so it never can be.
++--
++-- THE FIX, at the line that misreads: in all three reads a redeemed ticket
++-- counts as seat income only when it has no closed-target-cash leg (one
++-- primary-key probe of chip_ledger_idem per ticket row). After install the
++-- hourly pass 1 re-reads every open alert through the corrected scalar and
++-- closes the 56 itself; no alert row, wallet or ledger row is written by this
++-- migration. Not a settlement: no money moved wrongly, so 10.9 has nothing to
++-- pay.
+ --
+ -- HOW: the pinned-preimage exact-substitution helper of 20261007212545. The
+ -- live text must hash to today's measured md5 (scalar 17ae3dfd..., set
+--- 118b1c0b...), the one anchor must occur exactly once in each (measured
+--- read-only on production 2026-10-15: 1 and 1), and each result must hash to
+--- the postimage derived read-only on production with replace() (scalar
+--- 34e1f8a4..., set 4bc2c77d...); owner, SECURITY DEFINER, proconfig and
++-- 118b1c0b..., batch c9e67c9c..., the postimages of 20261009151510), the one
++-- anchor must occur exactly once in each (measured read-only on production
++-- 2026-10-15: 1, 1 and 1), and each result must hash to the postimage derived
++-- read-only on production with replace() (scalar 34e1f8a4..., set
++-- 4bc2c77d..., batch 8d21d2f9...); owner, SECURITY DEFINER, proconfig and
+ -- grants must not move.
+ --
+ -- Regression: scripts/ci/test-ticket-cash-conservation.py (native
+ -- PostgreSQL), run by .github/workflows/ticket-cash-conservation.yml.
+ --
+--- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_tournament_conservation_delta(uuid)'::regprocedure)) = '34e1f8a48e1ba37b8009e3d64c5ed626' AND md5(pg_get_functiondef('public.fn_tournament_conservation_deltas(timestamp with time zone,timestamp with time zone)'::regprocedure)) = '4bc2c77d5e02abe38a535367bade00e8')
++-- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_tournament_conservation_delta(uuid)'::regprocedure)) = '34e1f8a48e1ba37b8009e3d64c5ed626' AND md5(pg_get_functiondef('public.fn_tournament_conservation_deltas(timestamp with time zone,timestamp with time zone)'::regprocedure)) = '4bc2c77d5e02abe38a535367bade00e8' AND md5(pg_get_functiondef('public.fn_pay_backed_payout_shortfalls(boolean,integer)'::regprocedure)) = '8d21d2f9e49672bb9bcc3cf5c51c5c58')
+ 
+ BEGIN;
+ 
+@@ -133,4 +144,21 @@ SELECT pg_temp.ca_conservation_subst(
+                            WHERE ci.idempotency_key = 'ticket:' || k.id::text || ':closed-target-cash')))$new$
+ );
+ 
++SELECT pg_temp.ca_conservation_subst(
++  'public.fn_pay_backed_payout_shortfalls(boolean,integer)',
++  'c9e67c9c7e42028543e39b18d29f02d3', '8d21d2f9e49672bb9bcc3cf5c51c5c58',
++  $old$AND (k.id IS NULL OR k.status = 'redeemed')$old$,
++  $new$AND (k.id IS NULL OR (k.status = 'redeemed'
++          -- A TICKET PAID IN CASH NEVER ARRIVED HERE (2026-10-15). A direct
++          -- ticket whose target closed before it was used is paid to its
++          -- holder from ticket escrow by fn_ca_pay_closed_target_ticket_in_cash,
++          -- and the ticket guard records that as issued -> redeemed too. That
++          -- redemption is an escrow -> wallet leg keyed
++          -- ticket:<id>:closed-target-cash, not an entry into this event (an
++          -- admitted ticket's leg is escrow -> prize_liability instead), so it
++          -- is income the target never received.
++          AND NOT EXISTS (SELECT 1 FROM public.chip_ledger_idem ci
++                           WHERE ci.idempotency_key = 'ticket:' || k.id::text || ':closed-target-cash')))$new$
++);
++
+ COMMIT;
+diff --git a/tests/backedPayoutScanRegression.test.ts b/tests/backedPayoutScanRegression.test.ts
+index f10b81b76..80536e815 100644
+--- a/tests/backedPayoutScanRegression.test.ts
++++ b/tests/backedPayoutScanRegression.test.ts
+@@ -56,6 +56,12 @@ const diamondPins = JSON.parse(
+ const diamondPath = diamondPins.migration;
+ const diamondMigration = read(diamondPath);
+ const diamondScalar = read('scripts/ci/fixtures/backed-payout-scan/diamond-book-scalar.sql');
++// A ticket paid in cash never arrived at its target (2026-10-15): one more
++// anchored dynamic patch of the same three functions, from the Diamond
++// postimages; scripts/ci/test-ticket-cash-conservation.py qualifies it natively.
++const ticketCashPath =
++  'supabase/migrations/20261015072547_a_ticket_paid_in_cash_never_arrived_at_its_target.sql';
++const ticketCashMigration = read(ticketCashPath);
+ // The migration's own anchored swaps, in order: [target, anchor, replacement, what].
+ const diamondSwaps = [
+   ...diamondMigration.matchAll(
+@@ -384,6 +390,7 @@ describe('backed payout discovery is the same accounting question in a batch', (
+           ticketPath,
+           conservationPath,
+           diamondPath,
++          ticketCashPath,
+         ].some((path) => file === path.split('/').at(-1)) &&
+         /pg_get_functiondef[\s\S]{0,180}fn_tournament_conservation_delta/.test(sql) &&
+         /\bEXECUTE\b/i.test(stripComments(sql))
+@@ -400,6 +407,34 @@ describe('backed payout discovery is the same accounting question in a batch', (
+     expect(maintained).toBe(diamondScalar);
+   });
+ 
++  it('a ticket paid in cash is not seat income, in the scalar, the set and the batch alike', () => {
++    // Its preimages are exactly the qualified Diamond postimages.
++    for (const md5 of [
++      diamondPins.scalarDefinitionMD5,
++      diamondPins.setAfterMD5,
++      diamondPins.batchAfterMD5,
++    ])
++      expect(ticketCashMigration).toContain(`'${md5}'`);
++    const calls = [
++      ...ticketCashMigration.matchAll(
++        /pg_temp\.ca_conservation_subst\(\n  '([^']+)',\n  '[0-9a-f]{32}', '[0-9a-f]{32}',\n  \$old\$([\s\S]*?)\$old\$,\n  \$new\$([\s\S]*?)\$new\$\n\);/g
++      ),
++    ];
++    expect(calls.map((m) => m[1])).toEqual([
++      'public.fn_tournament_conservation_delta(uuid)',
++      'public.fn_tournament_conservation_deltas(timestamp with time zone,timestamp with time zone)',
++      'public.fn_pay_backed_payout_shortfalls(boolean,integer)',
++    ]);
++    // One anchor and one replacement, the same for all three reads.
++    expect(new Set(calls.map((m) => m[2])).size).toBe(1);
++    expect(new Set(calls.map((m) => m[3])).size).toBe(1);
++    expect(calls[0][2]).toBe("AND (k.id IS NULL OR k.status = 'redeemed')");
++    expect(calls[0][3]).toContain(":closed-target-cash'");
++    expect(read('scripts/ci/test-ticket-cash-conservation.py')).toContain(
++      'batch-no-longer-pays-from-a-cash-paid-ticket'
++    );
++  });
++
+   it('reads a platform Diamond event from its own escrow and keeps it out of the chip sweep', () => {
+     expect(createHash('md5').update(diamondScalar).digest('hex')).toBe(
+       diamondPins.scalarDefinitionMD5

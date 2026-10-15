@@ -56,6 +56,12 @@ const diamondPins = JSON.parse(
 const diamondPath = diamondPins.migration;
 const diamondMigration = read(diamondPath);
 const diamondScalar = read('scripts/ci/fixtures/backed-payout-scan/diamond-book-scalar.sql');
+const spinPath =
+  'supabase/migrations/20261015212119_a_spin_conservation_reading_counts_its_reserve_movements.sql';
+const spinPins = JSON.parse(
+  read('scripts/ci/fixtures/backed-payout-scan/spin-reserve-replacement.json')
+);
+const spinBefore = read('scripts/ci/fixtures/backed-payout-scan/spin-reserve-scalar-before.sql');
 // The migration's own anchored swaps, in order: [target, anchor, replacement, what].
 const diamondSwaps = [
   ...diamondMigration.matchAll(
@@ -384,6 +390,7 @@ describe('backed payout discovery is the same accounting question in a batch', (
           ticketPath,
           conservationPath,
           diamondPath,
+          spinPath,
         ].some((path) => file === path.split('/').at(-1)) &&
         /pg_get_functiondef[\s\S]{0,180}fn_tournament_conservation_delta/.test(sql) &&
         /\bEXECUTE\b/i.test(stripComments(sql))
@@ -398,6 +405,36 @@ describe('backed payout discovery is the same accounting question in a batch', (
       maintained = maintained.replace(anchor, () => replacement);
     }
     expect(maintained).toBe(diamondScalar);
+    // The installed cash-ticket gate is the only predecessor change since
+    // the Diamond scalar. Derive it from its maintained migration, then bind
+    // the Spin fixture to that exact result rather than trusting a snapshot.
+    const cashTicket = read(
+      'supabase/migrations/20261015100003_a_ticket_paid_in_cash_never_arrives_at_its_target.sql'
+    );
+    const oldGate = cashTicket.match(/old_gate constant text := \$g\$([\s\S]*?)\$g\$/)![1];
+    const newGate = cashTicket.match(/new_gate constant text := \$g\$([\s\S]*?)\$g\$/)![1];
+    expect(maintained.split(oldGate)).toHaveLength(2);
+    maintained = maintained.replace(oldGate, () => newGate);
+    expect(maintained).toBe(spinBefore);
+    expect(createHash('md5').update(maintained).digest('hex')).toBe(spinPins.beforeHash);
+    expect(maintained.split(spinPins.old)).toHaveLength(2);
+    expect(
+      createHash('md5')
+        .update(maintained.replace(spinPins.old, () => spinPins.new))
+        .digest('hex')
+    ).toBe(spinPins.afterHash);
+    const spinMigration = read(spinPath);
+    expect(spinMigration).toContain('$old$' + spinPins.old + '$old$');
+    expect(spinMigration).toContain('$new$' + spinPins.new + '$new$');
+    expect(spinPins.new).toContain("WHERE t.id=m.id)='spin'");
+    // Both batch readers exclude Spins. The required native proof compares
+    // every non-Spin fixture delta before/after this Spin-only scalar patch.
+    expect(read('scripts/ci/test-spin-conservation-postgres.py')).toContain(
+      'non-Spin and Diamond parity'
+    );
+    expect(read('scripts/ci/test-backed-payout-scan-postgres.py')).toContain(
+      "ROOT/'scripts/ci/test-spin-conservation-postgres.py'"
+    );
   });
 
   it('reads a platform Diamond event from its own escrow and keeps it out of the chip sweep', () => {

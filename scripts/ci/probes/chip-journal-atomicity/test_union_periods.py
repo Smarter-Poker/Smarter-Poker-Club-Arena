@@ -19,7 +19,7 @@ def _verify_union_periods(run,database):
   if path.name<"20260908044150":continue
   source=path.read_text()
   for match in re.finditer(r"CREATE(?: OR REPLACE)? VIEW public\.accounting_payable_earning_sources\b.*?;",source,re.I|re.S):views["accounting_payable_earning_sources"]=match.group(0)
-  for name in ["fn_union_weekly_rakeback_close","fn_caller_is_engine","fn_accounting_union_earned_plan","fn_ca_launch_accounting_cutoff","fn_ca_launch_accounting_start","fn_ca_launch_accounting_accepts","fn_ca_launch_accounting_waived"]:
+  for name in ["fn_union_weekly_rakeback_close","fn_caller_is_engine","fn_accounting_union_earned_plan","fn_ca_launch_accounting_cutoff","fn_ca_launch_accounting_start","fn_ca_launch_accounting_accepts","fn_ca_launch_accounting_waived","fn_ca_launch_accounting_club_cutoffs"]:
    for match in re.finditer(r"CREATE(?: OR REPLACE)? FUNCTION public\."+name+r"\s*\(",source,re.I):
     tail=source[match.start():];body=re.search(r"\bAS\s+(\$[A-Za-z0-9_]*\$)",tail,re.I)
     end=tail.find(body.group(1),body.end());definitions[name]=tail[:end+len(body.group(1))]+";"

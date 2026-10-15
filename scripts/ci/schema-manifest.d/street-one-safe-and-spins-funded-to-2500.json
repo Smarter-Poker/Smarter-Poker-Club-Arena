@@ -1,0 +1,11 @@
+{
+  "_owner": "fix/street-one-safe-spins-funded-db (#6946) - migrations 20261015093545 and 20261015093549, installed through apply-merged-migration.yml and recorded in schema_migrations on 2026-10-15. Verified live: fn_choice_state reports payout_version 7 with a [16,22,33,...] ladder for a 20-diamond bet, and fn_wheel_state_v2 funds a 2,500 spin.",
+  "functions": [
+    "fn_choice_road_coin_v7",
+    "fn_choice_road_coins_vn",
+    "fn_choice_road_prizes_v7",
+    "fn_choice_prizes_v7",
+    "fn_diamond_spins_allowance_floor",
+    "fn_diamond_spins_hold_allowance_floor"
+  ]
+}

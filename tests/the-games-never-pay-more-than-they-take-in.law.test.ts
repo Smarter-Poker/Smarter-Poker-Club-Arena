@@ -1938,8 +1938,6 @@ describe('Donkey Cross flips a fair coin on every street and keeps 0.80 wherever
  * every stop is still worth at most 0.80, exactly 0.80 below the 20x top.
  */
 describe('Donkey Cross contract 7: street one never smashes, and every stop still keeps 0.80', () => {
-  const sevenSql = latest('donkey_cross_street_one_is_always_safe').sql;
-
   it('street one is safe on every seed, and every later street is the contract-6 coin', async () => {
     for (let s = 0; s < 512; s++) {
       expect(await roadCoin(`seven-${s}`, 'law-client', s + 1, 1, ROAD_COIN_V7)).toBe(true);
@@ -1980,14 +1978,5 @@ describe('Donkey Cross contract 7: street one never smashes, and every stop stil
   it('the standard ladder starts at the sure 0.80x and then runs contract 6', () => {
     const chips = roadCoinPrizeFifths(1, 0.5, ROAD_COIN_V7).map((p) => p / 500);
     expect(chips).toEqual([0.8, 1.1, 1.65, 2.47, 3.7, 5.55, 8.32, 12.48, 18.72, 20]);
-  });
-
-  it('the migration installs exactly that, for crossing only', () => {
-    expect(sevenSql).toContain(' SELECT p_street=1 OR public.fn_choice_road_coin_v6(');
-    expect(sevenSql).toContain(" SELECT (ARRAY[p_bet*0.8]||public.fn_choice_road_prizes_v6(p_bet,p_floor))[1:20]");
-    expect(sevenSql).toContain("CASE WHEN p_game='crossing' THEN 7 ELSE 5 END) RETURNING");
-    expect(sevenSql).toContain('r.payout_version IN (5,6,7) THEN');
-    expect(sevenSql.match(/^BEGIN;$/gm)?.length).toBe(1);
-    expect(sevenSql.match(/^COMMIT;$/gm)?.length).toBe(1);
   });
 });

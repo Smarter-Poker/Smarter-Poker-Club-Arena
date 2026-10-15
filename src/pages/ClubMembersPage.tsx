@@ -131,9 +131,9 @@ function chips(value: number | null): string {
 }
 
 function feeTitle(member: RosterMember): string | undefined {
-  if (member.total_fees === null) return undefined;
+  if (member.total_fees == null) return undefined;
   const exact = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 2 });
-  return member.downline_fees !== null && (member.downline_total ?? 0) > 0
+  return member.downline_fees != null && (member.downline_total ?? 0) > 0
     ? `Fees Generated ${exact(member.total_fees)}. Downline Fees ${exact(member.downline_fees)}.`
     : `Fees Generated ${exact(member.total_fees)}.`;
 }
@@ -1858,7 +1858,7 @@ export const MemberRow = memo(function MemberRow({
             <span className="member-simple-balance" title={feeTitle(member)}>
               <strong>{feeFigure(member.total_fees)}</strong>
               <span>Fees Generated</span>
-              {(member.downline_total ?? 0) > 0 && member.downline_fees !== null && (
+              {(member.downline_total ?? 0) > 0 && member.downline_fees != null && (
                 <span className="member-simple-balance__downline">
                   Downline {feeFigure(member.downline_fees)}
                 </span>

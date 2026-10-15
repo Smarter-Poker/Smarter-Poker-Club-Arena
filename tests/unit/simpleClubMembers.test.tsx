@@ -224,7 +224,7 @@ it('routes Simple agent and role grouping controls through the existing server q
   expect(f.page.mock.calls.at(-1)?.[1].sort).toBe('name');
 });
 
-it('shows the authorized balance and opens the existing management route', async () => {
+it('shows the authorized fees generated, never the wallet, and opens the existing management route', async () => {
   f.page.mockResolvedValue({
     items: [
       {
@@ -232,7 +232,8 @@ it('shows the authorized balance and opens the existing management route', async
         alias: 'KingFish45',
         player_number: '3258017',
         role: 'player',
-        player_wallet: 12345,
+        player_wallet: 98765,
+        total_fees: 12345,
         can_view_financials: true,
       },
     ],
@@ -264,6 +265,9 @@ it('shows the authorized balance and opens the existing management route', async
     await vi.advanceTimersByTimeAsync(110);
   });
   expect(screen.getByText('12.3K')).toBeInTheDocument();
+  expect(screen.getByText('Fees Generated')).toBeInTheDocument();
+  expect(screen.queryByText('98.7K')).not.toBeInTheDocument();
+  expect(screen.queryByText('Player Wallet')).not.toBeInTheDocument();
   expect(screen.getByText(/ID: 3258017/)).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Applicants' })).toHaveAttribute(
     'href',

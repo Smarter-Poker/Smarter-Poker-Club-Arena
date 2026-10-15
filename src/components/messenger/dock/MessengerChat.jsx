@@ -37,7 +37,7 @@ export default function MessengerChat({ actorId, identity, conversation, service
     const hasLoaded = useRef(false);
     const ops = useRef(new Map());
     const request = async (path, body) => {
-        const response = await services.request(MESSAGE_ROUTES[path], { method: 'POST', body: JSON.stringify(body) });
+        const response = await services.request(MESSAGE_ROUTES[path], { method: 'POST', body: JSON.stringify(body), actorId, currentActor: () => identity.current });
         const data = await response.json();
         if (!response.ok || data.success !== true) throw Object.assign(new Error(data.error || 'Messages Are Unavailable'), { status: response.status });
         return data;
@@ -47,11 +47,11 @@ export default function MessengerChat({ actorId, identity, conversation, service
         let storage = null;
         try { storage = window.localStorage; } catch { /* Controller reports the failure. */ }
         return createContinuityController({ actorId, workspace: conversation.dockWorkspace || { workspace: 'social' }, storage,
-            isCurrent: current, changed: () => { if (current()) render(value => value + 1); },
+            isCurrent: () => identity.current === actorId, changed: () => { if (current()) render(value => value + 1); },
             committed: (conversationId, receipt) => services.broadcastSync('smarter_poker_continuity_sync', { actorId, conversationId,
                 workspace: conversation.dockWorkspace || { workspace: 'social' }, receipt: { field: receipt.field, revision: receipt.revision } }),
             request: async body => {
-                const response = await services.request('/api/messenger/continuity', { method: 'POST', body: JSON.stringify(body) });
+                const response = await services.request('/api/messenger/continuity', { method: 'POST', body: JSON.stringify(body), actorId, currentActor: () => identity.current });
                 return { ok: response.ok, status: response.status, body: await response.json() };
             },
         });
@@ -174,7 +174,7 @@ export default function MessengerChat({ actorId, identity, conversation, service
     const attempt = async (operation, capturedDraft) => {
         try {
             await performMessengerSend(operation, { storage: window.localStorage, currentActor: () => identity.current,
-                send: body => services.request('/api/messenger/send-message', { method: 'POST', body }),
+                send: body => services.request('/api/messenger/send-message', { method: 'POST', body, actorId, currentActor: () => identity.current }),
                 changed: changed => {
                     if (!current()) return;
                     setMessages(previous => reconcileMessengerMessage(previous, changed.receipt || messengerOperationMessage(changed)));
@@ -205,7 +205,7 @@ export default function MessengerChat({ actorId, identity, conversation, service
         if (!/^(image|video)\//.test(media.type) || media.size > (media.type.startsWith('video/') ? 50 : 10) * 1024 * 1024) { setError('Choose An Image Under 10MB Or Video Under 50MB'); return; }
         setUploading(true);
         try {
-            const response = await services.request('/api/social/upload-url', { method: 'POST', body: JSON.stringify({ fileName: media.name, fileSize: media.size, mimeType: media.type, folder: 'messages', prefix: actorId }) });
+            const response = await services.request('/api/social/upload-url', { method: 'POST', body: JSON.stringify({ fileName: media.name, fileSize: media.size, mimeType: media.type, folder: 'messages', prefix: actorId }), actorId, currentActor: () => identity.current });
             const result = await response.json();
             if (!response.ok || !result.success || !result.signedUrl || !result.publicUrl) throw new Error('Upload Could Not Be Started');
             if (!current()) return;

@@ -7,24 +7,16 @@ import { publicOrigin } from '../../lib/appBase';
 import { leaveForHub } from '../../lib/openExternal';
 import { broadcastSync, listenBroadcast } from './dock/broadcastDock.mjs';
 
+import { requestForDockActor } from './dock/bindDockRequest.mjs';
 const services = {
   supabase,
   getAuthUser,
   broadcastSync,
   listenBroadcast,
-  request: async (path: string, options: RequestInit = {}) => {
-    const token = await getFreshAccessToken();
-    if (!token) throw new Error('Sign In To Open Messages');
-    return fetch(`${publicOrigin()}${path}`, {
-      ...options,
-      signal: options.signal || AbortSignal.timeout(30000),
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-        Authorization: `Bearer ${token}`,
-      },
-    });
-  },
+  request: (
+    path: string,
+    options: RequestInit & { actorId?: string; currentActor?: () => string | null } = {}
+  ) => requestForDockActor(`${publicOrigin()}${path}`, options, getFreshAccessToken),
   getPreferences: async (actorId: string) => {
     const { data, error } = await supabase
       .from('user_notification_preferences')

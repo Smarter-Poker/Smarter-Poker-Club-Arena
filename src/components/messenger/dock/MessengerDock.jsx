@@ -11,7 +11,7 @@ function Portrait({ conversation }) {
 export default function MessengerDock({ services }) {
     const { supabase, getAuthUser, getPreferences, listenBroadcast, openMessenger } = services;
     const inboxRequest = async body => {
-        const response = await services.request('/api/messenger/get-conversations', { method: 'POST', body: JSON.stringify(body) });
+        const response = await services.request('/api/messenger/get-conversations', { method: 'POST', body: JSON.stringify(body), actorId: identity.current, currentActor: () => identity.current });
         const data = await response.json();
         if (!response.ok || data.success !== true || !Array.isArray(data.conversations)) throw new Error(data.error || 'Messages Are Unavailable');
         return data;
@@ -134,7 +134,7 @@ export default function MessengerDock({ services }) {
                 if (chat.minimized) dispatch({ type: 'minimize', id: chat.id });
             } catch { /* Revoked/deleted threads must not reappear. */ }
         })).then(() => { if (identity.current === actorId && generation.current === epoch) { loadedActor.current = actorId; setHydrated(actorId); } });
-        void refresh();
+        void refresh(true);
 
         const channel = supabase.channel(`messenger-dock:${actorId}`)
             .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'social_messages' }, payload => {

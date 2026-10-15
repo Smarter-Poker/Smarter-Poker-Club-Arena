@@ -104,13 +104,11 @@ describe('every member is discoverable in the cashier', () => {
     expect(page).not.toMatch(/user_id\)\s*!==\s*(viewerId|user\.id)/);
     expect(page).toContain('let rows = downline;');
     expect(page).toContain('sortCashierRosterMatches(rows, search, bySort)');
-    // The self row is refused as a recipient at the one place selection happens.
-    expect(page).toContain('if (r.isSelf || r.userId === user?.id) return;');
-    // The self row carries no Send Out select. An owner, co-owner or super
-    // agent gets "Fund Me" instead, which opens the Club Bank on their own
-    // player wallet (a-club-owner-can-be-paid-into-their-player-wallet).
-    expect(page).toContain('{r.isSelf ? (');
-    expect(page).toContain('selfCanFundPlayerWallet ? (');
+    // The self row is selectable only when the Club Bank can pay it (Dan
+    // 2026-10-15: "INCLUDING OWNERS"); a Send Out to yourself is a Club Bank
+    // send (a-club-owner-can-be-paid-into-their-player-wallet).
+    expect(page).toContain('const selectable = !r.isSelf || selfCanFundPlayerWallet;');
+    expect(page).toContain('disabled={!selectable || busy}');
     // And the "Available" count is recipients, not rows.
     expect(page).toContain(
       'const recipients = useMemo(() => downline.filter((r) => !r.isSelf), [downline]);'

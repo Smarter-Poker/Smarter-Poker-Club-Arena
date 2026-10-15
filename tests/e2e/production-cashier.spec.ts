@@ -27,14 +27,15 @@ const EXPECTED_WALLETS = (process.env.E2E_CASHIER_WALLETS || '')
 // covering one. See support/cashierFundingVerdict.ts.
 async function expectBatchVerdictFromFunding(
   dialog: Locator,
-  fundingLabel: 'Your Agent Wallet' | 'Your Chips',
+  fundingLabel: 'From Your Agent Wallet' | 'From Your Player Wallet',
   total: number,
   recipients: number,
   testInfo: TestInfo,
   name: string
 ): Promise<void> {
   const text = (await dialog.innerText()).replace(/\s+/g, ' ');
-  const figure = new RegExp(`${fundingLabel}: (\\S+)`).exec(text)?.[1] ?? '';
+  // The funding wallet prints as its own painted row: label, then figure.
+  const figure = new RegExp(`${fundingLabel} (\\S+)`).exec(text)?.[1] ?? '';
   const coverage = fundingCoverage(figure, total);
   const verdict = batchVerdictFor(coverage, recipients);
   await testInfo.attach(`${name}-funding-verdict.json`, {
@@ -257,11 +258,16 @@ test.describe('Production Cashier Certification', () => {
     await page.getByRole('button', { name: 'Clear Filters', exact: true }).click();
     await expect(roleFilter).toHaveValue('all');
     await expect(rosterSearch).toBeFocused();
+    // Dan 2026-10-15: one tap anywhere on a row checks it; Send Out opens the
+    // dialog on the selection.
     const nativeSelect = surface.getByRole('button', { name: /^Select / }).first();
     await expect(nativeSelect).toBeVisible();
     await nativeSelect.click();
+    await expect(nativeSelect).toHaveAttribute('aria-pressed', 'true');
+    const sendOutAction = surface.getByRole('button', { name: 'Send Out', exact: true });
+    await sendOutAction.click();
     const transferDialog = page.getByRole('dialog', { name: 'Send Out', exact: true });
-    const singleAmount = transferDialog.getByRole('spinbutton', { name: 'Amount Per Player' });
+    const singleAmount = transferDialog.getByRole('spinbutton', { name: 'Amount', exact: true });
     await singleAmount.fill('10.005');
     await expect(singleAmount).toHaveAttribute('aria-invalid', 'true');
     await expect(singleAmount).toHaveAccessibleDescription(
@@ -269,12 +275,13 @@ test.describe('Production Cashier Certification', () => {
     );
     await singleAmount.fill('0.20');
     await expect(singleAmount).toHaveAttribute('aria-invalid', 'false');
-    const selectedWallet = transferDialog.getByRole('region', {
-      name: 'Selected Player Wallet Context',
-    });
-    await expect(selectedWallet).toBeVisible();
-    await expect(selectedWallet).toContainText('Player Wallet:');
-    await expect(selectedWallet).toContainText('Send From Your Agent Wallet To Their');
+    const selectedPlayer = transferDialog.getByRole('region', { name: 'Selected Player' });
+    await expect(selectedPlayer).toBeVisible();
+    await expect(selectedPlayer).toContainText('ID');
+    await expect(selectedPlayer).toContainText('Player Wallet');
+    await expect(
+      transferDialog.getByRole('region', { name: 'From Your Agent Wallet' })
+    ).toBeVisible();
     const confirm = transferDialog.getByRole('button', { name: 'Confirm', exact: true });
     const close = transferDialog.getByRole('button', { name: 'Close', exact: true });
     await confirm.focus();
@@ -283,7 +290,7 @@ test.describe('Production Cashier Certification', () => {
     await page.keyboard.press('Shift+Tab');
     await expect(confirm).toBeFocused();
     await transferDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
-    await expect(nativeSelect).toBeFocused();
+    await expect(sendOutAction).toBeFocused();
     await expect(transferDialog).toHaveCount(0);
     // Preview only: certify the published individual-amount wiring without
     // spending real chips or issuing tickets against production players.
@@ -293,7 +300,7 @@ test.describe('Production Cashier Certification', () => {
     await recipients.nth(0).check();
     await recipients.nth(1).check();
     await surface.getByRole('button', { name: 'Send Out', exact: true }).click();
-    await transferDialog.getByRole('spinbutton', { name: 'Amount Per Player' }).fill('10');
+    await transferDialog.getByRole('spinbutton', { name: 'Amount', exact: true }).fill('10');
     const individualAmounts = transferDialog.getByRole('spinbutton', { name: /^Amount For / });
     await expect(individualAmounts).toHaveCount(2);
     await individualAmounts.nth(1).fill('0.20');
@@ -301,7 +308,7 @@ test.describe('Production Cashier Certification', () => {
     await expect(transferDialog).toContainText('2 Players ·');
     await expectBatchVerdictFromFunding(
       transferDialog,
-      'Your Agent Wallet',
+      'From Your Agent Wallet',
       10.2,
       2,
       testInfo,
@@ -311,16 +318,13 @@ test.describe('Production Cashier Certification', () => {
     await attachCashierScreenshot(page, testInfo, 'cashier-batch-individual-preview');
     await transferDialog.getByRole('button', { name: 'Send Ticket', exact: true }).click();
     const ticketDialog = page.getByRole('dialog', { name: 'Send Ticket', exact: true });
-    await expect(ticketDialog).toContainText('Total: 10.20');
+    // Dan 2026-10-15: a ticket is bought into one future or running tournament,
+    // priced by the server and paid from the sender's player wallet.
+    await expect(ticketDialog.getByRole('combobox', { name: 'Tournament' })).toBeVisible();
+    await expect(
+      ticketDialog.getByRole('region', { name: 'From Your Player Wallet' })
+    ).toBeVisible();
     await expect(ticketDialog).toContainText('2 Players ·');
-    await expectBatchVerdictFromFunding(
-      ticketDialog,
-      'Your Chips',
-      10.2,
-      2,
-      testInfo,
-      'cashier-batch-send-ticket'
-    );
     await ticketDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
     await uncheckEveryRecipient(surface);
     await page.setViewportSize({ width: 1440, height: 1000 });

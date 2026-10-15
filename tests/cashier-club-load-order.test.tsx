@@ -663,7 +663,7 @@ describe('CashierTradePage club load ordering', () => {
     await waitFor(() =>
       expect(screen.getByRole('dialog', { name: /Send Out/ })).toBeInTheDocument()
     );
-    expect(screen.getByRole('spinbutton', { name: 'Amount Per Player' })).toHaveValue(42.5);
+    expect(screen.getByRole('spinbutton', { name: 'Amount' })).toHaveValue(42.5);
     expect(screen.getByRole('button', { name: 'Confirm' })).toBeEnabled();
     expect(localStorage.length).toBe(1);
   });
@@ -748,12 +748,13 @@ describe('CashierTradePage club load ordering', () => {
       `/clubs/${CLUB_ID}/members/${PLAYER_ID}`
     );
     fireEvent.click(player);
+    fireEvent.click(screen.getByRole('button', { name: 'Send Out', exact: true }));
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Send Diamonds' })).toBeInTheDocument();
     expect(
       within(screen.getByRole('dialog')).getByRole('button', { name: 'Send Ticket' })
     ).toBeInTheDocument();
-    fireEvent.change(screen.getByRole('spinbutton', { name: 'Amount Per Player' }), {
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Amount' }), {
       target: { value: '10' },
     });
 

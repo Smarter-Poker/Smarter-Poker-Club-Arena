@@ -139,11 +139,18 @@ describe('no Club Bank screen picks the wallet from the role alone', () => {
     expect(trade).toContain(
       "currentClub?.entityType === 'club' && canSeeClubBank(myRole) && holdsPlayerWallet(myRole)"
     );
-    expect(trade).toContain("destination: 'player_wallet',");
-    expect(trade).toContain("setActiveCashier('club_bank');");
+    // Dan 2026-10-15: the owner's own row is selectable like any other, and a
+    // Send Out to yourself is paid by the Club Bank into your player wallet.
+    expect(trade).toContain('const selectable = !r.isSelf || selfCanFundPlayerWallet;');
+    expect(trade).toContain(
+      "if (kind === 'send' && targets.length === 1 && selfCanFundPlayerWallet) {"
+    );
+    expect(trade).toContain("supabase.rpc('fn_club_bank_send', {");
+    expect(trade).toContain("p_destination: 'player_wallet',");
     expect(trade).toContain('initialRecipientId={cashierPreset?.recipientId ?? null}');
-    // Send Out still never targets the viewer: fn_agent_wallet_send refuses it.
-    expect(trade).toContain('if (r.isSelf || r.userId === user?.id) return;');
+    // The agent wallet still never pays the viewer: fn_agent_wallet_send
+    // refuses it, so a batch never carries the viewer's own row.
+    expect(trade).toContain("'Send To Yourself On Its Own, Then Send To The Others'");
   });
 
   it('the cashier modal opens on the preset recipient and wallet, through the same guard', () => {

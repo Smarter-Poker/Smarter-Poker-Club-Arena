@@ -16,6 +16,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const CLUB_A = '11111111-1111-4111-8111-111111111111';
 const CLUB_B = '22222222-2222-4222-8222-222222222222';
 const USER_ID = '33333333-3333-4333-8333-333333333333';
+const TOURNEY_ID = '99999999-9999-4999-8999-999999999999';
 const PLAYER_IDS = [
   '44444444-4444-4444-8444-444444444441',
   '44444444-4444-4444-8444-444444444442',
@@ -161,6 +162,14 @@ async function synchronized() {
   await waitFor(() => expect(screen.getByText('Balances Synchronized')).toBeInTheDocument());
 }
 
+/** Send Ticket is bought into one tournament (Dan 2026-10-15). */
+async function chooseTournament(dialog: HTMLElement) {
+  await within(dialog).findByRole('option', { name: /Test Event/ });
+  fireEvent.change(within(dialog).getByRole('combobox', { name: 'Tournament' }), {
+    target: { value: TOURNEY_ID },
+  });
+}
+
 async function openSendOut(amount: string, picks: number) {
   for (let index = 0; index < picks; index += 1) {
     fireEvent.click(
@@ -169,7 +178,7 @@ async function openSendOut(amount: string, picks: number) {
   }
   fireEvent.click(screen.getByRole('button', { name: 'Send Out' }));
   const dialog = await screen.findByRole('dialog', { name: /Send Out/ });
-  fireEvent.change(screen.getByRole('spinbutton', { name: 'Amount Per Player' }), {
+  fireEvent.change(screen.getByRole('spinbutton', { name: 'Amount' }), {
     target: { value: amount },
   });
   return dialog;
@@ -301,6 +310,32 @@ beforeEach(() => {
     if (name === 'fn_agent_wallet_reversible' && state.reversible) {
       return state.reversible(params.p_club_id as string) as never;
     }
+    if (name === 'fn_cashier_ticketable_tournaments') {
+      return Promise.resolve({
+        data: {
+          success: true,
+          club_id: params.p_club_id,
+          count: 1,
+          tournaments: [
+            {
+              tournament_id: TOURNEY_ID,
+              name: 'Test Event',
+              start_time: '2026-12-01T00:00:00Z',
+              status: 'REGISTERING',
+              late_registration: false,
+              price: 10,
+              entry_prize: 9,
+              entry_bounty: 0,
+              entry_fee: 1,
+              is_union_event: false,
+              current_players: 0,
+              max_players: 100,
+            },
+          ],
+        },
+        error: null,
+      }) as never;
+    }
     if (name === 'fn_respond_chip_request') {
       return Promise.resolve({ data: { success: true }, error: null }) as never;
     }
@@ -332,7 +367,7 @@ describe('large cashier roster stays complete and progressively rendered', () =>
       fireEvent.click(checkbox);
     fireEvent.click(screen.getByRole('button', { name: 'Send Out' }));
     const dialog = await screen.findByRole('dialog', { name: 'Send Out' });
-    fireEvent.change(within(dialog).getByRole('spinbutton', { name: 'Amount Per Player' }), {
+    fireEvent.change(within(dialog).getByRole('spinbutton', { name: 'Amount' }), {
       target: { value: '0.20' },
     });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm' }));
@@ -372,8 +407,9 @@ describe('large cashier roster stays complete and progressively rendered', () =>
     );
     expect(screen.getAllByRole('checkbox', { name: /^Include / })).toHaveLength(1);
     fireEvent.click(screen.getByRole('button', { name: 'Select Roster Player 1999' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Send Out', exact: true }));
     const dialog = await screen.findByRole('dialog', { name: 'Send Out' });
-    fireEvent.change(within(dialog).getByRole('spinbutton', { name: 'Amount Per Player' }), {
+    fireEvent.change(within(dialog).getByRole('spinbutton', { name: 'Amount' }), {
       target: { value: '0.20' },
     });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm' }));
@@ -541,7 +577,12 @@ describe('P-10: the figure a user confirms is the figure that moves', () => {
     expect(within(dialog).queryByText(/Recipients Ready For Server Verification/)).toBeNull();
     fireEvent.click(within(dialog).getByRole('button', { name: 'Send Ticket' }));
     const ticket = await screen.findByRole('dialog', { name: /Send Ticket/ });
-    expect(within(ticket).getByText(/Total: 10\.20/)).toBeInTheDocument();
+    // A ticket's value is the tournament's price, the same for everyone.
+    expect(
+      within(ticket).getByText('Choose A Tournament', { selector: '[role="status"]' })
+    ).toBeInTheDocument();
+    await chooseTournament(ticket);
+    expect(within(ticket).getByText(/Total: 20/)).toBeInTheDocument();
     expect(within(ticket).getByText('2 Recipients Ready For Server Verification')).toHaveAttribute(
       'role',
       'status'
@@ -679,7 +720,7 @@ describe('S-06: the batch-send reason is the same on every retry', () => {
     fireEvent.click(await screen.findByRole('checkbox', { name: /Mutable Alias/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Send Out' }));
     await screen.findByRole('dialog', { name: /Send Out/ });
-    fireEvent.change(screen.getByRole('spinbutton', { name: 'Amount Per Player' }), {
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Amount' }), {
       target: { value: '10' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
@@ -826,7 +867,7 @@ describe('P-04, P-12, P-15, L-03: the Trade page is reachable and truthful', () 
     mountCashier();
     await synchronized();
     await openSendOut('1', 1);
-    const amount = screen.getByRole('spinbutton', { name: 'Amount Per Player' });
+    const amount = screen.getByRole('spinbutton', { name: 'Amount' });
     expect(amount).toHaveAttribute('inputmode', 'decimal');
     expect(amount).toHaveAttribute('step', '0.01');
     for (const tag of TRADE.match(/<input[^>]*type="number"[^>]*>/gs) ?? []) {
@@ -930,6 +971,7 @@ it('keeps a late uncertain transfer in its original club instead of poisoning th
   expect(screen.queryByText(/Nothing Was Sent/)).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Select Player 1' })).toBeEnabled();
   fireEvent.click(screen.getByRole('button', { name: 'Select Player 1' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Send Out', exact: true }));
   expect(await screen.findByRole('dialog', { name: /Send Out/ })).toBeInTheDocument();
 });
 
@@ -947,7 +989,7 @@ it('Phase 2: editing an uncertain transfer preserves its original journal and ho
   expect(journalKeys).toHaveLength(1);
   const original = localStorage.getItem(journalKeys[0]);
   expect(toastMocks.error.mock.calls.flat().join(' ')).not.toContain('Nothing Was Sent');
-  fireEvent.change(screen.getByRole('spinbutton', { name: 'Amount Per Player' }), {
+  fireEvent.change(screen.getByRole('spinbutton', { name: 'Amount' }), {
     target: { value: '11' },
   });
   await waitFor(() => expect(localStorage.getItem(journalKeys[0])).toBe(original));
@@ -1115,13 +1157,23 @@ it('Phase 4: shows the selected identity, separate player balance and actual sen
   mountCashier();
   await synchronized();
   fireEvent.click(screen.getByRole('button', { name: 'Select First Agent' }));
-  const context = screen.getByRole('region', { name: 'Selected Player Wallet Context' });
-  expect(context).toHaveTextContent('First Agent');
-  expect(context).toHaveTextContent('Player Wallet: 120');
-  expect(context).toHaveTextContent('Send From Your Agent Wallet To Their Agent Wallet');
-  expect(context).toHaveTextContent('Separate From Their Agent Wallet');
-  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Send Ticket' }));
-  expect(context).toHaveTextContent('Ticket Funding Comes From Your Player Wallet');
+  fireEvent.click(screen.getByRole('button', { name: 'Send Out', exact: true }));
+  const dialog = await screen.findByRole('dialog', { name: 'Send Out' });
+  // Dan 2026-10-15: a large name, the player number, a large balance and the
+  // sender's own balance, and no paragraph of words.
+  const card = within(dialog).getByRole('region', { name: 'Selected Player' });
+  expect(card).toHaveTextContent('First Agent');
+  expect(card).toHaveTextContent('120');
+  expect(card).toHaveTextContent('Player Wallet, Sending To Agent Wallet');
+  expect(within(dialog).getByRole('region', { name: 'From Your Agent Wallet' })).toHaveTextContent(
+    '500'
+  );
+  expect(dialog).not.toHaveTextContent('Amount Per Player');
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Send Ticket' }));
+  expect(within(dialog).getByRole('region', { name: 'From Your Player Wallet' })).toHaveTextContent(
+    '250'
+  );
+  expect(within(dialog).getByRole('combobox', { name: 'Tournament' })).toBeInTheDocument();
 });
 it('Phase 4: places the working roster before the read-only reconciliation report', async () => {
   mountCashier();
@@ -1282,24 +1334,33 @@ it('Phase 5: a mismatched batch acknowledgement never confirms money movement', 
   expect(readCashierTransferRecovery(USER_ID, CLUB_A)).not.toBeNull();
 });
 
-it('Phase 5: individual ticket values use original durable keys after a reload', async () => {
+it('Phase 5: tournament ticket keys are bound to the tournament and survive a reload', async () => {
   state.roster = [player(0, 75), player(1, 50)];
   state.batch = async () => ({ data: null, error: { message: 'Connection Lost' } });
   const mounted = mountCashier();
   await synchronized();
   let dialog = await openSendOut('10', 2);
   fireEvent.click(within(dialog).getByRole('button', { name: 'Send Ticket' }));
-  fireEvent.change(within(dialog).getByRole('spinbutton', { name: 'Amount For Player 2' }), {
-    target: { value: '21.05' },
-  });
+  await chooseTournament(dialog);
   fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm' }));
   await screen.findByRole('region', { name: 'Batch Transfer Receipt' });
   const first = state.rpcCalls.find((call) => call.name === 'fn_cashier_batch_transfer')!;
   expect(first.args.p_kind).toBe('ticket');
   expect(first.args.p_items).toEqual([
-    expect.objectContaining({ amount: 10, idempotency_key: expect.stringContaining(':10') }),
-    expect.objectContaining({ amount: 21.05, idempotency_key: expect.stringContaining(':21.05') }),
+    expect.objectContaining({
+      user_id: PLAYER_IDS[0],
+      tournament_id: TOURNEY_ID,
+      amount: 10,
+      idempotency_key: expect.stringContaining(`:tournament:${TOURNEY_ID}`),
+    }),
+    expect.objectContaining({
+      user_id: PLAYER_IDS[1],
+      tournament_id: TOURNEY_ID,
+      amount: 10,
+      idempotency_key: expect.stringContaining(`:tournament:${TOURNEY_ID}`),
+    }),
   ]);
+  expect(readCashierTransferRecoveries(USER_ID, CLUB_A)[0].tournamentId).toBe(TOURNEY_ID);
   mounted.unmount();
   mountCashier();
   await synchronized();
@@ -1316,6 +1377,10 @@ it('Phase 5: individual ticket values use original durable keys after a reload',
     .mock.calls.find(([name]) => name === 'fn_cashier_recovery_receipts')!;
   expect(lookup[1]?.p_ticket_keys).toEqual(
     (first.args.p_items as Array<{ idempotency_key: string }>).map((item) => item.idempotency_key)
+  );
+  await within(dialog).findByRole('option', { name: /Test Event/ });
+  await waitFor(() =>
+    expect(within(dialog).getByRole('combobox', { name: 'Tournament' })).toHaveValue(TOURNEY_ID)
   );
   fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm' }));
   await waitFor(() =>
@@ -1371,7 +1436,7 @@ it('Phase 5: confirmed removed recipients retain their own amount while only the
   fireEvent.click(screen.getByRole('button', { name: 'Review And Retry' }));
   const dialog = await screen.findByRole('dialog', { name: /Send Out/ });
   expect(within(dialog).getByText(/Total: 21.05/)).toBeInTheDocument();
-  expect(within(dialog).getByRole('spinbutton', { name: 'Amount Per Player' })).toHaveValue(21.05);
+  expect(within(dialog).getByRole('spinbutton', { name: 'Amount' })).toHaveValue(21.05);
   fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm' }));
   await waitFor(() =>
     expect(state.rpcCalls.some((call) => call.name === 'fn_cashier_batch_transfer')).toBe(true)
@@ -1419,36 +1484,47 @@ it('Phase 5: editing one individual amount creates a new intent without erasing 
   ).toEqual({ [PLAYER_IDS[0]]: 10, [PLAYER_IDS[1]]: 21.05 });
 });
 
-it.each(['send', 'ticket'] as const)(
-  'Phase 7: associates a single %s amount refusal with its field',
-  async (mode) => {
-    state.roster = [player(0, 75)];
-    mountCashier();
-    await synchronized();
-    const dialog = await openSendOut('10.005', 1);
-    if (mode === 'ticket')
-      fireEvent.click(within(dialog).getByRole('button', { name: 'Send Ticket', exact: true }));
-    const field = screen.getByRole('spinbutton', { name: 'Amount Per Player' });
-    expect(field).toHaveAttribute('aria-invalid', 'true');
-    expect(field).toHaveAccessibleDescription(
-      /Enter The Amount As Digits, With Up To Two Decimals/
-    );
-    expect(state.rpcCalls.some((call) => call.name === 'fn_cashier_batch_transfer')).toBe(false);
-    fireEvent.change(field, { target: { value: '0.20' } });
-    expect(field).toHaveAttribute('aria-invalid', 'false');
-    expect(field).toHaveAccessibleDescription(/Recipients Ready For Server Verification/);
-  }
-);
+it('Phase 7: associates a single send amount refusal with its field', async () => {
+  state.roster = [player(0, 75)];
+  mountCashier();
+  await synchronized();
+  await openSendOut('10.005', 1);
+  const field = screen.getByRole('spinbutton', { name: 'Amount' });
+  expect(field).toHaveAttribute('aria-invalid', 'true');
+  expect(field).toHaveAccessibleDescription(/Enter The Amount As Digits, With Up To Two Decimals/);
+  expect(state.rpcCalls.some((call) => call.name === 'fn_cashier_batch_transfer')).toBe(false);
+  fireEvent.change(field, { target: { value: '0.20' } });
+  expect(field).toHaveAttribute('aria-invalid', 'false');
+  expect(field).toHaveAccessibleDescription(/Recipients Ready For Server Verification/);
+});
+
+it('Phase 7: a ticket is priced by its tournament and waits for one to be chosen', async () => {
+  state.roster = [player(0, 75)];
+  mountCashier();
+  await synchronized();
+  const dialog = await openSendOut('10.005', 1);
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Send Ticket', exact: true }));
+  expect(within(dialog).queryByRole('spinbutton', { name: 'Amount' })).toBeNull();
+  expect(within(dialog).getByRole('button', { name: 'Confirm' })).toBeDisabled();
+  await chooseTournament(dialog);
+  expect(within(dialog).getByText(/Total: 10/)).toBeInTheDocument();
+  expect(within(dialog).getByText('1 Recipients Ready For Server Verification')).toHaveAttribute(
+    'role',
+    'status'
+  );
+  expect(state.rpcCalls.some((call) => call.name === 'fn_cashier_batch_transfer')).toBe(false);
+});
 
 it('Phase 7: the native player composer traps both Tab directions and returns focus on Escape', async () => {
   state.roster = [player(0, 75)];
   mountCashier();
   await synchronized();
-  const trigger = screen.getByRole('button', { name: 'Select Player 1', exact: true });
+  fireEvent.click(screen.getByRole('button', { name: 'Select Player 1', exact: true }));
+  const trigger = screen.getByRole('button', { name: 'Send Out', exact: true });
   trigger.focus();
   fireEvent.click(trigger);
   const dialog = await screen.findByRole('dialog', { name: 'Send Out', exact: true });
-  const field = within(dialog).getByRole('spinbutton', { name: 'Amount Per Player' });
+  const field = within(dialog).getByRole('spinbutton', { name: 'Amount' });
   fireEvent.change(field, { target: { value: '10' } });
   await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
   expect(document.body.style.overflow).toBe('hidden');
@@ -1563,8 +1639,10 @@ describe('Simple And Advanced Action Recovery Audit', () => {
       await waitFor(() => expect(screen.getByText('Balances Synchronized')).toBeInTheDocument());
       if (advanced) fireEvent.click(screen.getByRole('button', { name: /^Advanced/ }));
       let dialog = await openSendOut('10', 1);
-      if (firstKind === 'ticket')
+      if (firstKind === 'ticket') {
         fireEvent.click(within(dialog).getByRole('button', { name: 'Send Ticket', exact: true }));
+        await chooseTournament(dialog);
+      }
       fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm', exact: true }));
       await screen.findByRole('region', { name: 'Batch Transfer Receipt' });
       const original = readCashierTransferRecoveries(USER_ID, CLUB_A)[0];
@@ -1581,6 +1659,7 @@ describe('Simple And Advanced Action Recovery Audit', () => {
         name: nextKind === 'send' ? 'Send Out' : 'Send Ticket',
         exact: true,
       });
+      if (nextKind === 'ticket') await chooseTournament(dialog);
       state.batch = async (params) => ({
         data: {
           success: true,

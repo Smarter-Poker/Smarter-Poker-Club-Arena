@@ -251,7 +251,9 @@ describe('#ClubArenaConsole is the Cashier visual authority', () => {
       expect(tag).toContain('inputMode="decimal"');
       expect(tag).toContain('step="0.01"');
     }
-    for (const label of ['Amount Per Player', 'Chips Requested']) {
+    // Dan 2026-10-15: "IT SHOULD NEVER SAY AMOUNT PER PLAYER".
+    expect(trade).not.toContain('Amount Per Player');
+    for (const label of ['Amount', 'Chips Requested']) {
       expect(trade).toContain(`aria-label="${label}"`);
     }
     expect(read('src/pages/CashierPage.tsx')).not.toContain('inputMode="numeric"');

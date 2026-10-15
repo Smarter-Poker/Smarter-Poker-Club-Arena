@@ -1549,8 +1549,9 @@ export default function ClubMembersPage() {
                 Excluding This Player.
               </p>
               <p>
-                Fees Are Read From The Club Fee Ledgers That Pay Agents And Rakeback, All Time, With
-                No Date Filter On This Roster. Wallets And Fees Are In Club Chips.
+                Fees Are Read From The Club Fee Ledgers That Pay Agents And Rakeback. They Count From
+                The Week Of October 12, 2026 (Monday Midnight Pacific) And Keep Accumulating From
+                Then On, With No Weekly Reset. Wallets And Fees Are In Club Chips.
               </p>
               <p>
                 Recent Activity Uses Login Time When Available, Otherwise Presence Or Club Activity

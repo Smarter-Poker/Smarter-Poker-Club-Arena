@@ -1,3 +1,4 @@
+import './lightning-pilot-replay-sample.test.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';

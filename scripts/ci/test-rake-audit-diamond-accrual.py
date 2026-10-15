@@ -22,6 +22,7 @@ import pathlib
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import uuid
 
@@ -209,3 +210,5 @@ finally:
     (out / 'RESULTS.json').write_text(json.dumps(results, indent=2, default=str) + '\n')
 print(json.dumps({'passed': len(results['checks']), 'baseline': results.get('baseline'),
                   'candidate': results.get('candidate'), 'output': str(out / 'RESULTS.json')}))
+print(command([sys.executable, ROOT / 'scripts/ci/test-rake-dealt-roster-postgres.py',
+               '--pg-bin', pg]))

@@ -84,6 +84,12 @@ def verify_tickets(run):
      IF r->>'success' IS DISTINCT FROM 'false' OR s IS DISTINCT FROM {state}
        OR current_setting('app.ledger_category')<>'outside' THEN RAISE EXCEPTION 'Failed release changed state or leaked context';END IF;
     END $t$;ROLLBACK;""");count+=1
+  # A ticket bound to one tournament is used by registering, never redeemed for chips.
+  run("BEGIN;"+seed+actor(I)+f"SELECT {issue};INSERT INTO tournament_ticket_entry_targets SELECT id,'{X}' FROM tournament_tickets;"+actor(H)+f"""
+   DO $t$ DECLARE r jsonb;s jsonb;BEGIN SELECT {state} INTO s;r:={release("redeem")};
+    IF r->>'success' IS DISTINCT FROM 'false' OR r->>'error' IS DISTINCT FROM 'This Ticket Is Used By Registering For Its Tournament'
+      OR s IS DISTINCT FROM {state} THEN RAISE EXCEPTION 'Bound ticket redeemed for wallet chips';END IF;
+   END $t$;ROLLBACK;""");count+=1
   for first,second in [("cancel","cancel"),("redeem","redeem"),("cancel","redeem")]:
    params=dict(name="ticket "+first+"/"+second,setup=seed+actor(I)+f"SELECT {issue};",
     actor=actor(I if first=="cancel" else H),secondActor=actor(I if second=="cancel" else H),

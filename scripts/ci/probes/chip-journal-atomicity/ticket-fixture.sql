@@ -22,6 +22,8 @@ CREATE TABLE tournament_tickets(
   entry_bounty numeric(15,2),
   entry_fee numeric(15,2)
 );
+-- 20261015132042: a cashier ticket bound to one tournament; redeem refuses it.
+CREATE TABLE tournament_ticket_entry_targets(ticket_id uuid PRIMARY KEY,tournament_id uuid NOT NULL);
 CREATE TABLE wallet_transactions(user_id uuid,wallet_type text,type text,amount numeric,category text,description text,balance_after numeric);
 CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS $$ SELECT nullif(current_setting('test.actor',true),'')::uuid $$;
 CREATE FUNCTION fn_club_cashier_can_transact(uuid,uuid,uuid) RETURNS boolean LANGUAGE sql AS 'SELECT true';

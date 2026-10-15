@@ -122,6 +122,14 @@ import { SpadeConsole } from '../components/console/SpadeConsole';
 import { compactChips } from '../utils/format';
 import { exactChipFigure, parseTradeAmount, sumChips } from '../utils/cashierAmount';
 import { titleCase } from '../utils/titleCase';
+import { generateAvatarSvg } from '../utils/avatarGenerator';
+import { readCashierBalances } from '../services/cashierBalanceRead';
+import {
+  buildTournamentTicketItem,
+  listTicketableTournaments,
+  tournamentTicketIdempotencyKey,
+  type TicketableTournament,
+} from '../services/CashierTournamentTickets';
 import {
   cashierBatchAmounts,
   cashierBatchAcknowledgement,
@@ -246,6 +254,73 @@ const fmt = compactChips;
  */
 const CASHIER_SEND_OUT_REASON = 'Cashier Send Out';
 
+// ─── The money dialogs' painted parts (Dan 2026-10-15) ─────────────────────
+//
+// "IT SHOULD SHOW THE PLAYER NAME LARGER, IT SHOULD HAVE A PROFILE IMAGE OR
+//  CLUB ARENA AVATAR, THEIR CURRENT BALANCE SHOULD BE LARGER ... A VERY SIMPLE
+//  SCREEN WITH NAME, PLAYER ID, AND AN ACTUAL ENTRY FIELD ... AND SHOULD ALWAYS
+//  SHOW THE SENDERS BALANCE". Send Out, Claim Back and Send Ticket share these
+//  three rows, printed into zones measured on approved shells:
+//    the player   action-primary-shell.png  1280 x 315, portrait ring + plate
+//    a wallet     wallet-row-shell.png      1280 x 274, square slot + plate
+//    the entry    wallet-row-shell.png      the same shell, the field in the plate
+
+/** The player a dialog acts on: portrait in the ring, name, number and wallet. */
+function CashierPlayerCard({
+  row,
+  balanceLabel,
+}: {
+  row: Pick<DownlineRow, 'userId' | 'name' | 'playerNumber' | 'avatarUrl' | 'chipBalance'>;
+  balanceLabel: string;
+}) {
+  return (
+    <section className={styles.playerCard} aria-label="Selected Player">
+      <img
+        className={styles.playerCardAvatar}
+        src={row.avatarUrl || generateAvatarSvg(row.userId, row.name || '?')}
+        alt=""
+        onError={(event) => {
+          const image = event.currentTarget;
+          image.onerror = null;
+          image.src = generateAvatarSvg(row.userId, row.name || '?');
+        }}
+      />
+      <span className={styles.playerCardPlate}>
+        <span className={styles.playerCardIdentity}>
+          <strong className={styles.playerCardName}>{row.name}</strong>
+          <span className={styles.playerCardId}>
+            {row.playerNumber ? `ID: ${row.playerNumber}` : 'ID Unavailable'}
+          </span>
+        </span>
+        <span className={styles.playerCardBalance}>
+          <strong>{compactChips(row.chipBalance)}</strong>
+          <span>{balanceLabel}</span>
+        </span>
+      </span>
+    </section>
+  );
+}
+
+/** A wallet the dialog spends from or fills, with its live balance. */
+function CashierWalletRow({ label, balance }: { label: string; balance: number | null }) {
+  return (
+    <section className={styles.walletRow} aria-label={label}>
+      <span className={styles.walletRowSlot} aria-hidden="true">
+        <img
+          src={`${import.meta.env.BASE_URL}assets/club-buttons/wallets/wallet-mark-v1.svg`}
+          alt=""
+        />
+      </span>
+      <span className={styles.walletRowPlate}>
+        <span className={styles.walletRowLabel}>{label}</span>
+        <strong className={styles.walletRowValue}>
+          {balance === null ? '-' : compactChips(balance)}
+        </strong>
+      </span>
+    </section>
+  );
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 /**
@@ -257,6 +332,17 @@ const CASHIER_SEND_OUT_REASON = 'Cashier Send Out';
  * there is a 22P02 from Postgres on the one call that moves the chips - on
  * exactly the browsers that have no randomUUID.
  */
+/**
+ * The retry key a saved ticket batch used for one recipient: a ticket into a
+ * tournament is keyed to that tournament (CashierTournamentTickets), a plain
+ * ticket to its value. Recovery must ask the server for the SAME key.
+ */
+function savedTicketKey(saved: CashierTransferRecovery, userId: string): string {
+  return saved.tournamentId
+    ? tournamentTicketIdempotencyKey(saved.clubId, saved.submissionId, userId, saved.tournamentId)
+    : `ticket:${saved.clubId}:${saved.submissionId}:${userId}:${saved.targetAmounts?.[userId] ?? saved.amount}`;
+}
+
 function newOpId(): string {
   try {
     const c = globalThis.crypto as Crypto | undefined;
@@ -406,6 +492,19 @@ function CashierTradeWorkspace() {
    * would refuse.
    */
   const [claimOpen, setClaimOpen] = useState(false);
+  /* SEND TICKET INTO ONE TOURNAMENT (Dan 2026-10-15): the ticket is bound to
+     a future or running tournament the cashier picks, priced by the SERVER
+     from that tournament and paid from the sender's player wallet. */
+  const [ticketTournaments, setTicketTournaments] = useState<TicketableTournament[] | null>(null);
+  const [ticketTournamentsError, setTicketTournamentsError] = useState<string | null>(null);
+  const [ticketTournamentId, setTicketTournamentId] = useState<string>('');
+  /* The Club Bank figure, read when a dialog spends or fills it: a self send
+     (owner, co owner) and a management claim back (Dan 2026-10-15). */
+  const [bankBalance, setBankBalance] = useState<number | null>(null);
+  const [mgmtClaimAmount, setMgmtClaimAmount] = useState('');
+  const [mgmtClaiming, setMgmtClaiming] = useState(false);
+  /** Double tap on a roster row opens Player Management (Dan 2026-10-15). */
+  const lastRowTapRef = useRef<{ userId: string; at: number } | null>(null);
   const [reversible, setReversible] = useState<ReversibleSend[]>([]);
   const [reversibleLoading, setReversibleLoading] = useState(false);
   const [reversibleError, setReversibleError] = useState<string | null>(null);
@@ -1762,15 +1861,37 @@ function CashierTradeWorkspace() {
 
   /** Chips the selected players are holding right now. */
   const pickedHeld = useMemo(() => sumChips(picked.map((r) => r.chipBalance)), [picked]);
-  const batchPlan = useMemo(
-    () =>
-      cashierBatchAmounts(
-        picked.map((row) => row.userId),
-        amount,
-        recipientAmounts
-      ),
-    [picked, amount, recipientAmounts]
+  /** The tournament a Send Ticket is bound to; its price is every ticket's value. */
+  const ticketTournament = useMemo(
+    () => ticketTournaments?.find((row) => row.tournamentId === ticketTournamentId) ?? null,
+    [ticketTournaments, ticketTournamentId]
   );
+  const batchPlan = useMemo(() => {
+    if (amountModal === 'ticket') {
+      // A ticket is the tournament's entry: the price is the server's, never
+      // typed, and the same for every recipient.
+      if (!ticketTournament) {
+        return {
+          ok: false as const,
+          userId: picked[0]?.userId ?? '',
+          error: 'Choose A Tournament',
+        };
+      }
+      const amounts = Object.fromEntries(
+        picked.map((row) => [row.userId, ticketTournament.price])
+      ) as Record<string, number>;
+      return {
+        ok: true as const,
+        amounts,
+        total: sumChips(Object.values(amounts)),
+      };
+    }
+    return cashierBatchAmounts(
+      picked.map((row) => row.userId),
+      amount,
+      recipientAmounts
+    );
+  }, [picked, amount, recipientAmounts, amountModal, ticketTournament]);
   const previewTotal = batchPlan.ok ? batchPlan.total : 0;
   const uniformAmountValue =
     picked.length === 1 ? (recipientAmounts[picked[0].userId] ?? amount) : amount;
@@ -1842,8 +1963,27 @@ function CashierTradeWorkspace() {
      * here: an owner with a large treasury and an unfunded agent wallet sailed
      * past the old check and collected N server refusals instead.
      */
-    if (targets.some((target) => target.isSelf || target.userId === user.id)) {
-      toast?.error?.('Choose Another Active Member');
+    const selfTargeted = targets.some((target) => target.isSelf || target.userId === user.id);
+    if (selfTargeted) {
+      /* SENDING TO YOURSELF (Dan 2026-10-15: "INCLUDING OWNERS, I CURRENTLY
+         CAN'T SEND CHIPS TO MYSELF"). An agent wallet cannot pay its own
+         holder (fn_agent_wallet_send refuses it), so an owner or co owner's
+         own player wallet is funded from the Club Bank, the account that
+         already pays them through Fund Me. On its own, so a batch never
+         mixes two funding accounts. */
+      if (kind === 'send' && targets.length === 1 && selfCanFundPlayerWallet) {
+        await sendToSelf();
+        return;
+      }
+      toast?.error?.(
+        kind === 'send' && selfCanFundPlayerWallet
+          ? 'Send To Yourself On Its Own, Then Send To The Others'
+          : 'Choose Another Active Member'
+      );
+      return;
+    }
+    if (kind === 'ticket' && !ticketTournament) {
+      toast?.error?.('Choose A Tournament For The Ticket');
       return;
     }
     if (!canHoldAgentWallet(myRole)) {
@@ -1941,6 +2081,14 @@ function CashierTradeWorkspace() {
         transferRecovery?.submissionId === submissionId
           ? transferRecovery.ticketNote
           : 'Cashier Ticket',
+      ...(kind === 'ticket' && ticketTournament
+        ? {
+            tournamentId:
+              transferRecovery?.submissionId === submissionId && transferRecovery.tournamentId
+                ? transferRecovery.tournamentId
+                : ticketTournament.tournamentId,
+          }
+        : {}),
       destinations:
         transferRecovery?.submissionId === submissionId
           ? transferRecovery.destinations
@@ -1986,6 +2134,7 @@ function CashierTradeWorkspace() {
           ? opIdFor(target.userId)
           : `ticket:${clubUuid}:${submissionId}:${target.userId}:${parsedAmount.amounts[target.userId]}`,
     }));
+    const boundTournamentId = uncertainRecovery.tournamentId ?? null;
     const receiptById = new Map(receiptRows.map((row) => [row.userId, row]));
     const failed: Array<{ userId: string; name: string; message: string }> = [];
     const owningView = transferView.current;
@@ -2017,26 +2166,42 @@ function CashierTradeWorkspace() {
         try {
           for (const target of chunk)
             receiptById.get(target.userId)!.outcome = 'Outcome Needs Verification';
-          const items = chunk.map((target) => ({
-            user_id: target.userId,
-            amount: parsedAmount.amounts[target.userId],
-            ...(kind === 'send'
-              ? {
-                  destination:
-                    uncertainRecovery.destinations?.[target.userId] ||
-                    (canHoldAgentWallet(target.role) ? 'agent_wallet' : 'player_wallet'),
-                  // The server's replay fingerprint includes the reason, so it
-                  // cannot change between an uncertain send and its retry -
-                  // never a display name (S-06). A constant is stable; op_id
-                  // is the identity (regression review G-07).
-                  reason: CASHIER_SEND_OUT_REASON,
-                  op_id: opIdFor(target.userId),
-                }
+          const items = chunk.map((target) =>
+            kind === 'ticket' && boundTournamentId
+              ? // The tournament item carries its own user_id and amount (the
+                // price the cashier saw); spreading it under them would name
+                // both twice.
+                buildTournamentTicketItem({
+                  clubId: clubUuid,
+                  submissionId,
+                  userId: target.userId,
+                  tournament: {
+                    tournamentId: boundTournamentId,
+                    price: parsedAmount.amounts[target.userId],
+                  },
+                  note: uncertainRecovery.ticketNote,
+                })
               : {
-                  note: uncertainRecovery.ticketNote || `Cashier ticket for ${target.name}`,
-                  idempotency_key: `ticket:${clubUuid}:${submissionId}:${target.userId}:${parsedAmount.amounts[target.userId]}`,
-                }),
-          }));
+                  user_id: target.userId,
+                  amount: parsedAmount.amounts[target.userId],
+                  ...(kind === 'send'
+                    ? {
+                        destination:
+                          uncertainRecovery.destinations?.[target.userId] ||
+                          (canHoldAgentWallet(target.role) ? 'agent_wallet' : 'player_wallet'),
+                        // The server's replay fingerprint includes the reason, so it
+                        // cannot change between an uncertain send and its retry -
+                        // never a display name (S-06). A constant is stable; op_id
+                        // is the identity (regression review G-07).
+                        reason: CASHIER_SEND_OUT_REASON,
+                        op_id: opIdFor(target.userId),
+                      }
+                    : {
+                        note: uncertainRecovery.ticketNote || `Cashier ticket for ${target.name}`,
+                        idempotency_key: `ticket:${clubUuid}:${submissionId}:${target.userId}:${parsedAmount.amounts[target.userId]}`,
+                      }),
+                }
+          );
           const { data, error } = await supabase.rpc('fn_cashier_batch_transfer', {
             p_club_id: clubUuid,
             p_kind: kind,
@@ -2302,6 +2467,213 @@ function CashierTradeWorkspace() {
     }
   };
 
+  /**
+   * ── CLUB BANK MOVES FROM THIS PAGE (Dan 2026-10-15) ──────────────────────
+   *
+   * Two moves the Trade grid could not make, both on the Club Bank's own
+   * audited RPCs (the same ones the Club Bank cashier and Fund Me use):
+   *
+   *   Send Out to yourself  -> fn_club_bank_send      bank -> own player wallet
+   *   Claim Back, any time  -> fn_club_bank_claim_back player wallet -> bank
+   *
+   * "OWNERS, CO OWNERS AND ADMIN'S HAVE THE ABILITY TO CLAIM BACK CHIPS AT
+   * ANY POINT". Every other role keeps the ten minute reversal anchored on
+   * one of its own sends. Both are keyed by a reserved operation id, so a
+   * retry after a lost response replays rather than moving chips twice.
+   */
+  const managementClaims = myRole === 'owner' || myRole === 'co_owner' || myRole === 'admin';
+  /** The one player a management claim acts on: the dialog's, else the single selection. */
+  const managementClaimTarget: DownlineRow | null = !managementClaims
+    ? null
+    : claimRecipient
+      ? (rosterById.get(claimRecipient) ?? null)
+      : picked.length === 1
+        ? picked[0]
+        : null;
+
+  const loadBankBalance = useCallback(async () => {
+    if (!clubUuid || !user?.id) return;
+    const requestedClub = clubUuid;
+    const controller = new AbortController();
+    try {
+      const snapshot = await readCashierBalances(
+        requestedClub,
+        user.id,
+        'club_bank',
+        controller.signal
+      );
+      if (!isMounted.current) return;
+      setBankBalance(Number.isFinite(snapshot.bank) ? (snapshot.bank as number) : null);
+    } catch (error) {
+      reportError(error, 'CashierTradePage.loadBankBalance');
+      // An unread bank is unknown, never zero.
+      if (isMounted.current) setBankBalance(null);
+    }
+  }, [clubUuid, user?.id]);
+
+  const sendToSelf = async () => {
+    if (!clubUuid || !user?.id || busyRef.current) return;
+    if (!requireOnline()) return;
+    const plan = batchPlan;
+    if (!plan.ok) {
+      toast?.error?.(plan.error);
+      return;
+    }
+    const value = plan.amounts[user.id];
+    if (!(value > 0)) {
+      toast?.error?.('Enter An Amount');
+      return;
+    }
+    if (bankBalance !== null && value > bankBalance) {
+      toast?.error?.(`Insufficient Chips: The Club Bank Holds ${exactChipFigure(bankBalance)}`);
+      return;
+    }
+    const owningView = transferView.current;
+    busyRef.current = true;
+    setBusy(true);
+    try {
+      const operation = await reserveCashierWalletOperation(
+        user.id,
+        clubUuid,
+        'fn_club_bank_send',
+        {
+          p_club_id: clubUuid,
+          p_to_user_id: user.id,
+          p_destination: 'player_wallet',
+          p_amount: value,
+          p_reason: 'Cashier Send To Self',
+        }
+      );
+      if (!operation) throw new Error('Cashier Safety Storage Is Unavailable. Try Again');
+      const { data, error } = await supabase.rpc('fn_club_bank_send', {
+        p_club_id: clubUuid,
+        p_to_user_id: user.id,
+        p_amount: value,
+        p_destination: 'player_wallet',
+        p_reason: 'Cashier Send To Self',
+        p_op_id: operation.operationId,
+      });
+      if (error) throw error;
+      const res = (Array.isArray(data) ? data[0] : data) as {
+        success?: boolean;
+        error?: string;
+        replayed?: boolean;
+      } | null;
+      if (!res?.success) throw new Error(res?.error || 'The Club Bank Refused That Send');
+      clearCashierWalletOperation(operation);
+      if (!isMounted.current || transferView.current !== owningView) return;
+      toast?.success?.(
+        res.replayed
+          ? `That Send Had Already Gone Through. ${exactChipFigure(value)} Chips Are In Your Player Wallet`
+          : `Sent ${exactChipFigure(value)} From The Club Bank To Your Player Wallet`
+      );
+      setAmountModal(null);
+      setAmount('');
+      setRecipientAmounts({});
+      masterBus.emit('BALANCE_UPDATED', { source: 'cashier_trade_self', userId: user.id });
+    } catch (e) {
+      if (!isMounted.current) return;
+      reportError(e, 'CashierTradePage.sendToSelf');
+      toast?.error?.((e as Error).message || 'Send Failed');
+    } finally {
+      busyRef.current = false;
+      if (isMounted.current) setBusy(false);
+    }
+  };
+
+  const claimToBank = async (target: DownlineRow) => {
+    if (!clubUuid || !user?.id || busyRef.current || mgmtClaiming) return;
+    if (!requireOnline()) return;
+    const parsed = parseTradeAmount(mgmtClaimAmount);
+    if (!parsed.ok) {
+      toast?.error?.(parsed.error);
+      return;
+    }
+    if (parsed.value > target.chipBalance) {
+      toast?.error?.(`${titleCase(target.name)} Only Holds ${exactChipFigure(target.chipBalance)}`);
+      return;
+    }
+    const owningView = transferView.current;
+    busyRef.current = true;
+    setMgmtClaiming(true);
+    try {
+      const operation = await reserveCashierWalletOperation(
+        user.id,
+        clubUuid,
+        'fn_club_bank_claim_back',
+        {
+          p_club_id: clubUuid,
+          p_from_user_id: target.userId,
+          p_source: 'player_wallet',
+          p_amount: parsed.value,
+          p_reason: 'Cashier Claim Back',
+        }
+      );
+      if (!operation) throw new Error('Cashier Safety Storage Is Unavailable. Try Again');
+      const { data, error } = await supabase.rpc('fn_club_bank_claim_back', {
+        p_club_id: clubUuid,
+        p_from_user_id: target.userId,
+        p_amount: parsed.value,
+        p_source: 'player_wallet',
+        p_reason: 'Cashier Claim Back',
+        p_op_id: operation.operationId,
+      });
+      if (error) throw error;
+      const res = (Array.isArray(data) ? data[0] : data) as {
+        success?: boolean;
+        error?: string;
+        replayed?: boolean;
+      } | null;
+      if (!res?.success) throw new Error(res?.error || 'Those Chips Could Not Be Claimed Back');
+      clearCashierWalletOperation(operation);
+      if (!isMounted.current || transferView.current !== owningView) return;
+      toast?.success?.(
+        res.replayed
+          ? `That Claim Had Already Gone Through. ${exactChipFigure(parsed.value)} Chips Are In The Club Bank`
+          : `Claimed ${exactChipFigure(parsed.value)} From ${titleCase(target.name)} Into The Club Bank`
+      );
+      setMgmtClaimAmount('');
+      setClaimOpen(false);
+      masterBus.emit('BALANCE_UPDATED', { source: 'cashier_trade_bank_claim', userId: user.id });
+    } catch (e) {
+      if (!isMounted.current) return;
+      reportError(e, 'CashierTradePage.claimToBank');
+      toast?.error?.((e as Error).message || 'Claim Back Failed');
+    } finally {
+      busyRef.current = false;
+      if (isMounted.current) setMgmtClaiming(false);
+    }
+  };
+
+  // The tournaments a ticket can be sent into, read whenever Send Ticket opens.
+  useEffect(() => {
+    if (amountModal !== 'ticket' || !clubUuid) return;
+    let live = true;
+    setTicketTournamentsError(null);
+    listTicketableTournaments(clubUuid)
+      .then((rows) => {
+        if (!live) return;
+        setTicketTournaments(rows);
+        setTicketTournamentId((current) =>
+          rows.some((row) => row.tournamentId === current) ? current : ''
+        );
+      })
+      .catch((error: Error) => {
+        if (!live) return;
+        reportError(error, 'CashierTradePage.listTicketableTournaments');
+        setTicketTournaments(null);
+        setTicketTournamentsError(error.message || 'Could Not Load Tournaments');
+      });
+    return () => {
+      live = false;
+    };
+  }, [amountModal, clubUuid]);
+
+  // The bank figure each Club Bank dialog spends or fills.
+  useEffect(() => {
+    if (amountModal === 'send' || claimOpen) void loadBankBalance();
+  }, [amountModal, claimOpen, loadBankBalance]);
+
   // The claimable list, and a one second tick so each countdown is the truth
   // rather than the value it had when the modal opened.
   useEffect(() => {
@@ -2389,12 +2761,7 @@ function CashierTradeWorkspace() {
           p_club_id: saved.clubId,
           p_operation_ids: saved.kind === 'send' ? chunk.map((id) => saved.opIds[id]) : [],
           p_ticket_keys:
-            saved.kind === 'ticket'
-              ? chunk.map(
-                  (id) =>
-                    `ticket:${saved.clubId}:${saved.submissionId}:${id}:${saved.targetAmounts?.[id] ?? saved.amount}`
-                )
-              : [],
+            saved.kind === 'ticket' ? chunk.map((id) => savedTicketKey(saved, id)) : [],
         });
         if (!isMounted.current || transferView.current !== recoveryView) return;
         if (error) throw error;
@@ -2409,9 +2776,7 @@ function CashierTradeWorkspace() {
                 )
               : data.tickets.some(
                   (row: { ticket_key?: string; receipt?: { success?: boolean } }) =>
-                    row.ticket_key ===
-                      `ticket:${saved.clubId}:${saved.submissionId}:${id}:${saved.targetAmounts?.[id] ?? saved.amount}` &&
-                    row.receipt?.success === true
+                    row.ticket_key === savedTicketKey(saved, id) && row.receipt?.success === true
                 )
           )
           .forEach((id) => confirmedTargets.add(id));
@@ -2430,10 +2795,7 @@ function CashierTradeWorkspace() {
                   ? 'Agent Wallet'
                   : 'Player Wallet',
             outcome: 'Confirmed',
-            reference:
-              saved.kind === 'send'
-                ? saved.opIds[id]
-                : `ticket:${saved.clubId}:${saved.submissionId}:${id}:${saved.targetAmounts?.[id] ?? saved.amount}`,
+            reference: saved.kind === 'send' ? saved.opIds[id] : savedTicketKey(saved, id),
           })),
         });
         clearCashierTransferRecovery(saved.userId, saved.clubId, saved.submissionId);
@@ -2460,10 +2822,7 @@ function CashierTradeWorkspace() {
               ? 'Agent Wallet'
               : 'Player Wallet',
         outcome: confirmedTargets.has(id) ? 'Confirmed' : 'Outcome Needs Verification',
-        reference:
-          saved.kind === 'send'
-            ? saved.opIds[id]
-            : `ticket:${saved.clubId}:${saved.submissionId}:${id}:${saved.targetAmounts?.[id] ?? saved.amount}`,
+        reference: saved.kind === 'send' ? saved.opIds[id] : savedTicketKey(saved, id),
       })),
     });
     const authorized = new Set(downline.map((row) => row.userId));
@@ -2499,6 +2858,7 @@ function CashierTradeWorkspace() {
         : {}
     );
     setSelected(new Set(pendingTargets));
+    if (saved.tournamentId) setTicketTournamentId(saved.tournamentId);
     setTransferRecovery(saved);
     // Persisted recovery deliberately omits names and raw server messages.
     // Restore names only from the freshly authorized roster for this club.
@@ -3192,118 +3552,128 @@ function CashierTradeWorkspace() {
             */}
                 {!loading &&
                   !loadError &&
-                  list.slice(0, visibleCount).map((r) => (
-                    <div
-                      key={r.userId}
-                      className={`${styles.row} ${r.isSelf ? styles.rowSelf : styles.selectableRow} ${selected.has(r.userId) ? styles.rowSelected : ''}`}
-                      onClick={() => navigate(`/clubs/${clubParam}/members/${r.userId}`)}
-                      title={
-                        r.isSelf
-                          ? selfCanFundPlayerWallet
-                            ? 'This Is You. Fund Your Player Wallet From The Club Bank With Fund Me.'
-                            : 'This Is You. Chips Cannot Be Sent To Yourself.'
-                          : undefined
+                  list.slice(0, visibleCount).map((r) => {
+                    /* ONE TAP SELECTS, TWO TAPS OPEN (Dan 2026-10-15): "ONE
+                       CLICK ANYWHERE PLACES A CHECK MARK ON THE PLAYER
+                       (INCLUDING OWNERS) ... DOUBLE CLICK OR DOUBLE TAP OPENS
+                       THE PLAYER MANAGEMENT PAGE". A second tap on the same
+                       row inside 350 ms undoes the first tap's toggle and
+                       opens the record, so a double tap never leaves a stray
+                       check behind. Measured by our own clock, because a
+                       touch double tap does not reliably fire dblclick. Your
+                       own row is selectable when the Club Bank can pay you. */
+                    const selectable = !r.isSelf || selfCanFundPlayerWallet;
+                    const isSelected = selected.has(r.userId);
+                    const toggle = () =>
+                      setSelected((previous) => {
+                        const next = new Set(previous);
+                        if (next.has(r.userId)) next.delete(r.userId);
+                        else next.add(r.userId);
+                        return next;
+                      });
+                    const openRecord = () => navigate(`/clubs/${clubParam}/members/${r.userId}`);
+                    const onRowTap = () => {
+                      const now = performance.now();
+                      const last = lastRowTapRef.current;
+                      if (last && last.userId === r.userId && now - last.at < 350) {
+                        lastRowTapRef.current = null;
+                        if (selectable && !busy) toggle();
+                        openRecord();
+                        return;
                       }
-                    >
-                      <label
-                        className={styles.recipientPicker}
-                        onClick={(event) => event.stopPropagation()}
+                      lastRowTapRef.current = { userId: r.userId, at: now };
+                      if (selectable && !busy) toggle();
+                    };
+                    return (
+                      <div
+                        key={r.userId}
+                        className={`${styles.row} ${r.isSelf ? styles.rowSelf : ''} ${selectable ? styles.selectableRow : ''} ${isSelected ? styles.rowSelected : ''}`}
+                        onClick={onRowTap}
+                        title={
+                          r.isSelf && !selfCanFundPlayerWallet
+                            ? 'This Is You. Chips Cannot Be Sent To Yourself.'
+                            : undefined
+                        }
                       >
-                        <input
-                          type="checkbox"
-                          className={styles.batchPicker}
-                          aria-label={`Include ${r.name}`}
-                          checked={selected.has(r.userId)}
-                          disabled={r.isSelf || busy}
+                        <label
+                          className={styles.recipientPicker}
                           onClick={(event) => event.stopPropagation()}
-                          onChange={() => {
-                            if (r.isSelf || r.userId === user?.id) return;
-                            setSelected((previous) => {
-                              const next = new Set(previous);
-                              if (next.has(r.userId)) next.delete(r.userId);
-                              else next.add(r.userId);
-                              return next;
-                            });
-                          }}
-                        />
-                      </label>
-                      {r.avatarUrl ? (
-                        <img src={r.avatarUrl} alt="" className={styles.avatar} />
-                      ) : null}
-                      <Link
-                        className={styles.rowInfo}
-                        to={`/clubs/${clubParam}/members/${r.userId}`}
-                        aria-label={`Manage ${r.name}`}
-                        onClick={(event) => event.stopPropagation()}
-                      >
-                        <span className={styles.rowName}>
-                          {r.name}
-                          {r.isSelf ? <span className={styles.rowYou}>You</span> : null}
-                        </span>
-                        <span className={`${styles.rowSub} ${styles.simpleId}`}>
-                          {!advanced ? (
-                            r.playerNumber ? (
-                              `ID: ${r.playerNumber}`
-                            ) : (
-                              'ID Unavailable'
-                            )
-                          ) : (
-                            <>
-                              {r.playerNumber ? `ID: ${r.playerNumber} · ` : ''}
-                              {titleCase(roleLabel(r.role as ClubRole))}
-                              {r.username ? ` · @${r.username}` : ''}
-                            </>
-                          )}
-                        </span>
-                      </Link>
-                      <span className={styles.rosterWallet}>
-                        <span className={styles.rowBalance}>{fmt(r.chipBalance)}</span>
-                        <span className={styles.rowSub}>Player Wallet</span>
-                      </span>
-                      {r.isSelf ? (
-                        /* The owner's own row: Send Out cannot pay it (see
-                           cashierPreset), the Club Bank can. Offered only to
-                           a role that both spends the bank and holds a
-                           player wallet - owner, co-owner, super agent. */
-                        selfCanFundPlayerWallet ? (
-                          <button
-                            type="button"
-                            className={styles.checkbox}
-                            disabled={!isOnline || cashierAuthorityBlocked}
-                            aria-label="Send Chips From The Club Bank To My Player Wallet"
-                            title="Send Chips From The Club Bank To Your Own Player Wallet So You Can Play"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              if (!user?.id) return;
-                              setCashierPreset({
-                                recipientId: user.id,
-                                destination: 'player_wallet',
-                              });
-                              setActiveCashier('club_bank');
+                        >
+                          <input
+                            type="checkbox"
+                            className={styles.batchPicker}
+                            aria-label={`Include ${r.name}`}
+                            checked={isSelected}
+                            disabled={!selectable || busy}
+                            onClick={(event) => event.stopPropagation()}
+                            onChange={() => {
+                              if (selectable) toggle();
                             }}
-                          >
-                            Fund Me
-                          </button>
-                        ) : null
-                      ) : (
-                        <button
-                          type="button"
-                          className={`${styles.checkbox} ${selected.has(r.userId) ? styles.checkboxOn : ''}`}
-                          disabled={!isOnline || busy || cashierAuthorityBlocked}
-                          aria-label={`Select ${r.name}`}
+                          />
+                        </label>
+                        <img
+                          src={r.avatarUrl || generateAvatarSvg(r.userId, r.name || '?')}
+                          alt=""
+                          className={styles.avatar}
+                        />
+                        {/* The record stays a real link for the keyboard and
+                            for assistive technology (Enter opens it). A tap is
+                            the row's: one selects, two open. */}
+                        <Link
+                          className={styles.rowInfo}
+                          to={`/clubs/${clubParam}/members/${r.userId}`}
+                          aria-label={`Manage ${r.name}`}
                           onClick={(event) => {
-                            event.stopPropagation();
-                            if (r.isSelf || r.userId === user?.id) return;
-                            dialogTriggerRef.current = event.currentTarget;
-                            setSelected(new Set([r.userId]));
-                            setAmountModal('send');
+                            if (event.detail === 0) {
+                              // A keyboard activation: open the record.
+                              event.stopPropagation();
+                              return;
+                            }
+                            event.preventDefault();
                           }}
                         >
-                          {selected.has(r.userId) ? 'Selected' : 'Select'}
-                        </button>
-                      )}
-                    </div>
-                  ))}
+                          <span className={styles.rowName}>
+                            {r.name}
+                            {r.isSelf ? <span className={styles.rowYou}>You</span> : null}
+                          </span>
+                          <span className={`${styles.rowSub} ${styles.simpleId}`}>
+                            {!advanced ? (
+                              r.playerNumber ? (
+                                `ID: ${r.playerNumber}`
+                              ) : (
+                                'ID Unavailable'
+                              )
+                            ) : (
+                              <>
+                                {r.playerNumber ? `ID: ${r.playerNumber} · ` : ''}
+                                {titleCase(roleLabel(r.role as ClubRole))}
+                                {r.username ? ` · @${r.username}` : ''}
+                              </>
+                            )}
+                          </span>
+                        </Link>
+                        <span className={styles.rosterWallet}>
+                          <span className={styles.rowBalance}>{fmt(r.chipBalance)}</span>
+                          <span className={styles.rowSub}>Player Wallet</span>
+                        </span>
+                        {selectable ? (
+                          <button
+                            type="button"
+                            className={`${styles.checkbox} ${isSelected ? styles.checkboxOn : ''}`}
+                            disabled={busy}
+                            aria-label={`Select ${r.name}`}
+                            aria-pressed={isSelected}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              onRowTap();
+                            }}
+                          >
+                            {isSelected ? 'Selected' : 'Select'}
+                          </button>
+                        ) : null}
+                      </div>
+                    );
+                  })}
                 {!loading && !loadError && visibleCount < list.length && (
                   <button
                     className={styles.classicLink}
@@ -3347,7 +3717,7 @@ function CashierTradeWorkspace() {
                 )}
 
                 {/* Footer actions — pinned */}
-                <div className={styles.footer}>
+                <div className={`${styles.footer} ${styles.actionBar}`}>
                   {/* NOT GATED ON THE SELECTION any more. A claim back is anchored on
                 a SEND, not on a player, so the modal lists this agent's own
                 sends that are still inside their ten minute window - and says
@@ -3359,7 +3729,8 @@ function CashierTradeWorkspace() {
                     disabled={!isOnline || busy || claimingId !== null}
                     onClick={(event) => {
                       dialogTriggerRef.current = event.currentTarget;
-                      setClaimRecipient(null);
+                      setClaimRecipient(picked.length === 1 ? picked[0].userId : null);
+                      setMgmtClaimAmount('');
                       setClaimOpen(true);
                     }}
                   >
@@ -4107,7 +4478,10 @@ function CashierTradeWorkspace() {
                           !isOnline ||
                           picked.length === 0 ||
                           cashierAuthorityBlocked ||
-                          (amountModal === 'send' && agentWallet === null) ||
+                          (amountModal === 'send' &&
+                            agentWallet === null &&
+                            !(picked.length === 1 && picked[0].userId === user?.id)) ||
+                          (amountModal === 'ticket' && !ticketTournament) ||
                           !canHoldAgentWallet(myRole),
                         onClick: () => void runTransfers(amountModal),
                       },
@@ -4151,30 +4525,44 @@ function CashierTradeWorkspace() {
                     Send Diamonds
                   </button>
                 </div>
-                {picked.length === 1 && (
-                  <section
-                    className={styles.selectedContext}
-                    aria-label="Selected Player Wallet Context"
-                  >
-                    <strong>{picked[0].name}</strong>
-                    <span>
-                      {picked[0].playerNumber ? `ID: ${picked[0].playerNumber} · ` : ''}
-                      {titleCase(roleLabel(picked[0].role as ClubRole))}
-                    </span>
-                    <span>Player Wallet: {fmt(picked[0].chipBalance)}</span>
-                    <span>
-                      {amountModal === 'send'
-                        ? `Send From Your Agent Wallet To Their ${transferDestination(picked[0]) === 'agent_wallet' ? 'Agent Wallet' : 'Player Wallet'}`
-                        : amountModal === 'ticket'
-                          ? 'Ticket Funding Comes From Your Player Wallet'
-                          : 'Diamonds Move Between Diamond Wallets'}
-                    </span>
-                    {amountModal === 'send' &&
-                      transferDestination(picked[0]) === 'agent_wallet' && (
-                        <span>The Player Wallet Above Is Separate From Their Agent Wallet.</span>
+                {(() => {
+                  /* THE SENDER'S BALANCE, ALWAYS (Dan 2026-10-15). Each
+                     action names the one account it spends:
+                       Send Out          your agent wallet
+                       Send Out to you   the Club Bank (an agent wallet
+                                         cannot pay its own holder)
+                       Send Ticket       your player wallet */
+                  const selfOnly = picked.length === 1 && picked[0].userId === user?.id;
+                  const sourceLabel =
+                    amountModal === 'ticket'
+                      ? 'From Your Player Wallet'
+                      : amountModal === 'send'
+                        ? selfOnly
+                          ? 'From The Club Bank'
+                          : 'From Your Agent Wallet'
+                        : null;
+                  const sourceBalance =
+                    amountModal === 'ticket' ? myBalance : selfOnly ? bankBalance : agentWallet;
+                  return (
+                    <>
+                      {picked.length === 1 && (
+                        <CashierPlayerCard
+                          row={picked[0]}
+                          balanceLabel={
+                            amountModal === 'send' &&
+                            !selfOnly &&
+                            transferDestination(picked[0]) === 'agent_wallet'
+                              ? 'Player Wallet, Sending To Agent Wallet'
+                              : 'Player Wallet'
+                          }
+                        />
                       )}
-                  </section>
-                )}
+                      {sourceLabel && (
+                        <CashierWalletRow label={sourceLabel} balance={sourceBalance} />
+                      )}
+                    </>
+                  );
+                })()}
                 {amountModal === 'diamonds' && user?.id && picked.length === 1 ? (
                   <DiamondWalletTransfer
                     key={`${user?.id}:${picked[0].userId}`}
@@ -4188,43 +4576,98 @@ function CashierTradeWorkspace() {
                   />
                 ) : (
                   <>
-                    <input
-                      type="number"
-                      inputMode="decimal"
-                      min={0}
-                      step="0.01"
-                      aria-label="Amount Per Player"
-                      aria-invalid={uniformAmountInvalid}
-                      aria-describedby="cashier-amount-validation"
-                      value={uniformAmountValue}
-                      disabled={busy}
-                      onChange={(e) => {
-                        setAmount(e.target.value);
-                        setRecipientAmounts({});
-                        if (transferFailures.length) setTransferFailures([]);
-                      }}
-                      placeholder={
-                        amountModal === 'ticket' ? 'Ticket Value Per Player' : 'Amount Per Player'
-                      }
-                      autoFocus
-                    />
-                    {/* WHO, AND WHERE IT LANDS (Dan 2026-08-25).
-                The modal named a count and never the people; on a 375px screen
-                the selection has scrolled out of view and the user is one tap
-                from moving real money to a set they cannot see. The wallet is
-                named too, because a send to a sub agent funds the float they
-                distribute from rather than a balance they can sit down with. */}
-                    {picked.length > 0 && (
+                    {amountModal === 'ticket' ? (
+                      /* SEND TICKET INTO ONE TOURNAMENT (Dan 2026-10-15). The
+                         list is every future or running event this club's
+                         cashier may ticket; the price is the server's. */
+                      <label className={styles.entryRow}>
+                        <span className={styles.entryRowSlot}>Event</span>
+                        <span className={styles.entryRowPlate}>
+                          <select
+                            className={styles.entrySelect}
+                            aria-label="Tournament"
+                            value={ticketTournamentId}
+                            disabled={busy || ticketTournaments === null}
+                            onChange={(event) => {
+                              setTicketTournamentId(event.target.value);
+                              if (transferFailures.length) setTransferFailures([]);
+                            }}
+                          >
+                            <option value="">
+                              {ticketTournamentsError
+                                ? 'Tournaments Unavailable'
+                                : ticketTournaments === null
+                                  ? 'Loading Tournaments'
+                                  : ticketTournaments.length === 0
+                                    ? 'No Open Tournaments'
+                                    : 'Choose A Tournament'}
+                            </option>
+                            {(ticketTournaments ?? []).map((row) => (
+                              <option key={row.tournamentId} value={row.tournamentId}>
+                                {titleCase(row.name)}
+                                {row.startTime
+                                  ? ` · ${new Date(row.startTime).toLocaleString([], {
+                                      month: 'short',
+                                      day: 'numeric',
+                                      hour: 'numeric',
+                                      minute: '2-digit',
+                                    })}`
+                                  : ''}
+                                {row.status === 'RUNNING' ? ' · Late Reg' : ''}
+                                {` · ${exactChipFigure(row.price)}`}
+                              </option>
+                            ))}
+                          </select>
+                        </span>
+                      </label>
+                    ) : (
+                      <label className={styles.entryRow}>
+                        <span className={styles.entryRowSlot}>Amount</span>
+                        <span className={styles.entryRowPlate}>
+                          <input
+                            className={styles.entryInput}
+                            type="number"
+                            inputMode="decimal"
+                            min={0}
+                            step="0.01"
+                            aria-label="Amount"
+                            aria-invalid={uniformAmountInvalid}
+                            aria-describedby="cashier-amount-validation"
+                            value={uniformAmountValue}
+                            disabled={busy}
+                            onChange={(e) => {
+                              setAmount(e.target.value);
+                              setRecipientAmounts({});
+                              if (transferFailures.length) setTransferFailures([]);
+                            }}
+                            placeholder="Enter Amount"
+                            autoFocus
+                          />
+                        </span>
+                      </label>
+                    )}
+                    {/* WHO, WHEN THERE IS MORE THAN ONE (Dan 2026-08-25). On a
+                        375px screen the selection has scrolled out of view, so
+                        every recipient is named with its own amount. */}
+                    {picked.length > 1 && (
                       <div className={styles.modalTargets}>
                         {picked.map((r) => (
                           <div className={styles.modalTargetRow} key={r.userId}>
-                            <span>
+                            <img
+                              className={styles.modalTargetAvatar}
+                              src={r.avatarUrl || generateAvatarSvg(r.userId, r.name || '?')}
+                              alt=""
+                            />
+                            <span className={styles.modalTargetName}>
                               {r.name}
-                              {amountModal === 'send' && transferDestination(r) === 'agent_wallet'
-                                ? ' (Agent Wallet)'
-                                : ''}
+                              <small>
+                                {r.playerNumber ? `ID: ${r.playerNumber}` : 'ID Unavailable'}
+                                {amountModal === 'send' && transferDestination(r) === 'agent_wallet'
+                                  ? ' · Agent Wallet'
+                                  : ''}
+                              </small>
                             </span>
-                            {picked.length > 1 ? (
+                            {amountModal === 'send' ? (
                               <input
                                 type="number"
                                 inputMode="decimal"
@@ -4252,36 +4695,24 @@ function CashierTradeWorkspace() {
                         ))}
                       </div>
                     )}
-                    {amountModal === 'ticket' && (
-                      <div className={styles.modalHint}>
-                        Tickets Are Paid Now And Held Until The Player Redeems Them. Cancel An
-                        Unredeemed Ticket To Get The Chips Back.
-                      </div>
-                    )}
-                    <div className={styles.modalHint}>
-                      Total: {exactChipFigure(previewTotal)} &middot;{' '}
-                      {/* THE ACCOUNT EACH ACTION SPENDS. Send Out debits the agent
-                  wallet; a ticket escrows the caller's own chip balance. They
-                  are different accounts and quoting the wrong one tells the
-                  user they have money this action cannot reach. */}
-                      {amountModal === 'send'
-                        ? `Your Agent Wallet: ${agentWallet === null ? '--' : fmt(agentWallet)}`
-                        : `Your Chips: ${fmt(myBalance)}`}
-                    </div>
-                    {amountModal === 'send' && (
-                      <div className={styles.modalHint}>
-                        You Can Claim These Chips Back For Ten Minutes. After That The Player Must
-                        Request A Cash Out.
-                      </div>
-                    )}
+                    <div className={styles.modalTotal}>Total: {exactChipFigure(previewTotal)}</div>
                     <div id="cashier-amount-validation" className={styles.modalHint} role="status">
                       {!batchPlan.ok
-                        ? `Amount For ${picked.find((row) => row.userId === batchPlan.userId)?.name || 'Cashier Recipient'}: ${batchPlan.error}`
+                        ? amountModal === 'ticket'
+                          ? batchPlan.error
+                          : `Amount For ${picked.find((row) => row.userId === batchPlan.userId)?.name || 'Cashier Recipient'}: ${batchPlan.error}`
                         : cashierAuthorityBlocked || !canHoldAgentWallet(myRole)
                           ? 'Cashier Access Must Be Verified Before Sending'
-                          : amountModal === 'send' && agentWallet === null
+                          : amountModal === 'send' &&
+                              !(picked.length === 1 && picked[0].userId === user?.id) &&
+                              agentWallet === null
                             ? 'Agent Wallet Could Not Be Verified'
-                            : batchPlan.total > (amountModal === 'send' ? agentWallet! : myBalance)
+                            : batchPlan.total >
+                                (amountModal === 'send'
+                                  ? picked.length === 1 && picked[0].userId === user?.id
+                                    ? (bankBalance ?? Number.POSITIVE_INFINITY)
+                                    : agentWallet!
+                                  : myBalance)
                               ? 'Insufficient Chips In The Funding Wallet'
                               : `${picked.length} Recipients Ready For Server Verification`}
                     </div>
@@ -4334,24 +4765,88 @@ function CashierTradeWorkspace() {
             onClick={(e) => e.stopPropagation()}
           >
             <SpadeConsole
-              onClose={claimingId ? undefined : () => setClaimOpen(false)}
-              eyebrow="Ten Minute Reversal"
+              onClose={claimingId || mgmtClaiming ? undefined : () => setClaimOpen(false)}
+              eyebrow={managementClaims ? 'Into The Club Bank' : 'Ten Minute Reversal'}
               title="Claim Back"
               titleId="cashier-claim-title"
-              pill={claimingId ? 'Working' : 'Limited'}
-              pillInk={claimingId ? 'gold' : 'red'}
-              foot="foot"
+              pill={
+                claimingId || mgmtClaiming ? 'Working' : managementClaims ? 'Any Time' : 'Limited'
+              }
+              pillInk={claimingId || mgmtClaiming ? 'gold' : managementClaims ? 'blue' : 'red'}
+              foot={managementClaimTarget ? 'plates' : 'foot'}
+              plates={
+                managementClaimTarget
+                  ? {
+                      secondary: {
+                        label: 'Cancel',
+                        disabled: mgmtClaiming,
+                        onClick: () => setClaimOpen(false),
+                      },
+                      primary: {
+                        label: 'Claim Back',
+                        ink: 'red',
+                        disabled:
+                          !isOnline ||
+                          mgmtClaiming ||
+                          cashierAuthorityBlocked ||
+                          !parseTradeAmount(mgmtClaimAmount).ok,
+                        onClick: () => void claimToBank(managementClaimTarget),
+                      },
+                    }
+                  : undefined
+              }
               className={styles.console}
             >
               <div className={styles.glass}>
-                <div className={styles.modalHint}>
-                  You Can Take Back A Send For Ten Minutes. After That The Only Way Chips Leave A
-                  Player Is Their Own Cash Out Request.
-                </div>
-                {reversibleLoading && (
+                {/* OWNERS, CO OWNERS AND ADMINS CLAIM BACK AT ANY POINT (Dan
+                    2026-10-15). Any amount the player holds, straight into the
+                    Club Bank, on fn_club_bank_claim_back. Every other role keeps
+                    the ten minute reversal below. */}
+                {managementClaims && managementClaimTarget && (
+                  <>
+                    <CashierPlayerCard row={managementClaimTarget} balanceLabel="Player Wallet" />
+                    <CashierWalletRow label="Into The Club Bank" balance={bankBalance} />
+                    <label className={styles.entryRow}>
+                      <span className={styles.entryRowSlot}>Amount</span>
+                      <span className={styles.entryRowPlate}>
+                        <input
+                          className={styles.entryInput}
+                          type="number"
+                          inputMode="decimal"
+                          min={0}
+                          step="0.01"
+                          aria-label="Claim Back Amount"
+                          value={mgmtClaimAmount}
+                          disabled={mgmtClaiming}
+                          onChange={(event) => setMgmtClaimAmount(event.target.value)}
+                          placeholder="Enter Amount"
+                          autoFocus
+                        />
+                      </span>
+                    </label>
+                    <button
+                      type="button"
+                      className={styles.claimAll}
+                      disabled={mgmtClaiming || managementClaimTarget.chipBalance <= 0}
+                      onClick={() =>
+                        setMgmtClaimAmount(
+                          String(Math.floor(managementClaimTarget.chipBalance * 100) / 100)
+                        )
+                      }
+                    >
+                      Claim All {compactChips(managementClaimTarget.chipBalance)}
+                    </button>
+                  </>
+                )}
+                {managementClaims && !managementClaimTarget && (
+                  <div className={styles.modalHint}>
+                    Select One Player To Claim Back Any Amount.
+                  </div>
+                )}
+                {!managementClaimTarget && reversibleLoading && (
                   <div className={styles.empty}>Reading Your Recent Sends...</div>
                 )}
-                {!reversibleLoading && reversibleError && (
+                {!managementClaimTarget && !reversibleLoading && reversibleError && (
                   <div className={styles.empty} role="alert">
                     {reversibleError}{' '}
                     <button
@@ -4363,7 +4858,8 @@ function CashierTradeWorkspace() {
                     </button>
                   </div>
                 )}
-                {!reversibleLoading &&
+                {!managementClaimTarget &&
+                  !reversibleLoading &&
                   !reversibleError &&
                   stillClaimable.filter(
                     (row) => !claimRecipient || row.to_user_id === claimRecipient
@@ -4374,55 +4870,68 @@ function CashierTradeWorkspace() {
                       }
                     </div>
                   )}
-                {!reversibleLoading && !reversibleError && stillClaimable.length > 0 && (
-                  <div className={styles.claimList}>
-                    {stillClaimable
-                      .filter((row) => !claimRecipient || row.to_user_id === claimRecipient)
-                      .map((row) => {
-                        // The countdown is the DATABASE's own seconds_left, counted
-                        // down by a monotonic stopwatch rather than by the phone's
-                        // clock. The decision is never the phone's either:
-                        // fn_agent_wallet_claim_back re-checks reversible_until and
-                        // refuses a late claim outright.
-                        const left = secondsLeftFor(row);
-                        const mm = Math.floor(left / 60);
-                        // padStart on a CLOCK, not on an amount - "9:05 Left", not
-                        // "9:5". Chip figures on this page all go through fmt().
-                        const ss = String(left % 60).padStart(2, '0');
-                        return (
-                          <div className={styles.claimRow} key={row.transaction_id}>
-                            <div className={styles.rowInfo}>
-                              <span className={styles.rowName}>{row.to_name}</span>
-                              <span className={styles.rowSub}>
-                                {row.destination === 'agent_wallet'
-                                  ? 'Agent Wallet'
-                                  : 'Player Wallet'}{' '}
-                                &middot; {mm}:{ss} Left
-                              </span>
+                {!managementClaimTarget &&
+                  !reversibleLoading &&
+                  !reversibleError &&
+                  stillClaimable.length > 0 && (
+                    <div className={styles.claimList}>
+                      {stillClaimable
+                        .filter((row) => !claimRecipient || row.to_user_id === claimRecipient)
+                        .map((row) => {
+                          // The countdown is the DATABASE's own seconds_left, counted
+                          // down by a monotonic stopwatch rather than by the phone's
+                          // clock. The decision is never the phone's either:
+                          // fn_agent_wallet_claim_back re-checks reversible_until and
+                          // refuses a late claim outright.
+                          const left = secondsLeftFor(row);
+                          const mm = Math.floor(left / 60);
+                          // padStart on a CLOCK, not on an amount - "9:05 Left", not
+                          // "9:5". Chip figures on this page all go through fmt().
+                          const ss = String(left % 60).padStart(2, '0');
+                          return (
+                            <div className={styles.claimRow} key={row.transaction_id}>
+                              <img
+                                className={styles.modalTargetAvatar}
+                                src={
+                                  rosterById.get(row.to_user_id)?.avatarUrl ||
+                                  generateAvatarSvg(row.to_user_id, row.to_name || '?')
+                                }
+                                alt=""
+                              />
+                              <div className={styles.rowInfo}>
+                                <span className={styles.rowName}>{row.to_name}</span>
+                                <span className={styles.rowSub}>
+                                  {row.destination === 'agent_wallet'
+                                    ? 'Agent Wallet'
+                                    : 'Player Wallet'}{' '}
+                                  &middot; {mm}:{ss} Left
+                                </span>
+                              </div>
+                              <span className={styles.rowBalance}>{fmt(row.remaining)}</span>
+                              <button
+                                className={`${styles.reqBtn} ${styles.reqBtnGo}`}
+                                disabled={!isOnline || claimingId !== null}
+                                onClick={() => void claimBack(row)}
+                              >
+                                {claimingId === row.transaction_id ? 'Working...' : 'Claim Back'}
+                              </button>
                             </div>
-                            <span className={styles.rowBalance}>{fmt(row.remaining)}</span>
-                            <button
-                              className={`${styles.reqBtn} ${styles.reqBtnGo}`}
-                              disabled={!isOnline || claimingId !== null}
-                              onClick={() => void claimBack(row)}
-                            >
-                              {claimingId === row.transaction_id ? 'Working...' : 'Claim Back'}
-                            </button>
-                          </div>
-                        );
-                      })}
+                          );
+                        })}
+                    </div>
+                  )}
+                {!managementClaimTarget && (
+                  <div className={styles.modalActions}>
+                    <button
+                      type="button"
+                      className={styles.closeBtn}
+                      disabled={claimingId !== null}
+                      onClick={() => setClaimOpen(false)}
+                    >
+                      Close
+                    </button>
                   </div>
                 )}
-                <div className={styles.modalActions}>
-                  <button
-                    type="button"
-                    className={styles.closeBtn}
-                    disabled={claimingId !== null}
-                    onClick={() => setClaimOpen(false)}
-                  >
-                    Close
-                  </button>
-                </div>
               </div>
             </SpadeConsole>
           </div>

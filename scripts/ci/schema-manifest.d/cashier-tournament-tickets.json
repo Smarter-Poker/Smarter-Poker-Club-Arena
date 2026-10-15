@@ -1,0 +1,14 @@
+{
+  "_owner": "agent/claude-cashfin/feat/cashier-tournament-tickets. Installed by migration 20261015132042_cashier_sends_a_ticket_into_one_tournament.",
+  "tables": ["tournament_ticket_entry_targets"],
+  "functions": [
+    "fn_ca_tournament_ticket_entry_target_is_immutable",
+    "fn_ca_cashier_ticket_target_state",
+    "fn_ca_cashier_ticket_target_in_club",
+    "fn_cashier_ticketable_tournaments",
+    "fn_issue_tournament_entry_ticket",
+    "fn_ca_find_cashier_entry_ticket_for",
+    "fn_ca_use_cashier_entry_ticket",
+    "fn_ca_settle_closed_cashier_entry_tickets"
+  ]
+}

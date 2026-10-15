@@ -1566,3 +1566,315 @@
   width: 44px;
   min-height: 44px;
 }
+
+/* ── The money dialogs' painted rows (Dan 2026-10-15) ────────────────────
+   "IT SHOULD SHOW THE PLAYER NAME LARGER, IT SHOULD HAVE A PROFILE IMAGE ...
+   THEIR CURRENT BALANCE SHOULD BE LARGER ... AN ACTUAL ENTRY FIELD ... AND
+   SHOULD ALWAYS SHOW THE SENDERS BALANCE." Each row prints live text into
+   zones measured on an approved shell at its native ratio; nothing here draws
+   a frame. Zones are master pixels over the shell's own width and height.
+
+     action-primary-shell.png  1280 x 315  ring x103-250 y75-225,
+                                           plate x269-1181 y70-250
+     wallet-row-shell.png      1280 x 274  slot x97-224 y69-197,
+                                           plate x287-1188 y62-202 */
+.console .playerCard,
+.console .walletRow,
+.console .entryRow {
+  position: relative;
+  display: block;
+  width: 100%;
+  container-type: inline-size;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+}
+
+.console .playerCard {
+  aspect-ratio: 1280 / 315;
+  background-image: url('/assets/club-buttons/action-primary-shell.webp');
+}
+
+.console .walletRow,
+.console .entryRow {
+  aspect-ratio: 1280 / 274;
+  background-image: url('/assets/club-buttons/wallet-row-shell.png');
+}
+
+.console .playerCardAvatar {
+  position: absolute;
+  left: calc(103 / 1280 * 100%);
+  top: calc(75 / 315 * 100%);
+  width: calc(147 / 1280 * 100%);
+  height: calc(150 / 315 * 100%);
+  clip-path: circle(50%);
+  object-fit: cover;
+}
+
+.console .playerCardPlate {
+  position: absolute;
+  left: calc(290 / 1280 * 100%);
+  top: calc(70 / 315 * 100%);
+  width: calc(870 / 1280 * 100%);
+  height: calc(180 / 315 * 100%);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 3cqw;
+  min-width: 0;
+}
+
+.console .playerCardIdentity,
+.console .playerCardBalance,
+.console .walletRowPlate {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+}
+
+.console .playerCardName {
+  overflow: hidden;
+  color: var(--ink-silver);
+  font:
+    800 6.4cqw/1.1 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  text-overflow: ellipsis;
+  text-shadow: var(--ink-silver-bevel);
+  white-space: nowrap;
+}
+
+.console .playerCardId {
+  color: var(--ink-blue);
+  font:
+    700 3.4cqw/1.3 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.08em;
+  text-shadow: var(--ink-blue-glow);
+  text-transform: uppercase;
+}
+
+.console .playerCardBalance {
+  flex: 0 0 auto;
+  align-items: flex-end;
+  text-align: right;
+}
+
+.console .playerCardBalance strong,
+.console .walletRowValue {
+  color: var(--ink-gold);
+  font:
+    800 6.4cqw/1.1 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  font-variant-numeric: tabular-nums lining-nums;
+  text-shadow: var(--ink-gold-glow);
+}
+
+.console .playerCardBalance span,
+.console .walletRowLabel {
+  color: var(--ink-muted);
+  font:
+    700 3cqw/1.3 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.08em;
+  text-shadow: var(--ink-muted-shadow);
+  text-transform: uppercase;
+}
+
+.console .walletRowSlot,
+.console .entryRowSlot {
+  position: absolute;
+  left: calc(97 / 1280 * 100%);
+  top: calc(69 / 274 * 100%);
+  width: calc(127 / 1280 * 100%);
+  height: calc(128 / 274 * 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.console .walletRowSlot img {
+  width: 70%;
+  height: 70%;
+}
+
+.console .entryRowSlot {
+  color: var(--ink-blue);
+  font:
+    800 2.3cqw/1 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.06em;
+  text-shadow: var(--ink-blue-glow);
+  text-transform: uppercase;
+}
+
+.console .walletRowPlate,
+.console .entryRowPlate {
+  position: absolute;
+  left: calc(320 / 1280 * 100%);
+  top: calc(62 / 274 * 100%);
+  width: calc(840 / 1280 * 100%);
+  height: calc(140 / 274 * 100%);
+}
+
+.console .walletRowPlate {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 3cqw;
+}
+
+.console .entryRowPlate {
+  display: flex;
+  align-items: center;
+}
+
+/* The field fills the painted plate: the plate is its frame. */
+.console input.entryInput,
+.console select.entrySelect {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 0 2cqw;
+  border: 0 !important;
+  border-radius: 0 !important;
+  outline: 0;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  color: var(--ink-white) !important;
+  font:
+    800 6cqw/1.1 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif !important;
+  font-variant-numeric: tabular-nums lining-nums;
+  text-shadow: var(--ink-white-glow);
+}
+
+.console select.entrySelect {
+  appearance: none;
+  font-size: 3.6cqw !important;
+  text-overflow: ellipsis;
+}
+
+.console select.entrySelect option {
+  background: #0a0b0d;
+  color: var(--ink-white);
+}
+
+.console input.entryInput:focus-visible,
+.console select.entrySelect:focus-visible {
+  color: var(--ink-gold) !important;
+  text-shadow: var(--ink-gold-glow);
+}
+
+.modalTotal {
+  padding: min(1.8cqw, 9px) min(0.5cqw, 2.5px);
+  border-top: 1px solid #000;
+  box-shadow: var(--engraved-rule-lip);
+  color: var(--ink-silver);
+  font-size: min(4.4cqw, 22px);
+  font-variant-numeric: tabular-nums lining-nums;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-shadow: var(--ink-silver-bevel);
+  text-transform: uppercase;
+}
+
+.modalTargetRow {
+  align-items: center;
+}
+
+.modalTargetAvatar {
+  flex: 0 0 auto;
+  width: min(9cqw, 44px);
+  height: min(9cqw, 44px);
+  clip-path: circle(50%);
+  object-fit: cover;
+}
+
+.modalTargetRow > .modalTargetName {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  color: var(--ink-white);
+  font-size: min(3.8cqw, 19px);
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.modalTargetName small {
+  color: var(--ink-blue);
+  font-size: min(2.8cqw, 14px);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-shadow: var(--ink-blue-glow);
+}
+
+.claimAll {
+  align-self: flex-end;
+}
+
+/* ── The action bar: Claim Back, Send Ticket, Send Out (Dan 2026-10-15) ─
+   "MORE DEFINED AND A DYNAMIC HIGH DEF FRAME LIKE THE ONE BELOW IT". The
+   frame is the footer master itself (club-arena-footer-v2.webp, 1916 x 256)
+   with its six emblems lifted out by random-column synthesis of its own
+   quilt (period 78.17px, measured): cashier-action-bar-v1.png. Same rails,
+   same quilt, same corners; the three actions print into its interior,
+   x 38-1878, y 29-229. */
+.console .actionBar,
+.page.simple .actionBar {
+  aspect-ratio: 1916 / 256;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 0;
+  width: 100%;
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 0 calc(60 / 1916 * 100%);
+  border: 0;
+  background: url('/images/cashier-actions/cashier-action-bar-v1.png') center / 100% 100% no-repeat;
+  box-shadow: none;
+}
+
+.console .actionBar .footerBtn,
+.page.simple .actionBar .footerBtn {
+  min-height: 44px;
+  height: 100%;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-silver);
+  font:
+    800 clamp(13px, 3.4cqw, 22px) / 1 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.1em;
+  text-shadow: var(--ink-silver-bevel);
+  text-transform: uppercase;
+}
+
+.console .actionBar .footerBtn:first-child,
+.page.simple .actionBar .footerBtn:first-child {
+  color: var(--ink-blue);
+  text-shadow: var(--ink-blue-glow);
+}
+
+.console .actionBar .footerBtn:last-child,
+.page.simple .actionBar .footerBtn:last-child {
+  color: var(--ink-white);
+  text-shadow: var(--ink-white-glow);
+}

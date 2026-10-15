@@ -371,18 +371,20 @@ describe('the cashier never offers a recipient the server will refuse', () => {
     );
   });
 
-  it('the trade grid lists the viewer but never lets them pick themselves', () => {
+  it('the trade grid lists the viewer and lets them pick themselves only when the Club Bank pays them', () => {
     // fn_club_cashier_members returns the caller for a staff viewer (scope
     // 'all' is every active member). The row used to be deleted on arrival,
     // which made the owner unsearchable in his own cashier (Dan 2026-09-04).
-    // It is listed now, marked "You", and refused by toggleSelect - see
-    // tests/every-member-is-discoverable-in-the-cashier.law.test.ts.
+    // It is listed, marked "You", and (Dan 2026-10-15: "I CURRENTLY CAN'T
+    // SEND CHIPS TO MYSELF") selectable when the Club Bank can fund the
+    // owner's own player wallet. A self send never goes through the agent
+    // wallet: it runs on its own through fn_club_bank_send, and any other
+    // self target is refused before a request is made.
     expect(TRADE).not.toContain('String(row.user_id) !== viewerId');
-    expect(TRADE).toContain('if (r.isSelf || r.userId === user?.id) return;');
-    // The self row is never a Send Out target; an owner's own row offers the
-    // Club Bank route to their player wallet instead (Dan 2026-10-11).
-    expect(TRADE).toContain('{r.isSelf ? (');
-    expect(TRADE).toContain('selfCanFundPlayerWallet ? (');
+    expect(TRADE).toContain('const selectable = !r.isSelf || selfCanFundPlayerWallet;');
+    expect(TRADE).toContain('target.isSelf || target.userId === user.id');
+    expect(TRADE).toContain("'Send To Yourself On Its Own, Then Send To The Others'");
+    expect(TRADE).toContain("p_destination: 'player_wallet'");
   });
 });
 

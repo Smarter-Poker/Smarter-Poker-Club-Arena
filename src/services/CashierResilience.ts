@@ -32,6 +32,8 @@ export interface CashierTransferRecovery {
   /** The server replay fingerprint must survive recipient promotion/demotion. */
   destinations?: Record<string, 'agent_wallet' | 'player_wallet'>;
   ticketNote?: 'Cashier Ticket';
+  /** A Send Ticket into one tournament; its retry keys are bound to it. */
+  tournamentId?: string;
   createdAt: number;
 }
 
@@ -123,6 +125,11 @@ const isValidRecovery = (
     return false;
 
   if (row.ticketNote !== undefined && row.ticketNote !== 'Cashier Ticket') return false;
+  if (
+    row.tournamentId !== undefined &&
+    (row.kind !== 'ticket' || !UUID_PATTERN.test(String(row.tournamentId)))
+  )
+    return false;
   if (
     row.targetAmounts !== undefined &&
     (!row.targetAmounts ||
@@ -235,7 +242,8 @@ const sameRecoveryIntent = (
   JSON.stringify(left.targetIds) === JSON.stringify(right.targetIds) &&
   JSON.stringify(left.opIds) === JSON.stringify(right.opIds) &&
   JSON.stringify(left.destinations) === JSON.stringify(right.destinations) &&
-  left.ticketNote === right.ticketNote;
+  left.ticketNote === right.ticketNote &&
+  left.tournamentId === right.tournamentId;
 
 interface CashierRecoveryCollection {
   recoveries: CashierTransferRecovery[];

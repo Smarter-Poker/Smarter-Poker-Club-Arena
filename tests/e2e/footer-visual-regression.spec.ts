@@ -5,7 +5,7 @@ import { join } from 'node:path';
 const ROOT = process.cwd();
 const footerCss = readFileSync(join(ROOT, 'src/components/club/ClubBottomNav.module.css'), 'utf8');
 const footerArt = readFileSync(
-  join(ROOT, 'public/images/club-footer/club-arena-footer-v2.webp')
+  join(ROOT, 'public/images/club-footer/club-arena-footer-v3.webp')
 ).toString('base64');
 
 /* READ THE SHIPPED CONSTANT, DO NOT RESTATE IT (2026-09-05).

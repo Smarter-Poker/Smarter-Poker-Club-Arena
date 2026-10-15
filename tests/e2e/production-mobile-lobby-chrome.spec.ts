@@ -176,7 +176,7 @@ test.describe('the mobile lobby chrome on production', () => {
 
     const edge = await bottomEdge(page);
     // The Diamond Spins overlay is a second image; measure the approved base frame.
-    const artwork = nav.locator('img[src$="/club-arena-footer-v2.webp"]').locator('..');
+    const artwork = nav.locator('img[src$="/club-arena-footer-v3.webp"]').locator('..');
     await expect(artwork).toHaveCount(1);
     const frame = await artwork.boundingBox();
     expect(frame).not.toBeNull();

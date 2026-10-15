@@ -1448,7 +1448,9 @@
 }
 .page.simple {
   min-height: calc(100dvh - 140px);
-  padding: 8px 8px calc(var(--bottom-nav-clearance, 86px) + 110px);
+  /* Clears the action dock: its frame is 412/1916 of its width on a phone
+     and at most 1000 x 334/1916 = 174px tall on a desktop. */
+  padding: 8px 8px calc(var(--bottom-nav-clearance, 86px) + min(190px, 24vw));
 }
 .page.simple .hero {
   display: block;
@@ -1827,31 +1829,93 @@
   align-self: flex-end;
 }
 
-/* ── The action bar: Claim Back, Send Ticket, Send Out (Dan 2026-10-15) ─
-   "MORE DEFINED AND A DYNAMIC HIGH DEF FRAME LIKE THE ONE BELOW IT". The
-   frame is the footer master itself (club-arena-footer-v2.webp, 1916 x 256)
-   with its six emblems lifted out by random-column synthesis of its own
-   quilt (period 78.17px, measured): cashier-action-bar-v1.png. Same rails,
-   same quilt, same corners; the three actions print into its interior,
-   x 38-1878, y 29-229. */
+/* ── The action dock: one painted frame (Dan 2026-10-15) ───────────────
+   "THE ENTIRE SELECTED BOX AND THE CLAIM BACK SEND TICKET SEND OUT SHOULD BE
+   ONE FRAME ... ITS LIKE ONE PREMIUM FRAME BEHIND ONE GENERIC FRAME", and
+   "BOTH OF THE FRAMES HAVE THIS WEIRD BROKEN TOP LINES". The frame is the
+   footer master (club-arena-footer-v3.webp, the stray emblem tips above its
+   top rail removed) with its emblems lifted out and its own quilt extended by
+   whole vertical periods (78 px, measured), so the rails, corners and quilt
+   are the master's:
+     cashier-action-dock-v1.png       1916 x 334 (one extra period)
+     cashier-action-dock-tall-v1.png  1916 x 412 (two, for phones)
+   The selection line and the three actions print into its interior,
+   x 38-1878 and from y 29 to 29 px above the bottom. Padding is a share of
+   the width, which is exactly a share of the frame's height here, because
+   the frame's height is a fixed share of its width. */
+.console .dock,
+.page.simple .dock {
+  padding: 0;
+  background: transparent;
+}
+
+.page.simple .dock {
+  left: max(12px, calc((100vw - 1000px) / 2));
+  right: max(12px, calc((100vw - 1000px) / 2));
+}
+
 .console .actionBar,
 .page.simple .actionBar {
-  aspect-ratio: 1916 / 256;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  align-items: stretch;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  aspect-ratio: 1916 / 334;
   gap: 0;
   width: 100%;
   max-width: 1000px;
   margin: 0 auto;
-  padding: 0 calc(60 / 1916 * 100%);
+  padding: calc(34 / 1916 * 100%) calc(64 / 1916 * 100%) calc(30 / 1916 * 100%);
   border: 0;
-  background: url('/images/cashier-actions/cashier-action-bar-v1.png') center / 100% 100% no-repeat;
+  background: url('/images/cashier-actions/cashier-action-dock-v1.png') center / 100% 100% no-repeat;
   box-shadow: none;
+}
+
+@media (max-width: 640px) {
+  .console .actionBar,
+  .page.simple .actionBar {
+    aspect-ratio: 1916 / 412;
+    background-image: url('/images/cashier-actions/cashier-action-dock-tall-v1.png');
+  }
+}
+
+.console .actionBar .selBar,
+.page.simple .actionBar .selBar {
+  min-width: 0;
+  padding: 0 calc(16 / 1916 * 100%);
+  border: 0;
+  box-shadow: none;
+  font-size: clamp(10px, 2.6cqw, 14px);
+}
+
+.console .actionBar .selBar > span,
+.page.simple .actionBar .selBar > span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.console .actionBar .selClear,
+.page.simple .actionBar .selClear {
+  min-height: 28px;
+  padding: 0 6px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-blue);
+  font: inherit;
+  letter-spacing: inherit;
+  text-shadow: inherit;
+  text-transform: inherit;
+}
+
+.actionButtons {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
+  min-height: 0;
 }
 
 .console .actionBar .footerBtn,
 .page.simple .actionBar .footerBtn {
-  min-height: 44px;
+  min-height: 40px;
   height: 100%;
   padding: 0 4px;
   border: 0;

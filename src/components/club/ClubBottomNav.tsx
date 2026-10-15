@@ -37,7 +37,7 @@ interface AccountResolvedClub {
   clubId: string | null;
 }
 
-const APPROVED_FOOTER_ART = `${import.meta.env.BASE_URL}images/club-footer/club-arena-footer-v2.webp`;
+const APPROVED_FOOTER_ART = `${import.meta.env.BASE_URL}images/club-footer/club-arena-footer-v3.webp`;
 
 function useResolvedClubId(explicit?: string, routeClubId?: string | null): string | null {
   const { user } = useAuthUser();

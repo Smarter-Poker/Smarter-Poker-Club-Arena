@@ -194,8 +194,8 @@ describe('ClubBottomNav approved footer contract', () => {
 
     const artwork = screen
       .getAllByRole('presentation')
-      .find((img) => img.getAttribute('src') === '/images/club-footer/club-arena-footer-v2.webp');
-    expect(artwork).toHaveAttribute('src', '/images/club-footer/club-arena-footer-v2.webp');
+      .find((img) => img.getAttribute('src') === '/images/club-footer/club-arena-footer-v3.webp');
+    expect(artwork).toHaveAttribute('src', '/images/club-footer/club-arena-footer-v3.webp');
     expect(artwork).toHaveAttribute('width', '1916');
     expect(artwork).toHaveAttribute('height', '256');
   });

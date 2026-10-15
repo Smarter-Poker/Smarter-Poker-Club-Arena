@@ -493,6 +493,29 @@
   text-shadow: 0 0 8px rgba(0, 212, 255, 0.3);
 }
 
+.mml-table-stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  font-family: var(--mml-font-label);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.mml-table-stat-label {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.mml-table-stat-value {
+  font-weight: 700;
+  color: #e8eef6;
+}
+
 .mml-table-queue {
   font-family: var(--mml-font-label);
   font-size: 0.72rem;

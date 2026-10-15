@@ -1,14 +1,61 @@
-# Lightning Go-Live Handoff (2026-10-15, 17:30 UTC)
+# Lightning Go-Live Handoff (2026-10-15, Updated 20:30 UTC)
 
 You are picking up the Lightning programme for Club Arena (Smarter Poker). Lightning is the pooled fast-fold cash mode. This document is the complete state of the work and every step left before Lightning can go live for real players. Read it top to bottom before acting. Nothing in it is a summary of a summary: every id, run, migration and rule you need is here.
+
+**Section U (directly below) is the newest state and overrides anything older in sections 3 to 5.** Sections 3 to 5 were written at 17:30 UTC and are kept for their ids and history.
+
+## U. Update At 20:30 UTC: Lightning Is Dealing Real Hands In The Pilot
+
+### U.1 What Happened Since 17:30
+
+| Time (UTC) | Event |
+| --- | --- |
+| 18:11 | The other session restored the global fleet (`enabled=true`). Pilot horse wallets were NOT reset to 10,000 (pilot wallets 14,322.45 at 19:46). |
+| 18:14:55 | 6-max cluster `babb43f1` converted `must_move` to `lightning` with 18 live; 18 pool sessions opened; the shadow worker began comparisons at 18:15:00. |
+| 19:02:11 | 9-max cluster `3330ff9f` converted with 27 live; 27 pool sessions; comparisons from 19:03:01. |
+| 19:22 | PR #6992 merged (squash `19f21fdcee41a4a9cfed6feeaf7da172a01f79bc`). |
+| 19:46 | A/A calibration read from `lightning_matcher_shadow_comparison`: 6-max 85 comparisons, 9-max 44, every one nonempty (for example 156 groups, 1,352 seated per window), m1 vs m1-port, mean quality delta 0.000 on both. Calibrated. |
+| 19:47:20 | Stage 2 dispatched: `lightning-pilot-stage.yml` `stage=form`, operation `3715c610-a445-4a23-85fd-e330e45bbbc7`, run 38796724234. Succeeded (its readiness gate accepted the post-calibration reasons). |
+| 20:03 | First install of `20261015172330` (run 38793372623) was refused by the break window at exactly :03; nothing committed. |
+| 20:08 | Re-dispatched once: run 38799510609, success. `@live-proof` true; the nine Classic games are closed. |
+| 20:10:55 | **First real Lightning hands** formed on both clusters (a full 6-handed and a full 9-handed hand first). |
+| 20:29 | 1,313 Lightning hands settled across both clusters; 0 settled-but-stale; every settled hand has a `hand_history_id`; zero abandoned instances. |
+
+### U.2 Phase 3 Status
+
+- 3a Classic games closed: done (installed 20:08, live proof true).
+- 3b Fill: done (18 of 18 and 27 of 27 live). The Classic closure did not gate this fill: the Classic tables were already closed by the wallet reset, so they gave no band supply when the fleet returned.
+- 3c Conversion: done on both.
+- 3d Calibration: done (85 and 44, delta 0). **Defect to own:** the 60-minute shadow time box was overrun. The 6-max sat in shadow from 18:15 to 20:10 (about 115 minutes) and the 9-max from 19:02 to 20:10 (about 68 minutes) with pool players receiving no hands, because the fleet came back while the session was waiting on CI and nobody was watching the conversion. No money was affected. Next time, watch `cluster_mode` from the moment the fleet returns.
+- 3f Form mode: done (run 38796724234).
+- 3g First real hands: formed, dealt and settled. Conservation over the first 582 settled hands: for every hand, sum of `settle_receipt.deltas` plus `rake` plus `bbj` equals 0 (0 nonconserving). Rake on those 582: 5.13 (9-max) and 0.77 (6-max).
+- Still to record for Phase 3: the stage `report` run 38800898759 (dispatched 20:19, queued at 20:29; read its artifact `lightning-pilot-stage-report` for the authenticated readiness verdict and the shadow report), and a replay check through `fn_lightning_operator_hand_replay` on a sample of settled hands (needs the authenticated owner or service role).
+- **Do not report "Phase 3 Of 8 Is Done" until B1 and B2 below are understood**, because both sit on the Stage 2 exit path.
+
+### U.3 New Launch Blockers Found In The First Hands
+
+**B1. Hands form mostly heads-up.** After the first full hand at 20:10:55, the matcher deals small hands from a full pool. Of the first 593 hands: 6-max 188 heads-up, 21 three-handed, 8 four, 2 five, 2 six (average 2.24 dealt); 9-max 258 heads-up, 101 three, 35 four, 7 five, 2 each of six, seven and nine, 1 eight (average 2.55). `lightning_instance.target_size` equals the dealt count, so it is the plan, not a drop-out.
+- Cause, read from the code: the matcher packs every legal idle player each pass with `instance_min = 2` (`LIGHTNING_MATCHER_PARAM_DEFAULTS` in `server/src/lightning/LightningMatcherModel.ts`, mirrored by the SQL m1 matcher and `fn_lightning_config` keys `instance_min`, `instance_target`, `instance_max`; group sizing in `lightningGroupSizes`). Passes run often, and fast-folded players return one or two at a time, so whenever two are idle they are dealt a heads-up hand instead of waiting a moment for a fuller table. 18 players end up in about six concurrent small hands.
+- This is a launch blocker for a fast-fold product (players expect near-full rings) and it skews every downstream statistic (rake, VPIP, latency, fairness, the 5,000-hand sample).
+- Fix direction (needs a reviewed matcher phase, because ROLLOUT says m1 changes ship as their own reviewed phase, and because the wait-versus-fullness trade-off is Dan's product call): form a group only when idle legal players reach the target size for the current pool (for example the table size, or the pool size if smaller), OR when the oldest idle player has waited past a bounded aging limit; keep queue aging so nobody starves; implement in both the SQL m1 matcher and the engine port, keep parity (`scripts/dev/test-lightning-matcher-parity.sh`) and the fairness sims (`LightningMatcherSim.ts`) green, and re-run A/A calibration after the change. Ask Dan to choose the maximum wait (a number of seconds) in one short question with a recommended value.
+
+**B2. One high integrity signal is open.** `lightning_integrity_signal` id 1, 6-max cluster, `TIMING_CORRELATION`, players `0097309f-2864-4d09-b02b-56bca012a9c3` and `19de9af5-6576-4ebb-92c6-1fe53599f782` (both pilot horses), suspicion 90, `latency_corr` 0.9949, 27 hands together, status open. Readiness reports `INTEGRITY_HIGH_SIGNALS_OPEN` while it is open, and the Stage 2 exit needs no open high signal.
+- Treat it as real (CLAUDE.md 10.5 and PHASE5 contract rule 4: two horses that correlate is a HorseBehavior defect an operator must see; never filter horses out of the scan). Likely cause to verify: horse action timing in the engine (`scheduleHorseAction` and HorseLogic think-time) is too uniform, so two horses' decision latencies correlate. Fix the timing at its source with a regression test, then review and resolve the signal with a note.
+- Also check how B1 inflates it: heads-up hands put the same two horses together repeatedly.
+
+### U.4 What The Next Agent Does Now, In Order
+
+1. Read the report artifact of run 38800898759 and record readiness and the shadow report.
+2. Decide whether to keep the pilot dealing while B1 is fixed. Recommended: keep it dealing (it is private, horses only, conservation holds) so latency windows and hand counts accrue, but do not count hands toward the 5,000-hand Stage 2 sample until B1 ships, because the sample must reflect the launch matcher. If you instead stop it, use `stage=drain` (expect eight `lightning_drain_step` events and outcome drained).
+3. Fix B1 (ask Dan the one wait-time question first) and B2.
+4. Then finish Phase 3 reporting and continue with Phase 2 leftovers (section 5.2) and Phases 4 to 8 (sections 5.4 to 5.8). The Stage 2 rehearsals in 5.3 step 3e (pause and resume, joins off and on, freeze and unfreeze, rollback answered ALREADY) and the mid-hand drain can now be done on live hands.
 
 ## 0. First Actions, In Order
 
 1. Read root `CLAUDE.md`, `AGENTS.md`, `AGENT-PLAYBOOK.md`, `docs/agent-policy/REFERENCE-INDEX.md` and `PUBLISHING.md`. They bind you.
 2. Read `docs/lightning/FUNCTIONAL-BUILD-PHASES.md` (the 8 phases), `docs/lightning/REMAINING-WORK.md` (R01 to R22), `docs/lightning/ROLLOUT.md` (Stages 0 to 4) and `docs/lightning/FINAL-RELEASE-REVIEW.md` with `docs/lightning/release-gates.json` (gates L01 to L54).
-3. Check PR #6992 (section 4.1). If merged and not installed, install it (section 6.3).
-4. Check whether the global horse fleet is back on (section 3.4). Lightning cannot progress with the fleet off.
-5. Then work Phase 3 (section 5.3) to completion, then Phases 4 to 8 in order.
+3. Read section U above; it is the current state.
+4. Then work section U.4, then Phases 4 to 8 in order.
 
 ## 1. Who, Where, What
 

@@ -16,7 +16,7 @@ THEM."
   Give Your Players", and a field to set it (0 to the lesser of 50% and their
   own rate).
 
-## Server (`20261015163259_agents_set_the_rakeback_their_players_receive`)
+## Server (`20261015163632_agents_set_the_rakeback_their_players_receive`)
 
 - `fn_club_set_member_role`, `fn_create_agent`: no player rakeback needed; a
   promotion that does not name one starts at 0. The upline's player rakeback no
@@ -36,3 +36,8 @@ THEM."
   figure moves. `fn_accounting_legacy_certify_week` is untouched (closed weeks).
 
 Law `tests/promotion-assigns-the-rate.law.test.ts` updated in the same commit.
+
+Installed 2026-10-15 as `20261015163632` (file renamed to match). Rolled-back
+production probe: promotion to agent at 30% with no player rakeback succeeded
+and stored 0; the new agent set 20% (stored, two agreement-history rows) and
+was refused at 40% ("cannot exceed your own rate of 30.00 percent").

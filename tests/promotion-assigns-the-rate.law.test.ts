@@ -101,7 +101,7 @@ describe('the promote screen asks for the rate it is granting', () => {
     const dashboard = read('src/pages/SuperAgentDashboard.tsx');
     expect(dashboard).toMatch(/rpc\('fn_agent_set_player_rakeback'/);
     const sql = read(
-      'supabase/migrations/20261015163259_agents_set_the_rakeback_their_players_receive.sql'
+      'supabase/migrations/20261015163632_agents_set_the_rakeback_their_players_receive.sql'
     );
     expect(sql).toMatch(/CREATE FUNCTION public\.fn_agent_set_player_rakeback/);
     expect(sql).toMatch(/p_rate > v_agent\.commission_rate/);

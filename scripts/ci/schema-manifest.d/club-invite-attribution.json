@@ -1,5 +1,5 @@
 {
-  "_owner": "feat/share-invite-attribution (2026-10-15). PROMISED, not yet observed: migration 20261015181214_club_invite_links_and_attribution is applied through apply-merged-migration.yml after the protected merge. Share & Invite short links: the two tables, the invite RPCs, the phone-verified credit trigger function, and the redefined fn_redeem_club_invite_code.",
+  "_owner": "feat/share-invite-attribution (2026-10-15). Applied to production 2026-10-15 as 20261015223250 club_invite_links_and_attribution; every function body verified md5-identical to this file. Share & Invite short links: the two tables, the invite RPCs, the phone-verified credit trigger function, and the redefined fn_redeem_club_invite_code.",
   "tables": [
     "club_invite_links",
     "club_invite_attributions"

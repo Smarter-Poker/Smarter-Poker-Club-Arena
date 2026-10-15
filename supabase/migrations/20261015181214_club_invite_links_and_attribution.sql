@@ -381,8 +381,12 @@ BEGIN
   RETURN NULL;
 END $$;
 
-DROP TRIGGER IF EXISTS trg_club_invite_phone_verified ON public.profiles;
-CREATE TRIGGER trg_club_invite_phone_verified
+-- CREATE OR REPLACE, not DROP + CREATE: DROP TRIGGER takes ACCESS EXCLUSIVE on
+-- profiles, which queues behind every reader (a 30-second prune job holding an
+-- ACCESS SHARE lock refused the first apply at lock_timeout) and blocks every
+-- read while it waits. CREATE TRIGGER takes SHARE ROW EXCLUSIVE, which readers
+-- never conflict with.
+CREATE OR REPLACE TRIGGER trg_club_invite_phone_verified
   AFTER UPDATE OF phone_verified ON public.profiles
   FOR EACH ROW
   WHEN (NEW.phone_verified IS TRUE AND OLD.phone_verified IS DISTINCT FROM TRUE)

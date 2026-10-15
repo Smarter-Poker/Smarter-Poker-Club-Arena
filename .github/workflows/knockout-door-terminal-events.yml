@@ -1,0 +1,67 @@
+name: Knockout door counts only events still being played
+
+# fn_ca_knockout_door_stalled (migration 20261015024956). Runs
+# scripts/ci/test-knockout-door-terminal-events.py against a throwaway
+# PostgreSQL 17 cluster, never production: the exact production definition
+# captured 2026-10-15 (pg_get_functiondef md5 equal to the live function) must
+# fire on a lone stale candidate of a cancelled tournament, and the migration
+# must stop counting candidates of finished events while still firing on a
+# real stall, and reproduce production's derived postimage md5. Kept in its
+# own file so the change does not edit ci.yml. No timer (CLAUDE.md 10.85):
+# pull_request only, scoped to the paths it proves.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - supabase/migrations/20261015024956_the_knockout_door_counts_only_candidates_of_events_still_bei.sql
+      - scripts/ci/fixtures/knockout-door-terminal-events/**
+      - scripts/ci/test-knockout-door-terminal-events.py
+      - .github/workflows/knockout-door-terminal-events.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: knockout-door-terminal-events-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  knockout-door-terminal-events:
+    name: Knockout door counts only candidates of events still being played
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL 17 from the signed PGDG source only
+        run: |
+          set -euo pipefail
+          pg_sources="$(mktemp -d "$RUNNER_TEMP/ca-postgres-apt.XXXXXX")"
+          chmod 755 "$pg_sources"
+          test -f /etc/apt/sources.list.d/ubuntu.sources
+          cp /etc/apt/sources.list.d/ubuntu.sources "$pg_sources/ubuntu.sources"
+          pg_apt=(-o "Dir::Etc::sourcelist=/dev/null" -o "Dir::Etc::sourceparts=$pg_sources")
+          sudo apt-get "${pg_apt[@]}" update
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-common curl ca-certificates
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail --silent --show-error --location \
+            --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          codename="$(. /etc/os-release && printf '%s' "$VERSION_CODENAME")"
+          printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' \
+            "$codename" > "$pg_sources/pgdg.sources"
+          sudo apt-get "${pg_apt[@]}" update
+          printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-17
+      # Runs as the runner user (non-root), exactly as the ci.yml step would.
+      - name: Knockout door counts only candidates of events still being played
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-knockout-door-terminal-events.py --output artifacts/knockout-door-terminal-events
+      - name: Retain the regression evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: knockout-door-terminal-events-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/knockout-door-terminal-events/RESULTS.json
+          retention-days: 7
+          if-no-files-found: warn

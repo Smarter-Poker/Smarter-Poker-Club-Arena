@@ -1,0 +1,46 @@
+Horse Brain Opponent-Read Repair Natural Completion Windows: Declaration
+Written (date -u on Dan's Mac, before any window opened and before any journal or telemetry of the window was read): 2026-10-14T23:55:26Z
+Writer: Horse Brain takeover agent, session https://claude.ai/code/session_01WM1mgwwZpVw6CFUNDKL4LL
+Merge under test: PR #6777, merged 2026-10-14T23:40:12Z as c92768c85bc53a4a5a5972d09c6ee58561010035.
+Serving engine when written: unreadable (the 23:55Z hourly break was in progress; the last read, 21:05Z, was 0f73f0fed813586631bc757e1f65c079982c1aaf, which does not contain c92768c8).
+
+1. Release
+The release is the first club-arena-engine release that serves c92768c85bc53a4a5a5972d09c6ee58561010035, proven by
+git merge-base --is-ancestor c92768c85bc53a4a5a5972d09c6ee58561010035 <releaseSha> (exit 0), where releaseSha is the
+engine host's /health releaseSha and equals the container label sp.release.sha.
+
+2. Window
+The window is [H:02:00.000Z, H:50:00.000Z) for the first full UTC hour H that starts after that release's container
+StartedAt and during which that release serves unchanged, proven by reading container StartedAt, the sp.release.sha label
+and /health releaseSha once before H:02:00Z and once after H:50:00Z, both reads equal. If the release is replaced inside
+the window, the window is void and moves to the next full :02 to :50 hour of the next release whose Phase 11 and Phase 12
+policy digests (section 5) are unchanged, recomputed from that release's sources before reading.
+Bounds are exactly YYYY-MM-DDTHH:02:00.000Z and YYYY-MM-DDTHH:50:00.000Z. --release-unchanged=true only after the second read.
+
+3. Packs And Exact Commands
+Same two-stage procedure and commands as docs/evidence/phase12/declaration-completion-round4-2026-10-12.txt section 3,
+scripts taken from c92768c85bc53a4a5a5972d09c6ee58561010035 (confirmed byte-identical at the release first, otherwise the
+release's own scripts are used and recorded). Stage 1 on the engine host, read-only, nice 19 / ionice idle, closed archive
+segments only, every decision-worker shard directory. Stage 2 in the clean detached worktree
+/Volumes/SmarterWork/agent-work/claude-takeover-20261014/src-c92768c (cd server).
+Phase 11 (stage 1 server/scripts/phase11-completion-extract.py; stage 2 server/src/scripts/phase11CompletionRecord.ts): plo5, plo6, plo8
+Phase 12 (stage 1 server/scripts/phase12-completion-extract.py; stage 2 server/src/scripts/phase12CompletionRecord.ts): flh
+
+4. Counting And Verdict
+Counting is the authority's own, done only by the stage 2 writers. Floor: Wilson lower bound of completed / eligible at
+z = 2.5758293035489 of at least 0.95 with at least 127 eligible per cell; a pack meets the floor only if every street clears it.
+Every cell is reported. An empty window, a refusal by name, a failed cell or a void window are all results.
+
+5. Expected Digests (computed at c92768c85bc53a4a5a5972d09c6ee58561010035)
+| 10 | PLO4 | policy   | a2265ab97318517b73f24ac2a9002be84353437b4d8b615d10ccf4ae854475d7 |
+| 10 | PLO4 | contract | 83ab185b2a2df72876b73d61ece6ea8c2f03f364ce252deecbfcde392ae5f838 |
+| 11 | PLO5 | policy   | 52440150e2beb41bddba1ffe3e270c829366f415615737bf72cd1ae57a478d17 |
+| 11 | PLO6 | policy   | 670b01e51c19493170258905a5f786994b9fdd342a3de3ba74f603a10714d44d |
+| 11 | PLO8 | policy   | a5daefa9832ccec2e303c0e04389ce6c16d7f753cf28248e9063f03b466bd0bf |
+| 11 | PLO5, PLO6, PLO8 | contract | 5b93ae20962ff79798b998f437ed43d2bd224a64995d86e34ed63d7bb22057fc |
+| 12 | FLH  | policy   | 67f964ba00fba3a96a81fba27552b5824b930483c9d7e8e1effbd32386ffe898 |
+| 12 | FLH  | contract | fafbba8dc23ebc59b5aadf78fdcc47cd6f504baf9bcd10b07970ad7fbea501c0 |
+Each stage 2 record's policyDigest must equal its row; any difference is recorded as a defect.
+
+6. Production Rules
+Read-only observation only: no synthetic hands, wagers, tables or bomb pots, nothing activated to manufacture evidence, no scheduler.

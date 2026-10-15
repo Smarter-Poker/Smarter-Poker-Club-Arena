@@ -431,10 +431,40 @@ export interface HorsePhase12AuthoritySelection {
  * Generation 2 is explicitly null until the existing locked FLH v1 matrix
  * requalifies the exact repaired source and fresh natural completion is read.
  * Retain generation-2 evidence; any later renewal uses generation 3.
+ *
+ * October 15: FLH generation 3. The locked FLH v1 matrix requalified the exact
+ * repaired source c92768c8 (#6777, run 38656879989, 42 of 42 shards): cash after
+ * rake against the horse population +1.11 [+0.70, +1.52] bb/100, qualified on
+ * condition (a) with no reasons, at policy digest 67f964ba.... The predeclared
+ * natural completion window on release c92768c8 (2026-10-15 00:02 to 00:50Z,
+ * docs/evidence/phase12/declaration-completion-pfr-repair-2026-10-14.txt) meets
+ * the 0.95 floor on every street (lowest Wilson bound 0.9807, river).
  */
 export const PHASE12_PROTECTED_RELEASE_SELECTIONS: Readonly<
   Record<RemainingPolicyVariant, HorsePhase12AuthoritySelection | null>
-> = Object.freeze({ short_deck: null, pineapple: null, flh: null, flo8: null });
+> = Object.freeze({
+  short_deck: null,
+  pineapple: null,
+  flh: Object.freeze({
+    schema: 'horse-qualified-authority-selection-v1',
+    phase: 'phase12',
+    variant: 'flh',
+    sourceSha: 'c92768c85bc53a4a5a5972d09c6ee58561010035',
+    packVersion: 'fixed-limit-holdem-round3-v1',
+    contractVersion: 'remaining-variant-strength-contract-v1',
+    contractDigest: 'fafbba8dc23ebc59b5aadf78fdcc47cd6f504baf9bcd10b07970ad7fbea501c0',
+    domain: 'flh-cash-single-board-after-rake-horse-population',
+    qualificationPath: 'docs/evidence/phase12/c92768c8/phase12-qualification-2026-10-15-flh.json',
+    qualificationSha256: '0b349ec894b1d5f0db47c052abf87a336b9fb4aa087265a96acb613083cb315d',
+    completionPath: 'docs/evidence/phase12/c92768c8/phase12-completion-2026-10-15-flh.json',
+    completionSha256: '55c641c6f3c6818311be024b005a01136a7a37507991f2d6c33be6170c1641c2',
+    approvalGeneration: 3,
+    issuedAt: '2026-10-15T01:05:00.000Z',
+    expiresAt: null,
+    withdrawn: null,
+  } as const),
+  flo8: null,
+});
 
 const HEX40 = /^[0-9a-f]{40}$/;
 const HEX64 = /^[0-9a-f]{64}$/;

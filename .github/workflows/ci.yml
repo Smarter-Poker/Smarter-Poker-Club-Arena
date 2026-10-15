@@ -1617,10 +1617,6 @@ jobs:
         if: matrix.shard == 4
         run: python3 scripts/ci/test-backed-payout-scan-postgres.py
 
-      - name: Spin conservation includes the reserve's signed event legs
-        if: matrix.shard == 4
-        run: python3 scripts/ci/test-spin-conservation-postgres.py
-
       - name: Reserved cleanup finds immutable cash sources without a trailing-key scan
         if: matrix.shard == 4
         run: python3 scripts/ci/test-certification-player-index-postgres.py

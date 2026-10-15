@@ -33,8 +33,11 @@ describe('a Spin conservation reading counts its reserve', () => {
     expect(migration).not.toMatch(/\b(?:UPDATE|DELETE FROM|INSERT INTO) public\./);
   });
   it('executes its native fail-before and pass-after checks in maintained CI', () => {
+    expect(read('scripts/ci/test-backed-payout-scan-postgres.py')).toContain(
+      "ROOT/'scripts/ci/test-spin-conservation-postgres.py'"
+    );
     expect(read('.github/workflows/ci.yml')).toContain(
-      'run: python3 scripts/ci/test-spin-conservation-postgres.py'
+      'run: python3 scripts/ci/test-backed-payout-scan-postgres.py'
     );
     const native = read('scripts/ci/test-spin-conservation-postgres.py');
     for (const proof of [

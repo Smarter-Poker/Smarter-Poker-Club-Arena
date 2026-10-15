@@ -157,17 +157,68 @@ export async function recoverFromStaleChunk(error: unknown): Promise<boolean> {
  * boot prevents its default uncaught-error path and gives the cache-busting
  * recovery above ownership of the stale document.
  */
+/**
+ * A STYLESHEET THAT FAILED IS NOT A STYLESHEET THAT LOADED (Dan 2026-10-14,
+ * iPad: "THE ENTIRE DISPLAY PAGE LOOKS SUPER ZOOMED IN ... INSTEAD OF LOADING
+ * NORMALLY" - the lobby drawn with no CSS: raw buttons, sr-only labels showing,
+ * art stretched to full width).
+ *
+ * Vite's preloader skips a CSS dependency whose <link> is already in the
+ * document, and it does not distinguish a link that LOADED from one that
+ * ERRORED. So after one failed CSS fetch, every retry of that route "found"
+ * its stylesheet and rendered without it. The failed link is removed here so
+ * the next attempt fetches it again and waits for it.
+ */
+export function dropFailedStylesheet(error: unknown): boolean {
+  const message = (error as { message?: string } | null)?.message ?? '';
+  const match = /Unable to preload CSS for (\S+)/.exec(message);
+  if (!match || typeof document === 'undefined') return false;
+  const href = match[1];
+  let removed = false;
+  document.querySelectorAll('link[rel="stylesheet"]').forEach((node) => {
+    const link = node as HTMLLinkElement;
+    const attr = link.getAttribute('href') ?? '';
+    if (attr === href || link.href === href || link.href.endsWith(href)) {
+      link.remove();
+      removed = true;
+    }
+  });
+  return removed;
+}
+
 export function installVitePreloadErrorRecovery(): () => void {
   const onPreloadError = (event: Event) => {
     const payload = (event as Event & { payload?: unknown }).payload;
+    // A failed stylesheet must be fetched again by whatever retries next.
+    const cssFailed = dropFailedStylesheet(payload);
     // Vite propagates the original import error only if this event remains
-    // uncancelled. An exhausted budget must reach the route's error boundary.
+    // uncancelled. An exhausted budget must reach the route's retry/error
+    // boundary. A CSS failure is never cancelled: cancelling makes Vite hand
+    // back the module anyway, and the route renders with no styles.
     if (!canOwnChunkRecovery(payload)) return;
-    event.preventDefault();
+    if (!cssFailed) event.preventDefault();
     void recoverFromStaleChunk(payload);
   };
   window.addEventListener('vite:preloadError', onPreloadError);
   return () => window.removeEventListener('vite:preloadError', onPreloadError);
+}
+
+/**
+ * THE RELOAD BUDGET IS PER INCIDENT, NOT PER TAB (Dan 2026-10-14). The budget
+ * (MAX_RELOADS) stops a broken deploy from reload-looping, and it lived in
+ * sessionStorage with nothing that ever cleared it. A tab left open across a
+ * day of publishes spent its two reloads on the first two stale chunks and
+ * then had no recovery at all for every later one. A document that has run
+ * cleanly for a minute has proved the last recovery worked, so the budget is
+ * returned. A reload loop still trips it: each loop iteration fails within
+ * seconds, long before this fires.
+ */
+export function releaseChunkRecoveryBudgetWhenStable(stableMs = 60_000): () => void {
+  if (typeof window === 'undefined') return () => undefined;
+  const timer = window.setTimeout(() => {
+    if (!recoveryStarted) clearChunkRecoveryState();
+  }, stableMs);
+  return () => window.clearTimeout(timer);
 }
 
 export function lazyWithRetry<T extends ComponentType<any>>(

@@ -110,6 +110,34 @@ export function displayOrderWithDealtIndex(
   return paired.map((slot) => (slot.card == null ? slot : sortedVisible[next++]));
 }
 
+/**
+ * THE HERO'S ROW KEEPS ITS ORDER WHEN THE ENGINE SHOWS THE HAND (Dan 2026-10-14).
+ *
+ * The hero's cards normally arrive through `table_hole_cards` and are sorted
+ * high to low there (cards_pre_sort). But once the hand is TABLED (an all-in
+ * runout or showdown) the public engine snapshot also carries the hero's cards,
+ * in DEALT order, and the snapshot merge used to take them verbatim, so an
+ * all-in PLO6 hand jumped from 6-6-6-J-J-5 to 6-J-5-6-6-J on the felt.
+ *
+ * Rule: if the incoming cards are the same set the row already shows, keep the
+ * row exactly as it is (so every index-keyed flag, like the show-card picks,
+ * still points at the same card). Otherwise apply the display sort.
+ */
+export function heroDisplayHoleCards<T extends Card | null | undefined>(
+  incoming: T[],
+  current: ReadonlyArray<Card | null | undefined> | null | undefined,
+  preSort: boolean
+): T[] {
+  const key = (c: Card | null | undefined) => (c ? `${c.rank}${c.suit}` : '');
+  if (current && current.length === incoming.length && incoming.every((c) => c)) {
+    const have = current.map(key).sort().join(',');
+    const got = incoming.map(key).sort().join(',');
+    if (have === got && !current.some((c) => !c)) return current as unknown as T[];
+  }
+  if (!preSort || incoming.some((c) => !c)) return incoming;
+  return sortCardsByRank(incoming as unknown as Card[]) as unknown as T[];
+}
+
 export const GAME_VARIANT_LABELS: Record<string, string> = {
   NLH: "NO LIMIT HOLD'EM",
   nlh: "NO LIMIT HOLD'EM",

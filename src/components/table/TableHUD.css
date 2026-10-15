@@ -307,3 +307,22 @@
     --sp-hud-tile-size: clamp(44px, 13.5vw, 66px);
   }
 }
+
+/* ── THE SEAT CHANGE BUTTON IS ON THE LEFT (Dan 2026-10-14) ──────────────────
+   "THE 'SEAT CHANGE' BUTTON SHOULD NEVER BE IN THE UPPER RIGHT HAND CORNER, IT
+   SHOULD BE ON THE LEFT SIDE." The cash must-move box (CashClusterHUD) still
+   mounts inside the upper-right slot, but its dock is pinned to the LEFT edge
+   at the same height as that corner, so it mirrors where it used to sit and
+   stays clear of the tab row above it and the seats below it. Pinned by
+   tests/unit/theSeatChangeButtonIsOnTheLeft.test.ts. */
+.hud-seat-change-dock {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + var(--mtt-ticker-h, 0px) + 54px);
+  left: 6px;
+  right: auto;
+  z-index: 101;
+}
+
+.hud-seat-change-dock .cch-column {
+  align-items: flex-start;
+}

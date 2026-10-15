@@ -306,7 +306,10 @@ import { type HandRecord } from '../components/table/HandHistoryPanel';
 import { usePlayerStats } from '../hooks/usePlayerStats';
 import { useMaintenanceBreak } from '../hooks/useMaintenanceBreak';
 import { platformFrozenMessage } from '../utils/platformFrozen';
-import { MaintenanceBreakScreen } from '../components/table/MaintenanceBreakScreen';
+import {
+  MaintenanceBreakScreen,
+  MaintenanceBreakLine,
+} from '../components/table/MaintenanceBreakScreen';
 import { useTableSettings } from '../hooks/useTableSettings';
 import { useTableTimer } from '../hooks/useTableTimer';
 import { useTableChat } from '../hooks/useTableChat';
@@ -999,10 +1002,12 @@ import { generateAvatarSvg } from '../utils/avatarGenerator';
 import {
   ENGINE_SUIT_MAP,
   sortCardsByRank,
+  heroDisplayHoleCards,
   getGameVariantLabel,
   heroCardsCollideWithBoard,
   heroHoleCardsAreForThisHand,
 } from '../lib/tableCardDisplay';
+import { seatTapBalanceVerdict, notEnoughChipsText } from '../lib/seatTapBalance';
 import {
   seatLayoutFor,
   createEmptySeats,
@@ -2356,6 +2361,13 @@ function LiveTablePage({
     ingestMaintenanceEvent,
     refreshFromDb: refreshMaintenanceBreak,
   } = useMaintenanceBreak(tableId);
+  /* Whether the player closed the break card. A closed break is a masthead
+     line under the bomb pot clock (Dan 2026-10-14). Reset between breaks so
+     closing one never hides the next. */
+  const [maintenanceBreakClosed, setMaintenanceBreakClosed] = useState(false);
+  useEffect(() => {
+    if (!maintenanceBreak.active) setMaintenanceBreakClosed(false);
+  }, [maintenanceBreak.active]);
 
   const {
     snapshot: rawEngineSnapshot,
@@ -2691,7 +2703,20 @@ function LiveTablePage({
         cardHoldNextHand <= 0 || cardHoldPrevHand <= 0 || cardHoldNextHand === cardHoldPrevHand;
       const nextPlayers: (SeatPlayer | null)[] = rosterPlayers.map((p, i) => {
         if (!p) return null;
-        const sp = p as unknown as SeatPlayer;
+        let sp = p as unknown as SeatPlayer;
+        /* Dan 2026-10-14: an all-in / showdown snapshot carries the hero's
+           cards in DEALT order. Keep the row in its display order. */
+        if (sp.isHero && sp.holeCards && sp.holeCards.length > 0) {
+          const prevRow = prev.players[i];
+          sp = {
+            ...sp,
+            holeCards: heroDisplayHoleCards(
+              sp.holeCards,
+              prevRow && prevRow.isHero && prevRow.id === sp.id ? prevRow.holeCards : null,
+              !!cardsPreSortRef.current
+            ),
+          };
+        }
         if (sp.isHero && (!sp.holeCards || sp.holeCards.length === 0)) {
           /* ═══ THE HERO NEVER LOSES SIGHT OF THEIR OWN HAND ═══════════════
              Dan 2026-08-26, verbatim: "I just sat down at a table, was dealt
@@ -16748,7 +16773,7 @@ function LiveTablePage({
                 holeCards:
                   sp.user_id === userId
                     ? sp.cards?.length
-                      ? sp.cards
+                      ? heroDisplayHoleCards(sp.cards, existing?.holeCards, !!cardsPreSortRef.current)
                       : heroHoldIsExpired(existing?.holeCards)
                         ? []
                         : existing?.holeCards || []
@@ -20641,11 +20666,29 @@ function LiveTablePage({
   }, [heroHandStrengthLive, tableState.isHandInProgress]);
 
   // Handle seat click (sit down at empty seat)
+  const openCashBuyIn = (seatNumber: number) => {
+    if (heroSeatRef.current > 0 || showBuyInModal) return;
+    console.debug('[Seat] Opening buy-in modal for seat', seatNumber);
+    // Paint the seat as taken THIS FRAME, before any network work starts.
+    setPendingSeat(seatNumber);
+    setSelectedSeat(seatNumber);
+    setShowBuyInModal(true);
+    // Fire-and-forget: update presence (non-blocking — do NOT await)
+    updateSeat(seatNumber).catch((e) => console.warn('[Seat] Presence update failed:', e));
+  };
+
+  /* A TAP IS NEVER SPENT ON A CHECK (Dan 2026-10-14): "IT SHOULD JUST CHECK
+     AUTOMATICALLY". A tap that lands before the table's funding is known used
+     to answer with a popup and throw the tap away. It is remembered instead,
+     silently, and replayed the moment the funding read lands (effect below
+     the handler). */
+  const deferredSeatTapRef = useRef<number | null>(null);
   const handleSeatClick = (seatNumber: number) => {
     if (!tableState.arenaAsset) {
-      toast.warning('Verifying Table Funding');
+      deferredSeatTapRef.current = seatNumber;
       return;
     }
+    deferredSeatTapRef.current = null;
     // Validate seat is empty before showing buy-in modal
     const seatIdx = seatNumber - 1;
     if (seatIdx >= 0 && seatIdx < tableState.players.length && tableState.players[seatIdx]) {
@@ -20761,14 +20804,41 @@ function LiveTablePage({
       setShowBuyInModal(true);
       return;
     }
-    console.debug('[Seat] Opening buy-in modal for seat', seatNumber);
-    // Paint the seat as taken THIS FRAME, before any network work starts.
-    setPendingSeat(seatNumber);
-    setSelectedSeat(seatNumber);
-    setShowBuyInModal(true);
-    // Fire-and-forget: update presence (non-blocking — do NOT await)
-    updateSeat(seatNumber).catch((e) => console.warn('[Seat] Presence update failed:', e));
+    /* NOT ENOUGH CHIPS IS SAID OUT LOUD (Dan 2026-10-14): "IF THE USER
+       DOESN'T HAVE ENOUGH CHIPS, WHEN THEY HIT THE + BUTTON TO SIT DOWN, IT
+       SHOULD POP UP THAT THEY DO NOT HAVE ENOUGH CHIPS FOR THIS GAME." The
+       balance is read when the table loads; a tap before it lands is answered
+       after one silent read, never with a "checking" popup. Unknown stays
+       unknown (null): only a READ balance below the minimum refuses here, and
+       the buy-in RPC remains the authority. */
+    const needed = Math.max(Number(tableState.minBuyIn) || 0, cashoutMinBuyIn || 0);
+    const refuseIfShort = (balance: number | null): boolean => {
+      const verdict = seatTapBalanceVerdict(balance, needed);
+      if (verdict !== 'short') return false;
+      toast.error(notEnoughChipsText(needed, balance as number, tableState.arenaAsset));
+      return true;
+    };
+    if (accountBalance === null && userId && tableId) {
+      const revision = readBalanceRevision();
+      void readBustBalance(userId, tableId).then((b) => {
+        if (b !== null) setBalanceIfCurrent(revision, b);
+        if (refuseIfShort(b)) return;
+        openCashBuyIn(seatNumber);
+      });
+      return;
+    }
+    if (refuseIfShort(accountBalance)) return;
+    openCashBuyIn(seatNumber);
   };
+
+  /* Replay a tap that landed before the table's funding was known. */
+  useEffect(() => {
+    const seat = deferredSeatTapRef.current;
+    if (seat === null || !tableState.arenaAsset) return;
+    deferredSeatTapRef.current = null;
+    handleSeatClick(seat);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tableState.arenaAsset]);
 
   /* ── DEEP LINK ?buyin=1 (Dan 2026-08-30) ─────────────────────────────────
      A waitlist seat offer holds the seat for 60 seconds and its notification
@@ -24799,7 +24869,13 @@ function LiveTablePage({
                 STACKS, HOW MANY PLAYERS ETC." Every must-move table carries
                 it; the SEAT CHANGE button under it appears only while the
                 database says the change is available. */}
+            {/* THE SEAT CHANGE BUTTON IS ON THE LEFT (Dan 2026-10-14): "THE
+                'SEAT CHANGE' BUTTON SHOULD NEVER BE IN THE UPPER RIGHT HAND
+                CORNER, IT SHOULD BE ON THE LEFT SIDE." The box still mounts in
+                this slot, but its dock is pinned to the left edge at the same
+                height (.hud-seat-change-dock, TableHUD.css). */}
             {!tableState.isTournament && tableState.clusterId && (
+              <div className="hud-seat-change-dock">
               <CashClusterHUD
                 gameId={tableState.clusterId}
                 refreshKey={clusterRefreshKey}
@@ -24814,6 +24890,7 @@ function LiveTablePage({
                   navigate(`/table/${dest}`);
                 }}
               />
+              </div>
             )}
             {/* The MiniStatsCard stats icon that used to sit under the bar is
                 REMOVED (Dan 2026-08-30): the level bar itself opens the
@@ -25341,6 +25418,19 @@ function LiveTablePage({
                         <span className="table-brand__bomb">{bombPotBadge.text}</span>
                       </span>
                     )}
+                    {/* THE CLOSED MAINTENANCE BREAK (Dan 2026-10-14): "THIS
+                        NEEDS TO APPEAR BELOW 'BOMB POT IN 2:47' NOT UNDER THE
+                        HERO." Shown once the player closes the break card,
+                        and on every background tile of a multi-table view,
+                        where the card itself is not drawn. */}
+                    {maintenanceBreak.active &&
+                      (maintenanceBreakClosed || (isMultiTable && !isActive)) && (
+                        <MaintenanceBreakLine
+                          phase={maintenanceBreak.phase}
+                          breakEndsAtMs={maintenanceBreak.breakEndsAtMs}
+                          onOpen={() => setMaintenanceBreakClosed(false)}
+                        />
+                      )}
                     {/* KILL POTS (kill-v1): the next hand is a kill hand. The
                         bomb clock's line, word for word the same pattern: a
                         masthead line under the blinds, not a pill on the felt.
@@ -27991,6 +28081,8 @@ function LiveTablePage({
         phase={maintenanceBreak.phase}
         breakEndsAtMs={maintenanceBreak.breakEndsAtMs}
         reason={maintenanceBreak.reason}
+        minimized={maintenanceBreakClosed}
+        onMinimize={() => setMaintenanceBreakClosed(true)}
       />
       <TableModalsLayer
         isActive={isActive}

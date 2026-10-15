@@ -35,6 +35,8 @@ const BASELINE: Record<string, string[]> = {
   'src/pages/MultiTablePage.tsx': ['goToLobby', 'sitOutStartedMessage'],
   'src/pages/TablePage.tsx': [
     'bustRebuyOpenRef',
+    // Read inside the snapshot merge's setTableState callback (2026-10-14).
+    'cardsPreSortRef',
     'clearEarlyTimers',
     'collectingChipSeatsRef',
     'exitIfBustedRef',

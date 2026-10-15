@@ -5022,7 +5022,7 @@ function ClubHomePageContent({
     {
       id: 'first-agent',
       label: 'Configure Your First Agent',
-      detail: 'Promote A Player, Choose Prepaid Or Credit, And Assign Rakeback',
+      detail: 'Promote A Player And Assign The Agent Rakeback',
       complete: Boolean(configuredAgentUserId),
       optional: true,
       actionLabel: Number(club.member_count || 0) > 1 ? 'Choose Player' : 'Invite Player First',

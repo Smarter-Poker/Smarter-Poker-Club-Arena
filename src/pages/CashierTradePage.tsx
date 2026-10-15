@@ -1334,17 +1334,16 @@ function CashierTradeWorkspace() {
             direction: managed ? ('managed' as const) : out ? ('out' as const) : ('in' as const),
             // A third party reads a Club Bank send by the pot that paid,
             // never its operator: a send nobody pressed reads the same.
-            // A one-sided entry (a tournament buy-in has no recipient, a prize
-            // no sender) is not a transfer between two members: it reads as
-            // what it is instead of "Transfer X To A Member".
+            // An entry with no recipient (a tournament buy-in) is not a
+            // transfer to a member: it reads as what it is instead of
+            // "Transfer X To A Member". A send whose sender is the Club Bank
+            // still reads as the pot that paid.
             counterparty: managed
-              ? r.from_user_id && r.to_user_id
+              ? r.to_user_id
                 ? `${thirdPartySender(r, r.from_name)} To ${r.to_name || 'A Member'}`
-                : r.to_user_id
-                  ? `${txLabel(r.transaction_type)} To ${r.to_name || 'A Member'}`
-                  : `${txLabel(r.transaction_type)} By ${thirdPartySender(r, r.from_name)}`
+                : `${txLabel(r.transaction_type)} By ${thirdPartySender(r, r.from_name)}`
               : otherName || 'Club',
-            twoSided: Boolean(r.from_user_id && r.to_user_id),
+            twoSided: Boolean(r.to_user_id),
             route: walletRoute(r),
             // The receipt's summary prints the receipt's own exact figure, so
             // the sentence and the headline above it never disagree (C1-14).

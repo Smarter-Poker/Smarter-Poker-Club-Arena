@@ -10789,7 +10789,7 @@ export abstract class ServerTableEngineBase {
         resolve();
       };
       const unsubscribe = onMaintenanceThaw(finish);
-      void this.sleep(ms).then(finish, finish);
+      void this.sleep(ms).then(finish).catch(finish);
     });
   }
 

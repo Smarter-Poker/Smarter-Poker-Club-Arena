@@ -75,6 +75,7 @@ p9_fixture=$F/lightning-phase9-formation-fixture.sql
 r2_fixture=$F/lightning-remediation-two-fixture.sql
 p6_fixture=$F/lightning-phase6-matcher-fixture.sql
 s6_fixture=$F/lightning-phase6-settlement-fixture.sql
+mode_race=$F/lightning-mode-change-race.sql
 phase2=$M/20260920235343_lightning_phase_2_the_pool_the_instance_the_reservation_and_.sql
 phase2r=$M/20260921025504_lightning_phase_2_remediation_the_hand_knows_its_cluster_its.sql
 phase3=$M/20260921025523_lightning_phase_3_a_lightning_capable_game_opens_as_a_feeder.sql
@@ -107,7 +108,7 @@ extra=${LIGHTNING_P12_EXTRA-$(find "$M" -maxdepth 1 -name '*_lightning_phase_12_
 for f in "$base_fixture" "$pop_fixture" "$p5_fixture" "$p9_fixture" "$r2_fixture" "$p6_fixture" "$s6_fixture" \
          "$phase2" "$phase2r" "$phase3" "$phase3r" "$phase4" "$phase4r" \
          "$phase5" "$phase5r" "$phase9" "$phase9r" "$r2a" "$r2b" "$r2c" "$r2d" "$p6" "$s6" "$s6r" "$p7" \
-         "$phase8" "$p7r" "$fix" "$p9d" "$p10" "$p9r2" "$p11" "$p12rg" "$p11_harness" $extra; do
+         "$phase8" "$p7r" "$fix" "$p9d" "$p10" "$p9r2" "$p11" "$p12rg" "$p11_harness" "$mode_race" $extra; do
   [ -f "$f" ] || { echo "FAIL: missing input $f"; exit 1; }
 done
 fixture=$(mktemp -d "${TMPDIR:-/tmp}/lightning-p12-test.XXXXXX")
@@ -1591,6 +1592,28 @@ if want C4; then
   mode_rest_check C4 failed_conversions_leave_no_trace "$errs > 0" "$errs drive errors recorded as evidence, $restarted backends terminated at once"
   verdict C4 "CHAOS CONVERSION FAILURE AND SERVER RESTART  faults inside the conversion, drives and ticks killed, $restarted backends terminated at once, the Clusters driven back to rest"
   ran=$((ran + 1))
+fi
+
+# MR A SEAT WAITS FOR THE MODE CHANGE IN FLIGHT (20261015121542): the six
+# deterministic two-backend interleavings of a seat arrival and a Cluster
+# mode change (MUST MOVE -> LIGHTNING, PENDING_OFF -> LIGHTNING, and the
+# one-transaction reversion to MUST MOVE, each in both orders), forced through
+# dblink rather than hoped for under load. C4 found the race by chance; this
+# reproduces every order of it on purpose. Run after every scenario, on
+# Clusters of its own, so no worker and no verdict sees them; a deterministic
+# proof, not a scenario, so it adds no verdict row and no section.
+if want MR; then
+  set +e
+  "${PSQL[@]}" -f "$mode_race" > "$fixture/mode-race.out" 2>&1
+  status=$?
+  set -e
+  mr_ok=$(grep -c 'MR M[1-6] .* ok: mode' "$fixture/mode-race.out" || true)
+  if [ "$status" != 0 ] || [ "$mr_ok" != 6 ]; then
+    grep -E 'FAIL|ERROR|ok: mode' "$fixture/mode-race.out" | tail -20
+    echo "FAIL: MR a seat arrival racing a Cluster mode change ($mr_ok of 6 interleavings exact, psql exited $status)"
+    exit 1
+  fi
+  echo "  ok  MR A SEAT WAITS FOR THE MODE CHANGE IN FLIGHT  six forced interleavings of an arrival and a mode change (conversion, pending_off abort, one-transaction reversion; each in both orders): the second backend waits for the first, nobody eligible is left out of a LIGHTNING pool, no pool session survives at a dead epoch or into MUST MOVE"
 fi
 
 # ===========================================================================

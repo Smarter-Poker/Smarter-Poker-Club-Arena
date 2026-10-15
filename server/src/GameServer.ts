@@ -7534,18 +7534,29 @@ export class GameServer {
                   id +
                   ' shows no progress for ' +
                   Math.round(engine.msSinceProgress() / 1000) +
-                  's - rebuilding'
+                  's at ' +
+                  engine.describeLoopPhase() +
+                  ' (permit ' +
+                  engine.f06PermitPhase() +
+                  ') - rebuilding'
               ),
               'GameServer.zombie_engine_rebuilt'
             );
+            /* THE KILL NAMES THE LINE IT INTERRUPTED (2026-10-15). The detail
+               used to be the bare reason, so 76 zombie kills a day recorded
+               nothing about where each table had stopped. It now carries the
+               loop step and the held F06 permit's phase
+               (describeStallForRecovery: `next_hand_rest:permit=reserved`),
+               without seconds, so the rows still group by cause. */
+            const stalledAt = engine.describeStallForRecovery();
             if (this.tournamentOwnedTables.has(id)) {
               /* Synchronously stop mutation and notify the exact owning manager;
                  its identity-CAS replacement preserves the tournament lease. */
-              engine.fenceForEngineLeaseLoss('tournament_table_zombie', true);
+              engine.fenceForEngineLeaseLoss('tournament_table_zombie:' + stalledAt, true);
             } else {
               // Stop mutation before the first teardown await, then retain the
               // old map generation until its exact DB lease is released.
-              engine.fenceForEngineLeaseLoss('cash_table_zombie', false);
+              engine.fenceForEngineLeaseLoss('cash_table_zombie:' + stalledAt, false);
               void this.recoverDirectTableEngine(id, engine, 'zombie_engine').catch(
                 (recoveryError) =>
                   reportError(recoveryError, 'GameServer.zombie_engine_recovery_failed', {

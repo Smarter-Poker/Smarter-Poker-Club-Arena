@@ -1,0 +1,13 @@
+diff --git a/server/src/engine/ServerTableEngineBase.ts b/server/src/engine/ServerTableEngineBase.ts
+index 39f708894..d12ee29ea 100644
+--- a/server/src/engine/ServerTableEngineBase.ts
++++ b/server/src/engine/ServerTableEngineBase.ts
+@@ -10789,7 +10789,7 @@ export abstract class ServerTableEngineBase {
+         resolve();
+       };
+       const unsubscribe = onMaintenanceThaw(finish);
+-      void this.sleep(ms).then(finish, finish);
++      void this.sleep(ms).then(finish).catch(finish);
+     });
+   }
+ 

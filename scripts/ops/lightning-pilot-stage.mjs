@@ -14,24 +14,38 @@ import { PILOT, PILOT_TARGETS, pilotServiceFetch } from './prepare-lightning-pri
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** Evidence-level reasons each stage exists to produce (ROLLOUT.md ground rules). */
+/** Evidence-level reasons each stage exists to produce (ROLLOUT.md ground rules),
+ * read AFTER the stage's own preparation, immediately before its gated action. */
 export const STAGE_ACCEPTED_REASONS = Object.freeze({
-  shadow: Object.freeze(['NO_AA_CALIBRATION', 'NO_LATENCY_EVIDENCE', 'WORKER_SHADOW_ONLY', 'WORKER_OFF']),
+  shadow: Object.freeze(['NO_AA_CALIBRATION', 'NO_LATENCY_EVIDENCE', 'WORKER_SHADOW_ONLY']),
   form: Object.freeze(['NO_LATENCY_EVIDENCE', 'WORKER_SHADOW_ONLY']),
 });
 
-/** The ordered door actions for each stage. Report and drain read or retreat only. */
-export const STAGE_ACTIONS = Object.freeze({
-  shadow: Object.freeze([
-    ['set_flag', { flag: 'lightning_shadow_matcher', value: true }],
-    ['set_matcher_version', { version: 'm1-port', role: 'shadow' }],
-    ['set_worker_mode', { mode: 'shadow' }],
-    ['enable_lightning', {}],
-  ]),
-  form: Object.freeze([['set_worker_mode', { mode: 'form' }]]),
-  drain: Object.freeze([['drain', {}]]),
-  report: Object.freeze([]),
+/** Each stage: `prepare` configures (never enables or forms) and runs first on
+ * every target; readiness is then read and gated on every target; only then do
+ * the `gated` actions run. ROLLOUT.md: readiness is read and recorded "before a
+ * Cluster's enable_lightning" - after Stage 1 has switched the worker to shadow,
+ * which is itself the evidence WORKER_OFF asks for. Drain retreats ungated. */
+export const STAGE_PLAN = Object.freeze({
+  shadow: Object.freeze({
+    prepare: Object.freeze([
+      ['set_flag', { flag: 'lightning_shadow_matcher', value: true }],
+      ['set_matcher_version', { version: 'm1-port', role: 'shadow' }],
+      ['set_worker_mode', { mode: 'shadow' }],
+    ]),
+    gated: Object.freeze([['enable_lightning', {}]]),
+  }),
+  form: Object.freeze({ prepare: Object.freeze([]), gated: Object.freeze([['set_worker_mode', { mode: 'form' }]]) }),
+  drain: Object.freeze({ prepare: Object.freeze([['drain', {}]]), gated: Object.freeze([]), ungated: true }),
+  report: Object.freeze({ prepare: Object.freeze([]), gated: Object.freeze([]), ungated: true }),
 });
+
+/** Every door action of a stage, in execution order (for review and tests). */
+export const STAGE_ACTIONS = Object.freeze(
+  Object.fromEntries(
+    Object.entries(STAGE_PLAN).map(([k, v]) => [k, Object.freeze([...v.prepare, ...v.gated])])
+  )
+);
 
 /** A stable request id per (operation, cluster, action): a retry replays. */
 export function stageRequestId(operationId, clusterId, action) {
@@ -127,8 +141,8 @@ export async function runPilotStage(env = process.env, clientFactory) {
       await admin.from('cash_games').select('*').eq('club_id', club.id),
       'Pilot Games'
     );
-    // Resolve and gate EVERY selected target before the first action, so a
-    // missing game or a refused readiness never leaves one size half-staged.
+    // Resolve EVERY selected target before the first action, so a missing
+    // game never leaves one size half-staged.
     const staged = [];
     for (const handedness of wanted) {
       const target = PILOT_TARGETS.find((t) => t.handedness === handedness);
@@ -138,30 +152,38 @@ export async function runPilotStage(env = process.env, clientFactory) {
       assertStageTarget(game, club.id);
       const entry = { handedness, clusterId: game.id, actions: [] };
       report.clusters.push(entry);
+      staged.push({ game, entry });
+    }
+    const act = async (game, entry, action, args) => {
+      const requestId = stageRequestId(operationId, game.id, action);
+      const answer = must(
+        await player.rpc('fn_lightning_operator_control', {
+          p_cluster_id: game.id,
+          p_action: action,
+          p_reason: reason,
+          p_args: { ...args, request_id: requestId },
+        }),
+        `Control ${action}`
+      );
+      entry.actions.push({ action, requestId, answer });
+      if (answer?.code === 'REQUEST_IN_PROGRESS')
+        throw new Error(`${action} Still In Progress; Retry The Same Operation ID`);
+      if (answer?.ok !== true) throw new Error(`${action} Refused: ${answer?.code ?? 'UNKNOWN'}`);
+    };
+    const plan = STAGE_PLAN[stage];
+    for (const { game, entry } of staged)
+      for (const [action, args] of plan.prepare) await act(game, entry, action, args);
+    // Readiness, read and recorded on every target, gates the stage's gated actions.
+    for (const { game, entry } of staged) {
       entry.readinessBefore = must(
         await player.rpc('fn_lightning_rollout_readiness', { p_cluster_id: game.id }),
         'Readiness'
       );
-      if (stage !== 'report' && stage !== 'drain') assertStageReadiness(stage, entry.readinessBefore);
-      staged.push({ game, entry });
+      if (!plan.ungated) assertStageReadiness(stage, entry.readinessBefore);
     }
+    for (const { game, entry } of staged)
+      for (const [action, args] of plan.gated) await act(game, entry, action, args);
     for (const { game, entry } of staged) {
-      for (const [action, args] of STAGE_ACTIONS[stage]) {
-        const requestId = stageRequestId(operationId, game.id, action);
-        const answer = must(
-          await player.rpc('fn_lightning_operator_control', {
-            p_cluster_id: game.id,
-            p_action: action,
-            p_reason: reason,
-            p_args: { ...args, request_id: requestId },
-          }),
-          `Control ${action}`
-        );
-        entry.actions.push({ action, requestId, answer });
-        if (answer?.code === 'REQUEST_IN_PROGRESS')
-          throw new Error(`${action} Still In Progress; Retry The Same Operation ID`);
-        if (answer?.ok !== true) throw new Error(`${action} Refused: ${answer?.code ?? 'UNKNOWN'}`);
-      }
       entry.shadowReport = must(
         await admin.rpc('fn_lightning_shadow_report', { p_cluster_id: game.id }),
         'Shadow Report'

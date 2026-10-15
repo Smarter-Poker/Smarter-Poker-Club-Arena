@@ -389,6 +389,37 @@ export function horseJournalShardsAffordable(input: {
   return Math.max(1, existing + legacyFresh + laterFresh);
 }
 
+let journalCapacityUnreadable: string | null = null;
+
+/** Why the last journal capacity reading was refused, published on /health
+ * (liveHorseDecision.journalCapacityUnreadable) so the reason a host runs the
+ * two-worker ceiling is visible without reading the host. Null when the last
+ * reading succeeded or nothing is journaled. */
+export function horseJournalCapacityUnreadableReason(): string | null {
+  return journalCapacityUnreadable;
+}
+
+/** One bounded line: the error's first line, with the exit status, signal and
+ * first stderr line of a failed command. Paths only; never an environment value. */
+function capacityFailureText(error: unknown): string {
+  const e = (error ?? {}) as {
+    message?: unknown;
+    status?: unknown;
+    signal?: unknown;
+    code?: unknown;
+    stderr?: unknown;
+  };
+  const first = (value: unknown) =>
+    typeof value === 'string' ? (value.split('\n').find((line) => line.trim()) ?? '') : '';
+  const parts = [first(e.message) || 'unknown error'];
+  if (e.code !== undefined) parts.push(`code=${String(e.code)}`);
+  if (e.status !== undefined && e.status !== null) parts.push(`status=${String(e.status)}`);
+  if (e.signal) parts.push(`signal=${String(e.signal)}`);
+  const stderr = first(e.stderr);
+  if (stderr) parts.push(`stderr=${stderr}`);
+  return parts.join(' ').slice(0, 400);
+}
+
 /** Measure once at lane construction. No configured journal means no disk
  * limit. A configured journal whose budget cannot be read retains the legacy
  * two-worker ceiling; inability to measure must never increase the default. */
@@ -397,6 +428,7 @@ export function horseJournalShardCapacity(
   allocationReader: (directories: readonly string[]) => number[] = horseJournalArchiveAllocatedBytes
 ): number | undefined {
   const directory = environment.HORSE_DECISION_JOURNAL_DIR;
+  journalCapacityUnreadable = null;
   if (!directory) return undefined;
   try {
     const { maxBytes } = runtimeHorseJournalArchiveOptions(directory, environment);
@@ -411,7 +443,7 @@ export function horseJournalShardCapacity(
     // Read free space after the allocation walk. Lane construction precedes
     // spawning its shard writers; no publisher starts during this measurement.
     const fs = statfsSync(probe);
-    return horseJournalShardsAffordable({
+    const shards = horseJournalShardsAffordable({
       existingShardAllocatedBytes: allocated,
       availableBytes: fs.bavail * fs.bsize,
       shardBytes: horseJournalShardDiskBytes(maxBytes),
@@ -420,9 +452,13 @@ export function horseJournalShardCapacity(
       ),
       reserveBytes: HORSE_JOURNAL_SHARD_DISK_RESERVE_BYTES,
     });
-  } catch {
+    journalCapacityUnreadable = null;
+    return shards;
+  } catch (error) {
+    journalCapacityUnreadable = capacityFailureText(error);
     console.warn(
-      '[HorseDecisionLane] journal disk capacity unreadable; retaining legacy two-worker ceiling'
+      '[HorseDecisionLane] journal disk capacity unreadable; retaining legacy two-worker ceiling',
+      journalCapacityUnreadable
     );
     return 2;
   }

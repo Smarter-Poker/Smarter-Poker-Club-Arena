@@ -27,3 +27,11 @@ archives is still refused and still retains the two-worker ceiling.
 ## Pinned By
 
 `config.test.ts`: the retired-segment reading is accepted, and four other failures are still refused.
+
+## Follow-Up: The Reason Is Published (Same Day)
+
+Release 9970aa0c (which carries the fix above) still logged `journal disk capacity unreadable` and still ran two
+workers, so the retired-segment race was not the only refusal. The catch swallowed the error, and the reason could only be
+read from the host. `/health.liveHorseDecision` now carries `journalShardCapacity` and `journalCapacityUnreadable` (the
+error's first line with its exit status, signal and first stderr line), and the engine log line carries the same text,
+so the next release names the cause publicly.

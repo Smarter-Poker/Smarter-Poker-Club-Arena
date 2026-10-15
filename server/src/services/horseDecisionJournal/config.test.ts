@@ -19,6 +19,7 @@ import {
   HORSE_JOURNAL_SHARD_DISK_RESERVE_BYTES,
   horseJournalArchiveDirectoryNames,
   horseJournalArchiveAllocatedBytes,
+  horseJournalCapacityUnreadableReason,
   horseJournalShardCapacity,
   horseJournalShardDiskBytes,
   horseJournalShardsAffordable,
@@ -374,8 +375,10 @@ describe('the journal disk bounds the shards a default may add', () => {
     });
     expect(horseJournalShardCapacity({ HORSE_DECISION_JOURNAL_DIR: dir })).toBe(2);
     expect(warning).toHaveBeenCalledWith(
-      '[HorseDecisionLane] journal disk capacity unreadable; retaining legacy two-worker ceiling'
+      '[HorseDecisionLane] journal disk capacity unreadable; retaining legacy two-worker ceiling',
+      expect.stringContaining('du failed')
     );
+    expect(horseJournalCapacityUnreadableReason()).toContain('du failed');
     warning.mockRestore();
   });
 
@@ -410,6 +413,7 @@ describe('the journal disk bounds the shards a default may add', () => {
     expect(horseJournalShardCapacity({ HORSE_DECISION_JOURNAL_DIR: dir })).toBe(
       expected(allocated)
     );
+    expect(horseJournalCapacityUnreadableReason()).toBeNull();
     expect(
       horseJournalShardCapacity({ HORSE_DECISION_JOURNAL_DIR: join(dir, 'not-yet', 'journal') })
     ).toBe(expected([]));

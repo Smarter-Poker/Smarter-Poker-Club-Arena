@@ -1,0 +1,5 @@
+{
+  "_owner": "fix/a-calculating-week-advances-on-its-own-tick",
+  "_comment": "Migration 20261015173123: the chunked close tick advances a calculating club-week's split parts on its own.",
+  "functions": ["fn_accounting_split_advance_due"]
+}

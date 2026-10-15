@@ -12,6 +12,9 @@ name: Settler lag reads what the settler reads
 # The same job runs scripts/ci/test-a-finding-with-no-amount-is-not-a-chip-drift.py
 # for fn_ca_raise_drift_incident() (migration 20261015024752): a liveness
 # finding at 0.00 is headlined by its check, not as a 0.00 chip drift.
+# And scripts/ci/test-the-sweep-files-a-governance-finding-once.py for
+# fn_ca_conservation_sweep() (migration 20261015030651): one credit-risk
+# finding is filed once, under governance.
 on:
   pull_request:
     branches: [main]
@@ -23,6 +26,9 @@ on:
       - supabase/migrations/20261015024752_a_finding_with_no_amount_is_not_a_chip_drift.sql
       - scripts/ci/fixtures/a-finding-with-no-amount-is-not-a-chip-drift/**
       - scripts/ci/test-a-finding-with-no-amount-is-not-a-chip-drift.py
+      - supabase/migrations/20261015030651_the_sweep_files_a_governance_finding_once.sql
+      - scripts/ci/fixtures/the-sweep-files-a-governance-finding-once/**
+      - scripts/ci/test-the-sweep-files-a-governance-finding-once.py
 
 permissions:
   contents: read
@@ -68,6 +74,11 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-a-finding-with-no-amount-is-not-a-chip-drift.py --output artifacts/a-finding-with-no-amount-is-not-a-chip-drift
+      - name: The sweep files a governance finding once
+        if: always()
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-the-sweep-files-a-governance-finding-once.py --output artifacts/the-sweep-files-a-governance-finding-once
       - name: Retain the regression evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -76,5 +87,6 @@ jobs:
           path: |
             artifacts/settler-lag-reads-what-the-settler-reads/RESULTS.json
             artifacts/a-finding-with-no-amount-is-not-a-chip-drift/RESULTS.json
+            artifacts/the-sweep-files-a-governance-finding-once/RESULTS.json
           retention-days: 7
           if-no-files-found: warn

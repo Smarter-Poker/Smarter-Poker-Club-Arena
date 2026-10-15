@@ -49,3 +49,15 @@ drift keeps its amount. Migration
 `e6dac566`, postimage `b5025fd1`), regression
 `scripts/ci/test-a-finding-with-no-amount-is-not-a-chip-drift.py` in the same
 workflow.
+
+## Also: The Sweep Files A Governance Finding Once
+
+`fn_union_governance_check` ends with `UNION ALL SELECT * FROM
+fn_union_credit_risk_check()`, yet `fn_ca_conservation_sweep` ran both, so
+every credit-risk finding was filed twice under two sources (74 governance and
+34 credit-risk rows for the one `union_eco_not_recorded` condition). The sweep
+now runs governance only; the migration refuses if governance ever stops
+including credit risk. Migration
+`20261015030651_the_sweep_files_a_governance_finding_once.sql` (preimage
+`69e18c18`, postimage `81995d0a`), regression
+`scripts/ci/test-the-sweep-files-a-governance-finding-once.py`.

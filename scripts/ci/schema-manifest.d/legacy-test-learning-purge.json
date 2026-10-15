@@ -1,0 +1,22 @@
+{
+  "_owner": "One-time owner-authorized legacy test-learning purge, 2026-10-15",
+  "_comment": "Declared migration contract only. Not a claim of production installation; protected merge, recorded installation and readback remain required.",
+  "functions": [
+    "smarter_private.legacy_learning_purge_immutable",
+    "smarter_private.purge_legacy_horse_learning"
+  ],
+  "tables": [
+    "smarter_private.horse_adaptive_legacy_learning_purges"
+  ],
+  "columns": {
+    "smarter_private.horse_adaptive_legacy_learning_purges": [
+      "hand_id",
+      "hand_digest",
+      "observed_through_ms",
+      "authorized_reason",
+      "purged_at",
+      "observations_deleted",
+      "batches_compacted"
+    ]
+  }
+}

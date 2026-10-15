@@ -304,6 +304,9 @@ export default function ClubDataSimplePage() {
   const summary = snapshot?.summary ?? null;
   const rows = useMemo(() => snapshot?.rows ?? [], [snapshot]);
   const liveCount = rows.filter((r) => r.live).length;
+  // A route segment, never a `??` inside the template: the reachability law
+  // reads everything after a `?` as a query string.
+  const clubKey = clubUuid || clubParam;
   const updatedLabel = updatedAt ? new Date(updatedAt).toISOString().slice(11, 19) : null;
 
   if (denied) {
@@ -322,7 +325,7 @@ export default function ClubDataSimplePage() {
     <div className={styles.page}>
       <Header
         onBack={() => navigate(-1)}
-        onAdvanced={() => navigate(`/clubs/${clubUuid ?? clubParam}/data/advanced`)}
+        onAdvanced={() => navigate(`/clubs/${clubKey}/data/advanced`)}
       />
 
       <div className={styles.rangeBar}>

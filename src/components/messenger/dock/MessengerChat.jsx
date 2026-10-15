@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Minus, X, Maximize2, Send, ImagePlus, Reply, Smile, ThumbsUp } from './DockIcons';
 import { dockName } from './messengerDock.mjs';
-import { createContinuityController, visibleMessageBoundary, isMessageId, CONTINUITY_PREFIX } from './messengerContinuity.mjs';
+import { visibleMessageBoundary, isMessageId, CONTINUITY_PREFIX } from './messengerContinuity.mjs';
 import { createMessengerSendOperation, restoreMessengerSendOperations, performMessengerSend,
     mergeMessengerPendingMessages, reconcileMessengerMessage, messengerOperationMessage, acknowledgeMessengerSend } from './messengerSendOperation.mjs';
 
@@ -10,7 +10,7 @@ function safeMedia(content) {
     const match = /^\[(Image|Video|GIF|Audio)\]\((https:\/\/[^\s)]+)\)/i.exec(content || '');
     return match ? { kind: match[1].toLowerCase(), url: match[2] } : null;
 }
-export default function MessengerChat({ actorId, identity, conversation, services, onMinimize, onClose, onRead }) {
+export default function MessengerChat({ actorId, identity, conversation, services, continuityOwner, onMinimize, onClose, onRead }) {
     const id = conversation.id;
     const [messages, setMessages] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -21,7 +21,6 @@ export default function MessengerChat({ actorId, identity, conversation, service
     const [uploading, setUploading] = useState(false);
     const [newAvailable, setNewAvailable] = useState(false);
     const [emojis, setEmojis] = useState(false);
-    const [, render] = useState(0);
     const mounted = useRef(true);
     const sequence = useRef(0);
     const scroll = useRef(null);
@@ -46,8 +45,7 @@ export default function MessengerChat({ actorId, identity, conversation, service
     const continuity = useMemo(() => {
         let storage = null;
         try { storage = window.localStorage; } catch { /* Controller reports the failure. */ }
-        return createContinuityController({ actorId, workspace: conversation.dockWorkspace || { workspace: 'social' }, storage,
-            isCurrent: () => identity.current === actorId, changed: () => { if (current()) render(value => value + 1); },
+        return continuityOwner.get(actorId, conversation.dockWorkspace || { workspace: 'social' }, { storage,
             committed: (conversationId, receipt) => services.broadcastSync('smarter_poker_continuity_sync', { actorId, conversationId,
                 workspace: conversation.dockWorkspace || { workspace: 'social' }, receipt: { field: receipt.field, revision: receipt.revision } }),
             request: async body => {
@@ -55,7 +53,7 @@ export default function MessengerChat({ actorId, identity, conversation, service
                 return { ok: response.ok, status: response.status, body: await response.json() };
             },
         });
-    }, [actorId, id, services]);
+    }, [actorId, id, services, continuityOwner]);
     const draftTimer = useRef(null);
     const draft = continuity.state(id).draft;
     const editDraft = text => {

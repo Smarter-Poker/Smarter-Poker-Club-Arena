@@ -2,6 +2,7 @@ import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { MessageCircle, X, ExternalLink, Settings, Check } from './DockIcons';
 import { DOCK_STORAGE_PREFIX, dockId, dockName, dockLayout, dockCapacity, dockNotificationLayout, restoreDock, updateDock } from './messengerDock.mjs';
 import MessengerChat from './MessengerChat';
+import { createDockContinuityOwner } from './dockContinuityOwner.mjs';
 
 function Portrait({ conversation }) {
     const name = dockName(conversation);
@@ -29,6 +30,9 @@ export default function MessengerDock({ services }) {
     const viewportRef = useRef(viewport);
     viewportRef.current = viewport;
     const identity = useRef(null);
+    const [, continuityChanged] = useReducer(value => value + 1, 0);
+    const continuityOwner = useRef(null);
+    if (!continuityOwner.current) continuityOwner.current = createDockContinuityOwner({ getIdentity: () => identity.current, notify: continuityChanged });
     const interactions = useRef(new Map());
     const [bottom, setBottom] = useState(76);
     const chatsRef = useRef(chats);
@@ -98,6 +102,7 @@ export default function MessengerDock({ services }) {
             if (!mounted || identity.current === (user?.id || null)) return;
             identity.current = user?.id || null;
             ++generation.current;
+            continuityOwner.current.clear();
             setActorId(identity.current);
             for (const chat of chatsRef.current) dispatch({ type: 'close', id: chat.id });
             setConversations([]); setInbox(false); setError('');
@@ -114,7 +119,7 @@ export default function MessengerDock({ services }) {
             if (event === 'SIGNED_OUT') { if (!identity.current) ++generation.current; accept(null); }
             else if (session?.user) accept(session.user);
         });
-        return () => { mounted = false; ++generation.current; data?.subscription?.unsubscribe(); };
+        return () => { mounted = false; ++generation.current; continuityOwner.current.clear(); data?.subscription?.unsubscribe(); };
     }, []);
 
     useEffect(() => {
@@ -239,7 +244,7 @@ export default function MessengerDock({ services }) {
                 </div>
                 <button type="button" className="dock-open-full" onClick={() => openMessenger()}>Open Messenger <ExternalLink size={16} /></button>
             </section> : layout.expanded.map(chat => <section className="dock-window" key={chat.id} aria-label={`Chat With ${dockName(chat.conversation)}`}>
-                <MessengerChat key={`${actorId}:${chat.id}`} actorId={actorId} identity={identity} conversation={chat.conversation} services={services}
+                <MessengerChat key={`${actorId}:${chat.id}`} actorId={actorId} identity={identity} conversation={chat.conversation} services={services} continuityOwner={continuityOwner.current}
                     onMinimize={() => windowAction('minimize', chat.id)} onClose={() => windowAction('close', chat.id)} onRead={() => { dispatch({ type: 'read', id: chat.id }); void refresh(); }} />
             </section>)}
             <nav className="dock-rail" aria-label="Minimized Chats">

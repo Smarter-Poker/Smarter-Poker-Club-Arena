@@ -31,8 +31,11 @@ const SORTS = ['hierarchy', 'activity', 'name', 'downlines', 'wallet', 'fees'];
 export const ROSTER_COLUMNS: RosterColumn[] = ['downlines', 'wallets', 'fees', 'activity'];
 export const ROSTER_ROW_HEIGHT = 123;
 export const MAX_ROSTER_RETURN_TOP = ROSTER_ROW_HEIGHT * 10_000;
+/* Fees lead, wallets are opt-in: Player Management always shows fees
+   generated, never a wallet balance by default (Dan, 2026-10-14). */
+export const DEFAULT_ROSTER_COLUMNS: RosterColumn[] = ['fees', 'downlines', 'activity'];
 export function defaultRosterWorkspace(): RosterWorkspace {
-  return { search: '', filter: 'all', sort: 'hierarchy', columns: [...ROSTER_COLUMNS] };
+  return { search: '', filter: 'all', sort: 'hierarchy', columns: [...DEFAULT_ROSTER_COLUMNS] };
 }
 export function rosterWorkspaceKey(viewer: string, club: string): string {
   return `roster_workspace_v1_${encodeURIComponent(viewer)}_${encodeURIComponent(club)}`;

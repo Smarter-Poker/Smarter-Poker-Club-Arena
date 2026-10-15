@@ -37,7 +37,7 @@ rows at all. Statistics are not the money ledger.
 
 ## The root fix
 
-Migration `20261015014037_player_management_fees_come_from_the_fee_ledgers`:
+Migration `20261015092518_player_management_fees_come_from_the_fee_ledgers`:
 
 - `ca_club_member_tournament_fee_daily`: per club, player and UTC day
   projection of the immutable tournament fee receipts, written by a statement
@@ -52,3 +52,11 @@ Migration `20261015014037_player_management_fees_come_from_the_fee_ledgers`:
   statistics tables.
 
 Pinned by `tests/unit/playerManagementShowsFeesGenerated.test.tsx`.
+
+## Installed
+
+Installed on production 2026-10-15 and recorded as version `20261015092518`;
+the file was renamed from its reserved `20261015014037` to the recorded version
+so the merged and installed migration ledgers agree. Read back after install:
+tournament receipts equal the projection to the cent, and Deep Stack Society
+reads 1,368,142.01 of fees generated (it read 675.00 before).

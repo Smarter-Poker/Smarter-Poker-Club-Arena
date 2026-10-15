@@ -67,3 +67,31 @@ template. Proven:
   completes that hand through the same owner;
 - a rolled-back owner call leaves everything untouched;
 - forward replay of the migration is refused; ownership and ACLs are preserved.
+
+## Outcome On Production (2026-10-15)
+
+What this change actually did, measured after install, so nobody relies on the
+expectation above:
+
+- **It shipped a defect.** The once-per-call batch selection matched
+  certificates with `c.hand_id::text = ANY(text[])`. The cast disabled the
+  certificates primary key, so from 00:07 UTC every owner call ran a sequential
+  scan and hit its statement timeout. Each call rolled back whole (nothing
+  partial was written), but retirement stalled until
+  `20261015001555` (#6890, see
+  `2026-10-15-horse-adaptive-compaction-finds-batches-through-the-hand-id-index.md`)
+  compared uuid to uuid at about 01:10 UTC.
+- **It did not raise throughput.** With the cast fixed, a continuous drain still
+  retired about 20 hands per second, the same as the original per-hand path.
+  The premise was wrong: hands taken in qualified order are scattered across
+  batches (250 consecutive pending hands touched 277 distinct batches), so
+  compacting once per call saved little.
+- **The real fix** was `20261015022307` (#6900, see
+  `2026-10-15-horse-adaptive-retirement-groups-hands-by-shared-batch.md`),
+  which attempts a seed hand together with its pending batch-mates so each
+  touched batch is rewritten once for many hands. Measured afterwards: about
+  240 hands per 4.9-second call; the backlog fell from 1,004,430 (01:50 UTC) to
+  454,210 (10:01 UTC) while about 41,000 hands an hour arrived.
+- The deferred retire and the once-per-call compaction from this change remain
+  the base those fixes build on, and the byte-identical harness still covers
+  all three migrations.

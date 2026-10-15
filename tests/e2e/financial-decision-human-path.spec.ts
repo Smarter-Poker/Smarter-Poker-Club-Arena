@@ -1,5 +1,6 @@
 import { expect, test, type BrowserContext, type Route } from '@playwright/test';
 import { readFileSync } from 'node:fs';
+import { installRealtimeSessionGuard } from './support/realtimeSessionGuard';
 
 for (const width of [375, 393, 1280]) {
   test.describe(`Tournament footer viewport ${width}px`, () => {
@@ -90,6 +91,10 @@ const HARNESS_USER_ID = '11111111-2222-4333-8444-555555555555';
  * financial write anywhere.
  */
 async function seedHarnessSession(context: BrowserContext) {
+  // The session below is fabricated (HS256, no key id, 'test-signature').
+  // REST and Auth are mocked, but the Realtime socket is not, so without this
+  // guard every run joined production Realtime with it and was refused.
+  await installRealtimeSessionGuard(context);
   await context.addInitScript(
     ({ authKey, userId }) => {
       const expiresAt = Math.floor(Date.now() / 1000) + 24 * 60 * 60;

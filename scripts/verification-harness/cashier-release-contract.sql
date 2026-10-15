@@ -98,7 +98,13 @@ BEGIN
     ),
     jsonb_build_object(
       'signature', 'public.fn_cashier_batch_transfer(uuid,text,jsonb,uuid)',
-      'hash', '0252faecc9c3e8dd506ccd00061243cb'
+      -- 20261015132042 lets a 'ticket' item name a tournament_id and routes it
+      -- to fn_issue_tournament_entry_ticket; items without one are unchanged.
+      -- The replacement hash was computed from that migration's text in an
+      -- isolated PostgreSQL; re-read it live after the apply and drop the
+      -- superseded hash once production carries the new body.
+      'hash', '0252faecc9c3e8dd506ccd00061243cb',
+      'replacement_hash', '522bb44fb336bfbf0d13277729a58de3'
     ),
     jsonb_build_object(
       'signature', 'public.fn_club_cashier_can_transact(uuid,uuid,uuid)',
@@ -263,7 +269,10 @@ BEGIN
     ),
     jsonb_build_object(
       'signature', 'public.fn_redeem_tournament_ticket(uuid)',
-      'hash', 'ab95c0907acccdedef0190acf242c8a3'
+      -- 20261015132042: a cashier ticket bound to one tournament is refused
+      -- here (it is used by registering). Same provenance as the batch hash.
+      'hash', 'ab95c0907acccdedef0190acf242c8a3',
+      'replacement_hash', '0bb17681b38164a7a2746e17d07597b3'
     ),
     jsonb_build_object(
       'signature', 'public.fn_cancel_tournament_ticket(uuid)',

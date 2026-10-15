@@ -539,6 +539,9 @@ function CashierTradeWorkspace() {
     Array<{ userId: string; name: string; message: string }>
   >([]);
   const [transferRecovery, setTransferRecovery] = useState<CashierTransferRecovery | null>(null);
+  /** The retained journal, readable from async callbacks without a stale closure. */
+  const transferRecoveryRef = useRef<CashierTransferRecovery | null>(null);
+  transferRecoveryRef.current = transferRecovery;
   const [amount, setAmount] = useState('');
   const [recipientAmounts, setRecipientAmounts] = useState<Record<string, string>>({});
   const [batchReceipt, setBatchReceipt] = useState<{
@@ -615,6 +618,9 @@ function CashierTradeWorkspace() {
     amount,
     Object.entries(recipientAmounts).sort(([left], [right]) => left.localeCompare(right)),
     [...selected].sort(),
+    // A different tournament is a different ticket intent: it must never
+    // inherit the retained batch, or the retry would issue into the old one.
+    ticketTournamentId,
   ]);
   /** The exact local-storage scope owned by the retained batch nonce. */
   const transferRecoveryScopeRef = useRef<{
@@ -1862,9 +1868,36 @@ function CashierTradeWorkspace() {
   /** Chips the selected players are holding right now. */
   const pickedHeld = useMemo(() => sumChips(picked.map((r) => r.chipBalance)), [picked]);
   /** The tournament a Send Ticket is bound to; its price is every ticket's value. */
+  /* A retained ticket batch names its tournament even after that tournament
+     stops taking entries. The retry must go to the SAME tournament with the
+     same keys, so the server can replay what committed (or refuse it plainly);
+     it is offered as its own locked choice rather than silently dropped. */
+  const retainedTicketTournament = useMemo<TicketableTournament | null>(() => {
+    const saved = transferRecovery;
+    if (!saved || saved.kind !== 'ticket' || !saved.tournamentId) return null;
+    if (ticketTournaments?.some((row) => row.tournamentId === saved.tournamentId)) return null;
+    return {
+      tournamentId: saved.tournamentId,
+      name: 'Original Tournament (Retry Only)',
+      startTime: null,
+      status: 'RETAINED',
+      lateRegistration: false,
+      price: Number(saved.amount),
+      entryPrize: 0,
+      entryBounty: 0,
+      entryFee: 0,
+      isUnionEvent: false,
+      currentPlayers: null,
+      maxPlayers: null,
+    } as TicketableTournament;
+  }, [transferRecovery, ticketTournaments]);
   const ticketTournament = useMemo(
-    () => ticketTournaments?.find((row) => row.tournamentId === ticketTournamentId) ?? null,
-    [ticketTournaments, ticketTournamentId]
+    () =>
+      ticketTournaments?.find((row) => row.tournamentId === ticketTournamentId) ??
+      (retainedTicketTournament?.tournamentId === ticketTournamentId
+        ? retainedTicketTournament
+        : null),
+    [ticketTournaments, ticketTournamentId, retainedTicketTournament]
   );
   const batchPlan = useMemo(() => {
     if (amountModal === 'ticket') {
@@ -2132,11 +2165,19 @@ function CashierTradeWorkspace() {
       reference:
         kind === 'send'
           ? opIdFor(target.userId)
-          : `ticket:${clubUuid}:${submissionId}:${target.userId}:${parsedAmount.amounts[target.userId]}`,
+          : uncertainRecovery.tournamentId
+            ? tournamentTicketIdempotencyKey(
+                clubUuid,
+                submissionId,
+                target.userId,
+                uncertainRecovery.tournamentId
+              )
+            : `ticket:${clubUuid}:${submissionId}:${target.userId}:${parsedAmount.amounts[target.userId]}`,
     }));
     const boundTournamentId = uncertainRecovery.tournamentId ?? null;
     const receiptById = new Map(receiptRows.map((row) => [row.userId, row]));
     const failed: Array<{ userId: string; name: string; message: string }> = [];
+    const uncertain: Array<{ userId: string; name: string; message: string }> = [];
     const owningView = transferView.current;
     const owningAuthorityEpoch = transferAuthorityEpoch.current;
     const batchStartedAt = Date.now();
@@ -2230,21 +2271,29 @@ function CashierTradeWorkspace() {
             if (result.reference) receiptRow.reference = result.reference;
             if (result.outcome === 'Confirmed') ok++;
             else {
-              failed.push({
+              const failure = {
                 userId: target.userId,
                 name: target.name,
                 message: result.message || 'Outcome Needs Verification',
-              });
+              };
+              failed.push(failure);
+              // A refusal is definitive: the item rolled back and moved nothing,
+              // so only an unknown outcome is kept for verification.
+              if (result.outcome !== 'Refused') uncertain.push(failure);
             }
           }
         } catch (e) {
           batchFailureReason ||= cashierReasonCode(e);
           for (const target of chunk) {
-            failed.push({
+            const failure = {
               userId: target.userId,
               name: target.name,
-              message: (e as Error)?.message || 'Transfer Failed',
-            });
+              // A raw transport message ("Failed to fetch", "JWT expired") is
+              // not shown: the request may have committed, so say exactly that.
+              message: 'Connection Lost. Outcome Needs Verification',
+            };
+            failed.push(failure);
+            uncertain.push(failure);
           }
         }
         if (isMounted.current && transferView.current === owningView) {
@@ -2296,13 +2345,21 @@ function CashierTradeWorkspace() {
         }
       }
       const recovery: CashierTransferRecovery | null =
-        failed.length > 0
+        uncertain.length > 0
           ? {
               ...uncertainRecovery,
-              failures: failed,
+              failures: uncertain,
             }
           : null;
       if (recovery) writeCashierTransferRecovery(recovery);
+      else if (ok !== targets.length) {
+        // Every item that did not go through was refused outright. Nothing is
+        // left to verify, so the journal closes instead of offering a retry
+        // that can only be refused again (and eventually filling storage).
+        clearCashierTransferRecovery(user.id, clubUuid, submissionId);
+        if (isMounted.current && transferView.current === owningView)
+          setTransferRecovery(readCashierTransferRecovery(user.id, clubUuid));
+      }
       if (isMounted.current) {
         setBusy(false);
         setBatchProgress(null);
@@ -2445,6 +2502,11 @@ function CashierTradeWorkspace() {
         replayed?: boolean;
         amount?: number;
       } | null;
+      if (res && res.success === false) {
+        // A definitive refusal moved nothing, so its journal entry is closed.
+        clearCashierWalletOperation(operation);
+        claimOpIdsRef.current.delete(row.transaction_id);
+      }
       if (!res?.success) throw new Error(res?.error || 'Those Chips Could Not Be Claimed Back');
       clearCashierWalletOperation(operation);
       if (!current()) return;
@@ -2559,6 +2621,8 @@ function CashierTradeWorkspace() {
         error?: string;
         replayed?: boolean;
       } | null;
+      // A definitive refusal moved nothing, so its journal entry is closed.
+      if (res && res.success === false) clearCashierWalletOperation(operation);
       if (!res?.success) throw new Error(res?.error || 'The Club Bank Refused That Send');
       clearCashierWalletOperation(operation);
       if (!isMounted.current || transferView.current !== owningView) return;
@@ -2624,6 +2688,8 @@ function CashierTradeWorkspace() {
         error?: string;
         replayed?: boolean;
       } | null;
+      // A definitive refusal moved nothing, so its journal entry is closed.
+      if (res && res.success === false) clearCashierWalletOperation(operation);
       if (!res?.success) throw new Error(res?.error || 'Those Chips Could Not Be Claimed Back');
       clearCashierWalletOperation(operation);
       if (!isMounted.current || transferView.current !== owningView) return;
@@ -2655,7 +2721,10 @@ function CashierTradeWorkspace() {
         if (!live) return;
         setTicketTournaments(rows);
         setTicketTournamentId((current) =>
-          rows.some((row) => row.tournamentId === current) ? current : ''
+          rows.some((row) => row.tournamentId === current) ||
+          (current !== '' && current === transferRecoveryRef.current?.tournamentId)
+            ? current
+            : ''
         );
       })
       .catch((error: Error) => {
@@ -2838,6 +2907,7 @@ function CashierTradeWorkspace() {
         .map(([id, value]) => [id, String(value)] as [string, string])
         .sort(([left], [right]) => left.localeCompare(right)),
       [...pendingTargets].sort(),
+      saved.tournamentId ?? ticketTournamentId,
     ]);
     submissionIdRef.current = saved.submissionId;
     opIdsRef.current = new Map(Object.entries(saved.opIds));
@@ -2909,7 +2979,7 @@ function CashierTradeWorkspace() {
           setTransferFailures([]);
         }
         if (askOpen && !asking) setAskOpen(false);
-        if (claimOpen && !claimingId) setClaimOpen(false);
+        if (claimOpen && !claimingId && !mgmtClaiming) setClaimOpen(false);
         if (receipt) setReceipt(null);
         return;
       }
@@ -2955,6 +3025,7 @@ function CashierTradeWorkspace() {
     diamondSending,
     asking,
     claimingId,
+    mgmtClaiming,
   ]);
 
   useEffect(() => {
@@ -3664,8 +3735,11 @@ function CashierTradeWorkspace() {
                             aria-label={`Select ${r.name}`}
                             aria-pressed={isSelected}
                             onClick={(event) => {
+                              // The button only toggles. A double tap opens the
+                              // record from the row itself, never from here.
                               event.stopPropagation();
-                              onRowTap();
+                              lastRowTapRef.current = null;
+                              if (selectable && !busy) toggle();
                             }}
                           >
                             {isSelected ? 'Selected' : 'Select'}
@@ -4609,6 +4683,12 @@ function CashierTradeWorkspace() {
                                     ? 'No Open Tournaments'
                                     : 'Choose A Tournament'}
                             </option>
+                            {retainedTicketTournament ? (
+                              <option value={retainedTicketTournament.tournamentId}>
+                                {retainedTicketTournament.name} ·{' '}
+                                {exactChipFigure(retainedTicketTournament.price)}
+                              </option>
+                            ) : null}
                             {(ticketTournaments ?? []).map((row) => (
                               <option key={row.tournamentId} value={row.tournamentId}>
                                 {titleCase(row.name)}
@@ -4758,7 +4838,7 @@ function CashierTradeWorkspace() {
         <div
           className={styles.modalOverlay}
           onClick={() => {
-            if (claimingId) return;
+            if (claimingId || mgmtClaiming) return;
             setClaimOpen(false);
           }}
         >

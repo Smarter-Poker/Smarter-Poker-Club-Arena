@@ -98,7 +98,7 @@ export function useVisibleRead<T>({
     window.addEventListener('online', onVisibility);
     window.addEventListener('offline', onVisibility);
     if (callbacks.current.deferInitial?.()) {
-      if (visible()) timer = setTimeout(() => void run('initial'), intervalMs);
+      if (!manualOnly && visible()) timer = setTimeout(() => void run('initial'), intervalMs);
     } else void run('initial');
     return () => {
       disposed = true;

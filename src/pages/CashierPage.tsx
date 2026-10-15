@@ -284,7 +284,15 @@ function CashierContent() {
      (myClubChips, what a cashout debits) or the agent wallet (myAgentWallet,
      what a send debits). Leaving it destructured is an invitation to reach for
      it again. */
-  const { loadBalances } = useWalletStore();
+  const { loadBalances: loadWalletBalances } = useWalletStore();
+  const [walletRevision, setWalletRevision] = useState(0);
+  const loadBalances = useCallback(
+    async (userId: string) => {
+      await loadWalletBalances(userId);
+      setWalletRevision((revision) => revision + 1);
+    },
+    [loadWalletBalances]
+  );
   // The live diamonds-per-chip rate fn_mint_chips_from_diamonds charges at.
   const { diamondsPerChip: mintRate, failed: mintRateFailed } = useBridgeRate();
   const toast = useToast();
@@ -355,13 +363,6 @@ function CashierContent() {
   const mintOpIdRef = useRef<string | null>(null);
   const RATE_LIMIT_MS = 2000;
 
-  // Connection status: track realtime channel health
-  // Starts 'reconnecting', not 'connected': asserting a healthy live link
-  // before any channel has reported SUBSCRIBED is the same unearned claim the
-  // fabricated AML checklist made.
-  const [realtimeStatus, setRealtimeStatus] = useState<'connected' | 'reconnecting' | 'error'>(
-    'reconnecting'
-  );
   const [message, setMessage] = useState<{
     type: 'success' | 'error' | 'info';
     text: string;
@@ -1456,76 +1457,6 @@ function CashierContent() {
   // Cashier history and balance reads follow initial navigation, explicit
   // refresh and completed user commands. No background event reloads the page.
 
-  // Supabase Realtime channel for chip_transactions (cross-device sync)
-  //
-  // Registered with a FACTORY. Previously this called getOrCreateChannel and
-  // subscribed directly, with no registerChannelFactory. MasterBus's 30s health
-  // monitor takes the no-factory branch for such a channel and simply removes
-  // it ("No factory for ... -- removed only"), which also aborts Supabase's own
-  // auto-rejoin. The effect deps never change, so nothing rebuilt it: one
-  // transient error and cross-device chip sync was dead for the whole session.
-  //
-  // The subscribe callback also had no 'CLOSED' case, and removeChannel drives
-  // the channel to CLOSED rather than CHANNEL_ERROR — so realtimeStatus stayed
-  // 'connected' and the degraded-connection banner never appeared. On a money
-  // screen that means a stale balance presented as live.
-  useEffect(() => {
-    if (!user?.id) return;
-    const key = `cashier-chip-txns-${user.id}`;
-    const onRowChange = () => {
-      loadBalances(user.id);
-      loadTransactions({ force: true });
-    };
-    const subscribeChannel = () =>
-      masterBus
-        .getOrCreateChannel(key)
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'chip_transactions',
-            filter: `from_user_id=eq.${user.id}`,
-          },
-          onRowChange
-        )
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'chip_transactions',
-            filter: `to_user_id=eq.${user.id}`,
-          },
-          onRowChange
-        )
-        .subscribe((status: string, err?: Error) => {
-          if (status === 'SUBSCRIBED') {
-            if (isMounted.current) setRealtimeStatus('connected');
-          }
-          if (status === 'CHANNEL_ERROR') {
-            if (err) reportError(err?.message || err, 'CashierPage._Realtime_channel_error');
-            if (isMounted.current) setRealtimeStatus('error');
-          }
-          if (status === 'CLOSED') {
-            if (isMounted.current) setRealtimeStatus('error');
-          }
-          if (status === 'TIMED_OUT') {
-            reportError('Realtime channel timed out', 'CashierPage._Realtime_channel_timed_out');
-            if (isMounted.current) setRealtimeStatus('reconnecting');
-          }
-        });
-
-    // Factory FIRST, so a channel that dies on its very first subscribe can
-    // still be recovered by the health monitor.
-    masterBus.registerChannelFactory(key, subscribeChannel);
-    subscribeChannel();
-    return () => {
-      masterBus.removeChannelFactory(key);
-      masterBus.removeRegisteredChannel(key);
-    };
-  }, [user?.id, loadBalances, loadTransactions]);
-
   // ─────────────────────────────────────────────────────────────────────────────
   // DETERMINE AVAILABLE TABS
   // ─────────────────────────────────────────────────────────────────────────────
@@ -2407,6 +2338,9 @@ function CashierContent() {
       {user?.id && clubId && (
         <div className={styles.walletHeader}>
           <DynamicWallet
+            manualOnly
+            actionClassName={styles.wordAction}
+            refreshKey={walletRevision}
             userId={user.id}
             clubId={clubId}
             /**
@@ -2473,8 +2407,8 @@ function CashierContent() {
         eyebrow="Club Arena Cashier"
         title="Cashier"
         subtitle={titleCase(clubName || 'Club Wallet')}
-        pill={realtimeStatus === 'connected' ? 'Live' : 'Syncing'}
-        pillInk={realtimeStatus === 'connected' ? 'green' : 'blue'}
+        pill="Manual"
+        pillInk="blue"
         foot="foot"
         className={styles.console}
       >
@@ -2501,19 +2435,6 @@ function CashierContent() {
           />
 
           {/* Action Tabs */}
-          {/* Connection status indicator */}
-          {realtimeStatus !== 'connected' && (
-            <p
-              className={`sc-copy ${realtimeStatus === 'reconnecting' ? 'sc-ink--blue' : 'sc-ink--red'}`}
-              role="status"
-              aria-live="polite"
-            >
-              {realtimeStatus === 'reconnecting'
-                ? 'Reconnecting To Live Updates…'
-                : 'Live Connection Lost - Data May Be Stale'}
-            </p>
-          )}
-
           {/* No tab set while the role is unknown: an owner whose role read
             failed must not be handed the player tabs (P-01). */}
           {!contextError && (
@@ -2582,6 +2503,8 @@ function CashierContent() {
             clubId &&
             user?.id && (
               <AgentPromoPanel
+                manualOnly
+                actionClassName={styles.wordAction}
                 clubId={clubId}
                 userId={user.id}
                 role={userRole}

@@ -23,6 +23,27 @@ describe('visible authoritative reads', () => {
       await Promise.resolve();
     });
 
+  it('a deferred cached Cashier read never schedules a background read', async () => {
+    const read = vi.fn().mockResolvedValue(100);
+    const hook = renderHook(() =>
+      useVisibleRead({
+        scopeKey: 'cached-cashier',
+        enabled: true,
+        manualOnly: true,
+        deferInitial: () => true,
+        read,
+        onData: vi.fn(),
+        onError: vi.fn(),
+      })
+    );
+    await act(() => vi.advanceTimersByTimeAsync(60_000));
+    expect(read).not.toHaveBeenCalled();
+    act(() => hook.result.current());
+    await settle();
+    expect(read).toHaveBeenCalledOnce();
+    hook.unmount();
+  });
+
   it('Cashier manual mode never reads on time, focus, visibility or reconnect', async () => {
     const read = vi.fn().mockResolvedValue(100);
     const hook = renderHook(() =>

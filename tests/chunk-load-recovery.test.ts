@@ -95,17 +95,17 @@ describe('stale deployment chunk recovery', () => {
   it('drops a failed stylesheet and never cancels a CSS failure into an unstyled render', () => {
     const link = document.createElement('link');
     link.rel = 'stylesheet';
-    link.setAttribute('href', '/assets/HomePage-abc.css');
+    link.setAttribute('href', 'data:text/css,.a{}');
     document.head.appendChild(link);
     const uninstall = installVitePreloadErrorRecovery();
     const event = new Event('vite:preloadError', { cancelable: true }) as Event & {
       payload?: unknown;
     };
-    event.payload = new Error('Unable to preload CSS for /assets/HomePage-abc.css');
+    event.payload = new Error('Unable to preload CSS for data:text/css,.a{}');
     // Keep recovery at its ceiling so the unit test never navigates.
     sessionStorage.setItem('club_arena_chunk_reload', '2');
     window.dispatchEvent(event);
-    expect(document.querySelector('link[href="/assets/HomePage-abc.css"]')).toBeNull();
+    expect(document.querySelector('link[href="data:text/css,.a{}"]')).toBeNull();
     expect(event.defaultPrevented).toBe(false);
     uninstall();
   });

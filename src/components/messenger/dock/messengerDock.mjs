@@ -16,7 +16,7 @@ export function updateDock(chats, action) {
     if (action.type === 'read') return chats.map(chat => chat.id === action.id ? { ...chat, unread: false } : chat);
     if (action.type === 'close') return chats.filter(chat => chat.id !== action.id);
     if (action.type === 'minimize') return chats.map(chat => chat.id === action.id ? { ...chat, minimized: true } : chat);
-    if (action.type === 'refresh') return chats.map(chat => chat.id === action.conversation.id ? { ...chat, conversation: action.conversation } : chat);
+    if (action.type === 'refresh') return chats.map(chat => chat.id === action.conversation.id ? { ...chat, conversation: action.conversation, unread: action.conversation.unreadCount === 0 ? false : chat.unread } : chat);
     if (action.type !== 'open' || !dockId(action.conversation?.id)) return chats;
     const previous = chats.find(chat => chat.id === action.conversation.id);
     // A new message in a deliberately minimized chat highlights its bubble;

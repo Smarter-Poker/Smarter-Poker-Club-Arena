@@ -156,9 +156,12 @@ export default function MessengerChat({ actorId, identity, conversation, service
         let confirmed = false;
         try {
             const result = await request('mark-read', { conversationId: id, throughMessageId: boundary.last });
-            if (!current()) return;
-            readThrough.current = boundary.last; confirmed = true;
+            if (identity.current !== actorId) return;
+            // The acknowledged read still refreshes badges if this panel was
+            // minimized while the request was in flight. No unmounted UI write.
             services.broadcastSync('smarter_poker_unread_sync', 'refresh_unread');
+            if (!mounted.current) return;
+            readThrough.current = boundary.last; confirmed = true;
             const prefs = await services.getPreferences(actorId);
             if (current() && prefs.readReceipts !== false) void channel.current?.send({ type: 'broadcast', event: 'read_receipt', payload: { readerId: actorId, conversationId: id, readThrough: result.readThrough } });
             if (current()) onRead();

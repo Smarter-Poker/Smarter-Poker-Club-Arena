@@ -684,6 +684,24 @@ export async function createHudClockReader() {
         .in('table_id', tableIds)
         .is('left_at', null);
       if (seats.error) throw seats.error;
+      // AN UNREADABLE ROW IS NOT AN UNKNOWN BOARD (2026-10-15).
+      //
+      // public.tables carries a RESTRICTIVE policy, so a table this account
+      // may not read comes back as no row at all: HTTP 200, empty array, no
+      // error. Those candidates then classified `unknown` exactly like a
+      // board whose tournament really is unreadable, and runs 38656420977 and
+      // 38672391424 recorded 30 and 22 indistinguishable `unknown`s while the
+      // engine was offering healthy boards. Name the read-scope miss here so
+      // the next run says which of the two it is in one line.
+      const returnedIds = new Set((tables.data || []).map((row) => String(row.id)));
+      const unreadable = tableIds.filter((id) => !returnedIds.has(id));
+      if (unreadable.length) {
+        console.log(
+          `[board-facts] ${unreadable.length} of ${tableIds.length} requested table(s) returned no row ` +
+            `for this account, so they cannot be qualified as running: ${unreadable.slice(0, 5).join(', ')}` +
+            `${unreadable.length > 5 ? ', …' : ''}`
+        );
+      }
       for (const table of tables.data || []) {
         const tournament = tournaments.data?.find((row) => row.id === table.tournament_id);
         const level = tournament?.blind_level_state as { big_blind?: unknown } | null | undefined;

@@ -396,7 +396,16 @@ export default async function globalSetup(config: FullConfig) {
       console.log('[global-setup] preserving the isolated account with zero club memberships.');
     } else {
       observation.stage('membership');
+      // SAY WHICH MEMBERSHIPS THIS ACCOUNT ENDED UP WITH.
+      //
+      // ensureClubMembership logs only when it clicks Join, so "already a
+      // member" and "this branch never ran" produced identical setup logs.
+      // Run 38672391424 cost an hour of archaeology for exactly that: the
+      // union boards came back unreadable and the log could not say whether
+      // the union join had happened, been a no-op, or been skipped.
+      const assignedClub = process.env.E2E_CLUB_ID || DEFAULT_E2E_CLUB_ID;
       await ensureClubMembership(page, baseURL, process.env.E2E_CLUB_ID || DEFAULT_E2E_CLUB_ID);
+      console.log(`[global-setup] assigned club ${assignedClub} membership ensured.`);
       await dismissClubEntryMessage(page);
 
       /* THE ENGINE OFFERED 30 SPIN AND 32 SNG BOARDS AND THE DATABASE SHOWED
@@ -422,10 +431,16 @@ export default async function globalSetup(config: FullConfig) {
          service-role shortcut, read-only spectator membership. Only the lane
          that sets E2E_UNION_CLUB_ID takes it, so no other suite's account
          shape changes. */
-      if (process.env.E2E_UNION_CLUB_ID) {
+      const unionClub = process.env.E2E_UNION_CLUB_ID;
+      if (unionClub) {
         observation.stage('union-membership');
-        await ensureClubMembership(page, baseURL, process.env.E2E_UNION_CLUB_ID);
+        const joined = await ensureClubMembership(page, baseURL, process.env.E2E_UNION_CLUB_ID);
+        console.log(
+          `[global-setup] union-scope club ${unionClub} membership: ${joined ? 'joined now' : 'already a member'}.`
+        );
         await dismissClubEntryMessage(page);
+      } else {
+        console.log('[global-setup] no E2E_UNION_CLUB_ID; union-scoped boards stay unreadable.');
       }
     }
 

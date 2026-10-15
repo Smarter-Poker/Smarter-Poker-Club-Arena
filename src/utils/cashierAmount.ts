@@ -65,3 +65,18 @@ export function parseTradeAmount(
   }
   return { ok: true, value: raw };
 }
+
+/** Group the editable whole part without rounding or hiding invalid input. */
+export function formatCashierAmountInput(input: string): string {
+  const raw = cashierAmountInputValue(input);
+  if (!/^\d*(\.\d*)?$/.test(raw)) return input;
+  const [whole, fraction] = raw.split('.');
+  return (
+    whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + (fraction === undefined ? '' : `.${fraction}`)
+  );
+}
+
+/** Remove only conventional grouping; malformed commas stay visibly invalid. */
+export function cashierAmountInputValue(input: string): string {
+  return /^\d{1,3}(,\d{3})+(\.\d*)?$/.test(input) ? input.replace(/,/g, '') : input;
+}

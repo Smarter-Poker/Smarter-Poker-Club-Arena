@@ -21,6 +21,33 @@ beforeEach(() => {
   Object.defineProperty(globalThis, 'crypto', { configurable: true, value: webcrypto });
 });
 describe('durable wallet operation identity', () => {
+  it('accepts existing PostgreSQL entity IDs without weakening operation UUID validation', async () => {
+    const existingClub = 'a0000000-0000-0000-0000-000000000001';
+    const first = await reserveCashierWalletOperation(user, existingClub, action, args);
+    expect(first).not.toBeNull();
+    expect(await reserveCashierWalletOperation(user, existingClub, action, args)).toEqual(first);
+    expect(readCashierWalletOperations(user, existingClub)).toEqual([first]);
+    clearCashierWalletOperation(first!);
+    expect(readCashierWalletOperations(user, existingClub)).toEqual([]);
+    expect(
+      await reserveCashierWalletOperation(
+        user,
+        club,
+        action,
+        args,
+        () => existingClub,
+        localStorage
+      )
+    ).toBeNull();
+    expect(
+      await reserveCashierWalletOperation(
+        user,
+        '00000000-0000-0000-0000-000000000000',
+        action,
+        args
+      )
+    ).toBeNull();
+  });
   it('uses the same operation after reload, without persisting the reason', async () => {
     const first = await reserveCashierWalletOperation(user, club, action, args);
     expect(first).not.toBeNull();

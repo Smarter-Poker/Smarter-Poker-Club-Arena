@@ -23,6 +23,33 @@ describe('visible authoritative reads', () => {
       await Promise.resolve();
     });
 
+  it('Cashier manual mode never reads on time, focus, visibility or reconnect', async () => {
+    const read = vi.fn().mockResolvedValue(100);
+    const hook = renderHook(() =>
+      useVisibleRead({
+        scopeKey: 'cashier',
+        enabled: true,
+        manualOnly: true,
+        read,
+        onData: vi.fn(),
+        onError: vi.fn(),
+      })
+    );
+    await settle();
+    expect(read).toHaveBeenCalledTimes(1);
+    await act(() => vi.advanceTimersByTimeAsync(60_000));
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+      document.dispatchEvent(new Event('visibilitychange'));
+      window.dispatchEvent(new Event('online'));
+    });
+    await settle();
+    expect(read).toHaveBeenCalledTimes(1);
+    act(() => hook.result.current());
+    await settle();
+    expect(read).toHaveBeenCalledTimes(2);
+  });
+
   it('reads another session’s changed balance while the view stays open', async () => {
     const read = vi.fn().mockResolvedValueOnce(100).mockResolvedValue(70);
     const onData = vi.fn();

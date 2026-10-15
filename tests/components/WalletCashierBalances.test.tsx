@@ -1,4 +1,4 @@
-import { act, cleanup, render } from '@testing-library/react';
+import { act, cleanup, render, fireEvent, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fixture = vi.hoisted(() => ({
@@ -117,12 +117,15 @@ describe('the open cashier reads the balances that changed elsewhere', () => {
     vi.restoreAllMocks();
   });
 
-  it('shows a concurrent club-bank withdrawal without reopening or a row event', async () => {
+  it('keeps the working balance until explicit refresh', async () => {
     render(<WalletCashierModal {...base} walletType="club_bank" />);
     await flush();
     expect(document.querySelector('.cbc-bank strong')).toHaveTextContent('100');
     fixture.bank = 70;
     await act(() => vi.advanceTimersByTimeAsync(8_000));
+    expect(document.querySelector('.cbc-bank strong')).toHaveTextContent('100');
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh Balances' }));
+    await flush();
     expect(document.querySelector('.cbc-bank strong')).toHaveTextContent('70');
     expect(fixture.channel).not.toHaveBeenCalled();
     expect(fixture.rpc.mock.calls.every(([name]) => name === 'fn_club_cashier_members')).toBe(true);
@@ -137,6 +140,8 @@ describe('the open cashier reads the balances that changed elsewhere', () => {
     expect(document.querySelector('.cbc-bank strong')).toHaveTextContent('40');
     fixture.agent = 19;
     await act(() => vi.advanceTimersByTimeAsync(8_000));
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh Balances' }));
+    await flush();
     expect(document.querySelector('.cbc-bank strong')).toHaveTextContent('19');
     for (const read of fixture.reads.filter((r) => r.table === 'agents')) {
       expect(read.filters).toEqual({
@@ -153,6 +158,8 @@ describe('the open cashier reads the balances that changed elsewhere', () => {
     fixture.pot = 31;
     fixture.float = 99;
     await act(() => vi.advanceTimersByTimeAsync(8_000));
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh Balances' }));
+    await flush();
     expect(document.querySelector('.cbc-bank strong')).toHaveTextContent('31');
   });
 
@@ -161,6 +168,8 @@ describe('the open cashier reads the balances that changed elsewhere', () => {
     await flush();
     fixture.failure = true;
     await act(() => vi.advanceTimersByTimeAsync(8_000));
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh Balances' }));
+    await flush();
     expect(document.querySelector('.cbc-bank strong')).toHaveTextContent('Unavailable');
   });
 

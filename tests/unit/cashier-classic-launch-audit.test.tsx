@@ -242,7 +242,7 @@ describe('Cashier Classic launch audit', () => {
       start();
       await screen.findByRole('tab', { name: 'Send', selected: true });
       fireEvent.click(screen.getByRole('tab', { name: tab, exact: true }));
-      const field = await screen.findByRole('spinbutton', { name: label, exact: true });
+      const field = await screen.findByRole('textbox', { name: label, exact: true });
       expect(field).toHaveAttribute('aria-invalid', 'false');
       fireEvent.change(field, { target: { value: invalid } });
       expect(field).toHaveAttribute('aria-invalid', 'true');
@@ -274,7 +274,7 @@ describe('Cashier Classic launch audit', () => {
     const recipient = await screen.findByLabelText('Send To Recipient');
     await waitFor(() => expect((recipient as HTMLSelectElement).options.length).toBe(2));
     fireEvent.change(recipient, { target: { value: PLAYER_ONE } });
-    const field = screen.getByRole('spinbutton', { name: 'Amount', exact: true });
+    const field = screen.getByRole('textbox', { name: 'Amount', exact: true });
     fireEvent.change(field, { target: { value: '10.005' } });
     fireEvent.click(
       screen.getByRole('button', { name: 'Send 10.005 Chips To Selected Recipient' })

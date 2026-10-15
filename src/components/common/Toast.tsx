@@ -43,6 +43,7 @@ export interface Toast {
   message: string;
   duration?: number;
   onClick?: () => void;
+  receiptId?: string;
 }
 
 export interface ToastContextValue {
@@ -54,8 +55,14 @@ export interface ToastContextValue {
    * array never re-fires an effect when toasts come and go.
    */
   getToasts: () => Toast[];
-  showToast: (message: string, type?: ToastType, duration?: number, onClick?: () => void) => void;
-  success: (message: string, duration?: number, onClick?: () => void) => void;
+  showToast: (
+    message: string,
+    type?: ToastType,
+    duration?: number,
+    onClick?: () => void,
+    receiptId?: string
+  ) => void;
+  success: (message: string, duration?: number, onClick?: () => void, receiptId?: string) => void;
   error: (message: string, duration?: number, onClick?: () => void) => void;
   warning: (message: string, duration?: number, onClick?: () => void) => void;
   info: (message: string, duration?: number, onClick?: () => void) => void;
@@ -249,7 +256,13 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const showToast = useCallback(
-    (message: string, type: ToastType = 'info', duration = 4000, onClick?: () => void) => {
+    (
+      message: string,
+      type: ToastType = 'info',
+      duration = 4000,
+      onClick?: () => void,
+      receiptId?: string
+    ) => {
       // Dan's house rule (2026-08-20), enforced at the ONLY door every toast
       // walks through: Title Case every word, no em dashes. See popupStyle.ts.
       // a rule in the render path cannot drift, a rule in a doc does.
@@ -310,7 +323,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       /* COOLDOWN. See lastShownRef: the on-screen dedupe below cannot stop a
        message that returns after its predecessor expired, which is how one
        error reads as an endless stream of them. */
-      const cooldownKey = type + ':' + styled;
+      const cooldownKey = type + ':' + (receiptId || styled);
       const nowMs = Date.now();
       const shownAt = lastShownRef.current.get(cooldownKey);
       if (shownAt !== undefined && nowMs - shownAt < TOAST_COOLDOWN_MS) return;
@@ -327,8 +340,13 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
         // An identical message already on screen does not stack a twin. The
         // heartbeat loop and its friends retry on intervals, and a column of
         // five matching warnings reads as five separate emergencies.
-        if (prev.some((t) => t.message === styled && t.type === type)) return prev;
-        const next = [...prev, { id, type, message: styled, duration, onClick }];
+        if (
+          prev.some(
+            (t) => t.type === type && (receiptId ? t.receiptId === receiptId : t.message === styled)
+          )
+        )
+          return prev;
+        const next = [...prev, { id, type, message: styled, duration, onClick, receiptId }];
         // Cap at 5 visible toasts; dismiss oldest if overflow
         return next.length > 5 ? next.slice(-5) : next;
       });
@@ -337,8 +355,8 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   );
 
   const success = useCallback(
-    (message: string, duration?: number, onClick?: () => void) =>
-      showToast(message, 'success', duration, onClick),
+    (message: string, duration?: number, onClick?: () => void, receiptId?: string) =>
+      showToast(message, 'success', duration, onClick, receiptId),
     [showToast]
   );
   const error = useCallback(

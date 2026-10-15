@@ -40,3 +40,22 @@ human, staff role, pending row or unreadable profile. Its receipt reports
 `tests/the-arena-is-one-club-and-it-mints-nothing.law.test.ts` pins the ruling,
 the five named boards, the refusal of every other club, the funding path and
 that nothing activates. The setup script has five new cases (51 pass).
+
+## Stage Operator
+
+`scripts/ops/lightning-pilot-stage.mjs` and the dispatch-only
+`lightning-pilot-stage.yml` (main only) perform one ROLLOUT.md step per run on
+the two named private pilot games, through `fn_lightning_operator_control` as
+the authenticated service owner:
+
+- `shadow`: Stage 1 (`set_flag lightning_shadow_matcher`, `set_matcher_version
+  m1-port shadow`, `set_worker_mode shadow`, `enable_lightning`).
+- `form`: Stage 2 (`set_worker_mode form`).
+- `drain`: the retreat. `report`: read only.
+
+Readiness is read and recorded first; `no_go`, a blocking reason or any reason
+the stage does not exist to produce stops it. Every target is resolved and
+gated before the first action, so one size is never half-staged (a test caught
+the first draft acting on the 6-max before discovering the 9-max was missing).
+Request ids derive from the dispatch's operation id, so a retry replays. 8 node
+tests.

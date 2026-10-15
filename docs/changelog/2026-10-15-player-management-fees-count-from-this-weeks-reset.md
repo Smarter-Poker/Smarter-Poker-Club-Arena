@@ -21,3 +21,8 @@ Read back: week starts 2026-10-12; Deep Stack Society reads 59,995.87 of fees
 this week across 405 players (all tournament fees; no cash rake this week),
 and the roster total equals the ledger total to the cent. Tournament receipts
 are unchanged by this migration.
+
+**Superseded the same morning** by `20261015132358` (see
+`2026-10-15-player-management-fees-accumulate-from-the-week-of-october-12.md`):
+fees count from the fixed start Monday 2026-10-12 and accumulate with no
+weekly reset.

@@ -93,7 +93,7 @@ describe('Player Management shows fees generated', () => {
     const sql = readFileSync(
       resolve(
         process.cwd(),
-        'supabase/migrations/20261015130331_player_management_fees_accumulate_from_the_week_of_october_t.sql'
+        'supabase/migrations/20261015132358_player_management_fees_accumulate_from_the_week_of_october_t.sql'
       ),
       'utf8'
     );

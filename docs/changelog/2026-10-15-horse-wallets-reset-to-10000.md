@@ -29,12 +29,12 @@ account: `fn_club_bank_claim_back` (player wallet into the club bank) then
 `fn_club_bank_send` (10,000 to the player wallet), reason "Owner Horse Wallet
 Reset To 10,000 (Dan, 2026-10-15)", keys `horse-reset-20261015:*`.
 
-| Club | Live horses at 10,000 | Claimed into the bank | Sent |
-| --- | --- | --- | --- |
-| Deep Stack Society | 416 | 6,330,829.27 | 4,160,000 |
-| Club JAQK | 518 | 78,122,251.16 | 5,800,000 |
-| SHARK CLUB | 522 | 48,902,694.31 | 5,840,000 |
-| Midway Union | 261 | 20,008,734.19 | 3,230,000 |
+| Club               | Live horses at 10,000 | Claimed into the bank | Sent      |
+| ------------------ | --------------------- | --------------------- | --------- |
+| Deep Stack Society | 416                   | 6,330,829.27          | 4,160,000 |
+| Club JAQK          | 518                   | 78,122,251.16         | 5,800,000 |
+| SHARK CLUB         | 522                   | 48,902,694.31         | 5,840,000 |
+| Midway Union       | 261                   | 20,008,734.19         | 3,230,000 |
 
 1,717 live horse wallets held exactly 10,000 at 18:09 UTC. 186 deleted horse
 accounts (62 in each of three clubs) were sent 10,000 before they were

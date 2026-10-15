@@ -106,6 +106,12 @@ async function runPilotWithReceipt(replaceReceipt, finalGame = game, finalMember
               if (key === 'id') this.filterId = value;
               return this;
             },
+            // Roster profile lookup: no fixture member here is a horse.
+            in() {
+              return {
+                then: (resolve, reject) => Promise.resolve({ data: [] }).then(resolve, reject),
+              };
+            },
             async maybeSingle() {
               return {
                 data:
@@ -346,11 +352,13 @@ async function runTwoTargetFlow(estate, options = {}) {
             const filters = {};
             const data = () =>
               table === 'profiles'
-                ? { id: PILOT.ownerId, role: 'god', status: 'active', is_horse: false }
+                ? filters.in
+                  ? (options.profiles ?? []).filter((p) => filters.in.includes(p.id))
+                  : { id: PILOT.ownerId, role: 'god', status: 'active', is_horse: false }
                 : table === 'club_members'
                   ? rosterReads++ > 0 && options.finalRoster
                     ? options.finalRoster
-                    : ownerRoster
+                    : (options.initialRoster ?? ownerRoster)
                   : table === 'clubs'
                     ? (options.finalClub ?? club)
                     : filters.id
@@ -363,6 +371,10 @@ async function runTwoTargetFlow(estate, options = {}) {
               },
               eq(key, value) {
                 filters[key] = value;
+                return this;
+              },
+              in(key, values) {
+                filters.in = values;
                 return this;
               },
               maybeSingle: async () => ({ data: data() }),
@@ -655,3 +667,35 @@ test('successful null or no-error cleanup outcomes retain setup compatibility', 
     assert.equal(receipt.publicLaunch, 'NO_GO');
   }
 });
+
+test('the roster accepts the owner plus admitted horses and counts them on the receipt', async () => {
+  const horses = ['horse-a', 'horse-b'];
+  const roster = [
+    { user_id: PILOT.ownerId, status: 'active', role: 'owner' },
+    ...horses.map((id) => ({ user_id: id, status: 'active', role: 'player' })),
+  ];
+  const { receipt } = await runTwoTargetFlow([game, game9], {
+    initialRoster: roster,
+    finalRoster: roster,
+    profiles: horses.map((id) => ({ id, is_horse: true })),
+  });
+  assert.equal(receipt.participants, 'owner_and_admitted_horses');
+  assert.equal(receipt.admittedHorses, 2);
+});
+
+for (const [label, member, profile] of [
+  ['a human player', { user_id: 'human-x', status: 'active', role: 'player' }, { id: 'human-x', is_horse: false }],
+  ['a horse with a staff role', { user_id: 'horse-x', status: 'active', role: 'admin' }, { id: 'horse-x', is_horse: true }],
+  ['a pending horse', { user_id: 'horse-y', status: 'pending', role: 'player' }, { id: 'horse-y', is_horse: true }],
+  ['an unreadable profile', { user_id: 'ghost', status: 'active', role: 'player' }, null],
+])
+  test(`the roster refuses ${label}`, async () => {
+    const roster = [{ user_id: PILOT.ownerId, status: 'active', role: 'owner' }, member];
+    await assert.rejects(
+      runTwoTargetFlow([game, game9], {
+        initialRoster: roster,
+        finalRoster: roster,
+        profiles: profile ? [profile] : [],
+      })
+    );
+  });

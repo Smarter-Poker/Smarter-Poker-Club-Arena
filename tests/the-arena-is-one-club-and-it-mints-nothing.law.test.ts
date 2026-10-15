@@ -157,3 +157,39 @@ describe('a horse may play in the arena', () => {
     expect(code(horse)).toContain('the house board rule is still a bare list');
   });
 });
+
+describe('the Lightning pilot club is a house board by Dan\'s ruling, and nothing else is', () => {
+  const pilot = read('the_lightning_pilot_club_is_a_house_board');
+
+  it('records the ruling as Dan\'s, not the migration\'s', () => {
+    expect(pilot).toContain("THE RULING IS DAN'S, NOT THIS MIGRATION'S");
+    expect(pilot).toContain('admit 72 horses, and fund them from its');
+  });
+
+  it('keeps the derived half and the four legacy boards, and names exactly one more club', () => {
+    expect(code(pilot)).toContain(
+      'SELECT COALESCE((SELECT c.is_platform FROM public.clubs c WHERE c.id = p_club_id), false)'
+    );
+    for (const id of [
+      'a41434bb-8d0c-400a-8f0d-e8b3d65afed4',
+      'a0000000-0000-0000-0000-000000000001',
+      'fade0000-0000-0000-0000-000000000001',
+      '2a1132b9-5ba2-42e6-9f01-30a7fcffebe3',
+      'e14bc9f7-736d-425f-8f2c-e78305ebac1d',
+    ]) {
+      expect(code(pilot)).toContain(id);
+    }
+  });
+
+  it('still refuses every club that is not a named house board, and activates nothing', () => {
+    expect(code(pilot)).toContain('the guard lets an automated player into club');
+    expect(code(pilot)).toContain('a club that does not exist reads as a house board');
+    expect(code(pilot)).toContain('this migration must not activate anything');
+  });
+
+  it('funds the horses through the platform path from the pilot treasury, all or nothing', () => {
+    expect(code(pilot)).toContain("fn_seed_horses_to_floor('e14bc9f7-736d-425f-8f2c-e78305ebac1d', 40)");
+    expect(code(pilot)).toContain("set_config('app.club_membership_source', 'join_club', true)");
+    expect(code(pilot)).not.toMatch(/UPDATE public\.club_members/);
+  });
+});

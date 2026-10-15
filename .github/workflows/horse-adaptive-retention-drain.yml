@@ -1,0 +1,53 @@
+# Owner-dispatched drain of the horse adaptive retention backlog.
+#
+# Calls the installed bounded owner public.fn_prune_horse_adaptive_journal()
+# in a loop, one committed statement per call, through the same DATABASE_URL
+# credential boundary apply-merged-migration uses. All retention rules live in
+# that function; this job adds none. DISPATCH ONLY: no schedule, no push
+# trigger. It stops by itself when fewer than stop_below hands are pending or
+# when max_minutes elapse; a person dispatches it again to continue.
+name: Horse Adaptive Retention Drain
+
+on:
+  workflow_dispatch:
+    inputs:
+      max_minutes:
+        description: 'Stop after this many minutes (1-345)'
+        required: false
+        default: '340'
+        type: string
+      stop_below:
+        description: 'Stop when fewer than this many hands remain pending'
+        required: false
+        default: '2000'
+        type: string
+
+concurrency:
+  group: horse-adaptive-retention-drain
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  drain:
+    name: Drain horse adaptive retention
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use the production Node major
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install the Postgres client library
+        run: npm i pg@8 --no-save --no-audit --no-fund
+
+      - name: Drain
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          MAX_MINUTES: ${{ inputs.max_minutes }}
+          STOP_BELOW: ${{ inputs.stop_below }}
+        run: node scripts/ci/drain-horse-adaptive-retention.mjs

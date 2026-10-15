@@ -134,8 +134,8 @@ function feeTitle(member: RosterMember): string | undefined {
   if (member.total_fees == null) return undefined;
   const exact = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 2 });
   return member.downline_fees != null && (member.downline_total ?? 0) > 0
-    ? `Fees Generated ${exact(member.total_fees)}. Downline Fees ${exact(member.downline_fees)}.`
-    : `Fees Generated ${exact(member.total_fees)}.`;
+    ? `Fees This Week ${exact(member.total_fees)}. Downline Fees ${exact(member.downline_fees)}.`
+    : `Fees This Week ${exact(member.total_fees)}.`;
 }
 
 function abortLike(error: unknown): boolean {
@@ -1549,8 +1549,9 @@ export default function ClubMembersPage() {
                 Excluding This Player.
               </p>
               <p>
-                Fees Are Read From The Club Fee Ledgers That Pay Agents And Rakeback, All Time, With
-                No Date Filter On This Roster. Wallets And Fees Are In Club Chips.
+                Fees Are Read From The Club Fee Ledgers That Pay Agents And Rakeback And Count This
+                Week Only, From The Monday Reset At Midnight Pacific. Every Player And Horse Starts
+                At Zero Each Monday. Wallets And Fees Are In Club Chips.
               </p>
               <p>
                 Recent Activity Uses Login Time When Available, Otherwise Presence Or Club Activity
@@ -1857,7 +1858,7 @@ export const MemberRow = memo(function MemberRow({
           {simpleMode && member.can_view_financials && (
             <span className="member-simple-balance" title={feeTitle(member)}>
               <strong>{feeFigure(member.total_fees)}</strong>
-              <span>Fees Generated</span>
+              <span>Fees This Week</span>
               {(member.downline_total ?? 0) > 0 && member.downline_fees != null && (
                 <span className="member-simple-balance__downline">
                   Downline {feeFigure(member.downline_fees)}

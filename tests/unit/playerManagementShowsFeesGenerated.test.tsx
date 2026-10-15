@@ -53,7 +53,7 @@ function simpleRow(overrides: Record<string, unknown>) {
 describe('Player Management shows fees generated', () => {
   it('prints the fee figure and never the wallet in Simple mode', () => {
     render(simpleRow({}));
-    expect(screen.getByText('Fees Generated')).toBeVisible();
+    expect(screen.getByText('Fees This Week')).toBeVisible();
     expect(screen.getByText('12.3K')).toBeVisible();
     expect(screen.queryByText('Player Wallet')).not.toBeInTheDocument();
     expect(screen.queryByText('274.6K')).not.toBeInTheDocument();
@@ -87,5 +87,19 @@ describe('Player Management shows fees generated', () => {
     expect(sql).toContain('public.ca_club_member_fee_totals(p_club_id) lf');
     expect(sql).toContain('public.ca_club_rake_daily_user');
     expect(sql).toContain('AFTER INSERT ON public.accounting_tournament_fee_sources');
+  });
+
+  it('counts fees from this week\'s Monday reset only, without touching the ledgers', () => {
+    const sql = readFileSync(
+      resolve(
+        process.cwd(),
+        'supabase/migrations/20261015121220_player_management_fees_count_from_this_weeks_reset.sql'
+      ),
+      'utf8'
+    );
+    expect(sql).toContain('public.fn_union_week_start(p_at)');
+    expect(sql).toContain('d.day >= b.from_day');
+    expect(sql).toContain('t.day >= b.from_day');
+    expect(sql).not.toMatch(/\b(DELETE|TRUNCATE|UPDATE)\b/);
   });
 });

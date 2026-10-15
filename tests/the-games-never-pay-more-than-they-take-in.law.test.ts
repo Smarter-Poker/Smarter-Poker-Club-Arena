@@ -1979,4 +1979,16 @@ describe('Donkey Cross contract 7: street one never smashes, and every stop stil
     const chips = roadCoinPrizeFifths(1, 0.5, ROAD_COIN_V7).map((p) => p / 500);
     expect(chips).toEqual([0.8, 1.1, 1.65, 2.47, 3.7, 5.55, 8.32, 12.48, 18.72, 20]);
   });
+
+  it('the migration installs exactly that, for crossing only', () => {
+    const sevenSql = latest('donkey_cross_street_one_is_always_safe').sql;
+    expect(sevenSql).toContain(' SELECT p_street=1 OR public.fn_choice_road_coin_v6(');
+    expect(sevenSql).toContain(
+      ' SELECT (ARRAY[p_bet*0.8]||public.fn_choice_road_prizes_v6(p_bet,p_floor))[1:20]'
+    );
+    expect(sevenSql).toContain("CASE WHEN p_game='crossing' THEN 7 ELSE 5 END) RETURNING");
+    expect(sevenSql).toContain('r.payout_version IN (5,6,7) THEN');
+    expect(sevenSql.match(/^BEGIN;$/gm)?.length).toBe(1);
+    expect(sevenSql.match(/^COMMIT;$/gm)?.length).toBe(1);
+  });
 });

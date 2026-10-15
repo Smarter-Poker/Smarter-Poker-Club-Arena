@@ -4,6 +4,12 @@ You are picking up the Lightning programme for Club Arena (Smarter Poker). Light
 
 **The dated delivery checkpoints above section U supersede the historical state in section U and sections 3 to 5.** Sections 3 to 5 were written at 17:30 UTC and are kept for their ids and history.
 
+## Private Access Witness Preparation (2026-10-15)
+
+- The current #7025 candidate adds explicit `stage=access` to the existing pilot workflow. It uses only the designated outsider and verified service owner, tests nonmember and unapproved zero-balance pending states through actual browser/HTTP/WebSocket paths, and withdraws only its own pending request through the maintained cancellation door. Credentials remain in memory, synthetic sessions sign out locally, and no identity, approval, funding, buy-in or table action is created.
+- 105 local operator/access/report/setup checks pass; access-anchor wiring has a before-fail/after-pass witness. Actual browser/socket production evidence remains PENDING. Dispatch this step after protected delivery, before reactivating the private pilot. A request's unknown durable outcome must be read from the original operation before any retry; never infer absence from an unreadable row or clean up changed/funded membership.
+- #7016/#7017/#7027 closed after their exact commits were retained in #7025. Cancellation requested for their obsolete checks only; terminal cancellations (including always jobs) still need confirmation. #7014 remains independent at head `799ba4711eab97cfdaeda623098587eefdc1c98e`; CI 38810741223 has no reported failure but required shards are still pending. Qualification 38813383364 is queued. No new activation or release action has run.
+
 ## Combined Candidate Validation (2026-10-15)
 
 - Current delivery branch is `codex/lightning-authoritative-calibration-20261015`, existing PR #7025. B2 correlation, B3 boot presence, replay evidence and explicit operator steps are retained as ancestry merges; #7014 remains independently checked. Dated checkpoints below preserve original operation identities and limits.

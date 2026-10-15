@@ -55,6 +55,7 @@ export const STAGE_PLAN = Object.freeze({
     gated: Object.freeze([]),
     ungated: true,
   }),
+  access: Object.freeze({ prepare: Object.freeze([]), gated: Object.freeze([]), ungated: true }),
   off: Object.freeze({
     prepare: Object.freeze([['set_worker_mode', { mode: 'off' }]]),
     gated: Object.freeze([]),
@@ -112,7 +113,7 @@ export function assertStageTarget(game, clubId) {
   return target;
 }
 
-export async function runPilotStage(env = process.env, clientFactory) {
+export async function runPilotStage(env = process.env, clientFactory, accessRunner) {
   const stage = env.PILOT_STAGE;
   if (!Object.hasOwn(STAGE_ACTIONS, stage)) throw new Error('Unknown Pilot Stage');
   const controlAction = env.PILOT_CONTROL_ACTION ?? '';
@@ -198,6 +199,27 @@ export async function runPilotStage(env = process.env, clientFactory) {
       const entry = { handedness, clusterId: game.id, actions: [] };
       report.clusters.push(entry);
       staged.push({ game, entry });
+    }
+    if (stage === 'access') {
+      const run = accessRunner ?? (await import('./lightning-pilot-access.mjs')).runPilotAccess;
+      const chromium = accessRunner ? null : (await import('@playwright/test')).chromium;
+      const WebSocket = accessRunner ? null : (await import('ws')).default;
+      try {
+        report.access = await run({
+          admin,
+          player,
+          createClient,
+          url: env.SUPABASE_URL,
+          games: staged.map((s) => s.game),
+          operationId,
+          requestId: stageRequestId(operationId, club.id, 'pending_access_proof'),
+          chromium,
+          WebSocket,
+        });
+      } catch (error) {
+        report.access = error.pilotAccessReport ?? { verdict: 'unknown' };
+        throw error;
+      }
     }
     // A review is an explicit operator judgment on one investigated finding,
     // never a bulk clear or launch certificate. Preserve the original evidence.
@@ -302,6 +324,7 @@ export async function runPilotStage(env = process.env, clientFactory) {
     report.error = String(error?.message ?? error);
   } finally {
     const out = await player.auth.signOut({ scope: 'local' }).catch((e) => ({ error: e }));
+    report.serviceSessionCleanup = out?.error ? 'unverified' : 'local_signout_confirmed';
     if (out?.error && !primaryError) primaryError = new Error('Service Session Cleanup Failed');
     report.completedAt = new Date().toISOString();
     if (env.PILOT_STAGE_REPORT_PATH)

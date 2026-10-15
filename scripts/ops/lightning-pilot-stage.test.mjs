@@ -364,3 +364,18 @@ test('off is one explicit worker-off action and remains available on no_go', asy
     calls.every((c) => c.args.p_action === 'set_worker_mode' && c.args.p_args.mode === 'off')
   );
 });
+
+test('access dispatch reaches the observer with the validated private targets and stable operation', async () => {
+  const f = fakeClients();
+  let captured;
+  const r = await runPilotStage({ ...env, PILOT_STAGE: 'access' }, f.factory, async (args) => {
+    captured = args;
+    return { verdict: 'passed', scope: 'test_only' };
+  });
+  assert.deepEqual(captured.games, [game6, game9]);
+  assert.equal(captured.operationId, OP);
+  assert.equal(captured.requestId, stageRequestId(OP, CLUB, 'pending_access_proof'));
+  assert.equal(r.access.verdict, 'passed');
+  assert.equal(f.calls.filter((c) => c.name === 'fn_lightning_operator_control').length, 0);
+  assert.deepEqual(f.signedOut, [{ scope: 'local' }]);
+});

@@ -3375,6 +3375,16 @@ export class GameServer {
   private lastDarkTournamentSweepAt = 0;
   /** When each dark tournament's manager was last retired for a rebuild. */
   private readonly darkTournamentRebuiltAtMs = new Map<string, number>();
+  /**
+   * When this sweep first read each event as dark, kept while it stays a
+   * candidate (2026-10-15). A manager the resume lane re-admits inside the
+   * dark window used to reset the "admitted recently" skip on every
+   * re-admission, so an event re-admitted more often than the window was never
+   * rebuilt or paged again (Freeroll a38b88a9: 35 hours dark, silent after its
+   * first six). The skip now yields once the event has been dark for the whole
+   * window as this sweep has seen it, however often it was re-admitted.
+   */
+  private readonly darkTournamentFirstSeenAtMs = new Map<string, number>();
   /** When each long-failing resume / repeat-dark event was last paged. */
   private readonly failingResumePagedAtMs = new Map<string, number>();
   private readonly darkAfterRebuildPagedAtMs = new Map<string, number>();
@@ -4853,6 +4863,7 @@ export class GameServer {
           dealable: 0,
           secsIdle: Math.round(t.msFailing / 1000),
           admission: 'failing' as const,
+          refusal: t.refusal,
         })),
     ];
     // LIVENESS RACE FIX (2026-08-22): the per-table recovery chain (watchdog
@@ -5995,11 +6006,15 @@ export class GameServer {
    */
   private tournamentTablesFailingAdmission(
     now: number
-  ): Array<{ tableId: string; msFailing: number }> {
-    const failing: Array<{ tableId: string; msFailing: number }> = [];
+  ): Array<{ tableId: string; msFailing: number; refusal: string | null }> {
+    const failing: Array<{ tableId: string; msFailing: number; refusal: string | null }> = [];
     for (const manager of this.tournamentEngines.values()) {
+      const refusals = new Map(
+        (manager.getTableAdmissionRefusals?.() ?? []).map((r) => [r.tableId, r.refusal])
+      );
       for (const table of manager.getTablesFailingAdmission?.(now) ?? []) {
-        if (table.msFailing > 120_000) failing.push(table);
+        if (table.msFailing > 120_000)
+          failing.push({ ...table, refusal: refusals.get(table.tableId) ?? null });
       }
     }
     return failing.sort((x, y) => y.msFailing - x.msFailing);
@@ -10638,16 +10653,23 @@ export class GameServer {
       return;
     }
     const rows = Array.isArray(data) ? (data as Array<Record<string, unknown>>) : [];
+    const darkNow = new Set<string>();
     for (const row of rows) {
       const tournamentId = String(row.tournament_id ?? '');
       if (!tournamentId) continue;
+      darkNow.add(tournamentId);
+      if (!this.darkTournamentFirstSeenAtMs.has(tournamentId))
+        this.darkTournamentFirstSeenAtMs.set(tournamentId, now);
       const manager = this.tournamentEngines.get(tournamentId);
       if (!manager) continue; // the RUNNING resume lane owns an unowned event
       if (this.tournamentManagerQuarantine?.heldBy(tournamentId) === manager) continue;
       const admittedAt = this.tournamentManagerAdmittedAtMs?.get(manager);
+      const darkWindowMs = GameServer.DARK_TOURNAMENT_LIVE_MINUTES * 60 * 1000;
+      const seenDarkSince = this.darkTournamentFirstSeenAtMs.get(tournamentId) ?? now;
       if (
         admittedAt !== undefined &&
-        now - admittedAt < GameServer.DARK_TOURNAMENT_LIVE_MINUTES * 60 * 1000
+        now - admittedAt < darkWindowMs &&
+        now - seenDarkSince < darkWindowMs
       ) {
         continue;
       }
@@ -10715,11 +10737,16 @@ export class GameServer {
         'GameServer.dark_tournament_manager_rebuild'
       );
     }
+    // An event that is still dark keeps its rebuild record, so the
+    // "dark after rebuild" page keeps firing for as long as it stays dark.
     for (const [tournamentId, rebuiltAt] of this.darkTournamentRebuiltAtMs) {
-      if (now - rebuiltAt > 6 * 60 * 60 * 1000) {
+      if (!darkNow.has(tournamentId) && now - rebuiltAt > 6 * 60 * 60 * 1000) {
         this.darkTournamentRebuiltAtMs.delete(tournamentId);
         this.darkAfterRebuildPagedAtMs.delete(tournamentId);
       }
+    }
+    for (const tournamentId of [...this.darkTournamentFirstSeenAtMs.keys()]) {
+      if (!darkNow.has(tournamentId)) this.darkTournamentFirstSeenAtMs.delete(tournamentId);
     }
   }
 

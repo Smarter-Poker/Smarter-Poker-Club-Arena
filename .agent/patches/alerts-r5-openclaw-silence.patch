@@ -1,79 +1,6 @@
-diff --git a/.github/workflows/a-silent-job-cannot-hide.yml b/.github/workflows/a-silent-job-cannot-hide.yml
-new file mode 100644
-index 000000000..36a931374
---- /dev/null
-+++ b/.github/workflows/a-silent-job-cannot-hide.yml
-@@ -0,0 +1,67 @@
-+name: A silent job cannot hide
-+
-+# v_openclaw_job_staleness and fn_monitoring_health_snapshot (migration
-+# 20261015035957). Runs scripts/ci/test-a-silent-job-cannot-hide.py against a
-+# throwaway PostgreSQL 17 cluster, never production: the exact production
-+# view and snapshot captured 2026-10-15 (md5 equal to the live ones) must hide
-+# a sparse failing job, a job with no success in 30 days and a job failing on
-+# its last skipped success; the migration must show all three, keep every
-+# healthy job quiet, honour a deliberate owner hold, reproduce production's
-+# derived postimage md5, and refuse a second run. No timer (CLAUDE.md 10.85):
-+# pull_request only, scoped to the paths it proves.
-+on:
-+  pull_request:
-+    branches: [main]
-+    paths:
-+      - supabase/migrations/20261015035957_a_failing_or_dispatched_job_cannot_hide_from_the_silence_ale.sql
-+      - scripts/ci/fixtures/a-silent-job-cannot-hide/**
-+      - scripts/ci/test-a-silent-job-cannot-hide.py
-+      - .github/workflows/a-silent-job-cannot-hide.yml
-+
-+permissions:
-+  contents: read
-+
-+concurrency:
-+  group: a-silent-job-cannot-hide-${{ github.ref }}
-+  cancel-in-progress: true
-+
-+jobs:
-+  a-silent-job-cannot-hide:
-+    name: A silent job cannot hide from the silence alerts
-+    runs-on: ubuntu-latest
-+    timeout-minutes: 15
-+    steps:
-+      - uses: actions/checkout@v4
-+      - name: Install PostgreSQL 17 from the signed PGDG source only
-+        run: |
-+          set -euo pipefail
-+          pg_sources="$(mktemp -d "$RUNNER_TEMP/ca-postgres-apt.XXXXXX")"
-+          chmod 755 "$pg_sources"
-+          test -f /etc/apt/sources.list.d/ubuntu.sources
-+          cp /etc/apt/sources.list.d/ubuntu.sources "$pg_sources/ubuntu.sources"
-+          pg_apt=(-o "Dir::Etc::sourcelist=/dev/null" -o "Dir::Etc::sourceparts=$pg_sources")
-+          sudo apt-get "${pg_apt[@]}" update
-+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-common curl ca-certificates
-+          sudo install -d /usr/share/postgresql-common/pgdg
-+          sudo curl --fail --silent --show-error --location \
-+            --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
-+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
-+          codename="$(. /etc/os-release && printf '%s' "$VERSION_CODENAME")"
-+          printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' \
-+            "$codename" > "$pg_sources/pgdg.sources"
-+          sudo apt-get "${pg_apt[@]}" update
-+          printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
-+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-17
-+      # Runs as the runner user (non-root), exactly as the ci.yml step would.
-+      - name: A silent job cannot hide from the silence alerts
-+        env:
-+          PG_BIN: /usr/lib/postgresql/17/bin
-+        run: python3 scripts/ci/test-a-silent-job-cannot-hide.py --output artifacts/a-silent-job-cannot-hide
-+      - name: Retain the regression evidence
-+        if: always()
-+        uses: actions/upload-artifact@v4
-+        with:
-+          name: a-silent-job-cannot-hide-${{ github.run_id }}-${{ github.run_attempt }}
-+          path: artifacts/a-silent-job-cannot-hide/RESULTS.json
-+          retention-days: 7
-+          if-no-files-found: warn
 diff --git a/docs/changelog/2026-10-15-a-silent-job-cannot-hide.md b/docs/changelog/2026-10-15-a-silent-job-cannot-hide.md
 new file mode 100644
-index 000000000..effa7c798
+index 000000000..0337f1b1b
 --- /dev/null
 +++ b/docs/changelog/2026-10-15-a-silent-job-cannot-hide.md
 @@ -0,0 +1,32 @@
@@ -101,9 +28,9 @@ index 000000000..effa7c798
 +  still being fired.
 +- The no-op count reads each job's latest finished run of any status and never
 +  counts a run that reports `held`.
-+- `/cron/pokernews-videos` (removed from the World Hub dispatcher; the
-+  official channel is a video registry source) and the dispatcher's own auth
-+  probe route are registered in `ca_retired_cron_jobs`.
++- `/cron/pokernews-videos` (removed from the World Hub dispatcher; PokerNews
++  is an active `content_sources` registry source, handle `@PokerNews`) and the
++  dispatcher's own auth probe route are registered in `ca_retired_cron_jobs`.
 +
 +## Pinned By
 +
@@ -500,7 +427,7 @@ index 000000000..ac9c0b635
 +                  'candidate': results.get('candidate'), 'output': str(out / 'RESULTS.json')}))
 diff --git a/supabase/migrations/20261015035957_a_failing_or_dispatched_job_cannot_hide_from_the_silence_ale.sql b/supabase/migrations/20261015035957_a_failing_or_dispatched_job_cannot_hide_from_the_silence_ale.sql
 new file mode 100644
-index 000000000..8b2d3526f
+index 000000000..e7718412a
 --- /dev/null
 +++ b/supabase/migrations/20261015035957_a_failing_or_dispatched_job_cannot_hide_from_the_silence_ale.sql
 @@ -0,0 +1,262 @@
@@ -553,9 +480,9 @@ index 000000000..8b2d3526f
 +--      * /cron/pokernews-videos: removed from the World Hub dispatcher by the
 +--        companion World Hub PR. No PokerNews content_author exists (the
 +--        importer refuses to attribute official items to a horse), its RSS
-+--        source now 404s, and the video registry already ingests the official
-+--        PokerNews YouTube channel (@PokerNews) as a source, so the work
-+--        lives there. Last success 2026-09-30 00:30 UTC.
++--        source now 404s, and the source registry already carries PokerNews
++--        as an active source (public.content_sources 'PokerNews', handle
++--        @PokerNews), so the work lives there. Last success 2026-09-30 00:30 UTC.
 +--      * /cron/__auth_probe_no_such_route__: the dispatcher's own auth probe
 +--        (scripts/openclaw-cron-dispatcher.py) deliberately requests a route
 +--        that does not exist; its 404 is its success. 12,492 rows, never a
@@ -640,8 +567,8 @@ index 000000000..8b2d3526f
 +INSERT INTO public.ca_retired_cron_jobs (job_name, retired_at, reason, replaced_by)
 +VALUES
 +  ('/cron/pokernews-videos', '2026-09-30 00:30:01.347+00'::timestamptz,
-+   'Removed from the World Hub OpenClaw dispatcher on 2026-10-15. It returned HTTP 500 every 3 hours from 2026-09-30: no PokerNews content_author exists and the importer correctly refuses to attribute official items to a horse, and its RSS source now answers 404. The official PokerNews YouTube channel (@PokerNews) is already a video registry source, so the work it duplicated lives there. Last success 2026-09-30 00:30 UTC.',
-+   'video registry source @PokerNews (video-library-scraper)'),
++   'Removed from the World Hub OpenClaw dispatcher on 2026-10-15. It returned HTTP 500 every 3 hours from 2026-09-30: no PokerNews content_author exists and the importer correctly refuses to attribute official items to a horse, and its RSS source now answers 404. PokerNews is already an active source in the content_sources registry (handle @PokerNews), so the work it duplicated lives there. Last success 2026-09-30 00:30 UTC.',
++   'content_sources registry source PokerNews (@PokerNews)'),
 +  ('/cron/__auth_probe_no_such_route__', '2026-10-15 00:00:00+00'::timestamptz,
 +   'Not a job: the OpenClaw dispatcher''s own CRON_SECRET probe (scripts/openclaw-cron-dispatcher.py) deliberately requests this nonexistent workers route, and the 404 it logs is the outcome it wants. It has never succeeded and never will.',
 +   NULL)

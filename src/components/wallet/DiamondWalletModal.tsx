@@ -217,6 +217,11 @@ export default function DiamondWalletModal({
   const [balanceRevision, setBalanceRevision] = useState(0);
   const [historyOwnerId, setHistoryOwnerId] = useState<string | null>(null);
   const historyRequest = useRef(0);
+  const historyCursor = useRef<{ owner: string; createdAt: string; id: string } | null>(null);
+  const pageInFlight = useRef(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [moreError, setMoreError] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -239,15 +244,25 @@ export default function DiamondWalletModal({
   }, []);
   const isMounted = useIsMounted();
 
-  const fetchTransactions = useCallback(async () => {
-    if (!user?.id || !isOpen) return;
-    const request = ++historyRequest.current;
-    const isCurrent = () => isMounted.current && request === historyRequest.current;
-    setLoading(true);
-    setLoadError(false);
+  const fetchTransactions = useCallback(
+    async (append = false) => {
+      if (!user?.id || !isOpen) return;
+      const cursor = historyCursor.current;
+      if (append && (pageInFlight.current || !cursor || cursor.owner !== user.id)) return;
+      pageInFlight.current = append;
+      setLoadingMore(append);
+      setMoreError(false);
+      if (!append) {
+        historyCursor.current = null;
+        setHasMore(false);
+      }
+      const request = ++historyRequest.current;
+      const isCurrent = () => isMounted.current && request === historyRequest.current;
+      if (!append) setLoading(true);
+      setLoadError(false);
 
-    try {
-      /* ── THE `wallet_transactions` HALF OF THIS FETCH IS GONE ───────────────
+      try {
+        /* ── THE `wallet_transactions` HALF OF THIS FETCH IS GONE ───────────────
          It filtered on `category IN (diamond_purchase, diamond_deduction,
          vip_purchase, mint, diamond_reward, diamond_refund)`. Five of those six
          values are REJECTED by `wallet_transactions_category_check`, so no row
@@ -263,56 +278,88 @@ export default function DiamondWalletModal({
          movement in a wallet that never moved.
 
          Diamonds live in `diamond_transactions`. One source, one currency. */
-      const { data: dtData, error: dtError } = await supabase
-        .from('diamond_transactions')
-        /* `type` is selected as well as `transaction_type`, and that is the
+        let query = supabase
+          .from('diamond_transactions')
+          /* `type` is selected as well as `transaction_type`, and that is the
            whole fix for 773 of the ~1,540 rows in this table. `transaction_type`
            is NULL on 774 of them — 557 `reconciliation` rows and 216
            `signup_bonus` rows carry their kind in the older `type` column
            instead — and this component read only `transaction_type`. So a
            player's Welcome Bonus, the first diamond movement on every account
            ever created, rendered in their own wallet as a grey "Adjustment". */
-        .select('id, type, transaction_type, amount, player_line, balance_after, created_at')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(TX_LIMIT);
+          .select('id, type, transaction_type, amount, player_line, balance_after, created_at')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: false });
+        // A stable tuple cursor survives newer receipts arriving between pages.
+        // The user_id predicate remains outside this OR and scopes every page.
+        if (append && cursor) {
+          query = query.or(
+            `created_at.lt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},id.lt.${cursor.id})`
+          );
+        }
+        const { data: dtData, error: dtError } = await query.limit(TX_LIMIT);
 
-      /* supabase-js RESOLVES with `{ data: null, error }`; it does not throw.
+        /* supabase-js RESOLVES with `{ data: null, error }`; it does not throw.
          Both reads here discarded `error` entirely, so an RLS denial or a
          dropped connection produced an empty array and this modal told the
          player "No Transactions Yet" — a statement about their money that was
          not true, with no error, no retry and nothing in local diagnostics. */
-      if (dtError) throw dtError;
+        if (dtError) throw dtError;
 
-      const combined: DiamondTransaction[] = (dtData || []).map((t: any) => ({
-        id: t.id,
-        type: t.transaction_type || t.type || '',
-        transaction_type: t.transaction_type || t.type || '',
-        amount: Number(t.amount) || 0,
-        line: typeof t.player_line === 'string' ? t.player_line : undefined,
-        balance_after: t.balance_after,
-        created_at: t.created_at,
-      }));
+        const combined: DiamondTransaction[] = (dtData || []).map((t: any) => ({
+          id: t.id,
+          type: t.transaction_type || t.type || '',
+          transaction_type: t.transaction_type || t.type || '',
+          amount: Number(t.amount) || 0,
+          line: typeof t.player_line === 'string' ? t.player_line : undefined,
+          balance_after: t.balance_after,
+          created_at: t.created_at,
+        }));
 
-      if (isCurrent()) {
-        setTransactions(combined);
-        setHistoryOwnerId(user.id);
+        if (isCurrent()) {
+          setTransactions((previous) =>
+            append
+              ? [
+                  ...previous,
+                  ...combined.filter((row) => !previous.some((old) => old.id === row.id)),
+                ]
+              : combined
+          );
+          const last = combined.at(-1);
+          historyCursor.current = last
+            ? { owner: user.id, createdAt: last.created_at, id: last.id }
+            : null;
+          setHasMore(combined.length === TX_LIMIT);
+          setHistoryOwnerId(user.id);
+        }
+      } catch (err) {
+        if (isCurrent()) {
+          reportError(err, 'DiamondWalletModal.Fetch_error');
+          setHistoryOwnerId(user.id);
+          if (append) setMoreError(true);
+          else setLoadError(true);
+        }
+      } finally {
+        if (isCurrent()) {
+          pageInFlight.current = false;
+          setLoadingMore(false);
+          setLoading(false);
+        }
       }
-    } catch (err) {
-      if (isCurrent()) {
-        reportError(err, 'DiamondWalletModal.Fetch_error');
-        setHistoryOwnerId(user.id);
-        setLoadError(true);
-      }
-    } finally {
-      if (isCurrent()) setLoading(false);
-    }
-  }, [user?.id, isOpen, isMounted]);
+    },
+    [user?.id, isOpen, isMounted]
+  );
 
   useEffect(() => {
     const requestRef = historyRequest;
     setTransactions([]);
     setHistoryOwnerId(null);
+    historyCursor.current = null;
+    pageInFlight.current = false;
+    setHasMore(false);
+    setLoadingMore(false);
+    setMoreError(false);
     setLoadError(false);
     setLoading(true);
     if (isOpen) void fetchTransactions();
@@ -508,7 +555,11 @@ export default function DiamondWalletModal({
               </div>
             ) : filteredTx.length === 0 ? (
               <p className="sc-copy sc-copy--center dwc__status">
-                {filter === 'all' ? 'No Transactions Yet' : 'No Transactions Of This Kind'}
+                {filter === 'all'
+                  ? 'No Transactions Yet'
+                  : hasMore
+                    ? 'No Matching Transactions Loaded Yet'
+                    : 'No Transactions Of This Kind'}
               </p>
             ) : (
               filteredTx.map((tx) => {
@@ -548,6 +599,23 @@ export default function DiamondWalletModal({
                   </div>
                 );
               })
+            )}
+            {!loading && !loadError && historyOwnerId === user?.id && hasMore && (
+              <div className="dwc__status">
+                {moreError && (
+                  <p className="sc-copy sc-copy--center" role="status">
+                    Could Not Load Earlier Transactions
+                  </p>
+                )}
+                <button
+                  type="button"
+                  className="dwc-word sc-ink--white"
+                  disabled={loadingMore}
+                  onClick={() => void fetchTransactions(true)}
+                >
+                  {loadingMore ? 'Loading Earlier Transactions' : 'Show Earlier Transactions'}
+                </button>
+              </div>
             )}
           </div>
         </SpadeConsole>

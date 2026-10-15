@@ -139,7 +139,7 @@ function expectPreferences() {
   expect(search()).toHaveValue('Player');
   expect(screen.getByRole('combobox', { name: 'Filter Players' })).toHaveValue('agents');
   expect(sort()).toHaveValue('name');
-  expect(screen.getByRole('checkbox', { name: 'Wallets', exact: true })).not.toBeChecked();
+  expect(screen.getByRole('checkbox', { name: 'Wallets', exact: true })).toBeChecked();
 }
 beforeEach(() => {
   vi.useFakeTimers();
@@ -187,7 +187,7 @@ it('isolates club preferences and restores the original club on return', async (
   await settle();
   expect(search()).toHaveValue('');
   expect(sort()).toHaveValue('hierarchy');
-  expect(screen.getByRole('checkbox', { name: 'Wallets', exact: true })).toBeChecked();
+  expect(screen.getByRole('checkbox', { name: 'Wallets', exact: true })).not.toBeChecked();
   fireEvent.click(screen.getByRole('button', { name: 'Club A' }));
   await settle();
   expectPreferences();
@@ -201,7 +201,7 @@ it('isolates an account switch on a mounted route without overwriting the origin
   await settle();
   expect(search()).toHaveValue('');
   expect(sort()).toHaveValue('hierarchy');
-  expect(screen.getByRole('checkbox', { name: 'Wallets', exact: true })).toBeChecked();
+  expect(screen.getByRole('checkbox', { name: 'Wallets', exact: true })).not.toBeChecked();
   f.actor.user = { id: 'viewer-a' };
   view.rerender(tree());
   await settle();
@@ -451,7 +451,7 @@ it.each([
   expect(search()).toHaveValue('');
   expect(sort()).toHaveValue('hierarchy');
   expect(screen.getByRole('combobox', { name: 'Filter Players' })).toHaveValue('all');
-  expect(screen.getByRole('checkbox', { name: 'Wallets', exact: true })).toBeChecked();
+  expect(screen.getByRole('checkbox', { name: 'Wallets', exact: true })).not.toBeChecked();
   expect(screen.getByRole('button', { name: /^Open Player 0,/ })).toBeInTheDocument();
 });
 

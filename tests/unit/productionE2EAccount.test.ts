@@ -9,6 +9,7 @@ import {
   cleanupStaleProductionE2EAccounts,
   createProductionE2EAccount,
   prepareProductionE2EStaffMembership,
+  prepareProductionE2ESpectatorMembership,
   prepareProductionE2ETemplateMembership,
   prepareProductionE2ELightningMembership,
   prepareProductionE2ETemplateFixture,
@@ -410,6 +411,57 @@ describe('post-deploy production account', () => {
       role: 'admin',
       status: 'active',
     });
+  });
+
+  it('joins the live-table spectator to one union club as an ordinary zero-balance player', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'production-e2e-account-spectator-'));
+    const env = { ...environment(directory), E2E_CLUB_ID: '002c2d27-9584-4e52-835a-bb2be148fc81' };
+    writeFileSync(
+      join(directory, 'club-arena-production-e2e-account.json'),
+      JSON.stringify({
+        id: USER_ID,
+        email: 'ca-customization-cert-postdeploy-spectator@example.invalid',
+        password: 'unused',
+      })
+    );
+    const SHARK = 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/auth/v1/token?grant_type=password')) {
+        return Response.json({ access_token: 'temporary-user-token' });
+      }
+      if (url.includes('/rest/v1/rpc/fn_join_club')) {
+        expect(JSON.parse(String(init?.body))).toEqual({ p_club_id: SHARK });
+        return Response.json({ club_id: SHARK });
+      }
+      if (url.includes('/rest/v1/club_members?') && init?.method !== 'PATCH') {
+        expect(url).toContain(`club_id=eq.${SHARK}`);
+        const reads = fetchMock.mock.calls.filter(([called]) =>
+          String(called).includes('/rest/v1/club_members?')
+        ).length;
+        if (reads === 1) return Response.json([]);
+        return Response.json([
+          { club_id: SHARK, user_id: USER_ID, role: 'player', status: 'active', chip_balance: 0 },
+        ]);
+      }
+      if (url.includes('/rest/v1/club_members?') && init?.method === 'PATCH') {
+        const body = JSON.parse(String(init.body));
+        return Response.json([
+          { club_id: SHARK, user_id: USER_ID, role: body.role, status: body.status, chip_balance: 0 },
+        ]);
+      }
+      return new Response('unexpected request', { status: 500 });
+    });
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    await expect(
+      prepareProductionE2ESpectatorMembership({ environment: env, fetchImpl: fetchMock })
+    ).resolves.toMatchObject({ club_id: SHARK, role: 'player', status: 'active', chip_balance: 0 });
+    const roleUpdate = fetchMock.mock.calls.find(
+      ([input, init]) => String(input).includes('/club_members?') && init?.method === 'PATCH'
+    );
+    expect(JSON.parse(String(roleUpdate?.[1]?.body))).toMatchObject({ role: 'player' });
+    expect(String(roleUpdate?.[1]?.body)).not.toContain('admin');
   });
 
   it.each([

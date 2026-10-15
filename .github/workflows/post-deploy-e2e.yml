@@ -1465,8 +1465,23 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: node scripts/ci/production-e2e-account.mjs create
 
+      # Union boards (MTT, SPIN, SNG) are readable only by members of a club in
+      # the union's scope. Without this the identity could read the platform
+      # Diamond Arena but no Midway board, so SPIN and SNG (union-only) were
+      # never observable and every certificate was a NON-VERDICT. An ordinary
+      # zero-balance player join through the public door; cleanup removes it.
+      - name: Let the isolated spectator read the union boards it certifies
+        if: steps.live.outputs.ready == 'true' && steps.account.outcome == 'success'
+        id: spectator
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
+          E2E_SPECTATOR_CLUB_ID: a41434bb-8d0c-400a-8f0d-e8b3d65afed4
+        run: node scripts/ci/production-e2e-account.mjs prepare-spectator
+
       - name: Certify live-table continuity against the exact serving engine
-        if: always() && steps.live.outputs.ready == 'true' && steps.account.outcome == 'success'
+        if: always() && steps.live.outputs.ready == 'true' && steps.account.outcome == 'success' && steps.spectator.outcome == 'success'
         env:
           BASE_URL: https://smarter.poker/hub/club-arena/
           ARENA_BASE_URL: https://smarter.poker/hub/club-arena

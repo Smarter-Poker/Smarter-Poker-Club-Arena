@@ -69,6 +69,28 @@ describe('post-publication verification belongs to its delivered component', () 
     }
   });
 
+  it('lets the live-table spectator read the union boards before certifying them', () => {
+    const steps = engine.steps;
+    const accountAt = steps.findIndex((step: any) => step.id === 'account');
+    const spectatorAt = steps.findIndex((step: any) => step.id === 'spectator');
+    const certifyAt = steps.findIndex(
+      (step: any) => step.name === 'Certify live-table continuity against the exact serving engine'
+    );
+    expect(accountAt).toBeGreaterThan(-1);
+    expect(spectatorAt).toBeGreaterThan(accountAt);
+    expect(certifyAt).toBeGreaterThan(spectatorAt);
+    expect(steps[spectatorAt].run).toBe(
+      'node scripts/ci/production-e2e-account.mjs prepare-spectator'
+    );
+    // A union club: SPIN and SNG run only inside the union's scope.
+    expect(steps[spectatorAt].env.E2E_SPECTATOR_CLUB_ID).toBe(
+      'a41434bb-8d0c-400a-8f0d-e8b3d65afed4'
+    );
+    expect(steps[certifyAt].if).toContain("steps.spectator.outcome == 'success'");
+    // Never staff authority for a spectator certificate.
+    expect(JSON.stringify(steps)).not.toContain('production-e2e-account.mjs prepare-staff');
+  });
+
   it('gives the client its own result without an engine or live-table prerequisite', () => {
     expect(client.needs).toBe('publication-gate');
     expect(client.if).toBe("needs.publication-gate.outputs.should_run == 'true'");

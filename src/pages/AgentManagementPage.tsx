@@ -92,7 +92,6 @@ const EMPTY_AGENT_FORM = {
   role: 'agent' as const,
   parentAgentId: '',
   commissionRate: 50,
-  playerRakebackRate: 30,
   creditLimit: 0,
 };
 
@@ -204,7 +203,6 @@ export default function AgentManagementPage() {
     role: 'super_agent' | 'agent' | 'sub_agent';
     parentAgentId: string;
     commissionRate: number;
-    playerRakebackRate: number;
     creditLimit: number;
   }>({ ...EMPTY_AGENT_FORM });
 
@@ -921,11 +919,7 @@ export default function AgentManagementPage() {
       return;
     }
     if (newAgentForm.commissionRate <= 0 || newAgentForm.commissionRate > 70) {
-      toast.error('Commission Rate must be between 1% and 70%');
-      return;
-    }
-    if (newAgentForm.playerRakebackRate < 0 || newAgentForm.playerRakebackRate > 50) {
-      toast.error('Rakeback Rate must be between 0% and 50%');
+      toast.error('Agent Rakeback Rate must be between 1% and 70%');
       return;
     }
 
@@ -936,8 +930,8 @@ export default function AgentManagementPage() {
         clubId,
         role: newAgentForm.role,
         parentAgentId: newAgentForm.parentAgentId || undefined,
+        // The player rakeback is the new agent's own choice (Dan, 2026-10-15).
         commissionRate: newAgentForm.commissionRate / 100, // Convert to decimal
-        playerRakebackRate: newAgentForm.playerRakebackRate / 100,
         creditLimit: newAgentForm.creditLimit,
       });
 
@@ -1866,7 +1860,7 @@ export default function AgentManagementPage() {
               {/* Commission Rate */}
               <div className={styles.formGroup}>
                 <label>
-                  Commission Rate * <span className={styles.formHint}>(Max 70%)</span>
+                  Agent Rakeback Rate * <span className={styles.formHint}>(Max 70%)</span>
                 </label>
                 <div className={styles.sliderGroup}>
                   <input
@@ -1886,31 +1880,10 @@ export default function AgentManagementPage() {
                 </p>
               </div>
 
-              {/* Rakeback Rate */}
-              <div className={styles.formGroup}>
-                <label>
-                  Player Rakeback Rate * <span className={styles.formHint}>(Max 50%)</span>
-                </label>
-                <div className={styles.sliderGroup}>
-                  <input
-                    type="range"
-                    min="0"
-                    max="50"
-                    value={newAgentForm.playerRakebackRate}
-                    onChange={(e) =>
-                      setNewAgentForm({
-                        ...newAgentForm,
-                        playerRakebackRate: Number(e.target.value),
-                      })
-                    }
-                    className={styles.slider}
-                  />
-                  <span className={styles.sliderValue}>{newAgentForm.playerRakebackRate}%</span>
-                </div>
-                <p className={styles.fieldDesc}>
-                  Rakeback Rate - Percentage Of Rake Players Receive Back As Chips
-                </p>
-              </div>
+              <p className={styles.fieldDesc}>
+                This Rate Covers The Agent&apos;s Own Account And Every Sub Agent Under Them. The
+                Agent Sets The Rakeback Their Players Receive From Their Agent Dashboard.
+              </p>
 
               {/* Credit Limit */}
               <div className={styles.formGroup}>
@@ -1944,10 +1917,7 @@ export default function AgentManagementPage() {
                     Role: <strong>{newAgentForm.role.replace('_', ' ')}</strong>
                   </div>
                   <div>
-                    Commission: <strong>{newAgentForm.commissionRate}%</strong>
-                  </div>
-                  <div>
-                    Rakeback: <strong>{newAgentForm.playerRakebackRate}%</strong>
+                    Agent Rakeback: <strong>{newAgentForm.commissionRate}%</strong>
                   </div>
                   <div>
                     Credit Limit:{' '}

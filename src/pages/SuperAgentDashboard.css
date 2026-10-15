@@ -312,6 +312,31 @@
   color: var(--realism-cyan);
 }
 
+.rate-edit {
+  margin: 0.75rem 0 0;
+}
+
+.rate-edit__controls {
+  display: flex;
+  gap: 0.5rem;
+  align-items: stretch;
+}
+
+.rate-edit__controls input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.rate-edit__controls .btn {
+  flex: 0 0 auto;
+}
+
+.rate-edit__note {
+  margin: 0.5rem 0 0;
+  font-size: 0.75rem;
+  color: var(--realism-muted);
+}
+
 /* ─────────────────────────────────────────────────────────────────────────────
    AGENT/PLAYER LISTS
    ───────────────────────────────────────────────────────────────────────────── */

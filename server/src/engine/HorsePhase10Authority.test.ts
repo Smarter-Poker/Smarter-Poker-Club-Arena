@@ -64,12 +64,22 @@ function expectedKey(identity: Record<string, unknown>): string {
   return createHash('sha256').update(JSON.stringify(sorted)).digest('hex');
 }
 
-describe('P10.3 the PFR repair requires fresh qualification of the round-3 PLO4 pack', () => {
+describe('P10.3 the PFR repair requalified the round-3 PLO4 pack at generation 2', () => {
   const committed = PREVIOUS_PHASE10_SELECTION;
 
-  it('retains the previous c8bfc617 identity with selection null and the contract unchanged', () => {
+  it('retains the previous c8bfc617 identity and selects generation 2 on the repaired source under the unchanged contract', () => {
     expect(committed).not.toBeNull();
-    expect(PHASE10_PROTECTED_RELEASE_SELECTION).toBeNull();
+    expect(PHASE10_PROTECTED_RELEASE_SELECTION).toMatchObject({
+      sourceSha: 'c92768c85bc53a4a5a5972d09c6ee58561010035',
+      packVersion: PLO4_POLICY_PACK.version,
+      contractDigest: PHASE10_RUNNING_CONTRACT_DIGEST,
+      domain: HORSE_PHASE10_DOMAIN,
+      qualificationPath: 'docs/evidence/phase10/c92768c8/phase10-qualification-2026-10-15.json',
+      approvalGeneration: 2,
+      expiresAt: null,
+      withdrawn: null,
+    });
+    expect(Object.isFrozen(PHASE10_PROTECTED_RELEASE_SELECTION)).toBe(true);
     expect(Object.isFrozen(committed)).toBe(true);
     expect(committed).toMatchObject({
       schema: 'horse-qualified-authority-selection-v1',
@@ -87,11 +97,18 @@ describe('P10.3 the PFR repair requires fresh qualification of the round-3 PLO4 
     expect(PHASE10_RUNNING_CONTRACT_DIGEST).toMatch(/^[0-9a-f]{64}$/);
   });
 
-  it('the default is shadow and the retained previous qualification cannot admit the modified policy', () => {
-    expect(admitHorsePhase10ReleaseAuthority()).toEqual({
-      status: 'refused',
-      reason: 'unselected',
-      transient: false,
+  it('the committed generation 2 admits for this digest and source, and the retained generation 1 cannot', () => {
+    const selected = admitHorsePhase10ReleaseAuthority();
+    expect(selected.status).toBe('admitted');
+    expect(selectedHorsePhase10Authority(selected)).toMatchObject({
+      phase: 'phase10',
+      sourceSha: PHASE10_PROTECTED_RELEASE_SELECTION!.sourceSha,
+      continuationVersion: PLO4_POLICY_PACK.version,
+      policyDigest: horsePhase10PolicyDigest(),
+      domain: HORSE_PHASE10_DOMAIN,
+      evidencePath: PHASE10_PROTECTED_RELEASE_SELECTION!.qualificationPath,
+      evidenceSha256: PHASE10_PROTECTED_RELEASE_SELECTION!.qualificationSha256,
+      approvalGeneration: 2,
     });
     const release = admitHorsePhase10ReleaseAuthority(Date.now(), committed);
     expect(release).toEqual({
@@ -147,9 +164,9 @@ describe('P10.3 the PFR repair requires fresh qualification of the round-3 PLO4 
     expect(unwired).toMatchObject({ status: 'refused', reason: 'contract_unavailable' });
   });
 
-  it('the live main-scheduler gate stays unselected until requalification', () => {
+  it('the live main-scheduler gate is usable under the committed generation 2', () => {
     liveHorsePhase10Authority.refresh();
-    expect(liveHorsePhase10Authority.mainState()).toBe('unselected');
+    expect(liveHorsePhase10Authority.mainState()).toBe('usable');
   });
 
   it('withdrawal is a committed record: the same selection with withdrawn set is a withdrawal, never a selection', () => {
@@ -173,15 +190,22 @@ describe('P10.3 the PFR repair requires fresh qualification of the round-3 PLO4 
     expect(gate.mainState()).toBe('withdrawn');
   });
 
-  it('retains the previously qualified file while its selection is null', () => {
+  it('the only qualified file on the running policy is the selected one; generation 1 is retained on its old digest', () => {
     const dir = fileURLToPath(new URL('../../../docs/evidence/phase10/', import.meta.url));
     const files = existsSync(dir)
       ? readdirSync(dir, { recursive: true, encoding: 'utf8' }).filter((f) => f.endsWith('.json'))
       : [];
     for (const file of files) {
       const parsed = JSON.parse(readFileSync(`${dir}${file}`, 'utf8')) as Record<string, unknown>;
-      if (parsed.schema === 'horse-phase10-qualification-v1' && parsed.qualified === true)
-        expect(`docs/evidence/phase10/${file}`).toBe(committed!.qualificationPath);
+      if (parsed.schema === 'horse-phase10-qualification-v1' && parsed.qualified === true) {
+        const path = `docs/evidence/phase10/${file}`;
+        if (path === PHASE10_PROTECTED_RELEASE_SELECTION!.qualificationPath)
+          expect(parsed.policyDigest, path).toBe(horsePhase10PolicyDigest());
+        else {
+          expect(path).toBe(committed!.qualificationPath);
+          expect(parsed.policyDigest, path).not.toBe(horsePhase10PolicyDigest());
+        }
+      }
     }
   });
 });

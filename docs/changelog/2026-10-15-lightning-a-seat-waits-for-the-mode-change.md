@@ -78,3 +78,15 @@ The full `ci` profile run (11 scenarios, 169 invariant checks, S3 conversion sto
 
 - `fn_cash_cluster_unfreeze` and the freeze: unfreeze moves FROZEN to MUST MOVE, and the trigger never enters a seat outside LIGHTNING, so it has no arrival race.
 - **An orphan arrival:** a seat with no open cash session that commits after `commit_lightning`'s orphan check. That window existed before this change, and the lock wait can widen it. It makes the pool INSERT fail on NOT NULL, the conversion rolls back whole, and the next drive's orphan check aborts PENDING_ON cleanly. A second orphan check after the lock would have falsified 20260925204249's proof that the conversion has exactly two refusal answers, so it was left out. The live buy-in writes the seat and its cash session in one transaction.
+
+## Rebinding
+
+Adding the migration to `LIGHTNING_P12_EXTRA` changes `.github/workflows/ci.yml`
+from 225,000 bytes (sha256 `08d32ff1...ebba47e`) to 225,112 bytes (sha256
+`bd79793d...fecd853`). Six qualification bindings pin that file and refuse a
+drift (`qualification source input differs`, `Cash source pin differs`), so the
+pin is re-recorded in each: `weekly-initial-selector`, `original-flow-eligibility`,
+`weekly-standalone-selector`, `weekly-cohort-cutoff`, `cash-original17` source
+bindings and `cash-native-hosted.manifest.json`. The only change to the file is
+one added migration path in the Lightning Phase 12 extra list; no step those
+qualifications run is affected. Nothing else in any binding moved.

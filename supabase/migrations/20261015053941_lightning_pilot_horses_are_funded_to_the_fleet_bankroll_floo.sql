@@ -23,6 +23,8 @@
 -- Horses are players (CLAUDE.md 10.5): this is the same bankroll rule a horse
 -- meets in every house club. No game, policy or Lightning state changes.
 
+-- @live-proof: EXISTS (SELECT 1 FROM public.chip_transactions WHERE club_id = 'e14bc9f7-736d-425f-8f2c-e78305ebac1d' AND transaction_type = 'horse_treasury_funding' AND balance_after = 200)
+
 BEGIN;
 SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '60s';

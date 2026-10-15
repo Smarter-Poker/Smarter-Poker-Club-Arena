@@ -1679,7 +1679,6 @@ function RoleSection({
               onClick={() => {
                 setError('');
                 setCommissionPct('');
-                setRakebackPct('');
                 setFunding('');
                 setCreditLimit('');
                 setConfirmRole(role);

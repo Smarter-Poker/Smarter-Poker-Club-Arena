@@ -1,0 +1,5 @@
+{
+  "_owner": "agent/claude-cashfin/fix/union-close-boundary-budget",
+  "_comment": "Migration 20261015061812: windowed original-flow evidence proof, installed through apply-merged-migration after merge. Not yet applied when this fragment was written.",
+  "functions": ["smarter_private.union_pnl_original_flow_evidence_window"]
+}

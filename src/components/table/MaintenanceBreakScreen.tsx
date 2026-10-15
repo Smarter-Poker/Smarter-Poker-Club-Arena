@@ -28,6 +28,13 @@ export interface MaintenanceBreakScreenProps {
   /** Absolute instant, epoch ms. Null while the last hand is still in play. */
   breakEndsAtMs: number | null;
   reason?: string;
+  /**
+   * Controlled by the table (Dan 2026-10-14). A closed break no longer leaves a
+   * pill floating under the hero: it becomes a line in the table masthead,
+   * directly under the bomb pot clock, drawn by `MaintenanceBreakLine`.
+   */
+  minimized: boolean;
+  onMinimize: () => void;
 }
 
 function formatTime(totalSeconds: number): string {
@@ -36,47 +43,77 @@ function formatTime(totalSeconds: number): string {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
-export function MaintenanceBreakScreen({
-  isVisible,
-  phase,
-  breakEndsAtMs,
-  reason = 'Scheduled Engine Maintenance',
-}: MaintenanceBreakScreenProps) {
-  const [minimized, setMinimized] = useState(false);
-  const countingDown = phase === 'counting_down' && !!breakEndsAtMs;
-  const waitingLabel =
-    phase === 'resuming'
-      ? 'Resuming Tables'
-      : phase === 'finalizing'
-        ? 'Finalizing Maintenance'
-        : 'Last Hand In Play';
+function waitingLabelFor(phase: MaintenanceBreakState['phase']): string {
+  return phase === 'resuming'
+    ? 'Resuming Tables'
+    : phase === 'finalizing'
+      ? 'Finalizing Maintenance'
+      : 'Last Hand In Play';
+}
 
+/** Seconds left on the break, read from the wall clock every second. */
+function useBreakRemaining(active: boolean, breakEndsAtMs: number | null): number {
   const read = useMemo(
     () => () => (breakEndsAtMs ? Math.max(0, Math.round((breakEndsAtMs - serverNow()) / 1000)) : 0),
     [breakEndsAtMs]
   );
   const [remaining, setRemaining] = useState(read);
-
-  /**
-   * Recompute from the wall clock every tick rather than decrementing.
-   *
-   * A local decrement loses every tick a throttled background tab does not
-   * get, and this overlay is up precisely while the tab is most likely to be
-   * in the background - the player has been told to go away for five minutes.
-   * TournamentBreakScreen carries the same note for the same reason.
-   */
   useEffect(() => {
-    if (!isVisible || !countingDown) return;
+    if (!active) return;
     setRemaining(read());
     const timer = setInterval(() => setRemaining(read()), 1000);
     return () => clearInterval(timer);
-  }, [isVisible, countingDown, read]);
+  }, [active, read]);
+  return remaining;
+}
 
-  // Reset the collapsed state between breaks, so minimizing one break does not
-  // silently hide the next one.
-  useEffect(() => {
-    if (!isVisible) setMinimized(false);
-  }, [isVisible]);
+export interface MaintenanceBreakLineProps {
+  phase: MaintenanceBreakState['phase'];
+  breakEndsAtMs: number | null;
+  onOpen: () => void;
+}
+
+/**
+ * THE CLOSED BREAK, AS A MASTHEAD LINE (Dan 2026-10-14, with a screenshot of
+ * the pill under KingFish): "THIS NEEDS TO APPEAR BELOW 'BOMB POT IN 2:47' NOT
+ * UNDER THE HERO." It is a `.table-brand__line` like the bomb clock above it,
+ * so it shares that column and type scale on every layout. Tapping it reopens
+ * the full break card.
+ */
+export function MaintenanceBreakLine({ phase, breakEndsAtMs, onOpen }: MaintenanceBreakLineProps) {
+  const countingDown = phase === 'counting_down' && !!breakEndsAtMs;
+  const remaining = useBreakRemaining(countingDown, breakEndsAtMs);
+  const text = countingDown
+    ? `Maintenance Break: ${formatTime(remaining)}`
+    : `Maintenance Break: ${waitingLabelFor(phase)}`;
+  return (
+    <span
+      className="table-brand__line table-brand__line--bomb table-brand__line--maintenance"
+      role="button"
+      tabIndex={0}
+      aria-live="polite"
+      onClick={onOpen}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') onOpen();
+      }}
+    >
+      <span className="table-brand__maintenance">{text}</span>
+    </span>
+  );
+}
+
+export function MaintenanceBreakScreen({
+  isVisible,
+  phase,
+  breakEndsAtMs,
+  reason = 'Scheduled Engine Maintenance',
+  minimized,
+  onMinimize,
+}: MaintenanceBreakScreenProps) {
+  const countingDown = phase === 'counting_down' && !!breakEndsAtMs;
+  const waitingLabel = waitingLabelFor(phase);
+  /* The countdown reads `breakEndsAtMs - serverNow()` every tick (one server clock). */
+  const remaining = useBreakRemaining(isVisible && countingDown, breakEndsAtMs);
 
   const progressPercent = useMemo(() => {
     if (!countingDown) return 100;
@@ -86,25 +123,8 @@ export function MaintenanceBreakScreen({
 
   if (!isVisible) return null;
 
-  if (minimized) {
-    return (
-      <div
-        className="maintenance-break__minimized"
-        onClick={() => setMinimized(false)}
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') setMinimized(false);
-        }}
-      >
-        <span className="maintenance-break__mini-badge">
-          {countingDown
-            ? `Maintenance Break: ${formatTime(remaining)}`
-            : `Maintenance Break: ${waitingLabel}`}
-        </span>
-      </div>
-    );
-  }
+  /* Closed: the table masthead carries it (MaintenanceBreakLine). */
+  if (minimized) return null;
 
   return (
     <div
@@ -117,7 +137,7 @@ export function MaintenanceBreakScreen({
       <div className="maintenance-break__content">
         <button
           className="maintenance-break__close"
-          onClick={() => setMinimized(true)}
+          onClick={onMinimize}
           aria-label="Close Maintenance Break Screen"
         >
           X

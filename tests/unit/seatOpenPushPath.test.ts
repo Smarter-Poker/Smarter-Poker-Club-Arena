@@ -110,13 +110,23 @@ describe('seat-open push — the rules, now in the migration', () => {
     expect(sql).toMatch(/CREATE OR REPLACE FUNCTION public\.fn_offer_open_seat/);
   });
 
-  it('retires a lapsed OFFER and tells the player, instead of dropping them in silence', () => {
+  it('retires a lapsed OFFER', () => {
     expect(sql).toMatch(/p_offer_ttl interval DEFAULT interval '3 minutes'/);
     expect(sql).toMatch(/notified_at < now\(\) - p_offer_ttl/);
-    expect(sql).toMatch(/'waitlist_offer_expired'/);
-    // A bell item, never an interrupt: '_push' is the documented signal that
-    // makes the mirror trigger skip the row.
-    expect(sql).toMatch(/'_push', 'skip'/);
+  });
+
+  /* SUPERSEDED 2026-10-14 (Dan, screenshot of his inbox): "SEAT OFFER EXPIRED
+     SHOULD NEVER BE SENT AS A PUSH NOTIFICATION LIKE THIS." A lapsed hold is
+     no longer a notification at all; 20261015044258 removes both writers. */
+  it('a lapsed offer is never written as a notification', () => {
+    const fix = readdirSync(MIGRATIONS).find((f) =>
+      f.includes('a_seat_offer_that_lapses_is_never_a_notification')
+    );
+    expect(fix, 'the removal migration is missing').toBeTruthy();
+    const body = readFileSync(join(MIGRATIONS, fix!), 'utf8');
+    expect(body).toMatch(/SELECT count\(\*\) INTO v_expired FROM dead;/);
+    expect(body).toMatch(/SELECT \(SELECT count\(\*\) FROM dead\),/);
+    expect(body).toMatch(/DELETE FROM public\.notifications WHERE type = 'waitlist_offer_expired';/);
   });
 
   it('retires an ABANDONED place in line', () => {

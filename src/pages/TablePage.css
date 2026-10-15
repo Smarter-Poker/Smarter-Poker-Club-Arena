@@ -1602,6 +1602,19 @@
   font-weight: 800;
 }
 
+/* THE CLOSED MAINTENANCE BREAK (Dan 2026-10-14): a masthead line directly
+   under the bomb pot clock, same column and type scale, in the break card's
+   blue so it never reads as part of the bomb pot. */
+.table-brand__line--maintenance {
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.table-brand__maintenance {
+  color: #9dc2ff;
+  font-weight: 800;
+}
+
 /* URGENCY IS NOT A STEADY STATE (2026-08-29): the pulse marks "the next hand
    is the bomb" and nothing else. A bomb_pot_only table never reaches this
    state - see the badge ladder in TablePage.tsx - or it would pulse all

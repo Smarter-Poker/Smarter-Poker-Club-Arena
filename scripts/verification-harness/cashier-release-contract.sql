@@ -72,11 +72,11 @@ BEGIN
   v_contract := jsonb_build_array(
     jsonb_build_object(
       'signature', 'public.fn_cashier_conservation_report(uuid)',
-      -- Same report contract; 20261014210416 groups both wallet sides from one
-      -- covering scan per baseline cutoff (the prior body expanded every journal
-      -- row through a per-row VALUES pair and hit the read timeout).
-      'hash', '68e55e37885c51afd37d532753cb5ba1',
-      'replacement_hash', '7e64f42dd89bd5b50d4e92c8971ca5e5'
+      -- Same report contract; 20261015022628 also checks members who joined
+      -- after the club baseline from zero at the existing cutoff (they were
+      -- permanently "unverified" before).
+      'hash', '7e64f42dd89bd5b50d4e92c8971ca5e5',
+      'replacement_hash', '9bc52994306a0c6519cbea5e031dce21'
     ),
     jsonb_build_object(
       'signature', 'public.fn_cashier_recovery_receipts(uuid,uuid[],text[])',

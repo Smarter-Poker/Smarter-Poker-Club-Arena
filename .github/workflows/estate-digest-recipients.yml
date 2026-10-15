@@ -1,0 +1,37 @@
+name: The Estate Digest Is Not An Alert
+
+# .github/scripts/estate-digest.mjs delivers the daily digest in-app to every
+# active platform recipient except the owner account: his operational notices
+# are routed to the Production Alerts store, so a digest addressed to him
+# became a FIRING warning on the alert board every day (46 rows, 2026-09-01 to
+# 2026-10-14). tests/operations/estate-digest-recipients.test.mjs pins it.
+# No timer (CLAUDE.md 10.85): pull_request only, scoped to the paths it proves.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/scripts/estate-digest.mjs
+      - .github/scripts/estate-digest-recipients.mjs
+      - tests/operations/estate-digest-recipients.test.mjs
+      - supabase/migrations/20260916111614_owner_operational_notification_destination.sql
+      - .github/workflows/estate-digest-recipients.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: estate-digest-recipients-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  digest-recipients:
+    name: The Estate Digest Is Never Addressed To The Owner Account
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run the recipient regression
+        run: node --test tests/operations/estate-digest-recipients.test.mjs

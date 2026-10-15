@@ -22,6 +22,7 @@
  */
 import { execFileSync } from 'node:child_process';
 import { supabaseServerHeaders } from '../../scripts/ci/supabase-auth-headers.mjs';
+import { digestRecipients } from './estate-digest-recipients.mjs';
 
 const REPO = process.env.REPO || 'Smarter-Poker/Smarter-Poker-Club-Arena';
 const WH_REPO = process.env.WH_REPO || 'Smarter-Poker/Smarter-Poker-World-Hub';
@@ -197,7 +198,9 @@ if (SB_URL && SB_KEY) {
     const res = await sb(`/rest/v1/ca_incident_recipients?scope=eq.platform&active=eq.true&select=user_id`);
     const recips = res.ok ? await res.json() : [];
     let sent = 0;
-    for (const r of [...new Set(recips.map((x) => x.user_id))]) {
+    // A report, not an alert: never addressed to the owner account, whose
+    // notices become alert-board rows (estate-digest-recipients.mjs).
+    for (const r of digestRecipients(recips.map((x) => x.user_id))) {
       const ok = await sb(`/rest/v1/rpc/fn_raise_notification`, {
         method: 'POST',
         body: JSON.stringify({

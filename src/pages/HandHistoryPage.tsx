@@ -119,8 +119,8 @@ function formatDate(ts: number): string {
   return date.toLocaleDateString();
 }
 
-function signed(n: number): string {
-  return `${n > 0 ? '+' : n < 0 ? '-' : ''}${money(Math.abs(n))}`;
+function signed(n: number, dp = 2): string {
+  return `${n > 0 ? '+' : n < 0 ? '-' : ''}${money(Math.abs(n), dp)}`;
 }
 
 export default function HandHistoryPage() {
@@ -1042,6 +1042,7 @@ export default function HandHistoryPage() {
           hands.map((hand, index) => {
             const me = hand.replay.players.find((p) => p.userId === userId);
             const net = me?.net ?? 0;
+            const amountPrecision = hand.arenaAsset === 'diamonds' ? 0 : 2;
             const expanded = expandedId === hand.id;
             const variant = gameTypeLabel(hand.replay.gameVariant) || hand.gameType;
             const runs = hand.replay.boards.length;
@@ -1072,8 +1073,12 @@ export default function HandHistoryPage() {
                   <div className="hand-body">
                     <div className="pot-info">
                       <span className="pot-label">Pot</span>
-                      <span className="pot-value">{money(hand.replay.potTotal)}</span>
-                      {hand.rake > 0 && <span className="pot-rake">Rake {money(hand.rake)}</span>}
+                      <span className="pot-value">
+                        {money(hand.replay.potTotal, amountPrecision)}
+                      </span>
+                      {hand.rake > 0 && (
+                        <span className="pot-rake">Rake {money(hand.rake, amountPrecision)}</span>
+                      )}
                     </div>
                     <div className="hand-tags">
                       <span className="hand-tag">{variant}</span>
@@ -1088,7 +1093,7 @@ export default function HandHistoryPage() {
                       )}
                     </div>
                     <div className={`result-badge ${net > 0 ? 'win' : net < 0 ? 'loss' : 'flat'}`}>
-                      {signed(net)}
+                      {signed(net, amountPrecision)}
                     </div>
                   </div>
                   <div className="hand-footer">

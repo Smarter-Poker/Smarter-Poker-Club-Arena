@@ -1,5 +1,16 @@
 # Diamond release manifest: rollback and compatibility
 
+## Current compatibility checkpoint, October 15, 2026
+
+This manifest's numbered sections below are the **September 20 snapshot**, retained as history. They do not describe current switches, installed doors or outstanding custody. The current repair/delivery register is [the October 15 audit](../changelog/2026-10-15-diamond-arena-launch-audit.md).
+
+- Public client at both required build-info endpoints: `7e7dd55475b8770fb60ee43099ffbfbf4212d2c7`, published by run `38807703634`. The pending PR #7021 client changes are not included yet.
+- Serving engine: `a2ccc04d39bc15852d0047a32893371f3a0a6836` (public health reports `a2ccc04d`); this commit is a protected-main ancestor. This task has no engine runtime change or new engine API dependency.
+- Both Diamond game switches are enabled. Current custody is nonzero: sampled 14 active cash seats with 3,692 Diamonds and 894 active tournament entries with 12,646 Diamonds. Released custody totals zero. These are moving observations, not release authorizations.
+- A rollback must preserve current cash, tournament, jackpot, Spin and wallet contracts and exact custody reachability. The old zero-custody exemption is invalid. No rollback below the current serving engine or currently published client is qualified by this continuation; an older retained bundle is not automatically compatible.
+- Database is forward-only. Own-history repair history `20261015213617` and denomination/report-only/reporting-plan repair `20261015220449` are installed; never replay either migration or restore an older function body over later edits. Both repairs use existing engine contracts.
+- Retained origin release availability, whole current installed-contract parity and an actual rollback/restore rehearsal remain to be sealed. Until then **DA-10 remains open**; this checkpoint corrects stale instructions without manufacturing a rollback certificate.
+
 Written 2026-09-20. This file answers one question: if a Diamond Arena release has to be rolled back, how far back can each component go before something a player owns stops being reachable.
 
 It is a compatibility record, not a runbook. The owner actions this session could not perform are in [the owner steps runbook](../runbooks/diamond-launch-owner-steps-2026-09-20.md).

@@ -103,6 +103,16 @@ describe('a seated stack is part of the result, not a loss', () => {
   });
 });
 
+describe('the everyday screen lists what was played, live first', () => {
+  it('ranks by activity inside the window, never by a table creation date', () => {
+    const b = latest('ca_club_data_screen');
+    expect(b).toContain('ca_can_view_club_finances(p_club_id)');
+    expect(b).toContain('ORDER BY live DESC, activity_at DESC NULLS LAST');
+    expect(b).toContain('fn_ca_club_cash_felt(p_club_id, v_start, v_end');
+    expect(b).toContain('fn_ca_club_game_summary(p_club_id, v_start, v_end');
+  });
+});
+
 describe('the everyday screen reads live and stays simple', () => {
   it('is the screen at clubs/:clubId/data, with the full report one tap away', () => {
     expect(APP).toMatch(/path="clubs\/:clubId\/data"[\s\S]{0,300}<ClubDataSimplePage \/>/);
@@ -110,7 +120,7 @@ describe('the everyday screen reads live and stays simple', () => {
   });
 
   it('re-reads on a short clock and never paints zeros for a failed read', () => {
-    expect(PAGE).toContain("supabase.rpc('ca_club_data_snapshot'");
+    expect(PAGE).toContain("supabase.rpc('ca_club_data_screen'");
     expect(PAGE).toContain('preset === 1 ? 15_000 : 60_000');
     expect(PAGE).toContain('Showing The Last Good Figures.');
     expect(PAGE).toContain("summary ? formatMoney(summary.total_winnings) : '-'");

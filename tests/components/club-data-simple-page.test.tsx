@@ -99,7 +99,7 @@ describe('ClubDataSimplePage', () => {
     expect(screen.getByText('Shark Tank')).toBeTruthy();
     expect(screen.getByText('Live', { selector: 'span' })).toBeTruthy();
     const [fn, args] = rpcMock.mock.calls[0];
-    expect(fn).toBe('ca_club_data_snapshot');
+    expect(fn).toBe('ca_club_data_screen');
     expect(args).toMatchObject({ p_club_id: CLUB_ID, p_start: today, p_end: today, p_game: 'ALL' });
   });
 

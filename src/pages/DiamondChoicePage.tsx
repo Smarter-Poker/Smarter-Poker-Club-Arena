@@ -45,7 +45,7 @@ import {
 import { supabase } from '../lib/supabase';
 import {
   ROAD_COIN_REFERENCE_CENTS,
-  ROAD_COIN_VERSION,
+  isRoadCoinVersion,
   roadCoinLadderCents,
 } from '../utils/roadCoin';
 import {
@@ -727,9 +727,9 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
   // derived from the round's own floor, so the page paints the prizes the round
   // (or, before Start, the quote) was dealt, over its stake.
   const quoteChips = state && validBonusBudget(budget) ? bet / state.diamonds_per_chip : undefined;
-  const quotedCoinRoad = game === 'crossing' && state?.payout_version === ROAD_COIN_VERSION;
-  // A coin road's first street is 1.6B - L with L from half to just under 0.80
-  // of the stake, so 0.80x to 1.10x. A quote whose first prize is not that is
+  const quotedCoinRoad = game === 'crossing' && isRoadCoinVersion(state?.payout_version);
+  // A coin road's first street is 0.80x (contract 7: the sure street) or, on a
+  // contract-6 quote, 1.6B - L with L from half to just under 0.80: 0.80x to 1.10x. A quote whose first prize is not that is
   // a quote for another stake, and painting it over this one would print
   // nonsense multipliers; the reference road stands in until the quote catches up.
   const quoteFits =
@@ -743,13 +743,13 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
       ? roadCoinLadderCents(state.prizes, quoteChips)
       : ROAD_COIN_REFERENCE_CENTS
     : ROAD;
-  const coinRoad = round ? round.payout_version === ROAD_COIN_VERSION : quotedCoinRoad;
+  const coinRoad = round ? isRoadCoinVersion(round.payout_version) : quotedCoinRoad;
   const ladder = game !== 'crossing' ? undefined : round ? roadRoundLadder(round) : quoteLadder;
   const roadEnd =
     game === 'crossing' && round?.proof && ladder
       ? // The coin road states where it ended, and this device re-flips every
         // coin from the revealed seed to check it (verifyChoiceRoundDetailed).
-        round.payout_version === ROAD_COIN_VERSION
+        isRoadCoinVersion(round.payout_version)
         ? (round.proof.road_end ?? null)
         : ladder.filter((target) =>
             round.payout_version === 5
@@ -925,7 +925,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
   // on screen until its receipt has taken the player back to the wheel.
   const boardRound = viewOpen ? view : sceneRound;
   const guaranteedChips = boardRound
-    ? boardRound.payout_version === 5 || boardRound.payout_version === ROAD_COIN_VERSION
+    ? boardRound.payout_version === 5 || isRoadCoinVersion(boardRound.payout_version)
       ? choiceLossGuarantee(
           boardRound.prizes,
           boardRound.picked.length - (boardRound.status === 'lost' ? 1 : 0),
@@ -1258,7 +1258,9 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
         {game === 'crossing' ? (
           <p className="sc-copy">
             {coinRoad
-              ? 'Every Street Is A Fair Coin Flip: Exactly A 50% Chance To Cross Safely, Street One Included. Each Coin Is Sealed Before You Start, And When You Book The Win You See How Far You Would Have Got.'
+              ? (round?.payout_version ?? state?.payout_version) === 6
+                ? 'Every Street Is A Fair Coin Flip: Exactly A 50% Chance To Cross Safely, Street One Included. Each Coin Is Sealed Before You Start, And When You Book The Win You See How Far You Would Have Got.'
+                : 'Street One Is Always Safe. Every Street After It Is A Fair Coin Flip: Exactly A 50% Chance To Cross Safely. Each Coin Is Sealed Before You Start, And When You Book The Win You See How Far You Would Have Got.'
               : 'Where The Donkey Would Be Hit Is Sealed Before You Start; Your Only Choice Is When To Book.'}
           </p>
         ) : null}

@@ -1881,7 +1881,7 @@ export default function AgentManagementPage() {
               </div>
 
               <p className={styles.fieldDesc}>
-                This Rate Covers The Agent&apos;s Own Account And Every Sub Agent Under Them. The
+                This Rate Covers The Agent Account And Every Sub Agent Under Them. The
                 Agent Sets The Rakeback Their Players Receive From Their Agent Dashboard.
               </p>
 

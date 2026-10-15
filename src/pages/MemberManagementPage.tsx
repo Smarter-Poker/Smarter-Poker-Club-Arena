@@ -1574,7 +1574,7 @@ function RoleSection({
                 />
               </label>
               <p className="mm-roles__rates-note">
-                This Rate Covers The Agent&apos;s Own Account And Every Sub Agent Under Them. The
+                This Rate Covers The Agent Account And Every Sub Agent Under Them. The
                 Agent Sets The Rakeback Their Players Receive From Their Agent Dashboard.
               </p>
               <div className="mm-roles__funding">

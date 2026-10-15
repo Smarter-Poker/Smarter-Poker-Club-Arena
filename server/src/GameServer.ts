@@ -340,6 +340,17 @@ const PAST_START_TOP_UP_CONCURRENCY = 4;
  * branch of discoverTournaments for the backoff that reaches it.
  */
 const PAST_START_TOP_UP_MAX_INTERVAL_MS = 10 * 60 * 1000;
+/**
+ * One past-start event's top-up clock. cancelAskedAt is when an event nobody
+ * entered was last offered to atomic_cancel_tournament (2026-10-15, see
+ * tournament/emptyPastStartEvent.ts); it rides this entry so it is pruned with
+ * the event and the walk carries no state of its own for it.
+ */
+interface PastStartTopUpClock {
+  at: number;
+  misses: number;
+  cancelAskedAt?: number;
+}
 /** C19's 40ms start stagger, applied to RUNNING re-adoption as well. */
 const TOURNAMENT_RESUME_STAGGER_MS = 40;
 /**
@@ -3341,9 +3352,7 @@ export class GameServer {
    * throttle of its own - the pass was the throttle - and the pass is now
    * seconds long. Pruned with lastMttRampAt.
    */
-  private pastStartTopUpClock: Map<string, { at: number; misses: number }> = new Map();
-  /** When an empty past-start event was last offered to atomic_cancel_tournament. */
-  private emptyEventCancelAskedAt: Map<string, number> = new Map();
+  private pastStartTopUpClock: Map<string, PastStartTopUpClock> = new Map();
   /**
    * REGISTERING rows whose prize pool is already finalized, reported once each
    * (2026-09-11). Such a row has left registration whatever its status says;
@@ -8059,13 +8068,18 @@ export class GameServer {
                 emptyTopUps: emptyClock?.misses ?? 0,
               })
             ) {
-              const askedAt = this.emptyEventCancelAskedAt.get(tournament.id) ?? 0;
+              const askedAt = emptyClock?.cancelAskedAt ?? 0;
               if (now - askedAt >= EMPTY_PAST_START_CANCEL_RETRY_MS) {
                 this.launchDiscoveryTopUp(
                   tournament.id,
                   generation,
                   async () => {
-                    this.emptyEventCancelAskedAt.set(tournament.id, now);
+                    const settled = this.pastStartTopUpClock.get(tournament.id);
+                    this.pastStartTopUpClock.set(tournament.id, {
+                      at: settled?.at ?? now,
+                      misses: settled?.misses ?? 0,
+                      cancelAskedAt: now,
+                    });
                     const { error: cancelError } = await supabase.rpc('atomic_cancel_tournament', {
                       p_tournament_id: tournament.id,
                       p_admin_id: null,
@@ -8275,7 +8289,6 @@ export class GameServer {
         if (
           this.lastMttRampAt.size > 0 ||
           this.pastStartTopUpClock.size > 0 ||
-          this.emptyEventCancelAskedAt.size > 0 ||
           this.registeringButFinalizedReported.size > 0 ||
           spinLaunchParks.size > 0
         ) {
@@ -8290,9 +8303,6 @@ export class GameServer {
           }
           for (const id of this.pastStartTopUpClock.keys()) {
             if (!stillRegistering.has(id)) this.pastStartTopUpClock.delete(id);
-          }
-          for (const id of this.emptyEventCancelAskedAt.keys()) {
-            if (!stillRegistering.has(id)) this.emptyEventCancelAskedAt.delete(id);
           }
           for (const id of this.registeringButFinalizedReported) {
             if (!stillRegistering.has(id)) this.registeringButFinalizedReported.delete(id);

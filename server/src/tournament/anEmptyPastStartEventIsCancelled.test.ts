@@ -94,6 +94,13 @@ describe('the discovery loop wiring', () => {
     expect(branch).toContain("'GameServer.empty_past_start_event_cancel_refused'");
   });
 
+  it('keeps its retry clock on the past-start clock entry, pruned with the event', () => {
+    expect(branch).toContain('const askedAt = emptyClock?.cancelAskedAt ?? 0;');
+    expect(branch).toContain('cancelAskedAt: now,');
+    expect(source).toContain('private pastStartTopUpClock: Map<string, PastStartTopUpClock>');
+    expect(source).toContain('  cancelAskedAt?: number;');
+  });
+
   it('sits inside the past-start top-up branch, ahead of the top-up', () => {
     const topUp = source.indexOf('if (needsPastStartTopUp) {');
     expect(topUp).toBeGreaterThan(-1);

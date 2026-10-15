@@ -97,7 +97,7 @@ import {
   type HorseAuthorityReceipt,
 } from '../HorseQualifiedAuthority.js';
 import { liveHorsePhase8Safety } from '../HorsePhase8Safety.js';
-import type { Phase8Mode } from '../HorseTournamentPostflop.js';
+import { PHASE8_POLICY, type Phase8Mode } from '../HorseTournamentPostflop.js';
 import {
   admitHorsePhase10ReleaseAuthority,
   horsePhase10AdmittedMode,
@@ -182,6 +182,14 @@ import type {
 } from './protocol.js';
 import { buildHorseDecisionKey, validatedHorsePolicySamplingKey } from './protocol.js';
 import { horseDecisionReplayState } from './replayState.js';
+
+/** Trusted in-process construction seam; never part of the live wire protocol. */
+export type HorseDecisionWorkerAuthorityHolderFactory = (
+  owner: 'phase8' | 'phase10' | 'phase11' | 'phase12' | 'phase13',
+  variant: string | null,
+  runningVersion: string,
+  freshEpoch: string
+) => HorseQualifiedAuthorityHolder;
 
 export interface HorseDecisionWorkerDependencies {
   journalEnabled?: () => boolean;
@@ -558,72 +566,79 @@ export class HorseDecisionWorkerRuntime {
   private readyPromise: Promise<HorseDecisionWorkerReadiness> | null = null;
   /** Worker-owned Phase 8 authority. Admitted once from the committed release
    * selection; never from a request. A new worker is a new epoch. */
-  private readonly phase8Authority = new HorseQualifiedAuthorityHolder();
+  private readonly phase8Authority: HorseQualifiedAuthorityHolder;
   private phase8AuthorityAdmitted = false;
-  /** P10.3: worker-owned Phase 10 authority, the same holder class and laws,
-   * bound to the running PLO4 pack version. Never obtained from a request. */
-  private readonly phase10Authority = new HorseQualifiedAuthorityHolder(
-    undefined,
-    PLO4_POLICY_PACK.version
-  );
+  private readonly phase10Authority: HorseQualifiedAuthorityHolder;
   private phase10AuthorityAdmitted = false;
-  /** P11.3: worker-owned Phase 11 authority, one holder per pack (the same
-   * holder class and laws), each bound to its own pack version and sharing
-   * this worker's epoch. Never obtained from a request. */
-  private readonly phase11Epoch = randomUUID();
   private readonly phase11Authority: Readonly<
     Record<OmahaPolicyVariant, HorseQualifiedAuthorityHolder>
-  > = Object.freeze({
-    plo5: new HorseQualifiedAuthorityHolder(this.phase11Epoch, OMAHA_VARIANT_PACKS.plo5.version),
-    plo6: new HorseQualifiedAuthorityHolder(this.phase11Epoch, OMAHA_VARIANT_PACKS.plo6.version),
-    plo8: new HorseQualifiedAuthorityHolder(this.phase11Epoch, OMAHA_VARIANT_PACKS.plo8.version),
-  });
+  >;
   private phase11AuthorityAdmitted = false;
-  /** P12.3: worker-owned Phase 12 authority, one holder per pack (the same
-   * holder class and laws), each bound to its own pack version and sharing
-   * this worker's epoch. Never obtained from a request. */
-  private readonly phase12Epoch = randomUUID();
   private readonly phase12Authority: Readonly<
     Record<RemainingPolicyVariant, HorseQualifiedAuthorityHolder>
-  > = Object.freeze({
-    short_deck: new HorseQualifiedAuthorityHolder(
-      this.phase12Epoch,
-      REMAINING_VARIANT_PACKS.short_deck.version
-    ),
-    pineapple: new HorseQualifiedAuthorityHolder(
-      this.phase12Epoch,
-      REMAINING_VARIANT_PACKS.pineapple.version
-    ),
-    flh: new HorseQualifiedAuthorityHolder(this.phase12Epoch, REMAINING_VARIANT_PACKS.flh.version),
-    flo8: new HorseQualifiedAuthorityHolder(
-      this.phase12Epoch,
-      REMAINING_VARIANT_PACKS.flo8.version
-    ),
-  });
+  >;
   private phase12AuthorityAdmitted = false;
-  /** P13.3: worker-owned Phase 13 authority, one holder per joint variant
-   * (the same holder class and laws), each bound to the joint domain and its
-   * own variant, sharing this worker's epoch. Never obtained from a request. */
-  private readonly phase13Epoch = randomUUID();
-  private readonly phase13Authority: Readonly<Record<JointVariant, HorseQualifiedAuthorityHolder>> =
-    Object.freeze(
-      Object.fromEntries(
-        HORSE_PHASE13_VARIANTS.map((variant) => [
-          variant,
-          new HorseQualifiedAuthorityHolder(
-            this.phase13Epoch,
-            horsePhase13ContinuationVersion(variant)
-          ),
-        ])
-      ) as Record<JointVariant, HorseQualifiedAuthorityHolder>
-    );
+  private readonly phase13Authority: Readonly<Record<JointVariant, HorseQualifiedAuthorityHolder>>;
   private phase13AuthorityAdmitted = false;
   constructor(
     private readonly send: (message: HorseDecisionWorkerResponse) => void,
     private readonly deps: HorseDecisionWorkerDependencies = defaultHorseDecisionWorkerDependencies,
     /** Test seam; production always yields to a real event-loop turn. */
-    private readonly turnEventLoop: () => Promise<void> = nextEventLoopTurn
-  ) {}
+    private readonly turnEventLoop: () => Promise<void> = nextEventLoopTurn,
+    /** Offline/test construction only. Never accepted in an IPC request;
+     * production uses fresh epochs and its ordinary qualified admissions. */
+    authorityHolder: HorseDecisionWorkerAuthorityHolderFactory = (
+      _owner,
+      _variant,
+      version,
+      epoch
+    ) => new HorseQualifiedAuthorityHolder(epoch, version)
+  ) {
+    this.phase8Authority = authorityHolder('phase8', null, PHASE8_POLICY.version, randomUUID());
+    this.phase10Authority = authorityHolder(
+      'phase10',
+      null,
+      PLO4_POLICY_PACK.version,
+      randomUUID()
+    );
+    const phase11Epoch = randomUUID();
+    this.phase11Authority = Object.freeze(
+      Object.fromEntries(
+        HORSE_PHASE11_VARIANTS.map((variant) => [
+          variant,
+          authorityHolder('phase11', variant, OMAHA_VARIANT_PACKS[variant].version, phase11Epoch),
+        ])
+      ) as Record<OmahaPolicyVariant, HorseQualifiedAuthorityHolder>
+    );
+    const phase12Epoch = randomUUID();
+    this.phase12Authority = Object.freeze(
+      Object.fromEntries(
+        HORSE_PHASE12_VARIANTS.map((variant) => [
+          variant,
+          authorityHolder(
+            'phase12',
+            variant,
+            REMAINING_VARIANT_PACKS[variant].version,
+            phase12Epoch
+          ),
+        ])
+      ) as Record<RemainingPolicyVariant, HorseQualifiedAuthorityHolder>
+    );
+    const phase13Epoch = randomUUID();
+    this.phase13Authority = Object.freeze(
+      Object.fromEntries(
+        HORSE_PHASE13_VARIANTS.map((variant) => [
+          variant,
+          authorityHolder(
+            'phase13',
+            variant,
+            horsePhase13ContinuationVersion(variant),
+            phase13Epoch
+          ),
+        ])
+      ) as Record<JointVariant, HorseQualifiedAuthorityHolder>
+    );
+  }
 
   start(): Promise<HorseDecisionWorkerReadiness> {
     if (this.readyPromise) return this.readyPromise;

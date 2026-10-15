@@ -41,6 +41,10 @@ import {
 } from '../workerRuntime.js';
 import { currentReplaySolverStores } from './references.js';
 import type { HorseReplayInput } from './reconstruct.js';
+import {
+  qualifiedReplayAdmissions,
+  qualifiedReplayAuthorityHolders,
+} from './qualifiedAuthority.js';
 
 export interface HorseRuntimeReplayOutcome {
   result: FastHorseDecisionResult | null;
@@ -86,6 +90,7 @@ export async function replayThroughWorkerRuntime(
   const features: string[] = [];
   let admission: HorseDecisionReplayAdmission | null = null;
   const deps: HorseDecisionWorkerDependencies = {
+    ...qualifiedReplayAdmissions,
     journalEnabled: () => false,
     async startServices() {
       prepareTournamentFutureHandFacts();
@@ -118,12 +123,17 @@ export async function replayThroughWorkerRuntime(
     },
     now: () => performance.now(),
   };
-  // Production arms telemetry at boot and the FAST path decides with it on;
-  // the same code paths must be taken here (utility budgets, safety gates).
+  const runtime = new HorseDecisionWorkerRuntime(
+    (message) => messages.push(message),
+    deps,
+    undefined,
+    qualifiedReplayAuthorityHolders(input.original, request.gameState.gameVariant ?? 'nlh')
+  );
+  // Qualification/refusal happens before touching process telemetry. The
+  // same production telemetry paths run only after a holder can be rebuilt.
   enableBrainTelemetry();
   const parkedFires = drainFires();
   const before = equityWorkCounters();
-  const runtime = new HorseDecisionWorkerRuntime((message) => messages.push(message), deps);
   const canonicalRng = saveFastRandom();
   const parkedSafety = liveHorsePhase8Safety.disabledReason;
   equityGovernor.__setScaleForTest(input.governorScale);

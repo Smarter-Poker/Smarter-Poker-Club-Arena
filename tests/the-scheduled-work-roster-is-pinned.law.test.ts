@@ -132,7 +132,12 @@ const ROSTER = join(ROOT, 'docs', 'attestation', 'cron-roster.tsv');
 // 2026-10-13: the three dated DSS one-shots are absent after their lifecycle.
 // Original retention job 117 uses the installed, qualified 30-second cadence
 // from 20261012200422; no recurring job was retired by this roster update.
-const ACTIVE_JOBS = 132;
+// 2026-10-14: 132 -> 133 active: ca-operator-floor-hold-watchdog-1m, scheduled by
+// 20261014231111 a_floor_park_is_a_lease_that_expires_and_pages_never_a_switc
+// (the floor hold is a lease that pages at 10 minutes and releases at 60;
+// argument in that migration's header). Read live from cron.job: 132 active
+// before the install, 134 total.
+const ACTIVE_JOBS = 133;
 const RETAINED_INACTIVE = 2;
 const TOTAL_JOBS = ACTIVE_JOBS + RETAINED_INACTIVE;
 
@@ -176,8 +181,8 @@ describe('the scheduled-work roster is pinned', () => {
     expect(Number(headerValue('retained-inactive'))).toBe(RETAINED_INACTIVE);
   });
 
-  it('134 total is 132 active plus the two rows cron.job keeps inactive', () => {
-    expect(TOTAL_JOBS).toBe(134);
+  it('135 total is 133 active plus the two rows cron.job keeps inactive', () => {
+    expect(TOTAL_JOBS).toBe(135);
     // The two bust sweeps 20260910073355 restored disabled are both of them
     // again: union-weekly-rakeback-close was the third until 20261003101805
     // re-armed jobid 272, and it is now an ACTIVE row of the body instead.

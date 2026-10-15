@@ -45,6 +45,16 @@ import {
   type HorseObservationWindow,
 } from './HorseObservationWindow.js';
 
+/** Match the controller's full-raise marker: an all-in button can be a call
+ * or a short raise and must not invent an aggressive read. */
+function isMindAggression(action: { action: string; isFullRaise?: boolean }): boolean {
+  return (
+    action.action === 'bet' ||
+    action.action === 'raise' ||
+    (action.action === 'all_in' && action.isFullRaise === true)
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // OPPONENT STATS
 // ─────────────────────────────────────────────────────────────────────────────
@@ -475,10 +485,7 @@ export class HorseMind {
         curStage = a.stage;
         streetBettor = null;
       }
-      const isAggr =
-        a.action === 'bet' ||
-        a.action === 'raise' ||
-        (a.action === 'all_in' && a.isFullRaise === true);
+      const isAggr = isMindAggression(a);
       // V28 AUDIT FIX: "faced aggression" now means FACED AGGRESSION. The old
       // counters incremented facedAggr on every call and every fold — a limp
       // of the big blind counted as "faced aggression and did not fold", and
@@ -529,7 +536,8 @@ export class HorseMind {
           }
         }
 
-        // Preflop VPIP / PFR / 3-bet (first voluntary action only)
+        // VPIP and PFR are separate once-per-hand observations. A caller
+        // can raise later in the same preflop round (a limp-reraise).
         if (preflop) {
           const voluntary =
             a.action === 'call' ||
@@ -541,10 +549,14 @@ export class HorseMind {
             if (!this.handFlags.has(vKey)) {
               this.handFlags.add(vKey);
               s.vpip++;
-              if (isAggr) {
-                s.pfr++;
-                if (preflopRaises >= 1) s.threeBet++;
-              }
+            }
+          }
+          if (isAggr) {
+            const rKey = `${handKey}|${a.userId}|pfr`;
+            if (!this.handFlags.has(rKey)) {
+              this.handFlags.add(rKey);
+              s.pfr++;
+              if (preflopRaises >= 1) s.threeBet++;
             }
           }
         }
@@ -1241,10 +1253,7 @@ export class HorseMind {
     let curStreet: string = 'preflop';
     let streetBets = new Map<string, number>();
     for (const a of history) {
-      const isAggr =
-        a.action === 'bet' ||
-        a.action === 'raise' ||
-        (a.action === 'all_in' && a.isFullRaise === true);
+      const isAggr = isMindAggression(a);
       const anyChips = isAggr || a.action === 'call' || a.action === 'all_in';
       if (a.stage === 'preflop') sawPreflop = true;
       if (a.stage !== curStreet) {
@@ -1846,6 +1855,7 @@ export class HorseMind {
           /** V43: the engine stamps Date.now() on every record; the tempo
            *  read needs it. Optional so older callers and fixtures still type. */
           timestamp?: number;
+          isFullRaise?: boolean;
         }>
       | undefined,
     bigBlind: number,
@@ -1909,7 +1919,7 @@ export class HorseMind {
       let threeBetIdx = -1;
       for (let i = 0; i < pre.length; i++) {
         const a = pre[i];
-        if (a.action === 'raise' || a.action === 'bet' || a.action === 'all_in') {
+        if (isMindAggression(a)) {
           if (openerId === null) {
             openerId = a.userId!;
             openerIdx = i;
@@ -1932,7 +1942,7 @@ export class HorseMind {
       // Preflop aggressor = last preflop raiser.
       let preAggr: string | null = null;
       for (const a of pre) {
-        if (a.action === 'raise' || a.action === 'bet' || a.action === 'all_in') {
+        if (isMindAggression(a)) {
           preAggr = a.userId!;
         }
       }
@@ -1940,7 +1950,10 @@ export class HorseMind {
       if (preAggr) {
         let cbetIdx = -1;
         for (let i = 0; i < flop.length; i++) {
-          if (flop[i].action === 'bet') {
+          if (
+            flop[i].action === 'bet' ||
+            (flop[i].action === 'all_in' && flop[i].isFullRaise === true)
+          ) {
             if (flop[i].userId === preAggr) cbetIdx = i;
             break; // only the FIRST flop bet can be a c-bet
           }
@@ -1973,7 +1986,7 @@ export class HorseMind {
           const gap = ts !== null && prevTs !== null ? ts - prevTs : null;
           if (ts !== null) prevTs = ts;
           if (a.stage !== 'river' || !a.userId || counted.has(a.userId)) continue;
-          if (a.action !== 'bet' && a.action !== 'raise' && a.action !== 'all_in') continue;
+          if (!isMindAggression(a)) continue;
           if ((a.amount ?? 0) < 20 * bb) continue;
           const sd = shown.get(a.userId);
           if (!sd) continue; // bet took it down — no showdown information

@@ -4,7 +4,7 @@
 # line to make a check pass: tests/the-scheduled-work-roster-is-pinned.law.test.ts
 # pins the count, and the count is supposed to be argued about.
 # observed_at: 2026-10-13T11:50:45Z
-# active: 132
+# active: 133
 # retained-inactive: 2	the two bust sweeps restored disabled by 20260910073355
 # 2026-09-20: 135 -> 132. union-seat-provenance-heal, ca-bbj-repair-unbanked-15m
 # and reconcile-club-table-counts-nightly were retired by migration
@@ -168,6 +168,14 @@
 #     specification's Phase 21 requires (freeze, stuck conversion, drive
 #     error, reaper failure, integrity spike, latency regression). It pages and
 #     repairs nothing. The argument is in that header.
+# 2026-10-14: 132 -> 133 active, retained-inactive unchanged at 2. ONE IS ADDED:
+#   ca-operator-floor-hold-watchdog-1m  * * * * *  scheduled by migration
+#     20261014231111 a_floor_park_is_a_lease_that_expires_and_pages_never_a_switc:
+#     the operator floor hold (park/pause) became a 60-minute lease after a park
+#     taken 2026-10-13 13:15Z held the whole Midway Union floor for 34 hours and
+#     paged nobody. The watch pages a hold older than 10 minutes and releases
+#     one past its lease exactly as its owner's resume would. The argument is
+#     in that header.
 bbj-rollup-catchup	45 * * * *
 ca-alarm-drill-weekly	7 11 * * 1
 ca-bbj-threshold-notify-5m	*/5 * * * *
@@ -206,6 +214,7 @@ ca-mint-velocity-5m	*/5 * * * *
 ca-money-rpc-drift-daily	25 5 * * *
 ca-negative-balance-watch-10m	*/10 * * * *
 ca-op-claims-prune-daily	45 5 * * *
+ca-operator-floor-hold-watchdog-1m	* * * * *
 ca-orphaned-checks-daily	18 6 * * *
 ca-pay-backed-payout-shortfalls-hourly	26 * * * *
 ca-payout-guarantee-check-hourly	18 * * * *

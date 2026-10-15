@@ -415,6 +415,45 @@ export class HorseQualifiedAuthorityHolder {
     this.runningVersion = runningVersion;
   }
 
+  /** Offline replay only. The recorded receipt supplies process identity,
+   * never qualification: the ordinary release verifier must independently
+   * admit the exact authority before its epoch/generation can be restored. */
+  static fromReplayReceipt(
+    receipt: HorseAuthorityReceipt,
+    admission: HorseAuthorityAdmission,
+    runningVersion: string
+  ): HorseQualifiedAuthorityHolder {
+    if (
+      !receiptIsWellFormed(receipt) ||
+      receipt.state !== 'usable' ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(receipt.epoch) ||
+      receipt.generation < 1 ||
+      receipt.mainGeneration !== null ||
+      !['admitted', 'renewed', 'refresh_restored'].includes(receipt.reason ?? '')
+    )
+      throw new Error('invalid_recorded_authority');
+    if (admission.status !== 'admitted')
+      throw new Error(admission.status === 'withdrawn' ? 'withdrawn' : admission.reason);
+    const holder = new HorseQualifiedAuthorityHolder(receipt.epoch, runningVersion);
+    holder.apply(admission);
+    const qualified = holder.receipt();
+    for (const key of [
+      'state',
+      'continuationVersion',
+      'approvalGeneration',
+      'authorityKey',
+      'evidenceSha256',
+      'sourceSha',
+      'expiresAt',
+    ] as const)
+      if (receipt[key] !== qualified[key]) throw new Error(`identity_${key}`);
+    // This is input restoration after qualification, not a live transition.
+    // apply(), verdict(), withdrawal and renewal retain their ordinary laws.
+    holder.generation = receipt.generation;
+    holder.reason = receipt.reason;
+    return holder;
+  }
+
   apply(admission: HorseAuthorityAdmission): void {
     if (admission.status === 'withdrawn') {
       this.withdrawnApproval = Math.max(this.withdrawnApproval ?? 0, admission.approvalGeneration);

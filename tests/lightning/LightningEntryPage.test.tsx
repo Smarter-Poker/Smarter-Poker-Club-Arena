@@ -5,15 +5,18 @@
  * existing cash join and sends the player to the table's own buy-in.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, Route, Routes, useLocation, useParams } from 'react-router-dom';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 
 const POOL = '11111111-1111-4111-8111-111111111111';
 const CLUSTER = '22222222-2222-4222-8222-222222222222';
 const ANCHOR = '33333333-3333-4333-8333-333333333333';
+const NEXT_CLUSTER = '44444444-4444-4444-8444-444444444444';
+const NEXT_ANCHOR = '55555555-5555-4555-8555-555555555555';
 
 const rpc = vi.fn();
 const tablesRead = vi.fn();
+const metadataRead = vi.fn();
 const gameRow = {
   id: CLUSTER,
   club_id: null,
@@ -32,7 +35,7 @@ vi.mock('../../src/lib/supabase', () => ({
       if (table === 'tables') tablesRead();
       const chain: Record<string, unknown> = {};
       for (const m of ['select', 'eq']) chain[m] = () => chain;
-      chain.maybeSingle = () => Promise.resolve({ data: gameRow, error: null });
+      chain.maybeSingle = () => metadataRead();
       return chain;
     },
   },
@@ -44,6 +47,7 @@ vi.mock('../../src/components/common/Toast', () => ({ useToast: () => toast }));
 
 import LightningEntryPage from '../../src/pages/LightningEntryPage';
 import {
+  fetchMyLightningSession,
   getLightningEntryIntent,
   getLightningPoolSession,
   resetLightningRegistryForTests,
@@ -55,9 +59,15 @@ function TableProbe() {
   return <div data-testid="table-route">{`${tableId}|${loc.search}`}</div>;
 }
 
+function RouteSwitch() {
+  const navigate = useNavigate();
+  return <button onClick={() => navigate(`/lightning/${NEXT_CLUSTER}`)}>Open Next Game</button>;
+}
+
 const renderAt = (path: string) =>
   render(
     <MemoryRouter initialEntries={[path]}>
+      <RouteSwitch />
       <Routes>
         <Route path="/lightning/:clusterId" element={<LightningEntryPage />} />
         <Route path="/table/:tableId" element={<TableProbe />} />
@@ -67,9 +77,13 @@ const renderAt = (path: string) =>
 
 beforeEach(() => {
   sessionStorage.clear();
+  localStorage.clear();
+  for (const method of Object.values(toast)) method.mockClear();
   resetLightningRegistryForTests();
   rpc.mockReset();
   tablesRead.mockReset();
+  metadataRead.mockReset();
+  metadataRead.mockResolvedValue({ data: gameRow, error: null });
 });
 afterEach(cleanup);
 
@@ -183,4 +197,215 @@ describe('the Lightning route', () => {
     expect(screen.getByText(/game unavailable/i)).toBeTruthy();
     expect(rpc).not.toHaveBeenCalled();
   });
+});
+
+describe('truthful regular-table entry guidance', () => {
+  it.each([6, 9])(
+    'explains the %s-max MUST MOVE buy-in without promising Lightning hands',
+    async (size) => {
+      const previousMode = gameRow.cluster_mode;
+      const previousSize = gameRow.handedness;
+      gameRow.cluster_mode = 'must_move';
+      gameRow.handedness = size;
+      rpc.mockImplementation(async (name: string) => {
+        if (name === 'fn_lightning_my_session')
+          return { data: { pool_session_id: null, cluster_mode: 'must_move' }, error: null };
+        if (name === 'fn_cash_game_join')
+          return { data: { ok: true, action: 'seat', table_id: ANCHOR }, error: null };
+        return { data: null, error: null };
+      });
+      try {
+        renderAt(`/lightning/${CLUSTER}`);
+        const join = await screen.findByRole('button', { name: 'Join Game' });
+        expect(
+          screen.getByText(/This Game Uses Regular Tables And The Normal Buy-In/)
+        ).toBeTruthy();
+        expect(screen.queryByText(/Buy In Once And Play One Stream/)).toBeNull();
+        expect(screen.queryByTestId('table-route')).toBeNull();
+        expect(rpc.mock.calls.some(([name]) => name === 'fn_lightning_pool_status')).toBe(false);
+        fireEvent.click(join);
+        expect((await screen.findByTestId('table-route')).textContent).toBe(`${ANCHOR}|`);
+        expect(getLightningEntryIntent(ANCHOR)).toBeNull();
+      } finally {
+        gameRow.cluster_mode = previousMode;
+        gameRow.handedness = previousSize;
+      }
+    }
+  );
+
+  it('gives normal buy-in guidance during preparation without claiming the mode is active', async () => {
+    const previousMode = gameRow.cluster_mode;
+    gameRow.cluster_mode = 'pending_on';
+    rpc.mockResolvedValue({
+      data: { pool_session_id: null, cluster_mode: 'pending_on' },
+      error: null,
+    });
+    try {
+      renderAt(`/lightning/${CLUSTER}`);
+      await screen.findByRole('button', { name: 'Join Game' });
+      expect(screen.getByText(/Join Game Opens The Normal Table Buy-In/)).toBeTruthy();
+      expect(screen.queryByText(/Buy In Once And Play One Stream/)).toBeNull();
+      expect(screen.queryByTestId('table-route')).toBeNull();
+    } finally {
+      gameRow.cluster_mode = previousMode;
+    }
+  });
+});
+
+describe('private direct-link entry boundaries', () => {
+  it('preserves explicit session refusal as a failed read', async () => {
+    const refusal = { ok: false, code: 'NOT_AUTHORIZED', reason: 'membership_required' };
+    rpc.mockResolvedValue({ data: refusal, error: null });
+    await expect(fetchMyLightningSession(CLUSTER)).rejects.toMatchObject(refusal);
+    renderAt(`/lightning/${CLUSTER}`);
+    await screen.findByText('Game Unavailable');
+    expect(screen.queryByRole('button', { name: /join/i })).toBeNull();
+  });
+
+  it.each(['missing', 'failed', 'wrong-cluster'])(
+    'offers no join for %s metadata without an owned room or seat',
+    async (outcome) => {
+      metadataRead.mockResolvedValue(
+        outcome === 'failed'
+          ? { data: null, error: { code: 'PRIVATE_READ_DENIED' } }
+          : { data: outcome === 'missing' ? null : { ...gameRow, id: ANCHOR }, error: null }
+      );
+      rpc.mockResolvedValue({ data: { pool_session_id: null }, error: null });
+      renderAt(`/lightning/${CLUSTER}`);
+      await screen.findByText('Game Unavailable');
+      expect(screen.queryByRole('button', { name: /join/i })).toBeNull();
+      expect(screen.queryByTestId('table-route')).toBeNull();
+    }
+  );
+
+  it('retains legacy owned-room recovery when metadata fails', async () => {
+    metadataRead.mockResolvedValue({ data: null, error: { code: 'META_UNREADABLE' } });
+    rpc.mockImplementation(async (name) => ({
+      data: name === 'fn_lightning_my_session' ? { pool_session_id: POOL, state: 'active' } : null,
+      error: null,
+    }));
+    renderAt(`/lightning/${CLUSTER}`);
+    expect((await screen.findByTestId('table-route')).textContent).toBe(`${POOL}|`);
+  });
+
+  it('retains a manual owned-seat return when metadata is missing', async () => {
+    metadataRead.mockResolvedValue({ data: null, error: null });
+    rpc.mockImplementation(async (name) => ({
+      data:
+        name === 'fn_lightning_my_session'
+          ? { pool_session_id: null, seat_table_id: ANCHOR, cluster_mode: 'must_move' }
+          : null,
+      error: null,
+    }));
+    renderAt(`/lightning/${CLUSTER}`);
+    const view = await screen.findByRole('button', { name: 'View Game' });
+    expect(screen.queryByTestId('table-route')).toBeNull();
+    fireEvent.click(view);
+    expect((await screen.findByTestId('table-route')).textContent).toBe(`${ANCHOR}|`);
+  });
+});
+
+describe('route ownership of a pending join', () => {
+  it.each(['seat', 'waitlisted', 'refused'])(
+    'ignores a delayed %s result from the old game while the new join owns the page',
+    async (outcome) => {
+      let resolveOld: (value: unknown) => void = () => {};
+      let resolveNext: (value: unknown) => void = () => {};
+      rpc.mockImplementation(async (name, args) => {
+        if (name === 'fn_lightning_my_session')
+          return { data: { pool_session_id: null }, error: null };
+        if (name === 'fn_cash_game_join')
+          return await new Promise((resolve) => {
+            if (args.p_game_id === CLUSTER) resolveOld = resolve;
+            else resolveNext = resolve;
+          });
+        return { data: null, error: null };
+      });
+      renderAt(`/lightning/${CLUSTER}`);
+      fireEvent.click(await screen.findByRole('button', { name: 'Join Lightning' }));
+      await screen.findByRole('button', { name: 'Joining...' });
+      metadataRead.mockResolvedValue({ data: { ...gameRow, id: NEXT_CLUSTER }, error: null });
+      fireEvent.click(screen.getByRole('button', { name: 'Open Next Game' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Join Lightning' }));
+      await screen.findByRole('button', { name: 'Joining...' });
+      const prefsBefore = localStorage.getItem('ca.lightning.prefs.v1');
+      await act(async () => {
+        resolveOld(
+          outcome === 'refused'
+            ? { data: { ok: false, reason: 'membership_required' }, error: null }
+            : {
+                data:
+                  outcome === 'seat'
+                    ? { ok: true, action: 'seat', table_id: ANCHOR }
+                    : { ok: true, action: 'waitlisted', position: 1 },
+                error: null,
+              }
+        );
+      });
+      await waitFor(() =>
+        expect(rpc.mock.calls.filter(([name]) => name === 'fn_cash_game_join')).toHaveLength(2)
+      );
+      expect(screen.queryByTestId('table-route')).toBeNull();
+      expect(screen.getByRole('button', { name: 'Joining...' })).toBeTruthy();
+      expect(getLightningEntryIntent(ANCHOR)).toBeNull();
+      expect(localStorage.getItem('ca.lightning.prefs.v1')).toBe(prefsBefore);
+      expect(toast.info).not.toHaveBeenCalled();
+      expect(toast.warning).not.toHaveBeenCalled();
+      resolveNext({ data: { ok: true, action: 'seat', table_id: NEXT_ANCHOR }, error: null });
+      expect((await screen.findByTestId('table-route')).textContent).toBe(`${NEXT_ANCHOR}|`);
+      expect(getLightningEntryIntent(NEXT_ANCHOR)).toBe(NEXT_CLUSTER);
+      expect(
+        rpc.mock.calls
+          .filter(([name]) => name === 'fn_cash_game_join')
+          .map(([, args]) => args.p_game_id)
+      ).toEqual([CLUSTER, NEXT_CLUSTER]);
+    }
+  );
+});
+
+describe('late old-game outcome after navigating away', () => {
+  it.each(['seat', 'waitlisted', 'refused'])(
+    'does not apply a delayed %s result to the new entry page',
+    async (outcome) => {
+      let resolveOld: (value: unknown) => void = () => {};
+      rpc.mockImplementation(async (name) => {
+        if (name === 'fn_lightning_my_session')
+          return { data: { pool_session_id: null }, error: null };
+        if (name === 'fn_cash_game_join')
+          return await new Promise((resolve) => {
+            resolveOld = resolve;
+          });
+        return { data: null, error: null };
+      });
+      renderAt(`/lightning/${CLUSTER}`);
+      fireEvent.click(await screen.findByRole('button', { name: 'Join Lightning' }));
+      await screen.findByRole('button', { name: 'Joining...' });
+      metadataRead.mockResolvedValue({ data: { ...gameRow, id: NEXT_CLUSTER }, error: null });
+      fireEvent.click(screen.getByRole('button', { name: 'Open Next Game' }));
+      await waitFor(() =>
+        expect(screen.getByTestId('lightning-entry').getAttribute('aria-busy')).toBeNull()
+      );
+      const prefsBefore = localStorage.getItem('ca.lightning.prefs.v1');
+      await act(async () => {
+        resolveOld(
+          outcome === 'refused'
+            ? { data: { ok: false, reason: 'membership_required' }, error: null }
+            : {
+                data:
+                  outcome === 'seat'
+                    ? { ok: true, action: 'seat', table_id: ANCHOR }
+                    : { ok: true, action: 'waitlisted', position: 1 },
+                error: null,
+              }
+        );
+      });
+      expect(screen.queryByTestId('table-route')).toBeNull();
+      expect(screen.getByRole('button', { name: 'Join Lightning' })).toBeTruthy();
+      expect(getLightningEntryIntent(ANCHOR)).toBeNull();
+      expect(localStorage.getItem('ca.lightning.prefs.v1')).toBe(prefsBefore);
+      expect(toast.info).not.toHaveBeenCalled();
+      expect(toast.warning).not.toHaveBeenCalled();
+      expect(rpc.mock.calls.filter(([name]) => name === 'fn_cash_game_join')).toHaveLength(1);
+    }
+  );
 });

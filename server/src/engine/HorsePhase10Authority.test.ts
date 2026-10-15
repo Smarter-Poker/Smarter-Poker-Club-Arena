@@ -40,6 +40,7 @@ import {
 } from './HorsePhase10Authority.test-support.js';
 import { PLO4_POLICY_PACK } from './plo4/Plo4PolicyPack.js';
 import { plo4StrengthContractDigest } from '../benchmark/Plo4StrengthContract.js';
+import { PREVIOUS_PHASE10_SELECTION } from './HorsePreviousSelections.test-support.js';
 
 const admit = (
   selection: HorsePhase10AuthoritySelection | null,
@@ -63,11 +64,12 @@ function expectedKey(identity: Record<string, unknown>): string {
   return createHash('sha256').update(JSON.stringify(sorted)).digest('hex');
 }
 
-describe('P10.3 committed selection: the round-3 PLO4 pack, qualified on condition (a)', () => {
-  const committed = PHASE10_PROTECTED_RELEASE_SELECTION;
+describe('P10.3 the PFR repair requires fresh qualification of the round-3 PLO4 pack', () => {
+  const committed = PREVIOUS_PHASE10_SELECTION;
 
-  it('the committed selection names the c8bfc617 matrix and the running digest is the P10.2 contract digest', () => {
+  it('retains the previous c8bfc617 identity with selection null and the contract unchanged', () => {
     expect(committed).not.toBeNull();
+    expect(PHASE10_PROTECTED_RELEASE_SELECTION).toBeNull();
     expect(Object.isFrozen(committed)).toBe(true);
     expect(committed).toMatchObject({
       schema: 'horse-qualified-authority-selection-v1',
@@ -85,19 +87,19 @@ describe('P10.3 committed selection: the round-3 PLO4 pack, qualified on conditi
     expect(PHASE10_RUNNING_CONTRACT_DIGEST).toMatch(/^[0-9a-f]{64}$/);
   });
 
-  it('the running code admits it: the committed file qualifies for this digest, source and policy', () => {
-    const release = admitHorsePhase10ReleaseAuthority();
-    expect(release.status).toBe('admitted');
-    expect(selectedHorsePhase10Authority(release)).toMatchObject({
-      phase: 'phase10',
-      sourceSha: committed!.sourceSha,
-      continuationVersion: PLO4_POLICY_PACK.version,
-      policyDigest: horsePhase10PolicyDigest(),
-      domain: HORSE_PHASE10_DOMAIN,
-      evidencePath: committed!.qualificationPath,
-      evidenceSha256: committed!.qualificationSha256,
-      approvalGeneration: 1,
+  it('the default is shadow and the retained previous qualification cannot admit the modified policy', () => {
+    expect(admitHorsePhase10ReleaseAuthority()).toEqual({
+      status: 'refused',
+      reason: 'unselected',
+      transient: false,
     });
+    const release = admitHorsePhase10ReleaseAuthority(Date.now(), committed);
+    expect(release).toEqual({
+      status: 'refused',
+      reason: 'policy_digest_mismatch',
+      transient: false,
+    });
+    expect(selectedHorsePhase10Authority(release)).toBeNull();
     const file = JSON.parse(
       readFileSync(
         fileURLToPath(new URL(`../../../${committed!.qualificationPath}`, import.meta.url)),
@@ -107,9 +109,18 @@ describe('P10.3 committed selection: the round-3 PLO4 pack, qualified on conditi
     expect(file).toMatchObject({
       qualified: true,
       mode: 'contract',
-      policyDigest: horsePhase10PolicyDigest(),
       policyDigestDefinition: HORSE_PHASE10_POLICY_DIGEST_DEFINITION,
     });
+    expect(file.policyDigest).not.toBe(horsePhase10PolicyDigest());
+    expect(
+      createHash('sha256')
+        .update(
+          readFileSync(
+            fileURLToPath(new URL(`../../../${committed!.qualificationPath}`, import.meta.url))
+          )
+        )
+        .digest('hex')
+    ).toBe(committed!.qualificationSha256);
   });
 
   it('the running code refuses a well-formed qualified selection made under another contract', () => {
@@ -136,9 +147,9 @@ describe('P10.3 committed selection: the round-3 PLO4 pack, qualified on conditi
     expect(unwired).toMatchObject({ status: 'refused', reason: 'contract_unavailable' });
   });
 
-  it('the live main-scheduler gate is usable under the committed selection', () => {
+  it('the live main-scheduler gate stays unselected until requalification', () => {
     liveHorsePhase10Authority.refresh();
-    expect(liveHorsePhase10Authority.mainState()).toBe('usable');
+    expect(liveHorsePhase10Authority.mainState()).toBe('unselected');
   });
 
   it('withdrawal is a committed record: the same selection with withdrawn set is a withdrawal, never a selection', () => {
@@ -162,7 +173,7 @@ describe('P10.3 committed selection: the round-3 PLO4 pack, qualified on conditi
     expect(gate.mainState()).toBe('withdrawn');
   });
 
-  it('the only committed Phase 10 qualification file that says qualified:true is the selected one', () => {
+  it('retains the previously qualified file while its selection is null', () => {
     const dir = fileURLToPath(new URL('../../../docs/evidence/phase10/', import.meta.url));
     const files = existsSync(dir)
       ? readdirSync(dir, { recursive: true, encoding: 'utf8' }).filter((f) => f.endsWith('.json'))

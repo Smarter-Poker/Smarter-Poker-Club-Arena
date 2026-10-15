@@ -393,7 +393,7 @@ export interface HorsePhase12AuthoritySelection {
 }
 
 /**
- * THE PROTECTED RELEASE SELECTIONS, one per pack.
+ * Historical protected release selections, one per pack.
  *
  * FLH (`fixed-limit-holdem-round3-v1`), approval generation 2: qualified on
  * condition (a) of the winning contract as amended by the owner on October 9,
@@ -426,32 +426,15 @@ export interface HorsePhase12AuthoritySelection {
  * the engine image under server/release-evidence/. Withdrawal is a reviewed
  * change of `withdrawn` to `{ at, reason }`; a withdrawn generation never
  * returns.
+ *
+ * October 12: the opponent PFR repair changes the qualified FLH policy digest.
+ * Generation 2 is explicitly null until the existing locked FLH v1 matrix
+ * requalifies the exact repaired source and fresh natural completion is read.
+ * Retain generation-2 evidence; any later renewal uses generation 3.
  */
 export const PHASE12_PROTECTED_RELEASE_SELECTIONS: Readonly<
   Record<RemainingPolicyVariant, HorsePhase12AuthoritySelection | null>
-> = Object.freeze({
-  short_deck: null,
-  pineapple: null,
-  flh: Object.freeze({
-    schema: 'horse-qualified-authority-selection-v1',
-    phase: 'phase12',
-    variant: 'flh',
-    sourceSha: '9d5674639f2bd091f2386c75cbd87bec419c5dcd',
-    packVersion: 'fixed-limit-holdem-round3-v1',
-    contractVersion: 'remaining-variant-strength-contract-v1',
-    contractDigest: 'fafbba8dc23ebc59b5aadf78fdcc47cd6f504baf9bcd10b07970ad7fbea501c0',
-    domain: 'flh-cash-single-board-after-rake-horse-population',
-    qualificationPath: 'docs/evidence/phase12/9d567463/phase12-qualification-2026-10-12-flh.json',
-    qualificationSha256: '01e91eb38a73dadc9fa2aff7ee4980f64b8b8d8c07a44ec18f50d6bfbccf3f8f',
-    completionPath: 'docs/evidence/phase12/9d567463/phase12-completion-2026-10-12-flh.json',
-    completionSha256: 'b42fb264780ea75bcc89b6d2f700d875fd68b49bf3600329f85f2a624499fbdf',
-    approvalGeneration: 2,
-    issuedAt: '2026-10-12T11:00:00.000Z',
-    expiresAt: null,
-    withdrawn: null,
-  } as const),
-  flo8: null,
-});
+> = Object.freeze({ short_deck: null, pineapple: null, flh: null, flo8: null });
 
 const HEX40 = /^[0-9a-f]{40}$/;
 const HEX64 = /^[0-9a-f]{64}$/;

@@ -3358,7 +3358,7 @@ describe('P10.3 worker-owned PLO4 authority (the Phase 8 path, reused)', () => {
   ] as const;
 
   it.each(LIVE_STATES)(
-    'live behaviour under the committed selection: %s',
+    'the unselected committed policy retains the reference action in shadow: %s',
     async (_name, format, cards, changed, mainAction) => {
       const request = format === 'cash' ? plo4Cash(601, cards) : plo4Tournament(601, cards);
       const live = await decideThrough(request, () => admitHorsePhase10ReleaseAuthority());
@@ -3369,22 +3369,47 @@ describe('P10.3 worker-owned PLO4 authority (the Phase 8 path, reused)', () => {
       expect(receipt.changed).toBe(changed);
       expect(receipt.finalAction).toBe(live.decision.action);
       expect(live.result.phase10Authority).toMatchObject({
-        state: 'usable',
+        state: 'unselected',
         continuationVersion: 'plo4-policy-round3-v2',
       });
-      expect(receipt.authority).toMatchObject({ state: 'usable' });
+      expect(receipt.authority).toMatchObject({ state: 'unselected' });
+      expect(live.h.decisionOpts[0].phase10Plo4).toBe('shadow');
+      expect(receipt).toMatchObject({ mode: 'shadow', applied: false });
+      // Even the cash spot whose shadow proposal changes the reference fold
+      // must execute that fold until the repaired source is requalified.
+      expect(act(live.decision)).toEqual(mainAction);
+      expect(horseDecisionReceiptIsValid(structuredClone(live.decision), 'plo4')).toBe(true);
+    }
+  );
+
+  it.each(LIVE_STATES)(
+    'a genuinely qualified fixture retains the cash candidate and tournament reference boundary: %s',
+    async (_name, format, cards, changed, mainAction) => {
+      const request = format === 'cash' ? plo4Cash(602, cards) : plo4Tournament(602, cards);
+      const qualified = await decideThrough(request, () => qualifiedPhase10TestAdmission(2));
+      const reference = await decideThrough(request, undefined, true);
+      expect(act(reference.decision)).toEqual(mainAction);
+      const receipt = qualified.decision.plo4Policy!;
+      expect(receipt.changed).toBe(changed);
+      expect(receipt.finalAction).toBe(qualified.decision.action);
+      expect(qualified.result.phase10Authority).toMatchObject({
+        state: 'usable',
+        continuationVersion: 'plo4-policy-round3-v2',
+        approvalGeneration: 2,
+      });
+      expect(receipt.authority).toMatchObject({ state: 'usable', approvalGeneration: 2 });
       if (format === 'tournament') {
         // A tournament decision never admits candidate mode: Phase 7 keeps it.
-        expect(live.h.decisionOpts[0].phase10Plo4).toBe('shadow');
+        expect(qualified.h.decisionOpts[0].phase10Plo4).toBe('shadow');
         expect(receipt).toMatchObject({ mode: 'shadow', applied: false });
-        expect(act(live.decision)).toEqual(mainAction);
+        expect(act(qualified.decision)).toEqual(mainAction);
       } else {
-        expect(live.h.decisionOpts[0].phase10Plo4).toBe('candidate');
+        expect(qualified.h.decisionOpts[0].phase10Plo4).toBe('candidate');
         expect(receipt).toMatchObject({ mode: 'candidate', applied: changed });
-        if (changed) expect(live.decision.action).not.toBe(mainAction.action);
-        else expect(act(live.decision)).toEqual(mainAction);
+        if (changed) expect(qualified.decision.action).not.toBe(mainAction.action);
+        else expect(act(qualified.decision)).toEqual(mainAction);
       }
-      expect(horseDecisionReceiptIsValid(structuredClone(live.decision), 'plo4')).toBe(true);
+      expect(horseDecisionReceiptIsValid(structuredClone(qualified.decision), 'plo4')).toBe(true);
     }
   );
 

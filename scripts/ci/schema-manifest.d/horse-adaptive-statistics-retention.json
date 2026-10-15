@@ -6,6 +6,7 @@
     "fn_finish_horse_journaled_model_statistics",
     "smarter_private.enable_horse_adaptive_retention",
     "smarter_private.retire_horse_adaptive_hand",
+    "smarter_private.retire_horse_adaptive_hand_deferred",
     "smarter_private.capture_horse_adaptive_disposals",
     "smarter_private.adaptive_retained_batch",
     "smarter_private.horse_adaptive_disposal_certificate_matches",

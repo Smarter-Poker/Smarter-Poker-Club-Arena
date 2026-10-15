@@ -1,5 +1,6 @@
-import { existsSync, lstatSync } from 'node:fs';
-import { isAbsolute, join } from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { existsSync, lstatSync, statfsSync } from 'node:fs';
+import { dirname, isAbsolute, join } from 'node:path';
 
 /** A closed window of capture time whose published segments the ring never
  * retires. Resolved once, when a writer opens with it, to the published
@@ -79,6 +80,8 @@ export interface HorseJournalArchiveOptions {
 // writer's start.
 export const HORSE_JOURNAL_ARCHIVE_HOLD = '2026-09-18T21:56:28Z/2026-09-25T19:34:06Z';
 export const HORSE_JOURNAL_ARCHIVE_BYTES = 8 * 1024 * 1024 * 1024;
+/** Additional shards have no historical allocation to preserve. */
+export const HORSE_JOURNAL_ADDITIONAL_ARCHIVE_BYTES = 4 * 1024 * 1024 * 1024;
 export const HORSE_JOURNAL_ARCHIVE_SEGMENTS = 2_000_000;
 // The record cap the catalog is sized for, whatever the segment count.
 export const HORSE_JOURNAL_ARCHIVE_RECORDS = 8_000_000;
@@ -167,13 +170,11 @@ function evidenceHold(value: string | undefined): HorseJournalArchiveHold | null
  * so turning on a second decision-worker shard never orphans existing
  * evidence: shard 0 keeps the exact catalog and allocation it already had.
  * Later shards (1, 2, ...) get their own fresh 'archive-shard-<index>'
- * catalog, each with the SAME full byte/segment allocation as shard 0 (not a
- * fraction of it): a lowered per-shard allocation would retire a chunk of
- * shard 0's existing archive - including possibly the Phase 6A/6B evidence
- * hold - the moment this ships, which is a self-inflicted version of the
- * exact ring-eviction risk this change exists to reduce, not increase.
- * Running N shards therefore multiplies the archive's WORST-CASE total disk
- * footprint by N; operators raising HORSE_DECISION_WORKERS should size
+ * catalog. Shards 0 and 1 keep their existing full 8 GiB segment allocation:
+ * lowering them would retire historical evidence. New shards 2+ default to
+ * 4 GiB segments with the same 6 GiB catalog ceiling. A configured
+ * HORSE_DECISION_JOURNAL_ARCHIVE_MAX_BYTES overrides both defaults for every
+ * shard. Operators raising HORSE_DECISION_WORKERS should size
  * HORSE_DECISION_JOURNAL_ARCHIVE_MAX_BYTES/SEGMENTS with that in mind, or
  * watch each shard's own /health figures (now reported per shard). */
 export interface HorseJournalArchiveShard {
@@ -208,7 +209,7 @@ export function runtimeHorseJournalArchiveOptions(
     directory: join(directory, archiveDirectoryName(shard.index)),
     maxBytes: positiveInteger(
       environment.HORSE_DECISION_JOURNAL_ARCHIVE_MAX_BYTES,
-      HORSE_JOURNAL_ARCHIVE_BYTES,
+      shard.index < 2 ? HORSE_JOURNAL_ARCHIVE_BYTES : HORSE_JOURNAL_ADDITIONAL_ARCHIVE_BYTES,
       Number.MAX_SAFE_INTEGER
     ),
     maxSegments: positiveInteger(
@@ -234,8 +235,10 @@ export function readonlyHorseJournalStoreOptions(
   readOnly: true;
   archive?: HorseJournalArchiveOptions;
 } {
-  const index = archiveDirectory === 'archive' ? 0 : Number(archiveDirectory.slice('archive-shard-'.length));
-  if (archiveDirectory !== archiveDirectoryName(index)) throw Error('Invalid Horse journal shard directory');
+  const index =
+    archiveDirectory === 'archive' ? 0 : Number(archiveDirectory.slice('archive-shard-'.length));
+  if (archiveDirectory !== archiveDirectoryName(index))
+    throw Error('Invalid Horse journal shard directory');
   const archive = runtimeHorseJournalArchiveOptions(directory, {}, { index });
   try {
     lstatSync(archive.directory);
@@ -244,4 +247,132 @@ export function readonlyHorseJournalStoreOptions(
     throw error;
   }
   return { readOnly: true, archive };
+}
+
+/* A SHARD THE DISK CANNOT HOLD IS NEVER ADDED BY DEFAULT (2026-10-12). Each
+   decision-worker shard owns a full allocation (above), so the default worker
+   count (horseDecisionWorkerCount in engine/horseDecision/lane.ts) is bounded
+   by how many shards the journal's filesystem can hold. A shard's worst case
+   on disk is its compressed segment bytes at the small-file block overhead
+   plus the catalog ceiling: measured on the engine host on 2026-10-12, 8.6 GB
+   of compressed segments took 10.4 GB of blocks (1.21x) beside a 3.3 GB
+   catalog, 14 GB a shard. The reserve is what every shard at its worst case
+   still leaves to the rest of the host (the engine image build, logs). Existing
+   archives grow on demand too: their remaining growth is charged first. */
+export const HORSE_JOURNAL_SEGMENT_BLOCK_OVERHEAD = 1.25;
+export const HORSE_JOURNAL_SHARD_DISK_RESERVE_BYTES = 4 * 1024 * 1024 * 1024;
+
+/** One shard's worst-case footprint on disk at the given segment allocation. */
+export function horseJournalShardDiskBytes(maxBytes: number): number {
+  return (
+    Math.ceil(maxBytes * HORSE_JOURNAL_SEGMENT_BLOCK_OVERHEAD) + HORSE_JOURNAL_ARCHIVE_CATALOG_BYTES
+  );
+}
+
+/** Read actual allocated blocks once, without following symlinks. du walks the
+ * potentially large archive, so cap its execution; a failed/incomplete reading
+ * must never authorize an additional worker. Round down one KiB per result,
+ * because du -k rounds each allocation up to a KiB. */
+export function horseJournalArchiveAllocatedBytes(directories: readonly string[]): number[] {
+  if (!directories.length) return [];
+  for (const directory of directories) {
+    const stat = lstatSync(directory);
+    if (!stat.isDirectory() || stat.isSymbolicLink())
+      throw Error('Invalid Horse journal archive directory');
+  }
+  const output = execFileSync('/usr/bin/du', ['-sk', ...directories], {
+    encoding: 'utf8',
+    timeout: 15_000,
+    maxBuffer: 64 * 1024,
+    env: { ...process.env, LC_ALL: 'C' },
+  });
+  const lines = output.trimEnd().split('\n');
+  if (lines.length !== directories.length) throw Error('Unreadable Horse archive allocation');
+  return lines.map((line, index) => {
+    const match = /^([0-9]+)\t(.*)$/.exec(line);
+    if (!match || match[2] !== directories[index])
+      throw Error('Unreadable Horse archive allocation');
+    const bytes = Number(match[1]) * 1024;
+    if (!Number.isSafeInteger(bytes) || bytes < 0)
+      throw Error('Unreadable Horse archive allocation');
+    return Math.max(0, bytes - 1024);
+  });
+}
+
+/** Existing archives consume free space as they grow towards their quotas.
+ * Reserve that remaining growth before admitting fresh full-size shards.
+ * Retain existing workers when their previous allocation already exceeds the
+ * disk budget; this guard never retires archives or changes their retention. */
+export function horseJournalShardsAffordable(input: {
+  existingShardAllocatedBytes: readonly number[];
+  availableBytes: number;
+  shardBytes: number;
+  /** Worst-case cost for indexes 2+, defaulting to the legacy cost. */
+  additionalShardBytes?: number;
+  reserveBytes: number;
+}): number {
+  const additional = input.additionalShardBytes ?? input.shardBytes;
+  if (
+    ![input.availableBytes, input.shardBytes, additional, input.reserveBytes].every(
+      (value) => Number.isSafeInteger(value) && value >= 0
+    ) ||
+    input.shardBytes === 0 ||
+    additional === 0 ||
+    input.existingShardAllocatedBytes.some((value) => !Number.isSafeInteger(value) || value < 0)
+  )
+    throw Error('Unreadable Horse journal disk capacity');
+  const remainingGrowth = input.existingShardAllocatedBytes.reduce(
+    (total, bytes, index) =>
+      total + Math.max(0, (index < 2 ? input.shardBytes : additional) - bytes),
+    0
+  );
+  if (!Number.isSafeInteger(remainingGrowth)) throw Error('Unreadable Horse journal disk capacity');
+  const existing = input.existingShardAllocatedBytes.length;
+  const budget = Math.max(0, input.availableBytes - input.reserveBytes - remainingGrowth);
+  // A fresh journal must pay for indexes 0 and 1 before cheaper later shards.
+  const legacyFresh = Math.min(Math.max(0, 2 - existing), Math.floor(budget / input.shardBytes));
+  const laterFresh =
+    existing + legacyFresh >= 2
+      ? Math.floor((budget - legacyFresh * input.shardBytes) / additional)
+      : 0;
+  return Math.max(1, existing + legacyFresh + laterFresh);
+}
+
+/** Measure once at lane construction. No configured journal means no disk
+ * limit. A configured journal whose budget cannot be read retains the legacy
+ * two-worker ceiling; inability to measure must never increase the default. */
+export function horseJournalShardCapacity(
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+  allocationReader: (directories: readonly string[]) => number[] = horseJournalArchiveAllocatedBytes
+): number | undefined {
+  const directory = environment.HORSE_DECISION_JOURNAL_DIR;
+  if (!directory) return undefined;
+  try {
+    const { maxBytes } = runtimeHorseJournalArchiveOptions(directory, environment);
+    let probe = directory;
+    while (!existsSync(probe) && dirname(probe) !== probe) probe = dirname(probe);
+    const names = horseJournalArchiveDirectoryNames(directory);
+    if (names.some((name, index) => name !== archiveDirectoryName(index)))
+      throw Error('Incomplete Horse journal archive layout');
+    const directories = names.map((name) => join(directory, name));
+    const allocated = allocationReader(directories);
+    if (allocated.length !== directories.length) throw Error('Incomplete Horse archive allocation');
+    // Read free space after the allocation walk. Lane construction precedes
+    // spawning its shard writers; no publisher starts during this measurement.
+    const fs = statfsSync(probe);
+    return horseJournalShardsAffordable({
+      existingShardAllocatedBytes: allocated,
+      availableBytes: fs.bavail * fs.bsize,
+      shardBytes: horseJournalShardDiskBytes(maxBytes),
+      additionalShardBytes: horseJournalShardDiskBytes(
+        runtimeHorseJournalArchiveOptions(directory, environment, { index: 2 }).maxBytes
+      ),
+      reserveBytes: HORSE_JOURNAL_SHARD_DISK_RESERVE_BYTES,
+    });
+  } catch {
+    console.warn(
+      '[HorseDecisionLane] journal disk capacity unreadable; retaining legacy two-worker ceiling'
+    );
+    return 2;
+  }
 }

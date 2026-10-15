@@ -350,7 +350,7 @@ export interface HorsePhase11AuthoritySelection {
 }
 
 /**
- * THE PROTECTED RELEASE SELECTIONS, one per pack.
+ * Historical generation-one selections, one per pack.
  *
  * PLO8 (`plo8-split-round3-v2`), approval generation 1, selected under the
  * winning contract as amended by the owner on October 9, 2026 (condition (a)
@@ -367,65 +367,15 @@ export interface HorsePhase11AuthoritySelection {
  * docs/evidence/phase11/ and shipped in the engine image under
  * server/release-evidence/. Withdrawal is a reviewed change of a pack's
  * `withdrawn` to `{ at, reason }`; a withdrawn generation never returns.
+ *
+ * October 12: the opponent PFR source repair changes the qualified policy
+ * digest. Selection is explicitly null until the existing locked matrix
+ * requalifies the exact protected source and a new generation is selected.
+ * Retain all prior evidence; it cannot qualify this modified policy.
  */
 export const PHASE11_PROTECTED_RELEASE_SELECTIONS: Readonly<
   Record<'plo5' | 'plo6' | 'plo8', HorsePhase11AuthoritySelection | null>
-> = Object.freeze({
-  plo5: Object.freeze({
-    schema: 'horse-qualified-authority-selection-v1',
-    phase: 'phase11',
-    variant: 'plo5',
-    sourceSha: '1235b47a63c439da9bdf8427148bc0818499378c',
-    packVersion: 'plo5-high-round3-v2',
-    contractVersion: 'omaha-variant-strength-contract-v1',
-    contractDigest: '5b93ae20962ff79798b998f437ed43d2bd224a64995d86e34ed63d7bb22057fc',
-    domain: 'plo5-cash-single-board-after-rake-horse-population',
-    qualificationPath: 'docs/evidence/phase11/1235b47a/phase11-qualification-2026-10-09-plo5.json',
-    qualificationSha256: 'fdf10caa5d8fd9539951d3a55802861e5d6afc609d52a01c290d669cafdbb699',
-    completionPath: 'docs/evidence/phase11/1235b47a/phase11-completion-2026-10-09-plo5.json',
-    completionSha256: 'a1020b0a7e24f925f782e16b62482160bd30006a1daf80dc24966bbbe0ce1b7d',
-    approvalGeneration: 1,
-    issuedAt: '2026-10-09T21:45:00.000Z',
-    expiresAt: null,
-    withdrawn: null,
-  } as const),
-  plo6: Object.freeze({
-    schema: 'horse-qualified-authority-selection-v1',
-    phase: 'phase11',
-    variant: 'plo6',
-    sourceSha: '1235b47a63c439da9bdf8427148bc0818499378c',
-    packVersion: 'plo6-high-round3-v2',
-    contractVersion: 'omaha-variant-strength-contract-v1',
-    contractDigest: '5b93ae20962ff79798b998f437ed43d2bd224a64995d86e34ed63d7bb22057fc',
-    domain: 'plo6-cash-single-board-after-rake-horse-population',
-    qualificationPath: 'docs/evidence/phase11/1235b47a/phase11-qualification-2026-10-09-plo6.json',
-    qualificationSha256: 'dbb0ecec5bdf94d52d789fc398d6b6b1cce965edbcecb5f68273defcaa47f7b2',
-    completionPath: 'docs/evidence/phase11/1235b47a/phase11-completion-2026-10-09-plo6.json',
-    completionSha256: 'e57364725b4b107de6dc813c4f6e33af693c85b1da3bd39789b6da4e2d7c0ae2',
-    approvalGeneration: 1,
-    issuedAt: '2026-10-09T21:45:00.000Z',
-    expiresAt: null,
-    withdrawn: null,
-  } as const),
-  plo8: Object.freeze({
-    schema: 'horse-qualified-authority-selection-v1',
-    phase: 'phase11',
-    variant: 'plo8',
-    sourceSha: '1235b47a63c439da9bdf8427148bc0818499378c',
-    packVersion: 'plo8-split-round3-v2',
-    contractVersion: 'omaha-variant-strength-contract-v1',
-    contractDigest: '5b93ae20962ff79798b998f437ed43d2bd224a64995d86e34ed63d7bb22057fc',
-    domain: 'plo8-cash-single-board-after-rake-horse-population',
-    qualificationPath: 'docs/evidence/phase11/1235b47a/phase11-qualification-2026-10-09-plo8.json',
-    qualificationSha256: 'eff1eb7a6005979cfc86066c3607cf63197d264dd38455f52187f1254ab95e7b',
-    completionPath: 'docs/evidence/phase11/1235b47a/phase11-completion-2026-10-09-plo8.json',
-    completionSha256: '7ffd07ce649140e7871e9b31be22de2632445bdfab2de6a10399e240b6ee7a95',
-    approvalGeneration: 1,
-    issuedAt: '2026-10-09T20:20:00.000Z',
-    expiresAt: null,
-    withdrawn: null,
-  } as const),
-});
+> = Object.freeze({ plo5: null, plo6: null, plo8: null });
 
 const HEX40 = /^[0-9a-f]{40}$/;
 const HEX64 = /^[0-9a-f]{64}$/;

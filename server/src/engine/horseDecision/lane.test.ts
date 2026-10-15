@@ -12,6 +12,7 @@ vi.mock('node:os', async (importOriginal) => {
 });
 import type { HorseDecisionWorkerReady, HorseDecisionWorkerResponse } from './protocol.js';
 import type { WorkerLike } from './client.js';
+import { solverStoreIdentity } from '../../gto/SolverStoreIdentity.js';
 import {
   DEFAULT_HORSE_DECISION_WORKERS,
   LiveHorseDecisionWorkerPool,
@@ -120,10 +121,35 @@ describe('horseDecisionWorkerCount', () => {
     expect(horseDecisionWorkerCount({ cores: 4, canYield: true })).toBe(2);
     expect(horseDecisionWorkerCount({ cores: 3, canYield: true })).toBe(1);
     expect(horseDecisionWorkerCount({ cores: 2, canYield: true })).toBe(1);
-    expect(horseDecisionWorkerCount({ cores: 16, canYield: true })).toBe(2);
     expect(horseDecisionWorkerCount({ cores: 4, canYield: false })).toBe(1);
     expect(horseDecisionWorkerCount({ requested: '3', cores: 4, canYield: true })).toBe(2);
     expect(horseDecisionWorkerCount({ requested: '1', cores: 4, canYield: true })).toBe(1);
+  });
+
+  it('runs one yielding worker per physical core but one, never fewer than two (2026-10-12)', () => {
+    // The engine host: eight logical CPUs on four EPYC Milan cores. Three.
+    expect(horseDecisionWorkerCount({ cores: 8, canYield: true })).toBe(3);
+    expect(horseDecisionWorkerCount({ cores: 6, canYield: true })).toBe(2);
+    expect(horseDecisionWorkerCount({ cores: 10, canYield: true })).toBe(4);
+    expect(horseDecisionWorkerCount({ cores: 16, canYield: true })).toBe(7);
+    expect(horseDecisionWorkerCount({ cores: 32, canYield: true })).toBe(
+      MAX_HORSE_DECISION_WORKERS
+    );
+  });
+
+  it('never defaults to more shards than the journal disk can hold, nor bounds an explicit request', () => {
+    expect(horseDecisionWorkerCount({ cores: 8, canYield: true, journalShards: 3 })).toBe(3);
+    expect(horseDecisionWorkerCount({ cores: 8, canYield: true, journalShards: 5 })).toBe(3);
+    expect(horseDecisionWorkerCount({ cores: 8, canYield: true, journalShards: 2 })).toBe(2);
+    expect(horseDecisionWorkerCount({ cores: 8, canYield: true, journalShards: 1 })).toBe(1);
+    expect(horseDecisionWorkerCount({ cores: 8, journalShards: 1 })).toBe(1);
+    // No journal, or no reading of it: the CPU rule alone.
+    for (const journalShards of [undefined, 0, -1, 1.5, Number.NaN])
+      expect(horseDecisionWorkerCount({ cores: 8, canYield: true, journalShards })).toBe(3);
+    // The operator who sets HORSE_DECISION_WORKERS sizes the journal too.
+    expect(
+      horseDecisionWorkerCount({ requested: '4', cores: 8, canYield: true, journalShards: 2 })
+    ).toBe(4);
   });
 
   it('defaults by physical cores at two threads each where a worker cannot yield', () => {
@@ -235,6 +261,65 @@ describe('LiveHorseDecisionWorkerPool', () => {
     await expect(pool.ready()).rejects.toThrow('worker 1 loaded a different solver corpus');
     expect(workers.every((worker) => worker.sent.some((m) => m.type === 'SHUTDOWN'))).toBe(true);
   });
+
+  it.each(['charts', 'postflop'] as const)(
+    'refuses equal-count different %s content',
+    async (store) => {
+      const { pool, workers } = poolOf(2);
+      const original = {
+        charts: solverStoreIdentity(new Map([['chart', { frequency: 0.5 }]]), null),
+        postflop: solverStoreIdentity(new Map([['node', { equity: 0.5 }]]), null),
+      };
+      const changed = {
+        ...original,
+        [store]: solverStoreIdentity(
+          new Map([
+            [
+              store === 'charts' ? 'chart' : 'node',
+              store === 'charts' ? { frequency: 0.6 } : { equity: 0.6 },
+            ],
+          ]),
+          null
+        ),
+      };
+      workers[0]!.emit(ready({ solverStoreIdentity: original }));
+      workers[1]!.emit(ready({ solverStoreIdentity: changed }));
+      await expect(pool.ready()).rejects.toThrow('worker 1 loaded a different solver corpus');
+      expect(workers.every((worker) => worker.sent.some((m) => m.type === 'SHUTDOWN'))).toBe(true);
+    }
+  );
+
+  it('accepts identical content with an unknown source revision', async () => {
+    const { pool, workers } = poolOf(2);
+    const content = new Map([['row', { frequency: 0.5 }]]);
+    const unknown = solverStoreIdentity(content, null);
+    const known = solverStoreIdentity(content, '2026-10-12T00:00:00.000Z');
+    workers[0]!.emit(ready({ solverStoreIdentity: { charts: unknown, postflop: unknown } }));
+    workers[1]!.emit(ready({ solverStoreIdentity: { charts: known, postflop: known } }));
+    await expect(pool.ready()).resolves.toBeDefined();
+  });
+
+  it.each(['missing', 'malformed', 'revision'] as const)(
+    'refuses %s corpus identity beside a loaded peer',
+    async (kind) => {
+      const { pool, workers } = poolOf(2);
+      const content = new Map([['row', { frequency: 0.5 }]]);
+      const original = solverStoreIdentity(content, '2026-10-12T00:00:00.000Z');
+      const other =
+        kind === 'revision'
+          ? solverStoreIdentity(content, '2026-10-12T01:00:00.000Z')
+          : { ...original, digest: 'invalid' };
+      workers[0]!.emit(ready({ solverStoreIdentity: { charts: original, postflop: original } }));
+      workers[1]!.emit(
+        ready({
+          solverStoreIdentity:
+            kind === 'missing' ? undefined : { charts: other, postflop: original },
+        })
+      );
+      await expect(pool.ready()).rejects.toThrow('worker 1 loaded a different solver corpus');
+      expect(workers.every((worker) => worker.sent.some((m) => m.type === 'SHUTDOWN'))).toBe(true);
+    }
+  );
 
   it('routes every job for one table to the same worker, in order', async () => {
     const { pool, workers } = poolOf(2);

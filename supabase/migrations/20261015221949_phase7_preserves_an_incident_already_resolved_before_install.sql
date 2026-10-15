@@ -78,6 +78,37 @@ DO $guard$BEGIN
  IF to_regprocedure('public.fn_ca_launch_health_tournament_held(uuid,uuid)') IS NOT NULL THEN RAISE EXCEPTION 'phase7_triage_already_present';END IF;
 END $guard$;
 
+-- The broad fairness read finishes before the treasury row is locked.
+DO $c$
+DECLARE v_fair boolean;
+BEGIN
+  WITH d AS (
+    SELECT (r.receipt->>'multiplier')::int AS m,
+           (SELECT jsonb_agg(jsonb_build_array((x->>'multiplier')::int, (x->>'freq')::bigint, (x->>'reserveThresholdX')::numeric)
+                             ORDER BY (x->>'multiplier')::int)
+              FROM jsonb_array_elements(r.rule_manifest->'tiers') x) AS ladder
+      FROM public.spin_draw_receipts r
+     WHERE r.created_at > now() - interval '42 days'
+       AND r.receipt->>'rule_provenance' = 'at_draw'
+       AND r.receipt->'locked' = '[]'::jsonb),
+  spec AS (SELECT jsonb_agg(jsonb_build_array(multiplier, freq, reserve_threshold_x) ORDER BY multiplier) AS ladder,
+                  sum(freq)::numeric AS f FROM public.spin_tier_spec),
+  n AS (SELECT count(*)::numeric AS n FROM d),
+  chi AS (SELECT sum((coalesce(c.c, 0) - n.n * s.freq / spec.f) ^ 2 / (n.n * s.freq / spec.f)) AS chi
+            FROM public.spin_tier_spec s CROSS JOIN n CROSS JOIN spec
+            LEFT JOIN (SELECT m, count(*) AS c FROM d GROUP BY m) c ON c.m = s.multiplier),
+  man AS (SELECT count(DISTINCT d.ladder) AS manifests,
+                 bool_and(d.ladder IS NOT NULL AND d.ladder = spec.ladder) AS all_equal_spec
+            FROM d CROSS JOIN spec),
+  off AS (SELECT count(*) AS off_ladder FROM d WHERE m IS NULL OR m NOT IN (SELECT multiplier FROM public.spin_tier_spec))
+  SELECT (chi.chi < 18.475 AND n.n >= 250000 AND man.manifests = 1 AND man.all_equal_spec AND off.off_ladder = 0)
+    INTO v_fair FROM chi, n, man, off;
+  IF v_fair IS NOT TRUE THEN
+    RAISE EXCEPTION 'C: the 42 day Spin draw distribution is not proven fair';
+  END IF;
+END
+$c$;
+
 -- 1. A deliberate owner park is not an overdue start.
 CREATE FUNCTION public.fn_ca_launch_health_tournament_held(p_club uuid, p_union uuid)
  RETURNS boolean
@@ -213,35 +244,7 @@ UPDATE public.financial_alerts SET resolved = true, resolved_at = now(),
  WHERE id = '67c3926b-770e-40f4-bffb-c386ba1f56fe' AND resolved IS NOT TRUE;
 
 -- 3C. Spin fairness: the 42 day distribution is on the published ladder.
-DO $c$
-DECLARE v_fair boolean;
-BEGIN
-  WITH d AS (
-    SELECT (r.receipt->>'multiplier')::int AS m,
-           (SELECT jsonb_agg(jsonb_build_array((x->>'multiplier')::int, (x->>'freq')::bigint, (x->>'reserveThresholdX')::numeric)
-                             ORDER BY (x->>'multiplier')::int)
-              FROM jsonb_array_elements(r.rule_manifest->'tiers') x) AS ladder
-      FROM public.spin_draw_receipts r
-     WHERE r.created_at > now() - interval '42 days'
-       AND r.receipt->>'rule_provenance' = 'at_draw'
-       AND r.receipt->'locked' = '[]'::jsonb),
-  spec AS (SELECT jsonb_agg(jsonb_build_array(multiplier, freq, reserve_threshold_x) ORDER BY multiplier) AS ladder,
-                  sum(freq)::numeric AS f FROM public.spin_tier_spec),
-  n AS (SELECT count(*)::numeric AS n FROM d),
-  chi AS (SELECT sum((coalesce(c.c, 0) - n.n * s.freq / spec.f) ^ 2 / (n.n * s.freq / spec.f)) AS chi
-            FROM public.spin_tier_spec s CROSS JOIN n CROSS JOIN spec
-            LEFT JOIN (SELECT m, count(*) AS c FROM d GROUP BY m) c ON c.m = s.multiplier),
-  man AS (SELECT count(DISTINCT d.ladder) AS manifests,
-                 bool_and(d.ladder IS NOT NULL AND d.ladder = spec.ladder) AS all_equal_spec
-            FROM d CROSS JOIN spec),
-  off AS (SELECT count(*) AS off_ladder FROM d WHERE m IS NULL OR m NOT IN (SELECT multiplier FROM public.spin_tier_spec))
-  SELECT (chi.chi < 18.475 AND n.n >= 250000 AND man.manifests = 1 AND man.all_equal_spec AND off.off_ladder = 0)
-    INTO v_fair FROM chi, n, man, off;
-  IF v_fair IS NOT TRUE THEN
-    RAISE EXCEPTION 'C: the 42 day Spin draw distribution is not proven fair';
-  END IF;
-END
-$c$;
+
 SELECT public.fn_ca_incident_action('ba5d559f-1b81-4737-8ba1-e94cd4773b7b', 'resolve',
   'Verified 2026-10-15: the Spin draw is fair. Over 42 days of unlocked at-draw receipts the distribution matches spin_tier_spec (chi-square 13.05 on 7 df over 271,422 draws, under the p 0.01 line of 18.475; asserted), every receipt carries the one published ladder and none is off it. The 04:44 reading is a tail of an hourly sliding 7 day window: 25x and 50x ran high from Oct 9 to 13 after running low around Oct 2. fn_spin_draw_multiplier draws by CSPRNG inverse-CDF over the manifest exactly. migration 20261015221949',
   NULL,

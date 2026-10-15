@@ -90,6 +90,11 @@ describe('a parked floor is not an overdue start', () => {
     );
   });
 
+  it('finishes the broad fairness read before taking the treasury row lock', () => {
+    expect(SQL.indexOf('$c$;')).toBeLessThan(SQL.indexOf('DO $b$'));
+    expect(SQL.indexOf('$c$;')).toBeLessThan(SQL.indexOf('SELECT public.fn_ca_incident_action'));
+  });
+
   it('closes each alert only behind an assertion that its cause is gone, and every incident with a root cause', () => {
     for (const name of ['a', 'b', 'c', 'd']) {
       expect(block(name)).toContain('RAISE EXCEPTION');

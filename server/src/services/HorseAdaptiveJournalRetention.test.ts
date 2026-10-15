@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { pruneAdaptiveJournal } from './HorseAdaptiveJournalRetention.js';
+import {
+  ADAPTIVE_RETENTION_TIMEOUT_MS,
+  pruneAdaptiveJournal,
+} from './HorseAdaptiveJournalRetention.js';
 const mocks = vi.hoisted(() => ({ rpc: vi.fn(), reply: vi.fn() }));
 vi.mock('./supabase.js', () => ({ supabase: { rpc: mocks.rpc } }));
 beforeEach(() => {
@@ -11,6 +14,15 @@ beforeEach(() => {
   });
 });
 describe('bounded journal retention receipt', () => {
+  it('gives a full grouped pass its own transport ceiling below the 8 s service_role statement timeout', async () => {
+    const timeout = vi.spyOn(AbortSignal, 'timeout');
+    await pruneAdaptiveJournal();
+    expect(timeout).toHaveBeenCalledWith(ADAPTIVE_RETENTION_TIMEOUT_MS);
+    expect(ADAPTIVE_RETENTION_TIMEOUT_MS).toBe(7500);
+    expect(ADAPTIVE_RETENTION_TIMEOUT_MS).toBeGreaterThan(5000);
+    expect(ADAPTIVE_RETENTION_TIMEOUT_MS).toBeLessThan(8000);
+    timeout.mockRestore();
+  });
   it('accepts only one bounded pass without claiming completeness', async () => {
     expect(await pruneAdaptiveJournal()).toEqual({
       status: 'pruned',

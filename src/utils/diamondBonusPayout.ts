@@ -185,7 +185,7 @@ export function validBonusMinimum(value: Record<string, unknown>): boolean {
   if (
     version !== BONUS_PAYOUT_VERSION &&
     !(version === 5 && ['mines', 'crossing', 'crash'].includes(String(value.game))) &&
-    !(version === 6 && value.game === 'crossing')
+    !((version === 6 || version === 7) && value.game === 'crossing')
   )
     return false;
   const rate = value.diamonds_per_chip;

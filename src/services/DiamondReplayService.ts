@@ -52,7 +52,7 @@ export type BonusReplay = ReplayBase &
           mine_cells: number[] | null;
           road_end: number | null;
           /** Contract 6 roads only: the sealed coin of every street (true = safe). */
-          payout_version?: 6;
+          payout_version?: 6 | 7;
           coins?: boolean[];
           /** Contract 6 roads only: each street's prize over the stake (1.1 = 1.10x). */
           street_multipliers?: number[];
@@ -177,7 +177,8 @@ export function parseBonusReplay(value: unknown): BonusReplay {
       // is the first smash among those coins.
       (r.game === 'crossing' &&
         d.payout_version !== undefined &&
-        (d.payout_version !== 6 ||
+        ((d.payout_version !== 6 && d.payout_version !== 7) ||
+          (d.payout_version === 7 && d.coins?.[0] !== true) ||
           !Array.isArray(d.coins) ||
           d.coins.length !== d.prizes.length ||
           !d.coins.every((c) => typeof c === 'boolean') ||

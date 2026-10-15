@@ -200,8 +200,8 @@ describe('isolated journal serial loop', () => {
     ]);
   });
   it.each([
-    ['retirementPending', true, [0, 5000]],
-    ['budgetReached', true, [0, 5000]],
+    ['retirementPending', true, [0, 1000, 2000, 3000, 4000, 5000, 6000]],
+    ['budgetReached', true, [0, 1000, 2000, 3000, 4000, 5000, 6000]],
     ['retirementPending', false, [0]],
   ] as const)(
     'uses v3 %s=%s instead of counting protected attempts as completion',

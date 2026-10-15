@@ -13,7 +13,7 @@ import { describe, expect, it } from 'vitest';
 import receipts from '../fixtures/diamond-spins/crossing-coin-postgres-receipts.json';
 import {
   ROAD_COIN_REFERENCE_CENTS,
-  ROAD_COIN_VERSION,
+  ROAD_COIN_V6 as ROAD_COIN_VERSION,
   roadCoin,
   roadCoinEnd,
   roadCoinPrizes,
@@ -43,7 +43,7 @@ describe('a contract-6 road verifies on this device exactly as the server dealt 
     // The coins this device flips are the coins the server revealed.
     const proof = round.proof!;
     expect(
-      await roadCoins(proof.server_seed, proof.client_seed, proof.nonce, round.max_steps)
+      await roadCoins(proof.server_seed, proof.client_seed, proof.nonce, round.max_steps, ROAD_COIN_VERSION)
     ).toEqual(proof.coins);
     expect(proof.road_end).toBe(roadCoinEnd(proof.coins!));
   });
@@ -55,7 +55,7 @@ describe('a contract-6 road verifies on this device exactly as the server dealt 
       `${proof.client_seed}:${proof.nonce}:street:1`
     );
     expect(Number.parseInt(hash.slice(0, 2), 16) < 128).toBe(false);
-    expect(await roadCoin(proof.server_seed, proof.client_seed, proof.nonce, 1)).toBe(false);
+    expect(await roadCoin(proof.server_seed, proof.client_seed, proof.nonce, 1, ROAD_COIN_VERSION)).toBe(false);
     expect(proof.road_end).toBe(0);
   });
 
@@ -111,8 +111,9 @@ describe('a contract-6 road verifies on this device exactly as the server dealt 
       'crossing'
     );
     expect(state.payout_version).toBe(ROAD_COIN_VERSION);
-    expect(state.prizes).toEqual(roadCoinPrizes(25, 12.5).slice(0, state.max_steps));
-    expect(ROAD_COIN_REFERENCE_CENTS).toEqual([110, 165, 247, 370, 555, 832, 1248, 1872, 2000]);
+    expect(state.prizes).toEqual(roadCoinPrizes(25, 12.5, ROAD_COIN_VERSION).slice(0, state.max_steps));
+    // The reference road a NEW round is quoted from is contract 7's (street one sure).
+    expect(ROAD_COIN_REFERENCE_CENTS).toEqual([80, 110, 165, 247, 370, 555, 832, 1248, 1872, 2000]);
   });
 
   it('the scene paints the round’s own ladder', () => {

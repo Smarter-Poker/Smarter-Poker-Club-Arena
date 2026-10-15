@@ -1,4 +1,4 @@
--- 20261015121220_player_management_fees_count_from_this_weeks_reset.sql
+-- 20261015121331_player_management_fees_count_from_this_weeks_reset.sql
 --
 -- WHAT THIS CHANGES, AND WHY:
 --

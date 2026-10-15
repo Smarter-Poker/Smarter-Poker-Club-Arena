@@ -6,6 +6,7 @@ import {
   LayeredChassis,
   LayeredFitText,
   LayeredStatus,
+  LayeredStyleLine,
   LayeredZoneBox,
   splitBuyInRange,
   type LayeredCanvas,
@@ -62,6 +63,8 @@ export const PLO_FOUR_BAY_ZONES = {
   /* Dan 2026-09-03 review: "ALL TABLE NAMES (THE LINE BELOW THE TITLE HEADER)
      NEEDS TO BE LOWER, AND NOT RIGHT ON TOP OF THE TITLE." */
   subtitle: { x: 130, y: 318, width: 700, height: 48, align: 'left' },
+  /* The style line with its note (Action / Madness, Dan 2026-10-15). */
+  styleNote: { x: 130, y: 310, width: 960, height: 66, align: 'left' },
   status: { x: 872, y: 222, width: 245, height: 72, align: 'center' },
   gameType: bay(130, 220),
   stakes: bay(388, 217),
@@ -136,15 +139,13 @@ export function PloFourBayCard({
         />
       </LayeredZoneBox>
 
-      {data.subtitle && (
-        <LayeredZoneBox canvas={C} zone={PLO_FOUR_BAY_ZONES.subtitle} name="subtitle">
-          <LayeredFitText
-            as="span"
-            text={data.subtitle}
-            className="agc-layered__text--subtitle agc-layered__text--muted"
-          />
-        </LayeredZoneBox>
-      )}
+      <LayeredStyleLine
+        canvas={C}
+        zone={PLO_FOUR_BAY_ZONES.subtitle}
+        noteZone={PLO_FOUR_BAY_ZONES.styleNote}
+        subtitle={data.subtitle}
+        note={data.styleNote}
+      />
 
       <LayeredStatus canvas={C} zone={PLO_FOUR_BAY_ZONES.status} data={data} />
 

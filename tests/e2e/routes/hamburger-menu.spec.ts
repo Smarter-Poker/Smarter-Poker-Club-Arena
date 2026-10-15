@@ -205,9 +205,16 @@ test.describe('Hamburger Menu — Navigation Links', () => {
       // flaky once the suite went to 4 workers. toHaveURL already polls —
       // give it a real budget and let it do that.
       const destination = 'destination' in link ? link.destination : link.path;
+      // A destination owned by the World Hub (Marketplace opens
+      // /hub/diamond-store) is a full document load of another application,
+      // not a client-side route change. Run 38741150929 (2026-10-15) printed
+      // "Received: https://smarter.poker/hub/diamond-store", the right page,
+      // one poll after the 10 s client-route budget ran out. Same assertion,
+      // a cross-application budget.
+      const crossApplication = 'destination' in link;
       await expect(page, `navigation did not reach ${destination}`).toHaveURL(
         (url) => matchesDestination(url, destination),
-        { timeout: 10_000 }
+        { timeout: crossApplication ? 30_000 : 10_000 }
       );
     });
   }

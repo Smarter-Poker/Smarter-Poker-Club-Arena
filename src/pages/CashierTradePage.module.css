@@ -1915,7 +1915,10 @@
 
 .console .actionBar .footerBtn,
 .page.simple .actionBar .footerBtn {
-  min-height: 40px;
+  /* 44px is the thumb target the production Cashier certificate enforces at
+     375 and 393 px (production-cashier.spec.ts). The painted dock grows the
+     few pixels this needs; its art is drawn at 100% x 100%. */
+  min-height: 44px;
   height: 100%;
   padding: 0 4px;
   border: 0;

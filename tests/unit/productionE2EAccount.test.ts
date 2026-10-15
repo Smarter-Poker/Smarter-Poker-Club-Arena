@@ -1000,6 +1000,74 @@ describe('post-deploy production account', () => {
     expect(wait).not.toHaveBeenCalledWith(10_000);
   });
 
+  it('asks the cleanup door again after a lock timeout instead of leaking the identity (run 38770284952)', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'production-e2e-account-lock-timeout-'));
+    const env = environment(directory);
+    const record = {
+      id: USER_ID,
+      email: 'ca-customization-cert-postdeploy-lock-timeout@example.invalid',
+    };
+    let sweepAttempts = 0;
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes('/rest/v1/rpc/cleanup_reserved_certification_account')) {
+        sweepAttempts += 1;
+        return sweepAttempts === 1
+          ? Response.json(
+              {
+                code: '55P03',
+                details: null,
+                hint: null,
+                message: 'canceling statement due to lock timeout',
+              },
+              { status: 500 }
+            )
+          : Response.json({ success: true, already_removed: false, user_id: USER_ID });
+      }
+      if (url.includes(`/auth/v1/admin/users/${USER_ID}`)) {
+        return new Response(null, { status: 404 });
+      }
+      return new Response('unexpected request', { status: 500 });
+    });
+    const wait = vi.fn().mockResolvedValue(undefined);
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await expect(
+      cleanupProductionE2EAccount({ environment: env, fetchImpl: fetchMock, wait, record })
+    ).resolves.toBe(true);
+    expect(sweepAttempts).toBe(2);
+    expect(wait).toHaveBeenCalledTimes(1);
+  });
+
+  it('never asks the cleanup door again after a guard refusal', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'production-e2e-account-guard-refusal-'));
+    const env = environment(directory);
+    const record = {
+      id: USER_ID,
+      email: 'ca-customization-cert-postdeploy-guard@example.invalid',
+    };
+    let sweepAttempts = 0;
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes('/rest/v1/rpc/cleanup_reserved_certification_account')) {
+        sweepAttempts += 1;
+        return Response.json(
+          { code: '55000', message: 'CERTIFICATION_RETIREMENT_HAS_AUTHORITY_OR_CUSTODY' },
+          { status: 500 }
+        );
+      }
+      return new Response('unexpected request', { status: 500 });
+    });
+    const wait = vi.fn().mockResolvedValue(undefined);
+
+    await expect(
+      cleanupProductionE2EAccount({ environment: env, fetchImpl: fetchMock, wait, record })
+    ).rejects.toThrow(/CERTIFICATION_RETIREMENT_HAS_AUTHORITY_OR_CUSTODY/);
+    expect(sweepAttempts).toBe(1);
+    expect(wait).not.toHaveBeenCalled();
+  });
+
   it('waits out the raised form of the freeze refusal too (run 38148991448)', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'production-e2e-account-raised-freeze-'));
     const env = environment(directory);

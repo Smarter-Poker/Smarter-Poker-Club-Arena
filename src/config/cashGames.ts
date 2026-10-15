@@ -31,6 +31,28 @@ export const CASH_TEMPLATES: ReadonlyArray<{ id: CashTemplate; label: string; bl
 ];
 
 /**
+ * WHAT CHANGES, PRINTED BESIDE THE STYLE ON EVERY CASH CARD (Dan 2026-10-15):
+ * "WHEN CASH GAMES ARE DISPLAYED WITH 'CLASSIC' 'ACTION' AND 'MADNESS' THERE
+ * SHOULD BE A DESCRIPTION NEXT TO THEM FOR ACTION AND MADNESS EXPLAINING WHAT
+ * CHANGES THE VARIATION OF THE GAME."
+ *
+ * Classic is the standard ring game, so it prints nothing: only the two
+ * styles that change the game explain themselves. The words are the same
+ * blurb the New Cash Game picker shows (one source, never two wordings), and
+ * they match fn_cash_template_defaults as read 2026-10-15: Action = SB ante,
+ * 30% VPIP floor, 2-board bomb every 15 min; Madness = BB ante, 50% VPIP
+ * floor, 2-board bomb every orbit. No numbers are printed, so a host override
+ * of a figure never makes the card say something untrue.
+ */
+export function cashTemplateNote(template: string | null | undefined): string | null {
+  if (!template) return null;
+  const id = String(template).toLowerCase();
+  if (id === 'classic') return null;
+  const hit = CASH_TEMPLATES.find((t) => t.id === id);
+  return hit ? hit.blurb.replace(/\.\s*$/, '') : null;
+}
+
+/**
  * Every variant the engine deals, in the order the picker shows them. A
  * variant that is NOT here is offered disabled with "This Variant Is Not
  * Available Yet" and the database refuses it too (ROE 16) - nothing is ever

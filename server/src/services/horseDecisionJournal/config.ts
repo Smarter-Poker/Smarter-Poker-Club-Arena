@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { existsSync, lstatSync, statfsSync } from 'node:fs';
 import { dirname, isAbsolute, join } from 'node:path';
 
@@ -318,18 +318,17 @@ function horseJournalAllocationDespiteRetiredSegments(
  * potentially large archive, so cap its execution; a failed/incomplete reading
  * must never authorize an additional worker. Round down one KiB per result,
  * because du -k rounds each allocation up to a KiB. */
+export const HORSE_JOURNAL_DU_TIMEOUT_MS = 15_000;
+export const HORSE_JOURNAL_DU_ASYNC_TIMEOUT_MS = 90_000;
+
 export function horseJournalArchiveAllocatedBytes(directories: readonly string[]): number[] {
   if (!directories.length) return [];
-  for (const directory of directories) {
-    const stat = lstatSync(directory);
-    if (!stat.isDirectory() || stat.isSymbolicLink())
-      throw Error('Invalid Horse journal archive directory');
-  }
+  checkArchiveDirectories(directories);
   let output: string;
   try {
     output = execFileSync('/usr/bin/du', ['-sk', ...directories], {
       encoding: 'utf8',
-      timeout: 15_000,
+      timeout: HORSE_JOURNAL_DU_TIMEOUT_MS,
       maxBuffer: 1024 * 1024,
       env: { ...process.env, LC_ALL: 'C' },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -337,6 +336,18 @@ export function horseJournalArchiveAllocatedBytes(directories: readonly string[]
   } catch (error) {
     output = horseJournalAllocationDespiteRetiredSegments(error, directories);
   }
+  return parseHorseJournalDu(output, directories);
+}
+
+function checkArchiveDirectories(directories: readonly string[]): void {
+  for (const directory of directories) {
+    const stat = lstatSync(directory);
+    if (!stat.isDirectory() || stat.isSymbolicLink())
+      throw Error('Invalid Horse journal archive directory');
+  }
+}
+
+function parseHorseJournalDu(output: string, directories: readonly string[]): number[] {
   const lines = output.trimEnd().split('\n');
   if (lines.length !== directories.length) throw Error('Unreadable Horse archive allocation');
   return lines.map((line, index) => {
@@ -347,6 +358,74 @@ export function horseJournalArchiveAllocatedBytes(directories: readonly string[]
     if (!Number.isSafeInteger(bytes) || bytes < 0)
       throw Error('Unreadable Horse archive allocation');
     return Math.max(0, bytes - 1024);
+  });
+}
+
+/**
+ * THE WALK RUNS OFF THE EVENT LOOP, WITH TIME FOR A FULL ARCHIVE (2026-10-15).
+ * The synchronous walk had 15 s. Three archives at their caps (13.9, 13.7 and
+ * 5.7 GB of segments) took 9.9 s warm on the engine host read-only, two thirds
+ * of that limit, and the boot walk on releases e848247e, 3002fe25 and 9970aa0c
+ * (the last with the retired-segment rule) was refused each time, keeping the
+ * two-worker ceiling on a host whose disk admits three. Lane start is
+ * already asynchronous, so the walk now runs as a child process the event loop
+ * does not wait on, with HORSE_JOURNAL_DU_ASYNC_TIMEOUT_MS. Every refusal rule
+ * of the synchronous walk is unchanged.
+ */
+export async function horseJournalArchiveAllocatedBytesAsync(
+  directories: readonly string[]
+): Promise<number[]> {
+  if (!directories.length) return [];
+  checkArchiveDirectories(directories);
+  const output = await new Promise<string>((resolve, reject) => {
+    execFile(
+      '/usr/bin/du',
+      ['-sk', ...directories],
+      {
+        encoding: 'utf8',
+        timeout: HORSE_JOURNAL_DU_ASYNC_TIMEOUT_MS,
+        maxBuffer: 1024 * 1024,
+        env: { ...process.env, LC_ALL: 'C' },
+      },
+      (error, stdout, stderr) => {
+        if (!error) return resolve(stdout);
+        try {
+          resolve(
+            horseJournalAllocationDespiteRetiredSegments(
+              Object.assign(error, {
+                status: typeof error.code === 'number' ? error.code : null,
+                stdout,
+                stderr,
+              }),
+              directories
+            )
+          );
+        } catch (refused) {
+          reject(refused);
+        }
+      }
+    );
+  });
+  return parseHorseJournalDu(output, directories);
+}
+
+/** The capacity, with the archive walk measured asynchronously first. The
+ * same reading and the same refusals as horseJournalShardCapacity. */
+export async function horseJournalShardCapacityMeasured(
+  environment: Readonly<Record<string, string | undefined>> = process.env
+): Promise<number | undefined> {
+  const directory = environment.HORSE_DECISION_JOURNAL_DIR;
+  if (!directory) return horseJournalShardCapacity(environment);
+  let measured: number[] | { error: unknown };
+  try {
+    const names = horseJournalArchiveDirectoryNames(directory);
+    measured = await horseJournalArchiveAllocatedBytesAsync(names.map((n) => join(directory, n)));
+  } catch (error) {
+    measured = { error };
+  }
+  return horseJournalShardCapacity(environment, () => {
+    if (!Array.isArray(measured)) throw measured.error;
+    return measured;
   });
 }
 
@@ -389,6 +468,37 @@ export function horseJournalShardsAffordable(input: {
   return Math.max(1, existing + legacyFresh + laterFresh);
 }
 
+let journalCapacityUnreadable: string | null = null;
+
+/** Why the last journal capacity reading was refused, published on /health
+ * (liveHorseDecision.journalCapacityUnreadable) so the reason a host runs the
+ * two-worker ceiling is visible without reading the host. Null when the last
+ * reading succeeded or nothing is journaled. */
+export function horseJournalCapacityUnreadableReason(): string | null {
+  return journalCapacityUnreadable;
+}
+
+/** One bounded line: the error's first line, with the exit status, signal and
+ * first stderr line of a failed command. Paths only; never an environment value. */
+function capacityFailureText(error: unknown): string {
+  const e = (error ?? {}) as {
+    message?: unknown;
+    status?: unknown;
+    signal?: unknown;
+    code?: unknown;
+    stderr?: unknown;
+  };
+  const first = (value: unknown) =>
+    typeof value === 'string' ? (value.split('\n').find((line) => line.trim()) ?? '') : '';
+  const parts = [first(e.message) || 'unknown error'];
+  if (e.code !== undefined) parts.push(`code=${String(e.code)}`);
+  if (e.status !== undefined && e.status !== null) parts.push(`status=${String(e.status)}`);
+  if (e.signal) parts.push(`signal=${String(e.signal)}`);
+  const stderr = first(e.stderr);
+  if (stderr) parts.push(`stderr=${stderr}`);
+  return parts.join(' ').slice(0, 400);
+}
+
 /** Measure once at lane construction. No configured journal means no disk
  * limit. A configured journal whose budget cannot be read retains the legacy
  * two-worker ceiling; inability to measure must never increase the default. */
@@ -397,6 +507,7 @@ export function horseJournalShardCapacity(
   allocationReader: (directories: readonly string[]) => number[] = horseJournalArchiveAllocatedBytes
 ): number | undefined {
   const directory = environment.HORSE_DECISION_JOURNAL_DIR;
+  journalCapacityUnreadable = null;
   if (!directory) return undefined;
   try {
     const { maxBytes } = runtimeHorseJournalArchiveOptions(directory, environment);
@@ -411,7 +522,7 @@ export function horseJournalShardCapacity(
     // Read free space after the allocation walk. Lane construction precedes
     // spawning its shard writers; no publisher starts during this measurement.
     const fs = statfsSync(probe);
-    return horseJournalShardsAffordable({
+    const shards = horseJournalShardsAffordable({
       existingShardAllocatedBytes: allocated,
       availableBytes: fs.bavail * fs.bsize,
       shardBytes: horseJournalShardDiskBytes(maxBytes),
@@ -420,9 +531,13 @@ export function horseJournalShardCapacity(
       ),
       reserveBytes: HORSE_JOURNAL_SHARD_DISK_RESERVE_BYTES,
     });
-  } catch {
+    journalCapacityUnreadable = null;
+    return shards;
+  } catch (error) {
+    journalCapacityUnreadable = capacityFailureText(error);
     console.warn(
-      '[HorseDecisionLane] journal disk capacity unreadable; retaining legacy two-worker ceiling'
+      '[HorseDecisionLane] journal disk capacity unreadable; retaining legacy two-worker ceiling',
+      journalCapacityUnreadable
     );
     return 2;
   }

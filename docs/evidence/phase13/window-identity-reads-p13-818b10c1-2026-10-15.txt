@@ -1,0 +1,33 @@
+read1 (declared, H:00-H:02, H=18) at 2026-10-15T18:00:09Z
+2026-10-15T17:41:51.159462786Z 818b10c16e962616008cc225a28a1cddba8cf6a0
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+    import sys,json;print(json.load(sys.stdin).get("releaseSha"))
+                          ~~~~~~~~~^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.2/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py", line 298, in load
+    return loads(fp.read(),
+        cls=cls, object_hook=object_hook,
+        parse_float=parse_float, parse_int=parse_int,
+        parse_constant=parse_constant, object_pairs_hook=object_pairs_hook, **kw)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.2/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py", line 352, in loads
+    return _default_decoder.decode(s)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.2/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py", line 345, in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.2/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py", line 363, in raw_decode
+    raise JSONDecodeError("Expecting value", s, err.value) from None
+json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+health 
+release runs queued/in_progress:
+error connecting to api.github.com
+check your internet connection or https://githubstatus.com
+read1b (H=18) at 2026-10-15T18:01:13Z
+2026-10-15T17:41:51.159462786Z 818b10c16e962616008cc225a28a1cddba8cf6a0
+error connecting to api.github.com
+check your internet connection or https://githubstatus.com
+health at 2026-10-15T18:02:05Z 
+note: /health at 17:58:21Z (Mac) read releaseSha 818b10c16e962616008cc225a28a1cddba8cf6a0, workerCount 3; the H:00-H:02 /health fetches from the Mac failed (Mac DNS resolution timed out for engine.smarter.poker and api.github.com), so the in-slot identity is the container StartedAt and sp.release.sha label above, read at 18:00:09Z and 18:01:13Z.
+digests: release 818b10c1 is the declared source; its Phase 13 digests are section 4 (p13-digests-818b10c.txt, computed from that tree at 16:39Z before any journal read).
+window H=18: [2026-10-15T18:02:00.000Z, 2026-10-15T19:50:00.000Z)
+VOID H=18 (recorded at 2026-10-15T18:14:48Z, before any journal of the window was read): auto-deploy-hetzner run 38772485733 (Engine Release 818b10c1, the serving release itself, cut over 17:41:51Z) completed successfully at 2026-10-15T18:12:48Z, inside the window, when its trailing certification job finished. Section 2 counts any successful completion between the reads, so the window is void. Per section 2 the declaration applies to the next H after the void window: H=20, window [2026-10-15T20:02:00.000Z, 2026-10-15T21:50:00.000Z).

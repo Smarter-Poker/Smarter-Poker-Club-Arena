@@ -73,6 +73,11 @@ function SuperAgentDashboardForScope({ userId, clubId }: { userId: string; clubI
 
   const [transferPlayerId, setTransferPlayerId] = useState('');
   const [transferAmount, setTransferAmount] = useState('');
+  // The rakeback this agent gives their own players (Dan, 2026-10-15: "THE
+  // AGENT ASSIGNS WHAT THEY WANT TO GIVE THEIR PLAYERS"). Blank until they type;
+  // the saved figure is shown beside it.
+  const [playerRakebackInput, setPlayerRakebackInput] = useState('');
+  const [savingPlayerRakeback, setSavingPlayerRakeback] = useState(false);
   const [isTransferring, setIsTransferring] = useState(false);
   const transferInFlight = useRef(false);
   const [visibleStatCards, setVisibleStatCards] = useState(new Set<number>());
@@ -322,6 +327,37 @@ function SuperAgentDashboardForScope({ userId, clubId }: { userId: string; clubI
     }
   };
 
+  const handleSavePlayerRakeback = async () => {
+    if (!agent || savingPlayerRakeback) return;
+    const pct = Number(playerRakebackInput);
+    const maxPct = Math.min(50, (agent.commissionRate || 0) * 100);
+    if (playerRakebackInput.trim() === '' || !Number.isFinite(pct) || pct < 0 || pct > maxPct) {
+      toast.error(`Enter A Player Rakeback From 0 To ${maxPct.toLocaleString()} Percent.`);
+      return;
+    }
+    setSavingPlayerRakeback(true);
+    try {
+      const { data, error } = await supabase.rpc('fn_agent_set_player_rakeback', {
+        p_club_id: agent.clubId,
+        p_rate: Math.round(pct * 100) / 10000,
+      });
+      if (error) throw error;
+      const result = data as { success?: boolean; error?: string } | null;
+      if (!result?.success) throw new Error(result?.error || 'Player Rakeback Was Not Saved');
+      if (!isMounted.current) return;
+      toast.success(`Your Players Now Receive ${pct.toLocaleString()}% Rakeback`);
+      setPlayerRakebackInput('');
+      await loadDashboardData();
+    } catch (error) {
+      reportError(error, 'SuperAgentDashboard.Set_player_rakeback');
+      if (isMounted.current) {
+        toast.error(error instanceof Error ? error.message : 'Player Rakeback Was Not Saved');
+      }
+    } finally {
+      if (isMounted.current) setSavingPlayerRakeback(false);
+    }
+  };
+
   const handleTransfer = async () => {
     if (!agent || !transferPlayerId || !transferAmount || transferInFlight.current) return;
     const amount = parseFloat(transferAmount);
@@ -484,16 +520,51 @@ function SuperAgentDashboardForScope({ userId, clubId }: { userId: string; clubI
             <div className="rates-card">
               <h3>Your Rates</h3>
               <div className="rate-row">
-                <span>Commission Rate</span>
+                <span>Your Rakeback (Set By The Club)</span>
                 <span className="rate-value">
                   {((agent.commissionRate || 0) * 100).toFixed(1)}%
                 </span>
               </div>
               <div className="rate-row">
-                <span>Player Rakeback</span>
+                <span>Rakeback You Give Your Players</span>
                 <span className="rate-value">
                   {((agent.playerRakebackRate || 0) * 100).toFixed(1)}%
                 </span>
+              </div>
+              <div className="form-row rate-edit">
+                <label htmlFor="player-rakeback-input">
+                  Set Your Players&apos; Rakeback (0 To{' '}
+                  {Math.min(50, (agent.commissionRate || 0) * 100).toLocaleString()}%)
+                </label>
+                <div className="rate-edit__controls">
+                  <input
+                    id="player-rakeback-input"
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    max={Math.min(50, (agent.commissionRate || 0) * 100)}
+                    step={1}
+                    placeholder={((agent.playerRakebackRate || 0) * 100).toString()}
+                    value={playerRakebackInput}
+                    onChange={(e) => setPlayerRakebackInput(e.target.value)}
+                    disabled={savingPlayerRakeback || agent.status !== 'active'}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={() => void handleSavePlayerRakeback()}
+                    disabled={
+                      savingPlayerRakeback ||
+                      agent.status !== 'active' ||
+                      playerRakebackInput.trim() === ''
+                    }
+                  >
+                    {savingPlayerRakeback ? 'Saving...' : 'Save'}
+                  </button>
+                </div>
+                <p className="rate-edit__note">
+                  Paid Out Of Your Own Rakeback, So It Cannot Be Higher Than Your Rate.
+                </p>
               </div>
             </div>
             {/* Credit Request Widget */}

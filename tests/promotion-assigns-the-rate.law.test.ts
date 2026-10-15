@@ -67,17 +67,22 @@ const MIGRATION_CO_OWNER = 'supabase/migrations/20260831235996_co_owner_counts_a
 // 1. THE RATE IS CHOSEN, NOT INVENTED
 // ─────────────────────────────────────────────────────────────────────────────
 describe('the promote screen asks for the rate it is granting', () => {
-  it('collects a commission and a player rakeback percentage', () => {
+  // Dan, 2026-10-15, superseding the PLAYER half of the 2026-08-31 rule: "THE
+  // OWNER ASSIGNS THE AGENT A SPECIFIC RAKE BACK AMOUNT ... THE AGENT ASSIGNS
+  // WHAT THEY WANT TO GIVE THEIR PLAYERS, THIS SHOULDN'T BE DONE BY THE PERSON
+  // PROMOTING THEM." The promoter chooses the agent's own rate only.
+  it('collects the agent rate and not the player rakeback', () => {
     expect(MEMBER_MANAGEMENT).toMatch(/commissionPct/);
-    expect(MEMBER_MANAGEMENT).toMatch(/rakebackPct/);
+    expect(codeOnly(MEMBER_MANAGEMENT)).not.toMatch(/rakebackPct/);
+    expect(MEMBER_MANAGEMENT).toMatch(/Agent Rakeback Percent \(0 To 70\)/);
   });
 
-  it('sends both to fn_club_set_member_role', () => {
+  it('sends the agent rate to fn_club_set_member_role, and no player rakeback', () => {
     expect(MEMBER_MANAGEMENT).toMatch(/p_commission_rate/);
-    expect(MEMBER_MANAGEMENT).toMatch(/p_player_rakeback_rate/);
+    expect(codeOnly(MEMBER_MANAGEMENT)).not.toMatch(/p_player_rakeback_rate/);
   });
 
-  it('asks for them only for an agent tier', () => {
+  it('asks for it only for an agent tier', () => {
     expect(MEMBER_MANAGEMENT).toMatch(/isAgentRole\(/);
   });
 
@@ -85,17 +90,23 @@ describe('the promote screen asks for the rate it is granting', () => {
     // The field says "40" and agents.commission_rate is DECIMAL(5,4) capped at
     // 0.70. Sending 40 would not merely be wrong, it would overflow the column.
     expect(MEMBER_MANAGEMENT).toMatch(/comm\s*\/\s*100/);
-    expect(MEMBER_MANAGEMENT).toMatch(/rake\s*\/\s*100/);
   });
 
-  it('refuses a rakeback larger than the commission it is paid out of', () => {
-    expect(MEMBER_MANAGEMENT).toMatch(/rake\s*>\s*comm/);
-  });
-
-  it('does not pre-fill either field', () => {
+  it('does not pre-fill the agent rate', () => {
     // A pre-filled rate is a rate nobody chose, which is the bug.
     expect(MEMBER_MANAGEMENT).toMatch(/const \[commissionPct, setCommissionPct\] = useState\(''\)/);
-    expect(MEMBER_MANAGEMENT).toMatch(/const \[rakebackPct, setRakebackPct\] = useState\(''\)/);
+  });
+
+  it('the agent sets their own players\' rakeback, capped by their own rate', () => {
+    const dashboard = read('src/pages/SuperAgentDashboard.tsx');
+    expect(dashboard).toMatch(/rpc\('fn_agent_set_player_rakeback'/);
+    const sql = read(
+      'supabase/migrations/20261015163632_agents_set_the_rakeback_their_players_receive.sql'
+    );
+    expect(sql).toMatch(/CREATE FUNCTION public\.fn_agent_set_player_rakeback/);
+    expect(sql).toMatch(/p_rate > v_agent\.commission_rate/);
+    // An agent's 0 means 0: the volume ladder is only for players with no agent.
+    expect(sql).toMatch(/WHEN p\.member_agent IS NOT NULL THEN p\.offer/);
   });
 
   it('says out loud that co owners and admins earn none', () => {

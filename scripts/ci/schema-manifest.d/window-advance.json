@@ -1,0 +1,5 @@
+{
+  "_owner": "fix/a-proving-week-advances-on-its-own-tick",
+  "_comment": "Migration 20261015182133: the chunked close tick proves a prepared week's round 2 and round 3 windows on its own.",
+  "functions": ["fn_accounting_window_advance_due"]
+}

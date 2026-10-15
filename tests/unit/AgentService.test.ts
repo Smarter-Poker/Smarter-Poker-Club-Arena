@@ -202,17 +202,16 @@ describe('AgentService', () => {
       ).rejects.toThrow(/commission rate is required/i);
     });
 
-    it('should reject missing rakeback rate', async () => {
+    it('does not require a player rakeback: the agent sets it (Dan, 2026-10-15)', async () => {
       await expect(
         AgentService.createAgent({
           userId: 'user-1',
           clubId: 'club-1',
           role: 'agent',
           commissionRate: 0.5,
-          playerRakebackRate: undefined as any,
           creditLimit: 10000,
         })
-      ).rejects.toThrow(/rakeback rate is required/i);
+      ).rejects.not.toThrow(/rakeback rate/i);
     });
 
     it('should reject missing credit limit', async () => {

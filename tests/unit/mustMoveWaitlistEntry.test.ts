@@ -33,9 +33,9 @@ describe('the full Must-Move table reaches its game entry door', () => {
 
   it('refreshes the handler when the game changes and keeps the footer connected', () => {
     expect(source).toContain('}, [loadWaitlist, tableState.clusterId]);');
-    expect(source).toMatch(
-      /className="spectator-footer-bar__cta"\s+onClick=\{handleOpenWaitlist\}/
-    );
+    /* Dan 2026-10-15: the full-table footer is the painted waitlist shell
+       now (WaitlistCallToAction), still wired to the same handler. */
+    expect(source).toMatch(/<WaitlistCallToAction\s+onClick=\{handleOpenWaitlist\}/);
   });
 });
 

@@ -43,6 +43,7 @@ import {
   joinCashGame,
   joinGameRefusalText,
   leaveCashGameWaitlist,
+  lobbyTableChips,
   lobbyTableLabel,
   mustMoveListRows,
   pendingMoveNotice,
@@ -429,6 +430,18 @@ export function MustMoveLobbyModal({
                       <span className="mml-table-state">{lifecycleLabel(t)}</span>
                       <span className="mml-table-count">
                         {t.seated}/{t.max_players}
+                      </span>
+                      <span className="mml-table-stat" data-stat="average-stack">
+                        <span className="mml-table-stat-label">Avg Stack</span>
+                        <span className="mml-table-stat-value">
+                          {formatAmount(lobbyTableChips(t).average)}
+                        </span>
+                      </span>
+                      <span className="mml-table-stat" data-stat="total-chips">
+                        <span className="mml-table-stat-label">Total Chips</span>
+                        <span className="mml-table-stat-value">
+                          {formatAmount(lobbyTableChips(t).total)}
+                        </span>
                       </span>
                       {t.seat_change_queue > 0 && (
                         <span className="mml-table-queue">

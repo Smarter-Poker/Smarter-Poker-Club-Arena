@@ -15,6 +15,10 @@ import {
   type RetirementBinding,
   type RetirementCustody,
 } from './services/TournamentRetirementCustody.js';
+import {
+  EMPTY_PAST_START_CANCEL_RETRY_MS,
+  shouldCancelEmptyPastStartEvent,
+} from './tournament/emptyPastStartEvent.js';
 import { projectTournamentAdmission } from './tournament/tournamentAdmission.js';
 import {
   isPersistedUnlimitedMtt,
@@ -3338,6 +3342,8 @@ export class GameServer {
    * seconds long. Pruned with lastMttRampAt.
    */
   private pastStartTopUpClock: Map<string, { at: number; misses: number }> = new Map();
+  /** When an empty past-start event was last offered to atomic_cancel_tournament. */
+  private emptyEventCancelAskedAt: Map<string, number> = new Map();
   /**
    * REGISTERING rows whose prize pool is already finalized, reported once each
    * (2026-09-11). Such a row has left registration whatever its status says;
@@ -8035,6 +8041,62 @@ export class GameServer {
              */
             const target = tournament.effective_max_players ?? minPlayers;
 
+            /* AN EVENT NOBODY ENTERED IS CANCELLED (2026-10-15). See
+               tournament/emptyPastStartEvent.ts: no entrant on a complete
+               roster read, thirty minutes past start, and a top-up that has
+               already come back empty. Nothing is refunded because nothing was
+               paid; atomic_cancel_tournament writes the receipt. A club whose
+               horses can fill the event is filled by the top-up below first. */
+            const emptyClock = this.pastStartTopUpClock.get(tournament.id);
+            if (
+              shouldCancelEmptyPastStartEvent({
+                seatFirst: isSngOrSpin,
+                poolFinalized,
+                rosterCount: rosterByTournament.get(tournament.id),
+                currentPlayers: tournament.current_players,
+                startTimeMs: startTime,
+                nowMs: now,
+                emptyTopUps: emptyClock?.misses ?? 0,
+              })
+            ) {
+              const askedAt = this.emptyEventCancelAskedAt.get(tournament.id) ?? 0;
+              if (now - askedAt >= EMPTY_PAST_START_CANCEL_RETRY_MS) {
+                this.launchDiscoveryTopUp(
+                  tournament.id,
+                  generation,
+                  async () => {
+                    this.emptyEventCancelAskedAt.set(tournament.id, now);
+                    const { error: cancelError } = await supabase.rpc('atomic_cancel_tournament', {
+                      p_tournament_id: tournament.id,
+                      p_admin_id: null,
+                    });
+                    if (cancelError) {
+                      reportError(
+                        new Error(
+                          `[GameServer] empty past-start event ${tournament.name} (${String(
+                            tournament.id
+                          ).slice(0, 8)}) was not cancelled: ${cancelError.message}`
+                        ),
+                        'GameServer.empty_past_start_event_cancel_refused',
+                        { tournamentId: tournament.id }
+                      );
+                      return;
+                    }
+                    console.log(
+                      `[GameServer] Cancelled "${tournament.name}" (${String(tournament.id).slice(
+                        0,
+                        8
+                      )}): nobody entered it, it is ${Math.round(
+                        (now - startTime) / 60_000
+                      )} minute(s) past its start and no horse could fill it; nothing to refund`
+                    );
+                  },
+                  'GameServer.empty_past_start_event_cancel_failed'
+                );
+              }
+              continue;
+            }
+
             /* At most every 45 s (the ramp's MTT_PRESTART_TICK_MS), and an event
                that keeps coming back empty is asked half as often each time, up
                to PAST_START_TOP_UP_MAX_INTERVAL_MS - the same backoff
@@ -8213,6 +8275,7 @@ export class GameServer {
         if (
           this.lastMttRampAt.size > 0 ||
           this.pastStartTopUpClock.size > 0 ||
+          this.emptyEventCancelAskedAt.size > 0 ||
           this.registeringButFinalizedReported.size > 0 ||
           spinLaunchParks.size > 0
         ) {
@@ -8227,6 +8290,9 @@ export class GameServer {
           }
           for (const id of this.pastStartTopUpClock.keys()) {
             if (!stillRegistering.has(id)) this.pastStartTopUpClock.delete(id);
+          }
+          for (const id of this.emptyEventCancelAskedAt.keys()) {
+            if (!stillRegistering.has(id)) this.emptyEventCancelAskedAt.delete(id);
           }
           for (const id of this.registeringButFinalizedReported) {
             if (!stillRegistering.has(id)) this.registeringButFinalizedReported.delete(id);

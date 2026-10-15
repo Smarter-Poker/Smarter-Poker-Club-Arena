@@ -1,4 +1,4 @@
--- 20261015010318_club_data_is_live_and_counts_the_felt.sql
+-- 20261015100638_club_data_is_live_and_counts_the_felt.sql
 --
 -- Version reserved by scripts/new-migration.mjs against origin/main and every
 -- remote branch, so it cannot collide with another agent's in-flight work.

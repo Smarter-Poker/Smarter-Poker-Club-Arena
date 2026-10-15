@@ -9,7 +9,7 @@
  * generated in the window - games, total winnings, MTT winnings, fee - and
  * one row per game, all under the same filters.
  *
- * Why the numbers are live (migration 20261015010318): cash rake and cash
+ * Why the numbers are live (migration 20261015100638): cash rake and cash
  * buy-ins / cash-outs are now written to club_table_daily by the same insert
  * triggers that already fed tournaments, in the transaction that moves the
  * money. Nothing waits for an hourly rebuild. A seated player's stack counts

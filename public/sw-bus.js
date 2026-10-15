@@ -392,12 +392,12 @@ sw.addEventListener('fetch', (event) => {
           }).catch(() => {
             // Offline: the cached copy, however old, beats a broken image.
             if (cached) return cached;
-            // No cache and no network. An empty PNG keeps the layout intact
-            // rather than surfacing a browser error glyph mid-hand.
-            return new Response(new Uint8Array(0), {
-              status: 200,
-              headers: { 'Content-Type': 'image/png' },
-            });
+            // No cache and no network: a real network error, never an empty
+            // 200. A 0-byte "image/png" paints nothing, fires no error and
+            // can never be retried, which is how the table felt and room art
+            // went missing together on a dropped first fetch (Dan
+            // 2026-10-15). An error lets the page's own loader retry it.
+            return Response.error();
           });
 
           if (cached) {

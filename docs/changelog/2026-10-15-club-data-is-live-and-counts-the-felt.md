@@ -10,7 +10,7 @@ Dan, 2026-10-14: "THE DATA PAGE IS NOT ACCURATE, AND THE UI NEEDS TO BE IMPROVED
 
 ## What Changed
 
-Migration `20261015010318_club_data_is_live_and_counts_the_felt.sql`:
+Migration `20261015100638_club_data_is_live_and_counts_the_felt.sql`:
 
 - `trg_ca_reporting_rake_insert` now writes each raked cash hand into `club_table_daily` through `fn_ca_club_table_daily_add_rake`, with the rebuild's exact attribution (first union club, else the table's club; a hand with no usable contribution goes to the table's club whole). Contributors are kept in `ca_club_table_player_daily` so the player count matches the rebuild.
 - `trg_ca_reporting_wallet_insert` now writes cash buy-ins, add-ons, rebuys, refunds and cash-outs into `club_table_daily`, in its own block so a failure never costs the player rollup.
@@ -25,4 +25,4 @@ Pinned by `tests/club-data-is-live-and-counts-the-felt.law.test.ts` and `tests/c
 
 ## Installing
 
-After merge, the migration is applied once with `apply-merged-migration.yml` (migration `20261015010318_club_data_is_live_and_counts_the_felt.sql`), and the migration's last statement rebuilds today's cash rows from the ledger inside the same transaction, so the live day starts exact. Days are UTC, like every statement on the platform.
+After merge, the migration is applied once with `apply-merged-migration.yml` (migration `20261015100638_club_data_is_live_and_counts_the_felt.sql`), and the migration's last statement rebuilds today's cash rows from the ledger inside the same transaction, so the live day starts exact. Days are UTC, like every statement on the platform.

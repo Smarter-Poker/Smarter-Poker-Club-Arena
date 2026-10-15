@@ -21,6 +21,11 @@ cancelled with nothing kept, then applies the candidate migration and proves:
     60 s before the plan) are unchanged;
   * every window fresh and the plan present still returns false, so the money
     round is never held back by the clock;
+  * job 272's entry (fn_union_settlement_cascade_due) proves a 'prepared'
+    book's round-2 windows from the top of the tick until a minute before the
+    statement ends and then visits no scope, and is exactly as before when no
+    window is pending, the round is paid, the tick is not chunked (the
+    engine's call), the platform is frozen, or a window cannot be proved;
   * the derived postimage md5s, owner, volatility, settings and grants, and a
     refused second run.
 
@@ -58,16 +63,21 @@ psql = [pg / 'psql', '-X', '-qAt', '-v', 'ON_ERROR_STOP=1', '-h', sock, '-p', PO
 results = {'checks': [], 'production_mutations': False}
 
 COMMISSION = 'public.fn_settle_accounting_commission_advance(text,uuid,timestamp with time zone,timestamp with time zone)'
+DUE = 'public.fn_union_settlement_cascade_due()'
 RAKEBACK = 'public.fn_settle_accounting_rakeback_advance(text,uuid,timestamp with time zone,timestamp with time zone)'
 # pg_get_functiondef md5 read on production 2026-10-15 before the candidate,
 # and the postimages derived read-only on production with replace().
-LIVE = {COMMISSION: '962cc58063d067043734b56a829a78aa', RAKEBACK: '53dadff0fe6ec7e39415e8b8d4b6a99b'}
-POST = {COMMISSION: 'e91c40770c8de772df2a25bbce016ef5', RAKEBACK: '2c3f36a8920d70b225c887c1287a567b'}
+LIVE = {COMMISSION: '962cc58063d067043734b56a829a78aa', RAKEBACK: '53dadff0fe6ec7e39415e8b8d4b6a99b',
+        DUE: '719944c319cd935f5240326469d98f01'}
+POST = {COMMISSION: 'e91c40770c8de772df2a25bbce016ef5', RAKEBACK: '2c3f36a8920d70b225c887c1287a567b',
+        DUE: '4e48f73890bd1b928653327f3a0a388b'}
 FIXTURE = {COMMISSION: 'fn_settle_accounting_commission_advance.live-20261015.sql',
-           RAKEBACK: 'fn_settle_accounting_rakeback_advance.live-20261015.sql'}
+           RAKEBACK: 'fn_settle_accounting_rakeback_advance.live-20261015.sql',
+           DUE: 'fn_union_settlement_cascade_due.live-20261015.sql'}
 # Production's grants: {postgres=X/postgres,service_role=X/postgres}.
 GRANTS = ''.join(f'REVOKE ALL ON FUNCTION {s} FROM PUBLIC; GRANT EXECUTE ON FUNCTION {s} TO service_role;\n'
-                 for s in (COMMISSION, RAKEBACK))
+                 for s in (COMMISSION, RAKEBACK, DUE))
+PRONAMES = "('fn_settle_accounting_commission_advance','fn_settle_accounting_rakeback_advance','fn_union_settlement_cascade_due')"
 
 UNION = 'fade0000-0000-0000-0000-000000000001'
 WEEK = "'2026-10-05 07:00+00'::timestamptz,'2026-10-12 07:00+00'::timestamptz"
@@ -81,6 +91,18 @@ CREATE TABLE public.accounting_close_partials(kind text NOT NULL, union_id uuid 
   window_end timestamptz NOT NULL, value jsonb, cash_ids uuid[], cash_md5 bytea, fee_ids uuid[], fee_md5 bytea,
   computed_at timestamptz NOT NULL, PRIMARY KEY(kind,union_id,period_start,period_end,window_start));
 CREATE TABLE public.plan_calls(at timestamptz DEFAULT clock_timestamp());
+CREATE TABLE public.process_calls(at timestamptz DEFAULT clock_timestamp());
+CREATE TABLE public.union_accounting_runs(scope_kind text, scope_id uuid, period_start timestamptz,
+  period_end timestamptz, status text, result jsonb);
+CREATE TABLE public.accounting_routed_settlement_runs(scope_kind text, scope_id uuid, period_start timestamptz,
+  period_end timestamptz, round_no integer);
+CREATE FUNCTION public.fn_platform_frozen() RETURNS boolean LANGUAGE sql
+  AS $$ SELECT COALESCE(current_setting('test.frozen',true),'')='on' $$;
+CREATE FUNCTION public.fn_caller_is_engine() RETURNS boolean LANGUAGE sql AS $$ SELECT true $$;
+-- The scope scan the tick would otherwise run: recorded, nothing else.
+CREATE FUNCTION public.fn_process_weekly_accounting(p_union_id uuid DEFAULT NULL::uuid) RETURNS jsonb
+  LANGUAGE plpgsql AS $$ BEGIN INSERT INTO public.process_calls DEFAULT VALUES;
+  RETURN jsonb_build_object('success',true,'checked',0,'failed',0,'detail','[]'::jsonb,'processed',true); END $$;
 -- Production's definition, byte for byte.
 CREATE FUNCTION public.fn_accounting_close_windows(p_start timestamp with time zone, p_end timestamp with time zone)
  RETURNS TABLE(window_start timestamp with time zone, window_end timestamp with time zone)
@@ -100,6 +122,7 @@ CREATE FUNCTION public.fn_settle_accounting_commission_window(p_union_id uuid, p
  RETURNS TABLE(value jsonb, cash_ids uuid[], cash_md5 bytea, fee_ids uuid[], fee_md5 bytea)
  LANGUAGE plpgsql AS $$ BEGIN
   PERFORM pg_sleep(current_setting('test.window_seconds')::float8);
+  IF COALESCE(current_setting('test.window_fail',true),'')='on' THEN RAISE EXCEPTION 'stub window refused'; END IF;
   RETURN QUERY SELECT jsonb_build_object('e1',0), NULL::uuid[], NULL::bytea, NULL::uuid[], NULL::bytea;
  END $$;
 CREATE FUNCTION public.fn_settle_accounting_rakeback_window(p_union_id uuid, p_standalone_club_id uuid,
@@ -187,6 +210,33 @@ def plan_calls():
     return int(run('SELECT count(*) FROM public.plan_calls'))
 
 
+def tick(*, statement_timeout='64s', chunked='on', window_seconds=1, frozen='off', fail='off'):
+    """One job 272 tick: its settings, then ONE statement calling the entry.
+    The hourly-break rule reads the minute in the session's time zone, so the
+    tick runs in a zone whose minute is under 45 (production runs in UTC)."""
+    minute = int(run("SELECT extract(minute FROM clock_timestamp() AT TIME ZONE 'UTC')"))
+    zone = 'UTC' if minute < 40 else 'Asia/Kathmandu'
+    run('TRUNCATE public.process_calls;')
+    sql = f"""
+SET TimeZone = '{zone}';
+SET statement_timeout = '{statement_timeout}';
+SET test.window_seconds = '{window_seconds}';
+SET test.frozen = '{frozen}';
+SET test.window_fail = '{fail}';
+SET app.weekly_accounting_chunked = '{chunked}';
+SET app.weekly_accounting_scope_budget = '3 minutes';
+SELECT public.fn_union_settlement_cascade_due();
+"""
+    out_ = command(psql, sql, 240)
+    return json.loads(out_.splitlines()[-1]), int(run('SELECT count(*) FROM public.process_calls'))
+
+
+def prepared_run(stage='prepared'):
+    run('TRUNCATE public.union_accounting_runs, public.accounting_routed_settlement_runs;')
+    run(f"""INSERT INTO public.union_accounting_runs VALUES('union','{UNION}','2026-10-05 07:00+00','2026-10-12 07:00+00',
+'running',jsonb_build_object('stage','{stage}','success',false,'chunk_committed',true,'committed_round',0));""")
+
+
 try:
     if shutil.disk_usage(tempfile.gettempdir()).free < 256 * 1024 ** 2:
         raise RuntimeError('256 MiB disk reserve required')
@@ -207,7 +257,7 @@ try:
         check(f'baseline-is-production-preimage:{sig.split("(")[0]}', got == LIVE[sig], got)
     acl_before = run("SELECT string_agg(p.oid::regprocedure::text||'|'||pg_get_userbyid(p.proowner)||'|'||p.prosecdef||'|'||"
                      "p.provolatile::text||'|'||array_to_string(p.proconfig,',')||'|'||p.proacl::text, ';' ORDER BY p.oid::regprocedure::text) "
-                     "FROM pg_proc p WHERE p.proname IN ('fn_settle_accounting_commission_advance','fn_settle_accounting_rakeback_advance')")
+                     "FROM pg_proc p WHERE p.proname IN " + PRONAMES)
 
     base = {}
     # 1. A late attempt: 3 s of a 62 s statement already spent, so less than a
@@ -232,6 +282,12 @@ try:
     base['overrun-round2-kept'] = partials('round2_union_window')
     check('baseline-is-cancelled-and-keeps-nothing',
           base['overrun-round2'][0] == 'cancelled' and base['overrun-round2-kept'] == 0, base)
+    reset()
+    prepared_run()
+    base['tick'] = tick()
+    base['tick-kept'] = partials('round2_union_window')
+    check('baseline-tick-never-proves-windows-before-the-scope-scan',
+          base['tick'][1] == 1 and base['tick-kept'] == 0, base)
     results['baseline'] = base
 
     # Candidate: the migration under test, applied as production would.
@@ -250,8 +306,11 @@ try:
         check(f'candidate-reproduces-production-derived-postimage:{sig.split("(")[0]}', got == POST[sig], got)
     acl_after = run("SELECT string_agg(p.oid::regprocedure::text||'|'||pg_get_userbyid(p.proowner)||'|'||p.prosecdef||'|'||"
                     "p.provolatile::text||'|'||array_to_string(p.proconfig,',')||'|'||p.proacl::text, ';' ORDER BY p.oid::regprocedure::text) "
-                    "FROM pg_proc p WHERE p.proname IN ('fn_settle_accounting_commission_advance','fn_settle_accounting_rakeback_advance')")
+                    "FROM pg_proc p WHERE p.proname IN " + PRONAMES)
     check('candidate-keeps-owner-volatility-settings-and-grants', acl_after == acl_before, [acl_before, acl_after])
+    check('the-advance-is-service-role-only',
+          run("SELECT array_to_string(proacl,',') FROM pg_proc WHERE oid='public.fn_accounting_close_windows_advance_due()'::regprocedure")
+          == 'postgres=X/postgres,service_role=X/postgres')
 
     got = {}
     reset()
@@ -318,15 +377,58 @@ VALUES('round3_union_plan','{UNION}','2026-10-05 07:00+00','2026-10-12 07:00+00'
     got['done-late'] = attempt('fn_settle_accounting_rakeback_advance', statement_timeout='62s',
                                late_seconds=3, window_seconds=0.01)
     check('a-finished-round3-never-holds-the-money-round', got['done-late'][1] == 'f' and plan_calls() == 0, got)
+    # Job 272's entry: a 'prepared' book's round-2 windows are proved from
+    # the top of the tick until a minute before the statement ends, and the
+    # tick then visits no scope.
+    reset()
+    prepared_run()
+    got['tick'] = tick(statement_timeout='64s', window_seconds=1)
+    got['tick-kept'] = partials('round2_union_window')
+    check('a-chunked-tick-proves-pending-round2-windows-and-visits-no-scope',
+          got['tick'][0].get('window_advance') is not None and got['tick'][1] == 0
+          and 3 <= got['tick-kept'] <= 5 and got['tick'][0].get('success') is True
+          and got['tick'][0].get('checked') == 0 and got['tick'][0].get('detail') == [], got)
+    reset()
+    prepared_run()
+    got['tick-whole'] = tick(statement_timeout='240s', window_seconds=0.01)
+    got['tick-whole-kept'] = partials('round2_union_window')
+    check('a-tick-with-time-proves-every-window', got['tick-whole-kept'] == 84 and got['tick-whole'][1] == 0, got)
+    got['tick-done'] = tick(statement_timeout='240s', window_seconds=0.01)
+    check('every-window-fresh-the-tick-is-as-before',
+          got['tick-done'][1] == 1 and got['tick-done'][0].get('processed') is True, got)
+    reset()
+    prepared_run()
+    run(f"INSERT INTO public.accounting_routed_settlement_runs VALUES('union','{UNION}','2026-10-05 07:00+00','2026-10-12 07:00+00',2);")
+    got['tick-paid'] = tick(window_seconds=0.01)
+    check('a-paid-round-is-left-alone', got['tick-paid'][1] == 1 and partials('round2_union_window') == 0, got)
+    reset()
+    prepared_run(stage='certifying')
+    got['tick-certifying'] = tick(window_seconds=0.01)
+    check('a-book-not-prepared-is-left-alone', got['tick-certifying'][1] == 1 and partials('round2_union_window') == 0, got)
+    reset()
+    prepared_run()
+    got['tick-engine'] = tick(statement_timeout='8s', chunked='off', window_seconds=0.01)
+    check('the-engines-call-is-unchanged', got['tick-engine'][1] == 1 and partials('round2_union_window') == 0, got)
+    got['tick-frozen'] = tick(frozen='on', window_seconds=0.01)
+    check('a-frozen-platform-is-left-alone', got['tick-frozen'][1] == 1 and partials('round2_union_window') == 0, got)
+    got['tick-fail'] = tick(fail='on', window_seconds=0.01)
+    check('a-window-that-cannot-be-proved-falls-through-to-the-scope-scan',
+          got['tick-fail'][1] == 1 and partials('round2_union_window') == 0, got)
     results['candidate'] = got
 
-    # A second run is refused by the pinned preimage.
+    # A second run is refused (the advance exists; the pinned preimages are gone).
     try:
         run(migration)
         replay = 'applied'
     except RuntimeError as e:
         replay = str(e)
-    check('a-second-run-is-refused', 'is not the pinned text' in replay, replay[-300:])
+    check('a-second-run-is-refused', 'close_clock_advance_already_present' in replay, replay[-300:])
+    try:
+        run(migration.replace("IF to_regprocedure('public.fn_accounting_close_windows_advance_due()') IS NOT NULL THEN RAISE EXCEPTION 'close_clock_advance_already_present';END IF;", ''))
+        replay = 'applied'
+    except RuntimeError as e:
+        replay = str(e)
+    check('a-second-run-is-refused-by-the-pinned-preimage-too', 'is not the pinned text' in replay, replay[-300:])
 finally:
     (out / 'RESULTS.json').write_text(json.dumps(results, indent=2, default=str))
     try:

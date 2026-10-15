@@ -29,6 +29,7 @@ import {
   stackFormatRank,
   styleCountsLine,
 } from './lobbyEntries';
+import { cashTemplateNote } from '../../config/cashGames';
 import { prefetchIntent } from '../../utils/ChunkPreloader';
 import { observeLobbyTableWarmups, warmTable } from '../../services/tableWarmup';
 import { useSpinTierAvailability } from '../../hooks/useSpinTierAvailability';
@@ -470,13 +471,21 @@ const COL_NAME: ColumnDef = {
          table's own name — and line 2 must not be cut off by the chips beside
          it. Both lines come from cashTitleLines so the split is one rule. */
       const { headline, subtitle } = cashTitleLines(e);
+      /* Action and Madness say what they change, next to the style word
+         (Dan 2026-10-15). Classic and untemplated tables print nothing. */
+      const styleNote = cashTemplateNote(e.game?.template);
       return (
         <span className="lt-name lt-name--cash" title={e.name}>
           <span className="lt-name__line1">
             {e.live && <i className="lt-live" aria-hidden="true" title="Live" />}
             {headline}
           </span>
-          {subtitle && <span className="lt-name__table">{subtitle}</span>}
+          {subtitle && (
+            <span className="lt-name__table">
+              {subtitle}
+              {styleNote && <span className="lt-name__style-note">{styleNote}</span>}
+            </span>
+          )}
           <LobbyFlagChips entry={e} />
           <PlayerStateChip entry={e} ctx={ctx} />
         </span>

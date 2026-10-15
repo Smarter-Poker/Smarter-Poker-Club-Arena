@@ -46,6 +46,11 @@ export const NLH_PREMIUM_ZONES = {
   /* Dan 2026-09-03 review: the table-name line "NEEDS TO BE LOWER, AND NOT
      RIGHT ON TOP OF THE TITLE". Was y 174. */
   subtitle: { x: 90, y: 186, width: 297, height: 43, align: 'left', maxLines: 1 },
+  /* The style line with its note (Action / Madness, Dan 2026-10-15): the
+     subtitle's own row, run out under the status pill (its rim ends at y
+     ~188) to the well's right wall, tall enough for two short lines above the
+     well's bottom edge (y ~234). */
+  styleNote: { x: 90, y: 190, width: 575, height: 44, align: 'left', maxLines: 2 },
   liveDot: { x: 72, y: 120, width: 48, height: 52 },
   status: { x: 441, y: 112, width: 227, height: 93 },
   /* The lit interior of the same pill, for the DOM-text states (Empty, Full,

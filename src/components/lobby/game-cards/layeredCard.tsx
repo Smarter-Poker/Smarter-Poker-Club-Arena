@@ -135,6 +135,70 @@ export function LayeredFitText({
 }
 
 /**
+ * The style line of a cash card, and - for Action and Madness - what that
+ * style changes, printed NEXT TO it (Dan 2026-10-15: "THERE SHOULD BE A
+ * DESCRIPTION NEXT TO THEM FOR ACTION AND MADNESS EXPLAINING WHAT CHANGES THE
+ * VARIATION OF THE GAME").
+ *
+ * Without a note this is exactly the old subtitle: one fitted line in
+ * `zone`. With one, the row takes `noteZone` (the same left edge, run out to
+ * the right wall of the header well and tall enough for two short lines):
+ * the style word keeps its own size on the left, and the note fills the rest,
+ * taking a second line before it would shrink under 85% (useFitText wrap).
+ */
+export function LayeredStyleLine({
+  canvas,
+  zone,
+  noteZone,
+  subtitle,
+  note,
+}: {
+  canvas: LayeredCanvas;
+  zone: LayeredZone;
+  noteZone: LayeredZone;
+  subtitle?: string;
+  note?: string;
+}) {
+  if (!note) {
+    if (!subtitle) return null;
+    return (
+      <LayeredZoneBox canvas={canvas} zone={zone} name="subtitle">
+        <LayeredFitText
+          as="span"
+          text={subtitle}
+          className="agc-layered__text--subtitle agc-layered__text--muted"
+        />
+      </LayeredZoneBox>
+    );
+  }
+  return (
+    <LayeredZoneBox canvas={canvas} zone={noteZone} name="subtitle" className="agc-layered__style-row">
+      {subtitle && (
+        <span className="agc-layered__style-word">
+          <LayeredFitText
+            as="span"
+            text={subtitle}
+            className="agc-layered__text--subtitle agc-layered__text--muted"
+          />
+        </span>
+      )}
+      <span className="agc-layered__style-note-box" data-zone="styleNote">
+        <LayeredStyleNote text={note} />
+      </span>
+    </LayeredZoneBox>
+  );
+}
+
+export function LayeredStyleNote({ text }: { text: string }) {
+  const ref = useFitText<HTMLSpanElement>(text, 1, 0.55, { wrapBelow: 0.85, maxLines: 2 });
+  return (
+    <span ref={ref} className="agc-layered__text agc-layered__style-note" title={text}>
+      {text}
+    </span>
+  );
+}
+
+/**
  * A buy-in RANGE printed as two centred lines, minimum over maximum, with no
  * dash. Dan 2026-09-03: "REMOVE ALL THE - FOR THE BUY IN CARDS. HAVE IT JUST
  * MINIMUM ON TOP 40 AND BELOW IT THE MAX 200. THE - IS THROWING EVERYTHING

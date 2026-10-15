@@ -192,6 +192,8 @@ const DailyBonusPage = lazyWithRetry(() => import('./pages/DailyBonusPage'));
 const ClubSettingsPage = lazyWithRetry(() => import('./pages/ClubSettingsPage'));
 const TransactionHistoryPage = lazyWithRetry(() => import('./pages/TransactionHistoryPage'));
 const InvitePage = lazyWithRetry(() => import('./pages/InvitePage'));
+const InviteSignupRedirect = lazyWithRetry(() => import('./components/auth/InviteSignupRedirect'));
+const InviteCodePage = lazyWithRetry(() => import('./pages/InviteCodePage'));
 const NotFoundPage = lazyWithRetry(() => import('./pages/NotFoundPage'));
 const ReportPlayerPage = lazyWithRetry(() => import('./pages/ReportPlayerPage'));
 const ReportReviewPage = lazyWithRetry(() => import('./pages/ReportReviewPage'));
@@ -741,6 +743,12 @@ function FullApp() {
                   </GuestGuard>
                 }
               />
+
+              {/* Share & Invite short link opened in the app (2026-10-15). On the
+                  web the World Hub serves smarter.poker/i/<CODE>; this is the
+                  native deep-link landing. Public: the join page it forwards to
+                  decides signup versus join. */}
+              <Route path="/i/:code" element={<InviteCodePage />} />
 
               {/* Public Hand Replay — shareable link, no auth required */}
               <Route path="/share/hand/:handId" element={<HandReplayerPage />} />
@@ -1831,7 +1839,7 @@ function FullApp() {
                 <Route
                   path="invite/:clubId"
                   element={
-                    <AuthGuard>
+                    <AuthGuard publicFallback={<InviteSignupRedirect />}>
                       <PageErrorBoundary pageName="Invite">
                         <InvitePage />
                       </PageErrorBoundary>

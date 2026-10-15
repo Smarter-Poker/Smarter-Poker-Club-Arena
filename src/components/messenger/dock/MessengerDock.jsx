@@ -74,7 +74,7 @@ export default function MessengerDock({ services }) {
         const sequence = ++inboxSequence.current;
         setLoading(true);
         try {
-            const data = await inboxRequest({ workspace: 'social' });
+            const data = await inboxRequest({ workspace: 'dock' });
             if (identity.current !== actor || generation.current !== epoch || sequence !== inboxSequence.current) return;
             setConversations(data.conversations);
             setError('');

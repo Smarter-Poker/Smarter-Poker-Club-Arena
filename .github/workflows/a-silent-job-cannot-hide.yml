@@ -1,0 +1,67 @@
+name: A silent job cannot hide
+
+# v_openclaw_job_staleness and fn_monitoring_health_snapshot (migration
+# 20261015035957). Runs scripts/ci/test-a-silent-job-cannot-hide.py against a
+# throwaway PostgreSQL 17 cluster, never production: the exact production
+# view and snapshot captured 2026-10-15 (md5 equal to the live ones) must hide
+# a sparse failing job, a job with no success in 30 days and a job failing on
+# its last skipped success; the migration must show all three, keep every
+# healthy job quiet, honour a deliberate owner hold, reproduce production's
+# derived postimage md5, and refuse a second run. No timer (CLAUDE.md 10.85):
+# pull_request only, scoped to the paths it proves.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - supabase/migrations/20261015035957_a_failing_or_dispatched_job_cannot_hide_from_the_silence_ale.sql
+      - scripts/ci/fixtures/a-silent-job-cannot-hide/**
+      - scripts/ci/test-a-silent-job-cannot-hide.py
+      - .github/workflows/a-silent-job-cannot-hide.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: a-silent-job-cannot-hide-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  a-silent-job-cannot-hide:
+    name: A silent job cannot hide from the silence alerts
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL 17 from the signed PGDG source only
+        run: |
+          set -euo pipefail
+          pg_sources="$(mktemp -d "$RUNNER_TEMP/ca-postgres-apt.XXXXXX")"
+          chmod 755 "$pg_sources"
+          test -f /etc/apt/sources.list.d/ubuntu.sources
+          cp /etc/apt/sources.list.d/ubuntu.sources "$pg_sources/ubuntu.sources"
+          pg_apt=(-o "Dir::Etc::sourcelist=/dev/null" -o "Dir::Etc::sourceparts=$pg_sources")
+          sudo apt-get "${pg_apt[@]}" update
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-common curl ca-certificates
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail --silent --show-error --location \
+            --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          codename="$(. /etc/os-release && printf '%s' "$VERSION_CODENAME")"
+          printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' \
+            "$codename" > "$pg_sources/pgdg.sources"
+          sudo apt-get "${pg_apt[@]}" update
+          printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-17
+      # Runs as the runner user (non-root), exactly as the ci.yml step would.
+      - name: A silent job cannot hide from the silence alerts
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-a-silent-job-cannot-hide.py --output artifacts/a-silent-job-cannot-hide
+      - name: Retain the regression evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a-silent-job-cannot-hide-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/a-silent-job-cannot-hide/RESULTS.json
+          retention-days: 7
+          if-no-files-found: warn

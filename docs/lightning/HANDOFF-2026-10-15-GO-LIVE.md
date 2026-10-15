@@ -4,6 +4,12 @@ You are picking up the Lightning programme for Club Arena (Smarter Poker). Light
 
 **The dated delivery checkpoints above section U supersede the historical state in section U and sections 3 to 5.** Sections 3 to 5 were written at 17:30 UTC and are kept for their ids and history.
 
+## Combined Candidate Validation (2026-10-15)
+
+- Current delivery branch is `codex/lightning-authoritative-calibration-20261015`, existing PR #7025. B2 correlation, B3 boot presence, replay evidence and explicit operator steps are retained as ancestry merges; #7014 remains independently checked. Dated checkpoints below preserve original operation identities and limits.
+- Combined exact source passed 276 Lightning engine tests / 20 files, 93 operator/report/setup checks, 1,072 Lightning client contracts / 45 files, server TypeScript, native PostgreSQL 17 matcher/calibration parity (8 snapshots / 49 groups) and the full integrity remediation chain with paired-moment before/after witnesses and authority proof. Logs: `combined-*.log` in the existing evidence root. Required hosted checks, protected merge, ordered installation and live behavior remain pending.
+- Normal merge hooks formatted a few incoming protected-main lobby/client files; their final differences are formatting only. Preserve their current behavior and other writers' implementation. No UI redesign is assigned by this delivery.
+
 ## Resume Checkpoint (2026-10-15)
 
 - Owner: Codex chat `01a1416e-f22c-73f0-977e-8f478fdb909f`; branch `codex/lightning-resume-20261015`; owned SSD checkout `/Volumes/SmarterWork/agent-work/lightning-resume-20261015-01a1416e/repo`, base `7e7dd5547`.

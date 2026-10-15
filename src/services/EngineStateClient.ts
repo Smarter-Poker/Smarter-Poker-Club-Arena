@@ -29,6 +29,7 @@ import {
   CLOSE_MUX_SUPERSEDED,
   engineSocketUrl,
   accessRefusalFromClose,
+  isTournamentTablePausedClose,
   type MuxAccessRefusalCode,
 } from './EngineSocketMux';
 import type { Operation } from 'fast-json-patch';
@@ -419,7 +420,7 @@ export function isStillWakeableTableRow(table: WakeableTableRow | null | undefin
   );
 }
 
-export { accessRefusalFromClose };
+export { accessRefusalFromClose, isTournamentTablePausedClose };
 export type { MuxAccessRefusalCode };
 
 export interface EngineStateClientOptions {

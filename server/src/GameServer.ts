@@ -6000,6 +6000,21 @@ export class GameServer {
   }
 
   /**
+   * True while any tournament manager is failing to admit this table: it has a
+   * seated field and no engine, so a viewer is told the table is paused rather
+   * than that it does not exist (A PAUSED TABLE SAYS SO, 2026-10-15). No
+   * threshold: a table that is failing right now is paused right now.
+   */
+  isTournamentTablePaused(tableId: string): boolean {
+    for (const manager of this.tournamentEngines.values()) {
+      if ((manager.getTablesFailingAdmission?.() ?? []).some((t) => t.tableId === tableId)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
    * Tournament tables a manager has been failing to admit for longer than the
    * 120 s stall threshold, oldest first. Between retries such a table has no
    * engine, so tableLivenessSnapshot() cannot see it.

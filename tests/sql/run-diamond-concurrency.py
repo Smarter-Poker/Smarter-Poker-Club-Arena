@@ -553,6 +553,10 @@ def build(cluster, until=None):
         observed = cluster.sql("SELECT md5(pg_get_functiondef('%s'::regprocedure))" % signature)
         if observed != door['full_md5']:
             raise Failure('current authority installation differs: ' + signature)
+        metadata = json.loads(cluster.sql("SELECT json_build_object('owner',pg_get_userbyid(proowner),'security_definer',prosecdef,'config',proconfig,'acl',proacl::text) FROM pg_proc WHERE oid='%s'::regprocedure" % signature))
+        if metadata != {key: door[key] for key in ('owner', 'security_definer', 'config', 'acl')}:
+            raise Failure('current authority metadata differs: ' + signature)
+
     print('PASS: eight October 15 deployed authorities retain their exact definitions and execute grants', flush=True)
 
 

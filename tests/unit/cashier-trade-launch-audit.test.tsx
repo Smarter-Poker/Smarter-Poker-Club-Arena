@@ -36,6 +36,7 @@ type TableCall = {
 const state = vi.hoisted(() => ({
   resolveClub: null as null | ((id: string) => Promise<string>),
   agentWallet: 500,
+  myRole: 'owner',
   roster: [] as Array<Record<string, unknown>>,
   chipRequests: [] as Array<Record<string, unknown>>,
   recentMoves: [] as Array<Record<string, unknown>>,
@@ -192,6 +193,7 @@ beforeEach(() => {
   Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
   state.resolveClub = null;
   state.agentWallet = 500;
+  state.myRole = 'owner';
   state.roster = [player(0, 75)];
   state.chipRequests = [];
   state.recentMoves = [];
@@ -223,7 +225,7 @@ beforeEach(() => {
     });
     builder.maybeSingle = vi.fn(async () =>
       table === 'club_members'
-        ? { data: { role: 'owner', chip_balance: 250 }, error: null }
+        ? { data: { role: state.myRole, chip_balance: 250 }, error: null }
         : table === 'agents'
           ? { data: { agent_wallet_balance: state.agentWallet }, error: null }
           : { data: null, error: null }
@@ -1769,3 +1771,21 @@ it('background balance events and browser wake preserve a typed transfer', async
   ).toHaveLength(before);
   expect(screen.getByRole('dialog', { name: 'Send Out' })).toBe(dialog);
 });
+
+it.each(['player', 'agent'])(
+  'Simple Cashier opens the amount-based cashout sheet for a %s',
+  async (role) => {
+    state.myRole = role;
+    mountCashier();
+    const entry = await screen.findByRole('button', { name: 'Request Cash Out' });
+    fireEvent.click(entry);
+    const sheet = await screen.findByRole('dialog', { name: 'Request Cashout' });
+    expect(within(sheet).getByText('Available Balance')).toBeInTheDocument();
+    expect(within(sheet).getByText('250 Chips')).toBeInTheDocument();
+    expect(within(sheet).getByRole('textbox', { name: /Amount/i })).toBeInTheDocument();
+    expect(
+      within(sheet).getByText(/Chips Will Be Locked Until Your Agent Approves/i)
+    ).toBeInTheDocument();
+    expect(state.rpcCalls.some((call) => call.name === 'fn_cashout_request_v2')).toBe(false);
+  }
+);

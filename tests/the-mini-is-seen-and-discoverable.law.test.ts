@@ -315,9 +315,9 @@ describe('the felt: a thinner frame, and the mini under it', () => {
     expect(plateCss).toMatch(
       /--sp-bbj-h: calc\(var\(--sp-bbj-plate-h\) \+ var\(--sp-bbj-mini-h\)\);/
     );
-    expect(plateCss).toMatch(/\.table-page\[data-bbj-mini='1'\] \{\s*--sp-bbj-mini-h: 16px;/);
+    expect(plateCss).toMatch(/\.table-page\[data-bbj-mini='1'\] \{\s*--sp-bbj-mini-h: 22px;/);
     expect(plateCss).toMatch(/--sp-bbj-plate-h: 22px;/); // phone
-    expect(plateCss).toMatch(/\.table-page\[data-bbj-mini='1'\] \{\s*--sp-bbj-mini-h: 14px;/);
+    expect(plateCss).toMatch(/\.table-page\[data-bbj-mini='1'\] \{\s*--sp-bbj-mini-h: 19px;/);
     // Both felt reserves derive from the variable; neither is a bare literal.
     const tablePageCss = read('src/pages/TablePage.css');
     expect(tablePageCss).toContain(

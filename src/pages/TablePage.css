@@ -4993,3 +4993,26 @@ button.post-bb-overlay-button {
     font-size: 10px;
   }
 }
+
+/* Dan 2026-10-15: "IT MUST ALWAYS LOAD THE ACTUAL TABLE AND BACKGROUND IMAGES
+   AND EVERYTHING AT ONCE." Until useTableArt has decoded the felt and the
+   room, the whole table sits behind this cover, so the player never sees
+   seats on a bare gradient. It lifts in one frame with everything painted. */
+.table-art-cover {
+  position: absolute;
+  inset: 0;
+  z-index: 5000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0a1020;
+  pointer-events: auto;
+}
+
+.table-art-cover__label {
+  color: rgba(233, 236, 245, 0.72);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}

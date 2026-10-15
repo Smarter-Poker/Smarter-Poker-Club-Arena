@@ -471,6 +471,7 @@ import SpectatorBadge from '../components/table/SpectatorBadge';
 import { horseBugReporter } from '../services/HorseBugReporter';
 import { useUserTableSettings, TABLE_SETTINGS_META } from '../hooks/useUserTableSettings';
 import { useUserThemeSettings } from '../hooks/useUserThemeSettings';
+import { useTableArt } from '../hooks/useTableArt';
 import PineappleDiscard from '../components/table/PineappleDiscard';
 import GameServerAPI, {
   submitAction,
@@ -1016,7 +1017,8 @@ import {
 } from '../lib/tableSeatGeometry';
 import {
   resolveSkin,
-  resolveBackgroundLayers,
+  resolveBackground,
+  resolveBackgroundLayersForUrl,
   DEFAULT_TABLE_BACKDROP_COLOR,
   TABLE_BACKGROUND_SIZE,
   TABLE_BACKGROUND_POSITION,
@@ -9128,6 +9130,20 @@ function LiveTablePage({
      */
     tournamentFormat ?? undefined
   );
+
+  /* Dan 2026-10-15: "IT MUST ALWAYS LOAD THE ACTUAL TABLE AND BACKGROUND
+     IMAGES AND EVERYTHING AT ONCE." Both rasters are fetched, decoded and
+     retried by useTableArt; the table is revealed in one frame once they
+     have (hooks/useTableArt.ts). */
+  const tableSkinUrl = resolveSkin(
+    tableState.isFinalTable
+      ? 'final_table'
+      : v8Theme.table_id || v8Theme.theme_id || userSettings.theme || ''
+  );
+  const tableBackgroundUrl = resolveBackground(
+    tableState.isFinalTable ? 'final_table_broadcast' : v8Theme.background_id || 'midnight'
+  );
+  const tableArt = useTableArt(tableSkinUrl, tableBackgroundUrl);
 
   /**
    * Dan 2026-08-20 — THE CARDS TAB NEVER APPLIED ANYTHING.
@@ -24301,6 +24317,7 @@ function LiveTablePage({
          derived from the render conditions rather than restated. CSS collapses
          the bottom bar on [data-hero-action="none"]; do not rename either the
          attribute or any of the three values. */
+      data-table-art={tableArt.reveal ? 'ready' : 'loading'}
       data-hero-action={heroActionState}
       /* Operational truth for connection diagnostics and real browser tests.
          An outage now self-recovers and reconciles, but exposing the current
@@ -24346,15 +24363,18 @@ function LiveTablePage({
         // designed backdrop, so a 404 / decode failure / slow first paint can
         // no longer leave the page empty — see lib/tableTheme.
         backgroundColor: DEFAULT_TABLE_BACKDROP_COLOR,
-        backgroundImage: resolveBackgroundLayers(
-          tableState.isFinalTable ? 'final_table_broadcast' : v8Theme.background_id
-        ),
+        backgroundImage: resolveBackgroundLayersForUrl(tableArt.backgroundSrc),
         backgroundSize: `var(--sp-background-layers-size, ${TABLE_BACKGROUND_SIZE})`,
         backgroundPosition: `var(--sp-background-layers-position, ${TABLE_BACKGROUND_POSITION})`,
         backgroundRepeat: TABLE_BACKGROUND_REPEAT,
       }}
     >
       <style>{`
+      {!tableArt.reveal && (
+        <div className="table-art-cover" role="status" aria-live="polite">
+          <span className="table-art-cover__label">Loading Table</span>
+        </div>
+      )}
       <ButtonImagePreloader />
                 @keyframes boardSlideIn { from { opacity: 0; transform: scale(0.98); } to { opacity: 1; transform: scale(1); } }
                 @keyframes boardFade { from { opacity: 0.7; } to { opacity: 1; } }
@@ -25084,13 +25104,10 @@ function LiveTablePage({
                 and + SIT buttons sit ON the rail at every breakpoint. */}
             <img
               className="table-art"
-              src={resolveSkin(
-                tableState.isFinalTable
-                  ? 'final_table'
-                  : v8Theme.table_id || v8Theme.theme_id || userSettings.theme || ''
-              )}
+              src={tableArt.skinSrc}
               alt=""
               draggable={false}
+              decoding="sync"
             />
             <div className="table-rail">
               <div className="table-surface">

@@ -118,7 +118,7 @@ describe('the prior fixes in this area are still in place', () => {
        length decides, and when the snapshot carries nothing the hero's holding
        is PRESERVED rather than wiped. */
     expect(TABLE_PAGE).toMatch(
-      /sp\.cards\?\.length\s*\?\s*sp\.cards\s*:\s*heroHoldIsExpired\(existing\?\.holeCards\)\s*\?\s*\[\]\s*:\s*existing\?\.holeCards/
+      /sp\.cards\?\.length\s*\?\s*heroDisplayHoleCards\(sp\.cards, existing\?\.holeCards, !!cardsPreSortRef\.current\)\s*:\s*heroHoldIsExpired\(existing\?\.holeCards\)\s*\?\s*\[\]\s*:\s*existing\?\.holeCards/
     );
   });
 

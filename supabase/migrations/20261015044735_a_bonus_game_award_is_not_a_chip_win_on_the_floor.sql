@@ -29,6 +29,7 @@
 --     still appears, with what it actually paid);
 --   - the lifetime average counts them at 0 instant value.
 -- Both rewritten from their exact production bodies (md5 guarded).
+-- @live-proof: position('''bonus'', ''upgrade''' in pg_get_functiondef('public.fn_diamond_game_floor(uuid,integer)'::regprocedure)) > 0 AND position('''bonus'',''upgrade''' in pg_get_functiondef('public.fn_diamond_game_lifetime(uuid)'::regprocedure)) > 0
 
 BEGIN;
 SET LOCAL lock_timeout = '5s';

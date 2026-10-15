@@ -26,6 +26,11 @@ function amount(v: number): string {
 }
 
 /** Title Case, no em dashes (CLAUDE.md 5.7). */
-export function notEnoughChipsText(needed: number, balance: number, unit = 'Chips'): string {
+export function notEnoughChipsText(
+  needed: number,
+  balance: number,
+  asset: string | null | undefined = 'chips'
+): string {
+  const unit = asset === 'diamonds' ? 'Diamonds' : 'Chips';
   return `You Do Not Have Enough ${unit} For This Game. The Minimum Buy In Is ${amount(needed)} ${unit} And Your Balance Is ${amount(Math.max(0, balance))} ${unit}.`;
 }

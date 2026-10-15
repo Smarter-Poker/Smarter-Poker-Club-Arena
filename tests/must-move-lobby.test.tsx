@@ -587,7 +587,7 @@ describe('the tab follows the chair', () => {
 
   it('the corner box and the lobby are wired on every cluster table, and only there', () => {
     expect(TABLE_PAGE).toMatch(
-      /\{!tableState\.isTournament && tableState\.clusterId && \(\s*<CashClusterHUD/
+      /\{!tableState\.isTournament && tableState\.clusterId && \(\s*<div className=\"hud-seat-change-dock\">\s*<CashClusterHUD/
     );
     expect(TABLE_PAGE).toMatch(
       /<MustMoveLobbyModal\s+isOpen=\{showMustMoveLobby\}\s+gameId=\{tableState\.clusterId\}/

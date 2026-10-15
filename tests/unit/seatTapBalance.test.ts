@@ -35,6 +35,6 @@ describe('the table page', () => {
     expect(PAGE).not.toContain("toast.warning('Verifying Table Funding')");
   });
   it('refuses a short balance out loud on the seat tap', () => {
-    expect(PAGE).toContain('toast.error(notEnoughChipsText(needed, balance as number, unit))');
+    expect(PAGE).toContain('toast.error(notEnoughChipsText(needed, balance as number, tableState.arenaAsset))');
   });
 });

@@ -24,6 +24,7 @@
 -- Both are rewritten from their exact production bodies (md5 guarded below),
 -- with only those lines changed, so nothing else about the queue moves.
 -- The rows already written are removed so the inboxes stop showing them.
+-- @live-proof: position('waitlist_offer_expired' in pg_get_functiondef('public.fn_offer_open_seat(uuid,interval,interval)'::regprocedure)) = 0 AND position('waitlist_offer_expired' in pg_get_functiondef('public.fn_sweep_stale_waitlists(interval,interval)'::regprocedure)) = 0
 
 BEGIN;
 SET LOCAL lock_timeout = '5s';

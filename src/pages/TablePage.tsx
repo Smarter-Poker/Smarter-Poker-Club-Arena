@@ -20643,6 +20643,17 @@ function LiveTablePage({
   }, [heroHandStrengthLive, tableState.isHandInProgress]);
 
   // Handle seat click (sit down at empty seat)
+  const openCashBuyIn = (seatNumber: number) => {
+    if (heroSeatRef.current > 0 || showBuyInModal) return;
+    console.debug('[Seat] Opening buy-in modal for seat', seatNumber);
+    // Paint the seat as taken THIS FRAME, before any network work starts.
+    setPendingSeat(seatNumber);
+    setSelectedSeat(seatNumber);
+    setShowBuyInModal(true);
+    // Fire-and-forget: update presence (non-blocking — do NOT await)
+    updateSeat(seatNumber).catch((e) => console.warn('[Seat] Presence update failed:', e));
+  };
+
   /* A TAP IS NEVER SPENT ON A CHECK (Dan 2026-10-14): "IT SHOULD JUST CHECK
      AUTOMATICALLY". A tap that lands before the table's funding is known used
      to answer with a popup and throw the tap away. It is remembered instead,
@@ -20778,11 +20789,10 @@ function LiveTablePage({
        unknown (null): only a READ balance below the minimum refuses here, and
        the buy-in RPC remains the authority. */
     const needed = Math.max(Number(tableState.minBuyIn) || 0, cashoutMinBuyIn || 0);
-    const unit = tableState.arenaAsset === 'diamonds' ? 'Diamonds' : 'Chips';
     const refuseIfShort = (balance: number | null): boolean => {
       const verdict = seatTapBalanceVerdict(balance, needed);
       if (verdict !== 'short') return false;
-      toast.error(notEnoughChipsText(needed, balance as number, unit));
+      toast.error(notEnoughChipsText(needed, balance as number, tableState.arenaAsset));
       return true;
     };
     if (accountBalance === null && userId && tableId) {
@@ -20796,17 +20806,6 @@ function LiveTablePage({
     }
     if (refuseIfShort(accountBalance)) return;
     openCashBuyIn(seatNumber);
-  };
-
-  const openCashBuyIn = (seatNumber: number) => {
-    if (heroSeatRef.current > 0 || showBuyInModal) return;
-    console.debug('[Seat] Opening buy-in modal for seat', seatNumber);
-    // Paint the seat as taken THIS FRAME, before any network work starts.
-    setPendingSeat(seatNumber);
-    setSelectedSeat(seatNumber);
-    setShowBuyInModal(true);
-    // Fire-and-forget: update presence (non-blocking — do NOT await)
-    updateSeat(seatNumber).catch((e) => console.warn('[Seat] Presence update failed:', e));
   };
 
   /* Replay a tap that landed before the table's funding was known. */

@@ -13,8 +13,10 @@
  *
  * So, once after boot (a short delay after the engine starts accepting
  * sockets, so returning players have reconnected first), this pass reads the
- * OPEN pool sessions and reports as disconnected every one whose player
- * holds no socket here right now. It feeds the ordinary reporter path, so
+ * OPEN pool sessions and reports as disconnected every player absent from
+ * the same anchor-engine and Lightning-room presence authority as matching.
+ * A room socket is not the only live input device: the anchor engine also
+ * reports ordinary DisconnectEngine presence, including server heartbeats. It feeds the ordinary reporter path, so
  * the batching, the deploy-window tolerance and the drop-on-failure contract
  * for disconnect entries all apply unchanged. The presence door is
  * idempotent: telling the database about a player it already stamped costs
@@ -30,6 +32,7 @@ import { supabase } from '../services/supabase/client.js';
 import { isUuid } from './LightningRpc.js';
 import type { LightningPresenceReport } from './LightningPresenceReporter.js';
 import type { LightningWorkerLogger } from './LightningClusterWorker.js';
+import { LightningPresence, type PresenceSource } from './LightningPresence.js';
 
 /** How long after boot the one pass runs: returning sockets land first. */
 export const LIGHTNING_PRESENCE_RECONCILE_DELAY_MS = 30_000;
@@ -43,8 +46,10 @@ export interface LightningOpenSession {
 export interface LightningPresenceReconciliationDeps {
   /** The open pool sessions (exited_at is null). Defaults to the one select. */
   openSessions?: () => Promise<LightningOpenSession[]>;
-  /** Does this player hold a live socket in this Cluster here, right now? */
-  isConnected: (clusterId: string, playerId: string) => boolean;
+  /** The matcher's complete authority: anchor engines and Lightning rooms. */
+  presenceSource?: PresenceSource;
+  /** Narrow injectable probe for callers without a full presence source. */
+  isConnected?: (clusterId: string, playerId: string) => boolean;
   /** The ordinary reporter: batching and tolerance come with it. */
   report: LightningPresenceReport;
   logger?: Pick<LightningWorkerLogger, 'warn'>;
@@ -85,10 +90,37 @@ export async function reconcileLightningPresence(
     return 0;
   }
   let reported = 0;
+  const connectedByCluster = new Map<string, Set<string>>();
+  if (deps.presenceSource) {
+    try {
+      // Observe once, so the whole boot pass judges one consistent set of
+      // engine reports. CONNECTED wins over a stale room disconnect exactly
+      // as it does for matching; no player-type inference is needed.
+      const reports = [...deps.presenceSource()];
+      const presence = new LightningPresence(() => reports);
+      for (const { clusterId } of sessions) {
+        if (!connectedByCluster.has(clusterId))
+          connectedByCluster.set(clusterId, new Set(presence.snapshot(clusterId).connected));
+      }
+    } catch (err) {
+      deps.logger?.warn(
+        '[LightningPresenceReconciliation] presence read failed; nothing reconciled ' +
+          `(${err instanceof Error ? err.message : String(err)})`
+      );
+      return 0;
+    }
+  } else if (!deps.isConnected) {
+    deps.logger?.warn(
+      '[LightningPresenceReconciliation] presence authority unavailable; nothing reconciled'
+    );
+    return 0;
+  }
   for (const { clusterId, playerId } of sessions) {
     let connected = false;
     try {
-      connected = deps.isConnected(clusterId, playerId);
+      connected = deps.presenceSource
+        ? connectedByCluster.get(clusterId)?.has(playerId) === true
+        : deps.isConnected!(clusterId, playerId);
     } catch {
       /* a presence probe must never take the pass down; absent is reported */
     }

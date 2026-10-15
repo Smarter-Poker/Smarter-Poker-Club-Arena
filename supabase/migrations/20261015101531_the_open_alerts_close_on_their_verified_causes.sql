@@ -1,3 +1,4 @@
+-- SUPERSEDED BY 20261015124934: never installed; refused whole (P0404) because the settler lag incident it resolved carried no root cause. The replacement leaves that incident open.
 -- @live-proof: (SELECT count(*) FROM public.financial_alerts WHERE resolved IS NOT TRUE AND (source IN ('Tournament.table_admission_failing','GameServer.tournament_dark_after_rebuild','postHandTasks.leave_pending_failed','fn_money_check_health','drift_incident:financial_alerts:fn_money_check_health','TournamentRecurring.freeBuyAudit','drift_incident:fn_ca_settlement_correctness_check:settler_lag')) AND created_at < timestamptz '2026-10-15 10:15:00+00')=0
 -- 20261015101531_the_open_alerts_close_on_their_verified_causes.sql
 --

@@ -1,7 +1,7 @@
 /**
  * LAW: THE OPEN ALERTS CLOSE ON THEIR VERIFIED CAUSES (2026-10-15).
  *
- * Every alert or drift incident that migration 20261015101531 closes is
+ * Every alert or drift incident that migration 20261015124934 closes is
  * closed only after its group re-asserts the state it was closed on, inside
  * the same transaction, so the file rolls back whole if the board has moved.
  * It moves no money, writes no ledger row and deletes nothing, and the alerts
@@ -15,7 +15,7 @@ import { resolve } from 'node:path';
 const SQL = readFileSync(
   resolve(
     process.cwd(),
-    'supabase/migrations/20261015101531_the_open_alerts_close_on_their_verified_causes.sql'
+    'supabase/migrations/20261015124934_the_open_alerts_close_on_their_verified_causes_again.sql'
   ),
   'utf8'
 );
@@ -38,8 +38,7 @@ describe('the open alerts close on their verified causes', () => {
       "'B: an open leave_pending alert moved chips'",
       "'C: fn_money_check_health is scheduled after all'",
       "'C: % has not succeeded on its own job within %'",
-      "'D: the rakeback settler is not healthy'",
-      "'E: a Free Buy slot due since the board resumed is missing'",
+      "'D: a Free Buy slot due since the board resumed is missing'",
     ])
       expect(CODE).toContain(assertion);
   });
@@ -61,6 +60,8 @@ describe('the open alerts close on their verified causes', () => {
       'fn_union_enforce_stop_loss',
       'fn_spin_fairness_check',
       'ledger_invariant',
+      'settler_lag',
+      'c748f59f',
     ])
       expect(CODE).not.toContain(source);
     expect(CODE).not.toContain("source = 'fn_tournament_money_conservation'");

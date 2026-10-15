@@ -1,0 +1,4 @@
+{
+  "_owner": "phase7/the-launch-has-one-health-reading. Migration 20261015101222: one launch readiness reading.",
+  "functions": ["fn_ca_launch_health"]
+}

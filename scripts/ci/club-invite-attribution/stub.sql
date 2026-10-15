@@ -10,7 +10,7 @@ CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$
 CREATE TABLE auth.users (id uuid PRIMARY KEY);
 
 CREATE TABLE public.profiles (
-  id uuid PRIMARY KEY, username text, player_number text, phone text,
+  id uuid PRIMARY KEY, username text, alias text, player_number text, phone text,
   phone_verified boolean DEFAULT false, referred_by uuid, created_at timestamptz DEFAULT now());
 CREATE TABLE public.clubs (
   id uuid PRIMARY KEY, club_id integer, slug text, name text, description text, logo_url text,

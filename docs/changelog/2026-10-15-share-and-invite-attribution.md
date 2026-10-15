@@ -80,3 +80,7 @@ Migration `supabase/migrations/20261015181214_club_invite_links_and_attribution.
 World Hub: `pages/i/[code].js`, `pages/api/og/club-invite.js`,
 `src/lib/clubInvite.js`, `pages/auth/signup.js`, `pages/auth/callback.js`,
 `pages/hub/verify-phone.js`, `src/components/gates/VerificationConsole.jsx`.
+
+## Follow-Up: The Poker Alias, Not The Login Name
+
+The live preview for KingFish's link read "kingfish": `profiles.username` is stored lower case. Every invite surface (preview, landing page, stats, pending-join forward, inviter notifications) now prints `COALESCE(alias, username)`, the same order Club Arena uses for a player's display name. Migration `20261015223818_club_invite_names_use_the_poker_alias.sql`, applied to production as `20261015224105`, function bodies only, all six verified md5-identical to the file. Scenario added to `scripts/ci/club-invite-attribution` (44 pass).

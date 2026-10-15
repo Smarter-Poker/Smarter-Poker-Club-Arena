@@ -51,6 +51,9 @@ INSERT INTO r SELECT 'resolve', fn_club_invite_resolve((SELECT v->>'code' FROM r
 SELECT pg_temp.ok((SELECT (v->>'found')::boolean AND v->'inviter'->>'alias'='playerc' AND (v->'club'->>'players_playing')::int=7 FROM r WHERE k='resolve'), 'resolve returns inviter alias and live count');
 SELECT pg_temp.ok((SELECT click_count FROM club_invite_links WHERE inviter_id='00000000-0000-0000-0000-00000000000c') = 1, 'click counted');
 SELECT pg_temp.ok((fn_club_invite_resolve('BADCODE1'))->>'found' = 'false', 'bad code not found');
+UPDATE profiles SET alias='PlayerC' WHERE id='00000000-0000-0000-0000-00000000000c';
+SELECT pg_temp.ok((fn_club_invite_resolve((SELECT v->>'code' FROM r WHERE k='c_link'), false))->'inviter'->>'alias' = 'PlayerC', 'the poker alias is shown, not the lower-case username');
+UPDATE profiles SET alias=NULL WHERE id='00000000-0000-0000-0000-00000000000c';
 SELECT pg_temp.as_user('00000000-0000-0000-0000-00000000000c');
 SELECT fn_club_invite_resolve((SELECT v->>'code' FROM r WHERE k='c_link'));
 SELECT pg_temp.ok((SELECT click_count FROM club_invite_links WHERE inviter_id='00000000-0000-0000-0000-00000000000c') = 1, 'the inviter opening their own link is not an open');

@@ -1,0 +1,4 @@
+{
+  "_owner": "phase2/payable-sources-read-their-cutoff-once. Migration 20261015094219: the payable earning sources view reads each club's launch accounting cutoff once per query.",
+  "functions": ["fn_ca_launch_accounting_club_cutoffs"]
+}

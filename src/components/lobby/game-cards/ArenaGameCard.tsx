@@ -184,7 +184,16 @@ function PremiumHeader({
     <header className="agc-premium-header">
       <div className="agc-premium-heading" data-zone="title">
         <h3 title={data.title}>{title}</h3>
-        {showSubtitle && data.subtitle && <p>{data.subtitle}</p>}
+        {showSubtitle && (data.subtitle || data.styleNote) && (
+          <p>
+            {data.subtitle}
+            {data.styleNote && (
+              <span className="agc-premium-style-note" data-zone="styleNote">
+                {data.styleNote}
+              </span>
+            )}
+          </p>
+        )}
       </div>
       <PremiumStatus data={data} />
     </header>

@@ -486,7 +486,9 @@ describe('the mobile card says the style', () => {
     const card = read('src/components/lobby/game-cards/ArenaGameCard.tsx');
     expect(card).toMatch(/zone="stakes"/);
     expect(card).toMatch(/zone="players"/);
-    expect(card).toMatch(/data-zone="title"[\s\S]*?<p>\{data\.subtitle\}<\/p>/);
+    /* The style line may carry its note after the word (Dan 2026-10-15,
+       Action and Madness say what they change); the word still leads it. */
+    expect(card).toMatch(/data-zone="title"[\s\S]*?<p>\s*\{data\.subtitle\}/);
   });
 });
 

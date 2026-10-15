@@ -8,7 +8,7 @@ import { ArenaPremiumTitle, ArenaPremiumValueText } from './ArenaPremiumText';
 import { NLH_PREMIUM_ASSETS, NLH_PREMIUM_ZONES, premiumZoneStyle } from './nlhPremiumTemplate';
 import { premiumStatusBadge } from './premiumStatus';
 import { useFitText } from './useFitText';
-import { splitBuyInRange } from './layeredCard';
+import { LayeredStyleNote, splitBuyInRange } from './layeredCard';
 import './NlhPremiumCard.css';
 
 interface NlhPremiumCardProps {
@@ -110,7 +110,7 @@ function NlhActionLabel({ text }: { text: string }) {
 
 export function NlhPremiumCard({ data, actions }: NlhPremiumCardProps) {
   const titleRef = useFitText<HTMLElement>(data.title, TITLE_SCALE_X);
-  const titleZone = data.subtitle ? NLH_PREMIUM_ZONES.titleNoDot : NLH_PREMIUM_ZONES.titleAlone;
+  const titleZone = data.subtitle || data.styleNote ? NLH_PREMIUM_ZONES.titleNoDot : NLH_PREMIUM_ZONES.titleAlone;
 
   return (
     <div className="agc-nlh-premium">
@@ -134,7 +134,26 @@ export function NlhPremiumCard({ data, actions }: NlhPremiumCardProps) {
         </ArenaPremiumTitle>
       </div>
 
-      {data.subtitle && (
+      {data.styleNote && (
+        <div
+          className="agc-nlh-premium__zone agc-nlh-premium__style-row agc-layered__style-row"
+          data-zone="subtitle"
+          style={premiumZoneStyle(NLH_PREMIUM_ZONES.styleNote)}
+        >
+          {data.subtitle && (
+            <span className="agc-layered__style-word agc-nlh-premium__subtitle">
+              <ArenaPremiumValueText as="span" title={data.subtitle}>
+                {data.subtitle}
+              </ArenaPremiumValueText>
+            </span>
+          )}
+          <span className="agc-layered__style-note-box" data-zone="styleNote">
+            <LayeredStyleNote text={data.styleNote} />
+          </span>
+        </div>
+      )}
+
+      {!data.styleNote && data.subtitle && (
         <div
           className="agc-nlh-premium__zone agc-nlh-premium__subtitle"
           data-zone="subtitle"

@@ -1,0 +1,72 @@
+diff --git a/server/src/services/supabase/seats.ts b/server/src/services/supabase/seats.ts
+index 2cb209d03..43084607e 100644
+--- a/server/src/services/supabase/seats.ts
++++ b/server/src/services/supabase/seats.ts
+@@ -401,6 +401,25 @@ export async function notifyWaitlistSeatOpen(tableId: string): Promise<void> {
+   }
+ }
+ 
++/* Two short waits inside one hand boundary, the same budget the post-hand
++   step retry uses (ServerTableEngineSettlement STEP_RETRY_BACKOFF_MS). */
++const DEPARTURE_READ_RETRY_MS = [250, 1_000];
++const PRE_EXECUTION_POSTGREST_CODES = new Set(['PGRST001', 'PGRST002', 'PGRST003']);
++
++/**
++ * A returned read error that the DATABASE did not give: no SQLSTATE and no
++ * PostgREST answer code (a gateway 502/504 HTML page, an empty body), or
++ * PostgREST's own "the statement never ran" 503 codes. Only for reads: a
++ * write that met a gateway error may have committed, and is never asked
++ * again on this basis.
++ */
++export function isGatewayReadFailure(error: { code?: unknown } | null | undefined): boolean {
++  if (!error) return false;
++  const code = error.code;
++  if (code === null || code === undefined || code === '') return true;
++  return typeof code === 'string' && PRE_EXECUTION_POSTGREST_CODES.has(code);
++}
++
+ /**
+  * Process leave-pending players after hand completion
+  */
+@@ -456,12 +475,35 @@ export async function processLeavePending(
+      passing it along - and an unlocked stack read handed to a credit is the
+      2026-08-27 race. Do not add it back. */
+   diagnostic?.phase('table_seats_query');
+-  const { data: pendingSeats, error: pendingReadError } = await supabase
+-    .from('table_seats')
+-    .select('user_id, seat_number, occupancy_id')
+-    .eq('table_id', tableId)
+-    .eq('leave_pending', true)
+-    .is('left_at', null);
++  /* A GATEWAY BLIP IS NOT THE DATABASE ANSWERING (2026-10-15).
++     This enumeration is a plain GET, which PostgREST runs read-only, so asking
++     again can never replay a write. A Cloudflare 502 page (2026-10-14 14:27
++     and 2026-10-15 05:48 UTC, postHandTasks.leave_pending_failed) reached here
++     as a RETURNED error with no SQLSTATE, so the step's retry budget read it
++     as a decision (`non_transient`) and the boundary deferred every pending
++     departure. A returned error that carries no database code, or PostgREST's
++     own pre-execution 503 codes, is asked again inside this boundary; an
++     error the database itself raised (a SQLSTATE, a PGRST answer) is still
++     final and throws exactly as before. Thrown transport errors keep their
++     existing step-level retry. */
++  let pendingSeats: Array<{ user_id: string; seat_number: number; occupancy_id: string }> | null =
++    null;
++  let pendingReadError: { message?: string; code?: unknown } | null = null;
++  for (let attempt = 0; ; attempt++) {
++    ({ data: pendingSeats, error: pendingReadError } = await supabase
++      .from('table_seats')
++      .select('user_id, seat_number, occupancy_id')
++      .eq('table_id', tableId)
++      .eq('leave_pending', true)
++      .is('left_at', null));
++    if (
++      !pendingReadError ||
++      attempt >= DEPARTURE_READ_RETRY_MS.length ||
++      !isGatewayReadFailure(pendingReadError)
++    )
++      break;
++    await new Promise((resolve) => setTimeout(resolve, DEPARTURE_READ_RETRY_MS[attempt]));
++  }
+ 
+   if (pendingReadError) {
+     diagnostic?.fail(pendingReadError, 'returned_error');

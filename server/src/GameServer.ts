@@ -2056,6 +2056,16 @@ export class GameServer {
   private tournamentBountyObligationChannel: ReturnType<typeof supabase.channel> | null = null;
   private tournamentBountyReconnectTimer: NodeJS.Timeout | null = null;
   private tournamentBountyReconnectBackoffMs = 1_000;
+  /**
+   * Each recreated process channel gets its own topic (2026-10-15). realtime-js
+   * keys its channel registry by TOPIC: `channel(topic)` returns an existing
+   * channel of that topic, `_remove()` drops every channel of that topic, and
+   * replies are routed to whichever channel holds the topic. A replacement on
+   * the old topic could therefore be handed the dying channel, or be removed
+   * from the registry by the old channel's late close, after which its join
+   * replies reach nobody and it times out and silently rejoins for ever.
+   */
+  private tournamentRealtimeChannelGeneration = 0;
 
   /** Compare-and-delete: an old async continuation never owns a new slot. */
   private ownsTournamentManager(tournamentId: string, manager: TournamentManager): boolean {
@@ -9360,7 +9370,9 @@ export class GameServer {
     );
 
     const channel = supabase
-      .channel(`tournament-bounty-obligations:${process.pid}`)
+      .channel(
+        `tournament-bounty-obligations:${process.pid}:${++this.tournamentRealtimeChannelGeneration}`
+      )
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'tournament_bounty_obligations' },
@@ -9388,9 +9400,25 @@ export class GameServer {
             new Error(`Tournament bounty obligation channel entered ${status}`),
             'GameServer.tournament_bounty_channel_error'
           );
-          // Realtime will rejoin this channel. A direct database drain closes
-          // the delivery gap without waiting for that transport recovery.
+          /* THIS PROCESS OWNS ITS RECOVERY, NOT realtime-js (2026-10-15).
+             This branch used to trust "Realtime will rejoin this channel".
+             realtime-js only rejoins while its socket is connected and never
+             reopens one (RealtimeChannel._rejoinUntilConnected), and a
+             channel its registry has dropped keeps timing out and rejoining
+             with no reply ever routed to it. On 2026-10-13 both process
+             channels went down after a Realtime restart and stayed down for
+             27 hours with no join refused server-side, until the next engine
+             release restarted the process. An errored or timed-out channel
+             is retired and recreated on a new topic through subscribe(),
+             which also reopens the socket, on the same capped backoff as a
+             closed one. The direct drain below still closes the gap. */
+          this.tournamentBountyObligationChannel = null;
+          this.launchServerLifecycleJob(
+            Promise.resolve(supabase.removeChannel(channel)),
+            'GameServer.tournament_bounty_errored_channel_remove_failed'
+          );
           this.requestPendingTournamentBountyRecovery();
+          this.scheduleTournamentBountySubscriptionReconnect();
         } else if (status === 'CLOSED') {
           bountyRecoveryRealtimeConnected.set(0);
           this.tournamentBountyObligationChannel = null;
@@ -9408,7 +9436,10 @@ export class GameServer {
     this.requestPendingTournamentBountyRecovery();
   }
 
-  /** Recreate a channel only after it actually closes; never poll a healthy one. */
+  /**
+   * Recreate a channel only after it closes, errors or times out; never poll
+   * a healthy (SUBSCRIBED) one.
+   */
   private scheduleTournamentBountySubscriptionReconnect(): void {
     if (
       !this.running ||
@@ -9493,7 +9524,9 @@ export class GameServer {
       );
     }, 'GameServer.managerWakes.notification');
     const channel = supabase
-      .channel(`tournament-manager-wakes:${process.pid}`)
+      .channel(
+        `tournament-manager-wakes:${process.pid}:${++this.tournamentRealtimeChannelGeneration}`
+      )
       .on(
         'postgres_changes',
         {
@@ -9552,10 +9585,18 @@ export class GameServer {
             new Error(`Tournament manager wake channel entered ${status}`),
             'GameServer.tournament_manager_wake_channel_error'
           );
+          // Retired and recreated on a new topic, exactly as the bounty
+          // channel above: realtime-js's own rejoin can wedge for ever.
+          this.tournamentManagerWakeChannel = null;
+          this.launchServerLifecycleJob(
+            Promise.resolve(supabase.removeChannel(channel)),
+            'GameServer.tournament_manager_wake_errored_channel_remove_failed'
+          );
           this.launchServerLifecycleJob(
             this.drainTournamentManagerWakes(),
             'GameServer.tournament_manager_wake_error_drain_failed'
           );
+          this.scheduleTournamentManagerWakeSubscriptionReconnect();
         } else if (status === 'CLOSED') {
           tournamentManagerWakeRealtimeConnected.set(0);
           this.tournamentManagerWakeChannel = null;
@@ -9579,7 +9620,7 @@ export class GameServer {
     );
   }
 
-  /** Recreate the durable-wake channel only after an actual close event. */
+  /** Recreate the durable-wake channel only after a close, error or timeout. */
   private scheduleTournamentManagerWakeSubscriptionReconnect(): void {
     if (
       !this.running ||

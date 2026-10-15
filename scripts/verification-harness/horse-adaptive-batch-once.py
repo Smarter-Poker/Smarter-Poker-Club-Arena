@@ -14,6 +14,7 @@ sys.dont_write_bytecode=True
 ROOT=Path(__file__).resolve().parents[2];sys.path.insert(0,str(ROOT/'scripts/ci'))
 from satellite_qualifier_fixture import module,sha,lit
 MIGRATION=Path('supabase/migrations/20261014231333_horse_adaptive_retirement_rewrites_each_batch_once_per_call.sql')
+INDEX_FIX=Path('supabase/migrations/20261015001400_adaptive_batch_once_finds_touched_batches_through_the_hand_i.sql')
 NUMBERED=Path('supabase/migrations/20261013130413_horse_journal_retirement_follows_original_numbered_observati.sql')
 HANDS=40
 def function_body(path,name):
@@ -88,6 +89,12 @@ def qualify(e,base):
  corrected=e.database(d)
  e.sql(corrected,file=ROOT/MIGRATION,label='batch-once-forward-correction')
  status,_,err=e.sql(corrected,file=ROOT/MIGRATION,label='batch-once-replay-refused',check=False);assert status and 'ADAPTIVE_BATCH_ONCE_PREIMAGE_CHANGED' in err;checks.append('batch-once-forward-replay-refused')
+ # The #6883 postimage in this fixture is exactly what production installed;
+ # the index repair's guard is pinned to it.
+ yes(corrected,"SELECT md5(pg_get_functiondef('public.fn_prune_horse_adaptive_journal()'::regprocedure))='cbc454dbbdbe7ea0bcfb629b5218dd2d';",'batch-once-fixture-postimage-equals-production-installed-md5')
+ e.sql(corrected,file=ROOT/INDEX_FIX,label='batch-once-hand-index-repair')
+ status,_,err=e.sql(corrected,file=ROOT/INDEX_FIX,label='batch-once-hand-index-replay-refused',check=False);assert status and 'ADAPTIVE_BATCH_INDEX_PREIMAGE_CHANGED' in err;checks.append('batch-once-hand-index-replay-refused')
+ yes(corrected,"SELECT position('c.hand_id=ANY(retired_hands::uuid[])' IN pg_get_functiondef('public.fn_prune_horse_adaptive_journal()'::regprocedure))>0 AND position('hand_id::text=ANY' IN pg_get_functiondef('public.fn_prune_horse_adaptive_journal()'::regprocedure))=0;",'batch-once-touched-batches-found-through-the-uuid-primary-key')
  e.sql(corrected,"SELECT smarter_private.enable_horse_adaptive_retention('"+'a'*40+"');",label='corrected-enable')
  t0=time.monotonic()
  receipt=json.loads(read(corrected,'SELECT fn_prune_horse_adaptive_journal();','corrected-owner-one-call'))
@@ -141,7 +148,7 @@ def run_icu(e):
   installed=json.loads(e.sql(base,"SELECT jsonb_build_object('prune',md5(pg_get_functiondef('public.fn_prune_horse_adaptive_journal()'::regprocedure)),'retire',md5(pg_get_functiondef('smarter_private.retire_horse_adaptive_hand(uuid)'::regprocedure)),'certificate',md5(pg_get_functiondef('smarter_private.horse_adaptive_disposal_certificate_immutable()'::regprocedure)))::text;",label='batch-once-production-preimage')[1].strip())
   assert installed=={'prune':'d287d2dc4fd96d9aa2a2e179ff156ff3','retire':'f1147867f410f36e244e8849df4ac6d7','certificate':'2497e31c1f8c6c955e2b082fdc0a3df0'},installed
   checks=qualify(e,base);checks.insert(0,'fixture-preimage-equals-production-installed-md5s');e.report['batch_once']['proven']=checks;e.discard(base)
-  for path in [MIGRATION,Path(__file__).relative_to(ROOT)]:e.report['source_sha256'][str(path)]=sha(ROOT/path)
+  for path in [MIGRATION,INDEX_FIX,Path(__file__).relative_to(ROOT)]:e.report['source_sha256'][str(path)]=sha(ROOT/path)
  finally:e.database=original_database
 def main():
  p=argparse.ArgumentParser();p.add_argument('--evidence',type=Path,required=True);p.add_argument('--pg-bin',type=Path,required=True);args=p.parse_args()

@@ -24,15 +24,17 @@ const SQL = readFileSync(
   'utf8'
 );
 const CODE = SQL.replace(/^\s*--[^\n]*$/gm, '');
-const VIEW = CODE.split('CREATE OR REPLACE VIEW public.accounting_payable_earning_sources')[1].split(
-  'DO $post$'
-)[0];
+const VIEW = CODE.split(
+  'CREATE OR REPLACE VIEW public.accounting_payable_earning_sources'
+)[1].split('DO $post$')[0];
 
 describe('payable earning sources read their cutoff once', () => {
   it('is one transaction with a live proof and an exact preimage', () => {
     expect(SQL.match(/^BEGIN;$/gm)).toHaveLength(1);
     expect(SQL.match(/^COMMIT;$/gm)).toHaveLength(1);
-    expect(SQL).toMatch(/^-- @live-proof: \(SELECT position\('fn_ca_launch_accounting_club_cutoffs'/m);
+    expect(SQL).toMatch(
+      /^-- @live-proof: \(SELECT position\('fn_ca_launch_accounting_club_cutoffs'/m
+    );
     expect(CODE).toContain("<>'a6fc7948eac00658f2302ad19833719f' THEN RAISE EXCEPTION");
     expect(CODE).toContain('payable_cutoff_one_active_refused');
     expect(CODE).toContain('payable_cutoff_columns_refused');
@@ -42,7 +44,11 @@ describe('payable earning sources read their cutoff once', () => {
 
   it('never calls the per-row helper, and joins the cutoffs once per branch', () => {
     expect(VIEW).not.toContain('fn_ca_launch_accounting_accepts');
-    expect(VIEW.match(/LEFT JOIN public\.fn_ca_launch_accounting_club_cutoffs\(\) bd ON bd\.club_id = s\.club_id/g)).toHaveLength(2);
+    expect(
+      VIEW.match(
+        /LEFT JOIN public\.fn_ca_launch_accounting_club_cutoffs\(\) bd ON bd\.club_id = s\.club_id/g
+      )
+    ).toHaveLength(2);
     expect(VIEW).toContain('WITH (security_invoker=true)');
   });
 
@@ -55,11 +61,12 @@ describe('payable earning sources read their cutoff once', () => {
   });
 
   it('the cutoff reader is service role only and writes nothing', () => {
-    expect(CODE).toContain('REVOKE ALL ON FUNCTION public.fn_ca_launch_accounting_club_cutoffs() FROM PUBLIC;');
     expect(CODE).toContain(
-      'REVOKE ALL ON FUNCTION public.fn_ca_launch_accounting_club_cutoffs() FROM anon, authenticated;'
+      'REVOKE ALL ON FUNCTION public.fn_ca_launch_accounting_club_cutoffs() FROM PUBLIC, anon, authenticated;'
     );
-    expect(CODE).toContain('GRANT EXECUTE ON FUNCTION public.fn_ca_launch_accounting_club_cutoffs() TO service_role;');
+    expect(CODE).toContain(
+      'GRANT EXECUTE ON FUNCTION public.fn_ca_launch_accounting_club_cutoffs() TO service_role;'
+    );
     expect(CODE).not.toMatch(/\b(INSERT|UPDATE|DELETE)\b/i);
   });
 });

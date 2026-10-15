@@ -81,8 +81,7 @@ AS $fn$
  SELECT b.scope_id, b.cutoff_at FROM public.ca_launch_accounting_boundaries b
   WHERE b.scope_kind='club' AND b.undone_at IS NULL
 $fn$;
-REVOKE ALL ON FUNCTION public.fn_ca_launch_accounting_club_cutoffs() FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.fn_ca_launch_accounting_club_cutoffs() FROM anon, authenticated;
+REVOKE ALL ON FUNCTION public.fn_ca_launch_accounting_club_cutoffs() FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_ca_launch_accounting_club_cutoffs() TO service_role;
 COMMENT ON FUNCTION public.fn_ca_launch_accounting_club_cutoffs() IS
  'The active club launch accounting cutoffs, read once per query by accounting_payable_earning_sources (20261015094219).';

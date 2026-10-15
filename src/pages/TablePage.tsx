@@ -129,6 +129,7 @@ import { cachedAuthUserId, hydrateIdentity, persistIdentity } from '../lib/cache
 import { formatGameTitle } from '../utils/formatGameTitle';
 import {
   accessRefusalFromClose,
+  isTournamentTablePausedClose,
   isStillWakeableTableRow,
   shouldRecoverMissedHandStartPresentation,
 } from '../services/EngineStateClient';
@@ -3784,6 +3785,9 @@ function LiveTablePage({
      down: claimed there, released when the socket connects or the row turns
      out to be wakeable. Declared here, above the heartbeat that reads it. */
   const tableClosedToastShownRef = useRef(false);
+  /* A PAUSED TABLE SAYS SO (2026-10-15): the one "this table is paused" notice
+     per pause, claimed by the 4404 effect, released when the socket connects. */
+  const tablePausedToastShownRef = useRef(false);
   /* Read by the heartbeat below without joining its dependency list, which
      would restart the five-second interval on every render. */
   const probeEngineLinkRef = useRef(probeEngineLink);
@@ -4020,6 +4024,24 @@ function LiveTablePage({
          Also asks the database, because a browser that loaded DURING the
          outage never received the announcement over a socket. */
       if (maintenanceBreakRef.current.active) return;
+      /* A PAUSED TABLE SAYS SO (2026-10-15). The engine answers a tournament
+         table its manager cannot admit with this 4404: the field is still
+         seated, the chips are still on the felt, and the floor has been paged
+         (Tournament.table_admission_failing). It is the opposite of a closed
+         table, yet three of these 4404s used to end in "This Table Is No
+         Longer Running" - what a player at the 6:00 AM Freeroll's frozen
+         tables was told. Say it is paused, once, and keep the ladder polling
+         so the felt rejoins the moment the table deals again. */
+      if (isTournamentTablePausedClose(engineLastError.code, engineLastError.reason)) {
+        notFoundCountRef.current = 0;
+        if (!tablePausedToastShownRef.current) {
+          tablePausedToastShownRef.current = true;
+          heartbeatToastRef.current?.info?.(
+            'This Table Is Paused. Your Seat And Stack Are Safe And The Floor Has Been Alerted'
+          );
+        }
+        return;
+      }
       notFoundCountRef.current += 1;
       if (notFoundCountRef.current >= 3 && !tableClosedToastShownRef.current) {
         // Claim the slot BEFORE the await so three more 4404s arriving during
@@ -4149,6 +4171,7 @@ function LiveTablePage({
     if (engineWsStatus === 'connected') {
       notFoundCountRef.current = 0;
       tableClosedToastShownRef.current = false;
+      tablePausedToastShownRef.current = false;
       // A socket that reached OPEN is proof the engine accepted this token.
       // Nothing weaker clears it (see the comment above).
       setEngineRefusedAuth(false);

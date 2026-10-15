@@ -97,6 +97,24 @@ export type MuxAccessRefusalCode = (typeof MUX_ACCESS_REFUSAL_CODES)[number];
 /** The prefix the per-table ERROR branch below puts in front of the engine's code. */
 export const MUX_REFUSAL_REASON_PREFIX = 'subscription refused: ';
 
+/**
+ * A PAUSED TABLE SAYS SO (2026-10-15). The engine answers TABLE_NOT_FOUND with
+ * this message for a tournament table its manager is failing to admit (mirror
+ * of server/src/transport/EngineWebSocketServer.ts TABLE_PAUSED_MESSAGE). The
+ * close keeps 4404, so the ladder keeps polling and rejoins when the table
+ * deals again; its reason names the pause so the felt can say so.
+ */
+export const TOURNAMENT_TABLE_PAUSED_MESSAGE = 'tournament_table_paused';
+export const TOURNAMENT_TABLE_PAUSED_REASON = MUX_REFUSAL_REASON_PREFIX + 'TOURNAMENT_TABLE_PAUSED';
+
+/** True when a close is the engine saying this tournament table is paused. */
+export function isTournamentTablePausedClose(
+  code: number | undefined,
+  reason: string | undefined
+): boolean {
+  return code === 4404 && reason === TOURNAMENT_TABLE_PAUSED_REASON;
+}
+
 /** The engine's access verdict carried by a facade close, or null for any other close. */
 export function accessRefusalFromClose(
   code: number | undefined,
@@ -723,7 +741,7 @@ class EngineSocketMuxImpl {
       if (this.ws !== ws) return;
       this.lastInboundAt = Date.now();
       const raw = typeof e.data === 'string' ? e.data : String(e.data);
-      let msg: { type?: string; tableId?: string; code?: string } | null = null;
+      let msg: { type?: string; tableId?: string; code?: string; message?: string } | null = null;
       try {
         msg = JSON.parse(raw) as { type?: string; tableId?: string };
       } catch {
@@ -801,7 +819,12 @@ class EngineSocketMuxImpl {
           this.facades.delete(msg.tableId);
           const closeCode =
             msg.code === 'TABLE_NOT_FOUND' ? 4404 : msg.code === 'BANNED' ? 4403 : 4400;
-          f._close(closeCode, MUX_REFUSAL_REASON_PREFIX + (msg.code ?? 'unknown'));
+          f._close(
+            closeCode,
+            msg.code === 'TABLE_NOT_FOUND' && msg.message === TOURNAMENT_TABLE_PAUSED_MESSAGE
+              ? TOURNAMENT_TABLE_PAUSED_REASON
+              : MUX_REFUSAL_REASON_PREFIX + (msg.code ?? 'unknown')
+          );
         }
         return;
       }

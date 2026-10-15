@@ -2,7 +2,9 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import { isDeepStrictEqual } from 'node:util';
 
-const CLUB_DATA_PATH = 'clubs/shark-club/data';
+// #6895 made clubs/:clubId/data the PokerBros-style everyday screen and moved
+// this full operator report (and its Simple/Advanced modes) to data/advanced.
+const CLUB_DATA_PATH = 'clubs/shark-club/data/advanced';
 type ClubDataAccess = 'authorized' | 'restricted';
 
 interface ObservedPlayerPage {

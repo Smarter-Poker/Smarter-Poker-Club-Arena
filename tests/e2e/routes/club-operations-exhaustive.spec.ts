@@ -85,6 +85,19 @@ test.describe('Reserved Admin - every Club Operations registry route', () => {
       await expectRoute(page, path);
       await expectDestination(page, `/${path}`);
 
+      if (operation.id === 'data') {
+        // #6895: data is the PokerBros-style everyday screen; its Report action
+        // opens the full operator report, which keeps the Simple/Advanced tool
+        // and the Club Operations frame certified below.
+        await expect(page.getByRole('heading', { name: 'Club Data', exact: true })).toBeVisible({
+          timeout: 30_000,
+        });
+        await page.getByRole('button', { name: 'Report', exact: true }).click();
+        await expect(page).toHaveURL(/\/clubs\/[^/]+\/data\/advanced(?:[?#]|$)/, {
+          timeout: 30_000,
+        });
+      }
+
       if (operation.id === 'players') {
         await expect(page.locator('[data-players-mode="simple"]')).toBeVisible();
         await page.getByRole('button', { name: 'Advanced', exact: true }).click();

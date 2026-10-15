@@ -20,7 +20,9 @@
  */
 import { useEffect, useState } from 'react';
 
-const decoded = new Set<string>();
+/** Each requested URL mapped to the URL that actually decoded (itself, or the
+ *  retry that succeeded), so a later caller paints the copy the browser has. */
+const decoded = new Map<string, string>();
 const inflight = new Map<string, Promise<string>>();
 
 /** Backoff between attempts; the last value repeats. */
@@ -66,7 +68,8 @@ export const TABLE_ART_MAX_ATTEMPTS = 40;
  *  by every caller, so it is never cancelled by one of them leaving. */
 export function loadTableImage(url: string): Promise<string> {
   if (!url) return Promise.resolve(url);
-  if (decoded.has(url)) return Promise.resolve(url);
+  const known = decoded.get(url);
+  if (known) return Promise.resolve(known);
   const existing = inflight.get(url);
   if (existing) return existing;
   const run = (async () => {
@@ -75,8 +78,7 @@ export function loadTableImage(url: string): Promise<string> {
       const candidate = withAttempt(url, attempt);
       try {
         await loadOnce(candidate);
-        decoded.add(url);
-        decoded.add(candidate);
+        decoded.set(url, candidate);
         return candidate;
       } catch {
         const wait = TABLE_ART_RETRY_MS[Math.min(attempt, TABLE_ART_RETRY_MS.length - 1)];
@@ -91,6 +93,11 @@ export function loadTableImage(url: string): Promise<string> {
 
 export function isTableImageDecoded(url: string): boolean {
   return !url || decoded.has(url);
+}
+
+/** The URL to paint for `url`: the decoded copy when there is one. */
+export function decodedTableImageUrl(url: string): string {
+  return decoded.get(url) ?? url;
 }
 
 export interface TableArt {
@@ -108,8 +115,8 @@ export function useTableArt(skinUrl: string, backgroundUrl: string): TableArt {
   const both = () => isTableImageDecoded(skinUrl) && isTableImageDecoded(backgroundUrl);
   const [state, setState] = useState(() => ({
     key: `${skinUrl}|${backgroundUrl}`,
-    skinSrc: skinUrl,
-    backgroundSrc: backgroundUrl,
+    skinSrc: decodedTableImageUrl(skinUrl),
+    backgroundSrc: decodedTableImageUrl(backgroundUrl),
     ready: both(),
   }));
   const [coverExpired, setCoverExpired] = useState(false);

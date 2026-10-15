@@ -5,7 +5,7 @@
  * IMPROVED TO BE MORE 'POKER BROS' STYLE AND SIMPLICITY. MAKE SURE THAT ALL
  * THE DATA IS REAL TIME ACCURATE DATA."
  *
- * One screen, one read: ca_club_data_snapshot. It answers what the club has
+ * One screen, one read: ca_club_data_screen. It answers what the club has
  * generated in the window - games, total winnings, MTT winnings, fee - and
  * one row per game, all under the same filters.
  *
@@ -57,6 +57,8 @@ export interface ClubDataRow {
   game_class?: string | null;
   blinds?: string | null;
   started_at?: string | null;
+  /** Last money movement inside the window (ca_club_data_screen). */
+  activity_at?: string | null;
   status?: string | null;
   creator_name?: string | null;
   fee?: number | null;
@@ -222,7 +224,7 @@ export default function ClubDataSimplePage() {
     const mine = ++requestRef.current;
     let timer = 0;
     try {
-      const read = supabase.rpc('ca_club_data_snapshot', {
+      const read = supabase.rpc('ca_club_data_screen', {
         p_club_id: clubUuid,
         p_start: startDate,
         p_end: endDate,
@@ -479,7 +481,11 @@ export default function ClubDataSimplePage() {
                 </div>
                 <div className={styles.rowMeta}>
                   <span className={styles.kind}>{kindLabel(row)}</span>
-                  {row.started_at && <span>{startedLabel(row.started_at)}</span>}
+                  {(row.kind === 'CASH' ? row.activity_at : row.started_at) && (
+                    <span>
+                      {startedLabel(row.kind === 'CASH' ? row.activity_at : row.started_at)}
+                    </span>
+                  )}
                   {Number(row.players) > 0 && (
                     <span>
                       {Number(row.players).toLocaleString('en-US')} Player{Number(row.players) === 1 ? '' : 's'}

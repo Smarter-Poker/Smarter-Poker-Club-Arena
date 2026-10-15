@@ -11,6 +11,7 @@
 import { test, expect } from '@playwright/test';
 import { assertRendered } from './utils';
 import { observeCashierFailure } from '../support/cashierFailureDiagnostics';
+import { isEngineCutoverHandshake } from '../support/engineCutoverConsole';
 
 test.describe('Cashier Page — Financial UI', () => {
   test('should load without console errors', async ({ page }, testInfo) => {
@@ -40,7 +41,10 @@ test.describe('Cashier Page — Financial UI', () => {
           // A report-only CSP that carries upgrade-insecure-requests makes the
           // browser log that it ignored the directive. It is a notice about our
           // header, not a page error, and it fired on every route.
-          !e.includes('Content Security Policy')
+          !e.includes('Content Security Policy') &&
+          // The browser's own line for the gateway refusing the engine channel
+          // while the engine is replaced (see engineCutoverConsole.ts).
+          !isEngineCutoverHandshake(e)
       );
 
       expect(criticalErrors).toHaveLength(0);
@@ -88,7 +92,10 @@ test.describe('Wallet Page — Financial UI', () => {
         // A report-only CSP that carries upgrade-insecure-requests makes the
         // browser log that it ignored the directive. It is a notice about our
         // header, not a page error, and it fired on every route.
-        !e.includes('Content Security Policy')
+        !e.includes('Content Security Policy') &&
+        // The browser's own line for the gateway refusing the engine channel
+        // while the engine is replaced (see engineCutoverConsole.ts).
+        !isEngineCutoverHandshake(e)
     );
 
     expect(criticalErrors).toHaveLength(0);

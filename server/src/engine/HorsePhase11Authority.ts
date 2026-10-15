@@ -380,13 +380,51 @@ export interface HorsePhase11AuthoritySelection {
  * release c92768c8 in the window predeclared in
  * docs/evidence/phase12/declaration-completion-pfr-repair-2026-10-14.txt
  * (2026-10-15 00:02 to 00:50Z), Wilson lower bounds 0.998, 0.990, 0.990, 0.986.
- * PLO5 and PLO6 stay null until their matrices finish.
+ * PLO5: run 38656874186, 243 of 243 shards, 2,379,456 pairs, +5.37 [+4.25,
+ * +6.49] bb/100; PLO6: run 38656876020, 2,519,424 pairs, +3.68 [+2.89, +4.47]
+ * bb/100; both qualified with no reasons, completion in the same window with
+ * Wilson lower bounds PLO5 0.999, 0.994, 0.992, 0.993 and PLO6 0.998, 0.993,
+ * 0.989, 0.991.
  */
 export const PHASE11_PROTECTED_RELEASE_SELECTIONS: Readonly<
   Record<'plo5' | 'plo6' | 'plo8', HorsePhase11AuthoritySelection | null>
 > = Object.freeze({
-  plo5: null,
-  plo6: null,
+  plo5: Object.freeze({
+    schema: 'horse-qualified-authority-selection-v1',
+    phase: 'phase11',
+    variant: 'plo5',
+    sourceSha: 'c92768c85bc53a4a5a5972d09c6ee58561010035',
+    packVersion: 'plo5-high-round3-v2',
+    contractVersion: 'omaha-variant-strength-contract-v1',
+    contractDigest: '5b93ae20962ff79798b998f437ed43d2bd224a64995d86e34ed63d7bb22057fc',
+    domain: 'plo5-cash-single-board-after-rake-horse-population',
+    qualificationPath: 'docs/evidence/phase11/c92768c8/phase11-qualification-2026-10-15-plo5.json',
+    qualificationSha256: '69c0db872ddcd9b86bd00d410ba2f2458f8797baab9fe1e2944a1f20556b45f1',
+    completionPath: 'docs/evidence/phase11/c92768c8/phase11-completion-2026-10-15-plo5.json',
+    completionSha256: 'b4928081d22bac9a144e37482be3a6ee29e8bb1e4bb130fb69dc4cd6749dd631',
+    approvalGeneration: 2,
+    issuedAt: '2026-10-15T07:35:00.000Z',
+    expiresAt: null,
+    withdrawn: null,
+  } as const),
+  plo6: Object.freeze({
+    schema: 'horse-qualified-authority-selection-v1',
+    phase: 'phase11',
+    variant: 'plo6',
+    sourceSha: 'c92768c85bc53a4a5a5972d09c6ee58561010035',
+    packVersion: 'plo6-high-round3-v2',
+    contractVersion: 'omaha-variant-strength-contract-v1',
+    contractDigest: '5b93ae20962ff79798b998f437ed43d2bd224a64995d86e34ed63d7bb22057fc',
+    domain: 'plo6-cash-single-board-after-rake-horse-population',
+    qualificationPath: 'docs/evidence/phase11/c92768c8/phase11-qualification-2026-10-15-plo6.json',
+    qualificationSha256: '6b12daa4157047af0429798f67f1f2333b6d6f1053eebf11afc881cadd0d34f8',
+    completionPath: 'docs/evidence/phase11/c92768c8/phase11-completion-2026-10-15-plo6.json',
+    completionSha256: '0360a0cf58e331b7866e38e3b632f0bb55db6fa7b7705b7195ca0fd494651e3c',
+    approvalGeneration: 2,
+    issuedAt: '2026-10-15T07:35:00.000Z',
+    expiresAt: null,
+    withdrawn: null,
+  } as const),
   plo8: Object.freeze({
     schema: 'horse-qualified-authority-selection-v1',
     phase: 'phase11',

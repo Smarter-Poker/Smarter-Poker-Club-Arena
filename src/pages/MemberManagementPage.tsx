@@ -1234,10 +1234,11 @@ function RoleSection({
   }, [confirmRole]);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  // Percentages, not fractions. Blank on purpose: a rate that arrives
-  // pre-filled is a rate nobody chose, which is the bug this pair fixes.
+  // A percentage, not a fraction. Blank on purpose: a rate that arrives
+  // pre-filled is a rate nobody chose. The promoter sets the agent's own rate
+  // only; what the agent gives their players is the agent's to set
+  // (Dan, 2026-10-15), from their agent dashboard.
   const [commissionPct, setCommissionPct] = useState('');
-  const [rakebackPct, setRakebackPct] = useState('');
   // Prepaid or a credit line, and how much. Blank for the same reason the rates
   // are blank: Dan asked for the funding to be ASSIGNED at promotion, and a
   // default sitting in the box is not a choice anybody made. The server refuses
@@ -1340,34 +1341,28 @@ function RoleSection({
     // row did not already exist. fn_club_set_member_role now refuses an agent
     // role that arrives without a rate, so the two fields below are the whole
     // point of the confirm step rather than decoration on it.
+    //
+    // Dan, 2026-10-15: the owner assigns the AGENT's rate, which covers the
+    // agent's own account and every sub agent under them; "THE AGENT ASSIGNS
+    // WHAT THEY WANT TO GIVE THEIR PLAYERS, THIS SHOULDN'T BE DONE BY THE PERSON
+    // PROMOTING THEM." So no player rakeback is sent; the server starts it at 0
+    // and the agent sets it on their own dashboard (fn_agent_set_player_rakeback).
     let rates:
       | {
           p_commission_rate: number;
-          p_player_rakeback_rate: number;
           p_is_prepaid: boolean;
           p_credit_limit: number;
         }
       | undefined;
     if (isAgentRole(newRole)) {
       const comm = Number(commissionPct);
-      const rake = Number(rakebackPct);
-      if (commissionPct.trim() === '' || rakebackPct.trim() === '') {
-        setError('Enter A Commission And A Rakeback Percentage.');
+      if (commissionPct.trim() === '') {
+        setError('Enter The Agent Rakeback Percentage.');
         setPromoting(false);
         return;
       }
       if (!Number.isFinite(comm) || comm < 0 || comm > 70) {
-        setError('Commission Must Be Between 0 And 70 Percent.');
-        setPromoting(false);
-        return;
-      }
-      if (!Number.isFinite(rake) || rake < 0 || rake > 50) {
-        setError('Rakeback Must Be Between 0 And 50 Percent.');
-        setPromoting(false);
-        return;
-      }
-      if (rake > comm) {
-        setError('Rakeback Cannot Be More Than The Commission It Is Paid Out Of.');
+        setError('The Agent Rakeback Must Be Between 0 And 70 Percent.');
         setPromoting(false);
         return;
       }
@@ -1397,7 +1392,6 @@ function RoleSection({
       // The database stores a fraction. The field asks for a percentage.
       rates = {
         p_commission_rate: comm / 100,
-        p_player_rakeback_rate: rake / 100,
         p_is_prepaid: funding === 'prepaid',
         p_credit_limit: limit,
       };
@@ -1566,7 +1560,7 @@ function RoleSection({
                 Set The Deal Now. The Server Will Not Accept An Agent Without One.
               </p>
               <label className="mm-field">
-                <span className="mm-field__label">Commission Percent (0 To 70)</span>
+                <span className="mm-field__label">Agent Rakeback Percent (0 To 70)</span>
                 <input
                   type="number"
                   inputMode="decimal"
@@ -1579,20 +1573,10 @@ function RoleSection({
                   disabled={promoting}
                 />
               </label>
-              <label className="mm-field">
-                <span className="mm-field__label">Player Rakeback Percent (0 To 50)</span>
-                <input
-                  type="number"
-                  inputMode="decimal"
-                  min={0}
-                  max={50}
-                  step={1}
-                  value={rakebackPct}
-                  placeholder="E.G. 30"
-                  onChange={(e) => setRakebackPct(e.target.value)}
-                  disabled={promoting}
-                />
-              </label>
+              <p className="mm-roles__rates-note">
+                This Rate Covers The Agent Account And Every Sub Agent Under Them. The
+                Agent Sets The Rakeback Their Players Receive From Their Agent Dashboard.
+              </p>
               <div className="mm-roles__funding">
                 <span className="mm-field__label">Funding</span>
                 <div className="mm-roles__funding-choice" role="group" aria-label="Funding">
@@ -1647,9 +1631,8 @@ function RoleSection({
               )}
 
               <p className="mm-roles__rates-note">
-                Rakeback Is Paid Out Of The Commission, So It Cannot Be The Larger Of The Two, And
-                Neither May Exceed The Upline They Report To. A Credit Line Cannot Exceed The Upline
-                Limit Either, And It Is Owed Back Weekly.
+                The Agent Rakeback Cannot Exceed The Upline They Report To. A Credit Line Cannot
+                Exceed The Upline Limit Either, And It Is Owed Back Weekly.
               </p>
             </div>
           )}
@@ -1696,7 +1679,6 @@ function RoleSection({
               onClick={() => {
                 setError('');
                 setCommissionPct('');
-                setRakebackPct('');
                 setFunding('');
                 setCreditLimit('');
                 setConfirmRole(role);

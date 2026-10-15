@@ -204,7 +204,7 @@ describe('Players detail surfaces', () => {
       fireEvent.click(role);
       const firstControl =
         grantRole === 'agent'
-          ? await screen.findByRole('spinbutton', { name: 'Commission Percent (0 To 70)' })
+          ? await screen.findByRole('spinbutton', { name: 'Agent Rakeback Percent (0 To 70)' })
           : await screen.findByRole('button', { name: 'Confirm' });
       expect(firstControl).toHaveFocus();
       const cancel = screen.getByRole('button', { name: 'Cancel' });
@@ -212,7 +212,7 @@ describe('Players detail surfaces', () => {
       fireEvent.click(cancel);
       expect(screen.getByRole('button', { name: roleName })).toHaveFocus();
       expect(
-        screen.queryByRole('spinbutton', { name: 'Commission Percent (0 To 70)' })
+        screen.queryByRole('spinbutton', { name: 'Agent Rakeback Percent (0 To 70)' })
       ).not.toBeInTheDocument();
       expect(state.toast.success).not.toHaveBeenCalled();
       expect(

@@ -337,19 +337,75 @@ export async function handleEngineAuthRejection(
   return inFlight;
 }
 
-/** Bind the original logout transaction's event to the existing verified sign-in flow. */
-export function installPlayerSessionRevocationEvents(): () => void {
+/** The slice of the Supabase client the revocation channel uses (injected in tests). */
+type RevocationSession = { access_token?: string | null; user?: { id?: string | null } | null } | null;
+export interface RevocationRealtimeClient {
+  channel(name: string): {
+    on(
+      type: 'postgres_changes',
+      filter: { event: '*'; schema: string; table: string; filter: string },
+      callback: () => void
+    ): { subscribe(callback?: (status: string) => void): unknown };
+  };
+  removeChannel(channel: unknown): unknown;
+  auth: {
+    getSession(): Promise<{ data: { session: RevocationSession } }>;
+    onAuthStateChange(cb: (event: string, session: RevocationSession) => void): {
+      data: { subscription: { unsubscribe(): void } };
+    };
+  };
+}
+
+/** How long a refused revocation channel waits before asking GoTrue again. */
+export const REVOCATION_CHANNEL_RETRY_MS = 30_000;
+
+/**
+ * Bind the original logout transaction's event to the existing verified sign-in flow.
+ *
+ * The channel joins only under a session GoTrue has actually handed out
+ * (2026-10-15). It used to bind first from the user id sitting in
+ * localStorage, and to stay bound when that session could no longer be
+ * refreshed. Either way realtime-js joined with no user token, so the join ran
+ * as `anon`, which holds no column privilege on this table, and Realtime
+ * refused it ("invalid column for filter user_id"). realtime-js then re-joins
+ * every ten seconds for as long as the tab is open: about 300 refusals an
+ * hour, around the clock, in the production database log. Now a refused join
+ * removes the channel, and it is bound again only when GoTrue returns a live
+ * session (the next sign-in or refresh, or one re-check after 30 seconds).
+ */
+export function installPlayerSessionRevocationEvents(
+  loadClient: () => Promise<RevocationRealtimeClient> = () =>
+    import('./supabase').then(
+      ({ supabase }) => supabase as unknown as RevocationRealtimeClient
+    )
+): () => void {
   let disposed = false;
   let stopChannel: (() => void) | null = null;
+  let boundUser: string | null = null;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
   let stopAuth: (() => void) | null = null;
-  void import('./supabase')
-    .then(({ supabase }) => {
+  void loadClient()
+    .then((supabase) => {
       if (disposed) return;
-      const bind = (userId: string | null) => {
+      const bind = (session: RevocationSession) => {
+        const userId = session?.access_token ? session.user?.id || null : null;
+        if (userId && userId === boundUser && stopChannel) return;
+        if (retryTimer) clearTimeout(retryTimer);
+        retryTimer = null;
         stopChannel?.();
-        stopChannel = null;
         if (!userId || disposed) return;
-        const channel = supabase
+        let refused = false;
+        let channel: unknown = null;
+        const stop = () => {
+          if (stopChannel === stop) {
+            stopChannel = null;
+            boundUser = null;
+          }
+          if (channel) void supabase.removeChannel(channel);
+        };
+        stopChannel = stop;
+        boundUser = userId;
+        channel = supabase
           .channel(`player-session-control:${userId}`)
           .on(
             'postgres_changes',
@@ -363,20 +419,29 @@ export function installPlayerSessionRevocationEvents(): () => void {
               void handleEngineAuthRejection('operator:force_logout', true);
             }
           )
-          .subscribe();
-        stopChannel = () => {
-          void supabase.removeChannel(channel);
-        };
+          .subscribe((status) => {
+            if (status !== 'CHANNEL_ERROR' || refused || stopChannel !== stop) return;
+            refused = true;
+            stop();
+            retryTimer = setTimeout(() => {
+              retryTimer = null;
+              if (disposed || stopChannel) return;
+              void supabase.auth
+                .getSession()
+                .then(({ data }) => {
+                  if (!disposed && !stopChannel) bind(data.session);
+                })
+                .catch(() => {
+                  /* the next auth event binds a live session */
+                });
+            }, REVOCATION_CHANNEL_RETRY_MS);
+          });
+        // A refusal reported synchronously happened before `channel` was set.
+        if (refused) void supabase.removeChannel(channel);
       };
-      try {
-        const raw = JSON.parse(localStorage.getItem(AUTH_STORAGE_KEY) || 'null');
-        bind(raw?.user?.id || null);
-      } catch {
-        /* auth state callback handles the next valid session */
-      }
       const { data } = supabase.auth.onAuthStateChange((_event, session) => {
         // Avoid calling SDK methods inside the SDK's held auth-state lock.
-        queueMicrotask(() => bind(session?.user?.id || null));
+        queueMicrotask(() => bind(session));
       });
       stopAuth = () => data.subscription.unsubscribe();
     })
@@ -385,6 +450,7 @@ export function installPlayerSessionRevocationEvents(): () => void {
     });
   return () => {
     disposed = true;
+    if (retryTimer) clearTimeout(retryTimer);
     stopChannel?.();
     stopAuth?.();
   };

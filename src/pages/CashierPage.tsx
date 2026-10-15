@@ -1321,16 +1321,23 @@ function CashierContent() {
       // Keying off performed_by rendered every self-initiated credit (a mint
       // to yourself, a refill you triggered) as a debit with a leading minus
       // — money coming in displayed as money going out.
+      // A move between two OTHER accounts that this user only performed (a
+      // claim from a member into the club bank, a distribution) never touched
+      // this user's wallet. It is listed as managed, without a sign, instead of
+      // a debit of a wallet that did not change.
       type:
         entry.to_entity_id === user.id
           ? 'credit'
           : entry.from_entity_id === user.id
             ? 'debit'
-            : entry.performed_by === user.id
-              ? 'debit'
-              : 'credit',
+            : 'managed',
       category: entry.category,
-      description: entry.description || `${entry.from_label} → ${entry.to_label}`,
+      // The ledger's automatic audit note ("auto-audited club_members...
+      // delta") is an internal trace, not a sentence for a player.
+      description:
+        entry.description && !/^auto-audited /i.test(entry.description)
+          ? entry.description
+          : `${enumToTitleCase(entry.from_label || entry.from_type || 'Account')} To ${enumToTitleCase(entry.to_label || entry.to_type || 'Account')}`,
       related_entity_id: entry.to_entity_id,
       created_at: entry.created_at,
       _source: 'chip_ledger',
@@ -2428,7 +2435,8 @@ function CashierContent() {
     const rows = filteredTransactions.map((tx) => {
       const date = new Date(tx.created_at).toLocaleDateString();
       const time = new Date(tx.created_at).toLocaleTimeString();
-      const typeText = tx.type === 'credit' ? 'Credit' : 'Debit';
+      const typeText =
+        tx.type === 'credit' ? 'Credit' : tx.type === 'managed' ? 'Managed' : 'Debit';
       const categoryText =
         CATEGORY_LABELS[tx.category] ||
         (tx.category || tx.type || '').replace(/_/g, ' ').toUpperCase();
@@ -3606,13 +3614,15 @@ function CashierContent() {
                             </div>
                             <div className={styles.txAmounts}>
                               <span
-                                className={`${styles.txAmount} ${tx.type === 'credit' ? 'sc-ink--green' : 'sc-ink--red'}`}
+                                className={`${styles.txAmount} ${tx.type === 'credit' ? 'sc-ink--green' : tx.type === 'managed' ? 'sc-ink--silver' : 'sc-ink--red'}`}
                               >
-                                {tx.type === 'credit' ? '+' : '-'}
+                                {tx.type === 'credit' ? '+' : tx.type === 'managed' ? '' : '-'}
                                 {chipFigure(Math.abs(tx.amount))}
                               </span>
                               <span className={`${styles.txWallet} sc-ink--blue`}>
-                                {enumToTitleCase(tx.wallet_type)}
+                                {tx.type === 'managed'
+                                  ? 'Managed'
+                                  : enumToTitleCase(tx.wallet_type)}
                               </span>
                             </div>
                             <span className={`${styles.txTime} sc-ink--muted`}>

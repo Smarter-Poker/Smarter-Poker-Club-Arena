@@ -192,6 +192,8 @@ interface TradeRecordRow {
   /** Relative to the viewer; managed means neither party is the viewer. */
   direction: 'in' | 'out' | 'managed';
   counterparty: string;
+  /** Both a sender and a recipient member: only then is it a member-to-member transfer. */
+  twoSided?: boolean;
   /**
    * Dan 2026-09-02: a ledger line must say which wallet the chips left and
    * which they entered, whatever the role. "Agent Wallet To Player Wallet".
@@ -1332,9 +1334,16 @@ function CashierTradeWorkspace() {
             direction: managed ? ('managed' as const) : out ? ('out' as const) : ('in' as const),
             // A third party reads a Club Bank send by the pot that paid,
             // never its operator: a send nobody pressed reads the same.
+            // An entry with no recipient (a tournament buy-in) is not a
+            // transfer to a member: it reads as what it is instead of
+            // "Transfer X To A Member". A send whose sender is the Club Bank
+            // still reads as the pot that paid.
             counterparty: managed
-              ? `${thirdPartySender(r, r.from_name)} To ${r.to_name || 'A Member'}`
+              ? r.to_user_id
+                ? `${thirdPartySender(r, r.from_name)} To ${r.to_name || 'A Member'}`
+                : `${txLabel(r.transaction_type)} By ${thirdPartySender(r, r.from_name)}`
               : otherName || 'Club',
+            twoSided: Boolean(r.to_user_id),
             route: walletRoute(r),
             // The receipt's summary prints the receipt's own exact figure, so
             // the sentence and the headline above it never disagree (C1-14).
@@ -3964,7 +3973,9 @@ function CashierTradeWorkspace() {
                       <div className={styles.rowInfo}>
                         <span className={styles.rowName}>
                           {r.direction === 'managed'
-                            ? 'Transfer '
+                            ? r.twoSided
+                              ? 'Transfer '
+                              : ''
                             : r.direction === 'out'
                               ? 'To '
                               : 'From '}

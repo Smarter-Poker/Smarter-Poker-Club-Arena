@@ -42,6 +42,8 @@ import './styles/metallic-popups.css';
 // word on animation, and importing it after the rest keeps its !important
 // declarations from being read before the sheets they moderate.
 import './styles/reducedMotion.css';
+import './styles/single-field-focus.css';
+import { installSingleFieldFocus } from './lib/singleFieldFocus.mjs';
 // IMPROVEMENT PASS 2026-08-19: ChipAnimations.css and CardAnimations.css
 // deleted — ~1,400 lines of keyframes/selectors with ZERO component
 // consumers (chip-bet--from-seat-*, community-card--flop-*, card--folding,
@@ -68,6 +70,9 @@ import {
 // Install before any fire-and-forget import. Vite's preload event covers the
 // critical route graph, while importWithRetry below keeps optional boot work
 // non-disruptive during an atomic publish.
+const disposeSingleFieldFocus = installSingleFieldFocus(document);
+if (import.meta.hot) import.meta.hot.dispose(disposeSingleFieldFocus);
+
 installVitePreloadErrorRecovery();
 releaseChunkRecoveryBudgetWhenStable();
 

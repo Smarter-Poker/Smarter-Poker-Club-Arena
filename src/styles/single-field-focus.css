@@ -1,0 +1,30 @@
+/* One inset edge replaces stacked browser, component and utility focus boxes.
+   The event owner is the existing painted input or its compact field wrapper.
+   Checkbox/radio/range controls and button/link focus keep their own feedback. */
+html[data-sp-single-field-focus]
+  body
+  :where(
+    input:not([type='hidden']):not([type='checkbox']):not([type='radio']):not([type='range']):not(
+        [type='button']
+      ):not([type='submit']):not([type='reset']):not([type='image']):not([type='file']),
+    textarea,
+    select,
+    [contenteditable='true'],
+    [contenteditable='']
+  ):is(:focus, :focus-visible) {
+  outline: none !important;
+  box-shadow: none !important;
+  --tw-ring-shadow: 0 0 #0000 !important;
+  --tw-ring-offset-shadow: 0 0 #0000 !important;
+}
+/* Higher specificity than the field reset; inset drawing never changes layout. */
+html[data-sp-single-field-focus] body [data-sp-field-focus-owner] {
+  outline: 2px solid var(--sp-field-focus-color, #45adff) !important;
+  outline-offset: -2px !important;
+  box-shadow: none !important;
+}
+/* Some painted wells used a second focus outline on a decorative pseudo-element. */
+html[data-sp-single-field-focus] body [data-sp-field-focus-owner]::before,
+html[data-sp-single-field-focus] body [data-sp-field-focus-owner]::after {
+  outline: none !important;
+}

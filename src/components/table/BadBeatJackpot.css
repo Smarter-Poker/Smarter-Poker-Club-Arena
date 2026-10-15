@@ -205,8 +205,8 @@
    refuse is not shown.
 
    Desktop: the nameplate is `top: 6px` and stacks label over amount, about
-   40px tall with the 2px frame; the mini row sits at 48px and is 16px tall,
-   ending at 64px against the desktop felt reserve of 76px. Phone: the
+   40px tall with the 2px frame; the mini row sits at 48px and is 22px tall,
+   ending at 70px against the desktop felt reserve of 76px. Phone: the
    nameplate is the declared --sp-bbj-plate-h and the row is --sp-bbj-mini-h,
    both published from the <=768px block below; the felt reserve reads their
    sum, so the row can never be under a top seat. */
@@ -233,7 +233,7 @@
 }
 
 .table-page[data-bbj-mini='1'] {
-  --sp-bbj-mini-h: 16px;
+  --sp-bbj-mini-h: 22px;
   --sp-bbj-h: calc(var(--sp-bbj-plate-h) + var(--sp-bbj-mini-h));
 }
 
@@ -245,9 +245,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 7px;
   height: var(--sp-bbj-mini-h);
-  padding: 0 10px;
+  min-width: 112px;
+  padding: 0 14px;
   background:
     var(--sp-dialog-blue, linear-gradient(165deg, #1b3a68 0%, #12253f 52%, #0a1626 100%))
       padding-box,
@@ -270,34 +271,48 @@
   cursor: pointer;
   z-index: 49;
   white-space: nowrap;
+  /* Dan 2026-10-15: "MINI BBJ LOOKS LIKE SHIT WHEN ITS BEING DISPLAYED AND IS
+     SUPER HARD TO READ AND SEE WHAT IT ACTUALLY IS ... ITS TO DARK AND TO
+     SMALL." The row was a 14px band of dark navy carrying a 9px slate label,
+     so it read as a smudge under the plate. It is taller now (19px phone,
+     22px desktop, both values of --sp-bbj-mini-h so the felt reserve follows),
+     its face is lit from inside with the house blue (#45adff, sc-ink--blue)
+     along the top and a blue bloom around it, the label is lit blue caps and
+     the amount is bright silver at the size of the plate's own numerals. */
   box-shadow:
     0 2px 4px rgba(0, 0, 0, 0.5),
-    0 0 12px rgba(36, 92, 168, 0.22),
-    inset 0 1px 0 rgba(255, 255, 255, 0.16);
+    0 0 14px rgba(69, 173, 255, 0.35),
+    inset 0 1px 0 rgba(69, 173, 255, 0.55),
+    inset 0 0 10px rgba(69, 173, 255, 0.18);
 }
 
 .bbj-mini-plate__label {
-  font-size: 0.5rem;
-  font-weight: 700;
-  color: #9fb4d0;
-  letter-spacing: 0.08em;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: #45adff;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   line-height: 1;
-  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.6);
+  text-shadow:
+    0 0 6px rgba(49, 168, 255, 0.7),
+    0 1px 1px rgba(0, 0, 0, 0.85);
 }
 
 .bbj-mini-plate__amount {
-  font-size: 0.625rem;
+  font-size: 0.8125rem;
   font-weight: 800;
   line-height: 1;
   font-family: 'JetBrains Mono', monospace;
   letter-spacing: 0.02em;
-  color: #fff;
-  background: linear-gradient(180deg, #ffffff 0%, #dfe5ec 42%, #a8b2bf 72%, #eef2f7 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.75));
+  /* Solid bright white (the console's sc-ink--white), not the plate's silver
+     gradient: at this size the gradient's darker stops won and the number read
+     grey against the navy (Dan 2026-10-15, "TO DARK"). */
+  color: #f4f7fb;
+  -webkit-text-fill-color: #f4f7fb;
+  text-shadow:
+    0 0 6px rgba(69, 173, 255, 0.55),
+    0 1px 1px rgba(0, 0, 0, 0.85);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -664,7 +679,7 @@
      nameplate alone (still 22px, still one row); --sp-bbj-h is what everything
      else reads and is now the plate PLUS the mini row, so the felt reserve in
      TablePage.css follows on its own and a top seat still cannot reach the
-     mini. The mini row is 14px on a phone (a 10px line in a 14px box) and 16px
+     mini. The mini row is 19px on a phone (a 12px line in a 19px box) and 22px
      above 768px; both are values of --sp-bbj-mini-h, declared with the rest of
      the contract above `.bbj-mini-plate`, so neither is written twice. Hung 0px below the
      plate's bottom bezel.
@@ -682,18 +697,24 @@
   }
 
   .table-page[data-bbj-mini='1'] {
-    --sp-bbj-mini-h: 14px;
+    --sp-bbj-mini-h: 19px;
   }
 
   .bbj-mini-plate {
-    padding: 0 8px;
-    gap: 5px;
-    border-radius: 0 0 6px 6px;
+    min-width: 104px;
+    padding: 0 12px;
+    gap: 6px;
+    border-radius: 0 0 7px 7px;
   }
 
-  .bbj-mini-plate__label,
+  /* 11px label and 12px amount in a 19px row: the amount matches the
+     nameplate's own numerals above it, so the two read as one fixture. */
+  .bbj-mini-plate__label {
+    font-size: 0.6875rem;
+  }
+
   .bbj-mini-plate__amount {
-    font-size: 0.5625rem;
+    font-size: 0.75rem;
   }
 
   .bbj-widget {

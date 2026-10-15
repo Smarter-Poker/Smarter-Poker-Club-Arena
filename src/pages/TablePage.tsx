@@ -16,6 +16,7 @@ import { TableLoadFailureOverlay } from '../components/table/TableLoadFailureOve
 /* #ClubArenaConsole: the felt's own dialogs print into Dan's approved master
    rather than drawing a card in CSS. See .claude/skills/club-arena-console. */
 import { SpadeConsole } from '../components/console/SpadeConsole';
+import { WaitlistCallToAction } from '../components/table/WaitlistCallToAction';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -26986,23 +26987,25 @@ function LiveTablePage({
             data-state={spectatorSeatState}
             data-testid="spectator-footer-bar"
           >
-            <span className="spectator-footer-bar__label">
-              {spectatorSeatState === 'no-seats-here' ? (
-                /* A button, not a sentence: "join the waiting list" is an
-                   action he asked for, and the waitlist modal is already
-                   built and wired (handleOpenWaitlist). Telling a player a
-                   table is full and leaving them to find the hamburger menu
-                   is how the old copy ended up lying instead. */
-                <button
-                  type="button"
-                  className="spectator-footer-bar__cta"
-                  onClick={handleOpenWaitlist}
-                >
-                  {heroWaitlistPosition != null
-                    ? `On The Waiting List · #${heroWaitlistPosition} Of ${waitListPlayers.length}`
-                    : 'Table Full · Join The Waiting List'}
-                </button>
-              ) : (
+            {spectatorSeatState === 'no-seats-here' ? (
+              /* A button, not a sentence: "join the waiting list" is an
+                 action he asked for, and the waitlist modal is already
+                 built and wired (handleOpenWaitlist). Telling a player a
+                 table is full and leaving them to find the hamburger menu
+                 is how the old copy ended up lying instead.
+
+                 Dan 2026-10-15: "THIS IS TOO CHEAP, IT NEEDS A PREMIUM LOOK
+                 AND FEEL TO IT." It is the painted action shell now, with
+                 the queue printed into it (WaitlistCallToAction). It sits
+                 outside the label span, whose one-line ellipsis would clip
+                 the shell's shadow. */
+              <WaitlistCallToAction
+                onClick={handleOpenWaitlist}
+                waitingCount={waitListPlayers.length}
+                position={heroWaitlistPosition}
+              />
+            ) : (
+              <span className="spectator-footer-bar__label">
                 <>
                   {/* An MTT table has no seat a spectator may take — `canSit`
                       is false for every one of them (see the SeatSlot `canSit`
@@ -27020,8 +27023,8 @@ function LiveTablePage({
                       ? `Spectating, Tap An Open Seat To Join · ${tableState.players.filter(Boolean).length} Of ${seatFirstBuyIn.seats} Seats Taken`
                       : 'Spectating, Tap An Open Seat To Join'}
                 </>
-              )}
-            </span>
+              </span>
+            )}
           </div>
         ) : !tableState.players.some((p) => p?.isHero) &&
           /* ── THIS GUARD IS WHY LEAVE SEAT IS REACHABLE (2026-08-28) ──────

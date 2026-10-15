@@ -1,0 +1,145 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE FULL-TABLE CALL TO ACTION (Dan 2026-10-15)
+   ═══════════════════════════════════════════════════════════════════════════
+
+   "THIS IS TOO CHEAP, IT NEEDS A PREMIUM LOOK AND FEEL TO IT."
+
+   The control is the approved painted action shell, at its native ratio
+   (1280 x 315). Nothing below draws a border, a radius or a gradient: the
+   rim, the glass face, the crystal end caps and the socket are all in the
+   art. The DOM only prints three strings into zones measured on it, in
+   master pixels:
+
+     socket  x 100-250, y 70-225   (the round well on the left)
+     face    x 300-1150, y 58-252  (the black glass, inside its chrome)
+
+   SIZE. A spectator's felt reserves the full seated action row
+   (--sp-bottom-row-h, see ActionPanel.css and TablePage.css), so the shell may
+   stand as tall as that row and never reaches a seat. Its width is derived
+   from that height through the art's own ratio, capped by the screen. */
+
+.waitlist-cta {
+  --waitlist-cta-ratio: 4.0635; /* 1280 / 315 */
+
+  position: relative;
+  display: block;
+  flex-shrink: 0;
+  width: min(
+    calc(100vw - 32px),
+    calc(var(--sp-bottom-row-h, 56px) * var(--waitlist-cta-ratio)),
+    380px
+  );
+  aspect-ratio: 1280 / 315;
+  margin: 0 auto;
+  padding: 0;
+  border: 0;
+  background: url('/assets/club-buttons/action-primary-shell.webp') center / 100% 100% no-repeat;
+  color: #e4e7ec;
+  font: inherit;
+  cursor: pointer;
+  pointer-events: auto;
+  container-type: inline-size;
+  filter: drop-shadow(0 6px 10px rgb(0 0 0 / 65%));
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    transform 120ms ease,
+    filter 160ms ease;
+}
+
+/* NO :hover (tests/no-hover-effects.law.test.ts). The press is the feedback:
+   the shell settles a hair and its glass lights blue. */
+.waitlist-cta:active {
+  transform: translateY(1px) scale(0.985);
+  filter: drop-shadow(0 3px 6px rgb(0 0 0 / 70%)) drop-shadow(0 0 10px rgb(49 168 255 / 45%));
+}
+
+.waitlist-cta:focus-visible {
+  outline: none;
+  filter: drop-shadow(0 6px 10px rgb(0 0 0 / 65%)) drop-shadow(0 0 8px rgb(49 168 255 / 70%));
+}
+
+/* ── The socket: one numeral, lit blue, centred in the round well ── */
+.waitlist-cta__socket {
+  position: absolute;
+  left: 7.81%; /* 100 / 1280 */
+  top: 22.22%; /* 70 / 315 */
+  width: 11.72%; /* 150 / 1280 */
+  height: 49.21%; /* 155 / 315 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.waitlist-cta__socket-text {
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: calc(6.4cqw * var(--fit, 1));
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  color: #45adff;
+  -webkit-text-fill-color: #45adff;
+  text-shadow:
+    0 0 1.2cqw rgb(49 168 255 / 75%),
+    0 0 2.6cqw rgb(49 168 255 / 35%),
+    0 0.3cqw 0.4cqw rgb(0 0 0 / 85%);
+}
+
+/* ── The face: eyebrow over title, centred in the glass ── */
+.waitlist-cta__face {
+  position: absolute;
+  left: 23.44%; /* 300 / 1280 */
+  top: 18.41%; /* 58 / 315 */
+  width: 66.41%; /* 850 / 1280 */
+  height: 61.59%; /* 194 / 315 */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.8cqw;
+  text-align: center;
+}
+
+.waitlist-cta__line {
+  display: block;
+  width: 100%;
+}
+
+.waitlist-cta__eyebrow {
+  display: inline-block;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: calc(3.7cqw * var(--fit, 1));
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: #45adff;
+  -webkit-text-fill-color: #45adff;
+  text-shadow:
+    0 0 0.9cqw rgb(49 168 255 / 70%),
+    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
+}
+
+.waitlist-cta__title {
+  display: inline-block;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: calc(6.2cqw * var(--fit, 1));
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  color: #e4e7ec;
+  -webkit-text-fill-color: #e4e7ec;
+  text-shadow:
+    0 -0.18cqw 0 rgb(255 255 255 / 55%),
+    0 0.25cqw 0 #6d747c,
+    0 0.45cqw 0 #050607,
+    0 0 1.6cqw rgb(49 168 255 / 25%);
+}
+
+/* On the list: the title is white, the hero's own standing. */
+.waitlist-cta[data-on-list='true'] .waitlist-cta__title {
+  color: #f4f7fb;
+  -webkit-text-fill-color: #f4f7fb;
+}

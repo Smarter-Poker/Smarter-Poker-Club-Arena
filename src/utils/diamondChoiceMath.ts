@@ -7,7 +7,7 @@ import {
 /** Internal game mathematics. Presentation never advertises return percentages. */
 import { hmacSha256Hex, sha256Hex } from './wheelFairness';
 import {
-  ROAD_COIN_VERSION,
+  isRoadCoinVersion,
   roadCoinEnd,
   roadCoinLadderCents,
   roadCoinPrize,
@@ -54,7 +54,7 @@ export function roadRoundLadder(round: {
   prizes: readonly number[];
   bet_chips: number;
 }): readonly number[] | undefined {
-  if (round.payout_version === ROAD_COIN_VERSION)
+  if (isRoadCoinVersion(round.payout_version))
     return round.prizes.length && round.bet_chips > 0
       ? roadCoinLadderCents(round.prizes, round.bet_chips)
       : undefined;
@@ -264,13 +264,14 @@ async function sealedDrawMatches(proof: ChoiceProof) {
   }
   // CONTRACT 6: every street's coin is the one this seed flips, and the road
   // end the receipt states is the first smash among them.
-  if (proof.payout_version === ROAD_COIN_VERSION) {
+  if (isRoadCoinVersion(proof.payout_version)) {
     if (!Array.isArray(proof.coins) || !proof.coins.length) return false;
     const coins = await roadCoins(
       proof.server_seed,
       proof.client_seed,
       proof.nonce,
-      proof.coins.length
+      proof.coins.length,
+      proof.payout_version
     );
     return (
       JSON.stringify(coins) === JSON.stringify(proof.coins) && proof.road_end === roadCoinEnd(coins)
@@ -322,7 +323,7 @@ export async function verifyChoiceRoundDetailed(
   const version = round.payout_version ?? 0;
   const sealedV4 = version >= CHOICE_PAYOUT_VERSION;
   // A coin road (contract 6) is crossing-only and has no fixed table.
-  const coinRoad = version === ROAD_COIN_VERSION;
+  const coinRoad = isRoadCoinVersion(version);
   if (coinRoad && round.game !== 'crossing') return nothing;
   const ladder = roadLadder(round.mode, version) as readonly number[];
   if (round.game === 'crossing' && !coinRoad && !ladder) return nothing;
@@ -336,7 +337,7 @@ export async function verifyChoiceRoundDetailed(
               ? minePrizeV4(round.bet_chips, Number(round.mode), picks, floor)
               : minePrize(round.bet_chips, Number(round.mode), picks, floor)
       : coinRoad
-        ? (picks: number) => roadCoinPrize(round.bet_chips, floor, picks)
+        ? (picks: number) => roadCoinPrize(round.bet_chips, floor, picks, version)
         : (picks: number) => ({
             numerator: BigInt(Math.round(round.bet_chips * 100)) * BigInt(ladder[picks - 1]),
             denominator: 100n,
@@ -348,7 +349,8 @@ export async function verifyChoiceRoundDetailed(
         // A receipt is sealed under one contract, and says which one it was.
         sealedV4 === (proof.payout_version ?? 0) >= CHOICE_PAYOUT_VERSION &&
         (version !== 5 || proof.payout_version === 5) &&
-        (version === ROAD_COIN_VERSION) === (proof.payout_version === ROAD_COIN_VERSION)
+        isRoadCoinVersion(version) === isRoadCoinVersion(proof.payout_version) &&
+        (!isRoadCoinVersion(version) || proof.payout_version === version)
     ),
     draw: await checked(async () => {
       if (!(await sealedDrawMatches(proof))) return false;

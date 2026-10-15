@@ -2775,3 +2775,18 @@
   box-shadow: none;
   clip-path: none;
 }
+
+/* What an Action or Madness game changes, next to its style word (Dan
+   2026-10-15). Copy, so Inter and the muted ink; a hairline in the master's
+   blue sets it apart from the word it explains. */
+.agc-premium-style-note {
+  margin-left: 0.5em;
+  padding-left: 0.5em;
+  border-left: 1px solid rgb(91 184 255 / 45%);
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 0.86em;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  color: #c5c5c8;
+}

@@ -22,7 +22,11 @@ import type {
 } from './protocol.js';
 import type { HorseDiscardExecutionObservation } from '../../services/horseDecisionJournal/discard.js';
 import { decisionWorkersCanYield } from './workerPriority.js';
-import { horseJournalShardCapacity } from '../../services/horseDecisionJournal/config.js';
+import {
+  horseJournalCapacityUnreadableReason,
+  horseJournalShardCapacity,
+  horseJournalShardCapacityMeasured,
+} from '../../services/horseDecisionJournal/config.js';
 import type { HorsePlanAcceptance } from '../HorsePlanEffectReceipt.js';
 
 /**
@@ -221,6 +225,10 @@ export interface LiveHorseDecisionWorkerShardStatus {
 
 export interface LiveHorseDecisionLaneStatus extends LiveHorseDecisionWorkerStatus {
   workerCount: number;
+  /** The journal shards the disk admitted at construction (null: no journal). */
+  journalShardCapacity: number | null;
+  /** Why that reading was refused (the two-worker ceiling), else null. */
+  journalCapacityUnreadable: string | null;
   workers: LiveHorseDecisionWorkerShardStatus[];
 }
 
@@ -258,6 +266,9 @@ export interface LiveHorseDecisionLane {
 export interface LiveHorseDecisionLaneOptions extends LiveHorseDecisionWorkerClientOptions {
   /** Tests pin the count; production derives it (horseDecisionWorkerCount). */
   workers?: number;
+  /** The journal capacity measured before construction off the event loop
+   * (horseJournalShardCapacityMeasured); absent, the constructor reads it. */
+  journalCapacity?: { shards: number | undefined };
 }
 
 const PHASE_RANK: Record<LiveHorseDecisionWorkerPhase, number> = {
@@ -285,9 +296,14 @@ export class LiveHorseDecisionWorkerPool implements LiveHorseDecisionLane {
   private readonly readyPromise: Promise<HorseDecisionWorkerReadiness>;
   /** The journal shards the disk can hold, read once at construction. */
   readonly journalShardCapacity: number | undefined;
+  /** Why the capacity reading was refused, read once with it. */
+  readonly journalCapacityUnreadable: string | null;
 
   constructor(options: LiveHorseDecisionLaneOptions = {}) {
-    this.journalShardCapacity = horseJournalShardCapacity();
+    this.journalShardCapacity = options.journalCapacity
+      ? options.journalCapacity.shards
+      : horseJournalShardCapacity();
+    this.journalCapacityUnreadable = horseJournalCapacityUnreadableReason();
     const count = horseDecisionWorkerCount({
       requested: options.workers ?? process.env[HORSE_DECISION_WORKERS_ENV],
       cores: availableParallelism(),
@@ -296,6 +312,7 @@ export class LiveHorseDecisionWorkerPool implements LiveHorseDecisionLane {
     });
     const clientOptions: LiveHorseDecisionWorkerClientOptions = { ...options };
     delete (clientOptions as LiveHorseDecisionLaneOptions).workers;
+    delete (clientOptions as LiveHorseDecisionLaneOptions).journalCapacity;
     this.clients = Object.freeze(
       Array.from(
         { length: count },
@@ -414,6 +431,8 @@ export class LiveHorseDecisionWorkerPool implements LiveHorseDecisionLane {
       governor: governor ? { ...governor } : null,
       statusSampledAt: minOf(all.map((s) => s.statusSampledAt)),
       workerCount: all.length,
+      journalShardCapacity: this.journalShardCapacity ?? null,
+      journalCapacityUnreadable: this.journalCapacityUnreadable,
       workers: all.map((s, index) => ({
         index,
         phase: s.phase,
@@ -496,7 +515,12 @@ export async function startLiveHorseDecisionWorker(
   options: LiveHorseDecisionLaneOptions = {}
 ): Promise<LiveHorseDecisionLane> {
   if (!singleton) {
-    singleton = new LiveHorseDecisionWorkerPool(options);
+    // The archive walk runs as a child process the event loop does not wait
+    // on (horseJournalShardCapacityMeasured, 2026-10-15).
+    const journalCapacity = options.journalCapacity ?? {
+      shards: await horseJournalShardCapacityMeasured(),
+    };
+    if (!singleton) singleton = new LiveHorseDecisionWorkerPool({ ...options, journalCapacity });
     console.log(
       `[LiveHorseDecisionWorker] ${singleton.workerCount} decision worker(s) sharded by table ` +
         `on ${availableParallelism()} logical CPU(s)` +
@@ -544,6 +568,8 @@ const stoppedLaneStatus = (): LiveHorseDecisionLaneStatus => ({
   governor: null,
   statusSampledAt: null,
   workerCount: 0,
+  journalShardCapacity: null,
+  journalCapacityUnreadable: null,
   workers: [],
 });
 

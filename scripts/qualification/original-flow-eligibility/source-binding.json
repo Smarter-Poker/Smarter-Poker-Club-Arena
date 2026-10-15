@@ -2,8 +2,8 @@
   "scope": "Exact original late-proof eligibility component/actual31 and source40 installation qualification inputs; no production timing or financial writer.",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 225112,
-      "sha256": "bd79793d22be38b73aa77ace9091c975c772494623da76b903b5f26bdfecd853"
+      "bytes": 225358,
+      "sha256": "72457a984cf3fdc8119a4fd3ebaa5f5583bfe78a475c3c7923d196658827cd5e"
     },
     "scripts/qualification/original-flow-eligibility/README.md": {
       "bytes": 2608,
@@ -135,6 +135,17 @@
     "current": {
       "bytes": 221256,
       "sha256": "78545cc8462142bcafa0387bdc3429278a7e6fb2ae823217fe6cfaeac2f7adc8"
+    }
+  },
+  "diamondOwnHistoryCiInput20261015": {
+    "reason": "Additive Diamond own-history native regression in existing accounting shard 3. Only current workflow identity changes. Financial sources, historical evidence, assertions and qualification verdicts remain unchanged.",
+    "previousWorkflow": {
+      "bytes": 225112,
+      "sha256": "bd79793d22be38b73aa77ace9091c975c772494623da76b903b5f26bdfecd853"
+    },
+    "currentWorkflow": {
+      "bytes": 225358,
+      "sha256": "72457a984cf3fdc8119a4fd3ebaa5f5583bfe78a475c3c7923d196658827cd5e"
     }
   }
 }

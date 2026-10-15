@@ -116,6 +116,9 @@ def qualify(e, base):
  cash_human='1e000010-0000-4000-8000-000000000010'
  reported_submission='1e000011-0000-4000-8000-000000000011'
  reported_cash='1e000012-0000-4000-8000-000000000012'
+ string_submission='1e000013-0000-4000-8000-000000000013'
+ string_cash='1e000014-0000-4000-8000-000000000014'
+ string_disposal='1e000015-0000-4000-8000-000000000015'
  facts=[fact(legacy,3),fact(legacy,30)]
  hf=fact(old.HAND_ID,3,origin='player')
  adjacent_fact=fact(adjacent,3,origin='player')
@@ -132,12 +135,15 @@ def qualify(e, base):
  normal_horse='1e001002-0000-4000-8000-000000000009'
  normal_seed=normal_seed.replace("'{\"p_stacks\": []}'::jsonb","jsonb_build_object('p_stacks','[]'::jsonb,'p_hand_row',jsonb_build_object('has_human',false,'players',jsonb_build_array(jsonb_build_object('userId',"+lit(normal_horse)+"))))")
  e.sql(d,normal_seed+"UPDATE hand_history SET has_human=false WHERE id="+lit(normal)+";"+old.AUTHORITY+"SELECT smarter_private.hand_submission_retention_disposal(ARRAY["+lit(normal)+"]::uuid[],'Native normal certificate remains outside legacy exception');",label='legacy-genuine-normal-certificate-protection')
- protect_key,protect_payload=batch('legacy-atomic-and-normal',[fact(atomic,3),fact(normal,3),fact(cash_human,3),fact(reported_submission,3),fact(reported_cash,3)])
+ protect_key,protect_payload=batch('legacy-atomic-and-normal',[fact(atomic,3),fact(normal,3),fact(cash_human,3),fact(reported_submission,3),fact(reported_cash,3),fact(string_submission,3),fact(string_cash,3),fact(string_disposal,3)])
  e.sql(d,'SELECT fn_append_horse_adaptive_observations('+lit(protect_payload)+');',label='legacy-atomic-normal-raw')
  e.sql(d,"INSERT INTO public.hand_history(id,has_human,created_at) VALUES("+lit(active)+",false,'2026-09-01'); SELECT fn_queue_horse_adaptive_batch("+lit(work_payload)+");",label='legacy-protected-active-and-unfinished')
  e.sql(d,"INSERT INTO cash_hand_provenance_receipts(table_id,hand_number,hand_id,payload_hash,accepted_request,atomic_receipt,stack_claim,stack_settlement,status,participants,all_players_included,funding_provenance_complete,issues) VALUES("+lit(old.TABLE)+",1000310,"+lit(cash_human)+",repeat('a',64),'{\"hand_row\":{\"has_human\":true}}','{}','{}','{}','captured','[]',true,true,'[]');",label='legacy-original-human-cash-receipt')
  e.sql(d,"INSERT INTO smarter_private.hand_submissions(submission_id,table_id,hand_number,instance_id,lease_generation,request,request_hash) VALUES("+lit(reported_submission)+','+lit(old.TABLE)+",1000311,'original-reported-test',"+lit(old.DEAD_GEN)+",'{\"p_hand_row\":{\"has_human\":false,\"reported\":true}}',repeat('b',64));",label='legacy-original-reported-submission')
  e.sql(d,"INSERT INTO cash_hand_provenance_receipts(table_id,hand_number,hand_id,payload_hash,accepted_request,atomic_receipt,stack_claim,stack_settlement,status,participants,all_players_included,funding_provenance_complete,issues) VALUES("+lit(old.TABLE)+",1000312,"+lit(reported_cash)+",repeat('c',64),'{\"hand_row\":{\"has_human\":false,\"reported\":true}}','{}','{}','{}','captured','[]',true,true,'[]');",label='legacy-original-reported-cash-receipt')
+ e.sql(d,"INSERT INTO smarter_private.hand_submissions(submission_id,table_id,hand_number,instance_id,lease_generation,request,request_hash) VALUES("+lit(string_submission)+','+lit(old.TABLE)+",1000313,'original-string-human-test',"+lit(old.DEAD_GEN)+",'{\"p_hand_row\":{\"has_human\":\"true\"}}',repeat('d',64));",label='legacy-original-string-human-submission')
+ e.sql(d,"INSERT INTO cash_hand_provenance_receipts(table_id,hand_number,hand_id,payload_hash,accepted_request,atomic_receipt,stack_claim,stack_settlement,status,participants,all_players_included,funding_provenance_complete,issues) VALUES("+lit(old.TABLE)+",1000314,"+lit(string_cash)+",repeat('e',64),'{\"hand_row\":{\"has_human\":\"true\"}}','{}','{}','{}','captured','[]',true,true,'[]');",label='legacy-original-string-human-cash-receipt')
+ e.sql(d,"INSERT INTO smarter_private.hand_submission_disposals(table_id,hand_number,submission_id,receipt_id,witness_hand_number,reason,expected) VALUES("+lit(old.TABLE)+",1000315,"+lit(string_disposal)+",'3e000015-0000-4000-8000-000000000015',1000316,'Native immutable original string human disposal protection witness','{\"original_has_human\":\"true\"}');",label='legacy-original-string-human-disposal-receipt')
  yes(d,'SELECT EXISTS(SELECT 1 FROM smarter_private.horse_adaptive_disposal_certificates WHERE hand_id='+lit(normal)+');','fixture-has-genuine-original-normal-certificate')
  before=read(d,PROTECTED_SNAPSHOT,'legacy-protected-preimage')
  # The original owner has no authority for these erased, uncertified hands.
@@ -148,13 +154,13 @@ def qualify(e, base):
  assert code!=0, 'migration replay unexpectedly accepted'
  checks.append('legacy-migration-replay-refused')
  # Actual current state, not output counts, determines protection.
- r=invoke(d,[legacy,veto,young,active,unfinished,old.HAND_ID,atomic,normal,cash_human,reported_submission,reported_cash],'legacy-one-bounded-exception')
+ r=invoke(d,[legacy,veto,young,active,unfinished,old.HAND_ID,atomic,normal,cash_human,reported_submission,reported_cash,string_submission,string_cash,string_disposal],'legacy-one-bounded-exception')
  assert r['status']=='purged' and r['handsPurged']==1 and r['observationsDeleted']==2,r
  checks.append('only-explicit-old-erased-legacy-hand-is-purged')
  yes(d,"SELECT count(*)=1 AND bool_and(observed_through_ms=1791158399999 AND authorized_reason='owner-one-time-legacy-test-learning-20261015' AND observations_deleted=2) FROM "+LEDGER+';', 'exception-ledger-is-distinct-fixed-owner-authority')
  yes(d,"SELECT NOT EXISTS(SELECT 1 FROM horse_adaptive_observation_journal WHERE hand_id="+lit(legacy)+');','legacy-raw-absent-after-committed-purge')
  yes(d,"SELECT canonical_payload::jsonb->7=jsonb_build_array("+','.join(lit(x) for x in [hf,adjacent_fact,fact(veto,3),fact(active,3),fact(rollback_hand,3)])+") AND batch_digest="+lit(digest(payload))+" AND retention_compacted FROM horse_adaptive_observation_batches WHERE batch_key="+lit(key)+';', 'shared-batch-keeps-protected-tuple-bytes-and-original-digest')
- for hand,count,label in [(veto,2,'newer-same-hand-veto-across-batches'),(young,1,'outside-fixed-cutoff-retained'),(active,1,'existing-history-retained'),(unfinished,1,'unfinished-work-retained'),(old.HAND_ID,1,'human-history-learning-retained'),(atomic,1,'atomic-without-history-retained'),(normal,1,'ordinary-qualified-certificate-retained'),(cash_human,1,'original-cash-human-evidence-retained'),(reported_submission,1,'original-reported-submission-retained'),(reported_cash,1,'original-reported-cash-receipt-retained')]:
+ for hand,count,label in [(veto,2,'newer-same-hand-veto-across-batches'),(young,1,'outside-fixed-cutoff-retained'),(active,1,'existing-history-retained'),(unfinished,1,'unfinished-work-retained'),(old.HAND_ID,1,'human-history-learning-retained'),(atomic,1,'atomic-without-history-retained'),(normal,1,'ordinary-qualified-certificate-retained'),(cash_human,1,'original-cash-human-evidence-retained'),(reported_submission,1,'original-reported-submission-retained'),(reported_cash,1,'original-reported-cash-receipt-retained'),(string_submission,1,'original-string-true-human-submission-retained'),(string_cash,1,'original-string-true-human-cash-retained'),(string_disposal,1,'original-string-true-human-disposal-retained')]:
   yes(d,'SELECT count(*)='+str(count)+' FROM horse_adaptive_observation_journal WHERE hand_id='+lit(hand)+';',label)
  assert read(d,PROTECTED_SNAPSHOT,'legacy-protected-postimage')==before
  checks.append('every-financial-human-history-normal-certificate-statistic-and-fence-row-unchanged')
@@ -230,6 +236,9 @@ def qualify(e, base):
   if lock.poll() is None:lock.terminate();lock.wait(timeout=10)
  assert read(d,PROTECTED_SNAPSHOT,'legacy-final-protected-snapshot')==before
  checks.append('protected-records-still-byte-identical-after-all-refusals')
+ postimage_query="SELECT jsonb_object_agg(p.oid::regprocedure::text,jsonb_build_object('md5',md5(pg_get_functiondef(p.oid)),'owner',p.proowner::regrole::text,'acl',p.proacl::text,'security_definer',p.prosecdef,'config',p.proconfig)) FROM pg_proc p WHERE p.oid IN ('smarter_private.purge_legacy_horse_learning(uuid[])'::regprocedure,'smarter_private.legacy_learning_purge_immutable()'::regprocedure,'public.fn_append_horse_adaptive_observations(text)'::regprocedure,'public.fn_queue_horse_adaptive_batch(text)'::regprocedure,'smarter_private.adaptive_retained_batch(text)'::regprocedure,'smarter_private.horse_adaptive_raw_retirement_fence()'::regprocedure,'smarter_private.register_horse_adaptive_batch_membership(text)'::regprocedure);"
+ e.report['qualified_postimages']=json.loads(read(d,postimage_query,'legacy-exact-seven-qualified-postimages'))
+ assert len(e.report['qualified_postimages'])==7
  e.report['legacy_test_learning_purge']={'proven':checks,'receipt':r,'cutoff_ms':1791158399999}
  e.report['source_sha256'][str(MIGRATION)]=sha(ROOT/MIGRATION)
  e.report['source_sha256'][str(Path(__file__).relative_to(ROOT))]=sha(Path(__file__))

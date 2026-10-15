@@ -144,11 +144,11 @@ BEGIN
   IF EXISTS(SELECT 1 FROM smarter_private.horse_adaptive_disposal_certificates WHERE hand_id=v_hand)
   OR EXISTS(SELECT 1 FROM public.hand_history WHERE hand_history.id=v_hand)
   OR EXISTS(SELECT 1 FROM public.hand_atomic_commits WHERE hand_id=v_hand)
-  OR s.request#>'{p_hand_row,has_human}'='true'::jsonb
+  OR s.request#>>'{p_hand_row,has_human}'='true'
   OR s.request#>>'{p_hand_row,reported}'='true'
-  OR d.expected->'original_has_human'='true'::jsonb
+  OR d.expected->>'original_has_human'='true'
   OR EXISTS(SELECT 1 FROM public.cash_hand_provenance_receipts p WHERE p.hand_id=v_hand
-   AND (p.accepted_request#>'{hand_row,has_human}'='true'::jsonb
+   AND (p.accepted_request#>>'{hand_row,has_human}'='true'
     OR p.accepted_request#>>'{hand_row,reported}'='true'))
   OR EXISTS(SELECT 1 FROM public.hand_projection_outbox WHERE hand_id=v_hand)
   OR EXISTS(SELECT 1 FROM public.tournament_knockout_candidates WHERE hand_id=v_hand AND state='pending')

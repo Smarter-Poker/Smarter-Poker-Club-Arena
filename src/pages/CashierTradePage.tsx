@@ -123,7 +123,7 @@ import { compactChips } from '../utils/format';
 import { exactChipFigure, parseTradeAmount, sumChips } from '../utils/cashierAmount';
 import { titleCase } from '../utils/titleCase';
 import { generateAvatarSvg } from '../utils/avatarGenerator';
-import { readCashierBalances } from '../services/cashierBalanceRead';
+import { creditHeadroomOf, readCashierBalances } from '../services/cashierBalanceRead';
 import {
   buildTournamentTicketItem,
   listTicketableTournaments,
@@ -404,6 +404,8 @@ function CashierTradeWorkspace() {
    * that is not. The pre-flight check below only refuses on a KNOWN shortfall.
    */
   const [agentWallet, setAgentWallet] = useState<number | null>(null);
+  /** What a credit agent may send beyond the float; 0 for everyone else. */
+  const [agentCredit, setAgentCredit] = useState(0);
   const [downline, setDownline] = useState<DownlineRow[]>([]);
   const [mineOnly, setMineOnly] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -919,7 +921,7 @@ function CashierTradeWorkspace() {
         // that has not been funded, staff included.
         supabase
           .from('agents')
-          .select('agent_wallet_balance, status')
+          .select('agent_wallet_balance, status, is_prepaid, credit_limit, credit_used')
           .eq('club_id', clubUuid)
           .eq('user_id', user.id)
           .maybeSingle(),
@@ -956,6 +958,9 @@ function CashierTradeWorkspace() {
         : floatRes.data
           ? Number(floatRes.data.agent_wallet_balance) || 0
           : 0;
+      // A credit agent may send past the float, drawn against the line the
+      // server allows (credit_limit - credit_used). Prepaid agents have none.
+      const credit = floatRes.error ? 0 : creditHeadroomOf(floatRes.data);
 
       /**
        * WHO THIS PAGE MAY TRANSACT WITH — asked in the database.
@@ -1037,6 +1042,7 @@ function CashierTradeWorkspace() {
             setRoleResolved(true);
             setMyBalance(bal);
             setAgentWallet(float);
+            setAgentCredit(credit);
             setDownline(mapCashierRoster(dl, user.id));
             setLoading(false);
             setRosterLoadingMore(page.length === rosterPageSize);
@@ -1057,6 +1063,7 @@ function CashierTradeWorkspace() {
       setRoleResolved(true);
       setMyBalance(bal);
       setAgentWallet(float);
+      setAgentCredit(credit);
       setDownline(mapCashierRoster(dl, user.id));
       setRosterLoadingMore(false);
       if (complete) setLastVerifiedAt(Date.now());
@@ -2028,9 +2035,11 @@ function CashierTradeWorkspace() {
       return;
     }
     const total = parsedAmount.total;
-    if (kind === 'send' && agentWallet !== null && total > agentWallet) {
+    if (kind === 'send' && agentWallet !== null && total > agentWallet + agentCredit) {
       toast?.error?.(
-        `Insufficient Chips: Sending ${exactChipFigure(total)} Needs More Than Your Agent Wallet Holds, ${exactChipFigure(agentWallet)}`
+        agentCredit > 0
+          ? `Insufficient Chips: Sending ${exactChipFigure(total)} Needs More Than Your Agent Wallet And Credit Line Allow, ${exactChipFigure(agentWallet + agentCredit)}`
+          : `Insufficient Chips: Sending ${exactChipFigure(total)} Needs More Than Your Agent Wallet Holds, ${exactChipFigure(agentWallet)}`
       );
       return;
     }
@@ -4798,7 +4807,7 @@ function CashierTradeWorkspace() {
                                 (amountModal === 'send'
                                   ? picked.length === 1 && picked[0].userId === user?.id
                                     ? (bankBalance ?? Number.POSITIVE_INFINITY)
-                                    : agentWallet!
+                                    : agentWallet! + agentCredit
                                   : myBalance)
                               ? 'Insufficient Chips In The Funding Wallet'
                               : `${picked.length} Recipients Ready For Server Verification`}

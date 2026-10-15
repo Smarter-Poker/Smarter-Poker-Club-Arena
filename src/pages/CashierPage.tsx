@@ -53,6 +53,7 @@ import {
   isCashoutStartCurrent,
 } from '../hooks/usePreparedCashoutOperations';
 import { supabase } from '../lib/supabase';
+import { creditHeadroomOf } from '../services/cashierBalanceRead';
 import CashierClubSwitcher from '../components/club/CashierClubSwitcher';
 
 import { useToast } from '../components/common/Toast';
@@ -484,6 +485,7 @@ function CashierContent() {
    * the chips this action moves.
    */
   const [myAgentWallet, setMyAgentWallet] = useState<number | null>(null);
+  const [myAgentCredit, setMyAgentCredit] = useState(0);
 
   // Send chips state
   const [recipients, setRecipients] = useState<Recipient[]>([]);
@@ -613,6 +615,7 @@ function CashierContent() {
     // Chips are per club, and so is the float. Carrying the previous club's
     // agent wallet across a switch would quote a balance this club cannot spend.
     setMyAgentWallet(null);
+    setMyAgentCredit(0);
   }, [clubId]);
 
   // Guards every async loader below against a club switch landing mid-flight.
@@ -747,7 +750,7 @@ function CashierContent() {
           () =>
             supabase
               .from('agents')
-              .select('agent_wallet_balance, status')
+              .select('agent_wallet_balance, status, is_prepaid, credit_limit, credit_used')
               .eq('club_id', resolvedId)
               .eq('user_id', user.id)
               .maybeSingle()
@@ -793,6 +796,9 @@ function CashierContent() {
             ? Number(floatResult.data.agent_wallet_balance) || 0
             : 0
       );
+      // A credit agent may send past the float, against the line the server
+      // allows (credit_limit - credit_used). Prepaid agents have none.
+      setMyAgentCredit(floatResult?.error ? 0 : creditHeadroomOf(floatResult?.data));
 
       // Union check — derived from combined query above
       const detectedUnionId = clubResult?.data?.union_id;
@@ -1996,11 +2002,11 @@ function CashierContent() {
            * balance they buy in with - and the database derives it again from the
            * recipient regardless of what is sent here.
            */
-          if (myAgentWallet !== null && myAgentWallet < value) {
+          if (myAgentWallet !== null && myAgentWallet + myAgentCredit < value) {
             if (isMounted.current)
               setMessage({
                 type: 'error',
-                text: `Insufficient chips in your agent wallet. Available: ${chipFigure(myAgentWallet)}`,
+                text: `Insufficient chips in your agent wallet. Available: ${chipFigure(myAgentWallet + myAgentCredit)}`,
               });
             if (isMounted.current) setIsProcessing(false);
             return;
@@ -2859,7 +2865,9 @@ function CashierContent() {
                   <button
                     className={styles.presetBtn}
                     disabled={myAgentWallet === null}
-                    onClick={() => setAmount(String(Math.floor(myAgentWallet ?? 0)))}
+                    onClick={() =>
+                      setAmount(String(Math.floor((myAgentWallet ?? 0) + myAgentCredit)))
+                    }
                   >
                     Max
                   </button>

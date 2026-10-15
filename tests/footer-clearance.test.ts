@@ -130,7 +130,7 @@ describe('global Club Arena footer mounting and clearance', () => {
    * channel, and nothing behind it may paint a colour back in.
    */
   it('ships an alpha channel and paints nothing opaque behind it', () => {
-    const art = readFileSync(join(ROOT, 'public/images/club-footer/club-arena-footer-v2.webp'));
+    const art = readFileSync(join(ROOT, 'public/images/club-footer/club-arena-footer-v3.webp'));
     expect(art.subarray(0, 4).toString('ascii')).toBe('RIFF');
     expect(art.subarray(8, 12).toString('ascii')).toBe('WEBP');
     // Lossless WebP: 'VP8L', a 0x2f signature byte, then 14 bits of width-1,

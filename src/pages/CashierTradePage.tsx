@@ -3701,61 +3701,68 @@ function CashierTradeWorkspace() {
               decides whether a Claim Back is worth making. All three live in
               the thumb zone, which at 375px is where the hand already is. */}
               <div className={styles.dock}>
-                {selected.size > 0 && (
-                  <div className={styles.selBar} role="status">
-                    <span>
-                      {selected.size.toLocaleString()} Selected &middot; {fmt(pickedHeld)} Held
-                    </span>
-                    <button
-                      type="button"
-                      className={styles.selClear}
-                      onClick={() => setSelected(new Set())}
-                    >
-                      Clear
-                    </button>
-                  </div>
-                )}
-
+                {/* ONE FRAME (Dan 2026-10-15: "THE ENTIRE SELECTED BOX AND THE
+                CLAIM BACK SEND TICKET SEND OUT SHOULD BE ONE FRAME"). The
+                selection line prints into the top of the same painted frame
+                as the three actions, so there is no generic box behind it. */}
                 {/* Footer actions — pinned */}
                 <div className={`${styles.footer} ${styles.actionBar}`}>
-                  {/* NOT GATED ON THE SELECTION any more. A claim back is anchored on
+                  <div className={styles.selBar} role="status">
+                    <span>
+                      {selected.size > 0
+                        ? `${selected.size.toLocaleString()} Selected \u00b7 ${fmt(pickedHeld)} Held`
+                        : 'Tap A Player To Select'}
+                    </span>
+                    {selected.size > 0 ? (
+                      <button
+                        type="button"
+                        className={styles.selClear}
+                        onClick={() => setSelected(new Set())}
+                      >
+                        Clear
+                      </button>
+                    ) : null}
+                  </div>
+                  <div className={styles.actionButtons}>
+                    {/* NOT GATED ON THE SELECTION any more. A claim back is anchored on
                 a SEND, not on a player, so the modal lists this agent's own
                 sends that are still inside their ten minute window - and says
                 so plainly when there are none. Gating it on a selection would
                 hide the only control that can undo a mistake behind picking the
                 player you have just realised you sent to by accident. */}
-                  <button
-                    className={styles.footerBtn}
-                    disabled={!isOnline || busy || claimingId !== null}
-                    onClick={(event) => {
-                      dialogTriggerRef.current = event.currentTarget;
-                      setClaimRecipient(picked.length === 1 ? picked[0].userId : null);
-                      setMgmtClaimAmount('');
-                      setClaimOpen(true);
-                    }}
-                  >
-                    Claim Back
-                  </button>
-                  <button
-                    className={styles.footerBtn}
-                    disabled={!isOnline || selected.size === 0 || cashierAuthorityBlocked}
-                    onClick={(event) => {
-                      dialogTriggerRef.current = event.currentTarget;
-                      setAmountModal('ticket');
-                    }}
-                  >
-                    Send Ticket
-                  </button>
-                  <button
-                    className={styles.footerBtn}
-                    disabled={!isOnline || selected.size === 0 || cashierAuthorityBlocked}
-                    onClick={(event) => {
-                      dialogTriggerRef.current = event.currentTarget;
-                      setAmountModal('send');
-                    }}
-                  >
-                    Send Out
-                  </button>
+                    <button
+                      className={styles.footerBtn}
+                      disabled={!isOnline || busy || claimingId !== null}
+                      onClick={(event) => {
+                        dialogTriggerRef.current = event.currentTarget;
+                        setClaimRecipient(picked.length === 1 ? picked[0].userId : null);
+                        setMgmtClaimAmount('');
+                        setClaimOpen(true);
+                      }}
+                    >
+                      Claim Back
+                    </button>
+                    <button
+                      className={styles.footerBtn}
+                      disabled={!isOnline || selected.size === 0 || cashierAuthorityBlocked}
+                      onClick={(event) => {
+                        dialogTriggerRef.current = event.currentTarget;
+                        setAmountModal('ticket');
+                      }}
+                    >
+                      Send Ticket
+                    </button>
+                    <button
+                      className={styles.footerBtn}
+                      disabled={!isOnline || selected.size === 0 || cashierAuthorityBlocked}
+                      onClick={(event) => {
+                        dialogTriggerRef.current = event.currentTarget;
+                        setAmountModal('send');
+                      }}
+                    >
+                      Send Out
+                    </button>
+                  </div>
                 </div>
               </div>
             </section>

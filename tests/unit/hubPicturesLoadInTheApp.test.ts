@@ -45,7 +45,7 @@ describe('which pictures come from the World Hub', () => {
     '/cards/As.webp',
     '/assets/index-abc123.js',
     '/poker-chip-logo.webp',
-    `${APP}/images/club-footer/club-arena-footer-v2.webp`,
+    `${APP}/images/club-footer/club-arena-footer-v3.webp`,
     'https://kuklfnapbkmacvwxktbh.supabase.co/storage/v1/object/public/avatars/a.png',
     `${HUB}/avatars/free/chef.webp`,
     'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg"/>',

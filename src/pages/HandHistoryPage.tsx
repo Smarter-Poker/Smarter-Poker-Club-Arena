@@ -55,6 +55,7 @@ import { handFlagService, type HandFlag } from '../services/HandFlagService';
 import { toPokerStarsFile } from '../utils/pokerStarsExport';
 import { openInBrowser } from '../lib/openExternal';
 import { downloadBlob } from '../utils/downloadCsv';
+import { isDiamondHandHistoryScope } from '../utils/clubScopedPath';
 import {
   DIAMOND_HAND_HISTORY_PARAM,
   DIAMOND_HAND_HISTORY_VALUE,
@@ -143,7 +144,7 @@ export default function HandHistoryPage() {
      their club id, so the page, the order and Load More are all the
      arena's. Cleared by navigating to the bare route, which is also what
      the drilldown's Show All Hands already does. */
-  const arenaScoped = searchParams.get(DIAMOND_HAND_HISTORY_PARAM) === DIAMOND_HAND_HISTORY_VALUE;
+  const arenaScoped = isDiamondHandHistoryScope('/hand-history', searchParams);
   /* The page knows which ROOM it is in, not which club row, so it asks by
      asset and the service names the one open club behind it. */
   const arenaAssetScope = arenaScoped ? ('diamonds' as const) : null;

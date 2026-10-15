@@ -1,3 +1,8 @@
+import {
+  DIAMOND_HAND_HISTORY_PARAM,
+  DIAMOND_HAND_HISTORY_VALUE,
+  isDiamondArenaClubKey,
+} from '../lib/constants';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CLUB-SCOPED PATHS — one vocabulary for "which club is this link about?"
@@ -244,4 +249,17 @@ export function findClubByParam<
 >(clubs: readonly T[], param: string | null | undefined): T | null {
   if (!param) return null;
   return clubs.find((club) => matchesClubParam(club, param)) ?? null;
+}
+
+/** Both published archive links name the same read scope; neither grants access. */
+export function isDiamondHandHistoryScope(
+  pathname: string,
+  search: string | URLSearchParams | null | undefined
+): boolean {
+  if (normalize(splitPath(pathname).base) !== '/hand-history') return false;
+  const params = typeof search === 'string' ? new URLSearchParams(search) : search;
+  return (
+    params?.get(DIAMOND_HAND_HISTORY_PARAM) === DIAMOND_HAND_HISTORY_VALUE ||
+    isDiamondArenaClubKey(readClubContextParam(search))
+  );
 }

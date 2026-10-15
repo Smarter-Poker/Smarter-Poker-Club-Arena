@@ -4085,9 +4085,9 @@ function ClubHomePageContent({
     (tournamentId: string) => {
       const target = `/tournaments/${tournamentId}`;
       if (window.location.pathname.endsWith(target)) return;
-      navigate(target);
+      navigate(withClubContext(target, clubId));
     },
-    [navigate]
+    [navigate, clubId]
   );
 
   const openEntry = useCallback(

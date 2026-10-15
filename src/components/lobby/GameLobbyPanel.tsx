@@ -34,6 +34,7 @@ import { tableService } from '../../services/TableService';
 import { supabase } from '../../lib/supabase';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { formatBuyIn } from '../../utils/buyIn';
+import { withClubContext } from '../../utils/clubScopedPath';
 import { reportError } from '../../utils/errorReporter';
 import { useInTabLobby } from '../../context/InTabLobbyContext';
 import type { Tournament, BlindLevel } from '../../types/database.types';
@@ -460,7 +461,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
         return {
           label: st === 'completed' ? 'Results' : 'Watch',
           kind: 'secondary' as const,
-          link: `/tournaments/${entry.id}`,
+          link: withClubContext(`/tournaments/${entry.id}`, clubId),
         };
       }
       return { label: 'Entry Unavailable', kind: 'disabled' as const };
@@ -528,7 +529,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
       return {
         label: 'Return To Tournament',
         kind: 'gold' as const,
-        link: `/tournaments/${entry.id}`,
+        link: withClubContext(`/tournaments/${entry.id}`, clubId),
       };
     if (registered)
       return {
@@ -565,6 +566,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
       needsAuth: true,
     };
   }, [
+    clubId,
     seatsClosedLabel,
     registrationClosedLabel,
     entry,
@@ -1318,7 +1320,10 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
               )}
 
               {entry.kind === 'mtt' && (
-                <Link className="glp__fulllink" to={`/tournaments/${entry.id}`}>
+                <Link
+                  className="glp__fulllink"
+                  to={withClubContext(`/tournaments/${entry.id}`, clubId)}
+                >
                   Open Full Tournament Lobby
                 </Link>
               )}

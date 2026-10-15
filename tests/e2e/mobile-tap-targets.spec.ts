@@ -37,12 +37,14 @@ const ROUTES = [
   'settings',
   'hand-history',
   `clubs/${CLUB}`,
+  `clubs/${CLUB}/data`,
   `clubs/${CLUB}/data/advanced`,
   'stats',
   `rate-audit?club=${CLUB}`,
   'settlement-history',
 ];
 const REQUIRED_DATA_ROUTES = new Set([
+  `clubs/${CLUB}/data`,
   `clubs/${CLUB}/data/advanced`,
   'stats',
   `rate-audit?club=${CLUB}`,
@@ -53,6 +55,20 @@ async function requireDataRouteReady(page: import('@playwright/test').Page, rout
   if (!REQUIRED_DATA_ROUTES.has(route)) return;
   await expect(page).not.toHaveURL(/\/auth(?:\/|\?|$)/, { timeout: 30_000 });
   const routePath = route.split('?')[0];
+  if (route === `clubs/${CLUB}/data`) {
+    // #6895: the PokerBros-style everyday screen. Its controls are measured below.
+    await expect(page.getByRole('heading', { name: 'Club Data', exact: true })).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByRole('button', { name: 'Report', exact: true })).toBeVisible();
+    await expect(
+      page.getByRole('list', { name: 'Games' }).or(page.getByText('No Data In This Period.'))
+    ).toBeVisible({
+      timeout: 30_000,
+    });
+    expect(new URL(page.url()).pathname).toMatch(/\/clubs\/[^/]+\/data$/);
+    return;
+  }
   if (route === `clubs/${CLUB}/data/advanced`) {
     // #6895: the full Club Data report (Simple/Advanced, Read The Room) lives at
     // data/advanced; data is the PokerBros-style everyday screen.

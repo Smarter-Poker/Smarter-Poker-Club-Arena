@@ -426,3 +426,28 @@
   font-weight: 700;
   cursor: pointer;
 }
+
+/* A thumb needs 44px. The 40px period, game and stakes buttons keep their
+   painted size and gain an invisible 44px-tall hit area on touch devices only
+   (mobile-tap-targets.spec.ts measures what a thumb actually lands on). The
+   2px it adds above and below stays inside each row's own padding, so no hit
+   area reaches a neighbouring control. */
+@media (pointer: coarse) {
+  .segmentButton,
+  .tab,
+  .stake {
+    position: relative;
+  }
+
+  .segmentButton::after,
+  .tab::after,
+  .stake::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 44px;
+    transform: translateY(-50%);
+  }
+}

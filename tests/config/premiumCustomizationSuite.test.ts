@@ -27,7 +27,9 @@ describe('premium customization suite', () => {
     const selectableIds = assets.match(/TABLE_BACKGROUND_IDS: string\[\] = \[([\s\S]*?)\];/)?.[1];
     expect(selectableIds).not.toContain('final_table_broadcast');
     expect(tablePage).toContain("tableState.isFinalTable ? 'final_table_broadcast'");
-    expect(tablePage).toContain("tableState.isFinalTable\n                  ? 'final_table'");
+    // 2026-10-15: the felt URL is resolved once for useTableArt (the art
+    // loader), so the final-table skin is picked there, not inside the <img>.
+    expect(tablePage).toMatch(/tableState\.isFinalTable\s*\?\s*'final_table'\s*:/);
     expect(preview).toContain('? TABLE_SKINS.final_table');
   });
 

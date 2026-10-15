@@ -163,9 +163,75 @@ describe('GameServer shared Realtime callback ownership', () => {
         channels[0].status!(status);
       }
     });
-    expect(serviceCalls.length).toBeGreaterThanOrEqual(5);
+    // SUBSCRIBED drains; CHANNEL_ERROR drains, retires the channel and
+    // schedules its recreation, after which the retired channel's later
+    // TIMED_OUT and CLOSED belong to nobody (2026-10-15).
+    expect(serviceCalls.length).toBeGreaterThanOrEqual(3);
     expect(serviceCalls.every((authority) => authority === null)).toBe(true);
     expect(supabase.removeChannel).toHaveBeenCalledOnce();
+  });
+
+  /**
+   * A CHANNEL THAT ERRORS OR TIMES OUT IS RECREATED BY THIS PROCESS
+   * (2026-10-15). Both process channels were disconnected for 27 hours after a
+   * Realtime restart on 2026-10-13, with no join refused server-side, until an
+   * engine release restarted the process: the error branches trusted
+   * realtime-js to rejoin, and realtime-js never reopens a socket and never
+   * recovers a channel its topic-keyed registry has dropped. Each such status
+   * now retires the channel and schedules its recreation on a new topic.
+   */
+  it.each([
+    [
+      'startTournamentBountyObligationSubscription',
+      'tournamentBountyObligationChannel',
+      'scheduleTournamentBountySubscriptionReconnect',
+      'CHANNEL_ERROR',
+    ],
+    [
+      'startTournamentBountyObligationSubscription',
+      'tournamentBountyObligationChannel',
+      'scheduleTournamentBountySubscriptionReconnect',
+      'TIMED_OUT',
+    ],
+    [
+      'startTournamentManagerWakeSubscription',
+      'tournamentManagerWakeChannel',
+      'scheduleTournamentManagerWakeSubscriptionReconnect',
+      'CHANNEL_ERROR',
+    ],
+    [
+      'startTournamentManagerWakeSubscription',
+      'tournamentManagerWakeChannel',
+      'scheduleTournamentManagerWakeSubscriptionReconnect',
+      'TIMED_OUT',
+    ],
+  ])('%s retires and recreates its channel on %s', (start, field, reconnect, status) => {
+    server[start]();
+    channels[0].status!('SUBSCRIBED');
+    expect(server[reconnect]).not.toHaveBeenCalled();
+    channels[0].status!(status);
+    expect(server[field]).toBeNull();
+    expect(supabase.removeChannel).toHaveBeenCalledOnce();
+    expect(supabase.removeChannel).toHaveBeenCalledWith(channels[0]);
+    expect(server[reconnect]).toHaveBeenCalledOnce();
+    // The retired channel's later statuses are not this process's any more.
+    channels[0].status!('CLOSED');
+    expect(supabase.removeChannel).toHaveBeenCalledOnce();
+    expect(server[reconnect]).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ['startTournamentBountyObligationSubscription', 'tournamentBountyObligationChannel'],
+    ['startTournamentManagerWakeSubscription', 'tournamentManagerWakeChannel'],
+  ])('%s gives every recreated channel its own topic', (start, field) => {
+    server.tournamentRealtimeChannelGeneration = 0;
+    server[start]();
+    server[field] = null;
+    server[start]();
+    const topics = vi.mocked(supabase.channel).mock.calls.map((call) => String(call[0]));
+    expect(topics).toHaveLength(2);
+    expect(new Set(topics).size).toBe(2);
+    for (const topic of topics) expect(topic).toMatch(/:\d+:\d+$/);
   });
 
   it.each([

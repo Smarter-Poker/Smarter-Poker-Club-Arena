@@ -61,7 +61,7 @@ import {
   spinRakeRate,
   spinBlindsForLevel,
 } from '../config/spinSpec.js';
-import { reportError } from '../services/errorReporter.js';
+import { describeError, reportError } from '../services/errorReporter.js';
 import { selectInChunks } from '../services/supabase/chunkedIn.js';
 /**
  * THE TOURNAMENT CEILING IS THE DECK, NOT THE CASH SEAT LAW (2026-08-31).
@@ -431,6 +431,23 @@ export abstract class TournamentManagerBase {
    * reported stalledTableCount 0. GameServer reads this to count it.
    */
   private readonly tableAdmissionFailingSince = new Map<string, number>();
+  /**
+   * A TABLE THAT CANNOT START SAYS WHY, WHERE AN OPERATOR CAN READ IT
+   * (2026-10-15). The 6:00 AM Freeroll a38b88a9 sat RUNNING with 58 seated
+   * players and no hand for 35 hours. Every one of its 8 tables was refused
+   * `retained_hand_submission_pending: successor_financial_claim_spent` every
+   * fifteen seconds, and that sentence only ever reached this process's
+   * console. /health named the tables as failing admission but not the reason,
+   * and nothing paged. The last refusal is kept per table, and a table failing
+   * for TABLE_ADMISSION_PAGE_AFTER_MS raises one critical financial alert per
+   * table (deduplicated on the table id) carrying it, refreshed no more often
+   * than TABLE_ADMISSION_PAGE_EVERY_MS. Identification only: nothing is
+   * retried, rebuilt or restarted because of it.
+   */
+  private readonly tableAdmissionLastRefusal = new Map<string, string>();
+  private readonly tableAdmissionPagedAt = new Map<string, number>();
+  static readonly TABLE_ADMISSION_PAGE_AFTER_MS = 10 * 60_000;
+  static readonly TABLE_ADMISSION_PAGE_EVERY_MS = 30 * 60_000;
   /** Scheduler runs are separate because a finish can initiate stop from inside one. */
   private readonly eliminationSchedulerJobs = new Set<Promise<void>>();
   private readonly managerLifecycleDiagnostics = new LifecycleDiagnostics();
@@ -1537,6 +1554,7 @@ export abstract class TournamentManagerBase {
     if (resetAttempts) {
       this.tableEngineRecoveryAttempts.delete(tableId);
       this.tableAdmissionFailingSince.delete(tableId);
+      this.tableAdmissionLastRefusal?.delete(tableId);
     }
   }
 
@@ -1548,6 +1566,7 @@ export abstract class TournamentManagerBase {
     this.tableEngineRecoveryExpected.clear();
     this.tableEngineRecoveryAttempts.clear();
     this.tableAdmissionFailingSince.clear();
+    this.tableAdmissionLastRefusal?.clear();
   }
 
   /**
@@ -1557,8 +1576,63 @@ export abstract class TournamentManagerBase {
    * keeps the first-failure stamp.
    */
   private forgetAdmissionFailureUnlessRetrying(tableId: string): void {
-    if (!this.tableEngineRecoveryTimers.has(tableId))
+    if (!this.tableEngineRecoveryTimers.has(tableId)) {
       this.tableAdmissionFailingSince.delete(tableId);
+      this.tableAdmissionLastRefusal?.delete(tableId);
+    }
+  }
+
+  /** Keep the last refusal a failing table's admission met (bounded text). */
+  private noteTableAdmissionRefusal(tableId: string, error: unknown): void {
+    const text = describeError(error).replace(/\s+/g, ' ').trim().slice(0, 400);
+    if (text) this.tableAdmissionLastRefusal?.set(tableId, text);
+  }
+
+  /** The last refusal recorded for each table still failing admission. */
+  getTableAdmissionRefusals(): Array<{ tableId: string; refusal: string | null }> {
+    return [...this.tableAdmissionFailingSince.keys()].map((tableId) => ({
+      tableId,
+      refusal: this.tableAdmissionLastRefusal?.get(tableId) ?? null,
+    }));
+  }
+
+  /**
+   * Page once a table has failed admission for TABLE_ADMISSION_PAGE_AFTER_MS,
+   * naming its last refusal; refresh no sooner than
+   * TABLE_ADMISSION_PAGE_EVERY_MS. The dedupe key names the table, so a
+   * replacement manager re-raising it keeps one open alert.
+   */
+  private pageTableAdmissionFailingIfDue(tableId: string, now = Date.now()): void {
+    const since = this.tableAdmissionFailingSince?.get(tableId);
+    if (since === undefined || !this.tableAdmissionPagedAt) return;
+    const failingMs = now - since;
+    if (failingMs < TournamentManagerBase.TABLE_ADMISSION_PAGE_AFTER_MS) return;
+    const pagedAt = this.tableAdmissionPagedAt.get(tableId);
+    if (
+      pagedAt !== undefined &&
+      now - pagedAt < TournamentManagerBase.TABLE_ADMISSION_PAGE_EVERY_MS
+    )
+      return;
+    this.tableAdmissionPagedAt.set(tableId, now);
+    const refusal = this.tableAdmissionLastRefusal?.get(tableId) ?? null;
+    const minutes = Math.round(failingMs / 60_000);
+    void raiseFinancialAlert(
+      'critical',
+      'Tournament.table_admission_failing',
+      `Tournament ${this.tournamentId} table ${tableId} has failed to start for ${minutes} min; its seated players have no dealer. Last refusal: ${refusal ?? 'unknown'}`,
+      {
+        tournament_id: this.tournamentId,
+        table_id: tableId,
+        failing_minutes: minutes,
+        failing_since: new Date(since).toISOString(),
+        last_refusal: refusal,
+        attempts: this.tableEngineRecoveryAttempts?.get(tableId) ?? null,
+      },
+      `table-admission-failing:${tableId}`,
+      this.tournamentId
+    ).catch((alertError) =>
+      reportError(alertError, 'Tournament.table_admission_failing_alert_failed', { tableId })
+    );
   }
 
   /**
@@ -1734,6 +1808,9 @@ export abstract class TournamentManagerBase {
       this.tableAdmissionFailingSince.set(tableId, Date.now());
     }
     if (this.tableEngineRecoveryTimers.has(tableId)) return;
+    // Every retry that fails comes back here with no timer, so this is asked
+    // once per retry: the table's own live path, not a sweep.
+    this.pageTableAdmissionFailingIfDue(tableId);
 
     // A table whose dealer generation is being replaced is still a member of
     // the tournament.  Keep its durable id in an active hand-for-hand barrier
@@ -1780,6 +1857,7 @@ export abstract class TournamentManagerBase {
         }
         await this.admitMissingManagedTableEngine(tableId, lifecycle, `${reason}:retry`);
       } catch (error) {
+        this.noteTableAdmissionRefusal(tableId, error);
         reportError(error, 'Tournament.table_engine_causal_retry_failed', {
           tournamentId: this.tournamentId,
           tableId,
@@ -2379,6 +2457,7 @@ export abstract class TournamentManagerBase {
       await engine.start();
     })().catch(async (error) => {
       reportError(error, errorContext, metadata);
+      if (tableId) this.noteTableAdmissionRefusal(tableId, error);
       if (!lifecycle || !tableId || !this.lifecycleIsCurrent(lifecycle)) return;
       await this.recoverManagedTableEngine(tableId, engine, lifecycle, 'engine_start_failed', true);
     });

@@ -140,6 +140,8 @@ describe('/health counts a table its manager cannot admit as stalled', () => {
         dealable: 0,
         secsIdle: 23_400,
         admission: 'failing',
+        // 2026-10-15: the last refusal is named beside it (none recorded here).
+        refusal: null,
       },
     ]);
     expect(status.tableLivenessSummary.stalled).toBe(1);

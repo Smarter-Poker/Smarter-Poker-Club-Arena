@@ -1,0 +1,19 @@
+Horse Brain Phase 13 Natural Completion Window (Source 818b10c1): Amendment To Section 2
+Written (date -u, before the H=20 window opened and before any journal of any window under this declaration was read): 2026-10-15T18:16:17Z
+Writer: Horse Brain takeover agent, session https://claude.ai/code/session_01THJQ8mhLsuDwLCpJq2QFfr
+Amends: declaration-completion-p13-single-board-2026-10-15.txt (sha256 f4d29d211c516398be2472bb84b7c967b35b96d1d4f93cd8d27f23024454d6ad).
+Applies to every window that opens at or after 2026-10-15T20:02:00.000Z. Sections 1, 3, 4, 5 and 6 are unchanged.
+
+Why: the H=18 window was void under section 2 because auto-deploy-hetzner run 38772485733, the run of the serving
+release itself (818b10c1, cut over 17:41:51Z), completed successfully at 18:12:48Z when its trailing certification job
+finished. That completion did not replace the release. A release run's trailing jobs finish 20 to 35 minutes after its
+cutover, so the old wording voids windows that measured one unchanged release.
+
+Section 2, amended: the window is [H:02:00.000Z, (H+1):50:00.000Z). The release is unchanged when the container
+StartedAt and the sp.release.sha label read before H:02:00Z equal the reads after (H+1):50:00Z, /health releaseSha read
+after (H+1):50:00Z equals that label, and no auto-deploy-hetzner run cut over a different release in between (a
+successful run whose Engine Release sha is not the serving release, or any container restart, voids the window; a run of
+the serving release that only finishes trailing jobs does not). If the release changed, the window is void, nothing
+measured in it is used, and the declaration applies to the next H after the void window.
+
+The H=18 window stays void as recorded; nothing measured in it is used.

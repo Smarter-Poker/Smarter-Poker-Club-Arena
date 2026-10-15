@@ -1830,6 +1830,14 @@ groups:
   #   HorseRotatorSeatReadFailing   poker_horse_rotator_seat_read_failed_total
   #   HorseTournamentFillFailing    poker_horse_tournament_fill_failed_total{reason}
   #   HorseFleetStateUpsertFailing  poker_horse_fleet_state_upsert_failed_total
+  #   HorseSeatRefusalsByReason     poker_horse_buyin_refused_total{reason}
+  #                                 (atomic_table_buyin refusals; today they
+  #                                 reach only ca_horse_fleet_heartbeat
+  #                                 detail.gates.buy_in_refused, a table, so
+  #                                 the 2026-10-13 stall's 32k refusals were
+  #                                 invisible to Prometheus. Producer belongs
+  #                                 on the rpc('atomic_table_buyin') error path
+  #                                 in server/src/services/HorseFleetManager.ts.)
   # Their full bodies, with measurements, are in
   # docs/changelog/2026-09-11-the-horse-audit.md.
   # ═══════════════════════════════════════════════════════════════════════
@@ -1864,6 +1872,110 @@ groups:
             Hand per-host caps, and whether tournaments are stuck REGISTERING
             and holding horses at the four-game limit.
           runbook: docs/changelog/2026-09-11-the-horse-audit.md
+
+      # The same 30 minutes on each of the previous 1..6 days, averaged over
+      # the days Prometheus still holds, absent unless at least three are
+      # there (see HorseFleetThroughputRelativeDrop below for why).
+      - record: sp:hands_dealt:same_hour_mean_6d
+        expr: |
+          (
+            (
+                (sum(rate(poker_hands_dealt_total[30m] offset 1d)) or on() vector(0))
+              + (sum(rate(poker_hands_dealt_total[30m] offset 2d)) or on() vector(0))
+              + (sum(rate(poker_hands_dealt_total[30m] offset 3d)) or on() vector(0))
+              + (sum(rate(poker_hands_dealt_total[30m] offset 4d)) or on() vector(0))
+              + (sum(rate(poker_hands_dealt_total[30m] offset 5d)) or on() vector(0))
+              + (sum(rate(poker_hands_dealt_total[30m] offset 6d)) or on() vector(0))
+            )
+            /
+            clamp_min(
+                (count(sum(rate(poker_hands_dealt_total[30m] offset 1d))) or on() vector(0))
+              + (count(sum(rate(poker_hands_dealt_total[30m] offset 2d))) or on() vector(0))
+              + (count(sum(rate(poker_hands_dealt_total[30m] offset 3d))) or on() vector(0))
+              + (count(sum(rate(poker_hands_dealt_total[30m] offset 4d))) or on() vector(0))
+              + (count(sum(rate(poker_hands_dealt_total[30m] offset 5d))) or on() vector(0))
+              + (count(sum(rate(poker_hands_dealt_total[30m] offset 6d))) or on() vector(0))
+            , 1)
+          )
+          and on()
+          (
+              (count(sum(rate(poker_hands_dealt_total[30m] offset 1d))) or on() vector(0))
+            + (count(sum(rate(poker_hands_dealt_total[30m] offset 2d))) or on() vector(0))
+            + (count(sum(rate(poker_hands_dealt_total[30m] offset 3d))) or on() vector(0))
+            + (count(sum(rate(poker_hands_dealt_total[30m] offset 4d))) or on() vector(0))
+            + (count(sum(rate(poker_hands_dealt_total[30m] offset 5d))) or on() vector(0))
+            + (count(sum(rate(poker_hands_dealt_total[30m] offset 6d))) or on() vector(0))
+          ) >= 3
+
+      - alert: HorseFleetThroughputRelativeDrop
+        # THE FLOOR THAT IS HALF EMPTY, NOT EMPTY (2026-10-15).
+        #
+        # 2026-10-13 13:15 UTC -> 2026-10-14 23:03 UTC the Midway Union floor
+        # sat parked (the operator park that #6885 turned into a 60-minute
+        # lease) and atomic_table_buyin refused 32k horse seats. Every rule in
+        # this group is an ABSOLUTE floor set under the night trough, so the
+        # fleet had to drain to the bottom before anything spoke: the first
+        # page came about eight hours in.
+        #
+        # This asks the relative question instead: is the fleet dealing less
+        # than half of what it dealt at this time of day over the past week?
+        #
+        # MEASURED (CLAUDE.md 10.84) from hand_history, hourly, each hour
+        # against the mean of the same hour 1..6 days earlier, 2026-10-05 ->
+        # 2026-10-15 12:00 UTC:
+        #                               hours   ratio
+        #     healthy, baseline > 2/s    132    min 0.79, p01 0.84
+        #     the stall, 13:00 hour        1    0.33 (it began at 13:15)
+        #     the stall, 16:00 -> 22:00   ~31   0.01 .. 0.22
+        # 0.5 sits under every healthy hour and over every stall hour.
+        #
+        # THE BASELINE FLOOR (> 2 hands/s, 7,200 an hour). Before 2026-10-08
+        # the platform dealt tens to a few thousand hands an hour, and there a
+        # ratio is noise: 3 hands against 96 reads 0.03. Every healthy hour
+        # since the fleet reached its present size has a baseline over 9,300
+        # an hour, so the floor only switches the rule off while there is no
+        # meaningful week to compare against.
+        #
+        # THE BASELINE IS AVERAGED OVER THE DAYS PROMETHEUS STILL HAS. Retention
+        # is 7d AND 1GB (docker-compose.yml), so `offset 7d` is past the edge
+        # and even 6d may be gone. Each day contributes its rate or 0, the
+        # divisor counts only the days present, and at least three must be.
+        # Any missing day therefore shortens the window instead of dragging
+        # the mean to zero (which would hide a stall) or emptying the whole
+        # expression (which would hide it too). A stall day inside the window
+        # lowers the mean by at most a sixth of itself, so the day after an
+        # outage is still compared against something close to normal.
+        #
+        # sp:hands_dealt:same_hour_mean_6d (just above, evaluated first in
+        # this group) applies `offset` to the raw COUNTER, never to a recorded
+        # series: an offset over a new recording rule would have no history
+        # for a week, the counter has it today. `for: 30m` is inside the 40-minute ceiling for guarded alarms
+        # (tests/theBreakDoesNotSilenceTheAlarmsAboutItself.law.test.ts), and
+        # because the break falls at the same minute every hour, the 30m rate
+        # window and its baseline contain the same share of break minutes.
+        # The stall would have fired by about 14:15 UTC instead of ~21:00.
+        expr: |
+          sum(rate(poker_hands_dealt_total[30m]))
+            < 0.5 * sp:hands_dealt:same_hour_mean_6d
+          and on() sp:hands_dealt:same_hour_mean_6d > 2
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 30m
+        labels:
+          severity: critical
+          page: sms
+          component: club-arena-engine
+        annotations:
+          summary: 'The fleet is dealing {{ $value | printf "%.1f" }} hands/s, under half its usual rate for this hour'
+          description: |
+            Fleet-wide hands per second over the last 30 minutes have stayed
+            under half the mean of the same 30 minutes on each of the previous
+            days Prometheus still holds (1..6 days, at least three) for 30
+            minutes outside a break. Tables are dealing, just far fewer than
+            usual: a club floor parked or refused, not a dead engine. Read
+            ca_horse_fleet_heartbeat `detail.gates` (buy_in_refused names the
+            atomic_table_buyin refusal reasons), operator floor parks and their
+            lease expiry, and per-club hands in hand_history for the last hour.
+          runbook: docs/changelog/2026-10-15-the-fleet-alarm-that-remembers-yesterday.md
 
       - alert: HorseCashActionsStopped
         # THE "HANDFUL OF HORSES" DETECTOR, and the closest series to what Dan

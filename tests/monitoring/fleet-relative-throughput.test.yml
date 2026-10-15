@@ -1,0 +1,195 @@
+{
+  "rule_files": [
+    "../../infra/monitoring/alert-rules.yml"
+  ],
+  "evaluation_interval": "5m",
+  "tests": [
+    {
+      "name": "A floor that falls to a tenth of its week fires, with only four days retained",
+      "interval": "1m",
+      "input_series": [
+        {
+          "series": "poker_hands_dealt_total{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "0+600x5760 3456060+60x179"
+        },
+        {
+          "series": "poker_maintenance_break_active{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "0+0x5940"
+        }
+      ],
+      "promql_expr_test": [
+        {
+          "expr": "ALERTS{alertname=\"HorseFleetThroughputRelativeDrop\",alertstate=\"firing\"}",
+          "eval_time": "5755m",
+          "exp_samples": []
+        },
+        {
+          "expr": "ALERTS{alertname=\"HorseFleetThroughputRelativeDrop\",alertstate=\"firing\"}",
+          "eval_time": "5930m",
+          "exp_samples": [
+            {
+              "labels": "ALERTS{alertname=\"HorseFleetThroughputRelativeDrop\",alertstate=\"firing\",component=\"club-arena-engine\",page=\"sms\",severity=\"critical\"}",
+              "value": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Exactly at the 2026-10-13 stall's first hour (0.33 of the week) it fires",
+      "interval": "1m",
+      "input_series": [
+        {
+          "series": "poker_hands_dealt_total{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "0+600x5760 3456198+198x179"
+        },
+        {
+          "series": "poker_maintenance_break_active{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "0+0x5940"
+        }
+      ],
+      "promql_expr_test": [
+        {
+          "expr": "ALERTS{alertname=\"HorseFleetThroughputRelativeDrop\",alertstate=\"firing\"}",
+          "eval_time": "5755m",
+          "exp_samples": []
+        },
+        {
+          "expr": "ALERTS{alertname=\"HorseFleetThroughputRelativeDrop\",alertstate=\"firing\"}",
+          "eval_time": "5930m",
+          "exp_samples": [
+            {
+              "labels": "ALERTS{alertname=\"HorseFleetThroughputRelativeDrop\",alertstate=\"firing\",component=\"club-arena-engine\",page=\"sms\",severity=\"critical\"}",
+              "value": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Sixty per cent of the week is a quiet hour, not a stall (healthy min was 0.79)",
+      "interval": "1m",
+      "input_series": [
+        {
+          "series": "poker_hands_dealt_total{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "0+600x5760 3456360+360x179"
+        },
+        {
+          "series": "poker_maintenance_break_active{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "0+0x5940"
+        }
+      ],
+      "promql_expr_test": [
+        {
+          "expr": "ALERTS{alertname=\"HorseFleetThroughputRelativeDrop\",alertstate=\"firing\"}",
+          "eval_time": "5755m",
+          "exp_samples": []
+        },
+        {
+          "expr": "ALERTS{alertname=\"HorseFleetThroughputRelativeDrop\",alertstate=\"firing\"}",
+          "eval_time": "5930m",
+          "exp_samples": []
+        }
+      ]
+    },
+    {
+      "name": "Fewer than three days of history is no baseline, and it stays silent",
+      "interval": "1m",
+      "input_series": [
+        {
+          "series": "poker_hands_dealt_total{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "0+600x2880 1728060+60x179"
+        },
+        {
+          "series": "poker_maintenance_break_active{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "0+0x3060"
+        }
+      ],
+      "promql_expr_test": [
+        {
+          "expr": "ALERTS{alertname=\"HorseFleetThroughputRelativeDrop\",alertstate=\"firing\"}",
+          "eval_time": "2875m",
+          "exp_samples": []
+        },
+        {
+          "expr": "ALERTS{alertname=\"HorseFleetThroughputRelativeDrop\",alertstate=\"firing\"}",
+          "eval_time": "3050m",
+          "exp_samples": []
+        }
+      ]
+    },
+    {
+      "name": "A week under 2 hands/s is too small to compare against",
+      "interval": "1m",
+      "input_series": [
+        {
+          "series": "poker_hands_dealt_total{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "0+60x5760 345606+6x179"
+        },
+        {
+          "series": "poker_maintenance_break_active{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "0+0x5940"
+        }
+      ],
+      "promql_expr_test": [
+        {
+          "expr": "ALERTS{alertname=\"HorseFleetThroughputRelativeDrop\",alertstate=\"firing\"}",
+          "eval_time": "5755m",
+          "exp_samples": []
+        },
+        {
+          "expr": "ALERTS{alertname=\"HorseFleetThroughputRelativeDrop\",alertstate=\"firing\"}",
+          "eval_time": "5930m",
+          "exp_samples": []
+        }
+      ]
+    },
+    {
+      "name": "Inside the break guard it is silent",
+      "interval": "1m",
+      "input_series": [
+        {
+          "series": "poker_hands_dealt_total{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "0+600x5760 3456060+60x179"
+        },
+        {
+          "series": "poker_maintenance_break_active{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "1+0x5940"
+        }
+      ],
+      "promql_expr_test": [
+        {
+          "expr": "ALERTS{alertname=\"HorseFleetThroughputRelativeDrop\",alertstate=\"firing\"}",
+          "eval_time": "5755m",
+          "exp_samples": []
+        },
+        {
+          "expr": "ALERTS{alertname=\"HorseFleetThroughputRelativeDrop\",alertstate=\"firing\"}",
+          "eval_time": "5930m",
+          "exp_samples": []
+        }
+      ]
+    },
+    {
+      "name": "It waits its 30 minutes before firing",
+      "interval": "1m",
+      "input_series": [
+        {
+          "series": "poker_hands_dealt_total{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "0+600x5760 3456060+60x179"
+        },
+        {
+          "series": "poker_maintenance_break_active{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "0+0x5940"
+        }
+      ],
+      "promql_expr_test": [
+        {
+          "expr": "ALERTS{alertname=\"HorseFleetThroughputRelativeDrop\",alertstate=\"firing\"}",
+          "eval_time": "5785m",
+          "exp_samples": []
+        }
+      ]
+    }
+  ]
+}

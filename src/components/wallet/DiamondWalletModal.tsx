@@ -326,7 +326,7 @@ export default function DiamondWalletModal({
                 ]
               : combined
           );
-          const last = combined.at(-1);
+          const last = combined[combined.length - 1];
           historyCursor.current = last
             ? { owner: user.id, createdAt: last.created_at, id: last.id }
             : null;

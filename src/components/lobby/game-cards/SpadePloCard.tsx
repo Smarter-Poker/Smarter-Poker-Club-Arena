@@ -6,6 +6,7 @@ import {
   LayeredChassis,
   LayeredFitText,
   LayeredStatus,
+  LayeredStyleLine,
   LayeredZoneBox,
   splitBuyInRange,
   type LayeredCanvas,
@@ -42,6 +43,11 @@ export const SPADE_PLO_ASSETS = {
 export const SPADE_PLO_ZONES = {
   title: { x: 150, y: 196, width: 560, height: 100, align: 'left' },
   subtitle: { x: 152, y: 312, width: 560, height: 48, align: 'left' },
+  /* The style line once it carries its note (Action / Madness, Dan
+     2026-10-15): same left edge, out to the header well's right wall, below
+     the status pill's rim (master y ~306) and above the divider (y ~388),
+     tall enough for two short lines. */
+  styleNote: { x: 152, y: 320, width: 880, height: 64, align: 'left' },
   status: { x: 792, y: 224, width: 232, height: 64, align: 'center' },
   gameType: { x: 150, y: 590, width: 152, height: 160, align: 'center' },
   stakes: { x: 394, y: 590, width: 152, height: 160, align: 'center' },
@@ -101,15 +107,13 @@ export function SpadePloCard({
         />
       </LayeredZoneBox>
 
-      {data.subtitle && (
-        <LayeredZoneBox canvas={C} zone={SPADE_PLO_ZONES.subtitle} name="subtitle">
-          <LayeredFitText
-            as="span"
-            text={data.subtitle}
-            className="agc-layered__text--subtitle agc-layered__text--muted"
-          />
-        </LayeredZoneBox>
-      )}
+      <LayeredStyleLine
+        canvas={C}
+        zone={SPADE_PLO_ZONES.subtitle}
+        noteZone={SPADE_PLO_ZONES.styleNote}
+        subtitle={data.subtitle}
+        note={data.styleNote}
+      />
 
       <LayeredStatus canvas={C} zone={SPADE_PLO_ZONES.status} data={data} />
 

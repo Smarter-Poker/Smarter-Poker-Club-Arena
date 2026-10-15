@@ -115,6 +115,46 @@
   text-transform: uppercase;
 }
 
+/* The style line with its note (Action / Madness). Same left edge as the old
+   subtitle; the word keeps its size, the note takes the rest of the well. */
+.agc-layered__style-row {
+  display: flex;
+  align-items: center;
+  gap: 1.6cqw;
+}
+
+.agc-layered__style-word {
+  display: grid;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 42%;
+}
+
+.agc-layered__style-note-box {
+  display: grid;
+  align-items: center;
+  flex: 1 1 0;
+  min-width: 0;
+  height: 100%;
+  padding-left: 1.6cqw;
+  border-left: 0.18cqw solid rgb(91 184 255 / 45%);
+}
+
+.agc-layered__style-note {
+  --size: 2.55cqw;
+  font-family: Inter, 'Roboto Condensed', system-ui, sans-serif;
+  font-stretch: normal;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: #c5c5c8;
+  text-shadow: 0 0.22cqw 0.35cqw #000;
+}
+
+.agc-layered__style-note[data-fit-wrap] {
+  white-space: normal;
+  line-height: 1.12;
+}
+
 /* Small blue plaque labels (GAME TYPE, STAKES ...) where the chassis has none. */
 .agc-layered__text--label {
   --size: 2.75cqw;

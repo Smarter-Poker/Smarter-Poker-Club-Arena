@@ -185,9 +185,14 @@ describe('a failed hand-number allocation is one attempt, not a standing error',
   });
 
   it('a failure after BEGIN keeps holding the table on the original permit', async () => {
+    // 2026-10-15 (AnUnstartedHandReleasesItsPermit.test.ts): an unknown BEGIN
+    // is now replayed with its own exact identity to learn whether SQL holds
+    // it, and a proven reservation is released. While the replay cannot
+    // prove anything the table still holds the ORIGINAL permit: no second
+    // permit and no different hand is ever begun ahead of it.
     const { engine, attempt, dealt, rpc, permits } = tournamentTable({
       allocations: [allocated(1000002), allocated(1000003), allocated(1000004)],
-      begins: [failed],
+      begins: [failed, failed, failed, failed],
     });
 
     await expect(attempt()).rejects.toThrow('f06_permit_unproven');
@@ -195,11 +200,14 @@ describe('a failed hand-number allocation is one attempt, not a standing error',
     expect(original).toBe(permits[0]);
     expect(original.recoveryState()).toBe('unknown');
 
-    await expect(attempt()).rejects.toThrow('f06_prior_hand_unresolved');
-    await expect(attempt()).rejects.toThrow('f06_prior_hand_unresolved');
+    await expect(attempt()).rejects.toThrow('f06_permit_unproven');
+    await expect(attempt()).rejects.toThrow('f06_permit_unproven');
     expect(engine.f06CurrentPermit).toBe(original);
+    expect(original.recoveryState()).toBe('unknown');
     expect(permits).toHaveLength(1);
-    expect(rpc.mock.calls.filter(([n]) => n === 'fn_f06_begin_hand')).toHaveLength(1);
+    // The original BEGIN, its replay at that attempt's end, and one replay at
+    // the start of each later attempt - all for the same permit.
+    expect(rpc.mock.calls.filter(([n]) => n === 'fn_f06_begin_hand')).toHaveLength(4);
     expect(dealt).toEqual([]);
   });
 });

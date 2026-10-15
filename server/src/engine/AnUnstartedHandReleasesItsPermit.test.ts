@@ -239,8 +239,14 @@ describe('a deal attempt that ends without a hand releases its F06 permit', () =
   it('a release whose reply was lost is finished by the next attempt, which allocates fresh', async () => {
     const f = fixture({ loseCancelReply: 1 });
     f.allowStart.value = false;
-    await expect(f.engine.dealHand(f.seats)).rejects.toThrow('f06_prepared_cancellation_unknown');
+    // The attempt's own outcome is what the loop sees; the lost release is
+    // reported and the permit stays held for the next attempt to finish.
+    await f.engine.dealHand(f.seats);
     expect(f.engine.f06PermitPhase()).toBe('terminated');
+    expect(f.recorded).not.toHaveBeenCalledWith(
+      'unstarted_hand_permit_released',
+      expect.anything()
+    );
 
     // The preparation made under the next rest was refused while the permit
     // stood. That refusal belongs to no attempt once the permit is released.

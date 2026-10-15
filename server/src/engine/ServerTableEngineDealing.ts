@@ -3703,10 +3703,24 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
              the tournament stalls of 2026-10-11..15. The same continuation
              releases it now, so a failed attempt costs one attempt. */
           const heldPhase = this.f06PermitPhase();
-          if (await this.resolveUnstartedF06Permit()) {
-            this.recordRecoveryEvent(
-              'unstarted_hand_permit_released',
-              (unstartedCause ?? 'returned_unstarted') + ':permit=' + heldPhase
+          try {
+            if (await this.resolveUnstartedF06Permit()) {
+              this.recordRecoveryEvent(
+                'unstarted_hand_permit_released',
+                (unstartedCause ?? 'returned_unstarted') + ':permit=' + heldPhase
+              );
+            }
+          } catch (releaseError) {
+            // The attempt's own outcome stays the one reported to the loop.
+            // The permit is still held, and the next attempt's first step
+            // (the top of dealHand) asks again before any new number.
+            reportError(
+              releaseError,
+              'ServerTableEngine.' + this.tableId + '.unstarted_permit_release_failed',
+              {
+                cause: unstartedCause,
+                permit: heldPhase,
+              }
             );
           }
         }

@@ -1,0 +1,308 @@
+diff --git a/docs/changelog/2026-10-15-an-event-nobody-entered-is-cancelled.md b/docs/changelog/2026-10-15-an-event-nobody-entered-is-cancelled.md
+new file mode 100644
+index 000000000..bccbafa04
+--- /dev/null
++++ b/docs/changelog/2026-10-15-an-event-nobody-entered-is-cancelled.md
+@@ -0,0 +1,19 @@
++# An Event Nobody Entered Is Cancelled
++
++Date: 2026-10-15
++
++## What Happened
++
++`TournamentNeverStarted` fired every hour on `poker_tournaments_overdue_start = 3`: three "Daily 25 Chip Freezeout" MTTs of a one-member pilot club with no horse in it, REGISTERING 7 to 55 hours past their start with zero entrants. Its daily schedule spawns one more every day. The same shape paged `HorseTournamentsOverdue` on 2026-10-05 (zero-entrant MTTs of a club under an operator hold, cancelled by hand the next morning).
++
++## Root Cause
++
++The discovery loop's past-start branch had no end for an event nobody entered and no horse could fill. It asked `topUpWithHorses` for a full field, got nothing (no horse in the club, or the club's fleet held), backed off to every ten minutes, and asked again for ever. "Tournaments run, they do not cancel" protects a player who paid for a game; an event with no entrant has nobody to protect and nothing to refund.
++
++## Fix
++
++`server/src/tournament/emptyPastStartEvent.ts` decides it: a registration-first event (never a seat-first Spin/SNG), pool not finalized, a complete roster read with no registered or playing entrant and a counter that agrees, at least 30 minutes past start, and a past-start top-up that has already come back empty. Such an event is cancelled through `atomic_cancel_tournament` (the database cancellation authority, which writes the immutable receipt and closes every bank at exact zero), asked at most every 30 minutes, refused loudly (`GameServer.empty_past_start_event_cancel_refused`). A club whose horses can fill the event is filled and played first.
++
++## Tests
++
++`server/src/tournament/anEmptyPastStartEventIsCancelled.test.ts` pins every condition of the predicate and the wiring (complete roster read, top-up backoff, cancellation only through `atomic_cancel_tournament`, ahead of the top-up).
+diff --git a/server/src/GameServer.ts b/server/src/GameServer.ts
+index a0b8b3b73..fb0c48f69 100644
+--- a/server/src/GameServer.ts
++++ b/server/src/GameServer.ts
+@@ -15,6 +15,10 @@ import {
+   type RetirementBinding,
+   type RetirementCustody,
+ } from './services/TournamentRetirementCustody.js';
++import {
++  EMPTY_PAST_START_CANCEL_RETRY_MS,
++  shouldCancelEmptyPastStartEvent,
++} from './tournament/emptyPastStartEvent.js';
+ import { projectTournamentAdmission } from './tournament/tournamentAdmission.js';
+ import {
+   isPersistedUnlimitedMtt,
+@@ -3338,6 +3342,8 @@ export class GameServer {
+    * seconds long. Pruned with lastMttRampAt.
+    */
+   private pastStartTopUpClock: Map<string, { at: number; misses: number }> = new Map();
++  /** When an empty past-start event was last offered to atomic_cancel_tournament. */
++  private emptyEventCancelAskedAt: Map<string, number> = new Map();
+   /**
+    * REGISTERING rows whose prize pool is already finalized, reported once each
+    * (2026-09-11). Such a row has left registration whatever its status says;
+@@ -8035,6 +8041,62 @@ export class GameServer {
+              */
+             const target = tournament.effective_max_players ?? minPlayers;
+ 
++            /* AN EVENT NOBODY ENTERED IS CANCELLED (2026-10-15). See
++               tournament/emptyPastStartEvent.ts: no entrant on a complete
++               roster read, thirty minutes past start, and a top-up that has
++               already come back empty. Nothing is refunded because nothing was
++               paid; atomic_cancel_tournament writes the receipt. A club whose
++               horses can fill the event is filled by the top-up below first. */
++            const emptyClock = this.pastStartTopUpClock.get(tournament.id);
++            if (
++              shouldCancelEmptyPastStartEvent({
++                seatFirst: isSngOrSpin,
++                poolFinalized,
++                rosterCount: rosterByTournament.get(tournament.id),
++                currentPlayers: tournament.current_players,
++                startTimeMs: startTime,
++                nowMs: now,
++                emptyTopUps: emptyClock?.misses ?? 0,
++              })
++            ) {
++              const askedAt = this.emptyEventCancelAskedAt.get(tournament.id) ?? 0;
++              if (now - askedAt >= EMPTY_PAST_START_CANCEL_RETRY_MS) {
++                this.launchDiscoveryTopUp(
++                  tournament.id,
++                  generation,
++                  async () => {
++                    this.emptyEventCancelAskedAt.set(tournament.id, now);
++                    const { error: cancelError } = await supabase.rpc('atomic_cancel_tournament', {
++                      p_tournament_id: tournament.id,
++                      p_admin_id: null,
++                    });
++                    if (cancelError) {
++                      reportError(
++                        new Error(
++                          `[GameServer] empty past-start event ${tournament.name} (${String(
++                            tournament.id
++                          ).slice(0, 8)}) was not cancelled: ${cancelError.message}`
++                        ),
++                        'GameServer.empty_past_start_event_cancel_refused',
++                        { tournamentId: tournament.id }
++                      );
++                      return;
++                    }
++                    console.log(
++                      `[GameServer] Cancelled "${tournament.name}" (${String(tournament.id).slice(
++                        0,
++                        8
++                      )}): nobody entered it, it is ${Math.round(
++                        (now - startTime) / 60_000
++                      )} minute(s) past its start and no horse could fill it; nothing to refund`
++                    );
++                  },
++                  'GameServer.empty_past_start_event_cancel_failed'
++                );
++              }
++              continue;
++            }
++
+             /* At most every 45 s (the ramp's MTT_PRESTART_TICK_MS), and an event
+                that keeps coming back empty is asked half as often each time, up
+                to PAST_START_TOP_UP_MAX_INTERVAL_MS - the same backoff
+@@ -8213,6 +8275,7 @@ export class GameServer {
+         if (
+           this.lastMttRampAt.size > 0 ||
+           this.pastStartTopUpClock.size > 0 ||
++          this.emptyEventCancelAskedAt.size > 0 ||
+           this.registeringButFinalizedReported.size > 0 ||
+           spinLaunchParks.size > 0
+         ) {
+@@ -8228,6 +8291,9 @@ export class GameServer {
+           for (const id of this.pastStartTopUpClock.keys()) {
+             if (!stillRegistering.has(id)) this.pastStartTopUpClock.delete(id);
+           }
++          for (const id of this.emptyEventCancelAskedAt.keys()) {
++            if (!stillRegistering.has(id)) this.emptyEventCancelAskedAt.delete(id);
++          }
+           for (const id of this.registeringButFinalizedReported) {
+             if (!stillRegistering.has(id)) this.registeringButFinalizedReported.delete(id);
+           }
+diff --git a/server/src/tournament/anEmptyPastStartEventIsCancelled.test.ts b/server/src/tournament/anEmptyPastStartEventIsCancelled.test.ts
+new file mode 100644
+index 000000000..49e8e08fd
+--- /dev/null
++++ b/server/src/tournament/anEmptyPastStartEventIsCancelled.test.ts
+@@ -0,0 +1,105 @@
++/**
++ * AN EVENT NOBODY ENTERED IS CANCELLED, NOT WAITED ON FOR EVER (2026-10-15).
++ *
++ * TournamentNeverStarted paged every hour on three "Daily 25 Chip Freezeout"
++ * events of a one-member pilot club with no horse in it: zero entrants, 7 to
++ * 55 hours past start, REGISTERING for ever, one more spawned every day. The
++ * past-start lane topped them up with horses that did not exist and tried
++ * again, with no end. See tournament/emptyPastStartEvent.ts.
++ */
++import { describe, expect, it } from 'vitest';
++import { readFileSync } from 'node:fs';
++import { join } from 'node:path';
++import {
++  EMPTY_PAST_START_CANCEL_AFTER_MS,
++  EMPTY_PAST_START_CANCEL_RETRY_MS,
++  shouldCancelEmptyPastStartEvent,
++  type EmptyPastStartEvent,
++} from './emptyPastStartEvent.js';
++
++const START = Date.parse('2026-10-14T19:00:00Z');
++const empty: EmptyPastStartEvent = {
++  seatFirst: false,
++  poolFinalized: false,
++  rosterCount: 0,
++  currentPlayers: 0,
++  startTimeMs: START,
++  nowMs: START + 7 * 60 * 60 * 1000,
++  emptyTopUps: 1,
++};
++
++describe('an empty past-start event', () => {
++  it('is cancelled once nobody entered, it is 30 minutes past start and the top-up came back empty', () => {
++    expect(shouldCancelEmptyPastStartEvent(empty)).toBe(true);
++    expect(
++      shouldCancelEmptyPastStartEvent({
++        ...empty,
++        nowMs: START + EMPTY_PAST_START_CANCEL_AFTER_MS,
++      })
++    ).toBe(true);
++  });
++
++  it('is never cancelled with an entrant on its roster or its counter', () => {
++    expect(shouldCancelEmptyPastStartEvent({ ...empty, rosterCount: 1 })).toBe(false);
++    expect(shouldCancelEmptyPastStartEvent({ ...empty, currentPlayers: 1 })).toBe(false);
++  });
++
++  it('is never cancelled when its roster could not be read', () => {
++    expect(shouldCancelEmptyPastStartEvent({ ...empty, rosterCount: undefined })).toBe(false);
++  });
++
++  it('waits for the top-up first, so a club whose horses can fill it plays it', () => {
++    expect(shouldCancelEmptyPastStartEvent({ ...empty, emptyTopUps: 0 })).toBe(false);
++  });
++
++  it('waits thirty minutes past start', () => {
++    expect(
++      shouldCancelEmptyPastStartEvent({
++        ...empty,
++        nowMs: START + EMPTY_PAST_START_CANCEL_AFTER_MS - 1,
++      })
++    ).toBe(false);
++    expect(shouldCancelEmptyPastStartEvent({ ...empty, nowMs: START - 60_000 })).toBe(false);
++  });
++
++  it('never touches a seat-first game or a finalized pool', () => {
++    expect(shouldCancelEmptyPastStartEvent({ ...empty, seatFirst: true })).toBe(false);
++    expect(shouldCancelEmptyPastStartEvent({ ...empty, poolFinalized: true })).toBe(false);
++  });
++
++  it('refuses an unreadable clock', () => {
++    expect(shouldCancelEmptyPastStartEvent({ ...empty, startTimeMs: Number.NaN })).toBe(false);
++  });
++
++  it('asks again no more than every thirty minutes', () => {
++    expect(EMPTY_PAST_START_CANCEL_RETRY_MS).toBe(30 * 60 * 1000);
++  });
++});
++
++describe('the discovery loop wiring', () => {
++  const source = readFileSync(join(process.cwd(), 'src/GameServer.ts'), 'utf8');
++  const start = source.indexOf('AN EVENT NOBODY ENTERED IS CANCELLED (2026-10-15)');
++  const branch = source.slice(start, source.indexOf('/* At most every 45 s', start));
++
++  it('asks the predicate with the complete roster read and the top-up backoff', () => {
++    expect(start).toBeGreaterThan(-1);
++    expect(branch).toContain('shouldCancelEmptyPastStartEvent({');
++    expect(branch).toContain('rosterCount: rosterByTournament.get(tournament.id)');
++    expect(branch).toContain('emptyTopUps: emptyClock?.misses ?? 0');
++  });
++
++  it('cancels only through the database cancellation authority', () => {
++    expect(branch).toContain("supabase.rpc('atomic_cancel_tournament'");
++    expect(branch).not.toMatch(/\.update\(\{\s*status:/);
++    expect(branch).toContain("'GameServer.empty_past_start_event_cancel_refused'");
++  });
++
++  it('sits inside the past-start top-up branch, ahead of the top-up', () => {
++    const topUp = source.indexOf('if (needsPastStartTopUp) {');
++    expect(topUp).toBeGreaterThan(-1);
++    expect(start).toBeGreaterThan(topUp);
++    expect(source.indexOf('this.tournamentRecurring.topUpWithHorses(', start)).toBeGreaterThan(
++      start
++    );
++  });
++});
+diff --git a/server/src/tournament/emptyPastStartEvent.ts b/server/src/tournament/emptyPastStartEvent.ts
+new file mode 100644
+index 000000000..cdae3d941
+--- /dev/null
++++ b/server/src/tournament/emptyPastStartEvent.ts
+@@ -0,0 +1,61 @@
++/**
++ * AN EVENT NOBODY ENTERED IS CANCELLED, NOT WAITED ON FOR EVER (2026-10-15).
++ *
++ * A registration-first event (an MTT and its variants) starts on its clock
++ * once it has its minimum field. Short of that field past its start, the
++ * discovery loop tops it up with horses and starts it on a later pass: Dan's
++ * "TOURNAMENTS RUN. THEY DO NOT CANCEL" (2026-08-19), which exists so a player
++ * who paid gets the game he paid for.
++ *
++ * That loop had no end for an event that NOBODY entered and that the horse
++ * pool cannot fill. Measured on production 2026-10-15: three "Daily 25 Chip
++ * Freezeout" events of a one-member pilot club with no horse in it sat
++ * REGISTERING 7 to 55 hours past their start with zero entrants, a new one is
++ * spawned every day, and TournamentNeverStarted paged on them every hour. The
++ * same shape is what HorseTournamentsOverdue paged on 2026-10-05: zero-entrant
++ * MTTs of a club under an operator hold, whose top-up is refused while the
++ * club is held, cancelled by hand afterwards.
++ *
++ * Nothing is at stake in such an event: no entrant, so nothing to refund and
++ * nobody denied a game. The rule for it is cancel and refund nothing, through
++ * the platform's one cancellation authority (atomic_cancel_tournament), which
++ * writes the immutable cancellation receipt and closes every bank at exact
++ * zero. This predicate is the whole decision, so it is tested without a
++ * database and the call site cannot drift from it.
++ *
++ * Every condition is required:
++ *   - registration-first, never a seat-first Spin/SNG (those have their own
++ *     unfilled-seat expiry and their start is bought seats, not a clock);
++ *   - the prize pool is not finalized (a finalized pool has left
++ *     registration; it needs the finish path, never a cancellation);
++ *   - the roster read for this event SUCCEEDED and found no registered or
++ *     playing entrant, and the denormalised counter agrees (an unreadable
++ *     roster is not an empty one);
++ *   - it is at least EMPTY_PAST_START_CANCEL_AFTER_MS past its start;
++ *   - the past-start top-up has been asked at least once and added nobody,
++ *     so a club whose horses CAN fill it is filled and played instead.
++ */
++export const EMPTY_PAST_START_CANCEL_AFTER_MS = 30 * 60 * 1000;
++/** A refused cancellation is a stable answer; ask again at most this often. */
++export const EMPTY_PAST_START_CANCEL_RETRY_MS = 30 * 60 * 1000;
++
++export interface EmptyPastStartEvent {
++  seatFirst: boolean;
++  poolFinalized: boolean;
++  /** Registered or playing entrants from a COMPLETE roster read; undefined if unread. */
++  rosterCount: number | undefined;
++  currentPlayers: number | null | undefined;
++  startTimeMs: number;
++  nowMs: number;
++  /** Past-start top-ups that added nobody (the discovery loop's backoff counter). */
++  emptyTopUps: number;
++}
++
++export function shouldCancelEmptyPastStartEvent(event: EmptyPastStartEvent): boolean {
++  if (event.seatFirst || event.poolFinalized) return false;
++  if (event.rosterCount !== 0) return false;
++  if ((event.currentPlayers ?? 0) !== 0) return false;
++  if (!Number.isFinite(event.startTimeMs) || !Number.isFinite(event.nowMs)) return false;
++  if (event.nowMs - event.startTimeMs < EMPTY_PAST_START_CANCEL_AFTER_MS) return false;
++  return event.emptyTopUps >= 1;
++}

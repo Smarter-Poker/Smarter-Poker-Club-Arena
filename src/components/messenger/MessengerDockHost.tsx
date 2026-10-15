@@ -1,6 +1,6 @@
 import MessengerDock from './dock/MessengerDock';
 import './dock/MessengerDock.css';
-import { supabase } from '../../lib/supabase';
+import { supabase, getAuthUser } from '../../lib/supabase';
 import { getFreshAccessToken } from '../../lib/authToken';
 import { masterBus } from '../../core/MasterBus';
 import { publicOrigin } from '../../lib/appBase';
@@ -9,6 +9,7 @@ import { broadcastSync, listenBroadcast } from './dock/broadcastDock.mjs';
 
 const services = {
   supabase,
+  getAuthUser,
   broadcastSync,
   listenBroadcast,
   request: async (path: string, options: RequestInit = {}) => {

@@ -34,6 +34,10 @@ const INTENTIONAL_EXCEPTIONS = [
   '/dev/customization',
   '/dev/financial-decisions',
   'table/:tableId',
+  // Share & Invite short link opened in the app (2026-10-15): it resolves the
+  // code and immediately replaces itself with the club's join page, which is
+  // where the header lives. It never renders a page of its own.
+  '/i/:code',
 ] as const;
 const intentionalExceptions = new Set<string>(INTENTIONAL_EXCEPTIONS);
 
@@ -59,7 +63,7 @@ describe('the complete route manifest inherits one global header', () => {
     // and run the catalog. A staff page, behind PlatformStaffGuard, in the shell.
     // +1 for diamond-staff-desk (2026-09-29): platform staff run Diamond games,
     // incidents, books and adjustments. Behind PlatformStaffGuard, in the shell.
-    expect(allPaths).toHaveLength(154); // Includes the public, explicitly shared bonus replay. +1: cashier statements, +1: the Lightning route, +1: the Lightning operator dashboard, +1: the Club Data full report (2026-10-15)
+    expect(allPaths).toHaveLength(155); // Includes the public, explicitly shared bonus replay. +1: cashier statements, +1: the Lightning route, +1: the Lightning operator dashboard, +1: the Club Data full report (2026-10-15), +1: the Share & Invite short link /i/:code (2026-10-15)
     expect(allPaths).toContain('clubs/:clubId/applicants');
     expect(allPaths).toContain('clubs/:clubId/create-table/:gameType');
     expect(allPaths).toContain('messages/clubs/:conversationId');

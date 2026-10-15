@@ -171,17 +171,29 @@ export default function MessengerDock({ services }) {
     }, [actorId, chats, hydrated]);
 
     useEffect(() => {
+        const footerHeight = () => Math.max(0, ...['--sp-footer-height', '--ca-bottom-chrome-h'].map(name =>
+            Number.parseFloat(document.documentElement.style.getPropertyValue(name)) || 0));
+        let measuredFooter = footerHeight();
         const measure = () => {
             const view = window.visualViewport;
             const keyboard = Math.max(0, window.innerHeight - (view?.height || window.innerHeight) - (view?.offsetTop || 0));
-            setViewport({ width: document.documentElement.clientWidth, height: view?.height || window.innerHeight });
-            setBottom(keyboard > 80 ? keyboard + 8 : 76);
+            const clearance = keyboard > 80 ? 8 : Math.max(76, measuredFooter + 8);
+            setViewport({ width: document.documentElement.clientWidth, height: view?.height || window.innerHeight, clearance });
+            setBottom(keyboard > 80 ? keyboard + 8 : clearance);
         };
+        // Both maintained footers publish exact pixel height on the root. Only
+        // that value changing triggers measurement; our own CSS writes do not.
+        const footerObserver = new MutationObserver(() => {
+            const next = footerHeight();
+            if (next !== measuredFooter) { measuredFooter = next; measure(); }
+        });
+        footerObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['style'] });
         measure();
         window.addEventListener('resize', measure);
         window.visualViewport?.addEventListener('resize', measure);
         window.visualViewport?.addEventListener('scroll', measure);
         return () => {
+            footerObserver.disconnect();
             window.removeEventListener('resize', measure);
             window.visualViewport?.removeEventListener('resize', measure);
             window.visualViewport?.removeEventListener('scroll', measure);

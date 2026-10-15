@@ -35,7 +35,7 @@ export function dockLayout(chats, viewport, inbox = false) {
     const expanded = chats.filter(chat => !chat.minimized).slice(-capacity);
     const bubbles = chats.filter(chat => !expanded.includes(chat));
     const mobile = viewport.width < 768;
-    const panelHeight = Math.max(120, Math.min(mobile ? 680 : 500, viewport.height - 100));
+    const panelHeight = Math.max(120, Math.min(mobile ? 680 : 500, viewport.height - (viewport.clearance ?? 76) - 24));
     return { expanded, bubbles, mobile, panelHeight,
         width: expanded.length || inbox ? Math.min(viewport.width - (mobile ? 16 : 24), mobile ? viewport.width - 16 : (inbox ? 350 : expanded.length * 350) + 68) : 64,
         height: expanded.length || inbox ? panelHeight : Math.min(400, 64 + bubbles.length * 54),

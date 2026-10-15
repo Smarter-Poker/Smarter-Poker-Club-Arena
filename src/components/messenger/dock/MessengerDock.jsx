@@ -111,7 +111,7 @@ export default function MessengerDock({ services }) {
         const authGeneration = generation.current;
         void Promise.resolve(seed).then(user => { if (mounted && generation.current === authGeneration && user?.id) accept(user); }).catch(() => { if (mounted && generation.current === authGeneration) setError('Sign In To Open Messages'); });
         const { data } = supabase.auth.onAuthStateChange((event, session) => {
-            if (event === 'SIGNED_OUT') accept(null);
+            if (event === 'SIGNED_OUT') { if (!identity.current) ++generation.current; accept(null); }
             else if (session?.user) accept(session.user);
         });
         return () => { mounted = false; ++generation.current; data?.subscription?.unsubscribe(); };

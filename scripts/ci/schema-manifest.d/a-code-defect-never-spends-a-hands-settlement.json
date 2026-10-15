@@ -1,0 +1,5 @@
+{
+  "_owner": "phase4/a-code-defect-never-spends-a-hands-settlement",
+  "_comment": "Migration 20261015011723: generic metadata-defect source-correction proof, installed through apply-merged-migration after merge.",
+  "functions": ["smarter_private.metadata_defect_source_correction_proof"]
+}

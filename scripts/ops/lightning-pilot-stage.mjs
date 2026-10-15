@@ -1,0 +1,195 @@
+// Lightning pilot stage operator (docs/lightning/ROLLOUT.md Stages 1 and 2).
+//
+// Every change goes through the one audited door, fn_lightning_operator_control,
+// as the authenticated service owner of the private pilot, with a reason and a
+// request id derived from the dispatch's operation id, so a retry of the same
+// operation replays instead of acting twice. Readiness is read and recorded
+// before any enable. It only ever touches the two named private pilot games of
+// the Lightning Internal Pilot club; any other Cluster, a public game, a
+// no_go verdict or a blocking reason stops it before the first action.
+import { createHash } from 'node:crypto';
+import { writeFileSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
+import { PILOT, PILOT_TARGETS, pilotServiceFetch } from './prepare-lightning-private-pilot.mjs';
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Evidence-level reasons each stage exists to produce (ROLLOUT.md ground rules). */
+export const STAGE_ACCEPTED_REASONS = Object.freeze({
+  shadow: Object.freeze(['NO_AA_CALIBRATION', 'NO_LATENCY_EVIDENCE', 'WORKER_SHADOW_ONLY', 'WORKER_OFF']),
+  form: Object.freeze(['NO_LATENCY_EVIDENCE', 'WORKER_SHADOW_ONLY']),
+});
+
+/** The ordered door actions for each stage. Report and drain read or retreat only. */
+export const STAGE_ACTIONS = Object.freeze({
+  shadow: Object.freeze([
+    ['set_flag', { flag: 'lightning_shadow_matcher', value: true }],
+    ['set_matcher_version', { version: 'm1-port', role: 'shadow' }],
+    ['set_worker_mode', { mode: 'shadow' }],
+    ['enable_lightning', {}],
+  ]),
+  form: Object.freeze([['set_worker_mode', { mode: 'form' }]]),
+  drain: Object.freeze([['drain', {}]]),
+  report: Object.freeze([]),
+});
+
+/** A stable request id per (operation, cluster, action): a retry replays. */
+export function stageRequestId(operationId, clusterId, action) {
+  const h = createHash('sha256').update(`${operationId}:${clusterId}:${action}`).digest('hex');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-8${h.slice(17, 20)}-${h.slice(20, 32)}`;
+}
+
+/** Readiness gate: ok answer, never no_go, and every reason accepted for the stage. */
+export function assertStageReadiness(stage, readiness) {
+  if (!readiness || readiness.ok === false || typeof readiness.verdict !== 'string')
+    throw new Error('Readiness Unreadable; No Stage Action Taken');
+  if (readiness.verdict === 'no_go') throw new Error('Readiness Is No Go; No Stage Action Taken');
+  const accepted = STAGE_ACCEPTED_REASONS[stage];
+  if (!accepted) return;
+  const reasons = Array.isArray(readiness.reasons) ? readiness.reasons : null;
+  if (!reasons) throw new Error('Readiness Reasons Unreadable; No Stage Action Taken');
+  const blocking = reasons.filter(
+    (r) => r?.severity === 'blocking' || !accepted.includes(r?.code)
+  );
+  if (readiness.verdict !== 'go' && blocking.length > 0)
+    throw new Error(
+      `Readiness Has Reasons This Stage Does Not Accept: ${blocking.map((r) => r?.code).join(',')}`
+    );
+}
+
+/** The game must be one of the named private pilot targets in the pilot club. */
+export function assertStageTarget(game, clubId) {
+  const target = PILOT_TARGETS.find((t) => t.gameName === game?.name);
+  if (
+    !target ||
+    !UUID.test(game?.id ?? '') ||
+    game.club_id !== clubId ||
+    game.handedness !== target.handedness ||
+    Number(game.sb) !== target.sb ||
+    Number(game.bb) !== target.bb ||
+    game.must_move !== true ||
+    game.ruleset_snapshot?.options?.is_private !== true ||
+    game.closed_at
+  )
+    throw new Error('Stage Target Is Not A Private Pilot Game');
+  return target;
+}
+
+export async function runPilotStage(env = process.env, clientFactory) {
+  const stage = env.PILOT_STAGE;
+  if (!Object.hasOwn(STAGE_ACTIONS, stage)) throw new Error('Unknown Pilot Stage');
+  const operationId = env.PILOT_OPERATION_ID ?? '';
+  if (stage !== 'report' && !UUID.test(operationId))
+    throw new Error('A Stage Action Requires An Operation UUID');
+  const reason = (env.PILOT_REASON ?? '').trim();
+  if (stage !== 'report' && reason.length < 12) throw new Error('A Stage Action Requires A Reason');
+  if (
+    env.SP_EMAIL?.toLowerCase() !== PILOT.ownerEmail ||
+    !env.SP_PASS ||
+    !env.SUPABASE_URL ||
+    !env.SUPABASE_SERVICE_ROLE_KEY
+  )
+    throw new Error('Configured Verified Service Credentials Are Required');
+  const createClient = clientFactory ?? (await import('@supabase/supabase-js')).createClient;
+  const options = { auth: { persistSession: false, autoRefreshToken: false } };
+  const admin = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
+    ...options,
+    global: { fetch: pilotServiceFetch(env.SUPABASE_SERVICE_ROLE_KEY) },
+  });
+  const player = createClient(
+    env.SUPABASE_URL,
+    'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx',
+    options
+  );
+  const must = (result, label) => {
+    if (result.error) throw new Error(`${label}: ${result.error.code || 'Request Failed'}`);
+    return result.data;
+  };
+  const wanted = (env.PILOT_TARGETS ?? '6,9')
+    .split(',')
+    .map((s) => Number(s.trim()))
+    .filter((n) => n === 6 || n === 9);
+  if (wanted.length === 0) throw new Error('No Pilot Target Selected');
+  const report = { stage, operationId: operationId || null, startedAt: new Date().toISOString(), clusters: [] };
+  let primaryError;
+  try {
+    const login = must(
+      await player.auth.signInWithPassword({ email: env.SP_EMAIL, password: env.SP_PASS }),
+      'Service Login'
+    );
+    if (login.user?.id !== PILOT.ownerId) throw new Error('Authenticated Service Identity Mismatch');
+    const club = must(
+      await admin.from('clubs').select('id,owner_id,name,is_public').eq('owner_id', PILOT.ownerId).eq('name', PILOT.name).maybeSingle(),
+      'Pilot Club'
+    );
+    if (!club?.id || club.is_public !== false) throw new Error('Pilot Club Missing Or Public');
+    const games = must(
+      await admin.from('cash_games').select('*').eq('club_id', club.id),
+      'Pilot Games'
+    );
+    // Resolve and gate EVERY selected target before the first action, so a
+    // missing game or a refused readiness never leaves one size half-staged.
+    const staged = [];
+    for (const handedness of wanted) {
+      const target = PILOT_TARGETS.find((t) => t.handedness === handedness);
+      const matches = (Array.isArray(games) ? games : []).filter((g) => g.name === target.gameName);
+      if (matches.length !== 1) throw new Error(`Pilot ${handedness}-Max Game Not Uniquely Found`);
+      const game = matches[0];
+      assertStageTarget(game, club.id);
+      const entry = { handedness, clusterId: game.id, actions: [] };
+      report.clusters.push(entry);
+      entry.readinessBefore = must(
+        await player.rpc('fn_lightning_rollout_readiness', { p_cluster_id: game.id }),
+        'Readiness'
+      );
+      if (stage !== 'report' && stage !== 'drain') assertStageReadiness(stage, entry.readinessBefore);
+      staged.push({ game, entry });
+    }
+    for (const { game, entry } of staged) {
+      for (const [action, args] of STAGE_ACTIONS[stage]) {
+        const requestId = stageRequestId(operationId, game.id, action);
+        const answer = must(
+          await player.rpc('fn_lightning_operator_control', {
+            p_cluster_id: game.id,
+            p_action: action,
+            p_reason: reason,
+            p_args: { ...args, request_id: requestId },
+          }),
+          `Control ${action}`
+        );
+        entry.actions.push({ action, requestId, answer });
+        if (answer?.code === 'REQUEST_IN_PROGRESS')
+          throw new Error(`${action} Still In Progress; Retry The Same Operation ID`);
+        if (answer?.ok !== true) throw new Error(`${action} Refused: ${answer?.code ?? 'UNKNOWN'}`);
+      }
+      entry.shadowReport = must(
+        await admin.rpc('fn_lightning_shadow_report', { p_cluster_id: game.id }),
+        'Shadow Report'
+      );
+      entry.readinessAfter = must(
+        await player.rpc('fn_lightning_rollout_readiness', { p_cluster_id: game.id }),
+        'Readiness After'
+      );
+    }
+  } catch (error) {
+    primaryError = error;
+    report.error = String(error?.message ?? error);
+  } finally {
+    const out = await player.auth.signOut({ scope: 'local' }).catch((e) => ({ error: e }));
+    if (out?.error && !primaryError) primaryError = new Error('Service Session Cleanup Failed');
+    report.completedAt = new Date().toISOString();
+    if (env.PILOT_STAGE_REPORT_PATH) writeFileSync(env.PILOT_STAGE_REPORT_PATH, JSON.stringify(report, null, 2) + '\n');
+  }
+  if (primaryError) throw primaryError;
+  return report;
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+  runPilotStage().then(
+    (r) => console.log(JSON.stringify({ stage: r.stage, clusters: r.clusters.map((c) => ({ handedness: c.handedness, clusterId: c.clusterId, actions: c.actions.map((a) => [a.action, a.answer?.ok]) })) })),
+    (e) => {
+      console.error(String(e?.message ?? e));
+      process.exitCode = 1;
+    }
+  );
+}

@@ -119,6 +119,23 @@ async function ready() {
 beforeEach(() => {
   vi.useFakeTimers();
   sessionStorage.clear();
+  // Wallets are an opt-in column since fees lead Player Management
+  // (2026-10-14); these cases are about wallet delivery, so opt in.
+  for (const id of [
+    '00000000-0000-0000-0000-000000000043',
+    '00000000-0000-0000-0000-000000000044',
+  ]) {
+    sessionStorage.setItem(
+      `roster_workspace_v1_viewer-a_${id}`,
+      JSON.stringify({
+        version: 1,
+        search: '',
+        filter: 'all',
+        sort: 'hierarchy',
+        columns: ['fees', 'downlines', 'activity', 'wallets'],
+      })
+    );
+  }
   vi.clearAllMocks();
   f.actor.user = { id: 'viewer-a' };
   f.memberSignal = null;

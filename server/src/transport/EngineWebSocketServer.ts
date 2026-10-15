@@ -103,6 +103,11 @@ export const CLOSE_AUTH_FAILED = 4401;
 export const CLOSE_BANNED = 4403; // Round 70: banned by club / union blacklist
 
 export const CLOSE_TABLE_NOT_FOUND = 4404;
+/**
+ * The TABLE_NOT_FOUND message for a tournament table its manager is failing to
+ * admit. Mirrored by src/services/EngineSocketMux.ts (TOURNAMENT_TABLE_PAUSED_MESSAGE).
+ */
+export const TABLE_PAUSED_MESSAGE = 'tournament_table_paused';
 export const CLOSE_RATE_LIMITED = 4429;
 export const CLOSE_SERVER_ERROR = 4500;
 export const CLOSE_BAD_REQUEST = 4400;
@@ -254,6 +259,14 @@ export interface EngineWebSocketServerOptions {
    * Optional for isolated transport tests; production always wires it.
    */
   ensureTable?: EnsureTableCheck;
+  /**
+   * True while a tournament manager is failing to admit this table (A PAUSED
+   * TABLE SAYS SO, 2026-10-15). The refusal keeps its TABLE_NOT_FOUND code, so
+   * every client keeps polling and rejoins the moment the table deals again;
+   * only the message changes, from "not found" to TABLE_PAUSED_MESSAGE, so the
+   * felt can tell a seated player the truth instead of "no longer running".
+   */
+  tablePaused?: (tableId: string) => boolean;
   /** Optional override for auth, used by tests to inject fake tokens. */
   verifyToken?: (token: string) => Promise<TokenVerdict | null>;
   /** Optional override for the complete durable connection verdict in tests. */
@@ -536,6 +549,7 @@ export class EngineWebSocketServer {
   private readonly hub: TableStateHub;
   private readonly tableExists: TableExistsCheck;
   private readonly ensureTable?: EnsureTableCheck;
+  private readonly tablePaused?: (tableId: string) => boolean;
   private readonly verifyToken: (token: string) => Promise<TokenVerdict | null>;
   private readonly authorizeConnection: (
     tableId: string,
@@ -561,6 +575,7 @@ export class EngineWebSocketServer {
     this.hub = opts.hub;
     this.tableExists = opts.tableExists;
     this.ensureTable = opts.ensureTable;
+    this.tablePaused = opts.tablePaused;
     this.verifyToken = opts.verifyToken ?? defaultVerifyToken;
     const authority = opts.authorizeConnection ?? authorizeTableConnection;
     this.authorizeConnection = async (tableId, userId) => {
@@ -1201,6 +1216,15 @@ export class EngineWebSocketServer {
     }
   }
 
+  /** A throwing probe must never turn a refusal into a crash: it reads as not paused. */
+  private isTablePaused(tableId: string): boolean {
+    try {
+      return this.tablePaused?.(tableId) === true;
+    } catch {
+      return false;
+    }
+  }
+
   private sendMuxError(
     conn: ConnectionState,
     tableId: string,
@@ -1314,7 +1338,12 @@ export class EngineWebSocketServer {
       if (!tableReady) {
         timing.outcome = 'table_unavailable';
         conn.subs.delete(tableId);
-        this.sendMuxError(conn, tableId, 'TABLE_NOT_FOUND', 'Table not found in engine');
+        this.sendMuxError(
+          conn,
+          tableId,
+          'TABLE_NOT_FOUND',
+          this.isTablePaused(tableId) ? TABLE_PAUSED_MESSAGE : 'Table not found in engine'
+        );
         return;
       }
       if (this.isIpConflict(tableId, conn.userId, conn.clientIp, viewerAccess.ipRestricted)) {

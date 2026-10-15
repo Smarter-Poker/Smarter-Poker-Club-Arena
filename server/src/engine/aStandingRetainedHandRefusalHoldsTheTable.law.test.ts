@@ -43,6 +43,7 @@ const leases = await import('../services/tableLease.js');
 const errors = await import('../services/errorReporter.js');
 const {
   RETAINED_HAND_STANDING_REFUSALS,
+  RetainedHandSubmissionFrozenError,
   RetainedHandSubmissionRefusedError,
   resumeRetainedHandSubmission,
 } = await import('../services/supabase/handHistory.js');
@@ -72,9 +73,18 @@ describe('the door names a standing refusal and nothing else', () => {
     expect(error.message).toBe(`retained_hand_submission_readback_failed: ${code}`);
   });
 
+  it.each(['HAND_SUBMISSION_PLATFORM_FROZEN', 'HAND_SUBMISSION_MAINTENANCE_BUSY'])(
+    '%s is the freeze, never a standing refusal (aFrozenRetainedHandWaitsForTheThaw)',
+    async (code) => {
+      vi.spyOn(supabase, 'rpc').mockResolvedValue({ data: null, error: { message: code } } as any);
+      const error = await resumeRetainedHandSubmission(TABLE, 'i', GENERATION).catch((e) => e);
+      expect(error).not.toBeInstanceOf(RetainedHandSubmissionRefusedError);
+      expect(error).toBeInstanceOf(RetainedHandSubmissionFrozenError);
+      expect(error.message).toBe(`retained_hand_submission_readback_failed: ${code}`);
+    }
+  );
+
   it.each([
-    'HAND_SUBMISSION_PLATFORM_FROZEN',
-    'HAND_SUBMISSION_MAINTENANCE_BUSY',
     'HAND_SUBMISSION_LEASE_UNPROVEN',
     'HAND_SUBMISSION_SCOPE_CHANGED',
     'F06_HAND_DISPATCH_BUSY',
@@ -84,6 +94,7 @@ describe('the door names a standing refusal and nothing else', () => {
     vi.spyOn(supabase, 'rpc').mockResolvedValue({ data: null, error: { message } } as any);
     const error = await resumeRetainedHandSubmission(TABLE, 'i', GENERATION).catch((e) => e);
     expect(error).not.toBeInstanceOf(RetainedHandSubmissionRefusedError);
+    expect(error).not.toBeInstanceOf(RetainedHandSubmissionFrozenError);
     expect(error.message).toBe(`retained_hand_submission_readback_failed: ${message}`);
   });
 

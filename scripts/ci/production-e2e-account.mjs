@@ -321,6 +321,30 @@ export async function cleanupProductionE2EAccount({
 }
 
 /**
+ * The live-table certificate observes union tournament boards (MTT, SPIN, SNG)
+ * as a spectator. Union games are readable only by members of a club in the
+ * union's scope (fn_poker_can_read_games behind the restrictive table policy),
+ * so an identity with no membership can read the platform Diamond Arena but no
+ * Midway board at all, and SPIN/SNG (which run only in the union) were never
+ * observable. Join the reserved identity to one union club through the same
+ * public door the staff helper uses, as an ordinary zero-balance player: no
+ * role change, no balance, removed with the identity by cleanup.
+ */
+export async function prepareProductionE2ESpectatorMembership({
+  environment = process.env,
+  fetchImpl = fetch,
+} = {}) {
+  return prepareProductionE2EStaffMembership({
+    environment: {
+      ...environment,
+      E2E_CLUB_ID: environment.E2E_SPECTATOR_CLUB_ID || DEFAULT_E2E_CLUB_ID,
+    },
+    fetchImpl,
+    memberRole: 'player',
+  });
+}
+
+/**
  * Give only the short-lived reserved certification identity enough authority
  * to open staff-only Club Arena surfaces. The account is created immediately
  * before this call and must have no membership yet: refusing an existing row
@@ -333,7 +357,10 @@ export async function prepareProductionE2EStaffMembership({
   fetchImpl = fetch,
   requireStandalone = false,
   reusePreparedMembership = false,
+  memberRole = 'admin',
 } = {}) {
+  if (memberRole !== 'admin' && memberRole !== 'player')
+    throw new Error('Reserved membership role must be admin or player.');
   const path = fixturePath(environment);
   const account = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : null;
   if (!account?.id || !reserved(account.email || '')) {
@@ -380,7 +407,7 @@ export async function prepareProductionE2EStaffMembership({
     if (
       row.club_id === clubId &&
       row.user_id === account.id &&
-      row.role === 'admin' &&
+      row.role === memberRole &&
       row.status === 'active' &&
       Number(row.chip_balance) === 0
     )
@@ -437,7 +464,7 @@ export async function prepareProductionE2EStaffMembership({
     {
       method: 'PATCH',
       headers: { Prefer: 'return=representation' },
-      body: JSON.stringify({ role: 'admin', status: 'active', is_active: true }),
+      body: JSON.stringify({ role: memberRole, status: 'active', is_active: true }),
     },
     fetchImpl
   );
@@ -446,13 +473,17 @@ export async function prepareProductionE2EStaffMembership({
     created?.length !== 1 ||
     row?.club_id !== clubId ||
     row?.user_id !== account.id ||
-    row?.role !== 'admin' ||
+    row?.role !== memberRole ||
     row?.status !== 'active' ||
     Number(row?.chip_balance) !== 0
   ) {
     throw new Error('Reserved staff membership was not created exactly as requested.');
   }
-  console.log('[production-e2e-account] isolated zero-balance staff membership verified.');
+  console.log(
+    memberRole === 'admin'
+      ? '[production-e2e-account] isolated zero-balance staff membership verified.'
+      : '[production-e2e-account] isolated zero-balance spectator membership verified.'
+  );
   return row;
 }
 
@@ -1350,12 +1381,13 @@ async function main() {
   const command = process.argv[2];
   if (command === 'create') return createProductionE2EAccount();
   if (command === 'prepare-staff') return prepareProductionE2EStaffMembership();
+  if (command === 'prepare-spectator') return prepareProductionE2ESpectatorMembership();
   if (command === 'prepare-lightning-staff') return prepareProductionE2ELightningMembership();
   if (command === 'prepare-template-staff') return prepareProductionE2ETemplateFixture();
   if (command === 'retire-create-clubs') return retireProductionCreateClubFixtures();
   if (command === 'cleanup') return cleanupProductionE2EAccount();
   throw new Error(
-    'Usage: production-e2e-account.mjs <create|prepare-staff|prepare-lightning-staff|prepare-template-staff|retire-create-clubs|cleanup>'
+    'Usage: production-e2e-account.mjs <create|prepare-staff|prepare-spectator|prepare-lightning-staff|prepare-template-staff|retire-create-clubs|cleanup>'
   );
 }
 

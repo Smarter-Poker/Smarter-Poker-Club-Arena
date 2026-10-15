@@ -44,6 +44,8 @@ function row(index = 0): Props {
       can_view_financials: true,
       player_wallet: 250,
       agent_wallet: 10,
+      total_fees: 87.5,
+      downline_fees: 0,
     }),
     position: index + 1,
     total: 10_000,
@@ -182,7 +184,11 @@ describe('Phase 6 real roster row render budget', () => {
     expect(item).toHaveAttribute('aria-posinset', '61');
     expect(item).toHaveAttribute('aria-setsize', '419');
     expect(item.querySelector('mark')).toHaveTextContent('Player');
-    expect(screen.getByText('250')).toBeVisible();
+    // Simple mode leads with fees generated, never a wallet balance.
+    expect(screen.getByText('87.5')).toBeVisible();
+    expect(screen.getByText('Fees Generated')).toBeVisible();
+    expect(screen.queryByText('250')).not.toBeInTheDocument();
+    expect(screen.queryByText('Player Wallet')).not.toBeInTheDocument();
     expect(screen.queryByText('Agent Wallet')).not.toBeInTheDocument();
     view.rerender(
       <MemberRow {...next} selectable={false} simpleMode={false} columns={new Set()} />

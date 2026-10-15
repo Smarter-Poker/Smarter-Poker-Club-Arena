@@ -225,49 +225,13 @@
   text-align: center;
 }
 
-/* ── Minimized badge ────────────────────────────────────────────────────── */
+/* ── Closed ─────────────────────────────────────────────────────────────── */
 
-/* AT THE BOTTOM OF THE PAGE (Dan 2026-09-23, screenshot of the pill sitting in
-   the iPhone status bar over the clock and the signal): "THE 'MAINTENANCE
-   BREAK' CAN NEVER BE DISPLAYED ABOVE THE ACTION BAR. IT SHOULD ALWAYS BE AT
-   THE BOTTOM OF THE PAGE." It was `top: 12px`, the one place on a phone that
-   is already spoken for. It hangs from the bottom edge now, just clear of the
-   action bar.
-
-   CLEAR OF THE BAR, NOT IN IT (2026-09-24). The first cut sat the pill inside
-   the home-indicator inset, on the premise that "during a break there is
-   nothing to act on". That is false for two of the four phases the screen is
-   visible in: `last_hand` (:53 to :55, when every table is finishing its hand
-   and the hero must still act) and `resuming`. Minimizing is the only way to
-   reach the felt then, and the pill landed centred on the Call button. The
-   pill is mounted inside `.table-page`, so it reads the same
-   `--sp-action-reserve` the felt geometry reserves for the bar (bar height
-   plus inset, TablePage.css) and stands 10px above it - still the bottom of
-   the page, never the status bar, never over a button. WaitlistBanner does
-   the same for the same reason. */
-.maintenance-break__minimized {
-  position: fixed;
-  bottom: calc(var(--sp-action-reserve, calc(96px + env(safe-area-inset-bottom, 0px))) + 10px);
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 721;
-  cursor: pointer;
-  pointer-events: auto;
-}
-
-.maintenance-break__mini-badge {
-  display: inline-block;
-  padding: 6px 14px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  color: #dce7fb;
-  background: rgba(16, 27, 45, 0.94);
-  border: 1px solid rgba(96, 154, 255, 0.45);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
-  white-space: nowrap;
-}
+/* A CLOSED BREAK IS A MASTHEAD LINE (Dan 2026-10-14), not a floating pill.
+   It renders as MaintenanceBreakLine inside the table masthead, directly under
+   the bomb pot clock; its styles live with the masthead in TablePage.css
+   (.table-brand__line--maintenance). This supersedes the 2026-09-23 bottom
+   pill, which landed under the hero seat. */
 
 /* ── Wider screens ──────────────────────────────────────────────────────── */
 

@@ -26,7 +26,7 @@ vi.mock('../services/supabase.js', () => ({
 }));
 vi.mock('../services/errorReporter.js', () => ({ reportError: vi.fn() }));
 
-import { EngineWebSocketServer } from './EngineWebSocketServer.js';
+import { EngineWebSocketServer, TABLE_PAUSED_MESSAGE } from './EngineWebSocketServer.js';
 
 type Handler = (...args: unknown[]) => void;
 
@@ -253,6 +253,45 @@ describe('EngineWebSocketServer /ws/multi', () => {
     expect(hub.subscribe).not.toHaveBeenCalled();
     const errs = ws.sent.map((s) => JSON.parse(s));
     expect(errs.some((m) => m.type === 'ERROR' && m.code === 'TABLE_NOT_FOUND')).toBe(true);
+  });
+
+  it('names a paused tournament table but keeps TABLE_NOT_FOUND so the client keeps polling', async () => {
+    const paused = '44444444-4444-4444-8444-444444444444';
+    const other = '55555555-5555-4555-8555-555555555555';
+    const tablePaused = vi.fn((id: string) => id === paused);
+    const { server: s2, hub: h2 } = makeServer({ tablePaused });
+    const socket = makeFakeWs();
+    (s2 as unknown as { onUpgradedMux: Handler }).onUpgradedMux(socket, 'user-1', '1.2.3.4');
+    socket.emitMessage({ type: 'SUBSCRIBE', tableId: paused });
+    socket.emitMessage({ type: 'SUBSCRIBE', tableId: other });
+    await flush();
+    expect(h2.subscribe).not.toHaveBeenCalled();
+    const errs = socket.sent.map((raw) => JSON.parse(raw)).filter((m) => m.type === 'ERROR');
+    expect(errs).toEqual([
+      { type: 'ERROR', tableId: paused, code: 'TABLE_NOT_FOUND', message: TABLE_PAUSED_MESSAGE },
+      {
+        type: 'ERROR',
+        tableId: other,
+        code: 'TABLE_NOT_FOUND',
+        message: 'Table not found in engine',
+      },
+    ]);
+  });
+
+  it('a throwing pause probe reads as not paused and never breaks the refusal', async () => {
+    const { server: s2 } = makeServer({
+      tablePaused: () => {
+        throw new Error('probe failed');
+      },
+    });
+    const socket = makeFakeWs();
+    (s2 as unknown as { onUpgradedMux: Handler }).onUpgradedMux(socket, 'user-1', '1.2.3.4');
+    socket.emitMessage({ type: 'SUBSCRIBE', tableId: '66666666-6666-4666-8666-666666666666' });
+    await flush();
+    const errs = socket.sent.map((raw) => JSON.parse(raw)).filter((m) => m.type === 'ERROR');
+    expect(errs).toHaveLength(1);
+    expect(errs[0].code).toBe('TABLE_NOT_FOUND');
+    expect(errs[0].message).toBe('Table not found in engine');
   });
 
   it.each(['missing', 'throws'])(

@@ -104,6 +104,7 @@ const engineWs = new EngineWebSocketServer({
     return gameServer.lightningRooms.authorize(tableId, userId);
   },
   ensureTable: (tableId) => gameServer.ensureCashTableEngine(tableId),
+  tablePaused: (tableId) => gameServer.isTournamentTablePaused(tableId),
   // FIX 2 (2026-07-24): on (re)connect / RESYNC, re-push the player's hole
   // cards for the current hand (public state alone leaves reconnecting players
   // blind and auto-folded).

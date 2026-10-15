@@ -137,7 +137,12 @@ const ROSTER = join(ROOT, 'docs', 'attestation', 'cron-roster.tsv');
 // (the floor hold is a lease that pages at 10 minutes and releases at 60;
 // argument in that migration's header). Read live from cron.job: 132 active
 // before the install, 134 total.
-const ACTIVE_JOBS = 133;
+// 2026-10-15: 133 -> 134 active: ca-currency-meter-nightly, scheduled by
+// 20261015034439 the_currency_meter_reads_what_is_owed_and_runs_on_its_own.
+// fn_ca_currency_meter() leaves ca-ledger-replay-nightly's command for its own
+// job so the two no longer share a transaction (the meter's 2026-10-14
+// timeout rolled the night's replay back). No new work runs.
+const ACTIVE_JOBS = 134;
 const RETAINED_INACTIVE = 2;
 const TOTAL_JOBS = ACTIVE_JOBS + RETAINED_INACTIVE;
 
@@ -181,8 +186,8 @@ describe('the scheduled-work roster is pinned', () => {
     expect(Number(headerValue('retained-inactive'))).toBe(RETAINED_INACTIVE);
   });
 
-  it('135 total is 133 active plus the two rows cron.job keeps inactive', () => {
-    expect(TOTAL_JOBS).toBe(135);
+  it('136 total is 134 active plus the two rows cron.job keeps inactive', () => {
+    expect(TOTAL_JOBS).toBe(136);
     // The two bust sweeps 20260910073355 restored disabled are both of them
     // again: union-weekly-rakeback-close was the third until 20261003101805
     // re-armed jobid 272, and it is now an ACTIVE row of the body instead.

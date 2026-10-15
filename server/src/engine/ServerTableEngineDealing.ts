@@ -1612,6 +1612,29 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     this.gapPhaseMs = {};
   }
 
+  /**
+   * A groupable name for why a deal attempt ended without a hand: the error's
+   * message with identifiers and numbers folded away, so recovery-event
+   * details collapse to one row per cause rather than one per table.
+   */
+  protected static causeOf(error: unknown): string {
+    const raw =
+      error instanceof Error
+        ? error.message
+        : typeof error === 'string'
+          ? error
+          : String((error as { message?: unknown } | null)?.message ?? error);
+    return (
+      raw
+        .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '#')
+        // Hand numbers, counts and ids; short codes such as f06 keep their name.
+        .replace(/\d{3,}/g, '#')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 120) || 'unknown'
+    );
+  }
+
   /** Loop phases that mean the table was waiting on something other than bookkeeping. */
   private static readonly IDLE_LOOP_PHASES = new Set([
     'idle_not_enough_players',
@@ -2090,12 +2113,23 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     if (this.operatorClosureOnlyId) throw new Error('operator_cash_close_dealing_forbidden');
     // Resume an already-owned cancellation with the same immutable identity.
     // A lost response never permits allocation of a different hand first.
-    if (this.f06CurrentPermit?.hasPreparedCancellation()) await this.cancelF06PreparedHand();
+    // 2026-10-15: and a permit an earlier attempt reserved but never started
+    // (its release at that attempt's end did not complete) is released here,
+    // before any new number is taken. See resolveUnstartedF06Permit.
+    if (await this.resolveUnstartedF06Permit()) {
+      // The number prepared under this rest was asked for while that permit
+      // still stood, so SQL refused it (hand_permit_unresolved). It is not
+      // this attempt's failure: forget it and allocate fresh below.
+      this.preparedF06AllocationError = null;
+      this.preparedHandNumberValue = null;
+    }
     const releaseSeatBoundary = await this.acquireSeatBoundary();
     const preparation = {};
     this.f06HandPreparation = preparation;
     const completedHandNumber = this.handCount;
     let handStarted = false;
+    // Why this attempt ended without a hand, when it did (diagnostics only).
+    let unstartedCause: string | null = null;
     try {
       // The roster was selected before the between-hand rest and may now contain
       // a cashed-out occupancy. Revalidate it while departures cannot run.
@@ -3639,12 +3673,16 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
               this.finishTerminalBoundaryPersistence(persistenceGeneration, false);
             }
             reportError(err, `ServerTableEngine.${this.tableId}.failed_to_start_hand`);
+            unstartedCause = 'start_failed:' + ServerTableEngineDealing.causeOf(err);
             releaseHandWait('hand_start_failed');
           }
         });
       } finally {
         publicationStart?.release();
       }
+    } catch (error) {
+      unstartedCause ??= 'threw:' + ServerTableEngineDealing.causeOf(error);
+      throw error;
     } finally {
       // A reserved number abandoned before start is not a completed boundary.
       // Keep parked banks bound to the last real hand, including every pause
@@ -3655,8 +3693,37 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // The exact continuation has finished all preparation awaits and never
         // invoked permit.start. Fence that permit before durably releasing it;
         // a pause checkpoint alone cannot survive a process replacement.
-        if (!handStarted && (this.isNextHandPaused() || !this.running))
+        if (!handStarted && (this.isNextHandPaused() || !this.running)) {
           await this.cancelF06PreparedHand();
+        } else if (!handStarted) {
+          /* THE PAUSE WAS NEVER THE ONLY WAY TO END UNSTARTED (2026-10-15).
+             A running, unpaused table that leaves here without a hand used to
+             keep its permit `reserved`, and SQL then refused every later
+             number for this table until the 180s zombie reaper rebuilt it -
+             the tournament stalls of 2026-10-11..15. The same continuation
+             releases it now, so a failed attempt costs one attempt. */
+          const heldPhase = this.f06PermitPhase();
+          try {
+            if (await this.resolveUnstartedF06Permit()) {
+              this.recordRecoveryEvent(
+                'unstarted_hand_permit_released',
+                (unstartedCause ?? 'returned_unstarted') + ':permit=' + heldPhase
+              );
+            }
+          } catch (releaseError) {
+            // The attempt's own outcome stays the one reported to the loop.
+            // The permit is still held, and the next attempt's first step
+            // (the top of dealHand) asks again before any new number.
+            reportError(
+              releaseError,
+              'ServerTableEngine.' + this.tableId + '.unstarted_permit_release_failed',
+              {
+                cause: unstartedCause,
+                permit: heldPhase,
+              }
+            );
+          }
+        }
       } finally {
         if (this.f06HandPreparation === preparation) this.f06HandPreparation = null;
       }

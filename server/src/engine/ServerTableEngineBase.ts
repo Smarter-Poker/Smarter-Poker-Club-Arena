@@ -2310,6 +2310,73 @@ export abstract class ServerTableEngineBase {
     if (this.f06CurrentPermit !== permit) throw new Error('f06_permit_replaced');
     this.f06CurrentPermit = null;
   }
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  A PERMIT NO HAND WAS STARTED ON IS RELEASED BY THE DEALER THAT TOOK IT
+   *  (2026-10-15, Dan: "FIX THE STALLING TOURNAMENT TABLES AT THEIR ROOT
+   *  CAUSE.")
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * dealHand reserves the next hand's F06 permit (fn_f06_begin_hand) before it
+   * builds and starts the controller. Until this method existed the only path
+   * that released a permit no hand had started on was a pause or a stop
+   * (#4858, written for the maintenance restart). Every other way an attempt
+   * could end unstarted - the begin reply lost or refused after SQL committed
+   * it (local phase `unknown`), a throw between the reservation and the
+   * start, `permit.start` refusing, an early return - left the permit
+   * `reserved` in SQL and held in `f06CurrentPermit` while the table kept
+   * running. From then on every deal attempt was refused:
+   * fn_f06_allocate_hand_number answers `hand_permit_unresolved` (surfaced as
+   * f06_allocation_unproven), and a number that did get through met
+   * `f06_prior_hand_unresolved` in reserveF06Hand. The dealing loop backs off
+   * 3, 6, 12, 24, 30, 30 ... seconds, which takes longer than 180 seconds to
+   * reach its tenth error, so the table dealt nothing until GameServer's
+   * zombie reaper killed and rebuilt it.
+   *
+   * Measured on production: every tournament_table_zombie of 2026-10-11 to
+   * 2026-10-15 whose table had dealt at all carries exactly one permit above
+   * its last committed hand, `reserved` until the rebuild's
+   * f06_no_start_continuations receipt turned it `never_started`
+   * (ef900c4d / 34605918 and 9aca69d4 / 34605926 at 06:07, released
+   * 06:10:48 after the 06:10:25 kills). No hand evidence exists for any of
+   * them: the hand never started.
+   *
+   * Released here, by the same continuation that holds positive local proof
+   * of non-actuation (`permit.start` never ran, so the phase is still
+   * `reserved`), through the same durable door the maintenance path uses
+   * (fn_f06_cancel_prepared_hand), whose SQL refuses any permit with start
+   * evidence. A permit whose start was attempted is never touched. A permit
+   * in phase `unknown` first replays its exact begin (fn_f06_begin_hand is an
+   * idempotent replay for one permit_id) so the cancellation acts on the row
+   * SQL actually holds. Returns true when it released a permit.
+   */
+  protected async resolveUnstartedF06Permit(): Promise<boolean> {
+    const permit = this.f06CurrentPermit;
+    if (!permit) return false;
+    if (permit.recoveryState() === 'unknown') {
+      // A stopping dealer cannot prove current ownership for a replay; the
+      // existing stop/maintenance custody owns that permit.
+      if (!this.running) return false;
+      try {
+        await permit.reserve();
+      } catch (error) {
+        // The exact refusal that proves no reservation exists frees the slot.
+        if (permit.knownNumberRefusal() && this.f06CurrentPermit === permit) {
+          this.f06CurrentPermit = null;
+          return true;
+        }
+        throw error;
+      }
+      if (this.f06CurrentPermit !== permit) throw new Error('f06_permit_replaced');
+    }
+    if (permit.recoveryState() !== 'reserved' && !permit.hasPreparedCancellation()) return false;
+    await this.cancelF06PreparedHand();
+    return true;
+  }
+  /** The held F06 permit's local phase, or `none` (diagnostics only). */
+  f06PermitPhase(): string {
+    return this.f06CurrentPermit?.recoveryState() ?? 'none';
+  }
   private f06RecoveryInFlight = false;
   async replayF06OriginalPermit(
     expected: F06HandPermit['binding'],
@@ -6031,6 +6098,19 @@ export abstract class ServerTableEngineBase {
   /** `load_seats+96s` — for recovery-event details and /health. */
   describeLoopPhase(): string {
     return this.loopPhase + '+' + Math.round(this.msSinceLoopPhase() / 1000) + 's';
+  }
+
+  /**
+   * What a reaper writes into `engine_recovery_events.detail` when it kills
+   * this table (2026-10-15): the loop step it was sitting in and the phase of
+   * any F06 permit it was holding, e.g. `next_hand_rest:permit=reserved`.
+   * Seconds are left out on purpose (the turn watchdog's rule): a detail that
+   * is unique per row cannot be grouped. Until this existed every zombie kill
+   * recorded only `tournament_table_zombie`, so a stall could not name its
+   * own line.
+   */
+  describeStallForRecovery(): string {
+    return this.loopPhase + ':permit=' + this.f06PermitPhase();
   }
 
   /**

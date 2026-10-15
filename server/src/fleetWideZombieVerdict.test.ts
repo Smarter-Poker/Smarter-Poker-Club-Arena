@@ -78,8 +78,16 @@ describe('the sweep judges its verdicts as a whole, and says so when it stands d
   it('the per-table condemnation path is unchanged', () => {
     // Standing down removes no recovery: the minority path still fences the
     // exact engine and still tells a tournament table's owner to replace it.
-    expect(SRC).toContain("engine.fenceForEngineLeaseLoss('tournament_table_zombie', true)");
-    expect(SRC).toContain("engine.fenceForEngineLeaseLoss('cash_table_zombie', false)");
+    // 2026-10-15: the reason now carries where the table stopped (loop step
+    // and held F06 permit phase), so a stall names its own line in
+    // engine_recovery_events.detail.
+    expect(SRC).toContain('const stalledAt = engine.describeStallForRecovery();');
+    expect(SRC).toContain(
+      "engine.fenceForEngineLeaseLoss('tournament_table_zombie:' + stalledAt, true)"
+    );
+    expect(SRC).toContain(
+      "engine.fenceForEngineLeaseLoss('cash_table_zombie:' + stalledAt, false)"
+    );
     expect(SRC).toContain('GameServer.zombie_engine_rebuilt');
   });
 });

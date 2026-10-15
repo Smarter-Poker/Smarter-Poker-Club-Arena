@@ -963,22 +963,18 @@ it.each(['continue', 'fail', 'pause', 'unknown_reply'])(
         if (outcome === 'fail') expect(String(dealError)).toContain('original preparation failed');
         else expect(dealError).toBeUndefined();
         expect(handEvents.some((event) => event.type === 'HAND_START')).toBe(false);
-        if (outcome === 'pause') {
-          // A paused original preparation is durably cancelled by its own
-          // exact permit, without manufacturing a table-retirement operation.
-          await f.manager.recoverF06OriginalAdmissions();
-          expect(
-            f.calls.filter((call) => call.name === 'fn_f06_cancel_prepared_hand')
-          ).toHaveLength(1);
-          expect(f.calls.filter((call) => call.name === 'fn_f06_request_park')).toHaveLength(0);
-          expect(f.engine.getF06RetainedPermit()).toBeNull();
-        } else {
-          await expect(f.manager.recoverF06OriginalAdmissions()).rejects.toThrow(
-            'outcome unproven'
-          );
-          expect(f.calls.filter((call) => call.name === 'fn_f06_request_park')).toHaveLength(1);
-          expect(f.engine.getF06RetainedPermit().binding.permit_id).toBe(id(8));
-        }
+        // A paused original preparation is durably cancelled by its own
+        // exact permit, without manufacturing a table-retirement operation.
+        // 2026-10-15: so is one that FAILED while the table kept running.
+        // It used to stay reserved until the 180s zombie reaper and a park
+        // custody retired the table (the tournament stalls of 2026-10-11..15;
+        // AnUnstartedHandReleasesItsPermit.test.ts).
+        await f.manager.recoverF06OriginalAdmissions();
+        expect(f.calls.filter((call) => call.name === 'fn_f06_cancel_prepared_hand')).toHaveLength(
+          1
+        );
+        expect(f.calls.filter((call) => call.name === 'fn_f06_request_park')).toHaveLength(0);
+        expect(f.engine.getF06RetainedPermit()).toBeNull();
       }
     } finally {
       release();

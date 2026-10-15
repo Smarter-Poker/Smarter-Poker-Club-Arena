@@ -36,7 +36,7 @@ const shadowReady = {
   reasons: [
     { code: 'NO_AA_CALIBRATION', severity: 'evidence' },
     { code: 'NO_LATENCY_EVIDENCE', severity: 'evidence' },
-    { code: 'WORKER_OFF', severity: 'evidence' },
+    { code: 'WORKER_SHADOW_ONLY', severity: 'evidence' },
   ],
 };
 const env = {
@@ -131,34 +131,54 @@ test('only the two named private pilot games are targets', () => {
     assert.throws(() => assertStageTarget({ ...game6, ...patch }, CLUB));
 });
 
-test('shadow stage reads readiness, then issues the four door actions in order on both sizes', async () => {
+test('shadow stage prepares every size, reads readiness on every size, then enables', async () => {
   const { factory, calls, signedOut } = fakeClients();
   const report = await runPilotStage(env, factory);
   const door = calls.filter((c) => c.name === 'fn_lightning_operator_control');
   assert.equal(door.length, 8);
-  for (const [i, game] of [game6, game9].entries()) {
-    const mine = door.slice(i * 4, i * 4 + 4);
-    assert.deepEqual(
-      mine.map((c) => c.args.p_action),
-      STAGE_ACTIONS.shadow.map(([a]) => a)
-    );
-    for (const c of mine) {
-      assert.equal(c.who, 'owner');
-      assert.equal(c.args.p_cluster_id, game.id);
-      assert.equal(c.args.p_reason, env.PILOT_REASON);
-      assert.equal(c.args.p_args.request_id, stageRequestId(OP, game.id, c.args.p_action));
-    }
+  const seq = calls
+    .filter((c) => c.name === 'fn_lightning_operator_control' || c.name === 'fn_lightning_rollout_readiness')
+    .map((c) => `${c.name === 'fn_lightning_rollout_readiness' ? 'ready' : c.args.p_action}:${c.args.p_cluster_id === game6.id ? 6 : 9}`);
+  assert.deepEqual(seq.slice(0, 8), [
+    'set_flag:6', 'set_matcher_version:6', 'set_worker_mode:6',
+    'set_flag:9', 'set_matcher_version:9', 'set_worker_mode:9',
+    'ready:6', 'ready:9',
+  ]);
+  assert.deepEqual(seq.slice(8, 10), ['enable_lightning:6', 'enable_lightning:9']);
+  for (const c of door) {
+    assert.equal(c.who, 'owner');
+    assert.equal(c.args.p_reason, env.PILOT_REASON);
+    assert.equal(c.args.p_args.request_id, stageRequestId(OP, c.args.p_cluster_id, c.args.p_action));
   }
-  const firstDoor = calls.findIndex((c) => c.name === 'fn_lightning_operator_control');
-  const firstReady = calls.findIndex((c) => c.name === 'fn_lightning_rollout_readiness');
-  assert.ok(firstReady < firstDoor);
+  assert.deepEqual(
+    door.filter((c) => c.args.p_cluster_id === game6.id).map((c) => c.args.p_action),
+    STAGE_ACTIONS.shadow.map(([a]) => a)
+  );
   assert.equal(report.clusters.length, 2);
   assert.deepEqual(signedOut, [{ scope: 'local' }]);
 });
 
-test('a no_go readiness stops before any door action', async () => {
+test('a no_go readiness after preparation stops before any enable', async () => {
   const { factory, calls } = fakeClients({ readiness: { ok: true, verdict: 'no_go', reasons: [] } });
   await assert.rejects(runPilotStage(env, factory), /No Go/);
+  const door = calls.filter((c) => c.name === 'fn_lightning_operator_control');
+  assert.equal(door.filter((c) => c.args.p_action === 'enable_lightning').length, 0);
+  assert.ok(door.every((c) => ['set_flag', 'set_matcher_version', 'set_worker_mode'].includes(c.args.p_action)));
+});
+
+test('a worker still off after preparation is not accepted for Stage 1', () => {
+  assert.throws(() =>
+    assertStageReadiness('shadow', {
+      ok: true,
+      verdict: 'insufficient_evidence',
+      reasons: [{ code: 'WORKER_OFF', severity: 'evidence' }],
+    })
+  );
+});
+
+test('form gates on readiness before switching the worker', async () => {
+  const { factory, calls } = fakeClients({ readiness: shadowReady });
+  await assert.rejects(runPilotStage({ ...env, PILOT_STAGE: 'form' }, factory), /Does Not Accept: NO_AA_CALIBRATION/);
   assert.equal(calls.filter((c) => c.name === 'fn_lightning_operator_control').length, 0);
 });
 

@@ -185,12 +185,43 @@ for (const [orientation, viewport] of ORIENTATIONS) {
           .catch((error: unknown) => ({ ids: new Set<string>(), error: String(error) }));
       const seatsRead = holdingRead('table_seats', 'table_id');
       const registrationsRead = holdingRead('tournament_players', 'tournament_id');
+      // The lobby's own cash-table read (ClubHomePage: open, non-tournament
+      // tables in scope). An owner may close the whole cash floor (a floor
+      // park, or "close cash above 1/2"), and then the arena honestly has no
+      // stake ladder to paint. Run 38770284952 failed "the arena stake ladder
+      // did not render" at 17:18 UTC on 2026-10-15 while the owner's one-hour
+      // cash floor park had every Diamond Arena cash table closed: the spec,
+      // not the page, was wrong. The ladder is owed exactly when this read
+      // returned an open cash table; an unobserved read keeps the strict
+      // expectation, so a missing ladder can never pass by losing the read.
+      const cashTablesRead = page
+        .waitForResponse(
+          (response) => {
+            const url = new URL(response.url());
+            const select = (url.searchParams.get('select') || '').replace(/\s+/g, '');
+            return (
+              url.pathname.endsWith('/rest/v1/tables') &&
+              select.startsWith('id,name,game_variant,') &&
+              url.searchParams.get('tournament_id') === 'is.null'
+            );
+          },
+          { timeout: 10_000 }
+        )
+        .then(async (response) => {
+          if (!response.ok())
+            throw new Error(`Lobby cash tables returned HTTP ${response.status()}`);
+          const rows = await response.json();
+          if (!Array.isArray(rows)) throw new Error('Lobby cash tables returned a non-array body');
+          return { open: rows.length, error: null };
+        })
+        .catch((error: unknown) => ({ open: null as number | null, error: String(error) }));
       const { onArena, why } = await openArena(page);
       test.skip(!onArena, why);
-      const [authority, seats, registrations] = await Promise.all([
+      const [authority, seats, registrations, cashTables] = await Promise.all([
         contextRead,
         seatsRead,
         registrationsRead,
+        cashTablesRead,
       ]);
       expect(authority.error, 'the actual arena switch read could not be verified').toBeNull();
       expect(seats.error, 'own seat state could not be verified').toBeNull();
@@ -199,7 +230,19 @@ for (const [orientation, viewport] of ORIENTATIONS) {
       const cards = page.getByTestId('arena-lobby-game-card');
       await cards.first().waitFor({ state: 'visible', timeout: 20_000 });
       const cashCards = page.locator('[data-testid="arena-lobby-game-card"][data-kind="cash"]');
-      expect(await cashCards.count(), 'the arena stake ladder did not render').toBeGreaterThan(0);
+      if (cashTables.open === 0) {
+        // The server says the cash floor is closed: no phantom ladder either.
+        expect(
+          await cashCards.count(),
+          'the arena painted cash games the lobby read did not return'
+        ).toBe(0);
+        test.info().annotations.push({
+          type: 'arena-cash-floor',
+          description: 'the lobby read returned no open cash table; no stake ladder is owed',
+        });
+      } else {
+        expect(await cashCards.count(), 'the arena stake ladder did not render').toBeGreaterThan(0);
+      }
       for (const card of await cashCards.all()) {
         const id = await card.getAttribute('data-id');
         const status = await card.getAttribute('data-status');

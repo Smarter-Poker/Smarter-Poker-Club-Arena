@@ -233,15 +233,28 @@ export async function cleanupProductionE2EAccount({
   if (account.templateFixtureRequest) {
     await retireProductionCreateClubFixtures({ environment, fetchImpl, wait, record: account });
   }
+  // The cleanup door is ONE PostgREST transaction: a lock or statement timeout
+  // rolls all of it back, and a replay of a door that already removed the
+  // identity answers `already_removed`. So a database that was only busy is
+  // asked again, bounded, instead of leaking the identity and failing the
+  // certificate (run 38770284952, 2026-10-15 17:38 UTC: "canceling statement
+  // due to lock timeout").
+  // A refusal (`success: false`, an application SQLSTATE) is never retried.
+  const askCleanupDoor = () =>
+    retryTransient(
+      () =>
+        serviceRequest(
+          configuration,
+          '/rest/v1/rpc/cleanup_reserved_certification_account',
+          { method: 'POST', body: JSON.stringify({ p_user_id: account.id }) },
+          fetchImpl
+        ),
+      { wait, label: `cleanup of reserved certification account ${account.id}` }
+    );
   let result;
   for (let freezesWaited = 0; ; ) {
     try {
-      result = await serviceRequest(
-        configuration,
-        '/rest/v1/rpc/cleanup_reserved_certification_account',
-        { method: 'POST', body: JSON.stringify({ p_user_id: account.id }) },
-        fetchImpl
-      );
+      result = await askCleanupDoor();
     } catch (error) {
       if (!isPlatformFreezeRefusal(error)) throw error;
       // The raised form of the same refusal: one transaction, rolled back.
@@ -283,12 +296,7 @@ export async function cleanupProductionE2EAccount({
       { method: 'DELETE', body: JSON.stringify({ should_soft_delete: true }) },
       fetchImpl
     );
-    result = await serviceRequest(
-      configuration,
-      '/rest/v1/rpc/cleanup_reserved_certification_account',
-      { method: 'POST', body: JSON.stringify({ p_user_id: account.id }) },
-      fetchImpl
-    );
+    result = await askCleanupDoor();
     if (result?.success !== true || result?.disposition !== 'retained_ledger_actor') {
       throw new Error(`Reserved ledger actor ${account.id} retirement is not verified.`);
     }

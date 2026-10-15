@@ -104,21 +104,51 @@ function expectedKey(identity: Record<string, unknown>): string {
   return createHash('sha256').update(JSON.stringify(sorted)).digest('hex');
 }
 
-describe('P11.3 the PFR repair requires fresh qualification of every previously selected pack', () => {
+describe('P11.3 the PFR repair requalifies each previously selected pack at generation 2', () => {
   const selected = HORSE_PHASE11_VARIANTS.filter((v) => PREVIOUS_PHASE11_SELECTIONS[v] !== null);
 
-  it('keeps current selections null and refuses retained generation-one evidence under the unchanged contract', () => {
+  it('each pack is unselected or selected at generation 2 on the repaired source, and retained generation-one evidence is refused under the unchanged contract', () => {
     expect(Object.isFrozen(PHASE11_PROTECTED_RELEASE_SELECTIONS)).toBe(true);
     expect(selected.length).toBeGreaterThan(0);
     expect(PHASE11_RUNNING_CONTRACT_DIGEST).toBe(omahaVariantStrengthContractDigest());
     expect(PHASE11_RUNNING_CONTRACT_DIGEST).toMatch(/^[0-9a-f]{64}$/);
     for (const variant of HORSE_PHASE11_VARIANTS) {
-      expect(PHASE11_PROTECTED_RELEASE_SELECTIONS[variant]).toBeNull();
-      expect(admitHorsePhase11ReleaseAuthority(variant), variant).toEqual({
-        status: 'refused',
-        reason: 'unselected',
-        transient: false,
-      });
+      const current = PHASE11_PROTECTED_RELEASE_SELECTIONS[variant];
+      if (current === null)
+        expect(admitHorsePhase11ReleaseAuthority(variant), variant).toEqual({
+          status: 'refused',
+          reason: 'unselected',
+          transient: false,
+        });
+      else {
+        expect(Object.isFrozen(current)).toBe(true);
+        expect(current, variant).toMatchObject({
+          schema: 'horse-qualified-authority-selection-v1',
+          phase: 'phase11',
+          variant,
+          sourceSha: 'c92768c85bc53a4a5a5972d09c6ee58561010035',
+          packVersion: OMAHA_VARIANT_PACKS[variant].version,
+          contractDigest: PHASE11_RUNNING_CONTRACT_DIGEST,
+          approvalGeneration: 2,
+          expiresAt: null,
+          withdrawn: null,
+        });
+        const admitted = admitHorsePhase11ReleaseAuthority(variant);
+        expect(admitted.status, variant).toBe('admitted');
+        expect(selectedHorsePhase11Authority(variant, admitted), variant).toMatchObject({
+          sourceSha: current.sourceSha,
+          evidenceSha256: current.qualificationSha256,
+          approvalGeneration: 2,
+        });
+        for (const [path, digest] of [
+          [current.qualificationPath, current.qualificationSha256],
+          [current.completionPath!, current.completionSha256!],
+        ])
+          for (const root of ['../../../', '../../release-evidence/']) {
+            const bytes = readFileSync(fileURLToPath(new URL(`${root}${path}`, import.meta.url)));
+            expect(createHash('sha256').update(bytes).digest('hex'), `${root}${path}`).toBe(digest);
+          }
+      }
       const selection = PREVIOUS_PHASE11_SELECTIONS[variant]!;
       const release = admitHorsePhase11ReleaseAuthority(variant, Date.now(), selection);
       expect(selection, variant).toMatchObject({
@@ -196,7 +226,7 @@ describe('P11.3 the PFR repair requires fresh qualification of every previously 
   // selections (2026-10-09): a committed qualification that says
   // qualified:true is exactly the one its pack's selection names, and a
   // completion record exists for a selected pack or an unpromoted one.
-  it('retains each previously qualified file while its selection is null', () => {
+  it("a qualified file is either its pack's current selection on the running policy or a retained generation-one file on an older one", () => {
     const dir = fileURLToPath(new URL('../../../docs/evidence/phase11/', import.meta.url));
     const files = existsSync(dir)
       ? readdirSync(dir, { recursive: true, encoding: 'utf8' }).filter((f) => f.endsWith('.json'))
@@ -205,9 +235,13 @@ describe('P11.3 the PFR repair requires fresh qualification of every previously 
       const parsed = JSON.parse(readFileSync(`${dir}${file}`, 'utf8')) as Record<string, unknown>;
       if (parsed.schema === HORSE_PHASE11_QUALIFICATION_SCHEMA && parsed.qualified === true) {
         const variant = parsed.variant as OmahaPolicyVariant;
-        expect(PREVIOUS_PHASE11_SELECTIONS[variant]?.qualificationPath, file).toBe(
-          `docs/evidence/phase11/${file}`
-        );
+        const path = `docs/evidence/phase11/${file}`;
+        if (PHASE11_PROTECTED_RELEASE_SELECTIONS[variant]?.qualificationPath === path)
+          expect(parsed.policyDigest, file).toBe(horsePhase11PolicyDigest(variant));
+        else {
+          expect(PREVIOUS_PHASE11_SELECTIONS[variant]?.qualificationPath, file).toBe(path);
+          expect(parsed.policyDigest, file).not.toBe(horsePhase11PolicyDigest(variant));
+        }
       }
       if (parsed.schema === HORSE_PHASE11_COMPLETION_SCHEMA)
         expect(HORSE_PHASE11_VARIANTS as readonly string[], file).toContain(parsed.variant);

@@ -372,10 +372,40 @@ export interface HorsePhase11AuthoritySelection {
  * digest. Selection is explicitly null until the existing locked matrix
  * requalifies the exact protected source and a new generation is selected.
  * Retain all prior evidence; it cannot qualify this modified policy.
+ *
+ * October 15: generation 2, one pack at a time as its locked matrix finishes
+ * on the exact repaired source c92768c8 (#6777). PLO8: run 38656878018, 114 of
+ * 114 shards, 1,116,288 pairs, +7.84 [+6.84, +8.84] bb/100 cash after rake,
+ * qualified with no reasons at policy digest a5daefa9...; natural completion on
+ * release c92768c8 in the window predeclared in
+ * docs/evidence/phase12/declaration-completion-pfr-repair-2026-10-14.txt
+ * (2026-10-15 00:02 to 00:50Z), Wilson lower bounds 0.998, 0.990, 0.990, 0.986.
+ * PLO5 and PLO6 stay null until their matrices finish.
  */
 export const PHASE11_PROTECTED_RELEASE_SELECTIONS: Readonly<
   Record<'plo5' | 'plo6' | 'plo8', HorsePhase11AuthoritySelection | null>
-> = Object.freeze({ plo5: null, plo6: null, plo8: null });
+> = Object.freeze({
+  plo5: null,
+  plo6: null,
+  plo8: Object.freeze({
+    schema: 'horse-qualified-authority-selection-v1',
+    phase: 'phase11',
+    variant: 'plo8',
+    sourceSha: 'c92768c85bc53a4a5a5972d09c6ee58561010035',
+    packVersion: 'plo8-split-round3-v2',
+    contractVersion: 'omaha-variant-strength-contract-v1',
+    contractDigest: '5b93ae20962ff79798b998f437ed43d2bd224a64995d86e34ed63d7bb22057fc',
+    domain: 'plo8-cash-single-board-after-rake-horse-population',
+    qualificationPath: 'docs/evidence/phase11/c92768c8/phase11-qualification-2026-10-15-plo8.json',
+    qualificationSha256: '5cf937a8a7cada1fd72200546c72b71f844c66e2273dbb66ee7c1074e2309456',
+    completionPath: 'docs/evidence/phase11/c92768c8/phase11-completion-2026-10-15-plo8.json',
+    completionSha256: 'fbeec6201c664c1e8ba93ca4ca745fede9999a1603745c06228783d74925fa59',
+    approvalGeneration: 2,
+    issuedAt: '2026-10-15T04:20:00.000Z',
+    expiresAt: null,
+    withdrawn: null,
+  } as const),
+});
 
 const HEX40 = /^[0-9a-f]{40}$/;
 const HEX64 = /^[0-9a-f]{64}$/;

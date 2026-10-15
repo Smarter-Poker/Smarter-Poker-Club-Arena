@@ -1,0 +1,91 @@
+/**
+ * Player Management always shows fees generated, never a wallet balance
+ * (Dan, 2026-10-14: "IT SHOULD ALWAYS SHOW FEES GENERATED, NOT WALLET
+ * BALANCES"). The Simple row's one figure is the player's fees; an agent with
+ * a downline also sees the downline's fees. Wallets stay an opt-in Advanced
+ * column and are off by default.
+ */
+import '@testing-library/jest-dom/vitest';
+import { render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+vi.mock('../../src/hooks/useProfilePresence', () => ({
+  useOnlineNow: (_id: string, loaded: boolean) => loaded,
+}));
+
+import { MemberRow } from '../../src/pages/ClubMembersPage';
+import { feeFigure } from '../../src/utils/format';
+import { mapRosterRow } from '../../src/services/ClubRosterService';
+import { defaultRosterWorkspace } from '../../src/lib/rosterWorkspace';
+
+function simpleRow(overrides: Record<string, unknown>) {
+  return (
+    <MemberRow
+      member={mapRosterRow({
+        user_id: 'u-1',
+        alias: 'King',
+        username: 'king',
+        player_number: '940017',
+        role: 'player',
+        can_view_financials: true,
+        player_wallet: 274_600,
+        agent_wallet: 0,
+        total_fees: 12_345.67,
+        downline_fees: 0,
+        downline_total: 0,
+        ...overrides,
+      })}
+      position={1}
+      total={1}
+      query=""
+      onOpen={vi.fn()}
+      selectable={false}
+      selected={false}
+      onSelect={vi.fn()}
+      columns={new Set(defaultRosterWorkspace().columns)}
+      simpleMode
+    />
+  );
+}
+
+describe('Player Management shows fees generated', () => {
+  it('prints the fee figure and never the wallet in Simple mode', () => {
+    render(simpleRow({}));
+    expect(screen.getByText('Fees Generated')).toBeVisible();
+    expect(screen.getByText('12.3K')).toBeVisible();
+    expect(screen.queryByText('Player Wallet')).not.toBeInTheDocument();
+    expect(screen.queryByText('274.6K')).not.toBeInTheDocument();
+  });
+
+  it('adds downline fees for an agent with a downline', () => {
+    render(simpleRow({ role: 'agent', downline_total: 4, downline_fees: 2_500 }));
+    expect(screen.getByText('Downline 2.5K')).toBeVisible();
+  });
+
+  it('does not floor small fees to zero', () => {
+    expect(feeFigure(0.5)).toBe('0.5');
+    expect(feeFigure(999.25)).toBe('999.25');
+    expect(feeFigure(1_200)).toBe('1.2K');
+    expect(feeFigure(null)).toBe('Restricted');
+  });
+
+  it('keeps wallets out of the default Advanced columns', () => {
+    expect(defaultRosterWorkspace().columns).not.toContain('wallets');
+    expect(defaultRosterWorkspace().columns[0]).toBe('fees');
+  });
+
+  it('reads fees from the fee ledgers, not hand statistics', () => {
+    const sql = readFileSync(
+      resolve(
+        process.cwd(),
+        'supabase/migrations/20261015014037_player_management_fees_come_from_the_fee_ledgers.sql'
+      ),
+      'utf8'
+    );
+    expect(sql).toContain('public.ca_club_member_fee_totals(p_club_id) lf');
+    expect(sql).toContain('public.ca_club_rake_daily_user');
+    expect(sql).toContain('AFTER INSERT ON public.accounting_tournament_fee_sources');
+  });
+});

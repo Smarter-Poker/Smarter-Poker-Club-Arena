@@ -1528,10 +1528,11 @@
   width: 44px;
   height: 44px;
 }
+/* The role stays visible in Simple mode: "Group By Role" orders the list by
+   it, and a grouping nobody can see is not a grouping (2026-10-14). */
 .members-simple .member-username,
 .members-simple .member-club,
-.members-simple .member-upline,
-.members-simple .member-role {
+.members-simple .member-upline {
   display: none;
 }
 .members-simple .member-subline {
@@ -1558,6 +1559,11 @@
 .member-simple-balance > span {
   color: #9aa5b3;
   font-size: 10px;
+}
+.member-simple-balance > .member-simple-balance__downline {
+  color: #7fb2ff;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 @media (max-width: 430px) {
   .members-mode-heading {

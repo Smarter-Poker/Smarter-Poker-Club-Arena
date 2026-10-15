@@ -1109,6 +1109,9 @@ BEGIN
     p_tournament_id,p_user_id);
 END;
 $function$;
+-- Restated, unchanged from production: the engine-only horse gate.
+REVOKE ALL ON FUNCTION public.fn_register_horse_for_tournament_before_terminal_gate(uuid,uuid,boolean)
+  FROM PUBLIC, anon, authenticated;
 
 CREATE OR REPLACE FUNCTION public.fn_horse_tournament_entry_ticket_hints(p_tournament_id uuid)
  RETURNS jsonb
@@ -1205,6 +1208,10 @@ BEGIN
   RETURN jsonb_build_object('ok',true,'holder_ids',v_holder_ids);
 END;
 $function$;
+-- Restated, unchanged from production: engine telemetry for the horse fleet.
+REVOKE ALL ON FUNCTION public.fn_horse_tournament_entry_ticket_hints(uuid)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_horse_tournament_entry_ticket_hints(uuid) TO service_role;
 
 -- A bound ticket is an entry, not chips.
 CREATE OR REPLACE FUNCTION public.fn_redeem_tournament_ticket(p_ticket_id uuid)

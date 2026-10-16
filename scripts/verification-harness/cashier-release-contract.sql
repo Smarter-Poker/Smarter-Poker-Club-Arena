@@ -312,7 +312,13 @@ BEGIN
     ),
     jsonb_build_object(
       'signature', 'public.fn_promo_disburse(text,uuid,text,uuid,numeric,text,uuid,uuid)',
-      'hash', '54539cb4d66ffdcdacd85521e5fbb929',
+      -- Installed 20261016132743 (#7104, Midway weekly horse promo): the
+      -- engine/cron caller reads fn_caller_is_engine(), a union's own club
+      -- members are eligible, and the union promo leg journals its own
+      -- labelled ledger row. Owner checks for signed-in callers are unchanged.
+      -- Full definition derived from the merged migration and read back live
+      -- by post-deploy run 38929938237.
+      'hash', 'e54e4f3949335c61d4c1492d81b5ca21',
       'search_path', 'search_path=public'
     ),
     jsonb_build_object(

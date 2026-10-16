@@ -503,3 +503,20 @@ body.marketplace-color-scope .toast__close svg {
     width: 94px;
   }
 }
+
+/* Live Messenger windows keep transient notifications above the composer. */
+.toast-container,
+body[data-toast-theme='daily-missions-casino'] .toast-container {
+  bottom: max(
+    24px,
+    calc(var(--bottom-nav-clearance, 0px) + 12px),
+    var(--sp-messenger-toast-clearance, 0px)
+  );
+}
+
+.toast-container,
+body[data-toast-theme='daily-missions-casino'] .toast-container {
+  max-height: var(--sp-messenger-toast-room, calc(100dvh - 100px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}

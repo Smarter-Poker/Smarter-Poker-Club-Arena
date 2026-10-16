@@ -1,0 +1,4 @@
+{
+  "_owner": "codex/lightning-authoritative-calibration-20261015; migration 20261015214203 declared, installation pending protected merge and qualification, not live proof",
+  "functions": ["fn_lightning_matcher_snapshot", "fn_lightning_matcher_binding"]
+}

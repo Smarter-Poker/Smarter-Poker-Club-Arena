@@ -364,12 +364,11 @@ export default function GlobalHeader({ inTab = null }: { inTab?: InTabLobbyNav |
         data-in-tab={inTab ? 'true' : undefined}
         aria-label="Smarter.Poker Global Header"
       >
-        {/* Desktop and landscape use the supplied artwork itself. This is a
-            lossless crop: no redrawing, substitutions, filters, or resampling
-            were applied to the source file. The controls below become precise
-            hit regions over the artwork at these breakpoints. */}
+        {/* The black frame finish follows the club footer (Dan 2026-10-15).
+            Interior pixels, controls, center logo and blue shines are preserved
+            from global-header-desktop.png; only the rails and divider finish change. */}
         <img
-          src={`${APPROVED_HEADER_ASSET}global-header-desktop.png`}
+          src={`${APPROVED_HEADER_ASSET}global-header-desktop-black-v2.png`}
           alt=""
           width={1648}
           height={168}

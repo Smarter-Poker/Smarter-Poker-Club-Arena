@@ -201,4 +201,164 @@ describe('post-publication verification belongs to its delivered component', () 
       }
     }
   );
+
+  it('requires steps.engine_gate.outputs.current == "true" on both browser steps', () => {
+    const chromium = engineSteps.find((s: any) => s.name === "Install Chromium and WebKit");
+    const live = engineSteps.find((s: any) => s.id === "live");
+    expect(chromium).toBeDefined();
+    expect(chromium.if).toBe("steps.engine_gate.outputs.current == 'true'");
+    expect(live).toBeDefined();
+    expect(live.if).toBe("steps.engine_gate.outputs.current == 'true'");
+  });
+
+  it('gives current=false with exit 0 when a later protected-main release supersedes EXPECTED', () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ca-post-deploy-superseded-"));
+    const env = {
+      ...gitEnvironmentForCwd(),
+      GIT_AUTHOR_NAME: "Scope fixture",
+      GIT_AUTHOR_EMAIL: "fixture@example.invalid",
+      GIT_COMMITTER_NAME: "Scope fixture",
+      GIT_COMMITTER_EMAIL: "fixture@example.invalid",
+    };
+    const git = (...args: string[]) =>
+      execFileSync("git", args, { cwd, env, encoding: "utf8" }).trim();
+    try {
+      git("init", "-q");
+      mkdirSync(join(cwd, "server"), { recursive: true });
+      writeFileSync(join(cwd, "server/runtime.ts"), "base engine");
+      git("add", ".");
+      git("commit", "-qm", "base engine");
+      const baseSha = git("rev-parse", "HEAD");
+
+      writeFileSync(join(cwd, "server/runtime.ts"), "newer main engine");
+      git("add", ".");
+      git("commit", "-qm", "newer main engine");
+      const newerSha = git("rev-parse", "HEAD");
+
+      git("update-ref", "refs/remotes/origin/main", newerSha);
+      git("remote", "add", "origin", cwd);
+      git("branch", "-M", "main");
+
+      mkdirSync(join(cwd, "scripts/ci"), { recursive: true });
+      copyFileSync(
+        join(root, "scripts/ci/read-engine-release.mjs"),
+        join(cwd, "scripts/ci/read-engine-release.mjs")
+      );
+      copyFileSync(
+        join(root, "scripts/ci/await-engine-gameplay.mjs"),
+        join(cwd, "scripts/ci/await-engine-gameplay.mjs")
+      );
+      copyFileSync(
+        join(root, "scripts/ci/production-e2e-provenance.mjs"),
+        join(cwd, "scripts/ci/production-e2e-provenance.mjs")
+      );
+      mkdirSync(join(cwd, "bin"));
+      writeFileSync(join(cwd, "bin/curl"), '#!/bin/sh\nprintf "%s" "$FIXTURE_HEALTH"\n');
+      chmodSync(join(cwd, "bin/curl"), 0o755);
+
+      const output = join(cwd, "output");
+      const summary = join(cwd, "summary");
+      const common = {
+        ...env,
+        PATH: `${join(cwd, "bin")}:${process.env.PATH}`,
+        EXPECTED_ENGINE_SHA: baseSha,
+        FIXTURE_HEALTH: JSON.stringify({ releaseSha: newerSha, running: true, liveness: "ok" }),
+        GITHUB_OUTPUT: output,
+        GITHUB_STEP_SUMMARY: summary,
+        GITHUB_RUN_ID: "123",
+      };
+
+      const ready = spawnSync(
+        "bash",
+        ["-c", onFixtureEngine(admission.run, common.FIXTURE_HEALTH)],
+        {
+          cwd,
+          env: common,
+          encoding: "utf8",
+          timeout: 10000,
+        }
+      );
+      expect(ready.status, ready.stderr).toBe(0);
+      const outputContent = readFileSync(output, "utf8");
+      expect(outputContent).toContain("current=false");
+      const summaryContent = readFileSync(summary, "utf8");
+      expect(summaryContent).toContain("NON-VERDICT");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('gives exit 1 when READY_SHA is a descendant not on origin/main', () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ca-post-deploy-notonmain-"));
+    const env = {
+      ...gitEnvironmentForCwd(),
+      GIT_AUTHOR_NAME: "Scope fixture",
+      GIT_AUTHOR_EMAIL: "fixture@example.invalid",
+      GIT_COMMITTER_NAME: "Scope fixture",
+      GIT_COMMITTER_EMAIL: "fixture@example.invalid",
+    };
+    const git = (...args: string[]) =>
+      execFileSync("git", args, { cwd, env, encoding: "utf8" }).trim();
+    try {
+      git("init", "-q");
+      mkdirSync(join(cwd, "server"), { recursive: true });
+      writeFileSync(join(cwd, "server/runtime.ts"), "base engine");
+      git("add", ".");
+      git("commit", "-qm", "base engine");
+      const baseSha = git("rev-parse", "HEAD");
+
+      git("update-ref", "refs/remotes/origin/main", baseSha);
+      git("remote", "add", "origin", cwd);
+      git("branch", "-M", "main");
+
+      // Now create a descendant commit on a side branch / unmerged commit (not on origin/main)
+      writeFileSync(join(cwd, "server/runtime.ts"), "unmerged engine descendant");
+      git("add", ".");
+      git("commit", "-qm", "unmerged engine descendant");
+      const descendantSha = git("rev-parse", "HEAD");
+
+      mkdirSync(join(cwd, "scripts/ci"), { recursive: true });
+      copyFileSync(
+        join(root, "scripts/ci/read-engine-release.mjs"),
+        join(cwd, "scripts/ci/read-engine-release.mjs")
+      );
+      copyFileSync(
+        join(root, "scripts/ci/await-engine-gameplay.mjs"),
+        join(cwd, "scripts/ci/await-engine-gameplay.mjs")
+      );
+      copyFileSync(
+        join(root, "scripts/ci/production-e2e-provenance.mjs"),
+        join(cwd, "scripts/ci/production-e2e-provenance.mjs")
+      );
+      mkdirSync(join(cwd, "bin"));
+      writeFileSync(join(cwd, "bin/curl"), '#!/bin/sh\nprintf "%s" "$FIXTURE_HEALTH"\n');
+      chmodSync(join(cwd, "bin/curl"), 0o755);
+
+      const output = join(cwd, "output");
+      const summary = join(cwd, "summary");
+      const common = {
+        ...env,
+        PATH: `${join(cwd, "bin")}:${process.env.PATH}`,
+        EXPECTED_ENGINE_SHA: baseSha,
+        FIXTURE_HEALTH: JSON.stringify({ releaseSha: descendantSha, running: true, liveness: "ok" }),
+        GITHUB_OUTPUT: output,
+        GITHUB_STEP_SUMMARY: summary,
+        GITHUB_RUN_ID: "123",
+      };
+
+      const ready = spawnSync(
+        "bash",
+        ["-c", onFixtureEngine(admission.run, common.FIXTURE_HEALTH)],
+        {
+          cwd,
+          env: common,
+          encoding: "utf8",
+          timeout: 10000,
+        }
+      );
+      expect(ready.status).toBe(1);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
 });

@@ -12,6 +12,15 @@ is the platform failing to do that and something else tidying up afterwards.
 > better instrumented. It closes when the live path cannot produce the wrong
 > outcome and the job is **deleted**.
 
+## 2026-10-15 duplicate-place overpay charge retired
+
+`fn_charge_place_overpays` and the engine's hourly call to it are retired. The
+root fix is unique index `tournament_players_one_finish_position`, which refuses
+a second player on one finishing place; no renumber since 2026-08-28, all 296
+charges taken by 2026-09-02, queue empty since. The function moves nothing and
+answers `status: '_retired'`. See
+`docs/changelog/2026-10-15-a-new-clubs-opening-grant-is-counted-once.md`.
+
 ## 2026-09-10 control-plane retirement and fee boundary
 
 The 60-second `club-arena-supervisor.service` / `.timer` mutator is retired.

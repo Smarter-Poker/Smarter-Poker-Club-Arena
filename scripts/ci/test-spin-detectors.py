@@ -28,6 +28,7 @@ import pathlib
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import uuid
 
@@ -284,3 +285,5 @@ finally:
     results['owned_cluster_removed'] = not cluster.exists()
     (out / 'RESULTS.json').write_text(json.dumps(results, indent=2, default=str) + '\n')
 print(json.dumps({'passed': len(results['checks']), 'output': str(out / 'RESULTS.json')}))
+print(command([sys.executable, ROOT / 'scripts/ci/test-spin-critical-confirmation-postgres.py',
+               '--pg-bin', pg]))

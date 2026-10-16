@@ -160,6 +160,7 @@ const LeaderboardPage = lazyWithRetry(() => import('./pages/LeaderboardPage'));
 const HandHistoryPage = lazyWithRetry(() => import('./pages/HandHistoryPage'));
 const PlayerWalletPage = lazyWithRetry(() => import('./pages/PlayerWalletPage'));
 const NotificationsPage = lazyWithRetry(() => import('./pages/NotificationsPage'));
+const MessengerDockHost = lazyWithRetry(() => import('./components/messenger/MessengerDockHost'));
 const NavigateToMessenger = lazyWithRetry(() => import('./pages/NavigateToMessenger'));
 const SearchPage = lazyWithRetry(() => import('./pages/SearchPage'));
 const HelpPage = lazyWithRetry(() => import('./pages/HelpPage'));
@@ -192,6 +193,8 @@ const DailyBonusPage = lazyWithRetry(() => import('./pages/DailyBonusPage'));
 const ClubSettingsPage = lazyWithRetry(() => import('./pages/ClubSettingsPage'));
 const TransactionHistoryPage = lazyWithRetry(() => import('./pages/TransactionHistoryPage'));
 const InvitePage = lazyWithRetry(() => import('./pages/InvitePage'));
+const InviteSignupRedirect = lazyWithRetry(() => import('./components/auth/InviteSignupRedirect'));
+const InviteCodePage = lazyWithRetry(() => import('./pages/InviteCodePage'));
 const NotFoundPage = lazyWithRetry(() => import('./pages/NotFoundPage'));
 const ReportPlayerPage = lazyWithRetry(() => import('./pages/ReportPlayerPage'));
 const ReportReviewPage = lazyWithRetry(() => import('./pages/ReportReviewPage'));
@@ -606,6 +609,9 @@ function FullApp() {
           <PushSubscriptionSync />
           <FirstRunPushPrompt />
         </Suspense>
+        <Suspense fallback={null}>
+          <MessengerDockHost />
+        </Suspense>
         <GlobalBalanceSync />
         <HeaderAppearanceSync />
         <ProfileAccountSync />
@@ -739,6 +745,20 @@ function FullApp() {
                   <GuestGuard>
                     <AuthPage />
                   </GuestGuard>
+                }
+              />
+
+              {/* Share & Invite short link opened in the app (2026-10-15). On the
+                  web the World Hub serves smarter.poker/i/<CODE>; this is the
+                  native deep-link landing. Resolving a code needs a session
+                  (no anonymous browser may call fn_club_invite_resolve), so a
+                  signed-out player signs in first and comes back here. */}
+              <Route
+                path="/i/:code"
+                element={
+                  <AuthGuard>
+                    <InviteCodePage />
+                  </AuthGuard>
                 }
               />
 
@@ -1831,7 +1851,7 @@ function FullApp() {
                 <Route
                   path="invite/:clubId"
                   element={
-                    <AuthGuard>
+                    <AuthGuard publicFallback={<InviteSignupRedirect />}>
                       <PageErrorBoundary pageName="Invite">
                         <InvitePage />
                       </PageErrorBoundary>

@@ -17,6 +17,7 @@ export function useVisibleRead<T>({
   onReset,
   deferInitial,
   intervalMs = 8_000,
+  manualOnly = false,
 }: {
   scopeKey: string;
   enabled: boolean;
@@ -27,6 +28,8 @@ export function useVisibleRead<T>({
   /** A freshly painted device cache may wait for the first normal read. */
   deferInitial?: () => boolean;
   intervalMs?: number;
+  /** Initial read and explicit refresh only; never poll or refresh on focus. */
+  manualOnly?: boolean;
 }): () => void {
   const callbacks = useRef({ read, onData, onError, onReset, deferInitial });
   useEffect(() => {
@@ -54,7 +57,11 @@ export function useVisibleRead<T>({
     };
     const run = async (reason: VisibleReadReason) => {
       stopTimer();
-      if (disposed || !visible()) return;
+      // Manual reads are navigation or explicit command/refresh attempts,
+      // including a command finishing after the tab was hidden. Do not leave
+      // the initial skeleton or silently drop a confirmed-command readback.
+      // Offline failures reach the existing Retry state instead.
+      if (disposed || (!manualOnly && !visible())) return;
       if (inFlight) {
         // A completed money command may request a fresher read than the one
         // already travelling. Keep ONE successor, not overlapping requests.
@@ -76,18 +83,18 @@ export function useVisibleRead<T>({
       } finally {
         clearTimeout(deadline);
         inFlight = false;
-        if (!disposed && visible()) {
+        if (!disposed && (manualOnly || visible())) {
           if (refreshPending) {
             refreshPending = false;
             void run('refresh');
-          } else {
+          } else if (!manualOnly) {
             timer = setTimeout(() => void run('interval'), intervalMs);
           }
         }
       }
     };
     const onVisibility = () => {
-      if (visible()) void run('visible');
+      if (!manualOnly && visible()) void run('visible');
       else stopTimer();
     };
     refreshRef.current = () => void run('refresh');
@@ -95,7 +102,7 @@ export function useVisibleRead<T>({
     window.addEventListener('online', onVisibility);
     window.addEventListener('offline', onVisibility);
     if (callbacks.current.deferInitial?.()) {
-      if (visible()) timer = setTimeout(() => void run('initial'), intervalMs);
+      if (!manualOnly && visible()) timer = setTimeout(() => void run('initial'), intervalMs);
     } else void run('initial');
     return () => {
       disposed = true;
@@ -106,7 +113,7 @@ export function useVisibleRead<T>({
       window.removeEventListener('online', onVisibility);
       window.removeEventListener('offline', onVisibility);
     };
-  }, [scopeKey, enabled, intervalMs]);
+  }, [scopeKey, enabled, intervalMs, manualOnly]);
 
   return useCallback(() => refreshRef.current?.(), []);
 }

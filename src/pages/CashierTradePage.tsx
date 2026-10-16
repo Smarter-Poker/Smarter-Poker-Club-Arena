@@ -63,6 +63,8 @@ import {
  * ./cashier-classic and is linked from the bottom of the Trade tab.
  */
 
+import { useRecentRecipients } from '../hooks/useRecentRecipients';
+import CashoutRequestModal from '../components/wallet/CashoutRequestModal';
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { roleLabel, roleRank, type ClubRole } from '../types/clubRoles';
 import { Link, useParams, useNavigate } from 'react-router-dom';
@@ -120,7 +122,13 @@ import { rememberLastClub } from '../utils/clubQuickLink';
 import { CashierWorkspace } from '../components/wallet/CashierWorkspace';
 import { SpadeConsole } from '../components/console/SpadeConsole';
 import { compactChips } from '../utils/format';
-import { exactChipFigure, parseTradeAmount, sumChips } from '../utils/cashierAmount';
+import {
+  exactChipFigure,
+  parseTradeAmount,
+  sumChips,
+  formatCashierAmountInput,
+  cashierAmountInputValue,
+} from '../utils/cashierAmount';
 import { titleCase } from '../utils/titleCase';
 import { generateAvatarSvg } from '../utils/avatarGenerator';
 import { creditHeadroomOf, readCashierBalances } from '../services/cashierBalanceRead';
@@ -437,7 +445,7 @@ function CashierTradeWorkspace() {
   const rosterSearchRef = useRef<HTMLInputElement>(null);
   const [roleFilter, setRoleFilter] = useState('all');
   const [groupByRole, setGroupByRole] = useState(false);
-  const [sortKey, setSortKey] = useState<'balance' | 'name'>('balance');
+  const [sortKey, setSortKey] = useState<'recent' | 'balance' | 'name'>('recent');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [visibleCount, setVisibleCount] = useState(25);
 
@@ -895,232 +903,219 @@ function CashierTradeWorkspace() {
     return true;
   }, [clubUuid, user?.id]);
 
-  const loadClub = useCallback(async () => {
-    // Bail-before-try left `loading` true forever, because the finally that
-    // clears it is inside the try: a signed-out moment or an unresolvable club
-    // gave a permanent "Loading members...". Clear it here instead.
-    if (!user?.id || !clubUuid) {
-      setLoading(false);
-      return false;
-    }
-    const myVersion = ++loadVersion.current;
-    const stale = () => loadVersion.current !== myVersion;
-    setLoading(true);
-    setLoadError(null);
-    setRosterWarning(null);
-    setRosterLoadingMore(false);
-    let complete = true;
-    try {
-      const [meRes, floatRes] = await Promise.all([
-        supabase
-          .from('club_members')
-          .select('role, chip_balance, status')
-          .eq('club_id', clubUuid)
-          .eq('user_id', user.id)
-          .maybeSingle(),
-        // The account Send Out spends. An owner has one of these too - the
-        // Club Bank funds it, and fn_agent_wallet_send refuses every role
-        // that has not been funded, staff included.
-        supabase
-          .from('agents')
-          .select('agent_wallet_balance, status, is_prepaid, credit_limit, credit_used')
-          .eq('club_id', clubUuid)
-          .eq('user_id', user.id)
-          .maybeSingle(),
-      ]);
-      // Swallowing this error rendered an owner as a `player` with a 0.00
-      // balance and silently flipped the downline into agent scope. A failure
-      // has to look like a failure.
-      if (meRes.error) throw meRes.error;
-      if (floatRes.error) {
-        complete = false;
-        reportError(floatRes.error, 'CashierTradePage.agentWallet');
+  const loadClub = useCallback(
+    async (silent = false) => {
+      // Bail-before-try left `loading` true forever, because the finally that
+      // clears it is inside the try: a signed-out moment or an unresolvable club
+      // gave a permanent "Loading members...". Clear it here instead.
+      if (!user?.id || !clubUuid) {
+        setLoading(false);
+        return false;
       }
-      memberAuthoritySnapshot.current = {
-        clubId: clubUuid,
-        role: String(meRes.data?.role || 'player'),
-        status: meRes.data?.status || 'active',
-      };
-      let role =
-        meRes.data && (!meRes.data.status || MEMBER_IN_CLUB.includes(meRes.data.status))
-          ? String(meRes.data.role || 'player')
-          : 'player';
-      if (
-        ['super_agent', 'agent', 'sub_agent'].includes(role) &&
-        floatRes.data?.status !== undefined &&
-        floatRes.data.status !== 'active'
-      )
-        role = 'player';
-      const bal = meRes.data?.chip_balance ? Number(meRes.data.chip_balance) : 0;
-      // A row that does not exist is a float of zero. A row we could not READ
-      // is unknown, and stays null so the pre-flight check does not refuse a
-      // send the server would have allowed.
-      const float = floatRes.error
-        ? null
-        : floatRes.data
-          ? Number(floatRes.data.agent_wallet_balance) || 0
-          : 0;
-      // A credit agent may send past the float, drawn against the line the
-      // server allows (credit_limit - credit_used). Prepaid agents have none.
-      const credit = floatRes.error ? 0 : creditHeadroomOf(floatRes.data);
+      const myVersion = ++loadVersion.current;
+      const stale = () => loadVersion.current !== myVersion;
+      if (!silent) setLoading(true);
+      setLoadError(null);
+      setRosterWarning(null);
+      setRosterLoadingMore(false);
+      let complete = true;
+      try {
+        const [meRes, floatRes] = await Promise.all([
+          supabase
+            .from('club_members')
+            .select('role, chip_balance, status')
+            .eq('club_id', clubUuid)
+            .eq('user_id', user.id)
+            .maybeSingle(),
+          // The account Send Out spends. An owner has one of these too - the
+          // Club Bank funds it, and fn_agent_wallet_send refuses every role
+          // that has not been funded, staff included.
+          supabase
+            .from('agents')
+            .select('agent_wallet_balance, status, is_prepaid, credit_limit, credit_used')
+            .eq('club_id', clubUuid)
+            .eq('user_id', user.id)
+            .maybeSingle(),
+        ]);
+        // Swallowing this error rendered an owner as a `player` with a 0.00
+        // balance and silently flipped the downline into agent scope. A failure
+        // has to look like a failure.
+        if (meRes.error) throw meRes.error;
+        if (floatRes.error) {
+          complete = false;
+          reportError(floatRes.error, 'CashierTradePage.agentWallet');
+        }
+        memberAuthoritySnapshot.current = {
+          clubId: clubUuid,
+          role: String(meRes.data?.role || 'player'),
+          status: meRes.data?.status || 'active',
+        };
+        let role =
+          meRes.data && (!meRes.data.status || MEMBER_IN_CLUB.includes(meRes.data.status))
+            ? String(meRes.data.role || 'player')
+            : 'player';
+        if (
+          ['super_agent', 'agent', 'sub_agent'].includes(role) &&
+          floatRes.data?.status !== undefined &&
+          floatRes.data.status !== 'active'
+        )
+          role = 'player';
+        const bal = meRes.data?.chip_balance ? Number(meRes.data.chip_balance) : 0;
+        // A row that does not exist is a float of zero. A row we could not READ
+        // is unknown, and stays null so the pre-flight check does not refuse a
+        // send the server would have allowed.
+        const float = floatRes.error
+          ? null
+          : floatRes.data
+            ? Number(floatRes.data.agent_wallet_balance) || 0
+            : 0;
+        // A credit agent may send past the float, drawn against the line the
+        // server allows (credit_limit - credit_used). Prepaid agents have none.
+        const credit = floatRes.error ? 0 : creditHeadroomOf(floatRes.data);
 
-      /**
-       * WHO THIS PAGE MAY TRANSACT WITH — asked in the database.
-       *
-       * This used to page club_members by hand and scope it from
-       * ca_club_my_downline, in three different ways depending on the role, with
-       * a super_agent branch that also swept up every UNASSIGNED member of the
-       * club. None of that agreed with the server: fn_agent_wallet_send refuses
-       * on fn_club_cashier_can_transact, which walks the recursive
-       * club_members.agent_id edge and nothing else. A list that offers someone
-       * the RPC will reject is a dead end nobody can diagnose from the screen.
-       *
-       * fn_club_cashier_members IS that edge: everyone for an owner, co owner or
-       * admin; the recursive downline for a super agent, agent or sub agent;
-       * nobody for a plain player. It also carries `depth`, so "Assigned To Me"
-       * is a direct hop rather than a second query for agent_id.
-       */
-      const dl: CashierRosterRpcRow[] = [];
-      if (role !== 'player') {
-        // Paint page one instead of holding the whole workspace hostage while
-        // a large club downloads. The cursor is deterministic and avoids the
-        // repeated OFFSET walk; later pages enrich the same authoritative list.
-        const rosterPageSize = 500;
-        let afterRoleRank: number | null = null;
-        let afterUserId: string | null = null;
-        let pageNumber = 0;
-        for (;;) {
-          const rosterPageStartedAt = Date.now();
-          const { data: memberRows, error: dlErr } = await supabase.rpc(
-            'fn_club_cashier_members_page_v3',
-            {
-              p_club_id: clubUuid,
-              p_after_role_rank: afterRoleRank,
-              p_after_user_id: afterUserId,
-              p_limit: rosterPageSize,
+        /**
+         * WHO THIS PAGE MAY TRANSACT WITH — asked in the database.
+         *
+         * This used to page club_members by hand and scope it from
+         * ca_club_my_downline, in three different ways depending on the role, with
+         * a super_agent branch that also swept up every UNASSIGNED member of the
+         * club. None of that agreed with the server: fn_agent_wallet_send refuses
+         * on fn_club_cashier_can_transact, which walks the recursive
+         * club_members.agent_id edge and nothing else. A list that offers someone
+         * the RPC will reject is a dead end nobody can diagnose from the screen.
+         *
+         * fn_club_cashier_members IS that edge: everyone for an owner, co owner or
+         * admin; the recursive downline for a super agent, agent or sub agent;
+         * nobody for a plain player. It also carries `depth`, so "Assigned To Me"
+         * is a direct hop rather than a second query for agent_id.
+         */
+        const dl: CashierRosterRpcRow[] = [];
+        if (role !== 'player') {
+          // Paint page one instead of holding the whole workspace hostage while
+          // a large club downloads. The cursor is deterministic and avoids the
+          // repeated OFFSET walk; later pages enrich the same authoritative list.
+          const rosterPageSize = 500;
+          let afterRoleRank: number | null = null;
+          let afterUserId: string | null = null;
+          let pageNumber = 0;
+          for (;;) {
+            const rosterPageStartedAt = Date.now();
+            const { data: memberRows, error: dlErr } = await supabase.rpc(
+              'fn_club_cashier_members_page_v3',
+              {
+                p_club_id: clubUuid,
+                p_after_role_rank: afterRoleRank,
+                p_after_user_id: afterUserId,
+                p_limit: rosterPageSize,
+              }
+            );
+            if (dlErr) {
+              complete = false;
+              recordCashierOperation({
+                userId: user.id,
+                clubId: clubUuid,
+                event: 'roster_page_failed',
+                operation: 'roster',
+                durationMs: Date.now() - rosterPageStartedAt,
+                pageNumber,
+                itemCount: dl.length,
+                reasonCode: cashierReasonCode(dlErr),
+              });
+              if (pageNumber === 0) throw dlErr;
+              reportError(dlErr, 'CashierTradePage.rosterContinuation');
+              if (isMounted.current && !stale()) {
+                setRosterWarning(
+                  `Loaded ${dl.length.toLocaleString()} Members. The Rest Could Not Be Reached.`
+                );
+              }
+              break;
             }
-          );
-          if (dlErr) {
-            complete = false;
+            if (stale()) return false;
+            const page = (memberRows || []) as CashierRosterRpcRow[];
+            dl.push(...page);
             recordCashierOperation({
               userId: user.id,
               clubId: clubUuid,
-              event: 'roster_page_failed',
+              event: 'roster_page_succeeded',
               operation: 'roster',
               durationMs: Date.now() - rosterPageStartedAt,
               pageNumber,
-              itemCount: dl.length,
-              reasonCode: cashierReasonCode(dlErr),
+              itemCount: page.length,
             });
-            if (pageNumber === 0) throw dlErr;
-            reportError(dlErr, 'CashierTradePage.rosterContinuation');
+            pageNumber++;
+
             if (isMounted.current && !stale()) {
-              setRosterWarning(
-                `Loaded ${dl.length.toLocaleString()} Members. The Rest Could Not Be Reached.`
-              );
+              if (!initialTabResolvedRef.current) {
+                setTab(role === 'player' ? 'record' : 'trade');
+                initialTabResolvedRef.current = true;
+              }
+              setMyRole(role);
+              setRoleResolved(true);
+              setMyBalance(bal);
+              setAgentWallet(float);
+              setAgentCredit(credit);
+              setDownline(mapCashierRoster(dl, user.id));
+              setLoading(false);
+              setRosterLoadingMore(page.length === rosterPageSize);
             }
-            break;
+            if (page.length < rosterPageSize) break;
+            const cursor = page[page.length - 1];
+            afterRoleRank = Number(cursor.role_rank);
+            afterUserId = String(cursor.user_id);
           }
-          if (stale()) return false;
-          const page = (memberRows || []) as CashierRosterRpcRow[];
-          dl.push(...page);
-          recordCashierOperation({
-            userId: user.id,
-            clubId: clubUuid,
-            event: 'roster_page_succeeded',
-            operation: 'roster',
-            durationMs: Date.now() - rosterPageStartedAt,
-            pageNumber,
-            itemCount: page.length,
-          });
-          pageNumber++;
-
-          if (isMounted.current && !stale()) {
-            if (!initialTabResolvedRef.current) {
-              setTab(role === 'player' ? 'record' : 'trade');
-              initialTabResolvedRef.current = true;
-            }
-            setMyRole(role);
-            setRoleResolved(true);
-            setMyBalance(bal);
-            setAgentWallet(float);
-            setAgentCredit(credit);
-            setDownline(mapCashierRoster(dl, user.id));
-            setLoading(false);
-            setRosterLoadingMore(page.length === rosterPageSize);
-          }
-          if (page.length < rosterPageSize) break;
-          const cursor = page[page.length - 1];
-          afterRoleRank = Number(cursor.role_rank);
-          afterUserId = String(cursor.user_id);
         }
-      }
 
-      if (!isMounted.current || stale()) return false;
-      if (!initialTabResolvedRef.current) {
-        setTab(role === 'player' ? 'record' : 'trade');
-        initialTabResolvedRef.current = true;
-      }
-      setMyRole(role);
-      setRoleResolved(true);
-      setMyBalance(bal);
-      setAgentWallet(float);
-      setAgentCredit(credit);
-      setDownline(mapCashierRoster(dl, user.id));
-      setRosterLoadingMore(false);
-      if (complete) setLastVerifiedAt(Date.now());
-      return complete;
-    } catch (e) {
-      reportError(e, 'CashierTradePage.loadClub');
-      // An empty list used to be the only symptom of a failed load, so the
-      // owner of a 588-member club was told they had no downline.
-      if (isMounted.current && !stale()) {
-        setDownline([]);
+        if (!isMounted.current || stale()) return false;
+        if (!initialTabResolvedRef.current) {
+          setTab(role === 'player' ? 'record' : 'trade');
+          initialTabResolvedRef.current = true;
+        }
+        setMyRole(role);
+        setRoleResolved(true);
+        setMyBalance(bal);
+        setAgentWallet(float);
+        setAgentCredit(credit);
+        setDownline(mapCashierRoster(dl, user.id));
         setRosterLoadingMore(false);
-        setLoadError('Could Not Load This Club. Check Your Connection And Try Again.');
-      }
-      return false;
-    } finally {
-      if (isMounted.current && !stale()) setLoading(false);
-    }
-  }, [user?.id, clubUuid]);
-
-  // Refresh on any balance event
-  useEffect(() => {
-    // AUDIT 2026-08-21: BALANCE_UPDATED alone missed mints, distributions and
-    // cashier changes, so the strip could sit stale after real money moved.
-    const events = [
-      'BALANCE_UPDATED',
-      'CHIPS_ADDED',
-      'CHIPS_DISTRIBUTED',
-      'CASHIER_BALANCE_CHANGED',
-      'MEMBER_ROLE_CHANGED',
-      'MEMBER_UPDATED',
-      'AGENT_UPDATED',
-    ] as const;
-    // Only OUR club. CHIPS_DISTRIBUTED and CASHIER_BALANCE_CHANGED both carry a
-    // clubId that was thrown away, so a chip event anywhere on the platform
-    // triggered a full reload here - up to ten paged queries on a large club,
-    // and each one wiped the selection out from under an open amount modal.
-    const unsubs = events.map((e) =>
-      masterBus.subscribe(e as never, (payload: unknown) => {
-        const pid = (payload as { clubId?: string } | null)?.clubId;
-        if (pid && clubUuid && pid !== clubUuid) return;
-        if (e === 'MEMBER_ROLE_CHANGED' || e === 'MEMBER_UPDATED' || e === 'AGENT_UPDATED') {
-          transferAuthorityEpoch.current++;
-          setRoleResolved(false);
+        if (complete) setLastVerifiedAt(Date.now());
+        return complete;
+      } catch (e) {
+        reportError(e, 'CashierTradePage.loadClub');
+        // An empty list used to be the only symptom of a failed load, so the
+        // owner of a 588-member club was told they had no downline.
+        if (isMounted.current && !stale()) {
+          setDownline([]);
+          setRosterLoadingMore(false);
+          setLoadError('Could Not Load This Club. Check Your Connection And Try Again.');
         }
-        loadClub();
-        // The badge's own comment promised this and it was never wired: the
-        // only caller was the mount effect, so an owner on the Trade tab saw
-        // the count frozen at whatever it was when the page opened - the exact
-        // scenario the badge exists for.
-        void loadPendingCount();
-        void loadHeldTicketCount();
+        return false;
+      } finally {
+        if (isMounted.current && !stale()) setLoading(false);
+      }
+    },
+    [user?.id, clubUuid]
+  );
+
+  // Keep the working page stable. Mutations still validate authority in the
+  // server transaction; explicit role changes invalidate controls immediately.
+  useEffect(() => {
+    const events = ['MEMBER_ROLE_CHANGED', 'MEMBER_UPDATED', 'AGENT_UPDATED'] as const;
+    const unsubs = events.map((event) =>
+      masterBus.subscribe(event, (payload: unknown) => {
+        const changed = payload as { clubId?: string; userId?: string } | null;
+        if (changed?.clubId && changed.clubId !== clubUuid) return;
+        if (changed?.userId !== user?.id) return;
+        transferAuthorityEpoch.current++;
+        setRoleResolved(false);
+        setDownline([]);
+        setSelected(new Set());
+        setAmountModal(null);
+        const role = (payload as { newRole?: string } | null)?.newRole;
+        if (role) setMyRole(role);
       })
     );
-    return () => unsubs.forEach((u) => u());
-  }, [loadClub, clubUuid, loadPendingCount, loadHeldTicketCount]);
+    return () => unsubs.forEach((unsubscribe) => unsubscribe());
+  }, [clubUuid, user?.id]);
 
   const refreshAuthority = (payload: {
     eventType?: string;
@@ -1139,7 +1134,12 @@ function CashierTradeWorkspace() {
       return;
     transferAuthorityEpoch.current++;
     setRoleResolved(false);
-    void loadClub();
+    // Revoked access retires protected rows and any open intent immediately.
+    // This is authority invalidation, never a background directory reload.
+    setDownline([]);
+    setSelected(new Set());
+    setAmountModal(null);
+    if (payload.new?.role) setMyRole(payload.new.role);
   };
   useMasterBusChannel({
     channelName: user?.id && clubUuid ? `cashier-member-authority:${user.id}:${clubUuid}` : null,
@@ -1186,21 +1186,6 @@ function CashierTradeWorkspace() {
       })();
     },
   });
-  // Agents are deliberately not published to Realtime. Refresh on explicit
-  // management events and returning to this view; each mutation rechecks the
-  // active agent inside its own database transaction.
-  useEffect(() => {
-    const refresh = () => {
-      if (document.visibilityState !== 'hidden') void loadClub();
-    };
-    window.addEventListener('focus', refresh);
-    document.addEventListener('visibilitychange', refresh);
-    return () => {
-      window.removeEventListener('focus', refresh);
-      document.removeEventListener('visibilitychange', refresh);
-    };
-  }, [loadClub]);
-
   // ── Trade record tab data ──────────────────────────────────────────────────
   // Cleared BEFORE every club load: the previous club's trades used to stay on
   // screen until the new query landed.
@@ -1240,6 +1225,7 @@ function CashierTradeWorkspace() {
     setAmountModal(null);
     setAmount('');
     setActiveCashier(null);
+    setShowCashoutRequest(false);
     setCashierPreset(null);
     setTransferFailures([]);
     setTransferRecovery(null);
@@ -1733,6 +1719,9 @@ function CashierTradeWorkspace() {
     [downline]
   );
 
+  const { recentIds, addRecipient } = useRecentRecipients(user?.id, clubUuid, 'cashier');
+  const [showCashoutRequest, setShowCashoutRequest] = useState(false);
+
   const rosterById = useMemo(() => new Map(downline.map((row) => [row.userId, row])), [downline]);
 
   const list = useMemo(() => {
@@ -1743,7 +1732,14 @@ function CashierTradeWorkspace() {
     if (mineOnly) rows = rows.filter((r) => r.isMine);
     if (roleFilter !== 'all') rows = rows.filter((r) => r.role === roleFilter);
     const bySort = (a: DownlineRow, b: DownlineRow) =>
-      sortKey === 'balance' ? b.chipBalance - a.chipBalance : a.name.localeCompare(b.name);
+      sortKey === 'recent'
+        ? (recentIds.includes(a.userId) ? recentIds.indexOf(a.userId) : Infinity) -
+            (recentIds.includes(b.userId) ? recentIds.indexOf(b.userId) : Infinity) ||
+          b.chipBalance - a.chipBalance ||
+          a.name.localeCompare(b.name)
+        : sortKey === 'balance'
+          ? b.chipBalance - a.chipBalance
+          : a.name.localeCompare(b.name);
     // A search is a question about a NAME. Answer it by match quality first
     // (rosterMatchRank), and only then by the chosen sort - a balance sort on
     // a search put the owner, at 0.00, twenty-first behind twenty horses
@@ -1759,7 +1755,7 @@ function CashierTradeWorkspace() {
       rows = [...rows].sort((a, b) => roleRank(b.role as ClubRole) - roleRank(a.role as ClubRole));
     }
     return rows;
-  }, [downline, search, sortKey, groupByRole, mineOnly, roleFilter]);
+  }, [downline, search, sortKey, groupByRole, mineOnly, roleFilter, recentIds]);
 
   const agencyBalance = useMemo(() => sumChips(recipients.map((r) => r.chipBalance)), [recipients]);
 
@@ -2404,6 +2400,7 @@ function CashierTradeWorkspace() {
 
     if (!isMounted.current || transferView.current !== owningView) return;
     if (ok > 0) {
+      for (const row of receiptRows) if (row.outcome === 'Confirmed') addRecipient(row.userId);
       // Name the counterparty on a single-target move. The Toast layer bars an
       // identical type+text for 60s, so "Sent 100.00 To 1 Player" twice in a
       // minute confirmed only the FIRST real chip movement - a receipt must
@@ -2412,10 +2409,18 @@ function CashierTradeWorkspace() {
       toast?.success?.(
         kind === 'send'
           ? `Sent ${exactChipFigure(sumChips(receiptRows.filter((row) => row.outcome === 'Confirmed').map((row) => row.amount)))} Total To ${who} From Your Agent Wallet`
-          : `Issued ${ok} Ticket${ok === 1 ? '' : 's'} To ${who}. Review The Exact Values In Your Batch Receipt`
+          : `Issued ${ok} Ticket${ok === 1 ? '' : 's'} To ${who}. Review The Exact Values In Your Batch Receipt`,
+        undefined,
+        undefined,
+        `${submissionId}:${receiptRows
+          .filter((row) => row.outcome === 'Confirmed')
+          .map((row) => row.reference)
+          .sort()
+          .join(',')}`
       );
-      // The bus event is already wired to reload this page, so calling
-      // loadClub() as well fired two identical loads at once.
+      // Read back this completed command without a loading reset. Background
+      // balance events never reload the working directory.
+      void loadClub(true);
       masterBus.emit('BALANCE_UPDATED', { source: 'cashier_trade', userId: user.id });
     }
     if (failed.length > 0) {
@@ -2528,11 +2533,16 @@ function CashierTradeWorkspace() {
       if (!res?.success) throw new Error(res?.error || 'Those Chips Could Not Be Claimed Back');
       clearCashierWalletOperation(operation);
       if (!current()) return;
+      addRecipient(row.to_user_id);
+      void loadClub(true);
       const claimedAmount = Number(res.amount) || 0;
       toast?.success?.(
         res.replayed
           ? `That Claim Had Already Gone Through. ${fmt(claimedAmount)} Chips Are Back In Your Agent Wallet`
-          : `Claimed ${fmt(claimedAmount)} Back From ${row.to_name}`
+          : `Claimed ${fmt(claimedAmount)} Back From ${row.to_name}`,
+        undefined,
+        undefined,
+        operation.operationId
       );
       claimOpIdsRef.current.delete(row.transaction_id);
       masterBus.emit('BALANCE_UPDATED', { source: 'cashier_trade_claim', userId: user?.id || '' });
@@ -2647,11 +2657,16 @@ function CashierTradeWorkspace() {
       toast?.success?.(
         res.replayed
           ? `That Send Had Already Gone Through. ${exactChipFigure(value)} Chips Are In Your Player Wallet`
-          : `Sent ${exactChipFigure(value)} From The Club Bank To Your Player Wallet`
+          : `Sent ${exactChipFigure(value)} From The Club Bank To Your Player Wallet`,
+        undefined,
+        undefined,
+        operation.operationId
       );
       setAmountModal(null);
       setAmount('');
       setRecipientAmounts({});
+      void loadClub(true);
+      void loadBankBalance();
       masterBus.emit('BALANCE_UPDATED', { source: 'cashier_trade_self', userId: user.id });
     } catch (e) {
       if (!isMounted.current) return;
@@ -2714,8 +2729,14 @@ function CashierTradeWorkspace() {
       toast?.success?.(
         res.replayed
           ? `That Claim Had Already Gone Through. ${exactChipFigure(parsed.value)} Chips Are In The Club Bank`
-          : `Claimed ${exactChipFigure(parsed.value)} From ${titleCase(target.name)} Into The Club Bank`
+          : `Claimed ${exactChipFigure(parsed.value)} From ${titleCase(target.name)} Into The Club Bank`,
+        undefined,
+        undefined,
+        operation.operationId
       );
+      addRecipient(target.userId);
+      void loadClub(true);
+      void loadBankBalance();
       setMgmtClaimAmount('');
       setClaimOpen(false);
       masterBus.emit('BALANCE_UPDATED', { source: 'cashier_trade_bank_claim', userId: user.id });
@@ -3149,6 +3170,15 @@ function CashierTradeWorkspace() {
               </button>
             </div>
 
+            {holdsPlayerWallet(myRole) && roleResolved && (
+              <button
+                type="button"
+                className={styles.classicLink}
+                onClick={() => setShowCashoutRequest(true)}
+              >
+                Request Cash Out
+              </button>
+            )}
             {!advanced && (
               <div className={styles.simpleStatus} role="status">
                 {cashierSyncMessage}
@@ -3561,9 +3591,18 @@ function CashierTradeWorkspace() {
                 </label>
                 <button
                   className={styles.sortBtn}
-                  onClick={() => setSortKey((k) => (k === 'balance' ? 'name' : 'balance'))}
+                  onClick={() =>
+                    setSortKey((k) =>
+                      k === 'recent' ? 'balance' : k === 'balance' ? 'name' : 'recent'
+                    )
+                  }
                 >
-                  Sort By {sortKey === 'balance' ? 'Chip Balance' : 'Name'}
+                  Sort By{' '}
+                  {sortKey === 'recent'
+                    ? 'Most Recent'
+                    : sortKey === 'balance'
+                      ? 'Chip Balance'
+                      : 'Name'}
                 </button>
               </div>
 
@@ -4451,7 +4490,7 @@ function CashierTradeWorkspace() {
               title="Request Chips"
               titleId="cashier-ask-title"
               pill={asking ? 'Sending' : 'Ready'}
-              pillInk={asking ? 'gold' : 'green'}
+              pillInk={asking ? 'blue' : 'green'}
               foot="plates"
               className={styles.console}
               plates={{
@@ -4470,13 +4509,13 @@ function CashierTradeWorkspace() {
             >
               <div className={styles.glass}>
                 <input
-                  type="number"
+                  type="text"
                   inputMode="decimal"
                   min={0}
-                  value={askAmount}
+                  value={formatCashierAmountInput(askAmount)}
                   step="0.01"
                   aria-label="Chips Requested"
-                  onChange={(e) => setAskAmount(e.target.value)}
+                  onChange={(e) => setAskAmount(cashierAmountInputValue(e.target.value))}
                   placeholder="How Many Chips?"
                   autoFocus
                 />
@@ -4502,9 +4541,7 @@ function CashierTradeWorkspace() {
       <WalletCashierModal
         isOpen={!!activeCashier}
         onClose={() => {
-          // The modal emits its own balance bus event on every money move and
-          // that event reloads this page; a second loadClub() here doubled
-          // every paged read on a large club (P-18).
+          // Closing a dialog never reloads or resets the working page.
           setActiveCashier(null);
           setCashierPreset(null);
         }}
@@ -4514,6 +4551,18 @@ function CashierTradeWorkspace() {
         initialRecipientId={cashierPreset?.recipientId ?? null}
         initialDestination={cashierPreset?.destination ?? null}
       />
+
+      {clubUuid && user?.id && (
+        <CashoutRequestModal
+          key={`${user.id}:${clubUuid}`}
+          isOpen={showCashoutRequest}
+          onClose={() => setShowCashoutRequest(false)}
+          playerId={user.id}
+          clubId={clubUuid}
+          currentBalance={loading ? null : myBalance}
+          onComplete={() => void loadClub(true)}
+        />
+      )}
 
       {/* Amount modal */}
       {amountModal && (
@@ -4554,7 +4603,7 @@ function CashierTradeWorkspace() {
               }
               titleId="cashier-amount-title"
               pill={busy ? 'Working' : 'Ready'}
-              pillInk={busy ? 'gold' : 'green'}
+              pillInk={busy ? 'blue' : 'green'}
               foot={amountModal === 'diamonds' ? 'foot' : 'plates'}
               className={styles.console}
               plates={
@@ -4733,17 +4782,15 @@ function CashierTradeWorkspace() {
                         <span className={styles.entryRowPlate}>
                           <input
                             className={styles.entryInput}
-                            type="number"
+                            type="text"
                             inputMode="decimal"
-                            min={0}
-                            step="0.01"
                             aria-label="Amount"
                             aria-invalid={uniformAmountInvalid}
                             aria-describedby="cashier-amount-validation"
-                            value={uniformAmountValue}
+                            value={formatCashierAmountInput(uniformAmountValue)}
                             disabled={busy}
                             onChange={(e) => {
-                              setAmount(e.target.value);
+                              setAmount(cashierAmountInputValue(e.target.value));
                               setRecipientAmounts({});
                               if (transferFailures.length) setTransferFailures([]);
                             }}
@@ -4776,19 +4823,19 @@ function CashierTradeWorkspace() {
                             </span>
                             {amountModal === 'send' ? (
                               <input
-                                type="number"
+                                type="text"
                                 inputMode="decimal"
-                                min={0}
-                                step="0.01"
                                 aria-label={`Amount For ${r.name}`}
                                 aria-invalid={!batchPlan.ok && batchPlan.userId === r.userId}
                                 aria-describedby="cashier-amount-validation"
                                 disabled={busy}
-                                value={recipientAmounts[r.userId] ?? amount}
+                                value={formatCashierAmountInput(
+                                  recipientAmounts[r.userId] ?? amount
+                                )}
                                 onChange={(event) => {
                                   setRecipientAmounts((previous) => ({
                                     ...previous,
-                                    [r.userId]: event.target.value,
+                                    [r.userId]: cashierAmountInputValue(event.target.value),
                                   }));
                                   setTransferFailures([]);
                                 }}
@@ -4809,7 +4856,7 @@ function CashierTradeWorkspace() {
                           ? batchPlan.error
                           : `Amount For ${picked.find((row) => row.userId === batchPlan.userId)?.name || 'Cashier Recipient'}: ${batchPlan.error}`
                         : cashierAuthorityBlocked || !canHoldAgentWallet(myRole)
-                          ? 'Cashier Access Must Be Verified Before Sending'
+                          ? ''
                           : amountModal === 'send' &&
                               !(picked.length === 1 && picked[0].userId === user?.id) &&
                               agentWallet === null
@@ -4821,7 +4868,7 @@ function CashierTradeWorkspace() {
                                     : agentWallet! + agentCredit
                                   : myBalance)
                               ? 'Insufficient Chips In The Funding Wallet'
-                              : `${picked.length} Recipients Ready For Server Verification`}
+                              : ''}
                     </div>
                     {transferFailures.length > 0 && (
                       <div className={styles.modalFailures} role="alert">
@@ -4879,7 +4926,7 @@ function CashierTradeWorkspace() {
               pill={
                 claimingId || mgmtClaiming ? 'Working' : managementClaims ? 'Any Time' : 'Limited'
               }
-              pillInk={claimingId || mgmtClaiming ? 'gold' : managementClaims ? 'blue' : 'red'}
+              pillInk={claimingId || mgmtClaiming ? 'blue' : managementClaims ? 'blue' : 'red'}
               foot={managementClaimTarget ? 'plates' : 'foot'}
               plates={
                 managementClaimTarget
@@ -4918,14 +4965,16 @@ function CashierTradeWorkspace() {
                       <span className={styles.entryRowPlate}>
                         <input
                           className={styles.entryInput}
-                          type="number"
+                          type="text"
                           inputMode="decimal"
                           min={0}
                           step="0.01"
                           aria-label="Claim Back Amount"
-                          value={mgmtClaimAmount}
+                          value={formatCashierAmountInput(mgmtClaimAmount)}
                           disabled={mgmtClaiming}
-                          onChange={(event) => setMgmtClaimAmount(event.target.value)}
+                          onChange={(event) =>
+                            setMgmtClaimAmount(cashierAmountInputValue(event.target.value))
+                          }
                           placeholder="Enter Amount"
                           autoFocus
                         />

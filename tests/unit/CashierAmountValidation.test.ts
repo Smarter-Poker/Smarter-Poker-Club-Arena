@@ -1,3 +1,4 @@
+import { formatCashierAmountInput } from '../../src/utils/cashierAmount';
 /**
  * Cashier amount validation.
  *
@@ -73,4 +74,12 @@ describe('parseChipAmount', () => {
     // parseFloat('100abc') === 100 — Number() correctly returns NaN
     expect(parseChipAmount('100abc').ok).toBe(false);
   });
+});
+
+it('groups editable cashier figures without rounding or hiding invalid spelling', () => {
+  expect(formatCashierAmountInput('100000')).toBe('100,000');
+  expect(formatCashierAmountInput('100000.05')).toBe('100,000.05');
+  expect(formatCashierAmountInput('1000.')).toBe('1,000.');
+  expect(formatCashierAmountInput('')).toBe('');
+  expect(formatCashierAmountInput('1e3')).toBe('1e3');
 });

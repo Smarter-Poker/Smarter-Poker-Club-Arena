@@ -83,7 +83,37 @@ test.describe('the mobile lobby chrome on production', () => {
   // in run 35310320354. Allow the existing bounded navigation/readiness (30s +
   // 45s), greeting (3s + 8s), count (20s), persistence (4s) and geometry phases
   // to finish. No individual readiness deadline or visual assertion is relaxed.
-  test.describe.configure({ timeout: 120_000 });
+  // These cases share the certificate account: the persistence journey selects
+  // PLO/NLH while the scroll journey selects ALL. Keep this group in order so
+  // one real preference write cannot replace another case's saved selection.
+  // Default mode still executes later cases when an earlier assertion fails.
+  test.describe.configure({ mode: 'default', timeout: 120_000 });
+
+  test('the selected game list survives a cold return to the lobby', async ({ page }) => {
+    await openLobby(page);
+    const tabs = page.getByRole('tablist', { name: 'Game Type', exact: true });
+    const original = (await tabs.getByRole('tab', { selected: true }).textContent())!.trim();
+    const target = original === 'PLO' ? 'NLH' : 'PLO';
+    const save = () =>
+      page.waitForResponse(
+        (response) =>
+          response.ok() &&
+          response.request().method() === 'POST' &&
+          new URL(response.url()).pathname.endsWith('/rest/v1/user_lobby_filters')
+      );
+    try {
+      await Promise.all([save(), tabs.getByRole('tab', { name: target, exact: true }).click()]);
+      await openLobby(page);
+      await expect(tabs.getByRole('tab', { name: target, exact: true })).toHaveAttribute(
+        'aria-selected',
+        'true'
+      );
+    } finally {
+      // This is the isolated certificate account; restore its original view
+      // so the next maintained journey inherits the same starting preference.
+      await Promise.all([save(), tabs.getByRole('tab', { name: original, exact: true }).click()]);
+    }
+  });
 
   test('MY WALLETS prints the count, keeps it, centred and unclipped', async ({ page }) => {
     await openLobby(page);

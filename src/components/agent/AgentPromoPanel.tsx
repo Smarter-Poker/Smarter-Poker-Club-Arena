@@ -57,6 +57,8 @@ interface DownlinePlayer {
 type DownlineEvent = { kind: 'remove' } | { kind: 'balance'; value: number };
 
 interface AgentPromoPanelProps {
+  manualOnly?: boolean;
+  actionClassName?: string;
   clubId: string;
   userId: string;
   role: string;
@@ -64,6 +66,8 @@ interface AgentPromoPanelProps {
 }
 
 export default function AgentPromoPanel({
+  manualOnly = false,
+  actionClassName,
   clubId,
   userId,
   role,
@@ -113,6 +117,7 @@ export default function AgentPromoPanel({
   const scopeRef = useRef(readScope);
   scopeRef.current = readScope;
   const refreshBalance = useVisibleRead({
+    manualOnly,
     scopeKey: readScope,
     enabled: Boolean(clubId && userId && isAgent),
     read: async (signal) => {
@@ -149,6 +154,7 @@ export default function AgentPromoPanel({
     },
   });
   const refreshDownline = useVisibleRead({
+    manualOnly,
     scopeKey: readScope,
     enabled: Boolean(clubId && userId && isAgent),
     intervalMs: 60_000,
@@ -234,10 +240,10 @@ export default function AgentPromoPanel({
   };
   useMasterBusSubscription('DATA_MUTATED', (payload) => {
     const relevant = ['promo_distributed', 'promo_granted', 'chips_distributed', 'chips_minted'];
-    if (relevant.includes(String(payload?.action || ''))) loadData();
+    if (!manualOnly && relevant.includes(String(payload?.action || ''))) loadData();
   });
   useEffect(() => {
-    if (!clubId || !userId || !isAgent) return;
+    if (manualOnly || !clubId || !userId || !isAgent) return;
     let active = true;
     const scope = readScope;
     const channelKey = `agent-promo-${clubId}-${userId}`;
@@ -304,7 +310,7 @@ export default function AgentPromoPanel({
       active = false;
       masterBus.removeRegisteredChannel(channelKey);
     };
-  }, [clubId, userId, isAgent, readScope, refreshDownline]);
+  }, [clubId, userId, isAgent, readScope, refreshDownline, manualOnly]);
 
   const handleDistribute = async () => {
     if (!selectedPlayer || !amount || promoBalance === null || balanceError || downlineError)
@@ -451,6 +457,12 @@ export default function AgentPromoPanel({
           </div>
         </div>
       </div>
+
+      {manualOnly && (
+        <button type="button" className={actionClassName} onClick={loadData}>
+          Refresh Promo
+        </button>
+      )}
 
       {toast && (
         <div

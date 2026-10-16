@@ -232,6 +232,24 @@ export function lightningGroupSizes(
   return out;
 }
 
+/** Owner choice, 2026-10-15: fresh arrivals wait for a full ring for at most
+ * three seconds. Only legal queue ages count; no queue timestamp is reset. */
+export const LIGHTNING_FORMATION_MAX_WAIT_MS = 3_000;
+
+export function lightningFormationSizes(
+  players: readonly LightningPoolPlayer[],
+  nowMs: number,
+  params: LightningMatcherParams
+): number[] {
+  const max = Math.min(Math.max(params.instanceMax || 2, 2), 9);
+  const min = Math.min(Math.max(params.instanceMin || 2, 2), max);
+  const target = Math.min(Math.max(params.instanceTarget || max, min), max);
+  const oldest = players.reduce((t, p) => Math.min(t, p.idleSinceMs), Infinity);
+  if (nowMs - oldest >= LIGHTNING_FORMATION_MAX_WAIT_MS)
+    return lightningGroupSizes(players.length, min, target, max);
+  return Array.from({ length: Math.floor(players.length / target) }, () => target);
+}
+
 // ─── ORDERS ───────────────────────────────────────────────────────────────
 
 const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
@@ -405,24 +423,14 @@ function planWith(
   const cap = Math.max(0, Math.floor(params.maxGroups));
 
   let seatable = legal;
-  let sizes = lightningGroupSizes(
-    seatable.length,
-    params.instanceMin,
-    params.instanceTarget,
-    params.instanceMax
-  );
+  let sizes = lightningFormationSizes(seatable, snapshot.nowMs, params);
   const g = Math.min(sizes.length, cap);
 
   if (params.firstEntryRule === 'big_blind' && g > 0) {
     const firstBbs = new Set(seatable.slice(0, g).map((p) => p.playerId));
     const next = seatable.filter((p) => !p.newcomer || firstBbs.has(p.playerId));
     if (next.length < seatable.length) {
-      const sizes2 = lightningGroupSizes(
-        next.length,
-        params.instanceMin,
-        params.instanceTarget,
-        params.instanceMax
-      );
+      const sizes2 = lightningFormationSizes(next, snapshot.nowMs, params);
       if (Math.min(sizes2.length, cap) === g) {
         seatable = next;
         sizes = sizes2;

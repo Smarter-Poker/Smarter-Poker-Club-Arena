@@ -557,3 +557,17 @@ describe('Phase 5 durable individual batch amounts', () => {
     ).toBe(false);
   });
 });
+
+it('persists and restores a batch for an existing non-RFC PostgreSQL club UUID', () => {
+  const storage = new MemoryStorage();
+  const row = { ...recovery, clubId: 'a0000000-0000-0000-0000-000000000001' };
+  expect(writeCashierTransferRecovery(row, storage, row.createdAt)).toBe(true);
+  expect(readCashierTransferRecovery(row.userId, row.clubId, storage, row.createdAt)).toEqual({
+    ...row,
+    failures: row.failures.map((failure) => ({
+      ...failure,
+      name: 'Cashier Recipient',
+      message: 'Outcome Needs Verification',
+    })),
+  });
+});

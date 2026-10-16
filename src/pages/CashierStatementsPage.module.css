@@ -25,9 +25,9 @@
   --ink-red-glow:
     0 0 min(1cqw, 5px) rgb(240 40 73 / 80%), 0 0 min(2cqw, 10px) rgb(240 40 73 / 35%),
     0 min(0.25cqw, 1.25px) 0 rgb(0 0 0 / 70%);
-  --ink-gold: #ffd700;
+  --ink-gold: #45adff;
   --ink-gold-glow:
-    0 0 min(1cqw, 5px) rgb(255 215 0 / 70%), 0 0 min(2cqw, 10px) rgb(255 215 0 / 30%),
+    0 0 min(1cqw, 5px) rgb(69 173 255 / 30%), 0 0 min(2cqw, 10px) rgb(69 173 255 / 15%),
     0 min(0.25cqw, 1.25px) 0 rgb(0 0 0 / 70%);
   --ink-muted: #9aa5b3;
   --ink-muted-shadow: 0 min(0.2cqw, 1px) min(0.3cqw, 1.5px) rgb(0 0 0 / 80%);

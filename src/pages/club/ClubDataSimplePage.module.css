@@ -278,7 +278,9 @@
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--cd-ink);
-  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.9), 0 0 10px rgba(111, 220, 255, 0.18);
+  text-shadow:
+    0 1px 0 rgba(0, 0, 0, 0.9),
+    0 0 10px rgba(111, 220, 255, 0.18);
 }
 
 .statLabel {
@@ -423,7 +425,9 @@
   border-radius: 10px;
   border: 1px solid var(--cd-hairline-soft);
   background: linear-gradient(180deg, var(--cd-surface-raised) 0%, var(--cd-surface-sunk) 100%);
-  box-shadow: var(--cd-bevel), 0 3px 8px rgba(0, 0, 0, 0.45);
+  box-shadow:
+    var(--cd-bevel),
+    0 3px 8px rgba(0, 0, 0, 0.45);
   color: var(--cd-ink);
   font-size: 14px;
   font-weight: 600;
@@ -435,7 +439,9 @@
 
 .stake:active {
   transform: translateY(1px) scale(0.98);
-  box-shadow: var(--cd-bevel), 0 1px 3px rgba(0, 0, 0, 0.5);
+  box-shadow:
+    var(--cd-bevel),
+    0 1px 3px rgba(0, 0, 0, 0.5);
 }
 
 .stakeActive {
@@ -563,12 +569,16 @@
 
 .inkWin {
   color: var(--cd-win);
-  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.85), 0 0 10px rgba(34, 197, 94, 0.35);
+  text-shadow:
+    0 1px 0 rgba(0, 0, 0, 0.85),
+    0 0 10px rgba(34, 197, 94, 0.35);
 }
 
 .inkLoss {
   color: var(--cd-loss);
-  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.85), 0 0 10px rgba(239, 68, 68, 0.35);
+  text-shadow:
+    0 1px 0 rgba(0, 0, 0, 0.85),
+    0 0 10px rgba(239, 68, 68, 0.35);
 }
 
 .inkNeutral {
@@ -603,7 +613,9 @@
   border-radius: 999px;
   border: 0;
   background: linear-gradient(180deg, #3d9bff 0%, var(--cd-action) 50%, var(--cd-action-deep) 100%);
-  box-shadow: var(--cd-bevel-strong), 0 4px 12px rgba(24, 119, 242, 0.45);
+  box-shadow:
+    var(--cd-bevel-strong),
+    0 4px 12px rgba(24, 119, 242, 0.45);
   color: #ffffff;
   font-weight: 800;
   cursor: pointer;

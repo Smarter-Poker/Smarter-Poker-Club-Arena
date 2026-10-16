@@ -52,7 +52,6 @@ import { WaitlistCallToAction } from '../components/table/WaitlistCallToAction';
  * TournamentWinnerOverlay, useTableModals, retryAsync, resolveClubUUID,
  * handPersistenceService, and the unused types ChatMessage, Throwable,
  * ThrowEvent, HandHistoryAction, HandHistoryStreet.
-import { ButtonImagePreloader } from '../components/table/ButtonImagePreloader';
  *
  * Almost all of the components above are still imported and rendered by
  * TableModalsLayer or another owner, so nothing lost its stylesheet.
@@ -88,6 +87,7 @@ import { ButtonImagePreloader } from '../components/table/ButtonImagePreloader';
  * All five component files (TSX + CSS) and useTableModals.ts are deleted.
  */
 
+import { ButtonImagePreloader } from '../components/table/ButtonImagePreloader';
 import {
   useState,
   useEffect,
@@ -2485,7 +2485,7 @@ function LiveTablePage({
     return {
       tableId: tableId || '',
       tableName: init?.tableName || 'Loading...',
-      gameType: init?.gameType || 'NLH',
+      gameType: init?.gameType || '',
       blinds: b,
       minBuyIn: init?.minBuyIn || 0,
       maxBuyIn: init?.maxBuyIn || 0,
@@ -9116,7 +9116,13 @@ function LiveTablePage({
   cardsPreSortRef.current = v8Settings.cards_pre_sort;
 
   // Bible V8 §11.2: Per-game-type theme from Supabase
-  const { theme: v8Theme } = useUserThemeSettings(
+  const {
+    theme: v8Theme,
+    ready: themeReady,
+    scope: themeScope,
+    error: themeError,
+    retry: retryTheme,
+  } = useUserThemeSettings(
     userId !== 'guest' ? userId : null,
     tableState.gameType,
     tableState.isTournament,
@@ -9129,7 +9135,8 @@ function LiveTablePage({
      * attributes on the table root come off that same value, so a Spin did not
      * merely miss a preference, it rendered a different table.
      */
-    tournamentFormat ?? undefined
+    tournamentFormat ?? undefined,
+    Boolean(tableState.gameType)
   );
 
   /* Dan 2026-10-15: "IT MUST ALWAYS LOAD THE ACTUAL TABLE AND BACKGROUND
@@ -9144,7 +9151,7 @@ function LiveTablePage({
   const tableBackgroundUrl = resolveBackground(
     tableState.isFinalTable ? 'final_table_broadcast' : v8Theme.background_id || 'midnight'
   );
-  const tableArt = useTableArt(tableSkinUrl, tableBackgroundUrl);
+  const tableArt = useTableArt(tableSkinUrl, tableBackgroundUrl, themeReady, themeScope);
 
   /**
    * Dan 2026-08-20 — THE CARDS TAB NEVER APPLIED ANYTHING.
@@ -16790,7 +16797,11 @@ function LiveTablePage({
                 holeCards:
                   sp.user_id === userId
                     ? sp.cards?.length
-                      ? heroDisplayHoleCards(sp.cards, existing?.holeCards, !!cardsPreSortRef.current)
+                      ? heroDisplayHoleCards(
+                          sp.cards,
+                          existing?.holeCards,
+                          !!cardsPreSortRef.current
+                        )
                       : heroHoldIsExpired(existing?.holeCards)
                         ? []
                         : existing?.holeCards || []
@@ -24364,19 +24375,24 @@ function LiveTablePage({
         // designed backdrop, so a 404 / decode failure / slow first paint can
         // no longer leave the page empty — see lib/tableTheme.
         backgroundColor: DEFAULT_TABLE_BACKDROP_COLOR,
-        backgroundImage: resolveBackgroundLayersForUrl(tableArt.backgroundSrc),
+        backgroundImage: themeReady
+          ? resolveBackgroundLayersForUrl(tableArt.backgroundSrc)
+          : undefined,
         backgroundSize: `var(--sp-background-layers-size, ${TABLE_BACKGROUND_SIZE})`,
         backgroundPosition: `var(--sp-background-layers-position, ${TABLE_BACKGROUND_POSITION})`,
         backgroundRepeat: TABLE_BACKGROUND_REPEAT,
       }}
     >
-      <style>{`
-      {!tableArt.reveal && (
+      {!tableArt.reveal && !tableLoadFailure && (
         <div className="table-art-cover" role="status" aria-live="polite">
-          <span className="table-art-cover__label">Loading Table</span>
+          <span className="table-art-cover__label">
+            {themeError ? 'Could Not Load Saved Table' : 'Loading Table'}
+          </span>
+          {themeError && <button onClick={retryTheme}>Retry</button>}
         </div>
       )}
       <ButtonImagePreloader />
+      <style>{`
                 @keyframes boardSlideIn { from { opacity: 0; transform: scale(0.98); } to { opacity: 1; transform: scale(1); } }
                 @keyframes boardFade { from { opacity: 0.7; } to { opacity: 1; } }
                 .community-area { animation: boardFade 0.4s ease-out; }
@@ -24897,20 +24913,20 @@ function LiveTablePage({
                 height (.hud-seat-change-dock, TableHUD.css). */}
             {!tableState.isTournament && tableState.clusterId && (
               <div className="hud-seat-change-dock">
-              <CashClusterHUD
-                gameId={tableState.clusterId}
-                refreshKey={clusterRefreshKey}
-                onOpenLobby={() => setShowMustMoveLobby(true)}
-                onSeatChange={() => setShowMustMoveLobby(true)}
-                onGoToTable={(dest) => {
-                  if (dest === tableId) return;
-                  if (embeddedTableId) {
-                    onTableInfoUpdate?.({ movedToTableId: dest });
-                    return;
-                  }
-                  navigate(`/table/${dest}`);
-                }}
-              />
+                <CashClusterHUD
+                  gameId={tableState.clusterId}
+                  refreshKey={clusterRefreshKey}
+                  onOpenLobby={() => setShowMustMoveLobby(true)}
+                  onSeatChange={() => setShowMustMoveLobby(true)}
+                  onGoToTable={(dest) => {
+                    if (dest === tableId) return;
+                    if (embeddedTableId) {
+                      onTableInfoUpdate?.({ movedToTableId: dest });
+                      return;
+                    }
+                    navigate(`/table/${dest}`);
+                  }}
+                />
               </div>
             )}
             {/* The MiniStatsCard stats icon that used to sit under the bar is
@@ -25105,7 +25121,7 @@ function LiveTablePage({
                 and + SIT buttons sit ON the rail at every breakpoint. */}
             <img
               className="table-art"
-              src={tableArt.skinSrc}
+              src={tableArt.skinSrc || undefined}
               alt=""
               draggable={false}
               decoding="sync"
@@ -26753,6 +26769,8 @@ function LiveTablePage({
             tableId={tableId}
             heroSeated={tableState.heroSeat > 0}
             isTournament={tableState.isTournament}
+            leaveClockRemainingMs={heroLeaveLocked ? heroLeaveMs : null}
+            leaveClockRunning={heroLeave?.running === true}
             handNumber={tableState.handNumber ?? 0}
             heroPos={
               tableState.heroSeat > 0 ? (seatPositions[tableState.heroSeat - 1] ?? null) : null

@@ -22,7 +22,7 @@ import {
  * - Active tables/games grid
  */
 
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
 import type { ClubRole } from '../types/clubRoles';
 import { isClubStaff } from '../types/clubRoles';
 import { MEDIA_BASE } from '../utils/mediaBase';
@@ -154,6 +154,7 @@ import MaintenanceBreakBanner from '../components/common/MaintenanceBreakBanner'
 import HouseAdRotator from '../components/ads/HouseAdRotator';
 import { ClubBBJShell } from '../components/wallet/ClubWalletArtwork';
 import { ClubIdentityCard } from '../components/club-buttons';
+import { ShareInviteSheet } from '../components/club/ShareInviteSheet';
 import { COUNT_UNKNOWN, type CountFigure } from '../lib/countFigure';
 import DiamondBustPrompt from '../components/games/DiamondBustPrompt';
 import { playerDisplayName } from '../utils/playerDisplayName';
@@ -729,7 +730,6 @@ import PageErrorBoundary from '../components/common/PageErrorBoundary';
 import ArenaAccessBoundary from '../components/arena/ArenaAccessBoundary';
 import { useArenaAccess } from '../components/arena/arenaAccess';
 import { useDiamondFreerollCountdown } from '../hooks/useNextDiamondFreeroll';
-import { publicOrigin } from '../lib/appBase';
 
 /**
  * Dan 2026-10-04: `initialGameType` opens the embedded lobby ON a named list.
@@ -1014,6 +1014,7 @@ function ClubHomePageContent({
      different ticks and the gap between them is a cross-club leak (see the
      persistence effect). */
   const viewPrefsOwner = useRef<string | null>(null);
+  const viewPrefsAccount = useRef<string | null>(currentUser?.id ?? null);
   /* Has the player changed anything since the prefs in state were loaded.
      resolvedClubId arrives after first paint, so without this a tab tapped
      during those few hundred milliseconds would be silently undone by the
@@ -1045,6 +1046,7 @@ function ClubHomePageContent({
   // match so the watchdog and the reset guard agree with what is on screen.
   const [loading, setLoading] = useState(!bootCache?.club);
   const [userRole, setUserRole] = useState<ClubRole>('player');
+  const [showShareSheet, setShowShareSheet] = useState(false);
   const [deletingTableId, setDeletingTableId] = useState<string | null>(null);
   const [, setIsInUnion] = useState(false);
   const [, setUnionName] = useState<string | null>(null);
@@ -2081,9 +2083,12 @@ function ClubHomePageContent({
      `viewPrefsTouched` is the guard described where the ref is declared: if
      the player has already picked a tab in this visit, their pick wins over
      whatever the last visit left behind. */
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!resolvedClubId) return;
-    if (viewPrefsOwner.current === resolvedClubId) return;
+    const account = currentUser?.id ?? null;
+    const switchingAccounts = viewPrefsAccount.current !== account;
+    if (viewPrefsOwner.current === resolvedClubId && !switchingAccounts) return;
+    viewPrefsAccount.current = account;
 
     /* A SWITCH IS NOT A FIRST LOAD. Going from club A to club B must clear
        "the player already chose" -- that choice was about A. Leaving it set
@@ -2094,10 +2099,11 @@ function ClubHomePageContent({
     const switchingClubs = viewPrefsOwner.current !== null;
     viewPrefsOwner.current = resolvedClubId;
     if (switchingClubs) viewPrefsTouched.current = false;
+    if (switchingAccounts) viewPrefsTouched.current = false;
     // The landing was a request about the club it was made in.
     if (switchingClubs) landingGameTypeRef.current = undefined;
 
-    const saved = loadViewPrefs(resolvedClubId);
+    const saved = loadViewPrefs(resolvedClubId, currentUser?.id);
     setViewPrefs(saved);
 
     const applyView = (p: LobbyViewPrefs) => {
@@ -2138,7 +2144,7 @@ function ClubHomePageContent({
            a failed read are indistinguishable on purpose, and all three mean
            "keep what the cache gave you" rather than "reset". */
     let cancelled = false;
-    void fetchRemoteViewPrefs(resolvedClubId).then((remote) => {
+    void fetchRemoteViewPrefs(resolvedClubId, currentUser?.id).then((remote) => {
       if (cancelled || !remote) return;
       if (viewPrefsOwner.current !== resolvedClubId) return;
       if (viewPrefsTouched.current) return;
@@ -2146,12 +2152,12 @@ function ClubHomePageContent({
       applyView(remote);
       // Bring this browser's cache forward so the next cold open is already
       // right, instead of flashing the stale tab on every visit.
-      saveViewPrefs(resolvedClubId, remote);
+      saveViewPrefs(resolvedClubId, remote, currentUser?.id);
     });
     return () => {
       cancelled = true;
     };
-  }, [resolvedClubId]);
+  }, [resolvedClubId, currentUser?.id]);
 
   /**
    * Record a preference and write it through in the same breath.
@@ -2195,16 +2201,17 @@ function ClubHomePageContent({
   useEffect(() => {
     if (!resolvedClubId) return;
     if (viewPrefsOwner.current !== resolvedClubId) return;
+    if (viewPrefsAccount.current !== (currentUser?.id ?? null)) return;
     if (!viewPrefsTouched.current) return;
-    saveViewPrefs(resolvedClubId, viewPrefs);
+    saveViewPrefs(resolvedClubId, viewPrefs, currentUser?.id);
     /* And to the row, so the next device starts where this one finished.
        Fire and forget by design (see lobbyViewPrefs): the local write above
        has already made the choice real on this screen, and a preference must
        never wait on, or be undone by, the network. Both writes are guarded by
        the same two conditions, so the remote can no more receive club A's tab
        under club B's id than the local one can. */
-    pushRemoteViewPrefs(resolvedClubId, viewPrefs);
-  }, [resolvedClubId, viewPrefs]);
+    pushRemoteViewPrefs(resolvedClubId, viewPrefs, currentUser?.id);
+  }, [resolvedClubId, viewPrefs, currentUser?.id]);
 
   /** Pick a tab: remember it, and restore that tab's own last sort. */
   const selectGameType = useCallback(
@@ -5155,59 +5162,16 @@ function ClubHomePageContent({
                 : undefined
             }
             shareIcon={<IconShareLink />}
-            onShare={async () => {
+            onShare={() => {
+              /* SHARE & INVITE (Dan 2026-10-15): the link is the SENDER's own
+                 short code (smarter.poker/i/<CODE>), so whoever shares it is
+                 credited and the new player lands in their downline. It used
+                 to be /invite/<club>?ref=<player number>, which sent a
+                 signed-out friend to LOGIN and lost the club on the way
+                 through signup. The sheet holds the link, Copy, Share, a QR
+                 code and the sender's results. */
               haptic.medium();
-              let refQuery = '';
-              let profRefNum: number | null = null;
-              try {
-                // readLocalSession, not the auth SDK's remote user lookup: the
-                // session is already local and the referral action must open
-                // instantly when the player taps it.
-                const session = readLocalSession();
-                if (session?.userId) {
-                  const { data: prof, error: profErr } = await supabase
-                    .from('profiles')
-                    .select('player_number')
-                    .eq('id', session.userId)
-                    .maybeSingle();
-                  // ROUND 9 (2026-08-29): the uuid fallback below still
-                  // credits the referral, so behaviour is unchanged - but a
-                  // failed read was silently downgrading share links from the
-                  // friendly player number to a raw uuid.
-                  if (profErr) {
-                    reportError(profErr, 'ClubHomePage.share_ref_profile_read_failed');
-                  }
-                  if (prof?.player_number) {
-                    profRefNum = prof.player_number;
-                    refQuery = `?ref=${prof.player_number}`;
-                  } else {
-                    refQuery = `?ref=${session.userId}`;
-                  }
-                }
-              } catch (err) {
-                reportError(err, 'ClubHomePage.share_ref_lookup_failed');
-              }
-              const shareUrl = `${publicOrigin()}/hub/club-arena/invite/${club.id}${refQuery}`;
-              /* The same leak as the card, and further out: this string is
-                 handed to the OS share sheet, so `display_name` was carrying a
-                 player's legal name into WhatsApp, SMS and anywhere else the
-                 invite was forwarded. An invite to a poker club is signed with
-                 the handle. */
-              const inviterName = playerDisplayName(currentUser, 'arena');
-              const playerNumText = profRefNum ? `\nYour Referral Number: ${profRefNum}` : '';
-              const shareText = `${inviterName} invited you to join ${club.name}!\n\nClub ID: ${club.club_id}${playerNumText}`;
-
-              try {
-                if (navigator.share) {
-                  await navigator.share({ title: club.name, text: shareText, url: shareUrl });
-                } else {
-                  await navigator.clipboard.writeText(`${shareText}\n\n${shareUrl}`);
-                  toast.success('Club link copied!');
-                }
-              } catch (e) {
-                reportError(e, 'ClubHomePage.async');
-                /* user cancelled share */
-              }
+              setShowShareSheet(true);
             }}
           />
           {/* The Bad Beat Jackpot reads its own asset's pool. An arena strip
@@ -6189,6 +6153,20 @@ function ClubHomePageContent({
         onCancel={() => setDeleteTableConfirm({ show: false, tableId: null, tableName: null })}
       />
 
+      {club && (
+        <ShareInviteSheet
+          isOpen={showShareSheet}
+          onClose={() => setShowShareSheet(false)}
+          clubId={club.id}
+          clubName={club.name}
+          clubNumber={club.club_id}
+          inviterAlias={playerDisplayName(currentUser, 'arena')}
+          canSeeClubStats={
+            isOwner ||
+            ['co_owner', 'admin', 'super_agent', 'agent', 'sub_agent'].includes(String(userRole))
+          }
+        />
+      )}
       {showOpeningWizard && isOwner && club && openingChecklistEligible && (
         <ClubOpeningWizard
           clubId={club.id}

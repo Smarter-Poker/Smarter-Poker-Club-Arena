@@ -59,7 +59,7 @@
  *   screen is honest between polls - all of them now, not just the first one.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { reportError, reportWarning } from '../../utils/errorReporter';
@@ -837,7 +837,7 @@ function TickerHost() {
      one animation, and nothing can be clicked while it plays. */
   const [leaving, setLeaving] = useState(false);
   const wasVisible = useRef(false);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (barVisible) {
       wasVisible.current = true;
       setLeaving(false);
@@ -867,14 +867,14 @@ function TickerHost() {
      topmost (no global header, i.e. /table/*) it has paid, so the tab bar's
      own inset is zeroed. Paying it twice is the ~47px band that was fixed on
      notched iPhones once already, in this same relationship. */
-  useEffect(() => {
+  useLayoutEffect(() => {
     const root = document.documentElement;
     const clear = () => {
       root.style.removeProperty('--mtt-ticker-h');
       root.style.removeProperty('--sp-tabbar-inset');
     };
 
-    if (!barVisible) {
+    if (!mounted || lane.length === 0) {
       clear();
       return clear;
     }
@@ -902,7 +902,7 @@ function TickerHost() {
       ro?.disconnect();
       clear();
     };
-  }, [barVisible, headerBottom]);
+  }, [mounted, lane.length, headerBottom]);
 
   if (!mounted || lane.length === 0) return null;
 

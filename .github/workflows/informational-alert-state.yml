@@ -1,0 +1,68 @@
+name: Informational alert state
+
+# fn_record_operational_alert() and the operational_alert_events
+# investigation_status CHECK (migration 20261015183650). Runs
+# scripts/ci/test-informational-alert-state.py against a throwaway PostgreSQL
+# 17 cluster, never production: the exact production writer captured
+# 2026-10-15 (pg_get_functiondef md5 equal to the live function) records an
+# info/info summary as 'new', and the migration must record it
+# 'informational', leave every incident 'new', reclassify only the info/info
+# rows still 'new', keep grants and reproduce production's derived postimage
+# md5. No timer (CLAUDE.md 10.85): pull_request only, scoped to the paths it
+# proves. ci.yml has no push trigger, so neither does this.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - supabase/migrations/20261015183650_an_informational_alert_is_recorded_informational.sql
+      - scripts/ci/fixtures/informational-alert-state/**
+      - scripts/ci/test-informational-alert-state.py
+      - .github/workflows/informational-alert-state.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: informational-alert-state-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  informational-alert-state:
+    name: An informational alert is recorded informational
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL 17 from the signed PGDG source only
+        run: |
+          set -euo pipefail
+          pg_sources="$(mktemp -d "$RUNNER_TEMP/ca-postgres-apt.XXXXXX")"
+          chmod 755 "$pg_sources"
+          test -f /etc/apt/sources.list.d/ubuntu.sources
+          cp /etc/apt/sources.list.d/ubuntu.sources "$pg_sources/ubuntu.sources"
+          pg_apt=(-o "Dir::Etc::sourcelist=/dev/null" -o "Dir::Etc::sourceparts=$pg_sources")
+          sudo apt-get "${pg_apt[@]}" update
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-common curl ca-certificates
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail --silent --show-error --location \
+            --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          codename="$(. /etc/os-release && printf '%s' "$VERSION_CODENAME")"
+          printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' \
+            "$codename" > "$pg_sources/pgdg.sources"
+          sudo apt-get "${pg_apt[@]}" update
+          printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-17
+      # Runs as the runner user (non-root), exactly as the ci.yml step would.
+      - name: An informational alert is recorded informational
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-informational-alert-state.py --output artifacts/informational-alert-state
+      - name: Retain the regression evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: informational-alert-state-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/informational-alert-state/RESULTS.json
+          retention-days: 7
+          if-no-files-found: warn

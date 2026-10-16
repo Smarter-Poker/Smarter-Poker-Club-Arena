@@ -86,6 +86,15 @@ export function ShareInviteSheet({
     []
   );
 
+  // The club page stays mounted when the club changes, so nothing from the
+  // previous club (its link, QR, figures or stats table) may carry over.
+  useEffect(() => {
+    setLink(null);
+    setStats(null);
+    setClubRows(null);
+    setClubScope(null);
+  }, [clubId]);
+
   useEffect(() => {
     if (!isOpen || !clubId) return;
     let alive = true;

@@ -84,3 +84,8 @@ World Hub: `pages/i/[code].js`, `pages/api/og/club-invite.js`,
 ## Follow-Up: The Poker Alias, Not The Login Name
 
 The live preview for KingFish's link read "kingfish": `profiles.username` is stored lower case. Every invite surface (preview, landing page, stats, pending-join forward, inviter notifications) now prints `COALESCE(alias, username)`, the same order Club Arena uses for a player's display name. Migration `20261015223818_club_invite_names_use_the_poker_alias.sql`, applied to production as `20261015224105`, function bodies only, all six verified md5-identical to the file. Scenario added to `scripts/ci/club-invite-attribution` (44 pass).
+
+## Follow-Up: Audit Fixes
+
+- `fn_club_invite_club_stats` now admits staff and agents whose membership status is `automatic`, matching every other invite function (`20261016004124_club_invite_stats_admit_automatic_members.sql`, applied as `20261016004204`, md5-verified).
+- The Share & Invite sheet clears the previous club's link, QR, figures and stats when the club changes, so a failed load can never show or copy another club's link.

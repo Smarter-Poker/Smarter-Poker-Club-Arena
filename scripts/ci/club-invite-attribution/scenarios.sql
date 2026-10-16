@@ -156,5 +156,10 @@ INSERT INTO r SELECT 'agent_stats', fn_club_invite_club_stats('11111111-1111-111
 SELECT pg_temp.ok((SELECT v->>'scope'='downline' AND EXISTS(SELECT 1 FROM jsonb_array_elements(v->'rows') e WHERE e->>'alias'='playerc') AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements(v->'rows') e WHERE e->>'alias'='kingfish') FROM r WHERE k='agent_stats'), 'agent sees own downline only');
 SELECT pg_temp.as_user('00000000-0000-0000-0000-00000000000c');
 SELECT pg_temp.ok((fn_club_invite_club_stats('11111111-1111-1111-1111-111111111111'))->>'allowed'='false', 'plain player cannot read club stats');
+-- an agent admitted with status 'automatic' still reads the stats
+UPDATE club_members SET status='automatic' WHERE club_id='11111111-1111-1111-1111-111111111111' AND user_id='00000000-0000-0000-0000-00000000000b';
+SELECT pg_temp.as_user('00000000-0000-0000-0000-00000000000b');
+SELECT pg_temp.ok((fn_club_invite_club_stats('11111111-1111-1111-1111-111111111111'))->>'allowed'='true', 'an automatic-status agent reads club stats');
+UPDATE club_members SET status='active' WHERE club_id='11111111-1111-1111-1111-111111111111' AND user_id='00000000-0000-0000-0000-00000000000b';
 
 SELECT v FROM r WHERE k IN ('owner_stats');

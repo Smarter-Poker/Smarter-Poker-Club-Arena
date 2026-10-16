@@ -507,16 +507,18 @@ body.marketplace-color-scope .toast__close svg {
 /* Live Messenger windows keep transient notifications above the composer. */
 .toast-container,
 body[data-toast-theme='daily-missions-casino'] .toast-container {
-  bottom: max(
+  --toast-bottom-clearance: max(
     24px,
     calc(var(--bottom-nav-clearance, 0px) + 12px),
     var(--sp-messenger-toast-clearance, 0px)
   );
-}
-
-.toast-container,
-body[data-toast-theme='daily-missions-casino'] .toast-container {
-  max-height: var(--sp-messenger-toast-room, calc(100dvh - 100px));
+  bottom: var(--toast-bottom-clearance);
+  /* Messenger room is an additional cap, not permission to cross the top
+     edge when the footer raises the final bottom position. */
+  max-height: min(
+    var(--sp-messenger-toast-room, 100dvh),
+    calc(100dvh - max(16px, env(safe-area-inset-top)) - var(--toast-bottom-clearance))
+  );
   overflow-y: auto;
   overscroll-behavior: contain;
 }

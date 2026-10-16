@@ -196,7 +196,7 @@ describe('second sweep (2026-09-04): the parts the first fix missed or broke', (
     );
     const turns = read('server/src/engine/ServerTableEngineTurns.ts');
     expect(turns).toContain(
-      'if (opts?.rebuyPromptOpen) this.rebuyPromptOpenAt.set(userId, Date.now());'
+      'if (presenceOptions?.rebuyPromptOpen) this.rebuyPromptOpenAt.set(userId, Date.now());'
     );
     expect(page).toContain('rebuyPromptOpen: bustRebuyOpenRef.current,');
   });

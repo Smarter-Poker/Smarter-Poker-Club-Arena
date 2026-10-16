@@ -102,7 +102,7 @@ describe("Dan's Phase 5 rulings on heads-up tournaments", () => {
     // The normal countdown is still the mechanism, unchanged.
     expect(disconnect).toContain('disconnectTimeoutSeconds: 30');
     expect(disconnect).toContain('reconnectGraceSeconds: 5');
-    expect(disconnect).toContain('maxConsecutiveTimeouts: 3');
+    expect(disconnect).toContain('maxConsecutiveTimeouts: 2');
   });
 
   /**

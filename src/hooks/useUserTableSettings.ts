@@ -109,7 +109,7 @@ export const DEFAULT_USER_TABLE_SETTINGS: UserTableSettings = {
   card_slide: false, // 2026-09-04: the corner peel, OFF by default (Dan); 20260905001550
   card_squeeze: false,
   show_stack_in_bb: false,
-  auto_time_bank: false,
+  auto_time_bank: true,
   enhanced_view: true,
   voice_message: true,
   text_message: true,
@@ -248,6 +248,7 @@ export const TABLE_SETTINGS_META: SettingMeta[] = [
     key: 'auto_time_bank',
     label: 'Auto Time Bank',
     description: 'Auto-Activate Time Bank When Primary Timer Expires',
+    quick: true,
   },
   {
     key: 'enhanced_view',

@@ -116,5 +116,7 @@ CREATE FUNCTION fn_lock_daily_mission_user(uuid) RETURNS void LANGUAGE sql AS $$
 # Phase 7 closure qualification runs in this existing required accounting step.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-phase7-preserve-resolved-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
 
+# Unchanged weekly receipt freshness predicates use the actual concurrent indexes.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-source-freshness-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
 # Installed proof lifetime remains connected to the finite inventory authority.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / "test-inventory-proof-lifetime-postgres.py"), "--pg-bin", str(pg), "--scratch", str(args.scratch)], text=True))

@@ -136,7 +136,7 @@ describe('a socket that answers is a player who is here', () => {
     const i = index.indexOf('onAlive: (tableId, userId) => {');
     expect(i).toBeGreaterThan(-1);
     expect(index.slice(i, index.indexOf('},', i))).toContain(
-      'gameServer.getTableEngine(tableId)?.heartbeat(userId)'
+      'gameServer.getTableEngine(tableId)?.heartbeat(userId, { transportOnly: true })'
     );
   });
 });

@@ -496,6 +496,18 @@ if [ "$status" != 0 ]; then
 fi
 oks=$(grep -c -E '^  ok  (0[1-9]|10) ' "$fixture/build.out" || true)
 [ "$oks" = 10 ] || { echo "FAIL: $oks of the 10 sections reported"; exit 1; }
+# A stale compatibility overload must refuse the whole migration, not silently
+# remove an unqualified door or leave its new readers installed after failure.
+before_match=$(Q "SELECT md5(pg_get_functiondef('public.fn_lightning_match(uuid,timestamptz,uuid[],text,jsonb)'::regprocedure))")
+Q "CREATE FUNCTION public.fn_lightning_match(uuid,timestamptz,uuid[],text) RETURNS jsonb LANGUAGE sql AS 'SELECT NULL::jsonb'" >/dev/null
+if "${PSQL[@]}" -f "$M/20261015214203_lightning_calibration_uses_the_authoritative_plan_snapshot.sql" > "$fixture/signature-refusal.out" 2>&1; then
+  echo 'FAIL: unexpected matcher signature was accepted'; exit 1
+fi
+grep -q 'Lightning matcher signature differs from the qualified Phase 8 door' "$fixture/signature-refusal.out" || { cat "$fixture/signature-refusal.out"; exit 1; }
+[ "$(Q "SELECT to_regprocedure('public.fn_lightning_match(uuid,timestamptz,uuid[],text)') IS NOT NULL AND to_regprocedure('public.fn_lightning_matcher_binding(uuid)') IS NULL AND to_regprocedure('public.fn_lightning_matcher_snapshot(uuid,timestamptz,uuid[],jsonb)') IS NULL")" = t ] || { echo 'FAIL: signature refusal was not atomic'; exit 1; }
+[ "$(Q "SELECT md5(pg_get_functiondef('public.fn_lightning_match(uuid,timestamptz,uuid[],text,jsonb)'::regprocedure))")" = "$before_match" ] || { echo 'FAIL: signature refusal changed the original matcher'; exit 1; }
+Q "DROP FUNCTION public.fn_lightning_match(uuid,timestamptz,uuid[],text)" >/dev/null
+echo '  ok  matcher signature mismatch refuses atomically and preserves both doors'
 # Prove the old report certifies unbound rows, then qualify the source-bound
 # report and the actual snapshot payload through the same real database.
 "${PSQL[@]}" -f "$F/lightning-authoritative-calibration-before.sql" \

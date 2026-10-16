@@ -4,6 +4,31 @@ You are picking up the Lightning programme for Club Arena (Smarter Poker). Light
 
 **The dated delivery checkpoints above section U supersede the historical state in section U and sections 3 to 5.** Sections 3 to 5 were written at 17:30 UTC and are kept for their ids and history.
 
+## Current-Head Signature Failure Recovery (2026-10-16 01:35 UTC)
+
+- CI `38828275996` client shard 3 failed one of 8,927 tests: existing one-overload law cannot infer the Phase 8 dynamic retirement. Local reproduction fails identically. Fresh production catalog confirms exactly one matcher door, the five-argument signature. This is an uninstalled migration source qualification gap, not demonstrated production overload ambiguity.
+- The uninstalled authoritative-calibration migration explicitly retires the obsolete signature, refusing an unexpected current schema before any drop. Native regression injects a stale overload in isolation, requires the exact refusal and atomic rollback preserving both original doors, then installs on the qualified shape. No assertion weakened or installed migration replayed. Fresh native PostgreSQL parity/calibration passes (8 fixtures / 49 identical groups), including the atomic mismatch refusal. Existing signature law plus all Lightning contracts pass: 1,078 tests / 46 files; TypeScript passes. Normal submission follows.
+
+## Formation Installer Retry (2026-10-16 01:20 UTC)
+
+- Fresh database server time `2026-10-16T01:20:18.999452Z` confirms B1 absent. Prior unrelated installer completed successfully; pending operation admitted as queued and identified as unrelated `20261015212515_one_time_legacy_test_learning_purge.sql`. No pending run was displaced.
+- One explicit B1 retry dispatched `2026-10-16T01:20:24Z`, run `38834574194`, protected workflow source `dfafc10de523f627ffbfe67702928e6f6fc669f2`; pending behind that existing operation. Preserve this owner; no duplicate, override or installation claim.
+- Current-head #7025 production build, Diamond WebGL and engine shards 2/4 and 4/4 passed. Remaining native accounting/engine/CSS/client checks active or queued, no reported failure. Fresh public engine identity remains `a2ccc04d39bc15852d0047a32893371f3a0a6836`; both pilots MUST-MOVE/disabled, latest eligible 50/39.
+
+## Continued Ownership (2026-10-16 01:06 UTC)
+
+- Canonical reader emitted `2026-10-16T01:06:35.742Z`, policy 2.9 with unchanged manifest and four hashes recorded below. Fresh actual repository entrypoints, full CLAUDE, publishing/deployment and Lightning checkpoint/phase/register/rollout/review/catalog read; canonical comparison passed. Owned head remains `607bd988b484a6b852b5ee5b8583ea6acb29b9f1`.
+- B1 stage `38828113975` succeeded and correlated exact component `fdb889b77df29f7a62596d925fb7278a72d92597` to receiver `38832686277`, whose four engine checks remain queued. No serving adoption claimed.
+- Installer `38829859349` owns an unrelated Spin migration and remains queued; `38833018716` is pending with no job/input identity yet exposed. Preserve both operations; do not displace another task’s pending installer by dispatching a competing retry. Our terminal-refused B1 install is still absent at the 01:05 database read.
+- Current #7025 CI `38828275996` has no reported failure. Compiler/source/native checks passed, Diamond WebGL admitted; required heavy jobs pending. Both private games remain disabled pending qualified installation and engine adoption.
+
+## Integrated Candidate And Guarded Refusal (2026-10-16 00:53 UTC)
+
+- #7014 is protected-merged as `fdb889b77df29f7a62596d925fb7278a72d92597`. #7025 is now mergeable at pushed head `607bd988b484a6b852b5ee5b8583ea6acb29b9f1`, CI `38828275996`. Runtime source is unchanged from `9caf2219`; only checkpoint text differs. Native PostgreSQL matcher/calibration parity, 1,072 client contracts and normal pre-push passed after integration. Current-head initial guards, compiler/repository checks and native fixture passed; heavy required jobs remain queued with no reported failure.
+- The superseded #7025 CI `38818170935` ignored normal cancellation in always jobs; explicit force-cancel completed, terminal cancelled with no nonterminal jobs. Preserve current CI `38828275996`.
+- Formation installer `38828138951` was admitted at `2026-10-16T00:52:56Z`, correctly REFUSED by the :50–:03 UTC DDL guard before sending the migration. Fresh readback still has no `20261015212230` row. This is a known terminal refusal, not unknown installation. One explicit retry is prepared for after `2026-10-16T01:03Z` (use 01:04 or later to avoid the exact-boundary refusal), after fresh server-time/history read. No retry loop or override.
+- Engine staging owner `38828113975`: runtime-change detection passed, exact-SHA dispatch still queued. No new engine deployment or private activation claimed. Effective pilot latency configuration remains unchanged: idle_to_match ceiling 5,000ms, three recent windows, minimum 20 samples; the chosen 3,000ms formation maximum fits that ceiling but actual workload proof remains required.
+
 ## Formation Integration (2026-10-16 00:12 UTC)
 
 - #7014 protected squash merged as `fdb889b77df29f7a62596d925fb7278a72d92597` after all six required contexts qualified (build/CSS valid engine-only classification skips). All substantive shards passed; only non-required summary remained queued.

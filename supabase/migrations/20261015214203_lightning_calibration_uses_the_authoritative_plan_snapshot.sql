@@ -76,6 +76,20 @@ GRANT EXECUTE ON FUNCTION public.fn_lightning_matcher_snapshot(uuid,timestamptz,
 
 -- Both STABLE readers use the exact same statement snapshot and p_now. No
 -- post-reservation read or second RPC can replace the input this plan saw.
+-- Phase 8 replaced the four-argument door through dynamic SQL. Make its
+-- retirement explicit for signature qualification, while refusing an unexpected
+-- schema rather than dropping a live, unreviewed compatibility door.
+DO $signature$
+BEGIN
+ IF to_regprocedure('public.fn_lightning_match(uuid,timestamptz,uuid[],text,jsonb)') IS NULL
+    OR to_regprocedure('public.fn_lightning_match(uuid,timestamptz,uuid[],text)') IS NOT NULL
+    OR (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+         WHERE n.nspname='public' AND p.proname='fn_lightning_match') <> 1 THEN
+   RAISE EXCEPTION 'Lightning matcher signature differs from the qualified Phase 8 door';
+ END IF;
+END $signature$;
+DROP FUNCTION IF EXISTS public.fn_lightning_match(uuid,timestamptz,uuid[],text);
+
 CREATE OR REPLACE FUNCTION public.fn_lightning_match(
  p_cluster_id uuid,p_now timestamptz,p_disconnected uuid[],p_matcher_version text,p_player_platforms jsonb DEFAULT NULL
 ) RETURNS jsonb LANGUAGE sql STABLE SET search_path TO 'public','pg_temp' AS $fn$

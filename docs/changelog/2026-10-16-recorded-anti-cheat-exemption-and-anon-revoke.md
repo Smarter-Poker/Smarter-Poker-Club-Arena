@@ -1,0 +1,33 @@
+# Recorded Anti-Cheat Exemption And Anon Revoke (2026-10-16)
+
+## What Was Wrong
+
+- `20261015170348_anti_cheat_multi_account_exemptions_beta_testers` and
+  `20261015184608_cashout_messages_still_reach_players_and_agents` were applied
+  to PokerIQ-Production on 2026-10-15 but their files sat in PR #7028 for twelve
+  hours, red on `Supabase Invariants - New Migrations Were Applied`, because no
+  schema-manifest fragment declared `anti_cheat_exemptions` or
+  `fn_anti_cheat_flags_skip_exempt`.
+- That migration left Postgres's default `EXECUTE` grant on the new SECURITY
+  DEFINER trigger function, so the hourly Production Integrity Audit reported
+  `anon_definers=1`: the one anon-executable definer not on
+  `docs/security/anon-executable-definers.json`.
+
+## What Changed
+
+- `scripts/ci/schema-manifest.d/anti-cheat-exemptions.json` declares the table
+  and trigger function until the nightly base snapshot absorbs them.
+- `20261016100351_the_anti_cheat_exemption_trigger_is_not_callable_by_anon`
+  revokes `EXECUTE` from `PUBLIC`, `anon` and `authenticated`, with an in-transaction
+  readback. Applied to production at 10:03 UTC; the live anon-executable definer
+  set is now exactly the 24 allowlisted signatures. The trigger still fires with
+  the definer's rights, so KingFish and Danimal remain exempt.
+- The Cron Health roster move for the two daily-digest jobs is left to #7078,
+  which carries the same 134 -> 136 change (live `cron.job`: 138 total, 136
+  active) together with the Schema Integrity fix.
+- `20261016110416_the_invoice_deliverer_is_callable_by_the_service_role_only`
+  states the grant `fn_deliver_accounting_invoice` already has on production
+  (EXECUTE for service_role only; CREATE OR REPLACE in `20261015184608` kept it).
+  `check-definer-authorization.mjs` reads the repository, could not see an
+  inherited grant, and refused the recorded migration. Applied at 11:04 UTC as a
+  no-op with a readback.

@@ -26847,6 +26847,8 @@ function LiveTablePage({
             tableId={tableId}
             heroSeated={tableState.heroSeat > 0}
             isTournament={tableState.isTournament}
+            leaveClockRemainingMs={heroLeaveLocked ? heroLeaveMs : null}
+            leaveClockRunning={heroLeave?.running === true}
             handNumber={tableState.handNumber ?? 0}
             heroPos={
               tableState.heroSeat > 0 ? (seatPositions[tableState.heroSeat - 1] ?? null) : null

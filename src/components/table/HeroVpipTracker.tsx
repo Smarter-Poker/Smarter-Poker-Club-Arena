@@ -23,7 +23,7 @@
  * short delay so the hand's fact row has landed), when the hero sits, and on
  * a slow backstop timer. One small RPC per hand per human.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import VpipRequirementBadge from './VpipRequirementBadge';
 import './HeroVpipTracker.css';
@@ -142,6 +142,9 @@ interface Props {
   handNumber: number;
   /** Where the hero's seat is, percent of the table; the tracker sits to its left. */
   heroPos: { x: number; y: number } | null;
+  /** Existing engine stay-clock projection; no client-side lock decision. */
+  leaveClockRemainingMs?: number | null;
+  leaveClockRunning?: boolean;
 }
 
 export default function HeroVpipTracker({
@@ -150,24 +153,67 @@ export default function HeroVpipTracker({
   isTournament,
   handNumber,
   heroPos,
+  leaveClockRemainingMs = null,
+  leaveClockRunning = false,
 }: Props) {
   const enabled = Boolean(tableId) && heroSeated && !isTournament;
   const { status, freshness } = useHeroVpipStatus(tableId, enabled, handNumber);
-  if (!enabled || !status?.ok || !status.seated || !heroPos) return null;
+  const anchor = useRef<HTMLDivElement>(null);
+  const vpip = status?.vpip == null ? null : Number(status.vpip);
+  const floor = Number(status?.required ?? 0);
+  const showVpip = Boolean(status?.ok && status.seated && floor > 0);
+  const showClock =
+    leaveClockRunning && leaveClockRemainingMs !== null && leaveClockRemainingMs > 0;
 
-  const vpip = status.vpip == null ? null : Number(status.vpip);
-  const floor = Number(status.required ?? 0);
+  useLayoutEffect(() => {
+    const node = anchor.current;
+    const plane = node?.parentElement;
+    const info = plane?.querySelector<HTMLElement>('.seat-wrapper--hero .seat__info');
+    const actionPanel = plane?.closest('.table-page')?.querySelector<HTMLElement>('.action-panel');
+    if (!node || !plane || !info) return;
+    const place = () => {
+      const parent = plane.getBoundingClientRect();
+      const plate = info.getBoundingClientRect();
+      if (
+        !parent.width ||
+        !parent.height ||
+        !plane.offsetWidth ||
+        !plane.offsetHeight ||
+        !plate.width
+      )
+        return;
+      const scaleX = parent.width / plane.offsetWidth;
+      const scaleY = parent.height / plane.offsetHeight;
+      // The real name/stack plate is the anchor, including its responsive lift.
+      // Center the indicator column beside the plate and keep its clock
+      // above the plate's bottom edge, clear of the action bar.
+      node.style.left = `${(plate.left - parent.left) / scaleX - 12}px`;
+      const center = (plate.top + plate.height / 2 - parent.top) / scaleY;
+      const actions = actionPanel?.getBoundingClientRect();
+      const bottomEdge =
+        actions && actions.height > 0 ? Math.min(plate.bottom, actions.top - 4) : plate.bottom;
+      const bottom = (bottomEdge - parent.top) / scaleY;
+      const height = node.getBoundingClientRect().height / scaleY;
+      node.style.top = `${Math.min(center, bottom - height / 2)}px`;
+    };
+    place();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(place);
+    observer.observe(plane);
+    observer.observe(info);
+    observer.observe(node);
+    if (actionPanel) observer.observe(actionPanel);
+    if (info.parentElement) observer.observe(info.parentElement);
+    return () => observer.disconnect();
+  }, [tableId, enabled, heroPos?.x, heroPos?.y, showVpip, showClock]);
 
-  /* A TABLE WITH NO FLOOR HAS NOTHING TO PLACARD (Dan 2026-09-07, item 3).
-     The badge he designed is a REQUIREMENT badge - its bottom row is the game
-     rule. On a table that runs no VPIP rule there is no requirement to print,
-     and the old rectangle's fallback ("7 Hands") was the generic readout he
-     asked to be rid of. So the tracker renders nothing there rather than
-     inventing a minimum to fill the row. */
-  if (!(floor > 0)) return null;
+  if (!enabled || !heroPos || (!showVpip && !showClock)) return null;
+  const seconds = Math.max(0, Math.ceil((leaveClockRemainingMs ?? 0) / 1000));
+  const clockText = `${Math.floor(seconds / 60)}:${seconds % 60 < 10 ? `0${seconds % 60}` : seconds % 60}`;
 
   return (
     <div
+      ref={anchor}
       className="hero-vpip"
       style={{ left: `${heroPos.x}%`, top: `${heroPos.y}%` }}
       data-testid="hero-vpip"
@@ -183,7 +229,15 @@ export default function HeroVpipTracker({
           computed and discarded. If an eligibility indicator is approved it
           gets built deliberately, per that section, rather than left lying
           around looking wired. */}
-      <VpipRequirementBadge minimumVpip={floor} currentVpip={vpip} status={freshness} />
+      {showVpip && (
+        <VpipRequirementBadge minimumVpip={floor} currentVpip={vpip} status={freshness} />
+      )}
+      {showClock && (
+        <div className="hero-vpip__clock" data-testid="hero-profit-clock">
+          <span>Your Time Clock Has Started</span>
+          <time aria-label={`Time Clock ${clockText}`}>{clockText}</time>
+        </div>
+      )}
     </div>
   );
 }

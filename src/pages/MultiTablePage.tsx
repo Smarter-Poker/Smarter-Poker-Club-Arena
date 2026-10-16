@@ -86,6 +86,11 @@ import { sessionStatsService } from '../services/SessionStatsService';
 import './MultiTablePage.css';
 import { lazyWithRetry } from '../utils/lazyWithRetry';
 import { resolveLobbyClubId } from '../utils/clubQuickLink';
+import {
+  rememberLobbyPage,
+  restoreLobbyPage,
+  type LobbyPageSnapshot,
+} from '../utils/lobbyPageHistory';
 import { useUserStore } from '../stores/useUserStore';
 import { TableErrorBoundary } from '../components/common/TableErrorBoundary';
 import { betSliderStep, sliderUnitFor } from '../components/table/ActionPanel';
@@ -333,7 +338,7 @@ interface TableInstance {
   lobbyLandedList?: boolean;
   /** undefined uses the home club; null displays the shared arena selector. */
   lobbyClubId?: string | null;
-  lobbyArenaStack?: (string | null)[];
+  lobbyPageHistory?: LobbyPageSnapshot[];
 }
 
 /**
@@ -345,7 +350,11 @@ interface TableInstance {
  */
 
 /** Push a tournament onto a lobby tab's drill-in history. */
-const pushLobbyTournament = (t: TableInstance, target: InTabTournamentTarget): TableInstance => {
+const pushLobbyTournament = (
+  t: TableInstance,
+  target: InTabTournamentTarget,
+  homeClubId: string | null = null
+): TableInstance => {
   const stack = t.lobbyTournamentStack ?? [];
   // Re-opening the event already on screen is a no-op, not a second entry.
   // Without this, a double tap on the same row would need two "back" presses
@@ -353,11 +362,17 @@ const pushLobbyTournament = (t: TableInstance, target: InTabTournamentTarget): T
   const top = stack[stack.length - 1];
   if (top && top.tournamentId === target.tournamentId && top.search === target.search) return t;
   const next = [...stack, target];
-  return { ...t, lobbyTournamentStack: next, lobbyTournamentId: target.tournamentId };
+  return {
+    ...rememberLobbyPage(t, homeClubId),
+    lobbyTournamentStack: next,
+    lobbyTournamentId: target.tournamentId,
+  };
 };
 
 /** Pop one level. Returns the tab showing the club lobby when the stack empties. */
 const popLobbyTournament = (t: TableInstance): TableInstance => {
+  const previous = restoreLobbyPage(t);
+  if (previous) return previous;
   const stack = t.lobbyTournamentStack ?? [];
   const next = stack.slice(0, -1);
   const top = next[next.length - 1];
@@ -1617,13 +1632,34 @@ export default function MultiTablePage() {
         tabsAfter.find(isTableTab);
       if (!host) return;
       pendingTabIndexRef.current = idx;
-      navigate(`/table/${host.id}${tableQuery(host)}`, { replace: true });
+      navigate(`/table/${host.id}${tableQuery(host)}`);
     },
     [hidden, navigate]
   );
 
   /** One counter for every lobby-page remount request (see `openLobbyTabOn`). */
   const lobbyLandingNonceRef = useRef(0);
+
+  const lobbyReturnTabRef = useRef(new Map<string, string>());
+  const previousVisibleTabRef = useRef<{ id: string; hidden: boolean } | null>(null);
+  const visibleTabId = tables[activeIndex]?.id;
+  useLayoutEffect(() => {
+    const previous = previousVisibleTabRef.current;
+    // The route-sync layout effect below consumes this pending focus before
+    // paint. Observe that target too, not the borrowed host table it hides.
+    const current = tablesRef.current[pendingTabIndexRef.current ?? activeIndexRef.current];
+    if (!hidden && current && isLobbyTab(current) && previous) {
+      if (previous.hidden) lobbyReturnTabRef.current.delete(current.id);
+      else if (previous.id !== current.id) {
+        lobbyReturnTabRef.current.set(current.id, previous.id);
+      }
+    }
+    previousVisibleTabRef.current = current ? { id: current.id, hidden } : null;
+    const openIds = new Set(tablesRef.current.map((tab) => tab.id));
+    for (const id of lobbyReturnTabRef.current.keys()) {
+      if (!openIds.has(id)) lobbyReturnTabRef.current.delete(id);
+    }
+  }, [visibleTabId, hidden]);
 
   useMasterBusSubscription('OPEN_LOBBY_TAB', () => {
     const prev = tablesRef.current;
@@ -1640,7 +1676,11 @@ export default function MultiTablePage() {
        * button being broken. Pressing "+" is a request for the lobby; give
        * them the lobby.
        */
-      setTables((cur) => cur.map((t) => (isLobbyTab(t) ? clearLobbyTournaments(t) : t)));
+      setTables((cur) =>
+        cur.map((t) =>
+          isLobbyTab(t) ? { ...clearLobbyTournaments(t), lobbyPageHistory: undefined } : t
+        )
+      );
       /* A page still showing a list an earlier request landed it on is
          remounted, so a plain request opens on the player's own saved tab.
          `openLobbyTabOn` emits BEFORE it stamps, so its own request is
@@ -2533,7 +2573,10 @@ export default function MultiTablePage() {
       if (!target) return;
 
       if (isTableTab(target)) {
-        navigate(`/table/${target.id}${tableQuery(target)}`, { replace: true });
+        // A return from another page is a real forward navigation. Replacing
+        // it erased that page and made header Back skip into an older club.
+        if (hidden) navigate(`/table/${target.id}${tableQuery(target)}`);
+        else navigate(`/table/${target.id}${tableQuery(target)}`, { replace: true });
         return;
       }
 
@@ -2557,7 +2600,7 @@ export default function MultiTablePage() {
         tables.find((t) => isTableTab(t));
       if (!host) return; // lobby tabs only: nothing to borrow, nothing to do
       pendingTabIndexRef.current = idx;
-      navigate(`/table/${host.id}${tableQuery(host)}`, { replace: true });
+      navigate(`/table/${host.id}${tableQuery(host)}`);
     },
     [tables, activeIndex, trackedTimeout, navigate, hidden]
   );
@@ -3620,7 +3663,21 @@ export default function MultiTablePage() {
            for one navigation — meant the second overwrote the first's result
            with stale data. `setActiveIndex` below is already an index into an
            array whose identity cannot change here, so it stays direct. */
-        setTables((cur) => cur.map((t) => (isLobbyTab(t) ? pushLobbyTournament(t, target) : t)));
+        const fromLobby = !!routeTableIdRef.current && activeIndexRef.current === lobbyIdx;
+        setTables((cur) =>
+          cur.map((t) =>
+            isLobbyTab(t)
+              ? fromLobby
+                ? pushLobbyTournament(t, target, homeClubIdRef.current)
+                : {
+                    ...t,
+                    lobbyTournamentId: target.tournamentId,
+                    lobbyTournamentStack: [target],
+                    lobbyPageHistory: undefined,
+                  }
+              : t
+          )
+        );
         setActiveIndex(lobbyIdx);
         return true;
       }
@@ -3691,9 +3748,8 @@ export default function MultiTablePage() {
         const current = tab.lobbyClubId === undefined ? homeClubIdRef.current : tab.lobbyClubId;
         if (current === clubKey && !tab.lobbyTournamentStack?.length) return tab;
         return {
-          ...clearLobbyTournaments(tab),
+          ...clearLobbyTournaments(rememberLobbyPage(tab, homeClubIdRef.current)),
           lobbyClubId: clubKey,
-          lobbyArenaStack: [...(tab.lobbyArenaStack ?? []), current],
         };
       })
     );
@@ -3811,7 +3867,7 @@ export default function MultiTablePage() {
             .map((t) =>
               t.id === lobbyId
                 ? tournament
-                  ? pushLobbyTournament(t, tournament)
+                  ? pushLobbyTournament(t, tournament, homeClubIdRef.current)
                   : {
                       ...clearLobbyTournaments(t),
                       ...(arena ? { lobbyClubId: arena.clubKey } : {}),
@@ -3837,31 +3893,35 @@ export default function MultiTablePage() {
   );
 
   /**
-   * The in-tab header's Back: up the drill-in first, the browser's Back only
-   * when there is nothing left to pop (see InTabLobbyNav.goBack).
+   * Back follows visible pages in order, then the exact tab this lobby was
+   * opened from. Opening a lobby does not push browser history, so falling
+   * through there skipped the table and could land in an unrelated club.
    */
   const goBackInTab = useCallback(() => {
     const cur = tablesRef.current[activeIndexRef.current];
+    if (cur && isLobbyTab(cur) && cur.lobbyPageHistory?.length) {
+      setTables((tabs) =>
+        tabs.map((tab) => (tab.id === cur.id ? (restoreLobbyPage(tab) ?? tab) : tab))
+      );
+      return;
+    }
+    if (cur && isLobbyTab(cur)) {
+      const returnId = lobbyReturnTabRef.current.get(cur.id);
+      const returnIndex = tablesRef.current.findIndex((tab) => tab.id === returnId);
+      if (returnIndex !== -1) {
+        setActiveIndex(returnIndex);
+        const target = tablesRef.current[returnIndex];
+        if (isTableTab(target))
+          navigate(`/table/${target.id}${tableQuery(target)}`, { replace: true });
+        return;
+      }
+    }
     if (cur && isLobbyTab(cur) && (cur.lobbyTournamentStack?.length ?? 0) > 0) {
       setTables((tabs) => tabs.map((t) => (t.id === cur.id ? popLobbyTournament(t) : t)));
       return;
     }
-    if (cur && isLobbyTab(cur) && cur.lobbyArenaStack?.length) {
-      setTables((tabs) =>
-        tabs.map((tab) => {
-          if (tab.id !== cur.id) return tab;
-          const stack = tab.lobbyArenaStack ?? [];
-          return {
-            ...clearLobbyTournaments(tab),
-            lobbyClubId: stack[stack.length - 1],
-            lobbyArenaStack: stack.slice(0, -1),
-          };
-        })
-      );
-      return;
-    }
     window.history.back();
-  }, []);
+  }, [navigate]);
 
   /* The "+" long-press menu (TableTabBar): straight to the lobby, or straight
      to a hub page, in a NEW tab - so a player on a felt reaches Social or

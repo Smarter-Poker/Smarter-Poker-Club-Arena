@@ -370,9 +370,7 @@ describe('the regular ante reaches the felt', () => {
        MECHANISM - anchored at the hero's own point and pushed left by half the
        pod, so it rides with the seat at every breakpoint - not on the gap,
        which is Dan's to set. It was 10px; it is 3px. */
-    expect(css).toMatch(
-      /transform: translate\(calc\(-100% - var\(--sp-hero-half\) - 3px\), -50%\);/
-    );
+    expect(css).toMatch(/transform: translate\(-100%, -50%\);/);
     /* And it stays small: a plaque beside the hero, not a second seat. The
        pin moved with the redesign (2026-09-07) - this file no longer draws
        anything, so there is no `__figure` font size to hold. What it still
@@ -484,5 +482,72 @@ describe('the game line fits its box (2026-09-09)', () => {
     expect(block).toMatch(/white-space: normal;/);
     expect(block).toMatch(/text-overflow: clip;/);
     expect(block).toMatch(/text-align: center;/);
+  });
+});
+
+describe('the profit stay clock is printed from the existing server projection', () => {
+  beforeEach(() =>
+    rpc.mockResolvedValue({
+      data: { ok: true, seated: true, required: 30, vpip: 100 },
+      error: null,
+    })
+  );
+  it('shows the requested caption and updates the remaining time without starting a new clock', async () => {
+    const props = {
+      tableId: 't1',
+      heroSeated: true,
+      isTournament: false,
+      handNumber: 1,
+      heroPos: { x: 50, y: 95 },
+      leaveClockRunning: true,
+    };
+    const view = render(<HeroVpipTracker {...props} leaveClockRemainingMs={351000} />);
+    expect(screen.getByTestId('hero-profit-clock')).toHaveTextContent(
+      'Your Time Clock Has Started5:51'
+    );
+    view.rerender(<HeroVpipTracker {...props} leaveClockRemainingMs={350000} />);
+    expect(screen.getByLabelText('Time Clock 5:50')).toBeInTheDocument();
+    view.rerender(<HeroVpipTracker {...props} leaveClockRemainingMs={0} />);
+    expect(screen.queryByTestId('hero-profit-clock')).not.toBeInTheDocument();
+    await act(async () => {
+      await Promise.resolve();
+    });
+  });
+  it('does not show a paused, unknown, spectator or tournament clock', async () => {
+    for (const props of [
+      {
+        heroSeated: true,
+        isTournament: false,
+        leaveClockRunning: false,
+        leaveClockRemainingMs: 600000,
+      },
+      {
+        heroSeated: true,
+        isTournament: false,
+        leaveClockRunning: true,
+        leaveClockRemainingMs: null,
+      },
+      {
+        heroSeated: false,
+        isTournament: false,
+        leaveClockRunning: true,
+        leaveClockRemainingMs: 600000,
+      },
+      {
+        heroSeated: true,
+        isTournament: true,
+        leaveClockRunning: true,
+        leaveClockRemainingMs: 600000,
+      },
+    ]) {
+      const view = render(
+        <HeroVpipTracker tableId="t1" handNumber={1} heroPos={{ x: 50, y: 95 }} {...props} />
+      );
+      expect(screen.queryByTestId('hero-profit-clock')).not.toBeInTheDocument();
+      view.unmount();
+    }
+    await act(async () => {
+      await Promise.resolve();
+    });
   });
 });

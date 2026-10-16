@@ -74,7 +74,8 @@ const CAPS: ClubNavigationCapabilities = {
 const ALLOWED_ORPHANS: Record<string, string> = {
   // ── Entry points that arrive from OUTSIDE the app ────────────────────────
   auth: 'public authentication entry point reached from signed-out redirects and old bookmarks',
-  'i/:code': 'Share & Invite short link opened from outside the app (smarter.poker/i/<CODE> deep link)',
+  'i/:code':
+    'Share & Invite short link opened from outside the app (smarter.poker/i/<CODE> deep link)',
   'share/hand/:handId':
     "a hand's own address - Copy Link on the replay writes it, and a player bookmarks it; " +
     'reads hand_history, so it is for the people who played the hand',
@@ -180,6 +181,10 @@ function reachableTargets(): Set<string> {
   })) {
     for (const i of g.items) targets.add(i.path);
   }
+  // Outside a selected club, verified staff still need their global editor.
+  for (const g of getClubArenaNavigation({ canCustomizeWelcome: true })) {
+    for (const i of g.items) targets.add(i.path);
+  }
   for (const i of CLUB_ARENA_SUPPORT_NAV) targets.add(i.path);
   for (const probe of [
     '/play',
@@ -263,6 +268,8 @@ describe('the reachability analysis itself is sound', () => {
     // this breaks, orphan counts jump and the allowlist looks wrong.
     expect(isReachable('clubs/:clubId/finance')).toBe(true);
     expect(isReachable('clubs/:clubId/operations')).toBe(true);
+    expect(isReachable('welcome-messages')).toBe(true);
+    expect(isReachable('clubs/:clubId/welcome-message')).toBe(true);
   });
 });
 

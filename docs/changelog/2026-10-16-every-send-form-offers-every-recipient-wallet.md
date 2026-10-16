@@ -19,7 +19,7 @@ did not:
 | Super Agent dashboard Transfers | Agent or Player only, no balances | Agent, Promo, Player, each with its balance |
 | Agent Dashboard transfer | Always Agent Wallet, no choice | Agent, Promo or Player, Agent by default (no balances; see below) |
 
-All four read their choices from `clubBankRecipientWallets`, which left out the
+The first three read their choices from `clubBankRecipientWallets`, which left out the
 Promo Wallet every agent-capable member holds. Both RPCs behind them
 (`fn_agent_wallet_send`, `fn_club_bank_send`) already credit it.
 

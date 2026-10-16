@@ -52,7 +52,7 @@ BEGIN
   v_result := public.fn_club_bank_send_core_20261004$after$);
 END
 $bank_lock_order$;
-COMMIT;
 -- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_agent_wallet_send_core_20260830(uuid,uuid,numeric,text,text,uuid)'::regprocedure)) = '5a56023dc4b123775fa4fe7f7cb50cb8')
 -- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_agent_wallet_send_phase2_core_20260831(uuid,uuid,numeric,text,text,uuid)'::regprocedure)) = '3eeac7ee4ed90db3b5bd59052a21620e')
 -- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_club_bank_send(uuid,uuid,numeric,text,text,uuid)'::regprocedure)) = '08e0c75b5fb1f51fc8c31a8928271fb6')
+COMMIT;

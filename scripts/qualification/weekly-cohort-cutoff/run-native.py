@@ -12,3 +12,7 @@ for script in (['installer-driver.py'] if args.installer_only else ['semantic-dr
  print(q.stdout,end='');print(q.stderr,end='',file=sys.stderr)
  if q.returncode:raise SystemExit(q.returncode)
 print('PASS bounded pure cohort/native recorded installer; no production/money RPC/performance claim')
+
+# Same required accounting entry point: qualify completion cohort reuse separately.
+if not args.installer_only:
+ subprocess.run([sys.executable,str(R/'scripts/ci/test-weekly-completion-receipts-postgres.py')],check=True)

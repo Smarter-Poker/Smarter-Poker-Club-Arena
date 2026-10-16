@@ -145,7 +145,7 @@ describe('a Club Bank move that got no answer says so', () => {
     fireEvent.click(await screen.findByText('Fish Finder'));
     fireEvent.change(screen.getByLabelText('Chips To Send'), { target: { value: '100' } });
     const plate = () =>
-      screen.getByText('Send Chips', { selector: '.sc-plate__text' }).closest('button')!;
+      screen.getByText('Confirm', { selector: '.sc-plate__text' }).closest('button')!;
     await waitFor(() => expect(plate().disabled).toBe(false));
     fireEvent.click(plate());
     return plate;
@@ -171,7 +171,7 @@ describe('a Club Bank move that got no answer says so', () => {
     await waitFor(() => expect(sends()).toHaveLength(1));
     await waitFor(() =>
       expect(
-        screen.getByText('Send Chips', { selector: '.sc-plate__text' }).closest('button')!.disabled
+        screen.getByText('Confirm', { selector: '.sc-plate__text' }).closest('button')!.disabled
       ).toBe(false)
     );
     expect(screen.queryByText(/Got No Answer/)).toBeNull();
@@ -182,7 +182,7 @@ describe('a Club Bank move that got no answer says so', () => {
     await waitFor(() => expect(sends()).toHaveLength(1));
     await waitFor(() =>
       expect(
-        screen.getByText('Send Chips', { selector: '.sc-plate__text' }).closest('button')!.disabled
+        screen.getByText('Confirm', { selector: '.sc-plate__text' }).closest('button')!.disabled
       ).toBe(false)
     );
     expect(screen.queryByText(/Got No Answer/)).toBeNull();

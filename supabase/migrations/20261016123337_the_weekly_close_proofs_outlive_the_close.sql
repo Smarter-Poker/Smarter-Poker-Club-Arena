@@ -48,7 +48,8 @@
 -- exact number of occurrences checked, inside one transaction.
 --
 -- @live-proof: (SELECT public.fn_accounting_close_proof_lifetime() = interval '72 hours')
--- @live-proof: (SELECT count(*) = 10 FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND prokind = 'f' AND proname IN ('fn_accounting_close_certificate','fn_accounting_close_windows_advance_due','fn_accounting_close_windows_pending','fn_accounting_union_earned_plan_advance','fn_accounting_union_earned_plan_combine','fn_settle_accounting_commission_advance','fn_settle_accounting_commission_combine','fn_settle_accounting_rakeback_advance','fn_settle_accounting_rakeback_pairs','fn_settle_accounting_rakeback_plan_get') AND strpos(pg_get_functiondef(oid), 'clock_timestamp()-public.fn_accounting_close_proof_lifetime()') > 0 AND strpos(pg_get_functiondef(oid), 'clock_timestamp()-interval ''12 hours''') = 0)
+-- (fn_accounting_close_certificate was restored to its sealed body by 20261016133404, so the proof counts the other nine.)
+-- @live-proof: (SELECT count(*) = 9 FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND prokind = 'f' AND proname IN ('fn_accounting_close_windows_advance_due','fn_accounting_close_windows_pending','fn_accounting_union_earned_plan_advance','fn_accounting_union_earned_plan_combine','fn_settle_accounting_commission_advance','fn_settle_accounting_commission_combine','fn_settle_accounting_rakeback_advance','fn_settle_accounting_rakeback_pairs','fn_settle_accounting_rakeback_plan_get') AND strpos(pg_get_functiondef(oid), 'clock_timestamp()-public.fn_accounting_close_proof_lifetime()') > 0 AND strpos(pg_get_functiondef(oid), 'clock_timestamp()-interval ''12 hours''') = 0)
 
 BEGIN;
 SET LOCAL lock_timeout = '5s';

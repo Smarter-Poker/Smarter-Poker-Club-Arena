@@ -54,3 +54,15 @@ Recorded as `20261016123337`. `fn_accounting_close_proof_lifetime()` returns
 ## Pinned
 
 `tests/the-weekly-close-proofs-outlive-the-close.law.test.ts`.
+
+## Correction The Same Day
+
+`fn_accounting_close_certificate` turned out to be one of the 40 inventory
+proof sources sealed by md5 in
+`smarter_private.original_inventory_proof_sources_match()`. Rewriting it broke
+the seal, the inventory generation went NULL at 12:33, and the close fell back
+to re-proving the week live. `20261016133404` put that one function back on
+its exact sealed body and the generation returned. The 72 hour lifetime still
+covers the two-hour windows and the other nine readers, which is where the
+time went; the six combined certificates keep 12 hours. See
+`docs/changelog/2026-10-16-the-weekly-close-fits-its-tick.md`.

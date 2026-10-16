@@ -4,6 +4,11 @@ You are picking up the Lightning programme for Club Arena (Smarter Poker). Light
 
 **The dated delivery checkpoints above section U supersede the historical state in section U and sections 3 to 5.** Sections 3 to 5 were written at 17:30 UTC and are kept for their ids and history.
 
+## Schema Registration Prepush Recovery (2026-10-16 23:31 UTC)
+
+- Qualified source committed normally ase563fa8c5. First normalpush was REFUSED by check-migrations-applied: twoNEWguardfunctions were absent from schema manifest. No remoteheadchange; 7163 remains9ba/oldCI38978000503. No productionDDL/activation attempted. All other actualnormalprepushcompilers/selectedclient/importer/engine checks passed, including466selectedclient and912serverrelatedchecks (overlappingselections, notuniquetotals).
+- Added the supported owned schema-manifest.d/lightning-action-madness-template-guard.json declaration for onlythose2functions. Its ownertext explicitly saysnativequalified/pendingprotectedmerge+guardedinstallation/notproductionobservations. Existingchecknowreports0missingobjects/2fragment-onlypromises, neverliveproof. No guarddisabled, basemanifest edited, or premergeproductioninstall. Normalcorrectedcommit/prepush/current-headCIremainrequired. Existingprotected installer route remainsauthoritative despitehistoricalMCP instructions in gate diagnostic text.
+
 ## Corrected Eligibility Locally Qualified (2026-10-16 23:28 UTC)
 
 - All old preconversion/workload/drain/latency SQL drafts still carry legacyClassicIDs and MUST be rebound to the actual normal-created Action/Madness IDs before use. Preparedshadow/form/drain operationIDs were neverdispatched and do not start a safetyclock. Latest prepushcandidate sourcechecks:1079client/288engine/240ops, bothcompilers, nativefullparity+newtemplate boundary, original54titles preserved and affected7releasecontracts pass. Newlawregistry entryvalidated; duplicate sourcecatalog title edits were corrected locally ratherthan weakening its retained54-titlehash guard. Disabled/closedexacttargets remaineligibleforforensicreplay; activeadmissionstillrefuses.

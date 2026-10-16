@@ -4,6 +4,8 @@ import { createHash } from 'node:crypto';
 // delay must not turn a free dispatch-time lane into a failed migration. Wait
 // once inside the original transaction, before its unchanged guards and DDL.
 export const ACCOUNTING_ADMISSION_SOURCES = Object.freeze({
+  '20261016132741_inventory_proofs_bind_the_weekly_close_lifetime.sql':
+    'a0b048a1c96d21069601ed2498aba166abc9479e293e9adfe87ee8b8bb9875f6',
   '20261015182133_a_proving_week_advances_on_its_own_tick.sql':
     '3cdd45ba7ee979c4fc8be0136e0797ebdd37b8b798c578305a7ebfec75c8e3de',
   '20261015221949_phase7_preserves_an_incident_already_resolved_before_install.sql':

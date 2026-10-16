@@ -73,6 +73,38 @@ describe('a scheduled event that will not exist is paged', () => {
     );
   });
 
+  it('pages a satellite whose target was cancelled, naming the cancelled event (2026-10-16)', () => {
+    // The Midway Sunday 200 Deep Stack for 2026-10-18 was cancelled on
+    // 2026-10-13 and all three of its daily satellites waited, silently, for
+    // three days. A cancelled target is not one that has not arrived yet.
+    const build = between(
+      'private async buildInsertRow(',
+      '\n  private async resolveSatelliteTarget('
+    );
+    expect(build).toMatch(
+      /const cancelled = targetName\s*\?\s*await this\.cancelledSatelliteTarget\(schedule, targetName, startTime\)/
+    );
+    // The cancelled branch records its reason and does NOT join the quiet wait.
+    const branch = build.slice(
+      build.indexOf('if (cancelled) {'),
+      build.indexOf('no pre-start satellite target matching')
+    );
+    expect(branch).toContain(
+      'this.refusalReasons.set(occurrenceKey(schedule.id, startTime), reason);'
+    );
+    expect(branch).not.toContain('waitingForSatelliteTarget');
+    const spawn = between(
+      'private async spawnInstance(',
+      '\n  private async scheduleIsDiamondArena('
+    );
+    expect(spawn).toMatch(
+      /await this\.pageMissedOccurrence\(\s*schedule,\s*startTime,\s*this\.takeRefusalReason\(schedule\.id, startTime\) \?\?/
+    );
+    const finder = between('private async cancelledSatelliteTarget(', '\n  // ───');
+    expect(finder).toContain(".in('status', ['CANCELLED', 'CANCELED'])");
+    expect(finder).toContain('feederStartTime.getTime()');
+  });
+
   it('is one alert per schedule, and the next successful spawn closes it', () => {
     const page = between(
       'private async pageMissedOccurrence(',

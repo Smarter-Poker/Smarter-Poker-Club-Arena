@@ -32,6 +32,8 @@ import { DIAMOND_FREEROLL_REBUY_DIAMONDS, diamondSpawnConfig } from './diamondSc
 import {
   FIXED_BOARD,
   FIXED_BOARD_CLUBS,
+  FIXED_BOARD_RESYNC_MS,
+  isFixedBoardConfig,
   fixedBoardRowFor,
   planFixedBoardSync,
   type ExistingFixedBoardRow,
@@ -273,5 +275,37 @@ describe('the board is hard coded in the engine, so it can never run ahead of it
     const poll = src.slice(src.indexOf('private async poll('));
     expect(poll.indexOf('this.syncFixedBoard()')).toBeGreaterThan(-1);
     expect(poll.indexOf('this.syncFixedBoard()')).toBeLessThan(poll.indexOf(".from('tournament_schedules')"));
+  });
+
+  it('a running engine writes the board again every ten minutes, not once per process', () => {
+    // 2026-10-16 audit: written once per boot, a board row edited or switched
+    // off after boot stayed wrong until the next release.
+    expect(FIXED_BOARD_RESYNC_MS).toBe(10 * 60_000);
+    const src = readFileSync(join(__dirname, 'ScheduledTournamentService.ts'), 'utf8');
+    const poll = src.slice(src.indexOf('private async poll('), src.indexOf('private async syncFixedBoard('));
+    expect(poll).toMatch(/Date\.now\(\) - this\.fixedBoardSyncedAt >= FIXED_BOARD_RESYNC_MS/);
+    expect(poll).toMatch(/if \(await this\.syncFixedBoard\(\)\) this\.fixedBoardSyncedAt = Date\.now\(\);/);
+    expect(src).not.toMatch(/fixedBoardSynced\s*=\s*(true|false)/);
+  });
+
+  it('knows a board row when it sees one', () => {
+    for (const club of FIXED_BOARD_CLUBS) {
+      for (const event of FIXED_BOARD) expect(isFixedBoardConfig(fixedBoardRowFor(club, event).config)).toBe(true);
+    }
+    expect(isFixedBoardConfig({ type: 'mtt', name: 'Sunday 200 Deep Stack' })).toBe(false);
+    expect(isFixedBoardConfig(null)).toBe(false);
+    expect(isFixedBoardConfig([])).toBe(false);
+  });
+
+  it('the database refuses an owner edit of a board row, so the owner screen and the engine cannot fight', () => {
+    const file = readdirSync(migrationsDir).find((f) =>
+      f.includes('the_hard_coded_board_and_the_weekly_events_keep_chicago_time')
+    );
+    expect(file, 'the 2026-10-16 board-guard migration').toBeTruthy();
+    const sql = readFileSync(join(migrationsDir, file!), 'utf8');
+    expect(sql).toMatch(/CREATE OR REPLACE FUNCTION public\.fn_tournament_schedule_board_is_hard_coded\(\)/);
+    expect(sql).toMatch(/auth\.role\(\)[\s\S]{0,120}'authenticated'[\s\S]{0,40}'anon'/);
+    expect(sql).toMatch(/'fixed_board'/);
+    expect(sql).toMatch(/BEFORE INSERT OR UPDATE OR DELETE ON public\.tournament_schedules/);
   });
 });

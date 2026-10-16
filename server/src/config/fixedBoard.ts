@@ -30,6 +30,26 @@
 
 export const FIXED_BOARD_TIME_ZONE = 'America/Chicago';
 
+/**
+ * How often a running engine writes the board again (2026-10-16 audit). The
+ * first version wrote it once per process, so a board row that was switched
+ * off or edited after boot stayed wrong until the next release, possibly for
+ * days. Re-asserting it every ten minutes costs one indexed read when nothing
+ * changed, and a drifted row is back on the code within one interval.
+ */
+export const FIXED_BOARD_RESYNC_MS = 10 * 60_000;
+
+/** True for a tournament_schedules config the engine owns (the hard-coded board). */
+export function isFixedBoardConfig(config: unknown): boolean {
+  return (
+    !!config &&
+    typeof config === 'object' &&
+    !Array.isArray(config) &&
+    ((config as Record<string, unknown>).type === 'fixed_board' ||
+      typeof (config as Record<string, unknown>).fixedBoard === 'string')
+  );
+}
+
 export interface FixedBoardClub {
   clubId: string;
   /** tournaments.union_id: the union id for the Midway Union, null for the arena. */

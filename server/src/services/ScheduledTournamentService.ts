@@ -72,7 +72,11 @@ import {
 } from '../tournament/mttStructurePolicy.js';
 import { SPIN_SEATS, SPIN_TIERS, spinBlindsForLevel } from '../config/spinSpec.js';
 import { localDateIn, zonedStartUtc } from './scheduleWallClock.js';
-import { planFixedBoardSync, type ExistingFixedBoardRow } from '../config/fixedBoard.js';
+import {
+  FIXED_BOARD_RESYNC_MS,
+  planFixedBoardSync,
+  type ExistingFixedBoardRow,
+} from '../config/fixedBoard.js';
 import {
   HEADS_UP_BLIND_STRUCTURE,
   HEADS_UP_PAYOUTS,
@@ -591,8 +595,13 @@ export function fixedBoardRow(
 
 export class ScheduledTournamentService {
   private pollTimer: ReturnType<typeof setInterval> | null = null;
-  /** True once this process has written the hard-coded board (syncFixedBoard). */
-  private fixedBoardSynced = false;
+  /**
+   * When this process last confirmed tournament_schedules holds the
+   * hard-coded board (syncFixedBoard). 0 = never: the first poll writes it,
+   * and every FIXED_BOARD_RESYNC_MS after that it is written again, so a row
+   * edited or switched off after boot cannot stay wrong until the next release.
+   */
+  private fixedBoardSyncedAt = 0;
   private isRunning = false;
   /** Re-entrancy guard: a slow poll must never overlap the next tick. */
   private polling = false;
@@ -761,10 +770,11 @@ export class ScheduledTournamentService {
     try {
       // THE FIXED BOARD IS HARD CODED (config/fixedBoard.ts). Written by this
       // binary before it reads a schedule, so the board it runs is the board
-      // it was built with. Until the write lands, it is retried every poll.
-      if (!this.fixedBoardSynced) {
+      // it was built with. Until the write lands, it is retried every poll;
+      // after that it is re-asserted every FIXED_BOARD_RESYNC_MS.
+      if (Date.now() - this.fixedBoardSyncedAt >= FIXED_BOARD_RESYNC_MS) {
         try {
-          this.fixedBoardSynced = await this.syncFixedBoard();
+          if (await this.syncFixedBoard()) this.fixedBoardSyncedAt = Date.now();
         } catch (err: unknown) {
           // A failed write never costs the rest of the poll its schedules.
           reportError(
@@ -1021,7 +1031,8 @@ export class ScheduledTournamentService {
       await this.pageMissedOccurrence(
         schedule,
         startTime,
-        'its configuration was refused before creation (the ScheduledTournaments error log names the rule)'
+        this.takeRefusalReason(schedule.id, startTime) ??
+          'its configuration was refused before creation (the ScheduledTournaments error log names the rule)'
       );
       return;
     }
@@ -1296,6 +1307,23 @@ export class ScheduledTournamentService {
    * yet. Keyed per occurrence, so concurrent spawns cannot read each other's.
    */
   private readonly waitingForSatelliteTarget = new Set<string>();
+
+  /**
+   * The specific reason buildInsertRow refused an occurrence, when it knows
+   * one better than the generic "configuration refused" (keyed per
+   * occurrence). Read once by spawnInstance's page, then forgotten.
+   */
+  private readonly refusalReasons = new Map<string, string>();
+
+  /** (schedule, cancelled target) pairs already written to the error log. */
+  private readonly reportedCancelledTargets = new Set<string>();
+
+  private takeRefusalReason(scheduleId: string, startTime: Date): string | undefined {
+    const key = occurrenceKey(scheduleId, startTime);
+    const reason = this.refusalReasons.get(key);
+    this.refusalReasons.delete(key);
+    return reason;
+  }
 
   /** Housekeeping only: it never throws, so it can never cost a spawn. */
   private async clearMissedOccurrencePage(scheduleId: string): Promise<void> {
@@ -1786,6 +1814,34 @@ export class ScheduledTournamentService {
           ? await this.resolveSatelliteTarget(schedule, targetName, targetId, startTime)
           : null;
       if (!target) {
+        /* A CANCELLED TARGET IS NOT A TARGET THAT HAS NOT ARRIVED YET
+           (2026-10-16 audit). Staff cancelled the Midway Union's Sunday 200
+           Deep Stack for 2026-10-18 on 2026-10-13; its schedule had already
+           spawned that date, so nothing replaced it, and all three of its
+           daily satellites waited - silently, by the rule below - for three
+           days. Waiting is right when the target simply has not been
+           published yet. When the very event a feeder would award seats in
+           was cancelled, the feeder will not run until somebody acts, and
+           that is a scheduled event that will not exist: it pages, naming
+           the cancelled target, inside the usual one-hour window. */
+        const cancelled = targetName
+          ? await this.cancelledSatelliteTarget(schedule, targetName, startTime)
+          : null;
+        if (cancelled) {
+          const reason =
+            `its target "${cancelled.name}" at ${cancelled.start_time} was cancelled and no ` +
+            `replacement is on the board, so this satellite has no seat to award`;
+          const logKey = `${schedule.id}:${cancelled.id}`;
+          if (!this.reportedCancelledTargets.has(logKey)) {
+            this.reportedCancelledTargets.add(logKey);
+            reportError(
+              new Error(`[ScheduledTournaments] schedule ${schedule.id.slice(0, 8)}: ${reason}`),
+              'ScheduledTournaments.satellite_target_cancelled'
+            );
+          }
+          this.refusalReasons.set(occurrenceKey(schedule.id, startTime), reason);
+          return null;
+        }
         console.log(
           `[ScheduledTournaments] schedule ${schedule.id.slice(0, 8)}: no pre-start satellite target matching "${targetName}" - skipping this spawn`
         );
@@ -2006,6 +2062,35 @@ export class ScheduledTournamentService {
     )
       return null;
     return data.id as string;
+  }
+
+  /**
+   * The nearest CANCELLED event after the feeder's start that the feeder
+   * would otherwise have targeted (same name prefix, same club or union).
+   * Only asked once resolveSatelliteTarget found no live target, so a hit
+   * means the very next target was cancelled and nothing replaced it. Null
+   * when there is none, or when the read failed (a failed read keeps the
+   * old, quiet wait rather than paging on a guess).
+   */
+  private async cancelledSatelliteTarget(
+    schedule: TournamentScheduleRow,
+    namePrefix: string,
+    feederStartTime: Date
+  ): Promise<{ id: string; name: string; start_time: string } | null> {
+    let query = supabase
+      .from('tournaments')
+      .select('id, name, start_time')
+      .in('status', ['CANCELLED', 'CANCELED'])
+      .gt('start_time', new Date(Math.max(Date.now(), feederStartTime.getTime())).toISOString())
+      .ilike('name', `${namePrefix.replace(/[%_]/g, '')}%`)
+      .order('start_time', { ascending: true })
+      .limit(1);
+    query = schedule.union_id
+      ? query.eq('union_id', schedule.union_id)
+      : query.eq('club_id', schedule.club_id);
+    const { data, error } = await query.maybeSingle();
+    if (error || !data) return null;
+    return data as { id: string; name: string; start_time: string };
   }
 
   // ─────────────────────────────────────────────────────────────────────────

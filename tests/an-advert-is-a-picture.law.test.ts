@@ -149,8 +149,10 @@ describe('LAW 2: a tap opens the advert full screen, and the button does the goi
     expect(SERVICE).toMatch(/posterUrl: r\.poster_url == null \? null : String\(r\.poster_url\)/);
     expect(INTERSTITIAL).toMatch(
       // Whitespace-tolerant: Prettier breaks the nested ternary across lines.
-      /isSafeAdImage\(ad\.posterUrl\)\s*\?\s*ad\.posterUrl\s*:\s*isSafeAdImage\(ad\.imageUrl\)\s*\?\s*ad\.imageUrl\s*:\s*null/
+      /safeImage\(ad\.posterUrl\)\s*\?\s*ad\.posterUrl\s*:\s*safeImage\(ad\.imageUrl\)\s*\?\s*ad\.imageUrl\s*:\s*null/
     );
+    expect(INTERSTITIAL).toMatch(/isSafeAdImage\(url\) \|\|/);
+    expect(INTERSTITIAL).toMatch(/ad\.clubOwned && clubId && isClubRotatingImage\(url, clubId\)/);
     expect(STANDARD_MIGRATION).toMatch(
       /COALESCE\(c\.poster_url, pl\.image_url, c\.image_url\) AS poster_url/
     );
@@ -173,7 +175,9 @@ describe('LAW 2: a tap opens the advert full screen, and the button does the goi
     expect(proceed.indexOf('openInBrowser(target')).toBeLessThan(
       proceed.indexOf('AdService.logClick')
     );
-    expect(proceed).toMatch(/if \(external\) \{[\s\S]*?return;\s*\}\s*AdService\.logClick/);
+    expect(proceed).toMatch(
+      /if \(external\) \{[\s\S]*?return;\s*\}\s*if \(!ad\.clubOwned\) AdService\.logClick/
+    );
   });
 
   it('closing without going is a dismiss, not a click', () => {

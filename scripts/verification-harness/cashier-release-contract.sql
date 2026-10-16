@@ -162,7 +162,9 @@ BEGIN
     ),
     jsonb_build_object(
       'signature', 'public.fn_club_bank_send(uuid,uuid,numeric,text,text,uuid)',
-      'hash', 'd858bb9dbc4c2657c940c99f0c03b015'
+      -- Installed 20261016021637 takes the agreement mutex before the retained
+      -- bank core. Exact full definition and owner/ACL posture read back live.
+      'hash', '08e0c75b5fb1f51fc8c31a8928271fb6'
     ),
     jsonb_build_object(
       'signature', 'public.fn_club_bank_claim_back(uuid,uuid,numeric,text,text,uuid)',

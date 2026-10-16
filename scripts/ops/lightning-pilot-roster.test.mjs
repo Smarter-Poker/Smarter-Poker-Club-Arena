@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
+  rosterMain,
   createRosterAdapter,
   prepareRoster,
   executeRoster,
@@ -435,4 +438,45 @@ test('prepared request manifest is pinned; stale baseline and durable funding pr
   assert.equal(r.status, 'stopped');
   assert.equal(f.calls.filter((c) => c[0] === 'fund').length, 1);
   assert.equal(r.steps.at(-1).status, 'acknowledged');
+});
+
+// The failed first preparation hid its failing boundary. Only owned static
+// codes may reach reports; provider payloads can contain sensitive data.
+test('CLI reports its failing boundary and static code without copying provider errors', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'lightning-roster-diagnostic-'));
+  const secret = 'PROVIDER_PAYLOAD_MUST_NOT_APPEAR';
+  const env = {
+    PILOT_ROSTER_PHASE: 'prepare',
+    PILOT_ROSTER_OPERATION_ID: operationId,
+    SP_EMAIL: PILOT.ownerEmail,
+    SP_PASS: secret,
+    SUPABASE_URL: 'https://example.invalid',
+    SUPABASE_SERVICE_ROLE_KEY: secret,
+    PILOT_ROSTER_REPORT_PATH: join(dir, 'report.json'),
+  };
+  let signedOut = false;
+  try {
+    const result = await rosterMain(env, () => ({
+      auth: {
+        signInWithPassword: async () => ({ error: { message: secret } }),
+        signOut: async (args) => {
+          assert.equal(args.scope, 'local');
+          signedOut = true;
+          return {};
+        },
+      },
+    }));
+    assert.equal(result.phase, 'authentication');
+    assert.equal(result.diagnostic, 'OWNER_LOGIN_UNAVAILABLE_UNKNOWN');
+    assert.equal(result.cleanup, 'local_session_closed');
+    assert.equal(signedOut, true);
+    assert.equal(JSON.stringify(result).includes(secret), false);
+    const unexpected = await rosterMain(env, () => {
+      throw new Error(secret);
+    });
+    assert.equal(unexpected.diagnostic, 'UNEXPECTED_FAILURE');
+    assert.equal(JSON.stringify(unexpected).includes(secret), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

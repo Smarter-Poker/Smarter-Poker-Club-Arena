@@ -4,6 +4,12 @@ You are picking up the Lightning programme for Club Arena (Smarter Poker). Light
 
 **The dated delivery checkpoints above section U supersede the historical state in section U and sections 3 to 5.** Sections 3 to 5 were written at 17:30 UTC and are kept for their ids and history.
 
+## Roster Preparation Failure And Admission Submission (2026-10-16 22:24 UTC)
+
+- Parent7151 protected squash f5e8d41b6d7739dc00ec21da321eb18c13df49b9; exact roster/workflow blobs match qualified1afd. First prepare38975034730/opb13cc1cf-8efc-4147-a262-cb2c640bf701 stopped22:21:37 before baseline, local_session_closed. Report only INPUT_AUTH_OR_EXECUTION_UNVERIFIED; no execute invoked. Retained roster-prepare-38975034730/report and roster-prepare-failure.log. Fresh schema/identity/money/gate/grant readbacks do not establish exact failing request; no speculative policy/funding correction or blind rerun. Supporting source now preserves static owned failure boundary/code, never raw provider text;18focused roster/provider checks pass including CLI sanitized-report regression. Actual diagnostic preparation retry requires protected source adoption, sameoperation and fresh readback.
+- Admission followup7163 submitted/attached, exact55a7238c11a8676e275f7b903c03944686d4d2a6 CI38975171515. Root62selectedchecks/TypeScript/format/diff/normalprepush passed, privateGitreceipt retained. Root resolved squash conflicts only after incomingthreeblobs proved identicalto1afd; rootandindependentconnectedreview find no new blocker. New roster diagnostic fix will join this stillopen owned followup; no runtime/DDL changes. Both pilots remain disabled, latesteligible7/8, repairedAA/sample absent. Samantha consent not executed.
+- Removed ONLY clean merged owned private-pool-statusworktree after exactprotectedblob/provenance proof; source/remote/evidence retained. Work7.2GiBfree. Current browser-admission remains activewriter; no other task cleanup.
+
 ## Continued Delivery Receipt (2026-10-16 22:22 UTC)
 
 - Fresh full canonical reader emitted2026-10-16T22:18:18.585Z, policy2.9 manifest a659f31c5c1c2b0864889508079a635dd5fe2fc98decfbfc9d3f9c80dd45ec3b; four policy hashes unchanged from retained full receipt. Actual repository AGENTS/AGENT-PLAYBOOK/fullCLAUDE/PUBLISHING/deploypaths/storage/fullcheckpoint/phase/register/rollout/review/catalog read; canonical comparison passes. Current owned browser-admission HEAD1c27d67f2; root sole Git/production/checkpoint writer. Both SSD own disks mounted, Work6.1GiB/Archives203GiB available.

@@ -5,3 +5,7 @@ The private-pilot witness previously required an active pool before authenticati
 The helper retains the actual request identity before waiting for a response. A lost reply qualifies only through the exact normal cash-buy-in receipt and independently verified owned pool, anchor seat and continuous table-scoped cash session. Existing pool membership resumes without another purchase. A changed or unknown result stops the operation. The primary session remains open during the existing player witness, within one four-minute budget, and both local sessions and browsers must close.
 
 The cash session retains its existing table scope and cluster pointer, as specified by the installed Phase 1 migration; no second economic identity is introduced. No funding, roster, policy, force-seat, direct buy-in RPC or Lightning activation is performed by this evidence tool. Actual browser execution, financial readback and player outcomes remain separate from source qualification.
+
+## Roster Preparation Diagnostics
+
+The first guarded roster preparation stopped before producing a baseline, but its generic catch hid the failing boundary. Retain only owned static phase and failure codes, with SQLSTATE/PostgREST codes when present; never copy provider messages or credential payloads. No financial door, admission predicate or duplicate-execution safeguard changes. Eighteen focused roster/provider checks pass, including CLI report redaction and local cleanup.

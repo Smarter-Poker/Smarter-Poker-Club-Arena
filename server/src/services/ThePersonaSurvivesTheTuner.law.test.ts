@@ -154,8 +154,10 @@ describe('LAW: the persona survives the tuner', () => {
       const d = defaultPersonaFor(id);
       expect(d.straddleRate).toBeGreaterThanOrEqual(0);
       expect(d.straddleRate).toBeLessThanOrEqual(0.6);
-      expect(d.gtoAdherence).toBeGreaterThanOrEqual(0.5);
-      expect(d.gtoAdherence).toBeLessThanOrEqual(1);
+      // G4 (2026-10-16): an unauthored horse follows the solver line; the
+      // charts' own mixed strategies are the variety. Individuality without
+      // an authored row lives in the straddle rate.
+      expect(d.gtoAdherence).toBe(1);
     }
     expect(PERSONA_DEFAULT.straddleRate).toBe(0);
   });

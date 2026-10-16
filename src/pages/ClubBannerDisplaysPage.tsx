@@ -16,7 +16,7 @@ import {
   validateClubBanner,
   type ClubBannerRecord,
 } from '../services/ClubBannerService';
-import ClubRotatingBannerEditor from '../components/club/ClubRotatingBannerEditor';
+import ClubAdVisibilityControl from '../components/club/ClubAdVisibilityControl';
 import './ClubBannerDisplaysPage.css';
 
 const DEFAULT_BANNER = mediaUrl(
@@ -146,7 +146,9 @@ function BannerEditor({ clubId, userId }: { clubId?: string; userId?: string }) 
           {!loading && !isOwner && club && <p>Only The Club Owner Can Change Banner Displays.</p>}
           {!loading && isOwner && club && (
             <>
-              <p>Manage Your Club Banner Here, Including When Your Club Belongs To A Union.</p>
+              <p>
+                Manage Your Club Banner And Smarter.Poker Ad Visibility, Including In Union Clubs.
+              </p>
               <h2>Lobby Banner Preview</h2>
               <img
                 className="club-banner-preview"
@@ -201,7 +203,7 @@ function BannerEditor({ clubId, userId }: { clubId?: string; userId?: string }) 
                 Use Default Banner
               </button>
               <p>Banner Taps Open Your Club Announcements.</p>
-              <ClubRotatingBannerEditor
+              <ClubAdVisibilityControl
                 club={club}
                 ownerId={userId!}
                 onSaved={(saved) =>

@@ -2,14 +2,13 @@
 import { writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { PILOT, pilotServiceFetch } from './prepare-lightning-private-pilot.mjs';
-import { assertPlayerPin, witnessPlayer } from './lightning-pilot-player.mjs';
+import { assertPlayerPin, witnessPlayer, CONSENT_PLAYERS } from './lightning-pilot-player.mjs';
 import { witnessLatencyWorkload } from './lightning-pilot-latency-workload.mjs';
 import { witnessCycle } from './lightning-pilot-cycle.mjs';
 import { witnessRecovery } from './lightning-pilot-recovery.mjs';
 import { collectReplayBatch } from './lightning-pilot-replay-batch.mjs';
 const CLUB = 'e14bc9f7-736d-425f-8f2c-e78305ebac1d';
 const CLUSTERS = ['babb43f1-368e-406f-a97a-a0d5013648b2', '3330ff9f-76ec-4487-b0c9-fc8ad8c2fdbb'];
-const CONSENT_PLAYER = '0097309f-2864-4d09-b02b-56bca012a9c3';
 const KEY = 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export async function runPilotWitness(env = process.env, dependencies = {}) {
@@ -35,7 +34,7 @@ export async function runPilotWitness(env = process.env, dependencies = {}) {
     const consentInput = env.PILOT_ACCEPT_PLAYER_TERMS ?? 'false';
     if (
       !['true', 'false'].includes(consentInput) ||
-      (consentInput === 'true' && (mode !== 'player' || pin.playerId !== CONSENT_PLAYER))
+      (consentInput === 'true' && (mode !== 'player' || !CONSENT_PLAYERS.includes(pin.playerId)))
     )
       throw new Error();
     const acceptTerms = consentInput === 'true';
@@ -45,10 +44,10 @@ export async function runPilotWitness(env = process.env, dependencies = {}) {
     const maxBatch = Number(env.PILOT_BATCH || '100');
     if (mode !== 'replay') {
       assertPlayerPin(pin);
-      if (mode === 'latency' && pin.playerId !== CONSENT_PLAYER) throw new Error();
+      if (mode === 'latency' && !CONSENT_PLAYERS.includes(pin.playerId)) throw new Error();
       if (
         mode === 'recovery' &&
-        (pin.playerId !== CONSENT_PLAYER ||
+        (!CONSENT_PLAYERS.includes(pin.playerId) ||
           !UUID.test(env.PILOT_SECOND_POOL_SESSION_ID) ||
           env.PILOT_SECOND_POOL_SESSION_ID === pin.poolSessionId)
       )

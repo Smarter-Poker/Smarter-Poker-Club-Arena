@@ -167,6 +167,16 @@ describe('Daily Challenges Smarter Casino Realism surface', () => {
     expect(cardOverflow).toBe('visible');
     expect(cardRules.some((rule) => /clip-path:\s*polygon\(/.test(rule[1]))).toBe(true);
     expect(css).toMatch(/^\.missionBoard\s*\{[^}]*overflow:\s*hidden;/m);
+    // Clip the oversized corner ornament at its own owner. Card-level clipping
+    // hides the aligned rail; an unbounded pseudo-element adds scroll overflow
+    // to the mission panel even when the card's polygon clips its paint.
+    const ornament = css.match(/^\.cardOrnament\s*\{([^}]*)\}/m)?.[1];
+    expect(ornament).toBeDefined();
+    expect(ornament).toMatch(/inset:\s*0;/);
+    expect(ornament).toMatch(/overflow:\s*hidden;/);
+    expect(ornament).toMatch(/pointer-events:\s*none;/);
+    expect(css).not.toMatch(/^\.challengeCard::after\s*\{/m);
+    expect(surface).toContain('<span className={styles.cardOrnament} aria-hidden="true" />');
   });
 
   it('gives every cycle a distinct physical instrument and every loading card a closed chassis', () => {

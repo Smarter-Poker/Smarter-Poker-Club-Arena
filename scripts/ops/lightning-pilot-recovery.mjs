@@ -1,6 +1,6 @@
 /** Finite existing-player recovery observations. No joins, wagers, consent or fabricated frames. */
 import {
-  CONSENT_PLAYER,
+  CONSENT_PLAYERS,
   openPlayerSession,
   validatePlayer,
   renderHand,
@@ -233,11 +233,13 @@ export async function witnessRecovery({
       timeoutMs > 240000 ||
       !Array.isArray(pins) ||
       pins.length !== 2 ||
+      !CONSENT_PLAYERS.includes(pins[0].playerId) ||
+      pins.some((p) => p.playerId !== pins[0].playerId) ||
       new Set(pins.map((p) => p.poolSessionId)).size !== 2 ||
       !CLUSTERS.every((cluster) =>
         pins.some(
           (p) =>
-            p.clusterId === cluster && p.playerId === CONSENT_PLAYER && UUID.test(p.poolSessionId)
+            p.clusterId === cluster && p.playerId === pins[0].playerId && UUID.test(p.poolSessionId)
         )
       )
     )
@@ -250,11 +252,11 @@ export async function witnessRecovery({
       const profile = await admin
         .from('profiles')
         .select('id,club_arena_tos_accepted_at')
-        .eq('id', CONSENT_PLAYER)
+        .eq('id', pins[0].playerId)
         .maybeSingle();
       if (
         profile.error ||
-        profile.data?.id !== CONSENT_PLAYER ||
+        profile.data?.id !== pins[0].playerId ||
         !Number.isFinite(Date.parse(profile.data.club_arena_tos_accepted_at))
       )
         throw new Error('Consent');

@@ -2,6 +2,7 @@ import { test, expect, devices, type Page } from '@playwright/test';
 import { prepareCashLobbyActions } from './support/cashLobbyOverlays';
 import { observeCashierFailure } from './support/cashierFailureDiagnostics';
 import { diamondEntryRead, settleDiamondSpinsOffer } from './support/diamondInvitationOffer';
+import { restoreLobbyPreference, selectLobbyPreference } from './support/lobbyPreferenceProof';
 
 /**
  * THE THREE THINGS DAN PHOTOGRAPHED, ON THE LIVE LOBBY (2026-09-10).
@@ -94,42 +95,71 @@ test.describe('the mobile lobby chrome on production', () => {
     const tabs = page.getByRole('tablist', { name: 'Game Type', exact: true });
     const original = (await tabs.getByRole('tab', { selected: true }).textContent())!.trim();
     const target = original === 'PLO' ? 'NLH' : 'PLO';
-    const save = () =>
-      page.waitForResponse(
-        (response) =>
-          response.ok() &&
-          response.request().method() === 'POST' &&
-          new URL(response.url()).pathname.endsWith('/rest/v1/user_lobby_filters')
-      );
     let returningPage: Page | undefined;
+    let returningReady = false;
+    const failures: unknown[] = [];
     let returningDiagnostics: ReturnType<typeof observeCashierFailure> | undefined;
     try {
-      await Promise.all([save(), tabs.getByRole('tab', { name: target, exact: true }).click()]);
+      await selectLobbyPreference(page, CLUB_ID, target);
       // A new document has no mounted filter state or tab session cache.
       // Reusing the old document raced its legitimate chunk recovery with
       // goto(), which aborted that recovery and the requested navigation.
       returningPage = await page.context().newPage();
       returningDiagnostics = observeCashierFailure(returningPage);
       await openLobby(returningPage);
+      returningReady = true;
       await expect(
         returningPage
           .getByRole('tablist', { name: 'Game Type', exact: true })
           .getByRole('tab', { name: target, exact: true })
       ).toHaveAttribute('aria-selected', 'true');
     } catch (error) {
+      failures.push(error);
       if (returningDiagnostics)
         await testInfo.attach('cold-return-network-diagnostics', {
           body: Buffer.from(JSON.stringify(returningDiagnostics.snapshot())),
           contentType: 'application/json',
         });
-      throw error;
     } finally {
-      returningDiagnostics?.stop();
-      await returningPage?.close();
       // This is the isolated certificate account; restore its original view
-      // so the next maintained journey inherits the same starting preference.
-      await Promise.all([save(), tabs.getByRole('tab', { name: original, exact: true }).click()]);
+      // on the ready document before closing it, then independently read it
+      // from another document. Only a failed cold open falls back to the old
+      // page. Neither a failed journey nor failed restoration is concealed.
+      try {
+        await restoreLobbyPreference({
+          originalPage: page,
+          returningPage,
+          returningReady,
+          clubId: CLUB_ID,
+          original,
+          verify: async () => {
+            const restoredPage = await page.context().newPage();
+            try {
+              await openLobby(restoredPage);
+              await expect(
+                restoredPage
+                  .getByRole('tablist', { name: 'Game Type', exact: true })
+                  .getByRole('tab', { name: original, exact: true })
+              ).toHaveAttribute('aria-selected', 'true');
+            } finally {
+              await restoredPage.close();
+            }
+          },
+        });
+      } catch (cleanupError) {
+        failures.push(cleanupError);
+        if (returningDiagnostics)
+          await testInfo.attach('cold-return-restoration-network-diagnostics', {
+            body: Buffer.from(JSON.stringify(returningDiagnostics.snapshot())),
+            contentType: 'application/json',
+          });
+      } finally {
+        returningDiagnostics?.stop();
+      }
     }
+    if (failures.length > 1)
+      throw new AggregateError(failures, 'Cold return and preference restoration failed');
+    if (failures.length === 1) throw failures[0];
   });
 
   test('MY WALLETS prints the count, keeps it, centred and unclipped', async ({ page }) => {

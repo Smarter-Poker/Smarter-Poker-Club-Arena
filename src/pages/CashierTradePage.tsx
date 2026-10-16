@@ -257,10 +257,9 @@ type InvoiceRow = ClubWeeklyStatement;
 
 type TabKey = 'trade' | 'record' | 'leaderboard' | 'request' | 'tickets';
 
-/* #ClubArenaConsole law: chip figures outside the felt never print decimal
-   points. The authoritative ledger keeps its cents; this display deliberately
-   uses the shared rounded-down K/M/B reading without changing stored values. */
-const fmt = formatWalletChips;
+/* Transaction amounts and aggregates retain the console reading. Wallet
+   balances use formatWalletChips explicitly: exact cents below one million. */
+const fmt = compactChips;
 
 /**
  * The ledger note on every Send Out row (regression review 2026-10-10, G-07).
@@ -3364,13 +3363,15 @@ function CashierTradeWorkspace() {
               <div className={styles.heroMetric}>
                 <span className={styles.heroMetricLabel}>Club Chips</span>
                 <strong className={styles.heroMetricValue}>
-                  {loading || isHydrating ? '-' : fmt(myBalance)}
+                  {loading || isHydrating ? '-' : formatWalletChips(myBalance)}
                 </strong>
               </div>
               <div className={styles.heroMetric}>
                 <span className={styles.heroMetricLabel}>Agent Wallet</span>
                 <strong className={styles.heroMetricValue}>
-                  {loading || isHydrating || agentWallet === null ? '-' : fmt(agentWallet)}
+                  {loading || isHydrating || agentWallet === null
+                    ? '-'
+                    : formatWalletChips(agentWallet)}
                 </strong>
               </div>
               <div className={styles.heroMetric}>
@@ -3458,7 +3459,9 @@ function CashierTradeWorkspace() {
                       ) : null}
                       <span className={styles.pickerName}>{titleCase(m.name)}</span>
                       <span className={styles.pickerBalance}>
-                        {m.entityType === 'union' ? 'Union Wallets' : `${fmt(m.chipBalance)} Chips`}
+                        {m.entityType === 'union'
+                          ? 'Union Wallets'
+                          : `${formatWalletChips(m.chipBalance)} Chips`}
                       </span>
                     </button>
                   ))}
@@ -3631,7 +3634,7 @@ function CashierTradeWorkspace() {
               <div className={styles.strip}>
                 <div className={styles.stripCell}>
                   <span className={styles.stripLabel}>Club Chips</span>
-                  <span className={styles.stripValue}>{fmt(myBalance)}</span>
+                  <span className={styles.stripValue}>{formatWalletChips(myBalance)}</span>
                 </div>
                 <div className={styles.stripCell}>
                   <span className={styles.stripLabel}>Downline Holdings</span>
@@ -3647,7 +3650,7 @@ function CashierTradeWorkspace() {
                 <div className={styles.stripCell}>
                   <span className={styles.stripLabel}>Agent Wallet</span>
                   <span className={styles.stripValue}>
-                    {agentWallet === null ? '--' : fmt(agentWallet)}
+                    {agentWallet === null ? '--' : formatWalletChips(agentWallet)}
                     {canSeeClubBank(myRole) && (
                       <button
                         className={styles.plusBtn}
@@ -3940,7 +3943,9 @@ function CashierTradeWorkspace() {
                           </span>
                         </Link>
                         <span className={styles.rosterWallet}>
-                          <span className={styles.rowBalance}>{fmt(r.chipBalance)}</span>
+                          <span className={styles.rowBalance}>
+                            {formatWalletChips(r.chipBalance)}
+                          </span>
                           <span className={styles.rowSub}>Player Wallet</span>
                         </span>
                         {selectable ? (

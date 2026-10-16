@@ -224,7 +224,7 @@
     "tests/components/WeeklyAccountingWorkspace.test.tsx": "3fa2ec057866093383ec05539ac3a60de8cec52abfee780d2491ead8894f5be7",
     "tests/helpers/accountingObservation.ts": "9dba06d97c2f9cce2356fa8c6800ff9a07e4618ea2028370a278b4820b6199f6",
     "tests/components/FinancialAlertsExport.test.tsx": "8863dfb7e552fdf23d4e8e00eefce37b16f3cfbf1eb1858f9db9274b1f987d80",
-    "tests/components/cashier-cashout-generations.test.tsx": "ef6c974a4a13cfd32561cd7a864a3ee24e866f88a8c7b1441ddf99aefdccb020",
+    "tests/components/cashier-cashout-generations.test.tsx": "18f5fadfadc7cba15d554d269e03b56bf7f99e01bbbf855d3dd2702bd7a21a39",
     "tests/components/cashout-own-event-acknowledgment.test.tsx": "70d0367305b58d387e47d9e52ff096fbf0a82121f7748a25018d95cddf224ead",
     "tests/unit/FinancialAlertServiceRead.test.ts": "2e9f47a08edbc96afb48d026dbec4fdf55b12a07bcb1f8cbc924af3b13ff4934",
     "tests/unit/discardedErrorReadRatchet.test.ts": "6ee42c44014a340d3618dd48c107786fa7b3ab379ccc5fb90c2445b8e716573c",
@@ -4899,5 +4899,11 @@
     "file": "tests/cashout-escrow-flow.test.ts",
     "previous_sha256": "8b7c9e4943ac8bc8fc4e8f7c2bfd22e54fb15a19b35188ab0ffb797f54efb327",
     "sha256": "40d60032482e553ccd6ee12e6d67cdba807abd491853f2dbbe25ca6be7598dd6"
+  },
+  "cashier_wallet_amount_separation_20261016": {
+    "reason": "Reviewed the complete three-line display assertion diff. The owner precision instruction is for wallet balances; pending cashout transaction amounts retain their compact console display. Restores 876 Chips while preserving same-ID account epoch isolation, stale-response suppression and the no-financial-command assertion. Current test source identity only; financial fixtures, historical audits and qualification status are unchanged. Matching source identity does not certify native money behavior or production delivery.",
+    "file": "tests/components/cashier-cashout-generations.test.tsx",
+    "previous_sha256": "ef6c974a4a13cfd32561cd7a864a3ee24e866f88a8c7b1441ddf99aefdccb020",
+    "sha256": "18f5fadfadc7cba15d554d269e03b56bf7f99e01bbbf855d3dd2702bd7a21a39"
   }
 }

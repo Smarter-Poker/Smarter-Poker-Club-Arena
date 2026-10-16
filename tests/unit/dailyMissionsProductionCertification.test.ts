@@ -231,9 +231,9 @@ describe('Daily Missions production certification', () => {
     const css = readDailyChallengesStylesheet();
     const before = css.slice(
       css.indexOf('.challengeCard::before'),
-      css.indexOf('.challengeCard::after')
+      css.indexOf('.cardOrnament::after')
     );
-    const after = css.slice(css.indexOf('.challengeCard::after'), css.indexOf('.cardCompleted'));
+    const after = css.slice(css.indexOf('.cardOrnament::after'), css.indexOf('.cardCompleted'));
     expect(before).toContain('pointer-events: none');
     expect(after).toContain('pointer-events: none');
     const page = source('src/pages/DailyChallengesPage.tsx');

@@ -1,0 +1,50 @@
+{
+  "status": "LOCAL_QUALIFIED_NOT_PUSHED_MERGED_OR_INSTALLED",
+  "migration": "supabase/migrations/20261016214822_ordinary_adaptive_statistics_expiry_uses_age_index.sql",
+  "source_sha256": {
+    "supabase/migrations/20261016214822_ordinary_adaptive_statistics_expiry_uses_age_index.sql": "9cafe534e8b36185e4a6b54f6ce6b662d3390cb7010026e6e26b36724dd441aa",
+    "scripts/verification-harness/horse-adaptive-statistics-expiry-index.py": "a75974d8c183d0f5daa984977729c2c1aaf7d0e4e3de0f28643451b291010a00"
+  },
+  "preimage": "70231d2cc066971c13a269b5cc374be8",
+  "postimage": "c0631cff4a00f33fce8ab06aacac0a7e",
+  "native_result_sha256": "e200770fb2c936ecafbecb503a1bc42e701a6e1275c0a3b715de856dc63e9a10",
+  "native_checks": [
+    "original702-postimage",
+    "original-whole-owner-volatile-age-seqscan",
+    "whole-owner-only-four-reviewed-anchors-changed",
+    "owner-acl-secdef-config-unchanged",
+    "actual-plpgsql-cutoff-variable-age-index",
+    "migration-replay-refused",
+    "no-expired-postimage-preserved",
+    "whole-owner-no-expired-delete-branch",
+    "whole-owner-expired-deadline-minmax-indexonly-no-expired-false",
+    "prior-budget-true-never-cleared",
+    "empty-delete-branch",
+    "empty-min-null-is-false",
+    "expired-else-no-delete",
+    "1000-row-cap",
+    "whole-owner-present-expired-deleted",
+    "strict-below-equal-above-cutoff-deletion",
+    "equal-above-retained-and-min-false"
+  ],
+  "cleanup": {
+    "stopped": true,
+    "removed": true
+  },
+  "limitations": "Whole original/candidate owner with empty unrelated retention tables; finite membership leaf stub only controls deadline. Unchanged hand/finance authority uses retained parent qualification.",
+  "production_plan_evidence": "Root guarded READONLY plain EXPLAIN old two expiry SeqScan / bound firstIndexScan / min(age)IndexOnlyScan; no production benchmark gain asserted",
+  "policy_receipt": {
+    "version": "2.9",
+    "manifestSHA256": "a659f31c5c1c2b0864889508079a635dd5fe2fc98decfbfc9d3f9c80dd45ec3b",
+    "readAt": "2026-10-16T21:47:09.238Z",
+    "base": "3d57aa13e4d5ed8360234e4b91aab63295734279"
+  },
+  "local_checks": {
+    "typescript": "passed tsc --noEmit",
+    "source_contracts": "passed 2 provider-proof/version tests",
+    "policy": "passed canonical comparison",
+    "diff_check": "passed",
+    "normal_pre_push": "pending",
+    "hosted_ci": "pending"
+  }
+}

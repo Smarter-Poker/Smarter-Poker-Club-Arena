@@ -9,6 +9,16 @@ const PUBLIC_KEY = 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx';
 const fail = (message) => {
   throw new Error(message);
 };
+// Supabase RPC builders are thenables, not promises with .catch().
+const safely = async (operation) => {
+  try {
+    const answer = await operation();
+    return answer && typeof answer === 'object' ? answer : { error: true };
+  } catch {
+    return { error: true };
+  }
+};
+
 const data = (r, label) => {
   if (r?.error || !r?.data) fail(label);
   return r.data;
@@ -52,7 +62,7 @@ export async function openDesignatedOutsiderSession(admin, createClient, url) {
       fail('Synthetic Session Identity Mismatch');
     return { client, session: login.session };
   } catch (error) {
-    const out = await client.auth.signOut({ scope: 'local' }).catch(() => ({ error: true }));
+    const out = await safely(() => client.auth.signOut({ scope: 'local' }));
     if (out?.error) fail('Synthetic Session Verification And Cleanup Failed');
     throw error;
   }
@@ -419,7 +429,7 @@ export async function runPilotAccess({
   const membership = async () => {
     const r = await admin
       .from('club_members')
-      .select('status,chip_balance')
+      .select('club_id,user_id,joined_at,status,chip_balance')
       .eq('club_id', clubId)
       .eq('user_id', PILOT_OUTSIDER)
       .maybeSingle();
@@ -433,13 +443,74 @@ export async function runPilotAccess({
       fail('Outsider Membership Read Unavailable');
     return r.data;
   };
-  if (await membership()) fail('Designated Outsider Is Already A Pilot Member');
+  const initialMembership = await membership();
+  let recoveryOnly = false;
+  if (initialMembership) {
+    const row = initialMembership;
+    let owned = false;
+    if (row.status === 'pending' && Number(row.chip_balance) === 0) {
+      const receipt = await safely(() =>
+        admin
+          .from('club_join_idempotency')
+          .select('user_id,request_id,club_id,result')
+          .eq('user_id', PILOT_OUTSIDER)
+          .eq('request_id', requestId)
+          .eq('club_id', clubId)
+          .maybeSingle()
+      );
+      const saved = receipt.data,
+        result = saved?.result,
+        member = result?.membership;
+      owned =
+        !receipt.error &&
+        saved?.user_id === PILOT_OUTSIDER &&
+        saved.request_id === requestId &&
+        saved.club_id === clubId &&
+        result?.success === true &&
+        result.status === 'pending' &&
+        result.club?.id === clubId &&
+        row.club_id === clubId &&
+        row.user_id === PILOT_OUTSIDER &&
+        member?.club_id === clubId &&
+        member.user_id === PILOT_OUTSIDER &&
+        member.status === 'pending' &&
+        Number(member.chip_balance) === 0 &&
+        typeof row.joined_at === 'string' &&
+        row.joined_at.length > 0 &&
+        member.joined_at === row.joined_at;
+    }
+    if (!owned) {
+      report.phase = 'startup_membership_refused';
+      report.verdict = 'failed_or_unknown';
+      report.cleanup.pendingRequest = 'unowned_or_changed_no_cancellation';
+      report.cleanup.outsiderSession = 'not_created';
+      const error = new Error('Existing Membership Does Not Match This Owned Pending Operation');
+      error.pilotAccessReport = report;
+      throw error;
+    }
+    recoveryOnly = true;
+  }
   const { client, session } = await openDesignatedOutsiderSession(admin, createClient, url);
   let requested = false,
     requestConfirmed = false,
     requestTerminal = false,
     primary;
   try {
+    if (recoveryOnly) {
+      report.phase = 'startup_owned_pending_recovery';
+      report.cleanup.pendingRequest = 'owned_pending_cancel_requested';
+      const cancelled = await safely(() =>
+        client.rpc('fn_cancel_club_join_request', { p_club_id: clubId })
+      );
+      const after = await membership().catch(() => undefined);
+      report.cleanup.pendingRequest =
+        after === null
+          ? cancelled.error
+            ? 'absent_after_unknown_reply'
+            : 'removed_and_absence_verified'
+          : 'owned_pending_cleanup_unverified';
+      fail('Owned Pending Membership Recovery Only; A Fresh Operation Is Required For Proof');
+    }
     const ownerSession = data(await player.auth.getSession(), 'Owner Session Unavailable').session;
     if (ownerSession?.user?.id !== PILOT.ownerId) fail('Owner Session Identity Invalid');
     const tables = await admin
@@ -553,9 +624,9 @@ export async function runPilotAccess({
           ? action
           : 'UNKNOWN';
         if (r.data?.ok === true) {
-          const cleanup = await client
-            .rpc('fn_cash_game_leave_waitlist', { p_game_id: game.id })
-            .catch(() => ({ error: true }));
+          const cleanup = await safely(() =>
+            client.rpc('fn_cash_game_leave_waitlist', { p_game_id: game.id })
+          );
           diagnostic.cleanup =
             !cleanup.error && (cleanup.data === true || cleanup.data?.ok === true)
               ? 'reply_ok'
@@ -583,9 +654,9 @@ export async function runPilotAccess({
     if (requested) {
       const before = await membership().catch(() => undefined);
       if (before?.status === 'pending' && Number(before.chip_balance) === 0) {
-        const cancelled = await client
-          .rpc('fn_cancel_club_join_request', { p_club_id: clubId })
-          .catch(() => ({ error: true }));
+        const cancelled = await safely(() =>
+          client.rpc('fn_cancel_club_join_request', { p_club_id: clubId })
+        );
         if (!cancelled.error && (await membership().catch(() => undefined)) === null)
           report.cleanup.pendingRequest = 'removed_and_absence_verified';
         else primary ??= new Error('Pending Membership Cleanup Unverified');
@@ -599,11 +670,11 @@ export async function runPilotAccess({
         primary ??= new Error('Pending Membership Changed; No Destructive Cleanup Attempted');
       }
     }
-    const out = await client.auth.signOut({ scope: 'local' }).catch(() => ({ error: true }));
+    const out = await safely(() => client.auth.signOut({ scope: 'local' }));
     report.cleanup.outsiderSession = out?.error ? 'unverified' : 'local_signout_confirmed';
     if (out?.error) primary ??= new Error('Outsider Session Cleanup Failed');
   }
-  report.verdict = primary ? 'failed_or_unknown' : 'passed';
+  report.verdict = recoveryOnly ? 'cleanup_only' : primary ? 'failed_or_unknown' : 'passed';
   if (primary) {
     const error = new Error(
       `Private Pilot Access Proof Failed At ${report.phase}; Inspect Sanitized Report And Durable Membership State`

@@ -93,3 +93,24 @@ The live preview for KingFish's link read "kingfish": `profiles.username` is sto
 ## Follow-Up: The Sheet Clears The Header And Footer
 
 Checked live after publish at 1024x768: the sheet rendered inside the club page's `z-index: 1` stacking context, so the sticky header covered its close control and the fixed footer covered Share and Close (a tap on Close opened the Market). The sheet now renders through `createPortal` to `document.body`, where its overlay (`z-index: 10000`, scrollable) clears both. Proven on the live page by re-parenting the overlay: all five controls became reachable.
+
+## Second Audit (2026-10-16)
+
+Database (`20261016040136_club_invite_deep_sweep_hardening.sql`, applied as `20261016040608`, md5-verified; 54 harness scenarios):
+- A client-reported first click can no longer predate the link, and a fresh signup must postdate the link, so no account can steer platform referral credit to an inviter of its choice.
+- Concurrent claims cannot split attribution and referral between two inviters (the insert returns its id; the loser answers with the winner's row).
+- Unjoined attributions lapse after 30 days in claim and redeem, not only in the pending forward.
+- A self-referral block binds only the inviter it was raised against.
+- A joining member with status `automatic` is placed like any member.
+- Re-running an invite for a settled member records no join and sends no notification.
+- Only the landing page's server request counts an open.
+- Any membership row ends the pending forward, so a refused member is never sent back.
+
+Proven end to end on the production schema in one self-aborting transaction: claim, phone verification through the service context, `fn_join_club_atomic` with the referral, placement, attribution `joined`, two inviter notifications, and a no-op re-run.
+
+Client:
+- The pending forward asks the database once per session even when nothing is pending.
+- No Share & Invite in the automatic Diamond Arena (no membership row, no downline).
+- The app build opens the system share sheet (Capacitor Share); the web keeps navigator.share and copy.
+- Agent invite modal (when the agent opens it), Club Settings and Promotions share the sender's short link, falling back to the old link.
+- A signed-out invite in the app opens Create Account, and the in-app signup carries the invite into the account metadata.

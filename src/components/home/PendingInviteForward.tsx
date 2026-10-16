@@ -23,8 +23,12 @@ export default function PendingInviteForward() {
   const navigate = useNavigate();
 
   useEffect(() => {
+    // Claim the once-per-session slot BEFORE asking the database, so the RPC
+    // runs at most once per browser session even when nothing is pending
+    // (the arena home mounts this on every visit).
     try {
       if (window.sessionStorage.getItem(PENDING_INVITE_SHOWN_KEY)) return;
+      window.sessionStorage.setItem(PENDING_INVITE_SHOWN_KEY, 'checked');
     } catch {
       /* storage unavailable: still forward once for this mount */
     }

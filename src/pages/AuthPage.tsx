@@ -37,6 +37,7 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { IS_NATIVE_BUILD } from '../lib/appBase';
 import { safeInAppRedirect, signInUrl } from '../lib/signIn';
+import { inviteSignupMetadata } from '../services/ClubInviteService';
 import { authReturnUrl } from '../lib/authReturnUrl';
 import { ageOn, latestAdultBirthday, MINIMUM_AGE } from '../lib/age';
 import { supabase } from '../lib/supabase';
@@ -88,9 +89,12 @@ export default function AuthPage() {
   const [searchParams] = useSearchParams();
   // NATIVE: where to go after signing in (AuthGuard put an in-app path here).
   const afterSignIn = safeInAppRedirect(searchParams.get('redirect'));
-  const [mode, setMode] = useState<AuthMode>(
-    searchParams.get('mode') === 'update' ? 'update' : 'login'
-  );
+  // `mode=signup` opens on Create Account: a signed-out player arriving on a
+  // club invite in the app (InviteSignupRedirect) has no account yet.
+  const [mode, setMode] = useState<AuthMode>(() => {
+    const requested = searchParams.get('mode');
+    return requested === 'update' ? 'update' : requested === 'signup' ? 'signup' : 'login';
+  });
   const [newPassword, setNewPassword] = useState('');
   const [newPasswordConfirm, setNewPasswordConfirm] = useState('');
   const [email, setEmail] = useState('');
@@ -242,6 +246,7 @@ export default function AuthPage() {
           data: {
             username: username.trim(),
             display_name: username.trim(),
+            ...inviteSignupMetadata(afterSignIn),
           },
         },
       });

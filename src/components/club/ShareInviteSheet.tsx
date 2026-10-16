@@ -23,6 +23,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { SpadeConsole } from '../console/SpadeConsole';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { reportError } from '../../utils/errorReporter';
+import { IS_NATIVE_BUILD, isNativePlatform } from '../../lib/appBase';
 import {
   getClubInviteStats,
   getMyInviteLink,
@@ -34,6 +35,20 @@ import {
 } from '../../services/ClubInviteService';
 import '../social/ReferralModal.css';
 import './ShareInviteSheet.css';
+
+/**
+ * The system share sheet on the app build (src/lib/native/share.ts). A function
+ * of its own so IS_NATIVE_BUILD removes the import, and the Capacitor plugin
+ * with it, from the web bundle (see StatsShareCard.tsx for why it cannot sit
+ * inside the handler's try). Resolves false on the web, where the caller uses
+ * navigator.share or the clipboard instead.
+ */
+async function shareInviteOnNative(title: string, text: string, url: string): Promise<boolean> {
+  if (!IS_NATIVE_BUILD || !isNativePlatform()) return false;
+  const { nativeShareText } = await import('../../lib/native/share');
+  await nativeShareText(title, text, url);
+  return true;
+}
 
 export interface ShareInviteSheetProps {
   isOpen: boolean;
@@ -156,6 +171,7 @@ export function ShareInviteSheet({
   const handleShare = async () => {
     if (!link) return;
     try {
+      if (await shareInviteOnNative(clubName, shareText, link.shortUrl)) return;
       if (navigator.share) {
         await navigator.share({ title: clubName, text: shareText, url: link.shortUrl });
       } else {

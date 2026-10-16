@@ -314,8 +314,11 @@ export function ClubIdentityCard({
             onto the plate: a tap on either face is the same button, the
             frame keeps its full 44px band, and the keyboard meets one stop
             named for the words it can see. An arena covers the plate with
-            its rail, so its button stays the bare copy frame. */}
-        {arenaStats ? (
+            its rail, so its button stays the bare copy frame.
+            No onShare, no button (2026-10-15): the automatic Diamond Arena
+            has no club_members row to hang an invite link on, so the lobby
+            passes no handler there and nothing pretends to share. */}
+        {!onShare ? null : arenaStats ? (
           <button
             type="button"
             className="club-identity__share"

@@ -1,0 +1,6 @@
+{
+  "_owner": "claude/horse-realtime-phase15-20261016",
+  "_comment": "Migration 20261016192158 applied to production 2026-10-16 22:22Z (schema_migrations version 20261016192158 read back; objects present in pg_proc/pg_class). Horse Brain Phase 15 daily reference-agreement report.",
+  "tables": ["horse_reference_agreement_daily"],
+  "functions": ["fn_run_horse_reference_agreement", "ca_horse_reference_agreement"]
+}

@@ -4,6 +4,17 @@ You are picking up the Lightning programme for Club Arena (Smarter Poker). Light
 
 **The dated delivery checkpoints above section U supersede the historical state in section U and sections 3 to 5.** Sections 3 to 5 were written at 17:30 UTC and are kept for their ids and history.
 
+## Final Recovery Consumer Proof Adjustment (2026-10-16 14:03 UTC)
+
+- Directreview found an evidencegap, not a demonstratedproductdefect: initialrecoveryprovedrawsocket4401 butclosednormalbrowserbeforeobservingitsrevocationconsumer. Finalsource keepsbrowseralive, locallyrevokesonlyitsownsyntheticsession, drops/restoresactualtransport, requiresnormal/auth/login?authError=no_session pluslocal-storage-authclearedboolean, thenfreshverifiedsamepoolrecovery. One-timeoriginpinnedinitialization prevents theharnessfromreinsertingrevokedtokensonlogin navigation. No productengine/clientchange.
+- Final59focusedopschecks0skip plusrootTypeScript pass. Thisone necessarysourceadjustmentupdates7107 before heavyqualification; retireonlysupersededownhead d3CI38911173965 after normalpush succeeds. Parent7097privatepolicyinstallation remainsindependent, prepared14:04 outsideDDLwindow. Actualprivateplayerconsent/access/recoverystillnotexecuted.
+- Readonly13:58:16Z precheckverifies authorized0097309f hasactiveexistingseats/cashsessions inbothpilots:9seat876e4cc6-dc7d-4008-96e4-4404223fd7bd/session06dc3a0f-f8a2-4324-b2cc-c5628e052422 baseline12.52 stack2.83;6seat5da9d6d7-9a4e-42f5-b1ce-d60ebccaf546/sessione4117a16-cb9c-4869-b096-0b5ca2b087c9 baseline3.68 stack1.99. Theseareprechecks, not invarianceclaims across subsequentlegitimateplay. Retrospective mid-handdrain SQLderives sameactualhandfromdurablerequest/start/settlement timestamps despiteworkflowqueue; no timingcontrollerneeded.
+
+## Witness Followup Submitted And Dashboard Evidence Reused (2026-10-16 13:53 UTC)
+
+- Normalprepushpassed and pushed d3c308b85fde3c7ef8adf5bb13535d97d19e0e92 on codex/lightning-private-live-witnesses-20261016. PR7107 created/attached; owningCI38911173965. Final56focusedintegratedchecks/rootTypeScript/normalhooks passafterprotectedmainintegration. No othercandidatechangesplanned unlessactualfailure. Privatepolicy755merged; installation stillpreparedfor14:04UTC afterfreshprechecks, no actionduringDDLwindow.
+- Reused actualpostdeploy38895550335 clientjob116955251863: scopedLightningoperator Chromium393x900/1440x900 coldloads12:12:57–12:13:06Z,2passed0skip0retry. Overview/detail/readiness/invariants/calibrationvalidation/integrityworker dialogs/cancel-no-write/layout proved againstscopedclient8041514e6bcf53ce4e8c013ac00dae7574d49040; testblobc10e209051843dc4c82cbcb87e8150772d206993 matchescurrentHEAD. Fixture/Authretirementverified; boundedlogpostdeploy-38895550335-lightning-coldload.log. This suppliesL49read/cancelcoverage, notprivateaccess/gameplay/controlwrites. BroaderlaterpagebracketUNKNOWNfromforward298publication remainsdistinct.
+
 ## Access Candidate Merged And Witness Integration (2026-10-16 13:51 UTC)
 
 - PR7097 protectedsquashmerged755e56b04cc97ea023692134340af8d81e035dc4 afterall6requiredcontextsSUCCESS onexact0ae; owningCI38905916715 all4accountingshards/allLightningnativechainpassed. Nonrequiredmain-wideledgerfailure remainsseparate asrecorded. Private-discovery stillNOTinstalled; requiredaggregate admitted too close to13:50DDLboundary, so nextoneexplicitinstallafter14:03(use14:04) withfreshhistory/clock/concurrencyread. Nooverride, duplicateinstaller, activation orconsentwrite.

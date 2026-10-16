@@ -1,9 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
+import { runInNewContext } from 'node:vm';
 import { readFileSync } from 'node:fs';
 import {
   recoveryFrame,
+  initializeRecoverySession,
+  observeRevokedConsumer,
   observeRevokedSocket,
   witnessRecovery,
 } from './lightning-pilot-recovery.mjs';
@@ -201,4 +204,77 @@ test('partial recovery authentication retains owned local-client cleanup', async
   assert.deepEqual(signouts, [{ scope: 'local' }]);
   assert.equal(r.cleanup, 'local_sessions_and_browser_closed');
   assert.doesNotMatch(JSON.stringify(r), new RegExp(SECRET));
+});
+
+test('normal revoked consumer must redirect itself with its session cleared after a real transport drop', async () => {
+  const calls = [],
+    socket = { closed: false };
+  const context = {
+    setOffline: async (offline) => {
+      calls.push(offline);
+      if (offline) socket.closed = true;
+    },
+  };
+  const evidence = {
+    sockets: [socket],
+    wait: async (predicate) => assert.equal(predicate(), true),
+  };
+  const page = {
+    waitForURL: async (predicate) => {
+      assert.equal(
+        predicate(new URL('https://smarter.poker/auth/login?authError=no_session')),
+        true
+      );
+      assert.equal(predicate(new URL('https://smarter.poker/auth/login')), false);
+      assert.equal(
+        predicate(new URL('https://example.invalid/auth/login?authError=no_session')),
+        false
+      );
+    },
+    evaluate: async () => true,
+  };
+  assert.deepEqual(await observeRevokedConsumer(page, context, evidence, () => 1000), {
+    redirect: 'observed',
+    localSessionCleared: true,
+  });
+  assert.deepEqual(calls, [true, false]);
+  socket.closed = false;
+  page.evaluate = async () => false;
+  await assert.rejects(
+    observeRevokedConsumer(page, context, evidence, () => 1000),
+    /Session Remains/
+  );
+});
+
+test('synthetic initialization never reinstates a cleared session on the normal login redirect', () => {
+  const local = new Map(),
+    tab = new Map();
+  const storage = (map) => ({
+    getItem: (key) => map.get(key) ?? null,
+    setItem: (key, value) => map.set(key, value),
+  });
+  const sandbox = {
+    location: { origin: 'https://smarter.poker' },
+    localStorage: storage(local),
+    sessionStorage: storage(tab),
+    session: { access_token: SECRET },
+  };
+  const script = '(' + initializeRecoverySession.toString() + ')({session})';
+  runInNewContext(script, sandbox);
+  assert.equal(local.has('smarter-poker-auth'), true);
+  local.delete('smarter-poker-auth');
+  runInNewContext(script, sandbox);
+  assert.equal(local.has('smarter-poker-auth'), false);
+});
+
+test('revoked consumer contract belongs to maintained session owner and login route', () => {
+  const read = (path) => readFileSync(new URL('../../' + path, import.meta.url), 'utf8');
+  const consumer = read('src/lib/sessionRevoked.ts');
+  assert.match(
+    consumer,
+    /signInUrl\(pathname \+ \(search \|\| ''\), \{ authError: 'no_session' \}\)/
+  );
+  assert.match(consumer, /supabase.auth.signOut\(\{ scope: 'local' \}\)/);
+  assert.match(consumer, /localStorage.removeItem\(AUTH_STORAGE_KEY\)/);
+  assert.match(read('src/lib/signIn.ts'), /auth\/login/);
 });

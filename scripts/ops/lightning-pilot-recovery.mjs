@@ -20,6 +20,36 @@ export function recoveryFrame(payload, direction, rooms) {
   } catch {}
   return null;
 }
+/** Seed only the first same-origin document; a real revocation must stay cleared. */
+export function initializeRecoverySession({ session }) {
+  if (location.origin !== 'https://smarter.poker') return;
+  const marker = 'ca.pilot.recovery.session-initialized';
+  if (sessionStorage.getItem(marker)) return;
+  localStorage.setItem('smarter-poker-auth', JSON.stringify(session));
+  sessionStorage.setItem(marker, 'true');
+}
+
+/** Observe the existing consumer, without clearing storage or navigating for it. */
+export async function observeRevokedConsumer(page, context, evidence, remaining) {
+  const transports = evidence.sockets.filter((socket) => !socket.closed);
+  if (transports.length !== 1) throw new Error('Revoked Consumer Transport Unavailable');
+  await context.setOffline(true);
+  await evidence.wait(() => transports.every((socket) => socket.closed));
+  await context.setOffline(false);
+  await page.waitForURL(
+    (url) =>
+      url.origin === 'https://smarter.poker' &&
+      url.pathname === '/auth/login' &&
+      url.searchParams.get('authError') === 'no_session',
+    { timeout: remaining() }
+  );
+  const localSessionCleared = await page.evaluate(
+    () => localStorage.getItem('smarter-poker-auth') === null
+  );
+  if (localSessionCleared !== true) throw new Error('Revoked Consumer Session Remains');
+  return { redirect: 'observed', localSessionCleared: true };
+}
+
 function journal(page, rooms, remaining) {
   const frames = [],
     sockets = [];
@@ -137,6 +167,7 @@ export async function witnessRecovery({
     sameHand: 'unknown',
     duplicate: 'unknown',
     revoked: 'unknown',
+    revokedConsumer: { redirect: 'unknown', localSessionCleared: null },
     recovery: 'unknown',
     cleanup: 'pending',
   };
@@ -240,10 +271,7 @@ export async function witnessRecovery({
           viewport: { width: 375, height: 812 },
           hasTouch: true,
         });
-        await c.addInitScript(
-          ({ session }) => localStorage.setItem('smarter-poker-auth', JSON.stringify(session)),
-          { session }
-        );
+        await c.addInitScript(initializeRecoverySession, { session });
         const page = await c.newPage();
         const evidence = journal(
           page,
@@ -316,8 +344,6 @@ export async function witnessRecovery({
       await validate(admin, pin);
       report.duplicate = 'second_connection_rendered_same_pool';
       await duplicate.c.close();
-      await context.close();
-      context = null;
       report.phase = 'local_revoke';
       const out = await primary.client.auth.signOut({ scope: 'local' });
       if (out?.error) throw new Error('Revoke Unverified');
@@ -330,6 +356,11 @@ export async function witnessRecovery({
         Math.min(10000, remaining())
       );
       if (report.revoked !== 'auth_refused') throw new Error('Revoked Refusal Unverified');
+      report.phase = 'revoked_consumer';
+      report.revokedConsumer = await observeRevokedConsumer(page, context, evidence, remaining);
+      await context.close();
+      context = null;
+      remaining();
       report.phase = 'session_recovery';
       replacement = await openSession(admin, ownedCreateClient, url, pin, remaining);
       clients.add(replacement.client);

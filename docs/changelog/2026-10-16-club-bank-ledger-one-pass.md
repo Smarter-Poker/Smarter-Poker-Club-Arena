@@ -1,0 +1,9 @@
+# Club Bank Ledger Reads Its Summaries In One Pass
+
+Live verification of the Club Bank UI release retained the Transaction Ledger tab but its history RPC failed with `canceling statement due to statement timeout`. The installed function remains the October 12 definition (`f17eb94522c177856683617945d9f371`), which independently scans receipts for the filtered count, complete type directory and bank totals.
+
+The guarded migration replaces those three scans with one aggregate grouped by the existing displayed transaction kind. The count still applies the selected type filter; the directory and bank totals still cover the entire club. Raw transaction kinds and reversal flags retain their existing money predicates. Authorization, every history row, names/privacy, metadata, pagination and reversal eligibility remain byte-equivalent. No balance, receipt or money row is written.
+
+The existing directly triggered PostgreSQL 17 qualification now checks 91 complete JSON answers across roles, filters, pagination and an empty authorized club; immutable data; unchanged owner/grants/definer/search path; browser installer refusal; rollback; wrong preimage and replay refusal. A two-million-row mixed-club fixture under forced generic prepared plans preserves the exact answer. Local timings were 0.555 seconds before and 0.368 seconds after; those are isolated Mac measurements, not production timings. The read-only grouped production aggregate completed in 929 ms under a three-second bound; the complete installed RPC still requires final live proof after installation.
+
+The three original UI fixes remain published separately in PR #7102. This follow-up changes the ledger read only, uses no engine replacement, and must be installed once through Apply Merged Migration after protected merge, with the normal DDL-window guard and exact function/history readback.

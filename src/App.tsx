@@ -193,6 +193,8 @@ const DailyBonusPage = lazyWithRetry(() => import('./pages/DailyBonusPage'));
 const ClubSettingsPage = lazyWithRetry(() => import('./pages/ClubSettingsPage'));
 const TransactionHistoryPage = lazyWithRetry(() => import('./pages/TransactionHistoryPage'));
 const InvitePage = lazyWithRetry(() => import('./pages/InvitePage'));
+const InviteSignupRedirect = lazyWithRetry(() => import('./components/auth/InviteSignupRedirect'));
+const InviteCodePage = lazyWithRetry(() => import('./pages/InviteCodePage'));
 const NotFoundPage = lazyWithRetry(() => import('./pages/NotFoundPage'));
 const ReportPlayerPage = lazyWithRetry(() => import('./pages/ReportPlayerPage'));
 const ReportReviewPage = lazyWithRetry(() => import('./pages/ReportReviewPage'));
@@ -206,6 +208,8 @@ const ClubAdvertisePage = lazyWithRetry(() => import('./pages/ClubAdvertisePage'
 const VIPPage = lazyWithRetry(() => import('./pages/VIPPage'));
 const ClubFinancialsPage = lazyWithRetry(() => import('./pages/ClubFinancialsPage'));
 const ClubRulesPage = lazyWithRetry(() => import('./pages/ClubRulesPage'));
+const ClubBannerDisplaysPage = lazyWithRetry(() => import('./pages/ClubBannerDisplaysPage'));
+const ClubWelcomeMessagePage = lazyWithRetry(() => import('./pages/ClubWelcomeMessagePage'));
 const NotificationCenter = lazyWithRetry(() => import('./pages/NotificationCenter'));
 const BusDevToolsPage = lazyWithRetry(() => import('./pages/BusDevToolsPage'));
 const ClubButtonsShowcasePage = lazyWithRetry(() => import('./pages/dev/ClubButtonsShowcasePage'));
@@ -743,6 +747,22 @@ function FullApp() {
                   <GuestGuard>
                     <AuthPage />
                   </GuestGuard>
+                }
+              />
+
+              {/* Share & Invite short link opened in the app (2026-10-15). On the
+                  web the World Hub serves smarter.poker/i/<CODE>; this is the
+                  native deep-link landing. Resolving a code needs a session
+                  (no anonymous browser may call fn_club_invite_resolve), so a
+                  signed-out player is sent to CREATE AN ACCOUNT first (the
+                  same redirect the /invite route uses, carrying the code) and
+                  comes back here. */}
+              <Route
+                path="/i/:code"
+                element={
+                  <AuthGuard publicFallback={<InviteSignupRedirect />}>
+                    <InviteCodePage />
+                  </AuthGuard>
                 }
               />
 
@@ -1811,6 +1831,40 @@ function FullApp() {
                   }
                 />
                 <Route
+                  path="welcome-messages"
+                  element={
+                    <AuthGuard>
+                      <PageErrorBoundary pageName="Custom Welcome Message">
+                        <ClubWelcomeMessagePage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/welcome-message"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Custom Welcome Message">
+                          <ClubWelcomeMessagePage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/banner-displays"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Banner Displays">
+                          <ClubBannerDisplaysPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
                   path="clubs/:clubId/settings"
                   element={
                     <AuthGuard>
@@ -1835,7 +1889,7 @@ function FullApp() {
                 <Route
                   path="invite/:clubId"
                   element={
-                    <AuthGuard>
+                    <AuthGuard publicFallback={<InviteSignupRedirect />}>
                       <PageErrorBoundary pageName="Invite">
                         <InvitePage />
                       </PageErrorBoundary>

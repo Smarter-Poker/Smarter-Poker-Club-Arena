@@ -2,8 +2,8 @@
   "scope": "Exact final narrow/hash-compatible cohort native inputs; no moneyRPC",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 225112,
-      "sha256": "bd79793d22be38b73aa77ace9091c975c772494623da76b903b5f26bdfecd853"
+      "bytes": 225916,
+      "sha256": "e9f6041a40826ba944f662b0914d7ba3f9af600e513ed4e627cb47d18614255f"
     },
     "scripts/qualification/original-flow-eligibility/after-flow.sql": {
       "bytes": 13791,
@@ -58,8 +58,8 @@
       "sha256": "57fce087e84ef59f1be3963ec29c49de49eb263c4a9aa19d5232c69312a309aa"
     },
     "scripts/qualification/weekly-cohort-cutoff/run-native.py": {
-      "bytes": 1259,
-      "sha256": "6f75a24a2e63b2adcbb49ba6d913d328b0b6af53c477bbd1dd1c35b17fade75d"
+      "bytes": 1481,
+      "sha256": "c22c18ffcfb3f1e3e755bad7895c9c0ee4af7f468c08963a9ccc3ce9182736d0"
     },
     "scripts/qualification/weekly-cohort-cutoff/semantic-bootstrap.sql": {
       "bytes": 10091,

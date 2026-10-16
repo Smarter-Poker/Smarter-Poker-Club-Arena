@@ -62,14 +62,16 @@ describe('the one live path now spends the agent wallet', () => {
    */
   it('takes no sender parameter at all', () => {
     expect(AGENT_SERVICE).toMatch(
-      /async transferToPlayer\(playerId: string, clubId: string, amount: number\)/
+      /async transferToPlayer\(\s*playerId: string,\s*clubId: string,\s*amount: number,/
     );
     expect(AGENT_SERVICE).not.toMatch(/async transferToPlayer\(\s*\n?\s*agentId: string/);
   });
 
   it('the dashboard no longer passes the agents-table row id', () => {
     expect(SUPER_AGENT).not.toMatch(/transferToPlayer\(agent\.id/);
-    expect(SUPER_AGENT).toMatch(/transferToPlayer\(transferPlayerId, clubId!, amount\)/);
+    expect(SUPER_AGENT).toMatch(
+      /transferToPlayer\(\s*transferPlayerId,\s*clubId!,\s*amount,\s*transferDestination\s*\)/
+    );
   });
 
   it('reuses a durable retry identity and requires a confirmed receipt', () => {

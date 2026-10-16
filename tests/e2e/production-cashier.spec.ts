@@ -1,5 +1,10 @@
 import { expect, test, type Locator, type TestInfo } from '@playwright/test';
-import { BATCH_VERDICTS, batchVerdictFor, fundingCoverage } from './support/cashierFundingVerdict';
+import {
+  BATCH_VERDICTS,
+  batchVerdictFor,
+  fundingCoverage,
+  printedFundingFigure,
+} from './support/cashierFundingVerdict';
 import {
   attachCashierScreenshot,
   expectCashierAxeClean,
@@ -33,9 +38,15 @@ async function expectBatchVerdictFromFunding(
   testInfo: TestInfo,
   name: string
 ): Promise<void> {
-  const text = (await dialog.innerText()).replace(/\s+/g, ' ');
-  // The funding wallet prints as its own painted row: label, then figure.
-  const figure = new RegExp(`${fundingLabel} (\\S+)`).exec(text)?.[1] ?? '';
+  // The funding wallet prints as its own painted row (CashierWalletRow): a
+  // region named by its label, holding the figure in its value element. Read
+  // the figure from that element. The dialog's innerText is not a source: the
+  // painted label is text-transform: uppercase and sits flush against the
+  // figure, so a label-then-figure match on innerText finds nothing and every
+  // run reported an empty figure (Post-Deploy E2E, 2026-10-15).
+  const fundingRow = dialog.getByRole('region', { name: fundingLabel, exact: true });
+  await expect(fundingRow).toBeVisible();
+  const figure = printedFundingFigure(await fundingRow.locator('strong').allTextContents());
   const coverage = fundingCoverage(figure, total);
   const verdict = batchVerdictFor(coverage, recipients);
   await testInfo.attach(`${name}-funding-verdict.json`, {
@@ -267,7 +278,10 @@ test.describe('Production Cashier Certification', () => {
     const sendOutAction = surface.getByRole('button', { name: 'Send Out', exact: true });
     await sendOutAction.click();
     const transferDialog = page.getByRole('dialog', { name: 'Send Out', exact: true });
-    const singleAmount = transferDialog.getByRole('spinbutton', { name: 'Amount', exact: true });
+    const singleAmount = transferDialog.getByRole('textbox', { name: 'Amount', exact: true });
+    await expect(singleAmount).toHaveAttribute('inputmode', 'decimal');
+    await singleAmount.fill('100000');
+    await expect(singleAmount).toHaveValue('100,000');
     await singleAmount.fill('10.005');
     await expect(singleAmount).toHaveAttribute('aria-invalid', 'true');
     await expect(singleAmount).toHaveAccessibleDescription(
@@ -300,8 +314,8 @@ test.describe('Production Cashier Certification', () => {
     await recipients.nth(0).check();
     await recipients.nth(1).check();
     await surface.getByRole('button', { name: 'Send Out', exact: true }).click();
-    await transferDialog.getByRole('spinbutton', { name: 'Amount', exact: true }).fill('10');
-    const individualAmounts = transferDialog.getByRole('spinbutton', { name: /^Amount For / });
+    await transferDialog.getByRole('textbox', { name: 'Amount', exact: true }).fill('10');
+    const individualAmounts = transferDialog.getByRole('textbox', { name: /^Amount For / });
     await expect(individualAmounts).toHaveCount(2);
     await individualAmounts.nth(1).fill('0.20');
     await expect(transferDialog).toContainText('Total: 10.20');
@@ -524,11 +538,13 @@ test.describe('Production Cashier Certification', () => {
         const tab = advancedTabs.getByRole('tab', { name: rail, exact: true });
         if ((await tab.count()) === 0) continue;
         await tab.click();
-        const field = console.getByRole('spinbutton', {
+        const field = console.getByRole('textbox', {
           name: rail === 'Mint' ? 'Chips To Mint' : 'Amount',
           exact: true,
         });
         await expect(field).toBeVisible();
+        await field.fill('100000');
+        await expect(field).toHaveValue('100,000');
         await expect(field).toHaveAttribute('inputmode', rail === 'Mint' ? 'numeric' : 'decimal');
         await field.fill(rail === 'Mint' ? '1.5' : '10.005');
         await expect(field).toHaveAttribute('aria-invalid', 'true');

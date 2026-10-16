@@ -139,8 +139,9 @@ describe.each(['transfer', 'prepaid'])('dashboard %s retry', (flow) => {
     } else {
       fireEvent.click(screen.getByRole('button', { name: 'Credit' }));
       const selectors = screen.getAllByRole('combobox');
+      // Every agent is prepaid (Dan, October 2026): sending prepaid chips is
+      // the tab's one action, so there is no action selector to set.
       fireEvent.change(selectors[0], { target: { value: ids.agent } });
-      fireEvent.change(selectors[1], { target: { value: 'add_prepaid' } });
     }
     fireEvent.change(screen.getByPlaceholderText('0'), { target: { value: '25' } });
   }

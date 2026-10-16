@@ -57,6 +57,9 @@ import { mttBountyAmount } from '../tournament/mttBountyAllocation.js';
 import { mysteryBountyCreationColumns } from '../domain/mysteryBountyCreation.js';
 import {
   TournamentRecurringService,
+  fixedBoardTemplate,
+  fixedFreeBuyRow,
+  recurringMttRow,
   MTT_PUBLISH_LEAD_MS,
   satelliteTargetIsDeliverable,
   type SatelliteTargetRow,
@@ -69,6 +72,7 @@ import {
 } from '../tournament/mttStructurePolicy.js';
 import { SPIN_SEATS, SPIN_TIERS, spinBlindsForLevel } from '../config/spinSpec.js';
 import { localDateIn, zonedStartUtc } from './scheduleWallClock.js';
+import { planFixedBoardSync, type ExistingFixedBoardRow } from '../config/fixedBoard.js';
 import {
   HEADS_UP_BLIND_STRUCTURE,
   HEADS_UP_PAYOUTS,
@@ -553,8 +557,42 @@ function asBool(v: unknown): boolean {
 // SERVICE
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/**
+ * PURE. The row for one occurrence of a fixed-board schedule (Dan 2026-10-15,
+ * "PUT THEM ON A HARD CODED SCHEDULE"). `cfg.fixedBoard` names the template:
+ * a Free Buy slot ("Prime Time Free Buy (NLH)"), a lobby MTT ("Night Owl
+ * Special (NLH)") or a union MTT ("Union Grand Championship (NLH)"). Null for
+ * a name that is none of those, so the occurrence is refused and paged rather
+ * than guessed.
+ */
+export function fixedBoardRow(
+  schedule: Pick<TournamentScheduleRow, 'id' | 'club_id' | 'union_id' | 'name'>,
+  cfg: Record<string, unknown>,
+  startTime: Date
+): Record<string, unknown> | null {
+  const name = typeof cfg.fixedBoard === 'string' ? cfg.fixedBoard.trim() : '';
+  if (!name) return null;
+  const unionId = schedule.union_id ?? null;
+  const freeBuy = fixedFreeBuyRow(name, startTime, {
+    clubId: schedule.club_id,
+    unionId,
+    label: schedule.name,
+  });
+  if (freeBuy) return { ...freeBuy, schedule_id: schedule.id };
+  const template = fixedBoardTemplate(name);
+  if (!template) return null;
+  const row = recurringMttRow(template.config, startTime, {
+    clubId: schedule.club_id,
+    unionId,
+    xmtt: template.kind === 'union_mtt',
+  });
+  return { ...row, schedule_id: schedule.id };
+}
+
 export class ScheduledTournamentService {
   private pollTimer: ReturnType<typeof setInterval> | null = null;
+  /** True once this process has written the hard-coded board (syncFixedBoard). */
+  private fixedBoardSynced = false;
   private isRunning = false;
   /** Re-entrancy guard: a slow poll must never overlap the next tick. */
   private polling = false;
@@ -721,6 +759,23 @@ export class ScheduledTournamentService {
     this.fundingBankReads = new Map();
     this.retiredScheduleIds = new Set();
     try {
+      // THE FIXED BOARD IS HARD CODED (config/fixedBoard.ts). Written by this
+      // binary before it reads a schedule, so the board it runs is the board
+      // it was built with. Until the write lands, it is retried every poll.
+      if (!this.fixedBoardSynced) {
+        try {
+          this.fixedBoardSynced = await this.syncFixedBoard();
+        } catch (err: unknown) {
+          // A failed write never costs the rest of the poll its schedules.
+          reportError(
+            new Error(
+              `[ScheduledTournaments] fixed board sync failed: ${(err as Error)?.message ?? err}`
+            ),
+            'ScheduledTournaments.fixed_board_sync_failed'
+          );
+        }
+        if (!this.lifecycleIsCurrent(generation)) return;
+      }
       const { data: schedules, error } = await supabase
         .from('tournament_schedules')
         .select('*')
@@ -769,6 +824,57 @@ export class ScheduledTournamentService {
     } finally {
       this.polling = false;
     }
+  }
+
+  /**
+   * Make tournament_schedules hold exactly the hard-coded board in
+   * config/fixedBoard.ts (planFixedBoardSync). True when the table matches,
+   * false when a read or write failed (retried on the next poll).
+   */
+  private async syncFixedBoard(): Promise<boolean> {
+    const { data, error } = await supabase
+      .from('tournament_schedules')
+      .select('id, club_id, active, days_of_week, start_times_utc, time_zone, config')
+      .not('config->>fixedBoard', 'is', null);
+    if (error) {
+      reportError(
+        new Error(`[ScheduledTournaments] fixed board read failed: ${error.message}`),
+        'ScheduledTournaments.fixed_board_read_failed'
+      );
+      return false;
+    }
+    const plan = planFixedBoardSync((data ?? []) as ExistingFixedBoardRow[]);
+    let ok = true;
+    for (const id of plan.deactivate) {
+      const { error: e } = await supabase
+        .from('tournament_schedules')
+        .update({ active: false })
+        .eq('id', id);
+      if (e) ok = false;
+    }
+    for (const { id, row } of plan.updates) {
+      const { error: e } = await supabase.from('tournament_schedules').update(row).eq('id', id);
+      if (e) ok = false;
+    }
+    if (plan.inserts.length > 0) {
+      const { error: e } = await supabase.from('tournament_schedules').insert(plan.inserts);
+      if (e) ok = false;
+    }
+    if (!ok) {
+      reportError(
+        new Error('[ScheduledTournaments] fixed board write failed - retried next poll'),
+        'ScheduledTournaments.fixed_board_write_failed'
+      );
+      return false;
+    }
+    const changed = plan.inserts.length + plan.updates.length + plan.deactivate.length;
+    if (changed > 0) {
+      console.log(
+        `[ScheduledTournaments] Fixed board written: ${plan.inserts.length} added, ` +
+          `${plan.updates.length} updated, ${plan.deactivate.length} retired`
+      );
+    }
+    return true;
   }
 
   private async processSchedule(schedule: TournamentScheduleRow): Promise<void> {
@@ -1336,6 +1442,24 @@ export class ScheduledTournamentService {
     cfg: Record<string, unknown>,
     startTime: Date
   ): Promise<Record<string, unknown> | null> {
+    /* THE FIXED BOARD (Dan 2026-10-15): a schedule row may name one of the
+       Midway Union's board templates instead of spelling a config out. The
+       occurrence is built by the SAME builder the old board timer used, so it
+       is that event column for column, at the schedule's fixed time. An
+       unknown template is a refused occurrence, which pages like any other. */
+    if (cfg.fixedBoard !== undefined) {
+      const fixed = fixedBoardRow(schedule, cfg, startTime);
+      if (!fixed) {
+        reportError(
+          new Error(
+            `[ScheduledTournaments] schedule ${schedule.id.slice(0, 8)} names an unknown fixed-board template "${String(cfg.fixedBoard)}" - skipping`
+          ),
+          'ScheduledTournaments.unknown_fixed_board_template'
+        );
+        return null;
+      }
+      return fixed;
+    }
     const linkedSatellite = isUnlimitedMtt({
       satellite_target_id: cfg.satellite_target_id,
       satelliteTargetId: cfg.satelliteTargetId,

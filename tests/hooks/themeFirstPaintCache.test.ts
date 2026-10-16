@@ -198,3 +198,92 @@ describe('theme first paint comes from the cache', () => {
     expect(result.current.theme.faceDeckId).toBe('house-classic');
   });
 });
+
+describe('every saved bucket reaches the first-paint cache, without trusting the device clock (2026-10-16)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    eq.mockResolvedValue({ data: null, error: null });
+  });
+
+  it('a database echo for a bucket no table is showing still updates that bucket', async () => {
+    localStorage.setItem(
+      CACHE_KEY,
+      JSON.stringify([
+        { ...cachedRows[0], updated_at: '2026-08-01T00:00:00Z' },
+        { ...cachedRows[0], game_type: 'PLO', table_id: 'old_plo', updated_at: '2026-08-02T00:00:00Z' },
+      ])
+    );
+    const { result } = renderHook(() => useUserThemeSettings('user-1', 'nlh'));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    act(() => {
+      masterBus.emit('UI_THEME_CHANGED', {
+        key: 'PLO',
+        value: { table_id: 'new_plo' },
+        userId: 'user-1',
+        updatedAt: '2026-09-01T00:00:00Z',
+      });
+    });
+
+    // The next PLO table reveals the saved felt, not the one before it.
+    expect(resolveCachedTheme('user-1', 'PLO')?.table_id).toBe('new_plo');
+    // The NLH table on screen is untouched by a PLO save.
+    expect(result.current.theme.table_id).toBe('jade_city');
+  });
+
+  it('a confirmed save on a fast device clock does not outrank a newer save from another device', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2030-01-01T00:00:00Z'));
+    try {
+      localStorage.setItem(
+        CACHE_KEY,
+        JSON.stringify([
+          { ...cachedRows[0], updated_at: '2026-08-01T00:00:00Z' },
+          {
+            ...cachedRows[0],
+            game_type: 'NLH',
+            table_id: 'ocean_blue',
+            updated_at: '2026-08-20T00:00:00Z',
+          },
+        ])
+      );
+      const { result } = renderHook(() => useUserThemeSettings('user-1', 'nlh'));
+      await waitFor(() => expect(result.current.loading).toBe(false));
+
+      act(() => {
+        masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
+          kind: 'table-appearance',
+          scope: 'user-1:NLH',
+          mutationId: 'skewed-nlh',
+          state: 'pending',
+        });
+        masterBus.emit('UI_THEME_CHANGED', {
+          key: 'NLH',
+          value: { table_id: 'nlh_local' },
+          userId: 'user-1',
+          mutationId: 'skewed-nlh',
+        });
+        masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
+          kind: 'table-appearance',
+          scope: 'user-1:NLH',
+          mutationId: 'skewed-nlh',
+          state: 'confirmed',
+        });
+      });
+      expect(resolveCachedTheme('user-1', 'NLH')?.table_id).toBe('nlh_local');
+
+      // Another device then saves ALL; the server stamps it after the NLH save.
+      act(() => {
+        masterBus.emit('UI_THEME_CHANGED', {
+          key: 'ALL',
+          value: { table_id: 'carbon_ion' },
+          userId: 'user-1',
+          updatedAt: '2026-08-21T00:00:00Z',
+        });
+      });
+      expect(resolveCachedTheme('user-1', 'NLH')?.table_id).toBe('carbon_ion');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

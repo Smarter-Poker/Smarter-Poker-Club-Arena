@@ -65,7 +65,7 @@ function callArgs(src: string, rpc: string): string {
 }
 
 // ───────────────────────────────────────────────────────────────────────────
-describe('the trade grid spends the AGENT WALLET', () => {
+describe('the trade grid defaults to the agent wallet and honors the selected source', () => {
   it('finds the function it is asserting about', () => {
     expect(RUN_TRANSFERS.length).toBeGreaterThan(500);
     expect(RUN_TRANSFERS).toContain('fn_cashier_batch_transfer');
@@ -107,12 +107,13 @@ describe('the trade grid spends the AGENT WALLET', () => {
     expect(RUN_TRANSFERS).toContain("'player_wallet'");
   });
 
-  it('checks the pot the send actually spends, not the club bank or the player balance', () => {
-    // An owner with a large treasury and an unfunded float sailed past the old
-    // check and collected N server refusals instead.
-    expect(RUN_TRANSFERS).toMatch(/kind === 'send' && agentWallet !== null && total > agentWallet/);
-    // And an unread balance must not refuse a send the server would allow.
-    expect(RUN_TRANSFERS).toContain('agentWallet !== null');
+  it('caps the selected source and applies credit headroom only to the Agent Wallet', () => {
+    expect(RUN_TRANSFERS).toMatch(
+      /kind === 'send' &&\s*selectedSourceBalance !== null &&\s*total > selectedSourceBalance/
+    );
+    expect(RUN_TRANSFERS).toContain("sendSource === 'agent_wallet' ? agentCredit : 0");
+    expect(RUN_TRANSFERS).toContain("kind === 'send' && selectedSourceBalance === null");
+    expect(RUN_TRANSFERS).toContain("source: uncertainRecovery.source ?? 'agent_wallet'");
   });
 });
 

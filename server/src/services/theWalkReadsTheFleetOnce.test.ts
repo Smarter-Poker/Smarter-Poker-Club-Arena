@@ -131,7 +131,6 @@ function discoveryHarness(boards: ReturnType<typeof boardRow>[][]) {
     lastOrphanSeatSweepAt: DISCOVERY_NOW,
     lastConservationAt: DISCOVERY_NOW,
     lastNoHandResultCheckAt: DISCOVERY_NOW,
-    lastPlaceOverpayChargeAt: DISCOVERY_NOW,
     lastSpinExpireAt: DISCOVERY_NOW,
     readSeatFirstPaidSeats: vi.fn(async () => new Map()),
     // The start gate reads each row's roster (2026-09-24); these rows carry

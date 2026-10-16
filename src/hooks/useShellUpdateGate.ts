@@ -34,7 +34,7 @@
  * case specifically. The gate therefore waits for a moment that is boring by
  * construction:
  *
- *   1. the player is not looking at a table (no /table/ route), AND
+ *   1. the player is not looking at a table or any Cashier page, AND
  *   2. the page is visible (reloading a hidden tab burns the update on a
  *      session nobody is watching, and Safari may defer it anyway), AND
  *   3. a short settle delay has passed with both still true.
@@ -154,6 +154,9 @@ export function mayReloadForShell(opts: {
   now: number;
 }): boolean {
   if (isAtTable(opts.pathname)) return false;
+  // Cashier pages never refresh themselves, including global shell adoption.
+  // A pending update can be adopted after the player leaves the financial form.
+  if (/(?:^|\/)cashier(?:-classic)?(?:\/|$)/.test(opts.pathname)) return false;
   if (!opts.visible) return false;
   if (opts.lastReloadAt != null && opts.now - opts.lastReloadAt < RELOAD_COOLDOWN_MS) return false;
   return true;

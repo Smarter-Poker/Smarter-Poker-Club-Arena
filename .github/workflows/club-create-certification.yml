@@ -194,6 +194,8 @@ jobs:
         with:
           name: create-club-production-evidence
           path: |
+            test-results/banner-displays-mobile.png
+            test-results/banner-displays-desktop.png
             test-results/create-club-ready-mobile.png
             test-results/create-club-opened-mobile.png
             test-results/create-club-leaderboard-review-mobile.png

@@ -36,18 +36,36 @@ beforeEach(() => {
 });
 
 describe('Diamond Spins bust invitation', () => {
-  it('removes a dismissed offer even when its exit animation cannot complete', () => {
+  const funded = { bust_prompt: false, member_chips: 100, diamonds: 25 };
+  const empty = { bust_prompt: true, member_chips: 0, diamonds: 25 };
+  function bust() {
+    state.entry = funded;
+    const view = render(<DiamondBustPrompt clubId="club-a" />);
+    state.entry = empty;
+    view.rerender(<DiamondBustPrompt clubId="club-a" />);
+    return view;
+  }
+
+  it('never opens just because a club page opens, even for an eligible empty wallet', () => {
+    state.entry = empty;
+    const view = render(<DiamondBustPrompt clubId="club-a" />);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    view.rerender(<DiamondBustPrompt clubId="club-a" />);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('opens after a confirmed funded-to-empty transition and dismisses despite a stalled exit', () => {
     state.retainExit = true;
-    state.entry = { bust_prompt: true, member_chips: 0, diamonds: 25 };
-    const { rerender } = render(<DiamondBustPrompt clubId="club-a" />);
+    const view = bust();
+    expect(screen.getByRole('dialog', { name: 'Diamond Spins' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Not Now' }));
-    expect(screen.queryByRole('dialog', { name: 'Diamond Spins' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(document.querySelector('.ca-modal-portal')).not.toBeInTheDocument();
     expect(document.body.style.overflow).toBe('');
-    rerender(<DiamondBustPrompt clubId="club-a" />);
+    view.rerender(<DiamondBustPrompt clubId="club-a" />);
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    rerender(<DiamondBustPrompt clubId="club-b" />);
-    expect(screen.getByRole('dialog', { name: 'Diamond Spins' })).toBeInTheDocument();
+    view.rerender(<DiamondBustPrompt clubId="club-b" />);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('removes a dismissed offer when session storage is unavailable', () => {
@@ -75,7 +93,7 @@ describe('Diamond Spins bust invitation', () => {
       } satisfies Storage,
     });
     try {
-      const { rerender } = render(<DiamondBustPrompt clubId="club-a" />);
+      const { rerender } = bust();
       fireEvent.click(screen.getByRole('button', { name: 'Not Now' }));
       expect(write).toHaveBeenCalledWith('diamond-spins-bust:player-a:club-a', 'dismissed');
       expect(write.mock.results[0].type).toBe('throw');
@@ -88,40 +106,46 @@ describe('Diamond Spins bust invitation', () => {
     }
   });
 
-  it('requires confirmed zero chips, at least 25 diamonds, and server eligibility', () => {
-    const { rerender } = render(<DiamondBustPrompt clubId="club-a" />);
+  it('recognizes a real bust after chips were already committed to an active seat', () => {
+    state.entry = { ...empty, bust_prompt: false };
+    const view = render(<DiamondBustPrompt clubId="club-a" />);
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    state.entry = empty;
+    view.rerender(<DiamondBustPrompt clubId="club-a" />);
+    expect(screen.getByRole('dialog', { name: 'Diamond Spins' })).toBeInTheDocument();
+  });
+
+  it('never inherits a shortage from another account or club', () => {
+    const view = bust();
+    state.user = { id: 'player-b' };
+    view.rerender(<DiamondBustPrompt clubId="club-a" />);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    view.rerender(<DiamondBustPrompt clubId="club-b" />);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('requires confirmed zero chips, sufficient diamonds and current server eligibility', () => {
+    state.entry = funded;
+    const view = render(<DiamondBustPrompt clubId="club-a" />);
     for (const entry of [
       { bust_prompt: true, member_chips: null, diamonds: 100 },
-      { bust_prompt: true, member_chips: 0.01, diamonds: 100 },
+      { bust_prompt: true, member_chips: 1, diamonds: 100 },
       { bust_prompt: true, member_chips: 0, diamonds: 24 },
       { bust_prompt: false, member_chips: 0, diamonds: 100 },
     ]) {
       state.entry = entry;
-      rerender(<DiamondBustPrompt clubId="club-a" />);
+      view.rerender(<DiamondBustPrompt clubId="club-a" />);
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     }
-    state.entry = { bust_prompt: true, member_chips: 0, diamonds: 25 };
-    rerender(<DiamondBustPrompt clubId="club-a" />);
-    expect(screen.getByRole('dialog', { name: 'Diamond Spins' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Earn Diamonds Daily' }));
-    expect(state.navigate).toHaveBeenCalledWith('/clubs/club-a/earn-diamonds');
   });
-  it('dismisses per account and club, and permits a new invitation after chips are replenished', () => {
-    state.entry = { bust_prompt: true, member_chips: 0, diamonds: 25 };
-    const { rerender } = render(<DiamondBustPrompt clubId="club-a" />);
+
+  it('allows a new real shortage after replenishment and preserves the Diamond Spins route', () => {
+    const view = bust();
     fireEvent.click(screen.getByRole('button', { name: 'Not Now' }));
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    state.user = { id: 'player-b' };
-    rerender(<DiamondBustPrompt clubId="club-a" />);
-    expect(screen.getByRole('dialog')).toBeInTheDocument();
-    state.user = { id: 'player-a' };
-    rerender(<DiamondBustPrompt clubId="club-a" />);
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    state.entry = { bust_prompt: false, member_chips: 10, diamonds: 25 };
-    rerender(<DiamondBustPrompt clubId="club-a" />);
-    state.entry = { bust_prompt: true, member_chips: 0, diamonds: 25 };
-    rerender(<DiamondBustPrompt clubId="club-a" />);
+    state.entry = funded;
+    view.rerender(<DiamondBustPrompt clubId="club-a" />);
+    state.entry = empty;
+    view.rerender(<DiamondBustPrompt clubId="club-a" />);
     fireEvent.click(screen.getByRole('button', { name: 'Play Diamond Spins' }));
     expect(state.navigate).toHaveBeenCalledWith('/clubs/club-a/wheel');
   });

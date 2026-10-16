@@ -60,3 +60,11 @@ finally:
     if start_attempted and (data/'postmaster.pid').exists():
         run([pg/'pg_ctl', '-D', data, '-m', 'fast', '-w', 'stop'])
     shutil.rmtree(cluster)
+
+# The same maintained wallet qualification entry point also exercises explicit
+# recipient destinations and the bank-to-agent lock order.
+if not args.baseline:
+    import sys
+    choice_env = dict(os.environ, PG_BIN=str(pg))
+    subprocess.run([sys.executable, str(ROOT/'scripts/ci/test-chip-wallet-choice-postgres.py')],
+                   env=choice_env, check=True, timeout=60)

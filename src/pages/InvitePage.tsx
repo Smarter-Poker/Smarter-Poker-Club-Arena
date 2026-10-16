@@ -16,6 +16,12 @@ import PageSkeleton from '../components/common/PageSkeleton';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { reportError } from '../utils/errorReporter';
 import { MEDIA_BASE } from '../utils/mediaBase';
+import {
+  claimInvite,
+  clearPendingInviteCode,
+  normalizeInviteCode,
+  readPendingInviteCode,
+} from '../services/ClubInviteService';
 
 import { safeErrorMessage } from '../utils/safeErrorMessage';
 const inviteStepAnimationStyle = {
@@ -65,7 +71,16 @@ export default function InvitePage() {
   const [searchParams] = useSearchParams();
   const inviteCode = searchParams.get('code');
   const refCode = searchParams.get('ref');
+  /* SHARE & INVITE (Dan 2026-10-15): a short link carries `i=<CODE>`, the
+     sender's own code. Claiming it records who brought this player (first link
+     wins) before the join, so fn_redeem_club_invite_code places them in THAT
+     sender's downline whatever `ref` a later link carries. */
+  const shortInviteCode = normalizeInviteCode(searchParams.get('i'));
   const { user } = useAuthUser();
+  // The referral the join redeems: the link's own ?ref=, or the inviter the
+  // claimed invite names when the player arrived without one.
+  const [claimedRef, setClaimedRef] = useState<string | null>(null);
+  const effectiveRef = refCode || claimedRef;
 
   const [club, setClub] = useState<ClubInfo | null>(null);
   const [loading, setLoading] = useState(true);
@@ -157,7 +172,37 @@ export default function InvitePage() {
           is_public: clubData.is_public,
         });
 
+        let joinRef = refCode;
         if (user?.id) {
+          const pendingInvite = readPendingInviteCode();
+          const codeToClaim = shortInviteCode || pendingInvite?.code || null;
+          if (codeToClaim) {
+            try {
+              const claimed = await claimInvite(
+                codeToClaim,
+                pendingInvite?.code === codeToClaim ? pendingInvite.firstSeen : undefined
+              );
+              if (claimed.success && claimed.joinPath && claimed.joinPath.includes(clubData.id)) {
+                const fromClaim = new URL(claimed.joinPath, window.location.origin).searchParams.get('ref');
+                if (fromClaim) {
+                  joinRef = joinRef || fromClaim;
+                  if (!getIsMounted || getIsMounted()) setClaimedRef(fromClaim);
+                }
+              }
+              if (
+                claimed.code === 'self_referral' ||
+                claimed.code === 'expired' ||
+                claimed.code === 'invalid_code'
+              ) {
+                clearPendingInviteCode();
+              }
+            } catch (claimErr) {
+              // The join below still works from ?ref=; the claim only adds
+              // first-wins attribution, so a failure here never blocks it.
+              reportError(claimErr, 'InvitePage.claim_invite_failed');
+            }
+          }
+
           const { data: membership } = await supabase
             .from('club_members')
             .select('user_id, status')
@@ -176,10 +221,10 @@ export default function InvitePage() {
             // not, or because they closed the tab mid-flight — came back to
             // "Pending Approval" and a Browse Clubs button, with no way to
             // spend the code that was sitting in their own localStorage.
-            const redeemed = refCode
+            const redeemed = joinRef
               ? await ClubJoinService.join({
                   identifier: clubData.slug || String(clubData.club_id || clubData.id),
-                  referralCode: refCode,
+                  referralCode: joinRef,
                 })
               : null;
             if (getIsMounted && !getIsMounted()) return;
@@ -211,6 +256,7 @@ export default function InvitePage() {
                looks broken. Replacing means Back goes to wherever they were
                before the link. */
             setPendingApproval(false);
+            clearPendingInviteCode();
             enterClub(clubData.slug || clubData.id);
             return;
           } else {
@@ -229,7 +275,7 @@ export default function InvitePage() {
     // `enterClub` was missing here and eslint was warning about it: the member
     // redirect below calls it, so a stale closure would have navigated with a
     // stale club. It is a useCallback on [navigate], so adding it costs nothing.
-    [clubId, inviteCode, refCode, user?.id, toast, enterClub]
+    [clubId, inviteCode, shortInviteCode, refCode, user?.id, toast, enterClub]
   );
 
   useVisibilityRefresh(() => loadClubInfo());
@@ -299,7 +345,7 @@ export default function InvitePage() {
       // dead ends.
       const joinResult = await ClubJoinService.join({
         identifier: club.slug || String(club.club_id || club.id),
-        referralCode: refCode,
+        referralCode: effectiveRef,
       });
       if (!joinResult.success) throw new Error(joinResult.error || 'Failed to join club');
 
@@ -316,6 +362,7 @@ export default function InvitePage() {
       // call this replaced ran on top of that recount and inflated the count
       // by one on every invite-page join — the only join path that did.
 
+      clearPendingInviteCode();
       toast.success(`Welcome to ${club.name}!`);
       enterClub(club.slug || club.id);
     } catch (err: any) {

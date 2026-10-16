@@ -214,7 +214,7 @@ describe('the page wires the menu to the saved filter', () => {
     expect(page).toContain('variantChoices: vSpec.games');
     expect(page).toContain('selectedVariants: vVal.games');
     expect(page).toMatch(
-      /onVariantsChange: \(games: string\[\]\) => \{[\s\S]*?setAdvFilters\(next\);[\s\S]*?saveFilters\(resolvedClubId, next\)/
+      /onVariantsChange: \(games: string\[\]\) => \{[\s\S]*?setAdvFilters\(next\);[\s\S]*?persistAdvFilters\(resolvedClubId, next\)/
     );
     // Both tabs the menu serves declare their games in the spec.
     expect(FILTER_SPECS.HOLDEM.games?.length).toBeGreaterThan(0);

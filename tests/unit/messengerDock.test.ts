@@ -8,9 +8,49 @@ import {
   dockLayout,
   updateDock,
   restoreDock,
+  updateDockPreviews,
+  dockHasSurface,
+  dockPreviewLayout,
 } from '../../src/components/messenger/dock/messengerDock.mjs';
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 describe('native Messenger dock', () => {
+  it('renders nothing idle and requires an explicit notice click to open a chat', () => {
+    const chats = [];
+    let notices = [];
+    expect(dockHasSurface(chats, notices)).toBe(false);
+    notices = updateDockPreviews(notices, {
+      type: 'receive',
+      conversation: { id: id(1), unreadCount: 1 },
+    });
+    expect(dockHasSurface(chats, notices)).toBe(true);
+    expect(chats).toHaveLength(0);
+    const unread = notices[0].unreadCount;
+    notices = updateDockPreviews(notices, { type: 'dismiss', id: id(1) });
+    expect(dockHasSurface(chats, notices)).toBe(false);
+    expect(unread).toBe(1);
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/messenger/dock/MessengerDock.jsx'),
+      'utf8'
+    );
+    const incoming = source.slice(
+      source.indexOf('if (incoming) {'),
+      source.indexOf("previewAction({ type: 'dismiss', id });")
+    );
+    expect(incoming).toContain("type: 'receive'");
+    expect(incoming).not.toContain("type: 'open'");
+    expect(source).toContain('Dismiss Message From');
+    expect(source).toContain('Open Message From');
+  });
+  it('bounds and clears notices, with visible close controls above mobile footers', () => {
+    let notices = [];
+    for (let n = 1; n <= 8; n++)
+      notices = updateDockPreviews(notices, { type: 'receive', conversation: { id: id(n) } });
+    expect(notices).toHaveLength(3);
+    expect(notices.at(-1).id).toBe(id(8));
+    expect(updateDockPreviews(notices, { type: 'clear' })).toEqual([]);
+    const layout = dockPreviewLayout(568, 76, true);
+    expect(layout.bottom + layout.maxHeight).toBeLessThanOrEqual(556);
+  });
   it('opens one window per conversation and preserves explicit minimization', () => {
     const conversation = { id: id(1), title: 'Player' };
     let rows = updateDock([], { type: 'open', conversation, incoming: true });

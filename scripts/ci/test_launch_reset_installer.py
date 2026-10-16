@@ -19,6 +19,7 @@ with tempfile.TemporaryDirectory(prefix='installer-native-',dir=a.scratch) as tm
  for dep in ['check-migrations-are-live.mjs','migration-concurrent-preamble.mjs','contract-index-recovery.mjs','final-table-cleanup-batches.mjs']:copy_module(dep)
  installer=ci/'apply-recorded-migration.mjs';installer.write_bytes(original)
  copy_module('settlement-lane.mjs')
+ copy_module('accounting-migration-admission.mjs')
  copy_module('maintenance-thaw-repair.mjs')
  copy_module('test_settlement_lane.mjs')
  # A private copy of only the existing locked pg dependency closure. No shared
@@ -106,8 +107,11 @@ with tempfile.TemporaryDirectory(prefix='installer-native-',dir=a.scratch) as tm
   passed=apply(lane_name,lane=True);assert passed.returncode==0,(passed.stdout,passed.stderr)
   assert json.loads(sql("SELECT to_json(statements) FROM supabase_migrations.schema_migrations WHERE version='20261012181905';"))==[lane_text]
   assert sql('SELECT pg_try_advisory_xact_lock_shared(530090,1);')=='t'
+  # The exact CLI must wait inside its original transaction behind accounting.
+  import runpy
+  runpy.run_path(str(a.repository/'scripts/ci/fixtures/accounting-migration-admission/qualify.py'),init_globals=globals())
   assert a.installer.read_bytes()==original,'Candidate installer changed during qualification'
-  result={'qualified':True,'settlement_lane_actual_installer_qualified':True,'installer_sha256':source_sha,'native_tls_verified':True,'invalid_ca_refused_before_ddl':True,'atomic_schema_exact_history_commit':True,'history_failure_rolls_back_schema':True,'original_window_refusal_sends_nothing':True,'original_readiness_refusal_sends_nothing':True,'original_break_guard_body_fixture_time_only':True,'already_applied_no_replay':True,'postcommit_socket_loss_returns_unknown':True,'precommit_backend_termination_returns_unknown_without_partial_schema_or_history':True,'unknown_durable_state_inspected_without_retry':True,'production_actions':False,'fixture_clock_only_stubbed_for_utc_window':True}
+  result={'qualified':True,'settlement_lane_actual_installer_qualified':True,'accounting_admission_actual_installer_qualified':True,'installer_sha256':source_sha,'native_tls_verified':True,'invalid_ca_refused_before_ddl':True,'atomic_schema_exact_history_commit':True,'history_failure_rolls_back_schema':True,'original_window_refusal_sends_nothing':True,'original_readiness_refusal_sends_nothing':True,'original_break_guard_body_fixture_time_only':True,'already_applied_no_replay':True,'postcommit_socket_loss_returns_unknown':True,'precommit_backend_termination_returns_unknown_without_partial_schema_or_history':True,'unknown_durable_state_inspected_without_retry':True,'production_actions':False,'fixture_clock_only_stubbed_for_utc_window':True}
   a.output.parent.mkdir(parents=True,exist_ok=True);a.output.write_text(json.dumps(result,indent=2)+'\n');print(json.dumps(result))
  finally:cmd([pg/'pg_ctl','-D',data,'-m','immediate','-w','stop'],expect=None)
 

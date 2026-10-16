@@ -1,0 +1,71 @@
+name: Lightning hand counts every player dealt in
+
+# fn_lightning_settle_hand (migration 20261015222121). Runs
+# scripts/ci/test-lightning-hand-counts-every-player-dealt-in.py against a
+# throwaway PostgreSQL 17 cluster, never production: production's exact text,
+# rebuilt from the Phase 6 definition and its later substitutions (md5 equal to
+# the live function on 2026-10-15), must book a four-handed hand with two
+# fast folders who never posted as num_players 2, and the migration must book
+# it as 4 with the contribution map unchanged and reproduce production's
+# derived postimage md5. The same command ci.yml would run, kept in its own
+# file so the change does not edit ci.yml. No timer (CLAUDE.md 10.85):
+# pull_request only, scoped to the paths it proves. ci.yml has no push
+# trigger, so neither does this.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - supabase/migrations/20261015222121_a_lightning_hand_counts_every_player_dealt_in.sql
+      - supabase/migrations/20261001154813_lightning_phase_6_settlement_the_hand_settles_onto_its_ancho.sql
+      - supabase/migrations/20261001201216_lightning_phase_6_remediation_a_frozen_cluster_settles_nothi.sql
+      - supabase/migrations/20261007212735_lightning_phase_8_multi_table_limits_session_statistics_pool.sql
+      - scripts/ci/test-lightning-hand-counts-every-player-dealt-in.py
+      - .github/workflows/lightning-hand-counts-every-player-dealt-in.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lightning-hand-counts-every-player-dealt-in-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lightning-hand-counts-every-player-dealt-in:
+    name: Lightning hand counts every player dealt in, not every payer
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL 17 from the signed PGDG source only
+        run: |
+          set -euo pipefail
+          pg_sources="$(mktemp -d "$RUNNER_TEMP/ca-postgres-apt.XXXXXX")"
+          chmod 755 "$pg_sources"
+          test -f /etc/apt/sources.list.d/ubuntu.sources
+          cp /etc/apt/sources.list.d/ubuntu.sources "$pg_sources/ubuntu.sources"
+          pg_apt=(-o "Dir::Etc::sourcelist=/dev/null" -o "Dir::Etc::sourceparts=$pg_sources")
+          sudo apt-get "${pg_apt[@]}" update
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-common curl ca-certificates
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail --silent --show-error --location \
+            --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          codename="$(. /etc/os-release && printf '%s' "$VERSION_CODENAME")"
+          printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' \
+            "$codename" > "$pg_sources/pgdg.sources"
+          sudo apt-get "${pg_apt[@]}" update
+          printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-17
+      # Runs as the runner user (non-root), exactly as the ci.yml step would.
+      - name: Lightning hand counts every player dealt in, not every payer
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-lightning-hand-counts-every-player-dealt-in.py --output artifacts/lightning-hand-counts-every-player-dealt-in
+      - name: Retain the regression evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lightning-hand-counts-every-player-dealt-in-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/lightning-hand-counts-every-player-dealt-in/RESULTS.json
+          retention-days: 7
+          if-no-files-found: warn

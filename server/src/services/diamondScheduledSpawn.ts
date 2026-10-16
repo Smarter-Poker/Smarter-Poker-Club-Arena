@@ -95,6 +95,9 @@ const wholePositive = (v: unknown): number | null => {
   return n >= 1 ? n : null;
 };
 
+/** An arena freeroll's rebuy and add-on: 100 Diamonds, one dollar (Dan 2026-10-16). */
+export const DIAMOND_FREEROLL_REBUY_DIAMONDS = 100;
+
 export type DiamondSpawnConfig =
   | { ok: true; config: Record<string, unknown> }
   | { ok: false; reason: string };
@@ -130,7 +133,13 @@ export function diamondSpawnConfig(
   }
 
   // The same ladder price a chip event of this schedule charges, as a TOTAL.
-  const total = buyInFor(wholeChips(cfg.buyIn)).total;
+  // A fixed-board schedule (Dan 2026-10-15) names a template instead of a
+  // buyIn, so its price is the total the template's own row carries.
+  const total = buyInFor(
+    wholeChips(
+      cfg.buyIn !== undefined ? cfg.buyIn : num(row.buy_in_amount) + num(row.buy_in_fee)
+    )
+  ).total;
   const maxPlayers = row.max_players == null ? null : Math.floor(num(row.max_players));
   const freeBuy = row.free_buy === true;
 
@@ -203,6 +212,18 @@ export function diamondSpawnConfig(
     if (cost === null) return { ok: false, reason: 'diamond_schedule_addon_cost_not_whole' };
     config.addOn = true;
     config.addonCost = cost;
+  }
+  /* AN ARENA FREEROLL'S REBUY AND ADD-ON ARE 100 DIAMONDS, ONE DOLLAR (Dan
+     2026-10-16, verbatim: "DIAMOND REBUYS ARE 100 DIAMONDS (ONE DOLLAR)").
+     This supersedes the 2026-10-06 one-Diamond answer. The creation door
+     (fn_poker_diamond_create_tournament_core) refuses any other freeroll
+     price, and fn_freerolls_are_free_buy forces the same 100 on an arena row,
+     so the three agree. A paid arena event's rebuy stays its own entry price. */
+  if (total === 0) {
+    if (config.rebuyCost !== undefined) config.rebuyCost = DIAMOND_FREEROLL_REBUY_DIAMONDS;
+    if (config.addonCost !== undefined) config.addonCost = DIAMOND_FREEROLL_REBUY_DIAMONDS;
+  }
+  if (addOn) {
     config.addonChips = Math.floor(num(row.addon_chips));
     if (row.addon_levels != null) config.addonLevels = Math.floor(num(row.addon_levels));
   }

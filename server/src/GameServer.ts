@@ -3421,8 +3421,6 @@ export class GameServer {
   private lastConservationAt = 0;
   /** Last fn_detect_results_without_a_hand pass (2026-09-01 phase 7). */
   private lastNoHandResultCheckAt = 0;
-  /** Last fn_charge_place_overpays pass (2026-08-28 duplicate-place overpay). */
-  private lastPlaceOverpayChargeAt = 0;
   /** Last fn_spin_expire_unfilled pass (2026-08-31 phase 2 review). */
   private lastSpinExpireAt = 0;
   private running: boolean = false;
@@ -4207,13 +4205,12 @@ export class GameServer {
       // reported disconnected and their open pool session would sit until
       // the anchor-seat backstop. One pass, shortly after boot (returning
       // sockets land first), reports every open session whose player holds
-      // no socket here through the ordinary reporter path. The presence door
+      // no connected anchor or room presence through the ordinary reporter path. The presence door
       // is idempotent, so over-reporting an already-stamped player is free.
       this.lightningPresenceReconcileTimer = setTimeout(() => {
         this.lightningPresenceReconcileTimer = null;
         void reconcileLightningPresence({
-          isConnected: (clusterId, playerId) =>
-            this.lightningRooms.hasClusterSocket(clusterId, playerId),
+          presenceSource: () => this.lightningPresenceReports(),
           report: this.lightningPresenceReporter,
         });
       }, LIGHTNING_PRESENCE_RECONCILE_DELAY_MS);
@@ -8575,7 +8572,8 @@ export class GameServer {
         // being invented again; this is what makes the CLASS visible, so a new
         // cause arriving by another route cannot be silent for a fortnight the
         // way that one was. It reports and moves no money.
-        // Its OWN timer, per the lesson recorded on the overpay charge below.
+        // Its OWN timer: a check gated on another job's clock runs once at
+        // boot and then effectively never.
         if (Date.now() - this.lastNoHandResultCheckAt > 6 * 60 * 60 * 1000) {
           this.lastNoHandResultCheckAt = Date.now();
           try {
@@ -8595,38 +8593,6 @@ export class GameServer {
             }
           } catch (nhEx) {
             reportError(nhEx, 'GameServer.no_hand_result_check_threw');
-          }
-        }
-
-        // ── DUPLICATE-PLACE OVERPAY CHARGE (2026-08-28) ──
-        // 259 duplicate finishing places were renumbered; 19 of the demoted
-        // rows had collected more than their corrected place is worth. Dan's
-        // call: no clawback from players, the hosting club absorbs it. The
-        // charge cannot always be taken on the spot - fn_debit_treasury
-        // refuses to overdraw, and a club that has been funding advertised
-        // guarantees can sit negative until the weekly rakeback close - so the
-        // obligation is a queue and this drains it. Its OWN timer: the lesson
-        // from the HU back-pay is that a repair gated on another job's clock
-        // runs once at boot and then effectively never.
-        if (Date.now() - this.lastPlaceOverpayChargeAt > 60 * 60 * 1000) {
-          this.lastPlaceOverpayChargeAt = Date.now();
-          try {
-            const { data: chg, error: chgErr } = await supabase.rpc('fn_charge_place_overpays', {
-              p_limit: 500,
-            });
-            if (chgErr) {
-              reportError(
-                new Error(`[GameServer] place overpay charge failed: ${chgErr.message}`),
-                'GameServer.place_overpay_charge_failed'
-              );
-            } else if (Number(chg?.charged) > 0 || Number(chg?.clubs_blocked) > 0) {
-              console.log(
-                `[GameServer] Place overpay charge: ${chg.charged} chips from ${chg.clubs_charged} club(s), ` +
-                  `${chg.blocked_insufficient_treasury} still owed by ${chg.clubs_blocked} (queue ${chg.owed_before} -> ${chg.owed_after})`
-              );
-            }
-          } catch (chgEx) {
-            reportError(chgEx, 'GameServer.place_overpay_charge_threw');
           }
         }
 

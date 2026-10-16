@@ -1,7 +1,11 @@
+import { useState } from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({ access: vi.fn(), auth: vi.fn(), unsubscribe: vi.fn() }));
+vi.mock('../../src/stores/useUserStore', () => ({
+  useUserStore: { getState: () => ({ user: { id: 'account-a' } }) },
+}));
 vi.mock('../../src/services/ArenaContextService', () => ({ getArenaContext: mocks.access }));
 vi.mock('../../src/lib/supabase', () => ({
   supabase: { auth: { onAuthStateChange: mocks.auth } },
@@ -164,5 +168,101 @@ describe('Diamond Arena renders the shared lobby, not a placeholder', () => {
     fireEvent.focus(window);
     await screen.findByText('Diamond Games Are Not Open For Play Yet.');
     expect(screen.getByText('Shared Club Lobby')).toBeTruthy();
+  });
+});
+
+function CashierDraft() {
+  const [amount, setAmount] = useState('');
+  return (
+    <input aria-label="Amount" value={amount} onChange={(event) => setAmount(event.target.value)} />
+  );
+}
+const draftView = () => (
+  <MemoryRouter initialEntries={['/clubs/chip/cashier-classic']}>
+    <ArenaAccessBoundary clubKey="chip">
+      <CashierDraft />
+    </ArenaAccessBoundary>
+  </MemoryRouter>
+);
+const authEvent = (event: string, id?: string) =>
+  mocks.auth.mock.calls[0][0](event, id ? { user: { id } } : null);
+
+describe('Cashier draft and authenticated arena lifetime', () => {
+  it('keeps the mounted amount through same-account sign-in and token refresh', async () => {
+    mocks.access.mockResolvedValue(chip);
+    render(draftView());
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Amount' }), {
+      target: { value: '1,500' },
+    });
+    mocks.access.mockReturnValueOnce(new Promise(() => {}));
+    await act(async () => {
+      authEvent('SIGNED_IN', 'account-a');
+    });
+    expect((screen.getByRole('textbox', { name: 'Amount' }) as HTMLInputElement).value).toBe(
+      '1,500'
+    );
+    await act(async () => {
+      authEvent('TOKEN_REFRESHED', 'account-a');
+    });
+    expect((screen.getByRole('textbox', { name: 'Amount' }) as HTMLInputElement).value).toBe(
+      '1,500'
+    );
+  });
+
+  it('retires drafts on a different account, including a batched A to B to A', async () => {
+    mocks.access.mockResolvedValue(chip);
+    render(draftView());
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Amount' }), {
+      target: { value: '1,500' },
+    });
+    await act(async () => {
+      authEvent('SIGNED_IN', 'account-b');
+      authEvent('SIGNED_IN', 'account-a');
+    });
+    expect(
+      ((await screen.findByRole('textbox', { name: 'Amount' })) as HTMLInputElement).value
+    ).toBe('');
+  });
+
+  it('removes the previous account immediately and rejects its late response', async () => {
+    let finish!: (value: unknown) => void;
+    mocks.access.mockResolvedValueOnce(chip);
+    render(draftView());
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Amount' }), {
+      target: { value: '1,500' },
+    });
+    mocks.access.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+    );
+    await act(async () => {
+      authEvent('TOKEN_REFRESHED', 'account-a');
+    });
+    mocks.access.mockResolvedValueOnce({ ...chip, member: false });
+    await act(async () => {
+      authEvent('SIGNED_IN', 'account-b');
+    });
+    expect(screen.queryByRole('textbox', { name: 'Amount' })).toBeNull();
+    await act(async () => {
+      finish(chip);
+    });
+    expect(screen.queryByRole('textbox', { name: 'Amount' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Join This Club' })).toBeTruthy();
+  });
+
+  it('never restores an in-flight access response after sign-out', async () => {
+    let finish!: (value: unknown) => void;
+    mocks.access.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+    );
+    render(draftView());
+    await act(async () => {
+      authEvent('SIGNED_OUT');
+      finish(chip);
+    });
+    expect(screen.queryByRole('textbox', { name: 'Amount' })).toBeNull();
   });
 });

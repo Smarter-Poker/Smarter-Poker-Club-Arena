@@ -122,9 +122,15 @@ describe('cashier authority and exact intent', () => {
       ],
       [
         'fn_promo_wallet_send_core_20261004',
-        'fn_promo_wallet_send',
-        '20260903170529_the_hierarchy_sends_are_one_journal_row_each.sql',
-        'b101fc1f3280218d04d7addd155ed4ea',
+        'fn_promo_wallet_send_core_20261004',
+        '20261016024912_cashier_sends_use_the_selected_source_and_destination_wallet.sql',
+        'b6b0c7686b67d33e2b01c132f8775cbc',
+      ],
+      [
+        'fn_club_promo_send_core_20261004',
+        'fn_club_promo_send_core_20261004',
+        '20261016024912_cashier_sends_use_the_selected_source_and_destination_wallet.sql',
+        '5990c675526e842d0671f47890c1ff27',
       ],
       [
         'fn_agent_wallet_claim_back_core_20261004',
@@ -175,11 +181,6 @@ describe('cashier authority and exact intent', () => {
       expect(createHash('md5').update(installedBody).digest('hex')).toBe(hash);
     }
     const retainedProductionPins = [
-      [
-        'fn_club_promo_send_core_20261004',
-        'docs/audits/2026-09-10-union-accounting-proposal/live-function-inventory.json',
-        'fe490fcc75f305338160eca2a7a88b25',
-      ],
       [
         'fn_agent_wallet_send_core_20261004',
         'supabase/accounting/credit-reduction-v1/guard-lock-successor-sources.json',

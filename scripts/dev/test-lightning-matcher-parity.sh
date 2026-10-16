@@ -481,6 +481,7 @@ chain=(-f "$base_fixture" -f "$pop_fixture" -f "$p5_fixture"
   -f "$r2a" -f "$r2b" -f "$r2c" -f "$r2d" -f "$p6_fixture" -f "$p6" -f "$s6_fixture" -f "$s6" -f "$s6r" -f "$p7"
   -f "$phase8" -f "$p7r" -f "$fix" -f "$p9d" -f "$p10" -f "$p9r2"
   -f "$fixture/p11-ground.sql" -f "$p11" -f "$p12rg" -f "$fixture/ops-ground.sql" -f "$p12ops" -f "$p12lc"
+  -f "$M/20261009181945_lightning_phase_11_remediation_integrity_signals_are_fair_an.sql"
   -f "$M/20261015212230_lightning_waits_three_seconds_for_full_rings.sql"
   -f "$fixture/lc-ground.sql" -f "$fixture/parity.sql")
 set +e
@@ -495,9 +496,33 @@ if [ "$status" != 0 ]; then
 fi
 oks=$(grep -c -E '^  ok  (0[1-9]|10) ' "$fixture/build.out" || true)
 [ "$oks" = 10 ] || { echo "FAIL: $oks of the 10 sections reported"; exit 1; }
+# A stale compatibility overload must refuse the whole migration, not silently
+# remove an unqualified door or leave its new readers installed after failure.
+before_match=$(Q "SELECT md5(pg_get_functiondef('public.fn_lightning_match(uuid,timestamptz,uuid[],text,jsonb)'::regprocedure))")
+Q "CREATE FUNCTION public.fn_lightning_match(uuid,timestamptz,uuid[],text) RETURNS jsonb LANGUAGE sql AS 'SELECT NULL::jsonb'" >/dev/null
+if "${PSQL[@]}" -f "$M/20261015214203_lightning_calibration_uses_the_authoritative_plan_snapshot.sql" > "$fixture/signature-refusal.out" 2>&1; then
+  echo 'FAIL: unexpected matcher signature was accepted'; exit 1
+fi
+grep -q 'Lightning matcher signature differs from the qualified Phase 8 door' "$fixture/signature-refusal.out" || { cat "$fixture/signature-refusal.out"; exit 1; }
+[ "$(Q "SELECT to_regprocedure('public.fn_lightning_match(uuid,timestamptz,uuid[],text)') IS NOT NULL AND to_regprocedure('public.fn_lightning_matcher_binding(uuid)') IS NULL AND to_regprocedure('public.fn_lightning_matcher_snapshot(uuid,timestamptz,uuid[],jsonb)') IS NULL")" = t ] || { echo 'FAIL: signature refusal was not atomic'; exit 1; }
+[ "$(Q "SELECT md5(pg_get_functiondef('public.fn_lightning_match(uuid,timestamptz,uuid[],text,jsonb)'::regprocedure))")" = "$before_match" ] || { echo 'FAIL: signature refusal changed the original matcher'; exit 1; }
+Q "DROP FUNCTION public.fn_lightning_match(uuid,timestamptz,uuid[],text)" >/dev/null
+echo '  ok  matcher signature mismatch refuses atomically and preserves both doors'
+# Prove the old report certifies unbound rows, then qualify the source-bound
+# report and the actual snapshot payload through the same real database.
+"${PSQL[@]}" -f "$F/lightning-authoritative-calibration-before.sql" \
+  -f "$M/20261015214203_lightning_calibration_uses_the_authoritative_plan_snapshot.sql" \
+  -f "$F/lightning-authoritative-calibration-after.sql" > "$fixture/authoritative.out" 2>&1 || {
+  cat "$fixture/authoritative.out"; exit 1;
+}
+grep '^  ok  11' "$fixture/authoritative.out"
+proof=$(sed -n 's/^-- @live-proof: //p' "$M/20261015214203_lightning_calibration_uses_the_authoritative_plan_snapshot.sql")
+[ "$(Q "SELECT ($proof)")" = t ] || { echo 'FAIL: authoritative calibration live proof'; exit 1; }
 n=$(Q "SELECT count(*) FROM pp.out")
 Q "SELECT jsonb_build_object('fixtures', jsonb_agg(doc || jsonb_build_object('discriminates', discriminates) ORDER BY n)) FROM pp.out" > "$fixture/fixtures.json"
 groups=$(Q "SELECT sum(jsonb_array_length(doc -> 'plan' -> 'groups')) FROM pp.out")
+bash "$root/scripts/dev/test-lightning-private-discovery.sh"
+bash "$root/scripts/dev/test-lightning-private-join.sh"
 players=$(Q "SELECT sum(jsonb_array_length(doc -> 'players')) FROM pp.out")
 horses=$(Q "SELECT sum(pp.horses(game)) FROM pp.cl")
 
@@ -515,4 +540,4 @@ grep -q "^PARITY $n fixtures $groups groups identical" "$fixture/parity.out" \
   || { echo "FAIL: the parity check did not cover every fixture and group ($n fixtures, $groups groups)"; exit 1; }
 grep -q '^DISCRIMINATES ' "$fixture/parity.out" \
   || { echo "FAIL: the pre-remediation port was not shown to differ on the tie fixtures"; exit 1; }
-echo "PASS: the TypeScript matcher port (m1-port and m1) decides exactly what the real fn_lightning_match_plan decides, on PostgreSQL 17 over the real Lightning chain through the 20261015212230 full-ring correction under production's default ACLs and autorevoke trigger: 10 sections, $n fixtures ($players open-pool players, $horses of them horses at capture), $groups groups, every group's seats, big blind, small blind and button identical, the same legal count and pool diversity score - ties on idle_since and pool entry, blind debt, several groups per pass, the thin, medium and large bands, the first-entry rule, nine-handed tables, two hands at one instant and a new epoch; and the port without the remediation's keys (the Cluster join, the slot's opening, the hand ids) is shown to differ on the two tie fixtures"
+echo "PASS: the TypeScript matcher port (m1-port and m1) decides exactly what the real fn_lightning_match_plan decides, on PostgreSQL 17 over the real Lightning chain through the 20261015214203 authoritative calibration correction under production's default ACLs and autorevoke trigger: 10 matcher sections plus before/after source-bound calibration, $n fixtures ($players open-pool players, $horses of them horses at capture), $groups groups, every group's seats, big blind, small blind and button identical, the same legal count and pool diversity score - ties on idle_since and pool entry, blind debt, several groups per pass, the thin, medium and large bands, the first-entry rule, nine-handed tables, two hands at one instant and a new epoch; and the port without the remediation's keys (the Cluster join, the slot's opening, the hand ids) is shown to differ on the two tie fixtures"

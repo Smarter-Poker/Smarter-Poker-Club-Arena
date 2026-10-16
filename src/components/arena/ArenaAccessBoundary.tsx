@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
+import { useUserStore } from '../../stores/useUserStore';
 import { getArenaContext } from '../../services/ArenaContextService';
 import type { ArenaAccessContext } from '../../../server/src/domain/ArenaContext';
 import PageSkeleton from '../common/PageSkeleton';
@@ -13,6 +14,7 @@ import './DiamondArenaShell.css';
 
 interface AccessState {
   key: string;
+  accountGeneration: number;
   context: ArenaAccessContext | null;
   settled: boolean;
   failed: boolean;
@@ -47,6 +49,7 @@ export default function ArenaAccessBoundary({
   const [retry, setRetry] = useState(0);
   const [state, setState] = useState<AccessState>({
     key: '',
+    accountGeneration: 0,
     context: null,
     settled: false,
     failed: false,
@@ -54,14 +57,17 @@ export default function ArenaAccessBoundary({
   useEffect(() => {
     let alive = true;
     let request = 0;
+    let accountId = useUserStore.getState().user?.id ?? null;
+    let accountGeneration = 0;
     const refresh = async () => {
       const token = ++request;
       try {
         const context = key ? await getArenaContext(key) : null;
-        if (alive && token === request) setState({ key, context, settled: true, failed: false });
+        if (alive && token === request)
+          setState({ key, accountGeneration, context, settled: true, failed: false });
       } catch {
         if (alive && token === request)
-          setState({ key, context: null, settled: true, failed: true });
+          setState({ key, accountGeneration, context: null, settled: true, failed: true });
       }
     };
     void refresh();
@@ -75,20 +81,29 @@ export default function ArenaAccessBoundary({
     document.addEventListener('visibilitychange', onVisible);
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'SIGNED_OUT' || event === 'SIGNED_IN') {
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      const nextAccount = session?.user?.id ?? null;
+      // Supabase also emits SIGNED_IN when the same account signs in in
+      // another tab. Keep its verified page mounted during revalidation.
+      // Actual identity transitions retire both pending reads and child drafts,
+      // even if React batches A -> B -> A without an intermediate render.
+      if (event === 'SIGNED_OUT' || nextAccount !== accountId) {
+        accountId = nextAccount;
+        ++accountGeneration;
         ++request;
         setState({
           key,
+          accountGeneration,
           context: null,
           settled: event === 'SIGNED_OUT',
           failed: event === 'SIGNED_OUT',
         });
       }
       // Do not run Supabase calls synchronously inside the auth callback.
+      const generation = accountGeneration;
       if (event !== 'SIGNED_OUT')
         queueMicrotask(() => {
-          if (alive) void refresh();
+          if (alive && generation === accountGeneration) void refresh();
         });
     });
     return () => {
@@ -159,14 +174,14 @@ export default function ArenaAccessBoundary({
        club feature and is not mounted here. tests/the-diamond-arena-has-no-
        chip-bridge.law.test.ts holds this. */
     return showArenaPlayerSurface ? (
-      <ArenaAccessProvider value={state.context}>
+      <ArenaAccessProvider key={`${key}:${state.accountGeneration}`} value={state.context}>
         {showClosedNotice && state.context.cashGamesEnabled !== true && (
           <p className="diamond-arena-notice">Diamond Games Are Not Open For Play Yet.</p>
         )}
         {children}
       </ArenaAccessProvider>
     ) : (
-      <ArenaAccessProvider value={state.context}>
+      <ArenaAccessProvider key={`${key}:${state.accountGeneration}`} value={state.context}>
         <section className="club-home diamond-arena-shell" aria-label="Diamond Arena">
           <SpadeConsole
             eyebrow="Welcome To"
@@ -210,5 +225,9 @@ export default function ArenaAccessBoundary({
         </SpadeConsole>
       </section>
     );
-  return <ArenaAccessProvider value={state.context}>{children}</ArenaAccessProvider>;
+  return (
+    <ArenaAccessProvider key={`${key}:${state.accountGeneration}`} value={state.context}>
+      {children}
+    </ArenaAccessProvider>
+  );
 }

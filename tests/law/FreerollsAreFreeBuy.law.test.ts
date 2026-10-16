@@ -152,7 +152,14 @@ describe('2. the engine passes the rule explicitly', () => {
   it('the recurring service spreads freeBuyColumns over BOTH MTT inserts, last', () => {
     expect(RECURRING).toMatch(/import \{[^}]*freeBuyColumns[^}]*\} from '\.\.\/config\/buyIn\.js'/);
     const spreads = RECURRING.match(/\.\.\.freeBuyColumns\(\{/g) ?? [];
-    expect(spreads.length, 'XMTT insert + MTT insert').toBe(2);
+    // XMTT insert + MTT insert + recurringMttRow, the fixed board's builder
+    // (Dan 2026-10-15, theBoardIsAFixedSchedule.law.test.ts).
+    expect(spreads.length, 'XMTT insert + MTT insert + fixed-board builder').toBe(3);
+    const builder = RECURRING.slice(RECURRING.indexOf('export function recurringMttRow('));
+    const builderBody = builder.slice(0, builder.indexOf('\n}\n'));
+    expect(builderBody.indexOf('...freeBuyColumns({')).toBeGreaterThan(
+      builderBody.indexOf('addon_levels:')
+    );
     // Spread comes AFTER the template's own addon_levels key in each insert.
     for (const m of RECURRING.matchAll(
       /addon_levels: \(config as \{ addOn\?: boolean \}\)\.addOn \? 1 : null,\s*\n([\s\S]{0,400})/g
@@ -345,33 +352,42 @@ describe('the three copies of the rule agree', () => {
   });
 });
 
-describe('7. a scheduled Free Buy prices itself, and nothing else does', () => {
-  const body = functionBody(PRICING, 'fn_freerolls_are_free_buy');
+/* THE PIN MOVED AGAIN (Dan 2026-10-16): "ALL REBUY ADD ON'S FOR MIDWAY UNION
+   ARE 1 CHIP REBUY ADD ON NOT 2, DIAMOND REBUYS ARE 100 DIAMONDS (ONE DOLLAR)".
+   The 2026-09-04 exception that let the $500 Free Buy charge 2 is gone: every
+   freeroll is priced by its club's asset, 1 chip or 100 Diamonds. The pins
+   below read the migration that carries that rule. */
+const ONE_PRICE = read(
+  'supabase/migrations/20261016123336_every_freeroll_rebuy_and_add_on_is_one_chip_or_one_hundred_d.sql'
+);
+void PRICING;
 
-  it('still forces 1.00 on an ordinary freeroll - the 2026-09-02 law survives', () => {
-    expect(body).toMatch(/NEW\.rebuy_cost\s*:=\s*1\.00;/);
-    expect(body).toMatch(/NEW\.addon_cost\s*:=\s*1\.00;/);
+describe('7. every freeroll rebuy and add-on has one price: 1 chip, or 100 Diamonds', () => {
+  const body = functionBody(ONE_PRICE, 'fn_freerolls_are_free_buy');
+
+  it('prices by the club asset: 100 in a Diamond club, 1.00 everywhere else', () => {
+    expect(body).toMatch(/c\.asset\s*=\s*'diamonds'/);
+    expect(body).toMatch(/THEN 100\.00/);
+    expect(body).toMatch(/ELSE 1\.00/);
+    expect(body).toMatch(/NEW\.rebuy_cost\s*:=\s*v_price;/);
+    expect(body).toMatch(/NEW\.addon_cost\s*:=\s*v_price;/);
     expect(body).toMatch(/NEW\.buy_in_fee\s*:=\s*0;/);
     expect(body).toMatch(/NEW\.is_rebuy\s*:=\s*true;/);
     expect(body).toMatch(/NEW\.add_on_available\s*:=\s*true;/);
   });
 
-  it('gates BOTH price overwrites on the event not having priced itself', () => {
-    expect(body).toMatch(
-      /v_priced\s*:=\s*COALESCE\(NEW\.free_buy,\s*false\)\s*AND\s*COALESCE\(NEW\.rebuy_cost,\s*0\)\s*>\s*0;/
-    );
-    expect(body).toMatch(/IF NOT v_priced AND NEW\.rebuy_cost IS DISTINCT FROM 1\.00 THEN/);
-    expect(body).toMatch(/IF NOT v_priced AND NEW\.addon_cost IS DISTINCT FROM 1\.00 THEN/);
+  it('has no exception left: no event prices itself', () => {
+    expect(body).not.toMatch(/v_priced/);
+    expect(body).not.toMatch(/2\.00/);
   });
 
-  it('treats a missing price as missing, not as a decision', () => {
-    // COALESCE(NEW.rebuy_cost, 0) > 0 - a NULL or 0 falls through to the default.
-    expect(body).toMatch(/COALESCE\(NEW\.rebuy_cost,\s*0\)\s*>\s*0/);
+  it('the Diamond creation door asks for the same 100', () => {
+    expect(ONE_PRICE).toMatch(/'v_rebuy_cost := 100; v_addon_cost := 100;'/);
+    expect(ONE_PRICE).toMatch(/one_hundred_diamonds_to_the_prize_pool/);
   });
 
-  it('never leaves a priced event with a 1.00 add-on under a 2.00 rebuy', () => {
-    expect(body).toMatch(/IF v_priced AND COALESCE\(NEW\.addon_cost,\s*0\)\s*<=\s*0 THEN/);
-    expect(body).toMatch(/NEW\.addon_cost\s*:=\s*NEW\.rebuy_cost;/);
+  it('keeps the trigger a security definer, as it was', () => {
+    expect(ONE_PRICE).toMatch(/SECURITY DEFINER/);
   });
 
   it('leaves the chip and level defaults exactly as they were', () => {

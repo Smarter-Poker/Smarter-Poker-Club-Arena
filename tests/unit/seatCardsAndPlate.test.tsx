@@ -481,7 +481,7 @@ describe("the hero's row opens out only when the table can see it", () => {
       />
     );
 
-  it('stays compact and arced while the hand is private', () => {
+  it('stays compact while the hand is private', () => {
     const { container } = renderHero();
     expect(container.querySelector('.seat__cards--hero')).not.toBeNull();
     expect(

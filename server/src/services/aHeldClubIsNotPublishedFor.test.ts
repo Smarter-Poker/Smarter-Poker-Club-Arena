@@ -60,7 +60,10 @@ vi.mock('./errorReporter.js', () => ({
 }));
 vi.mock('../maintenance/freezeState.js', () => ({ isMaintenanceFrozen: () => false }));
 
-import { TournamentRecurringService } from './TournamentRecurringService.js';
+import {
+  MIDWAY_BOARD_IS_ON_THE_FIXED_SCHEDULE,
+  TournamentRecurringService,
+} from './TournamentRecurringService.js';
 import { _resetFleetPolicyCacheForTests } from './HorseFleetPolicy.js';
 import { FREE_BUY_HOSTS, freeBuySlotsDue } from './FreeBuy.js';
 
@@ -128,79 +131,44 @@ describe('a held club is not published for', () => {
     expect(FREE_BUY_HOSTS).toHaveLength(1);
   });
 
-  it('publishes for an unheld host, as before', async () => {
-    policyAnswer(() => ({ data: policyRow(), error: null }));
+  /**
+   * THE FIXED BOARD (Dan 2026-10-15): "TOURNAMENTS CAN NEVER FAIL, AND MUST
+   * ALWAYS RUN AND SPAWN ... PUT THEM ON A HARD CODED SCHEDULE." The Midway
+   * Union's five Free Buys are tournament_schedules rows at fixed Chicago
+   * times now (theBoardIsAFixedSchedule.law.test.ts). This timer is the path
+   * that went dark on 2026-10-13, so for the Midway Union it publishes
+   * nothing, in every fleet state, and does not even read the policy: a
+   * horse-fleet hold can no longer decide whether a Free Buy exists.
+   */
+  it('the only host is the Midway Union, which the fixed schedule owns', () => {
+    expect(MIDWAY_BOARD_IS_ON_THE_FIXED_SCHEDULE).toBe(true);
+    expect(FREE_BUY_HOSTS[0].clubId).toBe('fade0000-0000-0000-0000-000000000001');
+  });
+
+  for (const [label, row] of [
+    ['an unheld fleet', policyRow()],
+    ['pause_new_seatings', policyRow({ pause_new_seatings: true })],
+    ['enabled false', policyRow({ enabled: false })],
+  ] as const) {
+    it(`publishes nothing for the Midway Union under ${label}`, async () => {
+      policyAnswer(() => ({ data: row, error: null }));
+      await tick();
+      await tick();
+      expect(insertMock).not.toHaveBeenCalled();
+      expect(reportErrorMock.mock.calls.filter((c) => c[1] === REFUSAL)).toEqual([]);
+    });
+  }
+
+  it('publishes nothing for the Midway Union on an unreadable policy either', async () => {
+    policyAnswer(() => ({ data: null, error: { message: 'read timed out' } }));
     await tick();
-    expect(insertMock).toHaveBeenCalledTimes(1);
-    expect(insertMock.mock.calls[0][0]).toBe('tournaments');
+    expect(insertMock).not.toHaveBeenCalled();
     expect(reportErrorMock.mock.calls.filter((c) => c[1] === REFUSAL)).toEqual([]);
   });
 
-  it('pause_new_seatings refuses to publish, and says so once per steady hold', async () => {
+  it('never reads the fleet policy for a host the fixed schedule owns', async () => {
     policyAnswer(() => ({ data: policyRow({ pause_new_seatings: true }), error: null }));
     await tick();
-    await tick();
-    expect(insertMock).not.toHaveBeenCalled();
-    expect(reportErrorMock.mock.calls.filter((c) => c[1] === REFUSAL)).toHaveLength(1);
-    expect(String(reportErrorMock.mock.calls[0][0])).toContain('pauseNewSeatings=true');
-  });
-
-  it('enabled false refuses to publish too', async () => {
-    policyAnswer(() => ({ data: policyRow({ enabled: false }), error: null }));
-    await tick();
-    expect(insertMock).not.toHaveBeenCalled();
-    expect(reportErrorMock.mock.calls.filter((c) => c[1] === REFUSAL)).toHaveLength(1);
-  });
-
-  it('FAILS CLOSED: an unreadable policy publishes nothing, unlike the ramp', async () => {
-    policyAnswer(() => ({ data: null, error: { message: 'read timed out' } }));
-    await tick();
-    expect(insertMock).not.toHaveBeenCalled();
-    const mine = reportErrorMock.mock.calls.filter((c) => c[1] === REFUSAL);
-    expect(mine).toHaveLength(1);
-    expect(String(mine[0][0])).toContain('could not be read');
-  });
-
-  it('says it again when the reason CHANGES from held to unreadable', async () => {
-    policyAnswer(() => ({ data: policyRow({ pause_new_seatings: true }), error: null }));
-    await tick();
-    _resetFleetPolicyCacheForTests();
-    policyAnswer(() => ({ data: null, error: { message: 'read timed out' } }));
-    await tick();
-    const mine = reportErrorMock.mock.calls.filter((c) => c[1] === REFUSAL);
-    expect(mine).toHaveLength(2);
-    expect(String(mine[0][0])).toContain('pauseNewSeatings=true');
-    expect(String(mine[1][0])).toContain('could not be read');
-  });
-
-  it('stops complaining once the hold is lifted, and publishes again', async () => {
-    policyAnswer(() => ({ data: policyRow({ pause_new_seatings: true }), error: null }));
-    await tick();
-    expect(insertMock).not.toHaveBeenCalled();
-
-    _resetFleetPolicyCacheForTests();
-    policyAnswer(() => ({ data: policyRow(), error: null }));
-    await tick();
-    expect(insertMock).toHaveBeenCalledTimes(1);
-
-    _resetFleetPolicyCacheForTests();
-    policyAnswer(() => ({ data: policyRow({ pause_new_seatings: true }), error: null }));
-    await tick();
-    expect(reportErrorMock.mock.calls.filter((c) => c[1] === REFUSAL)).toHaveLength(2);
-  });
-
-  it('spends one policy read per host per tick, not one per due slot', async () => {
-    policyAnswer(() => ({ data: policyRow({ pause_new_seatings: true }), error: null }));
-    await tick();
-    expect(rpcMock.mock.calls.filter((c) => c[0] === 'fn_ca_fleet_policy_effective')).toHaveLength(
-      1
-    );
-  });
-
-  it('reads the policy for the HOST club, not the global scope', async () => {
-    policyAnswer(() => ({ data: policyRow({ pause_new_seatings: true }), error: null }));
-    await tick();
-    const call = rpcMock.mock.calls.find((c) => c[0] === 'fn_ca_fleet_policy_effective');
-    expect(call?.[1]).toEqual({ p_club_id: FREE_BUY_HOSTS[0].clubId });
+    expect(rpcMock.mock.calls.filter((c) => c[0] === 'fn_ca_fleet_policy_effective')).toEqual([]);
   });
 });

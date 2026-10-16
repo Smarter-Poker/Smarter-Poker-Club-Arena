@@ -1,0 +1,15 @@
+{
+  "schema": "horse-phase12-strength-runner-v1",
+  "runner": "GitHub Actions 1000307493",
+  "image": "ubuntu24",
+  "imageVersion": "20261012.334.1",
+  "vcpu": 4,
+  "cpu": "AMD EPYC 7763 64-Core Processor",
+  "kernel": "6.17.0-1022-azure",
+  "node": "v22.23.3",
+  "workflowRun": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/38771868755",
+  "runAttempt": 1,
+  "variant": "flo8",
+  "shard": "p12c-flo8-6max-4dealt-100bb-12631151-s20",
+  "sourceSha": "818b10c16e962616008cc225a28a1cddba8cf6a0"
+}

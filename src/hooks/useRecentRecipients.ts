@@ -1,52 +1,93 @@
 import { useState, useEffect, useCallback } from 'react';
+import { supabase } from '../lib/supabase';
+import { reportError } from '../utils/errorReporter';
+import { resolveClubUUIDStrict } from '../utils/clubIdResolver';
 
-const MAX_RECENT = 5;
+const MAX_RECENT = 50;
+const MOVES = [
+  'agent_wallet_send',
+  'agent_wallet_claim_back',
+  'club_bank_send',
+  'club_bank_claim_back',
+  'club_bank_reverse',
+  'promo_wallet_send',
+  'club_promo_wallet_send',
+  'tournament_ticket_issue',
+];
 
 export function useRecentRecipients(
   userId: string | undefined,
   clubId: string | null,
-  sourceWallet: string
+  _sourceWallet: string
 ) {
-  const [recentIds, setRecentIds] = useState<string[]>([]);
-
-  const storageKey =
-    userId && clubId ? `recent_recipients_${userId}_${clubId}_${sourceWallet}` : null;
-
+  const scope = userId && clubId ? `${userId}:${clubId}` : null;
+  const [state, setState] = useState<{ scope: string | null; ids: string[] }>({
+    scope: null,
+    ids: [],
+  });
   useEffect(() => {
-    if (!storageKey) return;
-    try {
-      const stored = localStorage.getItem(storageKey);
-      if (stored) {
-        /* VALIDATED, NOT TRUSTED. `JSON.parse` of a stored `"5"` gives a
-           NUMBER, and the consumer calls `.includes()` on it - which throws
-           and takes the whole cashier down on open. localStorage survives
-           builds, users and tampering; it is untrusted input. */
-        const parsed: unknown = JSON.parse(stored);
-        if (Array.isArray(parsed)) {
-          setRecentIds(parsed.filter((x): x is string => typeof x === 'string'));
+    let current = true;
+    setState({ scope, ids: [] });
+    if (!scope || !userId || !clubId) return;
+    // Existing RLS controls access. Filter the actor before the bounded read so
+    // another operator's activity or gameplay never crowds out these recents.
+    void (async () => {
+      try {
+        const resolvedClub = await resolveClubUUIDStrict(clubId);
+        if (!current) return;
+        const { data, error } = await supabase
+          .from('chip_transactions')
+          .select('from_user_id,to_user_id,transaction_type,created_at')
+          .eq('club_id', resolvedClub)
+          .in('transaction_type', MOVES)
+          .or(
+            `and(from_user_id.eq.${userId},transaction_type.in.(agent_wallet_send,club_bank_send,promo_wallet_send,club_promo_wallet_send,tournament_ticket_issue)),and(to_user_id.eq.${userId},transaction_type.in.(agent_wallet_claim_back,club_bank_claim_back,club_bank_reverse))`
+          )
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: false })
+          .limit(250);
+        if (!current) return;
+        if (error) {
+          reportError(error, 'useRecentRecipients.history');
+          return;
         }
+        const ids = [
+          ...new Set(
+            (data || []).flatMap((row) => {
+              const claim = /claim_back|reverse/.test(row.transaction_type || '');
+              if (claim ? row.to_user_id !== userId : row.from_user_id !== userId) return [];
+              const other = claim ? row.from_user_id : row.to_user_id;
+              return other && other !== userId ? [other] : [];
+            })
+          ),
+        ].slice(0, MAX_RECENT);
+        setState((previous) => ({
+          scope,
+          ids: [...new Set([...(previous.scope === scope ? previous.ids : []), ...ids])].slice(
+            0,
+            MAX_RECENT
+          ),
+        }));
+      } catch (error) {
+        if (current) reportError(error, 'useRecentRecipients.history');
       }
-    } catch (e) {
-      // ignore
-    }
-  }, [storageKey]);
-
+    })();
+    return () => {
+      current = false;
+    };
+  }, [scope, userId, clubId]);
   const addRecipient = useCallback(
-    (recipientId: string) => {
-      if (!storageKey) return;
-      setRecentIds((prev) => {
-        const filtered = prev.filter((id) => id !== recipientId);
-        const next = [recipientId, ...filtered].slice(0, MAX_RECENT);
-        try {
-          localStorage.setItem(storageKey, JSON.stringify(next));
-        } catch (e) {
-          // ignore
-        }
-        return next;
-      });
+    (id: string) => {
+      if (!scope || !id) return;
+      setState((previous) => ({
+        scope,
+        ids: [
+          id,
+          ...(previous.scope === scope ? previous.ids.filter((value) => value !== id) : []),
+        ].slice(0, MAX_RECENT),
+      }));
     },
-    [storageKey]
+    [scope]
   );
-
-  return { recentIds, addRecipient };
+  return { recentIds: state.scope === scope ? state.ids : [], addRecipient };
 }

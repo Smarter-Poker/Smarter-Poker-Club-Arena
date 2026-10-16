@@ -23,6 +23,9 @@
 
 .chipContainer {
   position: absolute;
+  width: 36px;
+  height: 36px;
+  translate: -18px -18px;
   display: flex;
   flex-direction: column;
   align-items: center;

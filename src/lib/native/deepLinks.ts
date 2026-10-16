@@ -61,6 +61,11 @@ export function parseAppUrl(raw: string): ParsedAppUrl | null {
     if (ours && (p === WEB_PREFIX || p.startsWith(WEB_PREFIX + '/'))) {
       return { path: `${toInAppPath(p)}${url.search}`, hashParams, searchParams };
     }
+    // A Share & Invite short link (smarter.poker/i/<CODE>, 2026-10-15) opens
+    // the in-app /i/:code route, which resolves it to the club's join page.
+    if (ours && /^\/i\/[A-Za-z0-9]{7}\/?$/.test(p)) {
+      return { path: `${p.replace(/\/$/, '')}${url.search}`, hashParams, searchParams };
+    }
     // capacitor://localhost and https://localhost are the webview itself.
     if (url.hostname === 'localhost') {
       return { path: `${p}${url.search}`, hashParams, searchParams };

@@ -74,6 +74,8 @@ import { safeErrorMessage } from '../utils/safeErrorMessage';
 import { EmptyState } from '../components/common/EmptyState';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 import { resolvePageClubId, pickPreferredClubId } from '../utils/resolvePageClubId';
+import { SEND_DESTINATION_LABELS } from '../utils/cashierSendWallets';
+import type { ClubBankRecipientWallet } from '../components/wallet/cashierModes';
 type AgentTab =
   | 'overview'
   | 'players'
@@ -192,10 +194,16 @@ function AgentDashboardContent() {
   const [transferAmount, setTransferAmount] = useState('');
   const [transferNotes, setTransferNotes] = useState('');
   const walletOperationInFlightRef = useRef(false);
+  // THE SENDER CHOOSES THE RECIPIENT'S WALLET (Dan 2026-10-15: "SELECTABLE TO
+  // SEND TO ANY WALLET I WANT THAT THE USER HAS (PLAYER WALLET, AGENT WALLET,
+  // PROMO WALLET ETC)"). This form used to send every transfer into the Agent
+  // Wallet with no choice. Agent Wallet stays the default; the server refuses a
+  // wallet the recipient does not hold.
+  const [transferDestination, setTransferDestination] =
+    useState<ClubBankRecipientWallet>('agent_wallet');
 
   // Credit management (owner-only)
   const [creditTarget, setCreditTarget] = useState('');
-  const [creditAction, setCreditAction] = useState('issue_credit');
   const [creditAmount, setCreditAmount] = useState('');
   const [creditNotes, setCreditNotes] = useState('');
   const creditInputEpoch = useRef(0);
@@ -837,8 +845,8 @@ function AgentDashboardContent() {
    * all, from a form that asks for a club member.
    *
    * fn_agent_wallet_send is the send the platform actually uses. It is
-   * definer, it is granted, it enforces the downline server-side, it derives
-   * the destination wallet from the recipient's role, and it takes a retry key
+   * definer, it is granted, it enforces the downline server-side, it credits
+   * the wallet the sender chose (2026-10-16), and it takes a retry key
    * so a repeated call replays rather than sending twice. The note the form
    * has always collected and thrown away is now the send's reason.
    */
@@ -864,7 +872,7 @@ function AgentDashboardContent() {
           clubId: resolvedClub,
           targetId: transferTarget,
           kind: 'agent_send',
-          destination: 'agent_wallet',
+          destination: transferDestination,
           amount: amt,
         },
         async (operation) => {
@@ -872,12 +880,12 @@ function AgentDashboardContent() {
             p_club_id: resolvedClub,
             p_to_user_id: transferTarget,
             p_amount: amt,
-            p_destination: 'agent_wallet',
+            p_destination: transferDestination,
             p_reason: transferNotes.trim() || 'Agent transfer',
             p_op_id: operation.operationId,
           });
           if (sendError) throw sendError;
-          if (!confirmedAgentWalletReceipt(data, amt, 'agent_send', 'agent_wallet')) {
+          if (!confirmedAgentWalletReceipt(data, amt, 'agent_send', transferDestination)) {
             throw new Error(data?.error || 'The Cashier Did Not Confirm That Transfer');
           }
         }
@@ -888,6 +896,7 @@ function AgentDashboardContent() {
       setTransferTarget('');
       setTransferAmount('');
       setTransferNotes('');
+      setTransferDestination('agent_wallet');
       loadDashboard(clubId);
     } catch (err: unknown) {
       setError(safeErrorMessage(err));
@@ -1000,6 +1009,26 @@ function AgentDashboardContent() {
                     onChange={(e) => setTransferTarget(e.target.value)}
                     placeholder="UUID Of Receiving Agent"
                   />
+                </div>
+                <div>
+                  <label className="admin-label" htmlFor="agent-transfer-recipient-wallet">
+                    Recipient Wallet
+                  </label>
+                  <select
+                    id="agent-transfer-recipient-wallet"
+                    className="admin-input"
+                    value={transferDestination}
+                    disabled={processing}
+                    onChange={(event) =>
+                      setTransferDestination(event.target.value as ClubBankRecipientWallet)
+                    }
+                  >
+                    {(['agent_wallet', 'promo_wallet', 'player_wallet'] as const).map((wallet) => (
+                      <option key={wallet} value={wallet}>
+                        {SEND_DESTINATION_LABELS[wallet]}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label className="admin-label">Amount (Chips)</label>
@@ -1806,12 +1835,12 @@ function AgentDashboardContent() {
         {tab === 'credit' && isOwner && (
           <div className="admin-tab-content">
             <div className="admin-card" style={{ padding: '20px' }}>
-              <h3 className="admin-card-title">Agent Credit Management</h3>
+              <h3 className="admin-card-title">Agent Funding</h3>
               <div
                 className="admin-text-secondary"
                 style={{ marginBottom: '16px', lineHeight: 1.5 }}
               >
-                Issue Credit Lines, Add Prepaid Balances, Or Revoke Credit For Agents.
+                Every Agent Is Prepaid. Send Chips Into An Agent Wallet From Here.
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 <div>
@@ -1831,21 +1860,6 @@ function AgentDashboardContent() {
                         {a.role}
                       </option>
                     ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="admin-label">Action</label>
-                  <select
-                    className="admin-input"
-                    value={creditAction}
-                    onChange={(e) => {
-                      invalidateCreditInput();
-                      setCreditAction(e.target.value);
-                    }}
-                  >
-                    <option value="issue_credit">Set Credit Line To</option>
-                    <option value="add_prepaid">Send Prepaid Chips</option>
-                    <option value="revoke_credit">Reduce Credit Line By</option>
                   </select>
                 </div>
                 <div>
@@ -1874,22 +1888,7 @@ function AgentDashboardContent() {
                     placeholder="Reason..."
                   />
                 </div>
-                {user?.id && clubId && (
-                  <CreditReductionControls
-                    key={`${user.id}:${clubId}`}
-                    actorId={user.id}
-                    clubId={clubId}
-                    targetUserId={creditTarget}
-                    amount={creditAmount}
-                    note={creditNotes}
-                    enabled={creditAction === 'revoke_credit'}
-                    isCurrent={isCurrent}
-                    revision={creditInputRevision}
-                    getRevision={() => creditInputEpoch.current}
-                  />
-                )}
-                {creditAction !== 'revoke_credit' && (
-                  <button
+                <button
                     className="admin-btn admin-btn-primary"
                     disabled={processing || !creditTarget || !creditAmount}
                     style={{ marginTop: '4px' }}
@@ -1901,38 +1900,12 @@ function AgentDashboardContent() {
                       try {
                         const amt = Number(creditAmount);
                         assertChipAmount(amt);
-                        /*
-                        ALL THREE OF THESE WERE WRONG, EACH IN ITS OWN WAY.
-
-                        ISSUE CREDIT was the only one that could work, and it
-                        passed the raw route param where a uuid was expected -
-                        CreditService looks the agent up with
-                        .eq('club_id', clubId), so on a slug or code URL it
-                        found no row and told the operator "No agent found for
-                        this club" about an agent that exists.
-
-                        ADD PREPAID could never succeed at all. It called
-                        setCreditLine(..., isPrepaid: true) with the amount as
-                        the LIMIT, and fn_admin_update_agent refuses exactly
-                        that pair: "a prepaid agent carries no credit line".
-                        Any positive amount was rejected. Funding a prepaid
-                        agent means sending them chips, which is
-                        fn_agent_wallet_send into their agent wallet.
-
-                        Credit reductions use the prepared operation controls below.
-                      */
+                        /* Every agent is prepaid with no credit line (Dan,
+                           October 2026). Funding an agent means sending chips
+                           into their agent wallet through fn_agent_wallet_send. */
                         const resolvedCreditClub = await resolveClubUUID(clubId || '');
                         const note = creditNotes.trim() || undefined;
-                        if (creditAction === 'issue_credit') {
-                          await CreditService.setCreditLine(
-                            creditTarget,
-                            resolvedCreditClub,
-                            amt,
-                            false,
-                            note
-                          );
-                        } else if (creditAction === 'add_prepaid') {
-                          await runAgentWalletOperation(
+                        await runAgentWalletOperation(
                             {
                               userId: user.id,
                               clubId: resolvedCreditClub,
@@ -1968,12 +1941,7 @@ function AgentDashboardContent() {
                               }
                             }
                           );
-                        }
-                        const labels: Record<string, string> = {
-                          issue_credit: 'Credit line set to',
-                          add_prepaid: 'Prepaid balance sent',
-                        };
-                        setSuccess(`${labels[creditAction] || 'Done'} - ${fmtChips(amt)} chips`);
+                        setSuccess(`Prepaid Chips Sent - ${fmtChips(amt)} Chips`);
                         masterBus.emit('CREDIT_UPDATED', {
                           clubId: clubId || '',
                           userId: creditTarget,
@@ -1989,15 +1957,8 @@ function AgentDashboardContent() {
                       }
                     }}
                   >
-                    {processing
-                      ? 'Processing...'
-                      : creditAction === 'issue_credit'
-                        ? 'Set Credit Line'
-                        : creditAction === 'add_prepaid'
-                          ? 'Send Prepaid Chips'
-                          : 'Reduce Credit Line'}
+                    {processing ? 'Processing...' : 'Send Prepaid Chips'}
                   </button>
-                )}
               </div>
             </div>
           </div>

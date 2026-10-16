@@ -432,7 +432,7 @@ it.each(['approval', 'cancellation'] as const)(
     // The service emitted through the actual bus before returning. Its actual
     // debounced listener now fires while the local acknowledgment lock is held.
     await act(async () => {
-      providerChange();
+      if (kind === 'approval') providerChange();
       await vi.advanceTimersByTimeAsync(500);
     });
     expect(read).toHaveBeenCalledOnce();

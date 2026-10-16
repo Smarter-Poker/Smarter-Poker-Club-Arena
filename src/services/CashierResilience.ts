@@ -30,7 +30,8 @@ export interface CashierTransferRecovery {
   submissionId: string;
   opIds: Record<string, string>;
   /** The server replay fingerprint must survive recipient promotion/demotion. */
-  destinations?: Record<string, 'agent_wallet' | 'player_wallet'>;
+  destinations?: Record<string, 'agent_wallet' | 'player_wallet' | 'promo_wallet'>;
+  source?: 'agent_wallet' | 'club_bank' | 'promo_wallet' | 'club_promo_wallet' | 'player_wallet';
   ticketNote?: 'Cashier Ticket';
   /** A Send Ticket into one tournament; its retry keys are bound to it. */
   tournamentId?: string;
@@ -55,6 +56,8 @@ interface CashierRecoveryEnvelope {
 /** Account-scoped financial intent; its prefix is shared with the sign-out purge. */
 const CASHIER_RECOVERY_FUTURE_SKEW_MS = 5 * 60 * 1000;
 const CASHIER_RECOVERY_MAX_BATCHES = 20;
+const ENTITY_UUID_PATTERN =
+  /^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const browserRecoveryStorage = (): CashierRecoveryStorage | null => {
@@ -89,8 +92,8 @@ const isValidRecovery = (
     row.version !== 1 ||
     row.userId !== userId ||
     row.clubId !== clubId ||
-    !UUID_PATTERN.test(userId) ||
-    !UUID_PATTERN.test(clubId) ||
+    !ENTITY_UUID_PATTERN.test(userId) ||
+    !ENTITY_UUID_PATTERN.test(clubId) ||
     (row.kind !== 'send' && row.kind !== 'ticket') ||
     !Number.isFinite(row.amount) ||
     Number(row.amount) <= 0 ||
@@ -113,13 +116,20 @@ const isValidRecovery = (
   }
 
   if (
+    row.source !== undefined &&
+    !['agent_wallet', 'club_bank', 'promo_wallet', 'club_promo_wallet', 'player_wallet'].includes(
+      row.source
+    )
+  )
+    return false;
+  if (
     row.destinations !== undefined &&
     (!row.destinations ||
       typeof row.destinations !== 'object' ||
       Array.isArray(row.destinations) ||
       Object.keys(row.destinations).length !== row.targetIds.length ||
       row.targetIds.some(
-        (id) => !['agent_wallet', 'player_wallet'].includes(row.destinations![id])
+        (id) => !['agent_wallet', 'player_wallet', 'promo_wallet'].includes(row.destinations![id])
       ))
   )
     return false;
@@ -127,7 +137,7 @@ const isValidRecovery = (
   if (row.ticketNote !== undefined && row.ticketNote !== 'Cashier Ticket') return false;
   if (
     row.tournamentId !== undefined &&
-    (row.kind !== 'ticket' || !UUID_PATTERN.test(String(row.tournamentId)))
+    (row.kind !== 'ticket' || !ENTITY_UUID_PATTERN.test(String(row.tournamentId)))
   )
     return false;
   if (
@@ -149,7 +159,10 @@ const isValidRecovery = (
   )
     return false;
   const targets = new Set(row.targetIds);
-  if (targets.size !== row.targetIds.length || row.targetIds.some((id) => !UUID_PATTERN.test(id))) {
+  if (
+    targets.size !== row.targetIds.length ||
+    row.targetIds.some((id) => !ENTITY_UUID_PATTERN.test(id))
+  ) {
     return false;
   }
   if (
@@ -241,6 +254,7 @@ const sameRecoveryIntent = (
   ) &&
   JSON.stringify(left.targetIds) === JSON.stringify(right.targetIds) &&
   JSON.stringify(left.opIds) === JSON.stringify(right.opIds) &&
+  left.source === right.source &&
   JSON.stringify(left.destinations) === JSON.stringify(right.destinations) &&
   left.ticketNote === right.ticketNote &&
   left.tournamentId === right.tournamentId;
@@ -318,7 +332,7 @@ export function readCashierTransferRecoveries(
   storage: CashierRecoveryStorage | null = browserRecoveryStorage(),
   now = Date.now()
 ): CashierTransferRecovery[] {
-  if (!storage || !UUID_PATTERN.test(userId) || !UUID_PATTERN.test(clubId)) return [];
+  if (!storage || !ENTITY_UUID_PATTERN.test(userId) || !ENTITY_UUID_PATTERN.test(clubId)) return [];
   try {
     // Never erase an unreadable financial journal during a read. A malformed
     // entry may be the only surviving evidence of a request whose response was
@@ -416,8 +430,8 @@ export function clearCashierTransferRecovery(
 ): void {
   if (
     !storage ||
-    !UUID_PATTERN.test(userId) ||
-    !UUID_PATTERN.test(clubId) ||
+    !ENTITY_UUID_PATTERN.test(userId) ||
+    !ENTITY_UUID_PATTERN.test(clubId) ||
     !UUID_PATTERN.test(submissionId)
   )
     return;
@@ -462,8 +476,8 @@ const canonicalChipRequestNote = (note: string | null): string | null => {
 async function chipRequestIntentHash(intent: CashierChipRequestIntent): Promise<string | null> {
   const note = canonicalChipRequestNote(intent.note);
   if (
-    !UUID_PATTERN.test(intent.userId) ||
-    !UUID_PATTERN.test(intent.clubId) ||
+    !ENTITY_UUID_PATTERN.test(intent.userId) ||
+    !ENTITY_UUID_PATTERN.test(intent.clubId) ||
     !Number.isFinite(intent.amount) ||
     intent.amount <= 0 ||
     intent.amount > 1e9 ||

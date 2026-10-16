@@ -52,8 +52,10 @@ export interface FreeBuyConfig {
   minPlayers: number;
 }
 
-/** Dan 2026-09-04: "$250 FREE BUY IS $1 REBUY AND $1 ADD ON ... FOR THE $500
- *  REBUYS ARE $2 AND ADD ON'S $2." Starting stack 3,000; an add-on is 10,000,
+/** Dan 2026-09-04: "$250 FREE BUY IS $1 REBUY AND $1 ADD ON". The $500
+ *  feature's $2 rebuy and add-on are SUPERSEDED (Dan 2026-10-16, verbatim): "ALL
+ *  REBUY ADD ON'S FOR MIDWAY UNION ARE 1 CHIP REBUY ADD ON NOT 2". Both tiers
+ *  charge 1. Starting stack 3,000; an add-on is 10,000,
  *  so an add-on is worth more than three starting stacks and is close to
  *  compulsory - which is exactly why every horse takes one. */
 export const FREE_BUY_TIERS: Record<FreeBuyTier, FreeBuyConfig> = {
@@ -76,9 +78,9 @@ export const FREE_BUY_TIERS: Record<FreeBuyTier, FreeBuyConfig> = {
     guarantee: 500,
     buyIn: 0,
     startingChips: 3000,
-    rebuyCost: 2,
+    rebuyCost: 1,
     rebuyChips: 3000,
-    addOnCost: 2,
+    addOnCost: 1,
     addOnChips: 10000,
     lateRegMinutes: 60,
     blindStructure: 'FREE_BUY',

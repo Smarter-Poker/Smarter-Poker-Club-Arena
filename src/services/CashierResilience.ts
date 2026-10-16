@@ -30,7 +30,8 @@ export interface CashierTransferRecovery {
   submissionId: string;
   opIds: Record<string, string>;
   /** The server replay fingerprint must survive recipient promotion/demotion. */
-  destinations?: Record<string, 'agent_wallet' | 'player_wallet'>;
+  destinations?: Record<string, 'agent_wallet' | 'player_wallet' | 'promo_wallet'>;
+  source?: 'agent_wallet' | 'club_bank' | 'promo_wallet' | 'club_promo_wallet' | 'player_wallet';
   ticketNote?: 'Cashier Ticket';
   /** A Send Ticket into one tournament; its retry keys are bound to it. */
   tournamentId?: string;
@@ -115,13 +116,20 @@ const isValidRecovery = (
   }
 
   if (
+    row.source !== undefined &&
+    !['agent_wallet', 'club_bank', 'promo_wallet', 'club_promo_wallet', 'player_wallet'].includes(
+      row.source
+    )
+  )
+    return false;
+  if (
     row.destinations !== undefined &&
     (!row.destinations ||
       typeof row.destinations !== 'object' ||
       Array.isArray(row.destinations) ||
       Object.keys(row.destinations).length !== row.targetIds.length ||
       row.targetIds.some(
-        (id) => !['agent_wallet', 'player_wallet'].includes(row.destinations![id])
+        (id) => !['agent_wallet', 'player_wallet', 'promo_wallet'].includes(row.destinations![id])
       ))
   )
     return false;
@@ -246,6 +254,7 @@ const sameRecoveryIntent = (
   ) &&
   JSON.stringify(left.targetIds) === JSON.stringify(right.targetIds) &&
   JSON.stringify(left.opIds) === JSON.stringify(right.opIds) &&
+  left.source === right.source &&
   JSON.stringify(left.destinations) === JSON.stringify(right.destinations) &&
   left.ticketNote === right.ticketNote &&
   left.tournamentId === right.tournamentId;

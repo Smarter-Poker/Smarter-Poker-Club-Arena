@@ -305,3 +305,29 @@ describe('a ledger line names both wallets', () => {
     expect(thirdPartySender({ transaction_type: 'plinko_prize' }, ' ')).toBe('A Member');
   });
 });
+
+it.each(['promo_wallet_send', 'club_promo_send'])(
+  'keeps selected agent float distinct from legacy promo destinations for %s',
+  (transaction_type) => {
+    expect(
+      walletRoute({ transaction_type, metadata: { destination: 'cashier_agent_wallet' } })
+    ).toBe(
+      `${transaction_type === 'club_promo_send' ? 'Club Promo Wallet' : 'Promo Wallet'} To Agent Wallet`
+    );
+    expect(
+      walletRoute({ transaction_type, metadata: { destination: 'cashier_promo_wallet' } })
+    ).toContain('To Promo Wallet');
+    expect(walletRoute({ transaction_type, metadata: { destination: 'agent_wallet' } })).toContain(
+      'To Promo Wallet'
+    );
+  }
+);
+it('shows an explicit player wallet send route without guessing routes of old peer records', () => {
+  expect(
+    walletRoute({
+      transaction_type: 'peer_transfer',
+      metadata: { source: 'player_wallet', destination: 'promo_wallet' },
+    })
+  ).toBe('Player Wallet To Promo Wallet');
+  expect(walletRoute({ transaction_type: 'peer_transfer' })).toBeNull();
+});

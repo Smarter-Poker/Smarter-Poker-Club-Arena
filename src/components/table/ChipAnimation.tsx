@@ -113,6 +113,7 @@ export default function ChipAnimation({
 }: ChipAnimationProps) {
   const [position, setPosition] = useState(from);
   const [landed, setLanded] = useState(false);
+  const [flightFinished, setFlightFinished] = useState(false);
   const targetRef = useRef(resolveTarget);
   targetRef.current = resolveTarget;
   const originRef = useRef(from);
@@ -159,9 +160,45 @@ export default function ChipAnimation({
     setPosition((current) => (current.x === target.x && current.y === target.y ? current : target));
   }, [landed, isVisible, resolveTarget]);
 
+  // The final hold starts only after React commits the landing. A busy
+  // render must never batch the endpoint and removal into one invisible step.
+  useLayoutEffect(() => {
+    if (!flightFinished) return;
+    const timer = setTimeout(() => {
+      hideTimerRef.current = null;
+      setIsVisible(false);
+      onCompleteRef.current?.();
+    }, 100);
+    hideTimerRef.current = timer;
+    return () => {
+      clearTimeout(timer);
+      if (hideTimerRef.current === timer) hideTimerRef.current = null;
+    };
+  }, [flightFinished]);
+
   useEffect(() => {
+    setFlightFinished(false);
     setLanded(false);
-    const currentTarget = () => targetRef.current?.() ?? destinationRef.current;
+    const currentTarget = () => {
+      if (targetRef.current) return targetRef.current();
+      const to = destinationRef.current;
+      const layer = containerRef.current?.parentElement;
+      if (!recipientId || !layer) return to;
+      const frame = layer.getBoundingClientRect();
+      if (!(frame.width > 0 && frame.height > 0)) return to;
+      const width = layer.offsetWidth || frame.width;
+      const height = layer.offsetHeight || frame.height;
+      const fallback = {
+        x: frame.left + (to.x * frame.width) / width,
+        y: frame.top + (to.y * frame.height) / height,
+      };
+      return viewportPointInFrame(
+        winnerViewportPoint(layer.closest('.table-page'), recipientId, fallback),
+        frame,
+        width,
+        height
+      );
+    };
     // ANIMATION AUDIT 2026-08-28 (multi-table): a background table is
     // display:none, not unmounted — every chip flight there still drove a
     // full rAF bezier loop nobody could see. If this chip's container has no
@@ -246,12 +283,7 @@ export default function ChipAnimation({
         animRef.current = requestAnimationFrame(run);
       } else {
         setLanded(true);
-        // Finished — brief pause then hide
-        hideTimerRef.current = setTimeout(() => {
-          hideTimerRef.current = null;
-          setIsVisible(false);
-          onCompleteRef.current?.();
-        }, 100);
+        setFlightFinished(true);
       }
     };
 
@@ -263,7 +295,18 @@ export default function ChipAnimation({
     };
 
     // intentionally read through onCompleteRef; see CHIP-GLITCH FIX above.
-  }, [flightId, originX, originY, destinationX, destinationY, duration, delay, useArc, arcHeight]);
+  }, [
+    flightId,
+    originX,
+    originY,
+    destinationX,
+    destinationY,
+    duration,
+    delay,
+    useArc,
+    arcHeight,
+    recipientId,
+  ]);
 
   if (!isVisible) return null;
 

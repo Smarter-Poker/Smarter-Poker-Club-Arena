@@ -14,13 +14,87 @@
  *     3-8 chips and EVERY chip carried a label of its own 1/Nth share, so a
  *     1,000 pot showed eight chips each reading "125".
  */
-import { describe, it, expect } from 'vitest';
-import { render } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+import { act, render } from '@testing-library/react';
+import ChipAnimation from '../src/components/table/ChipAnimation';
 import PotDisplay from '../src/components/table/PotDisplay';
 import {
   createChipToPotEvent,
   createPotToWinnerEvent,
 } from '../src/components/table/ChipAnimation';
+
+it.each([false, true])(
+  'commits the payout landing before its final hold, moving recipient %s',
+  (movingRecipient) => {
+    vi.useFakeTimers();
+    const callbacks = new Map<number, FrameRequestCallback>();
+    let nextId = 0;
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callbacks.set(++nextId, callback);
+      return nextId;
+    });
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => callbacks.delete(id));
+    const rects = vi
+      .spyOn(HTMLElement.prototype, 'getClientRects')
+      .mockReturnValue([new DOMRect(0, 0, 36, 36)] as unknown as DOMRectList);
+    let recipientY = 100;
+    const bounds = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function (this: HTMLElement) {
+        if (this.classList.contains('seat__info')) return new DOMRect(90, recipientY - 10, 20, 20);
+        if (this.dataset.chipLayer) return new DOMRect(0, 0, 300, 600);
+        return new DOMRect();
+      });
+    const done = vi.fn();
+    const view = render(
+      <div className="table-page">
+        <div data-player-id="winner">
+          <div className="seat__info" />
+        </div>
+        <div data-chip-layer="true">
+          <ChipAnimation
+            from={{ x: 0, y: 0 }}
+            to={{ x: 100, y: 100 }}
+            amount={10}
+            duration={100}
+            onComplete={done}
+            recipientId="winner"
+            flightId="award-1"
+          />
+        </div>
+      </div>
+    );
+    const frame = (at: number) => {
+      const [id, callback] = callbacks.entries().next().value!;
+      callbacks.delete(id);
+      callback(at);
+    };
+    try {
+      // React may batch the final frame with work that already consumes the
+      // old 100ms timer. Removal must wait for an actually committed landing.
+      act(() => {
+        frame(100);
+        if (movingRecipient) recipientY = 108;
+        frame(200);
+        vi.advanceTimersByTime(100);
+      });
+      expect(view.container.querySelector('[data-chip-phase="landed"]')).not.toBeNull();
+      expect(
+        (view.container.querySelector('[data-chip-phase="landed"]') as HTMLElement).style.transform
+      ).toContain(`translate(100px, ${recipientY}px)`);
+      expect(done).not.toHaveBeenCalled();
+      act(() => vi.advanceTimersByTime(100));
+      expect(done).toHaveBeenCalledTimes(1);
+      expect(view.container.querySelector('[data-chip-flight]')).toBeNull();
+    } finally {
+      view.unmount();
+      rects.mockRestore();
+      bounds.mockRestore();
+      vi.unstubAllGlobals();
+      vi.useRealTimers();
+    }
+  }
+);
 
 describe('PotDisplay pot push', () => {
   it('does not animate between hands', () => {

@@ -451,3 +451,61 @@ describe('the confirm box is still the same box', () => {
     expect(within(box).getByText(/That Is 25\.0 Percent Of The Club Bank\./)).toBeTruthy();
   });
 });
+
+describe('The Sender Chooses The Recipient Wallet', () => {
+  it.each(['owner', 'co_owner', 'super_agent', 'agent', 'sub_agent'])(
+    'sends to the player wallet of a %s without replacing the selection',
+    async (role) => {
+      fx.agentRow = { agent_wallet_balance: 1000, is_prepaid: true, credit_used: 0 };
+      fx.members = [{ data: [{ ...kingfish, role }], error: null }];
+      openCashier({ role: 'owner', walletType: 'agent_wallet' });
+      await pick(/Kingfish/);
+      await toPlayerWallet();
+      typeAmount('5');
+      await waitFor(() => expect(plate('Send Chips')).not.toBeDisabled());
+      fireEvent.click(plate('Send Chips'));
+      await waitFor(() => expect(sends('fn_agent_wallet_send')).toHaveLength(1));
+      expect(sends('fn_agent_wallet_send')[0].args.p_destination).toBe('player_wallet');
+    }
+  );
+
+  it.each(['player_wallet', 'agent_wallet'])(
+    'funds the owner self from the club bank into %s',
+    async (destination) => {
+      fx.members = [
+        {
+          data: [{ ...kingfish, user_id: '11111111-1111-4111-8111-111111111111', role: 'owner' }],
+          error: null,
+        },
+      ];
+      openCashier({ role: 'owner', walletType: 'club_bank' });
+      if (destination === 'player_wallet') await toPlayerWallet();
+      await pick(/Kingfish/);
+      typeAmount('5');
+      await waitFor(() => expect(plate('Send Chips')).not.toBeDisabled());
+      fireEvent.click(plate('Send Chips'));
+      await waitFor(() => expect(sends('fn_club_bank_send')).toHaveLength(1));
+      expect(sends('fn_club_bank_send')[0].args).toMatchObject({
+        p_to_user_id: '11111111-1111-4111-8111-111111111111',
+        p_destination: destination,
+      });
+    }
+  );
+});
+
+describe('The Main Bank Never Fails Silently', () => {
+  it('shows a definitive bank refusal inside the cashier', async () => {
+    fx.members = [{ data: [{ ...kingfish, role: 'agent' }], error: null }];
+    fx.sends = [
+      { data: { success: false, error: 'Recipient Wallet Is Unavailable' }, error: null },
+    ];
+    openCashier({ role: 'owner', walletType: 'club_bank' });
+    await pick(/Kingfish/);
+    typeAmount('5');
+    await waitFor(() => expect(plate('Send Chips')).not.toBeDisabled());
+    fireEvent.click(plate('Send Chips'));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Recipient Wallet Is Unavailable');
+    expect(fx.toast.success).not.toHaveBeenCalled();
+    expect(sends('fn_club_bank_send')[0].args.p_destination).toBe('agent_wallet');
+  });
+});

@@ -76,7 +76,20 @@ try:
         query((fixture/(name+'.sql')).read_text())
     query('CREATE TRIGGER cashier_operation_intent_guard BEFORE INSERT ON chip_transactions FOR EACH ROW EXECUTE FUNCTION fn_cashier_operation_intent_guard();')
     selected_migration=(ROOT/'supabase/migrations/20261016024912_cashier_sends_use_the_selected_source_and_destination_wallet.sql').read_text()
+    query((fixture/'money-registry-guard.sql').read_text())
     if not args.selected_baseline:
+        # Reproduce the installed DDL guard refusal and prove its transaction
+        # did not leave earlier patches, a new writer or registry admission.
+        registration_start=selected_migration.index('-- Register the new writer before CREATE')
+        registration_end=selected_migration.index('CREATE OR REPLACE FUNCTION public.fn_cashier_player_wallet_send',registration_start)
+        unregistered=selected_migration[:registration_start]+selected_migration[registration_end:]
+        try: query(unregistered)
+        except RuntimeError as error:
+            assert 'fn_cashier_player_wallet_send writes balance columns and is not in ca_money_rpc_registry' in str(error), str(error)
+        else: raise RuntimeError('Unregistered player writer was admitted')
+        assert query("SELECT to_regprocedure('public.fn_cashier_player_wallet_send(uuid,uuid,numeric,text,text,uuid)') IS NULL AND NOT EXISTS(SELECT 1 FROM ca_money_rpc_registry WHERE proname='fn_cashier_player_wallet_send');").strip()=='t'
+        for proof in re.findall(r'^-- @live-proof: (.+)$', migration, re.M):
+            assert query('SELECT '+proof+';').strip()=='t', proof
         query(selected_migration)
         print('NEW_PLAYER_FUNCTION_HASH',query("SELECT md5(pg_get_functiondef('public.fn_cashier_player_wallet_send(uuid,uuid,numeric,text,text,uuid)'::regprocedure));").strip(),flush=True)
         for proof in re.findall(r'^-- @live-proof: (.+)$', selected_migration, re.M):

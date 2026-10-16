@@ -177,7 +177,7 @@
     "tests/credit-admin-data.test.ts": "fbb77922279019b1f8e00f16637b76c647772b39ba46f68d80df6e09c148d33b",
     "tests/credit-admin-panel-scope.test.tsx": "5b05b519ce6c4fbc7d86af31e9d05eb23bbaa5b2783d554544e5ade77dd469a4",
     "tests/credit-request-widget-scope.test.tsx": "45ad84f004fe5fd39fcb8affa7a6c0f16c5782335966f4c01728305de8cd126d",
-    "tests/super-agent-credit-routing.test.tsx": "81ec47fdf9b2d6bf4aa9a5e5e03552a557a35a9c30a58eed769447b3e0dbc996",
+    "tests/super-agent-credit-routing.test.tsx": "0741030aba402bac0adda0a47f95679981789d3fa873e0fc09f5c5f503261580",
     "tests/unit/CreditRequestAuthority.test.ts": "0dce14c178ef4f5bd8f8a2aa794cfc8f76fec4fe3207e0882add16e162abb821",
     "tests/unit/CreditRequestLegacyCaller.test.ts": "ef6f8458a54ce3b5e646d831c176f279456e8f59598616e20dbb3a9dbc7f2e7b",
     "tests/unit/CreditRequestService.test.ts": "47bc48d13b54901999a6a58b36a93edb79e4f2d057427a4a6d622ff009d7c0c3",
@@ -4881,5 +4881,11 @@
         "reason": "Assert displayed grouped input spelling while retaining invalid-money refusal and no-RPC assertions. Replace the obsolete background row-refresh expectation with an initial read and no background subscription, as explicitly requested by the owner."
       }
     }
+  },
+  "chipWalletChoiceDashboardRegression20261015": {
+    "reason": "Reviewed the complete dashboard regression diff: adds an explicit recipient wallet submission assertion and transfer mock while preserving every existing credit authority and route assertion. Current test source identity only; financial fixtures, SQL, historical audits and qualification states are unchanged. This fingerprint is not native or production certification.",
+    "path": "tests/super-agent-credit-routing.test.tsx",
+    "previous_sha256": "81ec47fdf9b2d6bf4aa9a5e5e03552a557a35a9c30a58eed769447b3e0dbc996",
+    "current_sha256": "0741030aba402bac0adda0a47f95679981789d3fa873e0fc09f5c5f503261580"
   }
 }

@@ -22,11 +22,49 @@ import {
   readPendingInviteCode,
   rememberInviteCode,
   inviteShareText,
+  getPendingClubInvite,
   toInAppJoinPath,
 } from '../../src/services/ClubInviteService';
+import { supabase } from '../../src/lib/supabase';
 import { inviteSignupUrl } from '../../src/components/auth/InviteSignupRedirect';
 
 const src = (p: string) => readFileSync(resolve(__dirname, '../..', p), 'utf8');
+
+describe('pending invite lookup is a read', () => {
+  beforeEach(() => vi.mocked(supabase.rpc).mockReset());
+
+  it('uses GET for the stable RPC and preserves its validated destination', async () => {
+    vi.mocked(supabase.rpc).mockResolvedValue({
+      data: {
+        pending: true,
+        club: { id: 'club-1', name: 'Club One' },
+        join_path: '/hub/club-arena/invite/club-1',
+      },
+      error: null,
+    } as never);
+    expect(await getPendingClubInvite()).toMatchObject({
+      clubId: 'club-1',
+      inAppPath: '/invite/club-1',
+    });
+    expect(supabase.rpc).toHaveBeenCalledWith('fn_club_invite_pending', undefined, { get: true });
+  });
+
+  it('keeps absent or invalid invites absent and exposes lookup failures', async () => {
+    for (const data of [
+      null,
+      { pending: false },
+      { pending: true, club: { id: 'club-1' }, join_path: 'https://evil.example' },
+    ]) {
+      vi.mocked(supabase.rpc).mockResolvedValue({ data, error: null } as never);
+      expect(await getPendingClubInvite()).toBeNull();
+    }
+    vi.mocked(supabase.rpc).mockResolvedValue({
+      data: null,
+      error: { message: 'Lookup Refused' },
+    } as never);
+    await expect(getPendingClubInvite()).rejects.toThrow('Lookup Refused');
+  });
+});
 
 describe('invite codes', () => {
   it('accepts only the 7-character database alphabet', () => {
@@ -86,7 +124,10 @@ describe('a signed-out recipient goes to Create Account first', () => {
 
   it('the invite route renders the signup redirect instead of the login bounce', () => {
     const app = src('src/App.tsx');
-    const route = app.slice(app.indexOf('path="invite/:clubId"'), app.indexOf('path="invite/:clubId"') + 200);
+    const route = app.slice(
+      app.indexOf('path="invite/:clubId"'),
+      app.indexOf('path="invite/:clubId"') + 200
+    );
     expect(route).toContain('<AuthGuard publicFallback={<InviteSignupRedirect />}>');
   });
 });

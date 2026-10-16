@@ -382,6 +382,7 @@ function CashierContent() {
     value: number;
     recipientId: string;
     recipientName: string;
+    destination?: ClubBankRecipientWallet;
   }>({ show: false, value: 0, recipientId: '', recipientName: '' });
 
   /* High-value Send confirm dialog focus management (launch audit 2026-10-09,
@@ -1561,7 +1562,7 @@ function CashierContent() {
    * 'player_wallet'` - so an owner (including the sender themselves, who is on
    * this list) could only ever be paid into their float, never into the wallet
    * they play from. A recipient holding both wallets now offers both.
-   * An agent's Distribute is fn_agent_wallet_send and still follows the role.
+   * Owner update 2026-10-15: agent sends honor the same wallet choice.
    */
   const distributeViaClubBank =
     ['owner', 'co_owner', 'admin', 'super_agent'].includes(userRole) || isUnionOwner;
@@ -1569,17 +1570,12 @@ function CashierContent() {
   useEffect(() => {
     setDistributeWallet(null);
   }, [selectedRecipient]);
-  const distributeWallets: ClubBankRecipientWallet[] =
-    distributeViaClubBank && selectedRecipientData
-      ? clubBankRecipientWallets(selectedRecipientData.role)
-      : [];
-  const distributeDestination: ClubBankRecipientWallet = !selectedRecipientData
-    ? 'player_wallet'
-    : distributeViaClubBank
-      ? clubBankDestinationFor(selectedRecipientData.role, distributeWallet)
-      : canHoldAgentWallet(selectedRecipientData.role)
-        ? 'agent_wallet'
-        : 'player_wallet';
+  const distributeWallets: ClubBankRecipientWallet[] = selectedRecipientData
+    ? clubBankRecipientWallets(selectedRecipientData.role)
+    : [];
+  const distributeDestination: ClubBankRecipientWallet = selectedRecipientData
+    ? clubBankDestinationFor(selectedRecipientData.role, distributeWallet)
+    : 'player_wallet';
 
   // ── Keyboard navigation for tabs (Arrow Left/Right, Home/End) ──
   const tabNavRef = useRef<HTMLElement | null>(null);
@@ -1640,7 +1636,11 @@ function CashierContent() {
     }
   };
 
-  const handleAction = async (override?: { value?: number; recipientId?: string }) => {
+  const handleAction = async (override?: {
+    value?: number;
+    recipientId?: string;
+    destination?: ClubBankRecipientWallet;
+  }) => {
     if (cashoutActionInFlight.current || cashoutBusy.current || transferBusy.current) return;
     // At a table, Buy-In and Cash-Out move no money here: both are done at the
     // table itself (atomic_table_buyin, and leaving the seat). There is no
@@ -1815,10 +1815,8 @@ function CashierContent() {
            * row, one op_id, a downline check before any money moves, and a ten
            * minute clawback window the Claim Back surfaces can act on.
            *
-           * `p_destination` follows the RECIPIENT's role - chips to an agent land
-           * in the float they distribute from, chips to a player land in the
-           * balance they buy in with - and the database derives it again from the
-           * recipient regardless of what is sent here.
+           * Owner update 2026-10-15: p_destination is the sender's explicit
+           * choice, validated against the wallets the recipient holds.
            */
           if (myAgentWallet !== null && myAgentWallet + myAgentCredit < value) {
             if (isMounted.current)
@@ -1835,7 +1833,7 @@ function CashierContent() {
             p_club_id: resolvedForTransfer,
             p_to_user_id: recipientIdForAction,
             p_amount: value,
-            p_destination: canHoldAgentWallet(recipient?.role) ? 'agent_wallet' : 'player_wallet',
+            p_destination: override?.destination ?? distributeDestination,
             p_reason: 'Cashier Send',
           };
           const operation = await reserveCashierWalletOperation(
@@ -2598,7 +2596,7 @@ function CashierContent() {
                       <span>Player Wallet: {chipFigure(selectedRecipientData.balance)}</span>
                       <span>
                         Destination:{' '}
-                        {canHoldAgentWallet(selectedRecipientData.role)
+                        {distributeDestination === 'agent_wallet'
                           ? 'Agent Wallet'
                           : 'Player Wallet'}
                       </span>
@@ -2655,6 +2653,28 @@ function CashierContent() {
                     </select>
                   )}
                 </div>
+
+                {distributeWallets.length > 1 && (
+                  <div
+                    className={styles.presetGrid}
+                    role="radiogroup"
+                    aria-label="Recipient Wallet"
+                  >
+                    {distributeWallets.map((wallet) => (
+                      <button
+                        key={wallet}
+                        type="button"
+                        role="radio"
+                        aria-checked={distributeDestination === wallet}
+                        className={styles.presetBtn}
+                        disabled={isProcessing}
+                        onClick={() => setDistributeWallet(wallet)}
+                      >
+                        {wallet === 'agent_wallet' ? 'Agent Wallet' : 'Player Wallet'}
+                      </button>
+                    ))}
+                  </div>
+                )}
 
                 <div className={styles.formGroup}>
                   <label className="sc-label sc-ink--blue" htmlFor="cashier-send-amount">
@@ -2766,6 +2786,7 @@ function CashierContent() {
                         value,
                         recipientId: selectedRecipient,
                         recipientName: selectedRecipientData.username,
+                        destination: distributeDestination,
                       });
                     } else {
                       handleAction();
@@ -3565,6 +3586,7 @@ function CashierContent() {
                     const confirmed = {
                       value: sendConfirm.value,
                       recipientId: sendConfirm.recipientId,
+                      destination: sendConfirm.destination,
                     };
                     setSendConfirm({
                       show: false,

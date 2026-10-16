@@ -276,6 +276,58 @@ describe('post-deploy production account', () => {
     }
   );
 
+  it('concurrent observer lanes create distinct principals and clean up only their own record', async () => {
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    vi.spyOn(Date, 'now').mockReturnValue(1792160000000);
+    const lanes = [1, 2].map((n) => {
+      const id = `00000000-0000-4000-8000-00000000009${n}`;
+      const directory = mkdtempSync(join(tmpdir(), 'production-e2e-observer-'));
+      const env = environment(directory);
+      writeFileSync(env.GITHUB_ENV, '');
+      const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        if (url.endsWith('/auth/v1/admin/users') && init?.method === 'POST')
+          return Response.json({ id });
+        if (url.includes('/rest/v1/profiles?select=id,arena_avatar_url'))
+          return Response.json([{ id, arena_avatar_url: AVATAR }]);
+        if (url.includes('/rest/v1/profiles?select=id')) return Response.json([{ id }]);
+        if (url.includes('/rest/v1/profiles?id=eq.') && init?.method === 'PATCH')
+          return new Response(null, { status: 204 });
+        if (url.includes('/rpc/cleanup_reserved_certification_account')) {
+          expect(String(init?.body)).toContain(id);
+          return Response.json({ success: true });
+        }
+        if (url.includes(`/auth/v1/admin/users/${id}`)) return new Response(null, { status: 404 });
+        throw new Error(`Unexpected observer request ${url}`);
+      });
+      return { id, env, fetchMock, directory };
+    });
+    const accounts = await Promise.all(
+      lanes.map((lane) =>
+        createProductionE2EAccount({
+          environment: lane.env,
+          fetchImpl: lane.fetchMock,
+          wait: async () => undefined,
+        })
+      )
+    );
+    expect(accounts[0].id).not.toBe(accounts[1].id);
+    expect(accounts[0].email).not.toBe(accounts[1].email);
+    expect(accounts[0].password).not.toBe(accounts[1].password);
+    await cleanupProductionE2EAccount({ environment: lanes[0].env, fetchImpl: lanes[0].fetchMock });
+    expect(existsSync(join(lanes[1].directory, 'club-arena-production-e2e-account.json'))).toBe(
+      true
+    );
+    await cleanupProductionE2EAccount({ environment: lanes[1].env, fetchImpl: lanes[1].fetchMock });
+    for (const lane of lanes)
+      expect(
+        lane.fetchMock.mock.calls.some(([url]) =>
+          String(url).includes('fn_ca_stale_certification_accounts')
+        )
+      ).toBe(false);
+  });
+
   it('creates one normalized reserved identity, exports it, then proves hard deletion', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'production-e2e-account-'));
     const env = environment(directory);

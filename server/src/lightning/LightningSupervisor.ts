@@ -11,11 +11,11 @@
  * A Cluster HOLDS A WORKER when both hold:
  *   - `cash_games.cluster_mode` is `lightning` or `pending_off`,
  *   - its `fn_lightning_config` says `worker_mode <> 'off'`.
- * It FORMS only when it is in `lightning` with `lightning_enabled = true`;
+ * It FORMS only for Action or Madness, in `lightning` with `lightning_enabled = true`;
  * otherwise its worker is DRAINING (see below).
  *
  * ONE CHEAP QUERY PER INTERVAL. The first is a single select of
- * `id, cluster_mode, lightning_enabled` over `cash_games`, every
+ * `id, cluster_mode, lightning_enabled, template_name` over `cash_games`, every
  * LIGHTNING_DISCOVERY_INTERVAL_MS. Only a Cluster that passes it costs a
  * second call (`fn_lightning_config`), and today none does: every Cluster is
  * must_move with Lightning disabled, so this ships dark and costs one tiny
@@ -150,6 +150,8 @@ export interface LightningDiscoveredCluster {
    * forms; the hands in the air settle.
    */
   draining: boolean;
+  /** Only Action and Madness may form; an existing ineligible worker only drains. */
+  formationBlocked?: boolean;
   /**
    * LIGHTNING PHASE 13: the operator's hold, present only for the `draining`
    * and `paused` modes (a `pending_off` or switched-off Cluster carries none:
@@ -182,7 +184,7 @@ const FRONT_TABLE_TTL_MS = 30_000;
 export async function discoverLightningClusters(): Promise<LightningDiscoveredCluster[]> {
   const { data, error } = await supabase
     .from('cash_games')
-    .select('id, cluster_mode, lightning_enabled')
+    .select('id, cluster_mode, lightning_enabled, template_name')
     .in('cluster_mode', [...LIGHTNING_WORKER_CLUSTER_MODES]);
   if (error) throw error;
   return parseDiscoveredClusters(data);
@@ -196,16 +198,24 @@ export async function discoverLightningClusters(): Promise<LightningDiscoveredCl
 export function parseDiscoveredClusters(rows: unknown): LightningDiscoveredCluster[] {
   const out: LightningDiscoveredCluster[] = [];
   for (const row of Array.isArray(rows) ? rows : []) {
-    const r = row as { id?: unknown; cluster_mode?: unknown; lightning_enabled?: unknown } | null;
+    const r = row as {
+      id?: unknown;
+      cluster_mode?: unknown;
+      lightning_enabled?: unknown;
+      template_name?: unknown;
+    } | null;
     if (!r || !isUuid(r.id)) continue;
+    const blocked = r.template_name !== 'action' && r.template_name !== 'madness';
+    const eligibility = blocked ? { formationBlocked: true as const } : {};
     if (r.cluster_mode === 'draining' || r.cluster_mode === 'paused') {
-      out.push({ clusterId: r.id, draining: true, hold: r.cluster_mode });
+      out.push({ clusterId: r.id, draining: true, hold: r.cluster_mode, ...eligibility });
       continue;
     }
     if (r.cluster_mode !== 'lightning' && r.cluster_mode !== 'pending_off') continue;
     out.push({
       clusterId: r.id,
-      draining: r.cluster_mode === 'pending_off' || r.lightning_enabled !== true,
+      draining: blocked || r.cluster_mode === 'pending_off' || r.lightning_enabled !== true,
+      ...eligibility,
     });
   }
   return out;
@@ -213,6 +223,7 @@ export function parseDiscoveredClusters(rows: unknown): LightningDiscoveredClust
 
 interface DiscoveredState {
   draining: boolean;
+  formationBlocked?: boolean;
   hold: LightningWorkerHold | null;
 }
 
@@ -235,7 +246,12 @@ function normalizeDiscovered(
       const hold =
         item.hold === 'draining' || item.hold === 'paused' ? item.hold : (prev?.hold ?? null);
       out.set(item.clusterId, {
-        draining: item.draining === true || prev?.draining === true || hold !== null,
+        draining:
+          item.formationBlocked === true ||
+          item.draining === true ||
+          prev?.draining === true ||
+          hold !== null,
+        formationBlocked: item.formationBlocked === true || prev?.formationBlocked === true,
         hold,
       });
     }
@@ -457,6 +473,18 @@ export class LightningSupervisor {
 
     const qualifying = new Map<string, LightningConfig>();
     for (const clusterId of candidates.keys()) {
+      if (candidates.get(clusterId)?.formationBlocked) {
+        // Never start a Classic/unknown worker. Preserve an existing host's
+        // keepalives and settlement under a hold, without aborting its hand.
+        const existing = this.workers.get(clusterId);
+        if (existing) {
+          const hold = candidates.get(clusterId)?.hold;
+          if (hold) existing.setHold(hold);
+          else existing.setDraining(true);
+          qualifying.set(clusterId, existing.currentConfig);
+        }
+        continue;
+      }
       const out = await lightningConfig(this.rpc, clusterId);
       if (!this.running || generation !== this.generation) return;
       if (out.status !== 'ok') {

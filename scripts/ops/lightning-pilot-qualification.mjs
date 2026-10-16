@@ -7,6 +7,7 @@ import {
   PILOT,
   PILOT_TARGETS as PREPARATION_TARGETS,
   pilotServiceFetch,
+  pilotTemplateMatches,
 } from './prepare-lightning-private-pilot.mjs';
 
 export const PILOT_TARGETS = Object.freeze(
@@ -14,6 +15,7 @@ export const PILOT_TARGETS = Object.freeze(
     Object.freeze({
       name: target.gameName,
       handedness: target.handedness,
+      templateName: target.templateName,
       sb: target.sb,
       bb: target.bb,
     })
@@ -86,7 +88,9 @@ export async function servingIdentities(fetchImpl = fetch) {
     typeof r.version === 'string' &&
     /^[0-9a-f]{7,40}$/i.test(r.version) &&
     (!Object.hasOwn(r, 'releaseSha') ||
-      (typeof r.releaseSha === 'string' && SHA.test(r.releaseSha) && r.releaseSha.startsWith(r.version)));
+      (typeof r.releaseSha === 'string' &&
+        SHA.test(r.releaseSha) &&
+        r.releaseSha.startsWith(r.version)));
   const [origin, publicClient, engine] = await Promise.all([
     publicJson('https://ca-static.smarter.poker/build-info.json', fetchImpl, stamp, client),
     publicJson('https://smarter.poker/hub/club-arena/build-info.json', fetchImpl, stamp, client),
@@ -134,7 +138,7 @@ export function selectTargets(games, clubId) {
       !UUID.test(g.id ?? '') ||
       g.union_id ||
       g.variant !== 'nlh' ||
-      g.template_name !== 'classic' ||
+      !pilotTemplateMatches(g, target) ||
       stake(g.sb) !== target.sb ||
       stake(g.bb) !== target.bb ||
       g.handedness !== target.handedness ||
@@ -152,7 +156,7 @@ export function selectTargets(games, clubId) {
         id: g.id,
         clubId,
         handedness: g.handedness,
-        templateName: 'classic',
+        templateName: target.templateName,
         sb: target.sb,
         bb: target.bb,
         lightningEnabled: typeof g.lightning_enabled === 'boolean' ? g.lightning_enabled : null,

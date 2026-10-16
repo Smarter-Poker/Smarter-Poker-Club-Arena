@@ -271,7 +271,8 @@ test('scope and funded active member preconditions refuse before authentication'
               ? {
                   id: CLUSTER,
                   club_id: CLUB,
-                  name: 'Lightning Pilot NLH 6',
+                  name: 'Lightning Pilot NLH Action 6',
+                  template_name: 'action',
                   handedness: 6,
                   sb: 0.01,
                   bb: 0.02,
@@ -280,7 +281,15 @@ test('scope and funded active member preconditions refuse before authentication'
                   must_move: true,
                   cluster_mode: 'lightning',
                   lightning_enabled: true,
-                  ruleset_snapshot: { options: { is_private: true } },
+                  ruleset_snapshot: {
+                    template: 'action',
+                    variant: 'nlh',
+                    regular_ante: 'sb',
+                    vpip_floor: 30,
+                    vpip_window: 10,
+                    bombs: { enabled: true, trigger: 'timed_15m', ante_bb: 2, boards: 2 },
+                    options: { is_private: true },
+                  },
                 }
               : table === 'profiles'
                 ? { id: ADMISSION_PLAYER, is_horse: true, status: 'active' }
@@ -476,4 +485,55 @@ test('a seated join resumes only its actual pool and never purchases another sea
     assert.deepEqual(f.rpc, []);
     assert.equal(report.cleanup, 'local_session_and_browser_closed');
   }
+});
+
+test('Classic admission refuses before authentication even when the private game otherwise matches', async () => {
+  const f = fixture();
+  delete f.args.validateScope;
+  f.args.admin.from = (table) => {
+    const q = {
+      select: () => q,
+      eq: () => q,
+      maybeSingle: async () => ({
+        data:
+          table === 'clubs'
+            ? {
+                id: CLUB,
+                owner_id: '2d1cd6c3-5700-4af9-a271-d4863fdab20d',
+                name: 'Lightning Internal Pilot',
+                is_public: false,
+                requires_approval: true,
+              }
+            : {
+                id: CLUSTER,
+                club_id: CLUB,
+                name: 'Lightning Pilot NLH Action 6',
+                template_name: 'classic',
+                handedness: 6,
+                sb: 0.01,
+                bb: 0.02,
+                variant: 'nlh',
+                enabled: true,
+                must_move: true,
+                cluster_mode: 'lightning',
+                lightning_enabled: true,
+                ruleset_snapshot: {
+                  template: 'action',
+                  variant: 'nlh',
+                  regular_ante: 'sb',
+                  vpip_floor: 30,
+                  vpip_window: 10,
+                  bombs: { enabled: true, trigger: 'timed_15m', ante_bb: 2, boards: 2 },
+                  options: { is_private: true },
+                },
+              },
+      }),
+    };
+    return q;
+  };
+  const result = await witnessAdmission(f.args);
+  assert.equal(result.status, 'unknown');
+  assert.equal(result.phase, 'scope');
+  assert.deepEqual(f.actions, []);
+  assert.deepEqual(f.cleanup, []);
 });

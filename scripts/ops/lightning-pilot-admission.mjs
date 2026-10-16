@@ -3,10 +3,9 @@
  * are reconciled once through their real receipt; a new intent is never sent.
  */
 import { acceptPlayerTerms } from './lightning-pilot-player.mjs';
-import { assertPilotClub, PILOT_TARGETS } from './prepare-lightning-private-pilot.mjs';
+import { resolvePilotTarget } from './lightning-pilot-targets.mjs';
 export const ADMISSION_PLAYER = 'a23ca5c9-b748-482f-9b59-9db35f7aa996';
 const CLUB = 'e14bc9f7-736d-425f-8f2c-e78305ebac1d';
-const CLUSTERS = ['babb43f1-368e-406f-a97a-a0d5013648b2', '3330ff9f-76ec-4487-b0c9-fc8ad8c2fdbb'];
 const KEY = 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const must = (r) => {
@@ -38,28 +37,7 @@ export function admissionReceiptMatches(p, reply) {
   );
 }
 async function scope(admin, pin) {
-  const club = must(await admin.from('clubs').select('*').eq('id', CLUB).maybeSingle());
-  assertPilotClub(club);
-  const game = must(
-    await admin.from('cash_games').select('*').eq('id', pin.clusterId).maybeSingle()
-  );
-  const target = PILOT_TARGETS[CLUSTERS.indexOf(pin.clusterId)];
-  if (
-    game.id !== pin.clusterId ||
-    game.club_id !== CLUB ||
-    game.union_id ||
-    game.name !== target.gameName ||
-    game.handedness !== target.handedness ||
-    Number(game.sb) !== target.sb ||
-    Number(game.bb) !== target.bb ||
-    game.variant !== 'nlh' ||
-    game.enabled !== true ||
-    game.must_move !== true ||
-    game.ruleset_snapshot?.options?.is_private !== true ||
-    game.cluster_mode !== 'lightning' ||
-    game.lightning_enabled !== true
-  )
-    throw new Error('Pilot Scope');
+  await resolvePilotTarget(admin, pin.clusterId);
   const profile = must(
     await admin.from('profiles').select('id,is_horse,status').eq('id', pin.playerId).maybeSingle()
   );
@@ -200,7 +178,7 @@ export async function witnessAdmission({
     if (
       pin?.playerId !== ADMISSION_PLAYER ||
       pin.clubId !== CLUB ||
-      !CLUSTERS.includes(pin.clusterId) ||
+      !UUID.test(pin.clusterId) ||
       typeof acceptTerms !== 'boolean' ||
       !Number.isInteger(timeoutMs) ||
       timeoutMs < 30000 ||

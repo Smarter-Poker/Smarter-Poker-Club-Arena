@@ -53,7 +53,7 @@ jobs:
         with:
           node-version: '22'
       - name: Verify The Finite Witness Before Acting
-        run: node --test scripts/ops/lightning-pilot-admission.test.mjs scripts/ops/lightning-pilot-witness.test.mjs scripts/ops/lightning-pilot-player.test.mjs scripts/ops/lightning-pilot-replay-batch.test.mjs scripts/ops/lightning-pilot-cycle.test.mjs scripts/ops/lightning-pilot-recovery.test.mjs scripts/ops/lightning-pilot-latency-workload.test.mjs
+        run: node --test scripts/ops/lightning-pilot-targets.test.mjs scripts/ops/lightning-pilot-admission.test.mjs scripts/ops/lightning-pilot-witness.test.mjs scripts/ops/lightning-pilot-player.test.mjs scripts/ops/lightning-pilot-replay-batch.test.mjs scripts/ops/lightning-pilot-cycle.test.mjs scripts/ops/lightning-pilot-recovery.test.mjs scripts/ops/lightning-pilot-latency-workload.test.mjs
       - run: npm ci --ignore-scripts
       - name: Install Chromium For The Explicit Player Witness
         if: inputs.mode != 'replay'

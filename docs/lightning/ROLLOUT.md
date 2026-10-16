@@ -8,6 +8,10 @@ Enabling Lightning for real players is the single biggest outward action in the 
 
 On 2026-10-12 the owner removed the fixed pilot and limited-club calendar waits. No minimum elapsed-day or batch-age requirement applies. Advance on completed active-play samples, workload coverage, recovery rehearsals and recorded readiness, not time spent with an empty pool. The retained 5,000-hand target, five-club coverage, both table sizes, calibration and latency sample/ceiling requirements remain. The bounded shadow-stage time box is a safety limit, not a waiting period. Historical handoffs cannot restore the removed waits.
 
+## Owner Update: Eligible Game Styles
+
+On October 16 the owner confirmed that Lightning is available only for Action and Madness. Classic remains normal poker. The earlier Classic private pilots are ineligible and remain disabled. Their historical evidence is retained, but cannot qualify the corrected Action 6-max and Madness 9-max targets. Provision corrected targets through the existing authenticated setup route, preserving Classic games and sessions; record their actual IDs and fresh evidence before activation.
+
 ## Ground Rules For Every Stage
 
 - **One door.** Every change is `fn_lightning_operator_control(cluster, action, reason, {request_id, ...})`, called by a platform admin, a club control member (owner, co_owner, admin) or the service. Hand-written config or `cash_games` updates are out of bounds.

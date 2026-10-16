@@ -2,6 +2,10 @@
 
 Owner update, 2026-10-12: fixed calendar waits are removed. No minimum elapsed-day or batch-age requirement applies. Empty-pool elapsed time is not qualification. Active play, the retained sample/coverage targets and the 54 final gates determine readiness.
 
+## Current Eligible Styles
+
+Lightning is only available for Action and Madness, per the owner's October 16 clarification. Classic games remain normal poker. Earlier Classic pilot targets are ineligible; the corrected private targets are Action 6-max and Madness 9-max. Their actual setup, protected delivery, calibration and active-play evidence remain required, with no repeat of the completed authorized roster/funding operation.
+
 ## Current Boundary
 
 The core Lightning implementation has maintained database, engine and client qualification. The calibration-window control is installed. The private NLH 6-max pilot exists and authenticated provisioning succeeded. At the production readback `2026-10-12T05:54:39Z`, its worker and Lightning are off, it has one service-owner member and no active seats, and there are zero production Lightning sessions, shadow comparisons or latency windows. The 6-max default activation/reversion thresholds are 18/12 participants; the 9-max defaults are 27/18. An empty private game is not a functional play demonstration.

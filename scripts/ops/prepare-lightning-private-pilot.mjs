@@ -8,7 +8,7 @@ export const PILOT = Object.freeze({
   ownerEmail: 'daniel@smarter.poker',
   requestId: '84ad2b53-990b-4fae-91cf-e7fd5509d105',
   name: 'Lightning Internal Pilot',
-  gameName: 'Lightning Pilot NLH 6',
+  gameName: 'Lightning Pilot NLH Action 6',
 });
 
 // The existing one-per-key index excludes handedness. Distinct microstakes
@@ -16,19 +16,21 @@ export const PILOT = Object.freeze({
 export const PILOT_TARGETS = Object.freeze([
   Object.freeze({
     gameName: PILOT.gameName,
+    templateName: 'action',
     handedness: 6,
     sb: 0.01,
     bb: 0.02,
-    windowRequestId: 'aaf6c3a2-b098-4d65-8e47-647a6834900b',
-    integrityRequestId: 'b5e5c106-183e-4f9c-a37b-d72189567369',
+    windowRequestId: '57b786b4-1f87-4b57-b65f-ea9997ca9dc8',
+    integrityRequestId: '4ffbcbb6-f273-4c13-9dcb-bcd27b1d1005',
   }),
   Object.freeze({
-    gameName: 'Lightning Pilot NLH 9',
+    gameName: 'Lightning Pilot NLH Madness 9',
+    templateName: 'madness',
     handedness: 9,
     sb: 0.02,
     bb: 0.04,
-    windowRequestId: 'fbb0c5d2-5e32-4852-88a1-2077e620a4c3',
-    integrityRequestId: '5ded3c91-dcb0-437a-b192-b072ec7b8ac9',
+    windowRequestId: '92836685-da27-433b-b25c-d524d6199f9b',
+    integrityRequestId: '9c2c4d5b-2911-413d-87f4-befc54820391',
   }),
 ]);
 
@@ -44,6 +46,25 @@ export function assertPilotClub(club) {
     throw new Error('Pilot Club Identity Or Isolation Configuration Mismatch');
 }
 
+/** Preserve the template's immutable normal-poker terms; never relabel Classic. */
+export function pilotTemplateMatches(game, target) {
+  const s = game?.ruleset_snapshot;
+  const action = target?.templateName === 'action';
+  if (!action && target?.templateName !== 'madness') return false;
+  return (
+    game.template_name === target.templateName &&
+    s?.template === target.templateName &&
+    s.variant === 'nlh' &&
+    s.regular_ante === (action ? 'sb' : 'bb') &&
+    s.vpip_floor === (action ? 30 : 50) &&
+    s.vpip_window === 10 &&
+    s.bombs?.enabled === true &&
+    s.bombs.trigger === (action ? 'timed_15m' : 'every_orbit') &&
+    s.bombs.ante_bb === (action ? 2 : 3) &&
+    s.bombs.boards === 2
+  );
+}
+
 export function assertPilotGame(game, clubId, target = null) {
   const expected = target ?? PILOT_TARGETS[0];
   if (
@@ -52,11 +73,8 @@ export function assertPilotGame(game, clubId, target = null) {
     game.union_id ||
     game.name !== expected.gameName ||
     game.handedness !== expected.handedness ||
-    (target &&
-      (game.sb !== target.sb ||
-        game.bb !== target.bb ||
-        game.template_name !== 'classic' ||
-        game.enabled !== true)) ||
+    !pilotTemplateMatches(game, expected) ||
+    (target && (game.sb !== target.sb || game.bb !== target.bb || game.enabled !== true)) ||
     game.variant !== 'nlh' ||
     game.must_move !== true ||
     game.ruleset_snapshot?.options?.is_private !== true
@@ -250,7 +268,7 @@ export async function preparePilot(env = process.env, clientFactory) {
         const created = must(
           await player.rpc('fn_cash_game_create', {
             p_club_id: club.id,
-            p_template: 'classic',
+            p_template: target.templateName,
             p_variant: 'nlh',
             p_sb: target.sb,
             p_bb: target.bb,

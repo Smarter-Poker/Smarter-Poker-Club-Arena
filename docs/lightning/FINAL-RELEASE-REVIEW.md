@@ -4,6 +4,10 @@ This is programme Phase 14, covering specification Phases 23 (final regression) 
 
 **Current public-launch verdict: NO_GO.** Lightning remains dark. Engineering qualification, database installation, publication, affected live proof and staged rollout evidence are separate states. The closed Phase 13 dark-stage delivery does not certify a production pilot.
 
+## Owner Update: Action And Madness Only
+
+The October 16 owner instruction restricts Lightning to Action and Madness. The earlier Classic private targets are ineligible and remain disabled; their historical engineering and access evidence does not qualify active play on the corrected targets. The corrected Action 6-max and Madness 9-max require actual provisioning, protected client/engine delivery, authoritative template-guard installation and fresh stage evidence. Public launch remains NO_GO.
+
 ## Owner Update And Current Remaining Work
 
 On 2026-10-12 the owner removed fixed calendar waits. No minimum elapsed-day or batch-age requirement applies. Launch qualification depends on actual active-play evidence and the 54 gates, not an idle clock. Retain the 5,000-hand sample target, five-club coverage, both table sizes and existing security, financial, calibration, latency and recovery requirements.

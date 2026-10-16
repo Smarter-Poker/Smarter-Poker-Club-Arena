@@ -349,17 +349,17 @@ describe('discovery reads the operator modes', () => {
     ]);
     expect(
       parseDiscoveredClusters([
-        { id: A, cluster_mode: 'draining', lightning_enabled: true },
-        { id: B, cluster_mode: 'paused', lightning_enabled: true },
+        { id: A, template_name: 'action', cluster_mode: 'draining', lightning_enabled: true },
+        { id: B, template_name: 'action', cluster_mode: 'paused', lightning_enabled: true },
       ])
     ).toEqual([
       { clusterId: A, draining: true, hold: 'draining' },
       { clusterId: B, draining: true, hold: 'paused' },
     ]);
     // Earlier shapes are exactly as before (no hold key).
-    expect(parseDiscoveredClusters([{ id: A, cluster_mode: 'pending_off' }])).toEqual([
-      { clusterId: A, draining: true },
-    ]);
+    expect(
+      parseDiscoveredClusters([{ id: A, template_name: 'action', cluster_mode: 'pending_off' }])
+    ).toEqual([{ clusterId: A, draining: true }]);
     expect(lightningClusterStatusOf('draining')).toBe('ending');
     expect(lightningClusterStatusOf('pending_off')).toBe('ending');
     expect(lightningClusterStatusOf('switched_off')).toBe('ending');

@@ -30,9 +30,33 @@ function fixture(mode = '') {
             ? {
                 id: clusterId,
                 club_id: clubId,
-                ruleset_snapshot: { options: { is_private: mode !== 'public' } },
+                name: 'Lightning Pilot NLH Action 6',
+                template_name: mode === 'classic' ? 'classic' : 'action',
+                handedness: 6,
+                sb: 0.01,
+                bb: 0.02,
+                variant: 'nlh',
+                enabled: true,
+                must_move: true,
+                cluster_mode: 'must_move',
+                lightning_enabled: false,
+                ruleset_snapshot: {
+                  template: 'action',
+                  variant: 'nlh',
+                  regular_ante: 'sb',
+                  vpip_floor: 30,
+                  vpip_window: 10,
+                  bombs: { enabled: true, trigger: 'timed_15m', ante_bb: 2, boards: 2 },
+                  options: { is_private: mode !== 'public' },
+                },
               }
-            : { id: clubId, owner_id: owner, is_public: false, requires_approval: true },
+            : {
+                id: clubId,
+                name: 'Lightning Internal Pilot',
+                owner_id: owner,
+                is_public: false,
+                requires_approval: true,
+              },
       });
       q.limit = async (n) => ({
         data: mode === 'truncated' ? rows.slice(0, 1) : rows.slice(0, n),
@@ -141,7 +165,7 @@ test('invalid bounds and nonpilot targets refuse before reads', async () => {
     { maxBatch: 1001 },
     { maxBatch: 0 },
     { cursor: 'bad' },
-    { clusterId: id(99) },
+    { clusterId: 'not-a-uuid' },
     { to: '2100-01-01T00:00:00Z' },
     { from: 'bad' },
   ]) {
@@ -150,5 +174,21 @@ test('invalid bounds and nonpilot targets refuse before reads', async () => {
     const r = await collectReplayBatch(f.args);
     assert.equal(r.errorCode, 'INVALID_REPLAY_SCOPE');
     assert.equal(f.calls.length, 0);
+  }
+});
+
+test('Classic or arbitrary valid UUID is rejected before owner session inspection', async () => {
+  for (const mode of ['classic', '']) {
+    const f = fixture(mode);
+    let authReads = 0;
+    f.args.player.auth.getSession = async () => {
+      authReads++;
+      throw new Error();
+    };
+    if (mode === '') f.args.clusterId = id(99);
+    const r = await collectReplayBatch(f.args);
+    assert.equal(r.status, 'unknown');
+    assert.equal(authReads, 0);
+    assert.equal(f.calls.filter((x) => x[0] === 'fn_lightning_operator_hand_replay').length, 0);
   }
 });

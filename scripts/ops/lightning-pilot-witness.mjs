@@ -1,6 +1,7 @@
 /** One explicit private-pilot evidence operation. No activation, joins or funding. */
 import { writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
+import { resolvePilotTarget } from './lightning-pilot-targets.mjs';
 import { PILOT, pilotServiceFetch } from './prepare-lightning-private-pilot.mjs';
 import { assertPlayerPin, witnessPlayer, CONSENT_PLAYERS } from './lightning-pilot-player.mjs';
 import { witnessAdmission, ADMISSION_PLAYER } from './lightning-pilot-admission.mjs';
@@ -9,7 +10,6 @@ import { witnessCycle } from './lightning-pilot-cycle.mjs';
 import { witnessRecovery } from './lightning-pilot-recovery.mjs';
 import { collectReplayBatch } from './lightning-pilot-replay-batch.mjs';
 const CLUB = 'e14bc9f7-736d-425f-8f2c-e78305ebac1d';
-const CLUSTERS = ['babb43f1-368e-406f-a97a-a0d5013648b2', '3330ff9f-76ec-4487-b0c9-fc8ad8c2fdbb'];
 const KEY = 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export async function runPilotWitness(env = process.env, dependencies = {}) {
@@ -27,7 +27,7 @@ export async function runPilotWitness(env = process.env, dependencies = {}) {
   try {
     const mode = report.mode,
       clusterId = env.PILOT_CLUSTER_ID;
-    if (!CLUSTERS.includes(clusterId) || mode === 'invalid') throw new Error();
+    if (!UUID.test(clusterId) || mode === 'invalid') throw new Error();
     const pin = {
       clubId: CLUB,
       clusterId,
@@ -78,6 +78,7 @@ export async function runPilotWitness(env = process.env, dependencies = {}) {
       ...options,
       global: { fetch: pilotServiceFetch(env.SUPABASE_SERVICE_ROLE_KEY) },
     });
+    const firstTarget = await resolvePilotTarget(admin, clusterId, { active: mode !== 'replay' });
     if (mode !== 'replay') {
       // Consent is required unless this exact owner-authorized pin uses the normal UI.
       const profile = await admin
@@ -133,9 +134,26 @@ export async function runPilotWitness(env = process.env, dependencies = {}) {
         });
       else {
         const WebSocket = dependencies.WebSocket ?? (await import('ws')).default;
+        const second = await admin
+          .from('lightning_pool_session')
+          .select('id,cluster_id,player_id,state,exited_at')
+          .eq('id', env.PILOT_SECOND_POOL_SESSION_ID)
+          .maybeSingle();
+        if (
+          second.error ||
+          second.data?.id !== env.PILOT_SECOND_POOL_SESSION_ID ||
+          second.data.player_id !== pin.playerId ||
+          second.data.state !== 'active' ||
+          second.data.exited_at !== null ||
+          second.data.cluster_id === pin.clusterId
+        )
+          throw new Error('Second Own Pool Unverified');
+        const otherTarget = await resolvePilotTarget(admin, second.data.cluster_id);
+        if (otherTarget.target.templateName === firstTarget.target.templateName)
+          throw new Error('Other Pilot Target Required');
         const secondPin = {
           ...pin,
-          clusterId: CLUSTERS.find((id) => id !== pin.clusterId),
+          clusterId: second.data.cluster_id,
           poolSessionId: env.PILOT_SECOND_POOL_SESSION_ID,
         };
         assertPlayerPin(secondPin);

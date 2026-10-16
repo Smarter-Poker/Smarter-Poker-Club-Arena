@@ -102,6 +102,8 @@ export function assertStageTarget(game, clubId) {
     !target ||
     !UUID.test(game?.id ?? '') ||
     game.club_id !== clubId ||
+    game.template_name !== target.templateName ||
+    game.variant !== 'nlh' ||
     game.handedness !== target.handedness ||
     Number(game.sb) !== target.sb ||
     Number(game.bb) !== target.bb ||

@@ -1,5 +1,6 @@
 /** Finite browser witness for an explicitly pinned, already seated pilot horse.
- * No join, buy-in, funding, identity creation, consent acceptance or forged telemetry.
+ * No join, buy-in, funding, identity creation or forged telemetry.
+ * Consent requires explicit opt-in for the separately owner-authorized exact identity.
  * Horse input continues; only the ordinary UI and authoritative accepted actions count.
  */
 import { assertPilotClub, PILOT_TARGETS } from './prepare-lightning-private-pilot.mjs';
@@ -151,6 +152,78 @@ export function renderHand(payload, poolSessionId) {
   }
 }
 
+export const CONSENT_PLAYER = '0097309f-2864-4d09-b02b-56bca012a9c3';
+export async function acceptPlayerTerms(
+  page,
+  session,
+  pin,
+  url,
+  authorized = false,
+  remaining = () => 30000
+) {
+  if (
+    typeof authorized !== 'boolean' ||
+    (authorized && (pin.playerId !== CONSENT_PLAYER || session?.user?.id !== CONSENT_PLAYER))
+  )
+    throw new Error('Player Consent Authorization Mismatch');
+  await page.waitForFunction(
+    () =>
+      ['accepted', 'not_accepted', 'unknown'].includes(
+        document.querySelector('[data-tos-gate-status]')?.getAttribute('data-tos-gate-status')
+      ),
+    null,
+    { timeout: remaining() }
+  );
+  const gate = page.locator('[data-tos-gate-status]');
+  const status = await gate.getAttribute('data-tos-gate-status', { timeout: remaining() });
+  if (status === 'accepted') return { authorized, acceptedNow: false, status: 'accepted' };
+  if (status !== 'not_accepted' || !authorized)
+    throw new Error('Player Consent Not Authorized Or Unknown');
+  const matches = await page.evaluate(
+    async ({ base, key, token, id, timeout }) => {
+      const response = await fetch(`${base}/auth/v1/user`, {
+        headers: { apikey: key, Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(timeout),
+      });
+      const user = await response.json();
+      return response.ok && user.id === id;
+    },
+    {
+      base: url,
+      key: PUBLIC_KEY,
+      token: session.access_token,
+      id: CONSENT_PLAYER,
+      timeout: Math.min(15000, remaining()),
+    }
+  );
+  if (matches !== true) throw new Error('Player Consent Browser Identity Unverified');
+  const dialog = page.getByRole('dialog', { name: 'Terms Of Service', exact: true });
+  await dialog.waitFor({ state: 'visible', timeout: remaining() });
+  await dialog.locator('.tosc__terms').evaluate((terms) => {
+    terms.scrollTop = terms.scrollHeight;
+    terms.dispatchEvent(new Event('scroll', { bubbles: true }));
+  });
+  await dialog
+    .getByRole('checkbox', {
+      name: 'I Have Read And Agree To The Terms Of Service And Privacy Policy',
+      exact: true,
+    })
+    .check({ timeout: remaining() });
+  await dialog
+    .getByRole('button', { name: 'Accept & Continue', exact: true })
+    .click({ timeout: remaining() });
+  await page.waitForFunction(
+    () =>
+      document.querySelector('[data-tos-gate-status]')?.getAttribute('data-tos-gate-status') ===
+      'accepted',
+    null,
+    { timeout: remaining() }
+  );
+  if ((await gate.getAttribute('data-tos-gate-status', { timeout: remaining() })) !== 'accepted')
+    throw new Error('Player Consent Write Unverified');
+  return { authorized: true, acceptedNow: true, status: 'accepted' };
+}
+
 export async function witnessPlayer({
   admin,
   createClient,
@@ -158,8 +231,11 @@ export async function witnessPlayer({
   url,
   pin,
   timeoutMs = 120000,
+  acceptTerms = false,
 }) {
   assertPlayerPin(pin);
+  if (typeof acceptTerms !== 'boolean' || (acceptTerms && pin.playerId !== CONSENT_PLAYER))
+    throw new Error('Player Consent Authorization Mismatch');
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 240000)
     throw new Error('Bounded Player Witness Timeout Required');
   const deadline = Date.now() + timeoutMs;
@@ -226,6 +302,12 @@ export async function witnessPlayer({
       waitUntil: 'domcontentloaded',
       timeout: remaining(),
     });
+    report.subphase = 'consent';
+    report.cause = 'consent_unverified';
+    report.consent = await bounded(
+      acceptPlayerTerms(page, session, pin, url, acceptTerms, remaining),
+      remaining()
+    );
     for (const device of PLAYER_DEVICES) {
       const baseline = latestHand;
       await bounded(

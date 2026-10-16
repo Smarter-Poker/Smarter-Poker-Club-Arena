@@ -6,8 +6,84 @@ import {
   openPlayerSession,
   validatePlayer,
   witnessPlayer,
+  acceptPlayerTerms,
 } from './lightning-pilot-player.mjs';
 import { readFileSync } from 'node:fs';
+
+function termsPage(initial = 'not_accepted', identity = true) {
+  let status = initial;
+  const calls = [];
+  const dialog = {
+    waitFor: async () => calls.push('visible'),
+    locator: () => ({ evaluate: async () => calls.push('scroll') }),
+    getByRole: (role) =>
+      role === 'checkbox'
+        ? { check: async () => calls.push('check') }
+        : {
+            click: async () => {
+              calls.push('accept');
+              status = 'accepted';
+            },
+          },
+  };
+  return {
+    calls,
+    page: {
+      waitForFunction: async () => {},
+      locator: () => ({ getAttribute: async () => status }),
+      evaluate: async () => {
+        calls.push('identity');
+        return identity;
+      },
+      getByRole: () => dialog,
+    },
+  };
+}
+test('player consent default refuses an owed gate without writing', async () => {
+  const f = termsPage();
+  await assert.rejects(
+    acceptPlayerTerms(f.page, { user: { id: pin.playerId } }, pin, 'https://example.invalid')
+  );
+  assert.deepEqual(f.calls, []);
+});
+test('authorized pinned player accepts through visible normal UI and confirmed gate', async () => {
+  const f = termsPage();
+  const r = await acceptPlayerTerms(
+    f.page,
+    { user: { id: pin.playerId }, access_token: 'fixture-only' },
+    pin,
+    'https://example.invalid',
+    true
+  );
+  assert.equal(r.acceptedNow, true);
+  assert.deepEqual(f.calls, ['identity', 'visible', 'scroll', 'check', 'accept']);
+});
+test('accepted gate makes no duplicate acceptance request', async () => {
+  const f = termsPage('accepted');
+  assert.equal(
+    (
+      await acceptPlayerTerms(
+        f.page,
+        { user: { id: pin.playerId } },
+        pin,
+        'https://example.invalid',
+        true
+      )
+    ).acceptedNow,
+    false
+  );
+  assert.deepEqual(f.calls, []);
+});
+test('browser identity mismatch refuses consent before any UI write', async () => {
+  const f = termsPage('not_accepted', false);
+  await assert.rejects(
+    acceptPlayerTerms(f.page, { user: { id: pin.playerId } }, pin, 'https://example.invalid', true)
+  );
+  assert.deepEqual(f.calls, ['identity']);
+  await assert.rejects(
+    acceptPlayerTerms(f.page, { user: { id: pin.clubId } }, pin, 'https://example.invalid', true)
+  );
+});
 const pin = {
   playerId: '0097309f-2864-4d09-b02b-56bca012a9c3',
   poolSessionId: '11111111-1111-4111-8111-111111111111',
@@ -184,6 +260,8 @@ function fakeBrowser(refused = false) {
       }),
     });
   const page = {
+    waitForFunction: async () => {},
+    locator: () => ({ getAttribute: async () => 'accepted' }),
     on: (type, fn) => {
       assert.equal(type, 'websocket');
       fn({

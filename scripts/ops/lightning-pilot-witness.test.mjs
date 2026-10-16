@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { runPilotWitness } from './lightning-pilot-witness.mjs';
 import { PILOT } from './prepare-lightning-private-pilot.mjs';
 const SECRET = 'TEST_SECRET_MUST_NOT_ESCAPE';
-const PLAYER = '0097309f-0000-4000-8000-000000000001';
+const PLAYER = '0097309f-2864-4d09-b02b-56bca012a9c3';
 const POOL = '0097309f-0000-4000-8000-000000000002';
 const env = {
   PILOT_WITNESS_MODE: 'replay',
@@ -107,6 +107,7 @@ test('player requires explicit pin and previously recorded consent without legal
   assert.equal(r.status, 'observed');
   assert.equal(f.calls.at(-1).pin.playerId, PLAYER);
   assert.equal(f.calls.at(-1).timeoutMs, 240000);
+  assert.equal(f.calls.at(-1).acceptTerms, false);
   assert.equal(f.signedOut.length, 0);
   const blocked = fixture({ consent: false });
   assert.equal((await runPilotWitness(playerEnv, blocked)).status, 'unknown');
@@ -134,9 +135,33 @@ test('manual witness stays bounded, main-only and installs browser only for play
     'utf8'
   );
   assert.match(workflow, /workflow_dispatch:/);
+  assert.match(workflow, /accept_player_terms:[\s\S]*?type: boolean\s+default: false/);
+  assert.match(workflow, /PILOT_ACCEPT_PLAYER_TERMS: \$\{\{ inputs\.accept_player_terms \}\}/);
   assert.doesNotMatch(workflow, /schedule:|cron:/);
   assert.match(workflow, /if: github.ref == 'refs\/heads\/main'/);
   assert.match(workflow, /timeout-minutes: 15/);
   assert.match(workflow, /if: inputs.mode == 'player'/);
   assert.match(workflow, /if: always\(\)/);
+});
+
+test('only explicit consent for the exact authorized player may reach the normal UI without prior acceptance', async () => {
+  const playerEnv = {
+    ...env,
+    PILOT_WITNESS_MODE: 'player',
+    PILOT_PLAYER_ID: PLAYER,
+    PILOT_POOL_SESSION_ID: POOL,
+    PILOT_ACCEPT_PLAYER_TERMS: 'true',
+  };
+  const f = fixture({ consent: false });
+  assert.equal((await runPilotWitness(playerEnv, f)).status, 'observed');
+  assert.equal(f.calls.at(-1).acceptTerms, true);
+  for (const patch of [
+    { PILOT_WITNESS_MODE: 'replay' },
+    { PILOT_PLAYER_ID: POOL },
+    { PILOT_ACCEPT_PLAYER_TERMS: 'yes' },
+  ]) {
+    const blocked = fixture({ consent: false });
+    assert.equal((await runPilotWitness({ ...playerEnv, ...patch }, blocked)).status, 'unknown');
+    assert.equal(blocked.calls.length, 0);
+  }
 });

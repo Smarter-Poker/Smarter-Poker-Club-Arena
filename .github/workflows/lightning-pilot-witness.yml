@@ -7,6 +7,10 @@ on:
         type: choice
         options: [player, replay]
         required: true
+      accept_player_terms:
+        description: 'Explicit owner-authorized normal TOS and Privacy acceptance for player 0097309f-2864-4d09-b02b-56bca012a9c3 only'
+        type: boolean
+        default: false
       cluster_id:
         description: 'Exact private pilot cluster UUID'
         type: string
@@ -58,6 +62,7 @@ jobs:
           SP_EMAIL: ${{ secrets.SP_EMAIL }}
           SP_PASS: ${{ secrets.SP_PASS }}
           PILOT_WITNESS_MODE: ${{ inputs.mode }}
+          PILOT_ACCEPT_PLAYER_TERMS: ${{ inputs.accept_player_terms }}
           PILOT_CLUSTER_ID: ${{ inputs.cluster_id }}
           PILOT_PLAYER_ID: ${{ inputs.player_id }}
           PILOT_POOL_SESSION_ID: ${{ inputs.pool_session_id }}

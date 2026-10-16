@@ -52,7 +52,7 @@ export function stackedLobbyDoorsFixture() {
                     fetch('https://fixture.invalid/rest/v1/rpc/fn_dismiss_club_message', { method: 'POST' })
                       .then((r) => r.json())
                       .then((body) => { if (body.ok) { counts.dismissals += 1; setGreeting(false); } });
-                  }}>Do Not Show Me This Message Again</button>
+                  }}>Do Not Show Again</button>
                 </Modal>
                 <Modal isOpen={invitation} onClose={() => setInvitation(false)} size="small"
                        showCloseButton={false} ariaLabel="Diamond Spins">

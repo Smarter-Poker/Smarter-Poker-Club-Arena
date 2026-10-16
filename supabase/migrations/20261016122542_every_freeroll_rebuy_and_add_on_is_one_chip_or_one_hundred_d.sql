@@ -23,9 +23,12 @@
 -- 3. ca_diamond_economics records the new answer for freeroll_rebuy_cost and
 --    freeroll_addon_cost (the door reads the newest row), superseding the
 --    2026-10-06 one-Diamond answer.
--- 4. Every freeroll that has not started yet is repriced to the rule, through
---    the trigger itself. A started event keeps the contract its players
---    entered under (the trigger refuses to touch it).
+-- 4. Every freeroll nobody has entered yet is repriced to the rule, through
+--    the trigger itself. An event with a registered entrant keeps the
+--    contract it was entered under (fn_guard_managed_game_lifecycle); at
+--    writing that is 48 already-published events, the last starting
+--    2026-10-19 06:00 Chicago, and every event published after this runs at
+--    the new price.
 --
 -- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_freerolls_are_free_buy()'::regprocedure)) <> 'b4cd5955cb813a63b6364b9b9f1de844' AND public.fn_ca_diamond_economic_text('freeroll_rebuy_cost') = 'one_hundred_diamonds_to_the_prize_pool' AND public.fn_ca_diamond_economic_text('freeroll_addon_cost') = 'one_hundred_diamonds_to_the_prize_pool' AND position('v_rebuy_cost := 100; v_addon_cost := 100;' in pg_get_functiondef('public.fn_poker_diamond_create_tournament_core(jsonb,jsonb)'::regprocedure)) > 0)
 
@@ -209,10 +212,14 @@ VALUES
    'ALL REBUY ADD ON''S FOR MIDWAY UNION ARE 1 CHIP REBUY ADD ON NOT 2, DIAMOND REBUYS ARE 100 DIAMONDS (ONE DOLLAR)',
    'Dan 2026-10-16. A Diamond freeroll add-on is 100 Diamonds (one dollar), wholly to the prize pool. Supersedes the 2026-10-06 answer one_diamond_to_the_prize_pool.');
 
--- 4. Every freeroll that has not started takes the rule, through the trigger.
+-- 4. Every freeroll nobody has entered yet takes the rule, through the trigger.
+--    An event with a registered entrant keeps the contract it was entered
+--    under: fn_guard_managed_game_lifecycle refuses any change to its rebuy or
+--    add-on price, by design, and this migration does not go around it.
 UPDATE public.tournaments t
    SET rebuy_cost = t.rebuy_cost
  WHERE upper(COALESCE(t.status, '')) IN ('ANNOUNCED', 'REGISTERING')
+   AND NOT EXISTS (SELECT 1 FROM public.tournament_players tp WHERE tp.tournament_id = t.id)
    AND public.fn_is_free_buy_event(t.buy_in_amount, t.buy_in_fee, t.tournament_type, t.variant)
    AND (t.rebuy_cost IS DISTINCT FROM (CASE WHEN EXISTS (SELECT 1 FROM public.clubs c WHERE c.id = t.club_id AND c.asset = 'diamonds') THEN 100.00 ELSE 1.00 END)
      OR t.addon_cost IS DISTINCT FROM (CASE WHEN EXISTS (SELECT 1 FROM public.clubs c WHERE c.id = t.club_id AND c.asset = 'diamonds') THEN 100.00 ELSE 1.00 END));
@@ -223,6 +230,7 @@ BEGIN
   SELECT count(*) INTO n
     FROM public.tournaments t
    WHERE upper(COALESCE(t.status, '')) IN ('ANNOUNCED', 'REGISTERING')
+     AND NOT EXISTS (SELECT 1 FROM public.tournament_players tp WHERE tp.tournament_id = t.id)
      AND public.fn_is_free_buy_event(t.buy_in_amount, t.buy_in_fee, t.tournament_type, t.variant)
      AND (t.rebuy_cost IS DISTINCT FROM (CASE WHEN EXISTS (SELECT 1 FROM public.clubs c WHERE c.id = t.club_id AND c.asset = 'diamonds') THEN 100.00 ELSE 1.00 END)
        OR t.addon_cost IS DISTINCT FROM (CASE WHEN EXISTS (SELECT 1 FROM public.clubs c WHERE c.id = t.club_id AND c.asset = 'diamonds') THEN 100.00 ELSE 1.00 END));

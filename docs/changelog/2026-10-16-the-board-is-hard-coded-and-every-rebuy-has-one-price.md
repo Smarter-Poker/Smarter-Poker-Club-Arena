@@ -17,7 +17,12 @@ event alerts of 2026-10-16 fixed "AT ITS ROOT CAUSE AND HARD CODE FIXED".
   for an arena freeroll rebuy and add-on (was 1), and `ca_diamond_economics`
   records `one_hundred_diamonds_to_the_prize_pool` for both.
 - `diamondSpawnConfig` sends 100 for an arena freeroll.
-- Every freeroll not yet started was repriced to the rule by the migration.
+- Every freeroll nobody has entered is repriced by the migration. The 48
+  already-published freerolls with registered entrants keep the price they
+  were entered under, because `fn_guard_managed_game_lifecycle` refuses any
+  price change on a registered event; the last of them starts Mon 2026-10-19
+  06:00 Chicago, and every event published after the migration runs at the
+  new price.
 
 Migration `20261016122542_every_freeroll_rebuy_and_add_on_is_one_chip_or_one_hundred_d`.
 

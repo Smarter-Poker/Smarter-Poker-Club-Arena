@@ -44,7 +44,9 @@ describe('Club Arena Tournament Board lobby design', () => {
        reaches for display_name itself. */
     expect(page).toContain("pokerAlias={playerDisplayName(currentUser, 'arena')}");
     expect(code(page)).not.toMatch(/currentUser\?\.display_name/);
-    expect(page).toContain('playerId={currentUser?.player_number}');
+    /* Dan 2026-10-16: the person line prints the REFERRAL ID - the player
+       number for everyone, "KingFish" for player 1 (src/lib/referralId.ts). */
+    expect(page).toContain('playerId={referralIdFor(currentUser?.player_number)}');
     expect(page).toContain('playersPlaying={playersPlaying}');
     /* ── DAN'S 2026-09-04 MASTER (kingfish-v1) ─────────────────────────────
        "YOU NEED TO MAKE THE CLUB CARD LOOK EXACTLY LIKE THIS." The card is

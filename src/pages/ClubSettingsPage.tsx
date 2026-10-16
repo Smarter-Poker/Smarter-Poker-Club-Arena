@@ -6,6 +6,7 @@ import { useState, useEffect, useRef, useMemo, type ChangeEvent } from 'react';
 import { isClubStaff, type ClubRole } from '../types/clubRoles';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { referralIdFor } from '../lib/referralId';
 import { retryFetch } from '../utils/retryFetch';
 import { masterBus } from '../core/MasterBus';
 import { ClubsService } from '../services/ClubsService';
@@ -105,7 +106,9 @@ export default function ClubSettingsPage() {
   const { user } = useAuthUser();
   const toast = useToast();
 
-  const [playerNumber, setPlayerNumber] = useState<number | null>(null);
+  /* Holds the REFERRAL ID: the player number, or "KingFish" for player 1
+     (Dan 2026-10-16, src/lib/referralId.ts). */
+  const [playerNumber, setPlayerNumber] = useState<string | null>(null);
   const [inUnion, setInUnion] = useState<boolean>(false);
   const [clubNumericId, setClubNumericId] = useState<number | null>(null);
   const [resolvedClubIdentity, setResolvedClubIdentity] = useState<{
@@ -602,7 +605,7 @@ export default function ClubSettingsPage() {
         .maybeSingle()
         .then(({ data }) => {
           if (isMounted && data) {
-            setPlayerNumber(data.player_number);
+            setPlayerNumber(referralIdFor(data.player_number));
           }
         });
     }

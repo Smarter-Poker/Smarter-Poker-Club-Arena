@@ -57,6 +57,9 @@ import { mttBountyAmount } from '../tournament/mttBountyAllocation.js';
 import { mysteryBountyCreationColumns } from '../domain/mysteryBountyCreation.js';
 import {
   TournamentRecurringService,
+  fixedBoardTemplate,
+  fixedFreeBuyRow,
+  recurringMttRow,
   MTT_PUBLISH_LEAD_MS,
   satelliteTargetIsDeliverable,
   type SatelliteTargetRow,
@@ -552,6 +555,38 @@ function asBool(v: unknown): boolean {
 // ═══════════════════════════════════════════════════════════════════════════════
 // SERVICE
 // ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * PURE. The row for one occurrence of a fixed-board schedule (Dan 2026-10-15,
+ * "PUT THEM ON A HARD CODED SCHEDULE"). `cfg.fixedBoard` names the template:
+ * a Free Buy slot ("Prime Time Free Buy (NLH)"), a lobby MTT ("Night Owl
+ * Special (NLH)") or a union MTT ("Union Grand Championship (NLH)"). Null for
+ * a name that is none of those, so the occurrence is refused and paged rather
+ * than guessed.
+ */
+export function fixedBoardRow(
+  schedule: Pick<TournamentScheduleRow, 'id' | 'club_id' | 'union_id' | 'name'>,
+  cfg: Record<string, unknown>,
+  startTime: Date
+): Record<string, unknown> | null {
+  const name = typeof cfg.fixedBoard === 'string' ? cfg.fixedBoard.trim() : '';
+  if (!name) return null;
+  const unionId = schedule.union_id ?? null;
+  const freeBuy = fixedFreeBuyRow(name, startTime, {
+    clubId: schedule.club_id,
+    unionId,
+    label: schedule.name,
+  });
+  if (freeBuy) return { ...freeBuy, schedule_id: schedule.id };
+  const template = fixedBoardTemplate(name);
+  if (!template) return null;
+  const row = recurringMttRow(template.config, startTime, {
+    clubId: schedule.club_id,
+    unionId,
+    xmtt: template.kind === 'union_mtt',
+  });
+  return { ...row, schedule_id: schedule.id };
+}
 
 export class ScheduledTournamentService {
   private pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -1336,6 +1371,24 @@ export class ScheduledTournamentService {
     cfg: Record<string, unknown>,
     startTime: Date
   ): Promise<Record<string, unknown> | null> {
+    /* THE FIXED BOARD (Dan 2026-10-15): a schedule row may name one of the
+       Midway Union's board templates instead of spelling a config out. The
+       occurrence is built by the SAME builder the old board timer used, so it
+       is that event column for column, at the schedule's fixed time. An
+       unknown template is a refused occurrence, which pages like any other. */
+    if (cfg.fixedBoard !== undefined) {
+      const fixed = fixedBoardRow(schedule, cfg, startTime);
+      if (!fixed) {
+        reportError(
+          new Error(
+            `[ScheduledTournaments] schedule ${schedule.id.slice(0, 8)} names an unknown fixed-board template "${String(cfg.fixedBoard)}" - skipping`
+          ),
+          'ScheduledTournaments.unknown_fixed_board_template'
+        );
+        return null;
+      }
+      return fixed;
+    }
     const linkedSatellite = isUnlimitedMtt({
       satellite_target_id: cfg.satellite_target_id,
       satelliteTargetId: cfg.satelliteTargetId,

@@ -1,0 +1,3 @@
+# server/src/services/theBoardIsAFixedSchedule.law.test.ts
+
+Dan, 2026-10-15: "TOURNAMENTS CAN NEVER FAIL, AND MUST ALWAYS RUN AND SPAWN, INSTEAD OF RANDOMLY SPAWNING THEM, PUT THEM ON A HARD CODED SCHEDULE", for the Midway Union and the Diamond Arena. The law pins that the five Free Buys, the 15 lobby MTT templates and the 5 union MTT templates are tournament_schedules rows at fixed America/Chicago times for both clubs (53 starts a day each), that every scheduled name builds the exact row the old board timer built, that the engine's Free Buy, lobby and union timers stand down for the Midway Union, and that a Diamond Arena occurrence is priced at its real entry total rather than read as a freeroll.

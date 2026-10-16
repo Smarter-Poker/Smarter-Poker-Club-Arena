@@ -5,6 +5,8 @@ import {
   installNaturalMultiRunWitness,
   readNaturalMultiRunHistory,
   initializeNaturalMultiRunObservers,
+  naturalMultiRunCandidateQuery,
+  eligibleNaturalMultiRunTable,
 } from '../e2e/support/naturalMultiRunMobile';
 
 const packet = { hand: 41, runs: 3, at: 100, recipients: ['winner'] };
@@ -109,6 +111,86 @@ it('observes the visible table rather than a retained hidden table', async () =>
 });
 
 const engineSha = '5780828e02d0f9c076f08bb503a4507599465928';
+const naturalCashCandidate = {
+  id: '00000000-0000-0000-0000-000000000001',
+  current_players: 6,
+  status: 'running',
+  game_type: 'cash',
+  tournament_id: null,
+  max_players: 6,
+  is_deleted: false,
+  is_template: false,
+  run_it_twice: true,
+  allow_run_it_twice: true,
+  run_it_twice_enabled: false,
+  run_it_mode: 'none',
+};
+it('discovers occupied running cash games instead of waiting tournaments', () => {
+  const query = naturalMultiRunCandidateQuery('club');
+  expect(Object.fromEntries(query)).toMatchObject({
+    club_id: 'eq.club',
+    status: 'eq.running',
+    game_type: 'eq.cash',
+    tournament_id: 'is.null',
+    max_players: 'gt.2',
+    current_players: 'gte.2',
+    is_deleted: 'eq.false',
+    is_template: 'eq.false',
+    order: 'current_players.desc,id.asc',
+    limit: '32',
+  });
+  expect(query.has('run_it_twice')).toBe(false);
+  for (const field of ['run_it_twice', 'allow_run_it_twice', 'run_it_twice_enabled'])
+    expect(query.get('select')!.split(',')).toContain(field);
+});
+it.each([
+  { status: 'waiting' },
+  { game_type: 'tournament' },
+  { tournament_id: 'tournament' },
+  { max_players: 2 },
+  { current_players: 1 },
+  { is_deleted: true },
+  { is_template: true },
+  { run_it_twice: false },
+  { allow_run_it_twice: false },
+])('refuses an ineligible natural multirun subject: %j', (change) => {
+  expect(eligibleNaturalMultiRunTable({ ...naturalCashCandidate, ...change })).toBe(false);
+});
+it('uses effective legacy RIT flags and does not mistake mode none for disabled', () => {
+  expect(eligibleNaturalMultiRunTable(naturalCashCandidate)).toBe(true);
+  expect(
+    eligibleNaturalMultiRunTable({
+      ...naturalCashCandidate,
+      run_it_twice: null,
+      allow_run_it_twice: null,
+    })
+  ).toBe(true);
+  expect(
+    eligibleNaturalMultiRunTable({
+      ...naturalCashCandidate,
+      run_it_twice: false,
+      allow_run_it_twice: false,
+      run_it_twice_enabled: true,
+    })
+  ).toBe(true);
+});
+
+it('keeps the baseline navigation budget separate from the single remaining media setup budget', async () => {
+  let now = 1_000;
+  await initializeNaturalMultiRunObservers(
+    [1, 2, 3, 4, 5, 6],
+    async (_table, navigationBudget, remainingSetup) => {
+      expect(navigationBudget).toBe(12_000);
+      const beforeMedia = remainingSetup();
+      now += 13_000; // Actual decoded art may finish after protocol admission.
+      expect(remainingSetup()).toBe(beforeMedia - 13_000);
+    },
+    1_000,
+    () => now
+  );
+  expect(now).toBe(79_000);
+});
+
 it('finishes each cold observer admission before starting the next, retaining all six', async () => {
   const events: string[] = [];
   let active = 0;

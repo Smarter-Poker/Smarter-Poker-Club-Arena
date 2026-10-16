@@ -1,9 +1,9 @@
 {
-  "status": "locally_qualified_not_pushed_or_installed",
+  "status": "pushed_pending_required_checks_and_installation",
   "base_revision": "d7c67a5e6dccd6d957bffc676e795fb1cf367c66",
   "migration_preimage_md5": "dcce64d000c3d5e45cc8faf1f6e83e92",
   "source_sha256": {
-    "supabase/migrations/20261016131548_legacy_learning_retirement_validates_each_locked_batch_once_.sql": "9ed389a7ffd542f408086d45ef2acab4c3617dcb58f3a5d5681d643fb28f2a6f",
+    "supabase/migrations/20261016131548_legacy_learning_retirement_validates_each_locked_batch_once_.sql": "61f73381be20672bd1055872f5b8bd2dec24fa5d0cb91cbfa4d658614a371213",
     "scripts/verification-harness/horse-legacy-test-learning-purge.py": "e3b304ae4bdb6f11010da7c95deb22f60e2a2e5307b438b5ae051be4707a56d7",
     "scripts/verification-harness/horse-legacy-batch-cache.py": "9d284a945f3d1415c32779cd33f5495b0e15c8ea78d37eca94c279b3143f7de1"
   },
@@ -131,7 +131,9 @@
         "shared_batches": 3,
         "facts_per_hand_per_batch": 2
       }
-    }
+    },
+    "qualified_migration_source_sha256": "9ed389a7ffd542f408086d45ef2acab4c3617dcb58f3a5d5681d643fb28f2a6f",
+    "comment_only_followup": "Added exact qualified function postimage live-proof annotation after native48. Executable SQL and function bytes unchanged; no new native run claimed."
   },
   "provider_checks": "pending",
   "production_installation": "pending",
@@ -139,6 +141,8 @@
   "local_checks": {
     "typescript": "passed",
     "policy_canonical_comparison": "passed",
-    "diff_whitespace": "passed"
-  }
+    "diff_whitespace": "passed",
+    "migration_live_proof_law": "21 passed"
+  },
+  "source_md5": "8124b25270585f86433b8f010c6a1c4a"
 }

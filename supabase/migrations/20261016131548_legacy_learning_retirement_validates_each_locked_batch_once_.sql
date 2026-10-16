@@ -4,6 +4,7 @@
 -- original call. Validate requested hands in each locked batch once per call.
 -- No qualification, lock, deadline, count/byte budget, ledger, financial or
 -- human-retention change. No persistent cache, job, trigger or new authority.
+-- @live-proof: COALESCE((SELECT md5(pg_get_functiondef(p.oid)) = '71e06db3bd454096fbd7bd605b9c0631' AND p.proowner = 'postgres'::regrole AND p.prosecdef AND p.proacl::text = '{postgres=X/postgres}' AND p.proconfig = ARRAY['search_path=pg_catalog, public, smarter_private','lock_timeout=2s'] FROM pg_proc p WHERE p.oid = to_regprocedure('smarter_private.purge_legacy_horse_learning(uuid[])')), false)
 BEGIN;
 SET LOCAL lock_timeout='2s';
 SET LOCAL statement_timeout='60s';

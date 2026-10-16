@@ -59,6 +59,40 @@ import { reportError } from '../../utils/errorReporter';
 import { supabase } from '../../lib/supabase';
 import { readLocalSession } from '../../lib/authUtils';
 
+/**
+ * A request the browser abandoned (the page navigated, the tab closed, the
+ * fetch was cancelled) is not a failure of the save or the read: it is the
+ * player leaving. Reporting it filed AbortError rows for every cold return.
+ * The write it belonged to stays marked unsynced and is finished next open.
+ */
+export function isAbortedRequest(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const e = error as { name?: unknown; message?: unknown; details?: unknown };
+  if (e.name === 'AbortError') return true;
+  const text = `${typeof e.message === 'string' ? e.message : ''} ${
+    typeof e.details === 'string' ? e.details : ''
+  }`;
+  return /AbortError|The operation was aborted|signal is aborted/i.test(text);
+}
+
+/** Storage-safe marker helpers shared by every lobby preference writer. */
+export function markUnsynced(key: string, unsynced: boolean): void {
+  try {
+    if (unsynced) localStorage.setItem(key, '1');
+    else localStorage.removeItem(key);
+  } catch {
+    /* storage unavailable: the in-session write order still holds */
+  }
+}
+
+export function isUnsynced(key: string): boolean {
+  try {
+    return localStorage.getItem(key) === '1';
+  } catch {
+    return false;
+  }
+}
+
 export type LobbyTabKey = 'ALL' | 'HOLDEM' | 'OMAHA' | 'LIMIT' | 'MIXED' | 'MTT' | 'SNG' | 'SPIN';
 export type LobbySortKey =
   | 'recommended'
@@ -201,13 +235,15 @@ export async function fetchRemoteViewPrefs(
       .eq('club_id', clubId)
       .maybeSingle();
     if (error) {
-      reportError(error, 'lobbyViewPrefs.fetchRemoteViewPrefs', { clubId });
+      if (!isAbortedRequest(error)) {
+        reportError(error, 'lobbyViewPrefs.fetchRemoteViewPrefs', { clubId });
+      }
       return null;
     }
     if (!data?.view_prefs || typeof data.view_prefs !== 'object') return null;
     return sanitizeViewPrefs(data.view_prefs);
   } catch (e) {
-    reportError(e, 'lobbyViewPrefs.fetchRemoteViewPrefs', { clubId });
+    if (!isAbortedRequest(e)) reportError(e, 'lobbyViewPrefs.fetchRemoteViewPrefs', { clubId });
     return null;
   }
 }
@@ -229,9 +265,15 @@ export function pushRemoteViewPrefs(
 ): void {
   if (!userId || !clubId) return;
   const key = `${userId}:${clubId}`;
+  /* THE CHOICE IS OWED TO THE ROW UNTIL THE ROW CONFIRMS IT. Marked before
+     the request leaves, cleared only by the last queued write succeeding. A
+     save the network dropped therefore stays recorded on this device, and the
+     next lobby open finishes that same write instead of letting the older row
+     overwrite the newer choice (see hasUnsyncedViewPrefs). */
+  markUnsynced(unsyncedViewKey(userId, clubId), true);
   // Preserve tap order: a slow earlier save must not land after the last tap.
   // Each action contributes one bounded write, with no timer or repair loop.
-  const write = async () => {
+  const write = async (): Promise<boolean> => {
     try {
       const { error } = await supabase.from('user_lobby_filters').upsert(
         {
@@ -242,17 +284,50 @@ export function pushRemoteViewPrefs(
         },
         { onConflict: 'user_id,club_id' }
       );
-      if (error) reportError(error, 'lobbyViewPrefs.pushRemoteViewPrefs', { clubId });
+      if (error) {
+        if (!isAbortedRequest(error)) {
+          reportError(error, 'lobbyViewPrefs.pushRemoteViewPrefs', { clubId });
+        }
+        return false;
+      }
+      return true;
     } catch (error) {
-      reportError(error, 'lobbyViewPrefs.pushRemoteViewPrefs', { clubId });
+      if (!isAbortedRequest(error)) {
+        reportError(error, 'lobbyViewPrefs.pushRemoteViewPrefs', { clubId });
+      }
+      return false;
     }
   };
   const previous = pendingViewWrites.get(key);
-  const pending = previous ? previous.then(write) : write();
+  let settled!: Promise<void>;
+  const pending = (previous ? previous.then(write) : write()).then((ok) => {
+    // Only the newest queued choice may declare this account+club synced.
+    if (ok && pendingViewWrites.get(key) === settled) {
+      markUnsynced(unsyncedViewKey(userId, clubId), false);
+    }
+  });
+  settled = pending;
   pendingViewWrites.set(key, pending);
   void pending.then(() => {
     if (pendingViewWrites.get(key) === pending) pendingViewWrites.delete(key);
   });
+}
+
+/**
+ * Does this device hold a choice the database never confirmed?
+ *
+ * True after a save that failed (offline, a dropped tab, a server error) and
+ * until a later save succeeds. The lobby reads it before it lets the row
+ * correct the cache: the row is the truth only once it has the latest choice,
+ * so an unconfirmed local choice is finished (re-sent) rather than discarded.
+ */
+export function hasUnsyncedViewPrefs(clubId: string, userId = currentUserId()): boolean {
+  if (!userId || !clubId) return false;
+  return isUnsynced(unsyncedViewKey(userId, clubId));
+}
+
+function unsyncedViewKey(userId: string, clubId: string): string {
+  return `${KEY_PREFIX}${userId}:${clubId}:unsynced`;
 }
 
 /**

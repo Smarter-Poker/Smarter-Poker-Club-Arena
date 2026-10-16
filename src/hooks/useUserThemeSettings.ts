@@ -543,6 +543,7 @@ export function useUserThemeRealtime(
   reconciliationRevision: number;
   retry: () => void;
 } {
+  attachThemeCacheFollower();
   const [state, setState] = useState<UserThemeRealtimeState>(
     userId && enabled ? (themeRealtimeByUser.get(userId)?.state ?? 'connecting') : 'local'
   );
@@ -638,6 +639,93 @@ function cacheAuthoritativeThemeRows(userId: string, rows: ThemeRow[]): void {
   );
 }
 
+/**
+ * The precedence stamp for a write this device just saw confirmed.
+ *
+ * It used to be the device clock. pickThemeRow compares that stamp against
+ * server times on the other rows, so a phone running a few minutes fast made
+ * its confirmed PLO row outrank a newer ALL choice saved on another device
+ * (2026-10-16). One step past the newest stamp already cached says the same
+ * thing ("this is the latest write this device knows of") with no clock in
+ * it, and the server's own time replaces it when the database echo arrives.
+ */
+function confirmationPrecedence(userId: string | null | undefined): string {
+  let newest = 0;
+  for (const row of readCachedThemeRows(userId)) {
+    const ms = Date.parse(String(row.updated_at ?? ''));
+    if (Number.isFinite(ms) && ms > newest) newest = ms;
+  }
+  return new Date(newest + 1).toISOString();
+}
+
+/**
+ * ONE ACCOUNT-WIDE CACHE FOLLOWER, attached on first use.
+ *
+ * Each mounted table hook merges only the bucket it renders, so a database
+ * echo for any other bucket (an NLH table open while the Studio saves PLO, or
+ * the Studio opened from Settings with no table at all) never reached the
+ * first-paint cache. The next PLO table then revealed the old felt and swapped
+ * it a moment later: the exact flash #7043 removed (2026-10-16). Authoritative
+ * echoes carry a server version, so merging the same one twice is a no-op.
+ */
+let themeCacheFollowerAttached = false;
+function attachThemeCacheFollower(): void {
+  if (themeCacheFollowerAttached) return;
+  themeCacheFollowerAttached = true;
+  /* Writes still saving, per `<user>:<bucket>`. While one is pending the echo
+     of an OLDER write records only its server version (metadataOnly), exactly
+     as the mounted hook does, so a delayed predecessor cannot repaint the
+     cache over the newer tap. */
+  const pending = new Map<string, Set<string>>();
+  masterBus.subscribe('CUSTOMIZATION_MUTATION_STATE', (event) => {
+    try {
+      const payload = event.payload;
+      if (payload.kind !== 'table-appearance') return;
+      const separator = payload.scope.lastIndexOf(':');
+      if (separator < 0) return;
+      const key = `${payload.scope.slice(0, separator)}:${canonicalGameType(
+        payload.scope.slice(separator + 1)
+      )}`;
+      const set = pending.get(key) ?? new Set<string>();
+      if (payload.state === 'pending') set.add(payload.mutationId);
+      else if (payload.state !== 'rolling-back') set.delete(payload.mutationId);
+      if (set.size) pending.set(key, set);
+      else pending.delete(key);
+    } catch {
+      /* never break the bus */
+    }
+  });
+  masterBus.subscribe('UI_THEME_CHANGED', (event) => {
+    try {
+      const body = ((event as { payload?: unknown })?.payload ?? event) as {
+        key?: string;
+        value?: unknown;
+        userId?: string;
+        mutationId?: string;
+        updatedAt?: string;
+      };
+      if (!body?.userId || body.mutationId || !body.updatedAt || !body.key) return;
+      const selection = body.value;
+      if (!selection || typeof selection !== 'object' || Array.isArray(selection)) return;
+      const clean: Partial<UserThemeSelection> = {};
+      for (const field of THEME_FIELDS) {
+        const value = (selection as Record<string, unknown>)[field];
+        if (typeof value === 'string' && value) {
+          clean[field] = (field === 'faceDeckId' ? normalizeFaceDeckId(value) : value) as never;
+        }
+      }
+      if (!Object.keys(clean).length) return;
+      const bucket = canonicalGameType(body.key);
+      const busy = Boolean(pending.get(`${body.userId}:${bucket}`)?.size);
+      if (mergeCachedThemeRow(body.userId, bucket, clean, body.updatedAt, true, busy)) {
+        advanceAccountThemeRevision(body.userId);
+      }
+    } catch {
+      /* a cache follower must never break the bus */
+    }
+  });
+}
+
 /** Returns false for an older/conflicting DB echo without changing any cache. */
 function mergeCachedThemeRow(
   userId: string | null | undefined,
@@ -707,6 +795,7 @@ export function useUserThemeSettings(
   tournamentType?: string,
   contextReady = true
 ) {
+  attachThemeCacheFollower();
   /**
    * null while a tournament's format is unresolved: the bucket is not yet
    * knowable, and guessing is what the load effect refuses to do.
@@ -886,7 +975,7 @@ export function useUserThemeSettings(
         // this on the first tap would make a failed ALL save outrank a valid
         // per-game row after refresh.
         if (event.payload.state === 'confirmed') {
-          mergeCachedThemeRow(userId, savedBucket, {}, new Date().toISOString());
+          mergeCachedThemeRow(userId, savedBucket, {}, confirmationPrecedence(userId));
         }
       }
     });

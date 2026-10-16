@@ -716,10 +716,24 @@ export function ThemeSettingsModal({
   };
   const [gameType, setGameType] = useState<string>(readScope);
   useLayoutEffect(() => {
-    setGameType(readScope());
-    // Read only on account handoff; opening the Studio keeps this selection.
+    /* Read on account handoff AND each time the Studio opens. Settings, the
+       hamburger menu and the table panel each keep a closed instance mounted,
+       so reading only at mount let one instance save to the scope another had
+       already moved off (2026-10-16). A choice made while open is written to
+       storage before setGameType, so reopening returns that same choice. */
+    if (isOpen) setGameType(readScope());
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scopeKey]);
+  }, [scopeKey, isOpen]);
+  useEffect(() => {
+    // Another browser tab moved the scope: follow it while this one is open.
+    if (!isOpen) return;
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === scopeKey) setGameType(readScope());
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scopeKey, isOpen]);
   const [selection, setSelection] = useState<ThemeSelection>({ ...DEFAULT_SELECTION });
   const [saving, setSaving] = useState(false);
   const [previewFinalTable, setPreviewFinalTable] = useState(false);

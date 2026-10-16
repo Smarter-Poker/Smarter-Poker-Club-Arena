@@ -26,9 +26,12 @@ def qualify(e,base,q):
  malformed=e.database(d)
  prior=e.database(d)
  e.sql(prior,file=q.ROOT/q.CACHE_MIGRATION,label='requested-prior-cache-installed')
+ e.sql(prior,file=q.ROOT/q.REQUESTED_MIGRATION,label='compaction-prior-requested-set-installed')
  e.sql(newer,file=q.ROOT/q.CACHE_MIGRATION,label='cache-followup-installed')
  e.sql(newer,file=q.ROOT/q.REQUESTED_MIGRATION,label='requested-keyset-installed')
+ e.sql(newer,file=q.ROOT/q.COMPACTION_MIGRATION,label='compaction-keyset-installed')
  edges=e.database(newer)
+ edge_prior=e.database(prior)
  def call(db,label):
   start=time.perf_counter();v=json.loads(e.sql(db,'SELECT '+q.PURGE+'(ARRAY['+','.join(map(q.lit,ids))+']::uuid[]);',label=label)[1]);return v,time.perf_counter()-start
  before=e.sql(d,q.PROTECTED_SNAPSHOT,label='cache-protected-before')[1]
@@ -49,9 +52,12 @@ def qualify(e,base,q):
  # Native-only instrumentation uses the identical unpurged clone.
  e.sql(instrumented,file=q.ROOT/q.CACHE_MIGRATION,label='cache-instrumented-followup')
  e.sql(instrumented,file=q.ROOT/q.REQUESTED_MIGRATION,label='requested-instrumented-followup')
+ e.sql(instrumented,file=q.ROOT/q.COMPACTION_MIGRATION,label='compaction-instrumented-followup')
  src=e.sql(newer,"SELECT pg_get_functiondef('smarter_private.purge_legacy_horse_learning(uuid[])'::regprocedure);",label='cache-exact-function')[1]
  assert src.count('FOR v IN SELECT value FROM jsonb_array_elements(b.canonical_payload::jsonb->7) LOOP')==1
  assert 'IF NOT batch_cache ? cache_key THEN' in src
+ assert 'ANY(purged::text[])' not in src and 'ANY(p_hand_ids::text[])' not in src
+ checks.append('compaction-no-per-tuple-uuid-array-cast-or-linear-search')
  checks.append('cache-classification-loop-only-inside-unseen-locked-key-branch')
  instrument=src.replace(' cache_bad boolean;', ' cache_bad boolean; cache_parse_count integer:=0;')
  # The declaration shares a line, so replace only the exact unique suffix.
@@ -78,6 +84,7 @@ def qualify(e,base,q):
  e.sql(malformed,"UPDATE horse_adaptive_observation_batches SET canonical_payload=jsonb_set(canonical_payload::jsonb,'{7,0}',to_jsonb('not-json'::text))::text WHERE batch_key="+q.lit(first)+';',label='cache-malformed-original-payload')
  e.sql(malformed,file=q.ROOT/q.CACHE_MIGRATION,label='cache-malformed-followup')
  e.sql(malformed,file=q.ROOT/q.REQUESTED_MIGRATION,label='requested-malformed-followup')
+ e.sql(malformed,file=q.ROOT/q.COMPACTION_MIGRATION,label='compaction-malformed-followup')
  code,_,err=e.sql(malformed,'SELECT '+q.PURGE+'(ARRAY['+','.join(map(q.lit,ids))+']::uuid[]);',label='cache-malformed-refused',check=False)
  assert code!=0 and 'invalid input syntax for type json' in err,err
  assert e.sql(malformed,'SELECT count(*) FROM smarter_private.horse_adaptive_legacy_learning_purges;',label='cache-malformed-no-partial-ledger')[1].strip()=='0'
@@ -85,7 +92,10 @@ def qualify(e,base,q):
 
  # Requested-key boundaries through the real final owner.
  def edge_call(values,label):
-  return json.loads(e.sql(edges,'SELECT '+q.PURGE+'('+values+');',label=label)[1])
+  value=json.loads(e.sql(edges,'SELECT '+q.PURGE+'('+values+');',label=label)[1])
+  prior_value=json.loads(e.sql(edge_prior,'SELECT '+q.PURGE+'('+values+');',label=label+'-prior')[1])
+  assert value==prior_value,(value,prior_value)
+  return value
  assert edge_call('ARRAY[]::uuid[]','requested-empty')['handsPurged']==0
  checks.append('requested-keyset-empty-request-remains-empty')
  assert edge_call('ARRAY['+q.lit(ids[0])+']::uuid[]','requested-single')['handsPurged']==1
@@ -99,16 +109,22 @@ def qualify(e,base,q):
  # A canonical NULL hand stays retained; membership NULL never means a match.
  null_tuple=json.dumps(['unknown','unknown',None,0,0,1790000000000])
  key=e.sql(edges,"SELECT batch_key FROM smarter_private.horse_adaptive_batch_hand_membership WHERE hand_digest=encode(sha256(convert_to("+q.lit(ids[2])+",'UTF8')),'hex') ORDER BY batch_key LIMIT 1;",label='requested-null-hand-batch')[1].strip()
- e.sql(edges,"UPDATE horse_adaptive_observation_batches SET canonical_payload=jsonb_set(canonical_payload::jsonb,'{7}',(canonical_payload::jsonb->7)||jsonb_build_array("+q.lit(null_tuple)+"::text))::text WHERE batch_key="+q.lit(key)+';',label='requested-null-hand-tuple')
+ for db in [edges,edge_prior]:
+  e.sql(db,"UPDATE horse_adaptive_observation_batches SET canonical_payload=jsonb_set(canonical_payload::jsonb,'{7}',(canonical_payload::jsonb->7)||jsonb_build_array("+q.lit(null_tuple)+"::text))::text WHERE batch_key="+q.lit(key)+';',label='requested-null-hand-tuple')
  r=edge_call('ARRAY['+q.lit(ids[2])+']::uuid[]','requested-null-hand-canonical')
  assert r['handsPurged']==1,r
  assert e.sql(edges,"SELECT EXISTS(SELECT 1 FROM horse_adaptive_observation_batches b CROSS JOIN LATERAL jsonb_array_elements(b.canonical_payload::jsonb->7) v WHERE b.batch_key="+q.lit(key)+" AND (v.value#>>'{}')::jsonb->>2 IS NULL);",label='requested-null-hand-retained')[1].strip()=='t'
  checks.append('requested-keyset-null-canonical-hand-is-not-selected')
+ assert snapshot(edges,'compaction-null-new-postimage')==snapshot(edge_prior,'compaction-null-prior-postimage')
+ checks.append('compaction-empty-single-duplicate-null-canonical-entire-postimages-identical')
  code,_,err=e.sql(newer,file=q.ROOT/q.REQUESTED_MIGRATION,label='requested-keyset-replay-refused',check=False)
  assert code!=0 and 'LEGACY_REQUESTED_SET_PREIMAGE_CHANGED' in err,err
  checks.append('requested-keyset-migration-replay-refused')
+ code,_,err=e.sql(newer,file=q.ROOT/q.COMPACTION_MIGRATION,label='compaction-keyset-replay-refused',check=False)
+ assert code!=0 and 'LEGACY_COMPACTION_SET_PREIMAGE_CHANGED' in err,err
+ checks.append('compaction-keyset-migration-replay-refused')
  # Current performance recorded rather than a fragile wall-time pass threshold.
  e.report['legacy_batch_cache']={'checks':checks,'original_seconds':at,'cached_seconds':bt,'prior_cache_seconds':ct,'shape':{'hands':250,'shared_batches':3,'facts_per_hand_per_batch':2},'same_receipt':a}
  e.report['source_sha256']['scripts/verification-harness/horse-legacy-batch-cache.py']=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
- e.discard(d);e.discard(newer);e.discard(instrumented);e.discard(malformed);e.discard(prior);e.discard(edges)
+ e.discard(d);e.discard(newer);e.discard(instrumented);e.discard(malformed);e.discard(prior);e.discard(edges);e.discard(edge_prior)
  return checks

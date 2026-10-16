@@ -523,6 +523,7 @@ Q "SELECT jsonb_build_object('fixtures', jsonb_agg(doc || jsonb_build_object('di
 groups=$(Q "SELECT sum(jsonb_array_length(doc -> 'plan' -> 'groups')) FROM pp.out")
 bash "$root/scripts/dev/test-lightning-private-discovery.sh"
 bash "$root/scripts/dev/test-lightning-private-join.sh"
+bash "$root/scripts/dev/test-lightning-private-pool-status.sh"
 players=$(Q "SELECT sum(jsonb_array_length(doc -> 'players')) FROM pp.out")
 horses=$(Q "SELECT sum(pp.horses(game)) FROM pp.cl")
 

@@ -268,7 +268,7 @@ it('hides already visible pending rows on a same-ID account epoch change until a
   );
   await screen.findByRole('tab', { name: 'Cash-Out', selected: true });
   fireEvent.click(screen.getByRole('tab', { name: 'Cash-Out' }));
-  await screen.findByText('876 Chips');
+  await screen.findByText('876.00 Chips');
   const nextRead = deferred<any>();
   state.pendingRead.mockReturnValue(nextRead.promise);
   state.epoch += 2;
@@ -277,9 +277,9 @@ it('hides already visible pending rows on a same-ID account epoch change until a
       <CashierPage />
     </MemoryRouter>
   );
-  expect(screen.queryByText('876 Chips')).toBeNull();
+  expect(screen.queryByText('876.00 Chips')).toBeNull();
   await act(async () => nextRead.resolve({ data: [], error: null }));
-  expect(screen.queryByText('876 Chips')).toBeNull();
+  expect(screen.queryByText('876.00 Chips')).toBeNull();
   expect(state.run).not.toHaveBeenCalled();
 });
 

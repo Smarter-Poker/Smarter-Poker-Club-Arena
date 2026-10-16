@@ -1,0 +1,6 @@
+{
+  "_owner": "fix/chip-drift-hand-in-transit-20261016. Migration 20261016172614_the_supply_meter_counts_a_hand_in_transit: the posthand_transit column the hourly supply meter writes. Installed through apply-merged-migration after the protected merge; its @live-proof reads the column and the meter's postimage md5.",
+  "columns": {
+    "ca_supply_snapshots": ["posthand_transit"]
+  }
+}

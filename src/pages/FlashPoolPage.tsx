@@ -1,3 +1,4 @@
+import { formatWalletChips } from '../utils/format';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  FLASH POOL PAGE — Fast-Fold Poker Lobby
@@ -360,7 +361,7 @@ export default function FlashPoolPage() {
                 </div>
                 {userBalance !== null && (
                   <div style={{ fontSize: '11px', color: '#60a5fa', marginTop: '2px' }}>
-                    Your Balance: {userBalance.toLocaleString()} Chips
+                    Your Balance: {formatWalletChips(userBalance)} Chips
                   </div>
                 )}
               </div>

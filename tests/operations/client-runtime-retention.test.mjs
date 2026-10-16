@@ -91,6 +91,8 @@ const backendToolPaths = [
   'scripts/ops/lightning-pilot-witness.mjs',
   'scripts/ops/lightning-pilot-witness.test.mjs',
   'scripts/dev/test-lightning-matcher-parity.sh',
+  'scripts/dev/test-lightning-private-pool-status.sh',
+  'scripts/dev/fixtures/lightning-private-pool-status.sql',
   'scripts/dev/test-lightning-private-discovery.sh',
   'scripts/dev/fixtures/lightning-private-discovery.sql',
 ];

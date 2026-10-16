@@ -1157,6 +1157,77 @@ describe('ClubDataPage', () => {
     await screen.findByText('Club Ledger Refreshed.');
   });
 
+  it('commits the first player read through repeated refreshes and rejects an outgoing club read', async () => {
+    const defaultRpc = rpcMock.getMockImplementation()!;
+    const pending: Array<{
+      fn: string;
+      args: Record<string, unknown>;
+      finish: (value: unknown) => void;
+    }> = [];
+    rpcMock.mockImplementation((fn: string, args: Record<string, unknown> = {}) => {
+      if (fn === 'ca_club_player_breakdown' || fn === 'ca_club_player_page') {
+        return new Promise((finish) => pending.push({ fn, args, finish }));
+      }
+      return defaultRpc(fn, args);
+    });
+    const visible = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    const finish = (reads: typeof pending, name: string) => {
+      const rows = [{ ...playerBreakdown.players[0], username: name }];
+      for (const read of reads) {
+        read.finish({
+          data:
+            read.fn === 'ca_club_player_breakdown'
+              ? playerBreakdownWithRows(rows, 1)
+              : playerPageFor(read.args, { rows }),
+          error: null,
+        });
+      }
+    };
+    try {
+      const view = render(<ClubDataPage />);
+      fireEvent.click(screen.getByRole('button', { name: 'Advanced', exact: true }));
+      await screen.findByText('Shark Table One');
+      fireEvent.click(screen.getByRole('tab', { name: 'Players' }));
+      await waitFor(() => expect(pending).toHaveLength(2));
+      for (let signal = 0; signal < 3; signal++) {
+        await act(async () => document.dispatchEvent(new Event('visibilitychange')));
+      }
+      // A refresh asks the same question. It must join the bounded first read,
+      // rather than steal its version and discard its eventual valid rows.
+      expect(pending).toHaveLength(2);
+      const refresh = screen.getByRole('button', { name: 'Refresh Club Ledger' });
+      await act(async () => {
+        fireEvent.click(refresh);
+        // Drain the already-resolved game/invoice reads. Players alone remain
+        // deferred, so a completed refresh here would be false success.
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      expect(refresh).toBeDisabled();
+      expect(screen.queryByText('Club Ledger Refreshed.')).not.toBeInTheDocument();
+      await act(async () => finish(pending.splice(0), 'First Player'));
+      await screen.findByText('First Player');
+      await screen.findByText('Club Ledger Refreshed.');
+      expect(screen.queryByText('Loading Players')).not.toBeInTheDocument();
+
+      // A deliberate sort and then a club change are different questions.
+      fireEvent.click(screen.getByRole('button', { name: 'Biggest Losers' }));
+      await waitFor(() => expect(pending).toHaveLength(2));
+      const outgoing = pending.splice(0);
+      routeState.clubId = 'b52545cc-9e1d-411b-9f1e-f9c4e76bf0e5';
+      view.rerender(<ClubDataPage />);
+      fireEvent.click(screen.getByRole('button', { name: 'Advanced', exact: true }));
+      await waitFor(() => expect(pending).toHaveLength(2));
+      await act(async () => finish(outgoing, 'Outgoing Player'));
+      expect(screen.queryByText('Outgoing Player')).not.toBeInTheDocument();
+      expect(screen.getByText('Loading Players')).toBeInTheDocument();
+      await act(async () => finish(pending.splice(0), 'Incoming Player'));
+      await screen.findByText('Incoming Player');
+      expect(screen.queryByText('Loading Players')).not.toBeInTheDocument();
+    } finally {
+      visible.mockRestore();
+    }
+  });
+
   it('keeps manual recovery available during a silent player reconciliation', async () => {
     render(<ClubDataPage />);
     fireEvent.click(screen.getByRole('button', { name: 'Advanced', exact: true }));
@@ -1268,6 +1339,73 @@ describe('ClubDataPage', () => {
       expect(gameCacheKey).toBeTruthy();
       const cached = JSON.parse(sessionStorage.getItem(gameCacheKey!) || '{}');
       expect(cached.data.snapshot.rows[0].name).toBe('Shark Table One');
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('lets the first player response paint during realtime invalidations', async () => {
+    let resolveBreakdown!: (value: unknown) => void;
+    let resolvePage!: (value: unknown) => void;
+    const totals = new Promise((resolve) => {
+      resolveBreakdown = resolve;
+    });
+    const firstPage = new Promise((resolve) => {
+      resolvePage = resolve;
+    });
+    const ordinaryRpc = rpcMock.getMockImplementation()!;
+    rpcMock.mockImplementation((fn: string, args?: Record<string, unknown>) => {
+      if (fn === 'ca_club_player_breakdown') return totals;
+      if (fn === 'ca_club_player_page') return firstPage;
+      return ordinaryRpc(fn, args);
+    });
+
+    render(<ClubDataPage />);
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced', exact: true }));
+    await screen.findByText('Shark Table One');
+    fireEvent.click(screen.getByRole('tab', { name: 'Players' }));
+    await screen.findByText('Loading Players');
+    act(() => realtimeState.busHandler?.({ clubId: CLUB_ID }));
+    // The existing realtime debounce is 750ms. Let that real callback execute
+    // while both first-paint RPCs remain deferred, rather than racing timers.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 850));
+    });
+    const reads = rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_player_page');
+    expect(reads).toHaveLength(1);
+    await act(async () => {
+      resolveBreakdown({ data: playerBreakdown, error: null });
+      resolvePage({ data: playerPageFor(), error: null });
+    });
+    expect(await screen.findByText('Table Regular')).toBeVisible();
+    expect(screen.queryByText('Loading Players')).not.toBeInTheDocument();
+  });
+
+  it('releases the first player read after failure so explicit recovery can succeed', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const ordinaryRpc = rpcMock.getMockImplementation()!;
+    let refused = true;
+    rpcMock.mockImplementation((fn: string, args?: Record<string, unknown>) => {
+      if (fn === 'ca_club_player_page' && refused) {
+        return Promise.resolve({
+          data: null,
+          error: { code: 'PGRST202', message: 'read unavailable' },
+        });
+      }
+      return ordinaryRpc(fn, args);
+    });
+    try {
+      render(<ClubDataPage />);
+      fireEvent.click(screen.getByRole('button', { name: 'Advanced', exact: true }));
+      await screen.findByText('Shark Table One');
+      fireEvent.click(screen.getByRole('tab', { name: 'Players' }));
+      const retry = await screen.findByRole('button', { name: 'Try Again' });
+      expect(screen.queryByText('Loading Players')).not.toBeInTheDocument();
+      expect(screen.queryByText('Table Regular')).not.toBeInTheDocument();
+      refused = false;
+      fireEvent.click(retry);
+      expect(await screen.findByText('Table Regular')).toBeVisible();
+      expect(screen.queryByRole('button', { name: 'Try Again' })).not.toBeInTheDocument();
     } finally {
       errorSpy.mockRestore();
     }
@@ -1757,6 +1895,16 @@ describe('ClubDataPage', () => {
       });
       expect(screen.getByText('Cached Loser')).toBeInTheDocument();
       expect(screen.queryByText('Retired Winner')).not.toBeInTheDocument();
+      act(() => realtimeState.busHandler?.({ clubId: CLUB_ID }));
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 850));
+      });
+      // The stale winner's finally must not release the newer loser request.
+      expect(
+        rpcMock.mock.calls.filter(
+          ([fn, args]) => fn === 'ca_club_player_page' && args?.p_sort === 'losers'
+        )
+      ).toHaveLength(1);
 
       await act(async () => {
         resolveLosers?.({

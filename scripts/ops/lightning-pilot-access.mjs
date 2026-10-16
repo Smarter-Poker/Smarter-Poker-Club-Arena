@@ -527,6 +527,32 @@ export async function runPilotAccess({
       ...g,
       accessTableIds: tables.data.filter((t) => t.cluster_id === g.id).map((t) => t.id),
     }));
+    report.poolStatusOwner = [];
+    report.phase = 'owner_pool_status';
+    for (const game of games) {
+      const observation = { clusterId: game.id, outcome: 'unknown' };
+      report.poolStatusOwner.push(observation);
+      const reply = await safely(() =>
+        player.rpc('fn_lightning_pool_status', { p_cluster_id: game.id })
+      );
+      const value = reply.data;
+      if (
+        !reply.error &&
+        value &&
+        typeof value === 'object' &&
+        !Array.isArray(value) &&
+        Number.isInteger(value.players) &&
+        value.players >= 0 &&
+        typeof value.joinable === 'boolean' &&
+        value.multi_table_limit !== null &&
+        typeof value.multi_table_limit === 'object' &&
+        !Array.isArray(value.multi_table_limit) &&
+        ['HOT', 'ACTIVE', 'THIN', 'BUILDING'].includes(value.status)
+      )
+        observation.outcome = 'positive';
+      if (observation.outcome !== 'positive')
+        fail('Owner Pool Status Positive Control Unavailable');
+    }
     report.phase = 'owner_sockets';
     for (const game of games) {
       const own = tables.data.filter((t) => t.cluster_id === game.id);
@@ -566,10 +592,23 @@ export async function runPilotAccess({
         browser: null,
         sockets: [],
         joins: [],
+        poolStatus: [],
         approved: false,
         funded: false,
       };
       report.states.push(stateObservation);
+      report.phase = `${state}_pool_status`;
+      for (const game of games) {
+        const observation = { clusterId: game.id, outcome: 'unknown' };
+        stateObservation.poolStatus.push(observation);
+        const reply = await safely(() =>
+          client.rpc('fn_lightning_pool_status', { p_cluster_id: game.id })
+        );
+        if (!reply.error && reply.data === null) observation.outcome = 'refused';
+        else if (!reply.error && reply.data !== undefined) observation.outcome = 'exposed';
+        if (observation.outcome !== 'refused')
+          fail('Outsider Private Pool Status Refusal Unverified');
+      }
       report.phase = `${state}_browser`;
       const browser = await observeBrowser(
         chromium,

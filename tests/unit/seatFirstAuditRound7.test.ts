@@ -143,8 +143,8 @@ describe('an unknown wallet balance is not printed as zero', () => {
     /* The word, not a dash: check-ui-text forbids em dashes in UI copy
        (Dan 2026-08-20) and a hyphen beside a number reads as a minus sign
        on a wallet figure, which is worse than the 0 this replaced. */
-    expect(table).toContain(
-      "{accountBalance === null ? 'Unknown' : Number(accountBalance).toLocaleString()}"
+    expect(table).toMatch(
+      /accountBalance === null\s*\? 'Unknown'\s*:\s*tableState\.arenaAsset === 'diamonds'\s*\? Number\(accountBalance\)\.toLocaleString\(\)\s*:\s*formatWalletChips\(accountBalance\)/
     );
     expect(table).not.toContain('Your Balance {Number(accountBalance || 0).toLocaleString()}');
   });

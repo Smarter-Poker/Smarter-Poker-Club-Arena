@@ -60,7 +60,7 @@ import {
   type WheelCardVerdict,
   type WheelFairnessVerdict,
 } from '../utils/wheelFairness';
-import { compactChips } from '../utils/format';
+import { compactChips, formatWalletChips, formatWalletDiamonds } from '../utils/format';
 import TodayLine from '../components/games/TodayLine';
 import {
   autoRunVerdict,
@@ -1804,8 +1804,12 @@ export default function DiamondWheelPage() {
           </>
         }
         bays={[
-          { label: 'Diamonds', value: compactChips(player?.diamonds ?? 0), ink: 'blue' },
-          { label: 'Club Chips', value: compactChips(player?.member_chips ?? 0), ink: 'silver' },
+          { label: 'Diamonds', value: formatWalletDiamonds(player?.diamonds ?? 0), ink: 'blue' },
+          {
+            label: 'Club Chips',
+            value: formatWalletChips(player?.member_chips ?? 0),
+            ink: 'silver',
+          },
           freeMode
             ? { label: 'Spin', value: welcomeMode ? 'Welcome' : 'Bonus', ink: 'gold' }
             : { label: 'Spin', value: compactChips(price), ink: 'silver' },

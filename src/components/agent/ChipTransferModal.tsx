@@ -1,3 +1,4 @@
+import { formatWalletChips } from '../../utils/format';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CHIP TRANSFER MODAL - Cashier-Based Chip Distribution
@@ -592,7 +593,7 @@ export default function ChipTransferModal({
     // credit line the server knows about and this browser does not, so the
     // server is the one to refuse an agent send.
     if (viaClubBank && senderBalance !== null && transferAmount > senderBalance) {
-      setError(`Your ${sourceLabel} Only Holds ${senderBalance.toLocaleString()} Chips.`);
+      setError(`Your ${sourceLabel} Only Holds ${formatWalletChips(senderBalance)} Chips.`);
       return;
     }
     if (!user?.id) return;
@@ -759,7 +760,7 @@ export default function ChipTransferModal({
               which of two RPCs moves it. "Your Balance" was true of neither. */}
           <span>Your {sourceLabel}:</span>
           <span className="balance-amount">
-            {senderBalance === null ? 'Unknown' : senderBalance.toLocaleString()}
+            {senderBalance === null ? 'Unknown' : formatWalletChips(senderBalance)}
           </span>
         </div>
         {senderRoleFailed && (
@@ -775,9 +776,7 @@ export default function ChipTransferModal({
         {recipientId && selectedRecipientData && (
           <div className="agent-balance">
             <span>To {selectedRecipientData.username}:</span>
-            <span className="balance-amount">
-              {destinationLabel}
-            </span>
+            <span className="balance-amount">{destinationLabel}</span>
           </div>
         )}
 
@@ -865,7 +864,7 @@ export default function ChipTransferModal({
                       <option key={r.id} value={r.id}>
                         {isSelf ? '(You) ' : ''}
                         {roleTag}
-                        {r.username} (Bal: {r.balance.toLocaleString()})
+                        {r.username} (Bal: {formatWalletChips(r.balance)})
                       </option>
                     );
                   })}
@@ -917,18 +916,17 @@ export default function ChipTransferModal({
                   {/* An unread balance is Unknown, never a fabricated 0 -> 0. */}
                   {senderBalance === null
                     ? 'Unknown'
-                    : `${senderBalance.toLocaleString()} → ${Math.max(0, senderBalance - parseFloat(amount)).toLocaleString()}`}
+                    : `${formatWalletChips(senderBalance)} → ${formatWalletChips(Math.max(0, senderBalance - parseFloat(amount)))}`}
                 </span>
               </div>
               <div className="preview-row">
                 <span>
-                  {selectedRecipientData.username} (
-                  {destinationLabel}):
+                  {selectedRecipientData.username} ({destinationLabel}):
                 </span>
                 <span>
                   {destinationBalance === null
                     ? 'Unknown'
-                    : `${destinationBalance.toLocaleString()} → ${(destinationBalance + parseFloat(amount)).toLocaleString()}`}
+                    : `${formatWalletChips(destinationBalance)} → ${formatWalletChips(destinationBalance + parseFloat(amount))}`}
                 </span>
               </div>
             </div>

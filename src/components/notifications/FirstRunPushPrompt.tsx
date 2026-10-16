@@ -47,6 +47,8 @@
  *
  * Copy is Title Case with no em dashes, per CLAUDE.md section 5.7.
  */
+import { supabase } from '../../lib/supabase';
+import { reportError } from '../../utils/errorReporter';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
@@ -156,6 +158,41 @@ type PendingAsk = null | {
 };
 
 export default function FirstRunPushPrompt() {
+  const { user } = useAuthUser();
+  const [verifiedOwner, setVerifiedOwner] = useState<string | null>(null);
+  const { pathname } = useLocation();
+  useEffect(() => {
+    let live = true;
+    let version = 0;
+    setVerifiedOwner(null);
+    const read = async () => {
+      if (!user?.id) return;
+      const request = ++version;
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('phone_verified')
+          .eq('id', user.id)
+          .maybeSingle();
+        if (error) reportError(error, 'FirstRunPushPrompt.phone');
+        if (live && request === version)
+          setVerifiedOwner(!error && data?.phone_verified === true ? user.id : null);
+      } catch (error) {
+        reportError(error, 'FirstRunPushPrompt.phone');
+        if (live && request === version) setVerifiedOwner(null);
+      }
+    };
+    void read();
+    window.addEventListener('profile-updated', read);
+    return () => {
+      live = false;
+      window.removeEventListener('profile-updated', read);
+    };
+  }, [user?.id, pathname]);
+  return user?.id && verifiedOwner === user.id ? <VerifiedPhonePushPrompt /> : null;
+}
+
+function VerifiedPhonePushPrompt() {
   // Nothing renders until somebody is signed in: the subscribe endpoint is
   // authenticated, so prompting a signed-out visitor could only ever fail.
   const { user } = useAuthUser();

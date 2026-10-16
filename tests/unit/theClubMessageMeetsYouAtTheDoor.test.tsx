@@ -27,6 +27,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   entry: null as any,
+  posts: [] as Array<{ id: string; title: string; content: string }>,
   dismissCalls: [] as string[],
   saveCalls: [] as any[],
   rpc: null as any,
@@ -34,6 +35,15 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
+    from: () => {
+      const q: any = {
+        select: () => q,
+        eq: () => q,
+        order: () => q,
+        limit: async () => ({ data: mocks.posts, error: null }),
+      };
+      return q;
+    },
     rpc: (name: string, args: any) => {
       if (name === 'fn_get_club_entry_message') {
         return Promise.resolve({ data: mocks.entry, error: null });
@@ -52,6 +62,9 @@ vi.mock('../../src/lib/supabase', () => ({
       return Promise.resolve({ data: null, error: null });
     },
   },
+}));
+vi.mock('../../src/hooks/useAuthUser', () => ({
+  useAuthUser: () => ({ user: { id: 'player-1' } }),
 }));
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: () => {} }));
 
@@ -84,6 +97,8 @@ const click = async (name: RegExp) => {
 
 describe('the club message meets you at the door', () => {
   beforeEach(() => {
+    localStorage.clear();
+    mocks.posts = [];
     mocks.entry = SHOWING;
     mocks.dismissCalls = [];
     mocks.saveCalls = [];
@@ -99,6 +114,35 @@ describe('the club message meets you at the door', () => {
    * The whole point of the rewrite. Three lobby elements printed this message
    * with three different editors and three different length caps.
    */
+  it('does not greet again after revisiting the same club today', async () => {
+    const first = renderGreeting();
+    await screen.findByText(SHOWING.message);
+    first.unmount();
+    renderGreeting();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('greets again on the next club day without retiring the message revision', async () => {
+    localStorage.setItem('sp-club-greeting-day:player-1:club-1', '2020-01-01');
+    renderGreeting();
+    expect(await screen.findByText(SHOWING.message)).toBeInTheDocument();
+    expect(mocks.dismissCalls).toEqual([]);
+  });
+
+  it('shows available announcements directly even when there is no greeting', async () => {
+    mocks.entry = { ok: true, should_show: false };
+    mocks.posts = [{ id: 'post-1', title: 'club update', content: 'new games today' }];
+    renderGreeting();
+    expect(await screen.findByText('Club Update')).toBeInTheDocument();
+    expect(screen.getByText('New Games Today')).toBeInTheDocument();
+    expect(screen.queryByText('View Club Announcements')).toBeNull();
+    await click(/^close$/i);
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
   it('renders nothing at all when the server says not to', async () => {
     mocks.entry = { ...SHOWING, should_show: false };
     renderGreeting();
@@ -116,7 +160,7 @@ describe('the club message meets you at the door', () => {
   it('closes on the X without silencing the club', async () => {
     renderGreeting();
     await screen.findByText(SHOWING.message);
-    await click(/close club message/i);
+    await click(/^close$/i);
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(mocks.dismissCalls, 'the X must never write a dismissal').toEqual([]);
   });
@@ -125,7 +169,7 @@ describe('the club message meets you at the door', () => {
   it('records the dismissal when asked not to show it again', async () => {
     renderGreeting();
     await screen.findByText(SHOWING.message);
-    await click(/do not show me this message again/i);
+    await click(/do not show again/i);
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(mocks.dismissCalls).toEqual(['club-1']);
   });

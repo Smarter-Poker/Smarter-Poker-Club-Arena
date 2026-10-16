@@ -86,6 +86,19 @@ const lobby = () =>
   );
 
 describe('the lobby prints the crash odds the server plays', () => {
+  it('prints exact wallet cents and whole Diamond counts while keeping game prices separate', async () => {
+    mocks.gameState.mockImplementation(async (_club: string, game: string) => ({
+      ...crashState([10000]),
+      game,
+      player: { diamonds: 12345, spendable: 12345, member_chips: 1000 },
+    }));
+    lobby();
+    expect(await screen.findByText('1,000.00')).toBeTruthy();
+    expect(screen.getByText('12,345')).toBeTruthy();
+    expect(screen.queryByText('12.3K')).toBeNull();
+    expect(screen.queryByText('1K')).toBeNull();
+  });
+
   it('derives the instant crash from the minimum, and the cap from the quote', async () => {
     mocks.gameState.mockImplementation(async (_club: string, game: string) =>
       game === 'crash'

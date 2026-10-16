@@ -209,6 +209,13 @@ generation 4. The worker and exact-replay tests return to the null-selection for
   (all four packs, same), `RemainingVariantNetAction.test.ts`, `HorsePhase8Tournament.test.ts`,
   and the Phase 11/12 completion-share tests.
 - Source pins: the net-action passes are called with no deadline and no `economicsStart`.
+- The P12.3 completion reader (`server/src/scripts/phase12CompletionRecord.test.ts`, outside the
+  engine suite, so the pre-push hook found it): its window built the one river work-budget fallback
+  from a live decision on a 5 ms clock, which since this change does the declared work and counts
+  complete (river 131 / 0 instead of 130 / 1). The fallback is now what it is, an EARLIER release's
+  journaled receipt (`reason: 'work_budget'`), and the reader still counts it as `workBudget` and
+  admission still refuses the record below the floor; the same test asserts a slow and a stalled
+  clock now produce a `completed` receipt. `horsePhase12CompletionOutcome` is unchanged.
 - `RemainingVariantFlo8Round4.test.ts`: section 2.
 - Contract pins updated with the reasons above.
 - Server engine suite (`src/engine src/services src/benchmark`): 862 files passed, 1 skipped;

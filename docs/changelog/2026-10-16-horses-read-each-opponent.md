@@ -139,6 +139,78 @@ frame makes the same decision.
 - The held v17 river-probe patch (default off) is applied; its audit migration
   is re-reserved as 20261016182539.
 
+## Added to the same requalification (second pass, 2026-10-16)
+
+Each of these touches a hashed file (`HorseLogic.ts`, `HorseMind.ts`,
+`HorseOpponentExploit.ts`, `GtoPostflopV31.ts`), so they ride this one
+requalification rather than voiding the next.
+
+- **The read crosses worker shards.** `observeExploitRow` (decay-and-add onto
+  a bounded store) and `mergeExploitRows` (a sandbox's rows merged into a live
+  store) in `HorseOpponentExploit.ts`; `HorseMind.observeExploitHand` now uses
+  the same routine, and `HorseMind.sandboxExploitRows(sandbox)` /
+  `HorseMind.mergeSandboxExploit(sandbox)` are the entry points the worker
+  mirror (`horseDecision/mindMirror.ts`, `mergeSandboxIntoLiveMind`, branch
+  `claude/horse-realtime-phase15-20261016`, its "FOLLOW-UP" section) calls
+  after a mirrored hand. A sandbox starts empty, so each row it holds is
+  exactly one hand's increments: merging it decays and adds onto the live row,
+  or inserts a copy. `HorseOpponentExploit.test.ts` proves a merged one-hand
+  sandbox leaves exactly the counters and the read that observing the hand
+  live leaves (decay included, a new player included, over a 40-hand
+  sequence too). The mirror itself is not changed here (it is not a hashed
+  file); it must call `HorseMind.mergeSandboxExploit(sandbox)` and count
+  `HorseMind.sandboxExploitRows(sandbox).size` in its nothing-to-learn check.
+- **Exploit rows are evicted least recently used.** The store (16,000
+  `scope|player` rows) evicted the first-INSERTED rows, so a regular who had
+  played every hand since the restart was the first to go. An updated row now
+  moves to the most-recently-used end; eviction (to three quarters of the cap)
+  takes the stalest.
+- **`aSelectedPackShipsItsEvidence.law.test.ts` is whole again.** The first
+  pass let a committed selection pass when refused for
+  `policy_digest_mismatch`. A non-null, unwithdrawn selection must be
+  admitted; the moved digests are handled by null selections, which the law
+  skips.
+- **Two layers the league measured losing are default OFF** (the v17 river
+  probe precedent, commit 8cc137070e8):
+  - `shortdeck_v23`, -0.36 +/- 0.14 bb/100 over 44 runs. Only the short-deck
+    half of `v23Variants` (one-pair thin value shrinks, draws earn +0.02
+    implied credit) moves behind the new opt-in `v23ShortDeck`; the plo8
+    low-only draw half (`plo8_v23_lowdraw` +1.63 +/- 0.18) stays on, the way
+    V46 was split on 2026-10-05.
+  - `v32_facing_defense` (heads-up NLH), -0.31 +/- 0.15 over 41 runs:
+    `v32FacingDefense` is opt-in. It fired live (2026-10-16: 28,461 calls,
+    10,671 folds, 8,456 strong passes, 44,304 no-range misses), so heads-up
+    NLH facing-bet decisions change: the heuristic call line decides them.
+  - League matchups keep their names and signs (arm A turns the layer on);
+    `full_vs_v2_legacy` lists `v23ShortDeck: false`. Ledger flags record the
+    defaults; the `v32_*` receipt floor is removed.
+- **An empty V31 store is skipped before the consult.** V31 is parked (the
+  PioSOLVER hosts are off) and its store has no cells, so every eligible
+  heads-up hold'em postflop decision did the consult's work and recorded
+  `v31_certified_miss_empty_store` plus two miss-axis counters (306,763 misses
+  on 2026-10-16). `gtoV31StoreIsEmpty(datasetChecksum)` is checked first; an
+  empty store records one `v31_certified_skip_empty_store` and decides exactly
+  as the miss did (`GtoPostflopV31.test.ts`: identical to the consult switched
+  off over 80 spots, no miss counters; a stocked store is still consulted).
+- **The audit knows** (migration 20261016182539, extended in its one
+  transaction; every body rebuilt from the installed one, md5(prosrc) checked
+  against production: `fn_audit_layer_silence` 3c8ce9e8...,
+  `fn_audit_league_pooled_findings` 542d0d69..., `fn_audit_layer_drift`
+  8e70a9a5... = 20261005190000):
+  `fn_audit_league_pooled_findings` treats a significant negative
+  `shortdeck_v23` / `v32_facing_defense` as confirming the default and a
+  significant positive as the flag earning its default back;
+  `fn_audit_layer_drift` section 1 skips layers the silence check already
+  called `layer_default_off` (v17*river_probe would otherwise also have been a
+  `layer_went_silent` warn), notes the `v32_defend*\*`counters as`layer*default_off`, and reports an outcome counter (`\_reason*`,
+`unavailable`, `_skip_`, `_miss_`, `v44*declined*`; section 2 already never
+judged them as layers) as info `outcome_counter_went_quiet` instead of a
+  warn. Applied to a scratch Postgres 17 with stub tables and exercised: the
+  three functions create, and the findings are the ones above.
+- **Neutrality.** The corpus was recorded on main, which played the short-deck
+  V23 half and V32 by default, so the replay pins `v23ShortDeck: true` and
+  `v32FacingDefense: true` explicitly, as it pins `v17RiverProbe: true`.
+
 ## What this costs, and what is not verified
 
 - The PLO4 (Phase 10), PLO5/6/8 (Phase 11) and FLH (Phase 12) live
@@ -174,29 +246,29 @@ v3, Phase 11 v5, Phase 12 v2, Phase 13 v2.
 | Phase | Pack                | Kind     | Digest                                                           |
 | ----- | ------------------- | -------- | ---------------------------------------------------------------- |
 | 8     | tournament postflop | policy   | 3eaf56053395fb046c8bce310e4175c0504d6399b04958900c5fd00e7661fd3a |
-| 10    | PLO4                | policy   | 413bc42984185a3ec1547858ec7116fa44bd0e3c1c33b1fd05d8f6fa6fc62378 |
+| 10    | PLO4                | policy   | 99028825a6cd1e009958a665ca2661e8a0bd895731e8917ed9e1e9e3874e87a5 |
 | 10    | PLO4                | contract | 83ab185b2a2df72876b73d61ece6ea8c2f03f364ce252deecbfcde392ae5f838 |
-| 11    | PLO5                | policy   | c2ca1d89c2655f05c5f33c5dd8ac388005f1bb41e659f3165becf480d77ebc49 |
-| 11    | PLO6                | policy   | a5017462c7c169bc3d74d51d477b20f18a44403b23e1d8325aff25e85f4e2cc0 |
-| 11    | PLO8                | policy   | 6aef492dcb1d30236a28efca6b1b94ce625c064869aca712796781292b03193b |
+| 11    | PLO5                | policy   | 5a8705169d087f24fb73007ef0df0a832996dacd898846c366779f42348b0390 |
+| 11    | PLO6                | policy   | 160000216a405526b567ff6a8729e9a1780d5dd3e7b7196bef0308111ed56686 |
+| 11    | PLO8                | policy   | d4f5111ab937985524516a48221348743bbf275380dd4195756216bb58bce742 |
 | 11    | PLO5, PLO6, PLO8    | contract | 0716bb254de73014914ca086aa26b6ffe499bb2e50897432de6a9e855da5ee05 |
-| 12    | Short Deck          | policy   | 8c067dda57d9a063fa70ea836c3dd6c964918cebb3f4a71b746797f9567d9faf |
-| 12    | Crazy Pineapple     | policy   | e27d69f1517fe011cd5259be9c8c9ee8e40d8cb5a494512b9865f13f4c66929c |
-| 12    | FLH                 | policy   | 95b99b8c792eb83ac00e9e368fae5e2dcec983e2a86415c16eb3b72b936031c6 |
-| 12    | FLO8                | policy   | 7c16066271f626b6c8dc564c74dbf8e79eb7c0b9ffcfd61eaf02196ed15c7033 |
+| 12    | Short Deck          | policy   | c3265d5a910bc85dfb13b27f0950f270f92c16012a68b13d92e8926fd1d25961 |
+| 12    | Crazy Pineapple     | policy   | 5324f9c8e60db4355fa58c4f14abbb907a04896678f732807c3202089774c2bd |
+| 12    | FLH                 | policy   | d3d1b293842bcdecfd01f8491f5c3f4b42e41c95c862868fc84df910c499e36f |
+| 12    | FLO8                | policy   | 39e27a78acabb3b6ef07e3e4421be944c35cc2a7d19ad88988fdceee1d05a757 |
 | 12    | Short Deck          | contract | 0abc9fa4e6e850989e0007a8f5be682ac1a14725c11a6272641533a2000884e2 |
 | 12    | Crazy Pineapple     | contract | 0abc9fa4e6e850989e0007a8f5be682ac1a14725c11a6272641533a2000884e2 |
 | 12    | FLH                 | contract | fafbba8dc23ebc59b5aadf78fdcc47cd6f504baf9bcd10b07970ad7fbea501c0 |
 | 12    | FLO8                | contract | 0abc9fa4e6e850989e0007a8f5be682ac1a14725c11a6272641533a2000884e2 |
-| 13    | nlh                 | policy   | 36e279bae7bcba1eaba3682564cbafae1af749814ebd58540d466e9cbe603df0 |
-| 13    | short_deck          | policy   | 04c6b48b4139299baee7ad8d71757674494bcd27649605a5bb928fc5d7ac1820 |
-| 13    | flh                 | policy   | 2ac7a5c4f011e9d65ef032d5724e7d34ddbd3192e328b957289dfa0d9024fb2b |
-| 13    | pineapple           | policy   | fa896bb8aec065c926607d8bbb43957801d945ff19f639535481d2d43a965e7f |
-| 13    | plo4                | policy   | 35333017625c422fc31e9fa9914a28059ab9366492a275e45f491bcce8423adb |
-| 13    | plo5                | policy   | aa866142a97a355f1009c9cab2b985c307ebdcbc5a4ed9bc528d63dbe657a7f6 |
-| 13    | plo6                | policy   | 8057b1729af8642e55cf82c83ab159c89c1924c81affaa8b09e3111cdf5833fd |
-| 13    | plo8                | policy   | 4ef3da0b48e4ba67681c49f3bd3457dfa39d62979e4fc9458e3da72259202276 |
-| 13    | flo8                | policy   | 9d7885c8839c4b84f31eceecf8295d06df6d9e7f67a22cc866d84b15eba95782 |
+| 13    | nlh                 | policy   | 07904a4cc84f0648e2784b4179d58f58cde86f535aa30451aa502a1ae3dd5fb5 |
+| 13    | short_deck          | policy   | 42c75987e0bcedf1195f35c8f35881517629e49c8ebd2ef6c832c47bd63c2401 |
+| 13    | flh                 | policy   | f90f2177384f4ec5096fd0bdaab6104f59486ec154560ef2d34d5b3fc1da0224 |
+| 13    | pineapple           | policy   | 0c0db8305fc3986c082a38e3d47def03432147c69ecd1454f6dfae37d5f4d6a0 |
+| 13    | plo4                | policy   | 10907789e6bf904a3ff59bb56674f740a6098836c458d3595640570ccfa3d545 |
+| 13    | plo5                | policy   | 49ab93c168ed38a8684cf736c415101ce981e8536490843bd668a0089a64dede |
+| 13    | plo6                | policy   | bdac2f924d29e6e8f0e0f48a3beaecb1a794349fde2f8dae8d2bb88ccf983eaf |
+| 13    | plo8                | policy   | 3fe6cbd6ea349d8229d68ad8377cae783a90a8d8586d10d20efac35b59584ba7 |
+| 13    | flo8                | policy   | 33d7d93610c8801bfaf435e99bf9c2ee68540587cdb288885fcc8127231f4066 |
 | 13    | all                 | contract | 0cd88d970c600fb64933337672af349e9d106402d4edfcc3510e1f26374741f8 |
 
 Phase 8 has no strength-contract digest (its league contract is checked key by
@@ -205,10 +277,19 @@ FLH keeps the frozen Phase 12 contract v1; Short Deck, Crazy Pineapple and FLO8
 are on Phase 12 contract v2. No selection is set: every pack above is shadow
 until the requalification measures exactly these digests.
 
-Combined-tree tests (after the main merge): server engine suite
-(`src/engine src/services src/benchmark`) 866 files passed, 1 skipped; 15,778
-tests passed, 168 skipped. The neutrality law with `HORSE_NEUTRALITY_FULL=1`
-(all 600 hands of every run): 20 of 20. `tsc --noEmit -p server` clean. Root
-law-registry and migration laws: 9 files, 1,028 tests passed. Migration
-20261016182539 is unique against main, all 823 remote branches and every local
-worktree.
+Recomputed after the second pass (commit c7be84974e1; the commits after it
+change only tests and docs). Every Phase 10, 11, 12 and 13 policy digest moved
+again (`HorseLogic.ts`, `HorseOpponentExploit.ts`, `GtoPostflopV31.ts` are in
+all four boundaries, `HorseMind.ts` in 10, 11 and 12); Phase 8 and every
+contract digest are unchanged.
+
+Combined-tree tests (second pass, final commit): the FULL server suite
+(`cd server && npx vitest run`, src/scripts included, `TMPDIR` under
+/Volumes/SmarterWork/agent-work as the hook runs it) 1,313 files passed, 1
+skipped; 22,584 tests passed, 168 skipped. The neutrality law with
+`HORSE_NEUTRALITY_FULL=1` (all 600 hands of every run): 20 of 20.
+`tsc --noEmit` clean at the root and in server. Root law-registry, migration,
+definer and audit laws touched by the migration: 19 files, 1,259 tests passed.
+Migration 20261016182539 keeps its reserved version (unique against main,
+all 823 remote branches and every local worktree when it was reserved); its
+three functions were created and exercised on a scratch Postgres 17.

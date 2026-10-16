@@ -91,3 +91,39 @@ describe('layer_fire_collapse reads each layer against its own population', () =
     expect(s2).toContain('and (p.prev_fires is null or c.cur_fires < p.prev_fires)');
   });
 });
+
+/**
+ * 2026-10-16: section 1 (layer_went_silent) raised about 110 warns on
+ * 2026-10-15 and none was a layer that stopped: renamed or retired reason
+ * codes, and reason / refusal / population counters. A retired key the
+ * engine registers in horse_data_ledger (receipt, legacy_unused) is reported
+ * as one info line, and the counters section 2 already does not judge as
+ * layers are reported as one info line, never one warn each.
+ */
+describe('layer_went_silent reads retired and outcome counters for what they are', () => {
+  const { sql } = newestDefinition();
+  const at = sql.indexOf(DEFINES);
+  const s1 = sql.slice(at, sql.indexOf('-- 2. A layer that collapsed without going silent', at));
+
+  it('skips a key the engine registered as retired, and lists it once', () => {
+    expect(s1).toContain("where l.kind = 'receipt' and l.cadence = 'legacy_unused'");
+    expect(s1).toContain("and split_part(l.key, ':', 2) = r.feature");
+    expect(s1).toContain("'code', 'retired_counters_quiet'");
+  });
+
+  it('reports reason, refusal and population counters as one info line, with the section 2 patterns', () => {
+    expect(s1).toContain(
+      "or r.feature ~ '(_reason_|unavailable|_skip_|_miss_|^v44_declined_)' then"
+    );
+    expect(s1).toContain("if r.feature ~ '^decide(_|$)'");
+    expect(s1).toContain("'code', 'outcome_counters_quiet'");
+    // a real layer still warns
+    expect(s1).toContain("'code', 'layer_went_silent'");
+  });
+
+  it('judges the named fallbacks before the outcome patterns (gto_miss_ is a fallback)', () => {
+    expect(s1.indexOf('v_is_fallback := r.feature')).toBeLessThan(
+      s1.indexOf("or r.feature ~ '(_reason_|unavailable")
+    );
+  });
+});

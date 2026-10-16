@@ -42,6 +42,7 @@ import {
   createHorsePlanEffectReceipt,
 } from '../../HorsePlanEffectReceipt.js';
 import { horsePlanContextKey, type HorsePlanBatchBinding } from '../../HorsePlanHandIdentity.js';
+import { stableReceipt } from './HorseDecisionReplay.js';
 import { currentReplaySolverStores } from './references.js';
 import { qualifiedReplayAdmissions } from './qualifiedAuthority.js';
 import { plo4Cards, plo4ReferenceSpot } from '../../../benchmark/Plo4PolicyEvidence.js';
@@ -303,6 +304,7 @@ describe('P15-A exact historical replay', () => {
     expect(verdict.replayVerified).toBe(true);
     expect(verdict.firstDifference).toBeNull();
     expect(verdict.recordedSource).toBe(SOURCE);
+    expect(verdict.recordSha256).toBe(record.sha256);
     expect(verdict.runningSource).toBe(SOURCE);
     expect(verdict.replayed).toEqual(verdict.original);
     expect(verdict.original).toMatchObject({
@@ -574,5 +576,48 @@ describe('P15-A exact historical replay', () => {
     expect(firstHorseReplayDifference([1, 2], [1, 2, 3], 'e')).toBe('e.length');
     expect(firstHorseReplayDifference({ x: { y: [1] } }, { x: { y: [1] } }, 'd')).toBeNull();
     expect(firstHorseReplayDifference({ x: 1 }, { x: 1, z: 2 }, 'd')).toBe('d.z');
+  });
+
+  it('never compares a wall-clock measurement a receipt records about its own work', () => {
+    // 2026-10-16, natural 4c3509e5 records: a live PLO6/PLO8 pack decision
+    // replayed field for field except decision.omahaVariantPolicy.equity.analysisMs.
+    const original = stableReceipt({
+      action: 'bet',
+      amount: 28,
+      omahaVariantPolicy: {
+        mode: 'candidate',
+        applied: true,
+        reason: 'proposal_selected',
+        equity: { analysisMs: 1.37, samples: 96 },
+        economics: { analysisMs: 0.41, best: 'bet' },
+      },
+    });
+    const replayed = stableReceipt({
+      action: 'bet',
+      amount: 28,
+      omahaVariantPolicy: {
+        mode: 'candidate',
+        applied: true,
+        reason: 'proposal_selected',
+        equity: { analysisMs: 0, samples: 96 },
+        economics: { analysisMs: 0, best: 'bet' },
+      },
+    });
+    expect(firstHorseReplayDifference(original, replayed, 'decision')).toBeNull();
+    // Everything else in the same receipt is still compared.
+    const resampled = stableReceipt({
+      action: 'bet',
+      amount: 28,
+      omahaVariantPolicy: {
+        mode: 'candidate',
+        applied: true,
+        reason: 'proposal_selected',
+        equity: { analysisMs: 0, samples: 95 },
+        economics: { analysisMs: 0, best: 'bet' },
+      },
+    });
+    expect(firstHorseReplayDifference(original, resampled, 'decision')).toBe(
+      'decision.omahaVariantPolicy.equity.samples'
+    );
   });
 });

@@ -156,46 +156,80 @@ describe('V44 equity depth', () => {
 
 describe('V44 second look plan and verdict', () => {
   const T = ServerTableEngineTurns;
-  it('earns a second look only on a close spot with time to spend', () => {
+  it('earns a second look only on a close spot with turn clock to spend', () => {
     const call = { action: 'call', thinkTime: 3000 };
-    expect(T.secondLookPlan(call, 20, 100, 2, 3000, 1)).toEqual({ ok: true, afterMs: 400 });
-    expect(T.secondLookPlan(call, 20, 100, 2, 1800, 1)).toEqual({ ok: true, afterMs: 400 });
+    // (thinkTimeMs left, turnBudgetMs left)
+    expect(T.secondLookPlan(call, 20, 100, 2, 3000, 12_000)).toEqual({ ok: true, afterMs: 400 });
+    expect(T.secondLookPlan(call, 20, 100, 2, 1800, 12_000)).toEqual({ ok: true, afterMs: 400 });
     // the replay always lands well inside the think time
-    const plan = T.secondLookPlan(call, 20, 100, 2, 1500, 1);
+    const plan = T.secondLookPlan(call, 20, 100, 2, 1500, 12_000);
     expect(plan.ok).toBe(true);
     expect(plan.ok && plan.afterMs).toBeLessThan(1500);
   });
 
   /*
+   * THE SECOND LOOK IS BUDGETED FROM THE TURN CLOCK (2026-10-16). Under load
+   * the worker queue ate the chosen think time, so `no_think_time` closed the
+   * gate on spots with most of the turn clock still unused, and `governor`
+   * closed it whenever the worker was busy. The turn clock is the budget now
+   * and the governor gate is gone: the worker always decides at scale 1.
+   */
+  it('a queue that ate the think time does not cost the second look while the turn clock has time', () => {
+    const call = { action: 'call', thinkTime: 2500 };
+    expect(T.secondLookPlan(call, 20, 100, 2, 0, 9_000)).toEqual({ ok: true, afterMs: 0 });
+    expect(T.secondLookPlan(call, 20, 100, 2, 300, 9_000)).toEqual({ ok: true, afterMs: 100 });
+    expect(T.secondLookPlan(call, 20, 100, 2, 0, 1_499)).toEqual({
+      ok: false,
+      reason: 'no_think_time',
+    });
+    for (const budget of [Number.NaN, -1, 0])
+      expect(T.secondLookPlan(call, 20, 100, 2, 3000, budget)).toEqual({
+        ok: false,
+        reason: 'no_think_time',
+      });
+  });
+
+  it('the turn budget is the action clock less the engine margin, with no floor', () => {
+    const start = 1_000_000;
+    expect(T.horseTurnBudgetMs(15, start, start)).toBe(13_500);
+    expect(T.horseTurnBudgetMs(15, start, start + 6_000)).toBe(7_500);
+    expect(T.horseTurnBudgetMs(15, start, start + 14_000)).toBe(0);
+    expect(T.horseTurnBudgetMs(30, start, start + 1_000)).toBe(27_500);
+    // a missing clock reads as the engine's 15 s default; a missing start as now
+    expect(T.horseTurnBudgetMs(null, start, start)).toBe(13_500);
+    expect(T.horseTurnBudgetMs(0, undefined, start)).toBe(13_500);
+  });
+
+  /*
    * A DECLINE NAMES ITS GATE (2026-09-06). On 2026-09-05 the daily audit
    * reported v44_second_look firing 0 times against 2,121,841 decides, and
-   * nobody could say which of the five gates was closing, because the plan
-   * returned a bare null. Each reason wants an opposite fix - `governor` is
-   * capacity, `no_think_time` is the tempo model, `small_pot` and
+   * nobody could say which of the gates was closing, because the plan
+   * returned a bare null. Each reason wants an opposite fix - `no_think_time`
+   * is the turn clock (capacity since 2026-10-16), `small_pot` and
    * `action_shape` are the ledger's 0.1% expectation being wrong - so the
    * reason is the finding.
    */
   it('a decline names the gate that closed, in gate order', () => {
     const call = { action: 'call', thinkTime: 3000 };
-    expect(T.secondLookPlan(call, 0, 100, 2, 3000, 1)).toEqual({
+    expect(T.secondLookPlan(call, 0, 100, 2, 3000, 12_000)).toEqual({
       ok: false,
       reason: 'not_facing_bet',
     });
     // pot too small (20bb at bb 2 = 40 chips)
-    expect(T.secondLookPlan(call, 10, 30, 2, 3000, 1)).toEqual({ ok: false, reason: 'small_pot' });
+    expect(T.secondLookPlan(call, 10, 30, 2, 3000, 12_000)).toEqual({
+      ok: false,
+      reason: 'small_pot',
+    });
     // a sizing answer is not the sample's call
-    expect(T.secondLookPlan({ action: 'raise', thinkTime: 3000 }, 20, 100, 2, 3000, 1)).toEqual({
+    expect(
+      T.secondLookPlan({ action: 'raise', thinkTime: 3000 }, 20, 100, 2, 3000, 12_000)
+    ).toEqual({
       ok: false,
       reason: 'action_shape',
     });
-    expect(T.secondLookPlan(call, 20, 100, 2, 1200, 1)).toEqual({
+    expect(T.secondLookPlan(call, 20, 100, 2, 3000, 1200)).toEqual({
       ok: false,
       reason: 'no_think_time',
-    });
-    // the governor is shedding load
-    expect(T.secondLookPlan(call, 20, 100, 2, 3000, 0.7)).toEqual({
-      ok: false,
-      reason: 'governor',
     });
     // gate ORDER matters: a spot failing several gates reports the first, so
     // the counts partition the decisions rather than double-counting them.
@@ -213,11 +247,10 @@ describe('V44 second look plan and verdict', () => {
       'small_pot',
       'action_shape',
       'no_think_time',
-      'governor',
     ];
     for (const r of reasons) noteSecondLookDecline(r);
     const fired = drainFires();
-    // Five reasons, five distinct keys, one fire each - the counts partition
+    // Four reasons, four distinct keys, one fire each - the counts partition
     // the declined decisions rather than double-counting them.
     expect(fired.length).toBe(reasons.length);
     expect(new Set(fired.map((f) => f.feature)).size).toBe(reasons.length);

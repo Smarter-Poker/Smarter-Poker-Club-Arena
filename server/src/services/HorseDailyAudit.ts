@@ -19,8 +19,8 @@
  *    distinguishable from the container logs.
  *
  * Audited day: YESTERDAY (UTC) — the last COMPLETE day of data. Window is
- * 06:00-09:00 UTC, safely after the 04:30 league run so the audit sees the
- * night's league results.
+ * 06:00-09:00 UTC. The audited day's league runs (13:00 and 16:00 UTC since
+ * 2026-10-16, see LEAGUE_HOUR_UTC) finished the afternoon before.
  */
 
 import { supabase } from './supabase/client.js';

@@ -1,0 +1,14 @@
+{
+  "09807183": {
+    "decisions": 6,
+    "variants": { "plo8": 2, "plo4": 1, "plo5": 1, "flh": 1, "plo6": 1 },
+    "modes": { "cash": 6 },
+    "packs": { "omahaVariantPolicy": 4, "plo4Policy": 1, "remainingVariantPolicy": 1 }
+  },
+  "4c3509e5": {
+    "decisions": 10,
+    "variants": { "plo4": 2, "flh": 2, "plo5": 2, "plo8": 2, "plo6": 2 },
+    "modes": { "cash": 10 },
+    "packs": { "plo4Policy": 2, "remainingVariantPolicy": 2, "omahaVariantPolicy": 6 }
+  }
+}

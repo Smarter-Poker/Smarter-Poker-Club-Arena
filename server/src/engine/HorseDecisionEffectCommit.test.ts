@@ -1430,7 +1430,12 @@ describe.each([
     'unchanged',
     'generation',
     'fence',
-    'after_commit',
+    // 2026-10-16: the think time ends with the deep read still out. The action
+    // waits for it inside the turn clock and the deeper read acts (it used to
+    // act on the fast answer and retire the deep one: 96% of deep looks).
+    'after_think_time',
+    // ...unless the deep read never lands inside the turn-clock budget.
+    'hold_expired',
     'cancelled',
     'brain_exception',
   ] as const)('reconciles the actual scheduled deep result: %s', async (mode) => {
@@ -1461,8 +1466,17 @@ describe.each([
     engine.scheduleHorseAction(player, 1, enginePlayer, state);
     await vi.advanceTimersByTimeAsync(100);
     expect(decisionWorker.worker.decideDeep).toHaveBeenCalledOnce();
-    if (mode === 'after_commit') await vi.advanceTimersByTimeAsync(1000);
+    if (mode === 'after_think_time') {
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(performAction).not.toHaveBeenCalled();
+    }
+    if (mode === 'hold_expired') {
+      // 15 s clock, turn started at the request: 13.5 s budget from the fast answer.
+      await vi.advanceTimersByTimeAsync(13_400);
+      expect(performAction).toHaveBeenCalledOnce();
+    }
     if (mode === 'cancelled') engine.cancelHorseDecisionWork();
+    const deepActs = mode === 'accepted' || mode === 'after_think_time';
     const result = response(
       deepSnapshot,
       deep,
@@ -1477,17 +1491,17 @@ describe.each([
     release({ ...result, type: 'DEEP_RESULT' });
     await vi.advanceTimersByTimeAsync(1100);
     expect(fast.executionStatus).toBe(
-      mode === 'accepted' || mode === 'cancelled' ? 'not_executed' : 'intended'
+      deepActs || mode === 'cancelled' ? 'not_executed' : 'intended'
     );
-    expect(deep.executionStatus).toBe(mode === 'accepted' ? 'intended' : 'not_executed');
+    expect(deep.executionStatus).toBe(deepActs ? 'intended' : 'not_executed');
     // DEEP only replaces call/fold/all-in. Its retired FAST cannot supply plans.
     expect(decisionWorker.commitDecisionEffects).not.toHaveBeenCalled();
     if (mode === 'cancelled') expect(performAction).not.toHaveBeenCalled();
     else {
       expect(performAction).toHaveBeenCalledOnce();
-      expect(performAction.mock.calls[0][1]).toBe(mode === 'accepted' ? 'fold' : 'call');
+      expect(performAction.mock.calls[0][1]).toBe(deepActs ? 'fold' : 'call');
     }
-    expect(mode === 'accepted' ? fast.executedAction : deep.executedAction).toBeNull();
+    expect(deepActs ? fast.executedAction : deep.executedAction).toBeNull();
     const retirementFeature = {
       tournamentUtility: 'phase7_utility_not_executed',
       tournamentPostflop: 'phase8_execution_not_executed',
@@ -1537,6 +1551,58 @@ describe.each([
     expect(performAction).not.toHaveBeenCalled();
     expect(decisionWorker.commitDecisionEffects).not.toHaveBeenCalled();
   });
+  // 2026-10-16: the action may now wait past the think time for the deep
+  // read. While it waits, the wait is this engine's horseActionTimer (one per
+  // table), and a deep answer that lands after the turn was retired or the
+  // hand moved on never acts: every path to the table goes through the same
+  // commit fence (controller, hand number, lease) the think timer always had.
+  it.each(['cancelled_while_awaited', 'successor_hand_while_awaited'] as const)(
+    'a deep answer that lands after the turn moved on never acts: %s',
+    async (mode) => {
+      const { engine, player, enginePlayer, state, performAction } = harness(true);
+      const fast = ledger(),
+        deep = ledger('fold', null);
+      state.currentBet = 20;
+      const authority = engine.handController.getAuthoritativeActionState();
+      engine.handController.getAuthoritativeActionState = () => ({
+        ...authority,
+        legalActions: ['fold', 'call', 'raise', 'all_in'],
+        toCall: 20,
+        minRaiseTo: 40,
+      });
+      vi.spyOn(ServerTableEngineTurns, 'secondLookPlan').mockReturnValue({
+        ok: true,
+        afterMs: 100,
+      });
+      decisionWorker.decideFast.mockImplementationOnce(async (s: any) => response(s, fast, 'call'));
+      let release: (v: any) => void = () => {};
+      let deepSnapshot: any;
+      decisionWorker.worker.decideDeep.mockImplementationOnce((s: any) => {
+        deepSnapshot = s;
+        return new Promise((resolve) => {
+          release = resolve;
+        });
+      });
+      engine.scheduleHorseAction(player, 1, enginePlayer, state);
+      await vi.advanceTimersByTimeAsync(100);
+      expect(decisionWorker.worker.decideDeep).toHaveBeenCalledOnce();
+      // The think time is over; the deep read is still out, so the turn waits
+      // on a timer this engine owns.
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(performAction).not.toHaveBeenCalled();
+      expect(engine.horseActionTimer).not.toBeNull();
+      if (mode === 'cancelled_while_awaited') {
+        engine.cancelHorseDecisionWork();
+        expect(engine.horseActionTimer).toBeNull();
+      } else engine.handCount += 1;
+      release({ ...response(deepSnapshot, deep, 'fold', undefined, 'deep'), type: 'DEEP_RESULT' });
+      // Past the whole turn-clock hold as well: nothing acts late either.
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(performAction).not.toHaveBeenCalled();
+      expect(deep.executionStatus).toBe('not_executed');
+      expect(fast.executionStatus).toBe('not_executed');
+    }
+  );
 });
 
 // Each phase reconciles through the same real scheduled action boundary.

@@ -126,3 +126,8 @@ print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().pare
 # Exact weekly cash maxima and accrued-rake bounds use their existing indexes.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-indexed-reads-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-cash-cohort-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
+
+# Actual skewed cash equality/range path and exact unaccrued receipt reader.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-cash-keyorder-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-cash-commission-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-cash-access-install-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))

@@ -141,6 +141,34 @@ describe('Daily Challenges Smarter Casino Realism surface', () => {
     expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)[\s\S]*\.iconOrbit/);
   });
 
+  it('aligns mission rails with the outer card border rather than its padding box', () => {
+    const cardRules = [...css.matchAll(/^\.challengeCard\s*\{([^}]*)\}/gm)];
+    const cardBorder = cardRules
+      .map((rule) => rule[1].match(/\bborder:\s*([\d.]+)px\s+solid\b/)?.[1])
+      .filter((value) => value !== undefined)
+      .at(-1);
+    const frameRule = css.match(/^\.challengeCard\s*>\s*\.bevelFrame\s*\{([^}]*)\}/m)?.[1];
+    const baseFrameRule = css.match(/^\.bevelFrame\s*\{([^}]*)\}/m)?.[1];
+    expect(cardBorder).toBeDefined();
+    expect(frameRule).toBeDefined();
+    const inset =
+      frameRule?.match(/\binset:\s*(-?[\d.]+)(?:px)?\s*;/)?.[1] ??
+      baseFrameRule?.match(/\binset:\s*(-?[\d.]+)(?:px)?\s*;/)?.[1];
+    expect(inset).toBeDefined();
+    // Absolute positioning starts at the padding box. Compensate the actual
+    // border width so the painted rails sit on all four outer card edges.
+    expect(Number(cardBorder) + Number(inset)).toBe(0);
+    const cardOverflow = cardRules
+      .map((rule) => rule[1].match(/\boverflow:\s*([^;]+);/)?.[1])
+      .filter((value) => value !== undefined)
+      .at(-1);
+    // Keep the aligned rails visible without letting decorative scroll bounds
+    // escape the board. The existing polygon still clips each card's paint.
+    expect(cardOverflow).toBe('visible');
+    expect(cardRules.some((rule) => /clip-path:\s*polygon\(/.test(rule[1]))).toBe(true);
+    expect(css).toMatch(/^\.missionBoard\s*\{[^}]*overflow:\s*hidden;/m);
+  });
+
   it('gives every cycle a distinct physical instrument and every loading card a closed chassis', () => {
     expect(presentation).toContain("daily: 'cycle-daily'");
     expect(presentation).toContain("weekly: 'cycle-weekly'");

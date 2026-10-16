@@ -5344,3 +5344,69 @@ describe('Diamond cash fee envelope transport', () => {
     }
   );
 });
+
+describe('ONE FLOOR, ONE READ: a hand another shard owns is only learned (2026-10-16)', () => {
+  const table = '10000000-0000-4000-8000-0000000000cc';
+  const committed = '30000000-0000-4000-8000-0000000000cc';
+  const hand = (): ObserveCompletedHandRequest =>
+    ({
+      type: 'OBSERVE_COMPLETED_HAND',
+      requestId: 2,
+      generation: 1_000_001,
+      fence: `${table}:1000001:9:observe`,
+      handKey: `${table}:1000001`,
+      committedHandId: committed,
+      actions: [],
+      bigBlind: 2,
+      acceptedActorRoster: { rosterDigest: 'x' } as never,
+    }) as ObserveCompletedHandRequest;
+
+  it('learns it, acknowledges it, and never journals or binds it', async () => {
+    const h = harness();
+    const journaled: unknown[] = [];
+    const ownerLearned: unknown[] = [];
+    const mirrored: ObserveCompletedHandRequest[] = [];
+    h.deps.journalAcceptedHand = (r) => journaled.push(r);
+    h.deps.observeCompletedHand = (r) => ownerLearned.push(r);
+    h.deps.ownsCompletedHand = () => false;
+    h.deps.learnMirroredHand = (r) => {
+      mirrored.push(r);
+      return 'learned';
+    };
+    h.runtime.receive(hand());
+    await h.runtime.drain();
+    expect(journaled).toEqual([]);
+    expect(ownerLearned).toEqual([]);
+    expect(mirrored).toHaveLength(1);
+    expect(h.features).toContain('horse_mind_mirror_learned');
+    expect(h.features).not.toContain('phase14_accepted_roster_refused');
+    expect(h.messages.at(-1)).toMatchObject({ type: 'ACK', operation: 'OBSERVE_COMPLETED_HAND' });
+  });
+
+  it('acknowledges a mirror it could not learn and says so', async () => {
+    const h = harness();
+    h.deps.ownsCompletedHand = () => false;
+    h.deps.learnMirroredHand = () => {
+      throw new Error('inside a capture');
+    };
+    h.runtime.receive(hand());
+    await h.runtime.drain();
+    expect(h.features).toContain('horse_mind_mirror_refused');
+    expect(h.messages.at(-1)).toMatchObject({ type: 'ACK', operation: 'OBSERVE_COMPLETED_HAND' });
+  });
+
+  it('observes and journals its own hands exactly as before', async () => {
+    const h = harness();
+    const journaled: unknown[] = [];
+    h.deps.journalAcceptedHand = (r) => journaled.push(r);
+    h.deps.ownsCompletedHand = () => true;
+    h.deps.learnMirroredHand = () => {
+      throw new Error('an owned hand is never mirrored');
+    };
+    h.runtime.receive(hand());
+    await h.runtime.drain();
+    expect(journaled).toHaveLength(1);
+    expect(h.observations).toEqual([`${table}:1000001`]);
+    expect(h.features.some((f) => f.startsWith('horse_mind_mirror_'))).toBe(false);
+  });
+});

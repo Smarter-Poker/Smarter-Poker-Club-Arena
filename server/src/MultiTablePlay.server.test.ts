@@ -255,7 +255,24 @@ describe('horse decision interleaving across 4 tables', () => {
 
   it('shipped source pin: the think timer is per-engine state, armed per table', () => {
     const src = readFileSync(join(process.cwd(), 'src/engine/ServerTableEngineTurns.ts'), 'utf8');
-    expect(src).toContain('this.horseActionTimer = setTimeout(');
+    // 2026-10-16: the think timer is still this engine's own setTimeout, held
+    // in this engine's horseActionTimer. Since the action may wait for a V44
+    // deep read past the think time (inside the turn clock), the wait is a
+    // second per-engine timer held in the same field, so cancelHorseDecisionWork
+    // clears whichever one the turn is on. Both are armed per table.
+    expect(src).toContain('const thinkTimer = setTimeout(');
+    expect(src).toContain('this.horseActionTimer = thinkTimer;');
+    expect(src).toContain('secondLookHoldTimer = setTimeout(');
+    expect(src).toContain('this.horseActionTimer = secondLookHoldTimer;');
+    // Every path that acts (think timer, hold expiry, deep answer landing)
+    // goes through commitDecision, which runs the commit fence before it
+    // touches the table, and a cancelled turn's deep answer never acts.
+    expect(src).toMatch(
+      /commitDecision = \(\): void => \{[\s\S]{0,1200}?if \(!fenceIsCurrent\('commit'\)\) return;/
+    );
+    expect(src).toContain('decisionCommitted || abortController.signal.aborted) return;');
+    // Behaviour: HorseDecisionEffectCommit.test.ts, "a deep answer that lands
+    // after the turn moved on never acts".
     // The asynchronous worker result and timer carry controller, hand and
     // lease identity, so a slow answer cannot fire into a successor hand.
     //

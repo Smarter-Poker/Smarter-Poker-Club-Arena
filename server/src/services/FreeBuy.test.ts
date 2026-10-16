@@ -34,13 +34,13 @@ describe('the two tiers carry Dan 2026-09-04 exactly', () => {
       blindStructure: 'FREE_BUY',
     });
   });
-  it('$500 tier: same shape, $2 rebuy and $2 add-on', () => {
+  it('$500 tier: same shape, $1 rebuy and $1 add-on (Dan 2026-10-16: "1 CHIP ... NOT 2")', () => {
     expect(feat).toMatchObject({
       guarantee: 500,
       buyIn: 0,
       startingChips: 3000,
-      rebuyCost: 2,
-      addOnCost: 2,
+      rebuyCost: 1,
+      addOnCost: 1,
       addOnChips: 10000,
       lateRegMinutes: 60,
       blindStructure: 'FREE_BUY',

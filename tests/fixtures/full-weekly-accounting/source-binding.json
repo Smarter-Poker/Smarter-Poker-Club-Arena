@@ -192,7 +192,7 @@
     "tests/fixtures/cashier-document-authority/regression.sql": "e2b63df49609d6b318c0cbae5d41173c1f15f1dbb8466d01a6c15ceb32f50a65",
     "tests/fixtures/cashier-document-authority/captured-manual-writers.json": "70645c393822b197621f4f8ff7313deb99578c33b21c76850fe9422ef5d4c484",
     "tests/helpers/cashoutV2Receipt.ts": "db760aae934fbae5c3b14c5e1bd5ca2011bf9a1dd7d0f294d90684e9ff18d20a",
-    "tests/components/agent-dashboard-durable-transfers.test.tsx": "86a984352a74d27c8365270b20485d52e55873ee7bb900af71796b59da84c138",
+    "tests/components/agent-dashboard-durable-transfers.test.tsx": "10a6ac5cd00135fe4d6466c17a8508d6d5901fadf6ff5ce8591f66d94391221b",
     "tests/unit/CashoutRequestModal.test.tsx": "01dce8b14e1793534c604d17fe6566c0a30c643b9a3590fc1d3203a906cf7d04",
     "tests/fixtures/cashier-document-authority/README.md": "fe65d50c5ed2aa2507e0ed8cc1149c4c9dbcc12d55cca1822352c4aa05ec8580",
     "tests/fixtures/cashier-document-authority/captured-cashier-catalog.json": "4037cbccb52b206a4f1a1b158b055cb7cc8819cd14241d0becb74127819328c2",
@@ -4856,5 +4856,15 @@
         "current": "d15ff04edffea0be07e232f40ed39dab13eeae5766d12271e77d43c984366890"
       }
     }
+  },
+  "agentsArePrepaidFundingTabRebinding20261016": {
+    "reason": "Dan, October 2026: every agent is prepaid and no agent carries a credit line. The agent dashboard credit tab lost its action selector (Set Credit Line To, Send Prepaid Chips, Reduce Credit Line By) because sending prepaid chips is now its one action. The durable-transfer fixture no longer sets the removed selector; it still selects the agent, enters the amount, presses Send Prepaid Chips and asserts the same agent_wallet destination, durable operation key, replay and double-click behaviour. The complete diff was read before restamping; no financial source, SQL image, write amount, assertion or historical audit entry is removed or weakened.",
+    "changed_repository_bindings": [
+      {
+        "path": "tests/components/agent-dashboard-durable-transfers.test.tsx",
+        "previous_sha256": "86a984352a74d27c8365270b20485d52e55873ee7bb900af71796b59da84c138",
+        "sha256": "10a6ac5cd00135fe4d6466c17a8508d6d5901fadf6ff5ce8591f66d94391221b"
+      }
+    ]
   }
 }

@@ -89,3 +89,7 @@ The live preview for KingFish's link read "kingfish": `profiles.username` is sto
 
 - `fn_club_invite_club_stats` now admits staff and agents whose membership status is `automatic`, matching every other invite function (`20261016004124_club_invite_stats_admit_automatic_members.sql`, applied as `20261016004204`, md5-verified).
 - The Share & Invite sheet clears the previous club's link, QR, figures and stats when the club changes, so a failed load can never show or copy another club's link.
+
+## Follow-Up: The Sheet Clears The Header And Footer
+
+Checked live after publish at 1024x768: the sheet rendered inside the club page's `z-index: 1` stacking context, so the sticky header covered its close control and the fixed footer covered Share and Close (a tap on Close opened the Market). The sheet now renders through `createPortal` to `document.body`, where its overlay (`z-index: 10000`, scrollable) clears both. Proven on the live page by re-parenting the overlay: all five controls became reachable.

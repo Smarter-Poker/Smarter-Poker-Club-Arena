@@ -55,6 +55,8 @@ export async function uploadClubBannerImage(clubId: string, file: File): Promise
   return supabase.storage.from('club-assets').getPublicUrl(data.path).data.publicUrl;
 }
 
+// Presentation saves refresh the lobby without restarting membership guards.
+// CLUB_UPDATED is also an access-change signal and can unmount an in-flight editor.
 export async function saveClubBanner(
   clubId: string,
   ownerId: string,
@@ -77,10 +79,10 @@ export async function saveClubBanner(
     const current = await readClubBanner(clubId);
     if (current.owner_id !== ownerId || current.banner_url !== nextUrl)
       throw new Error('Banner Changed Or Access Was Removed. Reload Before Saving.');
-    masterBus.emit('CLUB_UPDATED', { clubId });
+    masterBus.emit('CLUB_SETTINGS_UPDATED', { clubId });
     return current;
   }
-  masterBus.emit('CLUB_UPDATED', { clubId });
+  masterBus.emit('CLUB_SETTINGS_UPDATED', { clubId });
   return data as ClubBannerRecord;
 }
 
@@ -122,9 +124,9 @@ export async function saveClubRotatingBanners(
         )
     )
       throw new Error('Banner Displays Changed Or Access Was Removed. Reload Before Saving.');
-    masterBus.emit('CLUB_UPDATED', { clubId });
+    masterBus.emit('CLUB_SETTINGS_UPDATED', { clubId });
     return current;
   }
-  masterBus.emit('CLUB_UPDATED', { clubId });
+  masterBus.emit('CLUB_SETTINGS_UPDATED', { clubId });
   return data as ClubBannerRecord;
 }

@@ -1457,7 +1457,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
      * already resolves the table engine. A second endpoint would be a second
      * thing to keep alive for the sake of one boolean.
      */
-    opts?: {
+    presenceOptions?: {
       turnRendered?: boolean;
       /**
        * 2026-09-04 (second sweep, Dan: "my rebuy said it failed to load ...
@@ -1487,16 +1487,16 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
        spectator's heartbeat still registers nothing. */
     this.registerSeatedPlayerOnDemand(userId);
     if (
-      typeof opts?.autoTimeBank === 'boolean' &&
+      typeof presenceOptions?.autoTimeBank === 'boolean' &&
       this.disconnectEngine.getState(this.tableId, userId)
     ) {
-      this.timeBankEngine.setAutoActivate(this.tableId, userId, opts.autoTimeBank);
+      this.timeBankEngine.setAutoActivate(this.tableId, userId, presenceOptions.autoTimeBank);
     }
-    this.disconnectEngine.heartbeat(this.tableId, userId, opts?.transportOnly);
-    if (opts?.turnRendered) {
+    this.disconnectEngine.heartbeat(this.tableId, userId, presenceOptions?.transportOnly);
+    if (presenceOptions?.turnRendered) {
       this.disconnectEngine.noteTurnRendered(this.tableId, userId);
     }
-    if (opts?.rebuyPromptOpen) this.rebuyPromptOpenAt.set(userId, Date.now());
+    if (presenceOptions?.rebuyPromptOpen) this.rebuyPromptOpenAt.set(userId, Date.now());
     const connected = this.disconnectEngine.isConnected(this.tableId, userId);
     return { success: true, connected, gracePeriodRemaining: 0 };
   }

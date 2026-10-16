@@ -6,6 +6,10 @@ import {
   whileInitialTableConnects,
   whileConnectionBannerStaysHidden,
 } from './support/liveTableRealtime';
+import {
+  installNaturalAuthAdmissionDiagnostic,
+  readNaturalAuthAdmissionDiagnostic,
+} from './support/naturalAuthAdmissionDiagnostic';
 import { remainingInitialTableReadinessMs } from './support/initialTableReadiness';
 import {
   installNaturalMultiRunWitness,
@@ -171,6 +175,7 @@ test('natural two-run and three-run mobile rivers precede awards and winner chip
       async (table, navigationBudgetMs, remainingSetup) => {
         const page = await context.newPage();
         const journal = new EngineSocketJournal(page);
+        await installNaturalAuthAdmissionDiagnostic(page);
         await installNaturalMultiRunWitness(page);
         pages.push({ page, tableId: table.id, journal, packets: [] });
         await openNaturalMultiRunObserver(
@@ -240,6 +245,13 @@ test('natural two-run and three-run mobile rivers precede awards and winner chip
       before
     );
   } finally {
+    // Snapshot all surviving pages before closing any possible shared-lock owner.
+    const authAdmission = await Promise.all(
+      pages.map(async (item) => ({
+        tableId: item.tableId,
+        diagnostic: await readNaturalAuthAdmissionDiagnostic(item.page).catch(() => null),
+      }))
+    );
     for (const item of pages) {
       observations.push({
         tableId: item.tableId,
@@ -261,6 +273,7 @@ test('natural two-run and three-run mobile rivers precede awards and winner chip
         {
           before,
           observedAt: new Date().toISOString(),
+          authAdmission,
           coverage: [...coverage.values()],
           observations,
         },

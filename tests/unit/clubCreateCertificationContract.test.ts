@@ -1,3 +1,4 @@
+import { timeoutBudgetMinutes } from '../productionJobBudget';
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -480,10 +481,10 @@ describe('a Create Club fixture another run left behind is retired by the next r
     const cutoff = Number(/STALE_ACCOUNT_AGE_MS = (\d+) \* 60_000/.exec(account)?.[1]);
     const ceilings = [
       ...read('.github/workflows/club-create-certification.yml').matchAll(
-        /timeout-minutes: (\d+)/g
+        /^ {4}timeout-minutes: (.+)$/gm
       ),
-      ...read('.github/workflows/post-deploy-e2e.yml').matchAll(/timeout-minutes: (\d+)/g),
-    ].map((match) => Number(match[1]));
+      ...read('.github/workflows/post-deploy-e2e.yml').matchAll(/^ {4}timeout-minutes: (.+)$/gm),
+    ].flatMap((match) => Object.values(timeoutBudgetMinutes(match[1])));
     expect(cutoff).toBeGreaterThan(Math.max(...ceilings) + 5);
   });
 });

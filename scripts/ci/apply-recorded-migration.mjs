@@ -70,6 +70,7 @@ import {
 
 import { batchRequest, applyFinalTablePages } from './final-table-cleanup-batches.mjs';
 import { withSettlementLane } from './settlement-lane.mjs';
+import { accountingAdmissionSQL } from './accounting-migration-admission.mjs';
 import {
   validateThawRepair,
   THAW_REPAIR_ADMISSION,
@@ -532,7 +533,15 @@ const transactionBody = preamble.length > 0 ? shape.body : sql;
 const atomicSQL = transactionBody.replace(/COMMIT\s*;\s*$/i, () => historyStatement + '\nCOMMIT;');
 if (atomicSQL === transactionBody)
   refused('atomic migration history could not bind the final COMMIT');
-const admittedSQL = MAINTENANCE_THAW_REPAIR ? thawRepairSQL(atomicSQL) : atomicSQL;
+let admittedSQL;
+try {
+  admittedSQL = MAINTENANCE_THAW_REPAIR
+    ? thawRepairSQL(atomicSQL)
+    : accountingAdmissionSQL(file, sql, atomicSQL);
+} catch (e) {
+  await client.end().catch(() => {});
+  refused(e.message);
+}
 const started = Date.now();
 try {
   // With no preamble this is the whole file, exactly as before.

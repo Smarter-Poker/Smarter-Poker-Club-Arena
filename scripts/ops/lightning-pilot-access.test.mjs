@@ -5,6 +5,7 @@ import {
   PILOT_OUTSIDER,
   socketAccess,
   browserAccess,
+  acceptDesignatedTerms,
 } from './lightning-pilot-access.mjs';
 import { EventEmitter } from 'node:events';
 const TOKEN = 'TEST_TOKEN_NOT_A_CREDENTIAL';
@@ -136,7 +137,7 @@ test('browser observer refuses visible private discovery and closes its isolated
       [{ id: 'pilot' }],
       'https://example.invalid'
     ),
-    /Discover/
+    (error) => error.browserDiagnostic?.cause === 'private_discovery_visible'
   );
   assert.equal(closed, 1);
 });
@@ -333,4 +334,120 @@ test('both outsider states stay unapproved and unfunded, with pending cancellati
     ['fn_cash_game_join', 'fn_join_club_atomic', 'fn_cash_game_join', 'fn_cancel_club_join_request']
   );
   assert.doesNotMatch(JSON.stringify(r), new RegExp(TOKEN));
+});
+
+test('browser locator failure retains bounded diagnostics without raw browser secrets', async () => {
+  let closed = false;
+  const chromium = {
+    launch: async () => ({
+      newContext: async () => ({
+        addInitScript: async () => {},
+        newPage: async () => ({
+          goto: async () => {},
+          url: () => `https://smarter.poker/auth?token=${TOKEN}`,
+          locator: () => ({
+            waitFor: async () => {
+              throw new Error(TOKEN);
+            },
+          }),
+          evaluate: async () => ({ entryVisible: false, refusalVisible: false, token: TOKEN }),
+        }),
+      }),
+      close: async () => {
+        closed = true;
+      },
+    }),
+  };
+  await assert.rejects(
+    browserAccess(
+      chromium,
+      { access_token: TOKEN, user: { id: PILOT_OUTSIDER } },
+      'outsider',
+      [{ id: 'pilot' }],
+      'https://example.invalid'
+    ),
+    (error) => {
+      assert.equal(error.browserDiagnostic.subphase, 'entry_locator');
+      assert.equal(error.browserDiagnostic.cause, 'entry_locator_failed');
+      assert.equal(error.browserDiagnostic.clusterId, 'pilot');
+      assert.equal(error.browserDiagnostic.path, 'other');
+      assert.equal(error.browserDiagnostic.entryVisible, false);
+      assert.doesNotMatch(JSON.stringify(error), new RegExp(TOKEN));
+      assert.doesNotMatch(error.message, new RegExp(TOKEN));
+      return true;
+    }
+  );
+  assert.equal(closed, true);
+});
+
+test('consent is opt-in and pinned to the designated outsider', async () => {
+  assert.deepEqual(await acceptDesignatedTerms({}, {}, 'outsider', '', false), {
+    authorized: false,
+    acceptedNow: false,
+  });
+  for (const [actor, id] of [
+    ['owner', PILOT_OUTSIDER],
+    ['outsider', 'another-user'],
+  ]) {
+    await assert.rejects(
+      acceptDesignatedTerms({}, { user: { id } }, actor, '', true),
+      /Designated Outsider/
+    );
+  }
+});
+
+test('authorized consent uses the visible normal UI and confirmed owning gate exactly once', async () => {
+  const calls = [];
+  let status = 'not_accepted';
+  const dialog = {
+    waitFor: async () => calls.push('dialog'),
+    locator: (selector) => ({
+      evaluate: async () => {
+        assert.equal(selector, '.tosc__terms');
+        calls.push('scroll');
+      },
+    }),
+    getByRole: (role, options) => ({
+      check: async () => {
+        assert.equal(role, 'checkbox');
+        assert.match(options.name, /Privacy Policy/);
+        calls.push('check');
+      },
+      click: async () => {
+        assert.equal(role, 'button');
+        assert.equal(options.name, 'Accept & Continue');
+        calls.push('accept');
+        status = 'accepted';
+      },
+    }),
+  };
+  const page = {
+    waitForFunction: async () => {},
+    locator: () => ({ getAttribute: async () => status }),
+    evaluate: async () => true,
+    getByRole: (role, options) => {
+      assert.equal(role, 'dialog');
+      assert.equal(options.name, 'Terms Of Service');
+      return dialog;
+    },
+  };
+  const session = { user: { id: PILOT_OUTSIDER }, access_token: TOKEN };
+  assert.deepEqual(await acceptDesignatedTerms(page, session, 'outsider', '', true), {
+    authorized: true,
+    acceptedNow: true,
+    status: 'accepted',
+  });
+  assert.deepEqual(calls, ['dialog', 'scroll', 'check', 'accept']);
+  assert.equal(
+    (await acceptDesignatedTerms(page, session, 'outsider', '', true)).acceptedNow,
+    false
+  );
+  assert.equal(calls.length, 4);
+  status = 'not_accepted';
+  page.evaluate = async () => false;
+  await assert.rejects(
+    acceptDesignatedTerms(page, session, 'outsider', '', true),
+    /Identity Unverified/
+  );
+  assert.equal(calls.length, 4);
 });

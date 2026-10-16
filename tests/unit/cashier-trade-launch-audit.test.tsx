@@ -669,14 +669,17 @@ describe('P-20: a comma-grouped amount is understood, any other comma is named',
     expect((batch.args.p_items as Array<{ amount: number }>)[0].amount).toBe(1000);
   });
 
-  it("refuses a stray comma with the classic cashier's own words", async () => {
+  it('normalizes edited grouping while the submitted parser still refuses malformed spelling', async () => {
     mountCashier();
     await synchronized();
     await openSendOut('1,0', 1);
+    expect(screen.getByRole('textbox', { name: 'Amount', exact: true })).toHaveValue('10');
     fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
     await waitFor(() =>
-      expect(toastMocks.error).toHaveBeenCalledWith('Enter The Amount Without Commas')
+      expect(state.rpcCalls.some((call) => call.name === 'fn_cashier_batch_transfer')).toBe(true)
     );
+    const batch = state.rpcCalls.find((call) => call.name === 'fn_cashier_batch_transfer')!;
+    expect((batch.args.p_items as Array<{ amount: number }>)[0].amount).toBe(10);
     expect(parseTradeAmount('1,234,567.89')).toEqual({ ok: true, value: 1234567.89 });
     expect(parseTradeAmount('12,34')).toEqual({
       ok: false,

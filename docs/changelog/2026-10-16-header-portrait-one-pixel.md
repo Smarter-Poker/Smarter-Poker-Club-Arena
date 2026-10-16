@@ -25,3 +25,5 @@ Reload correction: the profit chip read SessionStatsService, whose browser-local
 Queue-label correction at08:37: the listed Seat Change pill now says only the actual queue number plus On The List (for example, #1 On The List), preserving its existing lobby action and reducing width through shorter content.
 
 The final CSS Beat run passed288cases and exposed one old doubled-tracker expectation. Updated its exact phone/desktop dimensions to52x34/100x36 while retaining centre, collision, viewport and full-number-fit assertions. Reduced only the compact phone pill's text inset and aligned its font fallback with the clock's Arial fallback, keeping the13px tracker text. Real stylesheet measurements at375/393/430/1024px with0/28px safe-area offsets pass all8cases, including -170.37 without clipping.
+
+Concurrent main integration: PR7099 independently landed the same three byte-identical installed migration records. Resolved only their overlapping manifest metadata, retaining main's provenance and unknown installation timestamps; the exact SQL and MD5s agree. This PR's final diff therefore carries no migration or recording-manifest change. No SQL was replayed.

@@ -1,0 +1,3 @@
+# tests/the-weekly-close-proofs-outlive-the-close.law.test.ts
+
+The weekly close's proofs outlive the close (2026-10-16): every proved piece of a weekly close (earned-plan, flow and settlement windows, P&L certificates) is trusted for fn_accounting_close_proof_lifetime(), 72 hours, instead of 12, because a union week takes longer than 12 hours to prove inside job 272's 240 s ticks and its first pieces expired before its last were proved, restarting the close 154 times; job 272's 240 s replication bound, the one hour life of a problem proof and fn_rakeback_recompute_split's own 12 hour rule are unchanged.

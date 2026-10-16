@@ -298,7 +298,9 @@ test.describe('Production Create A Club Certificate', () => {
     const imageResponse = await page.request.get(new URL(imageUrl!, page.url()).href);
     expect(imageResponse.ok()).toBe(true);
     let uploadedPath: string | null = null;
+    const rotatingUploadPaths: string[] = [];
     let savedClubId: string | null = null;
+    let originalSettings: Record<string, unknown> | null | undefined;
     const cleanupErrors: string[] = [];
     try {
       await bannerInput.setInputFiles({
@@ -326,6 +328,7 @@ test.describe('Production Create A Club Certificate', () => {
       const update = await updateResponse;
       expect(update.ok()).toBe(true);
       const savedBanner = await update.json();
+      originalSettings = savedBanner.settings;
       expect(typeof savedBanner.id).toBe('string');
       savedClubId = savedBanner.id;
       expect(savedBanner.banner_url).toContain(uploadedPath);
@@ -355,18 +358,101 @@ test.describe('Production Create A Club Certificate', () => {
       const reset = await resetResponse;
       expect(reset.ok()).toBe(true);
       expect((await reset.json()).banner_url).toBeNull();
+
+      // Own rotating banners share this setting and the actual lobby strip.
+      for (let index = 1; index <= 2; index++) {
+        await page.getByLabel('Add Rotating Banner Image', { exact: true }).setInputFiles({
+          name: `rotating-${index}.png`,
+          mimeType: 'image/png',
+          buffer: await imageResponse.body(),
+        });
+        await page
+          .getByLabel(`Banner Title ${index}`, { exact: true })
+          .fill(`Certificate Banner ${index}`);
+      }
+      await expect(
+        page.getByRole('button', { name: 'Save Rotating Banners', exact: true })
+      ).toBeEnabled();
+      await page.getByRole('button', { name: 'Move Banner 2 Up', exact: true }).click();
+      await page.getByLabel('Enable Banner 2', { exact: true }).uncheck();
+      page.on('response', async (response) => {
+        if (
+          response.request().method() === 'POST' &&
+          response.url().includes('/storage/v1/object/club-assets/club-cards/')
+        )
+          rotatingUploadPaths.push(
+            decodeURIComponent(new URL(response.url()).pathname.split('/object/club-assets/')[1])
+          );
+      });
+      const rotatingSave = page.waitForResponse(
+        (response) =>
+          response.request().method() === 'PATCH' &&
+          new URL(response.url()).pathname.endsWith('/rest/v1/clubs')
+      );
+      await page.getByRole('button', { name: 'Save Rotating Banners', exact: true }).click();
+      const rotatingResponse = await rotatingSave;
+      expect(rotatingResponse.ok()).toBe(true);
+      const rotatingRecord = await rotatingResponse.json();
+      expect(
+        rotatingRecord.settings.rotating_banners.map(
+          (banner: { title: string; enabled: boolean }) => [banner.title, banner.enabled]
+        )
+      ).toEqual([
+        ['Certificate Banner 2', true],
+        ['Certificate Banner 1', false],
+      ]);
+      const { rotating_banners: _rotating, ...otherSettings } = rotatingRecord.settings;
+      expect(otherSettings).toEqual(savedBanner.settings);
+      await expect(
+        page.getByRole('button', { name: 'Save Rotating Banners', exact: true })
+      ).toBeDisabled();
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await expect(page.getByLabel('Banner Title 1', { exact: true })).toHaveValue(
+        'Certificate Banner 2',
+        { timeout: 30000 }
+      );
+      await page.screenshot({ path: 'test-results/rotating-banners-mobile.png', fullPage: true });
+      await page.getByRole('button', { name: 'Back To Club', exact: true }).click();
+      await expect(
+        page.locator('.ad-rotator').first().getByAltText('Certificate Banner 2', { exact: true })
+      ).toHaveAttribute('src', rotatingRecord.settings.rotating_banners[0].imageUrl, {
+        timeout: 30000,
+      });
+      await expect(
+        page.getByRole('tab', { name: 'Show Certificate Banner 1', exact: true })
+      ).toHaveCount(0);
+      await page.goto(`./clubs/${createdClubRef}/banner-displays`, {
+        waitUntil: 'domcontentloaded',
+      });
+      await page.getByRole('button', { name: 'Remove Banner 2', exact: true }).click();
+      await page.getByRole('button', { name: 'Remove Banner 1', exact: true }).click();
+      const emptySave = page.waitForResponse(
+        (response) =>
+          response.request().method() === 'PATCH' &&
+          new URL(response.url()).pathname.endsWith('/rest/v1/clubs')
+      );
+      await page.getByRole('button', { name: 'Save Rotating Banners', exact: true }).click();
+      expect((await (await emptySave).json()).settings.rotating_banners).toEqual([]);
+      await expect(
+        page.getByRole('button', { name: 'Save Rotating Banners', exact: true })
+      ).toBeDisabled();
     } finally {
       // Delete only this exact disposable club's image, including a failed
       // persistence attempt. Never leave an auth-owned object blocking teardown.
       if (savedClubId) {
         const { error } = await admin
           .from('clubs')
-          .update({ banner_url: null })
+          .update({
+            banner_url: null,
+            ...(originalSettings === undefined ? {} : { settings: originalSettings }),
+          })
           .eq('id', savedClubId);
         if (error) cleanupErrors.push(error.message);
       }
       if (uploadedPath) {
-        const { error } = await admin.storage.from('club-assets').remove([uploadedPath]);
+        const { error } = await admin.storage
+          .from('club-assets')
+          .remove([uploadedPath, ...rotatingUploadPaths]);
         if (error) cleanupErrors.push(error.message);
       }
     }

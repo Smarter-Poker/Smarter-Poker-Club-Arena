@@ -5,6 +5,10 @@ import {
   validatePlayer,
   renderHand,
 } from './lightning-pilot-player.mjs';
+import {
+  captureRecoveryPhase,
+  observeRecoveryPhaseBracket,
+} from './recovery-phase-observation.mjs';
 const CLUSTERS = ['babb43f1-368e-406f-a97a-a0d5013648b2', '3330ff9f-76ec-4487-b0c9-fc8ad8c2fdbb'];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export function recoveryFrame(payload, direction, rooms) {
@@ -157,6 +161,7 @@ export async function witnessRecovery({
   timeoutMs = 240000,
   openSession = openPlayerSession,
   validate = validatePlayer,
+  capturePhase = captureRecoveryPhase,
 }) {
   const report = {
     scope: 'private_existing_player_recovery_sample',
@@ -164,6 +169,8 @@ export async function witnessRecovery({
     phase: 'preflight',
     touch: [],
     reconnect: 'unknown',
+    phaseBracket: { status: 'unknown', phase: 'unknown' },
+    phaseCoverage: { idle: 'unknown', reservation: 'unknown', dealing: 'unknown' },
     sameHand: 'unknown',
     duplicate: 'unknown',
     revoked: 'unknown',
@@ -315,17 +322,29 @@ export async function witnessRecovery({
         oldSockets = evidence.sockets.filter((s) => !s.closed);
       if (!beforeHand || oldSockets.length !== 1) throw new Error('Initial Transport');
       report.phase = 'disconnect';
-      await context.setOffline(true);
-      await evidence.wait(() => oldSockets.every((s) => s.closed));
-      const restoredAt = Date.now();
-      await context.setOffline(false);
-      await evidence.wait(() =>
-        ['SUBSCRIBE', 'SUBSCRIBED', 'SNAPSHOT', 'RENDER_ACK'].every((type) =>
-          evidence.frames.some(
-            (f) => f.type === type && f.room === pin.poolSessionId && f.at >= restoredAt
-          )
-        )
-      );
+      let restoredAt;
+      // One existing outage, surrounded by actual scoped phase reads.
+      // Missing phases remain UNKNOWN; they do not rewrite legacy transport status.
+      const observedPhase = await observeRecoveryPhaseBracket({
+        capture: () => capturePhase({ admin, player: primary.client, pin, remaining }),
+        disconnect: async () => {
+          const offlineStartedAt = Date.now();
+          await context.setOffline(true);
+          await evidence.wait(() => oldSockets.every((s) => s.closed));
+          restoredAt = Date.now();
+          await context.setOffline(false);
+          await evidence.wait(() =>
+            ['SUBSCRIBE', 'SUBSCRIBED', 'SNAPSHOT', 'RENDER_ACK'].every((type) =>
+              evidence.frames.some(
+                (f) => f.type === type && f.room === pin.poolSessionId && f.at >= restoredAt
+              )
+            )
+          );
+          return { offlineStartedAt, onlineStartedAt: restoredAt };
+        },
+      });
+      report.phaseBracket = observedPhase.bracket;
+      report.phaseCoverage = observedPhase.coverage;
       const subscriptions = evidence.frames.filter(
         (f) => f.type === 'SUBSCRIBED' && f.room === pin.poolSessionId && f.at >= restoredAt
       );

@@ -41,6 +41,8 @@ export type AdSlot =
   | 'table_between_hands';
 
 export interface HouseAd {
+  /** Local club promotion, never billed or written to ad_event. */
+  clubOwned?: boolean;
   adId: string;
   adKey: string;
   category: string;

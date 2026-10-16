@@ -1191,8 +1191,13 @@ jobs:
     timeout-minutes: ${{ github.event_name == 'repository_dispatch' && toJSON(github.event.client_payload.mobile_multirun) == 'true' && 98 || 76 }}
     permissions:
       contents: read
+    # An explicit passive observation owns a distinct serialized queue. Ordinary
+    # publication jobs otherwise replace it while pending (38933600568, three
+    # zero-step attempts). Both lanes create fresh disposable Auth principals;
+    # their table cases are read-only and cleanup owns only that exact account.
+    # Client browser checks retain their original shared write-serialization.
     concurrency:
-      group: post-deploy-live-table-production
+      group: ${{ github.event_name == 'repository_dispatch' && toJSON(github.event.client_payload.mobile_multirun) == 'true' && 'post-deploy-live-table-multirun-production' || 'post-deploy-live-table-production' }}
       cancel-in-progress: false
     outputs:
       client_sha: ${{ steps.live.outputs.sha }}

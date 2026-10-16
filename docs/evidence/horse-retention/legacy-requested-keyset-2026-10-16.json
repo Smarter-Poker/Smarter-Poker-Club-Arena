@@ -1,0 +1,176 @@
+{
+  "status": "locally_qualified_pending_root_review_push_checks_installation",
+  "base_revision": "4c3509e53d6465f2d13d286dd440e55ea501886b",
+  "source_sha256": {
+    "supabase/migrations/20261016171029_legacy_learning_requested_hands_are_keyed_once.sql": "182577c849321e42615574d4acc0dd7858293e119b7b4e989301a9bb9e150dfd",
+    "scripts/verification-harness/horse-legacy-test-learning-purge.py": "8a4b0f62ff1bb53cff996b2553ccf0c8bb9e1cd90501398554d206885e78f16a",
+    "scripts/verification-harness/horse-legacy-batch-cache.py": "b8d76f8d6a85f96d2165fa1248aba6ef773d125b53514a0a55290449efec8108"
+  },
+  "migration_md5": "301372715ab5c5176b410f0c8b8f367d",
+  "preimage_md5": "71e06db3bd454096fbd7bd605b9c0631",
+  "qualified_postimages": {
+    "fn_queue_horse_adaptive_batch(text)": {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "md5": "3d518628f96858fe33e4ba5fe2b0123a",
+      "owner": "postgres",
+      "config": ["search_path=pg_catalog, public, pg_temp", "lock_timeout=2s"],
+      "security_definer": true
+    },
+    "fn_append_horse_adaptive_observations(text)": {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "md5": "f37975fa232ca26269c3aacab7896669",
+      "owner": "postgres",
+      "config": ["search_path=pg_catalog, public, pg_temp", "lock_timeout=2s"],
+      "security_definer": true
+    },
+    "smarter_private.adaptive_retained_batch(text)": {
+      "acl": "{postgres=X/postgres}",
+      "md5": "41320953f6f340f8f9834b450660fb4b",
+      "owner": "postgres",
+      "config": ["search_path=pg_catalog, public, smarter_private"],
+      "security_definer": true
+    },
+    "smarter_private.legacy_learning_purge_immutable()": {
+      "acl": "{postgres=X/postgres}",
+      "md5": "d4fd520f5019364cc5cd7862d7d3fb49",
+      "owner": "postgres",
+      "config": ["search_path=pg_catalog, public, smarter_private"],
+      "security_definer": true
+    },
+    "smarter_private.purge_legacy_horse_learning(uuid[])": {
+      "acl": "{postgres=X/postgres}",
+      "md5": "a616a19fcae4cd91485d2a66d781b3fa",
+      "owner": "postgres",
+      "config": ["search_path=pg_catalog, public, smarter_private", "lock_timeout=2s"],
+      "security_definer": true
+    },
+    "smarter_private.horse_adaptive_raw_retirement_fence()": {
+      "acl": "{postgres=X/postgres}",
+      "md5": "ad19b08c3073091fa8017bf23e6e86e7",
+      "owner": "postgres",
+      "config": ["search_path=pg_catalog, public, smarter_private"],
+      "security_definer": true
+    },
+    "smarter_private.register_horse_adaptive_batch_membership(text)": {
+      "acl": "{postgres=X/postgres}",
+      "md5": "fd0d43ed066f74b66f6912f77d5c6471",
+      "owner": "postgres",
+      "config": ["search_path=pg_catalog, public, smarter_private"],
+      "security_definer": true
+    }
+  },
+  "native": {
+    "status": "passed",
+    "result_sha256": "80b01c52890046ccee270239109eef8175c2d205d932e5059a0ec6eac8701a3d",
+    "checks": [
+      "fixture-has-genuine-original-normal-certificate",
+      "fail-before-legacy-uncertified-raw-is-retained",
+      "legacy-migration-replay-refused",
+      "legacy-cache-migration-replay-refused",
+      "only-explicit-old-erased-legacy-hand-is-purged",
+      "exception-ledger-is-distinct-fixed-owner-authority",
+      "legacy-raw-absent-after-committed-purge",
+      "shared-batch-keeps-protected-tuple-bytes-and-original-digest",
+      "newer-same-hand-veto-across-batches",
+      "outside-fixed-cutoff-retained",
+      "existing-history-retained",
+      "unfinished-work-retained",
+      "human-history-learning-retained",
+      "atomic-without-history-retained",
+      "ordinary-qualified-certificate-retained",
+      "original-cash-human-evidence-retained",
+      "original-reported-submission-retained",
+      "original-reported-cash-receipt-retained",
+      "original-string-true-human-submission-retained",
+      "original-string-true-human-cash-retained",
+      "original-string-true-human-disposal-retained",
+      "every-financial-human-history-normal-certificate-statistic-and-fence-row-unchanged",
+      "exception-repeat-is-idempotent",
+      "rollback-restores-raw-batch-and-exception-ledger",
+      "identical-old-batch-replay-stays-idempotent-without-raw",
+      "new-batch-replay-cannot-resurrect-legacy-raw",
+      "queue-refuses-retired-legacy-cohort",
+      "raw-before-insert-fence-refuses-cached-writer-resurrection",
+      "failed-replays-have-no-partial-batch-or-work-write",
+      "original-retained-batch-sanitizer-removes-only-exception-hand",
+      "membership-on-append-sanitizes-cached-old-batch-and-preserves-digest",
+      "exception-ledger-update-refused",
+      "exception-ledger-delete-refused",
+      "exception-ledger-truncate-refused",
+      "private-purge-denies-anon",
+      "private-purge-denies-authenticated",
+      "private-purge-denies-service_role",
+      "direct-forged-exception-ledger-insert-refused",
+      "more-than250-requested-hands-refused",
+      "maintenance-refusal-preserves-exception-and-raw",
+      "real-two-session-capacity-contention-is-nonwaiting-and-preserves-raw",
+      "protected-records-still-byte-identical-after-all-refusals",
+      "requested-keyset-prior-cache-and-new-receipts-identical",
+      "cache-old-new-receipts-identical-shared250-with-newer-and-late-protected",
+      "cache-old-new-entire-raw-batch-ledger-postimages-byte-identical-except-transition-time",
+      "requested-keyset-prior-cache-entire-postimages-identical-except-time",
+      "cache-financial-human-normal-evidence-unchanged",
+      "cache-classification-loop-only-inside-unseen-locked-key-branch",
+      "cache-native-count-five-shared-batches-qualified-once-for250hands",
+      "cache-malformed-source-aborts-without-partial-ledger",
+      "requested-keyset-empty-request-remains-empty",
+      "requested-keyset-single-request-preserved",
+      "requested-keyset-duplicate-request-purges-once",
+      "requested-keyset-null-request-and-element-original-refusal",
+      "requested-keyset-null-canonical-hand-is-not-selected",
+      "requested-keyset-migration-replay-refused"
+    ],
+    "cleanup": {
+      "stopped": true,
+      "removed": true
+    },
+    "parent_loader": "satellite_qualifier_fixture.module; absent sys.modules; run_icu",
+    "initial_derivation_only_failure": "psql appended output newline caused Python preimage MD5 assertion; cluster closed, canonical pg_get_functiondef newline recovered from saved stdout; no qualification ran in that attempt",
+    "initial_cache_harness_sha256": "5ada6df83c3dfd731793785d90500a9136b4139cd2ede7a92f5ad29de3dd645f",
+    "affected_final_boundary": {
+      "result_sha256": "73951f96aefa3154c5ca10a13bc526f4f514e716276cbc4554d91b33d5d2e2ce",
+      "checks": [
+        "requested-keyset-prior-cache-and-new-receipts-identical",
+        "cache-old-new-receipts-identical-shared250-with-newer-and-late-protected",
+        "cache-old-new-entire-raw-batch-ledger-postimages-byte-identical-except-transition-time",
+        "requested-keyset-prior-cache-entire-postimages-identical-except-time",
+        "cache-financial-human-normal-evidence-unchanged",
+        "cache-classification-loop-only-inside-unseen-locked-key-branch",
+        "cache-native-count-five-shared-batches-qualified-once-for250hands",
+        "cache-malformed-source-aborts-without-partial-ledger",
+        "requested-keyset-empty-request-remains-empty",
+        "requested-keyset-single-request-preserved",
+        "requested-keyset-duplicate-request-purges-once",
+        "requested-keyset-null-request-and-element-original-refusal",
+        "requested-keyset-null-canonical-hand-is-not-selected",
+        "requested-keyset-migration-replay-refused"
+      ],
+      "cleanup": {
+        "stopped": true,
+        "removed": true
+      },
+      "why": "Final source review showed canonical NULL tuple was in a batch outside requested ID membership. Selected an actual membership-keyed batch and reran only affected cache component; prior remaining checks apply unchanged."
+    }
+  },
+  "isolated_profile": {
+    "requested_hands": 250,
+    "total_tuples": 100000,
+    "matched_each": 50000,
+    "original_seconds": 1.290786,
+    "text_once_seconds": 0.299624,
+    "jsonb_once_seconds": 0.082897,
+    "reproduction_sql_sha256": "580f5a5fb3f505e9eef0cdb308ab6d33b37273899e03f7aeb93a91f41983a02a",
+    "limitation": "Single isolated loop profile; no production throughput claim"
+  },
+  "local_checks": {
+    "typescript": "passed",
+    "source_laws": "22 passed across migration-live-proof and version uniqueness",
+    "canonical_policy": "passed",
+    "diff_whitespace": "passed"
+  },
+  "delivery": {
+    "pushed": false,
+    "merged": false,
+    "installed": false
+  }
+}

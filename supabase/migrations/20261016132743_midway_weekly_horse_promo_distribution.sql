@@ -123,8 +123,9 @@ BEGIN
       IF v_club IS NULL THEN
         SELECT m.club_id INTO v_club
           FROM club_members m
-          JOIN union_clubs uc ON uc.club_id = m.club_id AND uc.union_id = v_union
-         WHERE m.user_id = p_target_id
+         WHERE (EXISTS(SELECT 1 FROM union_clubs uc WHERE uc.club_id=m.club_id AND uc.union_id=v_union)
+                 OR (m.club_id=v_union AND EXISTS(SELECT 1 FROM clubs c WHERE c.id=v_union AND c.union_id=v_union AND c.is_union IS TRUE)))
+           AND m.user_id = p_target_id
            AND COALESCE(m.status, 'active') IN ('active', 'approved')
          ORDER BY m.updated_at DESC NULLS LAST
          LIMIT 1;
@@ -133,7 +134,9 @@ BEGIN
         RETURN jsonb_build_object('success', false, 'error', 'That Player Is Not In Any Club Of This Union');
       END IF;
       IF NOT EXISTS (SELECT 1 FROM union_clubs uc
-                      WHERE uc.union_id = v_union AND uc.club_id = v_club) THEN
+                      WHERE uc.union_id = v_union AND uc.club_id = v_club)
+         AND NOT (v_club=v_union AND EXISTS(SELECT 1 FROM clubs c
+                    WHERE c.id=v_union AND c.union_id=v_union AND c.is_union IS TRUE)) THEN
         RETURN jsonb_build_object('success', false, 'error', 'That Club Is Not In This Union');
       END IF;
     END IF;
@@ -331,12 +334,14 @@ BEGIN
   SELECT m.club_id,m.user_id,m.chip_balance AS opening_balance
    FROM public.club_members m JOIN public.profiles p ON p.id=m.user_id
    JOIN public.clubs c ON c.id=m.club_id
-   JOIN public.union_clubs uc ON uc.club_id=c.id AND uc.union_id=c.union_id
-   WHERE c.union_id=v_midway AND p.is_horse IS TRUE
+   WHERE c.union_id=v_midway
+    AND ((c.id=v_midway AND c.is_union IS TRUE) OR EXISTS(
+      SELECT 1 FROM public.union_clubs uc WHERE uc.club_id=c.id AND uc.union_id=v_midway))
+    AND p.is_horse IS TRUE
     AND p.horse_status IS DISTINCT FROM 'disabled'
     AND m.is_active IS TRUE AND m.status IN('active','approved')
     AND m.membership_lifecycle_status='active' AND m.chip_balance<10000
-   ORDER BY m.club_id,m.user_id FOR UPDATE OF m FOR SHARE OF p,c,uc
+   ORDER BY m.club_id,m.user_id FOR UPDATE OF m FOR SHARE OF p,c
  )w;
  v_n:=jsonb_array_length(v_wallets); v_run:=gen_random_uuid();
  v_note:='Midway Weekly Promo Distribution: '||to_char(NEW.period_start AT TIME ZONE 'America/Los_Angeles','YYYY-MM-DD');
@@ -347,6 +352,8 @@ BEGIN
   'app.ledger_category','app.ledger_counterparty','app.ledger_counterparty_entity',
   'app.ledger_settlement','app.ledger_idempotency_key','app.ledger_counterparty_label',
   'app.ledger_correlation','app.ledger_autoskip_union_wallets','app.ledger_autoskip_clubs'])k;
+ -- A promo run owns its settlement identity, not the preceding rakeback round.
+ PERFORM set_config('app.ledger_settlement',v_run::text,true);
  IF v_n>0 AND v_cents>0 THEN
   v_each:=v_cents/v_n; v_extra:=v_cents%v_n;
   FOR v_wallet IN SELECT value FROM jsonb_array_elements(v_wallets) LOOP

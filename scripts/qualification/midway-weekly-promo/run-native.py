@@ -12,10 +12,11 @@ if os.environ.get('DATABASE_URL'):raise RuntimeError('remote database input forb
 if sys.platform=='darwin' and not str(O).startswith('/Volumes/SmarterWork/agent-work/'):raise RuntimeError('owned SSD output required')
 pg=pathlib.Path(os.environ.get('PG_BIN','/opt/homebrew/opt/postgresql@17/bin' if sys.platform=='darwin' else str(pathlib.Path(shutil.which('psql')).parent)))
 assert ' 17.' in subprocess.check_output([str(pg/'postgres'),'--version'],text=True)
+ENV={'PATH':os.environ.get('PATH','/usr/bin:/bin'),'LANG':'C','LC_ALL':'C','PGCONNECT_TIMEOUT':'3','TMPDIR':str(O.parent)}
 C=pathlib.Path(tempfile.mkdtemp(prefix='midway-pg-',dir=O.parent));S=C/'s';S.mkdir();port='56743';started=False
 q=[pg/'psql','-X','-qAt','-v','ON_ERROR_STOP=1','-h',S,'-p',port,'-U','postgres','-d','r46_mtt_midway_promo']
 def run(cmd,name,input=None,expect=None,timeout=180):
- r=subprocess.run([str(x) for x in cmd],input=input,text=True,capture_output=True,timeout=timeout)
+ r=subprocess.run([str(x) for x in cmd],input=input,text=True,capture_output=True,timeout=timeout,env=ENV)
  (O/(name+'.stdout')).write_text(r.stdout);(O/(name+'.stderr')).write_text(r.stderr)
  if expect:assert r.returncode!=0 and expect in r.stderr,(name,r.stderr[-3000:])
  else:assert r.returncode==0,(name,r.stderr[-3000:])
@@ -53,8 +54,8 @@ try:
  sql((P/'regression.sql').read_text(),'regression')
  import time,importlib.util
  began=time.monotonic();sql((P/'scale.sql').read_text(),'scale')
- (O/'scale-duration.json').write_text(json.dumps({'wallets':2002,'seconds':time.monotonic()-began}))
- spec=importlib.util.spec_from_file_location('midway_concurrency',P/'concurrency.py');race=importlib.util.module_from_spec(spec);spec.loader.exec_module(race);race.qualify(sql,q,O)
+ (O/'scale-duration.json').write_text(json.dumps({'wallets':2003,'seconds':time.monotonic()-began}))
+ spec=importlib.util.spec_from_file_location('midway_concurrency',P/'concurrency.py');race=importlib.util.module_from_spec(spec);spec.loader.exec_module(race);race.qualify(sql,q,O,ENV)
  # Restore the authentic due-time dependency and verify premature payment refusal.
  calendar=next(x for x in auth if x['signature'].startswith('fn_union_accounting_run_at'))
  sql(calendar['definition']+';','authentic-due-time-restored')

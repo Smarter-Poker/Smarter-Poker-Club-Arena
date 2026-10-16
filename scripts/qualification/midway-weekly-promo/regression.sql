@@ -1,15 +1,17 @@
 DO $test$
 DECLARE r jsonb; n int;
 BEGIN
+ PERFORM set_config('app.ledger_settlement','native-previous-weekly-round',true);
  INSERT INTO public.union_accounting_runs(union_id,period_start,period_end,scheduled_at,status,attempts,result)
  VALUES('fade0000-0000-0000-0000-000000000001','2026-10-12 07:00Z','2026-10-19 07:00Z','2026-10-19 09:00Z','complete',1,'{"success":true}');
+ IF current_setting('app.ledger_settlement',true)<>'native-previous-weekly-round' THEN RAISE EXCEPTION 'parent ledger context not restored';END IF;
  SELECT result INTO r FROM public.union_weekly_horse_promo_runs;
- IF (r->>'eligible_wallets')::int<>3 OR (r->>'paid')::numeric<>50.01 OR (r->>'remaining_promo')::numeric<>50.02 THEN RAISE EXCEPTION 'wrong split %',r; END IF;
- IF (SELECT count(*) FROM public.union_weekly_horse_promo_recipients)<>3 OR
-    (SELECT min(amount) FROM public.union_weekly_horse_promo_recipients)<>16.67 OR
-    (SELECT max(amount) FROM public.union_weekly_horse_promo_recipients)<>16.67 THEN RAISE EXCEPTION 'per-club split';END IF;
+ IF (r->>'eligible_wallets')::int<>4 OR (r->>'paid')::numeric<>50.01 OR (r->>'remaining_promo')::numeric<>50.02 THEN RAISE EXCEPTION 'wrong split %',r; END IF;
+ IF (SELECT count(*) FROM public.union_weekly_horse_promo_recipients)<>4 OR
+    (SELECT min(amount) FROM public.union_weekly_horse_promo_recipients)<>12.50 OR
+    (SELECT max(amount) FROM public.union_weekly_horse_promo_recipients)<>12.51 THEN RAISE EXCEPTION 'per-club split';END IF;
  UPDATE public.union_accounting_runs SET status='complete' WHERE union_id='fade0000-0000-0000-0000-000000000001';
- IF (SELECT count(*) FROM public.union_weekly_horse_promo_recipients)<>3 THEN RAISE EXCEPTION 'duplicate paid';END IF;
+ IF (SELECT count(*) FROM public.union_weekly_horse_promo_recipients)<>4 THEN RAISE EXCEPTION 'duplicate paid';END IF;
  RAISE NOTICE 'PASS per-club eligibility, exact threshold, disabled/inactive/banned/departed/human exclusions, no duplicate';
 END $test$;
 -- Every receipt joins the original transaction and one authoritative ledger leg.
@@ -21,8 +23,8 @@ BEGIN
   WHERE t.amount IS DISTINCT FROM r.amount OR t.to_user_id IS DISTINCT FROM r.user_id
     OR t.club_id IS DISTINCT FROM r.club_id OR l.amount IS DISTINCT FROM r.amount
     OR l.from_type IS DISTINCT FROM 'union_wallet' OR l.to_type IS DISTINCT FROM 'player_wallet'
-    OR l.from_label IS DISTINCT FROM 'union_wallets.promo_wallet') THEN RAISE EXCEPTION 'receipt/ledger mismatch %', (SELECT jsonb_agg(jsonb_build_object('operation',r.operation_id,'amount',r.amount,'ledger',to_jsonb(l))) FROM union_weekly_horse_promo_recipients r LEFT JOIN chip_ledger l ON l.correlation_id=r.operation_id); END IF;
- IF (SELECT count(*) FROM chip_ledger l JOIN union_weekly_horse_promo_recipients r ON r.operation_id=l.correlation_id)<>3 THEN RAISE EXCEPTION 'one leg per movement'; END IF;
+    OR l.from_label IS DISTINCT FROM 'union_wallets.promo_wallet' OR l.settlement_id IS DISTINCT FROM r.run_id::text) THEN RAISE EXCEPTION 'receipt/ledger mismatch %', (SELECT jsonb_agg(jsonb_build_object('operation',r.operation_id,'amount',r.amount,'ledger',to_jsonb(l))) FROM union_weekly_horse_promo_recipients r LEFT JOIN chip_ledger l ON l.correlation_id=r.operation_id); END IF;
+ IF (SELECT count(*) FROM chip_ledger l JOIN union_weekly_horse_promo_recipients r ON r.operation_id=l.correlation_id)<>4 THEN RAISE EXCEPTION 'one leg per movement'; END IF;
  IF (SELECT sum(amount) FROM union_wallet_transactions WHERE tx_type='promo_disbursement')<>50.01 THEN RAISE EXCEPTION 'source receipt sum'; END IF;
  RAISE NOTICE 'PASS existing chip transactions, union wallet receipts and real journal legs';
 END $test$;
@@ -52,7 +54,7 @@ END $test$;
 ROLLBACK;
 
 BEGIN;
-UPDATE club_members SET is_active=false WHERE membership_lifecycle_status='active' AND is_active IS TRUE AND club_id IN('a0000000-0000-0000-0000-000000000001','a41434bb-8d0c-400a-8f0d-e8b3d65afed4');
+UPDATE club_members SET is_active=false WHERE membership_lifecycle_status='active' AND is_active IS TRUE AND club_id IN('a0000000-0000-0000-0000-000000000001','a41434bb-8d0c-400a-8f0d-e8b3d65afed4','fade0000-0000-0000-0000-000000000001');
 INSERT INTO union_accounting_runs(union_id,period_start,period_end,scheduled_at,status,attempts,result)
  VALUES('fade0000-0000-0000-0000-000000000001','2026-10-19 07:00Z','2026-10-26 07:00Z','2026-10-26 09:00Z','complete',1,'{"success":true}');
 DO $$ BEGIN IF NOT EXISTS(SELECT FROM union_weekly_horse_promo_runs WHERE period_end='2026-10-26 07:00Z' AND paid=0 AND eligible_wallets=0 AND result->>'reason'='no_eligible_wallets')
@@ -89,7 +91,7 @@ BEGIN;
 SELECT fn_promo_disburse('union','fade0000-0000-0000-0000-000000000001','player',md5('midway-native-3')::uuid,50,NULL,'a0000000-0000-0000-0000-000000000001',gen_random_uuid());
 INSERT INTO union_accounting_runs(union_id,period_start,period_end,scheduled_at,status,attempts,result)
  VALUES('fade0000-0000-0000-0000-000000000001','2026-10-19 07:00Z','2026-10-26 07:00Z','2026-10-26 09:00Z','complete',1,'{"success":true}');
-DO $$ BEGIN IF NOT EXISTS(SELECT FROM union_weekly_horse_promo_runs WHERE period_end='2026-10-26 07:00Z' AND budget=.01 AND paid=.01 AND paid_wallets=1 AND eligible_wallets=2) THEN RAISE EXCEPTION 'tiny split failed';END IF;RAISE NOTICE 'PASS tiny budget, deterministic cent allocation and zero-size shares';END $$;
+DO $$ BEGIN IF NOT EXISTS(SELECT FROM union_weekly_horse_promo_runs WHERE period_end='2026-10-26 07:00Z' AND budget=.01 AND paid=.01 AND paid_wallets=1 AND eligible_wallets=3) THEN RAISE EXCEPTION 'tiny split failed';END IF;RAISE NOTICE 'PASS tiny budget, deterministic cent allocation and zero-size shares';END $$;
 ROLLBACK;
 BEGIN;
 SELECT fn_promo_disburse('union','fade0000-0000-0000-0000-000000000001','player',md5('midway-native-3')::uuid,50.01,NULL,'a0000000-0000-0000-0000-000000000001',gen_random_uuid());

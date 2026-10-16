@@ -12,8 +12,8 @@ INSERT INTO union_accounting_runs(union_id,period_start,period_end,scheduled_at,
  VALUES('fade0000-0000-0000-0000-000000000001','2026-10-19 07:00Z','2026-10-26 07:00Z','2026-10-26 09:00Z','complete',1,'{"success":true}');
 SET CONSTRAINTS ALL IMMEDIATE;
 DO $$ BEGIN
- IF NOT EXISTS(SELECT FROM union_weekly_horse_promo_runs WHERE period_end='2026-10-26 07:00Z' AND eligible_wallets=2002 AND paid_wallets=2002 AND budget=25.01 AND paid=25.01) THEN RAISE EXCEPTION 'scale split failed';END IF;
+ IF NOT EXISTS(SELECT FROM union_weekly_horse_promo_runs WHERE period_end='2026-10-26 07:00Z' AND eligible_wallets=2003 AND paid_wallets=2003 AND budget=25.01 AND paid=25.01) THEN RAISE EXCEPTION 'scale split failed';END IF;
  IF EXISTS(SELECT FROM union_weekly_horse_promo_recipients WHERE run_id=(SELECT id FROM union_weekly_horse_promo_runs WHERE period_end='2026-10-26 07:00Z') AND amount NOT IN(.01,.02)) THEN RAISE EXCEPTION 'unequal scale shares';END IF;
- RAISE NOTICE 'PASS 2002 real disbursements with all deferred financial journal guards';
+ RAISE NOTICE 'PASS 2003 real disbursements with all deferred financial journal guards';
 END $$;
 ROLLBACK;

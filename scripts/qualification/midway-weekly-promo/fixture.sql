@@ -21,6 +21,7 @@ ALTER TABLE public.clubs DISABLE TRIGGER trg_record_new_club_opening_bank;
 INSERT INTO public.clubs(id,name,club_id,owner_id,union_id,chip_treasury)
  VALUES('a0000000-0000-0000-0000-000000000001'::uuid,'Native Midway Club 1',984031,md5('midway-native-9')::uuid,'fade0000-0000-0000-0000-000000000001',0),
  ('a41434bb-8d0c-400a-8f0d-e8b3d65afed4'::uuid,'Native Midway Club 2',984032,md5('midway-native-9')::uuid,'fade0000-0000-0000-0000-000000000001',0);
+INSERT INTO public.clubs(id,name,club_id,owner_id,union_id,chip_treasury,is_union) VALUES('fade0000-0000-0000-0000-000000000001','Native Midway Own Board',984033,md5('midway-native-9')::uuid,'fade0000-0000-0000-0000-000000000001',0,true);
 INSERT INTO public.union_clubs(union_id,club_id) SELECT 'fade0000-0000-0000-0000-000000000001',CASE WHEN i=1 THEN 'a0000000-0000-0000-0000-000000000001'::uuid ELSE 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4'::uuid END FROM generate_series(1,2)i ON CONFLICT DO NOTHING;
 ALTER TABLE public.clubs ENABLE TRIGGER trg_seed_new_club_opening_bank;
 ALTER TABLE public.clubs ENABLE TRIGGER trg_record_new_club_opening_bank;
@@ -33,6 +34,7 @@ INSERT INTO public.club_members(club_id,user_id,is_active,status,membership_life
 INSERT INTO public.club_members(club_id,user_id,is_active,status,membership_lifecycle_status,chip_balance)
  VALUES('a41434bb-8d0c-400a-8f0d-e8b3d65afed4'::uuid,md5('midway-native-1')::uuid,true,'approved','active',12000),
  ('a41434bb-8d0c-400a-8f0d-e8b3d65afed4'::uuid,md5('midway-native-2')::uuid,true,'approved','active',0);
+INSERT INTO public.club_members(club_id,user_id,is_active,status,membership_lifecycle_status,chip_balance) VALUES('fade0000-0000-0000-0000-000000000001',md5('midway-native-2')::uuid,true,'active','active',0);
 -- Opening fixture balances use the ordinary declared source, never replica mode.
 SELECT public.fn_ca_declare_ledger('promo','union_wallet','fade0000-0000-0000-0000-000000000001',NULL,'native-open',ARRAY['union_wallets']);
 UPDATE public.club_members SET chip_balance=9999.99 WHERE club_id='a0000000-0000-0000-0000-000000000001'::uuid AND user_id=md5('midway-native-1')::uuid;

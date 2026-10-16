@@ -1,0 +1,7 @@
+# Capture backoff keeps retention moving
+
+A deferred or failed observation capture paused the entire serial adaptive worker for up to 60 seconds. Adaptive retirement shares that worker, so a capture queue or source problem also delayed already-qualified retention work. Discovery already used its own retry deadline; capture now follows the same independent-owner contract.
+
+The existing loop stores a capture retry deadline and skips capture until it is due. Its exponential failure backoff, failure counter, healthy one-second pacing, idle five-second pacing, eight-turn journal fairness, shutdown handling and serialized RPCs remain intact. During an unhealthy capture's backoff, the existing journal and retention turns continue after their normal one-second pause. No timer, schedule, new worker or database behavior is added.
+
+The focused regression failed against the original loop for deferred, unknown and thrown capture outcomes: its shared wait reached 60 seconds. The candidate passes all 31 existing connected capture, retention and discovery loop checks, preserving capture attempt spacing while retention continues and RPCs never overlap. Existing assertions of shared error sleeps were replaced with capture timestamp assertions; healthy behavior and shutdown assertions remain. Local compilers and normal submission checks are recorded in task evidence. Deployment and natural worker throughput remain pending; this does not certify automatic backlog clearance.

@@ -886,7 +886,8 @@ test.describe('notification reflow above Messenger and navigation', () => {
           'Daily Mission Settlement Confirmed With Every Diamond Recorded In The Vault Ledger And Reconciled Against The Current Wallet Before The Reward Window Closed',
           'Streak Freeze Protection Is Ready And The Protected Date Remains Visible After Reload Across Every Open Club Arena Challenge Window',
         ];
-        await page.setContent(`<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600&family=Roboto+Condensed:wght@600&display=swap"><style>${css('src/components/common/Toast.css')}</style>
+        await page.setContent(`<meta name="viewport" content="width=device-width, initial-scale=1">
+          <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600&family=Roboto+Condensed:wght@600&display=swap"><style>${css('src/components/common/Toast.css')}</style>
           <body data-toast-theme="daily-missions-casino" style="--bottom-nav-clearance:72px;--sp-messenger-toast-clearance:${messengerActive ? bottom : 0}px;--sp-messenger-toast-room:${room}px">
           <div class="toast-container">${messages.map((message) => `<div class="toast toast--success"><span class="toast__icon"></span><span class="toast__message">${message}</span><button class="toast__close" aria-label="Dismiss Notification">X</button></div>`).join('')}</div></body>`);
         await page.evaluate(() => {

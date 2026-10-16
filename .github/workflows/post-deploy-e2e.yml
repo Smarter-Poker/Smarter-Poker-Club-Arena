@@ -1624,7 +1624,7 @@ jobs:
         run: |
           set -uo pipefail
           echo 'certified=false' >> "$GITHUB_OUTPUT"
-          if [ "$MULTIRUN_REQUESTED" = 'true' ] && [ "$MULTIRUN_OUTCOME" != 'success' ]; then
+          if [ "${MULTIRUN_REQUESTED:-false}" = 'true' ] && [ "${MULTIRUN_OUTCOME:-}" != 'success' ]; then
             echo "NON-VERDICT: the requested natural two/three-run mobile certificate did not pass." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi

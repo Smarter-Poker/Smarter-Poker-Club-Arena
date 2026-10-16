@@ -28,7 +28,7 @@
  *   is the one rule that decides which account a viewer stands at, and a bank
  *   role who ALSO holds a float may switch between the two.
  *
- * AGENT WALLET — unchanged: sends to a player wallet only.
+ * AGENT WALLET — sends to the selected player or agent wallet.
  *
  * The server does not trust this file. fn_club_bank_claim_back,
  * fn_promo_wallet_send and fn_club_promo_wallet_send re-check every rule;
@@ -185,39 +185,13 @@ export function claimNeedsConfirm(amount: number): boolean {
   return amount > 0;
 }
 
-/**
- * ═══════════════════════════════════════════════════════════════════════════
- *  AGENT TO AGENT ALWAYS CREDITS THE AGENT WALLET — and nothing wider
- * ═══════════════════════════════════════════════════════════════════════════
- *
- * Dan 2026-08-25, binding: "AGENT TO AGENT SEND OR CLAIM BACK ALWAYS CREDIT TO
- * AGENT WALLETS."
- *
- * fn_agent_wallet_send derives the destination from the recipient's role and
- * ignores what the client asked for, so this is only the half that stops the
- * mistake being OFFERED. It lives here rather than inline in the modal because
- * the version that lived inline applied to EVERY cashier and BOTH tabs, and
- * that quietly broke three things the law does not touch:
- *
- *   - the Club Bank could no longer fund an agent's PROMO wallet;
- *   - the Club Bank could no longer credit a player-wallet balance to someone
- *     who happens to hold a float;
- *   - the Club Bank's Claim Back could only pull from an agent's float, never
- *     from their promo wallet or their playing balance, though
- *     fn_club_bank_claim_back accepts all three.
- *
- * "Agent to agent" is fn_agent_wallet_send. It is not fn_club_bank_send and it
- * is not fn_promo_wallet_send, both of which take an explicit destination the
- * server honours. So: the AGENT wallet, on its SEND tab, to a recipient who
- * holds a float. `recipientHoldsFloat` is canHoldAgentWallet(role) — passed in
- * rather than re-derived, so the caller and this rule cannot disagree.
- */
+/** Owner update 2026-10-15: sends honor the sender's wallet choice. */
 export function coercesToAgentWallet(
-  walletType: CashierWalletType,
-  tab: CashierTab,
-  recipientHoldsFloat: boolean
+  _walletType: CashierWalletType,
+  _tab: CashierTab,
+  _recipientHoldsFloat: boolean
 ): boolean {
-  return walletType === 'agent_wallet' && tab === 'send' && recipientHoldsFloat;
+  return false;
 }
 
 /**
@@ -268,10 +242,7 @@ export function cashierRefusesSelfSend(
  * default and stays the agent float, because funding a freshly promoted agent
  * is what the Member Management screen opens this flow to do.
  *
- * This is the Club Bank's rule only. fn_agent_wallet_send still credits a
- * staff or agent recipient's float whatever is asked ("AGENT TO AGENT ALWAYS
- * CREDIT TO AGENT WALLETS", see coercesToAgentWallet), so an agent wallet
- * screen keeps deriving the destination from the role.
+ * Owner update 2026-10-15: the same wallet choice applies to agent sends.
  */
 export type ClubBankRecipientWallet = 'agent_wallet' | 'player_wallet';
 

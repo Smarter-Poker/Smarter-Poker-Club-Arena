@@ -547,6 +547,9 @@ function CashierTradeWorkspace() {
   const transferRecoveryRef = useRef<CashierTransferRecovery | null>(null);
   transferRecoveryRef.current = transferRecovery;
   const [amount, setAmount] = useState('');
+  const [recipientWallets, setRecipientWallets] = useState<
+    Record<string, 'player_wallet' | 'agent_wallet'>
+  >({});
   const [recipientAmounts, setRecipientAmounts] = useState<Record<string, string>>({});
   const [batchReceipt, setBatchReceipt] = useState<{
     batchId: string;
@@ -620,6 +623,7 @@ function CashierTradeWorkspace() {
     user?.id,
     clubUuid,
     amount,
+    Object.entries(recipientWallets).sort(([left], [right]) => left.localeCompare(right)),
     Object.entries(recipientAmounts).sort(([left], [right]) => left.localeCompare(right)),
     [...selected].sort(),
     // A different tournament is a different ticket intent: it must never
@@ -1869,6 +1873,7 @@ function CashierTradeWorkspace() {
 
   useEffect(() => {
     setRecipientAmounts({});
+    setRecipientWallets({});
     setBatchReceipt(null);
   }, [user?.id, clubUuid]);
 
@@ -1952,7 +1957,9 @@ function CashierTradeWorkspace() {
   const transferDestination = (target: DownlineRow): 'agent_wallet' | 'player_wallet' =>
     (transferRecovery?.submissionId === submissionIdRef.current
       ? transferRecovery.destinations?.[target.userId]
-      : undefined) || (canHoldAgentWallet(target.role) ? 'agent_wallet' : 'player_wallet');
+      : undefined) ||
+    recipientWallets[target.userId] ||
+    (canHoldAgentWallet(target.role) ? 'agent_wallet' : 'player_wallet');
 
   // ── Money actions ──────────────────────────────────────────────────────────
   const runTransfers = async (kind: 'send' | 'ticket') => {
@@ -2144,10 +2151,7 @@ function CashierTradeWorkspace() {
         transferRecovery?.submissionId === submissionId
           ? transferRecovery.destinations
           : Object.fromEntries(
-              targets.map((target) => [
-                target.userId,
-                canHoldAgentWallet(target.role) ? 'agent_wallet' : 'player_wallet',
-              ])
+              targets.map((target) => [target.userId, transferDestination(target)])
             ),
       createdAt: recoveryCreatedAt,
     };
@@ -2619,7 +2623,7 @@ function CashierTradeWorkspace() {
         {
           p_club_id: clubUuid,
           p_to_user_id: user.id,
-          p_destination: 'player_wallet',
+          p_destination: transferDestination(picked[0]),
           p_amount: value,
           p_reason: 'Cashier Send To Self',
         }
@@ -2629,7 +2633,7 @@ function CashierTradeWorkspace() {
         p_club_id: clubUuid,
         p_to_user_id: user.id,
         p_amount: value,
-        p_destination: 'player_wallet',
+        p_destination: transferDestination(picked[0]),
         p_reason: 'Cashier Send To Self',
         p_op_id: operation.operationId,
       });
@@ -2646,8 +2650,8 @@ function CashierTradeWorkspace() {
       if (!isMounted.current || transferView.current !== owningView) return;
       toast?.success?.(
         res.replayed
-          ? `That Send Had Already Gone Through. ${exactChipFigure(value)} Chips Are In Your Player Wallet`
-          : `Sent ${exactChipFigure(value)} From The Club Bank To Your Player Wallet`
+          ? `That Send Had Already Gone Through. ${exactChipFigure(value)} Chips Are In Your ${transferDestination(picked[0]) === 'agent_wallet' ? 'Agent' : 'Player'} Wallet`
+          : `Sent ${exactChipFigure(value)} From The Club Bank To Your ${transferDestination(picked[0]) === 'agent_wallet' ? 'Agent' : 'Player'} Wallet`
       );
       setAmountModal(null);
       setAmount('');
@@ -2921,12 +2925,14 @@ function CashierTradeWorkspace() {
       user.id,
       clubUuid,
       String(saved.amount),
+      Object.entries(saved.destinations ?? {}).sort(([left], [right]) => left.localeCompare(right)),
       Object.entries(saved.targetAmounts ?? {})
         .map(([id, value]) => [id, String(value)] as [string, string])
         .sort(([left], [right]) => left.localeCompare(right)),
       [...pendingTargets].sort(),
       saved.tournamentId ?? ticketTournamentId,
     ]);
+    setRecipientWallets(saved.destinations ?? {});
     submissionIdRef.current = saved.submissionId;
     opIdsRef.current = new Map(Object.entries(saved.opIds));
     transferRecoveryScopeRef.current = {
@@ -3081,10 +3087,9 @@ function CashierTradeWorkspace() {
   // ── Render ────────────────────────────────────────────────────────────────
   const cashierAuthorityBlocked = busy || loading || !roleResolved || !!loadError;
   /** Whether the viewer's own row offers "Fund Me" (see cashierPreset). */
-  // Not inside a union house: fn_has_player_wallet gives nobody a player wallet
-  // in a union, so the chips would land in a balance no table reads.
-  const selfCanFundPlayerWallet =
-    currentClub?.entityType === 'club' && canSeeClubBank(myRole) && holdsPlayerWallet(myRole);
+  // Only a club cashier may spend its own bank; recipient eligibility is
+  // determined separately for the selected player or agent wallet.
+  const selfCanFundPlayerWallet = currentClub?.entityType === 'club' && canSeeClubBank(myRole);
 
   return (
     <div
@@ -4753,6 +4758,36 @@ function CashierTradeWorkspace() {
                         </span>
                       </label>
                     )}
+                    {amountModal === 'send' &&
+                      picked.map((target) => (
+                        <label className={styles.entryRow} key={`wallet-${target.userId}`}>
+                          <span className={styles.entryRowSlot}>Wallet</span>
+                          <span className={styles.entryRowPlate}>
+                            <select
+                              className={styles.entrySelect}
+                              aria-label={`Recipient Wallet For ${target.name}`}
+                              value={transferDestination(target)}
+                              disabled={busy}
+                              onChange={(event) => {
+                                setRecipientWallets((previous) => ({
+                                  ...previous,
+                                  [target.userId]: event.target.value as
+                                    | 'player_wallet'
+                                    | 'agent_wallet',
+                                }));
+                                setTransferFailures([]);
+                              }}
+                            >
+                              {holdsPlayerWallet(target.role) && (
+                                <option value="player_wallet">Player Wallet</option>
+                              )}
+                              {canHoldAgentWallet(target.role) && (
+                                <option value="agent_wallet">Agent Wallet</option>
+                              )}
+                            </select>
+                          </span>
+                        </label>
+                      ))}
                     {/* WHO, WHEN THERE IS MORE THAN ONE (Dan 2026-08-25). On a
                         375px screen the selection has scrolled out of view, so
                         every recipient is named with its own amount. */}

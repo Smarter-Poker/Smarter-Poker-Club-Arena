@@ -1744,3 +1744,25 @@ describe('Simple And Advanced Action Recovery Audit', () => {
     }
   );
 });
+
+it('the sender chooses a recipient agent player wallet and the batch retains that destination', async () => {
+  state.roster = [{ ...player(0, 10, 'Player 1'), role: 'agent' }];
+  state.agentWallet = 5000;
+  mountCashier();
+  await synchronized();
+  const dialog = await openSendOut('5', 1);
+  fireEvent.change(
+    within(dialog).getByRole('combobox', { name: 'Recipient Wallet For Player 1' }),
+    {
+      target: { value: 'player_wallet' },
+    }
+  );
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm', exact: true }));
+  await waitFor(() =>
+    expect(state.rpcCalls.some((call) => call.name === 'fn_cashier_batch_transfer')).toBe(true)
+  );
+  const batch = state.rpcCalls.find((call) => call.name === 'fn_cashier_batch_transfer')!;
+  expect(batch.args.p_items).toEqual([
+    expect.objectContaining({ user_id: PLAYER_IDS[0], destination: 'player_wallet' }),
+  ]);
+});

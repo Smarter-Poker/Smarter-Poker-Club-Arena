@@ -239,6 +239,55 @@ test.describe('Hamburger Menu — Navigation Links', () => {
 });
 
 test.describe('Hamburger Menu — Settings Toggles', () => {
+  test('Auto Time Bank defaults on and persists between menu and table settings after reload', async ({
+    page,
+  }) => {
+    await navigateAndWait(page, '/');
+    await expect(page).not.toHaveURL(/\/auth(?:[/?#]|$)/);
+    await openMenuOrSkip(page);
+    const drawer = page.getByRole('dialog', { name: 'Poker Arena' });
+    const expandSettings = async () => {
+      await drawer.locator('span:text-is("Table Settings")').first().click();
+      await expect(drawer.locator('.tsp-inline')).toHaveAttribute('aria-busy', 'false');
+    };
+    await expandSettings();
+    const toggles = drawer.getByRole('switch', { name: 'Auto Time Bank', exact: true });
+    await expect(toggles).toHaveCount(2);
+    await expect(toggles.nth(0)).toHaveAttribute('aria-checked', 'true');
+    await expect(toggles.nth(1)).toHaveAttribute('aria-checked', 'true');
+    const savedChoice = (value: boolean) =>
+      page.waitForResponse((response) => {
+        const request = response.request();
+        return (
+          response.url().includes('/rest/v1/user_table_settings') &&
+          request.method() === 'POST' &&
+          response.ok() &&
+          request.postDataJSON()?.auto_time_bank === value
+        );
+      });
+    const offSaved = savedChoice(false);
+    await toggles.nth(0).click();
+    await offSaved;
+    await expect(toggles.nth(1)).toHaveAttribute('aria-checked', 'false');
+    const restored = page.waitForResponse(
+      (response) =>
+        response.url().includes('/rest/v1/user_table_settings') &&
+        response.request().method() === 'GET' &&
+        response.ok()
+    );
+    await page.reload();
+    const row = await (await restored).json();
+    expect(Array.isArray(row) ? row[0]?.auto_time_bank : row?.auto_time_bank).toBe(false);
+    await openMenuOrSkip(page);
+    await expandSettings();
+    await expect(toggles.nth(0)).toHaveAttribute('aria-checked', 'false');
+    await expect(toggles.nth(1)).toHaveAttribute('aria-checked', 'false');
+    const onSaved = savedChoice(true);
+    await toggles.nth(1).click();
+    await onSaved;
+    await expect(toggles.nth(0)).toHaveAttribute('aria-checked', 'true');
+  });
+
   test('should toggle Sounds on/off', async ({ page }) => {
     await navigateAndWait(page, '/');
 

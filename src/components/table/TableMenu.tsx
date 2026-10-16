@@ -31,6 +31,7 @@ import { STORAGE_KEYS } from '../../lib/storage';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useAuthUser } from '../../hooks/useAuthUser';
+import { useUserTableSettings } from '../../hooks/useUserTableSettings';
 import { AvatarGallery } from '../customization/AvatarGallery';
 import { useHeaderDataStore } from '../../stores/useHeaderDataStore';
 import { useButtonImage } from '../../hooks/useButtonImage';
@@ -338,6 +339,9 @@ export function TableMenu({
   });
   const [isVip, setIsVip] = useState(false);
   const { user } = useAuthUser();
+  const { settings: playerSettings, toggleSetting: togglePlayerSetting } = useUserTableSettings(
+    user?.id
+  );
   const avatarUrl = useHeaderDataStore((s) => s.avatarUrl);
   const prevOpenRef = useRef(false);
 
@@ -446,6 +450,13 @@ export function TableMenu({
     {
       title: 'Table Controls',
       actions: [
+        {
+          id: 'auto-time-bank',
+          label: 'Auto Time Bank',
+          icon: <SettingsIcon />,
+          badge: playerSettings.auto_time_bank ? 'ON' : 'OFF',
+          onClick: () => void togglePlayerSetting('auto_time_bank'),
+        },
         {
           id: 'seat-change-visibility',
           label: 'Seat Change',
@@ -628,10 +639,16 @@ export function TableMenu({
                         <button
                           key={action.id}
                           role={
-                            action.id === 'seat-change-visibility' ? 'menuitemcheckbox' : 'menuitem'
+                            action.id === 'seat-change-visibility' || action.id === 'auto-time-bank'
+                              ? 'menuitemcheckbox'
+                              : 'menuitem'
                           }
                           aria-checked={
-                            action.id === 'seat-change-visibility' ? seatChangeVisible : undefined
+                            action.id === 'seat-change-visibility'
+                              ? seatChangeVisible
+                              : action.id === 'auto-time-bank'
+                                ? playerSettings.auto_time_bank
+                                : undefined
                           }
                           className={`table-menu__action ${action.danger ? 'table-menu__action--danger' : ''} ${action.disabled ? 'table-menu__action--disabled' : ''}`}
                           onClick={() => handleActionClick(action)}

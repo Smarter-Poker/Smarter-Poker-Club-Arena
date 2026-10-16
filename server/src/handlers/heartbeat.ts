@@ -17,7 +17,7 @@ export interface HeartbeatDeps {
       | {
           heartbeat(
             userId: string,
-            opts?: { turnRendered?: boolean; rebuyPromptOpen?: boolean }
+            opts?: { turnRendered?: boolean; rebuyPromptOpen?: boolean; autoTimeBank?: boolean }
           ): unknown;
         }
       | null
@@ -42,7 +42,7 @@ export async function handleHeartbeat(
        Optional — older clients omit it, and the silent-client canary is built
        to work without it. Coerced rather than trusted as a shape: it arrives
        from a browser, and only its truthiness is ever read. */
-    const { tableId, turnRendered, rebuyPromptOpen } = body;
+    const { tableId, turnRendered, rebuyPromptOpen, autoTimeBank } = body;
     const userId = auth.userId;
 
     if (!tableId) {
@@ -57,6 +57,7 @@ export async function handleHeartbeat(
     const result = engine.heartbeat(userId, {
       turnRendered: turnRendered === true,
       rebuyPromptOpen: rebuyPromptOpen === true,
+      ...(typeof autoTimeBank === 'boolean' ? { autoTimeBank } : {}),
     });
     return sendJSON(res, 200, result);
   } catch (err: unknown) {

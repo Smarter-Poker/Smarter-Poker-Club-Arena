@@ -24,7 +24,7 @@ const SRC = readFileSync(join(here, 'ServerTableEngineDealing.ts'), 'utf8');
 
 describe('dealHand re-reads the controller after every preparation await', () => {
   const construct = SRC.indexOf('this.handController = new HandController(');
-  const awaitAt = SRC.indexOf('const tbExtras = await this.fetchTimeBankExtras(', construct);
+  const awaitAt = SRC.indexOf('const [tbExtras, autoPreferences] = await Promise.all([', construct);
   const guardTree = ts.createSourceFile('dealing.ts', SRC, ts.ScriptTarget.Latest, true);
   const matchingGuards: ts.IfStatement[] = [];
   function findGuard(node: ts.Node): void {
@@ -216,6 +216,12 @@ for (const boundary of awaits) {
       const fn = vm.runInNewContext(js, {
         hcPlayers: [],
         tbNewPlayers: [],
+        preferenceIds: [],
+        readAutoTimeBankPreferences: async () => {
+          await settle();
+          return new Map();
+        },
+        reportError() {},
         handNumber: 1,
         console: { log() {} },
       });

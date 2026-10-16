@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 // button rather than a line of text.
 const page = readFileSync('src/pages/CashierTradePage.tsx', 'utf8');
 const css = readFileSync('src/pages/CashierTradePage.module.css', 'utf8');
-const PLATE = 'public/images/cashier-actions/cashier-request-cashout-plate-v1.png';
+const PILL = 'public/images/cashier-actions/cashier-request-cashout-pill-v1.png';
 
 describe('the Simple Cashier header', () => {
   it('prints no Live Ledger pill, and still says Locked when offline', () => {
@@ -15,9 +15,10 @@ describe('the Simple Cashier header', () => {
     expect(page).toContain("pill={isOnline ? undefined : 'Locked'}");
   });
 
-  it('carries no Simple Cashier caption', () => {
+  it('carries no Simple Cashier caption or toolbar row, and keeps the Advanced switch beside the club', () => {
     expect(page).not.toContain("'Simple Cashier'");
-    expect(page).toContain('{advanced ? <span>Advanced Cashier</span>');
+    expect(page).toMatch(/\{advanced && \(\s*<div className=\{styles\.modeToolbar\}>/);
+    expect(page).toContain('{!advanced && modeToggle}');
   });
 
   it('keeps a healthy sync status for assistive technology only, and shows every other state', () => {
@@ -32,13 +33,13 @@ describe('the Simple Cashier header', () => {
     expect(page).toContain('styles.entityCaretOpen');
   });
 
-  it('puts Request Cash Out on its own painted plate', () => {
+  it('puts Request Cash Out on a compact lit pill cut from the approved header pill', () => {
     expect(page).toMatch(/className=\{styles\.cashoutButton\}[\s\S]{0,120}Request Cash Out/);
-    expect(css).toContain("url('/images/cashier-actions/cashier-request-cashout-plate-v1.png')");
-    expect(css).toMatch(/\.cashoutButton \{[^}]*aspect-ratio: 401 \/ 155;/);
-    expect(existsSync(PLATE)).toBe(true);
-    const png = readFileSync(PLATE);
-    expect(png.readUInt32BE(16)).toBe(401);
-    expect(png.readUInt32BE(20)).toBe(155);
+    expect(css).toContain("url('/images/cashier-actions/cashier-request-cashout-pill-v1.png')");
+    expect(css).toMatch(/\.cashoutButton \{[^}]*width: 220px;[^}]*aspect-ratio: 470 \/ 108;/);
+    expect(existsSync(PILL)).toBe(true);
+    const png = readFileSync(PILL);
+    expect(png.readUInt32BE(16)).toBe(470);
+    expect(png.readUInt32BE(20)).toBe(108);
   });
 });

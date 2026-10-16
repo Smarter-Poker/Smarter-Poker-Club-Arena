@@ -3266,6 +3266,28 @@ function CashierTradeWorkspace() {
   // determined separately for the selected player or agent wallet.
   const selfCanFundPlayerWallet = currentClub?.entityType === 'club' && canSeeClubBank(myRole);
 
+  const modeToggle = (
+    <button
+      type="button"
+      className={styles.modeToggle}
+      aria-pressed={advanced}
+      onClick={() => {
+        if (advanced) {
+          setTab('trade');
+          setRoleFilter('all');
+          setMineOnly(false);
+          setGroupByRole(false);
+        }
+        setAdvanced((value) => !value);
+      }}
+    >
+      {advanced ? 'Simple' : 'Advanced'}
+      {!advanced && pendingCount + heldTicketCount > 0
+        ? ` (${(pendingCount + heldTicketCount).toLocaleString()})`
+        : ''}
+    </button>
+  );
+
   return (
     <div
       className={`${styles.page} ${!advanced ? styles.simple : ''}`}
@@ -3283,29 +3305,15 @@ function CashierTradeWorkspace() {
         className={styles.console}
       >
         <div className={styles.glass}>
-          <div className={styles.modeToolbar}>
-            {/* Dan 2026-10-16: the Simple view carries no "Simple Cashier" caption. */}
-            {advanced ? <span>Advanced Cashier</span> : <span aria-hidden="true" />}
-            <button
-              type="button"
-              className={styles.modeToggle}
-              aria-pressed={advanced}
-              onClick={() => {
-                if (advanced) {
-                  setTab('trade');
-                  setRoleFilter('all');
-                  setMineOnly(false);
-                  setGroupByRole(false);
-                }
-                setAdvanced((value) => !value);
-              }}
-            >
-              {advanced ? 'Simple' : 'Advanced'}
-              {!advanced && pendingCount + heldTicketCount > 0
-                ? ` (${(pendingCount + heldTicketCount).toLocaleString()})`
-                : ''}
-            </button>
-          </div>
+          {/* Dan 2026-10-16: the Simple view carries no "Simple Cashier" caption
+          and no toolbar row; its Advanced switch sits beside the club so the
+          club leads the glass. Advanced keeps its labelled toolbar. */}
+          {advanced && (
+            <div className={styles.modeToolbar}>
+              <span>Advanced Cashier</span>
+              {modeToggle}
+            </div>
+          )}
           <section
             className={styles.hero}
             aria-labelledby={advanced ? 'cashier-title' : undefined}
@@ -3324,22 +3332,25 @@ function CashierTradeWorkspace() {
                 {currentClub?.logoUrl ? (
                   <img src={currentClub.logoUrl} alt="" className={styles.entityLogo} />
                 ) : null}
-                <span className={styles.entityName}>{currentClubLabel}</span>
-                <span
-                  className={`${styles.entityCaret} ${pickerOpen ? styles.entityCaretOpen : ''} sc-label sc-ink--blue`}
-                  aria-hidden="true"
-                >
-                  Choose
-                  <svg className={styles.entityChevron} viewBox="0 0 12 8" focusable="false">
-                    <path
-                      d="M1 1.5 6 6.5 11 1.5"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                    />
-                  </svg>
+                <span className={styles.entityText}>
+                  <span className={styles.entityName}>{currentClubLabel}</span>
+                  <span
+                    className={`${styles.entityCaret} ${pickerOpen ? styles.entityCaretOpen : ''} sc-label sc-ink--blue`}
+                    aria-hidden="true"
+                  >
+                    Choose
+                    <svg className={styles.entityChevron} viewBox="0 0 12 8" focusable="false">
+                      <path
+                        d="M1 1.5 6 6.5 11 1.5"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      />
+                    </svg>
+                  </span>
                 </span>
               </button>
+              {!advanced && modeToggle}
             </div>
 
             {holdsPlayerWallet(myRole) && roleResolved && (

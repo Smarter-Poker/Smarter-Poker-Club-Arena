@@ -2021,18 +2021,38 @@
 }
 
 /* ── Cashier header, Dan 2026-10-16 ─────────────────────────────────────
-   The club logo leads the header at the size of the club's own mark,
-   "Choose" reads as a dropdown (a lit chevron that turns when the club list
-   is open beneath it), and Request Cash Out sits on its own painted plate:
-   the lit primary plate lifted by surgery from the Spade Console plates
-   master (bottom-plates.png, 401 x 155 from 507,31). Nothing is drawn in CSS. */
+   The club leads the glass: no toolbar row above it in Simple, the logo at
+   the size of the club's own mark with its name and a "Choose" dropdown
+   (a lit chevron that turns when the club list opens beneath it) stacked
+   beside it, and the Advanced switch on the same row. Request Cash Out is a
+   compact lit pill: the approved global-header pill (images/global-header/
+   hub.png) with its icon and word cut away by surgery, its right cap
+   mirrored for the left, and the label printed live. Nothing is drawn in CSS. */
+.page.simple .header {
+  justify-content: space-between;
+  gap: 12px;
+}
+.page.simple .header .modeToggle {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  min-height: 44px;
+  padding: 0 4px;
+}
 .page .header .entityBtn {
   gap: 14px;
-  min-height: 80px;
+  min-height: 72px;
+  text-align: left;
 }
 .page .header .entityLogo {
   width: 72px;
   height: 72px;
+}
+.entityText {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
 }
 .page .header .entityName {
   font-size: 20px;
@@ -2054,15 +2074,16 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: min(100%, 300px);
-  aspect-ratio: 401 / 155;
-  margin: 12px auto 0;
-  padding: 0 12%;
+  width: 220px;
+  max-width: 100%;
+  aspect-ratio: 470 / 108;
+  margin: 10px auto 0;
+  padding: 0 10%;
   border: 0;
-  background: url('/images/cashier-actions/cashier-request-cashout-plate-v1.png') center / 100% 100%
+  background: url('/images/cashier-actions/cashier-request-cashout-pill-v1.png') center / 100% 100%
     no-repeat;
   color: var(--ink-white);
-  font-size: 16px;
+  font-size: 13px;
   font-weight: 800;
   letter-spacing: 0.1em;
   text-shadow: var(--ink-white-glow);
@@ -2071,7 +2092,7 @@
   cursor: pointer;
 }
 .cashoutButton:active {
-  filter: brightness(1.15);
+  filter: brightness(1.2);
 }
 .cashoutButton:focus-visible {
   outline: 2px solid var(--ink-blue);

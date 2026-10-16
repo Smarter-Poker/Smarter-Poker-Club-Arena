@@ -29,6 +29,8 @@ INSERT INTO club_members(club_id,user_id,role,status,agent_id) VALUES
  ('11111111-1111-1111-1111-111111111111','00000000-0000-0000-0000-000000000010','player','active',NULL),
  ('11111111-1111-1111-1111-111111111111','00000000-0000-0000-0000-000000000012','player','left',NULL);
 INSERT INTO agents(club_id,user_id,status) VALUES ('11111111-1111-1111-1111-111111111111','00000000-0000-0000-0000-00000000000b','active');
+-- the seeded members are long-standing
+UPDATE club_members SET created_at = now() - interval '400 days';
 
 CREATE TEMP TABLE r(k text, v jsonb);
 CREATE FUNCTION pg_temp.as_user(u text) RETURNS void LANGUAGE sql AS $$ SELECT set_config('request.jwt.claim.sub', u, false) $$;
@@ -59,6 +61,8 @@ SELECT fn_club_invite_resolve((SELECT v->>'code' FROM r WHERE k='c_link'));
 SELECT pg_temp.ok((SELECT click_count FROM club_invite_links WHERE inviter_id='00000000-0000-0000-0000-00000000000c') = 1, 'the inviter opening their own link is not an open');
 SELECT pg_temp.ok(NOT has_function_privilege('anon', 'public.fn_club_invite_resolve(text, boolean)', 'execute'), 'anonymous browsers cannot call resolve');
 
+-- Fresh accounts are created after the links exist (a fresh signup must postdate the link).
+UPDATE profiles SET created_at = clock_timestamp() WHERE created_at > now() - interval '1 day';
 -- 3. newbie d claims c's link
 SELECT pg_temp.as_user('00000000-0000-0000-0000-00000000000d');
 INSERT INTO r SELECT 'd_claim', fn_club_invite_claim((SELECT v->>'code' FROM r WHERE k='c_link'),'dev-d', now()-interval '5 minutes');
@@ -130,7 +134,13 @@ SELECT pg_temp.ok((SELECT status='pending' AND agent_id IS NULL AND invited_by='
 
 -- 12. expiry
 SELECT pg_temp.as_user('00000000-0000-0000-0000-000000000014');
+UPDATE club_invite_links SET created_at = created_at - interval '40 days' WHERE code = (SELECT v->>'code' FROM r WHERE k='b_link');
 SELECT pg_temp.ok((fn_club_invite_claim((SELECT v->>'code' FROM r WHERE k='b_link'),NULL, now()-interval '31 days'))->>'code'='expired', 'expired after 30 days');
+UPDATE club_invite_links SET created_at = created_at + interval '40 days' WHERE code = (SELECT v->>'code' FROM r WHERE k='b_link');
+SELECT pg_temp.ok((fn_club_invite_claim((SELECT v->>'code' FROM r WHERE k='b_link'),NULL, now()-interval '31 days'))->>'code' IS DISTINCT FROM 'expired', 'a click cannot predate its link');
+DELETE FROM club_invite_attributions WHERE user_id='00000000-0000-0000-0000-000000000014';
+DELETE FROM referrals WHERE referee_id='00000000-0000-0000-0000-000000000014';
+UPDATE profiles SET referred_by=NULL WHERE id='00000000-0000-0000-0000-000000000014';
 
 -- 13. old account: placed, not platform-credited
 INSERT INTO r SELECT 'old_claim', fn_club_invite_claim((SELECT v->>'code' FROM r WHERE k='b_link'),'dev-old', now());
@@ -161,5 +171,66 @@ UPDATE club_members SET status='automatic' WHERE club_id='11111111-1111-1111-111
 SELECT pg_temp.as_user('00000000-0000-0000-0000-00000000000b');
 SELECT pg_temp.ok((fn_club_invite_club_stats('11111111-1111-1111-1111-111111111111'))->>'allowed'='true', 'an automatic-status agent reads club stats');
 UPDATE club_members SET status='active' WHERE club_id='11111111-1111-1111-1111-111111111111' AND user_id='00000000-0000-0000-0000-00000000000b';
+
+
+-- 16. second audit (2026-10-16)
+INSERT INTO auth.users SELECT unnest(ARRAY['00000000-0000-0000-0000-000000000015','00000000-0000-0000-0000-000000000016','00000000-0000-0000-0000-000000000017']::uuid[]);
+INSERT INTO profiles(id,username,player_number,phone,phone_verified,created_at) VALUES
+ ('00000000-0000-0000-0000-000000000015','autojoin','1500',NULL,false, now()-interval '90 days'),
+ ('00000000-0000-0000-0000-000000000016','wasblocked','1600',NULL,false, now()-interval '90 days'),
+ ('00000000-0000-0000-0000-000000000017','stale','1700',NULL,false, now()-interval '90 days');
+-- a signed-in caller cannot inflate opens
+SELECT pg_temp.as_user('00000000-0000-0000-0000-00000000000d');
+INSERT INTO r SELECT 'cc_before', to_jsonb((SELECT click_count FROM club_invite_links WHERE inviter_id='00000000-0000-0000-0000-00000000000c'));
+SELECT fn_club_invite_resolve((SELECT v->>'code' FROM r WHERE k='c_link'));
+SELECT pg_temp.ok((SELECT click_count FROM club_invite_links WHERE inviter_id='00000000-0000-0000-0000-00000000000c') = (SELECT (v#>>'{}')::int FROM r WHERE k='cc_before'), 'a signed-in caller does not count an open');
+-- re-running an invite for a settled member records nothing and notifies nobody
+SELECT pg_temp.as_user('00000000-0000-0000-0000-00000000000c');
+INSERT INTO r SELECT 'n_before', to_jsonb((SELECT count(*) FROM notifications) + (SELECT count(*) FROM club_invite_attributions));
+SELECT fn_redeem_club_invite_code('11111111-1111-1111-1111-111111111111','00000000-0000-0000-0000-00000000000c','1');
+SELECT pg_temp.ok(((SELECT count(*) FROM notifications) + (SELECT count(*) FROM club_invite_attributions)) = (SELECT (v#>>'{}')::int FROM r WHERE k='n_before'), 'a settled member re-running an invite records and notifies nothing');
+-- an 'automatic' member is placed like any member
+INSERT INTO club_members(club_id,user_id,role,status,agent_id) VALUES ('11111111-1111-1111-1111-111111111111','00000000-0000-0000-0000-000000000015','player','automatic',NULL);
+SELECT pg_temp.as_user('00000000-0000-0000-0000-000000000015');
+INSERT INTO r SELECT 'auto_redeem', fn_redeem_club_invite_code('11111111-1111-1111-1111-111111111111','00000000-0000-0000-0000-000000000015','300');
+SELECT pg_temp.ok((SELECT (v->>'success')::boolean FROM r WHERE k='auto_redeem') AND (SELECT agent_id='00000000-0000-0000-0000-00000000000b' FROM club_members WHERE user_id='00000000-0000-0000-0000-000000000015'), 'an automatic-status member is placed under the inviter''s agent');
+-- a block against one inviter does not stop another inviter's placement
+INSERT INTO club_members(club_id,user_id,role,status,agent_id) VALUES ('11111111-1111-1111-1111-111111111111','00000000-0000-0000-0000-000000000016','player','pending',NULL);
+INSERT INTO club_invite_attributions(code,club_id,inviter_id,user_id,status,block_reason,fresh_signup,first_clicked_at)
+ VALUES ((SELECT v->>'code' FROM r WHERE k='c_link'),'11111111-1111-1111-1111-111111111111','00000000-0000-0000-0000-00000000000c','00000000-0000-0000-0000-000000000016','blocked','same_device',false,now());
+SELECT pg_temp.as_user('00000000-0000-0000-0000-000000000016');
+SELECT pg_temp.ok((fn_redeem_club_invite_code('11111111-1111-1111-1111-111111111111','00000000-0000-0000-0000-000000000016','300'))->>'referral_skipped' = 'same_device', 'the blocked inviter still cannot place the player');
+INSERT INTO r SELECT 'unblock', fn_redeem_club_invite_code('11111111-1111-1111-1111-111111111111','00000000-0000-0000-0000-000000000016','200');
+SELECT pg_temp.ok((SELECT agent_id='00000000-0000-0000-0000-00000000000b' AND status='active' FROM club_members WHERE user_id='00000000-0000-0000-0000-000000000016')
+  AND EXISTS(SELECT 1 FROM club_invite_attributions WHERE user_id='00000000-0000-0000-0000-000000000016' AND status='joined' AND inviter_id='00000000-0000-0000-0000-00000000000b'), 'a different inviter places a player blocked against someone else');
+-- an unjoined attribution lapses after 30 days and gives way to a new link
+SELECT pg_temp.as_user('00000000-0000-0000-0000-000000000010');
+INSERT INTO r SELECT 'kf_sweep_link', fn_club_invite_link('11111111-1111-1111-1111-111111111111');
+INSERT INTO club_invite_attributions(code,club_id,inviter_id,user_id,status,fresh_signup,first_clicked_at,claimed_at)
+ VALUES ((SELECT v->>'code' FROM r WHERE k='c_link'),'11111111-1111-1111-1111-111111111111','00000000-0000-0000-0000-00000000000c','00000000-0000-0000-0000-000000000017','signed_up',false,now()-interval '40 days',now()-interval '40 days');
+SELECT pg_temp.as_user('00000000-0000-0000-0000-000000000017');
+SELECT fn_club_invite_claim((SELECT v->>'code' FROM r WHERE k='kf_sweep_link'), NULL, now());
+SELECT pg_temp.ok((SELECT inviter_id='00000000-0000-0000-0000-000000000010' FROM club_invite_attributions WHERE user_id='00000000-0000-0000-0000-000000000017'), 'a lapsed attribution gives way to the new link');
+-- any membership row ends the pending forward
+SELECT pg_temp.ok((fn_club_invite_pending())->>'pending' = 'true', 'an unjoined invite is pending');
+INSERT INTO club_members(club_id,user_id,role,status,agent_id) VALUES ('11111111-1111-1111-1111-111111111111','00000000-0000-0000-0000-000000000017','player','banned',NULL);
+SELECT pg_temp.ok((fn_club_invite_pending())->>'pending' = 'false', 'a refused member is not forwarded to the join page');
+
+
+-- 17. final audit (2026-10-16)
+SELECT pg_temp.ok((SELECT bool_and(actor_id IS NOT NULL) FROM notifications WHERE type LIKE 'club_invite%' AND data ? 'referee_id'), 'invite notifications carry the invited player as actor');
+SELECT pg_temp.ok(NOT EXISTS(SELECT 1 FROM notifications WHERE type='club_invite_signup' AND data->>'_push' IS DISTINCT FROM 'suppressed_unverified')
+  AND NOT EXISTS(SELECT 1 FROM notifications WHERE type IN ('club_invite_verified','club_invite_joined') AND data ? '_push'), 'signup notices do not push; verified and joined do');
+-- a first redemption that leaves the member pending under the owner is still recorded
+INSERT INTO auth.users SELECT '00000000-0000-0000-0000-000000000018'::uuid;
+INSERT INTO profiles(id,username,player_number,phone,phone_verified,created_at) VALUES ('00000000-0000-0000-0000-000000000018','viadeparted','1800',NULL,false, now()-interval '90 days');
+INSERT INTO club_members(club_id,user_id,role,status,agent_id) VALUES ('11111111-1111-1111-1111-111111111111','00000000-0000-0000-0000-000000000018','player','pending',NULL);
+SELECT pg_temp.as_user('00000000-0000-0000-0000-000000000018');
+SELECT fn_redeem_club_invite_code('11111111-1111-1111-1111-111111111111','00000000-0000-0000-0000-000000000018','700');
+SELECT pg_temp.ok(EXISTS(SELECT 1 FROM club_invite_attributions WHERE user_id='00000000-0000-0000-0000-000000000018' AND status='joined')
+  AND (SELECT status='pending' FROM club_members WHERE user_id='00000000-0000-0000-0000-000000000018'), 'a first redemption routed to the owner is still recorded');
+INSERT INTO r SELECT 'dep_n', to_jsonb((SELECT count(*) FROM club_invite_attributions));
+SELECT fn_redeem_club_invite_code('11111111-1111-1111-1111-111111111111','00000000-0000-0000-0000-000000000018','700');
+SELECT pg_temp.ok((SELECT count(*) FROM club_invite_attributions) = (SELECT (v#>>'{}')::int FROM r WHERE k='dep_n'), 'its re-run records nothing more');
 
 SELECT v FROM r WHERE k IN ('owner_stats');

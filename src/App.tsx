@@ -753,11 +753,13 @@ function FullApp() {
                   web the World Hub serves smarter.poker/i/<CODE>; this is the
                   native deep-link landing. Resolving a code needs a session
                   (no anonymous browser may call fn_club_invite_resolve), so a
-                  signed-out player signs in first and comes back here. */}
+                  signed-out player is sent to CREATE AN ACCOUNT first (the
+                  same redirect the /invite route uses, carrying the code) and
+                  comes back here. */}
               <Route
                 path="/i/:code"
                 element={
-                  <AuthGuard>
+                  <AuthGuard publicFallback={<InviteSignupRedirect />}>
                     <InviteCodePage />
                   </AuthGuard>
                 }

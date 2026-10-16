@@ -22,6 +22,7 @@
  */
 import { supabase } from '../lib/supabase';
 import { publicOrigin } from '../lib/appBase';
+import { toWebPath } from '../lib/signIn';
 
 export const CLUB_INVITE_STORAGE_KEY = 'sp-club-invite';
 export const DEVICE_ID_STORAGE_KEY = 'sp-device-id';
@@ -157,6 +158,35 @@ export function clearPendingInviteCode(): void {
   } catch {
     /* ignore */
   }
+}
+
+/**
+ * SHARE & INVITE (2026-10-15): the in-app AuthPage's sign-up writes the same
+ * invite fields the World Hub signup does (pages/auth/signup.js), so a player
+ * who signs up inside the app is credited to the sender exactly as on the
+ * web, even when the confirmation email is opened on another device. The code
+ * comes from the way back (the /i/<CODE> path or the join page's ?i=) or the
+ * invite this device is carrying; club_join_path is the join page itself, as
+ * a web path.
+ */
+export function inviteSignupMetadata(afterSignIn: string): Record<string, string> {
+  const [path, query = ''] = afterSignIn.split('#')[0].split('?');
+  const shortLink = /^\/i\/([^/?#]+)\/?$/.exec(path);
+  const isInvitePath = !!shortLink || path.startsWith('/invite/');
+  const fromRedirect = isInvitePath
+    ? normalizeInviteCode(new URLSearchParams(query).get('i')) ||
+      (shortLink ? normalizeInviteCode(shortLink[1]) : null)
+    : null;
+  const pending = readPendingInviteCode();
+  const code = fromRedirect || pending?.code || null;
+  const out: Record<string, string> = {};
+  if (code) {
+    const firstSeen = pending && pending.code === code ? pending.firstSeen : Date.now();
+    out.club_invite_code = code;
+    out.club_invite_first_seen = new Date(firstSeen).toISOString();
+  }
+  if (isInvitePath) out.club_join_path = toWebPath(afterSignIn);
+  return out;
 }
 
 const num = (v: unknown) => {

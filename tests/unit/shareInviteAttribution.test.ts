@@ -22,11 +22,15 @@ import {
   readPendingInviteCode,
   rememberInviteCode,
   inviteShareText,
+  inviteSignupMetadata,
   getPendingClubInvite,
   toInAppJoinPath,
 } from '../../src/services/ClubInviteService';
 import { supabase } from '../../src/lib/supabase';
-import { inviteSignupUrl } from '../../src/components/auth/InviteSignupRedirect';
+import {
+  inviteCodeFromLocation,
+  inviteSignupUrl,
+} from '../../src/components/auth/InviteSignupRedirect';
 
 const src = (p: string) => readFileSync(resolve(__dirname, '../..', p), 'utf8');
 
@@ -142,8 +146,9 @@ describe('the short link opens in the app', () => {
 
   it('the route is registered', () => {
     const app = src('src/App.tsx');
-    const route = app.slice(app.indexOf('path="/i/:code"'), app.indexOf('path="/i/:code"') + 160);
-    expect(route).toContain('<AuthGuard>');
+    const route = app.slice(app.indexOf('path="/i/:code"'), app.indexOf('path="/i/:code"') + 200);
+    // Signed out, the short link goes to Create Account first, like /invite.
+    expect(route).toContain('<AuthGuard publicFallback={<InviteSignupRedirect />}>');
     expect(route).toContain('<InviteCodePage />');
   });
 });
@@ -192,5 +197,104 @@ describe('the join page claims before it joins', () => {
     expect(sheet).toContain("import { createPortal } from 'react-dom';");
     expect(sheet).toMatch(/return createPortal\(\s*<div className="referral-overlay"/);
     expect(sheet).toMatch(/<\/div>,\s*document\.body\s*\);/);
+  });
+});
+
+/* Deep sweep, 2026-10-15. */
+describe('share & invite deep sweep', () => {
+  beforeEach(() => window.localStorage.clear());
+
+  it('asks the database about a pending invite at most once per browser session', () => {
+    const fwd = src('src/components/home/PendingInviteForward.tsx');
+    // The slot is spent on a real answer (pending or not), never on a failed read.
+    const spend = fwd.indexOf("window.sessionStorage.setItem(PENDING_INVITE_SHOWN_KEY, pending ? pending.clubId : 'checked')");
+    expect(spend).toBeGreaterThan(fwd.indexOf('getPendingClubInvite()'));
+    expect(spend).toBeLessThan(fwd.indexOf('.catch('));
+    // A pending invite is still forwarded to.
+    expect(fwd).toContain('navigate(pending.inAppPath)');
+  });
+
+  it('offers no Share & Invite in the automatic Diamond Arena', () => {
+    const home = src('src/pages/ClubHomePage.tsx');
+    expect(home).toMatch(/onShare=\{[\s\S]{0,400}?isAutomaticArena\s*\?\s*undefined/);
+    expect(home).toContain('{club && !isAutomaticArena && (\n        <ShareInviteSheet');
+    const card = src('src/components/club-buttons/ClubIdentityCard.tsx');
+    expect(card).toContain('{!onShare ? null : arenaStats ? (');
+  });
+
+  it('opens the system share sheet on the app build', () => {
+    const sheet = src('src/components/club/ShareInviteSheet.tsx');
+    expect(sheet).toContain("const { nativeShareText } = await import('../../lib/native/share');");
+    expect(sheet).toContain('if (!IS_NATIVE_BUILD || !isNativePlatform()) return false;');
+    expect(sheet).toContain(
+      'if (await shareInviteOnNative(clubName, shareText, link.shortUrl)) return;'
+    );
+    // The web keeps navigator.share with the clipboard behind it.
+    expect(sheet).toContain('if (navigator.share) {');
+    expect(sheet).toContain('await handleCopy();');
+    expect(src('src/lib/native/share.ts')).toContain('export async function nativeShareText(');
+  });
+
+  it('every remaining share surface hands out the sender’s short link, ref as fallback', () => {
+    const modal = src('src/components/agent/PlayerInviteModal.tsx');
+    expect(modal).toContain('link = (await getMyInviteLink(resolvedClubId)).shortUrl;');
+    // Only for the agent's own link: the RPC credits the caller.
+    expect(modal).toContain('sessionData.session?.user?.id === agentUserId');
+    expect(modal).toContain('/hub/club-arena/invite/${resolvedClubId}?ref=${ref}');
+
+    const settings = src('src/pages/ClubSettingsPage.tsx');
+    expect(settings).toContain('.then((uuid) => getMyInviteLink(uuid))');
+    expect(settings).toContain('shortInvite && shortInvite.scope === ownerScope');
+    expect(settings).toContain('/hub/club-arena/invite/${clubId}?ref=${playerNumber}');
+
+    const promos = src('src/pages/PromotionsPage.tsx');
+    expect(promos).toContain('.then((uuid) => getMyInviteLink(uuid))');
+    expect(promos).toContain('shortInvite && shortInvite.scope === inviteScope');
+    expect(promos).toContain('/hub/club-arena/invite/${clubId}?ref=${referralCode}');
+  });
+
+  it('reads the code from the short-link path as well as ?i=', () => {
+    expect(inviteCodeFromLocation('/i/abc2345', '')).toBe('ABC2345');
+    expect(inviteCodeFromLocation('/hub/club-arena/i/ABC2345/', '')).toBe('ABC2345');
+    expect(inviteCodeFromLocation('/invite/c1', '?i=XYZ6789')).toBe('XYZ6789');
+    expect(inviteCodeFromLocation('/invite/c1', '?ref=9')).toBeNull();
+    const q = new URLSearchParams(inviteSignupUrl('/i/ABC2345', '').split('?')[1]);
+    expect(q.get('invite')).toBe('ABC2345');
+    expect(q.get('redirect')).toBe('/hub/club-arena/i/ABC2345');
+  });
+
+  it('sends a signed-out player in the app to Create Account, not Sign In', () => {
+    const redirect = src('src/components/auth/InviteSignupRedirect.tsx');
+    expect(redirect).toContain(
+      'signInUrl(`${location.pathname}${location.search}`, { signup: true })'
+    );
+    expect(src('src/lib/signIn.ts')).toContain("if (opts.signup) params.push('mode=signup');");
+    const auth = src('src/pages/AuthPage.tsx');
+    expect(auth).toContain("requested === 'signup' ? 'signup' : 'login'");
+    expect(auth).toContain('...inviteSignupMetadata(afterSignIn),');
+  });
+
+  it('the in-app sign-up carries the invite like the web sign-up does', () => {
+    const fromPath = inviteSignupMetadata('/i/ABC2345');
+    expect(fromPath.club_invite_code).toBe('ABC2345');
+    expect(Number.isNaN(Date.parse(fromPath.club_invite_first_seen))).toBe(false);
+    expect(fromPath.club_join_path).toBe('/hub/club-arena/i/ABC2345');
+
+    const t = Date.now() - 5000;
+    rememberInviteCode('XYZ6789', t);
+    const fromQuery = inviteSignupMetadata('/invite/c1?ref=9&i=XYZ6789');
+    expect(fromQuery).toEqual({
+      club_invite_code: 'XYZ6789',
+      club_invite_first_seen: new Date(t).toISOString(),
+      club_join_path: '/hub/club-arena/invite/c1?ref=9&i=XYZ6789',
+    });
+
+    // Not an invite page: only the code this device is carrying, no join path.
+    expect(inviteSignupMetadata('/')).toEqual({
+      club_invite_code: 'XYZ6789',
+      club_invite_first_seen: new Date(t).toISOString(),
+    });
+    window.localStorage.clear();
+    expect(inviteSignupMetadata('/')).toEqual({});
   });
 });

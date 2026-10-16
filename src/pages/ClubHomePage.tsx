@@ -5162,17 +5162,24 @@ function ClubHomePageContent({
                 : undefined
             }
             shareIcon={<IconShareLink />}
-            onShare={() => {
-              /* SHARE & INVITE (Dan 2026-10-15): the link is the SENDER's own
-                 short code (smarter.poker/i/<CODE>), so whoever shares it is
-                 credited and the new player lands in their downline. It used
-                 to be /invite/<club>?ref=<player number>, which sent a
-                 signed-out friend to LOGIN and lost the club on the way
-                 through signup. The sheet holds the link, Copy, Share, a QR
-                 code and the sender's results. */
-              haptic.medium();
-              setShowShareSheet(true);
-            }}
+            onShare={
+              /* The automatic Diamond Arena has no club_members row, so
+                 fn_club_invite_link cannot create a link there: no handler,
+                 and the card draws no Share & Invite button. */
+              isAutomaticArena
+                ? undefined
+                : () => {
+                  /* SHARE & INVITE (Dan 2026-10-15): the link is the SENDER's own
+                     short code (smarter.poker/i/<CODE>), so whoever shares it is
+                     credited and the new player lands in their downline. It used
+                     to be /invite/<club>?ref=<player number>, which sent a
+                     signed-out friend to LOGIN and lost the club on the way
+                     through signup. The sheet holds the link, Copy, Share, a QR
+                     code and the sender's results. */
+                  haptic.medium();
+                  setShowShareSheet(true);
+                }
+            }
           />
           {/* The Bad Beat Jackpot reads its own asset's pool. An arena strip
               appears only when its dedicated Diamond switch is explicitly on. */}
@@ -6153,7 +6160,7 @@ function ClubHomePageContent({
         onCancel={() => setDeleteTableConfirm({ show: false, tableId: null, tableName: null })}
       />
 
-      {club && (
+      {club && !isAutomaticArena && (
         <ShareInviteSheet
           isOpen={showShareSheet}
           onClose={() => setShowShareSheet(false)}

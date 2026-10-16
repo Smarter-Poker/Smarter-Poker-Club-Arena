@@ -77,6 +77,7 @@ import {
   validateClubName,
 } from '../utils/clubSettingsRules';
 import { publicOrigin } from '../lib/appBase';
+import { getMyInviteLink } from '../services/ClubInviteService';
 
 const DESCRIPTION_MAX = 500;
 const TAGLINE_MAX = 72;
@@ -330,6 +331,27 @@ export default function ClubSettingsPage() {
       if (activeSettingsScopeRef.current === settingsScope) activeSettingsScopeRef.current = '';
     };
   }, [settingsScope]);
+
+  // SHARE & INVITE (Dan 2026-10-15): the Copy Invite Link button hands out the
+  // member's own short link (smarter.poker/i/<CODE>), which carries a
+  // signed-out friend through signup and credits the sender. Loaded ahead of
+  // the tap so the clipboard write stays inside the click; until it arrives,
+  // or if fn_club_invite_link fails, the button copies the ref link below.
+  const [shortInvite, setShortInvite] = useState<{ scope: string; url: string } | null>(null);
+  useEffect(() => {
+    if (!clubId || !user?.id) return;
+    let alive = true;
+    const scope = settingsScope;
+    resolveClubUUID(clubId)
+      .then((uuid) => getMyInviteLink(uuid))
+      .then((link) => {
+        if (alive) setShortInvite({ scope, url: link.shortUrl });
+      })
+      .catch((err) => reportError(err, 'ClubSettingsPage.shortInviteLink'));
+    return () => {
+      alive = false;
+    };
+  }, [clubId, user?.id, settingsScope]);
 
   // Release the pending-logo blob URL when the page goes away. The per-club
   // reset and the save/discard paths revoke it, but plain unmount did not.
@@ -1409,8 +1431,11 @@ export default function ClubSettingsPage() {
                 //   3. `?c=` fed a five-digit code to a form that demanded six.
                 // Corroboration: club_members has 1502 rows and exactly ONE
                 // non-null invited_by.
-                const url = `${publicOrigin()}/hub/club-arena/invite/${clubId}?ref=${playerNumber}`;
                 const ownerScope = settingsScope;
+                const url =
+                  shortInvite && shortInvite.scope === ownerScope
+                    ? shortInvite.url
+                    : `${publicOrigin()}/hub/club-arena/invite/${clubId}?ref=${playerNumber}`;
                 try {
                   await navigator.clipboard.writeText(url);
                   if (activeSettingsScopeRef.current === ownerScope && isMountedRef.current)

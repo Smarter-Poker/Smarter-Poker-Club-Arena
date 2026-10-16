@@ -23,6 +23,10 @@ export default function PendingInviteForward() {
   const navigate = useNavigate();
 
   useEffect(() => {
+    // Once per browser session, and only spent on a real answer: the database
+    // is asked once a session even when nothing is pending, while a failed
+    // read tries again on the next visit. The key is shared with the World
+    // Hub's forwarder on the same origin, so neither bounces a player back.
     try {
       if (window.sessionStorage.getItem(PENDING_INVITE_SHOWN_KEY)) return;
     } catch {
@@ -31,12 +35,12 @@ export default function PendingInviteForward() {
     let alive = true;
     getPendingClubInvite()
       .then((pending) => {
-        if (!alive || !pending) return;
         try {
-          window.sessionStorage.setItem(PENDING_INVITE_SHOWN_KEY, pending.clubId);
+          window.sessionStorage.setItem(PENDING_INVITE_SHOWN_KEY, pending ? pending.clubId : 'checked');
         } catch {
           /* ignore */
         }
+        if (!alive || !pending) return;
         navigate(pending.inAppPath);
       })
       .catch((err) => reportError(err, 'PendingInviteForward.read'));

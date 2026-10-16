@@ -18,7 +18,7 @@ CREATE TABLE public.clubs (
   asset text DEFAULT 'chips', owner_id uuid);
 CREATE TABLE public.club_members (
   club_id uuid, user_id uuid, role text DEFAULT 'player', status text, agent_id uuid,
-  invited_by uuid, updated_at timestamptz, PRIMARY KEY (club_id, user_id));
+  invited_by uuid, updated_at timestamptz, created_at timestamptz DEFAULT now(), PRIMARY KEY (club_id, user_id));
 CREATE TABLE public.agents (
   club_id uuid, user_id uuid, status text, total_players int, active_player_count int, updated_at timestamptz);
 CREATE TABLE public.referrals (
@@ -26,7 +26,7 @@ CREATE TABLE public.referrals (
   referrer_id uuid REFERENCES auth.users(id), referee_id uuid UNIQUE REFERENCES auth.users(id),
   referral_code_used varchar, status varchar CHECK (status IN ('pending','completed')),
   created_at timestamptz DEFAULT now(), completed_at timestamptz);
-CREATE TABLE public.notifications (
+CREATE TABLE public.notifications (actor_id uuid, 
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(), user_id uuid, type text, title text, message text,
   data jsonb, action_url text, read boolean, is_read boolean, created_at timestamptz DEFAULT now());
 CREATE TABLE public.anti_cheat_exemptions (player_id uuid, flag_type text, reason text);

@@ -26,6 +26,7 @@ import { reportError } from '../utils/errorReporter';
 import RewardsOverlayPortal from '../components/rewards/RewardsOverlayPortal';
 import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 import { publicOrigin } from '../lib/appBase';
+import { getMyInviteLink } from '../services/ClubInviteService';
 import { useReferralCount } from '../hooks/useReferralCount';
 
 interface Promotion {
@@ -130,10 +131,36 @@ function PromotionsAccount({
      recognises; sharing an account id produced a link that always refused. If
      the number is not known the link is simply not offered. */
   const referralCode = profileOwner === user?.id ? playerNumber || '' : '';
+
+  /* SHARE & INVITE (Dan 2026-10-15): the shared link is the player's own short
+     link (smarter.poker/i/<CODE>), which carries a signed-out friend through
+     signup and credits the sender. Until it loads, or if fn_club_invite_link
+     fails, the ref link is shared exactly as before. Keyed to club and
+     account so a link for one never shows on the other. */
+  const inviteScope = `${clubId || ''}:${user?.id || ''}`;
+  const [shortInvite, setShortInvite] = useState<{ scope: string; url: string } | null>(null);
+  useEffect(() => {
+    if (!clubId || !user?.id) return;
+    let alive = true;
+    const scope = `${clubId}:${user.id}`;
+    resolveClubUUID(clubId)
+      .then((uuid) => getMyInviteLink(uuid))
+      .then((link) => {
+        if (alive) setShortInvite({ scope, url: link.shortUrl });
+      })
+      .catch((err) => reportError(err, 'PromotionsPage.shortInviteLink'));
+    return () => {
+      alive = false;
+    };
+  }, [clubId, user?.id]);
+
+  // The short link needs no player number; only the old ref link does.
   const referralLink =
-    clubId && referralCode
-      ? `${publicOrigin()}/hub/club-arena/invite/${clubId}?ref=${referralCode}`
-      : '';
+    clubId && shortInvite && shortInvite.scope === inviteScope
+      ? shortInvite.url
+      : clubId && referralCode
+        ? `${publicOrigin()}/hub/club-arena/invite/${clubId}?ref=${referralCode}`
+        : '';
 
   // Load the user's existing claims so cards show Claimed vs claimable.
   useEffect(() => {

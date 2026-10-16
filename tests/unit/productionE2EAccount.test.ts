@@ -1,3 +1,4 @@
+import { workflowJobBudget } from '../productionJobBudget';
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -39,16 +40,8 @@ const CLUB_CREATE_WORKFLOW = readFileSync(
 );
 
 function workflowJobTimeoutMinutes(source: string, job: string) {
-  const marker = `\n  ${job}:\n`;
-  const start = source.indexOf(marker);
-  expect(start).toBeGreaterThanOrEqual(0);
-  const bodyStart = start + marker.length;
-  const remaining = source.slice(bodyStart);
-  const nextJob = remaining.search(/\n {2}[a-z0-9-]+:\n/);
-  const body = nextJob === -1 ? remaining : remaining.slice(0, nextJob);
-  const timeout = body.match(/^ {4}timeout-minutes: (\d+)$/m);
-  expect(timeout).not.toBeNull();
-  return Number(timeout?.[1]);
+  const budget = workflowJobBudget(source, job);
+  return Math.max(budget.ordinary, budget.optIn);
 }
 
 function environment(directory: string) {
@@ -447,7 +440,13 @@ describe('post-deploy production account', () => {
       if (url.includes('/rest/v1/club_members?') && init?.method === 'PATCH') {
         const body = JSON.parse(String(init.body));
         return Response.json([
-          { club_id: SHARK, user_id: USER_ID, role: body.role, status: body.status, chip_balance: 0 },
+          {
+            club_id: SHARK,
+            user_id: USER_ID,
+            role: body.role,
+            status: body.status,
+            chip_balance: 0,
+          },
         ]);
       }
       return new Response('unexpected request', { status: 500 });
@@ -938,7 +937,14 @@ describe('post-deploy production account', () => {
     const query = decodeURIComponent(String(fetchMock.mock.calls[0]?.[0]));
     expect(query).toContain('/rpc/fn_ca_stale_certification_accounts');
     const request = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(JSON.parse(String(request[1]?.body))).toEqual({ p_before: '2026-09-04T22:30:00.000Z' });
+    expect(JSON.parse(String(request[1]?.body))).toEqual({ p_before: '2026-09-04T22:08:00.000Z' });
+  });
+
+  it('keeps the ordinary job ceiling and grants only the explicit multirun observation its extra time', () => {
+    expect(workflowJobBudget(POST_DEPLOY_WORKFLOW, 'live-table-e2e')).toEqual({
+      ordinary: 76,
+      optIn: 98,
+    });
   });
 
   it('cannot classify an account stale while any fixture-owning job may still run', () => {
@@ -948,6 +954,8 @@ describe('post-deploy production account', () => {
       workflowJobTimeoutMinutes(CLUB_CREATE_WORKFLOW, 'certify')
     );
     expect(STALE_ACCOUNT_AGE_MS).toBeGreaterThanOrEqual((longestOwningJobMinutes + 10) * 60_000);
+    const live = workflowJobTimeoutMinutes(POST_DEPLOY_WORKFLOW, 'live-table-e2e');
+    expect(STALE_ACCOUNT_AGE_MS).toBeGreaterThanOrEqual((live + 14) * 60_000);
   });
 
   it('waits out the maintenance freeze instead of abandoning the fixture', async () => {

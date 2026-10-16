@@ -145,3 +145,33 @@ it('keeps a definitive refusal distinct from an unknown purchase and allows corr
   });
   expect(onConfirm).toHaveBeenCalledTimes(2);
 });
+
+it.each([undefined, 'rebuy'] as const)(
+  'blocks backdrop dismissal during parent processing: %s',
+  (purchaseKind) => {
+    const onClose = vi.fn();
+    const { container } = render(
+      <BuyInModal
+        {...base}
+        purchaseKind={purchaseKind}
+        externalProcessing
+        onConfirm={vi.fn()}
+        onClose={onClose}
+      />
+    );
+    fireEvent.click(container.querySelector('.buy-in-modal__overlay')!);
+    expect(onClose).not.toHaveBeenCalled();
+  }
+);
+
+it('clears the previous refusal when a new sheet is opened', async () => {
+  const onConfirm = vi.fn().mockResolvedValue(false);
+  const { rerender } = render(<BuyInModal {...base} onConfirm={onConfirm} />);
+  await act(async () => {
+    fireEvent.click(screen.getByText('Buy Chips'));
+  });
+  expect(screen.getByRole('alert')).toBeTruthy();
+  rerender(<BuyInModal {...base} isOpen={false} onConfirm={onConfirm} />);
+  rerender(<BuyInModal {...base} onConfirm={onConfirm} />);
+  expect(screen.queryByRole('alert')).toBeNull();
+});

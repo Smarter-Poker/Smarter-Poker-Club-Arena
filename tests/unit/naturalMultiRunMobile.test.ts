@@ -4,6 +4,7 @@ import {
   naturalMultiRunEngineIdentity,
   installNaturalMultiRunWitness,
   readNaturalMultiRunHistory,
+  initializeNaturalMultiRunObservers,
 } from '../e2e/support/naturalMultiRunMobile';
 
 const packet = { hand: 41, runs: 3, at: 100, recipients: ['winner'] };
@@ -108,6 +109,54 @@ it('observes the visible table rather than a retained hidden table', async () =>
 });
 
 const engineSha = '5780828e02d0f9c076f08bb503a4507599465928';
+it('finishes each cold observer admission before starting the next, retaining all six', async () => {
+  const events: string[] = [];
+  let active = 0;
+  await initializeNaturalMultiRunObservers(
+    [1, 2, 3, 4, 5, 6],
+    async (table, budget) => {
+      expect(++active).toBe(1);
+      expect(budget).toBe(12_000);
+      events.push(`start${table}`);
+      await Promise.resolve();
+      events.push(`ready${table}`);
+      active--;
+    },
+    1_000,
+    () => 1_000
+  );
+  expect(events).toEqual([1, 2, 3, 4, 5, 6].flatMap((id) => [`start${id}`, `ready${id}`]));
+});
+
+it('refuses incomplete observer selection before starting any page', async () => {
+  const initialize = vi.fn();
+  await expect(
+    initializeNaturalMultiRunObservers([1, 2, 3, 4, 5], initialize, 1_000, () => 1_000)
+  ).rejects.toThrow(/all six observers/);
+  expect(initialize).not.toHaveBeenCalled();
+});
+
+it('propagates actual readiness failure without starting replacement observers', async () => {
+  const failure = new Error('authoritative snapshot unavailable');
+  const initialize = vi.fn().mockRejectedValue(failure);
+  await expect(
+    initializeNaturalMultiRunObservers([1, 2, 3, 4, 5, 6], initialize, 1_000, () => 1_000)
+  ).rejects.toBe(failure);
+  expect(initialize).toHaveBeenCalledTimes(1);
+});
+
+it('shares the original 120-second setup ceiling rather than granting every observer a fresh setup', async () => {
+  let now = 120_000;
+  const initialize = vi.fn(async (_table, budget) => {
+    expect(budget).toBe(1_000);
+    now += 1_000;
+  });
+  await expect(
+    initializeNaturalMultiRunObservers([1, 2, 3, 4, 5, 6], initialize, 1_000, () => now)
+  ).rejects.toThrow(/navigation deadline/);
+  expect(initialize).toHaveBeenCalledTimes(1);
+});
+
 it('reads recent multirun history only through bounded candidate-table lookups', async () => {
   const ids = Array.from(
     { length: 6 },

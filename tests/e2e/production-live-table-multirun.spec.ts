@@ -1,18 +1,84 @@
 import { expect, test, type Page } from '@playwright/test';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import { EngineSocketJournal } from './support/liveTableRealtime';
+import { EngineSocketJournal, whileInitialTableConnects } from './support/liveTableRealtime';
+import { remainingInitialTableReadinessMs } from './support/initialTableReadiness';
 import {
   installNaturalMultiRunWitness,
   completedNaturalRuns,
   naturalMultiRunEngineIdentity,
   readNaturalMultiRunHistory,
+  initializeNaturalMultiRunObservers,
   type NaturalRunPacket,
 } from './support/naturalMultiRunMobile';
 import {
   readServiceRows,
   requireCustomizationCertificationEnvironment,
 } from './support/temporaryCustomizationAccount';
+
+/** The same authoritative admission signals used by the baseline live proof. */
+async function openNaturalMultiRunObserver(
+  page: Page,
+  journal: EngineSocketJournal,
+  tableId: string,
+  budgetMs: number
+): Promise<void> {
+  const startedAt = Date.now();
+  const remaining = () => remainingInitialTableReadinessMs(startedAt, budgetMs);
+  const protocolReady = Promise.all([
+    journal.waitForFrame(
+      { direction: 'sent', tableId, type: 'SUBSCRIBE', since: startedAt },
+      remaining(),
+      `${tableId} natural observer did not subscribe`
+    ),
+    journal.waitForFrame(
+      { direction: 'received', tableId, type: 'SUBSCRIBED', since: startedAt },
+      remaining(),
+      `${tableId} natural observer subscription was not acknowledged`
+    ),
+    journal.waitForFrame(
+      { direction: 'received', tableId, type: 'SNAPSHOT', since: startedAt },
+      remaining(),
+      `${tableId} natural observer did not receive an authoritative snapshot`
+    ),
+  ]);
+  await whileInitialTableConnects(
+    page,
+    (async () => {
+      await Promise.all([
+        page.goto(`table/${tableId}`, { waitUntil: 'domcontentloaded', timeout: remaining() }),
+        protocolReady,
+      ]);
+      await expect(page.locator('.table-page')).toBeVisible({ timeout: remaining() });
+      await expect(page.locator('.table-surface')).toBeVisible({ timeout: remaining() });
+      await expect(page.getByTestId('table-connection-banner')).toBeHidden({
+        timeout: remaining(),
+      });
+      await expect
+        .poll(
+          () =>
+            page
+              .locator('img.table-art')
+              .evaluateAll(
+                (images: HTMLImageElement[]) =>
+                  images.length === 1 &&
+                  images[0].complete &&
+                  images[0].naturalWidth > 0 &&
+                  images[0].naturalHeight > 0
+              ),
+          {
+            timeout: remaining(),
+            message: 'The actual table felt must load before natural observation',
+          }
+        )
+        .toBe(true);
+      await expect(page.locator('.table-art-cover:visible')).toHaveCount(0, {
+        timeout: remaining(),
+      });
+    })(),
+    `${tableId} natural observer initial connection`
+  );
+}
 
 const enabled = process.env.LIVE_TABLE_MULTIRUN_CERTIFICATION === '1';
 const union = 'fade0000-0000-0000-0000-000000000001';
@@ -32,6 +98,7 @@ test('natural two-run and three-run mobile rivers precede awards and winner chip
     'Selected multirun spec requires explicit production certificate configuration'
   ).toBe(true);
   testInfo.setTimeout(observationMs + 120_000);
+  const setupStartedAt = Date.now();
   expect(browserName).toBe('webkit');
   expect(testInfo.project.name).toBe('webkit-live-table-realtime');
   expect(baseURL?.replace(/\/$/, '')).toBe('https://smarter.poker/hub/club-arena');
@@ -90,18 +157,17 @@ test('natural two-run and three-run mobile rivers precede awards and winner chip
   const coverage = new Map<number, any>();
   const observations: any[] = [];
   try {
-    const setup = await Promise.allSettled(
-      selected.map(async (table) => {
+    await initializeNaturalMultiRunObservers(
+      selected,
+      async (table, navigationBudgetMs) => {
         const page = await context.newPage();
         const journal = new EngineSocketJournal(page);
         await installNaturalMultiRunWitness(page);
         pages.push({ page, tableId: table.id, journal, packets: [] });
-        await page.goto(`table/${table.id}`, { waitUntil: 'domcontentloaded', timeout: 45_000 });
-        await expect(page.locator('.table-page')).toBeVisible({ timeout: 30_000 });
-        await expect(page.locator('.table-art-cover:visible')).toHaveCount(0);
-      })
+        await openNaturalMultiRunObserver(page, journal, table.id, navigationBudgetMs);
+      },
+      setupStartedAt
     );
-    for (const result of setup) if (result.status === 'rejected') throw result.reason;
     const deadline = Date.now() + observationMs;
     await expect
       .poll(

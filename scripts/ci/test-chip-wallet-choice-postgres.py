@@ -9,6 +9,8 @@ import argparse
 ROOT = Path(__file__).resolve().parents[2]
 parser = argparse.ArgumentParser()
 parser.add_argument('--baseline', action='store_true')
+parser.add_argument('--selected-baseline', action='store_true')
+parser.add_argument('--intent-guard-baseline', action='store_true')
 args = parser.parse_args()
 pg = Path(os.environ.get('PG_BIN', '/opt/homebrew/opt/postgresql@17/bin' if Path('/Volumes/SmarterWork').is_dir() else '/usr/lib/postgresql/17/bin'))
 scratch = '/Volumes/SmarterWork/agent-work' if Path('/Volumes/SmarterWork').is_dir() else tempfile.gettempdir()
@@ -19,7 +21,10 @@ def run(command, sql=None):
     if result.returncode: raise RuntimeError(result.stderr + result.stdout)
     return result.stdout
 psql = [pg/'psql', '-X', '-qAt', '-v', 'ON_ERROR_STOP=1', '-h', socket, '-U', 'postgres', '-d', 'postgres']
-def query(sql): return run(psql, sql)
+def query(sql):
+    sql_file=cluster/'query.sql'
+    sql_file.write_text(sql)
+    return run(psql+['-f',sql_file])
 try:
     assert ' 17.' in run([pg/'postgres', '--version'])
     shared = Path(run([pg/'pg_config', '--sharedir']).strip())
@@ -66,7 +71,63 @@ try:
         except RuntimeError as error:
             assert 'Unexpected function preimage' in str(error)
         else: raise RuntimeError('Migration replay was not refused')
-    print(result)
+    query((fixture/'selected-setup.sql').read_text())
+    for name in ['fn_agent_wallet_send','fn_agent_wallet_send_core_20261004','fn_promo_wallet_send_core_20261004','fn_club_promo_send_core_20261004','fn_promo_wallet_send','fn_club_promo_wallet_send','fn_agent_wallet_claim_back_phase2_core_20260831','fn_cashier_batch_transfer','fn_cashier_operation_intent_guard']:
+        query((fixture/(name+'.sql')).read_text())
+    query('CREATE TRIGGER cashier_operation_intent_guard BEFORE INSERT ON chip_transactions FOR EACH ROW EXECUTE FUNCTION fn_cashier_operation_intent_guard();')
+    selected_migration=(ROOT/'supabase/migrations/20261016024912_cashier_sends_use_the_selected_source_and_destination_wallet.sql').read_text()
+    query((fixture/'money-registry-guard.sql').read_text())
+    if not args.selected_baseline:
+        # Reproduce the installed DDL guard refusal and prove its transaction
+        # did not leave earlier patches, a new writer or registry admission.
+        registration_start=selected_migration.index('-- Register the new writer before CREATE')
+        registration_end=selected_migration.index('CREATE OR REPLACE FUNCTION public.fn_cashier_player_wallet_send',registration_start)
+        unregistered=selected_migration[:registration_start]+selected_migration[registration_end:]
+        try: query(unregistered)
+        except RuntimeError as error:
+            assert 'fn_cashier_player_wallet_send writes balance columns and is not in ca_money_rpc_registry' in str(error), str(error)
+        else: raise RuntimeError('Unregistered player writer was admitted')
+        assert query("SELECT to_regprocedure('public.fn_cashier_player_wallet_send(uuid,uuid,numeric,text,text,uuid)') IS NULL AND NOT EXISTS(SELECT 1 FROM ca_money_rpc_registry WHERE proname='fn_cashier_player_wallet_send');").strip()=='t'
+        for proof in re.findall(r'^-- @live-proof: (.+)$', migration, re.M):
+            assert query('SELECT '+proof+';').strip()=='t', proof
+        query(selected_migration)
+        print('NEW_PLAYER_FUNCTION_HASH',query("SELECT md5(pg_get_functiondef('public.fn_cashier_player_wallet_send(uuid,uuid,numeric,text,text,uuid)'::regprocedure));").strip(),flush=True)
+        for proof in re.findall(r'^-- @live-proof: (.+)$', selected_migration, re.M):
+            assert query('SELECT '+proof+';').strip() == 't', proof
+    if args.intent_guard_baseline:
+        query((fixture/'fn_cashier_operation_intent_guard.sql').read_text())
+    selected_result=query((fixture/'selected-cases.sql').read_text())
+    assert 'selected-wallet-routing-passed' in selected_result
+    try: query(selected_migration)
+    except RuntimeError as error: assert 'Unexpected preimage' in str(error)
+    else: raise RuntimeError('Selected routing migration replay was not refused')
+    # Two physical sessions wait together on the SAME exact-intent lock.
+    # Releasing it admits a genuine concurrent replay, with one debit/journal.
+    concurrent_op='12345678-1234-4234-8234-123456789abc'
+    holder=subprocess.Popen([str(v) for v in psql],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+    holder.stdin.write("BEGIN; SELECT pg_advisory_xact_lock(hashtextextended('test-intent:"+concurrent_op+"',0)); SELECT 'held';\n"); holder.stdin.flush()
+    while True:
+        line=holder.stdout.readline()
+        if not line: raise RuntimeError('Concurrent replay holder exited before readiness')
+        if line.strip()=='held': break
+    workers=[]
+    for index in range(2):
+        process=subprocess.Popen([str(v) for v in psql],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+        process.stdin.write("SET application_name='selected-wallet-race'; SELECT set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000002',false); SELECT fn_cashier_batch_transfer('00000000-0000-0000-0000-000000000001','send','[{\"user_id\":\"00000000-0000-0000-0000-000000000003\",\"amount\":2,\"source\":\"player_wallet\",\"destination\":\"promo_wallet\",\"op_id\":\""+concurrent_op+"\"}]',gen_random_uuid());\n"); process.stdin.flush(); workers.append(process)
+    deadline=time.monotonic()+5
+    try:
+        while query("SELECT count(*) FROM pg_stat_activity WHERE application_name='selected-wallet-race' AND wait_event='advisory';").strip() != '2':
+            if time.monotonic()>deadline: raise RuntimeError('Concurrent sends did not reach the shared lock')
+            time.sleep(.02)
+    finally: holder.communicate('ROLLBACK;\n',timeout=5)
+    for process in workers:
+        output,error=process.communicate(timeout=5)
+        assert process.returncode==0 and '"success": true' in output, error+output
+    assert query("SELECT count(*) FROM chip_transactions WHERE metadata->>'op_id'='"+concurrent_op+"';").strip()=='1'
+    assert query("SELECT count(*) FROM journal WHERE op='cashier_player_send:"+concurrent_op+"';").strip()=='1'
+    for signature in ['public.fn_cashier_recipient_wallet_balances(uuid,uuid[])','public.fn_cashier_player_wallet_send(uuid,uuid,numeric,text,text,uuid)']:
+        print('NEW_FUNCTION_HASH',signature,query("SELECT md5(pg_get_functiondef('"+signature+"'::regprocedure));").strip())
+    print(result,selected_result,'selected-wallet-concurrent-replay-passed')
 finally:
     if (cluster/'data/postmaster.pid').exists():
         run([pg/'pg_ctl','-D',cluster/'data','-m','fast','-w','stop'])

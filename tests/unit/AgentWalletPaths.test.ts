@@ -120,3 +120,25 @@ describe.each(['self', 'send'])('canonical %s transfer', (kind) => {
     expect(mocks.emit).not.toHaveBeenCalled();
   });
 });
+
+it('binds the selected agent destination into the RPC, receipt and retry identity', async () => {
+  mocks.rpc.mockRejectedValueOnce(new Error('response lost'));
+  await expect(AgentService.transferToPlayer(target, club, 5, 'agent_wallet')).rejects.toThrow();
+  const original = mocks.rpc.mock.calls[0][1].p_op_id;
+  mocks.rpc.mockResolvedValue({
+    data: {
+      success: true,
+      transaction_id: tx,
+      amount: 5,
+      agent_wallet_after: 95,
+      recipient_balance_after: 5,
+      destination: 'agent_wallet',
+    },
+    error: null,
+  });
+  await expect(AgentService.transferToPlayer(target, club, 5, 'agent_wallet')).resolves.toBe(true);
+  expect(mocks.rpc.mock.calls[1][1]).toMatchObject({
+    p_destination: 'agent_wallet',
+    p_op_id: original,
+  });
+});

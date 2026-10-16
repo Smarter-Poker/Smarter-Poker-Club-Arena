@@ -89,7 +89,7 @@ test.describe('the mobile lobby chrome on production', () => {
   // Default mode still executes later cases when an earlier assertion fails.
   test.describe.configure({ mode: 'default', timeout: 120_000 });
 
-  test('the selected game list survives a cold return to the lobby', async ({ page }) => {
+  test('the selected game list survives a cold return to the lobby', async ({ page }, testInfo) => {
     await openLobby(page);
     const tabs = page.getByRole('tablist', { name: 'Game Type', exact: true });
     const original = (await tabs.getByRole('tab', { selected: true }).textContent())!.trim();
@@ -101,14 +101,31 @@ test.describe('the mobile lobby chrome on production', () => {
           response.request().method() === 'POST' &&
           new URL(response.url()).pathname.endsWith('/rest/v1/user_lobby_filters')
       );
+    let returningPage: Page | undefined;
+    let returningDiagnostics: ReturnType<typeof observeCashierFailure> | undefined;
     try {
       await Promise.all([save(), tabs.getByRole('tab', { name: target, exact: true }).click()]);
-      await openLobby(page);
-      await expect(tabs.getByRole('tab', { name: target, exact: true })).toHaveAttribute(
-        'aria-selected',
-        'true'
-      );
+      // A new document has no mounted filter state or tab session cache.
+      // Reusing the old document raced its legitimate chunk recovery with
+      // goto(), which aborted that recovery and the requested navigation.
+      returningPage = await page.context().newPage();
+      returningDiagnostics = observeCashierFailure(returningPage);
+      await openLobby(returningPage);
+      await expect(
+        returningPage
+          .getByRole('tablist', { name: 'Game Type', exact: true })
+          .getByRole('tab', { name: target, exact: true })
+      ).toHaveAttribute('aria-selected', 'true');
+    } catch (error) {
+      if (returningDiagnostics)
+        await testInfo.attach('cold-return-network-diagnostics', {
+          body: Buffer.from(JSON.stringify(returningDiagnostics.snapshot())),
+          contentType: 'application/json',
+        });
+      throw error;
     } finally {
+      returningDiagnostics?.stop();
+      await returningPage?.close();
       // This is the isolated certificate account; restore its original view
       // so the next maintained journey inherits the same starting preference.
       await Promise.all([save(), tabs.getByRole('tab', { name: original, exact: true }).click()]);

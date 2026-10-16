@@ -34,13 +34,9 @@
  * (fn_agent_wallet_send, downline enforced server-side). Both carry a uuid
  * op_id, write one chip_transactions row, and open a ten minute clawback window.
  *
- * WHICH WALLET THE CHIPS LAND IN (Dan 2026-10-11: "CLUB OWNERS CAN PLAY AND
- * HAVE CHIPS SENT TO THEIR PLAYER WALLETS"). An agent wallet send credits a
- * staff or agent recipient's float whatever is asked, so it follows the
- * recipient's role. A Club Bank send honours p_destination, and an owner,
- * co-owner or super agent holds BOTH wallets - so the sender chooses, through
- * clubBankRecipientWallets. Deriving it from the role alone paid every owner
- * into their float and made their own player wallet unreachable.
+ * Owner direction 2026-10-15: every sender chooses the recipient wallet.
+ * Both bank and agent sends honor that choice, restricted to wallets the
+ * recipient actually holds. Retry identity includes the selected wallet.
  */
 
 import { useState, useEffect, useMemo, useRef } from 'react';
@@ -48,7 +44,7 @@ import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
-import { CLUB_BANK_ROLES, canHoldAgentWallet } from '../wallet/walletRows';
+import { CLUB_BANK_ROLES } from '../wallet/walletRows';
 import {
   clubBankDestinationFor,
   clubBankRecipientWallets,
@@ -379,7 +375,7 @@ export default function ChipTransferModal({
         const scopedList: Recipient[] = ((scoped || []) as Array<Record<string, unknown>>)
           // fn_agent_wallet_send refuses a self-send outright, so offering it
           // is offering a guaranteed refusal.
-          .filter((m) => String(m.user_id) !== user.id)
+          .filter((m) => viaClubBank || String(m.user_id) !== user.id)
           .map((m) => ({
             id: String(m.user_id),
             username: String(m.username || m.name || 'Unknown'),
@@ -489,21 +485,13 @@ export default function ChipTransferModal({
     return recipients.find((r) => r.id === selectedRecipient);
   }, [pinnedRecipient, recipients, selectedRecipient]);
 
-  /* The preview must show the wallet the chips land in. An agent wallet send
-     follows the recipient's role (fn_agent_wallet_send credits a staff or
-     agent recipient's float whatever is asked). A Club Bank send credits the
-     wallet the sender chose, out of the ones the recipient holds. */
-  const recipientWallets: ClubBankRecipientWallet[] =
-    selectedRecipientData && viaClubBank
-      ? clubBankRecipientWallets(selectedRecipientData.role)
-      : [];
-  const previewDestination: ClubBankRecipientWallet = !selectedRecipientData
-    ? 'player_wallet'
-    : viaClubBank
-      ? clubBankDestinationFor(selectedRecipientData.role, chosenWallet)
-      : canHoldAgentWallet(selectedRecipientData.role)
-        ? 'agent_wallet'
-        : 'player_wallet';
+  // Preview and submission share the sender's choice and recipient eligibility.
+  const recipientWallets: ClubBankRecipientWallet[] = selectedRecipientData
+    ? clubBankRecipientWallets(selectedRecipientData.role)
+    : [];
+  const previewDestination: ClubBankRecipientWallet = selectedRecipientData
+    ? clubBankDestinationFor(selectedRecipientData.role, chosenWallet)
+    : 'player_wallet';
   const destinationIsAgentWallet = !!selectedRecipientData && previewDestination === 'agent_wallet';
 
   // A different recipient starts from their default wallet again.
@@ -616,13 +604,8 @@ export default function ChipTransferModal({
       const resolvedForSend = (await resolveClubUUID(clubId)) || clubId;
 
       // Read from the recipient's real row, after the check above, never
-      // defaulted. The Club Bank honours the wallet the sender chose; an agent
-      // wallet send pays a staff or agent recipient into their float.
-      const destination: ClubBankRecipientWallet = viaClubBank
-        ? clubBankDestinationFor(recipientData.role, chosenWallet)
-        : canHoldAgentWallet(recipientData.role)
-          ? 'agent_wallet'
-          : 'player_wallet';
+      // defaulted. Both money paths honor the wallet the sender chose.
+      const destination = clubBankDestinationFor(recipientData.role, chosenWallet);
       const kind = viaClubBank ? 'club_bank_send' : 'agent_send';
       let confirmationHeadline: string | undefined;
       await runAgentWalletOperation(
@@ -788,8 +771,7 @@ export default function ChipTransferModal({
         )}
 
         <div className="chip-transfer-form">
-          {/* WHICH WALLET (Dan 2026-10-11). Offered only when the Club Bank is
-              paying someone who holds two - an owner, co-owner or super agent.
+          {/* WHICH WALLET (Dan 2026-10-11). Offered when the recipient holds two - an owner, co-owner or super agent.
               The owner's player wallet is the one they sit down with. */}
           {recipientWallets.length > 1 && (
             <div className="form-group">

@@ -79,7 +79,11 @@ export function normalizeInviteCode(value: unknown): string | null {
 }
 
 /** The text that travels with the link in the OS share sheet, signed with the alias. */
-export function inviteShareText(inviterAlias: string, clubName: string, clubNumber: unknown): string {
+export function inviteShareText(
+  inviterAlias: string,
+  clubName: string,
+  clubNumber: unknown
+): string {
   const id = clubNumber == null || clubNumber === '' ? '' : `\nClub ID: ${String(clubNumber)}`;
   return `${inviterAlias} Invited You To Join ${clubName} On Smarter.Poker!${id}`;
 }
@@ -92,7 +96,8 @@ export function shortInviteUrl(code: string): string {
 export function toInAppJoinPath(joinPath: unknown): string | null {
   if (typeof joinPath !== 'string') return null;
   const prefix = '/hub/club-arena/';
-  if (!joinPath.startsWith(prefix) || joinPath.includes('\\') || joinPath.startsWith('//')) return null;
+  if (!joinPath.startsWith(prefix) || joinPath.includes('\\') || joinPath.startsWith('//'))
+    return null;
   return '/' + joinPath.slice(prefix.length);
 }
 
@@ -112,7 +117,9 @@ export function getDeviceId(): string | null {
   }
 }
 
-export function readPendingInviteCode(now = Date.now()): { code: string; firstSeen: number } | null {
+export function readPendingInviteCode(
+  now = Date.now()
+): { code: string; firstSeen: number } | null {
   try {
     const raw = window.localStorage.getItem(CLUB_INVITE_STORAGE_KEY);
     if (!raw) return null;
@@ -194,7 +201,12 @@ export async function getMyInviteLink(clubId: string): Promise<InviteLink> {
     p_device_id: getDeviceId(),
   });
   if (error) throw new Error(error.message || 'Could Not Create Your Invite Link');
-  const r = (data || {}) as { success?: boolean; code?: string; join_path?: string; error?: string };
+  const r = (data || {}) as {
+    success?: boolean;
+    code?: string;
+    join_path?: string;
+    error?: string;
+  };
   if (!r.success || !r.code) throw new Error(r.error || 'Could Not Create Your Invite Link');
   return { code: r.code, shortUrl: shortInviteUrl(r.code), joinPath: r.join_path || '' };
 }
@@ -247,7 +259,13 @@ export async function claimInvite(code: string, firstSeen?: number): Promise<Cla
     p_first_clicked_at: new Date(firstSeen || Date.now()).toISOString(),
   });
   if (error) throw new Error(error.message || 'Could Not Apply That Invite');
-  const r = (data || {}) as { success?: boolean; status?: string; code?: string; error?: string; join_path?: string };
+  const r = (data || {}) as {
+    success?: boolean;
+    status?: string;
+    code?: string;
+    error?: string;
+    join_path?: string;
+  };
   return {
     success: r.success === true,
     status: r.status,
@@ -259,7 +277,8 @@ export async function claimInvite(code: string, firstSeen?: number): Promise<Cla
 
 /** The club this player was invited to and has not joined yet, if any. */
 export async function getPendingClubInvite(): Promise<PendingClubInvite | null> {
-  const { data, error } = await supabase.rpc('fn_club_invite_pending');
+  // This STABLE lookup also runs on read-only administration surfaces.
+  const { data, error } = await supabase.rpc('fn_club_invite_pending', undefined, { get: true });
   if (error) throw new Error(error.message || 'Could Not Load Your Invite');
   const r = (data || {}) as {
     pending?: boolean;

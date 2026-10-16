@@ -3276,14 +3276,16 @@ function CashierTradeWorkspace() {
         compact={!advanced}
         eyebrow="Secure Cashier"
         title="Cashier"
-        pill={isOnline ? 'Live Ledger' : 'Locked'}
-        pillInk={isOnline ? 'green' : 'red'}
+        // Dan 2026-10-16: no "Live Ledger" pill. A locked cashier still says so.
+        pill={isOnline ? undefined : 'Locked'}
+        pillInk="red"
         foot="foot"
         className={styles.console}
       >
         <div className={styles.glass}>
           <div className={styles.modeToolbar}>
-            <span>{advanced ? 'Advanced Cashier' : 'Simple Cashier'}</span>
+            {/* Dan 2026-10-16: the Simple view carries no "Simple Cashier" caption. */}
+            {advanced ? <span>Advanced Cashier</span> : <span aria-hidden="true" />}
             <button
               type="button"
               className={styles.modeToggle}
@@ -3323,8 +3325,19 @@ function CashierTradeWorkspace() {
                   <img src={currentClub.logoUrl} alt="" className={styles.entityLogo} />
                 ) : null}
                 <span className={styles.entityName}>{currentClubLabel}</span>
-                <span className={`${styles.entityCaret} sc-label sc-ink--blue`} aria-hidden="true">
+                <span
+                  className={`${styles.entityCaret} ${pickerOpen ? styles.entityCaretOpen : ''} sc-label sc-ink--blue`}
+                  aria-hidden="true"
+                >
                   Choose
+                  <svg className={styles.entityChevron} viewBox="0 0 12 8" focusable="false">
+                    <path
+                      d="M1 1.5 6 6.5 11 1.5"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                    />
+                  </svg>
                 </span>
               </button>
             </div>
@@ -3332,14 +3345,22 @@ function CashierTradeWorkspace() {
             {holdsPlayerWallet(myRole) && roleResolved && (
               <button
                 type="button"
-                className={styles.classicLink}
+                className={styles.cashoutButton}
                 onClick={() => setShowCashoutRequest(true)}
               >
                 Request Cash Out
               </button>
             )}
             {!advanced && (
-              <div className={styles.simpleStatus} role="status">
+              // Dan 2026-10-16: a healthy cashier prints no "Balances Synchronized"
+              // line. The status stays announced to assistive technology, and any
+              // other state (offline, reconciling, an error) is still shown.
+              <div
+                className={
+                  cashierSyncMessage === 'Balances Synchronized' ? 'sr-only' : styles.simpleStatus
+                }
+                role="status"
+              >
                 {cashierSyncMessage}
               </div>
             )}

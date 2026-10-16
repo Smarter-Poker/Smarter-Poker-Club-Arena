@@ -1195,6 +1195,56 @@ end
 $function$
 $definition$;
 END $patch$;
+DO $patch$ DECLARE d text; BEGIN
+SELECT pg_get_functiondef('fn_cashier_operation_intent_guard()'::regprocedure) INTO d;
+IF md5(d) <> 'd89888ea95f0fba54a976fe966804649' THEN RAISE EXCEPTION 'Unexpected preimage: fn_cashier_operation_intent_guard'; END IF;
+EXECUTE $definition$CREATE OR REPLACE FUNCTION public.fn_cashier_operation_intent_guard()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_operation uuid;
+  v_owner uuid;
+  v_action text;
+  v_expected_type text;
+BEGIN
+  IF NEW.metadata ->> 'op_id' IS NULL THEN RETURN NEW; END IF;
+  BEGIN
+    v_operation := (NEW.metadata ->> 'op_id')::uuid;
+  EXCEPTION WHEN invalid_text_representation THEN
+    RETURN NEW;
+  END;
+
+  PERFORM pg_advisory_xact_lock(hashtextextended(
+    'cashier-exact-intent:' || v_operation, 0));
+  SELECT actor_user_id, action INTO v_owner, v_action
+    FROM public.cashier_rpc_operation_intents
+   WHERE operation_id = v_operation;
+  IF NOT FOUND THEN RETURN NEW; END IF;
+
+  v_expected_type := CASE v_action
+    WHEN 'club_bank_send' THEN 'club_bank_send'
+    WHEN 'club_bank_claim' THEN 'club_bank_claim'
+    WHEN 'club_bank_reversal' THEN 'club_bank_reversal'
+    WHEN 'admin_removal' THEN 'admin_removal'
+    WHEN 'promo_wallet_send' THEN 'promo_wallet_send'
+    WHEN 'club_promo_send' THEN 'club_promo_send'
+    WHEN 'agent_wallet_send' THEN 'agent_wallet_send'
+    WHEN 'cashier_player_send' THEN 'peer_transfer'
+    WHEN 'agent_wallet_claim_back' THEN 'agent_wallet_claim_back'
+  END;
+  IF v_owner IS DISTINCT FROM auth.uid()
+     OR v_expected_type IS NULL
+     OR NEW.transaction_type IS DISTINCT FROM v_expected_type THEN
+    RAISE EXCEPTION 'cashier_retry_key_reused_across_actions' USING ERRCODE = '23505';
+  END IF;
+  RETURN NEW;
+END
+$function$
+$definition$;
+END $patch$;
 CREATE OR REPLACE FUNCTION public.fn_cashier_recipient_wallet_balances(p_club_id uuid,p_user_ids uuid[])
 RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path TO 'public','pg_temp'
 AS $function$
@@ -1270,5 +1320,6 @@ COMMIT;
 -- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_promo_wallet_send_core_20261004(uuid,uuid,numeric,text,text,uuid)'::regprocedure)) = '9902bccc4d422766b3611e050eeec770')
 -- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_club_promo_send_core_20261004(uuid,uuid,numeric,text,text,uuid)'::regprocedure)) = '5d037d10de17314377a263d96a18556f')
 -- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_cashier_batch_transfer(uuid,text,jsonb,uuid)'::regprocedure)) = '859bb844228d65085bf134c4dbd8b32b')
+-- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_cashier_operation_intent_guard()'::regprocedure)) = '60350724279387da3b548bd370d082db')
 -- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_cashier_recipient_wallet_balances(uuid,uuid[])'::regprocedure)) = '54b0da3ecb0744f88ada5cdf391e531c')
 -- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_cashier_player_wallet_send(uuid,uuid,numeric,text,text,uuid)'::regprocedure)) = '1e91c2c8b643c70d149cfe3c5e2e1eeb')

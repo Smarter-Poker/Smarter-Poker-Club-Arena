@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 parser = argparse.ArgumentParser()
 parser.add_argument('--baseline', action='store_true')
 parser.add_argument('--selected-baseline', action='store_true')
+parser.add_argument('--intent-guard-baseline', action='store_true')
 args = parser.parse_args()
 pg = Path(os.environ.get('PG_BIN', '/opt/homebrew/opt/postgresql@17/bin' if Path('/Volumes/SmarterWork').is_dir() else '/usr/lib/postgresql/17/bin'))
 scratch = '/Volumes/SmarterWork/agent-work' if Path('/Volumes/SmarterWork').is_dir() else tempfile.gettempdir()
@@ -71,13 +72,16 @@ try:
             assert 'Unexpected function preimage' in str(error)
         else: raise RuntimeError('Migration replay was not refused')
     query((fixture/'selected-setup.sql').read_text())
-    for name in ['fn_agent_wallet_send','fn_agent_wallet_send_core_20261004','fn_promo_wallet_send_core_20261004','fn_club_promo_send_core_20261004','fn_promo_wallet_send','fn_club_promo_wallet_send','fn_agent_wallet_claim_back_phase2_core_20260831','fn_cashier_batch_transfer']:
+    for name in ['fn_agent_wallet_send','fn_agent_wallet_send_core_20261004','fn_promo_wallet_send_core_20261004','fn_club_promo_send_core_20261004','fn_promo_wallet_send','fn_club_promo_wallet_send','fn_agent_wallet_claim_back_phase2_core_20260831','fn_cashier_batch_transfer','fn_cashier_operation_intent_guard']:
         query((fixture/(name+'.sql')).read_text())
+    query('CREATE TRIGGER cashier_operation_intent_guard BEFORE INSERT ON chip_transactions FOR EACH ROW EXECUTE FUNCTION fn_cashier_operation_intent_guard();')
     selected_migration=(ROOT/'supabase/migrations/20261016024912_cashier_sends_use_the_selected_source_and_destination_wallet.sql').read_text()
     if not args.selected_baseline:
         query(selected_migration)
         for proof in re.findall(r'^-- @live-proof: (.+)$', selected_migration, re.M):
             assert query('SELECT '+proof+';').strip() == 't', proof
+    if args.intent_guard_baseline:
+        query((fixture/'fn_cashier_operation_intent_guard.sql').read_text())
     selected_result=query((fixture/'selected-cases.sql').read_text())
     assert 'selected-wallet-routing-passed' in selected_result
     try: query(selected_migration)

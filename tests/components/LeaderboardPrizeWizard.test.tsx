@@ -327,7 +327,7 @@ describe('LeaderboardPrizeWizard', () => {
 
     await user.click(screen.getByRole('button', { name: /Yes, Show Prizes/i }));
     await user.click(screen.getByRole('button', { name: 'Continue' }));
-    expect(screen.getByText('350 Chips')).toBeInTheDocument();
+    expect(screen.getByText('350.00 Chips')).toBeInTheDocument();
     expect(screen.getByText('370 Chips')).toBeInTheDocument();
     expect(screen.getByText('250 Chips')).toBeInTheDocument();
     expect(

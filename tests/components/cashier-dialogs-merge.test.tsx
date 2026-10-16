@@ -89,7 +89,9 @@ describe('the promo float switch is offered on the agents row itself', () => {
   it('a Club Bank role with no agents row stands at the club pot alone', async () => {
     fx.balances.mockResolvedValue(promoSnapshot({ promoFloat: 0, hasFloat: false }));
     openPromo();
-    await waitFor(() => expect(document.querySelector('.cbc-bank strong')?.textContent).toBe('25'));
+    await waitFor(() =>
+      expect(document.querySelector('.cbc-bank strong')?.textContent).toBe('25.00')
+    );
     // The empty float reads 0 now, which is not a float this owner holds.
     expect(screen.queryByRole('radiogroup', { name: 'Promo Wallet Source' })).toBeNull();
     expect(screen.queryByText('My Promo Float')).toBeNull();
@@ -102,7 +104,9 @@ describe('the promo float switch is offered on the agents row itself', () => {
     expect(group.textContent).toContain('Club Promo Wallet');
     expect(group.textContent).toContain('My Promo Float');
     fireEvent.click(screen.getByRole('radio', { name: /My Promo Float/ }));
-    await waitFor(() => expect(document.querySelector('.cbc-bank strong')?.textContent).toBe('15'));
+    await waitFor(() =>
+      expect(document.querySelector('.cbc-bank strong')?.textContent).toBe('15.00')
+    );
   });
 });
 

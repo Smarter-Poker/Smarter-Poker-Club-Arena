@@ -449,6 +449,7 @@ export default function ClubAnnouncementsPage() {
   return (
     <StandardContentLayout className="announcements-page">
       <SpadeConsole
+        onClose={() => navigate(`/clubs/${clubId}`)}
         className="announcements-console"
         aria-busy={loading || posting || undefined}
         eyebrow={clubName || 'Club'}

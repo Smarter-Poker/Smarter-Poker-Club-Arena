@@ -408,13 +408,17 @@ export default function DailyBonusSheet({
     }
     const failures = (receipt.results ?? []).filter((r) => !r.success);
     const paid = (receipt.results ?? []).filter((r) => r.success && !r.idempotent);
+    const complete = !failures.length && receipt.status?.unclaimed === 0;
     if (paid.length) {
       triggerHaptic('success');
       playPremiumSfx('ctaClick');
       setBurstSlot(0);
       setRevealSlot(0);
       if (burstTimer.current) clearTimeout(burstTimer.current);
-      burstTimer.current = setTimeout(() => setBurstSlot(null), 1400);
+      burstTimer.current = setTimeout(() => {
+        setBurstSlot(null);
+        if (complete && mode === 'modal') onClose?.();
+      }, 1400);
     }
     if (failures.length && !paid.length) {
       triggerHaptic('error');
@@ -423,8 +427,9 @@ export default function DailyBonusSheet({
       toast.info(`Available Rewards Collected. ${claimReasonText(failures[0].reason)}`);
     } else {
       toast.success('All Rewards Collected');
+      if (complete && !paid.length && mode === 'modal') onClose?.();
     }
-  }, [claimAll, toast]);
+  }, [claimAll, toast, mode, onClose]);
 
   if (mode === 'modal' && !open) return null;
 

@@ -131,7 +131,7 @@ import transferStyles from '../../pages/CashierTradePage.module.css';
 import { downloadBlob } from '../../utils/downloadCsv';
 import { statementCsvCell } from '../../utils/cashierStatementCsv';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
-import { compactChips } from '../../utils/format';
+import { formatWalletChips } from '../../utils/format';
 import { generateAvatarSvg } from '../../utils/avatarGenerator';
 import { safeErrorMessage } from '../../utils/safeErrorMessage';
 
@@ -257,7 +257,7 @@ interface WalletCashierModalProps {
 }
 
 /**
- * A chip figure on the glass: compactChips, the house reading for every chip
+ * A chip figure on the glass: formatWalletChips, the house reading for every chip
  * count outside the felt (Dan 2026-09-09: "NEVER USE DECIMAL POINTS ON ANY
  * FORWARD FACING PAGE ... IF ITS 1200 USE 1.2K"). This printed 12,500.5 -
  * decimals and all - on balances, member rows and the ledgers (audit C2-17).
@@ -266,7 +266,7 @@ interface WalletCashierModalProps {
  * 0.00, which is an invented balance.
  */
 const fmt = (n?: number | null) =>
-  n === undefined || n === null ? '...' : Number.isFinite(n) ? compactChips(n) : 'Unavailable';
+  n === undefined || n === null ? '...' : Number.isFinite(n) ? formatWalletChips(n) : 'Unavailable';
 
 /** The amount being moved, exactly: a confirmation or a receipt never abbreviates it. */
 const fmtWhole = (n: number) => Math.round(n).toLocaleString('en-US');

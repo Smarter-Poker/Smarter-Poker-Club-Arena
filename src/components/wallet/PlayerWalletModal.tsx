@@ -18,6 +18,7 @@
  * Styling rides on the cashier's cbc- classes so the two read as one family.
  */
 
+import { formatWalletChips } from '../../utils/format';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
@@ -335,7 +336,9 @@ export default function PlayerWalletModal({ isOpen, onClose, clubId }: PlayerWal
     ? 'Unavailable'
     : balances === null
       ? '...'
-      : fmt(balances.player_wallet);
+      : balances.player_wallet == null
+        ? 'Unavailable'
+        : formatWalletChips(Number(balances.player_wallet));
 
   return (
     <div
@@ -381,13 +384,21 @@ export default function PlayerWalletModal({ isOpen, onClose, clubId }: PlayerWal
                 {isAgentShaped && (
                   <div className="cbc-row">
                     <span className="sc-label sc-ink--blue">Agent Wallet</span>
-                    <strong className="sc-ink--silver">{fmt(balances.agent_wallet)}</strong>
+                    <strong className="sc-ink--silver">
+                      {balances.agent_wallet == null
+                        ? 'Unavailable'
+                        : formatWalletChips(Number(balances.agent_wallet))}
+                    </strong>
                   </div>
                 )}
                 {isAgentShaped && (
                   <div className="cbc-row">
                     <span className="sc-label sc-ink--blue">Promo Wallet</span>
-                    <strong className="sc-ink--silver">{fmt(balances.promo_wallet)}</strong>
+                    <strong className="sc-ink--silver">
+                      {balances.promo_wallet == null
+                        ? 'Unavailable'
+                        : formatWalletChips(Number(balances.promo_wallet))}
+                    </strong>
                   </div>
                 )}
               </>

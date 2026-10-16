@@ -9,7 +9,7 @@ import { LeaderboardService } from '../../services/LeaderboardService';
 import { enumToTitleCase } from '../../utils/titleCase';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { SpadeConsole } from '../console/SpadeConsole';
-import { compactChips } from '../../utils/format';
+import { compactChips, formatWalletChips } from '../../utils/format';
 import { safeErrorMessage } from '../../utils/safeErrorMessage';
 import {
   MAX_PRIZE_PLAN_BUDGET,
@@ -648,7 +648,7 @@ export function LeaderboardPrizeWizard({
                   <dl className="lb-prize-funding-grid" aria-label="Funding Commitment Summary">
                     <div>
                       <dt>Promo Wallet</dt>
-                      <dd>{compactChips(setup.wallet_balance)} Chips</dd>
+                      <dd>{formatWalletChips(setup.wallet_balance)} Chips</dd>
                     </div>
                     <div>
                       <dt>Published Commitments</dt>

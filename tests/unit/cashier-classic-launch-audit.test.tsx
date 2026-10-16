@@ -797,7 +797,7 @@ describe('Cashier Classic launch audit', () => {
     // Attempt 3: lands.
     nowMs += 5_000;
     fireEvent.click(confirm());
-    await screen.findByText(/Minted 100 Chips Into The Club Bank/);
+    await screen.findByText(/Minted 100\.00 Chips Into The Club Bank/);
 
     const mints = rpcCalls.filter(([name]) => name === 'fn_mint_chips_from_diamonds');
     expect(mints).toHaveLength(3);
@@ -879,7 +879,7 @@ describe('Cashier Classic launch audit', () => {
     expect(
       screen.getByRole('region', { name: 'Selected Player Wallet Context' })
     ).toHaveTextContent('Player Wallet: 123');
-    expect(screen.getByText('Agent Wallet Receives 10 Chips')).toBeInTheDocument();
+    expect(screen.getByText('Agent Wallet Receives 10.00 Chips')).toBeInTheDocument();
     expect(screen.queryByText('123 → 133')).toBeNull();
   });
 

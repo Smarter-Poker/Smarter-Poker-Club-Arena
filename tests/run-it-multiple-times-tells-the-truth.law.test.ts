@@ -183,9 +183,8 @@ describe('second sweep (2026-09-04): the parts the first fix missed or broke', (
     expect(layer).toContain('accountBalance: number | null;');
     expect(layer).toContain('onRetryBalance={onRetryAccountBalance}');
     const cashier = read('src/components/table/CashierModal.tsx');
-    expect(cashier).toContain(
-      "balanceKnown ? formatAmount(accountBalance, currency) : 'Unavailable'"
-    );
+    expect(cashier).toMatch(/const balanceValue = balanceKnown[\s\S]{0,250}: 'Unavailable'/);
+    expect(cashier).toContain('formatWalletChips(accountBalance)');
   });
 
   it('a busted seat is not released while its owner is at the rebuy dialog', () => {

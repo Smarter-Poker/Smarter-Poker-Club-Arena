@@ -8,6 +8,7 @@ import {
 import {
   attachCashierScreenshot,
   expectCashierAxeClean,
+  expectCashierAmountPresets,
   expectCompactCashierFigure,
   expectCashierWalletBalance,
 } from './support/cashierProductionCertification';
@@ -558,10 +559,7 @@ test.describe('Production Cashier Certification', () => {
       'diamonds'
     );
     const presets = console.locator('[class*="presetBtn"]');
-    expect(await presets.count()).toBeGreaterThan(0);
-    for (const value of await presets.allInnerTexts()) {
-      if (value.trim() !== 'Max') expectCompactCashierFigure(value, 'Amount Preset');
-    }
+    expectCashierAmountPresets(await presets.allInnerTexts());
     await expectCashierAxeClean(page, testInfo, 'main', 'advanced-cashier');
     await expect(page.locator('main .dw__row-picture').first()).not.toBeVisible();
     await expect(page.locator('main .dw__row-label').first()).toBeVisible();

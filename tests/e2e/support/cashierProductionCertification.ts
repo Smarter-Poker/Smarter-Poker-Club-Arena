@@ -108,3 +108,18 @@ export function expectCompactCashierFigure(value: string, name: string): void {
     /^[-+]?(?:\d{1,3}(?:,\d{3})*|\d+(?:\.\d)?[KMB])$/
   );
 }
+
+export function expectCashierAmountPresets(values: string[]): void {
+  const labels = values.map((value) => value.trim());
+  // innerText reflects CSS uppercase; MAX is a command, not a chip amount.
+  const commands = labels.filter((value) => /^max$/i.test(value));
+  const amounts = labels.filter((value) => !/^max$/i.test(value));
+  expect(commands, 'Advanced Cashier must expose exactly one Max command').toHaveLength(1);
+  for (const value of amounts) expectCompactCashierFigure(value, 'Amount Preset');
+  expect(amounts, 'Advanced Cashier must retain all four numeric presets').toEqual([
+    '100',
+    '500',
+    '1K',
+    '5K',
+  ]);
+}

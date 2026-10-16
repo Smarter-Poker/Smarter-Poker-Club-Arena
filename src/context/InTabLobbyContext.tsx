@@ -88,10 +88,9 @@ export interface InTabLobbyNav {
   /** Select an arena inside the current lobby tab; null opens the shared selector. */
   openArena?: (clubKey: string | null) => boolean;
   /**
-   * The header's Back, in a tab. A drill-in inside the tab pushes no history
-   * entry, so browser Back would step OUT of the table route rather than back
-   * up the drill-in; this pops the drill-in first and only then falls back to
-   * the browser's own Back, which is what it does everywhere else.
+   * Back restores the previous visible in-tab page, then the exact tab the
+   * lobby opened from. These transitions do not add browser-history entries;
+   * browser Back is used only when the previous page was outside the tab.
    */
   goBack: () => void;
 }
@@ -164,10 +163,11 @@ export function useAppNavigate(): NavigateFunction {
     if (!inTab) return navigate;
 
     const wrapped = (to: To | number, options?: NavigateOptions) => {
-      // A numeric `to` is history movement (back / forward). It cannot name a
-      // tournament, and rewriting it would break the browser Back button.
+      // Embedded pages share the header's visible-page history. Their Back
+      // must not escape to an unrelated older browser entry.
       if (typeof to === 'number') {
-        navigate(to);
+        if (to === -1) inTab.goBack();
+        else navigate(to);
         return;
       }
       const arena = arenaTargetFromTo(to);

@@ -14,6 +14,32 @@ const diamond = { id: DIAMOND_ARENA_CLUB_ID, slug: 'diamond-arena' };
 const joined = [{ id: 'first' }, { id: 'second' }];
 
 describe('Poker Arena selection', () => {
+  it('routes embedded numeric Back through the same history as the header', () => {
+    const goBack = vi.fn();
+    function Back() {
+      const navigate = useAppNavigate();
+      const location = useLocation();
+      return (
+        <>
+          <output>{location.pathname}</output>
+          <button onClick={() => navigate(-1)}>Back</button>
+        </>
+      );
+    }
+    render(
+      <MemoryRouter initialEntries={['/clubs/deep-stack-society', '/table/shark']} initialIndex={1}>
+        <InTabLobbyContext.Provider
+          value={{ openTournament: () => false, openHub: () => false, goBack }}
+        >
+          <Back />
+        </InTabLobbyContext.Provider>
+      </MemoryRouter>
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Back', exact: true }));
+    expect(goBack).toHaveBeenCalledOnce();
+    expect(screen.getByText('/table/shark')).toBeTruthy();
+  });
+
   it('keeps platform entries adjacent while preserving joined club preferences', () => {
     const cards = orderArenaCards(
       [...joined, diamond, shark],

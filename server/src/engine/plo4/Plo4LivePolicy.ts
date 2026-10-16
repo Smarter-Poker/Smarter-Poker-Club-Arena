@@ -1051,7 +1051,11 @@ export function evaluatePlo4LivePolicy(
   now = () => performance.now(),
   /** The owner's legalizer (HorseLogic passes its own): a changed proposal is
    * recorded and executed in its exact legal form (audit 2026-10-05). */
-  legalForm?: (decision: HorseDecision) => HorseDecision
+  legalForm?: (decision: HorseDecision) => HorseDecision,
+  /** 2026-10-16: a live opponent's read is a credible station
+   * (HorseOpponentExploit.isStation). The pack's deviations are wagers into
+   * an opponent-blind horse field; against a station the reference stays. */
+  opponentStation = false
 ) {
   const start = now();
   const receipt: Plo4LiveReceipt = {
@@ -1419,18 +1423,20 @@ export function evaluatePlo4LivePolicy(
     );
   };
   const deviation = () =>
-    plo4ReferenceDeviation(
-      {
-        street: s.stage,
-        dealtSeats: seats.length,
-        liveOpponents: active.length,
-        role: receipt.role,
-        position: receipt.position,
-        baseline,
-        callCost,
-      },
-      PLO4_POLICY_PACK.deviations
-    );
+    opponentStation
+      ? null
+      : plo4ReferenceDeviation(
+          {
+            street: s.stage,
+            dealtSeats: seats.length,
+            liveOpponents: active.length,
+            role: receipt.role,
+            position: receipt.position,
+            baseline,
+            callCost,
+          },
+          PLO4_POLICY_PACK.deviations
+        );
   if (s.stage === 'preflop') {
     const chosen = deviation();
     return chosen ? deviate(chosen.reason, chosen.fraction) : finish('reference_retained');

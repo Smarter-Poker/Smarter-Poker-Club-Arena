@@ -783,7 +783,11 @@ export function evaluateOmahaVariantPolicy(
    * recorded and executed in the exact legal form the owner will give it, so
    * a unit or all-in rewrite never turns a measured proposal into an
    * `illegal_candidate` refusal (audit 2026-10-05). */
-  legalForm?: (decision: HorseDecision) => HorseDecision
+  legalForm?: (decision: HorseDecision) => HorseDecision,
+  /** 2026-10-16: a live opponent's read is a credible station
+   * (HorseOpponentExploit.isStation); the deviations stay out, the reference
+   * (which carries the exploit read) is retained. */
+  opponentStation = false
 ) {
   const start = now();
   const externalAnalysisMs = evidence
@@ -1233,18 +1237,20 @@ export function evaluateOmahaVariantPolicy(
    * shared kernel) or the reference itself. A deviation is a wager or
    * nothing: a wager the legal menu cannot hold retains the reference. */
   const deviation = () =>
-    plo4ReferenceDeviation(
-      {
-        street: s.stage,
-        dealtSeats: seats.length,
-        liveOpponents: active.length,
-        role: receipt.role,
-        position: receipt.position,
-        baseline,
-        callCost,
-      },
-      pack.deviations
-    );
+    opponentStation
+      ? null
+      : plo4ReferenceDeviation(
+          {
+            street: s.stage,
+            dealtSeats: seats.length,
+            liveOpponents: active.length,
+            role: receipt.role,
+            position: receipt.position,
+            baseline,
+            callCost,
+          },
+          pack.deviations
+        );
   const decide = (done: typeof finish) => {
     const chosen = deviation();
     if (!chosen) return done('reference_retained');

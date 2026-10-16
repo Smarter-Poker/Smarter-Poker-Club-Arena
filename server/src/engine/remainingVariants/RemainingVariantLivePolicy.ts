@@ -1071,7 +1071,11 @@ export function evaluateRemainingVariantPolicy(
   mode: RemainingVariantMode = 'shadow',
   now = () => performance.now(),
   decisionEquityCeiling = 1,
-  sampleWhenMissing = true
+  sampleWhenMissing = true,
+  /** 2026-10-16: a live opponent's read is a credible station
+   * (HorseOpponentExploit.isStation); the round-3 entry deviations stay out
+   * and the reference (which carries the exploit read) is retained. */
+  opponentStation = false
 ) {
   const start = now(),
     variant = isRemainingPolicyVariant(s.gameVariant) ? s.gameVariant : null;
@@ -1607,6 +1611,7 @@ export function evaluateRemainingVariantPolicy(
     // keeps every preflop decision except the declared entry spots.
     const rules = pack.round3;
     const baselineWagers = ['bet', 'raise', 'all_in'].includes(baseline.action);
+    if (opponentStation) return finish('round3_reference_retained', retained());
     if (
       receipt.role === 'rfi' &&
       baselineWagers &&

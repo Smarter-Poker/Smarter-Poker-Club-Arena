@@ -133,13 +133,17 @@ describe('P11.3 the PFR repair requalifies each previously selected pack at gene
           expiresAt: null,
           withdrawn: null,
         });
+        // 2026-10-16: the opponent-exploit change moved the Phase 11 policy
+        // digest (definition v5), so generation 2 no longer measured the running
+        // code. It is refused - exactly as stale evidence always is - and the
+        // pack is shadow until requalified. Nothing here re-points it.
         const admitted = admitHorsePhase11ReleaseAuthority(variant);
-        expect(admitted.status, variant).toBe('admitted');
-        expect(selectedHorsePhase11Authority(variant, admitted), variant).toMatchObject({
-          sourceSha: current.sourceSha,
-          evidenceSha256: current.qualificationSha256,
-          approvalGeneration: 2,
+        expect(admitted, variant).toEqual({
+          status: 'refused',
+          reason: 'policy_digest_mismatch',
+          transient: false,
         });
+        expect(selectedHorsePhase11Authority(variant, admitted), variant).toBeNull();
         for (const [path, digest] of [
           [current.qualificationPath, current.qualificationSha256],
           [current.completionPath!, current.completionSha256!],
@@ -196,12 +200,12 @@ describe('P11.3 the PFR repair requalifies each previously selected pack at gene
     ).toMatchObject({ status: 'refused', reason: 'contract_unavailable' });
   });
 
-  it('each live main-scheduler gate is usable exactly when its pack is selected', () => {
+  it('each live main-scheduler gate refuses its selection until requalified (digest moved 2026-10-16)', () => {
     for (const variant of HORSE_PHASE11_VARIANTS) {
       const gate = liveHorsePhase11Authorities[variant];
       gate.refresh();
       expect(gate.mainState(), variant).toBe(
-        PHASE11_PROTECTED_RELEASE_SELECTIONS[variant] === null ? 'unselected' : 'usable'
+        PHASE11_PROTECTED_RELEASE_SELECTIONS[variant] === null ? 'unselected' : 'refused'
       );
     }
   });
@@ -226,7 +230,7 @@ describe('P11.3 the PFR repair requalifies each previously selected pack at gene
   // selections (2026-10-09): a committed qualification that says
   // qualified:true is exactly the one its pack's selection names, and a
   // completion record exists for a selected pack or an unpromoted one.
-  it("a qualified file is either its pack's current selection on the running policy or a retained generation-one file on an older one", () => {
+  it("a qualified file is its pack's current selection or a retained generation-one file, and none is on the running policy since 2026-10-16", () => {
     const dir = fileURLToPath(new URL('../../../docs/evidence/phase11/', import.meta.url));
     const files = existsSync(dir)
       ? readdirSync(dir, { recursive: true, encoding: 'utf8' }).filter((f) => f.endsWith('.json'))
@@ -236,12 +240,14 @@ describe('P11.3 the PFR repair requalifies each previously selected pack at gene
       if (parsed.schema === HORSE_PHASE11_QUALIFICATION_SCHEMA && parsed.qualified === true) {
         const variant = parsed.variant as OmahaPolicyVariant;
         const path = `docs/evidence/phase11/${file}`;
-        if (PHASE11_PROTECTED_RELEASE_SELECTIONS[variant]?.qualificationPath === path)
-          expect(parsed.policyDigest, file).toBe(horsePhase11PolicyDigest(variant));
-        else {
-          expect(PREVIOUS_PHASE11_SELECTIONS[variant]?.qualificationPath, file).toBe(path);
-          expect(parsed.policyDigest, file).not.toBe(horsePhase11PolicyDigest(variant));
-        }
+        expect(
+          [
+            PHASE11_PROTECTED_RELEASE_SELECTIONS[variant]?.qualificationPath,
+            PREVIOUS_PHASE11_SELECTIONS[variant]?.qualificationPath,
+          ],
+          file
+        ).toContain(path);
+        expect(parsed.policyDigest, file).not.toBe(horsePhase11PolicyDigest(variant));
       }
       if (parsed.schema === HORSE_PHASE11_COMPLETION_SCHEMA)
         expect(HORSE_PHASE11_VARIANTS as readonly string[], file).toContain(parsed.variant);

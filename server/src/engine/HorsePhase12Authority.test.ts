@@ -177,15 +177,18 @@ describe('P12.3 the PFR repair requires fresh qualification of previously select
         expiresAt: null,
         withdrawn: null,
       });
-      expect(release.status, variant).toBe('admitted');
-      expect(selectedHorsePhase12Authority(variant, release), variant).toMatchObject({
-        phase: 'phase12',
-        sourceSha: selection.sourceSha,
-        continuationVersion: REMAINING_VARIANT_PACKS[variant].version,
-        evidenceSha256: selection.qualificationSha256,
-        approvalGeneration: 3,
+      // 2026-10-16: the opponent-exploit change moved the Phase 12 policy
+      // digest (definition v2), so generation 3 no longer measured the running
+      // code. It is refused - exactly as stale evidence always is - and the
+      // pack is shadow until requalified. Nothing here re-points it.
+      expect(release, variant).toEqual({
+        status: 'refused',
+        reason: 'policy_digest_mismatch',
+        transient: false,
       });
-      // The admitted pack is the candidate at cash tables and shadow in tournaments.
+      expect(selectedHorsePhase12Authority(variant, release), variant).toBeNull();
+      // Once requalified, an admitted pack is the candidate at cash tables and
+      // shadow in tournaments.
       for (const [gameMode, expected] of [
         ['cash', 'candidate'],
         ['tournament', 'shadow'],
@@ -236,7 +239,7 @@ describe('P12.3 the PFR repair requires fresh qualification of previously select
     expect(holder.receipt().approvalGeneration).toBe(3);
   });
 
-  it('FLH generation 3 is selected on the repaired source and admits with its committed evidence', () => {
+  it('FLH generation 3 is selected on the repaired source; its committed evidence is refused on the running code since 2026-10-16', () => {
     const selected = PHASE12_PROTECTED_RELEASE_SELECTIONS.flh!;
     expect(selected).toMatchObject({
       sourceSha: 'c92768c85bc53a4a5a5972d09c6ee58561010035',
@@ -256,7 +259,11 @@ describe('P12.3 the PFR repair requires fresh qualification of previously select
       }
     }
     const admission = admitHorsePhase12ReleaseAuthority('flh');
-    expect(admission.status).toBe('admitted');
+    expect(admission).toEqual({
+      status: 'refused',
+      reason: 'policy_digest_mismatch',
+      transient: false,
+    });
     for (const other of ['short_deck', 'pineapple', 'flo8'] as const)
       expect(PHASE12_PROTECTED_RELEASE_SELECTIONS[other]).toBeNull();
   });
@@ -300,12 +307,12 @@ describe('P12.3 the PFR repair requires fresh qualification of previously select
     ).toMatchObject({ status: 'refused', reason: 'contract_unavailable' });
   });
 
-  it('each live main-scheduler gate is usable exactly when its pack is selected; an unselected gate accepts no receipt', () => {
+  it('each live main-scheduler gate refuses its selection until requalified (digest moved 2026-10-16); an unselected gate accepts no receipt', () => {
     for (const variant of HORSE_PHASE12_VARIANTS) {
       const gate = liveHorsePhase12Authorities[variant];
       gate.refresh();
       const isSelected = PHASE12_PROTECTED_RELEASE_SELECTIONS[variant] !== null;
-      expect(gate.mainState(), variant).toBe(isSelected ? 'usable' : 'unselected');
+      expect(gate.mainState(), variant).toBe(isSelected ? 'refused' : 'unselected');
       if (isSelected) continue;
       const worker = new HorseQualifiedAuthorityHolder(
         `p123-null-${variant}`,
@@ -365,7 +372,7 @@ describe('P12.3 the PFR repair requires fresh qualification of previously select
   // measured policy digest no longer runs, which no admission can accept.
   // Since the generation-2 FLH selection (2026-10-12) the only qualified:true
   // FLH qualification on the running FLH policy digest is the selected one.
-  it('the only qualified:true qualification of each pack is the one its selection names, or one measured on a policy that no longer runs', () => {
+  it('every qualified:true qualification of each pack was measured on a policy that no longer runs (2026-10-16), the selected one included', () => {
     const dir = fileURLToPath(new URL('../../../docs/evidence/phase12/', import.meta.url));
     const files = existsSync(dir)
       ? readdirSync(dir, { recursive: true, encoding: 'utf8' }).filter((f) => f.endsWith('.json'))
@@ -378,16 +385,15 @@ describe('P12.3 the PFR repair requires fresh qualification of previously select
         const named =
           PHASE12_PROTECTED_RELEASE_SELECTIONS[variant]?.qualificationPath ===
           `docs/evidence/phase12/${file}`;
-        if (!named) expect(parsed.policyDigest, file).not.toBe(horsePhase12PolicyDigest(variant));
-        else {
-          expect(parsed.policyDigest, file).toBe(horsePhase12PolicyDigest(variant));
-          qualifiedSelected.push(`${variant}:${file}`);
-        }
+        // The opponent-exploit change moved the running digest: no file,
+        // the selected one included, measured this code.
+        expect(parsed.policyDigest, file).not.toBe(horsePhase12PolicyDigest(variant));
+        if (named) qualifiedSelected.push(`${variant}:${file}`);
       }
       if (parsed.schema === HORSE_PHASE12_COMPLETION_SCHEMA)
         expect(HORSE_PHASE12_VARIANTS as readonly string[], file).toContain(parsed.variant);
     }
-    // Every selected pack names a qualified:true file on its running policy.
+    // The selected pack still names its committed qualified:true file.
     expect(qualifiedSelected).toEqual(['flh:c92768c8/phase12-qualification-2026-10-15-flh.json']);
   });
 });

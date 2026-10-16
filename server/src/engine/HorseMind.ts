@@ -44,6 +44,21 @@ import {
   observeHorseObservationWindow,
   type HorseObservationWindow,
 } from './HorseObservationWindow.js';
+import {
+  barrelNarrowingScale,
+  callDownRespectShift,
+  decayAndAdd,
+  exploitHandIncrements,
+  freshExploitCounters,
+  looseCallerWidth,
+  openerRangeWidth,
+  opponentExploitRead,
+  postflopBluffMod,
+  reRaiseWidth,
+  valueThinMod as readValueThinMod,
+  type ExploitCounters,
+  type OpponentExploitRead,
+} from './HorseOpponentExploit.js';
 
 /** Match the controller's full-raise marker: an all-in button can be a call
  * or a short raise and must not invent an aggressive read. */
@@ -254,6 +269,9 @@ export interface HorseMindSandbox {
    *  scoped counters would leak into the live fleet and into the next run. */
   scoped: Map<string, OpponentStats>;
   dirtyScoped: Set<string>;
+  /** 2026-10-16 opponent exploit: decayed per-(scope, player) counters,
+   *  keyed `${scope}|${userId}`. Memory only, never flushed to the DB. */
+  exploit: Map<string, ExploitCounters>;
 }
 
 /** V23: what hero decided AT BET TIME it would do about a raise. */
@@ -391,6 +409,11 @@ export class HorseMind {
   private static dirtyScoped = new Set<string>();
   /** V45: the scope of the decision in flight (set by HorseLogic.decide). */
   private static decisionScope: ReadScope | null = null;
+  /** 2026-10-16: decayed opponent-exploit counters, `${scope}|${userId}`. */
+  private static exploitCounters = new Map<string, ExploitCounters>();
+  /** 2026-10-16: the game variant of the decision in flight; it picks the
+   *  population envelope the exploit read is judged against. */
+  private static decisionVariant: string | null = null;
   /** dedupe of processed ActionRecords across repeated decide() calls */
   private static seenActions = new Set<string>();
   /** per (handKey|userId) preflop-participation flags already counted */
@@ -669,6 +692,54 @@ export class HorseMind {
    * bets raised, at rates their global profile cannot explain — the
    * signature of a player who has singled this horse out.
    */
+  // ───────────────────────────────────────────────────────────────────────
+  // 2026-10-16 OPPONENT EXPLOIT - decayed reads, gate and accessors
+  // ───────────────────────────────────────────────────────────────────────
+
+  private static observeExploitHand(
+    actions: ReadonlyArray<{
+      userId?: string;
+      action: string;
+      amount?: number;
+      stage: string;
+      isFullRaise?: boolean;
+    }>,
+    scope: ReadScope
+  ): void {
+    for (const [userId, increments] of exploitHandIncrements(actions)) {
+      const key = `${scope}|${userId}`;
+      let row = this.exploitCounters.get(key);
+      if (!row) {
+        if (this.exploitCounters.size >= MAX_TRACKED_PLAYERS * 4)
+          evictOldest(this.exploitCounters, MAX_TRACKED_PLAYERS * 4 - 1);
+        row = freshExploitCounters();
+        this.exploitCounters.set(key, row);
+      }
+      decayAndAdd(row, increments);
+    }
+  }
+
+  /** The decayed exploit counters for (scope, player), for tests and the read frame. */
+  static getExploitCounters(userId: string, scope: ReadScope): ExploitCounters | undefined {
+    return this.exploitCounters.get(`${scope}|${userId}`);
+  }
+
+  /**
+   * The opponent-exploit read for the decision in flight (its scope), or NULL
+   * when none of this player's statistics is credibly outside the horse
+   * envelope. Null is the neutrality contract: callers run their exact
+   * pre-existing code. Pure: no random draws, no writes.
+   */
+  static opponentRead(userId: string): OpponentExploitRead | null {
+    const scope = this.decisionScope;
+    if (!scope) return null;
+    return opponentExploitRead(
+      this.exploitCounters.get(`${scope}|${userId}`),
+      scope,
+      this.decisionVariant
+    );
+  }
+
   static targetingOf(heroId: string, oppId: string): number {
     const p = this.pairs.get(`${oppId}|${heroId}`);
     if (!p) return 0;
@@ -710,8 +781,9 @@ export class HorseMind {
   // ── V45 SCOPED READS ────────────────────────────────────────────────────
 
   /** Set by HorseLogic.decide for the decision in flight; null outside one. */
-  static setDecisionScope(scope: ReadScope | null): void {
+  static setDecisionScope(scope: ReadScope | null, variant: string | null = null): void {
     this.decisionScope = scope;
+    this.decisionVariant = scope ? variant : null;
   }
 
   static currentScope(): ReadScope | null {
@@ -837,7 +909,9 @@ export class HorseMind {
     this.dirtyPairs.clear();
     this.scoped.clear();
     this.dirtyScoped.clear();
+    this.exploitCounters.clear();
     this.decisionScope = null;
+    this.decisionVariant = null;
   }
 
   // ───────────────────────────────────────────────────────────────────────
@@ -1093,6 +1167,7 @@ export class HorseMind {
       outlooks: new Map(),
       scoped: new Map(),
       dirtyScoped: new Set(),
+      exploit: new Map(),
     };
   }
 
@@ -1125,6 +1200,8 @@ export class HorseMind {
           const key = `${family}:${size}|${id}`;
           const scoped = this.scoped.get(key);
           if (scoped) view.scoped.set(key, { ...scoped });
+          const exploit = this.exploitCounters.get(key);
+          if (exploit) view.exploit.set(key, { ...exploit });
         }
       }
       for (const other of ids) {
@@ -1160,6 +1237,7 @@ export class HorseMind {
       throw new Error('HorseMind.runInSandbox: cannot cross an active effect capture');
     }
     const liveScope = this.decisionScope;
+    const liveVariant = this.decisionVariant;
     const live = {
       stats: this.stats,
       seenActions: this.seenActions,
@@ -1172,8 +1250,12 @@ export class HorseMind {
       outlooks: this.outlooks,
       scoped: this.scoped,
       dirtyScoped: this.dirtyScoped,
+      exploit: this.exploitCounters,
     };
     this.stats = sandbox.stats;
+    // A sandbox built before the exploit layer (or by a caller that only
+    // knows the older fields) reads as "no exploit memory", never as live.
+    this.exploitCounters = sandbox.exploit ?? new Map();
     this.scoped = sandbox.scoped;
     this.dirtyScoped = sandbox.dirtyScoped;
     this.seenActions = sandbox.seenActions;
@@ -1186,6 +1268,7 @@ export class HorseMind {
     this.outlooks = sandbox.outlooks;
     this.sandboxDepth = 1;
     this.decisionScope = null;
+    this.decisionVariant = null;
     try {
       return fn();
     } finally {
@@ -1200,8 +1283,10 @@ export class HorseMind {
       this.outlooks = live.outlooks;
       this.scoped = live.scoped;
       this.dirtyScoped = live.dirtyScoped;
+      this.exploitCounters = live.exploit;
       this.sandboxDepth = 0;
       this.decisionScope = liveScope;
+      this.decisionVariant = liveVariant;
     }
   }
 
@@ -1408,10 +1493,36 @@ export class HorseMind {
       }
     }
 
+    // 2026-10-16 OPPONENT EXPLOIT: a credibly non-horse opener's range is
+    // the share of hands THEY raise, not the seat's. A 100% raiser's open is
+    // nearly any hand; a nit's is the top of the deck. Null read = no change.
+    const read = this.opponentRead(userId);
+    if (read) {
+      const width =
+        line === 'open'
+          ? openerRangeWidth(read)
+          : line === 'threebet'
+            ? reRaiseWidth(read)
+            : line === 'fourbet'
+              ? (() => {
+                  const w = reRaiseWidth(read);
+                  return w === null ? null : w * 0.5;
+                })()
+              : line === 'limp' || line === 'call'
+                ? looseCallerWidth(read)
+                : null;
+      if (width !== null) lo = 1 - width;
+    }
+
     // V5/V7: every postflop street they bet or raised narrows the read
     // upward, weighted by bet size. A flop-and-turn pot-barreller is priced
     // as strong; a pair of min-bets barely moves the read. Capped so even a
     // triple barrel leaves bluffs in the range.
+    // 2026-10-16: a credible over-aggressor's barrels say less about their
+    // hand; their bets narrow the read by a fraction of the usual weight.
+    const narrowing = read ? barrelNarrowingScale(read) : 1;
+    if (narrowing !== 1)
+      for (const [stage, w] of streetWeight) streetWeight.set(stage, w * narrowing);
     if (streetWeight.size > 0) {
       let total = 0;
       for (const w of streetWeight.values()) total += w;
@@ -1481,6 +1592,25 @@ export class HorseMind {
   // ───────────────────────────────────────────────────────────────────────
 
   static exploit(userId: string, recencyBlend: boolean = true): ExploitProfile {
+    const legacy = this.legacyExploit(userId, recencyBlend);
+    // 2026-10-16 OPPONENT EXPLOIT: a credible read replaces the lifetime
+    // profile on the statistics it covers. The bluff read is POSTFLOP-ONLY
+    // fold-to-bet (the lifetime fold rate mixes preflop folds and bluffed a
+    // tight-preflop maniac more). Null read = the legacy profile, unchanged.
+    const read = this.opponentRead(userId);
+    if (!read) return legacy;
+    const bluff = postflopBluffMod(read);
+    const thin = readValueThinMod(read);
+    const shift = callDownRespectShift(read);
+    if (bluff === null && thin === null && shift === 0) return legacy;
+    return {
+      bluffMod: bluff ?? legacy.bluffMod,
+      callDownMod: shift !== 0 ? 1 - shift : legacy.callDownMod,
+      valueThinMod: thin ?? legacy.valueThinMod,
+    };
+  }
+
+  private static legacyExploit(userId: string, recencyBlend: boolean): ExploitProfile {
     const s = this.readStats(userId);
     if (!s || s.hands < 10) return NEUTRAL_EXPLOIT;
     // V45: the recency window is pooled (gears are not per-scope).
@@ -2007,6 +2137,10 @@ export class HorseMind {
         }
       }
       mirror();
+      // 2026-10-16 OPPONENT EXPLOIT: one completed hand decays and feeds the
+      // per-(scope, player) counters the exploit read is built from. Scoped
+      // hands only: a read is always for the game it was learned in.
+      if (scope) this.observeExploitHand(actions, scope);
     } catch {
       /* full-hand observation is best-effort by contract */
     } finally {

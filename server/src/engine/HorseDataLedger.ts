@@ -1363,6 +1363,27 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     0.0002
   ),
   receipt('v17_catch_block', 'HorseLogic (V17)', 'call-side blocker', 'V17', 'decide', 0.0005),
+  // 2026-10-16 opponent exploit (HorseOpponentExploit). No floor: these fire
+  // only against an opponent whose decayed read is credibly outside the
+  // horse-population envelope, which horse-versus-horse play almost never is.
+  receipt(
+    'opponent_exploit_preflop',
+    'HorseLogic (opponent exploit)',
+    "a raiser or limper read outside the horse envelope moved a preflop bar (Dan: 'raising and potting at a 100% VPIP')",
+    'OPPX'
+  ),
+  receipt(
+    'opponent_exploit_postflop',
+    'HorseLogic (opponent exploit)',
+    'traps against a read aggressor or bigger value sizes into a read station',
+    'OPPX'
+  ),
+  receipt(
+    'opponent_exploit_calldown',
+    'HorseLogic (opponent exploit)',
+    "the current bettor's own read priced the call instead of the table average",
+    'OPPX'
+  ),
   receipt(
     'v17_short_deck',
     'HorseLogic (V17)',

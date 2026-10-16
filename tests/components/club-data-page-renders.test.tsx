@@ -1273,6 +1273,73 @@ describe('ClubDataPage', () => {
     }
   });
 
+  it('lets the first player response paint during realtime invalidations', async () => {
+    let resolveBreakdown!: (value: unknown) => void;
+    let resolvePage!: (value: unknown) => void;
+    const totals = new Promise((resolve) => {
+      resolveBreakdown = resolve;
+    });
+    const firstPage = new Promise((resolve) => {
+      resolvePage = resolve;
+    });
+    const ordinaryRpc = rpcMock.getMockImplementation()!;
+    rpcMock.mockImplementation((fn: string, args?: Record<string, unknown>) => {
+      if (fn === 'ca_club_player_breakdown') return totals;
+      if (fn === 'ca_club_player_page') return firstPage;
+      return ordinaryRpc(fn, args);
+    });
+
+    render(<ClubDataPage />);
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced', exact: true }));
+    await screen.findByText('Shark Table One');
+    fireEvent.click(screen.getByRole('tab', { name: 'Players' }));
+    await screen.findByText('Loading Players');
+    act(() => realtimeState.busHandler?.({ clubId: CLUB_ID }));
+    // The existing realtime debounce is 750ms. Let that real callback execute
+    // while both first-paint RPCs remain deferred, rather than racing timers.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 850));
+    });
+    const reads = rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_player_page');
+    expect(reads).toHaveLength(1);
+    await act(async () => {
+      resolveBreakdown({ data: playerBreakdown, error: null });
+      resolvePage({ data: playerPageFor(), error: null });
+    });
+    expect(await screen.findByText('Table Regular')).toBeVisible();
+    expect(screen.queryByText('Loading Players')).not.toBeInTheDocument();
+  });
+
+  it('releases the first player read after failure so explicit recovery can succeed', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const ordinaryRpc = rpcMock.getMockImplementation()!;
+    let refused = true;
+    rpcMock.mockImplementation((fn: string, args?: Record<string, unknown>) => {
+      if (fn === 'ca_club_player_page' && refused) {
+        return Promise.resolve({
+          data: null,
+          error: { code: 'PGRST202', message: 'read unavailable' },
+        });
+      }
+      return ordinaryRpc(fn, args);
+    });
+    try {
+      render(<ClubDataPage />);
+      fireEvent.click(screen.getByRole('button', { name: 'Advanced', exact: true }));
+      await screen.findByText('Shark Table One');
+      fireEvent.click(screen.getByRole('tab', { name: 'Players' }));
+      const retry = await screen.findByRole('button', { name: 'Try Again' });
+      expect(screen.queryByText('Loading Players')).not.toBeInTheDocument();
+      expect(screen.queryByText('Table Regular')).not.toBeInTheDocument();
+      refused = false;
+      fireEvent.click(retry);
+      expect(await screen.findByText('Table Regular')).toBeVisible();
+      expect(screen.queryByRole('button', { name: 'Try Again' })).not.toBeInTheDocument();
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
   it('keeps verified player rows visible when a background refresh is transiently refused', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     try {
@@ -1757,6 +1824,16 @@ describe('ClubDataPage', () => {
       });
       expect(screen.getByText('Cached Loser')).toBeInTheDocument();
       expect(screen.queryByText('Retired Winner')).not.toBeInTheDocument();
+      act(() => realtimeState.busHandler?.({ clubId: CLUB_ID }));
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 850));
+      });
+      // The stale winner's finally must not release the newer loser request.
+      expect(
+        rpcMock.mock.calls.filter(
+          ([fn, args]) => fn === 'ca_club_player_page' && args?.p_sort === 'losers'
+        )
+      ).toHaveLength(1);
 
       await act(async () => {
         resolveLosers?.({

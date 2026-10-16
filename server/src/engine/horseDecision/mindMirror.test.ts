@@ -92,7 +92,40 @@ function readOf(players = PLAYERS) {
       ? { ...HorseMind.getScopedStats(id, SCOPE)! }
       : null,
     pairs: players.map((other) => HorseMind.getPair(id, other) ?? null),
+    exploit: HorseMind.getExploitCounters(id, SCOPE)
+      ? structuredClone(HorseMind.getExploitCounters(id, SCOPE)!)
+      : null,
   }));
+}
+
+/** Every hand, `maniac` opens to a pot-size raise and the rest fold to him. */
+function maniacHand(n: number, maniac: string, table = TABLE): ObserveCompletedHandRequest {
+  const number = 2_000_000 + n;
+  const t0 = 1_761_000_000_000 + n * 60_000;
+  const others = PLAYERS.filter((p) => p !== maniac);
+  const actions = [
+    { seat: 1, userId: maniac, action: 'raise', amount: 7, stage: 'preflop', timestamp: t0 },
+    ...others.map((userId, i) => ({
+      seat: i + 2,
+      userId,
+      action: 'fold',
+      amount: 0,
+      stage: 'preflop',
+      timestamp: t0 + 700 * (i + 1),
+    })),
+  ];
+  return {
+    type: 'OBSERVE_COMPLETED_HAND',
+    requestId: n + 1,
+    generation: number,
+    fence: `${table}:${number}:9:observe`,
+    handKey: `${table}:${number}`,
+    committedHandId: committedId(),
+    actions,
+    bigBlind: 2,
+    showdown: null,
+    scope: SCOPE,
+  };
 }
 
 describe('a mirrored hand teaches exactly what the owner learned', () => {
@@ -171,6 +204,36 @@ describe('a mirrored hand teaches exactly what the owner learned', () => {
     // The own hand completes: its preflop actions must not count again.
     learnAsOwner(own);
     expect(HorseMind.getStats(PLAYERS[0]!)!.hands).toBe(handsBefore);
+  });
+});
+
+describe('the opponent-exploit read crosses shards (one floor, one read)', () => {
+  beforeEach(() => HorseMind.reset());
+  afterEach(() => {
+    HorseMind.setDecisionScope(null);
+    HorseMind.reset();
+  });
+
+  it('a maniac read on one shard engages identically on another', () => {
+    const maniac = PLAYERS[0]!;
+    const hands = Array.from({ length: 14 }, (_, i) => maniacHand(i, maniac));
+
+    // The owning shard learns every hand itself.
+    for (const h of hands) learnAsOwner(h);
+    HorseMind.setDecisionScope(SCOPE);
+    const ownerRead = HorseMind.opponentRead(maniac);
+    HorseMind.setDecisionScope(null);
+    const ownerRows = readOf();
+    expect(ownerRead).not.toBeNull();
+
+    // Another shard sees none of those tables: it learns them only by mirror.
+    HorseMind.reset();
+    const mirror = new HorseMindMirror();
+    for (const h of hands) expect(mirror.learn(h, learnAsOwner)).toBe('learned');
+    HorseMind.setDecisionScope(SCOPE);
+    expect(HorseMind.opponentRead(maniac)).toEqual(ownerRead);
+    HorseMind.setDecisionScope(null);
+    expect(readOf()).toEqual(ownerRows);
   });
 });
 

@@ -192,21 +192,17 @@ requalification rather than voiding the next.
   empty store records one `v31_certified_skip_empty_store` and decides exactly
   as the miss did (`GtoPostflopV31.test.ts`: identical to the consult switched
   off over 80 spots, no miss counters; a stocked store is still consulted).
-- **The audit knows** (migration 20261016182539, extended in its one
-  transaction; every body rebuilt from the installed one, md5(prosrc) checked
-  against production: `fn_audit_layer_silence` 3c8ce9e8...,
-  `fn_audit_league_pooled_findings` 542d0d69..., `fn_audit_layer_drift`
-  8e70a9a5... = 20261005190000):
-  `fn_audit_league_pooled_findings` treats a significant negative
-  `shortdeck_v23` / `v32_facing_defense` as confirming the default and a
-  significant positive as the flag earning its default back;
-  `fn_audit_layer_drift` section 1 skips layers the silence check already
-  called `layer_default_off` (v17*river_probe would otherwise also have been a
-  `layer_went_silent` warn), notes the `v32_defend*\*`counters as`layer*default_off`, and reports an outcome counter (`\_reason*`,
-`unavailable`, `_skip_`, `_miss_`, `v44*declined*`; section 2 already never
-judged them as layers) as info `outcome_counter_went_quiet` instead of a
-  warn. Applied to a scratch Postgres 17 with stub tables and exercised: the
-  three functions create, and the findings are the ones above.
+- **The audit knows** (migration 20261016182539, one transaction; bodies
+  rebuilt from the installed ones, md5(prosrc) checked against production:
+  `fn_audit_layer_silence` 3c8ce9e8..., `fn_audit_league_pooled_findings`
+  542d0d69...): `fn_audit_league_pooled_findings` treats a significant
+  negative `shortdeck_v23` / `v32_facing_defense` as confirming the default
+  and a significant positive as the flag earning its default back.
+  `fn_audit_layer_drift` is deliberately NOT replaced: the Phase 15 migration
+  20261016192158 (installed 2026-10-16 22:22Z, md5 6014fc66...) replaced it
+  first, and rebuilding it here from the older body would undo that installed
+  version. So the default-off layers' counters going quiet can still read as
+  `layer_went_silent` in the drift check; that is true and is left visible.
 - **Neutrality.** The corpus was recorded on main, which played the short-deck
   V23 half and V32 by default, so the replay pins `v23ShortDeck: true` and
   `v32FacingDefense: true` explicitly, as it pins `v17RiverProbe: true`.

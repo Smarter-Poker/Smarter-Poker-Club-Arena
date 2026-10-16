@@ -52,9 +52,15 @@ causes, both measured inside rolled-back probes:
   document checks. Each now accepts a marked-sent invoice other than
   `cashier_cashout`; a cashout still needs its deliveries.
 
+- `20261016152326`: a partial `(coordinator_union_id, club_id)` index on
+  `accounting_tournament_fee_sources`. `fn_accounting_week_clubs` read every
+  union fee row from the 1.8 GB heap to find the week's tournament clubs:
+  86.8 s on the first, cold call of each tick, then about 5 s. It is now an
+  index-only scan (7 MB).
+
 ## Verified Live
 
-All recorded (`20261016123337`, `20261016131916`, `20261016133404`, `20261016142840`, `20261016144115`); the inventory generation is intact after each.
+All recorded (`20261016123337`, `20261016131916`, `20261016133404`, `20261016142840`, `20261016144115`, `20261016152326`); the inventory generation is intact after each.
 Attempt 156 at 13:40 finished in 88 seconds instead of timing out and
 certified the opening boundary; the close is moving again.
 
@@ -64,3 +70,4 @@ certified the opening boundary; the close is moving again.
 - `tests/the-sealed-certificate-reader-keeps-its-sealed-body.law.test.ts`
 - `tests/a-close-attempt-ends-before-its-tick-does.law.test.ts`
 - `tests/a-weekly-close-accepts-a-history-only-invoice.law.test.ts`
+- `tests/the-weeks-tournament-clubs-are-read-from-an-index.law.test.ts`

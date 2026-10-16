@@ -15,7 +15,7 @@ The Midway Union weekly close for 2026-10-05 to 2026-10-12 (union `fade0000`, jo
 
 ## The Fix
 
-1. `fn_accounting_week_clubs` reads a union's earning clubs set based: cash sources grouped per club, recognized tournament sources grouped per club, each club's launch cutoff asked once as before. A club is accepted exactly when the old per-row test accepted one of its rows. Measured on production: 11.6 s, the same 2 clubs.
+1. `fn_accounting_week_clubs` reads a union's earning clubs per club: cash sources grouped per club, and each club with tournament fee sources in the union accepted by one indexed existence test of its own recognized rows in the week, with the per-row tests unchanged and each club's launch cutoff asked once as before. A club is accepted exactly when the old per-row test accepted one of its rows. Measured on production: 15.6 s against 23.9 s for the old read run right after it, the same 2 clubs.
 2. Inside one union close attempt, and only while the transaction holds the week's exclusive close lock (which every source writer must share), that answer is kept for the rest of the attempt. It is read again outside an attempt, without the lock, and in the next attempt.
 3. `fn_process_weekly_accounting_scope`: a book with a committed step and more to do goes first in its tick and the tick ends with it, as a calculating week and a proving week already own theirs. If that first-place visit is itself cancelled or raises, its visit record carries `in_progress_visit: true` and the book gives its place back for exactly one tick.
 

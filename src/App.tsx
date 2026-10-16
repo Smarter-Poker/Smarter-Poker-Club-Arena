@@ -160,6 +160,7 @@ const LeaderboardPage = lazyWithRetry(() => import('./pages/LeaderboardPage'));
 const HandHistoryPage = lazyWithRetry(() => import('./pages/HandHistoryPage'));
 const PlayerWalletPage = lazyWithRetry(() => import('./pages/PlayerWalletPage'));
 const NotificationsPage = lazyWithRetry(() => import('./pages/NotificationsPage'));
+const MessengerDockHost = lazyWithRetry(() => import('./components/messenger/MessengerDockHost'));
 const NavigateToMessenger = lazyWithRetry(() => import('./pages/NavigateToMessenger'));
 const SearchPage = lazyWithRetry(() => import('./pages/SearchPage'));
 const HelpPage = lazyWithRetry(() => import('./pages/HelpPage'));
@@ -605,6 +606,9 @@ function FullApp() {
         <Suspense fallback={null}>
           <PushSubscriptionSync />
           <FirstRunPushPrompt />
+        </Suspense>
+        <Suspense fallback={null}>
+          <MessengerDockHost />
         </Suspense>
         <GlobalBalanceSync />
         <HeaderAppearanceSync />

@@ -1,0 +1,550 @@
+.messenger-dock {
+  position: fixed;
+  right: 8px;
+  z-index: 1100;
+  pointer-events: none;
+  max-width: calc(100vw - 16px);
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 4px;
+  box-sizing: border-box;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+  color: #1c1e21;
+}
+.messenger-dock button,
+.messenger-dock a {
+  -webkit-tap-highlight-color: transparent;
+}
+.messenger-dock button {
+  cursor: pointer;
+  font: inherit;
+}
+.messenger-dock button:focus-visible,
+.messenger-dock a:focus-visible {
+  outline: 2px solid #0866ff;
+  outline-offset: 2px;
+}
+.dock-window,
+.dock-inbox {
+  pointer-events: auto;
+  width: 340px;
+  height: calc(100% - 4px);
+  flex-shrink: 0;
+  border-radius: 10px;
+  box-shadow: 0 2px 14px #0003;
+  background: #fff;
+  overflow: hidden;
+  animation: dock-arrive 0.14s ease-out;
+}
+.dock-window iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fff;
+}
+.dock-inbox {
+  display: flex;
+  flex-direction: column;
+}
+.dock-inbox header {
+  display: flex;
+  align-items: center;
+  padding: 12px;
+  gap: 4px;
+  border-bottom: 1px solid #e4e6eb;
+}
+.dock-inbox header strong {
+  font-size: 22px;
+  flex: 1;
+}
+.dock-inbox header button {
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  padding: 6px;
+  display: flex;
+  color: #65676b;
+}
+.dock-inbox header button:active {
+  background: #f0f2f5;
+}
+.dock-inbox-scroll {
+  min-height: 0;
+  overflow: auto;
+  flex: 1;
+  padding: 6px;
+}
+.dock-inbox-scroll p {
+  padding: 12px;
+  font-size: 14px;
+}
+.dock-conversation {
+  border: 0;
+  background: transparent;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px;
+  text-align: left;
+  color: inherit;
+}
+.dock-conversation:active {
+  background: #f0f2f5;
+}
+.dock-conversation > span {
+  min-width: 0;
+  flex: 1;
+}
+.dock-conversation strong,
+.dock-conversation small {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.dock-conversation strong {
+  font-size: 14px;
+}
+.dock-conversation small {
+  font-size: 12px;
+  color: #65676b;
+  margin-top: 4px;
+}
+.dock-inbox > .dock-open-full {
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  padding: 14px;
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  border-top: 1px solid #e4e6eb;
+  color: #0866ff;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 600;
+}
+.dock-setting {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px;
+  background: #f0f2f5;
+  border: 0;
+  font-size: 14px;
+}
+.dock-rail {
+  pointer-events: auto;
+  width: 54px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  flex-shrink: 0;
+  padding-bottom: 2px;
+  max-height: 100%;
+  overflow: auto;
+  scrollbar-width: none;
+}
+.dock-launcher,
+.dock-bubble {
+  width: 48px;
+  height: 48px;
+  border: 0;
+  border-radius: 50%;
+  background: #0866ff;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  box-shadow: 0 2px 8px #0003;
+  padding: 0;
+}
+.dock-bubble {
+  background: #fff;
+  color: #0866ff;
+}
+.dock-launcher {
+  position: sticky;
+  bottom: 0;
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+.dock-bubble-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+.dock-bubble-close {
+  position: absolute;
+  right: -2px;
+  top: -3px;
+  background: #e4e6eb;
+  border: 0;
+  border-radius: 50%;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #1c1e21;
+}
+.dock-count {
+  font-size: 11px;
+  background: #e41e3f;
+  color: #fff;
+  border-radius: 12px;
+  padding: 3px 5px;
+  min-width: 10px;
+  text-align: center;
+}
+.dock-launcher > .dock-count {
+  position: absolute;
+  top: -2px;
+  right: -4px;
+}
+.dock-unread-dot {
+  width: 12px;
+  height: 12px;
+  background: #0866ff;
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  border: 2px solid #fff;
+  border-radius: 50%;
+}
+.messenger-dock .dock-avatar {
+  width: 40px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.messenger-dock .dock-initial {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #e7f3ff;
+  color: #0866ff;
+  font-size: 20px;
+  font-weight: 600;
+}
+.dock-mobile .dock-window,
+.dock-mobile .dock-inbox {
+  width: calc(100% - 4px);
+  flex: 1;
+}
+.dock-mobile:has(.dock-window) .dock-rail,
+.dock-mobile:has(.dock-inbox) .dock-rail {
+  display: none;
+}
+@keyframes dock-arrive {
+  from {
+    transform: translateY(8px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dock-window,
+  .dock-inbox {
+    animation: none;
+  }
+}
+.dock-chat {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #fff;
+  color: #050505;
+  font-size: 14px;
+}
+.dock-chat-header {
+  display: flex;
+  align-items: center;
+  padding: 8px;
+  gap: 3px;
+  min-height: 52px;
+  flex-shrink: 0;
+  box-shadow: 0 1px 3px #0002;
+  z-index: 1;
+}
+.dock-chat-header > button:not(.dock-chat-person) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 32px;
+  flex-shrink: 0;
+  border: 0;
+  background: transparent;
+  color: #0084ff;
+  border-radius: 50%;
+  padding: 0;
+}
+.dock-chat-header > button:active {
+  background: #f0f2f5;
+}
+.dock-chat-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+.dock-chat-person {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 4px;
+  background: transparent;
+  border: 0;
+  text-align: left;
+  color: inherit;
+}
+.dock-chat-person strong {
+  display: block;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  font-size: 14px;
+}
+.dock-chat-person small {
+  display: block;
+  color: #65676b;
+  font-size: 11px;
+  margin-top: 2px;
+}
+.dock-chat-messages {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 12px 10px;
+  scrollbar-width: thin;
+}
+.dock-message {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  max-width: 85%;
+  margin: 4px 0 10px;
+}
+.dock-own {
+  margin-left: auto;
+  align-items: flex-end;
+}
+.dock-message-bubble {
+  background: #e4e6eb;
+  padding: 9px 12px;
+  border-radius: 18px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+  box-sizing: border-box;
+  line-height: 1.4;
+}
+.dock-own .dock-message-bubble {
+  background: #0084ff;
+  color: #fff;
+}
+.dock-message-bubble img,
+.dock-message-bubble video {
+  max-width: 100%;
+  border-radius: 9px;
+  display: block;
+}
+.dock-message-bubble audio {
+  max-width: 100%;
+  height: 40px;
+}
+.dock-message-status {
+  font-size: 10px;
+  color: #65676b;
+  margin: 3px 6px 0;
+}
+.dock-message-status button,
+.dock-message-bubble button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-decoration: underline;
+  padding: 0;
+}
+.dock-reply {
+  position: absolute;
+  right: -27px;
+  top: 6px;
+  background: transparent;
+  border: 0;
+  color: #65676b;
+  opacity: 0;
+}
+.dock-own .dock-reply {
+  left: -27px;
+  right: auto;
+}
+.dock-message:active .dock-reply,
+.dock-reply:focus-visible {
+  opacity: 1;
+}
+.dock-composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  padding: 8px 6px;
+  flex-shrink: 0;
+}
+.dock-composer > button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  color: #0084ff;
+  width: 30px;
+  height: 36px;
+  padding: 0;
+  flex-shrink: 0;
+}
+.dock-composer > button:disabled {
+  opacity: 0.5;
+}
+.dock-composer textarea {
+  background: #f0f2f5;
+  border: 0;
+  border-radius: 19px;
+  resize: none;
+  min-width: 0;
+  flex: 1;
+  font: inherit;
+  font-size: 16px;
+  line-height: 20px;
+  padding: 8px 12px;
+  color: inherit;
+  max-height: 100px;
+  box-sizing: border-box;
+  field-sizing: content;
+}
+.dock-composer textarea:focus {
+  outline: 2px solid #0084ff;
+  outline-offset: -2px;
+}
+.dock-chat-error {
+  background: #fff1f1;
+  color: #a41320;
+  font-size: 12px;
+  padding: 7px 10px;
+  flex-shrink: 0;
+}
+.dock-chat-error button,
+.dock-history {
+  border: 0;
+  background: transparent;
+  color: #0866ff;
+  text-decoration: underline;
+}
+.dock-history {
+  display: block;
+  margin: 0 auto 12px;
+  font-size: 12px;
+}
+.dock-empty {
+  color: #65676b;
+  text-align: center;
+  padding: 24px 16px;
+}
+.dock-typing {
+  font-size: 12px;
+  color: #65676b;
+  padding: 5px;
+}
+.dock-reply-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: #e7f3ff;
+  color: #0866ff;
+  font-size: 12px;
+}
+.dock-reply-banner button {
+  display: flex;
+  background: transparent;
+  border: 0;
+  color: inherit;
+}
+.dock-emojis {
+  display: flex;
+  gap: 6px;
+  padding: 6px 12px;
+  justify-content: space-between;
+}
+.dock-emojis button {
+  background: transparent;
+  border: 0;
+  font-size: 24px;
+}
+@media (hover: none) {
+  .dock-reply {
+    opacity: 1;
+  }
+}
+@media (prefers-color-scheme: dark) {
+  .dock-chat,
+  .dock-inbox {
+    background: #242526;
+    color: #e4e6eb;
+  }
+  .dock-chat-header button:active,
+  .dock-conversation:active {
+    background: #3a3b3c;
+  }
+  .dock-message-bubble {
+    background: #3a3b3c;
+  }
+  .dock-own .dock-message-bubble {
+    background: #0084ff;
+  }
+  .dock-composer textarea {
+    background: #3a3b3c;
+  }
+  .dock-chat-person small,
+  .dock-message-status,
+  .dock-conversation small,
+  .dock-empty,
+  .dock-typing {
+    color: #b0b3b8;
+  }
+  .dock-setting {
+    background: #3a3b3c;
+    color: #e4e6eb;
+  }
+  .dock-chat-header,
+  .dock-inbox header {
+    border-color: #3e4042;
+  }
+  .dock-chat-error {
+    background: #4b2025;
+    color: #ffb9bf;
+  }
+}
+
+.dock-new-messages {
+  align-self: center;
+  border: 0;
+  border-radius: 18px;
+  background: #0084ff;
+  color: #fff;
+  padding: 7px 14px;
+  font-size: 12px;
+  box-shadow: 0 2px 6px #0002;
+}

@@ -10,3 +10,7 @@ Wallet precision also covers all authorized Find Player wallet fields, Agent Por
 Chip transfer balance previews, promotional wallets, chip deposit/cashout balances, super-agent wallets, player balance lookup and the table seat confirmation also use exact chip wallet amounts. Diamond unit formatting remains whole.
 
 The required push browser harness now supplies a local persisted-profile adapter, so the new phone gate does not load an unconfigured production Supabase client. Browser coverage includes an unverified account staying unprompted until the fixture saves verification; existing opt-in and cooldown checks remain intact.
+
+### Connected wallet displays
+
+The active Diamond Spins lobby, wheel, crash and choice-game account readouts, wallet entry button, agent hierarchy and union wallet tiles now use the same wallet display contract. Chip and promo balances retain commas and two decimal places below one million; Diamond wallet counts stay whole and exact below one million. Unknown formatter inputs remain distinct from zero. Game prices, table stacks, transaction amounts and aggregate statistics retain their existing format. Mounted lobby, union modal, agent tree and wallet-entry regressions cover the connected readouts.

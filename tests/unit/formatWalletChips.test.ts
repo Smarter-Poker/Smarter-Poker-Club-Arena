@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatWalletChips, compactChips } from '../../src/utils/format';
+import { formatWalletChips, formatWalletDiamonds, compactChips } from '../../src/utils/format';
 describe('Wallet Amounts', () => {
   it.each([
     [0, '0.00'],
@@ -16,4 +16,20 @@ describe('Wallet Amounts', () => {
     expect(formatWalletChips(null)).toBe('-');
   });
   it('preserves compact statistics', () => expect(compactChips(1250)).toBe('1.2K'));
+});
+
+describe('Diamond Wallet Amounts', () => {
+  it.each([
+    [0, '0'],
+    [1000, '1,000'],
+    [1250, '1,250'],
+    [999999, '999,999'],
+    [1000000, '1M'],
+  ])('prints %s as %s', (amount, expected) => {
+    expect(formatWalletDiamonds(Number(amount))).toBe(expected);
+  });
+  it('keeps an unavailable balance distinct from zero', () => {
+    for (const amount of [null, undefined, NaN, Infinity])
+      expect(formatWalletDiamonds(amount)).toBe('-');
+  });
 });

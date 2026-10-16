@@ -24,7 +24,7 @@
 
 import { ArenaActionButton, ClubButtonsSurface } from '../club-buttons';
 import { useDiamondGamesEntry } from '../../hooks/useDiamondGamesEntry';
-import { compactChips } from '../../utils/format';
+import { compactChips, formatWalletDiamonds } from '../../utils/format';
 import type { DiamondGamesEntry } from '../../services/DiamondGamesService';
 
 export function entrySublabel(entry: DiamondGamesEntry | null): string {
@@ -33,8 +33,8 @@ export function entrySublabel(entry: DiamondGamesEntry | null): string {
   // Short of the cheapest way in: say what the way in costs, because "you do
   // not have enough" without a number is a dead end rather than a next step.
   if (entry.entry_diamonds !== null && entry.diamonds < entry.entry_diamonds)
-    return `${compactChips(entry.diamonds)} Diamonds. ${compactChips(entry.entry_diamonds)} Gets You In`;
-  return `${compactChips(entry.diamonds)} Diamonds Ready To Play`;
+    return `${formatWalletDiamonds(entry.diamonds)} Diamonds. ${compactChips(entry.entry_diamonds)} Gets You In`;
+  return `${formatWalletDiamonds(entry.diamonds)} Diamonds Ready To Play`;
 }
 
 /** The player can get in: a game is open to them and they hold the cheapest way in. */
@@ -80,7 +80,7 @@ export default function DiamondsToChipsButton({
         label={entry?.welcome_spin_ready ? 'Welcome Spin Ready' : label}
         sublabel={entrySublabel(entry)}
         size={size}
-        value={entry ? compactChips(entry.diamonds) : undefined}
+        value={entry ? formatWalletDiamonds(entry.diamonds) : undefined}
         onClick={() => onGo(`/clubs/${clubId}/wheel`)}
       />
     </ClubButtonsSurface>

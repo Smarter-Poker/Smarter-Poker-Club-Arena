@@ -513,3 +513,11 @@ export const formatWalletChips = (amount: number | null | undefined): string => 
   if (Math.abs(value) >= 1_000_000) return compactChips(value);
   return value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 };
+
+/** Whole Diamond wallet counts stay exact below one million. */
+export const formatWalletDiamonds = (amount: number | null | undefined): string => {
+  if (amount == null || !Number.isFinite(Number(amount))) return '-';
+  const value = Math.trunc(Number(amount));
+  if (Math.abs(value) >= 1_000_000) return compactChips(value);
+  return value.toLocaleString('en-US', { maximumFractionDigits: 0 });
+};

@@ -108,7 +108,7 @@ import {
   verifyCrashRound,
   type CrashFairnessVerdict,
 } from '../utils/diamondGamesFairness';
-import { compactChips } from '../utils/format';
+import { compactChips, formatWalletChips, formatWalletDiamonds } from '../utils/format';
 import { crossedMilestone } from '../utils/crashMilestones';
 import TodayLine from '../components/games/TodayLine';
 import SealedPrize from '../components/games/SealedPrize';
@@ -1361,8 +1361,8 @@ function DiamondCrashGame() {
             pressLabel: 'Change Auto Cash Out',
             disabled: open || starting || running,
           },
-          { label: 'Diamonds', value: compactChips(player?.diamonds ?? 0), ink: 'blue' },
-          { label: 'Chips', value: compactChips(player?.member_chips ?? 0), ink: 'silver' },
+          { label: 'Diamonds', value: formatWalletDiamonds(player?.diamonds ?? 0), ink: 'blue' },
+          { label: 'Chips', value: formatWalletChips(player?.member_chips ?? 0), ink: 'silver' },
         ]}
         secondary={
           earned.required || budget.award

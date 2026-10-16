@@ -17,6 +17,7 @@ psql "$url" -q -v ON_ERROR_STOP=1 -f "$root/supabase/migrations/20261015181214_c
 psql "$url" -q -v ON_ERROR_STOP=1 -f "$root/supabase/migrations/20261015223818_club_invite_names_use_the_poker_alias.sql" >/dev/null 2>&1
 psql "$url" -q -v ON_ERROR_STOP=1 -f "$root/supabase/migrations/20261016004124_club_invite_stats_admit_automatic_members.sql" >/dev/null 2>&1
 psql "$url" -q -v ON_ERROR_STOP=1 -f "$root/supabase/migrations/20261016040136_club_invite_deep_sweep_hardening.sql" >/dev/null 2>&1
+psql "$url" -q -v ON_ERROR_STOP=1 -f "$root/supabase/migrations/20261016042212_club_invite_notify_actor_and_first_redemption.sql" >/dev/null 2>&1
 out="$(psql "$url" -q -v ON_ERROR_STOP=1 -f "$here/scenarios.sql" 2>&1 || true)"
 echo "$out" | grep -E 'PASS:|FAIL' || true
 if echo "$out" | grep -qE 'FAIL|ERROR'; then echo "club invite attribution: FAILED"; exit 1; fi

@@ -490,6 +490,15 @@ export async function runPilotAccess({
       const row = await membership();
       if (state === 'nonmember' ? row !== null : row?.status !== 'pending')
         fail('Outsider Membership State Changed');
+      const stateObservation = {
+        state,
+        browser: null,
+        sockets: [],
+        joins: [],
+        approved: false,
+        funded: false,
+      };
+      report.states.push(stateObservation);
       report.phase = `${state}_browser`;
       const browser = await observeBrowser(
         chromium,
@@ -499,8 +508,9 @@ export async function runPilotAccess({
         url,
         acceptOutsiderTerms
       );
+      stateObservation.browser = browser;
       report.phase = `${state}_sockets`;
-      const sockets = [];
+      const sockets = stateObservation.sockets;
       for (const table of tables.data) {
         const answer = await observeSocket(WebSocket, table.id, session.access_token);
         if (answer.outcome !== 'refused' || answer.status !== 403)
@@ -508,29 +518,62 @@ export async function runPilotAccess({
         sockets.push({ tableId: table.id, ...answer });
       }
       report.phase = `${state}_joins`;
-      const joins = [];
+      const joins = stateObservation.joins;
       for (const game of games) {
+        const diagnostic = {
+          clusterId: game.id,
+          ok: null,
+          errorSQLSTATE: 'UNKNOWN',
+          reason: 'UNAVAILABLE',
+          admittedAction: 'UNKNOWN',
+          cleanup: 'not_requested',
+          refused: false,
+        };
+        joins.push(diagnostic);
         const r = await client.rpc('fn_cash_game_join', { p_game_id: game.id });
+        diagnostic.ok = typeof r.data?.ok === 'boolean' ? r.data.ok : null;
+        diagnostic.errorSQLSTATE =
+          typeof r.error?.code === 'string' && /^[A-Z0-9]{5}$/.test(r.error.code)
+            ? r.error.code
+            : 'UNKNOWN';
+        const rawReason = String(r.error?.message ?? r.data?.reason ?? '').split(':')[0];
+        const reasons = [
+          'PRIVATE_MEMBERSHIP_REQUIRED',
+          'INSUFFICIENT_CHIPS',
+          'GAME_NOT_FOUND',
+          'NOT_MEMBER',
+          'MEMBERSHIP_REQUIRED',
+          'NOT_AUTHORIZED',
+        ];
+        diagnostic.reason =
+          reasons.find((code) => rawReason.toUpperCase().startsWith(code)) ??
+          (/^permission denied/i.test(rawReason) ? 'PERMISSION_DENIED' : 'UNRECOGNIZED');
+        const action = r.data?.action ?? r.data?.status;
+        diagnostic.admittedAction = ['seated', 'seat', 'waitlisted'].includes(action)
+          ? action
+          : 'UNKNOWN';
         if (r.data?.ok === true) {
-          await client.rpc('fn_cash_game_leave_waitlist', { p_game_id: game.id });
+          const cleanup = await client
+            .rpc('fn_cash_game_leave_waitlist', { p_game_id: game.id })
+            .catch(() => ({ error: true }));
+          diagnostic.cleanup =
+            !cleanup.error && (cleanup.data === true || cleanup.data?.ok === true)
+              ? 'reply_ok'
+              : 'reply_refused_or_unknown';
           fail('Outsider Join Unexpectedly Admitted A Queue Or Seat');
         }
         const prefix = String(r.error?.message ?? r.data?.reason ?? '').split(':')[0];
         if (
           !r.error ||
-          !/^(INSUFFICIENT_CHIPS|GAME_NOT_FOUND|NOT_MEMBER|MEMBERSHIP_REQUIRED|NOT_AUTHORIZED|permission denied)/i.test(
+          (/^PRIVATE_MEMBERSHIP_REQUIRED/i.test(prefix) &&
+            (prefix !== 'PRIVATE_MEMBERSHIP_REQUIRED' || r.error.code !== '42501')) ||
+          !/^(PRIVATE_MEMBERSHIP_REQUIRED|INSUFFICIENT_CHIPS|GAME_NOT_FOUND|NOT_MEMBER|MEMBERSHIP_REQUIRED|NOT_AUTHORIZED|permission denied)/i.test(
             prefix
           )
         )
           fail('Outsider Join Refusal Was Not An Access Or Funding Gate');
-        joins.push({
-          clusterId: game.id,
-          refused: true,
-          code: String(r.error.code ?? 'UNKNOWN').slice(0, 20),
-          reason: prefix.slice(0, 60),
-        });
+        diagnostic.refused = true;
       }
-      report.states.push({ state, browser, sockets, joins, approved: false, funded: false });
     }
   } catch (error) {
     primary = error;

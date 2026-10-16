@@ -451,3 +451,231 @@ test('authorized consent uses the visible normal UI and confirmed owning gate ex
   );
   assert.equal(calls.length, 4);
 });
+
+test('failed join replies retain sanitized diagnostics and earlier browser/socket observations', async () => {
+  const { runPilotAccess } = await import('./lightning-pilot-access.mjs');
+  const club = '00000000-0000-4000-8000-000000000010';
+  const game = '00000000-0000-4000-8000-000000000011';
+  const ownerId = '2d1cd6c3-5700-4af9-a271-d4863fdab20d';
+  for (const [reply, expected] of [
+    [
+      {
+        error: { code: '42501', message: 'PRIVATE_MEMBERSHIP_REQUIRED_UNKNOWN' },
+        data: { ok: false },
+      },
+      {
+        ok: false,
+        errorSQLSTATE: '42501',
+        reason: 'PRIVATE_MEMBERSHIP_REQUIRED',
+        admittedAction: 'UNKNOWN',
+        cleanup: 'not_requested',
+      },
+    ],
+    ...['23514', undefined].map((code) => [
+      { error: { code, message: 'PRIVATE_MEMBERSHIP_REQUIRED' }, data: { ok: false } },
+      {
+        ok: false,
+        errorSQLSTATE: code ?? 'UNKNOWN',
+        reason: 'PRIVATE_MEMBERSHIP_REQUIRED',
+        admittedAction: 'UNKNOWN',
+        cleanup: 'not_requested',
+      },
+    ]),
+    [
+      { data: { ok: true, action: 'seat', secret: TOKEN } },
+      {
+        ok: true,
+        errorSQLSTATE: 'UNKNOWN',
+        reason: 'UNRECOGNIZED',
+        admittedAction: 'seat',
+        cleanup: 'reply_ok',
+      },
+    ],
+    [
+      { data: { ok: true, action: 'waitlisted', secret: TOKEN } },
+      {
+        ok: true,
+        errorSQLSTATE: 'UNKNOWN',
+        reason: 'UNRECOGNIZED',
+        admittedAction: 'waitlisted',
+        cleanup: 'reply_ok',
+      },
+    ],
+    [
+      {
+        error: { code: '23514', message: 'NEW_REFUSAL:' + TOKEN },
+        data: { ok: false, action: TOKEN },
+      },
+      {
+        ok: false,
+        errorSQLSTATE: '23514',
+        reason: 'UNRECOGNIZED',
+        admittedAction: 'UNKNOWN',
+        cleanup: 'not_requested',
+      },
+    ],
+    [
+      { data: { ok: false, reason: 'NOT_MEMBER', action: TOKEN } },
+      {
+        ok: false,
+        errorSQLSTATE: 'UNKNOWN',
+        reason: 'NOT_MEMBER',
+        admittedAction: 'UNKNOWN',
+        cleanup: 'not_requested',
+      },
+    ],
+    [
+      { error: { code: TOKEN, message: TOKEN } },
+      {
+        ok: null,
+        errorSQLSTATE: 'UNKNOWN',
+        reason: 'UNRECOGNIZED',
+        admittedAction: 'UNKNOWN',
+        cleanup: 'not_requested',
+      },
+    ],
+  ]) {
+    const f = fixture();
+    f.client.rpc = async (name) => {
+      if (name === 'fn_cash_game_join') return reply;
+      if (name === 'fn_cash_game_leave_waitlist') return { data: { ok: true, cancelled: 0 } };
+      throw new Error('Unexpected RPC');
+    };
+    f.admin.from = (table) => {
+      const q = {
+        select: () => q,
+        eq: () => q,
+        in: () => q,
+        maybeSingle: async () => ({
+          data:
+            table === 'clubs'
+              ? { id: club, owner_id: ownerId, is_public: false, requires_approval: true }
+              : null,
+        }),
+        then: (resolve, reject) =>
+          Promise.resolve({ data: [{ id: game, cluster_id: game }] }).then(resolve, reject),
+      };
+      return q;
+    };
+    let report;
+    try {
+      await runPilotAccess({
+        admin: f.admin,
+        player: {
+          auth: {
+            getSession: async () => ({
+              data: { session: { access_token: 'OWNER_TEST', user: { id: ownerId } } },
+            }),
+          },
+        },
+        createClient: f.factory,
+        url: 'https://example.invalid',
+        games: [{ id: game, club_id: club, ruleset_snapshot: { options: { is_private: true } } }],
+        operationId: 'operation',
+        requestId: 'request',
+        observeBrowser: async () => [{ clusterId: game, entry: 'observed' }],
+        observeSocket: async (_ws, _id, token) =>
+          token === 'OWNER_TEST'
+            ? { outcome: 'opened', status: 101 }
+            : { outcome: 'refused', status: 403 },
+      });
+      assert.fail('Invalid Join Proof Must Remain Failed');
+    } catch (error) {
+      report = error.pilotAccessReport;
+    }
+    assert.equal(report.verdict, 'failed_or_unknown');
+    assert.equal(report.phase, 'nonmember_joins');
+    const observation = report.states.find((state) => state.state === 'nonmember');
+    assert.equal(observation.browser[0].entry, 'observed');
+    assert.equal(observation.sockets[0].status, 403);
+    assert.deepEqual(observation.joins[0], { clusterId: game, ...expected, refused: false });
+    assert.equal(report.cleanup.outsiderSession, 'local_signout_confirmed');
+    assert.doesNotMatch(JSON.stringify(report), new RegExp(TOKEN));
+  }
+});
+
+test('private membership guard requires its exact SQLSTATE on nonmember and pending refusal', async () => {
+  const { runPilotAccess } = await import('./lightning-pilot-access.mjs');
+  const f = fixture();
+  const club = '00000000-0000-4000-8000-000000000010',
+    game = '00000000-0000-4000-8000-000000000011';
+  let row = null;
+  const operations = [];
+  f.client.rpc = async (name, args) => {
+    operations.push({ name, args });
+    if (name === 'fn_join_club_atomic') {
+      row = { status: 'pending', chip_balance: 0 };
+      return { data: { success: true } };
+    }
+    if (name === 'fn_cancel_club_join_request') {
+      row = null;
+      return { data: true };
+    }
+    if (name === 'fn_cash_game_join')
+      return { error: { code: '42501', message: 'PRIVATE_MEMBERSHIP_REQUIRED' } };
+    throw new Error('Unexpected RPC');
+  };
+  f.admin.from = (table) => {
+    const q = {
+      select: () => q,
+      eq: () => q,
+      in: () => q,
+      maybeSingle: async () => ({
+        data:
+          table === 'clubs'
+            ? {
+                id: club,
+                owner_id: '2d1cd6c3-5700-4af9-a271-d4863fdab20d',
+                is_public: false,
+                requires_approval: true,
+              }
+            : row,
+      }),
+      then: (resolve, reject) =>
+        Promise.resolve({ data: [{ id: game, cluster_id: game }] }).then(resolve, reject),
+    };
+    return q;
+  };
+  const r = await runPilotAccess({
+    admin: f.admin,
+    player: {
+      auth: {
+        getSession: async () => ({
+          data: {
+            session: {
+              access_token: 'OWNER_TEST',
+              user: { id: '2d1cd6c3-5700-4af9-a271-d4863fdab20d' },
+            },
+          },
+        }),
+      },
+    },
+    createClient: f.factory,
+    url: 'https://example.invalid',
+    games: [{ id: game, club_id: club, ruleset_snapshot: { options: { is_private: true } } }],
+    operationId: 'operation',
+    requestId: 'request',
+    observeBrowser: async () => [],
+    observeSocket: async (_ws, _id, token) =>
+      token === 'OWNER_TEST'
+        ? { outcome: 'opened', status: 101 }
+        : { outcome: 'refused', status: 403 },
+  });
+  assert.equal(r.verdict, 'passed');
+  for (const state of r.states.filter((row) => row.state !== 'owner')) {
+    assert.equal(state.joins[0].reason, 'PRIVATE_MEMBERSHIP_REQUIRED');
+    assert.equal(state.joins[0].errorSQLSTATE, '42501');
+    assert.equal(state.joins[0].refused, true);
+  }
+  assert.deepEqual(
+    r.states.map((s) => s.state),
+    ['owner', 'nonmember', 'pending']
+  );
+  assert.equal(r.cleanup.pendingRequest, 'removed_and_absence_verified');
+  assert.equal(row, null);
+  assert.deepEqual(
+    operations.map((x) => x.name),
+    ['fn_cash_game_join', 'fn_join_club_atomic', 'fn_cash_game_join', 'fn_cancel_club_join_request']
+  );
+  assert.doesNotMatch(JSON.stringify(r), new RegExp(TOKEN));
+});

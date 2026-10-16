@@ -40,6 +40,17 @@ describe('the Simple Cashier header', () => {
     );
     expect(rule).toContain("url('/images/cashier-actions/cashier-action-dock-v1.png')");
     expect(rule).toContain('aspect-ratio: 1916 / 334;');
-    expect(rule).toContain('width: 260px;');
+    expect(rule).toContain('width: 300px;');
+  });
+
+  it("prints the viewer's own club balance inside Request Cash Out", () => {
+    expect(page).toContain('aria-describedby="cashier-cashout-balance"');
+    expect(page).toMatch(/id="cashier-cashout-balance"[\s\S]{0,200}\$\{fmt\(myBalance\)\} Chips/);
+  });
+
+  it('centres the dock selection line in its frame', () => {
+    expect(css).toMatch(
+      /\.page\.simple \.actionBar \.selBar \{\s*position: relative;\s*justify-content: center;/
+    );
   });
 });

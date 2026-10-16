@@ -3354,12 +3354,19 @@ function CashierTradeWorkspace() {
             </div>
 
             {holdsPlayerWallet(myRole) && roleResolved && (
+              // Dan 2026-10-16: the button carries the viewer's own player
+              // balance in this club, the same figure the cashout sheet checks.
               <button
                 type="button"
                 className={styles.cashoutButton}
+                aria-label="Request Cash Out"
+                aria-describedby="cashier-cashout-balance"
                 onClick={() => setShowCashoutRequest(true)}
               >
-                Request Cash Out
+                <span className={styles.cashoutLabel}>Request Cash Out</span>
+                <span id="cashier-cashout-balance" className={styles.cashoutBalance}>
+                  {loading || isHydrating ? 'Loading Balance' : `${fmt(myBalance)} Chips`}
+                </span>
               </button>
             )}
             {!advanced && (

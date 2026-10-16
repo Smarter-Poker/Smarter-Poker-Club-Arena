@@ -2071,23 +2071,36 @@
 }
 .cashoutButton {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  width: 260px;
+  gap: 2px;
+  width: 300px;
   max-width: 100%;
   aspect-ratio: 1916 / 334;
   margin: 10px auto 0;
   padding: 0 8%;
   border: 0;
   background: url('/images/cashier-actions/cashier-action-dock-v1.png') center / 100% 100% no-repeat;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.cashoutLabel {
   color: var(--ink-blue);
   font-size: 13px;
   font-weight: 800;
   letter-spacing: 0.1em;
+  line-height: 1.1;
   text-shadow: var(--ink-blue-glow);
   text-transform: uppercase;
-  white-space: nowrap;
-  cursor: pointer;
+}
+.cashoutBalance {
+  color: var(--ink-silver);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.1;
+  text-shadow: var(--ink-muted-shadow);
 }
 .cashoutButton:active {
   filter: brightness(1.2);
@@ -2095,4 +2108,24 @@
 .cashoutButton:focus-visible {
   outline: 2px solid var(--ink-blue);
   outline-offset: 2px;
+}
+
+/* Dan 2026-10-16: "Tap A Player To Select" (and the selection count that
+   replaces it) is centred in the dock frame; Clear keeps the right edge. */
+.console .actionBar .selBar,
+.page.simple .actionBar .selBar {
+  position: relative;
+  justify-content: center;
+  text-align: center;
+}
+.console .actionBar .selBar > span,
+.page.simple .actionBar .selBar > span {
+  max-width: calc(100% - 120px);
+}
+.console .actionBar .selClear,
+.page.simple .actionBar .selClear {
+  position: absolute;
+  top: 50%;
+  right: calc(16 / 1916 * 100%);
+  transform: translateY(-50%);
 }

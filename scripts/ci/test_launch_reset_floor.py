@@ -122,3 +122,7 @@ print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().pare
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / "test-inventory-proof-lifetime-postgres.py"), "--pg-bin", str(pg), "--scratch", str(args.scratch)], text=True))
 # Historical earning-club discovery uses exact indexed event witnesses.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-club-event-witness-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
+
+# Exact weekly cash maxima and accrued-rake bounds use their existing indexes.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-indexed-reads-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-cash-cohort-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))

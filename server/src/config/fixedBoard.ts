@@ -108,7 +108,7 @@ export function fixedBoardRowFor(club: FixedBoardClub, event: FixedBoardEvent): 
     club_id: club.clubId,
     union_id: club.unionId,
     name: event.name,
-    description: 'Fixed daily board',
+    description: 'Fixed Daily Board',
     active: true,
     days_of_week: [...EVERY_DAY],
     start_times_utc: [...event.times],

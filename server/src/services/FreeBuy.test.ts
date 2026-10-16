@@ -650,8 +650,7 @@ describe('auditFreeBuyRow', () => {
     expect(auditFreeBuyRow(good())).toEqual([]);
   });
 
-  it('catches the trigger repricing the feature tier back to 1.00', () => {
-    // This is the whole reason the audit reads the DATABASE and not the code.
+  it('passes the Prime Time Free Buy at a 1 chip rebuy and add-on (Dan 2026-10-16)', () => {
     const feature = good({
       name: 'Prime Time Free Buy (NLH)',
       start_time: startOf(20),
@@ -659,9 +658,22 @@ describe('auditFreeBuyRow', () => {
       rebuy_cost: 1,
       addon_cost: 1,
     });
+    expect(auditFreeBuyRow(feature)).toEqual([]);
+  });
+
+  it('catches a Free Buy that still charges 2 for a rebuy or add-on', () => {
+    // The audit reads the DATABASE, not the code: a row the trigger did not
+    // reprice is exactly what it exists to find.
+    const feature = good({
+      name: 'Prime Time Free Buy (NLH)',
+      start_time: startOf(20),
+      guaranteed_prize: 500,
+      rebuy_cost: 2,
+      addon_cost: 2,
+    });
     const p = auditFreeBuyRow(feature);
-    expect(p.some((x) => x.includes('rebuy 1'))).toBe(true);
-    expect(p.some((x) => x.includes('add-on 1'))).toBe(true);
+    expect(p.some((x) => x.includes('rebuy 2'))).toBe(true);
+    expect(p.some((x) => x.includes('add-on 2'))).toBe(true);
   });
 
   it('catches a paid first entry', () => {

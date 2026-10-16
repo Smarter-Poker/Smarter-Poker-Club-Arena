@@ -13,6 +13,9 @@ import {
   naturalMultiRunEngineIdentity,
   readNaturalMultiRunHistory,
   initializeNaturalMultiRunObservers,
+  naturalMultiRunCandidateQuery,
+  eligibleNaturalMultiRunTable,
+  type NaturalMultiRunCandidate,
   type NaturalRunPacket,
 } from './support/naturalMultiRunMobile';
 import {
@@ -135,23 +138,16 @@ test('natural two-run and three-run mobile rivers precede awards and winner chip
   };
   const before = await readIdentity();
   const environment = requireCustomizationCertificationEnvironment();
-  const tables = await readServiceRows<{ id: string; current_players: number }>(
+  const candidateTables = await readServiceRows<NaturalMultiRunCandidate>(
     environment,
     'tables',
-    new URLSearchParams({
-      select: 'id,current_players',
-      club_id: `eq.${union}`,
-      current_players: 'gte.2',
-      run_it_twice: 'eq.true',
-      status: 'in.(playing,active,waiting)',
-      order: 'current_players.desc',
-      limit: '32',
-    })
+    naturalMultiRunCandidateQuery(union)
   );
+  const tables = candidateTables.filter(eligibleNaturalMultiRunTable);
   expect(
     tables.length,
-    'No occupied union table available for natural multirun observation'
-  ).toBeGreaterThan(0);
+    'Natural multirun observation requires six occupied, run-enabled cash tables'
+  ).toBeGreaterThanOrEqual(6);
   const recent = await readNaturalMultiRunHistory(
     tables.map((table) => table.id),
     (query) => readServiceRows(environment, 'hand_history', query)

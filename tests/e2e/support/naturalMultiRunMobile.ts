@@ -58,7 +58,9 @@ export async function initializeNaturalMultiRunObservers<T>(
   if (tables.length !== 6) throw new Error('Natural multirun proof requires all six observers');
   const remainingSetup = () => remainingInitialTableReadinessMs(setupStartedAt, 120_000, now());
   for (const table of tables) {
-    await initialize(table, Math.min(12_000, remainingSetup()), remainingSetup);
+    // This optional observer uses its original shared setup allocation. The
+    // ordinary four-case baseline owns its separate connection-latency law.
+    await initialize(table, remainingSetup(), remainingSetup);
     remainingSetup();
   }
 }

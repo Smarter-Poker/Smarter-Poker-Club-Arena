@@ -220,8 +220,8 @@ function newOpId(): string {
   });
 }
 
-/** #ClubArenaConsole chip reading for every forward-facing non-felt figure. */
-const chipFigure = formatWalletChips;
+/** Non-wallet amounts retain the console reading; balances use formatWalletChips. */
+const chipFigure = compactChips;
 
 const CATEGORY_LABELS: Record<string, string> = {
   buyin: 'Buy-In',
@@ -1839,7 +1839,7 @@ function CashierContent() {
             if (isMounted.current)
               setMessage({
                 type: 'error',
-                text: `Insufficient chips in your agent wallet. Available: ${chipFigure(myAgentWallet + myAgentCredit)}`,
+                text: `Insufficient chips in your agent wallet. Available: ${formatWalletChips(myAgentWallet + myAgentCredit)}`,
               });
             if (isMounted.current) setIsProcessing(false);
             return;
@@ -2076,7 +2076,7 @@ function CashierContent() {
               if (isMounted.current)
                 setMessage({
                   type: 'error',
-                  text: `Insufficient chips in this club. Available: ${available !== null ? chipFigure(available) : 'unavailable'}`,
+                  text: `Insufficient chips in this club. Available: ${available !== null ? formatWalletChips(available) : 'unavailable'}`,
                 });
               if (isMounted.current) setIsProcessing(false);
               return;
@@ -2192,7 +2192,7 @@ function CashierContent() {
         if (isMounted.current)
           setMessage({
             type: 'error',
-            text: `Insufficient chips in this club. Available: ${available !== null ? chipFigure(available) : 'unavailable'}`,
+            text: `Insufficient chips in this club. Available: ${available !== null ? formatWalletChips(available) : 'unavailable'}`,
           });
         if (isMounted.current) setIsProcessing(false);
         return;
@@ -2608,7 +2608,7 @@ function CashierContent() {
                       aria-label="Selected Player Wallet Context"
                     >
                       <strong>{selectedRecipientData.username}</strong>
-                      <span>Player Wallet: {chipFigure(selectedRecipientData.balance)}</span>
+                      <span>Player Wallet: {formatWalletChips(selectedRecipientData.balance)}</span>
                       <span>Destination: {SEND_DESTINATION_LABELS[distributeDestination]}</span>
                       {canHoldAgentWallet(selectedRecipientData.role) && (
                         <span>The Player Wallet Above Is Separate From Their Agent Wallet.</span>
@@ -2656,7 +2656,7 @@ function CashierContent() {
                           return (
                             <option key={r.id} value={r.id}>
                               {roleTag ? `[${roleTag}${commInfo}${typeInfo}] ` : ''}
-                              {r.username} (Bal: {chipFigure(r.balance)})
+                              {r.username} (Bal: {formatWalletChips(r.balance)})
                             </option>
                           );
                         })}
@@ -2751,8 +2751,8 @@ function CashierContent() {
                     <div className={styles.row}>
                       <span className="sc-label sc-ink--blue">Your Agent Wallet</span>
                       <span className={`${styles.value} sc-ink--silver`}>
-                        {chipFigure(myAgentWallet)} →{' '}
-                        {chipFigure(Math.max(0, myAgentWallet - typedChips))}
+                        {formatWalletChips(myAgentWallet)} →{' '}
+                        {formatWalletChips(Math.max(0, myAgentWallet - typedChips))}
                       </span>
                     </div>
                     <div className={styles.row}>
@@ -2762,7 +2762,7 @@ function CashierContent() {
                       <span className={`${styles.value} sc-ink--silver`}>
                         {canHoldAgentWallet(selectedRecipientData.role)
                           ? `Agent Wallet Receives ${chipFigure(typedChips)} Chips`
-                          : `${chipFigure(selectedRecipientData.balance)} → ${chipFigure(selectedRecipientData.balance + typedChips)}`}
+                          : `${formatWalletChips(selectedRecipientData.balance)} → ${formatWalletChips(selectedRecipientData.balance + typedChips)}`}
                       </span>
                     </div>
                     <div className={styles.row}>
@@ -2867,7 +2867,7 @@ function CashierContent() {
                       aria-label="Selected Player Wallet Context"
                     >
                       <strong>{selectedRecipientData.username}</strong>
-                      <span>Player Wallet: {chipFigure(selectedRecipientData.balance)}</span>
+                      <span>Player Wallet: {formatWalletChips(selectedRecipientData.balance)}</span>
                       <span>Destination: {SEND_DESTINATION_LABELS[distributeDestination]}</span>
                       {distributeDestination !== 'player_wallet' && (
                         <span>
@@ -2916,7 +2916,8 @@ function CashierContent() {
                       {filteredRecipients.map((r) => (
                         <option key={r.id} value={r.id}>
                           {r.id === user?.id ? '(You) ' : ''}
-                          {r.username} ({enumToTitleCase(r.role)}) - {chipFigure(r.balance)} Chips
+                          {r.username} ({enumToTitleCase(r.role)}) - {formatWalletChips(r.balance)}{' '}
+                          Chips
                         </option>
                       ))}
                     </select>

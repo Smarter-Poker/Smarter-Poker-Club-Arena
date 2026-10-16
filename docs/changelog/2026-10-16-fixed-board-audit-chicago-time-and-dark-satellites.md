@@ -116,3 +116,13 @@ Pinned in `theBoardIsAFixedSchedule.law.test.ts`: one event per slot across the
 board and the reserved weekly slots, every start on the grid, one to three
 starts every hour, the Free Buys on their hours, repeats an hour apart, and
 the migration's slot list equal to the engine's.
+
+## Installed
+
+- `20261016182049` (Chicago time, engine-owned board rows): installed 18:20 UTC,
+  before the engine, because the serving engine already reads a Chicago row.
+- #7131 merged as `52ed250b`; client `cff3cf99` published; engine `52ed250b`
+  serving after the 21:00 UTC break. The board rows were re-written by it
+  within two polls and no date holds more board events than its day allows.
+- `20261016210343` (the clubs' own events move off the board's slots):
+  installed 21:03 UTC, after the engine that reads a time change was serving.

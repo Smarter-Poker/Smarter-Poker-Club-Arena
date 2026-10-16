@@ -8,6 +8,7 @@ import {
 import {
   attachCashierScreenshot,
   expectCashierAxeClean,
+  expectCompactCashierFigure,
   expectCashierWalletBalance,
 } from './support/cashierProductionCertification';
 
@@ -260,6 +261,8 @@ test.describe('Production Cashier Certification', () => {
         `Trade Player Wallet ${index + 1}`
       );
     }
+    const aggregates = surface.locator('[class*="stripValue"]');
+    expectCompactCashierFigure(await aggregates.nth(1).innerText(), 'Downline Holdings');
     await expectCashierAxeClean(page, testInfo, '[data-cashier-surface="trade"]', 'trade-cashier');
     await attachCashierScreenshot(page, testInfo, 'trade-cashier');
     await expect(surface.locator('[data-cashier-layout="directory"]')).toHaveCount(1);
@@ -554,6 +557,11 @@ test.describe('Production Cashier Certification', () => {
       'Advanced Diamond Wallet',
       'diamonds'
     );
+    const presets = console.locator('[class*="presetBtn"]');
+    expect(await presets.count()).toBeGreaterThan(0);
+    for (const value of await presets.allInnerTexts()) {
+      if (value.trim() !== 'Max') expectCompactCashierFigure(value, 'Amount Preset');
+    }
     await expectCashierAxeClean(page, testInfo, 'main', 'advanced-cashier');
     await expect(page.locator('main .dw__row-picture').first()).not.toBeVisible();
     await expect(page.locator('main .dw__row-label').first()).toBeVisible();
@@ -619,9 +627,59 @@ test.describe('Production Cashier Certification', () => {
     await expect(advancedTabs.getByRole('tab').first()).toBeFocused();
     await sendTab.click();
 
+    // Read only the dedicated canary's identity, never its token or credentials.
+    const ownerId = await page.evaluate(() => {
+      const session = JSON.parse(localStorage.getItem('smarter-poker-auth') || 'null');
+      return session?.user?.id || session?.currentSession?.user?.id || null;
+    });
+    expect(ownerId).toMatch(/^[0-9a-f-]{36}$/);
+    const agentBalanceRead = page.waitForResponse(
+      (response) => {
+        const url = new URL(response.url());
+        return (
+          response.request().method() === 'GET' &&
+          url.pathname.endsWith('/rest/v1/agents') &&
+          url.searchParams.get('club_id') === `eq.${clubId}` &&
+          url.searchParams.get('select') ===
+            'agent_wallet_balance,promo_wallet_balance,is_prepaid,credit_limit,credit_used' &&
+          url.searchParams.get('user_id') === `eq.${ownerId}` &&
+          response.status() === 200
+        );
+      },
+      { timeout: 30_000 }
+    );
     await agentWallet.click();
     const dialog = page.getByRole('dialog', { name: 'Agent Wallet Cashier' });
     await expect(dialog).toBeVisible({ timeout: 30_000 });
+    const agentAnswer = await (await agentBalanceRead).json();
+    if (Array.isArray(agentAnswer)) expect(agentAnswer.length).toBeLessThanOrEqual(1);
+    const agentRow = Array.isArray(agentAnswer) ? (agentAnswer[0] ?? null) : agentAnswer;
+    const bankFigure = dialog.locator('.cbc-bank strong');
+    if (agentRow === null) {
+      // A successful absent agents row is an unfunded float, never an unread balance.
+      await expect(bankFigure).toHaveText('No Agent Float Yet');
+    } else {
+      expect(typeof agentRow).toBe('object');
+      expect(agentRow).toHaveProperty('agent_wallet_balance');
+      // The authoritative balance reader coalesces SQL NULL to zero, but never a missing field.
+      const rawHeld = agentRow.agent_wallet_balance;
+      expect(rawHeld === null || typeof rawHeld === 'number' || typeof rawHeld === 'string').toBe(
+        true
+      );
+      expect(rawHeld).not.toBe('');
+      const held = Number(rawHeld);
+      expect(Number.isFinite(held)).toBe(true);
+      if (Math.abs(held) < 1_000_000) {
+        await expect(bankFigure).toHaveText(
+          held.toLocaleString('en-US', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })
+        );
+      } else {
+        await expect(bankFigure).toHaveText(/^-?\d+(?:\.\d)?[MB]$/);
+      }
+    }
     await expectCashierWalletBalance(
       dialog.locator('.cbc-bank > strong'),
       'Agent Wallet Cashier',

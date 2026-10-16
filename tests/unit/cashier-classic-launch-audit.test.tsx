@@ -287,6 +287,19 @@ describe('Cashier Classic launch audit', () => {
   });
 
   // ── P-01 ─────────────────────────────────────────────────────────────────
+  it('keeps presets compact while recipient wallets retain exact cents', async () => {
+    start();
+    await screen.findByRole('tab', { name: 'Send', selected: true });
+    expect(screen.getByRole('button', { name: '100', exact: true })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '1K', exact: true })).toBeInTheDocument();
+    const recipient = await screen.findByLabelText('Send To Recipient');
+    await waitFor(() => expect((recipient as HTMLSelectElement).options.length).toBe(2));
+    fireEvent.change(recipient, { target: { value: PLAYER_ONE } });
+    expect(
+      await screen.findByRole('region', { name: 'Selected Player Wallet Context' })
+    ).toHaveTextContent('Player Wallet: 5.00');
+  });
+
   it('P-01: a failed role read shows an error with Retry and never the player tab set', async () => {
     roleReads[CLUB] = () => Promise.resolve({ data: null, error: { code: '57014' } });
     start();
@@ -797,7 +810,7 @@ describe('Cashier Classic launch audit', () => {
     // Attempt 3: lands.
     nowMs += 5_000;
     fireEvent.click(confirm());
-    await screen.findByText(/Minted 100\.00 Chips Into The Club Bank/);
+    await screen.findByText(/Minted 100 Chips Into The Club Bank/);
 
     const mints = rpcCalls.filter(([name]) => name === 'fn_mint_chips_from_diamonds');
     expect(mints).toHaveLength(3);
@@ -879,7 +892,7 @@ describe('Cashier Classic launch audit', () => {
     expect(
       screen.getByRole('region', { name: 'Selected Player Wallet Context' })
     ).toHaveTextContent('Player Wallet: 123');
-    expect(screen.getByText('Agent Wallet Receives 10.00 Chips')).toBeInTheDocument();
+    expect(screen.getByText('Agent Wallet Receives 10 Chips')).toBeInTheDocument();
     expect(screen.queryByText('123 → 133')).toBeNull();
   });
 

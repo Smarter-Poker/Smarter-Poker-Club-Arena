@@ -14,8 +14,8 @@ describe('the cashier is a rendered Club Arena room, not a generic dark dashboar
   });
 
   it('keeps all balances and access data live in HTML', () => {
-    expect(PAGE).toContain('fmt(myBalance)');
-    expect(PAGE).toContain('fmt(agentWallet)');
+    expect(PAGE).toContain('formatWalletChips(myBalance)');
+    expect(PAGE).toContain('formatWalletChips(agentWallet)');
     expect(PAGE).toContain('roleLabel(myRole as ClubRole)');
   });
 

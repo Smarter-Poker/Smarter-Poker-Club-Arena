@@ -22,6 +22,7 @@ const fx = vi.hoisted(() => ({
   >,
   ledgers: [] as Array<Answer | Promise<Answer>>,
   promoLedgers: [] as Array<Answer | Promise<Answer>>,
+  reversible: [] as Array<Record<string, unknown>>,
   handoff: true as boolean | Promise<boolean>,
   exportGuard: null as null | (() => boolean),
   calls: [] as Array<{ fn: string; args: Record<string, unknown> }>,
@@ -94,6 +95,9 @@ vi.mock('../src/lib/supabase', () => ({
       }
       if (fn === 'fn_club_cashier_members') {
         return Promise.resolve(fx.members.length > 1 ? fx.members.shift() : fx.members[0]);
+      }
+      if (fn === 'fn_agent_wallet_reversible') {
+        return Promise.resolve({ data: fx.reversible, error: null });
       }
       if (fn === 'fn_promo_wallet_ledger') {
         return Promise.resolve(
@@ -170,6 +174,8 @@ async function openLedger() {
 }
 beforeEach(() => {
   fx.agentRow = null;
+  fx.reversible = [];
+  fx.club.chip_treasury = 1000;
   fx.promoLedgers = [];
   fx.club.promo_balance = 50;
   fx.members = [{ data: [], error: null }];
@@ -317,5 +323,88 @@ describe('promo ledger ownership and failed file handoffs', () => {
     fx.handoff = true;
     fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
     await waitFor(() => expect(fx.toast.success).toHaveBeenCalledTimes(1));
+  });
+});
+
+describe('wallet balances and ledger movements retain separate formats', () => {
+  it.each(['club_bank', 'promo_wallet'] as const)(
+    '%s keeps compact movements and aggregates beside exact wallet snapshots',
+    async (walletType) => {
+      fx.club.chip_treasury = 12500.5;
+      fx.club.promo_balance = 12500.5;
+      const receipt = {
+        ...row('Formatting Receipt', 'club_bank_send'),
+        amount: 1250.5,
+        balance_after: 11250,
+        direction: 'out',
+        category: 'send',
+        counterparty_name: 'Recipient',
+      };
+      fx.ledgers = [
+        {
+          data: {
+            authorized: true,
+            total: 1,
+            types: [],
+            totals: { into_bank: 2500.5, out_of_bank: 1250.5, net: 1250 },
+            rows: [receipt],
+          },
+          error: null,
+        },
+      ];
+      fx.promoLedgers = [
+        {
+          data: {
+            authorized: true,
+            total: 1,
+            totals: { in: 2500.5, out: 1250.5, net: 1250 },
+            rows: [receipt],
+          },
+          error: null,
+        },
+      ];
+      render(<WalletCashierModal {...props} walletType={walletType} />);
+      await waitFor(() =>
+        expect(document.querySelector('.cbc-bank strong')).toHaveTextContent('12,500.50')
+      );
+      fireEvent.click(screen.getByRole('tab', { name: 'Transaction Ledger' }));
+      await screen.findByText('Formatting Receipt');
+      expect(
+        Array.from(document.querySelectorAll('.cbc-totals strong'), (n) => n.textContent)
+      ).toEqual(['2.5K', '1.2K', '1.2K']);
+      expect(document.querySelector('.cbc-tx-amount')).toHaveTextContent(
+        walletType === 'promo_wallet' ? '-1.2K' : '1.2K'
+      );
+      expect(
+        screen.getByText(
+          walletType === 'promo_wallet' ? 'Wallet After 11,250.00' : 'Bank After 11,250.00'
+        )
+      ).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Export CSV' })).toBeEnabled();
+    }
+  );
+
+  it('keeps agent claim history compact while the current wallet remains exact', async () => {
+    fx.agentRow = { agent_wallet_balance: 12500.5, promo_wallet_balance: 0 };
+    fx.reversible = [
+      {
+        transaction_id: 'claim-receipt',
+        to_name: 'Recipient',
+        destination: 'player_wallet',
+        amount: 2500.5,
+        remaining: 1250.5,
+        claimed_back: 1250,
+        seconds_left: 500,
+      },
+    ];
+    render(<WalletCashierModal {...props} role="agent" walletType="agent_wallet" />);
+    await waitFor(() =>
+      expect(document.querySelector('.cbc-bank strong')).toHaveTextContent('12,500.50')
+    );
+    fireEvent.click(screen.getByRole('tab', { name: 'Claim Back' }));
+    await screen.findByText('Sent 2.5K, 1.2K Already Claimed Back');
+    expect(document.querySelector('.cbc-tx-amount')).toHaveTextContent('1.2K');
+    expect(screen.getByRole('button', { name: 'Claim Back 1,251 Chips' })).toBeInTheDocument();
+    expect(fx.calls.some((c) => /send|claim_back|reverse/.test(c.fn))).toBe(false);
   });
 });

@@ -1,11 +1,9 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, type Locator, type Page, type TestInfo } from '@playwright/test';
 
-// Statement aggregates are whole chips unless compacted with an explicit K/M/B
-// suffix. Wallet balances have a separate exact-decimal contract below.
-// Reject every unsuffixed fractional value, not just the conventional
-// two-decimal rendering; otherwise a regression such as `12.5` or `12.345`
-// would evade the production certificate.
+// Non-wallet transaction/statistic figures retain the compact console reading.
+// Wallets have a separate exact-cents contract below. Reject every unsuffixed
+// fractional non-wallet value, including 12.5 and 12.345.
 const RAW_CENTS = /(?:^|[^\d])[-+]?\d{1,3}(?:,\d{3})*\.\d+(?!\d|[KMB%])/;
 // Wallets retain US grouping and exactly two decimals below one million;
 // Diamonds retain whole counts. Only million/billion wallets are abbreviated.
@@ -103,4 +101,10 @@ export async function expectCashierWalletBalance(
       { message: `${name} must print its verified ${kind} wallet balance` }
     )
     .toMatchObject({ valid: true });
+}
+
+export function expectCompactCashierFigure(value: string, name: string): void {
+  expect(value.trim(), `${name} is not a no-cents compact chip figure`).toMatch(
+    /^[-+]?(?:\d{1,3}(?:,\d{3})*|\d+(?:\.\d)?[KMB])$/
+  );
 }

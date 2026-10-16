@@ -1,10 +1,5 @@
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
-import {
-  readRotatingBanners,
-  validateRotatingBanners,
-  type ClubRotatingBanner,
-} from '../utils/clubRotatingBanners';
 
 export const CLUB_BANNER_MAX_BYTES = 2 * 1024 * 1024;
 const IMAGE_EXTENSIONS: Record<string, string> = {
@@ -86,15 +81,15 @@ export async function saveClubBanner(
   return data as ClubBannerRecord;
 }
 
-/** Compare the complete settings snapshot so unrelated concurrent edits are never lost. */
-export async function saveClubRotatingBanners(
+/** Preserve every other setting and refuse stale or non-owner writes. */
+export async function saveClubAdVisibility(
   clubId: string,
   ownerId: string,
   expectedSettings: Record<string, unknown> | null,
-  banners: ClubRotatingBanner[]
+  visible: boolean
 ): Promise<ClubBannerRecord> {
-  validateRotatingBanners(banners, clubId);
-  const settings = { ...expectedSettings, rotating_banners: banners };
+  if (typeof visible !== 'boolean') throw new Error('Choose Whether To Show Smarter.Poker Ads');
+  const settings = { ...expectedSettings, show_smarter_poker_ads: visible };
   let query = supabase.from('clubs').update({ settings }).eq('id', clubId).eq('owner_id', ownerId);
   query =
     expectedSettings === null
@@ -105,24 +100,10 @@ export async function saveClubRotatingBanners(
     .maybeSingle();
   if (error) throw error;
   if (!data) {
+    // A response may be lost after commit. Read the exact durable choice
+    // before accepting it; a different choice or removed ownership is a conflict.
     const current = await readClubBanner(clubId);
-    validateRotatingBanners(current.settings?.rotating_banners as ClubRotatingBanner[], clubId);
-    // A response can be lost after commit. Accept the identical desired list,
-    // preserving any later unrelated settings, but never overwrite another list.
-    if (
-      current.owner_id !== ownerId ||
-      JSON.stringify(
-        readRotatingBanners(current.settings, clubId).map(({ id, title, imageUrl, enabled }) => ({
-          id,
-          title,
-          imageUrl,
-          enabled,
-        }))
-      ) !==
-        JSON.stringify(
-          banners.map(({ id, title, imageUrl, enabled }) => ({ id, title, imageUrl, enabled }))
-        )
-    )
+    if (current.owner_id !== ownerId || current.settings?.show_smarter_poker_ads !== visible)
       throw new Error('Banner Displays Changed Or Access Was Removed. Reload Before Saving.');
     masterBus.emit('CLUB_SETTINGS_UPDATED', { clubId });
     return current;

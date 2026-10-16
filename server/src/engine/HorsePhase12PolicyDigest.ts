@@ -44,11 +44,11 @@ export const HORSE_PHASE12_POLICY_DIGEST_DEFINITION = 'horse-phase12-policy-dige
  */
 export const HORSE_PHASE12_POLICY_SOURCE_REASONS: Readonly<Record<string, string>> = Object.freeze({
   'src/engine/remainingVariants/RemainingVariantPolicyPack.ts':
-    'the four packs: versions, round-3 rules, entry bars, hand shapes, seat caps and the live budgets',
+    'the four packs: versions, round-3 rules (FLO8 its own round-4 set), entry bars, hand shapes, seat caps and the declared live work (no clock decides it)',
   'src/engine/remainingVariants/RemainingVariantLivePolicy.ts':
     'the live policy: eligibility, geometry, the round-3 rules over the reference and the proposal',
   'src/engine/remainingVariants/RemainingVariantSampler.ts':
-    'the bounded equity sampler: public-line prior, Pineapple flop-only discard prior, deadline',
+    'the bounded equity sampler: public-line prior, Pineapple flop-only discard prior, the declared full sample (no deadline)',
   'src/engine/omaha/OmahaVariantEquity.ts':
     'the equity summary the sampler returns and the validity check the policy applies to it',
   'src/engine/omaha/OmahaCardFacts.ts':

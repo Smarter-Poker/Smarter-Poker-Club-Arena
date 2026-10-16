@@ -39,6 +39,13 @@ export const PHASE8_POLICY = {
    * samples (the full CONTINUATION_POLICY.maxOutcomeSamples pool only on a
    * calibration retry), FUTURE_HAND_POLICY.maxHands future hand per branch and
    * `maxFutureIcmTrials` ICM trials.
+   *
+   * The gate value is unchanged. The full declared work measured on a 2.1 GHz
+   * x64 Linux runner (2026-10-16, four three-seat Spin league runs, 360
+   * eligible decisions) at p50 4.4 to 5.2 ms, p99 15 to 25 ms, max 26 ms, so
+   * Phase 8 cannot pass this gate until its declared work or the gate is
+   * resized by a reviewed change (Phase 8 has no selection and no tournament
+   * outcome model yet). docs/changelog/2026-10-16-packs-do-declared-work.md.
    */
   budgetMs: 5,
   /**

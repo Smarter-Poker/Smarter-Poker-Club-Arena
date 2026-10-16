@@ -27,7 +27,15 @@
   pointer-events: none;
 }
 
-.challengeCard::after {
+.cardOrnament {
+  /* Contain decorative scroll bounds without clipping the outer frame rail. */
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.cardOrnament::after {
   position: absolute;
   right: -35px;
   bottom: -35px;
@@ -52,7 +60,7 @@
 }
 
 .cardClaimed::before,
-.cardClaimed::after,
+.cardClaimed .cardOrnament::after,
 .cardClaimed .iconAssembly,
 .cardClaimed .rewardGem {
   opacity: 0.67;

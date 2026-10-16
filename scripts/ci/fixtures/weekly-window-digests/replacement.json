@@ -1,0 +1,22 @@
+{
+  "functions": [
+    {
+      "signature": "public.fn_settle_accounting_commission_combine(text,uuid,timestamptz,timestamptz)",
+      "before_file": "commission-before.sql",
+      "after_file": "commission-after.sql",
+      "before_md5": "0a4e7a1bc6b05634ebb0d87e6cc05501",
+      "after_md5": "98470df5bb0e684508cc2fc8a105e9a6",
+      "old": " SELECT md5(COALESCE((SELECT string_agg(encode(substring(w.cash_md5 FROM (u.ord::int-1)*16+1 FOR 16),'hex'),'' ORDER BY u.id)\n     FROM pg_temp._close_r2_windows w CROSS JOIN LATERAL unnest(w.cash_ids) WITH ORDINALITY u(id,ord)),'')\n  ||COALESCE((SELECT string_agg(encode(substring(w.fee_md5 FROM (u.ord::int-1)*16+1 FOR 16),'hex'),'' ORDER BY u.id)\n     FROM pg_temp._close_r2_windows w CROSS JOIN LATERAL unnest(w.fee_ids) WITH ORDINALITY u(id,ord)),'')) INTO fp;",
+      "new": " WITH fingerprint_windows AS MATERIALIZED (SELECT w.cash_ids,w.cash_md5||''::bytea AS cash_md5,w.fee_ids,w.fee_md5||''::bytea AS fee_md5 FROM pg_temp._close_r2_windows w),\n cash_rows AS MATERIALIZED (SELECT u.id,encode(substring(w.cash_md5 FROM (u.ord::int-1)*16+1 FOR 16),'hex') AS row_md5 FROM fingerprint_windows w CROSS JOIN LATERAL unnest(w.cash_ids) WITH ORDINALITY u(id,ord)),\n fee_rows AS MATERIALIZED (SELECT u.id,encode(substring(w.fee_md5 FROM (u.ord::int-1)*16+1 FOR 16),'hex') AS row_md5 FROM fingerprint_windows w CROSS JOIN LATERAL unnest(w.fee_ids) WITH ORDINALITY u(id,ord))\n SELECT md5(COALESCE((SELECT string_agg(c.row_md5,'' ORDER BY c.id) FROM cash_rows c),'')\n  ||COALESCE((SELECT string_agg(f.row_md5,'' ORDER BY f.id) FROM fee_rows f),'')) INTO fp;"
+    },
+    {
+      "signature": "public.fn_accounting_union_earned_plan_combine(uuid,timestamptz,timestamptz)",
+      "before_file": "earned-before.sql",
+      "after_file": "earned-after.sql",
+      "before_md5": "b2e3fd77ed627e13476e440bf7aa5322",
+      "after_md5": "79ea1825fc78b42b0928bac70b5ac4f6",
+      "old": " SELECT md5(COALESCE((SELECT string_agg(encode(substring(w.cash_md5 FROM (u.ord::int-1)*16+1 FOR 16),'hex'),'' ORDER BY u.id)\n     FROM pg_temp._close_plan_windows w CROSS JOIN LATERAL unnest(w.cash_ids) WITH ORDINALITY u(id,ord)),'')\n  ||COALESCE((SELECT string_agg(encode(substring(w.fee_md5 FROM (u.ord::int-1)*16+1 FOR 16),'hex'),'' ORDER BY u.id)\n     FROM pg_temp._close_plan_windows w CROSS JOIN LATERAL unnest(w.fee_ids) WITH ORDINALITY u(id,ord)),'')) INTO fp;",
+      "new": " WITH fingerprint_windows AS MATERIALIZED (SELECT w.cash_ids,w.cash_md5||''::bytea AS cash_md5,w.fee_ids,w.fee_md5||''::bytea AS fee_md5 FROM pg_temp._close_plan_windows w),\n cash_rows AS MATERIALIZED (SELECT u.id,encode(substring(w.cash_md5 FROM (u.ord::int-1)*16+1 FOR 16),'hex') AS row_md5 FROM fingerprint_windows w CROSS JOIN LATERAL unnest(w.cash_ids) WITH ORDINALITY u(id,ord)),\n fee_rows AS MATERIALIZED (SELECT u.id,encode(substring(w.fee_md5 FROM (u.ord::int-1)*16+1 FOR 16),'hex') AS row_md5 FROM fingerprint_windows w CROSS JOIN LATERAL unnest(w.fee_ids) WITH ORDINALITY u(id,ord))\n SELECT md5(COALESCE((SELECT string_agg(c.row_md5,'' ORDER BY c.id) FROM cash_rows c),'')\n  ||COALESCE((SELECT string_agg(f.row_md5,'' ORDER BY f.id) FROM fee_rows f),'')) INTO fp;"
+    }
+  ]
+}

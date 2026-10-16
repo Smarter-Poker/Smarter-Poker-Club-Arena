@@ -45,8 +45,8 @@ import {
 } from '../../services/AdService';
 import type { AdSlot, HouseAd } from '../../services/AdService';
 import { openInBrowser } from '../../lib/openExternal';
-import { readRotatingBanners } from '../../utils/clubRotatingBanners';
 import { titleCase } from '../../utils/titleCase';
+import { reportError } from '../../utils/errorReporter';
 import './HouseAdRotator.css';
 
 /* The full-screen popup is fetched on the first tap, not before first paint.
@@ -115,29 +115,39 @@ export default function HouseAdRotator({
     setAds([]);
     setIndex(0);
     setOpen(false);
-    AdService.resolve(slot, clubId, Math.min(10, Math.max(limit * 2, limit))).then((rows) => {
+    Promise.all([
+      AdService.resolve(slot, clubId, Math.min(10, Math.max(limit * 2, limit))),
+      slot === 'lobby_strip' && clubId
+        ? import('../../utils/clubRotatingBanners').catch((failure) => {
+            reportError(failure, 'HouseAdRotator.clubBanners');
+            return null;
+          })
+        : Promise.resolve(null),
+    ]).then(([rows, clubBanners]) => {
       if (cancelled) return;
       const withImage = rows.filter((a) => isSafeAdImage(a.imageUrl)).slice(0, limit);
-      const owned: HouseAd[] = clubId
-        ? readRotatingBanners(JSON.parse(clubBannerSnapshot), clubId)
-            .filter((banner) => banner.enabled)
-            .map((banner) => ({
-              adId: `club-banner-${banner.id}`,
-              adKey: `club-banner-${banner.id}`,
-              category: 'club_banner',
-              headline: titleCase(banner.title),
-              body: null,
-              glyph: null,
-              targetUrl: `/clubs/${clubId}/announcements`,
-              ctaLabel: 'Open Announcements',
-              imageUrl: banner.imageUrl,
-              posterUrl: banner.imageUrl,
-              placementId: null,
-              advertiserKind: 'club',
-              advertiserName: null,
-              clubOwned: true,
-            }))
-        : [];
+      const owned: HouseAd[] =
+        clubId && clubBanners
+          ? clubBanners
+              .readRotatingBanners(JSON.parse(clubBannerSnapshot), clubId)
+              .filter((banner) => banner.enabled)
+              .map((banner) => ({
+                adId: `club-banner-${banner.id}`,
+                adKey: `club-banner-${banner.id}`,
+                category: 'club_banner',
+                headline: titleCase(banner.title),
+                body: null,
+                glyph: null,
+                targetUrl: `/clubs/${clubId}/announcements`,
+                ctaLabel: 'Open Announcements',
+                imageUrl: banner.imageUrl,
+                posterUrl: banner.imageUrl,
+                placementId: null,
+                advertiserKind: 'club',
+                advertiserName: null,
+                clubOwned: true,
+              }))
+          : [];
       setAds([...owned, ...withImage]);
       setIndex(0);
     });

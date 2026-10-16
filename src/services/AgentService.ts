@@ -22,6 +22,7 @@ import {
   type NameableProfile,
 } from '../utils/playerDisplayName';
 import { UUID_TOKEN } from '../utils/agentManagementPayload';
+import type { AgentWalletDestination } from './AgentWalletIntent';
 
 const AGENT_ADMIN_AUTHZ_REFUSAL = /not authorized to manage this club's agents/i;
 
@@ -1148,7 +1149,7 @@ class AgentServiceClass {
     playerId: string,
     clubId: string,
     amount: number,
-    destination: 'player_wallet' | 'agent_wallet' = 'player_wallet'
+    destination: AgentWalletDestination = 'player_wallet'
   ): Promise<boolean> {
     const { assertChipAmount, runAgentWalletOperation, confirmedAgentWalletReceipt } =
       await import('./AgentWalletIntent');
@@ -1314,7 +1315,14 @@ class AgentServiceClass {
       if (Math.round((amount - claimedBack) * 100) !== Math.round(remaining * 100)) {
         return malformedAgentPayload(`reversible.rows[${index}].remaining`);
       }
-      if (row.destination !== 'player_wallet' && row.destination !== 'agent_wallet') {
+      // fn_agent_wallet_reversible returns the destination the send recorded, and
+      // an Agent Wallet send into a Promo Wallet has been reversible since
+      // 20261016024912. Refusing it here made one such send fail the whole list.
+      if (
+        row.destination !== 'player_wallet' &&
+        row.destination !== 'agent_wallet' &&
+        row.destination !== 'promo_wallet'
+      ) {
         return malformedAgentPayload(`reversible.rows[${index}].destination`);
       }
       const createdAt = timestampValue(row.created_at, `reversible.rows[${index}].created_at`)!;

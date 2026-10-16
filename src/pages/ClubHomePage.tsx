@@ -144,6 +144,7 @@ import {
   saveViewPrefs,
   fetchRemoteViewPrefs,
   pushRemoteViewPrefs,
+  hasUnsyncedViewPrefs,
   sortForTab,
   EMPTY_VIEW_PREFS,
   type LobbyViewPrefs,
@@ -163,6 +164,10 @@ import ClubEntryMessage from '../components/club/ClubEntryMessage';
 import AdvancedFilters, {
   loadFilters,
   saveFilters,
+  persistFilters,
+  pushRemoteFilters,
+  fetchRemoteFilters,
+  hasUnsyncedFilters,
   type FilterStore,
 } from '../components/lobby/AdvancedFilters';
 import {
@@ -1003,6 +1008,17 @@ function ClubHomePageContent({
      paint of the lobby rather than flashing an unfiltered list first. */
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [advFilters, setAdvFilters] = useState<FilterStore>({});
+  /* Has the player (or the lobby's own auto-clear) changed the filters since
+     they were loaded for this club. A late database reply must never undo a
+     chip tapped during the round trip, the same rule as viewPrefsTouched. */
+  const advFiltersTouched = useRef(false);
+  /** Every lobby-side filter change goes through here: this browser's cache
+   *  and the player's row together, so a quick chip follows them to every
+   *  device exactly like the sheet does. */
+  const persistAdvFilters = (clubUuid: string, next: FilterStore) => {
+    advFiltersTouched.current = true;
+    persistFilters(clubUuid, next);
+  };
   /* THE TAB, THE SORT AND THE FAVORITES CHIP ARE PREFERENCES TOO
      (Dan 2026-08-26: "they should auto save until changed"). The saved
      Advanced Filters beside this have persisted since 2026-08-20; these three
@@ -2072,12 +2088,34 @@ function ClubHomePageContent({
      the UUID is known. Re-runs on a club switch: one club's "Bomb Pot only"
      must never silently apply to another club's lobby. */
   useEffect(() => {
+    advFiltersTouched.current = false;
     if (!resolvedClubId) {
       setAdvFilters({});
       return;
     }
-    setAdvFilters(loadFilters(resolvedClubId));
-  }, [resolvedClubId]);
+    const cached = loadFilters(resolvedClubId, currentUser?.id ?? null);
+    setAdvFilters(cached);
+
+    /* THEN THE PLAYER'S ROW (2026-10-16). Until now only the open filter
+       sheet ever read it, so a phone opened the lobby with the laptop's
+       filters missing until the sheet happened to be opened. Same three
+       refusals as the tab/sort hydration: a newer unconfirmed choice on this
+       device is finished rather than overwritten, a reply for a club already
+       left is dropped, and a chip tapped during the round trip wins. */
+    if (hasUnsyncedFilters(resolvedClubId, currentUser?.id ?? null)) {
+      pushRemoteFilters(resolvedClubId, cached);
+      return;
+    }
+    let cancelled = false;
+    void fetchRemoteFilters(resolvedClubId).then((remote) => {
+      if (cancelled || !remote || advFiltersTouched.current) return;
+      setAdvFilters((prev) => (JSON.stringify(prev) === JSON.stringify(remote) ? prev : remote));
+      saveFilters(resolvedClubId, remote, currentUser?.id ?? null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [resolvedClubId, currentUser?.id]);
 
   /* The same rule for the tab / sort / Favorites triple, keyed the same way.
      `viewPrefsTouched` is the guard described where the ref is declared: if
@@ -2143,6 +2181,14 @@ function ClubHomePageContent({
          - it does not touch anything on a null result. Signed out, no row, or
            a failed read are indistinguishable on purpose, and all three mean
            "keep what the cache gave you" rather than "reset". */
+    /* A CHOICE THE ROW NEVER CONFIRMED OUTRANKS THE ROW. When this device's
+       last save failed, the row still holds the choice before it, and letting
+       it "correct" the cache would quietly undo the player's newer pick. Finish
+       that same write instead; the row is the truth again once it lands. */
+    if (hasUnsyncedViewPrefs(resolvedClubId, currentUser?.id)) {
+      pushRemoteViewPrefs(resolvedClubId, saved, currentUser?.id);
+      return;
+    }
     let cancelled = false;
     void fetchRemoteViewPrefs(resolvedClubId, currentUser?.id).then((remote) => {
       if (cancelled || !remote) return;
@@ -3613,7 +3659,7 @@ function ClubHomePageContent({
         [gameType]: emptyFilterValue(narrowing.fSpec),
       };
       setAdvFilters(next);
-      if (resolvedClubId) saveFilters(resolvedClubId, next);
+      if (resolvedClubId) persistAdvFilters(resolvedClubId, next);
     }
   }, [narrowing.fSpec, advFilters, gameType, resolvedClubId, selectFavoritesOnly, selectGameType]);
 
@@ -4496,7 +4542,7 @@ function ClubHomePageContent({
       [gameType]: emptyFilterValue(narrowing.fSpec),
     };
     setAdvFilters(next);
-    if (resolvedClubId) saveFilters(resolvedClubId, next);
+    if (resolvedClubId) persistAdvFilters(resolvedClubId, next);
     toast.info('Filters Cleared, They Were Hiding Every Game');
   }, [
     loading,
@@ -5621,7 +5667,7 @@ function ClubHomePageContent({
                               [gameType]: { ...qVal, statuses: [] },
                             };
                             setAdvFilters(next);
-                            if (resolvedClubId) saveFilters(resolvedClubId, next);
+                            if (resolvedClubId) persistAdvFilters(resolvedClubId, next);
                           }}
                         >
                           All
@@ -5655,7 +5701,7 @@ function ClubHomePageContent({
                                   },
                                 };
                                 setAdvFilters(next);
-                                if (resolvedClubId) saveFilters(resolvedClubId, next);
+                                if (resolvedClubId) persistAdvFilters(resolvedClubId, next);
                               }}
                             >
                               {sf.label}
@@ -5791,9 +5837,15 @@ function ClubHomePageContent({
                  so closing without Apply must still show what was saved -
                  re-read storage so the lobby matches the persisted store. */
               setFiltersOpen(false);
+              /* The sheet has already saved (and synced) every change, so
+                 the lobby takes its store and a late row reply must not. */
+              advFiltersTouched.current = true;
               setAdvFilters(loadFilters(resolvedClubId || club!.id));
             }}
-            onApply={setAdvFilters}
+            onApply={(next: FilterStore) => {
+              advFiltersTouched.current = true;
+              setAdvFilters(next);
+            }}
             sortKey={sortKey}
             onSortChange={selectSortKey}
             sortOptions={SORT_OPTIONS}
@@ -5863,7 +5915,7 @@ function ClubHomePageContent({
                     haptic.selection();
                     const next: FilterStore = { ...advFilters, [gameType]: { ...vVal, games } };
                     setAdvFilters(next);
-                    if (resolvedClubId) saveFilters(resolvedClubId, next);
+                    if (resolvedClubId) persistAdvFilters(resolvedClubId, next);
                   },
                 };
               })()}
@@ -5887,7 +5939,7 @@ function ClubHomePageContent({
                     haptic.selection();
                     const next: FilterStore = { ...advFilters, [gameType]: { ...sVal, styles } };
                     setAdvFilters(next);
-                    if (resolvedClubId) saveFilters(resolvedClubId, next);
+                    if (resolvedClubId) persistAdvFilters(resolvedClubId, next);
                   },
                 };
               })()}

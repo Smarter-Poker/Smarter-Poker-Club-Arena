@@ -3,8 +3,8 @@
 # A change here is a change to what this platform runs on a timer. Never edit a
 # line to make a check pass: tests/the-scheduled-work-roster-is-pinned.law.test.ts
 # pins the count, and the count is supposed to be argued about.
-# observed_at: 2026-10-13T11:50:45Z
-# active: 134
+# observed_at: 2026-10-16T06:20:39Z
+# active: 136
 # retained-inactive: 2	the two bust sweeps restored disabled by 20260910073355
 # 2026-09-20: 135 -> 132. union-seat-provenance-heal, ca-bbj-repair-unbanked-15m
 # and reconcile-club-table-counts-nightly were retired by migration
@@ -139,6 +139,12 @@
 # existing_horse_retention_runs_each_thirty_seconds (protected retention
 # delivery); command, work bounds and all other fields remain unchanged.
 # The other 131 active schedules match the previous pinned roster.
+# 2026-10-16: 134 -> 136 active, read by Cron Health run 38860663976.
+# TWO APPEARED, both scheduled by 20261016040716 sp_daily_digest (#7070):
+#   sp-daily-metrics-snapshot  15,45 5,6 * * *
+#   sp-daily-digest-watchdog   15 13,14 * * *
+# Each gates itself on Chicago local time inside its command; neither moves money.
+# ca-currency-meter-nightly moved one row only to restore the generator's sort order.
 # jobname	schedule
 # 2026-10-04: 125 -> 126. postgrest-pool-renew-10m was scheduled by migration
 # the_api_pool_is_renewed_before_it_outgrows_the_host: PostgREST's pool
@@ -194,8 +200,8 @@ ca-cash-pot-conservation-hourly	34 */6 * * *
 ca-collusion-daily	20 4 * * *
 ca-conservation-sweep-hourly	52 * * * *
 ca-crash-settle-abandoned-minute	* * * * *
-ca-currency-meter-nightly	20 7 * * *
 ca-cron-health-30m	7,37 * * * *
+ca-currency-meter-nightly	20 7 * * *
 ca-daily-attestation	10 6 * * *
 ca-diamond-cash-rake-sweep-hourly	14 * * * *
 ca-diamond-economy-watch-daily	25 6 * * *
@@ -297,6 +303,8 @@ reconcile-tournament-denormals	* * * * *
 refresh-player-stats-hourly	17 * * * *
 resolve-friend-challenges	*/15 * * * *
 snapshot-player-stats	5 0 * * *
+sp-daily-digest-watchdog	15 13,14 * * *
+sp-daily-metrics-snapshot	15,45 5,6 * * *
 sp-prune-hand-discards	7,37 * * * *
 sp-prune-rabbit-hunt-offers	9,39 * * * *
 sp_prune_ca_settlements_10m	7,17,27,37,47 * * * *

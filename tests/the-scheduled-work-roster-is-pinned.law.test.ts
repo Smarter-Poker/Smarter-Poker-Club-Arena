@@ -142,7 +142,12 @@ const ROSTER = join(ROOT, 'docs', 'attestation', 'cron-roster.tsv');
 // fn_ca_currency_meter() leaves ca-ledger-replay-nightly's command for its own
 // job so the two no longer share a transaction (the meter's 2026-10-14
 // timeout rolled the night's replay back). No new work runs.
-const ACTIVE_JOBS = 134;
+// 2026-10-16: 134 -> 136 active: sp-daily-metrics-snapshot and
+// sp-daily-digest-watchdog, scheduled by 20261016040716 sp_daily_digest (#7070,
+// the Smarter.Poker daily operations digest). Both run in the early Chicago
+// hours and gate themselves on local time inside the command; neither moves
+// money. Cron Health read 136 active on 2026-10-16T06:20Z.
+const ACTIVE_JOBS = 136;
 const RETAINED_INACTIVE = 2;
 const TOTAL_JOBS = ACTIVE_JOBS + RETAINED_INACTIVE;
 
@@ -186,8 +191,8 @@ describe('the scheduled-work roster is pinned', () => {
     expect(Number(headerValue('retained-inactive'))).toBe(RETAINED_INACTIVE);
   });
 
-  it('136 total is 134 active plus the two rows cron.job keeps inactive', () => {
-    expect(TOTAL_JOBS).toBe(136);
+  it('138 total is 136 active plus the two rows cron.job keeps inactive', () => {
+    expect(TOTAL_JOBS).toBe(138);
     // The two bust sweeps 20260910073355 restored disabled are both of them
     // again: union-weekly-rakeback-close was the third until 20261003101805
     // re-armed jobid 272, and it is now an ACTIVE row of the body instead.

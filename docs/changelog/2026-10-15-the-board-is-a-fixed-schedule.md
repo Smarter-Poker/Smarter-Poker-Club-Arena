@@ -51,3 +51,13 @@ paged.
 
 `server/src/services/theBoardIsAFixedSchedule.law.test.ts`
 (`docs/laws.d/the-board-is-a-fixed-schedule.md`).
+
+## Follow-Up: The Arena's 8 PM Free Buy (2026-10-16)
+
+After release, 24 of the Diamond Arena's 25 fixed-board templates spawned. The
+Prime Time Free Buy did not: it carries the Midway feature tier's 2-chip rebuy
+and add-on, and the arena's creation door refuses any freeroll rebuy or add-on
+that is not exactly one Diamond (`diamond_freeroll_rebuy_and_addon_cost_one_diamond`,
+Dan's 2026-10-06 arena ruling). `diamondSpawnConfig` now prices an arena
+freeroll's rebuy and add-on at one Diamond, so the arena runs all five Free
+Buys a day. Pinned in `theBoardIsAFixedSchedule.law.test.ts`.

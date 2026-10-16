@@ -10,14 +10,6 @@ name: Spin edge drift needs a second window
 # names, keep owner, security, settings and grants, and reproduce production's
 # derived postimage md5. No timer (CLAUDE.md 10.85): pull_request only, scoped
 # to the paths it proves.
-on: the exact production definition
-# captured 2026-10-16 (pg_get_functiondef md5 equal to the live function) must
-# read a settled hand's rake and drop as unexplained while its post-commit
-# obligations are still in flight, and the migration must read every phase of
-# the same hands as zero, exclude tournament and Diamond tables, open a new
-# basis, declare its guard redefinition, keep owner, security, settings and
-# grants, and reproduce production's derived postimage md5. No timer
-# (CLAUDE.md 10.85): pull_request only, scoped to the paths it proves.
 on:
   pull_request:
     branches: [main]

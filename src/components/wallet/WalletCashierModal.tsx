@@ -131,7 +131,7 @@ import transferStyles from '../../pages/CashierTradePage.module.css';
 import { downloadBlob } from '../../utils/downloadCsv';
 import { statementCsvCell } from '../../utils/cashierStatementCsv';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
-import { formatWalletChips } from '../../utils/format';
+import { compactChips, formatWalletChips } from '../../utils/format';
 import { generateAvatarSvg } from '../../utils/avatarGenerator';
 import { safeErrorMessage } from '../../utils/safeErrorMessage';
 
@@ -256,16 +256,10 @@ interface WalletCashierModalProps {
   initialDestination?: CashierDestination | null;
 }
 
-/**
- * A chip figure on the glass: formatWalletChips, the house reading for every chip
- * count outside the felt (Dan 2026-09-09: "NEVER USE DECIMAL POINTS ON ANY
- * FORWARD FACING PAGE ... IF ITS 1200 USE 1.2K"). This printed 12,500.5 -
- * decimals and all - on balances, member rows and the ledgers (audit C2-17).
- * Rounded down, so a balance is never overstated. Unknown is "...", and a
- * value that is not a number is "Unavailable" - it used to print a confident
- * 0.00, which is an invented balance.
- */
-const fmt = (n?: number | null) =>
+/** Wallet balances retain cents and separators below one million (Dan 2026-10-16).
+ * Unknown and unreadable balances remain distinct from a verified zero.
+ * Transactions and ledger aggregates use compactChips at their render sites. */
+const fmtWallet = (n?: number | null) =>
   n === undefined || n === null ? '...' : Number.isFinite(n) ? formatWalletChips(n) : 'Unavailable';
 
 /** The amount being moved, exactly: a confirmation or a receipt never abbreviates it. */
@@ -1700,7 +1694,7 @@ export default function WalletCashierModal({
                     ? clubLoading
                       ? '...'
                       : 'Unavailable'
-                    : fmt(bank)}
+                    : fmtWallet(bank)}
               </strong>
               {walletType === 'promo_wallet' && clubName && (
                 <em className="cbc-bank-sub">
@@ -1711,7 +1705,7 @@ export default function WalletCashierModal({
                   there is one, so a prepaid agent reads what they always read. */}
               {walletType === 'agent_wallet' && bank !== null && credit !== null && credit > 0 && (
                 <em className="cbc-bank-sub">
-                  {`Plus ${fmt(credit)} Credit Line Left, So You Can Send ${fmt(bank + credit)}`}
+                  {`Plus ${fmtWallet(credit)} Credit Line Left, So You Can Send ${fmtWallet(bank + credit)}`}
                 </em>
               )}
             </div>
@@ -1742,7 +1736,11 @@ export default function WalletCashierModal({
                   >
                     <span>Club Promo Wallet</span>
                     <strong>
-                      {promoPot === null ? (clubLoading ? '...' : 'Unavailable') : fmt(promoPot)}
+                      {promoPot === null
+                        ? clubLoading
+                          ? '...'
+                          : 'Unavailable'
+                        : fmtWallet(promoPot)}
                     </strong>
                   </button>
                   <button
@@ -1756,7 +1754,7 @@ export default function WalletCashierModal({
                     }}
                   >
                     <span>My Promo Float</span>
-                    <strong>{fmt(promoFloat)}</strong>
+                    <strong>{fmtWallet(promoFloat)}</strong>
                   </button>
                 </div>
               )}
@@ -1825,7 +1823,7 @@ export default function WalletCashierModal({
                       <div key={row.transaction_id} className="cbc-tx">
                         <div className="cbc-tx-top">
                           <span className="cbc-tx-type">{titleCase(row.to_name)}</span>
-                          <span className="cbc-tx-amount">{fmt(row.remaining)}</span>
+                          <span className="cbc-tx-amount">{compactChips(row.remaining)}</span>
                         </div>
                         <div className="cbc-tx-mid">
                           <span>Into {enumToTitleCase(row.destination)}</span>
@@ -1840,7 +1838,8 @@ export default function WalletCashierModal({
                         {Number(row.claimed_back) > 0 && (
                           <div className="cbc-tx-foot">
                             <span>
-                              Sent {fmt(row.amount)}, {fmt(row.claimed_back)} Already Claimed Back
+                              Sent {compactChips(row.amount)}, {compactChips(row.claimed_back)}{' '}
+                              Already Claimed Back
                             </span>
                           </div>
                         )}
@@ -1929,7 +1928,7 @@ export default function WalletCashierModal({
                               </option>
                             ))}
                           </select>
-                          <strong>{fmt(holderHeld)}</strong>
+                          <strong>{fmtWallet(holderHeld)}</strong>
                         </span>
                       </span>
                     </section>
@@ -2029,7 +2028,7 @@ export default function WalletCashierModal({
                             {block ? (
                               <span className="cbc-member-block">{block.label}</span>
                             ) : (
-                              <span className="cbc-member-bal">{fmt(m.chip_balance)}</span>
+                              <span className="cbc-member-bal">{fmtWallet(m.chip_balance)}</span>
                             )}
                           </button>
                         );
@@ -2053,7 +2052,7 @@ export default function WalletCashierModal({
                           {tab === 'claim' ? 'Into The Club Bank' : 'From The Club Bank'}
                         </span>
                         <strong className={transferStyles.walletRowValue}>
-                          {bank === null ? 'Unavailable' : fmt(bank)}
+                          {bank === null ? 'Unavailable' : fmtWallet(bank)}
                         </strong>
                       </span>
                     </section>
@@ -2095,7 +2094,7 @@ export default function WalletCashierModal({
                       <div className="cbc-blurb">
                         {holderHeld === null
                           ? 'Reading That Wallet...'
-                          : `${titleCase(recipient.name)} Holds ${fmt(holderHeld)} In That Wallet.`}
+                          : `${titleCase(recipient.name)} Holds ${fmtWallet(holderHeld)} In That Wallet.`}
                       </div>
                     )}
                     {/* A BALANCE WE COULD NOT READ CANNOT PROJECT AN AFTER
@@ -2107,19 +2106,19 @@ export default function WalletCashierModal({
                     {amt > 0 && !overCap && bank !== null && (
                       <div className="cbc-blurb">
                         {tab === 'claim'
-                          ? `Claiming ${fmtWhole(amt)}. The Club Bank Would Hold ${fmt(bank + amt)} Afterwards.`
+                          ? `Claiming ${fmtWhole(amt)}. The Club Bank Would Hold ${fmtWallet(bank + amt)} Afterwards.`
                           : creditDraw > 0
                             ? `Sending ${fmtWhole(amt)}. ${fmtExact(creditDraw)} Of It Is Drawn From Your Credit Line.`
-                            : `Sending ${fmtWhole(amt)}. The Wallet Would Hold ${fmt(bank - amt)} Afterwards.`}
+                            : `Sending ${fmtWhole(amt)}. The Wallet Would Hold ${fmtWallet(bank - amt)} Afterwards.`}
                       </div>
                     )}
                     {overCap && (
                       <div className="cbc-warn">
                         {tab === 'claim'
-                          ? `That Wallet Only Holds ${fmt(cap ?? 0)} Chips.`
+                          ? `That Wallet Only Holds ${fmtWallet(cap ?? 0)} Chips.`
                           : creditLine > 0
-                            ? `Your Wallet And Credit Line Cover ${fmt(cap ?? 0)} Chips.`
-                            : `The Wallet Only Holds ${fmt(cap ?? 0)} Chips.`}
+                            ? `Your Wallet And Credit Line Cover ${fmtWallet(cap ?? 0)} Chips.`
+                            : `The Wallet Only Holds ${fmtWallet(cap ?? 0)} Chips.`}
                       </div>
                     )}
                     {sendError && (
@@ -2198,15 +2197,15 @@ export default function WalletCashierModal({
                     <div className="cbc-totals">
                       <div>
                         <span>Received</span>
-                        <strong className="cbc-in">{fmt(promoLedgerTotals.in)}</strong>
+                        <strong className="cbc-in">{compactChips(promoLedgerTotals.in)}</strong>
                       </div>
                       <div>
                         <span>Handed Out</span>
-                        <strong className="cbc-out">{fmt(promoLedgerTotals.out)}</strong>
+                        <strong className="cbc-out">{compactChips(promoLedgerTotals.out)}</strong>
                       </div>
                       <div>
                         <span>Net</span>
-                        <strong>{fmt(promoLedgerTotals.net)}</strong>
+                        <strong>{compactChips(promoLedgerTotals.net)}</strong>
                       </div>
                     </div>
                   )}
@@ -2244,7 +2243,7 @@ export default function WalletCashierModal({
                               className={inbound ? 'cbc-tx-amount cbc-in' : 'cbc-tx-amount cbc-out'}
                             >
                               {inbound ? '+' : '-'}
-                              {fmt(row.amount)}
+                              {compactChips(row.amount)}
                             </span>
                           </div>
                           <div className="cbc-tx-mid">
@@ -2262,7 +2261,7 @@ export default function WalletCashierModal({
                             {note && <span>{titleCase(note)}</span>}
                             {row.actor_name && <span>By {titleCase(row.actor_name)}</span>}
                             {row.balance_after !== null && row.balance_after !== undefined && (
-                              <span>Wallet After {fmt(Number(row.balance_after))}</span>
+                              <span>Wallet After {fmtWallet(Number(row.balance_after))}</span>
                             )}
                           </div>
                         </div>
@@ -2306,15 +2305,17 @@ export default function WalletCashierModal({
                     <div className="cbc-totals">
                       <div>
                         <span>Into The Bank</span>
-                        <strong className="cbc-in">{fmt(ledgerTotals.into_bank)}</strong>
+                        <strong className="cbc-in">{compactChips(ledgerTotals.into_bank)}</strong>
                       </div>
                       <div>
                         <span>Out Of The Bank</span>
-                        <strong className="cbc-out">{fmt(ledgerTotals.out_of_bank)}</strong>
+                        <strong className="cbc-out">
+                          {compactChips(ledgerTotals.out_of_bank)}
+                        </strong>
                       </div>
                       <div>
                         <span>Net</span>
-                        <strong>{fmt(ledgerTotals.net)}</strong>
+                        <strong>{compactChips(ledgerTotals.net)}</strong>
                       </div>
                     </div>
                   )}
@@ -2368,7 +2369,7 @@ export default function WalletCashierModal({
                             <span className="cbc-tx-type">
                               {enumToTitleCase(row.transaction_type)}
                             </span>
-                            <span className="cbc-tx-amount">{fmt(row.amount)}</span>
+                            <span className="cbc-tx-amount">{compactChips(row.amount)}</span>
                           </div>
                           <div className="cbc-tx-mid">
                             <span>
@@ -2395,7 +2396,7 @@ export default function WalletCashierModal({
                               <span>From {enumToTitleCase(src)}</span>
                             )}
                             {row.balance_after !== null && (
-                              <span>Bank After {fmt(Number(row.balance_after))}</span>
+                              <span>Bank After {fmtWallet(Number(row.balance_after))}</span>
                             )}
                             {row.is_reversed && <span className="cbc-tx-rev">Reversed</span>}
                           </div>

@@ -87,20 +87,18 @@ function policyRow(over: Record<string, unknown> = {}) {
 }
 
 /**
- * 10:00 UTC = 05:00 Chicago (CDT), three hours before the 08:00 slot, so
+ * 10:30 UTC = 05:30 Chicago (CDT), three hours before the 08:30 slot, so
  * exactly one slot sits inside FREE_BUY_PUBLISH_LEAD_MS. Asserted below
  * rather than assumed, so a change to the slot table fails here loudly
  * instead of quietly testing nothing.
  */
-const AT_FIVE_AM_CHICAGO = Date.parse('2026-10-05T10:00:00.000Z');
+const AT_FIVE_THIRTY_AM_CHICAGO = Date.parse('2026-10-05T10:30:00.000Z');
 
 describe('a held club is not published for', () => {
   let svc: TournamentRecurringService;
 
   const tick = () =>
-    (
-      svc as unknown as { checkAndCreateFreeBuys: () => Promise<void> }
-    ).checkAndCreateFreeBuys();
+    (svc as unknown as { checkAndCreateFreeBuys: () => Promise<void> }).checkAndCreateFreeBuys();
 
   function policyAnswer(answer: () => { data: unknown; error: { message: string } | null }) {
     rpcMock.mockImplementation(async (name: string) => {
@@ -111,7 +109,7 @@ describe('a held club is not published for', () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
-    vi.setSystemTime(AT_FIVE_AM_CHICAGO);
+    vi.setSystemTime(AT_FIVE_THIRTY_AM_CHICAGO);
     rpcMock.mockReset();
     insertMock.mockReset();
     reportErrorMock.mockReset();
@@ -127,7 +125,7 @@ describe('a held club is not published for', () => {
   });
 
   it('has exactly one slot due at the test clock, so the cases below are real', () => {
-    expect(freeBuySlotsDue(AT_FIVE_AM_CHICAGO)).toHaveLength(1);
+    expect(freeBuySlotsDue(AT_FIVE_THIRTY_AM_CHICAGO)).toHaveLength(1);
     expect(FREE_BUY_HOSTS).toHaveLength(1);
   });
 

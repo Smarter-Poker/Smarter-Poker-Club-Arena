@@ -1,0 +1,5 @@
+{
+  "_owner": "claude/fixed-board-audit-chicago-time",
+  "_comment": "Migration 20261016182049 (installed): a fixed-board tournament_schedules row is written by the engine only.",
+  "functions": ["fn_tournament_schedule_board_is_hard_coded"]
+}

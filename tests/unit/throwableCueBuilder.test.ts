@@ -43,7 +43,10 @@ function fixture() {
       spawnSync(process.execPath, [script, ...args], { encoding: 'utf8', timeout: 10000 }),
   };
 }
-afterEach(() => dirs.splice(0).forEach((d) => rmSync(d, { recursive: true, force: true })));
+// The builder runs as a child process with a 10-second budget of its own; on a
+// loaded CI runner the cleanup after it took past vitest's 10-second hook
+// default (2026-10-16, PR #7131), failing a check that was otherwise green.
+afterEach(() => dirs.splice(0).forEach((d) => rmSync(d, { recursive: true, force: true })), 30_000);
 describe('partial throwable cue builds', () => {
   it.each([['--only', 'reserved'], ['--only=reserved']])(
     'retains attribution for untouched cues: %s',
@@ -61,7 +64,8 @@ describe('partial throwable cue builds', () => {
       expect(
         readFileSync(join(f.root, 'src/throwables/cueManifest.generated.ts'), 'utf8')
       ).toContain('"second"');
-    }
+    },
+    30_000
   );
   it('downloads a single-file OpenGameArt asset only while its page still proves CC0', async () => {
     const f = fixture();

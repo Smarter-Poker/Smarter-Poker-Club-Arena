@@ -69,6 +69,11 @@ const commit = (cwd) => {
 };
 
 const backendToolPaths = [
+  'scripts/ci/fixtures/new-native-proof/source-pins.json',
+  'scripts/ci/migration-live-proofs.json',
+  'scripts/ci/recorded-migrations.manifest.json',
+  'scripts/dev/test-lightning-private-join.sh',
+  'scripts/dev/fixtures/lightning-private-join.sql',
   'scripts/ci/accounting-migration-admission.mjs',
   'scripts/ci/apply-recorded-migration.mjs',
   'scripts/ci/contract-index-recovery.test.mjs',
@@ -162,7 +167,8 @@ test('actual lazy shared-server module/watch graph excludes engine-only churn an
       'vite.config.ts',
       'scripts/new-build.mjs',
       'scripts/ops/lightning-pilot-unknown.mjs',
-      'scripts/ci/fixtures/accounting-migration-admission/unknown.py',
+      'scripts/ci/unknown.json',
+      'scripts/ci/fixtures/unseen/package.json',
       'scripts/dev/fixtures/unknown.sql',
       'server/new-shared.js',
       'tests/protected-features.json',
@@ -273,9 +279,10 @@ test('reviewed backend tools remain runtime inputs when read by a real build or 
     put(
       cwd,
       'src/main.js',
-      'window.readTool = () => import("../scripts/ops/lightning-pilot-access.mjs");'
+      'window.readTool = () => import("../scripts/ops/lightning-pilot-access.mjs"); window.readNative = () => import("../scripts/ci/fixtures/native-input.mjs");'
     );
     for (const path of backendToolPaths) put(cwd, path, 'export const value = 1;');
+    put(cwd, 'scripts/ci/fixtures/native-input.mjs', 'export const value = 1;');
     const baseline = commit(cwd);
     const observations = [];
     for (const label of ['app', 'diamond', 'prerender']) {
@@ -287,7 +294,8 @@ test('reviewed backend tools remain runtime inputs when read by a real build or 
           {
             name: 'watch-native-fixtures',
             buildStart() {
-              this.addWatchFile(resolve(cwd, 'scripts/ci/fixtures'));
+              this.addWatchFile(resolve(cwd, 'scripts/ci/fixtures/accounting-migration-admission'));
+              this.addWatchFile(resolve(cwd, 'scripts/ci/fixtures/launch-reset'));
             },
           },
           runtimeInputPlugin(label, cwd),
@@ -303,9 +311,12 @@ test('reviewed backend tools remain runtime inputs when read by a real build or 
     assert.ok(
       inputs.files.some((entry) => entry.path === 'scripts/ops/lightning-pilot-access.mjs')
     );
-    assert.ok(inputs.directories.includes('scripts/ci/fixtures/'));
+    assert.ok(inputs.files.some((entry) => entry.path === 'scripts/ci/fixtures/native-input.mjs'));
+    assert.ok(inputs.directories.includes('scripts/ci/fixtures/accounting-migration-admission/'));
     for (const path of [
       'scripts/ops/lightning-pilot-access.mjs',
+      'scripts/ci/fixtures/native-input.mjs',
+      'scripts/ci/fixtures/accounting-migration-admission/new-proof.json',
       'scripts/ci/fixtures/accounting-migration-admission/qualify.py',
       'scripts/ci/fixtures/launch-reset/maintenance-thaw-repair/qualify.py',
     ]) {
@@ -324,6 +335,19 @@ test('reviewed backend tools remain runtime inputs when read by a real build or 
         path
       );
     }
+    git(cwd, 'checkout', '-q', '--detach', baseline);
+    rmSync(resolve(cwd, 'scripts/ci/fixtures/native-input.mjs'));
+    const deleted = commit(cwd);
+    assert.equal(
+      qualifiesRuntimeInputs(
+        inputs,
+        baseline,
+        deleted,
+        compareClientBacklog(baseline, deleted, cwd).paths,
+        cwd
+      ),
+      false
+    );
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

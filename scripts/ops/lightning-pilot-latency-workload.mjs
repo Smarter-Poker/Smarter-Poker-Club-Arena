@@ -1,7 +1,7 @@
 /** One bounded actual-action workload for the already authorized existing player.
  * Reports sample observations, never a latency pass or manufactured percentile. */
 import {
-  CONSENT_PLAYER,
+  CONSENT_PLAYERS,
   assertPlayerPin,
   openPlayerSession,
   validatePlayer,
@@ -216,7 +216,7 @@ export async function witnessLatencyWorkload({
       !Number.isInteger(timeoutMs) ||
       timeoutMs < 30000 ||
       timeoutMs > 240000 ||
-      pin?.playerId !== CONSENT_PLAYER
+      !CONSENT_PLAYERS.includes(pin?.playerId)
     )
       throw new Error('Scope');
     assertPlayerPin(pin);

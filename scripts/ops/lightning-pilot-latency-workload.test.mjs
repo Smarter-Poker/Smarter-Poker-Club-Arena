@@ -221,3 +221,39 @@ test('unaccepted terms and another player cannot start authentication or browser
     assert.equal(report.attempts.length, 0);
   }
 });
+
+test('Samantha uses her own prior-consent profile; no new consent is written', async () => {
+  const samantha = 'a23ca5c9-b748-482f-9b59-9db35f7aa996';
+  for (const accepted of [false, true]) {
+    let opened = false;
+    const admin = {
+      from: (table) => {
+        assert.equal(table, 'profiles');
+        const q = {
+          select: () => q,
+          eq: (key, value) => {
+            assert.equal(key, 'id');
+            assert.equal(value, samantha);
+            return q;
+          },
+          maybeSingle: async () => ({
+            data: { id: samantha, club_arena_tos_accepted_at: accepted ? '2026-01-01' : null },
+          }),
+        };
+        return q;
+      },
+      rpc: async () => ({ error: true }),
+    };
+    const report = await witnessLatencyWorkload({
+      admin,
+      pin: { ...pin, playerId: samantha },
+      validate: async () => {},
+      openSession: async () => {
+        opened = true;
+        throw new Error('fixture');
+      },
+    });
+    assert.equal(opened, accepted);
+    assert.equal(report.status, 'unknown');
+  }
+});

@@ -16,7 +16,12 @@ const env = {
   SUPABASE_URL: 'https://example.invalid',
   SUPABASE_SERVICE_ROLE_KEY: SECRET,
 };
-function fixture({ id = PILOT.ownerId, consent = true, cleanupFails = false } = {}) {
+function fixture({
+  id = PILOT.ownerId,
+  consent = true,
+  cleanupFails = false,
+  playerId = PLAYER,
+} = {}) {
   const calls = [],
     signedOut = [];
   const admin = {
@@ -26,7 +31,7 @@ function fixture({ id = PILOT.ownerId, consent = true, cleanupFails = false } = 
         eq: () => q,
         maybeSingle: async () => ({
           data: {
-            id: PLAYER,
+            id: playerId,
             club_arena_tos_accepted_at: consent ? '2026-01-01T00:00:00Z' : null,
           },
         }),
@@ -290,4 +295,35 @@ test('latency preserves partial observations and real counts without asserting q
   const absent = fixture({ consent: false });
   assert.equal((await runPilotWitness(args, absent)).status, 'unknown');
   assert.equal(absent.calls.length, 1);
+});
+
+const SAMANTHA = 'a23ca5c9-b748-482f-9b59-9db35f7aa996';
+test('Samantha consent is exact and player-only, with matching durable profile identity', async () => {
+  const args = {
+    ...env,
+    PILOT_WITNESS_MODE: 'player',
+    PILOT_PLAYER_ID: SAMANTHA,
+    PILOT_POOL_SESSION_ID: POOL,
+    PILOT_ACCEPT_PLAYER_TERMS: 'true',
+  };
+  const f = fixture({ consent: false, playerId: SAMANTHA });
+  assert.equal((await runPilotWitness(args, f)).status, 'observed');
+  assert.equal(f.calls.at(-1).pin.playerId, SAMANTHA);
+  assert.equal(f.calls.at(-1).acceptTerms, true);
+  const wrong = fixture({ consent: false });
+  assert.equal((await runPilotWitness(args, wrong)).status, 'unknown');
+  assert.equal(wrong.calls.length, 1);
+  const prior = fixture({ consent: false, playerId: SAMANTHA });
+  assert.equal(
+    (await runPilotWitness({ ...args, PILOT_ACCEPT_PLAYER_TERMS: 'false' }, prior)).status,
+    'unknown'
+  );
+  for (const mode of ['cycle', 'recovery', 'latency', 'replay']) {
+    const blocked = fixture({ consent: false, playerId: SAMANTHA });
+    assert.equal(
+      (await runPilotWitness({ ...args, PILOT_WITNESS_MODE: mode }, blocked)).status,
+      'unknown'
+    );
+    assert.equal(blocked.calls.length, 0);
+  }
 });

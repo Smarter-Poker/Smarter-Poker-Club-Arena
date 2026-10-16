@@ -8,7 +8,7 @@ on:
         options: [player, replay, cycle, recovery, latency]
         required: true
       accept_player_terms:
-        description: 'Explicit owner-authorized normal TOS and Privacy acceptance for player 0097309f-2864-4d09-b02b-56bca012a9c3 only'
+        description: 'Explicit owner-authorized normal TOS and Privacy acceptance only for named players 0097309f-2864-4d09-b02b-56bca012a9c3 or Samantha a23ca5c9-b748-482f-9b59-9db35f7aa996'
         type: boolean
         default: false
       cluster_id:

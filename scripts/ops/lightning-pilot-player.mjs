@@ -153,6 +153,10 @@ export function renderHand(payload, poolSessionId) {
 }
 
 export const CONSENT_PLAYER = '0097309f-2864-4d09-b02b-56bca012a9c3';
+export const CONSENT_PLAYERS = Object.freeze([
+  CONSENT_PLAYER,
+  'a23ca5c9-b748-482f-9b59-9db35f7aa996',
+]);
 export async function acceptPlayerTerms(
   page,
   session,
@@ -163,7 +167,7 @@ export async function acceptPlayerTerms(
 ) {
   if (
     typeof authorized !== 'boolean' ||
-    (authorized && (pin.playerId !== CONSENT_PLAYER || session?.user?.id !== CONSENT_PLAYER))
+    (authorized && (!CONSENT_PLAYERS.includes(pin.playerId) || session?.user?.id !== pin.playerId))
   )
     throw new Error('Player Consent Authorization Mismatch');
   await page.waitForFunction(
@@ -192,7 +196,7 @@ export async function acceptPlayerTerms(
       base: url,
       key: PUBLIC_KEY,
       token: session.access_token,
-      id: CONSENT_PLAYER,
+      id: pin.playerId,
       timeout: Math.min(15000, remaining()),
     }
   );
@@ -234,7 +238,7 @@ export async function witnessPlayer({
   acceptTerms = false,
 }) {
   assertPlayerPin(pin);
-  if (typeof acceptTerms !== 'boolean' || (acceptTerms && pin.playerId !== CONSENT_PLAYER))
+  if (typeof acceptTerms !== 'boolean' || (acceptTerms && !CONSENT_PLAYERS.includes(pin.playerId)))
     throw new Error('Player Consent Authorization Mismatch');
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 240000)
     throw new Error('Bounded Player Witness Timeout Required');

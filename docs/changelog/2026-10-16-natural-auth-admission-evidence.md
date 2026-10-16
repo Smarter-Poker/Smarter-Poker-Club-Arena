@@ -1,0 +1,5 @@
+# Retain The Auth Admission That Blocks A Natural Observer
+
+Production run 38974488335 passed all four actual-hand/reconnect cases. Natural observation then failed during its original shared setup deadline: the fourth table image never received a source, and no saved-theme query reached the network. Valid auth requests completed, but session admission timed out. The retained trace did not identify the shared lock owner, so it does not justify changing authentication, saved selections or deadlines.
+
+The existing natural proof now retains a credential-free journal of the shared auth Web Lock's request, acquisition, release and rejection events. It snapshots every surviving page before closing any page that may own the lock. This is diagnostic evidence, not a claimed runtime repair. Lock arguments, callback behavior and outcomes remain unchanged; no session objects, tokens or request headers are recorded. The six observers, original shared setup and observation budgets, river/recipient checks and exact release identity checks remain unchanged.

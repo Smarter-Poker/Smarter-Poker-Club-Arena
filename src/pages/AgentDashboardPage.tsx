@@ -76,9 +76,6 @@ import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayNa
 import { resolvePageClubId, pickPreferredClubId } from '../utils/resolvePageClubId';
 import { SEND_DESTINATION_LABELS } from '../utils/cashierSendWallets';
 import type { ClubBankRecipientWallet } from '../components/wallet/cashierModes';
-import { useRecipientWalletBalances, walletOptionLabel } from '../hooks/useRecipientWalletBalances';
-
-const TRANSFER_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 type AgentTab =
   | 'overview'
   | 'players'
@@ -200,22 +197,10 @@ function AgentDashboardContent() {
   // THE SENDER CHOOSES THE RECIPIENT'S WALLET (Dan 2026-10-15: "SELECTABLE TO
   // SEND TO ANY WALLET I WANT THAT THE USER HAS (PLAYER WALLET, AGENT WALLET,
   // PROMO WALLET ETC)"). This form used to send every transfer into the Agent
-  // Wallet with no choice and no balance. The wallets offered are the ones the
-  // cashier read says the recipient holds, each with its balance; until that
-  // read answers all three are offered and the server refuses one they lack.
-  const [transferWallet, setTransferWallet] = useState<ClubBankRecipientWallet>('agent_wallet');
-  const transferTargetId = TRANSFER_UUID.test(transferTarget.trim())
-    ? transferTarget.trim().toLowerCase()
-    : null;
-  const transferBalances = useRecipientWalletBalances(clubId, transferTargetId);
-  const transferWallets: ClubBankRecipientWallet[] = transferBalances
-    ? (['agent_wallet', 'promo_wallet', 'player_wallet'] as const).filter(
-        (wallet) => transferBalances[wallet] !== undefined
-      )
-    : ['agent_wallet', 'promo_wallet', 'player_wallet'];
-  const transferDestination: ClubBankRecipientWallet = transferWallets.includes(transferWallet)
-    ? transferWallet
-    : transferWallets[0] ?? 'agent_wallet';
+  // Wallet with no choice. Agent Wallet stays the default; the server refuses a
+  // wallet the recipient does not hold.
+  const [transferDestination, setTransferDestination] =
+    useState<ClubBankRecipientWallet>('agent_wallet');
 
   // Credit management (owner-only)
   const [creditTarget, setCreditTarget] = useState('');
@@ -911,7 +896,7 @@ function AgentDashboardContent() {
       setTransferTarget('');
       setTransferAmount('');
       setTransferNotes('');
-      setTransferWallet('agent_wallet');
+      setTransferDestination('agent_wallet');
       loadDashboard(clubId);
     } catch (err: unknown) {
       setError(safeErrorMessage(err));
@@ -1035,16 +1020,12 @@ function AgentDashboardContent() {
                     value={transferDestination}
                     disabled={processing}
                     onChange={(event) =>
-                      setTransferWallet(event.target.value as ClubBankRecipientWallet)
+                      setTransferDestination(event.target.value as ClubBankRecipientWallet)
                     }
                   >
-                    {transferWallets.map((wallet) => (
+                    {(['agent_wallet', 'promo_wallet', 'player_wallet'] as const).map((wallet) => (
                       <option key={wallet} value={wallet}>
-                        {walletOptionLabel(
-                          SEND_DESTINATION_LABELS[wallet],
-                          transferBalances,
-                          wallet
-                        )}
+                        {SEND_DESTINATION_LABELS[wallet]}
                       </option>
                     ))}
                   </select>

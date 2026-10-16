@@ -68,6 +68,21 @@ describe('useShellUpdateGate poll', () => {
     expect(probes).toHaveBeenCalledTimes(3);
   });
 
+  it('defers stale shell adoption on Cashier through focus and idle checks', async () => {
+    window.history.replaceState(null, '', '/hub/club-arena/clubs/a/cashier-classic');
+    probes.mockResolvedValue('<script src="/assets/index-new.js"></script>');
+    renderHook(() => useShellUpdateGate());
+    await vi.advanceTimersByTimeAsync(5_000);
+    // The mount probe may check for an update, but cannot hand over the worker
+    // or reload a financial form, even when the deployed shell is newer.
+    expect(navigator.serviceWorker.getRegistration).toHaveBeenCalledTimes(1);
+    window.dispatchEvent(new Event('focus'));
+    document.dispatchEvent(new Event('visibilitychange'));
+    await vi.advanceTimersByTimeAsync(STALE_CHECK_IDLE_MS * 2);
+    expect(probes).toHaveBeenCalled();
+    expect(navigator.serviceWorker.getRegistration).toHaveBeenCalledTimes(probes.mock.calls.length);
+  });
+
   it('stops polling on unmount', async () => {
     const { unmount } = renderHook(() => useShellUpdateGate());
     unmount();

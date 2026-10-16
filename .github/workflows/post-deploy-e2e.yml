@@ -1629,6 +1629,15 @@ jobs:
               ;;
           esac
 
+      - name: Retain The Verified Mobile Table Screens And Measurements
+        if: always() && steps.live.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-live-table-proof
+          path: test-results/live-table-realtime/**/attachments/mobile-live-table-*
+          if-no-files-found: ignore
+          retention-days: 3
+
       - name: Upload the report when something is wrong on production
         # `failure()` is false when GitHub cancels a job at its time limit. The
         # old condition therefore discarded the only report from exactly the

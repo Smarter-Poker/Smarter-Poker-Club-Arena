@@ -242,3 +242,32 @@
     transform: none;
   }
 }
+
+/* Scale the corner controls with the available screen, retaining a tap target. */
+.cch-column {
+  max-width: min(72vw, 320px);
+}
+.cch-seat-change {
+  min-height: clamp(36px, 10vw, 44px);
+  font-size: clamp(10px, 2.8vw, 12px);
+  padding-inline: clamp(10px, 3vw, 16px);
+  max-width: 100%;
+}
+.cch-seat-change-control {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 100%;
+}
+.cch-seat-change-close {
+  flex: 0 0 32px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #e6edf3;
+  font:
+    700 14px/1 'Roboto Condensed',
+    sans-serif;
+  cursor: pointer;
+}

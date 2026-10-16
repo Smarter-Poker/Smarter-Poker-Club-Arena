@@ -139,6 +139,8 @@ export interface CommunityCardsProps {
   handId?: string | number;
   /** 0 = board 1; 1 and 2 for double/triple-board bomb pots; the RIT run index. */
   boardIndex?: number;
+  /** The fifth card has completed its visual reveal, including interrupted/static deals. */
+  onRiverPresented?: () => void;
   /** Chooses the timing profile. Never inspects tournament economics (spec 28). */
   gameMode?: CardPresentationMode;
   /**
@@ -582,8 +584,8 @@ function CommunityCardsComponent({
   cards,
   stage,
   rabbitCards = NO_RABBIT_CARDS,
-  highlightedIndices = NO_HIGHLIGHTS as number[],
-  winningHandName,
+  highlightedIndices: requestedHighlights = NO_HIGHLIGHTS as number[],
+  winningHandName: requestedWinningHandName,
   winningHandDescription,
   lowWinnerLabel,
   deckStyle,
@@ -596,6 +598,7 @@ function CommunityCardsComponent({
   tableId,
   handId,
   boardIndex = 0,
+  onRiverPresented,
   gameMode = 'cash',
   isFocused = true,
   isVisible = true,
@@ -708,6 +711,38 @@ function CommunityCardsComponent({
   const prevVisibleCountRef = useRef(visibleCount);
   const [showdownMode, setShowdownMode] = useState(false);
   const [newlyDealtIndices, setNewlyDealtIndices] = useState<Set<number>>(new Set());
+  const [riverPresented, setRiverPresented] = useState(false);
+  const riverPresentedCallbackRef = useRef(onRiverPresented);
+  riverPresentedCallbackRef.current = onRiverPresented;
+  const visibleCountRef = useRef(visibleCount);
+  visibleCountRef.current = visibleCount;
+  const highlightedIndices = runs > 1 && !riverPresented ? NO_HIGHLIGHTS : requestedHighlights;
+  const winningHandName = runs > 1 && !riverPresented ? undefined : requestedWinningHandName;
+  useEffect(() => {
+    if (visibleCount < 5) {
+      setRiverPresented(false);
+      return;
+    }
+    // A full board mounted after reconnect is already static. A live deal
+    // owns its completion through the presentation engine's completion event.
+    let second: number | null = null;
+    const first = requestAnimationFrame(() => {
+      second = requestAnimationFrame(() => {
+        const key = activeSqueezeRef.current;
+        const phase = key ? cardPresentationEngine.phaseAt(key) : 'complete';
+        if (phase === 'settle' || phase === 'complete' || phase === 'cancelled')
+          setRiverPresented(true);
+      });
+    });
+    return () => {
+      cancelAnimationFrame(first);
+      if (second !== null) cancelAnimationFrame(second);
+    };
+  }, [visibleCount, handId, boardIndex]);
+  useEffect(() => {
+    if (riverPresented && visibleCount === 5) riverPresentedCallbackRef.current?.();
+  }, [riverPresented, visibleCount]);
+
   /** When the current newly-dealt window opened (see re-arm branch below). */
   const dealtAtRef = useRef(0);
   const [stageLabel, setStageLabel] = useState<string | null>(null);
@@ -746,6 +781,7 @@ function CommunityCardsComponent({
       announceHold(false);
     };
     if (visibleCount > prevCount) {
+      if (visibleCount >= 5) setRiverPresented(false);
       // New cards appeared — mark them as newly dealt
       const newIndices = new Set<number>();
       for (let i = prevCount; i < visibleCount; i++) {
@@ -921,6 +957,11 @@ function CommunityCardsComponent({
   useEffect(() => {
     return cardPresentationEngine.subscribe(({ key, phase }) => {
       if (key !== activeSqueezeRef.current && key !== pendingRevealKeyRef.current) return;
+      if (
+        visibleCountRef.current === 5 &&
+        (phase === 'settle' || phase === 'complete' || phase === 'cancelled')
+      )
+        setRiverPresented(true);
       if (phase === 'cancelled') {
         // AUDIT FIX 2026-09-05 - A CANCEL MUST REACH THE PIXELS.
         //
@@ -1226,6 +1267,7 @@ export const CommunityCards = memo(CommunityCardsComponent, (prev, next) => {
   // Return true if props are equal (skip re-render)
   if (prev.stage !== next.stage) return false;
   if (prev.winningHandName !== next.winningHandName) return false;
+  if (prev.onRiverPresented !== next.onRiverPresented) return false;
   // SHOWDOWN SYSTEM 2026-08-25: the secondary description line must re-render.
   if (prev.winningHandDescription !== next.winningHandDescription) return false;
   // SHOWDOWN POLISH 2026-08-25: the hi-lo low line must re-render too.

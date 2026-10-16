@@ -18,6 +18,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { SpadeConsole } from '../console/SpadeConsole';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
@@ -173,7 +174,11 @@ export function ShareInviteSheet({
     ['Joined', stats ? stats.joined : null],
   ];
 
-  return (
+  /* Portalled to <body>: inside the club page the overlay sits in that page's
+     z-index:1 stacking context, so the sticky header covered the close control
+     and the fixed footer covered Share and Close on short screens. At the
+     document root its z-index 10000 clears both and the overlay scrolls. */
+  return createPortal(
     <div className="referral-overlay" onClick={onClose} role="presentation">
       <div
         ref={dialogRef}
@@ -309,7 +314,8 @@ export function ShareInviteSheet({
           </div>
         </SpadeConsole>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

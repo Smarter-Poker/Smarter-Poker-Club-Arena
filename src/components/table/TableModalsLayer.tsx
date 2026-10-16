@@ -37,7 +37,7 @@ import type { ThrowEvent } from '../../services/ThrowableService';
 import DiamondWalletModal from '../wallet/DiamondWalletModal';
 import { DiamondTopUpModal } from '../vip/DiamondTopUpModal';
 import CashierModal from './CashierModal';
-import BuyInModal from './BuyInModal';
+import BuyInModal, { type BuyInConfirmation } from './BuyInModal';
 
 import LeaderboardPanel from './LeaderboardPanel';
 import LeaveTableConfirm from './LeaveTableConfirm';
@@ -373,7 +373,7 @@ export interface TableModalsLayerProps {
   buyInSecondsLeft?: number | null;
   cashBuyInRecovery?: { p_amount: number; p_seat_number: number } | null;
   onCloseBuyInModal: () => void;
-  onConfirmBuyIn: (amount: number, autoRebuy?: boolean) => Promise<boolean | void>;
+  onConfirmBuyIn: (amount: number, autoRebuy?: boolean) => Promise<BuyInConfirmation>;
 
   // Rabbit Hunt
   /**

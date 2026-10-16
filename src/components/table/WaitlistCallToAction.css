@@ -101,8 +101,11 @@
 }
 
 .waitlist-cta__line {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 100%;
+  line-height: 1;
 }
 
 .waitlist-cta__eyebrow {

@@ -41,7 +41,7 @@ showed is below, with what was done about each.
    board is on Chicago wall clock, but the other 63 schedules in each club were
    UTC rows written for Chicago summer time. "100 Chip Guarantee Freeroll -
    6:00 PM" is 23:00 UTC; after the fall-back it would have started at 5:00 PM.
-   Migration `20261016170754` rewrites all 126 to the same Chicago days and
+   Migration `20261016182049` rewrites all 126 to the same Chicago days and
    times they run at today, and writes each already-spawned occurrence's local
    key beside its UTC key so the change cannot spawn a duplicate. It aborts if
    any row's local pairs are not a clean days x times product, if any pre-start
@@ -101,6 +101,11 @@ events at the wrong time of day for their names: the Early Bird Freeroll at
   2:30 AM graveyard events to 2:40 AM, the 8 PM weekly event to 8:20 PM, the
   8 PM Sunday Deep Stack Satellite to 8:40 PM, and the Sunday 200 Deep Stack
   to 1:00 PM (the Midday Free Buy keeps noon).
+- The clubs' own events move in a follow-up migration installed only once this
+  engine is live: the engine that serves today does not read a time change,
+  and installing the moved times ahead of it would have spawned both times for
+  three days (the same data-ahead-of-code mistake behind this morning's eight
+  alerts).
 - No date is doubled by the move. A moved schedule carries its old times and
   the first date the new ones may take; any date that already has an
   occurrence at an old time keeps the old times, and only a date with nothing

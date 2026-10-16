@@ -219,7 +219,9 @@ export const FIXED_BOARD: readonly FixedBoardEvent[] = [
 /**
  * The Chicago start slots each club's OWN scheduled events hold every day
  * (tournament_schedules rows that are not the board, pinned to Chicago time by
- * migration 20261016170754), so the board can never be laid on top of them:
+ * migration 20261016182049 and moved onto these slots by the follow-up
+ * migration installed once this engine is live), so the board can never be
+ * laid on top of them:
  * the four 100 Guarantee Freerolls, the Sunday Deep Stack satellites, the
  * Sunday 200 Deep Stack (Sundays), and the one weekly event each night at
  * 2:40 AM, 9 AM, 3 PM, 7 PM, 8:20 PM, 9 PM, 10 PM and 11 PM.

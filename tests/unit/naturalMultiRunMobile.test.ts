@@ -30,6 +30,29 @@ it('does not substitute a two-run hand for three-run coverage', () => {
   w.hands[0].runs = 2;
   expect(completedNaturalRuns([packet], w)).toEqual([]);
 });
+it('requires both winners of a split hand to receive their chips', () => {
+  const split = { ...packet, recipients: ['winner', 'second'] };
+  const w = witness();
+  expect(completedNaturalRuns([split], w)).toEqual([]);
+  w.flights.push({ hand: 41, recipient: 'second', landedAt: 310, distance: 0.4 });
+  expect(completedNaturalRuns([split], w)).toEqual([split]);
+});
+it.each(['unexpected recipient', 'off-target extra chip'])(
+  'rejects %s even when the winner also receives a chip',
+  (kind) => {
+    const w = witness();
+    w.flights.push({
+      hand: 41,
+      recipient: kind === 'unexpected recipient' ? 'other' : 'winner',
+      landedAt: 310,
+      distance: kind === 'unexpected recipient' ? 0 : 4,
+    });
+    expect(completedNaturalRuns([packet], w)).toEqual([]);
+  }
+);
+it('refuses an empty engine recipient set', () => {
+  expect(completedNaturalRuns([{ ...packet, recipients: [] }], witness())).toEqual([]);
+});
 it.each(['wrong recipient', 'off target', 'prior hand', 'before packet'])(
   'refuses %s payout evidence',
   (kind) => {

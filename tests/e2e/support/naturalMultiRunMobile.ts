@@ -98,12 +98,18 @@ export function completedNaturalRuns(packets: NaturalRunPacket[], witness: any) 
       )
     )
       return false;
-    return witness.flights.some(
-      (flight: any) =>
-        flight.hand === packet.hand &&
-        flight.landedAt >= packet.at &&
-        flight.distance <= 2 &&
-        packet.recipients.includes(flight.recipient)
+    if (!packet.recipients.length) return false;
+    const flights = witness.flights.filter(
+      (flight: any) => flight.hand === packet.hand && flight.landedAt >= packet.at
+    );
+    if (
+      flights.some(
+        (flight: any) => !packet.recipients.includes(flight.recipient) || !(flight.distance <= 2)
+      )
+    )
+      return false;
+    return packet.recipients.every((recipient) =>
+      flights.some((flight: any) => flight.recipient === recipient && flight.distance <= 2)
     );
   });
 }

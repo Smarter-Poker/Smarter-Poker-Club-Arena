@@ -25,7 +25,10 @@ test('natural two-run and three-run mobile rivers precede awards and winner chip
   baseURL,
   browserName,
 }, testInfo) => {
-  test.skip(!enabled, 'Explicit production multirun certificate only');
+  expect(
+    enabled,
+    'Selected multirun spec requires explicit production certificate configuration'
+  ).toBe(true);
   testInfo.setTimeout(observationMs + 120_000);
   expect(browserName).toBe('webkit');
   expect(testInfo.project.name).toBe('webkit-live-table-realtime');
@@ -125,7 +128,9 @@ test('natural two-run and three-run mobile rivers precede awards and winner chip
                     hand: Number(p.hand_number),
                     runs: p.runs,
                     at: frame.at,
-                    recipients: Object.keys(p.distribution ?? {}),
+                    recipients: Object.entries(p.distribution ?? {})
+                      .filter(([, amount]) => Number(amount) > 0)
+                      .map(([recipient]) => recipient),
                   },
                 ];
               });

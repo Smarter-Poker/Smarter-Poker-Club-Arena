@@ -1187,7 +1187,8 @@ jobs:
     # Preserve the existing job envelope; MTT shares the original case limit.
     # +16m (2026-10-04): a certificate that would start within 15 minutes of
     # the :53 announcement first waits for that break (await-engine-gameplay).
-    timeout-minutes: 76
+    # The opt-in adds a separate 20m observation plus 2m setup/retention.
+    timeout-minutes: ${{ github.event_name == 'repository_dispatch' && toJSON(github.event.client_payload.mobile_multirun) == 'true' && 98 || 76 }}
     permissions:
       contents: read
     concurrency:
@@ -1618,9 +1619,15 @@ jobs:
           EXPECTED_LIVE_SHA: ${{ steps.live.outputs.sha }}
           RUNTIME_RESUMED: ${{ steps.gameplay.outputs.resumed }}
           LIVE_COVERAGE_COMPLETE: ${{ steps.live_coverage.outputs.complete }}
+          MULTIRUN_REQUESTED: ${{ github.event_name == 'repository_dispatch' && toJSON(github.event.client_payload.mobile_multirun) == 'true' }}
+          MULTIRUN_OUTCOME: ${{ steps.multirun.outcome }}
         run: |
           set -uo pipefail
           echo 'certified=false' >> "$GITHUB_OUTPUT"
+          if [ "$MULTIRUN_REQUESTED" = 'true' ] && [ "$MULTIRUN_OUTCOME" != 'success' ]; then
+            echo "NON-VERDICT: the requested natural two/three-run mobile certificate did not pass." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           if ! [[ "$EXPECTED_LIVE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
             echo "::error::The recorded live SHA is malformed."
             exit 1

@@ -4999,6 +4999,8 @@ button.post-bb-overlay-button {
    room, the whole table sits behind this cover, so the player never sees
    seats on a bare gradient. It lifts in one frame with everything painted. */
 .table-art-cover {
+  flex-direction: column;
+  gap: 12px;
   position: absolute;
   inset: 0;
   z-index: 5000;

@@ -134,7 +134,7 @@ describe('Browse Full Lobby lands on its list once per request', () => {
     );
     const effect = sliceBetween(
       HOME,
-      'if (viewPrefsOwner.current === resolvedClubId) return;',
+      'if (viewPrefsOwner.current === resolvedClubId && !switchingAccounts) return;',
       'Record a preference and write it through in the same breath.'
     );
     expect(effect).toContain("const tab = landingGameTypeRef.current ?? p.tab ?? 'ALL';");
@@ -145,7 +145,7 @@ describe('Browse Full Lobby lands on its list once per request', () => {
     expect(effect).toContain('if (!landingReportedRef.current) {');
     // The cleared prop must not re-run this effect: that would cancel the
     // database's correction of the saved view for this visit.
-    expect(effect).toContain('}, [resolvedClubId]);');
+    expect(effect).toContain('}, [resolvedClubId, currentUser?.id]);');
     // A club switch inside one mount drops the landing with the old club.
     expect(effect).toContain('if (switchingClubs) landingGameTypeRef.current = undefined;');
     // The wrapper hands the callback to the page content.

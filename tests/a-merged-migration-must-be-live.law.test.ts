@@ -443,7 +443,9 @@ describe('a merged migration must be live', () => {
     expect(declared.length).toBeGreaterThanOrEqual(150);
     const refused = declared.filter((p) => !proofIsRunnable(p));
     expect(refused.length / declared.length).toBeLessThan(0.02);
-  });
+    // Reads every migration in the window; on a loaded worktree that exceeds
+    // the 5 s default without anything being wrong.
+  }, 30_000);
 
   it('a syntax error is about the text we sent, never about what production holds', () => {
     // VERBOSITY=verbose is what makes the two distinguishable at all.

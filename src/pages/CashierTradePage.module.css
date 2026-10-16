@@ -2033,6 +2033,8 @@
 }
 .page.simple .header .modeToggle {
   flex: 0 0 auto;
+  color: var(--ink-white);
+  text-shadow: var(--ink-white-glow);
   align-self: flex-start;
   min-height: 44px;
   padding: 0 4px;
@@ -2060,6 +2062,8 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  color: var(--ink-white);
+  text-shadow: var(--ink-white-glow);
 }
 .entityChevron {
   width: 12px;
@@ -2085,14 +2089,17 @@
   white-space: nowrap;
   cursor: pointer;
 }
+/* The same grey as the dock's resting Send Ticket and Send Out: their
+   silver ink at the dock's 0.45 resting opacity (Dan 2026-10-16). */
 .cashoutLabel,
 .cashoutBalance {
-  color: var(--ink-blue);
+  color: var(--ink-silver);
   font-size: 13px;
   font-weight: 800;
   letter-spacing: 0.1em;
   line-height: 1.1;
-  text-shadow: var(--ink-blue-glow);
+  opacity: 0.45;
+  text-shadow: none;
   text-transform: uppercase;
 }
 .cashoutButton:active {

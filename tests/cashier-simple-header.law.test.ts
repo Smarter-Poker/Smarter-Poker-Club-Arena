@@ -53,4 +53,13 @@ describe('the Simple Cashier header', () => {
       /\.page\.simple \.actionBar \.selBar \{\s*position: relative;\s*justify-content: center;/
     );
   });
+
+  it('prints Choose and Advanced in white, and the cashout words in the dock grey', () => {
+    expect(page).not.toMatch(/styles\.entityCaretOpen : ''\} sc-label sc-ink--blue/);
+    expect(css).toMatch(/\.entityCaret \{[^}]*color: var\(--ink-white\);/);
+    expect(css).toMatch(/\.page\.simple \.header \.modeToggle \{[^}]*color: var\(--ink-white\);/);
+    expect(css).toMatch(
+      /\.cashoutLabel,\s*\.cashoutBalance \{[^}]*color: var\(--ink-silver\);[^}]*opacity: 0\.45;/
+    );
+  });
 });

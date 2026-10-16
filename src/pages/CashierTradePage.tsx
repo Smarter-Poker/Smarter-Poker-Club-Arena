@@ -3335,7 +3335,7 @@ function CashierTradeWorkspace() {
                 <span className={styles.entityText}>
                   <span className={styles.entityName}>{currentClubLabel}</span>
                   <span
-                    className={`${styles.entityCaret} ${pickerOpen ? styles.entityCaretOpen : ''} sc-label sc-ink--blue`}
+                    className={`${styles.entityCaret} ${pickerOpen ? styles.entityCaretOpen : ''} sc-label`}
                     aria-hidden="true"
                   >
                     Choose

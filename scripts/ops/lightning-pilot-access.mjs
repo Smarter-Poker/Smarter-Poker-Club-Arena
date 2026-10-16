@@ -91,7 +91,65 @@ export async function socketAccess(WebSocket, tableId, token) {
   });
 }
 
-export async function browserAccess(chromium, session, actor, games, url) {
+/** Owner-authorized consent, only for the pinned existing synthetic identity. */
+export async function acceptDesignatedTerms(page, session, actor, url, authorized = false) {
+  if (authorized === false) return { authorized: false, acceptedNow: false };
+  if (authorized !== true) fail('Consent Authorization Must Be Explicit');
+  if (actor !== 'outsider' || session?.user?.id !== PILOT_OUTSIDER)
+    fail('Consent Authorization Does Not Match The Designated Outsider');
+  await page.waitForFunction(
+    () => {
+      const status = document
+        .querySelector('[data-tos-gate-status]')
+        ?.getAttribute('data-tos-gate-status');
+      return status === 'accepted' || status === 'not_accepted' || status === 'unknown';
+    },
+    null,
+    { timeout: 30000 }
+  );
+  const gate = page.locator('[data-tos-gate-status]');
+  const status = await gate.getAttribute('data-tos-gate-status');
+  if (status === 'accepted') return { authorized: true, acceptedNow: false, status: 'accepted' };
+  if (status !== 'not_accepted') fail('Designated Outsider Consent Status Unavailable');
+  const identityMatches = await page.evaluate(
+    async ({ base, key, token, id }) => {
+      const response = await fetch(`${base}/auth/v1/user`, {
+        headers: { apikey: key, Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(15000),
+      });
+      const user = await response.json();
+      return response.ok && user.id === id;
+    },
+    { base: url, key: PUBLIC_KEY, token: session.access_token, id: PILOT_OUTSIDER }
+  );
+  if (identityMatches !== true) fail('Designated Outsider Consent Identity Unverified');
+  const dialog = page.getByRole('dialog', { name: 'Terms Of Service', exact: true });
+  await dialog.waitFor({ state: 'visible', timeout: 30000 });
+  await dialog.locator('.tosc__terms').evaluate((terms) => {
+    terms.scrollTop = terms.scrollHeight;
+    terms.dispatchEvent(new Event('scroll', { bubbles: true }));
+  });
+  await dialog
+    .getByRole('checkbox', {
+      name: 'I Have Read And Agree To The Terms Of Service And Privacy Policy',
+      exact: true,
+    })
+    .check();
+  await dialog.getByRole('button', { name: 'Accept & Continue', exact: true }).click();
+  // The owning gate changes only after the normal authenticated endpoint confirms its write.
+  await page.waitForFunction(
+    () =>
+      document.querySelector('[data-tos-gate-status]')?.getAttribute('data-tos-gate-status') ===
+      'accepted',
+    null,
+    { timeout: 30000 }
+  );
+  if ((await gate.getAttribute('data-tos-gate-status')) !== 'accepted')
+    fail('Designated Outsider Consent Acceptance Unverified');
+  return { authorized: true, acceptedNow: true, status: 'accepted' };
+}
+
+export async function browserAccess(chromium, session, actor, games, url, acceptTerms = false) {
   const browser = await chromium.launch({ headless: true });
   try {
     const context = await browser.newContext({ viewport: { width: 375, height: 812 } });
@@ -115,6 +173,9 @@ export async function browserAccess(chromium, session, actor, games, url) {
         readStatus: null,
         discoveryVisible: null,
         socketOutcome: 'unknown',
+        consentAuthorized: acceptTerms === true,
+        consentAcceptedNow: false,
+        consentStatus: 'unknown',
       };
       const refuse = (message, cause) => {
         diagnostic.cause = cause;
@@ -125,6 +186,11 @@ export async function browserAccess(chromium, session, actor, games, url) {
           waitUntil: 'domcontentloaded',
           timeout: 45000,
         });
+        diagnostic.subphase = 'consent';
+        diagnostic.cause = 'consent_unverified';
+        const consent = await acceptDesignatedTerms(page, session, actor, url, acceptTerms);
+        diagnostic.consentAcceptedNow = consent.acceptedNow;
+        diagnostic.consentStatus = consent.status === 'accepted' ? 'accepted' : 'not_requested';
         diagnostic.subphase = 'entry_locator';
         diagnostic.cause = 'entry_locator_failed';
         await page
@@ -268,6 +334,7 @@ export async function browserAccess(chromium, session, actor, games, url) {
           actor,
           browserSocket: observed.socket,
           viewport: 375,
+          consent,
           authenticated: true,
           discovery: observed.ids.includes(game.id) ? 'visible' : 'hidden',
           entry: actor === 'outsider' ? 'refused' : 'rendered',
@@ -317,6 +384,7 @@ export async function runPilotAccess({
   requestId,
   chromium,
   WebSocket,
+  acceptOutsiderTerms = false,
   observeBrowser = browserAccess,
   observeSocket = socketAccess,
 }) {
@@ -423,7 +491,14 @@ export async function runPilotAccess({
       if (state === 'nonmember' ? row !== null : row?.status !== 'pending')
         fail('Outsider Membership State Changed');
       report.phase = `${state}_browser`;
-      const browser = await observeBrowser(chromium, session, 'outsider', games, url);
+      const browser = await observeBrowser(
+        chromium,
+        session,
+        'outsider',
+        games,
+        url,
+        acceptOutsiderTerms
+      );
       report.phase = `${state}_sockets`;
       const sockets = [];
       for (const table of tables.data) {

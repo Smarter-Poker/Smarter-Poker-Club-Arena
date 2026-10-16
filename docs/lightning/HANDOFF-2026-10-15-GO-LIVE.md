@@ -4,6 +4,20 @@ You are picking up the Lightning programme for Club Arena (Smarter Poker). Light
 
 **The dated delivery checkpoints above section U supersede the historical state in section U and sections 3 to 5.** Sections 3 to 5 were written at 17:30 UTC and are kept for their ids and history.
 
+## Resumption And Consent Delivery (2026-10-16 12:57 UTC)
+
+- Canonical reader emitted2026-10-16T12:55:37.047Z, policy2.9; manifest/four policy hashes unchanged from the full receipt below. Fresh actual repository entrypoints, full CLAUDE, publishing/deploy paths, storage and complete checkpoint plus Lightning phase/register/rollout/review/catalog read; canonical comparison passes. SSD separate disk7s4,11GiB free. Owned branch codex/lightning-private-access-diagnostics-20261016, PR7097 head e28871ba82a55678c02f4acd85f6dbc918ca47de; sole production/Git operation owner remains this chat.
+- Explicit consent opt-in uses the current normal Terms/Privacy UI only for designated outsider23040e91; default false and access-stage-only. The saved acceptance gate is driven only by confirmed endpoint success. Actual acceptance remains pending protected merge and explicit invocation with the authorized flag; verify persisted profile afterward.
+- Postdeploy38895550335 client-browser and live-table jobs both passed. Overall seal still queued. Newer client29866b6a702419c18bb7a0d68edf06faee486065 appears at both public stamps and contains7025 by ancestry; engine0279795e remains healthy and contains7025. No redundant deployment.
+- Fresh12:56:29Z ledger confirms B1/B2 installed, AA/private-discovery absent. AA known refused before SQLsend; one explicit retry after13:03 (use13:04) remains prepared. Review4 owning38903630365 still queued; findings1/2/3 reviewed,4/5/6/7 open. Preserve owners, no duplicate dispatch.
+
+## Terms Prerequisite And Explicit Instruction (2026-10-16 12:53 UTC)
+
+- Durable profile read confirms designated outsider23040e91 has null club_arena_tos_accepted_at, while service owner has prior acceptance. TOSGuard removes the entire router when not accepted; this explains the missing outsider route without changing access policy. No other existing eligible nonmember internal horse has prior acceptance. No consent was forged or bypassed.
+- Dan explicitly answered Authorize acceptance for this test horse to the question naming current Club Arena Terms/Privacy, exact identity and normal acceptance flow. Prepare explicit opt-in in the manual access workflow, defaultfalse, exactidentity-only, normalUI acceptance and durable verification. This authorization is limited to that account/test.
+- AA installer38902664108 terminal REFUSED at12:50:06.815Z before SQL send; fresh history12:51:08Z confirms absent. One explicit retry after13:03UTC (use13:04) remains prepared, no override or loop.
+- PR7097 e28871ba82a55678c02f4acd85f6dbc918ca47de pending hostedchecks. Legacy finding3 review run38903379764 succeeded; finding4 owning run38903630365 queued, do not duplicate.
+
 ## Private Access Failure And Source Recovery (2026-10-16 12:49 UTC)
 
 - Access38902576640 completed failure at nonmember_browser. Owner375px routes and all16anchor sockets passed; pending membership notcreated, outsider and service local-signout confirmed. Artifact access-38902576640/lightning-pilot-stage.json. Failure lacked exact browser substep, so maintained witness adds enumerated sanitized diagnostics without error/page/token/URL copying or relaxed assertions.79 access/operator/setup tests and TypeScript pass.

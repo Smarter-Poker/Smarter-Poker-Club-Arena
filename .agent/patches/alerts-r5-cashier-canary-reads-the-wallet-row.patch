@@ -1,0 +1,119 @@
+diff --git a/tests/e2e/production-cashier.spec.ts b/tests/e2e/production-cashier.spec.ts
+index efb441e..d68de06 100644
+--- a/tests/e2e/production-cashier.spec.ts
++++ b/tests/e2e/production-cashier.spec.ts
+@@ -1,5 +1,10 @@
+ import { expect, test, type Locator, type TestInfo } from '@playwright/test';
+-import { BATCH_VERDICTS, batchVerdictFor, fundingCoverage } from './support/cashierFundingVerdict';
++import {
++  BATCH_VERDICTS,
++  batchVerdictFor,
++  fundingCoverage,
++  printedFundingFigure,
++} from './support/cashierFundingVerdict';
+ import {
+   attachCashierScreenshot,
+   expectCashierAxeClean,
+@@ -33,9 +38,15 @@ async function expectBatchVerdictFromFunding(
+   testInfo: TestInfo,
+   name: string
+ ): Promise<void> {
+-  const text = (await dialog.innerText()).replace(/\s+/g, ' ');
+-  // The funding wallet prints as its own painted row: label, then figure.
+-  const figure = new RegExp(`${fundingLabel} (\\S+)`).exec(text)?.[1] ?? '';
++  // The funding wallet prints as its own painted row (CashierWalletRow): a
++  // region named by its label, holding the figure in its value element. Read
++  // the figure from that element. The dialog's innerText is not a source: the
++  // painted label is text-transform: uppercase and sits flush against the
++  // figure, so a label-then-figure match on innerText finds nothing and every
++  // run reported an empty figure (Post-Deploy E2E, 2026-10-15).
++  const fundingRow = dialog.getByRole('region', { name: fundingLabel, exact: true });
++  await expect(fundingRow).toBeVisible();
++  const figure = printedFundingFigure(await fundingRow.locator('strong').allTextContents());
+   const coverage = fundingCoverage(figure, total);
+   const verdict = batchVerdictFor(coverage, recipients);
+   await testInfo.attach(`${name}-funding-verdict.json`, {
+diff --git a/tests/e2e/support/cashierFundingVerdict.ts b/tests/e2e/support/cashierFundingVerdict.ts
+index b939f11..c47eab6 100644
+--- a/tests/e2e/support/cashierFundingVerdict.ts
++++ b/tests/e2e/support/cashierFundingVerdict.ts
+@@ -26,9 +26,22 @@ export type FundingCoverage = 'covers' | 'short' | 'unreadable' | 'unknown';
+ 
+ const UNITS: Record<string, number> = { '': 1, K: 1_000, M: 1_000_000, B: 1_000_000_000 };
+ 
++/**
++ * The figure one painted funding row prints. CashierWalletRow renders
++ * <section aria-label={label}> with the figure as its only <strong>, so the
++ * caller passes that element's textContent (never the dialog's innerText,
++ * which applies the label's text-transform and runs label and figure
++ * together). Anything but exactly one value element is not a reading.
++ */
++export function printedFundingFigure(valueTexts: readonly string[]): string {
++  return valueTexts.length === 1 ? valueTexts[0].trim() : '';
++}
++
+ export function fundingCoverage(printedFigure: string, total: number): FundingCoverage {
+   const figure = printedFigure.trim();
+-  if (figure === '--') return 'unreadable';
++  // The trade dialog's CashierWalletRow prints a single hyphen for a wallet it
++  // could not read; the classic surfaces print two. Both are the same answer.
++  if (figure === '--' || figure === '-') return 'unreadable';
+   const match = /^(-?)(\d+(?:\.\d)?)([KMB]?)$/.exec(figure);
+   if (!match || !Number.isFinite(total)) return 'unknown';
+   const unit = UNITS[match[3]];
+diff --git a/tests/unit/cashierFundingVerdict.test.ts b/tests/unit/cashierFundingVerdict.test.ts
+index 5160bb0..36295c5 100644
+--- a/tests/unit/cashierFundingVerdict.test.ts
++++ b/tests/unit/cashierFundingVerdict.test.ts
+@@ -1,6 +1,12 @@
++import { readFileSync } from 'node:fs';
++import { resolve } from 'node:path';
+ import { describe, expect, it } from 'vitest';
+ import { compactChips } from '../../src/utils/format';
+-import { batchVerdictFor, fundingCoverage } from '../e2e/support/cashierFundingVerdict';
++import {
++  batchVerdictFor,
++  fundingCoverage,
++  printedFundingFigure,
++} from '../e2e/support/cashierFundingVerdict';
+ 
+ describe('the production cashier canary derives the batch verdict from the printed funding wallet', () => {
+   it('reads the maintained unfunded identity as short of a 10.20 batch', () => {
+@@ -33,4 +39,37 @@ describe('the production cashier canary derives the batch verdict from the print
+     expect(fundingCoverage(compactChips(9.99), 10.2)).toBe('short');
+     expect(fundingCoverage(compactChips(1290), 10.2)).toBe('covers');
+   });
++
++  // Post-Deploy E2E, 2026-10-15: every run failed "the printed From Your Agent
++  // Wallet figure \"\" cannot decide". The canary matched label-then-figure on
++  // the dialog's innerText, but the painted label is uppercase and flush
++  // against its figure, so the match found nothing. The figure is read from the
++  // row's own value element, and the row's "-" for an unread wallet is an
++  // unreadable wallet, not an undecidable figure.
++  it('reads the figure from the painted row value, including its unread hyphen', () => {
++    expect(printedFundingFigure([' 1.2K '])).toBe('1.2K');
++    expect(printedFundingFigure([])).toBe('');
++    expect(printedFundingFigure(['1', '2'])).toBe('');
++    expect(fundingCoverage(printedFundingFigure(['-']), 10.2)).toBe('unreadable');
++    expect(fundingCoverage(printedFundingFigure([compactChips(0)]), 10.2)).toBe('short');
++  });
++
++  it('keeps the canary on the row element, and the row printing one figure', () => {
++    const root = resolve(__dirname, '../..');
++    const spec = readFileSync(resolve(root, 'tests/e2e/production-cashier.spec.ts'), 'utf8');
++    const verdictReader = spec.slice(
++      spec.indexOf('async function expectBatchVerdictFromFunding'),
++      spec.indexOf('async function uncheckEveryRecipient')
++    );
++    expect(verdictReader).toContain("getByRole('region', { name: fundingLabel, exact: true })");
++    expect(verdictReader).not.toMatch(/innerText\(\)/);
++    const page = readFileSync(resolve(root, 'src/pages/CashierTradePage.tsx'), 'utf8');
++    const row = page.slice(
++      page.indexOf('function CashierWalletRow('),
++      page.indexOf('function CashierWalletRow(') + 900
++    );
++    expect(row).toContain('aria-label={label}');
++    expect(row.match(/<strong/g)?.length).toBe(1);
++    expect(row).toContain("balance === null ? '-' : compactChips(balance)");
++  });
+ });

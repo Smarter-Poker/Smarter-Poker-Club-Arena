@@ -3655,7 +3655,7 @@ export default function MultiTablePage() {
            for one navigation — meant the second overwrote the first's result
            with stale data. `setActiveIndex` below is already an index into an
            array whose identity cannot change here, so it stays direct. */
-        const fromLobby = activeIndexRef.current === lobbyIdx;
+        const fromLobby = !!routeTableIdRef.current && activeIndexRef.current === lobbyIdx;
         setTables((cur) =>
           cur.map((t) =>
             isLobbyTab(t)

@@ -52,6 +52,9 @@ describe('header Back restores the previous visible page', () => {
     );
     expect(back).not.toContain('resolveLobbyClubId');
     expect(multi).toContain('lobbyReturnTabRef.current.set(current.id, previous.id)');
+    expect(multi).toContain(
+      'const fromLobby = !!routeTableIdRef.current && activeIndexRef.current === lobbyIdx;'
+    );
   });
 
   it('executes the real root Back handler and returns to its originating table', () => {

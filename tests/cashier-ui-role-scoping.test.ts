@@ -396,8 +396,8 @@ describe('the cashier tells the truth when it cannot read a balance', () => {
     // `bank ?? 0` printed "The Wallet Would Hold -500.00 Afterwards" directly
     // under a header already showing "..." for the same number.
     expect(MODAL).toContain('amt > 0 && !overCap && bank !== null');
-    expect(MODAL).not.toContain('fmt((bank ?? 0) - amt)');
-    expect(MODAL).not.toContain('fmt((bank ?? 0) + amt)');
+    expect(MODAL).not.toContain('fmtWallet((bank ?? 0) - amt)');
+    expect(MODAL).not.toContain('fmtWallet((bank ?? 0) + amt)');
   });
 
   it('the amount field is named for a screen reader', () => {

@@ -208,8 +208,8 @@ describe('C2-3: the corner X cannot close the cashier with a send in flight', ()
     await toPlayerWallet();
     await pick(/Kingfish/);
     typeAmount('10');
-    await waitFor(() => expect(plate('Send Chips')).not.toBeDisabled());
-    fireEvent.click(plate('Send Chips'));
+    await waitFor(() => expect(plate('Confirm')).not.toBeDisabled());
+    fireEvent.click(plate('Confirm'));
     await waitFor(() => expect(sends('fn_club_bank_send')).toHaveLength(1));
     const x = document.querySelector('[data-testid="sc-close"]');
     if (x) fireEvent.click(x);
@@ -237,12 +237,12 @@ describe('C2-5: the reason is part of the retry key', () => {
     await toPlayerWallet();
     await pick(/Kingfish/);
     typeAmount('10');
-    await waitFor(() => expect(plate('Send Chips')).not.toBeDisabled());
-    fireEvent.click(plate('Send Chips'));
+    await waitFor(() => expect(plate('Confirm')).not.toBeDisabled());
+    fireEvent.click(plate('Confirm'));
     await waitFor(() => expect(fx.toast.error).toHaveBeenCalled());
     fireEvent.change(screen.getByLabelText('Reason'), { target: { value: 'Weekly Float' } });
-    await waitFor(() => expect(plate('Send Chips')).not.toBeDisabled());
-    fireEvent.click(plate('Send Chips'));
+    await waitFor(() => expect(plate('Confirm')).not.toBeDisabled());
+    fireEvent.click(plate('Confirm'));
     await waitFor(() => expect(sends('fn_club_bank_send')).toHaveLength(2));
     const [first, second] = sends('fn_club_bank_send');
     expect(second.args.p_reason).toBe('Weekly Float');
@@ -359,8 +359,8 @@ describe('C2-17: the modal, item by item', () => {
     await toPlayerWallet();
     await pick(/Kingfish/);
     typeAmount('10');
-    await waitFor(() => expect(plate('Send Chips')).not.toBeDisabled());
-    fireEvent.click(plate('Send Chips'));
+    await waitFor(() => expect(plate('Confirm')).not.toBeDisabled());
+    fireEvent.click(plate('Confirm'));
     await waitFor(() => expect(fx.toast.success).toHaveBeenCalled());
     expect(fx.toast.success.mock.calls[0][0]).toContain('To Kingfish');
   });
@@ -445,8 +445,8 @@ describe('the confirm box is still the same box', () => {
     await toPlayerWallet();
     await pick(/Kingfish/);
     typeAmount('250');
-    await waitFor(() => expect(plate('Send Chips')).not.toBeDisabled());
-    fireEvent.click(plate('Send Chips'));
+    await waitFor(() => expect(plate('Confirm')).not.toBeDisabled());
+    fireEvent.click(plate('Confirm'));
     const box = await screen.findByRole('alert');
     expect(within(box).getByText(/That Is 25\.0 Percent Of The Club Bank\./)).toBeTruthy();
   });
@@ -482,8 +482,8 @@ describe('The Sender Chooses The Recipient Wallet', () => {
       if (destination === 'player_wallet') await toPlayerWallet();
       await pick(/Kingfish/);
       typeAmount('5');
-      await waitFor(() => expect(plate('Send Chips')).not.toBeDisabled());
-      fireEvent.click(plate('Send Chips'));
+      await waitFor(() => expect(plate('Confirm')).not.toBeDisabled());
+      fireEvent.click(plate('Confirm'));
       await waitFor(() => expect(sends('fn_club_bank_send')).toHaveLength(1));
       expect(sends('fn_club_bank_send')[0].args).toMatchObject({
         p_to_user_id: '11111111-1111-4111-8111-111111111111',
@@ -502,8 +502,8 @@ describe('The Main Bank Never Fails Silently', () => {
     openCashier({ role: 'owner', walletType: 'club_bank' });
     await pick(/Kingfish/);
     typeAmount('5');
-    await waitFor(() => expect(plate('Send Chips')).not.toBeDisabled());
-    fireEvent.click(plate('Send Chips'));
+    await waitFor(() => expect(plate('Confirm')).not.toBeDisabled());
+    fireEvent.click(plate('Confirm'));
     expect(await screen.findByRole('alert')).toHaveTextContent('Recipient Wallet Is Unavailable');
     expect(fx.toast.success).not.toHaveBeenCalled();
     expect(sends('fn_club_bank_send')[0].args.p_destination).toBe('agent_wallet');

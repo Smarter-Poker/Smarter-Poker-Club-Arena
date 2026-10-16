@@ -99,6 +99,55 @@ describe('the tracker', () => {
     expect(el.style.top).toBe('100%');
   });
 
+  it('keeps the tracker above an action panel that mounts after the seated-player HUD', async () => {
+    rpc.mockResolvedValue(seated());
+    const bounds = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function () {
+        if (this.classList.contains('table-scaler')) return new DOMRect(0, 0, 1000, 1200);
+        if (this.classList.contains('seat__info')) return new DOMRect(600, 1100, 120, 60);
+        if (this.classList.contains('hero-vpip')) return new DOMRect(0, 0, 106, 58);
+        if (this.classList.contains('action-panel')) return new DOMRect(0, 1120, 1000, 84);
+        return new DOMRect();
+      });
+    const width = vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(1000);
+    const height = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(1200);
+    const Fixture = ({ actions }: { actions: boolean }) => (
+      <div className="table-page">
+        <div className="table-scaler">
+          <div className="seat-wrapper--hero">
+            <div className="seat__info">Hero 400</div>
+          </div>
+          <HeroVpipTracker
+            tableId="late-actions"
+            heroSeated
+            isTournament={false}
+            handNumber={1}
+            heroPos={{ x: 50, y: 100 }}
+          />
+        </div>
+        {actions && <div className="action-panel">Fold Call Raise</div>}
+      </div>
+    );
+    try {
+      const { rerender } = render(<Fixture actions={false} />);
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(screen.getByTestId('hero-vpip').style.top).toBe('1130px');
+      rerender(<Fixture actions />);
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(screen.getByTestId('hero-vpip').style.left).toBe('588px');
+      expect(screen.getByTestId('hero-vpip').style.top).toBe('1087px');
+    } finally {
+      bounds.mockRestore();
+      width.mockRestore();
+      height.mockRestore();
+    }
+  });
+
   it('refreshes after every hand, once the fact row has had time to land', async () => {
     rpc.mockResolvedValue(seated({ hands: 10, vpip: 25 }));
     const { rerender } = render(
@@ -377,8 +426,8 @@ describe('the regular ante reaches the felt', () => {
        owns, and what still has to stay small, is the badge's ONE size input.
        Its appearance is locked inside VpipRequirementBadge (spec section 27),
        which is why nothing here may reach into it. */
-    expect(css).toMatch(/--vpip-badge-size: 58px;/);
-    expect(css).toMatch(/--vpip-badge-size: 40px;/);
+    expect(css).toMatch(/--vpip-badge-size: 78px;/);
+    expect(css).toMatch(/--vpip-badge-size: 72px;/);
     expect(css).not.toMatch(/\.hero-vpip__(figure|eyebrow|detail)/);
     expect(css).not.toMatch(/:hover/);
   });

@@ -75,8 +75,7 @@ export function CashClusterHUD({
   onGoToTable,
 }: CashClusterHUDProps) {
   const toast = useToast();
-  const { visible: seatChangeVisible, setVisible: setSeatChangeVisible } =
-    useSeatChangeVisibility();
+  const { visible: seatChangeVisible } = useSeatChangeVisibility();
   const {
     lobby,
     busy: joining,
@@ -167,21 +166,15 @@ export function CashClusterHUD({
             onClick={onSeatChange}
             aria-label="Seat Change - Request A Table Change"
           >
-            <img
-              className="cch-seat-change__art"
-              src={`${import.meta.env.BASE_URL}assets/club-buttons/seat-change-black-v1.webp`}
-              alt=""
-              aria-hidden="true"
-            />
-            <span className="cch-seat-change__label">Seat Change</span>
-          </button>
-          <button
-            type="button"
-            className="cch-seat-change-close"
-            aria-label="Hide Seat Change"
-            onClick={() => setSeatChangeVisible(false)}
-          >
-            X
+            <span className="cch-seat-change__face">
+              <img
+                className="cch-seat-change__art"
+                src={`${import.meta.env.BASE_URL}assets/club-buttons/seat-change-black-v1.webp`}
+                alt=""
+                aria-hidden="true"
+              />
+              <span className="cch-seat-change__label">Seat Change</span>
+            </span>
           </button>
         </div>
       )}
@@ -192,15 +185,7 @@ export function CashClusterHUD({
             className="cch-seat-change cch-seat-change--listed"
             onClick={onOpenLobby}
           >
-            Seat Change: #{listed.position ?? '-'} On The List
-          </button>
-          <button
-            type="button"
-            className="cch-seat-change-close"
-            aria-label="Hide Seat Change"
-            onClick={() => setSeatChangeVisible(false)}
-          >
-            X
+            #{listed.position ?? '-'} On The List
           </button>
         </div>
       )}

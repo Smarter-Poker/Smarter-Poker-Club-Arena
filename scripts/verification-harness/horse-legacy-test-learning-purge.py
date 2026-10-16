@@ -6,6 +6,7 @@ The ordinary eight-day and human-history retention owners remain unchanged.
 """
 from pathlib import Path
 import argparse, datetime, hashlib, json, subprocess, sys, uuid
+from types import SimpleNamespace
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'scripts/ci'))
@@ -94,6 +95,7 @@ def fixture(e, template):
 MIGRATION = Path('supabase/migrations/20261015212515_one_time_legacy_test_learning_purge.sql')
 LEDGER = 'smarter_private.horse_adaptive_legacy_learning_purges'
 PURGE = 'smarter_private.purge_legacy_horse_learning'
+CACHE_MIGRATION = Path('supabase/migrations/20261016131548_legacy_learning_retirement_validates_each_locked_batch_once_.sql')
 
 def qualify(e, base):
  checks=[]
@@ -153,6 +155,11 @@ def qualify(e, base):
  code,_,err=e.sql(d,file=ROOT/MIGRATION,label='legacy-migration-replay-refused',check=False)
  assert code!=0, 'migration replay unexpectedly accepted'
  checks.append('legacy-migration-replay-refused')
+ e.sql(d,file=ROOT/CACHE_MIGRATION,label='legacy-locked-batch-cache-migration')
+ code,_,err=e.sql(d,file=ROOT/CACHE_MIGRATION,label='legacy-cache-migration-replay-refused',check=False)
+ assert code!=0 and 'LEGACY_BATCH_CACHE_PREIMAGE_CHANGED' in err,err
+ checks.append('legacy-cache-migration-replay-refused')
+ e.report['source_sha256'][str(CACHE_MIGRATION)]=sha(ROOT/CACHE_MIGRATION)
  # Actual current state, not output counts, determines protection.
  r=invoke(d,[legacy,veto,young,active,unfinished,old.HAND_ID,atomic,normal,cash_human,reported_submission,reported_cash,string_submission,string_cash,string_disposal],'legacy-one-bounded-exception')
  assert r['status']=='purged' and r['handsPurged']==1 and r['observationsDeleted']==2,r
@@ -247,7 +254,11 @@ def qualify(e, base):
 
 def run_icu(e):
  base=prepare(e)
- try:return qualify(e,base)
+ try:
+  checks=qualify(e,base)
+  cached=module(ROOT/'scripts/verification-harness/horse-legacy-batch-cache.py','legacy_cache_comparison')
+  checks+=cached.qualify(e,base,SimpleNamespace(ROOT=ROOT,MIGRATION=MIGRATION,CACHE_MIGRATION=CACHE_MIGRATION,PROTECTED_SNAPSHOT=PROTECTED_SNAPSHOT,PURGE=PURGE,fixture=fixture,lit=lit))
+  return checks
  finally:e.discard(base)
 
 def main():

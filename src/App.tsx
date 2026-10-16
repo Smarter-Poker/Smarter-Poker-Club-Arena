@@ -208,6 +208,7 @@ const ClubAdvertisePage = lazyWithRetry(() => import('./pages/ClubAdvertisePage'
 const VIPPage = lazyWithRetry(() => import('./pages/VIPPage'));
 const ClubFinancialsPage = lazyWithRetry(() => import('./pages/ClubFinancialsPage'));
 const ClubRulesPage = lazyWithRetry(() => import('./pages/ClubRulesPage'));
+const ClubBannerDisplaysPage = lazyWithRetry(() => import('./pages/ClubBannerDisplaysPage'));
 const ClubWelcomeMessagePage = lazyWithRetry(() => import('./pages/ClubWelcomeMessagePage'));
 const NotificationCenter = lazyWithRetry(() => import('./pages/NotificationCenter'));
 const BusDevToolsPage = lazyWithRetry(() => import('./pages/BusDevToolsPage'));
@@ -1846,6 +1847,18 @@ function FullApp() {
                       <ClubMemberGuard>
                         <PageErrorBoundary pageName="Custom Welcome Message">
                           <ClubWelcomeMessagePage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/banner-displays"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Banner Displays">
+                          <ClubBannerDisplaysPage />
                         </PageErrorBoundary>
                       </ClubMemberGuard>
                     </AuthGuard>

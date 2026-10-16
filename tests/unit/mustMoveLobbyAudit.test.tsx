@@ -843,6 +843,8 @@ describe('the corner and the lobby are on the realism chassis', () => {
     const trigger = read('src/components/table/CashClusterHUD.tsx');
     expect(trigger).toContain('cch-seat-change cch-seat-change--control');
     expect(trigger).toContain('assets/club-buttons/seat-change-black-v1.webp');
+    expect(trigger).toContain('cch-seat-change__face');
+    expect(trigger).not.toContain('Hide Seat Change');
     expect(HUD).toMatch(
       /\.cch-seat-change\.cch-seat-change--control \{[\s\S]*?width: var\(--sp-hud-tile-size, 66px\);[\s\S]*?height: var\(--sp-hud-tile-size, 66px\);/
     );

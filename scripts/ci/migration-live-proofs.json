@@ -80,7 +80,7 @@
     },
     {
       "file": "20261016133404_the_sealed_certificate_reader_keeps_its_sealed_body.sql",
-      "sha256": "436242442cbdd9feb9b7ff63d738bd1240c6e686f7639035b431962ba64116e6",
+      "sha256": "084b0eb0eda4976e6d1d68d4e5ada98a7f456e4fa7868d436d792ba1d96735d7",
       "proofs": [
         "(SELECT md5(pg_get_functiondef('public.fn_accounting_close_certificate(text,uuid,timestamptz,timestamptz)'::regprocedure))='7b4a5f4572a45db069b6058899614021' AND md5(pg_get_functiondef('smarter_private.original_inventory_proof_sources_match()'::regprocedure))='4a98179afccf2d31c127f50ed5ab9270' AND smarter_private.original_inventory_proof_sources_match() AND public.fn_accounting_close_proof_lifetime()=interval '72 hours')"
       ]

@@ -136,6 +136,12 @@ export function BuyInModal({
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const confirmInFlightRef = useRef(false);
 
+  // The sheet stays mounted between seats; a previous refusal belongs only
+  // to the opening that produced it. Durable purchase recovery is a parent prop.
+  useEffect(() => {
+    if (isOpen) setConfirmError(null);
+  }, [isOpen]);
+
   // 60-second kicker visual countdown
   const [timeLeft, setTimeLeft] = useState(60);
 
@@ -339,7 +345,7 @@ export function BuyInModal({
   if (purchaseKind === 'rebuy') {
     const unit = wholeDiamonds ? 'Diamonds' : 'Chips';
     const closeRebuy = () => {
-      if (!confirmInFlightRef.current) onClose();
+      if (!confirmInFlightRef.current && !isProcessing) onClose();
     };
     return (
       <div className="buy-in-modal__overlay addon-console__overlay" onClick={closeRebuy}>
@@ -511,7 +517,7 @@ export function BuyInModal({
     <div
       className="buy-in-modal__overlay"
       onClick={() => {
-        if (!confirmInFlightRef.current) onClose();
+        if (!confirmInFlightRef.current && !isProcessing) onClose();
       }}
     >
       <div
@@ -678,7 +684,7 @@ export function BuyInModal({
                 label="Close"
                 disabled={isProcessing}
                 onClick={() => {
-                  if (!confirmInFlightRef.current) onClose();
+                  if (!confirmInFlightRef.current && !isProcessing) onClose();
                 }}
                 aria-label="Close Buy-In"
               />

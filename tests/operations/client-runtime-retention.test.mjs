@@ -68,6 +68,28 @@ const commit = (cwd) => {
   return git(cwd, 'rev-parse', 'HEAD');
 };
 
+const backendToolPaths = [
+  'scripts/ci/accounting-migration-admission.mjs',
+  'scripts/ci/apply-recorded-migration.mjs',
+  'scripts/ci/contract-index-recovery.test.mjs',
+  'scripts/ci/fixtures/accounting-migration-admission/preimages.json',
+  'scripts/ci/fixtures/accounting-migration-admission/qualify.py',
+  'scripts/ci/fixtures/launch-reset/maintenance-thaw-repair/qualify.py',
+  'scripts/ops/lightning-pilot-access.mjs',
+  'scripts/ops/lightning-pilot-access.test.mjs',
+  'scripts/ops/lightning-pilot-player.mjs',
+  'scripts/ops/lightning-pilot-player.test.mjs',
+  'scripts/ops/lightning-pilot-replay-batch.mjs',
+  'scripts/ops/lightning-pilot-replay-batch.test.mjs',
+  'scripts/ops/lightning-pilot-stage.mjs',
+  'scripts/ops/lightning-pilot-stage.test.mjs',
+  'scripts/ops/lightning-pilot-witness.mjs',
+  'scripts/ops/lightning-pilot-witness.test.mjs',
+  'scripts/dev/test-lightning-matcher-parity.sh',
+  'scripts/dev/test-lightning-private-discovery.sh',
+  'scripts/dev/fixtures/lightning-private-discovery.sql',
+];
+
 test('actual lazy shared-server module/watch graph excludes engine-only churn and includes all shared inputs', async () => {
   const cwd = temp();
   try {
@@ -124,6 +146,7 @@ test('actual lazy shared-server module/watch graph excludes engine-only churn an
     put(cwd, 'scripts/qualification/current.json', '{"qualified":true}');
     put(cwd, 'scripts/ci/schema-manifest.d/current.json', '{}');
     put(cwd, 'scripts/ci/test-native.py', '# corrected native qualification');
+    for (const path of backendToolPaths) put(cwd, path, '// isolated backend tooling');
     put(cwd, '.github/workflows/ci.yml', 'current verification wiring');
     put(cwd, 'supabase/migrations/20261007071300_rule.sql', '-- database delivery');
     put(cwd, 'server/engine.js', 'export const engine = 2;');
@@ -138,6 +161,10 @@ test('actual lazy shared-server module/watch graph excludes engine-only churn an
       'package-lock.json',
       'vite.config.ts',
       'scripts/new-build.mjs',
+      'scripts/ops/lightning-pilot-unknown.mjs',
+      'scripts/ci/fixtures/accounting-migration-admission/unknown.py',
+      'scripts/dev/fixtures/unknown.sql',
+      'server/new-shared.js',
       'tests/protected-features.json',
       '.github/workflows/post-deploy-e2e.yml',
     ]) {
@@ -223,6 +250,80 @@ test('actual lazy shared-server module/watch graph excludes engine-only churn an
       ),
       false
     );
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('reviewed backend tools remain runtime inputs when read by a real build or watched scope', async () => {
+  const cwd = temp();
+  try {
+    initFixture(cwd);
+    put(cwd, '.gitignore', 'dist/\n.client-runtime-*.json\n');
+    const lock = JSON.parse(
+      readFileSync(new URL('../../package-lock.json', import.meta.url), 'utf8')
+    );
+    put(cwd, 'package.json', '{"name":"backend-tool-input-fixture"}');
+    put(
+      cwd,
+      'package-lock.json',
+      JSON.stringify({ packages: { 'node_modules/vite': lock.packages['node_modules/vite'] } })
+    );
+    put(cwd, 'index.html', '<script type="module" src="/src/main.js"></script>');
+    put(
+      cwd,
+      'src/main.js',
+      'window.readTool = () => import("../scripts/ops/lightning-pilot-access.mjs");'
+    );
+    for (const path of backendToolPaths) put(cwd, path, 'export const value = 1;');
+    const baseline = commit(cwd);
+    const observations = [];
+    for (const label of ['app', 'diamond', 'prerender']) {
+      await build({
+        root: cwd,
+        configFile: false,
+        logLevel: 'silent',
+        plugins: [
+          {
+            name: 'watch-native-fixtures',
+            buildStart() {
+              this.addWatchFile(resolve(cwd, 'scripts/ci/fixtures'));
+            },
+          },
+          runtimeInputPlugin(label, cwd),
+        ],
+        build: { outDir: resolve(cwd, 'dist'), emptyOutDir: true },
+      });
+      observations.push(
+        JSON.parse(readFileSync(resolve(cwd, `.client-runtime-${label}.json`), 'utf8'))
+      );
+    }
+    const inputs = makeRuntimeInputs(baseline, observations, cwd);
+    assert.equal(inputs.complete, true);
+    assert.ok(
+      inputs.files.some((entry) => entry.path === 'scripts/ops/lightning-pilot-access.mjs')
+    );
+    assert.ok(inputs.directories.includes('scripts/ci/fixtures/'));
+    for (const path of [
+      'scripts/ops/lightning-pilot-access.mjs',
+      'scripts/ci/fixtures/accounting-migration-admission/qualify.py',
+      'scripts/ci/fixtures/launch-reset/maintenance-thaw-repair/qualify.py',
+    ]) {
+      git(cwd, 'checkout', '-q', '--detach', baseline);
+      put(cwd, path, 'export const value = 2;');
+      const target = commit(cwd);
+      assert.equal(
+        qualifiesRuntimeInputs(
+          inputs,
+          baseline,
+          target,
+          compareClientBacklog(baseline, target, cwd).paths,
+          cwd
+        ),
+        false,
+        path
+      );
+    }
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

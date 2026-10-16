@@ -1,0 +1,3 @@
+# tests/a-weekly-close-accepts-a-history-only-invoice.law.test.ts
+
+A weekly close accepts a history-only invoice (2026-10-16): under Dan's 2026-10-15 rule only cashout documents reach the messenger and every other invoice is marked delivered in transaction history, so the union round 1 receipt, the retained share, the legacy week discharge, the club weekly statement and its summary, and the correction and credit-change document checks accept a marked-sent invoice other than cashier_cashout without messenger deliveries, while a cashout still needs them; the union close for 2026-10-05 had failed its own round 1 receipt on this.

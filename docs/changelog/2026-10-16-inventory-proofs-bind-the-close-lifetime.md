@@ -7,8 +7,9 @@ generation disabled cache reads and writes, repeatedly rebuilding raw inventory
 before the original union week could prepare or pay.
 
 Installed migration `20261016133404` restores the exact sealed certificate
-reader. This PR records its applied SQL byte for byte and adds connected native
-regression protection. The inventory matcher, generation, source witnesses,
+reader. The executable SQL matches the applied record; main adds explanatory comments
+and two inline live proofs. This PR retains those additions and adds connected
+native regression protection. The inventory matcher, generation, source witnesses,
 security metadata, existing cached evidence and financial rows are preserved.
 The other nine weekly-close proof functions retain the installed 72-hour helper;
 the sealed P&L certificate reader retains its original 12-hour lifetime.

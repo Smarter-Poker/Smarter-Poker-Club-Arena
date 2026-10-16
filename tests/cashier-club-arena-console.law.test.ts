@@ -233,6 +233,19 @@ describe('#ClubArenaConsole is the Cashier visual authority', () => {
     }
   });
 
+  it('clips only the orphan pixels below both transfer row frames', () => {
+    const css = read('src/pages/CashierTradePage.module.css');
+    expect(css).toMatch(
+      /\.console \.walletRow,\s*\.console \.entryRow\s*\{[^}]*aspect-ratio: 1280 \/ 274;[^}]*clip-path: inset\(0 0 calc\(9 \/ 274 \* 100%\) 0\)/
+    );
+    expect(read('src/components/wallet/WalletCashierModal.tsx')).toContain(
+      'transferStyles.walletRow'
+    );
+    expect(read('src/components/wallet/WalletCashierModal.tsx')).toContain(
+      'transferStyles.entryRow'
+    );
+  });
+
   it('puts every Trade Cashier dialog on the painted authority', () => {
     const trade = read('src/pages/CashierTradePage.tsx');
     for (const title of ['Transaction Receipt', 'Request Chips', 'Send Out', 'Claim Back']) {

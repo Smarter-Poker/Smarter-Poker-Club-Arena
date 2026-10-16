@@ -878,6 +878,42 @@
         "liveReader": "scripts/ci/check-recorded-migrations-evidence.mjs"
       },
       "liveVerdict": "Retirement owning run38406713940 on protected88c8aa9d97ce6f88529a696b800142ce30335e4b committed2026-10-13T13:39:56Z. Independent2026-10-13T13:40:39.853168Z readback found exact retirement version20261013120756/MD51a8a6470554d08dc02ddafcf3ed7aa48, all three operations NULL, exactly two registry rows retired and zero DSS jobs. Independent2026-10-13T13:41:36.043676Z exact machine predicate returned true and historical MD51e37a105a1c11d7a6d7aa313c8c5053e still matched. Original historical installation time remains unknown. Historical horse exclusion and fixed-owner impersonation are preserved as history, never approved by this recording. Existing horse financial law is unchanged; its scanner returns zero findings for these bytes. Mandatory reader refuses missing/changed retirement history or any surviving operation/schedule. No replay, payment or generic waiver."
+    },
+    {
+      "version": "20261015101106",
+      "name": "the_money_check_board_reads_the_cron_runs_that_drive_each_ch",
+      "file": "supabase/migrations/20261015101106_the_money_check_board_reads_the_cron_runs_that_drive_each_ch.sql",
+      "md5": "c9684fe775e73192de3c1684ec32ac61",
+      "appliedToProductionAt": null,
+      "recoveredOn": "2026-10-16",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte; verified through public.fn_ca_migration_text",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/7099",
+      "refusedBy": [],
+      "liveVerdict": "Read-only recovery 2026-10-16: file is the exact 8370 UTF-8 bytes recorded by schema_migrations and fn_ca_migration_text. It declares only a pg_temp substitution helper, with no persistent new function or trigger. Current fn_money_check_health(numeric) is postgres-owned SECURITY DEFINER with search_path public,pg_temp and neither anon nor authenticated EXECUTE. The source first matched immutable committed export 49ed57b923d; no other checkout was changed. This is an existing installation record, not SQL to replay."
+    },
+    {
+      "version": "20261015102509",
+      "name": "transfer_receipts_ledger_only_not_notifications",
+      "file": "supabase/migrations/20261015102509_transfer_receipts_ledger_only_not_notifications.sql",
+      "md5": "b60e8d7b22fc2317dcf76096d924bff8",
+      "appliedToProductionAt": null,
+      "recoveredOn": "2026-10-16",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte; verified through public.fn_ca_migration_text",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/7099",
+      "refusedBy": [],
+      "liveVerdict": "Read-only recovery 2026-10-16: file is the exact 3268 UTF-8 bytes held by schema_migrations and fn_ca_migration_text, without the later authored header/transaction wrapper. It patches existing accounting notification functions and declares no new persistent function, trigger or grant. Current fn_deliver_accounting_invoice denies anon/authenticated EXECUTE; the existing visibility and profile readers deny anon and retain authenticated EXECUTE. No migration is installed or replayed by this recording; the later cash-out-message successor remains separate."
+    },
+    {
+      "version": "20261015131200",
+      "name": "a_replica_session_cannot_move_chips",
+      "file": "supabase/migrations/20261015131200_a_replica_session_cannot_move_chips.sql",
+      "md5": "d22aed0c9e72695c797e7920f0f41fcb",
+      "appliedToProductionAt": null,
+      "recoveredOn": "2026-10-16",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte; verified through public.fn_ca_migration_text",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/7099",
+      "refusedBy": [],
+      "liveVerdict": "Read-only recovery 2026-10-16: exact 5324 stored UTF-8 bytes and fn_ca_migration_text MD5 d22aed0c9e72695c797e7920f0f41fcb. This installed record reaches the 24-hour gate during this delivery. Current fn_ca_is_protected_cluster and fn_ca_refuse_replica_money_write are postgres-owned SECURITY DEFINER with fixed pg_catalog / pg_catalog,public search paths. Both deny anon/authenticated EXECUTE; only the cluster reader grants service_role EXECUTE. The file declares trigger names, not new trigger DDL. This is immutable installation history, never a migration to replay; no chip, acknowledgement or trigger is changed by restoring its source. Exact historical execution time was not independently read, so appliedToProductionAt remains unknown."
     }
   ]
 }

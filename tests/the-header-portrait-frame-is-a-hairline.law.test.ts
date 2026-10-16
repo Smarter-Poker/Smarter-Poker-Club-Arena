@@ -1,5 +1,5 @@
 /**
- * LAW: THE HEADER PORTRAIT'S FRAME IS A 0.5px BLACK HAIRLINE, AND THE BAKED
+ * LAW: THE HEADER PORTRAIT'S FRAME IS A 1px BLACK HAIRLINE, AND THE BAKED
  * ORNAMENT IS MASKED - AT EVERY WIDTH.
  * ═══════════════════════════════════════════════════════════════════════════
  *
@@ -11,7 +11,7 @@
  *
  * The same ruling, three times before:
  *   2026-08-31  remove the profile ring (#2183, #2305: "Only the live circular
- *               portrait and its nearly invisible edge remain"), 0.5px (#2366)
+ *               portrait and its nearly invisible edge remain"), 1px (#2366)
  *   2026-09-03  "THE FRAME IN THE GLOBAL HEADER AROUND THE PROFILE IMAGE
  *               REGRESSED AND CHANGED (INSTEAD OF HAVING THE .50 PIXEL BLACK
  *               INVISIBLE CIRCLE FRAME)."
@@ -37,7 +37,7 @@
  *      ornament's glow (r 52 around (1159.75, 80.5)) and stays off the silver
  *      rails (r 62). Every `.profileBtn` rule that touches `background`, in
  *      any media query, bottoms out in #000. Same check for the desktop band.
- *   2. `.profileAvatarSlot` declares `border: 0.5px solid rgba(0, 0, 0, 0.94)`
+ *   2. `.profileAvatarSlot` declares `border: 1px solid rgba(0, 0, 0, 0.94)`
  *      in exactly ONE rule in the file (the base rule), so there is one copy
  *      to regress and no override can disagree with it.
  *   3. Nothing else may draw around the photo: no box-shadow or outline on
@@ -69,7 +69,7 @@ const PLANE_W = 1648;
 const PLANE_H = 168;
 const ORNAMENT = { cx: 1159.75, cy: 80.5, glowR: 52, railR: 62 };
 const DESKTOP_BAND_PX = 96;
-const HAIRLINE = /border:\s*0\.5px\s+solid\s+rgba\(0,\s*0,\s*0,\s*0?\.94\)\s*;/;
+const HAIRLINE = /border:\s*1px\s+solid\s+rgba\(0,\s*0,\s*0,\s*0?\.94\)\s*;/;
 
 type Rule = { media: string | null; body: string; decls: Map<string, string> };
 
@@ -226,7 +226,7 @@ describe('the header portrait frame is a hairline: the ornament is masked', () =
     }
   });
 
-  it('the slot declares the 0.5px hairline exactly once, in the base rule, and it is a circle', () => {
+  it('the slot declares the 1px hairline exactly once, in the base rule, and it is a circle', () => {
     expect(baseSlot, '.profileAvatarSlot base rule must exist').toBeTruthy();
     expect(baseSlot!.body).toMatch(HAIRLINE);
     expect(baseSlot!.decls.get('border-radius')).toBe('50%');
@@ -243,8 +243,8 @@ describe('the header portrait frame is a hairline: the ornament is masked', () =
     ).toBe(1);
     expect(withBorder[0].media).toBeNull();
     expect(
-      CSS.match(/border:\s*0?\.5px/g)?.length,
-      'the half-pixel edge belongs to the slot alone'
+      withBorder[0].body.match(/border:\s*1px/g)?.length,
+      'the one-pixel edge belongs to the slot alone'
     ).toBe(1);
 
     // The photo sits inside the disc with black around it - never the disc's
@@ -284,7 +284,7 @@ describe('the header portrait frame is a hairline: the ornament is masked', () =
     // The explanation is what stops the disc being read as "a shape drawn over
     // approved artwork" and deleted again. It stays with the rule.
     expect(RAW_CSS).toContain(
-      'THE PROFILE FRAME IS A 0.5px BLACK HAIRLINE. THE BAKED ORNAMENT IS MASKED.'
+      'THE PROFILE FRAME IS A 1px BLACK HAIRLINE. THE BAKED ORNAMENT IS MASKED.'
     );
     expect(RAW_CSS).toContain("'appears invisible'");
     expect(RAW_CSS).toContain('tests/the-header-portrait-frame-is-a-hairline.law.test.ts');

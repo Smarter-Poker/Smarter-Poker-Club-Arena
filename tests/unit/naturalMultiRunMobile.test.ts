@@ -11,6 +11,7 @@ const witness = () => ({
   flights: [{ hand: 41, recipient: 'winner', landedAt: 300, distance: 0.2 }],
 });
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   document.body.innerHTML = '';
   delete (window as any).__naturalMultiRunWitness;
@@ -41,6 +42,7 @@ it.each(['wrong recipient', 'off target', 'prior hand', 'before packet'])(
   }
 );
 it.each([2, 3])('the actual DOM observer rejects a %i-run award before its river', async (runs) => {
+  vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 393, 852));
   let tick!: FrameRequestCallback;
   vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
     tick = callback;
@@ -53,4 +55,29 @@ it.each([2, 3])('the actual DOM observer rejects a %i-run award before its river
   document.body.innerHTML = `<div class="table-page"><span class="table-brand__hand">Hand #41</span>${Array.from({ length: runs }, () => `<div class="community-area__run"><span class="community-area__run-winner">Winner</span>${'<i class="community-cards__card"></i>'.repeat(4)}</div>`).join('')}</div>`;
   tick(1);
   expect((window as any).__naturalMultiRunWitness.read().violations).toHaveLength(runs);
+});
+
+it('observes the visible table rather than a retained hidden table', async () => {
+  let tick!: FrameRequestCallback;
+  vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
+    this: HTMLElement
+  ) {
+    return this.style.display === 'none' ? new DOMRect() : new DOMRect(0, 0, 393, 852);
+  });
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    tick = callback;
+    return 1;
+  });
+  vi.stubGlobal('cancelAnimationFrame', vi.fn());
+  await installNaturalMultiRunWitness({
+    addInitScript: async (callback: () => void) => callback(),
+  } as any);
+  const lane =
+    '<div class="community-area__run"><span class="community-area__run-winner">Winner</span></div>';
+  document.body.innerHTML = `<div class="table-page" style="display:none"><span class="table-brand__hand">Hand #40</span>${lane.repeat(3)}</div><div class="table-page"><span class="table-brand__hand">Hand #41</span></div>`;
+  tick(1);
+  expect((window as any).__naturalMultiRunWitness.read()).toMatchObject({
+    hands: [],
+    violations: [],
+  });
 });

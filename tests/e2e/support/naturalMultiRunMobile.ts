@@ -10,7 +10,10 @@ export async function installNaturalMultiRunWitness(page: Page) {
     let frame = 0;
     const sample = () => {
       if (stopped) return;
-      const table = document.querySelector('.table-page');
+      const table = Array.from(document.querySelectorAll('.table-page')).find((node) => {
+        const box = node.getBoundingClientRect();
+        return box.width > 0 && box.height > 0;
+      });
       const hand = Number(
         table?.querySelector('.table-brand__hand')?.textContent?.match(/\d+/)?.[0]
       );
@@ -30,7 +33,7 @@ export async function installNaturalMultiRunWitness(page: Page) {
           if (winner && count === 5 && !animating) witness.winnerAt ??= now;
         });
       }
-      for (const chip of document.querySelectorAll<HTMLElement>('[data-chip-recipient]')) {
+      for (const chip of table?.querySelectorAll<HTMLElement>('[data-chip-recipient]') ?? []) {
         const id = chip.dataset.chipFlight;
         if (!id) continue;
         const flight = flights.get(id) ?? {
@@ -41,9 +44,9 @@ export async function installNaturalMultiRunWitness(page: Page) {
         };
         flights.set(id, flight);
         if (flight.landedAt) continue;
-        const seat = Array.from(document.querySelectorAll<HTMLElement>('[data-player-id]')).find(
-          (node) => node.dataset.playerId === flight.recipient
-        );
+        const seat = Array.from(
+          table?.querySelectorAll<HTMLElement>('[data-player-id]') ?? []
+        ).find((node) => node.dataset.playerId === flight.recipient);
         const target = seat?.querySelector('.seat__info')?.getBoundingClientRect();
         if (!target?.width) continue;
         const rect = chip.getBoundingClientRect();

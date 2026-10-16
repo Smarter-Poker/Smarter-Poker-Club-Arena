@@ -1,4 +1,19 @@
 import { expect, type Page, type TestInfo } from '@playwright/test';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
+
+/** JSON reporter bodies are embedded, so retain files for the release artifact too. */
+async function attachMobileProof(
+  testInfo: TestInfo,
+  name: string,
+  body: Buffer,
+  contentType: string
+) {
+  const path = testInfo.outputPath(`${name}.${contentType === 'image/png' ? 'png' : 'json'}`);
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, body);
+  await testInfo.attach(name, { path, contentType });
+}
 
 /** Read the deployed table through the isolated spectator's real mobile UI. */
 export async function certifyMobileLiveTableLayout(page: Page, testInfo: TestInfo) {
@@ -76,14 +91,18 @@ export async function certifyMobileLiveTableLayout(page: Page, testInfo: TestInf
         'Mobile proof requires actual occupied seats'
       ).toBeGreaterThanOrEqual(2);
       console.log(`MOBILE_LIVE_TABLE_LAYOUT ${JSON.stringify(measured)}`);
-      await testInfo.attach(`mobile-live-table-${width}`, {
-        body: await page.screenshot(),
-        contentType: 'image/png',
-      });
-      await testInfo.attach(`mobile-live-table-${width}-measurements`, {
-        body: Buffer.from(JSON.stringify(measured)),
-        contentType: 'application/json',
-      });
+      await attachMobileProof(
+        testInfo,
+        `mobile-live-table-${width}`,
+        await page.screenshot(),
+        'image/png'
+      );
+      await attachMobileProof(
+        testInfo,
+        `mobile-live-table-${width}-measurements`,
+        Buffer.from(JSON.stringify(measured)),
+        'application/json'
+      );
     }
     const menu = page.getByRole('button', { name: 'Table Menu', exact: true });
     await menu.click();
@@ -96,10 +115,12 @@ export async function certifyMobileLiveTableLayout(page: Page, testInfo: TestInf
     await toggle.click();
     await menu.click();
     await expect(toggle).toHaveAttribute('aria-checked', 'true');
-    await testInfo.attach('mobile-live-table-seat-change-toggle', {
-      body: await page.screenshot(),
-      contentType: 'image/png',
-    });
+    await attachMobileProof(
+      testInfo,
+      'mobile-live-table-seat-change-toggle',
+      await page.screenshot(),
+      'image/png'
+    );
     await page.keyboard.press('Escape');
   } finally {
     if (originalViewport) await page.setViewportSize(originalViewport);
@@ -115,20 +136,28 @@ export async function installMobileAwardJournal(page: Page) {
       multiBoardSamples: 0,
     };
     const seen = new Set<string>();
+    const active = new Map<
+      string,
+      { chip: HTMLElement; recipient: string; distance: number | null }
+    >();
+    let frame = 0;
+    let stopped = false;
     const inspect = () => {
-      for (const chip of document.querySelectorAll<HTMLElement>(
-        '[data-chip-recipient][data-chip-phase="landed"]'
-      )) {
+      for (const chip of document.querySelectorAll<HTMLElement>('[data-chip-recipient]')) {
         const id = chip.dataset.chipFlight ?? '';
-        if (!id || seen.has(id)) continue;
-        seen.add(id);
+        if (!id) continue;
         const recipient = chip.dataset.chipRecipient ?? '';
+        const flight = active.get(id) ?? { chip, recipient, distance: null };
+        active.set(id, flight);
         const seat = Array.from(document.querySelectorAll<HTMLElement>('[data-player-id]')).find(
           (node) => node.dataset.playerId === recipient
         );
         const target = seat?.querySelector('.seat__info')?.getBoundingClientRect();
         if (!target || !target.width) {
-          evidence.violations.push('Payout Has No Rendered Recipient');
+          if (chip.dataset.chipPhase === 'landed' && !seen.has(id)) {
+            seen.add(id);
+            evidence.violations.push('Payout Has No Rendered Recipient');
+          }
           continue;
         }
         const actual = chip.getBoundingClientRect();
@@ -136,8 +165,24 @@ export async function installMobileAwardJournal(page: Page) {
           actual.left + actual.width / 2 - target.left - target.width / 2,
           actual.top + actual.height / 2 - target.top - target.height / 2
         );
-        evidence.landings.push({ distance, recipient });
-        if (distance > 2) evidence.violations.push('Payout Missed Its Rendered Recipient');
+        flight.distance = distance;
+        // Keep the explicit endpoint witness, and also retain the last visible
+        // position when a short-lived state attribute was not observed.
+        if (!seen.has(id) && chip.dataset.chipPhase === 'landed') {
+          seen.add(id);
+          evidence.landings.push({ distance, recipient });
+          if (distance > 2) evidence.violations.push('Payout Missed Its Rendered Recipient');
+        }
+      }
+      for (const [id, flight] of active) {
+        if (flight.chip.isConnected) continue;
+        active.delete(id);
+        if (flight.distance === null || flight.distance > 2) {
+          evidence.violations.push('Payout Disappeared Before Reaching Its Recipient');
+        } else if (!seen.has(id)) {
+          evidence.landings.push({ distance: flight.distance, recipient: flight.recipient });
+        }
+        seen.add(id);
       }
       for (const run of document.querySelectorAll('.community-area__run')) {
         if (!run.querySelector('.community-area__run-winner')) continue;
@@ -147,6 +192,12 @@ export async function installMobileAwardJournal(page: Page) {
           run.querySelector('.card-squeeze-host[data-rs-animating="true"]')
         )
           evidence.violations.push('Run Award Appeared Before Its River Finished');
+      }
+      if (!stopped && active.size && !frame) {
+        frame = requestAnimationFrame(() => {
+          frame = 0;
+          inspect();
+        });
       }
     };
     const observer = new MutationObserver(inspect);
@@ -159,6 +210,9 @@ export async function installMobileAwardJournal(page: Page) {
     (window as any).__mobileAwardJournal = {
       evidence,
       stop: () => {
+        stopped = true;
+        if (frame) cancelAnimationFrame(frame);
+        frame = 0;
         inspect();
         observer.disconnect();
         return evidence;
@@ -169,10 +223,12 @@ export async function installMobileAwardJournal(page: Page) {
 export async function certifyMobileAwardJournal(page: Page, testInfo: TestInfo) {
   const evidence = await page.evaluate(() => (window as any).__mobileAwardJournal.stop());
   console.log(`MOBILE_LIVE_PAYOUT_PROOF ${JSON.stringify(evidence)}`);
-  await testInfo.attach('mobile-live-table-payout-measurements', {
-    body: Buffer.from(JSON.stringify(evidence)),
-    contentType: 'application/json',
-  });
+  await attachMobileProof(
+    testInfo,
+    'mobile-live-table-payout-measurements',
+    Buffer.from(JSON.stringify(evidence)),
+    'application/json'
+  );
   expect(evidence.violations, 'Actual mobile payout and river ordering').toEqual([]);
   expect(evidence.landings.length, 'Live proof requires an actual payout landing').toBeGreaterThan(
     0

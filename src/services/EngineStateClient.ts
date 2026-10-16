@@ -643,6 +643,10 @@ export class EngineStateClient {
     if (this.onResume === null && typeof window !== 'undefined') {
       this.onResume = (event) => {
         if (this.intentionalClose || document.visibilityState !== 'visible') return;
+        // online already owns this bounded attempt. A delayed pageshow/visibility
+        // event must not replace its CONNECTING facade while SUBSCRIBED is in flight.
+        // The existing handshake deadline still tears down a genuinely stalled attempt.
+        if (this.ws?.readyState === 0 && this.handshakeTimer !== null) return;
         if (this.status === 'connected') {
           // pageshow can be the only wake event after Home Screen/BFCache
           // restoration. A healthy link keeps its existing bounded resync.
@@ -2115,6 +2119,10 @@ export class EngineChannelClient {
     if (this.onResume === null && typeof window !== 'undefined') {
       this.onResume = (event) => {
         if (this.intentionalClose || document.visibilityState !== 'visible') return;
+        // online already owns this bounded attempt. A delayed pageshow/visibility
+        // event must not replace its CONNECTING facade while SUBSCRIBED is in flight.
+        // The existing handshake deadline still tears down a genuinely stalled attempt.
+        if (this.ws?.readyState === 0 && this.handshakeTimer !== null) return;
         if (this.status === 'connected') {
           // pageshow can be the only wake event after Home Screen/BFCache
           // restoration. A healthy link keeps its existing bounded resync.

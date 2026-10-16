@@ -12,7 +12,7 @@ import { viewportPointInFrame, winnerViewportPoint } from '../../lib/chipAwardGe
  * - Supports chip-to-pot and pot-to-winner flows
  */
 
-import { useEffect, useLayoutEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useLayoutEffect, useState, useRef } from 'react';
 import {
   breakChips,
   chipDenominationFor,
@@ -37,6 +37,7 @@ interface Position {
 interface ChipAnimationProps {
   recipientId?: string;
   flightId?: string;
+  resolveTarget?: () => Position;
   from: Position;
   to: Position;
   amount: number;
@@ -96,6 +97,7 @@ function easeOutCubic(t: number): number {
 export default function ChipAnimation({
   recipientId,
   flightId,
+  resolveTarget,
   from,
   to,
   amount,
@@ -110,6 +112,18 @@ export default function ChipAnimation({
   denomValue,
 }: ChipAnimationProps) {
   const [position, setPosition] = useState(from);
+  const [landed, setLanded] = useState(false);
+  const [flightFinished, setFlightFinished] = useState(false);
+  const targetRef = useRef(resolveTarget);
+  targetRef.current = resolveTarget;
+  const originRef = useRef(from);
+  originRef.current = from;
+  const destinationRef = useRef(to);
+  destinationRef.current = to;
+  const originX = resolveTarget ? undefined : from.x;
+  const originY = resolveTarget ? undefined : from.y;
+  const destinationX = resolveTarget ? undefined : to.x;
+  const destinationY = resolveTarget ? undefined : to.y;
   // AUDIT 2026-08-25: there was an `opacity` state here whose setter was never
   // called on any path, so it was 1 for the whole life of every chip and was
   // written into the inline style on every rAF frame. Removed: a state that
@@ -117,7 +131,6 @@ export default function ChipAnimation({
   // is done by `.chipContainer` in ChipAnimation.module.css.
   const [scale, setScale] = useState(1);
   const [isVisible, setIsVisible] = useState(true);
-  const [flightFinished, setFlightFinished] = useState(false);
   const animRef = useRef<number>(0);
   // CA-12 BUG FIX: the 100ms hide-delay setTimeout after the rAF completes was
   // fire-and-forget. If the parent unmounts ChipAnimation during this window,
@@ -139,9 +152,16 @@ export default function ChipAnimation({
   /** The chip's own DOM node — used to detect a hidden (background) table. */
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  // Start the final hold only after React has committed the landing. Starting
-  // this timer inside rAF let a busy render batch the landing with removal,
-  // so a real payout could disappear without ever reaching its recipient.
+  useLayoutEffect(() => {
+    if (!landed || !isVisible || !targetRef.current) return;
+    // A hidden table can become visible during the endpoint hold. Align the
+    // landed chip before paint without replaying or extending its flight.
+    const target = targetRef.current();
+    setPosition((current) => (current.x === target.x && current.y === target.y ? current : target));
+  }, [landed, isVisible, resolveTarget]);
+
+  // The final hold starts only after React commits the landing. A busy
+  // render must never batch the endpoint and removal into one invisible step.
   useLayoutEffect(() => {
     if (!flightFinished) return;
     const timer = setTimeout(() => {
@@ -158,13 +178,35 @@ export default function ChipAnimation({
 
   useEffect(() => {
     setFlightFinished(false);
+    setLanded(false);
+    const currentTarget = () => {
+      if (targetRef.current) return targetRef.current();
+      const to = destinationRef.current;
+      const layer = containerRef.current?.parentElement;
+      if (!recipientId || !layer) return to;
+      const frame = layer.getBoundingClientRect();
+      if (!(frame.width > 0 && frame.height > 0)) return to;
+      const width = layer.offsetWidth || frame.width;
+      const height = layer.offsetHeight || frame.height;
+      const fallback = {
+        x: frame.left + (to.x * frame.width) / width,
+        y: frame.top + (to.y * frame.height) / height,
+      };
+      return viewportPointInFrame(
+        winnerViewportPoint(layer.closest('.table-page'), recipientId, fallback),
+        frame,
+        width,
+        height
+      );
+    };
     // ANIMATION AUDIT 2026-08-28 (multi-table): a background table is
     // display:none, not unmounted — every chip flight there still drove a
     // full rAF bezier loop nobody could see. If this chip's container has no
     // client rects, land it instantly and complete on the flight's own
     // wall-clock so parent sequencing (award staggers, holds) stays truthful.
     if (containerRef.current && containerRef.current.getClientRects().length === 0) {
-      setPosition(to);
+      setPosition(currentTarget());
+      setLanded(true);
       hideTimerRef.current = setTimeout(
         () => {
           hideTimerRef.current = null;
@@ -185,7 +227,8 @@ export default function ChipAnimation({
       typeof window !== 'undefined' &&
       window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
     ) {
-      setPosition(to);
+      setPosition(currentTarget());
+      setLanded(true);
       hideTimerRef.current = setTimeout(() => {
         hideTimerRef.current = null;
         setIsVisible(false);
@@ -198,27 +241,6 @@ export default function ChipAnimation({
 
     let startTime: number | null = null;
 
-    const destination = () => {
-      const layer = containerRef.current?.parentElement;
-      if (!recipientId || !layer) return to;
-      const frame = layer.getBoundingClientRect();
-      if (!(frame.width > 0 && frame.height > 0)) return to;
-      const width = layer.offsetWidth || frame.width;
-      const height = layer.offsetHeight || frame.height;
-      const fallback = {
-        x: frame.left + (to.x * frame.width) / width,
-        y: frame.top + (to.y * frame.height) / height,
-      };
-      // The winner pop moves the plate while the fan is in flight. Follow
-      // the rendered recipient without restarting the flight or its clock.
-      return viewportPointInFrame(
-        winnerViewportPoint(layer.closest('.table-page'), recipientId, fallback),
-        frame,
-        width,
-        height
-      );
-    };
-
     const run = (timestamp: number) => {
       if (!startTime) startTime = timestamp + delay;
       if (timestamp < startTime) {
@@ -229,18 +251,24 @@ export default function ChipAnimation({
       const elapsed = timestamp - startTime;
       const rawProgress = Math.min(elapsed / duration, 1);
       const t = easeOutCubic(rawProgress);
-      const target = destination();
-      const controlX = (from.x + target.x) / 2;
-      const dist = Math.hypot(target.x - from.x, target.y - from.y);
-      const controlY = (from.y + target.y) / 2 + dist * arcHeight;
 
+      // Winner plates can move when showdown labels commit or the table fits.
+      // Resolve their current box on the visual frame instead of retaining a
+      // launch-only seat coordinate through the entire flight.
+      const target = currentTarget();
+      const origin = originRef.current;
+      const midX = (origin.x + target.x) / 2;
+      const midY = (origin.y + target.y) / 2;
+      const dist = Math.hypot(target.x - origin.x, target.y - origin.y);
+      const controlX = midX;
+      const controlY = midY + dist * arcHeight;
       // Position along bezier curve
       const x = useArc
-        ? quadBezier(from.x, controlX, target.x, t)
-        : from.x + (target.x - from.x) * t;
+        ? quadBezier(origin.x, controlX, target.x, t)
+        : origin.x + (target.x - origin.x) * t;
       const y = useArc
-        ? quadBezier(from.y, controlY, target.y, t)
-        : from.y + (target.y - from.y) * t;
+        ? quadBezier(origin.y, controlY, target.y, t)
+        : origin.y + (target.y - origin.y) * t;
 
       setPosition({ x, y });
 
@@ -254,6 +282,7 @@ export default function ChipAnimation({
       if (rawProgress < 1) {
         animRef.current = requestAnimationFrame(run);
       } else {
+        setLanded(true);
         setFlightFinished(true);
       }
     };
@@ -266,7 +295,18 @@ export default function ChipAnimation({
     };
 
     // intentionally read through onCompleteRef; see CHIP-GLITCH FIX above.
-  }, [from.x, from.y, to.x, to.y, duration, delay, useArc, arcHeight, recipientId]);
+  }, [
+    flightId,
+    originX,
+    originY,
+    destinationX,
+    destinationY,
+    duration,
+    delay,
+    useArc,
+    arcHeight,
+    recipientId,
+  ]);
 
   if (!isVisible) return null;
 
@@ -281,9 +321,7 @@ export default function ChipAnimation({
       ref={containerRef}
       data-chip-recipient={recipientId}
       data-chip-flight={flightId}
-      data-chip-phase={
-        flightFinished || (position.x === to.x && position.y === to.y) ? 'landed' : 'flying'
-      }
+      data-chip-phase={landed ? 'landed' : 'flying'}
       className={styles.chipContainer}
       style={{
         transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`,
@@ -385,7 +423,7 @@ export function ChipAnimationManager({
       observer.disconnect();
       window.removeEventListener('resize', measure);
     };
-  }, [animations, floats]);
+  }, []);
   const local = (point: Position) =>
     viewportPointInFrame(point, frame, frame.localWidth, frame.localHeight);
   return (
@@ -397,6 +435,26 @@ export function ChipAnimationManager({
           flightId={anim.id}
           from={local(anim.from)}
           to={local(anim.to)}
+          resolveTarget={
+            anim.recipientId
+              ? () => {
+                  const element = frameRef.current;
+                  if (!element) return local(anim.to);
+                  const target = winnerViewportPoint(
+                    element.closest('.table-page'),
+                    anim.recipientId!,
+                    anim.to
+                  );
+                  const rect = element.getBoundingClientRect();
+                  return viewportPointInFrame(
+                    target,
+                    rect,
+                    element.offsetWidth || rect.width,
+                    element.offsetHeight || rect.height
+                  );
+                }
+              : undefined
+          }
           amount={anim.amount}
           chipColor={anim.chipColor}
           denomValue={anim.denomValue}

@@ -1,0 +1,177 @@
+[
+  {
+    "notes": "agents agent_wallet_balance and promo_wallet_balance",
+    "store": "agent_wallet",
+    "added_at": "2026-09-11T16:10:27.128168+00:00",
+    "treatment": "counted",
+    "counted_by": "agent_wallets"
+  },
+  {
+    "notes": "main, backup and promo",
+    "store": "bbj_pool",
+    "added_at": "2026-09-11T16:10:27.128168+00:00",
+    "treatment": "counted",
+    "counted_by": "bbj_pools"
+  },
+  {
+    "notes": "tournament_escrow bounty_balance",
+    "store": "bounty_liability",
+    "added_at": "2026-09-11T16:10:27.128168+00:00",
+    "treatment": "counted",
+    "counted_by": "tournament_liability"
+  },
+  {
+    "notes": "retirement holding",
+    "store": "chip_retirement",
+    "added_at": "2026-09-11T16:10:27.128168+00:00",
+    "treatment": "noncirculating",
+    "counted_by": null
+  },
+  {
+    "notes": "clubs chip_treasury",
+    "store": "club_treasury",
+    "added_at": "2026-09-11T16:10:27.128168+00:00",
+    "treatment": "counted",
+    "counted_by": "treasuries"
+  },
+  {
+    "notes": "club_wallets chip_balance",
+    "store": "club_wallet",
+    "added_at": "2026-09-11T16:10:27.128168+00:00",
+    "treatment": "counted",
+    "counted_by": "club_wallets"
+  },
+  {
+    "notes": "never used in the journal to date. Movement raises a finding so its treatment is decided before it carries money",
+    "store": "credit_facility",
+    "added_at": "2026-09-11T16:10:27.128168+00:00",
+    "treatment": "uncounted",
+    "counted_by": null
+  },
+  {
+    "notes": "never used in the journal to date. Movement raises a finding so its treatment is decided before it carries money",
+    "store": "credit_receivable",
+    "added_at": "2026-09-11T16:10:27.128168+00:00",
+    "treatment": "uncounted",
+    "counted_by": null
+  },
+  {
+    "notes": "Outstanding tournament tickets. ADDED 2026-09-11: it was in no list at all, which is the whole of the five supply incidents of that morning",
+    "store": "escrow",
+    "added_at": "2026-09-11T16:10:27.128168+00:00",
+    "treatment": "counted",
+    "counted_by": "ticket_escrow"
+  },
+  {
+    "notes": "clubs insurance_balance",
+    "store": "insurance_bank",
+    "added_at": "2026-09-11T16:10:27.128168+00:00",
+    "treatment": "counted",
+    "counted_by": "club_insurance + union insurance_wallet"
+  },
+  {
+    "notes": "issuance held before it enters circulation",
+    "store": "issuance_reserve",
+    "added_at": "2026-09-11T16:10:27.128168+00:00",
+    "treatment": "noncirculating",
+    "counted_by": null
+  },
+  {
+    "notes": "the same seed, while a round is being settled",
+    "store": "leaderboard_round",
+    "added_at": "2026-09-11T16:10:27.128168+00:00",
+    "treatment": "counted",
+    "counted_by": "leaderboard_liability"
+  },
+  {
+    "notes": "club_opening_setups leaderboard_seed_remaining",
+    "store": "opening_setup",
+    "added_at": "2026-09-11T16:10:27.128168+00:00",
+    "treatment": "counted",
+    "counted_by": "leaderboard_liability"
+  },
+  {
+    "notes": "club_members chip_balance and promo_balance",
+    "store": "player_wallet",
+    "added_at": "2026-09-11T16:10:27.128168+00:00",
+    "treatment": "counted",
+    "counted_by": "member_wallets + member_promo"
+  },
+  {
+    "notes": "tournament_escrow prize_balance, or the counters where an event has no escrow row yet",
+    "store": "prize_liability",
+    "added_at": "2026-09-11T16:10:27.128168+00:00",
+    "treatment": "counted",
+    "counted_by": "tournament_liability"
+  },
+  {
+    "notes": "the promo floats, brought inside the total on 2026-09-03",
+    "store": "promo_wallet",
+    "added_at": "2026-09-11T16:10:27.128168+00:00",
+    "treatment": "counted",
+    "counted_by": "club_promo + agent_promo + union promo_wallet"
+  },
+  {
+    "notes": "never used in the journal to date. Movement raises a finding so its treatment is decided before it carries money",
+    "store": "rakeback_payable",
+    "added_at": "2026-09-11T16:10:27.128168+00:00",
+    "treatment": "uncounted",
+    "counted_by": null
+  },
+  {
+    "notes": "never used in the journal to date. Movement raises a finding so its treatment is decided before it carries money",
+    "store": "refund_payable",
+    "added_at": "2026-09-11T16:10:27.128168+00:00",
+    "treatment": "uncounted",
+    "counted_by": null
+  },
+  {
+    "notes": "NOT in the basis and NOT verified as a routing label. It holds a large historical net and has not moved in the sixty hours to 2026-09-11 15:00, so it is not implicated in the incidents this migration fixes. Declared uncounted deliberately rather than guessed into the total, where a wrong guess would double count. Any movement now raises a finding, which is the point",
+    "store": "settlement_suspense",
+    "added_at": "2026-09-11T16:10:27.128168+00:00",
+    "treatment": "uncounted",
+    "counted_by": null
+  },
+  {
+    "notes": "spin_bonus_pools balance",
+    "store": "spin_reserve",
+    "added_at": "2026-09-11T16:10:27.128168+00:00",
+    "treatment": "counted",
+    "counted_by": "spin_pools + union spin_reserve_wallet"
+  },
+  {
+    "notes": "retirement. A move into it is a burn",
+    "store": "system_burn",
+    "added_at": "2026-09-11T16:10:27.128168+00:00",
+    "treatment": "noncirculating",
+    "counted_by": null
+  },
+  {
+    "notes": "issuance. A move out of it is a mint",
+    "store": "system_mint",
+    "added_at": "2026-09-11T16:10:27.128168+00:00",
+    "treatment": "noncirculating",
+    "counted_by": null
+  },
+  {
+    "notes": "table_seats stack on cash tables. Tournament felt is deliberately excluded and carried by tournament_liability instead",
+    "store": "table_stack",
+    "added_at": "2026-09-11T16:10:27.128168+00:00",
+    "treatment": "counted",
+    "counted_by": "felt"
+  },
+  {
+    "notes": "union_wallets chip_balance",
+    "store": "union_bank",
+    "added_at": "2026-09-11T16:10:27.128168+00:00",
+    "treatment": "counted",
+    "counted_by": "union_wallets"
+  },
+  {
+    "notes": "the union rake, bbj, promo, insurance and spin reserve wallets",
+    "store": "union_wallet",
+    "added_at": "2026-09-11T16:10:27.128168+00:00",
+    "treatment": "counted",
+    "counted_by": "union_wallets"
+  }
+]

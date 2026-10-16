@@ -58,3 +58,7 @@ Removing the two World Hub crons from `vercel.json` stops the email and pager. T
 ## Follow Up: The Online View Matches The Email
 
 Attention items found live at send time (cashouts, stuck tournaments, funding) are now saved to the day's record, so the "View This Digest Online" page and any re-send show the same list as the email. The "digest was not delivered" rule now only counts days after the first digest ran, so launch day does not raise a false alarm.
+
+## Follow Up: Rake Reconciles For Standalone Clubs
+
+A standalone club's cash rake is retired rather than paid to a union wallet. The digest now counts it in Cash Game Rake and in the rake reconciliation, and Top Clubs ranks the clubs players sat in instead of the union the ledger books them under. A 42 minute window on Oct 15 had written 835 Lightning pilot rake rows with no club; they were stamped from their rake records and the day's rollup rebuilt, so the ledger and the rollup both read 182,445.52 for Oct 15.

@@ -1,18 +1,65 @@
 import type { Page } from '@playwright/test';
 import { remainingInitialTableReadinessMs } from './initialTableReadiness';
 
+export interface NaturalMultiRunCandidate {
+  id: string;
+  current_players: number;
+  status: string;
+  game_type: string;
+  tournament_id: string | null;
+  max_players: number;
+  is_deleted: boolean;
+  is_template: boolean;
+  run_it_twice?: boolean | null;
+  allow_run_it_twice?: boolean | null;
+  run_it_twice_enabled?: boolean | null;
+  run_it_mode?: string | null;
+}
+
+export function naturalMultiRunCandidateQuery(clubId: string): URLSearchParams {
+  return new URLSearchParams({
+    select:
+      'id,current_players,status,game_type,tournament_id,max_players,is_deleted,is_template,run_it_twice,allow_run_it_twice,run_it_twice_enabled,run_it_mode',
+    club_id: `eq.${clubId}`,
+    status: 'eq.running',
+    game_type: 'eq.cash',
+    tournament_id: 'is.null',
+    max_players: 'gt.2',
+    current_players: 'gte.2',
+    is_deleted: 'eq.false',
+    is_template: 'eq.false',
+    order: 'current_players.desc,id.asc',
+    limit: '32',
+  });
+}
+
+/** Match the serving engine's effective cash RIT gate, including legacy flags. */
+export function eligibleNaturalMultiRunTable(table: NaturalMultiRunCandidate): boolean {
+  return (
+    table.status === 'running' &&
+    table.game_type === 'cash' &&
+    table.tournament_id === null &&
+    table.max_players > 2 &&
+    table.current_players >= 2 &&
+    table.is_deleted === false &&
+    table.is_template === false &&
+    (((table.run_it_twice ?? true) && (table.allow_run_it_twice ?? true)) ||
+      (table.run_it_twice_enabled ?? false))
+  );
+}
+
 /** Cold starts are sequential; all six pages stay open for the observation. */
 export async function initializeNaturalMultiRunObservers<T>(
   tables: T[],
-  initialize: (table: T, navigationBudgetMs: number) => Promise<void>,
+  initialize: (table: T, navigationBudgetMs: number, remainingSetup: () => number) => Promise<void>,
   setupStartedAt: number,
   now = Date.now
 ): Promise<void> {
   if (tables.length !== 6) throw new Error('Natural multirun proof requires all six observers');
+  const remainingSetup = () => remainingInitialTableReadinessMs(setupStartedAt, 120_000, now());
   for (const table of tables) {
-    const remaining = remainingInitialTableReadinessMs(setupStartedAt, 120_000, now());
-    await initialize(table, Math.min(12_000, remaining));
-    remainingInitialTableReadinessMs(setupStartedAt, 120_000, now());
+    await initialize(table, Math.min(12_000, remainingSetup()), remainingSetup);
+    remainingSetup();
   }
 }
 

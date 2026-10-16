@@ -4,6 +4,22 @@ You are picking up the Lightning programme for Club Arena (Smarter Poker). Light
 
 **The dated delivery checkpoints above section U supersede the historical state in section U and sections 3 to 5.** Sections 3 to 5 were written at 17:30 UTC and are kept for their ids and history.
 
+## Hosted Wrapper Portability Recovery (2026-10-16 16:13 UTC)
+
+- CI38928034189 accounting3 failed onlynewprivatejoinwrapper line19: rgnotinstalledonhostedrunner. Earlieractualnativeparity/calibration/discovery sectionsallpassed; this isnewtestwrapperdependencyfailure, notinstalledproductfailure. Replacedboth rg -q withportable grep -q matchingexistingnativewrappers, noassertionchange. Requalifiedwrapper with PATH=/usr/bin:/bin andexternalTMPDIR (no rgavailable); exactnativebefore/after/replaypasses. Correctedsourcewillnormalpush7114andretireonlyobsoleteownCIafterpushsucceeds. No unchangedretry/bypass.
+
+## Separate Required Stale Fold Repair (2026-10-16 16:09 UTC)
+
+- RequiredR08connectedreviewfinds firstdeliverygap: TablePage/sendLightningFold emitscontextlesspool/action; submitActionmaywaitbeforefirstsend or429backoff. HTTPidempotencyonlyprotects previouslyexecutedkeys. PoolroomoutliveshandsandSeatProxyresolvescurrenthost; handlePlayerActionspecialfoldbranchesbeforeordinaryactionContextvalidation. ThusadelayedfirstFastFold/FoldWatchcanapplytonexthand whenavailable. No livefaultinjectionperformed; source-provenconnectedgapandretainedtestsnotcoveringit. Mustfixbeforeprivateactivation.
+- Keep7114qualificationunchanged. SeparateownedSSDworktree taskroot/stale-fold, branchcodex/lightning-stale-fold-intent-20261016 from9b019ab7. RootsoleGit; clientagentowns src/tests, engineagentserveronly. Bothcoordinate stablehand-onlytoken lightning-hand:<canonicalUUID> through existingactionContext, capturedfromactualrenderedhand beforeanyasyncwait andvalidatedagainstactualhosthand beforefoldsideeffects. Missing/stalerefused, ordinaryturncontextunchanged; no syntheticframes/controller. Same-taskowneddependencyreadsymlinks only, noinstallthroughsymlink.
+- Thisis now anidentifiednewengine+clientprotocoldependency. Clientcanpublishnormallybutaffectedprivateactivationrequiresbothcontainingclientandsealednewengine; do notborrowanunrelatedenginependingreleaseasprerequisite. Existing578engineissealedreceiver38909588241/attempt1068 butdoesnotcontainthisnewfix. Fullreceiptlogretainedengine-578-sealed-release.log; exactpostdeploy38919972831cancelled suppliesnopass.
+
+## Private Join Repair Submitted (2026-10-16 16:03 UTC)
+
+- Normalcommit/prepushpassed; pushed9b019ab7bb302b905bc9fd5bed626175d1ff6084 oncodex/lightning-private-join-access-20261016. PR7114 created/attached. OwningrequiredCI38928034189, currentlyrunningnativeaccounting/client/enginejobs withnoreportedrequired failure. No furthercandidatechangesplanned absentactualfailure. NewmigrationrawMD5826368469180345989cd925e199b0992, NOTinstalled. Preparedreadback taskroot/private-join-install-readback.sql.
+- Nonrequiredmain-wideledger38928032869 FAILURE retainedprivate-join-main-wide-ledger-failure.log:8missingfiles,7inside24h,1olderunrelated20261015141043 autoledgerjournalsaccounttoitself. NotLightning; nooutsidefinancialrepairor fabricatedalias. Requiredchecks remainindependent.
+- PreparedmanualoperationIDs(notdispatched): repairedshadow365d94ad-73fa-43b1-b8db-1d9070868d9d, formbc8c40a2-0b56-4e33-849e-4d30cf1a7940, safetydraind90207c9-bea3-4380-9bb9-28fbd86f6fff. Allrequireactualaccesspass/freshreadiness andexistingstagegates; preparationdoesnotactivate. No newacceptancebeyondoutsiderstamp14:14:03,009stillpending.
+
 ## Private Join Repair Locally Qualified (2026-10-16 15:57 UTC)
 
 - Reserved20261016155403_private_cash_join_requires_approved_membership.sql guards exactlivepredecessor pg_get_functiondef MD521778e534332e0caffce932b05faee93 and inserts privategame/privateclub owner-or-activeapprovedmembership beforeenabled/seat/wallet/hold/queue paths. Singletransaction3slocktimeout/20sstatementtimeout; preservesfunctionownership/ACL/SECURITYDEFINER/search_path andexistingDiamondchecks. DiamondArena is_publictrue/all17gamesunmarkedprivate independentlyconfirmed, soordinarypublicDiamondpathunchanged.

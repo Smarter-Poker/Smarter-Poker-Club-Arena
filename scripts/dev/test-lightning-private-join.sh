@@ -16,7 +16,7 @@ psql=("$pgbin/psql" -X -h "$scratch" -p 55588 -d postgres -v ON_ERROR_STOP=1)
 if "${psql[@]}" -c 'SET ROLE authenticated; SELECT witness.expect_denied(9);' >"$scratch/before.log" 2>&1; then
  echo 'FAIL: actual predecessor did not admit unrelated-wallet nonmember'; exit 1
 fi
-rg -q 'PRIVATE_JOIN_EXPOSED: seat' "$scratch/before.log"
+grep -q 'PRIVATE_JOIN_EXPOSED: seat' "$scratch/before.log"
 echo 'PASS before: actual predecessor admits unrelated-wallet private nonmember (expected failure)'
 "${psql[@]}" -f "$root/supabase/migrations/20261016155403_private_cash_join_requires_approved_membership.sql" >/dev/null
 "${psql[@]}" -c 'SET ROLE authenticated; SELECT witness.expect_denied(4); SELECT witness.expect_denied(9);' >/dev/null
@@ -33,7 +33,7 @@ echo 'PASS before: actual predecessor admits unrelated-wallet private nonmember 
 if "${psql[@]}" -f "$root/supabase/migrations/20261016155403_private_cash_join_requires_approved_membership.sql" >"$scratch/replay.log" 2>&1; then
  echo 'FAIL: migration replay accepted'; exit 1
 fi
-rg -q 'predecessor mismatch' "$scratch/replay.log"
+grep -q 'predecessor mismatch' "$scratch/replay.log"
 "${psql[@]}" -Atc "SELECT md5(pg_get_functiondef('public.fn_cash_game_join(uuid)'::regprocedure))" >"$scratch/after.md5"
 cmp "$scratch/installed.md5" "$scratch/after.md5"
 echo 'PASS after: pending/nonmember refused before wallet/hold; owner/active/approved and public accepted; replay refused unchanged'

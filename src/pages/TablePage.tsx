@@ -16,6 +16,7 @@ import { TableLoadFailureOverlay } from '../components/table/TableLoadFailureOve
 /* #ClubArenaConsole: the felt's own dialogs print into Dan's approved master
    rather than drawing a card in CSS. See .claude/skills/club-arena-console. */
 import { SpadeConsole } from '../components/console/SpadeConsole';
+import { ButtonImagePreloader } from '../components/table/ButtonImagePreloader';
 import { WaitlistCallToAction } from '../components/table/WaitlistCallToAction';
 
 /**
@@ -52,7 +53,6 @@ import { WaitlistCallToAction } from '../components/table/WaitlistCallToAction';
  * TournamentWinnerOverlay, useTableModals, retryAsync, resolveClubUUID,
  * handPersistenceService, and the unused types ChatMessage, Throwable,
  * ThrowEvent, HandHistoryAction, HandHistoryStreet.
-import { ButtonImagePreloader } from '../components/table/ButtonImagePreloader';
  *
  * Almost all of the components above are still imported and rendered by
  * TableModalsLayer or another owner, so nothing lost its stylesheet.
@@ -178,7 +178,7 @@ import smarterPokerLetterLogo from '../assets/smarter-poker-letter-logo.png';
 import lobbyButtonArt from '../assets/lobby-button.webp';
 import { useButtonImage } from '../hooks/useButtonImage';
 
-import { cashBuyInRange, cashBuyInRefusalText } from '../lib/cashBuyIn';
+import { cashBuyInRange, cashBuyInRefusalText, cashBuyInSeatConflictText } from '../lib/cashBuyIn';
 import {
   cashBuyInJournal,
   executeCashBuyIn,
@@ -473,6 +473,7 @@ import { horseBugReporter } from '../services/HorseBugReporter';
 import { useUserTableSettings, TABLE_SETTINGS_META } from '../hooks/useUserTableSettings';
 import { useUserThemeSettings } from '../hooks/useUserThemeSettings';
 import { useTableArt } from '../hooks/useTableArt';
+import { useProtectedCardLayout } from '../hooks/useProtectedCardLayout';
 import PineappleDiscard from '../components/table/PineappleDiscard';
 import GameServerAPI, {
   submitAction,
@@ -1146,6 +1147,8 @@ const NO_SEATED_IDS: readonly (string | undefined)[] = [];
 interface TablePageProps {
   /** When set, overrides the URL :tableId param (used by MultiTablePage) */
   embeddedTableId?: string;
+  /** Explicit chair acceptance follows the tab to its buy-in sheet. */
+  openBuyInOnArrival?: boolean;
   /** Callback to report table info updates to the multi-table container */
   onTableInfoUpdate?: (info: {
     name?: string;
@@ -1209,6 +1212,7 @@ interface TablePageProps {
      * no-auto-table-switch law is about activeIndex, which this leaves alone).
      */
     movedToTableId?: string;
+    buyInRequested?: boolean;
     /**
      * THE LOBBY BUTTON (Dan 2026-09-05): the must-move game this table belongs
      * to, or '' when it belongs to none. The action pill row shows its LOBBY
@@ -1683,6 +1687,7 @@ export default function TablePage(props: TablePageProps = {}) {
 
 function LiveTablePage({
   embeddedTableId,
+  openBuyInOnArrival = false,
   onTableInfoUpdate,
   isMultiTable = false,
   isActive = true,
@@ -2571,6 +2576,7 @@ function LiveTablePage({
 
     const applySeats = (seats: any[]) => {
       setTableState((prev) => {
+        if (!active || engineSnapshotRef.current?.table_id === tableId) return prev;
         const p = [...prev.players];
         /* THE SAME DROP, IN THE PATH THAT PAINTS FIRST (Dan 2026-08-31).
            This forEach used to skip any seat whose index fell outside the
@@ -5594,6 +5600,17 @@ function LiveTablePage({
   // reshape of the table artwork.
   const tableScalerRef = useRef<HTMLDivElement | null>(null);
   const [scalerSize, setScalerSize] = useState<{ w: number; h: number }>({ w: 320, h: 571 });
+  useProtectedCardLayout(
+    tableScalerRef,
+    JSON.stringify([
+      tableState.players.map((p) => p && [p.id, p.showCards, p.status, p.holeCards?.length]),
+      tableState.communityCards,
+      tableState.communityCards2,
+      tableState.communityCards3,
+      tableState.pot,
+      tableState.heroSeat,
+    ])
+  );
 
   useEffect(() => {
     const el = tableScalerRef.current;
@@ -16790,7 +16807,11 @@ function LiveTablePage({
                 holeCards:
                   sp.user_id === userId
                     ? sp.cards?.length
-                      ? heroDisplayHoleCards(sp.cards, existing?.holeCards, !!cardsPreSortRef.current)
+                      ? heroDisplayHoleCards(
+                          sp.cards,
+                          existing?.holeCards,
+                          !!cardsPreSortRef.current
+                        )
                       : heroHoldIsExpired(existing?.holeCards)
                         ? []
                         : existing?.holeCards || []
@@ -20864,19 +20885,19 @@ function LiveTablePage({
      painted and the hero is not already seated, open the buy-in flow on the
      first open seat exactly as if they had tapped it. Fires at most once per
      mount, and never on a tournament table (handleSeatClick refuses those). */
+  const [acceptedChair, setAcceptedChair] = useState(0);
   const autoBuyInFiredRef = useRef(false);
   useEffect(() => {
     if (autoBuyInFiredRef.current) return;
-    let wantsBuyIn = false;
+    let wantsBuyIn = openBuyInOnArrival || acceptedChair > 0;
     try {
-      wantsBuyIn = new URLSearchParams(window.location.search).get('buyin') === '1';
+      wantsBuyIn ||=
+        location.pathname.endsWith(`/table/${tableId}`) &&
+        new URLSearchParams(window.location.search).get('buyin') === '1';
     } catch {
       wantsBuyIn = false;
     }
-    if (!wantsBuyIn) {
-      autoBuyInFiredRef.current = true;
-      return;
-    }
+    if (!wantsBuyIn) return;
     if (!tableState.players.length) return; // table not painted yet - wait
     /* AND ITS FUNDING IS KNOWN (launch audit 2026-10-05). The seat array is
        painted before the table's asset is read, and handleSeatClick answers a
@@ -20887,14 +20908,34 @@ function LiveTablePage({
        here, before the latch, so the tap is made once handleSeatClick can
        act on it. */
     if (!tableState.arenaAsset) return;
-    autoBuyInFiredRef.current = true;
+    // An opening table may seed players after its metadata. Never choose a
+    // chair from that empty bootstrap while a live roster is still arriving.
+    if (
+      !engineSnapshot ||
+      engineSnapshot.table_id !== tableId ||
+      !Array.isArray(engineSnapshot.players)
+    )
+      return;
     if (heroSeatRef.current > 0 || tableState.heroSeat > 0) return;
     if (tableState.players.some((p) => p && p.id === userId)) return;
-    const openIdx = tableState.players.findIndex((p) => !p);
+    const occupied = new Set(
+      engineSnapshot.players.map((p: { seat?: unknown } | null) => Number(p?.seat))
+    );
+    const openIdx = tableState.players.findIndex((p, index) => !p && !occupied.has(index + 1));
     if (openIdx < 0) return;
+    autoBuyInFiredRef.current = true;
     handleSeatClick(openIdx + 1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tableState.players, tableState.heroSeat, tableState.arenaAsset]);
+  }, [
+    tableState.players,
+    tableState.heroSeat,
+    tableState.arenaAsset,
+    engineSnapshot,
+    tableId,
+    openBuyInOnArrival,
+    acceptedChair,
+    location.pathname,
+  ]);
 
   /**
    * SEAT-FIRST COMMIT (Dan 2026-08-23). The only place a seat-first buy-in
@@ -24370,13 +24411,13 @@ function LiveTablePage({
         backgroundRepeat: TABLE_BACKGROUND_REPEAT,
       }}
     >
-      <style>{`
       {!tableArt.reveal && (
         <div className="table-art-cover" role="status" aria-live="polite">
           <span className="table-art-cover__label">Loading Table</span>
         </div>
       )}
       <ButtonImagePreloader />
+      <style>{`
                 @keyframes boardSlideIn { from { opacity: 0; transform: scale(0.98); } to { opacity: 1; transform: scale(1); } }
                 @keyframes boardFade { from { opacity: 0.7; } to { opacity: 1; } }
                 .community-area { animation: boardFade 0.4s ease-out; }
@@ -24897,20 +24938,24 @@ function LiveTablePage({
                 height (.hud-seat-change-dock, TableHUD.css). */}
             {!tableState.isTournament && tableState.clusterId && (
               <div className="hud-seat-change-dock">
-              <CashClusterHUD
-                gameId={tableState.clusterId}
-                refreshKey={clusterRefreshKey}
-                onOpenLobby={() => setShowMustMoveLobby(true)}
-                onSeatChange={() => setShowMustMoveLobby(true)}
-                onGoToTable={(dest) => {
-                  if (dest === tableId) return;
-                  if (embeddedTableId) {
-                    onTableInfoUpdate?.({ movedToTableId: dest });
-                    return;
-                  }
-                  navigate(`/table/${dest}`);
-                }}
-              />
+                <CashClusterHUD
+                  gameId={tableState.clusterId}
+                  refreshKey={clusterRefreshKey}
+                  onOpenLobby={() => setShowMustMoveLobby(true)}
+                  onSeatChange={() => setShowMustMoveLobby(true)}
+                  onGoToTable={(dest) => {
+                    if (dest === tableId) {
+                      autoBuyInFiredRef.current = false;
+                      setAcceptedChair((count) => count + 1);
+                      return;
+                    }
+                    if (embeddedTableId) {
+                      onTableInfoUpdate?.({ movedToTableId: dest, buyInRequested: true });
+                      return;
+                    }
+                    navigate(`/table/${dest}?buyin=1`);
+                  }}
+                />
               </div>
             )}
             {/* The MiniStatsCard stats icon that used to sit under the bar is
@@ -28407,8 +28452,18 @@ function LiveTablePage({
             setCashBuyInRecovery(null);
             if (outcome.kind === 'rejected') {
               reportError(outcome.error, 'TablePage.atomic_table_buyin_returned_failure');
-              toast.error(cashBuyInRefusalText(outcome.error) ?? 'The Server Refused This Buy-In.');
-              return false;
+              const message =
+                cashBuyInRefusalText(outcome.error) ?? 'The Server Refused This Buy-In.';
+              toast.error(message);
+              if (cashBuyInSeatConflictText(outcome.error)) {
+                // A proven seat collision moved no chips. Release only this
+                // failed selection, and refresh the authoritative roster.
+                setPendingSeat(null);
+                setSelectedSeat(null);
+                setShowBuyInModal(false);
+                requestEngineSnapshot();
+              }
+              return { status: 'rejected' as const, message };
             }
             buyInCommitted = true;
             const paid = attempt.payload;
@@ -28845,12 +28900,16 @@ function LiveTablePage({
         currentTableId={tableId}
         onClose={() => setShowMustMoveLobby(false)}
         onGoToTable={(dest) => {
-          if (dest === tableId) return;
-          if (embeddedTableId) {
-            onTableInfoUpdate?.({ movedToTableId: dest });
+          if (dest === tableId) {
+            autoBuyInFiredRef.current = false;
+            setAcceptedChair((count) => count + 1);
             return;
           }
-          navigate(`/table/${dest}`);
+          if (embeddedTableId) {
+            onTableInfoUpdate?.({ movedToTableId: dest, buyInRequested: true });
+            return;
+          }
+          navigate(`/table/${dest}?buyin=1`);
         }}
       />
       {/* THE TOURNAMENT LOBBY, ON THE FELT (Dan 2026-08-28). Opened by the

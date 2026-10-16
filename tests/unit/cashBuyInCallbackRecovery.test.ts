@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import ts from 'typescript';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { uuid } from '../../src/utils/uuid';
-import { cashBuyInRefusalText } from '../../src/lib/cashBuyIn';
+import { cashBuyInRefusalText, cashBuyInSeatConflictText } from '../../src/lib/cashBuyIn';
 import { isDeadSessionRefusal } from '../../src/lib/deadSessionRefusal';
 import {
   createCashBuyInJournal,
@@ -86,6 +86,7 @@ function fixture() {
     reportError: vi.fn(),
     toast: { error: vi.fn(), warning: vi.fn() },
     cashBuyInRefusalText,
+    cashBuyInSeatConflictText,
     isDeadSessionRefusal,
     askToSignInAgain: vi.fn(),
     applyBalanceDelta: vi.fn(),
@@ -208,7 +209,10 @@ describe('cash buy-in callback recovery', () => {
       data: { success: false, error: 'seat_taken' } as any,
       error: null,
     });
-    expect(await f.handler(100, false)).toBe(false);
+    expect(await f.handler(100, false)).toEqual({
+      status: 'rejected',
+      message: 'The Server Refused This Buy-In.',
+    });
     expect(f.d.setShowBuyInModal).not.toHaveBeenCalledWith(false);
     expect(f.d.setSelectedSeat).not.toHaveBeenCalledWith(null);
     expect(f.state().heroSeat).toBe(0);
@@ -370,14 +374,15 @@ it.each([
         error: name === 'atomic_table_buyin' ? error : null,
       })
     );
-    expect(await f.handler(100, false)).toBe(false);
+    expect(await f.handler(100, false)).toEqual({ status: 'rejected', message });
     await Promise.resolve();
     expect(f.d.toast.error).toHaveBeenCalledWith(message);
     expect(f.d.cashBuyInJournal.read(f.d.userId, f.d.tableId)).toBeNull();
     expect(f.d.cashBuyInPendingRef.current).toBeNull();
     expect(f.d.buyInProcessingRef.current).toBe(false);
     expect(f.state().heroSeat).toBe(0);
-    expect(f.d.setShowBuyInModal).not.toHaveBeenCalledWith(false);
+    if (cashBuyInSeatConflictText(error)) expect(f.d.setShowBuyInModal).toHaveBeenCalledWith(false);
+    else expect(f.d.setShowBuyInModal).not.toHaveBeenCalledWith(false);
     const originalKey = f.d.supabase.rpc.mock.calls[0][1].p_idempotency_key;
     f.d.selectedSeat = 3;
     f.d.supabase.rpc.mockResolvedValue({ data: null, error: null });
@@ -451,4 +456,26 @@ it.each([
   expect(
     f.d.supabase.rpc.mock.calls.filter((call: any[]) => call[0] === 'atomic_table_buyin')
   ).toHaveLength(1);
+});
+
+it('a proven seat collision releases the failed selection without abandoning the table', async () => {
+  const f = fixture();
+  f.d.supabase.rpc.mockResolvedValue({
+    data: null,
+    error: {
+      code: '23505',
+      message:
+        'duplicate key value violates unique constraint "table_seats_table_id_seat_number_key"',
+    },
+  });
+  expect(await f.handler(400, false)).toEqual({
+    status: 'rejected',
+    message: 'That Seat Was Taken. Please Choose Another Seat.',
+  });
+  expect(f.d.setPendingSeat).toHaveBeenCalledWith(null);
+  expect(f.d.setSelectedSeat).toHaveBeenCalledWith(null);
+  expect(f.d.setShowBuyInModal).toHaveBeenCalledWith(false);
+  expect(f.d.requestEngineSnapshot).toHaveBeenCalled();
+  expect(f.d.buyInProcessingRef.current).toBe(false);
+  expect(f.state().heroSeat).toBe(0);
 });

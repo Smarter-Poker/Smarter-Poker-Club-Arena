@@ -182,6 +182,7 @@ interface TableInstance {
    * it is never stored on the instance.
    */
   movedToTableId?: string;
+  buyInRequested?: boolean;
   /**
    * WHEN THE TOURNAMENT MOVED THE HERO INTO THIS TAB (Dan 2026-10-04), epoch
    * ms on this device. Set by both move paths at the moment the tab is
@@ -3372,7 +3373,9 @@ export default function MultiTablePage() {
         updates.movedToTableId !== tableId &&
         routeTableIdRef.current === tableId
       ) {
-        navigateRef.current(`/table/${updates.movedToTableId}`, { replace: true });
+        if (updates.buyInRequested)
+          navigateRef.current(`/table/${updates.movedToTableId}?buyin=1`, { replace: true });
+        else navigateRef.current(`/table/${updates.movedToTableId}`, { replace: true });
       }
       setTables((prev) => {
         const idx = prev.findIndex((t) => t.id === tableId);
@@ -3391,6 +3394,10 @@ export default function MultiTablePage() {
                open one IS the moved seat. A tournament move stamps it exactly
                as the re-point below does, or its felt says "Reconnecting Your
                Seat" for a seat the tournament just moved there. */
+            if (updates.buyInRequested)
+              return prev
+                .filter((t) => t.id !== tableId)
+                .map((t) => (t.id === dest ? { ...t, buyInRequested: true } : t));
             if (!tabIsTournament(current)) return prev.filter((t) => t.id !== tableId);
             return prev
               .filter((t) => t.id !== tableId)
@@ -3401,6 +3408,7 @@ export default function MultiTablePage() {
           const next = prev.slice();
           next[idx] = {
             id: dest,
+            buyInRequested: updates.buyInRequested,
             name: current.name,
             stakes: current.stakes,
             isMyTurn: false,
@@ -5286,6 +5294,7 @@ export default function MultiTablePage() {
                         <TablePage
                           key={table.id}
                           embeddedTableId={table.id}
+                          openBuyInOnArrival={table.buyInRequested}
                           onTableInfoUpdate={getTableInfoCb(table.id)}
                           isMultiTable={true}
                           isActive={idx === activeIndex && !hidden}
@@ -5552,6 +5561,7 @@ export default function MultiTablePage() {
                         <TablePage
                           key={table.id}
                           embeddedTableId={table.id}
+                          openBuyInOnArrival={table.buyInRequested}
                           onTableInfoUpdate={getTableInfoCb(table.id)}
                           muted={mutedIds.includes(table.id)}
                           // Dan 2026-08-19: while hidden on another route no tab is

@@ -634,3 +634,66 @@ test('the enlarged player plates stay inside the phone viewport on every ring', 
     }
   }
 });
+
+test('mobile seat plates, straight private cards and waiting-list text fit their frames', async ({
+  page,
+}) => {
+  const waitingCss = readFileSync(
+    resolve(ROOT, 'src/components/table/WaitlistCallToAction.css'),
+    'utf8'
+  );
+  let priorPlate = 0;
+  for (const width of [375, 393, 430]) {
+    await page.setViewportSize({ width, height: 852 });
+    await page.setContent(buildHtml(css + waitingCss));
+    await page.evaluate(() => {
+      const scaler = document.querySelector<HTMLElement>('.table-scaler')!;
+      scaler.style.setProperty('--table-w', `${scaler.getBoundingClientRect().width}px`);
+      const row = document.querySelector('.seat--hero .seat__cards--hero')!;
+      row.innerHTML = Array.from(
+        { length: 5 },
+        () => '<span class="seat__card-pick"><div class="seat__card seat__card--face"></div></span>'
+      ).join('');
+      const cta = document.createElement('button');
+      cta.className = 'waitlist-cta';
+      cta.innerHTML =
+        '<span class="waitlist-cta__face"><span class="waitlist-cta__line"><span class="waitlist-cta__eyebrow">Table Full · 0 Waiting</span></span><span class="waitlist-cta__line"><span class="waitlist-cta__title">Join The Waiting List</span></span></span>';
+      document.querySelector('.table-page')!.append(cta);
+    });
+    const measured = await page.evaluate(() => {
+      const face = document.querySelector('.waitlist-cta__face')!.getBoundingClientRect();
+      const lines = Array.from(document.querySelectorAll('.waitlist-cta__line')).map((el) =>
+        el.getBoundingClientRect()
+      );
+      const cards = Array.from(document.querySelectorAll('.seat--hero .seat__card-pick')).map(
+        (el) => ({ transform: getComputedStyle(el).transform, top: el.getBoundingClientRect().top })
+      );
+      return {
+        plate: document.querySelector('.seat:not(.seat--hero)')!.getBoundingClientRect().width,
+        face: { top: face.top, bottom: face.bottom },
+        lines: lines.map((r) => ({ top: r.top, bottom: r.bottom })),
+        cards,
+      };
+    });
+    expect(measured.plate, `${width}px: plate must scale below the old fixed minimum`).toBeLessThan(
+      width * 0.24
+    );
+    expect(measured.plate).toBeGreaterThan(priorPlate);
+    priorPlate = measured.plate;
+    for (const line of measured.lines) {
+      expect(line.top).toBeGreaterThanOrEqual(measured.face.top - 1);
+      expect(line.bottom).toBeLessThanOrEqual(measured.face.bottom + 1);
+    }
+    expect(
+      Math.abs(
+        (measured.lines[0].top + measured.lines[1].bottom) / 2 -
+          (measured.face.top + measured.face.bottom) / 2
+      )
+    ).toBeLessThan(1);
+    expect(measured.cards.every((card) => card.transform === 'none')).toBe(true);
+    expect(
+      Math.max(...measured.cards.map((card) => card.top)) -
+        Math.min(...measured.cards.map((card) => card.top))
+    ).toBeLessThan(1);
+  }
+});

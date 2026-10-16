@@ -12,7 +12,7 @@ their existing installation path.
 
 Admission refuses overrides and checks current freeze, maintenance boundary and
 the database's DDL authority before and after waiting. It reserves 310 seconds
-before waiting (245 seconds of lock budget plus the migration's existing 60
+only when the scheduler lock is occupied, before waiting (245 seconds of lock budget plus the migration's existing 60
 second statement budget and margin), then rechecks 60 seconds of runway. The
 original migrations retain their operator, source/history, ownership and DDL
 guards, including their original short DDL timeouts. A refusal or interrupted

@@ -27,8 +27,11 @@ def untouched():
  assert sql("SELECT NOT EXISTS(SELECT FROM supabase_migrations.schema_migrations WHERE version='20261015182133') AND to_regprocedure('public.fn_accounting_window_advance_due()') IS NULL AND md5(pg_get_functiondef('public.fn_process_weekly_accounting_scope(uuid,uuid)'::regprocedure))='a497381284a4f68b573cbf08ce1929e3';")=='t'
 # Future maintenance refusal must reject before acquiring the scheduler lane.
 sql("UPDATE fixture_accounting_admission SET refusal='future_wait';")
-r=apply(name);assert r.returncode==1 and 'accounting_install_wait_runway_refused' in r.stderr,(r.stdout,r.stderr);untouched()
-assert sql('SELECT NOT EXISTS(SELECT FROM pg_locks WHERE '+lockwhere+');')=='t'
+h=holder('')
+try:
+ r=apply(name);assert r.returncode==1 and 'accounting_install_wait_runway_refused' in r.stderr,(r.stdout,r.stderr);untouched()
+ assert sql('SELECT NOT EXISTS(SELECT FROM pg_locks WHERE '+lockwhere+' AND NOT granted);')=='t'
+finally:h.communicate(timeout=5);assert h.returncode==0
 sql('UPDATE fixture_accounting_admission SET refusal=NULL;')
 # Reproduce the former queued-reader refusal with the unwrapped exact file.
 h=holder('')
@@ -72,4 +75,13 @@ assert json.loads(sql("SELECT to_json(statements) FROM supabase_migrations.schem
 assert sql("SELECT md5(pg_get_functiondef('public.fn_process_weekly_accounting_scope(uuid,uuid)'::regprocedure))='009938740934b24744b35496477d02a1' AND to_regprocedure('public.fn_accounting_window_advance_due()') IS NOT NULL;")=='t'
 assert sql('SELECT NOT EXISTS(SELECT FROM pg_locks WHERE '+lockwhere+');')=='t'
 again=apply(name);assert again.returncode==0 and 'ALREADY-APPLIED' in again.stdout
+# Reset only this throwaway fixture to the exact preimage and prove an already
+# free lane does not reserve a wait. Production history is never deleted.
+sql("DELETE FROM supabase_migrations.schema_migrations WHERE version='20261015182133';DROP FUNCTION public.fn_accounting_window_advance_due();")
+for row in preimages:
+ if row['security_definer']:sql('SET check_function_bodies=false;'+row['definition'])
+sql("UPDATE fixture_accounting_admission SET refusal='future_wait';")
+r=apply(name);assert r.returncode==0,(r.stdout,r.stderr)
+assert json.loads(sql("SELECT to_json(statements) FROM supabase_migrations.schema_migrations WHERE version='20261015182133';"))==[source]
+
 print('PASS accounting admission: actual TLS CLI reader refusal before, bounded in-transaction wait after; concurrent freeze/boundary/clock refusal; exact source/history; postimages; transaction lock released; duplicate no replay')

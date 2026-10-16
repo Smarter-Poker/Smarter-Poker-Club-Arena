@@ -27,9 +27,11 @@ BEGIN
  -- Reserve the bounded wait and the original migration's 60s statement budget.
  refusal:=public.fn_ca_break_window_refuses_migrations(clock_timestamp());
  IF refusal IS NOT NULL THEN RAISE EXCEPTION 'accounting_install_ddl_refused' USING DETAIL=refusal;END IF;
- refusal:=public.fn_ca_break_window_refuses_migrations(clock_timestamp()+interval '310 seconds');
- IF refusal IS NOT NULL THEN RAISE EXCEPTION 'accounting_install_wait_runway_refused' USING DETAIL=refusal;END IF;
- PERFORM pg_catalog.pg_advisory_xact_lock(hashtextextended('union-accounting-scheduler',0));
+ IF NOT pg_catalog.pg_try_advisory_xact_lock(hashtextextended('union-accounting-scheduler',0)) THEN
+  refusal:=public.fn_ca_break_window_refuses_migrations(clock_timestamp()+interval '310 seconds');
+  IF refusal IS NOT NULL THEN RAISE EXCEPTION 'accounting_install_wait_runway_refused' USING DETAIL=refusal;END IF;
+  PERFORM pg_catalog.pg_advisory_xact_lock(hashtextextended('union-accounting-scheduler',0));
+ END IF;
  -- Everything can change while waiting. These checks precede the original
  -- migration, whose own operator/history/source/freeze/try-lock guards remain.
  IF public.fn_platform_frozen() IS DISTINCT FROM false OR public.fn_active_maintenance_release_boundary() IS NOT NULL THEN

@@ -2074,7 +2074,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
+  gap: 6px;
   width: 300px;
   max-width: 100%;
   aspect-ratio: 1916 / 334;
@@ -2085,7 +2085,8 @@
   white-space: nowrap;
   cursor: pointer;
 }
-.cashoutLabel {
+.cashoutLabel,
+.cashoutBalance {
   color: var(--ink-blue);
   font-size: 13px;
   font-weight: 800;
@@ -2093,14 +2094,6 @@
   line-height: 1.1;
   text-shadow: var(--ink-blue-glow);
   text-transform: uppercase;
-}
-.cashoutBalance {
-  color: var(--ink-silver);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  line-height: 1.1;
-  text-shadow: var(--ink-muted-shadow);
 }
 .cashoutButton:active {
   filter: brightness(1.2);

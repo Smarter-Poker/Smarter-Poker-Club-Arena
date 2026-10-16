@@ -95,6 +95,9 @@ const wholePositive = (v: unknown): number | null => {
   return n >= 1 ? n : null;
 };
 
+/** An arena freeroll's rebuy and add-on: 100 Diamonds, one dollar (Dan 2026-10-16). */
+export const DIAMOND_FREEROLL_REBUY_DIAMONDS = 100;
+
 export type DiamondSpawnConfig =
   | { ok: true; config: Record<string, unknown> }
   | { ok: false; reason: string };
@@ -210,16 +213,15 @@ export function diamondSpawnConfig(
     config.addOn = true;
     config.addonCost = cost;
   }
-  /* AN ARENA FREEROLL'S REBUY AND ADD-ON ARE ONE DIAMOND (Dan 2026-10-06,
-     recorded in ca_diamond_economics: "one_diamond_to_the_prize_pool"). The
-     creation door refuses any other price with
-     diamond_freeroll_rebuy_and_addon_cost_one_diamond, so the Midway Prime
-     Time Free Buy's 2-chip rebuy and add-on (its feature tier) made the
-     arena's 8 PM Free Buy unspawnable every day. The arena's own rule wins
-     for the arena's own event. */
+  /* AN ARENA FREEROLL'S REBUY AND ADD-ON ARE 100 DIAMONDS, ONE DOLLAR (Dan
+     2026-10-16, verbatim: "DIAMOND REBUYS ARE 100 DIAMONDS (ONE DOLLAR)").
+     This supersedes the 2026-10-06 one-Diamond answer. The creation door
+     (fn_poker_diamond_create_tournament_core) refuses any other freeroll
+     price, and fn_freerolls_are_free_buy forces the same 100 on an arena row,
+     so the three agree. A paid arena event's rebuy stays its own entry price. */
   if (total === 0) {
-    if (config.rebuyCost !== undefined) config.rebuyCost = 1;
-    if (config.addonCost !== undefined) config.addonCost = 1;
+    if (config.rebuyCost !== undefined) config.rebuyCost = DIAMOND_FREEROLL_REBUY_DIAMONDS;
+    if (config.addonCost !== undefined) config.addonCost = DIAMOND_FREEROLL_REBUY_DIAMONDS;
   }
   if (addOn) {
     config.addonChips = Math.floor(num(row.addon_chips));

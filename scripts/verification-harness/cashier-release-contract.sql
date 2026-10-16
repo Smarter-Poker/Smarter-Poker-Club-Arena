@@ -282,7 +282,9 @@ BEGIN
       -- 20261006005823, not the last CREATE (20260823170000).
       -- 20261012040542 (installed and read back live 2026-10-12) lists,
       -- filters and counts a treasury-funded seat as a Club Bank send.
-      'hash', 'f17eb94522c177856683617945d9f371'
+      -- 20261016155801 (#7115, installed 2026-10-16) reads the same rows and
+      -- totals in one pass; its transaction asserts this post-image.
+      'hash', 'cb7edf507b92e7c22535d6fed10a416b'
     ),
     jsonb_build_object(
       'signature', 'public.fn_promo_wallet_ledger(text,uuid,integer,integer,text)',

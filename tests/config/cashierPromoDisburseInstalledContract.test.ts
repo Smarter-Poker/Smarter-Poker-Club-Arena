@@ -39,3 +39,35 @@ it('pins the installed definition in the live Cashier verifier', () => {
   expect(entry).not.toContain(PREIMAGE);
   expect(entry).toContain("'search_path', 'search_path=public'");
 });
+
+// Club Bank ledger one-pass read (20261016155801, #7115) asserts its own
+// post-image inside the install transaction; the verifier pins that value.
+const ledgerMigration = readFileSync(
+  'supabase/migrations/20261016155801_club_bank_ledger_reads_its_totals_in_one_pass.sql',
+  'utf8'
+);
+const LEDGER_PREIMAGE = 'f17eb94522c177856683617945d9f371';
+const LEDGER_INSTALLED = 'cb7edf507b92e7c22535d6fed10a416b';
+
+it('derives the installed fn_club_bank_ledger definition from its migration', () => {
+  expect(ledgerMigration).toContain(`IS DISTINCT FROM '${LEDGER_PREIMAGE}'`);
+  expect(ledgerMigration).toContain(`IS DISTINCT FROM '${LEDGER_INSTALLED}'`);
+  const start = ledgerMigration.indexOf('CREATE OR REPLACE FUNCTION public.fn_club_bank_ledger(');
+  expect(start).toBeGreaterThanOrEqual(0);
+  const tail = ledgerMigration.slice(start);
+  const open = tail.indexOf('AS $function$');
+  const close = tail.indexOf('$function$', open + 'AS $function$'.length);
+  expect(close).toBeGreaterThan(open);
+  const definition = `${tail.slice(0, close + '$function$'.length)}\n`;
+  expect(createHash('md5').update(definition).digest('hex')).toBe(LEDGER_INSTALLED);
+});
+
+it('pins the installed Club Bank ledger in the live Cashier verifier', () => {
+  const at = contract.indexOf(
+    "'signature', 'public.fn_club_bank_ledger(uuid,integer,integer,text[])'"
+  );
+  expect(at).toBeGreaterThanOrEqual(0);
+  const entry = contract.slice(at, contract.indexOf('\n    ),', at));
+  expect(entry).toContain(`'hash', '${LEDGER_INSTALLED}'`);
+  expect(entry).not.toContain(`'hash', '${LEDGER_PREIMAGE}'`);
+});

@@ -25,7 +25,7 @@ installs of 20261015173123 and 20261015182133, e6960e39 -> a4973812 ->
 pinned substitutions, reproduces production's derived postimage md5s, and then
 proves:
 
-  1. the set-based week-clubs read returns exactly what the old per-row read
+  1. the per-club week-clubs read returns exactly what the old per-row read
      returned, for every union and week of a randomized fixture that covers
      NULL clubs, NULL, -infinity, infinity and boundary cutoffs, NULL and
      infinite charges, and every recognition flag;
@@ -79,7 +79,7 @@ SCOPE_SELECTOR = 'e6960e3960fde66c11578438692c57b1'   # 20261013212336
 SCOPE_SPLIT = 'a497381284a4f68b573cbf08ce1929e3'      # 20261015173123 (live)
 SCOPE_WINDOWS = '009938740934b24744b35496477d02a1'    # 20261015182133 (#6995)
 # Derived read-only on production with replace() over the live text.
-WEEK_CLUBS_POST = '5d65713ce64534dfbe31e749d5bf737f'
+WEEK_CLUBS_POST = '7d216ca8b05a7c4b5b47133d6bd95ed1'
 SCOPE_POST = 'faa32923eae3b055b18e85d5f3df356d'
 # 20261015234926 (PR #7040) pins #6995's text too and edits disjoint lines; it
 # installs first, and this candidate then starts from its postimage.

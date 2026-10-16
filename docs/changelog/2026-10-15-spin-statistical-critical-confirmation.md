@@ -1,0 +1,7 @@
+# Spin statistical critical confirmation
+
+The handoff identified a recurring critical alert from one rolling seven-day chi-square tail, despite the broader draw history matching the published ladder. Migration `20261015025123` already required a disjoint preceding window for a distribution warning, but left statistical criticals unconfirmed.
+
+Migration `20261015215216` extends that same calculation to critical escalation. The preceding window uses its own pooled degrees of freedom and the existing p<0.001 threshold table. A critical distribution verdict requires both windows to cross their critical lines. Existing warning confirmation remains unchanged, so a warning-level confirmation can still produce a warning. An isolated crossing is returned as `distribution_unconfirmed`, with current/prior critical flags and the prior critical threshold visible in the context. Off-ladder multipliers and |z|>4 expectation drift remain immediately critical.
+
+This changes statistical escalation, not the draws, odds, reserves or wallets. It does not close existing incidents. Source/grant/freeze/replay guards and exact before/after hashes are retained. The existing Spin native workflow executes both its original qualification and the new actual-function cases: fail-before, single versus confirmed criticals, warnings, off-ladder, expectation drift, low volume, absent prior data, exact disjoint boundaries, duplicates, rollback and authority. No production mutation was used for testing.

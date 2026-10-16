@@ -4,6 +4,24 @@ You are picking up the Lightning programme for Club Arena (Smarter Poker). Light
 
 **The dated delivery checkpoints above section U supersede the historical state in section U and sections 3 to 5.** Sections 3 to 5 were written at 17:30 UTC and are kept for their ids and history.
 
+## Separate Recovery Evidence Amendment (2026-10-16 16:48 UTC)
+
+- Owned supporting checkout taskroot/recovery-evidence, branch codex/lightning-recovery-phase-evidence-20261016 from 5cc. Submitted 7114/7116 heads unchanged. Existing single outage now bracketed by actual own-session/scoped reservation-slot-instance reads. Strict identity/state/timing classification; missing phase coverage remains UNKNOWN independently of legacy transport status. No new outage/retry/phase controller/runtime change. Nineteen focused helper/recovery checks and root TypeScript pass. Actual private phase observations pending.
+- Root retains sole Git/production/checkpoint writer; this is continued necessary R12 acceptance evidence, not a new feature or outside audit. No shadow/form operation dispatched. Final private proof still requires source fixes installed/adopted and actual access pass.
+
+## Continued Delivery Receipt (2026-10-16 16:44 UTC)
+
+- Canonical full reader emitted 2026-10-16T16:43:05.405Z, policy 2.9; manifest and all four hashes match the full receipt retained below. Fresh actual repository AGENTS/AGENT-PLAYBOOK/full CLAUDE/PUBLISHING/deploy paths/storage and full Lightning checkpoint/phase/register/rollout/review/catalog read. Canonical comparison passes. Owned stale-fold HEAD 5cc5796d8234895caa003e3d66fb91d1b9ca4d68; calibration candidate remains 9d706b8baa914fea369fa564ead5f1a46ff2098f. Root retains sole Git/production/checkpoint ownership.
+- Both SSD volumes independently mounted disk5s4/s3, Work about 10 GiB free, Archives about 205 GiB. Current required accounting 1 remains running for 7114; 1/3 for 7116, all other component checks passed or correctly classified skipped. Ancillary outside-scope migration-ledger failures remain visible; no duplicate checks/installation/activation.
+- Recovery witness source review finds it discards snapshot state and cannot establish idle/reservation/dealing at disruption. Separate finite evidence-tool amendment is being prepared without changing either qualified submitted candidate. Existing reconnect engineering qualification is not promoted to actual phase interruption proof.
+
+## Parallel Qualified Candidates Submitted (2026-10-16 16:17 UTC)
+
+- Privatejoinguard correctedhead9d706b8baa914fea369fa564ead5f1a46ff2098f pushednormally into7114. NewowningCI38930172303, noobservedcurrentheadfailure. Obsolete38928034189 normalcancelignoredalwaysaccountingjobs; explicitforcecancelnowterminalcancelledwithzeroactivejobs. Originalhostedfailurelogretained; wrapperpasseswithout-rgutilityPATH. Databaseinstallationstillpendingprotectedmerge; rawMD5826368469180345989cd925e199b0992 unchanged.
+- Stale-foldbranch fastforwarded9d preservingallpendingprivatefixsource beforecommittingruntimechange5cc5796d8234895caa003e3d66fb91d1b9ca4d68. Normalcommit/prepushpassed, pushed, PR7116created/attached, currentowningCI38930652605. All282Lightningengine/1092affectedclient/bothTypeScripts pass. Normalprepushalsopassedrequiredselected233files3416tests/importers615files8136tests/7files142tests/70files1015tests (overlappingselections, donotsumasuniquecount). No furthercandidatechangesunlessactualfailure.
+- Bothcandidatesremainowned; preferprotectedmerge/exactinstall7114firstwhile7116qualifies. Thenactualaccessretryoriginaloperationf124054c-cf6d-4930-8261-2f57fccbaee6 oncorrectedmain. Do notstart60minshadowuntilnewhand-boundclientandsealedengineareliveandverified; runtimeprotocoldependencyisspecificanddocumented. Preparedshadow/form/drain IDsremainNOTdispatched. BothprivatepilotsandallglobalLightningdisabledatfreshread.
+- SSDcurrentWork6.4GiBfree/Archives205GiBfree; stale-folddependencylinksreadSAMEtaskownedcalibrationdeps, noinstallthroughlinks. Retainbothownedworktreesuntilassigneddeliveryfinishes; rootsoleGit/prod/checkpointwriter.
+
 ## Hand-Bound Fold Candidate (2026-10-16 16:11 UTC)
 
 - Separate stale-fold source nowcaptures actualrenderedhand UUID synchronously andsendsstable lightning-hand:<uuid> viaexistingactionContext throughHTTPfingerprint/SeatProxy. Host rejects missing/stale tokens beforeanyflags/timestamps/foldsideeffects; ordinaryturncontexts andhorseinputunchanged. Samehandearlyfold remainsvalidacrossotherturns. No legacycontextlessfallback.

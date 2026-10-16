@@ -10,6 +10,7 @@ import {
   observeRevokedSocket,
   witnessRecovery,
 } from './lightning-pilot-recovery.mjs';
+import { observeRecoveryPhaseBracket } from './recovery-phase-observation.mjs';
 const SECRET = 'TEST_PRIVATE_FRAME_AND_TOKEN';
 const ROOM = '10000000-0000-4000-8000-000000000001';
 const OTHER = '10000000-0000-4000-8000-000000000002';
@@ -277,4 +278,50 @@ test('revoked consumer contract belongs to maintained session owner and login ro
   assert.match(consumer, /supabase.auth.signOut\(\{ scope: 'local' \}\)/);
   assert.match(consumer, /localStorage.removeItem\(AUTH_STORAGE_KEY\)/);
   assert.match(read('src/lib/signIn.ts'), /auth\/login/);
+});
+
+test('one normal disconnect is bracketed in order and never closes unobserved phases', async () => {
+  const order = [];
+  let reads = 0;
+  const result = await observeRecoveryPhaseBracket({
+    capture: async () => {
+      order.push('read');
+      return {
+        status: 'observed',
+        phase: reads++ ? 'idle' : 'reservation',
+        ...pins[1],
+        handId: null,
+        startedAt: reads === 1 ? 100 : 200,
+        endedAt: reads === 1 ? 110 : 210,
+      };
+    },
+    disconnect: async () => {
+      order.push('disconnect');
+      return { offlineStartedAt: 120, onlineStartedAt: 190 };
+    },
+  });
+  assert.deepEqual(order, ['read', 'disconnect', 'read']);
+  assert.equal(result.bracket.status, 'observed');
+  assert.deepEqual(result.coverage, {
+    idle: 'unknown',
+    reservation: 'observed',
+    dealing: 'unknown',
+  });
+});
+test('missing phase remains unknown without retrying or changing normal reconnect outcome', async () => {
+  let calls = 0;
+  const result = await observeRecoveryPhaseBracket({
+    capture: async () => ({ status: 'unknown', phase: 'unknown' }),
+    disconnect: async () => {
+      calls++;
+      return { offlineStartedAt: 120, onlineStartedAt: 190 };
+    },
+  });
+  assert.equal(calls, 1);
+  assert.equal(result.bracket.status, 'unknown');
+  assert.deepEqual(result.coverage, {
+    idle: 'unknown',
+    reservation: 'unknown',
+    dealing: 'unknown',
+  });
 });

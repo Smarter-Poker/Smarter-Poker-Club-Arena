@@ -189,6 +189,8 @@ source:
 
 These are this branch alone; combined with the opponent-exploitation branch they move again and
 must be recomputed on the combined source.
+Superseded: the combined table is in
+[2026-10-16-horses-read-each-opponent.md](2026-10-16-horses-read-each-opponent.md#combined-digests-this-change-with-the-declared-pack-work).
 
 As in #6777 and #6886, the committed selections are null until requalification: PLO4 generation 2,
 PLO5/PLO6/PLO8 generation 2 and FLH generation 3 are retained in

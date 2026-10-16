@@ -142,9 +142,12 @@ frame makes the same decision.
 ## What this costs, and what is not verified
 
 - The PLO4 (Phase 10), PLO5/6/8 (Phase 11) and FLH (Phase 12) live
-  selections no longer match the running policy digest. They are refused
-  `policy_digest_mismatch` and run shadow until their locked matrices
-  requalify this source. Nothing re-points a digest.
+  selections no longer match the running policy digest. Combined with the
+  declared-work change (below), their committed selections are null (the
+  #6777 / #6886 precedent) and they run shadow until their locked matrices
+  requalify this source. The retired generations are kept in
+  `HorsePreviousSelections.test-support.ts` (`RETIRED_2026_10_16_*`) and
+  pinned as refused. Nothing re-points a digest.
 - The decayed counters are memory only (no migration). Each worker learns
   the tables it serves and forgets at restart (the hourly break); the read
   re-forms within about 8 hands.
@@ -153,3 +156,59 @@ frame makes the same decision.
   later than at 3+ seats.
 - Not measured: bb/100 of the exploit against a live human field; the A/B
   above is decision frequencies, not results.
+
+## Combined digests (this change with the declared pack work)
+
+This branch carries both this change and
+[the packs do their declared work](2026-10-16-packs-do-declared-work.md)
+(fixed declared work instead of the 4 ms wall-clock budgets; FLO8 round 4).
+The digest table in that changelog was computed on its branch alone and is
+**superseded** by this one. Recomputed on the combined tree (after merging
+main at 0fb6ae5b2e5; nothing main added is inside a hashed boundary) with the
+repo's own digest functions (`horsePhase8PolicyDigest`,
+`horsePhase10PolicyDigest`, `horsePhase11PolicyDigest`,
+`horsePhase12PolicyDigest`, `horsePhase13PolicyDigest` and the
+`PHASE10/11/12/13_RUNNING_CONTRACT_DIGEST(S)` constants). Definitions: Phase 10
+v3, Phase 11 v5, Phase 12 v2, Phase 13 v2.
+
+| Phase | Pack                | Kind     | Digest                                                           |
+| ----- | ------------------- | -------- | ---------------------------------------------------------------- |
+| 8     | tournament postflop | policy   | 3eaf56053395fb046c8bce310e4175c0504d6399b04958900c5fd00e7661fd3a |
+| 10    | PLO4                | policy   | 413bc42984185a3ec1547858ec7116fa44bd0e3c1c33b1fd05d8f6fa6fc62378 |
+| 10    | PLO4                | contract | 83ab185b2a2df72876b73d61ece6ea8c2f03f364ce252deecbfcde392ae5f838 |
+| 11    | PLO5                | policy   | c2ca1d89c2655f05c5f33c5dd8ac388005f1bb41e659f3165becf480d77ebc49 |
+| 11    | PLO6                | policy   | a5017462c7c169bc3d74d51d477b20f18a44403b23e1d8325aff25e85f4e2cc0 |
+| 11    | PLO8                | policy   | 6aef492dcb1d30236a28efca6b1b94ce625c064869aca712796781292b03193b |
+| 11    | PLO5, PLO6, PLO8    | contract | 0716bb254de73014914ca086aa26b6ffe499bb2e50897432de6a9e855da5ee05 |
+| 12    | Short Deck          | policy   | 8c067dda57d9a063fa70ea836c3dd6c964918cebb3f4a71b746797f9567d9faf |
+| 12    | Crazy Pineapple     | policy   | e27d69f1517fe011cd5259be9c8c9ee8e40d8cb5a494512b9865f13f4c66929c |
+| 12    | FLH                 | policy   | 95b99b8c792eb83ac00e9e368fae5e2dcec983e2a86415c16eb3b72b936031c6 |
+| 12    | FLO8                | policy   | 7c16066271f626b6c8dc564c74dbf8e79eb7c0b9ffcfd61eaf02196ed15c7033 |
+| 12    | Short Deck          | contract | 0abc9fa4e6e850989e0007a8f5be682ac1a14725c11a6272641533a2000884e2 |
+| 12    | Crazy Pineapple     | contract | 0abc9fa4e6e850989e0007a8f5be682ac1a14725c11a6272641533a2000884e2 |
+| 12    | FLH                 | contract | fafbba8dc23ebc59b5aadf78fdcc47cd6f504baf9bcd10b07970ad7fbea501c0 |
+| 12    | FLO8                | contract | 0abc9fa4e6e850989e0007a8f5be682ac1a14725c11a6272641533a2000884e2 |
+| 13    | nlh                 | policy   | 36e279bae7bcba1eaba3682564cbafae1af749814ebd58540d466e9cbe603df0 |
+| 13    | short_deck          | policy   | 04c6b48b4139299baee7ad8d71757674494bcd27649605a5bb928fc5d7ac1820 |
+| 13    | flh                 | policy   | 2ac7a5c4f011e9d65ef032d5724e7d34ddbd3192e328b957289dfa0d9024fb2b |
+| 13    | pineapple           | policy   | fa896bb8aec065c926607d8bbb43957801d945ff19f639535481d2d43a965e7f |
+| 13    | plo4                | policy   | 35333017625c422fc31e9fa9914a28059ab9366492a275e45f491bcce8423adb |
+| 13    | plo5                | policy   | aa866142a97a355f1009c9cab2b985c307ebdcbc5a4ed9bc528d63dbe657a7f6 |
+| 13    | plo6                | policy   | 8057b1729af8642e55cf82c83ab159c89c1924c81affaa8b09e3111cdf5833fd |
+| 13    | plo8                | policy   | 4ef3da0b48e4ba67681c49f3bd3457dfa39d62979e4fc9458e3da72259202276 |
+| 13    | flo8                | policy   | 9d7885c8839c4b84f31eceecf8295d06df6d9e7f67a22cc866d84b15eba95782 |
+| 13    | all                 | contract | 0cd88d970c600fb64933337672af349e9d106402d4edfcc3510e1f26374741f8 |
+
+Phase 8 has no strength-contract digest (its league contract is checked key by
+key by `phase8-strength-assemble.mjs`). The Phase 13 contract is unchanged.
+FLH keeps the frozen Phase 12 contract v1; Short Deck, Crazy Pineapple and FLO8
+are on Phase 12 contract v2. No selection is set: every pack above is shadow
+until the requalification measures exactly these digests.
+
+Combined-tree tests (after the main merge): server engine suite
+(`src/engine src/services src/benchmark`) 866 files passed, 1 skipped; 15,778
+tests passed, 168 skipped. The neutrality law with `HORSE_NEUTRALITY_FULL=1`
+(all 600 hands of every run): 20 of 20. `tsc --noEmit -p server` clean. Root
+law-registry and migration laws: 9 files, 1,028 tests passed. Migration
+20261016182539 is unique against main, all 823 remote branches and every local
+worktree.

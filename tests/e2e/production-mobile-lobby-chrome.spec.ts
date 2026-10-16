@@ -83,7 +83,11 @@ test.describe('the mobile lobby chrome on production', () => {
   // in run 35310320354. Allow the existing bounded navigation/readiness (30s +
   // 45s), greeting (3s + 8s), count (20s), persistence (4s) and geometry phases
   // to finish. No individual readiness deadline or visual assertion is relaxed.
-  test.describe.configure({ timeout: 120_000 });
+  // These cases share the certificate account: the persistence journey selects
+  // PLO/NLH while the scroll journey selects ALL. Keep this group in order so
+  // one real preference write cannot replace another case's saved selection.
+  // Default mode still executes later cases when an earlier assertion fails.
+  test.describe.configure({ mode: 'default', timeout: 120_000 });
 
   test('the selected game list survives a cold return to the lobby', async ({ page }) => {
     await openLobby(page);

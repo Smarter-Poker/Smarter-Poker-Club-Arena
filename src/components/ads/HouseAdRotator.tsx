@@ -78,8 +78,6 @@ interface HouseAdRotatorProps {
   /** Where a creative's checked destination should take the player. */
   onNavigate?: (path: string) => void;
   className?: string;
-  /** Hide the surface without resolving or recording an advert. */
-  visible?: boolean;
 }
 
 function substituteClub(url: string | null, clubId: string | null | undefined): string | null {
@@ -94,7 +92,6 @@ export default function HouseAdRotator({
   intervalMs = 7000,
   onNavigate,
   className,
-  visible = true,
 }: HouseAdRotatorProps) {
   const [ads, setAds] = useState<HouseAd[]>([]);
   const [index, setIndex] = useState(0);
@@ -108,13 +105,12 @@ export default function HouseAdRotator({
   openRef.current = open;
 
   // Resolve only platform-managed creatives. Owner presentation settings
-  // may hide this surface; they never supply or replace its advertising.
+  // never hide this surface or supply or replace its advertising.
   useEffect(() => {
     let cancelled = false;
     setAds([]);
     setIndex(0);
     setOpen(false);
-    if (!visible) return;
     void AdService.resolve(slot, clubId, Math.min(10, Math.max(limit * 2, limit)))
       .then((rows) => {
         if (cancelled) return;
@@ -127,7 +123,7 @@ export default function HouseAdRotator({
     return () => {
       cancelled = true;
     };
-  }, [slot, clubId, limit, visible]);
+  }, [slot, clubId, limit]);
 
   // ── Reduced motion: the crossfade collapses, the rotation does not ─────────
   // Animation law (CLAUDE.md 10.6): reduced-motion collapses motion but never
@@ -146,7 +142,7 @@ export default function HouseAdRotator({
   useEffect(() => {
     if (timerRef.current) clearInterval(timerRef.current);
     timerRef.current = null;
-    if (!visible || ads.length < 2) return;
+    if (ads.length < 2) return;
     timerRef.current = setInterval(
       () => {
         // A hidden tab does not rotate: nobody is looking, and advancing the
@@ -162,9 +158,9 @@ export default function HouseAdRotator({
       if (timerRef.current) clearInterval(timerRef.current);
       timerRef.current = null;
     };
-  }, [ads.length, intervalMs, visible]);
+  }, [ads.length, intervalMs]);
 
-  const ad = visible && ads.length > 0 ? ads[Math.min(index, ads.length - 1)] : null;
+  const ad = ads.length > 0 ? ads[Math.min(index, ads.length - 1)] : null;
   const adId = ad?.adId;
 
   // ── Impression: rendered ───────────────────────────────────────────────────

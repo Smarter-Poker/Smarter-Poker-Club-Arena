@@ -12,7 +12,6 @@ vi.mock('../../src/core/MasterBus', () => ({ masterBus: { emit: mocks.emit } }))
 import {
   readClubBanner,
   saveClubBanner,
-  saveClubAdVisibility,
   uploadClubBannerImage,
   validateClubBanner,
 } from '../../src/services/ClubBannerService';
@@ -91,62 +90,6 @@ describe('club banner persistence', () => {
     mocks.from.mockReturnValue(query({ data: null, error: new Error('denied') }));
     await expect(saveClubBanner('club', 'owner', null, '/new.png')).rejects.toThrow('denied');
     await expect(readClubBanner('club')).rejects.toThrow('denied');
-    expect(mocks.emit).not.toHaveBeenCalled();
-  });
-});
-
-describe('platform ad visibility persistence', () => {
-  const expected = { unrelated: 'preserved', rotating_banners: [{ title: 'Legacy' }] };
-  const saved = {
-    ...club,
-    union_id: 'union',
-    settings: { ...expected, show_smarter_poker_ads: false },
-  };
-  it('changes only visibility with owner RLS and complete settings CAS, including union clubs', async () => {
-    const q = query({ data: saved, error: null });
-    mocks.from.mockReturnValue(q);
-    await expect(saveClubAdVisibility('club', 'owner', expected, false)).resolves.toEqual(saved);
-    expect(q.update).toHaveBeenCalledWith({ settings: saved.settings });
-    expect(q.eq.mock.calls).toEqual([
-      ['id', 'club'],
-      ['owner_id', 'owner'],
-      ['settings', JSON.stringify(expected)],
-    ]);
-    expectPresentationNotification('club');
-    expect(mocks.upload).not.toHaveBeenCalled();
-  });
-  it('uses SQL null semantics when settings have never been saved', async () => {
-    const q = query({ data: saved, error: null });
-    mocks.from.mockReturnValue(q);
-    await saveClubAdVisibility('club', 'owner', null, false);
-    expect(q.is).toHaveBeenCalledWith('settings', null);
-  });
-  it('recovers an already committed flag while preserving later unrelated settings', async () => {
-    const current = { ...saved, settings: { ...saved.settings, unrelated: 'newer' } };
-    mocks.from
-      .mockReturnValueOnce(query({ data: null, error: null }))
-      .mockReturnValueOnce(query({ data: current, error: null }));
-    await expect(saveClubAdVisibility('club', 'owner', expected, false)).resolves.toEqual(current);
-    expectPresentationNotification('club');
-  });
-  it.each([
-    { ...saved, settings: { show_smarter_poker_ads: true } },
-    { ...saved, owner_id: 'another-owner' },
-  ])(
-    'refuses changed visibility or revoked ownership without success notification',
-    async (current) => {
-      mocks.from
-        .mockReturnValueOnce(query({ data: null, error: null }))
-        .mockReturnValueOnce(query({ data: current, error: null }));
-      await expect(saveClubAdVisibility('club', 'owner', expected, false)).rejects.toThrow(
-        'Reload'
-      );
-      expect(mocks.emit).not.toHaveBeenCalled();
-    }
-  );
-  it('propagates database refusal without reporting a successful save', async () => {
-    mocks.from.mockReturnValue(query({ data: null, error: new Error('denied') }));
-    await expect(saveClubAdVisibility('club', 'owner', expected, false)).rejects.toThrow('denied');
     expect(mocks.emit).not.toHaveBeenCalled();
   });
 });

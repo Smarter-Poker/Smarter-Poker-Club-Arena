@@ -320,14 +320,11 @@
      modifier below, which is applied under exactly the condition that draws
      the button. */
   padding-right: 0;
-  /* Dan 2026-08-28: "the profit tracker and the 4 screen box need to be
-     lowered down so the 4 screen box is touching the top of where the table
-     meets." `center` floated both chips in the middle of the bar's full
-     height (safe-area inset included), leaving a gap between them and the
-     felt below. `flex-end` seats them on the wrapper's bottom edge — the
-     exact line where the table starts. The tab strip itself is unaffected:
-     it sizes to its own content and carries its own safe-area padding. */
-  align-items: flex-end;
+  /* October 15: the enlarged profit control shares the action pills' centre. */
+  align-items: center;
+  --mtp-profit-width: 128px;
+  --mtp-profit-font: 1.44rem;
+  --mtp-profit-height: 52px;
   gap: 0;
   padding: 0;
   /* Dan 2026-08-28: the strip either side of the P&L chip / tile toggle
@@ -352,6 +349,24 @@
      always and the bar does not move on a quiet schedule. The pinned modifier
      below overrides this with a `top` instead: it is fixed, not in flow. */
   margin-top: var(--mtt-ticker-h, 0px);
+}
+
+.multi-table-page__tab-bar-wrapper > .table-tab-bar {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.multi-table-page:has(.multi-table-page__pnl-chip) {
+  --sp-tabbar-h: calc(53px + var(--sp-tabbar-inset, env(safe-area-inset-top, 0px)));
+}
+@media (max-width: 480px) {
+  .multi-table-page__tab-bar-wrapper {
+    --mtp-profit-width: 104px;
+    --mtp-profit-font: 1.24rem;
+    --mtp-profit-height: 44px;
+  }
+  .multi-table-page:has(.multi-table-page__pnl-chip) {
+    --sp-tabbar-h: calc(45px + var(--sp-tabbar-inset, env(safe-area-inset-top, 0px)));
+  }
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -545,9 +560,10 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
 }
 
 .mtp-lobby-btn {
-  position: fixed;
-  top: calc(env(safe-area-inset-top, 0px) + var(--mtt-ticker-h, 0px) + 5px);
-  right: var(--mtp-edge);
+  position: relative;
+  top: auto;
+  right: auto;
+  margin: var(--sp-tabbar-inset, env(safe-area-inset-top, 0px)) var(--mtp-edge) 0;
   z-index: 210;
   display: flex;
   align-items: center;
@@ -572,11 +588,10 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
   pointer-events: none;
 }
 
-/* The strip and the P&L chip must not slide under it - applied under exactly
-   the condition that renders it (`activeClusterId && !isTileView`), so an
-   ordinary table keeps the whole width for its tabs. */
+/* October 15: Lobby occupies its own flex slot beside the enlarged tracker.
+   No fixed-position reserve remains for either control to slide underneath. */
 .multi-table-page__tab-bar-wrapper--with-lobby {
-  padding-right: calc(var(--mtp-edge) + var(--mtp-lobby-w) + var(--mtp-edge));
+  padding-right: 0;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -654,16 +669,14 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
     min-width: 0;
   }
 
-  /* The strip's four-pill budget (see the arithmetic in TableTabBar.css) is
-     computed from a fixed 52px for this chip, so the chip has to actually hold
-     to it. A six-figure swing ellipsises rather than pushing a table off the
-     screen — the exact figure is one tap away in the breakdown this opens. */
+  /* October 15 doubles the old 52px chip. Keep that mobile width bounded;
+     long figures clip inside their control and remain available in the
+     session breakdown without pushing Lobby outside the viewport. */
   .multi-table-page__pnl-chip {
-    /* border-box is the global reset (src/styles/club-engine.css), so 52px is
+    /* border-box is the global reset (src/styles/club-engine.css), so 104px is
        the whole chip, border and padding included. */
-    max-width: 52px;
-    padding: 4px 6px;
-    font-size: 0.62rem;
+    max-width: 104px;
+    padding: 8px 12px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -1150,14 +1163,27 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
    same pair the session ledger this chip opens now prints its rows in, so the
    figure does not change colour when the sheet opens. */
 .multi-table-page__pnl-chip {
-  flex-shrink: 0;
-  padding: 5px 10px;
-  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  flex: 0 0 var(--mtp-profit-width);
+  width: var(--mtp-profit-width);
+  max-width: var(--mtp-profit-width);
+  height: var(--mtp-profit-height);
+  margin-top: var(--sp-tabbar-inset, env(safe-area-inset-top, 0px));
+  margin-left: auto;
+  line-height: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 8px 6px;
+  border-radius: 24px;
   border: 1px solid rgb(255 255 255 / 14%);
   background: rgb(5 6 7 / 70%);
   color: #9aa5b3;
   font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
-  font-size: 0.72rem;
+  font-size: var(--mtp-profit-font);
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   cursor: pointer;

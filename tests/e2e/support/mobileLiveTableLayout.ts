@@ -105,3 +105,76 @@ export async function certifyMobileLiveTableLayout(page: Page, testInfo: TestInf
     if (originalViewport) await page.setViewportSize(originalViewport);
   }
 }
+
+/** Observe real payouts during the existing hand/reconnect case; never inject a hand. */
+export async function installMobileAwardJournal(page: Page) {
+  await page.evaluate(() => {
+    const evidence = {
+      landings: [] as Array<{ distance: number; recipient: string }>,
+      violations: [] as string[],
+      multiBoardSamples: 0,
+    };
+    const seen = new Set<string>();
+    const inspect = () => {
+      for (const chip of document.querySelectorAll<HTMLElement>(
+        '[data-chip-recipient][data-chip-phase="landed"]'
+      )) {
+        const id = chip.dataset.chipFlight ?? '';
+        if (!id || seen.has(id)) continue;
+        seen.add(id);
+        const recipient = chip.dataset.chipRecipient ?? '';
+        const seat = Array.from(document.querySelectorAll<HTMLElement>('[data-player-id]')).find(
+          (node) => node.dataset.playerId === recipient
+        );
+        const target = seat?.querySelector('.seat__info')?.getBoundingClientRect();
+        if (!target || !target.width) {
+          evidence.violations.push('Payout Has No Rendered Recipient');
+          continue;
+        }
+        const actual = chip.getBoundingClientRect();
+        const distance = Math.hypot(
+          actual.left + actual.width / 2 - target.left - target.width / 2,
+          actual.top + actual.height / 2 - target.top - target.height / 2
+        );
+        evidence.landings.push({ distance, recipient });
+        if (distance > 2) evidence.violations.push('Payout Missed Its Rendered Recipient');
+      }
+      for (const run of document.querySelectorAll('.community-area__run')) {
+        if (!run.querySelector('.community-area__run-winner')) continue;
+        evidence.multiBoardSamples++;
+        if (
+          run.querySelectorAll('.community-cards__card').length < 5 ||
+          run.querySelector('.card-squeeze-host[data-rs-animating="true"]')
+        )
+          evidence.violations.push('Run Award Appeared Before Its River Finished');
+      }
+    };
+    const observer = new MutationObserver(inspect);
+    observer.observe(document.body, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ['data-chip-phase', 'data-rs-animating'],
+    });
+    (window as any).__mobileAwardJournal = {
+      evidence,
+      stop: () => {
+        inspect();
+        observer.disconnect();
+        return evidence;
+      },
+    };
+  });
+}
+export async function certifyMobileAwardJournal(page: Page, testInfo: TestInfo) {
+  const evidence = await page.evaluate(() => (window as any).__mobileAwardJournal.stop());
+  console.log(`MOBILE_LIVE_PAYOUT_PROOF ${JSON.stringify(evidence)}`);
+  await testInfo.attach('mobile-live-table-payout-measurements', {
+    body: Buffer.from(JSON.stringify(evidence)),
+    contentType: 'application/json',
+  });
+  expect(evidence.violations, 'Actual mobile payout and river ordering').toEqual([]);
+  expect(evidence.landings.length, 'Live proof requires an actual payout landing').toBeGreaterThan(
+    0
+  );
+}

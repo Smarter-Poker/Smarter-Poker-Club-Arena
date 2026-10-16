@@ -1,4 +1,8 @@
-import { certifyMobileLiveTableLayout } from './support/mobileLiveTableLayout';
+import {
+  certifyMobileLiveTableLayout,
+  installMobileAwardJournal,
+  certifyMobileAwardJournal,
+} from './support/mobileLiveTableLayout';
 import {
   devices,
   expect,
@@ -1921,6 +1925,7 @@ test.describe('production mobile WebKit live-table realtime continuity', () => {
       ).toContainText(/\d+/, { timeout: 10_000 });
 
       await installLiveTablePresentationJournal(page);
+      await installMobileAwardJournal(page);
 
       /* Retained EVENT replay is explicitly excluded by its protocol marker.
          Prove action/street progress, completion, automatic next-hand start,
@@ -2046,6 +2051,7 @@ test.describe('production mobile WebKit live-table realtime continuity', () => {
         await expect(banner).toBeHidden();
         // Layout proof follows continuity; its UI reads do not extend any hand deadline.
         testInfo.setTimeout(testInfo.timeout + 45_000);
+        await certifyMobileAwardJournal(page, testInfo);
         await certifyMobileLiveTableLayout(page, testInfo);
       } finally {
         if (offline) await context.setOffline(false).catch(() => {});

@@ -697,3 +697,49 @@ test('mobile seat plates, straight private cards and waiting-list text fit their
     ).toBeLessThan(1);
   }
 });
+
+test('the doubled profit tracker shares the action-pill centre beside the rightmost Lobby', async ({
+  page,
+}) => {
+  const styles = ['src/pages/MultiTablePage.css', 'src/components/table/TableTabBar.css']
+    .map((path) => readFileSync(resolve(ROOT, path), 'utf8'))
+    .join('\n');
+  for (const width of [375, 393, 430, 1024])
+    for (const inset of [0, 28]) {
+      await page.setViewportSize({ width, height: 852 });
+      await page.setContent(`<style>*{box-sizing:border-box}body{margin:0}${styles}</style>
+      <div class="multi-table-page" style="--sp-tabbar-inset:${inset}px;--mtt-ticker-h:24px">
+        <div class="multi-table-page__tab-bar-wrapper multi-table-page__tab-bar-wrapper--with-lobby">
+          <div class="table-tab-bar"><div class="table-tab-bar__menu-container" style="width:34px;flex-shrink:0"></div><div class="table-tab-bar__tabs"><button class="table-tab-bar__tab">PLO5</button><button class="table-tab-bar__tab">PLO4</button></div></div>
+          <button class="multi-table-page__pnl-chip multi-table-page__pnl-chip--down">-170.37</button>
+          <button class="mtp-lobby-btn">Lobby</button>
+        </div>
+      </div>`);
+      const measured = await page.evaluate(() => {
+        const profit = document.querySelector<HTMLElement>('.multi-table-page__pnl-chip')!;
+        const tab = document.querySelector('.table-tab-bar__tab')!.getBoundingClientRect();
+        const pnl = profit.getBoundingClientRect();
+        const lobby = document.querySelector('.mtp-lobby-btn')!.getBoundingClientRect();
+        return {
+          width: pnl.width,
+          height: pnl.height,
+          pnlCenter: pnl.top + pnl.height / 2,
+          tabCenter: tab.top + tab.height / 2,
+          lobbyCenter: lobby.top + lobby.height / 2,
+          pnlRight: pnl.right,
+          lobbyLeft: lobby.left,
+          lobbyRight: lobby.right,
+          fullText: profit.scrollWidth <= profit.clientWidth,
+        };
+      });
+      expect(measured.width).toBe(width <= 480 ? 104 : 128); // Twice the previous 52px mobile cap.
+      expect(measured.height).toBe(width <= 480 ? 44 : 52);
+      expect(Math.abs(measured.pnlCenter - measured.tabCenter)).toBeLessThanOrEqual(1);
+      expect(Math.abs(measured.lobbyCenter - measured.tabCenter)).toBeLessThanOrEqual(1);
+      expect(measured.pnlRight).toBeLessThanOrEqual(measured.lobbyLeft);
+      expect(measured.lobbyRight).toBeLessThanOrEqual(width);
+      expect(measured.fullText, `${width}px inset=${inset}: ${JSON.stringify(measured)}`).toBe(
+        true
+      );
+    }
+});

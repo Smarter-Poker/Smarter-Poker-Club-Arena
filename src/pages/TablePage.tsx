@@ -1,3 +1,4 @@
+import { winnerViewportPoint, potViewportPoint } from '../lib/chipAwardGeometry';
 import { observeDealPresentationTiming } from '../utils/dealPresentationTiming';
 import { formatPrizeAtUnit } from '../utils/format';
 import {
@@ -6079,6 +6080,18 @@ function LiveTablePage({
    * board's ribbon/highlight/share label gates on its own run's turn.
    */
   const [ritRevealedRuns, setRitRevealedRuns] = useState(0);
+  const [ritFaceUpBoards, setRitFaceUpBoards] = useState<number[]>([]);
+  const ritFaceUpBoardsRef = useRef(new Set<number>());
+  const pendingRitAwardsRef = useRef(new Map<number, Array<() => void>>());
+  const markRitBoardPresented = useCallback((board: number, hand: number) => {
+    if (hand !== (tableStateRef.current.handNumber ?? 0)) return;
+    ritFaceUpBoardsRef.current.add(board);
+    setRitFaceUpBoards((prev) => (prev.includes(board) ? prev : [...prev, board]));
+    const pending = pendingRitAwardsRef.current.get(board) ?? [];
+    pendingRitAwardsRef.current.delete(board);
+    for (const launch of pending) launch();
+  }, []);
+
   /** Absolute wall-clock ms at which each run's ribbon lands (index = run-1).
    *  POT_WIN aligns each run's award groups to these. */
   const ritRunRibbonAtRef = useRef<number[]>([]);
@@ -6182,6 +6195,9 @@ function LiveTablePage({
     setRitRevealCounts(null);
     setRitRevealDone(false);
     setRitRevealedRuns(0);
+    setRitFaceUpBoards([]);
+    ritFaceUpBoardsRef.current.clear();
+    pendingRitAwardsRef.current.clear();
     ritRunRibbonAtRef.current = [];
     ritLastAcceptBannerAtRef.current = 0;
     ritDeadlineRef.current = 0;
@@ -6370,7 +6386,10 @@ function LiveTablePage({
       // then replays RUN BY RUN — each board's ribbon, highlights and share
       // label appear on its own turn (ritRevealedRuns), ships aligned to it.
       const visibleCount = ritRevealCounts?.[bi] ?? 5;
-      const revealed = ritRevealCounts === null || ritRevealDone || bi < ritRevealedRuns;
+      const revealed =
+        visibleCount >= 5 &&
+        ritFaceUpBoards.includes(bi) &&
+        (ritRevealCounts === null || ritRevealDone || bi < ritRevealedRuns);
 
       return {
         boardIndex: bi,
@@ -6396,6 +6415,7 @@ function LiveTablePage({
     ritRevealCounts,
     ritRevealDone,
     ritRevealedRuns,
+    ritFaceUpBoards,
   ]);
 
   // MULTI-BOARD PARITY 2026-08-26: union of each RIT board winner's hole
@@ -6441,6 +6461,7 @@ function LiveTablePage({
    */
   const winnerBandActive =
     winnerInfo.playerIds.length > 0 &&
+    ((ritRunsThisHand <= 1 && !ritResult) || (ritRevealedRuns > 0 && ritFaceUpBoards.length > 0)) &&
     (winnerInfo.handNumber === 0 || winnerInfo.handNumber === (tableState.handNumber ?? 0));
 
   // SECOND board never highlighted its winning five — the engine's
@@ -12187,6 +12208,9 @@ function LiveTablePage({
           // runout cadence. Winner ribbons + highlights + the pot ship all
           // wait for ritRevealDone / ritTimelineEndsAtRef.
           clearRitRevealTimers();
+          setRitRevealedRuns(0);
+          setRitFaceUpBoards([]);
+          ritFaceUpBoardsRef.current.clear();
           const baseCount = Math.min(
             5,
             Math.max(0, Number(handState.base_board_count as number) || 0)
@@ -18562,6 +18586,13 @@ function LiveTablePage({
         //   center to each winner's seat position over 400-600ms.
         const winnerIds = ((evt.data as any).winner_ids as string[]) || [];
         const potAmount = ((evt.data as any).pot as number) || 0;
+        const payoutCelebrations: Array<() => void> = [];
+        const presentPayoutVisual = (cue: () => void) => {
+          if (ritExpectedRunsRef.current > 1 || (ritResultRef.current?.boards.length ?? 0) > 1)
+            payoutCelebrations.push(cue);
+          else cue();
+        };
+
         // 2026-04-16 fix: Server sends hand_name INSIDE the per-winner
         // `winners[]` array, not at the top level. Extract from winners[0]
         // as fallback when top-level hand_name is empty.
@@ -18928,66 +18959,70 @@ function LiveTablePage({
               heroHandOutcomeRef.current.potWon += amounts[userId] || 0;
             }
             if (winHandName) heroHandOutcomeRef.current.handRank = winHandName;
-            const bb = safeBB(tableStateRef.current.blinds, 1);
-            const winBB = (amounts[userId] || potAmount) / bb;
-            if (winBB >= 10) {
-              // ANIMATION AUDIT 2026-08-27: setShowConfetti(true) was a no-op
-              // when the previous burst was still airborne (ConfettiCanvas
-              // only fires on the false→true edge) — back-to-back qualifying
-              // wins produced ONE burst. Clear-then-set on the next macrotask
-              // so every win gets its own burst (same pattern as
-              // useAnimationQueue.complete()).
-              setShowConfetti(false);
-              setTimeout(() => setShowConfetti(true), 0);
-            }
-            if (winBB >= 50) {
-              // Screen shake for massive win.
-              // ANIMATION AUDIT 2026-08-27: three fixes. (1) In multi-table
-              // mode document.querySelector('.table-page') always hit the
-              // FIRST table in DOM order — the shake landed on another table.
-              // (2) The 600ms removal was hardcoded while the keyframe runs
-              // calc(0.4s * --animation-speed) — at speed 2 the class was
-              // stripped at 75% and the shake snapped back. (3) The shake now
-              // targets the SCALER, not .table-page: a transform on any
-              // ancestor of the fixed-position chip layer re-anchors it and
-              // displaced every chip in flight — and this shake fires exactly
-              // while the pot-to-winner chips are flying. The chip layer now
-              // mounts outside the scaler, so shaking the scaler leaves it
-              // untouched.
-              const tableEl = tableScalerRef.current;
-              if (tableEl) {
-                tableEl.classList.add('table-page--shake');
-                setTimeout(
-                  () => tableEl.classList.remove('table-page--shake'),
-                  Math.round(600 * getAnimationSpeed())
-                );
+            presentPayoutVisual(() => {
+              const bb = safeBB(tableStateRef.current.blinds, 1);
+              const winBB = (amounts[userId] || potAmount) / bb;
+              if (winBB >= 10) {
+                // ANIMATION AUDIT 2026-08-27: setShowConfetti(true) was a no-op
+                // when the previous burst was still airborne (ConfettiCanvas
+                // only fires on the false→true edge) — back-to-back qualifying
+                // wins produced ONE burst. Clear-then-set on the next macrotask
+                // so every win gets its own burst (same pattern as
+                // useAnimationQueue.complete()).
+                setShowConfetti(false);
+                setTimeout(() => setShowConfetti(true), 0);
               }
-              // ANIMATION/SOUND AUDIT 2026-08-19: playBigWin fired here AND
-              // inside playWinSound (called below) — double celebration.
-              // playWinSound owns the escalation now.
-            }
+              if (winBB >= 50) {
+                // Screen shake for massive win.
+                // ANIMATION AUDIT 2026-08-27: three fixes. (1) In multi-table
+                // mode document.querySelector('.table-page') always hit the
+                // FIRST table in DOM order — the shake landed on another table.
+                // (2) The 600ms removal was hardcoded while the keyframe runs
+                // calc(0.4s * --animation-speed) — at speed 2 the class was
+                // stripped at 75% and the shake snapped back. (3) The shake now
+                // targets the SCALER, not .table-page: a transform on any
+                // ancestor of the fixed-position chip layer re-anchors it and
+                // displaced every chip in flight — and this shake fires exactly
+                // while the pot-to-winner chips are flying. The chip layer now
+                // mounts outside the scaler, so shaking the scaler leaves it
+                // untouched.
+                const tableEl = tableScalerRef.current;
+                if (tableEl) {
+                  tableEl.classList.add('table-page--shake');
+                  setTimeout(
+                    () => tableEl.classList.remove('table-page--shake'),
+                    Math.round(600 * getAnimationSpeed())
+                  );
+                }
+                // ANIMATION/SOUND AUDIT 2026-08-19: playBigWin fired here AND
+                // inside playWinSound (called below) — double celebration.
+                // playWinSound owns the escalation now.
+              }
+            });
           }
           // Bible V8 §5.1: Particle burst from first winner's seat position
-          const firstWinnerIdx = tableStateRef.current.players.findIndex(
-            (p) => p && winnerIds.includes(p.id)
-          );
-          if (firstWinnerIdx >= 0) {
-            // AUDIT FIX 2026-07-19: seatPositions is physical-seat-indexed
-            // (players[] index = seatNumber-1); the +1 sent the burst to the
-            // seat one past the winner. The PLAYER_ACTION path uses no offset.
-            const seatPct = seatPositions[firstWinnerIdx] || { x: 50, y: 50 };
-            // ANIMATION AUDIT 2026-08-27: like the confetti above, a second
-            // burst while one is active never retriggered (edge-gated).
-            // Clear-then-set so every winner gets their burst.
-            const nextParticle = {
-              active: true,
-              // 2026-08-04 FIX: scaler-relative percentages, not viewport
-              origin: seatPctToViewportPx(tableScalerRef.current, seatPct),
-              intensity: potAmount > 500 ? 2 : 1, // Big win = 2x particle intensity
-            };
-            setWinnerParticle((prev) => (prev.active ? { ...prev, active: false } : prev));
-            setTimeout(() => setWinnerParticle(nextParticle), 0);
-          }
+          presentPayoutVisual(() => {
+            const firstWinnerIdx = tableStateRef.current.players.findIndex(
+              (p) => p && winnerIds.includes(p.id)
+            );
+            if (firstWinnerIdx >= 0) {
+              // AUDIT FIX 2026-07-19: seatPositions is physical-seat-indexed
+              // (players[] index = seatNumber-1); the +1 sent the burst to the
+              // seat one past the winner. The PLAYER_ACTION path uses no offset.
+              const seatPct = seatPositions[firstWinnerIdx] || { x: 50, y: 50 };
+              // ANIMATION AUDIT 2026-08-27: like the confetti above, a second
+              // burst while one is active never retriggered (edge-gated).
+              // Clear-then-set so every winner gets their burst.
+              const nextParticle = {
+                active: true,
+                // 2026-08-04 FIX: scaler-relative percentages, not viewport
+                origin: seatPctToViewportPx(tableScalerRef.current, seatPct),
+                intensity: potAmount > 500 ? 2 : 1, // Big win = 2x particle intensity
+              };
+              setWinnerParticle((prev) => (prev.active ? { ...prev, active: false } : prev));
+              setTimeout(() => setWinnerParticle(nextParticle), 0);
+            }
+          });
         }
 
         // Bible V8 §4.19: Show/muck prompt when hero wins without showdown
@@ -19065,9 +19100,11 @@ function LiveTablePage({
         }
 
         if (winnerIds.length > 0 && winnerIds.includes(userId)) {
-          playWinSound(potAmount);
-          // Bible V8 §5.4: heavy celebration haptic on hero win
-          import('../services/HapticService').then(({ haptic }) => haptic.heavy());
+          presentPayoutVisual(() => {
+            playWinSound(potAmount);
+            // Bible V8 §5.4: heavy celebration haptic on hero win
+            import('../services/HapticService').then(({ haptic }) => haptic.heavy());
+          });
         }
         if (winnerIds.length > 0 && potAmount > 0) {
           /**
@@ -19202,6 +19239,7 @@ function LiveTablePage({
               toX: number;
               toY: number;
               amount: number;
+              userId: string;
             }>;
             /** RUN index (1..N) on run-it-twice hands; 1 otherwise. */
             board: number;
@@ -19274,7 +19312,12 @@ function LiveTablePage({
                   potAmount / (winnerIds.length || 1);
               // createPotToWinnerEvent already returns a fan of 3-8 chips with
               // bezier arc, staggered 40ms each, 600ms duration — spec match.
-              anim.events.push(...createPotToWinnerEvent(potPos, winnerPos, share));
+              anim.events.push(
+                ...createPotToWinnerEvent(potPos, winnerPos, share).map((event) => ({
+                  ...event,
+                  recipientId: w.userId,
+                }))
+              );
               // Dan 2026-08-21: the floating "+N" rides with this fan and ends
               // above the winner's seat naming the exact share they won.
               anim.floats.push({
@@ -19283,6 +19326,7 @@ function LiveTablePage({
                 toX: winnerPos.x,
                 toY: winnerPos.y,
                 amount: share,
+                userId: w.userId,
               });
               // 2026-09-05: the same share, keyed by player, so the stack hold
               // can release precisely this much when THIS fan lands. A player
@@ -19330,13 +19374,19 @@ function LiveTablePage({
                   ? seatPositionsRef.current[seatIdx] || { x: 50, y: 50 }
                   : UNSEATED_WINNER_PCT;
               const winnerPos = seatPctToViewportPx(tableScalerRef.current, seatPct);
-              fallback.events.push(...createPotToWinnerEvent(potPos, winnerPos, fallbackShare));
+              fallback.events.push(
+                ...createPotToWinnerEvent(potPos, winnerPos, fallbackShare).map((event) => ({
+                  ...event,
+                  recipientId: wid,
+                }))
+              );
               fallback.floats.push({
                 fromX: potPos.x,
                 fromY: potPos.y,
                 toX: winnerPos.x,
                 toY: winnerPos.y,
                 amount: fallbackShare,
+                userId: wid,
               });
               fallback.perPlayer[wid] = (fallback.perPlayer[wid] ?? 0) + fallbackShare;
             }
@@ -19346,6 +19396,7 @@ function LiveTablePage({
             }
           }
 
+          let remainingAwardLandings = awardGroups.filter((g) => g.events.length > 0).length;
           if (awardGroups.some((g) => g.events.length > 0)) {
             /**
              * PER-POT / PER-BOARD SHIPPING (rewritten 2026-09-05).
@@ -19427,18 +19478,38 @@ function LiveTablePage({
               if (g.events.length === 0) continue;
               beatsLeftByPot.set(g.potIndex, (beatsLeftByPot.get(g.potIndex) ?? 0) + 1);
             }
+            const awardHand = tableStateRef.current.handNumber ?? 0;
             const fireGroup = (g: AwardGroupAnim) => {
-              if (g.events.length === 0) return;
+              if (g.events.length === 0 || (tableStateRef.current.handNumber ?? 0) !== awardHand)
+                return;
+              if (
+                (ritExpectedRunsRef.current > 1 ||
+                  (ritResultRef.current?.boards.length ?? 0) > 1) &&
+                !ritFaceUpBoardsRef.current.has(g.board - 1)
+              ) {
+                const waiting = pendingRitAwardsRef.current.get(g.board - 1) ?? [];
+                pendingRitAwardsRef.current.set(g.board - 1, [...waiting, () => fireGroup(g)]);
+                return;
+              }
+              for (const cue of payoutCelebrations.splice(0)) cue();
               // Stamp the REAL start so the 5s safety sweep measures this fan
               // from the moment it went on screen, not from when it was built
               // (which on a run-it-twice hold is many seconds earlier).
               const startedAt = Date.now();
               for (const e of g.events) chipAnimStartedAtRef.current.set(e.id, startedAt);
-              setChipAnimations((prev) => [...prev, ...g.events]);
+              const root = tableScalerRef.current?.closest('.table-page') ?? null;
+              const source = potViewportPoint(root, potPos);
+              const flights = g.events.map((event) => ({
+                ...event,
+                from: source,
+                to: winnerViewportPoint(root, event.recipientId ?? '', event.to),
+              }));
+              setChipAnimations((prev) => [...prev, ...flights]);
               // Dan 2026-08-21: launch each winner's floating "+N" in the same
               // frame as their chip fan so the number travels WITH the pot.
               for (const plan of g.floats) {
-                spawnPotWinFloat(plan.fromX, plan.fromY, plan.toX, plan.toY, plan.amount);
+                const target = winnerViewportPoint(root, plan.userId, { x: plan.toX, y: plan.toY });
+                spawnPotWinFloat(source.x, source.y, target.x, target.y, plan.amount);
               }
               /**
                * THE STACK RISES WITH THIS FAN, NOT AT THE END OF THE HAND.
@@ -19454,6 +19525,8 @@ function LiveTablePage({
                 stackReleaseTimersRef.current = stackReleaseTimersRef.current.filter(
                   (x) => x !== releaseTimer
                 );
+                remainingAwardLandings--;
+                if (remainingAwardLandings === 0) setStackHoldReleased(true);
                 setStackReleasedByPlayer((prev) => {
                   const next = { ...prev };
                   for (const [pid, amt] of Object.entries(g.perPlayer)) {
@@ -19565,7 +19638,7 @@ function LiveTablePage({
           stackHoldReleaseTimerRef.current = setTimeout(
             () => {
               stackHoldReleaseTimerRef.current = null;
-              setStackHoldReleased(true);
+              if (remainingAwardLandings === 0) setStackHoldReleased(true);
             },
             lastGroupDelay + 700 * getAnimationSpeed()
           );
@@ -19605,73 +19678,51 @@ function LiveTablePage({
           // all along, documented as "set by JS" — nothing ever set them, so
           // the pot simply vanished at the end of every hand.
           //
-          /**
-           * SPLIT POTS ANIMATE TOO (Dan 2026-08-26 / 2026-08-27, the ship-pot
-           * invariant). Both branches of this merge arrived at the same fix on
-           * consecutive days; this is the shape that survived, and the older
-           * `soleSeatPct` average it replaces computed exactly the same point.
-           *
-           * This was `if (winnerIds.length === 1)`, with the comment "on a chop
-           * there is no one seat to push to". True, and it meant the pot pill
-           * never moved on ANY chopped or split pot — it just disappeared from
-           * the middle. Chops are common (a board that plays, a hi-lo split, a
-           * counterfeited pair) and every one of them lost the single clearest
-           * beat in the whole award.
-           *
-           * CHOSEN BEHAVIOUR: the pill slides to the MIDPOINT of the winners'
-           * seats, once. Not toward each winner in turn — a second slide would
-           * have to start from the pot's original centre after the first has
-           * already faded out at opacity 0 (`--pd-collect-*` with `forwards`),
-           * so the pill would blink back into existence mid-award. The midpoint
-           * is one honest motion in the direction the money went, and the
-           * per-winner fans and "+N" floats above carry the who-got-what.
-           */
-          {
-            const winnerPoints = winnerIds
-              .map((wid) => {
-                const idx = tableStateRef.current.players.findIndex((p) => p?.id === wid);
-                return idx >= 0 ? seatPositions[idx] : null;
-              })
-              .filter((p): p is NonNullable<typeof p> => !!p);
-            // No winner is on screen at all — nothing to aim at. The chip fans
-            // above still fired (they fall back to UNSEATED_WINNER_PCT), so the
-            // invariant holds; there is simply no direction for the pill.
-            const targetPct =
-              winnerPoints.length === 0
-                ? null
-                : winnerPoints.length === 1
-                  ? winnerPoints[0]
-                  : {
-                      x: winnerPoints.reduce((s, p) => s + p.x, 0) / winnerPoints.length,
-                      y: winnerPoints.reduce((s, p) => s + p.y, 0) / winnerPoints.length,
-                    };
-            if (targetPct) {
-              const winnerPx = seatPctToViewportPx(tableScalerRef.current, targetPct);
-              const collectTo = {
-                dx: Math.round(winnerPx.x - potPos.x),
-                dy: Math.round(winnerPx.y - potPos.y),
-              };
-              // Beat 2 — the pot itself travels, AFTER the sweep has landed.
-              const startPush = () => {
-                setPotCollectTo(collectTo);
-                if (potCollectTimerRef.current) clearTimeout(potCollectTimerRef.current);
-                // Slightly longer than --pd-collect-duration (0.5s) so the pot is
-                // never yanked back to centre mid-slide.
-                potCollectTimerRef.current = setTimeout(() => {
-                  potCollectTimerRef.current = null;
-                  setPotCollectTo(null);
-                }, 700 * getAnimationSpeed());
-              };
-              if (shipDelayMs > 0) {
-                if (potPushDelayTimerRef.current) clearTimeout(potPushDelayTimerRef.current);
-                potPushDelayTimerRef.current = setTimeout(() => {
-                  potPushDelayTimerRef.current = null;
-                  startPush();
-                }, shipDelayMs);
-              } else {
-                startPush();
+          // October 15: a split pot has one flight per actual recipient above.
+          // Never slide a merged pill to the empty midpoint between winners.
+          if (winnerIds.length === 1) {
+            const pillHand = tableStateRef.current.handNumber ?? 0;
+            const startPush = () => {
+              if ((tableStateRef.current.handNumber ?? 0) !== pillHand) return;
+              if (
+                (ritExpectedRunsRef.current > 1 ||
+                  (ritResultRef.current?.boards.length ?? 0) > 1) &&
+                !ritFaceUpBoardsRef.current.has(0)
+              ) {
+                const waiting = pendingRitAwardsRef.current.get(0) ?? [];
+                pendingRitAwardsRef.current.set(0, [...waiting, startPush]);
+                return;
               }
-            }
+              const wid = winnerIds[0];
+              const idx = tableStateRef.current.players.findIndex((p) => p?.id === wid);
+              if (idx < 0) return;
+              const root = tableScalerRef.current?.closest('.table-page') ?? null;
+              const source = potViewportPoint(root, potPos);
+              const target = winnerViewportPoint(
+                root,
+                wid,
+                seatPctToViewportPx(tableScalerRef.current, seatPositionsRef.current[idx])
+              );
+              const scale =
+                (tableScalerRef.current?.getBoundingClientRect().width ?? 0) /
+                  (tableScalerRef.current?.offsetWidth || 1) || 1;
+              setPotCollectTo({
+                dx: (target.x - source.x) / scale,
+                dy: (target.y - source.y) / scale,
+              });
+              if (potCollectTimerRef.current) clearTimeout(potCollectTimerRef.current);
+              potCollectTimerRef.current = setTimeout(() => {
+                potCollectTimerRef.current = null;
+                setPotCollectTo(null);
+              }, 700 * getAnimationSpeed());
+            };
+            if (shipDelayMs > 0) {
+              if (potPushDelayTimerRef.current) clearTimeout(potPushDelayTimerRef.current);
+              potPushDelayTimerRef.current = setTimeout(() => {
+                potPushDelayTimerRef.current = null;
+                startPush();
+              }, shipDelayMs);
+            } else startPush();
           }
         }
         break;
@@ -25613,6 +25664,9 @@ function LiveTablePage({
                           tableId={tableId}
                           handId={tableState.handNumber}
                           boardIndex={board.boardIndex}
+                          onRiverPresented={() =>
+                            markRitBoardPresented(board.boardIndex, tableState.handNumber ?? 0)
+                          }
                           /* VIP ALL-IN SQUEEZE 2026-09-05: a re-run board is
                              told it is one of several, so it can never
                              squeeze whatever else it is handed. */
@@ -25927,23 +25981,6 @@ function LiveTablePage({
           {/* Dan 2026-08-21: floating pot-win amount — "+N" rides the pushed
               pot to the winner, then rises and fades above their avatar
               (PokerBros reference). Pure CSS animation, self-cleaning. */}
-          {potWinFloats.map((f) => (
-            <div
-              key={f.id}
-              className="pot-win-float"
-              style={
-                {
-                  '--pwf-from-x': `${f.fromX}px`,
-                  '--pwf-from-y': `${f.fromY}px`,
-                  '--pwf-to-x': `${f.toX}px`,
-                  '--pwf-to-y': `${f.toY}px`,
-                } as React.CSSProperties
-              }
-              aria-hidden="true"
-            >
-              {f.label}
-            </div>
-          ))}
 
           {/* COMPETITOR-PARITY 2026-08-19: table-level ALL IN banner — fires
               once when the runout locks in (first equity broadcast). */}
@@ -26818,6 +26855,7 @@ function LiveTablePage({
             still hides with the table in multi-table mode. */}
         <ChipAnimationManager
           animations={chipAnimations}
+          floats={potWinFloats}
           onAnimationComplete={handleAnimationComplete}
         />
       </div>

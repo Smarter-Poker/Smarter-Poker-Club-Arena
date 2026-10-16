@@ -20,7 +20,7 @@ contradicted it:
 
 ## The Root Fix
 
-Migration `20261015221413_agents_are_prepaid_and_carry_no_credit_line`:
+Migration `20261016001952_agents_are_prepaid_and_carry_no_credit_line`:
 
 - `fn_agent_default_prepaid` now runs `BEFORE INSERT OR UPDATE OF is_prepaid,
   credit_limit` on `agents`. It refuses any credit limit above 0 with
@@ -47,3 +47,12 @@ Pinned by `tests/a-credit-line-is-spendable.law.test.ts` (section rewritten to
 the new rule), `tests/unit/AgentService.test.ts`,
 `tests/components/agent-management-authority-revocation.test.tsx` and
 `tests/unit/theAgentNetworkReachesSomething.test.ts`.
+
+## Installed
+
+Installed on production 2026-10-16 and recorded as version `20261016001952`;
+the file was renamed from its reserved `20261015221413` to match. Read back:
+the constraint is validated and the trigger covers insert and update. A
+rolled-back probe confirmed a credit limit of 100 is refused with "Agents Are
+Prepaid. Credit Lines Are Not Offered." and `is_prepaid = false` is stored as
+prepaid.

@@ -353,7 +353,7 @@ describe('the migration is safe to apply', () => {
  * SUPERSEDED BY DAN, OCTOBER 2026: "agents have no credit lines; all agents are
  * prepaid from now on." The promote screen no longer offers a funding choice:
  * it always sends prepaid with a zero line, and the database refuses a line on
- * any agent row (agents_are_prepaid, 20261015221413).
+ * any agent row (agents_are_prepaid, 20261016001952).
  */
 describe('the promote screen sends every agent prepaid', () => {
   it('sends prepaid and a zero line, always', () => {
@@ -370,7 +370,7 @@ describe('the promote screen sends every agent prepaid', () => {
 
   it('is held by the database, not only the screen', () => {
     const sql = read(
-      'supabase/migrations/20261015221413_agents_are_prepaid_and_carry_no_credit_line.sql'
+      'supabase/migrations/20261016001952_agents_are_prepaid_and_carry_no_credit_line.sql'
     );
     expect(sql).toMatch(/CHECK \(is_prepaid AND credit_limit = 0\)/);
     expect(sql).toMatch(/BEFORE INSERT OR UPDATE OF is_prepaid, credit_limit ON public\.agents/);

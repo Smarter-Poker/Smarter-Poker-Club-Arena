@@ -1,4 +1,4 @@
--- 20261015221413_agents_are_prepaid_and_carry_no_credit_line.sql
+-- 20261016001952_agents_are_prepaid_and_carry_no_credit_line.sql
 --
 -- Version reserved by scripts/new-migration.mjs against origin/main and every
 -- remote branch, so it cannot collide with another agent's in-flight work.

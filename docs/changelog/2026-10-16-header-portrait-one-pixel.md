@@ -7,3 +7,11 @@ Existing source and rendered-pixel contracts retain the ring masking and intact-
 ## Required Check Recovery
 
 The hosted migration-ledger check failed because installed migrations 20261015101106 and 20261015102509 had aged past its 24-hour source-recording grace. Their existing feature PRs are #6981 and #6949. This follow-up records only the exact SQL from production history, with digest-bound recording entries; it does not execute either migration, modify either feature branch, or supersede the feature work. Read-only checks confirmed the money-board postimage and registry state and the affected functions' owner, security, search paths and grants. The task archive retains the exact recovery bytes and provider failure.
+
+## Live Table Corrections
+
+The owner supplied the current NLH Action Feeder and clarified that the top-right session tracker must match the hand tabs on the left. The tracker is now 100 by 36 pixels on desktop, with the same 34-pixel pill height and bounded mobile width as the phone tabs. The static strip reserve follows the actual tab bar plus wrapper border. Session data and interactions are preserved.
+
+Live inspection also exposed VPIP text behind the action panel: the positioning effect could retain a null panel from the initial table load. It now resolves the nearest panel for each placement and observes table child mounts, so a later action panel immediately becomes the lower boundary. The regression mounts the panel after the real tracker and verifies its lower edge clears the action controls.
+
+The owner's follow-up screenshot also showed the VPIP and profit-clock fonts too small. The unframed VPIP readout now uses a 72-78px size input across phones and desktop, preserving its silver three-row design, and the minimum row increases proportionally. The clock caption is 11px and the running time 17px. Its compact 120px column remains left of the player plate and clears the action panel.

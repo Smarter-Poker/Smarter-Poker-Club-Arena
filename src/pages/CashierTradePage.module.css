@@ -2089,17 +2089,15 @@
   white-space: nowrap;
   cursor: pointer;
 }
-/* The same grey as the dock's resting Send Ticket and Send Out: their
-   silver ink at the dock's 0.45 resting opacity (Dan 2026-10-16). */
+/* The same ink as the roster's "522 Available" line (Dan 2026-10-16). */
 .cashoutLabel,
 .cashoutBalance {
-  color: var(--ink-silver);
+  color: var(--ink-muted);
   font-size: 13px;
   font-weight: 800;
   letter-spacing: 0.1em;
   line-height: 1.1;
-  opacity: 0.45;
-  text-shadow: none;
+  text-shadow: var(--ink-muted-shadow);
   text-transform: uppercase;
 }
 .cashoutButton:active {

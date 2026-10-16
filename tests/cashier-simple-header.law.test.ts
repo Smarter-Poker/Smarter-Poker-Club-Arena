@@ -54,12 +54,10 @@ describe('the Simple Cashier header', () => {
     );
   });
 
-  it('prints Choose and Advanced in white, and the cashout words in the dock grey', () => {
+  it('prints Choose and Advanced in white, and the cashout words in the roster meta ink', () => {
     expect(page).not.toMatch(/styles\.entityCaretOpen : ''\} sc-label sc-ink--blue/);
     expect(css).toMatch(/\.entityCaret \{[^}]*color: var\(--ink-white\);/);
     expect(css).toMatch(/\.page\.simple \.header \.modeToggle \{[^}]*color: var\(--ink-white\);/);
-    expect(css).toMatch(
-      /\.cashoutLabel,\s*\.cashoutBalance \{[^}]*color: var\(--ink-silver\);[^}]*opacity: 0\.45;/
-    );
+    expect(css).toMatch(/\.cashoutLabel,\s*\.cashoutBalance \{[^}]*color: var\(--ink-muted\);/);
   });
 });

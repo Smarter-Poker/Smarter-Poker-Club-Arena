@@ -1986,7 +1986,10 @@ function CashierTradeWorkspace() {
     (picked.length === 1 || recipientAmounts[batchPlan.userId] === undefined);
 
   useEffect(() => {
-    if (amountModal === null && !transferRecovery) setSendSource('agent_wallet');
+    if (amountModal === null && !transferRecovery) {
+      setSendSource('agent_wallet');
+      setRecipientWallets({});
+    }
   }, [amountModal, transferRecovery]);
 
   const pickedWalletKey = JSON.stringify(picked.map((row) => row.userId).sort());
@@ -4784,9 +4787,7 @@ function CashierTradeWorkspace() {
                           !isOnline ||
                           picked.length === 0 ||
                           cashierAuthorityBlocked ||
-                          (amountModal === 'send' &&
-                            selectedSourceBalance === null &&
-                            !(picked.length === 1 && picked[0].userId === user?.id)) ||
+                          (amountModal === 'send' && selectedSourceBalance === null) ||
                           (amountModal === 'ticket' && !ticketTournament) ||
                           !canHoldAgentWallet(myRole),
                         onClick: () => void runTransfers(amountModal),
@@ -4978,37 +4979,21 @@ function CashierTradeWorkspace() {
                     )}
                     {amountModal === 'send' &&
                       picked.length > 1 &&
-                      picked.map((target) => (
-                        <label className={styles.entryRow} key={`wallet-${target.userId}`}>
-                          <span className={styles.entryRowSlot}>Wallet</span>
-                          <span className={styles.entryRowPlate}>
-                            {recipientWalletControl(target)}
-                          </span>
-                        </label>
-                      ))}
-                    {/* WHO, WHEN THERE IS MORE THAN ONE (Dan 2026-08-25). On a
-                        375px screen the selection has scrolled out of view, so
-                        every recipient is named with its own amount. */}
-                    {picked.length > 1 && (
-                      <div className={styles.modalTargets}>
-                        {picked.map((r) => (
-                          <div className={styles.modalTargetRow} key={r.userId}>
-                            <img
-                              className={styles.modalTargetAvatar}
-                              src={r.avatarUrl || generateAvatarSvg(r.userId, r.name || '?')}
-                              alt=""
-                            />
-                            <span className={styles.modalTargetName}>
-                              {r.name}
-                              <small>
-                                {r.playerNumber ? `ID: ${r.playerNumber}` : 'ID Unavailable'}
-                                {amountModal === 'send' && transferDestination(r) === 'agent_wallet'
-                                  ? ' · Agent Wallet'
-                                  : ''}
-                              </small>
-                            </span>
-                            {amountModal === 'send' ? (
+                      picked.map((r) => (
+                        <div key={`wallet-${r.userId}`}>
+                          <CashierPlayerCard
+                            row={r}
+                            balanceLabel="Player Wallet"
+                            walletControl={recipientWalletControl(r)}
+                            walletBalance={
+                              targetBalances[r.userId]?.[transferDestination(r)] ?? null
+                            }
+                          />
+                          <label className={styles.entryRow}>
+                            <span className={styles.entryRowSlot}>Amount</span>
+                            <span className={styles.entryRowPlate}>
                               <input
+                                className={styles.entryInput}
                                 type="text"
                                 inputMode="decimal"
                                 aria-label={`Amount For ${r.name}`}
@@ -5026,11 +5011,31 @@ function CashierTradeWorkspace() {
                                   setTransferFailures([]);
                                 }}
                               />
-                            ) : (
-                              <span>
-                                {exactChipFigure(batchPlan.ok ? batchPlan.amounts[r.userId] : 0)}
-                              </span>
-                            )}
+                            </span>
+                          </label>
+                        </div>
+                      ))}
+                    {/* WHO, WHEN THERE IS MORE THAN ONE (Dan 2026-08-25). On a
+                        375px screen the selection has scrolled out of view, so
+                        every recipient is named with its own amount. */}
+                    {picked.length > 1 && amountModal !== 'send' && (
+                      <div className={styles.modalTargets}>
+                        {picked.map((r) => (
+                          <div className={styles.modalTargetRow} key={r.userId}>
+                            <img
+                              className={styles.modalTargetAvatar}
+                              src={r.avatarUrl || generateAvatarSvg(r.userId, r.name || '?')}
+                              alt=""
+                            />
+                            <span className={styles.modalTargetName}>
+                              {r.name}
+                              <small>
+                                {r.playerNumber ? `ID: ${r.playerNumber}` : 'ID Unavailable'}
+                              </small>
+                            </span>
+                            <span>
+                              {exactChipFigure(batchPlan.ok ? batchPlan.amounts[r.userId] : 0)}
+                            </span>
                           </div>
                         ))}
                       </div>
@@ -5043,15 +5048,12 @@ function CashierTradeWorkspace() {
                           : `Amount For ${picked.find((row) => row.userId === batchPlan.userId)?.name || 'Cashier Recipient'}: ${batchPlan.error}`
                         : cashierAuthorityBlocked || !canHoldAgentWallet(myRole)
                           ? ''
-                          : amountModal === 'send' &&
-                              !(picked.length === 1 && picked[0].userId === user?.id) &&
-                              agentWallet === null
-                            ? 'Agent Wallet Could Not Be Verified'
+                          : amountModal === 'send' && selectedSourceBalance === null
+                            ? 'Selected Wallet Could Not Be Verified'
                             : batchPlan.total >
                                 (amountModal === 'send'
-                                  ? picked.length === 1 && picked[0].userId === user?.id
-                                    ? (bankBalance ?? Number.POSITIVE_INFINITY)
-                                    : agentWallet! + agentCredit
+                                  ? (selectedSourceBalance ?? Number.POSITIVE_INFINITY) +
+                                    (sendSource === 'agent_wallet' ? agentCredit : 0)
                                   : myBalance)
                               ? 'Insufficient Chips In The Funding Wallet'
                               : ''}

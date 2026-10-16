@@ -1896,3 +1896,26 @@ it('Send Out gives an agent only their own sending wallets', async () => {
   expect(source).toHaveValue('agent_wallet');
   expect(within(source).queryByRole('option', { name: /Main Bank/ })).toBeNull();
 });
+
+it('keeps each batch recipient identity, selected wallet and current balance together', async () => {
+  state.roster = [0, 1].map((index) => ({ ...player(index, 10), role: 'agent' }));
+  mountCashier();
+  await synchronized();
+  const dialog = await openSendOut('5', 2);
+  const cards = within(dialog).getAllByRole('region', { name: 'Selected Player' });
+  expect(cards).toHaveLength(2);
+  for (let index = 0; index < 2; index++) {
+    expect(cards[index]).toHaveTextContent(`Player ${index + 1}`);
+    expect(cards[index]).toHaveTextContent(`ID: P-${index + 1}`);
+    await waitFor(() =>
+      expect(
+        within(cards[index]).getByRole('option', { name: 'Agent Wallet: 340' })
+      ).toBeInTheDocument()
+    );
+    expect(within(cards[index]).getByRole('combobox')).toHaveValue('agent_wallet');
+  }
+  fireEvent.change(within(cards[1]).getByRole('combobox'), { target: { value: 'promo_wallet' } });
+  expect(within(cards[0]).getByRole('combobox')).toHaveValue('agent_wallet');
+  expect(within(cards[1]).getByRole('combobox')).toHaveValue('promo_wallet');
+  expect(within(dialog).getByRole('textbox', { name: 'Amount For Player 2' })).toHaveValue('5');
+});

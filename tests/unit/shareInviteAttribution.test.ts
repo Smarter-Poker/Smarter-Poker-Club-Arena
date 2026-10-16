@@ -144,4 +144,12 @@ describe('the join page claims before it joins', () => {
     expect(src('src/pages/HomePage.tsx')).toContain('<PendingInviteForward />');
     expect(src('src/components/home/PendingInviteForward.tsx')).toContain('getPendingClubInvite()');
   });
+  it('the share sheet renders at the document root, above the club header and footer', () => {
+    // Inside the club page it sat in a z-index:1 stacking context: the header
+    // covered its close control and the footer covered Share and Close.
+    const sheet = src('src/components/club/ShareInviteSheet.tsx');
+    expect(sheet).toContain("import { createPortal } from 'react-dom';");
+    expect(sheet).toMatch(/return createPortal\(\s*<div className="referral-overlay"/);
+    expect(sheet).toMatch(/<\/div>,\s*document\.body\s*\);/);
+  });
 });

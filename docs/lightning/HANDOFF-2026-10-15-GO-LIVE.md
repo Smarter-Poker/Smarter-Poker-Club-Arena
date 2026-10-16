@@ -4,6 +4,12 @@ You are picking up the Lightning programme for Club Arena (Smarter Poker). Light
 
 **The dated delivery checkpoints above section U supersede the historical state in section U and sections 3 to 5.** Sections 3 to 5 were written at 17:30 UTC and are kept for their ids and history.
 
+## Formation Integration (2026-10-16 00:12 UTC)
+
+- #7014 protected squash merged as `fdb889b77df29f7a62596d925fb7278a72d92597` after all six required contexts qualified (build/CSS valid engine-only classification skips). All substantive shards passed; only non-required summary remained queued.
+- Exact B1 migration installation requested once: `38828138951`, created `2026-10-16T00:12:20Z`, selected protected main `fdb889b77df29f7a62596d925fb7278a72d92597`. It is pending behind another task's existing applier; no installed result claimed. Last read history contains none of the three repair migrations. Engine staging owner is `38828113975`; do not duplicate either operation.
+- Integrating the protected B1 squash into #7025 conflicted only in the parity harness's later authoritative-calibration chain, its before/after proof and coverage summary. Preserve those additions together with the already included three-second cases. Identical duplicate B1 checkpoint text is deduplicated; nonidentical evidence remains. Requalify native parity and affected contracts before normal submission.
+
 ## Continued Ownership (2026-10-15 23:58 UTC)
 
 - Latest owner instruction continues this same delivery through checks, protected merge, installation, deployment and actual private-pilot proof. Fresh canonical reader emitted `2026-10-15T23:58:24.988Z`, policy 2.9 with the unchanged manifest/four hashes above; actual repository entrypoints, full CLAUDE, publishing/deploy paths, complete checkpoint and Lightning phase/register/rollout/review/catalog read. Canonical comparison passed.

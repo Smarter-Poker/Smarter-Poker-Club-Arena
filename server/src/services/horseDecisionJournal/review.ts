@@ -103,6 +103,9 @@ export interface HorseJournalHandReview {
   gaps: HorseJournalReviewGap[];
   /** A finite local read cannot establish hands that never reached this spool. */
   completePopulation: false;
+  /** This reader cannot replay: a record replays only on its own source and
+   * runtime. The computed value is joinHorseJournalHandReplay's, from exact
+   * replay verdicts (`horseJournalReview --replay`). */
   replayVerified: false;
   gtoVerified: false;
   activationAllowed: false;
@@ -970,5 +973,134 @@ export function readHorsePlanEffects(directory: string, handKey: string): HorseP
     return reviewHorsePlanEffects(readHorseJournalHandRecords(directory, handKey), handKey);
   } catch {
     return { ...emptyPlanEffects(), gaps: ['invalid_records'] };
+  }
+}
+
+/**
+ * ── P15-A: REPLAY VERIFICATION OF ONE RETAINED HAND (2026-10-16) ──────────
+ *
+ * The hand review above keeps `replayVerified: false` because it cannot
+ * compute it: a record replays only in a fresh process on the exact source
+ * and JavaScript runtime that made it (exactReplay.ts), and this reader runs
+ * on whatever source and runtime opened the journal. The value exists where
+ * the exact replay runs. This join computes it from those verdicts
+ * (`scripts/phase15-exact-replay.mjs --full-verdicts`): a hand is
+ * replay-verified only when EVERY decision record of the hand has exactly one
+ * verdict bound to that record (event id and record digest), produced on the
+ * record's own source and runtime, with outcome `replayed_exact`. A hand with
+ * a DEEP second look is therefore never verified
+ * (`non_replayable:retained_fast_read_view`), and a missing, duplicated,
+ * foreign or refused verdict leaves it false with its reason counted.
+ */
+export interface HorseJournalReplayVerdictLike {
+  decisionId?: unknown;
+  recordSha256?: unknown;
+  recordedSource?: unknown;
+  runningSource?: unknown;
+  recordedRuntime?: unknown;
+  runningRuntime?: unknown;
+  outcome?: unknown;
+  replayVerified?: unknown;
+}
+export interface HorseJournalHandReplay {
+  version: 1;
+  scope: 'single_retained_hand';
+  decisions: number;
+  verified: number;
+  /** Per decision record without a verified exact replay: why. */
+  unverified: Record<string, number>;
+  replayVerified: boolean;
+}
+
+const sameRuntime = (a: unknown, b: unknown): boolean => {
+  const x = a as Record<string, unknown> | null;
+  const y = b as Record<string, unknown> | null;
+  return (
+    !!x &&
+    !!y &&
+    typeof x.node === 'string' &&
+    x.node === y.node &&
+    x.v8 === y.v8 &&
+    x.arch === y.arch
+  );
+};
+
+/** Pure: join exact-replay verdicts to one retained hand's decision records. */
+export function joinHorseJournalHandReplay(
+  records: readonly HorseJournalRecord[],
+  handKey: string,
+  verdicts: readonly HorseJournalReplayVerdictLike[]
+): HorseJournalHandReplay {
+  const out: HorseJournalHandReplay = {
+    version: 1,
+    scope: 'single_retained_hand',
+    decisions: 0,
+    verified: 0,
+    unverified: {},
+    replayVerified: false,
+  };
+  const miss = (reason: string) => {
+    out.unverified[reason] = (out.unverified[reason] ?? 0) + 1;
+  };
+  try {
+    if (!/^[0-9a-f]{64}$/.test(handKey) || !Array.isArray(records) || !Array.isArray(verdicts))
+      throw Error();
+    const byEvent = new Map<string, HorseJournalReplayVerdictLike[]>();
+    for (const v of verdicts) {
+      if (!v || typeof v !== 'object' || typeof v.decisionId !== 'string') continue;
+      const list = byEvent.get(v.decisionId) ?? [];
+      list.push(v);
+      byEvent.set(v.decisionId, list);
+    }
+    const seen = new Set<string>();
+    for (const record of records) {
+      validateHorseJournalRecord(record);
+      if (record.handKey !== handKey) throw Error();
+      if (record.kind !== 'decision' || seen.has(record.eventId)) continue;
+      seen.add(record.eventId);
+      out.decisions++;
+      const bound = (byEvent.get(record.eventId) ?? []).filter(
+        (v) => v.recordSha256 === record.sha256
+      );
+      if (bound.length === 0) miss('verdict_absent');
+      else if (bound.length > 1) miss('verdict_conflict');
+      else {
+        const v = bound[0]!;
+        if (v.recordedSource !== record.sourceRelease || v.runningSource !== record.sourceRelease)
+          miss('foreign_source');
+        else if (!sameRuntime(v.recordedRuntime, v.runningRuntime)) miss('foreign_runtime');
+        else if (v.outcome !== 'replayed_exact' || v.replayVerified !== true)
+          miss(typeof v.outcome === 'string' ? v.outcome : 'invalid_verdict');
+        else out.verified++;
+      }
+    }
+    out.replayVerified = out.decisions > 0 && out.verified === out.decisions;
+    return out;
+  } catch {
+    return { ...out, decisions: 0, verified: 0, unverified: { invalid_records: 1 } };
+  }
+}
+
+/** Explicit offline reader: one retained hand joined to supplied verdicts. */
+export function readHorseJournalHandReplay(
+  directory: string,
+  handKey: string,
+  verdicts: readonly HorseJournalReplayVerdictLike[]
+): HorseJournalHandReplay {
+  try {
+    return joinHorseJournalHandReplay(
+      readHorseJournalHandRecords(directory, handKey),
+      handKey,
+      verdicts
+    );
+  } catch {
+    return {
+      version: 1,
+      scope: 'single_retained_hand',
+      decisions: 0,
+      verified: 0,
+      unverified: { storage_unavailable: 1 },
+      replayVerified: false,
+    };
   }
 }

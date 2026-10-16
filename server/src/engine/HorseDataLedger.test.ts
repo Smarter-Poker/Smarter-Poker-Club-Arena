@@ -23,6 +23,7 @@ import {
   HORSE_DATA_LEDGER,
   ledgerByKind,
   ledgerReceiptFor,
+  RETIRED_PHASE12_REASONS,
   ledgerRows,
   type LedgerEntry,
 } from './HorseDataLedger.js';
@@ -69,6 +70,8 @@ const BRAIN_FILES = [
   'engine/horseDecision/client.ts',
   // Phase 15 final outcomes are emitted by the shared private witness owner.
   'engine/HorseExecutionWitness.ts',
+  // Phase 15 reference agreement is counted by the main-thread ledger observer.
+  'engine/HorsePolicyLedgerObserver.ts',
   // The decision journal publisher counts its own phase15_journal_* receipts,
   // including paused-at-quota apart from failed (2026-09-26).
   'services/HorseDecisionJournal.ts',
@@ -147,7 +150,15 @@ describe('HorseDataLedger - the contract holds against the source', () => {
         expect(e.kind).toBe('table');
         expect(e.dayColumn).toBeTruthy();
       }
-      if (e.cadence === 'legacy_unused') expect(e.kind).toBe('table');
+      // legacy_unused: a table nobody reads, or a retired telemetry key
+      // (retiredReceipt, 2026-10-16) that carries no ratio to judge.
+      if (e.cadence === 'legacy_unused') {
+        expect(['table', 'receipt']).toContain(e.kind);
+        if (e.kind === 'receipt') {
+          expect(e.ratioOf, k).toBeUndefined();
+          expect(e.key.endsWith('*'), `${k}: a retired receipt is one exact key`).toBe(false);
+        }
+      }
     }
     // the DB row shape carries the kind prefix so keys cannot collide across kinds
     const rows = ledgerRows();
@@ -205,7 +216,9 @@ describe('HorseDataLedger - the contract holds against the source', () => {
     }
     // Every exact receipt is fired somewhere; every family has at least one
     // fired literal or a dynamic prefix under it.
-    const receipts = ledgerByKind('receipt');
+    // A retired receipt is the opposite: it must NOT be fired (see the
+    // retired-receipt test below).
+    const receipts = ledgerByKind('receipt').filter((r) => r.cadence !== 'legacy_unused');
     for (const r of receipts) {
       if (r.key.endsWith('*')) {
         const prefix = r.key.slice(0, -1);
@@ -224,6 +237,43 @@ describe('HorseDataLedger - the contract holds against the source', () => {
         expect(fired, `receipt ${r.key} is registered but never fired`).toBe(true);
       }
     }
+  });
+
+  it('a retired receipt is gone from the source, so its silence is the retirement and not a dark layer', () => {
+    const retired = HORSE_DATA_LEDGER.filter(
+      (e) => e.kind === 'receipt' && e.cadence === 'legacy_unused'
+    );
+    expect(retired.length).toBeGreaterThan(100);
+    const firedLiterals = new Set(
+      [
+        ...telemetryArgs(BRAIN_SOURCE, 'noteFire'),
+        ...telemetryArgs(BRAIN_SOURCE, 'noteFeature'),
+      ].flatMap((arg) => [...arg.matchAll(/'([a-z0-9_]+)'/g)].map((m) => m[1]))
+    );
+    for (const e of retired) {
+      expect(['retired:source', 'retired:policy_bundle_2026_10_16']).toContain(e.consumer);
+      // An exact registration shadows any family for this one key, and no
+      // code path may still fire it by name.
+      expect(ledgerReceiptFor(e.key)?.key, e.key).toBe(e.key);
+      expect(firedLiterals.has(e.key), `${e.key} is retired but still fired`).toBe(false);
+    }
+    // Phase 12: the round-3 pack names its outcomes round3_*; none of the
+    // renamed reasons is still a reason the pack can return.
+    const phase12 = read('engine/remainingVariants/RemainingVariantLivePolicy.ts');
+    for (const reason of RETIRED_PHASE12_REASONS)
+      expect(phase12, `phase12 still returns ${reason}`).not.toMatch(
+        new RegExp(`['"\`]${reason}['"\`]`)
+      );
+    for (const reason of ['heads_up_big_blind_three_bet'])
+      expect(
+        BRAIN_SOURCE +
+          read('engine/plo4/Plo4LivePolicy.ts') +
+          read('engine/omaha/OmahaVariantLivePolicy.ts')
+      ).not.toContain(reason);
+    // The V44 governor decline left with the governor gate (2026-10-16).
+    expect(read('engine/ServerTableEngineTurns.ts')).not.toContain('v44_declined_governor');
+    // FOLLOW-UP when the 2026-10-16 policy bundle is on main: its keys become
+    // retired:source, and the packs' `work_budget` reason must be gone too.
   });
 
   it('names paused-at-quota apart from a failed journal', () => {

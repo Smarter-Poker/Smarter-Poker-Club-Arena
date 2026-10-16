@@ -95,7 +95,22 @@ export function horseReplayAuthority(
  * wall-clock work budget without owning the action, are the only parts of a
  * decision a faithful replay is allowed to change. Everything else in the
  * receipt is a function of the exact inputs and the RNG stream. */
-const VOLATILE_KEY = /(?:elapsed|latency)Ms$/i;
+/**
+ * Wall-clock measurements a receipt records about its own work. They are
+ * observations of how long the work took, not decision fields: a replay with
+ * its clock frozen measures 0. `analysisMs` (2026-10-16): the Omaha and
+ * remaining-variant packs record how long their equity analysis and action
+ * economics took (OmahaVariantSampler, OmahaVariantActionEconomics and the
+ * remaining-variant twins). Natural records of release 4c3509e5, live PLO6 and
+ * PLO8 river bets whose qualified pack decided, replayed the same action,
+ * amount, RNG, effects and binding and differed only at
+ * `decision.omahaVariantPolicy.equity.analysisMs`. Where such a measurement
+ * pushed the pack past its wall-clock work budget, the receipt names the
+ * budget (`work_budget`) and the exact replay refuses the record as
+ * `non_replayable:wall_clock_budget`; the measured value itself is never
+ * compared.
+ */
+const VOLATILE_KEY = /(?:elapsed|latency|analysis)Ms$/i;
 const SHADOW_RECEIPTS = new Set([
   'jointPolicy',
   'plo4Policy',

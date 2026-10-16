@@ -37,6 +37,10 @@ import { startHorseSelfTuner, stopHorseSelfTuner } from './services/HorseSelfTun
 import { sweepIncompleteHorses } from './services/HorseOnboarding.js';
 import { startHorseLeague, stopHorseLeague } from './benchmark/HorseLeague.js';
 import { startHorseDailyAudit, stopHorseDailyAudit } from './services/HorseDailyAudit.js';
+import {
+  startHorseReferenceAgreementReport,
+  stopHorseReferenceAgreementReport,
+} from './services/HorseReferenceAgreementReport.js';
 import { startBrainTelemetryFlush } from './services/BrainTelemetryFlush.js';
 import {
   startHorseDataLedgerSync,
@@ -249,6 +253,9 @@ async function startLeaderOwnedServices(): Promise<void> {
   // Daily audit (Dan 2026-08-26): findings over yesterday's 20bb reviews +
   // league results, written to horse_daily_audit for the /horses admin panel.
   startHorseDailyAudit();
+  // Phase 15 (2026-10-16): the daily reference-agreement report, written to
+  // horse_reference_agreement_daily from yesterday's brain telemetry.
+  startHorseReferenceAgreementReport();
   // Proof of receipt (Dan 2026-08-26): live layer-fire counters, flushed to
   // horse_brain_telemetry every minute for the daily audit + admin panel.
   startBrainTelemetryFlush();
@@ -313,6 +320,7 @@ function stopLeaderOwnedServices(): Promise<void> {
     ['HorseSelfTuner', stopHorseSelfTuner],
     ['HorseLeague', stopHorseLeague],
     ['HorseDailyAudit', stopHorseDailyAudit],
+    ['HorseReferenceAgreementReport', stopHorseReferenceAgreementReport],
     // GameServer stops Horse execution telemetry after its dealers drain;
     // stopping it at this early producer fence loses their final outcomes.
     ['HorseAdaptiveJournalWorker', () => horseAdaptiveJournalWorker.stop()],

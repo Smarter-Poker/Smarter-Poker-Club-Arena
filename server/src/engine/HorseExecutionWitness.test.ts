@@ -821,6 +821,43 @@ describe('private execution witness', () => {
     ]);
   });
 
+  it.each([
+    'second_look_unchanged',
+    'second_look_replaced',
+    'response_fence',
+    'caller_settled',
+    'brain_exception',
+    'turn_abandoned',
+  ] as const)('publishes why a witness was retired (%s), per lane', (reason) => {
+    const deep = createHorseExecutionWitness(
+      input,
+      { action: 'call', amount: 20, thinkTime: 1 },
+      {
+        requestId: 2,
+        lane: 'deep',
+        computeMs: 9,
+        governorScale: 1,
+      }
+    );
+    retireHorseExecutionWitness(deep, reason);
+    retireHorseExecutionWitness(deep, 'turn_abandoned'); // terminal: counted once
+    expect(deep.retirementReason).toBe(reason);
+    expect(drainFires()).toEqual([
+      { feature: 'phase15_execution_not_executed', fires: 1 },
+      { feature: 'phase15_deep_execution_not_executed', fires: 1 },
+      { feature: `phase15_deep_execution_retired_${reason}`, fires: 1 },
+    ]);
+  });
+
+  it('counts no retirement reason for an executed or unverified witness', () => {
+    const executed = make();
+    settleHorseExecutionWitness(executed, { applied: true, acceptedActions: accepted('bet', 20) });
+    const unverified = make();
+    settleHorseExecutionWitness(unverified, { applied: true, acceptedActions: [] });
+    expect(unverified.executionStatus).toBe('unverified');
+    expect(drainFires().filter((row) => row.feature.includes('_retired_'))).toEqual([]);
+  });
+
   it('does not mislabel an unsized call when the executor supplies its canonical price', () => {
     const witness = createHorseExecutionWitness(
       {
@@ -892,6 +929,7 @@ describe('private execution witness', () => {
     expect(drainFires()).toEqual([
       { feature: 'phase15_execution_not_executed', fires: 1 },
       { feature: 'phase15_fast_execution_not_executed', fires: 1 },
+      { feature: 'phase15_fast_execution_retired_second_look_replaced', fires: 1 },
     ]);
   });
 });

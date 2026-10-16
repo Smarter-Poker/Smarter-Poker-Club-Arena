@@ -135,6 +135,11 @@ test('global app wiring opts in after installation and keeps one inset edge with
   const css = readFileSync('src/styles/single-field-focus.css', 'utf8');
   const app = readFileSync('src/main.tsx', 'utf8');
   assert.match(app, /installSingleFieldFocus\(document\)/);
+  // The entry chunk is at its initial-load ceiling, so the app loads the
+  // helper and its sheet together as one deferred chunk, never statically.
+  assert.match(app, /import\('\.\/styles\/single-field-focus\.css'\)/);
+  assert.match(app, /import\('\.\/lib\/singleFieldFocus\.mjs'\)/);
+  assert.doesNotMatch(app, /^import .*single-?field-?focus/im);
   const standalone = readFileSync('src/diamond-test.tsx', 'utf8');
   assert.match(standalone, /installSingleFieldFocus\(document\)/);
   assert.match(standalone, /single-field-focus\.css/);

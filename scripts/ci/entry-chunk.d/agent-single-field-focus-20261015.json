@@ -1,4 +1,0 @@
-{
-  "_owner": "agent/single-field-focus-20261015 - the single-field focus law is global: main.tsx installs it on document before React mounts so the very first focused field (autofocus, hydration, keyboard Tab from the address bar) already gets exactly one shape-following edge. Lazy-loading it would leave the legacy doubled input ring visible on any field focused before the chunk arrived, which is the defect this branch removes. The CSS only applies under html[data-sp-single-field-focus], which the helper sets, so the two must arrive together. Cost is about 1.1kB gz (helper) + 0.6kB gz (style), no third-party dependencies, no timers, observers or network; measured entry stays inside the existing initial-load budget.",
-  "modules": ["src/lib/singleFieldFocus.mjs", "src/styles/single-field-focus.css"]
-}

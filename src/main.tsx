@@ -42,8 +42,6 @@ import './styles/metallic-popups.css';
 // word on animation, and importing it after the rest keeps its !important
 // declarations from being read before the sheets they moderate.
 import './styles/reducedMotion.css';
-import './styles/single-field-focus.css';
-import { installSingleFieldFocus } from './lib/singleFieldFocus.mjs';
 // IMPROVEMENT PASS 2026-08-19: ChipAnimations.css and CardAnimations.css
 // deleted — ~1,400 lines of keyframes/selectors with ZERO component
 // consumers (chip-bet--from-seat-*, community-card--flop-*, card--folding,
@@ -70,9 +68,6 @@ import {
 // Install before any fire-and-forget import. Vite's preload event covers the
 // critical route graph, while importWithRetry below keeps optional boot work
 // non-disruptive during an atomic publish.
-const disposeSingleFieldFocus = installSingleFieldFocus(document);
-if (import.meta.hot) import.meta.hot.dispose(disposeSingleFieldFocus);
-
 installVitePreloadErrorRecovery();
 releaseChunkRecoveryBudgetWhenStable();
 
@@ -87,6 +82,21 @@ function reportDeferredImportFailure(error: unknown, context: string): void {
   }
   reportError(error, context);
 }
+
+// ONE FOCUS EDGE PER FIELD (single-field focus law). Requested here, before
+// the render below, as its own small chunk: the initial-load gate sits at its
+// 320kB ceiling, so the helper and its sheet must not ride in the entry. The
+// sheet only applies under the root marker the helper sets, so the two always
+// arrive together, and the helper adopts a field that was already focused
+// when it installs, so nothing focused during boot is missed.
+void importWithRetry(() =>
+  Promise.all([import('./styles/single-field-focus.css'), import('./lib/singleFieldFocus.mjs')])
+)
+  .then(([, { installSingleFieldFocus }]) => {
+    const disposeSingleFieldFocus = installSingleFieldFocus(document);
+    if (import.meta.hot) import.meta.hot.dispose(disposeSingleFieldFocus);
+  })
+  .catch((err) => reportDeferredImportFailure(err, 'main.Single_field_focus_non_blocking'));
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  GLOBAL SAFETY NET — Catch unhandled promise rejections from service throws

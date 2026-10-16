@@ -117,6 +117,7 @@ export default function ChipAnimation({
   // is done by `.chipContainer` in ChipAnimation.module.css.
   const [scale, setScale] = useState(1);
   const [isVisible, setIsVisible] = useState(true);
+  const [flightFinished, setFlightFinished] = useState(false);
   const animRef = useRef<number>(0);
   // CA-12 BUG FIX: the 100ms hide-delay setTimeout after the rAF completes was
   // fire-and-forget. If the parent unmounts ChipAnimation during this window,
@@ -138,7 +139,25 @@ export default function ChipAnimation({
   /** The chip's own DOM node — used to detect a hidden (background) table. */
   const containerRef = useRef<HTMLDivElement | null>(null);
 
+  // Start the final hold only after React has committed the landing. Starting
+  // this timer inside rAF let a busy render batch the landing with removal,
+  // so a real payout could disappear without ever reaching its recipient.
+  useLayoutEffect(() => {
+    if (!flightFinished) return;
+    const timer = setTimeout(() => {
+      hideTimerRef.current = null;
+      setIsVisible(false);
+      onCompleteRef.current?.();
+    }, 100);
+    hideTimerRef.current = timer;
+    return () => {
+      clearTimeout(timer);
+      if (hideTimerRef.current === timer) hideTimerRef.current = null;
+    };
+  }, [flightFinished]);
+
   useEffect(() => {
+    setFlightFinished(false);
     // ANIMATION AUDIT 2026-08-28 (multi-table): a background table is
     // display:none, not unmounted — every chip flight there still drove a
     // full rAF bezier loop nobody could see. If this chip's container has no
@@ -213,12 +232,7 @@ export default function ChipAnimation({
       if (rawProgress < 1) {
         animRef.current = requestAnimationFrame(run);
       } else {
-        // Finished — brief pause then hide
-        hideTimerRef.current = setTimeout(() => {
-          hideTimerRef.current = null;
-          setIsVisible(false);
-          onCompleteRef.current?.();
-        }, 100);
+        setFlightFinished(true);
       }
     };
 

@@ -23,6 +23,38 @@ describe('visible authoritative reads', () => {
       await Promise.resolve();
     });
 
+  it.each(['hidden', 'offline'])(
+    'manual Cashier navigation still attempts its first read when %s',
+    async (state) => {
+      visibility = state === 'hidden' ? 'hidden' : 'visible';
+      online = state !== 'offline';
+      const read = vi.fn().mockResolvedValue(100);
+      const onData = vi.fn();
+      const hook = renderHook(() =>
+        useVisibleRead({
+          scopeKey: 'initial-cashier',
+          enabled: true,
+          manualOnly: true,
+          read,
+          onData,
+          onError: vi.fn(),
+        })
+      );
+      await settle();
+      expect(read).toHaveBeenCalledOnce();
+      expect(onData).toHaveBeenLastCalledWith(100, 'initial');
+      visibility = 'visible';
+      online = true;
+      act(() => {
+        document.dispatchEvent(new Event('visibilitychange'));
+        window.dispatchEvent(new Event('online'));
+      });
+      await act(() => vi.advanceTimersByTimeAsync(60_000));
+      expect(read).toHaveBeenCalledOnce();
+      hook.unmount();
+    }
+  );
+
   it('a deferred cached Cashier read never schedules a background read', async () => {
     const read = vi.fn().mockResolvedValue(100);
     const hook = renderHook(() =>

@@ -57,7 +57,10 @@ export function useVisibleRead<T>({
     };
     const run = async (reason: VisibleReadReason) => {
       stopTimer();
-      if (disposed || !visible()) return;
+      // Initial navigation is an explicit read even in a background/offline
+      // tab. Skipping it would leave a manual Cashier stuck on its skeleton;
+      // an offline failure must reach the visible Retry state instead.
+      if (disposed || (!visible() && !(manualOnly && reason === 'initial'))) return;
       if (inFlight) {
         // A completed money command may request a fresher read than the one
         // already travelling. Keep ONE successor, not overlapping requests.

@@ -20,7 +20,8 @@ export function fieldFocusOwner(field) {
         const roundedSurface = parseFloat(style.borderTopLeftRadius) > 0
             && style.backgroundColor !== 'transparent' && style.backgroundColor !== 'rgba(0, 0, 0, 0)';
         // A transitioning focus shadow on a transparent input is not its frame.
-        if (border || roundedSurface || (candidate !== field && style.boxShadow && style.boxShadow !== 'none')) return candidate;
+        const paintedImage = candidate !== field && style.backgroundImage && style.backgroundImage !== 'none';
+        if (border || roundedSurface || paintedImage || (candidate !== field && style.boxShadow && style.boxShadow !== 'none')) return candidate;
     }
     return field;
 }

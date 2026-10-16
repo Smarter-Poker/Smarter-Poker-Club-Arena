@@ -83,6 +83,14 @@ test('a divider inside a painted search well is not a second field frame', () =>
   assert.equal(fieldFocusOwner(search), well);
 });
 
+test('compact image-painted search wells own the edge around their transparent input', () => {
+  const f = fixture();
+  const well = f.node({ parent: f.document.body, width: 280, height: 50 });
+  well.style.backgroundImage = 'url(painted-search-well.png)';
+  const search = f.node({ parent: well, field: true });
+  assert.equal(fieldFocusOwner(search), well);
+});
+
 test('multi-field forms and large panels never become a giant focus frame', () => {
   const f = fixture();
   const form = f.node({ parent: f.document.body, width: 280, border: true });
@@ -130,7 +138,7 @@ test('global app wiring opts in after installation and keeps one inset edge with
   const standalone = readFileSync('src/diamond-test.tsx', 'utf8');
   assert.match(standalone, /installSingleFieldFocus\(document\)/);
   assert.match(standalone, /single-field-focus\.css/);
-  assert.match(css, /html\[data-sp-single-field-focus\] body/);
+  assert.match(css, /html:root\[data-sp-single-field-focus\] body/);
   assert.match(css, /outline-offset: -2px/);
   assert.match(css, /box-shadow: none !important/);
   assert.doesNotMatch(css, /border-width:|padding:|height:/);

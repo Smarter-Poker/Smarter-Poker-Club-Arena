@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   viewerStatus: 'active',
   agents: vi.fn(),
   players: vi.fn(),
+  transfer: vi.fn(),
   spread: vi.fn(),
   toast: { error: vi.fn(), success: vi.fn() },
 }));
@@ -38,7 +39,7 @@ vi.mock('../src/components/agent/CreditRequestWidget', () => ({
 vi.mock('../src/utils/clubIdResolver', () => ({ resolveClubUUID: async (id: string) => id }));
 vi.mock('../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 vi.mock('../src/services/AgentService', () => ({
-  AgentService: { getAgents: mocks.agents, getAgentPlayers: mocks.players },
+  AgentService: { getAgents: mocks.agents, getAgentPlayers: mocks.players, transferToPlayer: mocks.transfer },
 }));
 vi.mock('../src/services/CommissionService', () => ({
   CommissionService: { calculateSpread: mocks.spread },
@@ -208,3 +209,16 @@ describe('Super-agent credit request wiring', () => {
     expect(screen.queryByTestId('credit-props')).not.toBeInTheDocument();
   });
 });
+
+ it('sends into the selected wallet of a downline agent from the dashboard', async () => {
+  mocks.players.mockResolvedValue([{id:'recipient',userId:'recipient-user',role:'agent',displayName:'Downline Recipient',chipBalance:10,rakebackPercent:0,isOnline:false,joinedAt:'2026-10-15'}]);
+  mocks.transfer.mockResolvedValue(true);
+  render(<View />);
+  await screen.findByTestId('credit-props');
+  fireEvent.click(screen.getByRole('button',{name:'Transfers',exact:true}));
+  fireEvent.change(screen.getByRole('combobox'),{target:{value:'recipient-user'}});
+  fireEvent.change(screen.getByLabelText('Recipient Wallet'),{target:{value:'player_wallet'}});
+  fireEvent.change(screen.getByRole('spinbutton'),{target:{value:'5'}});
+  fireEvent.click(screen.getByRole('button',{name:'Send Chips'}));
+  await waitFor(()=>expect(mocks.transfer).toHaveBeenCalledWith('recipient-user','club-a',5,'player_wallet'));
+ });

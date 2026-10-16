@@ -373,6 +373,7 @@ export interface ReversibleDistribution {
 }
 
 export interface AgentPlayer {
+  role?: string;
   id: string;
   userId: string;
   displayName: string;
@@ -1062,7 +1063,7 @@ class AgentServiceClass {
     // (not membership_id) everywhere it is written — filter on that.
     const { data, error } = await supabase
       .from('club_members')
-      .select('club_id, user_id, chip_balance, joined_at')
+      .select('club_id, user_id, role, chip_balance, joined_at')
       .eq('agent_id', agent.user_id)
       .eq('club_id', scopedClubId)
       .limit(QUERY_LIMITS.MODERATE);
@@ -1100,6 +1101,7 @@ class AgentServiceClass {
       userId: m.user_id,
       displayName: playerDisplayName(profileMap[m.user_id]),
       avatarUrl: profileMap[m.user_id]?.avatar_url,
+      role: m.role || 'player',
       chipBalance: m.chip_balance || 0,
       rakebackPercent: 0, // rakeback_percent column does not exist yet
       joinedAt: m.joined_at,
@@ -1139,7 +1141,12 @@ class AgentServiceClass {
    * PARAMETER - the RPC derives it from auth.uid(), which is the only identity
    * a browser can establish and the reason bug 2 was possible at all.
    */
-  async transferToPlayer(playerId: string, clubId: string, amount: number): Promise<boolean> {
+  async transferToPlayer(
+    playerId: string,
+    clubId: string,
+    amount: number,
+    destination: 'player_wallet' | 'agent_wallet' = 'player_wallet'
+  ): Promise<boolean> {
     const { assertChipAmount, runAgentWalletOperation, confirmedAgentWalletReceipt } =
       await import('./AgentWalletIntent');
     assertChipAmount(amount);
@@ -1152,6 +1159,7 @@ class AgentServiceClass {
         clubId: resolvedId,
         targetId: playerId,
         kind: 'agent_send',
+        destination,
         amount,
       },
       async (operation) => {
@@ -1159,12 +1167,12 @@ class AgentServiceClass {
           p_club_id: resolvedId,
           p_to_user_id: playerId,
           p_amount: amount,
-          p_destination: 'player_wallet',
+          p_destination: destination,
           p_reason: 'Agent Transfer To Player',
           p_op_id: operation.operationId,
         });
         if (error) throw error;
-        if (!confirmedAgentWalletReceipt(data, amount, 'agent_send')) {
+        if (!confirmedAgentWalletReceipt(data, amount, 'agent_send', destination)) {
           throw new Error(data?.error || 'The Cashier Did Not Confirm That Transfer');
         }
         masterBus.emit('BALANCE_UPDATED', { source: 'agent_transfer_sent', userId: auth.user.id });

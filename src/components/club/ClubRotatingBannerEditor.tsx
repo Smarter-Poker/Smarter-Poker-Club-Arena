@@ -86,8 +86,8 @@ export default function ClubRotatingBannerEditor({
     <section aria-label="Rotating Banners" aria-busy={saving}>
       <h2>Rotating Banners</h2>
       <p>
-        Add Up To Three Club Banners. They Rotate In This Order Alongside Eligible Platform
-        Promotions, Including In Union Clubs. Banner Taps Open Club Announcements.
+        Add Up To Three Club Banners. Enabled Banners Rotate First In This Order, Including In Union
+        Clubs. Platform Promotions Fill Unused Spaces. Banner Taps Open Club Announcements.
       </p>
       {error && <p role="alert">{titleCase(error)}</p>}
       {!draft.length && <p>No Club Banners Added. Platform Promotions Continue To Display.</p>}

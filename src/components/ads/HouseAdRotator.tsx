@@ -148,7 +148,7 @@ export default function HouseAdRotator({
                 clubOwned: true,
               }))
           : [];
-      setAds([...owned, ...withImage]);
+      setAds([...owned, ...withImage].slice(0, limit));
       setIndex(0);
     });
     return () => {

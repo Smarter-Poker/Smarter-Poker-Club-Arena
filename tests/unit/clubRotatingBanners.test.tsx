@@ -192,3 +192,29 @@ it('rotates enabled club images alongside resolved ads and never bills club bann
   expect(mocks.dismiss).not.toHaveBeenCalled();
   expect(mocks.click).not.toHaveBeenCalled();
 });
+
+it('keeps the existing three-image strip limit with owner banners first and platform fallback', async () => {
+  mocks.resolve.mockResolvedValue([
+    {
+      adId: 'house',
+      adKey: 'house',
+      headline: 'House Promotion',
+      imageUrl: '/house.png',
+      advertiserKind: 'house',
+    },
+  ]);
+  const settings = {
+    rotating_banners: [banner, second, { ...banner, id: 'third', title: 'Third Banner' }],
+  };
+  const { rerender } = render(
+    <HouseAdRotator slot="lobby_strip" clubId={clubId} clubSettings={settings} />
+  );
+  await screen.findByAltText('First Banner');
+  expect(screen.getAllByRole('tab')).toHaveLength(3);
+  expect(screen.queryByRole('tab', { name: 'Show House Promotion' })).toBeNull();
+  rerender(
+    <HouseAdRotator slot="lobby_strip" clubId={clubId} clubSettings={{ rotating_banners: [] }} />
+  );
+  await screen.findByAltText('House Promotion');
+  expect(screen.queryByRole('tab')).toBeNull();
+});

@@ -36,7 +36,12 @@ real time. Measured the same day, it did not.
    no longer competes with live decisions: both windows moved into the
    quietest hours (13:00 and 16:00 UTC; was 04:00 and 16:00), and a run starts
    its compute process and each matchup only while the lane's oldest queued
-   decision is at most 1 s old (`decisionLaneHasHeadroom`). The engine image
+   decision is at most 1 s old (`decisionLaneHasHeadroom`). The age is taken
+   over DECISION jobs only (`DECIDE_FAST`, `DECIDE_DEEP`, `DECIDE_DISCARD`;
+   `status().oldestQueuedDecisionAgeMs`, per shard and lane-wide): every
+   completed hand is now mirrored to every shard (G5), and gating on the age
+   of that observation and mirror traffic would starve the league on a busy
+   floor while no horse was waiting. The engine image
    build stays on the host: PUBLISHING.md requires the Hetzner build, and it
    already runs in a 1-CPU, 2 GiB cgroup, serialized by a host lock.
 3. **G3, the second look is budgeted from the turn clock.** It was budgeted
@@ -57,6 +62,41 @@ real time. Measured the same day, it did not.
 
 No file inside a Phase 10/11/12/13 policy digest was changed (HorseMind.ts,
 HorseEval.ts, EquityLoadGovernor.ts and protocol.ts are untouched).
+
+**The think timer is still per table.** The pin in
+`server/src/MultiTablePlay.server.test.ts` ("the think timer is per-engine
+state, armed per table") read `this.horseActionTimer = setTimeout(`. G3 split
+the action out of that timer: the think timer is `const thinkTimer =
+setTimeout(...)` held in `this.horseActionTimer`, and when it fires with the
+deep read still out the wait is a second timer held in the same field
+(`this.horseActionTimer = secondLookHoldTimer`), so `cancelHorseDecisionWork`
+clears whichever one the turn is on. Every path that acts (think timer, hold
+expiry, deep answer landing) goes through `commitDecision`, whose first check
+is the commit fence (controller, hand number, lease, abort controller), and a
+deep answer that lands on a cancelled turn never acts. The pin now names that
+mechanism, and `HorseDecisionEffectCommit.test.ts` proves it in behaviour for
+every policy receipt: a deep answer landing after the turn was cancelled, or
+after the hand moved on, while the action was waiting for it never acts.
+
+## FOLLOW-UP: the mirror must merge the opponent-exploit counters
+
+**Not done here, on purpose.** The 2026-10-16 policy bundle (branch
+`claude/horse-brain-requal-bundle-20261016`, hashed files) adds a decaying
+opponent read: `HorseMind` keeps `exploitCounters` per `<scope>|<user>` and
+the sandbox carries them as `HorseMindSandbox.exploit`, updated with
+`decayAndAdd(row, increments)` from `HorseOpponentExploit.ts`. Neither exists
+on main, so `mindMirror.ts` is not written against them. When the bundle is on
+main, `mergeSandboxIntoLiveMind` (`server/src/engine/horseDecision/mindMirror.ts`)
+must also add each `sandbox.exploit` row into the live row with `decayAndAdd`
+(a sandbox row starts from `freshExploitCounters()`, so it holds exactly the
+mirrored hand's increments). HorseMind exposes only a read
+(`HorseMind.getExploitCounters(userId, scope)`) on that branch; creating a row
+for a player the live mind has not seen needs a HorseMind entry point for its
+private `exploitCounters` map, which is a hashed-file change and belongs to
+the bundle (or its follow-up), with a `mindMirror.test.ts` case that a mirrored
+hand moves `HorseMind.opponentRead` exactly as the owner's observe() does.
+Until then a shard that does not own a table learns that table's hands for
+every read except the bundle's exploit read.
 
 ## Arithmetic
 
@@ -94,6 +134,10 @@ without the cut, which is why the host needs more cores.
 `mindMirror.test.ts` (a mirrored hand teaches exactly the owner's read,
 including across recency halvings; dedupe; nothing marked for flush; in-flight
 dedupe survives 2,500 mirrored hands), `fullBrainWorker.test.ts`,
-`HorseLeagueLaneHeadroom.test.ts`, the V44 plan tests, the deep-look
-reconciliation modes `after_think_time` and `hold_expired`, the lane count and
-broadcast tests, and the worker runtime mirror path.
+`HorseLeagueLaneHeadroom.test.ts` (including: a mirror backlog is not a horse
+waiting, a queued decision is), `client.test.ts` (the client reports the oldest
+queued decision apart from mirrored-hand traffic), the V44 plan tests, the
+deep-look reconciliation modes `after_think_time` and `hold_expired`, the two
+late-deep-answer modes `cancelled_while_awaited` and
+`successor_hand_while_awaited`, the moved per-table timer pin, the lane count
+and broadcast tests, and the worker runtime mirror path.

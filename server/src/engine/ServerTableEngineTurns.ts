@@ -209,6 +209,40 @@ export function applyAllInOrFoldActionState(
  * outlives the code that fired it. So this is a switch, and every key is one
  * grep from its gate.
  */
+/**
+ * WHY A TOURNAMENT DECISION HAD NO COMPLETE CONTEXT (2026-10-16).
+ *
+ * About 10.5% of live tournament decisions reach the brain with an incomplete
+ * Phase 6 context and so get no ICM utility: the brain counted
+ * phase6_tournament_context_incomplete 163-167k a day and
+ * phase7_utility_unavailable 124-127k a day, and nothing recorded which issue
+ * closed the context. The issue list is already built
+ * (TournamentBrainContext.buildContext and getTournamentBrainContextSnapshot,
+ * then horseTournamentContext's table projection); it travelled inside the
+ * snapshot and was never counted.
+ *
+ * One receipt per distinct issue, plus one for the status, for each decision
+ * whose context is not complete, into the same daily brain telemetry
+ * (`phase6_context_issue_<issue>`, `phase6_context_issue_status_<status>`).
+ * The umbrella TOURNAMENT_CONTEXT_INCOMPLETE marker is not an issue and is
+ * not counted. Issue names are code-defined; anything that is not a plain
+ * lower-snake name of at most 64 characters is counted as `unrecognized`
+ * rather than becoming a key of its own. Exported for tests.
+ */
+export function noteTournamentContextIssues(status: string, issues: readonly string[]): string[] {
+  if (status === 'complete') return [];
+  const keys = new Set<string>();
+  const name = (raw: string): string => (/^[a-z0-9_]{1,64}$/.test(raw) ? raw : 'unrecognized');
+  keys.add(`status_${name(String(status))}`);
+  for (const issue of issues) {
+    if (issue === TOURNAMENT_CONTEXT_INCOMPLETE) continue;
+    keys.add(name(String(issue)));
+  }
+  const fired = [...keys];
+  for (const key of fired) noteFire(`phase6_context_issue_${key}`);
+  return fired;
+}
+
 export function noteSecondLookDecline(reason: SecondLookDecline): void {
   switch (reason) {
     case 'not_facing_bet':
@@ -2911,6 +2945,11 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       Object.prototype.hasOwnProperty.call(tctx.horseRebuyCapByUser, player.user_id)
         ? tctx.horseRebuyCapByUser[player.user_id]
         : null;
+
+    // Name what closed the context, once per decision (see
+    // noteTournamentContextIssues): launch-day data must say why a tournament
+    // decision had no ICM utility, not only that it had none.
+    noteTournamentContextIssues(contextStatus, localIssues);
 
     return {
       // Tournament metadata may name a Spin/MTT/HU structure only after the

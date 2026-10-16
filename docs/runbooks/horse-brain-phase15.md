@@ -40,13 +40,19 @@ reference brain, so play continued.
 - Out of domain: compare what is being dealt (seat counts, stacks and antes, bomb pots,
   multiboard, spins) with the pack's domain. The reason is on each decision's
   `policyOwnership.reason` in the private journal.
-- Unavailable: usually the pack's 4 ms wall-clock work budget under load. Read
-  `poker_horse_decision_worker_event_loop_delay_p99_ms` and the equity governor on /health.
+- Unavailable: the pack's sampler failed or its evidence was missing (or an input was
+  refused). Read `policyOwnership.reason` on the decisions in the private journal and the
+  serving release's changes to the pack's sampler and evidence inputs. The packs'
+  wall-clock work budget is retired by the 2026-10-16 policy bundle (separate branch); a
+  `work_budget` reason can only come from a release that predates it.
 
 ## HorseBrainPolicyUnregistered / HorseBrainPolicyGraphUnrecorded
 
-Both have a measured baseline of zero. A decision without a registered policy owner, or
-without its sealed eight-node policy graph, is a code fault in the release that is serving:
+Both have a measured baseline of zero and fire above 5 in 15 minutes. A decision without a
+registered policy owner, or without its sealed eight-node policy graph, is a code fault in
+the release that is serving. A shadow-only receipt the client dropped for a failed binding
+is counted as `outcome="shadow_receipt_dropped"` (with
+`phaseN_shadow_receipt_binding_dropped` in the daily telemetry), not as unregistered:
 read the variant label (`other` is a variant the registry does not know) and the release's
 changes to `HorseLogic`, `HorsePolicyRegistry` and `HorsePolicyGraph`.
 

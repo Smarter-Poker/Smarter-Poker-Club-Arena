@@ -16,8 +16,10 @@
  *
  *   1. `poker_horse_policy_decisions_total{variant,outcome}`: the policy
  *      outcome the registry reconciled (reference, disabled, computed,
- *      outside_domain, unavailable) or `unregistered` when the decision
- *      carries no ownership receipt. The OOD and silence alarms read it
+ *      outside_domain, unavailable), `shadow_receipt_dropped` when the client
+ *      dropped a shadow-only receipt (and its ownership record) whose strict
+ *      binding failed, or `unregistered` when the decision carries no
+ *      ownership receipt for any other reason. The OOD and silence alarms read it
  *      (infra/monitoring/alert-rules.yml, group `horse-brain-phase15`).
  *   2. `poker_horse_reference_agreement_total{variant,format,agreement}`:
  *      whether the final policy action equals the action the graph's
@@ -62,10 +64,22 @@ export interface HorsePolicyLedgerObservation {
   divergedAt: string | null;
 }
 
+/**
+ * What the client already knows about the receipt before the observer reads
+ * it. `ownershipDroppedWithShadowReceipt`: the client removed the decision's
+ * ownership record together with a shadow-only receipt whose strict binding
+ * failed (client.ts, `phaseN_shadow_receipt_binding_dropped`). Its owner was
+ * known; it is not an unregistered decision.
+ */
+export interface HorsePolicyLedgerContext {
+  ownershipDroppedWithShadowReceipt?: boolean;
+}
+
 /** Pure: classify one validated FAST decision. Never throws. */
 export function classifyHorsePolicyDecision(
   gameState: { gameVariant?: unknown; gameMode?: unknown } | null | undefined,
-  decision: HorseDecision | null | undefined
+  decision: HorseDecision | null | undefined,
+  context: HorsePolicyLedgerContext = {}
 ): HorsePolicyLedgerObservation {
   const rawVariant = gameState?.gameVariant ?? 'nlh';
   const variant = (
@@ -74,9 +88,14 @@ export function classifyHorsePolicyDecision(
   const format: LedgerFormat = gameState?.gameMode === 'cash' ? 'cash' : 'tournament';
   const ownership = decision?.policyOwnership as { outcome?: unknown } | undefined;
   const outcome = (
-    ownership && typeof ownership.outcome === 'string' && OUTCOMES.has(ownership.outcome)
+    ownership &&
+    typeof ownership.outcome === 'string' &&
+    ownership.outcome !== 'shadow_receipt_dropped' &&
+    OUTCOMES.has(ownership.outcome)
       ? ownership.outcome
-      : 'unregistered'
+      : !ownership && context.ownershipDroppedWithShadowReceipt === true
+        ? 'shadow_receipt_dropped'
+        : 'unregistered'
   ) as LedgerOutcome;
   const graph = decision?.policyGraph as HorsePolicyGraphReceipt | undefined;
   const transitions = Array.isArray(graph?.transitions) ? graph!.transitions : [];
@@ -98,10 +117,11 @@ export function classifyHorsePolicyDecision(
 /** Count one FAST decision. Telemetry must never break the decision lane. */
 export function observeHorsePolicyDecision(
   gameState: { gameVariant?: unknown; gameMode?: unknown } | null | undefined,
-  decision: HorseDecision | null | undefined
+  decision: HorseDecision | null | undefined,
+  context: HorsePolicyLedgerContext = {}
 ): HorsePolicyLedgerObservation | null {
   try {
-    const o = classifyHorsePolicyDecision(gameState, decision);
+    const o = classifyHorsePolicyDecision(gameState, decision, context);
     horsePolicyDecisionsTotal.inc(1, { variant: o.variant, outcome: o.outcome });
     horseReferenceAgreementTotal.inc(1, {
       variant: o.variant,

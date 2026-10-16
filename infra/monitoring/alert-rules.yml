@@ -2660,8 +2660,8 @@ groups:
           runbook: docs/runbooks/horse-brain-phase15.md
 
       - alert: HorseBrainPolicyUnavailableSurge
-        # Unavailable: the pack was in its domain but did not compute (work
-        # budget, missing evidence, refused input). (a): highest daily share
+        # Unavailable: the pack was in its domain but did not compute (sampler
+        # failure, missing evidence, refused input). (a): highest daily share
         # 0.75% (flo8), 0.57% (pineapple), 0.32% (flh). (b): highest 5-minute
         # share 1.85% (plo8). 5% over an hour with at least 300 decisions is
         # 2.7 times the highest 5-minute share.
@@ -2679,17 +2679,25 @@ groups:
           summary: '{{ $value | humanizePercentage }} of horse {{ $labels.variant }} decisions found their policy pack unavailable this hour'
           description: |
             The variant's pack was in domain but produced no proposal for more
-            than 5% of decisions this hour (measured maximum 1.9%). The usual
-            cause is the pack's wall-clock work budget under load: read
-            poker_horse_decision_worker_event_loop_delay_p99_ms and the
-            equity governor scale on /health.
+            than 5% of decisions this hour (measured maximum 1.9%). The cause
+            is the pack's sampler failing or its evidence missing (or a
+            refused input): read the decisions' policyOwnership.reason in the
+            private journal and the serving release's changes to the pack's
+            sampler and evidence inputs. The packs' wall-clock work budget is
+            retired by the 2026-10-16 policy bundle; a `work_budget` reason
+            can only come from a release that predates it.
           runbook: docs/runbooks/horse-brain-phase15.md
 
       - alert: HorseBrainPolicyUnregistered
         # A live decision with no registered policy owner. (a): the brain's
         # phase15_policy_unregistered never fired in the eight days measured,
         # and every decision of every variant carried a registered outcome.
-        expr: sum(increase(poker_horse_policy_decisions_total{outcome="unregistered"}[15m])) > 0
+        # A shadow-only receipt the client drops for a failed binding takes
+        # its ownership record with it; that is counted as its own outcome
+        # (shadow_receipt_dropped), never here. More than 5 in 15 minutes: a
+        # code fault repeats on every decision of its shape, a lone event
+        # (a decision racing a worker restart) does not page.
+        expr: sum(increase(poker_horse_policy_decisions_total{outcome="unregistered"}[15m])) > 5
         for: 5m
         labels:
           severity: warning
@@ -2707,8 +2715,10 @@ groups:
         # reference agreement cannot be known. (a): phase15_graph_started equals
         # phase15_graph_completed on every day 2026-10-09..16 (3.8 to 4.9
         # million a day), 0 failed; (b): every FAST record carried all eight
-        # transitions.
-        expr: sum(increase(poker_horse_reference_agreement_total{agreement="unrecorded"}[15m])) > 0
+        # transitions. More than 5 in 15 minutes, for the same reason as
+        # HorseBrainPolicyUnregistered: a missing graph is a code fault that
+        # repeats, and one stray decision is not one.
+        expr: sum(increase(poker_horse_reference_agreement_total{agreement="unrecorded"}[15m])) > 5
         for: 5m
         labels:
           severity: warning

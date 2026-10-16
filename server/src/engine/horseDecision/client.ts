@@ -142,6 +142,14 @@ export interface LiveHorseDecisionWorkerStatus {
   activeRequestId: number | null;
   activeJobAgeMs: number | null;
   oldestQueuedAgeMs: number | null;
+  /**
+   * The same age over DECISION jobs only (DECIDE_FAST, DECIDE_DEEP,
+   * DECIDE_DISCARD): how long a horse has been waiting for an answer.
+   * Observation, effect and mirrored-hand jobs are left out, so a burst of
+   * mirror traffic (mirrorCompletedHand) is not read as a horse waiting
+   * (HorseLeague's decisionLaneHasHeadroom reads this).
+   */
+  oldestQueuedDecisionAgeMs: number | null;
   lastCompletedAt: number | null;
   lastComputeMs: number | null;
   completedJobs: number;
@@ -331,6 +339,10 @@ const HORSE_EFFECT_LANE_TYPES: ReadonlySet<string> = new Set([
   'COMMIT_DECISION_EFFECTS',
   'RETIRE_DECISION_EFFECTS',
 ]);
+/** The jobs a horse is waiting on for its action (status().oldestQueuedDecisionAgeMs). */
+export const HORSE_DECISION_JOB_TYPES: ReadonlySet<HorseDecisionJobRequest['type']> = new Set<
+  HorseDecisionJobRequest['type']
+>(['DECIDE_FAST', 'DECIDE_DEEP', 'DECIDE_DISCARD']);
 const HORSE_OBSERVATION_TYPES: ReadonlySet<string> = new Set([
   ...HORSE_CAPTURE_LANE_TYPES,
   ...HORSE_EFFECT_LANE_TYPES,
@@ -626,10 +638,16 @@ export class LiveHorseDecisionWorkerClient {
     const active = this.inFlight[0] ?? null;
     // Everything still waiting for its turn: posted jobs behind the head, and
     // jobs not yet posted. The head is running and is reported as active.
-    const oldestQueued = [...this.inFlight.slice(1), ...this.queue].reduce<QueuedJob | null>(
-      (oldest, job) =>
-        job.settled || (oldest && oldest.enqueuedAt <= job.enqueuedAt) ? oldest : job,
-      null
+    const waiting = [...this.inFlight.slice(1), ...this.queue];
+    const oldestOf = (jobs: QueuedJob[]): QueuedJob | null =>
+      jobs.reduce<QueuedJob | null>(
+        (oldest, job) =>
+          job.settled || (oldest && oldest.enqueuedAt <= job.enqueuedAt) ? oldest : job,
+        null
+      );
+    const oldestQueued = oldestOf(waiting);
+    const oldestQueuedDecision = oldestOf(
+      waiting.filter((job) => HORSE_DECISION_JOB_TYPES.has(job.request.type))
     );
     return {
       phase: this.phase,
@@ -642,6 +660,9 @@ export class LiveHorseDecisionWorkerClient {
       activeJobAgeMs:
         active && this.activeStartedAt !== null ? Math.max(0, now - this.activeStartedAt) : null,
       oldestQueuedAgeMs: oldestQueued ? Math.max(0, now - oldestQueued.enqueuedAt) : null,
+      oldestQueuedDecisionAgeMs: oldestQueuedDecision
+        ? Math.max(0, now - oldestQueuedDecision.enqueuedAt)
+        : null,
       lastCompletedAt: this.lastCompletedAt,
       lastComputeMs: this.lastComputeMs,
       completedJobs: this.completedJobs,
@@ -1468,6 +1489,10 @@ export class LiveHorseDecisionWorkerClient {
       // record reconciled from that receipt goes with it; the decision keeps
       // its actual action and every other check below still applies. Any other
       // PLO4 receipt that fails the binding still fails closed below.
+      // Whether a dropped shadow receipt took the decision's ownership record
+      // with it: the Phase 15 ledger counts that as its own outcome, never as
+      // a decision with no owner (HorsePolicyLedgerObserver).
+      let ownershipDroppedWithShadowReceipt = false;
       const plo4Shadow = message.decision.plo4Policy;
       if (
         plo4Shadow &&
@@ -1478,8 +1503,10 @@ export class LiveHorseDecisionWorkerClient {
         !plo4LiveReceiptBindingIsValid(plo4Shadow)
       ) {
         delete message.decision.plo4Policy;
-        if (message.decision.policyOwnership?.owner === 'phase10')
+        if (message.decision.policyOwnership?.owner === 'phase10') {
           delete message.decision.policyOwnership;
+          ownershipDroppedWithShadowReceipt = true;
+        }
         noteFire('phase10_shadow_receipt_binding_dropped');
       }
       // P11.1, the same rule: a shadow-only PLO5/PLO6/PLO8 receipt (shadow,
@@ -1495,8 +1522,10 @@ export class LiveHorseDecisionWorkerClient {
         !omahaVariantReceiptBindingIsValid(phase11Shadow)
       ) {
         delete message.decision.omahaVariantPolicy;
-        if (message.decision.policyOwnership?.owner === 'phase11')
+        if (message.decision.policyOwnership?.owner === 'phase11') {
           delete message.decision.policyOwnership;
+          ownershipDroppedWithShadowReceipt = true;
+        }
         noteFire('phase11_shadow_receipt_binding_dropped');
       }
       // P12.1, the same rule for Short Deck, Pineapple, FLH and FLO8: a
@@ -1513,8 +1542,10 @@ export class LiveHorseDecisionWorkerClient {
         !remainingVariantReceiptBindingIsValid(phase12Shadow)
       ) {
         delete message.decision.remainingVariantPolicy;
-        if (message.decision.policyOwnership?.owner === 'phase12')
+        if (message.decision.policyOwnership?.owner === 'phase12') {
           delete message.decision.policyOwnership;
+          ownershipDroppedWithShadowReceipt = true;
+        }
         noteFire('phase12_shadow_receipt_binding_dropped');
       }
       // P13.1, the same rule for the joint owner: a shadow-only Phase 13
@@ -1627,7 +1658,9 @@ export class LiveHorseDecisionWorkerClient {
       // agreement read every validated FAST decision once (a DEEP second look
       // re-decides the same turn). Read-only; it never changes the decision.
       if (message.type === 'FAST_RESULT')
-        observeHorsePolicyDecision(active.request.gameState, message.decision);
+        observeHorsePolicyDecision(active.request.gameState, message.decision, {
+          ownershipDroppedWithShadowReceipt,
+        });
       const ownedFast =
         message.type === 'FAST_RESULT' && message.planIssueDisposition === 'issued'
           ? message

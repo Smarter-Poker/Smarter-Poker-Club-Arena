@@ -98,6 +98,43 @@ describe('Phase 15 policy ledger observer', () => {
     ).toMatchObject({ outcome: 'unregistered', agreement: 'exact' });
   });
 
+  it('counts a shadow receipt the client dropped as its own outcome, never as unregistered', () => {
+    const dropped = graphed([{ action: 'check' }], null);
+    const context = { ownershipDroppedWithShadowReceipt: true };
+    expect(classifyHorsePolicyDecision(cash('plo8'), dropped, context)).toMatchObject({
+      outcome: 'shadow_receipt_dropped',
+      agreement: 'exact',
+    });
+    // Only a decision whose ownership actually went with the receipt.
+    expect(
+      classifyHorsePolicyDecision(cash('plo8'), graphed([{ action: 'check' }]), context)
+    ).toMatchObject({ outcome: 'computed' });
+    expect(classifyHorsePolicyDecision(cash('plo8'), dropped)).toMatchObject({
+      outcome: 'unregistered',
+    });
+    // A worker cannot claim the outcome for itself.
+    expect(
+      classifyHorsePolicyDecision(
+        cash('plo8'),
+        graphed([{ action: 'check' }], 'shadow_receipt_dropped')
+      )
+    ).toMatchObject({ outcome: 'unregistered' });
+    const before = {
+      dropped: horsePolicyDecisionsTotal.get({
+        variant: 'plo8',
+        outcome: 'shadow_receipt_dropped',
+      }),
+      unregistered: horsePolicyDecisionsTotal.get({ variant: 'plo8', outcome: 'unregistered' }),
+    };
+    observeHorsePolicyDecision(cash('plo8'), dropped, context);
+    expect(
+      horsePolicyDecisionsTotal.get({ variant: 'plo8', outcome: 'shadow_receipt_dropped' })
+    ).toBe(before.dropped + 1);
+    expect(horsePolicyDecisionsTotal.get({ variant: 'plo8', outcome: 'unregistered' })).toBe(
+      before.unregistered
+    );
+  });
+
   it('keeps every label in its closed set', () => {
     const odd = classifyHorsePolicyDecision(
       { gameVariant: '__proto__', gameMode: 'sng' },
@@ -158,6 +195,7 @@ describe('Phase 15 policy ledger observer', () => {
         'outside_domain',
         'unavailable',
         'unregistered',
+        'shadow_receipt_dropped',
         'computed',
         'reference',
       ])

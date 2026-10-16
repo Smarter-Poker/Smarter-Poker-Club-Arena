@@ -18,24 +18,60 @@ import type { HorseLeagueCompute } from './HorseLeagueComputeWorkerClient.js';
 
 describe('decisionLaneHasHeadroom', () => {
   it('is calm only while the oldest queued decision is at most a second old', () => {
-    expect(decisionLaneHasHeadroom({ phase: 'ready', oldestQueuedAgeMs: null })).toBe(true);
-    expect(decisionLaneHasHeadroom({ phase: 'ready', oldestQueuedAgeMs: 0 })).toBe(true);
+    expect(decisionLaneHasHeadroom({ phase: 'ready', oldestQueuedDecisionAgeMs: null })).toBe(true);
+    expect(decisionLaneHasHeadroom({ phase: 'ready', oldestQueuedDecisionAgeMs: 0 })).toBe(true);
     expect(
-      decisionLaneHasHeadroom({ phase: 'ready', oldestQueuedAgeMs: LEAGUE_LANE_MAX_QUEUED_AGE_MS })
+      decisionLaneHasHeadroom({
+        phase: 'ready',
+        oldestQueuedDecisionAgeMs: LEAGUE_LANE_MAX_QUEUED_AGE_MS,
+      })
     ).toBe(true);
     expect(
       decisionLaneHasHeadroom({
         phase: 'ready',
-        oldestQueuedAgeMs: LEAGUE_LANE_MAX_QUEUED_AGE_MS + 1,
+        oldestQueuedDecisionAgeMs: LEAGUE_LANE_MAX_QUEUED_AGE_MS + 1,
       })
     ).toBe(false);
-    expect(decisionLaneHasHeadroom({ phase: 'ready', oldestQueuedAgeMs: 5_966 })).toBe(false);
+    expect(decisionLaneHasHeadroom({ phase: 'ready', oldestQueuedDecisionAgeMs: 5_966 })).toBe(
+      false
+    );
   });
 
   it('never calls a starting, failing or stopping lane calm; a process without one has nothing to protect', () => {
     for (const phase of ['starting', 'failed', 'stopping'] as const)
-      expect(decisionLaneHasHeadroom({ phase, oldestQueuedAgeMs: 0 })).toBe(false);
-    expect(decisionLaneHasHeadroom({ phase: 'stopped', oldestQueuedAgeMs: null })).toBe(true);
+      expect(decisionLaneHasHeadroom({ phase, oldestQueuedDecisionAgeMs: 0 })).toBe(false);
+    expect(decisionLaneHasHeadroom({ phase: 'stopped', oldestQueuedDecisionAgeMs: null })).toBe(
+      true
+    );
+  });
+});
+
+describe('the headroom gate reads decision jobs only', () => {
+  it('a mirrored-hand or observation backlog is not a horse waiting; a queued decision is', () => {
+    // Every completed hand is mirrored to every shard (mindMirror.ts): the
+    // lane's oldest job can be seconds old while no decision waits at all.
+    // client.test.ts proves the client reports exactly these two ages.
+    expect(
+      decisionLaneHasHeadroom({
+        phase: 'ready',
+        oldestQueuedAgeMs: 6_000,
+        oldestQueuedDecisionAgeMs: null,
+      } as never)
+    ).toBe(true);
+    expect(
+      decisionLaneHasHeadroom({
+        phase: 'ready',
+        oldestQueuedAgeMs: 6_000,
+        oldestQueuedDecisionAgeMs: 200,
+      } as never)
+    ).toBe(true);
+    expect(
+      decisionLaneHasHeadroom({
+        phase: 'ready',
+        oldestQueuedAgeMs: 6_000,
+        oldestQueuedDecisionAgeMs: LEAGUE_LANE_MAX_QUEUED_AGE_MS + 1,
+      } as never)
+    ).toBe(false);
   });
 });
 

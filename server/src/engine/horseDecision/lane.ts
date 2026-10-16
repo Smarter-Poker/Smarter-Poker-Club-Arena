@@ -242,6 +242,7 @@ export interface LiveHorseDecisionWorkerShardStatus {
   completedJobs: number;
   expiredJobs: number;
   oldestQueuedAgeMs: number | null;
+  oldestQueuedDecisionAgeMs: number | null;
   lastComputeMs: number | null;
   lastError: string | null;
 }
@@ -438,6 +439,7 @@ export class LiveHorseDecisionWorkerPool implements LiveHorseDecisionLane {
       activeRequestId: first.activeRequestId,
       activeJobAgeMs: maxOf(all.map((s) => s.activeJobAgeMs)),
       oldestQueuedAgeMs: maxOf(all.map((s) => s.oldestQueuedAgeMs)),
+      oldestQueuedDecisionAgeMs: maxOf(all.map((s) => s.oldestQueuedDecisionAgeMs)),
       lastCompletedAt: latest.lastCompletedAt,
       lastComputeMs: latest.lastComputeMs,
       completedJobs: sumOf(all.map((s) => s.completedJobs)),
@@ -465,6 +467,7 @@ export class LiveHorseDecisionWorkerPool implements LiveHorseDecisionLane {
         completedJobs: s.completedJobs,
         expiredJobs: s.expiredJobs,
         oldestQueuedAgeMs: s.oldestQueuedAgeMs,
+        oldestQueuedDecisionAgeMs: s.oldestQueuedDecisionAgeMs,
         lastComputeMs: s.lastComputeMs,
         lastError: s.lastError,
       })),
@@ -582,6 +585,7 @@ const stoppedLaneStatus = (): LiveHorseDecisionLaneStatus => ({
   activeRequestId: null,
   activeJobAgeMs: null,
   oldestQueuedAgeMs: null,
+  oldestQueuedDecisionAgeMs: null,
   lastCompletedAt: null,
   lastComputeMs: null,
   completedJobs: 0,

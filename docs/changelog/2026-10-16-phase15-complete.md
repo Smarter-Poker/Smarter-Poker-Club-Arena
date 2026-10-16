@@ -189,6 +189,60 @@ exact and 2 refused by name for the unrecorded wall-clock budget.
   `non_replayable:wall_clock_budget`. Making the pins complete means replacing those budgets
   with fixed declared work (audit item G6), which re-opens qualification.
 
+## 6. Launch-eve corrections (2026-10-16, evening)
+
+- **A dropped shadow receipt is not an unregistered decision.** When a
+  shadow-only Phase 10/11/12 receipt fails its strict input binding the client
+  drops it together with its ownership record (`client.ts`,
+  `phaseN_shadow_receipt_binding_dropped`), and the ledger observer then
+  counted that decision `unregistered`, which `HorseBrainPolicyUnregistered`
+  pages on. It is now its own outcome, `shadow_receipt_dropped`
+  (`HorsePolicyLedgerObserver`, zero-seeded in `engineInstruments.ts`); a
+  worker cannot claim that outcome for itself. Both
+  `HorseBrainPolicyUnregistered` and `HorseBrainPolicyGraphUnrecorded` now fire
+  above 5 in 15 minutes instead of on a single event: a code fault repeats on
+  every decision of its shape.
+- **The unavailable runbook names the real cause.** The packs' wall-clock work
+  budget is retired by the policy bundle, so `HorseBrainPolicyUnavailableSurge`
+  and the runbook point at a sampler failure or missing evidence
+  (`policyOwnership.reason` in the journal); a `work_budget` reason can only
+  come from a release that predates the bundle.
+- **Why a tournament decision had no ICM utility.** About 10.5% of tournament
+  decisions read `phase6_tournament_context_incomplete` (163-167k a day) and
+  `phase7_utility_unavailable` (124-127k a day), and nothing said which issue
+  closed the context. `ServerTableEngineTurns.noteTournamentContextIssues`
+  now counts every issue of an incomplete context, and its status, once per
+  decision into the daily brain telemetry (`phase6_context_issue_<issue>`,
+  `phase6_context_issue_status_<status>`; registered as
+  `phase6_context_issue_*`). The issue list is the one TournamentBrainContext
+  and the table projection already build; the umbrella marker is not counted
+  and an unexpected string counts as `unrecognized`. The status receipts are
+  counted once per scheduled horse action, so they should track the brain's
+  own `phase6_tournament_context_incomplete` closely (not proven equal: the
+  brain counts inside the worker). The Phase 7 unavailable reasons were
+  already partitioned (`phase7_unavailable_*`, HorseLogic, hashed).
+- **The daily audit stops reporting renamed and retired reasons as silent
+  layers.** On 2026-10-15 `fn_audit_layer_drift` raised about 110
+  `layer_went_silent` warns, none a layer that stopped. The engine now registers
+  retired keys in the data ledger (`RETIRED_RECEIPTS`: the Phase 12 pack's 16
+  pre-round-3 reasons on all five prefixes, the PLO packs'
+  `heads_up_big_blind_three_bet`, `v44_declined_governor`, and the
+  `*_reason_work_budget` keys the policy bundle retires; kind receipt, cadence
+  `legacy_unused`, never judged by `fn_audit_data_receipts`), and section 1 of
+  `fn_audit_layer_drift` reports them as one `retired_counters_quiet` info line.
+  Reason, refusal and population counters, which section 2 has not judged as
+  layers since 2026-10-05, are reported as one `outcome_counters_quiet` info
+  line. A real layer still warns. The function change is in the same,
+  still-unapplied migration `20261016192158` and its single transaction (built
+  on the installed body, md5 `8e70a9a55f691a1bf2b1842530c97383`); the whole
+  migration was applied to a throwaway local PostgreSQL 17 and the new section
+  exercised with a retired key, two outcome counters, a population counter, a
+  fallback and a real layer (only the real layer warned).
+- **Not applied to production.** The migration has not been applied; the
+  pre-push migration gate refuses the branch until it is (Supabase MCP
+  `apply_migration`, outside :50-:03 UTC). The alert rules are live only after
+  `bash infra/monitoring/deploy.sh` on the box.
+
 ## Files
 
 Not hashed (all): `server/src/engine/horseDecision/client.ts` (+test),
@@ -201,5 +255,7 @@ Not hashed (all): `server/src/engine/horseDecision/client.ts` (+test),
 `server/src/engine/horseDecision/replay/{HorseDecisionReplay,exactReplay}.ts` (+test),
 `server/src/services/horseDecisionJournal/review.ts` (+`replayJoin.test.ts`),
 `server/src/scripts/horseJournalReview.ts`, `infra/monitoring/alert-rules.yml`,
-`docs/runbooks/horse-brain-phase15.md`, the migration, `docs/evidence/phase15/*`.
+`docs/runbooks/horse-brain-phase15.md`, the migration, `docs/evidence/phase15/*`,
+`server/src/engine/TournamentContextIssueReceipts.test.ts` (new),
+`tests/layer-collapse-reads-its-own-denominator.law.test.ts` (section 1 pins).
 `workerRuntime.ts` and `lane.ts` are not touched.

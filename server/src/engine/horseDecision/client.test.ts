@@ -25,6 +25,7 @@ import {
   type Round3Spot,
 } from '../remainingVariants/RemainingVariantRound3Spots.test-support.js';
 import { horseDecisionReceiptIsValid } from './responseValidation.js';
+import { horsePolicyDecisionsTotal } from '../../observability/engineInstruments.js';
 import { jointPolicyFixture } from '../multiway/JointRangeFixture.test-support.js';
 import type { HorseDiscardExecutionObservation } from '../../services/horseDecisionJournal/discard.js';
 import { horseDecisionJournalHealth } from '../../services/HorseDecisionJournal.js';
@@ -2230,6 +2231,40 @@ describe('LiveHorseDecisionWorkerClient', () => {
     expect(worker.terminateCalls).toBe(1);
   });
 
+  it('reports the oldest queued DECISION apart from mirrored-hand and observation traffic', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-17T13:30:00Z'));
+    try {
+      const worker = new FakeWorker();
+      const client = new LiveHorseDecisionWorkerClient({
+        workerFactory: () => worker,
+        maxInFlight: 1,
+      });
+      worker.emitMessage(ready);
+      // Three hands mirrored from other shards: one posted, two waiting.
+      for (let i = 0; i < 3; i++)
+        client.mirrorCompletedHand({
+          generation: 7,
+          fence: `mirror-${i}`,
+          handKey: `table:hand-${i}`,
+          actions: [],
+          bigBlind: 2,
+        });
+      vi.setSystemTime(Date.now() + 5_000);
+      const mirrored = client.status();
+      expect(mirrored.oldestQueuedAgeMs).toBe(5_000);
+      expect(mirrored.oldestQueuedDecisionAgeMs).toBeNull();
+      // A horse's decision queued behind the same backlog is a horse waiting.
+      void client.decideFast(snapshot('waits-behind-mirrors')).catch(() => undefined);
+      vi.setSystemTime(Date.now() + 1_500);
+      const waiting = client.status();
+      expect(waiting.oldestQueuedAgeMs).toBe(6_500);
+      expect(waiting.oldestQueuedDecisionAgeMs).toBe(1_500);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('keeps an accepted hand observation ahead of the table next decision', async () => {
     const worker = new FakeWorker();
     const client = new LiveHorseDecisionWorkerClient({
@@ -2863,8 +2898,23 @@ describe('P11.1: a PLO5/PLO6/PLO8 receipt whose input binding fails validation',
     expect(horseDecisionReceiptIsValid(structuredClone(forged), 'plo8')).toBe(false);
     enableBrainTelemetry();
     drainFires();
+    const ledgerBefore = {
+      dropped: horsePolicyDecisionsTotal.get({
+        variant: 'plo8',
+        outcome: 'shadow_receipt_dropped',
+      }),
+      unregistered: horsePolicyDecisionsTotal.get({ variant: 'plo8', outcome: 'unregistered' }),
+    };
     const { worker, client, pending } = send(forged, 'p11-1-shadow');
     const result = await pending;
+    // The Phase 15 ledger counts it as a dropped shadow receipt, not as a
+    // decision with no registered owner (HorseBrainPolicyUnregistered).
+    expect(
+      horsePolicyDecisionsTotal.get({ variant: 'plo8', outcome: 'shadow_receipt_dropped' })
+    ).toBe(ledgerBefore.dropped + 1);
+    expect(horsePolicyDecisionsTotal.get({ variant: 'plo8', outcome: 'unregistered' })).toBe(
+      ledgerBefore.unregistered
+    );
     expect({ action: result.decision.action, amount: result.decision.amount }).toEqual({
       action: valid.action,
       amount: valid.amount,

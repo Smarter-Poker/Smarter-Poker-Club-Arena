@@ -1583,7 +1583,11 @@ class RequiredV31AgreementError extends Error {
  * six seconds old while the league process held 99% of a core for 72 minutes.
  *
  * So a matchup starts only while the decision lane is calm: its oldest queued
- * job is at most LEAGUE_LANE_MAX_QUEUED_AGE_MS old. Otherwise the run stands
+ * DECISION job (DECIDE_FAST, DECIDE_DEEP, DECIDE_DISCARD) is at most
+ * LEAGUE_LANE_MAX_QUEUED_AGE_MS old. Observation, effect and mirrored-hand
+ * jobs are not a horse waiting: every completed hand is mirrored to every
+ * shard (horseDecision/mindMirror.ts), and gating on the age of THAT traffic
+ * would starve the league on a busy floor while no horse was waiting at all. Otherwise the run stands
  * down with what it has (a partial card is resumable, see alreadyRanToday)
  * and the next ten-minute tick inside the window tries again. A process with
  * no live lane (tests, offline tools) has nothing to protect; a lane that is
@@ -1594,12 +1598,12 @@ export const LEAGUE_LANE_MAX_QUEUED_AGE_MS = 1_000;
 export function decisionLaneHasHeadroom(
   status: Pick<
     LiveHorseDecisionLaneStatus,
-    'phase' | 'oldestQueuedAgeMs'
+    'phase' | 'oldestQueuedDecisionAgeMs'
   > = liveHorseDecisionWorkerStatus()
 ): boolean {
   if (status.phase === 'stopped') return true;
   if (status.phase !== 'ready') return false;
-  return (status.oldestQueuedAgeMs ?? 0) <= LEAGUE_LANE_MAX_QUEUED_AGE_MS;
+  return (status.oldestQueuedDecisionAgeMs ?? 0) <= LEAGUE_LANE_MAX_QUEUED_AGE_MS;
 }
 
 export async function runLeague(
@@ -1680,7 +1684,7 @@ export async function runLeague(
     // a horse is waiting for its decision either.
     if (!laneHasHeadroom()) {
       console.log(
-        `[HorseLeague] run ${date} not starting: the live decision lane has a job waiting ` +
+        `[HorseLeague] run ${date} not starting: the live decision lane has a decision waiting ` +
           `more than ${LEAGUE_LANE_MAX_QUEUED_AGE_MS} ms; the next tick in the window tries again`
       );
       return results;
@@ -1896,7 +1900,7 @@ export async function runLeague(
       if (!laneHasHeadroom()) {
         console.log(
           `[HorseLeague] run ${date} standing down after ${results.length}/${card.length} ` +
-            `matchups: the live decision lane has a job waiting more than ` +
+            `matchups: the live decision lane has a decision waiting more than ` +
             `${LEAGUE_LANE_MAX_QUEUED_AGE_MS} ms; the next tick in the window resumes the card`
         );
         break;

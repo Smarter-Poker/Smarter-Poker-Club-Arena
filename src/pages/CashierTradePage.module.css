@@ -4,7 +4,8 @@
    Page typography is bounded on desktop, controls retain 44px touch targets,
    and the compact directory uses the Players page inks and hairline rules. */
 
-.page {
+.page,
+.console {
   /* The master's inks (SpadeConsole.css), for copy that carries a module class
      rather than an sc-ink class. Schema colours only. */
   --ink-blue: #45adff;
@@ -35,7 +36,9 @@
   --ink-muted-shadow: 0 min(0.2cqw, 1px) min(0.3cqw, 1.5px) rgb(0 0 0 / 80%);
   --ink-copy: #d7dee7;
   --engraved-rule-lip: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
 
+.page {
   position: relative;
   isolation: isolate;
   display: flex;
@@ -1601,6 +1604,8 @@
 .console .entryRow {
   aspect-ratio: 1280 / 274;
   background-image: url('/assets/club-buttons/wallet-row-shell.png');
+  /* The approved frame ends at row 265. Orphan pixels below it are not chrome. */
+  clip-path: inset(0 0 calc(9 / 274 * 100%) 0);
 }
 
 .console .playerCardAvatar {

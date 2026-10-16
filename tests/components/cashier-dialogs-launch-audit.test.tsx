@@ -264,7 +264,7 @@ describe('D-02: the corner X respects the in-flight lock', () => {
     fireEvent.click(screen.getByText('Fish Finder'));
     fireEvent.change(screen.getByLabelText('Chips To Send'), { target: { value: '100' } });
     await settle();
-    fireEvent.click(screen.getByText('Send Chips', { selector: '.sc-plate__text' }));
+    fireEvent.click(screen.getByText('Confirm', { selector: '.sc-plate__text' }));
     await settle();
 
     expect(screen.queryByTestId('sc-close')).toBeNull();
@@ -344,7 +344,7 @@ describe('D-04: the holder figure follows the roster after a claim', () => {
 
     fireEvent.change(screen.getByLabelText('Chips To Claim Back'), { target: { value: '500' } });
     await settle();
-    fireEvent.click(screen.getByText('Claim Chips', { selector: '.sc-plate__text' }));
+    fireEvent.click(screen.getByText('Confirm', { selector: '.sc-plate__text' }));
     await settle();
     fireEvent.click(screen.getByText('Yes, Claim It', { selector: '.sc-plate__text' }));
     await waitFor(() => expect(claimed).toBe(true));
@@ -358,12 +358,12 @@ describe('D-15: the amount is read from its spelling', () => {
     fireEvent.click(screen.getByText('Fish Finder'));
     fireEvent.change(screen.getByLabelText('Chips To Send'), { target: { value: '1e3' } });
     await settle();
-    const plate = screen.getByText('Send Chips', { selector: '.sc-plate__text' }).closest('button');
+    const plate = screen.getByText('Confirm', { selector: '.sc-plate__text' }).closest('button');
     expect(plate?.disabled).toBe(true);
     fireEvent.change(screen.getByLabelText('Chips To Send'), { target: { value: '1000' } });
     await settle();
     expect(
-      screen.getByText('Send Chips', { selector: '.sc-plate__text' }).closest('button')?.disabled
+      screen.getByText('Confirm', { selector: '.sc-plate__text' }).closest('button')?.disabled
     ).toBe(false);
   });
 });

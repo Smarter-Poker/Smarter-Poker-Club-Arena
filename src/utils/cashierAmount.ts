@@ -76,7 +76,12 @@ export function formatCashierAmountInput(input: string): string {
   );
 }
 
-/** Remove only conventional grouping; malformed commas stay visibly invalid. */
+/**
+ * Normalize the editable figure before regrouping it. Inserting a digit into
+ * "1,000" produces "1,0000" before React renders again; grouping validation
+ * belongs to the submitted amount, not this intermediate editing state.
+ * Letters, signs and other invalid spelling stay visible and are refused.
+ */
 export function cashierAmountInputValue(input: string): string {
-  return /^\d{1,3}(,\d{3})+(\.\d*)?$/.test(input) ? input.replace(/,/g, '') : input;
+  return /^[\d,]+(\.\d*)?$/.test(input) ? input.replace(/,/g, '') : input;
 }

@@ -124,8 +124,8 @@ describe('the page wires both halves in the right order', () => {
   const PAGE = read('src/pages/ClubHomePage.tsx');
 
   it('paints from the cache first, then lets the row correct it', () => {
-    const local = PAGE.indexOf('const saved = loadViewPrefs(resolvedClubId)');
-    const remote = PAGE.indexOf('fetchRemoteViewPrefs(resolvedClubId)');
+    const local = PAGE.indexOf('const saved = loadViewPrefs(resolvedClubId, currentUser?.id)');
+    const remote = PAGE.indexOf('fetchRemoteViewPrefs(resolvedClubId, currentUser?.id)');
     expect(local).toBeGreaterThan(-1);
     expect(remote).toBeGreaterThan(local);
   });
@@ -137,14 +137,20 @@ describe('the page wires both halves in the right order', () => {
   it('the correction refuses a stale club, a mid-flight choice, and a null', () => {
     // The hydration effect's own body, which encloses both the call and the
     // callback whose guards are the point of this test.
-    const block = sliceEnclosingBlock(PAGE, 'void fetchRemoteViewPrefs(resolvedClubId)');
+    const block = sliceEnclosingBlock(
+      PAGE,
+      'void fetchRemoteViewPrefs(resolvedClubId, currentUser?.id)'
+    );
     expect(block).toContain('if (cancelled || !remote) return;');
     expect(block).toContain('if (viewPrefsOwner.current !== resolvedClubId) return;');
     expect(block).toContain('if (viewPrefsTouched.current) return;');
   });
 
   it('every settled change is written to BOTH the cache and the row', () => {
-    const effect = sliceEnclosingBlock(PAGE, 'saveViewPrefs(resolvedClubId, viewPrefs);');
-    expect(effect).toContain('pushRemoteViewPrefs(resolvedClubId, viewPrefs);');
+    const effect = sliceEnclosingBlock(
+      PAGE,
+      'saveViewPrefs(resolvedClubId, viewPrefs, currentUser?.id);'
+    );
+    expect(effect).toContain('pushRemoteViewPrefs(resolvedClubId, viewPrefs, currentUser?.id);');
   });
 });

@@ -30,12 +30,14 @@ describe('the service worker never answers an image with nothing', () => {
 describe('TablePage paints the art the loader decoded, and waits for it', () => {
   const page = read('src/pages/TablePage.tsx');
   it('feeds both rasters through useTableArt', () => {
-    expect(page).toContain('const tableArt = useTableArt(tableSkinUrl, tableBackgroundUrl);');
-    expect(page).toContain('src={tableArt.skinSrc}');
+    expect(page).toContain(
+      'const tableArt = useTableArt(tableSkinUrl, tableBackgroundUrl, themeReady, themeScope);'
+    );
+    expect(page).toContain('src={tableArt.skinSrc || undefined}');
     expect(page).toContain('resolveBackgroundLayersForUrl(tableArt.backgroundSrc)');
   });
   it('covers the table until the art can be revealed', () => {
-    expect(page).toContain('{!tableArt.reveal && (');
+    expect(page).toContain('{!tableArt.reveal && !tableLoadFailure && (');
     expect(page).toContain('className="table-art-cover"');
     expect(read('src/pages/TablePage.css')).toMatch(/\.table-art-cover\s*\{[^}]*z-index:\s*5000/);
   });

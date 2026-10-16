@@ -704,15 +704,16 @@ export function useUserThemeSettings(
   userId: string | null | undefined,
   gameVariant?: string,
   isTournament?: boolean,
-  tournamentType?: string
+  tournamentType?: string,
+  contextReady = true
 ) {
   /**
    * null while a tournament's format is unresolved: the bucket is not yet
    * knowable, and guessing is what the load effect refuses to do.
    */
   const gameType = useMemo<CanonicalGameType | null>(
-    () => resolveThemeBucket(gameVariant, isTournament, tournamentType),
-    [gameVariant, isTournament, tournamentType]
+    () => (contextReady ? resolveThemeBucket(gameVariant, isTournament, tournamentType) : null),
+    [contextReady, gameVariant, isTournament, tournamentType]
   );
   const [theme, setTheme] = useState<UserThemeSelection>(() => {
     // FIRST PAINT (2026-08-28): resolve synchronously from the cache so the
@@ -732,6 +733,13 @@ export function useUserThemeSettings(
   const realtime = useUserThemeRealtime(userId);
   const themeScope = `${userId || 'guest'}:${gameType || 'unresolved'}`;
   const themeScopeRef = useRef(themeScope);
+  const [resolvedScope, setResolvedScope] = useState<string | null>(null);
+  const [loadRevision, setLoadRevision] = useState(0);
+  const retry = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    setLoadRevision((revision) => revision + 1);
+  }, []);
 
   // A persistent table shell can survive logout/login and game-bucket changes.
   // Never let the previous scope's art reach a browser paint while the next
@@ -795,6 +803,7 @@ export function useUserThemeSettings(
         }
 
         setError(null);
+        setResolvedScope(themeScope);
         // A read started before a newer accepted live patch cannot replace
         // that patch when its older snapshot arrives. The event already owns
         // the current paint and cache; no second read or replay is needed.
@@ -832,7 +841,7 @@ export function useUserThemeSettings(
     return () => {
       mounted = false;
     };
-  }, [userId, gameType, realtime.reconciliationRevision]);
+  }, [userId, gameType, realtime.reconciliationRevision, loadRevision, themeScope]);
 
   useEffect(() => {
     // A persisted hook can survive logout/login in the same shell. Pending
@@ -966,6 +975,13 @@ export function useUserThemeSettings(
 
   return {
     theme,
+    scope: themeScope,
+    // A cache hit is already a saved selection. A cold/unknown scope must
+    // finish its authoritative read before TablePage can reveal its artwork.
+    ready: Boolean(
+      gameType && (!userId || resolvedScope === themeScope || resolveCachedTheme(userId, gameType))
+    ),
+    retry,
     loading,
     error,
     realtimeState: realtime.state,

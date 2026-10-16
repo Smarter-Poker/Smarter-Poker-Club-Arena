@@ -134,7 +134,7 @@ describe('Browse Full Lobby lands on its list once per request', () => {
     );
     const effect = sliceBetween(
       HOME,
-      'if (viewPrefsOwner.current === resolvedClubId) return;',
+      'if (viewPrefsOwner.current === resolvedClubId && !switchingAccounts) return;',
       'Record a preference and write it through in the same breath.'
     );
     expect(effect).toContain("const tab = landingGameTypeRef.current ?? p.tab ?? 'ALL';");

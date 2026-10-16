@@ -22,7 +22,7 @@ import {
  * - Active tables/games grid
  */
 
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
 import type { ClubRole } from '../types/clubRoles';
 import { isClubStaff } from '../types/clubRoles';
 import { MEDIA_BASE } from '../utils/mediaBase';
@@ -1014,6 +1014,7 @@ function ClubHomePageContent({
      different ticks and the gap between them is a cross-club leak (see the
      persistence effect). */
   const viewPrefsOwner = useRef<string | null>(null);
+  const viewPrefsAccount = useRef<string | null>(currentUser?.id ?? null);
   /* Has the player changed anything since the prefs in state were loaded.
      resolvedClubId arrives after first paint, so without this a tab tapped
      during those few hundred milliseconds would be silently undone by the
@@ -2081,9 +2082,12 @@ function ClubHomePageContent({
      `viewPrefsTouched` is the guard described where the ref is declared: if
      the player has already picked a tab in this visit, their pick wins over
      whatever the last visit left behind. */
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!resolvedClubId) return;
-    if (viewPrefsOwner.current === resolvedClubId) return;
+    const account = currentUser?.id ?? null;
+    const switchingAccounts = viewPrefsAccount.current !== account;
+    if (viewPrefsOwner.current === resolvedClubId && !switchingAccounts) return;
+    viewPrefsAccount.current = account;
 
     /* A SWITCH IS NOT A FIRST LOAD. Going from club A to club B must clear
        "the player already chose" -- that choice was about A. Leaving it set
@@ -2094,10 +2098,11 @@ function ClubHomePageContent({
     const switchingClubs = viewPrefsOwner.current !== null;
     viewPrefsOwner.current = resolvedClubId;
     if (switchingClubs) viewPrefsTouched.current = false;
+    if (switchingAccounts) viewPrefsTouched.current = false;
     // The landing was a request about the club it was made in.
     if (switchingClubs) landingGameTypeRef.current = undefined;
 
-    const saved = loadViewPrefs(resolvedClubId);
+    const saved = loadViewPrefs(resolvedClubId, currentUser?.id);
     setViewPrefs(saved);
 
     const applyView = (p: LobbyViewPrefs) => {
@@ -2138,7 +2143,7 @@ function ClubHomePageContent({
            a failed read are indistinguishable on purpose, and all three mean
            "keep what the cache gave you" rather than "reset". */
     let cancelled = false;
-    void fetchRemoteViewPrefs(resolvedClubId).then((remote) => {
+    void fetchRemoteViewPrefs(resolvedClubId, currentUser?.id).then((remote) => {
       if (cancelled || !remote) return;
       if (viewPrefsOwner.current !== resolvedClubId) return;
       if (viewPrefsTouched.current) return;
@@ -2146,12 +2151,12 @@ function ClubHomePageContent({
       applyView(remote);
       // Bring this browser's cache forward so the next cold open is already
       // right, instead of flashing the stale tab on every visit.
-      saveViewPrefs(resolvedClubId, remote);
+      saveViewPrefs(resolvedClubId, remote, currentUser?.id);
     });
     return () => {
       cancelled = true;
     };
-  }, [resolvedClubId]);
+  }, [resolvedClubId, currentUser?.id]);
 
   /**
    * Record a preference and write it through in the same breath.
@@ -2195,16 +2200,17 @@ function ClubHomePageContent({
   useEffect(() => {
     if (!resolvedClubId) return;
     if (viewPrefsOwner.current !== resolvedClubId) return;
+    if (viewPrefsAccount.current !== (currentUser?.id ?? null)) return;
     if (!viewPrefsTouched.current) return;
-    saveViewPrefs(resolvedClubId, viewPrefs);
+    saveViewPrefs(resolvedClubId, viewPrefs, currentUser?.id);
     /* And to the row, so the next device starts where this one finished.
        Fire and forget by design (see lobbyViewPrefs): the local write above
        has already made the choice real on this screen, and a preference must
        never wait on, or be undone by, the network. Both writes are guarded by
        the same two conditions, so the remote can no more receive club A's tab
        under club B's id than the local one can. */
-    pushRemoteViewPrefs(resolvedClubId, viewPrefs);
-  }, [resolvedClubId, viewPrefs]);
+    pushRemoteViewPrefs(resolvedClubId, viewPrefs, currentUser?.id);
+  }, [resolvedClubId, viewPrefs, currentUser?.id]);
 
   /** Pick a tab: remember it, and restore that tab's own last sort. */
   const selectGameType = useCallback(

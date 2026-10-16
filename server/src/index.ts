@@ -126,13 +126,14 @@ const engineWs = new EngineWebSocketServer({
   // heartbeat to go stale, burning a full action clock on a player who was
   // already gone (and giving reconnects a laggy, frozen-feeling re-entry).
   onConnect: (tableId, userId, platform) => {
-    gameServer.getTableEngine(tableId)?.heartbeat(userId);
+    // Socket admission proves transport life; foreground app presence clears explicit absence.
+    gameServer.getTableEngine(tableId)?.heartbeat(userId, { transportOnly: true });
     // Lightning Phase 8: the device class rides along for the matcher's
     // per-platform Cluster limit (only a Lightning room records it).
     gameServer.lightningRooms.connect(tableId, userId, platform ?? null);
   },
-  // 2026-10-05: a PONG or RESYNC on an admitted table socket is proof of
-  // life, the same as an HTTP /heartbeat (presence only, never strikes).
+  // A PONG or RESYNC refreshes ordinary transport presence, never strikes.
+  // Explicit app absence is cleared only by a foreground app heartbeat.
   onAlive: (tableId, userId) => {
     gameServer.getTableEngine(tableId)?.heartbeat(userId, { transportOnly: true });
   },

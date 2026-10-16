@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
+import ts from 'typescript';
 import { ServerTableEngine } from './ServerTableEngine.js';
 
 const TABLE = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
@@ -89,6 +92,37 @@ describe('real bank expiry callbacks share the two-unanswered-turn ladder', () =
     e.heartbeat('u', { autoTimeBank: true });
     expect(e.disconnectEngine.isConnected(TABLE, 'u')).toBe(true);
     expect(e.timeBankEngine.isAutoActivateEnabled(TABLE, 'u')).toBe(true);
+  });
+
+  it('a socket admitted while the app is away cannot clear absence or renew protection', () => {
+    const { e } = harness();
+    e.notifyPageLeft('u');
+    const deadline = e.disconnectEngine.getFsmState(TABLE, 'u').graceDeadlineMs;
+    const source = readFileSync(new URL('../index.ts', import.meta.url), 'utf8');
+    const ast = ts.createSourceFile('index.ts', source, ts.ScriptTarget.Latest, true);
+    let admission: ts.Expression | undefined;
+    const visit = (node: ts.Node) => {
+      if (ts.isPropertyAssignment(node) && node.name.getText(ast) === 'onConnect') {
+        admission = node.initializer;
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(ast);
+    expect(admission).toBeDefined();
+    const code = ts.transpileModule('(' + admission!.getText(ast) + ')', {
+      compilerOptions: { target: ts.ScriptTarget.ES2022 },
+    }).outputText;
+    const connect = vm.runInNewContext(code, {
+      gameServer: {
+        getTableEngine: () => e,
+        lightningRooms: { connect() {} },
+      },
+    });
+    connect(TABLE, 'u', 'web');
+    expect(e.disconnectEngine.isConnected(TABLE, 'u')).toBe(false);
+    expect(e.disconnectEngine.getFsmState(TABLE, 'u').graceDeadlineMs).toBe(deadline);
+    e.heartbeat('u', { autoTimeBank: true });
+    expect(e.disconnectEngine.isConnected(TABLE, 'u')).toBe(true);
   });
 
   it('a blackholed socket receives reconnect protection before an expired turn spends a bank', () => {

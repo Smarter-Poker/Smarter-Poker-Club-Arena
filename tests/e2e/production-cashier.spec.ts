@@ -8,8 +8,7 @@ import {
 import {
   attachCashierScreenshot,
   expectCashierAxeClean,
-  expectCompactCashierFigure,
-  expectNoRawCashierCents,
+  expectCashierWalletBalance,
 } from './support/cashierProductionCertification';
 
 const DEFAULT_E2E_CLUB_ID = 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
@@ -247,10 +246,20 @@ test.describe('Production Cashier Certification', () => {
     ).toEqual([]);
 
     const surface = page.locator('[data-cashier-surface="trade"]');
-    await expectNoRawCashierCents(surface, 'Trade Cashier');
     const currentBalances = page.getByLabel('Current Cashier Balances').locator('strong');
-    expectCompactCashierFigure(await currentBalances.nth(0).innerText(), 'Club Chips');
-    expectCompactCashierFigure(await currentBalances.nth(1).innerText(), 'Agent Wallet');
+    await expectCashierWalletBalance(currentBalances.nth(0), 'Club Chips');
+    await expectCashierWalletBalance(currentBalances.nth(1), 'Agent Wallet');
+    const rosterWalletLabels = surface.getByText('Player Wallet', { exact: true });
+    const rosterWalletCount = await rosterWalletLabels.count();
+    expect(rosterWalletCount, 'Trade Cashier must expose player wallet balances').toBeGreaterThan(
+      0
+    );
+    for (let index = 0; index < rosterWalletCount; index++) {
+      await expectCashierWalletBalance(
+        rosterWalletLabels.nth(index).locator('..').locator('span').first(),
+        `Trade Player Wallet ${index + 1}`
+      );
+    }
     await expectCashierAxeClean(page, testInfo, '[data-cashier-surface="trade"]', 'trade-cashier');
     await attachCashierScreenshot(page, testInfo, 'trade-cashier');
     await expect(surface.locator('[data-cashier-layout="directory"]')).toHaveCount(1);
@@ -521,7 +530,30 @@ test.describe('Production Cashier Certification', () => {
         { timeout: 30_000 }
       )
       .toEqual({ loading: 0, walletVisible: true, walletVerified: true });
-    await expectNoRawCashierCents(page.locator('main'), 'Advanced Cashier');
+    const advancedWalletRows = page.locator(
+      'main [data-wallet-key]:not([data-wallet-key="diamonds"]):not([data-wallet-key="backup_bbj"])'
+    );
+    const advancedWalletCount = await advancedWalletRows.count();
+    expect(advancedWalletCount, 'Advanced Cashier must expose wallet balances').toBeGreaterThan(0);
+    for (let index = 0; index < advancedWalletCount; index++) {
+      const row = advancedWalletRows.nth(index);
+      const key = await row.getAttribute('data-wallet-key');
+      const value = row.locator('.dw__row-value');
+      // Treasury data can legitimately be unreadable/not applicable. Primary
+      // player, agent, promo and Club Bank wallets must verify, including zero.
+      if (
+        ['spins_wallet', 'rake_treasury'].includes(key || '') &&
+        (await value.innerText()) === '-'
+      ) {
+        continue;
+      }
+      await expectCashierWalletBalance(value, `Advanced ${key} Wallet`);
+    }
+    await expectCashierWalletBalance(
+      page.locator('main [data-wallet-key="diamonds"] .dw__row-value'),
+      'Advanced Diamond Wallet',
+      'diamonds'
+    );
     await expectCashierAxeClean(page, testInfo, 'main', 'advanced-cashier');
     await expect(page.locator('main .dw__row-picture').first()).not.toBeVisible();
     await expect(page.locator('main .dw__row-label').first()).toBeVisible();
@@ -590,7 +622,14 @@ test.describe('Production Cashier Certification', () => {
     await agentWallet.click();
     const dialog = page.getByRole('dialog', { name: 'Agent Wallet Cashier' });
     await expect(dialog).toBeVisible({ timeout: 30_000 });
-    await expectNoRawCashierCents(dialog, 'Agent Wallet Cashier');
+    await expectCashierWalletBalance(
+      dialog.locator('.cbc-bank > strong'),
+      'Agent Wallet Cashier',
+      'chips',
+      {
+        allowAbsentAgentFloat: true,
+      }
+    );
     await expectCashierAxeClean(page, testInfo, '[role="dialog"]', 'agent-wallet-cashier');
     await attachCashierScreenshot(page, testInfo, 'agent-wallet-cashier');
     await page.keyboard.press('Escape');

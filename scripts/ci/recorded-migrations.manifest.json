@@ -935,7 +935,7 @@
       "appliedToProductionAt": null,
       "recoveredOn": "2026-10-16",
       "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte, no added newline; verified through public.fn_ca_migration_text",
-      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/7121",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/7130",
       "refusedBy": [
         "check-unqualified-writes: DELETE on public.accounting_close_partials inside a pg_temp substitution anchor string, not a statement",
         "check-migrations-applied: fn_accounting_close_windows_advance_due absent from the stale schema snapshot"
@@ -950,7 +950,7 @@
       "appliedToProductionAt": null,
       "recoveredOn": "2026-10-16",
       "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte, no added newline; verified through public.fn_ca_migration_text",
-      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/7121",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/7130",
       "refusedBy": [],
       "liveVerdict": "Read-only production check 2026-10-16: schema_migrations holds exactly these 1954 bytes (fn_ca_migration_text MD5 4e52c01d47aaf3374e85cf33e4788af1). The authored source carried in open PR #7021 under 20261015213440 differs only by a trailing newline; this file is the installed record. Nothing is installed or replayed by this recording."
     },
@@ -962,7 +962,7 @@
       "appliedToProductionAt": null,
       "recoveredOn": "2026-10-16",
       "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte, no added newline; verified through public.fn_ca_migration_text",
-      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/7121",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/7130",
       "refusedBy": [
         "check-migrations-applied: fn_ca_diamond_guarantee_copy and fn_ca_diamond_guarantee_copy_trigger absent from the stale schema snapshot"
       ],

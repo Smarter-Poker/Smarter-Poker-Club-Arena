@@ -1634,7 +1634,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: mobile-live-table-proof
-          path: test-results/live-table-realtime/**/attachments/mobile-live-table-*
+          path: test-results/live-table-realtime/**/mobile-live-table-*
           if-no-files-found: ignore
           retention-days: 3
 

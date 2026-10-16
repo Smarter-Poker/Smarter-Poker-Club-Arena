@@ -1123,6 +1123,30 @@ describe('foreground recovery does not wait for an online event', () => {
         visibility.mockRestore();
       }
     });
+    it(`${kind}: wake events preserve a bounded handshake already recovering the link`, async () => {
+      const c = make(kind);
+      try {
+        void c.connect();
+        await flush();
+        const ws = live();
+        // A mux can be physically open while this table is waiting for its ack.
+        if (kind === 'table') ws._open();
+        await vi.advanceTimersByTimeAsync(1_300);
+        wake('pageshow');
+        wake('visibilitychange');
+        await flush();
+        expect(FakeWebSocket.instances).toHaveLength(1);
+        expect(ws.closedWith).toHaveLength(0);
+        if (kind === 'table') {
+          expect(
+            ws.sent.map((raw) => JSON.parse(raw)).filter((frame) => frame.type === 'SUBSCRIBE')
+          ).toHaveLength(1);
+          ws._frame({ type: 'SUBSCRIBED', tableId: TABLE });
+        } else ws._open();
+      } finally {
+        c.disconnect();
+      }
+    });
     it(`${kind}: a healthy open connection survives repeated wake events`, async () => {
       const c = make(kind);
       try {

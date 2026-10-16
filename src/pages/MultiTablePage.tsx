@@ -3658,9 +3658,8 @@ export default function MultiTablePage() {
         const fromLobby = activeIndexRef.current === lobbyIdx;
         setTables((cur) =>
           cur.map((t) =>
-            !isLobbyTab(t)
-              ? t
-              : fromLobby
+            isLobbyTab(t)
+              ? fromLobby
                 ? pushLobbyTournament(t, target, homeClubIdRef.current)
                 : {
                     ...t,
@@ -3668,6 +3667,7 @@ export default function MultiTablePage() {
                     lobbyTournamentStack: [target],
                     lobbyPageHistory: undefined,
                   }
+              : t
           )
         );
         setActiveIndex(lobbyIdx);

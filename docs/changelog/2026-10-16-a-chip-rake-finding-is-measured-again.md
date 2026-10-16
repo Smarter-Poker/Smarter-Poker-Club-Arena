@@ -34,8 +34,10 @@ hands still has that undercount on its settled `rake_records` row; across
 
 ## The Fix
 
-- The rake law now prices with `GREATEST(rr.num_players, players dealt)`. On
-  every other hand the two are equal, so nothing else moves.
+- The rake law's own `num_players` line is fixed by the merged, not yet
+  installed `20261015214329_rake_audits_read_the_dealt_roster_rather_than_contribution_c`.
+  This migration does not touch that function, so the two install cleanly in
+  either order.
 - The re-measure now measures a chip cash table over 36 hours with the same
   pricing functions the law uses. A fixed condition is superseded at the next
   tick; a live one is filed on fresh numbers; an unreadable hand stays a

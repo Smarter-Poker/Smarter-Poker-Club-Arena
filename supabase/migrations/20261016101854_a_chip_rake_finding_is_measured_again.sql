@@ -22,11 +22,12 @@
 --
 -- 1. fn_rake_law_violations priced a hand with COALESCE(rr.num_players, ...),
 --    so the 148 settled-as-recorded rows read over spec for as long as they
---    sit in any window. It now prices with GREATEST(rr.num_players,
---    jsonb_array_length(hh.players)): num_players can undercount and never
---    overcounts, and on every other hand the two are equal, so nothing else
---    moves. Measured read-only: the two pilot tables, 683 flopped hands from
---    20:00 to 21:10 UTC, priced this way: 0 over, 0 under, 0 BBJ over, 0 BBJ
+--    sit in any window. That line is already fixed on main by
+--    20261015214329_rake_audits_read_the_dealt_roster_rather_than_contribution_c
+--    (merged, preimage still live on 2026-10-16), which this migration does
+--    not touch so that both install cleanly in either order. Measured
+--    read-only: the two pilot tables, 683 flopped hands from 20:00 to 21:10
+--    UTC, priced with the players dealt in: 0 over, 0 under, 0 BBJ over, 0 BBJ
 --    under.
 --
 -- 2. fn_ca_remeasure_entity could only re-measure a club treasury or a
@@ -46,12 +47,11 @@
 -- rewritten.
 --
 -- HOW: the pinned-preimage exact-substitution helper of 20261007212545 /
--- 20261015222121. Each live text must hash to today's measured md5, each anchor
--- must occur exactly once (measured read-only on production 2026-10-16: 1 and
--- 1), and each result must hash to the postimage derived read-only with
--- replace(); owner, security, settings and grants must not move.
+-- 20261015222121. The live text must hash to today's measured md5, the anchor
+-- must occur exactly once (measured read-only on production 2026-10-16: 1),
+-- and the result must hash to the postimage derived read-only with replace();
+-- owner, security, settings and grants must not move.
 --
--- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_rake_law_violations(interval)'::regprocedure)) = '437308bc0bcfe73383342344e895ba0e')
 -- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_ca_remeasure_entity(text,uuid)'::regprocedure)) = '8222efcb6206a4b4b6358f8b6f3fc0be')
 
 BEGIN;
@@ -103,18 +103,6 @@ BEGIN
     RAISE EXCEPTION '%: owner, security, settings or grants moved', p_sig;
   END IF;
 END $h$;
-
-SELECT pg_temp.ca_audit_subst(
-  'public.fn_rake_law_violations(interval)',
-  'a3e1fde3f45140c91640389d419ed553', '437308bc0bcfe73383342344e895ba0e',
-  ARRAY[$o$COALESCE(rr.num_players, jsonb_array_length(CASE WHEN jsonb_typeof(hh.players) = 'array' THEN hh.players END)) AS dealt,$o$],
-  ARRAY[$n$/* EVERY PLAYER DEALT IN (2026-10-16). rake_records.num_players can undercount
-              a hand (fn_lightning_settle_hand counted payers, not players dealt,
-              until 20261015222121; 148 rows recorded that way are kept as
-              settled), and never overcounts it. hand_history.players is the
-              dealt list, so price with the larger of the two. */
-           GREATEST(rr.num_players, jsonb_array_length(CASE WHEN jsonb_typeof(hh.players) = 'array' THEN hh.players END)) AS dealt,$n$]
-);
 
 SELECT pg_temp.ca_audit_subst(
   'public.fn_ca_remeasure_entity(text,uuid)',

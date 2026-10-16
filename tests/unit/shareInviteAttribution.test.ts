@@ -165,9 +165,10 @@ describe('share & invite deep sweep', () => {
 
   it('asks the database about a pending invite at most once per browser session', () => {
     const fwd = src('src/components/home/PendingInviteForward.tsx');
-    const claim = fwd.indexOf("window.sessionStorage.setItem(PENDING_INVITE_SHOWN_KEY, 'checked')");
-    expect(claim).toBeGreaterThan(-1);
-    expect(claim).toBeLessThan(fwd.indexOf('getPendingClubInvite()'));
+    // The slot is spent on a real answer (pending or not), never on a failed read.
+    const spend = fwd.indexOf("window.sessionStorage.setItem(PENDING_INVITE_SHOWN_KEY, pending ? pending.clubId : 'checked')");
+    expect(spend).toBeGreaterThan(fwd.indexOf('getPendingClubInvite()'));
+    expect(spend).toBeLessThan(fwd.indexOf('.catch('));
     // A pending invite is still forwarded to.
     expect(fwd).toContain('navigate(pending.inAppPath)');
   });

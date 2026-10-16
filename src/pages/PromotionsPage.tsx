@@ -154,12 +154,13 @@ function PromotionsAccount({
     };
   }, [clubId, user?.id]);
 
+  // The short link needs no player number; only the old ref link does.
   const referralLink =
-    clubId && referralCode
-      ? shortInvite && shortInvite.scope === inviteScope
-        ? shortInvite.url
-        : `${publicOrigin()}/hub/club-arena/invite/${clubId}?ref=${referralCode}`
-      : '';
+    clubId && shortInvite && shortInvite.scope === inviteScope
+      ? shortInvite.url
+      : clubId && referralCode
+        ? `${publicOrigin()}/hub/club-arena/invite/${clubId}?ref=${referralCode}`
+        : '';
 
   // Load the user's existing claims so cards show Claimed vs claimable.
   useEffect(() => {

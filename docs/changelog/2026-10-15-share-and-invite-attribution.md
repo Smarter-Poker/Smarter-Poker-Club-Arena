@@ -114,3 +114,10 @@ Client:
 - The app build opens the system share sheet (Capacitor Share); the web keeps navigator.share and copy.
 - Agent invite modal (when the agent opens it), Club Settings and Promotions share the sender's short link, falling back to the old link.
 - A signed-out invite in the app opens Create Account, and the in-app signup carries the invite into the account metadata.
+
+## Final Audit (2026-10-16)
+
+- `20261016042212_club_invite_notify_actor_and_first_redemption.sql` (applied as `20261016042426`, md5-verified, 58 harness scenarios): invite notifications carry the invited player as `actor_id` (avatar in the feed, collapsed push tag); `club_invite_signup` is a bell row only, so unverified throwaway accounts cannot buzz an inviter's phone; the first redemption of a join in progress is recorded again even when the member stays pending under the owner. Re-proven end to end on the production schema (rolled back): verified and joined notices push with the actor set.
+- The arena-home forward spends its once-per-session slot only on a real answer, so a failed read retries next visit; the key is shared with the World Hub forwarder on the same origin.
+- Promotions shares the short link even before the player number loads.
+- World Hub: redirect targets refuse control characters (a tab turned `/<TAB>/evil.com` into `//evil.com`), any explained claim refusal stops the join-path fallback, verify-phone follows a pending invite that loads late.

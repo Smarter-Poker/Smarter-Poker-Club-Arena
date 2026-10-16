@@ -355,8 +355,10 @@
   flex: 1 1 auto;
   min-width: 0;
 }
-.multi-table-page:has(.multi-table-page__pnl-chip) {
-  --sp-tabbar-h: calc(53px + var(--sp-tabbar-inset, env(safe-area-inset-top, 0px)));
+/* Reserve the largest header in CSS even before a funded tracker appears.
+   Runtime chrome offsets position controls; they must never resize the felt. */
+.multi-table-page {
+  --sp-tabbar-h: calc(53px + env(safe-area-inset-top, 0px));
 }
 @media (max-width: 480px) {
   .multi-table-page__tab-bar-wrapper {
@@ -364,8 +366,8 @@
     --mtp-profit-font: 1.24rem;
     --mtp-profit-height: 44px;
   }
-  .multi-table-page:has(.multi-table-page__pnl-chip) {
-    --sp-tabbar-h: calc(45px + var(--sp-tabbar-inset, env(safe-area-inset-top, 0px)));
+  .multi-table-page {
+    --sp-tabbar-h: calc(45px + env(safe-area-inset-top, 0px));
   }
 }
 

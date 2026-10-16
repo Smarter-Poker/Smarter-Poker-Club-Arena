@@ -1,0 +1,6 @@
+{
+  "beforeHash": "61f614307807f21710b51c8a881f91da",
+  "old": "    - m.seat_paid_out\n",
+  "new": "    - m.seat_paid_out\n    -- A SPIN COUNTS ITS RESERVE MOVEMENTS (20261015212119). Contributions\n    -- leave the event; jackpot draws fund it. Seed repayments and adjustments\n    -- belong to the reserve owner, never to this event's prize book.\n    - CASE WHEN (SELECT t.variant FROM public.tournaments t WHERE t.id=m.id)='spin'\n           THEN COALESCE((SELECT sum(l.amount) FROM public.spin_reserve_ledger l\n                          WHERE l.tournament_id=m.id\n                            AND l.kind IN ('contribution','jackpot_draw')),0)\n           ELSE 0 END\n",
+  "afterHash": "6aeaa6643c320f8f12004d28bc45c928"
+}

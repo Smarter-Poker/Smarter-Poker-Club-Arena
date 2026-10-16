@@ -4,6 +4,12 @@ You are picking up the Lightning programme for Club Arena (Smarter Poker). Light
 
 **The dated delivery checkpoints above section U supersede the historical state in section U and sections 3 to 5.** Sections 3 to 5 were written at 17:30 UTC and are kept for their ids and history.
 
+## Access Candidate Merged And Witness Integration (2026-10-16 13:51 UTC)
+
+- PR7097 protectedsquashmerged755e56b04cc97ea023692134340af8d81e035dc4 afterall6requiredcontextsSUCCESS onexact0ae; owningCI38905916715 all4accountingshards/allLightningnativechainpassed. Nonrequiredmain-wideledgerfailure remainsseparate asrecorded. Private-discovery stillNOTinstalled; requiredaggregate admitted too close to13:50DDLboundary, so nextoneexplicitinstallafter14:03(use14:04) withfreshhistory/clock/concurrencyread. Nooverride, duplicateinstaller, activation orconsentwrite.
+- Separatefollowup branchlocalcommitfdf46fa6a5bf8d5db1553fe4bdcc10b60315037a integrated protected755 via882de671078bdb4f36b77c7e1751fc6ac1627855. Fourconflicts were onlycheckpoint/caller/workflow/tests; eachincomingblob provedbyteidenticaltoqualified0ae before retaining reviewedfollowupadditions. Otherwriters'currentmainchanges preserved; finaldiffonly11ownedpaths. Normalcommithooks, final56focusedopschecks0skip and rootTypeScript pass. Prepush/hostedchecks and actualexecution remainpending; no newengine/clientruntime selection required.
+- Currentmainapplier adds a source-hash-pinned accountingadmission adapter for3namedunrelatedmigrations; reviewed fulladapter/diff, private-discovery filename is outside allowlist so itsatomicSQL isunchanged. Existing13:47read shows targetabsent+exactpolicy predecessor. Preparedaccess operationf124054c-cf6d-4930-8261-2f57fccbaee6 remainsNOTdispatched and mustfollow exactpolicyinstallation/readback.
+
 ## Separate Live-Witness Candidate (2026-10-16 13:49 UTC)
 
 - All4client,4engine,4accounting shards plusbuild/CSS/TypeScript passed for PR7097 head0ae7142e6b2211d37d400908c77f62efc12d4c38; requiredServerEngineaggregate117004721686 remainsqueuedwithrunner_id0. No bypass or sourcechange to that remotehead. Pendinginstallerhistory0 and exactpredecessorqualMD5f1ff2b6f7d2976ab5a3c7deab313d9c5 freshlyread13:47:02Z; no installer dispatched.

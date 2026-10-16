@@ -69,7 +69,7 @@ describe('an advert is a picture now (Dan 2026-09-03)', () => {
   });
 
   it('shows only creatives that have a picture, and nothing at all otherwise', () => {
-    expect(ROTATOR).toMatch(/rows\.filter\(\(a\) => isSafeAdImage\(a\.imageUrl\)\)/);
+    expect(ROTATOR).toMatch(/rows\.filter\(\(ad\) => isSafeAdImage\(ad\.imageUrl\)\)/);
     expect(ROTATOR).toMatch(/if \(!ad\) return null;/);
     // No headline / body / glyph fallback rendered as text in a picture slot.
     expect(ROTATOR).not.toMatch(/house-ad__glyph|house-ad__headline/);
@@ -312,7 +312,7 @@ describe('a sponsor sends traffic to its own site (Dan 2026-09-09)', () => {
     expect(activate.indexOf("openInBrowser(target, 'noopener,noreferrer')")).toBeLessThan(
       activate.indexOf('AdService.logClick')
     );
-    expect(activate).toMatch(/return;\s*\}\s*if \(!ad\.clubOwned\) AdService\.logClick/);
+    expect(activate).toMatch(/return;\s*\}\s*AdService\.logClick/);
   });
 
   it('the router is not handed a path it would resolve under the basename', () => {
@@ -1106,7 +1106,7 @@ describe('an ad image is a URL every browser fetches without being asked', () =>
     expect(PLACEMENT_MIGRATION).toMatch(/add constraint ad_catalog_image_is_same_origin/);
     expect(PLACEMENT_MIGRATION).toMatch(/image_url like '\/%' and image_url not like '\/\/%'/);
     expect(SERVICE).toMatch(/export function isSafeAdImage/);
-    expect(ROTATOR).toMatch(/isSafeAdImage\(a\.imageUrl\)/);
+    expect(ROTATOR).toMatch(/isSafeAdImage\(ad\.imageUrl\)/);
   });
 
   it('proves the constraint refuses an external URL rather than trusting it', () => {

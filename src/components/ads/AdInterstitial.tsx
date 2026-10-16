@@ -44,12 +44,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { isSafeAdImage } from '../../services/AdService';
 import type { HouseAd } from '../../services/AdService';
-import { isClubRotatingImage } from '../../utils/clubRotatingBanners';
 import './AdInterstitial.css';
 
 interface AdInterstitialProps {
   ad: HouseAd;
-  clubId?: string | null;
   /** The checked destination; null when the advert has nowhere safe to go. */
   target: string | null;
   /** Leaves the site through the click redirect (a sponsor). */
@@ -62,7 +60,6 @@ interface AdInterstitialProps {
 
 export default function AdInterstitial({
   ad,
-  clubId,
   target,
   external,
   onProceed,
@@ -72,11 +69,9 @@ export default function AdInterstitial({
   const [ratio, setRatio] = useState<string>('3 / 4');
   const [broken, setBroken] = useState(false);
 
-  const safeImage = (url: string | null) =>
-    isSafeAdImage(url) || Boolean(ad.clubOwned && clubId && isClubRotatingImage(url, clubId));
-  const picture = safeImage(ad.posterUrl)
+  const picture = isSafeAdImage(ad.posterUrl)
     ? ad.posterUrl
-    : safeImage(ad.imageUrl)
+    : isSafeAdImage(ad.imageUrl)
       ? ad.imageUrl
       : null;
   const kind =

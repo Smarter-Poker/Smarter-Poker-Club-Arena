@@ -12,7 +12,7 @@ vi.mock('../../src/core/MasterBus', () => ({ masterBus: { emit: mocks.emit } }))
 import {
   readClubBanner,
   saveClubBanner,
-  saveClubRotatingBanners,
+  saveClubAdVisibility,
   uploadClubBannerImage,
   validateClubBanner,
 } from '../../src/services/ClubBannerService';
@@ -95,35 +95,58 @@ describe('club banner persistence', () => {
   });
 });
 
-describe('rotating banner save notifications preserve editor continuity', () => {
-  const clubId = 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
-  const banner = {
-    id: 'first',
-    title: 'Club Promotion',
-    imageUrl: `https://test.supabase.co/storage/v1/object/public/club-assets/club-cards/${clubId}-banner-abc123.png`,
-    enabled: true,
-  };
+describe('platform ad visibility persistence', () => {
+  const expected = { unrelated: 'preserved', rotating_banners: [{ title: 'Legacy' }] };
   const saved = {
     ...club,
-    id: clubId,
-    settings: { unrelated: 'preserved', rotating_banners: [banner] },
+    union_id: 'union',
+    settings: { ...expected, show_smarter_poker_ads: false },
   };
-
-  it('announces a persisted rotating save through the existing settings event only', async () => {
-    mocks.from.mockReturnValue(query({ data: saved, error: null }));
-    await expect(
-      saveClubRotatingBanners(clubId, 'owner', { unrelated: 'preserved' }, [banner])
-    ).resolves.toEqual(saved);
-    expectPresentationNotification(clubId);
+  it('changes only visibility with owner RLS and complete settings CAS, including union clubs', async () => {
+    const q = query({ data: saved, error: null });
+    mocks.from.mockReturnValue(q);
+    await expect(saveClubAdVisibility('club', 'owner', expected, false)).resolves.toEqual(saved);
+    expect(q.update).toHaveBeenCalledWith({ settings: saved.settings });
+    expect(q.eq.mock.calls).toEqual([
+      ['id', 'club'],
+      ['owner_id', 'owner'],
+      ['settings', JSON.stringify(expected)],
+    ]);
+    expectPresentationNotification('club');
+    expect(mocks.upload).not.toHaveBeenCalled();
   });
-
-  it('uses the same settings event after recovering an already committed rotating save', async () => {
+  it('uses SQL null semantics when settings have never been saved', async () => {
+    const q = query({ data: saved, error: null });
+    mocks.from.mockReturnValue(q);
+    await saveClubAdVisibility('club', 'owner', null, false);
+    expect(q.is).toHaveBeenCalledWith('settings', null);
+  });
+  it('recovers an already committed flag while preserving later unrelated settings', async () => {
+    const current = { ...saved, settings: { ...saved.settings, unrelated: 'newer' } };
     mocks.from
       .mockReturnValueOnce(query({ data: null, error: null }))
-      .mockReturnValueOnce(query({ data: saved, error: null }));
-    await expect(
-      saveClubRotatingBanners(clubId, 'owner', { unrelated: 'preserved' }, [banner])
-    ).resolves.toEqual(saved);
-    expectPresentationNotification(clubId);
+      .mockReturnValueOnce(query({ data: current, error: null }));
+    await expect(saveClubAdVisibility('club', 'owner', expected, false)).resolves.toEqual(current);
+    expectPresentationNotification('club');
+  });
+  it.each([
+    { ...saved, settings: { show_smarter_poker_ads: true } },
+    { ...saved, owner_id: 'another-owner' },
+  ])(
+    'refuses changed visibility or revoked ownership without success notification',
+    async (current) => {
+      mocks.from
+        .mockReturnValueOnce(query({ data: null, error: null }))
+        .mockReturnValueOnce(query({ data: current, error: null }));
+      await expect(saveClubAdVisibility('club', 'owner', expected, false)).rejects.toThrow(
+        'Reload'
+      );
+      expect(mocks.emit).not.toHaveBeenCalled();
+    }
+  );
+  it('propagates database refusal without reporting a successful save', async () => {
+    mocks.from.mockReturnValue(query({ data: null, error: new Error('denied') }));
+    await expect(saveClubAdVisibility('club', 'owner', expected, false)).rejects.toThrow('denied');
+    expect(mocks.emit).not.toHaveBeenCalled();
   });
 });

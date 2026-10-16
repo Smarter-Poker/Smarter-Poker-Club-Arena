@@ -8,7 +8,7 @@ import { getClubArenaNavigation } from '../../src/config/clubArenaNavigation';
 const mocks = vi.hoisted(() => ({
   read: vi.fn(),
   save: vi.fn(),
-  saveRotating: vi.fn(),
+  saveVisibility: vi.fn(),
   upload: vi.fn(),
   success: vi.fn(),
 }));
@@ -24,7 +24,7 @@ vi.mock('../../src/services/ClubBannerService', async (original) => ({
   ...(await original<typeof import('../../src/services/ClubBannerService')>()),
   readClubBanner: mocks.read,
   saveClubBanner: mocks.save,
-  saveClubRotatingBanners: mocks.saveRotating,
+  saveClubAdVisibility: mocks.saveVisibility,
   uploadClubBannerImage: mocks.upload,
 }));
 const record = {
@@ -132,16 +132,21 @@ describe('club banner displays', () => {
   });
 });
 
-it('preserves independently saved rotating banners when the top banner response arrives later', async () => {
-  vi.stubEnv('VITE_SUPABASE_URL', 'https://test.supabase.co');
-  const banner = {
-    id: 'original',
-    title: 'Before',
-    enabled: true,
-    imageUrl:
-      'https://test.supabase.co/storage/v1/object/public/club-assets/club-cards/club-uuid-banner-abc123.png',
-  };
-  const initial = { ...record, settings: { rotating_banners: [banner] } };
+it('offers union owners show/hide only, independently of the top banner uploader', async () => {
+  open();
+  expect(
+    await screen.findByRole('switch', { name: 'Show Smarter.Poker Rotating Ads' })
+  ).toBeChecked();
+  expect(screen.getAllByLabelText('Choose Banner Image')).toHaveLength(1);
+  expect(screen.queryByLabelText('Add Rotating Banner Image')).toBeNull();
+  expect(screen.queryByLabelText(/Banner Title/)).toBeNull();
+  expect(
+    screen.queryByRole('button', { name: /Save Rotating Banners|Move Banner|Remove Banner/ })
+  ).toBeNull();
+});
+
+it('preserves saved ad visibility when the top banner response arrives later', async () => {
+  const initial = { ...record, settings: { show_smarter_poker_ads: true, other: 1 } };
   mocks.read.mockResolvedValue(initial);
   let finishTop!: (value: unknown) => void;
   mocks.save.mockImplementationOnce(
@@ -150,60 +155,49 @@ it('preserves independently saved rotating banners when the top banner response 
         finishTop = resolve;
       })
   );
-  mocks.saveRotating.mockResolvedValue({
+  mocks.saveVisibility.mockResolvedValue({
     ...initial,
-    settings: { rotating_banners: [{ ...banner, title: 'Updated Promotion' }] },
+    settings: { ...initial.settings, show_smarter_poker_ads: false },
   });
   open();
   fireEvent.click(await screen.findByRole('button', { name: 'Use Default Banner' }));
   fireEvent.click(screen.getByRole('button', { name: 'Save Banner' }));
-  fireEvent.change(screen.getByLabelText('Banner Title 1'), {
-    target: { value: 'Updated Promotion' },
-  });
-  fireEvent.click(screen.getByRole('button', { name: 'Save Rotating Banners' }));
-  await waitFor(() => expect(mocks.success).toHaveBeenCalledWith('Rotating Banners Saved'));
+  fireEvent.click(screen.getByRole('switch', { name: 'Show Smarter.Poker Rotating Ads' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Save Ad Visibility' }));
+  await waitFor(() => expect(mocks.saveVisibility).toHaveBeenCalledOnce());
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: 'Save Ad Visibility' })).toBeDisabled()
+  );
   finishTop({ ...initial, banner_url: null });
   await waitFor(() => expect(mocks.success).toHaveBeenCalledWith('Banner Display Saved'));
-  expect((screen.getByLabelText('Banner Title 1') as HTMLInputElement).value).toBe(
-    'Updated Promotion'
-  );
+  expect(screen.getByRole('switch', { name: 'Show Smarter.Poker Rotating Ads' })).not.toBeChecked();
 });
 
-it('preserves the saved top banner when the rotating-banner response arrives later', async () => {
-  vi.stubEnv('VITE_SUPABASE_URL', 'https://test.supabase.co');
-  const banner = {
-    id: 'original',
-    title: 'Before',
-    enabled: true,
-    imageUrl:
-      'https://test.supabase.co/storage/v1/object/public/club-assets/club-cards/club-uuid-banner-abc123.png',
-  };
-  const initial = { ...record, settings: { rotating_banners: [banner] } };
+it('preserves the saved top banner when the visibility response arrives later', async () => {
+  const initial = { ...record, settings: { show_smarter_poker_ads: true, other: 1 } };
   mocks.read.mockResolvedValue(initial);
-  let finishRotating!: (value: unknown) => void;
-  mocks.saveRotating.mockImplementationOnce(
+  let finishVisibility!: (value: unknown) => void;
+  mocks.saveVisibility.mockImplementationOnce(
     () =>
       new Promise((resolve) => {
-        finishRotating = resolve;
+        finishVisibility = resolve;
       })
   );
   open();
-  fireEvent.change(await screen.findByLabelText('Banner Title 1'), {
-    target: { value: 'Updated Promotion' },
-  });
-  fireEvent.click(screen.getByRole('button', { name: 'Save Rotating Banners' }));
+  fireEvent.click(await screen.findByRole('switch', { name: 'Show Smarter.Poker Rotating Ads' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Save Ad Visibility' }));
   fireEvent.click(screen.getByRole('button', { name: 'Use Default Banner' }));
   fireEvent.click(screen.getByRole('button', { name: 'Save Banner' }));
   await waitFor(() => expect(mocks.success).toHaveBeenCalledWith('Banner Display Saved'));
-  finishRotating({
+  finishVisibility({
     ...initial,
-    settings: { rotating_banners: [{ ...banner, title: 'Updated Promotion' }] },
+    settings: { ...initial.settings, show_smarter_poker_ads: false },
   });
-  await waitFor(() => expect(mocks.success).toHaveBeenCalledWith('Rotating Banners Saved'));
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: 'Save Ad Visibility' })).toBeDisabled()
+  );
   expect(screen.getByAltText('Club Lobby Banner Preview').getAttribute('src')).toContain(
     'shark-club-championship'
   );
-  expect((screen.getByLabelText('Banner Title 1') as HTMLInputElement).value).toBe(
-    'Updated Promotion'
-  );
+  expect(screen.getByRole('switch', { name: 'Show Smarter.Poker Rotating Ads' })).not.toBeChecked();
 });

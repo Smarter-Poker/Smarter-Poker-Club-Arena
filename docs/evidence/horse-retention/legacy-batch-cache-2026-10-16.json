@@ -4,7 +4,7 @@
   "migration_preimage_md5": "dcce64d000c3d5e45cc8faf1f6e83e92",
   "source_sha256": {
     "supabase/migrations/20261016131548_legacy_learning_retirement_validates_each_locked_batch_once_.sql": "61f73381be20672bd1055872f5b8bd2dec24fa5d0cb91cbfa4d658614a371213",
-    "scripts/verification-harness/horse-legacy-test-learning-purge.py": "e3b304ae4bdb6f11010da7c95deb22f60e2a2e5307b438b5ae051be4707a56d7",
+    "scripts/verification-harness/horse-legacy-test-learning-purge.py": "c2f9b279ffad0c53f4ba94cf3a97b4f4b4d7cf0e2e4b4ad4980aaf9e62b946e1",
     "scripts/verification-harness/horse-legacy-batch-cache.py": "9d284a945f3d1415c32779cd33f5495b0e15c8ea78d37eca94c279b3143f7de1"
   },
   "native": {
@@ -144,5 +144,17 @@
     "diff_whitespace": "passed",
     "migration_live_proof_law": "21 passed"
   },
-  "source_md5": "8124b25270585f86433b8f010c6a1c4a"
+  "source_md5": "8124b25270585f86433b8f010c6a1c4a",
+  "parent_import_native": {
+    "result_sha256": "d40274f54af3ee54940c5f6554a7c6eabbd4e7d77004c9bb403d4faae89ff9fc",
+    "status": "passed",
+    "checks": 48,
+    "qualified_migration_source_sha256": "61f73381be20672bd1055872f5b8bd2dec24fa5d0cb91cbfa4d658614a371213",
+    "entry": "satellite_qualifier_fixture.module(path, legacy_test_learning_purge_qualified), absent from sys.modules, then main/run_icu",
+    "cleanup": {
+      "stopped": true,
+      "removed": true
+    },
+    "cause": "Hosted b3a62 Accounting3 completed41legacy checks then failed KeyError on sys.modules[__name__]; explicit seven-field fixture API replaces registration assumption."
+  }
 }

@@ -6,6 +6,7 @@ The ordinary eight-day and human-history retention owners remain unchanged.
 """
 from pathlib import Path
 import argparse, datetime, hashlib, json, subprocess, sys, uuid
+from types import SimpleNamespace
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'scripts/ci'))
@@ -256,7 +257,7 @@ def run_icu(e):
  try:
   checks=qualify(e,base)
   cached=module(ROOT/'scripts/verification-harness/horse-legacy-batch-cache.py','legacy_cache_comparison')
-  checks+=cached.qualify(e,base,sys.modules[__name__])
+  checks+=cached.qualify(e,base,SimpleNamespace(ROOT=ROOT,MIGRATION=MIGRATION,CACHE_MIGRATION=CACHE_MIGRATION,PROTECTED_SNAPSHOT=PROTECTED_SNAPSHOT,PURGE=PURGE,fixture=fixture,lit=lit))
   return checks
  finally:e.discard(base)
 

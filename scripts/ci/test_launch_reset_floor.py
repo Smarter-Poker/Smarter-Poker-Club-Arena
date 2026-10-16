@@ -120,3 +120,5 @@ print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().pare
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-source-freshness-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
 # Installed proof lifetime remains connected to the finite inventory authority.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / "test-inventory-proof-lifetime-postgres.py"), "--pg-bin", str(pg), "--scratch", str(args.scratch)], text=True))
+# Historical earning-club discovery uses exact indexed event witnesses.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-club-event-witness-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))

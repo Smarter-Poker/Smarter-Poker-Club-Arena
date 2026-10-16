@@ -914,6 +914,18 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/7099",
       "refusedBy": [],
       "liveVerdict": "Read-only recovery 2026-10-16: exact 5324 stored UTF-8 bytes and fn_ca_migration_text MD5 d22aed0c9e72695c797e7920f0f41fcb. This installed record reaches the 24-hour gate during this delivery. Current fn_ca_is_protected_cluster and fn_ca_refuse_replica_money_write are postgres-owned SECURITY DEFINER with fixed pg_catalog / pg_catalog,public search paths. Both deny anon/authenticated EXECUTE; only the cluster reader grants service_role EXECUTE. The file declares trigger names, not new trigger DDL. This is immutable installation history, never a migration to replay; no chip, acknowledgement or trigger is changed by restoring its source. Exact historical execution time was not independently read, so appliedToProductionAt remains unknown."
+    },
+    {
+      "version": "20261015141043",
+      "name": "the_autoledger_never_journals_an_account_to_itself",
+      "file": "supabase/migrations/20261015141043_the_autoledger_never_journals_an_account_to_itself.sql",
+      "md5": "8d1c281f18eeb39d306c58a350dd11ae",
+      "appliedToProductionAt": null,
+      "recoveredOn": "2026-10-16",
+      "recoveredFrom": "Exact schema_migrations statement bytes independently verified through fn_ca_migration_text; immutable49ed57b923d export without its extra trailing newline",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/7113",
+      "refusedBy": [],
+      "liveVerdict": "Read-only2026-10-16 recovery of6922 exact installed bytes after the24hour requiredledger refusal. fn_ca_autoledger() current definition MD5 620ce72294bdf8e3c8d3c556c8de35c9 matches recorded postcondition; postgres-owned SECURITY DEFINER with fixed public search_path, anon/authenticated EXECUTE both false, service_role true. No new trigger is declared; existing guard-redefinition acknowledgement is historical and is never replayed. This records an existing installation, with exact execution time unknown; no production ledger, trigger, grant or money movement is changed."
     }
   ]
 }

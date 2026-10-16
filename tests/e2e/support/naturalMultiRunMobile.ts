@@ -113,3 +113,19 @@ export function completedNaturalRuns(packets: NaturalRunPacket[], witness: any) 
     );
   });
 }
+
+/** Use the immutable deployment identity; version is only a display label. */
+export function naturalMultiRunEngineIdentity(
+  health: { version?: string; releaseSha?: string },
+  expected: string
+): string {
+  const observed = String(health.releaseSha || '').trim();
+  if (
+    !/^[0-9a-f]{40}$/.test(expected) ||
+    !/^[0-9a-f]{40}$/.test(observed) ||
+    observed !== expected
+  ) {
+    throw new Error('Natural multirun proof requires the exact serving engine releaseSha');
+  }
+  return observed;
+}

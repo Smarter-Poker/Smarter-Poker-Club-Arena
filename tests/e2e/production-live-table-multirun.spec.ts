@@ -5,6 +5,7 @@ import { EngineSocketJournal } from './support/liveTableRealtime';
 import {
   installNaturalMultiRunWitness,
   completedNaturalRuns,
+  naturalMultiRunEngineIdentity,
   type NaturalRunPacket,
 } from './support/naturalMultiRunMobile';
 import {
@@ -48,8 +49,8 @@ test('natural two-run and three-run mobile rivers precede awards and winner chip
     const c = await client.json();
     expect((await origin.json()).ca_sha).toBe(c.ca_sha);
     const e = await engine.json();
-    expect(e.version).toBe(expectedEngine);
-    return { client: c.ca_sha as string, engine: e.version as string };
+    const engineSha = naturalMultiRunEngineIdentity(e, expectedEngine!);
+    return { client: c.ca_sha as string, engine: engineSha };
   };
   const before = await readIdentity();
   const environment = requireCustomizationCertificationEnvironment();

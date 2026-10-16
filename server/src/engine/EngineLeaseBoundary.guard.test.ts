@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { sliceCall, sliceMethod } from '../testHelpers/sourceWindow.js';
+import { sliceMethod } from '../testHelpers/sourceWindow.js';
 
 const read = (file: string): string => readFileSync(path.join(process.cwd(), file), 'utf8');
 const base = read('src/engine/ServerTableEngineBase.ts');
@@ -81,8 +81,16 @@ describe('every live dealer carries and re-checks distributed authority', () => 
     expect(horse).toContain("return 'lifecycle_locked';");
     expect(horse).toContain('currentLease.generation !== leaseGeneration');
     expect(horse).toContain("return 'lease_lost';");
-    const horseActionTimer = sliceCall(horse, 'this.horseActionTimer = setTimeout(');
+    // 2026-10-16: the think timer and the second-look hold both act through
+    // one commit routine (the action may wait for the deeper read); the fence
+    // check lives in it.
+    const commitStart = horse.indexOf('commitDecision = (): void => {');
+    const commitEnd = horse.indexOf('const thinkTimer = setTimeout(', commitStart);
+    expect(commitStart).toBeGreaterThan(-1);
+    expect(commitEnd).toBeGreaterThan(commitStart);
+    const horseActionTimer = horse.slice(commitStart, commitEnd);
     expect(horseActionTimer).toContain("if (!fenceIsCurrent('commit')) return;");
+    expect(horse.slice(commitEnd)).toMatch(/this\.horseActionTimer = thinkTimer;/);
 
     const timer = sliceMethod(turns, '  protected startTurnTimer(');
     expect(timer).toMatch(

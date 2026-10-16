@@ -97,7 +97,7 @@ export interface LiveHorseDecisionWorkerClientOptions {
    * passes it); reaches the spawned worker so its journal writer opens its own
    * archive instead of sharing one with every other shard. Absent is shard 0,
    * unchanged from before sharding existed. */
-  shard?: { index: number };
+  shard?: { index: number; count?: number };
   readyTimeoutMs?: number;
   /** Caller deadline from enqueue and worker-integrity deadline from dispatch. */
   jobTimeoutMs?: number;
@@ -274,6 +274,8 @@ const HORSE_CAPTURE_LANE_TYPES: ReadonlySet<string> = new Set([
   'OBSERVE_DISCARD_EXECUTION',
   'OBSERVE_REQUEST_RETIREMENT',
 ]);
+/** Mirrored completed hands one client holds at once (mirrorCompletedHand). */
+export const HORSE_MIND_MIRROR_MAX_PENDING = 1024;
 /** Jobs the capture lane holds at once; past it a job queues at the tail. */
 export const HORSE_CAPTURE_LANE_MAX_QUEUED = 1024;
 /** Deadline, from enqueue, for observation and capture jobs (never below `jobTimeoutMs`). */
@@ -287,14 +289,44 @@ const HORSE_OBSERVATION_TYPES: ReadonlySet<string> = new Set([
  * worker.ts reads so its journal writer opens its own archive/catalog
  * instead of the one every shard shared until 2026-09-28 (see
  * runtimeHorseJournalArchiveOptions and HORSE_DECISION_WORKERS in lane.ts). */
-function defaultWorkerFactory(shard?: { index: number }): WorkerLike {
+function defaultWorkerFactory(shard?: { index: number; count?: number }): WorkerLike {
   // Production executes compiled JS; `npm run dev` executes this source via
   // tsx and workers inherit that loader. Point each runtime at an entry it can
   // actually open rather than making the development engine fail at boot.
   const entry = import.meta.url.endsWith('.ts') ? './worker.ts' : './worker.js';
   return new Worker(new URL(entry, import.meta.url), {
-    workerData: shard ? { shardIndex: shard.index } : undefined,
+    workerData: shard
+      ? {
+          shardIndex: shard.index,
+          ...(shard.count === undefined ? {} : { shardCount: shard.count }),
+        }
+      : undefined,
+    env: horseDecisionWorkerEnv(process.env),
   }) as WorkerLike;
+}
+
+/**
+ * THE DECISION WORKER RUNS THE QUALIFIED BRAIN (2026-10-16).
+ *
+ * The worker thread's EquityLoadGovernor sampled the worker's OWN event loop,
+ * and a decision worker's loop is nothing but the decisions it is running, so
+ * any busy worker read its own work as saturation and cut every Monte Carlo
+ * read: on 2026-10-16 (release 5780828e) 87.6% of 36,758 live decisions ran
+ * at 0.6 and 3.2% at 0.35, while every Phase 10-13 strength league qualified
+ * the packs with `EQUITY_GOVERNOR off, scale 1`. The live brain was not the
+ * qualified brain. The cut bought almost nothing: in the same journal, at the
+ * same hour, a fast decision cost 30.4 ms mean at scale 1 and 28.9 ms at 0.6.
+ *
+ * So the worker thread starts with the governor off, exactly like the league
+ * process and the strength contracts, and every decision journals scale 1.
+ * The main thread's own governor is untouched (it governs nothing horse-side
+ * since the 2026-09-08 worker move). Capacity is the lane's job: worker count
+ * (lane.ts) and keeping analysis off the live CPU (HorseLeague.ts).
+ */
+export function horseDecisionWorkerEnv(
+  parent: NodeJS.ProcessEnv
+): Record<string, string | undefined> {
+  return { ...parent, EQUITY_GOVERNOR: 'off' };
 }
 
 function errorMessage(error: unknown): string {
@@ -345,6 +377,8 @@ function errorMessage(error: unknown): string {
 let journalRelaySources = 0;
 export class LiveHorseDecisionWorkerClient {
   private readonly journalConfigured = horseDecisionJournalConfigured();
+  /** Mirrored completed hands enqueued and not yet answered (mirrorCompletedHand). */
+  private pendingMirrors = 0;
   /** Each shard's journal report keeps its own /health slot (HorseDecisionJournal.ts). */
   private readonly journalRelaySource = `shard-${++journalRelaySources}`;
   private retirementCaptureCount = 0;
@@ -653,6 +687,53 @@ export class LiveHorseDecisionWorkerClient {
       requestId: this.nextRequestId++,
     };
     return this.enqueue<HorseDecisionWorkerAck>(request, 'ACK', signal);
+  }
+
+  /**
+   * ONE FLOOR, ONE READ (2026-10-16). The same completed hand, sent to a
+   * worker that does NOT own its table so that worker's opponent memory
+   * learns it too (lane.ts, "WHAT CHANGES"). The worker recognises a hand it
+   * does not own by the shard hash of its fence and only learns from it: no
+   * journal record, no accepted-roster transport, no plan or decision state
+   * (workerRuntime.ts executeObservation, mindMirror.ts). So none of the
+   * owner's audit bookkeeping runs here either, and the private P14.2 roster
+   * never leaves its owner.
+   *
+   * Bounded: at most HORSE_MIND_MIRROR_MAX_PENDING mirrored hands wait in this
+   * client at once (about 50 seconds of the whole floor's hands at the
+   * measured 19.4 a second). Past that the shard is far behind and the hand
+   * is not queued; `horse_mind_mirror_shed` counts it. Never throws, never
+   * rejects into the caller: the owner's acknowledgement is the hand's.
+   */
+  mirrorCompletedHand(observation: CompletedHandObservation): void {
+    if (this.pendingMirrors >= HORSE_MIND_MIRROR_MAX_PENDING) {
+      noteFire('horse_mind_mirror_shed');
+      return;
+    }
+    const mirror: CompletedHandObservation = { ...observation };
+    delete mirror.acceptedActorRoster;
+    const request = {
+      ...mirror,
+      type: 'OBSERVE_COMPLETED_HAND' as const,
+      requestId: this.nextRequestId++,
+    };
+    this.pendingMirrors++;
+    let settled: Promise<HorseDecisionWorkerAck>;
+    try {
+      settled = this.enqueue<HorseDecisionWorkerAck>(request, 'ACK');
+    } catch {
+      settled = Promise.reject(new Error('mirror enqueue failed'));
+    }
+    void settled
+      .catch(() => noteFire('horse_mind_mirror_unavailable'))
+      .finally(() => {
+        this.pendingMirrors--;
+      });
+  }
+
+  /** Mirrored completed hands this client holds that have not been answered. */
+  get pendingMirrorCount(): number {
+    return this.pendingMirrors;
   }
 
   async commitDecisionEffects(

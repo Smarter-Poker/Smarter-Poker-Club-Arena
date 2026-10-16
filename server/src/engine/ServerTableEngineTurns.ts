@@ -91,7 +91,10 @@ import {
   type FastHorseDecisionResult,
   type LiveHorseDecisionSnapshot,
 } from './horseDecision/index.js';
-import { horseDecisionDeadlineMs } from './horseDecision/decisionDeadline.js';
+import {
+  HORSE_DECISION_DEADLINE_MARGIN_MS,
+  horseDecisionDeadlineMs,
+} from './horseDecision/decisionDeadline.js';
 
 /**
  * Why a decision did NOT earn a V44 second look (2026-09-06).
@@ -99,12 +102,7 @@ import { horseDecisionDeadlineMs } from './horseDecision/decisionDeadline.js';
  * Named rather than boolean because the five gates fail for opposite causes
  * and want opposite fixes - see ServerTableEngineTurns.secondLookPlan.
  */
-export type SecondLookDecline =
-  | 'not_facing_bet'
-  | 'small_pot'
-  | 'action_shape'
-  | 'no_think_time'
-  | 'governor';
+export type SecondLookDecline = 'not_facing_bet' | 'small_pot' | 'action_shape' | 'no_think_time';
 
 export type SecondLookPlan =
   | { ok: true; afterMs: number }
@@ -224,9 +222,6 @@ export function noteSecondLookDecline(reason: SecondLookDecline): void {
       return;
     case 'no_think_time':
       noteFire('v44_declined_no_think_time');
-      return;
-    case 'governor':
-      noteFire('v44_declined_governor');
       return;
   }
 }
@@ -372,15 +367,31 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
   static readonly SECOND_LOOK_DEPTH = 6;
   /** V44: a pot smaller than this, in big blinds, is not worth a second look. */
   static readonly SECOND_LOOK_MIN_POT_BB = 20;
-  /** V44: a think time shorter than this cannot fit a second look. */
+  /** V44: a turn with less clock left than this cannot fit a second look. */
   static readonly SECOND_LOOK_MIN_THINK_MS = 1500;
 
   /**
    * V44: whether a decision earns a second look, and when. Pure; exported
    * for tests. A second look is for a CLOSE spot: hero is facing a bet, the
    * pot is worth reading, the fast answer was a call, fold or all-in (the
-   * shapes the equity sample decides), there is think time to spend, and
-   * the equity governor is not already shedding load.
+   * shapes the equity sample decides), and the turn clock has time to spend.
+   *
+   * THE SECOND LOOK IS BUDGETED FROM THE TURN CLOCK (2026-10-16). It was
+   * budgeted from what was left of the horse's chosen think time after the
+   * worker queue, and declined whenever the worker's governor was below 1.
+   * Under load the queue ate the think time and the governor sat below 1, so
+   * on 2026-10-16 (release 5780828e) six second looks ran in 36,758
+   * decisions, 37.7% of the qualifying close spots lost theirs to those two
+   * gates, and of the 14,064 deep looks the day did start, 13,560 (96%) never
+   * acted: the think timer fired before the deep answer came back from the
+   * same queue. Now `turnBudgetMs` is what is left of the seat's action clock
+   * less the engine's margin (decisionDeadline.ts), the governor gate is gone
+   * (the worker always decides at scale 1, workerRuntime.ts), and the action
+   * waits for the deep answer inside that same budget (scheduleHorseAction).
+   * A close spot can take a horse longer than its chosen think time, never
+   * longer than the clock: a person thinks longer about a close call too.
+   * `thinkTimeMs` (what is left of the chosen think time) only places the
+   * replay inside it.
    */
   static secondLookPlan(
     decision: { action: string; thinkTime: number },
@@ -388,7 +399,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     pot: number,
     bigBlind: number,
     thinkTimeMs: number,
-    governorScale: number
+    turnBudgetMs: number
   ): SecondLookPlan {
     /*
      * ═══ A DECLINE IS AN OBSERVATION (2026-09-06) ═════════════════════════
@@ -399,10 +410,10 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
      * what it is for - and then nobody could say WHICH of the five gates was
      * closing, because a null carries no reason.
      *
-     * Five gates, and they fail for opposite causes. `governor` means the box
-     * is saturated and the answer is capacity. `no_think_time` means the
-     * horses are acting too fast for a second look to fit and the answer is
-     * the tempo model. `small_pot` or `action_shape` mean the layer is simply
+     * Four gates (five until the governor gate was retired on 2026-10-16),
+     * and they fail for opposite causes. `no_think_time` means the turn clock
+     * has too little left for a second look to fit. `small_pot` or
+     * `action_shape` mean the layer is simply
      * rarer than the ledger's 0.1% expectation and the answer is the
      * expectation. Guessing between those is how a layer stays dark for a
      * week; the reason is one string, and it turns tomorrow's audit line into
@@ -413,10 +424,10 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       return { ok: false, reason: 'small_pot' };
     if (decision.action !== 'call' && decision.action !== 'fold' && decision.action !== 'all_in')
       return { ok: false, reason: 'action_shape' };
-    if (thinkTimeMs < ServerTableEngineTurns.SECOND_LOOK_MIN_THINK_MS)
+    if (!(turnBudgetMs >= ServerTableEngineTurns.SECOND_LOOK_MIN_THINK_MS))
       return { ok: false, reason: 'no_think_time' };
-    if (governorScale < 1) return { ok: false, reason: 'governor' };
-    return { ok: true, afterMs: Math.min(400, Math.floor(thinkTimeMs / 3)) };
+    const think = Number.isFinite(thinkTimeMs) && thinkTimeMs > 0 ? thinkTimeMs : 0;
+    return { ok: true, afterMs: Math.min(400, Math.floor(think / 3)) };
   }
 
   /**
@@ -453,6 +464,31 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       actionTimeSeconds: this.tableInfo?.action_time_seconds,
       elapsedMs,
     });
+  }
+
+  /**
+   * What is left of this seat's action clock NOW, less the margin the engine
+   * keeps to act on an answer (HORSE_DECISION_DEADLINE_MARGIN_MS). Unlike the
+   * job deadline above it has no two-second floor: it is the budget a second
+   * look must fit inside, and zero means none. Pure in its inputs; exported
+   * through the class for tests.
+   */
+  static horseTurnBudgetMs(
+    actionTimeSeconds: number | null | undefined,
+    turnStartedAt: number | null | undefined,
+    now: number
+  ): number {
+    const seconds =
+      typeof actionTimeSeconds === 'number' &&
+      Number.isFinite(actionTimeSeconds) &&
+      actionTimeSeconds > 0
+        ? actionTimeSeconds
+        : 15;
+    const elapsed =
+      typeof turnStartedAt === 'number' && Number.isFinite(turnStartedAt) && turnStartedAt > 0
+        ? Math.max(0, now - turnStartedAt)
+        : 0;
+    return Math.max(0, Math.floor(seconds * 1000 - elapsed - HORSE_DECISION_DEADLINE_MARGIN_MS));
   }
 
   protected clearTurnTimer(): void {
@@ -3701,26 +3737,70 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         // alone: the sample is not what decides them.
         //
         // Cost: PLO6 at 6x is ~40 ms of CPU, on perhaps one decision in twenty.
-        // The equity governor still applies inside the replay, so a saturated
-        // loop runs the second look at whatever the floor allows; and it is
-        // skipped outright when the governor is already scaling down.
+        //
+        // 2026-10-16: budgeted from the TURN CLOCK, not from what the queue
+        // left of the think time, and no longer gated on the governor (see
+        // secondLookPlan). The action below waits for the deep answer until
+        // `secondLookHoldUntil`, which never passes the clock less its margin
+        // (or a protected deadline). A worker fallback is a liveness action,
+        // not a read, and never earns one.
+        const turnBudgetMs = safeWorkerFallback
+          ? 0
+          : Math.min(
+              ServerTableEngineTurns.horseTurnBudgetMs(
+                this.tableInfo?.action_time_seconds,
+                this.playerTurnStartTime,
+                Date.now()
+              ),
+              protectedDeadlineMs === undefined
+                ? Infinity
+                : Math.max(0, protectedDeadlineMs - Date.now() - 100)
+            );
         const secondLook = ServerTableEngineTurns.secondLookPlan(
           decision,
           toCall,
           state.pot,
           tournamentHand ? handBlinds.bigBlind : this.tableInfo?.big_blind || 2,
           remainingThinkMs,
-          fastResult.governorScale
+          turnBudgetMs
         );
+        // The second look in flight, and the latest moment the action may
+        // wait for it: the think time when that is later (a deliberate tank or
+        // bank burn), else the turn clock less its margin.
+        let secondLookPending = false;
+        let thinkTimeElapsed = false;
+        let decisionCommitted = false;
+        let secondLookHoldTimer: ReturnType<typeof setTimeout> | null = null;
+        const secondLookHoldUntil = Date.now() + Math.max(remainingThinkMs, turnBudgetMs);
+        // Declared below; the deep answer may commit the action once the
+        // think time has already elapsed.
+        let commitDecision: () => void = () => undefined;
+        const settleSecondLook = (): void => {
+          if (!secondLookPending) return;
+          secondLookPending = false;
+          // A cancelled turn (cleared timers, aborted controller) is never
+          // acted on from here; its owner already retired it.
+          if (!thinkTimeElapsed || decisionCommitted || abortController.signal.aborted) return;
+          if (secondLookHoldTimer) {
+            clearTimeout(secondLookHoldTimer);
+            if (this.horseActionTimer === secondLookHoldTimer) this.horseActionTimer = null;
+            secondLookHoldTimer = null;
+          }
+          commitDecision();
+        };
         if (!secondLook.ok) {
           // One receipt per declined decision, naming the gate that closed. See
           // secondLookPlan for why a bare null was not good enough.
           noteSecondLookDecline(secondLook.reason);
         }
         if (secondLook.ok) {
+          secondLookPending = true;
           this.horseSecondLookTimer = setTimeout(() => {
             this.horseSecondLookTimer = null;
-            if (!fenceIsCurrent('deep_start')) return;
+            if (!fenceIsCurrent('deep_start')) {
+              settleSecondLook();
+              return;
+            }
             void getLiveHorseDecisionWorker()
               .decideDeep(
                 {
@@ -3729,7 +3809,8 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
                   deepEquity: ServerTableEngineTurns.SECOND_LOOK_DEPTH,
                 },
                 abortController.signal,
-                { deadlineMs: this.horseDecisionDeadlineMs() }
+                // The deep job lives exactly as long as the action may wait.
+                { deadlineMs: Math.max(1, secondLookHoldUntil - Date.now()) }
               )
               .then((deepResult) => {
                 if (
@@ -3781,7 +3862,8 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
                 ) {
                   reportError(error, 'ServerTableEngineTurns.secondLook');
                 }
-              });
+              })
+              .finally(settleSecondLook);
           }, secondLook.afterMs);
           this.horseSecondLookTimer.unref?.();
         }
@@ -3793,8 +3875,9 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           clearTimeout(this.horseActionTimer);
           this.horseActionTimer = null;
         }
-        this.horseActionTimer = setTimeout(() => {
-          this.horseActionTimer = null;
+        commitDecision = (): void => {
+          if (decisionCommitted) return;
+          decisionCommitted = true;
           const utilityLedger = decision.tournamentUtility;
           const postflopLedger = decision.tournamentPostflop;
           const plo4Ledger = decision.plo4Policy;
@@ -4488,7 +4571,32 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
               'ServerTableEngine.' + this.tableId + '.horse_seat_unactable'
             );
           }
+        };
+        const thinkTimer = setTimeout(() => {
+          if (this.horseActionTimer === thinkTimer) this.horseActionTimer = null;
+          thinkTimeElapsed = true;
+          if (!secondLookPending) {
+            commitDecision();
+            return;
+          }
+          // The chosen think time is over and the deeper read is still out:
+          // wait for it, inside the turn clock. settleSecondLook acts the
+          // moment it lands; this timer acts on the fast answer if it never
+          // does.
+          noteFire('v44_second_look_awaited');
+          secondLookHoldTimer = setTimeout(
+            () => {
+              if (this.horseActionTimer === secondLookHoldTimer) this.horseActionTimer = null;
+              secondLookHoldTimer = null;
+              secondLookPending = false;
+              noteFire('v44_second_look_hold_expired');
+              commitDecision();
+            },
+            Math.max(0, secondLookHoldUntil - Date.now())
+          );
+          this.horseActionTimer = secondLookHoldTimer;
         }, remainingThinkMs);
+        this.horseActionTimer = thinkTimer;
       })
       .catch((error) => {
         markPendingUtilityNotExecuted();

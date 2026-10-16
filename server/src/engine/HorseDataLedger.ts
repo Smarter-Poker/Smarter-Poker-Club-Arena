@@ -2598,14 +2598,41 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   receipt(
     'v44_declined_no_think_time',
     'ServerTableEngineTurns.secondLookPlan',
-    'no second look: under 1500ms of think time to spend. A high count here is the tempo model, not the layer',
+    'no second look: under 1500ms of the turn clock left (less the engine margin) when the fast answer arrived. Budgeted from the turn clock since 2026-10-16; a high count here is the worker queue eating the clock, which is capacity. (The governor gate, v44_declined_governor, was retired the same day: the worker always decides at scale 1)',
+    'V44'
+  ),
+  /*
+   * THE ACTION WAITS FOR THE DEEPER READ (2026-10-16). 96% of the deep looks
+   * started on 2026-10-16 never acted because the think timer fired before
+   * the answer came back. The action now waits for it inside the turn clock.
+   * `awaited` counts actions that outlived their chosen think time to wait;
+   * `hold_expired` counts the ones whose deep answer still did not arrive by
+   * the clock budget, so the fast answer acted.
+   */
+  receipt(
+    'v44_second_look_awaited',
+    'ServerTableEngineTurns.scheduleHorseAction',
+    'the chosen think time ended with the second look still out, so the action waited for it inside the turn clock',
     'V44'
   ),
   receipt(
-    'v44_declined_governor',
-    'ServerTableEngineTurns.secondLookPlan',
-    'no second look: EquityLoadGovernor was already shedding load (event-loop p50 over 40ms). A high count here is capacity, and it is the ONLY visibility the governor has outside the GameServer status payload',
+    'v44_second_look_hold_expired',
+    'ServerTableEngineTurns.scheduleHorseAction',
+    'the second look did not land inside the turn-clock budget; the fast answer acted. A count here is worker capacity',
     'V44'
+  ),
+  /*
+   * ONE FLOOR, ONE READ (2026-10-16). Every completed hand reaches every
+   * decision-worker shard; the shards that do not own its table learn it
+   * (horseDecision/mindMirror.ts). learned / duplicate / nothing_to_learn /
+   * refused from the worker; shed (the client's bound) and unavailable (the
+   * job failed or expired) from the client.
+   */
+  receipt(
+    'horse_mind_mirror_*',
+    'LiveHorseDecisionWorkerPool.observeCompletedHand',
+    'a completed hand of another shard learned by this worker so every shard holds the same opponent read; shed and unavailable are the bounded mirror refusing or losing a hand',
+    'V50'
   ),
   receipt(
     'v48_gto_deviation',

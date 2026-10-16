@@ -63,6 +63,10 @@ const CAT_NAMES = [
 import { SUITS, RANKS, validateAction, calculateBettingState } from '../engine/PokerEngine.js';
 import { supabase } from '../services/supabase.js';
 import { reportError } from '../services/errorReporter.js';
+import {
+  liveHorseDecisionWorkerStatus,
+  type LiveHorseDecisionLaneStatus,
+} from '../engine/horseDecision/lane.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -983,7 +987,17 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
 // every matchup and solver-agreement scan to HorseLeagueComputeWorker. The
 // yield inside runMatchup remains the worker's cancellation/heartbeat edge;
 // it is not permission to put this CPU loop back on the dealer thread.
-const LEAGUE_HOUR_UTC = 4;
+//
+// 2026-10-16: MOVED FROM 04:00 TO 13:00 UTC. Seven days of hand_history
+// (2026-10-09 to 10-16, read-only) put the six quietest hours of the floor at
+// 13:00-18:59 UTC (28,796-37,267 hands an hour, against 40,006-42,614 at
+// 04:00-07:59 and 45,458 at the 23:00 peak). With every horse now deciding at
+// the full sample (horseDecision/workerRuntime.ts), the league's one core of
+// Monte Carlo competes with the decision workers for the same four physical
+// cores, so both windows now sit in that quiet stretch (13:00 and 16:00, each
+// with its three-hour catch-up), and every matchup also waits for the
+// decision lane to be calm before it starts (decisionLaneHasHeadroom).
+const LEAGUE_HOUR_UTC = 13;
 // V13: was 30 minutes against a ONE-HOUR window, so any engine restart in the
 // back half of the window pushed the next tick past it and the league silently
 // did not run that day at all. This repo deploys many times a day; on
@@ -1553,10 +1567,41 @@ class RequiredV31AgreementError extends Error {
   override readonly name = 'RequiredV31AgreementError';
 }
 
+/**
+ * THE LEAGUE NEVER TAKES A CORE FROM A HORSE THAT IS WAITING (2026-10-16).
+ *
+ * The league's compute process runs at nice 19 inside the engine container,
+ * so the kernel preempts it whenever a live thread wants its core. That is not
+ * enough on this host: four physical cores carry eight hyperthreads, and a
+ * league matchup on one thread slows the decision worker on its sibling. On
+ * 2026-10-16 at 17:20Z (the PM window) the lane's oldest queued decision was
+ * six seconds old while the league process held 99% of a core for 72 minutes.
+ *
+ * So a matchup starts only while the decision lane is calm: its oldest queued
+ * job is at most LEAGUE_LANE_MAX_QUEUED_AGE_MS old. Otherwise the run stands
+ * down with what it has (a partial card is resumable, see alreadyRanToday)
+ * and the next ten-minute tick inside the window tries again. A process with
+ * no live lane (tests, offline tools) has nothing to protect; a lane that is
+ * starting, failing or stopping is never a calm one.
+ */
+export const LEAGUE_LANE_MAX_QUEUED_AGE_MS = 1_000;
+
+export function decisionLaneHasHeadroom(
+  status: Pick<
+    LiveHorseDecisionLaneStatus,
+    'phase' | 'oldestQueuedAgeMs'
+  > = liveHorseDecisionWorkerStatus()
+): boolean {
+  if (status.phase === 'stopped') return true;
+  if (status.phase !== 'ready') return false;
+  return (status.oldestQueuedAgeMs ?? 0) <= LEAGUE_LANE_MAX_QUEUED_AGE_MS;
+}
+
 export async function runLeague(
   runDate?: string,
   shouldContinue: () => boolean = () => true,
-  computeFactory: () => HorseLeagueCompute = () => new HorseLeagueComputeWorkerClient()
+  computeFactory: () => HorseLeagueCompute = () => new HorseLeagueComputeWorkerClient(),
+  laneHasHeadroom: () => boolean = () => decisionLaneHasHeadroom()
 ): Promise<LeagueResult[]> {
   if (leagueRunning) return [];
   leagueRunning = true;
@@ -1626,6 +1671,15 @@ export async function runLeague(
     // its HorseMind sandbox intact on another core. There is deliberately no
     // sync fallback: failed analysis is retried from its durable claim;
     // delaying live poker to finish a benchmark is never an allowed fallback.
+    // Booting the compute process hydrates a whole solver corpus: not while
+    // a horse is waiting for its decision either.
+    if (!laneHasHeadroom()) {
+      console.log(
+        `[HorseLeague] run ${date} not starting: the live decision lane has a job waiting ` +
+          `more than ${LEAGUE_LANE_MAX_QUEUED_AGE_MS} ms; the next tick in the window tries again`
+      );
+      return results;
+    }
     compute = computeFactory();
     const solverStores = await compute.ready();
     requiresV31Agreement = solverStores.postflopV31 > 0;
@@ -1834,6 +1888,14 @@ export async function runLeague(
     const runSeed = (Date.parse(date) / 86_400_000) >>> 0;
     for (const m of card) {
       if (!shouldContinue()) break;
+      if (!laneHasHeadroom()) {
+        console.log(
+          `[HorseLeague] run ${date} standing down after ${results.length}/${card.length} ` +
+            `matchups: the live decision lane has a job waiting more than ` +
+            `${LEAGUE_LANE_MAX_QUEUED_AGE_MS} ms; the next tick in the window resumes the card`
+        );
+        break;
+      }
       // V13: a wall-clock budget. Even isolated analysis must not consume a
       // host core across the next run window. Stop cleanly and keep what
       // completed; partial results are still valid measurements.

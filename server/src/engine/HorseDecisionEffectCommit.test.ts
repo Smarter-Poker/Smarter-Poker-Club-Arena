@@ -1430,7 +1430,12 @@ describe.each([
     'unchanged',
     'generation',
     'fence',
-    'after_commit',
+    // 2026-10-16: the think time ends with the deep read still out. The action
+    // waits for it inside the turn clock and the deeper read acts (it used to
+    // act on the fast answer and retire the deep one: 96% of deep looks).
+    'after_think_time',
+    // ...unless the deep read never lands inside the turn-clock budget.
+    'hold_expired',
     'cancelled',
     'brain_exception',
   ] as const)('reconciles the actual scheduled deep result: %s', async (mode) => {
@@ -1461,8 +1466,17 @@ describe.each([
     engine.scheduleHorseAction(player, 1, enginePlayer, state);
     await vi.advanceTimersByTimeAsync(100);
     expect(decisionWorker.worker.decideDeep).toHaveBeenCalledOnce();
-    if (mode === 'after_commit') await vi.advanceTimersByTimeAsync(1000);
+    if (mode === 'after_think_time') {
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(performAction).not.toHaveBeenCalled();
+    }
+    if (mode === 'hold_expired') {
+      // 15 s clock, turn started at the request: 13.5 s budget from the fast answer.
+      await vi.advanceTimersByTimeAsync(13_400);
+      expect(performAction).toHaveBeenCalledOnce();
+    }
     if (mode === 'cancelled') engine.cancelHorseDecisionWork();
+    const deepActs = mode === 'accepted' || mode === 'after_think_time';
     const result = response(
       deepSnapshot,
       deep,
@@ -1477,17 +1491,17 @@ describe.each([
     release({ ...result, type: 'DEEP_RESULT' });
     await vi.advanceTimersByTimeAsync(1100);
     expect(fast.executionStatus).toBe(
-      mode === 'accepted' || mode === 'cancelled' ? 'not_executed' : 'intended'
+      deepActs || mode === 'cancelled' ? 'not_executed' : 'intended'
     );
-    expect(deep.executionStatus).toBe(mode === 'accepted' ? 'intended' : 'not_executed');
+    expect(deep.executionStatus).toBe(deepActs ? 'intended' : 'not_executed');
     // DEEP only replaces call/fold/all-in. Its retired FAST cannot supply plans.
     expect(decisionWorker.commitDecisionEffects).not.toHaveBeenCalled();
     if (mode === 'cancelled') expect(performAction).not.toHaveBeenCalled();
     else {
       expect(performAction).toHaveBeenCalledOnce();
-      expect(performAction.mock.calls[0][1]).toBe(mode === 'accepted' ? 'fold' : 'call');
+      expect(performAction.mock.calls[0][1]).toBe(deepActs ? 'fold' : 'call');
     }
-    expect(mode === 'accepted' ? fast.executedAction : deep.executedAction).toBeNull();
+    expect(deepActs ? fast.executedAction : deep.executedAction).toBeNull();
     const retirementFeature = {
       tournamentUtility: 'phase7_utility_not_executed',
       tournamentPostflop: 'phase8_execution_not_executed',

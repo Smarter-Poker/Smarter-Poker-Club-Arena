@@ -36,9 +36,25 @@ causes, both measured inside rolled-back probes:
 - The live proof of `20261016123337` now counts the nine functions that still
   carry the 72 hour lifetime.
 
+- `20261016142840`: `fn_weekly_accounting_attempt_begin` caps an attempt's
+  deadline at 60 seconds before the statement's own timeout. A union visit
+  that started two minutes into the 240 second tick had been measuring three
+  minutes from its own start, so its bounded steps never stopped in time and
+  the whole attempt was cancelled with nothing kept.
+- `20261016144115`: with the deadline fixed, attempt 157 (14:20) reached round
+  1, paid the clubs, and then refused its own receipt
+  (`union_close_invoice_receipt_missing`). Dan's rule of 2026-10-15
+  (`20261015184608`) sends only cashout documents to the messenger and marks
+  every other invoice delivered in transaction history "so the weekly close is
+  satisfied", but seven readers still demanded a messenger delivery row: the
+  union round 1 receipt, the retained share, the legacy week discharge, the
+  club weekly statement and its summary, and the correction and credit-change
+  document checks. Each now accepts a marked-sent invoice other than
+  `cashier_cashout`; a cashout still needs its deliveries.
+
 ## Verified Live
 
-All three recorded (`20261016131916`, `20261016133404`, and `20261016123337`).
+All recorded (`20261016123337`, `20261016131916`, `20261016133404`, `20261016142840`, `20261016144115`); the inventory generation is intact after each.
 Attempt 156 at 13:40 finished in 88 seconds instead of timing out and
 certified the opening boundary; the close is moving again.
 
@@ -46,3 +62,5 @@ certified the opening boundary; the close is moving again.
 
 - `tests/the-commission-evidence-check-reads-only-what-is-unaccrued.law.test.ts`
 - `tests/the-sealed-certificate-reader-keeps-its-sealed-body.law.test.ts`
+- `tests/a-close-attempt-ends-before-its-tick-does.law.test.ts`
+- `tests/a-weekly-close-accepts-a-history-only-invoice.law.test.ts`

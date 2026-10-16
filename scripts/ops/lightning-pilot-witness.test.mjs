@@ -140,7 +140,11 @@ test('manual witness stays bounded, main-only and installs browser only for play
   assert.doesNotMatch(workflow, /schedule:|cron:/);
   assert.match(workflow, /if: github.ref == 'refs\/heads\/main'/);
   assert.match(workflow, /timeout-minutes: 15/);
-  assert.match(workflow, /if: inputs.mode == 'player'/);
+  assert.match(workflow, /if: inputs.mode != 'replay'/);
+  assert.match(
+    workflow,
+    /PILOT_SECOND_POOL_SESSION_ID: \$\{\{ inputs\.second_pool_session_id \}\}/
+  );
   assert.match(workflow, /if: always\(\)/);
 });
 
@@ -164,4 +168,126 @@ test('only explicit consent for the exact authorized player may reach the normal
     assert.equal((await runPilotWitness({ ...playerEnv, ...patch }, blocked)).status, 'unknown');
     assert.equal(blocked.calls.length, 0);
   }
+});
+
+for (const mode of ['cycle', 'recovery'])
+  test(`${mode} uses exact existing pins without passing consent opt-in`, async () => {
+    const f = fixture();
+    const selected = [];
+    f.WebSocket = {};
+    f.witnessCycle = async (args) => {
+      selected.push(args);
+      return { status: 'observed', cleanup: 'local_session_closed' };
+    };
+    f.witnessRecovery = async (args) => {
+      selected.push(args);
+      return { status: 'observed', cleanup: 'local_sessions_and_browser_closed' };
+    };
+    const args = {
+      ...env,
+      PILOT_WITNESS_MODE: mode,
+      PILOT_PLAYER_ID: PLAYER,
+      PILOT_POOL_SESSION_ID: POOL,
+      PILOT_SECOND_POOL_SESSION_ID: '0097309f-0000-4000-8000-000000000003',
+    };
+    assert.equal((await runPilotWitness(args, f)).status, 'observed');
+    assert.equal(selected[0].acceptTerms, undefined);
+    if (mode === 'cycle') {
+      assert.equal(selected[0].timebank, true);
+      assert.equal(selected[0].preaction, true);
+    }
+    const expectedCleanup =
+      mode === 'recovery' ? 'local_sessions_and_browser_closed' : 'local_session_closed';
+    assert.equal((await runPilotWitness(args, f)).cleanup, expectedCleanup);
+    const badCleanup = fixture();
+    badCleanup.chromium = {};
+    badCleanup.WebSocket = {};
+    badCleanup.witnessCycle = async () => ({ status: 'observed', cleanup: 'unknown' });
+    badCleanup.witnessRecovery = async () => ({
+      status: 'observed',
+      cleanup: 'local_session_closed',
+    });
+    assert.equal((await runPilotWitness(args, badCleanup)).status, 'unknown');
+    assert.equal(selected[0].timeoutMs, 240000);
+    if (mode === 'recovery') {
+      assert.equal(selected[0].pins[0].poolSessionId, POOL);
+      assert.equal(selected[0].pins[1].poolSessionId, args.PILOT_SECOND_POOL_SESSION_ID);
+      assert.notEqual(selected[0].pins[0].clusterId, selected[0].pins[1].clusterId);
+    }
+    for (const patch of [
+      { PILOT_ACCEPT_PLAYER_TERMS: 'true' },
+      ...(mode === 'recovery'
+        ? [
+            { PILOT_SECOND_POOL_SESSION_ID: '' },
+            { PILOT_SECOND_POOL_SESSION_ID: POOL },
+            { PILOT_PLAYER_ID: POOL },
+          ]
+        : []),
+    ]) {
+      const blocked = fixture();
+      assert.equal((await runPilotWitness({ ...args, ...patch }, blocked)).status, 'unknown');
+      assert.equal(blocked.calls.length, 0);
+    }
+    const unaccepted = fixture({ consent: false });
+    assert.equal((await runPilotWitness(args, unaccepted)).status, 'unknown');
+    assert.equal(unaccepted.calls.length, 1);
+  });
+test('manual witness stays within GitHub ten-input limit', () => {
+  const workflow = readFileSync(
+    new URL('../../.github/workflows/lightning-pilot-witness.yml', import.meta.url),
+    'utf8'
+  );
+  const inputBlock = workflow.slice(
+    workflow.indexOf('    inputs:'),
+    workflow.indexOf('permissions:')
+  );
+  assert.equal([...inputBlock.matchAll(/^      [a-z_]+:/gm)].length, 10);
+});
+
+test('latency preserves partial observations and real counts without asserting qualification', async () => {
+  const args = {
+    ...env,
+    PILOT_WITNESS_MODE: 'latency',
+    PILOT_PLAYER_ID: PLAYER,
+    PILOT_POOL_SESSION_ID: POOL,
+  };
+  const f = fixture();
+  let received;
+  f.witnessLatencyWorkload = async (a) => {
+    received = a;
+    return {
+      status: 'partial_observed',
+      cleanup: 'local_session_and_browser_closed',
+      counts: { accepted: 3, refused: 2, unknown: 1 },
+      qualification: 'not_asserted',
+    };
+  };
+  const r = await runPilotWitness(args, f);
+  assert.equal(r.status, 'partial_observed');
+  assert.equal(r.qualification, 'not_asserted');
+  assert.deepEqual(r.result.counts, { accepted: 3, refused: 2, unknown: 1 });
+  assert.equal(received.acceptTerms, undefined);
+  assert.equal(received.timeoutMs, 240000);
+  for (const patch of [{ PILOT_ACCEPT_PLAYER_TERMS: 'true' }, { PILOT_PLAYER_ID: POOL }]) {
+    const blocked = fixture();
+    assert.equal((await runPilotWitness({ ...args, ...patch }, blocked)).status, 'unknown');
+    assert.equal(blocked.calls.length, 0);
+  }
+  for (const result of [
+    { status: 'partial_observed', cleanup: 'unknown', counts: { accepted: 3 } },
+    { status: 'partial_observed', cleanup: 'local_session_closed', counts: { accepted: 3 } },
+    { status: 'unknown', cleanup: 'local_session_and_browser_closed', counts: { accepted: 3 } },
+    {
+      status: 'partial_observed',
+      cleanup: 'local_session_and_browser_closed',
+      counts: { accepted: 0 },
+    },
+  ]) {
+    const bad = fixture();
+    bad.witnessLatencyWorkload = async () => result;
+    assert.equal((await runPilotWitness(args, bad)).status, 'unknown');
+  }
+  const absent = fixture({ consent: false });
+  assert.equal((await runPilotWitness(args, absent)).status, 'unknown');
+  assert.equal(absent.calls.length, 1);
 });

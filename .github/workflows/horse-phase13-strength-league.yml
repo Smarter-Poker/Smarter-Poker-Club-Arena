@@ -10,7 +10,7 @@ run-name: Horse Phase 13 ${{ inputs.variant }} joint strength league ${{ inputs.
 # (three dealt, six-max at 40, 100 and 200 BB, the seat ceiling or four dealt
 # for PLO6, one-, two- and three-board bomb hands, and 1,000 BB for FLH and
 # FLO8) x that variant's three held-out seeds x the profile shard count, one
-# shard per job and one job per runner, at most 20 at a time. Each variant is a
+# shard per job and one job per runner, at most eight at a time. Each variant is a
 # separate dispatch and a separate qualification; a pass for one variant never
 # certifies another. The matrix is not written here: the plan job reads it
 # from the contract at the evaluated commit, so the workflow cannot drift from
@@ -55,8 +55,13 @@ on:
 permissions:
   contents: read
 
+# Shared across phases, variants and source SHAs: one full league at a time.
+# Waiting runs consume no runners. Keep up to 100 pending qualifications;
+# the default single pending slot would silently replace earlier variants.
+# GitHub's finite queue rejects overflow; it never certifies an omitted run.
 concurrency:
-  group: horse-phase13-strength-league-${{ inputs.variant }}-${{ inputs.source_sha }}
+  group: horse-strength-hosted-capacity
+  queue: max
   cancel-in-progress: false
 
 env:
@@ -139,7 +144,7 @@ jobs:
     timeout-minutes: 120
     strategy:
       fail-fast: false
-      max-parallel: 20
+      max-parallel: 8
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     defaults:
       run:

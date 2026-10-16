@@ -130,7 +130,13 @@ export function diamondSpawnConfig(
   }
 
   // The same ladder price a chip event of this schedule charges, as a TOTAL.
-  const total = buyInFor(wholeChips(cfg.buyIn)).total;
+  // A fixed-board schedule (Dan 2026-10-15) names a template instead of a
+  // buyIn, so its price is the total the template's own row carries.
+  const total = buyInFor(
+    wholeChips(
+      cfg.buyIn !== undefined ? cfg.buyIn : num(row.buy_in_amount) + num(row.buy_in_fee)
+    )
+  ).total;
   const maxPlayers = row.max_players == null ? null : Math.floor(num(row.max_players));
   const freeBuy = row.free_buy === true;
 

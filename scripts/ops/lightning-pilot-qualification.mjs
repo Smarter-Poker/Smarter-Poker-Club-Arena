@@ -1,6 +1,7 @@
 /** Explicit, read-only private-pilot evidence collection. Never enables, seats,
  * funds, synthesizes play, installs, publishes, or issues a launch certificate. */
 import { writeFileSync } from 'node:fs';
+import { collectReplaySample } from './lightning-pilot-replay-sample.mjs';
 import { pathToFileURL } from 'node:url';
 import {
   PILOT,
@@ -81,14 +82,18 @@ export async function servingIdentities(fetchImpl = fetch) {
       typeof r.built_at === 'string' && Number.isFinite(Date.parse(r.built_at)) ? r.built_at : null,
   });
   const health = (r) =>
-    object(r) && typeof r.version === 'string' && /^[0-9a-f]{7,40}$/i.test(r.version);
+    object(r) &&
+    typeof r.version === 'string' &&
+    /^[0-9a-f]{7,40}$/i.test(r.version) &&
+    (!Object.hasOwn(r, 'releaseSha') ||
+      (typeof r.releaseSha === 'string' && SHA.test(r.releaseSha) && r.releaseSha.startsWith(r.version)));
   const [origin, publicClient, engine] = await Promise.all([
     publicJson('https://ca-static.smarter.poker/build-info.json', fetchImpl, stamp, client),
     publicJson('https://smarter.poker/hub/club-arena/build-info.json', fetchImpl, stamp, client),
     publicJson('https://engine.smarter.poker/health', fetchImpl, health, (r) => ({
-      reportedVersion: r.version,
+      reportedVersion: r.releaseSha ?? r.version,
       status: r.status === 'ok' ? 'ok' : 'not_ok',
-      fullRevisionEstablished: SHA.test(r.version),
+      fullRevisionEstablished: SHA.test(r.releaseSha ?? r.version),
     })),
   ]);
   return { origin, publicClient, engine };
@@ -532,6 +537,13 @@ export async function collectQualification({
               .not('settled_at', 'is', null)
               .not('hand_history_id', 'is', null)
         );
+        target.replaySample = await collectReplaySample({
+          admin,
+          player,
+          clusterId,
+          from: report.window.from,
+          to: report.window.to,
+        });
         target.poolSessions = await observeCount('lightning_pool_session:entered_window', () =>
           admin
             .from('lightning_pool_session')
@@ -701,6 +713,10 @@ export async function collectQualification({
         blockers.push('RECORDED_HAND_COVERAGE_UNKNOWN');
       else if (t.completedRecordedHands.data === 0)
         blockers.push('NO_RECORDED_SETTLED_LIGHTNING_HANDS');
+      if (t.replaySample?.status !== 'known') blockers.push('REPLAY_SAMPLE_UNKNOWN');
+      else if (t.replaySample.data.verdict === 'sample_failed')
+        blockers.push('REPLAY_SAMPLE_FAILED');
+      else if (t.replaySample.data.verdict === 'no_samples') blockers.push('REPLAY_SAMPLE_MISSING');
       if (t.poolSessions?.status !== 'known') blockers.push('POOL_SESSION_COVERAGE_UNKNOWN');
       if (t.configurationAuditEvents?.status !== 'known')
         blockers.push('CONFIGURATION_AUDIT_UNKNOWN');

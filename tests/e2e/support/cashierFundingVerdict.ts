@@ -26,9 +26,22 @@ export type FundingCoverage = 'covers' | 'short' | 'unreadable' | 'unknown';
 
 const UNITS: Record<string, number> = { '': 1, K: 1_000, M: 1_000_000, B: 1_000_000_000 };
 
+/**
+ * The figure one painted funding row prints. CashierWalletRow renders
+ * <section aria-label={label}> with the figure as its only <strong>, so the
+ * caller passes that element's textContent (never the dialog's innerText,
+ * which applies the label's text-transform and runs label and figure
+ * together). Anything but exactly one value element is not a reading.
+ */
+export function printedFundingFigure(valueTexts: readonly string[]): string {
+  return valueTexts.length === 1 ? valueTexts[0].trim() : '';
+}
+
 export function fundingCoverage(printedFigure: string, total: number): FundingCoverage {
   const figure = printedFigure.trim();
-  if (figure === '--') return 'unreadable';
+  // The trade dialog's CashierWalletRow prints a single hyphen for a wallet it
+  // could not read; the classic surfaces print two. Both are the same answer.
+  if (figure === '--' || figure === '-') return 'unreadable';
   const match = /^(-?)(\d+(?:\.\d)?)([KMB]?)$/.exec(figure);
   if (!match || !Number.isFinite(total)) return 'unknown';
   const unit = UNITS[match[3]];

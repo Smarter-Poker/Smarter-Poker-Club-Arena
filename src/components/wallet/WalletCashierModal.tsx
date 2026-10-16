@@ -1,3 +1,4 @@
+import { formatCashierAmountInput, cashierAmountInputValue } from '../../utils/cashierAmount';
 /**
  * ═══════════════════════════════════════════════════════════════════════════
  *  CLUB BANK CASHIER (Dan 2026-08-23, BINDING; Claim Back + Promo Send 2026-08-24)
@@ -108,7 +109,6 @@ import {
   canUseCashier,
   destinationBlurb,
   claimNeedsConfirm,
-  coercesToAgentWallet,
   cashierRefusesSelfSend,
   secondsLeftFromServer,
   DEFAULT_CASHIER_WALLET,
@@ -378,6 +378,8 @@ export default function WalletCashierModal({
   const [amount, setAmount] = useState('');
   const [reason, setReason] = useState('');
   const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [sendReceipt, setSendReceipt] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
 
   /**
@@ -494,45 +496,10 @@ export default function WalletCashierModal({
     walletType === 'club_bank' && canMintInClubBank(viewerRole, { standalone: inUnion === false });
 
   const tabs = cashierTabs(walletType);
-  /* AGENT TO AGENT ALWAYS CREDITS THE AGENT WALLET (Dan 2026-08-25).
-     A recipient who holds a float is funded IN that float, so the choice
-     disappears rather than being offered and then overridden. The database
-     coerces it too - fn_agent_wallet_send derives the destination from the
-     recipient's role and ignores what the client asked for - because a
-     dropdown is a suggestion and anything holding a session can call the RPC
-     directly. This is the half that stops the mistake being OFFERED.
-
-     SCOPED TO THE AGENT WALLET'S SEND TAB, and only there (2026-08-25 fix).
-     The narrowing used to apply to EVERY cashier and BOTH tabs, which broke
-     three things the law never touched:
-       - the Club Bank could no longer fund an agent's PROMO wallet, because
-         picking an agent collapsed the segmented control to Agent Wallet -
-         and fn_club_bank_send happily accepts promo_wallet;
-       - the Club Bank could no longer send a plain player-wallet credit to
-         someone who happens to be an agent;
-       - the Club Bank's Claim Back could only ever pull from an agent's float,
-         never from their promo wallet or their player balance, even though
-         fn_club_bank_claim_back takes all three.
-     "Agent to agent" is fn_agent_wallet_send. It is not the club bank. */
-  const recipientHoldsFloat = recipient ? canHoldAgentWallet(recipient.role) : false;
-  const coerceToAgentWallet = coercesToAgentWallet(walletType, tab, recipientHoldsFloat);
-  const destinations = useMemo(() => {
-    const all = cashierDestinations(walletType);
-    if (!coerceToAgentWallet) return all;
-    const only = all.filter((d) => d === 'agent_wallet');
-    return only.length > 0 ? only : all;
-  }, [walletType, coerceToAgentWallet]);
-  /** The agent wallet's Claim Back tab is a different shape from the bank's. */
+  // Every send honors the selected wallet. Eligibility is explained on each
+  // roster row; the transaction validates it again before moving chips.
+  const destinations = cashierDestinations(walletType);
   const agentClaimTab = walletType === 'agent_wallet' && tab === 'claim';
-
-  /* Picking a player, choosing their player wallet, then switching to an agent
-     would otherwise leave `destination` on a value the list no longer offers -
-     the send would still be coerced server-side, but the summary line above
-     the button would be describing a transfer that is not the one about to
-     happen. */
-  useEffect(() => {
-    if (coerceToAgentWallet && destination !== 'agent_wallet') setDestination('agent_wallet');
-  }, [coerceToAgentWallet, destination]);
 
   const balanceScopeRef = useRef(0);
   /* The member the cashier was opened for (initialRecipientId). Cleared on use
@@ -545,6 +512,7 @@ export default function WalletCashierModal({
   // every hand's treasury/agent updates across the platform. Money commands
   // still authorize and lock the actual balance inside their transaction.
   const loadClub = useVisibleRead({
+    manualOnly: true,
     scopeKey: `${clubId}:${user?.id}:${walletType}`,
     enabled: isOpen && allowed && Boolean(clubId && user?.id),
     read: (signal) => readCashierBalances(clubId, user!.id, walletType, signal),
@@ -795,6 +763,8 @@ export default function WalletCashierModal({
   useEffect(() => {
     if (!isOpen || !user?.id) return;
     setTab('send');
+    setSendError(null);
+    setSendReceipt(null);
     setPromoSource(promoSourceFor(role));
     setPromoPot(null);
     setPromoFloat(null);
@@ -1036,11 +1006,8 @@ export default function WalletCashierModal({
         refusesSelfSend: excludeSelf,
         destinationNeedsAgentWallet: AGENT_ONLY.includes(destination),
         memberHoldsAgentWallet: canHoldAgentWallet(m.role),
-        /* An admin holds no player wallet, so fn_club_bank_send refuses that
-           credit. An OWNER does hold one and is sendable (Dan 2026-10-11).
-           The agent wallet cashier is exempt: it pays a staff recipient into
-           their float whatever is asked, so nothing is refused there. */
-        destinationIsPlayerWallet: destination === 'player_wallet' && walletType !== 'agent_wallet',
+        // An admin holds no player wallet; every send honors this eligibility.
+        destinationIsPlayerWallet: destination === 'player_wallet',
         memberHoldsPlayerWallet: holdsPlayerWallet(m.role),
       }),
     [user?.id, excludeSelf, destination, walletType]
@@ -1135,7 +1102,12 @@ export default function WalletCashierModal({
      the typist never saw written out. Digits only. */
   const amountIsWhole =
     Number.isFinite(amt) && Number.isInteger(amt) && amt >= 1 && WHOLE_CHIPS.test(amount.trim());
-  const canSend = Boolean(recipient) && amountIsWhole && cap !== null && !overCap && !sending;
+  const canSend =
+    Boolean(recipient && !blockFor(recipient)) &&
+    amountIsWhole &&
+    cap !== null &&
+    !overCap &&
+    !sending;
   // A send that borrows on the credit line always asks first: it creates debt.
   const needsConfirm =
     tab === 'claim'
@@ -1161,6 +1133,7 @@ export default function WalletCashierModal({
   useEffect(() => {
     opIdRef.current = newOpId();
     setConfirming(false);
+    setSendError(null);
   }, [recipient?.user_id, amount, destination, tab, reason]);
 
   const doSend = async () => {
@@ -1168,6 +1141,8 @@ export default function WalletCashierModal({
     const owningView = actionView.current;
     busyRef.current = true;
     setSending(true);
+    setSendError(null);
+    setSendReceipt(null);
     try {
       const action =
         tab === 'claim'
@@ -1266,7 +1241,10 @@ export default function WalletCashierModal({
             : `Claimed ${fmtWhole(amt)} Chips Back From ${titleCase(recipient.name)} Into The Club Bank`
           : res.replayed
             ? `That Send Had Already Gone Through. ${fmtWhole(amt)} Chips Are With ${titleCase(recipient.name)}`
-            : `Sent ${fmtWhole(amt)} Chips To ${titleCase(recipient.name)} ${destLabel}`
+            : `Sent ${fmtWhole(amt)} Chips To ${titleCase(recipient.name)} ${destLabel}`,
+        undefined,
+        undefined,
+        operation.operationId
       );
       masterBus.emit('CHIPS_DISTRIBUTED', {
         clubId: clubUuid,
@@ -1277,6 +1255,11 @@ export default function WalletCashierModal({
       addRecipient(recipient.user_id);
       setAmount('');
       setReason('');
+      setSendReceipt(
+        tab === 'claim'
+          ? `Claimed ${fmtWhole(amt)} Chips Into The Club Bank`
+          : `Sent ${fmtWhole(amt)} Chips To ${titleCase(recipient.name)} ${destLabel}`
+      );
       setConfirming(false);
       opIdRef.current = newOpId();
       setHolderNonce((n) => n + 1);
@@ -1286,7 +1269,9 @@ export default function WalletCashierModal({
       if (!isMounted.current || actionView.current !== owningView) return;
       reportError(e, 'WalletCashierModal.send');
       // A refusal sentence passes through; a thrown object never prints raw.
-      toast?.error?.(safeErrorMessage(e, 'Send Failed'));
+      const message = safeErrorMessage(e, 'Send Failed');
+      setSendError(message);
+      toast?.error?.(message);
       // The key is NOT rotated here. If this failed because the response was
       // lost rather than because the send was refused, the retry must be able
       // to find the original instead of sending a second time. And the sheet
@@ -1365,8 +1350,12 @@ export default function WalletCashierModal({
       toast?.success?.(
         res.replayed
           ? `That Claim Had Already Gone Through. ${fmtWhole(Number(res.amount) || 0)} Chips Are Back In Your Agent Wallet`
-          : `Claimed ${fmtWhole(Number(res.amount) || 0)} Chips Back From ${titleCase(row.to_name)}`
+          : `Claimed ${fmtWhole(Number(res.amount) || 0)} Chips Back From ${titleCase(row.to_name)}`,
+        undefined,
+        undefined,
+        operation.operationId
       );
+      addRecipient(row.to_user_id);
       masterBus.emit('BALANCE_UPDATED', { source: 'agent_wallet_claim', userId: user?.id || '' });
       masterBus.emit('BALANCE_UPDATED', {
         source: 'agent_wallet_claim',
@@ -1651,6 +1640,9 @@ export default function WalletCashierModal({
                 : undefined
             }
           >
+            <button type="button" className="cbc-word" disabled={inFlight} onClick={refresh}>
+              Refresh Balances
+            </button>
             <div className="cbc-bank">
               <span>
                 {walletType === 'promo_wallet'
@@ -1948,15 +1940,15 @@ export default function WalletCashierModal({
                     <input
                       id="cbc-amount"
                       className="cbc-input"
-                      type="number"
+                      type="text"
                       /* Whole chips only (see amountIsWhole), so the keypad that
                          comes up is the numeric one rather than the decimal one
                          offering a point the field will then reject. */
                       inputMode="numeric"
                       min={1}
                       step={1}
-                      value={amount}
-                      onChange={(e) => setAmount(e.target.value)}
+                      value={formatCashierAmountInput(amount)}
+                      onChange={(e) => setAmount(cashierAmountInputValue(e.target.value))}
                       placeholder="Whole Chips"
                       /* aria-label was the EMPTY STRING, which is worse than
                          absent: it overrides the visible <label> and announces an
@@ -1994,6 +1986,16 @@ export default function WalletCashierModal({
                           : creditLine > 0
                             ? `Your Wallet And Credit Line Cover ${fmt(cap ?? 0)} Chips.`
                             : `The Wallet Only Holds ${fmt(cap ?? 0)} Chips.`}
+                      </div>
+                    )}
+                    {sendError && (
+                      <div className="cbc-warn" role="alert" ref={revealOnMount}>
+                        {titleCase(sendError)}
+                      </div>
+                    )}
+                    {sendReceipt && (
+                      <div className="cbc-blurb" role="status" ref={revealOnMount}>
+                        {titleCase(sendReceipt)}
                       </div>
                     )}
                     {/* THE UNKNOWN OUTCOME, INSIDE THE FRAME and under the

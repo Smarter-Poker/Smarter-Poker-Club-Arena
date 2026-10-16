@@ -15,6 +15,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
+import { loadViewPrefs, saveViewPrefs } from '../../src/components/lobby/lobbyViewPrefs';
 import {
   clearUserCaches,
   CLUB_HOME_CACHE_PREFIX,
@@ -34,6 +35,13 @@ describe('clearUserCaches', () => {
   beforeEach(() => {
     localStorage.clear();
     sessionStorage.clear();
+  });
+
+  it('preserves the returning account game choice through the real sign-out purge', () => {
+    saveViewPrefs('club', { tab: 'OMAHA', sortByTab: {}, favoritesOnly: false }, 'returning-user');
+    clearUserCaches();
+    expect(loadViewPrefs('club', 'returning-user').tab).toBe('OMAHA');
+    expect(loadViewPrefs('club', 'different-user').tab).toBeNull();
   });
 
   it('removes the previous account cached club list and profile', () => {

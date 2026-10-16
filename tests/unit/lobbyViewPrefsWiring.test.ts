@@ -41,7 +41,7 @@ const HYDRATOR = SRC.slice(
 describe('the saved view cannot leak between clubs', () => {
   it('the writer proves the prefs it holds belong to the club it writes to', () => {
     expect(WRITER).toMatch(/viewPrefsOwner\.current !== resolvedClubId/);
-    expect(WRITER).toMatch(/saveViewPrefs\(resolvedClubId, viewPrefs\)/);
+    expect(WRITER).toMatch(/saveViewPrefs\(resolvedClubId, viewPrefs, currentUser\?\.id\)/);
   });
 
   it('the writer refuses to echo a hydration back into storage', () => {
@@ -62,7 +62,7 @@ describe('the saved view cannot leak between clubs', () => {
 
   it('hydration claims ownership before anything can write', () => {
     const claimAt = HYDRATOR.indexOf('viewPrefsOwner.current = resolvedClubId');
-    const loadAt = HYDRATOR.indexOf('loadViewPrefs(resolvedClubId)');
+    const loadAt = HYDRATOR.indexOf('loadViewPrefs(resolvedClubId, currentUser?.id)');
     expect(claimAt).toBeGreaterThan(-1);
     expect(loadAt).toBeGreaterThan(claimAt);
   });

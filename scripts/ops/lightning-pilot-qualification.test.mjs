@@ -1,3 +1,4 @@
+import './lightning-pilot-replay-sample.test.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -570,4 +571,20 @@ test('the populated observation is part of the report and adds no write or contr
       .every((c) => ['fn_lightning_config', 'fn_lightning_rollout_readiness'].includes(c.rpc))
   );
   assert.equal(only.length, 1);
+});
+
+test('engine serving identity uses the full releaseSha and refuses inconsistent identities', async () => {
+  const full = 'a2ccc04d39bc15852d0047a32893371f3a0a6836';
+  const read = (body) => servingIdentities(async (url) => ({
+    ok: true,
+    json: async () => url.includes('/health') ? body : { ca_sha: revision },
+  }));
+  const actual = await read({ status: 'ok', version: full.slice(0, 8), releaseSha: full });
+  assert.equal(actual.engine.data.reportedVersion, full);
+  assert.equal(actual.engine.data.fullRevisionEstablished, true);
+  const later = await read({ status: 'ok', version: full.slice(0, 8), releaseSha: full.slice(0, 39) + '7' });
+  assert.equal(servingStable(actual, later), 'failed');
+  for (const releaseSha of ['short', 'b'.repeat(40), null]) {
+    assert.equal((await read({ status: 'ok', version: full.slice(0, 8), releaseSha })).engine.status, 'unknown');
+  }
 });

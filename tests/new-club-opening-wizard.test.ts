@@ -132,7 +132,7 @@ describe('new club opening wizard', () => {
   it('ends the launch checklist with a fully configured first agent', () => {
     expect(home).toContain("id: 'first-agent'");
     expect(home).toContain("label: 'Configure Your First Agent'");
-    expect(home).toContain('Promote A Player, Choose Prepaid Or Credit, And Assign Rakeback');
+    expect(home).toContain('Promote A Player And Assign The Agent Rakeback');
     expect(home).toContain('agent.is_prepaid === true && Number(agent.credit_limit || 0) === 0');
     expect(home).toContain('agent.is_prepaid === false && Number(agent.credit_limit || 0) > 0');
     expect(home).toContain('agent.player_rakeback_rate != null');

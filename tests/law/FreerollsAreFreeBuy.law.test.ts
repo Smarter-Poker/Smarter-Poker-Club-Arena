@@ -152,7 +152,14 @@ describe('2. the engine passes the rule explicitly', () => {
   it('the recurring service spreads freeBuyColumns over BOTH MTT inserts, last', () => {
     expect(RECURRING).toMatch(/import \{[^}]*freeBuyColumns[^}]*\} from '\.\.\/config\/buyIn\.js'/);
     const spreads = RECURRING.match(/\.\.\.freeBuyColumns\(\{/g) ?? [];
-    expect(spreads.length, 'XMTT insert + MTT insert').toBe(2);
+    // XMTT insert + MTT insert + recurringMttRow, the fixed board's builder
+    // (Dan 2026-10-15, theBoardIsAFixedSchedule.law.test.ts).
+    expect(spreads.length, 'XMTT insert + MTT insert + fixed-board builder').toBe(3);
+    const builder = RECURRING.slice(RECURRING.indexOf('export function recurringMttRow('));
+    const builderBody = builder.slice(0, builder.indexOf('\n}\n'));
+    expect(builderBody.indexOf('...freeBuyColumns({')).toBeGreaterThan(
+      builderBody.indexOf('addon_levels:')
+    );
     // Spread comes AFTER the template's own addon_levels key in each insert.
     for (const m of RECURRING.matchAll(
       /addon_levels: \(config as \{ addOn\?: boolean \}\)\.addOn \? 1 : null,\s*\n([\s\S]{0,400})/g

@@ -27,9 +27,9 @@
   --ink-red-glow:
     0 0 min(1cqw, 5px) rgb(240 40 73 / 80%), 0 0 min(2cqw, 10px) rgb(240 40 73 / 35%),
     0 min(0.25cqw, 1.25px) 0 rgb(0 0 0 / 70%);
-  --ink-gold: #ffd700;
+  --ink-gold: #45adff;
   --ink-gold-glow:
-    0 0 min(1cqw, 5px) rgb(255 215 0 / 70%), 0 0 min(2cqw, 10px) rgb(255 215 0 / 30%),
+    0 0 min(1cqw, 5px) rgb(69 173 255 / 30%), 0 0 min(2cqw, 10px) rgb(69 173 255 / 15%),
     0 min(0.25cqw, 1.25px) 0 rgb(0 0 0 / 70%);
   --ink-muted: #9aa5b3;
   --ink-muted-shadow: 0 min(0.2cqw, 1px) min(0.3cqw, 1.5px) rgb(0 0 0 / 80%);
@@ -1777,8 +1777,8 @@
 
 .console input.entryInput:focus-visible,
 .console select.entrySelect:focus-visible {
-  color: var(--ink-gold) !important;
-  text-shadow: var(--ink-gold-glow);
+  color: var(--ink-silver) !important;
+  text-shadow: none;
 }
 
 .modalTotal {
@@ -1860,13 +1860,14 @@
   /* One column: the base .footer grid lays out three, which put the
      selection line and the actions side by side. */
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr);
-  aspect-ratio: 1916 / 334;
+  grid-template-rows: 28px 44px;
+  min-height: 92px;
+  aspect-ratio: auto;
   gap: 0;
   width: 100%;
   max-width: 1000px;
   margin: 0 auto;
-  padding: calc(34 / 1916 * 100%) calc(64 / 1916 * 100%) calc(30 / 1916 * 100%);
+  padding: 10px 3.4%;
   border: 0;
   background: url('/images/cashier-actions/cashier-action-dock-v1.png') center / 100% 100% no-repeat;
   box-shadow: none;
@@ -1875,7 +1876,7 @@
 @media (max-width: 640px) {
   .console .actionBar,
   .page.simple .actionBar {
-    aspect-ratio: 1916 / 412;
+    aspect-ratio: auto;
     background-image: url('/images/cashier-actions/cashier-action-dock-tall-v1.png');
   }
 }
@@ -1947,4 +1948,69 @@
 .page.simple .actionBar .footerBtn:last-child {
   color: var(--ink-white);
   text-shadow: var(--ink-white-glow);
+}
+
+/* Editable figures stay crisp; chrome glow belongs on the painted artwork. */
+.console input.entryInput {
+  color: var(--ink-silver) !important;
+  text-shadow: none;
+}
+.console input.entryInput::placeholder {
+  color: var(--ink-muted);
+  opacity: 1;
+  text-shadow: none;
+}
+
+/* Identity owns the upper line; exactly one selected wallet owns the lower. */
+.console .playerCardPlate {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 1cqw;
+}
+.console .playerCardIdentity {
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 2cqw;
+}
+.console .playerCardName {
+  font-size: 4.5cqw;
+}
+.console .playerCardId {
+  flex: 0 0 auto;
+  font-size: 2.8cqw;
+}
+.console .playerCardBalance {
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  gap: 2cqw;
+}
+.console .playerCardBalance strong {
+  font-size: 4.5cqw;
+}
+.console select.walletSelect {
+  min-width: 0;
+  width: 100%;
+  padding: 0;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  color: var(--ink-silver) !important;
+  font:
+    700 3cqw/1.3 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif !important;
+  text-overflow: ellipsis;
+  appearance: auto;
+}
+.console select.walletSelect option {
+  background: #0a0b0d;
+  color: var(--ink-white);
+}
+.console select.walletSelect:focus-visible {
+  outline: 1px solid var(--ink-blue);
 }

@@ -67,7 +67,11 @@ describe('round 9: ClubHomePage', () => {
     expect(CLUB_HOME).not.toContain('level_reread_failed');
     expect(CLUB_HOME).not.toContain("rpc('recompute_club_levels'");
     expect(CLUB_HOME).toContain('getClubLevelInfoFromMembers(clubData.member_count || 0)');
-    expect(CLUB_HOME).toContain('share_ref_profile_read_failed');
+    // The share button's own profile read is gone (2026-10-15): Share & Invite
+    // now opens ShareInviteSheet, whose link RPC reports its failures as
+    // ShareInviteSheet.link (tests/unit/shareInviteAttribution.test.ts).
+    expect(CLUB_HOME).not.toContain('share_ref_profile_read_failed');
+    expect(CLUB_HOME).toContain('setShowShareSheet(true)');
   });
 });
 

@@ -43,11 +43,15 @@ beforeEach(() => {
   db.answer.mockReset();
 });
 
+/* onShare is passed so the share button renders: since 2026-10-15 the card
+   draws no share control without a handler (the lobby passes none in the
+   automatic Diamond Arena, which has no club_members row to hang a link on). */
 const base = {
   clubName: 'Diamond Arena',
   pokerAlias: 'KingFish',
   clubId: 68294,
   playerId: 1,
+  onShare: () => {},
 };
 
 describe('The arena identity rail', () => {
@@ -83,6 +87,21 @@ describe('The arena identity rail', () => {
     expect(container.querySelector('.club-identity__invite')).toBeNull();
     expect(screen.queryByText('Level 9')).toBeNull();
     expect(screen.queryByText('Share & Invite')).toBeNull();
+  });
+
+  it('draws no share control when the lobby passes no handler', () => {
+    const { container: arena } = render(
+      <ClubIdentityCard
+        {...base}
+        onShare={undefined}
+        arenaStats={{ activeCount: 3, freerollText: '0:30', freerollTitle: 'Freeroll' }}
+      />
+    );
+    expect(arena.querySelector('.club-identity__share')).toBeNull();
+    const { container: chip } = render(
+      <ClubIdentityCard {...base} onShare={undefined} clubName="Shark Club" />
+    );
+    expect(chip.querySelector('.club-identity__share')).toBeNull();
   });
 
   it('leaves a chip club exactly as it was', () => {

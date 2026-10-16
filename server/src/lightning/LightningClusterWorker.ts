@@ -550,6 +550,8 @@ export class LightningClusterWorker {
     this.observeShadow(passNow, snap, 'match', true, result.matcherVersion, result.groups, {
       legalCount: result.legalCount,
       legality: new Map(result.diagnosis.map((d) => [d.playerId, d.reasonCode])),
+      authoritativeSnapshot: result.authoritativeSnapshot,
+      snapshotBinding: result.snapshotBinding,
     });
     return { outcome: 'matched', summary, disconnected: disconnected.length };
   }
@@ -569,6 +571,8 @@ export class LightningClusterWorker {
       epoch?: number | null;
       legalCount?: number | null;
       legality?: ReadonlyMap<string, string | null> | null;
+      authoritativeSnapshot?: import('./LightningMatcherModel.js').LightningPoolSnapshot | null;
+      snapshotBinding?: string | null;
     } = {}
   ): void {
     if (!this.shadow.active) return;

@@ -71,6 +71,7 @@ import styles from './HomePage.module.css';
 import { titleCase } from '../utils/titleCase';
 import { leaveClubWarning } from '../utils/leaveClubWarning';
 import { reportError } from '../utils/errorReporter';
+import PendingInviteForward from '../components/home/PendingInviteForward';
 import { lazyWithRetry } from '../utils/lazyWithRetry';
 
 // Lazy-load heavy components to reduce initial bundle
@@ -1708,6 +1709,7 @@ function HomePageInner() {
 export default function HomePage() {
   return (
     <HomePageErrorBoundary>
+      <PendingInviteForward />
       <HomePageInner />
     </HomePageErrorBoundary>
   );

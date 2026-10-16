@@ -590,11 +590,12 @@ export class EngineStateClient {
           this.beginForegroundStateProbe();
           return;
         }
-        // 2026-08-22: a socket wedged in CONNECTING (captive portal, TCP
-        // blackhole, network transition) used to BLOCK this recovery path —
-        // the guard treated CONNECTING as healthy, no timer was pending, and
-        // the table sat at 'connecting' forever. Tear it down and start over.
+        // A CONNECTING socket without its handshake deadline is orphaned.
+        // Retire that socket; otherwise let the original deadline expire.
         if (this.ws !== null && this.ws.readyState === 0) {
+          // An active bounded handshake owns this attempt. Online, pageshow
+          // and visibilitychange can arrive separately for the same wake.
+          if (this.handshakeTimer !== null) return;
           try {
             this.ws.close();
           } catch {
@@ -642,6 +643,10 @@ export class EngineStateClient {
     if (this.onResume === null && typeof window !== 'undefined') {
       this.onResume = (event) => {
         if (this.intentionalClose || document.visibilityState !== 'visible') return;
+        // online already owns this bounded attempt. A delayed pageshow/visibility
+        // event must not replace its CONNECTING facade while SUBSCRIBED is in flight.
+        // The existing handshake deadline still tears down a genuinely stalled attempt.
+        if (this.ws?.readyState === 0 && this.handshakeTimer !== null) return;
         if (this.status === 'connected') {
           // pageshow can be the only wake event after Home Screen/BFCache
           // restoration. A healthy link keeps its existing bounded resync.
@@ -2067,6 +2072,9 @@ export class EngineChannelClient {
           return;
         }
         if (this.ws !== null && this.ws.readyState === 0) {
+          // An active bounded handshake owns this attempt. Online, pageshow
+          // and visibilitychange can arrive separately for the same wake.
+          if (this.handshakeTimer !== null) return;
           try {
             this.ws.close();
           } catch {
@@ -2111,6 +2119,10 @@ export class EngineChannelClient {
     if (this.onResume === null && typeof window !== 'undefined') {
       this.onResume = (event) => {
         if (this.intentionalClose || document.visibilityState !== 'visible') return;
+        // online already owns this bounded attempt. A delayed pageshow/visibility
+        // event must not replace its CONNECTING facade while SUBSCRIBED is in flight.
+        // The existing handshake deadline still tears down a genuinely stalled attempt.
+        if (this.ws?.readyState === 0 && this.handshakeTimer !== null) return;
         if (this.status === 'connected') {
           // pageshow can be the only wake event after Home Screen/BFCache
           // restoration. A healthy link keeps its existing bounded resync.

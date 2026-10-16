@@ -88,6 +88,9 @@ const SOURCE_BY_TYPE: Record<string, WalletName> = {
  */
 export const WALLET_MOVE_TYPES = new Set<string>([
   'agent_wallet_send',
+  'promo_wallet_send',
+  'club_promo_send',
+  'peer_transfer',
   'agent_wallet_self_stake',
   'club_bank_send',
   'club_bank_reversal',
@@ -221,6 +224,22 @@ export function describeChipTransaction(
       }
       return `${actor} Sent ${amount} From ${type === 'club_bank_send' ? 'The Club Bank' : `${possessive(from)} Agent Wallet`} To ${possessive(to)} ${dest}`;
     }
+    case 'promo_wallet_send':
+    case 'club_promo_send': {
+      const dest =
+        meta.destination === 'cashier_agent_wallet'
+          ? 'Agent Wallet'
+          : meta.destination === 'player_wallet'
+            ? 'Player Wallet'
+            : 'Promo Wallet';
+      const source =
+        type === 'club_promo_send' ? 'The Club Promo Wallet' : `${possessive(from)} Promo Wallet`;
+      return `${actor} Sent ${amount} From ${source} To ${possessive(to)} ${dest}`;
+    }
+    case 'peer_transfer':
+      return meta.source === 'player_wallet' && meta.destination
+        ? `${actor} Sent ${amount} From ${possessive(from)} Player Wallet To ${possessive(to)} ${walletName(meta.destination, 'Player Wallet')}`
+        : null;
     case 'club_bank_claim': {
       const source = walletName(meta.source, 'Agent Wallet');
       return `${nameOf(to)} Claimed Back ${amount} From ${possessive(from)} ${source} To The Club Bank`;
@@ -259,6 +278,20 @@ export function walletRoute(row: ChipTransactionLike): string | null {
       return `Agent Wallet To ${dest}`;
     case 'club_bank_send':
       return `Club Bank To ${dest}`;
+    case 'promo_wallet_send':
+    case 'club_promo_send': {
+      const dest =
+        meta.destination === 'cashier_agent_wallet'
+          ? 'Agent Wallet'
+          : meta.destination === 'player_wallet'
+            ? 'Player Wallet'
+            : 'Promo Wallet';
+      return `${type === 'club_promo_send' ? 'Club Promo Wallet' : 'Promo Wallet'} To ${dest}`;
+    }
+    case 'peer_transfer':
+      return meta.source === 'player_wallet' && meta.destination
+        ? `Player Wallet To ${dest}`
+        : null;
     case 'club_bank_claim':
       return `${walletName(meta.source, 'Agent Wallet')} To Club Bank`;
     case 'club_bank_reversal':

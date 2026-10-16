@@ -69,6 +69,7 @@ describe('readCashierBalances reads club money through the role-checked panel (S
       name: 'Deep Stack Society',
       inUnion: false,
       bank: 1234.56,
+      clubBank: 1234.56,
       credit: 0,
       promoPot: 78.9,
       promoFloat: null,

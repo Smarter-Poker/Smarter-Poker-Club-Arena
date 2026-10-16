@@ -196,7 +196,8 @@ describe('the wiring that carries that result to the screen', () => {
   it('InvitePage redeems for a player who arrives already pending', () => {
     // Otherwise the page is a dead end for exactly the people it is for.
     expect(INVITE_PAGE).toMatch(/ClubJoinService\.join\(/);
-    expect(INVITE_PAGE).toMatch(/referralCode: refCode/);
+    // effectiveRef is the ?ref= code, or the inviter a claimed short link pinned (first link wins).
+    expect(INVITE_PAGE).toMatch(/referralCode: effectiveRef/);
   });
 
   it('InvitePage carries the slug it queried into state, so share links stay readable', () => {

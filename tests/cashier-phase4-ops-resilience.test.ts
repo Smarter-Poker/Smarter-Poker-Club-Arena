@@ -557,3 +557,40 @@ describe('Phase 5 durable individual batch amounts', () => {
     ).toBe(false);
   });
 });
+
+it('persists and restores a batch for an existing non-RFC PostgreSQL club UUID', () => {
+  const storage = new MemoryStorage();
+  const row = { ...recovery, clubId: 'a0000000-0000-0000-0000-000000000001' };
+  expect(writeCashierTransferRecovery(row, storage, row.createdAt)).toBe(true);
+  expect(readCashierTransferRecovery(row.userId, row.clubId, storage, row.createdAt)).toEqual({
+    ...row,
+    failures: row.failures.map((failure) => ({
+      ...failure,
+      name: 'Cashier Recipient',
+      message: 'Outcome Needs Verification',
+    })),
+  });
+});
+
+it('retains one source and exact recipient wallets through a reload and refuses mutation of a retained intent', () => {
+  const storage = new MemoryStorage();
+  const row: CashierTransferRecovery = {
+    ...recovery,
+    source: 'club_promo_wallet',
+    destinations: Object.fromEntries(recovery.targetIds.map((id) => [id, 'promo_wallet'])),
+  };
+  expect(writeCashierTransferRecovery(row, storage, row.createdAt)).toBe(true);
+  expect(readCashierTransferRecovery(row.userId, row.clubId, storage, row.createdAt)).toEqual(
+    expect.objectContaining({ source: 'club_promo_wallet', destinations: row.destinations })
+  );
+  expect(
+    writeCashierTransferRecovery({ ...row, source: 'club_bank' }, storage, row.createdAt)
+  ).toBe(false);
+  expect(
+    writeCashierTransferRecovery(
+      { ...row, destinations: Object.fromEntries(row.targetIds.map((id) => [id, 'agent_wallet'])) },
+      storage,
+      row.createdAt
+    )
+  ).toBe(false);
+});

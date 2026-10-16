@@ -48,6 +48,12 @@ export function toInAppPath(pathAndSearch: string): string {
 export interface SignInUrlOptions {
   /** Passed through as `authError=` so the login page can say why. */
   authError?: string;
+  /**
+   * Native only: open the in-app AuthPage on Create Account rather than Sign
+   * In (`mode=signup`). An invite is for someone without an account yet. The
+   * web login page belongs to the World Hub and is left untouched.
+   */
+  signup?: boolean;
 }
 
 /**
@@ -60,6 +66,7 @@ export function signInUrl(returnTo: string, opts: SignInUrlOptions = {}): string
   const params: string[] = [];
   if (opts.authError) params.push(`authError=${encodeURIComponent(opts.authError)}`);
   if (IS_NATIVE_BUILD) {
+    if (opts.signup) params.push('mode=signup');
     params.push(`redirect=${encodeURIComponent(toInAppPath(returnTo))}`);
     return `${NATIVE_LOGIN_PATH}?${params.join('&')}`;
   }

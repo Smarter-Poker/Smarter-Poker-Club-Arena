@@ -19,6 +19,7 @@
  * Lives under __tests__ so the engine image never compiles it.
  */
 import { readFileSync } from 'node:fs';
+import { validateLightningMatchResult } from '../LightningRpc.js';
 import {
   lightningMatcherModel,
   lightningMatcherParams,
@@ -134,10 +135,30 @@ function main(): void {
   let groups = 0;
   const discriminated: string[] = [];
   for (const f of fixtures) {
+    const actual = validateLightningMatchResult(f.plan);
+    if (!actual.ok || !actual.value.authoritativeSnapshot || !actual.value.snapshotBinding) {
+      failed++;
+      console.log(
+        `FAIL ${f.name}: actual RPC snapshot unavailable or invalid (${actual.ok ? 'missing' : actual.reason})`
+      );
+      continue;
+    }
     for (const version of ['m1-port', 'm1']) {
       const ts = parityGroups(f, version);
+      const fromRpc = lightningMatcherModel(version)!.plan(
+        actual.value.authoritativeSnapshot,
+        lightningMatcherParams(f.config)
+      );
       const sql = f.plan;
       const problems: string[] = [];
+      if (
+        JSON.stringify(fromRpc.groups) !== JSON.stringify(ts.groups) ||
+        fromRpc.legalCount !== ts.legalCount ||
+        fromRpc.poolDiversityScore !== ts.poolDiversityScore
+      )
+        problems.push(
+          'actual RPC snapshot disagrees with independently captured queue/blind/history keys'
+        );
       if (ts.legalCount !== sql.legal_count)
         problems.push(`legal_count ts=${ts.legalCount} sql=${sql.legal_count}`);
       if (ts.groups.length !== sql.groups.length)

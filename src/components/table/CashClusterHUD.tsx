@@ -35,11 +35,9 @@
  * in this corner column, above the seats and far from the action buttons at
  * the foot of a 375px screen.
  *
- * THE MATERIAL (audit 2026-09-09, lane H). The notice is a bevelled gunmetal
- * plate lit blue and the buttons are illuminated pills, from the
- * #SmarterCasinoRealism vocabulary in club-engine.css - CashClusterHUD.css
- * says what that is and why the painted #ClubArenaConsole chassis is not
- * used here yet. The markup, the test ids and every sentence are unchanged.
+ * The available Seat Change trigger uses the same painted black/silver square
+ * material as Lobby, Message and Previous Hand (Dan 2026-10-15). Queue states
+ * retain their readable sentences and existing actions.
  */
 
 import {
@@ -51,6 +49,7 @@ import {
 import { useToast } from '../common/Toast';
 import { useCashGameLobby } from './useCashGameLobby';
 import './CashClusterHUD.css';
+import { useSeatChangeVisibility } from '../../hooks/useSeatChangeVisibility';
 
 export const CASH_CLUSTER_HUD_POLL_MS = 10_000;
 
@@ -76,6 +75,8 @@ export function CashClusterHUD({
   onGoToTable,
 }: CashClusterHUDProps) {
   const toast = useToast();
+  const { visible: seatChangeVisible, setVisible: setSeatChangeVisible } =
+    useSeatChangeVisibility();
   const {
     lobby,
     busy: joining,
@@ -158,24 +159,50 @@ export function CashClusterHUD({
           {moveNotice}
         </div>
       )}
-      {seatChangeAvailable && (
-        <button
-          type="button"
-          className="cch-seat-change"
-          onClick={onSeatChange}
-          aria-label="Seat Change - Request A Table Change"
-        >
-          Seat Change
-        </button>
+      {seatChangeAvailable && seatChangeVisible && (
+        <div className="cch-seat-change-control">
+          <button
+            type="button"
+            className="cch-seat-change cch-seat-change--control"
+            onClick={onSeatChange}
+            aria-label="Seat Change - Request A Table Change"
+          >
+            <img
+              className="cch-seat-change__art"
+              src={`${import.meta.env.BASE_URL}assets/club-buttons/seat-change-black-v1.webp`}
+              alt=""
+              aria-hidden="true"
+            />
+            <span className="cch-seat-change__label">Seat Change</span>
+          </button>
+          <button
+            type="button"
+            className="cch-seat-change-close"
+            aria-label="Hide Seat Change"
+            onClick={() => setSeatChangeVisible(false)}
+          >
+            X
+          </button>
+        </div>
       )}
-      {listed && (
-        <button
-          type="button"
-          className="cch-seat-change cch-seat-change--listed"
-          onClick={onOpenLobby}
-        >
-          Seat Change: #{listed.position ?? '-'} On The List
-        </button>
+      {listed && seatChangeVisible && (
+        <div className="cch-seat-change-control">
+          <button
+            type="button"
+            className="cch-seat-change cch-seat-change--listed"
+            onClick={onOpenLobby}
+          >
+            Seat Change: #{listed.position ?? '-'} On The List
+          </button>
+          <button
+            type="button"
+            className="cch-seat-change-close"
+            aria-label="Hide Seat Change"
+            onClick={() => setSeatChangeVisible(false)}
+          >
+            X
+          </button>
+        </div>
       )}
       {onWaitlist && (
         <button

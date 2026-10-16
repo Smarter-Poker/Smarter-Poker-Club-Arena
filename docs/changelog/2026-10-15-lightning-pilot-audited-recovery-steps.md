@@ -1,0 +1,7 @@
+# Lightning Pilot Audited Recovery Steps
+
+The maintained manually invoked pilot workflow now accepts one explicit recovery control per dispatch, or an explicit worker-off step. Pause/resume, joins off/on, freeze/unfreeze and matcher rollback use the existing audited operator door with deterministic request IDs. They never enable Lightning or start form mode. One action per dispatch leaves a refused or unknown result with its original operation, instead of guessing a compensating restore.
+
+A separate explicit review step handles only one of the seven investigated legacy TIMING_CORRELATION findings, on its one drained private target. It reads the authenticated operator evidence first, refuses changed/new/pooled findings and another operation's review, and uses the existing reviewer-required review door with a bounded evidence note. It records reviewed, never a bulk clear or exoneration. Original evidence and audit records remain. Install and verify the correlation repair before recording its source-fix outcome; fresh current-input qualification remains necessary.
+
+Sixty-six operator/setup checks pass, including control allowlisting, target isolation, non-activation, pending/refused answers, scoped review, unreadable evidence and authenticated local session cleanup. Existing Stage 1/2 readiness gates remain. No new workflow, schedule, release route or automatic recovery is added. Actual private-pilot rehearsals and review outcomes remain pending protected delivery and explicit dispatch.

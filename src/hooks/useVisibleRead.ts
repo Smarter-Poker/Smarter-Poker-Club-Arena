@@ -57,10 +57,11 @@ export function useVisibleRead<T>({
     };
     const run = async (reason: VisibleReadReason) => {
       stopTimer();
-      // Initial navigation is an explicit read even in a background/offline
-      // tab. Skipping it would leave a manual Cashier stuck on its skeleton;
-      // an offline failure must reach the visible Retry state instead.
-      if (disposed || (!visible() && !(manualOnly && reason === 'initial'))) return;
+      // Manual reads are navigation or explicit command/refresh attempts,
+      // including a command finishing after the tab was hidden. Do not leave
+      // the initial skeleton or silently drop a confirmed-command readback.
+      // Offline failures reach the existing Retry state instead.
+      if (disposed || (!manualOnly && !visible())) return;
       if (inFlight) {
         // A completed money command may request a fresher read than the one
         // already travelling. Keep ONE successor, not overlapping requests.
@@ -82,7 +83,7 @@ export function useVisibleRead<T>({
       } finally {
         clearTimeout(deadline);
         inFlight = false;
-        if (!disposed && visible()) {
+        if (!disposed && (manualOnly || visible())) {
           if (refreshPending) {
             refreshPending = false;
             void run('refresh');

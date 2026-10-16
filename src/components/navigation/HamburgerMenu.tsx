@@ -64,6 +64,7 @@ import { signInUrl } from '../../lib/signIn';
 import { rewardToolMatchesSearch as matchesRewardToolSearch } from './rewardToolSearch';
 import { menuOffersCreateUnion } from './menuUnionDoor';
 import { useInTabLobbyActive, useInTabLobbyClubId } from '../club/inTabLobbySurface';
+import { readClubWelcomeSettings } from '../../services/ClubWelcomeMessageService';
 
 /* Dan 2026-08-30: "THE FIRST LETTER OF EVERY WORD INSIDE THE HAMBURGER MENU
    MUST BE CAPITALIZED. AS WELL AS EVERY CLICKABLE PAGE AND SUBPAGE."
@@ -276,6 +277,35 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   const canManageGamesInContext = gameAuthorityContext === gameAuthorityKey && canManageGames;
   const unionManageIdInContext = gameAuthorityContext === gameAuthorityKey ? unionManageId : null;
   const clubRole = workspace.clubRole;
+  const welcomeActor = useRef<string | null>(user?.id || null);
+  welcomeActor.current = user?.id || null;
+  const [welcomeAccess, setWelcomeAccess] = useState<{ actorId: string; clubs: string[] } | null>(
+    null
+  );
+  useEffect(() => {
+    let live = true;
+    const accountId = user?.id;
+    setWelcomeAccess(null);
+    if (!isOpen || !accountId) return;
+    void readClubWelcomeSettings(accountId, () => welcomeActor.current)
+      .then((rows) => {
+        if (live && welcomeActor.current === accountId)
+          setWelcomeAccess({ actorId: accountId, clubs: rows.map((row) => row.club_id) });
+      })
+      .catch((error) => {
+        if (live && welcomeActor.current === accountId)
+          reportError(error, 'HamburgerMenu.welcomeAccess');
+      });
+    return () => {
+      live = false;
+    };
+  }, [isOpen, user?.id, workspace.clubUUID]);
+  const canCustomizeWelcome =
+    welcomeAccess !== null &&
+    welcomeAccess.actorId === user?.id &&
+    (workspace.clubUUID
+      ? welcomeAccess.clubs.includes(workspace.clubUUID)
+      : welcomeAccess.clubs.length > 0);
   /* No union in the Diamond Arena (ruling 16, Phase 10 line 6): the menu
      does not offer one to create while the arena is the club in context,
      including the arena's lobby opened as a tab over a table. See
@@ -307,6 +337,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     clubRole,
     isPlatformStaff: effectivePlatformStaff,
     canManageGames: canManageGamesInContext,
+    canCustomizeWelcome,
     canOperateUnionNetwork,
   });
   const allNavigationItems = useMemo(

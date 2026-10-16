@@ -1,0 +1,161 @@
+{
+  "version": "phase15-exact-replay-evidence-v1",
+  "label": "serving-09807183-Q",
+  "command": "node scripts/phase15-exact-replay.mjs /home/replay/j/batches/Q-09807183.ndjson --since 2026-10-16T18:52:00Z --until 2026-10-16T19:02:00Z --limit 100000 --concurrency 18 --store-snapshot /home/replay/j/stores/phase6c-store-chart-store-2c8a2d9f448e.json --store-snapshot /home/replay/j/stores/phase6c-store-solver-store-postflop-dff78313b437.json --node /opt/node/node-v22.23.2-linux-x64/bin/node --esbuild-binary /home/replay/w/hb-phase15-replaysrc-0980718/server/node_modules/@esbuild/linux-x64/bin/esbuild --label serving-09807183-Q --out /home/replay/j/evidence --full-verdicts /home/replay/j/verdicts/Q-09807183.json --note Predeclared window docs/evidence/phase15/replay-declaration-4c3509e5-20261016.md and its addendum; batch Q; child Node v22.23.2 linux-x64 in an x86_64 QEMU guest on the Mac",
+  "runningSource": "098071833b4e4a8240f60cb884882ffb11d55787",
+  "childRuntime": "{\"node\":\"v22.23.2\",\"v8\":\"12.4.254.21-node.56\",\"arch\":\"x64\"}",
+  "journalCopySha256": "5a27936aef9278c7deca2553ef7dfd60d0de7829ffb51c78f6dab8bcc5e0972d",
+  "batchRule": "newest 100000 decision records at or after 2026-10-16T18:52:00Z and before 2026-10-16T19:02:00Z, one fresh process each",
+  "startedAt": "2026-10-16T19:12:51.402Z",
+  "finishedAt": "2026-10-16T19:50:36.157Z",
+  "decisionsInCopy": 600,
+  "executionsInCopy": 600,
+  "planReceiptsInCopy": 83,
+  "replayed": 600,
+  "freshProcesses": 600,
+  "childFailures": 0,
+  "window": {
+    "from": "2026-10-16T19:01:33.793Z",
+    "to": "2026-10-16T19:01:59.964Z"
+  },
+  "recordedSources": {
+    "098071833b4e4a8240f60cb884882ffb11d55787": 600
+  },
+  "recordedRuntimesByOutcome": {
+    "v22.23.2/x64 replayed_exact": 598,
+    "v22.23.2/x64 non_replayable:wall_clock_budget": 2
+  },
+  "outcomes": {
+    "replayed_exact": 598,
+    "non_replayable:wall_clock_budget": 2
+  },
+  "replayVerified": 598,
+  "networkAttempts": 0,
+  "firstDifferences": {
+    "non_replayable:wall_clock_budget decision.policyOwnership.outcome": 2
+  },
+  "byCell": {
+    "cash/flh/flop": {
+      "replayed_exact": 5
+    },
+    "cash/flh/preflop": {
+      "replayed_exact": 4
+    },
+    "cash/flh/river": {
+      "replayed_exact": 6
+    },
+    "cash/flh/turn": {
+      "replayed_exact": 7,
+      "non_replayable:wall_clock_budget": 1
+    },
+    "cash/flo8/flop": {
+      "replayed_exact": 8
+    },
+    "cash/flo8/preflop": {
+      "replayed_exact": 13
+    },
+    "cash/flo8/river": {
+      "replayed_exact": 4
+    },
+    "cash/flo8/turn": {
+      "replayed_exact": 4
+    },
+    "cash/nlh/flop": {
+      "replayed_exact": 54
+    },
+    "cash/nlh/preflop": {
+      "replayed_exact": 136
+    },
+    "cash/nlh/river": {
+      "replayed_exact": 20
+    },
+    "cash/nlh/turn": {
+      "replayed_exact": 36
+    },
+    "cash/pineapple/flop": {
+      "replayed_exact": 17
+    },
+    "cash/pineapple/preflop": {
+      "replayed_exact": 17
+    },
+    "cash/pineapple/turn": {
+      "replayed_exact": 1
+    },
+    "cash/plo4/flop": {
+      "replayed_exact": 19
+    },
+    "cash/plo4/preflop": {
+      "replayed_exact": 38
+    },
+    "cash/plo4/river": {
+      "replayed_exact": 8
+    },
+    "cash/plo4/turn": {
+      "replayed_exact": 17
+    },
+    "cash/plo5/flop": {
+      "replayed_exact": 21
+    },
+    "cash/plo5/preflop": {
+      "replayed_exact": 12
+    },
+    "cash/plo5/river": {
+      "replayed_exact": 8
+    },
+    "cash/plo5/turn": {
+      "replayed_exact": 12
+    },
+    "cash/plo6/flop": {
+      "replayed_exact": 8
+    },
+    "cash/plo6/preflop": {
+      "replayed_exact": 26
+    },
+    "cash/plo6/river": {
+      "replayed_exact": 6
+    },
+    "cash/plo6/turn": {
+      "replayed_exact": 8
+    },
+    "cash/plo8/flop": {
+      "replayed_exact": 10
+    },
+    "cash/plo8/preflop": {
+      "replayed_exact": 16
+    },
+    "cash/plo8/river": {
+      "replayed_exact": 8,
+      "non_replayable:wall_clock_budget": 1
+    },
+    "cash/plo8/turn": {
+      "replayed_exact": 10
+    },
+    "cash/short_deck/flop": {
+      "replayed_exact": 8
+    },
+    "cash/short_deck/preflop": {
+      "replayed_exact": 17
+    },
+    "cash/short_deck/river": {
+      "replayed_exact": 4
+    },
+    "cash/short_deck/turn": {
+      "replayed_exact": 10
+    }
+  },
+  "acceptance": {
+    "joined:intended:selected_equal": 600
+  },
+  "durableEffectReceipts": {
+    "no_effects": 517,
+    "applied": 83
+  },
+  "durableEffectReceiptsByOutcome": {
+    "replayed_exact no_effects": 515,
+    "replayed_exact applied": 83,
+    "non_replayable:wall_clock_budget no_effects": 2
+  },
+  "notes": [
+    "Predeclared window docs/evidence/phase15/replay-declaration-4c3509e5-20261016.md and its addendum; batch Q; child Node v22.23.2 linux-x64 in an x86_64 QEMU guest on the Mac"
+  ]
+}

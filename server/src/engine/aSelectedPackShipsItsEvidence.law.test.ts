@@ -143,15 +143,12 @@ describe('a selected pack ships its evidence inside the engine image', () => {
     '%s: a committed, unwithdrawn selection is admitted from the shipped copy alone',
     (_name, c) => {
       if (c.selection === null || c.selection.withdrawn !== null) return;
-      const verdict = c.admit();
-      // 2026-10-16: the opponent-exploit change moved the Phase 10, 11 and 12
-      // policy digests, so those selections are refused until requalified -
-      // by name, for the digest, after every shipped file was found and read.
-      // What this law guards (a selection never refused for evidence the image
-      // does not carry) is unchanged.
-      if (verdict.status === 'refused')
-        expect(verdict, c.name).toMatchObject({ reason: 'policy_digest_mismatch' });
-      else expect(verdict, c.name).toMatchObject({ status: 'admitted' });
+      // A committed selection the running source refuses (for any reason,
+      // policy_digest_mismatch included) is not shipped evidence: a source
+      // change that moves a selected pack's digest sets that selection to null
+      // until it requalifies (the #6777 / #6886 precedent), and only null
+      // selections are skipped above.
+      expect(c.admit(), c.name).toMatchObject({ status: 'admitted' });
     }
   );
 

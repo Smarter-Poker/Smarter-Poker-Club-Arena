@@ -491,7 +491,12 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   flag('v23Endgame', 'tournament endgame adjust (bounties, prizes)', 'V23'),
   flag('v23Plan', 'raise-response plans decided at bet time', 'V23'),
   flag('v23Reads', 'river reads', 'V23'),
-  flag('v23Variants', 'plo8 low-only draws, short deck draw credit', 'V23'),
+  flag('v23Variants', 'plo8 low-only draw discipline (plo8_v23_lowdraw)', 'V23'),
+  flag(
+    'v23ShortDeck',
+    'the short-deck half of the V23 variant polish; DEFAULT OFF since 2026-10-16 (shortdeck_v23 -0.36 +/- 0.14 over 44 runs)',
+    'V23'
+  ),
   flag('v23Spin', 'spin format overlay', 'V23'),
   flag('v24Bounty', 'PKO bounty pull', 'V24'),
   flag(
@@ -514,7 +519,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'onGtoV31Decision',
     'captures decision-level source receipts for paired replay and league reconciliation'
   ),
-  flag('v32FacingDefense', 'solver facing-bet defense', 'V32'),
+  flag(
+    'v32FacingDefense',
+    'solver facing-bet defense; DEFAULT OFF since 2026-10-16 (v32_facing_defense -0.31 +/- 0.15 over 41 runs)',
+    'V32'
+  ),
   flag('v33DepthCeiling', 'solver depth ceiling (300bb)', 'V33'),
   flag('v37Satellite', 'satellite survival play', 'V37'),
   flag('v38Ev', 'the EV engine arbiter for solverless games and the MDF river', 'V38'),
@@ -1543,13 +1552,13 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'decide_nlh',
     0.002
   ),
+  // No floor: v32FacingDefense is default OFF since 2026-10-16, so silence is
+  // expected until a league matchup resolves positive and the default changes.
   receipt(
     'v32_*',
     'GtoFacingDefenseV32 (V32)',
-    'facing-bet defense verdicts and misses',
-    'V32',
-    'decide_nlh',
-    0.002
+    'facing-bet defense verdicts and misses; opt-in (v32FacingDefense)',
+    'V32'
   ),
   receipt(
     'v34_defend_draw_passthrough',

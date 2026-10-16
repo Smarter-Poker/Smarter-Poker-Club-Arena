@@ -47,10 +47,10 @@ import {
 import {
   barrelNarrowingScale,
   callDownRespectShift,
-  decayAndAdd,
   exploitHandIncrements,
-  freshExploitCounters,
   looseCallerWidth,
+  mergeExploitRows,
+  observeExploitRow,
   openerRangeWidth,
   opponentExploitRead,
   postflopBluffMod,
@@ -228,6 +228,10 @@ export interface BoardTexture {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const MAX_TRACKED_PLAYERS = 4000;
+/** 2026-10-16: the exploit store holds (scope, player) rows, up to four
+ *  scopes a player on average; evicted least recently updated first. */
+const EXPLOIT_ROW_CAP = MAX_TRACKED_PLAYERS * 4;
+const EMPTY_EXPLOIT_ROWS: ReadonlyMap<string, ExploitCounters> = new Map();
 const MAX_SEEN_ACTIONS = 60_000;
 const MAX_HAND_FLAGS = 20_000;
 
@@ -706,22 +710,37 @@ export class HorseMind {
     }>,
     scope: ReadScope
   ): void {
-    for (const [userId, increments] of exploitHandIncrements(actions)) {
-      const key = `${scope}|${userId}`;
-      let row = this.exploitCounters.get(key);
-      if (!row) {
-        if (this.exploitCounters.size >= MAX_TRACKED_PLAYERS * 4)
-          evictOldest(this.exploitCounters, MAX_TRACKED_PLAYERS * 4 - 1);
-        row = freshExploitCounters();
-        this.exploitCounters.set(key, row);
-      }
-      decayAndAdd(row, increments);
-    }
+    for (const [userId, increments] of exploitHandIncrements(actions))
+      observeExploitRow(this.exploitCounters, `${scope}|${userId}`, increments, EXPLOIT_ROW_CAP);
   }
 
   /** The decayed exploit counters for (scope, player), for tests and the read frame. */
   static getExploitCounters(userId: string, scope: ReadScope): ExploitCounters | undefined {
     return this.exploitCounters.get(`${scope}|${userId}`);
+  }
+
+  /**
+   * The exploit rows a sandbox learned, keyed `${scope}|${userId}` (empty for
+   * a sandbox built before the exploit layer). Read only: callers must not
+   * write through it.
+   */
+  static sandboxExploitRows(sandbox: HorseMindSandbox): ReadonlyMap<string, ExploitCounters> {
+    return sandbox.exploit ?? EMPTY_EXPLOIT_ROWS;
+  }
+
+  /**
+   * Add the exploit rows a sandbox learned from ONE completed hand to the live
+   * memory, exactly as if the live mind had observed that hand
+   * (`mergeExploitRows`: decay-and-add per key, a copy when absent, the same
+   * least-recently-used cap). This is the entry point the worker mirror
+   * (horseDecision/mindMirror.ts) uses to carry another shard's hands into the
+   * read. Refused inside a sandbox or an effect capture: it writes live state.
+   */
+  static mergeSandboxExploit(sandbox: HorseMindSandbox): void {
+    if (this.sandboxDepth > 0) throw new Error('HorseMind.mergeSandboxExploit: inside a sandbox');
+    if (this.decisionEffectSink)
+      throw new Error('HorseMind.mergeSandboxExploit: inside an effect capture');
+    mergeExploitRows(this.exploitCounters, this.sandboxExploitRows(sandbox), EXPLOIT_ROW_CAP);
   }
 
   /**

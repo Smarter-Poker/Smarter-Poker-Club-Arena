@@ -824,7 +824,16 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
    * 4242 and 20260921 (INERT); a heads-up v11 control diverged in 7 and 2 of 1,000.
    */
   // { name: 'v31_gto_suit_aware', seats: 2, pairs: 6000, a: {}, b: { v31GtoSuitAware: false } },
-  { name: 'v32_facing_defense', seats: 2, pairs: 6000, a: {}, b: { v32FacingDefense: false } },
+  // 2026-10-16: the facing-bet defence resolved NEGATIVE heads-up (-0.31 +/-
+  // 0.15 over 41 nightly runs) and is default OFF. Same matchup, same sign:
+  // arm A is still "defence on".
+  {
+    name: 'v32_facing_defense',
+    seats: 2,
+    pairs: 6000,
+    a: { v32FacingDefense: true },
+    b: {},
+  },
   // The depth ceiling only changes a decision ABOVE it, so dealing this at
   // the standard 100bb would measure exactly nothing and report 0.00 +/- 0.00
   // forever - the inert-matchup shape the audit now flags. 400bb is past
@@ -888,7 +897,11 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   // they ship scenario-tested with telemetry, the way V16 real ICM did.
   { name: 'v23_raise_plans', pairs: 6000, a: {}, b: { v23Plan: false } },
   { name: 'v23_river_reads', pairs: 6000, a: {}, b: { v23Reads: false } },
-  { name: 'shortdeck_v23', variant: 'short_deck', pairs: 6000, a: {}, b: { v23Variants: false } },
+  // 2026-10-16: the short-deck half of V23 resolved NEGATIVE (-0.36 +/- 0.14
+  // over 44 nightly runs) and is default OFF behind v23ShortDeck; the plo8
+  // low-draw half wins (+1.63 +/- 0.18) and stays on under v23Variants. Same
+  // matchup, same sign: arm A is still "short-deck polish on".
+  { name: 'shortdeck_v23', variant: 'short_deck', pairs: 6000, a: { v23ShortDeck: true }, b: {} },
   { name: 'plo8_v23_lowdraw', variant: 'plo8', pairs: 6000, a: {}, b: { v23Variants: false } },
   // ── V24 (2026-08-28) ── Dan full-potted 8 PLO hands in a PKO and was never
   // called once. The price defense is measurable on a PLO card; the bounty
@@ -962,6 +975,7 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
       v23Plan: false,
       v23Reads: false,
       v23Variants: false,
+      v23ShortDeck: false,
       v23Spin: false,
       v24Bounty: false,
       v24PloDefense: false,

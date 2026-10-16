@@ -162,6 +162,7 @@ import {
 } from './GtoPostflop.js';
 import {
   gtoStreetAdviceV31,
+  gtoV31StoreIsEmpty,
   type GtoV31ActionFamily,
   type GtoV31GameFamily,
   type GtoV31Objective,
@@ -1807,9 +1808,17 @@ export interface HorseDecideOpts {
    *  scales river bluffs up against folders and thin value down against
    *  stations (default: enabled; rides the mind layer) */
   v23Reads?: boolean;
-  /** disable the V23 variant polish: short-deck draw/thin-value recalibration
-   *  and plo8 low-only draw discipline (default: enabled) */
+  /** disable the V23 variant polish: plo8 low-only draw discipline
+   *  (default: enabled; plo8_v23_lowdraw +1.63 +/- 0.18 bb/100). Its
+   *  short-deck half is v23ShortDeck, default OFF. */
   v23Variants?: boolean;
+  /** V23 short deck, DEFAULT OFF since 2026-10-16. The short-deck half of the
+   *  V23 variant polish (one-pair thin value shrinks, draws earn extra implied
+   *  credit) lost: shortdeck_v23 measured -0.36 +/- 0.14 bb/100 over 44
+   *  nightly league runs, while the plo8 low-draw half of the same flag wins
+   *  (+1.63 +/- 0.18) and stays on under v23Variants (the V46 split of
+   *  2026-10-05). Set true to measure it (league arm A of shortdeck_v23). */
+  v23ShortDeck?: boolean;
   /** disable the V23 spin overlay: 3-max hypers reward aggression — bluff
    *  volume up, value thresholds down a notch (default: enabled). The overlay
    *  is about the STRUCTURE (three-handed, shallow, 3-minute levels), not the
@@ -1877,7 +1886,10 @@ export interface HorseDecideOpts {
    * only after the ordinary V31 lookup, sample, and legalization path runs.
    */
   onGtoV31Decision?: (receipt: GtoV31DecisionReceipt) => void;
-  /** V32: facing-a-bet defence from the solver's own betting range. */
+  /** ENABLE V32: facing-a-bet defence from the solver's own betting range.
+   *  DEFAULT OFF since 2026-10-16: v32_facing_defense (heads-up NLH)
+   *  measured -0.31 +/- 0.15 bb/100 over 41 nightly league runs. League arm
+   *  A of v32_facing_defense turns it on. */
   v32FacingDefense?: boolean;
   /** V33 (2026-09-01): refuse a solver consult the warehouse cannot honestly
    *  answer. DEPTH_BUCKETS stops at 150 and snapDepthBucket returns 150 for
@@ -5473,8 +5485,11 @@ export class HorseLogic {
     // ═══ V23 VARIANT POLISH ═══ short deck: straights arrive more often and
     // draws complete more — draws earn a touch more implied credit, while
     // one-pair thin value shrinks (everyone has more).
+    // 2026-10-16: the short-deck half is opt-in (v23ShortDeck); it measured
+    // negative in the league while the plo8 low-draw half wins.
     const useV23Var = (opts.v23Variants ?? true) !== false;
-    if (useV23Var && vi.isShortDeck && cat === 2) thinAdj23 += 0.03;
+    const useV23ShortDeck = useV23Var && opts.v23ShortDeck === true;
+    if (useV23ShortDeck && vi.isShortDeck && cat === 2) thinAdj23 += 0.03;
     // ═══ V18 SELF-IMAGE ═══ the table watched hero's recent line too. A
     // horse coming off a bluff-heavy stretch gets called down - throttle the
     // bluffs until the image cools; a rock's rare bets get instant credit -
@@ -5621,7 +5636,13 @@ export class HorseLogic {
     // lookup key. An open policy can never answer a response decision, and a
     // chip-EV tournament policy can never masquerade as ICM. The compact
     // loader has already rejected any row without a complete active seal.
-    if (
+    //
+    // 2026-10-16: an EMPTY store is checked once, before any of the consult's
+    // work. Every lookup against it returns `empty_store` and falls through to
+    // the heuristics (283k such misses a day while the PioSOLVER hosts are
+    // off and V31 is parked), so skipping it decides identically. One counter
+    // keeps the empty store visible instead of three miss counters.
+    const v31Eligible =
       (opts.v31GtoSuitAware ?? true) !== false &&
       (street === 'flop' || street === 'turn' || street === 'river') &&
       player.cards.length === 2 &&
@@ -5636,8 +5657,10 @@ export class HorseLogic {
       // retain ownership until a separately keyed straddle corpus exists.
       gs.straddleActive !== true &&
       gs.bombPot !== true &&
-      !(gs.communityCards2 && gs.communityCards2.length > 0)
-    ) {
+      !(gs.communityCards2 && gs.communityCards2.length > 0);
+    const v31StoreEmpty = v31Eligible && gtoV31StoreIsEmpty(opts.gtoV31DatasetChecksum);
+    if (v31StoreEmpty && tele15) noteFire('v31_certified_skip_empty_store');
+    if (v31Eligible && !v31StoreEmpty) {
       const opponent31 = opponents[0];
       const heroSeat31 = gtoV31Position({
         seat: player.seat,
@@ -5930,7 +5953,8 @@ export class HorseLogic {
     // threshold PASS (null) so the aggression layers keep owning raises.
     // Gate mirrors the open consult exactly: heads-up hold'em, one board.
     if (
-      (opts.v32FacingDefense ?? true) !== false &&
+      // 2026-10-16: opt-in; the league measured it negative heads-up.
+      opts.v32FacingDefense === true &&
       facingBet &&
       // NOT `initiative === 'opp'`: readInitiative reads EARLIER streets only,
       // so a villain betting THIS street after the action checked to them
@@ -7368,7 +7392,7 @@ export class HorseLogic {
       useV23Var && useHiLo && !!hiLoSplit && hiLoSplit.hi < 0.15 && hiLoSplit.lo > 0.3;
     const impliedBonus =
       drawsLive && equity >= 0.25 && dominationPenalty === 0 && !loOnly23
-        ? 0.04 + (useV23Var && vi.isShortDeck ? 0.02 : 0)
+        ? 0.04 + (useV23ShortDeck && vi.isShortDeck ? 0.02 : 0)
         : 0;
     // V35: fixed limit calls lighter — the pot always lays the price.
     let respect = 2 - exploit.callDownMod + (params.callRespect ?? 0); // maniac 0.8, neutral 1, passive 1.15

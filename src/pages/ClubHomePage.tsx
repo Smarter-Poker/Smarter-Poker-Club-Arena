@@ -310,6 +310,7 @@ function setClubHomeCache(clubId: string, data: { club: any; tables: any[] }) {
 
 // Types
 interface ClubData {
+  settings?: Record<string, unknown> | null;
   id: string;
   club_id: number;
   name: string;
@@ -2460,7 +2461,7 @@ function ClubHomePageContent({
           supabase
             .from('clubs')
             .select(
-              'id, club_id, name, slug, description, tagline, lobby_message, avatar_url, logo_url, banner_url, member_count, online_count, owner_id, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next, chip_treasury, spins_enabled, created_at, is_union, union_id, opening_checklist_started_at'
+              'id, club_id, name, slug, description, tagline, lobby_message, avatar_url, logo_url, banner_url, settings, member_count, online_count, owner_id, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next, chip_treasury, spins_enabled, created_at, is_union, union_id, opening_checklist_started_at'
             )
             .eq(clubCol, clubVal)
             .maybeSingle()
@@ -5215,16 +5216,16 @@ function ClubHomePageContent({
               isAutomaticArena
                 ? undefined
                 : () => {
-                  /* SHARE & INVITE (Dan 2026-10-15): the link is the SENDER's own
+                    /* SHARE & INVITE (Dan 2026-10-15): the link is the SENDER's own
                      short code (smarter.poker/i/<CODE>), so whoever shares it is
                      credited and the new player lands in their downline. It used
                      to be /invite/<club>?ref=<player number>, which sent a
                      signed-out friend to LOGIN and lost the club on the way
                      through signup. The sheet holds the link, Copy, Share, a QR
                      code and the sender's results. */
-                  haptic.medium();
-                  setShowShareSheet(true);
-                }
+                    haptic.medium();
+                    setShowShareSheet(true);
+                  }
             }
           />
           {/* The Bad Beat Jackpot reads its own asset's pool. An arena strip
@@ -5795,6 +5796,7 @@ function ClubHomePageContent({
       ═══════════════════════════════════════════════════════════════════ */}
         <HouseAdRotator
           slot="lobby_strip"
+          clubSettings={club.settings}
           clubId={resolvedClubId || club.id}
           onNavigate={(path) => {
             haptic.selection();

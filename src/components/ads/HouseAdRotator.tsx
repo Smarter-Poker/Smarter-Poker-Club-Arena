@@ -45,6 +45,8 @@ import {
 } from '../../services/AdService';
 import type { AdSlot, HouseAd } from '../../services/AdService';
 import { openInBrowser } from '../../lib/openExternal';
+import { readRotatingBanners } from '../../utils/clubRotatingBanners';
+import { titleCase } from '../../utils/titleCase';
 import './HouseAdRotator.css';
 
 /* The full-screen popup is fetched on the first tap, not before first paint.
@@ -77,6 +79,7 @@ interface HouseAdRotatorProps {
   /** Where a creative's checked destination should take the player. */
   onNavigate?: (path: string) => void;
   className?: string;
+  clubSettings?: unknown;
 }
 
 function substituteClub(url: string | null, clubId: string | null | undefined): string | null {
@@ -91,6 +94,7 @@ export default function HouseAdRotator({
   intervalMs = 7000,
   onNavigate,
   className,
+  clubSettings,
 }: HouseAdRotatorProps) {
   const [ads, setAds] = useState<HouseAd[]>([]);
   const [index, setIndex] = useState(0);
@@ -103,19 +107,44 @@ export default function HouseAdRotator({
   const openRef = useRef(false);
   openRef.current = open;
 
+  const clubBannerSnapshot = JSON.stringify(slot === 'lobby_strip' ? (clubSettings ?? null) : null);
+
   // ── Load: ask for more than we show, keep only the ones with a picture ────
   useEffect(() => {
     let cancelled = false;
+    setAds([]);
+    setIndex(0);
+    setOpen(false);
     AdService.resolve(slot, clubId, Math.min(10, Math.max(limit * 2, limit))).then((rows) => {
       if (cancelled) return;
       const withImage = rows.filter((a) => isSafeAdImage(a.imageUrl)).slice(0, limit);
-      setAds(withImage);
+      const owned: HouseAd[] = clubId
+        ? readRotatingBanners(JSON.parse(clubBannerSnapshot), clubId)
+            .filter((banner) => banner.enabled)
+            .map((banner) => ({
+              adId: `club-banner-${banner.id}`,
+              adKey: `club-banner-${banner.id}`,
+              category: 'club_banner',
+              headline: titleCase(banner.title),
+              body: null,
+              glyph: null,
+              targetUrl: `/clubs/${clubId}/announcements`,
+              ctaLabel: 'Open Announcements',
+              imageUrl: banner.imageUrl,
+              posterUrl: banner.imageUrl,
+              placementId: null,
+              advertiserKind: 'club',
+              advertiserName: null,
+              clubOwned: true,
+            }))
+        : [];
+      setAds([...owned, ...withImage]);
       setIndex(0);
     });
     return () => {
       cancelled = true;
     };
-  }, [slot, clubId, limit]);
+  }, [slot, clubId, limit, clubBannerSnapshot]);
 
   // ── Reduced motion: the crossfade collapses, the rotation does not ─────────
   // Animation law (CLAUDE.md 10.6): reduced-motion collapses motion but never
@@ -153,7 +182,7 @@ export default function HouseAdRotator({
   }, [ads.length, intervalMs]);
 
   const ad = ads.length > 0 ? ads[Math.min(index, ads.length - 1)] : null;
-  const adId = ad?.adId;
+  const adId = ad?.clubOwned ? undefined : ad?.adId;
 
   // ── Impression: rendered ───────────────────────────────────────────────────
   useEffect(() => {
@@ -261,7 +290,7 @@ export default function HouseAdRotator({
       openInBrowser(target, 'noopener,noreferrer');
       return;
     }
-    AdService.logClick({ adId: ad.adId }, slot, clubId);
+    if (!ad.clubOwned) AdService.logClick({ adId: ad.adId }, slot, clubId);
     onNavigate?.(target);
   };
 
@@ -270,7 +299,7 @@ export default function HouseAdRotator({
      once on 2026-08-29. */
   const dismiss = () => {
     setOpen(false);
-    AdService.logDismiss({ adId: ad.adId }, slot, clubId);
+    if (!ad.clubOwned) AdService.logDismiss({ adId: ad.adId }, slot, clubId);
   };
 
   const ratio = AD_SURFACE_RATIO[slot];
@@ -329,6 +358,7 @@ export default function HouseAdRotator({
         <Suspense fallback={null}>
           <AdInterstitial
             ad={ad}
+            clubId={clubId}
             target={target}
             external={external}
             onProceed={proceed}

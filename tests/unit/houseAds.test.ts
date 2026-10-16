@@ -312,7 +312,7 @@ describe('a sponsor sends traffic to its own site (Dan 2026-09-09)', () => {
     expect(activate.indexOf("openInBrowser(target, 'noopener,noreferrer')")).toBeLessThan(
       activate.indexOf('AdService.logClick')
     );
-    expect(activate).toMatch(/return;\s*\}\s*AdService\.logClick/);
+    expect(activate).toMatch(/return;\s*\}\s*if \(!ad\.clubOwned\) AdService\.logClick/);
   });
 
   it('the router is not handed a path it would resolve under the basename', () => {

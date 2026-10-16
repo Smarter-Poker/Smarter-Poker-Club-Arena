@@ -5,7 +5,9 @@
   min-height: 310px;
   height: 100%;
   flex-direction: column;
-  overflow: hidden;
+  /* The polygon clips paint at the outer border; padding-box clipping would
+     hide the continuous rail. The mission board contains scroll overflow. */
+  overflow: visible;
   padding: 18px;
   border: 1px solid #36414a;
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.035), transparent 28%), #090d10;

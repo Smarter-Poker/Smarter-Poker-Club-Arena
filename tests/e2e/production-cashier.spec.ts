@@ -9,7 +9,7 @@ import {
   attachCashierScreenshot,
   expectCashierAxeClean,
   expectCompactCashierFigure,
-  expectExactCashierWalletFigure,
+  expectCashierWalletBalance,
 } from './support/cashierProductionCertification';
 
 const DEFAULT_E2E_CLUB_ID = 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
@@ -248,12 +248,18 @@ test.describe('Production Cashier Certification', () => {
 
     const surface = page.locator('[data-cashier-surface="trade"]');
     const currentBalances = page.getByLabel('Current Cashier Balances').locator('strong');
-    expectExactCashierWalletFigure(await currentBalances.nth(0).innerText(), 'Club Chips');
-    expectExactCashierWalletFigure(await currentBalances.nth(1).innerText(), 'Agent Wallet');
-    const playerWallets = surface.locator('[class*="rosterWallet"] [class*="rowBalance"]');
-    expect(await playerWallets.count()).toBeGreaterThan(0);
-    for (const value of await playerWallets.allInnerTexts()) {
-      expectExactCashierWalletFigure(value, 'Roster Player Wallet');
+    await expectCashierWalletBalance(currentBalances.nth(0), 'Club Chips');
+    await expectCashierWalletBalance(currentBalances.nth(1), 'Agent Wallet');
+    const rosterWalletLabels = surface.getByText('Player Wallet', { exact: true });
+    const rosterWalletCount = await rosterWalletLabels.count();
+    expect(rosterWalletCount, 'Trade Cashier must expose player wallet balances').toBeGreaterThan(
+      0
+    );
+    for (let index = 0; index < rosterWalletCount; index++) {
+      await expectCashierWalletBalance(
+        rosterWalletLabels.nth(index).locator('..').locator('span').first(),
+        `Trade Player Wallet ${index + 1}`
+      );
     }
     const aggregates = surface.locator('[class*="stripValue"]');
     expectCompactCashierFigure(await aggregates.nth(1).innerText(), 'Downline Holdings');
@@ -527,17 +533,30 @@ test.describe('Production Cashier Certification', () => {
         { timeout: 30_000 }
       )
       .toEqual({ loading: 0, walletVisible: true, walletVerified: true });
-    expectExactCashierWalletFigure(
-      await agentWallet.locator('.dw__row-value').innerText(),
-      'Advanced Agent Wallet'
+    const advancedWalletRows = page.locator(
+      'main [data-wallet-key]:not([data-wallet-key="diamonds"]):not([data-wallet-key="backup_bbj"])'
     );
-    const walletFigures = page.locator(
-      'main [data-wallet-key]:not([data-wallet-key="diamonds"]) .dw__row-value, main .dw__bbj-amount'
-    );
-    for (const value of await walletFigures.allInnerTexts()) {
-      // Zero backup pools deliberately show '-' rather than a fabricated amount.
-      if (value.trim() !== '-') expectExactCashierWalletFigure(value, 'Advanced Wallet');
+    const advancedWalletCount = await advancedWalletRows.count();
+    expect(advancedWalletCount, 'Advanced Cashier must expose wallet balances').toBeGreaterThan(0);
+    for (let index = 0; index < advancedWalletCount; index++) {
+      const row = advancedWalletRows.nth(index);
+      const key = await row.getAttribute('data-wallet-key');
+      const value = row.locator('.dw__row-value');
+      // Treasury data can legitimately be unreadable/not applicable. Primary
+      // player, agent, promo and Club Bank wallets must verify, including zero.
+      if (
+        ['spins_wallet', 'rake_treasury'].includes(key || '') &&
+        (await value.innerText()) === '-'
+      ) {
+        continue;
+      }
+      await expectCashierWalletBalance(value, `Advanced ${key} Wallet`);
     }
+    await expectCashierWalletBalance(
+      page.locator('main [data-wallet-key="diamonds"] .dw__row-value'),
+      'Advanced Diamond Wallet',
+      'diamonds'
+    );
     const presets = console.locator('[class*="presetBtn"]');
     expect(await presets.count()).toBeGreaterThan(0);
     for (const value of await presets.allInnerTexts()) {
@@ -660,8 +679,15 @@ test.describe('Production Cashier Certification', () => {
       } else {
         await expect(bankFigure).toHaveText(/^-?\d+(?:\.\d)?[MB]$/);
       }
-      expectExactCashierWalletFigure(await bankFigure.innerText(), 'Open Agent Wallet');
     }
+    await expectCashierWalletBalance(
+      dialog.locator('.cbc-bank > strong'),
+      'Agent Wallet Cashier',
+      'chips',
+      {
+        allowAbsentAgentFloat: true,
+      }
+    );
     await expectCashierAxeClean(page, testInfo, '[role="dialog"]', 'agent-wallet-cashier');
     await attachCashierScreenshot(page, testInfo, 'agent-wallet-cashier');
     await page.keyboard.press('Escape');

@@ -12,13 +12,13 @@ describe('Accounting migration admission stays inside the original owning transa
     expect(accountingAdmissionSQL('other.sql', 'anything', source)).toBe(source);
     expect(Object.keys(ACCOUNTING_ADMISSION_SOURCES)).toHaveLength(4);
   });
-  it('requires exact bytes for every selected source', () => {
+  it('binds every selected migration to its reviewed bytes, including compatible Phase 7', () => {
     for (const selected of Object.keys(ACCOUNTING_ADMISSION_SOURCES)) {
-      const bytes = readFileSync('supabase/migrations/' + selected, 'utf8');
-      expect(accountingAdmissionSQL(selected, bytes, bytes)).toContain(ACCOUNTING_ADMISSION_SQL);
-      expect(() => accountingAdmissionSQL(selected, bytes + '\n', bytes)).toThrow(
-        'exact qualified'
-      );
+      const text = readFileSync('supabase/migrations/' + selected, 'utf8');
+      expect(
+        accountingAdmissionSQL(selected, text, text).replace('\n' + ACCOUNTING_ADMISSION_SQL, '')
+      ).toBe(text);
+      expect(() => accountingAdmissionSQL(selected, text + '\n', text)).toThrow('exact qualified');
     }
   });
   it('preserves source, history literals, final COMMIT and original guards', () => {

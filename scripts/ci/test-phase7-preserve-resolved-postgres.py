@@ -45,6 +45,16 @@ try:
  # A changed body cannot pass the source guard.
  q((ROOT/'scripts/ci/fixtures/phase7-preserve-resolved/action-before.sql').read_text().replace('DECLARE','DECLARE\n  fixture_drift boolean := false;',1))
  q('DO $$ BEGIN '+guard+' END $$;','phase7_incident_authority_changed')
+ # Installed prerequisite compatibility is qualified without changing either body.
+ compat=json.loads((ROOT/'scripts/ci/fixtures/phase7-preserve-resolved/installed-prerequisites.json').read_text())
+ q("CREATE ROLE service_role;CREATE TYPE ca_operator_floor_hold AS (id boolean);CREATE TYPE ca_engine_operator_commands AS (id uuid);CREATE TYPE ca_launch_operator_scopes AS (id uuid);SET check_function_bodies=false;"+compat['watchdog']+";REVOKE ALL ON FUNCTION fn_ca_operator_floor_hold_watchdog() FROM PUBLIC;GRANT EXECUTE ON FUNCTION fn_ca_operator_floor_hold_watchdog() TO service_role;")
+ assert q("SELECT md5(pg_get_functiondef('fn_ca_operator_floor_hold_watchdog()'::regprocedure));")=='a75ce8a90eaf1bbf6f6b28187233628e'
+ wd='DO $watchdog$'+new.split('DO $watchdog$')[1].split('END $watchdog$;')[0]+'END $watchdog$;'
+ before_wd='DO $watchdog$'+old.split('DO $watchdog$')[1].split('END $watchdog$;')[0]+'END $watchdog$;'
+ q(before_wd,'watchdog_preimage_refused')
+ q(wd);assert q("SELECT md5(pg_get_functiondef('fn_ca_operator_floor_hold_watchdog()'::regprocedure));")=='a75ce8a90eaf1bbf6f6b28187233628e','new lease watchdog stays byte identical'
+ q(compat['watchdog'].replace('DECLARE','-- fixture drift\nDECLARE',1));q(wd,'watchdog_preimage_refused')
+ print('PASS installed lease watchdog: legacy guard refuses; new exact source is preserved byte-for-byte; unknown watchdog refused')
  print('PASS: fail-before overwrites; full existing row preserved; open cases resolve; duplicate emits nothing; rollback; concurrent resolution wins')
 finally:
  if started:run([pg/'pg_ctl','-D',data,'-m','fast','-w','stop'])

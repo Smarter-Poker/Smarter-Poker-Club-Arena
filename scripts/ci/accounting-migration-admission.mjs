@@ -9,7 +9,7 @@ export const ACCOUNTING_ADMISSION_SOURCES = Object.freeze({
   '20261015182133_a_proving_week_advances_on_its_own_tick.sql':
     '3cdd45ba7ee979c4fc8be0136e0797ebdd37b8b798c578305a7ebfec75c8e3de',
   '20261015221949_phase7_preserves_an_incident_already_resolved_before_install.sql':
-    'e8920433d153aa632a39eb95c513ecfc6830c96ee71c62bba4d9cbb8697d763e',
+    'c80c867622372cf5ac40f0b70dfd855ebad0313ec304e2d71395d6b2c84a8dc0',
   '20261015234926_a_completed_week_reads_its_earning_clubs_once.sql':
     'f15e41fb79e200497daeac17e0a389590fc711b9a964fdb208e9c897253da869',
 });

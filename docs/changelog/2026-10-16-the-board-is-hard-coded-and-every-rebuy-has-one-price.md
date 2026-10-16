@@ -24,7 +24,7 @@ event alerts of 2026-10-16 fixed "AT ITS ROOT CAUSE AND HARD CODE FIXED".
   06:00 Chicago, and every event published after the migration runs at the
   new price.
 
-Migration `20261016122542_every_freeroll_rebuy_and_add_on_is_one_chip_or_one_hundred_d`.
+Migration `20261016123336_every_freeroll_rebuy_and_add_on_is_one_chip_or_one_hundred_d`.
 
 ## The Board Is Hard Coded, And Why The Missed Event Alerts Fired
 

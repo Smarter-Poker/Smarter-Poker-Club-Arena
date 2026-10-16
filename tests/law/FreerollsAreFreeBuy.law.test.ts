@@ -358,7 +358,7 @@ describe('the three copies of the rule agree', () => {
    freeroll is priced by its club's asset, 1 chip or 100 Diamonds. The pins
    below read the migration that carries that rule. */
 const ONE_PRICE = read(
-  'supabase/migrations/20261016122542_every_freeroll_rebuy_and_add_on_is_one_chip_or_one_hundred_d.sql'
+  'supabase/migrations/20261016123336_every_freeroll_rebuy_and_add_on_is_one_chip_or_one_hundred_d.sql'
 );
 void PRICING;
 

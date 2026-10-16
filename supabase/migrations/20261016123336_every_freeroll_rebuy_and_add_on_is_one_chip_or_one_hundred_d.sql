@@ -1,4 +1,4 @@
--- 20261016122542_every_freeroll_rebuy_and_add_on_is_one_chip_or_one_hundred_d.sql
+-- 20261016123336_every_freeroll_rebuy_and_add_on_is_one_chip_or_one_hundred_d.sql
 --
 -- Version reserved by scripts/new-migration.mjs against origin/main and every
 -- remote branch, so it cannot collide with another agent's in-flight work.

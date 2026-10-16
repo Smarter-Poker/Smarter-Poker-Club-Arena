@@ -3,6 +3,7 @@ import { writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { PILOT, pilotServiceFetch } from './prepare-lightning-private-pilot.mjs';
 import { assertPlayerPin, witnessPlayer, CONSENT_PLAYERS } from './lightning-pilot-player.mjs';
+import { witnessAdmission, ADMISSION_PLAYER } from './lightning-pilot-admission.mjs';
 import { witnessLatencyWorkload } from './lightning-pilot-latency-workload.mjs';
 import { witnessCycle } from './lightning-pilot-cycle.mjs';
 import { witnessRecovery } from './lightning-pilot-recovery.mjs';
@@ -13,7 +14,9 @@ const KEY = 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export async function runPilotWitness(env = process.env, dependencies = {}) {
   const report = {
-    mode: ['player', 'replay', 'cycle', 'recovery', 'latency'].includes(env.PILOT_WITNESS_MODE)
+    mode: ['player', 'replay', 'cycle', 'recovery', 'latency', 'admission'].includes(
+      env.PILOT_WITNESS_MODE
+    )
       ? env.PILOT_WITNESS_MODE
       : 'invalid',
     status: 'unknown',
@@ -34,7 +37,8 @@ export async function runPilotWitness(env = process.env, dependencies = {}) {
     const consentInput = env.PILOT_ACCEPT_PLAYER_TERMS ?? 'false';
     if (
       !['true', 'false'].includes(consentInput) ||
-      (consentInput === 'true' && (mode !== 'player' || !CONSENT_PLAYERS.includes(pin.playerId)))
+      (consentInput === 'true' &&
+        (!['player', 'admission'].includes(mode) || !CONSENT_PLAYERS.includes(pin.playerId)))
     )
       throw new Error();
     const acceptTerms = consentInput === 'true';
@@ -43,7 +47,9 @@ export async function runPilotWitness(env = process.env, dependencies = {}) {
       cursor = env.PILOT_CURSOR || null;
     const maxBatch = Number(env.PILOT_BATCH || '100');
     if (mode !== 'replay') {
-      assertPlayerPin(pin);
+      if (mode === 'admission') {
+        if (pin.playerId !== ADMISSION_PLAYER) throw new Error();
+      } else assertPlayerPin(pin);
       if (mode === 'latency' && !CONSENT_PLAYERS.includes(pin.playerId)) throw new Error();
       if (
         mode === 'recovery' &&
@@ -94,7 +100,23 @@ export async function runPilotWitness(env = process.env, dependencies = {}) {
         pin,
         timeoutMs: 240000,
       };
-      if (mode === 'player')
+      if (mode === 'admission')
+        report.result = await (dependencies.witnessAdmission ?? witnessAdmission)({
+          ...common,
+          acceptTerms,
+          withAdmittedSession: async ({ pin: admittedPin, remaining }) => {
+            const result = await (dependencies.witnessPlayer ?? witnessPlayer)({
+              ...common,
+              pin: admittedPin,
+              timeoutMs: Math.min(240000, remaining()),
+              acceptTerms: false,
+            });
+            if (result?.status !== 'observed' || result?.cleanup !== 'local_session_closed')
+              throw new Error('Admitted Player Witness Unverified');
+            return result;
+          },
+        });
+      else if (mode === 'player')
         report.result = await (dependencies.witnessPlayer ?? witnessPlayer)({
           ...common,
           acceptTerms,
@@ -123,10 +145,16 @@ export async function runPilotWitness(env = process.env, dependencies = {}) {
           pins: [pin, secondPin],
         });
       }
+      if (
+        mode === 'admission' &&
+        (report.result?.playerWitness?.status !== 'observed' ||
+          report.result?.playerWitness?.cleanup !== 'local_session_closed')
+      )
+        throw new Error('Admission Player Witness Unverified');
       const expectedCleanup =
         mode === 'recovery'
           ? 'local_sessions_and_browser_closed'
-          : mode === 'latency'
+          : ['latency', 'admission'].includes(mode)
             ? 'local_session_and_browser_closed'
             : 'local_session_closed';
       report.cleanup = report.result?.cleanup === expectedCleanup ? expectedCleanup : 'unknown';

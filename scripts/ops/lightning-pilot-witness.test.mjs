@@ -327,3 +327,59 @@ test('Samantha consent is exact and player-only, with matching durable profile i
     assert.equal(blocked.calls.length, 0);
   }
 });
+
+test('Samantha admission keeps the primary session through a bounded real-player callback', async () => {
+  const args = {
+    ...env,
+    PILOT_WITNESS_MODE: 'admission',
+    PILOT_PLAYER_ID: SAMANTHA,
+    PILOT_ACCEPT_PLAYER_TERMS: 'true',
+  };
+  const f = fixture({ consent: false, playerId: SAMANTHA });
+  let admissionArgs;
+  f.witnessAdmission = async (a) => {
+    admissionArgs = a;
+    const playerWitness = await a.withAdmittedSession({
+      pin: { ...a.pin, poolSessionId: POOL },
+      remaining: () => 180000,
+    });
+    return { status: 'observed', cleanup: 'local_session_and_browser_closed', playerWitness };
+  };
+  const r = await runPilotWitness(args, f);
+  assert.equal(r.status, 'observed');
+  assert.equal(admissionArgs.acceptTerms, true);
+  assert.equal(admissionArgs.pin.poolSessionId, undefined);
+  assert.equal(f.calls.at(-1).pin.poolSessionId, POOL);
+  assert.equal(f.calls.at(-1).timeoutMs, 180000);
+  assert.equal(f.calls.at(-1).acceptTerms, false);
+  for (const patch of [{ PILOT_PLAYER_ID: PLAYER }, { PILOT_ACCEPT_PLAYER_TERMS: 'false' }]) {
+    const blocked = fixture({ consent: false, playerId: SAMANTHA });
+    blocked.witnessAdmission = async () => assert.fail('unapproved admission reached');
+    assert.equal((await runPilotWitness({ ...args, ...patch }, blocked)).status, 'unknown');
+  }
+});
+test('admission cannot qualify without the observed child player witness and local cleanup', async () => {
+  const args = { ...env, PILOT_WITNESS_MODE: 'admission', PILOT_PLAYER_ID: SAMANTHA };
+  for (const result of [
+    { status: 'observed', cleanup: 'local_session_and_browser_closed' },
+    {
+      status: 'observed',
+      cleanup: 'unknown',
+      playerWitness: { status: 'observed', cleanup: 'local_session_closed' },
+    },
+    {
+      status: 'observed',
+      cleanup: 'local_session_and_browser_closed',
+      playerWitness: { status: 'unknown', cleanup: 'local_session_closed' },
+    },
+  ]) {
+    const f = fixture({ playerId: SAMANTHA });
+    f.witnessAdmission = async () => result;
+    assert.equal((await runPilotWitness(args, f)).status, 'unknown');
+  }
+  const child = fixture({ playerId: SAMANTHA });
+  child.witnessPlayer = async () => ({ status: 'unknown', cleanup: 'local_session_closed' });
+  child.witnessAdmission = async (a) =>
+    a.withAdmittedSession({ pin: { ...a.pin, poolSessionId: POOL }, remaining: () => 180000 });
+  assert.equal((await runPilotWitness(args, child)).status, 'unknown');
+});

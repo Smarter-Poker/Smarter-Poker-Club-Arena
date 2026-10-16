@@ -175,20 +175,23 @@ it('uses effective legacy RIT flags and does not mistake mode none for disabled'
   ).toBe(true);
 });
 
-it('keeps the baseline navigation budget separate from the single remaining media setup budget', async () => {
+it('allocates natural observer startup from one cumulative setup budget, including delayed document commits', async () => {
   let now = 1_000;
+  const budgets: number[] = [];
   await initializeNaturalMultiRunObservers(
     [1, 2, 3, 4, 5, 6],
     async (_table, navigationBudget, remainingSetup) => {
-      expect(navigationBudget).toBe(12_000);
+      budgets.push(navigationBudget);
+      expect(navigationBudget).toBe(remainingSetup());
       const beforeMedia = remainingSetup();
-      now += 13_000; // Actual decoded art may finish after protocol admission.
+      now += 13_000; // A slow HTML commit consumes setup, without a new per-page allowance.
       expect(remainingSetup()).toBe(beforeMedia - 13_000);
     },
     1_000,
     () => now
   );
   expect(now).toBe(79_000);
+  expect(budgets).toEqual([120_000, 107_000, 94_000, 81_000, 68_000, 55_000]);
 });
 
 it('finishes each cold observer admission before starting the next, retaining all six', async () => {
@@ -198,7 +201,7 @@ it('finishes each cold observer admission before starting the next, retaining al
     [1, 2, 3, 4, 5, 6],
     async (table, budget) => {
       expect(++active).toBe(1);
-      expect(budget).toBe(12_000);
+      expect(budget).toBe(120_000);
       events.push(`start${table}`);
       await Promise.resolve();
       events.push(`ready${table}`);

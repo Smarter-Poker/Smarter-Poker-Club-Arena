@@ -926,6 +926,61 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/7113",
       "refusedBy": [],
       "liveVerdict": "Read-only2026-10-16 recovery of6922 exact installed bytes after the24hour requiredledger refusal. fn_ca_autoledger() current definition MD5 620ce72294bdf8e3c8d3c556c8de35c9 matches recorded postcondition; postgres-owned SECURITY DEFINER with fixed public search_path, anon/authenticated EXECUTE both false, service_role true. No new trigger is declared; existing guard-redefinition acknowledgement is historical and is never replayed. This records an existing installation, with exact execution time unknown; no production ledger, trigger, grant or money movement is changed."
+    },
+    {
+      "version": "20261015181721",
+      "name": "a_close_proving_loop_stops_on_the_statement_clock",
+      "file": "supabase/migrations/20261015181721_a_close_proving_loop_stops_on_the_statement_clock.sql",
+      "md5": "3c85514ade70bc534d316ab1655af111",
+      "appliedToProductionAt": null,
+      "recoveredOn": "2026-10-16",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte, no added newline; verified through public.fn_ca_migration_text",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/7121",
+      "refusedBy": [
+        "check-unqualified-writes: DELETE on public.accounting_close_partials inside a pg_temp substitution anchor string, not a statement",
+        "check-migrations-applied: fn_accounting_close_windows_advance_due absent from the stale schema snapshot"
+      ],
+      "liveVerdict": "Read-only production check 2026-10-16: schema_migrations holds this version with a null name and exactly these 17752 bytes (fn_ca_migration_text MD5 3c85514ade70bc534d316ab1655af111). Both flagged DELETE texts are $o2$/$n2$ anchor fragments passed to pg_temp.ca_close_clock_subst; the live fn_settle_accounting_commission_advance statement reads DELETE FROM public.accounting_close_partials WHERE computed_at<clock_timestamp()-interval '8 days'. fn_accounting_close_windows_advance_due() exists live, postgres-owned, not SECURITY DEFINER, search_path=public, no anon or authenticated EXECUTE. Nothing is installed or replayed by this recording."
+    },
+    {
+      "version": "20261015213617",
+      "name": "diamond_hand_history_admits_automatic_arena_membership",
+      "file": "supabase/migrations/20261015213617_diamond_hand_history_admits_automatic_arena_membership.sql",
+      "md5": "4e52c01d47aaf3374e85cf33e4788af1",
+      "appliedToProductionAt": null,
+      "recoveredOn": "2026-10-16",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte, no added newline; verified through public.fn_ca_migration_text",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/7121",
+      "refusedBy": [],
+      "liveVerdict": "Read-only production check 2026-10-16: schema_migrations holds exactly these 1954 bytes (fn_ca_migration_text MD5 4e52c01d47aaf3374e85cf33e4788af1). The authored source carried in open PR #7021 under 20261015213440 differs only by a trailing newline; this file is the installed record. Nothing is installed or replayed by this recording."
+    },
+    {
+      "version": "20261015220449",
+      "name": "diamond_launch_copy_and_report_only_rule_are_explicit",
+      "file": "supabase/migrations/20261015220449_diamond_launch_copy_and_report_only_rule_are_explicit.sql",
+      "md5": "3c87c59a9abf58a71813ea590160ee32",
+      "appliedToProductionAt": null,
+      "recoveredOn": "2026-10-16",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte, no added newline; verified through public.fn_ca_migration_text",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/7121",
+      "refusedBy": [
+        "check-migrations-applied: fn_ca_diamond_guarantee_copy and fn_ca_diamond_guarantee_copy_trigger absent from the stale schema snapshot"
+      ],
+      "liveVerdict": "Read-only production check 2026-10-16: schema_migrations holds exactly these 8338 bytes (fn_ca_migration_text MD5 3c87c59a9abf58a71813ea590160ee32). fn_ca_diamond_guarantee_copy(text) exists live, postgres-owned, not SECURITY DEFINER, search_path=pg_catalog, authenticated EXECUTE and no anon EXECUTE; fn_ca_diamond_guarantee_copy_trigger() exists live, not SECURITY DEFINER, no anon or authenticated EXECUTE. The authored source in open PR #7021 (20261015220231) differs only by a trailing newline. Nothing is installed or replayed by this recording."
+    },
+    {
+      "version": "20261015222118",
+      "name": "an_owner_floor_park_is_not_an_outage",
+      "file": "supabase/migrations/20261015222118_an_owner_floor_park_is_not_an_outage.sql",
+      "md5": "9bcbe6631a8f538fc9b188b4682d9bbe",
+      "appliedToProductionAt": null,
+      "recoveredOn": "2026-10-16",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte, no added newline; verified through public.fn_ca_migration_text",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/7050",
+      "refusedBy": [
+        "check-migrations-applied: fn_ca_operator_floor_park_holds and fn_ca_operator_floor_park_share absent from the stale schema snapshot"
+      ],
+      "liveVerdict": "Read-only production check 2026-10-16: schema_migrations holds exactly these 17360 bytes (MD5 9bcbe6631a8f538fc9b188b4682d9bbe), identical to the authored file in open PR #7050. fn_ca_operator_floor_park_holds(uuid,uuid) exists live, postgres-owned, not SECURITY DEFINER, search_path=public, pg_temp, service_role EXECUTE only. fn_ca_operator_floor_park_share() exists live, postgres-owned SECURITY DEFINER with search_path=public, pg_temp and statement_timeout=10s, service_role EXECUTE only, no anon or authenticated EXECUTE. Nothing is installed or replayed by this recording."
     }
   ]
 }

@@ -23,6 +23,7 @@ with tempfile.TemporaryDirectory(prefix='installer-native-',dir=a.scratch) as tm
  for dep in ['check-migrations-are-live.mjs','migration-concurrent-preamble.mjs','contract-index-recovery.mjs','final-table-cleanup-batches.mjs']:copy_module(dep)
  installer=ci/'apply-recorded-migration.mjs';installer.write_bytes(original)
  copy_module('settlement-lane.mjs')
+ copy_module('accounting-migration-admission.mjs')
  (ci/'maintenance-thaw-repair.mjs').write_bytes((a.installer.parent/'maintenance-thaw-repair.mjs').read_bytes())
  copy_module('test_settlement_lane.mjs')
  # A private copy of only the existing locked pg dependency closure. No shared

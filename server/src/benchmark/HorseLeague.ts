@@ -793,7 +793,10 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   { name: 'v16_deep_reads', pairs: 6000, a: {}, b: { v16Reads: false } },
   // ── V17 (2026-08-26) ──
   { name: 'v17_positional', pairs: 6000, a: {}, b: { v17Pos: false } },
-  { name: 'v17_river_probe', pairs: 6000, a: {}, b: { v17RiverProbe: false } },
+  // 2026-10-16: the river probe resolved NEGATIVE pooled over the audit's
+  // 7-day window (-0.11 +/- 0.04) and is default OFF. Same matchup, same
+  // sign: arm A is still "probe on".
+  { name: 'v17_river_probe', pairs: 6000, a: { v17RiverProbe: true }, b: {} },
   { name: 'shortdeck_v17', variant: 'short_deck', pairs: 6000, a: {}, b: { v17ShortDeck: false } },
   // ── V18 (2026-08-26) ──
   { name: 'v18_squeeze_response', pairs: 6000, a: {}, b: { v18Squeeze: false } },

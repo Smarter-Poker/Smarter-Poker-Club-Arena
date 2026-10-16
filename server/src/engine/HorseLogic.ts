@@ -1735,9 +1735,14 @@ export interface HorseDecideOpts {
    *  — the binary ip/oop model treated first-of-four like first-of-two
    *  (default: enabled) */
   v17Pos?: boolean;
-  /** disable the V17 river delayed probe: when the turn checked through, the
+  /** ENABLE the V17 river delayed probe: when the turn checked through, the
    *  capped field gets attacked on the river too, at a lower frequency than
-   *  the turn probe (default: enabled) */
+   *  the turn probe. DEFAULT OFF since 2026-10-16: v17_river_probe resolved
+   *  NEGATIVE in the league pooled over the audit's 7-day window
+   *  (-0.11 +/- 0.04 bb/100, 8 runs) and over the 14 runs since 2026-10-03
+   *  (-0.10 +/- 0.05); over all 32 runs since 2026-09-15 it is
+   *  -0.02 +/- 0.03, i.e. it never earned a positive result either. League
+   *  arm A of v17_river_probe turns it on. */
   v17RiverProbe?: boolean;
   /** disable the V17 call-side blocker read: holding the missed front-door
    *  draw yourself removes bluff combos from a big river bettor's range —
@@ -5147,9 +5152,11 @@ export class HorseLogic {
       useHR && street === 'turn' && HorseMind.streetCheckedThrough(gs.actionHistory, 'flop');
     // V17: the same capped-field read one street later. The V5 probe stopped
     // at the turn ("river probes are thinner") — thinner is a frequency, not
-    // a reason to play zero.
+    // a reason to play zero. 2026-10-16: opt-in. The league measured it
+    // negative over the last two weeks and never positive; see the
+    // v17RiverProbe option.
     const riverPrevChecked =
-      (opts.v17RiverProbe ?? true) !== false &&
+      opts.v17RiverProbe === true &&
       useHR &&
       street === 'river' &&
       HorseMind.streetCheckedThrough(gs.actionHistory, 'turn');

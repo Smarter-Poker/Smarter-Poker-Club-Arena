@@ -467,7 +467,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V16'
   ),
   flag('v17Pos', 'players-behind bluff pressure', 'V17'),
-  flag('v17RiverProbe', 'river probe into a capped field', 'V17'),
+  flag(
+    'v17RiverProbe',
+    'river probe into a capped field; DEFAULT OFF since 2026-10-16 (v17_river_probe -0.11 +/- 0.04 pooled over 8 nights)',
+    'V17'
+  ),
   flag('v17CatchBlock', 'call-side blocker on missed-flush rivers', 'V17'),
   flag('v17ShortDeck', 'short deck multiway tightening', 'V17'),
   flag('v18Straddle', 'straddle read as unopened', 'V18', 'HorsePreflop.decidePreflopV7'),
@@ -1354,13 +1358,13 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     0.002
   ),
   receipt('v17_pos_behind', 'HorseLogic (V17)', 'players-behind pressure', 'V17', 'decide', 0.1),
+  // No floor: v17RiverProbe is default OFF since 2026-10-16, so silence is
+  // expected until a league matchup resolves positive and the default changes.
   receipt(
     'v17_river_probe',
     'HorseLogic (V17)',
-    'river probe into a capped field',
-    'V17',
-    'decide',
-    0.0002
+    'river probe into a capped field; opt-in (v17RiverProbe)',
+    'V17'
   ),
   receipt('v17_catch_block', 'HorseLogic (V17)', 'call-side blocker', 'V17', 'decide', 0.0005),
   // 2026-10-16 opponent exploit (HorseOpponentExploit). No floor: these fire

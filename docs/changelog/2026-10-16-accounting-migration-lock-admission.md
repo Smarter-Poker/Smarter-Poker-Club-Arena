@@ -31,3 +31,5 @@ Changes: `apply-recorded-migration.mjs` calls the source-bound admission wrapper
 before its existing single send; `test_launch_reset_installer.py` copies the
 module and invokes the native child. No migration, shared CI job, money rule,
 scheduler, production freeze or engine component changes.
+
+Hosted qualification found the contract-index body-order test still pinned the old admission expression. Updated its positive and missing-step negative checks to require the explicit thaw-or-accounting admission selection before the original transaction send. Recovery, atomic history and order assertions remain enforced.

@@ -900,6 +900,17 @@
       "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte; md5 verified against public.fn_ca_migration_text(version)",
       "refusedBy": [],
       "liveVerdict": "Read-only 2026-10-16: already installed; recovered only to repair the failed migration-ledger check on PR7096. No SQL replay. The four affected functions remain owned by postgres with search_path public and no anon EXECUTE. fn_deliver_accounting_invoice is service-role only; visibility/profile/summary functions retain authenticated/service_role grants. Their current definition MD5s are 8419aac1cd0ed1e30ac68621fb95823d, 08518497726b2c89711af3a43da15f98, eac33ce25c365a9907f1ae34755fa49b, and 3df1d8ab5cfe942a97c91fd4458d8f08 respectively; subsequent source changes remain intact. Existing feature PR6949 retains ownership of its tests and explanation."
+    },
+    {
+      "version": "20261015131200",
+      "name": "a_replica_session_cannot_move_chips",
+      "file": "supabase/migrations/20261015131200_a_replica_session_cannot_move_chips.sql",
+      "md5": "d22aed0c9e72695c797e7920f0f41fcb",
+      "appliedToProductionAt": "2026-10-15T13:12:00Z",
+      "recoveredOn": "2026-10-16",
+      "recoveredFrom": "Exact schema_migrations statements joined with newline; fn_ca_migration_text independently confirms MD5 and 5324 bytes",
+      "refusedBy": [],
+      "liveVerdict": "Read-only 2026-10-16: recording to repair PR7096 migration-ledger failure after this version aged past24hours. No replay. fn_ca_is_protected_cluster MD586373211d46df13c712106136ce2d8ca, postgres SECURITY DEFINER search_path pg_catalog, postgres/service_role EXECUTE; fn_ca_refuse_replica_money_write MD542ed613371ddac424b618f5ac767a733, postgres SECURITY DEFINER search_path pg_catalog/public, postgres-only EXECUTE. Anon cannot execute either.18write plus18truncate triggers are ENABLE ALWAYS. Existing feature PR6960 remains independently owned; historical source is preserved unchanged."
     }
   ]
 }

@@ -142,10 +142,12 @@ describe('GlobalHeader Component', () => {
     expect(screen.getByLabelText('Smarter.Poker Global Header')).toBeInTheDocument();
     expect(screen.queryByText('Club Arena')).not.toBeInTheDocument();
     expect(document.querySelector('img[src*="vault-iris-emblem"]')).not.toBeInTheDocument();
-    const approvedArtwork = document.querySelector('img[src*="global-header-desktop.png"]');
+    const approvedArtwork = document.querySelector(
+      'img[src*="global-header-desktop-black-v2.png"]'
+    );
     expect(approvedArtwork).toHaveAttribute(
       'src',
-      expect.stringContaining('images/global-header/global-header-desktop.png')
+      expect.stringContaining('images/global-header/global-header-desktop-black-v2.png')
     );
   });
 

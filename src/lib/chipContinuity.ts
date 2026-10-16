@@ -6,8 +6,9 @@
  * as of the engine's clock, and whether it is counting. These helpers turn
  * that into the one label the leave control is allowed to show.
  *
- * The only copy a player sees while locked is "Leave Available In M:SS".
- * No reason, no paragraph, no forbidden words (OPORD 1.3 section 6.1).
+ * The leave control says "Leave Available In M:SS". The felt also prints
+ * "Your Time Clock Has Started" with this same server-projected countdown
+ * below VPIP (owner direction 2026-10-15); neither display owns the lock.
  */
 
 export interface HeroLeaveClock {

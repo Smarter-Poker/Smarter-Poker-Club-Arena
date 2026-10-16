@@ -756,3 +756,9 @@ finally:
 
 if not results["passed"]:
     raise SystemExit(1)
+
+# Keep the current report-plan regression in the required Cashier native lane.
+subprocess.run([
+    sys.executable, str(ROOT / "scripts/ci/test-cashier-conservation-cutoff-statistics-postgres.py"),
+    "--output", str(out / "conservation-cutoffs"),
+], env={**os.environ, "PG_BIN": str(pg)}, check=True)

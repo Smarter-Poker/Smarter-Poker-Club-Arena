@@ -1957,11 +1957,6 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-cashier-authority-exact-intent-postgres.py --output artifacts/cashier-authority-recovery
-      - name: Cashier conservation retains cutoff statistics and exact coverage
-        if: matrix.shard == 1
-        env:
-          PG_BIN: /usr/lib/postgresql/17/bin
-        run: python3 scripts/ci/test-cashier-conservation-cutoff-statistics-postgres.py --output artifacts/cashier-conservation-cutoffs
       - name: Cashier statements follow the trade ledger scope and export what is on screen
         if: matrix.shard == 1
         env:

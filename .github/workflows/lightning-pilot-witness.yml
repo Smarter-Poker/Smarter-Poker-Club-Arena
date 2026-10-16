@@ -5,7 +5,7 @@ on:
       mode:
         description: 'One finite evidence operation'
         type: choice
-        options: [player, replay]
+        options: [player, replay, cycle, recovery, latency]
         required: true
       accept_player_terms:
         description: 'Explicit owner-authorized normal TOS and Privacy acceptance for player 0097309f-2864-4d09-b02b-56bca012a9c3 only'
@@ -16,10 +16,13 @@ on:
         type: string
         required: true
       player_id:
-        description: 'Player mode: existing funded pilot horse UUID with prior accepted terms'
+        description: 'Browser modes: existing funded pilot horse UUID with prior accepted terms'
         type: string
       pool_session_id:
-        description: 'Player mode: exact existing active pool session UUID'
+        description: 'Browser modes: exact existing active pool session UUID'
+        type: string
+      second_pool_session_id:
+        description: 'Recovery only: same authorized player existing active pool session in the other private pilot cluster'
         type: string
       from:
         description: 'Replay mode: closed interval start ISO timestamp'
@@ -50,10 +53,10 @@ jobs:
         with:
           node-version: '22'
       - name: Verify The Finite Witness Before Acting
-        run: node --test scripts/ops/lightning-pilot-witness.test.mjs scripts/ops/lightning-pilot-player.test.mjs scripts/ops/lightning-pilot-replay-batch.test.mjs
+        run: node --test scripts/ops/lightning-pilot-witness.test.mjs scripts/ops/lightning-pilot-player.test.mjs scripts/ops/lightning-pilot-replay-batch.test.mjs scripts/ops/lightning-pilot-cycle.test.mjs scripts/ops/lightning-pilot-recovery.test.mjs scripts/ops/lightning-pilot-latency-workload.test.mjs
       - run: npm ci --ignore-scripts
       - name: Install Chromium For The Explicit Player Witness
-        if: inputs.mode == 'player'
+        if: inputs.mode != 'replay'
         run: npx playwright install --with-deps chromium
       - name: Collect The Explicit Witness
         env:
@@ -66,6 +69,7 @@ jobs:
           PILOT_CLUSTER_ID: ${{ inputs.cluster_id }}
           PILOT_PLAYER_ID: ${{ inputs.player_id }}
           PILOT_POOL_SESSION_ID: ${{ inputs.pool_session_id }}
+          PILOT_SECOND_POOL_SESSION_ID: ${{ inputs.second_pool_session_id }}
           PILOT_FROM: ${{ inputs.from }}
           PILOT_TO: ${{ inputs.to }}
           PILOT_CURSOR: ${{ inputs.cursor }}

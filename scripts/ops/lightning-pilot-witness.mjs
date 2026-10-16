@@ -3,6 +3,9 @@ import { writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { PILOT, pilotServiceFetch } from './prepare-lightning-private-pilot.mjs';
 import { assertPlayerPin, witnessPlayer } from './lightning-pilot-player.mjs';
+import { witnessLatencyWorkload } from './lightning-pilot-latency-workload.mjs';
+import { witnessCycle } from './lightning-pilot-cycle.mjs';
+import { witnessRecovery } from './lightning-pilot-recovery.mjs';
 import { collectReplayBatch } from './lightning-pilot-replay-batch.mjs';
 const CLUB = 'e14bc9f7-736d-425f-8f2c-e78305ebac1d';
 const CLUSTERS = ['babb43f1-368e-406f-a97a-a0d5013648b2', '3330ff9f-76ec-4487-b0c9-fc8ad8c2fdbb'];
@@ -11,7 +14,7 @@ const KEY = 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export async function runPilotWitness(env = process.env, dependencies = {}) {
   const report = {
-    mode: ['player', 'replay'].includes(env.PILOT_WITNESS_MODE)
+    mode: ['player', 'replay', 'cycle', 'recovery', 'latency'].includes(env.PILOT_WITNESS_MODE)
       ? env.PILOT_WITNESS_MODE
       : 'invalid',
     status: 'unknown',
@@ -40,8 +43,17 @@ export async function runPilotWitness(env = process.env, dependencies = {}) {
       to = env.PILOT_TO,
       cursor = env.PILOT_CURSOR || null;
     const maxBatch = Number(env.PILOT_BATCH || '100');
-    if (mode === 'player') assertPlayerPin(pin);
-    else if (
+    if (mode !== 'replay') {
+      assertPlayerPin(pin);
+      if (mode === 'latency' && pin.playerId !== CONSENT_PLAYER) throw new Error();
+      if (
+        mode === 'recovery' &&
+        (pin.playerId !== CONSENT_PLAYER ||
+          !UUID.test(env.PILOT_SECOND_POOL_SESSION_ID) ||
+          env.PILOT_SECOND_POOL_SESSION_ID === pin.poolSessionId)
+      )
+        throw new Error();
+    } else if (
       !Number.isFinite(Date.parse(from)) ||
       !Number.isFinite(Date.parse(to)) ||
       Date.parse(from) >= Date.parse(to) ||
@@ -61,7 +73,7 @@ export async function runPilotWitness(env = process.env, dependencies = {}) {
       ...options,
       global: { fetch: pilotServiceFetch(env.SUPABASE_SERVICE_ROLE_KEY) },
     });
-    if (mode === 'player') {
+    if (mode !== 'replay') {
       // Consent is required unless this exact owner-authorized pin uses the normal UI.
       const profile = await admin
         .from('profiles')
@@ -75,21 +87,64 @@ export async function runPilotWitness(env = process.env, dependencies = {}) {
       )
         throw new Error();
       const chromium = dependencies.chromium ?? (await import('@playwright/test')).chromium;
-      report.result = await (dependencies.witnessPlayer ?? witnessPlayer)({
+      const common = {
         admin,
         createClient,
         chromium,
         url: env.SUPABASE_URL,
         pin,
         timeoutMs: 240000,
-        acceptTerms,
-      });
-      report.cleanup =
-        report.result?.cleanup === 'local_session_closed' ? 'local_session_closed' : 'unknown';
+      };
+      if (mode === 'player')
+        report.result = await (dependencies.witnessPlayer ?? witnessPlayer)({
+          ...common,
+          acceptTerms,
+        });
+      else if (mode === 'latency')
+        report.result = await (dependencies.witnessLatencyWorkload ?? witnessLatencyWorkload)(
+          common
+        );
+      else if (mode === 'cycle')
+        report.result = await (dependencies.witnessCycle ?? witnessCycle)({
+          ...common,
+          timebank: true,
+          preaction: true,
+        });
+      else {
+        const WebSocket = dependencies.WebSocket ?? (await import('ws')).default;
+        const secondPin = {
+          ...pin,
+          clusterId: CLUSTERS.find((id) => id !== pin.clusterId),
+          poolSessionId: env.PILOT_SECOND_POOL_SESSION_ID,
+        };
+        assertPlayerPin(secondPin);
+        report.result = await (dependencies.witnessRecovery ?? witnessRecovery)({
+          ...common,
+          WebSocket,
+          pins: [pin, secondPin],
+        });
+      }
+      const expectedCleanup =
+        mode === 'recovery'
+          ? 'local_sessions_and_browser_closed'
+          : mode === 'latency'
+            ? 'local_session_and_browser_closed'
+            : 'local_session_closed';
+      report.cleanup = report.result?.cleanup === expectedCleanup ? expectedCleanup : 'unknown';
       report.status =
-        report.result?.status === 'observed' && report.cleanup === 'local_session_closed'
+        report.result?.status === 'observed' && report.cleanup === expectedCleanup
           ? 'observed'
           : 'unknown';
+      if (mode === 'latency') {
+        report.qualification = 'not_asserted';
+        report.status =
+          report.result?.status === 'partial_observed' &&
+          report.cleanup === expectedCleanup &&
+          Number.isSafeInteger(report.result?.counts?.accepted) &&
+          report.result.counts.accepted > 0
+            ? 'partial_observed'
+            : 'unknown';
+      }
     } else {
       if (env.SP_EMAIL?.toLowerCase() !== PILOT.ownerEmail || !env.SP_PASS) throw new Error();
       owner = createClient(env.SUPABASE_URL, KEY, options);

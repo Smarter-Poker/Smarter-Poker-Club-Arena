@@ -1,0 +1,223 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import {
+  latencyAttemptPlan,
+  attemptLatencyFold,
+  readWorkloadLatency,
+  witnessLatencyWorkload,
+} from './lightning-pilot-latency-workload.mjs';
+const SECRET = 'PRIVATE_TEST_PAYLOAD';
+const PLAYER = '0097309f-2864-4d09-b02b-56bca012a9c3';
+const ROOM = '11111111-1111-4111-8111-111111111111';
+const HAND = '22222222-2222-4222-8222-222222222222';
+const pin = {
+  playerId: PLAYER,
+  poolSessionId: ROOM,
+  clubId: 'e14bc9f7-736d-425f-8f2c-e78305ebac1d',
+  clusterId: 'babb43f1-368e-406f-a97a-a0d5013648b2',
+};
+test('finite alternating plan cannot exceed the three-window sample workload bound', () => {
+  const plan = latencyAttemptPlan();
+  assert.equal(plan.length, 120);
+  assert.equal(plan.filter((k) => k === 'fast_fold').length, 60);
+  assert.equal(plan.filter((k) => k === 'fold_watch').length, 60);
+  for (let i = 1; i < plan.length; i++) assert.notEqual(plan[i], plan[i - 1]);
+  for (const count of [0, 121, NaN, 2.1]) assert.throws(() => latencyAttemptPlan(count));
+});
+test('one ordinary click records actual accepted/refused response and never retries a hand', async () => {
+  for (const kind of ['fast_fold', 'fold_watch'])
+    for (const accepted of [true, false]) {
+      const calls = [],
+        seen = new Set();
+      const response = {
+        request: () => ({
+          method: () => 'POST',
+          postDataJSON: () => ({ tableId: ROOM, action: kind }),
+        }),
+        url: () => 'https://engine.smarter.poker/action',
+        ok: () => accepted,
+        json: async () => ({ success: accepted, secret: SECRET }),
+      };
+      const page = {
+        getByTestId: (selector) => {
+          calls.push(selector);
+          return {
+            waitFor: async () => {},
+            click: async (opts) => {
+              calls.push(opts.trial ? 'trial' : 'click');
+            },
+          };
+        },
+        waitForResponse: async (predicate) => {
+          assert.equal(predicate(response), true);
+          return response;
+        },
+      };
+      const args = {
+        page,
+        pin,
+        kind,
+        handId: HAND,
+        seen,
+        currentHand: () => HAND,
+        remaining: () => 1000,
+      };
+      const result = await attemptLatencyFold(args);
+      assert.equal(result.outcome, accepted ? 'accepted' : 'refused');
+      assert.equal(result.renderedIntentHandId, HAND);
+      assert.equal(Object.hasOwn(result, 'handId'), false);
+      assert.equal(calls.filter((v) => v === 'click').length, 1);
+      assert.equal((await attemptLatencyFold(args)).cause, 'hand_already_attempted');
+      assert.equal(calls.filter((v) => v === 'click').length, 1);
+      assert.doesNotMatch(JSON.stringify(result), new RegExp(SECRET));
+    }
+});
+test('stale hand and missing action never send a normal click', async () => {
+  let clicks = 0;
+  const page = {
+    getByTestId: () => ({
+      waitFor: async () => {},
+      click: async (opts) => {
+        if (!opts.trial) clicks++;
+      },
+    }),
+  };
+  const stale = await attemptLatencyFold({
+    page,
+    pin,
+    kind: 'fast_fold',
+    handId: HAND,
+    seen: new Set(),
+    currentHand: () => ROOM,
+    remaining: () => 1000,
+  });
+  assert.equal(stale.cause, 'fresh_hand_changed');
+  assert.equal(clicks, 0);
+  page.getByTestId = () => ({
+    waitFor: async () => {
+      throw new Error(SECRET);
+    },
+  });
+  const unavailable = await attemptLatencyFold({
+    page,
+    pin,
+    kind: 'fold_watch',
+    handId: HAND,
+    seen: new Set(),
+    currentHand: () => HAND,
+    remaining: () => 1000,
+  });
+  assert.equal(unavailable.outcome, 'unknown');
+  assert.doesNotMatch(JSON.stringify(unavailable), new RegExp(SECRET));
+});
+test('latency readback keeps only actual ordered aggregates and unknown stays unknown', async () => {
+  const admin = {
+    rpc: async (name, args) => {
+      assert.equal(name, 'fn_lightning_operator_cluster');
+      assert.equal(args.p_cluster_id, pin.clusterId);
+      return {
+        data: {
+          ok: true,
+          cluster_id: pin.clusterId,
+          cards: SECRET,
+          latency_windows: [
+            {
+              window_from: '2026-01-01T00:00:00Z',
+              window_to: '2026-01-01T00:01:00Z',
+              legs: { fold_ack: { n: 2, p50: 1, p95: 2, p99: 3, secret: SECRET }, private: SECRET },
+            },
+          ],
+        },
+      };
+    },
+  };
+  const result = await readWorkloadLatency(admin, pin.clusterId, '2026-01-01', '2026-01-02');
+  assert.equal(result.status, 'known');
+  assert.equal(result.windows[0].legs.fold_ack.n, 2);
+  assert.deepEqual(Object.keys(result.windows[0].legs), ['fold_ack']);
+  assert.doesNotMatch(JSON.stringify(result), new RegExp(SECRET));
+  admin.rpc = async () => ({ error: SECRET });
+  assert.equal((await readWorkloadLatency(admin, pin.clusterId, '', '')).status, 'unknown');
+});
+test('prior consent is mandatory and partial auth owns only its created local session', async () => {
+  const signouts = [];
+  const admin = {
+    from: () => {
+      const q = {
+        select: () => q,
+        eq: () => q,
+        maybeSingle: async () => ({
+          data: { id: PLAYER, club_arena_tos_accepted_at: '2026-01-01' },
+        }),
+      };
+      return q;
+    },
+    rpc: async () => ({ data: { ok: true, cluster_id: pin.clusterId, latency_windows: [] } }),
+  };
+  const report = await witnessLatencyWorkload({
+    admin,
+    pin,
+    validate: async () => {},
+    createClient: () => ({
+      auth: {
+        signOut: async (opts) => {
+          signouts.push(opts);
+          return {};
+        },
+      },
+    }),
+    openSession: async (_admin, factory) => {
+      factory('https://example.invalid', 'public');
+      throw new Error(SECRET);
+    },
+  });
+  assert.equal(report.status, 'unknown');
+  assert.deepEqual(signouts, [{ scope: 'local' }]);
+  assert.equal(report.cleanup, 'local_session_and_browser_closed');
+  assert.equal(report.attempts.length, 0);
+  assert.doesNotMatch(JSON.stringify(report), new RegExp(SECRET));
+});
+test('selectors and action transport remain bound to maintained product owners', () => {
+  const read = (p) => readFileSync(new URL('../../' + p, import.meta.url), 'utf8');
+  const controls = read('src/components/table/LightningFoldBar.tsx');
+  assert.match(controls, /data-testid="lightning-fold"/);
+  assert.match(controls, /data-testid="lightning-fold-watch"/);
+  const api = read('src/services/GameServerAPI.ts');
+  assert.match(
+    api,
+    /JSON.stringify\(\{ tableId, action, amount, idempotencyKey, actionContext \}\)/
+  );
+  assert.match(
+    read('src/services/EngineStateClient.ts'),
+    /type: 'RENDER_ACK', tableId: this.opts.tableId, hand_id: handId/
+  );
+});
+
+test('unaccepted terms and another player cannot start authentication or browser activity', async () => {
+  let opened = false;
+  const admin = {
+    from: () => {
+      const q = {
+        select: () => q,
+        eq: () => q,
+        maybeSingle: async () => ({ data: { id: PLAYER, club_arena_tos_accepted_at: null } }),
+      };
+      return q;
+    },
+    rpc: async () => ({ error: true }),
+  };
+  for (const candidate of [pin, { ...pin, playerId: HAND }]) {
+    const report = await witnessLatencyWorkload({
+      admin,
+      pin: candidate,
+      validate: async () => {},
+      openSession: async () => {
+        opened = true;
+      },
+    });
+    assert.equal(report.status, 'unknown');
+    assert.equal(opened, false);
+    assert.equal(report.attempts.length, 0);
+  }
+});

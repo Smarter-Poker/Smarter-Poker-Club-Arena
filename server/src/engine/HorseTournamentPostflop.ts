@@ -26,19 +26,30 @@ export const PHASE8_POLICY = {
   maxCandidates: 16,
   maxFutureOutcomeSamples: 16,
   maxFutureIcmTrials: FUTURE_HAND_POLICY.maxIcmTrials,
-  policyBudgetMs: 2,
+  /**
+   * The measured cost the tournament league's promotion and baseline gates
+   * allow (`latencyMs.p99`, HorseTournamentLeague). A measurement gate on the
+   * declared work, never a live cut-off: since 2026-10-16 no clock decides
+   * any part of a Phase 8 decision. The 2 ms policy and 5 ms wall budgets that
+   * replaced a finished continuation by the baseline (reason
+   * budget_exhausted), and the 4 ms work budget that stopped the continuation
+   * part way (operation_budget), are gone; the decision is the one the work
+   * declared here and in CONTINUATION_POLICY and FUTURE_HAND_POLICY produces:
+   * at most `maxCandidates` candidates, `maxFutureOutcomeSamples` outcome
+   * samples (the full CONTINUATION_POLICY.maxOutcomeSamples pool only on a
+   * calibration retry), FUTURE_HAND_POLICY.maxHands future hand per branch and
+   * `maxFutureIcmTrials` ICM trials.
+   */
   budgetMs: 5,
-  workBudgetMs: 4,
   /**
    * The largest table the continuation's future hand is dealt to (seats still
-   * holding chips) for which the full computation fits the 4 ms work budget on
-   * the production engine host. Measured there on 2026-10-08 (two journal
-   * windows, 6,579 eligible NLH tournament postflop decisions): 2 seats
-   * completed 2,753 of 2,920 and 3 seats 801 of 890, while 5 to 9 seats
-   * completed 108 of 2,769, each stopping a third of the way through its work.
-   * A larger table is refused by name before eligibility, so it neither spends
-   * the budget for nothing nor counts as an eligible decision that stayed
-   * silent; the work budget itself is unchanged.
+   * holding chips): a declared bound on the work, fixed before any work from
+   * public seat state, never a clock. Sized on the production engine host on
+   * 2026-10-08 (two journal windows, 6,579 eligible NLH tournament postflop
+   * decisions): 2 seats completed 2,753 of 2,920 and 3 seats 801 of 890 inside
+   * the old 4 ms work budget, while 5 to 9 seats completed 108 of 2,769, each
+   * stopping a third of the way through its work. A larger table is refused by
+   * name before eligibility.
    */
   maxFutureHandSeats: 3,
 } as const;
@@ -172,7 +183,8 @@ export function futureHandSeats(gs: HorseGameStateV2): number {
   return seats;
 }
 
-/** No persistent state and no I/O. A clock is supplied by the worker boundary. */
+/** No persistent state and no I/O. The clock the worker boundary supplies
+ * measures `latencyMs`, `simulationMs` and `policyMs` only; it decides nothing. */
 export function evaluateTournamentPostflop(
   hero: SeatPlayer,
   gs: HorseGameStateV2,
@@ -239,20 +251,11 @@ export function evaluateTournamentPostflop(
   ): { decision: HorseDecision; ledger: HorseTournamentPostflopLedger } => {
     ledger.reason = reason;
     ledger.completed = completed && ledger.eligible && ledger.fired;
-    ledger.latencyMs = Math.max(0, now() - start);
+    // Measurements only (2026-10-16): the declared work decides, never a clock
+    // (see PHASE8_POLICY.budgetMs). A non-finite reading is not a time.
+    const elapsed = now() - start;
+    ledger.latencyMs = Number.isFinite(elapsed) ? Math.max(0, elapsed) : 0;
     ledger.policyMs = Math.max(0, ledger.latencyMs - ledger.simulationMs);
-    if (
-      !Number.isFinite(ledger.latencyMs) ||
-      ledger.latencyMs > PHASE8_POLICY.budgetMs ||
-      ledger.policyMs > PHASE8_POLICY.policyBudgetMs
-    ) {
-      ledger.reason = 'budget_exhausted';
-      ledger.completed = false;
-      ledger.applied = false;
-      ledger.selection = 'none';
-      ledger.continuationRetained = true;
-      return { decision: baseline, ledger };
-    }
     ledger.selection = ledger.applied
       ? 'selected'
       : ledger.changed && ledger.completed
@@ -327,7 +330,7 @@ export function evaluateTournamentPostflop(
       },
       shortStackThresholdChips:
         ledger.futureGame.nextOrbitCost ?? ledger.futureGame.currentOrbitCost ?? 0,
-      withinBudget: () => now() - start <= PHASE8_POLICY.workBudgetMs,
+      // No withinBudget: the continuation does its declared work in full.
       work: ledger.work,
     };
     const run = (maxSamples: number) =>
@@ -341,8 +344,8 @@ export function evaluateTournamentPostflop(
           });
     continuation = run(PHASE8_POLICY.maxFutureOutcomeSamples);
     // A smaller stratified pool must not erase a rare outcome. Retry the full
-    // captured pool only for calibration failure and within the same deadline.
-    if (continuation.unavailableReason === 'sample_calibration' && config.withinBudget()) {
+    // captured pool only for calibration failure.
+    if (continuation.unavailableReason === 'sample_calibration') {
       continuation = run(CONTINUATION_POLICY.maxOutcomeSamples);
     }
   } catch {

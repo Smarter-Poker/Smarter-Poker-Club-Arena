@@ -253,8 +253,9 @@ export type RemainingVariantReceipt = Omit<OmahaVariantReceipt, 'equity' | 'inpu
    * P12-B (#6151): the explicit per-action net chip economics of the FLH/FLO8
    * river node, or a NAMED unavailable result; absent everywhere else and on
    * retained receipts. Diagnostic: nothing reads it to decide. Priced AFTER
-   * the policy has finished, on its own budget (`netActionBudgetMs`), so its
-   * cost is not in `latencyMs`; it reports its own `analysisMs`.
+   * the policy has finished, over its declared work (never timed, since
+   * 2026-10-16), so its cost is not in `latencyMs`; it reports its own
+   * `analysisMs`.
    */
   actionEconomics?: RemainingVariantActionEconomics | null;
 };
@@ -1069,6 +1070,8 @@ export function evaluateRemainingVariantPolicy(
    * this sampler's own or absent (consumed but unattributed). */
   supplied: RemainingVariantEquityEvidence | OmahaVariantEquityEvidence | null,
   mode: RemainingVariantMode = 'shadow',
+  /** Measures `latencyMs` and the net-action pass's `analysisMs` only. Since
+   * 2026-10-16 no clock decides any part of the decision or its work. */
   now = () => performance.now(),
   decisionEquityCeiling = 1,
   sampleWhenMissing = true,
@@ -1082,11 +1085,13 @@ export function evaluateRemainingVariantPolicy(
   const pack = variant ? REMAINING_VARIANT_PACKS[variant] : null;
   // A foreign provenance is refused below by the population check.
   let evidence = supplied as RemainingVariantEquityEvidence | null;
-  const externalMs = evidence
-    ? Number.isFinite(evidence.analysisMs) && evidence.analysisMs >= 0
+  // A supplied sample's own cost, added to latencyMs as a measurement. A
+  // non-finite one is not a time (the evidence check refuses such a sample as
+  // malformed wherever it would be consumed) and adds nothing.
+  const externalMs =
+    evidence && Number.isFinite(evidence.analysisMs) && evidence.analysisMs >= 0
       ? evidence.analysisMs
-      : Infinity
-    : 0;
+      : 0;
   const receipt: RemainingVariantReceipt = {
     version: pack?.version ?? 'unsupported',
     variant: s.gameVariant ?? 'unknown',
@@ -1128,14 +1133,13 @@ export function evaluateRemainingVariantPolicy(
   /** Assembled only once every canonical check has passed. */
   let bind: (() => RemainingVariantInputBinding) | null = null;
   const finish = (reason: string, proposal = baseline) => {
-    // Bound inside the timed region: recording the inputs is policy work.
+    // Bound inside the measured region: recording the inputs is policy work.
     if (bind) receipt.inputs = bind();
+    // A measurement only (2026-10-16). The 4 ms wall-clock fallback that stood
+    // here replaced the proposal by the reference (reason work_budget) whenever
+    // the host was slow, so a live decision could differ from the decision the
+    // fixed-clock P12.2 matrix measured and depended on host load.
     const elapsed = Math.max(0, now() - start) + externalMs;
-    if (elapsed > REMAINING_VARIANT_DOMAIN.liveBudgetMs) {
-      reason = 'work_budget';
-      proposal = baseline;
-      receipt.fired = false;
-    }
     if (!s.legalActions?.includes(proposal.action)) {
       reason = 'proposal_outside_legal_menu';
       proposal = baseline;
@@ -1305,14 +1309,11 @@ export function evaluateRemainingVariantPolicy(
    * the fixed-limit river node also carries an explicit net chip result.
    *
    * It runs on the showdowns the sampler ALREADY scored - no extra sample,
-   * card or deck draw - and it runs STRICTLY AFTER `finish`, on its own
-   * budget. That ordering is the point: `finish` has already fixed the reason,
-   * the proposal, `changed`, `applied` and `latencyMs`, so no cost incurred
-   * here can turn a firing proposal into a `work_budget` fallback. An earlier
-   * version put this inside the policy budget and a shared CI runner proved it
-   * could: the guard bounds work units rather than wall time, so one
-   * settlement's overshoot past an in-budget deadline still crossed
-   * `liveBudgetMs` and dropped the proposal.
+   * card or deck draw - and it runs STRICTLY AFTER `finish`: `finish` has
+   * already fixed the reason, the proposal, `changed`, `applied` and
+   * `latencyMs`, so nothing here can change the decision. Its work is
+   * declared, never timed (since 2026-10-16): at most `defaultSamples`
+   * showdowns for each legal fixed-limit line.
    *
    * A refused node is not priced at all, and an unavailable pass is NAMED.
    */
@@ -1320,7 +1321,6 @@ export function evaluateRemainingVariantPolicy(
     const out = finish(reason, proposal);
     if (!out.receipt.fired || s.stage !== 'river' || (variant !== 'flh' && variant !== 'flo8'))
       return out;
-    const economicsStart = now();
     const showdowns = terminal as RemainingVariantTerminalShowdowns | null;
     const economics = remainingVariantActionEconomics({
       variant,
@@ -1345,7 +1345,7 @@ export function evaluateRemainingVariantPolicy(
       dealerSeat: s.dealerSeat!,
       rakeConfig: rake,
       bbjConfig: s.bbjConfig ?? null,
-      withinBudget: () => now() - economicsStart < REMAINING_VARIANT_DOMAIN.netActionBudgetMs,
+      // No deadline is passed: the pass completes its declared work (above).
       now,
     });
     out.receipt.actionEconomics = economics;
@@ -1649,9 +1649,8 @@ export function evaluateRemainingVariantPolicy(
       return finish('round3_big_blind_defended', call());
     return finish('round3_reference_retained', retained());
   }
-  // Reserve the sampler's remaining time after computing exact card facts.
-  // Doing the FLO8 facts after sampling spent a fresh millisecond after the
-  // sampler's deadline on wide flops and discarded otherwise valid reads.
+  // The exact FLO8 card facts, computed before sampling (the order the
+  // matrix measured; it no longer matters for time since no deadline exists).
   const splitFacts =
     variant === 'flo8' ? omahaCardFacts(hero.cards, s.communityCards, true, true) : null;
   if (!evidence && sampleWhenMissing) {
@@ -1659,7 +1658,10 @@ export function evaluateRemainingVariantPolicy(
       variant,
       hero,
       s,
-      () => now() - start < REMAINING_VARIANT_DOMAIN.samplingDeadlineMs,
+      // The declared work, never a clock (2026-10-16): the full request, at
+      // most three prior draws per dealt opponent per sample, as the P12.2
+      // matrix drew them. The 2.5 ms deadline that stood here is gone.
+      () => true,
       (showdowns) => {
         terminal = showdowns;
       }

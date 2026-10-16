@@ -95,7 +95,11 @@ export const PLO4_POLICY_PACK = Object.freeze({
   threeBetQuality: 0.8,
   fourBetQuality: 0.9,
   fiveBetQuality: 0.96,
-  liveBudgetMs: 4,
+  // No clock budget (2026-10-16): the live policy reads no clock to decide
+  // its work. Its work is fixed by the decision itself (the dealt census of at
+  // most `domain.maxSeats`, the public action line and the range capture), the
+  // same work the P10.2 matrix priced on its fixed clock; the 4 ms wall-clock
+  // fallback that stood here (`liveBudgetMs`, reason work_budget) is gone.
   maxSamples: 128,
   defaultSamples: 32,
   maxActionsPerHand: 128,

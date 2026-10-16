@@ -67,8 +67,19 @@ export type RemainingPolicyVariant = 'short_deck' | 'pineapple' | 'flh' | 'flo8'
  * differences failed the contract's normal-approximation check in every such
  * cell, while the whole measured gain sat at two and four dealt. Full tables
  * now play the reference exactly; two and four dealt are unchanged. The
- * fixed-limit rules (FLH, FLO8) keep no cap (null) and decide exactly as in
- * round 3.
+ * fixed-limit rules keep no cap (null); FLH decides exactly as in round 3.
+ *
+ * FLO8 round 4 (docs/changelog/2026-10-16-packs-do-declared-work.md): FLO8
+ * has its own rule set, the fixed-limit rules WITHOUT the big blind defence
+ * (`bigBlindDefendBelowCallBar: null`). The contract v2 matrix
+ * (run 38771868755 on 818b10c1: +1.06 [+0.72, +1.40] bb/100, no losing cell)
+ * failed only the trust check, in position big_blind (Edgeworth 0.00571) and
+ * profile 6max 2dealt 100bb (0.00145): the defence is a rare, large change
+ * (a fixed-limit big blind call it makes where the reference folds), whose
+ * handful of large paired differences is what the skewness check measures.
+ * FLO8 now plays the reference at every big blind facing a single raise;
+ * its open tightening, heads-up open and small blind steal are unchanged.
+ * FLH keeps REMAINING_VARIANT_FIXED_LIMIT_ROUND3 byte for byte.
  */
 export interface RemainingVariantRound3Rules {
   readonly openTighten: readonly ('early' | 'middle' | 'cutoff' | 'button')[];
@@ -93,6 +104,15 @@ const REMAINING_VARIANT_FIXED_LIMIT_ROUND3: RemainingVariantRound3Rules = Object
   headsUpOpenBelowBar: 0.15,
   smallBlindStealBelowBar: 0.2,
   bigBlindDefendBelowCallBar: 0.15,
+  bigBlindDefendMaxDealt: null,
+});
+/** FLO8 round 4: the fixed-limit rules without the big blind defence. */
+const REMAINING_VARIANT_FLO8_ROUND4: RemainingVariantRound3Rules = Object.freeze({
+  openTighten: Object.freeze(['middle', 'cutoff', 'button'] as const),
+  openTightenMinDealt: 3,
+  headsUpOpenBelowBar: 0.15,
+  smallBlindStealBelowBar: 0.2,
+  bigBlindDefendBelowCallBar: null,
   bigBlindDefendMaxDealt: null,
 });
 export const REMAINING_VARIANT_PACKS = Object.freeze({
@@ -163,7 +183,7 @@ export const REMAINING_VARIANT_PACKS = Object.freeze({
     round3: REMAINING_VARIANT_FIXED_LIMIT_ROUND3,
   }),
   flo8: Object.freeze({
-    version: 'fixed-limit-omaha8-round3-v1',
+    version: 'fixed-limit-omaha8-round4-v1',
     holes: 4,
     deck: 52,
     splitLow: true,
@@ -182,7 +202,7 @@ export const REMAINING_VARIANT_PACKS = Object.freeze({
     value: 0.58,
     depthAdjustment: 0.025,
     multiway: 0.01,
-    round3: REMAINING_VARIANT_FIXED_LIMIT_ROUND3,
+    round3: REMAINING_VARIANT_FLO8_ROUND4,
   }),
 });
 export const REMAINING_VARIANT_DOMAIN = Object.freeze({
@@ -195,19 +215,14 @@ export const REMAINING_VARIANT_DOMAIN = Object.freeze({
   fixedLimitMaxStackBB: 1000,
   maxAnteBB: 1,
   maxRakePercent: 10,
-  liveBudgetMs: 4,
-  // Leave headroom for completing a physical sample, pot receipts and GC.
-  samplingDeadlineMs: 2.5,
-  // P12.1: the net-action economics get a budget OF THEIR OWN, measured from
-  // their own start AFTER the policy has already finished and fixed its
-  // reason, proposal and latency. A deadline inside liveBudgetMs was the first
-  // design and it was wrong: the guard bounds work units, not wall time, so on
-  // a slow host one settlement's overshoot past the deadline still crossed
-  // liveBudgetMs and the diagnostic became the reason the policy fell back to
-  // the baseline. Measured, on a shared CI runner, by the test that pinned it.
-  // Now the decision cannot be reached from here at all. Checked before the
-  // hypothetical pots and before every terminal settlement.
-  netActionBudgetMs: 1,
+  // No clock budget (2026-10-16): the live policy and its sampler read no
+  // clock to decide their work. A live decision does the fixed work the P12.2
+  // matrix priced: the full `defaultSamples` request, at most three prior
+  // draws per dealt opponent per sample, and on a fired fixed-limit river node
+  // the net-action pass over those same showdowns. The 4 ms policy fallback
+  // (`liveBudgetMs`, reason work_budget), the 2.5 ms sampler deadline
+  // (`samplingDeadlineMs`) and the 1 ms net-action deadline
+  // (`netActionBudgetMs`) that stood here are gone.
   defaultSamples: 32,
   maxSamples: 128,
   maxActionsPerHand: 256,

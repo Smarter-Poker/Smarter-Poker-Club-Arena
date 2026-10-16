@@ -2,7 +2,12 @@ import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { PREVIOUS_PHASE11_SELECTIONS } from './HorsePreviousSelections.test-support.js';
+import { restoreFastRandom, saveFastRandom } from './HorseEval.js';
+import { slowClock, withoutMeasurements } from './HorseDeclaredWork.test-support.js';
+import {
+  PREVIOUS_PHASE11_SELECTIONS,
+  RETIRED_2026_10_16_PHASE11_SELECTIONS,
+} from './HorsePreviousSelections.test-support.js';
 import {
   admitHorsePhase11QualifiedAuthority,
   admitHorsePhase11ReleaseAuthority,
@@ -104,79 +109,60 @@ function expectedKey(identity: Record<string, unknown>): string {
   return createHash('sha256').update(JSON.stringify(sorted)).digest('hex');
 }
 
-describe('P11.3 the PFR repair requalifies each previously selected pack at generation 2', () => {
+describe('P11.3 the declared-work change (2026-10-16) requires fresh qualification of every previously selected pack', () => {
   const selected = HORSE_PHASE11_VARIANTS.filter((v) => PREVIOUS_PHASE11_SELECTIONS[v] !== null);
 
-  it('each pack is unselected or selected at generation 2 on the repaired source, and retained generation-one evidence is refused under the unchanged contract', () => {
+  it('every pack is unselected, and its retained generations 1 and 2 are refused under the running contract', () => {
     expect(Object.isFrozen(PHASE11_PROTECTED_RELEASE_SELECTIONS)).toBe(true);
     expect(selected.length).toBeGreaterThan(0);
     expect(PHASE11_RUNNING_CONTRACT_DIGEST).toBe(omahaVariantStrengthContractDigest());
     expect(PHASE11_RUNNING_CONTRACT_DIGEST).toMatch(/^[0-9a-f]{64}$/);
     for (const variant of HORSE_PHASE11_VARIANTS) {
-      const current = PHASE11_PROTECTED_RELEASE_SELECTIONS[variant];
-      if (current === null)
-        expect(admitHorsePhase11ReleaseAuthority(variant), variant).toEqual({
-          status: 'refused',
-          reason: 'unselected',
-          transient: false,
-        });
-      else {
-        expect(Object.isFrozen(current)).toBe(true);
-        expect(current, variant).toMatchObject({
+      expect(PHASE11_PROTECTED_RELEASE_SELECTIONS[variant], variant).toBeNull();
+      expect(admitHorsePhase11ReleaseAuthority(variant), variant).toEqual({
+        status: 'refused',
+        reason: 'unselected',
+        transient: false,
+      });
+      const retired = RETIRED_2026_10_16_PHASE11_SELECTIONS[variant];
+      for (const [selection, generation] of [
+        [PREVIOUS_PHASE11_SELECTIONS[variant]!, 1],
+        [retired, 2],
+      ] as const) {
+        expect(selection, variant).toMatchObject({
           schema: 'horse-qualified-authority-selection-v1',
           phase: 'phase11',
           variant,
-          sourceSha: 'c92768c85bc53a4a5a5972d09c6ee58561010035',
           packVersion: OMAHA_VARIANT_PACKS[variant].version,
-          contractDigest: PHASE11_RUNNING_CONTRACT_DIGEST,
-          approvalGeneration: 2,
+          approvalGeneration: generation,
           expiresAt: null,
           withdrawn: null,
         });
-        // 2026-10-16: the opponent-exploit change moved the Phase 11 policy
-        // digest (definition v5), so generation 2 no longer measured the running
-        // code. It is refused - exactly as stale evidence always is - and the
-        // pack is shadow until requalified. Nothing here re-points it.
-        const admitted = admitHorsePhase11ReleaseAuthority(variant);
-        expect(admitted, variant).toEqual({
+        // Measured under the contract text before its policy_clock entry
+        // stated the live declared work; refused before any file is read.
+        expect(selection.contractDigest).not.toBe(PHASE11_RUNNING_CONTRACT_DIGEST);
+        const release = admitHorsePhase11ReleaseAuthority(variant, Date.now(), selection);
+        expect(release, variant).toEqual({
           status: 'refused',
-          reason: 'policy_digest_mismatch',
+          reason: 'contract_digest_mismatch',
           transient: false,
         });
-        expect(selectedHorsePhase11Authority(variant, admitted), variant).toBeNull();
+        expect(selectedHorsePhase11Authority(variant, release)).toBeNull();
+        // Its policy digest no longer runs either.
+        const recorded = JSON.parse(
+          readFileSync(
+            fileURLToPath(new URL(`../../../${selection.qualificationPath}`, import.meta.url)),
+            'utf8'
+          )
+        ) as Record<string, unknown>;
+        expect(recorded.policyDigest, variant).not.toBe(horsePhase11PolicyDigest(variant));
         for (const [path, digest] of [
-          [current.qualificationPath, current.qualificationSha256],
-          [current.completionPath!, current.completionSha256!],
-        ])
-          for (const root of ['../../../', '../../release-evidence/']) {
-            const bytes = readFileSync(fileURLToPath(new URL(`${root}${path}`, import.meta.url)));
-            expect(createHash('sha256').update(bytes).digest('hex'), `${root}${path}`).toBe(digest);
-          }
-      }
-      const selection = PREVIOUS_PHASE11_SELECTIONS[variant]!;
-      const release = admitHorsePhase11ReleaseAuthority(variant, Date.now(), selection);
-      expect(selection, variant).toMatchObject({
-        schema: 'horse-qualified-authority-selection-v1',
-        phase: 'phase11',
-        variant,
-        packVersion: OMAHA_VARIANT_PACKS[variant].version,
-        contractDigest: PHASE11_RUNNING_CONTRACT_DIGEST,
-        approvalGeneration: 1,
-        expiresAt: null,
-        withdrawn: null,
-      });
-      expect(release, variant).toEqual({
-        status: 'refused',
-        reason: 'policy_digest_mismatch',
-        transient: false,
-      });
-      expect(selectedHorsePhase11Authority(variant, release)).toBeNull();
-      for (const [path, digest] of [
-        [selection.qualificationPath, selection.qualificationSha256],
-        [selection.completionPath!, selection.completionSha256!],
-      ]) {
-        const bytes = readFileSync(fileURLToPath(new URL(`../../../${path}`, import.meta.url)));
-        expect(createHash('sha256').update(bytes).digest('hex'), path).toBe(digest);
+          [selection.qualificationPath, selection.qualificationSha256],
+          [selection.completionPath!, selection.completionSha256!],
+        ]) {
+          const bytes = readFileSync(fileURLToPath(new URL(`../../../${path}`, import.meta.url)));
+          expect(createHash('sha256').update(bytes).digest('hex'), path).toBe(digest);
+        }
       }
     }
   });
@@ -230,7 +216,7 @@ describe('P11.3 the PFR repair requalifies each previously selected pack at gene
   // selections (2026-10-09): a committed qualification that says
   // qualified:true is exactly the one its pack's selection names, and a
   // completion record exists for a selected pack or an unpromoted one.
-  it("a qualified file is its pack's current selection or a retained generation-one file, and none is on the running policy since 2026-10-16", () => {
+  it("a qualified file is either its pack's current selection on the running policy or a retained generation-one or generation-two file on an older one", () => {
     const dir = fileURLToPath(new URL('../../../docs/evidence/phase11/', import.meta.url));
     const files = existsSync(dir)
       ? readdirSync(dir, { recursive: true, encoding: 'utf8' }).filter((f) => f.endsWith('.json'))
@@ -240,14 +226,18 @@ describe('P11.3 the PFR repair requalifies each previously selected pack at gene
       if (parsed.schema === HORSE_PHASE11_QUALIFICATION_SCHEMA && parsed.qualified === true) {
         const variant = parsed.variant as OmahaPolicyVariant;
         const path = `docs/evidence/phase11/${file}`;
-        expect(
-          [
-            PHASE11_PROTECTED_RELEASE_SELECTIONS[variant]?.qualificationPath,
-            PREVIOUS_PHASE11_SELECTIONS[variant]?.qualificationPath,
-          ],
-          file
-        ).toContain(path);
-        expect(parsed.policyDigest, file).not.toBe(horsePhase11PolicyDigest(variant));
+        if (PHASE11_PROTECTED_RELEASE_SELECTIONS[variant]?.qualificationPath === path)
+          expect(parsed.policyDigest, file).toBe(horsePhase11PolicyDigest(variant));
+        else {
+          expect(
+            [
+              PREVIOUS_PHASE11_SELECTIONS[variant]?.qualificationPath,
+              RETIRED_2026_10_16_PHASE11_SELECTIONS[variant].qualificationPath,
+            ],
+            file
+          ).toContain(path);
+          expect(parsed.policyDigest, file).not.toBe(horsePhase11PolicyDigest(variant));
+        }
       }
       if (parsed.schema === HORSE_PHASE11_COMPLETION_SCHEMA)
         expect(HORSE_PHASE11_VARIANTS as readonly string[], file).toContain(parsed.variant);
@@ -891,12 +881,13 @@ describe('P11.3 natural completion share: what a record counts', () => {
     expect(horsePhase11CompletionOutcome('plo8', value)).toBe(expected);
   });
 
-  it('counts real policy receipts, a work-budget fallback included, by street', () => {
+  it('counts real policy receipts by street; a slow clock completes, an earlier release work-budget fallback does not', () => {
     const seen: unknown[] = [];
     for (const street of ['preflop', 'flop', 'turn', 'river'] as const) {
       const input = omahaVariantSpot('plo5', street, 2, 'cash');
       const baseline = { action: 'call' as const, amount: 20, thinkTime: 0 };
       if (street === 'preflop') baseline.amount = 1;
+      const rng = saveFastRandom();
       const ok = evaluateOmahaVariantPolicy(
         input.hero,
         input.state,
@@ -905,24 +896,30 @@ describe('P11.3 natural completion share: what a record counts', () => {
         'shadow',
         () => 0
       );
-      let t = 0;
+      restoreFastRandom(rng);
       const slow = evaluateOmahaVariantPolicy(
         input.hero,
         input.state,
         baseline,
         null,
         'shadow',
-        () => (t += 5)
+        slowClock(5)
       );
       expect(ok.receipt.eligible, street).toBe(true);
-      expect(slow.receipt).toMatchObject({ eligible: true, reason: 'work_budget' });
-      seen.push(ok.receipt, slow.receipt);
+      // 2026-10-16: the clock is a measurement only; a slow host makes the
+      // same decision as the fixed clock.
+      expect(slow.receipt.reason, street).not.toBe('work_budget');
+      expect(withoutMeasurements(slow.receipt), street).toEqual(withoutMeasurements(ok.receipt));
+      // A receipt of an earlier release that fell back on the old 4 ms budget
+      // is still classified as one.
+      const earlier = { ...ok.receipt, reason: 'work_budget', fired: false };
+      seen.push(ok.receipt, slow.receipt, earlier);
     }
     const counts = horsePhase11CompletionCounts('plo5', seen);
     for (const street of ['preflop', 'flop', 'turn', 'river'] as const)
       expect(counts[street], street).toEqual({
-        eligible: 2,
-        completed: 1,
+        eligible: 3,
+        completed: 2,
         workBudget: 1,
         samplerBudgetExhausted: 0,
         sampleUnavailable: 0,
@@ -983,17 +980,17 @@ describe('P11.3 natural completion share: what a record counts', () => {
     const counted: unknown[] = [];
     for (const street of ['flop', 'turn', 'river'] as const) {
       const input = omahaVariantSpot('plo5', street, 3);
-      // The sampler's 3 ms budget is spent before the first sample; the
-      // policy itself stays inside its 4 ms budget.
-      let calls = 0;
-      const clock = () => (calls++ === 0 ? 0 : 3.5);
+      // No sample drawn (sampleWhenMissing false). Since 2026-10-16 no clock
+      // can starve the live sampler, so this is the only way to reach it.
       const r = evaluateOmahaVariantPolicy(
         input.hero,
         input.state,
         { action: 'call', amount: input.state.toCall, thinkTime: 0 },
         null,
         'shadow',
-        clock
+        () => 0,
+        1,
+        false
       );
       expect(r.receipt.inputs?.range.status, street).toBe('unavailable');
       expect(r.receipt.reason, street).not.toBe('work_budget');

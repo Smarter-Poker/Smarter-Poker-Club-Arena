@@ -248,9 +248,13 @@ describe('P12.2 Phase 12 strength contract object', () => {
     expect(remainingVariantStrengthContractDigest('flh')).toBe(
       'fafbba8dc23ebc59b5aadf78fdcc47cd6f504baf9bcd10b07970ad7fbea501c0'
     );
+    // 2026-10-16 (docs/changelog/2026-10-16-packs-do-declared-work.md): v2
+    // moved by the FLO8 pack version (fixed-limit-omaha8-round4-v1) and the
+    // policy_clock entry's text; seeds, shards and margins are unchanged (was
+    // 6c50e717...16f).
     for (const variant of ['short_deck', 'pineapple', 'flo8'] as const)
       expect(remainingVariantStrengthContractDigest(variant), variant).toBe(
-        '6c50e71707addc7b9f740493840e5d59053773d63ea7af5cdf33a6108036b16f'
+        '0abc9fa4e6e850989e0007a8f5be682ac1a14725c11a6272641533a2000884e2'
       );
   });
 
@@ -309,12 +313,12 @@ describe('P12.2 Phase 12 strength contract object', () => {
     ).toEqual([]);
   });
 
-  it('leaves the Phase 10 and Phase 11 contracts and their pinned digests untouched', () => {
+  it('leaves the Phase 10 contract untouched and the Phase 11 contract at its own pin', () => {
     expect(plo4StrengthContractDigest()).toBe(
       '83ab185b2a2df72876b73d61ece6ea8c2f03f364ce252deecbfcde392ae5f838'
     );
     expect(omahaVariantStrengthContractDigest()).toBe(
-      '5b93ae20962ff79798b998f437ed43d2bd224a64995d86e34ed63d7bb22057fc'
+      '0716bb254de73014914ca086aa26b6ffe499bb2e50897432de6a9e855da5ee05'
     );
   });
 

@@ -37,16 +37,14 @@ import {
  *    uncalibrated public-line prior, and a wager is BRACKETED by two declared
  *    opponent response assumptions rather than a response model.
  *  - Not a decision input. The live policy prices a node only after it has
- *    fixed its proposal, on a budget of its own; nothing reads the result.
+ *    fixed its proposal; nothing reads the result. Since 2026-10-16 the live
+ *    pass does its whole declared work (the offered showdowns, fold, call and
+ *    at most OMAHA_VARIANT_MAX_PRICED_WAGERS sizes) and no clock stops it.
  *
  * Every refusal has its own name. An unavailable result is never an empty one.
  */
 
 export const OMAHA_VARIANT_ACTION_ECONOMICS_VERSION = 'omaha-variant-action-economics-v1';
-
-/** The pass's own budget, measured from its own start, after the policy has
- * finished. It never shares the policy's `liveBudgetMs`. */
-export const OMAHA_VARIANT_NET_ACTION_BUDGET_MS = 1;
 
 /** Fewer terminal showdowns than this is not a net economic result. */
 export const OMAHA_VARIANT_MIN_TERMINAL_SAMPLES = 4;
@@ -146,7 +144,9 @@ export interface OmahaVariantActionEconomicsInput {
   rakeConfig: RakeConfig;
   bbjConfig: HandConfig['bbjConfig'] | null;
   /** False stops further work. A line short of the minimum sample count is
-   * reported unavailable rather than averaged over whatever finished. */
+   * reported unavailable rather than averaged over whatever finished. The
+   * live policy passes none (its work is declared, never timed); only offline
+   * callers stop the pass early. */
   withinBudget?: () => boolean;
   now?: () => number;
 }

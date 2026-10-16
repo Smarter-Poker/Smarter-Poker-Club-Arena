@@ -196,23 +196,15 @@ export interface HorsePhase10AuthoritySelection {
  * after rake against the horse population +6.94 [+6.25, +7.62] bb/100, qualified
  * with no reasons at policy digest a2265ab9.... Generation 1 stays committed and
  * refused by digest; this distinct approval is generation 2.
+ *
+ * October 16: the packs do their declared work (no wall-clock fallback,
+ * docs/changelog/2026-10-16-packs-do-declared-work.md) and the qualified PLO4
+ * policy digest moves (a2265ab9... to the running value). Generation 2 is
+ * explicitly null until the locked P10.2 matrix requalifies the exact new
+ * source and a new generation (3) is selected. Generations 1 and 2 stay
+ * committed with their evidence; neither can qualify the modified policy.
  */
-export const PHASE10_PROTECTED_RELEASE_SELECTION: HorsePhase10AuthoritySelection | null =
-  Object.freeze({
-    schema: 'horse-qualified-authority-selection-v1',
-    phase: 'phase10',
-    sourceSha: 'c92768c85bc53a4a5a5972d09c6ee58561010035',
-    packVersion: 'plo4-policy-round3-v2',
-    contractVersion: 'plo4-strength-contract-v1',
-    contractDigest: '83ab185b2a2df72876b73d61ece6ea8c2f03f364ce252deecbfcde392ae5f838',
-    domain: 'plo4-cash-single-board-after-rake-horse-population',
-    qualificationPath: 'docs/evidence/phase10/c92768c8/phase10-qualification-2026-10-15.json',
-    qualificationSha256: 'e4161a38a272241d1b1522461c2964f3bf0d0f463e0d8b45871be79f3b7bf4b9',
-    approvalGeneration: 2,
-    issuedAt: '2026-10-15T02:45:00.000Z',
-    expiresAt: null,
-    withdrawn: null,
-  } as const);
+export const PHASE10_PROTECTED_RELEASE_SELECTION: HorsePhase10AuthoritySelection | null = null;
 
 const HEX40 = /^[0-9a-f]{40}$/;
 const HEX64 = /^[0-9a-f]{64}$/;

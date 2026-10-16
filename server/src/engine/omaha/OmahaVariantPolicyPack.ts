@@ -95,7 +95,13 @@ export const OMAHA_VARIANT_DOMAIN = Object.freeze({
   maxAnteBB: 1,
   maxStraddleBB: 2,
   maxRakePercent: 10,
-  liveBudgetMs: 4,
+  // No clock budget (2026-10-16): the live policy and its sampler read no
+  // clock to decide their work. A live decision does the fixed work the P11.2
+  // matrix priced: the full 32-sample request, at most three prior draws per
+  // dealt opponent per sample, and on a fired river node the net-action pass
+  // over those same showdowns for at most two priced wager sizes. The 4 ms
+  // policy fallback (`liveBudgetMs`, reason work_budget), the 3 ms sampler
+  // deadline and the 1 ms net-action deadline that stood here are gone.
   maxSamples: 128,
   defaultSamples: 32,
   maxActionsPerHand: 128,

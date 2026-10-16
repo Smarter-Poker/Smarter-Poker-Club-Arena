@@ -2,7 +2,10 @@ import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { PREVIOUS_PHASE12_SELECTIONS } from './HorsePreviousSelections.test-support.js';
+import {
+  PREVIOUS_PHASE12_SELECTIONS,
+  RETIRED_2026_10_16_PHASE12_SELECTIONS,
+} from './HorsePreviousSelections.test-support.js';
 import {
   admitHorsePhase12QualifiedAuthority,
   admitHorsePhase12ReleaseAuthority,
@@ -68,6 +71,8 @@ import { evaluateRemainingVariantPolicy } from './remainingVariants/RemainingVar
 import { remainingVariantRequestedSamples } from './remainingVariants/RemainingVariantSampler.js';
 import { remainingVariantSpot } from '../benchmark/RemainingVariantPolicyEvidence.js';
 import { equityGovernor } from './EquityLoadGovernor.js';
+import { restoreFastRandom, saveFastRandom } from './HorseEval.js';
+import { slowClock, stalledClock, withoutMeasurements } from './HorseDeclaredWork.test-support.js';
 
 const V: RemainingPolicyVariant = 'flo8';
 const json = (value: unknown) => Buffer.from(JSON.stringify(value, null, 2) + '\n');
@@ -116,7 +121,7 @@ function expectedKey(identity: Record<string, unknown>): string {
   return createHash('sha256').update(JSON.stringify(sorted)).digest('hex');
 }
 
-describe('P12.3 the PFR repair requires fresh qualification of previously selected FLH', () => {
+describe('P12.3 the declared-work change (2026-10-16) requires fresh qualification of previously selected FLH', () => {
   const selected = HORSE_PHASE12_VARIANTS.filter(
     (v) => PHASE12_PROTECTED_RELEASE_SELECTIONS[v] !== null
   );
@@ -124,14 +129,21 @@ describe('P12.3 the PFR repair requires fresh qualification of previously select
     (v) => PHASE12_PROTECTED_RELEASE_SELECTIONS[v] === null
   );
 
-  it('FLH generation 2 evidence is retained and FLH alone is selected again at generation 3; each pack keeps its own contract digest, FLH the frozen v1', () => {
+  it('FLH generations 2 and 3 are retained and no pack is selected; each pack keeps its own contract digest, FLH the frozen v1', () => {
     expect(Object.isFrozen(PHASE12_PROTECTED_RELEASE_SELECTIONS)).toBe(true);
     expect([...HORSE_PHASE12_VARIANTS]).toEqual(['short_deck', 'pineapple', 'flh', 'flo8']);
     // FLH's generation-1 selection measured policy digest a55db7fe..., which
     // the round-4 sampler kernels and scoped packs moved: it was re-measured
     // under contract v1 on 9d567463 and selected at generation 2. The PFR
     // repair moved it again; generation 3 requalified the repaired source.
-    expect(selected).toEqual(['flh']);
+    // The declared-work change (2026-10-16) moved it again: none is selected
+    // until the combined requalification.
+    expect(selected).toEqual([]);
+    expect(RETIRED_2026_10_16_PHASE12_SELECTIONS.flh).toMatchObject({
+      sourceSha: 'c92768c85bc53a4a5a5972d09c6ee58561010035',
+      contractDigest: PHASE12_RUNNING_CONTRACT_DIGESTS.flh,
+      approvalGeneration: 3,
+    });
     expect(PREVIOUS_PHASE12_SELECTIONS.flh).toMatchObject({
       sourceSha: '9d5674639f2bd091f2386c75cbd87bec419c5dcd',
       qualificationPath: 'docs/evidence/phase12/9d567463/phase12-qualification-2026-10-12-flh.json',
@@ -206,66 +218,59 @@ describe('P12.3 the PFR repair requires fresh qualification of previously select
     }
   });
 
-  it('retains exact FLH generation-2 qualification and completion hashes but refuses them for the repaired policy', () => {
-    const previous = PREVIOUS_PHASE12_SELECTIONS.flh!;
-    expect(admitHorsePhase12ReleaseAuthority('flh', Date.now(), previous)).toEqual({
-      status: 'refused',
-      reason: 'policy_digest_mismatch',
-      transient: false,
-    });
-    for (const [path, digest] of [
-      [previous.qualificationPath, previous.qualificationSha256],
-      [previous.completionPath!, previous.completionSha256!],
+  it('retains exact FLH generation-2 and generation-3 qualification and completion hashes but refuses them for the declared-work policy', () => {
+    for (const previous of [
+      PREVIOUS_PHASE12_SELECTIONS.flh!,
+      RETIRED_2026_10_16_PHASE12_SELECTIONS.flh!,
     ]) {
-      const bytes = readFileSync(fileURLToPath(new URL(`../../../${path}`, import.meta.url)));
-      expect(createHash('sha256').update(bytes).digest('hex'), path).toBe(digest);
+      expect(admitHorsePhase12ReleaseAuthority('flh', Date.now(), previous)).toEqual({
+        status: 'refused',
+        reason: 'policy_digest_mismatch',
+        transient: false,
+      });
+      for (const [path, digest] of [
+        [previous.qualificationPath, previous.qualificationSha256],
+        [previous.completionPath!, previous.completionSha256!],
+      ]) {
+        const bytes = readFileSync(fileURLToPath(new URL(`../../../${path}`, import.meta.url)));
+        expect(createHash('sha256').update(bytes).digest('hex'), path).toBe(digest);
+      }
     }
   });
 
-  it('a fresh qualified generation 3 can renew FLH while generation 2 cannot return after withdrawal', () => {
+  it('a fresh qualified generation 4 can renew FLH while generation 3 cannot return after withdrawal', () => {
     const holder = new HorseQualifiedAuthorityHolder(
-      'pfr-flh-renewal',
+      'declared-work-flh-renewal',
       REMAINING_VARIANT_PACKS.flh.version
     );
     holder.apply({
       status: 'withdrawn',
-      approvalGeneration: 2,
+      approvalGeneration: 3,
       reason: 'prior_policy_source_changed',
     });
-    holder.apply(qualifiedPhase12TestAdmission('flh', 2));
-    expect(holder.currentState()).toBe('withdrawn');
     holder.apply(qualifiedPhase12TestAdmission('flh', 3));
+    expect(holder.currentState()).toBe('withdrawn');
+    holder.apply(qualifiedPhase12TestAdmission('flh', 4));
     expect(holder.currentState()).toBe('usable');
-    expect(holder.receipt().approvalGeneration).toBe(3);
+    expect(holder.receipt().approvalGeneration).toBe(4);
   });
 
-  it('FLH generation 3 is selected on the repaired source; its committed evidence is refused on the running code since 2026-10-16', () => {
-    const selected = PHASE12_PROTECTED_RELEASE_SELECTIONS.flh!;
-    expect(selected).toMatchObject({
-      sourceSha: 'c92768c85bc53a4a5a5972d09c6ee58561010035',
-      approvalGeneration: 3,
-      withdrawn: null,
-    });
-    expect(selected.approvalGeneration).toBeGreaterThan(
+  it('FLH generation 3 stays shipped with its evidence while no pack is selected', () => {
+    const retired = RETIRED_2026_10_16_PHASE12_SELECTIONS.flh!;
+    expect(retired.approvalGeneration).toBeGreaterThan(
       PREVIOUS_PHASE12_SELECTIONS.flh!.approvalGeneration
     );
     for (const [path, digest] of [
-      [selected.qualificationPath, selected.qualificationSha256],
-      [selected.completionPath!, selected.completionSha256!],
+      [retired.qualificationPath, retired.qualificationSha256],
+      [retired.completionPath!, retired.completionSha256!],
     ]) {
       for (const root of ['../../../', '../../release-evidence/']) {
         const bytes = readFileSync(fileURLToPath(new URL(`${root}${path}`, import.meta.url)));
         expect(createHash('sha256').update(bytes).digest('hex'), `${root}${path}`).toBe(digest);
       }
     }
-    const admission = admitHorsePhase12ReleaseAuthority('flh');
-    expect(admission).toEqual({
-      status: 'refused',
-      reason: 'policy_digest_mismatch',
-      transient: false,
-    });
-    for (const other of ['short_deck', 'pineapple', 'flo8'] as const)
-      expect(PHASE12_PROTECTED_RELEASE_SELECTIONS[other]).toBeNull();
+    for (const variant of HORSE_PHASE12_VARIANTS)
+      expect(PHASE12_PROTECTED_RELEASE_SELECTIONS[variant], variant).toBeNull();
   });
 
   it('an unselected pack returns unselected before any evidence file is read', () => {
@@ -393,8 +398,9 @@ describe('P12.3 the PFR repair requires fresh qualification of previously select
       if (parsed.schema === HORSE_PHASE12_COMPLETION_SCHEMA)
         expect(HORSE_PHASE12_VARIANTS as readonly string[], file).toContain(parsed.variant);
     }
-    // The selected pack still names its committed qualified:true file.
-    expect(qualifiedSelected).toEqual(['flh:c92768c8/phase12-qualification-2026-10-15-flh.json']);
+    // Every selected pack names a qualified:true file on its running policy;
+    // since 2026-10-16 none is selected.
+    expect(qualifiedSelected).toEqual([]);
   });
 });
 
@@ -1252,11 +1258,6 @@ describe('P12.3 natural completion share: what a record counts', () => {
     // As journaled: the JSON the worker writes.
     return JSON.parse(JSON.stringify(r.receipt)) as Record<string, any>;
   };
-  /** A clock that reads zero for `calls` reads, then `after`. */
-  const stepClock = (calls: number, after: number) => {
-    let n = 0;
-    return () => (n++ < calls ? 0 : after);
-  };
 
   it.each(HORSE_PHASE12_VARIANTS)(
     'counts real %s policy receipts by street, every outcome included',
@@ -1266,22 +1267,45 @@ describe('P12.3 natural completion share: what a record counts', () => {
         const ok = live(variant, street, () => 0);
         expect(ok.eligible, street).toBe(true);
         expect(horsePhase12CompletionOutcome(variant, ok), street).toBe('completed');
-        let t = 0;
-        const slow = live(variant, street, () => (t += 5));
-        expect(slow).toMatchObject({ eligible: true, reason: 'work_budget' });
+        // 2026-10-16: the clock is a measurement only. A slow or stalled host
+        // makes the decision the fixed clock makes, from the same random state.
+        const rng = saveFastRandom();
+        const fixed = withoutMeasurements(live(variant, street, () => 0));
+        for (const clock of [slowClock(5), stalledClock()]) {
+          restoreFastRandom(rng);
+          const late = live(variant, street, clock);
+          expect(late.reason, street).not.toBe('work_budget');
+          expect(withoutMeasurements(late), street).toEqual(fixed);
+        }
+        // A receipt of an earlier release that fell back on the old 4 ms
+        // budget is still classified as one.
+        const slow = { ...structuredClone(ok), reason: 'work_budget', fired: false };
         seen.push(ok, slow);
         if (street === 'preflop') continue;
-        // The sampler's deadline is spent before its first sample; the
-        // policy stays inside its own budget.
-        const none = live(variant, street, stepClock(1, 3));
+        // No live sample drawn (sampleWhenMissing false; no clock can starve
+        // the sampler any more): sample unavailable.
+        const s = remainingVariantSpot(variant, street, 2, 'cash');
+        const none = JSON.parse(
+          JSON.stringify(
+            evaluateRemainingVariantPolicy(
+              s.hero,
+              s.state,
+              s.baseline,
+              null,
+              'shadow',
+              () => 0,
+              1,
+              false
+            ).receipt
+          )
+        ) as Record<string, any>;
         expect(none.inputs.range.status, street).toBe('unavailable');
-        expect(none.reason, street).not.toBe('work_budget');
         expect(horsePhase12CompletionOutcome(variant, none), street).toBe('sample_unavailable');
-        // The deadline arrives after some samples: consumed, cut short.
-        const cut = live(variant, street, stepClock(9, 3));
+        // An earlier release's sample cut short by the old sampler deadline.
+        const cut = structuredClone(ok);
         expect(cut.inputs.range.status, street).toBe('consumed');
-        expect(cut.inputs.range.provenance.work.budgetExhausted, street).toBe(true);
-        expect(cut.inputs.range.provenance.work.completedSamples, street).toBeGreaterThan(0);
+        cut.inputs.range.provenance.work.budgetExhausted = true;
+        cut.inputs.range.provenance.work.completedSamples = 9;
         expect(horsePhase12CompletionOutcome(variant, cut), street).toBe(
           'sampler_budget_exhausted'
         );

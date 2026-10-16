@@ -82,8 +82,8 @@ export interface Plo4EquityEvidence {
   /** Already captured provenance (offline callers and tests); may be omitted. */
   range?: Plo4RangeProvenance;
   /** The live HorseLogic path: the provenance capture itself, run only when
-   * the proposal consumes it, inside this policy's timed region, so it counts
-   * against `liveBudgetMs` (P10 audit F7). A throw leaves the sample
+   * the proposal consumes it, inside this policy's measured region, so its cost
+   * is in `latencyMs` (P10 audit F7). A throw leaves the sample
    * unattributed, as an eager capture failure did. Ignored when `range` is set. */
   captureRange?: () => Plo4RangeProvenance;
 }
@@ -1048,6 +1048,8 @@ export function evaluatePlo4LivePolicy(
   baseline: HorseDecision,
   evidence: Plo4EquityEvidence | null,
   mode: Plo4LiveMode = 'shadow',
+  /** Measures `latencyMs` only. Since 2026-10-16 no clock decides any part
+   * of the decision: the policy does its fixed work and the proposal stands. */
   now = () => performance.now(),
   /** The owner's legalizer (HorseLogic passes its own): a changed proposal is
    * recorded and executed in its exact legal form (audit 2026-10-05). */
@@ -1095,16 +1097,16 @@ export function evaluatePlo4LivePolicy(
   /** Assembled only once every canonical check has passed. */
   let bind: (() => Plo4InputBinding) | null = null;
   const finish = (reason: string, proposal = baseline) => {
-    // Bound inside the timed region: recording the inputs is policy work.
+    // Bound inside the measured region: recording the inputs is policy work.
     if (bind) receipt.inputs = bind();
     if (legalForm && proposal !== baseline)
       proposal = { ...legalForm(proposal), thinkTime: proposal.thinkTime };
+    // A measurement only (2026-10-16). The 4 ms wall-clock fallback that stood
+    // here replaced the proposal by the reference (reason work_budget) whenever
+    // the host was slow, so a live decision could differ from the decision the
+    // fixed-clock P10.2 matrix measured and depended on host load. The work is
+    // fixed by the decision (census, action line, range capture), never by time.
     const elapsed = Math.max(0, now() - start);
-    if (elapsed > PLO4_POLICY_PACK.liveBudgetMs) {
-      reason = 'work_budget';
-      proposal = baseline;
-      receipt.fired = false;
-    }
     if (!s.legalActions?.includes(proposal.action)) {
       proposal = baseline;
       reason = 'proposal_outside_legal_menu';

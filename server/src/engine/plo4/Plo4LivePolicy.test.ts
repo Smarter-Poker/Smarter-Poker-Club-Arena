@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { decideUnderClocks } from '../HorseDeclaredWork.test-support.js';
 import {
   evaluatePlo4LivePolicy,
   plo4EntryBars,
@@ -552,7 +553,7 @@ describe('Phase 10 complete bounded PLO4 baseline', () => {
     expect(shadow.plo4Policy?.finalAction).toBe(shadow.action);
     expect(shadow.plo4Policy?.executionStatus).toBe('pending');
   });
-  it('rejects private cards and malformed state; falls back on exhausted time', () => {
+  it('rejects private cards and malformed state; never falls back on the clock', () => {
     const input = plo4ReferenceSpot('royal_flush');
     input.state.players[1].cards = plo4Cards('Ah Ad 6c 7c');
     expect(
@@ -560,8 +561,15 @@ describe('Phase 10 complete bounded PLO4 baseline', () => {
         .receipt.reason
     ).toBe('private_state_rejected');
     input.state.players[1].cards = [];
+    // 2026-10-16: a slow, a stalled and a fixed clock give the same decision,
+    // proposal and receipt; only latencyMs measures the difference.
+    const [fixed, ...late] = decideUnderClocks((now) =>
+      evaluatePlo4LivePolicy(input.hero, input.state, input.baseline, evidence, 'candidate', now)
+    );
+    expect((fixed as { receipt: { reason: string } }).receipt.reason).not.toBe('work_budget');
+    for (const other of late) expect(other).toEqual(fixed);
     let clock = 0;
-    const timeout = evaluatePlo4LivePolicy(
+    const slow = evaluatePlo4LivePolicy(
       input.hero,
       input.state,
       input.baseline,
@@ -569,8 +577,8 @@ describe('Phase 10 complete bounded PLO4 baseline', () => {
       'candidate',
       () => (clock += 5)
     );
-    expect(timeout.receipt.reason).toBe('work_budget');
-    expect(timeout.decision).toBe(input.baseline);
+    expect(slow.receipt.latencyMs).toBeGreaterThan(4);
+    expect(slow.receipt.reason).not.toBe('work_budget');
   });
   it('conditions each independent prior on that opponent public line only', () => {
     const input = plo4ReferenceSpot('dominated_flop_draw');

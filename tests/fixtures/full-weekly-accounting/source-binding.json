@@ -184,7 +184,7 @@
     "tests/components/agent-cashout-scope.test.tsx": "58f7be7a87a7f3f4d5f585ea0c297f7fe0fc9b64fc67a02d6edc2a81d36f9446",
     "tests/unit/CashoutService.test.ts": "528149522222b33c55598df5b1ece548928b27f364241c5912ff3b1b05c01449",
     "tests/config/roleScopedCashier.test.ts": "a233e4072262ad4356b705c37db292d78f49dd613506e0d6c13b92fb787eb4d8",
-    "tests/cashout-escrow-flow.test.ts": "8b7c9e4943ac8bc8fc4e8f7c2bfd22e54fb15a19b35188ab0ffb797f54efb327",
+    "tests/cashout-escrow-flow.test.ts": "40d60032482e553ccd6ee12e6d67cdba807abd491853f2dbbe25ca6be7598dd6",
     "tests/fixtures/cashier-document-authority/captured-legacy-route-catalog.json": "edef6d6318f142277069de1fead9cbfe8ea732cc5d774987d8f4894bdc06807f",
     "tests/fixtures/cashier-document-authority/captured-preimages.sql": "1219fa1b0c4ab26bf155f3c58d3f4c7f5fd108940c1780c5047f61d88727412a",
     "tests/unit/leaveClubReleasesEscrow.test.ts": "4faed6fab4a8eac765219b794e555edf9186064bc19b7ba02c8bc9f0572c1fca",
@@ -4893,5 +4893,11 @@
     "file": "tests/components/cashier-cashout-generations.test.tsx",
     "previous_sha256": "18f5fadfadc7cba15d554d269e03b56bf7f99e01bbbf855d3dd2702bd7a21a39",
     "sha256": "ef6c974a4a13cfd32561cd7a864a3ee24e866f88a8c7b1441ddf99aefdccb020"
+  },
+  "wallet_precision_guard_rebinding_20261016": {
+    "reason": "Reviewed the complete one-line display-contract diff: the cashout request available balance now prints through formatWalletChips, whose maintained contract retains two cent digits below one million. The guard still requires formatting for pending request amounts, and no cashout transaction, scope, receipt, idempotency or failure assertion changes. Current test source identity only; historical audits and native qualification states remain unchanged.",
+    "file": "tests/cashout-escrow-flow.test.ts",
+    "previous_sha256": "8b7c9e4943ac8bc8fc4e8f7c2bfd22e54fb15a19b35188ab0ffb797f54efb327",
+    "sha256": "40d60032482e553ccd6ee12e6d67cdba807abd491853f2dbbe25ca6be7598dd6"
   }
 }

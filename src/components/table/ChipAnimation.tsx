@@ -1,4 +1,4 @@
-import { viewportPointInFrame } from '../../lib/chipAwardGeometry';
+import { viewportPointInFrame, winnerViewportPoint } from '../../lib/chipAwardGeometry';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CHIP ANIMATION — Premium Poker Chip Movement Effects
@@ -117,6 +117,7 @@ export default function ChipAnimation({
   // is done by `.chipContainer` in ChipAnimation.module.css.
   const [scale, setScale] = useState(1);
   const [isVisible, setIsVisible] = useState(true);
+  const [flightFinished, setFlightFinished] = useState(false);
   const animRef = useRef<number>(0);
   // CA-12 BUG FIX: the 100ms hide-delay setTimeout after the rAF completes was
   // fire-and-forget. If the parent unmounts ChipAnimation during this window,
@@ -138,7 +139,25 @@ export default function ChipAnimation({
   /** The chip's own DOM node — used to detect a hidden (background) table. */
   const containerRef = useRef<HTMLDivElement | null>(null);
 
+  // Start the final hold only after React has committed the landing. Starting
+  // this timer inside rAF let a busy render batch the landing with removal,
+  // so a real payout could disappear without ever reaching its recipient.
+  useLayoutEffect(() => {
+    if (!flightFinished) return;
+    const timer = setTimeout(() => {
+      hideTimerRef.current = null;
+      setIsVisible(false);
+      onCompleteRef.current?.();
+    }, 100);
+    hideTimerRef.current = timer;
+    return () => {
+      clearTimeout(timer);
+      if (hideTimerRef.current === timer) hideTimerRef.current = null;
+    };
+  }, [flightFinished]);
+
   useEffect(() => {
+    setFlightFinished(false);
     // ANIMATION AUDIT 2026-08-28 (multi-table): a background table is
     // display:none, not unmounted — every chip flight there still drove a
     // full rAF bezier loop nobody could see. If this chip's container has no
@@ -179,12 +198,26 @@ export default function ChipAnimation({
 
     let startTime: number | null = null;
 
-    // Calculate control point for bezier arc
-    const midX = (from.x + to.x) / 2;
-    const midY = (from.y + to.y) / 2;
-    const dist = Math.sqrt((to.x - from.x) ** 2 + (to.y - from.y) ** 2);
-    const controlX = midX;
-    const controlY = midY + dist * arcHeight; // Negative = arc upward
+    const destination = () => {
+      const layer = containerRef.current?.parentElement;
+      if (!recipientId || !layer) return to;
+      const frame = layer.getBoundingClientRect();
+      if (!(frame.width > 0 && frame.height > 0)) return to;
+      const width = layer.offsetWidth || frame.width;
+      const height = layer.offsetHeight || frame.height;
+      const fallback = {
+        x: frame.left + (to.x * frame.width) / width,
+        y: frame.top + (to.y * frame.height) / height,
+      };
+      // The winner pop moves the plate while the fan is in flight. Follow
+      // the rendered recipient without restarting the flight or its clock.
+      return viewportPointInFrame(
+        winnerViewportPoint(layer.closest('.table-page'), recipientId, fallback),
+        frame,
+        width,
+        height
+      );
+    };
 
     const run = (timestamp: number) => {
       if (!startTime) startTime = timestamp + delay;
@@ -196,10 +229,18 @@ export default function ChipAnimation({
       const elapsed = timestamp - startTime;
       const rawProgress = Math.min(elapsed / duration, 1);
       const t = easeOutCubic(rawProgress);
+      const target = destination();
+      const controlX = (from.x + target.x) / 2;
+      const dist = Math.hypot(target.x - from.x, target.y - from.y);
+      const controlY = (from.y + target.y) / 2 + dist * arcHeight;
 
       // Position along bezier curve
-      const x = useArc ? quadBezier(from.x, controlX, to.x, t) : from.x + (to.x - from.x) * t;
-      const y = useArc ? quadBezier(from.y, controlY, to.y, t) : from.y + (to.y - from.y) * t;
+      const x = useArc
+        ? quadBezier(from.x, controlX, target.x, t)
+        : from.x + (target.x - from.x) * t;
+      const y = useArc
+        ? quadBezier(from.y, controlY, target.y, t)
+        : from.y + (target.y - from.y) * t;
 
       setPosition({ x, y });
 
@@ -213,12 +254,7 @@ export default function ChipAnimation({
       if (rawProgress < 1) {
         animRef.current = requestAnimationFrame(run);
       } else {
-        // Finished — brief pause then hide
-        hideTimerRef.current = setTimeout(() => {
-          hideTimerRef.current = null;
-          setIsVisible(false);
-          onCompleteRef.current?.();
-        }, 100);
+        setFlightFinished(true);
       }
     };
 
@@ -230,7 +266,7 @@ export default function ChipAnimation({
     };
 
     // intentionally read through onCompleteRef; see CHIP-GLITCH FIX above.
-  }, [from.x, from.y, to.x, to.y, duration, delay, useArc, arcHeight]);
+  }, [from.x, from.y, to.x, to.y, duration, delay, useArc, arcHeight, recipientId]);
 
   if (!isVisible) return null;
 
@@ -245,7 +281,9 @@ export default function ChipAnimation({
       ref={containerRef}
       data-chip-recipient={recipientId}
       data-chip-flight={flightId}
-      data-chip-phase={position.x === to.x && position.y === to.y ? 'landed' : 'flying'}
+      data-chip-phase={
+        flightFinished || (position.x === to.x && position.y === to.y) ? 'landed' : 'flying'
+      }
       className={styles.chipContainer}
       style={{
         transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`,

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { MessageCircle, X, ExternalLink, Settings, Check } from './DockIcons';
-import { DOCK_STORAGE_PREFIX, dockId, dockName, dockLayout, dockCapacity, dockNotificationLayout, restoreDock, updateDock } from './messengerDock.mjs';
+import { DOCK_STORAGE_PREFIX, dockId, dockName, dockLayout, dockNotificationLayout, dockHasSurface, dockPreviewLayout, isDockResolutionCurrent, restoreDock, updateDock, updateDockPreviews } from './messengerDock.mjs';
 import MessengerChat from './MessengerChat';
 import { createDockContinuityOwner } from './dockContinuityOwner.mjs';
 
@@ -19,6 +19,7 @@ export default function MessengerDock({ services }) {
     };
     const [actorId, setActorId] = useState(null);
     const [chats, dispatch] = useReducer(updateDock, []);
+    const [previews, previewAction] = useReducer(updateDockPreviews, []);
     const [inbox, setInbox] = useState(false);
     const [conversations, setConversations] = useState([]);
     const [error, setError] = useState('');
@@ -34,6 +35,7 @@ export default function MessengerDock({ services }) {
     const continuityOwner = useRef(null);
     if (!continuityOwner.current) continuityOwner.current = createDockContinuityOwner({ getIdentity: () => identity.current, notify: continuityChanged });
     const interactions = useRef(new Map());
+    const resolutions = useRef(new Map());
     const [bottom, setBottom] = useState(76);
     const chatsRef = useRef(chats);
     chatsRef.current = chats;
@@ -52,19 +54,29 @@ export default function MessengerDock({ services }) {
         if (!dockId(id) || !identity.current) return;
         const actor = identity.current;
         const epoch = generation.current;
+        if (!incoming) interactions.current.set(id, (interactions.current.get(id) || 0) + 1);
         const interaction = interactions.current.get(id) || 0;
+        const resolution = (resolutions.current.get(id) || 0) + 1;
+        resolutions.current.set(id, resolution);
         try {
             const data = await inboxRequest({ workspace: 'resolve', conversationId: id });
-            if (identity.current !== actor || generation.current !== epoch || (interactions.current.get(id) || 0) !== interaction || data.conversation?.id !== id) return;
+            if (identity.current !== actor || generation.current !== epoch || (interactions.current.get(id) || 0) !== interaction || !isDockResolutionCurrent(incoming, resolution, resolutions.current.get(id)) || data.conversation?.id !== id) return;
             const prefs = await preferences.current;
-            if (identity.current !== actor || generation.current !== epoch || (interactions.current.get(id) || 0) !== interaction) return;
+            if (identity.current !== actor || generation.current !== epoch || (interactions.current.get(id) || 0) !== interaction || !isDockResolutionCurrent(incoming, resolution, resolutions.current.get(id))) return;
             // Explicitly opening a conversation is always allowed. Automatic
             // opening respects both the existing account setting and dock toggle.
             if (incoming && (!automatic.current || prefs?.notifications === false)) return;
-            const occupied = chatsRef.current.filter(chat => !chat.minimized).length >= dockCapacity(viewportRef.current.width);
-            const preserveComposer = incoming && occupied && document.activeElement?.closest('.dock-chat');
-            dispatch({ type: 'open', minimized: !!preserveComposer, conversation: { ...data.conversation, dockWorkspace: { workspace: data.clubId ? 'club' : 'social', clubId: data.clubId, folder: data.folder } }, incoming });
-            if (!incoming) setInbox(false);
+            setError('');
+            const conversation = { ...data.conversation, dockWorkspace: { workspace: data.clubId ? 'club' : 'social', clubId: data.clubId, folder: data.folder } };
+            if (incoming) {
+                dispatch({ type: 'refresh', conversation });
+                const visible = dockLayout(chatsRef.current, viewportRef.current).expanded.some(chat => chat.id === id);
+                if (!visible) previewAction({ type: 'receive', conversation });
+                return;
+            }
+            previewAction({ type: 'dismiss', id });
+            dispatch({ type: 'open', conversation });
+            setInbox(false);
         } catch (failure) {
             if (identity.current !== actor || generation.current !== epoch) return;
             if (!incoming) setError(failure.message);
@@ -106,7 +118,8 @@ export default function MessengerDock({ services }) {
             setActorId(identity.current);
             for (const chat of chatsRef.current) dispatch({ type: 'close', id: chat.id });
             setConversations([]); setInbox(false); setError('');
-            seen.current.clear(); lastTimes.current.clear(); interactions.current.clear();
+            previewAction({ type: 'clear' });
+            seen.current.clear(); lastTimes.current.clear(); interactions.current.clear(); resolutions.current.clear();
             loadedActor.current = null; setHydrated(null);
             startedAt.current = Date.now();
             preferences.current = user?.id ? getPreferences(user.id).catch(() => ({ notifications: false })) : null;
@@ -208,14 +221,17 @@ export default function MessengerDock({ services }) {
         const style = document.documentElement.style;
         const before = style.getPropertyValue('--sp-messenger-toast-clearance');
         const beforeRoom = style.getPropertyValue('--sp-messenger-toast-room');
-        const notifications = dockNotificationLayout(window.innerHeight, bottom, layout.height);
-        style.setProperty('--sp-messenger-toast-clearance', `${actorId ? notifications.bottom : 0}px`);
-        style.setProperty('--sp-messenger-toast-room', `${actorId ? notifications.maxHeight : window.innerHeight - 12}px`);
+        const active = actorId && dockHasSurface(chats, previews, inbox);
+        const notice = dockPreviewLayout(window.innerHeight, bottom, !!(layout.expanded.length || inbox));
+        const noticeTopClearance = notice.bottom + Math.min(notice.maxHeight, previews.length * 100) + 12;
+        const notifications = previews.length ? { bottom: noticeTopClearance, maxHeight: Math.max(60, window.innerHeight - noticeTopClearance - 12) } : dockNotificationLayout(window.innerHeight, bottom, layout.height);
+        style.setProperty('--sp-messenger-toast-clearance', `${active ? notifications.bottom : 0}px`);
+        style.setProperty('--sp-messenger-toast-room', `${active ? notifications.maxHeight : window.innerHeight - 12}px`);
         return () => {
             if (before) style.setProperty('--sp-messenger-toast-clearance', before); else style.removeProperty('--sp-messenger-toast-clearance');
             if (beforeRoom) style.setProperty('--sp-messenger-toast-room', beforeRoom); else style.removeProperty('--sp-messenger-toast-room');
         };
-    }, [actorId, layout.height, bottom, viewport.height]);
+    }, [actorId, chats.length, previews.length, inbox, layout.height, bottom, viewport.height]);
     const windowAction = (type, id) => {
         interactions.current.set(id, (interactions.current.get(id) || 0) + 1);
         if (layout.mobile) for (const chat of chatsRef.current) dispatch({ type: 'minimize', id: chat.id });
@@ -227,8 +243,23 @@ export default function MessengerDock({ services }) {
         setPopups(next);
         try { localStorage.setItem(`${DOCK_STORAGE_PREFIX}popups:${actorId}`, String(next)); } catch { setError('This Preference Could Not Be Saved On This Device'); }
     };
-    if (!actorId) return null;
+    const dismissPreview = id => {
+        interactions.current.set(id, (interactions.current.get(id) || 0) + 1);
+        previewAction({ type: 'dismiss', id });
+    };
+    const previewPlacement = dockPreviewLayout(typeof window === 'undefined' ? viewport.height : window.innerHeight, bottom, !!(layout.expanded.length || inbox));
+    if (!actorId || !dockHasSurface(chats, previews, inbox)) return null;
     return <>
+        {previews.length > 0 && <aside className="messenger-previews" aria-label="New Messages" aria-live="polite" style={previewPlacement}>
+            {error && <p role="alert" className="dock-preview-error">{error}</p>}
+            {previews.map(conversation => <article className="dock-preview" key={conversation.id}>
+                <button type="button" className="dock-preview-open" aria-label={`Open Message From ${dockName(conversation)}`} onClick={() => resolve(conversation.id)}>
+                    <Portrait conversation={conversation} /><span><small>New Message</small><strong>{dockName(conversation)}</strong><span>{conversation.last_message_preview || 'Open Conversation'}</span></span>
+                </button>
+                <button type="button" className="dock-preview-close" aria-label={`Dismiss Message From ${dockName(conversation)}`} onClick={() => dismissPreview(conversation.id)}><X size={20} /></button>
+            </article>)}
+        </aside>}
+        {(chats.length > 0 || inbox) &&
         <div className={`messenger-dock ${layout.mobile ? 'dock-mobile' : ''}`} aria-label="Messenger Chat Dock" onKeyDown={event => { if (event.key === 'Escape' && inbox) { event.stopPropagation(); setInbox(false); } }} style={{ width: layout.width, height: layout.height, bottom }}>
             {inbox ? <section className="dock-inbox" aria-label="Chats">
                 <header><strong>Chats</strong><button type="button" aria-label="Chat Settings" onClick={() => setSettings(value => !value)}><Settings size={20} /></button><button type="button" aria-label="Close Chat List" onClick={() => setInbox(false)}><X size={20} /></button></header>
@@ -254,7 +285,7 @@ export default function MessengerDock({ services }) {
                 </div>)}
                 <button type="button" className="dock-launcher" aria-label={`Messages${unread ? `, ${unread} Unread` : ''}`} aria-expanded={inbox} onClick={() => { setInbox(value => !value); if (!inbox) void refresh(); }}><MessageCircle size={26} />{unread > 0 && <b className="dock-count">{unread > 99 ? '99+' : unread}</b>}</button>
             </nav>
-        </div>
+        </div>}
 
     </>;
 }

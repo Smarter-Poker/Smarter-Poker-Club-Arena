@@ -4,6 +4,26 @@ export const DOCK_STORAGE_PREFIX = 'sp-messenger-dock-v1:';
 export const DOCK_MAX_CHATS = 8;
 export const dockId = value => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 export const dockName = conversation => conversation?.title || conversation?.otherUser?.display_name || conversation?.otherUser?.full_name || conversation?.otherUser?.username || 'Conversation';
+export const isDockResolutionCurrent = (incoming, expected, current) => !incoming || expected === current;
+// Notices are ephemeral, authorized conversation projections, never restored
+// from storage. Dismissal changes presentation only, not the read watermark.
+export function updateDockPreviews(previews, action) {
+  if (action.type === 'clear') return [];
+  if (action.type === 'dismiss') return previews.filter((row) => row.id !== action.id);
+  if (action.type !== 'receive' || !dockId(action.conversation?.id)) return previews;
+  return [
+    ...previews.filter((row) => row.id !== action.conversation.id),
+    action.conversation,
+  ].slice(-3);
+}
+export function dockHasSurface(chats, previews, inbox = false) {
+  return !!(chats.length || previews.length || inbox);
+}
+export function dockPreviewLayout(viewHeight, bottom, hasWindow) {
+  const clearance = Math.min(bottom + (hasWindow ? 128 : 0), Math.max(bottom, viewHeight - 184));
+  // Leave one scrollable notification row above the white notice stack.
+  return { bottom: clearance, maxHeight: Math.max(60, viewHeight - clearance - 84) };
+}
 export function dockCapacity(width) { return width < 768 ? 1 : Math.max(1, Math.min(3, Math.floor((width - 88) / 350))); }
 export function restoreDock(raw) {
     try {

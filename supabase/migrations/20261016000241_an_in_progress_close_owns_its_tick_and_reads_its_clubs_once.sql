@@ -1,4 +1,4 @@
--- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_process_weekly_accounting_scope(uuid,uuid)'::regprocedure)) IN ('faa32923eae3b055b18e85d5f3df356d','a0ffe85a2f16c82af0221de03202fa26') AND md5(pg_get_functiondef('public.fn_accounting_week_clubs(uuid,uuid,timestamptz,timestamptz)'::regprocedure))='5d65713ce64534dfbe31e749d5bf737f')
+-- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_process_weekly_accounting_scope(uuid,uuid)'::regprocedure)) IN ('faa32923eae3b055b18e85d5f3df356d','a0ffe85a2f16c82af0221de03202fa26') AND md5(pg_get_functiondef('public.fn_accounting_week_clubs(uuid,uuid,timestamptz,timestamptz)'::regprocedure))='7d216ca8b05a7c4b5b47133d6bd95ed1')
 -- 20261016000241_an_in_progress_close_owns_its_tick_and_reads_its_clubs_once.sql
 --
 -- Version reserved by scripts/new-migration.mjs against origin/main and every
@@ -48,13 +48,16 @@
 --
 -- The fixes, at those lines:
 --
--- A. fn_accounting_week_clubs reads a union's earning clubs set-based: the
---    week's cash sources grouped per club (latest earned_at), the recognized
---    tournament sources grouped per club (whether any is earned, and the
---    latest instant both its charge and its recognition are at or after),
---    each club's launch cutoff asked once as before, and a club is accepted
---    exactly when the old per-row test accepted one of its rows. Measured on
---    production: 11.6 s, the same 2 clubs. Inside one union close attempt,
+-- A. fn_accounting_week_clubs reads a union's earning clubs per club: the
+--    week's cash sources grouped per club (latest earned_at), and each club
+--    with tournament fee sources in this union accepted by one indexed
+--    existence test of its own recognized rows in the week, carrying the
+--    per-row tests unchanged; each club's launch cutoff is asked once as
+--    before. A club is accepted exactly when the old per-row test accepted
+--    one of its rows. Measured on production at 00:58 UTC: 15.6 s against
+--    23.9 s for the old read run right after it, the same 2 clubs; the
+--    existence test costs 1.3 s for a club with no row and milliseconds for
+--    a club with one. Inside one union close attempt,
 --    while this transaction holds the exclusive week lock that every source
 --    writer (fn_accrue_cash_hand_commissions,
 --    fn_lock_accounting_tournament_recognition_week,
@@ -154,28 +157,19 @@ BEGIN
    RETURN QUERY SELECT m.id::uuid FROM unnest(string_to_array(NULLIF(split_part(current_setting('app.accounting_week_clubs_memo',true),'=',2),''),',')) WITH ORDINALITY m(id,n) ORDER BY m.n;
    RETURN;
   END IF;
-  -- SET-BASED (20261016000241): each club's cash sources and recognized
-  -- tournament sources are read once per club, not materialised row by row
-  -- (2.5 million rows for the 2026-10-05 Midway week). A club is accepted
-  -- exactly when the per-row test accepted one of its rows: with no launch
-  -- cutoff, any cash row or any earned tournament row; with a cutoff, a cash
-  -- row earned at or after it, or an earned tournament row both charged and
-  -- recognized at or after it (finite instants only, as before).
+  -- PER CLUB (20261016000241): the week's cash sources are grouped per club,
+  -- and a tournament club is accepted by one indexed existence test of its
+  -- own rows, instead of materialising every accepted earning (2.5 million
+  -- rows for the 2026-10-05 Midway week) to UNION them down to their clubs.
+  -- The tests are the per-row tests, unchanged: with no launch cutoff, any
+  -- cash row or any earned tournament row; with a cutoff, a cash row earned
+  -- at or after it, or an earned tournament row both charged and recognized
+  -- at or after it (finite instants only).
   SELECT COALESCE(array_agg(w.id ORDER BY w.id),ARRAY[]::uuid[]) INTO v_clubs FROM (WITH cash_clubs AS MATERIALIZED (
  SELECT s.club_id,max(s.earned_at) AS latest FROM public.accounting_cash_rake_sources s
  WHERE s.coordinator_union_id=p_union_id AND s.earned_at>=p_from AND s.earned_at<p_to GROUP BY s.club_id
 ), tournament_clubs AS MATERIALIZED (
- SELECT s.club_id,
-  bool_or((rs.disposition='earned' AND r.status='recognized' AND rs.rake_credit=s.rake_credit
-   AND rs.recognized_at=r.recognized_at AND NOT s.union_id IS DISTINCT FROM r.union_id) IS TRUE) AS earned_any,
-  max(LEAST(s.charged_at,rs.recognized_at)) FILTER(WHERE (rs.disposition='earned' AND r.status='recognized' AND rs.rake_credit=s.rake_credit
-   AND rs.recognized_at=r.recognized_at AND NOT s.union_id IS DISTINCT FROM r.union_id) IS TRUE
-   AND s.charged_at IS NOT NULL AND isfinite(s.charged_at) AND rs.recognized_at IS NOT NULL AND isfinite(rs.recognized_at)) AS latest
- FROM public.accounting_tournament_fee_sources s
- JOIN public.accounting_tournament_recognized_sources rs ON rs.source_id=s.id AND rs.tournament_id=s.tournament_id
- JOIN public.accounting_tournament_fee_recognitions r ON r.tournament_id=s.tournament_id
- WHERE s.coordinator_union_id=p_union_id AND rs.recognized_at>=p_from AND rs.recognized_at<p_to
- GROUP BY s.club_id
+ SELECT DISTINCT s.club_id FROM public.accounting_tournament_fee_sources s WHERE s.coordinator_union_id=p_union_id
 ), earning_clubs AS MATERIALIZED (
  SELECT e.club_id FROM (SELECT c.club_id FROM cash_clubs c UNION ALL SELECT t.club_id FROM tournament_clubs t)e GROUP BY e.club_id
 ), earning_cutoffs AS MATERIALIZED (
@@ -185,7 +179,15 @@ BEGIN
  WHERE CASE WHEN b.cutoff IS NULL THEN true ELSE c.latest>=b.cutoff END
  UNION ALL
  SELECT t.club_id FROM tournament_clubs t LEFT JOIN earning_cutoffs b ON b.club_id=t.club_id
- WHERE CASE WHEN b.cutoff IS NULL THEN t.earned_any ELSE t.latest>=b.cutoff END
+ WHERE EXISTS(SELECT 1 FROM public.accounting_tournament_fee_sources s
+  JOIN public.accounting_tournament_recognized_sources rs ON rs.source_id=s.id AND rs.tournament_id=s.tournament_id
+  JOIN public.accounting_tournament_fee_recognitions r ON r.tournament_id=s.tournament_id
+  WHERE s.coordinator_union_id=p_union_id AND s.club_id=t.club_id AND rs.recognized_at>=p_from AND rs.recognized_at<p_to
+   AND CASE WHEN b.cutoff IS NULL THEN true ELSE s.charged_at IS NOT NULL AND isfinite(s.charged_at) AND s.charged_at>=b.cutoff END
+   AND CASE WHEN b.cutoff IS NULL THEN true ELSE rs.recognized_at IS NOT NULL AND isfinite(rs.recognized_at) AND rs.recognized_at>=b.cutoff END
+   AND rs.disposition='earned' AND r.status='recognized'
+   AND rs.rake_credit=s.rake_credit AND rs.recognized_at=r.recognized_at
+   AND NOT s.union_id IS DISTINCT FROM r.union_id)
 ), initial AS ($anchor$;
  o3 text:=$anchor$  )x WHERE x.id IS NOT NULL AND x.id<>p_union_id ORDER BY x.id;
  END IF;$anchor$;
@@ -203,7 +205,7 @@ BEGIN
  SELECT string_agg(concat_ws('|',p.proowner::regrole,p.prosecdef,p.provolatile,array_to_string(p.proconfig,','),array_to_string(p.proacl,',')),';') INTO before FROM pg_proc p WHERE p.oid=sig;
  post:=replace(replace(replace(def,o1,n1),o2,n2),o3,n3);
  EXECUTE post;
- IF md5(pg_get_functiondef(sig))<>'5d65713ce64534dfbe31e749d5bf737f' THEN RAISE EXCEPTION 'in_progress_close_week_clubs_postimage_refused';END IF;
+ IF md5(pg_get_functiondef(sig))<>'7d216ca8b05a7c4b5b47133d6bd95ed1' THEN RAISE EXCEPTION 'in_progress_close_week_clubs_postimage_refused';END IF;
  IF (SELECT string_agg(concat_ws('|',p.proowner::regrole,p.prosecdef,p.provolatile,array_to_string(p.proconfig,','),array_to_string(p.proacl,',')),';') FROM pg_proc p WHERE p.oid=sig) IS DISTINCT FROM before THEN RAISE EXCEPTION 'in_progress_close_week_clubs_security_refused';END IF;
 END $install$;
 

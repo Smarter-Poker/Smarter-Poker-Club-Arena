@@ -57,6 +57,12 @@ groups:
           sp:hands_dealt:rate5m < 1
           and poker_active_tables > 0
           unless max_over_time(poker_maintenance_break_active[6m]) == 1
+          # An owner floor park holding half the cash floor or more is a stop
+          # somebody scheduled (2026-10-15: park 3d9c1ba1, share 1.0, paged
+          # four of these rules). 0.5: this rule pages at half the healthy floor
+          # or below, so a smaller park cannot explain it. Derivation:
+          # server/src/services/FloorParkWatch.ts, migration 20261015181538.
+          unless on() max_over_time(poker_operator_floor_park_share[6m]) >= 0.5
         for: 10m
         labels:
           severity: critical

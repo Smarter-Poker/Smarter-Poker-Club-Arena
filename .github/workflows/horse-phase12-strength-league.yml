@@ -12,7 +12,7 @@ run-name: Horse Phase 12 ${{ inputs.variant }} strength league ${{ inputs.source
 # profiles (six-max at 2, 4 and 6 dealt and 40, 100 and 200 BB, the seat
 # ceiling, and 1,000 BB for FLH and FLO8) x that pack's three held-out seeds x
 # the profile shard count, one shard per job and one job per runner, at most
-# 20 at a time. Each pack is a separate dispatch and a separate
+# eight at a time. Each pack is a separate dispatch and a separate
 # qualification; a pass for one pack never certifies another. The matrix is
 # not written here: the plan job reads it from the contract at the evaluated
 # commit, so the workflow cannot drift from the contract.
@@ -51,8 +51,13 @@ on:
 permissions:
   contents: read
 
+# Shared across phases, variants and source SHAs: one full league at a time.
+# Waiting runs consume no runners. Keep up to 100 pending qualifications;
+# the default single pending slot would silently replace earlier variants.
+# GitHub's finite queue rejects overflow; it never certifies an omitted run.
 concurrency:
-  group: horse-phase12-strength-league-${{ inputs.variant }}-${{ inputs.source_sha }}
+  group: horse-strength-hosted-capacity
+  queue: max
   cancel-in-progress: false
 
 env:
@@ -135,7 +140,7 @@ jobs:
     timeout-minutes: 120
     strategy:
       fail-fast: false
-      max-parallel: 20
+      max-parallel: 8
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     defaults:
       run:

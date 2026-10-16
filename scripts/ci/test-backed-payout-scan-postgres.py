@@ -185,6 +185,10 @@ try:
     runpy.run_path(str(FIXTURE/'ticket-funding-native.py'))['qualify'](globals())
     runpy.run_path(str(FIXTURE/'conservation-set-native.py'))['qualify'](globals())
     runpy.run_path(str(FIXTURE/'diamond-book-native.py'))['qualify'](globals())
+    # The Spin-only scalar term is qualified in its own private PG17 fixture;
+    # this maintained accounting driver makes that proof required in CI.
+    print(run([shutil.which('python3'), ROOT/'scripts/ci/test-spin-conservation-postgres.py',
+               '--pg-bin', pg, '--scratch', args.scratch]))
 finally:
     if started and (data/'postmaster.pid').exists():run([pg/'pg_ctl','-D',data,'-m','fast','-w','stop'])
     shutil.rmtree(cluster)

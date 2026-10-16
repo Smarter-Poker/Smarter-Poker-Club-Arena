@@ -839,7 +839,19 @@ describe('the corner and the lobby are on the realism chassis', () => {
     }
   });
 
-  it('the actions are illuminated pills, the notice a bevelled plate, sizes unchanged', () => {
+  it('Seat Change matches the square table controls while queue states keep their labels', () => {
+    const trigger = read('src/components/table/CashClusterHUD.tsx');
+    expect(trigger).toContain('cch-seat-change cch-seat-change--control');
+    expect(trigger).toContain('assets/club-buttons/seat-change-black-v1.webp');
+    expect(trigger).toContain('cch-seat-change__face');
+    expect(trigger).not.toContain('Hide Seat Change');
+    expect(HUD).toMatch(
+      /\.cch-seat-change\.cch-seat-change--control \{[\s\S]*?width: var\(--sp-hud-tile-size, 66px\);[\s\S]*?height: var\(--sp-hud-tile-size, 66px\);/
+    );
+    expect(HUD).toContain('.cch-seat-change--control:focus-visible');
+  });
+
+  it('queue actions retain their pills and the notice remains a bevelled plate', () => {
     expect(HUD).toMatch(/\.cch-seat-change \{[\s\S]*?border-radius: 999px;/);
     expect(HUD).toMatch(/\.cch-seat-change::after \{/);
     expect(HUD).toMatch(/\.cch-move-notice \{[\s\S]*?max-width: 240px;/);

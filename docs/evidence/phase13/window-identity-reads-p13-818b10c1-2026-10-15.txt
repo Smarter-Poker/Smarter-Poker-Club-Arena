@@ -31,3 +31,23 @@ note: /health at 17:58:21Z (Mac) read releaseSha 818b10c16e962616008cc225a28a1cd
 digests: release 818b10c1 is the declared source; its Phase 13 digests are section 4 (p13-digests-818b10c.txt, computed from that tree at 16:39Z before any journal read).
 window H=18: [2026-10-15T18:02:00.000Z, 2026-10-15T19:50:00.000Z)
 VOID H=18 (recorded at 2026-10-15T18:14:48Z, before any journal of the window was read): auto-deploy-hetzner run 38772485733 (Engine Release 818b10c1, the serving release itself, cut over 17:41:51Z) completed successfully at 2026-10-15T18:12:48Z, inside the window, when its trailing certification job finished. Section 2 counts any successful completion between the reads, so the window is void. Per section 2 the declaration applies to the next H after the void window: H=20, window [2026-10-15T20:02:00.000Z, 2026-10-15T21:50:00.000Z).
+read1 (declared amended, H:00-H:02, H=20) at 2026-10-15T20:00:06Z
+2026-10-15T17:41:51.159462786Z 818b10c16e962616008cc225a28a1cddba8cf6a0
+health 818b10c16e962616008cc225a28a1cddba8cf6a0
+release runs queued/in_progress:
+recent release runs:
+38772485733	completed	success	Engine Release 818b10c16e962616008cc225a28a1cddba8cf6a0	2026-10-15T18:12:48Z
+38768978748	completed	success	Engine Release 9970aa0ce731f73d1b5cd56446065ab43a9f0fa5	2026-10-15T17:30:35Z
+38748964796	completed	success	Engine Release 3002fe25f06cc958b2708026e80e9904bac6c518	2026-10-15T15:10:53Z
+date after 2026-10-15T20:00:13Z
+VOID H=20 (recorded 2026-10-15T21:17:10Z, before any journal read): container replaced at 2026-10-15T20:55:52Z by release a2ccc04d39bc15852d0047a32893371f3a0a6836 (run 38799018145). Next: H=22, window [2026-10-15T22:02:00.000Z, 2026-10-15T23:50:00.000Z), if the serving release carries section 4 digests.
+read1 (declared amended, H:00-H:02, H=22) at 2026-10-15T22:00:04Z
+2026-10-15T20:55:52.63394784Z a2ccc04d39bc15852d0047a32893371f3a0a6836
+health a2ccc04d39bc15852d0047a32893371f3a0a6836
+release runs queued/in_progress:
+recent release runs:
+38799018145	completed	success	Engine Release a2ccc04d39bc15852d0047a32893371f3a0a6836	2026-10-15T21:06:42Z
+38772485733	completed	success	Engine Release 818b10c16e962616008cc225a28a1cddba8cf6a0	2026-10-15T18:12:48Z
+38768978748	completed	success	Engine Release 9970aa0ce731f73d1b5cd56446065ab43a9f0fa5	2026-10-15T17:30:35Z
+date after 2026-10-15T22:00:09Z
+H=22: release a2ccc04d39bc15852d0047a32893371f3a0a6836, Phase 13 digests recomputed from its own tree at 21:18Z equal section 4 (p13-digests-a2ccc04.txt). Window [2026-10-15T22:02:00.000Z, 2026-10-15T23:50:00.000Z).

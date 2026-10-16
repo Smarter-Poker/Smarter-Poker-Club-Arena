@@ -235,6 +235,38 @@ function renderStudio(checkoutReturnResult: 'success' | 'canceled' | null = null
 }
 
 describe('ThemeSettingsModal hardening', () => {
+  it('remembers the selected game scope after remount and keeps accounts separate', async () => {
+    const view = renderStudio();
+    fireEvent.change(screen.getByLabelText('Apply To'), { target: { value: 'PLO' } });
+    expect(screen.getByLabelText('Apply To')).toHaveValue('PLO');
+    view.unmount();
+    const returning = renderStudio();
+    expect(screen.getByLabelText('Apply To')).toHaveValue('PLO');
+    returning.rerender(
+      <ThemeSettingsModal isOpen onClose={vi.fn()} userId="user-2" isVip={false} />
+    );
+    expect(screen.getByLabelText('Apply To')).toHaveValue('ALL');
+    returning.rerender(
+      <ThemeSettingsModal isOpen onClose={vi.fn()} userId="user-1" isVip={false} />
+    );
+    expect(screen.getByLabelText('Apply To')).toHaveValue('PLO');
+    await act(async () => {});
+  });
+
+  it('a Studio kept mounted while closed opens on the scope another Studio saved', async () => {
+    // Settings, the hamburger menu and the table panel each keep one mounted.
+    localStorage.setItem('ca_table_studio_scope:user-1', JSON.stringify('ALL'));
+    const resident = render(
+      <ThemeSettingsModal isOpen={false} onClose={vi.fn()} userId="user-1" isVip={false} />
+    );
+    const other = renderStudio();
+    fireEvent.change(screen.getByLabelText('Apply To'), { target: { value: 'PLO' } });
+    other.unmount();
+    resident.rerender(<ThemeSettingsModal isOpen onClose={vi.fn()} userId="user-1" isVip={false} />);
+    expect(screen.getByLabelText('Apply To')).toHaveValue('PLO');
+    await act(async () => {});
+  });
+
   beforeEach(() => {
     mocks.themeResult = Promise.resolve({ data: [savedTheme], error: null });
     mocks.purchaseResult = Promise.resolve({ data: [], error: null });
@@ -283,6 +315,7 @@ describe('ThemeSettingsModal hardening', () => {
       diamonds: 1_000,
       loadDiamonds: mocks.loadDiamonds,
     });
+    window.localStorage.clear();
     window.sessionStorage.clear();
     window.history.replaceState({}, '', '/table/test-table');
   });

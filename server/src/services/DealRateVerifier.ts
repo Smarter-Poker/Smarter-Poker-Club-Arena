@@ -64,6 +64,7 @@ import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { reportError } from './errorReporter.js';
 import { IN_LIST_CHUNK } from './supabase/chunkedIn.js';
 import { raiseEngineAlert, resolveEngineAlert } from './engineAlerts.js';
+import { fleetIsParkedByOwner, startFloorParkWatch, stopFloorParkWatch } from './FloorParkWatch.js';
 
 /** How often to ask the database. */
 const CHECK_INTERVAL_MS = 60_000;
@@ -263,6 +264,8 @@ export class DealRateVerifier {
     const generation = ++this.lifecycleGeneration;
     this.timer = setInterval(() => this.launchCheck(generation), CHECK_INTERVAL_MS);
     (this.timer as { unref?: () => void }).unref?.();
+    // The floor-park share this class consults below; see FloorParkWatch.ts.
+    startFloorParkWatch();
     console.log('[DealRateVerifier] watching the fleet from the database');
   }
 
@@ -276,6 +279,7 @@ export class DealRateVerifier {
     this.lifecycleGeneration++;
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    stopFloorParkWatch();
 
     const drain = this.drainLifecycleJobs();
     const trackedStop = drain.finally(() => {
@@ -531,6 +535,25 @@ export class DealRateVerifier {
           }
           // Not booting: nothing has dealt anywhere for the whole grace window.
           // Fall through and judge the floor on this process's first check.
+        }
+        /**
+         * AN OWNER FLOOR PARK IS NOT A LOST FLOOR (2026-10-15). On 2026-10-15
+         * the owner parked seven clubs that hold every cash table for a horse
+         * wallet reset, and this alarm paged at 17:33 for a stop he had
+         * scheduled. While a fresh read says a park holds at least half the
+         * floor, the floor being below FLEET_FLOOR_TABLES is the park's doing:
+         * stand down exactly as for the break, counters reset so a streak
+         * gathered under the park cannot fire one tick after it ends. A park
+         * that nobody keeps is paged by the floor-hold watchdog instead, and a
+         * read that fails says 0 here, so this never hides a real loss for
+         * longer than a lease. See FloorParkWatch.ts.
+         */
+        if (fleetIsParkedByOwner()) {
+          this.belowFloorChecks = 0;
+          this.silentChecks = 0;
+          this.handsInWindow = null;
+          this.lastCheckedAt = Date.now();
+          return;
         }
         this.belowFloorChecks++;
         this.silentChecks = 0;

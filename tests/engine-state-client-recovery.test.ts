@@ -1070,6 +1070,45 @@ describe('token acquisition cannot strand either connection type', () => {
 });
 
 describe('foreground recovery does not wait for an online event', () => {
+  for (const mode of ['mux', 'legacy', 'channel'] as const) {
+    it(`${mode}: repeated wake events preserve the replacement handshake until its deadline`, async () => {
+      localStorage.setItem('ca_ws_mux', mode === 'legacy' ? '0' : '1');
+      const statuses: string[] = [];
+      const opts = {
+        baseUrl: 'https://engine.example',
+        getToken: async () => 'tok',
+        onStatus: (status: string) => statuses.push(status),
+      };
+      const c =
+        mode === 'channel'
+          ? new EngineChannelClient(opts)
+          : new EngineStateClient({ ...opts, tableId: TABLE, onSnapshot: () => undefined });
+      try {
+        await c.connect();
+        const ws = live();
+        // A mux transport can be open while its table acknowledgement is
+        // still in flight. Neither state is permission to replace its owner.
+        if (mode === 'mux') ws._open();
+        const sent = [...ws.sent];
+        await vi.advanceTimersByTimeAsync(1_300);
+        window.dispatchEvent(new Event('online'));
+        window.dispatchEvent(new Event('pageshow'));
+        document.dispatchEvent(new Event('visibilitychange'));
+        await flush();
+        expect(ws.closedWith).toHaveLength(0);
+        expect(FakeWebSocket.instances).toHaveLength(1);
+        expect(ws.sent).toEqual(sent);
+        // An unanswered handshake still expires; repeated wakes cannot
+        // replace it early or grant it a new deadline.
+        await vi.advanceTimersByTimeAsync(15_000);
+        expect(statuses).toContain('reconnecting');
+      } finally {
+        c.disconnect();
+        localStorage.removeItem('ca_ws_mux');
+      }
+    });
+  }
+
   function make(kind: 'table' | 'channel') {
     return kind === 'table'
       ? client({ initialDelay: 30_000, maxDelay: 30_000 }).c
@@ -1121,6 +1160,30 @@ describe('foreground recovery does not wait for an online event', () => {
       } finally {
         c.disconnect();
         visibility.mockRestore();
+      }
+    });
+    it(`${kind}: wake events preserve a bounded handshake already recovering the link`, async () => {
+      const c = make(kind);
+      try {
+        void c.connect();
+        await flush();
+        const ws = live();
+        // A mux can be physically open while this table is waiting for its ack.
+        if (kind === 'table') ws._open();
+        await vi.advanceTimersByTimeAsync(1_300);
+        wake('pageshow');
+        wake('visibilitychange');
+        await flush();
+        expect(FakeWebSocket.instances).toHaveLength(1);
+        expect(ws.closedWith).toHaveLength(0);
+        if (kind === 'table') {
+          expect(
+            ws.sent.map((raw) => JSON.parse(raw)).filter((frame) => frame.type === 'SUBSCRIBE')
+          ).toHaveLength(1);
+          ws._frame({ type: 'SUBSCRIBED', tableId: TABLE });
+        } else ws._open();
+      } finally {
+        c.disconnect();
       }
     });
     it(`${kind}: a healthy open connection survives repeated wake events`, async () => {

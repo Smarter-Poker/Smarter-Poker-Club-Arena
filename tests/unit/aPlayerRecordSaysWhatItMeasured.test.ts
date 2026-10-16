@@ -240,8 +240,11 @@ describe('the transfer modal (source pins beside the mount test)', () => {
   });
 
   it('previews the wallet the chips land in', () => {
-    expect(MODAL).toContain('const destinationIsAgentWallet =');
-    expect(MODAL).toContain("select('agent_wallet_balance')");
+    // 2026-10-16: the preview reads every wallet the recipient holds through
+    // the cashier balance read the Send Out screen uses, not the agents table.
+    expect(MODAL).toContain('const destinationLabel = SEND_DESTINATION_LABELS[previewDestination];');
+    expect(MODAL).toContain('useRecipientWalletBalances(');
+    expect(MODAL).toContain('recipientBalances?.[previewDestination]');
   });
 
   it('is a dialog with labelled fields', () => {

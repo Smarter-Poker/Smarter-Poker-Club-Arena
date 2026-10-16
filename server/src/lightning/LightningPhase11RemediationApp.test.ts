@@ -378,3 +378,76 @@ describe('finding 7: a pair that shared one hand in the window is reported', () 
     for (const p of sig.pairs) expect(p.latency_corr).toBeNull();
   });
 });
+
+describe('A/A calibration uses the database plan snapshot and source binding', () => {
+  const binding = 'a'.repeat(32);
+  const snap = (nowMs: number) => ({
+    nowMs,
+    players: POP.map((id, i) =>
+      player(id, {
+        legal: i >= 2,
+        reasonCode: i < 2 ? 'DISCONNECTED' : null,
+        idleSinceMs: nowMs - 8_000 - i,
+        enteredAtMs: nowMs - 40_000,
+        joinedAtMs: nowMs - 90_000,
+        slotOpenedAtMs: nowMs - 30_000,
+        lastBbAtMs: nowMs - 10_000 + i,
+      })
+    ),
+    recentHands: [],
+    epoch: 7,
+  });
+  it('uses actual queue and blind keys instead of reconstructing them from first sighting', () => {
+    const { r } = runner();
+    const actual = snap(100_000);
+    const observed = r.buildSnapshot(
+      pass(actual.nowMs, {
+        kind: 'match',
+        authoritativeSnapshot: actual,
+        snapshotBinding: binding,
+      } as any)
+    );
+    expect(observed).toEqual(actual);
+    expect(observed).not.toBe(actual);
+    expect(observed.players[0]).not.toBe(actual.players[0]);
+  });
+  it('marks estimated windows as unbound, so they cannot supply a fresh calibration', async () => {
+    const { r, rpc } = runner(undefined, { ...ON, shadow_matcher_version: 'm1-port' });
+    const t = Date.UTC(2026, 9, 15, 12, 0);
+    r.observe(pass(t));
+    r.observe(pass(t + 61_000));
+    await r.settled();
+    expect(records(rpc)[0].p_live.snapshot_binding).toBeNull();
+    expect(records(rpc)[0].p_shadow.snapshot_binding).toBeNull();
+    await r.stop();
+  });
+  it('binds both sides to the actual SQL source and rejects a window mixing bindings', async () => {
+    const { r, rpc } = runner(undefined, { ...ON, shadow_matcher_version: 'm1-port' });
+    const t = Date.UTC(2026, 9, 15, 12, 0);
+    r.observe(
+      pass(t, { kind: 'match', authoritativeSnapshot: snap(t), snapshotBinding: binding } as any)
+    );
+    r.observe(
+      pass(t + 61_000, {
+        kind: 'match',
+        authoritativeSnapshot: snap(t + 61_000),
+        snapshotBinding: binding,
+      } as any)
+    );
+    await r.settled();
+    expect(records(rpc)[0].p_live.snapshot_binding).toBe(binding);
+    expect(records(rpc)[0].p_shadow.snapshot_binding).toBe(binding);
+    r.observe(
+      pass(t + 62_000, {
+        kind: 'match',
+        authoritativeSnapshot: snap(t + 62_000),
+        snapshotBinding: 'b'.repeat(32),
+      } as any)
+    );
+    r.observe(pass(t + 121_000));
+    await r.settled();
+    expect(records(rpc)[1].p_live.snapshot_binding).toBeNull();
+    expect(records(rpc)[1].p_shadow.snapshot_binding).toBeNull();
+    await r.stop();
+  });
+});

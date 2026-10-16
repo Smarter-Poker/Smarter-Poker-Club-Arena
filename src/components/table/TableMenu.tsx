@@ -13,6 +13,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import './TableMenu.css';
+import { useSeatChangeVisibility } from '../../hooks/useSeatChangeVisibility';
 import { haptic, soundService } from '../../services/SoundService';
 import {
   SitOutIcon,
@@ -30,6 +31,7 @@ import { STORAGE_KEYS } from '../../lib/storage';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useAuthUser } from '../../hooks/useAuthUser';
+import { useUserTableSettings } from '../../hooks/useUserTableSettings';
 import { AvatarGallery } from '../customization/AvatarGallery';
 import { useHeaderDataStore } from '../../stores/useHeaderDataStore';
 import { useButtonImage } from '../../hooks/useButtonImage';
@@ -317,6 +319,8 @@ export function TableMenu({
   onOpenIdentity,
 }: TableMenuProps) {
   const hamburgerIcon = useButtonImage('icon-hamburger');
+  const { visible: seatChangeVisible, setVisible: setSeatChangeVisible } =
+    useSeatChangeVisibility();
   /* `activeSection` / `setActiveSection` deleted 2026-08-25: state written by
      nobody and read by nobody since the file was written. */
   const menuRef = useRef<HTMLDivElement>(null);
@@ -335,6 +339,9 @@ export function TableMenu({
   });
   const [isVip, setIsVip] = useState(false);
   const { user } = useAuthUser();
+  const { settings: playerSettings, toggleSetting: togglePlayerSetting } = useUserTableSettings(
+    user?.id
+  );
   const avatarUrl = useHeaderDataStore((s) => s.avatarUrl);
   const prevOpenRef = useRef(false);
 
@@ -440,6 +447,25 @@ export function TableMenu({
       ] as MenuAction[],
     },
     ...propSections,
+    {
+      title: 'Table Controls',
+      actions: [
+        {
+          id: 'auto-time-bank',
+          label: 'Auto Time Bank',
+          icon: <SettingsIcon />,
+          badge: playerSettings.auto_time_bank ? 'ON' : 'OFF',
+          onClick: () => void togglePlayerSetting('auto_time_bank'),
+        },
+        {
+          id: 'seat-change-visibility',
+          label: 'Seat Change',
+          icon: <SettingsIcon />,
+          badge: seatChangeVisible ? 'ON' : 'OFF',
+          onClick: () => setSeatChangeVisible(!seatChangeVisible),
+        },
+      ],
+    },
   ];
 
   // Sound cue on menu open
@@ -612,7 +638,18 @@ export function TableMenu({
                       return (
                         <button
                           key={action.id}
-                          role="menuitem"
+                          role={
+                            action.id === 'seat-change-visibility' || action.id === 'auto-time-bank'
+                              ? 'menuitemcheckbox'
+                              : 'menuitem'
+                          }
+                          aria-checked={
+                            action.id === 'seat-change-visibility'
+                              ? seatChangeVisible
+                              : action.id === 'auto-time-bank'
+                                ? playerSettings.auto_time_bank
+                                : undefined
+                          }
                           className={`table-menu__action ${action.danger ? 'table-menu__action--danger' : ''} ${action.disabled ? 'table-menu__action--disabled' : ''}`}
                           onClick={() => handleActionClick(action)}
                           disabled={action.disabled}

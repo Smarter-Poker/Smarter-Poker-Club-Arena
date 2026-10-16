@@ -125,3 +125,53 @@ it('a cash rebuy amount remains editable before its minimum is applied on blur',
   expect(amount.valueAsNumber).toBe(137.5);
   expect(screen.getByRole('button', { name: 'Rebuy 137.50' })).toBeTruthy();
 });
+
+it('keeps a definitive refusal distinct from an unknown purchase and allows correction in place', async () => {
+  const onConfirm = vi
+    .fn()
+    .mockResolvedValueOnce({
+      status: 'rejected',
+      message: 'That Seat Was Taken. Please Choose Another Seat.',
+    })
+    .mockResolvedValueOnce(true);
+  render(<BuyInModal {...base} onConfirm={onConfirm} />);
+  await act(async () => {
+    fireEvent.click(screen.getByText('Buy Chips'));
+  });
+  expect(screen.getByRole('alert').textContent).toContain('That Seat Was Taken');
+  expect(screen.getByRole('alert').textContent).not.toContain('Not Yet Confirmed');
+  await act(async () => {
+    fireEvent.click(screen.getByText('Buy Chips'));
+  });
+  expect(onConfirm).toHaveBeenCalledTimes(2);
+});
+
+it.each([undefined, 'rebuy'] as const)(
+  'blocks backdrop dismissal during parent processing: %s',
+  (purchaseKind) => {
+    const onClose = vi.fn();
+    const { container } = render(
+      <BuyInModal
+        {...base}
+        purchaseKind={purchaseKind}
+        externalProcessing
+        onConfirm={vi.fn()}
+        onClose={onClose}
+      />
+    );
+    fireEvent.click(container.querySelector('.buy-in-modal__overlay')!);
+    expect(onClose).not.toHaveBeenCalled();
+  }
+);
+
+it('clears the previous refusal when a new sheet is opened', async () => {
+  const onConfirm = vi.fn().mockResolvedValue(false);
+  const { rerender } = render(<BuyInModal {...base} onConfirm={onConfirm} />);
+  await act(async () => {
+    fireEvent.click(screen.getByText('Buy Chips'));
+  });
+  expect(screen.getByRole('alert')).toBeTruthy();
+  rerender(<BuyInModal {...base} isOpen={false} onConfirm={onConfirm} />);
+  rerender(<BuyInModal {...base} onConfirm={onConfirm} />);
+  expect(screen.queryByRole('alert')).toBeNull();
+});

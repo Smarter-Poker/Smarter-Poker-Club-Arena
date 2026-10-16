@@ -44,6 +44,8 @@
 import { parseLightningConfig, type LightningConfig } from './LightningConfig.js';
 import { isMissingFunctionError } from './rpcErrors.js';
 import type { LightningDevicePlatform } from './LightningPresence.js';
+import type { LightningPoolSnapshot } from './LightningMatcherModel.js';
+import { parseLightningMatcherSnapshot } from './LightningMatcherSnapshot.js';
 
 /** The minimal slice of `supabase.rpc` these doors need; injected for tests. */
 export type LightningRpcClient = (
@@ -89,6 +91,8 @@ export interface LightningMatchResult {
   poolDiversityScore: number | null;
   legalCount: number;
   generatedAt: string | null;
+  authoritativeSnapshot?: LightningPoolSnapshot;
+  snapshotBinding?: string;
 }
 
 export interface LightningMatchArgs {
@@ -222,6 +226,15 @@ export function validateLightningMatchResult(raw: unknown): Validation<Lightning
   )
     return { ok: false, reason: 'generated_at_invalid' };
 
+  const generatedAt = typeof raw.generated_at === 'string' ? raw.generated_at : null;
+  const evidence =
+    raw.shadow_snapshot == null
+      ? null
+      : parseLightningMatcherSnapshot(raw.shadow_snapshot, generatedAt);
+  if (raw.shadow_snapshot != null && !evidence)
+    return { ok: false, reason: 'shadow_snapshot_invalid' };
+  if (evidence && evidence.snapshot.players.filter((p) => p.legal).length !== legal)
+    return { ok: false, reason: 'shadow_snapshot_legality_mismatch' };
   return {
     ok: true,
     value: {
@@ -230,7 +243,10 @@ export function validateLightningMatchResult(raw: unknown): Validation<Lightning
       diagnosis,
       poolDiversityScore: diversity,
       legalCount: legal,
-      generatedAt: typeof raw.generated_at === 'string' ? raw.generated_at : null,
+      generatedAt,
+      ...(evidence
+        ? { authoritativeSnapshot: evidence.snapshot, snapshotBinding: evidence.binding }
+        : {}),
     },
   };
 }

@@ -685,6 +685,7 @@ async function measureChrome(page: Page) {
       sortbarIsTopmost: sortbar === hit || sortbar.contains(hit),
       deckTop: r('.club-lobby-command-top__controls').top,
       deckBottom: r('.club-lobby-command-top__controls').bottom,
+      headerBottom: r('.fx-header').bottom,
       frameBottom: r('.bottomNav .artwork').bottom,
       viewportBottom: edgeBottom,
     };
@@ -693,6 +694,55 @@ async function measureChrome(page: Page) {
 
 test.describe('mobile lobby chrome', () => {
   test.use({ viewport: { width: 393, height: 852 }, hasTouch: true, isMobile: true });
+
+  for (const width of [375, 393]) {
+    for (const inTab of [false, true]) {
+      test(`the ticker band clears the entire sticky deck and row at ${width}px ${inTab ? 'in a tab' : 'standalone'}`, async ({
+        page,
+      }) => {
+        await page.setViewportSize({ width, height: 852 });
+        await page.setContent(
+          lobby({ countText: '5 Balances', publishControlsHeight: true, inTab })
+        );
+        for (const height of [38, 54, 0]) {
+          await page.evaluate(
+            (h) => document.documentElement.style.setProperty('--mtt-ticker-h', `${h}px`),
+            height
+          );
+          await page.evaluate(() => window.scrollTo(0, 700));
+          const m = await measureChrome(page);
+          expect(
+            Math.abs(m.deckTop - m.headerBottom - height),
+            'the ticker covers the selector deck'
+          ).toBeLessThan(1);
+          expect(
+            Math.abs(m.sortbarTop - m.deckBottom),
+            'the sort row does not follow the shifted deck'
+          ).toBeLessThan(1);
+          expect(m.sortbarIsTopmost).toBe(true);
+          if (!inTab) {
+            const focus = await page.evaluate(() => {
+              const root = document.documentElement;
+              const row = document.querySelector('.lobby-sortbar')!.getBoundingClientRect();
+              root.setAttribute('data-lobby-scrollport', 'true');
+              root.style.setProperty('--ca-lobby-sortbar-h', `${row.height}px`);
+              return {
+                padding: parseFloat(getComputedStyle(root).scrollPaddingTop),
+                bottom: row.bottom,
+                // Mobile WebKit reports client rects relative to its panned
+                // visual viewport; scroll padding uses layout coordinates.
+                visualOffset: window.visualViewport?.offsetTop ?? 0,
+              };
+            });
+            expect(
+              Math.abs(focus.padding - focus.bottom - focus.visualOffset),
+              'native focus scrolls behind the ticker'
+            ).toBeLessThan(1);
+          }
+        }
+      });
+    }
+  }
 
   test('the wallets count is centred on the painted title and never clipped', async ({ page }) => {
     for (const countText of ['1 Balance', '5 Balances', '12 Balances']) {
@@ -815,4 +865,58 @@ for (const width of [375, 390]) {
     const { verifyLobbyScrollClearance } = await import('./helpers/lobby-scroll-clearance.mjs');
     await verifyLobbyScrollClearance(page, width);
   });
+}
+
+// The Messenger producer can offer a room taller than the space remaining
+// above the footer. The toast consumer must honor both bounds at 200% text.
+test.describe('notification reflow above Messenger and navigation', () => {
+  for (const [width, height] of [
+    [320, 568],
+    [393, 852],
+    [568, 320],
+  ]) {
+    for (const messengerActive of [false, true]) {
+      test(`notification stack stays reachable at ${width}x${height}, Messenger ${messengerActive}`, async ({
+        page,
+      }) => {
+        await page.setViewportSize({ width, height });
+        const bottom = messengerActive ? 180 : 84;
+        const room = messengerActive ? height - 200 : height - 12;
+        const messages = [
+          'Daily Mission Settlement Confirmed With Every Diamond Recorded In The Vault Ledger And Reconciled Against The Current Wallet Before The Reward Window Closed',
+          'Streak Freeze Protection Is Ready And The Protected Date Remains Visible After Reload Across Every Open Club Arena Challenge Window',
+        ];
+        await page.setContent(`<meta name="viewport" content="width=device-width, initial-scale=1">
+          <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600&family=Roboto+Condensed:wght@600&display=swap"><style>${css('src/components/common/Toast.css')}</style>
+          <body data-toast-theme="daily-missions-casino" style="--bottom-nav-clearance:72px;--sp-messenger-toast-clearance:${messengerActive ? bottom : 0}px;--sp-messenger-toast-room:${room}px">
+          <div class="toast-container">${messages.map((message) => `<div class="toast toast--success"><span class="toast__icon"></span><span class="toast__message">${message}</span><button class="toast__close" aria-label="Dismiss Notification">X</button></div>`).join('')}</div></body>`);
+        await page.evaluate(() => {
+          document.documentElement.style.fontSize = '200%';
+        });
+        await documentFontsReady(page);
+        const stack = page.locator('.toast-container');
+        const geometry = await stack.evaluate((node) => {
+          const box = node.getBoundingClientRect();
+          return {
+            top: box.top,
+            bottom: box.bottom,
+            viewport: innerHeight,
+            scroll: node.scrollHeight,
+            client: node.clientHeight,
+          };
+        });
+        expect(geometry.top).toBeGreaterThanOrEqual(15);
+        expect(geometry.bottom).toBeLessThanOrEqual(height - bottom + 1);
+        expect(geometry.scroll).toBeGreaterThan(geometry.client);
+        const close = stack.getByRole('button').first();
+        await close.scrollIntoViewIfNeeded();
+        await expect(close).toBeInViewport();
+        await close.click();
+      });
+    }
+  }
+});
+
+async function documentFontsReady(page: Page) {
+  await page.evaluate(() => document.fonts.ready);
 }

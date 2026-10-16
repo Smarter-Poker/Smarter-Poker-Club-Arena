@@ -241,6 +241,7 @@ describe('the club identity card', () => {
         level={26}
         playersPlaying={174}
         shareIcon={<svg />}
+        onShare={() => {}}
       />
     );
 

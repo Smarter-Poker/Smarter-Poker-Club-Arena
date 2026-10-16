@@ -40,6 +40,7 @@ export interface CashierBalanceSnapshot {
   inUnion: boolean;
   /** Club Bank or the viewer's Agent Wallet, by walletType. null = unavailable, never 0. */
   bank: number | null;
+  clubBank: number | null;
   /** What a send may draw past the float: the Agent Wallet's credit line only, 0 otherwise. */
   credit: number;
   /** The club's promo pot (clubs.promo_balance through the role-checked panel). */
@@ -111,6 +112,7 @@ export async function readCashierBalances(
     clubId: uuid,
     name: typeof money.club_name === 'string' && money.club_name ? money.club_name : 'Club',
     inUnion: money.in_union === true || Boolean(money.union_id),
+    clubBank: amount(money.club_treasury),
     bank:
       walletType === 'club_bank'
         ? amount(money.club_treasury)

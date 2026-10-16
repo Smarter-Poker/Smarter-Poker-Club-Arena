@@ -129,7 +129,8 @@ describe('the jackpot subscription watches the row the jackpot came from', () =>
     const watch = sliceEnclosingBlock(WALLET, 'return watchBbjPool(resolvedId,');
     expect(watch).toContain('if (!isMounted.current) return;');
     expect(WALLET).toContain('return watchBbjPool(resolvedId,');
-    expect(WALLET).toMatch(/\}, \[resolvedId, hasChipWallet\]\);/);
+    expect(WALLET).toContain('if (manualOnly || !resolvedId || !hasChipWallet) return;');
+    expect(WALLET).toMatch(/\}, \[resolvedId, hasChipWallet, manualOnly\]\);/);
   });
 });
 

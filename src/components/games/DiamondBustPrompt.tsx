@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useDiamondGamesEntry } from '../../hooks/useDiamondGamesEntry';
@@ -17,10 +17,23 @@ export default function DiamondBustPrompt({ clubId }: { clubId: string | null | 
   const { entry } = useDiamondGamesEntry(clubId, !inDiamondArena);
   const navigate = useNavigate();
   const key = `diamond-spins-bust:${user?.id ?? ''}:${clubId ?? ''}`;
+  const previousBalance = useRef<{ key: string; eligible: boolean } | null>(null);
+  const [shortageKey, setShortageKey] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState<string | null>(null);
   const eligible = entry?.bust_prompt === true && entry.member_chips === 0 && entry.diamonds >= 25;
   useEffect(() => {
-    if (entry && entry.member_chips !== null && entry.member_chips > 0) {
+    // Opening a club is not a bust. Only an observed transition into a
+    // server-confirmed chip shortage opens this invitation. Buy-in, rebuy and add-on shortages
+    // keep their existing Diamond Spins actions at the attempted purchase.
+    if (!entry || entry.member_chips === null) return;
+    const previous = previousBalance.current;
+    if (previous?.key === key && !previous.eligible && eligible) {
+      setShortageKey(key);
+    }
+    if (previous?.key !== key) setShortageKey(null);
+    previousBalance.current = { key, eligible };
+    if (entry.member_chips > 0) {
+      setShortageKey(null);
       try {
         sessionStorage.removeItem(key);
       } catch {
@@ -28,7 +41,7 @@ export default function DiamondBustPrompt({ clubId }: { clubId: string | null | 
       }
       setDismissed(null);
     }
-  }, [entry, key]);
+  }, [entry, key, eligible]);
   let stored = false;
   try {
     stored = sessionStorage.getItem(key) === 'dismissed';
@@ -44,7 +57,13 @@ export default function DiamondBustPrompt({ clubId }: { clubId: string | null | 
     }
   };
   const isOpen = Boolean(
-    !inDiamondArena && user?.id && clubId && eligible && dismissed !== key && !stored
+    !inDiamondArena &&
+    user?.id &&
+    clubId &&
+    eligible &&
+    shortageKey === key &&
+    dismissed !== key &&
+    !stored
   );
   // A dismissed invitation must stop covering the lobby even if its exit
   // animation stalls. Keep this component mounted for account-scoped dismissal

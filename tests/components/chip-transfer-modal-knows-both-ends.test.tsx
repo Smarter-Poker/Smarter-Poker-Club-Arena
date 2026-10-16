@@ -135,6 +135,12 @@ beforeEach(() => {
       return Promise.resolve({ data: confirmedReceipt(args), error: null });
     }
     if (name === 'fn_club_money_panel') return Promise.resolve(db.moneyPanel);
+    // The recipient's wallets, read the way the Send Out screen reads them.
+    if (name === 'fn_cashier_recipient_wallet_balances')
+      return Promise.resolve({
+        data: [{ user_id: AGENT, agent_wallet: 500, promo_wallet: 40, player_wallet: 12 }],
+        error: null,
+      });
     return Promise.resolve({ data: [], error: null });
   });
   db.moneyPanel = { data: { authorized: true, club_treasury: 1000000 }, error: null };
@@ -190,6 +196,24 @@ describe('funding a named recipient', () => {
       p_amount: 250,
       p_destination: 'agent_wallet',
     });
+  });
+
+  it('offers every wallet the agent holds, each with its current balance (2026-10-16)', async () => {
+    render(<ChipTransferModal isOpen onClose={() => {}} clubId={CLUB} recipientId={AGENT} />);
+    await waitFor(() => expect(screen.getByText('Into Agent Wallet: 500')).toBeTruthy());
+    expect(screen.getByText('Into Promo Wallet: 40')).toBeTruthy();
+    expect(screen.getByText('Into Player Wallet: 12')).toBeTruthy();
+    fireEvent.click(screen.getByText('Into Promo Wallet: 40'));
+    fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '25' } });
+    await waitFor(() => expect((confirmButton() as HTMLButtonElement).disabled).toBe(false));
+    await act(async () => {
+      fireEvent.click(confirmButton());
+    });
+    await waitFor(() =>
+      expect(rpcMock.mock.calls.filter((c) => String(c[0]).endsWith('_send'))).toHaveLength(1)
+    );
+    const send = rpcMock.mock.calls.find((c) => String(c[0]).endsWith('_send'))!;
+    expect(send[1].p_destination).toBe('promo_wallet');
   });
 
   it('keeps Confirm closed, and sends nothing, while the recipient is still unknown', async () => {

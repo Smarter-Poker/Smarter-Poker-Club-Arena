@@ -2,24 +2,311 @@
 
 You are picking up the Lightning programme for Club Arena (Smarter Poker). Lightning is the pooled fast-fold cash mode. This document is the complete state of the work and every step left before Lightning can go live for real players. Read it top to bottom before acting. Nothing in it is a summary of a summary: every id, run, migration and rule you need is here.
 
-**Section U (directly below) is the newest state and overrides anything older in sections 3 to 5.** Sections 3 to 5 were written at 17:30 UTC and are kept for their ids and history.
+**The dated delivery checkpoints above section U supersede the historical state in section U and sections 3 to 5.** Sections 3 to 5 were written at 17:30 UTC and are kept for their ids and history.
+
+## Hosted Wrapper Portability Recovery (2026-10-16 16:13 UTC)
+
+- CI38928034189 accounting3 failed onlynewprivatejoinwrapper line19: rgnotinstalledonhostedrunner. Earlieractualnativeparity/calibration/discovery sectionsallpassed; this isnewtestwrapperdependencyfailure, notinstalledproductfailure. Replacedboth rg -q withportable grep -q matchingexistingnativewrappers, noassertionchange. Requalifiedwrapper with PATH=/usr/bin:/bin andexternalTMPDIR (no rgavailable); exactnativebefore/after/replaypasses. Correctedsourcewillnormalpush7114andretireonlyobsoleteownCIafterpushsucceeds. No unchangedretry/bypass.
+
+## Separate Required Stale Fold Repair (2026-10-16 16:09 UTC)
+
+- RequiredR08connectedreviewfinds firstdeliverygap: TablePage/sendLightningFold emitscontextlesspool/action; submitActionmaywaitbeforefirstsend or429backoff. HTTPidempotencyonlyprotects previouslyexecutedkeys. PoolroomoutliveshandsandSeatProxyresolvescurrenthost; handlePlayerActionspecialfoldbranchesbeforeordinaryactionContextvalidation. ThusadelayedfirstFastFold/FoldWatchcanapplytonexthand whenavailable. No livefaultinjectionperformed; source-provenconnectedgapandretainedtestsnotcoveringit. Mustfixbeforeprivateactivation.
+- Keep7114qualificationunchanged. SeparateownedSSDworktree taskroot/stale-fold, branchcodex/lightning-stale-fold-intent-20261016 from9b019ab7. RootsoleGit; clientagentowns src/tests, engineagentserveronly. Bothcoordinate stablehand-onlytoken lightning-hand:<canonicalUUID> through existingactionContext, capturedfromactualrenderedhand beforeanyasyncwait andvalidatedagainstactualhosthand beforefoldsideeffects. Missing/stalerefused, ordinaryturncontextunchanged; no syntheticframes/controller. Same-taskowneddependencyreadsymlinks only, noinstallthroughsymlink.
+- Thisis now anidentifiednewengine+clientprotocoldependency. Clientcanpublishnormallybutaffectedprivateactivationrequiresbothcontainingclientandsealednewengine; do notborrowanunrelatedenginependingreleaseasprerequisite. Existing578engineissealedreceiver38909588241/attempt1068 butdoesnotcontainthisnewfix. Fullreceiptlogretainedengine-578-sealed-release.log; exactpostdeploy38919972831cancelled suppliesnopass.
+
+## Private Join Repair Submitted (2026-10-16 16:03 UTC)
+
+- Normalcommit/prepushpassed; pushed9b019ab7bb302b905bc9fd5bed626175d1ff6084 oncodex/lightning-private-join-access-20261016. PR7114 created/attached. OwningrequiredCI38928034189, currentlyrunningnativeaccounting/client/enginejobs withnoreportedrequired failure. No furthercandidatechangesplanned absentactualfailure. NewmigrationrawMD5826368469180345989cd925e199b0992, NOTinstalled. Preparedreadback taskroot/private-join-install-readback.sql.
+- Nonrequiredmain-wideledger38928032869 FAILURE retainedprivate-join-main-wide-ledger-failure.log:8missingfiles,7inside24h,1olderunrelated20261015141043 autoledgerjournalsaccounttoitself. NotLightning; nooutsidefinancialrepairor fabricatedalias. Requiredchecks remainindependent.
+- PreparedmanualoperationIDs(notdispatched): repairedshadow365d94ad-73fa-43b1-b8db-1d9070868d9d, formbc8c40a2-0b56-4e33-849e-4d30cf1a7940, safetydraind90207c9-bea3-4380-9bb9-28fbd86f6fff. Allrequireactualaccesspass/freshreadiness andexistingstagegates; preparationdoesnotactivate. No newacceptancebeyondoutsiderstamp14:14:03,009stillpending.
+
+## Private Join Repair Locally Qualified (2026-10-16 15:57 UTC)
+
+- Reserved20261016155403_private_cash_join_requires_approved_membership.sql guards exactlivepredecessor pg_get_functiondef MD521778e534332e0caffce932b05faee93 and inserts privategame/privateclub owner-or-activeapprovedmembership beforeenabled/seat/wallet/hold/queue paths. Singletransaction3slocktimeout/20sstatementtimeout; preservesfunctionownership/ACL/SECURITYDEFINER/search_path andexistingDiamondchecks. DiamondArena is_publictrue/all17gamesunmarkedprivate independentlyconfirmed, soordinarypublicDiamondpathunchanged.
+- NewisolatedPG17native actualfullpredecessorFAILBEFORE admitsnonmemberseat viafundedwalletstub; PASSAFTER deniespending/nonmemberbeforewallet/hold/waitlist, acceptsowner/active/approved/public, separatelyprovesprivateclub/privategame boundaries, andrefusesreplaywithoutdefinitionchange. Hookedintoexistingrequiredmatcherparityharness. Rootintegratednativeharness passes8snapshots/49groups plusbothprivateguards;84focusedaccess/stage/setupchecks0skip androotTypeScriptpass. Logsprivate-join-native-integrated.log/private-join-ops-final.log/private-join-typecheck.log.
+- Accesscollector nowretains fixedsanitizedjoinoutcomes beforeassertion andsuccessfulintermediatebrowser/socketproof. NewprivateguardreasonrequiresEXACT PRIVATE_MEMBERSHIP_REQUIRED withSQLSTATE42501; lookalike/wrong/missingcodesremainfailed. Noassertionweakened. Actualaccessstillfaileduntilprotectedmerge/install/explicitretry. Noadditionalagreementacceptance oractivation.
+
+## Private Join Defect And Continued Recovery (2026-10-16 15:54 UTC)
+
+- Discovery installer38913126048 succeeded: SQL committed14:09:40.599Z in111ms, exactversionrecorded. Independent14:10:32Z readback confirms exact rawMD5804b5dd05068cc9151fca226cdd8c924, policydefinition5461a57e076c9d7a338b8030a3579e10, onlyauthenticatedSELECTpolicy, RLSenabled/liveprooftrue. Never replay.
+- Access38913648505 / operationf124054c-cf6d-4930-8261-2f57fccbaee6 failed atnonmember_joins. All16owneranchor sockets101 and both375ownerbrowser routes passed. Nonmemberbrowser/discovery/socket steps passed before join assertion; originaltool didnotretainthose successfulintermediate observations separately onfailure. NormalcurrentTerms/Privacy acceptancefor23040e91 persisted14:14:03.692Z, independentlyread back. No newacceptance needed for thatidentity;009playeracceptance stillpending.
+- Actual privatejoindefect: live SECURITYDEFINER fn_cash_game_join lacksprivateclubmembershipcheck. Itswalletcovers path fallsbacktofn_player_home_club throughfn_seat_club_for_user. Fresh15:53readonlyconfirms outsiderother-clubwalletcovers true onbothpilots despiteabsentpilotmembership. 6-max table_waitlist rowleft/holdnull corroborates admittedholdthen normalwitnesscancellation; noactivehold, waitlistor pilotmembership remains. No chips moved/newfunding. Rootfixmustguard privateowner/activeapprovedmembership beforeseat/wallet/hold writes; publicsemanticsunchanged. Remainsdisableduntil actualaccesspasses.
+- #7107 allrequired exacte5headchecks passed, CI38912695687 SUCCESS. Protectedmerged77192bb1a99dd49ed53dec3d51eb76a5492dfb7e at14:54:54Z. Witness tooling hasno runtime/DDLdependency. Followupownedbranchcodex/lightning-private-join-access-20261016 startsprotectedmain6296f0e060478495c3de9c5d5146e1f7ae4e7785 containing771; preservesotherwriters. RootsoleGit/prodwriter, agentsallocatednewnativeSQL and accessdiagnostics only.
+
+## Private Discovery Installation In Progress (2026-10-16 14:09 UTC)
+
+- One guarded installation dispatched14:06:41Z, owning38913126048, exact target20261016124818 onprotectedmain6d9b43128fbc9ee4ba0cfd36c9a62963ae8471b5. Sourceapplier/workflow unchangedfromreviewed755, targetrawMD5still804b5dd05068cc9151fca226cdd8c924. Admitted14:09:03Z afterrunnerqueue. No duplicate; actualcommit/readback pending.
+- Current7107e5 owningCI38912695687; obsolete d3run38911173965 normalcancelignored, explicitforcecancel nowterminalcancelled withzeroactivejobs. PRdescriptionupdated59focusedchecks andnormalrevokedconsumerproof. No newsourcechange or repeatedsuite.
+- Independent14:07liveproof: engine0279795ec6b20bea07eda41fbffd613eb8ef0040 healthy/includesB1+7025; bothclientstamps5780828e02d0f9c076f08bb503a4507599465928 via successfulpublisher38909138350 alsoincludeB1+7025. Unrelatedengine38909588241 stillowns later578target, notaprerequisiteforcurrenttooling.
+- Saved14:08:15Z preconversionbaseline exactseats+cashsessions/obligations. BothMUSTMOVEepoch2/disabled,pools0,current-boundAA0,highintegrity0/alerts0;eligible52/61. Theseareobservations,nofabricatedreadinessorconversioncausality. Noagreementacceptedandnoreactivationyet.
+
+## Continued Delivery Receipt (2026-10-16 14:07 UTC)
+
+- Fresh canonical full reader emitted14:05:51.278Z, policy2.9 with unchanged manifest/four hashes retained below. Actual repository entrypoints/fullCLAUDE/publishing/deploypaths/storage and full Lightning checkpoint/phase/register/rollout/review/catalog freshly read; canonical comparison passes. Both external SSD volumes mounted on own disk5s4/s3, Work6.9GiB available. HEAD e5f6bdd882111684e88d969fdd9d4adbcb1ce01e pushed on7107. Root retains sole production/Git ownership.
+- Fresh14:06:32Z database read: not frozen, target discovery ledger0, exact predecessor MD5f1ff2b6f7d2976ab5a3c7deab313d9c5. No nonterminal installer among current latest5; preparing one explicit guarded main installation. No agreements accepted or pilot activation yet.
+
+## Final Recovery Consumer Proof Adjustment (2026-10-16 14:03 UTC)
+
+- Directreview found an evidencegap, not a demonstratedproductdefect: initialrecoveryprovedrawsocket4401 butclosednormalbrowserbeforeobservingitsrevocationconsumer. Finalsource keepsbrowseralive, locallyrevokesonlyitsownsyntheticsession, drops/restoresactualtransport, requiresnormal/auth/login?authError=no_session pluslocal-storage-authclearedboolean, thenfreshverifiedsamepoolrecovery. One-timeoriginpinnedinitialization prevents theharnessfromreinsertingrevokedtokensonlogin navigation. No productengine/clientchange.
+- Final59focusedopschecks0skip plusrootTypeScript pass. Thisone necessarysourceadjustmentupdates7107 before heavyqualification; retireonlysupersededownhead d3CI38911173965 after normalpush succeeds. Parent7097privatepolicyinstallation remainsindependent, prepared14:04 outsideDDLwindow. Actualprivateplayerconsent/access/recoverystillnotexecuted.
+- Readonly13:58:16Z precheckverifies authorized0097309f hasactiveexistingseats/cashsessions inbothpilots:9seat876e4cc6-dc7d-4008-96e4-4404223fd7bd/session06dc3a0f-f8a2-4324-b2cc-c5628e052422 baseline12.52 stack2.83;6seat5da9d6d7-9a4e-42f5-b1ce-d60ebccaf546/sessione4117a16-cb9c-4869-b096-0b5ca2b087c9 baseline3.68 stack1.99. Theseareprechecks, not invarianceclaims across subsequentlegitimateplay. Retrospective mid-handdrain SQLderives sameactualhandfromdurablerequest/start/settlement timestamps despiteworkflowqueue; no timingcontrollerneeded.
+
+## Witness Followup Submitted And Dashboard Evidence Reused (2026-10-16 13:53 UTC)
+
+- Normalprepushpassed and pushed d3c308b85fde3c7ef8adf5bb13535d97d19e0e92 on codex/lightning-private-live-witnesses-20261016. PR7107 created/attached; owningCI38911173965. Final56focusedintegratedchecks/rootTypeScript/normalhooks passafterprotectedmainintegration. No othercandidatechangesplanned unlessactualfailure. Privatepolicy755merged; installation stillpreparedfor14:04UTC afterfreshprechecks, no actionduringDDLwindow.
+- Reused actualpostdeploy38895550335 clientjob116955251863: scopedLightningoperator Chromium393x900/1440x900 coldloads12:12:57–12:13:06Z,2passed0skip0retry. Overview/detail/readiness/invariants/calibrationvalidation/integrityworker dialogs/cancel-no-write/layout proved againstscopedclient8041514e6bcf53ce4e8c013ac00dae7574d49040; testblobc10e209051843dc4c82cbcb87e8150772d206993 matchescurrentHEAD. Fixture/Authretirementverified; boundedlogpostdeploy-38895550335-lightning-coldload.log. This suppliesL49read/cancelcoverage, notprivateaccess/gameplay/controlwrites. BroaderlaterpagebracketUNKNOWNfromforward298publication remainsdistinct.
+
+## Access Candidate Merged And Witness Integration (2026-10-16 13:51 UTC)
+
+- PR7097 protectedsquashmerged755e56b04cc97ea023692134340af8d81e035dc4 afterall6requiredcontextsSUCCESS onexact0ae; owningCI38905916715 all4accountingshards/allLightningnativechainpassed. Nonrequiredmain-wideledgerfailure remainsseparate asrecorded. Private-discovery stillNOTinstalled; requiredaggregate admitted too close to13:50DDLboundary, so nextoneexplicitinstallafter14:03(use14:04) withfreshhistory/clock/concurrencyread. Nooverride, duplicateinstaller, activation orconsentwrite.
+- Separatefollowup branchlocalcommitfdf46fa6a5bf8d5db1553fe4bdcc10b60315037a integrated protected755 via882de671078bdb4f36b77c7e1751fc6ac1627855. Fourconflicts were onlycheckpoint/caller/workflow/tests; eachincomingblob provedbyteidenticaltoqualified0ae before retaining reviewedfollowupadditions. Otherwriters'currentmainchanges preserved; finaldiffonly11ownedpaths. Normalcommithooks, final56focusedopschecks0skip and rootTypeScript pass. Prepush/hostedchecks and actualexecution remainpending; no newengine/clientruntime selection required.
+- Currentmainapplier adds a source-hash-pinned accountingadmission adapter for3namedunrelatedmigrations; reviewed fulladapter/diff, private-discovery filename is outside allowlist so itsatomicSQL isunchanged. Existing13:47read shows targetabsent+exactpolicy predecessor. Preparedaccess operationf124054c-cf6d-4930-8261-2f57fccbaee6 remainsNOTdispatched and mustfollow exactpolicyinstallation/readback.
+
+## Separate Live-Witness Candidate (2026-10-16 13:49 UTC)
+
+- All4client,4engine,4accounting shards plusbuild/CSS/TypeScript passed for PR7097 head0ae7142e6b2211d37d400908c77f62efc12d4c38; requiredServerEngineaggregate117004721686 remainsqueuedwithrunner_id0. No bypass or sourcechange to that remotehead. Pendinginstallerhistory0 and exactpredecessorqualMD5f1ff2b6f7d2976ab5a3c7deab313d9c5 freshlyread13:47:02Z; no installer dispatched.
+- To finish independent preparation while that aggregate waits, root created separatelocalbranch codex/lightning-private-live-witnesses-20261016 from0ae, applied the reviewed finitecycle/recovery/latency callerpatch, and integrated6newmodule/testfiles.56focusedintegratedchecks pass0skip; no liveexecution or newconsent. RootTypeScriptpasses; normalhooks pendingthiscandidate. Do not push its followup until7097merged and protectedmainintegrated/reviewed. Existing7097 operation remains soleownerofprivatepolicy/accessdelivery.
+- New modes are explicitmanual evidence operations, max4minwithreservedcleanup. Cycle records actualnaturalbetting/showdown/history and offeredtimebank/preaction acceptance versusexecution. Recovery requires twoexistingownpilotpoolpins for0097309f and separates touch/selection/reconnect/duplicate/localrevoked-session refusal/recovery. Latency max120 distinctrendered-intent UIattempts, actualaccepted/refused/unknowncounts and actualpersistedaggregates only; missingminimumsamples are stillmissing, notqualification. Normalfoldtransport hasnohandbinding; no stale-actioncertificate isclaimed. Allsyntheticclients areownedfromcreation forpartialauth/deadlinecleanup; noengine/clientruntime change ornewfunding.
+
+## Scoped Installed Proof Boundary (2026-10-16 13:35 UTC)
+
+- Fresh READ ONLY inventory covers48Lightning-named migrationfiles/492declaredproofs: one explicitlysuperseded fundingproof excluded; remaining491 yield453true,25false,13unknown(retiredsignatures). Everyexception has an individual laterowner/successorcoverage row in external lightning-live-proof-adjudication.json; originalresults remainunchanged in lightning-live-proof-results.json and expressions in lightning-live-proof-plan.json. Do not claim historicalexpressionsallpassed. Root reviewed currentplatformmap/signatureretirement/anti-manipulation successor clauses; currentrepairs, Phase13/operatorproofs and actualcurrentformationsemantics pass. No unexplained installationblocker identified among38exceptions. NoDDL/replay/activation.
+- Current83Lightningfunctions/12statekeys reflect laterphases; anonymousexecution0, disabledtriggers0. Classicclosurefalse is only its enablementconjunct: independent unclosedClassiccount0 and disabledpilotcount2. Preserved9argform/oldermatcher UNKNOWN maps to laterrequestidentity/platformmap owners, with current11argsemanticchecks alltrue. Pendingprivate-discovery20261016124818 still requires protectedmerge/exactinstallation/readback and actualoutsider/pendingbrowser/socketproof before Stage1.
+
+## Continued Qualification Receipt (2026-10-16 13:33 UTC)
+
+- Fresh canonical reader emitted2026-10-16T13:32:06.724Z, policy2.9, same manifest/four hashes retained below. Read current canonical policies, actual repository entrypoints/fullCLAUDE/publishing/deploypaths/storage and completeLightningcheckpoint/phase/register/rollout/review/catalog; canonicalcomparisonpasses. HEAD0ae7142e6b2211d37d400908c77f62efc12d4c38 unchanged, PR7097 open; only progresscheckpoint and new supplemental witnessfiles local. BothSSD volumes mounted on own disk5s4/s3, Work8.4GiBfree. Existing owningCI38905916715 has allclient/engine/CSS/build/TypeScript checks passed; accounting1/3 stillrunning,2/4passed. No duplicate check or release action.
+- New cycle/recovery sample modules are prepared separately for mandatory remaining action/device/reconnect evidence. They are not wired, pushed or livequalified and do not change currentcandidate. No agreement accepted yet; privatepilotremainsdisabled. Readonly installedproof inventory retains historical supersessions/state-dependentfalse, neverreplays.
+
+## SSD Reconnection Recovery (2026-10-16 13:27 UTC)
+
+- Both external volumes disappeared around13:23UTC; macOS detected no external physical disk. Stopped local writes and all new delivery actions under the storage rule; only read already-running cloud CI. No internal-drive fallback, source reset, migration replay or new activation. Dan reconnected the SSD;13:25readback shows SmarterWork on its own disk5s4 with3.5GiB free, Archives disk5s3 with208GiB free. Original worktree, source and evidence paths restored.
+- Canonical reader emitted2026-10-16T13:25:38.389Z, policy2.9; manifest/four policy hashes unchanged from fullreceipt below. Fresh repository entrypoints, fullCLAUDE, publishing/deploy paths, storageguide, completecheckpoint and Lightning phase/register/rollout/review/catalog read; canonicalcomparisonpasses. OwnedHEAD/remotePR7097 remain0ae7142e6b2211d37d400908c77f62efc12d4c38; only local progresscheckpoint differs, no candidate source change or new local rerun required.
+- CI38905916715 now passes all4engine shards, productionbuild, TypeScriptcompilation/repositorychecks, Diamondbrowser and3clientshards. Required aggregates/accounting/CSS and lastclientshard still running/queued, no current-head failure. Follow existing owner, then protectedmerge/install/access as prepared. Both agreement authorizations remain valid and unexercised; privatepilot remainsdisabled.
+
+## Current Protected Candidate And Prepared Access (2026-10-16 13:20 UTC)
+
+- Current pushed head0ae7142e6b2211d37d400908c77f62efc12d4c38, existing PR7097, owning CI38905916715. Final integrated114 focused checks, root TypeScript, normal commit/pre-push passed. Both explicit agreement authorizations are implemented defaultoff/exactpin-only but neither has been exercised. No more source changes planned unless a check or actual witness demonstrates a defect.
+- Superseded owned CI38903411074/38904213624/38905065457 terminal cancelled with zero active jobs; their heads have no nonterminal runs. All current-head ancillary checks passed except the nonrequired main-wide ledger job38905913429: unrelated older missing-file versions20261015101106 and20261015102509, neither on origin/main; exact report retained main-wide-ledger-failure.log. Do not alter unrelated migrations or fabricate aliases for this task. Required current-head suites running/queued, no observed failure.
+- Prepared access operationf124054c-cf6d-4930-8261-2f57fccbaee6 in external taskroot/access-prepared.json is NOT dispatched. It sets accept_outsider_terms=true and both pilot targets. Dispatch only after7097 protected merge, private-discovery installation and exact readback. The private-discovery raw SQL MD5 is804b5dd05068cc9151fca226cdd8c924; prepared SELECTs taskroot/private-discovery-readback.sql. No engine/client replacement is required by this tooling/database-only follow-up.
+- AA38905048100 is installed and independently verified; do not replay any of the3repair migrations. Stage report38905552638 is fresh authenticated insufficient_evidence/NO_AA_CALIBRATION only, not go. All7reviewed findings retain notes. Both games remain disabled, no new source-bound comparisons or repaired qualifying hands yet.
+- Continue required checks, protected merge, guarded discovery install, actual outsider/pending refusal plus saved acceptance readback; bounded Stage1 with30nonempty current-bound one-minute comparisons each and timely manual form/drain path; Stage2 actual form/controls/player witness (accept_player_terms=true only0097309f), all8latency legs, midhanddrain/maintenance/conservation/everyhandreplay and retained5000hands. Publicclub names/GA and newfunding retain task-specific scope holds. No watcher/controller/release loop.
+
+## Installed Repairs And Fresh Readiness (2026-10-16 13:10 UTC)
+
+- AA retry38905048100 submitted13:04:13Z after fresh13:04:08Z server clock/absent ledger and no competing installer. TerminalSUCCESS: exact9374bytes committed13:07:43.574Z in346ms, recorded20261015214203. Independent13:08 readback confirms all3repair migrations installed with exact rawSQL MD5s and all3liveproofs true. Never replay. NewAA functions postgres-owned, public/pg_temp, service-only, anon/member denied; matcher snapshot/binding/match are invokerSTABLE, shadow report definerSTABLE. Exact definitions retained in readback, installerlog calibration-installer-success.log.
+- All7legacy findings now statusreviewed by actual service owner, individual evidence and operationnotes retained; original findings not deleted or exonerated. Lastreview7 run38905309508 op d064a870-4ef5-4d4e-ad0a-1937d16adde2 reviewed13:07:28Z. Review6 run38904901400 op f6d0d823-4d2b-4ed4-b05e-4f28a4e9e52a reviewed13:05:34Z. Independent full notes/readback verified all7.
+- Fresh authenticated report38905552638 at13:08:53-54Z: both insufficient_evidence with ONLY NO_AA_CALIBRATION; all evaluated invariants true, missing migrations[], openalerts0, openhigh0, eligible52/59. Both MUST-MOVE/disabled and unfrozen, workerform inherited. Oldlatency windows endingOct15 20:54 are historical, not repaired workload proof. Fresh source-bound A/A still required. Access/discovery installation and actual witness must pass before activation.
+- Postdeploy38895550335 now terminalSUCCESS, including both client browser/live-table jobs and final seal. Existing containing engine/client adoption remains proved; this PR adds database policy and explicitly invoked evidence tooling, no new engine/client runtime contract or replacement.
+- Dan explicitly answered Authorize acceptance for this pilot horse for exact0097309f-2864-4d09-b02b-56bca012a9c3, normal currentTerms/PrivacyUI solely privatepilotgameplay. Newplayer optin defaultsfalse, player-mode-only and exactpin-only, verifies actual browser identity and confirmed owninggate; prioraccepted status avoids duplicatewrite. No agreement has yet been accepted by this task. Both existing outsider and this pilot participant have separate explicit authorizations.
+
+## Finite Player And Full-Replay Witness Integration (2026-10-16 13:03 UTC)
+
+- Necessary remaining live qualification has no maintained admitted-player wrapper, and the existing six-hand replay sample cannot certify the retained every-hand workload. Add one explicit manual witness caller/workflow: player mode validates an already funded active pilot horse and existing pool session, prior terms acceptance, actual browser render and normal fold actions at three viewports; replay mode authenticates the actual service owner and checks every selected recorded settled/history-linked hand in an exact bounded page. No activation, join, buy-in, new funding, manufactured hand or telemetry. This is acceptance evidence tooling, not a release controller.
+- Whole player operation is bounded to240seconds with20seconds reserved cleanup; only actual accepted actions followed by a fresh render count. Fixed sanitized subphase/cause and honest unknown remain. Replay pages require exact counts and keyset continuation, max1000 per explicit invocation, no automatic continuation. All109 integrated access/stage/setup/player/replay/caller checks pass, zero skipped; raw replay/card/session payloads are not retained.
+- All funded pilot participants lack prior agreement acceptance. Existing active pilot horse0097309f-2864-4d09-b02b-56bca012a9c3 has171.62 wallet chips at12:58Z. A specific current Terms/Privacy acceptance request is pending; outsider authorization does not supply it. No player agreement accepted and no new funds moved. Source player caller requires an existing accepted stamp and cannot write consent.
+- Review4 and5 owning runs38903630365/38904272476 succeeded and artifacts retained. Review6 requested once with operationf6d0d823-4d2b-4ed4-b05e-4f28a4e9e52a; preserve owning outcome before next. Superseded access CI38903411074 terminal cancelled with no active jobs. Current7097 head5315bf49045518fc6a4a4749dd7c12ef2677df1a requiredchecks pending, no failed current-head job observed. Further finite witness source is integrated here before final qualification to avoid a second delivery.
+
+## Resumption And Consent Delivery (2026-10-16 12:57 UTC)
+
+- Canonical reader emitted2026-10-16T12:55:37.047Z, policy2.9; manifest/four policy hashes unchanged from the full receipt below. Fresh actual repository entrypoints, full CLAUDE, publishing/deploy paths, storage and complete checkpoint plus Lightning phase/register/rollout/review/catalog read; canonical comparison passes. SSD separate disk7s4,11GiB free. Owned branch codex/lightning-private-access-diagnostics-20261016, PR7097 head e28871ba82a55678c02f4acd85f6dbc918ca47de; sole production/Git operation owner remains this chat.
+- Explicit consent opt-in uses the current normal Terms/Privacy UI only for designated outsider23040e91; default false and access-stage-only. The saved acceptance gate is driven only by confirmed endpoint success. Actual acceptance remains pending protected merge and explicit invocation with the authorized flag; verify persisted profile afterward.
+- Postdeploy38895550335 client-browser and live-table jobs both passed. Overall seal still queued. Newer client29866b6a702419c18bb7a0d68edf06faee486065 appears at both public stamps and contains7025 by ancestry; engine0279795e remains healthy and contains7025. No redundant deployment.
+- Fresh12:56:29Z ledger confirms B1/B2 installed, AA/private-discovery absent. AA known refused before SQLsend; one explicit retry after13:03 (use13:04) remains prepared. Review4 owning38903630365 still queued; findings1/2/3 reviewed,4/5/6/7 open. Preserve owners, no duplicate dispatch.
+
+## Terms Prerequisite And Explicit Instruction (2026-10-16 12:53 UTC)
+
+- Durable profile read confirms designated outsider23040e91 has null club_arena_tos_accepted_at, while service owner has prior acceptance. TOSGuard removes the entire router when not accepted; this explains the missing outsider route without changing access policy. No other existing eligible nonmember internal horse has prior acceptance. No consent was forged or bypassed.
+- Dan explicitly answered Authorize acceptance for this test horse to the question naming current Club Arena Terms/Privacy, exact identity and normal acceptance flow. Prepare explicit opt-in in the manual access workflow, defaultfalse, exactidentity-only, normalUI acceptance and durable verification. This authorization is limited to that account/test.
+- AA installer38902664108 terminal REFUSED at12:50:06.815Z before SQL send; fresh history12:51:08Z confirms absent. One explicit retry after13:03UTC (use13:04) remains prepared, no override or loop.
+- PR7097 e28871ba82a55678c02f4acd85f6dbc918ca47de pending hostedchecks. Legacy finding3 review run38903379764 succeeded; finding4 owning run38903630365 queued, do not duplicate.
+
+## Private Access Failure And Source Recovery (2026-10-16 12:49 UTC)
+
+- Access38902576640 completed failure at nonmember_browser. Owner375px routes and all16anchor sockets passed; pending membership notcreated, outsider and service local-signout confirmed. Artifact access-38902576640/lightning-pilot-stage.json. Failure lacked exact browser substep, so maintained witness adds enumerated sanitized diagnostics without error/page/token/URL copying or relaxed assertions.79 access/operator/setup tests and TypeScript pass.
+- Read production cash_games_read: pending membership counts as admission for discovery. New reserved migration20261016124818 restricts private discovery to active/approved membership or actual club owner, retains public/service behavior and guards exact predecessor qual MD5f1ff2b6f7d2976ab5a3c7deab313d9c5. Native predecessor fail-before/pass-after with denied states and owner/member/public/service positive controls passes through the actual required matcher-parity harness;8snapshots/49groups unchanged. Not installed.
+- Legacy finding1 reviewed through audited door, run38903105631 operation800bb576-db84-481a-bad6-308bdb4f2517,12:48:56.725Z, statusreviewed; evidence retained, no exoneration. Finding2 requested once operation60dbb583-12bf-4d24-9838-e9913397d99a, pending owning outcome. No activation.
+- AA installer38902664108 still owning checkout/execution; do not duplicate. All authorized delivery continues; private access remains failed/unknown pending source qualification and actual retry.
+
+## Correlation Installed And Access Invoked (2026-10-16 12:44 UTC)
+
+- B2 installer38902553449 succeeded; committed12:44:10.045Z in141ms and recorded20261015213334. Independent readback12:44:28.871Z confirms exact raw SQL MD581598b5b631862c4a869e1f5ca0e7d71 and live proof true. Existing findings untouched.
+- Authoritative-calibration installer38902664108 dispatched once12:44:30Z, pending behind another task’s existing Spin installer38902554580. Preserve owning run; no duplicate.
+- Explicit private access run38902576640, operation040f29f7-8007-402a-b137-463be41a20bb, dispatched12:43:48Z, actual browser preparation running. This uses existing outsider23040e91 and service owner, no membership approval/funding/buy-in.
+- Current engine0279795e contains #7025 by verified ancestry. Client8041514e includes #7025; publisher38891287876 succeeded. Existing postdeploy38895550335 passed4mobile WebKit live-table/reconnect cases and verified isolated-account deletion; broader client browser still running. Earlier exact-engine38892046511 cancelled after unrelated Cashier browser failure and never supplies a pass.
+
+## Resumed Delivery (2026-10-16 12:42 UTC)
+
+- Fresh canonical policy reader emitted `2026-10-16T12:42:21.826Z`, policy2.9, unchanged manifest/four hashes recorded below. Full actual repository entrypoints, CLAUDE, publishing, deploy paths, storage guide, complete checkpoint and Lightning phase/register/rollout/review/catalog read; canonical comparison passes. SSD separately mounted with12GiB free.
+- #7025 protected merged as `a3f10e061b905983ea8cab1dad19d7dec3205307`; exact head `a1e86ac35be86273d58e04cb701f4da5e0f41309` all required checks passed, including corrected client shard3. No repeated local qualification needed.
+- User explicitly authorized parallel agents; three read-only scopes recover engine receipts, client publication and pilot prerequisites. This chat retains sole mutation/dispatch ownership.
+- Current sealed engine `0279795ec6b20bea07eda41fbffd613eb8ef0040` contains both B1 and #7025 (local ancestry exit0); release38887335016 sealed. Original B1 receiver retired safely because a newer containing release already existed; never retry old release. Both public client stamps8041514e include #7025, publisher38891287876 success.
+- B1 installed; fresh agent production read finds B2/AA absent, pilots MUST-MOVE/disabled with0open sessions/instances. Existing designated outsider has other-club memberships but no pilot membership; preserve identity and recheck actual access preconditions.
+
+## Formation Migration Installed (2026-10-16 01:50 UTC)
+
+- B1 guarded retry `38834574194` terminal SUCCESS. Exact SQL sent once at `01:49:58.364Z`, committed in 599ms at `01:49:59.003Z`, recorded version `20261015212230`; no override or replay.
+- Independent production readback `2026-10-16T01:50:54.892133Z`: exact recorded raw SQL MD5 `0d34777f2cf890c23435d064a27102f3`, one statement, live proof true (2.999-second empty, 3-second pair, fresh 8 forms 6). Helper definition MD5 `65f6a1c0edc7a0be584bfffedf2f7184`, matcher plan MD5 `2e77ad138bb0c5a0941c1935e8594fe9`. Both owned by postgres, invoker rights, search_path public/pg_temp; helper IMMUTABLE, plan STABLE. Helper authenticated/service execution and plan service-only execution verified; anon denied.
+- Installation log `formation-installer-success.log`. Do not replay B1. B2 and authoritative calibration remain unmerged/uninstalled. Engine receiver still owns deployment; both pilots remain disabled pending containing adoption and qualified fresh evidence.
+
+## Corrected Candidate Submitted (2026-10-16 01:36 UTC)
+
+- Normal hooks passed and pushed correction `a1e86ac35be86273d58e04cb701f4da5e0f41309` into existing #7025. Current CI owner `38836051523`; PR remains mergeable/blocked pending exact-head checks. PR description updated with failure, guarded source correction and passing before/after/native evidence.
+- Superseded failed CI `38828275996` ignored normal cancellation; explicit force-cancel completed. Verified terminal cancelled with no nonterminal jobs. All four engine shards, production build, Diamond browser and CSS source suite passed on the old head, but those results do not replace current-head required checks after the SQL/harness change.
+- B1 retry `38834574194` has been admitted to the runner queue, pending actual installation. Receiver `38832686277` has all four engine-check shards passed; production-door gate queued. No private activation or new serving revision claimed.
+
+- Corrected authoritative-calibration raw SQL MD5: `bc1e26b30a8eeadbe3ddedfe7b8898f3`; prepared exact installation readback updated. Neither this migration nor B2 is installed.
+
+## Current-Head Signature Failure Recovery (2026-10-16 01:35 UTC)
+
+- CI `38828275996` client shard 3 failed one of 8,927 tests: existing one-overload law cannot infer the Phase 8 dynamic retirement. Local reproduction fails identically. Fresh production catalog confirms exactly one matcher door, the five-argument signature. This is an uninstalled migration source qualification gap, not demonstrated production overload ambiguity.
+- The uninstalled authoritative-calibration migration explicitly retires the obsolete signature, refusing an unexpected current schema before any drop. Native regression injects a stale overload in isolation, requires the exact refusal and atomic rollback preserving both original doors, then installs on the qualified shape. No assertion weakened or installed migration replayed. Fresh native PostgreSQL parity/calibration passes (8 fixtures / 49 identical groups), including the atomic mismatch refusal. Existing signature law plus all Lightning contracts pass: 1,078 tests / 46 files; TypeScript passes. Normal submission follows.
+
+## Formation Installer Retry (2026-10-16 01:20 UTC)
+
+- Fresh database server time `2026-10-16T01:20:18.999452Z` confirms B1 absent. Prior unrelated installer completed successfully; pending operation admitted as queued and identified as unrelated `20261015212515_one_time_legacy_test_learning_purge.sql`. No pending run was displaced.
+- One explicit B1 retry dispatched `2026-10-16T01:20:24Z`, run `38834574194`, protected workflow source `dfafc10de523f627ffbfe67702928e6f6fc669f2`; pending behind that existing operation. Preserve this owner; no duplicate, override or installation claim.
+- Current-head #7025 production build, Diamond WebGL and engine shards 2/4 and 4/4 passed. Remaining native accounting/engine/CSS/client checks active or queued, no reported failure. Fresh public engine identity remains `a2ccc04d39bc15852d0047a32893371f3a0a6836`; both pilots MUST-MOVE/disabled, latest eligible 50/39.
+
+## Continued Ownership (2026-10-16 01:06 UTC)
+
+- Canonical reader emitted `2026-10-16T01:06:35.742Z`, policy 2.9 with unchanged manifest and four hashes recorded below. Fresh actual repository entrypoints, full CLAUDE, publishing/deployment and Lightning checkpoint/phase/register/rollout/review/catalog read; canonical comparison passed. Owned head remains `607bd988b484a6b852b5ee5b8583ea6acb29b9f1`.
+- B1 stage `38828113975` succeeded and correlated exact component `fdb889b77df29f7a62596d925fb7278a72d92597` to receiver `38832686277`, whose four engine checks remain queued. No serving adoption claimed.
+- Installer `38829859349` owns an unrelated Spin migration and remains queued; `38833018716` is pending with no job/input identity yet exposed. Preserve both operations; do not displace another task’s pending installer by dispatching a competing retry. Our terminal-refused B1 install is still absent at the 01:05 database read.
+- Current #7025 CI `38828275996` has no reported failure. Compiler/source/native checks passed, Diamond WebGL admitted; required heavy jobs pending. Both private games remain disabled pending qualified installation and engine adoption.
+
+## Integrated Candidate And Guarded Refusal (2026-10-16 00:53 UTC)
+
+- #7014 is protected-merged as `fdb889b77df29f7a62596d925fb7278a72d92597`. #7025 is now mergeable at pushed head `607bd988b484a6b852b5ee5b8583ea6acb29b9f1`, CI `38828275996`. Runtime source is unchanged from `9caf2219`; only checkpoint text differs. Native PostgreSQL matcher/calibration parity, 1,072 client contracts and normal pre-push passed after integration. Current-head initial guards, compiler/repository checks and native fixture passed; heavy required jobs remain queued with no reported failure.
+- The superseded #7025 CI `38818170935` ignored normal cancellation in always jobs; explicit force-cancel completed, terminal cancelled with no nonterminal jobs. Preserve current CI `38828275996`.
+- Formation installer `38828138951` was admitted at `2026-10-16T00:52:56Z`, correctly REFUSED by the :50–:03 UTC DDL guard before sending the migration. Fresh readback still has no `20261015212230` row. This is a known terminal refusal, not unknown installation. One explicit retry is prepared for after `2026-10-16T01:03Z` (use 01:04 or later to avoid the exact-boundary refusal), after fresh server-time/history read. No retry loop or override.
+- Engine staging owner `38828113975`: runtime-change detection passed, exact-SHA dispatch still queued. No new engine deployment or private activation claimed. Effective pilot latency configuration remains unchanged: idle_to_match ceiling 5,000ms, three recent windows, minimum 20 samples; the chosen 3,000ms formation maximum fits that ceiling but actual workload proof remains required.
+
+## Formation Integration (2026-10-16 00:12 UTC)
+
+- #7014 protected squash merged as `fdb889b77df29f7a62596d925fb7278a72d92597` after all six required contexts qualified (build/CSS valid engine-only classification skips). All substantive shards passed; only non-required summary remained queued.
+- Exact B1 migration installation requested once: `38828138951`, created `2026-10-16T00:12:20Z`, selected protected main `fdb889b77df29f7a62596d925fb7278a72d92597`. It is pending behind another task's existing applier; no installed result claimed. Last read history contains none of the three repair migrations. Engine staging owner is `38828113975`; do not duplicate either operation.
+- Integrating the protected B1 squash into #7025 conflicted only in the parity harness's later authoritative-calibration chain, its before/after proof and coverage summary. Preserve those additions together with the already included three-second cases. Identical duplicate B1 checkpoint text is deduplicated; nonidentical evidence remains. Requalify native parity and affected contracts before normal submission.
+
+## Continued Ownership (2026-10-15 23:58 UTC)
+
+- Latest owner instruction continues this same delivery through checks, protected merge, installation, deployment and actual private-pilot proof. Fresh canonical reader emitted `2026-10-15T23:58:24.988Z`, policy 2.9 with the unchanged manifest/four hashes above; actual repository entrypoints, full CLAUDE, publishing/deploy paths, complete checkpoint and Lightning phase/register/rollout/review/catalog read. Canonical comparison passed.
+- #7014 current-head Client Unit Tests aggregate has now passed. The only pending required result is Server Engine aggregate, while every component shard has already passed. #7025 CI `38818170935` has passed Source Windows Are Structural; other initial jobs remain queued. No reported failure, no duplicate run/activation dispatched.
+- Storage checked on mounted SSD, 4 GiB free. Removed only this task's unused, clean boot-repair checkout `repo` after proving exact commit `1445ed1b64b8d3fe7b9e40609921a4ff0c6e5690` is retained in the pushed consolidated branch. The active calibration checkout, branches and external evidence remain. This is owned cleanup, not source loss or delivery completion.
+
+## Provider Boundary (2026-10-15 23:39 UTC)
+
+- Full canonical policy reader emitted `2026-10-15T23:38:44.363Z`, policy 2.9, unchanged manifest `a659f31c5c1c2b0864889508079a635dd5fe2fc98decfbfc9d3f9c80dd45ec3b` and four policy hashes recorded above. This uninterrupted continuation retained the actual repository/publishing/Lightning references. Owner remains this Codex chat.
+- #7014 head `799ba4711eab97cfdaeda623098587eefdc1c98e`, CI `38810741223`: all four client shards, all four engine shards, all four PostgreSQL accounting shards and native fixture passed. Required TypeScript and money-trigger checks passed; build/CSS were correctly skipped by the engine-only classifier. Required Client Unit Tests and Server Engine aggregates remain QUEUED with runner_id 0. GitHub UI explicitly says Waiting for a runner; no account Actions budget exists. No bypass or duplicate rerun was made.
+- #7025 latest pushed head `9caf2219542ae5a2504d672295ed3f0f2c9cf9b9`, CI `38818170935`: initial guards queued, no executed failure. The actual full-SHA report regression failed before and passes after; 106 operator/access/report/setup checks and normal pre-push guards passed. PR description updated. Earlier owned heads were explicitly retired; all seventeen cancellation requests and four force-cancel recoveries are retained in `consolidated-obsolete-*.json`. Four previously stuck CI runs are terminal cancelled with no nonterminal always job.
+- Fresh production read at `2026-10-15T23:38:53.855214Z`: both games MUST-MOVE and Lightning disabled; eligible 53/40; none of the three repair migrations installed; replacement outsider still has no pilot membership. No repair merge, migration installation, containing engine deployment or private activation has occurred. This task is incomplete at the external provider boundary.
+- Fresh report `38813383364` is terminal success as a collection operation, but both authenticated readiness verdicts remain NO_GO. Keep open integrity findings and 9-max A/A bias visible until repaired SQL/engine adoption and evidence-backed review/fresh calibration. Existing 2,832 hands do not qualify the changed launch matcher.
+- Next eligible operation: read current-head required results, protected squash merge #7014 when green; install `20261015212230` once outside :50–:03 and verify exact bytes/live proof; follow #7025 required checks/merge, then install `20261015213334` and `20261015214203` in order. Follow the existing owning stage/deploy transaction, verify serving inclusion, run explicit access with replacement nonmember, review legacy findings individually, and conduct bounded fresh Stage 1/2 proof. No watcher, scheduler, release loop, extra public-club activation or new funding is authorized by this checkpoint.
+- Remaining launch evidence: fresh 30-window source-bound A/A on both sizes; complete real player/action/device/security/financial/recovery coverage; all eight actual latency legs; mid-hand drain and maintenance recovery; replay/conservation and 5,000 valid repaired-matcher hands; at least five-club coverage; final L01–L54 production review and explicit public-club/GA scope approvals. Retain active owned worktrees while this delivery remains unfinished.
+
+## Corrected Outsider Designation (2026-10-15)
+
+- Dan explicitly answered “Select an existing nonmember (recommended)” after the original outsider proved to be a funded pilot member. The replacement is `23040e91-e0d0-430d-b18e-f9f67c385d90`: production read verifies active internal horse, existing internal Auth identity not banned, zero club memberships and zero active cash seats at selection. No new identity, approval, funding or table action was made. This supersedes every historical outsider designation below.
+- The maintained access script now pins that verified replacement and still rechecks authenticated identity and absent membership before its refusal tests. Fresh report dispatches must pass this replacement as `designated_outsider_id`. Actual browser/socket proof remains pending protected delivery and explicit invocation.
+
+## Fresh Report And Identity Correction (2026-10-15 22:32 UTC)
+
+- Read-only qualification run `38813383364` completed successfully; authenticated report still returns NO_GO on both games: open high integrity signals, plus 9-max A/A bias. Eligible counts remain 54/39; prior recorded hands remain 1,070/1,762. No repair deployment or new activation has occurred.
+- The designated outsider `00bc0957-1913-4beb-a4d1-acab94950690` is actually an ACTIVE pilot member, joined at `2026-10-15T05:31:53.447403Z`, current balance 193.31. This supersedes the historical nonmember description and any earlier assumed absence. Do not remove/fund/change that membership to manufacture a refusal test. The explicit access preflight correctly refuses it. A different verified existing nonmember designation remains pending clarification; no outsider proof has passed.
+- The report incorrectly missed the full engine identity by reading only `version`. Live health provides `releaseSha=a2ccc04d39bc15852d0047a32893371f3a0a6836`; the repair reads that full field, requires consistency with the short version, refuses malformed/conflicting identities and detects changes sharing the same prefix. Regression fails before and passes after; 106 operator/access/report/setup checks pass. Actual repair inclusion still requires protected delivery.
+- One existing populated-cluster seat-count observation remains UNKNOWN; it does not invalidate the independently read 54/39 pilot eligibility. Do not silently count unknown as zero. Artifact retained at `qualification-38813383364/lightning-pilot-qualification.json` in the existing evidence root.
+
+## Resumption Receipt (2026-10-15 22:23 UTC)
+
+- Canonical four-policy reader emitted `2026-10-15T22:23:40.232Z`, policy 2.9; manifest and all four hashes match the previous receipt. Full canonical policies, actual repository entrypoints/CLAUDE/publishing/deploy paths, storage guide and Lightning checkpoint/phase/register/rollout/review/catalog freshly read. Canonical comparison passed. Owned checkout head `737ac5a13fafeea3de030e1759e2b74601868170`; SSD remains separately mounted.
+- #7014 CI `38810741223` has no failed job; remaining required client/accounting/engine/typecheck jobs are running or queued. #7025 CI `38816082067` and read-only qualification `38813383364` queued. No merge/install/deploy/activation claimed. Preserve current candidates while provider qualification runs. All nine superseded owned attempts recorded earlier are terminal cancelled, including their always jobs.
+
+## Private Access Witness Preparation (2026-10-15)
+
+- The current #7025 candidate adds explicit `stage=access` to the existing pilot workflow. It uses only the designated outsider and verified service owner, tests nonmember and unapproved zero-balance pending states through actual browser/HTTP/WebSocket paths, and withdraws only its own pending request through the maintained cancellation door. Credentials remain in memory, synthetic sessions sign out locally, and no identity, approval, funding, buy-in or table action is created.
+- 105 local operator/access/report/setup checks pass; access-anchor wiring has a before-fail/after-pass witness. Actual browser/socket production evidence remains PENDING. Dispatch this step after protected delivery, before reactivating the private pilot. A request's unknown durable outcome must be read from the original operation before any retry; never infer absence from an unreadable row or clean up changed/funded membership.
+- #7016/#7017/#7027 closed after their exact commits were retained in #7025. Cancellation requested for their obsolete checks only; terminal cancellations (including always jobs) still need confirmation. #7014 remains independent at head `799ba4711eab97cfdaeda623098587eefdc1c98e`; CI 38810741223 has no reported failure but required shards are still pending. Qualification 38813383364 is queued. No new activation or release action has run.
+
+## Combined Candidate Validation (2026-10-15)
+
+- Current delivery branch is `codex/lightning-authoritative-calibration-20261015`, existing PR #7025. B2 correlation, B3 boot presence, replay evidence and explicit operator steps are retained as ancestry merges; #7014 remains independently checked. Dated checkpoints below preserve original operation identities and limits.
+- Combined exact source passed 276 Lightning engine tests / 20 files, 93 operator/report/setup checks, 1,072 Lightning client contracts / 45 files, server TypeScript, native PostgreSQL 17 matcher/calibration parity (8 snapshots / 49 groups) and the full integrity remediation chain with paired-moment before/after witnesses and authority proof. Logs: `combined-*.log` in the existing evidence root. Required hosted checks, protected merge, ordered installation and live behavior remain pending.
+- Normal merge hooks formatted a few incoming protected-main lobby/client files; their final differences are formatting only. Preserve their current behavior and other writers' implementation. No UI redesign is assigned by this delivery.
+
+## Resume Checkpoint (2026-10-15)
+
+- Owner: Codex chat `01a1416e-f22c-73f0-977e-8f478fdb909f`; branch `codex/lightning-resume-20261015`; owned SSD checkout `/Volumes/SmarterWork/agent-work/lightning-resume-20261015-01a1416e/repo`, base `7e7dd5547`.
+- Scope: recover private-pilot evidence, repair B1/B2 and the demonstrated A/A bias, then continue the eight-phase programme. Public-club activation, new horses/funding and general availability retain the explicit scope limits in section 7.
+- Current policy read: canonical four files in `/Users/smarter.poker/Documents`, policy 2.9, reader emitted `2026-10-15T21:19:24.330Z`; manifest SHA256 `a659f31c5c1c2b0864889508079a635dd5fe2fc98decfbfc9d3f9c80dd45ec3b`. Owner SHA256 `b9478d0331314413d8e12c41210b63479cdcabc1f86ed3fdcb3251efa36e6349`; operating law `a8bc3c04dce3354ebdd51a89c0b7d715af3344edcc794d33f6b3ad64506961d5`; hardening `d5fc451ce5caf6d6b5e64597a13883e1246581678fe53c962339d0a66136993e`; index `adce89c3f838f2f373cd504a00329d53906404d1dd42a647f672af6c16f95555`. Repository entrypoints, CLAUDE.md, publishing, deployment paths and Lightning handoff/phase/register/rollout/review/catalog read. SSD verified on separate mounted disk before writes.
+- Recovered report run `38800898759`: terminal success, actual report at `20:39:15Z`; BOTH readiness verdicts `no_go`. 6-max: one high integrity signal, 132 A/A comparisons, delta -0.03, calibrated. 9-max: three high signals, 91 comparisons, delta -2.55, `calibration_bias`. This supersedes the earlier zero-delta calibration claim for current readiness.
+- Fresh database observation: seven open high TIMING_CORRELATION signals. Signal 1's correlation 0.9949 comes from one four-hand window, while readiness is gated by accumulated shared-hand counts across windows without correlation evidence. Horse timing is not yet established as the cause; do not randomize it or dismiss the signals to hide an aggregation defect.
+- Drain dispatched through existing `lightning-pilot-stage.yml`, run `38809119759`, operation `abc32089-b9d7-4a2f-a09b-d0196d8a5e10`, targets 6 and 9. Terminal success, completed at 21:28:56 UTC. Both persisted drains are complete/drained with steps 1-8 and eight corresponding ledger events each; both games are MUST-MOVE and Lightning disabled. Recorded chips remained 40.60 (6-max) and 125.41 (9-max). No hand or pool session was in flight at request, so this does not supply the still-required mid-hand rehearsal. All 2,832 prior settled hands (1,070/1,762) have history links and zero nonconserving receipts; rake 3.62/21.32. Last settlements were around 20:53, before the 20:55 restart; investigate pilot return after maintenance before reactivation. Reattach to this operation, never duplicate it after an unknown outcome.
+- Dan selected **3 seconds** as the formation maximum wait. B1 regression reproduced: 5 failures / 2 passes on baseline; model repair now passes all 7 focused cases. SQL and model now pass PostgreSQL 17 parity (10 sections, 8 captured snapshots, 49 identical groups), all 258 Lightning engine tests, 1,093 client/Lightning contracts and both TypeScript checks. Seeded 10,000-hand simulations completed for 6-max populations 18/25/50 and 9-max 27/50; these are isolated measurements, not live proof. Required hosted checks, protected merge, installation, engine publication and fresh A/A remain pending. No current hands count toward the final launch-matcher 5,000-hand sample.
+- Evidence root: `/Volumes/SmarterArchives/agent-evidence/lightning-resume-20261015-01a1416e`, recovered artifact in `stage-report/lightning-pilot-stage.json`.
+
+## Authoritative Calibration Checkpoint (2026-10-15)
+
+- Owner: Codex chat `01a1416e-f22c-73f0-977e-8f478fdb909f`; checkout `/Volumes/SmarterWork/agent-work/lightning-resume-20261015-01a1416e/calibration`, branch `codex/lightning-authoritative-calibration-20261015`, based on #7014 head `799ba4711eab97cfdaeda623098587eefdc1c98e`. Fresh resumption read of the canonical policies, repository entrypoints, CLAUDE.md, publishing and checkpoint at `2026-10-15T21:53:11.107Z`, policy 2.9, manifest `a659f31c5c1c2b0864889508079a635dd5fe2fc98decfbfc9d3f9c80dd45ec3b`; initial receipt emitted `2026-10-15T21:19:24.330Z`. Repository, publishing, deployment and Lightning references read; canonical drift check passed.
+- #7014: full rings with Dan's chosen three-second maximum. #7016: actual paired-hand moments for correlation. #7017: boot presence uses anchor plus room authority. All pushed through passing normal hooks; protected integration, installation and live adoption still pending.
+- Recovered report 38800898759 is NO_GO on both pilots (9-max calibration bias and open integrity findings). Both drains from run 38809119759 / operation `abc32089-b9d7-4a2f-a09b-d0196d8a5e10` are complete with eight events and unchanged chip totals. All 2,832 prior settled hands conserve and have history links. No active hand at drain request, so mid-hand rehearsal remains open.
+- A/A root: the engine port used estimated queue/blind/history input. The repaired read-only RPC returns the same statement's actual snapshot. Validated producer/consumer wiring carries it to the port; current SQL-source/parameter bindings exclude old, mixed, estimated and empty comparison windows without deleting them. The actual snapshot matches independent native fixtures. Native before/after calibration proves the unchanged 30-window threshold and invalidation on matcher-parameter change.
+- Final local candidate: 270 engine Lightning tests across 18 files, 1,072 client Lightning contracts across 45 files, server TypeScript and PostgreSQL 17 native parity/calibration all passed. The native chain includes unchanged matcher sections, before/after 29/30 binding thresholds and service ACL proof. Logs are `calibration-*-final.log` in the evidence root.
+- New migration `20261015214203` requires `20261015212230` from #7014 first. Neither is installed by this checkpoint. Fresh live bounded calibration must follow installed SQL and containing engine adoption; do not reactivate from source-only evidence. Keep integrity signals open for evidence-backed review. Phase 3 and public launch remain unqualified.
+- Evidence root `/Volumes/SmarterArchives/agent-evidence/lightning-resume-20261015-01a1416e`. Remaining: protected checks/merge, exact migration readback, engine publication and actual new-input calibration, restart recovery, replay, outsider browser/socket proof and the remaining phase/gate register.
+
+## Correlation Repair Checkpoint (2026-10-15)
+
+- Owner: Codex chat `01a1416e-f22c-73f0-977e-8f478fdb909f`; owned SSD checkout `/Volumes/SmarterWork/agent-work/lightning-resume-20261015-01a1416e/repo`; branch `codex/lightning-pooled-correlation-20261015`. Full-ring repair is separate PR #7014 (`799ba4711eab97cfdaeda623098587eefdc1c98e`), normal local hook passed; hosted checks pending.
+- Current canonical policies were read in this uninterrupted continuation, version 2.9, manifest `a659f31c5c1c2b0864889508079a635dd5fe2fc98decfbfc9d3f9c80dd45ec3b`; repository/publishing/Lightning references read. Canonical policy check passed. Reader receipt emitted `2026-10-15T21:19:24.330Z`, retained in PR #7014's checkpoint.
+- Both pilot drains are complete, MUST-MOVE, Lightning disabled. Run `38809119759`, operation `abc32089-b9d7-4a2f-a09b-d0196d8a5e10`; eight step events each, unchanged chip totals 40.60/125.41. No active hand at request, so mid-hand rehearsal remains open. Prior 2,832 hands have zero nonconserving receipts and no missing history links.
+- B2 root reproduced: total shared-hand counts were lent to a coefficient from only four measured hands. Correlation across short windows was also missed. Engine now emits additive paired-hand moments; SQL pools those and applies the existing 20-hand sample floor to actual measured pairs. Both engine regressions failed before and pass after. PostgreSQL 17 witnesses reproduce borrowed-sample and negative-correlation false positives and a missed true positive before the repair, then reject the former, detect 20 paired positive samples and retain fast-follow detection afterward. Existing signals remain open; no horse timing randomization or horse exemption.
+- Migration `20261015213334` is locally qualified, NOT installed. Database installation must precede containing engine adoption. Hosted checks, protected merge, installation, publication and fresh live proof remain open. Do not reactivate the pilot from this checkpoint.
+- Connected restart defect: all 45 original pool sessions exited `disconnect_expired` at `2026-10-15T21:00:55.282734Z`, after the 20:55 maintenance restart. GameServer's boot pass consults room sockets only; the regular matcher uses anchor-engine DisconnectEngine presence too. Repair that original presence transition, including the frozen boot boundary, before claiming restart recovery.
+- Public launch remains NO_GO. Preserve fresh A/A, integrity review, private outsider browser/socket proof and the remaining phase/gate register. Evidence root `/Volumes/SmarterArchives/agent-evidence/lightning-resume-20261015-01a1416e`.
+
+## Boot Presence Repair Checkpoint (2026-10-15)
+
+- Continuation owner: Codex chat `01a1416e-f22c-73f0-977e-8f478fdb909f`, SSD checkout `/Volumes/SmarterWork/agent-work/lightning-resume-20261015-01a1416e/repo`, branch `codex/lightning-boot-presence-20261015`. Same uninterrupted canonical policy 2.9 read, manifest `a659f31c5c1c2b0864889508079a635dd5fe2fc98decfbfc9d3f9c80dd45ec3b`, emitted `2026-10-15T21:19:24.330Z`; repository/publishing/Lightning references read and canonical drift check passed.
+- Separate full-ring PR #7014 and correlation PR #7016 both pushed through passing normal local hooks; protected hosted checks pending. Neither repair is installed or live-certified.
+- Both private pilot drains verified complete/MUST-MOVE/disabled, with eight step events each and chip totals unchanged (40.60/125.41), operation `abc32089-b9d7-4a2f-a09b-d0196d8a5e10`, run `38809119759`. All prior 2,832 settled receipts conserve and have history links. No active hand at drain request; mid-hand rehearsal is still open.
+- Restart root: all 45 original sessions expired `disconnect_expired` together at `2026-10-15T21:00:55.282734Z`. The boot pass consulted room sockets only, contradicting the regular matcher's anchor-plus-room presence authority. Three new regressions reproduce this before repair. The repaired pass uses the existing merger, cluster scope and connected precedence; unknown source reads do not manufacture disconnects. Four new tests plus nineteen existing reconnect tests pass. Engine publication and actual maintenance-recovery proof remain required.
+- Do not reactivate the pilot until source repairs, fresh A/A and integrity review qualify. Private outsider browser/socket proof, the remaining player/security/performance/gate register and public-launch scope limits remain open. Public launch NO_GO. Evidence root `/Volumes/SmarterArchives/agent-evidence/lightning-resume-20261015-01a1416e`.
+
+## Replay Evidence Checkpoint (2026-10-15)
+
+- Owner Codex chat `01a1416e-f22c-73f0-977e-8f478fdb909f`, SSD checkout `/Volumes/SmarterWork/agent-work/lightning-resume-20261015-01a1416e/calibration`, branch `codex/lightning-pilot-replay-evidence-20261015`, base `e422d6aa686ce3c0d6ecf2633db66a14a5d9ffdf`. Canonical policy 2.9 resumption read emitted `2026-10-15T21:53:11.107Z`, manifest `a659f31c5c1c2b0864889508079a635dd5fe2fc98decfbfc9d3f9c80dd45ec3b`; repository entrypoints, CLAUDE.md, publishing, deployment paths and complete checkpoint/Lightning phase references read. Same policy hashes as the canonical receipt; no authority changed.
+- Submitted repairs: #7014 three-second full-ring formation, #7016 pooled actual paired-hand moments, #7017 anchor-plus-room boot presence, #7025 authoritative source-bound calibration (depends on #7014). Normal hooks passed. All remain unmerged/uninstalled/unpublished at this checkpoint; required hosted checks are queued/running, no failure currently observed.
+- Drain run `38809119759` / operation `abc32089-b9d7-4a2f-a09b-d0196d8a5e10`: both complete, eight ledger steps each, MUST-MOVE / Lightning disabled, unchanged chips. All prior 2,832 settled hands conserve and link history, but none qualify the repaired launch matcher. Initial authenticated report `38800898759` was NO_GO on both pilots.
+- Explicit read-only qualification run `38813383364` dispatched with designated outsider and the three existing populated MUST-MOVE Clusters; queued at this checkpoint. No activation dispatched.
+- Additional signal evidence: coefficient-bearing windows contain only 4/3/5/4/2/5 shared hands for findings 1/2/3/5/6/7. Finding 4 has 20 hands across four coefficient-bearing windows, but their weighted coefficients cannot reconstruct pooled correlation. All seven remain open; do not blanket-clear them or alter horse timing without evidence. The maintained review door is `fn_lightning_operator_signal_review`, requiring the authenticated reviewer and an audited note.
+- This change adds the missing bounded authenticated replay witness to the existing report, with 27 local checks passed. Actual production sample remains pending protected merge and dispatch. It does not replace every-hand release qualification, private outsider browser/socket proof, fresh bounded A/A, repaired engine adoption, mid-hand drain/restart recovery, latency, 5,000 valid hands, five-club coverage or explicit public/GA scope decisions.
+- Evidence root `/Volumes/SmarterArchives/agent-evidence/lightning-resume-20261015-01a1416e`. No public launch claim. Continue current-head protected checks, ordered migration installation/readback, containing engine adoption, then private pilot qualification.
+
+## Continued Delivery Checkpoint (2026-10-15)
+
+- Latest owner request: continue checks, fix failures, merge, install, deploy and verify the private pilot live; continue all authorized work and report precise launch blockers. Public club names, new participants/funding/global fleet changes and GA retain their task-specific limits.
+- Canonical policy reader emitted `2026-10-15T22:00:08.641Z`, policy 2.9, manifest `a659f31c5c1c2b0864889508079a635dd5fe2fc98decfbfc9d3f9c80dd45ec3b`; all four canonical policy hashes unchanged. Fresh repository entrypoints, CLAUDE.md, publishing, deployment paths, storage guide and complete Lightning checkpoint/phase/register/rollout/review/catalog read. SSD separate mounted disk, 15 GiB available; canonical drift check passed.
+- Owner remains Codex chat `01a1416e-f22c-73f0-977e-8f478fdb909f`; local supporting branch `codex/lightning-pilot-operator-rehearsal-20261015` in the owned calibration checkout. One-control dispatch and legacy review support have 66 passing operator/setup checks. No actual control/review/activation dispatched by this change.
+- #7014 remains on its own current-head CI. Follow-ups #7016/#7017/#7027 and this operator support are consolidated into existing #7025; their exact source commits remain ancestors of this candidate. Retire duplicate pending own attempts only after normal submission succeeds. Retain every source fix/checkpoint; requalify the combined candidate and keep protected merge requirements.
+- At 22:04 UTC all five submitted PRs were open, no failed check observed; most shards queued. #7014 native fixture and one client shard passed; remaining shards pending. Fresh migration history contains none of `20261015212230`, `20261015213334`, `20261015214203`. Both pilots remain MUST-MOVE with Lightning disabled. Qualification report `38813383364` remains queued.
+- Evidence under `/Volumes/SmarterArchives/agent-evidence/lightning-resume-20261015-01a1416e`; preserve drain operation `abc32089-b9d7-4a2f-a09b-d0196d8a5e10` and run `38809119759`. Continue required checks and source failure recovery, then exact ordered migration readback, actual containing engine adoption, evidence-backed legacy finding reviews, fresh bounded private A/A, operator rehearsals and real form-mode hands/replay/latency/restart/drain qualification. Public launch remains NO_GO.
 
 ## U. Update At 20:30 UTC: Lightning Is Dealing Real Hands In The Pilot
 
 ### U.1 What Happened Since 17:30
 
-| Time (UTC) | Event |
-| --- | --- |
-| 18:11 | The other session restored the global fleet (`enabled=true`). Pilot horse wallets were NOT reset to 10,000 (pilot wallets 14,322.45 at 19:46). |
-| 18:14:55 | 6-max cluster `babb43f1` converted `must_move` to `lightning` with 18 live; 18 pool sessions opened; the shadow worker began comparisons at 18:15:00. |
-| 19:02:11 | 9-max cluster `3330ff9f` converted with 27 live; 27 pool sessions; comparisons from 19:03:01. |
-| 19:22 | PR #6992 merged (squash `19f21fdcee41a4a9cfed6feeaf7da172a01f79bc`). |
-| 19:46 | A/A calibration read from `lightning_matcher_shadow_comparison`: 6-max 85 comparisons, 9-max 44, every one nonempty (for example 156 groups, 1,352 seated per window), m1 vs m1-port, mean quality delta 0.000 on both. Calibrated. |
-| 19:47:20 | Stage 2 dispatched: `lightning-pilot-stage.yml` `stage=form`, operation `3715c610-a445-4a23-85fd-e330e45bbbc7`, run 38796724234. Succeeded (its readiness gate accepted the post-calibration reasons). |
-| 20:03 | First install of `20261015172330` (run 38793372623) was refused by the break window at exactly :03; nothing committed. |
-| 20:08 | Re-dispatched once: run 38799510609, success. `@live-proof` true; the nine Classic games are closed. |
-| 20:10:55 | **First real Lightning hands** formed on both clusters (a full 6-handed and a full 9-handed hand first). |
-| 20:29 | 1,313 Lightning hands settled across both clusters; 0 settled-but-stale; every settled hand has a `hand_history_id`; zero abandoned instances. |
+| Time (UTC) | Event                                                                                                                                                                                                                               |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 18:11      | The other session restored the global fleet (`enabled=true`). Pilot horse wallets were NOT reset to 10,000 (pilot wallets 14,322.45 at 19:46).                                                                                      |
+| 18:14:55   | 6-max cluster `babb43f1` converted `must_move` to `lightning` with 18 live; 18 pool sessions opened; the shadow worker began comparisons at 18:15:00.                                                                               |
+| 19:02:11   | 9-max cluster `3330ff9f` converted with 27 live; 27 pool sessions; comparisons from 19:03:01.                                                                                                                                       |
+| 19:22      | PR #6992 merged (squash `19f21fdcee41a4a9cfed6feeaf7da172a01f79bc`).                                                                                                                                                                |
+| 19:46      | A/A calibration read from `lightning_matcher_shadow_comparison`: 6-max 85 comparisons, 9-max 44, every one nonempty (for example 156 groups, 1,352 seated per window), m1 vs m1-port, mean quality delta 0.000 on both. Calibrated. |
+| 19:47:20   | Stage 2 dispatched: `lightning-pilot-stage.yml` `stage=form`, operation `3715c610-a445-4a23-85fd-e330e45bbbc7`, run 38796724234. Succeeded (its readiness gate accepted the post-calibration reasons).                              |
+| 20:03      | First install of `20261015172330` (run 38793372623) was refused by the break window at exactly :03; nothing committed.                                                                                                              |
+| 20:08      | Re-dispatched once: run 38799510609, success. `@live-proof` true; the nine Classic games are closed.                                                                                                                                |
+| 20:10:55   | **First real Lightning hands** formed on both clusters (a full 6-handed and a full 9-handed hand first).                                                                                                                            |
+| 20:29      | 1,313 Lightning hands settled across both clusters; 0 settled-but-stale; every settled hand has a `hand_history_id`; zero abandoned instances.                                                                                      |
 
 ### U.2 Phase 3 Status
 
@@ -35,11 +322,13 @@ You are picking up the Lightning programme for Club Arena (Smarter Poker). Light
 ### U.3 New Launch Blockers Found In The First Hands
 
 **B1. Hands form mostly heads-up.** After the first full hand at 20:10:55, the matcher deals small hands from a full pool. Of the first 593 hands: 6-max 188 heads-up, 21 three-handed, 8 four, 2 five, 2 six (average 2.24 dealt); 9-max 258 heads-up, 101 three, 35 four, 7 five, 2 each of six, seven and nine, 1 eight (average 2.55). `lightning_instance.target_size` equals the dealt count, so it is the plan, not a drop-out.
+
 - Cause, read from the code: the matcher packs every legal idle player each pass with `instance_min = 2` (`LIGHTNING_MATCHER_PARAM_DEFAULTS` in `server/src/lightning/LightningMatcherModel.ts`, mirrored by the SQL m1 matcher and `fn_lightning_config` keys `instance_min`, `instance_target`, `instance_max`; group sizing in `lightningGroupSizes`). Passes run often, and fast-folded players return one or two at a time, so whenever two are idle they are dealt a heads-up hand instead of waiting a moment for a fuller table. 18 players end up in about six concurrent small hands.
 - This is a launch blocker for a fast-fold product (players expect near-full rings) and it skews every downstream statistic (rake, VPIP, latency, fairness, the 5,000-hand sample).
 - Fix direction (needs a reviewed matcher phase, because ROLLOUT says m1 changes ship as their own reviewed phase, and because the wait-versus-fullness trade-off is Dan's product call): form a group only when idle legal players reach the target size for the current pool (for example the table size, or the pool size if smaller), OR when the oldest idle player has waited past a bounded aging limit; keep queue aging so nobody starves; implement in both the SQL m1 matcher and the engine port, keep parity (`scripts/dev/test-lightning-matcher-parity.sh`) and the fairness sims (`LightningMatcherSim.ts`) green, and re-run A/A calibration after the change. Ask Dan to choose the maximum wait (a number of seconds) in one short question with a recommended value.
 
 **B2. One high integrity signal is open.** `lightning_integrity_signal` id 1, 6-max cluster, `TIMING_CORRELATION`, players `0097309f-2864-4d09-b02b-56bca012a9c3` and `19de9af5-6576-4ebb-92c6-1fe53599f782` (both pilot horses), suspicion 90, `latency_corr` 0.9949, 27 hands together, status open. Readiness reports `INTEGRITY_HIGH_SIGNALS_OPEN` while it is open, and the Stage 2 exit needs no open high signal.
+
 - Treat it as real (CLAUDE.md 10.5 and PHASE5 contract rule 4: two horses that correlate is a HorseBehavior defect an operator must see; never filter horses out of the scan). Likely cause to verify: horse action timing in the engine (`scheduleHorseAction` and HorseLogic think-time) is too uniform, so two horses' decision latencies correlate. Fix the timing at its source with a regression test, then review and resolve the signal with a note.
 - Also check how B1 inflates it: heads-up hands put the same two horses together repeatedly.
 
@@ -59,15 +348,15 @@ You are picking up the Lightning programme for Club Arena (Smarter Poker). Light
 
 ## 1. Who, Where, What
 
-| Item | Value |
-| --- | --- |
-| Owner | Dan (Daniel Bekavac). He does no manual steps. Do not offer him options: decide, act, report. No interim updates on long tasks. Written deliverables use Title Case headings and no em dashes. |
-| Repository | `Smarter-Poker/Smarter-Poker-Club-Arena`, default branch `main` |
-| Production database | Supabase project PokerIQ-Production, ref `kuklfnapbkmacvwxktbh` |
-| Engine | Hetzner VPS, `https://engine.smarter.poker/health`. Latest sealed release `3002fe25f06cc958b2708026e80e9904bac6c518`; it contains the Phase 13 engine change (prerequisite met). |
-| Client | `https://smarter.poker/hub/club-arena/` (rewrite to `https://ca-static.smarter.poker`), published by `publish-club-arena.yml` |
-| Service identity for scripts | `daniel@smarter.poker`, user id `2d1cd6c3-5700-4af9-a271-d4863fdab20d` (role god). Never Dan's personal account. Scripts sign out with `{ scope: 'local' }`. |
-| Workflow secrets used | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SP_EMAIL`, `SP_PASS` |
+| Item                         | Value                                                                                                                                                                                          |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Owner                        | Dan (Daniel Bekavac). He does no manual steps. Do not offer him options: decide, act, report. No interim updates on long tasks. Written deliverables use Title Case headings and no em dashes. |
+| Repository                   | `Smarter-Poker/Smarter-Poker-Club-Arena`, default branch `main`                                                                                                                                |
+| Production database          | Supabase project PokerIQ-Production, ref `kuklfnapbkmacvwxktbh`                                                                                                                                |
+| Engine                       | Hetzner VPS, `https://engine.smarter.poker/health`. Latest sealed release `3002fe25f06cc958b2708026e80e9904bac6c518`; it contains the Phase 13 engine change (prerequisite met).               |
+| Client                       | `https://smarter.poker/hub/club-arena/` (rewrite to `https://ca-static.smarter.poker`), published by `publish-club-arena.yml`                                                                  |
+| Service identity for scripts | `daniel@smarter.poker`, user id `2d1cd6c3-5700-4af9-a271-d4863fdab20d` (role god). Never Dan's personal account. Scripts sign out with `{ scope: 'local' }`.                                   |
+| Workflow secrets used        | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SP_EMAIL`, `SP_PASS`                                                                                                                             |
 
 ## 2. Rules That Bind Every Step
 
@@ -94,53 +383,53 @@ You are picking up the Lightning programme for Club Arena (Smarter Poker). Light
 
 ### 3.1 The Pilot Club
 
-| Field | Value |
-| --- | --- |
-| Name | Lightning Internal Pilot |
-| Club id | `e14bc9f7-736d-425f-8f2c-e78305ebac1d` (slug `lightning-internal-pilot-95087`) |
-| Visibility | `is_public=false`, `requires_approval=true`, no union |
-| Owner | `2d1cd6c3-5700-4af9-a271-d4863fdab20d` (service identity) |
-| Treasury | 84,830.64 (read 17:25 UTC) |
-| Member wallets total | 14,516.14 (read 17:25 UTC): 72 horses at about 200 each plus owner |
-| Spins | Off (`spins_enabled=false`, Spin pool inactive) since migration `20261015152535` |
-| House board | Yes: added to `fn_ca_house_board_allows_automation` by Dan's ruling (migration `20261015032740`) |
-| Fleet policy (club row) | `occupancy_bias` 9 (migration `20261015141154`) |
-| Roster | Owner plus 72 horses: 50 `cash` lane, 22 `both` lane, all `role='player'`, `status='active'`. No other humans. |
-| Designated outsider (for access proofs) | `00bc0957-1913-4beb-a4d1-acab94950690` ("tacomaadam"), a horse that is not a member |
-| Pilot creation request id | `84ad2b53-990b-4fae-91cf-e7fd5509d105` |
+| Field                                   | Value                                                                                                          |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Name                                    | Lightning Internal Pilot                                                                                       |
+| Club id                                 | `e14bc9f7-736d-425f-8f2c-e78305ebac1d` (slug `lightning-internal-pilot-95087`)                                 |
+| Visibility                              | `is_public=false`, `requires_approval=true`, no union                                                          |
+| Owner                                   | `2d1cd6c3-5700-4af9-a271-d4863fdab20d` (service identity)                                                      |
+| Treasury                                | 84,830.64 (read 17:25 UTC)                                                                                     |
+| Member wallets total                    | 14,516.14 (read 17:25 UTC): 72 horses at about 200 each plus owner                                             |
+| Spins                                   | Off (`spins_enabled=false`, Spin pool inactive) since migration `20261015152535`                               |
+| House board                             | Yes: added to `fn_ca_house_board_allows_automation` by Dan's ruling (migration `20261015032740`)               |
+| Fleet policy (club row)                 | `occupancy_bias` 9 (migration `20261015141154`)                                                                |
+| Roster                                  | Owner plus 72 horses: 50 `cash` lane, 22 `both` lane, all `role='player'`, `status='active'`. No other humans. |
+| Designated outsider (for access proofs) | `00bc0957-1913-4beb-a4d1-acab94950690` ("tacomaadam"), a horse that is not a member                            |
+| Pilot creation request id               | `84ad2b53-990b-4fae-91cf-e7fd5509d105`                                                                         |
 
 ### 3.2 The Pilot Games (Lightning Clusters)
 
-| Field | 6-max | 9-max |
-| --- | --- | --- |
-| Name | Lightning Pilot NLH 6 | Lightning Pilot NLH 9 |
-| Cluster (cash_games) id | `babb43f1-368e-406f-a97a-a0d5013648b2` | `3330ff9f-76ec-4487-b0c9-fc8ad8c2fdbb` |
-| Blinds, buy-in | 0.01/0.02, 0.80 to 4.00 | 0.02/0.04, 1.60 to 8.00 |
-| Main table | `d78448e2-42da-4bd0-b702-98f8b37d6da7` | `a84ebe4c-020e-41d4-bd2c-898b4c93b7bc` |
-| Feeder table | `f018bc61-69d7-4184-81ad-8a8d9e0118d9` (closed) | none |
-| Private | `ruleset_snapshot.options.is_private=true` | same |
-| `shadow_window_ms` | 60000 (op `aaf6c3a2-b098-4d65-8e47-647a6834900b`) | 60000 (op `fbb0c5d2-5e32-4852-88a1-2077e620a4c3`) |
-| Integrity telemetry | on (op `b5e5c106-183e-4f9c-a37b-d72189567369`) | on (op `5ded3c91-dcb0-437a-b192-b072ec7b8ac9`) |
-| Thresholds (on / off) | 18 / 12 | 27 / 18 |
-| Stage 1 applied | 17:07 UTC, run 38773675895, operation `816d4942-2a60-47ec-a7a5-4fc89499d97c` | same |
-| Now | `lightning_enabled=true`, worker `shadow`, `lightning_shadow_matcher` on, shadow version `m1-port`, live matcher `m1`, `cluster_mode='must_move'`, state `dormant`, 0 seated | same |
-| Readiness after Stage 1 | `insufficient_evidence`: `WORKER_SHADOW_ONLY`, `NO_AA_CALIBRATION`, `NO_LATENCY_EVIDENCE` (all accepted for Stage 1) | same |
+| Field                   | 6-max                                                                                                                                                                        | 9-max                                             |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| Name                    | Lightning Pilot NLH 6                                                                                                                                                        | Lightning Pilot NLH 9                             |
+| Cluster (cash_games) id | `babb43f1-368e-406f-a97a-a0d5013648b2`                                                                                                                                       | `3330ff9f-76ec-4487-b0c9-fc8ad8c2fdbb`            |
+| Blinds, buy-in          | 0.01/0.02, 0.80 to 4.00                                                                                                                                                      | 0.02/0.04, 1.60 to 8.00                           |
+| Main table              | `d78448e2-42da-4bd0-b702-98f8b37d6da7`                                                                                                                                       | `a84ebe4c-020e-41d4-bd2c-898b4c93b7bc`            |
+| Feeder table            | `f018bc61-69d7-4184-81ad-8a8d9e0118d9` (closed)                                                                                                                              | none                                              |
+| Private                 | `ruleset_snapshot.options.is_private=true`                                                                                                                                   | same                                              |
+| `shadow_window_ms`      | 60000 (op `aaf6c3a2-b098-4d65-8e47-647a6834900b`)                                                                                                                            | 60000 (op `fbb0c5d2-5e32-4852-88a1-2077e620a4c3`) |
+| Integrity telemetry     | on (op `b5e5c106-183e-4f9c-a37b-d72189567369`)                                                                                                                               | on (op `5ded3c91-dcb0-437a-b192-b072ec7b8ac9`)    |
+| Thresholds (on / off)   | 18 / 12                                                                                                                                                                      | 27 / 18                                           |
+| Stage 1 applied         | 17:07 UTC, run 38773675895, operation `816d4942-2a60-47ec-a7a5-4fc89499d97c`                                                                                                 | same                                              |
+| Now                     | `lightning_enabled=true`, worker `shadow`, `lightning_shadow_matcher` on, shadow version `m1-port`, live matcher `m1`, `cluster_mode='must_move'`, state `dormant`, 0 seated | same                                              |
+| Readiness after Stage 1 | `insufficient_evidence`: `WORKER_SHADOW_ONLY`, `NO_AA_CALIBRATION`, `NO_LATENCY_EVIDENCE` (all accepted for Stage 1)                                                         | same                                              |
 
 ### 3.3 The Classic Games In The Pilot Club (Being Closed)
 
 Nine 0.50/1.00 cash games, all 0 seated, main tables already `closed` by the 16:55 wallet reset but the games still `enabled=true`, `state='live'`:
 
-| Game | Cluster id | Main table |
-| --- | --- | --- |
-| Classic NLH | `e639c83c-f66a-42f9-9ea1-38eed4e26f27` | `b8e47104-0791-4977-958d-992a6954e3e4` |
-| Classic FLH | `60178ffc-883c-4357-b79e-52ccade254ee` | `ee3f3551-1865-4a82-9b1f-8a4f49763237` |
-| Classic PLO4 | `abac480c-f049-4e2a-9d62-958304b8188f` | `d2440ad5-f2e7-4e9b-b292-fdd0ea53809b` |
-| Classic PLO5 | `9869e373-9cfa-4492-aa97-ba5541dbed9e` | `660d6f21-9c0e-4926-b231-3fdd62858591` |
-| Classic PLO6 | `36d337b4-9b1b-434b-92fd-b6ed33e0e3c9` | `2ffc6747-9bcb-4fc0-8fe1-c5a3b29bcad7` |
-| Classic PLO8 | `037bc558-ead6-4143-96e4-3e2d641d0daa` | `10f94f40-cfd9-4153-bb2d-bbdab87c61f9` |
-| Classic FLO8 | `966d8e6b-74c0-42cd-90f2-743ce7378fde` | `a262d787-4e03-4dc7-b47b-62231efacaf8` |
+| Game               | Cluster id                             | Main table                             |
+| ------------------ | -------------------------------------- | -------------------------------------- |
+| Classic NLH        | `e639c83c-f66a-42f9-9ea1-38eed4e26f27` | `b8e47104-0791-4977-958d-992a6954e3e4` |
+| Classic FLH        | `60178ffc-883c-4357-b79e-52ccade254ee` | `ee3f3551-1865-4a82-9b1f-8a4f49763237` |
+| Classic PLO4       | `abac480c-f049-4e2a-9d62-958304b8188f` | `d2440ad5-f2e7-4e9b-b292-fdd0ea53809b` |
+| Classic PLO5       | `9869e373-9cfa-4492-aa97-ba5541dbed9e` | `660d6f21-9c0e-4926-b231-3fdd62858591` |
+| Classic PLO6       | `36d337b4-9b1b-434b-92fd-b6ed33e0e3c9` | `2ffc6747-9bcb-4fc0-8fe1-c5a3b29bcad7` |
+| Classic PLO8       | `037bc558-ead6-4143-96e4-3e2d641d0daa` | `10f94f40-cfd9-4153-bb2d-bbdab87c61f9` |
+| Classic FLO8       | `966d8e6b-74c0-42cd-90f2-743ce7378fde` | `a262d787-4e03-4dc7-b47b-62231efacaf8` |
 | Classic Short Deck | `36e26d8d-ca2f-4f32-9f20-3b224796075f` | `c1872504-6e92-4fb9-9273-9730d3179a55` |
-| Classic Pineapple | `da86d705-d554-402a-845c-b090d0c72958` | `35085133-43bc-46b2-b621-3a0b335a2318` |
+| Classic Pineapple  | `da86d705-d554-402a-845c-b090d0c72958` | `35085133-43bc-46b2-b621-3a0b335a2318` |
 
 Why they matter: an enabled game is stake supply to the horse fleet (`HorseFleetManager.ts` builds `bandsWithAGameByHost` from every open table of an enabled game). Their 'low' band supply stopped the pilot's low and mid band horses from projecting down to the micro pilot games (`projectStakeBandOnto` in `HorseBehavior.ts` steps a horse down only when its own band has no game on that host). That is why the pilot fill stalled at 8 and 8. Dan approved closing them at 12:19 Chicago. Fix: PR #6992 (section 4.1). Also present in the pilot: 3 "Daily 25 Chip Freezeout" MTTs in REGISTERING with 0 players. Tournaments are not cash stake supply, so they do not block; leave them unless a later fact says otherwise.
 
@@ -184,17 +473,17 @@ Before the shutdown: `563279fc-c09a-48a6-b487-c4f34f289095` (NLH 1/2 Madness, 6-
 
 ### 4.4 Pilot Roster, Funding And Fill Fixes (All Installed)
 
-| PR | Migration | What | Installed |
-| --- | --- | --- | --- |
-| #6910 | `20261015032740_the_lightning_pilot_club_is_a_house_board` | Pilot added to `fn_ca_house_board_allows_automation`; 72 horses admitted via `join_club` source; funded to 40 | yes |
-| #6910 | none | `scripts/ops/lightning-pilot-stage.mjs` (+ test), `.github/workflows/lightning-pilot-stage.yml`; setup script accepts owner plus admitted horses | merged |
-| #6919 | `20261015053941_..._funded_to_the_fleet_bankroll_floo` | Top-up to 200; refused by the ledger guard; marked `SUPERSEDED BY 20261015093554` | never applied |
-| #6930 | `20261015093554_horse_treasury_funding_locks_the_wallets_it_reads_pilot_top_` | Root fix: `fn_seed_horses_to_floor` locks the club row and horse wallets first; then top-up to 200 (moved 11,826.30; treasury 96,820.00 to 84,993.70) | 13:06 UTC |
-| #6956 | `20261015121542_lightning_phase_12_load_chaos_a_seat_waits_for_the_mode_chan` | Race fix: per-cluster advisory lock `hashtextextended('lightning_cluster_mode:'||cluster_id,0)`, shared in the seat trigger, exclusive in the three mode-commit functions. Regression `scripts/dev/fixtures/lightning-mode-change-race.sql` (M1 to M6) in section MR of `scripts/dev/test-lightning-phase12-load-chaos.sh` | 15:24 UTC |
-| #6963 | `20261015141154_lightning_pilot_tables_are_kept_full` | Pilot club fleet policy `occupancy_bias` 9 | 15:05 UTC |
-| #6971 | `20261015152535_lightning_pilot_spins_are_switched_off` | `fn_spin_deactivate` on the pilot | 16:05 UTC |
-| #6971 | `20261015152540_lightning_pilot_roster_plays_cash` | 25 events-lane horses left via `fn_member_leave_to_treasury`; 25 idle cash-lane horses joined; all funded to 200 | 16:26 UTC |
-| #6982 | none | Stage tool reads readiness after preparation, before `enable_lightning` | merged 16:53 |
+| PR    | Migration                                                                     | What                                                                                                                                                  | Installed     |
+| ----- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| #6910 | `20261015032740_the_lightning_pilot_club_is_a_house_board`                    | Pilot added to `fn_ca_house_board_allows_automation`; 72 horses admitted via `join_club` source; funded to 40                                         | yes           |
+| #6910 | none                                                                          | `scripts/ops/lightning-pilot-stage.mjs` (+ test), `.github/workflows/lightning-pilot-stage.yml`; setup script accepts owner plus admitted horses      | merged        |
+| #6919 | `20261015053941_..._funded_to_the_fleet_bankroll_floo`                        | Top-up to 200; refused by the ledger guard; marked `SUPERSEDED BY 20261015093554`                                                                     | never applied |
+| #6930 | `20261015093554_horse_treasury_funding_locks_the_wallets_it_reads_pilot_top_` | Root fix: `fn_seed_horses_to_floor` locks the club row and horse wallets first; then top-up to 200 (moved 11,826.30; treasury 96,820.00 to 84,993.70) | 13:06 UTC     |
+| #6956 | `20261015121542_lightning_phase_12_load_chaos_a_seat_waits_for_the_mode_chan` | Race fix: per-cluster advisory lock `hashtextextended('lightning_cluster_mode:'                                                                       |               | cluster_id,0)`, shared in the seat trigger, exclusive in the three mode-commit functions. Regression `scripts/dev/fixtures/lightning-mode-change-race.sql`(M1 to M6) in section MR of`scripts/dev/test-lightning-phase12-load-chaos.sh` | 15:24 UTC |
+| #6963 | `20261015141154_lightning_pilot_tables_are_kept_full`                         | Pilot club fleet policy `occupancy_bias` 9                                                                                                            | 15:05 UTC     |
+| #6971 | `20261015152535_lightning_pilot_spins_are_switched_off`                       | `fn_spin_deactivate` on the pilot                                                                                                                     | 16:05 UTC     |
+| #6971 | `20261015152540_lightning_pilot_roster_plays_cash`                            | 25 events-lane horses left via `fn_member_leave_to_treasury`; 25 idle cash-lane horses joined; all funded to 200                                      | 16:26 UTC     |
+| #6982 | none                                                                          | Stage tool reads readiness after preparation, before `enable_lightning`                                                                               | merged 16:53  |
 
 Race fix verified postimage `md5(prosrc)`: trigger fn `b6c664923a5407e83a1f41de840fa9a7`, commit_lightning `4d0f4e028c7a0411ac19ca598167a0cb`, abort_pending_off `4ed812c85c1e419f1d6e868463409629`, commit_must_move `0fa9c8d280bcbfd48a72375869b5cf87`.
 
@@ -216,6 +505,7 @@ Phase reporting rule (`FUNCTIONAL-BUILD-PHASES.md`): report "Phase N Of 8 Is Don
 ### 5.3 Phase 3: Calibration And First Real Lightning Hands (In Progress)
 
 Order:
+
 1. **3a. PR #6992** merged and installed (4.1).
 2. **3b. Fleet back on** (3.4). Then confirm the pilot fills: live eligible at least 18 on the 6-max and 27 on the 9-max. Read `fn_cash_cluster_live_eligible(cluster)` and seated counts. Read `ca_horse_fleet_heartbeat` (`detail->>'reason'`, `detail->'gates'`) and `ca_horse_fleet_state` for the 72 pilot horses to see why any horse is not seated (band, rest day, daily cap, activity window `isActiveNow`, four-game limit, one seat per game).
    - If still short after the Classic closure: the next levers each need Dan's own-words approval: swap horses that are busy elsewhere for idle cash-lane horses with suitable activity windows (same pattern as `20261015152540`), or add horses. Do not change the global policy.

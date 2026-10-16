@@ -36,8 +36,13 @@ on:
 permissions:
   contents: read
 
+# Shared across phases, variants and source SHAs: one full league at a time.
+# Waiting runs consume no runners. Keep up to 100 pending qualifications;
+# the default single pending slot would silently replace earlier variants.
+# GitHub's finite queue rejects overflow; it never certifies an omitted run.
 concurrency:
-  group: horse-phase10-strength-league-${{ inputs.source_sha }}
+  group: horse-strength-hosted-capacity
+  queue: max
   cancel-in-progress: false
 
 env:
@@ -112,7 +117,7 @@ jobs:
     timeout-minutes: 120
     strategy:
       fail-fast: false
-      max-parallel: 20
+      max-parallel: 8
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     defaults:
       run:

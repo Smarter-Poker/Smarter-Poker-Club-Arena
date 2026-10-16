@@ -9,12 +9,12 @@
  *
  * It was inline in the component, where it was one of eight jobs that component
  * was doing. Nothing about the behaviour changes here - the effect is the same
- * effect, including the two-second settling poll, which exists because the
+ * effect, including late header mount detection, which exists because the
  * global header can mount after the route does and a ResizeObserver cannot
  * observe an element that is not there yet.
  */
 
-import { useEffect, useState } from 'react';
+import { useLayoutEffect, useState } from 'react';
 import { measureTopChromeBottom, TOP_CHROME_SELECTORS } from './topChrome';
 
 /**
@@ -24,7 +24,7 @@ import { measureTopChromeBottom, TOP_CHROME_SELECTORS } from './topChrome';
 export function useTopChromeOffset(routeKey: string): number {
   const [headerBottom, setHeaderBottom] = useState(0);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const measure = () => {
       setHeaderBottom(measureTopChromeBottom((sel) => document.querySelector(sel)));
     };
@@ -36,29 +36,34 @@ export function useTopChromeOffset(routeKey: string): number {
       ro = new ResizeObserver(measure);
     }
 
-    /* Observe every candidate, not just the first one found, and re-attach on
-       each tick: observe() is idempotent per element, so this is free and it
-       picks up chrome that mounts late. The rail itself only appears when an
-       MTT comes inside the five-minute window, which is usually long after the
-       route did. */
-    let attempts = 0;
+    // A lazy header can mount after the old two-second settling deadline.
+    // Observe that mount event, then let ResizeObserver carry its geometry.
+    let mounts: MutationObserver | null = null;
     const attach = () => {
-      measure();
-      if (!ro) return;
+      let found = false;
       for (const sel of TOP_CHROME_SELECTORS) {
         const el = document.querySelector(sel);
-        if (el) ro.observe(el);
+        if (el) {
+          found = true;
+          ro?.observe(el);
+        }
       }
+      measure();
+      if (found) mounts?.disconnect();
+      return found;
     };
-    attach();
-    const poll = setInterval(() => {
-      attach();
-      if (++attempts > 20) clearInterval(poll); // 2s of settling, then observers carry it
-    }, 100);
+    if (!attach() && typeof MutationObserver !== 'undefined') {
+      mounts = new MutationObserver(attach);
+      mounts.observe(document.body, { childList: true, subtree: true });
+    }
+    // Capture nested lobby scrolls as well as the window scroll. Position can
+    // change without a resize when a sticky header reaches its scroll limit.
+    document.addEventListener('scroll', measure, true);
 
     return () => {
       window.removeEventListener('resize', measure);
-      clearInterval(poll);
+      document.removeEventListener('scroll', measure, true);
+      mounts?.disconnect();
       ro?.disconnect();
     };
   }, [routeKey]);

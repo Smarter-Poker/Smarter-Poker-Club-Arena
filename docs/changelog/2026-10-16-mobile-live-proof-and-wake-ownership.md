@@ -1,0 +1,9 @@
+# Mobile Live Proof And Wake Ownership
+
+The published mobile table release's production WebKit proof exposed an extra SNG subscription after reconnect. A delayed foreground event replaced a fresh CONNECTING facade while its acknowledgement was still in flight. Table and channel clients now preserve an attempt that still owns its bounded handshake timer. The existing handshake deadline and offline/online recovery remain active. Regressions reproduce both replacements before the repair and pass afterward.
+
+A second actual production payout landed about eight pixels from the current winner plate. The launch-only target was stale after the plate moved. Payout chips now resolve the rendered recipient on each visual frame and retain their original flight deadline across viewport fitting. A moving-plate WebKit regression fails with the previous launch-only target and passes with the recipient tracking. Landing state is explicit rather than inferred by comparing against an obsolete target. A settled background-table flight realigns before paint when its table becomes visible, without replaying or extending its deadline.
+
+The payout proof now follows visible chip bounds to the actual recipient throughout the flight, retaining the two-pixel endpoint limit. A flight removed before reaching its recipient fails qualification. This avoids depending solely on a short-lived render-state attribute and adds a negative dropped-flight case. Real mobile WebKit component flights finish within 0.001 pixels of their recipient centers in a translated, scaled table.
+
+Mobile screenshots and measurements are written into Playwright's output directory and attached by path. Buffer-only JSON reporter attachments were embedded in the report and did not match the dedicated artifact upload. The existing post-deploy workflow now retains those files directly. No hand or ledger is injected, no required assertion is skipped, and no real chips are spent for testing.

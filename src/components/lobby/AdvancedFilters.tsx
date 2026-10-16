@@ -37,6 +37,7 @@ import {
 import { reportError } from '../../utils/errorReporter';
 import { supabase } from '../../lib/supabase';
 import { readLocalSession } from '../../lib/authUtils';
+import { isAbortedRequest, isUnsynced, markUnsynced } from './lobbyViewPrefs';
 import { usePlatformCapability } from '../../hooks/usePlatformCapability';
 import './AdvancedFilters.css';
 
@@ -52,7 +53,39 @@ const TABS: { key: FilterGameType; label: string }[] = [
 
 export type FilterStore = Partial<Record<FilterGameType, GameFilterValue>>;
 
-const storageKey = (clubId: string) => `ca_advanced_filters_${clubId}`;
+const LEGACY_PREFIX = 'ca_advanced_filters_';
+/* PER ACCOUNT AND PER CLUB (2026-10-16), the same keying the tab/sort/
+   Favorites cache moved to in #7043. Keyed by club alone, one account's
+   "Bomb Pot only" survived sign-out and silently filtered the next account's
+   lobby on the same browser. Signed out keeps the legacy per-club key. */
+const storageKey = (clubId: string, userId: string | null = currentUserId()) =>
+  userId ? `${LEGACY_PREFIX}${userId}:${clubId}` : `${LEGACY_PREFIX}${clubId}`;
+const unsyncedKey = (clubId: string, userId: string) =>
+  `${LEGACY_PREFIX}${userId}:${clubId}:unsynced`;
+
+/** Read this account's cached store, adopting a pre-2026-10-16 browser-wide
+ *  store for exactly one account, never for every account after it. */
+function readCachedFilters(clubId: string, userId: string | null): string | null {
+  const key = storageKey(clubId, userId);
+  let raw = localStorage.getItem(key);
+  if (!raw && userId) {
+    const legacyKey = `${LEGACY_PREFIX}${clubId}`;
+    const ownerKey = `${legacyKey}:owner`;
+    const owner = localStorage.getItem(ownerKey);
+    if (!owner || owner === userId) {
+      raw = localStorage.getItem(legacyKey);
+      if (raw) {
+        try {
+          localStorage.setItem(ownerKey, userId);
+          localStorage.setItem(key, raw);
+        } catch {
+          /* A full store must not discard a readable preference. */
+        }
+      }
+    }
+  }
+  return raw;
+}
 
 /** How long a burst of changes must settle before the row is written.
  *  Long enough to swallow a slider drag, short enough that closing the sheet
@@ -147,9 +180,9 @@ export function sanitizeStore(parsed: FilterStore | null | undefined): FilterSto
 }
 
 /** Read saved filters from this device's cache, validated. */
-export function loadFilters(clubId: string): FilterStore {
+export function loadFilters(clubId: string, userId: string | null = currentUserId()): FilterStore {
   try {
-    const raw = localStorage.getItem(storageKey(clubId));
+    const raw = readCachedFilters(clubId, userId);
     if (!raw) return {};
     return sanitizeStore(JSON.parse(raw) as FilterStore);
   } catch (e) {
@@ -165,9 +198,13 @@ export function loadFilters(clubId: string): FilterStore {
  * in one tap instead of three. If they wrote anywhere else the sheet and the
  * row would disagree about what is filtered the moment you opened it.
  */
-export function saveFilters(clubId: string, store: FilterStore) {
+export function saveFilters(
+  clubId: string,
+  store: FilterStore,
+  userId: string | null = currentUserId()
+) {
   try {
-    localStorage.setItem(storageKey(clubId), JSON.stringify(store));
+    localStorage.setItem(storageKey(clubId, userId), JSON.stringify(store));
   } catch (e) {
     // Quota or private mode. The filters still apply for this session; only
     // the memory of them is lost, which is not worth an error in the player's face.
@@ -213,7 +250,9 @@ export async function fetchRemoteFilters(clubId: string): Promise<FilterStore | 
       .eq('club_id', clubId)
       .maybeSingle();
     if (error) {
-      reportError(error, 'AdvancedFilters.fetchRemoteFilters', { clubId });
+      if (!isAbortedRequest(error)) {
+        reportError(error, 'AdvancedFilters.fetchRemoteFilters', { clubId });
+      }
       return null;
     }
     if (!data?.filters || typeof data.filters !== 'object') return null;
@@ -224,24 +263,81 @@ export async function fetchRemoteFilters(clubId: string): Promise<FilterStore | 
        exact failure loadFilters was hardened against. */
     return sanitizeStore(data.filters as FilterStore);
   } catch (e) {
-    reportError(e, 'AdvancedFilters.fetchRemoteFilters', { clubId });
+    if (!isAbortedRequest(e)) reportError(e, 'AdvancedFilters.fetchRemoteFilters', { clubId });
     return null;
   }
 }
 
-/** Mirror the store to the database. Never throws, never blocks the UI. */
+/**
+ * Mirror the store to the database. Never throws, never blocks the UI.
+ *
+ * ORDERED AND CONFIRMED (2026-10-16). Writes for one account+club go out in
+ * the order they were made, so a slow earlier save can never land after the
+ * last one, and the store stays marked unsynced on this device until the
+ * newest write is confirmed. A save the network dropped is then finished by
+ * the next lobby open (hasUnsyncedFilters) instead of the older row
+ * overwriting the newer choice.
+ */
+const pendingFilterWrites = new Map<string, Promise<void>>();
+
 export function pushRemoteFilters(clubId: string, store: FilterStore): void {
   const userId = currentUserId();
   if (!userId || !clubId) return;
-  void supabase
-    .from('user_lobby_filters')
-    .upsert(
-      { user_id: userId, club_id: clubId, filters: store, updated_at: new Date().toISOString() },
-      { onConflict: 'user_id,club_id' }
-    )
-    .then(({ error }) => {
-      if (error) reportError(error, 'AdvancedFilters.pushRemoteFilters', { clubId });
-    });
+  const key = `${userId}:${clubId}`;
+  markUnsynced(unsyncedKey(clubId, userId), true);
+  const write = async (): Promise<boolean> => {
+    try {
+      const { error } = await supabase
+        .from('user_lobby_filters')
+        .upsert(
+          { user_id: userId, club_id: clubId, filters: store, updated_at: new Date().toISOString() },
+          { onConflict: 'user_id,club_id' }
+        );
+      if (error) {
+        if (!isAbortedRequest(error)) {
+          reportError(error, 'AdvancedFilters.pushRemoteFilters', { clubId });
+        }
+        return false;
+      }
+      return true;
+    } catch (error) {
+      if (!isAbortedRequest(error)) {
+        reportError(error, 'AdvancedFilters.pushRemoteFilters', { clubId });
+      }
+      return false;
+    }
+  };
+  const previous = pendingFilterWrites.get(key);
+  let settled!: Promise<void>;
+  const pending = (previous ? previous.then(write) : write()).then((ok) => {
+    if (ok && pendingFilterWrites.get(key) === settled) {
+      markUnsynced(unsyncedKey(clubId, userId), false);
+    }
+  });
+  settled = pending;
+  pendingFilterWrites.set(key, pending);
+  void pending.then(() => {
+    if (pendingFilterWrites.get(key) === pending) pendingFilterWrites.delete(key);
+  });
+}
+
+/** Does this device hold a filter store the database never confirmed? */
+export function hasUnsyncedFilters(clubId: string, userId = currentUserId()): boolean {
+  if (!userId || !clubId) return false;
+  return isUnsynced(unsyncedKey(clubId, userId));
+}
+
+/**
+ * THE LOBBY'S ONE DOOR FOR A FILTER CHANGE. The quick chips under the action
+ * bar (stakes, status, variants, styles) wrote only this browser's cache, so
+ * they never followed the player to another device even though the sheet
+ * beside them did. Each chip is one discrete tap, so it is written at once;
+ * pushRemoteFilters keeps the taps in order.
+ */
+export function persistFilters(clubId: string, store: FilterStore): void {
+  if (!clubId) return;
+  saveFilters(clubId, store);
+  pushRemoteFilters(clubId, store);
 }
 
 /** Format a range endpoint: blinds keep decimals, buy-ins do not. */
@@ -348,6 +444,9 @@ export default function AdvancedFilters({
      current interaction always outranks a late-arriving remote value. */
   const touchedRef = useRef(false);
   useEffect(() => {
+    // A store this device never got confirmed is newer than the row; the
+    // lobby already re-sent it, so the row must not redraw the sheet backwards.
+    if (hasUnsyncedFilters(clubId)) return;
     let cancelled = false;
     void fetchRemoteFilters(clubId).then((remote) => {
       if (cancelled || !remote || touchedRef.current) return;

@@ -26,6 +26,7 @@
  * nothing else in CI would notice.
  */
 import { describe, it, expect } from 'vitest';
+import sharp from 'sharp';
 import { createHash } from 'node:crypto';
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -237,7 +238,7 @@ describe('mobile uses the identical desktop header', () => {
   });
 
   it('uses only artwork derived from the approved source image', () => {
-    expect(TSX).toContain('global-header-desktop.png');
+    expect(TSX).toContain('global-header-desktop-black-v2.png');
     for (const file of [
       'menu.png',
       'back.png',
@@ -276,7 +277,7 @@ describe('the profile region shows the live profile picture inside the hairline,
    * fixed") and produced the header Dan then reported three times - 09-03,
    * 09-05 and 09-07 ("this thick broken frame") - because the tests forbade
    * the fix. The ring is never shown. The button is an opaque black disc over
-   * the whole ornament and the photo's only frame is the 0.5px hairline.
+   * the whole ornament and the photo's only frame is the 1px hairline.
    *
    * The binding version of this, by arithmetic rather than literal, is
    * tests/the-header-portrait-frame-is-a-hairline.law.test.ts. This block
@@ -305,7 +306,7 @@ describe('the profile region shows the live profile picture inside the hairline,
     expect(slot).toContain('width: 72%');
     expect(slot).toContain('aspect-ratio: 1');
     expect(slot).toContain('transform: translate(-50%, -50%) !important');
-    expect(slot).toContain('border: 0.5px solid rgba(0, 0, 0, 0.94)');
+    expect(slot).toContain('border: 1px solid rgba(0, 0, 0, 0.94)');
     expect(slot).toContain('border-radius: 50%');
     expect(slot).toContain('background: transparent');
     expect(slot).toContain('z-index: 1');
@@ -364,5 +365,42 @@ describe('compact unread badges preserve the mobile notification bell', () => {
     expect(CSS).toContain('right: -2px');
     expect(CSS).toContain('min-width: clamp(12px, 1.7vw, 18px)');
     expect(CSS).toContain('font-size: clamp(7px, 1vw, 10px)');
+  });
+});
+
+describe('the footer-black frame preserves the complete header interior', () => {
+  it('keeps every interior, blue shine and alpha pixel unchanged at the original size', async () => {
+    const [old, next] = await Promise.all([
+      sharp(APPROVED_DESKTOP).ensureAlpha().raw().toBuffer({ resolveWithObject: true }),
+      sharp(readBytes('../../public/images/global-header/global-header-desktop-black-v2.png'))
+        .ensureAlpha()
+        .raw()
+        .toBuffer({ resolveWithObject: true }),
+    ]);
+    expect(next.info.width).toBe(1648);
+    expect(next.info.height).toBe(168);
+    const regions = [
+      [24, 22, 480, 122],
+      [586, 22, 459, 122],
+      [1124, 22, 500, 122],
+    ];
+    for (const [x, y, width, height] of regions) {
+      for (let row = y; row < y + height; row++) {
+        const start = (row * 1648 + x) * 4;
+        expect(
+          next.data
+            .subarray(start, start + width * 4)
+            .equals(old.data.subarray(start, start + width * 4))
+        ).toBe(true);
+      }
+    }
+    let changed = 0;
+    for (let i = 0; i < old.data.length; i += 4) {
+      expect(next.data[i + 3]).toBe(old.data[i + 3]);
+      if (old.data[i + 2] > old.data[i] * 1.15 && old.data[i + 2] > old.data[i + 1] * 1.05)
+        expect(next.data.subarray(i, i + 4).equals(old.data.subarray(i, i + 4))).toBe(true);
+      if (next.data[i] !== old.data[i]) changed++;
+    }
+    expect(changed).toBeGreaterThan(10000);
   });
 });

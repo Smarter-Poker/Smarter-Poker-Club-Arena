@@ -34,13 +34,13 @@ describe('the two tiers carry Dan 2026-09-04 exactly', () => {
       blindStructure: 'FREE_BUY',
     });
   });
-  it('$500 tier: same shape, $2 rebuy and $2 add-on', () => {
+  it('$500 tier: same shape, $1 rebuy and $1 add-on (Dan 2026-10-16: "1 CHIP ... NOT 2")', () => {
     expect(feat).toMatchObject({
       guarantee: 500,
       buyIn: 0,
       startingChips: 3000,
-      rebuyCost: 2,
-      addOnCost: 2,
+      rebuyCost: 1,
+      addOnCost: 1,
       addOnChips: 10000,
       lateRegMinutes: 60,
       blindStructure: 'FREE_BUY',
@@ -490,18 +490,17 @@ describe('the row a Free Buy is created as', () => {
     expect(row.addon_chips).toBe(10000);
   });
 
-  it('carries the feature tier price at 20:00', () => {
+  it('carries the feature tier guarantee at 20:00, at the same 1 chip rebuy and add-on (Dan 2026-10-16)', () => {
     const row = rowFor(0, 20);
     expect(row.guaranteed_prize).toBe(500);
-    expect(row.rebuy_cost).toBe(2);
-    expect(row.addon_cost).toBe(2);
+    expect(row.rebuy_cost).toBe(1);
+    expect(row.addon_cost).toBe(1);
     expect(row.addon_chips).toBe(10000);
   });
 
   it('sets free_buy AND a positive rebuy_cost together, or the trigger reprices it to 1.00', () => {
-    // fn_freerolls_are_free_buy only leaves a price alone when
-    // free_buy = true AND rebuy_cost > 0. Either half alone is a $2 event
-    // that silently becomes a $1 one.
+    // Every Midway freeroll rebuy and add-on is 1 chip (Dan 2026-10-16), and
+    // fn_freerolls_are_free_buy forces exactly that; the row states it too.
     const row = rowFor(0, 20);
     expect(row.free_buy).toBe(true);
     expect(Number(row.rebuy_cost)).toBeGreaterThan(0);
@@ -651,8 +650,7 @@ describe('auditFreeBuyRow', () => {
     expect(auditFreeBuyRow(good())).toEqual([]);
   });
 
-  it('catches the trigger repricing the feature tier back to 1.00', () => {
-    // This is the whole reason the audit reads the DATABASE and not the code.
+  it('passes the Prime Time Free Buy at a 1 chip rebuy and add-on (Dan 2026-10-16)', () => {
     const feature = good({
       name: 'Prime Time Free Buy (NLH)',
       start_time: startOf(20),
@@ -660,9 +658,22 @@ describe('auditFreeBuyRow', () => {
       rebuy_cost: 1,
       addon_cost: 1,
     });
+    expect(auditFreeBuyRow(feature)).toEqual([]);
+  });
+
+  it('catches a Free Buy that still charges 2 for a rebuy or add-on', () => {
+    // The audit reads the DATABASE, not the code: a row the trigger did not
+    // reprice is exactly what it exists to find.
+    const feature = good({
+      name: 'Prime Time Free Buy (NLH)',
+      start_time: startOf(20),
+      guaranteed_prize: 500,
+      rebuy_cost: 2,
+      addon_cost: 2,
+    });
     const p = auditFreeBuyRow(feature);
-    expect(p.some((x) => x.includes('rebuy 1'))).toBe(true);
-    expect(p.some((x) => x.includes('add-on 1'))).toBe(true);
+    expect(p.some((x) => x.includes('rebuy 2'))).toBe(true);
+    expect(p.some((x) => x.includes('add-on 2'))).toBe(true);
   });
 
   it('catches a paid first entry', () => {

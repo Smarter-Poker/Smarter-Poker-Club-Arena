@@ -663,7 +663,7 @@ describe('CashierTradePage club load ordering', () => {
     await waitFor(() =>
       expect(screen.getByRole('dialog', { name: /Send Out/ })).toBeInTheDocument()
     );
-    expect(screen.getByRole('spinbutton', { name: 'Amount' })).toHaveValue(42.5);
+    expect(screen.getByRole('textbox', { name: 'Amount' })).toHaveValue('42.5');
     expect(screen.getByRole('button', { name: 'Confirm' })).toBeEnabled();
     expect(localStorage.length).toBe(1);
   });
@@ -754,7 +754,7 @@ describe('CashierTradePage club load ordering', () => {
     expect(
       within(screen.getByRole('dialog')).getByRole('button', { name: 'Send Ticket' })
     ).toBeInTheDocument();
-    fireEvent.change(screen.getByRole('spinbutton', { name: 'Amount' }), {
+    fireEvent.change(screen.getByRole('textbox', { name: 'Amount' }), {
       target: { value: '10' },
     });
 
@@ -847,7 +847,7 @@ describe('CashierTradePage club load ordering', () => {
     fireEvent.click(screen.getByRole('button', { name: /^Advanced/ }));
     fireEvent.click(await screen.findByRole('tab', { name: 'Chip Requests' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Request Chips From Your Agent' }));
-    fireEvent.change(screen.getByRole('spinbutton', { name: 'Chips Requested' }), {
+    fireEvent.change(screen.getByRole('textbox', { name: 'Chips Requested' }), {
       target: { value: '75' },
     });
     fireEvent.change(screen.getByRole('textbox', { name: 'Note' }), {
@@ -865,7 +865,7 @@ describe('CashierTradePage club load ordering', () => {
     fireEvent.click(screen.getByRole('button', { name: /^Advanced/ }));
     fireEvent.click(await screen.findByRole('tab', { name: 'Chip Requests' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Request Chips From Your Agent' }));
-    fireEvent.change(screen.getByRole('spinbutton', { name: 'Chips Requested' }), {
+    fireEvent.change(screen.getByRole('textbox', { name: 'Chips Requested' }), {
       target: { value: '75' },
     });
     fireEvent.change(screen.getByRole('textbox', { name: 'Note' }), {

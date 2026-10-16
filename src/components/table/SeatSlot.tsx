@@ -2767,6 +2767,7 @@ export const SeatSlot = memo(
         className={`${containerClasses} seat--cards-${cardSide}`}
         onClick={() => callbacksRef.current.onAction?.()}
         data-seat-num={seatNumber}
+        data-player-id={player.id}
         role="region"
         /* isActingNow: a screen reader must not keep announcing a folded seat
            as "acting now" for the round trip it takes the snapshot to move the

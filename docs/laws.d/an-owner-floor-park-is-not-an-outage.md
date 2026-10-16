@@ -1,0 +1,3 @@
+# tests/an-owner-floor-park-is-not-an-outage.law.test.ts
+
+An owner floor park is a scheduled stop, not an outage (2026-10-15, park 3d9c1ba1 paged four fleet rules and ClubArenaFleetFloorLost). Every rule that measures how much of the floor is dealing carries `unless on() max_over_time(poker_operator_floor_park_share[6m]) >= 0.5` beside its break guard, the share has an engine producer (`server/src/services/FloorParkWatch.ts`) that publishes 0 when it cannot read, DealRateVerifier stands ClubArenaFleetFloorLost down on the same fresh read and only in its below-floor branch, and a stall with seated players dealt nothing (EngineHandsStopped, EngineHandsPerSecDropped) is never guarded, because a park cannot explain it.

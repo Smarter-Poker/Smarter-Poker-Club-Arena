@@ -63,7 +63,9 @@ import { clampSeatsForVariant } from '../config/tableSeating.js';
 import {
   FREE_BUY_BOARD_NAMES,
   FREE_BUY_HOSTS,
+  FREE_BUY_SLOTS,
   FREE_BUY_TIERS,
+  freeBuyBoardName,
   auditFreeBuyBoard,
   freeBuySlotsDue,
   freeBuyTournamentRow,
@@ -2872,6 +2874,177 @@ interface BoardOwner {
 // TOURNAMENT RECURRING SERVICE CLASS
 // ═══════════════════════════════════════════════════════════════════════════════
 
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// THE FIXED BOARD (Dan 2026-10-15, BINDING)
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// Dan, verbatim: "TOURNAMENTS CAN NEVER FAIL, AND MUST ALWAYS RUN AND SPAWN,
+// INSTEAD OF RANDOMLY SPAWNING THEM, PUT THEM ON A HARD CODED SCHEDULE".
+//
+// On 2026-10-13 08:15 Chicago this service's MTT, Free Buy and Spin boards went
+// silent for ~34 hours (8 Free Buys and ~90 lobby MTTs never existed) while
+// every tournament_schedules row kept spawning on time. The boards here are
+// timers that fire relative to "now", one live instance per name, gated on
+// the fleet and board switches; the schedule table is a fixed calendar with a
+// spawn-key claim per occurrence and a page for every missed one.
+//
+// So the Midway Union's Free Buys, hourly lobby MTTs and union events are now
+// rows in tournament_schedules at fixed America/Chicago start times
+// (migration ..._the_midway_board_is_a_fixed_schedule). The rows name their
+// template here (`fixedBoard`), and ScheduledTournamentService builds each
+// occurrence with the SAME builders this service used, so a fixed-board event
+// is column-for-column the event the old timer made, only on a fixed clock.
+//
+// The timers below stand down for everything the schedule now owns.
+export const MIDWAY_BOARD_IS_ON_THE_FIXED_SCHEDULE = true;
+
+export type FixedBoardTemplate =
+  | { kind: 'lobby_mtt'; config: TournamentConfig }
+  | { kind: 'union_mtt'; config: XMTTConfig };
+
+/** The lobby and union MTT templates, by the exact name they are published under. */
+export function fixedBoardTemplate(name: string): FixedBoardTemplate | null {
+  for (const block of HOURLY_SCHEDULE) {
+    for (const config of block.tournaments) {
+      if (config.name === name) return { kind: 'lobby_mtt', config };
+    }
+  }
+  for (const block of XMTT_SCHEDULE) {
+    for (const config of block.tournaments) {
+      if (config.name === name) return { kind: 'union_mtt', config };
+    }
+  }
+  return null;
+}
+
+/**
+ * PURE. The tournaments row of one Free Buy occurrence on the fixed schedule:
+ * exactly the row checkAndCreateFreeBuys builds for the same slot (same
+ * builder, same FREE_BUY ladder, NINE payout, nine seats, the hour of late
+ * registration measured off the ladder). `slotName` is the published name,
+ * e.g. "Prime Time Free Buy (NLH)". Null for a name that is not a slot.
+ */
+export function fixedFreeBuyRow(
+  slotName: string,
+  startTime: Date,
+  host: { clubId: string; unionId: string | null; label: string }
+): Record<string, unknown> | null {
+  const slot = FREE_BUY_SLOTS.find((s) => freeBuyBoardName(s) === slotName);
+  if (!slot) return null;
+  const cfg = FREE_BUY_TIERS[slot.tier];
+  const dayKey = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Chicago',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(startTime);
+  return freeBuyTournamentRow({
+    host: { hostId: host.clubId, ...host },
+    due: { slot, dayKey, startMs: startTime.getTime() },
+    blindStructure: BLIND_STRUCTURES.FREE_BUY,
+    payoutStructure: PAYOUT_STRUCTURES.NINE,
+    tableSize: clampSeatsForVariant('nlh', 9),
+    lateRegLevels: lateRegLevelsForMinutes(BLIND_STRUCTURES.FREE_BUY, cfg.lateRegMinutes),
+  });
+}
+
+/** Every template name the fixed schedule may reference. */
+export function fixedBoardTemplateNames(): string[] {
+  return [
+    ...HOURLY_SCHEDULE.flatMap((b) => b.tournaments.map((t) => t.name)),
+    ...XMTT_SCHEDULE.flatMap((b) => b.tournaments.map((t) => t.name)),
+  ];
+}
+
+/**
+ * PURE. The tournaments row a lobby MTT (late reg 8) or union MTT (late reg 10,
+ * is_xmtt) is created with. createTournament, createXMTT and the fixed
+ * schedule all build through this one function, so the three cannot drift.
+ */
+export function recurringMttRow(
+  config: TournamentConfig | XMTTConfig,
+  startTime: Date,
+  owner: { clubId: string; unionId: string | null; xmtt: boolean }
+): Record<string, unknown> {
+  const dbGameType = dbGameTypeFor(config.gameVariant, owner.xmtt ? 'createXMTT' : 'createMTT');
+  validateMttBlindStructure(config.blindStructure, config.startingStack);
+  const isBountyType =
+    config.type === 'bounty' ||
+    config.type === 'progressive_bounty' ||
+    config.type === 'mystery_bounty';
+  // Whole-chip entry prices can fund fractional bounties. Use the same cent
+  // allocation as scheduled MTTs without changing a booked head.
+  const split = buyInFor(config.buyIn);
+  const bountyAmount = isBountyType ? mttBountyAmount(split, config) : 0;
+  // MYSTERY RANGE 2026-08-21: the draw pays 0.5x to 13x the funded head
+  // (60% x0.5, 25% x1, 10% x2, 4% x3, 1% x13), so that is what is written.
+  const MYSTERY_MIN_MULT = 0.5;
+  const MYSTERY_MAX_MULT = 13;
+  const mysteryMin =
+    config.type === 'mystery_bounty' ? Math.round(bountyAmount * MYSTERY_MIN_MULT * 100) / 100 : 0;
+  const mysteryMax =
+    config.type === 'mystery_bounty' ? Math.round(bountyAmount * MYSTERY_MAX_MULT * 100) / 100 : 0;
+  const lateRegLevels = owner.xmtt ? 10 : 8;
+  const rebuy = (config as { rebuy?: boolean }).rebuy === true;
+  const addOn = (config as { addOn?: boolean }).addOn === true;
+  return {
+    club_id: owner.clubId,
+    union_id: owner.unionId,
+    ...(owner.xmtt ? { is_xmtt: true } : {}),
+    name: config.name,
+    game_type: dbGameType,
+    variant: config.type === 'mtt' ? 'freezeout' : config.type,
+    tournament_type: 'MTT',
+    ...buyInColumns(config.buyIn),
+    guaranteed_prize: wholeChips(config.guarantee),
+    starting_chips: config.startingStack,
+    max_players: config.maxPlayers,
+    // SEATS AT THE TABLE (2026-08-31): written through the same clamp the
+    // engine applies at deal time, so the row states what will be dealt.
+    table_size: clampSeatsForVariant(config.gameVariant, 9),
+    min_players: config.minPlayers || 3,
+    current_players: 0,
+    status: 'REGISTERING',
+    blind_structure: config.blindStructure,
+    ...mttSpeedColumns(config.blindStructure),
+    payout_structure: config.payoutStructure || [],
+    payout_percent: mttPayoutPercent(config.payoutPercent),
+    start_time: startTime.toISOString(),
+    late_reg_levels: lateRegLevels,
+    late_reg_mins: mttLateRegistrationMinutes(config.blindStructure, lateRegLevels),
+    is_bounty: isBountyType,
+    is_pko: config.type === 'progressive_bounty',
+    is_mystery_bounty: config.type === 'mystery_bounty',
+    ...(config.type === 'mystery_bounty' ? mysteryBountyCreationColumns(config) : {}),
+    bounty_amount: bountyAmount,
+    mystery_bounty_min: mysteryMin,
+    mystery_bounty_max: mysteryMax,
+    // Rebuy / add-on rollout - opt-in per template. Cost and chips default to
+    // the buy-in and the starting stack, matching process_tournament_rebuy.
+    is_rebuy: rebuy,
+    is_reentry: rebuy,
+    rebuy_cost: rebuy ? split.total : null,
+    rebuy_chips: rebuy ? config.startingStack : null,
+    rebuy_levels: rebuy ? 6 : null,
+    max_rebuys: rebuy ? 2 : null,
+    max_reentries: rebuy ? 1 : null,
+    add_on_available: addOn,
+    addon_cost: addOn ? split.total : null,
+    addon_chips: addOn ? config.startingStack : null,
+    addon_levels: addOn ? 1 : null,
+    // FREEROLLS ARE FREE BUY (Dan 2026-09-02). Spread LAST so it wins over
+    // the template's opt-in keys above. Empty for any paid event.
+    ...freeBuyColumns({
+      buyIn: split.total,
+      tournamentType: 'MTT',
+      variant: config.type === 'mtt' ? 'freezeout' : config.type,
+      startingStack: config.startingStack,
+      maxRebuys: rebuy ? 2 : null,
+    }),
+  };
+}
+
 export class TournamentRecurringService {
   private tournamentInterval: ReturnType<typeof setInterval> | null = null;
   private sngInterval: ReturnType<typeof setInterval> | null = null;
@@ -3268,6 +3441,12 @@ export class TournamentRecurringService {
       if (due.length === 0) return;
 
       for (const host of FREE_BUY_HOSTS) {
+        // THE FIXED BOARD (Dan 2026-10-15): the Midway Union's five Free Buys
+        // are tournament_schedules rows at fixed Chicago times, built by the
+        // same freeBuyTournamentRow this pass uses. The scheduler publishes
+        // them; publishing here as well would only race it. The hourly audit
+        // below still checks every one of them.
+        if (MIDWAY_BOARD_IS_ON_THE_FIXED_SCHEDULE && host.clubId === MIDWAY_UNION_ID) continue;
         /**
          * ─── A HELD CLUB IS NOT PUBLISHED FOR (2026-10-05) ───
          *
@@ -3480,6 +3659,12 @@ export class TournamentRecurringService {
       // start() runs each check once immediately and a boot inside the
       // break used to launch straight through it.
       if (isMaintenanceFrozen()) return;
+      // THE FIXED BOARD (Dan 2026-10-15): every HOURLY_SCHEDULE event, and the
+      // floor below that relaunches them, belongs to the Midway Union, and the
+      // Midway Union's lobby MTTs are now tournament_schedules rows at fixed
+      // Chicago times. A timer launching them here as well would publish a
+      // second copy at "now + 30 min" beside every fixed occurrence.
+      if (MIDWAY_BOARD_IS_ON_THE_FIXED_SCHEDULE) return;
       const now = new Date();
       // TOURNEY-AUDIT 2026-07-24: schedule hours are UTC (was server-local time,
       // which shifts every named event when the host timezone differs).
@@ -4244,6 +4429,9 @@ export class TournamentRecurringService {
       if (!block) return;
 
       for (const union of unions) {
+        // THE FIXED BOARD (Dan 2026-10-15): the Midway Union's union events are
+        // tournament_schedules rows at fixed Chicago times now.
+        if (MIDWAY_BOARD_IS_ON_THE_FIXED_SCHEDULE && union.id === MIDWAY_UNION_ID) continue;
         // Check if union has cross-club tournaments enabled
         const settings = union.settings as any;
         if (!settings?.crossClubTournaments) continue;

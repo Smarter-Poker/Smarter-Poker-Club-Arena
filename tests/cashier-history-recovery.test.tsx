@@ -144,23 +144,24 @@ describe('Cashier history recovery through the rendered page', () => {
     });
   });
 
-  it('refreshes history after the financial channel reconnects without a ledger event', async () => {
+  it('keeps history stable on wake until the user refreshes', async () => {
     start();
     await showHistory();
     await waitFor(() => expect(walletReads).toHaveLength(1));
     await settle(0, [transaction('Before Reconnect')]);
     expect(await screen.findByText('Before Reconnect')).toBeInTheDocument();
     act(() => {
-      status('connecting');
-      status('connected');
+      window.dispatchEvent(new Event('focus'));
+      window.dispatchEvent(new Event('online'));
     });
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh History' }));
     await waitFor(() => expect(walletReads).toHaveLength(2), { timeout: 2500 });
     await settle(1, [transaction('After Reconnect')]);
     expect(await screen.findByText('After Reconnect')).toBeInTheDocument();
     expect(screen.queryByText('Before Reconnect')).toBeNull();
   });
 
-  it('retains a ledger refresh delivered while the first read is pending', async () => {
+  it('retains an explicit refresh delivered while the first read is pending', async () => {
     start();
     await showHistory();
     await waitFor(() => expect(walletReads).toHaveLength(1));
@@ -170,6 +171,7 @@ describe('Cashier history recovery through the rendered page', () => {
     await act(async () => {
       await new Promise((done) => setTimeout(done, 1100));
     });
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh History' }));
     await settle(0, [transaction('Obsolete Snapshot')]);
     await waitFor(() => expect(walletReads).toHaveLength(2));
     expect(screen.queryByText('Obsolete Snapshot')).toBeNull();
@@ -188,6 +190,7 @@ describe('Cashier history recovery through the rendered page', () => {
       act(() => {
         masterBus.emit('TRANSACTION_LOGGED', { entry: {}, direction: 'in' });
       });
+      fireEvent.click(screen.getByRole('button', { name: 'Refresh History' }));
       await waitFor(() => expect(walletReads).toHaveLength(2), { timeout: 2500 });
       await settle(1, [], failed);
       expect(await screen.findByRole('alert')).toHaveTextContent(
@@ -229,7 +232,7 @@ describe('Cashier history recovery through the rendered page', () => {
       expect(screen.queryByText('No Transactions Recorded Yet')).toBeNull();
     }
   );
-  it('coalesces one financial notification burst into one history read', async () => {
+  it('ignores financial notification bursts until explicit refresh', async () => {
     start();
     await showHistory();
     await waitFor(() => expect(walletReads).toHaveLength(1));
@@ -239,6 +242,7 @@ describe('Cashier history recovery through the rendered page', () => {
       masterBus.emit('WALLET_REFRESHED', { walletType: 'PLAYER', available: 5, total: 5 });
       masterBus.emit('CASHIER_BALANCE_CHANGED', { source: 'history-test' } as never);
     });
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh History' }));
     await waitFor(() => expect(walletReads).toHaveLength(2), { timeout: 2500 });
     await settle(1, [transaction('Updated History')]);
     expect(await screen.findByText('Updated History')).toBeInTheDocument();
@@ -251,9 +255,7 @@ describe('Cashier history recovery through the rendered page', () => {
     await waitFor(() => expect(walletReads).toHaveLength(1));
     await settle(0, [transaction('Club A History')]);
     expect(await screen.findByText('Club A History')).toBeInTheDocument();
-    act(() => {
-      status('connected');
-    });
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh History' }));
     await waitFor(() => expect(walletReads).toHaveLength(2), { timeout: 2500 });
     fireEvent.click(screen.getByRole('button', { name: 'Switch Club' }));
     await showHistory();

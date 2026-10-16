@@ -834,6 +834,7 @@ export async function sendHeartbeat(
     /** The bust-rebuy dialog is on screen: the engine's busted-seat sweep
      *  waits for a player who is at the cashier (2026-09-04). */
     rebuyPromptOpen?: boolean;
+    autoTimeBank?: boolean;
   }
 ): Promise<ActionResult> {
   // Circuit breaker: skip if game server is known-unreachable
@@ -851,6 +852,7 @@ export async function sendHeartbeat(
         tableId,
         ...(opts?.turnRendered ? { turnRendered: true } : {}),
         ...(opts?.rebuyPromptOpen ? { rebuyPromptOpen: true } : {}),
+        ...(typeof opts?.autoTimeBank === 'boolean' ? { autoTimeBank: opts.autoTimeBank } : {}),
       }),
     });
     if (response.status === 404) {

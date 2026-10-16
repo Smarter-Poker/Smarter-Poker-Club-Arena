@@ -14,7 +14,9 @@ export function fieldFocusOwner(field) {
         if (candidate !== field && (candidate.querySelectorAll(FIELD_SELECTOR).length !== 1
             || rect.height > fieldRect.height + 64 || rect.width > Math.max(fieldRect.width * 1.8, fieldRect.width + 160))) break;
         const style = view.getComputedStyle(candidate);
-        const border = ['Top', 'Right', 'Bottom', 'Left'].some(side => parseFloat(style[`border${side}Width`]) > 0 && style[`border${side}Style`] !== 'none');
+        const edge = side => parseFloat(style[`border${side}Width`]) > 0 && style[`border${side}Style`] !== 'none';
+        // One internal separator does not enclose a field.
+        const border = (edge('Top') && edge('Bottom')) || (edge('Left') && edge('Right'));
         const roundedSurface = parseFloat(style.borderTopLeftRadius) > 0
             && style.backgroundColor !== 'transparent' && style.backgroundColor !== 'rgba(0, 0, 0, 0)';
         // A transitioning focus shadow on a transparent input is not its frame.

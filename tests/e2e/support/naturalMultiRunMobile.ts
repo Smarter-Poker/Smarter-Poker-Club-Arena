@@ -1,5 +1,44 @@
 import type { Page } from '@playwright/test';
 
+export interface NaturalMultiRunHistoryRow {
+  table_id: string;
+  rit_boards: unknown[];
+}
+
+/** Use the existing (table_id, created_at, id) index, never global history. */
+export async function readNaturalMultiRunHistory(
+  tableIds: string[],
+  readRows: (query: URLSearchParams) => Promise<NaturalMultiRunHistoryRow[]>,
+  now = Date.now()
+): Promise<NaturalMultiRunHistoryRow[]> {
+  if (
+    !tableIds.length ||
+    tableIds.length > 32 ||
+    tableIds.some((id) => !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/.test(id))
+  )
+    throw new Error('Natural multirun history requires 1 to 32 candidate table IDs');
+  const rows: NaturalMultiRunHistoryRow[] = [];
+  // Bound both database work per query and simultaneous read requests.
+  for (let offset = 0; offset < tableIds.length; offset += 4) {
+    const batch = await Promise.all(
+      tableIds.slice(offset, offset + 4).map((id) =>
+        readRows(
+          new URLSearchParams({
+            select: 'table_id,rit_boards',
+            table_id: `eq.${id}`,
+            created_at: `gte.${new Date(now - 30 * 60_000).toISOString()}`,
+            rit_boards: 'not.is.null',
+            order: 'created_at.desc',
+            limit: '500',
+          })
+        )
+      )
+    );
+    rows.push(...batch.flat());
+  }
+  return rows;
+}
+
 /** Passive DOM witness. No hand, action, balance or table setting is written. */
 export async function installNaturalMultiRunWitness(page: Page) {
   await page.addInitScript(() => {

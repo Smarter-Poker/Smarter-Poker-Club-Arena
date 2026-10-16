@@ -3,6 +3,7 @@ import {
   completedNaturalRuns,
   naturalMultiRunEngineIdentity,
   installNaturalMultiRunWitness,
+  readNaturalMultiRunHistory,
 } from '../e2e/support/naturalMultiRunMobile';
 
 const packet = { hand: 41, runs: 3, at: 100, recipients: ['winner'] };
@@ -107,6 +108,57 @@ it('observes the visible table rather than a retained hidden table', async () =>
 });
 
 const engineSha = '5780828e02d0f9c076f08bb503a4507599465928';
+it('reads recent multirun history only through bounded candidate-table lookups', async () => {
+  const ids = Array.from(
+    { length: 6 },
+    (_, index) => `00000000-0000-0000-0000-00000000000${index + 1}`
+  );
+  const queries: URLSearchParams[] = [];
+  const now = Date.parse('2026-10-16T18:30:00Z');
+  const rows = await readNaturalMultiRunHistory(
+    ids,
+    async (query) => {
+      // Reproduce the production failure boundary: a global recent-history read
+      // is refused; equality on the existing table/created index is required.
+      expect(ids.map((id) => `eq.${id}`)).toContain(query.get('table_id'));
+      expect(query.get('created_at')).toBe('gte.2026-10-16T18:00:00.000Z');
+      expect(query.get('order')).toBe('created_at.desc');
+      expect(query.get('limit')).toBe('500');
+      expect(query.get('rit_boards')).toBe('not.is.null');
+      queries.push(query);
+      return [
+        {
+          table_id: query.get('table_id')!.slice(3),
+          rit_boards: queries.length % 2 ? [[]] : [[], []],
+        },
+      ];
+    },
+    now
+  );
+  expect(queries).toHaveLength(ids.length);
+  expect(new Set(rows.map((row) => row.table_id))).toEqual(new Set(ids));
+  expect(new Set(rows.map((row) => row.rit_boards.length))).toEqual(new Set([1, 2]));
+});
+
+it.each(
+  [[], ['not-a-table-id'], Array(33).fill('00000000-0000-0000-0000-000000000001')].map((ids) => ({
+    ids,
+  }))
+)('refuses missing, malformed or excessive candidates before any history read', async ({ ids }) => {
+  const readRows = vi.fn();
+  await expect(readNaturalMultiRunHistory(ids, readRows)).rejects.toThrow(/candidate table IDs/);
+  expect(readRows).not.toHaveBeenCalled();
+});
+
+it('propagates an indexed history read failure without retry or an empty-success fallback', async () => {
+  const failure = new Error('database read failed');
+  const readRows = vi.fn().mockRejectedValue(failure);
+  await expect(
+    readNaturalMultiRunHistory(['00000000-0000-0000-0000-000000000001'], readRows)
+  ).rejects.toBe(failure);
+  expect(readRows).toHaveBeenCalledTimes(1);
+});
+
 it('binds actual health with a short display version to its full immutable release', () => {
   expect(
     naturalMultiRunEngineIdentity(

@@ -6,6 +6,7 @@ import {
   installNaturalMultiRunWitness,
   completedNaturalRuns,
   naturalMultiRunEngineIdentity,
+  readNaturalMultiRunHistory,
   type NaturalRunPacket,
 } from './support/naturalMultiRunMobile';
 import {
@@ -71,16 +72,9 @@ test('natural two-run and three-run mobile rivers precede awards and winner chip
     tables.length,
     'No occupied union table available for natural multirun observation'
   ).toBeGreaterThan(0);
-  const recent = await readServiceRows<{ table_id: string; rit_boards: unknown[] }>(
-    environment,
-    'hand_history',
-    new URLSearchParams({
-      select: 'table_id,rit_boards',
-      created_at: `gte.${new Date(Date.now() - 30 * 60_000).toISOString()}`,
-      rit_boards: 'not.is.null',
-      order: 'created_at.desc',
-      limit: '500',
-    })
+  const recent = await readNaturalMultiRunHistory(
+    tables.map((table) => table.id),
+    (query) => readServiceRows(environment, 'hand_history', query)
   );
   const score = (id: string) =>
     recent.filter((row) => row.table_id === id && [1, 2].includes(row.rit_boards?.length)).length;

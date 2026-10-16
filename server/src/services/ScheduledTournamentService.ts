@@ -72,6 +72,7 @@ import {
 } from '../tournament/mttStructurePolicy.js';
 import { SPIN_SEATS, SPIN_TIERS, spinBlindsForLevel } from '../config/spinSpec.js';
 import { localDateIn, zonedStartUtc } from './scheduleWallClock.js';
+import { planFixedBoardSync, type ExistingFixedBoardRow } from '../config/fixedBoard.js';
 import {
   HEADS_UP_BLIND_STRUCTURE,
   HEADS_UP_PAYOUTS,
@@ -590,6 +591,8 @@ export function fixedBoardRow(
 
 export class ScheduledTournamentService {
   private pollTimer: ReturnType<typeof setInterval> | null = null;
+  /** True once this process has written the hard-coded board (syncFixedBoard). */
+  private fixedBoardSynced = false;
   private isRunning = false;
   /** Re-entrancy guard: a slow poll must never overlap the next tick. */
   private polling = false;
@@ -756,6 +759,23 @@ export class ScheduledTournamentService {
     this.fundingBankReads = new Map();
     this.retiredScheduleIds = new Set();
     try {
+      // THE FIXED BOARD IS HARD CODED (config/fixedBoard.ts). Written by this
+      // binary before it reads a schedule, so the board it runs is the board
+      // it was built with. Until the write lands, it is retried every poll.
+      if (!this.fixedBoardSynced) {
+        try {
+          this.fixedBoardSynced = await this.syncFixedBoard();
+        } catch (err: unknown) {
+          // A failed write never costs the rest of the poll its schedules.
+          reportError(
+            new Error(
+              `[ScheduledTournaments] fixed board sync failed: ${(err as Error)?.message ?? err}`
+            ),
+            'ScheduledTournaments.fixed_board_sync_failed'
+          );
+        }
+        if (!this.lifecycleIsCurrent(generation)) return;
+      }
       const { data: schedules, error } = await supabase
         .from('tournament_schedules')
         .select('*')
@@ -804,6 +824,57 @@ export class ScheduledTournamentService {
     } finally {
       this.polling = false;
     }
+  }
+
+  /**
+   * Make tournament_schedules hold exactly the hard-coded board in
+   * config/fixedBoard.ts (planFixedBoardSync). True when the table matches,
+   * false when a read or write failed (retried on the next poll).
+   */
+  private async syncFixedBoard(): Promise<boolean> {
+    const { data, error } = await supabase
+      .from('tournament_schedules')
+      .select('id, club_id, active, days_of_week, start_times_utc, time_zone, config')
+      .not('config->>fixedBoard', 'is', null);
+    if (error) {
+      reportError(
+        new Error(`[ScheduledTournaments] fixed board read failed: ${error.message}`),
+        'ScheduledTournaments.fixed_board_read_failed'
+      );
+      return false;
+    }
+    const plan = planFixedBoardSync((data ?? []) as ExistingFixedBoardRow[]);
+    let ok = true;
+    for (const id of plan.deactivate) {
+      const { error: e } = await supabase
+        .from('tournament_schedules')
+        .update({ active: false })
+        .eq('id', id);
+      if (e) ok = false;
+    }
+    for (const { id, row } of plan.updates) {
+      const { error: e } = await supabase.from('tournament_schedules').update(row).eq('id', id);
+      if (e) ok = false;
+    }
+    if (plan.inserts.length > 0) {
+      const { error: e } = await supabase.from('tournament_schedules').insert(plan.inserts);
+      if (e) ok = false;
+    }
+    if (!ok) {
+      reportError(
+        new Error('[ScheduledTournaments] fixed board write failed - retried next poll'),
+        'ScheduledTournaments.fixed_board_write_failed'
+      );
+      return false;
+    }
+    const changed = plan.inserts.length + plan.updates.length + plan.deactivate.length;
+    if (changed > 0) {
+      console.log(
+        `[ScheduledTournaments] Fixed board written: ${plan.inserts.length} added, ` +
+          `${plan.updates.length} updated, ${plan.deactivate.length} retired`
+      );
+    }
+    return true;
   }
 
   private async processSchedule(schedule: TournamentScheduleRow): Promise<void> {

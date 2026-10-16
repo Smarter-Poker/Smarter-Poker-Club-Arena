@@ -127,10 +127,12 @@ import { SpadeConsole } from '../console/SpadeConsole';
 import { enumToTitleCase, titleCase } from '../../utils/titleCase';
 import ChipMintModal from './ChipMintModal';
 import './WalletCashierModal.css';
+import transferStyles from '../../pages/CashierTradePage.module.css';
 import { downloadBlob } from '../../utils/downloadCsv';
 import { statementCsvCell } from '../../utils/cashierStatementCsv';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { compactChips } from '../../utils/format';
+import { generateAvatarSvg } from '../../utils/avatarGenerator';
 import { safeErrorMessage } from '../../utils/safeErrorMessage';
 
 type DestinationWallet = CashierDestination;
@@ -902,7 +904,7 @@ export default function WalletCashierModal({
   // promo floats live on the agents table and are fetched when the holder is
   // chosen. The claim button stays disabled until the figure is known.
   useEffect(() => {
-    if (tab !== 'claim' || !recipient || !clubUuid) {
+    if ((tab !== 'claim' && walletType !== 'club_bank') || !recipient || !clubUuid) {
       setHolderHeld(null);
       return;
     }
@@ -942,7 +944,7 @@ export default function WalletCashierModal({
     return () => {
       cancelled = true;
     };
-  }, [tab, destination, recipient, clubUuid, isMounted, holderNonce]);
+  }, [tab, destination, recipient, clubUuid, isMounted, holderNonce, walletType]);
 
   // A send that lands, a claim, a reversal, or a mint changes the bank and the
   // recipient. Refetch rather than patching state by hand — a hand-patched
@@ -1533,6 +1535,7 @@ export default function WalletCashierModal({
      one, so they close with the flat cap and print that action as a lit word
      on the glass. */
   const formTab = !agentClaimTab && (tab === 'send' || tab === 'claim');
+  const bankTransfer = walletType === 'club_bank' && formTab;
 
   // Belt and braces: this modal is only mounted behind a role check, and the
   // row that opens it only renders for roles that hold the wallet. If it is
@@ -1591,7 +1594,11 @@ export default function WalletCashierModal({
         aria-label={`${cashierTitle} Cashier`}
         onClick={closeIfIdle}
       >
-        <div ref={panelRef} className="cbc-panel wcm ac-popup" onClick={(e) => e.stopPropagation()}>
+        <div
+          ref={panelRef}
+          className={`cbc-panel wcm ac-popup${bankTransfer ? ' cbc-bank-transfer' : ''}`}
+          onClick={(e) => e.stopPropagation()}
+        >
           <SpadeConsole
             onClose={inFlight || showMint ? undefined : closeIfIdle}
             as="div"
@@ -1606,10 +1613,13 @@ export default function WalletCashierModal({
                travelling or the Chip Mint is up, exactly as the cashout sheet
                and the mint hide theirs; the overlay, Escape and every Close
                word guard the same. */
-            eyebrow={clubName || 'Club Arena'}
-            title={cashierTitle}
-            pill={roleLabel(viewerRole)}
-            pillInk="blue"
+            className={bankTransfer ? transferStyles.console : undefined}
+            eyebrow={
+              bankTransfer ? `${clubName || 'Club Arena'} · Club Bank` : clubName || 'Club Arena'
+            }
+            title={bankTransfer ? (tab === 'claim' ? 'Claim Back' : 'Send Out') : cashierTitle}
+            pill={bankTransfer ? (inFlight ? 'Working' : 'Ready') : roleLabel(viewerRole)}
+            pillInk={bankTransfer ? (inFlight ? 'blue' : 'green') : 'blue'}
             foot={formTab ? 'plates' : 'foot'}
             plates={
               formTab
@@ -1629,9 +1639,11 @@ export default function WalletCashierModal({
                           ? tab === 'claim'
                             ? 'Yes, Claim It'
                             : 'Yes, Send It'
-                          : tab === 'claim'
-                            ? 'Claim Chips'
-                            : 'Send Chips',
+                          : bankTransfer
+                            ? 'Confirm'
+                            : tab === 'claim'
+                              ? 'Claim Chips'
+                              : 'Send Chips',
                       ink: canSend ? 'white' : 'muted',
                       disabled: !canSend,
                       onClick: onSendPressed,
@@ -1643,7 +1655,7 @@ export default function WalletCashierModal({
             <button type="button" className="cbc-word" disabled={inFlight} onClick={refresh}>
               Refresh Balances
             </button>
-            <div className="cbc-bank">
+            <div className="cbc-bank" hidden={bankTransfer}>
               <span>
                 {walletType === 'promo_wallet'
                   ? promoBalanceLabel(promoSource)
@@ -1744,7 +1756,7 @@ export default function WalletCashierModal({
                   className={tab === t ? 'cbc-tab cbc-tab--on' : 'cbc-tab'}
                   onClick={() => setTab(t)}
                 >
-                  {TAB_LABELS[t]}
+                  {walletType === 'club_bank' && t === 'send' ? 'Send Out' : TAB_LABELS[t]}
                 </button>
               ))}
             </div>
@@ -1820,7 +1832,7 @@ export default function WalletCashierModal({
               ) : tab === 'send' || tab === 'claim' ? (
                 <>
                   {/* Destination (send) or source (claim) */}
-                  <div className="cbc-field">
+                  <div className="cbc-field" hidden={bankTransfer && Boolean(recipient)}>
                     <label className="cbc-label">
                       {tab === 'claim' ? 'Claim From' : 'Send Into'}
                     </label>
@@ -1841,7 +1853,64 @@ export default function WalletCashierModal({
                   </div>
 
                   {/* Recipient (send) or holder (claim) */}
-                  <div className="cbc-field">
+                  {bankTransfer && recipient && (
+                    <section className={transferStyles.playerCard} aria-label="Selected Player">
+                      <img
+                        className={transferStyles.playerCardAvatar}
+                        src={
+                          recipient.avatar_url ||
+                          generateAvatarSvg(recipient.user_id, recipient.name)
+                        }
+                        alt=""
+                        onError={(event) => {
+                          event.currentTarget.onerror = null;
+                          event.currentTarget.src = generateAvatarSvg(
+                            recipient.user_id,
+                            recipient.name
+                          );
+                        }}
+                      />
+                      <span className={transferStyles.playerCardPlate}>
+                        <span className={transferStyles.playerCardIdentity}>
+                          <strong className={transferStyles.playerCardName}>
+                            {titleCase(recipient.name)}
+                          </strong>
+                          <span className={transferStyles.playerCardId}>
+                            ID: {recipient.short_id}
+                          </span>
+                        </span>
+                        <span className={transferStyles.playerCardBalance}>
+                          <select
+                            className={transferStyles.walletSelect}
+                            aria-label={tab === 'claim' ? 'Claim From' : 'Send Into'}
+                            value={destination}
+                            disabled={inFlight}
+                            onChange={(event) =>
+                              setDestination(event.target.value as DestinationWallet)
+                            }
+                          >
+                            {destinations.map((key) => (
+                              <option key={key} value={key}>
+                                {DESTINATION_LABELS[key]}
+                              </option>
+                            ))}
+                          </select>
+                          <strong>{fmt(holderHeld)}</strong>
+                        </span>
+                      </span>
+                    </section>
+                  )}
+                  {bankTransfer && recipient && (
+                    <button
+                      type="button"
+                      className="cbc-word"
+                      disabled={inFlight}
+                      onClick={() => setRecipient(null)}
+                    >
+                      Change Recipient
+                    </button>
+                  )}
+                  <div className="cbc-field" hidden={bankTransfer && Boolean(recipient)}>
                     <label className="cbc-label" htmlFor="cbc-search">
                       {tab === 'claim' ? 'Claim From Member' : 'Recipient'}
                     </label>
@@ -1932,31 +2001,59 @@ export default function WalletCashierModal({
                     </div>
                   </div>
 
+                  {bankTransfer && (
+                    <section
+                      className={transferStyles.walletRow}
+                      aria-label={tab === 'claim' ? 'Into The Club Bank' : 'From The Club Bank'}
+                    >
+                      <span className={transferStyles.walletRowSlot} aria-hidden="true">
+                        <img
+                          src={`${import.meta.env.BASE_URL}assets/club-buttons/wallets/wallet-mark-v1.svg`}
+                          alt=""
+                        />
+                      </span>
+                      <span className={transferStyles.walletRowPlate}>
+                        <span className={transferStyles.walletRowLabel}>
+                          {tab === 'claim' ? 'Into The Club Bank' : 'From The Club Bank'}
+                        </span>
+                        <strong className={transferStyles.walletRowValue}>
+                          {bank === null ? 'Unavailable' : fmt(bank)}
+                        </strong>
+                      </span>
+                    </section>
+                  )}
                   {/* Amount */}
                   <div className="cbc-field">
-                    <label className="cbc-label" htmlFor="cbc-amount">
-                      Amount
-                    </label>
-                    <input
-                      id="cbc-amount"
-                      className="cbc-input"
-                      type="text"
-                      /* Whole chips only (see amountIsWhole), so the keypad that
+                    <label className={bankTransfer ? transferStyles.entryRow : undefined}>
+                      {bankTransfer && <span className={transferStyles.entryRowSlot}>Amount</span>}
+                      <span className={bankTransfer ? transferStyles.entryRowPlate : undefined}>
+                        <span className="cbc-label" hidden={bankTransfer}>
+                          Amount
+                        </span>
+                        <input
+                          id="cbc-amount"
+                          className={bankTransfer ? transferStyles.entryInput : 'cbc-input'}
+                          type="text"
+                          /* Whole chips only (see amountIsWhole), so the keypad that
                          comes up is the numeric one rather than the decimal one
                          offering a point the field will then reject. */
-                      inputMode="numeric"
-                      min={1}
-                      step={1}
-                      value={formatCashierAmountInput(amount)}
-                      onChange={(e) => setAmount(cashierAmountInputValue(e.target.value))}
-                      placeholder="Whole Chips"
-                      /* aria-label was the EMPTY STRING, which is worse than
+                          inputMode="numeric"
+                          min={1}
+                          step={1}
+                          value={formatCashierAmountInput(amount)}
+                          onChange={(e) => setAmount(cashierAmountInputValue(e.target.value))}
+                          placeholder="Whole Chips"
+                          /* aria-label was the EMPTY STRING, which is worse than
                          absent: it overrides the visible <label> and announces an
                          unnamed spin button to a screen reader on the one field
                          that decides how much money moves. */
-                      aria-label={tab === 'claim' ? 'Chips To Claim Back' : 'Chips To Send'}
-                    />
-
+                          aria-label={tab === 'claim' ? 'Chips To Claim Back' : 'Chips To Send'}
+                        />
+                      </span>
+                    </label>
+                    {bankTransfer && (
+                      <div className={transferStyles.modalTotal}>Total: {fmtWhole(amt)}</div>
+                    )}
                     {tab === 'claim' && recipient && (
                       <div className="cbc-blurb">
                         {holderHeld === null

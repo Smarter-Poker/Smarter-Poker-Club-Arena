@@ -28479,7 +28479,9 @@ function LiveTablePage({
             if (outcome.kind !== 'unknown') {
               // Cleanup failure leaves a safely replayable receipt, never a new
               // apparent failure after the server has confirmed the purchase.
-              void cashBuyInJournal
+              // Keep the confirm latch until the journal transition completes.
+              // Otherwise a corrected click can recover the just-rejected payload.
+              await cashBuyInJournal
                 .complete(attempt)
                 .catch((error) =>
                   reportError(error, 'TablePage.cash_buyin_journal_cleanup_failed')

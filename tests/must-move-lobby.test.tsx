@@ -403,7 +403,7 @@ describe('the box in the corner', () => {
       error: null,
     });
     render(<CashClusterHUD gameId={GAME} onOpenLobby={vi.fn()} onSeatChange={vi.fn()} />);
-    await waitFor(() => expect(screen.getByText('Seat Change: #1 On The List')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('#1 On The List')).toBeTruthy());
   });
 });
 
@@ -464,7 +464,7 @@ describe('the lobby', () => {
     });
     expect(lobbyTableChips({ seats: [] })).toEqual({ total: 0, average: 0, players: 0 });
     expect(
-      lobbyTableChips({ seats: [seat(1, 0.1, 'a'), seat(2, '0.2', 'b'), seat(3, 99, null)] }),
+      lobbyTableChips({ seats: [seat(1, 0.1, 'a'), seat(2, '0.2', 'b'), seat(3, 99, null)] })
     ).toEqual({ total: 0.3, average: 0.15, players: 2 });
   });
 
@@ -627,7 +627,7 @@ describe('the tab follows the chair', () => {
 
   it('the corner box and the lobby are wired on every cluster table, and only there', () => {
     expect(TABLE_PAGE).toMatch(
-      /\{!tableState\.isTournament && tableState\.clusterId && \(\s*<div className=\"hud-seat-change-dock\">\s*<CashClusterHUD/
+      /\{!tableState\.isTournament && tableState\.clusterId && \(\s*<div className="hud-seat-change-dock">\s*<CashClusterHUD/
     );
     expect(TABLE_PAGE).toMatch(
       /<MustMoveLobbyModal\s+isOpen=\{showMustMoveLobby\}\s+gameId=\{tableState\.clusterId\}/

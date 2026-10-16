@@ -316,6 +316,8 @@
    stays clear of the tab row above it and the seats below it. Pinned by
    tests/unit/theSeatChangeButtonIsOnTheLeft.test.ts. */
 .hud-seat-change-dock {
+  /* Match chat, whose hit area stays66px even when lower HUD tiles shrink. */
+  --sp-hud-tile-size: 66px;
   position: fixed;
   top: calc(env(safe-area-inset-top, 0px) + var(--mtt-ticker-h, 0px) + 54px);
   left: 6px;

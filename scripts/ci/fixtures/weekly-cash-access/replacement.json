@@ -1,0 +1,12 @@
+{
+  "before": "3143ddd4ec0f5eb3312700a1dd2b5b83",
+  "after": "0df1c3e9fe3e1a0e53a043baf57127d7",
+  "replacements": [
+    ["SELECT r.id, r.club_id, r.hand_id, r.table_id, r.metadata, r.created_at", "SELECT r.id"],
+    ["NOT COALESCE(r.is_tournament,false)", "r.is_tournament IS NOT TRUE"],
+    [
+      "SELECT 1 FROM unaccrued r",
+      "SELECT 1 FROM unaccrued u JOIN public.rake_records r ON r.id=u.id"
+    ]
+  ]
+}

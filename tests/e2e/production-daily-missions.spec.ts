@@ -1,3 +1,4 @@
+import { missionFrameEdgeIsContinuous } from './support/missionFrameGeometry';
 import { MissionCursorLifecycle } from './support/missionCursorLifecycle';
 import { remountConcurrentMissionReceipts } from './support/missionRerollRemount';
 import { finalizeMissionCleanupWithEvidence } from './support/missionReloadObservation';
@@ -599,21 +600,48 @@ test.describe('production Daily Missions certification', () => {
             if (!frame) throw new Error('Mission card is missing its continuous frame rail.');
             const cardRect = card.getBoundingClientRect();
             const frameRect = frame.getBoundingClientRect();
-            const background = getComputedStyle(frame).backgroundImage;
+            const frameStyle = getComputedStyle(frame);
+            const cardStyle = getComputedStyle(card);
+            const background = frameStyle.backgroundImage;
             return {
-              edgeOffsets: [
-                frameRect.top - cardRect.top,
-                cardRect.right - frameRect.right,
-                cardRect.bottom - frameRect.bottom,
-                frameRect.left - cardRect.left,
+              edges: [
+                {
+                  card: cardRect.top,
+                  scroll: window.scrollY,
+                  frame: frameRect.top,
+                  layoutGap: parseFloat(cardStyle.borderTopWidth) + parseFloat(frameStyle.top),
+                },
+                {
+                  card: cardRect.right,
+                  scroll: window.scrollX,
+                  frame: frameRect.right,
+                  layoutGap: parseFloat(cardStyle.borderRightWidth) + parseFloat(frameStyle.right),
+                },
+                {
+                  card: cardRect.bottom,
+                  scroll: window.scrollY,
+                  frame: frameRect.bottom,
+                  layoutGap:
+                    parseFloat(cardStyle.borderBottomWidth) + parseFloat(frameStyle.bottom),
+                },
+                {
+                  card: cardRect.left,
+                  scroll: window.scrollX,
+                  frame: frameRect.left,
+                  layoutGap: parseFloat(cardStyle.borderLeftWidth) + parseFloat(frameStyle.left),
+                },
               ],
+              frameTransform: frameStyle.transform,
               railLayers: background.split('linear-gradient').length - 1,
             };
           })
         );
         for (const proof of frameProof) {
           expect(proof.railLayers).toBeGreaterThanOrEqual(6);
-          for (const offset of proof.edgeOffsets) expect(Math.abs(offset)).toBeLessThanOrEqual(1);
+          expect(proof.frameTransform).toBe('none');
+          for (const edge of proof.edges) {
+            expect(missionFrameEdgeIsContinuous(edge), JSON.stringify(edge)).toBe(true);
+          }
         }
 
         const readMotion = () =>

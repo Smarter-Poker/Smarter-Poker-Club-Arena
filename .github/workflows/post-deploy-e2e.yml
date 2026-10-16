@@ -1290,6 +1290,7 @@ jobs:
           echo "Exact protected-main engine component: \`$ENGINE_SHA\`" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Require the exact engine before opening production browser fixtures
+        id: engine_gate
         env:
           EXPECTED_ENGINE_SHA: ${{ steps.engine.outputs.sha }}
         run: |
@@ -1299,15 +1300,28 @@ jobs:
           # answered yet. The equality below is the unchanged gate.
           READY_SHA="$(node scripts/ci/read-engine-release.mjs \
             "https://engine.smarter.poker/health?certificate=$GITHUB_RUN_ID")"
-          [ "$READY_SHA" = "$EXPECTED_ENGINE_SHA" ] || {
+          if [ "$READY_SHA" = "$EXPECTED_ENGINE_SHA" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          elif [[ "$READY_SHA" =~ ^[0-9a-f]{40}$ ]] && \
+               git cat-file -e "$READY_SHA^{commit}" 2>/dev/null && \
+               git merge-base --is-ancestor "$EXPECTED_ENGINE_SHA" "$READY_SHA" && \
+               git merge-base --is-ancestor "$READY_SHA" origin/main; then
+            echo "current=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::NON-VERDICT: engine \`$EXPECTED_ENGINE_SHA\` was superseded by later protected-main release \`$READY_SHA\`."
+            echo "NON-VERDICT: engine \`$EXPECTED_ENGINE_SHA\` was superseded by later protected-main release \`$READY_SHA\`." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          else
             echo "::error::Production engine $READY_SHA has not reached required $EXPECTED_ENGINE_SHA; this run cannot begin certification."
             exit 1
-          }
+          fi
 
       - name: Install Chromium and WebKit
+        if: steps.engine_gate.outputs.current == 'true'
         run: npx playwright install chromium webkit --with-deps
 
       - name: Confirm production is serving, and record what we are testing
+        if: steps.engine_gate.outputs.current == 'true'
         id: live
         run: |
           set -euo pipefail

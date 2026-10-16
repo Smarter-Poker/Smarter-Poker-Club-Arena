@@ -277,7 +277,7 @@ describe('the profile region shows the live profile picture inside the hairline,
    * fixed") and produced the header Dan then reported three times - 09-03,
    * 09-05 and 09-07 ("this thick broken frame") - because the tests forbade
    * the fix. The ring is never shown. The button is an opaque black disc over
-   * the whole ornament and the photo's only frame is the 0.5px hairline.
+   * the whole ornament and the photo's only frame is the 1px hairline.
    *
    * The binding version of this, by arithmetic rather than literal, is
    * tests/the-header-portrait-frame-is-a-hairline.law.test.ts. This block
@@ -306,7 +306,7 @@ describe('the profile region shows the live profile picture inside the hairline,
     expect(slot).toContain('width: 72%');
     expect(slot).toContain('aspect-ratio: 1');
     expect(slot).toContain('transform: translate(-50%, -50%) !important');
-    expect(slot).toContain('border: 0.5px solid rgba(0, 0, 0, 0.94)');
+    expect(slot).toContain('border: 1px solid rgba(0, 0, 0, 0.94)');
     expect(slot).toContain('border-radius: 50%');
     expect(slot).toContain('background: transparent');
     expect(slot).toContain('z-index: 1');

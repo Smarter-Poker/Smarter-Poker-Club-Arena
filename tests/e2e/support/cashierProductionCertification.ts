@@ -1,10 +1,10 @@
 import AxeBuilder from '@axe-core/playwright';
+import { isExactCashierWalletFigure } from './cashierFigureFormat';
 import { expect, type Locator, type Page, type TestInfo } from '@playwright/test';
 
-// Visible chip totals are whole chips unless compacted with an explicit K/M/B
-// suffix. Reject every unsuffixed fractional value, not just the conventional
-// two-decimal rendering; otherwise a regression such as `12.5` or `12.345`
-// would evade the production certificate.
+// Non-wallet transaction/statistic figures retain the compact console reading.
+// Wallets have a separate exact-cents contract below. Reject every unsuffixed
+// fractional non-wallet value, including 12.5 and 12.345.
 const RAW_CENTS = /(?:^|[^\d])[-+]?\d{1,3}(?:,\d{3})*\.\d+(?!\d|[KMB%])/;
 const COMPACT_FIGURE = /^[-+]?(?:\d{1,3}(?:,\d{3})*|\d+(?:\.\d)?[KMB])$/;
 
@@ -51,4 +51,11 @@ export async function expectNoRawCashierCents(surface: Locator, name: string): P
 
 export function expectCompactCashierFigure(value: string, name: string): void {
   expect(value.trim(), `${name} is not a no-cents compact chip figure`).toMatch(COMPACT_FIGURE);
+}
+
+export function expectExactCashierWalletFigure(value: string, name: string): void {
+  expect(
+    isExactCashierWalletFigure(value),
+    `${name} must show comma-grouped cents below one million or compact millions`
+  ).toBe(true);
 }

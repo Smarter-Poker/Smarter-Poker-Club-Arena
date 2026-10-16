@@ -46,46 +46,55 @@ import {
 } from '../../src/components/lobby/AdvancedFilters';
 import { FILTER_SPECS, emptyFilterValue } from '../../src/components/lobby/advancedFilterSpec';
 
+const GAME_A = FILTER_SPECS.HOLDEM.games![0].key;
+const GAME_B = FILTER_SPECS.HOLDEM.games![1].key;
+
 const plo = { tab: 'OMAHA' as const, sortByTab: {}, favoritesOnly: false };
 const holdem = { ...plo, tab: 'HOLDEM' as const };
 const settle = () => new Promise((r) => setTimeout(r, 0));
+// The write queues are module-level per account+club, so every test gets a
+// club of its own and an unresolved request in one cannot hold up the next.
+let clubSeq = 0;
+let club = 'club-0';
 
 beforeEach(() => {
   localStorage.clear();
   state.writes.length = 0;
   state.session = { userId: 'account-a' };
   reportError.mockClear();
+  clubSeq += 1;
+  club = `club-${clubSeq}`;
 });
 
 describe('an unconfirmed tab/sort choice is never overwritten by the older row', () => {
   it('stays unsynced after a failed save and is cleared by the next confirmed save', async () => {
-    pushRemoteViewPrefs('club', plo, 'account-a');
-    expect(hasUnsyncedViewPrefs('club', 'account-a')).toBe(true);
+    pushRemoteViewPrefs(club, plo, 'account-a');
+    expect(hasUnsyncedViewPrefs(club, 'account-a')).toBe(true);
     state.writes[0].resolve({ error: { message: 'network down' } });
     await settle();
-    expect(hasUnsyncedViewPrefs('club', 'account-a')).toBe(true);
+    expect(hasUnsyncedViewPrefs(club, 'account-a')).toBe(true);
 
-    pushRemoteViewPrefs('club', plo, 'account-a');
+    pushRemoteViewPrefs(club, plo, 'account-a');
     state.writes[1].resolve({ error: null });
     await settle();
-    expect(hasUnsyncedViewPrefs('club', 'account-a')).toBe(false);
+    expect(hasUnsyncedViewPrefs(club, 'account-a')).toBe(false);
   });
 
   it('only the newest queued choice can declare the device synced', async () => {
-    pushRemoteViewPrefs('club', holdem, 'account-a');
-    pushRemoteViewPrefs('club', plo, 'account-a');
+    pushRemoteViewPrefs(club, holdem, 'account-a');
+    pushRemoteViewPrefs(club, plo, 'account-a');
     state.writes[0].resolve({ error: null });
     await settle();
     // The PLO tap has not reached the row yet.
-    expect(hasUnsyncedViewPrefs('club', 'account-a')).toBe(true);
+    expect(hasUnsyncedViewPrefs(club, 'account-a')).toBe(true);
     state.writes[1].resolve({ error: null });
     await settle();
-    expect(hasUnsyncedViewPrefs('club', 'account-a')).toBe(false);
+    expect(hasUnsyncedViewPrefs(club, 'account-a')).toBe(false);
   });
 
   it('is kept per account', () => {
-    pushRemoteViewPrefs('club', plo, 'account-a');
-    expect(hasUnsyncedViewPrefs('club', 'account-b')).toBe(false);
+    pushRemoteViewPrefs(club, plo, 'account-a');
+    expect(hasUnsyncedViewPrefs(club, 'account-b')).toBe(false);
   });
 
   it('the lobby finishes the unconfirmed write instead of applying the row', () => {
@@ -107,15 +116,15 @@ describe('a navigation abort is the player leaving, not a failed save', () => {
   });
 
   it('does not report an aborted save, and keeps it owed to the row', async () => {
-    pushRemoteViewPrefs('club', plo, 'account-a');
+    pushRemoteViewPrefs(club, plo, 'account-a');
     state.writes[0].resolve({ error: { message: 'AbortError: The operation was aborted.' } });
     await settle();
     expect(reportError).not.toHaveBeenCalled();
-    expect(hasUnsyncedViewPrefs('club', 'account-a')).toBe(true);
+    expect(hasUnsyncedViewPrefs(club, 'account-a')).toBe(true);
   });
 
   it('still reports a real failure', async () => {
-    pushRemoteViewPrefs('club', plo, 'account-a');
+    pushRemoteViewPrefs(club, plo, 'account-a');
     state.writes[0].resolve({ error: { message: 'permission denied' } });
     await settle();
     expect(reportError).toHaveBeenCalledTimes(1);
@@ -123,53 +132,53 @@ describe('a navigation abort is the player leaving, not a failed save', () => {
 });
 
 describe('Advanced Filters belong to one account', () => {
-  const bomb = { HOLDEM: { ...emptyFilterValue(FILTER_SPECS.HOLDEM), games: ['nlh'] } };
+  const bomb = { HOLDEM: { ...emptyFilterValue(FILTER_SPECS.HOLDEM), games: [GAME_A] } };
 
   it('keeps each account its own filters on a shared browser', () => {
-    saveFilters('club', bomb, 'account-a');
-    expect(loadFilters('club', 'account-a').HOLDEM?.games).toEqual(['nlh']);
-    expect(loadFilters('club', 'account-b')).toEqual({});
+    saveFilters(club, bomb, 'account-a');
+    expect(loadFilters(club, 'account-a').HOLDEM?.games).toEqual([GAME_A]);
+    expect(loadFilters(club, 'account-b')).toEqual({});
   });
 
   it('adopts a pre-account browser store for exactly one account', () => {
-    localStorage.setItem('ca_advanced_filters_club', JSON.stringify(bomb));
-    expect(loadFilters('club', 'account-a').HOLDEM?.games).toEqual(['nlh']);
-    expect(loadFilters('club', 'account-b')).toEqual({});
+    localStorage.setItem(`ca_advanced_filters_${club}`, JSON.stringify(bomb));
+    expect(loadFilters(club, 'account-a').HOLDEM?.games).toEqual([GAME_A]);
+    expect(loadFilters(club, 'account-b')).toEqual({});
   });
 
   it('signed out still reads and writes the per-club key', () => {
-    saveFilters('club', bomb, null);
-    expect(localStorage.getItem('ca_advanced_filters_club')).toContain('nlh');
-    expect(loadFilters('club', null).HOLDEM?.games).toEqual(['nlh']);
+    saveFilters(club, bomb, null);
+    expect(localStorage.getItem(`ca_advanced_filters_${club}`)).toContain(GAME_A);
+    expect(loadFilters(club, null).HOLDEM?.games).toEqual([GAME_A]);
   });
 });
 
 describe('every lobby filter change reaches the row, in order', () => {
-  const a = { HOLDEM: { ...emptyFilterValue(FILTER_SPECS.HOLDEM), games: ['a'] } };
-  const b = { HOLDEM: { ...emptyFilterValue(FILTER_SPECS.HOLDEM), games: ['b'] } };
+  const a = { HOLDEM: { ...emptyFilterValue(FILTER_SPECS.HOLDEM), games: [GAME_A] } };
+  const b = { HOLDEM: { ...emptyFilterValue(FILTER_SPECS.HOLDEM), games: [GAME_B] } };
 
   it('persistFilters writes the cache and the row', async () => {
-    persistFilters('club', a);
-    expect(loadFilters('club', 'account-a').HOLDEM?.games).toEqual(['a']);
+    persistFilters(club, a);
+    expect(loadFilters(club, 'account-a').HOLDEM?.games).toEqual([GAME_A]);
     expect(state.writes).toHaveLength(1);
-    expect(state.writes[0].payload.filters.HOLDEM.games).toEqual(['a']);
-    expect(hasUnsyncedFilters('club', 'account-a')).toBe(true);
+    expect(state.writes[0].payload.filters.HOLDEM.games).toEqual([GAME_A]);
+    expect(hasUnsyncedFilters(club, 'account-a')).toBe(true);
     state.writes[0].resolve({ error: null });
     await settle();
-    expect(hasUnsyncedFilters('club', 'account-a')).toBe(false);
+    expect(hasUnsyncedFilters(club, 'account-a')).toBe(false);
   });
 
   it('a slow earlier save never lands after the last tap', async () => {
-    pushRemoteFilters('club', a);
-    pushRemoteFilters('club', b);
+    pushRemoteFilters(club, a);
+    pushRemoteFilters(club, b);
     expect(state.writes).toHaveLength(1);
     state.writes[0].resolve({ error: null });
     await vi.waitFor(() => expect(state.writes).toHaveLength(2));
-    expect(state.writes[1].payload.filters.HOLDEM.games).toEqual(['b']);
-    expect(hasUnsyncedFilters('club', 'account-a')).toBe(true);
+    expect(state.writes[1].payload.filters.HOLDEM.games).toEqual([GAME_B]);
+    expect(hasUnsyncedFilters(club, 'account-a')).toBe(true);
     state.writes[1].resolve({ error: null });
     await settle();
-    expect(hasUnsyncedFilters('club', 'account-a')).toBe(false);
+    expect(hasUnsyncedFilters(club, 'account-a')).toBe(false);
   });
 
   it('the lobby writes no filter change to the cache alone, and reads the row on open', () => {

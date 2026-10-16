@@ -41,6 +41,7 @@ import {
 import { buildArrivalInput, greetArrival } from '../services/HorseTableTalk.js';
 import type { SeatPlayer, GameVariant, HandConfig, HandEvent, SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
+import { readAutoTimeBankPreferences } from '../services/supabase/timeBankPreferences.js';
 import { readDiamondCashRakeSchedule } from '../services/supabase/diamondCashRakeSettings.js';
 import type { DiamondCashRakeSchedule } from '../domain/diamondCashRakeSchedule.js';
 import { holeCardCount, deckSizeFor, maxSeatsFor } from './VariantRules.js';
@@ -3378,7 +3379,18 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       const tbNewPlayers = hcPlayers.filter(
         (p) => !this.timeBankEngine.getPlayerBank(this.tableId, p.user_id)
       );
-      const tbExtras = await this.fetchTimeBankExtras(tbNewPlayers.map((p) => p.user_id));
+      const preferenceIds = hcPlayers
+        .filter((p) => !this.timeBankEngine.hasAutoActivatePreference(this.tableId, p.user_id))
+        .map((p) => p.user_id);
+      const [tbExtras, autoPreferences] = await Promise.all([
+        this.fetchTimeBankExtras(tbNewPlayers.map((p) => p.user_id)),
+        readAutoTimeBankPreferences(preferenceIds).catch((error) => {
+          reportError(error, 'ServerTableEngine.time_bank_preferences_unreadable');
+          // Do not spend a paid bank on an unreadable opt-out. The player's
+          // next foreground heartbeat supplies the actual choice.
+          return new Map(preferenceIds.map((id) => [id, false]));
+        }),
+      ]);
       /**
        * THE ENGINE MAY HAVE BEEN TORN DOWN DURING THAT AWAIT (2026-09-06).
        *
@@ -3412,6 +3424,12 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         return;
       }
       if (this.discardPreparedHandForPause()) return;
+      for (const [userId, enabled] of autoPreferences) {
+        // A live authenticated heartbeat during the read is newer evidence.
+        if (!this.timeBankEngine.hasAutoActivatePreference(this.tableId, userId)) {
+          this.timeBankEngine.setAutoActivate(this.tableId, userId, enabled);
+        }
+      }
       for (const p of hcPlayers) {
         this.atomicStackService.initializeStack(this.tableId, p.user_id, p.stack);
         // Only initialize time bank if player is NEW (don't reset existing pool per session)

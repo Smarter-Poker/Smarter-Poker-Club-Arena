@@ -93,7 +93,7 @@ export default defineConfig({
     },
     {
       name: 'webkit-live-table-realtime',
-      testMatch: /production-live-table-realtime\.spec\.ts$/,
+      testMatch: /production-live-table-(?:realtime|multirun)\.spec\.ts$/,
       /* One failed continuity pass is the verdict. A retry can land on a
          different hand or table and turn a real production freeze green. */
       retries: 0,

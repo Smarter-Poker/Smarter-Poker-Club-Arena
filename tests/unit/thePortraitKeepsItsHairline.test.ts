@@ -1,10 +1,13 @@
 /**
- * THE PORTRAIT'S 0.5px HAIRLINE - ONE DECLARATION, ONE PLACE.
+ * THE PORTRAIT'S 1px HAIRLINE - ONE DECLARATION, ONE PLACE.
  *
  * Dan, 2026-09-03: "THE FRAME IN THE GLOBAL HEADER AROUND THE PROFILE IMAGE
  * REGRESSED AND CHANGED (INSTEAD OF HAVING THE .50 PIXEL BLACK INVISIBLE
  * CIRCLE FRAME)." Dan, 2026-09-07: "the profile pic is supposed to be a .5
  * pixel black frame that 'appears invisible'".
+ *
+ * Owner update 2026-10-16: use a very thin one-pixel invisible black edge.
+ * This supersedes the historical half-pixel width, preserving the ring mask.
  *
  * UPDATED 2026-09-07. This file used to require the hairline in AT LEAST two
  * `.profileAvatarSlot` rules (base + desktop) and that they agree. Two copies
@@ -23,7 +26,7 @@ const CSS = readFileSync(
   join(process.cwd(), 'src/components/navigation/GlobalHeader.module.css'),
   'utf8'
 ).replace(/\/\*[\s\S]*?\*\//g, '');
-const HAIRLINE = /border:\s*0\.5px\s+solid\s+rgba\(0,\s*0,\s*0,\s*0\.94\)/;
+const HAIRLINE = /border:\s*1px\s+solid\s+rgba\(0,\s*0,\s*0,\s*0\.94\)/;
 
 /** Every `.profileAvatarSlot { ... }` block in the file, base and overrides. */
 function slotBlocks(): string[] {
@@ -35,7 +38,7 @@ function slotBlocks(): string[] {
 }
 
 describe('the portrait keeps its hairline', () => {
-  it('the base rule carries the 0.5px edge, not border: 0', () => {
+  it('the base rule carries the 1px edge, not border: 0', () => {
     const base = slotBlocks()[0];
     expect(base, '.profileAvatarSlot must exist').toBeTruthy();
     expect(base).toMatch(HAIRLINE);
@@ -48,8 +51,8 @@ describe('the portrait keeps its hairline', () => {
     expect(withBorder[0]).toMatch(HAIRLINE);
   });
 
-  it('it is half a pixel, not one - the 1px edge was too heavy (#2366)', () => {
-    for (const b of slotBlocks()) expect(b).not.toMatch(/border:\s*1px/);
+  it('it follows the October 16 one-pixel ruling with no thicker frame', () => {
+    for (const b of slotBlocks()) expect(b).not.toMatch(/border:\s*(?:[2-9]|\d{2,})(?:\.\d+)?px/);
   });
 
   it('and it is still a circle', () => {

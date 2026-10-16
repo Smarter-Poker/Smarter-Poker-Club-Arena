@@ -82,7 +82,7 @@ import { HubFrame, type HubFrameSwipeHandlers } from '../components/table/HubFra
 import GlobalHeader from '../components/navigation/GlobalHeader';
 import { soundService, haptic } from '../services/SoundService';
 import { setSitOut, submitAction } from '../services/GameServerAPI';
-import { sessionStatsService } from '../services/SessionStatsService';
+import { useServerCashSessionProfit } from '../hooks/useServerCashSessionProfit';
 import './MultiTablePage.css';
 import { lazyWithRetry } from '../utils/lazyWithRetry';
 import { resolveLobbyClubId } from '../utils/clubQuickLink';
@@ -2340,9 +2340,9 @@ export default function MultiTablePage() {
   }, [toast]);
 
   // ─── Batch 5: aggregated session stats ────────────────────────────────
-  // SessionStatsService already tracks per-table P&L / hands client-side;
-  // this simply reads every live table's stats and presents the multi-table
-  // whole: total net, total hands, combined hands/hour (total hands over the
+  // Server session identity and immutable settled-hand facts survive reloads.
+  // Aggregate those exact records, never a browser-lifetime baseline:
+  // total net, total hands, combined hands/hour (total hands over the
   // LONGEST-running session - summing rates would double-count time).
   interface AggRow {
     id: string;
@@ -2385,6 +2385,17 @@ export default function MultiTablePage() {
   /* Long-press (mobile) support for turning the chip off. */
   const pnlPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const cashSessionTableKey = tables
+    .filter((t) => isTableTab(t) && !t.isTournament)
+    .map((t) => t.id)
+    .sort()
+    .join('|');
+  const serverSessionStats = useServerCashSessionProfit(
+    user?.id,
+    cashSessionTableKey,
+    !hidden && profitTracking && cashSessionTableKey.includes('|')
+  );
+
   useEffect(() => {
     /* Dan 2026-08-28: the P&L tracker "should only appear once a user is
        playing MULTIPLE tables. It should never engage while playing 1 table."
@@ -2418,23 +2429,33 @@ export default function MultiTablePage() {
         setSessionAgg(null);
         return;
       }
+      // Unknown is not zero. Wait for every open table's server answer;
+      // an observer returns null, while a pending/failed read is undefined.
+      if (live.some((t) => serverSessionStats[t.id] === undefined)) {
+        setSessionAgg(null);
+        return;
+      }
       let net = 0;
       let hands = 0;
       let earliestStart = Infinity;
       const rows: AggRow[] = live.map((t) => {
-        const st = sessionStatsService.getStats(t.id);
+        const st = serverSessionStats[t.id];
         if (!st) return { id: t.id, name: t.name, hands: 0, net: 0, tracked: false };
-        net += st.profitLoss;
-        hands += st.handsPlayed;
-        if (st.sessionStartTime < earliestStart) earliestStart = st.sessionStartTime;
+        net = Math.round((net + st.net) * 100) / 100;
+        hands += st.hands;
+        if (st.startedAt < earliestStart) earliestStart = st.startedAt;
         return {
           id: t.id,
           name: t.name,
-          hands: st.handsPlayed,
-          net: st.profitLoss,
+          hands: st.hands,
+          net: st.net,
           tracked: true,
         };
       });
+      if (rows.filter((row) => row.tracked).length < 2) {
+        setSessionAgg(null);
+        return;
+      }
       const hours = earliestStart === Infinity ? 0 : (Date.now() - earliestStart) / 3_600_000;
       setSessionAgg({
         rows,
@@ -2444,11 +2465,10 @@ export default function MultiTablePage() {
       });
     };
     compute();
-    const iv = setInterval(compute, 5000);
-    return () => clearInterval(iv);
+
     // `tables`, not `tables.length`: a lobby tab converting into a game table
     // keeps the length constant while the live-table count changes.
-  }, [hidden, tables, profitTracking]);
+  }, [hidden, tables, profitTracking, serverSessionStats]);
 
   // ─── Batch 4: playable tile view ──────────────────────────────────────
   // Fold / Check / Call directly from a 2x2 tile - true simultaneous play on

@@ -26,15 +26,16 @@
      badge clear of the avatar. Unchanged from the rectangle it replaces. */
   --sp-hero-half: 64px;
   /* Spec 28: ONE size variable, and the badge is square, so this is both its
-     width and its height. 58px against a 128px hero pod reads as a plaque
+     width and its height. October 16: 72-78px keeps the three text rows legible beside the hero pod.
+     The unframed readout stays smaller than the hero plate and reads as a plaque
      beside the seat rather than a second seat next to it - the proportion Dan
      asked for on 2026-09-05 and kept in the redesign. */
-  --vpip-badge-size: 58px;
+  --vpip-badge-size: 78px;
 
   position: absolute;
   z-index: 6;
   pointer-events: none;
-  width: 106px;
+  width: 120px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -45,28 +46,28 @@
 @media (max-width: 640px) {
   .hero-vpip {
     --sp-hero-half: 51px;
-    --vpip-badge-size: 50px;
+    --vpip-badge-size: 76px;
   }
 }
 
 @media (max-width: 480px) {
   .hero-vpip {
     --sp-hero-half: 44px;
-    --vpip-badge-size: 44px;
+    --vpip-badge-size: 74px;
   }
 }
 
 @media (max-width: 380px) {
   .hero-vpip {
     --sp-hero-half: 40px;
-    --vpip-badge-size: 40px;
+    --vpip-badge-size: 72px;
   }
 }
 
 /* Printed on the felt below VPIP; it never covers the player's plate. */
 .hero-vpip__clock {
   width: 100%;
-  max-width: 106px;
+  max-width: 120px;
   margin-top: -4px;
   display: flex;
   flex-direction: column;
@@ -74,7 +75,7 @@
   gap: 2px;
   color: #e4e7ec;
   font-family: 'Roboto Condensed', Arial, sans-serif;
-  font-size: 8px;
+  font-size: 11px;
   line-height: 1.1;
   text-align: center;
   text-shadow: 0 1px 2px #000;
@@ -82,7 +83,7 @@
 
 .hero-vpip__clock time {
   color: #45adff;
-  font-size: 13px;
+  font-size: 17px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }

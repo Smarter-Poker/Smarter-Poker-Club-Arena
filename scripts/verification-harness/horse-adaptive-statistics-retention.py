@@ -120,6 +120,8 @@ def main():
   e.report['exact_space']=json.loads((space/'result.json').read_text())
   vacuum=module(ROOT/'scripts/verification-harness/horse-journal-vacuum-trigger.py','journal_vacuum_trigger_qualified');vacuum.qualify(e)
   cash_vacuum=module(ROOT/'scripts/verification-harness/cash-retention-vacuum-trigger.py','cash_vacuum_trigger_qualified');cash_vacuum.qualify(e)
+  expiry=out/'statistics-expiry-index';subprocess.run([sys.executable,'-B',str(ROOT/'scripts/verification-harness/horse-adaptive-statistics-expiry-index.py'),'--evidence',str(expiry),'--pg-bin',str(e.pg),'--scratch-root',str(e.socket.parent)],check=True,timeout=90)
+  e.report['statistics_expiry_index']=json.loads((expiry/'result.json').read_text())
   e.discard(base);e.report.update(status='passed',proven=checks)
  except BaseException as exc:e.report['failure']=repr(exc)
  finally:

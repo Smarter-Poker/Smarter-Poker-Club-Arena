@@ -131,3 +131,8 @@ print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().pare
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-cash-keyorder-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-cash-commission-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-cash-access-install-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
+
+# Fingerprints preserve source ordering while detoasting each window only once.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-window-r2-digests-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-window-earned-digests-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-window-digest-install-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))

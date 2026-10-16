@@ -258,12 +258,15 @@ test('real adapters exercise installed row shapes, exact RPC arguments and durab
     calls = [];
   const m = row(id, { club_id: ROSTER_CLUB, status: 'pending', chip_balance: '0.00' });
   let wrongClub = false;
+  let horseEmail = 'existing@horses.smarter.poker';
+  let horseIdentity = id;
+  let horseProfile = { id, is_horse: true, status: 'active' };
   const admin = {
     rpc: async (name) => ({ data: name === 'fn_club_membership_cap' ? 10 : 2 }),
     auth: {
       admin: {
         getUserById: async (user) => ({
-          data: { user: { id: user, email: 'existing@horses.smarter.poker' } },
+          data: { user: { id: horseIdentity, email: horseEmail } },
         }),
         generateLink: async () => ({
           data: { user: { id }, properties: { hashed_token: 'memory-only' } },
@@ -291,7 +294,7 @@ test('real adapters exercise installed row shapes, exact RPC arguments and durab
         },
         then(resolve, reject) {
           let value;
-          if (table === 'profiles') value = { id, is_horse: true, status: 'active' };
+          if (table === 'profiles') value = horseProfile;
           else if (table === 'club_members') value = m;
           else if (table === 'cashier_rpc_operation_intents')
             value = {
@@ -364,6 +367,26 @@ test('real adapters exercise installed row shapes, exact RPC arguments and durab
     createClient: () => horse,
     url: 'https://example.invalid',
   });
+  // These actual domains belong to exact owner-approved existing horse IDs.
+  for (const domain of [
+    'horse.ai',
+    'smarter.poker',
+    'horses.smarter.poker',
+    'hydra.smarter.poker',
+    'bot.smarter.poker',
+  ]) {
+    horseEmail = `existing@${domain}`;
+    assert.equal((await adapter.validateIncoming(id)).id, id);
+  }
+  for (const patch of [{ is_horse: false }, { status: 'inactive' }, { id: 'foreign' }]) {
+    horseProfile = { id, is_horse: true, status: 'active', ...patch };
+    await assert.rejects(adapter.validateIncoming(id), /HORSE_IDENTITY_CHANGED/);
+  }
+  horseProfile = { id, is_horse: true, status: 'active' };
+  horseIdentity = 'foreign';
+  await assert.rejects(adapter.validateIncoming(id), /HORSE_IDENTITY_CHANGED/);
+  horseIdentity = id;
+  await assert.rejects(adapter.validateIncoming(PILOT.ownerId), /UNPINNED_HORSE/);
   const joined = await adapter.join(id, rosterRequestId('join', id));
   assert.deepEqual(joined.membership, m);
   assert.deepEqual(

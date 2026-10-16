@@ -4,6 +4,11 @@ You are picking up the Lightning programme for Club Arena (Smarter Poker). Light
 
 **The dated delivery checkpoints above section U supersede the historical state in section U and sections 3 to 5.** Sections 3 to 5 were written at 17:30 UTC and are kept for their ids and history.
 
+## Exact Roster Preparation Root Cause (2026-10-16 22:28 UTC)
+
+- Configured read-only Supabase unified logs for exact22:21:30–38Z show firstnineoutgoinghazardreads returning200/zero; no rosterHTTP4xx. Exact approved incoming Auth readback finds ninth4ffcc7ec and threeotherapprovedhorses usehorse.ai, threeotherssmarter.poker; remaininghorse/hydra/botdomains allnonbanned. Newscript's inventedthree-domain regex rejects these legitimate approved existinghorseidentities. This explains failureatninthpreparation boundary without rosterwrite. RootdoesnotreplaceIDs or alterAuthprofiles.
+- Regressionusingactualdomains FAILSBEFOREwithHORSE_IDENTITY_CHANGED. Repairrequires exactapprovedUUID+actualmatchingAuthID+activeis_horseprofile+nonemptyemail+unbanned account, ratherthanemaildomain inference; magiclink/sessionIDproof remains. AdversarialunapprovedID/foreignAuthID/human/inactive/wrongprofile controls remainrefused. AFTER18roster/providercheckspass0skip; normalTypeScript/hooks/currentheadhostedproof required. Diagnosticstaticcodes remainnecessaryfor futureunknownboundary, no rawprovidertext. No money/admission/duplicate-executionpredicate changed.
+
 ## Roster Preparation Failure And Admission Submission (2026-10-16 22:24 UTC)
 
 - Parent7151 protected squash f5e8d41b6d7739dc00ec21da321eb18c13df49b9; exact roster/workflow blobs match qualified1afd. First prepare38975034730/opb13cc1cf-8efc-4147-a262-cb2c640bf701 stopped22:21:37 before baseline, local_session_closed. Report only INPUT_AUTH_OR_EXECUTION_UNVERIFIED; no execute invoked. Retained roster-prepare-38975034730/report and roster-prepare-failure.log. Fresh schema/identity/money/gate/grant readbacks do not establish exact failing request; no speculative policy/funding correction or blind rerun. Supporting source now preserves static owned failure boundary/code, never raw provider text;18focused roster/provider checks pass including CLI sanitized-report regression. Actual diagnostic preparation retry requires protected source adoption, sameoperation and fresh readback.

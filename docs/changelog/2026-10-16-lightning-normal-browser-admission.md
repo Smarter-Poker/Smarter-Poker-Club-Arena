@@ -9,3 +9,7 @@ The cash session retains its existing table scope and cluster pointer, as specif
 ## Roster Preparation Diagnostics
 
 The first guarded roster preparation stopped before producing a baseline, but its generic catch hid the failing boundary. Retain only owned static phase and failure codes, with SQLSTATE/PostgREST codes when present; never copy provider messages or credential payloads. No financial door, admission predicate or duplicate-execution safeguard changes. Eighteen focused roster/provider checks pass, including CLI report redaction and local cleanup.
+
+## Approved Horse Identity Correction
+
+The exact approved roster contains existing horse accounts on horse.ai and smarter.poker as well as the horse, Hydra and test subdomains. Preparation rejected the ninth approved horse on an invented email suffix restriction. Validate the exact approved UUID, matching Auth user, active horse profile and unbanned account instead. Real-domain regression fails before and passes after; foreign IDs, human profiles and inactive profiles remain refused.

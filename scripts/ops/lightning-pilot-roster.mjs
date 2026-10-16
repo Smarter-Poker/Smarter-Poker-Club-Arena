@@ -447,7 +447,8 @@ export function createRosterAdapter({ admin, owner, createClient, url, timeoutMs
       p.is_horse !== true ||
       p.status !== 'active' ||
       u?.id !== id ||
-      !/@(?:bot|horses|hydra)\.smarter\.poker$/.test(u.email ?? '') ||
+      typeof u.email !== 'string' ||
+      !u.email.trim() ||
       (u.banned_until &&
         (!Number.isFinite(Date.parse(u.banned_until)) || Date.parse(u.banned_until) > Date.now()))
     )

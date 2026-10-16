@@ -16,6 +16,7 @@ import {
   validateClubBanner,
   type ClubBannerRecord,
 } from '../services/ClubBannerService';
+import ClubRotatingBannerEditor from '../components/club/ClubRotatingBannerEditor';
 import './ClubBannerDisplaysPage.css';
 
 const DEFAULT_BANNER = mediaUrl(
@@ -105,7 +106,7 @@ function BannerEditor({ clubId, userId }: { clubId?: string; userId?: string }) 
       if (!mounted.current) return;
       const saved = await saveClubBanner(club.id, userId, club.banner_url, next);
       if (!mounted.current) return;
-      setClub(saved);
+      setClub((current) => (current ? { ...current, banner_url: saved.banner_url } : saved));
       setFile(null);
       setUseDefault(false);
       uploaded.current = null;
@@ -200,15 +201,13 @@ function BannerEditor({ clubId, userId }: { clubId?: string; userId?: string }) 
                 Use Default Banner
               </button>
               <p>Banner Taps Open Your Club Announcements.</p>
-              <h2>Rotating Promotional Strip</h2>
-              <p>The Strip Below Your Banner Is Managed By The Advertising System.</p>
-              <button
-                type="button"
-                disabled={saving}
-                onClick={() => navigate(`/clubs/${clubId}/advertise`)}
-              >
-                Advertise Your Club
-              </button>
+              <ClubRotatingBannerEditor
+                club={club}
+                ownerId={userId!}
+                onSaved={(saved) =>
+                  setClub((current) => (current ? { ...current, settings: saved.settings } : saved))
+                }
+              />
             </>
           )}
           {!loading && (

@@ -458,6 +458,8 @@ export default function WalletCashierModal({
   const [typeFilter, setTypeFilter] = useState<string | null>(null);
   const [ledgerLoading, setLedgerLoading] = useState(false);
   const [ledgerError, setLedgerError] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const exportBusyRef = useRef(false);
   const [reversingId, setReversingId] = useState<string | null>(null);
 
   const [showMint, setShowMint] = useState(false);
@@ -487,6 +489,9 @@ export default function WalletCashierModal({
   const actionViewKey = JSON.stringify([isOpen, clubId, user?.id, walletType, role]);
   const actionView = useRef({ key: actionViewKey });
   if (actionView.current.key !== actionViewKey) actionView.current = { key: actionViewKey };
+  const exportViewKey = JSON.stringify([actionViewKey, tab, promoSource, typeFilter]);
+  const exportView = useRef({ key: exportViewKey });
+  if (exportView.current.key !== exportViewKey) exportView.current = { key: exportViewKey };
   const busyRef = useRef(false);
 
   const viewerRole = normaliseRole(role);
@@ -666,6 +671,11 @@ export default function WalletCashierModal({
         isMounted.current && seq === ledgerSeqRef.current && scope === balanceScopeRef.current;
       setLedgerLoading(true);
       setLedgerError(null);
+      if (offset === 0) {
+        setLedger([]);
+        setLedgerTotal(0);
+        setLedgerTotals(null);
+      }
       try {
         const { data, error } = await supabase.rpc('fn_club_bank_ledger', {
           p_club_id: uuid,
@@ -717,6 +727,11 @@ export default function WalletCashierModal({
         isMounted.current && seq === promoLedgerSeqRef.current && scope === balanceScopeRef.current;
       setLedgerLoading(true);
       setLedgerError(null);
+      if (offset === 0) {
+        setPromoLedger([]);
+        setPromoLedgerTotal(0);
+        setPromoLedgerTotals(null);
+      }
       try {
         const { data, error } = await supabase.rpc('fn_promo_wallet_ledger', {
           p_scope: promoLedgerScope(source),
@@ -1432,25 +1447,46 @@ export default function WalletCashierModal({
       Safari/Firefox revoke timing AND the app's share-sheet branch; this
       used to be a local copy with the same name, which is why a grep for
       the helper looked clean while the app silently downloaded nothing. */
-  const downloadLedgerCsv = (name: string, header: string[], body: string[]) => {
-    downloadBlob(
-      `${name}-${clubName.replace(/\W+/g, '-').toLowerCase()}-${new Date()
-        .toISOString()
-        .slice(0, 10)}.csv`,
-      /* The byte order mark and the trailing CRLF are the statement export's
-         convention (buildStatementCsv): Excel reads UTF-8 instead of guessing,
-         and the last row ends like every other. */
-      new Blob(['\ufeff' + [header.map(csvText).join(','), ...body].join('\r\n') + '\r\n'], {
-        type: 'text/csv;charset=utf-8',
-      })
-    );
+  // Observe the actual file handoff, including native sharing. A closed or
+  // changed ledger cannot hand an old account's bytes to the share sheet.
+  const downloadLedgerCsv = async (name: string, header: string[], body: string[]) => {
+    if (exportBusyRef.current || ledgerLoading) return;
+    const owningView = exportView.current;
+    const ledgerRequest = ledgerSeqRef.current;
+    const promoRequest = promoLedgerSeqRef.current;
+    const current = () =>
+      isMounted.current &&
+      exportView.current === owningView &&
+      ledgerSeqRef.current === ledgerRequest &&
+      promoLedgerSeqRef.current === promoRequest;
+    exportBusyRef.current = true;
+    setExporting(true);
+    try {
+      const handedOff = await downloadBlob(
+        `${name}-${clubName.replace(/\W+/g, '-').toLowerCase()}-${new Date().toISOString().slice(0, 10)}.csv`,
+        new Blob(['\ufeff' + [header.map(csvText).join(','), ...body].join('\r\n') + '\r\n'], {
+          type: 'text/csv;charset=utf-8',
+        }),
+        current
+      );
+      if (!current()) return;
+      if (!handedOff) throw new Error('Could Not Export The Ledger');
+      toast?.success?.(`Exported ${body.length.toLocaleString('en-US')} Ledger Entries`);
+    } catch (error) {
+      if (!current()) return;
+      reportError(error, 'WalletCashierModal.exportLedger');
+      toast?.error?.(safeErrorMessage(error, 'Could Not Export The Ledger'));
+    } finally {
+      exportBusyRef.current = false;
+      if (isMounted.current) setExporting(false);
+    }
   };
 
   /** The promo ledger rows on screen, as a spreadsheet. */
   const exportPromoCsv = () => {
     const rows = promoLedger.slice(0, EXPORT_MAX);
     if (rows.length === 0) return;
-    downloadLedgerCsv(
+    void downloadLedgerCsv(
       promoSource === 'club_pot' ? 'club-promo-wallet-ledger' : 'promo-float-ledger',
       ['When', 'Direction', 'Category', 'Amount', 'Counterparty', 'By', 'Wallet After', 'Note'],
       rows.map((r) =>
@@ -1466,7 +1502,6 @@ export default function WalletCashierModal({
         ].join(',')
       )
     );
-    toast?.success?.(`Exported ${rows.length.toLocaleString('en-US')} Ledger Entries`);
   };
 
   /** The rows on screen, as a spreadsheet. Nothing leaves that is not shown. */
@@ -1497,13 +1532,8 @@ export default function WalletCashierModal({
         csvText(r.notes ?? ''),
       ].join(',')
     );
-    /* REVOKE AFTER THE DOWNLOAD HAS STARTED, not in the same tick. Safari and
-       Firefox read the blob asynchronously once the click is dispatched, so a
-       synchronous revoke cancelled the save and the Export button did nothing
-       at all on those browsers. One second is long enough for the fetch to be
-       issued and short enough that the blob is not held. (downloadCsv above.) */
-    downloadLedgerCsv('club-bank-ledger', header, body);
-    toast?.success?.(`Exported ${rows.length.toLocaleString('en-US')} Ledger Entries`);
+    // The shared downloader retains the browser read window before revoking.
+    void downloadLedgerCsv('club-bank-ledger', header, body);
   };
 
   if (!isOpen) return null;
@@ -1702,6 +1732,7 @@ export default function WalletCashierModal({
                 <div className="cbc-source" role="radiogroup" aria-label="Promo Wallet Source">
                   <button
                     role="radio"
+                    disabled={inFlight}
                     aria-checked={promoSource === 'club_pot'}
                     className={promoSource === 'club_pot' ? 'cbc-source-on' : ''}
                     onClick={() => {
@@ -1716,6 +1747,7 @@ export default function WalletCashierModal({
                   </button>
                   <button
                     role="radio"
+                    disabled={inFlight}
                     aria-checked={promoSource === 'own_float'}
                     className={promoSource === 'own_float' ? 'cbc-source-on' : ''}
                     onClick={() => {
@@ -1741,7 +1773,7 @@ export default function WalletCashierModal({
             {/* Chip Mint lives HERE and only for a standalone club. A club inside
                 a union has no mint at all - chips flow down from the union. */}
             {mayMint && (
-              <button className="cbc-mint" onClick={() => setShowMint(true)}>
+              <button className="cbc-mint" disabled={inFlight} onClick={() => setShowMint(true)}>
                 Mint Chips Into The Club Bank
               </button>
             )}
@@ -1752,6 +1784,7 @@ export default function WalletCashierModal({
                 <button
                   key={t}
                   role="tab"
+                  disabled={inFlight}
                   aria-selected={tab === t}
                   className={tab === t ? 'cbc-tab cbc-tab--on' : 'cbc-tab'}
                   onClick={() => setTab(t)}
@@ -1813,7 +1846,7 @@ export default function WalletCashierModal({
                         )}
                         <button
                           className="cbc-undo"
-                          disabled={claimingId !== null}
+                          disabled={inFlight}
                           onClick={() => void claimBack(row)}
                         >
                           {claimingId === row.transaction_id
@@ -1840,6 +1873,7 @@ export default function WalletCashierModal({
                       {destinations.map((key) => (
                         <button
                           key={key}
+                          disabled={inFlight}
                           className={destination === key ? 'cbc-seg-on' : ''}
                           onClick={() => setDestination(key)}
                         >
@@ -1923,6 +1957,7 @@ export default function WalletCashierModal({
                         AGENT_ONLY.includes(destination) ? 'Search Agents' : 'Search Members'
                       }
                       aria-label="Search Recipients"
+                      disabled={inFlight}
                     />
                     <div className="cbc-list">
                       {membersLoading && <div className="cbc-empty">Loading Members...</div>}
@@ -1957,6 +1992,7 @@ export default function WalletCashierModal({
                         return (
                           <button
                             key={m.user_id}
+                            disabled={inFlight}
                             className={
                               block
                                 ? 'cbc-member cbc-member--blocked'
@@ -2032,6 +2068,7 @@ export default function WalletCashierModal({
                         </span>
                         <input
                           id="cbc-amount"
+                          disabled={inFlight}
                           className={bankTransfer ? transferStyles.entryInput : 'cbc-input'}
                           type="text"
                           /* Whole chips only (see amountIsWhole), so the keypad that
@@ -2119,6 +2156,7 @@ export default function WalletCashierModal({
                     </label>
                     <input
                       id="cbc-reason"
+                      disabled={inFlight}
                       className="cbc-input"
                       value={reason}
                       onChange={(e) => setReason(e.target.value)}
@@ -2183,7 +2221,7 @@ export default function WalletCashierModal({
                       <button
                         className="cbc-export"
                         onClick={exportPromoCsv}
-                        disabled={promoLedger.length === 0}
+                        disabled={exporting || ledgerLoading || promoLedger.length === 0}
                       >
                         Export CSV
                       </button>
@@ -2290,7 +2328,7 @@ export default function WalletCashierModal({
                       <button
                         className="cbc-export"
                         onClick={exportCsv}
-                        disabled={ledger.length === 0}
+                        disabled={exporting || ledgerLoading || ledger.length === 0}
                       >
                         Export CSV
                       </button>
@@ -2364,7 +2402,7 @@ export default function WalletCashierModal({
                           {row.reversible && (
                             <button
                               className="cbc-undo"
-                              disabled={reversingId !== null}
+                              disabled={inFlight}
                               onClick={() => void reverse(row)}
                             >
                               {reversingId === row.id ? 'Reversing...' : 'Reverse This Send'}

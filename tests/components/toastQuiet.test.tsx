@@ -37,6 +37,16 @@ describe('error popups', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
+  it('confirms separate cashier receipts with identical text and dedupes the same receipt', () => {
+    const toast = mount();
+    act(() => {
+      toast().success('Sent 100 Chips', undefined, undefined, 'operation-a');
+      toast().success('Sent 100 Chips', undefined, undefined, 'operation-b');
+      toast().success('Sent 100 Chips', undefined, undefined, 'operation-a');
+    });
+    expect(visible()).toBe(2);
+  });
+
   it('never shows the two messages from the screenshots', () => {
     const toast = mount();
     act(() => {

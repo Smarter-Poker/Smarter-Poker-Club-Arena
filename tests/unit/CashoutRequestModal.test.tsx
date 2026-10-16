@@ -1,3 +1,4 @@
+import { formatCashierAmountInput } from '../../src/utils/cashierAmount';
 import { beforeEach, afterEach, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup, act } from '@testing-library/react';
 import { webcrypto } from 'node:crypto';
@@ -186,7 +187,7 @@ it.each([
 ])('mounted modal refuses original invalid spelling %s', async (text) => {
   const input = await mount();
   fireEvent.change(input, { target: { value: text } });
-  expect((input as HTMLInputElement).value).toBe(text);
+  expect((input as HTMLInputElement).value).toBe(formatCashierAmountInput(text));
   await submit(false);
   await screen.findByText(/Whole Cents|Greater Than Zero|Single Request Limit/);
   expect(rpc).not.toHaveBeenCalled();
@@ -538,27 +539,9 @@ it('an unknown lookup cannot reach settlement preflight or payment from the moun
   expect(rpc).not.toHaveBeenCalled();
   expect(complete).not.toHaveBeenCalled();
 });
-it('G-02: listens to this player only and reloads only for a row of this club', async () => {
+it('never starts a background status refresh subscription', async () => {
   realtime.subs.length = 0;
   await mount();
-  await waitFor(() => expect(realtime.subs.length).toBeGreaterThan(0));
-  const sub = realtime.subs[realtime.subs.length - 1];
-  expect(sub.filter).toEqual(
-    expect.objectContaining({ table: 'cashout_requests', filter: `player_id=eq.${ID.player}` })
-  );
-  expect(String(sub.filter.filter)).not.toContain('club_id');
-  const reads = vi.mocked(cashoutService.getPlayerCashouts);
-  await waitFor(() => expect(reads).toHaveBeenCalled());
-  await act(async () => {});
-  const before = reads.mock.calls.length;
-
-  // The player's cashout in another club does not reload this club's sheet.
-  await act(async () => sub.handler({ new: { club_id: 'another-club' }, old: {} }));
-  expect(reads.mock.calls.length).toBe(before);
-  // A row of this club does.
-  await act(async () => sub.handler({ new: { club_id: ID.club }, old: {} }));
-  await waitFor(() => expect(reads.mock.calls.length).toBe(before + 1));
-  // A DELETE whose club is not on the payload is not known to be another club's.
-  await act(async () => sub.handler({ new: {}, old: { id: 'gone' } }));
-  await waitFor(() => expect(reads.mock.calls.length).toBe(before + 2));
+  await waitFor(() => expect(cashoutService.getPlayerCashouts).toHaveBeenCalledOnce());
+  expect(realtime.subs).toHaveLength(0);
 });

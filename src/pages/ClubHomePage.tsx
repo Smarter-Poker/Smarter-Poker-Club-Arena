@@ -154,6 +154,7 @@ import MaintenanceBreakBanner from '../components/common/MaintenanceBreakBanner'
 import HouseAdRotator from '../components/ads/HouseAdRotator';
 import { ClubBBJShell } from '../components/wallet/ClubWalletArtwork';
 import { ClubIdentityCard } from '../components/club-buttons';
+import { ShareInviteSheet } from '../components/club/ShareInviteSheet';
 import { COUNT_UNKNOWN, type CountFigure } from '../lib/countFigure';
 import DiamondBustPrompt from '../components/games/DiamondBustPrompt';
 import { playerDisplayName } from '../utils/playerDisplayName';
@@ -729,7 +730,6 @@ import PageErrorBoundary from '../components/common/PageErrorBoundary';
 import ArenaAccessBoundary from '../components/arena/ArenaAccessBoundary';
 import { useArenaAccess } from '../components/arena/arenaAccess';
 import { useDiamondFreerollCountdown } from '../hooks/useNextDiamondFreeroll';
-import { publicOrigin } from '../lib/appBase';
 
 /**
  * Dan 2026-10-04: `initialGameType` opens the embedded lobby ON a named list.
@@ -1046,6 +1046,7 @@ function ClubHomePageContent({
   // match so the watchdog and the reset guard agree with what is on screen.
   const [loading, setLoading] = useState(!bootCache?.club);
   const [userRole, setUserRole] = useState<ClubRole>('player');
+  const [showShareSheet, setShowShareSheet] = useState(false);
   const [deletingTableId, setDeletingTableId] = useState<string | null>(null);
   const [, setIsInUnion] = useState(false);
   const [, setUnionName] = useState<string | null>(null);
@@ -5161,59 +5162,16 @@ function ClubHomePageContent({
                 : undefined
             }
             shareIcon={<IconShareLink />}
-            onShare={async () => {
+            onShare={() => {
+              /* SHARE & INVITE (Dan 2026-10-15): the link is the SENDER's own
+                 short code (smarter.poker/i/<CODE>), so whoever shares it is
+                 credited and the new player lands in their downline. It used
+                 to be /invite/<club>?ref=<player number>, which sent a
+                 signed-out friend to LOGIN and lost the club on the way
+                 through signup. The sheet holds the link, Copy, Share, a QR
+                 code and the sender's results. */
               haptic.medium();
-              let refQuery = '';
-              let profRefNum: number | null = null;
-              try {
-                // readLocalSession, not the auth SDK's remote user lookup: the
-                // session is already local and the referral action must open
-                // instantly when the player taps it.
-                const session = readLocalSession();
-                if (session?.userId) {
-                  const { data: prof, error: profErr } = await supabase
-                    .from('profiles')
-                    .select('player_number')
-                    .eq('id', session.userId)
-                    .maybeSingle();
-                  // ROUND 9 (2026-08-29): the uuid fallback below still
-                  // credits the referral, so behaviour is unchanged - but a
-                  // failed read was silently downgrading share links from the
-                  // friendly player number to a raw uuid.
-                  if (profErr) {
-                    reportError(profErr, 'ClubHomePage.share_ref_profile_read_failed');
-                  }
-                  if (prof?.player_number) {
-                    profRefNum = prof.player_number;
-                    refQuery = `?ref=${prof.player_number}`;
-                  } else {
-                    refQuery = `?ref=${session.userId}`;
-                  }
-                }
-              } catch (err) {
-                reportError(err, 'ClubHomePage.share_ref_lookup_failed');
-              }
-              const shareUrl = `${publicOrigin()}/hub/club-arena/invite/${club.id}${refQuery}`;
-              /* The same leak as the card, and further out: this string is
-                 handed to the OS share sheet, so `display_name` was carrying a
-                 player's legal name into WhatsApp, SMS and anywhere else the
-                 invite was forwarded. An invite to a poker club is signed with
-                 the handle. */
-              const inviterName = playerDisplayName(currentUser, 'arena');
-              const playerNumText = profRefNum ? `\nYour Referral Number: ${profRefNum}` : '';
-              const shareText = `${inviterName} invited you to join ${club.name}!\n\nClub ID: ${club.club_id}${playerNumText}`;
-
-              try {
-                if (navigator.share) {
-                  await navigator.share({ title: club.name, text: shareText, url: shareUrl });
-                } else {
-                  await navigator.clipboard.writeText(`${shareText}\n\n${shareUrl}`);
-                  toast.success('Club link copied!');
-                }
-              } catch (e) {
-                reportError(e, 'ClubHomePage.async');
-                /* user cancelled share */
-              }
+              setShowShareSheet(true);
             }}
           />
           {/* The Bad Beat Jackpot reads its own asset's pool. An arena strip
@@ -6195,6 +6153,20 @@ function ClubHomePageContent({
         onCancel={() => setDeleteTableConfirm({ show: false, tableId: null, tableName: null })}
       />
 
+      {club && (
+        <ShareInviteSheet
+          isOpen={showShareSheet}
+          onClose={() => setShowShareSheet(false)}
+          clubId={club.id}
+          clubName={club.name}
+          clubNumber={club.club_id}
+          inviterAlias={playerDisplayName(currentUser, 'arena')}
+          canSeeClubStats={
+            isOwner ||
+            ['co_owner', 'admin', 'super_agent', 'agent', 'sub_agent'].includes(String(userRole))
+          }
+        />
+      )}
       {showOpeningWizard && isOwner && club && openingChecklistEligible && (
         <ClubOpeningWizard
           clubId={club.id}

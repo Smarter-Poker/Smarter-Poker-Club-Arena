@@ -245,11 +245,12 @@ describe('#ClubArenaConsole is the Cashier visual authority', () => {
     // phone and `step="1"` flags 12.34 as invalid, so the two-decimal rule the
     // copy advertises was unreachable on the device most agents use.
     const trade = read('src/pages/CashierTradePage.tsx');
-    const tradeInputs = trade.match(/<input[^>]*type="number"[^>]*>/gs) ?? [];
+    const tradeInputs = (trade.match(/<input[^>]*type="text"[^>]*>/gs) ?? []).filter((tag) =>
+      /aria-label="(Amount|Chips Requested|Claim Back Amount)/.test(tag)
+    );
     expect(tradeInputs.length).toBeGreaterThanOrEqual(2);
     for (const tag of tradeInputs) {
       expect(tag).toContain('inputMode="decimal"');
-      expect(tag).toContain('step="0.01"');
     }
     // Dan 2026-10-15: "IT SHOULD NEVER SAY AMOUNT PER PLAYER".
     expect(trade).not.toContain('Amount Per Player');

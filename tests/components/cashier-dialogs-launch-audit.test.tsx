@@ -334,7 +334,7 @@ describe('D-04: the holder figure follows the roster after a claim', () => {
       }
       return { data: null, error: null };
     });
-    await openCashier();
+    await openCashier({ initialDestination: 'player_wallet' });
     fireEvent.click(screen.getByText('Claim Back'));
     // A player holds no agent wallet, so the source is their player wallet.
     fireEvent.click(screen.getByText('Player Wallet', { selector: '.cbc-seg button' }));

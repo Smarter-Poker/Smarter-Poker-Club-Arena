@@ -51,3 +51,13 @@ describe('the phase-3 migration keeps its guarantees', () => {
     expect(MIGRATION).toMatch(/coalesce\(cm\.status, 'active'\) in \('active', 'approved'\)/);
   });
 });
+
+describe('Cashier page observation follows explicit user actions', () => {
+  it('has no background chip transaction subscription and scopes its embedded readers to manual mode', () => {
+    expect(PAGE).not.toContain('cashier-chip-txns-');
+    expect(PAGE).toMatch(/<DynamicWallet\s+manualOnly/);
+    expect(PAGE).toMatch(/<AgentPromoPanel\s+manualOnly/);
+    expect(PAGE).toContain('refreshKey={walletRevision}');
+    expect(PAGE).not.toContain('Reconnecting To Live Updates');
+  });
+});

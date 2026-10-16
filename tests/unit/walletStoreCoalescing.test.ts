@@ -18,7 +18,6 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
-import ts from 'typescript';
 
 const getBalance = vi.fn();
 const getBalances = vi.fn();
@@ -202,57 +201,10 @@ describe('balance invalidations survive an in-flight snapshot', () => {
   });
 });
 
-it('Cashier BALANCE_UPDATED bypasses the fresh display cache', async () => {
-  // Execute the actual subscription callback without mounting unrelated cashier
-  // mutation flows. The real store below proves that its options cause a read.
-  const source = ts.createSourceFile(
-    'CashierPage.tsx',
-    readFileSync('src/pages/CashierPage.tsx', 'utf8'),
-    ts.ScriptTarget.Latest,
-    true,
-    ts.ScriptKind.TSX
-  );
-  const callbacks: ts.ArrowFunction[] = [];
-  const callsBalanceLoader = (node: ts.Node): boolean =>
-    (ts.isCallExpression(node) && node.expression.getText(source) === 'loadBalances') ||
-    Boolean(ts.forEachChild(node, callsBalanceLoader));
-  const visit = (node: ts.Node) => {
-    if (
-      ts.isCallExpression(node) &&
-      node.expression.getText(source) === 'useMasterBusSubscriptions'
-    ) {
-      const [events, listener] = node.arguments;
-      if (
-        events &&
-        ts.isArrayLiteralExpression(events) &&
-        events.elements.some(
-          (event) => ts.isStringLiteral(event) && event.text === 'BALANCE_UPDATED'
-        ) &&
-        listener &&
-        ts.isArrowFunction(listener) &&
-        callsBalanceLoader(listener)
-      )
-        callbacks.push(listener);
-    }
-    ts.forEachChild(node, visit);
-  };
-  visit(source);
-  expect(callbacks).toHaveLength(1);
-  const callback = callbacks[0];
-  const row = (balance: number) => [
-    { walletType: 'PLAYER', availableBalance: balance, lockedBalance: 0, balance },
-  ];
-  getBalances.mockResolvedValueOnce(row(40)).mockResolvedValueOnce(row(60));
-  await useWalletStore.getState().loadBalances(USER);
-  const loadBalances = vi.fn(useWalletStore.getState().loadBalances);
-  const listener = new Function('user', 'loadBalances', `return (${callback!.getText(source)})`)(
-    { id: USER },
-    loadBalances
-  );
-  listener();
-  await loadBalances.mock.results[0].value;
-  expect(getBalances).toHaveBeenCalledTimes(2);
-  expect(useWalletStore.getState().balances.PLAYER.total).toBe(60);
+it('Cashier does not subscribe to automatic balance reloads', () => {
+  const source = readFileSync('src/pages/CashierPage.tsx', 'utf8');
+  expect(source).not.toContain("['BALANCE_UPDATED', 'CHIPS_ADDED'");
+  expect(source).not.toContain('useRealtimeFinancials();');
 });
 
 it('a failed trailing balance read preserves the display and allows the next retry', async () => {

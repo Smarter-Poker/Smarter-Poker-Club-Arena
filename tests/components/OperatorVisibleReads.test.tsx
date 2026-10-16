@@ -141,6 +141,23 @@ describe('operator views observe only their visible scope', () => {
 });
 
 describe('promo float observation does not rewrite money', () => {
+  it('Cashier promo manual mode ignores background updates and refreshes explicitly', async () => {
+    render(<AgentPromoPanel clubId="club-a" userId="agent-a" role="agent" manualOnly />);
+    await flush();
+    const reads = state.query.mock.calls.length;
+    expect(state.channel).not.toHaveBeenCalled();
+    await act(() => vi.advanceTimersByTimeAsync(120_000));
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'));
+      window.dispatchEvent(new Event('online'));
+    });
+    await flush();
+    expect(state.query).toHaveBeenCalledTimes(reads);
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh Promo' }));
+    await flush();
+    expect(state.query.mock.calls.length).toBeGreaterThan(reads);
+  });
+
   it('uses scoped balance payloads without rereading every player for activity, and fences deletes', async () => {
     state.query.mockImplementation(async (name: string) => ({
       data:

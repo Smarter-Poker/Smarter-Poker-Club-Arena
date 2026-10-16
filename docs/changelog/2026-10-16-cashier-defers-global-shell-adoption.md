@@ -6,6 +6,4 @@ All routed Cashier pages now refuse automatic shell adoption through the existin
 
 The focused regression fails before the repair: five routed Cashier cases allowed reload, and a mounted stale-shell hook attempted worker handover. The same cases pass after the gate correction; existing ordinary-page and table behavior remains covered. No money mutation, engine change or database migration is included.
 
-Protected main also lacked the TypeScript declaration for its existing Messenger actor-bound request module. The missing declaration caused TS7016 during the required local compiler check. A matching declaration restores that check without changing Messenger runtime behavior.
-
 The unblocked production Cashier canary then reached its form checks and exposed four stale spinbutton selectors after grouped inputs became text fields in #7033. The canary now targets those actual textboxes and asserts 100000 renders as 100,000 before retaining the existing malformed-cents, keypad, feedback, geometry and preview-only checks. No assertion or journey is skipped.
